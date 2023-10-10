@@ -16,13 +16,15 @@ process.on('uncaughtException', error => {
 
 client.on('ready', () => {
     console.log(`${client.user.tag} is ready!`);
+    setInterval(() => {
     client.user.setPresence({
         status: 'online',
         activities: [{
-            name: 'No special setup is required, just post the tweet link.',
+            name: client.guilds.cache.size + 'servers\nNo special setup is required, just post the tweet link.',
             type: ActivityType.Watching
         }]
     });
+    }, 60000);
     client.application.commands.set([
         {
             name: 'help',
