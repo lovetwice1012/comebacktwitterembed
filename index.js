@@ -5,6 +5,7 @@ const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBit
 const config = require('./config.json');
 const fetch = require('node-fetch');
 
+
 process.on('unhandledRejection', error => {
     console.error('Unhandled promise rejection:', error);
 });
@@ -22,6 +23,16 @@ client.on('ready', () => {
             type: ActivityType.Watching
         }]
     });
+    client.application.commands.set([
+        {
+            name: 'help',
+            description: 'Shows help message.'
+        },
+        {
+            name: 'ping',
+            description: 'Pong!'
+        }
+    ]);
 });
 
 client.on('messageCreate', async (message) => {
@@ -82,6 +93,29 @@ client.on('messageCreate', async (message) => {
                 .catch(err => {
                     console.log(err);
                 });
+        });
+    }
+});
+
+client.on('interactionCreate', async (interaction) => {
+    if (!interaction.isCommand()) return;
+    if (interaction.commandName === 'ping') {
+        await interaction.reply('Pong!');
+    } else if (interaction.commandName === 'help') {
+        await interaction.reply({
+            embeds: [
+                {
+                    title: 'Help',
+                    description: 'No special setup is required, just post the tweet link.',
+                    color: 0x1DA1F2,
+                    fields: [
+                        {
+                            name: 'Commands',
+                            value: '`/ping` - Pong!\n`/help` - Shows help message.'
+                        }
+                    ]
+                }
+            ]
         });
     }
 });
