@@ -20,7 +20,7 @@ client.on('ready', () => {
     client.user.setPresence({
         status: 'online',
         activities: [{
-            name: client.guilds.cache.size + 'servers\nNo special setup is required, just post the tweet link.',
+            name: client.guilds.cache.size + 'servers | No special setup is required, just post the tweet link.',
             type: ActivityType.Watching
         }]
     });
