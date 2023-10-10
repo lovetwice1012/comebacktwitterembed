@@ -1,16 +1,30 @@
 //discord.js v14
 const discord = require('discord.js');
-const { Client, GatewayIntentBits, Partials } = require('discord.js');
+const { Client, GatewayIntentBits, Partials, ActivityType } = require('discord.js');
 const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent], partials: [Partials.Channel] });
 const config = require('./config.json');
 const fetch = require('node-fetch');
 
+process.on('unhandledRejection', error => {
+    console.error('Unhandled promise rejection:', error);
+});
+
+process.on('uncaughtException', error => {
+    console.error('Uncaught exception:', error);
+});
+
 client.on('ready', () => {
     console.log(`${client.user.tag} is ready!`);
+    client.user.setPresence({
+        status: 'online',
+        activities: [{
+            name: 'No special setup is required, just post the tweet link.',
+            type: ActivityType.Watching
+        }]
+    });
 });
 
 client.on('messageCreate', async (message) => {
-    console.log(message.content)
     if (message.author.bot) return;
     if ((message.content.includes('twitter.com') || message.content.includes('x.com')) && message.content.includes('status')) {
         const url = message.content.match(/(https?:\/\/[^\s]+)/g);
