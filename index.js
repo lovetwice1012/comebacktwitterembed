@@ -50,14 +50,21 @@ client.on('messageCreate', async (message) => {
                 .then(res => res.json())
                 .then(json => {
                     attachments = [];
+                    if(json.text.length > 1500) {
+                        json.text = json.text.slice(0, 300) + '...';
+                    }
                     const embed = {
                         title: json.user_name,
                         url: json.tweetURL,
-                        description: json.text,
+                        description: json.text + '\n\n[View on Twitter](' + json.tweetURL + ')\n\n:speech_balloon:'+json.replies+' replies • :recycle:'+json.retweets+' retweets • :heart:'+json.likes+' likes',
                         color: 0x1DA1F2,
                         author: {
                             name: json.user_screen_name,
-                        }
+                        },
+                        footer: {
+                            text: 'Posted by ' + json.user_name + ' (@' + json.user_screen_name + ')',
+                            icon_url: 'https://abs.twimg.com/icons/apple-touch-icon-192x192.png'
+                        },
                     };
                     //if the tweet has media
                     if (json.mediaURLs) {
@@ -66,6 +73,9 @@ client.on('messageCreate', async (message) => {
                                 url: json.mediaURLs[0]
                             }
                         } else {
+                            if(json.mediaURLs.length > 10) {
+                                json.mediaURLs = json.mediaURLs.slice(0, 10);
+                            }
                             attachments = json.mediaURLs
                         }
                     }
