@@ -52,6 +52,7 @@ client.on('messageCreate', async (message) => {
                 .then(res => res.json())
                 .then(json => {
                     attachments = [];
+                    let embeds = [];
                     if(json.text.length > 1500) {
                         json.text = json.text.slice(0, 300) + '...';
                     }
@@ -68,24 +69,32 @@ client.on('messageCreate', async (message) => {
                             icon_url: 'https://abs.twimg.com/icons/apple-touch-icon-192x192.png'
                         },
                     };
+                    embeds.push(embed);
                     //if the tweet has media
                     if (json.mediaURLs) {
-                        if (json.mediaURLs.length == 1 && json.mediaURLs[0].includes('pbs.twimg.com')) {
-                            embed.image = {
-                                url: json.mediaURLs[0]
+                            if(json.mediaURLs.length > 4) {
+                                if(json.mediaURLs.length > 10) {
+                                    json.mediaURLs = json.mediaURLs.slice(0, 10);
+                                }
+                                attachments = json.mediaURLs
+                            }else {
+                                json.mediaURLs.forEach(element => {
+                                    if(element.includes('video.twimg.com')) {
+                                        attachments.push(element);
+                                        return;
+                                    }
+                                    embeds.push({
+                                        url: json.tweetURL,
+                                        image: {
+                                            url: element
+                                        }
+                                    })
+                                });
                             }
-                        } else {
-                            if(json.mediaURLs.length > 10) {
-                                json.mediaURLs = json.mediaURLs.slice(0, 10);
-                            }
-                            attachments = json.mediaURLs
-                        }
                     }
                     if (attachments.length > 0) {
                         message.reply({
-                            embeds: [
-                                embed
-                            ],
+                            embeds: embeds,
                             files: attachments,
                             allowedMentions: {
                                 repliedUser: false
@@ -93,9 +102,7 @@ client.on('messageCreate', async (message) => {
                         })
                     } else {
                         message.reply({
-                            embeds: [
-                                embed
-                            ],
+                            embeds: embeds,
                             allowedMentions: {
                                 repliedUser: false
                             }
