@@ -174,7 +174,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
 });
 
 client.on(Events.InteractionCreate, async (interaction) => {
-    if (!interaction.type === InteractionType.MessageComponent) return;
+    if (!interaction.type === InteractionType.MessageComponent || interaction.type === InteractionType.ApplicationCommand) return;
     await interaction.deferReply({ ephemeral: true });
     switch (interaction.customId) {
         case 'showMediaAsAttachments':
