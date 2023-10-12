@@ -169,7 +169,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
             embeds: [
                 {
                     title: 'Help',
-                    description: 'No special setup is required, just post the tweet link.',
+                    description: 'No special setup is required, just post the tweet link.\n\nThis bot can check the contents of messages you have sent.\nIt will only be used to check if the message you sent contains a twitter link, and will not be used for any other purpose.\nIt will not be used for any other purpose, nor will it record the messages you send.\nIf you do not trust us, you can secure your safety by removing your channel permissions from this bot.',
                     color: 0x1DA1F2,
                     fields: [
                         {
