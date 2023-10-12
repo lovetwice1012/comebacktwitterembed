@@ -64,6 +64,7 @@ client.on('ready', () => {
             }]
         });
     }, 60000);
+
     client.application.commands.set([
         {
             name: 'help',
@@ -72,6 +73,14 @@ client.on('ready', () => {
         {
             name: 'ping',
             description: 'Pong!'
+        },
+        {
+            name: 'invite',
+            description: 'Invite me to your server!'
+        },
+        {
+            name: 'support',
+            description: 'Join support server!'
         }
     ]);
 });
@@ -165,6 +174,38 @@ client.on(Events.InteractionCreate, async (interaction) => {
                         {
                             name: 'Commands',
                             value: '`/ping` - Pong!\n`/help` - Shows help message.'
+                        }
+                    ]
+                }
+            ]
+        });
+    }else if (interaction.commandName === 'invite') {
+        await interaction.reply({
+            embeds: [
+                {
+                    title: 'Invite',
+                    description: 'Invite me to your server!',
+                    color: 0x1DA1F2,
+                    fields: [
+                        {
+                            name: 'Invite link',
+                            value: 'https://discord.com/oauth2/authorize?client_id=1161267455335862282&permissions=274877958144&scope=bot%20applications.commands'
+                        }
+                    ]
+                }
+            ]
+        });
+    }else if (interaction.commandName === 'support') {
+        await interaction.reply({
+            embeds: [
+                {
+                    title: 'Support',
+                    description: 'Join support server!',
+                    color: 0x1DA1F2,
+                    fields: [
+                        {
+                            name: 'Support server link',
+                            value: 'https://discord.gg/V5VUtS83SG'
                         }
                     ]
                 }
