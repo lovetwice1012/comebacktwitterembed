@@ -122,6 +122,7 @@ client.on(Events.MessageCreate, async (message) => {
                             text: 'Posted by ' + json.user_name + ' (@' + json.user_screen_name + ')',
                             icon_url: 'https://abs.twimg.com/icons/apple-touch-icon-192x192.png'
                         },
+                        timestamp: new Date(json.date),
                     };
                     embeds.push(embed);
                     //if the tweet has media
