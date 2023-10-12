@@ -1,9 +1,24 @@
 //discord.js v14
 const discord = require('discord.js');
-const { Client, GatewayIntentBits, Partials, ActivityType } = require('discord.js');
+const { Client, GatewayIntentBits, Partials, ActivityType, InteractionType, ButtonBuilder, ButtonStyle, ComponentType } = require('discord.js');
 const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent], partials: [Partials.Channel] });
 const config = require('./config.json');
 const fetch = require('node-fetch');
+
+const showAttachmentsAsEmbedsImagebuttonLocales = {
+    ja: '画像を埋め込み画像として表示する',
+    en: 'Show media in embeds image'
+}
+
+const showMediaAsAttachmentsButtonLocales = {
+    ja: 'メディアを添付ファイルとして表示する',
+    en: 'Show media as attachments'
+}
+
+const finishActionLocales = {
+    ja: '操作を完了しました。',
+    en: 'Finished action.'
+}
 
 
 process.on('unhandledRejection', error => {
@@ -17,13 +32,13 @@ process.on('uncaughtException', error => {
 client.on('ready', () => {
     console.log(`${client.user.tag} is ready!`);
     setInterval(() => {
-    client.user.setPresence({
-        status: 'online',
-        activities: [{
-            name: client.guilds.cache.size + 'servers | No special setup is required, just post the tweet link.',
-            type: ActivityType.Watching
-        }]
-    });
+        client.user.setPresence({
+            status: 'online',
+            activities: [{
+                name: client.guilds.cache.size + 'servers | No special setup is required, just post the tweet link.',
+                type: ActivityType.Watching
+            }]
+        });
     }, 60000);
     client.application.commands.set([
         {
@@ -53,13 +68,19 @@ client.on('messageCreate', async (message) => {
                 .then(json => {
                     attachments = [];
                     let embeds = [];
-                    if(json.text.length > 1500) {
+                    let showMediaAsAttachmentsButton = null;
+                    let messageObject = {
+                        allowedMentions: {
+                            repliedUser: false
+                        }
+                    };
+                    if (json.text.length > 1500) {
                         json.text = json.text.slice(0, 300) + '...';
                     }
                     const embed = {
                         title: json.user_name,
                         url: json.tweetURL,
-                        description: json.text + '\n\n[View on Twitter](' + json.tweetURL + ')\n\n:speech_balloon:'+json.replies+' replies • :recycle:'+json.retweets+' retweets • :heart:'+json.likes+' likes',
+                        description: json.text + '\n\n[View on Twitter](' + json.tweetURL + ')\n\n:speech_balloon:' + json.replies + ' replies • :recycle:' + json.retweets + ' retweets • :heart:' + json.likes + ' likes',
                         color: 0x1DA1F2,
                         author: {
                             name: json.user_screen_name,
@@ -72,42 +93,31 @@ client.on('messageCreate', async (message) => {
                     embeds.push(embed);
                     //if the tweet has media
                     if (json.mediaURLs) {
-                            if(json.mediaURLs.length > 4) {
-                                if(json.mediaURLs.length > 10) {
-                                    json.mediaURLs = json.mediaURLs.slice(0, 10);
+                        if (json.mediaURLs.length > 4) {
+                            if (json.mediaURLs.length > 10) {
+                                json.mediaURLs = json.mediaURLs.slice(0, 10);
+                            }
+                            attachments = json.mediaURLs
+                        } else {
+                            showMediaAsAttachmentsButton = new ButtonBuilder().setStyle(ButtonStyle.Primary).setLabel(showMediaAsAttachmentsButtonLocales[interaction.locale] ?? showMediaAsAttachmentsButtonLocales["en"]).setCustomId('showMediaAsAttachments');
+                            json.mediaURLs.forEach(element => {
+                                if (element.includes('video.twimg.com')) {
+                                    attachments.push(element);
+                                    return;
                                 }
-                                attachments = json.mediaURLs
-                            }else {
-                                json.mediaURLs.forEach(element => {
-                                    if(element.includes('video.twimg.com')) {
-                                        attachments.push(element);
-                                        return;
+                                embeds.push({
+                                    url: json.tweetURL,
+                                    image: {
+                                        url: element
                                     }
-                                    embeds.push({
-                                        url: json.tweetURL,
-                                        image: {
-                                            url: element
-                                        }
-                                    })
-                                });
-                            }
+                                })
+                            });
+                        }
                     }
-                    if (attachments.length > 0) {
-                        message.reply({
-                            embeds: embeds,
-                            files: attachments,
-                            allowedMentions: {
-                                repliedUser: false
-                            }
-                        })
-                    } else {
-                        message.reply({
-                            embeds: embeds,
-                            allowedMentions: {
-                                repliedUser: false
-                            }
-                        })
-                    }
+                    if (attachments.length > 0) messageObject.files = attachments;
+                    if (showMediaAsAttachmentsButton !== null) messageObject.components = [{ type: ComponentType.ActionRow, components: [showMediaAsAttachmentsButton] }];
+                    messageObject.embeds = embeds;
+                    message.reply(messageObject);
                 })
                 .catch(err => {
                     console.log(err);
@@ -117,7 +127,7 @@ client.on('messageCreate', async (message) => {
 });
 
 client.on('interactionCreate', async (interaction) => {
-    if (!interaction.isCommand()) return;
+    if (!interaction.type === InteractionType.ApplicationCommand) return;
     if (interaction.commandName === 'ping') {
         await interaction.reply('Pong!');
     } else if (interaction.commandName === 'help') {
@@ -136,6 +146,52 @@ client.on('interactionCreate', async (interaction) => {
                 }
             ]
         });
+    }
+});
+
+client.on('interactionCreate', async (interaction) => {
+    if (!interaction.type === InteractionType.MessageComponent) return;
+    interaction.deferUpdate();
+    switch (interaction.customId) {
+        case 'showMediaAsAttachments':
+            const showAttachmentsAsMediaButton = new ButtonBuilder().setStyle(ButtonStyle.Primary).setLabel(showAttachmentsAsEmbedsImagebuttonLocales[interaction.locale] ?? showAttachmentsAsEmbedsImagebuttonLocales["en"]).setCustomId('showAttachmentsAsEmbedsImage');
+            const messageObject = {};
+            messageObject.components = [{ type: ComponentType.ActionRow, components: [showAttachmentsAsMediaButton] }];
+            messageObject.files = [];
+            messageObject.embeds = [];
+            interaction.message.embeds.forEach(element => {
+                if (element.image) {
+                    messageObject.files.push(element.image.url);
+                }
+            });
+            messageObject.embeds.push(interaction.message.embeds[0]);
+            if (messageObject.embeds[0].image) delete messageObject.embeds.image;
+            await interaction.message.edit(messageObject);
+            await interaction.followUp({ content: finishActionLocales[interaction.locale] ?? finishActionLocales["en"], ephemeral: true });
+            break;
+
+        case 'showAttachmentsAsEmbedsImage':
+            const showMediaAsAttachmentsButton = new ButtonBuilder().setStyle(ButtonStyle.Primary).setLabel(showMediaAsAttachmentsButtonLocales[interaction.locale] ?? showMediaAsAttachmentsButtonLocales["en"]).setCustomId('showMediaAsAttachments');
+            const messageObject2 = {};
+            if (interaction.message.attachments === undefined || interaction.message.attachments === null) return interaction.reply('There are no attachments to show.');
+            const attachments = interaction.message.attachments.map(attachment => attachment.url);
+            if (attachments.length > 4) return interaction.reply('You can\'t show more than 4 attachments as embeds image.');
+            messageObject2.components = [{ type: ComponentType.ActionRow, components: [showMediaAsAttachmentsButton] }];
+            messageObject2.embeds = [];
+            messageObject2.embeds.push(interaction.message.embeds[0]);
+            if (messageObject2.embeds[0].image) delete messageObject2.embeds.image;
+            attachments.forEach(element => {
+                messageObject2.embeds.push({
+                    url: messageObject2.embeds[0].url,
+                    image: {
+                        url: element
+                    }
+                });
+            });
+            messageObject2.files = [];
+            await interaction.message.edit(messageObject2);
+            await interaction.followUp({ content: finishActionLocales[interaction.locale] ?? finishActionLocales["en"], ephemeral: true });
+            break;
     }
 });
 
