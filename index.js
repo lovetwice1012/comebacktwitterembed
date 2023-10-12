@@ -99,7 +99,7 @@ client.on('messageCreate', async (message) => {
                             }
                             attachments = json.mediaURLs
                         } else {
-                            showMediaAsAttachmentsButton = new ButtonBuilder().setStyle(ButtonStyle.Primary).setLabel(showMediaAsAttachmentsButtonLocales[interaction.locale] ?? showMediaAsAttachmentsButtonLocales["en"]).setCustomId('showMediaAsAttachments');
+                            showMediaAsAttachmentsButton = new ButtonBuilder().setStyle(ButtonStyle.Primary).setLabel(showMediaAsAttachmentsButtonLocales["en"]).setCustomId('showMediaAsAttachments');
                             json.mediaURLs.forEach(element => {
                                 if (element.includes('video.twimg.com')) {
                                     attachments.push(element);
