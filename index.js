@@ -1,6 +1,6 @@
 //discord.js v14
 const discord = require('discord.js');
-const { Client, GatewayIntentBits, Partials, ActivityType, InteractionType, ButtonBuilder, ButtonStyle, ComponentType } = require('discord.js');
+const { Client, Events, GatewayIntentBits, Partials, ActivityType, InteractionType, ButtonBuilder, ButtonStyle, ComponentType } = require('discord.js');
 const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent], partials: [Partials.Channel] });
 const config = require('./config.json');
 const fetch = require('node-fetch');
@@ -20,6 +20,30 @@ const finishActionLocales = {
     en: 'Finished action.'
 }
 
+const videoExtensions = [
+    'mp4',
+    'mov',
+    'wmv',
+    'avi',
+    'avchd',
+    'flv',
+    'f4v',
+    'swf',
+    'mkv',
+    'webm',
+    'm4v',
+    '3gp',
+    '3g2',
+    'mxf',
+    'roq',
+    'nsv',
+    'gifv',
+    'gif',
+    'ts',
+    'm2ts',
+    'mts',
+    'vob'
+];
 
 process.on('unhandledRejection', error => {
     console.error('Unhandled promise rejection:', error);
@@ -52,7 +76,7 @@ client.on('ready', () => {
     ]);
 });
 
-client.on('messageCreate', async (message) => {
+client.on(Events.MessageCreate, async (message) => {
     if (message.author.bot) return;
     if ((message.content.includes('twitter.com') || message.content.includes('x.com')) && message.content.includes('status')) {
         const url = message.content.match(/(https?:\/\/[^\s]+)/g);
@@ -99,12 +123,12 @@ client.on('messageCreate', async (message) => {
                             }
                             attachments = json.mediaURLs
                         } else {
-                            showMediaAsAttachmentsButton = new ButtonBuilder().setStyle(ButtonStyle.Primary).setLabel(showMediaAsAttachmentsButtonLocales["en"]).setCustomId('showMediaAsAttachments');
                             json.mediaURLs.forEach(element => {
                                 if (element.includes('video.twimg.com')) {
                                     attachments.push(element);
                                     return;
                                 }
+                                showMediaAsAttachmentsButton = new ButtonBuilder().setStyle(ButtonStyle.Primary).setLabel(showMediaAsAttachmentsButtonLocales["en"]).setCustomId('showMediaAsAttachments');
                                 embeds.push({
                                     url: json.tweetURL,
                                     image: {
@@ -126,7 +150,7 @@ client.on('messageCreate', async (message) => {
     }
 });
 
-client.on('interactionCreate', async (interaction) => {
+client.on(Events.InteractionCreate, async (interaction) => {
     if (!interaction.type === InteractionType.ApplicationCommand) return;
     if (interaction.commandName === 'ping') {
         await interaction.reply('Pong!');
@@ -149,9 +173,9 @@ client.on('interactionCreate', async (interaction) => {
     }
 });
 
-client.on('interactionCreate', async (interaction) => {
+client.on(Events.InteractionCreate, async (interaction) => {
     if (!interaction.type === InteractionType.MessageComponent) return;
-    interaction.deferUpdate();
+    await interaction.deferReply({ ephemeral: true });
     switch (interaction.customId) {
         case 'showMediaAsAttachments':
             const showAttachmentsAsMediaButton = new ButtonBuilder().setStyle(ButtonStyle.Primary).setLabel(showAttachmentsAsEmbedsImagebuttonLocales[interaction.locale] ?? showAttachmentsAsEmbedsImagebuttonLocales["en"]).setCustomId('showAttachmentsAsEmbedsImage');
@@ -167,7 +191,10 @@ client.on('interactionCreate', async (interaction) => {
             messageObject.embeds.push(interaction.message.embeds[0]);
             if (messageObject.embeds[0].image) delete messageObject.embeds.image;
             await interaction.message.edit(messageObject);
-            await interaction.followUp({ content: finishActionLocales[interaction.locale] ?? finishActionLocales["en"], ephemeral: true });
+            await interaction.editReply({ content: finishActionLocales[interaction.locale] ?? finishActionLocales["en"], ephemeral: true });
+            setTimeout(() => {
+                interaction.deleteReply();
+            }, 3000);
             break;
 
         case 'showAttachmentsAsEmbedsImage':
@@ -181,6 +208,11 @@ client.on('interactionCreate', async (interaction) => {
             messageObject2.embeds.push(interaction.message.embeds[0]);
             if (messageObject2.embeds[0].image) delete messageObject2.embeds.image;
             attachments.forEach(element => {
+                const extension = element.split("?").pop().split('.').pop();
+                if (videoExtensions.includes(extension)) {
+                    messageObject2.files.push(element);
+                    return;
+                }
                 messageObject2.embeds.push({
                     url: messageObject2.embeds[0].url,
                     image: {
@@ -190,7 +222,10 @@ client.on('interactionCreate', async (interaction) => {
             });
             messageObject2.files = [];
             await interaction.message.edit(messageObject2);
-            await interaction.followUp({ content: finishActionLocales[interaction.locale] ?? finishActionLocales["en"], ephemeral: true });
+            await interaction.editReply({ content: finishActionLocales[interaction.locale] ?? finishActionLocales["en"], ephemeral: true });
+            setTimeout(() => {
+                interaction.deleteReply();
+            }, 3000);
             break;
     }
 });
