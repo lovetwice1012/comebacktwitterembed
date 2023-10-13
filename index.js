@@ -32,6 +32,128 @@ const finishActionLocales = {
     en: 'Finished action.'
 }
 
+const helpTitleLocales = {
+    ja: 'ヘルプ',
+    en: 'Help'
+}
+
+const helpcommandDiscriptionLocales = {
+    ja: 'ヘルプメッセージを表示します。',
+    en: 'Shows help message.'
+}
+
+const helpDiscriptionLocales = {
+    ja: '特別な設定は必要なく、ツイートリンクを投稿するだけで使用することができます。\n\nこのbotは、あなたが送信したメッセージの内容を確認することができます。\nあなたが送信したメッセージにtwitterのリンクが含まれているかどうかを確認するためだけに使用され、それ以外の目的で使用されることはありません。\nまた、あなたが送信したメッセージを記録することもありません。\n私たちを信頼できない場合は、このbotからチャンネルの閲覧権限を削除することで安全を確保することができます。',
+    en: 'No special setup is required, just post the tweet link.\n\nThis bot can check the contents of messages you have sent.\nIt will only be used to check if the message you sent contains a twitter link, and will not be used for any other purpose.\nIt will not be used for any other purpose, nor will it record the messages you send.\nIf you do not trust us, you can secure your safety by removing your channel permissions from this bot.'
+}
+
+const helpCommandsLocales = {
+    ja: '`/ping` - Pong!\n`/help` - ヘルプメッセージを表示します。\n`/invite` - このbotをあなたのサーバーに招待するためのリンクを表示します\n`/support` - サポートサーバーに参加するためのリンクを表示します\n`/settings` - 設定を変更します',
+    en: '`/ping` - Pong!\n`/help` - Shows help message.\n`/invite` - Invite me to your server!\n`/support` - Join support server!\n`/settings` - chenge Settings'
+}
+
+const settingsDisableDiscriptionLocales = {
+    ja: 'ユーザーまたはチャンネルを指定して無効化します。',
+    en: 'Disable by user or channel.'
+}
+
+const settingsBannedWordsDiscriptionLocales = {
+    ja: '禁止ワードを追加または削除します。',
+    en: 'Add or remove banned words.'
+}
+
+const settingsDisableUserDiscriptionLocales = {
+    ja: '無効化するユーザーを指定します。',
+    en: 'Specify the user to disable.'
+}
+
+const settingsDisableChannelDiscriptionLocales = {
+    ja: '無効化するチャンネルを指定します。',
+    en: 'Specify the channel to disable.'
+}
+
+const settingsBannedWordsWordDiscriptionLocales = {
+    ja: '禁止ワードを指定します。',
+    en: 'Specify the banned word.'
+}
+
+const userDonthavePermissionLocales = {
+    ja: 'このコマンドを使用する権限がありません。',
+    en: 'You don\'t have permission to use this command.'
+}
+
+const userCantUseThisCommandForOtherUsersLocales = {
+    ja: 'ユーザーにあなた以外のユーザーを指定することはできません。',
+    en: 'You can\'t use this command for other users.'
+}
+
+const userCantDeleteThisMessageLocales = {
+    ja: 'このメッセージを削除することはできません。',
+    en: 'You can\'t delete this message.'
+}
+
+const userMustSpecifyAUserOrChannelLocales = {
+    ja: 'ユーザーまたはチャンネルを指定する必要があります。',
+    en: 'You must specify a user or channel.'
+}
+
+const userCantSpecifyBothAUserAndAChannelLocales = {
+    ja: 'ユーザーとチャンネルの両方を指定することはできません。',
+    en: 'You can\'t specify both a user and a channel.'
+}
+
+const iDonthavePermissionToManageMessagesLocales = {
+    ja: 'BOTにメッセージを管理する権限がありません。',
+    en: 'I don\'t have permission to manage messages.'
+}
+
+const iDonthavePermissionToDeleteMessagesLocales = {
+    ja: 'BOTにメッセージを削除する権限がありません。',
+    en: 'I don\'t have permission to delete messages.'
+}
+
+const addedUserToDisableUserLocales = {
+    ja: '無効化するユーザーに追加しました。',
+    en: 'Added user to disable.user.'
+}
+
+const removedUserFromDisableUserLocales = {
+    ja: '無効化するユーザーから削除しました。',
+    en: 'Removed user from disable.user.'
+}
+
+const addedChannelToDisableChannelLocales = {
+    ja: '無効化するチャンネルに追加しました。',
+    en: 'Added channel to disable.channel.'
+}
+
+const removedChannelFromDisableChannelLocales = {
+    ja: '無効化するチャンネルから削除しました。',
+    en: 'Removed channel from disable.channel.'
+}
+
+const addedWordToBannedWordsLocales = {
+    ja: '禁止ワードに追加しました。',
+    en: 'Added word to bannedWords.'
+}
+
+const removedWordFromBannedWordsLocales = {
+    ja: '禁止ワードから削除しました。',
+    en: 'Removed word from bannedWords.'
+}
+
+const deleteButtonLabelLocales = {
+    ja: '削除',
+    en: 'Delete'
+}
+
+const userMustSpecifyAnyWordLocales = {
+    ja: 'ワードを指定する必要があります。',
+    en: 'You must specify a word.'
+}
+
+
+
 const videoExtensions = [
     'mp4',
     'mov',
@@ -250,12 +372,12 @@ client.on(Events.InteractionCreate, async (interaction) => {
             embeds: [
                 {
                     title: 'Help',
-                    description: 'No special setup is required, just post the tweet link.\n\nThis bot can check the contents of messages you have sent.\nIt will only be used to check if the message you sent contains a twitter link, and will not be used for any other purpose.\nIt will not be used for any other purpose, nor will it record the messages you send.\nIf you do not trust us, you can secure your safety by removing your channel permissions from this bot.',
+                    description: helpDiscriptionLocales[interaction.locale] ?? helpDiscriptionLocales["en"],
                     color: 0x1DA1F2,
                     fields: [
                         {
                             name: 'Commands',
-                            value: '`/ping` - Pong!\n`/help` - Shows help message.\n`/invite` - Invite me to your server!\n`/support` - Join support server!\n`/settings` - chenge Settings'
+                            value: helpCommandsLocales[interaction.locale] ?? helpCommandsLocales["en"]
                         }
                     ]
                 }
@@ -297,36 +419,36 @@ client.on(Events.InteractionCreate, async (interaction) => {
         if(interaction.member.permissions.has(PermissionsBitField.Flags.ManageChannels) || interaction.member.permissions.has(PermissionsBitField.Flags.ManageGuild) || interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)){
             if(interaction.options.getSubcommand() === 'disable'){
                 if(interaction.options.getUser('user') === null && interaction.options.getChannel('channel') === null){
-                    return await interaction.reply('You must specify a user or channel.');
+                    return await interaction.reply(userMustSpecifyAUserOrChannelLocales[interaction.locale] ?? userMustSpecifyAUserOrChannelLocales["en"]);
                 }
 
                 if(interaction.options.getUser('user') !== null && interaction.options.getChannel('channel') !== null){
-                    return await interaction.reply('You can\'t specify both a user and a channel.');
+                    return await interaction.reply(userCantSpecifyBothAUserAndAChannelLocales[interaction.locale] ?? userCantSpecifyBothAUserAndAChannelLocales["en"]);
                 }
 
                 if(interaction.options.getUser('user') !== null){
                     const user = interaction.options.getUser('user');
                     if(settings.disable.user.includes(user.id)){
                         settings.disable.user.splice(settings.disable.user.indexOf(user.id), 1);
-                        await interaction.reply('Removed user from disable.user');
+                        await interaction.reply(removedUserFromDisableUserLocales[interaction.locale] ?? removedUserFromDisableUserLocales["en"]);
                     }else{
                         settings.disable.user.push(user.id);
-                        await interaction.reply('Added user to disable.user');
+                        await interaction.reply(addedUserToDisableUserLocales[interaction.locale] ?? addedUserToDisableUserLocales["en"]);
                     }
                 }else if(interaction.options.getChannel('channel') !== null){
                     const channel = interaction.options.getChannel('channel');
                     if(settings.disable.channel.includes(channel.id)){
                         settings.disable.channel.splice(settings.disable.channel.indexOf(channel.id), 1);
-                        await interaction.reply('Removed channel from disable.channel');
+                        await interaction.reply(removedChannelFromDisableChannelLocales[interaction.locale] ?? removedChannelFromDisableChannelLocales["en"]);
                     }else{
                         settings.disable.channel.push(channel.id);
-                        await interaction.reply('Added channel to disable.channel');
+                        await interaction.reply(addedChannelToDisableChannelLocales[interaction.locale] ?? addedChannelToDisableChannelLocales["en"]);
                     }
                 }
             }else if(interaction.options.getSubcommand() === 'bannedwords'){
-                if(interaction.options.getString('word') === null) return await interaction.reply('You must specify a word.');
+                if(interaction.options.getString('word') === null) return await interaction.reply(userMustSpecifyAnyWordLocales[interaction.locale] ?? userMustSpecifyAnyWordLocales["en"]);
                 if(!interaction.guild.members.me.permissions.has(PermissionsBitField.Flags.ManageMessages)){
-                    return await interaction.reply('I don\'t have permission to manage messages.');
+                    return await interaction.reply(iDonthavePermissionToManageMessagesLocales[interaction.locale] ?? iDonthavePermissionToManageMessagesLocales["en"]);
                 }
                 const word = interaction.options.getString('word');
                 if(settings.bannedWords[interaction.guildId] === undefined){
@@ -334,37 +456,37 @@ client.on(Events.InteractionCreate, async (interaction) => {
                 }
                 if(settings.bannedWords[interaction.guildId].includes(word)){
                     settings.bannedWords[interaction.guildId].splice(settings.bannedWords[interaction.guildId].indexOf(word), 1);
-                    await interaction.reply('Removed word from bannedWords');
+                    await interaction.reply(removedWordFromBannedWordsLocales[interaction.locale] ?? removedWordFromBannedWordsLocales["en"]);
                 }else{
                     settings.bannedWords[interaction.guildId].push(word);
-                    await interaction.reply('Added word to bannedWords');
+                    await interaction.reply(addedWordToBannedWordsLocales[interaction.locale] ?? addedWordToBannedWordsLocales["en"]);
                 }
             }
         }else{
             if(interaction.options.getSubcommand() === 'disable'){
                 if(interaction.options.getUser('user') === null && interaction.options.getChannel('channel') === null){
-                    return await interaction.reply('You must specify a user or channel.');
+                    return await interaction.reply(userMustSpecifyAUserOrChannelLocales[interaction.locale] ?? userMustSpecifyAUserOrChannelLocales["en"]);
                 }
 
                 if(interaction.options.getUser('user') !== null && interaction.options.getChannel('channel') !== null){
-                    return await interaction.reply('You can\'t specify both a user and a channel.');
+                    return await interaction.reply(userCantSpecifyBothAUserAndAChannelLocales[interaction.locale] ?? userCantSpecifyBothAUserAndAChannelLocales["en"]);
                 }
 
                 if(interaction.options.getUser('user') !== null){
                     const user = interaction.options.getUser('user');
-                    if(user.id !== interaction.user.id) return await interaction.reply('You can\'t use this command for other users.');
+                    if(user.id !== interaction.user.id) return await interaction.reply(userCantUseThisCommandForOtherUsersLocales[interaction.locale] ?? userCantUseThisCommandForOtherUsersLocales["en"]);
                     if(settings.disable.user.includes(user.id)){
                         settings.disable.user.splice(settings.disable.user.indexOf(user.id), 1);
-                        await interaction.reply('Removed you from disable.user');
+                        await interaction.reply(removedUserFromDisableUserLocales[interaction.locale] ?? removedUserFromDisableUserLocales["en"]);
                     }else{
                         settings.disable.user.push(user.id);
-                        await interaction.reply('Added you to disable.user');
+                        await interaction.reply(addedUserToDisableUserLocales[interaction.locale] ?? addedUserToDisableUserLocales["en"]);
                     }
                 }else if(interaction.options.getChannel('channel') !== null){
-                    return await interaction.reply('You don\'t have permission to use this command.');
+                    return await interaction.reply(userDonthavePermissionLocales[interaction.locale] ?? userDonthavePermissionLocales["en"]);
                 }
             }else if(interaction.options.getSubcommand() === 'bannedwords'){
-                await interaction.reply('You don\'t have permission to use this command.');
+                await interaction.reply(userDonthavePermissionLocales[interaction.locale] ?? userDonthavePermissionLocales["en"]);
             }
         }
         fs.writeFileSync('./settings.json', JSON.stringify(settings, null, 4));
