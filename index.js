@@ -258,7 +258,7 @@ client.on('ready', () => {
 });
 
 client.on(Events.MessageCreate, async (message) => {
-    if (message.author.bot) return;
+    if (message.author.bot && !message.webhookId) return;
     if ((message.content.includes('twitter.com') || message.content.includes('x.com')) && message.content.includes('status')) {
         const url = message.content.match(/(https?:\/\/[^\s]+)/g);
         if (url === null) return;
@@ -496,6 +496,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
 client.on(Events.InteractionCreate, async (interaction) => {
     if (!interaction.type === InteractionType.MessageComponent || interaction.type === InteractionType.ApplicationCommand) return;
     await interaction.deferReply({ ephemeral: true });
+    const deleteButton = new ButtonBuilder().setStyle(ButtonStyle.Danger).setLabel('Delete').setCustomId('delete');
     switch (interaction.customId) {
         case 'showMediaAsAttachments':
             const showAttachmentsAsMediaButton = new ButtonBuilder().setStyle(ButtonStyle.Primary).setLabel(showAttachmentsAsEmbedsImagebuttonLocales[interaction.locale] ?? showAttachmentsAsEmbedsImagebuttonLocales["en"]).setCustomId('showAttachmentsAsEmbedsImage');
