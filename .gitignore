@@ -132,4 +132,5 @@ dist
 config.json
 checkguild.js
 settings.json
+sendwebhook.js
 ```

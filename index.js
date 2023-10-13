@@ -526,7 +526,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
             const attachments = interaction.message.attachments.map(attachment => attachment.url);
             if (attachments.length > 4) return interaction.reply('You can\'t show more than 4 attachments as embeds image.');
             messageObject2.components = [{ type: ComponentType.ActionRow, components: [showMediaAsAttachmentsButton] }];
-            messageObject.components.push({ type: ComponentType.ActionRow, components: [deleteButton] });
+            messageObject2.components.push({ type: ComponentType.ActionRow, components: [deleteButton] });
             messageObject2.embeds = [];
             messageObject2.embeds.push(interaction.message.embeds[0]);
             if (messageObject2.embeds[0].image) delete messageObject2.embeds.image;
