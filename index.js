@@ -156,6 +156,7 @@ client.on(Events.MessageCreate, async (message) => {
                     attachments = [];
                     let embeds = [];
                     let showMediaAsAttachmentsButton = null;
+                    const deleteButton = new ButtonBuilder().setStyle(ButtonStyle.Danger).setLabel('Delete').setCustomId('delete');
                     let messageObject = {
                         allowedMentions: {
                             repliedUser: false
@@ -194,7 +195,7 @@ client.on(Events.MessageCreate, async (message) => {
                         description: json.text + '\n\n[View on Twitter](' + json.tweetURL + ')\n\n:speech_balloon:' + json.replies + ' replies • :recycle:' + json.retweets + ' retweets • :heart:' + json.likes + ' likes',
                         color: 0x1DA1F2,
                         author: {
-                            name: json.user_screen_name,
+                            name: 'request by ' + message.author.username + '(id:' + message.author.id + ')',
                         },
                         footer: {
                             text: 'Posted by ' + json.user_name + ' (@' + json.user_screen_name + ')',
@@ -228,6 +229,8 @@ client.on(Events.MessageCreate, async (message) => {
                     }
                     if (attachments.length > 0) messageObject.files = attachments;
                     if (showMediaAsAttachmentsButton !== null) messageObject.components = [{ type: ComponentType.ActionRow, components: [showMediaAsAttachmentsButton] }];
+                    if (!messageObject.components) messageObject.components = [];
+                    messageObject.components.push({ type: ComponentType.ActionRow, components: [deleteButton] });
                     messageObject.embeds = embeds;
                     message.reply(messageObject);
                 })
@@ -376,6 +379,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
             const showAttachmentsAsMediaButton = new ButtonBuilder().setStyle(ButtonStyle.Primary).setLabel(showAttachmentsAsEmbedsImagebuttonLocales[interaction.locale] ?? showAttachmentsAsEmbedsImagebuttonLocales["en"]).setCustomId('showAttachmentsAsEmbedsImage');
             const messageObject = {};
             messageObject.components = [{ type: ComponentType.ActionRow, components: [showAttachmentsAsMediaButton] }];
+            messageObject.components.push({ type: ComponentType.ActionRow, components: [deleteButton] });
             messageObject.files = [];
             messageObject.embeds = [];
             interaction.message.embeds.forEach(element => {
@@ -399,6 +403,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
             const attachments = interaction.message.attachments.map(attachment => attachment.url);
             if (attachments.length > 4) return interaction.reply('You can\'t show more than 4 attachments as embeds image.');
             messageObject2.components = [{ type: ComponentType.ActionRow, components: [showMediaAsAttachmentsButton] }];
+            messageObject.components.push({ type: ComponentType.ActionRow, components: [deleteButton] });
             messageObject2.embeds = [];
             messageObject2.embeds.push(interaction.message.embeds[0]);
             if (messageObject2.embeds[0].image) delete messageObject2.embeds.image;
@@ -421,6 +426,29 @@ client.on(Events.InteractionCreate, async (interaction) => {
             setTimeout(() => {
                 interaction.deleteReply();
             }, 3000);
+            break;
+
+        case 'delete':
+            if (interaction.member.permissions.has(PermissionsBitField.Flags.ManageMessages)) {
+                await interaction.message.delete();
+                await interaction.editReply({ content: finishActionLocales[interaction.locale] ?? finishActionLocales["en"], ephemeral: true });
+                setTimeout(() => {
+                    interaction.deleteReply();
+                }, 3000);
+            } else {
+                if (interaction.message.embeds[0].author.name.split(":")[1].split(")")[0] != interaction.user.id) {
+                    await interaction.editReply({ content: 'You can\'t delete this message.', ephemeral: true });
+                    setTimeout(() => {
+                        interaction.deleteReply();
+                    }, 3000);
+                    return;
+                }
+                await interaction.message.delete();
+                await interaction.editReply({ content: finishActionLocales[interaction.locale] ?? finishActionLocales["en"], ephemeral: true });
+                setTimeout(() => {
+                    interaction.deleteReply();
+                }, 3000);
+            }
             break;
     }
 });
