@@ -322,7 +322,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
                 }
             }else if(interaction.options.getSubcommand() === 'bannedwords'){
                 if(interaction.options.getString('word') === null) return await interaction.reply('You must specify a word.');
-                if(!interaction.guild.me.permissions.has(PermissionsBitField.Flags.ManageMessages)){
+                if(!interaction.guild.members.me.permissions.has(PermissionsBitField.Flags.ManageMessages)){
                     return await interaction.reply('I don\'t have permission to manage messages.');
                 }
                 const word = interaction.options.getString('word');
