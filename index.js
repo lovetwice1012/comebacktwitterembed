@@ -1,9 +1,21 @@
 //discord.js v14
 const discord = require('discord.js');
-const { Client, Events, GatewayIntentBits, Partials, ActivityType, InteractionType, ButtonBuilder, ButtonStyle, ComponentType } = require('discord.js');
+const { Client, Events, GatewayIntentBits, Partials, ActivityType, InteractionType, ButtonBuilder, ButtonStyle, ComponentType, PermissionsBitField, ApplicationCommandOptionType  } = require('discord.js');
 const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent], partials: [Partials.Channel] });
 const config = require('./config.json');
 const fetch = require('node-fetch');
+const fs = require('fs');
+
+if(!fs.existsSync('./settings.json')) {
+    fs.writeFileSync('./settings.json', JSON.stringify({
+        "disable":{
+            "user": [],
+            "channel": [],
+        },
+        "bannedWords": {},
+    }, null, 4));
+}
+const settings = JSON.parse(fs.readFileSync('./settings.json', 'utf8'));
 
 const showAttachmentsAsEmbedsImagebuttonLocales = {
     ja: '画像を埋め込み画像として表示する',
@@ -81,6 +93,44 @@ client.on('ready', () => {
         {
             name: 'support',
             description: 'Join support server!'
+        },
+        {
+            name: 'settings',
+            description: 'chenge Settings',
+            options: [
+                {
+                    name: 'disable',
+                    description: 'disable',
+                    type: ApplicationCommandOptionType.Subcommand,
+                    options: [
+                        {
+                            name: 'user',
+                            description: 'user',
+                            type: ApplicationCommandOptionType.User,
+                            required: false
+                        },
+                        {
+                            name: 'channel',
+                            description: 'channel',
+                            type: ApplicationCommandOptionType.Channel,
+                            required: false
+                        }
+                    ]
+                },
+                {
+                    name: 'bannedwords',
+                    description: 'bannedWords',
+                    type: ApplicationCommandOptionType.Subcommand,
+                    options: [
+                        {
+                            name: 'word',
+                            description: 'word',
+                            type: ApplicationCommandOptionType.String,
+                            required: true
+                        }
+                    ]
+                }
+            ]
         }
     ]);
 });
@@ -89,6 +139,10 @@ client.on(Events.MessageCreate, async (message) => {
     if (message.author.bot) return;
     if ((message.content.includes('twitter.com') || message.content.includes('x.com')) && message.content.includes('status')) {
         const url = message.content.match(/(https?:\/\/[^\s]+)/g);
+        if (url === null) return;
+        if (settings.disable.user.includes(message.author.id)) return;
+        if (settings.disable.channel.includes(message.channel.id)) return;
+
         url.forEach(element => {
             //replace twitter.com or x.com with api.vxtwitter.com
             var newUrl = element.replace(/twitter.com|x.com/g, 'api.vxtwitter.com');
@@ -107,6 +161,30 @@ client.on(Events.MessageCreate, async (message) => {
                             repliedUser: false
                         }
                     };
+                    let detected_bannedword = false;
+                    if (settings.bannedWords[message.guildId] !== undefined) {
+                        settings.bannedWords[message.guildId].forEach(element => {
+                            if (json.text.includes(element)) {
+                                detected_bannedword = true;
+                                return;
+                            }
+                        });
+
+                        if (detected_bannedword) return message.reply('Your tweet contains a banned word.').then(msg => {
+                            setTimeout(() => {
+                                msg.delete();
+                                    message.delete().catch(err => {
+                                        message.channel.send('I don\'t have permission to delete messages.').then(msg2 => {
+                                            setTimeout(() => {
+                                                msg2.delete();
+                                            }
+                                            , 3000);
+                                        });
+                                    });
+                            }, 3000);
+                        });
+                    }
+                    
                     if (json.text.length > 1500) {
                         json.text = json.text.slice(0, 300) + '...';
                     }
@@ -212,6 +290,81 @@ client.on(Events.InteractionCreate, async (interaction) => {
                 }
             ]
         });
+    }else if(interaction.commandName === 'settings'){
+        if(!interaction.member.permissions.has(PermissionsBitField.Flags.ManageChannels) || interaction.member.permissions.has(PermissionsBitField.Flags.ManageGuild) || interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)){
+            if(interaction.options.getSubcommand() === 'disable'){
+                if(interaction.options.getUser('user') === null && interaction.options.getChannel('channel') === null){
+                    return await interaction.reply('You must specify a user or channel.');
+                }
+
+                if(interaction.options.getUser('user') !== null && interaction.options.getChannel('channel') !== null){
+                    return await interaction.reply('You can\'t specify both a user and a channel.');
+                }
+
+                if(interaction.options.getUser('user') !== null){
+                    const user = interaction.options.getUser('user');
+                    if(settings.disable.user.includes(user.id)){
+                        settings.disable.user.splice(settings.disable.user.indexOf(user.id), 1);
+                        await interaction.reply('Removed user from disable.user');
+                    }else{
+                        settings.disable.user.push(user.id);
+                        await interaction.reply('Added user to disable.user');
+                    }
+                }else if(interaction.options.getChannel('channel') !== null){
+                    const channel = interaction.options.getChannel('channel');
+                    if(settings.disable.channel.includes(channel.id)){
+                        settings.disable.channel.splice(settings.disable.channel.indexOf(channel.id), 1);
+                        await interaction.reply('Removed channel from disable.channel');
+                    }else{
+                        settings.disable.channel.push(channel.id);
+                        await interaction.reply('Added channel to disable.channel');
+                    }
+                }
+            }else if(interaction.options.getSubcommand() === 'bannedwords'){
+                if(interaction.options.getString('word') === null) return await interaction.reply('You must specify a word.');
+                if(!interaction.guild.me.permissions.has(PermissionsBitField.Flags.ManageMessages)){
+                    return await interaction.reply('I don\'t have permission to manage messages.');
+                }
+                const word = interaction.options.getString('word');
+                if(settings.bannedWords[interaction.guildId] === undefined){
+                    settings.bannedWords[interaction.guildId] = [];
+                }
+                if(settings.bannedWords[interaction.guildId].includes(word)){
+                    settings.bannedWords[interaction.guildId].splice(settings.bannedWords[interaction.guildId].indexOf(word), 1);
+                    await interaction.reply('Removed word from bannedWords');
+                }else{
+                    settings.bannedWords[interaction.guildId].push(word);
+                    await interaction.reply('Added word to bannedWords');
+                }
+            }
+        }else{
+            if(interaction.options.getSubcommand() === 'disable'){
+                if(interaction.options.getUser('user') === null && interaction.options.getChannel('channel') === null){
+                    return await interaction.reply('You must specify a user or channel.');
+                }
+
+                if(interaction.options.getUser('user') !== null && interaction.options.getChannel('channel') !== null){
+                    return await interaction.reply('You can\'t specify both a user and a channel.');
+                }
+
+                if(interaction.options.getUser('user') !== null){
+                    const user = interaction.options.getUser('user');
+                    if(user.id !== interaction.user.id) return await interaction.reply('You can\'t use this command for other users.');
+                    if(settings.disable.user.includes(user.id)){
+                        settings.disable.user.splice(settings.disable.user.indexOf(user.id), 1);
+                        await interaction.reply('Removed you from disable.user');
+                    }else{
+                        settings.disable.user.push(user.id);
+                        await interaction.reply('Added you to disable.user');
+                    }
+                }else if(interaction.options.getChannel('channel') !== null){
+                    return await interaction.reply('You don\'t have permission to use this command.');
+                }
+            }else if(interaction.options.getSubcommand() === 'bannedwords'){
+                await interaction.reply('You don\'t have permission to use this command.');
+            }
+        }
+        fs.writeFileSync('./settings.json', JSON.stringify(settings, null, 4));
     }
 });
 
