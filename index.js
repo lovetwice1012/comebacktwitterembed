@@ -291,7 +291,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
             ]
         });
     }else if(interaction.commandName === 'settings'){
-        if(!interaction.member.permissions.has(PermissionsBitField.Flags.ManageChannels) || interaction.member.permissions.has(PermissionsBitField.Flags.ManageGuild) || interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)){
+        if(interaction.member.permissions.has(PermissionsBitField.Flags.ManageChannels) || interaction.member.permissions.has(PermissionsBitField.Flags.ManageGuild) || interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)){
             if(interaction.options.getSubcommand() === 'disable'){
                 if(interaction.options.getUser('user') === null && interaction.options.getChannel('channel') === null){
                     return await interaction.reply('You must specify a user or channel.');
