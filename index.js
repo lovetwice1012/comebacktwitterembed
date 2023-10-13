@@ -255,7 +255,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
                     fields: [
                         {
                             name: 'Commands',
-                            value: '`/ping` - Pong!\n`/help` - Shows help message.'
+                            value: '`/ping` - Pong!\n`/help` - Shows help message.\n`/invite` - Invite me to your server!\n`/support` - Join support server!\n`/settings` - chenge Settings'
                         }
                     ]
                 }
