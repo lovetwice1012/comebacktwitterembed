@@ -620,7 +620,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
             ]
         });
     } else if (interaction.commandName === 'settings') {
-        if ( 1==1|| interaction.member.permissions.has(PermissionsBitField.Flags.ManageChannels) || interaction.member.permissions.has(PermissionsBitField.Flags.ManageGuild) || interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+        if (interaction.member.permissions.has(PermissionsBitField.Flags.ManageChannels) || interaction.member.permissions.has(PermissionsBitField.Flags.ManageGuild) || interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
             if (interaction.options.getSubcommand() === 'disable') {
                 if (interaction.options.getUser('user') === null && interaction.options.getChannel('channel') === null) {
                     return await interaction.reply(userMustSpecifyAUserOrChannelLocales[interaction.locale] ?? userMustSpecifyAUserOrChannelLocales["en"]);
