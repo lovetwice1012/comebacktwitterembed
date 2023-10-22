@@ -133,4 +133,5 @@ config.json
 checkguild.js
 settings.json
 sendwebhook.js
+package-lock.json
 ```

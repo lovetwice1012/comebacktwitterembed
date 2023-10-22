@@ -9,6 +9,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "deepl-node": "^1.10.2",
     "discord.js": "^14.13.0",
     "node-fetch": "^2.7.0"
   }
