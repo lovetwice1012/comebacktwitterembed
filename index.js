@@ -946,7 +946,9 @@ client.on(Events.InteractionCreate, async (interaction) => {
                     messageObject.files.push(element.image.url);
                 }
             });
-            messageObject.embeds.push(interaction.message.embeds[0]);
+            let deepCopyEmbed0 = JSON.parse(JSON.stringify(interaction.message.embeds[0]));
+            delete deepCopyEmbed0.image;
+            messageObject.embeds.push(deepCopyEmbed0);
             if (messageObject.embeds[0].image) delete messageObject.embeds.image;
             await interaction.message.edit(messageObject);
             await interaction.editReply({ content: finishActionLocales[interaction.locale] ?? finishActionLocales["en"], ephemeral: true });
