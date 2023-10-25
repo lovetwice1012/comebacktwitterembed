@@ -963,13 +963,27 @@ client.on(Events.InteractionCreate, async (interaction) => {
             messageObject2.components = [{ type: ComponentType.ActionRow, components: [showMediaAsAttachmentsButton] }];
             messageObject2.components.push({ type: ComponentType.ActionRow, components: [translateButton, deleteButton] });
             messageObject2.embeds = [];
-            messageObject2.embeds.push(interaction.message.embeds[0]);
-            if (messageObject2.embeds[0].image) delete messageObject2.embeds.image;
             attachments.forEach(element => {
                 const extension = element.split("?").pop().split('.').pop();
                 if (videoExtensions.includes(extension)) {
                     messageObject2.files.push(element);
                     return;
+                }
+                if(messageObject2.embeds.length === 0){
+                    let embed = {};
+                    embed.url = interaction.message.embeds[0].url;
+                    embed.title = interaction.message.embeds[0].title;
+                    embed.description = interaction.message.embeds[0].description;
+                    embed.color = interaction.message.embeds[0].color;
+                    embed.author = interaction.message.embeds[0].author;
+                    embed.footer = interaction.message.embeds[0].footer;
+                    embed.timestamp = interaction.message.embeds[0].timestamp;
+                    embed.fields = interaction.message.embeds[0].fields;
+                    embed.image = {
+                        url: element
+                    };
+                    messageObject2.embeds.push(embed);
+                    return
                 }
                 messageObject2.embeds.push({
                     url: messageObject2.embeds[0].url,
