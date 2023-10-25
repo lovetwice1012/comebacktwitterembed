@@ -14,13 +14,22 @@ if (!fs.existsSync('./settings.json')) {
         "disable": {
             "user": [],
             "channel": [],
+            "role": {},
         },
         "bannedWords": {},
         "defaultLanguage": {},
-        "editOriginalIfTranslate": {}
+        "editOriginalIfTranslate": {},
+        "sendMediaAsAttachmentsAsDefault": {},
+        "deletemessageifonlypostedtweetlink": {},
+        "alwaysreplyifpostedtweetlink": {}
     }, null, 4));
 }
 const settings = JSON.parse(fs.readFileSync('./settings.json', 'utf8'));
+
+if (settings.disable.role === undefined) {
+    settings.disable.role = {};
+    fs.writeFileSync('./settings.json', JSON.stringify(settings, null, 4));
+}
 
 if (settings.defaultLanguage === undefined) {
     settings.defaultLanguage = {};
@@ -32,6 +41,20 @@ if (settings.editOriginalIfTranslate === undefined) {
     fs.writeFileSync('./settings.json', JSON.stringify(settings, null, 4));
 }
 
+if (settings.sendMediaAsAttachmentsAsDefault === undefined) {
+    settings.sendMediaAsAttachmentsAsDefault = {};
+    fs.writeFileSync('./settings.json', JSON.stringify(settings, null, 4));
+}
+
+if (settings.deletemessageifonlypostedtweetlink === undefined) {
+    settings.deletemessageifonlypostedtweetlink = {};
+    fs.writeFileSync('./settings.json', JSON.stringify(settings, null, 4));
+}
+
+if (settings.alwaysreplyifpostedtweetlink === undefined) {
+    settings.alwaysreplyifpostedtweetlink = {};
+    fs.writeFileSync('./settings.json', JSON.stringify(settings, null, 4));
+}
 
 
 const showAttachmentsAsEmbedsImagebuttonLocales = {
@@ -110,13 +133,13 @@ const userCantDeleteThisMessageLocales = {
 }
 
 const userMustSpecifyAUserOrChannelLocales = {
-    ja: 'ユーザーまたはチャンネルを指定する必要があります。',
-    en: 'You must specify a user or channel.'
+    ja: 'ユーザーまたはチャンネル、ロールのうち一つを指定する必要があります。',
+    en: 'You must specify a user or channel or role.'
 }
 
 const userCantSpecifyBothAUserAndAChannelLocales = {
-    ja: 'ユーザーとチャンネルの両方を指定することはできません。',
-    en: 'You can\'t specify both a user and a channel.'
+    ja: '複数のオプションを指定することはできません。',
+    en: 'You can\'t specify multiple options.'
 }
 
 const iDonthavePermissionToManageMessagesLocales = {
@@ -148,6 +171,18 @@ const removedChannelFromDisableChannelLocales = {
     ja: '無効化するチャンネルから削除しました。',
     en: 'Removed channel from disable.channel.'
 }
+
+const addedRoleToDisableRoleLocales = {
+    ja: '無効化するロールに追加しました。',
+    en: 'Added role to disable.role.'
+}
+
+const removedRoleFromDisableRoleLocales = {
+    ja: '無効化するロールから削除しました。',
+    en: 'Removed role from disable.role.'
+}
+
+
 
 const addedWordToBannedWordsLocales = {
     ja: '禁止ワードに追加しました。',
@@ -279,7 +314,35 @@ const youcantdeleteotherusersmessagesLocales = {
     en: 'You can\'t delete other users\' messages.'
 }
 
+const settingsSendMediaAsAttachmentsAsDefaultDescriptionLocalizations = {
+    ja: 'メディアを添付ファイルとして表示するかどうかを設定します。',
+    en: 'Sets whether to show media as attachments.'
+}
 
+const settingsDeleteMessageIfOnlyPostedTweetLinkDescriptionLocalizations = {
+    ja: 'ツイートのリンクのみを投稿した場合にメッセージを削除するかどうかを設定します。',
+    en: 'Sets whether to delete the message if only the tweet link is posted.'
+}
+
+const settingsAlwaysReplyIfPostedTweetLinkDescriptionLocalizations = {
+    ja: 'ツイートのリンクを投稿した場合に常に返信するかどうかを設定します。',
+    en: 'Sets whether to always reply if the tweet link is posted.'
+}
+
+const setdefaultmediaasattachmentstolocales = {
+    ja: 'メディアを添付ファイルとして表示するかどうかを設定しました。 :',
+    en: 'Set sendMediaAsAttachmentsAsDefault to '
+}
+
+const setdeleteifonlypostedtweetlinktolocales = {
+    ja: 'ツイートのリンクのみを投稿した場合にメッセージを削除するかどうかを設定しました。 :',
+    en: 'Set deleteIfOnlyPostedTweetLink to '
+}
+
+const setalwaysreplyifpostedtweetlinktolocales = {
+    ja: 'ツイートのリンクを投稿した場合に常に返信するかどうかを設定しました。 :',
+    en: 'Set alwaysReplyIfPostedTweetLink to '
+}
 
 function conv_en_to_en_US(obj) {
     if (obj === undefined) return undefined;
@@ -381,6 +444,12 @@ client.on('ready', () => {
                             descriptionLocalizations: conv_en_to_en_US(settingsDisableChannelDescriptionLocalizations),
                             type: ApplicationCommandOptionType.Channel,
                             required: false
+                        },
+                        {
+                            name: 'role',
+                            description: 'role',
+                            type: ApplicationCommandOptionType.Role,
+                            required: false
                         }
                     ]
                 },
@@ -437,6 +506,48 @@ client.on('ready', () => {
                             required: true
                         }
                     ]
+                },
+                {
+                    name: 'setdefaultmediaasattachments',
+                    description: 'setSendMediaAsAttachmentsAsDefault',
+                    descriptionLocalizations: conv_en_to_en_US(settingsSendMediaAsAttachmentsAsDefaultDescriptionLocalizations),
+                    type: ApplicationCommandOptionType.Subcommand,
+                    options: [
+                        {
+                            name: 'boolean',
+                            description: 'boolean',
+                            type: ApplicationCommandOptionType.Boolean,
+                            required: true
+                        }
+                    ]
+                },
+                {
+                    name: 'deleteifonlypostedtweetlink',
+                    description: 'deleteIfOnlyPostedTweetLink',
+                    descriptionLocalizations: conv_en_to_en_US(settingsDeleteMessageIfOnlyPostedTweetLinkDescriptionLocalizations),
+                    type: ApplicationCommandOptionType.Subcommand,
+                    options: [
+                        {
+                            name: 'boolean',
+                            description: 'boolean',
+                            type: ApplicationCommandOptionType.Boolean,
+                            required: true
+                        }
+                    ]
+                },
+                {
+                    name: 'alwaysreplyifpostedtweetlink',
+                    description: 'alwaysReplyIfPostedTweetLink',
+                    descriptionLocalizations: conv_en_to_en_US(settingsAlwaysReplyIfPostedTweetLinkDescriptionLocalizations),
+                    type: ApplicationCommandOptionType.Subcommand,
+                    options: [
+                        {
+                            name: 'boolean',
+                            description: 'boolean',
+                            type: ApplicationCommandOptionType.Boolean,
+                            required: true
+                        }
+                    ]
                 }
             ]
         }
@@ -444,9 +555,9 @@ client.on('ready', () => {
 });
 
 function getStringFromObject(object, locale) {
-    if(object === undefined) return undefined;
-    if(locale === undefined){
-        if(object["en"] !== undefined) {
+    if (object === undefined) return undefined;
+    if (locale === undefined) {
+        if (object["en"] !== undefined) {
             return object["en"];
         }
         return undefined;
@@ -460,13 +571,43 @@ function getStringFromObject(object, locale) {
     }
 }
 
+function ifUserHasRole(user, roleidlist) {
+    if (user.roles.cache.some(role => roleidlist.includes(role.id))) {
+        return true;
+    } else {
+        return false;
+    }
+}
+
+
+function convertBoolToEnableDisable(bool, locale) {
+    if (bool == true) {
+        if (locale === 'ja') {
+            return '有効';
+        } else {
+            return 'Enable';
+        }
+    } else {
+        if (locale === 'ja') {
+            return '無効';
+        } else {
+            return 'Disable';
+        }
+    }
+}
+
 client.on(Events.MessageCreate, async (message) => {
     if (message.author.bot && !message.webhookId) return;
-    if ((message.content.includes('twitter.com') || message.content.includes('x.com')) && message.content.includes('status')) {
-        const url = message.content.match(/(https?:\/\/[^\s]+)/g);
+    if ((message.content.includes('://twitter.com') || message.content.includes('://x.com')) && message.content.includes('status')) {
+        let content = message.content;
+        content = content.replace(/<https?:\/\/(twitter\.com|x\.com)[^\s<>|]*>|(\|\|https?:\/\/(twitter\.com|x\.com)[^\s<>|]*\|\|)/g, '');
+
+
+        const url = content.match(/(https?:\/\/[^\s]+)/g);
         if (url === null) return;
         if (settings.disable.user.includes(message.author.id)) return;
         if (settings.disable.channel.includes(message.channel.id)) return;
+        if (settings.disable.role[message.guild.id] !== undefined && ifUserHasRole(message.member, settings.disable.role[message.guild.id])) return;
         for (let i = 0; i < url.length; i++) {
             const element = url[i];
             //replace twitter.com or x.com with api.vxtwitter.com
@@ -490,14 +631,14 @@ client.on(Events.MessageCreate, async (message) => {
                     };
                     let detected_bannedword = false;
                     if (settings.bannedWords[message.guildId] !== undefined) {
-                        for(let i = 0; i < settings.bannedWords[message.guildId].length; i++) {
+                        for (let i = 0; i < settings.bannedWords[message.guildId].length; i++) {
                             const element = settings.bannedWords[message.guildId][i];
                             if (json.text.includes(element)) {
                                 detected_bannedword = true;
                                 break;
                             }
                         }
-                        
+
                         if (detected_bannedword) return message.reply(getStringFromObject(yourcontentsisconteinbannedwordLocales, settings.defaultLanguage[message.guild.id])).then(msg => {
                             setTimeout(() => {
                                 msg.delete();
@@ -530,35 +671,60 @@ client.on(Events.MessageCreate, async (message) => {
                         },
                         timestamp: new Date(json.date),
                     };
-                    embeds.push(embed);
                     if (json.mediaURLs) {
-                        if (json.mediaURLs.length > 4) {
+                        if (json.mediaURLs.length > 4 || settings.sendMediaAsAttachmentsAsDefault[message.guild.id] === true) {
                             if (json.mediaURLs.length > 10) {
                                 json.mediaURLs = json.mediaURLs.slice(0, 10);
                             }
                             attachments = json.mediaURLs
+                            embeds.push(embed);
+                            if(settings.sendMediaAsAttachmentsAsDefault[message.guild.id] === true){
+                                showMediaAsAttachmentsButton = new ButtonBuilder().setStyle(ButtonStyle.Primary).setLabel(getStringFromObject(showAttachmentsAsEmbedsImagebuttonLocales, settings.defaultLanguage[message.guild.id])).setCustomId('showAttachmentsAsEmbedsImage');
+                            }
                         } else {
                             json.mediaURLs.forEach(element => {
                                 if (element.includes('video.twimg.com')) {
                                     attachments.push(element);
                                     return;
                                 }
+
                                 showMediaAsAttachmentsButton = new ButtonBuilder().setStyle(ButtonStyle.Primary).setLabel(getStringFromObject(showMediaAsAttachmentsButtonLocales, settings.defaultLanguage[message.guild.id])).setCustomId('showMediaAsAttachments');
-                                embeds.push({
-                                    url: json.tweetURL,
-                                    image: {
+                                if (json.mediaURLs.length > 2) {
+                                    embeds.push(embed);
+                                    embeds.push({
+                                        url: json.tweetURL,
+                                        image: {
+                                            url: element
+                                        }
+                                    })
+                                } else {
+                                    embed.image = {
                                         url: element
                                     }
-                                })
+                                    embeds.push(embed);
+                                }
                             });
                         }
                     }
                     if (attachments.length > 0) messageObject.files = attachments;
                     if (showMediaAsAttachmentsButton !== null) messageObject.components = [{ type: ComponentType.ActionRow, components: [showMediaAsAttachmentsButton] }];
                     if (!messageObject.components) messageObject.components = [];
-                    messageObject.components.push({ type: ComponentType.ActionRow, components: [translateButton,deleteButton] });
+                    messageObject.components.push({ type: ComponentType.ActionRow, components: [translateButton, deleteButton] });
                     messageObject.embeds = embeds;
-                    message.reply(messageObject);
+                    if (settings.alwaysreplyifpostedtweetlink[message.guild.id] === true) {
+                        message.reply(messageObject);
+                    } else {
+                        message.channel.send(messageObject);
+                    }
+                    if (settings.deletemessageifonlypostedtweetlink[message.guild.id] === true && message.content == url[i]) {
+                        message.delete().catch(err => {
+                            message.channel.send(getStringFromObject(idonthavedeletemessagepermissionLocales, settings.defaultLanguage[message.guild.id])).then(msg => {
+                                setTimeout(() => {
+                                    msg.delete();
+                                }, 3000);
+                            });
+                        });
+                    }
                 })
                 .catch(err => {
                     console.log(err);
@@ -622,11 +788,11 @@ client.on(Events.InteractionCreate, async (interaction) => {
     } else if (interaction.commandName === 'settings') {
         if (interaction.member.permissions.has(PermissionsBitField.Flags.ManageChannels) || interaction.member.permissions.has(PermissionsBitField.Flags.ManageGuild) || interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
             if (interaction.options.getSubcommand() === 'disable') {
-                if (interaction.options.getUser('user') === null && interaction.options.getChannel('channel') === null) {
+                if (interaction.options.getUser('user') === null && interaction.options.getChannel('channel') === null && interaction.options.getRole('role') === null) {
                     return await interaction.reply(userMustSpecifyAUserOrChannelLocales[interaction.locale] ?? userMustSpecifyAUserOrChannelLocales["en"]);
                 }
 
-                if (interaction.options.getUser('user') !== null && interaction.options.getChannel('channel') !== null) {
+                if ((interaction.options.getUser('user') !== null && interaction.options.getChannel('channel') !== null && interaction.options.getRole('role') !== null) || (interaction.options.getUser('user') !== null && interaction.options.getChannel('channel') !== null) || (interaction.options.getUser('user') !== null && interaction.options.getRole('role') !== null) || (interaction.options.getChannel('channel') !== null && interaction.options.getRole('role') !== null)) {
                     return await interaction.reply(userCantSpecifyBothAUserAndAChannelLocales[interaction.locale] ?? userCantSpecifyBothAUserAndAChannelLocales["en"]);
                 }
 
@@ -647,6 +813,18 @@ client.on(Events.InteractionCreate, async (interaction) => {
                     } else {
                         settings.disable.channel.push(channel.id);
                         await interaction.reply(addedChannelToDisableChannelLocales[interaction.locale] ?? addedChannelToDisableChannelLocales["en"]);
+                    }
+                } else if (interaction.options.getRole('role') !== null) {
+                    const role = interaction.options.getRole('role');
+                    if (settings.disable.role[interaction.guildId] === undefined) {
+                        settings.disable.role[interaction.guildId] = [];
+                    }
+                    if (settings.disable.role[interaction.guildId].includes(role.id)) {
+                        settings.disable.role[interaction.guildId].splice(settings.disable.role[interaction.guildId].indexOf(role.id), 1);
+                        await interaction.reply(removedRoleFromDisableRoleLocales[interaction.locale] ?? removedRoleFromDisableRoleLocales["en"]);
+                    } else {
+                        settings.disable.role[interaction.guildId].push(role.id);
+                        await interaction.reply(addedRoleToDisableRoleLocales[interaction.locale] ?? addedRoleToDisableRoleLocales["en"]);
                     }
                 }
             } else if (interaction.options.getSubcommand() === 'bannedwords') {
@@ -670,50 +848,83 @@ client.on(Events.InteractionCreate, async (interaction) => {
                 const language = interaction.options.getString('language');
                 if (language === 'en' || language === 'ja') {
                     settings.defaultLanguage[interaction.guildId] = language;
-                    await interaction.reply(setdefaultlanguagetolocales[interaction.locale] ?? setdefaultlanguagetolocales["en"] + language);
+                    await interaction.reply((setdefaultlanguagetolocales[interaction.locale] ?? setdefaultlanguagetolocales["en"]) + language.toString());
                 } else {
                     await interaction.reply('You must specify either en or ja.');
                 }
             } else if (interaction.options.getSubcommand() === 'editoriginaliftranslate') {
                 if (interaction.options.getBoolean('boolean') === null) return await interaction.reply(userMustSpecifyAnyWordLocales[interaction.locale] ?? userMustSpecifyAnyWordLocales["en"]);
                 const boolean = interaction.options.getBoolean('boolean');
-                settings.editOriginalIfTranslate[interaction.guildId] = boolean;
-                await interaction.reply(seteditoriginaliftranslatetolocales[interaction.locale] ?? seteditoriginaliftranslatetolocales["en"] + boolean);
+                settings.editoriginaliftranslate[interaction.guildId] = boolean;
+                await interaction.reply((seteditoriginaliftranslatetolocales[interaction.locale] ?? seteditoriginaliftranslatetolocales["en"]) + convertBoolToEnableDisable(boolean,interaction.locale));
+            } else if (interaction.options.getSubcommand() === 'setdefaultmediaasattachments') {
+                if (interaction.options.getBoolean('boolean') === null) return await interaction.reply(userMustSpecifyAnyWordLocales[interaction.locale] ?? userMustSpecifyAnyWordLocales["en"]);
+                const boolean = interaction.options.getBoolean('boolean');
+                settings.sendMediaAsAttachmentsAsDefault[interaction.guildId] = boolean;
+                await interaction.reply((setdefaultmediaasattachmentstolocales[interaction.locale] ?? setdefaultmediaasattachmentstolocales["en"]) + convertBoolToEnableDisable(boolean,interaction.locale));
+            } else if (interaction.options.getSubcommand() === 'deleteifonlypostedtweetlink') {
+                if (interaction.options.getBoolean('boolean') === null) return await interaction.reply(userMustSpecifyAnyWordLocales[interaction.locale] ?? userMustSpecifyAnyWordLocales["en"]);
+                const boolean = interaction.options.getBoolean('boolean');
+                settings.deletemessageifonlypostedtweetlink[interaction.guildId] = boolean;
+                await interaction.reply((setdeleteifonlypostedtweetlinktolocales[interaction.locale] ?? setdeleteifonlypostedtweetlinktolocales["en"]) + convertBoolToEnableDisable(boolean,interaction.locale));
+                if (settings.deletemessageifonlypostedtweetlink[interaction.guildId] === true && settings.alwaysreplyifpostedtweetlink[interaction.guildId] === true) {
+                    settings.alwaysreplyifpostedtweetlink[interaction.guildId] = false;
+                    await interaction.followUp((setalwaysreplyifpostedtweetlinktolocales[interaction.locale] ?? setalwaysreplyifpostedtweetlinktolocales["en"]) + convertBoolToEnableDisable(false,interaction.locale));
+                }
+            } else if (interaction.options.getSubcommand() === 'alwaysreplyifpostedtweetlink') {
+                if (interaction.options.getBoolean('boolean') === null) return await interaction.reply(userMustSpecifyAnyWordLocales[interaction.locale] ?? userMustSpecifyAnyWordLocales["en"]);
+                const boolean = interaction.options.getBoolean('boolean');
+                settings.alwaysreplyifpostedtweetlink[interaction.guildId] = boolean;
+                await interaction.reply((setalwaysreplyifpostedtweetlinktolocales[interaction.locale] ?? setalwaysreplyifpostedtweetlinktolocales["en"]) + convertBoolToEnableDisable(boolean,interaction.locale));
+                if (settings.deletemessageifonlypostedtweetlink[interaction.guildId] === true && settings.alwaysreplyifpostedtweetlink[interaction.guildId] === true) {
+                    settings.deletemessageifonlypostedtweetlink[interaction.guildId] = false;
+                    await interaction.followUp((setdeleteifonlypostedtweetlinktolocales[interaction.locale] ?? setdeleteifonlypostedtweetlinktolocales["en"]) + convertBoolToEnableDisable(false,interaction.locale));
+                }
             }
-        } else {
-            if (interaction.options.getSubcommand() === 'disable') {
-                if (interaction.options.getUser('user') === null && interaction.options.getChannel('channel') === null) {
-                    return await interaction.reply(userMustSpecifyAUserOrChannelLocales[interaction.locale] ?? userMustSpecifyAUserOrChannelLocales["en"]);
-                }
-
-                if (interaction.options.getUser('user') !== null && interaction.options.getChannel('channel') !== null) {
-                    return await interaction.reply(userCantSpecifyBothAUserAndAChannelLocales[interaction.locale] ?? userCantSpecifyBothAUserAndAChannelLocales["en"]);
-                }
-
-                if (interaction.options.getUser('user') !== null) {
-                    const user = interaction.options.getUser('user');
-                    if (user.id !== interaction.user.id) return await interaction.reply(userCantUseThisCommandForOtherUsersLocales[interaction.locale] ?? userCantUseThisCommandForOtherUsersLocales["en"]);
-                    if (settings.disable.user.includes(user.id)) {
-                        settings.disable.user.splice(settings.disable.user.indexOf(user.id), 1);
-                        await interaction.reply(removedUserFromDisableUserLocales[interaction.locale] ?? removedUserFromDisableUserLocales["en"]);
-                    } else {
-                        settings.disable.user.push(user.id);
-                        await interaction.reply(addedUserToDisableUserLocales[interaction.locale] ?? addedUserToDisableUserLocales["en"]);
+            } else {
+                if (interaction.options.getSubcommand() === 'disable') {
+                    if (interaction.options.getUser('user') === null && interaction.options.getChannel('channel') === null && interaction.options.getRole('role') === null) {
+                        return await interaction.reply(userMustSpecifyAUserOrChannelLocales[interaction.locale] ?? userMustSpecifyAUserOrChannelLocales["en"]);
                     }
-                } else if (interaction.options.getChannel('channel') !== null) {
-                    return await interaction.reply(userDonthavePermissionLocales[interaction.locale] ?? userDonthavePermissionLocales["en"]);
+
+                    if ((interaction.options.getUser('user') !== null && interaction.options.getChannel('channel') !== null && interaction.options.getRole('role') !== null) || (interaction.options.getUser('user') !== null && interaction.options.getChannel('channel') !== null) || (interaction.options.getUser('user') !== null && interaction.options.getRole('role') !== null) || (interaction.options.getChannel('channel') !== null && interaction.options.getRole('role') !== null)) {
+                        return await interaction.reply(userCantSpecifyBothAUserAndAChannelLocales[interaction.locale] ?? userCantSpecifyBothAUserAndAChannelLocales["en"]);
+                    }
+
+                    if (interaction.options.getUser('user') !== null) {
+                        const user = interaction.options.getUser('user');
+                        if (user.id !== interaction.user.id) return await interaction.reply(userCantUseThisCommandForOtherUsersLocales[interaction.locale] ?? userCantUseThisCommandForOtherUsersLocales["en"]);
+                        if (settings.disable.user.includes(user.id)) {
+                            settings.disable.user.splice(settings.disable.user.indexOf(user.id), 1);
+                            await interaction.reply(removedUserFromDisableUserLocales[interaction.locale] ?? removedUserFromDisableUserLocales["en"]);
+                        } else {
+                            settings.disable.user.push(user.id);
+                            await interaction.reply(addedUserToDisableUserLocales[interaction.locale] ?? addedUserToDisableUserLocales["en"]);
+                        }
+                    } else if (interaction.options.getChannel('channel') !== null) {
+                        return await interaction.reply(userDonthavePermissionLocales[interaction.locale] ?? userDonthavePermissionLocales["en"]);
+                    } else if (interaction.options.getRole('role') !== null) {
+                        return await interaction.reply(userDonthavePermissionLocales[interaction.locale] ?? userDonthavePermissionLocales["en"]);
+                    }
+                } else if (interaction.options.getSubcommand() === 'bannedwords') {
+                    await interaction.reply(userDonthavePermissionLocales[interaction.locale] ?? userDonthavePermissionLocales["en"]);
+                } else if (interaction.options.getSubcommand() === 'defaultlanguage') {
+                    await interaction.reply(userDonthavePermissionLocales[interaction.locale] ?? userDonthavePermissionLocales["en"]);
+                } else if (interaction.options.getSubcommand() === 'editoriginaliftranslate') {
+                    await interaction.reply(userDonthavePermissionLocales[interaction.locale] ?? userDonthavePermissionLocales["en"]);
+                } else if (interaction.options.getSubcommand() === 'setdefaultmediaasattachments') {
+                    await interaction.reply(userDonthavePermissionLocales[interaction.locale] ?? userDonthavePermissionLocales["en"]);
+                } else if (interaction.options.getSubcommand() === 'deleteifonlypostedtweetlink') {
+                    await interaction.reply(userDonthavePermissionLocales[interaction.locale] ?? userDonthavePermissionLocales["en"]);
+                } else if (interaction.options.getSubcommand() === 'alwaysreplyifpostedtweetlink') {
+                    await interaction.reply(userDonthavePermissionLocales[interaction.locale] ?? userDonthavePermissionLocales["en"]);
+                } else {
+                    await interaction.reply(userDonthavePermissionLocales[interaction.locale] ?? userDonthavePermissionLocales["en"]);
                 }
-            } else if (interaction.options.getSubcommand() === 'bannedwords') {
-                await interaction.reply(userDonthavePermissionLocales[interaction.locale] ?? userDonthavePermissionLocales["en"]);
-            } else if (interaction.options.getSubcommand() === 'defaultlanguage') {
-                await interaction.reply(userDonthavePermissionLocales[interaction.locale] ?? userDonthavePermissionLocales["en"]);
-            } else if (interaction.options.getSubcommand() === 'editoriginaliftranslate') {
-                await interaction.reply(userDonthavePermissionLocales[interaction.locale] ?? userDonthavePermissionLocales["en"]);
             }
+            fs.writeFileSync('./settings.json', JSON.stringify(settings, null, 4));
         }
-        fs.writeFileSync('./settings.json', JSON.stringify(settings, null, 4));
-    }
-});
+    });
 
 client.on(Events.InteractionCreate, async (interaction) => {
     if (!interaction.type === InteractionType.MessageComponent || interaction.type === InteractionType.ApplicationCommand) return;
@@ -722,12 +933,12 @@ client.on(Events.InteractionCreate, async (interaction) => {
     const translateButton = new ButtonBuilder().setStyle(ButtonStyle.Primary).setLabel('Translate').setCustomId('translate');
     const showAttachmentsAsMediaButton = new ButtonBuilder().setStyle(ButtonStyle.Primary).setLabel(showAttachmentsAsEmbedsImagebuttonLocales[interaction.locale] ?? showAttachmentsAsEmbedsImagebuttonLocales["en"]).setCustomId('showAttachmentsAsEmbedsImage');
     const showMediaAsAttachmentsButton = new ButtonBuilder().setStyle(ButtonStyle.Primary).setLabel(showMediaAsAttachmentsButtonLocales[interaction.locale] ?? showMediaAsAttachmentsButtonLocales["en"]).setCustomId('showMediaAsAttachments');
-    
+
     switch (interaction.customId) {
         case 'showMediaAsAttachments':
             const messageObject = {};
             messageObject.components = [{ type: ComponentType.ActionRow, components: [showAttachmentsAsMediaButton] }];
-            messageObject.components.push({ type: ComponentType.ActionRow, components: [translateButton,deleteButton] });
+            messageObject.components.push({ type: ComponentType.ActionRow, components: [translateButton, deleteButton] });
             messageObject.files = [];
             messageObject.embeds = [];
             interaction.message.embeds.forEach(element => {
@@ -750,7 +961,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
             const attachments = interaction.message.attachments.map(attachment => attachment.url);
             if (attachments.length > 4) return interaction.reply('You can\'t show more than 4 attachments as embeds image.');
             messageObject2.components = [{ type: ComponentType.ActionRow, components: [showMediaAsAttachmentsButton] }];
-            messageObject2.components.push({ type: ComponentType.ActionRow, components: [translateButton,deleteButton] });
+            messageObject2.components.push({ type: ComponentType.ActionRow, components: [translateButton, deleteButton] });
             messageObject2.embeds = [];
             messageObject2.embeds.push(interaction.message.embeds[0]);
             if (messageObject2.embeds[0].image) delete messageObject2.embeds.image;
@@ -810,30 +1021,30 @@ client.on(Events.InteractionCreate, async (interaction) => {
             copyEmbedObject.footer = interaction.message.embeds[0].footer;
             copyEmbedObject.timestamp = interaction.message.embeds[0].timestamp;
             copyEmbedObject.fields = interaction.message.embeds[0].fields;
-            if(interaction.message.embeds[0].images){
+            if (interaction.message.embeds[0].images) {
                 copyEmbedObject.image = interaction.message.embeds[0].image;
             }
-            if(interaction.message.embeds[0].thumbnail)copyEmbedObject.thumbnail = interaction.message.embeds[0].thumbnail;
+            if (interaction.message.embeds[0].thumbnail) copyEmbedObject.thumbnail = interaction.message.embeds[0].thumbnail;
             messageObject3.embeds.push(copyEmbedObject);
-            if(interaction.message.embeds.length > 1) {
-                for(let i = 1; i < interaction.message.embeds.length; i++) {
+            if (interaction.message.embeds.length > 1) {
+                for (let i = 1; i < interaction.message.embeds.length; i++) {
                     messageObject3.embeds.push(interaction.message.embeds[i]);
                 }
             }
-            const translated = await translator.translateText(interaction.message.embeds[0].description, null, interaction.locale);  
+            const translated = await translator.translateText(interaction.message.embeds[0].description, null, interaction.locale);
             messageObject3.embeds[0].description = translated.text;
             await interaction.editReply(messageObject3);
-            if(settings.editOriginalIfTranslate[interaction.guildId] === true) {
-            if(interaction.message.attachments.length > 0){
+            if (settings.editOriginalIfTranslate[interaction.guildId] === true) {
+                if (interaction.message.attachments.length > 0) {
                     messageObject3.files = [];
                     interaction.message.attachments.forEach(element => {
                         messageObject3.files.push(element.url);
                     });
+                }
+                messageObject3.components = interaction.message.components;
+                await interaction.message.edit(messageObject3);
             }
-            messageObject3.components = interaction.message.components;
-            await interaction.message.edit(messageObject3);
-            }
-        }
+    }
 });
 
 client.login(config.token);
