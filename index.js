@@ -706,6 +706,7 @@ client.on(Events.MessageCreate, async (message) => {
                             });
                         }
                     }
+                    if(embeds.length === 0) embeds.push(embed);
                     if (attachments.length > 0) messageObject.files = attachments;
                     if (showMediaAsAttachmentsButton !== null) messageObject.components = [{ type: ComponentType.ActionRow, components: [showMediaAsAttachmentsButton] }];
                     if (!messageObject.components) messageObject.components = [];
