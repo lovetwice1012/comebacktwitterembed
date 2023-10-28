@@ -1048,19 +1048,24 @@ client.on(Events.InteractionCreate, async (interaction) => {
                     messageObject3.embeds.push(interaction.message.embeds[i]);
                 }
             }
-            const translated = await translator.translateText(interaction.message.embeds[0].description, null, interaction.locale);
-            messageObject3.embeds[0].description = translated.text;
-            await interaction.editReply(messageObject3);
-            if (settings.editOriginalIfTranslate[interaction.guildId] === true) {
-                if (interaction.message.attachments.length > 0) {
-                    messageObject3.files = [];
-                    interaction.message.attachments.forEach(element => {
-                        messageObject3.files.push(element.url);
-                    });
+            let target = interaction.locale;
+            if(target.startsWith("en-")) target = 'en';
+            if(target === 'jp') target = 'ja';
+            const responce = await fetch("https://script.google.com/macros/s/AKfycbwmofa3n_K15ze_-4KrpH-B-eBHiKXmmgLeqsJInS3dJUDM0IJ-627h8Xu-w8PIc2f-ug/exec?target=" + target + "&text=" + encodeURIComponent(interaction.message.embeds[0].description.split('\n').splice(0, interaction.message.embeds[0].description.split('\n').length - 3).join('\n')));
+            let text = await responce.text();
+            text = text + interaction.message.embeds[0].description.split('\n').splice(interaction.message.embeds[0].description.split('\n').length - 4, interaction.message.embeds[0].description.split('\n').length).join('\n')
+            messageObject3.embeds[0].description = text;
+                await interaction.editReply(messageObject3);
+                if (settings.editOriginalIfTranslate[interaction.guildId] === true) {
+                    if (interaction.message.attachments.length > 0) {
+                        messageObject3.files = [];
+                        interaction.message.attachments.forEach(element => {
+                            messageObject3.files.push(element.url);
+                        });
+                    }
+                    messageObject3.components = interaction.message.components;
+                    await interaction.message.edit(messageObject3);
                 }
-                messageObject3.components = interaction.message.components;
-                await interaction.message.edit(messageObject3);
-            }
     }
 });
 
