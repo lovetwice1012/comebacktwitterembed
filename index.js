@@ -689,8 +689,8 @@ client.on(Events.MessageCreate, async (message) => {
                                 }
 
                                 showMediaAsAttachmentsButton = new ButtonBuilder().setStyle(ButtonStyle.Primary).setLabel(getStringFromObject(showMediaAsAttachmentsButtonLocales, settings.defaultLanguage[message.guild.id])).setCustomId('showMediaAsAttachments');
-                                if (json.mediaURLs.length > 2) {
-                                    embeds.push(embed);
+                                if (json.mediaURLs.length > 1) {
+                                    if(embeds.length == 0) embeds.push(embed);
                                     embeds.push({
                                         url: json.tweetURL,
                                         image: {
