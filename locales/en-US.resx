@@ -1,0 +1,287 @@
+<root>
+  <data name="LocalizedTranslate">
+    <value>translate</value>
+  </data>
+  <data name="LocalizedDelete">
+    <value>delete</value>
+  </data>
+  <data name="localizedDefaultLanguage">
+    <value>Language</value>
+  </data>
+  <data name="LocalizedAll">
+    <value>all</value>
+  </data>
+  <data name="LocalizedHelp">
+    <value>help</value>
+  </data>
+  <data name="LocalizedPing">
+    <value>Pong!</value>
+  </data>
+  <data name="LocalizedInvite">
+    <value>invite</value>
+  </data>
+  <data name="LocalizedSupport">
+    <value>support</value>
+  </data>
+  <data name="LocalizedSettings">
+    <value>settings</value>
+  </data>
+  <data name="LocalizedDisable">
+    <value>disable</value>
+  </data>
+  <data name="LocalizedBannedwords">
+    <value>bannedwords</value>
+  </data>
+  <data name="LocalizedUser">
+    <value>user</value>
+  </data>
+  <data name="LocalizedChannel">
+    <value>channel</value>
+  </data>
+  <data name="LocalizedRole">
+    <value>role</value>
+  </data>
+  <data name="LocalizedWord">
+    <value>word</value>
+  </data>
+  <data name="LocalizedDefaultlanguage">
+    <value>defaultlanguage</value>
+  </data>
+  <data name="LocalizedFinishaction">
+    <value>Finished action.</value>
+  </data>
+  <data name="LocalizedShowattachmentsasembedsimagebutton">
+    <value>Show media in embeds image</value>
+  </data>
+  <data name="LocalizedShowmediaasattachmentsbutton">
+    <value>Show media as attachments</value>
+  </data>
+  <data name="LocalizedHelpcommanddiscription">
+    <value>Shows help message.</value>
+  </data>
+  <data name="LocalizedHelpdiscription">
+    <value>No special setup is required, just post the tweet link.
+
+This bot can check the contents of messages you have sent.
+It will only be used to check if the message you sent contains a twitter link, and will not be used for any other purpose.
+It will not be used for any other purpose, nor will it record the messages you send.
+If you do not trust us, you can secure your safety by removing your channel permissions from this bot.</value>
+  </data>
+  <data name="LocalizedHelpcommands">
+    <value>`/ping` - Pong!
+`/help` - Shows help message.
+`/invite` - Invite me to your server!
+`/support` - Join support server!
+`/settings` - chenge Settings</value>
+  </data>
+  <data name="LocalizedSettingsdisablediscription">
+    <value>Disable by user or channel.</value>
+  </data>
+  <data name="LocalizedSettingsbannedwordsdiscription">
+    <value>Add or remove banned words.</value>
+  </data>
+  <data name="LocalizedSettingsdisableuserdiscription">
+    <value>Specify the user to disable.</value>
+  </data>
+  <data name="LocalizedSettingsdisablechanneldiscription">
+    <value>Specify the channel to disable.</value>
+  </data>
+  <data name="LocalizedSettingsbannedwordsworddiscription">
+    <value>Specify the banned word.</value>
+  </data>
+  <data name="LocalizedUserdonthavepermission">
+    <value>You don't have permission to use this command.</value>
+  </data>
+  <data name="LocalizedUsercantusethiscommandforotherusers">
+    <value>You can't use this command for other users.</value>
+  </data>
+  <data name="LocalizedUsercantdeletethismessage">
+    <value>You can't delete this message.</value>
+  </data>
+  <data name="LocalizedUsermustspecifyauserorchannel">
+    <value>You must specify a user or channel or role.</value>
+  </data>
+  <data name="LocalizedUsercantspecifybothauserandachannel">
+    <value>You can't specify multiple options.</value>
+  </data>
+  <data name="LocalizedIdonthavepermissiontomanagemessages">
+    <value>I don't have permission to manage messages.</value>
+  </data>
+  <data name="LocalizedIdonthavepermissiontodeletemessages">
+    <value>I don't have permission to delete messages.</value>
+  </data>
+  <data name="LocalizedAddedusertodisableuser">
+    <value>Added user to disable.user.</value>
+  </data>
+  <data name="LocalizedRemoveduserfromdisableuser">
+    <value>Removed user from disable.user.</value>
+  </data>
+  <data name="LocalizedAddedchanneltodisablechannel">
+    <value>Added channel to disable.channel.</value>
+  </data>
+  <data name="LocalizedRemovedchannelfromdisablechannel">
+    <value>Removed channel from disable.channel.</value>
+  </data>
+  <data name="LocalizedAddedroletodisablerole">
+    <value>Added role to disable.role.</value>
+  </data>
+  <data name="LocalizedRemovedrolefromdisablerole">
+    <value>Removed role from disable.role.</value>
+  </data>
+  <data name="LocalizedAddedwordtobannedwords">
+    <value>Added word to bannedWords.</value>
+  </data>
+  <data name="LocalizedRemovedwordfrombannedwords">
+    <value>Removed word from bannedWords.</value>
+  </data>
+  <data name="LocalizedUsermustspecifyanyword">
+    <value>You must specify a option.</value>
+  </data>
+  <data name="LocalizedDefaultlanguagediscription">
+    <value>Sets the default language when translating.</value>
+  </data>
+  <data name="LocalizedEditoriginaliftranslatediscription">
+    <value>Sets whether to edit the original message when translating.</value>
+  </data>
+  <data name="LocalizedbotInvitelink">
+    <value>Invite me to your server!</value>
+  </data>
+  <data name="LocalizedSupportInvitelink">
+    <value>Join support server!</value>
+  </data>
+  <data name="LocalizedSettingschange">
+    <value>chenge Settings</value>
+  </data>
+  <data name="LocalizedYourcontentsisconteinbannedword">
+    <value>Your message contains a banned word.</value>
+  </data>
+  <data name="LocalizedIdonthavedeletemessagepermission">
+    <value>I don't have permission to delete messages.</value>
+  </data>
+  <data name="LocalizedSetdefaultlanguageto">
+    <value>Set default language to </value>
+  </data>
+  <data name="LocalizedSeteditoriginaliftranslateto">
+    <value>Set editOriginalIfTranslate to </value>
+  </data>
+  <data name="LocalizedYoucantdeleteotherusersmessages">
+    <value>You can't delete other users' messages.</value>
+  </data>
+  <data name="LocalizedSettingssendmediaasattachmentsasdefaultdescriptionlocalizations">
+    <value>Sets whether to show media as attachments.</value>
+  </data>
+  <data name="LocalizedSettingsdeletemessageifonlypostedtweetlinkdescriptionlocalizations">
+    <value>Sets whether to delete the message if only the tweet link is posted.</value>
+  </data>
+  <data name="LocalizedSettingsalwaysreplyifpostedtweetlinkdescriptionlocalizations">
+    <value>Sets whether to always reply if the tweet link is posted.</value>
+  </data>
+  <data name="LocalizedSetdefaultmediaasattachmentsto">
+    <value>Set sendMediaAsAttachmentsAsDefault to </value>
+  </data>
+  <data name="LocalizedSetdeleteifonlypostedtweetlinkto">
+    <value>Set deleteIfOnlyPostedTweetLink to </value>
+  </data>
+  <data name="LocalizedSetalwaysreplyifpostedtweetlinkto">
+    <value>Set alwaysReplyIfPostedTweetLink to </value>
+  </data>
+  <data name="LocalizedAddedallbutton">
+    <value>Disabled all buttons.</value>
+  </data>
+  <data name="LocalizedRemovedallbutton">
+    <value>Enabled all buttons.</value>
+  </data>
+  <data name="LocalizedSetshowmediaasattachmentsbutton">
+    <value>Set showMediaAsAttachments button to </value>
+  </data>
+  <data name="LocalizedSetshowattachmentsasembedsimagebutton">
+    <value>Set showAttachmentsAsEmbedsImage button to </value>
+  </data>
+  <data name="LocalizedSettranslatebutton">
+    <value>Set translate button to </value>
+  </data>
+  <data name="LocalizedSetdeletebutton">
+    <value>Set delete button to </value>
+  </data>
+  <data name="LocalizedAddedshowmediaasattachmentsbutton">
+    <value>Disabled showMediaAsAttachments button.</value>
+  </data>
+  <data name="LocalizedRemovedshowmediaasattachmentsbutton">
+    <value>Enabled showMediaAsAttachments button.</value>
+  </data>
+  <data name="LocalizedAddedshowattachmentsasembedsimagebutton">
+    <value>Disabled showAttachmentsAsEmbedsImage button.</value>
+  </data>
+  <data name="LocalizedRemovedshowattachmentsasembedsimagebutton">
+    <value>Enabled showAttachmentsAsEmbedsImage button.</value>
+  </data>
+  <data name="LocalizedAddedtranslatebutton">
+    <value>Disabled translate button.</value>
+  </data>
+  <data name="LocalizedRemovedtranslatebutton">
+    <value>Enabled translate button.</value>
+  </data>
+  <data name="LocalizedAddeddeletebutton">
+    <value>Disabled delete button.</value>
+  </data>
+  <data name="LocalizedRemoveddeletebutton">
+    <value>Enabled delete button.</value>
+  </data>
+  <data name="LocalizedAddedusertobuttondisableduser">
+    <value>Added user to button_disabled.user.</value>
+  </data>
+  <data name="LocalizedRemoveduserfrombuttondisableduser">
+    <value>Removed user from button_disabled.user.</value>
+  </data>
+  <data name="LocalizedAddedchanneltobuttondisabledchannel">
+    <value>Added channel to button_disabled.channel.</value>
+  </data>
+  <data name="LocalizedRemovedchannelfrombuttondisabledchannel">
+    <value>Removed channel from button_disabled.channel.</value>
+  </data>
+  <data name="LocalizedAddedroletobuttondisabledrole">
+    <value>Added role to button_disabled.role.</value>
+  </data>
+  <data name="LocalizedRemovedrolefrombuttondisabledrole">
+    <value>Removed role from button_disabled.role.</value>
+  </data>
+  <data name="LocalizedSettingsextractbotmessagedescriptionlocalizations">
+    <value>Sets whether to extract bot messages.</value>
+  </data>
+  <data name="LocalizedSetextractbotmessageto">
+    <value>Set extractBotMessage to </value>
+  </data>
+  <data name="LocalizedEditoriginaliftranslate">
+    <value>editoriginaliftranslate</value>
+  </data>
+  <data name="LocalizedBoolean">
+    <value>boolean</value>
+  </data>
+  <data name="LocalizedSetdefaultmediaasattachments">
+    <value>setdefaultmediaasattachments</value>
+  </data>
+  <data name="LocalizedDeleteifonlypostedtweetlink">
+    <value>deleteifonlypostedtweetlink</value>
+  </data>
+  <data name="LocalizedAlwaysreplyifpostedtweetlink">
+    <value>alwaysreplyifpostedtweetlink</value>
+  </data>
+  <data name="LocalizedButton">
+    <value>button</value>
+  </data>
+  <data name="LocalizedInvisible">
+    <value>invisible</value>
+  </data>
+  <data name="LocalizedDisabled">
+    <value>disabled</value>
+  </data>
+  <data name="LocalizedExtractbotmessage">
+    <value>extractbotmessage</value>
+  </data>
+  <data name="LocalizedShowmediaasattachments">
+    <value>showmediaasattachments</value>
+  </data>
+  <data name="LocalizedShowattachmentsasembedsimage">
+    <value>showattachmentsasembedsimage</value>
+  </data>
+</root>
