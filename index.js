@@ -549,7 +549,7 @@ const command_name_editoriginaliftranslate_Locales = {
 }
 
 const command_name_boolean_Locales = {
-    ja: 'はい(True)/いいえ(False)',
+    ja: 'はいかいいえ',
     en: 'boolean'
 }
 
@@ -584,7 +584,7 @@ const command_name_disabled_Locales = {
 }
 
 const command_name_extractbotmessage_Locales = {
-    ja: 'BOTのメッセージを展開',
+    ja: 'ボットのメッセージを展開',
     en: 'extractbotmessage'
 }
 
@@ -624,6 +624,7 @@ function conv_en_to_en_US(obj) {
     } else {
         return undefined;
     }
+    return obj_deep;
 }
 
 const videoExtensions = [
