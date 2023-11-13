@@ -18,7 +18,7 @@ function convertToResx(localeObj, lang) {
 }
 
 // Create 'locales' directory if it doesn't exist
-const dir = './locales';
+const dir = '../locales';
 if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir);
 }

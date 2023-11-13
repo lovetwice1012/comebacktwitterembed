@@ -1,65 +1,65 @@
 <root>
-  <data name="LocalizedTranslate">
+  <data name="Translate">
     <value>翻訳</value>
   </data>
-  <data name="LocalizedDelete">
+  <data name="Delete">
     <value>削除</value>
   </data>
-  <data name="localizedDefaultLanguage">
+  <data name="Language">
     <value>言語</value>
   </data>
-  <data name="LocalizedAll">
+  <data name="All">
     <value>すべて</value>
   </data>
-  <data name="LocalizedHelp">
+  <data name="Help">
     <value>ヘルプ</value>
   </data>
-  <data name="LocalizedPing">
-    <value>Pong!</value>
+  <data name="Ping">
+    <value>遅延確認</value>
   </data>
-  <data name="LocalizedInvite">
+  <data name="Invite">
     <value>招待</value>
   </data>
-  <data name="LocalizedSupport">
+  <data name="Support">
     <value>サポート</value>
   </data>
-  <data name="LocalizedSettings">
+  <data name="Settings">
     <value>設定</value>
   </data>
-  <data name="LocalizedDisable">
+  <data name="Disable">
     <value>無効化</value>
   </data>
-  <data name="LocalizedBannedwords">
+  <data name="BanWard">
     <value>禁止ワード</value>
   </data>
-  <data name="LocalizedUser">
+  <data name="User">
     <value>ユーザー</value>
   </data>
-  <data name="LocalizedChannel">
+  <data name="Channel">
     <value>チャンネル</value>
   </data>
-  <data name="LocalizedRole">
+  <data name="Role">
     <value>ロール</value>
   </data>
-  <data name="LocalizedWord">
+  <data name="Word">
     <value>単語</value>
   </data>
-  <data name="LocalizedDefaultlanguage">
+  <data name="DefaultLanguage">
     <value>デフォルト言語</value>
   </data>
-  <data name="LocalizedFinishaction">
+  <data name="FinishAction">
     <value>操作を完了しました。</value>
   </data>
-  <data name="LocalizedShowattachmentsasembedsimagebutton">
+  <data name="show_Embed_img">
     <value>画像を埋め込み画像として表示する</value>
   </data>
-  <data name="LocalizedShowmediaasattachmentsbutton">
+  <data name="show_mediaFiles">
     <value>メディアを添付ファイルとして表示する</value>
   </data>
-  <data name="LocalizedHelpcommanddiscription">
+  <data name="show_helpMessage">
     <value>ヘルプメッセージを表示します。</value>
   </data>
-  <data name="LocalizedHelpdiscription">
+  <data name="Help_script">
     <value>特別な設定は必要なく、ツイートリンクを投稿するだけで使用することができます。
 
 このbotは、あなたが送信したメッセージの内容を確認することができます。
@@ -67,221 +67,218 @@
 また、あなたが送信したメッセージを記録することもありません。
 私たちを信頼できない場合は、このbotからチャンネルの閲覧権限を削除することで安全を確保することができます。</value>
   </data>
-  <data name="LocalizedHelpcommands">
+  <data name="Help_command">
     <value>`/ping` - Pong!
 `/help` - ヘルプメッセージを表示します。
 `/invite` - このbotをあなたのサーバーに招待するためのリンクを表示します
 `/support` - サポートサーバーに参加するためのリンクを表示します
 `/settings` - 設定を変更します</value>
   </data>
-  <data name="LocalizedSettingsdisablediscription">
+  <data name="settings_Disable_ch_user">
     <value>ユーザーまたはチャンネルを指定して無効化します。</value>
   </data>
-  <data name="LocalizedSettingsbannedwordsdiscription">
+  <data name="settings_Add_remove_BANWords">
     <value>禁止ワードを追加または削除します。</value>
   </data>
-  <data name="LocalizedSettingsdisableuserdiscription">
+  <data name="settings_Disable_user">
     <value>無効化するユーザーを指定します。</value>
   </data>
-  <data name="LocalizedSettingsdisablechanneldiscription">
+  <data name="settings_Disable_ch">
     <value>無効化するチャンネルを指定します。</value>
   </data>
-  <data name="LocalizedSettingsbannedwordsworddiscription">
+  <data name="settings_BAN_word">
     <value>禁止ワードを指定します。</value>
   </data>
-  <data name="LocalizedUserdonthavepermission">
+  <data name="message_not_permission">
     <value>このコマンドを使用する権限がありません。</value>
   </data>
-  <data name="LocalizedUsercantusethiscommandforotherusers">
+  <data name="message_notuser_is_user">
     <value>ユーザーにあなた以外のユーザーを指定することはできません。</value>
   </data>
-  <data name="LocalizedUsercantdeletethismessage">
+  <data name="message_not_removeMessage">
     <value>このメッセージを削除することはできません。</value>
   </data>
-  <data name="LocalizedUsermustspecifyauserorchannel">
+  <data name="message_user_ch_roll_only_pick">
     <value>ユーザーまたはチャンネル、ロールのうち一つを指定する必要があります。</value>
   </data>
-  <data name="LocalizedUsercantspecifybothauserandachannel">
+  <data name="message_not_MultiOptions">
     <value>複数のオプションを指定することはできません。</value>
   </data>
-  <data name="LocalizedIdonthavepermissiontomanagemessages">
+  <data name="message_not_permission_ManegeMessage">
     <value>BOTにメッセージを管理する権限がありません。</value>
   </data>
-  <data name="LocalizedIdonthavepermissiontodeletemessages">
+  <data name="message_not_permission_DeleteMessage">
     <value>BOTにメッセージを削除する権限がありません。</value>
   </data>
-  <data name="LocalizedAddedusertodisableuser">
+  <data name="message_Add_Disable_user">
     <value>無効化するユーザーに追加しました。</value>
   </data>
-  <data name="LocalizedRemoveduserfromdisableuser">
+  <data name="message_Remove_Disable_user">
     <value>無効化するユーザーから削除しました。</value>
   </data>
-  <data name="LocalizedAddedchanneltodisablechannel">
+  <data name="message_Add_Disable_ch">
     <value>無効化するチャンネルに追加しました。</value>
   </data>
-  <data name="LocalizedRemovedchannelfromdisablechannel">
+  <data name="message_Remove_Disable_ch">
     <value>無効化するチャンネルから削除しました。</value>
   </data>
-  <data name="LocalizedAddedroletodisablerole">
+  <data name="message_Add_Disable_Roll">
     <value>無効化するロールに追加しました。</value>
   </data>
-  <data name="LocalizedRemovedrolefromdisablerole">
+  <data name="message_Remove_Disable_Roll">
     <value>無効化するロールから削除しました。</value>
   </data>
-  <data name="LocalizedAddedwordtobannedwords">
+  <data name="message_Add_Disable_Word">
     <value>禁止ワードに追加しました。</value>
   </data>
-  <data name="LocalizedRemovedwordfrombannedwords">
+  <data name="message_Remove_Disable_Word">
     <value>禁止ワードから削除しました。</value>
   </data>
-  <data name="LocalizedUsermustspecifyanyword">
+  <data name="settings_cantgood_option">
     <value>オプションを正確に指定する必要があります。</value>
   </data>
-  <data name="LocalizedDefaultlanguagediscription">
+  <data name="settings_translating_defaultLanguage">
     <value>翻訳するときのデフォルトの言語を設定します。</value>
   </data>
-  <data name="LocalizedEditoriginaliftranslatediscription">
+  <data name="settings_translating_messageEdit_option">
     <value>翻訳するときにオリジナルのメッセージを編集するかどうかを設定します。</value>
   </data>
-  <data name="LocalizedbotInvitelink">
+  <data name="BOT_Invite_Link">
     <value>このbotをあなたのサーバーに招待するためのリンクを表示します</value>
   </data>
-  <data name="LocalizedSupportInvitelink">
+  <data name="supportServer_Invite_Link">
     <value>サポートサーバーに参加するためのリンクを表示します</value>
   </data>
-  <data name="LocalizedSettingschange">
+  <data name="settings_change">
     <value>設定を変更します</value>
   </data>
-  <data name="LocalizedYourcontentsisconteinbannedword">
+  <data name="message_contains_BANWord">
     <value>あなたのメッセージには禁止ワードが含まれています。</value>
   </data>
-  <data name="LocalizedIdonthavedeletemessagepermission">
+  <data name="message_not_Remove_permission">
     <value>メッセージを削除する権限がありません。</value>
   </data>
-  <data name="LocalizedSetdefaultlanguageto">
+  <data name="settings_set_DefaultLanguage">
     <value>デフォルトの言語を設定しました。 :</value>
   </data>
-  <data name="LocalizedSeteditoriginaliftranslateto">
+  <data name="settings_editOriginalIfTranslate">
     <value>editOriginalIfTranslateを設定しました。 :</value>
   </data>
-  <data name="LocalizedYoucantdeleteotherusersmessages">
+  <data name="message_cant_delete_otherMessage">
     <value>あなたは他のユーザーのメッセージを削除することはできません。</value>
   </data>
-  <data name="LocalizedSettingssendmediaasattachmentsasdefaultdescriptionlocalizations">
+  <data name="settings_show_media">
     <value>メディアを添付ファイルとして表示するかどうかを設定します。</value>
   </data>
-  <data name="LocalizedSettingsdeletemessageifonlypostedtweetlinkdescriptionlocalizations">
+  <data name="settings_send_OnlyTwitterLink_Delete">
     <value>ツイートのリンクのみを投稿した場合にメッセージを削除するかどうかを設定します。</value>
   </data>
-  <data name="LocalizedSettingsalwaysreplyifpostedtweetlinkdescriptionlocalizations">
+  <data name="settings_tweetLink_allow_reply">
     <value>ツイートのリンクを投稿した場合に常に返信するかどうかを設定します。</value>
   </data>
-  <data name="LocalizedSetdefaultmediaasattachmentsto">
+  <data name="settings_show_media_complete">
     <value>メディアを添付ファイルとして表示するかどうかを設定しました。 :</value>
   </data>
-  <data name="LocalizedSetdeleteifonlypostedtweetlinkto">
+  <data name="settings_send_OnlyTwitterLink_Delete_complete">
     <value>ツイートのリンクのみを投稿した場合にメッセージを削除するかどうかを設定しました。 :</value>
   </data>
-  <data name="LocalizedSetalwaysreplyifpostedtweetlinkto">
+  <data name="settings_tweetLink_allow_reply_complete">
     <value>ツイートのリンクを投稿した場合に常に返信するかどうかを設定しました。 :</value>
   </data>
-  <data name="LocalizedAddedallbutton">
+  <data name="Disable_All_Button">
     <value>すべてのボタンを無効化しました。</value>
   </data>
-  <data name="LocalizedRemovedallbutton">
+  <data name="Enable_All_Button">
     <value>すべてのボタンを有効化しました。</value>
   </data>
-  <data name="LocalizedSetshowmediaasattachmentsbutton">
+  <data name="settings_mediaFile_show_button_complete">
     <value>メディアを添付ファイルとして表示するボタンを設定しました。 :</value>
   </data>
-  <data name="LocalizedSetshowattachmentsasembedsimagebutton">
+  <data name="settings_img_embed_show_button_complete">
     <value>画像を埋め込み画像として表示するボタンを設定しました。 :</value>
   </data>
-  <data name="LocalizedSettranslatebutton">
+  <data name="settings_Translate_button_complete">
     <value>翻訳ボタンを設定しました。 :</value>
   </data>
-  <data name="LocalizedSetdeletebutton">
+  <data name="settings_delete_button_complete">
     <value>削除ボタンを設定しました。 :</value>
   </data>
-  <data name="LocalizedAddedshowmediaasattachmentsbutton">
+  <data name="settings_show_media_button_Disable_complete">
     <value>メディアを添付ファイルとして表示するボタンを無効化しました。</value>
   </data>
-  <data name="LocalizedRemovedshowmediaasattachmentsbutton">
+  <data name="settings_show_media_button_Enable_complete">
     <value>メディアを添付ファイルとして表示するボタンを有効化しました。</value>
   </data>
-  <data name="LocalizedAddedshowattachmentsasembedsimagebutton">
+  <data name="settings_show_EmbedImg_button_Disable_complete">
     <value>画像を埋め込み画像として表示するボタンを無効化しました。</value>
   </data>
-  <data name="LocalizedRemovedshowattachmentsasembedsimagebutton">
+  <data name="settings_show_EmbedImg_button_Enable_complete">
     <value>画像を埋め込み画像として表示するボタンを有効化しました。</value>
   </data>
-  <data name="LocalizedAddedtranslatebutton">
+  <data name="settings_Translate_button_Disable_complete">
     <value>翻訳ボタンを無効化しました。</value>
   </data>
-  <data name="LocalizedRemovedtranslatebutton">
+  <data name="settings_Translate_button_Enable_complete">
     <value>翻訳ボタンを有効化しました。</value>
   </data>
-  <data name="LocalizedAddeddeletebutton">
+  <data name="settings_delete_button_Disable_complete">
     <value>削除ボタンを無効化しました。</value>
   </data>
-  <data name="LocalizedRemoveddeletebutton">
+  <data name="settings_delete_button_Enable_complete">
     <value>削除ボタンを有効化しました。</value>
   </data>
-  <data name="LocalizedAddedusertobuttondisableduser">
+  <data name="settings_Add_Disable_button_user_complete">
     <value>ボタンを無効化するユーザーに追加しました。</value>
   </data>
-  <data name="LocalizedRemoveduserfrombuttondisableduser">
+  <data name="settings_Remove_Disable_button_user_complete">
     <value>ボタンを無効化するユーザーから削除しました。</value>
   </data>
-  <data name="LocalizedAddedchanneltobuttondisabledchannel">
+  <data name="settings_Add_Disable_button_ch_complete">
     <value>ボタンを無効化するチャンネルに追加しました。</value>
   </data>
-  <data name="LocalizedRemovedchannelfrombuttondisabledchannel">
+  <data name="settings_Remove_Disable_button_ch_complete">
     <value>ボタンを無効化するチャンネルから削除しました。</value>
   </data>
-  <data name="LocalizedAddedroletobuttondisabledrole">
+  <data name="settings_Add_Disable_button_Roll_complete">
     <value>ボタンを無効化するロールに追加しました。</value>
   </data>
-  <data name="LocalizedRemovedrolefrombuttondisabledrole">
+  <data name="settings_Remove_Disable_button_Roll_complete">
     <value>ボタンを無効化するロールから削除しました。</value>
   </data>
-  <data name="LocalizedSettingsextractbotmessagedescriptionlocalizations">
+  <data name="settings_BOT_message_open">
     <value>BOTのメッセージを展開するかどうかを設定します。</value>
   </data>
-  <data name="LocalizedSetextractbotmessageto">
+  <data name="settings_BOT_message_open_complete">
     <value>BOTのメッセージを展開するかどうかを設定しました。 :</value>
   </data>
-  <data name="LocalizedEditoriginaliftranslate">
+  <data name="message_translate_originalMessageEdit">
     <value>翻訳時にオリジナルのメッセージを編集</value>
   </data>
-  <data name="LocalizedBoolean">
+  <data name="Boolean">
     <value>はいかいいえ</value>
   </data>
-  <data name="LocalizedSetdefaultmediaasattachments">
+  <data name="show_media">
     <value>メディアを添付ファイルとして表示</value>
   </data>
-  <data name="LocalizedDeleteifonlypostedtweetlink">
+  <data name="only_tweetLink_to_DeleteMessage">
     <value>ツイートのリンクのみを投稿した場合にメッセージを削除</value>
   </data>
-  <data name="LocalizedAlwaysreplyifpostedtweetlink">
+  <data name="send_to_tweetLink_always_reply">
     <value>ツイートのリンクを投稿した場合に常に返信</value>
   </data>
-  <data name="LocalizedButton">
+  <data name="Button">
     <value>ボタン</value>
   </data>
-  <data name="LocalizedInvisible">
+  <data name="Invisible">
     <value>非表示</value>
   </data>
-  <data name="LocalizedDisabled">
+  <data name="Disabled">
     <value>無効化</value>
   </data>
-  <data name="LocalizedExtractbotmessage">
+  <data name="open_BOT_message">
     <value>ボットのメッセージを展開</value>
   </data>
-  <data name="LocalizedShowmediaasattachments">
-    <value>メディアを添付ファイルとして表示</value>
-  </data>
-  <data name="LocalizedShowattachmentsasembedsimage">
+  <data name="show_embedImg">
     <value>画像を埋め込み画像として表示</value>
   </data>
 </root>
