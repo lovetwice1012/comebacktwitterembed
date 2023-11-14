@@ -1177,7 +1177,7 @@ async function sendTweetEmbed(message, url){
                     }
                 });;
                 }
-                if (settings.deletemessageifonlypostedtweetlink[message.guild.id] === true && message.content == url[i]) {
+                if (settings.deletemessageifonlypostedtweetlink[message.guild.id] === true && message.content == url) {
                     message.delete().catch(err => {
                         message.channel.send(getStringFromObject(idonthavedeletemessagepermissionLocales, settings.defaultLanguage[message.guild.id])).then(msg => {
                             setTimeout(() => {
