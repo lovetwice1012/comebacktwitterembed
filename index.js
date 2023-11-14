@@ -1063,7 +1063,6 @@ async function sendTweetEmbed(message, url){
         fetch(newUrl)
             .then(res => res.json())
             .then(async json => {
-                console.log(json);
                 attachments = [];
                 let embeds = [];
                 let showMediaAsAttachmentsButton = null;
