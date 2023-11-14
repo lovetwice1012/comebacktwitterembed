@@ -947,12 +947,12 @@ client.on('ready', () => {
 const warning_this_bot_is_not_main_instance_and_going_to_be_closed_embed = {
     ja: {
         title: '警告',
-        description: 'このbotはメインインスタンス(ComebackTwitterEmbed#3134)ではありません。\nメインインスタンスが認証を受けたため、このbotは72時間以内に削除されます。\nこの[リンク](https://discord.com/oauth2/authorize?client_id=1161267455335862282&permissions=274877958144&scope=bot%20applications.commands)よりメインインスタンスをサーバーに導入し、このbotをキックしてください。\n',
+        description: 'このbotはメインインスタンス(ComebackTwitterEmbed#3134)ではありません。\nメインインスタンスが認証を受けたため、このbotは72時間以内に削除されます。\nこの[リンク](https://discord.com/oauth2/authorize?client_id=1161267455335862282&permissions=274877966336&scope=bot%20applications.commands)よりメインインスタンスをサーバーに導入し、このbotをキックしてください。\n移行期限\n<t:1700208003:F>\n期限まで残り\n<t:1700208003:R>',
         color: 0xFF0000
     },
     en: {
         title: 'Warning',
-        description: 'This bot is not the main instance (ComebackTwitterEmbed#3134).\nThis bot will be deleted within 72 hours because the main instance has been verified.\nInstall the main instance on your server from this [link](https://discord.com/oauth2/authorize?client_id=1161267455335862282&permissions=274877958144&scope=bot%20applications.commands) and kick this bot.\n',
+        description: 'This bot is not the main instance (ComebackTwitterEmbed#3134).\nThis bot will be deleted within 72 hours because the main instance has been verified.\nInstall the main instance on your server from this [link](https://discord.com/oauth2/authorize?client_id=1161267455335862282&permissions=274877966336&scope=bot%20applications.commands) and kick this bot.\ndeadline:\n<t:1700208003:F>\nremain:\n<t:1700208003:R>',
         color: 0xFF0000
     }
 }
