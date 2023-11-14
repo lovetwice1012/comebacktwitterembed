@@ -1128,7 +1128,7 @@ async function sendTweetEmbed(message, url){
                     } else {
                         json.mediaURLs.forEach(element => {
                             if (element.includes('video.twimg.com')) {
-                                content.push(element);
+                                attachments.push(element);
                                 return;
                             }
 
@@ -1154,15 +1154,28 @@ async function sendTweetEmbed(message, url){
                 if (attachments.length > 0) messageObject.files = attachments;
                 if (showMediaAsAttachmentsButton !== null) messageObject.components = [{ type: ComponentType.ActionRow, components: [showMediaAsAttachmentsButton] }];
                 if (!messageObject.components) messageObject.components = [];
-                await sendContentPromise(message, content);
                 messageObject.components.push({ type: ComponentType.ActionRow, components: [translateButton, deleteButton] });
                 messageObject.components = checkComponentIncludesDisabledButtonAndIfFindDeleteIt(messageObject.components, message.guildId);
                 if (must_be_main_instance && client.user.id != 1161267455335862282) embeds.push(getStringFromObject(warning_this_bot_is_not_main_instance_and_going_to_be_closed_embed, settings.defaultLanguage[message.guild.id], true));
                 messageObject.embeds = embeds;
                 if (settings.alwaysreplyifpostedtweetlink[message.guild.id] === true) {
-                    message.reply(messageObject);
+                    message.reply(messageObject).catch(async err => {
+                        if (messageObject.files !== undefined) {
+                        await sendContentPromise(message, messageObject.files);
+                        message.channel.send(messageObject).catch(err => {
+                            console.log(err);
+                        });
+                    }
+                });
                 } else {
-                    message.channel.send(messageObject);
+                    message.channel.send(messageObject).catch(async err => {
+                        if (messageObject.files !== undefined) {
+                        await sendContentPromise(message, messageObject.files);
+                        message.channel.send(messageObject).catch(err => {
+                            console.log(err);
+                        });
+                    }
+                });;
                 }
                 if (settings.deletemessageifonlypostedtweetlink[message.guild.id] === true && message.content == url[i]) {
                     message.delete().catch(err => {
