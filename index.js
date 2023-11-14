@@ -5,6 +5,7 @@ const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBit
 const config = require('./config.json');
 const fetch = require('node-fetch');
 const fs = require('fs');
+const { send } = require('process');
 
 const must_be_main_instance = true;
 
@@ -996,6 +997,17 @@ function convertBoolToEnableDisable(bool, locale) {
     }
 }
 
+async function sendContentPromise(message, content) {
+    return new Promise((resolve, reject) => {
+        if(content.length == 0) return resolve();
+        message.channel.send(content.join('\n')).then(msg => {
+            resolve();
+        }).catch(err => {
+            reject(err);
+        });
+    });
+}
+
 function checkComponentIncludesDisabledButtonAndIfFindDeleteIt(components, guildId, setting = null) {
     if (setting === null) setting = settings;
     if (setting.button_invisible[guildId] === undefined || (setting.button_invisible[guildId].showMediaAsAttachments === false && setting.button_invisible[guildId].showAttachmentsAsEmbedsImage === false && setting.button_invisible[guildId].translate === false && setting.button_invisible[guildId].delete === false)) return components;
@@ -1039,6 +1051,138 @@ function checkComponentIncludesDisabledButtonAndIfFindDeleteIt(components, guild
     return components;
 }
 
+async function sendTweetEmbed(message, url){
+    return new Promise((resolve, reject) => {
+        const element = url;
+        //replace twitter.com or x.com with api.vxtwitter.com
+        var newUrl = element.replace(/twitter.com|x.com/g, 'api.vxtwitter.com');
+        if (newUrl.split("/").length > 6) {
+            newUrl = newUrl.split("/").slice(0, 6).join("/");
+        }
+        //fetch the api
+        fetch(newUrl)
+            .then(res => res.json())
+            .then(async json => {
+                console.log(json);
+                attachments = [];
+                let embeds = [];
+                let showMediaAsAttachmentsButton = null;
+                const deleteButton = new ButtonBuilder().setStyle(ButtonStyle.Danger).setLabel(getStringFromObject(deleteButtonLabelLocales, settings.defaultLanguage[message.guild.id] ?? "en")).setCustomId('delete');
+                const translateButton = new ButtonBuilder().setStyle(ButtonStyle.Primary).setLabel(getStringFromObject(translateButtonLabelLocales, settings.defaultLanguage[message.guild.id] ?? "en")).setCustomId('translate');
+                let messageObject = {
+                    allowedMentions: {
+                        repliedUser: false
+                    }
+                };
+                let detected_bannedword = false;
+                if (settings.bannedWords[message.guildId] !== undefined) {
+                    for (let i = 0; i < settings.bannedWords[message.guildId].length; i++) {
+                        const element = settings.bannedWords[message.guildId][i];
+                        if (json.text.includes(element)) {
+                            detected_bannedword = true;
+                            break;
+                        }
+                    }
+
+                    if (detected_bannedword) return message.reply(getStringFromObject(yourcontentsisconteinbannedwordLocales, settings.defaultLanguage[message.guild.id])).then(msg => {
+                        setTimeout(() => {
+                            msg.delete();
+                            message.delete().catch(err => {
+                                message.channel.send(getStringFromObject(idonthavedeletemessagepermissionLocales, settings.defaultLanguage[message.guild.id])).then(msg2 => {
+                                    setTimeout(() => {
+                                        msg2.delete();
+                                    }
+                                        , 3000);
+                                });
+                            });
+                        }, 3000);
+                    });
+                }
+                if (json.text.length > 1500) {
+                    json.text = json.text.slice(0, 300) + '...';
+                }
+                content = [];
+                const embed = {
+                    title: json.user_name,
+                    url: json.tweetURL,
+                    description: json.text + '\n\n[View on Twitter](' + json.tweetURL + ')\n\n:speech_balloon:' + json.replies + ' replies • :recycle:' + json.retweets + ' retweets • :heart:' + json.likes + ' likes',
+                    color: 0x1DA1F2,
+                    author: {
+                        name: 'request by ' + message.author.username + '(id:' + message.author.id + ')',
+                    },
+                    footer: {
+                        text: 'Posted by ' + json.user_name + ' (@' + json.user_screen_name + ')',
+                        icon_url: 'https://abs.twimg.com/icons/apple-touch-icon-192x192.png'
+                    },
+                    timestamp: new Date(json.date),
+                };
+                if (json.mediaURLs) {
+                    if (json.mediaURLs.length > 4 || settings.sendMediaAsAttachmentsAsDefault[message.guild.id] === true) {
+                        if (json.mediaURLs.length > 10) {
+                            json.mediaURLs = json.mediaURLs.slice(0, 10);
+                        }
+                        attachments = json.mediaURLs
+                        embeds.push(embed);
+                        if (settings.sendMediaAsAttachmentsAsDefault[message.guild.id] === true) {
+                            showMediaAsAttachmentsButton = new ButtonBuilder().setStyle(ButtonStyle.Primary).setLabel(getStringFromObject(showAttachmentsAsEmbedsImagebuttonLocales, settings.defaultLanguage[message.guild.id])).setCustomId('showAttachmentsAsEmbedsImage');
+                        }
+                    } else {
+                        json.mediaURLs.forEach(element => {
+                            if (element.includes('video.twimg.com')) {
+                                content.push(element);
+                                return;
+                            }
+
+                            showMediaAsAttachmentsButton = new ButtonBuilder().setStyle(ButtonStyle.Primary).setLabel(getStringFromObject(showMediaAsAttachmentsButtonLocales, settings.defaultLanguage[message.guild.id])).setCustomId('showMediaAsAttachments');
+                            if (json.mediaURLs.length > 1) {
+                                if (embeds.length == 0) embeds.push(embed);
+                                embeds.push({
+                                    url: json.tweetURL,
+                                    image: {
+                                        url: element
+                                    }
+                                })
+                            } else {
+                                embed.image = {
+                                    url: element
+                                }
+                                embeds.push(embed);
+                            }
+                        });
+                    }
+                }
+                if (embeds.length === 0) embeds.push(embed);
+                if (attachments.length > 0) messageObject.files = attachments;
+                if (showMediaAsAttachmentsButton !== null) messageObject.components = [{ type: ComponentType.ActionRow, components: [showMediaAsAttachmentsButton] }];
+                if (!messageObject.components) messageObject.components = [];
+                await sendContentPromise(message, content);
+                messageObject.components.push({ type: ComponentType.ActionRow, components: [translateButton, deleteButton] });
+                messageObject.components = checkComponentIncludesDisabledButtonAndIfFindDeleteIt(messageObject.components, message.guildId);
+                if (must_be_main_instance && client.user.id != 1161267455335862282) embeds.push(getStringFromObject(warning_this_bot_is_not_main_instance_and_going_to_be_closed_embed, settings.defaultLanguage[message.guild.id], true));
+                messageObject.embeds = embeds;
+                if (settings.alwaysreplyifpostedtweetlink[message.guild.id] === true) {
+                    message.reply(messageObject);
+                } else {
+                    message.channel.send(messageObject);
+                }
+                if (settings.deletemessageifonlypostedtweetlink[message.guild.id] === true && message.content == url[i]) {
+                    message.delete().catch(err => {
+                        message.channel.send(getStringFromObject(idonthavedeletemessagepermissionLocales, settings.defaultLanguage[message.guild.id])).then(msg => {
+                            setTimeout(() => {
+                                msg.delete();
+                            }, 3000);
+                        });
+                    });
+                }
+                resolve();
+            })
+            .catch(err => {
+                console.log(err);
+                reject(err);
+            });
+    });
+}
+
 client.on(Events.MessageCreate, async (message) => {
     if ((message.author.bot && (settings.extract_bot_message[message.guild.id] === undefined || settings.extract_bot_message[message.guild.id] !== true ) && !message.webhookId ) || message.author.id == client.user.id) return;
     if ((message.content.includes('://twitter.com') || message.content.includes('://x.com')) && message.content.includes('status')) {
@@ -1051,129 +1195,7 @@ client.on(Events.MessageCreate, async (message) => {
         if (settings.disable.channel.includes(message.channel.id)) return;
         if (settings.disable.role[message.guild.id] !== undefined && ifUserHasRole(message.member, settings.disable.role[message.guild.id])) return;
         for (let i = 0; i < url.length; i++) {
-            const element = url[i];
-            //replace twitter.com or x.com with api.vxtwitter.com
-            var newUrl = element.replace(/twitter.com|x.com/g, 'api.vxtwitter.com');
-            if (newUrl.split("/").length > 6) {
-                newUrl = newUrl.split("/").slice(0, 6).join("/");
-            }
-            //fetch the api
-            fetch(newUrl)
-                .then(res => res.json())
-                .then(json => {
-                    attachments = [];
-                    let embeds = [];
-                    let showMediaAsAttachmentsButton = null;
-                    const deleteButton = new ButtonBuilder().setStyle(ButtonStyle.Danger).setLabel(getStringFromObject(deleteButtonLabelLocales, settings.defaultLanguage[message.guild.id] ?? "en")).setCustomId('delete');
-                    const translateButton = new ButtonBuilder().setStyle(ButtonStyle.Primary).setLabel(getStringFromObject(translateButtonLabelLocales, settings.defaultLanguage[message.guild.id] ?? "en")).setCustomId('translate');
-                    let messageObject = {
-                        allowedMentions: {
-                            repliedUser: false
-                        }
-                    };
-                    let detected_bannedword = false;
-                    if (settings.bannedWords[message.guildId] !== undefined) {
-                        for (let i = 0; i < settings.bannedWords[message.guildId].length; i++) {
-                            const element = settings.bannedWords[message.guildId][i];
-                            if (json.text.includes(element)) {
-                                detected_bannedword = true;
-                                break;
-                            }
-                        }
-
-                        if (detected_bannedword) return message.reply(getStringFromObject(yourcontentsisconteinbannedwordLocales, settings.defaultLanguage[message.guild.id])).then(msg => {
-                            setTimeout(() => {
-                                msg.delete();
-                                message.delete().catch(err => {
-                                    message.channel.send(getStringFromObject(idonthavedeletemessagepermissionLocales, settings.defaultLanguage[message.guild.id])).then(msg2 => {
-                                        setTimeout(() => {
-                                            msg2.delete();
-                                        }
-                                            , 3000);
-                                    });
-                                });
-                            }, 3000);
-                        });
-                    }
-
-                    if (json.text.length > 1500) {
-                        json.text = json.text.slice(0, 300) + '...';
-                    }
-                    const embed = {
-                        title: json.user_name,
-                        url: json.tweetURL,
-                        description: json.text + '\n\n[View on Twitter](' + json.tweetURL + ')\n\n:speech_balloon:' + json.replies + ' replies • :recycle:' + json.retweets + ' retweets • :heart:' + json.likes + ' likes',
-                        color: 0x1DA1F2,
-                        author: {
-                            name: 'request by ' + message.author.username + '(id:' + message.author.id + ')',
-                        },
-                        footer: {
-                            text: 'Posted by ' + json.user_name + ' (@' + json.user_screen_name + ')',
-                            icon_url: 'https://abs.twimg.com/icons/apple-touch-icon-192x192.png'
-                        },
-                        timestamp: new Date(json.date),
-                    };
-                    if (json.mediaURLs) {
-                        if (json.mediaURLs.length > 4 || settings.sendMediaAsAttachmentsAsDefault[message.guild.id] === true) {
-                            if (json.mediaURLs.length > 10) {
-                                json.mediaURLs = json.mediaURLs.slice(0, 10);
-                            }
-                            attachments = json.mediaURLs
-                            embeds.push(embed);
-                            if (settings.sendMediaAsAttachmentsAsDefault[message.guild.id] === true) {
-                                showMediaAsAttachmentsButton = new ButtonBuilder().setStyle(ButtonStyle.Primary).setLabel(getStringFromObject(showAttachmentsAsEmbedsImagebuttonLocales, settings.defaultLanguage[message.guild.id])).setCustomId('showAttachmentsAsEmbedsImage');
-                            }
-                        } else {
-                            json.mediaURLs.forEach(element => {
-                                if (element.includes('video.twimg.com')) {
-                                    attachments.push(element);
-                                    return;
-                                }
-
-                                showMediaAsAttachmentsButton = new ButtonBuilder().setStyle(ButtonStyle.Primary).setLabel(getStringFromObject(showMediaAsAttachmentsButtonLocales, settings.defaultLanguage[message.guild.id])).setCustomId('showMediaAsAttachments');
-                                if (json.mediaURLs.length > 1) {
-                                    if (embeds.length == 0) embeds.push(embed);
-                                    embeds.push({
-                                        url: json.tweetURL,
-                                        image: {
-                                            url: element
-                                        }
-                                    })
-                                } else {
-                                    embed.image = {
-                                        url: element
-                                    }
-                                    embeds.push(embed);
-                                }
-                            });
-                        }
-                    }
-                    if (embeds.length === 0) embeds.push(embed);
-                    if (attachments.length > 0) messageObject.files = attachments;
-                    if (showMediaAsAttachmentsButton !== null) messageObject.components = [{ type: ComponentType.ActionRow, components: [showMediaAsAttachmentsButton] }];
-                    if (!messageObject.components) messageObject.components = [];
-                    messageObject.components.push({ type: ComponentType.ActionRow, components: [translateButton, deleteButton] });
-                    messageObject.components = checkComponentIncludesDisabledButtonAndIfFindDeleteIt(messageObject.components, message.guildId);
-                    if (must_be_main_instance && client.user.id != 1161267455335862282) embeds.push(getStringFromObject(warning_this_bot_is_not_main_instance_and_going_to_be_closed_embed, settings.defaultLanguage[message.guild.id], true));
-                    messageObject.embeds = embeds;
-                    if (settings.alwaysreplyifpostedtweetlink[message.guild.id] === true) {
-                        message.reply(messageObject);
-                    } else {
-                        message.channel.send(messageObject);
-                    }
-                    if (settings.deletemessageifonlypostedtweetlink[message.guild.id] === true && message.content == url[i]) {
-                        message.delete().catch(err => {
-                            message.channel.send(getStringFromObject(idonthavedeletemessagepermissionLocales, settings.defaultLanguage[message.guild.id])).then(msg => {
-                                setTimeout(() => {
-                                    msg.delete();
-                                }, 3000);
-                            });
-                        });
-                    }
-                })
-                .catch(err => {
-                    console.log(err);
-                });
+            await sendTweetEmbed(message, url[i]);
         };
     }
 });
