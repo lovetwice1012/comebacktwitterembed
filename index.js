@@ -924,7 +924,7 @@ client.on('ready', () => {
                             ]
                         }
                     ]
-                },{
+                }, {
                     name: 'extractbotmessage',
                     name_localizations: conv_en_to_en_US(command_name_extractbotmessage_Locales),
                     description: 'extractBotMessage',
@@ -999,7 +999,7 @@ function convertBoolToEnableDisable(bool, locale) {
 
 async function sendContentPromise(message, content) {
     return new Promise((resolve, reject) => {
-        if(content.length == 0) return resolve();
+        if (content.length == 0) return resolve();
         message.channel.send(content.join('\n')).then(msg => {
             resolve();
         }).catch(err => {
@@ -1051,7 +1051,7 @@ function checkComponentIncludesDisabledButtonAndIfFindDeleteIt(components, guild
     return components;
 }
 
-async function sendTweetEmbed(message, url, quoted = false){
+async function sendTweetEmbed(message, url, quoted = false, parent = null) {
     return new Promise((resolve, reject) => {
         const element = url;
         //replace twitter.com or x.com with api.vxtwitter.com
@@ -1158,28 +1158,39 @@ async function sendTweetEmbed(message, url, quoted = false){
                 messageObject.components = checkComponentIncludesDisabledButtonAndIfFindDeleteIt(messageObject.components, message.guildId);
                 if (must_be_main_instance && client.user.id != 1161267455335862282) embeds.push(getStringFromObject(warning_this_bot_is_not_main_instance_and_going_to_be_closed_embed, settings.defaultLanguage[message.guild.id], true));
                 messageObject.embeds = embeds;
-                if(quoted) messageObject.content = "Quoted tweet:"
-                if (settings.alwaysreplyifpostedtweetlink[message.guild.id] === true) {
-                    message.reply(messageObject).catch(async err => {
+                if (quoted) messageObject.content = "Quoted tweet:"
+                let msg = null;
+                if (settings.alwaysreplyifpostedtweetlink[message.guild.id] === true && parent === null) {
+                    msg = await message.reply(messageObject).catch(async err => {
                         if (messageObject.files !== undefined) {
-                        await sendContentPromise(message, messageObject.files);
-                        delete messageObject.files;
-                        message.channel.send(messageObject).catch(err => {
-                            console.log(err);
-                        });
-                    }
-                });
-                } else {
+                            await sendContentPromise(message, messageObject.files);
+                            delete messageObject.files;
+                            msg = await message.channel.send(messageObject).catch(err => {
+                                console.log(err);
+                            });
+                        }
+                    });
+                } else if (parent === null) {
 
-                    message.channel.send(messageObject).catch(async err => {
+                    msg = await message.channel.send(messageObject).catch(async err => {
                         if (messageObject.files !== undefined) {
-                        await sendContentPromise(message, messageObject.files);
-                        delete messageObject.files;
-                        message.channel.send(messageObject).catch(err => {
-                            console.log(err);
-                        });
-                    }
-                });;
+                            await sendContentPromise(message, messageObject.files);
+                            delete messageObject.files;
+                            msg = await message.channel.send(messageObject).catch(err => {
+                                console.log(err);
+                            });
+                        }
+                    });;
+                } else {
+                    parent.reply(messageObject).catch(async err => {
+                        if (messageObject.files !== undefined) {
+                            await sendContentPromise(message, messageObject.files);
+                            delete messageObject.files;
+                            await message.channel.send(messageObject).catch(err => {
+                                console.log(err);
+                            });
+                        }
+                    });
                 }
                 if (settings.deletemessageifonlypostedtweetlink[message.guild.id] === true && message.content == url) {
                     message.delete().catch(err => {
@@ -1190,7 +1201,7 @@ async function sendTweetEmbed(message, url, quoted = false){
                         });
                     });
                 }
-                if(json.qrtURL !== null) await sendTweetEmbed(message, json.qrtURL, true);
+                if (json.qrtURL !== null) await sendTweetEmbed(message, json.qrtURL, true, msg);
                 resolve();
             })
             .catch(err => {
@@ -1201,12 +1212,14 @@ async function sendTweetEmbed(message, url, quoted = false){
 }
 
 client.on(Events.MessageCreate, async (message) => {
-    if ((message.author.bot && (settings.extract_bot_message[message.guild.id] === undefined || settings.extract_bot_message[message.guild.id] !== true ) && !message.webhookId ) || message.author.id == client.user.id) return;
+    if ((message.author.bot && (settings.extract_bot_message[message.guild.id] === undefined || settings.extract_bot_message[message.guild.id] !== true) && !message.webhookId) || message.author.id == client.user.id) return;
     if ((message.content.includes('://twitter.com') || message.content.includes('://x.com')) && message.content.includes('status')) {
         let content = message.content;
         content = content.replace(/<https?:\/\/(twitter\.com|x\.com)[^\s<>|]*>|(\|\|https?:\/\/(twitter\.com|x\.com)[^\s<>|]*\|\|)/g, '');
 
-        const url = content.match(/(https?:\/\/[^\s]+)/g);
+        //match twitter link
+        const url = content.match(/https?:\/\/(twitter\.com|x\.com)\/[^\s<>|]*/g);
+
         if (url === null) return;
         if (settings.disable.user.includes(message.author.id)) return;
         if (settings.disable.channel.includes(message.channel.id)) return;
@@ -1441,12 +1454,12 @@ client.on(Events.InteractionCreate, async (interaction) => {
                         }
                     }
                 }
-                } else if (interaction.options.getSubcommand() === 'extractbotmessage') {
-                    if (interaction.options.getBoolean('boolean') === null) return await interaction.reply(userMustSpecifyAnyWordLocales[interaction.locale] ?? userMustSpecifyAnyWordLocales["en"]);
-                    if (settings.extract_bot_message[interaction.guildId] === undefined) settings.extract_bot_message[interaction.guildId] = false;
-                    const boolean = interaction.options.getBoolean('boolean');
-                    settings.extract_bot_message[interaction.guildId] = boolean;
-                    await interaction.reply((setextractbotmessagetolocales[interaction.locale] ?? setextractbotmessagetolocales["en"]) + convertBoolToEnableDisable(boolean, interaction.locale));
+            } else if (interaction.options.getSubcommand() === 'extractbotmessage') {
+                if (interaction.options.getBoolean('boolean') === null) return await interaction.reply(userMustSpecifyAnyWordLocales[interaction.locale] ?? userMustSpecifyAnyWordLocales["en"]);
+                if (settings.extract_bot_message[interaction.guildId] === undefined) settings.extract_bot_message[interaction.guildId] = false;
+                const boolean = interaction.options.getBoolean('boolean');
+                settings.extract_bot_message[interaction.guildId] = boolean;
+                await interaction.reply((setextractbotmessagetolocales[interaction.locale] ?? setextractbotmessagetolocales["en"]) + convertBoolToEnableDisable(boolean, interaction.locale));
             } else {
                 return await interaction.reply(userMustSpecifyAnyWordLocales[interaction.locale] ?? userMustSpecifyAnyWordLocales["en"]);
             }
