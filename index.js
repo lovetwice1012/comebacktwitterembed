@@ -1051,7 +1051,7 @@ function checkComponentIncludesDisabledButtonAndIfFindDeleteIt(components, guild
     return components;
 }
 
-async function sendTweetEmbed(message, url){
+async function sendTweetEmbed(message, url, quoted = false){
     return new Promise((resolve, reject) => {
         const element = url;
         //replace twitter.com or x.com with api.vxtwitter.com
@@ -1158,6 +1158,7 @@ async function sendTweetEmbed(message, url){
                 messageObject.components = checkComponentIncludesDisabledButtonAndIfFindDeleteIt(messageObject.components, message.guildId);
                 if (must_be_main_instance && client.user.id != 1161267455335862282) embeds.push(getStringFromObject(warning_this_bot_is_not_main_instance_and_going_to_be_closed_embed, settings.defaultLanguage[message.guild.id], true));
                 messageObject.embeds = embeds;
+                if(quoted) messageObject.content = "Quoted tweet:"
                 if (settings.alwaysreplyifpostedtweetlink[message.guild.id] === true) {
                     message.reply(messageObject).catch(async err => {
                         if (messageObject.files !== undefined) {
@@ -1169,7 +1170,7 @@ async function sendTweetEmbed(message, url){
                     }
                 });
                 } else {
-                    
+
                     message.channel.send(messageObject).catch(async err => {
                         if (messageObject.files !== undefined) {
                         await sendContentPromise(message, messageObject.files);
@@ -1189,6 +1190,7 @@ async function sendTweetEmbed(message, url){
                         });
                     });
                 }
+                if(json.qrtURL !== null) await sendTweetEmbed(message, json.qrtURL, true);
                 resolve();
             })
             .catch(err => {
