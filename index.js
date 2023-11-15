@@ -1162,15 +1162,18 @@ async function sendTweetEmbed(message, url){
                     message.reply(messageObject).catch(async err => {
                         if (messageObject.files !== undefined) {
                         await sendContentPromise(message, messageObject.files);
+                        delete messageObject.files;
                         message.channel.send(messageObject).catch(err => {
                             console.log(err);
                         });
                     }
                 });
                 } else {
+                    
                     message.channel.send(messageObject).catch(async err => {
                         if (messageObject.files !== undefined) {
                         await sendContentPromise(message, messageObject.files);
+                        delete messageObject.files;
                         message.channel.send(messageObject).catch(err => {
                             console.log(err);
                         });
