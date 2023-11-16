@@ -25,6 +25,7 @@ if (!fs.existsSync('./settings.json')) {
         "button_invisible": {},
         "button_disabled": {},
         "extract_bot_message": {},
+        "quote_repost_do_not_extract": {},
     }, null, 4));
 }
 const settings = JSON.parse(fs.readFileSync('./settings.json', 'utf8'));
@@ -71,6 +72,11 @@ if (settings.button_disabled === undefined) {
 
 if (settings.extract_bot_message === undefined) {
     settings.extract_bot_message = {};
+    fs.writeFileSync('./settings.json', JSON.stringify(settings, null, 4));
+}
+
+if (settings.quote_repost_do_not_extract === undefined) {
+    settings.quote_repost_do_not_extract = {};
     fs.writeFileSync('./settings.json', JSON.stringify(settings, null, 4));
 }
 
@@ -615,6 +621,21 @@ const command_name_all_Locales = {
 }
 
 
+const command_name_quote_repost_do_not_extract_Locales = {
+    ja: '引用リツイートを展開しない',
+    en: 'quote_repost_do_not_extract'
+}
+
+const settingsQuoteRepostDoNotExtractDescriptionLocalizations = {
+    ja: '引用リツイートを展開しないかどうかを設定します。',
+    en: 'Sets whether to expand quote retweets.'
+}
+
+const setquoterepostdonotextracttolocales = {
+    ja: '引用リツイートを展開しないかどうかを設定しました。 :',
+    en: 'Set quote_repost_do_not_extract to '
+}
+
 function conv_en_to_en_US(obj) {
     if (obj === undefined) return undefined;
     obj = [obj]
@@ -939,6 +960,22 @@ client.on('ready', () => {
                             required: true
                         }
                     ]
+                },
+                {
+                    name: 'quoterepostdonotextract',
+                    name_localizations: conv_en_to_en_US(command_name_quote_repost_do_not_extract_Locales),
+                    description: 'quote repost do not extract',
+                    description_localizations: conv_en_to_en_US(settingsQuoteRepostDoNotExtractDescriptionLocalizations),
+                    type: ApplicationCommandOptionType.Subcommand,
+                    options: [
+                        {
+                            name: 'boolean',
+                            name_localizations: conv_en_to_en_US(command_name_boolean_Locales),
+                            description: 'boolean',
+                            type: ApplicationCommandOptionType.Boolean,
+                            required: true
+                        }
+                    ]
                 }
             ]
         }
@@ -1201,7 +1238,7 @@ async function sendTweetEmbed(message, url, quoted = false, parent = null) {
                         });
                     });
                 }
-                if (json.qrtURL !== null) await sendTweetEmbed(message, json.qrtURL, true, msg);
+                if (json.qrtURL !== null && (settings.quote_repost_do_not_extract[message.guild.id] === undefined || settings.quote_repost_do_not_extract[message.guild.id] === false)) await sendTweetEmbed(message, json.qrtURL, true, msg);
                 resolve();
             })
             .catch(err => {
@@ -1460,6 +1497,12 @@ client.on(Events.InteractionCreate, async (interaction) => {
                 const boolean = interaction.options.getBoolean('boolean');
                 settings.extract_bot_message[interaction.guildId] = boolean;
                 await interaction.reply((setextractbotmessagetolocales[interaction.locale] ?? setextractbotmessagetolocales["en"]) + convertBoolToEnableDisable(boolean, interaction.locale));
+            } else if (interaction.options.getSubcommand() === 'quoterepostdonotextract'){
+                if (interaction.options.getBoolean('boolean') === null) return await interaction.reply(userMustSpecifyAnyWordLocales[interaction.locale] ?? userMustSpecifyAnyWordLocales["en"]);
+                if (settings.quote_repost_do_not_extract[interaction.guildId] === undefined) settings.quote_repost_do_not_extract[interaction.guildId] = false;
+                const boolean = interaction.options.getBoolean('boolean');
+                settings.quote_repost_do_not_extract[interaction.guildId] = boolean;
+                await interaction.reply((setquoterepostdonotextracttolocales[interaction.locale] ?? setquoterepostdonotextracttolocales["en"]) + convertBoolToEnableDisable(boolean, interaction.locale));
             } else {
                 return await interaction.reply(userMustSpecifyAnyWordLocales[interaction.locale] ?? userMustSpecifyAnyWordLocales["en"]);
             }
@@ -1510,8 +1553,9 @@ client.on(Events.InteractionCreate, async (interaction) => {
                 }
             } else if (interaction.options.getSubcommand() === 'extractbotmessage') {
                 await interaction.reply(userDonthavePermissionLocales[interaction.locale] ?? userDonthavePermissionLocales["en"]);
-            }
-            else {
+            } else if (interaction.options.getSubcommand() === 'quoterepostdonotextract'){
+                await interaction.reply(userDonthavePermissionLocales[interaction.locale] ?? userDonthavePermissionLocales["en"]);
+            } else {
                 return await interaction.reply(userMustSpecifyAnyWordLocales[interaction.locale] ?? userMustSpecifyAnyWordLocales["en"]);
             }
         }
