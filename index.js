@@ -1270,7 +1270,15 @@ client.on(Events.MessageCreate, async (message) => {
 client.on(Events.InteractionCreate, async (interaction) => {
     if (!interaction.type === InteractionType.ApplicationCommand) return;
     if (interaction.commandName === 'ping') {
-        await interaction.reply('Pong!');
+        await interaction.reply({
+            embeds: [
+                {
+                    title: 'Pong!',
+                    description: 'Ping: ' + client.ws.ping + 'ms',
+                    color: 0x1DA1F2
+                }
+            ]
+        });
     } else if (interaction.commandName === 'help') {
         await interaction.reply({
             embeds: [
