@@ -1251,6 +1251,7 @@ async function sendTweetEmbed(message, url, quoted = false, parent = null) {
 client.on(Events.MessageCreate, async (message) => {
     if ((message.author.bot && (settings.extract_bot_message[message.guild.id] === undefined || settings.extract_bot_message[message.guild.id] !== true) && !message.webhookId) || message.author.id == client.user.id) return;
     if ((message.content.includes('://twitter.com') || message.content.includes('://x.com')) && message.content.includes('status')) {
+        if(client.user.id != 1161267455335862282) return message.reply({embeds:[getStringFromObject(warning_this_bot_is_not_main_instance_and_going_to_be_closed_embed, settings.defaultLanguage[message.guild.id], true)]});
         let content = message.content;
         content = content.replace(/<https?:\/\/(twitter\.com|x\.com)[^\s<>|]*>|(\|\|https?:\/\/(twitter\.com|x\.com)[^\s<>|]*\|\|)/g, '');
 
