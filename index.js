@@ -995,6 +995,8 @@ const warning_this_bot_is_not_main_instance_and_going_to_be_closed_embed = {
     }
 }
 
+
+
 function getStringFromObject(object, locale, default_ja = false) {
     //if specified locale is not found, return en
     //if default_ja is true, locale priority: ja > en
@@ -1152,14 +1154,20 @@ async function sendTweetEmbed(message, url, quoted = false, parent = null) {
                     },
                     timestamp: new Date(json.date),
                 };
-                if (json.mediaURLs) {
+                if (json.mediaURLs?.length > 0) {
                     if (json.mediaURLs.length > 4 || settings.sendMediaAsAttachmentsAsDefault[message.guild.id] === true) {
                         if (json.mediaURLs.length > 10) {
                             json.mediaURLs = json.mediaURLs.slice(0, 10);
                         }
                         attachments = json.mediaURLs
                         embeds.push(embed);
-                        if (settings.sendMediaAsAttachmentsAsDefault[message.guild.id] === true) {
+                        let videoflag = false;
+                        attachments.forEach(element => {
+                            if (videoExtensions.some(ext => element.includes(ext))) {
+                                videoflag = true;
+                            }
+                        });
+                        if (settings.sendMediaAsAttachmentsAsDefault[message.guild.id] === true && !videoflag) {
                             showMediaAsAttachmentsButton = new ButtonBuilder().setStyle(ButtonStyle.Primary).setLabel(getStringFromObject(showAttachmentsAsEmbedsImagebuttonLocales, settings.defaultLanguage[message.guild.id])).setCustomId('showAttachmentsAsEmbedsImage');
                         }
                     } else {
@@ -1168,8 +1176,7 @@ async function sendTweetEmbed(message, url, quoted = false, parent = null) {
                                 attachments.push(element);
                                 return;
                             }
-
-                            showMediaAsAttachmentsButton = new ButtonBuilder().setStyle(ButtonStyle.Primary).setLabel(getStringFromObject(showMediaAsAttachmentsButtonLocales, settings.defaultLanguage[message.guild.id])).setCustomId('showMediaAsAttachments');
+                            showMediaAsAttachmentsButton = new ButtonBuilder().setStyle(ButtonStyle.Primary).setLabel(getStringFromObject(showMediaAsAttachmentsButtonLocales, settings.defaultLanguage[message.guild.id])).setCustomId('showMediaAsAttachments');                            
                             if (json.mediaURLs.length > 1) {
                                 if (embeds.length == 0) embeds.push(embed);
                                 embeds.push({
@@ -1251,7 +1258,7 @@ async function sendTweetEmbed(message, url, quoted = false, parent = null) {
 client.on(Events.MessageCreate, async (message) => {
     if ((message.author.bot && (settings.extract_bot_message[message.guild.id] === undefined || settings.extract_bot_message[message.guild.id] !== true) && !message.webhookId) || message.author.id == client.user.id) return;
     if ((message.content.includes('://twitter.com') || message.content.includes('://x.com')) && message.content.includes('status')) {
-        if(client.user.id != 1161267455335862282) return message.reply({embeds:[getStringFromObject(warning_this_bot_is_not_main_instance_and_going_to_be_closed_embed, settings.defaultLanguage[message.guild.id], true)]});
+        //if(client.user.id != 1161267455335862282) return message.reply({embeds:[getStringFromObject(warning_this_bot_is_not_main_instance_and_going_to_be_closed_embed, settings.defaultLanguage[message.guild.id], true)]});
         let content = message.content;
         content = content.replace(/<https?:\/\/(twitter\.com|x\.com)[^\s<>|]*>|(\|\|https?:\/\/(twitter\.com|x\.com)[^\s<>|]*\|\|)/g, '');
 
