@@ -1,8 +1,8 @@
 
 class ColumnBuilder {
-    constructor(name) {
+    constructor() {
         this.column = "";
-        this.name = name;
+        this.name = "";
     }
 
     setColumnName(name) {
@@ -36,6 +36,8 @@ class ColumnBuilder {
     }
 
     build() {
+        if(this.name === '') throw new Error('Column name not set');
+        if(this.column === '') throw new Error('Column option not set');
         return `${this.name} ${this.column}`;
     }
 
