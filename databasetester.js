@@ -2,7 +2,6 @@ const database = require('./src/database/databaseManager');
 const db = new database();
 const CommandBuilder = require('./src/database/commandBuilder');
 const columnBuilder = require('./src/database/columnBuilder');
-const column = new columnBuilder();
 
 const host = 'localhost';
 const user = 'root';
@@ -14,10 +13,10 @@ db.connect();
 
 //create table
 const columns_createTable = [
-    column.setColumnName('id').integer().notNull().autoIncrement().build(),
-    column.setColumnName('name').varchar(255).notNull().build(),
-    column.setColumnName('age').integer().notNull().build(),
-    column.setColumnName('address').text().notNull().build(),
+    new columnBuilder().setColumnName('id').integer().notNull().autoIncrement().build(),
+    new columnBuilder().setColumnName('name').varchar(255).notNull().build(),
+    new columnBuilder().setColumnName('age').integer().notNull().build(),
+    new columnBuilder().setColumnName('address').text().notNull().build(),
 ];
 
 var { sql, params } = new CommandBuilder().createTable("users", columns_createTable).build();
