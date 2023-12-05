@@ -10,4 +10,4 @@ if (args.length < 1) {
 
 console.log("UserId: " + args[0]);
 console.log("Checking user has been disabled or not...");
-console.log("User Disabled: " + setting.disable.users.includes(parseInt(args[0])));
+console.log("User Disabled: " + setting.disable.user.includes(parseInt(args[0])));
