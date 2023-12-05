@@ -1,4 +1,4 @@
-const setting  = require('./setting.json');
+const setting  = require('./settings.json');
 const fs = require('fs');
 
 const args = process.argv.slice(2);
