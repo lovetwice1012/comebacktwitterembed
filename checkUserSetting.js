@@ -4,7 +4,8 @@ const fs = require('fs');
 const args = process.argv.slice(2);
 
 if (args.length < 1) {
-    console.log("Usage: node checkUserSetting.js <username>");
+    console.log(setting.disable.user);
+    console.log("Usage: node checkUserSetting.js <UserId>");
     return;
 }
 
