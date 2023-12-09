@@ -16,7 +16,8 @@ parentPort.on("message", (data) => {
         return;
     }
     let result = null;
-    let url = data.url.replace(/twitter.com/g, "fxapi.lovetwice1012.workers.dev").replace(/x.com/g, "fxapi.lovetwice1012.workers.dev");
+    //let url = data.url.replace(/twitter.com/g, "fxapi.lovetwice1012.workers.dev").replace(/x.com/g, "fxapi.lovetwice1012.workers.dev");
+    let url = data.url.replace(/twitter.com/g, "api.fxtwitter.com").replace(/x.com/g, "api.fxtwitter.com");
     fetch(url, {
         method: "GET",
         headers: {

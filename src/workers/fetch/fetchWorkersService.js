@@ -46,6 +46,34 @@ class fetchWorkersService {
     add_queue(message, plan, url) {
         this.queue.push(new fetchTask(message, plan, url));
     }
+
+    getQueueLength() {
+        return this.queue.length;
+    }
+
+    get_queue() {
+        return this.queue;
+    }
+
+    get_workers() {
+        return this.workers;
+    }
+
+    get_total_workers() {
+        return this.total_workers;
+    }
+
+    set_total_workers(total_workers) {
+        this.total_workers = total_workers;
+    }
+
+    get_queueManager() {
+        return this.queueManager;
+    }
+
+    set_queueManager(queueManager) {
+        this.queueManager = queueManager;
+    }
 }
 
 module.exports = fetchWorkersService;
