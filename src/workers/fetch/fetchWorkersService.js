@@ -5,7 +5,6 @@ const fetchTask = require("./fetchTask");
 
 class fetchWorkersService {
     constructor(queueManagerClass = null, workers = null, total_workers = 24) {
-        if (queueManagerClass == null) throw new Error("Queue manager not initialized");
         if (workers == null) {
             workers = [];
         }
@@ -16,6 +15,7 @@ class fetchWorkersService {
     }
 
     initialize() {
+        if(this.queueManager == null) throw new Error("queueManager is required");
         if(this.workers.length != 0) throw new Error("Workers already initialized");
         for(let i = 0; i < this.total_workers; i++){
             let workerInstance = new Worker("./src/workers/fetch/fetchWorker.js");
@@ -47,12 +47,12 @@ class fetchWorkersService {
         this.queue.push(new fetchTask(message, plan, url));
     }
 
-    getQueueLength() {
-        return this.queue.length;
-    }
-
     get_queue() {
         return this.queue;
+    }
+
+    getQueueLength() {
+        return this.queue.length;
     }
 
     get_workers() {
@@ -63,16 +63,16 @@ class fetchWorkersService {
         return this.total_workers;
     }
 
-    set_total_workers(total_workers) {
-        this.total_workers = total_workers;
-    }
-
     get_queueManager() {
         return this.queueManager;
     }
 
     set_queueManager(queueManager) {
         this.queueManager = queueManager;
+    }
+
+    set_total_workers(total_workers) {
+        this.total_workers = total_workers;
     }
 }
 

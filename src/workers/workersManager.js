@@ -1,3 +1,4 @@
+const queue = require('../queue/queue');
 const fetchWorkersController = require('./fetch/fetchWorkersController');
 const fetchWorkersControllerInstance = new fetchWorkersController();
 
@@ -5,15 +6,21 @@ const sendWorkersController = require('./send/sendWorkersController');
 const sendWorkersControllerInstance = new sendWorkersController();
 
 class workersManager {
-    constructor(fetchWorkersController = null, sendWorkersController = null) {
+    constructor(queueManager, fetchWorkersController = null, sendWorkersController = null) {
+        if (queueManager == null) {
+            throw new Error('queueManager is required');
+        }
         if (fetchWorkersController == null) {
             fetchWorkersController = fetchWorkersControllerInstance;
         }
         if (sendWorkersController == null) {
             sendWorkersController = sendWorkersControllerInstance;
         }
+        this.queueManager = queueManager;
         this.fetchWorkersController = fetchWorkersController;
         this.sendWorkersController = sendWorkersController;
+        this.fetchWorkersController.set_queueManager(queueManager);
+        this.sendWorkersController.set_queueManager(queueManager);
     }
 
     initialize() {

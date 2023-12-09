@@ -37,8 +37,8 @@ class fetchWorkersController {
         return this.fetchWorkersService.get_queueManager();
     }
 
-    set_total_workers(queueManager) {
-        this.fetchWorkersService.set_total_workers(queueManager);
+    set_queueManager(queueManager) {
+        this.fetchWorkersService.set_queueManager(queueManager);
     }
 
     set_total_workers(total_workers) {
