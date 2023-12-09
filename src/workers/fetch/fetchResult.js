@@ -1,4 +1,10 @@
 class fetchResult {
+    message = null;
+    plan = null;
+    result = null;
+    error = null;
+    time = null;
+    
     constructor(messageClass, plan, result = null, error = null) {
         this.message = messageClass;
         this.plan = plan;

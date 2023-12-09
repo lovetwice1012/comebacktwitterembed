@@ -1,4 +1,4 @@
-const worker = require("worker_threads");
+const {Worker} = require("worker_threads");
 const fetchResult = require("./fetchResult");
 const fetchTask = require("./fetchTask");
 
@@ -18,22 +18,28 @@ class fetchWorkersService {
     initialize() {
         if(this.workers.length != 0) throw new Error("Workers already initialized");
         for(let i = 0; i < this.total_workers; i++){
-            let worker = new worker("./src/workers/fetch/fetchWorker.js");
-            worker.on("message", (data) => {
-                if(!(data instanceof fetchResult)) {
-                    if(this.queue.length == 0) return worker.postMessage(new fetchTask(nul, null, "Standby"));
-                    return worker.postMessage(this.queue.shift());
+            let workerInstance = new Worker("./src/workers/fetch/fetchWorker.js");
+            workerInstance.on("message", (data) => {
+                if(typeof data === "string" && data === "ready") {
+                    if(this.queue.length == 0) return workerInstance.postMessage(new fetchTask(null, null, "Standby"));
+                    return workerInstance.postMessage(this.queue.shift());
                 }
-                if(data.error) throw new Error(data.error);
+                if(data.error) {
+                    console.error(data.error);
+                    return workerInstance.postMessage(this.queue.shift());
+                }
                 this.queueManager.add_to_queue(data.result, data.plan);
+                console.log(`[${data.time.toLocaleString()}] ${data.result.tweet.text}`);
+                return workerInstance.postMessage(this.queue.shift());
             });
-            worker.on("error", (error) => {
+            workerInstance.on("error", (error) => {
                 throw new Error(error);
             });
-            worker.on("exit", (code) => {
+            workerInstance.on("exit", (code) => {
                 if(code != 0) throw new Error(`Worker stopped with exit code ${code}`);
+                console.log("Worker stopped");
             });
-            this.workers.push(worker);
+            this.workers.push(workerInstance);
         }
     }
 

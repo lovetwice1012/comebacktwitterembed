@@ -1,8 +1,14 @@
 const fetchResult = require('./fetchResult');
 const fetchTask = require('./fetchTask');
 const {workerData,parentPort} = require('worker_threads');
+const fetch = require('node-fetch');
+
+process.on("uncaughtException", (error) => {
+    console.error(error);
+});
 
 parentPort.on("message", (data) => {
+    if(data === undefined) return parentPort.postMessage("ready");
     if(data.url === "Standby"){
         setTimeout(() => {
             parentPort.postMessage("ready");
