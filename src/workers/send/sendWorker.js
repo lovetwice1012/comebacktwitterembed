@@ -30,7 +30,6 @@ parentPort.on('message', async (data) => {
     */ 
     //埋め込み送信処理をここに記述
 
-
     parentPort.postMessage('ready');
 });
 

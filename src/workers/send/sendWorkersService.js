@@ -14,7 +14,7 @@ class sendWorkersService {
         if(this.queueManager == null) throw new Error("queueManager is required");
         if(this.workers.length != 0) throw new Error("Workers already initialized");
         for(let i = 0; i < this.total_workers; i++){
-            let workerInstance = new Worker("./src/workers/send/sendWorker.js");
+            let workerInstance = new Worker("./src/workers/send/sendWorker.js", {workerData: {workerId: i}});
             workerInstance.on("message", (data) => {
                 let next = this.queueManager.get_next();
                 if(typeof data === "string" && data === "ready") {

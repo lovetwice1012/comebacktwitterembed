@@ -18,7 +18,7 @@ class fetchWorkersService {
         if(this.queueManager == null) throw new Error("queueManager is required");
         if(this.workers.length != 0) throw new Error("Workers already initialized");
         for(let i = 0; i < this.total_workers; i++){
-            let workerInstance = new Worker("./src/workers/fetch/fetchWorker.js");
+            let workerInstance = new Worker("./src/workers/fetch/fetchWorker.js", {workerData: {workerId: i}});
             workerInstance.on("message", (data) => {
                 if(typeof data === "string" && data === "ready") {
                     if(this.queue.length == 0) return workerInstance.postMessage(new fetchTask(null, null, "Standby"));
