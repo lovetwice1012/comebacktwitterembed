@@ -13,7 +13,7 @@ client.on(Events.CLIENT_READY, () => {
 
 parentPort.on('message', async (data) => {
     /*
-        data.message = discord incoming message class;
+        data.message = discord incoming message class(../../messages/postMessage.js or ../../messages/editMessage.js);
         data.plan = plan;
         data.result = fetchedTweetData;
         data.error = always null;
