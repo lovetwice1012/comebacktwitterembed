@@ -1,9 +1,6 @@
 const {Worker} = require("worker_threads");
-const fetchResult = require("./fetchResult");
-const fetchTask = require("./fetchTask");
 
-
-class fetchWorkersService {
+class sendWorkersService {
     constructor(queueManagerClass = null, workers = null, total_workers = 24) {
         if (workers == null) {
             workers = [];
@@ -11,26 +8,20 @@ class fetchWorkersService {
         this.workers = workers;
         this.total_workers = total_workers;
         this.queueManager = queueManagerClass;
-        this.queue = [];
     }
 
     initialize() {
         if(this.queueManager == null) throw new Error("queueManager is required");
         if(this.workers.length != 0) throw new Error("Workers already initialized");
         for(let i = 0; i < this.total_workers; i++){
-            let workerInstance = new Worker("./src/workers/fetch/fetchWorker.js");
+            let workerInstance = new Worker("./src/workers/send/sendWorker.js");
             workerInstance.on("message", (data) => {
+                let next = this.queueManager.get_next();
                 if(typeof data === "string" && data === "ready") {
-                    if(this.queue.length == 0) return workerInstance.postMessage(new fetchTask(null, null, "Standby"));
-                    return workerInstance.postMessage(this.queue.shift());
+                    if(next === null) return workerInstance.postMessage("Standby");
+                    return workerInstance.postMessage(next);
                 }
-                if(data.error) {
-                    console.error(data.error);
-                    return workerInstance.postMessage(this.queue.shift());
-                }
-                this.queueManager.add_to_queue(data, data.plan);
-                if(this.queue.length == 0) return workerInstance.postMessage(new fetchTask(null, null, "Standby"));
-                return workerInstance.postMessage(this.queue.shift());
+                console.log(data);
             });
             workerInstance.on("error", (error) => {
                 throw new Error(error);
@@ -43,16 +34,8 @@ class fetchWorkersService {
         }
     }
 
-    add_queue(message, plan, url) {
-        this.queue.push(new fetchTask(message, plan, url));
-    }
-
-    get_queue() {
-        return this.queue;
-    }
-
     getQueueLength() {
-        return this.queue.length;
+        return this.queueManager.getQueueLength();
     }
 
     get_workers() {
@@ -76,4 +59,4 @@ class fetchWorkersService {
     }
 }
 
-module.exports = fetchWorkersService;
+module.exports = sendWorkersService;
