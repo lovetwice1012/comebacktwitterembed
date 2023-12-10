@@ -28,7 +28,7 @@ class fetchWorkersService {
                     console.error(data.error);
                     return workerInstance.postMessage(this.queue.shift());
                 }
-                this.queueManager.add_to_queue(data.result, data.plan);
+                this.queueManager.add_to_queue(data, data.plan);
                 console.log(`[${data.time.toLocaleString()}] ${data.result.tweet.text}`);
                 return workerInstance.postMessage(this.queue.shift());
             });
