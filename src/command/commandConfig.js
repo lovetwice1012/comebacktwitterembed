@@ -21,54 +21,54 @@ client.on('ready', () => {
             description_localizations: conv_en_to_en_US(locales.ja.show_helpMessage)
         },
         {
-            name: 'ping',
+            name: (locales.en.Ping),
             name_localizations: conv_en_to_en_US(locales.ja.Ping),
             description: 'Pong!',
             description_localizations: conv_en_to_en_US('Pong!')
         },
         {
-            name: 'invite',
+            name: (locales.en.Invite),
             name_localizations: conv_en_to_en_US(locales.ja.Invite),
-            description: 'Invite me to your server!',
+            description: (locales.en.Invite),
             description_localizations: conv_en_to_en_US(locales.ja.BOT_Invite_Link)
         },
         {
-            name: 'support',
+            name: (locales.en.Support),
             name_localizations: conv_en_to_en_US(locales.ja.Support),
-            description: 'Join support server!',
+            description: (locales.en.supportServer_Invite_Link),
             description_localizations: conv_en_to_en_US(locales.ja.supportServer_Invite_Link)
         },
         {
-            name: 'settings',
+            name: (locales.en.Settings),
             name_localizations: conv_en_to_en_US(locales.ja.Settings),
-            description: 'chenge Settings',
+            description: (locales.en.settings_change),
             description_localizations: conv_en_to_en_US(locales.ja.settings_change),
             options: [
                 {
-                    name: 'disable',
+                    name: (locales.en.Disable),
                     name_localizations: conv_en_to_en_US(locales.ja.Disable),
-                    description: 'disable',
+                    description: (locales.en.settings_Disable_ch_user),
                     description_localizations: conv_en_to_en_US(locales.ja.settings_Disable_ch_user),
                     type: ApplicationCommandOptionType.Subcommand,
                     options: [
                         {
-                            name: 'user',
+                            name: (locales.en.User),
                             name_localizations: conv_en_to_en_US(locales.ja.User),
-                            description: 'user',
+                            description: (locales.en.settings_Disable_user),
                             description_localizations: conv_en_to_en_US(locales.ja.settings_Disable_user),
                             type: ApplicationCommandOptionType.User,
                             required: false
                         },
                         {
-                            name: 'channel',
+                            name: (locales.en.Channel),
                             name_localizations: conv_en_to_en_US(locales.ja.Channel),
-                            description: 'channel',
+                            description: (locales.en.settings_Disable_ch),
                             description_localizations: conv_en_to_en_US(locales.ja.settings_Disable_ch),
                             type: ApplicationCommandOptionType.Channel,
                             required: false
                         },
                         {
-                            name: 'role',
+                            name: (locales.en.command_name_role_Locales),
                             name_localizations: conv_en_to_en_US(locales.ja.command_name_role_Locales),
                             description: 'role',
                             type: ApplicationCommandOptionType.Role,
@@ -77,16 +77,16 @@ client.on('ready', () => {
                     ]
                 },
                 {
-                    name: 'bannedwords',
+                    name: (locales.en.BanWard),
                     name_localizations: conv_en_to_en_US(locales.ja.BanWard),
-                    description: 'bannedWords',
-                    description_localizations: conv_en_to_en_US(settingsBannedWordsDescriptionLocalizations),
+                    description: (locales.en.settings_Add_remove_BANWords),
+                    description_localizations: conv_en_to_en_US(locales.ja.settings_Add_remove_BANWords),
                     type: ApplicationCommandOptionType.Subcommand,
                     options: [
                         {
-                            name: 'word',
-                            name_localizations: conv_en_to_en_US(command_name_word_Locales),
-                            description: 'word',
+                            name: (locales.en.Word),
+                            name_localizations: conv_en_to_en_US(locales.ja.Word),
+                            description: (locales.en.settings_Add_remove_BANWords),
                             description_localizations: conv_en_to_en_US(locales.ja.settings_Add_remove_BANWords),
                             type: ApplicationCommandOptionType.String,
                             required: true
@@ -94,16 +94,16 @@ client.on('ready', () => {
                     ]
                 },
                 {
-                    name: 'defaultlanguage',
+                    name: (locales.en.DefaultLanguage),
                     name_localizations: conv_en_to_en_US(locales.ja.DefaultLanguage),
-                    description: 'defaultLanguage',
+                    description: (locales.en.settings_translating_defaultLanguage),
                     description_localizations: conv_en_to_en_US(locales.ja.settings_translating_defaultLanguage),
                     type: ApplicationCommandOptionType.Subcommand,
                     options: [
                         {
-                            name: 'language',
+                            name: (locales.en.Language),
                             name_localizations: conv_en_to_en_US(locales.ja.Language),
-                            description: 'language',
+                            description: (locales.en.Language),
                             description_localizations: conv_en_to_en_US(locales.ja.Language),
                             type: ApplicationCommandOptionType.String,
                             required: true,
@@ -121,150 +121,150 @@ client.on('ready', () => {
                     ]
                 },
                 {
-                    name: 'editoriginaliftranslate',
+                    name: (locales.en.message_translate_originalMessageEdit),
                     name_localizations: conv_en_to_en_US(locales.ja.message_translate_originalMessageEdit),
-                    description: 'editOriginalIfTranslate',
+                    description: (locales.en.settings_translating_messageEdit_option),
                     description_localizations: conv_en_to_en_US(locales.ja.settings_translating_messageEdit_option),
                     type: ApplicationCommandOptionType.Subcommand,
                     options: [
                         {
-                            name: 'boolean',
+                            name: (locales.en.Boolean),
                             name_localizations: conv_en_to_en_US(locales.ja.Boolean),
-                            description: 'boolean',
+                            description: (locales.en.Boolean),
                             type: ApplicationCommandOptionType.Boolean,
                             required: true
                         }
                     ]
                 },
                 {
-                    name: 'setdefaultmediaasattachments',
+                    name: (locales.en.show_media),
                     name_localizations: conv_en_to_en_US(locales.ja.show_media),
-                    description: 'setSendMediaAsAttachmentsAsDefault',
+                    description: (locales.en.settings_show_media),
                     description_localizations: conv_en_to_en_US(locales.ja.settings_show_media),
                     type: ApplicationCommandOptionType.Subcommand,
                     options: [
                         {
-                            name: 'boolean',
+                            name: (locales.en.Boolean),
                             name_localizations: conv_en_to_en_US(locales.ja.Boolean),
-                            description: 'boolean',
+                            description: (locales.en.Boolean),
                             type: ApplicationCommandOptionType.Boolean,
                             required: true
                         }
                     ]
                 },
                 {
-                    name: 'deleteifonlypostedtweetlink',
+                    name: (locales.en.only_tweetLink_to_DeleteMessage),
                     name_localizations: conv_en_to_en_US(locales.ja.only_tweetLink_to_DeleteMessage),
-                    description: 'deleteIfOnlyPostedTweetLink',
+                    description: (locales.en.settings_send_OnlyTwitterLink_Delete),
                     description_localizations: conv_en_to_en_US(locales.ja.settings_send_OnlyTwitterLink_Delete),
                     type: ApplicationCommandOptionType.Subcommand,
                     options: [
                         {
-                            name: 'boolean',
+                            name: (locales.en.Boolean),
                             name_localizations: conv_en_to_en_US(locales.ja.Boolean),
-                            description: 'boolean',
+                            description: (locales.en.Boolean),
                             type: ApplicationCommandOptionType.Boolean,
                             required: true
                         }
                     ]
                 },
                 {
-                    name: 'alwaysreplyifpostedtweetlink',
+                    name: (locales.en.send_to_tweetLink_always_reply),
                     name_localizations: conv_en_to_en_US(locales.ja.send_to_tweetLink_always_reply),
-                    description: 'alwaysReplyIfPostedTweetLink',
+                    description: (locales.en.settings_tweetLink_allow_reply),
                     description_localizations: conv_en_to_en_US(locales.ja.settings_tweetLink_allow_reply),
                     type: ApplicationCommandOptionType.Subcommand,
                     options: [
                         {
-                            name: 'boolean',
+                            name: (locales.en.Boolean),
                             name_localizations: conv_en_to_en_US(locales.ja.Boolean),
-                            description: 'boolean',
+                            description: (locales.en.Boolean),
                             type: ApplicationCommandOptionType.Boolean,
                             required: true
                         }
                     ]
                 },
                 {
-                    name: 'button',
+                    name: (locales.en.Button),
                     name_localizations: conv_en_to_en_US(locales.ja.Button),
-                    description: 'button',
+                    description: (locales.en.Button),
                     type: ApplicationCommandOptionType.SubcommandGroup,
                     options: [
                         {
-                            name: 'invisible',
+                            name: (locales.en.Invisible),
                             name_localizations: conv_en_to_en_US(locales.ja.Invisible),
-                            description: 'invisible',
+                            description: (locales.en.Invisible),
                             type: ApplicationCommandOptionType.Subcommand,
                             options: [
                                 {
-                                    name: 'showmediaasattachments',
+                                    name: (locales.en.show_media),
                                     name_localizations: conv_en_to_en_US(locales.ja.show_media),
-                                    description: 'showMediaAsAttachments',
+                                    description: (locales.en.show_mediaFiles),
                                     description_localizations: conv_en_to_en_US(locales.ja.show_mediaFiles),
                                     type: ApplicationCommandOptionType.Boolean,
                                 },
                                 {
-                                    name: 'showattachmentsasembedsimage',
+                                    name: (locales.en.show_Embed_img),
                                     name_localizations: conv_en_to_en_US(locales.ja.show_Embed_img),
-                                    description: 'showAttachmentsAsEmbedsImage',
+                                    description: (locales.en.show_Embed_img),
                                     description_localizations: conv_en_to_en_US(locales.ja.show_Embed_img),
                                     type: ApplicationCommandOptionType.Boolean,
                                 },
                                 {
-                                    name: 'translate',
+                                    name: (locales.en.Translate),
                                     name_localizations: conv_en_to_en_US(locales.ja.Translate),
-                                    description: 'translate',
+                                    description: (locales.en.Translate),
                                     description_localizations: conv_en_to_en_US(locales.ja.Translate),
                                     type: ApplicationCommandOptionType.Boolean,
                                 },
                                 {
-                                    name: 'delete',
+                                    name: (locales.en.Delete),
                                     name_localizations: conv_en_to_en_US(locales.ja.Delete),
-                                    description: 'delete',
+                                    description: (locales.en.Delete),
                                     description_localizations: conv_en_to_en_US(locales.ja.Delete),
                                     type: ApplicationCommandOptionType.Boolean,
                                 },
                                 {
-                                    name: 'all',
+                                    name: (locales.en.All),
                                     name_localizations: conv_en_to_en_US(locales.ja.All),
-                                    description: 'all',
+                                    description: (locales.en.All),
                                     type: ApplicationCommandOptionType.Boolean,
                                 }
                             ]
                         },
                         {
-                            name: 'disabled',
+                            name: (locales.en.Disable),
                             name_localizations: conv_en_to_en_US(locales.ja.Disable),
-                            description: 'disabled',
+                            description: (locales.en.Disable),
                             type: ApplicationCommandOptionType.Subcommand,
                             options: [
                                 {
-                                    name: 'user',
+                                    name: (locales.en.User),
                                     name_localizations: conv_en_to_en_US(locales.ja.User),
-                                    description: 'user',
+                                    description: (locales.en.settings_Disable_user),
                                     description_localizations: conv_en_to_en_US(locales.ja.settings_Disable_user),
                                     type: ApplicationCommandOptionType.User,
                                     required: false
                                 },
                                 {
-                                    name: 'channel',
+                                    name: (locales.en.Channel),
                                     name_localizations: conv_en_to_en_US(locales.ja.Channel),
-                                    description: 'channel',
+                                    description: (locales.en.settings_Disable_ch),
                                     description_localizations: conv_en_to_en_US(locales.ja.settings_Disable_ch),
                                     type: ApplicationCommandOptionType.Channel,
                                     required: false
                                 },
                                 {
-                                    name: 'role',
+                                    name: (locales.en.Role),
                                     name_localizations: conv_en_to_en_US(locales.ja.Role),
-                                    description: 'role',
+                                    description: (locales.en.Role),
                                     type: ApplicationCommandOptionType.Role,
                                     required: false
                                 }
                             ]
                         }
                     ]
-                }, {
+                }, { //これ以下変更なし
                     name: 'extractbotmessage',
                     name_localizations: conv_en_to_en_US(locales.ja.open_BOT_message),
                     description: 'extractBotMessage',
@@ -272,9 +272,9 @@ client.on('ready', () => {
                     type: ApplicationCommandOptionType.Subcommand,
                     options: [
                         {
-                            name: 'boolean',
+                            name: (locales.en.Boolean),
                             name_localizations: conv_en_to_en_US(locales.ja.Boolean),
-                            description: 'boolean',
+                            description: (locales.en.Boolean),
                             type: ApplicationCommandOptionType.Boolean,
                             required: true
                         }
@@ -288,9 +288,9 @@ client.on('ready', () => {
                     type: ApplicationCommandOptionType.Subcommand,
                     options: [
                         {
-                            name: 'boolean',
+                            name: (locales.en.Boolean),
                             name_localizations: conv_en_to_en_US(locales.ja.Boolean),
-                            description: 'boolean',
+                            description: (locales.en.Boolean),
                             type: ApplicationCommandOptionType.Boolean,
                             required: true
                         }
