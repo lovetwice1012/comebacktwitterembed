@@ -71,7 +71,8 @@ if (!setting.button_invisible[args[0]]) {
     console.log("button_invisible not found");
 }
 
-console.log("button_invisible: " + setting.button_invisible[args[0]]);
+console.log("button_invisible: " );
+console.log(setting.button_invisible[args[0]])
 
 //button_disabled
 
@@ -79,7 +80,8 @@ if (!setting.button_disabled[args[0]]) {
     console.log("button_disabled not found");
 }
 
-console.log("button_disabled: " + setting.button_disabled[args[0]]);
+console.log("button_disabled: ");
+console.log(setting.button_disabled[args[0]])
 //extract_bot_message
 
 if (!setting.extract_bot_message[args[0]]) {
