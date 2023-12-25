@@ -8,91 +8,91 @@ client.on('ready', () => {
 
     client.application.commands.set([
         {
-            name: (locales.en.Help),
+            name: (locales.Help.en),
             name_localizations: {
-                "ja": (locales.ja.Help)
+                "ja": (locales.Help.ja)
             },
-            description: (locales.en.Help),
+            description: (locales.Help.en),
             description_localizations: {
-                "ja": (locales.ja.show_helpMessage)
+                "ja": (locales.show_helpMessage.ja)
             }
         },
         {
-            name: (locales.en.Ping),
+            name: (locales.Ping.en),
             name_localizations: {
-                "ja": (locales.ja.Ping)
+                "ja": (locales.Ping.ja)
             },
             description: 'Pong!',
         },
         {
-            name: (locales.en.Invite),
+            name: (locales.Invite.en),
             name_localizations: {
-                "ja": locales.ja.Invite
+                "ja": locales.Invite.ja
             },
-            description: (locales.en.Invite),
+            description: (locales.Invite.en),
             description_localizations: {
-                "ja": locales.ja.BOT_Invite_Link
+                "ja": locales.BOT_Invite_Link.ja
             }
         },
         {
-            name: (locales.en.Support),
+            name: (locales.Support.en),
             name_localizations: {
-                "ja": locales.ja.Support
+                "ja": locales.Support.ja
             },
-            description: (locales.en.supportServer_Invite_Link),
+            description: (locales.supportServer_Invite_Link.en),
             description_localizations: {
-                "ja": locales.ja.supportServer_Invite_Link
+                "ja": locales.supportServer_Invite_Link.ja
             }
         },
         {
-            name: (locales.en.Settings),
+            name: (locales.Settings.en),
             name_localizations: {
-                "ja": locales.ja.Settings
+                "ja": locales.Settings.ja
             },
-            description: (locales.en.settings_change),
+            description: (locales.settings_change.en),
             description_localizations: {
-                "ja": locales.ja.settings_change
+                "ja": locales.settings_change.ja
             },
             options: [
                 {
-                    name: (locales.en.Disable),
+                    name: (locales.Disable.en),
                     name_localizations: {
-                        "ja": locales.ja.Disable
+                        "ja": locales.Disable.ja
                     },
-                    description: (locales.en.settings_Disable_ch_user),
+                    description: (locales.settings_Disable_ch_user.en),
                     description_localizations: {
-                        "ja": locales.ja.settings_Disable_ch_user
+                        "ja": locales.settings_Disable_ch_user.ja
                     },
                     type: ApplicationCommandOptionType.Subcommand,
                     options: [
                         {
-                            name: (locales.en.User),
+                            name: (locales.User.en),
                             name_localizations: {
-                                "ja": locales.ja.User
+                                "ja": locales.User.ja
                             },
-                            description: (locales.en.settings_Disable_user),
+                            description: (locales.settings_Disable_user.en),
                             description_localizations: {
-                                "ja": locales.ja.settings_Disable_user
+                                "ja": locales.settings_Disable_user.ja
                             },
                             type: ApplicationCommandOptionType.User,
                             required: false
                         },
                         {
-                            name: (locales.en.Channel),
+                            name: (locales.Channel.en),
                             name_localizations: {
-                                "ja": locales.ja.Channel
+                                "ja": locales.Channel.ja
                             },
-                            description: (locales.en.settings_Disable_ch),
+                            description: (locales.settings_Disable_ch.en),
                             description_localizations: {
-                                "ja": locales.ja.settings_Disable_ch
+                                "ja": locales.settings_Disable_ch.ja
                             },
                             type: ApplicationCommandOptionType.Channel,
                             required: false
                         },
                         {
-                            name: (locales.en.command_name_role_Locales),
+                            name: (locales.command_name_role_Locales.en),
                             name_localizations: {
-                                "ja": locales.ja.command_name_role_Locales
+                                "ja": locales.command_name_role_Locales.ja
                             },
                             description: 'role',
                             type: ApplicationCommandOptionType.Role,
@@ -101,24 +101,24 @@ client.on('ready', () => {
                     ]
                 },
                 {
-                    name: (locales.en.BanWard),
+                    name: (locales.BanWard.en),
                     name_localizations: {
-                        "ja": locales.ja.BanWard
+                        "ja": locales.BanWard.ja
                     },
-                    description: (locales.en.settings_Add_remove_BANWords),
+                    description: (locales.settings_Add_remove_BANWords.en),
                     description_localizations: {
-                        "ja": locales.ja.settings_Add_remove_BANWords
+                        "ja": locales.settings_Add_remove_BANWords.ja
                     },
                     type: ApplicationCommandOptionType.Subcommand,
                     options: [
                         {
-                            name: (locales.en.Word),
+                            name: (locales.Word.en),
                             name_localizations: {
-                                "ja": locales.ja.Word
+                                "ja": locales.Word.ja
                             },
-                            description: (locales.en.settings_Add_remove_BANWords),
+                            description: (locales.settings_Add_remove_BANWords.en),
                             description_localizations: {
-                                "ja": locales.ja.settings_Add_remove_BANWords
+                                "ja": locales.settings_Add_remove_BANWords.ja
                             },
                             type: ApplicationCommandOptionType.String,
                             required: true
@@ -126,24 +126,24 @@ client.on('ready', () => {
                     ]
                 },
                 {
-                    name: (locales.en.DefaultLanguage),
+                    name: (locales.DefaultLanguage.en),
                     name_localizations: {
-                        "ja": locales.ja.DefaultLanguage
+                        "ja": locales.DefaultLanguage.ja
                     },
-                    description: (locales.en.settings_translating_defaultLanguage),
+                    description: (locales.settings_translating_defaultLanguage.en),
                     description_localizations: {
-                        "ja": locales.ja.settings_translating_defaultLanguage
+                        "ja": locales.settings_translating_defaultLanguage.ja
                     },
                     type: ApplicationCommandOptionType.Subcommand,
                     options: [
                         {
-                            name: (locales.en.Language),
+                            name: (locales.Language.en),
                             name_localizations: {
-                                "ja": locales.ja.Language
+                                "ja": locales.Language.ja
                             },
-                            description: (locales.en.Language),
+                            description: (locales.Language.en),
                             description_localizations: {
-                                "ja": locales.ja.Language
+                                "ja": locales.Language.ja
                             },
                             type: ApplicationCommandOptionType.String,
                             required: true,
@@ -161,201 +161,201 @@ client.on('ready', () => {
                     ]
                 },
                 {
-                    name: (locales.en.message_translate_originalMessageEdit),
+                    name: (locales.message_translate_originalMessageEdit.en),
                     name_localizations: {
-                        "ja": locales.ja.message_translate_originalMessageEdit
+                        "ja": locales.message_translate_originalMessageEdit.ja
                     },
-                    description: (locales.en.settings_translating_messageEdit_option),
+                    description: (locales.settings_translating_messageEdit_option.en),
                     description_localizations: {
-                        "ja": locales.ja.settings_translating_messageEdit_option
+                        "ja": locales.settings_translating_messageEdit_option.ja
                     },
                     type: ApplicationCommandOptionType.Subcommand,
                     options: [
                         {
-                            name: (locales.en.Boolean),
+                            name: (locales.Boolean.en),
                             name_localizations: {
-                                "ja": locales.ja.Boolean
+                                "ja": locales.Boolean.ja
                             },
-                            description: (locales.en.Boolean),
+                            description: (locales.Boolean.en),
                             type: ApplicationCommandOptionType.Boolean,
                             required: true
                         }
                     ]
                 },
                 {
-                    name: (locales.en.show_media),
+                    name: (locales.show_media.en),
                     name_localizations: {
-                        "ja": locales.ja.show_media
+                        "ja": locales.show_media.ja
                     },
-                    description: (locales.en.settings_show_media),
+                    description: (locales.settings_show_media.en),
                     description_localizations: {
-                        "ja": locales.ja.settings_show_media
+                        "ja": locales.settings_show_media.ja
                     },
                     type: ApplicationCommandOptionType.Subcommand,
                     options: [
                         {
-                            name: (locales.en.Boolean),
+                            name: (locales.Boolean.en),
                             name_localizations: {
-                                "ja": locales.ja.Boolean
+                                "ja": locales.Boolean.ja
                             },
-                            description: (locales.en.Boolean),
+                            description: (locales.Boolean.en),
                             type: ApplicationCommandOptionType.Boolean,
                             required: true
                         }
                     ]
                 },
                 {
-                    name: (locales.en.only_tweetLink_to_DeleteMessage),
+                    name: (locales.only_tweetLink_to_DeleteMessage.en),
                     name_localizations: {
-                        "ja": locales.ja.only_tweetLink_to_DeleteMessage
+                        "ja": locales.only_tweetLink_to_DeleteMessage.ja
                     },
-                    description: (locales.en.settings_send_OnlyTwitterLink_Delete),
+                    description: (locales.settings_send_OnlyTwitterLink_Delete.en),
                     description_localizations: {
-                        "ja": locales.ja.settings_send_OnlyTwitterLink_Delete
+                        "ja": locales.settings_send_OnlyTwitterLink_Delete.ja
                     },
                     type: ApplicationCommandOptionType.Subcommand,
                     options: [
                         {
-                            name: (locales.en.Boolean),
+                            name: (locales.Boolean.en),
                             name_localizations: {
-                                "ja": locales.ja.Boolean
+                                "ja": locales.Boolean.ja
                             },
-                            description: (locales.en.Boolean),
+                            description: (locales.Boolean.en),
                             type: ApplicationCommandOptionType.Boolean,
                             required: true
                         }
                     ]
                 },
                 {
-                    name: (locales.en.send_to_tweetLink_always_reply),
+                    name: (locales.send_to_tweetLink_always_reply.en),
                     name_localizations: {
-                        "ja": locales.ja.send_to_tweetLink_always_reply
+                        "ja": locales.send_to_tweetLink_always_reply.ja
                     },
-                    description: (locales.en.settings_tweetLink_allow_reply),
+                    description: (locales.settings_tweetLink_allow_reply.en),
                     description_localizations: {
-                        "ja": locales.ja.settings_tweetLink_allow_reply
+                        "ja": locales.settings_tweetLink_allow_reply.ja
                     },
                     type: ApplicationCommandOptionType.Subcommand,
                     options: [
                         {
-                            name: (locales.en.Boolean),
+                            name: (locales.Boolean.en),
                             name_localizations: {
-                                "ja": locales.ja.Boolean
+                                "ja": locales.Boolean.ja
                             },
-                            description: (locales.en.Boolean),
+                            description: (locales.Boolean.en),
                             type: ApplicationCommandOptionType.Boolean,
                             required: true
                         }
                     ]
                 },
                 {
-                    name: (locales.en.Button),
+                    name: (locales.Button.en),
                     name_localizations: {
-                        "ja": locales.ja.Button
+                        "ja": locales.Button.ja
                     },
-                    description: (locales.en.Button),
+                    description: (locales.Button.en),
                     type: ApplicationCommandOptionType.SubcommandGroup,
                     options: [
                         {
-                            name: (locales.en.Invisible),
+                            name: (locales.Invisible.en),
                             name_localizations: {
-                                "ja": locales.ja.Invisible
+                                "ja": locales.Invisible.ja
                             },
-                            description: (locales.en.Invisible),
+                            description: (locales.Invisible.en),
                             type: ApplicationCommandOptionType.Subcommand,
                             options: [
                                 {
-                                    name: (locales.en.show_media),
+                                    name: (locales.show_media.en),
                                     name_localizations: {
-                                        "ja": locales.ja.show_media
+                                        "ja": locales.show_media.ja
                                     },
-                                    description: (locales.en.show_mediaFiles),
+                                    description: (locales.show_mediaFiles.en),
                                     description_localizations: {
-                                        "ja": locales.ja.show_mediaFiles
+                                        "ja": locales.show_mediaFiles.ja
                                     },
                                     type: ApplicationCommandOptionType.Boolean,
                                 },
                                 {
-                                    name: (locales.en.show_Embed_img),
+                                    name: (locales.show_Embed_img.en),
                                     name_localizations: {
-                                        "ja": locales.ja.show_Embed_img
+                                        "ja": locales.show_Embed_img.ja
                                     },
-                                    description: (locales.en.show_Embed_img),
+                                    description: (locales.show_Embed_img.en),
                                     description_localizations: {
-                                        "ja": locales.ja.show_Embed_img
+                                        "ja": locales.show_Embed_img.ja
                                     },
                                     type: ApplicationCommandOptionType.Boolean,
                                 },
                                 {
-                                    name: (locales.en.Translate),
+                                    name: (locales.Translate.en),
                                     name_localizations: {
-                                        "ja": locales.ja.Translate
+                                        "ja": locales.Translate.ja
                                     },
-                                    description: (locales.en.Translate),
+                                    description: (locales.Translate.en),
                                     description_localizations: {
-                                        "ja": locales.ja.Translate
+                                        "ja": locales.Translate.ja
                                     },
                                     type: ApplicationCommandOptionType.Boolean,
                                 },
                                 {
-                                    name: (locales.en.Delete),
+                                    name: (locales.Delete.en),
                                     name_localizations: {
-                                        "ja": locales.ja.Delete
+                                        "ja": locales.Delete.ja
                                     },
-                                    description: (locales.en.Delete),
+                                    description: (locales.Delete.en),
                                     description_localizations: {
-                                        "ja": locales.ja.Delete
+                                        "ja": locales.Delete.ja
                                     },
                                     type: ApplicationCommandOptionType.Boolean,
                                 },
                                 {
-                                    name: (locales.en.All),
+                                    name: (locales.All.en),
                                     name_localizations: {
-                                        "ja": locales.ja.All
+                                        "ja": locales.All.ja
                                     },
-                                    description: (locales.en.All),
+                                    description: (locales.All.en),
                                     type: ApplicationCommandOptionType.Boolean,
                                 }
                             ]
                         },
                         {
-                            name: (locales.en.Disable),
+                            name: (locales.Disable.en),
                             name_localizations: {
-                                "ja": locales.ja.Disable
+                                "ja": locales.Disable.ja
                             },
-                            description: (locales.en.Disable),
+                            description: (locales.Disable.en),
                             type: ApplicationCommandOptionType.Subcommand,
                             options: [
                                 {
-                                    name: (locales.en.User),
+                                    name: (locales.User.en),
                                     name_localizations: {
-                                        "ja": locales.ja.User
+                                        "ja": locales.User.ja
                                     },
-                                    description: (locales.en.settings_Disable_user),
+                                    description: (locales.settings_Disable_user.en),
                                     description_localizations: {
-                                        "ja": locales.ja.settings_Disable_user
+                                        "ja": locales.settings_Disable_user.ja
                                     },
                                     type: ApplicationCommandOptionType.User,
                                     required: false
                                 },
                                 {
-                                    name: (locales.en.Channel),
+                                    name: (locales.Channel.en),
                                     name_localizations: {
-                                        "ja": locales.ja.Channel
+                                        "ja": locales.Channel.ja
                                     },
-                                    description: (locales.en.settings_Disable_ch),
+                                    description: (locales.settings_Disable_ch.en),
                                     description_localizations: {
-                                        "ja": locales.ja.settings_Disable_ch
+                                        "ja": locales.settings_Disable_ch.ja
                                     },
                                     type: ApplicationCommandOptionType.Channel,
                                     required: false
                                 },
                                 {
-                                    name: (locales.en.Role),
+                                    name: (locales.Role.en),
                                     name_localizations: {
-                                        "ja": locales.ja.Role
+                                        "ja": locales.Role.ja
                                     },
-                                    description: (locales.en.Role),
+                                    description: (locales.Role.en),
                                     type: ApplicationCommandOptionType.Role,
                                     required: false
                                 }
@@ -364,44 +364,44 @@ client.on('ready', () => {
                     ]
                 },
                 {
-                    name: (locales.en.open_BOT_message),
+                    name: (locales.open_BOT_message.en),
                     name_localizations: {
-                        "ja": locales.ja.open_BOT_message
+                        "ja": locales.open_BOT_message.ja
                     },
-                    description: (locales.en.settings_BOT_message_open),
+                    description: (locales.settings_BOT_message_open.en),
                     description_localizations: {
-                        "ja": locales.ja.settings_BOT_message_open
+                        "ja": locales.settings_BOT_message_open.ja
                     },
                     type: ApplicationCommandOptionType.Subcommand,
                     options: [
                         {
-                            name: (locales.en.Boolean),
+                            name: (locales.Boolean.en),
                             name_localizations: {
-                                "ja": locales.ja.Boolean
+                                "ja": locales.Boolean.ja
                             },
-                            description: (locales.en.Boolean),
+                            description: (locales.Boolean.en),
                             type: ApplicationCommandOptionType.Boolean,
                             required: true
                         }
                     ]
                 },
                 {
-                    name: (locales.en.settings_QuoteDoNot_Extract),
+                    name: (locales.settings_QuoteDoNot_Extract.en),
                     name_localizations: {
-                        "ja": locales.ja.settings_QuoteDoNot_Extract
+                        "ja": locales.settings_QuoteDoNot_Extract.ja
                     },
-                    description: locales.en.settings_QuoteDoNot_Extract_name,
+                    description: locales.settings_QuoteDoNot_Extract_name.en,
                     description_localizations: {
-                        "ja": locales.ja.settings_QuoteDoNot_Extract_name
+                        "ja": locales.settings_QuoteDoNot_Extract_name.ja
                     },
                     type: ApplicationCommandOptionType.Subcommand,
                     options: [
                         {
-                            name: (locales.en.Boolean),
+                            name: (locales.Boolean.en),
                             name_localizations: {
-                                "ja": locales.ja.Boolean
+                                "ja": locales.Boolean.ja
                             },
-                            description: (locales.en.Boolean),
+                            description: (locales.Boolean.en),
                             type: ApplicationCommandOptionType.Boolean,
                             required: true
                         }

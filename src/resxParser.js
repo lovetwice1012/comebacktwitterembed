@@ -16,15 +16,18 @@ fs.readdirSync(localesDir).forEach(file => {
                 return;
             }
             const lang = file.split('.')[0];
-            locales[lang] = {};
 
             result.root.data.forEach(d => {
                 const key = d.$.name;
                 const value = d.value[0];
-                locales[lang][key] = value;
+                
+                if (!locales[key]) {
+                    locales[key] = {};
+                }
+                locales[key][lang] = value;
             });
 
-            console.log(`Loading LangFile : ${file}`);
+            console.log(`Loaded LangFile : ${file}`);
         });
     }
 });
