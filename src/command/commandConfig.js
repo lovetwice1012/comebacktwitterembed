@@ -3,13 +3,6 @@ const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBit
 
 const locales = require('../resxParser');
 
-/*
-283行目 quoterepostdonotextract
-
-コマンド / 説明共に翻訳文なし
-
-*/
-
 client.on('ready', () => {
     console.log(`${client.user.tag} is ready!`);
 
@@ -370,12 +363,12 @@ client.on('ready', () => {
                         }
                     ]
                 },
-                { //これ以下変更なし
-                    name: 'extractbotmessage',
+                {
+                    name: (locales.en.open_BOT_message),
                     name_localizations: {
                         "ja": locales.ja.open_BOT_message
                     },
-                    description: 'extractBotMessage',
+                    description: (locales.en.settings_BOT_message_open),
                     description_localizations: {
                         "ja": locales.ja.settings_BOT_message_open
                     },
@@ -393,13 +386,13 @@ client.on('ready', () => {
                     ]
                 },
                 {
-                    name: 'quoterepostdonotextract',
+                    name: (locales.en.settings_QuoteDoNot_Extract),
                     name_localizations: {
-                        "ja": command_name_quote_repost_do_not_extract_Locales
+                        "ja": locales.ja.settings_QuoteDoNot_Extract
                     },
-                    description: 'quote repost do not extract',
+                    description: locales.en.settings_QuoteDoNot_Extract_name,
                     description_localizations: {
-                        "ja": settingsQuoteRepostDoNotExtractDescriptionLocalizations
+                        "ja": locales.ja.settings_QuoteDoNot_Extract_name
                     },
                     type: ApplicationCommandOptionType.Subcommand,
                     options: [
@@ -418,7 +411,3 @@ client.on('ready', () => {
         }
     ]);
 });
-
-// (\s*)(name_localizations|description_localizations):\s*conv_en_to_en_US\(([^)]+)\)
-// to 
-// $1$2: {\n$1    "ja": $3\n$1}

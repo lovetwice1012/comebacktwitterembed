@@ -30,7 +30,7 @@
     <value>disable</value>
   </data>
   <data name="BanWard">
-    <value>bannedwords</value>
+    <value>BAN Word</value>
   </data>
   <data name="User">
     <value>user</value>
@@ -45,7 +45,7 @@
     <value>word</value>
   </data>
   <data name="DefaultLanguage">
-    <value>defaultlanguage</value>
+    <value>default language</value>
   </data>
   <data name="FinishAction">
     <value>Finished action.</value>
@@ -150,7 +150,7 @@ If you do not trust us, you can secure your safety by removing your channel perm
     <value>Join support server!</value>
   </data>
   <data name="settings_change">
-    <value>chenge Settings</value>
+    <value>change Settings</value>
   </data>
   <data name="message_contains_BANWord">
     <value>Your message contains a banned word.</value>
@@ -252,19 +252,19 @@ If you do not trust us, you can secure your safety by removing your channel perm
     <value>Set extractBotMessage to </value>
   </data>
   <data name="message_translate_originalMessageEdit">
-    <value>editoriginaliftranslate</value>
+    <value>edit original if translate</value>
   </data>
   <data name="Boolean">
     <value>boolean</value>
   </data>
   <data name="show_media">
-    <value>showmediaasattachments</value>
+    <value>show media as attachments</value>
   </data>
   <data name="only_tweetLink_to_DeleteMessage">
-    <value>deleteifonlypostedtweetlink</value>
+    <value>delete if only posted tweetlink</value>
   </data>
   <data name="send_to_tweetLink_always_reply">
-    <value>alwaysreplyifpostedtweetlink</value>
+    <value>always reply if posted tweetlink</value>
   </data>
   <data name="Button">
     <value>button</value>
@@ -276,9 +276,15 @@ If you do not trust us, you can secure your safety by removing your channel perm
     <value>disabled</value>
   </data>
   <data name="open_BOT_message">
-    <value>extractbotmessage</value>
+    <value>extract bot message</value>
   </data>
   <data name="show_embedImg">
-    <value>showattachmentsasembedsimage</value>
+    <value>show attachments as embeds image</value>
+  </data>
+  <data name="settings_QuoteDoNot_Extract">
+    <value>Sets whether to expand quote retweets.</value>
+  </data>
+  <data name="settings_QuoteDoNot_Extract_name">
+    <value>Do not deploy quote retweets</value>
   </data>
 </root>

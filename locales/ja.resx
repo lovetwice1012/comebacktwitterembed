@@ -281,4 +281,10 @@
   <data name="show_embedImg">
     <value>画像を埋め込み画像として表示</value>
   </data>
+  <data name="settings_QuoteDoNot_Extract">
+    <value>引用リツイートを展開しないかどうかを設定します。</value>
+  </data>
+  <data name="settings_QuoteDoNot_Extract_name">
+    <value>引用リツイートを展開しない</value>
+  </data>
 </root>

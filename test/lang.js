@@ -51,7 +51,7 @@ module.exports = {
 
     BanWard : {
         ja: '禁止ワード',
-        en: 'bannedwords'
+        en: 'BAN Word'
     },
 
     User : {
@@ -76,7 +76,7 @@ module.exports = {
 
     DefaultLanguage : {
         ja: 'デフォルト言語',
-        en: 'defaultlanguage'
+        en: 'default language'
     },
 
     FinishAction : {
@@ -236,7 +236,7 @@ module.exports = {
 
     settings_change : {
         ja: '設定を変更します',
-        en: 'chenge Settings'
+        en: 'change Settings'
     },
 
     message_contains_BANWord : {
@@ -407,7 +407,7 @@ module.exports = {
 
     message_translate_originalMessageEdit : {
         ja: '翻訳時にオリジナルのメッセージを編集',
-        en: 'editoriginaliftranslate'
+        en: 'edit original if translate'
     },
 
     Boolean : {
@@ -417,17 +417,17 @@ module.exports = {
 
     show_media : {
         ja: 'メディアを添付ファイルとして表示',
-        en: 'setdefaultmediaasattachments'
+        en: 'set default media as attachments'
     },
 
     only_tweetLink_to_DeleteMessage : {
         ja: 'ツイートのリンクのみを投稿した場合にメッセージを削除',
-        en: 'deleteifonlypostedtweetlink'
+        en: 'delete if only posted tweetlink'
     },
 
     send_to_tweetLink_always_reply : {
         ja: 'ツイートのリンクを投稿した場合に常に返信',
-        en: 'alwaysreplyifpostedtweetlink'
+        en: 'always reply if posted tweetlink'
     },
 
     Button : {
@@ -447,16 +447,26 @@ module.exports = {
 
     open_BOT_message : {
         ja: 'ボットのメッセージを展開',
-        en: 'extractbotmessage'
+        en: 'extract bot message'
     },
 
     show_media : {
         ja: 'メディアを添付ファイルとして表示',
-        en: 'showmediaasattachments'
+        en: 'show media as attachments'
     },
 
     show_embedImg : {
         ja: '画像を埋め込み画像として表示',
-        en: 'showattachmentsasembedsimage'
+        en: 'show attachments as embeds image'
     },
+
+    settings_QuoteDoNot_Extract : {
+        ja: '引用リツイートを展開しないかどうかを設定します。',
+        en : 'Sets whether to expand quote retweets.'
+    },
+
+    settings_QuoteDoNot_Extract_name : {
+        ja: '引用リツイートを展開しない',
+        en: 'Do not deploy quote retweets'
+    }
 };
