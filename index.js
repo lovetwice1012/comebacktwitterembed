@@ -747,7 +747,9 @@ client.on('ready', () => {
                 ]
             }]
         })
+        processed_column = processed;
         processed = 0;
+        
         if (new Date().getMinutes() === 0) {
             processed_hour_column = processed_hour;
             processed_hour = 0;
@@ -760,7 +762,7 @@ client.on('ready', () => {
         }else{
             processed_day_column = null;
         }
-        connection.query('INSERT INTO stats (timestamp, joinedServersCount, usersCount, channelsCount, minutes, hours, days) VALUES (?, ?, ?, ?, ?, ?, ?)', [new Date().getTime(), client.guilds.cache.size, client.users.cache.size, client.channels.cache.size, processed, processed_hour_column, processed_day_column], (err, results, fields) => {
+        connection.query('INSERT INTO stats (timestamp, joinedServersCount, usersCount, channelsCount, minutes, hours, days) VALUES (?, ?, ?, ?, ?, ?, ?)', [new Date().getTime(), client.guilds.cache.size, client.users.cache.size, client.channels.cache.size, processed_column, processed_hour_column, processed_day_column], (err, results, fields) => {
             if (err) {
                 console.error('Error connecting to database:', err);
                 return;
