@@ -1,11 +1,28 @@
 //discord.js v14
 const discord = require('discord.js');
 const { Client, Events, GatewayIntentBits, Partials, ActivityType, InteractionType, ButtonBuilder, ButtonStyle, ComponentType, PermissionsBitField, ApplicationCommandOptionType } = require('discord.js');
-const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent], partials: [Partials.Channel],shards:'auto' });
+const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent], partials: [Partials.Channel], shards: 'auto' });
 const config = require('./config.json');
 const fetch = require('node-fetch');
 const fs = require('fs');
 const { send } = require('process');
+const mysql = require('mysql');
+
+const connection = mysql.createConnection({
+    host: '192.168.100.22',
+    user: 'comebacktwitterembed',
+    password: 'bluebird',
+    database: 'ComebackTwitterEmbed'
+});
+
+// MySQLに接続
+connection.connect((err) => {
+    if (err) {
+        console.error('Error connecting to database:', err);
+        return;
+    }
+    console.log('Connected to database');
+});
 
 let processed = 0;
 let processed_hour = 0;
@@ -701,37 +718,54 @@ client.on('ready', () => {
     setInterval(async () => {
         let guild = await client.guilds.cache.get('1175729394782851123')
         let channel = await guild.channels.cache.get('1189083636574724167')
-        channel.send({embeds:[{
-            title: '🌐サーバー数',
-            description: client.guilds.cache.size + 'servers',
-            color: 0x1DA1F2,
-            fields: [
-                {
-                    name: 'ユーザー数',
-                    value: client.users.cache.size + 'users'
-                },
-                {
-                    name: 'チャンネル数',
-                    value: client.channels.cache.size + 'channels'
-                },
-                {
-                    name: '一分間に処理したメッセージ数',
-                    value: processed + 'messages'
-                },
-                {
-                    name: '一時間に処理したメッセージ数',
-                    value: processed_hour + 'messages'
-                },
-                {
-                    name: '一日に処理したメッセージ数',
-                    value: processed_day + 'messages'
-                }
-            ]
-        }]})
+        channel.send({
+            embeds: [{
+                title: '🌐サーバー数',
+                description: client.guilds.cache.size + 'servers',
+                color: 0x1DA1F2,
+                fields: [
+                    {
+                        name: 'ユーザー数',
+                        value: client.users.cache.size + 'users'
+                    },
+                    {
+                        name: 'チャンネル数',
+                        value: client.channels.cache.size + 'channels'
+                    },
+                    {
+                        name: '一分間に処理したメッセージ数',
+                        value: processed + 'messages'
+                    },
+                    {
+                        name: '一時間に処理したメッセージ数',
+                        value: processed_hour + 'messages'
+                    },
+                    {
+                        name: '一日に処理したメッセージ数',
+                        value: processed_day + 'messages'
+                    }
+                ]
+            }]
+        })
         processed = 0;
-        if(new Date().getMinutes() === 0) processed_hour = 0;
-        if(new Date().getHours() === 0 && new Date().getMinutes() === 0) processed_day = 0;
-
+        if (new Date().getMinutes() === 0) {
+            processed_hour_column = processed_hour;
+            processed_hour = 0;
+        }else{
+            processed_hour_column = null;
+        }
+        if (new Date().getHours() === 0 && new Date().getMinutes() === 0) {
+            processed_day_column = processed_day;
+            processed_day = 0;
+        }else{
+            processed_day_column = null;
+        }
+        connection.query('INSERT INTO stats (timestamp, joinedServersCount, usersCount, channelsCount, minutes, hours, days) VALUES (?, ?, ?, ?, ?, ?, ?)', [new Date().getTime(), client.guilds.cache.size, client.users.cache.size, client.channels.cache.size, processed, processed_hour_column, processed_day_column], (err, results, fields) => {
+            if (err) {
+                console.error('Error connecting to database:', err);
+                return;
+            }
+        });
     }, 60000);
 
     client.application.commands.set([
@@ -1216,7 +1250,7 @@ async function sendTweetEmbed(message, url, quoted = false, parent = null) {
                                 attachments.push(element);
                                 return;
                             }
-                            showMediaAsAttachmentsButton = new ButtonBuilder().setStyle(ButtonStyle.Primary).setLabel(getStringFromObject(showMediaAsAttachmentsButtonLocales, settings.defaultLanguage[message.guild.id])).setCustomId('showMediaAsAttachments');                            
+                            showMediaAsAttachmentsButton = new ButtonBuilder().setStyle(ButtonStyle.Primary).setLabel(getStringFromObject(showMediaAsAttachmentsButtonLocales, settings.defaultLanguage[message.guild.id])).setCustomId('showMediaAsAttachments');
                             if (json.mediaURLs.length > 1) {
                                 if (embeds.length == 0) embeds.push(embed);
                                 embeds.push({
@@ -1559,7 +1593,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
                 const boolean = interaction.options.getBoolean('boolean');
                 settings.extract_bot_message[interaction.guildId] = boolean;
                 await interaction.reply((setextractbotmessagetolocales[interaction.locale] ?? setextractbotmessagetolocales["en"]) + convertBoolToEnableDisable(boolean, interaction.locale));
-            } else if (interaction.options.getSubcommand() === 'quoterepostdonotextract'){
+            } else if (interaction.options.getSubcommand() === 'quoterepostdonotextract') {
                 if (interaction.options.getBoolean('boolean') === null) return await interaction.reply(userMustSpecifyAnyWordLocales[interaction.locale] ?? userMustSpecifyAnyWordLocales["en"]);
                 if (settings.quote_repost_do_not_extract[interaction.guildId] === undefined) settings.quote_repost_do_not_extract[interaction.guildId] = false;
                 const boolean = interaction.options.getBoolean('boolean');
@@ -1615,7 +1649,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
                 }
             } else if (interaction.options.getSubcommand() === 'extractbotmessage') {
                 await interaction.reply(userDonthavePermissionLocales[interaction.locale] ?? userDonthavePermissionLocales["en"]);
-            } else if (interaction.options.getSubcommand() === 'quoterepostdonotextract'){
+            } else if (interaction.options.getSubcommand() === 'quoterepostdonotextract') {
                 await interaction.reply(userDonthavePermissionLocales[interaction.locale] ?? userDonthavePermissionLocales["en"]);
             } else {
                 return await interaction.reply(userMustSpecifyAnyWordLocales[interaction.locale] ?? userMustSpecifyAnyWordLocales["en"]);
