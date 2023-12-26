@@ -8,6 +8,8 @@ const fs = require('fs');
 const { send } = require('process');
 
 let processed = 0;
+let processed_hour = 0;
+let processed_day = 0;
 
 const must_be_main_instance = true;
 
@@ -715,10 +717,21 @@ client.on('ready', () => {
                 {
                     name: '一分間に処理したメッセージ数',
                     value: processed + 'messages'
+                },
+                {
+                    name: '一時間に処理したメッセージ数',
+                    value: processed_hour + 'messages'
+                },
+                {
+                    name: '一日に処理したメッセージ数',
+                    value: processed_day + 'messages'
                 }
             ]
         }]})
         processed = 0;
+        if(new Date().getMinutes() === 0) processed_hour = 0;
+        if(new Date().getHours() === 0 && new Date().getMinutes() === 0) processed_day = 0;
+
     }, 60000);
 
     client.application.commands.set([
@@ -1274,6 +1287,8 @@ async function sendTweetEmbed(message, url, quoted = false, parent = null) {
                 }
                 if (json.qrtURL !== null && (settings.quote_repost_do_not_extract[message.guild.id] === undefined || settings.quote_repost_do_not_extract[message.guild.id] === false)) await sendTweetEmbed(message, json.qrtURL, true, msg);
                 processed++;
+                processed_hour++;
+                processed_day++;
                 resolve();
             })
             .catch(err => {
