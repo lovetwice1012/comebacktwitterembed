@@ -1,3 +1,3 @@
 const locales = require('./src/resxParser');
 
-console.log(locales)
+console.log(locales.Translate)
