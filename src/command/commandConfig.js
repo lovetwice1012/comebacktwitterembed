@@ -97,10 +97,8 @@ client.on('ready', () => {
                         {
                             name: (locales.Language),
                             name_localizations: locales.Language,
-                            
                             description: (locales.Language),
                             description_localizations: locales.Language,
-                            
                             type: ApplicationCommandOptionType.String,
                             required: true,
                             choices: [
@@ -119,10 +117,8 @@ client.on('ready', () => {
                 {
                     name: (locales.message_translate_originalMessageEdit),
                     name_localizations: locales.message_translate_originalMessageEdit,
-                    
                     description: (locales.settings_translating_messageEdit_option),
                     description_localizations: locales.settings_translating_messageEdit_option,
-                    
                     type: ApplicationCommandOptionType.Subcommand,
                     options: [
                         {
@@ -137,10 +133,8 @@ client.on('ready', () => {
                 {
                     name: (locales.show_media),
                     name_localizations: locales.show_media,
-                    
                     description: (locales.settings_show_media),
                     description_localizations: locales.settings_show_media,
-                    
                     type: ApplicationCommandOptionType.Subcommand,
                     options: [
                         {
@@ -155,7 +149,6 @@ client.on('ready', () => {
                 {
                     name: (locales.only_tweetLink_to_DeleteMessage),
                     name_localizations: locales.only_tweetLink_to_DeleteMessage,
-                    
                     description: (locales.settings_send_OnlyTwitterLink_Delete),
                     description_localizations: locales.settings_send_OnlyTwitterLink_Delete,
                     type: ApplicationCommandOptionType.Subcommand,
@@ -194,7 +187,6 @@ client.on('ready', () => {
                         {
                             name: (locales.Invisible),
                             name_localizations: locales.Invisible,
-                            
                             description: (locales.Invisible),
                             type: ApplicationCommandOptionType.Subcommand,
                             options: [
@@ -237,7 +229,6 @@ client.on('ready', () => {
                         {
                             name: (locales.Disable),
                             name_localizations: locales.Disable,
-                            
                             description: (locales.Disable),
                             type: ApplicationCommandOptionType.Subcommand,
                             options: [
