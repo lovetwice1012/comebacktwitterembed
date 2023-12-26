@@ -7,6 +7,8 @@ const fetch = require('node-fetch');
 const fs = require('fs');
 const { send } = require('process');
 
+let processed = 0;
+
 const must_be_main_instance = true;
 
 if (!fs.existsSync('./settings.json')) {
@@ -692,6 +694,31 @@ client.on('ready', () => {
                 type: ActivityType.Watching
             }]
         });
+    }, 60000);
+
+    setInterval(async () => {
+        let guild = await client.guilds.cache.get('1175729394782851123')
+        let channel = await guild.channels.cache.get('1189083636574724167')
+        channel.send({embeds:{
+            title: '🌐サーバー数',
+            description: client.guilds.cache.size + 'servers',
+            color: 'RANDOM',
+            fields: [
+                {
+                    name: 'ユーザー数',
+                    value: client.users.cache.size + 'users'
+                },
+                {
+                    name: 'チャンネル数',
+                    value: client.channels.cache.size + 'channels'
+                },
+                {
+                    name: '一分間に処理したメッセージ数',
+                    value: processed + 'messages'
+                }
+            ]
+        }})
+        processed = 0;
     }, 60000);
 
     client.application.commands.set([
