@@ -719,7 +719,7 @@ client.on('ready', () => {
             ]
         }]})
         processed = 0;
-    }, 1000);
+    }, 60000);
 
     client.application.commands.set([
         {
