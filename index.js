@@ -1273,6 +1273,7 @@ async function sendTweetEmbed(message, url, quoted = false, parent = null) {
                     });
                 }
                 if (json.qrtURL !== null && (settings.quote_repost_do_not_extract[message.guild.id] === undefined || settings.quote_repost_do_not_extract[message.guild.id] === false)) await sendTweetEmbed(message, json.qrtURL, true, msg);
+                processed++;
                 resolve();
             })
             .catch(err => {
