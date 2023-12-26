@@ -1,0 +1,290 @@
+<root>
+  <data name="Translate">
+    <value>traduzir</value>
+  </data>
+  <data name="Delete">
+    <value>apagar</value>
+  </data>
+  <data name="Language">
+    <value>Língua</value>
+  </data>
+  <data name="All">
+    <value>todos</value>
+  </data>
+  <data name="Help">
+    <value>ajuda</value>
+  </data>
+  <data name="Ping">
+    <value>ping</value>
+  </data>
+  <data name="Invite">
+    <value>rápido</value>
+  </data>
+  <data name="Support">
+    <value>apoio</value>
+  </data>
+  <data name="Settings">
+    <value>definições</value>
+  </data>
+  <data name="Disable">
+    <value>desativar</value>
+  </data>
+  <data name="BanWard">
+    <value>BAN Palavra</value>
+  </data>
+  <data name="User">
+    <value>utilizador</value>
+  </data>
+  <data name="Channel">
+    <value>canal</value>
+  </data>
+  <data name="Role">
+    <value>papel</value>
+  </data>
+  <data name="Word">
+    <value>tornar-se</value>
+  </data>
+  <data name="DefaultLanguage">
+    <value>língua predefinida</value>
+  </data>
+  <data name="FinishAction">
+    <value>Ação concluída.</value>
+  </data>
+  <data name="show_Embed_img">
+    <value>Mostrar multimédia na imagem incorporada</value>
+  </data>
+  <data name="show_mediaFiles">
+    <value>Mostrar multimédia como anexos</value>
+  </data>
+  <data name="show_helpMessage">
+    <value>Mostra a mensagem de ajuda.</value>
+  </data>
+  <data name="Help_script">
+    <value>Não é necessária nenhuma configuração especial, basta publicar a hiperligação do tweet.
+
+Este bot pode verificar o conteúdo das mensagens que enviou.
+Só será utilizado para verificar se a mensagem que enviou contém um link para o twitter e não será utilizado para qualquer outro fim.
+Não será utilizado para qualquer outro fim, nem registará as mensagens que enviar.
+Se não confia em nós, pode garantir a sua segurança removendo as suas permissões de canal deste bot.</value>
+  </data>
+  <data name="Help_command">
+    <value>`/ping` - Pong!
+`/help` - Mostra mensagem de ajuda.
+`/invite` - Convida-me para o teu servidor!
+`/support` - Junte-se ao servidor de suporte!
+`/settings` - Configurações do chenge</value>
+  </data>
+  <data name="settings_Disable_ch_user">
+    <value>Desativar por utilizador ou canal.</value>
+  </data>
+  <data name="settings_Add_remove_BANWords">
+    <value>Adicionar ou remover palavras proibidas.</value>
+  </data>
+  <data name="settings_Disable_user">
+    <value>Especifique o utilizador a desativar.</value>
+  </data>
+  <data name="settings_Disable_ch">
+    <value>Especifique o canal a desativar.</value>
+  </data>
+  <data name="settings_BAN_word">
+    <value>Especificar a palavra proibida.</value>
+  </data>
+  <data name="message_not_permission">
+    <value>Não tem permissão para utilizar este comando.</value>
+  </data>
+  <data name="message_notuser_is_user">
+    <value>Não é possível utilizar este comando para outros utilizadores.</value>
+  </data>
+  <data name="message_not_removeMessage">
+    <value>Não é possível apagar esta mensagem.</value>
+  </data>
+  <data name="message_user_ch_roll_only_pick">
+    <value>É necessário especificar um utilizador, um canal ou uma função.</value>
+  </data>
+  <data name="message_not_MultiOptions">
+    <value>Não é possível especificar várias opções.</value>
+  </data>
+  <data name="message_not_permission_ManegeMessage">
+    <value>Não tenho permissão para gerir mensagens.</value>
+  </data>
+  <data name="message_not_permission_DeleteMessage">
+    <value>Não tenho permissão para apagar mensagens.</value>
+  </data>
+  <data name="message_Add_Disable_user">
+    <value>Adicionado utilizador a disable.user.</value>
+  </data>
+  <data name="message_Remove_Disable_user">
+    <value>Removido o utilizador de disable.user.</value>
+  </data>
+  <data name="message_Add_Disable_ch">
+    <value>Adicionado canal a disable.channel.</value>
+  </data>
+  <data name="message_Remove_Disable_ch">
+    <value>Removido o canal de disable.channel.</value>
+  </data>
+  <data name="message_Add_Disable_Roll">
+    <value>Função adicionada a disable.role.</value>
+  </data>
+  <data name="message_Remove_Disable_Roll">
+    <value>Função removida de disable.role.</value>
+  </data>
+  <data name="message_Add_Disable_Word">
+    <value>Palavra adicionada a bannedWords.</value>
+  </data>
+  <data name="message_Remove_Disable_Word">
+    <value>Palavra removida de bannedWords.</value>
+  </data>
+  <data name="settings_cantgood_option">
+    <value>É necessário especificar uma opção.</value>
+  </data>
+  <data name="settings_translating_defaultLanguage">
+    <value>Define o idioma predefinido para a tradução.</value>
+  </data>
+  <data name="settings_translating_messageEdit_option">
+    <value>Define se a mensagem original deve ser editada durante a tradução.</value>
+  </data>
+  <data name="BOT_Invite_Link">
+    <value>Convidem-me para o vosso servidor!</value>
+  </data>
+  <data name="supportServer_Invite_Link">
+    <value>Junte-se ao servidor de apoio!</value>
+  </data>
+  <data name="settings_change">
+    <value>alterar Definições</value>
+  </data>
+  <data name="message_contains_BANWord">
+    <value>A sua mensagem contém uma palavra proibida.</value>
+  </data>
+  <data name="message_not_Remove_permission">
+    <value>Não tenho permissão para apagar mensagens.</value>
+  </data>
+  <data name="settings_set_DefaultLanguage">
+    <value>Definir o idioma predefinido para</value>
+  </data>
+  <data name="settings_editOriginalIfTranslate">
+    <value>Definir editOriginalIfTranslate para</value>
+  </data>
+  <data name="message_cant_delete_otherMessage">
+    <value>Não é possível apagar as mensagens de outros utilizadores.</value>
+  </data>
+  <data name="settings_show_media">
+    <value>Define se os meios de comunicação devem ser mostrados como anexos.</value>
+  </data>
+  <data name="settings_send_OnlyTwitterLink_Delete">
+    <value>Define se a mensagem deve ser eliminada se apenas for publicada a ligação do tweet.</value>
+  </data>
+  <data name="settings_tweetLink_allow_reply">
+    <value>Define se deve ser sempre respondido se a ligação do tweet for publicada.</value>
+  </data>
+  <data name="settings_show_media_complete">
+    <value>Definir sendMediaAsAttachmentsAsDefault para</value>
+  </data>
+  <data name="settings_send_OnlyTwitterLink_Delete_complete">
+    <value>Definir deleteIfOnlyPostedTweetLink como</value>
+  </data>
+  <data name="settings_tweetLink_allow_reply_complete">
+    <value>Definir alwaysReplyIfPostedTweetLink como</value>
+  </data>
+  <data name="Disable_All_Button">
+    <value>Desactivou todos os botões.</value>
+  </data>
+  <data name="Enable_All_Button">
+    <value>Activou todos os botões.</value>
+  </data>
+  <data name="settings_mediaFile_show_button_complete">
+    <value>Definir o botão showMediaAsAttachments para</value>
+  </data>
+  <data name="settings_img_embed_show_button_complete">
+    <value>Definir o botão showAttachmentsAsEmbedsImage para</value>
+  </data>
+  <data name="settings_Translate_button_complete">
+    <value>Definir o botão de tradução para</value>
+  </data>
+  <data name="settings_delete_button_complete">
+    <value>Definir o botão de apagar para</value>
+  </data>
+  <data name="settings_show_media_button_Disable_complete">
+    <value>Botão showMediaAsAttachments desativado.</value>
+  </data>
+  <data name="settings_show_media_button_Enable_complete">
+    <value>Ativado o botão showMediaAsAttachments.</value>
+  </data>
+  <data name="settings_show_EmbedImg_button_Disable_complete">
+    <value>Botão showAttachmentsAsEmbedsImage desativado.</value>
+  </data>
+  <data name="settings_show_EmbedImg_button_Enable_complete">
+    <value>Ativado o botão showAttachmentsAsEmbedsImage.</value>
+  </data>
+  <data name="settings_Translate_button_Disable_complete">
+    <value>Botão de tradução desativado.</value>
+  </data>
+  <data name="settings_Translate_button_Enable_complete">
+    <value>Botão de tradução ativado.</value>
+  </data>
+  <data name="settings_delete_button_Disable_complete">
+    <value>Botão de eliminação desativado.</value>
+  </data>
+  <data name="settings_delete_button_Enable_complete">
+    <value>Botão de eliminação ativado.</value>
+  </data>
+  <data name="settings_Add_Disable_button_user_complete">
+    <value>Adicionado utilizador a button_disabled.user.</value>
+  </data>
+  <data name="settings_Remove_Disable_button_user_complete">
+    <value>Removido o utilizador de button_disabled.user.</value>
+  </data>
+  <data name="settings_Add_Disable_button_ch_complete">
+    <value>Adicionado canal a button_disabled.channel.</value>
+  </data>
+  <data name="settings_Remove_Disable_button_ch_complete">
+    <value>Removido o canal de button_disabled.channel.</value>
+  </data>
+  <data name="settings_Add_Disable_button_Roll_complete">
+    <value>Adicionada função a button_disabled.role.</value>
+  </data>
+  <data name="settings_Remove_Disable_button_Roll_complete">
+    <value>Removida a função de button_disabled.role.</value>
+  </data>
+  <data name="settings_BOT_message_open">
+    <value>Define se as mensagens dos bots devem ser extraídas.</value>
+  </data>
+  <data name="settings_BOT_message_open_complete">
+    <value>Definir extractBotMessage para</value>
+  </data>
+  <data name="message_translate_originalMessageEdit">
+    <value>editar o original se for traduzido</value>
+  </data>
+  <data name="Boolean">
+    <value>booleano</value>
+  </data>
+  <data name="show_media">
+    <value>mostrar multimédia como anexos</value>
+  </data>
+  <data name="only_tweetLink_to_DeleteMessage">
+    <value>apagar se só tiver publicado o tweetlink</value>
+  </data>
+  <data name="send_to_tweetLink_always_reply">
+    <value>responder sempre que for publicado um tweetlink</value>
+  </data>
+  <data name="Button">
+    <value>botão</value>
+  </data>
+  <data name="Invisible">
+    <value>invisível</value>
+  </data>
+  <data name="Disabled">
+    <value>desativado</value>
+  </data>
+  <data name="open_BOT_message">
+    <value>extrair mensagem do bot</value>
+  </data>
+  <data name="show_embedImg">
+    <value>mostrar anexos como imagem incorporada</value>
+  </data>
+  <data name="settings_QuoteDoNot_Extract">
+    <value>Define se os retweets de citações devem ser expandidos.</value>
+  </data>
+  <data name="settings_QuoteDoNot_Extract_name">
+    <value>Não implementar retweets de citações</value>
+  </data>
+</root>

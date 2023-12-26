@@ -1,0 +1,290 @@
+<root>
+  <data name="Translate">
+    <value>перевести</value>
+  </data>
+  <data name="Delete">
+    <value>удалить</value>
+  </data>
+  <data name="Language">
+    <value>Язык</value>
+  </data>
+  <data name="All">
+    <value>все</value>
+  </data>
+  <data name="Help">
+    <value>помощь</value>
+  </data>
+  <data name="Ping">
+    <value>пинг</value>
+  </data>
+  <data name="Invite">
+    <value>подскажите</value>
+  </data>
+  <data name="Support">
+    <value>поддержка</value>
+  </data>
+  <data name="Settings">
+    <value>настройки</value>
+  </data>
+  <data name="Disable">
+    <value>отключить</value>
+  </data>
+  <data name="BanWard">
+    <value>Запретить слово</value>
+  </data>
+  <data name="User">
+    <value>пользователь</value>
+  </data>
+  <data name="Channel">
+    <value>канал</value>
+  </data>
+  <data name="Role">
+    <value>роль</value>
+  </data>
+  <data name="Word">
+    <value>стать</value>
+  </data>
+  <data name="DefaultLanguage">
+    <value>язык по умолчанию</value>
+  </data>
+  <data name="FinishAction">
+    <value>Законченное действие.</value>
+  </data>
+  <data name="show_Embed_img">
+    <value>Показать медиа в изображении вставки</value>
+  </data>
+  <data name="show_mediaFiles">
+    <value>Показывать медиафайлы как вложения</value>
+  </data>
+  <data name="show_helpMessage">
+    <value>Показывает сообщение о помощи.</value>
+  </data>
+  <data name="Help_script">
+    <value>Никаких специальных настроек не требуется, просто опубликуйте ссылку на твиттер.
+
+Этот бот может проверять содержимое отправленных вами сообщений.
+Он будет использоваться только для проверки того, содержит ли отправленное вами сообщение ссылку на твиттер, и не будет использоваться для каких-либо других целей.
+Он не будет использоваться для каких-либо других целей, а также не будет записывать отправленные вами сообщения.
+Если вы не доверяете нам, вы можете обеспечить свою безопасность, удалив права на канал этого бота.</value>
+  </data>
+  <data name="Help_command">
+    <value>`/ping` - Понг!
+`/help` - Показывает сообщение о помощи.
+`/invite` - Пригласите меня на свой сервер!
+`/support` - Присоединиться к серверу поддержки!
+`/settings` - Настройки chenge</value>
+  </data>
+  <data name="settings_Disable_ch_user">
+    <value>Отключается пользователем или каналом.</value>
+  </data>
+  <data name="settings_Add_remove_BANWords">
+    <value>Добавляйте или удаляйте запрещенные слова.</value>
+  </data>
+  <data name="settings_Disable_user">
+    <value>Укажите пользователя, которого нужно отключить.</value>
+  </data>
+  <data name="settings_Disable_ch">
+    <value>Укажите канал, который необходимо отключить.</value>
+  </data>
+  <data name="settings_BAN_word">
+    <value>Укажите запрещенное слово.</value>
+  </data>
+  <data name="message_not_permission">
+    <value>У вас нет разрешения на использование этой команды.</value>
+  </data>
+  <data name="message_notuser_is_user">
+    <value>Вы не можете использовать эту команду для других пользователей.</value>
+  </data>
+  <data name="message_not_removeMessage">
+    <value>Вы не можете удалить это сообщение.</value>
+  </data>
+  <data name="message_user_ch_roll_only_pick">
+    <value>Вы должны указать пользователя, канал или роль.</value>
+  </data>
+  <data name="message_not_MultiOptions">
+    <value>Вы не можете указать несколько вариантов.</value>
+  </data>
+  <data name="message_not_permission_ManegeMessage">
+    <value>У меня нет прав на управление сообщениями.</value>
+  </data>
+  <data name="message_not_permission_DeleteMessage">
+    <value>У меня нет прав на удаление сообщений.</value>
+  </data>
+  <data name="message_Add_Disable_user">
+    <value>Добавлен пользователь в disable.user.</value>
+  </data>
+  <data name="message_Remove_Disable_user">
+    <value>Удалили пользователя из disable.user.</value>
+  </data>
+  <data name="message_Add_Disable_ch">
+    <value>Добавлен канал в disable.channel.</value>
+  </data>
+  <data name="message_Remove_Disable_ch">
+    <value>Удалили канал из disable.channel.</value>
+  </data>
+  <data name="message_Add_Disable_Roll">
+    <value>Добавлена роль в disable.role.</value>
+  </data>
+  <data name="message_Remove_Disable_Roll">
+    <value>Удалена роль из disable.role.</value>
+  </data>
+  <data name="message_Add_Disable_Word">
+    <value>Добавьте слово в список запрещенных слов.</value>
+  </data>
+  <data name="message_Remove_Disable_Word">
+    <value>Удалите слово из списка запрещенных слов.</value>
+  </data>
+  <data name="settings_cantgood_option">
+    <value>Вы должны указать опцию.</value>
+  </data>
+  <data name="settings_translating_defaultLanguage">
+    <value>Устанавливает язык по умолчанию при переводе.</value>
+  </data>
+  <data name="settings_translating_messageEdit_option">
+    <value>Устанавливает, нужно ли редактировать исходное сообщение при переводе.</value>
+  </data>
+  <data name="BOT_Invite_Link">
+    <value>Пригласите меня на свой сервер!</value>
+  </data>
+  <data name="supportServer_Invite_Link">
+    <value>Присоединяйтесь к серверу поддержки!</value>
+  </data>
+  <data name="settings_change">
+    <value>изменить настройки</value>
+  </data>
+  <data name="message_contains_BANWord">
+    <value>В вашем сообщении содержится запрещенное слово.</value>
+  </data>
+  <data name="message_not_Remove_permission">
+    <value>У меня нет прав на удаление сообщений.</value>
+  </data>
+  <data name="settings_set_DefaultLanguage">
+    <value>Установите язык по умолчанию</value>
+  </data>
+  <data name="settings_editOriginalIfTranslate">
+    <value>Установите editOriginalIfTranslate на</value>
+  </data>
+  <data name="message_cant_delete_otherMessage">
+    <value>Вы не можете удалять сообщения других пользователей.</value>
+  </data>
+  <data name="settings_show_media">
+    <value>Устанавливает, показывать ли медиафайлы в качестве вложений.</value>
+  </data>
+  <data name="settings_send_OnlyTwitterLink_Delete">
+    <value>Устанавливает, удалять ли сообщение, если опубликована только ссылка на твит.</value>
+  </data>
+  <data name="settings_tweetLink_allow_reply">
+    <value>Устанавливает, нужно ли всегда отвечать, если опубликована ссылка на твит.</value>
+  </data>
+  <data name="settings_show_media_complete">
+    <value>Установите для параметра sendMediaAsAttachmentsAsDefault значение</value>
+  </data>
+  <data name="settings_send_OnlyTwitterLink_Delete_complete">
+    <value>Установите значение deleteIfOnlyPostedTweetLink на</value>
+  </data>
+  <data name="settings_tweetLink_allow_reply_complete">
+    <value>Установите значение alwaysReplyIfPostedTweetLink на</value>
+  </data>
+  <data name="Disable_All_Button">
+    <value>Отключение всех кнопок.</value>
+  </data>
+  <data name="Enable_All_Button">
+    <value>Включить все кнопки.</value>
+  </data>
+  <data name="settings_mediaFile_show_button_complete">
+    <value>Установите кнопку showMediaAsAttachments в положение</value>
+  </data>
+  <data name="settings_img_embed_show_button_complete">
+    <value>Установите кнопку showAttachmentsAsEmbedsImage в положение</value>
+  </data>
+  <data name="settings_Translate_button_complete">
+    <value>Установите кнопку перевода в положение</value>
+  </data>
+  <data name="settings_delete_button_complete">
+    <value>Установите кнопку удаления на</value>
+  </data>
+  <data name="settings_show_media_button_Disable_complete">
+    <value>Отключена кнопка showMediaAsAttachments.</value>
+  </data>
+  <data name="settings_show_media_button_Enable_complete">
+    <value>Включена кнопка showMediaAsAttachments.</value>
+  </data>
+  <data name="settings_show_EmbedImg_button_Disable_complete">
+    <value>Отключена кнопка showAttachmentsAsEmbedsImage.</value>
+  </data>
+  <data name="settings_show_EmbedImg_button_Enable_complete">
+    <value>Включена кнопка showAttachmentsAsEmbedsImage.</value>
+  </data>
+  <data name="settings_Translate_button_Disable_complete">
+    <value>Отключена кнопка перевода.</value>
+  </data>
+  <data name="settings_Translate_button_Enable_complete">
+    <value>Кнопка перевода включена.</value>
+  </data>
+  <data name="settings_delete_button_Disable_complete">
+    <value>Отключена кнопка удаления.</value>
+  </data>
+  <data name="settings_delete_button_Enable_complete">
+    <value>Включена кнопка удаления.</value>
+  </data>
+  <data name="settings_Add_Disable_button_user_complete">
+    <value>Добавлен пользователь в button_disabled.user.</value>
+  </data>
+  <data name="settings_Remove_Disable_button_user_complete">
+    <value>Удалили пользователя из button_disabled.user.</value>
+  </data>
+  <data name="settings_Add_Disable_button_ch_complete">
+    <value>Добавлен канал в button_disabled.channel.</value>
+  </data>
+  <data name="settings_Remove_Disable_button_ch_complete">
+    <value>Удален канал из button_disabled.channel.</value>
+  </data>
+  <data name="settings_Add_Disable_button_Roll_complete">
+    <value>Добавлена роль в button_disabled.role.</value>
+  </data>
+  <data name="settings_Remove_Disable_button_Roll_complete">
+    <value>Удалена роль из button_disabled.role.</value>
+  </data>
+  <data name="settings_BOT_message_open">
+    <value>Устанавливает, нужно ли извлекать сообщения ботов.</value>
+  </data>
+  <data name="settings_BOT_message_open_complete">
+    <value>Установите extractBotMessage на</value>
+  </data>
+  <data name="message_translate_originalMessageEdit">
+    <value>редактировать оригинал, если перевести</value>
+  </data>
+  <data name="Boolean">
+    <value>булево</value>
+  </data>
+  <data name="show_media">
+    <value>показывать медиафайлы как вложения</value>
+  </data>
+  <data name="only_tweetLink_to_DeleteMessage">
+    <value>удалить, если размещена только ссылка на твиттер</value>
+  </data>
+  <data name="send_to_tweetLink_always_reply">
+    <value>всегда отвечайте, если опубликовали ссылку на твиттер</value>
+  </data>
+  <data name="Button">
+    <value>кнопка</value>
+  </data>
+  <data name="Invisible">
+    <value>невидимка</value>
+  </data>
+  <data name="Disabled">
+    <value>отключено</value>
+  </data>
+  <data name="open_BOT_message">
+    <value>извлечь сообщение бота</value>
+  </data>
+  <data name="show_embedImg">
+    <value>показывать вложения как встроенные изображения</value>
+  </data>
+  <data name="settings_QuoteDoNot_Extract">
+    <value>Устанавливает, следует ли разворачивать ретвиты цитат.</value>
+  </data>
+  <data name="settings_QuoteDoNot_Extract_name">
+    <value>Не развертывайте ретвиты цитат</value>
+  </data>
+</root>

@@ -24,7 +24,7 @@ if (!fs.existsSync(dir)) {
 }
 
 // Convert and save for each language
-['en', 'ja'].forEach(lang => {
+['en', 'ja', 'zh-CN', 'es-ES', 'fr', 'ru', 'de', 'pt-BR'].forEach(lang => {
     const resxContent = convertToResx(locales, lang);
     const fileName = `${dir}/${lang}.resx`;
     fs.writeFileSync(fileName, resxContent);
