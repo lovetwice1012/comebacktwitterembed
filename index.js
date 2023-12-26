@@ -702,7 +702,7 @@ client.on('ready', () => {
         channel.send({embeds:{
             title: '🌐サーバー数',
             description: client.guilds.cache.size + 'servers',
-            color: 'RANDOM',
+            color: 'GREEN',
             fields: [
                 {
                     name: 'ユーザー数',
