@@ -699,7 +699,7 @@ client.on('ready', () => {
     setInterval(async () => {
         let guild = await client.guilds.cache.get('1175729394782851123')
         let channel = await guild.channels.cache.get('1189083636574724167')
-        channel.send({embeds:{
+        channel.send({embeds:[{
             title: '🌐サーバー数',
             description: client.guilds.cache.size + 'servers',
             color: 'GREEN',
@@ -717,7 +717,7 @@ client.on('ready', () => {
                     value: processed + 'messages'
                 }
             ]
-        }})
+        }]})
         processed = 0;
     }, 1000);
 
