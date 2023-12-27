@@ -1833,7 +1833,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
 });
 
 client.rest.on("rateLimited", (data) => {
-    console.log("Rate limited: " + data.timeout + "ms");
+    console.log("Rate limited: " + data.timeToReset + "ms");
     console.log(data);
 });
 
