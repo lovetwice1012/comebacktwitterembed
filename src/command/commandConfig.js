@@ -1,12 +1,5 @@
-const { Client, Events, GatewayIntentBits, Partials, ActivityType, ButtonBuilder, ButtonStyle, ComponentType, PermissionsBitField} = require('discord.js');
-const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent],shards:'auto' });
-
 const locales = require('../resxParser');
-
-client.on('ready', () => {
-    console.log(`${client.user.tag} is ready!`);
-
-    client.application.commands.set([
+const commands = [
         {
             name: (locales.Help),
             name_localizations: (locales.Help),
@@ -293,5 +286,6 @@ client.on('ready', () => {
                 }
             ]
         }
-    ]);
-});
+];
+
+module.exports = commands;
