@@ -28,7 +28,6 @@ fs.readdirSync(localesDir).forEach(file => {
             });
 
             console.log(`Loaded LangFile : ${file}`);
-            console.log(locales);
         });
     }
 });
