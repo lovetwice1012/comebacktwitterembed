@@ -173,7 +173,7 @@ Si vous ne nous faites pas confiance, vous pouvez assurer votre sécurité en su
   <data name="setEditOriginalIfTranslateTo">
     <value>Fixer editOriginalIfTranslate à</value>
   </data>
-  <data name="youCanTDeleteOtherUsers' Messages">
+  <data name="youCanTDeleteOtherUsersMessages">
     <value>Vous ne pouvez pas supprimer les messages des autres utilisateurs.</value>
   </data>
   <data name="setsWhetherToShowMediaAsAttachments">

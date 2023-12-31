@@ -173,7 +173,7 @@ Se não confia em nós, pode garantir a sua segurança removendo as suas permiss
   <data name="setEditOriginalIfTranslateTo">
     <value>Definir editOriginalIfTranslate para</value>
   </data>
-  <data name="youCanTDeleteOtherUsers' Messages">
+  <data name="youCanTDeleteOtherUsersMessages">
     <value>Não é possível apagar as mensagens de outros utilizadores.</value>
   </data>
   <data name="setsWhetherToShowMediaAsAttachments">

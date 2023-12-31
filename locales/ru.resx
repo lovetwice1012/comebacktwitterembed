@@ -173,7 +173,7 @@
   <data name="setEditOriginalIfTranslateTo">
     <value>Установите editOriginalIfTranslate на</value>
   </data>
-  <data name="youCanTDeleteOtherUsers' Messages">
+  <data name="youCanTDeleteOtherUsersMessages">
     <value>Вы не можете удалять сообщения других пользователей.</value>
   </data>
   <data name="setsWhetherToShowMediaAsAttachments">

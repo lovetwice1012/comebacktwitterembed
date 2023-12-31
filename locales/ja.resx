@@ -173,7 +173,7 @@
   <data name="setEditOriginalIfTranslateTo">
     <value>editOriginalIfTranslateを設定しました。</value>
   </data>
-  <data name="youCanTDeleteOtherUsers' Messages">
+  <data name="youCanTDeleteOtherUsersMessages">
     <value>あなたは他のユーザーのメッセージを削除することはできません。</value>
   </data>
   <data name="setsWhetherToShowMediaAsAttachments">

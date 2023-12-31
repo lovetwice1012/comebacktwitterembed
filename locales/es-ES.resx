@@ -173,7 +173,7 @@ Si no confías en nosotros, puedes garantizar tu seguridad eliminando los permis
   <data name="setEditOriginalIfTranslateTo">
     <value>Establecer editOriginalIfTranslate como</value>
   </data>
-  <data name="youCanTDeleteOtherUsers' Messages">
+  <data name="youCanTDeleteOtherUsersMessages">
     <value>No puedes borrar los mensajes de otros usuarios.</value>
   </data>
   <data name="setsWhetherToShowMediaAsAttachments">

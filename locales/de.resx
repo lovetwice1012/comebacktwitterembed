@@ -173,7 +173,7 @@ Wenn du uns nicht vertraust, kannst du deine Sicherheit gewährleisten, indem du
   <data name="setEditOriginalIfTranslateTo">
     <value>Setzen Sie editOriginalIfTranslate auf</value>
   </data>
-  <data name="youCanTDeleteOtherUsers' Messages">
+  <data name="youCanTDeleteOtherUsersMessages">
     <value>Sie können die Nachrichten anderer Benutzer nicht löschen.</value>
   </data>
   <data name="setsWhetherToShowMediaAsAttachments">

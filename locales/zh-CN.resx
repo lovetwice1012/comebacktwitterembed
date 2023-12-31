@@ -173,7 +173,7 @@
   <data name="setEditOriginalIfTranslateTo">
     <value>将 editOriginalIfTranslate 设置为</value>
   </data>
-  <data name="youCanTDeleteOtherUsers' Messages">
+  <data name="youCanTDeleteOtherUsersMessages">
     <value>您不能删除其他用户的信息。</value>
   </data>
   <data name="setsWhetherToShowMediaAsAttachments">
