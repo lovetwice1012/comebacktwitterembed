@@ -102,30 +102,54 @@ button_invisibleとbutton_disabledはギルドIDをキーとしてそれぞれ�
     //各設定をギルドIDをキーとしてまとめる
     let new_settings = {};
     for (let guildId in disable_role) {
+        if(new_settings[guildId] == undefined){
+            new_settings[guildId] = {};
+        }
         new_settings[guildId]['disable_roles'] = disable_role[guildId].join(',');
     }
     for (let guildId in bannedWords) {
+        if(new_settings[guildId] == undefined){
+            new_settings[guildId] = {};
+        }
         new_settings[guildId]['bannedWords'] = bannedWords[guildId].split(',').join(',');
     }
     for (let guildId in defaultLanguage) {
+        if(new_settings[guildId] == undefined){
+            new_settings[guildId] = {};
+        }
         new_settings[guildId]['defaultLanguage'] = defaultLanguage[guildId];
         if(defaultLanguage[guildId] == 'en'){
             new_settings[guildId]['defaultLanguage'] = 'en-US';
         }
     }
     for (let guildId in editOriginalIfTranslate) {
+        if(new_settings[guildId] == undefined){
+            new_settings[guildId] = {};
+        }
         new_settings[guildId]['editOriginalIfTranslate'] = boolToInt(editOriginalIfTranslate[guildId]);
     }
     for (let guildId in sendMediaAsAttachmentsAsDefault) {
+        if(new_settings[guildId] == undefined){
+            new_settings[guildId] = {};
+        }
         new_settings[guildId]['sendMediaAsAttachmentsAsDefault'] = boolToInt(sendMediaAsAttachmentsAsDefault[guildId]);
     }
     for (let guildId in deletemessageifonlypostedtweetlink) {
+        if(new_settings[guildId] == undefined){
+            new_settings[guildId] = {};
+        }
         new_settings[guildId]['deleteMessageIfOnlyPostedTweetLink'] = boolToInt(deletemessageifonlypostedtweetlink[guildId]);
     }
     for (let guildId in alwaysreplyifpostedtweetlink) {
+        if(new_settings[guildId] == undefined){
+            new_settings[guildId] = {};
+        }
         new_settings[guildId]['alwaysReply'] = boolToInt(alwaysreplyifpostedtweetlink[guildId]);
     }
     for (let guildId in button_invisible) {
+        if(new_settings[guildId] == undefined){
+            new_settings[guildId] = {};
+        }
         new_settings[guildId]['button_invisible_showMediaAsAttachments'] = boolToInt(button_invisible[guildId].showMediaAsAttachments);
         new_settings[guildId]['button_invisible_showAttachmentsAsEmbedsImage'] = boolToInt(button_invisible[guildId].showAttachmentsAsEmbedsImage);
         new_settings[guildId]['button_invisible_translate'] = boolToInt(button_invisible[guildId].translate);
@@ -133,14 +157,23 @@ button_invisibleとbutton_disabledはギルドIDをキーとしてそれぞれ�
         new_settings[guildId]['button_invisible_reload'] = boolToInt(button_invisible[guildId].reload);
     }
     for (let guildId in button_disabled) {
+        if(new_settings[guildId] == undefined){
+            new_settings[guildId] = {};
+        }
         new_settings[guildId]['button_disabled_users'] = button_disabled[guildId].user.join(',');
         new_settings[guildId]['button_disabled_channels'] = button_disabled[guildId].channel.join(',');
         new_settings[guildId]['button_disabled_roles'] = button_disabled[guildId].role.join(',');
     }
     for (let guildId in extract_bot_message) {
+        if(new_settings[guildId] == undefined){
+            new_settings[guildId] = {};
+        }
         new_settings[guildId]['extractBotMessage'] = boolToInt(extract_bot_message[guildId]);
     }
     for (let guildId in quote_repost_do_not_extract) {
+        if(new_settings[guildId] == undefined){
+            new_settings[guildId] = {};
+        }
         if(quote_repost_do_not_extract[guildId]){
             new_settings[guildId]['maxExtractQuotedTweet'] = 0;
         }
