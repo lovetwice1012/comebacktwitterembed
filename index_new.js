@@ -344,7 +344,7 @@ async function processNextQueue() {
     //メッセージを送信する
     //alwaysReplyが有効化されている場合は返信の形で送信する
     if(settings.alwaysReply == 1) {
-        message.reply(message_object).then((msg) => {
+        await message.reply(message_object).then((msg) => {
             if(videoText != null) message.channel.send(videoText);
             if(settings.deleteMessageIfOnlyPostedTweetLink == 1 && message.content == url) message.delete();
         }).catch((error) => {
@@ -367,7 +367,7 @@ async function processNextQueue() {
         });
     } else {
         const channel = await client.channels.fetch(message.channelId);
-        channel.send(message_object).then((msg) => {
+        await channel.send(message_object).then((msg) => {
             if(videoText != null) message.channel.send(videoText);
             if(settings.deleteMessageIfOnlyPostedTweetLink == 1 && message.content == url) message.delete();
         }).catch((error) => {
