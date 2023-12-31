@@ -58,7 +58,7 @@ const commands = [
                         {
                             name: locales.role["en-US"],
                             name_localizations: locales.role,
-                            description: 'role'["en-US"],
+                            description: locales.role["en-US"],
                             type: ApplicationCommandOptionType.Role,
                             required: false
                         }

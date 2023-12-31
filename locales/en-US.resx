@@ -261,7 +261,7 @@ If you do not trust us, you can secure your safety by removing your channel perm
     <value>Set extractBotMessage to </value>
   </data>
   <data name="editOriginalIfTranslate">
-    <value>edit original if translate</value>
+    <value>editoriginaliftranslate</value>
   </data>
   <data name="deleteIfOnlyPostedTweetlink">
     <value>delete if only posted tweetlink</value>
@@ -276,7 +276,7 @@ If you do not trust us, you can secure your safety by removing your channel perm
     <value>show attachments as embeds image</value>
   </data>
   <data name="setsWhetherToExpandQuoteRetweets">
-    <value>Sets whether to expand quote retweets.</value>
+    <value>setswhethertoexpandquoteretweets</value>
   </data>
   <data name="doNotDeployQuoteRetweets">
     <value>Do not deploy quote retweets</value>

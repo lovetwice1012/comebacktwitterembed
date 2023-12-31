@@ -843,7 +843,7 @@ Help_script: {
     },
     editOriginalIfTranslate: {
     "ja": "翻訳時にオリジナルのメッセージを編集",
-    "en-US": "edit original if translate",
+    "en-US": "editoriginaliftranslate",
     "zh-CN": "如需翻译，请编辑原文",
     "es-ES": "editar original si traducir",
     "fr": "éditer l'original si traduction",
@@ -893,7 +893,7 @@ Help_script: {
     },
     setsWhetherToExpandQuoteRetweets: {
     "ja": "引用リツイートを展開しないかどうかを設定します。",
-    "en-US": "Sets whether to expand quote retweets.",
+    "en-US": "setswhethertoexpandquoteretweets",
     "zh-CN": "设置是否扩展引用转发。",
     "es-ES": "Establece si se expanden los retweets de citas.",
     "fr": "Définit s'il faut développer les retweets de citations.",
