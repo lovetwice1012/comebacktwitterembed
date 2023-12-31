@@ -305,7 +305,7 @@ async function processNextQueue() {
     if(settings.button_invisible_showMediaAsAttachments == 0) {
         showMediaAsAttachmentsButton = new ButtonBuilder()
             .setCustomId('showMediaAsAttachments')
-            .setLabel(Translate.showMediaAsAttachments[settings.defaultLanguage])
+            .setLabel(Translate.show_media[settings.defaultLanguage])
             .setStyle(ButtonStyle.Secondary)
             .setEmoji('📎')
     }
