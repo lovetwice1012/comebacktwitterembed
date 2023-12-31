@@ -405,7 +405,7 @@ async function processNextQueue() {
 
     //もしtweetData.tweet.quoteがundefinedやnullじゃなくて、queue.quotedCountがmaxExtractQuotedTweetを超えていない場合は引用されたツイートのURL(tweetData.tweet.quote.url)をqueueに追加する
     if (tweetData.tweet.quote != undefined && tweetData.tweet.quote != null && queue.quotedCount < settings.maxExtractQuotedTweet) {
-        queueManagerInstance.add_to_queue(queue.message, queue.plan, tweetData.tweet.quote.url, queue.quotedCount + 1);
+        fetchWorkersServiceInstance.add_queue(message, queue.plan, tweetData.tweet.quote.url, queue.quotedCount + 1);
     }
 
     //0.1秒待って次のキューを処理する
