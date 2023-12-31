@@ -503,3 +503,7 @@ client.on(Events.MessageCreate, async (message) => {
     });
 })
 
+client.on(Events.InteractionCreate, async (interaction) => {
+});
+
+client.login(config.token);
