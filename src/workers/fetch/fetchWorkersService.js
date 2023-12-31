@@ -26,6 +26,8 @@ class fetchWorkersService {
                 }
                 if(data.error) {
                     console.error(data.error);
+                    message.reactions.cache.get("🔁").remove()
+                    message.react("❌")
                     return workerInstance.postMessage(this.queue.shift());
                 }
                 this.queueManager.add_to_queue(data, data.plan);

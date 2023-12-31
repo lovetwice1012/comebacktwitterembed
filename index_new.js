@@ -1,6 +1,6 @@
 const discord = require('discord.js');
 const { Client, Events, GatewayIntentBits, Partials, ActivityType, InteractionType, ButtonBuilder, ButtonStyle, ComponentType, PermissionsBitField, ApplicationCommandOptionType } = require('discord.js');
-const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent], partials: [Partials.Channel] });
+const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent, GatewayIntentBits.GuildMessageReactions], partials: [Partials.Channel] });
 const config = require('./config.json');
 const fs = require('fs');
 const mysql = require('mysql');
@@ -340,7 +340,7 @@ async function processNextQueue() {
         channel.send(message_object);
     }
     //messageのリアクションを取る
-    message.remove_reaction("🔁");
+    message.reactions.cache.get("🔁").remove();
     message.react("✅")
     //0.1秒待って次のキューを処理する
     setTimeout(() => {
