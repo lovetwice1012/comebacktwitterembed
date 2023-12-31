@@ -435,8 +435,9 @@ client.on(Events.ClientReady, () => {
             }]
         });
     }, 60000);
-    
+
     setInterval(async () => {
+        return
         let guild = await client.guilds.cache.get('1175729394782851123')
         let channel = await guild.channels.cache.get('1189083636574724167')
         channel.send({
