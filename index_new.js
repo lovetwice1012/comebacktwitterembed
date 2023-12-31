@@ -219,9 +219,9 @@ async function processNextQueue() {
     //videos
     let videoText = null;
     if(media.videos != undefined) {
-        
         for(let i = 0; i < media.videos.length; i++) {
             if(settings.sendMovieAsLink == 1) {
+                if(videoText == null) videoText = "";
                 //リンクとして送信する
                 videoText = videoText + "\n[動画リンク](" + media.videos[i].url + ")";
             } else {
