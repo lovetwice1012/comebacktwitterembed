@@ -313,9 +313,9 @@ async function processNextQueue() {
     //画像を埋め込みとして送信するボタンはここでは作成しない
 
     //5.ボタンをmessage_objectのcomponentsに追加する
-    //new Discord.MessageActionRow().addComponents
+    //new Discord.ActionRowBuilder().addComponents
     let components = [];
-    let actionRow = discord.MessageActionRow();
+    let actionRow = discord.ActionRowBuilder();
     if(translateButton != null) actionRow.addComponents(translateButton);
     if(deleteButton != null) actionRow.addComponents(deleteButton);
     if(reloadButton != null) actionRow.addComponents(reloadButton);
