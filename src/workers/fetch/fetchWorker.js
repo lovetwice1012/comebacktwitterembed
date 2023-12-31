@@ -31,7 +31,6 @@ parentPort.on("message", (data) => {
         }, 100);
         return;
     }
-    console.log(data)
     let result = null;
     let url = data.url.replace(/twitter.com/g, "fxapi.lovetwice1012.workers.dev").replace(/x.com/g, "fxapi.lovetwice1012.workers.dev");
     //テスト用
