@@ -43,7 +43,7 @@ Help_script: {
     },
     language: {
     "ja": "言語",
-    "en-US": "Language",
+    "en-US": "language",
     "zh-CN": "语言",
     "es-ES": "Idioma",
     "fr": "Langue",
@@ -123,7 +123,7 @@ Help_script: {
     },
     banWord: {
     "ja": "禁止ワード",
-    "en-US": "BAN Word",
+    "en-US": "banword",
     "zh-CN": "禁止词语",
     "es-ES": "Palabra BAN",
     "fr": "Mot BAN",
@@ -173,7 +173,7 @@ Help_script: {
     },
     defaultLanguage: {
     "ja": "デフォルト言語",
-    "en-US": "default language",
+    "en-US": "defaultlanguage",
     "zh-CN": "默认语言",
     "es-ES": "idioma por defecto",
     "fr": "langue par défaut",
@@ -233,7 +233,7 @@ Help_script: {
     },
     showMediaInEmbedsImage: {
     "ja": "画像を埋め込み画像として表示する",
-    "en-US": "Show media in embeds image",
+    "en-US": "showmediainembedsimage",
     "zh-CN": "在嵌入图片中显示媒体",
     "es-ES": "Mostrar medios en la imagen incrustada",
     "fr": "Afficher les médias dans l'image d'accompagnement",
@@ -243,7 +243,7 @@ Help_script: {
     },
     showMediaAsAttachments: {
     "ja": "メディアを添付ファイルとして表示",
-    "en-US": "show media as attachments",
+    "en-US": "showmediaasattachments",
     "zh-CN": "以附件形式显示媒体",
     "es-ES": "mostrar medios como archivos adjuntos",
     "fr": "afficher les médias sous forme de pièces jointes",
@@ -551,7 +551,7 @@ Help_script: {
     "de": "Setzen Sie editOriginalIfTranslate auf",
     "pt-BR": "Definir editOriginalIfTranslate para"
     },
-    "youCanTDeleteOtherUsers' Messages": {
+    youCanTDeleteOtherUsersMessages: {
     "ja": "あなたは他のユーザーのメッセージを削除することはできません。",
     "en-US": "You can't delete other users' messages.",
     "zh-CN": "您不能删除其他用户的信息。",
@@ -593,7 +593,7 @@ Help_script: {
     },
     setsEndMediaAsAttachmentsAsDefaultTo: {
     "ja": "メディアを添付ファイルとして表示するかどうかを設定しました。",
-    "en-US": "Set sendMediaAsAttachmentsAsDefault to ",
+    "en-US": "Set sendMediaAsAttachmentsAsDefault to",
     "zh-CN": "将 sendMediaAsAttachmentsAsDefault 设置为",
     "es-ES": "Establece sendMediaAsAttachmentsAsDefault como",
     "fr": "Fixer la valeur de sendMediaAsAttachmentsAsDefault à",
@@ -603,7 +603,7 @@ Help_script: {
     },
     setDEleteIfOnlyPostedTweetLinkTo: {
     "ja": "ツイートのリンクのみを投稿した場合にメッセージを削除するかどうかを設定しました。",
-    "en-US": "Set deleteIfOnlyPostedTweetLink to ",
+    "en-US": "setdeleteifonlypostedtweetlinkto",
     "zh-CN": "将 deleteIfOnlyPostedTweetLink 设为",
     "es-ES": "Establecer deleteIfOnlyPostedTweetLink a",
     "fr": "Fixer deleteIfOnlyPostedTweetLink à",
@@ -613,7 +613,7 @@ Help_script: {
     },
     setALwaysReplyIfPostedTweetLinkTo: {
     "ja": "ツイートのリンクを投稿した場合に常に返信するかどうかを設定しました。",
-    "en-US": "Set alwaysReplyIfPostedTweetLink to ",
+    "en-US": "setalwaysreplyifpostedtweetlinkto",
     "zh-CN": "将 alwaysReplyIfPostedTweetLink 设为",
     "es-ES": "Establecer alwaysReplyIfPostedTweetLink como",
     "fr": "Définissez toujoursReplyIfPostedTweetLink à",
@@ -823,7 +823,7 @@ Help_script: {
     },
     setsWhetherToExtractBotMessages: {
     "ja": "BOTのメッセージを展開するかどうかを設定します。",
-    "en-US": "Sets whether to extract bot messages.",
+    "en-US": "setswhethertoextractbotmessages.",
     "zh-CN": "设置是否提取僵尸信息。",
     "es-ES": "Establece si se extraen los mensajes bot.",
     "fr": "Indique s'il faut extraire les messages des robots.",
@@ -843,7 +843,7 @@ Help_script: {
     },
     editOriginalIfTranslate: {
     "ja": "翻訳時にオリジナルのメッセージを編集",
-    "en-US": "edit original if translate",
+    "en-US": "editoriginaliftranslate",
     "zh-CN": "如需翻译，请编辑原文",
     "es-ES": "editar original si traducir",
     "fr": "éditer l'original si traduction",
@@ -893,7 +893,7 @@ Help_script: {
     },
     setsWhetherToExpandQuoteRetweets: {
     "ja": "引用リツイートを展開しないかどうかを設定します。",
-    "en-US": "Sets whether to expand quote retweets.",
+    "en-US": "setswhethertoexpandquoteretweets",
     "zh-CN": "设置是否扩展引用转发。",
     "es-ES": "Establece si se expanden los retweets de citas.",
     "fr": "Définit s'il faut développer les retweets de citations.",

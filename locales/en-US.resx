@@ -17,14 +17,11 @@ If you do not trust us, you can secure your safety by removing your channel perm
   <data name="translate">
     <value>translate</value>
   </data>
-  <data name="reload">
-    <value>reload</value>
-  </data>
   <data name="delete">
     <value>delete</value>
   </data>
   <data name="language">
-    <value>Language</value>
+    <value>language</value>
   </data>
   <data name="all">
     <value>all</value>
@@ -48,7 +45,7 @@ If you do not trust us, you can secure your safety by removing your channel perm
     <value>disable</value>
   </data>
   <data name="banWord">
-    <value>BAN Word</value>
+    <value>banword</value>
   </data>
   <data name="user">
     <value>user</value>
@@ -63,7 +60,7 @@ If you do not trust us, you can secure your safety by removing your channel perm
     <value>word</value>
   </data>
   <data name="defaultLanguage">
-    <value>default language</value>
+    <value>defaultlanguage</value>
   </data>
   <data name="button">
     <value>button</value>
@@ -81,10 +78,10 @@ If you do not trust us, you can secure your safety by removing your channel perm
     <value>Finished action.</value>
   </data>
   <data name="showMediaInEmbedsImage">
-    <value>Show media in embeds image</value>
+    <value>showmediainembedsimage</value>
   </data>
   <data name="showMediaAsAttachments">
-    <value>show media as attachments</value>
+    <value>showmediaasattachments</value>
   </data>
   <data name="showsHelpMessage">
     <value>Shows help message.</value>
@@ -176,7 +173,7 @@ If you do not trust us, you can secure your safety by removing your channel perm
   <data name="setEditOriginalIfTranslateTo">
     <value>Set editOriginalIfTranslate to </value>
   </data>
-  <data name="youCanTDeleteOtherUsers' Messages">
+  <data name="youCanTDeleteOtherUsersMessages">
     <value>You can't delete other users' messages.</value>
   </data>
   <data name="setsWhetherToShowMediaAsAttachments">
@@ -189,13 +186,13 @@ If you do not trust us, you can secure your safety by removing your channel perm
     <value>Sets whether to always reply if the tweet link is posted.</value>
   </data>
   <data name="setsEndMediaAsAttachmentsAsDefaultTo">
-    <value>Set sendMediaAsAttachmentsAsDefault to </value>
+    <value>Set sendMediaAsAttachmentsAsDefault to</value>
   </data>
   <data name="setDEleteIfOnlyPostedTweetLinkTo">
-    <value>Set deleteIfOnlyPostedTweetLink to </value>
+    <value>setdeleteifonlypostedtweetlinkto</value>
   </data>
   <data name="setALwaysReplyIfPostedTweetLinkTo">
-    <value>Set alwaysReplyIfPostedTweetLink to </value>
+    <value>setalwaysreplyifpostedtweetlinkto</value>
   </data>
   <data name="disabledAllButtons">
     <value>Disabled all buttons.</value>
@@ -258,13 +255,13 @@ If you do not trust us, you can secure your safety by removing your channel perm
     <value>Removed role from button_disabled.role.</value>
   </data>
   <data name="setsWhetherToExtractBotMessages">
-    <value>Sets whether to extract bot messages.</value>
+    <value>setswhethertoextractbotmessages.</value>
   </data>
   <data name="setExtractBotMessageTo">
     <value>Set extractBotMessage to </value>
   </data>
   <data name="editOriginalIfTranslate">
-    <value>edit original if translate</value>
+    <value>editoriginaliftranslate</value>
   </data>
   <data name="deleteIfOnlyPostedTweetlink">
     <value>delete if only posted tweetlink</value>
@@ -279,7 +276,7 @@ If you do not trust us, you can secure your safety by removing your channel perm
     <value>show attachments as embeds image</value>
   </data>
   <data name="setsWhetherToExpandQuoteRetweets">
-    <value>Sets whether to expand quote retweets.</value>
+    <value>setswhethertoexpandquoteretweets</value>
   </data>
   <data name="doNotDeployQuoteRetweets">
     <value>Do not deploy quote retweets</value>
