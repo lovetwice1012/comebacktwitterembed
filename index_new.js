@@ -347,12 +347,46 @@ async function processNextQueue() {
         message.reply(message_object).then((msg) => {
             if(videoText != null) message.channel.send(videoText);
             if(settings.deleteMessageIfOnlyPostedTweetLink == 1 && message.content == url) message.delete();
+        }).catch((error) => {
+            if(error.includes("Request entity too large")){
+                const files = message_object.files;
+                //添付ファイルがある場合はそれを削除する
+                delete message_object.files;
+                //filesをリンクとして送信する
+                videoText = "";
+                for(let i = 0; i < files.length; i++) {
+                    videoText = videoText + "\n[動画リンク](" + files[i] + ")";
+                }
+                message.channel.send(message_object).then((msg) => {
+                    message.channel.send(videoText);
+                    if(settings.deleteMessageIfOnlyPostedTweetLink == 1 && message.content == url) message.delete();
+                });
+                return
+            }
+            console.error(error);
         });
     } else {
         const channel = await client.channels.fetch(message.channelId);
         channel.send(message_object).then((msg) => {
             if(videoText != null) message.channel.send(videoText);
             if(settings.deleteMessageIfOnlyPostedTweetLink == 1 && message.content == url) message.delete();
+        }).catch((error) => {
+            if(error.includes("Request entity too large")){
+                const files = message_object.files;
+                //添付ファイルがある場合はそれを削除する
+                delete message_object.files;
+                //filesをリンクとして送信する
+                videoText = "";
+                for(let i = 0; i < files.length; i++) {
+                    videoText = videoText + "\n[動画リンク](" + files[i] + ")";
+                }
+                message.channel.send(message_object).then((msg) => {
+                    message.channel.send(videoText);
+                    if(settings.deleteMessageIfOnlyPostedTweetLink == 1 && message.content == url) message.delete();
+                });
+                return
+            }
+            console.error(error);
         });
     }
     //messageのリアクションを取る
