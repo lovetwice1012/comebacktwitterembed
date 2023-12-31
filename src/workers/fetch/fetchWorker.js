@@ -99,7 +99,9 @@ parentPort.on("message", (data) => {
         });
         
     }).catch((error) => {
-        parentPort.postMessage(new fetchResult(data.message, data.plan, null, null, null, error));
+        if(data.retryCount == undefined) data.retryCount = 0;
+        data.retryCount++;
+        parentPort.postMessage(new fetchResult(data.message, data.plan, null, null, null, {error:error, data:data, count: data.retryCount}));
     });
 });
 
