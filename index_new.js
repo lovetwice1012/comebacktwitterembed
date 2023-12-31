@@ -277,7 +277,7 @@ async function processNextQueue() {
         translateButton = new ButtonBuilder()
             .setCustomId('translate')
             .setLabel(Translate.translate[settings.defaultLanguage])
-            .setStyle(ButtonStyle.PRIMARY)
+            .setStyle(ButtonStyle.Primary)
             .setEmoji('🌐')
             .build();
     }
@@ -287,7 +287,7 @@ async function processNextQueue() {
         deleteButton = new ButtonBuilder()
             .setCustomId('delete')
             .setLabel(Translate.delete[settings.defaultLanguage])
-            .setStyle(ButtonStyle.DANGER)
+            .setStyle(ButtonStyle.Danger)
             .setEmoji('🗑️')
             .build();
     }
@@ -298,7 +298,7 @@ async function processNextQueue() {
             reloadButton = new ButtonBuilder()
                 .setCustomId('reload')
                 .setLabel(Translate.reload[settings.defaultLanguage])
-                .setStyle(ButtonStyle.SECONDARY)
+                .setStyle(ButtonStyle.Secondary)
                 .setEmoji('🔄')
                 .build();
         }
@@ -309,7 +309,7 @@ async function processNextQueue() {
         showMediaAsAttachmentsButton = new ButtonBuilder()
             .setCustomId('showMediaAsAttachments')
             .setLabel(Translate.showMediaAsAttachments[settings.defaultLanguage])
-            .setStyle(ButtonStyle.SECONDARY)
+            .setStyle(ButtonStyle.Secondary)
             .setEmoji('📎')
             .build();
     }
