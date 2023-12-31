@@ -149,10 +149,10 @@ const commands = [
                     ]
                 },
                 {
-                    name: locales.show_media["en-US"],
-                    name_localizations: locales.show_media,
-                    description: locales.settings_show_media["en-US"],
-                    description_localizations: locales.settings_show_media,
+                    name: locales.showMediaAsAttachments["en-US"],
+                    name_localizations: locales.showMediaAsAttachments,
+                    description: locales.setsWhetherToShowMediaAsAttachments["en-US"],
+                    description_localizations: locales.setsWhetherToShowMediaAsAttachments,
                     type: ApplicationCommandOptionType.Subcommand,
                     options: [
                         {
