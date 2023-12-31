@@ -873,7 +873,7 @@ Help_script: {
     },
     extractBotMessage: {
     "ja": "ボットのメッセージを展開",
-    "en-US": "extract bot message",
+    "en-US": "extractbotmessage",
     "zh-CN": "提取僵尸消息",
     "es-ES": "extraer mensaje bot",
     "fr": "extraire le message du bot",

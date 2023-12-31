@@ -270,7 +270,7 @@ If you do not trust us, you can secure your safety by removing your channel perm
     <value>alwaysreplyifpostedtweetlink</value>
   </data>
   <data name="extractBotMessage">
-    <value>extract bot message</value>
+    <value>extractbotmessage</value>
   </data>
   <data name="showAttachmentsAsEmbedsImage">
     <value>show attachments as embeds image</value>
@@ -280,8 +280,5 @@ If you do not trust us, you can secure your safety by removing your channel perm
   </data>
   <data name="doNotDeployQuoteRetweets">
     <value>Do not deploy quote retweets</value>
-  </data>
-  <data name="reload">
-    <value>reload</value>
   </data>
 </root>
