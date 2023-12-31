@@ -332,6 +332,7 @@ async function processNextQueue() {
     
     //メッセージを送信する
     //alwaysReplyが有効化されている場合は返信の形で送信する
+    console.log(message)
     if(settings.alwaysReply == 1) {
         message.reply(message_object);
     } else {
