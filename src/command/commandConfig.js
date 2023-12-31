@@ -8,56 +8,57 @@ const commands = [
             description_localizations: locales.show_helpMessage
         },
         {
-            name: locales.Ping["en-US"],
-            name_localizations: locales.Ping,
+            name: locales.ping["en-US"],
+            name_localizations: locales.ping,
             description: 'Pong!',
         },
         {
             name: locales.Invite["en-US"],
             name_localizations: locales.Invite,
-            description: locales.Invite["en-US"],
-            description_localizations: locales.BOT_Invite_Link,
+            description: locales.inviteMeToYourServer["en-US"],
+            description_localizations: locales.inviteMeToYourServer,
         
         },
         {
             name: locales.Support["en-US"],
             name_localizations: locales.Support,
-            description: locales.supportServer_Invite_Link["en-US"],
-            description_localizations: locales.supportServer_Invite_Link
+            description: locales.joinSupportServer["en-US"],
+            description_localizations: locales.joinSupportServer
         
         },
         {
             name: locales.Settings["en-US"],
             name_localizations: locales.Settings,
-            description: locales.settings_change["en-US"],
-            description_localizations: locales.settings_change,
+            description: locales.changeSettings["en-US"],
+            description_localizations: locales.changeSettings,
             options: [
                 {
                     name: locales.Disable["en-US"],
                     name_localizations: locales.Disable,
-                    description: locales.settings_Disable_ch_user["en-US"],
-                    description_localizations: locales.settings_Disable_ch_user,
+                    description: locales.disableByUserOrChannel["en-US"],
+                    description_localizations: locales.disableByUserOrChannel,
                     type: ApplicationCommandOptionType.Subcommand,
                     options: [
                         {
                             name: locales.User["en-US"],
                             name_localizations: locales.User,
-                            description: locales.settings_Disable_user["en-US"],
-                            description_localizations: locales.settings_Disable_user,
+                            description: locales.specifyTheUserToDisable["en-US"],
+                            description_localizations: locales.specifyTheUserToDisable,
                             type: ApplicationCommandOptionType.User,
                             required: false
                         },
                         {
                             name: locales.Channel["en-US"],
                             name_localizations: locales.Channel,
-                            description: locales.settings_Disable_ch["en-US"],
-                            description_localizations: locales.settings_Disable_ch,
+                            description: locales.specifyTheChannelToDisable["en-US"],
+                            description_localizations: locales.specifyTheChannelToDisable,
                             type: ApplicationCommandOptionType.Channel,
                             required: false
                         },
+                        // 一致なし
                         {
-                            name: locales.command_name_role_Locales["en-US"],
-                            name_localizations: locales.command_name_role_Locales,
+                            name: locales.role["en-US"],
+                            name_localizations: locales.role,
                             description: 'role'["en-US"],
                             type: ApplicationCommandOptionType.Role,
                             required: false
@@ -65,60 +66,84 @@ const commands = [
                     ]
                 },
                 {
-                    name: locales.BanWard["en-US"],
-                    name_localizations: locales.BanWard,
-                    description: locales.settings_Add_remove_BANWords["en-US"],
-                    description_localizations: locales.settings_Add_remove_BANWords,
+                    name: locales.banWord["en-US"],
+                    name_localizations: locales.banWord,
+                    description: locales.addOrRemoveBannedWords["en-US"],
+                    description_localizations: locales.addOrRemoveBannedWords,
                     type: ApplicationCommandOptionType.Subcommand,
                     options: [
                         {
-                            name: locales.Word["en-US"],
-                            name_localizations: locales.Word,
-                            description: locales.settings_Add_remove_BANWords["en-US"],
-                            description_localizations: locales.settings_Add_remove_BANWords,
+                            name: locales.word["en-US"],
+                            name_localizations: locales.word,
+                            description: locales.addOrRemoveBannedWords["en-US"],
+                            description_localizations: locales.addOrRemoveBannedWords,
                             type: ApplicationCommandOptionType.String,
                             required: true
                         }
                     ]
                 },
                 {
-                    name: locales.DefaultLanguage["en-US"],
-                    name_localizations: locales.DefaultLanguage,
-                    description: locales.settings_translating_defaultLanguage["en-US"],
-                    description_localizations: locales.settings_translating_defaultLanguage,
+                    name: locales.defaultLanguage["en-US"],
+                    name_localizations: locales.defaultLanguage,
+                    description: locales.setsTheDefaultLanguageWhenTranslating["en-US"],
+                    description_localizations: locales.setsTheDefaultLanguageWhenTranslating,
                     type: ApplicationCommandOptionType.Subcommand,
                     options: [
                         {
-                            name: locales.Language["en-US"],
-                            name_localizations: locales.Language,
-                            description: locales.Language["en-US"],
-                            description_localizations: locales.Language,
+                            name: locales.language["en-US"],
+                            name_localizations: locales.language,
+                            description: locales.language["en-US"],
+                            description_localizations: locales.language,
                             type: ApplicationCommandOptionType.String,
                             required: true,
                             choices: [
                                 {
                                     name: 'English',
-                                    value: 'en'
+                                    value: 'en-US'
                                 },
                                 {
                                     name: 'Japanese',
                                     value: 'ja'
-                                }
+                                },
+                                {
+                                    name: 'German',
+                                    value: 'de'
+                                },
+                                {
+                                    name: 'Spanish',
+                                    value: 'es-ES'
+                                },
+                                {
+                                    name: 'French',
+                                    value: 'fr'
+                                },
+                                {
+                                    name: 'Portuguese,Brazilian',
+                                    value: 'pt-BR'
+                                },
+                                {
+                                    name: 'Russian',
+                                    value: 'ru'
+                                },
+                                {
+                                    name: 'Chinese',
+                                    value: 'zh-CN'
+                                },
                             ]
                         }
                     ]
                 },
                 {
-                    name: locales.message_translate_originalMessageEdit["en-US"],
-                    name_localizations: locales.message_translate_originalMessageEdit,
-                    description: locales.settings_translating_messageEdit_option["en-US"],
-                    description_localizations: locales.settings_translating_messageEdit_option,
+                    name: locales.editOriginalIfTranslate["en-US"],
+                    name_localizations: locales.editOriginalIfTranslate,
+                    description: locales.setsWhetherToEditTheOriginalMessageWhenTranslating["en-US"],
+                    description_localizations: locales.setsWhetherToEditTheOriginalMessageWhenTranslating,
                     type: ApplicationCommandOptionType.Subcommand,
                     options: [
                         {
-                            name: locales.Boolean["en-US"],
-                            name_localizations: locales.Boolean,
-                            description: locales.Boolean["en-US"],
+                            name: locales.boolean["en-US"],
+                            name_localizations: locales.boolean,
+                            description: locales.boolean["en-US"],
                             type: ApplicationCommandOptionType.Boolean,
                             required: true
                         }
@@ -132,120 +157,120 @@ const commands = [
                     type: ApplicationCommandOptionType.Subcommand,
                     options: [
                         {
-                            name: locales.Boolean["en-US"],
-                            name_localizations: locales.Boolean,
-                            description: locales.Boolean["en-US"],
+                            name: locales.boolean["en-US"],
+                            name_localizations: locales.boolean,
+                            description: locales.boolean["en-US"],
                             type: ApplicationCommandOptionType.Boolean,
                             required: true
                         }
                     ]
                 },
                 {
-                    name: locales.only_tweetLink_to_DeleteMessage["en-US"],
-                    name_localizations: locales.only_tweetLink_to_DeleteMessage,
-                    description: locales.settings_send_OnlyTwitterLink_Delete["en-US"],
-                    description_localizations: locales.settings_send_OnlyTwitterLink_Delete,
+                    name: locales.deleteIfOnlyPostedTweetlink["en-US"],
+                    name_localizations: locales.deleteIfOnlyPostedTweetlink,
+                    description: locales.setsWhetherToDeleteTheMessageIfOnlyTheTweetLinkIsPosted["en-US"],
+                    description_localizations: locales.setsWhetherToDeleteTheMessageIfOnlyTheTweetLinkIsPosted,
                     type: ApplicationCommandOptionType.Subcommand,
                     options: [
                         {
-                            name: locales.Boolean["en-US"],
-                            name_localizations: locales.Boolean,
-                            description: locales.Boolean["en-US"],
+                            name: locales.boolean["en-US"],
+                            name_localizations: locales.boolean,
+                            description: locales.boolean["en-US"],
                             type: ApplicationCommandOptionType.Boolean,
                             required: true
                         }
                     ]
                 },
                 {
-                    name: locales.send_to_tweetLink_always_reply["en-US"],
-                    name_localizations: locales.send_to_tweetLink_always_reply,
-                    description: locales.settings_tweetLink_allow_reply["en-US"],
-                    description_localizations: locales.settings_tweetLink_allow_reply,
+                    name: locales.alwaysReplyIfPostedTweetlink["en-US"],
+                    name_localizations: locales.alwaysReplyIfPostedTweetlink,
+                    description: locales.setsWhetherToAlwaysReplyIfTheTweetLinkIsPosted["en-US"],
+                    description_localizations: locales.setsWhetherToAlwaysReplyIfTheTweetLinkIsPosted,
                     type: ApplicationCommandOptionType.Subcommand,
                     options: [
                         {
-                            name: locales.Boolean["en-US"],
-                            name_localizations: locales.Boolean,
-                            description: locales.Boolean["en-US"],
+                            name: locales.boolean["en-US"],
+                            name_localizations: locales.boolean,
+                            description: locales.boolean["en-US"],
                             type: ApplicationCommandOptionType.Boolean,
                             required: true
                         }
                     ]
                 },
                 {
-                    name: locales.Button["en-US"],
-                    name_localizations: locales.Button,
-                    description: locales.Button["en-US"],
+                    name: locales.button["en-US"],
+                    name_localizations: locales.button,
+                    description: locales.button["en-US"],
                     type: ApplicationCommandOptionType.SubcommandGroup,
                     options: [
                         {
-                            name: locales.Invisible["en-US"],
-                            name_localizations: locales.Invisible,
-                            description: locales.Invisible["en-US"],
+                            name: locales.invisible["en-US"],
+                            name_localizations: locales.invisible,
+                            description: locales.invisible["en-US"],
                             type: ApplicationCommandOptionType.Subcommand,
                             options: [
                                 {
-                                    name: locales.show_media["en-US"],
-                                    name_localizations: locales.show_media,
-                                    description: locales.show_mediaFiles["en-US"],
-                                    description_localizations: locales.show_mediaFiles,
+                                    name: locales.showMediaAsAttachments["en-US"],
+                                    name_localizations: locales.showMediaAsAttachments,
+                                    description: locales.showMediaAsAttachments["en-US"],
+                                    description_localizations: locales.showMediaAsAttachments,
                                     type: ApplicationCommandOptionType.Boolean,
                                 },
                                 {
-                                    name: locales.show_Embed_img["en-US"],
-                                    name_localizations: locales.show_Embed_img,
-                                    description: locales.show_Embed_img["en-US"],
-                                    description_localizations: locales.show_Embed_img,
+                                    name: locales.showMediaInEmbedsImage["en-US"],
+                                    name_localizations: locales.showMediaInEmbedsImage,
+                                    description: locales.showMediaInEmbedsImage["en-US"],
+                                    description_localizations: locales.showMediaInEmbedsImage,
                                     type: ApplicationCommandOptionType.Boolean,
                                 },
                                 {
-                                    name: locales.Translate["en-US"],
-                                    name_localizations: locales.Translate,
-                                    description: locales.Translate["en-US"],
-                                    description_localizations: locales.Translate,
+                                    name: locales.translate["en-US"],
+                                    name_localizations: locales.translate,
+                                    description: locales.translate["en-US"],
+                                    description_localizations: locales.translate,
                                     type: ApplicationCommandOptionType.Boolean,
                                 },
                                 {
-                                    name: locales.Delete["en-US"],
-                                    name_localizations: locales.Delete,
-                                    description: locales.Delete["en-US"],
-                                    description_localizations: locales.Delete,
+                                    name: locales.delete["en-US"],
+                                    name_localizations: locales.delete,
+                                    description: locales.delete["en-US"],
+                                    description_localizations: locales.delete,
                                     type: ApplicationCommandOptionType.Boolean,
                                 },
                                 {
-                                    name: locales.All["en-US"],
-                                    name_localizations: locales.All,
-                                    description: locales.All["en-US"],
+                                    name: locales.all["en-US"],
+                                    name_localizations: locales.all,
+                                    description: locales.all["en-US"],
                                     type: ApplicationCommandOptionType.Boolean,
                                 }
                             ]
                         },
                         {
-                            name: locales.Disable["en-US"],
-                            name_localizations: locales.Disable,
-                            description: locales.Disable["en-US"],
+                            name: locales.disable["en-US"],
+                            name_localizations: locales.disable,
+                            description: locales.disable["en-US"],
                             type: ApplicationCommandOptionType.Subcommand,
                             options: [
                                 {
-                                    name: locales.User["en-US"],
-                                    name_localizations: locales.User,
-                                    description: locales.settings_Disable_user["en-US"],
-                                    description_localizations: locales.settings_Disable_user,
+                                    name: locales.user["en-US"],
+                                    name_localizations: locales.user,
+                                    description: locales.specifyTheUserToDisable["en-US"],
+                                    description_localizations: locales.specifyTheUserToDisable,
                                     type: ApplicationCommandOptionType.User,
                                     required: false
                                 },
                                 {
-                                    name: locales.Channel["en-US"],
-                                    name_localizations: locales.Channel,
-                                    description: locales.settings_Disable_ch["en-US"],
-                                    description_localizations: locales.settings_Disable_ch,
+                                    name: locales.channel["en-US"],
+                                    name_localizations: locales.channel,
+                                    description: locales.specifyTheChannelToDisable["en-US"],
+                                    description_localizations: locales.specifyTheChannelToDisable,
                                     type: ApplicationCommandOptionType.Channel,
                                     required: false
                                 },
                                 {
-                                    name: locales.Role["en-US"],
-                                    name_localizations: locales.Role,
-                                    description: locales.Role["en-US"],
+                                    name: locales.role["en-US"],
+                                    name_localizations: locales.role,
+                                    description: locales.role["en-US"],
                                     type: ApplicationCommandOptionType.Role,
                                     required: false
                                 }
@@ -254,32 +279,32 @@ const commands = [
                     ]
                 },
                 {
-                    name: locales.open_BOT_message["en-US"],
-                    name_localizations: locales.open_BOT_message,
-                    description: locales.settings_BOT_message_open["en-US"],
-                    description_localizations: locales.settings_BOT_message_open,
+                    name: locales.extractBotMessage["en-US"],
+                    name_localizations: locales.extractBotMessage,
+                    description: locales.setsWhetherToExtractBotMessages["en-US"],
+                    description_localizations: locales.setsWhetherToExtractBotMessages,
                     type: ApplicationCommandOptionType.Subcommand,
                     options: [
                         {
-                            name: locales.Boolean["en-US"],
-                            name_localizations: locales.Boolean,
-                            description: locales.Boolean["en-US"],
+                            name: locales.boolean["en-US"],
+                            name_localizations: locales.boolean,
+                            description: locales.boolean["en-US"],
                             type: ApplicationCommandOptionType.Boolean,
                             required: true
                         }
                     ]
                 },
                 {
-                    name: locales.settings_QuoteDoNot_Extract["en-US"],
-                    name_localizations: locales.settings_QuoteDoNot_Extract,
-                    description: locales.settings_QuoteDoNot_Extract_name["en-US"],
-                    description_localizations: locales.settings_QuoteDoNot_Extract_name,
+                    name: locales.setsWhetherToExpandQuoteRetweets["en-US"],
+                    name_localizations: locales.setsWhetherToExpandQuoteRetweets,
+                    description: locales.doNotDeployQuoteRetweets["en-US"],
+                    description_localizations: locales.doNotDeployQuoteRetweets,
                     type: ApplicationCommandOptionType.Subcommand,
                     options: [
                         {
-                            name: locales.Boolean["en-US"],
-                            name_localizations: locales.Boolean,
-                            description: locales.Boolean["en-US"],
+                            name: locales.boolean["en-US"],
+                            name_localizations: locales.boolean,
+                            description: locales.boolean["en-US"],
                             type: ApplicationCommandOptionType.Boolean,
                             required: true
                         }
