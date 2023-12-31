@@ -500,8 +500,50 @@ client.on(Events.InteractionCreate, async (interaction) => {
             return
 
         case Translate.Settings["en-US"]:
-            //settings
-            return
+            
+            switch (interaction.options.getSubcommand()) {
+                case 'disable':
+                    //disable
+                return
+
+                case 'bannedwords':
+                    //bannedwords
+                return
+
+                case 'defaultlanguage':
+                    //defaultlanguage
+                return
+
+                case 'editoriginaliftranslate':
+                    //editoriginaliftranslate
+                return
+
+                case 'setdefaultmediaasattachments':
+                    //setdefaultmediaasattachments
+                return
+
+                case 'deleteifonlypostedtweetlink':
+                    //deleteifonlypostedtweetlink
+                return
+
+                case 'alwaysreplyifpostedtweetlink':
+                    //alwaysreplyifpostedtweetlink
+                return
+
+                case 'button':
+                    //button
+                return
+
+                case 'extractbotmessage':
+                    //extractbotmessage
+                return
+
+                case 'quoterepostdonotextract':
+                    //quoterepostdonotextract
+                return
+            }
+            
+        return
     }
 });
 
