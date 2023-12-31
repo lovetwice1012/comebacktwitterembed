@@ -353,9 +353,11 @@ client.on(Events.ClientReady, () => {
 
     client.application.commands.set(commandConfig);
 
-    fetchWorkersServiceInstance.set_FetchTotalWorkers(64);
+    fetchWorkersServiceInstance.set_total_workers(64);
 
     fetchWorkersServiceInstance.initialize();
+
+    processNextQueue();
 
 });
 
