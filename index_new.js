@@ -78,7 +78,7 @@ async function processNextQueue() {
     削除ボタンは表示されない。
     */
     const settings = queue.settings;
-    const message = queue.message;
+    const message = await client.channels.cache.get(queue.message.channelId).messages.cache.get(queue.message.id);
     const plan = queue.plan;
     const url = queue.url;
     const tweetData = queue.result;
