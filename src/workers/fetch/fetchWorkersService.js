@@ -26,6 +26,8 @@ class fetchWorkersService {
                 }
                 if(data.error) {
                     console.error(data.error);
+                    data.message.reactions.remove("🔁")
+                    data.message.reactions.add("🚫")
                     return workerInstance.postMessage(this.queue.shift());
                 }
                 this.queueManager.add_to_queue(data, data.plan);

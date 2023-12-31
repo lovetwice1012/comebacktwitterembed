@@ -339,6 +339,7 @@ async function processNextQueue() {
     }
     //messageのリアクションを取る
     message.reactions.remove("🔁");
+    message.reactions.add("✅")
     //0.1秒待って次のキューを処理する
     setTimeout(() => {
         processNextQueue();
