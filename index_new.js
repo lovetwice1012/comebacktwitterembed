@@ -11,6 +11,14 @@ const queueManagerInstance = new queueManager();
 const fetchWorkersServiceInstance = new fetchWorkersService(queueManagerInstance);
 const commandConfig = require('./src/command/commandConfig');
 
+process.on('uncaughtException', function (err) {
+    console.log(err);
+});
+
+process.on('unhandledRejection', function (err) {
+    console.log(err);
+});
+
 // MySQL接続情報
 const connection = mysql.createConnection({
     host: '192.168.100.22',
