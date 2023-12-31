@@ -227,10 +227,7 @@ async function processNextQueue() {
             } else {
                 if(message_object.files == undefined) message_object.files = [];
                 //添付ファイルとして送信する
-                embed.video = {
-                    url: media.videos[i].url
-                }
-                //message_object.files.push(media.videos[i].url);
+                message_object.files.push(media.videos[i].url);
             }
         }
     }
