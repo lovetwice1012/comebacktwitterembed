@@ -268,6 +268,7 @@ async function processNextQueue() {
         embed.author.icon_url = 'https://abs.twimg.com/icons/apple-touch-icon-192x192.png';
         embed.title = 'Anonymous';
         embed.url = "https://anonymous.sprink.cloud/" + message.id;
+        embed.description = tweettext
         //もしimageEmbedsがある場合はそれも匿名化する
         if(imagesEmbeds.length != 0) {
             for(let i = 0; i < imagesEmbeds.length; i++) {
