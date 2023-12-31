@@ -854,6 +854,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
                 if (settings.button_invisible_translate == 0) actionRow.addComponents(translateButton);
                 if (settings.button_invisible_delete == 0) actionRow.addComponents(deleteButton);
                 messageObject2.components.push(actionRow);
+                messageObject2.embeds = [];
                 attachments.forEach(element => {
                     const extension = element.split("?").pop().split('.').pop();
                     if (messageObject2.embeds.length === 0) {
