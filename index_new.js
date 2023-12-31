@@ -1,10 +1,10 @@
 const discord = require('discord.js');
 const { Client, Events, GatewayIntentBits, Partials, ActivityType, InteractionType, ButtonBuilder, ButtonStyle, ComponentType, PermissionsBitField, ApplicationCommandOptionType } = require('discord.js');
-const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent], partials: [Partials.Channel] });
+const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent, GatewayIntentBits.GuildMessageReactions], partials: [Partials.Channel] });
 const config = require('./config.json');
 const fs = require('fs');
 const mysql = require('mysql');
-const { Translate } = require('./src/resxParser');
+const Translate = require('./src/resxParser');
 const fetchWorkersService = require('./src/workers/fetch/fetchWorkersService');
 const queueManager = require('./src/queue/queueManager');
 const queueManagerInstance = new queueManager();
@@ -78,7 +78,7 @@ async function processNextQueue() {
     削除ボタンは表示されない。
     */
     const settings = queue.settings;
-    const message = queue.message;
+    const message = await client.channels.cache.get(queue.message.channelId).messages.cache.get(queue.message.id);
     const plan = queue.plan;
     const url = queue.url;
     const tweetData = queue.result;
@@ -277,9 +277,8 @@ async function processNextQueue() {
         translateButton = new ButtonBuilder()
             .setCustomId('translate')
             .setLabel(Translate.translate[settings.defaultLanguage])
-            .setStyle(ButtonStyle.PRIMARY)
+            .setStyle(ButtonStyle.Primary)
             .setEmoji('🌐')
-            .build();
     }
     //削除ボタン
     let deleteButton = null;
@@ -287,9 +286,8 @@ async function processNextQueue() {
         deleteButton = new ButtonBuilder()
             .setCustomId('delete')
             .setLabel(Translate.delete[settings.defaultLanguage])
-            .setStyle(ButtonStyle.DANGER)
+            .setStyle(ButtonStyle.Danger)
             .setEmoji('🗑️')
-            .build();
     }
     //再読み込みボタン
     let reloadButton = null;
@@ -298,9 +296,8 @@ async function processNextQueue() {
             reloadButton = new ButtonBuilder()
                 .setCustomId('reload')
                 .setLabel(Translate.reload[settings.defaultLanguage])
-                .setStyle(ButtonStyle.SECONDARY)
+                .setStyle(ButtonStyle.Secondary)
                 .setEmoji('🔄')
-                .build();
         }
     }
     //メディアを添付ファイルとして送信するボタン
@@ -308,18 +305,17 @@ async function processNextQueue() {
     if(settings.button_invisible_showMediaAsAttachments == 0) {
         showMediaAsAttachmentsButton = new ButtonBuilder()
             .setCustomId('showMediaAsAttachments')
-            .setLabel(Translate.showMediaAsAttachments[settings.defaultLanguage])
-            .setStyle(ButtonStyle.SECONDARY)
+            .setLabel(Translate.show_media[settings.defaultLanguage])
+            .setStyle(ButtonStyle.Secondary)
             .setEmoji('📎')
-            .build();
     }
     
     //画像を埋め込みとして送信するボタンはここでは作成しない
 
     //5.ボタンをmessage_objectのcomponentsに追加する
-    //new Discord.MessageActionRow().addComponents
+    //new Discord.ActionRowBuilder().addComponents
     let components = [];
-    let actionRow = new discord.MessageActionRow();
+    let actionRow = new discord.ActionRowBuilder();
     if(translateButton != null) actionRow.addComponents(translateButton);
     if(deleteButton != null) actionRow.addComponents(deleteButton);
     if(reloadButton != null) actionRow.addComponents(reloadButton);
@@ -336,11 +332,19 @@ async function processNextQueue() {
     
     //メッセージを送信する
     //alwaysReplyが有効化されている場合は返信の形で送信する
+    console.log(message)
     if(settings.alwaysReply == 1) {
         message.reply(message_object);
     } else {
-        message.channel.send(message_object);
+        const channel = await client.channels.fetch(message.channelId);
+        channel.send(message_object);
     }
+    //messageのリアクションを取る
+    const myReactions = message.reactions.cache.filter(reaction => reaction.users.cache.has(client.user.id));
+    for (const reaction of myReactions.values()) {
+        await reaction.users.remove(client.user.id);
+    }
+    message.react("✅")
     //0.1秒待って次のキューを処理する
     setTimeout(() => {
         processNextQueue();
@@ -363,7 +367,7 @@ client.on(Events.ClientReady, () => {
 
     fetchWorkersServiceInstance.set_total_workers(64);
 
-    fetchWorkersServiceInstance.initialize();
+    fetchWorkersServiceInstance.initialize(client);
 
     processNextQueue();
 

@@ -14,18 +14,23 @@ class fetchWorkersService {
         this.queue = [];
     }
 
-    initialize() {
+    async initialize(client) {
         if(this.queueManager == null) throw new Error("queueManager is required");
         if(this.workers.length != 0) throw new Error("Workers already initialized");
         for(let i = 0; i < this.total_workers; i++){
             let workerInstance = new Worker("./src/workers/fetch/fetchWorker.js", {workerData: {workerId: i}});
-            workerInstance.on("message", (data) => {
+            workerInstance.on("message",async  (data) => {
                 if(typeof data === "string" && data === "ready") {
                     if(this.queue.length == 0) return workerInstance.postMessage(new fetchTask(null, null, "Standby"));
                     return workerInstance.postMessage(this.queue.shift());
                 }
                 if(data.error) {
                     console.error(data.error);
+                    const myReactions = data.message.reactions.cache.filter(reaction => reaction.users.cache.has(client.user.id));
+                    for (const reaction of myReactions.values()) {
+                        await reaction.users.remove(client.user.id);
+                    }
+                    data.message.react("❌")
                     return workerInstance.postMessage(this.queue.shift());
                 }
                 this.queueManager.add_to_queue(data, data.plan);

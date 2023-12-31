@@ -287,4 +287,8 @@ Si vous ne nous faites pas confiance, vous pouvez assurer votre sécurité en su
   <data name="settings_QuoteDoNot_Extract_name">
     <value>Ne pas déployer les retweets de citations</value>
   </data>
+  <data name="reload">
+    <value>recharger</value>
+  </data>
+  
 </root>

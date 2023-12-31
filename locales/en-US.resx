@@ -1,11 +1,11 @@
 <root>
-  <data name="Translate">
+  <data name="translate">
     <value>translate</value>
   </data>
-  <data name="Delete">
+  <data name="delete">
     <value>delete</value>
   </data>
-  <data name="Language">
+  <data name="language">
     <value>Language</value>
   </data>
   <data name="All">
@@ -289,5 +289,8 @@ If you do not trust us, you can secure your safety by removing your channel perm
   </data>
   <data name="command_name_role_Locales">
     <value>role</value>
+  </data>
+  <data name="reload">
+    <value>reload</value>
   </data>
 </root>

@@ -287,4 +287,7 @@
   <data name="settings_QuoteDoNot_Extract_name">
     <value>引用リツイートを展開しない</value>
   </data>
+  <data name="reload">
+    <value>再読み込み</value>
+  </data>
 </root>

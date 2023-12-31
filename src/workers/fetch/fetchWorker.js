@@ -48,7 +48,7 @@ parentPort.on("message", (data) => {
         result = json;
         let settings = null;
         const sql = 'SELECT * FROM settings WHERE guildId = ?';
-        const params = [data.message.guild.id];
+        const params = [data.message.guildId];
         connection.query(sql, params, (error, results, fields) => {
             if (error) {
                 console.error('Error connecting to database:', error);
