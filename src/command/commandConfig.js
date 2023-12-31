@@ -20,42 +20,41 @@ const commands = [
         
         },
         {
-            name: locales.Support["en-US"],
-            name_localizations: locales.Support,
+            name: locales.support["en-US"],
+            name_localizations: locales.support,
             description: locales.joinSupportServer["en-US"],
             description_localizations: locales.joinSupportServer
         
         },
         {
-            name: locales.Settings["en-US"],
-            name_localizations: locales.Settings,
+            name: locales.settings["en-US"],
+            name_localizations: locales.settings,
             description: locales.changeSettings["en-US"],
             description_localizations: locales.changeSettings,
             options: [
                 {
-                    name: locales.Disable["en-US"],
-                    name_localizations: locales.Disable,
+                    name: locales.disable["en-US"],
+                    name_localizations: locales.disable,
                     description: locales.disableByUserOrChannel["en-US"],
                     description_localizations: locales.disableByUserOrChannel,
                     type: ApplicationCommandOptionType.Subcommand,
                     options: [
                         {
-                            name: locales.User["en-US"],
-                            name_localizations: locales.User,
+                            name: locales.user["en-US"],
+                            name_localizations: locales.user,
                             description: locales.specifyTheUserToDisable["en-US"],
                             description_localizations: locales.specifyTheUserToDisable,
                             type: ApplicationCommandOptionType.User,
                             required: false
                         },
                         {
-                            name: locales.Channel["en-US"],
-                            name_localizations: locales.Channel,
+                            name: locales.channel["en-US"],
+                            name_localizations: locales.channel,
                             description: locales.specifyTheChannelToDisable["en-US"],
                             description_localizations: locales.specifyTheChannelToDisable,
                             type: ApplicationCommandOptionType.Channel,
                             required: false
                         },
-                        // 一致なし
                         {
                             name: locales.role["en-US"],
                             name_localizations: locales.role,
