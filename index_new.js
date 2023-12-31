@@ -507,7 +507,7 @@ client.on(Events.MessageCreate, async (message) => {
             for (let i = 0; i < urls.length; i++) {
                 fetchWorkersServiceInstance.add_queue(message, plan, urls[i]);
                 //キューに追加した事を示すためにリアクションを付ける
-                message.react(':repeat:');
+                message.react('🔁');
             }
         });
     });
