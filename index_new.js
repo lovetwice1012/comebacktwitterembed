@@ -371,8 +371,70 @@ client.on(Events.ClientReady, () => {
 
 client.on(Events.InteractionCreate, async (interaction) => {
     if (!interaction.isCommand()) return;
-    if (interaction.commandName === 'ping') {
-        await interaction.reply('Pong!');
+    console.log(interaction)
+    switch (interaction.commandName){
+
+        case Translate.Help["en-US"]:
+            await interaction.reply({
+                embeds: [
+                    {
+                        title: 'Help',
+                        description: Help_script[interaction.locale] ?? Help_script["en-US"],
+                        color: 0x1DA1F2,
+                        fields: [
+                            {
+                                name: 'Commands',
+                                value: Help_command[interaction.locale] ?? Help_command["en-US"]
+                            }
+                        ]
+                    }
+                ]
+            });
+        return
+
+        case locales.Ping["en-US"]:
+            await interaction.reply('Pong!');
+        return
+
+        case locales.Invite["en-US"]:
+            await interaction.reply({
+                embeds: [
+                    {
+                        title: 'Invite',
+                        description: BOT_Invite_Link[interaction.locale] ?? BOT_Invite_Link["en-US"],
+                        color: 0x1DA1F2,
+                        fields: [
+                            {
+                                name: 'Invite link',
+                                value: 'https://discord.com/oauth2/authorize?client_id=1161267455335862282&permissions=274877958144&scope=bot%20applications.commands'
+                            }
+                        ]
+                    }
+                ]
+            });
+        return
+
+        case Translate.Support["en-US"]:
+            await interaction.reply({
+                embeds: [
+                    {
+                        title: 'Support',
+                        description: supportServer_Invite_Link[interaction.locale] ?? supportServer_Invite_Link["en-US"],
+                        color: 0x1DA1F2,
+                        fields: [
+                            {
+                                name: 'Support server link',
+                                value: 'https://discord.gg/V5VUtS83SG'
+                            }
+                        ]
+                    }
+                ]
+            });
+        return
+
+        case Translate.Settings["en-US"]:
+            //settings
+        return
     }
 });
 
@@ -512,8 +574,5 @@ client.on(Events.MessageCreate, async (message) => {
         });
     });
 })
-
-client.on(Events.InteractionCreate, async (interaction) => {
-});
 
 client.login(config.token);
