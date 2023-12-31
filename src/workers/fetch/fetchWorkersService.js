@@ -25,7 +25,7 @@ class fetchWorkersService {
                     return workerInstance.postMessage(this.queue.shift());
                 }
                 if(data.error) {
-                    if(data.error.count < 6) return workerInstance.postMessage({message: data.error.data.message, plan: data.error.data.plan, url: data.error.data.url, quotedCount: data.quotedCount});
+                    if(data.error.count < 6) return workerInstance.postMessage({message: data.error.data.message, plan: data.error.data.plan, url: data.error.data.url, quotedCount: data.error.data.quotedCount});
                     console.error(data.error);
                     data.message = await client.channels.cache.get(data.message.channelId).messages.cache.get(data.message.id);
                     const myReactions = data.message.reactions.cache.filter(reaction => reaction.users.cache.has(client.user.id));
