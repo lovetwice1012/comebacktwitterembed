@@ -287,4 +287,7 @@ If you do not trust us, you can secure your safety by removing your channel perm
   <data name="settings_QuoteDoNot_Extract_name">
     <value>Do not deploy quote retweets</value>
   </data>
+  <data name="command_name_role_Locales">
+    <value>role</value>
+  </data>
 </root>
