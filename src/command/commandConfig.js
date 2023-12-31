@@ -312,5 +312,4 @@ const commands = [
             ]
         }
 ];
-console.log(locales.extractBotMessage);
 module.exports = commands;

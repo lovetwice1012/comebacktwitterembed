@@ -276,7 +276,7 @@
     <value>画像を埋め込み画像として表示</value>
   </data>
   <data name="setsWhetherToExpandQuoteRetweets">
-    <value>引用リツイートを展開しないかどうかを設定します。</value>
+    <value>引用リツイートを展開しないかどうかを設定します</value>
   </data>
   <data name="doNotDeployQuoteRetweets">
     <value>引用リツイートを展開しない</value>
