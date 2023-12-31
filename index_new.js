@@ -340,8 +340,10 @@ async function processNextQueue() {
         channel.send(message_object);
     }
     //messageのリアクションを取る
-    message.reactions.cache.filter(reaction => reaction.users.cache.has(client.user.id));
-    message.reactions.cache.get('🔁').remove()
+    const myReactions = message.reactions.cache.filter(reaction => reaction.users.cache.has(client.user.id));
+    for (const reaction of myReactions.values()) {
+        await reaction.users.remove(client.user.id);
+    }
     message.react("✅")
     //0.1秒待って次のキューを処理する
     setTimeout(() => {
@@ -365,7 +367,7 @@ client.on(Events.ClientReady, () => {
 
     fetchWorkersServiceInstance.set_total_workers(64);
 
-    fetchWorkersServiceInstance.initialize();
+    fetchWorkersServiceInstance.initialize(client);
 
     processNextQueue();
 
