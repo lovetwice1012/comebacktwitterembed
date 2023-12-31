@@ -2,9 +2,9 @@ const { ApplicationCommandOptionType } = require('discord.js');
 const locales = require('../resxParser');
 const commands = [
         {
-            name: locales.Help["en-US"],
-            name_localizations: locales.Help,
-            description: locales.Help["en-US"],
+            name: locales.help["en-US"],
+            name_localizations: locales.help,
+            description: locales.help["en-US"],
             description_localizations: locales.show_helpMessage
         },
         {
