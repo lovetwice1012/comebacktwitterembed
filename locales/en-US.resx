@@ -1,11 +1,11 @@
 <root>
-  <data name="Translate">
+  <data name="translate">
     <value>translate</value>
   </data>
-  <data name="Delete">
+  <data name="delete">
     <value>delete</value>
   </data>
-  <data name="Language">
+  <data name="language">
     <value>Language</value>
   </data>
   <data name="All">
