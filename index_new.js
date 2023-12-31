@@ -4,7 +4,7 @@ const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBit
 const config = require('./config.json');
 const fs = require('fs');
 const mysql = require('mysql');
-const { Translate } = require('./src/resxParser');
+const Translate = require('./src/resxParser');
 const fetchWorkersService = require('./src/workers/fetch/fetchWorkersService');
 const queueManager = require('./src/queue/queueManager');
 const queueManagerInstance = new queueManager();
@@ -341,6 +341,8 @@ async function processNextQueue() {
     } else {
         message.channel.send(message_object);
     }
+    //messageのリアクションを取る
+    message.reactions.remove("🔁");
     //0.1秒待って次のキューを処理する
     setTimeout(() => {
         processNextQueue();
