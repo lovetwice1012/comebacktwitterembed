@@ -593,7 +593,7 @@ Help_script: {
     },
     setsEndMediaAsAttachmentsAsDefaultTo: {
     "ja": "メディアを添付ファイルとして表示するかどうかを設定しました。",
-    "en-US": "Set sendMediaAsAttachmentsAsDefault to ",
+    "en-US": "Set sendMediaAsAttachmentsAsDefault to",
     "zh-CN": "将 sendMediaAsAttachmentsAsDefault 设置为",
     "es-ES": "Establece sendMediaAsAttachmentsAsDefault como",
     "fr": "Fixer la valeur de sendMediaAsAttachmentsAsDefault à",
@@ -603,7 +603,7 @@ Help_script: {
     },
     setDEleteIfOnlyPostedTweetLinkTo: {
     "ja": "ツイートのリンクのみを投稿した場合にメッセージを削除するかどうかを設定しました。",
-    "en-US": "Set deleteIfOnlyPostedTweetLink to ",
+    "en-US": "setdeleteifonlypostedtweetlinkto",
     "zh-CN": "将 deleteIfOnlyPostedTweetLink 设为",
     "es-ES": "Establecer deleteIfOnlyPostedTweetLink a",
     "fr": "Fixer deleteIfOnlyPostedTweetLink à",
@@ -613,7 +613,7 @@ Help_script: {
     },
     setALwaysReplyIfPostedTweetLinkTo: {
     "ja": "ツイートのリンクを投稿した場合に常に返信するかどうかを設定しました。",
-    "en-US": "Set alwaysReplyIfPostedTweetLink to ",
+    "en-US": "setalwaysreplyifpostedtweetlinkto",
     "zh-CN": "将 alwaysReplyIfPostedTweetLink 设为",
     "es-ES": "Establecer alwaysReplyIfPostedTweetLink como",
     "fr": "Définissez toujoursReplyIfPostedTweetLink à",
@@ -823,7 +823,7 @@ Help_script: {
     },
     setsWhetherToExtractBotMessages: {
     "ja": "BOTのメッセージを展開するかどうかを設定します。",
-    "en-US": "Sets whether to extract bot messages.",
+    "en-US": "setswhethertoextractbotmessages.",
     "zh-CN": "设置是否提取僵尸信息。",
     "es-ES": "Establece si se extraen los mensajes bot.",
     "fr": "Indique s'il faut extraire les messages des robots.",

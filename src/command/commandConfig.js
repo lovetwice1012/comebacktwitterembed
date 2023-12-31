@@ -164,7 +164,7 @@ const commands = [
                         }
                     ]
                 },
-                {
+                { //5 文字越え
                     name: locales.deleteIfOnlyPostedTweetlink["en-US"],
                     name_localizations: locales.deleteIfOnlyPostedTweetlink,
                     description: locales.setsWhetherToDeleteTheMessageIfOnlyTheTweetLinkIsPosted["en-US"],
@@ -277,7 +277,7 @@ const commands = [
                         }
                     ]
                 },
-                {
+                { //8
                     name: locales.extractBotMessage["en-US"],
                     name_localizations: locales.extractBotMessage,
                     description: locales.setsWhetherToExtractBotMessages["en-US"],
