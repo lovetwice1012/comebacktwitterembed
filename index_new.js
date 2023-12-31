@@ -435,53 +435,7 @@ client.on(Events.ClientReady, () => {
             }]
         });
     }, 60000);
-
-    //statsテーブルから最新の1件を取得する
-    /*
-    index	int(11) 連番	
-    joinedServersCount	int(11)	
-    usersCount	int(11)	
-    channelsCount	int(11)	
-    minutes	int(11)	
-    hours	int(11) NULL	
-    days	int(11) NULL	
-    timestamp	bigint(20)	
-    */
-    const sql = 'SELECT * FROM stats ORDER BY timestamp DESC LIMIT 1440';
-    connection.query(sql, (error, results, fields) => {
-        //もしdaysがnullじゃない場合は無視する
-        if (results[0].days != null) return;
-        //daysがnullではない行がある場合はそれとそれ以前をresultsから削除する
-        for (let i = 0; i < results.length; i++) {
-            if (results[i].days != null) {
-                results.splice(0, i);
-                break;
-            }
-        }
-        //hoursがnullではない行だけを抽出する
-        const hours = results.filter((result) => {
-            return result.hours != null;
-        });
-
-        //hoursを全部足してprocessed_dayに代入する
-        for (let i = 0; i < hours.length; i++) {
-            processed_day = processed_day + hours[i].hours;
-        }
-
-        //hoursがnullではない行がある場合はそれとそれ以前をresultsから削除する
-        for (let i = 0; i < results.length; i++) {
-            if (results[i].hours != null) {
-                results.splice(0, i);
-                break;
-            }
-        }
-
-        //minutesを全部足してprocessed_hourに代入する
-        for (let i = 0; i < results.length; i++) {
-            processed_hour = processed_hour + results[i].minutes;
-        }
-    });
-
+    
     setInterval(async () => {
         let guild = await client.guilds.cache.get('1175729394782851123')
         let channel = await guild.channels.cache.get('1189083636574724167')
