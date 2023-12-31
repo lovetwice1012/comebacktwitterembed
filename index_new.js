@@ -217,11 +217,13 @@ async function processNextQueue() {
         }
     }
     //videos
+    let videoText = null;
     if(media.videos != undefined) {
+        
         for(let i = 0; i < media.videos.length; i++) {
             if(settings.sendMovieAsLink == 1) {
                 //リンクとして送信する
-                message_object.content = message_object.content + "\n\n[動画リンク](" + media.videos[i].url + ")";
+                videoText = videoText + "\n[動画リンク](" + media.videos[i].url + ")";
             } else {
                 //添付ファイルとして送信する
                 message_object.files.push(media.videos[i].url);
@@ -341,10 +343,16 @@ async function processNextQueue() {
     //メッセージを送信する
     //alwaysReplyが有効化されている場合は返信の形で送信する
     if(settings.alwaysReply == 1) {
-        message.reply(message_object);
+        message.reply(message_object).then((msg) => {
+            if(videoText != null) message.channel.send(videoText);
+            if(settings.deleteMessageIfOnlyPostedTweetLink == 1 && message.content == url) message.delete();
+        });
     } else {
         const channel = await client.channels.fetch(message.channelId);
-        channel.send(message_object);
+        channel.send(message_object).then((msg) => {
+            if(videoText != null) message.channel.send(videoText);
+            if(settings.deleteMessageIfOnlyPostedTweetLink == 1 && message.content == url) message.delete();
+        });
     }
     //messageのリアクションを取る
     const myReactions = message.reactions.cache.filter(reaction => reaction.users.cache.has(client.user.id));
