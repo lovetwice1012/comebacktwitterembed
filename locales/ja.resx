@@ -1,64 +1,4 @@
 <root>
-  <data name="Translate">
-    <value>翻訳</value>
-  </data>
-  <data name="Delete">
-    <value>削除</value>
-  </data>
-  <data name="Language">
-    <value>言語</value>
-  </data>
-  <data name="All">
-    <value>すべて</value>
-  </data>
-  <data name="Help">
-    <value>ヘルプ</value>
-  </data>
-  <data name="Ping">
-    <value>遅延確認</value>
-  </data>
-  <data name="Invite">
-    <value>招待</value>
-  </data>
-  <data name="Support">
-    <value>サポート</value>
-  </data>
-  <data name="Settings">
-    <value>設定</value>
-  </data>
-  <data name="Disable">
-    <value>無効化</value>
-  </data>
-  <data name="BanWard">
-    <value>禁止ワード</value>
-  </data>
-  <data name="User">
-    <value>ユーザー</value>
-  </data>
-  <data name="Channel">
-    <value>チャンネル</value>
-  </data>
-  <data name="Role">
-    <value>ロール</value>
-  </data>
-  <data name="Word">
-    <value>単語</value>
-  </data>
-  <data name="DefaultLanguage">
-    <value>デフォルト言語</value>
-  </data>
-  <data name="FinishAction">
-    <value>操作を完了しました。</value>
-  </data>
-  <data name="show_Embed_img">
-    <value>画像を埋め込み画像として表示する</value>
-  </data>
-  <data name="show_mediaFiles">
-    <value>メディアを添付ファイルとして表示する</value>
-  </data>
-  <data name="show_helpMessage">
-    <value>ヘルプメッセージを表示します。</value>
-  </data>
   <data name="Help_script">
     <value>特別な設定は必要なく、ツイートリンクを投稿するだけで使用することができます。
 
@@ -74,220 +14,271 @@
 `/support` - サポートサーバーに参加するためのリンクを表示します
 `/settings` - 設定を変更します</value>
   </data>
-  <data name="settings_Disable_ch_user">
-    <value>ユーザーまたはチャンネルを指定して無効化します。</value>
+  <data name="translate">
+    <value>翻訳</value>
   </data>
-  <data name="settings_Add_remove_BANWords">
-    <value>禁止ワードを追加または削除します。</value>
+  <data name="delete">
+    <value>削除</value>
   </data>
-  <data name="settings_Disable_user">
-    <value>無効化するユーザーを指定します。</value>
+  <data name="language">
+    <value>言語</value>
   </data>
-  <data name="settings_Disable_ch">
-    <value>無効化するチャンネルを指定します。</value>
+  <data name="all">
+    <value>すべて</value>
   </data>
-  <data name="settings_BAN_word">
-    <value>禁止ワードを指定します。</value>
+  <data name="help">
+    <value>ヘルプ</value>
   </data>
-  <data name="message_not_permission">
-    <value>このコマンドを使用する権限がありません。</value>
+  <data name="ping">
+    <value>遅延確認</value>
   </data>
-  <data name="message_notuser_is_user">
-    <value>ユーザーにあなた以外のユーザーを指定することはできません。</value>
+  <data name="invite">
+    <value>招待</value>
   </data>
-  <data name="message_not_removeMessage">
-    <value>このメッセージを削除することはできません。</value>
+  <data name="support">
+    <value>サポート</value>
   </data>
-  <data name="message_user_ch_roll_only_pick">
-    <value>ユーザーまたはチャンネル、ロールのうち一つを指定する必要があります。</value>
+  <data name="settings">
+    <value>設定</value>
   </data>
-  <data name="message_not_MultiOptions">
-    <value>複数のオプションを指定することはできません。</value>
-  </data>
-  <data name="message_not_permission_ManegeMessage">
-    <value>BOTにメッセージを管理する権限がありません。</value>
-  </data>
-  <data name="message_not_permission_DeleteMessage">
-    <value>BOTにメッセージを削除する権限がありません。</value>
-  </data>
-  <data name="message_Add_Disable_user">
-    <value>無効化するユーザーに追加しました。</value>
-  </data>
-  <data name="message_Remove_Disable_user">
-    <value>無効化するユーザーから削除しました。</value>
-  </data>
-  <data name="message_Add_Disable_ch">
-    <value>無効化するチャンネルに追加しました。</value>
-  </data>
-  <data name="message_Remove_Disable_ch">
-    <value>無効化するチャンネルから削除しました。</value>
-  </data>
-  <data name="message_Add_Disable_Roll">
-    <value>無効化するロールに追加しました。</value>
-  </data>
-  <data name="message_Remove_Disable_Roll">
-    <value>無効化するロールから削除しました。</value>
-  </data>
-  <data name="message_Add_Disable_Word">
-    <value>禁止ワードに追加しました。</value>
-  </data>
-  <data name="message_Remove_Disable_Word">
-    <value>禁止ワードから削除しました。</value>
-  </data>
-  <data name="settings_cantgood_option">
-    <value>オプションを正確に指定する必要があります。</value>
-  </data>
-  <data name="settings_translating_defaultLanguage">
-    <value>翻訳するときのデフォルトの言語を設定します。</value>
-  </data>
-  <data name="settings_translating_messageEdit_option">
-    <value>翻訳するときにオリジナルのメッセージを編集するかどうかを設定します。</value>
-  </data>
-  <data name="BOT_Invite_Link">
-    <value>このbotをあなたのサーバーに招待するためのリンクを表示します</value>
-  </data>
-  <data name="supportServer_Invite_Link">
-    <value>サポートサーバーに参加するためのリンクを表示します</value>
-  </data>
-  <data name="settings_change">
-    <value>設定を変更します</value>
-  </data>
-  <data name="message_contains_BANWord">
-    <value>あなたのメッセージには禁止ワードが含まれています。</value>
-  </data>
-  <data name="message_not_Remove_permission">
-    <value>メッセージを削除する権限がありません。</value>
-  </data>
-  <data name="settings_set_DefaultLanguage">
-    <value>デフォルトの言語を設定しました。 :</value>
-  </data>
-  <data name="settings_editOriginalIfTranslate">
-    <value>editOriginalIfTranslateを設定しました。 :</value>
-  </data>
-  <data name="message_cant_delete_otherMessage">
-    <value>あなたは他のユーザーのメッセージを削除することはできません。</value>
-  </data>
-  <data name="settings_show_media">
-    <value>メディアを添付ファイルとして表示するかどうかを設定します。</value>
-  </data>
-  <data name="settings_send_OnlyTwitterLink_Delete">
-    <value>ツイートのリンクのみを投稿した場合にメッセージを削除するかどうかを設定します。</value>
-  </data>
-  <data name="settings_tweetLink_allow_reply">
-    <value>ツイートのリンクを投稿した場合に常に返信するかどうかを設定します。</value>
-  </data>
-  <data name="settings_show_media_complete">
-    <value>メディアを添付ファイルとして表示するかどうかを設定しました。 :</value>
-  </data>
-  <data name="settings_send_OnlyTwitterLink_Delete_complete">
-    <value>ツイートのリンクのみを投稿した場合にメッセージを削除するかどうかを設定しました。 :</value>
-  </data>
-  <data name="settings_tweetLink_allow_reply_complete">
-    <value>ツイートのリンクを投稿した場合に常に返信するかどうかを設定しました。 :</value>
-  </data>
-  <data name="Disable_All_Button">
-    <value>すべてのボタンを無効化しました。</value>
-  </data>
-  <data name="Enable_All_Button">
-    <value>すべてのボタンを有効化しました。</value>
-  </data>
-  <data name="settings_mediaFile_show_button_complete">
-    <value>メディアを添付ファイルとして表示するボタンを設定しました。 :</value>
-  </data>
-  <data name="settings_img_embed_show_button_complete">
-    <value>画像を埋め込み画像として表示するボタンを設定しました。 :</value>
-  </data>
-  <data name="settings_Translate_button_complete">
-    <value>翻訳ボタンを設定しました。 :</value>
-  </data>
-  <data name="settings_delete_button_complete">
-    <value>削除ボタンを設定しました。 :</value>
-  </data>
-  <data name="settings_show_media_button_Disable_complete">
-    <value>メディアを添付ファイルとして表示するボタンを無効化しました。</value>
-  </data>
-  <data name="settings_show_media_button_Enable_complete">
-    <value>メディアを添付ファイルとして表示するボタンを有効化しました。</value>
-  </data>
-  <data name="settings_show_EmbedImg_button_Disable_complete">
-    <value>画像を埋め込み画像として表示するボタンを無効化しました。</value>
-  </data>
-  <data name="settings_show_EmbedImg_button_Enable_complete">
-    <value>画像を埋め込み画像として表示するボタンを有効化しました。</value>
-  </data>
-  <data name="settings_Translate_button_Disable_complete">
-    <value>翻訳ボタンを無効化しました。</value>
-  </data>
-  <data name="settings_Translate_button_Enable_complete">
-    <value>翻訳ボタンを有効化しました。</value>
-  </data>
-  <data name="settings_delete_button_Disable_complete">
-    <value>削除ボタンを無効化しました。</value>
-  </data>
-  <data name="settings_delete_button_Enable_complete">
-    <value>削除ボタンを有効化しました。</value>
-  </data>
-  <data name="settings_Add_Disable_button_user_complete">
-    <value>ボタンを無効化するユーザーに追加しました。</value>
-  </data>
-  <data name="settings_Remove_Disable_button_user_complete">
-    <value>ボタンを無効化するユーザーから削除しました。</value>
-  </data>
-  <data name="settings_Add_Disable_button_ch_complete">
-    <value>ボタンを無効化するチャンネルに追加しました。</value>
-  </data>
-  <data name="settings_Remove_Disable_button_ch_complete">
-    <value>ボタンを無効化するチャンネルから削除しました。</value>
-  </data>
-  <data name="settings_Add_Disable_button_Roll_complete">
-    <value>ボタンを無効化するロールに追加しました。</value>
-  </data>
-  <data name="settings_Remove_Disable_button_Roll_complete">
-    <value>ボタンを無効化するロールから削除しました。</value>
-  </data>
-  <data name="settings_BOT_message_open">
-    <value>BOTのメッセージを展開するかどうかを設定します。</value>
-  </data>
-  <data name="settings_BOT_message_open_complete">
-    <value>BOTのメッセージを展開するかどうかを設定しました。 :</value>
-  </data>
-  <data name="message_translate_originalMessageEdit">
-    <value>翻訳時にオリジナルのメッセージを編集</value>
-  </data>
-  <data name="Boolean">
-    <value>はいかいいえ</value>
-  </data>
-  <data name="show_media">
-    <value>メディアを添付ファイルとして表示</value>
-  </data>
-  <data name="only_tweetLink_to_DeleteMessage">
-    <value>ツイートのリンクのみを投稿した場合にメッセージを削除</value>
-  </data>
-  <data name="send_to_tweetLink_always_reply">
-    <value>ツイートのリンクを投稿した場合に常に返信</value>
-  </data>
-  <data name="Button">
-    <value>ボタン</value>
-  </data>
-  <data name="Invisible">
-    <value>非表示</value>
-  </data>
-  <data name="Disabled">
+  <data name="disable">
     <value>無効化</value>
   </data>
-  <data name="open_BOT_message">
+  <data name="banWord">
+    <value>禁止ワード</value>
+  </data>
+  <data name="user">
+    <value>ユーザー</value>
+  </data>
+  <data name="channel">
+    <value>チャンネル</value>
+  </data>
+  <data name="role">
+    <value>ロール</value>
+  </data>
+  <data name="word">
+    <value>単語</value>
+  </data>
+  <data name="defaultLanguage">
+    <value>デフォルト言語</value>
+  </data>
+  <data name="button">
+    <value>ボタン</value>
+  </data>
+  <data name="invisible">
+    <value>非表示</value>
+  </data>
+  <data name="disabled">
+    <value>無効化</value>
+  </data>
+  <data name="boolean">
+    <value>はいかいいえ</value>
+  </data>
+  <data name="finishedAction">
+    <value>操作を完了しました。</value>
+  </data>
+  <data name="showMediaInEmbedsImage">
+    <value>画像を埋め込み画像として表示する</value>
+  </data>
+  <data name="showMediaAsAttachments">
+    <value>メディアを添付ファイルとして表示</value>
+  </data>
+  <data name="showsHelpMessage">
+    <value>ヘルプメッセージを表示します。</value>
+  </data>
+  <data name="disableByUserOrChannel">
+    <value>ユーザーまたはチャンネルを指定して無効化します。</value>
+  </data>
+  <data name="addOrRemoveBannedWords">
+    <value>禁止ワードを追加または削除します。</value>
+  </data>
+  <data name="specifyTheUserToDisable">
+    <value>無効化するユーザーを指定します。</value>
+  </data>
+  <data name="specifyTheChannelToDisable">
+    <value>無効化するチャンネルを指定します。</value>
+  </data>
+  <data name="specifyTheBannedWord">
+    <value>禁止ワードを指定します。</value>
+  </data>
+  <data name="youDonTHavePermissionToUseThisCommand">
+    <value>このコマンドを使用する権限がありません。</value>
+  </data>
+  <data name="youCanTUseThisCommandForOtherUsers">
+    <value>ユーザーにあなた以外のユーザーを指定することはできません。</value>
+  </data>
+  <data name="youCanTDeleteThisMessage">
+    <value>このメッセージを削除することはできません。</value>
+  </data>
+  <data name="youMustSpecifyAUserOrChannelOrRole">
+    <value>ユーザーまたはチャンネル、ロールのうち一つを指定する必要があります。</value>
+  </data>
+  <data name="youCanTSpecifyMultipleOptions">
+    <value>複数のオプションを指定することはできません。</value>
+  </data>
+  <data name="iDonTHavePermissionToManageMessages">
+    <value>BOTにメッセージを管理する権限がありません。</value>
+  </data>
+  <data name="iDonTHavePermissionToDeleteMessages">
+    <value>メッセージを削除する権限がありません。</value>
+  </data>
+  <data name="addedUserToDisableUser">
+    <value>無効化するユーザーに追加しました。</value>
+  </data>
+  <data name="removedUserFromDisableUser">
+    <value>無効化するユーザーから削除しました。</value>
+  </data>
+  <data name="addedChannelToDisableChannel">
+    <value>無効化するチャンネルに追加しました。</value>
+  </data>
+  <data name="removedChannelFromDisableChannel">
+    <value>無効化するチャンネルから削除しました。</value>
+  </data>
+  <data name="addedRoleToDisableRole">
+    <value>無効化するロールに追加しました。</value>
+  </data>
+  <data name="removedRoleFromDisableRole">
+    <value>無効化するロールから削除しました。</value>
+  </data>
+  <data name="addedWordToBannedWords">
+    <value>禁止ワードに追加しました。</value>
+  </data>
+  <data name="removedWordFromBannedWords">
+    <value>禁止ワードから削除しました。</value>
+  </data>
+  <data name="youMustSpecifyAOption">
+    <value>オプションを正確に指定する必要があります。</value>
+  </data>
+  <data name="setsTheDefaultLanguageWhenTranslating">
+    <value>翻訳するときのデフォルトの言語を設定します。</value>
+  </data>
+  <data name="setsWhetherToEditTheOriginalMessageWhenTranslating">
+    <value>翻訳するときにオリジナルのメッセージを編集するかどうかを設定します。</value>
+  </data>
+  <data name="inviteMeToYourServer">
+    <value>このbotをあなたのサーバーに招待するためのリンクを表示します</value>
+  </data>
+  <data name="joinSupportServer">
+    <value>サポートサーバーに参加するためのリンクを表示します</value>
+  </data>
+  <data name="changeSettings">
+    <value>設定を変更します</value>
+  </data>
+  <data name="yourMessageContainsABannedWord">
+    <value>あなたのメッセージには禁止ワードが含まれています。</value>
+  </data>
+  <data name="setDefaultLanguageTo">
+    <value>デフォルトの言語を設定しました。 :</value>
+  </data>
+  <data name="setEditOriginalIfTranslateTo">
+    <value>editOriginalIfTranslateを設定しました。 :</value>
+  </data>
+  <data name="youCanTDeleteOtherUsers' Messages">
+    <value>あなたは他のユーザーのメッセージを削除することはできません。</value>
+  </data>
+  <data name="setsWhetherToShowMediaAsAttachments">
+    <value>メディアを添付ファイルとして表示するかどうかを設定します。</value>
+  </data>
+  <data name="setsWhetherToDeleteTheMessageIfOnlyTheTweetLinkIsPosted">
+    <value>ツイートのリンクのみを投稿した場合にメッセージを削除するかどうかを設定します。</value>
+  </data>
+  <data name="setsWhetherToAlwaysReplyIfTheTweetLinkIsPosted">
+    <value>ツイートのリンクを投稿した場合に常に返信するかどうかを設定します。</value>
+  </data>
+  <data name="setsEndMediaAsAttachmentsAsDefaultTo">
+    <value>メディアを添付ファイルとして表示するかどうかを設定しました。 :</value>
+  </data>
+  <data name="setDEleteIfOnlyPostedTweetLinkTo">
+    <value>ツイートのリンクのみを投稿した場合にメッセージを削除するかどうかを設定しました。 :</value>
+  </data>
+  <data name="setALwaysReplyIfPostedTweetLinkTo">
+    <value>ツイートのリンクを投稿した場合に常に返信するかどうかを設定しました。 :</value>
+  </data>
+  <data name="disabledAllButtons">
+    <value>すべてのボタンを無効化しました。</value>
+  </data>
+  <data name="enabledAllButtons">
+    <value>すべてのボタンを有効化しました。</value>
+  </data>
+  <data name="setShowMediaAsAttachmentsButtonTo">
+    <value>メディアを添付ファイルとして表示するボタンを設定しました。 :</value>
+  </data>
+  <data name="setsHowAttachmentsAsEmbedsImageButtonTo">
+    <value>画像を埋め込み画像として表示するボタンを設定しました。 :</value>
+  </data>
+  <data name="setTranslateButtonTo">
+    <value>翻訳ボタンを設定しました。 :</value>
+  </data>
+  <data name="setDeleteButtonTo">
+    <value>削除ボタンを設定しました。 :</value>
+  </data>
+  <data name="disabledShowMediaAsAttachmentsButton">
+    <value>メディアを添付ファイルとして表示するボタンを無効化しました。</value>
+  </data>
+  <data name="enabledShowMediaAsAttachmentsButton">
+    <value>メディアを添付ファイルとして表示するボタンを有効化しました。</value>
+  </data>
+  <data name="disabledsHowAttachmentsAsEmbedsImageButton">
+    <value>画像を埋め込み画像として表示するボタンを無効化しました。</value>
+  </data>
+  <data name="enabledsHowAttachmentsAsEmbedsImageButton">
+    <value>画像を埋め込み画像として表示するボタンを有効化しました。</value>
+  </data>
+  <data name="disabledTranslateButton">
+    <value>翻訳ボタンを無効化しました。</value>
+  </data>
+  <data name="enabledTranslateButton">
+    <value>翻訳ボタンを有効化しました。</value>
+  </data>
+  <data name="disabledDeleteButton">
+    <value>削除ボタンを無効化しました。</value>
+  </data>
+  <data name="enabledDeleteButton">
+    <value>削除ボタンを有効化しました。</value>
+  </data>
+  <data name="addedUserToButtonDisabledUser">
+    <value>ボタンを無効化するユーザーに追加しました。</value>
+  </data>
+  <data name="removedUserFromButtonDisabledUser">
+    <value>ボタンを無効化するユーザーから削除しました。</value>
+  </data>
+  <data name="addedChannelToButtonDisabledChannel">
+    <value>ボタンを無効化するチャンネルに追加しました。</value>
+  </data>
+  <data name="removedChannelFromButtonDisabledChannel">
+    <value>ボタンを無効化するチャンネルから削除しました。</value>
+  </data>
+  <data name="addedRoleToButtonDisabledRole">
+    <value>ボタンを無効化するロールに追加しました。</value>
+  </data>
+  <data name="removedRoleFromButtonDisabledRole">
+    <value>ボタンを無効化するロールから削除しました。</value>
+  </data>
+  <data name="setsWhetherToExtractBotMessages">
+    <value>BOTのメッセージを展開するかどうかを設定します。</value>
+  </data>
+  <data name="setExtractBotMessageTo">
+    <value>BOTのメッセージを展開するかどうかを設定しました。 :</value>
+  </data>
+  <data name="editOriginalIfTranslate">
+    <value>翻訳時にオリジナルのメッセージを編集</value>
+  </data>
+  <data name="deleteIfOnlyPostedTweetlink">
+    <value>ツイートのリンクのみを投稿した場合にメッセージを削除</value>
+  </data>
+  <data name="alwaysReplyIfPostedTweetlink">
+    <value>ツイートのリンクを投稿した場合に常に返信</value>
+  </data>
+  <data name="extractBotMessage">
     <value>ボットのメッセージを展開</value>
   </data>
-  <data name="show_embedImg">
+  <data name="showAttachmentsAsEmbedsImage">
     <value>画像を埋め込み画像として表示</value>
   </data>
-  <data name="settings_QuoteDoNot_Extract">
+  <data name="setsWhetherToExpandQuoteRetweets">
     <value>引用リツイートを展開しないかどうかを設定します。</value>
   </data>
-  <data name="settings_QuoteDoNot_Extract_name">
+  <data name="doNotDeployQuoteRetweets">
     <value>引用リツイートを展開しない</value>
-  </data>
-  <data name="reload">
-    <value>再読み込み</value>
   </data>
 </root>

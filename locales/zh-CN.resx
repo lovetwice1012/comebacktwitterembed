@@ -1,64 +1,4 @@
 <root>
-  <data name="Translate">
-    <value>译</value>
-  </data>
-  <data name="Delete">
-    <value>删去</value>
-  </data>
-  <data name="Language">
-    <value>语言</value>
-  </data>
-  <data name="All">
-    <value>一应俱全</value>
-  </data>
-  <data name="Help">
-    <value>帮助</value>
-  </data>
-  <data name="Ping">
-    <value>乒</value>
-  </data>
-  <data name="Invite">
-    <value>推动</value>
-  </data>
-  <data name="Support">
-    <value>支持</value>
-  </data>
-  <data name="Settings">
-    <value>设置</value>
-  </data>
-  <data name="Disable">
-    <value>关闭</value>
-  </data>
-  <data name="BanWard">
-    <value>禁止词语</value>
-  </data>
-  <data name="User">
-    <value>用户</value>
-  </data>
-  <data name="Channel">
-    <value>海峡</value>
-  </data>
-  <data name="Role">
-    <value>作用</value>
-  </data>
-  <data name="Word">
-    <value>变成</value>
-  </data>
-  <data name="DefaultLanguage">
-    <value>默认语言</value>
-  </data>
-  <data name="FinishAction">
-    <value>完成行动。</value>
-  </data>
-  <data name="show_Embed_img">
-    <value>在嵌入图片中显示媒体</value>
-  </data>
-  <data name="show_mediaFiles">
-    <value>将媒体显示为附件</value>
-  </data>
-  <data name="show_helpMessage">
-    <value>显示帮助信息。</value>
-  </data>
   <data name="Help_script">
     <value>无需特殊设置，只需发布推文链接即可。
 
@@ -74,220 +14,271 @@
 `/support` - 加入支持服务器！
 `/settings` - chenge 设置</value>
   </data>
-  <data name="settings_Disable_ch_user">
-    <value>由用户或通道禁用。</value>
+  <data name="translate">
+    <value>译</value>
   </data>
-  <data name="settings_Add_remove_BANWords">
-    <value>添加或删除禁用词语。</value>
+  <data name="delete">
+    <value>删去</value>
   </data>
-  <data name="settings_Disable_user">
-    <value>指定要禁用的用户。</value>
+  <data name="language">
+    <value>语言</value>
   </data>
-  <data name="settings_Disable_ch">
-    <value>指定要禁用的通道。</value>
+  <data name="all">
+    <value>一应俱全</value>
   </data>
-  <data name="settings_BAN_word">
-    <value>指定禁用词。</value>
+  <data name="help">
+    <value>帮助</value>
   </data>
-  <data name="message_not_permission">
-    <value>您没有权限使用此命令。</value>
+  <data name="ping">
+    <value>乒</value>
   </data>
-  <data name="message_notuser_is_user">
-    <value>不能对其他用户使用该命令。</value>
+  <data name="invite">
+    <value>推动</value>
   </data>
-  <data name="message_not_removeMessage">
-    <value>您不能删除这条信息。</value>
+  <data name="support">
+    <value>支持</value>
   </data>
-  <data name="message_user_ch_roll_only_pick">
-    <value>您必须指定一个用户或通道或角色。</value>
+  <data name="settings">
+    <value>设置</value>
   </data>
-  <data name="message_not_MultiOptions">
-    <value>不能指定多个选项。</value>
+  <data name="disable">
+    <value>关闭</value>
   </data>
-  <data name="message_not_permission_ManegeMessage">
-    <value>我没有管理邮件的权限。</value>
+  <data name="banWord">
+    <value>禁止词语</value>
   </data>
-  <data name="message_not_permission_DeleteMessage">
-    <value>我没有删除信息的权限。</value>
+  <data name="user">
+    <value>用户</value>
   </data>
-  <data name="message_Add_Disable_user">
-    <value>已将用户添加到禁用用户。</value>
+  <data name="channel">
+    <value>海峡</value>
   </data>
-  <data name="message_Remove_Disable_user">
-    <value>从 disable.user 中移除用户。</value>
+  <data name="role">
+    <value>作用</value>
   </data>
-  <data name="message_Add_Disable_ch">
-    <value>已将 channel 添加到 disable.channel。</value>
+  <data name="word">
+    <value>变成</value>
   </data>
-  <data name="message_Remove_Disable_ch">
-    <value>从 disable.channel 中移除通道。</value>
+  <data name="defaultLanguage">
+    <value>默认语言</value>
   </data>
-  <data name="message_Add_Disable_Roll">
-    <value>已为 disable.role 添加角色。</value>
-  </data>
-  <data name="message_Remove_Disable_Roll">
-    <value>删除了 disable.role 中的角色。</value>
-  </data>
-  <data name="message_Add_Disable_Word">
-    <value>在禁用词语中添加了词语。</value>
-  </data>
-  <data name="message_Remove_Disable_Word">
-    <value>从 bannedWords 中删除了单词。</value>
-  </data>
-  <data name="settings_cantgood_option">
-    <value>您必须指定一个选项。</value>
-  </data>
-  <data name="settings_translating_defaultLanguage">
-    <value>设置翻译时的默认语言。</value>
-  </data>
-  <data name="settings_translating_messageEdit_option">
-    <value>设置翻译时是否编辑原始信息。</value>
-  </data>
-  <data name="BOT_Invite_Link">
-    <value>请我去你的服务器</value>
-  </data>
-  <data name="supportServer_Invite_Link">
-    <value>加入支持服务器！</value>
-  </data>
-  <data name="settings_change">
-    <value>更改设置</value>
-  </data>
-  <data name="message_contains_BANWord">
-    <value>您的邮件包含禁用词。</value>
-  </data>
-  <data name="message_not_Remove_permission">
-    <value>我没有删除信息的权限。</value>
-  </data>
-  <data name="settings_set_DefaultLanguage">
-    <value>将默认语言设置为</value>
-  </data>
-  <data name="settings_editOriginalIfTranslate">
-    <value>将 editOriginalIfTranslate 设置为</value>
-  </data>
-  <data name="message_cant_delete_otherMessage">
-    <value>您不能删除其他用户的信息。</value>
-  </data>
-  <data name="settings_show_media">
-    <value>设置是否将媒体显示为附件。</value>
-  </data>
-  <data name="settings_send_OnlyTwitterLink_Delete">
-    <value>设置是否在只发布了推文链接的情况下删除信息。</value>
-  </data>
-  <data name="settings_tweetLink_allow_reply">
-    <value>设置在发布推文链接时是否总是回复。</value>
-  </data>
-  <data name="settings_show_media_complete">
-    <value>将 sendMediaAsAttachmentsAsDefault 设置为</value>
-  </data>
-  <data name="settings_send_OnlyTwitterLink_Delete_complete">
-    <value>将 deleteIfOnlyPostedTweetLink 设为</value>
-  </data>
-  <data name="settings_tweetLink_allow_reply_complete">
-    <value>将 alwaysReplyIfPostedTweetLink 设为</value>
-  </data>
-  <data name="Disable_All_Button">
-    <value>禁用所有按钮。</value>
-  </data>
-  <data name="Enable_All_Button">
-    <value>启用所有按钮。</value>
-  </data>
-  <data name="settings_mediaFile_show_button_complete">
-    <value>将 showMediaAsAttachments 按钮设置为</value>
-  </data>
-  <data name="settings_img_embed_show_button_complete">
-    <value>将 showAttachmentsAsEmbedsImage 按钮设置为</value>
-  </data>
-  <data name="settings_Translate_button_complete">
-    <value>将翻译按钮设置为</value>
-  </data>
-  <data name="settings_delete_button_complete">
-    <value>将删除按钮设置为</value>
-  </data>
-  <data name="settings_show_media_button_Disable_complete">
-    <value>禁用 showMediaAsAttachments 按钮。</value>
-  </data>
-  <data name="settings_show_media_button_Enable_complete">
-    <value>启用 showMediaAsAttachments 按钮。</value>
-  </data>
-  <data name="settings_show_EmbedImg_button_Disable_complete">
-    <value>禁用 showAttachmentsAsEmbedsImage 按钮。</value>
-  </data>
-  <data name="settings_show_EmbedImg_button_Enable_complete">
-    <value>启用 showAttachmentsAsEmbedsImage 按钮。</value>
-  </data>
-  <data name="settings_Translate_button_Disable_complete">
-    <value>禁用翻译按钮。</value>
-  </data>
-  <data name="settings_Translate_button_Enable_complete">
-    <value>启用翻译按钮。</value>
-  </data>
-  <data name="settings_delete_button_Disable_complete">
-    <value>删除按钮已禁用。</value>
-  </data>
-  <data name="settings_delete_button_Enable_complete">
-    <value>启用删除按钮。</value>
-  </data>
-  <data name="settings_Add_Disable_button_user_complete">
-    <value>已在 button_disabled.user 中添加用户。</value>
-  </data>
-  <data name="settings_Remove_Disable_button_user_complete">
-    <value>删除了 button_disabled.user 中的用户。</value>
-  </data>
-  <data name="settings_Add_Disable_button_ch_complete">
-    <value>已为 button_disabled.channel 添加通道。</value>
-  </data>
-  <data name="settings_Remove_Disable_button_ch_complete">
-    <value>删除了 button_disabled.channel 中的通道。</value>
-  </data>
-  <data name="settings_Add_Disable_button_Roll_complete">
-    <value>已为 button_disabled.role 添加角色。</value>
-  </data>
-  <data name="settings_Remove_Disable_button_Roll_complete">
-    <value>删除了 button_disabled.role 中的角色。</value>
-  </data>
-  <data name="settings_BOT_message_open">
-    <value>设置是否提取僵尸信息。</value>
-  </data>
-  <data name="settings_BOT_message_open_complete">
-    <value>将 extractBotMessage 设为</value>
-  </data>
-  <data name="message_translate_originalMessageEdit">
-    <value>如需翻译，请编辑原文</value>
-  </data>
-  <data name="Boolean">
-    <value>布尔</value>
-  </data>
-  <data name="show_media">
-    <value>以附件形式显示媒体</value>
-  </data>
-  <data name="only_tweetLink_to_DeleteMessage">
-    <value>如果只发布推文链接，则删除</value>
-  </data>
-  <data name="send_to_tweetLink_always_reply">
-    <value>如果发布了推特链接，请务必回复</value>
-  </data>
-  <data name="Button">
+  <data name="button">
     <value>按钮</value>
   </data>
-  <data name="Invisible">
+  <data name="invisible">
     <value>无形</value>
   </data>
-  <data name="Disabled">
+  <data name="disabled">
     <value>残</value>
   </data>
-  <data name="open_BOT_message">
+  <data name="boolean">
+    <value>布尔</value>
+  </data>
+  <data name="finishedAction">
+    <value>完成行动。</value>
+  </data>
+  <data name="showMediaInEmbedsImage">
+    <value>在嵌入图片中显示媒体</value>
+  </data>
+  <data name="showMediaAsAttachments">
+    <value>以附件形式显示媒体</value>
+  </data>
+  <data name="showsHelpMessage">
+    <value>显示帮助信息。</value>
+  </data>
+  <data name="disableByUserOrChannel">
+    <value>由用户或通道禁用。</value>
+  </data>
+  <data name="addOrRemoveBannedWords">
+    <value>添加或删除禁用词语。</value>
+  </data>
+  <data name="specifyTheUserToDisable">
+    <value>指定要禁用的用户。</value>
+  </data>
+  <data name="specifyTheChannelToDisable">
+    <value>指定要禁用的通道。</value>
+  </data>
+  <data name="specifyTheBannedWord">
+    <value>指定禁用词。</value>
+  </data>
+  <data name="youDonTHavePermissionToUseThisCommand">
+    <value>您没有权限使用此命令。</value>
+  </data>
+  <data name="youCanTUseThisCommandForOtherUsers">
+    <value>不能对其他用户使用该命令。</value>
+  </data>
+  <data name="youCanTDeleteThisMessage">
+    <value>您不能删除这条信息。</value>
+  </data>
+  <data name="youMustSpecifyAUserOrChannelOrRole">
+    <value>您必须指定一个用户或通道或角色。</value>
+  </data>
+  <data name="youCanTSpecifyMultipleOptions">
+    <value>不能指定多个选项。</value>
+  </data>
+  <data name="iDonTHavePermissionToManageMessages">
+    <value>我没有管理邮件的权限。</value>
+  </data>
+  <data name="iDonTHavePermissionToDeleteMessages">
+    <value>我没有删除信息的权限。</value>
+  </data>
+  <data name="addedUserToDisableUser">
+    <value>已将用户添加到禁用用户。</value>
+  </data>
+  <data name="removedUserFromDisableUser">
+    <value>从 disable.user 中移除用户。</value>
+  </data>
+  <data name="addedChannelToDisableChannel">
+    <value>已将 channel 添加到 disable.channel。</value>
+  </data>
+  <data name="removedChannelFromDisableChannel">
+    <value>从 disable.channel 中移除通道。</value>
+  </data>
+  <data name="addedRoleToDisableRole">
+    <value>已为 disable.role 添加角色。</value>
+  </data>
+  <data name="removedRoleFromDisableRole">
+    <value>删除了 disable.role 中的角色。</value>
+  </data>
+  <data name="addedWordToBannedWords">
+    <value>在禁用词语中添加了词语。</value>
+  </data>
+  <data name="removedWordFromBannedWords">
+    <value>从 bannedWords 中删除了单词。</value>
+  </data>
+  <data name="youMustSpecifyAOption">
+    <value>您必须指定一个选项。</value>
+  </data>
+  <data name="setsTheDefaultLanguageWhenTranslating">
+    <value>设置翻译时的默认语言。</value>
+  </data>
+  <data name="setsWhetherToEditTheOriginalMessageWhenTranslating">
+    <value>设置翻译时是否编辑原始信息。</value>
+  </data>
+  <data name="inviteMeToYourServer">
+    <value>请我去你的服务器</value>
+  </data>
+  <data name="joinSupportServer">
+    <value>加入支持服务器！</value>
+  </data>
+  <data name="changeSettings">
+    <value>更改设置</value>
+  </data>
+  <data name="yourMessageContainsABannedWord">
+    <value>您的邮件包含禁用词。</value>
+  </data>
+  <data name="setDefaultLanguageTo">
+    <value>将默认语言设置为</value>
+  </data>
+  <data name="setEditOriginalIfTranslateTo">
+    <value>将 editOriginalIfTranslate 设置为</value>
+  </data>
+  <data name="youCanTDeleteOtherUsers' Messages">
+    <value>您不能删除其他用户的信息。</value>
+  </data>
+  <data name="setsWhetherToShowMediaAsAttachments">
+    <value>设置是否将媒体显示为附件。</value>
+  </data>
+  <data name="setsWhetherToDeleteTheMessageIfOnlyTheTweetLinkIsPosted">
+    <value>设置是否在只发布了推文链接的情况下删除信息。</value>
+  </data>
+  <data name="setsWhetherToAlwaysReplyIfTheTweetLinkIsPosted">
+    <value>设置在发布推文链接时是否总是回复。</value>
+  </data>
+  <data name="setsEndMediaAsAttachmentsAsDefaultTo">
+    <value>将 sendMediaAsAttachmentsAsDefault 设置为</value>
+  </data>
+  <data name="setDEleteIfOnlyPostedTweetLinkTo">
+    <value>将 deleteIfOnlyPostedTweetLink 设为</value>
+  </data>
+  <data name="setALwaysReplyIfPostedTweetLinkTo">
+    <value>将 alwaysReplyIfPostedTweetLink 设为</value>
+  </data>
+  <data name="disabledAllButtons">
+    <value>禁用所有按钮。</value>
+  </data>
+  <data name="enabledAllButtons">
+    <value>启用所有按钮。</value>
+  </data>
+  <data name="setShowMediaAsAttachmentsButtonTo">
+    <value>将 showMediaAsAttachments 按钮设置为</value>
+  </data>
+  <data name="setsHowAttachmentsAsEmbedsImageButtonTo">
+    <value>将 showAttachmentsAsEmbedsImage 按钮设置为</value>
+  </data>
+  <data name="setTranslateButtonTo">
+    <value>将翻译按钮设置为</value>
+  </data>
+  <data name="setDeleteButtonTo">
+    <value>将删除按钮设置为</value>
+  </data>
+  <data name="disabledShowMediaAsAttachmentsButton">
+    <value>禁用 showMediaAsAttachments 按钮。</value>
+  </data>
+  <data name="enabledShowMediaAsAttachmentsButton">
+    <value>启用 showMediaAsAttachments 按钮。</value>
+  </data>
+  <data name="disabledsHowAttachmentsAsEmbedsImageButton">
+    <value>禁用 showAttachmentsAsEmbedsImage 按钮。</value>
+  </data>
+  <data name="enabledsHowAttachmentsAsEmbedsImageButton">
+    <value>启用 showAttachmentsAsEmbedsImage 按钮。</value>
+  </data>
+  <data name="disabledTranslateButton">
+    <value>禁用翻译按钮。</value>
+  </data>
+  <data name="enabledTranslateButton">
+    <value>启用翻译按钮。</value>
+  </data>
+  <data name="disabledDeleteButton">
+    <value>删除按钮已禁用。</value>
+  </data>
+  <data name="enabledDeleteButton">
+    <value>启用删除按钮。</value>
+  </data>
+  <data name="addedUserToButtonDisabledUser">
+    <value>已在 button_disabled.user 中添加用户。</value>
+  </data>
+  <data name="removedUserFromButtonDisabledUser">
+    <value>删除了 button_disabled.user 中的用户。</value>
+  </data>
+  <data name="addedChannelToButtonDisabledChannel">
+    <value>已为 button_disabled.channel 添加通道。</value>
+  </data>
+  <data name="removedChannelFromButtonDisabledChannel">
+    <value>删除了 button_disabled.channel 中的通道。</value>
+  </data>
+  <data name="addedRoleToButtonDisabledRole">
+    <value>已为 button_disabled.role 添加角色。</value>
+  </data>
+  <data name="removedRoleFromButtonDisabledRole">
+    <value>删除了 button_disabled.role 中的角色。</value>
+  </data>
+  <data name="setsWhetherToExtractBotMessages">
+    <value>设置是否提取僵尸信息。</value>
+  </data>
+  <data name="setExtractBotMessageTo">
+    <value>将 extractBotMessage 设为</value>
+  </data>
+  <data name="editOriginalIfTranslate">
+    <value>如需翻译，请编辑原文</value>
+  </data>
+  <data name="deleteIfOnlyPostedTweetlink">
+    <value>如果只发布推文链接，则删除</value>
+  </data>
+  <data name="alwaysReplyIfPostedTweetlink">
+    <value>如果发布了推特链接，请务必回复</value>
+  </data>
+  <data name="extractBotMessage">
     <value>提取僵尸消息</value>
   </data>
-  <data name="show_embedImg">
+  <data name="showAttachmentsAsEmbedsImage">
     <value>将附件显示为嵌入图片</value>
   </data>
-  <data name="settings_QuoteDoNot_Extract">
+  <data name="setsWhetherToExpandQuoteRetweets">
     <value>设置是否扩展引用转发。</value>
   </data>
-  <data name="settings_QuoteDoNot_Extract_name">
+  <data name="doNotDeployQuoteRetweets">
     <value>不要部署引用转发</value>
-  </data>
-  <data name="reload">
-    <value>重新加载</value>
   </data>
 </root>
