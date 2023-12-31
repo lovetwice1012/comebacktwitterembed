@@ -5,10 +5,10 @@ const config = require('./config.json');
 const fs = require('fs');
 const mysql = require('mysql');
 const { Translate } = require('./src/resxParser');
-const fetchWorkerService = require('./src/workers/fetch/fetchWorkerService');
+const fetchWorkersService = require('./src/workers/fetch/fetchWorkersService');
 const queueManager = require('./src/queue/queueManager');
 const queueManagerInstance = new queueManager();
-const fetchWorkersServiceInstance = new fetchWorkerService(queueManagerInstance);
+const fetchWorkersServiceInstance = new fetchWorkersService(queueManagerInstance);
 const commandConfig = require('./src/command/commandConfig');
 
 // MySQL接続情報
