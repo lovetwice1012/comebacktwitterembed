@@ -644,23 +644,175 @@ client.on(Events.MessageCreate, async (message) => {
 client.on(Events.InteractionCreate, async (interaction) => {
     //ボタンが押された時の処理
     if (!interaction.isButton()) return;
-    //ボタンのカスタムID
-    const customId = interaction.customId;
-    //ボタンが押されたメッセージ
-    const message = interaction.message;
-    switch(customId){
-        case 'translate':
-            break;
-        case 'delete':
-            break;
-        case 'reload':
-            break;
+    await interaction.deferReply({ ephemeral: true });
+    if (settings.button_disabled[interaction.guildId] !== undefined) {
+        if (settings.button_disabled[interaction.guildId].user.includes(interaction.user.id)) {
+            await interaction.editReply({ content: userDonthavePermissionLocales[interaction.locale] ?? userDonthavePermissionLocales["en"], ephemeral: true });
+            setTimeout(() => {
+                interaction.deleteReply();
+            }, 3000);
+            return;
+        }
+        if (settings.button_disabled[interaction.guildId].channel.includes(interaction.channel.id)) {
+            await interaction.editReply({ content: userDonthavePermissionLocales[interaction.locale] ?? userDonthavePermissionLocales["en"], ephemeral: true });
+            setTimeout(() => {
+                interaction.deleteReply();
+            }, 3000);
+            return;
+        }
+        let role = false;
+        settings.button_disabled[interaction.guildId].role.forEach(element => {
+            if (ifUserHasRole(interaction.member, element)) {
+                role = true;
+            }
+        });
+        if (role) {
+            await interaction.editReply({ content: userDonthavePermissionLocales[interaction.locale] ?? userDonthavePermissionLocales["en"], ephemeral: true });
+            setTimeout(() => {
+                interaction.deleteReply();
+            }, 3000);
+            return;
+        }
+    }
+    const deleteButton = new ButtonBuilder().setStyle(ButtonStyle.Danger).setLabel('Delete').setCustomId('delete');
+    const translateButton = new ButtonBuilder().setStyle(ButtonStyle.Primary).setLabel('Translate').setCustomId('translate');
+    const showAttachmentsAsMediaButton = new ButtonBuilder().setStyle(ButtonStyle.Primary).setLabel(showAttachmentsAsEmbedsImagebuttonLocales[interaction.locale] ?? showAttachmentsAsEmbedsImagebuttonLocales["en"]).setCustomId('showAttachmentsAsEmbedsImage');
+    const showMediaAsAttachmentsButton = new ButtonBuilder().setStyle(ButtonStyle.Primary).setLabel(showMediaAsAttachmentsButtonLocales[interaction.locale] ?? showMediaAsAttachmentsButtonLocales["en"]).setCustomId('showMediaAsAttachments');
+
+    switch (interaction.customId) {
         case 'showMediaAsAttachments':
+            const messageObject = {};
+            messageObject.components = [{ type: ComponentType.ActionRow, components: [showAttachmentsAsMediaButton] }];
+            messageObject.components.push({ type: ComponentType.ActionRow, components: [translateButton, deleteButton] });
+            messageObject.files = [];
+            messageObject.embeds = [];
+            interaction.message.embeds.forEach(element => {
+                if (element.image) {
+                    messageObject.files.push(element.image.url);
+                }
+            });
+            let deepCopyEmbed0 = JSON.parse(JSON.stringify(interaction.message.embeds[0]));
+            delete deepCopyEmbed0.image;
+            messageObject.embeds.push(deepCopyEmbed0);
+            if (messageObject.embeds[0].image) delete messageObject.embeds.image;
+            messageObject.components = checkComponentIncludesDisabledButtonAndIfFindDeleteIt(messageObject.components, interaction.guildId);
+            await interaction.message.edit(messageObject);
+            await interaction.editReply({ content: finishActionLocales[interaction.locale] ?? finishActionLocales["en"], ephemeral: true });
+            setTimeout(() => {
+                interaction.deleteReply();
+            }, 3000);
             break;
+
         case 'showAttachmentsAsEmbedsImage':
+            const messageObject2 = {};
+            if (interaction.message.attachments === undefined || interaction.message.attachments === null) return interaction.reply('There are no attachments to show.');
+            const attachments = interaction.message.attachments.map(attachment => attachment.url);
+            if (attachments.length > 4) return interaction.reply('You can\'t show more than 4 attachments as embeds image.');
+            messageObject2.components = [{ type: ComponentType.ActionRow, components: [showMediaAsAttachmentsButton] }];
+            messageObject2.components.push({ type: ComponentType.ActionRow, components: [translateButton, deleteButton] });
+            messageObject2.components = checkComponentIncludesDisabledButtonAndIfFindDeleteIt(messageObject2.components, interaction.guildId);
+            messageObject2.embeds = [];
+            attachments.forEach(element => {
+                const extension = element.split("?").pop().split('.').pop();
+                if (videoExtensions.includes(extension)) {
+                    messageObject2.files.push(element);
+                    return;
+                }
+                if (messageObject2.embeds.length === 0) {
+                    let embed = {};
+                    embed.url = interaction.message.embeds[0].url;
+                    embed.title = interaction.message.embeds[0].title;
+                    embed.description = interaction.message.embeds[0].description;
+                    embed.color = interaction.message.embeds[0].color;
+                    embed.author = interaction.message.embeds[0].author;
+                    embed.footer = interaction.message.embeds[0].footer;
+                    embed.timestamp = interaction.message.embeds[0].timestamp;
+                    embed.fields = interaction.message.embeds[0].fields;
+                    embed.image = {
+                        url: element
+                    };
+                    messageObject2.embeds.push(embed);
+                    return
+                }
+                messageObject2.embeds.push({
+                    url: messageObject2.embeds[0].url,
+                    image: {
+                        url: element
+                    }
+                });
+            });
+            messageObject2.files = [];
+            await interaction.message.edit(messageObject2);
+            await interaction.editReply({ content: finishActionLocales[interaction.locale] ?? finishActionLocales["en"], ephemeral: true });
+            setTimeout(() => {
+                interaction.deleteReply();
+            }, 3000);
             break;
-        default:
+
+        case 'delete':
+            if (interaction.member.permissions.has(PermissionsBitField.Flags.ManageMessages)) {
+                await interaction.message.delete();
+                await interaction.editReply({ content: finishActionLocales[interaction.locale] ?? finishActionLocales["en"], ephemeral: true });
+                setTimeout(() => {
+                    interaction.deleteReply();
+                }, 3000);
+            } else {
+                if (interaction.message.embeds[0].author.name.split(":")[1].split(")")[0] != interaction.user.id) {
+                    await interaction.editReply({ content: youcantdeleteotherusersmessagesLocales[interaction.locale] ?? youcantdeleteotherusersmessagesLocales["en"], ephemeral: true });
+                    setTimeout(() => {
+                        interaction.deleteReply();
+                    }, 3000);
+                    return;
+                }
+                await interaction.message.delete();
+                await interaction.editReply({ content: finishActionLocales[interaction.locale] ?? finishActionLocales["en"], ephemeral: true });
+                setTimeout(() => {
+                    interaction.deleteReply();
+                }, 3000);
+            }
             break;
+
+        case 'translate':
+            const messageObject3 = {};
+            messageObject3.components = [];
+            messageObject3.embeds = [];
+            const copyEmbedObject = {};
+            copyEmbedObject.title = interaction.message.embeds[0].title;
+            copyEmbedObject.url = interaction.message.embeds[0].url;
+            copyEmbedObject.color = interaction.message.embeds[0].color;
+            copyEmbedObject.author = interaction.message.embeds[0].author;
+            copyEmbedObject.footer = interaction.message.embeds[0].footer;
+            copyEmbedObject.timestamp = interaction.message.embeds[0].timestamp;
+            copyEmbedObject.fields = interaction.message.embeds[0].fields;
+            if (interaction.message.embeds[0].images) {
+                copyEmbedObject.image = interaction.message.embeds[0].image;
+            }
+            if (interaction.message.embeds[0].thumbnail) copyEmbedObject.thumbnail = interaction.message.embeds[0].thumbnail;
+            messageObject3.embeds.push(copyEmbedObject);
+            if (interaction.message.embeds.length > 1) {
+                for (let i = 1; i < interaction.message.embeds.length; i++) {
+                    messageObject3.embeds.push(interaction.message.embeds[i]);
+                }
+            }
+            let target = interaction.locale;
+            if (target.startsWith("en-")) target = 'en';
+            if (target === 'jp') target = 'ja';
+            const responce = await fetch("https://script.google.com/macros/s/AKfycbwmofa3n_K15ze_-4KrpH-B-eBHiKXmmgLeqsJInS3dJUDM0IJ-627h8Xu-w8PIc2f-ug/exec?target=" + target + "&text=" + encodeURIComponent(interaction.message.embeds[0].description.split('\n').splice(0, interaction.message.embeds[0].description.split('\n').length - 3).join('\n')));
+            let text = await responce.text();
+            text = text + interaction.message.embeds[0].description.split('\n').splice(interaction.message.embeds[0].description.split('\n').length - 4, interaction.message.embeds[0].description.split('\n').length).join('\n')
+            messageObject3.embeds[0].description = text;
+            messageObject3.components = checkComponentIncludesDisabledButtonAndIfFindDeleteIt(messageObject3.components, interaction.guildId);
+            await interaction.editReply(messageObject3);
+            if (settings.editOriginalIfTranslate[interaction.guildId] === true) {
+                if (interaction.message.attachments.length > 0) {
+                    messageObject3.files = [];
+                    interaction.message.attachments.forEach(element => {
+                        messageObject3.files.push(element.url);
+                    });
+                }
+                messageObject3.components = interaction.message.components;
+                await interaction.message.edit(messageObject3);
+            }
     }
 })
 
