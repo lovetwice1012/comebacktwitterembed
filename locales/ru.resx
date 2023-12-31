@@ -287,4 +287,7 @@
   <data name="settings_QuoteDoNot_Extract_name">
     <value>Не развертывайте ретвиты цитат</value>
   </data>
+  <data name="reload">
+    <value>перезагрузить</value>
+  </data>
 </root>

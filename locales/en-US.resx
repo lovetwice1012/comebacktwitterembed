@@ -290,4 +290,7 @@ If you do not trust us, you can secure your safety by removing your channel perm
   <data name="command_name_role_Locales">
     <value>role</value>
   </data>
+  <data name="reload">
+    <value>reload</value>
+  </data>
 </root>
