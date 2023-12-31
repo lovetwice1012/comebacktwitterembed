@@ -95,11 +95,11 @@ parentPort.on("message", (data) => {
                 //設定がある場合はそれを使用する
                 settings = results[0];
             }
-            parentPort.postMessage(new fetchResult(data.message, data.plan, result, settings));
+            parentPort.postMessage(new fetchResult(data.message, data.plan, result, settings, data.quotedCount));
         });
         
     }).catch((error) => {
-        parentPort.postMessage(new fetchResult(data.message, data.plan, null, null, error));
+        parentPort.postMessage(new fetchResult(data.message, data.plan, null, null, null, error));
     });
 });
 

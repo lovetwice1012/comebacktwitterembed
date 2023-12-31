@@ -5,13 +5,14 @@ class fetchResult {
     error = null;
     time = null;
     settings = null;
-    
-    constructor(messageClass, plan, result = null, settings = null, error = null) {
+    quotedCount = 0;
+    constructor(messageClass, plan, result = null, settings = null, quotedCount = 0, error = null) {
         this.message = messageClass;
         this.plan = plan;
         this.result = result;
         this.error = error;
         this.settings = settings;
+        this.quotedCount = quotedCount;
         this.time = new Date();
     }
 }

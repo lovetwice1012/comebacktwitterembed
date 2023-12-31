@@ -344,6 +344,7 @@ async function processNextQueue() {
     embeds.push(...imagesEmbeds);
     message_object.embeds = embeds;
     message_object.components = components;
+    if(queue.quotedCount != 0) message_object.content = "Quoted tweet(" + queue.quotedCount + "): " + url;
 
     //メッセージを送信する
     //alwaysReplyが有効化されている場合は返信の形で送信する
@@ -400,6 +401,11 @@ async function processNextQueue() {
             await reaction.users.remove(client.user.id);
         }
         message.react("✅")
+    }
+
+    //もしtweetData.tweet.quoteがundefinedやnullじゃなくて、queue.quotedCountがmaxExtractQuotedTweetを超えていない場合は引用されたツイートのURL(tweetData.tweet.quote.url)をqueueに追加する
+    if (tweetData.tweet.quote != undefined && tweetData.tweet.quote != null && queue.quotedCount < settings.maxExtractQuotedTweet) {
+        queueManagerInstance.add_to_queue(queue.message, queue.plan, tweetData.tweet.quote.url, queue.quotedCount + 1);
     }
 
     //0.1秒待って次のキューを処理する

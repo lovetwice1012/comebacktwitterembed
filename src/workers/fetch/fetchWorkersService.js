@@ -49,8 +49,8 @@ class fetchWorkersService {
         }
     }
 
-    add_queue(message, plan, url) {
-        this.queue.push(new fetchTask(message, plan, url));
+    add_queue(message, plan, url, quotedCount = 0) {
+        this.queue.push(new fetchTask(message, plan, url, quotedCount));
     }
 
     get_queue() {
