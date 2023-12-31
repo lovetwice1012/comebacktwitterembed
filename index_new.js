@@ -796,7 +796,6 @@ client.on(Events.InteractionCreate, async (interaction) => {
             delete deepCopyEmbed0.image;
             messageObject.embeds.push(deepCopyEmbed0);
             if (messageObject.embeds[0].image) delete messageObject.embeds.image;
-            if(settings.button_invisible_showMediaAsAttachments == 0 && interaction.message.embeds[0].image != undefined) messageObject.components.push({ type: ComponentType.ActionRow, components: [showMediaAsAttachmentsButton] });
             if(settings.button_invisible_showAttachmentsAsEmbedsImage == 0 && messageObject.files != undefined) messageObject.components.push({ type: ComponentType.ActionRow, components: [showAttachmentsAsMediaButton] });
             if(settings.button_invisible_translate == 0) messageObject.components.push({ type: ComponentType.ActionRow, components: [translateButton] });
             if(settings.button_invisible_delete == 0) messageObject.components.push({ type: ComponentType.ActionRow, components: [deleteButton] });
@@ -814,15 +813,10 @@ client.on(Events.InteractionCreate, async (interaction) => {
             const attachments = interaction.message.attachments.map(attachment => attachment.url);
             if (attachments.length > 4) return interaction.reply('You can\'t show more than 4 attachments as embeds image.');
             if(settings.button_invisible_showMediaAsAttachments == 0 && interaction.message.embeds[0].image != undefined) messageObject2.components.push({ type: ComponentType.ActionRow, components: [showMediaAsAttachmentsButton] });
-            if(settings.button_invisible_showAttachmentsAsEmbedsImage == 0 && messageObject2.files != undefined) messageObject2.components.push({ type: ComponentType.ActionRow, components: [showAttachmentsAsMediaButton] });
             if(settings.button_invisible_translate == 0) messageObject2.components.push({ type: ComponentType.ActionRow, components: [translateButton] });
             if(settings.button_invisible_delete == 0) messageObject2.components.push({ type: ComponentType.ActionRow, components: [deleteButton] });messageObject2.embeds = [];
             attachments.forEach(element => {
                 const extension = element.split("?").pop().split('.').pop();
-                if (videoExtensions.includes(extension)) {
-                    messageObject2.files.push(element);
-                    return;
-                }
                 if (messageObject2.embeds.length === 0) {
                     let embed = {};
                     embed.url = interaction.message.embeds[0].url;
