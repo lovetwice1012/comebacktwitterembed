@@ -907,10 +907,6 @@ client.on(Events.InteractionCreate, async (interaction) => {
             text = text + interaction.message.embeds[0].description.split('\n').splice(interaction.message.embeds[0].description.split('\n').length - 4, interaction.message.embeds[0].description.split('\n').length).join('\n')
             messageObject3.embeds[0].description = text;
             //componentsにボタンを追加する(設定)
-            if(settings.button_invisible_showMediaAsAttachments == 0 && copyEmbedObject.image != undefined) messageObject3.components.push({ type: ComponentType.ActionRow, components: [showMediaAsAttachmentsButton] });
-            if(settings.button_invisible_showAttachmentsAsEmbedsImage == 0 && messageObject3.files != undefined) messageObject3.components.push({ type: ComponentType.ActionRow, components: [showAttachmentsAsMediaButton] });
-            if(settings.button_invisible_translate == 0) messageObject3.components.push({ type: ComponentType.ActionRow, components: [translateButton] });
-            if(settings.button_invisible_delete == 0) messageObject3.components.push({ type: ComponentType.ActionRow, components: [deleteButton] });
             await interaction.editReply(messageObject3);
             if (settings.editOriginalIfTranslate[interaction.guildId] === true) {
                 if (interaction.message.attachments.length > 0) {
