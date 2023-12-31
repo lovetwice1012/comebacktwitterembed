@@ -315,7 +315,7 @@ async function processNextQueue() {
     //5.ボタンをmessage_objectのcomponentsに追加する
     //new Discord.ActionRowBuilder().addComponents
     let components = [];
-    let actionRow = discord.ActionRowBuilder();
+    let actionRow = new discord.ActionRowBuilder();
     if(translateButton != null) actionRow.addComponents(translateButton);
     if(deleteButton != null) actionRow.addComponents(deleteButton);
     if(reloadButton != null) actionRow.addComponents(reloadButton);
