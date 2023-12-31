@@ -293,7 +293,7 @@ async function processNextQueue() {
     }
     //削除ボタン
     let deleteButton = null;
-    if(settings.button_invisible_delete == 0) {
+    if(settings.button_invisible_delete == 0 && isAnonymous == false) {
         deleteButton = new ButtonBuilder()
             .setCustomId('delete')
             .setLabel(Translate.delete[settings.defaultLanguage])
@@ -303,7 +303,7 @@ async function processNextQueue() {
     //再読み込みボタン
     let reloadButton = null;
     if(plan == 1 || plan == 2) {
-        if(settings.button_invisible_reload == 0) {
+        if(settings.button_invisible_reload == 0 && isAnonymous == false) {
             reloadButton = new ButtonBuilder()
                 .setCustomId('reload')
                 .setLabel(Translate.reload[settings.defaultLanguage])
@@ -313,7 +313,7 @@ async function processNextQueue() {
     }
     //メディアを添付ファイルとして送信するボタン
     let showMediaAsAttachmentsButton = null;
-    if(settings.button_invisible_showMediaAsAttachments == 0) {
+    if(settings.button_invisible_showMediaAsAttachments == 0 && settings.sendMediaAsAttachmentsAsDefault == 0 && embed.image != undefined) {
         showMediaAsAttachmentsButton = new ButtonBuilder()
             .setCustomId('showMediaAsAttachments')
             .setLabel(Translate.show_media[settings.defaultLanguage])
