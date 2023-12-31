@@ -645,39 +645,102 @@ client.on(Events.InteractionCreate, async (interaction) => {
     //ボタンが押された時の処理
     if (!interaction.isButton()) return;
     await interaction.deferReply({ ephemeral: true });
-    if (settings.button_disabled[interaction.guildId] !== undefined) {
-        if (settings.button_disabled[interaction.guildId].user.includes(interaction.user.id)) {
-            await interaction.editReply({ content: userDonthavePermissionLocales[interaction.locale] ?? userDonthavePermissionLocales["en"], ephemeral: true });
-            setTimeout(() => {
-                interaction.deleteReply();
-            }, 3000);
+    //DBより設定を取得
+    const sql = 'SELECT * FROM settings WHERE guildId = ?';
+    const params = [interaction.guildId];
+    connection.query(sql, params, async (error, results, fields) => {
+        if (error) {
+            console.error('Error connecting to database:', error);
             return;
         }
-        if (settings.button_disabled[interaction.guildId].channel.includes(interaction.channel.id)) {
-            await interaction.editReply({ content: userDonthavePermissionLocales[interaction.locale] ?? userDonthavePermissionLocales["en"], ephemeral: true });
-            setTimeout(() => {
-                interaction.deleteReply();
-            }, 3000);
-            return;
+        let settings = null;
+        if (results.length == 0) {
+            //設定がない場合はデフォルトの設定を使用する
+            const defaultSettings = {
+                guildId: interaction.guildId,
+                bannedWords: null,
+                defaultLanguage: 'en-US',
+                editOriginalIfTranslate: 0,
+                sendMediaAsAttachmentsAsDefault: 0,
+                deleteMessageIfOnlyPostedTweetLink: 0,
+                alwaysReply: 0,
+                button_invisible_showMediaAsAttachments: 0,
+                button_invisible_showAttachmentsAsEmbedsImage: 0,
+                button_invisible_translate: 0,
+                button_invisible_delete: 0,
+                button_invisible_reload: 0,
+                button_disabled_users: null,
+                button_disabled_channels: null,
+                button_disabled_roles: null,
+                disable_users: null,
+                disable_channels: null,
+                disable_roles: null,
+                extractBotMessage: 0,
+                extractWebhookMessage: 0,
+                sendMovieAsLink: 0,
+                anonymous_users: null,
+                anonymous_channels: null,
+                anonymous_roles: null,
+                maxExtractQuotedTweet: 3,
+            };
+            const sql = 'INSERT INTO settings SET ?';
+            const params = [defaultSettings];
+            connection.query(sql, params, (error, results, fields) => {
+                if (error) {
+                    console.error('Error connecting to database:', error);
+                    return;
+                }
+                console.log('Inserted default settings');
+            });
+            settings = defaultSettings;
+        }else{
+            settings = results[0];
         }
-        let role = false;
-        settings.button_disabled[interaction.guildId].role.forEach(element => {
-            if (ifUserHasRole(interaction.member, element)) {
-                role = true;
+        
+        //ボタンが無効化されているかどうか
+        if (settings.button_disabled_users != null) {
+            const button_disabled_users = settings.button_disabled_users.split(',');
+            for (let i = 0; i < button_disabled_users.length; i++) {
+                if (interaction.user.id == button_disabled_users[i]) {
+                    await interaction.editReply({ content: Translate.youcantusebuttons[interaction.locale] ?? Translate.youcantusebuttons[settings.defaultLanguage], ephemeral: true });
+                    setTimeout(() => {
+                        interaction.deleteReply();
+                    }, 3000);
+                    return;
+                }
             }
-        });
-        if (role) {
-            await interaction.editReply({ content: userDonthavePermissionLocales[interaction.locale] ?? userDonthavePermissionLocales["en"], ephemeral: true });
-            setTimeout(() => {
-                interaction.deleteReply();
-            }, 3000);
-            return;
         }
-    }
+        //ボタンが無効化されているかどうか
+        if (settings.button_disabled_channels != null) {
+            const button_disabled_channels = settings.button_disabled_channels.split(',');
+            for (let i = 0; i < button_disabled_channels.length; i++) {
+                if (interaction.channel.id == button_disabled_channels[i]) {
+                    await interaction.editReply({ content: Translate.youcantusebuttons[interaction.locale] ?? Translate.youcantusebuttons[settings.defaultLanguage], ephemeral: true });
+                    setTimeout(() => {
+                        interaction.deleteReply();
+                    }, 3000);
+                    return;
+                }
+            }
+        }
+        //ボタンが無効化されているかどうか
+        if (settings.button_disabled_roles != null) {
+            const button_disabled_roles = settings.button_disabled_roles.split(',');
+            for (let i = 0; i < button_disabled_roles.length; i++) {
+                if (interaction.member.roles.cache.has(button_disabled_roles[i])) {
+                    await interaction.editReply({ content: Translate.youcantusebuttons[interaction.locale] ?? Translate.youcantusebuttons[settings.defaultLanguage], ephemeral: true });
+                    setTimeout(() => {
+                        interaction.deleteReply();
+                    }, 3000);
+                    return;
+                }
+            }
+        }
+
     const deleteButton = new ButtonBuilder().setStyle(ButtonStyle.Danger).setLabel('Delete').setCustomId('delete');
     const translateButton = new ButtonBuilder().setStyle(ButtonStyle.Primary).setLabel('Translate').setCustomId('translate');
-    const showAttachmentsAsMediaButton = new ButtonBuilder().setStyle(ButtonStyle.Primary).setLabel(showAttachmentsAsEmbedsImagebuttonLocales[interaction.locale] ?? showAttachmentsAsEmbedsImagebuttonLocales["en"]).setCustomId('showAttachmentsAsEmbedsImage');
-    const showMediaAsAttachmentsButton = new ButtonBuilder().setStyle(ButtonStyle.Primary).setLabel(showMediaAsAttachmentsButtonLocales[interaction.locale] ?? showMediaAsAttachmentsButtonLocales["en"]).setCustomId('showMediaAsAttachments');
+    const showAttachmentsAsMediaButton = new ButtonBuilder().setStyle(ButtonStyle.Secondary).setLabel(Translate.showAttachmentsAsEmbedsImage[interaction.locale] ?? Translate.showAttachmentsAsEmbedsImage[settings.defaultLanguage]).setCustomId('showAttachmentsAsEmbedsImage');
+    const showMediaAsAttachmentsButton = new ButtonBuilder().setStyle(ButtonStyle.Secondary).setLabel(Translate.showMediaAsAttachments[interaction.locale] ?? Translate.showMediaAsAttachments[settings.defaultLanguage]).setCustomId('showMediaAsAttachments');
 
     switch (interaction.customId) {
         case 'showMediaAsAttachments':
@@ -697,7 +760,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
             if (messageObject.embeds[0].image) delete messageObject.embeds.image;
             messageObject.components = checkComponentIncludesDisabledButtonAndIfFindDeleteIt(messageObject.components, interaction.guildId);
             await interaction.message.edit(messageObject);
-            await interaction.editReply({ content: finishActionLocales[interaction.locale] ?? finishActionLocales["en"], ephemeral: true });
+            await interaction.editReply({ content: Translate.finishedAction[interaction.locale] ?? Translate.finishedAction[settings.defaultLanguage], ephemeral: true });
             setTimeout(() => {
                 interaction.deleteReply();
             }, 3000);
@@ -743,7 +806,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
             });
             messageObject2.files = [];
             await interaction.message.edit(messageObject2);
-            await interaction.editReply({ content: finishActionLocales[interaction.locale] ?? finishActionLocales["en"], ephemeral: true });
+            await interaction.editReply({ content: Translate.finishedAction[interaction.locale] ?? Translate.finishedAction[settings.defaultLanguage], ephemeral: true });
             setTimeout(() => {
                 interaction.deleteReply();
             }, 3000);
@@ -752,7 +815,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
         case 'delete':
             if (interaction.member.permissions.has(PermissionsBitField.Flags.ManageMessages)) {
                 await interaction.message.delete();
-                await interaction.editReply({ content: finishActionLocales[interaction.locale] ?? finishActionLocales["en"], ephemeral: true });
+                await interaction.editReply({ content: Translate.finishedAction[interaction.locale] ?? Translate.finishedAction[settings.defaultLanguage], ephemeral: true });
                 setTimeout(() => {
                     interaction.deleteReply();
                 }, 3000);
@@ -765,7 +828,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
                     return;
                 }
                 await interaction.message.delete();
-                await interaction.editReply({ content: finishActionLocales[interaction.locale] ?? finishActionLocales["en"], ephemeral: true });
+                await interaction.editReply({ content: Translate.finishedAction[interaction.locale] ?? Translate.finishedAction[settings.defaultLanguage], ephemeral: true });
                 setTimeout(() => {
                     interaction.deleteReply();
                 }, 3000);
@@ -813,7 +876,20 @@ client.on(Events.InteractionCreate, async (interaction) => {
                 messageObject3.components = interaction.message.components;
                 await interaction.message.edit(messageObject3);
             }
-    }
+            await interaction.editReply({ content: Translate.finishedAction[interaction.locale] ?? Translate.finishedAction[settings.defaultLanguage], ephemeral: true });
+            setTimeout(() => {
+                interaction.deleteReply();
+            }, 3000);
+            break;
+
+        case 'reload':
+            await interaction.editReply({ content: "この機能は現在開発中です", ephemeral: true });
+            setTimeout(() => {
+                interaction.deleteReply();
+            }, 3000);
+            break;
+        }
+    });
 })
 
 client.login(config.token);
