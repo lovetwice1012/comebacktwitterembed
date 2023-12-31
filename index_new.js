@@ -268,6 +268,13 @@ async function processNextQueue() {
         embed.author.icon_url = 'https://abs.twimg.com/icons/apple-touch-icon-192x192.png';
         embed.title = 'Anonymous';
         embed.description = tweettext + '\n\n:eyes:' + views + ' views • :speech_balloon:' + replies + ' replies • :recycle:' + retweets + ' retweets • :heart:' + likes + ' likes';
+        embed.url = "https://anonymous.sprink.cloud/" + message.author.id + "/" + message.id;
+        //もしimageEmbedsがある場合はそれも匿名化する
+        if(imagesEmbeds.length != 0) {
+            for(let i = 0; i < imagesEmbeds.length; i++) {
+                imagesEmbeds[i].url = "https://anonymous.sprink.cloud/" + message.author.id + "/" + message.id;
+            }
+        }
     }
 
     //4.非表示化されてるボタンを除いてボタンを作成する
