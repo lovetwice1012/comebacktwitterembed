@@ -320,7 +320,7 @@ async function processNextQueue() {
     if (settings.button_invisible_showMediaAsAttachments == 0 && settings.sendMediaAsAttachmentsAsDefault == 0 && embed.image != undefined) {
         showMediaAsAttachmentsButton = new ButtonBuilder()
             .setCustomId('showMediaAsAttachments')
-            .setLabel(Translate.show_media[settings.defaultLanguage])
+            .setLabel(Translate.showMediaAsAttachments[settings.defaultLanguage])
             .setStyle(ButtonStyle.Secondary)
             .setEmoji('📎')
     }
@@ -780,14 +780,13 @@ client.on(Events.InteractionCreate, async (interaction) => {
     const translateButton = new ButtonBuilder().setStyle(ButtonStyle.Primary).setLabel('Translate').setCustomId('translate');
     const showAttachmentsAsMediaButton = new ButtonBuilder().setStyle(ButtonStyle.Secondary).setLabel(Translate.showAttachmentsAsEmbedsImage[interaction.locale] ?? Translate.showAttachmentsAsEmbedsImage[settings.defaultLanguage]).setCustomId('showAttachmentsAsEmbedsImage');
     const showMediaAsAttachmentsButton = new ButtonBuilder().setStyle(ButtonStyle.Secondary).setLabel(Translate.showMediaAsAttachments[interaction.locale] ?? Translate.showMediaAsAttachments[settings.defaultLanguage]).setCustomId('showMediaAsAttachments');
-
+    const reloadButton = new ButtonBuilder().setStyle(ButtonStyle.Secondary).setLabel(Translate.reload[interaction.locale] ?? Translate.reload[settings.defaultLanguage]).setCustomId('reload');
     switch (interaction.customId) {
         case 'showMediaAsAttachments':
             const messageObject = {};
-            messageObject.components = [{ type: ComponentType.ActionRow, components: [showAttachmentsAsMediaButton] }];
-            messageObject.components.push({ type: ComponentType.ActionRow, components: [translateButton, deleteButton] });
             messageObject.files = [];
             messageObject.embeds = [];
+            messageObject.components = [];
             interaction.message.embeds.forEach(element => {
                 if (element.image) {
                     messageObject.files.push(element.image.url);
@@ -797,7 +796,10 @@ client.on(Events.InteractionCreate, async (interaction) => {
             delete deepCopyEmbed0.image;
             messageObject.embeds.push(deepCopyEmbed0);
             if (messageObject.embeds[0].image) delete messageObject.embeds.image;
-            messageObject.components = checkComponentIncludesDisabledButtonAndIfFindDeleteIt(messageObject.components, interaction.guildId);
+            if(settings.button_invisible_showMediaAsAttachments == 0 && interaction.message.embeds[0].image != undefined) messageObject.components.push({ type: ComponentType.ActionRow, components: [showMediaAsAttachmentsButton] });
+            if(settings.button_invisible_showAttachmentsAsEmbedsImage == 0 && messageObject.files != undefined) messageObject.components.push({ type: ComponentType.ActionRow, components: [showAttachmentsAsMediaButton] });
+            if(settings.button_invisible_translate == 0) messageObject.components.push({ type: ComponentType.ActionRow, components: [translateButton] });
+            if(settings.button_invisible_delete == 0) messageObject.components.push({ type: ComponentType.ActionRow, components: [deleteButton] });
             await interaction.message.edit(messageObject);
             await interaction.editReply({ content: Translate.finishedAction[interaction.locale] ?? Translate.finishedAction[settings.defaultLanguage], ephemeral: true });
             setTimeout(() => {
@@ -807,13 +809,14 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
         case 'showAttachmentsAsEmbedsImage':
             const messageObject2 = {};
+            messageObject2.components = [];
             if (interaction.message.attachments === undefined || interaction.message.attachments === null) return interaction.reply('There are no attachments to show.');
             const attachments = interaction.message.attachments.map(attachment => attachment.url);
             if (attachments.length > 4) return interaction.reply('You can\'t show more than 4 attachments as embeds image.');
-            messageObject2.components = [{ type: ComponentType.ActionRow, components: [showMediaAsAttachmentsButton] }];
-            messageObject2.components.push({ type: ComponentType.ActionRow, components: [translateButton, deleteButton] });
-            messageObject2.components = checkComponentIncludesDisabledButtonAndIfFindDeleteIt(messageObject2.components, interaction.guildId);
-            messageObject2.embeds = [];
+            if(settings.button_invisible_showMediaAsAttachments == 0 && interaction.message.embeds[0].image != undefined) messageObject2.components.push({ type: ComponentType.ActionRow, components: [showMediaAsAttachmentsButton] });
+            if(settings.button_invisible_showAttachmentsAsEmbedsImage == 0 && messageObject2.files != undefined) messageObject2.components.push({ type: ComponentType.ActionRow, components: [showAttachmentsAsMediaButton] });
+            if(settings.button_invisible_translate == 0) messageObject2.components.push({ type: ComponentType.ActionRow, components: [translateButton] });
+            if(settings.button_invisible_delete == 0) messageObject2.components.push({ type: ComponentType.ActionRow, components: [deleteButton] });messageObject2.embeds = [];
             attachments.forEach(element => {
                 const extension = element.split("?").pop().split('.').pop();
                 if (videoExtensions.includes(extension)) {
@@ -903,7 +906,11 @@ client.on(Events.InteractionCreate, async (interaction) => {
             let text = await responce.text();
             text = text + interaction.message.embeds[0].description.split('\n').splice(interaction.message.embeds[0].description.split('\n').length - 4, interaction.message.embeds[0].description.split('\n').length).join('\n')
             messageObject3.embeds[0].description = text;
-            messageObject3.components = checkComponentIncludesDisabledButtonAndIfFindDeleteIt(messageObject3.components, interaction.guildId);
+            //componentsにボタンを追加する(設定)
+            if(settings.button_invisible_showMediaAsAttachments == 0 && copyEmbedObject.image != undefined) messageObject3.components.push({ type: ComponentType.ActionRow, components: [showMediaAsAttachmentsButton] });
+            if(settings.button_invisible_showAttachmentsAsEmbedsImage == 0 && messageObject3.files != undefined) messageObject3.components.push({ type: ComponentType.ActionRow, components: [showAttachmentsAsMediaButton] });
+            if(settings.button_invisible_translate == 0) messageObject3.components.push({ type: ComponentType.ActionRow, components: [translateButton] });
+            if(settings.button_invisible_delete == 0) messageObject3.components.push({ type: ComponentType.ActionRow, components: [deleteButton] });
             await interaction.editReply(messageObject3);
             if (settings.editOriginalIfTranslate[interaction.guildId] === true) {
                 if (interaction.message.attachments.length > 0) {
