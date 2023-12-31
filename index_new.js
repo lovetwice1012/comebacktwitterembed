@@ -336,7 +336,8 @@ async function processNextQueue() {
     if(settings.alwaysReply == 1) {
         message.reply(message_object);
     } else {
-        message.channel.send(message_object);
+        const channel = await client.channels.fetch(message.channelId);
+        channel.send(message_object);
     }
     //messageのリアクションを取る
     message.remove_reaction("🔁");
