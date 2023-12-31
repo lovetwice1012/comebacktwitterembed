@@ -24,9 +24,11 @@ if (!fs.existsSync(dir)) {
 }
 
 // Convert and save for each language
-['en-US', 'ja', 'zh-CN', 'es-ES', 'fr', 'ru', 'de', 'pt-BR'].forEach(lang => {
+['en-US', 'ja'].forEach(lang => {
     const resxContent = convertToResx(locales, lang);
     const fileName = `${dir}/${lang}.resx`;
     fs.writeFileSync(fileName, resxContent);
     console.log(`Saved ${fileName}`);
 });
+
+// , 'zh-CN', 'es-ES', 'fr', 'ru', 'de', 'pt-BR'

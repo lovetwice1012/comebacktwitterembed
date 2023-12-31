@@ -603,7 +603,7 @@ Help_script: {
     },
     setDEleteIfOnlyPostedTweetLinkTo: {
     "ja": "ツイートのリンクのみを投稿した場合にメッセージを削除するかどうかを設定しました。",
-    "en-US": "setdeleteifonlypostedtweetlinkto",
+    "en-US": "Set deleteIfOnlyPostedTweetLink to",
     "zh-CN": "将 deleteIfOnlyPostedTweetLink 设为",
     "es-ES": "Establecer deleteIfOnlyPostedTweetLink a",
     "fr": "Fixer deleteIfOnlyPostedTweetLink à",
@@ -613,7 +613,7 @@ Help_script: {
     },
     setALwaysReplyIfPostedTweetLinkTo: {
     "ja": "ツイートのリンクを投稿した場合に常に返信するかどうかを設定しました。",
-    "en-US": "setalwaysreplyifpostedtweetlinkto",
+    "en-US": "Set alwaysReplyIfPostedTweetLink to",
     "zh-CN": "将 alwaysReplyIfPostedTweetLink 设为",
     "es-ES": "Establecer alwaysReplyIfPostedTweetLink como",
     "fr": "Définissez toujoursReplyIfPostedTweetLink à",
@@ -853,7 +853,7 @@ Help_script: {
     },
     deleteIfOnlyPostedTweetlink: {
     "ja": "ツイートのリンクのみを投稿した場合にメッセージを削除",
-    "en-US": "delete if only posted tweetlink",
+    "en-US": "deleteifonlypostedtweetlink",
     "zh-CN": "如果只发布推文链接，则删除",
     "es-ES": "borrar si sólo se ha publicado tweetlink",
     "fr": "supprimer si seulement le tweetlink a été posté",
@@ -863,7 +863,7 @@ Help_script: {
     },
     alwaysReplyIfPostedTweetlink: {
     "ja": "ツイートのリンクを投稿した場合に常に返信",
-    "en-US": "always reply if posted tweetlink",
+    "en-US": "alwaysreplyifpostedtweetlink",
     "zh-CN": "如果发布了推特链接，请务必回复",
     "es-ES": "responder siempre que se publique un tweetlink",
     "fr": "toujours répondre si le tweetlink est posté",
