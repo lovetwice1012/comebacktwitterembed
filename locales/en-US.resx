@@ -60,7 +60,7 @@ If you do not trust us, you can secure your safety by removing your channel perm
     <value>word</value>
   </data>
   <data name="defaultLanguage">
-    <value>default language</value>
+    <value>defaultLanguage</value>
   </data>
   <data name="button">
     <value>button</value>
@@ -78,7 +78,7 @@ If you do not trust us, you can secure your safety by removing your channel perm
     <value>Finished action.</value>
   </data>
   <data name="showMediaInEmbedsImage">
-    <value>Show media in embeds image</value>
+    <value>ShowMediaInEmbedsImage</value>
   </data>
   <data name="showMediaAsAttachments">
     <value>show media as attachments</value>
@@ -270,13 +270,13 @@ If you do not trust us, you can secure your safety by removing your channel perm
     <value>always reply if posted tweetlink</value>
   </data>
   <data name="extractBotMessage">
-    <value>extract bot message</value>
+    <value>extractBotMessage</value>
   </data>
   <data name="showAttachmentsAsEmbedsImage">
     <value>show attachments as embeds image</value>
   </data>
   <data name="setsWhetherToExpandQuoteRetweets">
-    <value>Sets whether to expand quote retweets.</value>
+    <value>SetsWhetherToExpandQuoteRetweets.</value>
   </data>
   <data name="doNotDeployQuoteRetweets">
     <value>Do not deploy quote retweets</value>
