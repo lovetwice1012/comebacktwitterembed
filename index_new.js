@@ -92,21 +92,21 @@ async function processNextQueue() {
     5.ボタンを埋め込みに追加する
     6.送信する
     */
-    
+
     //1.ツイートの内容に禁止ワードが含まれていないかを確認する
     let isBanned = false;
-    if(settings.bannedWords != null) {
+    if (settings.bannedWords != null) {
         const bannedWords = settings.bannedWords.split(',');
-        for(let i = 0; i < bannedWords.length; i++) {
-            if(tweetData.text.includes(bannedWords[i].replace("{#!comma}", ","))) {
+        for (let i = 0; i < bannedWords.length; i++) {
+            if (tweetData.text.includes(bannedWords[i].replace("{#!comma}", ","))) {
                 isBanned = true;
                 break;
             }
         }
     }
-    if(isBanned) {
+    if (isBanned) {
         //禁止ワードが含まれていた場合はそれを送信する
-        return message.reply({content: Translate.bannedWords[settings.defaultLanguage], allowedMentions: {repliedUser: false}});
+        return message.reply({ content: Translate.bannedWords[settings.defaultLanguage], allowedMentions: { repliedUser: false } });
     }
 
     //2.埋め込みを作成する
@@ -175,36 +175,36 @@ async function processNextQueue() {
     /*
     photosの例
     "photos": [
-				{
-					"type": "photo",
-					"url": "https://pbs.twimg.com/media/F-4UCe1a0AAEnYP.jpg",
-					"width": 946,
-					"height": 2048,
-					"altText": ""
-				}
-			]
+                {
+                    "type": "photo",
+                    "url": "https://pbs.twimg.com/media/F-4UCe1a0AAEnYP.jpg",
+                    "width": 946,
+                    "height": 2048,
+                    "altText": ""
+                }
+            ]
             */
     //動画:media.videos
     /*
     videosの例
 "videos": [
-				{
-					"url": "https://video.twimg.com/ext_tw_video/1738122125154893824/pu/vid/avc1/1328x720/aMfPTXSsUb4-Hm9z.mp4?tag=12",
-					"thumbnail_url": "https://pbs.twimg.com/ext_tw_video_thumb/1738122125154893824/pu/img/wI6WYzaGo5MFKUEJ.jpg",
-					"duration": 21.234,
-					"width": 1920,
-					"height": 1040,
-					"format": "video/mp4",
-					"type": "video"
-				}
-			]
+                {
+                    "url": "https://video.twimg.com/ext_tw_video/1738122125154893824/pu/vid/avc1/1328x720/aMfPTXSsUb4-Hm9z.mp4?tag=12",
+                    "thumbnail_url": "https://pbs.twimg.com/ext_tw_video_thumb/1738122125154893824/pu/img/wI6WYzaGo5MFKUEJ.jpg",
+                    "duration": 21.234,
+                    "width": 1920,
+                    "height": 1040,
+                    "format": "video/mp4",
+                    "type": "video"
+                }
+            ]
     */
     //無い場合はundefined
     //photos
-    if(media != undefined){
-        if(media.photos != undefined) {
-            for(let i = 0; i < media.photos.length; i++) {
-                if(i == 0) {
+    if (media != undefined) {
+        if (media.photos != undefined) {
+            for (let i = 0; i < media.photos.length; i++) {
+                if (i == 0) {
                     embed.image = {
                         url: media.photos[i].url
                     }
@@ -219,55 +219,55 @@ async function processNextQueue() {
             }
         }
         //videos
-        
-        if(media.videos != undefined) {
-            for(let i = 0; i < media.videos.length; i++) {
-                if(settings.sendMovieAsLink == 1) {
-                    if(videoText == null) videoText = "";
+
+        if (media.videos != undefined) {
+            for (let i = 0; i < media.videos.length; i++) {
+                if (settings.sendMovieAsLink == 1) {
+                    if (videoText == null) videoText = "";
                     //リンクとして送信する
                     videoText = videoText + "\n[動画リンク](" + media.videos[i].url + ")";
                 } else {
-                    if(message_object.files == undefined) message_object.files = [];
+                    if (message_object.files == undefined) message_object.files = [];
                     //添付ファイルとして送信する
                     message_object.files.push(media.videos[i].url);
                 }
             }
         }
     }
-    
+
 
     //3.もし匿名モードが有効化されている場合は、ユーザー名やアイコンを上書きして匿名化する
     //匿名モードが有効化されているかどうか
     let isAnonymous = false;
-    if(settings.anonymous_users != null) {
+    if (settings.anonymous_users != null) {
         const anonymous_users = settings.anonymous_users.split(',');
-        for(let i = 0; i < anonymous_users.length; i++) {
-            if(message.author.id == anonymous_users[i]) {
+        for (let i = 0; i < anonymous_users.length; i++) {
+            if (message.author.id == anonymous_users[i]) {
                 isAnonymous = true;
                 break;
             }
         }
     }
-    if(settings.anonymous_channels != null) {
+    if (settings.anonymous_channels != null) {
         const anonymous_channels = settings.anonymous_channels.split(',');
-        for(let i = 0; i < anonymous_channels.length; i++) {
-            if(message.channel.id == anonymous_channels[i]) {
+        for (let i = 0; i < anonymous_channels.length; i++) {
+            if (message.channel.id == anonymous_channels[i]) {
                 isAnonymous = true;
                 break;
             }
         }
     }
-    if(settings.anonymous_roles != null) {
+    if (settings.anonymous_roles != null) {
         const anonymous_roles = settings.anonymous_roles.split(',');
-        for(let i = 0; i < anonymous_roles.length; i++) {
-            if(message.member.roles.cache.has(anonymous_roles[i])) {
+        for (let i = 0; i < anonymous_roles.length; i++) {
+            if (message.member.roles.cache.has(anonymous_roles[i])) {
                 isAnonymous = true;
                 break;
             }
         }
     }
 
-    if(isAnonymous) {
+    if (isAnonymous) {
         //匿名モードが有効化されている場合は、ユーザー名やアイコンを上書きして匿名化する
         embed.author.name = 'request by Anonymous(id: Unknown)';
         embed.footer.text = 'Posted by Anonymous';
@@ -277,18 +277,18 @@ async function processNextQueue() {
         embed.url = "https://anonymous.sprink.cloud/" + message.id;
         embed.description = tweettext
         //もしimageEmbedsがある場合はそれも匿名化する
-        if(imagesEmbeds.length != 0) {
-            for(let i = 0; i < imagesEmbeds.length; i++) {
+        if (imagesEmbeds.length != 0) {
+            for (let i = 0; i < imagesEmbeds.length; i++) {
                 imagesEmbeds[i].url = "https://anonymous.sprink.cloud/" + message.author.id + "/" + message.id;
             }
         }
     }
 
     //4.非表示化されてるボタンを除いてボタンを作成する
-    
+
     //翻訳ボタン
     let translateButton = null;
-    if(settings.button_invisible_translate == 0) {
+    if (settings.button_invisible_translate == 0) {
         translateButton = new ButtonBuilder()
             .setCustomId('translate')
             .setLabel(Translate.translate[settings.defaultLanguage])
@@ -297,7 +297,7 @@ async function processNextQueue() {
     }
     //削除ボタン
     let deleteButton = null;
-    if(settings.button_invisible_delete == 0 && isAnonymous == false) {
+    if (settings.button_invisible_delete == 0 && isAnonymous == false) {
         deleteButton = new ButtonBuilder()
             .setCustomId('delete')
             .setLabel(Translate.delete[settings.defaultLanguage])
@@ -306,8 +306,8 @@ async function processNextQueue() {
     }
     //再読み込みボタン
     let reloadButton = null;
-    if(plan == 1 || plan == 2) {
-        if(settings.button_invisible_reload == 0 && isAnonymous == false) {
+    if (plan == 1 || plan == 2) {
+        if (settings.button_invisible_reload == 0 && isAnonymous == false) {
             reloadButton = new ButtonBuilder()
                 .setCustomId('reload')
                 .setLabel(Translate.reload[settings.defaultLanguage])
@@ -317,53 +317,53 @@ async function processNextQueue() {
     }
     //メディアを添付ファイルとして送信するボタン
     let showMediaAsAttachmentsButton = null;
-    if(settings.button_invisible_showMediaAsAttachments == 0 && settings.sendMediaAsAttachmentsAsDefault == 0 && embed.image != undefined) {
+    if (settings.button_invisible_showMediaAsAttachments == 0 && settings.sendMediaAsAttachmentsAsDefault == 0 && embed.image != undefined) {
         showMediaAsAttachmentsButton = new ButtonBuilder()
             .setCustomId('showMediaAsAttachments')
             .setLabel(Translate.show_media[settings.defaultLanguage])
             .setStyle(ButtonStyle.Secondary)
             .setEmoji('📎')
     }
-    
+
     //画像を埋め込みとして送信するボタンはここでは作成しない
 
     //5.ボタンをmessage_objectのcomponentsに追加する
     //new Discord.ActionRowBuilder().addComponents
     let components = [];
     let actionRow = new discord.ActionRowBuilder();
-    if(translateButton != null) actionRow.addComponents(translateButton);
-    if(deleteButton != null) actionRow.addComponents(deleteButton);
-    if(reloadButton != null) actionRow.addComponents(reloadButton);
-    if(showMediaAsAttachmentsButton != null) actionRow.addComponents(showMediaAsAttachmentsButton);
+    if (translateButton != null) actionRow.addComponents(translateButton);
+    if (deleteButton != null) actionRow.addComponents(deleteButton);
+    if (reloadButton != null) actionRow.addComponents(reloadButton);
+    if (showMediaAsAttachmentsButton != null) actionRow.addComponents(showMediaAsAttachmentsButton);
     //actionRowが空の場合はcomponentsに追加しない
-    if(actionRow.components.length != 0)components.push(actionRow);
-    
+    if (actionRow.components.length != 0) components.push(actionRow);
+
     //6.送信する
     //embedとimageEmbedsを結合する
     embeds.push(embed);
     embeds.push(...imagesEmbeds);
     message_object.embeds = embeds;
     message_object.components = components;
-    
+
     //メッセージを送信する
     //alwaysReplyが有効化されている場合は返信の形で送信する
-    if(settings.alwaysReply == 1) {
+    if (settings.alwaysReply == 1) {
         await message.reply(message_object).then((msg) => {
-            if(videoText != null) message.channel.send(videoText);
-            if(settings.deleteMessageIfOnlyPostedTweetLink == 1 && message.content == url) message.delete();
+            if (videoText != null) message.channel.send(videoText);
+            if (settings.deleteMessageIfOnlyPostedTweetLink == 1 && message.content == url) message.delete();
         }).catch((error) => {
-            if(error.message.includes("Request entity too large")){
+            if (error.message.includes("Request entity too large")) {
                 const files = message_object.files;
                 //添付ファイルがある場合はそれを削除する
                 delete message_object.files;
                 //filesをリンクとして送信する
                 videoText = "";
-                for(let i = 0; i < files.length; i++) {
+                for (let i = 0; i < files.length; i++) {
                     videoText = videoText + "\n[動画リンク](" + files[i] + ")";
                 }
                 message.channel.send(message_object).then((msg) => {
                     message.channel.send(videoText);
-                    if(settings.deleteMessageIfOnlyPostedTweetLink == 1 && message.content == url) message.delete();
+                    if (settings.deleteMessageIfOnlyPostedTweetLink == 1 && message.content == url) message.delete();
                 });
                 return
             }
@@ -372,33 +372,36 @@ async function processNextQueue() {
     } else {
         const channel = await client.channels.fetch(message.channelId);
         await channel.send(message_object).then((msg) => {
-            if(videoText != null) message.channel.send(videoText);
-            if(settings.deleteMessageIfOnlyPostedTweetLink == 1 && message.content == url) message.delete();
+            if (videoText != null) message.channel.send(videoText);
+            if (settings.deleteMessageIfOnlyPostedTweetLink == 1 && message.content == url) message.delete();
         }).catch((error) => {
-            if(error.message.includes("Request entity too large")){
+            if (error.message.includes("Request entity too large")) {
                 const files = message_object.files;
                 //添付ファイルがある場合はそれを削除する
                 delete message_object.files;
                 //filesをリンクとして送信する
                 videoText = "";
-                for(let i = 0; i < files.length; i++) {
+                for (let i = 0; i < files.length; i++) {
                     videoText = videoText + "\n[動画リンク](" + files[i] + ")";
                 }
                 message.channel.send(message_object).then((msg) => {
                     message.channel.send(videoText);
-                    if(settings.deleteMessageIfOnlyPostedTweetLink == 1 && message.content == url) message.delete();
+                    if (settings.deleteMessageIfOnlyPostedTweetLink == 1 && message.content == url) message.delete();
                 });
                 return
             }
             console.error(error);
         });
     }
-    //messageのリアクションを取る
-    const myReactions = message.reactions.cache.filter(reaction => reaction.users.cache.has(client.user.id));
-    for (const reaction of myReactions.values()) {
-        await reaction.users.remove(client.user.id);
+    if (settings.deleteMessageIfOnlyPostedTweetLink == 0 && message.content != url) {
+        //messageのリアクションを取る
+        const myReactions = message.reactions.cache.filter(reaction => reaction.users.cache.has(client.user.id));
+        for (const reaction of myReactions.values()) {
+            await reaction.users.remove(client.user.id);
+        }
+        message.react("✅")
     }
-    message.react("✅")
+
     //0.1秒待って次のキューを処理する
     setTimeout(() => {
         processNextQueue();
@@ -430,7 +433,7 @@ client.on(Events.ClientReady, () => {
 client.on(Events.InteractionCreate, async (interaction) => {
     if (!interaction.isCommand()) return;
     console.log(interaction)
-    switch (interaction.commandName){
+    switch (interaction.commandName) {
 
         case Translate.Help["en-US"]:
             await interaction.reply({
@@ -448,11 +451,11 @@ client.on(Events.InteractionCreate, async (interaction) => {
                     }
                 ]
             });
-        return
+            return
 
         case locales.Ping["en-US"]:
             await interaction.reply('Pong!');
-        return
+            return
 
         case locales.Invite["en-US"]:
             await interaction.reply({
@@ -470,7 +473,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
                     }
                 ]
             });
-        return
+            return
 
         case Translate.Support["en-US"]:
             await interaction.reply({
@@ -488,11 +491,11 @@ client.on(Events.InteractionCreate, async (interaction) => {
                     }
                 ]
             });
-        return
+            return
 
         case Translate.Settings["en-US"]:
             //settings
-        return
+            return
     }
 });
 
@@ -567,28 +570,28 @@ client.on(Events.MessageCreate, async (message) => {
         */
 
         //botのメッセージに反応するかどうか
-        if(settings.extractBotMessage == 0 && message.author.bot) return;
+        if (settings.extractBotMessage == 0 && message.author.bot) return;
         //webhookのメッセージに反応するかどうか
-        if(settings.extractWebhookMessage == 0 && message.webhookId != null) return;
+        if (settings.extractWebhookMessage == 0 && message.webhookId != null) return;
         //ユーザーが無効化されているかどうか
-        if(settings.disable_users != null) {
+        if (settings.disable_users != null) {
             const disable_users = settings.disable_users.split(',');
-            for(let i = 0; i < disable_users.length; i++) {
-                if(message.author.id == disable_users[i]) return;
+            for (let i = 0; i < disable_users.length; i++) {
+                if (message.author.id == disable_users[i]) return;
             }
         }
         //チャンネルが無効化されているかどうか
-        if(settings.disable_channels != null) {
+        if (settings.disable_channels != null) {
             const disable_channels = settings.disable_channels.split(',');
-            for(let i = 0; i < disable_channels.length; i++) {
-                if(message.channel.id == disable_channels[i]) return;
+            for (let i = 0; i < disable_channels.length; i++) {
+                if (message.channel.id == disable_channels[i]) return;
             }
         }
         //ロールが無効化されているかどうか
-        if(settings.disable_roles != null) {
+        if (settings.disable_roles != null) {
             const disable_roles = settings.disable_roles.split(',');
-            for(let i = 0; i < disable_roles.length; i++) {
-                if(message.member.roles.cache.has(disable_roles[i])) return;
+            for (let i = 0; i < disable_roles.length; i++) {
+                if (message.member.roles.cache.has(disable_roles[i])) return;
             }
         }
 
