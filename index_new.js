@@ -383,12 +383,12 @@ client.on(Events.InteractionCreate, async (interaction) => {
                 embeds: [
                     {
                         title: 'Help',
-                        description: Help_script[interaction.locale] ?? Help_script["en-US"],
+                        description: Translate.Help_script[interaction.locale] ?? Translate.Help_script["en-US"],
                         color: 0x1DA1F2,
                         fields: [
                             {
                                 name: 'Commands',
-                                value: Help_command[interaction.locale] ?? Help_command["en-US"]
+                                value: Translate.Help_command[interaction.locale] ?? Translate.Help_command["en-US"]
                             }
                         ]
                     }
@@ -405,7 +405,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
                 embeds: [
                     {
                         title: 'Invite',
-                        description: BOT_Invite_Link[interaction.locale] ?? BOT_Invite_Link["en-US"],
+                        description: Translate.BOT_Invite_Link[interaction.locale] ?? Translate.BOT_Invite_Link["en-US"],
                         color: 0x1DA1F2,
                         fields: [
                             {
@@ -423,7 +423,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
                 embeds: [
                     {
                         title: 'Support',
-                        description: supportServer_Invite_Link[interaction.locale] ?? supportServer_Invite_Link["en-US"],
+                        description: Translate.supportServer_Invite_Link[interaction.locale] ?? Translate.supportServer_Invite_Link["en-US"],
                         color: 0x1DA1F2,
                         fields: [
                             {
