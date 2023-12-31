@@ -563,7 +563,6 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
         case Translate.Settings["en-US"]:
             switch (interaction.options.getSubcommand()) {
-<<<<<<< HEAD
                 case Translate.disable["en-US"]:
                     //user channel role
                     const option_user = interaction.options.getUser('user');
@@ -647,50 +646,6 @@ client.on(Events.InteractionCreate, async (interaction) => {
                 return
             }
         return
-=======
-                case 'disable':
-                    //disable
-                    return
-
-                case 'bannedwords':
-                    //bannedwords
-                    return
-
-                case 'defaultlanguage':
-                    //defaultlanguage
-                    return
-
-                case 'editoriginaliftranslate':
-                    //editoriginaliftranslate
-                    return
-
-                case 'setdefaultmediaasattachments':
-                    //setdefaultmediaasattachments
-                    return
-
-                case 'deleteifonlypostedtweetlink':
-                    //deleteifonlypostedtweetlink
-                    return
-
-                case 'alwaysreplyifpostedtweetlink':
-                    //alwaysreplyifpostedtweetlink
-                    return
-
-                case 'button':
-                    //button
-                    return
-
-                case 'extractbotmessage':
-                    //extractbotmessage
-                    return
-
-                case 'quoterepostdonotextract':
-                    //quoterepostdonotextract
-                    return
-            }
-
-            return
->>>>>>> 0b0fd9a72f5cf6fef8dad04e759cfbf1bff3f562
     }
 });
 
