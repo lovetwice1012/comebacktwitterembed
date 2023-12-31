@@ -189,10 +189,10 @@ If you do not trust us, you can secure your safety by removing your channel perm
     <value>Set sendMediaAsAttachmentsAsDefault to</value>
   </data>
   <data name="setDEleteIfOnlyPostedTweetLinkTo">
-    <value>setdeleteifonlypostedtweetlinkto</value>
+    <value>Set deleteIfOnlyPostedTweetLink to</value>
   </data>
   <data name="setALwaysReplyIfPostedTweetLinkTo">
-    <value>setalwaysreplyifpostedtweetlinkto</value>
+    <value>Set alwaysReplyIfPostedTweetLink to</value>
   </data>
   <data name="disabledAllButtons">
     <value>Disabled all buttons.</value>
@@ -264,10 +264,10 @@ If you do not trust us, you can secure your safety by removing your channel perm
     <value>editoriginaliftranslate</value>
   </data>
   <data name="deleteIfOnlyPostedTweetlink">
-    <value>delete if only posted tweetlink</value>
+    <value>deleteifonlypostedtweetlink</value>
   </data>
   <data name="alwaysReplyIfPostedTweetlink">
-    <value>always reply if posted tweetlink</value>
+    <value>alwaysreplyifpostedtweetlink</value>
   </data>
   <data name="extractBotMessage">
     <value>extract bot message</value>
