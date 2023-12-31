@@ -595,7 +595,6 @@ client.on(Events.MessageCreate, async (message) => {
                     console.error('Error connecting to database:', error);
                     return;
                 }
-                console.log('Inserted default settings');
             });
             settings = defaultSettings;
         } else {
@@ -662,13 +661,22 @@ client.on(Events.MessageCreate, async (message) => {
                         console.error('Error connecting to database:', error);
                         return;
                     }
-                    console.log('Inserted user');
                 });
                 //プランは無料
                 plan = 0;
             } else {
                 //ユーザーが存在する場合はそれを使用する
                 plan = results[0].plan;
+                //もし有料プランの有効期限が切れていた場合はプランを無料にする
+                if (results[0].paid_plan_expired_at < new Date().getTime()) plan = 0;
+                const updateSQL = 'UPDATE users SET plan = ? WHERE userid = ?';
+                const updateParams = [plan, message.author.id];
+                connection.query(updateSQL, updateParams, (error, results, fields) => {
+                    if (error) {
+                        console.error('Error connecting to database:', error);
+                        return;
+                    }
+                });
             }
             //キューに全てのURLを追加する
             for (let i = 0; i < urls.length; i++) {

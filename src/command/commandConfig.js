@@ -308,7 +308,7 @@ const commands = [
                             required: true
                         }
                     ]
-                }
+                },
             ]
         }
 ];
