@@ -169,6 +169,7 @@ async function processNextQueue() {
         }
     }
     */
+    let videoText = null;
     const media = tweetData.tweet.media;
     //画像:media.photos
     /*
@@ -218,7 +219,7 @@ async function processNextQueue() {
             }
         }
         //videos
-        let videoText = null;
+        
         if(media.videos != undefined) {
             for(let i = 0; i < media.videos.length; i++) {
                 if(settings.sendMovieAsLink == 1) {
