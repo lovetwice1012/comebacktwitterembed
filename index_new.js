@@ -340,7 +340,8 @@ async function processNextQueue() {
         channel.send(message_object);
     }
     //messageのリアクションを取る
-    message.reactions.cache.get("🔁").remove();
+    message.reactions.cache.filter(reaction => reaction.users.cache.has(client.user.id));
+    message.reactions.cache.get('🔁').remove()
     message.react("✅")
     //0.1秒待って次のキューを処理する
     setTimeout(() => {
