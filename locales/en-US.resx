@@ -17,6 +17,9 @@ If you do not trust us, you can secure your safety by removing your channel perm
   <data name="translate">
     <value>translate</value>
   </data>
+  <data name="reload">
+    <value>reload</value>
+  </data>
   <data name="delete">
     <value>delete</value>
   </data>
