@@ -80,9 +80,9 @@ async function processNextQueue() {
     const settings = queue.settings;
     const message = await client.channels.cache.get(queue.message.channelId).messages.cache.get(queue.message.id);
     const plan = queue.plan;
-    const url = queue.tweet.url;
+    const url = queue.url;
     const tweetData = queue.result;
-
+    console.log(queue)
     //embedsを作成開始
     /*
     embedsの作成のワークフロー
@@ -332,7 +332,6 @@ async function processNextQueue() {
     
     //メッセージを送信する
     //alwaysReplyが有効化されている場合は返信の形で送信する
-    console.log(message)
     if(settings.alwaysReply == 1) {
         message.reply(message_object);
     } else {
