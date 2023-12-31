@@ -482,6 +482,61 @@ client.on(Events.ClientReady, () => {
         }
     });
 
+    setInterval(async () => {
+        let guild = await client.guilds.cache.get('1175729394782851123')
+        let channel = await guild.channels.cache.get('1189083636574724167')
+        channel.send({
+            embeds: [{
+                title: '🌐サーバー数',
+                description: client.guilds.cache.size + 'servers',
+                color: 0x1DA1F2,
+                fields: [
+                    {
+                        name: 'ユーザー数',
+                        value: client.users.cache.size + 'users'
+                    },
+                    {
+                        name: 'チャンネル数',
+                        value: client.channels.cache.size + 'channels'
+                    },
+                    {
+                        name: '一分間に処理したメッセージ数',
+                        value: processed_minute + 'messages'
+                    },
+                    {
+                        name: '一時間に処理したメッセージ数',
+                        value: processed_hour + 'messages'
+                    },
+                    {
+                        name: '一日に処理したメッセージ数',
+                        value: processed_day + 'messages'
+                    }
+                ]
+            }]
+        })
+        processed_column = processed_minute;
+        processed_minute = 0;
+        
+        if (new Date().getMinutes() === 0) {
+            processed_hour_column = processed_hour;
+            processed_hour = 0;
+        }else{
+            processed_hour_column = null;
+        }
+        if (new Date().getHours() === 0 && new Date().getMinutes() === 0) {
+            processed_day_column = processed_day;
+            processed_day = 0;
+        }else{
+            processed_day_column = null;
+        }
+        connection.query('INSERT INTO stats (timestamp, joinedServersCount, usersCount, channelsCount, minutes, hours, days) VALUES (?, ?, ?, ?, ?, ?, ?)', [new Date().getTime(), client.guilds.cache.size, client.users.cache.size, client.channels.cache.size, processed_column, processed_hour_column, processed_day_column], (err, results, fields) => {
+            if (err) {
+                console.error('Error connecting to database:', err);
+                return;
+            }
+        });
+    }, 60000);
+
     client.application.commands.set(commandConfig);
     fetchWorkersServiceInstance.set_total_workers(64);
     fetchWorkersServiceInstance.initialize(client);
