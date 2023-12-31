@@ -427,11 +427,8 @@ client.on(Events.ClientReady, () => {
     }, 60000);
 
     client.application.commands.set(commandConfig);
-
     fetchWorkersServiceInstance.set_total_workers(64);
-
     fetchWorkersServiceInstance.initialize(client);
-
     processNextQueue();
 
 });
@@ -501,6 +498,8 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
         case Translate.Settings["en-US"]:
             //settings
+                    
+
             return
     }
 });
@@ -642,4 +641,28 @@ client.on(Events.MessageCreate, async (message) => {
     });
 })
 
+client.on(Events.InteractionCreate, async (interaction) => {
+    //ボタンが押された時の処理
+    if (!interaction.isButton()) return;
+    //ボタンのカスタムID
+    const customId = interaction.customId;
+    //ボタンが押されたメッセージ
+    const message = interaction.message;
+    switch(customId){
+        case 'translate':
+            break;
+        case 'delete':
+            break;
+        case 'reload':
+            break;
+        case 'showMediaAsAttachments':
+            break;
+        case 'showAttachmentsAsEmbedsImage':
+            break;
+        default:
+            break;
+    }
+})
+
 client.login(config.token);
+
