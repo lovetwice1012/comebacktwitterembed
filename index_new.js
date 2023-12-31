@@ -200,37 +200,40 @@ async function processNextQueue() {
     */
     //無い場合はundefined
     //photos
-    if(media.photos != undefined) {
-        for(let i = 0; i < media.photos.length; i++) {
-            if(i == 0) {
-                embed.image = {
-                    url: media.photos[i].url
-                }
-            } else {
-                imagesEmbeds.push({
-                    url: url,
-                    image: {
+    if(media != undefined){
+        if(media.photos != undefined) {
+            for(let i = 0; i < media.photos.length; i++) {
+                if(i == 0) {
+                    embed.image = {
                         url: media.photos[i].url
                     }
-                });
+                } else {
+                    imagesEmbeds.push({
+                        url: url,
+                        image: {
+                            url: media.photos[i].url
+                        }
+                    });
+                }
+            }
+        }
+        //videos
+        let videoText = null;
+        if(media.videos != undefined) {
+            for(let i = 0; i < media.videos.length; i++) {
+                if(settings.sendMovieAsLink == 1) {
+                    if(videoText == null) videoText = "";
+                    //リンクとして送信する
+                    videoText = videoText + "\n[動画リンク](" + media.videos[i].url + ")";
+                } else {
+                    if(message_object.files == undefined) message_object.files = [];
+                    //添付ファイルとして送信する
+                    message_object.files.push(media.videos[i].url);
+                }
             }
         }
     }
-    //videos
-    let videoText = null;
-    if(media.videos != undefined) {
-        for(let i = 0; i < media.videos.length; i++) {
-            if(settings.sendMovieAsLink == 1) {
-                if(videoText == null) videoText = "";
-                //リンクとして送信する
-                videoText = videoText + "\n[動画リンク](" + media.videos[i].url + ")";
-            } else {
-                if(message_object.files == undefined) message_object.files = [];
-                //添付ファイルとして送信する
-                message_object.files.push(media.videos[i].url);
-            }
-        }
-    }
+    
 
     //3.もし匿名モードが有効化されている場合は、ユーザー名やアイコンを上書きして匿名化する
     //匿名モードが有効化されているかどうか
