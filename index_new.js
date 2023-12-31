@@ -349,7 +349,7 @@ async function processNextQueue() {
     embeds.push(...imagesEmbeds);
     message_object.embeds = embeds;
     message_object.components = components;
-    if (queue.quotedCount != undefined && queue.quotedCount != null && queue.quotedCount != 0) message_object.content = "Quoted tweet(" + queue.quotedCount + "): " + url;
+    if (queue.quotedCount != undefined && queue.quotedCount != null && queue.quotedCount != 0) message_object.content = "Quoted tweet(" + queue.quotedCount + "): ";
 
     //メッセージを送信する
     //alwaysReplyが有効化されている場合は返信の形で送信する
