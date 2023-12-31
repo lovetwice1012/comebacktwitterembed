@@ -80,9 +80,8 @@ async function processNextQueue() {
     const settings = queue.settings;
     const message = await client.channels.cache.get(queue.message.channelId).messages.cache.get(queue.message.id);
     const plan = queue.plan;
-    const url = queue.url;
     const tweetData = queue.result;
-    console.log(queue)
+    const url = tweetData.tweet.url;
     //embedsを作成開始
     /*
     embedsの作成のワークフロー
