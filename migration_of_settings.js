@@ -111,7 +111,7 @@ button_invisibleとbutton_disabledはギルドIDをキーとしてそれぞれ�
         if(new_settings[guildId] == undefined){
             new_settings[guildId] = {};
         }
-        new_settings[guildId]['bannedWords'] = bannedWords[guildId].split(',').join(',');
+        new_settings[guildId]['bannedWords'] = bannedWords[guildId].join(',');
     }
     for (let guildId in defaultLanguage) {
         if(new_settings[guildId] == undefined){
