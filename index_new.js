@@ -348,7 +348,7 @@ async function processNextQueue() {
             if(videoText != null) message.channel.send(videoText);
             if(settings.deleteMessageIfOnlyPostedTweetLink == 1 && message.content == url) message.delete();
         }).catch((error) => {
-            if(error.includes("Request entity too large")){
+            if(error.message.includes("Request entity too large")){
                 const files = message_object.files;
                 //添付ファイルがある場合はそれを削除する
                 delete message_object.files;
@@ -371,7 +371,7 @@ async function processNextQueue() {
             if(videoText != null) message.channel.send(videoText);
             if(settings.deleteMessageIfOnlyPostedTweetLink == 1 && message.content == url) message.delete();
         }).catch((error) => {
-            if(error.includes("Request entity too large")){
+            if(error.message.includes("Request entity too large")){
                 const files = message_object.files;
                 //添付ファイルがある場合はそれを削除する
                 delete message_object.files;
