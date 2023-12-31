@@ -427,11 +427,8 @@ client.on(Events.ClientReady, () => {
     }, 60000);
 
     client.application.commands.set(commandConfig);
-
     fetchWorkersServiceInstance.set_total_workers(64);
-
     fetchWorkersServiceInstance.initialize(client);
-
     processNextQueue();
 
 });
@@ -500,7 +497,6 @@ client.on(Events.InteractionCreate, async (interaction) => {
             return
 
         case Translate.Settings["en-US"]:
-            
             switch (interaction.options.getSubcommand()) {
                 case 'disable':
                     //disable
@@ -684,4 +680,256 @@ client.on(Events.MessageCreate, async (message) => {
     });
 })
 
+client.on(Events.InteractionCreate, async (interaction) => {
+    //ボタンが押された時の処理
+    if (!interaction.isButton()) return;
+    await interaction.deferReply({ ephemeral: true });
+    //DBより設定を取得
+    const sql = 'SELECT * FROM settings WHERE guildId = ?';
+    const params = [interaction.guildId];
+    connection.query(sql, params, async (error, results, fields) => {
+        if (error) {
+            console.error('Error connecting to database:', error);
+            return;
+        }
+        let settings = null;
+        if (results.length == 0) {
+            //設定がない場合はデフォルトの設定を使用する
+            const defaultSettings = {
+                guildId: interaction.guildId,
+                bannedWords: null,
+                defaultLanguage: 'en-US',
+                editOriginalIfTranslate: 0,
+                sendMediaAsAttachmentsAsDefault: 0,
+                deleteMessageIfOnlyPostedTweetLink: 0,
+                alwaysReply: 0,
+                button_invisible_showMediaAsAttachments: 0,
+                button_invisible_showAttachmentsAsEmbedsImage: 0,
+                button_invisible_translate: 0,
+                button_invisible_delete: 0,
+                button_invisible_reload: 0,
+                button_disabled_users: null,
+                button_disabled_channels: null,
+                button_disabled_roles: null,
+                disable_users: null,
+                disable_channels: null,
+                disable_roles: null,
+                extractBotMessage: 0,
+                extractWebhookMessage: 0,
+                sendMovieAsLink: 0,
+                anonymous_users: null,
+                anonymous_channels: null,
+                anonymous_roles: null,
+                maxExtractQuotedTweet: 3,
+            };
+            const sql = 'INSERT INTO settings SET ?';
+            const params = [defaultSettings];
+            connection.query(sql, params, (error, results, fields) => {
+                if (error) {
+                    console.error('Error connecting to database:', error);
+                    return;
+                }
+                console.log('Inserted default settings');
+            });
+            settings = defaultSettings;
+        }else{
+            settings = results[0];
+        }
+        
+        //ボタンが無効化されているかどうか
+        if (settings.button_disabled_users != null) {
+            const button_disabled_users = settings.button_disabled_users.split(',');
+            for (let i = 0; i < button_disabled_users.length; i++) {
+                if (interaction.user.id == button_disabled_users[i]) {
+                    await interaction.editReply({ content: Translate.youcantusebuttons[interaction.locale] ?? Translate.youcantusebuttons[settings.defaultLanguage], ephemeral: true });
+                    setTimeout(() => {
+                        interaction.deleteReply();
+                    }, 3000);
+                    return;
+                }
+            }
+        }
+        //ボタンが無効化されているかどうか
+        if (settings.button_disabled_channels != null) {
+            const button_disabled_channels = settings.button_disabled_channels.split(',');
+            for (let i = 0; i < button_disabled_channels.length; i++) {
+                if (interaction.channel.id == button_disabled_channels[i]) {
+                    await interaction.editReply({ content: Translate.youcantusebuttons[interaction.locale] ?? Translate.youcantusebuttons[settings.defaultLanguage], ephemeral: true });
+                    setTimeout(() => {
+                        interaction.deleteReply();
+                    }, 3000);
+                    return;
+                }
+            }
+        }
+        //ボタンが無効化されているかどうか
+        if (settings.button_disabled_roles != null) {
+            const button_disabled_roles = settings.button_disabled_roles.split(',');
+            for (let i = 0; i < button_disabled_roles.length; i++) {
+                if (interaction.member.roles.cache.has(button_disabled_roles[i])) {
+                    await interaction.editReply({ content: Translate.youcantusebuttons[interaction.locale] ?? Translate.youcantusebuttons[settings.defaultLanguage], ephemeral: true });
+                    setTimeout(() => {
+                        interaction.deleteReply();
+                    }, 3000);
+                    return;
+                }
+            }
+        }
+
+    const deleteButton = new ButtonBuilder().setStyle(ButtonStyle.Danger).setLabel('Delete').setCustomId('delete');
+    const translateButton = new ButtonBuilder().setStyle(ButtonStyle.Primary).setLabel('Translate').setCustomId('translate');
+    const showAttachmentsAsMediaButton = new ButtonBuilder().setStyle(ButtonStyle.Secondary).setLabel(Translate.showAttachmentsAsEmbedsImage[interaction.locale] ?? Translate.showAttachmentsAsEmbedsImage[settings.defaultLanguage]).setCustomId('showAttachmentsAsEmbedsImage');
+    const showMediaAsAttachmentsButton = new ButtonBuilder().setStyle(ButtonStyle.Secondary).setLabel(Translate.showMediaAsAttachments[interaction.locale] ?? Translate.showMediaAsAttachments[settings.defaultLanguage]).setCustomId('showMediaAsAttachments');
+
+    switch (interaction.customId) {
+        case 'showMediaAsAttachments':
+            const messageObject = {};
+            messageObject.components = [{ type: ComponentType.ActionRow, components: [showAttachmentsAsMediaButton] }];
+            messageObject.components.push({ type: ComponentType.ActionRow, components: [translateButton, deleteButton] });
+            messageObject.files = [];
+            messageObject.embeds = [];
+            interaction.message.embeds.forEach(element => {
+                if (element.image) {
+                    messageObject.files.push(element.image.url);
+                }
+            });
+            let deepCopyEmbed0 = JSON.parse(JSON.stringify(interaction.message.embeds[0]));
+            delete deepCopyEmbed0.image;
+            messageObject.embeds.push(deepCopyEmbed0);
+            if (messageObject.embeds[0].image) delete messageObject.embeds.image;
+            messageObject.components = checkComponentIncludesDisabledButtonAndIfFindDeleteIt(messageObject.components, interaction.guildId);
+            await interaction.message.edit(messageObject);
+            await interaction.editReply({ content: Translate.finishedAction[interaction.locale] ?? Translate.finishedAction[settings.defaultLanguage], ephemeral: true });
+            setTimeout(() => {
+                interaction.deleteReply();
+            }, 3000);
+            break;
+
+        case 'showAttachmentsAsEmbedsImage':
+            const messageObject2 = {};
+            if (interaction.message.attachments === undefined || interaction.message.attachments === null) return interaction.reply('There are no attachments to show.');
+            const attachments = interaction.message.attachments.map(attachment => attachment.url);
+            if (attachments.length > 4) return interaction.reply('You can\'t show more than 4 attachments as embeds image.');
+            messageObject2.components = [{ type: ComponentType.ActionRow, components: [showMediaAsAttachmentsButton] }];
+            messageObject2.components.push({ type: ComponentType.ActionRow, components: [translateButton, deleteButton] });
+            messageObject2.components = checkComponentIncludesDisabledButtonAndIfFindDeleteIt(messageObject2.components, interaction.guildId);
+            messageObject2.embeds = [];
+            attachments.forEach(element => {
+                const extension = element.split("?").pop().split('.').pop();
+                if (videoExtensions.includes(extension)) {
+                    messageObject2.files.push(element);
+                    return;
+                }
+                if (messageObject2.embeds.length === 0) {
+                    let embed = {};
+                    embed.url = interaction.message.embeds[0].url;
+                    embed.title = interaction.message.embeds[0].title;
+                    embed.description = interaction.message.embeds[0].description;
+                    embed.color = interaction.message.embeds[0].color;
+                    embed.author = interaction.message.embeds[0].author;
+                    embed.footer = interaction.message.embeds[0].footer;
+                    embed.timestamp = interaction.message.embeds[0].timestamp;
+                    embed.fields = interaction.message.embeds[0].fields;
+                    embed.image = {
+                        url: element
+                    };
+                    messageObject2.embeds.push(embed);
+                    return
+                }
+                messageObject2.embeds.push({
+                    url: messageObject2.embeds[0].url,
+                    image: {
+                        url: element
+                    }
+                });
+            });
+            messageObject2.files = [];
+            await interaction.message.edit(messageObject2);
+            await interaction.editReply({ content: Translate.finishedAction[interaction.locale] ?? Translate.finishedAction[settings.defaultLanguage], ephemeral: true });
+            setTimeout(() => {
+                interaction.deleteReply();
+            }, 3000);
+            break;
+
+        case 'delete':
+            if (interaction.member.permissions.has(PermissionsBitField.Flags.ManageMessages)) {
+                await interaction.message.delete();
+                await interaction.editReply({ content: Translate.finishedAction[interaction.locale] ?? Translate.finishedAction[settings.defaultLanguage], ephemeral: true });
+                setTimeout(() => {
+                    interaction.deleteReply();
+                }, 3000);
+            } else {
+                if (interaction.message.embeds[0].author.name.split(":")[1].split(")")[0] != interaction.user.id) {
+                    await interaction.editReply({ content: youcantdeleteotherusersmessagesLocales[interaction.locale] ?? youcantdeleteotherusersmessagesLocales["en"], ephemeral: true });
+                    setTimeout(() => {
+                        interaction.deleteReply();
+                    }, 3000);
+                    return;
+                }
+                await interaction.message.delete();
+                await interaction.editReply({ content: Translate.finishedAction[interaction.locale] ?? Translate.finishedAction[settings.defaultLanguage], ephemeral: true });
+                setTimeout(() => {
+                    interaction.deleteReply();
+                }, 3000);
+            }
+            break;
+
+        case 'translate':
+            const messageObject3 = {};
+            messageObject3.components = [];
+            messageObject3.embeds = [];
+            const copyEmbedObject = {};
+            copyEmbedObject.title = interaction.message.embeds[0].title;
+            copyEmbedObject.url = interaction.message.embeds[0].url;
+            copyEmbedObject.color = interaction.message.embeds[0].color;
+            copyEmbedObject.author = interaction.message.embeds[0].author;
+            copyEmbedObject.footer = interaction.message.embeds[0].footer;
+            copyEmbedObject.timestamp = interaction.message.embeds[0].timestamp;
+            copyEmbedObject.fields = interaction.message.embeds[0].fields;
+            if (interaction.message.embeds[0].images) {
+                copyEmbedObject.image = interaction.message.embeds[0].image;
+            }
+            if (interaction.message.embeds[0].thumbnail) copyEmbedObject.thumbnail = interaction.message.embeds[0].thumbnail;
+            messageObject3.embeds.push(copyEmbedObject);
+            if (interaction.message.embeds.length > 1) {
+                for (let i = 1; i < interaction.message.embeds.length; i++) {
+                    messageObject3.embeds.push(interaction.message.embeds[i]);
+                }
+            }
+            let target = interaction.locale;
+            if (target.startsWith("en-")) target = 'en';
+            if (target === 'jp') target = 'ja';
+            const responce = await fetch("https://script.google.com/macros/s/AKfycbwmofa3n_K15ze_-4KrpH-B-eBHiKXmmgLeqsJInS3dJUDM0IJ-627h8Xu-w8PIc2f-ug/exec?target=" + target + "&text=" + encodeURIComponent(interaction.message.embeds[0].description.split('\n').splice(0, interaction.message.embeds[0].description.split('\n').length - 3).join('\n')));
+            let text = await responce.text();
+            text = text + interaction.message.embeds[0].description.split('\n').splice(interaction.message.embeds[0].description.split('\n').length - 4, interaction.message.embeds[0].description.split('\n').length).join('\n')
+            messageObject3.embeds[0].description = text;
+            messageObject3.components = checkComponentIncludesDisabledButtonAndIfFindDeleteIt(messageObject3.components, interaction.guildId);
+            await interaction.editReply(messageObject3);
+            if (settings.editOriginalIfTranslate[interaction.guildId] === true) {
+                if (interaction.message.attachments.length > 0) {
+                    messageObject3.files = [];
+                    interaction.message.attachments.forEach(element => {
+                        messageObject3.files.push(element.url);
+                    });
+                }
+                messageObject3.components = interaction.message.components;
+                await interaction.message.edit(messageObject3);
+            }
+            await interaction.editReply({ content: Translate.finishedAction[interaction.locale] ?? Translate.finishedAction[settings.defaultLanguage], ephemeral: true });
+            setTimeout(() => {
+                interaction.deleteReply();
+            }, 3000);
+            break;
+
+        case 'reload':
+            await interaction.editReply({ content: "この機能は現在開発中です", ephemeral: true });
+            setTimeout(() => {
+                interaction.deleteReply();
+            }, 3000);
+            break;
+        }
+    });
+})
+
 client.login(config.token);
+
