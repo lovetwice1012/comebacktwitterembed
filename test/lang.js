@@ -532,7 +532,7 @@ Help_script: {
     "pt-BR": "A sua mensagem contém uma palavra proibida."
     },
     setDefaultLanguageTo: {
-    "ja": "デフォルトの言語を設定しました。 :",
+    "ja": "デフォルトの言語を設定しました。",
     "en-US": "Set default language to ",
     "zh-CN": "将默认语言设置为",
     "es-ES": "Establecer el idioma por defecto en",
@@ -542,7 +542,7 @@ Help_script: {
     "pt-BR": "Definir o idioma predefinido para"
     },
     setEditOriginalIfTranslateTo: {
-    "ja": "editOriginalIfTranslateを設定しました。 :",
+    "ja": "editOriginalIfTranslateを設定しました。",
     "en-US": "Set editOriginalIfTranslate to ",
     "zh-CN": "将 editOriginalIfTranslate 设置为",
     "es-ES": "Establecer editOriginalIfTranslate como",
@@ -592,7 +592,7 @@ Help_script: {
     "pt-BR": "Define se deve ser sempre respondido se a ligação do tweet for publicada."
     },
     setsEndMediaAsAttachmentsAsDefaultTo: {
-    "ja": "メディアを添付ファイルとして表示するかどうかを設定しました。 :",
+    "ja": "メディアを添付ファイルとして表示するかどうかを設定しました。",
     "en-US": "Set sendMediaAsAttachmentsAsDefault to ",
     "zh-CN": "将 sendMediaAsAttachmentsAsDefault 设置为",
     "es-ES": "Establece sendMediaAsAttachmentsAsDefault como",
@@ -602,7 +602,7 @@ Help_script: {
     "pt-BR": "Definir sendMediaAsAttachmentsAsDefault para"
     },
     setDEleteIfOnlyPostedTweetLinkTo: {
-    "ja": "ツイートのリンクのみを投稿した場合にメッセージを削除するかどうかを設定しました。 :",
+    "ja": "ツイートのリンクのみを投稿した場合にメッセージを削除するかどうかを設定しました。",
     "en-US": "Set deleteIfOnlyPostedTweetLink to ",
     "zh-CN": "将 deleteIfOnlyPostedTweetLink 设为",
     "es-ES": "Establecer deleteIfOnlyPostedTweetLink a",
@@ -612,7 +612,7 @@ Help_script: {
     "pt-BR": "Definir deleteIfOnlyPostedTweetLink como"
     },
     setALwaysReplyIfPostedTweetLinkTo: {
-    "ja": "ツイートのリンクを投稿した場合に常に返信するかどうかを設定しました。 :",
+    "ja": "ツイートのリンクを投稿した場合に常に返信するかどうかを設定しました。",
     "en-US": "Set alwaysReplyIfPostedTweetLink to ",
     "zh-CN": "将 alwaysReplyIfPostedTweetLink 设为",
     "es-ES": "Establecer alwaysReplyIfPostedTweetLink como",
@@ -642,7 +642,7 @@ Help_script: {
     "pt-BR": "Activou todos os botões."
     },
     setShowMediaAsAttachmentsButtonTo: {
-    "ja": "メディアを添付ファイルとして表示するボタンを設定しました。 :",
+    "ja": "メディアを添付ファイルとして表示するボタンを設定しました。",
     "en-US": "Set showMediaAsAttachments button to ",
     "zh-CN": "将 showMediaAsAttachments 按钮设置为",
     "es-ES": "Establecer el botón showMediaAsAttachments en",
@@ -652,7 +652,7 @@ Help_script: {
     "pt-BR": "Definir o botão showMediaAsAttachments para"
     },
     setsHowAttachmentsAsEmbedsImageButtonTo: {
-    "ja": "画像を埋め込み画像として表示するボタンを設定しました。 :",
+    "ja": "画像を埋め込み画像として表示するボタンを設定しました。",
     "en-US": "Set showAttachmentsAsEmbedsImage button to ",
     "zh-CN": "将 showAttachmentsAsEmbedsImage 按钮设置为",
     "es-ES": "Establecer el botón showAttachmentsAsEmbedsImage en",
@@ -662,7 +662,7 @@ Help_script: {
     "pt-BR": "Definir o botão showAttachmentsAsEmbedsImage para"
     },
     setTranslateButtonTo: {
-    "ja": "翻訳ボタンを設定しました。 :",
+    "ja": "翻訳ボタンを設定しました。",
     "en-US": "Set translate button to ",
     "zh-CN": "将翻译按钮设置为",
     "es-ES": "Poner el botón de traducción en",
@@ -672,7 +672,7 @@ Help_script: {
     "pt-BR": "Definir o botão de tradução para"
     },
     setDeleteButtonTo: {
-    "ja": "削除ボタンを設定しました。 :",
+    "ja": "削除ボタンを設定しました。",
     "en-US": "Set delete button to ",
     "zh-CN": "将删除按钮设置为",
     "es-ES": "Poner el botón de borrar en",
@@ -832,7 +832,7 @@ Help_script: {
     "pt-BR": "Define se as mensagens dos bots devem ser extraídas."
     },
     setExtractBotMessageTo: {
-    "ja": "BOTのメッセージを展開するかどうかを設定しました。 :",
+    "ja": "BOTのメッセージを展開するかどうかを設定しました。",
     "en-US": "Set extractBotMessage to ",
     "zh-CN": "将 extractBotMessage 设为",
     "es-ES": "Establecer extractBotMessage como",

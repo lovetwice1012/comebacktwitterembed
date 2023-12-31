@@ -168,10 +168,10 @@
     <value>あなたのメッセージには禁止ワードが含まれています。</value>
   </data>
   <data name="setDefaultLanguageTo">
-    <value>デフォルトの言語を設定しました。 :</value>
+    <value>デフォルトの言語を設定しました。</value>
   </data>
   <data name="setEditOriginalIfTranslateTo">
-    <value>editOriginalIfTranslateを設定しました。 :</value>
+    <value>editOriginalIfTranslateを設定しました。</value>
   </data>
   <data name="youCanTDeleteOtherUsers' Messages">
     <value>あなたは他のユーザーのメッセージを削除することはできません。</value>
@@ -186,13 +186,13 @@
     <value>ツイートのリンクを投稿した場合に常に返信するかどうかを設定します。</value>
   </data>
   <data name="setsEndMediaAsAttachmentsAsDefaultTo">
-    <value>メディアを添付ファイルとして表示するかどうかを設定しました。 :</value>
+    <value>メディアを添付ファイルとして表示するかどうかを設定しました。</value>
   </data>
   <data name="setDEleteIfOnlyPostedTweetLinkTo">
-    <value>ツイートのリンクのみを投稿した場合にメッセージを削除するかどうかを設定しました。 :</value>
+    <value>ツイートのリンクのみを投稿した場合にメッセージを削除するかどうかを設定しました。</value>
   </data>
   <data name="setALwaysReplyIfPostedTweetLinkTo">
-    <value>ツイートのリンクを投稿した場合に常に返信するかどうかを設定しました。 :</value>
+    <value>ツイートのリンクを投稿した場合に常に返信するかどうかを設定しました。</value>
   </data>
   <data name="disabledAllButtons">
     <value>すべてのボタンを無効化しました。</value>
@@ -201,16 +201,16 @@
     <value>すべてのボタンを有効化しました。</value>
   </data>
   <data name="setShowMediaAsAttachmentsButtonTo">
-    <value>メディアを添付ファイルとして表示するボタンを設定しました。 :</value>
+    <value>メディアを添付ファイルとして表示するボタンを設定しました。</value>
   </data>
   <data name="setsHowAttachmentsAsEmbedsImageButtonTo">
-    <value>画像を埋め込み画像として表示するボタンを設定しました。 :</value>
+    <value>画像を埋め込み画像として表示するボタンを設定しました。</value>
   </data>
   <data name="setTranslateButtonTo">
-    <value>翻訳ボタンを設定しました。 :</value>
+    <value>翻訳ボタンを設定しました。</value>
   </data>
   <data name="setDeleteButtonTo">
-    <value>削除ボタンを設定しました。 :</value>
+    <value>削除ボタンを設定しました。</value>
   </data>
   <data name="disabledShowMediaAsAttachmentsButton">
     <value>メディアを添付ファイルとして表示するボタンを無効化しました。</value>
@@ -258,7 +258,7 @@
     <value>BOTのメッセージを展開するかどうかを設定します。</value>
   </data>
   <data name="setExtractBotMessageTo">
-    <value>BOTのメッセージを展開するかどうかを設定しました。 :</value>
+    <value>BOTのメッセージを展開するかどうかを設定しました。</value>
   </data>
   <data name="editOriginalIfTranslate">
     <value>翻訳時にオリジナルのメッセージを編集</value>
