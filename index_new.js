@@ -131,16 +131,16 @@ async function processNextQueue() {
     let embeds = [];
     let embed = {}
     const tweettext = tweetData.tweet.text;
-    const replies = tweetData.tweet.reply;
-    const retweets = tweetData.tweet.retweet;
-    const view = tweetData.tweet.view;
-    const likes = tweetData.tweet.like;
+    const replies = tweetData.tweet.replies;
+    const retweets = tweetData.tweet.retweets;
+    const views = tweetData.tweet.views;
+    const likes = tweetData.tweet.likes;
     const user_name = tweetData.tweet.author.name;
     const user_screen_name = tweetData.tweet.author.screen_name;
 
     embed.title = user_name;
     embed.url = url;
-    embed.description = tweettext + '\n\n[View on Twitter](' + url + ')\n\n:speech_balloon:' + replies + ' replies • :recycle:' + retweets + ' retweets • :heart:' + likes + ' likes';
+    embed.description = tweettext + '\n\n[View on Twitter](' + url + ')\n\n:eyes:' + views + ' views • :speech_balloon:' + replies + ' replies • :recycle:' + retweets + ' retweets • :heart:' + likes + ' likes';
     embed.color = 0x1DA1F2;
     embed.author = {
         name: 'request by ' + message.author.username + '(id:' + message.author.id + ')',
