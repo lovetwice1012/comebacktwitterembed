@@ -104,30 +104,6 @@ const commands = [
                                     name: 'Japanese',
                                     value: 'ja'
                                 },
-                                {
-                                    name: 'German',
-                                    value: 'de'
-                                },
-                                {
-                                    name: 'Spanish',
-                                    value: 'es-ES'
-                                },
-                                {
-                                    name: 'French',
-                                    value: 'fr'
-                                },
-                                {
-                                    name: 'Portuguese,Brazilian',
-                                    value: 'pt-BR'
-                                },
-                                {
-                                    name: 'Russian',
-                                    value: 'ru'
-                                },
-                                {
-                                    name: 'Chinese',
-                                    value: 'zh-CN'
-                                },
                             ]
                         }
                     ]
@@ -196,7 +172,7 @@ const commands = [
                         }
                     ]
                 },
-                { // 8
+                {
                     name: locales.button["en-US"],
                     name_localizations: locales.button,
                     description: locales.button["en-US"],
@@ -277,7 +253,7 @@ const commands = [
                         }
                     ]
                 },
-                { //9
+                {
                     name: locales.extractBotMessage["en-US"],
                     name_localizations: locales.extractBotMessage,
                     description: locales.setsWhetherToExtractBotMessages["en-US"],
@@ -313,3 +289,33 @@ const commands = [
         }
 ];
 module.exports = commands;
+
+/*
+言語設定　未実装言語
+
+    {
+        name: 'German',
+        value: 'de'
+    },
+    {
+        name: 'Spanish',
+        value: 'es-ES'
+    },
+    {
+        name: 'French',
+        value: 'fr'
+    },
+    {
+        name: 'Portuguese,Brazilian',
+        value: 'pt-BR'
+    },
+    {
+        name: 'Russian',
+        value: 'ru'
+    },
+    {
+        name: 'Chinese',
+        value: 'zh-CN'
+    },
+
+*/

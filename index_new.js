@@ -435,7 +435,6 @@ client.on(Events.ClientReady, () => {
 
 client.on(Events.InteractionCreate, async (interaction) => {
     if (!interaction.isCommand()) return;
-    console.log(interaction)
     switch (interaction.commandName) {
 
         case Translate.Help["en-US"]:
@@ -498,50 +497,127 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
         case Translate.Settings["en-US"]:
             switch (interaction.options.getSubcommand()) {
-                case 'disable':
-                    //disable
+                case Translate.disable["en-US"]:
+                    //user channel role
+                    const option_user = interaction.options.getUser('user');
+                    const option_channel = interaction.options.getChannel('channel');
+                    const option_role = interaction.options.getRole('role');
+
+                    if (option_user) {
+                        //DBにoption_userを追加する
+                    }
+                    else if (option_channel) {
+                        //DBにoption_channelを追加する
+                    }
+                    else if (option_role) {
+                        //DBにoption_roleを追加する
+                    }
                 return
 
-                case 'bannedwords':
-                    //bannedwords
+                case Translate.banWord["en-US"]:
+                    //word
+                    const option_word = interaction.options.getString(Translate.word["en-US"]);
                 return
 
-                case 'defaultlanguage':
-                    //defaultlanguage
+                case Translate.defaultLanguage["en-US"]:
+                    //language
+                    const option_language = interaction.options.getString(TTranslate.language["en-US"]);
                 return
 
-                case 'editoriginaliftranslate':
-                    //editoriginaliftranslate
+                case Translate.editOriginalIfTranslate["en-US"]:
+                    //boolean
+                    const option_editOriginalIfTranslate_boolean = interaction.options.getBoolean(Translate.boolean["en-US"]);
                 return
 
-                case 'setdefaultmediaasattachments':
-                    //setdefaultmediaasattachments
+                case Translate.showMediaAsAttachments["en-US"]:
+                    //boolean
+                    const option_showMediaAsAttachments_boolean = interaction.options.getBoolean(Translate.boolean["en-US"]);
                 return
 
-                case 'deleteifonlypostedtweetlink':
-                    //deleteifonlypostedtweetlink
+                case Translate.deleteIfOnlyPostedTweetlink["en-US"]:
+                    //boolean
+                    const option_deleteIfOnlyPostedTweetlink_boolean = interaction.options.getBoolean(Translate.boolean["en-US"]);
                 return
 
-                case 'alwaysreplyifpostedtweetlink':
-                    //alwaysreplyifpostedtweetlink
+                case Translate.alwaysReplyIfPostedTweetlink['en-US']:
+                    //boolean
+                    const option_alwaysReplyIfPostedTweetlink_boolean = interaction.options.getBoolean(Translate.boolean["en-US"]);
                 return
 
-                case 'button':
-                    //button
+                case Translate.button["en-US"]:
+                    //showMediaAsAttachments showAttachmentsAsEmbedsImage translate delete reload
+                    const option_showMediaAsAttachments = interaction.options.Boolean(Translate.boolean["en-US"]);
+                    const option_showAttachmentsAsEmbedsImage = interaction.options.Boolean(Translate.boolean["en-US"]);
+                    const option_translate = interaction.options.Boolean(Translate.boolean["en-US"]);
+                    const option_delete = interaction.options.Boolean(Translate.boolean["en-US"]);
+                    const option_reload = interaction.options.Boolean(Translate.boolean["en-US"]);
+
+                    if (option_showMediaAsAttachments) {
+                        //option_showMediaAsAttachmentsを反転させる
+                    }
+                    else if (option_showAttachmentsAsEmbedsImage) {
+                        //option_showAttachmentsAsEmbedsImageを反転させる
+                    }
+                    else if (option_translate) {
+                        //option_translateを反転させる
+                    }
+                    else if (option_delete) {
+                        //option_deleteを反転させる
+                    }
+                    else if (option_reload) {
+                        //option_reloadを反転させる
+                    }
                 return
 
-                case 'extractbotmessage':
-                    //extractbotmessage
+                case Translate.extractBotMessage["en-US"]:
+                    //boolean
+                    const option_extractBotMessage_boolean = interaction.options.getBoolean(Translate.boolean["en-US"]);
                 return
 
-                case 'quoterepostdonotextract':
-                    //quoterepostdonotextract
+                case Translate.setsWhetherToExpandQuoteRetweets["en-US"]:
+                    //boolean
+                    const option_setsWhetherToExpandQuoteRetweets_boolean = interaction.options.getBoolean(Translate.boolean["en-US"]);
                 return
             }
-            
         return
     }
 });
+
+/* 
+
+settingsテーブルの詳細な説明
+    guildId    bigint(20)    :ギルドID
+    bannedWords    text NULL    :禁止ワードをカンマ区切り。禁止ワードがない場合はNULL。カンマが禁止ワードに含まれている場合は{#!comma}に置換されているため復元の必要あり
+    defaultLanguage    char(7) [en-US]    :デフォルトの言語
+    editOriginalIfTranslate    tinyint(4) [0]    :翻訳ボタンが押されたときに元メッセージを編集するかどうか
+    sendMediaAsAttachmentsAsDefault    tinyint(4) [0]    :デフォルトでメディアを添付ファイルとして送信するかどうか
+    deleteMessageIfOnlyPostedTweetLink    tinyint(4) [0]    :ツイートリンクのみのメッセージを削除するかどうか
+    alwaysReply    tinyint(4) [0]    :常に返信の形で内容を送信するかどうか。しない場合はチャンネルに送信する
+    button_invisible_showMediaAsAttachments    tinyint(4) [0]:メディアを添付ファイルとして送信するボタンを表示するかどうか    
+    button_invisible_showAttachmentsAsEmbedsImage    tinyint(4) [0]    :画像を埋め込みとして送信するボタンを表示するかどうか
+    button_invisible_translate    tinyint(4) [0]    :翻訳ボタンを表示するかどうか
+    button_invisible_delete    tinyint(4) [0]    :削除ボタンを表示するかどうか
+    button_invisible_reload    tinyint(4) [0]    :再読み込みボタンを表示するかどうか(userのplanが1か2の場合のみ)
+    button_disabled_users    text NULL    :ボタンを無効化するユーザーのIDをカンマ区切り。ボタンを無効化しない場合はNULL。
+    button_disabled_channels    text NULL    :ボタンを無効化するチャンネルのIDをカンマ区切り。ボタンを無効化しない場合はNULL。
+    button_disabled_roles    text NULL    :ボタンを無効化するロールのIDをカンマ区切り。ボタンを無効化しない場合はNULL。
+    disable_users    text NULL    :BOTが無視するユーザーのIDをカンマ区切り。無効化しない場合はNULL。
+    disable_channels    text NULL    :BOTが無視するチャンネルのIDをカンマ区切り。無効化しない場合はNULL。
+    disable_roles    text NULL    :BOTが無視するロールのIDをカンマ区切り。無効化しない場合はNULL。
+    extractBotMessage    tinyint(4) [0]    :BOTのメッセージに反応するかどうか
+    extractWebhookMessage    tinyint(4) [0]    :Webhookのメッセージに反応するかどうか
+    sendMovieAsLink    tinyint(4) [0]    :動画をリンクとして送信するかどうか。しない場合は添付ファイルとして送信するが、もし動画が添付ファイルとして送信できない場合はリンクとして送信する。　リンクとして送信する場合は [動画リンク](<動画のURL>)という形式で送信する
+    anonymous_users    text NULL    :匿名モードを有効化するユーザーのIDをカンマ区切り。匿名化しない場合はNULL。
+    anonymous_channels    text NULL    :匿名モードを有効化するチャンネルのIDをカンマ区切り。匿名化しない場合はNULL。
+    anonymous_roles    text NULL    :匿名モードを有効化するロールのIDをカンマ区切り。匿名化しない場合はNULL。
+    maxExtractQuotedTweet int(11) [3]    :引用ツイートを何個まで展開するか
+
+    匿名モード：
+    twitterのユーザー名やアイコン、誰が送信したかを表示しないモード。
+    ツイートリンクも表示されない。
+    削除ボタンは表示されない。
+
+*/
 
 client.on(Events.MessageCreate, async (message) => {
     //twitter.comかx.comが含まれているか
