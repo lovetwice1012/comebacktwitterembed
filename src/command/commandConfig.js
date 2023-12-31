@@ -1,3 +1,4 @@
+const { ApplicationCommandOptionType } = require('discord.js');
 const locales = require('../resxParser');
 const commands = [
         {
