@@ -359,3 +359,147 @@ client.on(Events.ClientReady, () => {
 
 });
 
+client.on(Events.InteractionCreate, async (interaction) => {
+    if (!interaction.isCommand()) return;
+    if (interaction.commandName === 'ping') {
+        await interaction.reply('Pong!');
+    }
+});
+
+client.on(Events.MessageCreate, async (message) => {
+    //twitter.comかx.comが含まれているか
+    if (!message.content.includes('twitter.com') && !message.content.includes('x.com')) return;
+    //https://twitter.comかhttps://x.comから始まるリンクのみを抽出する
+    const urlRegex = /https:\/\/(twitter|x)\.com\/[a-zA-Z0-9_]{1,15}\/status\/[0-9]{1,20}/g;
+    const urls = message.content.match(urlRegex);
+    if (urls == null) return;
+    //settingsの取得
+    const sql = 'SELECT * FROM settings WHERE guildId = ?';
+    const params = [message.guild.id];
+
+    connection.query(sql, params, (error, results, fields) => {
+        if (error) {
+            console.error('Error connecting to database:', error);
+            return;
+        }
+        if (results.length == 0) {
+            //設定がない場合はデフォルトの設定を使用する
+            const defaultSettings = {
+                guildId: message.guild.id,
+                bannedWords: null,
+                defaultLanguage: 'en-US',
+                editOriginalIfTranslate: 0,
+                sendMediaAsAttachmentsAsDefault: 0,
+                deleteMessageIfOnlyPostedTweetLink: 0,
+                alwaysReply: 0,
+                button_invisible_showMediaAsAttachments: 0,
+                button_invisible_showAttachmentsAsEmbedsImage: 0,
+                button_invisible_translate: 0,
+                button_invisible_delete: 0,
+                button_invisible_reload: 0,
+                button_disabled_users: null,
+                button_disabled_channels: null,
+                button_disabled_roles: null,
+                disable_users: null,
+                disable_channels: null,
+                disable_roles: null,
+                extractBotMessage: 0,
+                extractWebhookMessage: 0,
+                sendMovieAsLink: 0,
+                anonymous_users: null,
+                anonymous_channels: null,
+                anonymous_roles: null,
+                maxExtractQuotedTweet: 3,
+            };
+            const sql = 'INSERT INTO settings SET ?';
+            const params = [defaultSettings];
+            connection.query(sql, params, (error, results, fields) => {
+                if (error) {
+                    console.error('Error connecting to database:', error);
+                    return;
+                }
+                console.log('Inserted default settings');
+            });
+            settings = defaultSettings;
+        } else {
+            //設定がある場合はそれを使用する
+            settings = results[0];
+        }
+
+        //DBよりuserのデータを取得
+        /*
+        usersテーブル
+        userid	bigint(20)	:ユーザーID
+        plan	int(11) [0]	:プラン(0:無料,1:有料(ベーシック),2:有料(プレミアム))
+        paid_plan_expired_at	bigint(20) [0]	:有料プランの有効期限(unixtime)
+        register_date	bigint(20)	:登録日(unixtime)
+        enabled	tinyint(4) [1]	:有効化されているかどうか(利用禁止になった場合は0になる)
+        */
+
+        //botのメッセージに反応するかどうか
+        if(settings.extractBotMessage == 0 && message.author.bot) return;
+        //webhookのメッセージに反応するかどうか
+        if(settings.extractWebhookMessage == 0 && message.webhookId != null) return;
+        //ユーザーが無効化されているかどうか
+        if(settings.disable_users != null) {
+            const disable_users = settings.disable_users.split(',');
+            for(let i = 0; i < disable_users.length; i++) {
+                if(message.author.id == disable_users[i]) return;
+            }
+        }
+        //チャンネルが無効化されているかどうか
+        if(settings.disable_channels != null) {
+            const disable_channels = settings.disable_channels.split(',');
+            for(let i = 0; i < disable_channels.length; i++) {
+                if(message.channel.id == disable_channels[i]) return;
+            }
+        }
+        //ロールが無効化されているかどうか
+        if(settings.disable_roles != null) {
+            const disable_roles = settings.disable_roles.split(',');
+            for(let i = 0; i < disable_roles.length; i++) {
+                if(message.member.roles.cache.has(disable_roles[i])) return;
+            }
+        }
+
+        //ユーザーのデータを取得
+        const sql = 'SELECT * FROM users WHERE userid = ?';
+        const params = [message.author.id];
+        connection.query(sql, params, (error, results, fields) => {
+            if (error) {
+                console.error('Error connecting to database:', error);
+                return;
+            }
+            if (results.length == 0) {
+                //ユーザーが存在しない場合は登録する
+                const sql = 'INSERT INTO users SET ?';
+                const params = [{
+                    userid: message.author.id,
+                    plan: 0,
+                    paid_plan_expired_at: 0,
+                    register_date: new Date().getTime(),
+                    enabled: 1
+                }];
+                connection.query(sql, params, (error, results, fields) => {
+                    if (error) {
+                        console.error('Error connecting to database:', error);
+                        return;
+                    }
+                    console.log('Inserted user');
+                });
+                //プランは無料
+                plan = 0;
+            } else {
+                //ユーザーが存在する場合はそれを使用する
+                plan = results[0].plan;
+            }
+            //キューに全てのURLを追加する
+            for (let i = 0; i < urls.length; i++) {
+                fetchWorkersServiceInstance.add_queue(message, plan, urls[i]);
+                //キューに追加した事を示すためにリアクションを付ける
+                message.react(':repeat:');
+            }
+        });
+    });
+})
+
