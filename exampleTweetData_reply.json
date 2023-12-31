@@ -1,0 +1,42 @@
+{
+	"code": 200,
+	"message": "OK",
+	"tweet": {
+		"url": "https://twitter.com/nfujita55a/status/1739959049159156010",
+		"id": "1739959049159156010",
+		"text": "@naayu1012 「ホンモノ」の方、格が違った！",
+		"author": {
+			"id": "835827818814590976",
+			"name": "ふじた_🐱♨️💻雑用係",
+			"screen_name": "nfujita55a",
+			"avatar_url": "https://pbs.twimg.com/profile_images/835831903844368384/A-ub9dTi_200x200.jpg",
+			"banner_url": "https://pbs.twimg.com/profile_banners/835827818814590976/1670864486",
+			"description": "猫・温泉・漫画が好き。インターネットの端っこが仕事場。3週間に1回♨旅にでます。腐海の少女マンガ脳です。RT等ご自由に。\n避難場所 @pt2_nfujita55a\n\n※ツイートは所属する組織の見解を示すものではありません。\nhttp://qiita.com/nfujita55a\nhttp://togetter.com/id/nfujita55a",
+			"location": "硫黄泉♨️と🐱さまのあいだ ",
+			"url": "https://twitter.com/nfujita55a",
+			"followers": 2968,
+			"following": 1438,
+			"joined": "Sun Feb 26 12:24:15 +0000 2017",
+			"likes": 214258,
+			"website": {
+				"url": "https://twilog.org/nfujita55a",
+				"display_url": "twilog.org/nfujita55a"
+			},
+			"tweets": 84947,
+			"avatar_color": null
+		},
+		"replies": 0,
+		"retweets": 0,
+		"likes": 1,
+		"created_at": "Wed Dec 27 10:38:58 +0000 2023",
+		"created_timestamp": 1703673538,
+		"views": 26,
+		"is_note_tweet": false,
+		"lang": "ja",
+		"replying_to": "naayu1012",
+		"replying_to_status": "1739950150607589634",
+		"source": "Twitter Web App",
+		"twitter_card": "tweet",
+		"color": null
+	}
+}

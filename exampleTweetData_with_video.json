@@ -1,0 +1,67 @@
+{
+	"code": 200,
+	"message": "OK",
+	"tweet": {
+		"url": "https://twitter.com/naayu1012/status/1738122247477530649",
+		"id": "1738122247477530649",
+		"text": "操作性は悪いけどPCでシャニソンのライブプレイできた\n下手すぎてコンボカットしてるけどEasyではAG取ってるしうまい人ならAP行けるんじゃないかな",
+		"author": {
+			"id": "1333711395649585154",
+			"name": "naayu",
+			"screen_name": "naayu1012",
+			"avatar_url": "https://pbs.twimg.com/profile_images/1651315887540928512/tC6-eeXi_200x200.jpg",
+			"banner_url": "https://pbs.twimg.com/profile_banners/1333711395649585154/1682539363",
+			"description": "iOS15で艦これを使用可能にするブックマークレットの開発者/ComebackTwitterEmbedの開発者",
+			"location": "ゴミ捨て場",
+			"url": "https://twitter.com/naayu1012",
+			"followers": 544,
+			"following": 461,
+			"joined": "Tue Dec 01 09:55:58 +0000 2020",
+			"likes": 2309,
+			"website": {
+				"url": "https://ios15-kancolle.github.io",
+				"display_url": "ios15-kancolle.github.io"
+			},
+			"tweets": 2565,
+			"avatar_color": null
+		},
+		"replies": 0,
+		"retweets": 0,
+		"likes": 0,
+		"created_at": "Fri Dec 22 09:00:11 +0000 2023",
+		"created_timestamp": 1703235611,
+		"possibly_sensitive": false,
+		"views": 227,
+		"is_note_tweet": false,
+		"lang": "ja",
+		"replying_to": null,
+		"replying_to_status": null,
+		"media": {
+			"all": [
+				{
+					"url": "https://video.twimg.com/ext_tw_video/1738122125154893824/pu/vid/avc1/1328x720/aMfPTXSsUb4-Hm9z.mp4?tag=12",
+					"thumbnail_url": "https://pbs.twimg.com/ext_tw_video_thumb/1738122125154893824/pu/img/wI6WYzaGo5MFKUEJ.jpg",
+					"duration": 21.234,
+					"width": 1920,
+					"height": 1040,
+					"format": "video/mp4",
+					"type": "video"
+				}
+			],
+			"videos": [
+				{
+					"url": "https://video.twimg.com/ext_tw_video/1738122125154893824/pu/vid/avc1/1328x720/aMfPTXSsUb4-Hm9z.mp4?tag=12",
+					"thumbnail_url": "https://pbs.twimg.com/ext_tw_video_thumb/1738122125154893824/pu/img/wI6WYzaGo5MFKUEJ.jpg",
+					"duration": 21.234,
+					"width": 1920,
+					"height": 1040,
+					"format": "video/mp4",
+					"type": "video"
+				}
+			]
+		},
+		"source": "Twitter Web App",
+		"twitter_card": "player",
+		"color": null
+	}
+}

@@ -1,0 +1,79 @@
+{
+	"code": 200,
+	"message": "OK",
+	"tweet": {
+		"url": "https://twitter.com/naayu1012/status/1739950150607589634",
+		"id": "1739950150607589634",
+		"text": "これはまだいい方で、「ホンモノ」はエラーが出てることすら認識できずに次々と進めていって最終段階になって初めて「動かない！おかしい！！！」としか言わないからマジで困るんよな",
+		"author": {
+			"id": "1333711395649585154",
+			"name": "naayu",
+			"screen_name": "naayu1012",
+			"avatar_url": "https://pbs.twimg.com/profile_images/1651315887540928512/tC6-eeXi_200x200.jpg",
+			"banner_url": "https://pbs.twimg.com/profile_banners/1333711395649585154/1682539363",
+			"description": "iOS15で艦これを使用可能にするブックマークレットの開発者/ComebackTwitterEmbedの開発者",
+			"location": "ゴミ捨て場",
+			"url": "https://twitter.com/naayu1012",
+			"followers": 544,
+			"following": 461,
+			"joined": "Tue Dec 01 09:55:58 +0000 2020",
+			"likes": 2309,
+			"website": {
+				"url": "https://ios15-kancolle.github.io",
+				"display_url": "ios15-kancolle.github.io"
+			},
+			"tweets": 2565,
+			"avatar_color": null
+		},
+		"replies": 1,
+		"retweets": 1,
+		"likes": 6,
+		"created_at": "Wed Dec 27 10:03:37 +0000 2023",
+		"created_timestamp": 1703671417,
+		"views": 625,
+		"is_note_tweet": false,
+		"lang": "ja",
+		"replying_to": null,
+		"replying_to_status": null,
+		"quote": {
+			"url": "https://twitter.com/nfujita55a/status/1739640226300268968",
+			"id": "1739640226300268968",
+			"text": "よその会社さんのプログラマ「担当箇所のAWS使うとこ発生するエラー理由わかんないので、AWSのサポートに聞きます」\nふじた🐱「まず自分で調べて💢。Javaだよね。なんてメソッドでエラー吐くの？」\nプログラマ「調べてません。サポートに聞きます」\nふじた🐱「ふざけるな💢」\nが今日のハイライト",
+			"author": {
+				"id": "835827818814590976",
+				"name": "ふじた_🐱♨️💻雑用係",
+				"screen_name": "nfujita55a",
+				"avatar_url": "https://pbs.twimg.com/profile_images/835831903844368384/A-ub9dTi_200x200.jpg",
+				"banner_url": "https://pbs.twimg.com/profile_banners/835827818814590976/1670864486",
+				"description": "猫・温泉・漫画が好き。インターネットの端っこが仕事場。3週間に1回♨旅にでます。腐海の少女マンガ脳です。RT等ご自由に。\n避難場所 @pt2_nfujita55a\n\n※ツイートは所属する組織の見解を示すものではありません。\nhttp://qiita.com/nfujita55a\nhttp://togetter.com/id/nfujita55a",
+				"location": "硫黄泉♨️と🐱さまのあいだ ",
+				"url": "https://twitter.com/nfujita55a",
+				"followers": 2968,
+				"following": 1438,
+				"joined": "Sun Feb 26 12:24:15 +0000 2017",
+				"likes": 214258,
+				"website": {
+					"url": "https://twilog.org/nfujita55a",
+					"display_url": "twilog.org/nfujita55a"
+				},
+				"tweets": 84947,
+				"avatar_color": null
+			},
+			"replies": 20,
+			"retweets": 149,
+			"likes": 845,
+			"created_at": "Tue Dec 26 13:32:05 +0000 2023",
+			"created_timestamp": 1703597525,
+			"views": 216882,
+			"is_note_tweet": false,
+			"lang": "ja",
+			"replying_to": null,
+			"replying_to_status": null,
+			"source": "Twitter Web App",
+			"twitter_card": "tweet",
+			"color": null
+		},
+		"source": "Twitter Web App",
+		"color": null
+	}
+}

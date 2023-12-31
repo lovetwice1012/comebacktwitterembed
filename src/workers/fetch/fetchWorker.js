@@ -2,9 +2,25 @@ const fetchResult = require('./fetchResult');
 const fetchTask = require('./fetchTask');
 const {workerData,parentPort} = require('worker_threads');
 const fetch = require('node-fetch');
+const mysql = require('mysql');
 
-process.on("uncaughtException", (error) => {
-    console.error(error);
+
+// MySQL接続情報
+const connection = mysql.createConnection({
+    host: '192.168.100.22',
+    user: 'comebacktwitterembed',
+    password: 'bluebird',
+    database: 'ComebackTwitterEmbed'
+});
+
+// MySQLに接続
+connection.connect((err) => {
+    if (err) {
+        console.error('Error connecting to database:', err);
+        return;
+    }
+    console.log('Connected to database');
+    parentPort.postMessage("ready");
 });
 
 parentPort.on("message", (data) => {
@@ -29,13 +45,65 @@ parentPort.on("message", (data) => {
         return response.json();
     }).then((json) => {
         result = json;
-        parentPort.postMessage(new fetchResult(data.message, data.plan, result));
+        let settings = null;
+        const sql = 'SELECT * FROM settings WHERE guildId = ?';
+        const params = [data.message.guild.id];
+        connection.query(sql, params, (error, results, fields) => {
+            if (error) {
+                console.error('Error connecting to database:', error);
+                return;
+            }
+            if (results.length == 0) {
+                //設定がない場合はデフォルトの設定を使用する
+                const defaultSettings = {
+                    guildId: queue.guildId,
+                    bannedWords: null,
+                    defaultLanguage: 'en-US',
+                    editOriginalIfTranslate: 0,
+                    sendMediaAsAttachmentsAsDefault: 0,
+                    deleteMessageIfOnlyPostedTweetLink: 0,
+                    alwaysReply: 0,
+                    button_invisible_showMediaAsAttachments: 0,
+                    button_invisible_showAttachmentsAsEmbedsImage: 0,
+                    button_invisible_translate: 0,
+                    button_invisible_delete: 0,
+                    button_invisible_reload: 0,
+                    button_disabled_users: null,
+                    button_disabled_channels: null,
+                    button_disabled_roles: null,
+                    disable_users: null,
+                    disable_channels: null,
+                    disable_roles: null,
+                    extractBotMessage: 0,
+                    extractWebhookMessage: 0,
+                    sendMovieAsLink: 0,
+                    anonymous_users: null,
+                    anonymous_channels: null,
+                    anonymous_roles: null,
+                };
+                const sql = 'INSERT INTO settings SET ?';
+                const params = [defaultSettings];
+                connection.query(sql, params, (error, results, fields) => {
+                    if (error) {
+                        console.error('Error connecting to database:', error);
+                        return;
+                    }
+                    console.log('Inserted default settings');
+                });
+                settings = defaultSettings;
+            } else {
+                //設定がある場合はそれを使用する
+                settings = results[0];
+            }
+            parentPort.postMessage(new fetchResult(data.message, data.plan, result, settings));
+        });
+        
     }).catch((error) => {
-        parentPort.postMessage(new fetchResult(data.message, data.plan, null, error));
+        parentPort.postMessage(new fetchResult(data.message, data.plan, null, null, error));
     });
 });
 
-parentPort.postMessage("ready");
+
 
 
 

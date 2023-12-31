@@ -1,0 +1,63 @@
+{
+	"code": 200,
+	"message": "OK",
+	"tweet": {
+		"url": "https://twitter.com/naayu1012/status/1724337747421536737",
+		"id": "1724337747421536737",
+		"text": "Twitterのリンクをdiscordに貼っても埋め込みがされない問題を解決するために作成したbot、ComebackTwitterEmbedが認証されました〜\n現在サブインスタンスを利用中の方は11/17 17:00までに移行をお願いします\nそしてまだ未導入の方は以下のリンクより導入できます！\nhttps://discord.com/oauth2/authorize?client_id=1161267455335862282&permissions=274877966336&scope=bot%20applications.commands",
+		"author": {
+			"id": "1333711395649585154",
+			"name": "naayu",
+			"screen_name": "naayu1012",
+			"avatar_url": "https://pbs.twimg.com/profile_images/1651315887540928512/tC6-eeXi_200x200.jpg",
+			"banner_url": "https://pbs.twimg.com/profile_banners/1333711395649585154/1682539363",
+			"description": "iOS15で艦これを使用可能にするブックマークレットの開発者/ComebackTwitterEmbedの開発者",
+			"location": "ゴミ捨て場",
+			"url": "https://twitter.com/naayu1012",
+			"followers": 544,
+			"following": 461,
+			"joined": "Tue Dec 01 09:55:58 +0000 2020",
+			"likes": 2309,
+			"website": {
+				"url": "https://ios15-kancolle.github.io",
+				"display_url": "ios15-kancolle.github.io"
+			},
+			"tweets": 2565,
+			"avatar_color": null
+		},
+		"replies": 0,
+		"retweets": 20,
+		"likes": 25,
+		"created_at": "Tue Nov 14 08:05:30 +0000 2023",
+		"created_timestamp": 1699949130,
+		"possibly_sensitive": false,
+		"views": 4406,
+		"is_note_tweet": false,
+		"lang": "ja",
+		"replying_to": null,
+		"replying_to_status": null,
+		"media": {
+			"all": [
+				{
+					"type": "photo",
+					"url": "https://pbs.twimg.com/media/F-4UCe1a0AAEnYP.jpg",
+					"width": 946,
+					"height": 2048,
+					"altText": ""
+				}
+			],
+			"photos": [
+				{
+					"type": "photo",
+					"url": "https://pbs.twimg.com/media/F-4UCe1a0AAEnYP.jpg",
+					"width": 946,
+					"height": 2048,
+					"altText": ""
+				}
+			]
+		},
+		"source": "Twitter Web App",
+		"twitter_card": "summary_large_image",
+		"color": null
+	}
+}
