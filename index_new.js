@@ -279,7 +279,6 @@ async function processNextQueue() {
             .setLabel(Translate.translate[settings.defaultLanguage])
             .setStyle(ButtonStyle.Primary)
             .setEmoji('🌐')
-            .build();
     }
     //削除ボタン
     let deleteButton = null;
@@ -289,7 +288,6 @@ async function processNextQueue() {
             .setLabel(Translate.delete[settings.defaultLanguage])
             .setStyle(ButtonStyle.Danger)
             .setEmoji('🗑️')
-            .build();
     }
     //再読み込みボタン
     let reloadButton = null;
@@ -300,7 +298,6 @@ async function processNextQueue() {
                 .setLabel(Translate.reload[settings.defaultLanguage])
                 .setStyle(ButtonStyle.Secondary)
                 .setEmoji('🔄')
-                .build();
         }
     }
     //メディアを添付ファイルとして送信するボタン
@@ -311,7 +308,6 @@ async function processNextQueue() {
             .setLabel(Translate.showMediaAsAttachments[settings.defaultLanguage])
             .setStyle(ButtonStyle.Secondary)
             .setEmoji('📎')
-            .build();
     }
     
     //画像を埋め込みとして送信するボタンはここでは作成しない
