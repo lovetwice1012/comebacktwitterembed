@@ -394,7 +394,7 @@ async function processNextQueue() {
             console.error(error);
         });
     }
-    if (settings.deleteMessageIfOnlyPostedTweetLink == 0 && message.content != url) {
+    if (settings.deleteMessageIfOnlyPostedTweetLink == 0 || message.content != url) {
         //messageのリアクションを取る
         const myReactions = message.reactions.cache.filter(reaction => reaction.users.cache.has(client.user.id));
         for (const reaction of myReactions.values()) {
