@@ -783,15 +783,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
                 }
             }
         }
-
-
-
-
-
-
-
-
-
+        
         const deleteButton = new ButtonBuilder()
             .setCustomId('delete')
             .setLabel(Translate.delete[settings.defaultLanguage])
