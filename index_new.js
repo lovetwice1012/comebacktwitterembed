@@ -276,7 +276,7 @@ async function processNextQueue() {
     if(settings.button_invisible_translate == 0) {
         translateButton = new ButtonBuilder()
             .setCustomId('translate')
-            .setLabel(Translate.Translate[settings.defaultLanguage])
+            .setLabel(Translate.translate[settings.defaultLanguage])
             .setStyle(ButtonStyle.PRIMARY)
             .setEmoji('🌐')
             .build();
