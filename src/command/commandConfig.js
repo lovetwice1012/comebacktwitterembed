@@ -13,8 +13,8 @@ const commands = [
             description: 'Pong!',
         },
         {
-            name: locales.Invite["en-US"],
-            name_localizations: locales.Invite,
+            name: locales.invite["en-US"],
+            name_localizations: locales.invite,
             description: locales.inviteMeToYourServer["en-US"],
             description_localizations: locales.inviteMeToYourServer,
         
