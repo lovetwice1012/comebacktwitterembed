@@ -468,7 +468,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
                 embeds: [
                     {
                         title: 'Invite',
-                        description: Translate.BOT_Invite_Link[interaction.locale] ?? Translate.BOT_Invite_Link["en-US"],
+                        description: Translate.inviteMeToYourServer[interaction.locale] ?? Translate.inviteMeToYourServer["en-US"],
                         color: 0x1DA1F2,
                         fields: [
                             {
@@ -486,7 +486,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
                 embeds: [
                     {
                         title: 'Support',
-                        description: Translate.supportServer_Invite_Link[interaction.locale] ?? Translate.supportServer_Invite_Link["en-US"],
+                        description: Translate.joinSupportServer[interaction.locale] ?? Translate.joinSupportServer["en-US"],
                         color: 0x1DA1F2,
                         fields: [
                             {
