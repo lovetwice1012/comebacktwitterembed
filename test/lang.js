@@ -43,7 +43,7 @@ Help_script: {
     },
     language: {
     "ja": "言語",
-    "en-US": "Language",
+    "en-US": "language",
     "zh-CN": "语言",
     "es-ES": "Idioma",
     "fr": "Langue",
@@ -123,7 +123,7 @@ Help_script: {
     },
     banWord: {
     "ja": "禁止ワード",
-    "en-US": "BAN Word",
+    "en-US": "banword",
     "zh-CN": "禁止词语",
     "es-ES": "Palabra BAN",
     "fr": "Mot BAN",
@@ -173,7 +173,7 @@ Help_script: {
     },
     defaultLanguage: {
     "ja": "デフォルト言語",
-    "en-US": "default language",
+    "en-US": "defaultlanguage",
     "zh-CN": "默认语言",
     "es-ES": "idioma por defecto",
     "fr": "langue par défaut",
@@ -233,7 +233,7 @@ Help_script: {
     },
     showMediaInEmbedsImage: {
     "ja": "画像を埋め込み画像として表示する",
-    "en-US": "Show media in embeds image",
+    "en-US": "showmediainembedsimage",
     "zh-CN": "在嵌入图片中显示媒体",
     "es-ES": "Mostrar medios en la imagen incrustada",
     "fr": "Afficher les médias dans l'image d'accompagnement",
@@ -243,7 +243,7 @@ Help_script: {
     },
     showMediaAsAttachments: {
     "ja": "メディアを添付ファイルとして表示",
-    "en-US": "show media as attachments",
+    "en-US": "showmediaasattachments",
     "zh-CN": "以附件形式显示媒体",
     "es-ES": "mostrar medios como archivos adjuntos",
     "fr": "afficher les médias sous forme de pièces jointes",
@@ -551,7 +551,7 @@ Help_script: {
     "de": "Setzen Sie editOriginalIfTranslate auf",
     "pt-BR": "Definir editOriginalIfTranslate para"
     },
-    "youCanTDeleteOtherUsers' Messages": {
+    youCanTDeleteOtherUsersMessages: {
     "ja": "あなたは他のユーザーのメッセージを削除することはできません。",
     "en-US": "You can't delete other users' messages.",
     "zh-CN": "您不能删除其他用户的信息。",
