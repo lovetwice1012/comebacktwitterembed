@@ -26,7 +26,7 @@ class fetchWorkersService {
                 }
                 if(data.error) {
                     console.error(data.error);
-                    const myReactions = message.reactions.cache.filter(reaction => reaction.users.cache.has(client.user.id));
+                    const myReactions = data.message.reactions.cache.filter(reaction => reaction.users.cache.has(client.user.id));
                     for (const reaction of myReactions.values()) {
                         await reaction.users.remove(client.user.id);
                     }
