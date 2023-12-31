@@ -225,6 +225,7 @@ async function processNextQueue() {
                 //リンクとして送信する
                 videoText = videoText + "\n[動画リンク](" + media.videos[i].url + ")";
             } else {
+                if(message_object.files == undefined) message_object.files = [];
                 //添付ファイルとして送信する
                 message_object.files.push(media.videos[i].url);
             }
