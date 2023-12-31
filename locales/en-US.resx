@@ -281,4 +281,7 @@ If you do not trust us, you can secure your safety by removing your channel perm
   <data name="doNotDeployQuoteRetweets">
     <value>Do not deploy quote retweets</value>
   </data>
+  <data name="record">
+    <value>record</value>
+  </data>
 </root>
