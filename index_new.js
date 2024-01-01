@@ -501,6 +501,14 @@ client.on(Events.ClientReady, () => {
 
 client.on(Events.InteractionCreate, async (interaction) => {
     if (!interaction.isCommand()) return;
+    // settingsコマンドの場合ロールの管理、メッセージの管理、チャンネルの管理どれかの権限がついていない場合はほかの人に見えない形で返信する
+    if (interaction.commandName == Translate.Settings["en-US"]) {
+        if (!interaction.member.permissions.has(PermissionsBitField.ManageRoles) && !interaction.member.permissions.has(PermissionsBitField.ManageMessages) && !interaction.member.permissions.has(PermissionsBitField.ManageChannels)) {
+            // embed形式で送らず通常のテキストで送る
+            await interaction.reply(Translate.youDonTHavePermissionToUseThisCommand[interaction.locale] ?? Translate.youDonTHavePermissionToUseThisCommand["en-US"]);
+        }
+    }
+
     switch (interaction.commandName) {
 
         case Translate.Help["en-US"]:
