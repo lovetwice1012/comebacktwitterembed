@@ -1176,7 +1176,23 @@ async function sendTweetEmbed(message, url, quoted = false, parent = null) {
         }
         //fetch the api
         fetch(newUrl)
-            .then(res => res.json())
+            .then(res => {
+                res.json().catch(err => {
+                    //返答を記録する
+                    //もしerror_responseフォルダがなければ作る
+                    if (!fs.existsSync('./error_response')) {
+                        fs.mkdirSync('./error_response');
+                    }
+                    //error_responseフォルダに返答を記録する
+                    fs.writeFile('./error_response/' + new Date().getTime() + '.json', newUrl + "\n\n" + res, (err) => {
+                        if (err) {
+                            console.error(err);
+                            return;
+                        }
+                    });
+                    throw err;
+                })
+            })
             .then(async json => {
                 attachments = [];
                 let embeds = [];
