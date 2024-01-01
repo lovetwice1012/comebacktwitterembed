@@ -103,7 +103,7 @@ async function processNextQueue() {
     if (settings.bannedWords != null) {
         const bannedWords = settings.bannedWords.split(',');
         for (let i = 0; i < bannedWords.length; i++) {
-            if (tweetData.text.includes(bannedWords[i].replace("{#!comma}", ","))) {
+            if (tweetData.tweet.text.includes(bannedWords[i].replace("{#!comma}", ","))) {
                 isBanned = true;
                 break;
             }
