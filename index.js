@@ -1184,7 +1184,7 @@ async function sendTweetEmbed(message, url, quoted = false, parent = null) {
                         fs.mkdirSync('./error_response');
                     }
                     //error_responseフォルダに返答を記録する
-                    fs.writeFile('./error_response/' + new Date().getTime() + '.json', newUrl + "\n\n" +  JSON.stringify(res, null, 2), (err) => {
+                    fs.writeFile('./error_response/' + new Date().getTime() + '.json', newUrl + "\n\n" +  JSON.stringify(res.clone(), null, 2), (err) => {
                         if (err) {
                             console.error(err);
                             return;
