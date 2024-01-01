@@ -761,15 +761,17 @@ client.on(Events.InteractionCreate, async (interaction) => {
     }
 });
 
-// settingsコマンドによるDBへのデータ追加
 async function settingsInputDb(value) {
-    connection.query('INSERT INTO settings SET ?', value, (err, results, fields) => {
-        if (err) {
-            //console.log('Error connecting to database:', err);
-            return err;
-        }
-        return results;
-    });    
+    const query = 'INSERT INTO settings SET ? ON DUPLICATE KEY UPDATE ?';
+    return new Promise((resolve, reject) => {
+        connection.query(query, [value, value], (err, results, fields) => {
+            if (err) {
+                reject(err);
+            } else {
+                resolve(results);
+            }
+        });
+    });
 }
 
 /* 
