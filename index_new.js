@@ -403,9 +403,9 @@ async function processNextQueue() {
         //messageのリアクションを取る
         const myReactions = message.reactions.cache.filter(reaction => reaction.users.cache.has(client.user.id));
         for (const reaction of myReactions.values()) {
-            await reaction.users.remove(client.user.id).catch(console.error);
+            await reaction.users.remove(client.user.id).catch((error) => {});
         }
-        message.react("✅").catch(console.error);
+        message.react("✅").catch((error) => {});
     }
 
     processed_day++
