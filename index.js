@@ -1177,7 +1177,7 @@ async function sendTweetEmbed(message, url, quoted = false, parent = null) {
         //fetch the api
         fetch(newUrl)
             .then(res => {
-                res.json().catch(err => {
+                return res.json().catch(err => {
                     //返答を記録する
                     //もしerror_responseフォルダがなければ作る
                     if (!fs.existsSync('./error_response')) {
