@@ -511,7 +511,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
     //現在のサーバー設定を確認する
     //settingsの取得
     const sql = 'SELECT * FROM settings WHERE guildId = ?';
-    const params = [message.guild.id];
+    const params = [interaction.guild.id];
 
     connection.query(sql, params, async (error, results, fields) => {
         if (error) {
@@ -521,7 +521,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
         if (results.length == 0) {
             //設定がない場合はデフォルトの設定を使用する
             const defaultSettings = {
-                guildId: message.guild.id,
+                guildId: interaction.guild.id,
                 bannedWords: null,
                 defaultLanguage: 'en-US',
                 editOriginalIfTranslate: 0,
