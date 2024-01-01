@@ -46,7 +46,7 @@ async function processNextQueue() {
     if (queue == null) {
         setTimeout(() => {
             processNextQueue();
-        }, 100);
+        }, 20);
         return;
     }
     /*
@@ -421,7 +421,7 @@ async function processNextQueue() {
     //0.1秒待って次のキューを処理する
     setTimeout(() => {
         processNextQueue();
-    }, 100);
+    }, 20);
 }
 
 client.on(Events.ClientReady, () => {
