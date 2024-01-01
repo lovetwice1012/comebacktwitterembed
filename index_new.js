@@ -649,15 +649,15 @@ client.on(Events.InteractionCreate, async (interaction) => {
                 switch (interaction.options.getSubcommand()) {
                     case Translate.disable["en-US"]:
                         //user channel role
-                        const option_user = interaction.options.getUser('user');
-                        const option_channel = interaction.options.getChannel('channel');
-                        const option_role = interaction.options.getRole('role');
+                        const disable_option_user = interaction.options.getUser('user');
+                        const disable_option_channel = interaction.options.getChannel('channel');
+                        const disable_option_role = interaction.options.getRole('role');
 
                         if (option_user) {
                             //DBにoption_userを追加する
                             const option_user_data = {
                                 guildId: interaction.guild.id,
-                                disable_users: option_user
+                                disable_users: disable_option_user
                             };
                             const result = await settingsInputDb(option_user_data);
                             if (!result) await interaction.reply("無効化するユーザーを追加できませんでした");
@@ -667,7 +667,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
                             //DBにoption_channelを追加する
                             const option_channel_data = {
                                 guildId: interaction.guild.id,
-                                disable_channels: option_channel
+                                disable_channels: disable_option_channel
                             };
                             const result = await settingsInputDb(option_channel_data);
                             if (!result) await interaction.reply("無効化するチャンネルを追加できませんでした");
@@ -677,13 +677,50 @@ client.on(Events.InteractionCreate, async (interaction) => {
                             //DBにoption_roleを追加する
                             const option_role_data = {
                                 guildId: interaction.guild.id,
-                                disable_roles: option_role
+                                disable_roles: disable_option_role
                             };
                             const result = await settingsInputDb(option_role_data);
                             if (!result) await interaction.reply("無効化するロールを追加できませんでした");
                             else return await interaction.reply("無効化するロールを追加しました");
                         }
                         return
+                        
+                    case "anonymous":
+                        //user channel role
+                        const anonymous_option_user = interaction.options.getUser('user');
+                        const anonymous_option_channel = interaction.options.getChannel('channel');
+                        const anonymous_option_role = interaction.options.getRole('role');
+
+                        if (anonymous_option_user) {
+                            //DBにanonymous_option_userを追加する
+                            const anonymous_option_user_data = {
+                                guildId: interaction.guild.id,
+                                anonymous_users: anonymous_option_user
+                            };
+                            const result = await settingsInputDb(anonymous_option_user_data);
+                            if (!result) await interaction.reply("匿名モードを有効化するユーザーを追加できませんでした");
+                            else return await interaction.reply("匿名モードを有効化するユーザーを追加しました");
+                        }
+                        else if (anonymous_option_channel) {
+                            //DBにanonymous_option_channelを追加する
+                            const anonymous_option_channel_data = {
+                                guildId: interaction.guild.id,
+                                anonymous_channels: anonymous_option_channel
+                            };
+                            const result = await settingsInputDb(anonymous_option_channel_data);
+                            if (!result) await interaction.reply("匿名モードを有効化するチャンネルを追加できませんでした");
+                            else return await interaction.reply("匿名モードを有効化するチャンネルを追加しました");
+                        }
+                        else if (anonymous_option_role) {
+                            //DBにanonymous_option_roleを追加する
+                            const anonymous_option_role_data = {
+                                guildId: interaction.guild.id,
+                                anonymous_roles: anonymous_option_role
+                            };
+                            const result = await settingsInputDb(anonymous_option_role_data);
+                            if (!result) await interaction.reply("匿名モードを有効化するロールを追加できませんでした");
+                            else return await interaction.reply("匿名モードを有効化するロールを追加しました");
+                        }
 
                     case Translate.banWord["en-US"]:
                         //word
@@ -832,7 +869,18 @@ client.on(Events.InteractionCreate, async (interaction) => {
                         const result_setsWhetherToExpandQuoteRetweets_boolean = await settingsInputDb(option_setsWhetherToExpandQuoteRetweets_boolean_data);
                         if (!result_setsWhetherToExpandQuoteRetweets_boolean) await interaction.reply("引用リツイートを展開するかどうかを設定できませんでした");
                         else return await interaction.reply("引用リツイートを展開するかどうかを設定しました");
-                }
+                    
+                    case "maxExtractQuotedTweet":
+                        //number
+                        const option_maxExtractQuotedTweet_number = interaction.options.getInteger("number");
+                        const option_maxExtractQuotedTweet_number_data = {
+                            guildId: interaction.guild.id,
+                            maxExtractQuotedTweet: option_maxExtractQuotedTweet_number
+                        };
+                        const result_maxExtractQuotedTweet_number = await settingsInputDb(option_maxExtractQuotedTweet_number_data);
+                        if (!result_maxExtractQuotedTweet_number) await interaction.reply("引用ツイートを展開する数を設定できませんでした");
+                        else return await interaction.reply("引用ツイートを展開する数を設定しました");
+                    }
                 return
         }
     });
