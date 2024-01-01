@@ -599,6 +599,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
                             bannedWordsArray.push(option_word);
                         }
                         const updatedBannedWords = bannedWordsArray.join(',');
+
                         const option_word_data = {
                             guildId: interaction.guild.id,
                             bannedWords: updatedBannedWords
