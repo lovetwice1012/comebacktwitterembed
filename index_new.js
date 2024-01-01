@@ -543,7 +543,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
                         fields: [
                             {
                                 name: 'Invite link',
-                                value: 'https://discord.com/oauth2/authorize?client_id=1161267455335862282&permissions=274877958144&scope=bot%20applications.commands'
+                                value: '[href](https://discord.com/oauth2/authorize?client_id=1161267455335862282&permissions=274877958144&scope=bot%20applications.commands)'
                             }
                         ]
                     }
