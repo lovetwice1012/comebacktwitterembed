@@ -762,9 +762,9 @@ client.on(Events.InteractionCreate, async (interaction) => {
 });
 
 async function settingsInputDb(value) {
-    const query = 'INSERT INTO settings SET ? ON DUPLICATE KEY UPDATE ?';
+    const query = 'UPDATE settings SET ?';
     return new Promise((resolve, reject) => {
-        connection.query(query, [value, value], (err, results, fields) => {
+        connection.query(query, [value], (err, results, fields) => {
             if (err) {
                 reject(err);
             } else {
