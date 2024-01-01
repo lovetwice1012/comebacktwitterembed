@@ -593,8 +593,8 @@ client.on(Events.InteractionCreate, async (interaction) => {
                         }
                         
                         // 現在のbannedWordsを取得し、新しい単語を追加
-                        let currentBannedWords = results.length ? results[0].bannedWords : '';
-                        let bannedWordsArray = currentBannedWords.length ? currentBannedWords.split(',') : [];
+                        let currentBannedWords = results[0].bannedWords ?? '';
+                        let bannedWordsArray = currentBannedWords.split(',')
                         if (!bannedWordsArray.includes(option_word)) {
                             bannedWordsArray.push(option_word);
                         }
