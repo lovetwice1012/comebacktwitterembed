@@ -46,7 +46,7 @@ async function processNextQueue() {
     if (queue == null) {
         setTimeout(() => {
             processNextQueue();
-        }, 100);
+        }, 20);
         return;
     }
     /*
@@ -103,7 +103,7 @@ async function processNextQueue() {
     if (settings.bannedWords != null) {
         const bannedWords = settings.bannedWords.split(',');
         for (let i = 0; i < bannedWords.length; i++) {
-            if (tweetData.text.includes(bannedWords[i].replace("{#!comma}", ","))) {
+            if (tweetData.tweet.text.includes(bannedWords[i].replace("{#!comma}", ","))) {
                 isBanned = true;
                 break;
             }
@@ -111,7 +111,7 @@ async function processNextQueue() {
     }
     if (isBanned) {
         //禁止ワードが含まれていた場合はそれを送信する
-        return message.reply({ content: Translate.bannedWords[settings.defaultLanguage], allowedMentions: { repliedUser: false } });
+        return message.reply({ content: Translate.yourMessageContainsABannedWord[settings.defaultLanguage], allowedMentions: { repliedUser: false } });
     }
 
     //2.埋め込みを作成する
@@ -421,7 +421,7 @@ async function processNextQueue() {
     //0.1秒待って次のキューを処理する
     setTimeout(() => {
         processNextQueue();
-    }, 100);
+    }, 20);
 }
 
 client.on(Events.ClientReady, () => {
@@ -437,7 +437,6 @@ client.on(Events.ClientReady, () => {
     }, 60000);
 
     setInterval(async () => {
-        return
         let guild = await client.guilds.cache.get('1175729394782851123')
         let channel = await guild.channels.cache.get('1189083636574724167')
         channel.send({
@@ -471,17 +470,17 @@ client.on(Events.ClientReady, () => {
         })
         processed_column = processed_minute;
         processed_minute = 0;
-        
+
         if (new Date().getMinutes() === 0) {
             processed_hour_column = processed_hour;
             processed_hour = 0;
-        }else{
+        } else {
             processed_hour_column = null;
         }
         if (new Date().getHours() === 0 && new Date().getMinutes() === 0) {
             processed_day_column = processed_day;
             processed_day = 0;
-        }else{
+        } else {
             processed_day_column = null;
         }
         connection.query('INSERT INTO stats (timestamp, joinedServersCount, usersCount, channelsCount, minutes, hours, days) VALUES (?, ?, ?, ?, ?, ?, ?)', [new Date().getTime(), client.guilds.cache.size, client.users.cache.size, client.channels.cache.size, processed_column, processed_hour_column, processed_day_column], (err, results, fields) => {
@@ -509,104 +508,78 @@ client.on(Events.InteractionCreate, async (interaction) => {
         }
     }
 
-    switch (interaction.commandName) {
+    //現在のサーバー設定を確認する
+    //settingsの取得
+    const sql = 'SELECT * FROM settings WHERE guildId = ?';
+    const params = [interaction.guild.id];
 
-        case Translate.help["en-US"]:
-            await interaction.reply({
-                embeds: [
-                    {
-                        title: 'Help',
-                        description: Translate.Help_script[interaction.locale] ?? Translate.Help_script["en-US"],
-                        color: 0x1DA1F2,
-                        fields: [
-                            {
-                                name: 'Commands',
-                                value: Translate.Help_command[interaction.locale] ?? Translate.Help_command["en-US"]
-                            }
-                        ]
-                    }
-                ]
+    connection.query(sql, params, async (error, results, fields) => {
+        if (error) {
+            console.error('Error connecting to database:', error);
+            return;
+        }
+        if (results.length == 0) {
+            //設定がない場合はデフォルトの設定を使用する
+            const defaultSettings = {
+                guildId: interaction.guild.id,
+                bannedWords: null,
+                defaultLanguage: 'en-US',
+                editOriginalIfTranslate: 0,
+                sendMediaAsAttachmentsAsDefault: 0,
+                deleteMessageIfOnlyPostedTweetLink: 0,
+                alwaysReply: 0,
+                button_invisible_showMediaAsAttachments: 0,
+                button_invisible_showAttachmentsAsEmbedsImage: 0,
+                button_invisible_translate: 0,
+                button_invisible_delete: 0,
+                button_invisible_reload: 0,
+                button_disabled_users: null,
+                button_disabled_channels: null,
+                button_disabled_roles: null,
+                disable_users: null,
+                disable_channels: null,
+                disable_roles: null,
+                extractBotMessage: 0,
+                extractWebhookMessage: 0,
+                sendMovieAsLink: 0,
+                anonymous_users: null,
+                anonymous_channels: null,
+                anonymous_roles: null,
+                maxExtractQuotedTweet: 3,
+            };
+            const sql = 'INSERT INTO settings SET ?';
+            const params = [defaultSettings];
+            connection.query(sql, params, (error, results, fields) => {
+                if (error) {
+                    console.error('Error connecting to database:', error);
+                    return;
+                }
             });
-            return
+            settings = defaultSettings;
+        } else {
+            //設定がある場合はそれを使用する
+            settings = results[0];
+        }
 
-        case Translate.ping["en-US"]:
-            await interaction.reply('Pong!');
-            return
 
-        case Translate.invite["en-US"]:
-            await interaction.reply({
-                embeds: [
-                    {
-                        title: 'Invite',
-                        description: Translate.inviteMeToYourServer[interaction.locale] ?? Translate.inviteMeToYourServer["en-US"],
-                        color: 0x1DA1F2,
-                        fields: [
-                            {
-                                name: 'Invite link',
-                                value: '[click here!](https://discord.com/oauth2/authorize?client_id=1161267455335862282&permissions=274877958144&scope=bot%20applications.commands)'
-                            }
-                        ]
-                    }
-                ]
-            });
-            return
+        switch (interaction.commandName) {
 
-        case Translate.support["en-US"]:
-            await interaction.reply({
-                embeds: [
-                    {
-                        title: 'Support',
-                        description: Translate.joinSupportServer[interaction.locale] ?? Translate.joinSupportServer["en-US"],
-                        color: 0x1DA1F2,
-                        fields: [
-                            {
-                                name: 'Support server link',
-                                value: '[Join the support server](https://discord.gg/DsHgvNU8GY)'
-                            }
-                        ]
-                    }
-                ]
-            });
-            return
-
-        case Translate.settings["en-US"]:
-            switch (interaction.options.getSubcommand()) {
-                case Translate.disable["en-US"]:
-                    //user channel role
-                    const option_user = interaction.options.getUser('user');
-                    const option_channel = interaction.options.getChannel('channel');
-                    const option_role = interaction.options.getRole('role');
-
-                    if (option_user) {
-                        //DBにoption_userを追加する
-                        const option_user_data = {
-                            guildId: interaction.guild.id,
-                            disable_users: option_user
-                        };
-                        const result = await settingsInputDb(option_user_data);
-                        if (!result) await interaction.reply("無効化するユーザーを追加できませんでした");
-                        else return await interaction.reply("無効化するユーザーを追加しました");
-                    }
-                    else if (option_channel) {
-                        //DBにoption_channelを追加する
-                        const option_channel_data = {
-                            guildId: interaction.guild.id,
-                            disable_channels: option_channel
-                        };
-                        const result = await settingsInputDb(option_channel_data);
-                        if (!result) await interaction.reply("無効化するチャンネルを追加できませんでした");
-                        else return await interaction.reply("無効化するチャンネルを追加しました");
-                    }
-                    else if (option_role) {
-                        //DBにoption_roleを追加する
-                        const option_role_data = {
-                            guildId: interaction.guild.id,
-                            disable_roles: option_role
-                        };
-                        const result = await settingsInputDb(option_role_data);
-                        if (!result) await interaction.reply("無効化するロールを追加できませんでした");
-                        else return await interaction.reply("無効化するロールを追加しました");
-                    }
+            case Translate.help["en-US"]:
+                await interaction.reply({
+                    embeds: [
+                        {
+                            title: 'Help',
+                            description: Translate.Help_script[interaction.locale] ?? Translate.Help_script["en-US"],
+                            color: 0x1DA1F2,
+                            fields: [
+                                {
+                                    name: 'Commands',
+                                    value: Translate.Help_command[interaction.locale] ?? Translate.Help_command["en-US"]
+                                }
+                            ]
+                        }
+                    ]
+                });
                 return
 
                 case Translate.banWord["en-US"]:
@@ -635,145 +608,233 @@ client.on(Events.InteractionCreate, async (interaction) => {
                         else return await interaction.reply("禁止ワードを追加しました");
                     });
 
-                case Translate.defaultLanguage["en-US"]:
-                    //language
-                    const option_language = interaction.options.getString(Translate.language["en-US"]);
-                    const option_language_data = {
-                        guildId: interaction.guild.id,
-                        defaultLanguage: option_language
-                    };
-                    const result_language = await settingsInputDb(option_language_data);
-                    if (!result_language) await interaction.reply("デフォルトの言語を設定できませんでした");
-                    else return await interaction.reply("デフォルトの言語を設定しました");
-
-                case Translate.editOriginalIfTranslate["en-US"]:
-                    //boolean
-                    const option_editOriginalIfTranslate_boolean = interaction.options.getBoolean(Translate.boolean["en-US"]);
-                    const option_editOriginalIfTranslate_data = {
-                        guildId: interaction.guild.id,
-                        editOriginalIfTranslate: option_editOriginalIfTranslate_boolean
-                    };
-                    const result_editOriginalIfTranslate_boolean = await settingsInputDb(option_editOriginalIfTranslate_data);
-                    if (!result_editOriginalIfTranslate_boolean) await interaction.reply("翻訳ボタンが押されたときに元メッセージを編集するかどうかを設定できませんでした");
-                    else return await interaction.reply("翻訳ボタンが押されたときに元メッセージを編集するかどうかを設定しました");
-
-                case Translate.showMediaAsAttachments["en-US"]:
-                    //boolean
-                    const option_showMediaAsAttachments_boolean = interaction.options.getBoolean(Translate.boolean["en-US"]);
-                    const option_showMediaAsAttachments_data = {
-                        guildId: interaction.guild.id,
-                        showMediaAsAttachments: option_showMediaAsAttachments_boolean
-                    };
-                    const result_showMediaAsAttachments_boolean = await settingsInputDb(option_showMediaAsAttachments_data);
-                    if (!result_showMediaAsAttachments_boolean) await interaction.reply("メディアを添付ファイルとして送信するかどうかを設定できませんでした");
-                    else return await interaction.reply("メディアを添付ファイルとして送信するかどうかを設定しました");
-
-                case Translate.deleteIfOnlyPostedTweetlink["en-US"]:
-                    //boolean
-                    const option_deleteIfOnlyPostedTweetlink_boolean = interaction.options.getBoolean(Translate.boolean["en-US"]);
-                    const option_deleteIfOnlyPostedTweetlink_data = {
-                        guildId: interaction.guild.id,
-                        deleteMessageIfOnlyPostedTweetLink: option_deleteIfOnlyPostedTweetlink_boolean
-                    };
-                    const result_deleteIfOnlyPostedTweetlink_boolean = await settingsInputDb(option_deleteIfOnlyPostedTweetlink_data);
-                    if (!result_deleteIfOnlyPostedTweetlink_boolean) await interaction.reply("ツイートリンクのみのメッセージを削除するかどうかを設定できませんでした");
-                    else return await interaction.reply("ツイートリンクのみのメッセージを削除するかどうかを設定しました");
-
-                case Translate.alwaysReplyIfPostedTweetlink['en-US']:
-                    //boolean
-                    const option_alwaysReplyIfPostedTweetlink_boolean = interaction.options.getBoolean(Translate.boolean["en-US"]);
-                    const option_alwaysReplyIfPostedTweetlink_data = {
-                        guildId: interaction.guild.id,
-                        alwaysReply: option_alwaysReplyIfPostedTweetlink_boolean
-                    };
-                    const result_alwaysReplyIfPostedTweetlink_boolean = await settingsInputDb(option_alwaysReplyIfPostedTweetlink_data);
-                    if (!result_alwaysReplyIfPostedTweetlink_boolean) await interaction.reply("ツイートリンクのみのメッセージを削除するかどうかを設定できませんでした");
-                    else return await interaction.reply("ツイートリンクのみのメッセージを削除するかどうかを設定しました");
-
-                case Translate.button["en-US"]:
-                    //showMediaAsAttachments showAttachmentsAsEmbedsImage translate delete reload
-                    const option_showMediaAsAttachments = interaction.options.Boolean(Translate.boolean["en-US"]);
-                    const option_showAttachmentsAsEmbedsImage = interaction.options.Boolean(Translate.boolean["en-US"]);
-                    const option_translate = interaction.options.Boolean(Translate.boolean["en-US"]);
-                    const option_delete = interaction.options.Boolean(Translate.boolean["en-US"]);
-                    const option_reload = interaction.options.Boolean(Translate.boolean["en-US"]);
-
-                    if (option_showMediaAsAttachments) {
-                        //option_showMediaAsAttachmentsを反転させる
-                        const option_showMediaAsAttachments_boolean_data = {
-                            guildId: interaction.guild.id,
-                            showMediaAsAttachments: option_showMediaAsAttachments
-                        };
-                        const result_showMediaAsAttachments_boolean = await settingsInputDb(option_showMediaAsAttachments_boolean_data);
-                        if (!result_showMediaAsAttachments_boolean) await interaction.reply("メディアを添付ファイルとして送信するかどうかを設定できませんでした");
-                        else return await interaction.reply("メディアを添付ファイルとして送信するかどうかを設定しました");
-                    }
-                    else if (option_showAttachmentsAsEmbedsImage) {
-                        //option_showAttachmentsAsEmbedsImageを反転させる
-                        const option_showAttachmentsAsEmbedsImage_boolean_data = {
-                            guildId: interaction.guild.id,
-                            showAttachmentsAsEmbedsImage: option_showAttachmentsAsEmbedsImage
-                        };
-                        const result_showAttachmentsAsEmbedsImage_boolean = await settingsInputDb(option_showAttachmentsAsEmbedsImage_boolean_data);
-                        if (!result_showAttachmentsAsEmbedsImage_boolean) await interaction.reply("画像を埋め込みとして送信するかどうかを設定できませんでした");
-                        else return await interaction.reply("画像を埋め込みとして送信するかどうかを設定しました");
-                    }
-                    else if (option_translate) {
-                        //option_translateを反転させる
-                        const option_translate_boolean_data = {
-                            guildId: interaction.guild.id,
-                            translate: option_translate
-                        };
-                        const result_translate_boolean = await settingsInputDb(option_translate_boolean_data);
-                        if (!result_translate_boolean) await interaction.reply("翻訳ボタンを表示するかどうかを設定できませんでした");
-                        else return await interaction.reply("翻訳ボタンを表示するかどうかを設定しました");
-                    }
-                    else if (option_delete) {
-                        //option_deleteを反転させる
-                        const option_delete_boolean_data = {
-                            guildId: interaction.guild.id,
-                            delete: option_delete
-                        };
-                        const result_delete_boolean = await settingsInputDb(option_delete_boolean_data);
-                        if (!result_delete_boolean) await interaction.reply("削除ボタンを表示するかどうかを設定できませんでした");
-                        else return await interaction.reply("削除ボタンを表示するかどうかを設定しました");
-                    }
-                    else if (option_reload) {
-                        //option_reloadを反転させる
-                        const option_reload_boolean_data = {
-                            guildId: interaction.guild.id,
-                            reload: option_reload
-                        };
-                        const result_reload_boolean = await settingsInputDb(option_reload_boolean_data);
-                        if (!result_reload_boolean) await interaction.reply("再読み込みボタンを表示するかどうかを設定できませんでした");
-                        else return await interaction.reply("再読み込みボタンを表示するかどうかを設定しました");
-                    }
+            case Translate.invite["en-US"]:
+                await interaction.reply({
+                    embeds: [
+                        {
+                            title: 'Invite',
+                            description: Translate.inviteMeToYourServer[interaction.locale] ?? Translate.inviteMeToYourServer["en-US"],
+                            color: 0x1DA1F2,
+                            fields: [
+                                {
+                                    name: 'Invite link',
+                                    value: '[click here!](https://discord.com/oauth2/authorize?client_id=1161267455335862282&permissions=274877958144&scope=bot%20applications.commands)'
+                                }
+                            ]
+                        }
+                    ]
+                });
                 return
 
-                case Translate.extractBotMessage["en-US"]:
-                    //boolean
-                    const option_extractBotMessage_boolean = interaction.options.getBoolean(Translate.boolean["en-US"]);
-                    const option_extractBotMessage_boolean_data = {
-                        guildId: interaction.guild.id,
-                        extractBotMessage: option_extractBotMessage_boolean
-                    };
-                    const result_extractBotMessage_boolean = await settingsInputDb(option_extractBotMessage_boolean_data);
-                    if (!result_extractBotMessage_boolean) await interaction.reply("Botのメッセージを抽出するかどうかを設定できませんでした");
-                    else return await interaction.reply("Botのメッセージを抽出するかどうかを設定しました");
+            case Translate.support["en-US"]:
+                await interaction.reply({
+                    embeds: [
+                        {
+                            title: 'Support',
+                            description: Translate.joinSupportServer[interaction.locale] ?? Translate.joinSupportServer["en-US"],
+                            color: 0x1DA1F2,
+                            fields: [
+                                {
+                                    name: 'Support server link',
+                                    value: '[Join the support server](https://discord.gg/DsHgvNU8GY)'
+                                }
+                            ]
+                        }
+                    ]
+                });
+                return
 
-                case Translate.setsWhetherToExpandQuoteRetweets["en-US"]:
-                    //boolean
-                    const option_setsWhetherToExpandQuoteRetweets_boolean = interaction.options.getBoolean(Translate.boolean["en-US"]);
-                    const option_setsWhetherToExpandQuoteRetweets_boolean_data = {
-                        guildId: interaction.guild.id,
-                        setsWhetherToExpandQuoteRetweets: option_setsWhetherToExpandQuoteRetweets_boolean
-                    };
-                    const result_setsWhetherToExpandQuoteRetweets_boolean = await settingsInputDb(option_setsWhetherToExpandQuoteRetweets_boolean_data);
-                    if (!result_setsWhetherToExpandQuoteRetweets_boolean) await interaction.reply("引用リツイートを展開するかどうかを設定できませんでした");
-                    else return await interaction.reply("引用リツイートを展開するかどうかを設定しました");
-            }
-        return
-    }
+            case Translate.settings["en-US"]:
+                switch (interaction.options.getSubcommand()) {
+                    case Translate.disable["en-US"]:
+                        //user channel role
+                        const option_user = interaction.options.getUser('user');
+                        const option_channel = interaction.options.getChannel('channel');
+                        const option_role = interaction.options.getRole('role');
+
+                        if (option_user) {
+                            //DBにoption_userを追加する
+                            const option_user_data = {
+                                guildId: interaction.guild.id,
+                                disable_users: option_user
+                            };
+                            const result = await settingsInputDb(option_user_data);
+                            if (!result) await interaction.reply("無効化するユーザーを追加できませんでした");
+                            else return await interaction.reply("無効化するユーザーを追加しました");
+                        }
+                        else if (option_channel) {
+                            //DBにoption_channelを追加する
+                            const option_channel_data = {
+                                guildId: interaction.guild.id,
+                                disable_channels: option_channel
+                            };
+                            const result = await settingsInputDb(option_channel_data);
+                            if (!result) await interaction.reply("無効化するチャンネルを追加できませんでした");
+                            else return await interaction.reply("無効化するチャンネルを追加しました");
+                        }
+                        else if (option_role) {
+                            //DBにoption_roleを追加する
+                            const option_role_data = {
+                                guildId: interaction.guild.id,
+                                disable_roles: option_role
+                            };
+                            const result = await settingsInputDb(option_role_data);
+                            if (!result) await interaction.reply("無効化するロールを追加できませんでした");
+                            else return await interaction.reply("無効化するロールを追加しました");
+                        }
+                        return
+
+                    case Translate.banWord["en-US"]:
+                        //word
+                        const option_word = interaction.options.getString(Translate.word["en-US"]);
+                        const option_word_data = {
+                            guildId: interaction.guild.id,
+                            bannedWords: option_word
+                        };
+                        const result_word = await settingsInputDb(option_word_data);
+                        if (!result_word) await interaction.reply("禁止ワードを追加できませんでした");
+                        else return await interaction.reply("禁止ワードを追加しました");
+
+                    case Translate.defaultLanguage["en-US"]:
+                        //language
+                        const option_language = interaction.options.getString(Translate.language["en-US"]);
+                        const option_language_data = {
+                            guildId: interaction.guild.id,
+                            defaultLanguage: option_language
+                        };
+                        const result_language = await settingsInputDb(option_language_data);
+                        if (!result_language) await interaction.reply("デフォルトの言語を設定できませんでした");
+                        else return await interaction.reply("デフォルトの言語を設定しました");
+
+                    case Translate.editOriginalIfTranslate["en-US"]:
+                        //boolean
+                        const option_editOriginalIfTranslate_boolean = interaction.options.getBoolean(Translate.boolean["en-US"]);
+                        const option_editOriginalIfTranslate_data = {
+                            guildId: interaction.guild.id,
+                            editOriginalIfTranslate: option_editOriginalIfTranslate_boolean
+                        };
+                        const result_editOriginalIfTranslate_boolean = await settingsInputDb(option_editOriginalIfTranslate_data);
+                        if (!result_editOriginalIfTranslate_boolean) await interaction.reply("翻訳ボタンが押されたときに元メッセージを編集するかどうかを設定できませんでした");
+                        else return await interaction.reply("翻訳ボタンが押されたときに元メッセージを編集するかどうかを設定しました");
+
+                    case Translate.showMediaAsAttachments["en-US"]:
+                        //boolean
+                        const option_showMediaAsAttachments_boolean = interaction.options.getBoolean(Translate.boolean["en-US"]);
+                        const option_showMediaAsAttachments_data = {
+                            guildId: interaction.guild.id,
+                            showMediaAsAttachments: option_showMediaAsAttachments_boolean
+                        };
+                        const result_showMediaAsAttachments_boolean = await settingsInputDb(option_showMediaAsAttachments_data);
+                        if (!result_showMediaAsAttachments_boolean) await interaction.reply("メディアを添付ファイルとして送信するかどうかを設定できませんでした");
+                        else return await interaction.reply("メディアを添付ファイルとして送信するかどうかを設定しました");
+
+                    case Translate.deleteIfOnlyPostedTweetlink["en-US"]:
+                        //boolean
+                        const option_deleteIfOnlyPostedTweetlink_boolean = interaction.options.getBoolean(Translate.boolean["en-US"]);
+                        const option_deleteIfOnlyPostedTweetlink_data = {
+                            guildId: interaction.guild.id,
+                            deleteMessageIfOnlyPostedTweetLink: option_deleteIfOnlyPostedTweetlink_boolean
+                        };
+                        const result_deleteIfOnlyPostedTweetlink_boolean = await settingsInputDb(option_deleteIfOnlyPostedTweetlink_data);
+                        if (!result_deleteIfOnlyPostedTweetlink_boolean) await interaction.reply("ツイートリンクのみのメッセージを削除するかどうかを設定できませんでした");
+                        else return await interaction.reply("ツイートリンクのみのメッセージを削除するかどうかを設定しました");
+
+                    case Translate.alwaysReplyIfPostedTweetlink['en-US']:
+                        //boolean
+                        const option_alwaysReplyIfPostedTweetlink_boolean = interaction.options.getBoolean(Translate.boolean["en-US"]);
+                        const option_alwaysReplyIfPostedTweetlink_data = {
+                            guildId: interaction.guild.id,
+                            alwaysReply: option_alwaysReplyIfPostedTweetlink_boolean
+                        };
+                        const result_alwaysReplyIfPostedTweetlink_boolean = await settingsInputDb(option_alwaysReplyIfPostedTweetlink_data);
+                        if (!result_alwaysReplyIfPostedTweetlink_boolean) await interaction.reply("ツイートリンクのみのメッセージを削除するかどうかを設定できませんでした");
+                        else return await interaction.reply("ツイートリンクのみのメッセージを削除するかどうかを設定しました");
+
+                    case Translate.button["en-US"]:
+                        //showMediaAsAttachments showAttachmentsAsEmbedsImage translate delete reload
+                        const option_showMediaAsAttachments = interaction.options.Boolean(Translate.boolean["en-US"]);
+                        const option_showAttachmentsAsEmbedsImage = interaction.options.Boolean(Translate.boolean["en-US"]);
+                        const option_translate = interaction.options.Boolean(Translate.boolean["en-US"]);
+                        const option_delete = interaction.options.Boolean(Translate.boolean["en-US"]);
+                        const option_reload = interaction.options.Boolean(Translate.boolean["en-US"]);
+
+                        if (option_showMediaAsAttachments) {
+                            //option_showMediaAsAttachmentsを反転させる
+                            const option_showMediaAsAttachments_boolean_data = {
+                                guildId: interaction.guild.id,
+                                showMediaAsAttachments: option_showMediaAsAttachments
+                            };
+                            const result_showMediaAsAttachments_boolean = await settingsInputDb(option_showMediaAsAttachments_boolean_data);
+                            if (!result_showMediaAsAttachments_boolean) await interaction.reply("メディアを添付ファイルとして送信するかどうかを設定できませんでした");
+                            else return await interaction.reply("メディアを添付ファイルとして送信するかどうかを設定しました");
+                        }
+                        else if (option_showAttachmentsAsEmbedsImage) {
+                            //option_showAttachmentsAsEmbedsImageを反転させる
+                            const option_showAttachmentsAsEmbedsImage_boolean_data = {
+                                guildId: interaction.guild.id,
+                                showAttachmentsAsEmbedsImage: option_showAttachmentsAsEmbedsImage
+                            };
+                            const result_showAttachmentsAsEmbedsImage_boolean = await settingsInputDb(option_showAttachmentsAsEmbedsImage_boolean_data);
+                            if (!result_showAttachmentsAsEmbedsImage_boolean) await interaction.reply("画像を埋め込みとして送信するかどうかを設定できませんでした");
+                            else return await interaction.reply("画像を埋め込みとして送信するかどうかを設定しました");
+                        }
+                        else if (option_translate) {
+                            //option_translateを反転させる
+                            const option_translate_boolean_data = {
+                                guildId: interaction.guild.id,
+                                translate: option_translate
+                            };
+                            const result_translate_boolean = await settingsInputDb(option_translate_boolean_data);
+                            if (!result_translate_boolean) await interaction.reply("翻訳ボタンを表示するかどうかを設定できませんでした");
+                            else return await interaction.reply("翻訳ボタンを表示するかどうかを設定しました");
+                        }
+                        else if (option_delete) {
+                            //option_deleteを反転させる
+                            const option_delete_boolean_data = {
+                                guildId: interaction.guild.id,
+                                delete: option_delete
+                            };
+                            const result_delete_boolean = await settingsInputDb(option_delete_boolean_data);
+                            if (!result_delete_boolean) await interaction.reply("削除ボタンを表示するかどうかを設定できませんでした");
+                            else return await interaction.reply("削除ボタンを表示するかどうかを設定しました");
+                        }
+                        else if (option_reload) {
+                            //option_reloadを反転させる
+                            const option_reload_boolean_data = {
+                                guildId: interaction.guild.id,
+                                reload: option_reload
+                            };
+                            const result_reload_boolean = await settingsInputDb(option_reload_boolean_data);
+                            if (!result_reload_boolean) await interaction.reply("再読み込みボタンを表示するかどうかを設定できませんでした");
+                            else return await interaction.reply("再読み込みボタンを表示するかどうかを設定しました");
+                        }
+                        return
+
+                    case Translate.extractBotMessage["en-US"]:
+                        //boolean
+                        const option_extractBotMessage_boolean = interaction.options.getBoolean(Translate.boolean["en-US"]);
+                        const option_extractBotMessage_boolean_data = {
+                            guildId: interaction.guild.id,
+                            extractBotMessage: option_extractBotMessage_boolean
+                        };
+                        const result_extractBotMessage_boolean = await settingsInputDb(option_extractBotMessage_boolean_data);
+                        if (!result_extractBotMessage_boolean) await interaction.reply("Botのメッセージを抽出するかどうかを設定できませんでした");
+                        else return await interaction.reply("Botのメッセージを抽出するかどうかを設定しました");
+
+                    case Translate.setsWhetherToExpandQuoteRetweets["en-US"]:
+                        //boolean
+                        const option_setsWhetherToExpandQuoteRetweets_boolean = interaction.options.getBoolean(Translate.boolean["en-US"]);
+                        const option_setsWhetherToExpandQuoteRetweets_boolean_data = {
+                            guildId: interaction.guild.id,
+                            setsWhetherToExpandQuoteRetweets: option_setsWhetherToExpandQuoteRetweets_boolean
+                        };
+                        const result_setsWhetherToExpandQuoteRetweets_boolean = await settingsInputDb(option_setsWhetherToExpandQuoteRetweets_boolean_data);
+                        if (!result_setsWhetherToExpandQuoteRetweets_boolean) await interaction.reply("引用リツイートを展開するかどうかを設定できませんでした");
+                        else return await interaction.reply("引用リツイートを展開するかどうかを設定しました");
+                }
+                return
+        }
+    });
 });
 
 async function settingsInputDb(value) {
@@ -946,6 +1007,7 @@ client.on(Events.MessageCreate, async (message) => {
                 });
                 //プランは無料
                 plan = 0;
+                enabled = 1;
             } else {
                 //ユーザーが存在する場合はそれを使用する
                 plan = results[0].plan;
@@ -959,7 +1021,10 @@ client.on(Events.MessageCreate, async (message) => {
                         return;
                     }
                 });
+                enabled = results[0].enabled;
             }
+            //もしenabledが0の場合は処理を終了する
+            if (enabled == 0) return;
             //キューに全てのURLを追加する
             for (let i = 0; i < urls.length; i++) {
                 fetchWorkersServiceInstance.add_queue(message, plan, urls[i]);
