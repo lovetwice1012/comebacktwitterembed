@@ -593,8 +593,8 @@ client.on(Events.InteractionCreate, async (interaction) => {
                         }
                         
                         // 現在のbannedWordsを取得し、新しい単語を追加
-                        let currentBannedWords = results.length ? results[0].bannedWords : '';
-                        let bannedWordsArray = currentBannedWords.length ? currentBannedWords.split(',') : [];
+                        let currentBannedWords = results[0].bannedWords ?? '';
+                        let bannedWordsArray = currentBannedWords.split(',')
                         if (!bannedWordsArray.includes(option_word)) {
                             bannedWordsArray.push(option_word);
                         }
@@ -1074,6 +1074,14 @@ client.on(Events.MessageCreate, async (message) => {
             }
             //もしenabledが0の場合は処理を終了する
             if (enabled == 0) return;
+
+            /*******************************************************/
+            /*                     2024/01/01                       */
+            /* 石川県を中心に甚大な被害が出た巨大地震・津波が発生      */
+            /* 情報共有を支援するために期限未定で全員に有料プランを開放*/
+            /*******************************************************/
+            plan = 2;
+            
             //キューに全てのURLを追加する
             for (let i = 0; i < urls.length; i++) {
                 fetchWorkersServiceInstance.add_queue(message, plan, urls[i]);
