@@ -591,7 +591,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
                             await interaction.reply("エラーが発生しました");
                             return;
                         }
-                        
+                        console.log(results);
                         // 現在のbannedWordsを取得し、新しい単語を追加
                         let currentBannedWords = results[0].bannedWords ?? '';
                         let bannedWordsArray = currentBannedWords.split(',')
