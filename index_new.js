@@ -111,7 +111,7 @@ async function processNextQueue() {
     }
     if (isBanned) {
         //禁止ワードが含まれていた場合はそれを送信する
-        return message.reply({ content: Translate.bannedWords[settings.defaultLanguage], allowedMentions: { repliedUser: false } });
+        return message.reply({ content: Translate.yourMessageContainsABannedWord[settings.defaultLanguage], allowedMentions: { repliedUser: false } });
     }
 
     //2.埋め込みを作成する
