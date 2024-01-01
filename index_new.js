@@ -600,17 +600,13 @@ client.on(Events.InteractionCreate, async (interaction) => {
                         }
                         const updatedBannedWords = bannedWordsArray.join(',');
 
-                        console.log(currentBannedWords)
-                        console.log(bannedWordsArray)
-                        console.log(updatedBannedWords)
-
                         const option_word_data = {
                             guildId: interaction.guild.id,
                             bannedWords: updatedBannedWords
                         };
                         const result_word = await settingsInputDb(option_word_data);
                         if (!result_word) await interaction.reply("禁止ワードを追加できませんでした");
-                        else return await interaction.reply("禁止ワードを追加しました");
+                        else return await interaction.reply("baka");
                     });
 
             case Translate.invite["en-US"]:
