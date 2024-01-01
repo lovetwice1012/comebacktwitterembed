@@ -529,11 +529,11 @@ client.on(Events.InteractionCreate, async (interaction) => {
             });
             return
 
-        case locales.ping["en-US"]:
+        case Translate.ping["en-US"]:
             await interaction.reply('Pong!');
             return
 
-        case locales.invite["en-US"]:
+        case Translate.invite["en-US"]:
             await interaction.reply({
                 embeds: [
                     {
