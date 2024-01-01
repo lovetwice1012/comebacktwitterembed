@@ -727,6 +727,8 @@ async function settingsInputDb(value) {
         maxExtractQuotedTweet: value.maxExtractQuotedTweet
     }
 
+    console.log(settingInputDate)
+
     let settingToInsert = {};
 
     Object.keys(settingInputDate).forEach(key => {
@@ -734,9 +736,10 @@ async function settingsInputDb(value) {
             settingToInsert[key] = settingInputDate[key];
         }
     });
+    console.log(settingToInsert)
     connection.query('INSERT INTO settings SET ?', settingToInsert, (err, results, fields) => {
         if (err) {
-            console.log('Error connecting to database:', err);
+            //console.log('Error connecting to database:', err);
             return err;
         }
         return results;
