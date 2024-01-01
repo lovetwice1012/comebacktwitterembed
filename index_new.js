@@ -582,33 +582,6 @@ client.on(Events.InteractionCreate, async (interaction) => {
                 });
                 return
 
-                case Translate.banWord["en-US"]:
-                    //word
-                    const option_word = interaction.options.getString(Translate.word["en-US"]);
-                    connection.query('SELECT bannedWords FROM settings WHERE guildId = ?', [interaction.guild.id], async (err, results) => {
-                        if (err) {
-                            console.log(err);
-                            await interaction.reply("エラーが発生しました");
-                            return;
-                        }
-                        console.log(results);
-                        // 現在のbannedWordsを取得し、新しい単語を追加
-                        let currentBannedWords = results[0].bannedWords ?? '';
-                        let bannedWordsArray = currentBannedWords.split(',')
-                        if (!bannedWordsArray.includes(option_word)) {
-                            bannedWordsArray.push(option_word);
-                        }
-                        const updatedBannedWords = bannedWordsArray.join(',');
-
-                        const option_word_data = {
-                            guildId: interaction.guild.id,
-                            bannedWords: updatedBannedWords
-                        };
-                        const result_word = await settingsInputDb(option_word_data);
-                        if (!result_word) await interaction.reply("禁止ワードを追加できませんでした");
-                        else return await interaction.reply("禁止ワードを追加しました");
-                    });
-
             case Translate.invite["en-US"]:
                 await interaction.reply({
                     embeds: [
@@ -722,16 +695,33 @@ client.on(Events.InteractionCreate, async (interaction) => {
                             else return await interaction.reply("匿名モードを有効化するロールを追加しました");
                         }
 
-                    case Translate.banWord["en-US"]:
-                        //word
-                        const option_word = interaction.options.getString(Translate.word["en-US"]);
-                        const option_word_data = {
-                            guildId: interaction.guild.id,
-                            bannedWords: option_word
-                        };
-                        const result_word = await settingsInputDb(option_word_data);
-                        if (!result_word) await interaction.reply("禁止ワードを追加できませんでした");
-                        else return await interaction.reply("禁止ワードを追加しました");
+                        case Translate.banWord["en-US"]:
+                            //word
+                            const option_word = interaction.options.getString(Translate.word["en-US"]);
+                            connection.query('SELECT bannedWords FROM settings WHERE guildId = ?', [interaction.guild.id], async (err, results) => {
+                                if (err) {
+                                    console.log(err);
+                                    await interaction.reply("エラーが発生しました");
+                                    return;
+                                }
+                                console.log(results);
+                                // 現在のbannedWordsを取得し、新しい単語を追加
+                                let currentBannedWords = results[0].bannedWords ?? '';
+                                let bannedWordsArray = currentBannedWords.split(',')
+                                if (!bannedWordsArray.includes(option_word)) {
+                                    bannedWordsArray.push(option_word);
+                                }
+                                const updatedBannedWords = bannedWordsArray.join(',');
+        
+                                const option_word_data = {
+                                    guildId: interaction.guild.id,
+                                    bannedWords: updatedBannedWords
+                                };
+                                const result_word = await settingsInputDb(option_word_data);
+                                if (!result_word) await interaction.reply("禁止ワードを追加できませんでした");
+                                else return await interaction.reply("禁止ワードを追加しました");
+                            });
+                            return
 
                     case Translate.defaultLanguage["en-US"]:
                         //language
