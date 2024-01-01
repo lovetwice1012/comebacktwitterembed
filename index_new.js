@@ -511,7 +511,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
     switch (interaction.commandName) {
 
-        case Translate.Help["en-US"]:
+        case Translate.help["en-US"]:
             await interaction.reply({
                 embeds: [
                     {
@@ -529,11 +529,11 @@ client.on(Events.InteractionCreate, async (interaction) => {
             });
             return
 
-        case locales.Ping["en-US"]:
+        case locales.ping["en-US"]:
             await interaction.reply('Pong!');
             return
 
-        case locales.Invite["en-US"]:
+        case locales.invite["en-US"]:
             await interaction.reply({
                 embeds: [
                     {
@@ -551,7 +551,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
             });
             return
 
-        case Translate.Support["en-US"]:
+        case Translate.support["en-US"]:
             await interaction.reply({
                 embeds: [
                     {
