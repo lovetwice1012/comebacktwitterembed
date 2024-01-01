@@ -606,7 +606,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
                         };
                         const result_word = await settingsInputDb(option_word_data);
                         if (!result_word) await interaction.reply("禁止ワードを追加できませんでした");
-                        else return await interaction.reply("baka");
+                        else return await interaction.reply("禁止ワードを追加しました");
                     });
 
             case Translate.invite["en-US"]:
