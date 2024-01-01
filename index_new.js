@@ -561,7 +561,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
                         fields: [
                             {
                                 name: 'Support server link',
-                                value: 'https://discord.gg/V5VUtS83SG'
+                                value: '[Join the support server](https://discord.gg/9QWY9Zz)'
                             }
                         ]
                     }
