@@ -501,7 +501,7 @@ client.on(Events.ClientReady, () => {
 
 client.on(Events.InteractionCreate, async (interaction) => {
     if (!interaction.isCommand()) return;
-    if(interaction.author.id != 796972193287503913 && interaction.author.id != 687374475997741075 && interaction.author.id != 933314562487386122) return interaction.reply("現在コマンドは調整中です。");
+    if(interaction.user.id != 796972193287503913 && interaction.user.id != 687374475997741075 && interaction.user.id != 933314562487386122) return interaction.reply("現在コマンドは調整中です。");
     // settingsコマンドの場合ロールの管理、メッセージの管理、チャンネルの管理どれかの権限がついていない場合はほかの人に見えない形で返信する
     if (interaction.commandName == Translate.settings["en-US"]) {
         if (!interaction.member.permissions.has(PermissionsBitField.ManageRoles) && !interaction.member.permissions.has(PermissionsBitField.ManageMessages) && !interaction.member.permissions.has(PermissionsBitField.ManageChannels)) {
