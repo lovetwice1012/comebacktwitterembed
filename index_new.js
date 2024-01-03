@@ -436,6 +436,16 @@ client.on(Events.ClientReady, () => {
         });
     }, 60000);
 
+    setInterval(() => {
+        //1時間に1回select 1を実行する
+        connection.query('SELECT 1', (err, results, fields) => {
+            if (err) {
+                console.error('Error connecting to database:', err);
+                return;
+            }
+        });
+    }, 3600000);
+
     setInterval(async () => {
         let guild = await client.guilds.cache.get('1175729394782851123')
         let channel = await guild.channels.cache.get('1189083636574724167')
