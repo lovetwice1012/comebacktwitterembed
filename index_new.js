@@ -1294,7 +1294,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
                     }, 3000);
                 } else {
                     if (interaction.message.embeds[0].author.name.split(":")[1].split(")")[0] != interaction.user.id) {
-                        await interaction.editReply({ content: youcantdeleteotherusersmessagesLocales[interaction.locale] ?? youcantdeleteotherusersmessagesLocales["en"], ephemeral: true });
+                        await interaction.editReply({ content: Translate.youCanTDeleteOtherUsersMessages[interaction.locale] ?? Translate.youCanTDeleteOtherUsersMessages[settings.defaultLanguage], ephemeral: true });
                         setTimeout(() => {
                             interaction.deleteReply();
                         }, 3000);
