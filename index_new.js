@@ -1349,9 +1349,6 @@ client.on(Events.InteractionCreate, async (interaction) => {
                     await interaction.message.edit(messageObject3);
                 }
                 await interaction.editReply({ content: Translate.finishedAction[interaction.locale] ?? Translate.finishedAction[settings.defaultLanguage], ephemeral: true });
-                setTimeout(() => {
-                    interaction.deleteReply();
-                }, 3000);
                 break;
 
             case 'reload':
