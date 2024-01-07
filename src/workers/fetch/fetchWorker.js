@@ -21,6 +21,15 @@ connection.connect((err) => {
     }
     console.log('Connected to database');
     parentPort.postMessage("ready");
+    setInterval(() => {
+        //1時間に1回select 1を実行する
+        connection.query('SELECT 1', (err, results, fields) => {
+            if (err) {
+                console.error('Error connecting to database:', err);
+                return;
+            }
+        });
+    }, 3600000);
 });
 
 parentPort.on("message", (data) => {
