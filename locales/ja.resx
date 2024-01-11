@@ -59,6 +59,12 @@
   <data name="word">
     <value>単語</value>
   </data>
+  <data name="reload">
+    <value>再読み込み</value>
+  </data>
+  <data name="anonymous">
+    <value>匿名</value>
+  </data>
   <data name="defaultLanguage">
     <value>デフォルト言語</value>
   </data>
@@ -276,12 +282,12 @@
     <value>画像を埋め込み画像として表示</value>
   </data>
   <data name="setsWhetherToExpandQuoteRetweets">
-    <value>引用リツイートを展開しないかどうかを設定します</value>
+    <value>引用リツイートを展開しないかどうかを設定します。</value>
   </data>
   <data name="doNotDeployQuoteRetweets">
     <value>引用リツイートを展開しない</value>
   </data>
-  <data name="reload">
-    <value>再読み込み</value>
+  <data name="maxExtractQuotedTweet">
+    <value>最大抽出引用ツイート</value>
   </data>
 </root>

@@ -59,6 +59,12 @@ If you do not trust us, you can secure your safety by removing your channel perm
   <data name="word">
     <value>word</value>
   </data>
+  <data name="reload">
+    <value>reload</value>
+  </data>
+  <data name="anonymous">
+    <value>anonymous</value>
+  </data>
   <data name="defaultLanguage">
     <value>defaultlanguage</value>
   </data>
@@ -281,7 +287,7 @@ If you do not trust us, you can secure your safety by removing your channel perm
   <data name="doNotDeployQuoteRetweets">
     <value>Do not deploy quote retweets</value>
   </data>
-  <data name="reload">
-    <value>reload</value>
+  <data name="maxExtractQuotedTweet">
+    <value>maxextractquotedtweet</value>
   </data>
 </root>
