@@ -65,6 +65,38 @@ const commands = [
                     ]
                 },
                 {
+                    name: locales.anonymous["en-US"],
+                    name_localizations: locales.anonymous,
+                    description: locales.disableByUserOrChannel["en-US"],
+                    description_localizations: locales.disableByUserOrChannel,
+                    type: ApplicationCommandOptionType.Subcommand,
+                    options: [
+                        {
+                            name: locales.user["en-US"],
+                            name_localizations: locales.user,
+                            description: locales.specifyTheUserToDisable["en-US"],
+                            description_localizations: locales.specifyTheUserToDisable,
+                            type: ApplicationCommandOptionType.User,
+                            required: false
+                        },
+                        {
+                            name: locales.channel["en-US"],
+                            name_localizations: locales.channel,
+                            description: locales.specifyTheChannelToDisable["en-US"],
+                            description_localizations: locales.specifyTheChannelToDisable,
+                            type: ApplicationCommandOptionType.Channel,
+                            required: false
+                        },
+                        {
+                            name: locales.role["en-US"],
+                            name_localizations: locales.role,
+                            description: locales.role["en-US"],
+                            type: ApplicationCommandOptionType.Role,
+                            required: false
+                        }
+                    ]
+                },
+                {
                     name: locales.banWord["en-US"],
                     name_localizations: locales.banWord,
                     description: locales.addOrRemoveBannedWords["en-US"],
@@ -281,6 +313,22 @@ const commands = [
                             name_localizations: locales.boolean,
                             description: locales.boolean["en-US"],
                             type: ApplicationCommandOptionType.Boolean,
+                            required: true
+                        }
+                    ]
+                },
+                {
+                    name: locales.maxExtractQuotedTweet["en-US"],
+                    name_localizations: locales.maxExtractQuotedTweet,
+                    description: locales.doNotDeployQuoteRetweets["en-US"],
+                    description_localizations: locales.doNotDeployQuoteRetweets,
+                    type: ApplicationCommandOptionType.Subcommand,
+                    options: [
+                        {
+                            name: locales.boolean["en-US"],
+                            name_localizations: locales.boolean,
+                            description: locales.boolean["en-US"],
+                            type: ApplicationCommandOptionType.Number,
                             required: true
                         }
                     ]

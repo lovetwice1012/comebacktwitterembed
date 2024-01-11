@@ -685,7 +685,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
                         }
                         return
                         
-                    case "anonymous":
+                    case Translate.anonymous["en-US"]:
                         //user channel role
                         const anonymous_option_user = interaction.options.getUser('user');
                         const anonymous_option_channel = interaction.options.getChannel('channel');

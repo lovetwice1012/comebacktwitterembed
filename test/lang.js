@@ -171,6 +171,14 @@ Help_script: {
     "de": "werden.",
     "pt-BR": "tornar-se"
     },
+    reload: {
+    "ja": "再読み込み",
+    "en-US": "reload",
+    },
+    anonymous: {
+    "ja": "匿名",
+    "en-US": "anonymous",
+    },
     defaultLanguage: {
     "ja": "デフォルト言語",
     "en-US": "defaultlanguage",
@@ -910,5 +918,10 @@ Help_script: {
     "ru": "Не развертывайте ретвиты цитат",
     "de": "Keine Zitat-Retweets einsetzen",
     "pt-BR": "Não implementar retweets de citações"
+    },
+    maxExtractQuotedTweet: {
+    "ja": "最大抽出引用ツイート",
+    "en-US": "maxextractquotedtweet",
     }
+
 }
