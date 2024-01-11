@@ -30,9 +30,9 @@ class fetchWorkersService {
                     data.message = await client.channels.cache.get(data.message.channelId).messages.cache.get(data.message.id);
                     const myReactions = data.message.reactions.cache.filter(reaction => reaction.users.cache.has(client.user.id));
                     for (const reaction of myReactions.values()) {
-                        await reaction.users.remove(client.user.id);
+                        await reaction.users.remove(client.user.id).catch((error) => {});
                     }
-                    data.message.react("❌")
+                    data.message.react("❌").catch((error) => {});
                     return workerInstance.postMessage(this.queue.shift());
                 }
                 this.queueManager.add_to_queue(data, data.plan);

@@ -1,6 +1,6 @@
 const discord = require('discord.js');
 const { Client, Events, GatewayIntentBits, Partials, ActivityType, InteractionType, ButtonBuilder, ButtonStyle, ComponentType, PermissionsBitField, ApplicationCommandOptionType } = require('discord.js');
-const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent, GatewayIntentBits.GuildMessageReactions], partials: [Partials.Channel] });
+const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent, GatewayIntentBits.GuildMessageReactions], partials: [Partials.Channel] , shards: 'auto'});
 const config = require('./config.json');
 const fs = require('fs');
 const mysql = require('mysql');
@@ -354,7 +354,7 @@ async function processNextQueue() {
     //メッセージを送信する
     //alwaysReplyが有効化されている場合は返信の形で送信する
     if (settings.alwaysReply == 1) {
-        await message.reply(message_object).then((msg) => {
+        message.reply(message_object).then((msg) => {
             if (videoText != null) message.channel.send(videoText);
             if (settings.deleteMessageIfOnlyPostedTweetLink == 1 && message.content == url) message.delete();
         }).catch((error) => {
@@ -377,7 +377,7 @@ async function processNextQueue() {
         });
     } else {
         const channel = await client.channels.fetch(message.channelId);
-        await channel.send(message_object).then((msg) => {
+        channel.send(message_object).then((msg) => {
             if (videoText != null) message.channel.send(videoText);
             if (settings.deleteMessageIfOnlyPostedTweetLink == 1 && message.content == url) message.delete();
         }).catch((error) => {
@@ -403,9 +403,9 @@ async function processNextQueue() {
         //messageのリアクションを取る
         const myReactions = message.reactions.cache.filter(reaction => reaction.users.cache.has(client.user.id));
         for (const reaction of myReactions.values()) {
-            await reaction.users.remove(client.user.id);
+            await reaction.users.remove(client.user.id).catch((error) => {});
         }
-        message.react("✅")
+        message.react("✅").catch((error) => {});
     }
 
     processed_day++
@@ -435,6 +435,16 @@ client.on(Events.ClientReady, () => {
             }]
         });
     }, 60000);
+
+    setInterval(() => {
+        //1時間に1回select 1を実行する
+        connection.query('SELECT 1', (err, results, fields) => {
+            if (err) {
+                console.error('Error connecting to database:', err);
+                return;
+            }
+        });
+    }, 3600000);
 
     setInterval(async () => {
         let guild = await client.guilds.cache.get('1175729394782851123')
@@ -483,6 +493,7 @@ client.on(Events.ClientReady, () => {
         } else {
             processed_day_column = null;
         }
+        return
         connection.query('INSERT INTO stats (timestamp, joinedServersCount, usersCount, channelsCount, minutes, hours, days) VALUES (?, ?, ?, ?, ?, ?, ?)', [new Date().getTime(), client.guilds.cache.size, client.users.cache.size, client.channels.cache.size, processed_column, processed_hour_column, processed_day_column], (err, results, fields) => {
             if (err) {
                 console.error('Error connecting to database:', err);
@@ -500,6 +511,7 @@ client.on(Events.ClientReady, () => {
 
 client.on(Events.InteractionCreate, async (interaction) => {
     if (!interaction.isCommand()) return;
+    if(interaction.user.id != 796972193287503913 && interaction.user.id != 687374475997741075 && interaction.user.id != 933314562487386122) return interaction.reply("現在コマンドは調整中です。");
     // settingsコマンドの場合ロールの管理、メッセージの管理、チャンネルの管理どれかの権限がついていない場合はほかの人に見えない形で返信する
     if (interaction.commandName == Translate.settings["en-US"]) {
         if (!interaction.member.permissions.has(PermissionsBitField.ManageRoles) && !interaction.member.permissions.has(PermissionsBitField.ManageMessages) && !interaction.member.permissions.has(PermissionsBitField.ManageChannels)) {
@@ -581,33 +593,6 @@ client.on(Events.InteractionCreate, async (interaction) => {
                     ]
                 });
                 return
-
-                case Translate.banWord["en-US"]:
-                    //word
-                    const option_word = interaction.options.getString(Translate.word["en-US"]);
-                    connection.query('SELECT bannedWords FROM settings WHERE guildId = ?', [interaction.guild.id], async (err, results) => {
-                        if (err) {
-                            console.log(err);
-                            await interaction.reply("エラーが発生しました");
-                            return;
-                        }
-                        
-                        // 現在のbannedWordsを取得し、新しい単語を追加
-                        let currentBannedWords = results[0].bannedWords ?? '';
-                        let bannedWordsArray = currentBannedWords.split(',')
-                        if (!bannedWordsArray.includes(option_word)) {
-                            bannedWordsArray.push(option_word);
-                        }
-                        const updatedBannedWords = bannedWordsArray.join(',');
-
-                        const option_word_data = {
-                            guildId: interaction.guild.id,
-                            bannedWords: updatedBannedWords
-                        };
-                        const result_word = await settingsInputDb(option_word_data);
-                        if (!result_word) await interaction.reply("禁止ワードを追加できませんでした");
-                        else return await interaction.reply("禁止ワードを追加しました");
-                    });
 
             case Translate.invite["en-US"]:
                 await interaction.reply({
@@ -722,16 +707,32 @@ client.on(Events.InteractionCreate, async (interaction) => {
                             else return await interaction.reply("匿名モードを有効化するロールを追加しました");
                         }
 
-                    case Translate.banWord["en-US"]:
-                        //word
-                        const option_word = interaction.options.getString(Translate.word["en-US"]);
-                        const option_word_data = {
-                            guildId: interaction.guild.id,
-                            bannedWords: option_word
-                        };
-                        const result_word = await settingsInputDb(option_word_data);
-                        if (!result_word) await interaction.reply("禁止ワードを追加できませんでした");
-                        else return await interaction.reply("禁止ワードを追加しました");
+                        case Translate.banWord["en-US"]:
+                            //word
+                            const option_word = interaction.options.getString(Translate.word["en-US"]);
+                            connection.query('SELECT bannedWords FROM settings WHERE guildId = ?', [interaction.guild.id], async (err, results) => {
+                                if (err) {
+                                    console.log(err);
+                                    await interaction.reply("エラーが発生しました");
+                                    return;
+                                }
+                                // 現在のbannedWordsを取得し、新しい単語を追加
+                                let currentBannedWords = results[0].bannedWords ?? '';
+                                let bannedWordsArray = currentBannedWords.split(',')
+                                if (!bannedWordsArray.includes(option_word)) {
+                                    bannedWordsArray.push(option_word);
+                                }
+                                const updatedBannedWords = bannedWordsArray.join(',');
+        
+                                const option_word_data = {
+                                    guildId: interaction.guild.id,
+                                    bannedWords: updatedBannedWords
+                                };
+                                const result_word = await settingsInputDb(option_word_data);
+                                if (!result_word) await interaction.reply("禁止ワードを追加できませんでした");
+                                else return await interaction.reply("禁止ワードを追加しました");
+                            });
+                            return
 
                     case Translate.defaultLanguage["en-US"]:
                         //language
@@ -1293,7 +1294,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
                     }, 3000);
                 } else {
                     if (interaction.message.embeds[0].author.name.split(":")[1].split(")")[0] != interaction.user.id) {
-                        await interaction.editReply({ content: youcantdeleteotherusersmessagesLocales[interaction.locale] ?? youcantdeleteotherusersmessagesLocales["en"], ephemeral: true });
+                        await interaction.editReply({ content: Translate.youCanTDeleteOtherUsersMessages[interaction.locale] ?? Translate.youCanTDeleteOtherUsersMessages[settings.defaultLanguage], ephemeral: true });
                         setTimeout(() => {
                             interaction.deleteReply();
                         }, 3000);
@@ -1348,9 +1349,6 @@ client.on(Events.InteractionCreate, async (interaction) => {
                     await interaction.message.edit(messageObject3);
                 }
                 await interaction.editReply({ content: Translate.finishedAction[interaction.locale] ?? Translate.finishedAction[settings.defaultLanguage], ephemeral: true });
-                setTimeout(() => {
-                    interaction.deleteReply();
-                }, 3000);
                 break;
 
             case 'reload':
