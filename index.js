@@ -1323,7 +1323,7 @@ async function sendTweetEmbed(message, url, quoted = false, parent = null) {
                             showMediaAsAttachmentsButton = new ButtonBuilder().setStyle(ButtonStyle.Primary).setLabel(getStringFromObject(showAttachmentsAsEmbedsImagebuttonLocales, settings.defaultLanguage[message.guild.id])).setCustomId('showAttachmentsAsEmbedsImage');
                         }
                     } else {
-                        json.mediaURLs.forEach(element => {
+                        json.mediaURLs.forEach(async element => {
                             if (element.includes('video.twimg.com')) {
                                 attachments.push(element);
                                 return;
@@ -1338,7 +1338,11 @@ async function sendTweetEmbed(message, url, quoted = false, parent = null) {
                                     }
                                 })
                             } else {
-                                if (!quoted && (json.qrtURL !== null && (settings.quote_repost_do_not_extract[message.guild.id] === undefined || settings.quote_repost_do_not_extract[message.guild.id] === false))) return sendTweetEmbed(message, json.qrtURL, true, msg);;
+                                if ((settings.legacy_mode[message.guild.id] === false && !quoted && (settings.deletemessageifonlypostedtweetlink[message.guild.id] === false || (settings.deletemessageifonlypostedtweetlink[message.guild.id] === true && message.content != url)))) {
+                                    if((json.qrtURL !== null && (settings.quote_repost_do_not_extract[message.guild.id] === undefined || settings.quote_repost_do_not_extract[message.guild.id] === false))) return await sendTweetEmbed(message, json.qrtURL, true, msg);
+                                    showMediaAsAttachmentsButton = null 
+                                    return
+                                }
                                 embed.image = {
                                     url: element
                                 }
@@ -1351,7 +1355,7 @@ async function sendTweetEmbed(message, url, quoted = false, parent = null) {
                 if (attachments.length > 0) messageObject.files = attachments;
                 if (showMediaAsAttachmentsButton !== null) messageObject.components = [{ type: ComponentType.ActionRow, components: [showMediaAsAttachmentsButton] }];
                 if (!messageObject.components) messageObject.components = [];
-                messageObject.components.push({ type: ComponentType.ActionRow, components: [deleteButton] });
+                messageObject.components.push({ type: ComponentType.ActionRow, components: embeds[0].title ? [translateButton,deleteButton] : [deleteButton] });
                 messageObject.components = checkComponentIncludesDisabledButtonAndIfFindDeleteIt(messageObject.components, message.guildId);
                 messageObject.embeds = embeds;
                 if (quoted) messageObject.content = "Quoted tweet:"
@@ -1783,7 +1787,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
         case 'showMediaAsAttachments':
             const messageObject = {};
             messageObject.components = [{ type: ComponentType.ActionRow, components: [showAttachmentsAsMediaButton] }];
-            messageObject.components.push({ type: ComponentType.ActionRow, components: [deleteButton] });
+            messageObject.components.push({ type: ComponentType.ActionRow, components: interaction.message.embeds[0].title ? [translateButton,deleteButton] : [deleteButton] });
             messageObject.files = [];
             messageObject.embeds = [];
             interaction.message.embeds.forEach(element => {
@@ -1809,7 +1813,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
             const attachments = interaction.message.attachments.map(attachment => attachment.url);
             if (attachments.length > 4) return interaction.reply('You can\'t show more than 4 attachments as embeds image.');
             messageObject2.components = [{ type: ComponentType.ActionRow, components: [showMediaAsAttachmentsButton] }];
-            messageObject2.components.push({ type: ComponentType.ActionRow, components: [deleteButton] });
+            messageObject2.components.push({ type: ComponentType.ActionRow, components: interaction.message.embeds[0].title ? [translateButton,deleteButton] : [deleteButton] });
             messageObject2.components = checkComponentIncludesDisabledButtonAndIfFindDeleteIt(messageObject2.components, interaction.guildId);
             messageObject2.embeds = [];
             attachments.forEach(element => {
@@ -1821,13 +1825,13 @@ client.on(Events.InteractionCreate, async (interaction) => {
                 if (messageObject2.embeds.length === 0) {
                     let embed = {};
                     embed.url = interaction.message.embeds[0].url;
-                    //embed.title = interaction.message.embeds[0].title;
+                    if(interaction.message.embeds[0].title !== undefined) embed.title = interaction.message.embeds[0].title;
                     embed.description = interaction.message.embeds[0].description;
                     embed.color = interaction.message.embeds[0].color;
                     embed.author = interaction.message.embeds[0].author;
-                    //embed.footer = interaction.message.embeds[0].footer;
+                    if(interaction.message.embeds[0].footer !== undefined)embed.footer = interaction.message.embeds[0].footer;
                     embed.timestamp = interaction.message.embeds[0].timestamp;
-                    //embed.fields = interaction.message.embeds[0].fields;
+                    if(interaction.message.embeds[0].fields !== undefined)embed.fields = interaction.message.embeds[0].fields;
                     embed.image = {
                         url: element
                     };
@@ -1877,8 +1881,8 @@ client.on(Events.InteractionCreate, async (interaction) => {
             messageObject3.components = [];
             messageObject3.embeds = [];
             const copyEmbedObject = {};
-            //copyEmbedObject.title = interaction.message.embeds[0].title;
-            //copyEmbedObject.url = interaction.message.embeds[0].url;
+            copyEmbedObject.title = interaction.message.embeds[0].title;
+            copyEmbedObject.url = interaction.message.embeds[0].url;
             copyEmbedObject.color = interaction.message.embeds[0].color;
             copyEmbedObject.author = interaction.message.embeds[0].author;
             copyEmbedObject.footer = interaction.message.embeds[0].footer;
