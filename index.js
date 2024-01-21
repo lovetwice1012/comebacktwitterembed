@@ -47,6 +47,7 @@ if (!fs.existsSync('./settings.json')) {
         "button_disabled": {},
         "extract_bot_message": {},
         "quote_repost_do_not_extract": {},
+        "legacy_mode" : {}
     }, null, 4));
 }
 const settings = JSON.parse(fs.readFileSync('./settings.json', 'utf8'));
@@ -100,6 +101,12 @@ if (settings.quote_repost_do_not_extract === undefined) {
     settings.quote_repost_do_not_extract = {};
     fs.writeFileSync('./settings.json', JSON.stringify(settings, null, 4));
 }
+
+if (settings.legacy_mode === undefined) {
+    settings.legacy_mode = {};
+    fs.writeFileSync('./settings.json', JSON.stringify(settings, null, 4));
+}
+
 
 const button_disabled_template = {
     user: [], //user id
@@ -657,6 +664,22 @@ const setquoterepostdonotextracttolocales = {
     en: 'Set quote_repost_do_not_extract to '
 }
 
+const command_name_legacy_mode_Locales = {
+    ja: 'レガシーモード',
+    en: 'legacy_mode'
+}
+
+const settingsLegacyModeDescriptionLocalizations = {
+    ja: 'レガシーモードを設定します。',
+    en: 'Sets legacy mode.'
+}
+
+const setlegacymodetolocales = {
+    ja: 'レガシーモードを設定しました。 :',
+    en: 'Set legacy_mode to '
+}
+
+
 function conv_en_to_en_US(obj) {
     if (obj === undefined) return undefined;
     obj = [obj]
@@ -1052,6 +1075,22 @@ client.on('ready', () => {
                             required: true
                         }
                     ]
+                },
+                {
+                    name: 'legacymode',
+                    name_localizations: conv_en_to_en_US(command_name_legacy_mode_Locales),
+                    description: 'legacy mode',
+                    description_localizations: conv_en_to_en_US(settingsLegacyModeDescriptionLocalizations),
+                    type: ApplicationCommandOptionType.Subcommand,
+                    options: [
+                        {
+                            name: 'boolean',
+                            name_localizations: conv_en_to_en_US(command_name_boolean_Locales),
+                            description: 'boolean',
+                            type: ApplicationCommandOptionType.Boolean,
+                            required: true
+                        }
+                    ]
                 }
             ]
         }
@@ -1234,7 +1273,8 @@ async function sendTweetEmbed(message, url, quoted = false, parent = null) {
                 content = [];
                 let embed = {}
                 if(settings.deletemessageifonlypostedtweetlink[message.guild.id] === undefined) settings.deletemessageifonlypostedtweetlink[message.guild.id] = false;
-                if (!quoted && (settings.deletemessageifonlypostedtweetlink[message.guild.id] === false || (settings.deletemessageifonlypostedtweetlink[message.guild.id] === true && message.content != url))) {
+                if(settings.legacy_mode[message.guild.id] === undefined) settings.legacy_mode[message.guild.id] = false;
+                if (settings.legacy_mode[message.guild.id] === false && !quoted && (settings.deletemessageifonlypostedtweetlink[message.guild.id] === false || (settings.deletemessageifonlypostedtweetlink[message.guild.id] === true && message.content != url))) {
                     embed = {
                         //title: json.user_name,
                         url: json.tweetURL,
@@ -1634,6 +1674,12 @@ client.on(Events.InteractionCreate, async (interaction) => {
                 const boolean = interaction.options.getBoolean('boolean');
                 settings.quote_repost_do_not_extract[interaction.guildId] = boolean;
                 await interaction.reply((setquoterepostdonotextracttolocales[interaction.locale] ?? setquoterepostdonotextracttolocales["en"]) + convertBoolToEnableDisable(boolean, interaction.locale));
+            } else if (interaction.options.getSubcommand() === 'legacymode') {
+                if (interaction.options.getBoolean('boolean') === null) return await interaction.reply(userMustSpecifyAnyWordLocales[interaction.locale] ?? userMustSpecifyAnyWordLocales["en"]);
+                if (settings.legacy_mode[interaction.guildId] === undefined) settings.legacy_mode[interaction.guildId] = false;
+                const boolean = interaction.options.getBoolean('boolean');
+                settings.legacy_mode[interaction.guildId] = boolean;
+                await interaction.reply((setlegacymodetolocales[interaction.locale] ?? setlegacymodetolocales["en"]) + convertBoolToEnableDisable(boolean, interaction.locale));
             } else {
                 return await interaction.reply(userMustSpecifyAnyWordLocales[interaction.locale] ?? userMustSpecifyAnyWordLocales["en"]);
             }
@@ -1685,6 +1731,8 @@ client.on(Events.InteractionCreate, async (interaction) => {
             } else if (interaction.options.getSubcommand() === 'extractbotmessage') {
                 await interaction.reply(userDonthavePermissionLocales[interaction.locale] ?? userDonthavePermissionLocales["en"]);
             } else if (interaction.options.getSubcommand() === 'quoterepostdonotextract') {
+                await interaction.reply(userDonthavePermissionLocales[interaction.locale] ?? userDonthavePermissionLocales["en"]);
+            } else if (interaction.options.getSubcommand() === 'legacymode') {
                 await interaction.reply(userDonthavePermissionLocales[interaction.locale] ?? userDonthavePermissionLocales["en"]);
             } else {
                 return await interaction.reply(userMustSpecifyAnyWordLocales[interaction.locale] ?? userMustSpecifyAnyWordLocales["en"]);
