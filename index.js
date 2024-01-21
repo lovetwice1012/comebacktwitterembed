@@ -1233,8 +1233,8 @@ async function sendTweetEmbed(message, url, quoted = false, parent = null) {
                 }
                 content = [];
                 let embed = {}
-                if(settings.deleteifonlypostedtweetlink[message.guild.id] === undefined) settings.deleteifonlypostedtweetlink[message.guild.id] = false;
-                if (!quoted && (settings.deleteifonlypostedtweetlink[message.guild.id] === false || (settings.deleteifonlypostedtweetlink[message.guild.id] === true && message.content != url))) {
+                if(settings.deletemessageifonlypostedtweetlink[message.guild.id] === undefined) settings.deletemessageifonlypostedtweetlink[message.guild.id] = false;
+                if (!quoted && (settings.deletemessageifonlypostedtweetlink[message.guild.id] === false || (settings.deletemessageifonlypostedtweetlink[message.guild.id] === true && message.content != url))) {
                     embed = {
                         //title: json.user_name,
                         url: json.tweetURL,
