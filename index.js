@@ -1233,7 +1233,7 @@ async function sendTweetEmbed(message, url, quoted = false, parent = null) {
                 }
                 content = [];
                 let embed = {}
-                if (!quoted) {
+                if (!quoted && (settings.deleteifonlypostedtweetlink[message.guild.id] === false || (settings.deleteifonlypostedtweetlink[message.guild.id] === true && message.content != url))) {
                     embed = {
                         //title: json.user_name,
                         url: json.tweetURL,
