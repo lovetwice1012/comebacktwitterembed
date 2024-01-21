@@ -1268,7 +1268,7 @@ async function sendTweetEmbed(message, url, quoted = false, parent = null) {
                     });
                 }
                 if (json.text.length > 1500) {
-                    json.text = json.text.slice(0, 300) + '...';
+                    json.text = json.text.slice(0, 1500) + '...';
                 }
                 content = [];
                 let embed = {}
