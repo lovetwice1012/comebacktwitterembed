@@ -749,17 +749,17 @@ client.on('ready', () => {
         })
         processed_column = processed;
         processed = 0;
-        
+
         if (new Date().getMinutes() === 0) {
             processed_hour_column = processed_hour;
             processed_hour = 0;
-        }else{
+        } else {
             processed_hour_column = null;
         }
         if (new Date().getHours() === 0 && new Date().getMinutes() === 0) {
             processed_day_column = processed_day;
             processed_day = 0;
-        }else{
+        } else {
             processed_day_column = null;
         }
         connection.query('INSERT INTO stats (timestamp, joinedServersCount, usersCount, channelsCount, minutes, hours, days) VALUES (?, ?, ?, ?, ?, ?, ?)', [new Date().getTime(), client.guilds.cache.size, client.users.cache.size, client.channels.cache.size, processed_column, processed_hour_column, processed_day_column], (err, results, fields) => {
@@ -1184,7 +1184,7 @@ async function sendTweetEmbed(message, url, quoted = false, parent = null) {
                         fs.mkdirSync('./error_response');
                     }
                     //error_responseフォルダに返答を記録する
-                    fs.writeFile('./error_response/' + new Date().getTime() + '.json', newUrl + "\n\n" +  JSON.stringify(res.text(), null, 2), (err) => {
+                    fs.writeFile('./error_response/' + new Date().getTime() + '.json', newUrl + "\n\n" + JSON.stringify(res.text(), null, 2), (err) => {
                         if (err) {
                             console.error(err);
                             return;
@@ -1232,20 +1232,39 @@ async function sendTweetEmbed(message, url, quoted = false, parent = null) {
                     json.text = json.text.slice(0, 300) + '...';
                 }
                 content = [];
-                const embed = {
-                    //title: json.user_name,
-                    url: json.tweetURL,
-                    description: /*json.text + '\n\n[View on Twitter](' + json.tweetURL + ')\n\n*/':speech_balloon:' + json.replies + ' replies • :recycle:' + json.retweets + ' retweets • :heart:' + json.likes + ' likes',
-                    color: 0x1DA1F2,
-                    author: {
-                        name: 'request by ' + message.author.username + '(id:' + message.author.id + ')',
-                    },
-                    //footer: {
-                    //    text: 'Posted by ' + json.user_name + ' (@' + json.user_screen_name + ')',
-                    //    icon_url: 'https://abs.twimg.com/icons/apple-touch-icon-192x192.png'
-                    //},
-                    timestamp: new Date(json.date),
-                };
+                let embed = {}
+                if (!quoted) {
+                    embed = {
+                        //title: json.user_name,
+                        url: json.tweetURL,
+                        description: /*json.text + '\n\n[View on Twitter](' + json.tweetURL + ')\n\n*/':speech_balloon:' + json.replies + ' replies • :recycle:' + json.retweets + ' retweets • :heart:' + json.likes + ' likes',
+                        color: 0x1DA1F2,
+                        author: {
+                            name: 'request by ' + message.author.username + '(id:' + message.author.id + ')',
+                        },
+                        //footer: {
+                        //    text: 'Posted by ' + json.user_name + ' (@' + json.user_screen_name + ')',
+                        //    icon_url: 'https://abs.twimg.com/icons/apple-touch-icon-192x192.png'
+                        //},
+                        timestamp: new Date(json.date),
+                    };
+                } else {
+                    embed = {
+                        title: json.user_name,
+                        url: json.tweetURL,
+                        description: json.text + '\n\n[View on Twitter](' + json.tweetURL + ')\n\n:speech_balloon:' + json.replies + ' replies • :recycle:' + json.retweets + ' retweets • :heart:' + json.likes + ' likes',
+                        color: 0x1DA1F2,
+                        author: {
+                            name: 'request by ' + message.author.username + '(id:' + message.author.id + ')',
+                        },
+                        footer: {
+                            text: 'Posted by ' + json.user_name + ' (@' + json.user_screen_name + ')',
+                            icon_url: 'https://abs.twimg.com/icons/apple-touch-icon-192x192.png'
+                        },
+                        timestamp: new Date(json.date),
+                    };
+                }
+
                 if (json.mediaURLs?.length > 0) {
                     if (json.mediaURLs.length > 4 || settings.sendMediaAsAttachmentsAsDefault[message.guild.id] === true) {
                         if (json.mediaURLs.length > 10) {
@@ -1278,7 +1297,7 @@ async function sendTweetEmbed(message, url, quoted = false, parent = null) {
                                     }
                                 })
                             } else {
-                                if(!quoted && (json.qrtURL !== null && (settings.quote_repost_do_not_extract[message.guild.id] === undefined || settings.quote_repost_do_not_extract[message.guild.id] === false))) return sendTweetEmbed(message, json.qrtURL, true, msg);;
+                                if (!quoted && (json.qrtURL !== null && (settings.quote_repost_do_not_extract[message.guild.id] === undefined || settings.quote_repost_do_not_extract[message.guild.id] === false))) return sendTweetEmbed(message, json.qrtURL, true, msg);;
                                 embed.image = {
                                     url: element
                                 }
