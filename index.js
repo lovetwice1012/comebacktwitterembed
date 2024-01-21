@@ -1273,7 +1273,14 @@ async function sendTweetEmbed(message, url, quoted = false, parent = null) {
                 content = [];
                 let embed = {}
                 if(settings.deletemessageifonlypostedtweetlink[message.guild.id] === undefined) settings.deletemessageifonlypostedtweetlink[message.guild.id] = false;
-                if(settings.legacy_mode[message.guild.id] === undefined) settings.legacy_mode[message.guild.id] = false;
+                if(settings.legacy_mode[message.guild.id] === undefined) {
+                    if(message.guild.members.me.permissions.has(PermissionsBitField.Flags.ManageMessages)){
+                        settings.legacy_mode[message.guild.id] = true;
+                    }else{
+                        settings.legacy_mode[message.guild.id] = false;
+                    }
+                    
+                }
                 if (settings.legacy_mode[message.guild.id] === false && !quoted && (settings.deletemessageifonlypostedtweetlink[message.guild.id] === false || (settings.deletemessageifonlypostedtweetlink[message.guild.id] === true && message.content != url))) {
                     embed = {
                         //title: json.user_name,
