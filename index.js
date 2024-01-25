@@ -47,7 +47,9 @@ if (!fs.existsSync('./settings.json')) {
         "button_disabled": {},
         "extract_bot_message": {},
         "quote_repost_do_not_extract": {},
-        "legacy_mode" : {}
+        "legacy_mode" : {},
+        "passive_mode": {},
+        "secondary_extract_mode": {},
     }, null, 4));
 }
 const settings = JSON.parse(fs.readFileSync('./settings.json', 'utf8'));
@@ -104,6 +106,16 @@ if (settings.quote_repost_do_not_extract === undefined) {
 
 if (settings.legacy_mode === undefined) {
     settings.legacy_mode = {};
+    fs.writeFileSync('./settings.json', JSON.stringify(settings, null, 4));
+}
+
+if (settings.passive_mode === undefined) {
+    settings.passive_mode = {};
+    fs.writeFileSync('./settings.json', JSON.stringify(settings, null, 4));
+}
+
+if (settings.secondary_extract_mode === undefined) {
+    settings.secondary_extract_mode = {};
     fs.writeFileSync('./settings.json', JSON.stringify(settings, null, 4));
 }
 
@@ -679,6 +691,36 @@ const setlegacymodetolocales = {
     en: 'Set legacy_mode to '
 }
 
+const command_name_passive_mode_Locales = {
+    ja: 'パッシブモード',
+    en: 'passive_mode'
+}
+
+const settingsPassiveModeDescriptionLocalizations = {
+    ja: 'パッシブモード(画像表示用のボタンのみを送信するモード)を設定します。',
+    en: 'Sets passive mode.'
+}
+
+const setpassivemodetolocales = {
+    ja: 'パッシブモードを設定しました。 :',
+    en: 'Set passive_mode to '
+}
+
+const command_name_secondary_extract_mode_Locales = {
+    ja: 'セカンダリー展開モード',
+    en: 'secondary_extract_mode'
+}
+
+const settingsSecondaryExtractModeDescriptionLocalizations = {
+    ja: 'セカンダリー展開モード(画像が複数枚含まれるか、動画が含まれる場合のみ送信するモード)を設定します。',
+    en: 'Sets secondary extract mode.'
+}
+
+const setsecondaryextractmodetolocales = {
+    ja: 'セカンダリー展開モードを設定しました。 :',
+    en: 'Set secondary_extract_mode to '
+}
+
 
 function conv_en_to_en_US(obj) {
     if (obj === undefined) return undefined;
@@ -1091,6 +1133,40 @@ client.on('ready', () => {
                             required: true
                         }
                     ]
+                },
+                /*
+                {
+                    name: 'passivemode',
+                    name_localizations: conv_en_to_en_US(command_name_passive_mode_Locales),
+                    description: 'passive mode',
+                    description_localizations: conv_en_to_en_US(settingsPassiveModeDescriptionLocalizations),
+                    type: ApplicationCommandOptionType.Subcommand,
+                    options: [
+                        {
+                            name: 'boolean',
+                            name_localizations: conv_en_to_en_US(command_name_boolean_Locales),
+                            description: 'boolean',
+                            type: ApplicationCommandOptionType.Boolean,
+                            required: true
+                        }
+                    ]
+                },
+                */
+                {
+                    name: 'secondaryextractmode',
+                    name_localizations: conv_en_to_en_US(command_name_secondary_extract_mode_Locales),
+                    description: 'secondary extract mode',
+                    description_localizations: conv_en_to_en_US(settingsSecondaryExtractModeDescriptionLocalizations),
+                    type: ApplicationCommandOptionType.Subcommand,
+                    options: [
+                        {
+                            name: 'boolean',
+                            name_localizations: conv_en_to_en_US(command_name_boolean_Locales),
+                            description: 'boolean',
+                            type: ApplicationCommandOptionType.Boolean,
+                            required: true
+                        }
+                    ]
                 }
             ]
         }
@@ -1273,6 +1349,8 @@ async function sendTweetEmbed(message, url, quoted = false, parent = null) {
                 content = [];
                 let embed = {}
                 if(settings.deletemessageifonlypostedtweetlink[message.guild.id] === undefined) settings.deletemessageifonlypostedtweetlink[message.guild.id] = false;
+                if(settings.passive_mode[message.guild.id] === undefined) settings.passive_mode[message.guild.id] = false;
+                if(settings.secondary_extract_mode[message.guild.id] === undefined) settings.secondary_extract_mode[message.guild.id] = false;
                 if(settings.legacy_mode[message.guild.id] === undefined) {
                     if(message.guild.members.me.permissions.has(PermissionsBitField.Flags.ManageMessages)){
                         settings.legacy_mode[message.guild.id] = true;
@@ -1296,6 +1374,9 @@ async function sendTweetEmbed(message, url, quoted = false, parent = null) {
                         //},
                         timestamp: new Date(json.date),
                     };
+                    if(settings.passive_mode[message.guild.id] === true){
+                        delete embed.description
+                    }
                 } else {
                     embed = {
                         title: json.user_name,
@@ -1312,7 +1393,7 @@ async function sendTweetEmbed(message, url, quoted = false, parent = null) {
                         timestamp: new Date(json.date),
                     };
                 }
-
+                let videoflag = false;
                 if (json.mediaURLs?.length > 0) {
                     if (json.mediaURLs.length > 4 || settings.sendMediaAsAttachmentsAsDefault[message.guild.id] === true) {
                         if (json.mediaURLs.length > 10) {
@@ -1320,7 +1401,7 @@ async function sendTweetEmbed(message, url, quoted = false, parent = null) {
                         }
                         attachments = json.mediaURLs
                         embeds.push(embed);
-                        let videoflag = false;
+                        
                         attachments.forEach(element => {
                             if (videoExtensions.some(ext => element.includes(ext))) {
                                 videoflag = true;
@@ -1329,10 +1410,15 @@ async function sendTweetEmbed(message, url, quoted = false, parent = null) {
                         if (settings.sendMediaAsAttachmentsAsDefault[message.guild.id] === true && !videoflag) {
                             showMediaAsAttachmentsButton = new ButtonBuilder().setStyle(ButtonStyle.Primary).setLabel(getStringFromObject(showAttachmentsAsEmbedsImagebuttonLocales, settings.defaultLanguage[message.guild.id])).setCustomId('showAttachmentsAsEmbedsImage');
                         }
+                        if(settings.secondary_extract_mode[message.guild.id] === true && !videoflag && json.mediaURLs.length == 1){
+                            if((json.qrtURL !== null && (settings.quote_repost_do_not_extract[message.guild.id] === undefined || settings.quote_repost_do_not_extract[message.guild.id] === false))) return await sendTweetEmbed(message, json.qrtURL, true, msg);
+                            return resolve();
+                        }
                     } else {
                         json.mediaURLs.forEach(async element => {
                             if (element.includes('video.twimg.com')) {
                                 attachments.push(element);
+                                videoflag = true;
                                 return;
                             }
                             showMediaAsAttachmentsButton = new ButtonBuilder().setStyle(ButtonStyle.Primary).setLabel(getStringFromObject(showMediaAsAttachmentsButtonLocales, settings.defaultLanguage[message.guild.id])).setCustomId('showMediaAsAttachments');
@@ -1356,7 +1442,14 @@ async function sendTweetEmbed(message, url, quoted = false, parent = null) {
                                 embeds.push(embed);
                             }
                         });
+                        if(settings.secondary_extract_mode[message.guild.id] === true && json.mediaURLs.length == 1 && !videoflag){
+                            if((json.qrtURL !== null && (settings.quote_repost_do_not_extract[message.guild.id] === undefined || settings.quote_repost_do_not_extract[message.guild.id] === false))) return await sendTweetEmbed(message, json.qrtURL, true, msg);
+                            return resolve();
+                        }
                     }
+                }else if(settings.secondary_extract_mode[message.guild.id] === true){
+                    if(json.qrtURL !== null && (settings.quote_repost_do_not_extract[message.guild.id] === undefined || settings.quote_repost_do_not_extract[message.guild.id] === false)) await sendTweetEmbed(message, json.qrtURL, true, msg);
+                    return resolve();
                 }
                 if (embeds.length === 0) embeds.push(embed);
                 if (attachments.length > 0) messageObject.files = attachments;
@@ -1689,12 +1782,26 @@ client.on(Events.InteractionCreate, async (interaction) => {
                 settings.quote_repost_do_not_extract[interaction.guildId] = boolean;
                 await interaction.reply((setquoterepostdonotextracttolocales[interaction.locale] ?? setquoterepostdonotextracttolocales["en"]) + convertBoolToEnableDisable(boolean, interaction.locale));
             } else if (interaction.options.getSubcommand() === 'legacymode') {
+                if(settings.secondary_extract_mode[interaction.guildId] === true) return await interaction.reply("※セカンダリエクストラクトモードが有効になっているためこの設定は無効です。")
                 if (interaction.options.getBoolean('boolean') === null) return await interaction.reply(userMustSpecifyAnyWordLocales[interaction.locale] ?? userMustSpecifyAnyWordLocales["en"]);
                 if (settings.legacy_mode[interaction.guildId] === undefined) settings.legacy_mode[interaction.guildId] = false;
                 const boolean = interaction.options.getBoolean('boolean');
                 settings.legacy_mode[interaction.guildId] = boolean;
                 await interaction.reply((setlegacymodetolocales[interaction.locale] ?? setlegacymodetolocales["en"]) + convertBoolToEnableDisable(boolean, interaction.locale));
                 if(!interaction.guild.members.me.permissions.has(PermissionsBitField.Flags.ManageMessages)) await interaction.followUp("※BOTにメッセージの管理権限を付与するとdiscord純正の埋め込みのみを削除して今まで通りの展開が行われます。\nこのBOTにメッセージの管理権限を付与することを検討してみてください。\n(使用感はdiscordがリンクの展開を修正する前と変わらなくなります。)")
+            } else if(interaction.options.getSubcommand() === 'passivemode'){
+                if (interaction.options.getBoolean('boolean') === null) return await interaction.reply(userMustSpecifyAnyWordLocales[interaction.locale] ?? userMustSpecifyAnyWordLocales["en"]);
+                if (settings.passive_mode[interaction.guildId] === undefined) settings.passive_mode[interaction.guildId] = false;
+                const boolean = interaction.options.getBoolean('boolean');
+                settings.passive_mode[interaction.guildId] = boolean;
+                await interaction.reply((setpassivemodetolocales[interaction.locale] ?? setpassivemodetolocales["en"]) + convertBoolToEnableDisable(boolean, interaction.locale));
+            } else if(interaction.options.getSubcommand() === 'secondaryextractmode'){
+                if(settings.legacy_mode[interaction.guildId] === true) return await interaction.reply("※レガシーモードが有効になっているためこの設定は無効です。")
+                if (interaction.options.getBoolean('boolean') === null) return await interaction.reply(userMustSpecifyAnyWordLocales[interaction.locale] ?? userMustSpecifyAnyWordLocales["en"]);
+                if (settings.secondary_extract_mode[interaction.guildId] === undefined) settings.secondary_extract_mode[interaction.guildId] = false;
+                const boolean = interaction.options.getBoolean('boolean');
+                settings.secondary_extract_mode[interaction.guildId] = boolean;
+                await interaction.reply((setsecondaryextractmodetolocales[interaction.locale] ?? setsecondaryextractmodetolocales["en"]) + convertBoolToEnableDisable(boolean, interaction.locale));
             } else {
                 return await interaction.reply(userMustSpecifyAnyWordLocales[interaction.locale] ?? userMustSpecifyAnyWordLocales["en"]);
             }
@@ -1748,6 +1855,10 @@ client.on(Events.InteractionCreate, async (interaction) => {
             } else if (interaction.options.getSubcommand() === 'quoterepostdonotextract') {
                 await interaction.reply(userDonthavePermissionLocales[interaction.locale] ?? userDonthavePermissionLocales["en"]);
             } else if (interaction.options.getSubcommand() === 'legacymode') {
+                await interaction.reply(userDonthavePermissionLocales[interaction.locale] ?? userDonthavePermissionLocales["en"]);
+            } else if (interaction.options.getSubcommand() === 'passivemode') {
+                await interaction.reply(userDonthavePermissionLocales[interaction.locale] ?? userDonthavePermissionLocales["en"]);
+            } else if(interaction.options.getSubcommand() === 'secondaryextractmode'){
                 await interaction.reply(userDonthavePermissionLocales[interaction.locale] ?? userDonthavePermissionLocales["en"]);
             } else {
                 return await interaction.reply(userMustSpecifyAnyWordLocales[interaction.locale] ?? userMustSpecifyAnyWordLocales["en"]);
