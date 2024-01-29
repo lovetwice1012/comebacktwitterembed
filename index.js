@@ -1673,7 +1673,9 @@ async function sendTweetEmbed(message, url, quoted = false, parent = null, saved
                 if (quoted) messageObject.content = "Quoted tweet:"
                 let msg = null;
                 if (settings.legacy_mode[message.guild.id] === true && message.guild.members.me.permissions.has(PermissionsBitField.Flags.ManageMessages)) {
-                    message.suppressEmbeds(true);
+                    message.suppressEmbeds(true).catch(err => {
+                        //console.log(err);
+                    });
                 }
                 if (settings.alwaysreplyifpostedtweetlink[message.guild.id] === true && parent === null) {
                     msg = await message.reply(messageObject).catch(async err => {
