@@ -1622,7 +1622,7 @@ async function sendTweetEmbed(message, url, quoted = false, parent = null, saved
                             showMediaAsAttachmentsButton = new ButtonBuilder().setStyle(ButtonStyle.Primary).setLabel(getStringFromObject(showAttachmentsAsEmbedsImagebuttonLocales, settings.defaultLanguage[message.guild.id])).setCustomId('showAttachmentsAsEmbedsImage');
                         }
                         if (settings.secondary_extract_mode[message.guild.id] === true && !videoflag && json.mediaURLs.length == 1) {
-                            if ((json.qrtURL !== null && (settings.quote_repost_do_not_extract[message.guild.id] === undefined || settings.quote_repost_do_not_extract[message.guild.id] === false))) return await sendTweetEmbed(message, json.qrtURL, true, msg);
+                            if ((json.qrtURL !== null && (settings.quote_repost_do_not_extract[message.guild.id] === undefined || settings.quote_repost_do_not_extract[message.guild.id] === false))) return await sendTweetEmbed(message, json.qrtURL, true, message);
                             return resolve();
                         }
                     } else {
@@ -1643,7 +1643,7 @@ async function sendTweetEmbed(message, url, quoted = false, parent = null, saved
                                 })
                             } else {
                                 if ((settings.legacy_mode[message.guild.id] === false && !quoted && (settings.deletemessageifonlypostedtweetlink[message.guild.id] === false || (settings.deletemessageifonlypostedtweetlink[message.guild.id] === true && message.content != url)))) {
-                                    if ((json.qrtURL !== null && (settings.quote_repost_do_not_extract[message.guild.id] === undefined || settings.quote_repost_do_not_extract[message.guild.id] === false))) return await sendTweetEmbed(message, json.qrtURL, true, msg);
+                                    if ((json.qrtURL !== null && (settings.quote_repost_do_not_extract[message.guild.id] === undefined || settings.quote_repost_do_not_extract[message.guild.id] === false))) return await sendTweetEmbed(message, json.qrtURL, true, message);
                                     showMediaAsAttachmentsButton = null
                                     return
                                 }
@@ -1654,7 +1654,7 @@ async function sendTweetEmbed(message, url, quoted = false, parent = null, saved
                             }
                         });
                         if (settings.secondary_extract_mode[message.guild.id] === true && json.mediaURLs.length == 1 && !videoflag) {
-                            if ((json.qrtURL !== null && (settings.quote_repost_do_not_extract[message.guild.id] === undefined || settings.quote_repost_do_not_extract[message.guild.id] === false))) return await sendTweetEmbed(message, json.qrtURL, true, msg);
+                            if ((json.qrtURL !== null && (settings.quote_repost_do_not_extract[message.guild.id] === undefined || settings.quote_repost_do_not_extract[message.guild.id] === false))) return await sendTweetEmbed(message, json.qrtURL, true, message);
                             return resolve();
                         }
                     }
