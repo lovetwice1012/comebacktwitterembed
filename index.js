@@ -7,6 +7,8 @@ const fetch = require('node-fetch');
 const fs = require('fs');
 const { send } = require('process');
 const mysql = require('mysql');
+const https = require('https');
+const e = require('express');
 
 const connection = mysql.createConnection({
     host: '192.168.100.22',
@@ -47,9 +49,11 @@ if (!fs.existsSync('./settings.json')) {
         "button_disabled": {},
         "extract_bot_message": {},
         "quote_repost_do_not_extract": {},
-        "legacy_mode" : {},
+        "legacy_mode": {},
         "passive_mode": {},
         "secondary_extract_mode": {},
+        "save_tweet_quota_override": {},
+        "deletemessageifonlypostedtweetlink_secoundaryextractmode": {},
     }, null, 4));
 }
 const settings = JSON.parse(fs.readFileSync('./settings.json', 'utf8'));
@@ -119,6 +123,15 @@ if (settings.secondary_extract_mode === undefined) {
     fs.writeFileSync('./settings.json', JSON.stringify(settings, null, 4));
 }
 
+if (settings.save_tweet_quota_override === undefined) {
+    settings.save_tweet_quota_override = {};
+    fs.writeFileSync('./settings.json', JSON.stringify(settings, null, 4));
+}
+
+if (settings.deletemessageifonlypostedtweetlink_secoundaryextractmode === undefined) {
+    settings.deletemessageifonlypostedtweetlink_secoundaryextractmode = {};
+    fs.writeFileSync('./settings.json', JSON.stringify(settings, null, 4));
+}
 
 const button_disabled_template = {
     user: [], //user id
@@ -721,6 +734,105 @@ const setsecondaryextractmodetolocales = {
     en: 'Set secondary_extract_mode to '
 }
 
+const savetweetButtonLabelLocales = {
+    ja: 'ツイートを保存',
+    en: 'Save tweet'
+}
+
+const command_name_showSaveTweet_Locales = {
+    ja: '保存したツイートを表示',
+    en: 'showsavedtweet'
+}
+
+const showSaveTweetcommandDescriptionLocalizations = {
+    ja: '保存したツイートを表示します。',
+    en: 'Shows saved tweet.'
+}
+
+const command_name_showSaveTweetButtonLabelLocales = {
+    ja: '保存したツイートを表示',
+    en: 'Show saved tweet'
+}
+
+const userDonthaveSavedTweetLocales = {
+    ja: '保存したツイートがありません。',
+    en: 'You don\'t have saved tweet.'
+}
+
+const command_name_id_Locales = {
+    ja: 'id',
+    en: 'id'
+}
+
+const command_name_save_tweet_quota_override_Locales = {
+    ja: 'ツイート保存クオータオーバーライド',
+    en: 'save_tweet_quota_override'
+}
+
+const settingsSaveTweetQuotaOverrideDescriptionLocalizations = {
+    ja: '管理者用コマンド',
+    en: 'Admin only command'
+}
+
+const setSaveTweetQuotaOverridetolocales = {
+    ja: 'ツイート保存クオータオーバーライドを設定しました。 :',
+    en: 'Set save_tweet_quota_override to '
+}
+
+const command_name_quota_Locales = {
+    ja: 'クオータ',
+    en: 'quota'
+}
+
+const setsavetweetquotaoverridetolocales = {
+    ja: 'ツイート保存クオータを設定しました。 :',
+    en: 'Set save_tweet_quota to '
+}
+
+const command_name_showSaveTweetQuota_Locales = {
+    ja: 'ツイート保存クオータを表示',
+    en: 'showSaveTweetQuota'
+}
+
+const showSaveTweetQuotacommandDescriptionLocalizations = {
+    ja: 'ツイート保存クオータを表示します。',
+    en: 'Shows save tweet quota.'
+}
+
+const deletedSavedTweetLocales = {
+    ja: 'ツイートを削除しました。',
+    en: 'Deleted saved tweet.'
+}
+
+const quotastatsCommandNameLocales = {
+    ja: 'クオータ統計',
+    en: 'quotastats'
+}
+
+const quotastatsCommandDescriptionLocales = {
+    ja: 'クオータの統計を表示します。',
+    en: 'Shows quota stats.'
+}
+
+const myGuildSettingsCommandNameLocales = {
+    ja: 'サーバー設定の確認',
+    en: 'myguildsettings'
+}
+
+const command_name_doitwhensecondaryextractmodeisenabled_Locales = {
+    ja: 'セカンダリー展開と連携',
+    en: 'secoundaryextractmode'
+}
+
+const settingsDoItWhenSecondaryExtractModeIsEnabledDescriptionLocalizations = {
+    ja: 'セカンダリー展開モードが実行されたときのみに実行するかどうかを設定します。',
+    en: 'Sets whether to execute when secondary extract mode is enabled.'
+}
+
+const setdoitwhensecoundaryextractmodeisenabledtolocales = {
+    ja: 'セカンダリー展開モードが実行されたときのみに実行するを設定しました。 :',
+    en: 'Set doitwhensecondaryextractmodeisenabled to '
+}
 
 function conv_en_to_en_US(obj) {
     if (obj === undefined) return undefined;
@@ -987,6 +1099,14 @@ client.on('ready', () => {
                             description: 'boolean',
                             type: ApplicationCommandOptionType.Boolean,
                             required: true
+                        },
+                        {
+                            name: 'secoundaryextractmode',
+                            name_localizations: conv_en_to_en_US(command_name_doitwhensecondaryextractmodeisenabled_Locales),
+                            description: 'doItWhenSecondaryExtractModeIsEnabled',
+                            description_localizations: conv_en_to_en_US(settingsDoItWhenSecondaryExtractModeIsEnabledDescriptionLocalizations),
+                            type: ApplicationCommandOptionType.Boolean,
+                            required: false
                         }
                     ]
                 },
@@ -1169,6 +1289,90 @@ client.on('ready', () => {
                     ]
                 }
             ]
+        },
+        {
+            name: 'showsavetweet',
+            name_localizations: conv_en_to_en_US(command_name_showSaveTweet_Locales),
+            description: 'Shows save tweet.',
+            description_localizations: conv_en_to_en_US(showSaveTweetcommandDescriptionLocalizations),
+            options: [
+                {
+                    name: 'id',
+                    name_localizations: conv_en_to_en_US(command_name_id_Locales),
+                    description: 'string',
+                    type: ApplicationCommandOptionType.String,
+                    required: false
+                }
+            ]
+        },
+        {
+            name: 'savetweetquotaoverride',
+            name_localizations: conv_en_to_en_US(command_name_save_tweet_quota_override_Locales),
+            description: 'save tweet quota override',
+            description_localizations: conv_en_to_en_US(settingsSaveTweetQuotaOverrideDescriptionLocalizations),
+            options: [
+                {
+                    name: 'newquota',
+                    name_localizations: conv_en_to_en_US(command_name_quota_Locales),
+                    description: 'new quota',
+                    type: ApplicationCommandOptionType.Integer,
+                    required: true
+                },
+                {
+                    name: 'user',
+                    name_localizations: conv_en_to_en_US(command_name_user_Locales),
+                    description: 'user',
+                    description_localizations: conv_en_to_en_US(settingsDisableUserDescriptionLocalizations),
+                    type: ApplicationCommandOptionType.User,
+                    required: false
+                }
+            ]
+        },
+        {
+            name: 'deletesavetweet',
+            name_localizations: conv_en_to_en_US(command_name_delete_Locales),
+            description: 'delete save tweet.',
+            description_localizations: conv_en_to_en_US(settingsSaveTweetQuotaOverrideDescriptionLocalizations),
+            options: [
+                {
+                    name: 'id',
+                    name_localizations: conv_en_to_en_US(command_name_id_Locales),
+                    description: 'string',
+                    type: ApplicationCommandOptionType.String,
+                    required: true
+                }
+            ]
+        },
+        {
+            name: 'quotastats',
+            name_localizations: conv_en_to_en_US(quotastatsCommandNameLocales),
+            description: 'quota stats',
+            description_localizations: conv_en_to_en_US(settingsSaveTweetQuotaOverrideDescriptionLocalizations),
+            options: [
+                {
+                    name: 'user',
+                    name_localizations: conv_en_to_en_US(command_name_user_Locales),
+                    description: 'user',
+                    description_localizations: conv_en_to_en_US(settingsDisableUserDescriptionLocalizations),
+                    type: ApplicationCommandOptionType.User,
+                    required: false
+                }
+            ]
+        },
+        {
+            name: 'checkmyguildsettings',
+            name_localizations: conv_en_to_en_US(myGuildSettingsCommandNameLocales),
+            description: 'check my guild settings',
+            description_localizations: conv_en_to_en_US(settingsSaveTweetQuotaOverrideDescriptionLocalizations),
+            options: [
+                {
+                    name: 'guild',
+                    name_localizations: conv_en_to_en_US(command_name_user_Locales),
+                    description: 'guild',
+                    type: ApplicationCommandOptionType.String,
+                    required: false
+                }
+            ]
         }
     ]);
 });
@@ -1281,14 +1485,15 @@ function checkComponentIncludesDisabledButtonAndIfFindDeleteIt(components, guild
     return components;
 }
 
-async function sendTweetEmbed(message, url, quoted = false, parent = null) {
+async function sendTweetEmbed(message, url, quoted = false, parent = null, saved = false) {
     return new Promise((resolve, reject) => {
         const element = url;
         //replace twitter.com or x.com with api.vxtwitter.com
         var newUrl = element.replace(/twitter.com|x.com/g, 'api.vxtwitter.com');
-        if (newUrl.split("/").length > 6) {
+        if (newUrl.split("/").length > 6 && !newUrl.includes("twidata.sprink.cloud")) {
             newUrl = newUrl.split("/").slice(0, 6).join("/");
         }
+
         //fetch the api
         fetch(newUrl)
             .then(res => {
@@ -1314,6 +1519,7 @@ async function sendTweetEmbed(message, url, quoted = false, parent = null) {
                 let showMediaAsAttachmentsButton = null;
                 const deleteButton = new ButtonBuilder().setStyle(ButtonStyle.Danger).setLabel(getStringFromObject(deleteButtonLabelLocales, settings.defaultLanguage[message.guild.id] ?? "en")).setCustomId('delete');
                 const translateButton = new ButtonBuilder().setStyle(ButtonStyle.Primary).setLabel(getStringFromObject(translateButtonLabelLocales, settings.defaultLanguage[message.guild.id] ?? "en")).setCustomId('translate');
+                const savetweetButton = new ButtonBuilder().setStyle(ButtonStyle.Primary).setLabel(getStringFromObject(savetweetButtonLabelLocales, settings.defaultLanguage[message.guild.id] ?? "en")).setCustomId('savetweet');
                 let messageObject = {
                     allowedMentions: {
                         repliedUser: false
@@ -1348,25 +1554,26 @@ async function sendTweetEmbed(message, url, quoted = false, parent = null) {
                 }
                 content = [];
                 let embed = {}
-                if(settings.deletemessageifonlypostedtweetlink[message.guild.id] === undefined) settings.deletemessageifonlypostedtweetlink[message.guild.id] = false;
-                if(settings.passive_mode[message.guild.id] === undefined) settings.passive_mode[message.guild.id] = false;
-                if(settings.secondary_extract_mode[message.guild.id] === undefined) settings.secondary_extract_mode[message.guild.id] = false;
-                if(settings.legacy_mode[message.guild.id] === undefined) {
-                    if(message.guild.members.me.permissions.has(PermissionsBitField.Flags.ManageMessages)){
+                if (settings.deletemessageifonlypostedtweetlink[message.guild.id] === undefined) settings.deletemessageifonlypostedtweetlink[message.guild.id] = false;
+                if (settings.passive_mode[message.guild.id] === undefined) settings.passive_mode[message.guild.id] = false;
+                if (settings.secondary_extract_mode[message.guild.id] === undefined) settings.secondary_extract_mode[message.guild.id] = false;
+                if (settings.legacy_mode[message.guild.id] === undefined) {
+                    if (message.guild.members.me.permissions.has(PermissionsBitField.Flags.ManageMessages)) {
                         settings.legacy_mode[message.guild.id] = true;
-                    }else{
+                    } else {
                         settings.legacy_mode[message.guild.id] = false;
                     }
-                    
+
                 }
-                if (settings.legacy_mode[message.guild.id] === false && !quoted && (settings.deletemessageifonlypostedtweetlink[message.guild.id] === false || (settings.deletemessageifonlypostedtweetlink[message.guild.id] === true && message.content != url))) {
+
+                if (settings.legacy_mode[message.guild.id] === false && !quoted && (settings.deletemessageifonlypostedtweetlink[message.guild.id] === false || (settings.deletemessageifonlypostedtweetlink[message.guild.id] === true && message.content != url)) && !url.includes("twidata.sprink.cloud") && !url.includes("localhost:3088")) {
                     embed = {
                         //title: json.user_name,
                         url: json.tweetURL,
                         description: /*json.text + '\n\n[View on Twitter](' + json.tweetURL + ')\n\n*/':speech_balloon:' + json.replies + ' replies • :recycle:' + json.retweets + ' retweets • :heart:' + json.likes + ' likes',
                         color: 0x1DA1F2,
                         author: {
-                            name: 'request by ' + message.author.username + '(id:' + message.author.id + ')',
+                            name: 'request by ' + (message.author?.username ?? message.user.username) + '(id:' + (message.author?.id ?? message.user.id) + ')',
                         },
                         //footer: {
                         //    text: 'Posted by ' + json.user_name + ' (@' + json.user_screen_name + ')',
@@ -1374,7 +1581,7 @@ async function sendTweetEmbed(message, url, quoted = false, parent = null) {
                         //},
                         timestamp: new Date(json.date),
                     };
-                    if(settings.passive_mode[message.guild.id] === true){
+                    if (settings.passive_mode[message.guild.id] === true) {
                         delete embed.description
                     }
                 } else {
@@ -1384,7 +1591,7 @@ async function sendTweetEmbed(message, url, quoted = false, parent = null) {
                         description: json.text + '\n\n[View on Twitter](' + json.tweetURL + ')\n\n:speech_balloon:' + json.replies + ' replies • :recycle:' + json.retweets + ' retweets • :heart:' + json.likes + ' likes',
                         color: 0x1DA1F2,
                         author: {
-                            name: 'request by ' + message.author.username + '(id:' + message.author.id + ')',
+                            name: 'request by ' + (message.author?.username ?? message.user.username) + '(id:' + (message.author?.id ?? message.user.id) + ')',
                         },
                         footer: {
                             text: 'Posted by ' + json.user_name + ' (@' + json.user_screen_name + ')',
@@ -1392,6 +1599,10 @@ async function sendTweetEmbed(message, url, quoted = false, parent = null) {
                         },
                         timestamp: new Date(json.date),
                     };
+                }
+                if (url.includes("twidata.sprink.cloud") || url.includes("localhost:3088")) {
+                    embed.title = "<SAVED TWEET> " + embed.title;
+                    embed.color = 0x00FF00;
                 }
                 let videoflag = false;
                 if (json.mediaURLs?.length > 0) {
@@ -1401,7 +1612,7 @@ async function sendTweetEmbed(message, url, quoted = false, parent = null) {
                         }
                         attachments = json.mediaURLs
                         embeds.push(embed);
-                        
+
                         attachments.forEach(element => {
                             if (videoExtensions.some(ext => element.includes(ext))) {
                                 videoflag = true;
@@ -1410,8 +1621,8 @@ async function sendTweetEmbed(message, url, quoted = false, parent = null) {
                         if (settings.sendMediaAsAttachmentsAsDefault[message.guild.id] === true && !videoflag) {
                             showMediaAsAttachmentsButton = new ButtonBuilder().setStyle(ButtonStyle.Primary).setLabel(getStringFromObject(showAttachmentsAsEmbedsImagebuttonLocales, settings.defaultLanguage[message.guild.id])).setCustomId('showAttachmentsAsEmbedsImage');
                         }
-                        if(settings.secondary_extract_mode[message.guild.id] === true && !videoflag && json.mediaURLs.length == 1){
-                            if((json.qrtURL !== null && (settings.quote_repost_do_not_extract[message.guild.id] === undefined || settings.quote_repost_do_not_extract[message.guild.id] === false))) return await sendTweetEmbed(message, json.qrtURL, true, msg);
+                        if (settings.secondary_extract_mode[message.guild.id] === true && !videoflag && json.mediaURLs.length == 1) {
+                            if ((json.qrtURL !== null && (settings.quote_repost_do_not_extract[message.guild.id] === undefined || settings.quote_repost_do_not_extract[message.guild.id] === false))) return await sendTweetEmbed(message, json.qrtURL, true, msg);
                             return resolve();
                         }
                     } else {
@@ -1432,8 +1643,8 @@ async function sendTweetEmbed(message, url, quoted = false, parent = null) {
                                 })
                             } else {
                                 if ((settings.legacy_mode[message.guild.id] === false && !quoted && (settings.deletemessageifonlypostedtweetlink[message.guild.id] === false || (settings.deletemessageifonlypostedtweetlink[message.guild.id] === true && message.content != url)))) {
-                                    if((json.qrtURL !== null && (settings.quote_repost_do_not_extract[message.guild.id] === undefined || settings.quote_repost_do_not_extract[message.guild.id] === false))) return await sendTweetEmbed(message, json.qrtURL, true, msg);
-                                    showMediaAsAttachmentsButton = null 
+                                    if ((json.qrtURL !== null && (settings.quote_repost_do_not_extract[message.guild.id] === undefined || settings.quote_repost_do_not_extract[message.guild.id] === false))) return await sendTweetEmbed(message, json.qrtURL, true, msg);
+                                    showMediaAsAttachmentsButton = null
                                     return
                                 }
                                 embed.image = {
@@ -1442,20 +1653,21 @@ async function sendTweetEmbed(message, url, quoted = false, parent = null) {
                                 embeds.push(embed);
                             }
                         });
-                        if(settings.secondary_extract_mode[message.guild.id] === true && json.mediaURLs.length == 1 && !videoflag){
-                            if((json.qrtURL !== null && (settings.quote_repost_do_not_extract[message.guild.id] === undefined || settings.quote_repost_do_not_extract[message.guild.id] === false))) return await sendTweetEmbed(message, json.qrtURL, true, msg);
+                        if (settings.secondary_extract_mode[message.guild.id] === true && json.mediaURLs.length == 1 && !videoflag) {
+                            if ((json.qrtURL !== null && (settings.quote_repost_do_not_extract[message.guild.id] === undefined || settings.quote_repost_do_not_extract[message.guild.id] === false))) return await sendTweetEmbed(message, json.qrtURL, true, msg);
                             return resolve();
                         }
                     }
-                }else if(settings.secondary_extract_mode[message.guild.id] === true){
-                    if(json.qrtURL !== null && (settings.quote_repost_do_not_extract[message.guild.id] === undefined || settings.quote_repost_do_not_extract[message.guild.id] === false)) await sendTweetEmbed(message, json.qrtURL, true, msg);
+                } else if (settings.secondary_extract_mode[message.guild.id] === true) {
+                    if (json.qrtURL !== null && (settings.quote_repost_do_not_extract[message.guild.id] === undefined || settings.quote_repost_do_not_extract[message.guild.id] === false)) await sendTweetEmbed(message, json.qrtURL, true, msg);
                     return resolve();
                 }
                 if (embeds.length === 0) embeds.push(embed);
                 if (attachments.length > 0) messageObject.files = attachments;
                 if (showMediaAsAttachmentsButton !== null) messageObject.components = [{ type: ComponentType.ActionRow, components: [showMediaAsAttachmentsButton] }];
                 if (!messageObject.components) messageObject.components = [];
-                messageObject.components.push({ type: ComponentType.ActionRow, components: embeds[0].title ? [translateButton,deleteButton] : [deleteButton] });
+                messageObject.components.push({ type: ComponentType.ActionRow, components: embeds[0].title ? [translateButton, deleteButton] : [deleteButton] });
+                if (message.author?.id == 796972193287503913) messageObject.components.push({ type: ComponentType.ActionRow, components: [savetweetButton] });
                 messageObject.components = checkComponentIncludesDisabledButtonAndIfFindDeleteIt(messageObject.components, message.guildId);
                 messageObject.embeds = embeds;
                 if (quoted) messageObject.content = "Quoted tweet:"
@@ -1474,7 +1686,6 @@ async function sendTweetEmbed(message, url, quoted = false, parent = null) {
                         }
                     });
                 } else if (parent === null) {
-
                     msg = await message.channel.send(messageObject).catch(async err => {
                         if (messageObject.files !== undefined) {
                             await sendContentPromise(message, messageObject.files);
@@ -1496,13 +1707,18 @@ async function sendTweetEmbed(message, url, quoted = false, parent = null) {
                     });
                 }
                 if (settings.deletemessageifonlypostedtweetlink[message.guild.id] === true && message.content == url) {
-                    message.delete().catch(err => {
-                        message.channel.send(getStringFromObject(idonthavedeletemessagepermissionLocales, settings.defaultLanguage[message.guild.id])).then(msg => {
-                            setTimeout(() => {
-                                msg.delete();
-                            }, 3000);
+                    if (settings.deletemessageifonlypostedtweetlink_secoundaryextractmode[message.guild.id] === undefined) settings.deletemessageifonlypostedtweetlink_secoundaryextractmode[message.guild.id] = false;
+                    if (settings.deletemessageifonlypostedtweetlink_secoundaryextractmode[message.guild.id] === true && settings.secondary_extract_mode[message.guild.id] === true) {
+                        message.suppressEmbeds(true);
+                    } else {
+                        message.delete().catch(err => {
+                            message.channel.send(getStringFromObject(idonthavedeletemessagepermissionLocales, settings.defaultLanguage[message.guild.id])).then(msg => {
+                                setTimeout(() => {
+                                    msg.delete();
+                                }, 3000);
+                            });
                         });
-                    });
+                    }
                 }
                 if (json.qrtURL !== null && (settings.quote_repost_do_not_extract[message.guild.id] === undefined || settings.quote_repost_do_not_extract[message.guild.id] === false)) await sendTweetEmbed(message, json.qrtURL, true, msg);
                 processed++;
@@ -1683,6 +1899,10 @@ client.on(Events.InteractionCreate, async (interaction) => {
                     settings.alwaysreplyifpostedtweetlink[interaction.guildId] = false;
                     await interaction.followUp((setalwaysreplyifpostedtweetlinktolocales[interaction.locale] ?? setalwaysreplyifpostedtweetlinktolocales["en"]) + convertBoolToEnableDisable(false, interaction.locale));
                 }
+                if (interaction.options.getBoolean('secoundaryextractmode') !== null) {
+                    settings.deletemessageifonlypostedtweetlink_secoundaryextractmode[interaction.guild.id] = interaction.options.getBoolean('secoundaryextractmode');
+                    await interaction.followUp((setdoitwhensecoundaryextractmodeisenabledtolocales[interaction.locale] ?? setdoitwhensecoundaryextractmodeisenabledtolocales["en"]) + convertBoolToEnableDisable(interaction.options.getBoolean('secoundaryextractmode'), interaction.locale));
+                }
             } else if (interaction.options.getSubcommand() === 'alwaysreplyifpostedtweetlink') {
                 if (interaction.options.getBoolean('boolean') === null) return await interaction.reply(userMustSpecifyAnyWordLocales[interaction.locale] ?? userMustSpecifyAnyWordLocales["en"]);
                 const boolean = interaction.options.getBoolean('boolean');
@@ -1782,21 +2002,21 @@ client.on(Events.InteractionCreate, async (interaction) => {
                 settings.quote_repost_do_not_extract[interaction.guildId] = boolean;
                 await interaction.reply((setquoterepostdonotextracttolocales[interaction.locale] ?? setquoterepostdonotextracttolocales["en"]) + convertBoolToEnableDisable(boolean, interaction.locale));
             } else if (interaction.options.getSubcommand() === 'legacymode') {
-                if(settings.secondary_extract_mode[interaction.guildId] === true) return await interaction.reply("※セカンダリエクストラクトモードが有効になっているためこの設定は無効です。")
+                if (settings.secondary_extract_mode[interaction.guildId] === true) return await interaction.reply("※セカンダリエクストラクトモードが有効になっているためこの設定は無効です。")
                 if (interaction.options.getBoolean('boolean') === null) return await interaction.reply(userMustSpecifyAnyWordLocales[interaction.locale] ?? userMustSpecifyAnyWordLocales["en"]);
                 if (settings.legacy_mode[interaction.guildId] === undefined) settings.legacy_mode[interaction.guildId] = false;
                 const boolean = interaction.options.getBoolean('boolean');
                 settings.legacy_mode[interaction.guildId] = boolean;
                 await interaction.reply((setlegacymodetolocales[interaction.locale] ?? setlegacymodetolocales["en"]) + convertBoolToEnableDisable(boolean, interaction.locale));
-                if(!interaction.guild.members.me.permissions.has(PermissionsBitField.Flags.ManageMessages)) await interaction.followUp("※BOTにメッセージの管理権限を付与するとdiscord純正の埋め込みのみを削除して今まで通りの展開が行われます。\nこのBOTにメッセージの管理権限を付与することを検討してみてください。\n(使用感はdiscordがリンクの展開を修正する前と変わらなくなります。)")
-            } else if(interaction.options.getSubcommand() === 'passivemode'){
+                if (!interaction.guild.members.me.permissions.has(PermissionsBitField.Flags.ManageMessages)) await interaction.followUp("※BOTにメッセージの管理権限を付与するとdiscord純正の埋め込みのみを削除して今まで通りの展開が行われます。\nこのBOTにメッセージの管理権限を付与することを検討してみてください。\n(使用感はdiscordがリンクの展開を修正する前と変わらなくなります。)")
+            } else if (interaction.options.getSubcommand() === 'passivemode') {
                 if (interaction.options.getBoolean('boolean') === null) return await interaction.reply(userMustSpecifyAnyWordLocales[interaction.locale] ?? userMustSpecifyAnyWordLocales["en"]);
                 if (settings.passive_mode[interaction.guildId] === undefined) settings.passive_mode[interaction.guildId] = false;
                 const boolean = interaction.options.getBoolean('boolean');
                 settings.passive_mode[interaction.guildId] = boolean;
                 await interaction.reply((setpassivemodetolocales[interaction.locale] ?? setpassivemodetolocales["en"]) + convertBoolToEnableDisable(boolean, interaction.locale));
-            } else if(interaction.options.getSubcommand() === 'secondaryextractmode'){
-                if(settings.legacy_mode[interaction.guildId] === true) return await interaction.reply("※レガシーモードが有効になっているためこの設定は無効です。")
+            } else if (interaction.options.getSubcommand() === 'secondaryextractmode') {
+                if (settings.legacy_mode[interaction.guildId] === true) return await interaction.reply("※レガシーモードが有効になっているためこの設定は無効です。")
                 if (interaction.options.getBoolean('boolean') === null) return await interaction.reply(userMustSpecifyAnyWordLocales[interaction.locale] ?? userMustSpecifyAnyWordLocales["en"]);
                 if (settings.secondary_extract_mode[interaction.guildId] === undefined) settings.secondary_extract_mode[interaction.guildId] = false;
                 const boolean = interaction.options.getBoolean('boolean');
@@ -1858,14 +2078,242 @@ client.on(Events.InteractionCreate, async (interaction) => {
                 await interaction.reply(userDonthavePermissionLocales[interaction.locale] ?? userDonthavePermissionLocales["en"]);
             } else if (interaction.options.getSubcommand() === 'passivemode') {
                 await interaction.reply(userDonthavePermissionLocales[interaction.locale] ?? userDonthavePermissionLocales["en"]);
-            } else if(interaction.options.getSubcommand() === 'secondaryextractmode'){
+            } else if (interaction.options.getSubcommand() === 'secondaryextractmode') {
                 await interaction.reply(userDonthavePermissionLocales[interaction.locale] ?? userDonthavePermissionLocales["en"]);
             } else {
                 return await interaction.reply(userMustSpecifyAnyWordLocales[interaction.locale] ?? userMustSpecifyAnyWordLocales["en"]);
             }
         }
         fs.writeFileSync('./settings.json', JSON.stringify(settings, null, 4));
+    } else if (interaction.commandName === 'showsavetweet') {
+        //saves/{userid}があるか確認する
+        const userid = interaction.user.id;
+        if (!fs.existsSync('./saves/' + userid)) return await interaction.reply(userDonthaveSavedTweetLocales[interaction.locale] ?? userDonthaveSavedTweetLocales["en"]);
+        const dirs = fs.readdirSync('./saves/' + userid);
+        if (dirs.length === 0) return await interaction.reply(userDonthaveSavedTweetLocales[interaction.locale] ?? userDonthaveSavedTweetLocales["en"]);
+        //options: idが指定されているか確認する。設定されているならそのツイートを表示する。設定されていないなら一覧を表示する。
+        if (interaction.options.getString('id') === null) {
+            let content = '';
+            dirs.forEach(element => {
+                //./saves/{userid}/{element}/data.jsonを読み込み、textの先頭10文字を取得する
+                const data = fs.readFileSync('./saves/' + userid + '/' + element + '/data.json', 'utf-8');
+                const json = JSON.parse(data);
+                content += json.text.substring(0, 9) + '... Posted By ' + json.user_name + '(tweetid:' + element + ')\n';
+            });
+            await interaction.reply({
+                embeds: [
+                    {
+                        title: 'Saved tweets',
+                        description: content,
+                        color: 0x1DA1F2
+                    }
+                ]
+            });
+        } else {
+            await interaction.deferReply({ ephemeral: true });
+            await interaction.editReply({ content: '処理中です...' });
+            const id = interaction.options.getString('id');
+            if (!fs.existsSync('./saves/' + userid + '/' + id)) return await interaction.reply(userDonthaveSavedTweetLocales[interaction.locale] ?? userDonthaveSavedTweetLocales["en"]);
+            //await sendTweetEmbed(interaction, "https://twidata.sprink.cloud/data/"+userid+"/"+id+"/data.json", false);
+            await sendTweetEmbed(interaction, "http://localhost:3088/data/" + userid + "/" + id + "/data.json", false);
+            await interaction.editReply({ content: finishActionLocales[interaction.locale] ?? finishActionLocales["en"], ephemeral: true });
+        }
+    } else if (interaction.commandName === 'deletesavetweet') {
+        //saves/{userid}があるか確認する
+        const userid = interaction.user.id;
+        if (!fs.existsSync('./saves/' + userid)) return await interaction.reply(userDonthaveSavedTweetLocales[interaction.locale] ?? userDonthaveSavedTweetLocales["en"]);
+        const dirs = fs.readdirSync('./saves/' + userid);
+        if (dirs.length === 0) return await interaction.reply(userDonthaveSavedTweetLocales[interaction.locale] ?? userDonthaveSavedTweetLocales["en"]);
+        //options: idが指定されているか確認する。設定されているならそのツイートを削除する。設定されていないなら一覧を表示する。
+        if (interaction.options.getString('id') === null) {
+            let content = '';
+            dirs.forEach(element => {
+                content += element + '\n';
+            });
+            await interaction.reply({
+                embeds: [
+                    {
+                        title: 'Saved tweets',
+                        description: content,
+                        color: 0x1DA1F2
+                    }
+                ]
+            });
+        } else {
+            const id = interaction.options.getString('id');
+            if (!fs.existsSync('./saves/' + userid + '/' + id)) return await interaction.reply(userDonthaveSavedTweetLocales[interaction.locale] ?? userDonthaveSavedTweetLocales["en"]);
+            fs.rmdirSync('./saves/' + userid + '/' + id, { recursive: true });
+            await interaction.reply(deletedSavedTweetLocales[interaction.locale] ?? deletedSavedTweetLocales["en"]);
+        }
+    } else if (interaction.commandName === 'savetweetquotaoverride') {
+        if (interaction.user.id === '796972193287503913') {
+            if (interaction.options.getInteger('newquota') === null) return await interaction.reply(userMustSpecifyAnyWordLocales[interaction.locale] ?? userMustSpecifyAnyWordLocales["en"]);
+            const quota = interaction.options.getInteger('newquota');
+            let user = interaction.options.getUser('user');
+            if (user === null) user = interaction.user;
+            const userid = user.id;
+            settings.save_tweet_quota_override[userid] = quota;
+            await interaction.reply((setsavetweetquotaoverridetolocales[interaction.locale] ?? setsavetweetquotaoverridetolocales["en"]) + quota.toString());
+        } else {
+            await interaction.reply(userDonthavePermissionLocales[interaction.locale] ?? userDonthavePermissionLocales["en"]);
+        }
+        fs.writeFileSync('./settings.json', JSON.stringify(settings, null, 4));
+    } else if (interaction.commandName === 'quotastats') {
+        let user = interaction.options.getUser('user');
+        if (user === null) user = interaction.user;
+        const userid = user.id;
+        let quota = 100 * 1024 * 1024;
+        if (settings.save_tweet_quota_override[userid] !== undefined) quota = settings.save_tweet_quota_override[userid];
+        const dirs = fs.readdirSync('./saves/' + userid);
+        let used = 0;
+        for (let i = 0; i < dirs.length; i++) {
+            const element = dirs[i];
+            const dir2 = fs.readdirSync('./saves/' + userid + '/' + element);
+            for (let j = 0; j < dir2.length; j++) {
+                const element2 = dir2[j];
+                const stats = fs.statSync('./saves/' + userid + '/' + element + '/' + element2);
+                used += stats.size;
+            }
+        }
+        used = used / 1024 / 1024;
+        quota = quota / 1024 / 1024;
+        if (used >= 1024) used = (used / 1024).toFixed(2) + 'GB';
+        else used = used.toFixed(2) + 'MB';
+        if (quota >= 1024) quota = (quota / 1024).toFixed(2) + 'GB';
+        else quota = quota.toFixed(2) + 'MB';
+        await interaction.reply({
+            embeds: [
+                {
+                    title: 'Quota stats',
+                    color: 0x1DA1F2,
+                    fields: [
+                        {
+                            name: 'Used',
+                            value: used.toString()
+                        },
+                        {
+                            name: 'Quota',
+                            value: quota.toString()
+                        }
+                    ]
+                }
+            ]
+        });
+    } else if (interaction.commandName === 'checkmyguildsettings') {
+        const embeds = [];
+        if (interaction.options.getString('guildid') !== null && interaction.user.id !== '796972193287503913') return await interaction.reply(userDonthavePermissionLocales[interaction.locale] ?? userDonthavePermissionLocales["en"]);
+        let guildid = interaction.guildId;
+        if (interaction.options.getString('guildid') !== null) guildid = interaction.options.getString('guildid');
+        let embed = {};
+        embed.title = 'ギルド設定';
+        embed.color = 0x1DA1F2;
+        embed.fields = [];
+        //無効化されているチャンネル
+        if (settings.disable.channel[guildid] !== undefined) {
+            let value = '';
+            settings.disable.channel[guildid].forEach(element => {
+                value += '<#' + element + '>\n';
+            });
+            embed.fields.push({
+                name: '無効化されているチャンネル',
+                value: value
+            });
+        }
+        //無効化されているロール    
+        if (settings.disable.role[guildid] !== undefined) {
+            let value = '';
+            settings.disable.role[guildid].forEach(element => {
+                value += '<@&' + element + '>\n';
+            });
+            embed.fields.push({
+                name: '無効化されているロール',
+                value: value
+            });
+        }
+        //動作モード
+        if (settings.secondary_extract_mode[guildid] === true) {
+            embed.fields.push({
+                name: '動作モード',
+                value: 'セカンダリ展開モード(1つ以上の動画か画像が2枚以上含まれるときにのみ動作)'
+            });
+        } else if (settings.legacy_mode[guildid] === true) {
+            embed.fields.push({
+                name: '動作モード',
+                value: 'レガシーモード(適切な権限設定がされていればdiscord純正の埋め込みが削除され、今まで通りの展開が行われる)'
+            });
+        } else {
+            embed.fields.push({
+                name: '動作モード',
+                value: '通常モード(常にリプライやりポスト、ライク数を表示し、複数枚の画像や動画も展開する)'
+            });
+        }
+        //ツイートの展開
+        if (settings.extract_bot_message[guildid] === true) {
+            embed.fields.push({
+                name: 'ツイートの展開',
+                value: 'BOTの投稿も展開する'
+            });
+        } else {
+            embed.fields.push({
+                name: 'ツイートの展開',
+                value: 'BOTの投稿は展開しない'
+            });
+        }
+        //引用リツイートの展開
+        if (settings.quote_repost_do_not_extract[guildid] === true) {
+            embed.fields.push({
+                name: '引用リツイートの展開',
+                value: '引用リツイートは展開しない'
+            });
+        } else {
+            embed.fields.push({
+                name: '引用リツイートの展開',
+                value: '引用リツイートも展開する'
+            });
+        }
+        //ボタンの表示
+        if (settings.button_invisible[guildid] !== undefined) {
+            let value = '';
+            if (settings.button_invisible[guildid].showMediaAsAttachments === true) value += '画像を添付ファイルとして表示するボタン\n';
+            if (settings.button_invisible[guildid].showAttachmentsAsEmbedsImage === true) value += '埋め込みとして表示するボタン\n';
+            if (settings.button_invisible[guildid].translate === true) value += '翻訳ボタン\n';
+            if (settings.button_invisible[guildid].delete === true) value += '削除ボタン\n';
+            if (value === '') value = 'なし';
+            embed.fields.push({
+                name: 'ボタンの表示',
+                value: value
+            });
+        }
+        //ボタンの無効化
+        if (settings.button_disabled[guildid] !== undefined) {
+            let value = '';
+            if (settings.button_disabled[guildid].user.length !== 0) {
+                value += 'ユーザー\n';
+                settings.button_disabled[guildid].user.forEach(element => {
+                    value += '<@' + element + '>\n';
+                });
+            }
+            if (settings.button_disabled[guildid].channel.length !== 0) {
+                value += 'チャンネル\n';
+                settings.button_disabled[guildid].channel.forEach(element => {
+                    value += '<#' + element + '>\n';
+                });
+            }
+            if (settings.button_disabled[guildid].role.length !== 0) {
+                value += 'ロール\n';
+                settings.button_disabled[guildid].role.forEach(element => {
+                    value += '<@&' + element + '>\n';
+                });
+            }
+            if (value === '') value = 'なし';
+            embed.fields.push({
+                name: 'ボタンの無効化',
+                value: value
+            });
+        }
+        interaction.reply({ embeds: [embed] });
     }
+
 });
 
 client.on(Events.InteractionCreate, async (interaction) => {
@@ -1909,7 +2357,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
         case 'showMediaAsAttachments':
             const messageObject = {};
             messageObject.components = [{ type: ComponentType.ActionRow, components: [showAttachmentsAsMediaButton] }];
-            messageObject.components.push({ type: ComponentType.ActionRow, components: interaction.message.embeds[0].title ? [translateButton,deleteButton] : [deleteButton] });
+            messageObject.components.push({ type: ComponentType.ActionRow, components: interaction.message.embeds[0].title ? [translateButton, deleteButton] : [deleteButton] });
             messageObject.files = [];
             messageObject.embeds = [];
             interaction.message.embeds.forEach(element => {
@@ -1935,7 +2383,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
             const attachments = interaction.message.attachments.map(attachment => attachment.url);
             if (attachments.length > 4) return interaction.reply('You can\'t show more than 4 attachments as embeds image.');
             messageObject2.components = [{ type: ComponentType.ActionRow, components: [showMediaAsAttachmentsButton] }];
-            messageObject2.components.push({ type: ComponentType.ActionRow, components: interaction.message.embeds[0].title ? [translateButton,deleteButton] : [deleteButton] });
+            messageObject2.components.push({ type: ComponentType.ActionRow, components: interaction.message.embeds[0].title ? [translateButton, deleteButton] : [deleteButton] });
             messageObject2.components = checkComponentIncludesDisabledButtonAndIfFindDeleteIt(messageObject2.components, interaction.guildId);
             messageObject2.embeds = [];
             attachments.forEach(element => {
@@ -1947,13 +2395,13 @@ client.on(Events.InteractionCreate, async (interaction) => {
                 if (messageObject2.embeds.length === 0) {
                     let embed = {};
                     embed.url = interaction.message.embeds[0].url;
-                    if(interaction.message.embeds[0].title !== undefined) embed.title = interaction.message.embeds[0].title;
+                    if (interaction.message.embeds[0].title !== undefined) embed.title = interaction.message.embeds[0].title;
                     embed.description = interaction.message.embeds[0].description;
                     embed.color = interaction.message.embeds[0].color;
                     embed.author = interaction.message.embeds[0].author;
-                    if(interaction.message.embeds[0].footer !== undefined)embed.footer = interaction.message.embeds[0].footer;
+                    if (interaction.message.embeds[0].footer !== undefined) embed.footer = interaction.message.embeds[0].footer;
                     embed.timestamp = interaction.message.embeds[0].timestamp;
-                    if(interaction.message.embeds[0].fields !== undefined)embed.fields = interaction.message.embeds[0].fields;
+                    if (interaction.message.embeds[0].fields !== undefined) embed.fields = interaction.message.embeds[0].fields;
                     embed.image = {
                         url: element
                     };
@@ -2039,6 +2487,86 @@ client.on(Events.InteractionCreate, async (interaction) => {
                 messageObject3.components = interaction.message.components;
                 await interaction.message.edit(messageObject3);
             }
+        case 'savetweet':
+            //save tweet data to local
+            //store tweet data to ./saves/{userid}/{tweetid}/data.json
+            //store tweet media to ./saves/{userid}/{tweetid}/{mediaid}.{extension}
+            //if ./saves/{userid} folder is over 100MB, tell user to delete some tweet data
+            if (!fs.existsSync('./saves')) fs.mkdirSync('./saves');
+            if (!fs.existsSync('./saves/' + interaction.user.id)) fs.mkdirSync('./saves/' + interaction.user.id);
+
+            //tweet url may has query string, so remove it
+            let tweetUrl = interaction.message.embeds[0].url.split('?')[0];
+            tweetUrl = tweetUrl.replace('twitter.com', 'api.vxtwitter.com').replace('x.com', 'api.vxtwitter.com')
+            const tweetId = tweetUrl.split('/').pop();
+            if (!fs.existsSync('./saves/' + interaction.user.id + '/' + tweetId)) fs.mkdirSync('./saves/' + interaction.user.id + '/' + tweetId);
+            const fetchdata = await fetch(tweetUrl);
+            let tweetData = await fetchdata.json();
+            tweetData = tweetData;
+
+            for (let i = 0; i < tweetData.mediaURLs.length; i++) {
+                let element = tweetData.mediaURLs[i];
+                //remove query string
+                element = element.split('?')[0];
+                //download tweet media
+                await new Promise(resolve => {
+                    element = element.split('?')[0];
+                    const downloadStream = https.get(element, (res) => {
+                        const path = './saves/' + interaction.user.id + '/' + tweetId + '/' + element.split('/').pop();
+                        const filePath = fs.createWriteStream(path);
+                        res.pipe(filePath);
+                        filePath.on('finish', () => {
+                            filePath.close();
+                            resolve();
+                        });
+                    });
+                });
+            }
+            //download tweet profile image
+            await new Promise(resolve => {
+                //remove query string
+                tweetData.user_profile_image_url = tweetData.user_profile_image_url.split('?')[0];
+                const downloadStream = https.get(tweetData.user_profile_image_url, (res) => {
+                    const path = './saves/' + interaction.user.id + '/' + tweetId + '/' + tweetData.user_profile_image_url.split('/').pop();
+                    const filePath = fs.createWriteStream(path);
+                    res.pipe(filePath);
+                    filePath.on('finish', () => {
+                        filePath.close();
+                        resolve();
+                    });
+                });
+            });
+            tweetData.user_profile_image_url = "https://twidata.sprink.cloud/data/" + interaction.user.id + "/" + tweetId + "/" + tweetData.user_profile_image_url.split('/').pop();
+            if (tweetData.mediaURLs.length !== 0) {
+                for (let i = 0; i < tweetData.mediaURLs.length; i++) {
+                    let element = tweetData.mediaURLs[i];
+                    tweetData.mediaURLs[i] = "https://twidata.sprink.cloud/data/" + interaction.user.id + "/" + tweetId + "/" + element.split('/').pop();
+                }
+            }
+            fs.writeFileSync('./saves/' + interaction.user.id + '/' + tweetId + '/data.json', JSON.stringify(tweetData, null, 4));
+
+            //check if ./saves/{userid} folder is over 20MB
+            let totalSize = 0;
+            const dirs = fs.readdirSync('./saves/' + interaction.user.id);
+            dirs.forEach(element => {
+                const dir = fs.readdirSync('./saves/' + interaction.user.id + '/' + element);
+                dir.forEach(element2 => {
+                    totalSize += fs.statSync('./saves/' + interaction.user.id + '/' + element + '/' + element2).size;
+                });
+            });
+            //1MB
+            if (totalSize > (settings.save_tweet_quota_override[interaction.user.id] ?? 20 * 1024 * 1024)) {
+                //delete tweet data
+                fs.rmSync('./saves/' + interaction.user.id + '/' + tweetId, { recursive: true });
+                await interaction.editReply({ content: "あなたが保存したツイートのデータ量が許可された保存容量を超えています。新しくツイートを保存する前に既存のものを削除してください", ephemeral: true });
+                setTimeout(() => {
+                    interaction.deleteReply();
+                }, 3000);
+                return;
+            }
+
+            await interaction.editReply({ content: finishActionLocales[interaction.locale] ?? finishActionLocales["en"], ephemeral: true });
+
     }
 });
 
