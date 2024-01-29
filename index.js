@@ -2116,6 +2116,8 @@ client.on(Events.InteractionCreate, async (interaction) => {
             });
         } else {
             await interaction.deferReply({ ephemeral: true });
+            //./saves/{userid}/{id}があるか確認する
+            if (!fs.existsSync('./saves/' + userid + '/' + interaction.options.getString('id'))) return await interaction.editReply(userDonthaveSavedTweetLocales[interaction.locale] ?? userDonthaveSavedTweetLocales["en"]);
             await interaction.editReply({ content: '処理中です...' });
             const id = interaction.options.getString('id');
             if (!fs.existsSync('./saves/' + userid + '/' + id)) return await interaction.reply(userDonthaveSavedTweetLocales[interaction.locale] ?? userDonthaveSavedTweetLocales["en"]);
