@@ -1667,7 +1667,7 @@ async function sendTweetEmbed(message, url, quoted = false, parent = null, saved
                 if (showMediaAsAttachmentsButton !== null) messageObject.components = [{ type: ComponentType.ActionRow, components: [showMediaAsAttachmentsButton] }];
                 if (!messageObject.components) messageObject.components = [];
                 messageObject.components.push({ type: ComponentType.ActionRow, components: embeds[0].title ? [translateButton, deleteButton] : [deleteButton] });
-                if (message.author?.id == 796972193287503913) messageObject.components.push({ type: ComponentType.ActionRow, components: [savetweetButton] });
+                /*if (message.author?.id == 796972193287503913) */messageObject.components.push({ type: ComponentType.ActionRow, components: [savetweetButton] });
                 messageObject.components = checkComponentIncludesDisabledButtonAndIfFindDeleteIt(messageObject.components, message.guildId);
                 messageObject.embeds = embeds;
                 if (quoted) messageObject.content = "Quoted tweet:"
