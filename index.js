@@ -2114,8 +2114,8 @@ client.on(Events.InteractionCreate, async (interaction) => {
             await interaction.editReply({ content: '処理中です...' });
             const id = interaction.options.getString('id');
             if (!fs.existsSync('./saves/' + userid + '/' + id)) return await interaction.reply(userDonthaveSavedTweetLocales[interaction.locale] ?? userDonthaveSavedTweetLocales["en"]);
-            //await sendTweetEmbed(interaction, "https://twidata.sprink.cloud/data/"+userid+"/"+id+"/data.json", false);
-            await sendTweetEmbed(interaction, "http://localhost:3088/data/" + userid + "/" + id + "/data.json", false);
+            await sendTweetEmbed(interaction, "https://twidata.sprink.cloud/data/"+userid+"/"+id+"/data.json", false);
+            //await sendTweetEmbed(interaction, "http://localhost:3088/data/" + userid + "/" + id + "/data.json", false);
             await interaction.editReply({ content: finishActionLocales[interaction.locale] ?? finishActionLocales["en"], ephemeral: true });
         }
     } else if (interaction.commandName === 'deletesavetweet') {
