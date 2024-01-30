@@ -1621,7 +1621,7 @@ async function sendTweetEmbed(message, url, quoted = false, parent = null, saved
                         if (settings.sendMediaAsAttachmentsAsDefault[message.guild.id] === true && !videoflag) {
                             showMediaAsAttachmentsButton = new ButtonBuilder().setStyle(ButtonStyle.Primary).setLabel(getStringFromObject(showAttachmentsAsEmbedsImagebuttonLocales, settings.defaultLanguage[message.guild.id])).setCustomId('showAttachmentsAsEmbedsImage');
                         }
-                        if (settings.secondary_extract_mode[message.guild.id] === true && !videoflag && json.mediaURLs.length == 1) {
+                        if (settings.secondary_extract_mode[message.guild.id] === true && !videoflag && json.mediaURLs.length == 1 && !url.includes("twidata.sprink.cloud") && !url.includes("localhost:3088")) {
                             if ((json.qrtURL !== null && (settings.quote_repost_do_not_extract[message.guild.id] === undefined || settings.quote_repost_do_not_extract[message.guild.id] === false))) return await sendTweetEmbed(message, json.qrtURL, true, message);
                             return resolve();
                         }
@@ -1642,7 +1642,7 @@ async function sendTweetEmbed(message, url, quoted = false, parent = null, saved
                                     }
                                 })
                             } else {
-                                if ((settings.legacy_mode[message.guild.id] === false && !quoted && (settings.deletemessageifonlypostedtweetlink[message.guild.id] === false || (settings.deletemessageifonlypostedtweetlink[message.guild.id] === true && message.content != url)))) {
+                                if ((settings.legacy_mode[message.guild.id] === false && !quoted && (settings.deletemessageifonlypostedtweetlink[message.guild.id] === false || (settings.deletemessageifonlypostedtweetlink[message.guild.id] === true && message.content != url)) && !url.includes("twidata.sprink.cloud") && !url.includes("localhost:3088"))) {
                                     if ((json.qrtURL !== null && (settings.quote_repost_do_not_extract[message.guild.id] === undefined || settings.quote_repost_do_not_extract[message.guild.id] === false))) return await sendTweetEmbed(message, json.qrtURL, true, message);
                                     showMediaAsAttachmentsButton = null
                                     return
@@ -1653,12 +1653,12 @@ async function sendTweetEmbed(message, url, quoted = false, parent = null, saved
                                 embeds.push(embed);
                             }
                         });
-                        if (settings.secondary_extract_mode[message.guild.id] === true && json.mediaURLs.length == 1 && !videoflag) {
+                        if (settings.secondary_extract_mode[message.guild.id] === true && json.mediaURLs.length == 1 && !videoflag && !url.includes("twidata.sprink.cloud") && !url.includes("localhost:3088")) {
                             if ((json.qrtURL !== null && (settings.quote_repost_do_not_extract[message.guild.id] === undefined || settings.quote_repost_do_not_extract[message.guild.id] === false))) return await sendTweetEmbed(message, json.qrtURL, true, message);
                             return resolve();
                         }
                     }
-                } else if (settings.secondary_extract_mode[message.guild.id] === true) {
+                } else if (settings.secondary_extract_mode[message.guild.id] === true && !url.includes("twidata.sprink.cloud") && !url.includes("localhost:3088")) {
                     if (json.qrtURL !== null && (settings.quote_repost_do_not_extract[message.guild.id] === undefined || settings.quote_repost_do_not_extract[message.guild.id] === false)) await sendTweetEmbed(message, json.qrtURL, true, msg);
                     return resolve();
                 }
