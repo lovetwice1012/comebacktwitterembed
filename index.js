@@ -839,6 +839,11 @@ const showSaveTweetButtonLabelLocales = {
     en: 'Show saved tweet'
 }
 
+const setsavetweetbuttonLocales = {
+    ja: '保存したツイートを表示ボタンを設定しました。 :',
+    en: 'Set showSaveTweet button to '
+}
+
 function conv_en_to_en_US(obj) {
     if (obj === undefined) return undefined;
     obj = [obj]
