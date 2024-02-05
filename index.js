@@ -1461,13 +1461,14 @@ async function sendContentPromise(message, content) {
 
 function checkComponentIncludesDisabledButtonAndIfFindDeleteIt(components, guildId, setting = null) {
     if (setting === null) setting = settings;
-    if (setting.button_invisible[guildId] === undefined || (setting.button_invisible[guildId].showMediaAsAttachments === false && setting.button_invisible[guildId].showAttachmentsAsEmbedsImage === false && setting.button_invisible[guildId].translate === false && setting.button_invisible[guildId].delete === false)) return components;
+    if (setting.button_invisible[guildId] === undefined || (setting.button_invisible[guildId].showMediaAsAttachments === false && setting.button_invisible[guildId].showAttachmentsAsEmbedsImage === false && setting.button_invisible[guildId].translate === false && setting.button_invisible[guildId].delete === false && setting.button_invisible[guildId].savetweet === false)) return components;
     for (let i = 0; i < components.length; i++) {
         const element = components[i];
         if (element.components === undefined) continue;
         if (element.components.length === 0) continue;
         for (let j = 0; j < element.components.length; j++) {
             const element2 = element.components[j].data;
+            console.log(element2.custom_id);
             if (element2.custom_id === undefined) continue;
             if (element2.custom_id === 'showMediaAsAttachments' && setting.button_invisible[guildId].showMediaAsAttachments === true) {
                 element.components.splice(j, 1);
