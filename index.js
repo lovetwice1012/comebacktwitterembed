@@ -834,6 +834,11 @@ const setdoitwhensecoundaryextractmodeisenabledtolocales = {
     en: 'Set doitwhensecondaryextractmodeisenabled to '
 }
 
+const showSaveTweetButtonLabelLocales = {
+    ja: '保存したツイートを表示',
+    en: 'Show saved tweet'
+}
+
 function conv_en_to_en_US(obj) {
     if (obj === undefined) return undefined;
     obj = [obj]
@@ -1164,6 +1169,13 @@ client.on('ready', () => {
                                     name_localizations: conv_en_to_en_US(command_name_delete_Locales),
                                     description: 'delete',
                                     description_localizations: conv_en_to_en_US(deleteButtonLabelLocales),
+                                    type: ApplicationCommandOptionType.Boolean,
+                                },
+                                {
+                                    name: 'savetweet',
+                                    name_localizations: conv_en_to_en_US(command_name_showSaveTweetButtonLabelLocales),
+                                    description: 'showSaveTweet',
+                                    description_localizations: conv_en_to_en_US(showSaveTweetButtonLabelLocales),
                                     type: ApplicationCommandOptionType.Boolean,
                                 },
                                 {
@@ -1920,6 +1932,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
             } else if (interaction.options.getSubcommandGroup() === 'button') {
                 if (interaction.options.getSubcommand() === 'invisible') {
                     if (settings.button_invisible[interaction.guildId] === undefined) settings.button_invisible[interaction.guildId] = button_invisible_template;
+                    if (settings.button_invisible[interaction.guildId].savetweet === undefined) settings.button_invisible[interaction.guildId].savetweet = false;
                     //options: showMediaAsAttachments, showAttachmentsAsEmbedsImage, translate, delete, all;  all boolean
                     if (interaction.options.getBoolean('showmediaasattachments') === null && interaction.options.getBoolean('showattachmentsasembedsimage') === null && interaction.options.getBoolean('translate') === null && interaction.options.getBoolean('delete') === null && interaction.options.getBoolean('all') === null) {
                         return await interaction.reply(userMustSpecifyAnyWordLocales[interaction.locale] ?? userMustSpecifyAnyWordLocales["en"]);
@@ -1930,12 +1943,14 @@ client.on(Events.InteractionCreate, async (interaction) => {
                             settings.button_invisible[interaction.guildId].showAttachmentsAsEmbedsImage = true;
                             settings.button_invisible[interaction.guildId].translate = true;
                             settings.button_invisible[interaction.guildId].delete = true;
+                            settings.button_invisible[interaction.guildId].savetweet = true;
                             await interaction.reply(addedAllButtonLocales[interaction.locale] ?? addedAllButtonLocales["en"]);
                         } else {
                             settings.button_invisible[interaction.guildId].showMediaAsAttachments = false;
                             settings.button_invisible[interaction.guildId].showAttachmentsAsEmbedsImage = false;
                             settings.button_invisible[interaction.guildId].translate = false;
                             settings.button_invisible[interaction.guildId].delete = false;
+                            settings.button_invisible[interaction.guildId].savetweet = false;
                             await interaction.reply(removedAllButtonLocales[interaction.locale] ?? removedAllButtonLocales["en"]);
                         }
                     } else {
@@ -1954,6 +1969,10 @@ client.on(Events.InteractionCreate, async (interaction) => {
                         if (interaction.options.getBoolean('delete') !== null) {
                             settings.button_invisible[interaction.guildId].delete = interaction.options.getBoolean('delete');
                             await interaction.reply((setdeletebuttonLocales[interaction.locale] ?? setdeletebuttonLocales["en"]) + convertBoolToEnableDisable(!interaction.options.getBoolean('delete'), interaction.locale));
+                        }
+                        if (interaction.options.getBoolean('savetweet') !== null) {
+                            settings.button_invisible[interaction.guildId].savetweet = interaction.options.getBoolean('savetweet');
+                            await interaction.reply((setsavetweetbuttonLocales[interaction.locale] ?? setsavetweetbuttonLocales["en"]) + convertBoolToEnableDisable(!interaction.options.getBoolean('savetweet'), interaction.locale));
                         }
                     }
                 } else if (interaction.options.getSubcommand() === 'disabled') {
