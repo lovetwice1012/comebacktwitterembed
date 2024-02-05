@@ -1173,7 +1173,7 @@ client.on('ready', () => {
                                 },
                                 {
                                     name: 'savetweet',
-                                    name_localizations: conv_en_to_en_US(command_name_showSaveTweetButtonLabelLocales),
+                                    name_localizations: conv_en_to_en_US(savetweetButtonLabelLocales),
                                     description: 'showSaveTweet',
                                     description_localizations: conv_en_to_en_US(showSaveTweetButtonLabelLocales),
                                     type: ApplicationCommandOptionType.Boolean,
