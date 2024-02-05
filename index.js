@@ -1484,6 +1484,10 @@ function checkComponentIncludesDisabledButtonAndIfFindDeleteIt(components, guild
                 j--;
 
             }
+            if (element2.custom_id === 'savetweet' && setting.button_invisible[guildId].savetweet === true) {
+                element.components.splice(j, 1);
+                j--;
+            }
         }
     }
     for (let i = 0; i < components.length; i++) {
