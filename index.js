@@ -1772,7 +1772,7 @@ client.on(Events.MessageCreate, async (message) => {
         if (url === null) return;
         if (settings.disable.user.includes(message.author.id)) return;
         if (settings.disable.channel.includes(message.channel.id)) return;
-        if (settings.disable.role[message.guild.id] !== undefined && ifUserHasRole(message.member, settings.disable.role[message.guild.id])) return;
+        if (!message.webhookId && (settings.disable.role[message.guild.id] !== undefined && ifUserHasRole(message.member, settings.disable.role[message.guild.id]))) return;
         for (let i = 0; i < url.length; i++) {
             await sendTweetEmbed(message, url[i]);
         };
