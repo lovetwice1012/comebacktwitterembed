@@ -736,7 +736,7 @@ const setsecondaryextractmodetolocales = {
 
 const savetweetButtonLabelLocales = {
     ja: 'ツイートを保存',
-    en: 'Save tweet'
+    en: 'savetweet'
 }
 
 const command_name_showSaveTweet_Locales = {
