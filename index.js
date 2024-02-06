@@ -2590,7 +2590,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
                 });
             });
             //1MB
-            if (totalSize > (settings.save_tweet_quota_override[interaction.user.id] ?? 20 * 1024 * 1024)) {
+            if (totalSize > (settings.save_tweet_quota_override[interaction.user.id] ?? 100 * 1024 * 1024)) {
                 //delete tweet data
                 fs.rmSync('./saves/' + interaction.user.id + '/' + tweetId, { recursive: true });
                 await interaction.editReply({ content: "あなたが保存したツイートのデータ量が許可された保存容量を超えています。新しくツイートを保存する前に既存のものを削除してください", ephemeral: true });
