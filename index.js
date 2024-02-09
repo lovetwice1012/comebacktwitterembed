@@ -1695,7 +1695,7 @@ async function sendTweetEmbed(message, url, quoted = false, parent = null, saved
                 let msg = null;
                 if (settings.legacy_mode[message.guild.id] === true && message.guild.members.me.permissions.has(PermissionsBitField.Flags.ManageMessages)) {
                     try{
-                        message.suppressEmbeds(true)
+                        await message.suppressEmbeds(true)
                     }catch(err){
                         //console.log(err);
                     }
@@ -1722,7 +1722,7 @@ async function sendTweetEmbed(message, url, quoted = false, parent = null, saved
                         }
                     });;
                 } else {
-                    parent.reply(messageObject).catch(async err => {
+                    await parent.reply(messageObject).catch(async err => {
                         if (messageObject.files !== undefined) {
                             await sendContentPromise(message, messageObject.files);
                             delete messageObject.files;
@@ -1735,12 +1735,12 @@ async function sendTweetEmbed(message, url, quoted = false, parent = null, saved
                 if (settings.deletemessageifonlypostedtweetlink[message.guild.id] === true && message.content == url) {
                     if (settings.deletemessageifonlypostedtweetlink_secoundaryextractmode[message.guild.id] === undefined) settings.deletemessageifonlypostedtweetlink_secoundaryextractmode[message.guild.id] = false;
                     if (settings.deletemessageifonlypostedtweetlink_secoundaryextractmode[message.guild.id] === true && settings.secondary_extract_mode[message.guild.id] === true) {
-                        message.suppressEmbeds(true);
+                        await message.suppressEmbeds(true);
                     } else {
-                        message.delete().catch(err => {
-                            message.channel.send(getStringFromObject(idonthavedeletemessagepermissionLocales, settings.defaultLanguage[message.guild.id])).then(msg => {
-                                setTimeout(() => {
-                                    msg.delete();
+                        await message.delete().catch(async err => {
+                            await message.channel.send(getStringFromObject(idonthavedeletemessagepermissionLocales, settings.defaultLanguage[message.guild.id])).then(msg => {
+                                setTimeout(async () => {
+                                    await msg.delete();
                                 }, 3000);
                             });
                         });
@@ -2306,7 +2306,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
                 value: '引用リツイートも展開する'
             });
         }
-        //ボタンの表示
+        //ボタンの非表示
         if (settings.button_invisible[guildid] !== undefined) {
             let value = '';
             if (settings.button_invisible[guildid].showMediaAsAttachments === true) value += '画像を添付ファイルとして表示するボタン\n';
@@ -2315,7 +2315,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
             if (settings.button_invisible[guildid].delete === true) value += '削除ボタン\n';
             if (value === '') value = 'なし';
             embed.fields.push({
-                name: 'ボタンの表示',
+                name: 'ボタンの非表示',
                 value: value
             });
         }
