@@ -2524,7 +2524,7 @@ userid	users(userid)	RESTRICT	RESTRICT
                     body: JSON.stringify({ embeds: [{ title: 'このチャンネルにツイートを送信します', description: 'これはComebackTwitterEmbedの新着自動展開機能の登録確認メッセージです。\n今後はこのチャンネルに[' + username + '](https://twitter.com/' + username + ')のツイートが更新されるたびに通知を行います。' }] })
                 });
                 if (webhookResponse.status !== 204) return await interaction.reply({ embeds: [{ title: 'Auto extract add', description: '指定されたWEBHOOKは正しい形式ではないか、無効です。', color: 0x1DA1F2 }] });
-                connection.query('INSERT INTO rss (userid, username, webhook, created_at) VALUES (?, ?, ?, ?)', [interaction.user.id, username, webhook, Date.now()], async function (error, results, fields) {
+                connection.query('INSERT INTO rss (userid, username, lastextracted, webhook, created_at) VALUES (?, ?, ?, ?, ?)', [interaction.user.id, username, Date.now(), webhook, Date.now()], async function (error, results, fields) {
                     if (error) throw error;
                     await interaction.reply({ embeds: [{ title: 'Auto extract add', description: '登録が完了しました。\n[登録されたユーザー](https://twitter.com/' + username + ')', color: 0x1DA1F2 }] });
                 });
