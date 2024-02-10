@@ -2394,17 +2394,17 @@ client.on(Events.InteractionCreate, async (interaction) => {
         if (settings.secondary_extract_mode[guildid] === true) {
             embed.fields.push({
                 name: '動作モード',
-                value: 'セカンダリ展開モード(1つ以上の動画か画像が2枚以上含まれるときにのみ動作)'
+                value: 'セカンダリ展開モード\n(1つ以上の動画か画像が2枚以上含まれるときにのみ動作)'
             });
         } else if (settings.legacy_mode[guildid] === true) {
             embed.fields.push({
                 name: '動作モード',
-                value: 'レガシーモード(適切な権限設定がされていればdiscord純正の埋め込みが削除され、今まで通りの展開が行われる)'
+                value: 'レガシーモード\n(適切な権限設定がされていればdiscord純正の埋め込みが削除され、今まで通りの展開が行われる)'
             });
         } else {
             embed.fields.push({
                 name: '動作モード',
-                value: '通常モード(常にリプライやりポスト、ライク数を表示し、複数枚の画像や動画も展開する)'
+                value: '通常モード\n(常にリプライやりポスト、ライク数を表示し、複数枚の画像や動画も展開する)'
             });
         }
         //ツイートの展開
