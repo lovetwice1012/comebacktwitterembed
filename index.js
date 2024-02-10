@@ -884,6 +884,20 @@ const settingsAutoExtractDeleteDescriptionLocalizations = {
     en: 'Deletes from auto extract list.'
 }
 
+const command_name_autoextract_username_Locales = {
+    ja: '自動展開するTwitterユーザー名',
+    en: 'autoextract_username'
+}
+
+const command_name_autoextract_webhook_Locales = {
+    ja: '自動展開するWebhook',
+    en: 'autoextract_webhook'
+}
+
+const command_name_autoextract_id_Locales = {
+    ja: 'listで確認できる自動展開ID',
+    en: 'autoextract_id'
+}
 
 function conv_en_to_en_US(obj) {
     if (obj === undefined) return undefined;
