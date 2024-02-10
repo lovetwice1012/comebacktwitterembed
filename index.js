@@ -2501,7 +2501,6 @@ userid	users(userid)	RESTRICT	RESTRICT
             case "add":
                 //premiun_flagが0でuseridが一致するレコードが5件以上あるか確認する
                 const over_5_check = await new Promise(resolve => {
-                    return resolve(true);
                     connection.query('SELECT * FROM rss WHERE userid = ?', [interaction.user.id], async function (error, results, fields) {
                         if (error) throw error;
                         if (results.length >= 5) return resolve(false);
