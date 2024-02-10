@@ -2501,6 +2501,7 @@ userid	users(userid)	RESTRICT	RESTRICT
             case "add":
                 //premiun_flagが0でuseridが一致するレコードが5件以上あるか確認する
                 const over_5_check = await new Promise(resolve => {
+                    return resolve(true);
                     connection.query('SELECT * FROM rss WHERE userid = ?', [interaction.user.id], async function (error, results, fields) {
                         if (error) throw error;
                         if (results.length >= 5) return resolve(false);
@@ -2512,12 +2513,9 @@ userid	users(userid)	RESTRICT	RESTRICT
                 const webhook = interaction.options.getString('webhook');
                 if (username === null || webhook === null) return await interaction.reply(userMustSpecifyAnyWordLocales[interaction.locale] ?? userMustSpecifyAnyWordLocales["en"]);
                 //usernameが存在するか確認する(数字とアルファベットと_のみで構成されているか確認する)
-                if (!username.match(/^[0-9a-zA-Z_]+$/)) return await interaction.reply({ embeds: [{ title: 'Auto extract add', description: '指定されたユーザーは存在しません。\n[入力されたユーザー](https://twitter.com/' + username + ')', color: 0x1DA1F2 }] });
+                if (!username.match(/^[0-9a-zA-Z_]+$/)) return await interaction.reply({ embeds: [{ title: 'Auto extract add', description: '指定されたユーザーは無効です。\n[入力されたユーザー](https://twitter.com/' + username + ')', color: 0x1DA1F2 }] });
                 //webhookが正しい形式か確認する
                 if (!webhook.match(/^https:\/\/discord.com\/api\/webhooks\/[0-9]+\/[a-zA-Z0-9_-]+$/)) return await interaction.reply({ embeds: [{ title: 'Auto extract add', description: '指定されたWEBHOOKは正しい形式ではないか、無効です。', color: 0x1DA1F2 }] });
-                //usernameが存在するか確認する(https://twitter.com/{username}にアクセスして200が返ってくるか確認する)
-                const response = await fetch('https://twitter.com/' + username);
-                if (response.status !== 200) return await interaction.reply({ embeds: [{ title: 'Auto extract add', description: '指定されたユーザーは存在しません。\n[入力されたユーザー](https://twitter.com/' + username + ')', color: 0x1DA1F2 }] });
                 //webhookにテストメッセージを送信する
                 const webhookResponse = await fetch(webhook, {
                     method: 'POST',
