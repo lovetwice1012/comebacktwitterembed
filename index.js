@@ -1880,13 +1880,15 @@ client.on(Events.MessageCreate, async (message) => {
         if (url === null) return;
 
         //usersテーブルにユーザーが存在するか確認
-        connection.query('SELECT * FROM users WHERE userid = ?', [message.author.id], async (err, results) => {
+        connection.query('SELECT EXISTS (SELECT * FROM users WHERE userid = ? LIMIT 1)', [message.author.id], async (err, results) => {
             if (err) {
                 console.log(err);
                 return;
             }
-            if (results.length === 0) {
-                connection.query('INSERT INTO users (userid, plan, paid_plan_expired_at, register_date, enabled) VALUES (?, ?, ?, ?, ?)', [message.author.id, 0, 0, new Date().getTime(), 1], (err, results) => {
+            console.log(results);
+            if (results[0][Object.keys(results[0])[0]] === 0) {
+                //ユーザーが存在しない場合、usersテーブルにユーザーを追加
+                connection.query('INSERT INTO users (userid) VALUES (?)', [message.author.id], (err, results) => {
                     if (err) {
                         console.log(err);
                         return;
