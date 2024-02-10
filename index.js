@@ -1577,7 +1577,6 @@ function checkComponentIncludesDisabledButtonAndIfFindDeleteIt(components, guild
         if (element.components.length === 0) continue;
         for (let j = 0; j < element.components.length; j++) {
             const element2 = element.components[j].data;
-            console.log(element2.custom_id);
             if (element2.custom_id === undefined) continue;
             if (element2.custom_id === 'showMediaAsAttachments' && setting.button_invisible[guildId].showMediaAsAttachments === true) {
                 element.components.splice(j, 1);
