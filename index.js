@@ -844,6 +844,47 @@ const setsavetweetbuttonLocales = {
     en: 'Set showSaveTweet button to '
 }
 
+const command_name_autoextract_Locales = {
+    ja: '自動展開',
+    en: 'autoextract'
+}
+
+const settingsAutoExtractDescriptionLocalizations = {
+    ja: '自動展開を設定します。',
+    en: 'Sets auto extract.'
+}
+
+const command_name_autoextract_list_Locales = {
+    ja: '自動展開リスト',
+    en: 'autoextract_list'
+}
+
+const settingsAutoExtractListDescriptionLocalizations = {
+    ja: '自動展開リストを表示します。',
+    en: 'Shows auto extract list.'
+}
+
+const command_name_autoextract_add_Locales = {
+    ja: '自動展開追加',
+    en: 'autoextract_add'
+}
+
+const settingsAutoExtractAddDescriptionLocalizations = {
+    ja: '自動展開リストに追加します。',
+    en: 'Adds to auto extract list.'
+}
+
+const command_name_autoextract_delete_Locales = {
+    ja: '自動展開削除',
+    en: 'autoextract_delete'
+}
+
+const settingsAutoExtractDeleteDescriptionLocalizations = {
+    ja: '自動展開リストから削除します。',
+    en: 'Deletes from auto extract list.'
+}
+
+
 function conv_en_to_en_US(obj) {
     if (obj === undefined) return undefined;
     obj = [obj]
@@ -1388,6 +1429,60 @@ client.on('ready', () => {
                     description: 'guild',
                     type: ApplicationCommandOptionType.String,
                     required: false
+                }
+            ]
+        },
+        {
+            name: 'autoextract',
+            name_localizations: conv_en_to_en_US(command_name_autoextract_Locales),
+            description: 'auto extract',
+            description_localizations: conv_en_to_en_US(settingsAutoExtractDescriptionLocalizations),
+            options: [
+                {
+                    name: 'list',
+                    name_localizations: conv_en_to_en_US(command_name_autoextract_list_Locales),
+                    description: 'list',
+                    description_localizations: conv_en_to_en_US(settingsAutoExtractListDescriptionLocalizations),
+                    type: ApplicationCommandOptionType.Subcommand,
+                },
+                {
+                    name: 'add',
+                    name_localizations: conv_en_to_en_US(command_name_autoextract_add_Locales),
+                    description: 'add',
+                    description_localizations: conv_en_to_en_US(settingsAutoExtractAddDescriptionLocalizations),
+                    type: ApplicationCommandOptionType.Subcommand,
+                    options: [
+                        {
+                            name: 'username',
+                            name_localizations: conv_en_to_en_US(command_name_autoextract_username_Locales),
+                            description: 'username',
+                            type: ApplicationCommandOptionType.String,
+                            required: true
+                        },
+                        {
+                            name: 'webhook',
+                            name_localizations: conv_en_to_en_US(command_name_autoextract_webhook_Locales),
+                            description: 'webhook',
+                            type: ApplicationCommandOptionType.String,
+                            required: true
+                        }
+                    ]
+                },
+                {
+                    name: 'delete',
+                    name_localizations: conv_en_to_en_US(command_name_autoextract_delete_Locales),
+                    description: 'delete',
+                    description_localizations: conv_en_to_en_US(settingsAutoExtractDeleteDescriptionLocalizations),
+                    type: ApplicationCommandOptionType.Subcommand,
+                    options: [
+                        {
+                            name: 'id',
+                            name_localizations: conv_en_to_en_US(command_name_autoextract_id_Locales),
+                            description: 'id',
+                            type: ApplicationCommandOptionType.Integer,
+                            required: true
+                        }
+                    ]
                 }
             ]
         }
@@ -2055,7 +2150,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
                 const boolean = interaction.options.getBoolean('boolean');
                 settings.secondary_extract_mode[interaction.guildId] = boolean;
                 await interaction.reply((setsecondaryextractmodetolocales[interaction.locale] ?? setsecondaryextractmodetolocales["en"]) + convertBoolToEnableDisable(boolean, interaction.locale));
-            } else {
+            }else{
                 return await interaction.reply(userMustSpecifyAnyWordLocales[interaction.locale] ?? userMustSpecifyAnyWordLocales["en"]);
             }
         } else {
@@ -2347,8 +2442,87 @@ client.on(Events.InteractionCreate, async (interaction) => {
             });
         }
         interaction.reply({ embeds: [embed] });
-    }
+    } else if (interaction.commandName === 'autoextract') {
+        /*
+        
+列	型	コメント
+id	int(20) 連番	
+userid	bigint(20)	
+username	text NULL	
+lastextracted	bigint(20) [0]	
+webhook	text NULL	
+created_at	bigint(20)	
+premium_flag	int(10) [0]	
+premium_code	text NULL	
+索引
+PRIMARY	id
+INDEX	userid
 
+外部キー
+ソース	ターゲット	ON DELETE	ON UPDATE	
+userid	users(userid)	RESTRICT	RESTRICT
+
+        */
+        switch (interaction.options.getSubcommand()) {
+            case "list":
+                connection.query('SELECT * FROM rss WHERE userid = ?', [interaction.user.id], async function (error, results, fields) {
+                    if (error) throw error;
+                    if (results.length === 0) return await interaction.reply({embeds: [{title: 'Auto extract list', description: 'データが登録されていません。', color: 0x1DA1F2}]});
+                    let content = '';
+                    results.forEach(element => {
+                        content += element.id + ': (' + element.username + ')[https://twitter.com/'+ element.username +'] (WEBHOOK)[' + element.webhook + ']\n';
+                    });
+                    await interaction.reply({
+                        embeds: [
+                            {
+                                title: 'Auto extract list',
+                                description: content,
+                                color: 0x1DA1F2
+                            }
+                        ]
+                    });
+                }
+                );
+                break;
+            case "add":
+                const username = interaction.options.getString('username');
+                const webhook = interaction.options.getString('webhook');
+                if (username === null || webhook === null) return await interaction.reply(userMustSpecifyAnyWordLocales[interaction.locale] ?? userMustSpecifyAnyWordLocales["en"]);
+                //usernameが存在するか確認する(数字とアルファベットと_のみで構成されているか確認する)
+                if (!username.match(/^[0-9a-zA-Z_]+$/)) return await interaction.reply({embeds: [{title: 'Auto extract add', description: '指定されたユーザーは存在しません。\n[入力されたユーザー](https://twitter.com/' + username + ')', color: 0x1DA1F2}]});
+                //webhookが正しい形式か確認する
+                if (!webhook.match(/^https:\/\/discord.com\/api\/webhooks\/[0-9]+\/[a-zA-Z0-9_-]+$/)) return await interaction.reply({embeds: [{title: 'Auto extract add', description: '指定されたWEBHOOKは正しい形式ではないか、無効です。', color: 0x1DA1F2}]});
+                //usernameが存在するか確認する(https://twitter.com/{username}にアクセスして200が返ってくるか確認する)
+                const response = await fetch('https://twitter.com/' + username);
+                if (response.status !== 200) return await interaction.reply({embeds: [{title: 'Auto extract add', description: '指定されたユーザーは存在しません。\n[入力されたユーザー](https://twitter.com/' + username + ')', color: 0x1DA1F2}]});
+                //webhookにテストメッセージを送信する
+                const webhookResponse = await fetch(webhook, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ embeds: [{ title: 'このチャンネルにツイートを送信します', description: 'これはComebackTwitterEmbedの新着自動展開機能の登録確認メッセージです。\n今後はこのチャンネルに['+ username +'](https://twitter.com/'+username+')のツイートが更新されるたびに通知を行います。' }] })
+                });
+                if (webhookResponse.status !== 204) return await interaction.reply({embeds: [{title: 'Auto extract add', description: '指定されたWEBHOOKは正しい形式ではないか、無効です。', color: 0x1DA1F2}]});
+                connection.query('INSERT INTO rss (userid, username, webhook, created_at) VALUES (?, ?, ?, ?)', [interaction.user.id, username, webhook, Date.now()], async function (error, results, fields) {
+                    if (error) throw error;
+                    await interaction.reply({embeds: [{title: 'Auto extract add', description: '登録が完了しました。\n[登録されたユーザー](https://twitter.com/' + username + ')', color: 0x1DA1F2}]});
+                });
+                break;
+
+            case "delete":
+                const id = interaction.options.getInteger('id');
+                if (id === null) return await interaction.reply(userMustSpecifyAnyWordLocales[interaction.locale] ?? userMustSpecifyAnyWordLocales["en"]);
+                //idが数字か確認する
+                if (isNaN(id)) return await interaction.reply("指定されたIDは数字ではありません。");
+                connection.query('DELETE FROM rss WHERE userid = ? AND id = ?', [interaction.user.id, id], async function (error, results, fields) {
+                    if (error) throw error;
+                    if (results.affectedRows === 0) return await interaction.reply("指定されたIDの登録は存在しません。");
+                    await interaction.reply({embeds: [{title: 'Auto extract delete', description: '削除が完了しました。', color: 0x1DA1F2}]});
+                });
+                break;
+        }
+    }
 });
 
 client.on(Events.InteractionCreate, async (interaction) => {
