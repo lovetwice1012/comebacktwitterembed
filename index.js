@@ -860,7 +860,7 @@ const command_name_autoextract_list_Locales = {
 }
 
 const settingsAutoExtractListDescriptionLocalizations = {
-    ja: '自動展開リストを表示します。',
+    ja: '自動展開リストを表示します',
     en: 'Shows auto extract list.'
 }
 
@@ -870,7 +870,7 @@ const command_name_autoextract_add_Locales = {
 }
 
 const settingsAutoExtractAddDescriptionLocalizations = {
-    ja: '自動展開リストに追加します。',
+    ja: '自動展開リストに追加します',
     en: 'Adds to auto extract list.'
 }
 
@@ -880,7 +880,7 @@ const command_name_autoextract_delete_Locales = {
 }
 
 const settingsAutoExtractDeleteDescriptionLocalizations = {
-    ja: '自動展開リストから削除します。',
+    ja: '自動展開リストから削除します',
     en: 'Deletes from auto extract list.'
 }
 
@@ -890,7 +890,7 @@ const command_name_autoextract_username_Locales = {
 }
 
 const command_name_autoextract_webhook_Locales = {
-    ja: '自動展開するWebhook',
+    ja: '自動展開するwebhook',
     en: 'autoextract_webhook'
 }
 
