@@ -1878,6 +1878,23 @@ client.on(Events.MessageCreate, async (message) => {
         const url = content.match(/https?:\/\/(twitter\.com|x\.com)\/[^\s<>|]*/g);
 
         if (url === null) return;
+
+        //usersテーブルにユーザーが存在するか確認
+        connection.query('SELECT * FROM users WHERE userid = ?', [message.author.id], async (err, results) => {
+            if (err) {
+                console.log(err);
+                return;
+            }
+            if (results.length === 0) {
+                connection.query('INSERT INTO users (userid, plan, paid_plan_expired_at, register_date, enabled) VALUES (?, ?, ?, ?, ?)', [message.author.id, 0, 0, new Date().getTime(), 1], (err, results) => {
+                    if (err) {
+                        console.log(err);
+                        return;
+                    }
+                });
+            }
+        });
+
         if (settings.disable.user.includes(message.author.id)) return;
         if (settings.disable.channel.includes(message.channel.id)) return;
         if (!message.webhookId && (settings.disable.role[message.guild.id] !== undefined && ifUserHasRole(message.member, settings.disable.role[message.guild.id]))) return;
