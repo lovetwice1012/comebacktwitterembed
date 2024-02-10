@@ -2483,7 +2483,8 @@ userid	users(userid)	RESTRICT	RESTRICT
                     if (results.length === 0) return await interaction.reply({ embeds: [{ title: 'Auto extract list', description: 'データが登録されていません。', color: 0x1DA1F2 }] });
                     let content = '';
                     results.forEach(element => {
-                        content += element.id + ': (' + element.username + ')[https://twitter.com/' + element.username + '] (WEBHOOK)[' + element.webhook + ']\n';
+                        if(element.webhook === null) return;
+                        content += element.id + ': [' + element.username + '](https://twitter.com/' + element.username + ') [WEBHOOK](' + element.webhook + ')\n';
                     });
                     await interaction.reply({
                         embeds: [
