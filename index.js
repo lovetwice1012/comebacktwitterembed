@@ -885,7 +885,7 @@ const settingsAutoExtractDeleteDescriptionLocalizations = {
 }
 
 const command_name_autoextract_username_Locales = {
-    ja: 'Twitterユーザー名',
+    ja: 'twitterユーザー名',
     en: 'autoextract_username'
 }
 
@@ -895,7 +895,7 @@ const command_name_autoextract_webhook_Locales = {
 }
 
 const command_name_autoextract_id_Locales = {
-    ja: '自動展開ID',
+    ja: '自動展開id',
     en: 'autoextract_id'
 }
 
