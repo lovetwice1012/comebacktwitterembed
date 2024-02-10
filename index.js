@@ -1802,12 +1802,12 @@ async function sendTweetEmbed(message, url, quoted = false, parent = null, saved
                 if (quoted) messageObject.content = "Quoted tweet:"
                 let msg = null;
                 if (settings.legacy_mode[message.guild.id] === true && message.guild.members.me.permissions.has(PermissionsBitField.Flags.ManageMessages)) {
-                    try{
+                    try {
                         await message.suppressEmbeds(true)
-                    }catch(err){
+                    } catch (err) {
                         //console.log(err);
                     }
-                    
+
                 }
                 if (settings.alwaysreplyifpostedtweetlink[message.guild.id] === true && parent === null) {
                     msg = await message.reply(messageObject).catch(async err => {
@@ -2163,7 +2163,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
                 const boolean = interaction.options.getBoolean('boolean');
                 settings.secondary_extract_mode[interaction.guildId] = boolean;
                 await interaction.reply((setsecondaryextractmodetolocales[interaction.locale] ?? setsecondaryextractmodetolocales["en"]) + convertBoolToEnableDisable(boolean, interaction.locale));
-            }else{
+            } else {
                 return await interaction.reply(userMustSpecifyAnyWordLocales[interaction.locale] ?? userMustSpecifyAnyWordLocales["en"]);
             }
         } else {
@@ -2257,7 +2257,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
             await interaction.editReply({ content: '処理中です...' });
             const id = interaction.options.getString('id');
             if (!fs.existsSync('./saves/' + userid + '/' + id)) return await interaction.reply(userDonthaveSavedTweetLocales[interaction.locale] ?? userDonthaveSavedTweetLocales["en"]);
-            await sendTweetEmbed(interaction, "https://twidata.sprink.cloud/data/"+userid+"/"+id+"/data.json", false);
+            await sendTweetEmbed(interaction, "https://twidata.sprink.cloud/data/" + userid + "/" + id + "/data.json", false);
             //await sendTweetEmbed(interaction, "http://localhost:3088/data/" + userid + "/" + id + "/data.json", false);
             await interaction.editReply({ content: finishActionLocales[interaction.locale] ?? finishActionLocales["en"], ephemeral: true });
         }
@@ -2480,10 +2480,10 @@ userid	users(userid)	RESTRICT	RESTRICT
             case "list":
                 connection.query('SELECT * FROM rss WHERE userid = ?', [interaction.user.id], async function (error, results, fields) {
                     if (error) throw error;
-                    if (results.length === 0) return await interaction.reply({embeds: [{title: 'Auto extract list', description: 'データが登録されていません。', color: 0x1DA1F2}]});
+                    if (results.length === 0) return await interaction.reply({ embeds: [{ title: 'Auto extract list', description: 'データが登録されていません。', color: 0x1DA1F2 }] });
                     let content = '';
                     results.forEach(element => {
-                        content += element.id + ': (' + element.username + ')[https://twitter.com/'+ element.username +'] (WEBHOOK)[' + element.webhook + ']\n';
+                        content += element.id + ': (' + element.username + ')[https://twitter.com/' + element.username + '] (WEBHOOK)[' + element.webhook + ']\n';
                     });
                     await interaction.reply({
                         embeds: [
@@ -2498,28 +2498,37 @@ userid	users(userid)	RESTRICT	RESTRICT
                 );
                 break;
             case "add":
+                //premiun_flagが0でuseridが一致するレコードが5件以上あるか確認する
+                const over_5_check = await new Promise(resolve => {
+                    connection.query('SELECT * FROM rss WHERE userid = ?', [interaction.user.id], async function (error, results, fields) {
+                        if (error) throw error;
+                        if (results.length >= 5) return resolve(false);
+                        resolve(true);
+                    });
+                });
+                if (!over_5_check) return await interaction.reply({ embeds: [{ title: 'Auto extract add', description: '5件以上の登録はできません。', color: 0x1DA1F2 }] });
                 const username = interaction.options.getString('username');
                 const webhook = interaction.options.getString('webhook');
                 if (username === null || webhook === null) return await interaction.reply(userMustSpecifyAnyWordLocales[interaction.locale] ?? userMustSpecifyAnyWordLocales["en"]);
                 //usernameが存在するか確認する(数字とアルファベットと_のみで構成されているか確認する)
-                if (!username.match(/^[0-9a-zA-Z_]+$/)) return await interaction.reply({embeds: [{title: 'Auto extract add', description: '指定されたユーザーは存在しません。\n[入力されたユーザー](https://twitter.com/' + username + ')', color: 0x1DA1F2}]});
+                if (!username.match(/^[0-9a-zA-Z_]+$/)) return await interaction.reply({ embeds: [{ title: 'Auto extract add', description: '指定されたユーザーは存在しません。\n[入力されたユーザー](https://twitter.com/' + username + ')', color: 0x1DA1F2 }] });
                 //webhookが正しい形式か確認する
-                if (!webhook.match(/^https:\/\/discord.com\/api\/webhooks\/[0-9]+\/[a-zA-Z0-9_-]+$/)) return await interaction.reply({embeds: [{title: 'Auto extract add', description: '指定されたWEBHOOKは正しい形式ではないか、無効です。', color: 0x1DA1F2}]});
+                if (!webhook.match(/^https:\/\/discord.com\/api\/webhooks\/[0-9]+\/[a-zA-Z0-9_-]+$/)) return await interaction.reply({ embeds: [{ title: 'Auto extract add', description: '指定されたWEBHOOKは正しい形式ではないか、無効です。', color: 0x1DA1F2 }] });
                 //usernameが存在するか確認する(https://twitter.com/{username}にアクセスして200が返ってくるか確認する)
                 const response = await fetch('https://twitter.com/' + username);
-                if (response.status !== 200) return await interaction.reply({embeds: [{title: 'Auto extract add', description: '指定されたユーザーは存在しません。\n[入力されたユーザー](https://twitter.com/' + username + ')', color: 0x1DA1F2}]});
+                if (response.status !== 200) return await interaction.reply({ embeds: [{ title: 'Auto extract add', description: '指定されたユーザーは存在しません。\n[入力されたユーザー](https://twitter.com/' + username + ')', color: 0x1DA1F2 }] });
                 //webhookにテストメッセージを送信する
                 const webhookResponse = await fetch(webhook, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
                     },
-                    body: JSON.stringify({ embeds: [{ title: 'このチャンネルにツイートを送信します', description: 'これはComebackTwitterEmbedの新着自動展開機能の登録確認メッセージです。\n今後はこのチャンネルに['+ username +'](https://twitter.com/'+username+')のツイートが更新されるたびに通知を行います。' }] })
+                    body: JSON.stringify({ embeds: [{ title: 'このチャンネルにツイートを送信します', description: 'これはComebackTwitterEmbedの新着自動展開機能の登録確認メッセージです。\n今後はこのチャンネルに[' + username + '](https://twitter.com/' + username + ')のツイートが更新されるたびに通知を行います。' }] })
                 });
-                if (webhookResponse.status !== 204) return await interaction.reply({embeds: [{title: 'Auto extract add', description: '指定されたWEBHOOKは正しい形式ではないか、無効です。', color: 0x1DA1F2}]});
+                if (webhookResponse.status !== 204) return await interaction.reply({ embeds: [{ title: 'Auto extract add', description: '指定されたWEBHOOKは正しい形式ではないか、無効です。', color: 0x1DA1F2 }] });
                 connection.query('INSERT INTO rss (userid, username, webhook, created_at) VALUES (?, ?, ?, ?)', [interaction.user.id, username, webhook, Date.now()], async function (error, results, fields) {
                     if (error) throw error;
-                    await interaction.reply({embeds: [{title: 'Auto extract add', description: '登録が完了しました。\n[登録されたユーザー](https://twitter.com/' + username + ')', color: 0x1DA1F2}]});
+                    await interaction.reply({ embeds: [{ title: 'Auto extract add', description: '登録が完了しました。\n[登録されたユーザー](https://twitter.com/' + username + ')', color: 0x1DA1F2 }] });
                 });
                 break;
 
@@ -2531,7 +2540,7 @@ userid	users(userid)	RESTRICT	RESTRICT
                 connection.query('DELETE FROM rss WHERE userid = ? AND id = ?', [interaction.user.id, id], async function (error, results, fields) {
                     if (error) throw error;
                     if (results.affectedRows === 0) return await interaction.reply("指定されたIDの登録は存在しません。");
-                    await interaction.reply({embeds: [{title: 'Auto extract delete', description: '削除が完了しました。', color: 0x1DA1F2}]});
+                    await interaction.reply({ embeds: [{ title: 'Auto extract delete', description: '削除が完了しました。', color: 0x1DA1F2 }] });
                 });
                 break;
         }
