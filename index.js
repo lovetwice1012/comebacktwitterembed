@@ -1569,51 +1569,33 @@ async function sendContentPromise(message, content) {
 }
 
 function checkComponentIncludesDisabledButtonAndIfFindDeleteIt(components, guildId, setting = null) {
-    if (setting === null) setting = settings;
-    if (setting.button_invisible[guildId] === undefined || (setting.button_invisible[guildId].showMediaAsAttachments === false && setting.button_invisible[guildId].showAttachmentsAsEmbedsImage === false && setting.button_invisible[guildId].translate === false && setting.button_invisible[guildId].delete === false && setting.button_invisible[guildId].savetweet === false)) return components;
-    for (let i = 0; i < components.length; i++) {
-        const element = components[i];
-        if (element.components === undefined) continue;
-        if (element.components.length === 0) continue;
-        for (let j = 0; j < element.components.length; j++) {
-            const element2 = element.components[j].data;
-            if (element2.custom_id === undefined) continue;
-            if (element2.custom_id === 'showMediaAsAttachments' && setting.button_invisible[guildId].showMediaAsAttachments === true) {
-                element.components.splice(j, 1);
-                j--;
+    setting = setting || settings; // 簡素化された設定の確認
+    const invisibleSettings = setting.button_invisible[guildId] || {};
 
-            }
-            if (element2.custom_id === 'showAttachmentsAsEmbedsImage' && setting.button_invisible[guildId].showAttachmentsAsEmbedsImage === true) {
-                element.components.splice(j, 1);
-                j--;
-
-            }
-            if (element2.custom_id === 'translate' && setting.button_invisible[guildId].translate === true) {
-                element.components.splice(j, 1);
-                j--;
-
-            }
-            if (element2.custom_id === 'delete' && setting.button_invisible[guildId].delete === true) {
-                element.components.splice(j, 1);
-                j--;
-
-            }
-            if (element2.custom_id === 'savetweet' && setting.button_invisible[guildId].savetweet === true) {
-                element.components.splice(j, 1);
-                j--;
-            }
-        }
+    // 全ての条件がfalseの場合、早期リターン
+    if (Object.values(invisibleSettings).every(value => value === false)) {
+        return components;
     }
-    for (let i = 0; i < components.length; i++) {
-        const element = components[i];
-        if (element.components === undefined) continue;
-        if (element.components.length === 0) {
-            components.splice(i, 1);
-            i--;
+
+    // 条件に一致する子コンポーネントをフィルタリングし、空のコンポーネントを除外
+    return components.reduce((acc, component) => {
+        if (!component.components || component.components.length === 0) return acc;
+        
+        // 条件に一致しない子コンポーネントのみを保持
+        const filteredComponents = component.components.filter(subComponent => {
+            const id = subComponent.data && subComponent.data.custom_id;
+            return id ? !(id in invisibleSettings && invisibleSettings[id] === true) : true;
+        });
+
+        // フィルタリング後に子コンポーネントが残っている場合のみ、親コンポーネントを保持
+        if (filteredComponents.length > 0) {
+            component.components = filteredComponents;
+            acc.push(component);
         }
-    }
-    return components;
+        return acc;
+    }, []);
 }
+
 
 async function sendTweetEmbed(message, url, quoted = false, parent = null, saved = false) {
     return new Promise((resolve, reject) => {
@@ -1868,43 +1850,63 @@ async function sendTweetEmbed(message, url, quoted = false, parent = null, saved
 }
 
 client.on(Events.MessageCreate, async (message) => {
-    if ((message.author.bot && (settings.extract_bot_message[message.guild.id] === undefined || settings.extract_bot_message[message.guild.id] !== true) && !message.webhookId) || message.author.id == client.user.id) return;
-    if ((message.content.includes('://twitter.com') || message.content.includes('://x.com')) && message.content.includes('status')) {
-        //if(client.user.id != 1161267455335862282) return message.reply({embeds:[getStringFromObject(warning_this_bot_is_not_main_instance_and_going_to_be_closed_embed, settings.defaultLanguage[message.guild.id], true)]});
-        let content = message.content;
-        content = content.replace(/<https?:\/\/(twitter\.com|x\.com)[^\s<>|]*>|(\|\|https?:\/\/(twitter\.com|x\.com)[^\s<>|]*\|\|)/g, '');
+    if (shouldIgnoreMessage(message)) return;
 
-        //match twitter link
-        const url = content.match(/https?:\/\/(twitter\.com|x\.com)\/[^\s<>|]*/g);
+    const content = cleanMessageContent(message.content);
+    const urls = extractTwitterUrls(content);
 
-        if (url === null) return;
+    if (urls.length === 0) return;
+    if (isMessageDisabledForUserOrChannel(message)) return;
 
-        //usersテーブルにユーザーが存在するか確認
-        connection.query('SELECT EXISTS (SELECT * FROM users WHERE userid = ? LIMIT 1)', [message.author.id], async (err, results) => {
-            if (err) {
-                console.log(err);
-                return;
-            }
-            console.log(results);
-            if (results[0][Object.keys(results[0])[0]] === 0) {
-                //ユーザーが存在しない場合、usersテーブルにユーザーを追加
-                connection.query('INSERT INTO users (userid) VALUES (?)', [message.author.id], (err, results) => {
-                    if (err) {
-                        console.log(err);
-                        return;
-                    }
-                });
-            }
-        });
+    await ensureUserExistsInDatabase(message.author.id);
 
-        if (settings.disable.user.includes(message.author.id)) return;
-        if (settings.disable.channel.includes(message.channel.id)) return;
-        if (!message.webhookId && (settings.disable.role[message.guild.id] !== undefined && ifUserHasRole(message.member, settings.disable.role[message.guild.id]))) return;
-        for (let i = 0; i < url.length; i++) {
-            await sendTweetEmbed(message, url[i]);
-        };
+    for (const url of urls) {
+        await sendTweetEmbed(message, url);
     }
 });
+
+function shouldIgnoreMessage(message) {
+    const isBotMessageNotExtracted = message.author.bot && settings.extract_bot_message[message.guild.id] !== true && !message.webhookId;
+    const isMessageFromClient = message.author.id === client.user.id;
+    return isBotMessageNotExtracted || isMessageFromClient;
+}
+
+function cleanMessageContent(content) {
+    return content.replace(/<https?:\/\/(twitter\.com|x\.com)[^\s<>|]*>|(\|\|https?:\/\/(twitter\.com|x\.com)[^\s<>|]*\|\|)/g, '');
+}
+
+function extractTwitterUrls(content) {
+    return content.match(/https?:\/\/(twitter\.com|x\.com)\/[^\s<>|]*/g) || [];
+}
+
+function isMessageDisabledForUserOrChannel(message) {
+    const isUserDisabled = settings.disable.user.includes(message.author.id);
+    const isChannelDisabled = settings.disable.channel.includes(message.channel.id);
+    const isRoleDisabled = !message.webhookId && settings.disable.role[message.guild.id] !== undefined && ifUserHasRole(message.member, settings.disable.role[message.guild.id]);
+
+    return isUserDisabled || isChannelDisabled || isRoleDisabled;
+}
+
+async function ensureUserExistsInDatabase(userId) {
+    const userExists = await queryDatabase('SELECT EXISTS (SELECT * FROM users WHERE userid = ? LIMIT 1)', [userId]);
+    if (!userExists) {
+        await queryDatabase('INSERT INTO users (userid, register_date) VALUES (?, ?)', [userId, new Date().getTime()]);
+    }
+}
+
+async function queryDatabase(query, params) {
+    return new Promise((resolve, reject) => {
+        connection.query(query, params, (err, results) => {
+            if (err) {
+                console.error(err);
+                reject(err);
+                return;
+            }
+            resolve(results);
+        });
+    });
+}
+
 
 client.on(Events.InteractionCreate, async (interaction) => {
     if (!interaction.type === InteractionType.ApplicationCommand) return;
@@ -2186,63 +2188,46 @@ client.on(Events.InteractionCreate, async (interaction) => {
                 return await interaction.reply(userMustSpecifyAnyWordLocales[interaction.locale] ?? userMustSpecifyAnyWordLocales["en"]);
             }
         } else {
-            if (interaction.options.getSubcommand() === 'disable') {
-                if (interaction.options.getUser('user') === null && interaction.options.getChannel('channel') === null && interaction.options.getRole('role') === null) {
-                    return await interaction.reply(userMustSpecifyAUserOrChannelLocales[interaction.locale] ?? userMustSpecifyAUserOrChannelLocales["en"]);
-                }
-                if ((interaction.options.getUser('user') !== null && interaction.options.getChannel('channel') !== null && interaction.options.getRole('role') !== null) || (interaction.options.getUser('user') !== null && interaction.options.getChannel('channel') !== null) || (interaction.options.getUser('user') !== null && interaction.options.getRole('role') !== null) || (interaction.options.getChannel('channel') !== null && interaction.options.getRole('role') !== null)) {
-                    return await interaction.reply(userCantSpecifyBothAUserAndAChannelLocales[interaction.locale] ?? userCantSpecifyBothAUserAndAChannelLocales["en"]);
-                }
-                if (interaction.options.getUser('user') !== null) {
-                    const user = interaction.options.getUser('user');
-                    if (user.id !== interaction.user.id) return await interaction.reply(userCantUseThisCommandForOtherUsersLocales[interaction.locale] ?? userCantUseThisCommandForOtherUsersLocales["en"]);
-                    if (settings.disable.user.includes(user.id)) {
-                        settings.disable.user.splice(settings.disable.user.indexOf(user.id), 1);
-                        await interaction.reply(removedUserFromDisableUserLocales[interaction.locale] ?? removedUserFromDisableUserLocales["en"]);
-                    } else {
-                        settings.disable.user.push(user.id);
-                        await interaction.reply(addedUserToDisableUserLocales[interaction.locale] ?? addedUserToDisableUserLocales["en"]);
+            switch (interaction.options.getSubcommand()) {
+                case 'disable':
+                    if (interaction.options.getUser('user') === null && interaction.options.getChannel('channel') === null && interaction.options.getRole('role') === null) {
+                        return await interaction.reply(userMustSpecifyAUserOrChannelLocales[interaction.locale] ?? userMustSpecifyAUserOrChannelLocales["en"]);
                     }
-                } else if (interaction.options.getChannel('channel') !== null) {
-                    return await interaction.reply(userDonthavePermissionLocales[interaction.locale] ?? userDonthavePermissionLocales["en"]);
-                } else if (interaction.options.getRole('role') !== null) {
-                    return await interaction.reply(userDonthavePermissionLocales[interaction.locale] ?? userDonthavePermissionLocales["en"]);
-                }
-            } else if (interaction.options.getSubcommand() === 'bannedwords') {
-                await interaction.reply(userDonthavePermissionLocales[interaction.locale] ?? userDonthavePermissionLocales["en"]);
-            } else if (interaction.options.getSubcommand() === 'defaultlanguage') {
-                await interaction.reply(userDonthavePermissionLocales[interaction.locale] ?? userDonthavePermissionLocales["en"]);
-            } else if (interaction.options.getSubcommand() === 'editoriginaliftranslate') {
-                await interaction.reply(userDonthavePermissionLocales[interaction.locale] ?? userDonthavePermissionLocales["en"]);
-            } else if (interaction.options.getSubcommand() === 'setdefaultmediaasattachments') {
-                await interaction.reply(userDonthavePermissionLocales[interaction.locale] ?? userDonthavePermissionLocales["en"]);
-            } else if (interaction.options.getSubcommand() === 'deleteifonlypostedtweetlink') {
-                await interaction.reply(userDonthavePermissionLocales[interaction.locale] ?? userDonthavePermissionLocales["en"]);
-            } else if (interaction.options.getSubcommand() === 'alwaysreplyifpostedtweetlink') {
-                await interaction.reply(userDonthavePermissionLocales[interaction.locale] ?? userDonthavePermissionLocales["en"]);
-            } else if (interaction.options.getSubcommand() === 'button') {
-                if (interaction.options.getSubcommand() === 'invisible') {
-                    if (settings.button_invisible[interaction.guildId] === undefined) settings.button_invisible[interaction.guildId] = button_invisible_template;
-                    if (interaction.options.getBoolean('showmediaasattachments') === null && interaction.options.getBoolean('showattachmentsasembedsimage') === null && interaction.options.getBoolean('translate') === null && interaction.options.getBoolean('delete') === null && interaction.options.getBoolean('all') === null) {
-                        return await interaction.reply(userMustSpecifyAnyWordLocales[interaction.locale] ?? userMustSpecifyAnyWordLocales["en"]);
+                    if ((interaction.options.getUser('user') !== null && interaction.options.getChannel('channel') !== null && interaction.options.getRole('role') !== null) || (interaction.options.getUser('user') !== null && interaction.options.getChannel('channel') !== null) || (interaction.options.getUser('user') !== null && interaction.options.getRole('role') !== null) || (interaction.options.getChannel('channel') !== null && interaction.options.getRole('role') !== null)) {
+                        return await interaction.reply(userCantSpecifyBothAUserAndAChannelLocales[interaction.locale] ?? userCantSpecifyBothAUserAndAChannelLocales["en"]);
                     }
+                    if (interaction.options.getUser('user') !== null) {
+                        const user = interaction.options.getUser('user');
+                        if (user.id !== interaction.user.id) return await interaction.reply(userCantUseThisCommandForOtherUsersLocales[interaction.locale] ?? userCantUseThisCommandForOtherUsersLocales["en"]);
+                        if (settings.disable.user.includes(user.id)) {
+                            settings.disable.user.splice(settings.disable.user.indexOf(user.id), 1);
+                            await interaction.reply(removedUserFromDisableUserLocales[interaction.locale] ?? removedUserFromDisableUserLocales["en"]);
+                        } else {
+                            settings.disable.user.push(user.id);
+                            await interaction.reply(addedUserToDisableUserLocales[interaction.locale] ?? addedUserToDisableUserLocales["en"]);
+                        }
+                    } else if (interaction.options.getChannel('channel') !== null || interaction.options.getRole('role') !== null) {
+                        return await interaction.reply(userDonthavePermissionLocales[interaction.locale] ?? userDonthavePermissionLocales["en"]);
+                    }
+                    break;
+                case 'bannedwords':
+                case 'defaultlanguage':
+                case 'editoriginaliftranslate':
+                case 'setdefaultmediaasattachments':
+                case 'deleteifonlypostedtweetlink':
+                case 'alwaysreplyifpostedtweetlink':
+                case 'button':
+                case 'extractbotmessage':
+                case 'quoterepostdonotextract':
+                case 'legacymode':
+                case 'passivemode':
+                case 'secondaryextractmode':
                     await interaction.reply(userDonthavePermissionLocales[interaction.locale] ?? userDonthavePermissionLocales["en"]);
-                } else if (interaction.options.getSubcommand() === 'disabled') {
-                    await interaction.reply(userDonthavePermissionLocales[interaction.locale] ?? userDonthavePermissionLocales["en"]);
-                }
-            } else if (interaction.options.getSubcommand() === 'extractbotmessage') {
-                await interaction.reply(userDonthavePermissionLocales[interaction.locale] ?? userDonthavePermissionLocales["en"]);
-            } else if (interaction.options.getSubcommand() === 'quoterepostdonotextract') {
-                await interaction.reply(userDonthavePermissionLocales[interaction.locale] ?? userDonthavePermissionLocales["en"]);
-            } else if (interaction.options.getSubcommand() === 'legacymode') {
-                await interaction.reply(userDonthavePermissionLocales[interaction.locale] ?? userDonthavePermissionLocales["en"]);
-            } else if (interaction.options.getSubcommand() === 'passivemode') {
-                await interaction.reply(userDonthavePermissionLocales[interaction.locale] ?? userDonthavePermissionLocales["en"]);
-            } else if (interaction.options.getSubcommand() === 'secondaryextractmode') {
-                await interaction.reply(userDonthavePermissionLocales[interaction.locale] ?? userDonthavePermissionLocales["en"]);
-            } else {
-                return await interaction.reply(userMustSpecifyAnyWordLocales[interaction.locale] ?? userMustSpecifyAnyWordLocales["en"]);
+                    break;
+                default:
+                    return await interaction.reply(userMustSpecifyAnyWordLocales[interaction.locale] ?? userMustSpecifyAnyWordLocales["en"]);
             }
+            
         }
         fs.writeFileSync('./settings.json', JSON.stringify(settings, null, 4));
     } else if (interaction.commandName === 'showsavetweet') {
@@ -2476,24 +2461,23 @@ client.on(Events.InteractionCreate, async (interaction) => {
         interaction.reply({ embeds: [embed] });
     } else if (interaction.commandName === 'autoextract') {
         /*
-        
-列	型	コメント
-id	int(20) 連番	
-userid	bigint(20)	
-username	text NULL	
-lastextracted	bigint(20) [0]	
-webhook	text NULL	
-created_at	bigint(20)	
-premium_flag	int(10) [0]	
-premium_code	text NULL	
-索引
-PRIMARY	id
-INDEX	userid
+        列	型	コメント
+        id	int(20) 連番	
+        userid	bigint(20)	
+        username	text NULL	
+        lastextracted	bigint(20) [0]	
+        webhook	text NULL	
+        created_at	bigint(20)	
+        premium_flag	int(10) [0]	
+        premium_code	text NULL
 
-外部キー
-ソース	ターゲット	ON DELETE	ON UPDATE	
-userid	users(userid)	RESTRICT	RESTRICT
+        索引
+        PRIMARY	id
+        INDEX	userid
 
+        外部キー
+        ソース	ターゲット	ON DELETE	ON UPDATE
+        userid	users(userid)	RESTRICT	RESTRICT
         */
         switch (interaction.options.getSubcommand()) {
             case "list":
@@ -2556,7 +2540,6 @@ userid	users(userid)	RESTRICT	RESTRICT
                     await interaction.reply({ embeds: [{ title: 'Auto extract add', description: '登録が完了しました。\n[登録されたユーザー](https://twitter.com/' + username + ')', color: 0x1DA1F2 }] });
                 });
                 break;
-
             case "delete":
                 const id = interaction.options.getInteger('id');
                 if (id === null) return await interaction.reply(userMustSpecifyAnyWordLocales[interaction.locale] ?? userMustSpecifyAnyWordLocales["en"]);
