@@ -1889,7 +1889,7 @@ function isMessageDisabledForUserOrChannel(message) {
 
 async function ensureUserExistsInDatabase(userId) {
     const userExists = await queryDatabase('SELECT EXISTS (SELECT * FROM users WHERE userid = ? LIMIT 1)', [userId]);
-    if (!userExists) {
+    if (userExists[0][Object.keys(userExists[0])[0]] === 0){
         await queryDatabase('INSERT INTO users (userid, register_date) VALUES (?, ?)', [userId, new Date().getTime()]);
     }
 }
