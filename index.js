@@ -899,6 +899,28 @@ const command_name_autoextract_id_Locales = {
     en: 'autoextract_id'
 }
 
+const command_name_additionalautoextractslot_Locales = {
+    ja: '追加自動展開スロット',
+    en: 'additionalautoextractslot'
+}
+
+const settingsAdditionalAutoExtractSlotDescriptionLocalizations = {
+    ja: '追加自動展開スロットを設定します。',
+    en: 'Sets additional auto extract slot.'
+}
+
+const setadditionalautoextractslottolocales = {
+    ja: '追加自動展開スロットを設定しました。 :',
+    en: 'Set additionalautoextractslot to '
+}
+
+const command_name_slot_Locales = {
+    ja: 'スロット',
+    en: 'slot'
+}
+
+
+
 function conv_en_to_en_US(obj) {
     if (obj === undefined) return undefined;
     obj = [obj]
@@ -1493,6 +1515,29 @@ client.on('ready', () => {
                             name: 'id',
                             name_localizations: conv_en_to_en_US(command_name_autoextract_id_Locales),
                             description: 'id',
+                            type: ApplicationCommandOptionType.Integer,
+                            required: true
+                        }
+                    ]
+                },
+                {
+                    name: 'additionalautoextractslot',
+                    name_localizations: conv_en_to_en_US(command_name_additionalautoextractslot_Locales),
+                    description: 'ADMIN ONLY',
+                    description_localizations: conv_en_to_en_US(settingsAdditionalAutoExtractSlotDescriptionLocalizations),
+                    type: ApplicationCommandOptionType.Subcommand,
+                    options: [
+                        {
+                            name: 'user',
+                            name_localizations: conv_en_to_en_US(command_name_user_Locales),
+                            description: 'user',
+                            type: ApplicationCommandOptionType.User,
+                            required: true
+                        },
+                        {
+                            name: 'slot',
+                            name_localizations: conv_en_to_en_US(command_name_slot_Locales),
+                            description: 'slot',
                             type: ApplicationCommandOptionType.Integer,
                             required: true
                         }
@@ -2551,6 +2596,43 @@ client.on(Events.InteractionCreate, async (interaction) => {
                     await interaction.reply({ embeds: [{ title: 'Auto extract delete', description: '削除が完了しました。', color: 0x1DA1F2 }] });
                 });
                 break;
+            case "additionalautoextractslot":
+            /*
+
+列	型	コメント
+userid	bigint(20)	
+plan	int(11) [0]	
+paid_plan_expired_at	bigint(20) [0]	
+register_date	bigint(20)	
+additional_autoextraction_slot	int(11) [0]	
+save_tweet_quota_override	bigint(20) NULL	
+enabled	tinyint(4) [1]	
+
+            */
+                //データベースにuseridが存在するか確認する  
+                const additional_autoextraction_slot = await new Promise(resolve => {
+                    connection.query('SELECT * FROM users WHERE userid = ?', [interaction.user.id], async function (error, results, fields) {
+                        if (error) throw error;
+                        if (results.length === 0) return resolve(0);
+                        resolve(results[0].additional_autoextraction_slot);
+                    });
+                });
+                //存在しない場合は登録する
+                //存在する場合はadditional_autoextraction_slotをoption(slot)する
+                const slot = interaction.options.getInteger('slot');
+                if (slot === null) return await interaction.reply(userMustSpecifyAnyWordLocales[interaction.locale] ?? userMustSpecifyAnyWordLocales["en"]);
+                if (slot < 1) return await interaction.reply("追加スロットは1以上で指定してください。");
+                if (additional_autoextraction_slot === 0) {
+                    connection.query('INSERT INTO users (userid, register_date, additional_autoextraction_slot) VALUES (?, ?)', [interaction.user.id, new Date().getTime(), slot], async function (error, results, fields) {
+                        if (error) throw error;
+                        await interaction.reply({ embeds: [{ title: 'Auto extract additional slot', description: '追加スロットの登録が完了しました。', color: 0x1DA1F2 }] });
+                    });
+                } else {
+                    connection.query('UPDATE users SET additional_autoextraction_slot = ? WHERE userid = ?', [slot, interaction.user.id], async function (error, results, fields) {
+                        if (error) throw error;
+                        await interaction.reply({ embeds: [{ title: 'Auto extract additional slot', description: '追加スロットの変更が完了しました。', color: 0x1DA1F2 }] });
+                    });
+                }
         }
     }
 });
