@@ -2549,14 +2549,6 @@ client.on(Events.InteractionCreate, async (interaction) => {
             case "add":
                 let premium_flag = 0;
                 //premiun_flagが0でuseridが一致するレコードが5件以上あるか確認する
-                const over_5_check = await new Promise(resolve => {
-                    connection.query('SELECT * FROM rss WHERE userid = ? AND premium_flag = 0', [interaction.user.id], async function (error, results, fields) {
-                        if (error) throw error;
-                        if (results.length >= 5) return resolve(false);
-                        resolve(true);
-                    });
-                });
-                if (!over_5_check) return await interaction.reply({ embeds: [{ title: 'Auto extract add', description: '5件以上の登録はできません。', color: 0x1DA1F2 }] });
                 const limit_free_check = await new Promise(resolve => {
                     connection.query('SELECT * FROM rss WHERE premium_flag = 0', [], async function (error, results, fields) {
                         if (error) throw error;
@@ -2581,6 +2573,15 @@ client.on(Events.InteractionCreate, async (interaction) => {
                     if (now_using_additional_autoextraction_slot >= additional_autoextraction_slot) return await interaction.reply({ embeds: [{ title: 'Auto extract add', description: '支援者優先枠の登録上限に達しているため追加できません。', color: 0x1DA1F2 }] });
                     premium_flag = 1;
                 }
+                const over_5_check = await new Promise(resolve => {
+                    connection.query('SELECT * FROM rss WHERE userid = ? AND premium_flag = 0', [interaction.user.id], async function (error, results, fields) {
+                        if (error) throw error;
+                        if (results.length >= 5) return resolve(false);
+                        resolve(true);
+                    });
+                });
+                if (!over_5_check && !premium_flag) return await interaction.reply({ embeds: [{ title: 'Auto extract add', description: '5件以上の登録はできません。', color: 0x1DA1F2 }] });
+                
                 const username = interaction.options.getString('username');
                 const webhook = interaction.options.getString('webhook');
                 if (username === null || webhook === null) return await interaction.reply(userMustSpecifyAnyWordLocales[interaction.locale] ?? userMustSpecifyAnyWordLocales["en"]);
