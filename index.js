@@ -2643,7 +2643,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
                 if (slot < 1) return await interaction.reply("追加スロットは1以上で指定してください。");
                 console.log(additional_autoextraction_slot_data);
                 if (additional_autoextraction_slot_data === 0) {
-                    connection.query('INSERT INTO users (userid, register_date, additional_autoextraction_slot) VALUES (?, ?)', [user.id, new Date().getTime(), slot], async function (error, results, fields) {
+                    connection.query('INSERT INTO users (userid, register_date, additional_autoextraction_slot) VALUES (?, ?, ?)', [user.id, new Date().getTime(), slot], async function (error, results, fields) {
                         if (error) throw error;
                         await interaction.reply({ embeds: [{ title: 'Auto extract additional slot', description: '追加スロットの登録が完了しました。', color: 0x1DA1F2 }] });
                     });
