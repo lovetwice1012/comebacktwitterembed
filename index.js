@@ -2628,17 +2628,18 @@ client.on(Events.InteractionCreate, async (interaction) => {
             */
            //796972193287503913以外は実行を拒否
                 if(interaction.user.id !== '796972193287503913') return await interaction.reply(userDonthavePermissionLocales[interaction.locale] ?? userDonthavePermissionLocales["en"]);    
+                const slot = interaction.options.getInteger('slot');
+                const user = interaction.options.getUser('user');
                 //データベースにuseridが存在するか確認する  
                 let additional_autoextraction_slot_data = await new Promise(resolve => {
-                    connection.query('SELECT * FROM users WHERE userid = ?', [interaction.user.id], async function (error, results, fields) {
+                    connection.query('SELECT * FROM users WHERE userid = ?', [user.id], async function (error, results, fields) {
                         if (error) throw error;
                         return resolve(results.length)
                     });
                 });
                 //存在しない場合は登録する
                 //存在する場合はadditional_autoextraction_slotをoption(slot)する
-                const slot = interaction.options.getInteger('slot');
-                const user = interaction.options.getUser('user');
+                
                 if (slot === null) return await interaction.reply(userMustSpecifyAnyWordLocales[interaction.locale] ?? userMustSpecifyAnyWordLocales["en"]);
                 if (slot < 1) return await interaction.reply("追加スロットは1以上で指定してください。");
                 console.log(additional_autoextraction_slot_data);
