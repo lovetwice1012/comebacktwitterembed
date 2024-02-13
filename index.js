@@ -2549,6 +2549,12 @@ client.on(Events.InteractionCreate, async (interaction) => {
             case "add":
                 let premium_flag = 0;
                 //premiun_flagが0でuseridが一致するレコードが5件以上あるか確認する
+                let additional_autoextraction_slot = await new Promise(resolve => {
+                    connection.query('SELECT * FROM users WHERE userid = ?', [interaction.user.id], async function (error, results, fields) {
+                        if (error) throw error;
+                        return resolve(results[0].additional_autoextraction_slot);
+                    });
+                });
                 const limit_free_check = await new Promise(resolve => {
                     connection.query('SELECT * FROM rss WHERE premium_flag = 0', [], async function (error, results, fields) {
                         if (error) throw error;
@@ -2556,23 +2562,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
                         resolve(false);
                     });
                 });
-                if (!limit_free_check) {
-                    const additional_autoextraction_slot = await new Promise(resolve => {
-                        connection.query('SELECT * FROM users WHERE userid = ?', [interaction.user.id], async function (error, results, fields) {
-                            if (error) throw error;
-                            return resolve(results[0].additional_autoextraction_slot);
-                        });
-                    });
-                    if (additional_autoextraction_slot === 0) return await interaction.reply({ embeds: [{ title: 'Auto extract add', description: '無料枠の登録は上限に達しているため追加できません。', color: 0x1DA1F2 }] });
-                    const now_using_additional_autoextraction_slot = await new Promise(resolve => {
-                        connection.query('SELECT * FROM rss WHERE userid = ? AND premium_flag = 1', [interaction.user.id], async function (error, results, fields) {
-                            if (error) throw error;
-                            return resolve(results.length);
-                        });
-                    });
-                    if (now_using_additional_autoextraction_slot >= additional_autoextraction_slot) return await interaction.reply({ embeds: [{ title: 'Auto extract add', description: '支援者優先枠の登録上限に達しているため追加できません。', color: 0x1DA1F2 }] });
-                    premium_flag = 1;
-                }
+                if (!limit_free_check && additional_autoextraction_slot === 0) return await interaction.reply({ embeds: [{ title: 'Auto extract add', description: '無料枠の登録は上限に達しているため追加できません。', color: 0x1DA1F2 }] });
                 const over_5_check = await new Promise(resolve => {
                     connection.query('SELECT * FROM rss WHERE userid = ? AND premium_flag = 0', [interaction.user.id], async function (error, results, fields) {
                         if (error) throw error;
@@ -2580,7 +2570,15 @@ client.on(Events.InteractionCreate, async (interaction) => {
                         resolve(true);
                     });
                 });
-                if (!over_5_check && !premium_flag) return await interaction.reply({ embeds: [{ title: 'Auto extract add', description: '5件以上の登録はできません。', color: 0x1DA1F2 }] });
+                if (!over_5_check && additional_autoextraction_slot === 0) return await interaction.reply({ embeds: [{ title: 'Auto extract add', description: '5件以上の登録はできません。', color: 0x1DA1F2 }] });
+                const now_using_additional_autoextraction_slot = await new Promise(resolve => {
+                    connection.query('SELECT * FROM rss WHERE userid = ? AND premium_flag = 1', [interaction.user.id], async function (error, results, fields) {
+                        if (error) throw error;
+                        return resolve(results.length);
+                    });
+                });
+                if ((now_using_additional_autoextraction_slot >= additional_autoextraction_slot) && (over_5_check || limit_free_check)) return await interaction.reply({ embeds: [{ title: 'Auto extract add', description: '支援者優先枠の登録上限に達しているため追加できません。', color: 0x1DA1F2 }] });
+                if (now_using_additional_autoextraction_slot < additional_autoextraction_slot) premium_flag = 1;
                 
                 const username = interaction.options.getString('username');
                 const webhook = interaction.options.getString('webhook');
@@ -2628,7 +2626,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
            //796972193287503913以外は実行を拒否
                 if(interaction.user.id !== '796972193287503913') return await interaction.reply(userDonthavePermissionLocales[interaction.locale] ?? userDonthavePermissionLocales["en"]);    
                 //データベースにuseridが存在するか確認する  
-                const additional_autoextraction_slot = await new Promise(resolve => {
+                let additional_autoextraction_slot_data = await new Promise(resolve => {
                     connection.query('SELECT * FROM users WHERE userid = ?', [interaction.user.id], async function (error, results, fields) {
                         if (error) throw error;
                         return resolve(results.length)
@@ -2639,7 +2637,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
                 const slot = interaction.options.getInteger('slot');
                 if (slot === null) return await interaction.reply(userMustSpecifyAnyWordLocales[interaction.locale] ?? userMustSpecifyAnyWordLocales["en"]);
                 if (slot < 1) return await interaction.reply("追加スロットは1以上で指定してください。");
-                if (additional_autoextraction_slot === 0) {
+                if (additional_autoextraction_slot_data === 0) {
                     connection.query('INSERT INTO users (userid, register_date, additional_autoextraction_slot) VALUES (?, ?)', [interaction.user.id, new Date().getTime(), slot], async function (error, results, fields) {
                         if (error) throw error;
                         await interaction.reply({ embeds: [{ title: 'Auto extract additional slot', description: '追加スロットの登録が完了しました。', color: 0x1DA1F2 }] });
