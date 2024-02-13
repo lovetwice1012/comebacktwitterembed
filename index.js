@@ -2577,8 +2577,11 @@ client.on(Events.InteractionCreate, async (interaction) => {
                         return resolve(results.length);
                     });
                 });
-                if ((now_using_additional_autoextraction_slot >= additional_autoextraction_slot) && (over_5_check || limit_free_check)) return await interaction.reply({ embeds: [{ title: 'Auto extract add', description: '支援者優先枠の登録上限に達しているため追加できません。', color: 0x1DA1F2 }] });
-                if (now_using_additional_autoextraction_slot < additional_autoextraction_slot) premium_flag = 1;
+                if ((now_using_additional_autoextraction_slot >= additional_autoextraction_slot) && (over_5_check || limit_free_check)){
+                    return await interaction.reply({ embeds: [{ title: 'Auto extract add', description: '支援者優先枠の登録上限に達しているため追加できません。', color: 0x1DA1F2 }] });
+                } else if ((now_using_additional_autoextraction_slot < additional_autoextraction_slot) && (over_5_check || limit_free_check)) {
+                    premium_flag = 1;
+                }
                 
                 const username = interaction.options.getString('username');
                 const webhook = interaction.options.getString('webhook');
