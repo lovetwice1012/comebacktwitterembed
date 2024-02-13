@@ -2598,17 +2598,17 @@ client.on(Events.InteractionCreate, async (interaction) => {
                 break;
             case "additionalautoextractslot":
             /*
-
-列	型	コメント
-userid	bigint(20)	
-plan	int(11) [0]	
-paid_plan_expired_at	bigint(20) [0]	
-register_date	bigint(20)	
-additional_autoextraction_slot	int(11) [0]	
-save_tweet_quota_override	bigint(20) NULL	
-enabled	tinyint(4) [1]	
-
+            列	型	コメント
+            userid	bigint(20)	
+            plan	int(11) [0]	
+            paid_plan_expired_at	bigint(20) [0]	
+            register_date	bigint(20)	
+            additional_autoextraction_slot	int(11) [0]	
+            save_tweet_quota_override	bigint(20) NULL	
+            enabled	tinyint(4) [1]	
             */
+           //796972193287503913以外は実行を拒否
+                if(interaction.user.id !== '796972193287503913') return await interaction.reply(userDonthavePermissionLocales[interaction.locale] ?? userDonthavePermissionLocales["en"]);    
                 //データベースにuseridが存在するか確認する  
                 const additional_autoextraction_slot = await new Promise(resolve => {
                     connection.query('SELECT * FROM users WHERE userid = ?', [interaction.user.id], async function (error, results, fields) {
