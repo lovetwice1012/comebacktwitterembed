@@ -2547,6 +2547,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
                 );
                 break;
             case "add":
+                let premium_flag = 0;
                 //premiun_flagが0でuseridが一致するレコードが5件以上あるか確認する
                 const over_5_check = await new Promise(resolve => {
                     connection.query('SELECT * FROM rss WHERE userid = ? AND premium_flag = 0', [interaction.user.id], async function (error, results, fields) {
@@ -2563,7 +2564,23 @@ client.on(Events.InteractionCreate, async (interaction) => {
                         resolve(false);
                     });
                 });
-                if (!limit_free_check) return await interaction.reply({ embeds: [{ title: 'Auto extract add', description: '無料枠の登録は上限に達しているためできません。', color: 0x1DA1F2 }] });
+                if (!limit_free_check) {
+                    const additional_autoextraction_slot = await new Promise(resolve => {
+                        connection.query('SELECT * FROM users WHERE userid = ?', [interaction.user.id], async function (error, results, fields) {
+                            if (error) throw error;
+                            return resolve(results[0].additional_autoextraction_slot);
+                        });
+                    });
+                    if (additional_autoextraction_slot === 0) return await interaction.reply({ embeds: [{ title: 'Auto extract add', description: '無料枠の登録は上限に達しているため追加できません。', color: 0x1DA1F2 }] });
+                    const now_using_additional_autoextraction_slot = await new Promise(resolve => {
+                        connection.query('SELECT * FROM rss WHERE userid = ? AND premium_flag = 1', [interaction.user.id], async function (error, results, fields) {
+                            if (error) throw error;
+                            return resolve(results.length);
+                        });
+                    });
+                    if (now_using_additional_autoextraction_slot >= additional_autoextraction_slot) return await interaction.reply({ embeds: [{ title: 'Auto extract add', description: '支援者優先枠の登録上限に達しているため追加できません。', color: 0x1DA1F2 }] });
+                    premium_flag = 1;
+                }
                 const username = interaction.options.getString('username');
                 const webhook = interaction.options.getString('webhook');
                 if (username === null || webhook === null) return await interaction.reply(userMustSpecifyAnyWordLocales[interaction.locale] ?? userMustSpecifyAnyWordLocales["en"]);
@@ -2580,7 +2597,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
                     body: JSON.stringify({ embeds: [{ title: 'このチャンネルにツイートを送信します', description: 'これはComebackTwitterEmbedの新着自動展開機能の登録確認メッセージです。\n今後はこのチャンネルに[' + username + '](https://twitter.com/' + username + ')のツイートが更新されるたびに通知を行います。' }] })
                 });
                 if (webhookResponse.status !== 204) return await interaction.reply({ embeds: [{ title: 'Auto extract add', description: '指定されたWEBHOOKは正しい形式ではないか、無効です。', color: 0x1DA1F2 }] });
-                connection.query('INSERT INTO rss (userid, username, lastextracted, webhook, created_at) VALUES (?, ?, ?, ?, ?)', [interaction.user.id, username, new Date().getTime(), webhook, new Date().getTime()], async function (error, results, fields) {
+                connection.query('INSERT INTO rss (userid, username, lastextracted, webhook, created_at, premium_flag) VALUES (?, ?, ?, ?, ?, ?)', [interaction.user.id, username, new Date().getTime(), webhook, new Date().getTime(), premium_flag], async function (error, results, fields) {
                     if (error) throw error;
                     await interaction.reply({ embeds: [{ title: 'Auto extract add', description: '登録が完了しました。\n[登録されたユーザー](https://twitter.com/' + username + ')', color: 0x1DA1F2 }] });
                 });
