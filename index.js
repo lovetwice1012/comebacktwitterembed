@@ -2638,15 +2638,16 @@ client.on(Events.InteractionCreate, async (interaction) => {
                 //存在しない場合は登録する
                 //存在する場合はadditional_autoextraction_slotをoption(slot)する
                 const slot = interaction.options.getInteger('slot');
+                const user = interaction.options.getUser('user');
                 if (slot === null) return await interaction.reply(userMustSpecifyAnyWordLocales[interaction.locale] ?? userMustSpecifyAnyWordLocales["en"]);
                 if (slot < 1) return await interaction.reply("追加スロットは1以上で指定してください。");
                 if (additional_autoextraction_slot_data === 0) {
-                    connection.query('INSERT INTO users (userid, register_date, additional_autoextraction_slot) VALUES (?, ?)', [interaction.user.id, new Date().getTime(), slot], async function (error, results, fields) {
+                    connection.query('INSERT INTO users (userid, register_date, additional_autoextraction_slot) VALUES (?, ?)', [user.id, new Date().getTime(), slot], async function (error, results, fields) {
                         if (error) throw error;
                         await interaction.reply({ embeds: [{ title: 'Auto extract additional slot', description: '追加スロットの登録が完了しました。', color: 0x1DA1F2 }] });
                     });
                 } else {
-                    connection.query('UPDATE users SET additional_autoextraction_slot = ? WHERE userid = ?', [slot, interaction.user.id], async function (error, results, fields) {
+                    connection.query('UPDATE users SET additional_autoextraction_slot = ? WHERE userid = ?', [slot, user.id], async function (error, results, fields) {
                         if (error) throw error;
                         await interaction.reply({ embeds: [{ title: 'Auto extract additional slot', description: '追加スロットの変更が完了しました。', color: 0x1DA1F2 }] });
                     });
