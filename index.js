@@ -2613,8 +2613,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
                 const additional_autoextraction_slot = await new Promise(resolve => {
                     connection.query('SELECT * FROM users WHERE userid = ?', [interaction.user.id], async function (error, results, fields) {
                         if (error) throw error;
-                        if (results.length === 0) return resolve(0);
-                        resolve(results[0]);
+                        return resolve(results.length)
                     });
                 });
                 //存在しない場合は登録する
