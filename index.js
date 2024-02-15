@@ -2542,7 +2542,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
                                 color: 0x1DA1F2
                             }
                         ],
-                        Flags: 64
+                        flags: 64
                     });
                 }
                 );
