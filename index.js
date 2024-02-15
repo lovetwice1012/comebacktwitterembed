@@ -2552,6 +2552,12 @@ client.on(Events.InteractionCreate, async (interaction) => {
                 let additional_autoextraction_slot = await new Promise(resolve => {
                     connection.query('SELECT * FROM users WHERE userid = ?', [interaction.user.id], async function (error, results, fields) {
                         if (error) throw error;
+                        if (results.length === 0){
+                            connection.query('INSERT INTO users (userid, register_date) VALUES (?, ?)', [interaction.user.id, new Date().getTime()], async function (error, results, fields) {
+                                if (error) throw error;
+                            });
+                            return resolve(0);
+                        }
                         return resolve(results[0].additional_autoextraction_slot);
                     });
                 });
