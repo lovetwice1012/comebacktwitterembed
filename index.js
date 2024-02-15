@@ -2541,7 +2541,8 @@ client.on(Events.InteractionCreate, async (interaction) => {
                                 description: content,
                                 color: 0x1DA1F2
                             }
-                        ]
+                        ],
+                        Flags: 64
                     });
                 }
                 );
