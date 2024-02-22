@@ -919,6 +919,15 @@ const command_name_slot_Locales = {
     en: 'slot'
 }
 
+const command_name_checkfreeslot_Locales = {
+    ja: '空きスロット数を確認',
+    en: 'checkfreeslot'
+}
+
+const settingsAdditionalAutoExtractCheckFreeSlotDescriptionLocalizations = {
+    ja: '空きスロット数を確認します。',
+    en: 'Checks free slot.'
+}
 
 
 function conv_en_to_en_US(obj) {
@@ -1542,6 +1551,13 @@ client.on('ready', () => {
                             required: true
                         }
                     ]
+                },
+                {
+                    name: 'checkfreeslot',
+                    name_localizations: conv_en_to_en_US(command_name_checkfreeslot_Locales),
+                    description: 'check free slot',
+                    description_localizations: conv_en_to_en_US(settingsAdditionalAutoExtractCheckFreeSlotDescriptionLocalizations),
+                    type: ApplicationCommandOptionType.Subcommand
                 }
             ]
         }
@@ -1625,7 +1641,7 @@ function checkComponentIncludesDisabledButtonAndIfFindDeleteIt(components, guild
     // 条件に一致する子コンポーネントをフィルタリングし、空のコンポーネントを除外
     return components.reduce((acc, component) => {
         if (!component.components || component.components.length === 0) return acc;
-        
+
         // 条件に一致しない子コンポーネントのみを保持
         const filteredComponents = component.components.filter(subComponent => {
             const id = subComponent.data && subComponent.data.custom_id;
@@ -1934,7 +1950,7 @@ function isMessageDisabledForUserOrChannel(message) {
 
 async function ensureUserExistsInDatabase(userId) {
     const userExists = await queryDatabase('SELECT EXISTS (SELECT * FROM users WHERE userid = ? LIMIT 1)', [userId]);
-    if (userExists[0][Object.keys(userExists[0])[0]] === 0){
+    if (userExists[0][Object.keys(userExists[0])[0]] === 0) {
         await queryDatabase('INSERT INTO users (userid, register_date) VALUES (?, ?)', [userId, new Date().getTime()]);
     }
 }
@@ -1955,6 +1971,8 @@ async function queryDatabase(query, params) {
 
 client.on(Events.InteractionCreate, async (interaction) => {
     if (!interaction.type === InteractionType.ApplicationCommand) return;
+    //もしuserが登録されていなかったら登録する
+    await ensureUserExistsInDatabase(interaction.user.id);
     if (interaction.commandName === 'ping') {
         await interaction.reply({
             embeds: [
@@ -2272,7 +2290,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
                 default:
                     return await interaction.reply(userMustSpecifyAnyWordLocales[interaction.locale] ?? userMustSpecifyAnyWordLocales["en"]);
             }
-            
+
         }
         fs.writeFileSync('./settings.json', JSON.stringify(settings, null, 4));
     } else if (interaction.commandName === 'showsavetweet') {
@@ -2433,6 +2451,13 @@ client.on(Events.InteractionCreate, async (interaction) => {
                 name: '動作モード',
                 value: 'レガシーモード\n(適切な権限設定がされていればdiscord純正の埋め込みが削除され、今まで通りの展開が行われる)'
             });
+            //もし権限がない場合は注意を表示する
+            if (!interaction.guild.members.me.permissions.has(PermissionsBitField.Flags.ManageMessages)) {
+                embed.fields.push({
+                    name: 'レガシーモードに関する注意',
+                    value: 'BOTにメッセージの管理権限を付与するとdiscord純正の埋め込みのみを削除して今まで通りの展開が行われます。\nこのBOTにメッセージの管理権限を付与することを検討してみてください。\n(使用感はdiscordがリンクの展開を修正する前と変わらなくなります。)'
+                });
+            }
         } else {
             embed.fields.push({
                 name: '動作モード',
@@ -2531,7 +2556,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
                     if (results.length === 0) return await interaction.reply({ embeds: [{ title: 'Auto extract list', description: 'データが登録されていません。', color: 0x1DA1F2 }] });
                     let content = '';
                     results.forEach(element => {
-                        if(element.webhook === null) return;
+                        if (element.webhook === null) return;
                         content += element.id + ': [' + element.username + '](https://twitter.com/' + element.username + ') [WEBHOOK](' + element.webhook + ')\n';
                     });
                     await interaction.reply({
@@ -2553,7 +2578,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
                 let additional_autoextraction_slot = await new Promise(resolve => {
                     connection.query('SELECT * FROM users WHERE userid = ?', [interaction.user.id], async function (error, results, fields) {
                         if (error) throw error;
-                        if (results.length === 0){
+                        if (results.length === 0) {
                             connection.query('INSERT INTO users (userid, register_date) VALUES (?, ?)', [interaction.user.id, new Date().getTime()], async function (error, results, fields) {
                                 if (error) throw error;
                             });
@@ -2584,12 +2609,12 @@ client.on(Events.InteractionCreate, async (interaction) => {
                         return resolve(results.length);
                     });
                 });
-                if (additional_autoextraction_slot != 0 && (now_using_additional_autoextraction_slot >= additional_autoextraction_slot) && (over_5_check || limit_free_check)){
+                if (additional_autoextraction_slot != 0 && (now_using_additional_autoextraction_slot >= additional_autoextraction_slot) && (over_5_check || limit_free_check)) {
                     return await interaction.reply({ embeds: [{ title: 'Auto extract add', description: '支援者優先枠の登録上限に達しているため追加できません。', color: 0x1DA1F2 }] });
                 } else if (additional_autoextraction_slot != 0 && (now_using_additional_autoextraction_slot < additional_autoextraction_slot) && (over_5_check || limit_free_check)) {
                     premium_flag = 1;
                 }
-                
+
                 const username = interaction.options.getString('username');
                 const webhook = interaction.options.getString('webhook');
                 if (username === null || webhook === null) return await interaction.reply(userMustSpecifyAnyWordLocales[interaction.locale] ?? userMustSpecifyAnyWordLocales["en"]);
@@ -2623,18 +2648,18 @@ client.on(Events.InteractionCreate, async (interaction) => {
                 });
                 break;
             case "additionalautoextractslot":
-            /*
-            列	型	コメント
-            userid	bigint(20)	
-            plan	int(11) [0]	
-            paid_plan_expired_at	bigint(20) [0]	
-            register_date	bigint(20)	
-            additional_autoextraction_slot	int(11) [0]	
-            save_tweet_quota_override	bigint(20) NULL	
-            enabled	tinyint(4) [1]	
-            */
-           //796972193287503913以外は実行を拒否
-                if(interaction.user.id !== '796972193287503913') return await interaction.reply(userDonthavePermissionLocales[interaction.locale] ?? userDonthavePermissionLocales["en"]);    
+                /*
+                列	型	コメント
+                userid	bigint(20)	
+                plan	int(11) [0]	
+                paid_plan_expired_at	bigint(20) [0]	
+                register_date	bigint(20)	
+                additional_autoextraction_slot	int(11) [0]	
+                save_tweet_quota_override	bigint(20) NULL	
+                enabled	tinyint(4) [1]	
+                */
+                //796972193287503913以外は実行を拒否
+                if (interaction.user.id !== '796972193287503913') return await interaction.reply(userDonthavePermissionLocales[interaction.locale] ?? userDonthavePermissionLocales["en"]);
                 const slot = interaction.options.getInteger('slot');
                 const user = interaction.options.getUser('user');
                 //データベースにuseridが存在するか確認する  
@@ -2646,7 +2671,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
                 });
                 //存在しない場合は登録する
                 //存在する場合はadditional_autoextraction_slotをoption(slot)する
-                
+
                 if (slot === null) return await interaction.reply(userMustSpecifyAnyWordLocales[interaction.locale] ?? userMustSpecifyAnyWordLocales["en"]);
                 if (slot < 1) return await interaction.reply("追加スロットは1以上で指定してください。");
                 console.log(additional_autoextraction_slot_data);
@@ -2661,6 +2686,57 @@ client.on(Events.InteractionCreate, async (interaction) => {
                         await interaction.reply({ embeds: [{ title: 'Auto extract additional slot', description: '追加スロットの変更が完了しました。', color: 0x1DA1F2 }] });
                     });
                 }
+                break;
+            case "checkfreeslot":
+                const free_slot = await new Promise(resolve => {
+                    connection.query('SELECT * FROM rss WHERE premium_flag = 0', [], async function (error, results, fields) {
+                        if (error) throw error;
+                        return resolve(results.length);
+                    });
+                });
+                //無料枠の空き数と支援者優先枠の空き数を表示する。また、支援者優先枠の空き数が0の場合はその旨を表示する。さらに、全体の空き数と使用数、使用率を表示する。
+                const premium_slot = await new Promise(resolve => {
+                    connection.query('SELECT * FROM rss WHERE premium_flag = 1', [], async function (error, results, fields) {
+                        if (error) throw error;
+                        return resolve(results.length);
+                    });
+                });
+                const user_using_free_slot = await new Promise(resolve => {
+                    connection.query('SELECT * FROM rss WHERE userid = ? AND premium_flag = 0', [interaction.user.id], async function (error, results, fields) {
+                        if (error) throw error;
+                        return resolve(results.length);
+                    });
+                });
+                const user_using_premium_slot = await new Promise(resolve => {
+                    connection.query('SELECT * FROM rss WHERE userid = ? AND premium_flag = 1', [interaction.user.id], async function (error, results, fields) {
+                        if (error) throw error;
+                        return resolve(results.length);
+                    });
+                });
+                const user_have_additional_autoextraction_slot = await new Promise(resolve => {
+                    connection.query('SELECT * FROM users WHERE userid = ?', [interaction.user.id], async function (error, results, fields) {
+                        if (error) throw error;
+                        return resolve(results[0].additional_autoextraction_slot);
+                    });
+                });
+                const all_using_slot = free_slot + premium_slot;
+                const all_free_slot = 75;
+                const all_donater_slot = 150;
+                const all_slot = all_free_slot + all_donater_slot;
+                const free_slot_percent = Math.floor((free_slot / all_free_slot) * 100);
+                const premium_slot_percent = Math.floor((premium_slot / all_donater_slot) * 100);
+                const all_using_slot_percent = Math.floor((all_using_slot / all_slot) * 100);
+                let content = '';
+                content += '無料枠の空き数: ' + (all_free_slot - free_slot) + '/' + all_free_slot + ' (' + free_slot_percent + '%)\n';
+                content += '支援者優先枠の空き数: ' + (all_donater_slot - premium_slot) + '/' + all_donater_slot + ' (' + premium_slot_percent + '%)\n';
+                content += 'あなたの無料枠の使用数: ' + user_using_free_slot + '/' + free_slot + '\n';
+                content += 'あなたの支援者優先枠の使用数: ' + user_using_premium_slot + '/' + premium_slot + '\n';
+                content += 'あなたの追加スロットの使用数: ' + user_have_additional_autoextraction_slot + '/' + user_have_additional_autoextraction_slot + '\n';
+                content += '全体の使用数: ' + all_using_slot + '/' + all_slot + ' (' + all_using_slot_percent + '%)\n';
+                await interaction.reply({ embeds: [{ title: 'Auto extract check free slot', description: content, color: 0x1DA1F2 }] });
+                break;
+
+
         }
     }
 });
