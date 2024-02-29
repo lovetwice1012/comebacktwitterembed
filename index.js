@@ -1853,35 +1853,54 @@ async function sendTweetEmbed(message, url, quoted = false, parent = null, saved
 
                 }
                 if (settings.alwaysreplyifpostedtweetlink[message.guild.id] === true && parent === null) {
+                    await new Promise(async (resolve, reject) => {
                     msg = await message.reply(messageObject).catch(async err => {
                         if (messageObject.files !== undefined) {
                             await sendContentPromise(message, messageObject.files);
                             delete messageObject.files;
                             msg = await message.channel.send(messageObject).catch(err => {
                                 console.log(err);
+                            }).then(msg => {
+                                resolve();
                             });
                         }
+                    }).then(msg => {
+                        resolve();
                     });
+                });
                 } else if (parent === null) {
+                    await new Promise(async (resolve, reject) => {
                     msg = await message.channel.send(messageObject).catch(async err => {
                         if (messageObject.files !== undefined) {
                             await sendContentPromise(message, messageObject.files);
                             delete messageObject.files;
                             msg = await message.channel.send(messageObject).catch(err => {
                                 console.log(err);
+                            }).then(msg => {
+                                resolve();
                             });
                         }
-                    });;
+                    }).then(msg => {
+                        resolve();
+                    });
+                });
                 } else {
+                    await new Promise(async (resolve, reject) => {
+
                     await parent.reply(messageObject).catch(async err => {
                         if (messageObject.files !== undefined) {
                             await sendContentPromise(message, messageObject.files);
                             delete messageObject.files;
                             await message.channel.send(messageObject).catch(err => {
                                 console.log(err);
+                            }).then(msg => {
+                                resolve();
                             });
                         }
-                    });
+                    }).then(msg => {
+                        resolve();
+                    })
+                });
                 }
                 if (settings.deletemessageifonlypostedtweetlink[message.guild.id] === true && message.content == url) {
                     if (settings.deletemessageifonlypostedtweetlink_secoundaryextractmode[message.guild.id] === undefined) settings.deletemessageifonlypostedtweetlink_secoundaryextractmode[message.guild.id] = false;
@@ -2590,7 +2609,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
                 const limit_free_check = await new Promise(resolve => {
                     connection.query('SELECT * FROM rss WHERE premium_flag = 0', [], async function (error, results, fields) {
                         if (error) throw error;
-                        if (results.length < 76) return resolve(true);
+                        if (results.length < 151) return resolve(true);
                         resolve(false);
                     });
                 });
@@ -2720,7 +2739,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
                     });
                 });
                 const all_using_slot = free_slot + premium_slot;
-                const all_free_slot = 75;
+                const all_free_slot = 150;
                 const all_donater_slot = 150;
                 const all_slot = all_free_slot + all_donater_slot;
                 const free_slot_percent = Math.floor((free_slot / all_free_slot) * 100);
@@ -2731,7 +2750,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
                 content += '支援者優先枠の空き数: ' + (all_donater_slot - premium_slot) + '/' + all_donater_slot + ' (' + premium_slot_percent + '%)\n';
                 content += 'あなたの無料枠の使用数: ' + user_using_free_slot + '/' + free_slot + '\n';
                 content += 'あなたの支援者優先枠の使用数: ' + user_using_premium_slot + '/' + premium_slot + '\n';
-                content += 'あなたの追加スロットの使用数: ' + user_have_additional_autoextraction_slot + '/' + user_have_additional_autoextraction_slot + '\n';
+                content += 'あなたの追加スロットの使用数: ' + user_using_premium_slot + '/' + user_have_additional_autoextraction_slot + '\n';
                 content += '全体の使用数: ' + all_using_slot + '/' + all_slot + ' (' + all_using_slot_percent + '%)\n';
                 await interaction.reply({ embeds: [{ title: 'Auto extract check free slot', description: content, color: 0x1DA1F2 }] });
                 break;
