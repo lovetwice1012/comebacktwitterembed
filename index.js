@@ -1854,53 +1854,53 @@ async function sendTweetEmbed(message, url, quoted = false, parent = null, saved
                 }
                 if (settings.alwaysreplyifpostedtweetlink[message.guild.id] === true && parent === null) {
                     await new Promise(async (resolve, reject) => {
-                    msg = await message.reply(messageObject).catch(async err => {
-                        if (messageObject.files !== undefined) {
-                            await sendContentPromise(message, messageObject.files);
-                            delete messageObject.files;
-                            msg = await message.channel.send(messageObject).catch(err => {
-                                console.log(err);
-                            }).then(msg => {
-                                resolve();
-                            });
-                        }
-                    }).then(msg => {
-                        resolve();
+                        msg = await message.reply(messageObject).catch(async err => {
+                            if (messageObject.files !== undefined) {
+                                await sendContentPromise(message, messageObject.files);
+                                delete messageObject.files;
+                                msg = await message.channel.send(messageObject).catch(err => {
+                                    console.log(err);
+                                }).then(msg => {
+                                    resolve();
+                                });
+                            }
+                        }).then(msg => {
+                            resolve();
+                        });
                     });
-                });
                 } else if (parent === null) {
                     await new Promise(async (resolve, reject) => {
-                    msg = await message.channel.send(messageObject).catch(async err => {
-                        if (messageObject.files !== undefined) {
-                            await sendContentPromise(message, messageObject.files);
-                            delete messageObject.files;
-                            msg = await message.channel.send(messageObject).catch(err => {
-                                console.log(err);
-                            }).then(msg => {
-                                resolve();
-                            });
-                        }
-                    }).then(msg => {
-                        resolve();
+                        msg = await message.channel.send(messageObject).catch(async err => {
+                            if (messageObject.files !== undefined) {
+                                await sendContentPromise(message, messageObject.files);
+                                delete messageObject.files;
+                                msg = await message.channel.send(messageObject).catch(err => {
+                                    console.log(err);
+                                }).then(msg => {
+                                    resolve();
+                                });
+                            }
+                        }).then(msg => {
+                            resolve();
+                        });
                     });
-                });
                 } else {
                     await new Promise(async (resolve, reject) => {
 
-                    await parent.reply(messageObject).catch(async err => {
-                        if (messageObject.files !== undefined) {
-                            await sendContentPromise(message, messageObject.files);
-                            delete messageObject.files;
-                            await message.channel.send(messageObject).catch(err => {
-                                console.log(err);
-                            }).then(msg => {
-                                resolve();
-                            });
-                        }
-                    }).then(msg => {
-                        resolve();
-                    })
-                });
+                        await parent.reply(messageObject).catch(async err => {
+                            if (messageObject.files !== undefined) {
+                                await sendContentPromise(message, messageObject.files);
+                                delete messageObject.files;
+                                await message.channel.send(messageObject).catch(err => {
+                                    console.log(err);
+                                }).then(msg => {
+                                    resolve();
+                                });
+                            }
+                        }).then(msg => {
+                            resolve();
+                        })
+                    });
                 }
                 if (settings.deletemessageifonlypostedtweetlink[message.guild.id] === true && message.content == url) {
                     if (settings.deletemessageifonlypostedtweetlink_secoundaryextractmode[message.guild.id] === undefined) settings.deletemessageifonlypostedtweetlink_secoundaryextractmode[message.guild.id] = false;
@@ -2635,25 +2635,29 @@ client.on(Events.InteractionCreate, async (interaction) => {
                 }
 
                 const username = interaction.options.getString('username');
-                const webhook = interaction.options.getString('webhook');
-                if (username === null || webhook === null) return await interaction.reply(userMustSpecifyAnyWordLocales[interaction.locale] ?? userMustSpecifyAnyWordLocales["en"]);
-                //usernameが存在するか確認する(数字とアルファベットと_のみで構成されているか確認する)
-                if (!username.match(/^[0-9a-zA-Z_]+$/)) return await interaction.reply({ embeds: [{ title: 'Auto extract add', description: '指定されたユーザーは無効です。\n[入力されたユーザー](https://twitter.com/' + username + ')', color: 0x1DA1F2 }] });
-                //webhookが正しい形式か確認する
-                if (!webhook.match(/^https:\/\/discord.com\/api\/webhooks\/[0-9]+\/[a-zA-Z0-9_-]+$/)) return await interaction.reply({ embeds: [{ title: 'Auto extract add', description: '指定されたWEBHOOKは正しい形式ではないか、無効です。', color: 0x1DA1F2 }] });
-                //webhookにテストメッセージを送信する
-                const webhookResponse = await fetch(webhook, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({ embeds: [{ title: 'このチャンネルにツイートを送信します', description: 'これはComebackTwitterEmbedの新着自動展開機能の登録確認メッセージです。\n今後はこのチャンネルに[' + username + '](https://twitter.com/' + username + ')のツイートが更新されるたびに通知を行います。' }] })
-                });
-                if (webhookResponse.status !== 204) return await interaction.reply({ embeds: [{ title: 'Auto extract add', description: '指定されたWEBHOOKは正しい形式ではないか、無効です。', color: 0x1DA1F2 }] });
-                connection.query('INSERT INTO rss (userid, username, lastextracted, webhook, created_at, premium_flag) VALUES (?, ?, ?, ?, ?, ?)', [interaction.user.id, username, new Date().getTime(), webhook, new Date().getTime(), premium_flag], async function (error, results, fields) {
-                    if (error) throw error;
-                    await interaction.reply({ embeds: [{ title: 'Auto extract add', description: '登録が完了しました。\n[登録されたユーザー](https://twitter.com/' + username + ')', color: 0x1DA1F2 }] });
-                });
+                const webhooks = interaction.options.getString('webhook');
+                const webhooks_array = webhooks.split(',');
+                for (let i = 0; i < webhooks_array.length; i++) {
+                    const webhook = webhooks_array[i];
+                    if (username === null || webhook === null) return await interaction.reply(userMustSpecifyAnyWordLocales[interaction.locale] ?? userMustSpecifyAnyWordLocales["en"]);
+                    //usernameが存在するか確認する(数字とアルファベットと_のみで構成されているか確認する)
+                    if (!username.match(/^[0-9a-zA-Z_]+$/)) return await interaction.reply({ embeds: [{ title: 'Auto extract add', description: '指定されたユーザーは無効です。\n[入力されたユーザー](https://twitter.com/' + username + ')', color: 0x1DA1F2 }] });
+                    //webhookが正しい形式か確認する
+                    if (!webhook.match(/^https:\/\/discord.com\/api\/webhooks\/[0-9]+\/[a-zA-Z0-9_-]+$/)) return await interaction.reply({ embeds: [{ title: 'Auto extract add', description: '指定されたWEBHOOKは正しい形式ではないか、無効です。', color: 0x1DA1F2 }] });
+                    //webhookにテストメッセージを送信する
+                    const webhookResponse = await fetch(webhook, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({ embeds: [{ title: 'このチャンネルにツイートを送信します', description: 'これはComebackTwitterEmbedの新着自動展開機能の登録確認メッセージです。\n今後はこのチャンネルに[' + username + '](https://twitter.com/' + username + ')のツイートが更新されるたびに通知を行います。' }] })
+                    });
+                    if (webhookResponse.status !== 204) return await interaction.reply({ embeds: [{ title: 'Auto extract add', description: '指定されたWEBHOOKは正しい形式ではないか、無効です。', color: 0x1DA1F2 }] });
+                    connection.query('INSERT INTO rss (userid, username, lastextracted, webhook, created_at, premium_flag) VALUES (?, ?, ?, ?, ?, ?)', [interaction.user.id, username, new Date().getTime(), webhook, new Date().getTime(), premium_flag], async function (error, results, fields) {
+                        if (error) throw error;
+                        await interaction.reply({ embeds: [{ title: 'Auto extract add', description: '登録が完了しました。\n[登録されたユーザー](https://twitter.com/' + username + ')', color: 0x1DA1F2 }] });
+                    });
+                }
                 break;
             case "delete":
                 const id = interaction.options.getInteger('id');
