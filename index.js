@@ -1022,16 +1022,17 @@ hint	text NULL
                             description: `あなたが登録した新着自動展開機能の登録(ID:${result.rssId})は、以下の理由により自動解除されました。\n\n理由: ${result.reason}\n\n詳細: \n${result.hint}`,
                             color: 0x1DA1F2
                         }]
-                    })
-                    connection.query('UPDATE deregister_notification as T1 SET sendedDirectMessage = 1 WHERE T1.index = ?', [result.index], (err, results, fields) => {
-                        if (err) {
-                            console.error('Error connecting to database:', err);
-                            return;
-                        }
-                        console.log('Updated:', results);
-                    })
-                }
-                ).catch((e) => {
+                    }).then(() => {
+                        connection.query('UPDATE deregister_notification as T1 SET sendedDirectMessage = 1 WHERE T1.index = ?', [result.index], (err, results, fields) => {
+                            if (err) {
+                                console.error('Error connecting to database:', err);
+                                return;
+                            }
+                        })
+                    }).catch((e) => {
+                        console.error(e);
+                    });
+                }).catch((e) => {
                     console.error(e);
                 });
             });
@@ -2609,11 +2610,11 @@ client.on(Events.InteractionCreate, async (interaction) => {
         created_at	bigint(20)	
         premium_flag	int(10) [0]	
         premium_code	text NULL
-
+ 
         索引
         PRIMARY	id
         INDEX	userid
-
+ 
         外部キー
         ソース	ターゲット	ON DELETE	ON UPDATE
         userid	users(userid)	RESTRICT	RESTRICT
