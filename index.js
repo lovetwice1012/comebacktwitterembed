@@ -1009,7 +1009,7 @@ reasonId	int(11)
 reason	varchar(80)	
 hint	text NULL	
 */
-        connection.query('SELECT * FROM deregister_notification WHERE timestamp > ? AND sendedDirectMessage = 0 FULL OUTER JOIN deregister_reason ON deregister_notification.reasonId = deregister_reason.reasonId', [new Date().getTime() - 86400000], (err, results, fields) => {
+        connection.query('SELECT * FROM deregister_notification NATURAL LEFT OUTER JOIN deregister_reason WHERE timestamp > ? AND sendedDirectMessage = 0', [new Date().getTime() - 86400000], (err, results, fields) => {
             if (err) {
                 console.error('Error connecting to database:', err);
                 return;
