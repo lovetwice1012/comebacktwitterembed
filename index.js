@@ -1015,7 +1015,6 @@ hint	text NULL
                 return;
             }
             results.forEach(result => {
-                console.log(result);
                 client.users.fetch(result.userid).then(async user => {
                     user.send({
                         embeds: [{
