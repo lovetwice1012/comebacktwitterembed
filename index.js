@@ -988,6 +988,59 @@ client.on('ready', () => {
         });
     }, 60000);
 
+    setInterval(() => {
+        /*
+テーブル: deregister_notification
+
+列	型	コメント
+index	int(11) 連番	
+userid	bigint(20)	
+reasonId	int(11)	
+timestamp	bigint(20) [round(unix_timestamp(current_timestamp(4)) * 1000,0)]	
+sendedDirectMessage	tinyint(4) [0]	
+
+外部キー
+ソース	ターゲット	ON DELETE	ON UPDATE	
+reasonId	deregister_reason(reasonId)	RESTRICT	RESTRICT	
+
+テーブル: deregister_reason
+列	型	コメント
+reasonId	int(11)	
+reason	varchar(80)	
+hint	text NULL	
+*/
+        connection.query('SELECT * FROM deregister_notification WHERE timestamp < ? AND sendedDirectMessage = 0', [new Date().getTime() - 86400000], (err, results, fields) => {
+            if (err) {
+                console.error('Error connecting to database:', err);
+                return;
+            }
+            results.forEach(result => {
+                client.users.fetch(result.userid).then(user => {
+                    user.send({embeds: [{
+                        title: '新着自動展開機能の登録が自動解除されました',
+                        description: `あなたが登録した新着自動展開機能の登録(登録ID:${result.rssId}は、以下の理由により自動解除されました。\n\n理由: ${result.reason}\n\n詳細: \n${result.hint}`,
+                        color: 0x1DA1F2
+                    }]}).then(() => {
+                        connection.query('UPDATE deregister_notification SET sendedDirectMessage = 1 WHERE index = ?', [result.index], (err, results, fields) => {
+                            if (err) {
+                                console.error('Error connecting to database:', err);
+                                return;
+                            }
+                        });
+                    })
+                }
+                ).catch(() => {
+                    connection.query('UPDATE deregister_notification SET sendedDirectMessage = 1 WHERE index = ?', [result.index], (err, results, fields) => {
+                        if (err) {
+                            console.error('Error connecting to database:', err);
+                            return;
+                        }
+                    });
+                });
+            });
+        });
+    }, 60000);
+
     setInterval(async () => {
         let guild = await client.guilds.cache.get('1175729394782851123')
         let channel = await guild.channels.cache.get('1189083636574724167')
