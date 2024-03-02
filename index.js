@@ -1029,17 +1029,12 @@ hint	text NULL
                         });
                     })
                 }
-                ).catch(() => {
-                    connection.query('UPDATE deregister_notification SET sendedDirectMessage = 1 WHERE index = ?', [result.index], (err, results, fields) => {
-                        if (err) {
-                            console.error('Error connecting to database:', err);
-                            return;
-                        }
-                    });
+                ).catch((e) => {
+                    console.error(e);
                 });
             });
         });
-    }, 60000);
+    }, 10000);
 
     setInterval(async () => {
         let guild = await client.guilds.cache.get('1175729394782851123')
