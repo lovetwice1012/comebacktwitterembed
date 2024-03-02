@@ -1015,6 +1015,7 @@ hint	text NULL
                 return;
             }
             results.forEach(result => {
+                console.log(result);
                 client.users.fetch(result.userid).then(user => {
                     user.send({embeds: [{
                         title: '新着自動展開機能の登録が自動解除されました',
