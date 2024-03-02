@@ -1021,7 +1021,7 @@ hint	text NULL
                         description: `あなたが登録した新着自動展開機能の登録(登録ID:${result.rssId}は、以下の理由により自動解除されました。\n\n理由: ${result.reason}\n\n詳細: \n${result.hint}`,
                         color: 0x1DA1F2
                     }]}).then(() => {
-                        connection.query('UPDATE deregister_notification SET sendedDirectMessage = 1 WHERE index = ?', [result.index], (err, results, fields) => {
+                        connection.query('UPDATE deregister_notification SET sendedDirectMessage = 1 WHERE \'index\' = ?', [result.index], (err, results, fields) => {
                             if (err) {
                                 console.error('Error connecting to database:', err);
                                 return;
