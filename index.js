@@ -1023,7 +1023,7 @@ hint	text NULL
                             color: 0x1DA1F2
                         }]
                     })
-                    connection.query('UPDATE deregister_notification SET sendedDirectMessage = 1 WHERE \'index\' = ?;SHOW WARNINGS', [result.index], (err, results, fields) => {
+                    connection.query('UPDATE deregister_notification as T1 SET sendedDirectMessage = 1 WHERE T1.index = ?', [result.index], (err, results, fields) => {
                         if (err) {
                             console.error('Error connecting to database:', err);
                             return;
