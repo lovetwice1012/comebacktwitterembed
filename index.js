@@ -1028,6 +1028,7 @@ hint	text NULL
                             console.error('Error connecting to database:', err);
                             return;
                         }
+                        console.log('Updated:', results);
                     })
                 }
                 ).catch((e) => {
