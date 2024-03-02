@@ -1016,18 +1016,19 @@ hint	text NULL
             }
             results.forEach(result => {
                 console.log(result);
-                client.users.fetch(result.userid).then(user => {
-                    user.send({embeds: [{
-                        title: '新着自動展開機能の登録が自動解除されました',
-                        description: `あなたが登録した新着自動展開機能の登録(登録ID:${result.rssId})は、以下の理由により自動解除されました。\n\n理由: ${result.reason}\n\n詳細: \n${result.hint}`,
-                        color: 0x1DA1F2
-                    }]}).then(() => {
-                        connection.query('UPDATE deregister_notification SET sendedDirectMessage = 1 WHERE \'index\' = ?', [result.index], (err, results, fields) => {
-                            if (err) {
-                                console.error('Error connecting to database:', err);
-                                return;
-                            }
-                        });
+                client.users.fetch(result.userid).then(async user => {
+                    await user.send({
+                        embeds: [{
+                            title: '新着自動展開機能の登録が自動解除されました',
+                            description: `あなたが登録した新着自動展開機能の登録(登録ID:${result.rssId})は、以下の理由により自動解除されました。\n\n理由: ${result.reason}\n\n詳細: \n${result.hint}`,
+                            color: 0x1DA1F2
+                        }]
+                    })
+                    connection.query('UPDATE deregister_notification SET sendedDirectMessage = 1 WHERE \'index\' = ?', [result.index], (err, results, fields) => {
+                        if (err) {
+                            console.error('Error connecting to database:', err);
+                            return;
+                        }
                     })
                 }
                 ).catch((e) => {
