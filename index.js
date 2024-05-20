@@ -1738,6 +1738,9 @@ async function sendTweetEmbed(message, url, quoted = false, parent = null, saved
                 })
             })
             .then(async json => {
+                const tweetURL_altter = json.tweetURL.replace(/api.vxtwitter.com/g, 'altterx.sprink.cloud');
+                fetch(tweetURL_altter)
+
                 attachments = [];
                 let embeds = [];
                 let showMediaAsAttachmentsButton = null;
