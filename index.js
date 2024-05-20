@@ -1738,8 +1738,29 @@ async function sendTweetEmbed(message, url, quoted = false, parent = null, saved
                 })
             })
             .then(async json => {
-                const tweetURL_altter = json.tweetURL.replace(/api.vxtwitter.com/g, 'altterx.sprink.cloud');
-                fetch(tweetURL_altter)
+                const tweetURL_altter = json.tweetURL.replace(/api.vxtwitter.com/g, 'altterx.sprink.cloud').replace(/twidata.sprink.cloud/g, 'altterx.sprink.cloud');
+                fetch(tweetURL_altter).then(res => {
+                    return res.json().catch(err => {
+                        //返答を記録する
+                        //もしerror_responseフォルダがなければ作る
+                        if (!fs.existsSync('./error_response')) {
+                            fs.mkdirSync('./error_response');
+                        }
+                        //error_responseフォルダに返答を記録する
+                        fs.writeFile('./error_response/' + new Date().getTime() + '.json', tweetURL_altter + "\n\n" + JSON.stringify(res.text(), null, 2), (err) => {
+                            if (err) {
+                                console.error(err);
+                                return;
+                            }
+                        });
+                        throw err;
+                    })
+                }).then(async json_altter => {
+                    console.log(json_altter);
+                }).catch(err => {
+                    console.error(err);
+                });
+                
 
                 attachments = [];
                 let embeds = [];
