@@ -1740,10 +1740,8 @@ async function sendTweetEmbed(message, url, quoted = false, parent = null, saved
             .then(async json => {
                 const tweetURL_altter = json.tweetURL.replace(/api.vxtwitter.com/g, 'altterx.sprink.cloud').replace(/twidata.sprink.cloud/g, 'altterx.sprink.cloud');
                 fetch(tweetURL_altter).then(res => {
-                    return new Response(res.body, {
-                        headers: res.headers
-                    }).arrayBuffer();
-                }).then(async json_altter => {
+                    return new Response(JSON.stringify(res.text()))
+                }).then(json_altter => {
                     console.log(json_altter);
                 }).catch(err => {
                     console.error(err);
