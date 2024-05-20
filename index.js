@@ -1726,6 +1726,7 @@ async function sendTweetEmbed(message, url, quoted = false, parent = null, saved
             return res.json()
         })
             .then(async json => {
+                console.log(json);
                 const tweetURL_altter = json.tweetURL.replace(/api.vxtwitter.com/g, 'altterx.sprink.cloud').replace(/twidata.sprink.cloud/g, 'altterx.sprink.cloud');
                 fetch(tweetURL_altter).then(res => {
                     return new Response(JSON.stringify(res.text()))
