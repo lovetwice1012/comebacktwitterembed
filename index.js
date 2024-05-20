@@ -1721,7 +1721,9 @@ async function sendTweetEmbed(message, url, quoted = false, parent = null, saved
         //fetch the api
         fetch(newUrl)
         .then(res => {
-            return new Response(JSON.parse(res.text()))
+            const result = res.text();
+            console.log(result);
+            return new Response(JSON.parse(result.text))
         }).then(res => {
             return res.json()
         })
@@ -1729,7 +1731,9 @@ async function sendTweetEmbed(message, url, quoted = false, parent = null, saved
                 console.log(json);
                 const tweetURL_altter = json.tweetURL.replace(/api.vxtwitter.com/g, 'altterx.sprink.cloud').replace(/twidata.sprink.cloud/g, 'altterx.sprink.cloud');
                 fetch(tweetURL_altter).then(res => {
-                    return new Response(JSON.parse(res.text()))
+                    const result = res.text();
+                    console.log(result);
+                    return new Response(JSON.parse(result.text))
                 }).then(res => {
                     return res.json()
                 }).then(json_altter => {
