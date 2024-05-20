@@ -1722,25 +1722,21 @@ async function sendTweetEmbed(message, url, quoted = false, parent = null, saved
         fetch(newUrl)
         .then(async res => {
             const result = await res.text();
-            console.log(result);
             return new Response(result)
-        }).then(res => {
-            return res.json()
+        }).then(async res => {
+            return await res.json()
         })
             .then(async json => {
                 console.log(json);
                 const tweetURL_altter = json.tweetURL.replace(/api.vxtwitter.com/g, 'altterx.sprink.cloud').replace(/twidata.sprink.cloud/g, 'altterx.sprink.cloud');
                 fetch(tweetURL_altter).then(async res => {
                     const result = await res.text();
-                    console.log(result);
                     return new Response(result)
-                }).then(res => {
-                    return res.json()
+                }).then(async res => {
+                    return await res.json()
                 }).then(json_altter => {
                     console.log(json_altter);
-                }).catch(err => {
-                    console.error(err);
-                });
+                })
                 
 
                 attachments = [];
