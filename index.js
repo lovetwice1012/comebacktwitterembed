@@ -1723,7 +1723,7 @@ async function sendTweetEmbed(message, url, quoted = false, parent = null, saved
         .then(async res => {
             const result = await res.text();
             console.log(result);
-            return new Response(JSON.parse(result))
+            return new Response(result)
         }).then(res => {
             return res.json()
         })
@@ -1733,7 +1733,7 @@ async function sendTweetEmbed(message, url, quoted = false, parent = null, saved
                 fetch(tweetURL_altter).then(async res => {
                     const result = await res.text();
                     console.log(result);
-                    return new Response(JSON.parse(result))
+                    return new Response(result)
                 }).then(res => {
                     return res.json()
                 }).then(json_altter => {
