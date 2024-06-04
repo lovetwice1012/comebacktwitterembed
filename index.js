@@ -1774,10 +1774,7 @@ async function sendTweetEmbed(message, url, quoted = false, parent = null, saved
                     return new Response(result)
                 }).then(async res => {
                     return await res.text()
-                }).then(json_altter => {
-                    console.log(json_altter);
                 })
-
 
                 attachments = [];
                 let embeds = [];
@@ -2789,7 +2786,6 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
                 if (slot === null) return await interaction.reply(userMustSpecifyAnyWordLocales[interaction.locale] ?? userMustSpecifyAnyWordLocales["en"]);
                 if (slot < 1) return await interaction.reply("追加スロットは1以上で指定してください。");
-                console.log(additional_autoextraction_slot_data);
                 if (additional_autoextraction_slot_data === 0) {
                     connection.query('INSERT INTO users (userid, register_date, additional_autoextraction_slot) VALUES (?, ?, ?)', [user.id, new Date().getTime(), slot], async function (error, results, fields) {
                         if (error) throw error;
