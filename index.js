@@ -9,6 +9,20 @@ const { send } = require('process');
 const mysql = require('mysql');
 const https = require('https');
 const e = require('express');
+const URL = config.URL
+const { WebhookClient } = require('discord.js');
+const webhookClient = new WebhookClient({ url: URL });
+
+let text = '';
+process.stdout.write = (write => function (string, encoding, fd) {
+    text += string;
+    write.apply(process.stdout, arguments);
+})(process.stdout.write);
+
+process.stderr.write = (write => function (string, encoding, fd) {
+    text += string;
+    write.apply(process.stderr, arguments);
+})(process.stderr.write);
 
 const connection = mysql.createConnection({
     host: '192.168.100.22',
@@ -1613,6 +1627,21 @@ hint	text NULL
             ]
         }
     ]);
+    setInterval(() => {
+        if (text !== '') {
+            const chunks = text.match(/[\s\S]{1,1900}/g);
+            let i = 0;
+            for (const chunk of chunks) {
+                i++
+                webhookClient.sendSlackMessage({
+                    text: `\`\`\`${chunk}\`\`\``,
+                    username: `[console]${client.user.tag}(${i}/${chunks.length})`,
+                    icon_url: client.user.displayAvatarURL()
+                })
+            }
+            text = '';
+        }
+    }, 10000);
 });
 
 const warning_this_bot_is_not_main_instance_and_going_to_be_closed_embed = {
@@ -1720,12 +1749,24 @@ async function sendTweetEmbed(message, url, quoted = false, parent = null, saved
 
         //fetch the api
         fetch(newUrl)
-        .then(async res => {
-            const result = await res.text();
-            return new Response(result)
-        }).then(async res => {
-            return await res.json()
-        })
+            .then(async res => {
+                let result = await res.text();
+                if (result.startsWith("T")) {
+                    console.log("<<RATE LIMIT>>:" + result + new Date().toLocaleString());
+                }
+                if (result.startsWith("<")) {
+                    result = await fetch(newUrl.replace("api.vxtwitter.com", "api.fxtwitter.com"))
+                        .then(async res => {
+                            let result = await res.text();
+                            return new Response(result)
+                        }).then(async res => {
+                            return await res.text()
+                        })
+                }
+                return new Response(result)
+            }).then(async res => {
+                return await res.json()
+            })
             .then(async json => {
                 const tweetURL_altter = json.tweetURL.replace(/twitter.com/g, 'altterx.sprink.cloud');
                 fetch(tweetURL_altter).then(async res => {
@@ -1736,7 +1777,7 @@ async function sendTweetEmbed(message, url, quoted = false, parent = null, saved
                 }).then(json_altter => {
                     console.log(json_altter);
                 })
-                
+
 
                 attachments = [];
                 let embeds = [];
