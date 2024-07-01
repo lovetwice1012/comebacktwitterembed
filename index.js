@@ -2698,7 +2698,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
                 const limit_free_check = await new Promise(resolve => {
                     connection.query('SELECT * FROM rss WHERE premium_flag = 0', [], async function (error, results, fields) {
                         if (error) throw error;
-                        if (results.length < 151) return resolve(true);
+                        if (results.length < 176) return resolve(true);
                         resolve(false);
                     });
                 });
@@ -2831,7 +2831,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
                     });
                 });
                 const all_using_slot = free_slot + premium_slot;
-                const all_free_slot = 150;
+                const all_free_slot = 175;
                 const all_donater_slot = 150;
                 const all_slot = all_free_slot + all_donater_slot;
                 const free_slot_percent = Math.floor((free_slot / all_free_slot) * 100);
