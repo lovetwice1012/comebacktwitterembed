@@ -2717,7 +2717,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
                         return resolve(results.length);
                     });
                 });
-                if (additional_autoextraction_slot != 0 && (now_using_additional_autoextraction_slot >= additional_autoextraction_slot) && (over_5_check || limit_free_check)) {
+                if (additional_autoextraction_slot != 0 && (now_using_additional_autoextraction_slot >= additional_autoextraction_slot) && (!over_5_check || !limit_free_check)) {
                     return await interaction.reply({ embeds: [{ title: 'Auto extract add', description: '支援者優先枠の登録上限に達しているため追加できません。', color: 0x1DA1F2 }] });
                 } else if (additional_autoextraction_slot != 0 && (now_using_additional_autoextraction_slot < additional_autoextraction_slot) && (over_5_check || limit_free_check)) {
                     premium_flag = 1;
