@@ -2335,7 +2335,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
                 settings.quote_repost_do_not_extract[interaction.guildId] = boolean;
                 await interaction.reply((setquoterepostdonotextracttolocales[interaction.locale] ?? setquoterepostdonotextracttolocales["en"]) + convertBoolToEnableDisable(boolean, interaction.locale));
             } else if (interaction.options.getSubcommand() === 'legacymode') {
-                if (settings.secondary_extract_mode[interaction.guildId] === true) return await interaction.reply("※セカンダリエクストラクトモードが有効になっているためこの設定は無効です。")
+                if (settings.secondary_extract_mode[interaction.guildId] === true) settings.secondary_extract_mode[interaction.guildId] = false;
                 if (interaction.options.getBoolean('boolean') === null) return await interaction.reply(userMustSpecifyAnyWordLocales[interaction.locale] ?? userMustSpecifyAnyWordLocales["en"]);
                 if (settings.legacy_mode[interaction.guildId] === undefined) settings.legacy_mode[interaction.guildId] = false;
                 const boolean = interaction.options.getBoolean('boolean');
@@ -2349,7 +2349,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
                 settings.passive_mode[interaction.guildId] = boolean;
                 await interaction.reply((setpassivemodetolocales[interaction.locale] ?? setpassivemodetolocales["en"]) + convertBoolToEnableDisable(boolean, interaction.locale));
             } else if (interaction.options.getSubcommand() === 'secondaryextractmode') {
-                if (settings.legacy_mode[interaction.guildId] === true) return await interaction.reply("※レガシーモードが有効になっているためこの設定は無効です。")
+                if (settings.legacy_mode[interaction.guildId] === true) settings.legacy_mode[interaction.guildId] = false; 
                 if (interaction.options.getBoolean('boolean') === null) return await interaction.reply(userMustSpecifyAnyWordLocales[interaction.locale] ?? userMustSpecifyAnyWordLocales["en"]);
                 if (settings.secondary_extract_mode[interaction.guildId] === undefined) settings.secondary_extract_mode[interaction.guildId] = false;
                 const boolean = interaction.options.getBoolean('boolean');
@@ -2698,7 +2698,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
                 const limit_free_check = await new Promise(resolve => {
                     connection.query('SELECT * FROM rss WHERE premium_flag = 0', [], async function (error, results, fields) {
                         if (error) throw error;
-                        if (results.length < 176) return resolve(true);
+                        if (results.length < 175) return resolve(true);
                         resolve(false);
                     });
                 });
