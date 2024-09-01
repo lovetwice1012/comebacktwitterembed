@@ -2019,7 +2019,7 @@ async function sendTweetEmbed(message, url, quoted = false, parent = null, saved
 }
 client.on(Events.MessageCreate, async message => {
    if (message.guild.id !== 1132814274734067772 || message.channel.id !== 1279100351034953738) return;
-   if (message.channel.type === ChannelType.GuildAnnouncement) {
+   
      if (message.crosspostable) {
        message.crosspost()
        .then(() => message.react("✅"))
@@ -2027,7 +2027,6 @@ client.on(Events.MessageCreate, async message => {
      } else {
        message.react("❌")
     }
-   }
 });
 
 client.on(Events.MessageCreate, async (message) => {
