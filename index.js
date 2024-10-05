@@ -49,13 +49,7 @@ const must_be_main_instance = true;
 
 function antiDirectoryTraversalAttack(userInput) {
     const baseDirectory = path.resolve('saves');
-    if (userInput.includes('\0')) {
-        throw new Error('不正なパスが検出されました。');
-    }
     const invalidPathPattern = /(\.\.(\/|\\|$))/;
-    if (invalidPathPattern.test(userInput)) {
-        throw new Error('不正なパスが検出されました。');
-    }
     const joinedPath = path.join(baseDirectory, userInput);
     let realPath;
     try {
@@ -65,6 +59,8 @@ function antiDirectoryTraversalAttack(userInput) {
     }
     const relativePath = path.relative(baseDirectory, realPath);
     if (
+        userInput.includes('\0') ||
+        invalidPathPattern.test(userInput) ||
         relativePath.startsWith('..') ||
         path.isAbsolute(relativePath) ||
         relativePath.includes('\0') ||
