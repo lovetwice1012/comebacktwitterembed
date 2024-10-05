@@ -2472,7 +2472,6 @@ client.on(Events.InteractionCreate, async (interaction) => {
             }
             if (!fs.existsSync(filePath)) return await interaction.editReply(userDonthaveSavedTweetLocales[interaction.locale] ?? userDonthaveSavedTweetLocales["en"]);
             await interaction.editReply({ content: '処理中です...' });;
-            if (!fs.existsSync(filePath)) return await interaction.reply(userDonthaveSavedTweetLocales[interaction.locale] ?? userDonthaveSavedTweetLocales["en"]);
             await sendTweetEmbed(interaction, "https://twidata.sprink.cloud/data/" + filePath + "/data.json", false);
             //await sendTweetEmbed(interaction, "http://localhost:3088/data/" + filePath+ "/data.json", false);
             await interaction.editReply({ content: finishActionLocales[interaction.locale] ?? finishActionLocales["en"], ephemeral: true });
