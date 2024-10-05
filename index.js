@@ -2472,7 +2472,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
             try{
                 filePath = antiDirectoryTraversalAttack(filePath)
             }catch (e){
-                return return await interaction.reply(userDonthaveSavedTweetLocales[interaction.locale] ?? userDonthaveSavedTweetLocales["en"]);
+                return await interaction.reply(userDonthaveSavedTweetLocales[interaction.locale] ?? userDonthaveSavedTweetLocales["en"]);
             }
             if (!fs.existsSync(filePath)) return await interaction.editReply(userDonthaveSavedTweetLocales[interaction.locale] ?? userDonthaveSavedTweetLocales["en"]);
             await interaction.editReply({ content: '処理中です...' });;
@@ -2508,7 +2508,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
             try{
                 filePath = antiDirectoryTraversalAttack(filePath)
             }catch (e){
-                return return await interaction.reply(userDonthaveSavedTweetLocales[interaction.locale] ?? userDonthaveSavedTweetLocales["en"]);
+                return await interaction.reply(userDonthaveSavedTweetLocales[interaction.locale] ?? userDonthaveSavedTweetLocales["en"]);
             }
             if (!fs.existsSync(filePath)) return await interaction.reply(userDonthaveSavedTweetLocales[interaction.locale] ?? userDonthaveSavedTweetLocales["en"]);
             fs.rmdirSync(filePath, { recursive: true });
