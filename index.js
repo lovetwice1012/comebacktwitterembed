@@ -9,6 +9,7 @@ const { send } = require('process');
 const mysql = require('mysql');
 const https = require('https');
 const e = require('express');
+const path = require('path');
 const URL = config.URL
 const { WebhookClient } = require('discord.js');
 const webhookClient = new WebhookClient({ url: URL });
@@ -45,6 +46,34 @@ let processed_hour = 0;
 let processed_day = 0;
 
 const must_be_main_instance = true;
+
+function antiDirectoryTraversalAttack(userInput) {
+    const baseDirectory = path.resolve('saves');
+    if (userInput.includes('\0')) {
+        throw new Error('不正なパスが検出されました。');
+    }
+    const invalidPathPattern = /(\.\.(\/|\\|$))/;
+    if (invalidPathPattern.test(userInput)) {
+        throw new Error('不正なパスが検出されました。');
+    }
+    const joinedPath = path.join(baseDirectory, userInput);
+    let realPath;
+    try {
+        realPath = fs.realpathSync(joinedPath);
+    } catch (err) {
+        throw new Error('不正なパスが検出されました。');
+    }
+    const relativePath = path.relative(baseDirectory, realPath);
+    if (
+        relativePath.startsWith('..') ||
+        path.isAbsolute(relativePath) ||
+        relativePath.includes('\0') ||
+        !realPath.startsWith(baseDirectory)
+    ) {
+        throw new Error('不正なパスが検出されました。');
+    }
+    return realPath;
+}
 
 if (!fs.existsSync('./settings.json')) {
     fs.writeFileSync('./settings.json', JSON.stringify({
@@ -2439,12 +2468,17 @@ client.on(Events.InteractionCreate, async (interaction) => {
         } else {
             await interaction.deferReply({ ephemeral: true });
             //./saves/{userid}/{id}があるか確認する
-            if (!fs.existsSync('./saves/' + userid + '/' + interaction.options.getString('id'))) return await interaction.editReply(userDonthaveSavedTweetLocales[interaction.locale] ?? userDonthaveSavedTweetLocales["en"]);
-            await interaction.editReply({ content: '処理中です...' });
-            const id = interaction.options.getString('id');
-            if (!fs.existsSync('./saves/' + userid + '/' + id)) return await interaction.reply(userDonthaveSavedTweetLocales[interaction.locale] ?? userDonthaveSavedTweetLocales["en"]);
-            await sendTweetEmbed(interaction, "https://twidata.sprink.cloud/data/" + userid + "/" + id + "/data.json", false);
-            //await sendTweetEmbed(interaction, "http://localhost:3088/data/" + userid + "/" + id + "/data.json", false);
+            let filePath = userid + '/' + interaction.options.getString('id')
+            try{
+                filePath = antiDirectoryTraversalAttack(filePath)
+            }catch (e){
+                return return await interaction.reply(userDonthaveSavedTweetLocales[interaction.locale] ?? userDonthaveSavedTweetLocales["en"]);
+            }
+            if (!fs.existsSync(filePath)) return await interaction.editReply(userDonthaveSavedTweetLocales[interaction.locale] ?? userDonthaveSavedTweetLocales["en"]);
+            await interaction.editReply({ content: '処理中です...' });;
+            if (!fs.existsSync(filePath)) return await interaction.reply(userDonthaveSavedTweetLocales[interaction.locale] ?? userDonthaveSavedTweetLocales["en"]);
+            await sendTweetEmbed(interaction, "https://twidata.sprink.cloud/data/" + filePath + "/data.json", false);
+            //await sendTweetEmbed(interaction, "http://localhost:3088/data/" + filePath+ "/data.json", false);
             await interaction.editReply({ content: finishActionLocales[interaction.locale] ?? finishActionLocales["en"], ephemeral: true });
         }
     } else if (interaction.commandName === 'deletesavetweet') {
@@ -2470,8 +2504,14 @@ client.on(Events.InteractionCreate, async (interaction) => {
             });
         } else {
             const id = interaction.options.getString('id');
-            if (!fs.existsSync('./saves/' + userid + '/' + id)) return await interaction.reply(userDonthaveSavedTweetLocales[interaction.locale] ?? userDonthaveSavedTweetLocales["en"]);
-            fs.rmdirSync('./saves/' + userid + '/' + id, { recursive: true });
+            let filePath = userid + '/' + id;
+            try{
+                filePath = antiDirectoryTraversalAttack(filePath)
+            }catch (e){
+                return return await interaction.reply(userDonthaveSavedTweetLocales[interaction.locale] ?? userDonthaveSavedTweetLocales["en"]);
+            }
+            if (!fs.existsSync(filePath)) return await interaction.reply(userDonthaveSavedTweetLocales[interaction.locale] ?? userDonthaveSavedTweetLocales["en"]);
+            fs.rmdirSync(filePath, { recursive: true });
             await interaction.reply(deletedSavedTweetLocales[interaction.locale] ?? deletedSavedTweetLocales["en"]);
         }
     } else if (interaction.commandName === 'savetweetquotaoverride') {
