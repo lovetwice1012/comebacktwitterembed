@@ -7,6 +7,38 @@ const app = express();
 const port = 3088;
 const tempDir = path.join(__dirname, 'temp');
 
+const path = require('path');
+const fs = require('fs');
+
+function antiDirectoryTraversalAttack(userInput) {
+    const baseDirectory = path.resolve('saves');
+    if (userInput.includes('\0')) {
+        throw new Error('不正なパスが検出されました。');
+    }
+    const invalidPathPattern = /(\.\.(\/|\\|$))/;
+    if (invalidPathPattern.test(userInput)) {
+        throw new Error('不正なパスが検出されました。');
+    }
+    const joinedPath = path.join(baseDirectory, userInput);
+    let realPath;
+    try {
+        realPath = fs.realpathSync(joinedPath);
+    } catch (err) {
+        throw new Error('不正なパスが検出されました。');
+    }
+    const relativePath = path.relative(baseDirectory, realPath);
+    if (
+        relativePath.startsWith('..') ||
+        path.isAbsolute(relativePath) ||
+        relativePath.includes('\0') ||
+        !realPath.startsWith(baseDirectory)
+    ) {
+        throw new Error('不正なパスが検出されました。');
+    }
+    return realPath;
+}
+
+
 // 一時的なディレクトリが存在しない場合は作成
 if (!fs.existsSync(tempDir)) {
     fs.mkdirSync(tempDir);
@@ -14,7 +46,13 @@ if (!fs.existsSync(tempDir)) {
 
 app.get('/data/:userid/:tweetID/:filename', (req, res) => {
     const { userid, tweetID, filename } = req.params;
-    const filePath = path.join(__dirname, 'saves', userid, tweetID, filename);
+    let  filePath = path.join(userid, tweetID, filename);
+
+    try{
+        filePath = antiDirectoryTraversalAttack(filePath)
+    }catch (e){
+        return res.status(418).send('File not found');
+    }
 
     fs.access(filePath, fs.constants.F_OK, (err) => {
         if (err) {
@@ -29,8 +67,14 @@ app.get('/data/:userid/:tweetID/:filename', (req, res) => {
 
 app.get('/download/:userid/:tweetID', (req, res) => {
     const { userid, tweetID } = req.params;
-    const dirPath = path.join(__dirname, 'saves', userid, tweetID);
+    let  filePath = path.join(userid, tweetID);
 
+    try{
+        filePath = antiDirectoryTraversalAttack(filePath)
+    }catch (e){
+        return res.status(418).send('File not found');
+    }
+    
     fs.readdir(dirPath, (err, files) => {
         if (err) {
             res.status(500).send('Internal Server Error');
@@ -43,7 +87,13 @@ app.get('/download/:userid/:tweetID', (req, res) => {
         }
 
         const zipName = `${userid}_${tweetID}_files.zip`;
-        const zipPath = path.join(tempDir, zipName);
+        let zipPath = path.join(tempDir, zipName);
+
+        try{
+            zipPath = antiDirectoryTraversalAttack(zipPath)
+        }catch (e){
+            return res.status(418).send('File not found');
+        }
 
         const archive = archiver('zip', { zlib: { level: 9 } });
 
@@ -66,7 +116,11 @@ app.get('/download/:userid/:tweetID', (req, res) => {
 
 app.get('/download/:userid', (req, res) => {
     const { userid } = req.params;
-    const dirPath = path.join(__dirname, 'saves', userid);
+    try{
+        dirPath = antiDirectoryTraversalAttack(userid)
+    }catch (e){
+        return res.status(418).send('File not found');
+    }
 
     fs.readdir(dirPath, (err, files) => {
         if (err) {
