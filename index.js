@@ -2466,7 +2466,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
             //./saves/{userid}/{id}があるか確認する
             let filePath = userid + '/' + interaction.options.getString('id')
             try{
-                filePath = antiDirectoryTraversalAttack(filePath)
+                antiDirectoryTraversalAttack(filePath)
             }catch (e){
                 return await interaction.reply(userDonthaveSavedTweetLocales[interaction.locale] ?? userDonthaveSavedTweetLocales["en"]);
             }
