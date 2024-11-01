@@ -8,7 +8,7 @@ const port = 3088;
 const tempDir = path.join(__dirname, 'temp');
 
 
-const fs = require('fs');
+
 
 function antiDirectoryTraversalAttack(userInput) {
     const baseDirectory = path.resolve('saves');
