@@ -7,7 +7,7 @@ const app = express();
 const port = 3088;
 const tempDir = path.join(__dirname, 'temp');
 
-const path = require('path');
+
 const fs = require('fs');
 
 function antiDirectoryTraversalAttack(userInput) {
