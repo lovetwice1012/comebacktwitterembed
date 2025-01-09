@@ -9,6 +9,9 @@ if (args.length < 1) {
 
 console.log("GuildId: " + args[0]);
 
+console.log("disabled role: \n")
+console.log(setting.disable.role[args[0]])
+
 // check guild setting
 //default language
 if (!setting.defaultLanguage[args[0]]) {
