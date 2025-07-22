@@ -1028,6 +1028,7 @@ client.on('ready', () => {
     }, 60000);
 
     setInterval(() => {
+         return ；
         /*
 テーブル: deregister_notification
 
@@ -1125,12 +1126,14 @@ hint	text NULL
         } else {
             processed_day_column = null;
         }
+        /*
         connection.query('INSERT INTO stats (timestamp, joinedServersCount, usersCount, channelsCount, minutes, hours, days) VALUES (?, ?, ?, ?, ?, ?, ?)', [new Date().getTime(), client.guilds.cache.size, client.users.cache.size, client.channels.cache.size, processed_column, processed_hour_column, processed_day_column], (err, results, fields) => {
             if (err) {
                 console.error('Error connecting to database:', err);
                 return;
             }
         });
+        */
     }, 60000);
 
     client.application.commands.set([
@@ -2063,7 +2066,7 @@ client.on(Events.MessageCreate, async (message) => {
     if (urls.length === 0) return;
     if (isMessageDisabledForUserOrChannel(message)) return;
 
-    await ensureUserExistsInDatabase(message.author.id);
+    //await ensureUserExistsInDatabase(message.author.id);
 
     for (const url of urls) {
         await sendTweetEmbed(message, url);
@@ -2116,7 +2119,7 @@ async function queryDatabase(query, params) {
 client.on(Events.InteractionCreate, async (interaction) => {
     if (!interaction.type === InteractionType.ApplicationCommand) return;
     //もしuserが登録されていなかったら登録する
-    await ensureUserExistsInDatabase(interaction.user.id);
+    //await ensureUserExistsInDatabase(interaction.user.id);
     if (interaction.commandName === 'ping') {
         await interaction.reply({
             embeds: [
@@ -2684,6 +2687,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
         }
         interaction.reply({ embeds: [embed] });
     } else if (interaction.commandName === 'autoextract') {
+        return interaction.reply("現在データベースサーバー障害によりこの機能はご利用いただけません");
         /*
         列	型	コメント
         id	int(20) 連番	
