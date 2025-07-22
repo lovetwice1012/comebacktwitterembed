@@ -1028,7 +1028,7 @@ client.on('ready', () => {
     }, 60000);
 
     setInterval(() => {
-         return ；
+         return;
         /*
 テーブル: deregister_notification
 
