@@ -31,7 +31,7 @@ const connection = mysql.createConnection({
     password: 'bluebird',
     database: 'ComebackTwitterEmbed'
 });
-
+/*
 // MySQLに接続
 connection.connect((err) => {
     if (err) {
@@ -40,6 +40,7 @@ connection.connect((err) => {
     }
     console.log('Connected to database');
 });
+*/
 
 let processed = 0;
 let processed_hour = 0;
