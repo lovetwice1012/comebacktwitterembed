@@ -4,18 +4,17 @@ const fetchTask = require("./fetchTask");
 
 
 class fetchWorkersService {
-    constructor(queueManagerClass = null, workers = null, total_workers = 24) {
+    constructor(onResult = null, workers = null, total_workers = 24) {
         if (workers == null) {
             workers = [];
         }
         this.workers = workers;
         this.total_workers = total_workers;
-        this.queueManager = queueManagerClass;
+        this.onResult = onResult;
         this.queue = [];
     }
 
     async initialize(client) {
-        if(this.queueManager == null) throw new Error("queueManager is required");
         if(this.workers.length != 0) throw new Error("Workers already initialized");
         for(let i = 0; i < this.total_workers; i++){
             let workerInstance = new Worker("./src/workers/fetch/fetchWorker.js", {workerData: {workerId: i}});
@@ -35,7 +34,7 @@ class fetchWorkersService {
                     data.message.react("❌").catch((error) => {});
                     return workerInstance.postMessage(this.queue.shift());
                 }
-                this.queueManager.add_to_queue(data, data.plan);
+                if(this.onResult) this.onResult(data);
                 if(this.queue.length == 0) return workerInstance.postMessage(new fetchTask(null, null, "Standby"));
                 return workerInstance.postMessage(this.queue.shift());
             });
@@ -68,14 +67,6 @@ class fetchWorkersService {
 
     get_total_workers() {
         return this.total_workers;
-    }
-
-    get_queueManager() {
-        return this.queueManager;
-    }
-
-    set_queueManager(queueManager) {
-        this.queueManager = queueManager;
     }
 
     set_total_workers(total_workers) {

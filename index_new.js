@@ -6,9 +6,6 @@ const fs = require('fs');
 const mysql = require('mysql');
 const Translate = require('./src/resxParser');
 const fetchWorkersService = require('./src/workers/fetch/fetchWorkersService');
-const queueManager = require('./src/queue/queueManager');
-const queueManagerInstance = new queueManager();
-const fetchWorkersServiceInstance = new fetchWorkersService(queueManagerInstance);
 const commandConfig = require('./src/command/commandConfig');
 
 let processed_day = 0;
@@ -41,12 +38,8 @@ connection.connect((err) => {
     console.log('Connected to database');
 });
 
-async function processNextQueue() {
-    const queue = queueManagerInstance.get_next();
+async function processQueue(queue) {
     if (queue == null) {
-        setTimeout(() => {
-            processNextQueue();
-        }, 20);
         return;
     }
     /*
@@ -418,11 +411,9 @@ async function processNextQueue() {
         fetchWorkersServiceInstance.add_queue(message, queue.plan, tweetData.tweet.quote.url, queue.quotedCount + 1);
     }
 
-    //0.1秒待って次のキューを処理する
-    setTimeout(() => {
-        processNextQueue();
-    }, 20);
 }
+
+const fetchWorkersServiceInstance = new fetchWorkersService(processQueue);
 
 client.on(Events.ClientReady, () => {
     console.log(`${client.user.tag} is ready!`);
@@ -505,7 +496,6 @@ client.on(Events.ClientReady, () => {
     client.application.commands.set(commandConfig);
     fetchWorkersServiceInstance.set_total_workers(64);
     fetchWorkersServiceInstance.initialize(client);
-    processNextQueue();
 
 });
 
@@ -1083,11 +1073,9 @@ client.on(Events.MessageCreate, async (message) => {
             /*******************************************************/
             plan = 2;
             
-            //キューに全てのURLを追加する
+            //全てのURLの処理を開始する
             for (let i = 0; i < urls.length; i++) {
                 fetchWorkersServiceInstance.add_queue(message, plan, urls[i]);
-                //キューに追加した事を示すためにリアクションを付ける
-                message.react('🔁');
             }
         });
     });
