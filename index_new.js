@@ -281,12 +281,6 @@ async function processNextQueue() {
         embed.title = 'Anonymous';
         embed.url = "https://anonymous.sprink.cloud/" + message.id;
         embed.description = tweettext
-        //もしimageEmbedsがある場合はそれも匿名化する
-        if (imagesEmbeds.length != 0) {
-            for (let i = 0; i < imagesEmbeds.length; i++) {
-                imagesEmbeds[i].url = "https://anonymous.sprink.cloud/" + message.author.id + "/" + message.id;
-            }
-        }
     }
 
     //4.非表示化されてるボタンを除いてボタンを作成する
@@ -353,6 +347,11 @@ async function processNextQueue() {
 
     //メッセージを送信する
     //alwaysReplyが有効化されている場合は返信の形で送信する
+    processed_day++
+    processed_hour++
+    processed_minute++
+    processNextQueue();
+    return
     if (settings.alwaysReply == 1) {
         message.reply(message_object).then((msg) => {
             if (videoText != null) message.channel.send(videoText);
@@ -399,29 +398,17 @@ async function processNextQueue() {
             console.error(error);
         });
     }
-    if (settings.deleteMessageIfOnlyPostedTweetLink == 0 || message.content != url) {
-        //messageのリアクションを取る
-        const myReactions = message.reactions.cache.filter(reaction => reaction.users.cache.has(client.user.id));
-        for (const reaction of myReactions.values()) {
-            await reaction.users.remove(client.user.id).catch((error) => {});
-        }
-        message.react("✅").catch((error) => {});
-    }
 
     processed_day++
     processed_hour++
     processed_minute++
 
-
     //もしtweetData.tweet.quoteがundefinedやnullじゃなくて、queue.quotedCountがmaxExtractQuotedTweetを超えていない場合は引用されたツイートのURL(tweetData.tweet.quote.url)をqueueに追加する
     if (tweetData.tweet.quote != undefined && tweetData.tweet.quote != null && queue.quotedCount < settings.maxExtractQuotedTweet) {
         fetchWorkersServiceInstance.add_queue(message, queue.plan, tweetData.tweet.quote.url, queue.quotedCount + 1);
     }
+    
 
-    //0.1秒待って次のキューを処理する
-    setTimeout(() => {
-        processNextQueue();
-    }, 20);
 }
 
 client.on(Events.ClientReady, () => {
@@ -493,6 +480,7 @@ client.on(Events.ClientReady, () => {
         } else {
             processed_day_column = null;
         }
+        //テスト中はコメントアウトしておく
         return
         connection.query('INSERT INTO stats (timestamp, joinedServersCount, usersCount, channelsCount, minutes, hours, days) VALUES (?, ?, ?, ?, ?, ?, ?)', [new Date().getTime(), client.guilds.cache.size, client.users.cache.size, client.channels.cache.size, processed_column, processed_hour_column, processed_day_column], (err, results, fields) => {
             if (err) {
@@ -503,7 +491,7 @@ client.on(Events.ClientReady, () => {
     }, 60000);
 
     client.application.commands.set(commandConfig);
-    fetchWorkersServiceInstance.set_total_workers(64);
+    fetchWorkersServiceInstance.set_total_workers(24);
     fetchWorkersServiceInstance.initialize(client);
     processNextQueue();
 
@@ -511,7 +499,7 @@ client.on(Events.ClientReady, () => {
 
 client.on(Events.InteractionCreate, async (interaction) => {
     if (!interaction.isCommand()) return;
-    if(interaction.user.id != 796972193287503913 && interaction.user.id != 687374475997741075 && interaction.user.id != 933314562487386122) return interaction.reply("現在コマンドは調整中です。");
+    if(interaction.user.id != 796972193287503913 && interaction.user.id != 687374475997741075 && interaction.user.id != 933314562487386122) return //interaction.reply("現在コマンドは調整中です。");
     // settingsコマンドの場合ロールの管理、メッセージの管理、チャンネルの管理どれかの権限がついていない場合はほかの人に見えない形で返信する
     if (interaction.commandName == Translate.settings["en-US"]) {
         if (!interaction.member.permissions.has(PermissionsBitField.ManageRoles) && !interaction.member.permissions.has(PermissionsBitField.ManageMessages) && !interaction.member.permissions.has(PermissionsBitField.ManageChannels)) {
@@ -709,7 +697,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
                         case Translate.banWord["en-US"]:
                             //word
-                            const option_word = interaction.options.getString(Translate.word["en-US"]);
+                            const option_word = interaction.options.getString(Translate.word["en-US"]).replace(",", "{#!comma}");
                             connection.query('SELECT bannedWords FROM settings WHERE guildId = ?', [interaction.guild.id], async (err, results) => {
                                 if (err) {
                                     console.log(err);
@@ -1076,18 +1064,12 @@ client.on(Events.MessageCreate, async (message) => {
             //もしenabledが0の場合は処理を終了する
             if (enabled == 0) return;
 
-            /*******************************************************/
-            /*                     2024/01/01                       */
-            /* 石川県を中心に甚大な被害が出た巨大地震・津波が発生      */
-            /* 情報共有を支援するために期限未定で全員に有料プランを開放*/
-            /*******************************************************/
-            plan = 2;
             
             //キューに全てのURLを追加する
             for (let i = 0; i < urls.length; i++) {
                 fetchWorkersServiceInstance.add_queue(message, plan, urls[i]);
                 //キューに追加した事を示すためにリアクションを付ける
-                message.react('🔁');
+                //message.react('🔁');
             }
         });
     });

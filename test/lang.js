@@ -174,10 +174,22 @@ Help_script: {
     reload: {
     "ja": "再読み込み",
     "en-US": "reload",
+    "zh-CN": "重新装入",
+    "es-ES": "recargar",
+    "fr": "recharger",
+    "ru": "перезагрузка",
+    "de": "neu laden",
+    "pt-BR": "recarregar"
     },
     anonymous: {
     "ja": "匿名",
     "en-US": "anonymous",
+    "zh-CN": "匿名",
+    "es-ES": "anónimo",
+    "fr": "anonyme",
+    "ru": "анонимный",
+    "de": "anonym",
+    "pt-BR": "anônimo"
     },
     defaultLanguage: {
     "ja": "デフォルト言語",
@@ -920,8 +932,14 @@ Help_script: {
     "pt-BR": "Não implementar retweets de citações"
     },
     maxExtractQuotedTweet: {
-    "ja": "最大抽出引用ツイート",
+    "ja": "最大引用ツイート展開数",
     "en-US": "maxextractquotedtweet",
+    "zh-CN": "最大提取引用推文",
+    "es-ES": "máximo extraer tweet citado",
+    "fr": "maximum extraire le tweet cité",
+    "ru": "максимальное извлечение цитированного твита",
+    "de": "maximales Zitat-Tweet-Extrahieren",
+    "pt-BR": "extração máxima de tweet citado"
     }
 
 }

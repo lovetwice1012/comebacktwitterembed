@@ -1,0 +1,293 @@
+<root>
+  <data name="Help_script">
+    <value>Es ist keine besondere Einrichtung erforderlich, es genügt, den Tweet-Link zu posten.
+
+Dieser Bot kann den Inhalt der von Ihnen gesendeten Nachrichten überprüfen.
+Er wird nur dazu verwendet, um zu prüfen, ob die von Ihnen gesendete Nachricht einen Twitter-Link enthält, und wird nicht für andere Zwecke verwendet.
+Er wird weder für andere Zwecke verwendet, noch wird er die von Ihnen gesendeten Nachrichten aufzeichnen.
+Wenn du uns nicht vertraust, kannst du deine Sicherheit gewährleisten, indem du deine Kanalberechtigungen von diesem Bot entfernst.</value>
+  </data>
+  <data name="Help_command">
+    <value>/ping` - Pong!
+`/help` - Zeigt eine Hilfemeldung an.
+`/invite` - Lade mich auf deinen Server ein!
+`/support` - Dem Support-Server beitreten!
+`/settings` - chenge Einstellungen</value>
+  </data>
+  <data name="translate">
+    <value>übersetzen</value>
+  </data>
+  <data name="delete">
+    <value>löschen</value>
+  </data>
+  <data name="language">
+    <value>Sprache</value>
+  </data>
+  <data name="all">
+    <value>alle</value>
+  </data>
+  <data name="help">
+    <value>Hilfe</value>
+  </data>
+  <data name="ping">
+    <value>ping</value>
+  </data>
+  <data name="invite">
+    <value>Aufforderung</value>
+  </data>
+  <data name="support">
+    <value>Unterstützung</value>
+  </data>
+  <data name="settings">
+    <value>Einstellungen</value>
+  </data>
+  <data name="disable">
+    <value>deaktivieren</value>
+  </data>
+  <data name="banWord">
+    <value>BAN-Wort</value>
+  </data>
+  <data name="user">
+    <value>Benutzer</value>
+  </data>
+  <data name="channel">
+    <value>Kanal</value>
+  </data>
+  <data name="role">
+    <value>Rolle</value>
+  </data>
+  <data name="word">
+    <value>werden.</value>
+  </data>
+  <data name="reload">
+    <value>neu laden</value>
+  </data>
+  <data name="anonymous">
+    <value>anonym</value>
+  </data>
+  <data name="defaultLanguage">
+    <value>Standardsprache</value>
+  </data>
+  <data name="button">
+    <value>Taste</value>
+  </data>
+  <data name="invisible">
+    <value>unsichtbar</value>
+  </data>
+  <data name="disabled">
+    <value>deaktiviert</value>
+  </data>
+  <data name="boolean">
+    <value>boolean</value>
+  </data>
+  <data name="finishedAction">
+    <value>Beendete Aktion.</value>
+  </data>
+  <data name="showMediaInEmbedsImage">
+    <value>Medien im eingebetteten Bild anzeigen</value>
+  </data>
+  <data name="showMediaAsAttachments">
+    <value>Medien als Anhänge anzeigen</value>
+  </data>
+  <data name="showsHelpMessage">
+    <value>Zeigt eine Hilfemeldung an.</value>
+  </data>
+  <data name="disableByUserOrChannel">
+    <value>Deaktivierung durch Benutzer oder Kanal.</value>
+  </data>
+  <data name="addOrRemoveBannedWords">
+    <value>Verbotene Wörter hinzufügen oder entfernen.</value>
+  </data>
+  <data name="specifyTheUserToDisable">
+    <value>Geben Sie den zu deaktivierenden Benutzer an.</value>
+  </data>
+  <data name="specifyTheChannelToDisable">
+    <value>Geben Sie den zu deaktivierenden Kanal an.</value>
+  </data>
+  <data name="specifyTheBannedWord">
+    <value>Geben Sie das verbotene Wort an.</value>
+  </data>
+  <data name="youDonTHavePermissionToUseThisCommand">
+    <value>Sie haben keine Berechtigung, diesen Befehl zu verwenden.</value>
+  </data>
+  <data name="youCanTUseThisCommandForOtherUsers">
+    <value>Sie können diesen Befehl nicht für andere Benutzer verwenden.</value>
+  </data>
+  <data name="youCanTDeleteThisMessage">
+    <value>Sie können diese Nachricht nicht löschen.</value>
+  </data>
+  <data name="youMustSpecifyAUserOrChannelOrRole">
+    <value>Sie müssen einen Benutzer, einen Kanal oder eine Rolle angeben.</value>
+  </data>
+  <data name="youCanTSpecifyMultipleOptions">
+    <value>Sie können nicht mehrere Optionen angeben.</value>
+  </data>
+  <data name="iDonTHavePermissionToManageMessages">
+    <value>Ich habe keine Berechtigung zum Verwalten von Nachrichten.</value>
+  </data>
+  <data name="iDonTHavePermissionToDeleteMessages">
+    <value>Ich habe nicht die Erlaubnis, Nachrichten zu löschen.</value>
+  </data>
+  <data name="addedUserToDisableUser">
+    <value>Benutzer zu disable.user hinzugefügt.</value>
+  </data>
+  <data name="removedUserFromDisableUser">
+    <value>Benutzer aus disable.user entfernt.</value>
+  </data>
+  <data name="addedChannelToDisableChannel">
+    <value>Kanal zu disable.channel hinzugefügt.</value>
+  </data>
+  <data name="removedChannelFromDisableChannel">
+    <value>Kanal aus disable.channel entfernt.</value>
+  </data>
+  <data name="addedRoleToDisableRole">
+    <value>Rolle zu disable.role hinzugefügt.</value>
+  </data>
+  <data name="removedRoleFromDisableRole">
+    <value>Rolle aus disable.role entfernt.</value>
+  </data>
+  <data name="addedWordToBannedWords">
+    <value>Wort zu bannedWords hinzugefügt.</value>
+  </data>
+  <data name="removedWordFromBannedWords">
+    <value>Wort aus bannedWords entfernt.</value>
+  </data>
+  <data name="youMustSpecifyAOption">
+    <value>Sie müssen eine Option angeben.</value>
+  </data>
+  <data name="setsTheDefaultLanguageWhenTranslating">
+    <value>Legt die Standardsprache beim Übersetzen fest.</value>
+  </data>
+  <data name="setsWhetherToEditTheOriginalMessageWhenTranslating">
+    <value>Legt fest, ob die ursprüngliche Nachricht beim Übersetzen bearbeitet werden soll.</value>
+  </data>
+  <data name="inviteMeToYourServer">
+    <value>Laden Sie mich auf Ihren Server ein!</value>
+  </data>
+  <data name="joinSupportServer">
+    <value>Treten Sie dem Support-Server bei!</value>
+  </data>
+  <data name="changeSettings">
+    <value>Einstellungen ändern</value>
+  </data>
+  <data name="yourMessageContainsABannedWord">
+    <value>Ihre Nachricht enthält ein verbotenes Wort.</value>
+  </data>
+  <data name="setDefaultLanguageTo">
+    <value>Standardsprache einstellen auf</value>
+  </data>
+  <data name="setEditOriginalIfTranslateTo">
+    <value>Setzen Sie editOriginalIfTranslate auf</value>
+  </data>
+  <data name="youCanTDeleteOtherUsersMessages">
+    <value>Sie können die Nachrichten anderer Benutzer nicht löschen.</value>
+  </data>
+  <data name="setsWhetherToShowMediaAsAttachments">
+    <value>Legt fest, ob Medien als Anhänge angezeigt werden sollen.</value>
+  </data>
+  <data name="setsWhetherToDeleteTheMessageIfOnlyTheTweetLinkIsPosted">
+    <value>Legt fest, ob die Nachricht gelöscht werden soll, wenn nur der Tweet-Link gepostet wird.</value>
+  </data>
+  <data name="setsWhetherToAlwaysReplyIfTheTweetLinkIsPosted">
+    <value>Legt fest, ob immer geantwortet werden soll, wenn der Tweet-Link gepostet wird.</value>
+  </data>
+  <data name="setsEndMediaAsAttachmentsAsDefaultTo">
+    <value>sendMediaAsAttachmentsAsDefault einstellen auf</value>
+  </data>
+  <data name="setDEleteIfOnlyPostedTweetLinkTo">
+    <value>Setzen Sie deleteIfOnlyPostedTweetLink auf</value>
+  </data>
+  <data name="setALwaysReplyIfPostedTweetLinkTo">
+    <value>Setzen Sie alwaysReplyIfPostedTweetLink auf</value>
+  </data>
+  <data name="disabledAllButtons">
+    <value>Deaktiviert alle Schaltflächen.</value>
+  </data>
+  <data name="enabledAllButtons">
+    <value>Aktiviert alle Schaltflächen.</value>
+  </data>
+  <data name="setShowMediaAsAttachmentsButtonTo">
+    <value>Setzen Sie die Schaltfläche showMediaAsAttachments auf</value>
+  </data>
+  <data name="setsHowAttachmentsAsEmbedsImageButtonTo">
+    <value>Die Schaltfläche showAttachmentsAsEmbedsImage auf</value>
+  </data>
+  <data name="setTranslateButtonTo">
+    <value>Setzen Sie die Schaltfläche Übersetzen auf</value>
+  </data>
+  <data name="setDeleteButtonTo">
+    <value>Setzen Sie die Löschtaste auf</value>
+  </data>
+  <data name="disabledShowMediaAsAttachmentsButton">
+    <value>Deaktivierte Schaltfläche showMediaAsAttachments.</value>
+  </data>
+  <data name="enabledShowMediaAsAttachmentsButton">
+    <value>Aktivierte Schaltfläche showMediaAsAttachments.</value>
+  </data>
+  <data name="disabledsHowAttachmentsAsEmbedsImageButton">
+    <value>Deaktivierte Schaltfläche showAttachmentsAsEmbedsImage.</value>
+  </data>
+  <data name="enabledsHowAttachmentsAsEmbedsImageButton">
+    <value>Aktivierte Schaltfläche showAttachmentsAsEmbedsImage.</value>
+  </data>
+  <data name="disabledTranslateButton">
+    <value>Deaktivierte Schaltfläche "Übersetzen".</value>
+  </data>
+  <data name="enabledTranslateButton">
+    <value>Aktivierte Schaltfläche Übersetzen.</value>
+  </data>
+  <data name="disabledDeleteButton">
+    <value>Deaktivierte Löschtaste.</value>
+  </data>
+  <data name="enabledDeleteButton">
+    <value>Aktivierte Löschtaste.</value>
+  </data>
+  <data name="addedUserToButtonDisabledUser">
+    <value>Benutzer zu button_disabled.user hinzugefügt.</value>
+  </data>
+  <data name="removedUserFromButtonDisabledUser">
+    <value>Benutzer aus button_disabled.user entfernt.</value>
+  </data>
+  <data name="addedChannelToButtonDisabledChannel">
+    <value>Kanal zu button_disabled.channel hinzugefügt.</value>
+  </data>
+  <data name="removedChannelFromButtonDisabledChannel">
+    <value>Kanal aus button_disabled.channel entfernt.</value>
+  </data>
+  <data name="addedRoleToButtonDisabledRole">
+    <value>Rolle zu button_disabled.role hinzugefügt.</value>
+  </data>
+  <data name="removedRoleFromButtonDisabledRole">
+    <value>Die Rolle von button_disabled.role wurde entfernt.</value>
+  </data>
+  <data name="setsWhetherToExtractBotMessages">
+    <value>Legt fest, ob Bot-Nachrichten extrahiert werden sollen.</value>
+  </data>
+  <data name="setExtractBotMessageTo">
+    <value>Setzen Sie extractBotMessage auf</value>
+  </data>
+  <data name="editOriginalIfTranslate">
+    <value>Original bearbeiten, wenn übersetzen</value>
+  </data>
+  <data name="deleteIfOnlyPostedTweetlink">
+    <value>löschen, wenn nur Tweetlink gepostet</value>
+  </data>
+  <data name="alwaysReplyIfPostedTweetlink">
+    <value>immer antworten, wenn ein Tweetlink gepostet wurde</value>
+  </data>
+  <data name="extractBotMessage">
+    <value>Bot-Nachricht extrahieren</value>
+  </data>
+  <data name="showAttachmentsAsEmbedsImage">
+    <value>Anhänge als eingebettetes Bild anzeigen</value>
+  </data>
+  <data name="setsWhetherToExpandQuoteRetweets">
+    <value>Legt fest, ob Zitat-Retweets erweitert werden sollen.</value>
+  </data>
+  <data name="doNotDeployQuoteRetweets">
+    <value>Keine Zitat-Retweets einsetzen</value>
+  </data>
+  <data name="maxExtractQuotedTweet">
+    <value>maximales Zitat-Tweet-Extrahieren</value>
+  </data>
+</root>

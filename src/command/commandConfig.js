@@ -136,6 +136,30 @@ const commands = [
                                     name: 'Japanese',
                                     value: 'ja'
                                 },
+                                {
+                                    name: 'German',
+                                    value: 'de'
+                                },
+                                {
+                                    name: 'Spanish',
+                                    value: 'es-ES'
+                                },
+                                {
+                                    name: 'French',
+                                    value: 'fr'
+                                },
+                                {
+                                    name: 'Portuguese,Brazilian',
+                                    value: 'pt-BR'
+                                },
+                                {
+                                    name: 'Russian',
+                                    value: 'ru'
+                                },
+                                {
+                                    name: 'Chinese',
+                                    value: 'zh-CN'
+                                }
                             ]
                         }
                     ]
@@ -337,33 +361,3 @@ const commands = [
         }
 ];
 module.exports = commands;
-
-/*
-言語設定　未実装言語
-
-    {
-        name: 'German',
-        value: 'de'
-    },
-    {
-        name: 'Spanish',
-        value: 'es-ES'
-    },
-    {
-        name: 'French',
-        value: 'fr'
-    },
-    {
-        name: 'Portuguese,Brazilian',
-        value: 'pt-BR'
-    },
-    {
-        name: 'Russian',
-        value: 'ru'
-    },
-    {
-        name: 'Chinese',
-        value: 'zh-CN'
-    },
-
-*/

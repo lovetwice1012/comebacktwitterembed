@@ -288,6 +288,6 @@
     <value>引用リツイートを展開しない</value>
   </data>
   <data name="maxExtractQuotedTweet">
-    <value>最大抽出引用ツイート</value>
+    <value>最大引用ツイート展開数</value>
   </data>
 </root>
