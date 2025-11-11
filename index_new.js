@@ -3,12 +3,11 @@ const { Client, Events, GatewayIntentBits, Partials, ActivityType, InteractionTy
 const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent, GatewayIntentBits.GuildMessageReactions], partials: [Partials.Channel] , shards: 'auto'});
 const config = require('./config.json');
 const fs = require('fs');
-const mysql = require('mysql');
+const pool = require('./src/database/dbPool');
+const SettingsService = require('./src/database/settingsService');
 const Translate = require('./src/resxParser');
 const fetchWorkersService = require('./src/workers/fetch/fetchWorkersService');
-const queueManager = require('./src/queue/queueManager');
-const queueManagerInstance = new queueManager();
-const fetchWorkersServiceInstance = new fetchWorkersService(queueManagerInstance);
+const fetchWorkersServiceInstance = new fetchWorkersService();
 const commandConfig = require('./src/command/commandConfig');
 
 let processed_day = 0;
@@ -24,68 +23,11 @@ process.on('unhandledRejection', function (err) {
     console.log(err);
 });
 
-// MySQL接続情報
-const connection = mysql.createConnection({
-    host: '192.168.100.22',
-    user: 'comebacktwitterembed',
-    password: 'bluebird',
-    database: 'ComebackTwitterEmbed'
-});
-
-// MySQLに接続
-connection.connect((err) => {
-    if (err) {
-        console.error('Error connecting to database:', err);
-        return;
-    }
-    console.log('Connected to database');
-});
-
-async function processNextQueue() {
-    const queue = queueManagerInstance.get_next();
-    if (queue == null) {
-        setTimeout(() => {
-            processNextQueue();
-        }, 20);
-        return;
-    }
-    /*
-    queue.settingsの中身
-    guildId	bigint(20)	:ギルドID
-    bannedWords	text NULL	:禁止ワードをカンマ区切り。禁止ワードがない場合はNULL。カンマが禁止ワードに含まれている場合は{#!comma}に置換されているため復元の必要あり
-    defaultLanguage	char(7) [en-US]	:デフォルトの言語
-    editOriginalIfTranslate	tinyint(4) [0]	:翻訳ボタンが押されたときに元メッセージを編集するかどうか
-    sendMediaAsAttachmentsAsDefault	tinyint(4) [0]	:デフォルトでメディアを添付ファイルとして送信するかどうか
-    deleteMessageIfOnlyPostedTweetLink	tinyint(4) [0]	:ツイートリンクのみのメッセージを削除するかどうか
-    alwaysReply	tinyint(4) [0]	:常に返信の形で内容を送信するかどうか。しない場合はチャンネルに送信する
-    button_invisible_showMediaAsAttachments	tinyint(4) [0]:メディアを添付ファイルとして送信するボタンを表示するかどうか	
-    button_invisible_showAttachmentsAsEmbedsImage	tinyint(4) [0]	:画像を埋め込みとして送信するボタンを表示するかどうか
-    button_invisible_translate	tinyint(4) [0]	:翻訳ボタンを表示するかどうか
-    button_invisible_delete	tinyint(4) [0]	:削除ボタンを表示するかどうか
-    button_invisible_reload    tinyint(4) [0]	:再読み込みボタンを表示するかどうか(userのplanが1か2の場合のみ)
-    button_disabled_users	text NULL	:ボタンを無効化するユーザーのIDをカンマ区切り。ボタンを無効化しない場合はNULL。
-    button_disabled_channels	text NULL	:ボタンを無効化するチャンネルのIDをカンマ区切り。ボタンを無効化しない場合はNULL。
-    button_disabled_roles	text NULL	:ボタンを無効化するロールのIDをカンマ区切り。ボタンを無効化しない場合はNULL。
-    disable_users	text NULL	:BOTが無視するユーザーのIDをカンマ区切り。無効化しない場合はNULL。
-    disable_channels	text NULL	:BOTが無視するチャンネルのIDをカンマ区切り。無効化しない場合はNULL。
-    disable_roles	text NULL	:BOTが無視するロールのIDをカンマ区切り。無効化しない場合はNULL。
-    extractBotMessage	tinyint(4) [0]	:BOTのメッセージに反応するかどうか
-    extractWebhookMessage	tinyint(4) [0]	:Webhookのメッセージに反応するかどうか
-    sendMovieAsLink	tinyint(4) [0]	:動画をリンクとして送信するかどうか。しない場合は添付ファイルとして送信するが、もし動画が添付ファイルとして送信できない場合はリンクとして送信する。　リンクとして送信する場合は [動画リンク](<動画のURL>)という形式で送信する
-    anonymous_users	text NULL	:匿名モードを有効化するユーザーのIDをカンマ区切り。匿名化しない場合はNULL。
-    anonymous_channels	text NULL	:匿名モードを有効化するチャンネルのIDをカンマ区切り。匿名化しない場合はNULL。
-    anonymous_roles	text NULL	:匿名モードを有効化するロールのIDをカンマ区切り。匿名化しない場合はNULL。
-    maxExtractQuotedTweet int(11) [3]	:引用ツイートを何個まで展開するか
-
-    匿名モード：
-    twitterのユーザー名やアイコン、誰が送信したかを表示しないモード。
-    ツイートリンクも表示されない。
-    削除ボタンは表示されない。
-    */
-    const settings = queue.settings;
-    const message = await client.channels.cache.get(queue.message.channelId).messages.cache.get(queue.message.id);
-    const plan = queue.plan;
-    const tweetData = queue.result;
+async function processResult(data) {
+    const settings = data.settings;
+    const message = await client.channels.cache.get(data.message.channelId).messages.cache.get(data.message.id);
+    const plan = data.plan;
+    const tweetData = data.result;
     const url = tweetData.tweet.url;
     //embedsを作成開始
     /*
@@ -349,7 +291,7 @@ async function processNextQueue() {
     embeds.push(...imagesEmbeds);
     message_object.embeds = embeds;
     message_object.components = components;
-    if (queue.quotedCount != undefined && queue.quotedCount != null && queue.quotedCount != 0) message_object.content = "Quoted tweet(" + queue.quotedCount + "): ";
+    if (data.quotedCount != undefined && data.quotedCount != null && data.quotedCount != 0) message_object.content = "Quoted tweet(" + data.quotedCount + "): ";
 
     //メッセージを送信する
     //alwaysReplyが有効化されている場合は返信の形で送信する
@@ -413,15 +355,10 @@ async function processNextQueue() {
     processed_minute++
 
 
-    //もしtweetData.tweet.quoteがundefinedやnullじゃなくて、queue.quotedCountがmaxExtractQuotedTweetを超えていない場合は引用されたツイートのURL(tweetData.tweet.quote.url)をqueueに追加する
-    if (tweetData.tweet.quote != undefined && tweetData.tweet.quote != null && queue.quotedCount < settings.maxExtractQuotedTweet) {
-        fetchWorkersServiceInstance.add_queue(message, queue.plan, tweetData.tweet.quote.url, queue.quotedCount + 1);
+    //もしtweetData.tweet.quoteがundefinedやnullじゃなくて、data.quotedCountがmaxExtractQuotedTweetを超えていない場合は引用されたツイートのURL(tweetData.tweet.quote.url)をqueueに追加する
+    if (tweetData.tweet.quote != undefined && tweetData.tweet.quote != null && data.quotedCount < settings.maxExtractQuotedTweet) {
+        fetchWorkersServiceInstance.add_queue(message, data.plan, tweetData.tweet.quote.url, data.quotedCount + 1);
     }
-
-    //0.1秒待って次のキューを処理する
-    setTimeout(() => {
-        processNextQueue();
-    }, 20);
 }
 
 client.on(Events.ClientReady, () => {
@@ -436,14 +373,13 @@ client.on(Events.ClientReady, () => {
         });
     }, 60000);
 
-    setInterval(() => {
-        //1時間に1回select 1を実行する
-        connection.query('SELECT 1', (err, results, fields) => {
-            if (err) {
-                console.error('Error connecting to database:', err);
-                return;
-            }
-        });
+    setInterval(async () => {
+        //1時間に1回select 1を実行する（接続プールのキープアライブテスト）
+        try {
+            await pool.query('SELECT 1');
+        } catch (err) {
+            console.error('Error connecting to database:', err);
+        }
     }, 3600000);
 
     setInterval(async () => {
@@ -494,18 +430,15 @@ client.on(Events.ClientReady, () => {
             processed_day_column = null;
         }
         return
-        connection.query('INSERT INTO stats (timestamp, joinedServersCount, usersCount, channelsCount, minutes, hours, days) VALUES (?, ?, ?, ?, ?, ?, ?)', [new Date().getTime(), client.guilds.cache.size, client.users.cache.size, client.channels.cache.size, processed_column, processed_hour_column, processed_day_column], (err, results, fields) => {
-            if (err) {
+        pool.query('INSERT INTO stats (timestamp, joinedServersCount, usersCount, channelsCount, minutes, hours, days) VALUES (?, ?, ?, ?, ?, ?, ?)', [new Date().getTime(), client.guilds.cache.size, client.users.cache.size, client.channels.cache.size, processed_column, processed_hour_column, processed_day_column])
+            .catch(err => {
                 console.error('Error connecting to database:', err);
-                return;
-            }
-        });
+            });
     }, 60000);
 
     client.application.commands.set(commandConfig);
-    fetchWorkersServiceInstance.set_total_workers(64);
-    fetchWorkersServiceInstance.initialize(client);
-    processNextQueue();
+    fetchWorkersServiceInstance.set_total_workers(24);
+    fetchWorkersServiceInstance.initialize(client, processResult);
 
 });
 
@@ -521,58 +454,9 @@ client.on(Events.InteractionCreate, async (interaction) => {
     }
 
     //現在のサーバー設定を確認する
-    //settingsの取得
-    const sql = 'SELECT * FROM settings WHERE guildId = ?';
-    const params = [interaction.guild.id];
-
-    connection.query(sql, params, async (error, results, fields) => {
-        if (error) {
-            console.error('Error connecting to database:', error);
-            return;
-        }
-        if (results.length == 0) {
-            //設定がない場合はデフォルトの設定を使用する
-            const defaultSettings = {
-                guildId: interaction.guild.id,
-                bannedWords: null,
-                defaultLanguage: 'en-US',
-                editOriginalIfTranslate: 0,
-                sendMediaAsAttachmentsAsDefault: 0,
-                deleteMessageIfOnlyPostedTweetLink: 0,
-                alwaysReply: 0,
-                button_invisible_showMediaAsAttachments: 0,
-                button_invisible_showAttachmentsAsEmbedsImage: 0,
-                button_invisible_translate: 0,
-                button_invisible_delete: 0,
-                button_invisible_reload: 0,
-                button_disabled_users: null,
-                button_disabled_channels: null,
-                button_disabled_roles: null,
-                disable_users: null,
-                disable_channels: null,
-                disable_roles: null,
-                extractBotMessage: 0,
-                extractWebhookMessage: 0,
-                sendMovieAsLink: 0,
-                anonymous_users: null,
-                anonymous_channels: null,
-                anonymous_roles: null,
-                maxExtractQuotedTweet: 3,
-            };
-            const sql = 'INSERT INTO settings SET ?';
-            const params = [defaultSettings];
-            connection.query(sql, params, (error, results, fields) => {
-                if (error) {
-                    console.error('Error connecting to database:', error);
-                    return;
-                }
-            });
-            settings = defaultSettings;
-        } else {
-            //設定がある場合はそれを使用する
-            settings = results[0];
-        }
-
+    //settingsの取得（キャッシュ優先）
+    try {
+        const settings = await SettingsService.getSettings(interaction.guild.id);
 
         switch (interaction.commandName) {
 
@@ -707,32 +591,32 @@ client.on(Events.InteractionCreate, async (interaction) => {
                             else return await interaction.reply("匿名モードを有効化するロールを追加しました");
                         }
 
-                        case Translate.banWord["en-US"]:
-                            //word
-                            const option_word = interaction.options.getString(Translate.word["en-US"]);
-                            connection.query('SELECT bannedWords FROM settings WHERE guildId = ?', [interaction.guild.id], async (err, results) => {
-                                if (err) {
-                                    console.log(err);
-                                    await interaction.reply("エラーが発生しました");
-                                    return;
-                                }
-                                // 現在のbannedWordsを取得し、新しい単語を追加
-                                let currentBannedWords = results[0].bannedWords ?? '';
-                                let bannedWordsArray = currentBannedWords.split(',')
-                                if (!bannedWordsArray.includes(option_word)) {
-                                    bannedWordsArray.push(option_word);
-                                }
-                                const updatedBannedWords = bannedWordsArray.join(',');
-        
-                                const option_word_data = {
-                                    guildId: interaction.guild.id,
-                                    bannedWords: updatedBannedWords
-                                };
-                                const result_word = await settingsInputDb(option_word_data);
-                                if (!result_word) await interaction.reply("禁止ワードを追加できませんでした");
-                                else return await interaction.reply("禁止ワードを追加しました");
-                            });
-                            return
+                    case Translate.banWord["en-US"]:
+                        //word
+                        const option_word = interaction.options.getString(Translate.word["en-US"]);
+                        try {
+                            // 現在の設定を取得
+                            const currentSettings = await SettingsService.getSettings(interaction.guild.id);
+                            // 現在のbannedWordsを取得し、新しい単語を追加
+                            let currentBannedWords = currentSettings.bannedWords ?? '';
+                            let bannedWordsArray = currentBannedWords.split(',').filter(w => w);
+                            if (!bannedWordsArray.includes(option_word)) {
+                                bannedWordsArray.push(option_word);
+                            }
+                            const updatedBannedWords = bannedWordsArray.join(',');
+    
+                            const option_word_data = {
+                                guildId: interaction.guild.id,
+                                bannedWords: updatedBannedWords
+                            };
+                            const result_word = await settingsInputDb(option_word_data);
+                            if (!result_word) await interaction.reply("禁止ワードを追加できませんでした");
+                            else return await interaction.reply("禁止ワードを追加しました");
+                        } catch (err) {
+                            console.log(err);
+                            await interaction.reply("エラーが発生しました");
+                        }
+                        return
 
                     case Translate.defaultLanguage["en-US"]:
                         //language
@@ -884,20 +768,21 @@ client.on(Events.InteractionCreate, async (interaction) => {
                     }
                 return
         }
-    });
+    } catch (error) {
+        console.error('設定取得エラー:', error);
+        await interaction.reply("設定の取得に失敗しました。");
+    }
 });
 
 async function settingsInputDb(value) {
-    const query = 'UPDATE settings SET ?';
-    return new Promise((resolve, reject) => {
-        connection.query(query, [value], (err, results, fields) => {
-            if (err) {
-                reject(err);
-            } else {
-                resolve(results);
-            }
-        });
-    });
+    try {
+        // SettingsServiceを使用して更新
+        const result = await SettingsService.updateSettings(value.guildId, value);
+        return result;
+    } catch (err) {
+        console.error('設定更新エラー:', err);
+        return false;
+    }
 }
 
 /* 
@@ -943,57 +828,10 @@ client.on(Events.MessageCreate, async (message) => {
     const urlRegex = /https:\/\/(twitter|x)\.com\/[a-zA-Z0-9_]{1,15}\/status\/[0-9]{1,20}/g;
     const urls = message.content.match(urlRegex);
     if (urls == null) return;
-    //settingsの取得
-    const sql = 'SELECT * FROM settings WHERE guildId = ?';
-    const params = [message.guild.id];
-
-    connection.query(sql, params, (error, results, fields) => {
-        if (error) {
-            console.error('Error connecting to database:', error);
-            return;
-        }
-        if (results.length == 0) {
-            //設定がない場合はデフォルトの設定を使用する
-            const defaultSettings = {
-                guildId: message.guild.id,
-                bannedWords: null,
-                defaultLanguage: 'en-US',
-                editOriginalIfTranslate: 0,
-                sendMediaAsAttachmentsAsDefault: 0,
-                deleteMessageIfOnlyPostedTweetLink: 0,
-                alwaysReply: 0,
-                button_invisible_showMediaAsAttachments: 0,
-                button_invisible_showAttachmentsAsEmbedsImage: 0,
-                button_invisible_translate: 0,
-                button_invisible_delete: 0,
-                button_invisible_reload: 0,
-                button_disabled_users: null,
-                button_disabled_channels: null,
-                button_disabled_roles: null,
-                disable_users: null,
-                disable_channels: null,
-                disable_roles: null,
-                extractBotMessage: 0,
-                extractWebhookMessage: 0,
-                sendMovieAsLink: 0,
-                anonymous_users: null,
-                anonymous_channels: null,
-                anonymous_roles: null,
-                maxExtractQuotedTweet: 3,
-            };
-            const sql = 'INSERT INTO settings SET ?';
-            const params = [defaultSettings];
-            connection.query(sql, params, (error, results, fields) => {
-                if (error) {
-                    console.error('Error connecting to database:', error);
-                    return;
-                }
-            });
-            settings = defaultSettings;
-        } else {
-            //設定がある場合はそれを使用する
-            settings = results[0];
-        }
+    
+    try {
+        //settingsの取得（キャッシュ優先）
+        const settings = await SettingsService.getSettings(message.guild.id);
 
         //DBよりuserのデータを取得
         /*
@@ -1032,122 +870,60 @@ client.on(Events.MessageCreate, async (message) => {
         }
 
         //ユーザーのデータを取得
-        const sql = 'SELECT * FROM users WHERE userid = ?';
-        const params = [message.author.id];
-        connection.query(sql, params, (error, results, fields) => {
-            if (error) {
-                console.error('Error connecting to database:', error);
-                return;
-            }
-            if (results.length == 0) {
-                //ユーザーが存在しない場合は登録する
-                const sql = 'INSERT INTO users SET ?';
-                const params = [{
-                    userid: message.author.id,
-                    plan: 0,
-                    paid_plan_expired_at: 0,
-                    register_date: new Date().getTime(),
-                    enabled: 1
-                }];
-                connection.query(sql, params, (error, results, fields) => {
-                    if (error) {
-                        console.error('Error connecting to database:', error);
-                        return;
-                    }
-                });
-                //プランは無料
+        const [userResults] = await pool.query('SELECT * FROM users WHERE userid = ?', [message.author.id]);
+        
+        let plan, enabled;
+        if (userResults.length == 0) {
+            //ユーザーが存在しない場合は登録する
+            await pool.query('INSERT INTO users SET ?', [{
+                userid: message.author.id,
+                plan: 0,
+                paid_plan_expired_at: 0,
+                register_date: new Date().getTime(),
+                enabled: 1
+            }]);
+            //プランは無料
+            plan = 0;
+            enabled = 1;
+        } else {
+            //ユーザーが存在する場合はそれを使用する
+            plan = userResults[0].plan;
+            //もし有料プランの有効期限が切れていた場合はプランを無料にする
+            if (userResults[0].paid_plan_expired_at < new Date().getTime()) {
                 plan = 0;
-                enabled = 1;
-            } else {
-                //ユーザーが存在する場合はそれを使用する
-                plan = results[0].plan;
-                //もし有料プランの有効期限が切れていた場合はプランを無料にする
-                if (results[0].paid_plan_expired_at < new Date().getTime()) plan = 0;
-                const updateSQL = 'UPDATE users SET plan = ? WHERE userid = ?';
-                const updateParams = [plan, message.author.id];
-                connection.query(updateSQL, updateParams, (error, results, fields) => {
-                    if (error) {
-                        console.error('Error connecting to database:', error);
-                        return;
-                    }
-                });
-                enabled = results[0].enabled;
+                await pool.query('UPDATE users SET plan = ? WHERE userid = ?', [plan, message.author.id]);
             }
-            //もしenabledが0の場合は処理を終了する
-            if (enabled == 0) return;
+            enabled = userResults[0].enabled;
+        }
+        //もしenabledが0の場合は処理を終了する
+        if (enabled == 0) return;
 
-            /*******************************************************/
-            /*                     2024/01/01                       */
-            /* 石川県を中心に甚大な被害が出た巨大地震・津波が発生      */
-            /* 情報共有を支援するために期限未定で全員に有料プランを開放*/
-            /*******************************************************/
-            plan = 2;
-            
-            //キューに全てのURLを追加する
-            for (let i = 0; i < urls.length; i++) {
-                fetchWorkersServiceInstance.add_queue(message, plan, urls[i]);
-                //キューに追加した事を示すためにリアクションを付ける
-                message.react('🔁');
-            }
-        });
-    });
+        /*******************************************************/
+        /*                     2024/01/01                       */
+        /* 石川県を中心に甚大な被害が出た巨大地震・津波が発生      */
+        /* 情報共有を支援するために期限未定で全員に有料プランを開放*/
+        /*******************************************************/
+        plan = 2;
+        
+        //キューに全てのURLを追加する
+        for (let i = 0; i < urls.length; i++) {
+            fetchWorkersServiceInstance.add_queue(message, plan, urls[i]);
+            //キューに追加した事を示すためにリアクションを付ける
+            message.react('🔁');
+        }
+    } catch (error) {
+        console.error('メッセージ処理エラー:', error);
+    }
 })
 
 client.on(Events.InteractionCreate, async (interaction) => {
     //ボタンが押された時の処理
     if (!interaction.isButton()) return;
     await interaction.deferReply({ ephemeral: true });
-    //DBより設定を取得
-    const sql = 'SELECT * FROM settings WHERE guildId = ?';
-    const params = [interaction.guildId];
-    connection.query(sql, params, async (error, results, fields) => {
-        if (error) {
-            console.error('Error connecting to database:', error);
-            return;
-        }
-        let settings = null;
-        if (results.length == 0) {
-            //設定がない場合はデフォルトの設定を使用する
-            const defaultSettings = {
-                guildId: interaction.guildId,
-                bannedWords: null,
-                defaultLanguage: 'en-US',
-                editOriginalIfTranslate: 0,
-                sendMediaAsAttachmentsAsDefault: 0,
-                deleteMessageIfOnlyPostedTweetLink: 0,
-                alwaysReply: 0,
-                button_invisible_showMediaAsAttachments: 0,
-                button_invisible_showAttachmentsAsEmbedsImage: 0,
-                button_invisible_translate: 0,
-                button_invisible_delete: 0,
-                button_invisible_reload: 0,
-                button_disabled_users: null,
-                button_disabled_channels: null,
-                button_disabled_roles: null,
-                disable_users: null,
-                disable_channels: null,
-                disable_roles: null,
-                extractBotMessage: 0,
-                extractWebhookMessage: 0,
-                sendMovieAsLink: 0,
-                anonymous_users: null,
-                anonymous_channels: null,
-                anonymous_roles: null,
-                maxExtractQuotedTweet: 3,
-            };
-            const sql = 'INSERT INTO settings SET ?';
-            const params = [defaultSettings];
-            connection.query(sql, params, (error, results, fields) => {
-                if (error) {
-                    console.error('Error connecting to database:', error);
-                    return;
-                }
-                console.log('Inserted default settings');
-            });
-            settings = defaultSettings;
-        } else {
-            settings = results[0];
-        }
+    
+    try {
+        //DBより設定を取得（キャッシュ優先）
+        const settings = await SettingsService.getSettings(interaction.guildId);
 
         //ボタンが無効化されているかどうか
         if (settings.button_disabled_users != null) {
@@ -1358,7 +1134,10 @@ client.on(Events.InteractionCreate, async (interaction) => {
                 }, 3000);
                 break;
         }
-    });
+    } catch (error) {
+        console.error('インタラクション処理エラー:', error);
+        await interaction.editReply({ content: "エラーが発生しました。", ephemeral: true });
+    }
 })
 
 client.login(config.token);
