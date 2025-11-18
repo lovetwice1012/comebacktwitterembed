@@ -81,7 +81,7 @@ const videoExtensions = [
 async function sendTweetEmbed(message, url, quoted = false, parent = null, saved = false) {
     return new Promise((resolve, reject) => {
         const element = url;
-        var newUrl = element.replace(/twitter.com|x.com/g, 'api.vxtwitter.com');
+        let newUrl = element.replace(/twitter.com|x.com/g, 'api.vxtwitter.com');
 
         if (newUrl.split("/").length > 6 && !newUrl.includes("twidata.sprink.cloud")) {
             newUrl = newUrl.split("/").slice(0, 6).join("/");
@@ -115,7 +115,7 @@ async function sendTweetEmbed(message, url, quoted = false, parent = null, saved
                     return await res.text()
                 })
 
-                attachments = [];
+                let attachments = [];
                 let embeds = [];
                 let showMediaAsAttachmentsButton = null;
 
@@ -167,7 +167,7 @@ async function sendTweetEmbed(message, url, quoted = false, parent = null, saved
                     json.text = json.text.slice(0, 1500) + '...';
                 }
 
-                content = [];
+                let content = [];
                 let embed = {}
 
                 if (settings.deletemessageifonlypostedtweetlink[message.guild.id] === undefined)
@@ -1496,8 +1496,69 @@ client.on(Events.InteractionCreate, async (interaction) => {
 });
 
 // ============================================================================
+// Global Error Handlers
+// ============================================================================
+
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+    // Application specific logging, throwing an error, or other logic here
+});
+
+process.on('uncaughtException', (error) => {
+    console.error('Uncaught Exception:', error);
+    // Exit gracefully
+    process.exit(1);
+});
+
+// ============================================================================
+// Configuration Loading with Validation
+// ============================================================================
+
+function loadConfig() {
+    const configPath = path.join(__dirname, 'config.json');
+
+    if (!fs.existsSync(configPath)) {
+        console.error('❌ CRITICAL: config.json not found!');
+        console.error('Please create config.json with the following structure:');
+        console.error(JSON.stringify({
+            token: 'YOUR_DISCORD_BOT_TOKEN',
+            URL: 'YOUR_WEBHOOK_URL'
+        }, null, 2));
+        console.error('\nOr use environment variables:');
+        console.error('DISCORD_TOKEN=your_token');
+        console.error('WEBHOOK_URL=your_webhook');
+
+        // Fallback to environment variables
+        const token = process.env.DISCORD_TOKEN;
+        const URL = process.env.WEBHOOK_URL;
+
+        if (!token) {
+            throw new Error('Discord token not configured. Set DISCORD_TOKEN env variable or create config.json');
+        }
+
+        return { token, URL };
+    }
+
+    try {
+        const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+
+        if (!config.token) {
+            throw new Error('Discord token not found in config.json');
+        }
+
+        return config;
+    } catch (error) {
+        console.error('Error loading config.json:', error.message);
+        throw error;
+    }
+}
+
+// ============================================================================
 // Bot Login
 // ============================================================================
 
-const config = require('./config.json');
-client.login(config.token);
+const config = loadConfig();
+client.login(config.token).catch(error => {
+    console.error('Failed to login to Discord:', error.message);
+    process.exit(1);
+});
