@@ -566,12 +566,18 @@ client.on('ready', () => {
                         {
                             name: 'language',
                             name_localizations: convEnToEnUS(getLocaleObject('language')),
-                            description: 'Language',
+                            description: 'language',
                             type: ApplicationCommandOptionType.String,
                             required: true,
                             choices: [
-                                { name: 'English', value: 'en' },
-                                { name: '日本語', value: 'ja' }
+                                {
+                                    name: 'English',
+                                    value: 'en'
+                                },
+                                {
+                                    name: 'Japanese',
+                                    value: 'ja'
+                                }
                             ]
                         }
                     ]
@@ -595,7 +601,7 @@ client.on('ready', () => {
                 {
                     name: 'setdefaultmediaasattachments',
                     name_localizations: convEnToEnUS(getLocaleObject('setdefaultmediaasattachments')),
-                    description: 'setdefaultmediaasattachments',
+                    description: 'setSendMediaAsAttachmentsAsDefault',
                     description_localizations: convEnToEnUS(getLocaleObject('settingsSendMediaAsAttachmentsAsDefaultDescription')),
                     type: ApplicationCommandOptionType.Subcommand,
                     options: [
@@ -611,7 +617,7 @@ client.on('ready', () => {
                 {
                     name: 'deleteifonlypostedtweetlink',
                     name_localizations: convEnToEnUS(getLocaleObject('deleteifonlypostedtweetlink')),
-                    description: 'deleteifonlypostedtweetlink',
+                    description: 'deleteIfOnlyPostedTweetLink',
                     description_localizations: convEnToEnUS(getLocaleObject('settingsDeleteMessageIfOnlyPostedTweetLinkDescription')),
                     type: ApplicationCommandOptionType.Subcommand,
                     options: [
@@ -621,13 +627,21 @@ client.on('ready', () => {
                             description: 'boolean',
                             type: ApplicationCommandOptionType.Boolean,
                             required: true
+                        },
+                        {
+                            name: 'secoundaryextractmode',
+                            name_localizations: convEnToEnUS(getLocaleObject('secoundaryextractmode')),
+                            description: 'doItWhenSecondaryExtractModeIsEnabled',
+                            description_localizations: convEnToEnUS(getLocaleObject('settingsDoItWhenSecondaryExtractModeIsEnabledDescription')),
+                            type: ApplicationCommandOptionType.Boolean,
+                            required: false
                         }
                     ]
                 },
                 {
                     name: 'alwaysreplyifpostedtweetlink',
                     name_localizations: convEnToEnUS(getLocaleObject('alwaysreplyifpostedtweetlink')),
-                    description: 'alwaysreplyifpostedtweetlink',
+                    description: 'alwaysReplyIfPostedTweetLink',
                     description_localizations: convEnToEnUS(getLocaleObject('settingsAlwaysReplyIfPostedTweetLinkDescription')),
                     type: ApplicationCommandOptionType.Subcommand,
                     options: [
@@ -641,9 +655,97 @@ client.on('ready', () => {
                     ]
                 },
                 {
+                    name: 'button',
+                    name_localizations: convEnToEnUS(getLocaleObject('button')),
+                    description: 'button',
+                    type: ApplicationCommandOptionType.SubcommandGroup,
+                    options: [
+                        {
+                            name: 'invisible',
+                            name_localizations: convEnToEnUS(getLocaleObject('invisible')),
+                            description: 'invisible',
+                            type: ApplicationCommandOptionType.Subcommand,
+                            options: [
+                                {
+                                    name: 'showmediaasattachments',
+                                    name_localizations: convEnToEnUS(getLocaleObject('showmediaasattachments')),
+                                    description: 'showMediaAsAttachments',
+                                    description_localizations: convEnToEnUS(getLocaleObject('showMediaAsAttachments')),
+                                    type: ApplicationCommandOptionType.Boolean,
+                                },
+                                {
+                                    name: 'showattachmentsasembedsimage',
+                                    name_localizations: convEnToEnUS(getLocaleObject('showattachmentsasembedsimage')),
+                                    description: 'showAttachmentsAsEmbedsImage',
+                                    description_localizations: convEnToEnUS(getLocaleObject('showAttachmentsAsEmbedsImage')),
+                                    type: ApplicationCommandOptionType.Boolean,
+                                },
+                                {
+                                    name: 'translate',
+                                    name_localizations: convEnToEnUS(getLocaleObject('translate')),
+                                    description: 'translate',
+                                    description_localizations: convEnToEnUS(getLocaleObject('translateButton')),
+                                    type: ApplicationCommandOptionType.Boolean,
+                                },
+                                {
+                                    name: 'delete',
+                                    name_localizations: convEnToEnUS(getLocaleObject('delete')),
+                                    description: 'delete',
+                                    description_localizations: convEnToEnUS(getLocaleObject('deleteButton')),
+                                    type: ApplicationCommandOptionType.Boolean,
+                                },
+                                {
+                                    name: 'savetweet',
+                                    name_localizations: convEnToEnUS(getLocaleObject('saveTweetButton')),
+                                    description: 'showSaveTweet',
+                                    description_localizations: convEnToEnUS(getLocaleObject('showSaveTweetButton')),
+                                    type: ApplicationCommandOptionType.Boolean,
+                                },
+                                {
+                                    name: 'all',
+                                    name_localizations: convEnToEnUS(getLocaleObject('all')),
+                                    description: 'all',
+                                    type: ApplicationCommandOptionType.Boolean,
+                                }
+                            ]
+                        },
+                        {
+                            name: 'disabled',
+                            name_localizations: convEnToEnUS(getLocaleObject('disabled')),
+                            description: 'disabled',
+                            type: ApplicationCommandOptionType.Subcommand,
+                            options: [
+                                {
+                                    name: 'user',
+                                    name_localizations: convEnToEnUS(getLocaleObject('user')),
+                                    description: 'user',
+                                    description_localizations: convEnToEnUS(getLocaleObject('settingsDisableUserDescription')),
+                                    type: ApplicationCommandOptionType.User,
+                                    required: false
+                                },
+                                {
+                                    name: 'channel',
+                                    name_localizations: convEnToEnUS(getLocaleObject('channel')),
+                                    description: 'channel',
+                                    description_localizations: convEnToEnUS(getLocaleObject('settingsDisableChannelDescription')),
+                                    type: ApplicationCommandOptionType.Channel,
+                                    required: false
+                                },
+                                {
+                                    name: 'role',
+                                    name_localizations: convEnToEnUS(getLocaleObject('role')),
+                                    description: 'role',
+                                    type: ApplicationCommandOptionType.Role,
+                                    required: false
+                                }
+                            ]
+                        }
+                    ]
+                },
+                {
                     name: 'extractbotmessage',
                     name_localizations: convEnToEnUS(getLocaleObject('extractbotmessage')),
-                    description: 'extractbotmessage',
+                    description: 'extractBotMessage',
                     description_localizations: convEnToEnUS(getLocaleObject('settingsextractBotMessageDescription')),
                     type: ApplicationCommandOptionType.Subcommand,
                     options: [
@@ -657,9 +759,9 @@ client.on('ready', () => {
                     ]
                 },
                 {
-                    name: 'quote_repost_do_not_extract',
+                    name: 'quoterepostdonotextract',
                     name_localizations: convEnToEnUS(getLocaleObject('quote_repost_do_not_extract')),
-                    description: 'quote_repost_do_not_extract',
+                    description: 'quote repost do not extract',
                     description_localizations: convEnToEnUS(getLocaleObject('settingsQuoteRepostDoNotExtractDescription')),
                     type: ApplicationCommandOptionType.Subcommand,
                     options: [
@@ -673,9 +775,9 @@ client.on('ready', () => {
                     ]
                 },
                 {
-                    name: 'legacy_mode',
+                    name: 'legacymode',
                     name_localizations: convEnToEnUS(getLocaleObject('legacy_mode')),
-                    description: 'legacy_mode',
+                    description: 'legacy mode',
                     description_localizations: convEnToEnUS(getLocaleObject('settingsLegacyModeDescription')),
                     type: ApplicationCommandOptionType.Subcommand,
                     options: [
@@ -689,25 +791,9 @@ client.on('ready', () => {
                     ]
                 },
                 {
-                    name: 'passive_mode',
-                    name_localizations: convEnToEnUS(getLocaleObject('passive_mode')),
-                    description: 'passive_mode',
-                    description_localizations: convEnToEnUS(getLocaleObject('settingsPassiveModeDescription')),
-                    type: ApplicationCommandOptionType.Subcommand,
-                    options: [
-                        {
-                            name: 'boolean',
-                            name_localizations: convEnToEnUS(getLocaleObject('boolean')),
-                            description: 'boolean',
-                            type: ApplicationCommandOptionType.Boolean,
-                            required: true
-                        }
-                    ]
-                },
-                {
-                    name: 'secondary_extract_mode',
+                    name: 'secondaryextractmode',
                     name_localizations: convEnToEnUS(getLocaleObject('secondary_extract_mode')),
-                    description: 'secondary_extract_mode',
+                    description: 'secondary extract mode',
                     description_localizations: convEnToEnUS(getLocaleObject('settingsSecondaryExtractModeDescription')),
                     type: ApplicationCommandOptionType.Subcommand,
                     options: [
@@ -719,6 +805,174 @@ client.on('ready', () => {
                             required: true
                         }
                     ]
+                }
+            ]
+        },
+        {
+            name: 'showsavetweet',
+            name_localizations: convEnToEnUS(getLocaleObject('showsavedtweet')),
+            description: 'Shows save tweet.',
+            description_localizations: convEnToEnUS(getLocaleObject('showSaveTweetCommandDescription')),
+            options: [
+                {
+                    name: 'id',
+                    name_localizations: convEnToEnUS(getLocaleObject('id')),
+                    description: 'string',
+                    type: ApplicationCommandOptionType.String,
+                    required: false
+                }
+            ]
+        },
+        {
+            name: 'savetweetquotaoverride',
+            name_localizations: convEnToEnUS(getLocaleObject('save_tweet_quota_override')),
+            description: 'save tweet quota override',
+            description_localizations: convEnToEnUS(getLocaleObject('settingsSaveTweetQuotaOverrideDescription')),
+            options: [
+                {
+                    name: 'newquota',
+                    name_localizations: convEnToEnUS(getLocaleObject('quota')),
+                    description: 'new quota',
+                    type: ApplicationCommandOptionType.Integer,
+                    required: true
+                },
+                {
+                    name: 'user',
+                    name_localizations: convEnToEnUS(getLocaleObject('user')),
+                    description: 'user',
+                    description_localizations: convEnToEnUS(getLocaleObject('settingsDisableUserDescription')),
+                    type: ApplicationCommandOptionType.User,
+                    required: false
+                }
+            ]
+        },
+        {
+            name: 'deletesavetweet',
+            name_localizations: convEnToEnUS(getLocaleObject('delete')),
+            description: 'delete save tweet.',
+            description_localizations: convEnToEnUS(getLocaleObject('settingsSaveTweetQuotaOverrideDescription')),
+            options: [
+                {
+                    name: 'id',
+                    name_localizations: convEnToEnUS(getLocaleObject('id')),
+                    description: 'string',
+                    type: ApplicationCommandOptionType.String,
+                    required: true
+                }
+            ]
+        },
+        {
+            name: 'quotastats',
+            name_localizations: convEnToEnUS(getLocaleObject('quotastats')),
+            description: 'quota stats',
+            description_localizations: convEnToEnUS(getLocaleObject('settingsSaveTweetQuotaOverrideDescription')),
+            options: [
+                {
+                    name: 'user',
+                    name_localizations: convEnToEnUS(getLocaleObject('user')),
+                    description: 'user',
+                    description_localizations: convEnToEnUS(getLocaleObject('settingsDisableUserDescription')),
+                    type: ApplicationCommandOptionType.User,
+                    required: false
+                }
+            ]
+        },
+        {
+            name: 'checkmyguildsettings',
+            name_localizations: convEnToEnUS(getLocaleObject('myguildsettings')),
+            description: 'check my guild settings',
+            description_localizations: convEnToEnUS(getLocaleObject('settingsSaveTweetQuotaOverrideDescription')),
+            options: [
+                {
+                    name: 'guild',
+                    name_localizations: convEnToEnUS(getLocaleObject('user')),
+                    description: 'guild',
+                    type: ApplicationCommandOptionType.String,
+                    required: false
+                }
+            ]
+        },
+        {
+            name: 'autoextract',
+            name_localizations: convEnToEnUS(getLocaleObject('autoextract')),
+            description: 'auto extract',
+            description_localizations: convEnToEnUS(getLocaleObject('settingsAutoExtractDescription')),
+            options: [
+                {
+                    name: 'list',
+                    name_localizations: convEnToEnUS(getLocaleObject('autoextract_list')),
+                    description: 'list',
+                    description_localizations: convEnToEnUS(getLocaleObject('settingsAutoExtractListDescription')),
+                    type: ApplicationCommandOptionType.Subcommand,
+                },
+                {
+                    name: 'add',
+                    name_localizations: convEnToEnUS(getLocaleObject('autoextract_add')),
+                    description: 'add',
+                    description_localizations: convEnToEnUS(getLocaleObject('settingsAutoExtractAddDescription')),
+                    type: ApplicationCommandOptionType.Subcommand,
+                    options: [
+                        {
+                            name: 'username',
+                            name_localizations: convEnToEnUS(getLocaleObject('autoextract_username')),
+                            description: 'username',
+                            type: ApplicationCommandOptionType.String,
+                            required: true
+                        },
+                        {
+                            name: 'webhook',
+                            name_localizations: convEnToEnUS(getLocaleObject('autoextract_webhook')),
+                            description: 'webhook',
+                            type: ApplicationCommandOptionType.String,
+                            required: true
+                        }
+                    ]
+                },
+                {
+                    name: 'delete',
+                    name_localizations: convEnToEnUS(getLocaleObject('autoextract_delete')),
+                    description: 'delete',
+                    description_localizations: convEnToEnUS(getLocaleObject('settingsAutoExtractDeleteDescription')),
+                    type: ApplicationCommandOptionType.Subcommand,
+                    options: [
+                        {
+                            name: 'id',
+                            name_localizations: convEnToEnUS(getLocaleObject('autoextract_id')),
+                            description: 'id',
+                            type: ApplicationCommandOptionType.Integer,
+                            required: true
+                        }
+                    ]
+                },
+                {
+                    name: 'additionalautoextractslot',
+                    name_localizations: convEnToEnUS(getLocaleObject('additionalautoextractslot')),
+                    description: 'ADMIN ONLY',
+                    description_localizations: convEnToEnUS(getLocaleObject('settingsAdditionalAutoExtractSlotDescription')),
+                    type: ApplicationCommandOptionType.Subcommand,
+                    options: [
+                        {
+                            name: 'user',
+                            name_localizations: convEnToEnUS(getLocaleObject('user')),
+                            description: 'user',
+                            type: ApplicationCommandOptionType.User,
+                            required: true
+                        },
+                        {
+                            name: 'slot',
+                            name_localizations: convEnToEnUS(getLocaleObject('slot')),
+                            description: 'slot',
+                            type: ApplicationCommandOptionType.Integer,
+                            required: true
+                        }
+                    ]
+                },
+                {
+                    name: 'checkfreeslot',
+                    name_localizations: convEnToEnUS(getLocaleObject('checkfreeslot')),
+                    description: 'check free slot',
+                    description_localizations: convEnToEnUS(getLocaleObject('settingsAdditionalAutoExtractCheckFreeSlotDescription')),
+                    type: ApplicationCommandOptionType.Subcommand
                 }
             ]
         }
