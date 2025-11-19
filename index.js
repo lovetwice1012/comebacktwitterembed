@@ -302,7 +302,7 @@ async function sendTweetEmbed(message, url, quoted = false, parent = null, saved
                     !url.includes("twidata.sprink.cloud") && !url.includes("localhost:3088")) {
                     if (json.qrtURL !== null && (settings.quote_repost_do_not_extract[message.guild.id] === undefined ||
                         settings.quote_repost_do_not_extract[message.guild.id] === false))
-                        await sendTweetEmbed(message, json.qrtURL, true, msg);
+                        await sendTweetEmbed(message, json.qrtURL, true, message);
                     return resolve();
                 }
 
@@ -1009,7 +1009,7 @@ client.on(Events.MessageCreate, async (message) => {
 
 // Slash Command Handler
 client.on(Events.InteractionCreate, async (interaction) => {
-    if (!interaction.type === InteractionType.ApplicationCommand) return;
+    if (interaction.type !== InteractionType.ApplicationCommand) return;
 
     const locale = interaction.locale?.startsWith('en') ? 'en' : interaction.locale || 'en';
 
@@ -1192,6 +1192,136 @@ client.on(Events.InteractionCreate, async (interaction) => {
             }
         }
 
+        // Handle button subcommand group
+        const subcommandGroup = interaction.options.getSubcommandGroup();
+        if (subcommandGroup === 'button') {
+            const buttonSubcommand = interaction.options.getSubcommand();
+
+            if (buttonSubcommand === 'invisible') {
+                const showMediaAsAttachments = interaction.options.getBoolean('showmediaasattachments');
+                const showAttachmentsAsEmbedsImage = interaction.options.getBoolean('showattachmentsasembedsimage');
+                const translate = interaction.options.getBoolean('translate');
+                const deleteButton = interaction.options.getBoolean('delete');
+                const saveTweet = interaction.options.getBoolean('savetweet');
+                const all = interaction.options.getBoolean('all');
+
+                if (!settings.button_invisible[interaction.guildId]) {
+                    settings.button_invisible[interaction.guildId] = { ...button_invisible_template };
+                }
+
+                let changesApplied = [];
+
+                if (showMediaAsAttachments !== null) {
+                    settings.button_invisible[interaction.guildId].showMediaAsAttachments = showMediaAsAttachments;
+                    changesApplied.push(`showMediaAsAttachments: ${showMediaAsAttachments}`);
+                }
+                if (showAttachmentsAsEmbedsImage !== null) {
+                    settings.button_invisible[interaction.guildId].showAttachmentsAsEmbedsImage = showAttachmentsAsEmbedsImage;
+                    changesApplied.push(`showAttachmentsAsEmbedsImage: ${showAttachmentsAsEmbedsImage}`);
+                }
+                if (translate !== null) {
+                    settings.button_invisible[interaction.guildId].translate = translate;
+                    changesApplied.push(`translate: ${translate}`);
+                }
+                if (deleteButton !== null) {
+                    settings.button_invisible[interaction.guildId].delete = deleteButton;
+                    changesApplied.push(`delete: ${deleteButton}`);
+                }
+                if (saveTweet !== null) {
+                    settings.button_invisible[interaction.guildId].saveTweet = saveTweet;
+                    changesApplied.push(`saveTweet: ${saveTweet}`);
+                }
+                if (all !== null) {
+                    settings.button_invisible[interaction.guildId].all = all;
+                    changesApplied.push(`all: ${all}`);
+                }
+
+                saveSettings(settings);
+                return interaction.reply({
+                    content: 'Button invisible settings updated:\n' + changesApplied.join('\n'),
+                    ephemeral: true
+                });
+            } else if (buttonSubcommand === 'disabled') {
+                const user = interaction.options.getUser('user');
+                const channel = interaction.options.getChannel('channel');
+                const role = interaction.options.getRole('role');
+
+                const specifiedCount = [user, channel, role].filter(x => x !== null).length;
+
+                if (specifiedCount === 0) {
+                    return interaction.reply({
+                        content: t('userMustSpecifyAUserOrChannel', locale),
+                        ephemeral: true
+                    });
+                }
+
+                if (specifiedCount > 1) {
+                    return interaction.reply({
+                        content: t('userCantSpecifyBothAUserAndAChannel', locale),
+                        ephemeral: true
+                    });
+                }
+
+                if (!settings.button_disabled[interaction.guildId]) {
+                    settings.button_disabled[interaction.guildId] = { ...button_disabled_template };
+                }
+
+                if (user) {
+                    if (settings.button_disabled[interaction.guildId].user.includes(user.id)) {
+                        settings.button_disabled[interaction.guildId].user = settings.button_disabled[interaction.guildId].user.filter(id => id !== user.id);
+                        saveSettings(settings);
+                        return interaction.reply({
+                            content: `Removed ${user.username} from button disabled users`,
+                            ephemeral: true
+                        });
+                    } else {
+                        settings.button_disabled[interaction.guildId].user.push(user.id);
+                        saveSettings(settings);
+                        return interaction.reply({
+                            content: `Added ${user.username} to button disabled users`,
+                            ephemeral: true
+                        });
+                    }
+                }
+
+                if (channel) {
+                    if (settings.button_disabled[interaction.guildId].channel.includes(channel.id)) {
+                        settings.button_disabled[interaction.guildId].channel = settings.button_disabled[interaction.guildId].channel.filter(id => id !== channel.id);
+                        saveSettings(settings);
+                        return interaction.reply({
+                            content: `Removed ${channel.name} from button disabled channels`,
+                            ephemeral: true
+                        });
+                    } else {
+                        settings.button_disabled[interaction.guildId].channel.push(channel.id);
+                        saveSettings(settings);
+                        return interaction.reply({
+                            content: `Added ${channel.name} to button disabled channels`,
+                            ephemeral: true
+                        });
+                    }
+                }
+
+                if (role) {
+                    if (settings.button_disabled[interaction.guildId].role.includes(role.id)) {
+                        settings.button_disabled[interaction.guildId].role = settings.button_disabled[interaction.guildId].role.filter(id => id !== role.id);
+                        saveSettings(settings);
+                        return interaction.reply({
+                            content: `Removed ${role.name} from button disabled roles`,
+                            ephemeral: true
+                        });
+                    } else {
+                        settings.button_disabled[interaction.guildId].role.push(role.id);
+                        saveSettings(settings);
+                        return interaction.reply({
+                            content: `Added ${role.name} to button disabled roles`,
+                            ephemeral: true
+                        });
+                    }
+                }
+            }
+        }
+
         // Handle boolean settings
         const booleanSettings = {
             'defaultlanguage': { key: 'defaultLanguage', message: 'setdefaultlanguageto' },
@@ -1219,10 +1349,151 @@ client.on(Events.InteractionCreate, async (interaction) => {
         if (booleanSettings[subcommand]) {
             const value = interaction.options.getBoolean('boolean');
             const setting = booleanSettings[subcommand];
+
+            // Initialize settings object if it doesn't exist
+            if (!settings[setting.key]) {
+                settings[setting.key] = {};
+            }
+
             settings[setting.key][interaction.guildId] = value;
             saveSettings(settings);
             return interaction.reply({
                 content: t(setting.message, locale) + convertBoolToEnableDisable(value, locale),
+                ephemeral: true
+            });
+        }
+    } else if (interaction.commandName === 'showsavetweet') {
+        // Show saved tweet command
+        const id = interaction.options.getString('id');
+
+        if (!id) {
+            return interaction.reply({
+                content: 'Please provide a tweet ID to show.',
+                ephemeral: true
+            });
+        }
+
+        return interaction.reply({
+            content: `This feature is not yet implemented. Tweet ID: ${id}`,
+            ephemeral: true
+        });
+    } else if (interaction.commandName === 'savetweetquotaoverride') {
+        // Save tweet quota override command (admin only)
+        if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+            return interaction.reply({
+                content: t('userDonthavePermission', locale),
+                ephemeral: true
+            });
+        }
+
+        const newQuota = interaction.options.getInteger('newquota');
+        const user = interaction.options.getUser('user');
+
+        return interaction.reply({
+            content: `This feature is not yet implemented. New quota: ${newQuota}, User: ${user ? user.username : 'self'}`,
+            ephemeral: true
+        });
+    } else if (interaction.commandName === 'deletesavetweet') {
+        // Delete saved tweet command
+        const id = interaction.options.getString('id');
+
+        if (!id) {
+            return interaction.reply({
+                content: 'Please provide a tweet ID to delete.',
+                ephemeral: true
+            });
+        }
+
+        return interaction.reply({
+            content: `This feature is not yet implemented. Tweet ID: ${id}`,
+            ephemeral: true
+        });
+    } else if (interaction.commandName === 'quotastats') {
+        // Quota statistics command
+        const user = interaction.options.getUser('user');
+
+        return interaction.reply({
+            content: `This feature is not yet implemented. User: ${user ? user.username : 'self'}`,
+            ephemeral: true
+        });
+    } else if (interaction.commandName === 'checkmyguildsettings') {
+        // Check guild settings command
+        const guildId = interaction.options.getString('guild') || interaction.guildId;
+
+        try {
+            const guildSettings = {
+                defaultLanguage: settings.defaultLanguage[guildId] || 'en-US',
+                editOriginalIfTranslate: settings.editOriginalIfTranslate[guildId] || false,
+                sendMediaAsAttachmentsAsDefault: settings.sendMediaAsAttachmentsAsDefault[guildId] || false,
+                deletemessageifonlypostedtweetlink: settings.deletemessageifonlypostedtweetlink[guildId] || false,
+                alwaysreplyifpostedtweetlink: settings.alwaysreplyifpostedtweetlink[guildId] || false,
+                extractBotMessage: settings.extract_bot_message[guildId] || false,
+                quoteRepostDoNotExtract: settings.quote_repost_do_not_extract[guildId] || false,
+                legacyMode: settings.legacy_mode[guildId] || false,
+                secondaryExtractMode: settings.secondary_extract_mode[guildId] || false
+            };
+
+            const settingsText = Object.entries(guildSettings)
+                .map(([key, value]) => `${key}: ${value}`)
+                .join('\n');
+
+            return interaction.reply({
+                embeds: [{
+                    title: 'Guild Settings',
+                    description: settingsText,
+                    color: 0x1DA1F2
+                }],
+                ephemeral: true
+            });
+        } catch (error) {
+            console.error('Error fetching guild settings:', error);
+            return interaction.reply({
+                content: 'Error fetching guild settings.',
+                ephemeral: true
+            });
+        }
+    } else if (interaction.commandName === 'autoextract') {
+        // Auto extract command with subcommands
+        const subcommand = interaction.options.getSubcommand();
+
+        if (subcommand === 'list') {
+            return interaction.reply({
+                content: 'This feature is not yet implemented. Subcommand: list',
+                ephemeral: true
+            });
+        } else if (subcommand === 'add') {
+            const username = interaction.options.getString('username');
+            const webhook = interaction.options.getString('webhook');
+
+            return interaction.reply({
+                content: `This feature is not yet implemented. Username: ${username}, Webhook: ${webhook}`,
+                ephemeral: true
+            });
+        } else if (subcommand === 'delete') {
+            const id = interaction.options.getInteger('id');
+
+            return interaction.reply({
+                content: `This feature is not yet implemented. ID: ${id}`,
+                ephemeral: true
+            });
+        } else if (subcommand === 'additionalautoextractslot') {
+            if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+                return interaction.reply({
+                    content: t('userDonthavePermission', locale),
+                    ephemeral: true
+                });
+            }
+
+            const user = interaction.options.getUser('user');
+            const slot = interaction.options.getInteger('slot');
+
+            return interaction.reply({
+                content: `This feature is not yet implemented. User: ${user.username}, Slot: ${slot}`,
+                ephemeral: true
+            });
+        } else if (subcommand === 'checkfreeslot') {
+            return interaction.reply({
+                content: 'This feature is not yet implemented. Subcommand: checkfreeslot',
                 ephemeral: true
             });
         }
@@ -1231,7 +1502,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
 // Button Interaction Handler
 client.on(Events.InteractionCreate, async (interaction) => {
-    if (!interaction.type === InteractionType.MessageComponent || interaction.type === InteractionType.ApplicationCommand) return;
+    if (interaction.type !== InteractionType.MessageComponent) return;
 
     await interaction.deferReply({ ephemeral: true });
 
@@ -1423,6 +1694,14 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
             // Translate using DeepL API
             const targetLang = locale === 'ja' ? 'JA' : 'EN';
+            const deeplApiKey = process.env.DEEPL_API_KEY;
+
+            if (!deeplApiKey) {
+                return interaction.editReply({
+                    content: 'DeepL API key is not configured. Please set DEEPL_API_KEY in your environment variables.',
+                    ephemeral: true
+                });
+            }
 
             try {
                 const response = await fetch(`https://api-free.deepl.com/v2/translate`, {
@@ -1430,7 +1709,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
                     headers: {
                         'Content-Type': 'application/x-www-form-urlencoded'
                     },
-                    body: `auth_key=YOUR_DEEPL_API_KEY&text=${encodeURIComponent(tweetText)}&target_lang=${targetLang}`
+                    body: `auth_key=${deeplApiKey}&text=${encodeURIComponent(tweetText)}&target_lang=${targetLang}`
                 });
 
                 const data = await response.json();

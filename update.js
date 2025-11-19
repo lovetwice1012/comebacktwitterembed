@@ -3,10 +3,10 @@ const settings = require('./settings.json');
 
 // データベース接続設定
 const connection = mysql.createConnection({
-    host: 'your_host',
-    user: 'your_username',
-    password: 'your_password',
-    database: 'your_database'
+    host: process.env.DB_HOST || '192.168.100.22',
+    user: process.env.DB_USER || 'comebacktwitterembed',
+    password: process.env.DB_PASSWORD,
+    database: process.env.DB_NAME || 'ComebackTwitterEmbed'
 });
 
 function boolToInt(bool) {
