@@ -20,7 +20,6 @@ const {
 // Configuration & Database
 const client = require('./src/config/discord');
 const connection = require('./src/config/database');
-const { MUST_BE_MAIN_INSTANCE } = require('./src/config/constants');
 
 // Utilities
 const { antiDirectoryTraversalAttack } = require('./src/utils/security');
@@ -52,7 +51,6 @@ const https = require('https');
 // ============================================================================
 
 const settings = loadSettings();
-const must_be_main_instance = MUST_BE_MAIN_INSTANCE;
 
 const button_disabled_template = {
     user: [],
@@ -981,7 +979,10 @@ client.on('ready', () => {
 
 // Crosspost Event (specific guild/channel)
 client.on(Events.MessageCreate, async message => {
-    if (message.guild.id != 1132814274734067772 || message.channel.id != 1279100351034953738) return;
+    const crosspostGuildId = process.env.CROSSPOST_GUILD_ID || '1132814274734067772';
+    const crosspostChannelId = process.env.CROSSPOST_CHANNEL_ID || '1279100351034953738';
+
+    if (message.guild.id != crosspostGuildId || message.channel.id != crosspostChannelId) return;
 
     if (message.crosspostable) {
         message.crosspost()
@@ -1346,6 +1347,39 @@ client.on(Events.InteractionCreate, async (interaction) => {
             });
         }
 
+        // Special handling for deleteifonlypostedtweetlink with secoundaryextractmode option
+        if (subcommand === 'deleteifonlypostedtweetlink') {
+            const value = interaction.options.getBoolean('boolean');
+            const secoundaryExtractMode = interaction.options.getBoolean('secoundaryextractmode');
+
+            // Initialize settings objects if they don't exist
+            if (!settings.deletemessageifonlypostedtweetlink) {
+                settings.deletemessageifonlypostedtweetlink = {};
+            }
+            if (!settings.deletemessageifonlypostedtweetlink_secoundaryextractmode) {
+                settings.deletemessageifonlypostedtweetlink_secoundaryextractmode = {};
+            }
+
+            settings.deletemessageifonlypostedtweetlink[interaction.guildId] = value;
+
+            // If secoundaryextractmode option is provided, save it
+            if (secoundaryExtractMode !== null) {
+                settings.deletemessageifonlypostedtweetlink_secoundaryextractmode[interaction.guildId] = secoundaryExtractMode;
+            }
+
+            saveSettings(settings);
+
+            let responseMessage = t('setdeleteifonlypostedtweetlinkto', locale) + convertBoolToEnableDisable(value, locale);
+            if (secoundaryExtractMode !== null) {
+                responseMessage += `\nSecondary extract mode option: ${convertBoolToEnableDisable(secoundaryExtractMode, locale)}`;
+            }
+
+            return interaction.reply({
+                content: responseMessage,
+                ephemeral: true
+            });
+        }
+
         if (booleanSettings[subcommand]) {
             const value = interaction.options.getBoolean('boolean');
             const setting = booleanSettings[subcommand];
@@ -1652,25 +1686,50 @@ client.on(Events.InteractionCreate, async (interaction) => {
             break;
 
         case 'delete':
-            if (interaction.member.permissions.has(PermissionsBitField.Flags.ManageMessages)) {
-                await interaction.message.delete();
-                await interaction.editReply({
-                    content: t('finishAction', locale),
-                    ephemeral: true
-                });
-                setTimeout(() => interaction.deleteReply(), 3000);
-            } else {
-                if (interaction.message.embeds[0].author.name.split(":")[1].split(")")[0] != interaction.user.id) {
+            try {
+                if (interaction.member.permissions.has(PermissionsBitField.Flags.ManageMessages)) {
+                    await interaction.message.delete();
                     await interaction.editReply({
-                        content: t('youcantdeleteotherusersmessages', locale),
+                        content: t('finishAction', locale),
                         ephemeral: true
                     });
                     setTimeout(() => interaction.deleteReply(), 3000);
-                    return;
+                } else {
+                    // Safely extract user ID from embed author
+                    try {
+                        const authorName = interaction.message.embeds[0]?.author?.name || '';
+                        const userIdMatch = authorName.match(/:(\d+)\)/);
+                        const authorUserId = userIdMatch ? userIdMatch[1] : null;
+
+                        if (!authorUserId || authorUserId !== interaction.user.id) {
+                            await interaction.editReply({
+                                content: t('youcantdeleteotherusersmessages', locale),
+                                ephemeral: true
+                            });
+                            setTimeout(() => interaction.deleteReply(), 3000);
+                            return;
+                        }
+                    } catch (parseError) {
+                        console.error('Error parsing author user ID:', parseError);
+                        await interaction.editReply({
+                            content: t('youcantdeleteotherusersmessages', locale),
+                            ephemeral: true
+                        });
+                        setTimeout(() => interaction.deleteReply(), 3000);
+                        return;
+                    }
+
+                    await interaction.message.delete();
+                    await interaction.editReply({
+                        content: t('finishAction', locale),
+                        ephemeral: true
+                    });
+                    setTimeout(() => interaction.deleteReply(), 3000);
                 }
-                await interaction.message.delete();
+            } catch (error) {
+                console.error('Delete message error:', error);
                 await interaction.editReply({
-                    content: t('finishAction', locale),
+                    content: 'Error deleting message.',
                     ephemeral: true
                 });
                 setTimeout(() => interaction.deleteReply(), 3000);
@@ -1764,12 +1823,51 @@ client.on(Events.InteractionCreate, async (interaction) => {
             break;
 
         case 'savetweet':
-            // Save tweet functionality - implement as needed
-            await interaction.editReply({
-                content: 'Save tweet functionality not yet implemented.',
-                ephemeral: true
-            });
-            setTimeout(() => interaction.deleteReply(), 3000);
+            // Save tweet functionality
+            try {
+                const tweetUrl = interaction.message.embeds[0]?.url;
+                const userId = interaction.user.id;
+                const guildId = interaction.guildId;
+
+                if (!tweetUrl) {
+                    await interaction.editReply({
+                        content: 'Could not find tweet URL to save.',
+                        ephemeral: true
+                    });
+                    setTimeout(() => interaction.deleteReply(), 3000);
+                    break;
+                }
+
+                // Extract tweet ID from URL
+                const tweetIdMatch = tweetUrl.match(/status\/(\d+)/);
+                if (!tweetIdMatch) {
+                    await interaction.editReply({
+                        content: 'Invalid tweet URL format.',
+                        ephemeral: true
+                    });
+                    setTimeout(() => interaction.deleteReply(), 3000);
+                    break;
+                }
+
+                const tweetId = tweetIdMatch[1];
+
+                // TODO: Implement database storage for saved tweets
+                // TODO: Implement quota checking
+                // TODO: Implement file storage
+                // For now, provide informative feedback
+                await interaction.editReply({
+                    content: `Save tweet feature requires database setup.\nTweet ID: ${tweetId}\nUser: ${userId}\nGuild: ${guildId}\n\nPlease implement database schema for saved tweets.`,
+                    ephemeral: true
+                });
+                setTimeout(() => interaction.deleteReply(), 10000);
+            } catch (error) {
+                console.error('Save tweet error:', error);
+                await interaction.editReply({
+                    content: 'Error saving tweet.',
+                    ephemeral: true
+                });
+                setTimeout(() => interaction.deleteReply(), 3000);
+            }
             break;
     }
 });
