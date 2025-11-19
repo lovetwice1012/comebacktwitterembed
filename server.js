@@ -63,15 +63,16 @@ app.get('/data/:userid/:tweetID/:filename', (req, res) => {
 
 app.get('/download/:userid/:tweetID', (req, res) => {
     const { userid, tweetID } = req.params;
-    let  filePath = path.join(userid, tweetID);
+    let filePath = path.join(userid, tweetID);
+    let validatedPath;
 
-    try{
-        filePath = antiDirectoryTraversalAttack(filePath)
-    }catch (e){
+    try {
+        validatedPath = antiDirectoryTraversalAttack(filePath);
+    } catch (e) {
         return res.status(418).send('File not found');
     }
-    
-    fs.readdir(dirPath, (err, files) => {
+
+    fs.readdir(validatedPath, (err, files) => {
         if (err) {
             res.status(500).send('Internal Server Error');
             return;
@@ -83,13 +84,7 @@ app.get('/download/:userid/:tweetID', (req, res) => {
         }
 
         const zipName = `${userid}_${tweetID}_files.zip`;
-        let zipPath = path.join(tempDir, zipName);
-
-        try{
-            zipPath = antiDirectoryTraversalAttack(zipPath)
-        }catch (e){
-            return res.status(418).send('File not found');
-        }
+        const zipPath = path.join(tempDir, zipName);
 
         const archive = archiver('zip', { zlib: { level: 9 } });
 
@@ -102,8 +97,8 @@ app.get('/download/:userid/:tweetID', (req, res) => {
         archive.pipe(res);
 
         files.forEach((file) => {
-            const filePath = path.join(dirPath, file);
-            archive.file(filePath, { name: file });
+            const fileFullPath = path.join(validatedPath, file);
+            archive.file(fileFullPath, { name: file });
         });
 
         archive.finalize();
@@ -112,13 +107,15 @@ app.get('/download/:userid/:tweetID', (req, res) => {
 
 app.get('/download/:userid', (req, res) => {
     const { userid } = req.params;
-    try{
-        dirPath = antiDirectoryTraversalAttack(userid)
-    }catch (e){
+    let validatedPath;
+
+    try {
+        validatedPath = antiDirectoryTraversalAttack(userid);
+    } catch (e) {
         return res.status(418).send('File not found');
     }
 
-    fs.readdir(dirPath, (err, files) => {
+    fs.readdir(validatedPath, (err, files) => {
         if (err) {
             res.status(500).send('Internal Server Error');
             return;
@@ -144,8 +141,9 @@ app.get('/download/:userid', (req, res) => {
 
         files.forEach((file) => {
             // ディレクトリの場合は再帰的にファイルを追加
-            if (fs.statSync(path.join(dirPath, file)).isDirectory()) {
-                const dirPath2 = path.join(dirPath, file);
+            const fullPath = path.join(validatedPath, file);
+            if (fs.statSync(fullPath).isDirectory()) {
+                const dirPath2 = fullPath;
                 const files2 = fs.readdirSync(dirPath2);
 
                 files2.forEach((file2) => {
@@ -155,8 +153,7 @@ app.get('/download/:userid', (req, res) => {
 
                 return;
             }
-            const filePath = path.join(dirPath, file);
-            archive.file(filePath, { name: file });
+            archive.file(fullPath, { name: file });
         });
 
         archive.finalize();
