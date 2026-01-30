@@ -173,6 +173,11 @@ if (settings.deletemessageifonlypostedtweetlink_secoundaryextractmode === undefi
     fs.writeFileSync('./settings.json', JSON.stringify(settings, null, 4));
 }
 
+if (settings.quote_repost_max_depth === undefined) {
+    settings.quote_repost_max_depth = {};
+    fs.writeFileSync('./settings.json', JSON.stringify(settings, null, 4));
+}
+
 const button_disabled_template = {
     user: [], //user id
     channel: [], //channel id
@@ -727,6 +732,21 @@ const settingsQuoteRepostDoNotExtractDescriptionLocalizations = {
 const setquoterepostdonotextracttolocales = {
     ja: '引用リツイートを展開しないかどうかを設定しました。 :',
     en: 'Set quote_repost_do_not_extract to '
+}
+
+const command_name_quote_repost_max_depth_Locales = {
+    ja: '引用リツイート最大展開数',
+    en: 'quote_repost_max_depth'
+}
+
+const settingsQuoteRepostMaxDepthDescriptionLocalizations = {
+    ja: '引用リツイートの最大展開数を設定します。(0で無制限、デフォルト:無制限)',
+    en: 'Sets the maximum depth of quote retweet expansion. (0 for unlimited, default: unlimited)'
+}
+
+const setquoterepostmaxdepthtolocales = {
+    ja: '引用リツイートの最大展開数を設定しました: ',
+    en: 'Set quote_repost_max_depth to '
 }
 
 const command_name_legacy_mode_Locales = {
@@ -1436,6 +1456,25 @@ hint	text NULL
                     ]
                 },
                 {
+                    name: 'quoterepostmaxdepth',
+                    name_localizations: conv_en_to_en_US(command_name_quote_repost_max_depth_Locales),
+                    description: 'quote repost max depth',
+                    description_localizations: conv_en_to_en_US(settingsQuoteRepostMaxDepthDescriptionLocalizations),
+                    type: ApplicationCommandOptionType.Subcommand,
+                    options: [
+                        {
+                            name: 'depth',
+                            name_localizations: conv_en_to_en_US({ ja: '深さ', en: 'depth' }),
+                            description: 'max depth (0 for unlimited)',
+                            description_localizations: conv_en_to_en_US({ ja: '最大深さ (0で無制限)', en: 'max depth (0 for unlimited)' }),
+                            type: ApplicationCommandOptionType.Integer,
+                            required: true,
+                            min_value: 0,
+                            max_value: 10
+                        }
+                    ]
+                },
+                {
                     name: 'legacymode',
                     name_localizations: conv_en_to_en_US(command_name_legacy_mode_Locales),
                     description: 'legacy mode',
@@ -1767,7 +1806,7 @@ function checkComponentIncludesDisabledButtonAndIfFindDeleteIt(components, guild
 }
 
 
-async function sendTweetEmbed(message, url, quoted = false, parent = null, saved = false) {
+async function sendTweetEmbed(message, url, quoted = false, parent = null, saved = false, depth = 0) {
     return new Promise((resolve, reject) => {
         const element = url;
         //replace twitter.com or x.com with api.vxtwitter.com
@@ -1895,6 +1934,44 @@ async function sendTweetEmbed(message, url, quoted = false, parent = null, saved
                     embed.title = "<SAVED TWEET> " + embed.title;
                     embed.color = 0x00FF00;
                 }
+
+                // articleの処理（記事リンクがある場合）
+                if (json.article) {
+                    let articleText = '';
+                    if (json.article.title) {
+                        articleText += '📰 **' + json.article.title + '**\n';
+                    }
+                    if (json.article.preview_text) {
+                        // Discord embed descriptionの制限は4096文字
+                        // 現在のdescription長を計算して残り文字数を算出
+                        const currentDescLength = embed.description ? embed.description.length : 0;
+                        const titleLength = json.article.title ? json.article.title.length + 10 : 0; // 📰 ** ** \n の分
+                        const availableLength = 4096 - currentDescLength - titleLength - 10; // 改行等のマージン
+                        
+                        let previewText = json.article.preview_text;
+                        if (previewText.length > availableLength && availableLength > 0) {
+                            previewText = previewText.slice(0, availableLength) + '...';
+                        }
+                        articleText += previewText;
+                    }
+                    if (articleText) {
+                        // 既存のdescriptionにarticle情報を追加
+                        if (embed.description) {
+                            embed.description = embed.description.replace(json.text, json.text + '\n\n' + articleText);
+                            // 最終的にdescriptionが4096文字を超えないようにする
+                            if (embed.description.length > 4096) {
+                                embed.description = embed.description.slice(0, 4093) + '...';
+                            }
+                        }
+                    }
+                    // articleに画像があり、mediaURLsが空の場合は記事画像を使用
+                    if (json.article.image && (!json.mediaURLs || json.mediaURLs.length === 0)) {
+                        embed.image = {
+                            url: json.article.image
+                        };
+                    }
+                }
+
                 let videoflag = false;
                 if (json.mediaURLs?.length > 0) {
                     if (json.mediaURLs.length > 4 || settings.sendMediaAsAttachmentsAsDefault[message.guild.id] === true) {
@@ -1913,7 +1990,8 @@ async function sendTweetEmbed(message, url, quoted = false, parent = null, saved
                             showMediaAsAttachmentsButton = new ButtonBuilder().setStyle(ButtonStyle.Primary).setLabel(getStringFromObject(showAttachmentsAsEmbedsImagebuttonLocales, settings.defaultLanguage[message.guild.id])).setCustomId('showAttachmentsAsEmbedsImage');
                         }
                         if (settings.secondary_extract_mode[message.guild.id] === true && !videoflag && json.mediaURLs.length == 1 && !url.includes("twidata.sprink.cloud") && !url.includes("localhost:3088")) {
-                            if ((json.qrtURL !== null && (settings.quote_repost_do_not_extract[message.guild.id] === undefined || settings.quote_repost_do_not_extract[message.guild.id] === false))) return await sendTweetEmbed(message, json.qrtURL, true, message);
+                            const maxDepth = settings.quote_repost_max_depth[message.guild.id] ?? 0;
+                            if ((json.qrtURL !== null && (settings.quote_repost_do_not_extract[message.guild.id] === undefined || settings.quote_repost_do_not_extract[message.guild.id] === false) && (maxDepth === 0 || depth < maxDepth))) return await sendTweetEmbed(message, json.qrtURL, true, message, false, depth + 1);
                             return resolve();
                         }
                     } else {
@@ -1934,7 +2012,8 @@ async function sendTweetEmbed(message, url, quoted = false, parent = null, saved
                                 })
                             } else {
                                 if ((settings.legacy_mode[message.guild.id] === false && !quoted && (settings.deletemessageifonlypostedtweetlink[message.guild.id] === false || (settings.deletemessageifonlypostedtweetlink[message.guild.id] === true && message.content != url)) && !url.includes("twidata.sprink.cloud") && !url.includes("localhost:3088"))) {
-                                    if ((json.qrtURL !== null && (settings.quote_repost_do_not_extract[message.guild.id] === undefined || settings.quote_repost_do_not_extract[message.guild.id] === false))) return await sendTweetEmbed(message, json.qrtURL, true, message);
+                                    const maxDepth = settings.quote_repost_max_depth[message.guild.id] ?? 0;
+                                    if ((json.qrtURL !== null && (settings.quote_repost_do_not_extract[message.guild.id] === undefined || settings.quote_repost_do_not_extract[message.guild.id] === false) && (maxDepth === 0 || depth < maxDepth))) return await sendTweetEmbed(message, json.qrtURL, true, message, false, depth + 1);
                                     showMediaAsAttachmentsButton = null
                                     return
                                 }
@@ -1945,12 +2024,14 @@ async function sendTweetEmbed(message, url, quoted = false, parent = null, saved
                             }
                         });
                         if (settings.secondary_extract_mode[message.guild.id] === true && json.mediaURLs.length == 1 && !videoflag && !url.includes("twidata.sprink.cloud") && !url.includes("localhost:3088")) {
-                            if ((json.qrtURL !== null && (settings.quote_repost_do_not_extract[message.guild.id] === undefined || settings.quote_repost_do_not_extract[message.guild.id] === false))) return await sendTweetEmbed(message, json.qrtURL, true, message);
+                            const maxDepth = settings.quote_repost_max_depth[message.guild.id] ?? 0;
+                            if ((json.qrtURL !== null && (settings.quote_repost_do_not_extract[message.guild.id] === undefined || settings.quote_repost_do_not_extract[message.guild.id] === false) && (maxDepth === 0 || depth < maxDepth))) return await sendTweetEmbed(message, json.qrtURL, true, message, false, depth + 1);
                             return resolve();
                         }
                     }
-                } else if (settings.secondary_extract_mode[message.guild.id] === true && !url.includes("twidata.sprink.cloud") && !url.includes("localhost:3088")) {
-                    if (json.qrtURL !== null && (settings.quote_repost_do_not_extract[message.guild.id] === undefined || settings.quote_repost_do_not_extract[message.guild.id] === false)) await sendTweetEmbed(message, json.qrtURL, true, msg);
+                } else if (settings.secondary_extract_mode[message.guild.id] === true && !url.includes("twidata.sprink.cloud") && !url.includes("localhost:3088") && !json.article) {
+                    const maxDepth = settings.quote_repost_max_depth[message.guild.id] ?? 0;
+                    if (json.qrtURL !== null && (settings.quote_repost_do_not_extract[message.guild.id] === undefined || settings.quote_repost_do_not_extract[message.guild.id] === false) && (maxDepth === 0 || depth < maxDepth)) await sendTweetEmbed(message, json.qrtURL, true, msg, false, depth + 1);
                     return resolve();
                 }
                 if (embeds.length === 0) embeds.push(embed);
@@ -2034,7 +2115,8 @@ async function sendTweetEmbed(message, url, quoted = false, parent = null, saved
                         });
                     }
                 }
-                if (json.qrtURL !== null && (settings.quote_repost_do_not_extract[message.guild.id] === undefined || settings.quote_repost_do_not_extract[message.guild.id] === false)) await sendTweetEmbed(message, json.qrtURL, true, msg);
+                const maxDepth = settings.quote_repost_max_depth[message.guild.id] ?? 0;
+                if (json.qrtURL !== null && (settings.quote_repost_do_not_extract[message.guild.id] === undefined || settings.quote_repost_do_not_extract[message.guild.id] === false) && (maxDepth === 0 || depth < maxDepth)) await sendTweetEmbed(message, json.qrtURL, true, msg, false, depth + 1);
                 processed++;
                 processed_hour++;
                 processed_day++;
@@ -2374,6 +2456,12 @@ client.on(Events.InteractionCreate, async (interaction) => {
                 const boolean = interaction.options.getBoolean('boolean');
                 settings.quote_repost_do_not_extract[interaction.guildId] = boolean;
                 await interaction.reply((setquoterepostdonotextracttolocales[interaction.locale] ?? setquoterepostdonotextracttolocales["en"]) + convertBoolToEnableDisable(boolean, interaction.locale));
+            } else if (interaction.options.getSubcommand() === 'quoterepostmaxdepth') {
+                const depth = interaction.options.getInteger('depth');
+                if (depth === null) return await interaction.reply(userMustSpecifyAnyWordLocales[interaction.locale] ?? userMustSpecifyAnyWordLocales["en"]);
+                settings.quote_repost_max_depth[interaction.guildId] = depth;
+                const depthText = depth === 0 ? (interaction.locale === 'ja' ? '無制限' : 'unlimited') : depth.toString();
+                await interaction.reply((setquoterepostmaxdepthtolocales[interaction.locale] ?? setquoterepostmaxdepthtolocales["en"]) + depthText);
             } else if (interaction.options.getSubcommand() === 'legacymode') {
                 if (settings.secondary_extract_mode[interaction.guildId] === true) settings.secondary_extract_mode[interaction.guildId] = false;
                 if (interaction.options.getBoolean('boolean') === null) return await interaction.reply(userMustSpecifyAnyWordLocales[interaction.locale] ?? userMustSpecifyAnyWordLocales["en"]);
@@ -2430,6 +2518,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
                 case 'button':
                 case 'extractbotmessage':
                 case 'quoterepostdonotextract':
+                case 'quoterepostmaxdepth':
                 case 'legacymode':
                 case 'passivemode':
                 case 'secondaryextractmode':
