@@ -91,6 +91,7 @@ if (!fs.existsSync('./settings.json')) {
         "quote_repost_do_not_extract": {},
         "legacy_mode": {},
         "passive_mode": {},
+        "anonymous_expand": {},
         "secondary_extract_mode": {},
         "secondary_extract_mode_multiple_images": {},
         "secondary_extract_mode_video": {},
@@ -157,6 +158,11 @@ if (settings.legacy_mode === undefined) {
 
 if (settings.passive_mode === undefined) {
     settings.passive_mode = {};
+    fs.writeFileSync('./settings.json', JSON.stringify(settings, null, 4));
+}
+
+if (settings.anonymous_expand === undefined) {
+    settings.anonymous_expand = {};
     fs.writeFileSync('./settings.json', JSON.stringify(settings, null, 4));
 }
 
@@ -469,6 +475,11 @@ const settingsAlwaysReplyIfPostedTweetLinkDescriptionLocalizations = {
     en: 'Sets whether to always reply if the tweet link is posted.'
 }
 
+const settingsAnonymousExpandDescriptionLocalizations = {
+    ja: '匿名展開を設定します。展開者とツイート投稿者の情報を匿名化して表示します。',
+    en: 'Sets anonymous expansion mode. Requester and tweet author information will be anonymized.'
+}
+
 const setdefaultmediaasattachmentstolocales = {
     ja: 'メディアを添付ファイルとして表示するかどうかを設定しました。 :',
     en: 'Set sendMediaAsAttachmentsAsDefault to '
@@ -482,6 +493,31 @@ const setdeleteifonlypostedtweetlinktolocales = {
 const setalwaysreplyifpostedtweetlinktolocales = {
     ja: 'ツイートのリンクを投稿した場合に常に返信するかどうかを設定しました。 :',
     en: 'Set alwaysReplyIfPostedTweetLink to '
+}
+
+const setanonymousexpandtolocales = {
+    ja: '匿名展開を設定しました。 :',
+    en: 'Set anonymous expand to '
+}
+
+const anonymousExpandRequesterPrefixLocales = {
+    ja: '展開者: ',
+    en: 'request by '
+}
+
+const anonymousExpandRequesterLabelLocales = {
+    ja: '匿名ユーザー',
+    en: 'Anonymous user'
+}
+
+const anonymousExpandTweetAuthorLabelLocales = {
+    ja: '匿名投稿者',
+    en: 'Anonymous author'
+}
+
+const anonymousExpandPostedByPrefixLocales = {
+    ja: '投稿者: ',
+    en: 'Posted by '
 }
 
 const addedAllButtonLocales = {
@@ -683,6 +719,11 @@ const command_name_deleteifonlypostedtweetlink_Locales = {
 const command_name_alwaysreplyifpostedtweetlink_Locales = {
     ja: 'ツイートのリンクを投稿した場合に常に返信',
     en: 'alwaysreplyifpostedtweetlink'
+}
+
+const command_name_anonymous_expand_Locales = {
+    ja: '匿名展開',
+    en: 'anonymousexpand'
 }
 
 const command_name_secondaryextracttarget_Locales = {
@@ -1379,6 +1420,22 @@ hint	text NULL
                     ]
                 },
                 {
+                    name: 'anonymousexpand',
+                    name_localizations: conv_en_to_en_US(command_name_anonymous_expand_Locales),
+                    description: 'anonymous expand',
+                    description_localizations: conv_en_to_en_US(settingsAnonymousExpandDescriptionLocalizations),
+                    type: ApplicationCommandOptionType.Subcommand,
+                    options: [
+                        {
+                            name: 'boolean',
+                            name_localizations: conv_en_to_en_US(command_name_boolean_Locales),
+                            description: 'boolean',
+                            type: ApplicationCommandOptionType.Boolean,
+                            required: true
+                        }
+                    ]
+                },
+                {
                     name: 'button',
                     name_localizations: conv_en_to_en_US(command_name_button_Locales),
                     description: 'button',
@@ -1951,6 +2008,7 @@ async function sendTweetEmbed(message, url, quoted = false, parent = null, saved
                 let embed = {}
                 if (settings.deletemessageifonlypostedtweetlink[message.guild.id] === undefined) settings.deletemessageifonlypostedtweetlink[message.guild.id] = false;
                 if (settings.passive_mode[message.guild.id] === undefined) settings.passive_mode[message.guild.id] = false;
+                if (settings.anonymous_expand[message.guild.id] === undefined) settings.anonymous_expand[message.guild.id] = false;
                 if (settings.secondary_extract_mode[message.guild.id] === undefined) settings.secondary_extract_mode[message.guild.id] = false;
                 if (settings.secondary_extract_mode_multiple_images[message.guild.id] === undefined) settings.secondary_extract_mode_multiple_images[message.guild.id] = true;
                 if (settings.secondary_extract_mode_video[message.guild.id] === undefined) settings.secondary_extract_mode_video[message.guild.id] = true;
@@ -1963,6 +2021,19 @@ async function sendTweetEmbed(message, url, quoted = false, parent = null, saved
 
                 }
 
+                const language = settings.defaultLanguage[message.guild.id] ?? "en";
+                const isAnonymousExpandEnabled = settings.anonymous_expand[message.guild.id] === true;
+                const requesterDisplayName = isAnonymousExpandEnabled
+                    ? getStringFromObject(anonymousExpandRequesterLabelLocales, language, true)
+                    : (message.author?.username ?? message.user.username) + '(id:' + (message.author?.id ?? message.user.id) + ')';
+                const requesterLabelPrefix = getStringFromObject(anonymousExpandRequesterPrefixLocales, language, true);
+                const tweetAuthorLabel = isAnonymousExpandEnabled
+                    ? getStringFromObject(anonymousExpandTweetAuthorLabelLocales, language, true)
+                    : json.user_name;
+                const tweetAuthorFooterLabel = isAnonymousExpandEnabled
+                    ? getStringFromObject(anonymousExpandPostedByPrefixLocales, language, true) + getStringFromObject(anonymousExpandTweetAuthorLabelLocales, language, true)
+                    : 'Posted by ' + json.user_name + ' (@' + json.user_screen_name + ')';
+
                 if (settings.legacy_mode[message.guild.id] === false && !quoted && (settings.deletemessageifonlypostedtweetlink[message.guild.id] === false || (settings.deletemessageifonlypostedtweetlink[message.guild.id] === true && message.content != url)) && !url.includes("twidata.sprink.cloud") && !url.includes("localhost:3088")) {
                     embed = {
                         //title: json.user_name,
@@ -1970,7 +2041,7 @@ async function sendTweetEmbed(message, url, quoted = false, parent = null, saved
                         description: /*json.text + '\n\n[View on Twitter](' + json.tweetURL + ')\n\n*/':speech_balloon:' + json.replies + ' replies • :recycle:' + json.retweets + ' retweets • :heart:' + json.likes + ' likes',
                         color: 0x1DA1F2,
                         author: {
-                            name: 'request by ' + (message.author?.username ?? message.user.username) + '(id:' + (message.author?.id ?? message.user.id) + ')',
+                            name: requesterLabelPrefix + requesterDisplayName,
                         },
                         //footer: {
                         //    text: 'Posted by ' + json.user_name + ' (@' + json.user_screen_name + ')',
@@ -1983,15 +2054,15 @@ async function sendTweetEmbed(message, url, quoted = false, parent = null, saved
                     }
                 } else {
                     embed = {
-                        title: json.user_name,
+                        title: tweetAuthorLabel,
                         url: json.tweetURL,
                         description: json.text + '\n\n[View on Twitter](' + json.tweetURL + ')\n\n:speech_balloon:' + json.replies + ' replies • :recycle:' + json.retweets + ' retweets • :heart:' + json.likes + ' likes',
                         color: 0x1DA1F2,
                         author: {
-                            name: 'request by ' + (message.author?.username ?? message.user.username) + '(id:' + (message.author?.id ?? message.user.id) + ')',
+                            name: requesterLabelPrefix + requesterDisplayName,
                         },
                         footer: {
-                            text: 'Posted by ' + json.user_name + ' (@' + json.user_screen_name + ')',
+                            text: tweetAuthorFooterLabel,
                             icon_url: 'https://abs.twimg.com/icons/apple-touch-icon-192x192.png'
                         },
                         timestamp: new Date(json.date),
@@ -2431,6 +2502,11 @@ client.on(Events.InteractionCreate, async (interaction) => {
                 const boolean = interaction.options.getBoolean('boolean');
                 settings.alwaysreplyifpostedtweetlink[interaction.guildId] = boolean;
                 await interaction.reply((setalwaysreplyifpostedtweetlinktolocales[interaction.locale] ?? setalwaysreplyifpostedtweetlinktolocales["en"]) + convertBoolToEnableDisable(boolean, interaction.locale));
+            } else if (interaction.options.getSubcommand() === 'anonymousexpand') {
+                if (interaction.options.getBoolean('boolean') === null) return await interaction.reply(userMustSpecifyAnyWordLocales[interaction.locale] ?? userMustSpecifyAnyWordLocales["en"]);
+                const boolean = interaction.options.getBoolean('boolean');
+                settings.anonymous_expand[interaction.guildId] = boolean;
+                await interaction.reply((setanonymousexpandtolocales[interaction.locale] ?? setanonymousexpandtolocales["en"]) + convertBoolToEnableDisable(boolean, interaction.locale));
             } else if (interaction.options.getSubcommandGroup() === 'button') {
                 if (interaction.options.getSubcommand() === 'invisible') {
                     if (settings.button_invisible[interaction.guildId] === undefined) settings.button_invisible[interaction.guildId] = button_invisible_template;
@@ -2605,6 +2681,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
                 case 'setdefaultmediaasattachments':
                 case 'deleteifonlypostedtweetlink':
                 case 'alwaysreplyifpostedtweetlink':
+                case 'anonymousexpand':
                 case 'button':
                 case 'extractbotmessage':
                 case 'quoterepostdonotextract':
@@ -2830,6 +2907,17 @@ client.on(Events.InteractionCreate, async (interaction) => {
             embed.fields.push({
                 name: '引用リツイートの展開',
                 value: '引用リツイートも展開する'
+            });
+        }
+        if (settings.anonymous_expand[guildid] === true) {
+            embed.fields.push({
+                name: '匿名展開',
+                value: '有効'
+            });
+        } else {
+            embed.fields.push({
+                name: '匿名展開',
+                value: '無効'
             });
         }
         //ボタンの非表示
