@@ -1,4 +1,4 @@
-const { login, close, tweet, getPrivateTweet } = require('./twitter/twitter');
+const { login, close, tweet, getPrivateTweet } = require('../twitter/twitter');
 
 const TWITTER_BASE = '';
 const LOGIN_ID = '';

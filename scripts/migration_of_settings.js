@@ -80,7 +80,7 @@ const button_invisible_template = {
 button_invisibleとbutton_disabledはギルドIDをキーとしてそれぞれのテンプレートが入っている
     */
     //settings.jsonを読み込んでギルド事にデータを変換する
-    const settings = require('./settings.json');
+    const settings = require('../settings.json');
     const disable_role = settings.disable.role;
     const bannedWords = settings.bannedWords;
     const defaultLanguage = settings.defaultLanguage;

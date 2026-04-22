@@ -1,0 +1,40 @@
+'use strict';
+
+const fs = require('fs');
+const path = require('path');
+const { ButtonBuilder, ButtonStyle, ComponentType, ApplicationCommandOptionType, PermissionsBitField, EmbedBuilder, ActionRowBuilder } = require('discord.js');
+const { t, getStringFromObject, messageLocales, descriptionLocales, commandNameLocales } = require('../../../locales');
+const { settings, saveSettings, checkComponentIncludesDisabledButtonAndIfFindDeleteIt } = require('../../../settings');
+const { connection, queryDatabase, ensureUserExistsInDatabase } = require('../../../db');
+const {
+    button_disabled_template,
+    button_invisible_template,
+    antiDirectoryTraversalAttack,
+    ifUserHasRole,
+    convertBoolToEnableDisable,
+    conv_en_to_en_US,
+} = require('../../../utils');
+
+function hasAdminPerm(member) {
+    return (
+        member.permissions.has(PermissionsBitField.Flags.ManageChannels)
+        || member.permissions.has(PermissionsBitField.Flags.ManageGuild)
+        || member.permissions.has(PermissionsBitField.Flags.Administrator)
+    );
+}
+
+module.exports = async function (interaction, client) {
+    if (!hasAdminPerm(interaction.member)) {
+        return await interaction.reply(t('userDonthavePermissionLocales', interaction.locale));
+    }
+
+
+    if (settings.secondary_extract_mode[interaction.guildId] === true) settings.secondary_extract_mode[interaction.guildId] = false;
+    if (interaction.options.getBoolean('boolean') === null) return await interaction.reply(t('userMustSpecifyAnyWordLocales', interaction.locale));
+    if (settings.legacy_mode[interaction.guildId] === undefined) settings.legacy_mode[interaction.guildId] = false;
+    const boolean = interaction.options.getBoolean('boolean');
+    settings.legacy_mode[interaction.guildId] = boolean;
+    await interaction.reply((t('setlegacymodetolocales', interaction.locale)) + convertBoolToEnableDisable(boolean, interaction.locale));
+    if (!interaction.guild.members.me.permissions.has(PermissionsBitField.Flags.ManageMessages)) await interaction.followUp("※BOTにメッセージの管理権限を付与するとdiscord純正の埋め込みのみを削除して今まで通りの展開が行われます。\nこのBOTにメッセージの管理権限を付与することを検討してみてください。\n(使用感はdiscordがリンクの展開を修正する前と変わらなくなります。)")
+
+};

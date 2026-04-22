@@ -1,0 +1,67 @@
+'use strict';
+
+const { test } = require('node:test');
+const assert = require('node:assert/strict');
+
+const {
+    convertBoolToEnableDisable,
+    cleanMessageContent,
+    extractTwitterUrls,
+    conv_en_to_en_US,
+    isUnknownMessageError,
+} = require('../../src/utils');
+
+test('convertBoolToEnableDisable: ja true', () => {
+    assert.equal(convertBoolToEnableDisable(true, 'ja'), '有効');
+});
+
+test('convertBoolToEnableDisable: ja false', () => {
+    assert.equal(convertBoolToEnableDisable(false, 'ja'), '無効');
+});
+
+test('convertBoolToEnableDisable: en fallback', () => {
+    assert.equal(convertBoolToEnableDisable(true, 'en'), 'Enable');
+    assert.equal(convertBoolToEnableDisable(false, 'en-US'), 'Disable');
+});
+
+test('extractTwitterUrls: extracts twitter.com and x.com', () => {
+    const urls = extractTwitterUrls('check https://twitter.com/foo/status/1 and https://x.com/bar/status/2');
+    assert.deepEqual(urls, [
+        'https://twitter.com/foo/status/1',
+        'https://x.com/bar/status/2',
+    ]);
+});
+
+test('extractTwitterUrls: returns empty array when none', () => {
+    assert.deepEqual(extractTwitterUrls('no link here'), []);
+});
+
+test('cleanMessageContent: strips angle-bracketed and spoiler-wrapped twitter URLs', () => {
+    const cleaned = cleanMessageContent('a <https://twitter.com/x/status/1> b ||https://x.com/y/status/2|| c');
+    assert.equal(cleaned, 'a  b  c');
+});
+
+test('cleanMessageContent: leaves bare urls intact', () => {
+    const cleaned = cleanMessageContent('hello https://twitter.com/abc world');
+    assert.equal(cleaned, 'hello https://twitter.com/abc world');
+});
+
+test('conv_en_to_en_US: renames en to en-US', () => {
+    assert.deepEqual(
+        conv_en_to_en_US({ en: 'hi', ja: 'やあ' }),
+        { ja: 'やあ', 'en-US': 'hi' },
+    );
+});
+
+test('conv_en_to_en_US: returns undefined when en missing', () => {
+    assert.equal(conv_en_to_en_US(null), undefined);
+    assert.equal(conv_en_to_en_US({ ja: 'やあ' }), undefined);
+});
+
+test('isUnknownMessageError: matches code 10008 in either shape', () => {
+    assert.equal(isUnknownMessageError({ code: 10008 }), true);
+    assert.equal(isUnknownMessageError({ rawError: { code: 10008 } }), true);
+    assert.equal(isUnknownMessageError({ code: 50001 }), false);
+    assert.equal(isUnknownMessageError(null), false);
+    assert.equal(isUnknownMessageError(undefined), false);
+});

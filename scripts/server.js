@@ -70,6 +70,7 @@ app.get('/download/:userid/:tweetID', (req, res) => {
     }catch (e){
         return res.status(418).send('File not found');
     }
+    const dirPath = filePath;
     
     fs.readdir(dirPath, (err, files) => {
         if (err) {
@@ -112,6 +113,7 @@ app.get('/download/:userid/:tweetID', (req, res) => {
 
 app.get('/download/:userid', (req, res) => {
     const { userid } = req.params;
+    let dirPath;
     try{
         dirPath = antiDirectoryTraversalAttack(userid)
     }catch (e){
