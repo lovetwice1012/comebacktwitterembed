@@ -92,6 +92,8 @@ if (!fs.existsSync('./settings.json')) {
         "legacy_mode": {},
         "passive_mode": {},
         "secondary_extract_mode": {},
+        "secondary_extract_mode_multiple_images": {},
+        "secondary_extract_mode_video": {},
         "save_tweet_quota_override": {},
         "deletemessageifonlypostedtweetlink_secoundaryextractmode": {},
     }, null, 4));
@@ -160,6 +162,16 @@ if (settings.passive_mode === undefined) {
 
 if (settings.secondary_extract_mode === undefined) {
     settings.secondary_extract_mode = {};
+    fs.writeFileSync('./settings.json', JSON.stringify(settings, null, 4));
+}
+
+if (settings.secondary_extract_mode_multiple_images === undefined) {
+    settings.secondary_extract_mode_multiple_images = {};
+    fs.writeFileSync('./settings.json', JSON.stringify(settings, null, 4));
+}
+
+if (settings.secondary_extract_mode_video === undefined) {
+    settings.secondary_extract_mode_video = {};
     fs.writeFileSync('./settings.json', JSON.stringify(settings, null, 4));
 }
 
@@ -673,6 +685,21 @@ const command_name_alwaysreplyifpostedtweetlink_Locales = {
     en: 'alwaysreplyifpostedtweetlink'
 }
 
+const command_name_secondaryextracttarget_Locales = {
+    ja: 'セカンダリー展開対象',
+    en: 'secondary_extract_target'
+}
+
+const command_name_multipleimages_Locales = {
+    ja: '複数枚画像',
+    en: 'multipleimages'
+}
+
+const command_name_video_Locales = {
+    ja: '動画',
+    en: 'video'
+}
+
 const command_name_button_Locales = {
     ja: 'ボタン',
     en: 'button'
@@ -785,13 +812,28 @@ const command_name_secondary_extract_mode_Locales = {
 }
 
 const settingsSecondaryExtractModeDescriptionLocalizations = {
-    ja: 'セカンダリー展開モード(画像が複数枚含まれるか、動画が含まれる場合のみ送信するモード)を設定します。',
+    ja: 'セカンダリー展開モード(設定した展開対象に一致する場合のみ送信するモード)を設定します。',
     en: 'Sets secondary extract mode.'
 }
 
 const setsecondaryextractmodetolocales = {
     ja: 'セカンダリー展開モードを設定しました。 :',
     en: 'Set secondary_extract_mode to '
+}
+
+const settingsSecondaryExtractTargetDescriptionLocalizations = {
+    ja: 'セカンダリー展開モードで展開対象(複数枚画像/動画)を設定します。',
+    en: 'Sets extraction targets for secondary extract mode.'
+}
+
+const setsecondaryextracttargetmultipleimagestolocales = {
+    ja: 'セカンダリー展開対象(複数枚画像)を設定しました。 :',
+    en: 'Set secondary_extract_target multiple images to '
+}
+
+const setsecondaryextracttargetvideotolocales = {
+    ja: 'セカンダリー展開対象(動画)を設定しました。 :',
+    en: 'Set secondary_extract_target video to '
 }
 
 const savetweetButtonLabelLocales = {
@@ -1523,6 +1565,29 @@ hint	text NULL
                             required: true
                         }
                     ]
+                },
+                {
+                    name: 'secondaryextracttarget',
+                    name_localizations: conv_en_to_en_US(command_name_secondaryextracttarget_Locales),
+                    description: 'secondary extract target',
+                    description_localizations: conv_en_to_en_US(settingsSecondaryExtractTargetDescriptionLocalizations),
+                    type: ApplicationCommandOptionType.Subcommand,
+                    options: [
+                        {
+                            name: 'multipleimages',
+                            name_localizations: conv_en_to_en_US(command_name_multipleimages_Locales),
+                            description: 'multiple images',
+                            type: ApplicationCommandOptionType.Boolean,
+                            required: false
+                        },
+                        {
+                            name: 'video',
+                            name_localizations: conv_en_to_en_US(command_name_video_Locales),
+                            description: 'video',
+                            type: ApplicationCommandOptionType.Boolean,
+                            required: false
+                        }
+                    ]
                 }
             ]
         },
@@ -1887,6 +1952,8 @@ async function sendTweetEmbed(message, url, quoted = false, parent = null, saved
                 if (settings.deletemessageifonlypostedtweetlink[message.guild.id] === undefined) settings.deletemessageifonlypostedtweetlink[message.guild.id] = false;
                 if (settings.passive_mode[message.guild.id] === undefined) settings.passive_mode[message.guild.id] = false;
                 if (settings.secondary_extract_mode[message.guild.id] === undefined) settings.secondary_extract_mode[message.guild.id] = false;
+                if (settings.secondary_extract_mode_multiple_images[message.guild.id] === undefined) settings.secondary_extract_mode_multiple_images[message.guild.id] = true;
+                if (settings.secondary_extract_mode_video[message.guild.id] === undefined) settings.secondary_extract_mode_video[message.guild.id] = true;
                 if (settings.legacy_mode[message.guild.id] === undefined) {
                     if (message.guild.members.me.permissions.has(PermissionsBitField.Flags.ManageMessages)) {
                         settings.legacy_mode[message.guild.id] = true;
@@ -1972,6 +2039,18 @@ async function sendTweetEmbed(message, url, quoted = false, parent = null, saved
                     }
                 }
 
+                const mediaURLs = json.mediaURLs ?? [];
+                const containsVideoMedia = mediaURLs.some(element => {
+                    return element.includes('video.twimg.com') || videoExtensions.some(ext => element.includes(ext));
+                });
+                const imageMediaCount = mediaURLs.filter(element => {
+                    return !(element.includes('video.twimg.com') || videoExtensions.some(ext => element.includes(ext)));
+                }).length;
+                const containsMultipleImages = imageMediaCount > 1;
+                const shouldExtractInSecondaryMode = !settings.secondary_extract_mode[message.guild.id]
+                    || ((settings.secondary_extract_mode_multiple_images[message.guild.id] ?? true) && containsMultipleImages)
+                    || ((settings.secondary_extract_mode_video[message.guild.id] ?? true) && containsVideoMedia);
+
                 let videoflag = false;
                 if (json.mediaURLs?.length > 0) {
                     if (json.mediaURLs.length > 4 || settings.sendMediaAsAttachmentsAsDefault[message.guild.id] === true) {
@@ -1989,7 +2068,7 @@ async function sendTweetEmbed(message, url, quoted = false, parent = null, saved
                         if (settings.sendMediaAsAttachmentsAsDefault[message.guild.id] === true && !videoflag) {
                             showMediaAsAttachmentsButton = new ButtonBuilder().setStyle(ButtonStyle.Primary).setLabel(getStringFromObject(showAttachmentsAsEmbedsImagebuttonLocales, settings.defaultLanguage[message.guild.id])).setCustomId('showAttachmentsAsEmbedsImage');
                         }
-                        if (settings.secondary_extract_mode[message.guild.id] === true && !videoflag && json.mediaURLs.length == 1 && !url.includes("twidata.sprink.cloud") && !url.includes("localhost:3088")) {
+                        if (settings.secondary_extract_mode[message.guild.id] === true && !shouldExtractInSecondaryMode && !url.includes("twidata.sprink.cloud") && !url.includes("localhost:3088")) {
                             const maxDepth = settings.quote_repost_max_depth[message.guild.id] ?? 0;
                             if ((json.qrtURL !== null && (settings.quote_repost_do_not_extract[message.guild.id] === undefined || settings.quote_repost_do_not_extract[message.guild.id] === false) && (maxDepth === 0 || depth < maxDepth))) return await sendTweetEmbed(message, json.qrtURL, true, message, false, depth + 1);
                             return resolve();
@@ -2023,13 +2102,13 @@ async function sendTweetEmbed(message, url, quoted = false, parent = null, saved
                                 embeds.push(embed);
                             }
                         });
-                        if (settings.secondary_extract_mode[message.guild.id] === true && json.mediaURLs.length == 1 && !videoflag && !url.includes("twidata.sprink.cloud") && !url.includes("localhost:3088")) {
+                        if (settings.secondary_extract_mode[message.guild.id] === true && !shouldExtractInSecondaryMode && !url.includes("twidata.sprink.cloud") && !url.includes("localhost:3088")) {
                             const maxDepth = settings.quote_repost_max_depth[message.guild.id] ?? 0;
                             if ((json.qrtURL !== null && (settings.quote_repost_do_not_extract[message.guild.id] === undefined || settings.quote_repost_do_not_extract[message.guild.id] === false) && (maxDepth === 0 || depth < maxDepth))) return await sendTweetEmbed(message, json.qrtURL, true, message, false, depth + 1);
                             return resolve();
                         }
                     }
-                } else if (settings.secondary_extract_mode[message.guild.id] === true && !url.includes("twidata.sprink.cloud") && !url.includes("localhost:3088") && !json.article) {
+                } else if (settings.secondary_extract_mode[message.guild.id] === true && !shouldExtractInSecondaryMode && !url.includes("twidata.sprink.cloud") && !url.includes("localhost:3088") && !json.article) {
                     const maxDepth = settings.quote_repost_max_depth[message.guild.id] ?? 0;
                     if (json.qrtURL !== null && (settings.quote_repost_do_not_extract[message.guild.id] === undefined || settings.quote_repost_do_not_extract[message.guild.id] === false) && (maxDepth === 0 || depth < maxDepth)) await sendTweetEmbed(message, json.qrtURL, true, msg, false, depth + 1);
                     return resolve();
@@ -2343,10 +2422,6 @@ client.on(Events.InteractionCreate, async (interaction) => {
                 const boolean = interaction.options.getBoolean('boolean');
                 settings.deletemessageifonlypostedtweetlink[interaction.guildId] = boolean;
                 await interaction.reply((setdeleteifonlypostedtweetlinktolocales[interaction.locale] ?? setdeleteifonlypostedtweetlinktolocales["en"]) + convertBoolToEnableDisable(boolean, interaction.locale));
-                if (settings.deletemessageifonlypostedtweetlink[interaction.guildId] === true && settings.alwaysreplyifpostedtweetlink[interaction.guildId] === true) {
-                    settings.alwaysreplyifpostedtweetlink[interaction.guildId] = false;
-                    await interaction.followUp((setalwaysreplyifpostedtweetlinktolocales[interaction.locale] ?? setalwaysreplyifpostedtweetlinktolocales["en"]) + convertBoolToEnableDisable(false, interaction.locale));
-                }
                 if (interaction.options.getBoolean('secoundaryextractmode') !== null) {
                     settings.deletemessageifonlypostedtweetlink_secoundaryextractmode[interaction.guild.id] = interaction.options.getBoolean('secoundaryextractmode');
                     await interaction.followUp((setdoitwhensecoundaryextractmodeisenabledtolocales[interaction.locale] ?? setdoitwhensecoundaryextractmodeisenabledtolocales["en"]) + convertBoolToEnableDisable(interaction.options.getBoolean('secoundaryextractmode'), interaction.locale));
@@ -2356,10 +2431,6 @@ client.on(Events.InteractionCreate, async (interaction) => {
                 const boolean = interaction.options.getBoolean('boolean');
                 settings.alwaysreplyifpostedtweetlink[interaction.guildId] = boolean;
                 await interaction.reply((setalwaysreplyifpostedtweetlinktolocales[interaction.locale] ?? setalwaysreplyifpostedtweetlinktolocales["en"]) + convertBoolToEnableDisable(boolean, interaction.locale));
-                if (settings.deletemessageifonlypostedtweetlink[interaction.guildId] === true && settings.alwaysreplyifpostedtweetlink[interaction.guildId] === true) {
-                    settings.deletemessageifonlypostedtweetlink[interaction.guildId] = false;
-                    await interaction.followUp((setdeleteifonlypostedtweetlinktolocales[interaction.locale] ?? setdeleteifonlypostedtweetlinktolocales["en"]) + convertBoolToEnableDisable(false, interaction.locale));
-                }
             } else if (interaction.options.getSubcommandGroup() === 'button') {
                 if (interaction.options.getSubcommand() === 'invisible') {
                     if (settings.button_invisible[interaction.guildId] === undefined) settings.button_invisible[interaction.guildId] = button_invisible_template;
@@ -2483,6 +2554,25 @@ client.on(Events.InteractionCreate, async (interaction) => {
                 const boolean = interaction.options.getBoolean('boolean');
                 settings.secondary_extract_mode[interaction.guildId] = boolean;
                 await interaction.reply((setsecondaryextractmodetolocales[interaction.locale] ?? setsecondaryextractmodetolocales["en"]) + convertBoolToEnableDisable(boolean, interaction.locale));
+            } else if (interaction.options.getSubcommand() === 'secondaryextracttarget') {
+                if (interaction.options.getBoolean('multipleimages') === null && interaction.options.getBoolean('video') === null) {
+                    return await interaction.reply(userMustSpecifyAnyWordLocales[interaction.locale] ?? userMustSpecifyAnyWordLocales["en"]);
+                }
+                if (settings.secondary_extract_mode_multiple_images[interaction.guildId] === undefined) settings.secondary_extract_mode_multiple_images[interaction.guildId] = true;
+                if (settings.secondary_extract_mode_video[interaction.guildId] === undefined) settings.secondary_extract_mode_video[interaction.guildId] = true;
+
+                const response = [];
+                if (interaction.options.getBoolean('multipleimages') !== null) {
+                    const multipleImages = interaction.options.getBoolean('multipleimages');
+                    settings.secondary_extract_mode_multiple_images[interaction.guildId] = multipleImages;
+                    response.push((setsecondaryextracttargetmultipleimagestolocales[interaction.locale] ?? setsecondaryextracttargetmultipleimagestolocales["en"]) + convertBoolToEnableDisable(multipleImages, interaction.locale));
+                }
+                if (interaction.options.getBoolean('video') !== null) {
+                    const video = interaction.options.getBoolean('video');
+                    settings.secondary_extract_mode_video[interaction.guildId] = video;
+                    response.push((setsecondaryextracttargetvideotolocales[interaction.locale] ?? setsecondaryextracttargetvideotolocales["en"]) + convertBoolToEnableDisable(video, interaction.locale));
+                }
+                await interaction.reply(response.join('\n'));
             } else {
                 return await interaction.reply(userMustSpecifyAnyWordLocales[interaction.locale] ?? userMustSpecifyAnyWordLocales["en"]);
             }
@@ -2522,6 +2612,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
                 case 'legacymode':
                 case 'passivemode':
                 case 'secondaryextractmode':
+                case 'secondaryextracttarget':
                     await interaction.reply(userDonthavePermissionLocales[interaction.locale] ?? userDonthavePermissionLocales["en"]);
                     break;
                 default:
@@ -2689,9 +2780,15 @@ client.on(Events.InteractionCreate, async (interaction) => {
         }
         //動作モード
         if (settings.secondary_extract_mode[guildid] === true) {
+            if (settings.secondary_extract_mode_multiple_images[guildid] === undefined) settings.secondary_extract_mode_multiple_images[guildid] = true;
+            if (settings.secondary_extract_mode_video[guildid] === undefined) settings.secondary_extract_mode_video[guildid] = true;
             embed.fields.push({
                 name: '動作モード',
-                value: 'セカンダリ展開モード\n(1つ以上の動画か画像が2枚以上含まれるときにのみ動作)'
+                value: 'セカンダリ展開モード\n(設定した展開対象に一致するときにのみ動作)'
+            });
+            embed.fields.push({
+                name: 'セカンダリー展開対象',
+                value: '複数枚画像: ' + convertBoolToEnableDisable(settings.secondary_extract_mode_multiple_images[guildid], 'ja') + '\n動画: ' + convertBoolToEnableDisable(settings.secondary_extract_mode_video[guildid], 'ja')
             });
         } else if (settings.legacy_mode[guildid] === true) {
             embed.fields.push({
