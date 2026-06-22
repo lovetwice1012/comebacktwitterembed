@@ -32,7 +32,7 @@ module.exports = async function (interaction, client) {
     const user_have_additional_autoextraction_slot = await new Promise(resolve => {
         connection.query('SELECT * FROM users WHERE userid = ?', [interaction.user.id], async function (error, results, fields) {
             if (error) throw error;
-            return resolve(results[0].additional_autoextraction_slot);
+            return resolve(results[0]?.additional_autoextraction_slot ?? 0);
         });
     });
     const all_using_slot = free_slot + premium_slot;

@@ -45,4 +45,9 @@ require('./src/handlers/messageCreate').register(client);
 require('./src/handlers/applicationCommands').register(client);
 require('./src/handlers/messageComponents').register(client);
 
+client.rest.on('rateLimited', (data) => {
+    console.log('Rate limited: ' + data.timeToReset + 'ms');
+    console.log(data);
+});
+
 client.login(config.token);

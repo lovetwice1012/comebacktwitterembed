@@ -10,6 +10,7 @@
 const { ApplicationCommandOptionType } = require('discord.js');
 const { t, commandNameLocales, descriptionLocales, messageLocales } = require('../../locales');
 const { conv_en_to_en_US } = require('../../utils');
+const { saveSettings, settings } = require('../../settings');
 
 const COMMON_HANDLERS = {
     disable:                 require('./settings/disable'),
@@ -39,6 +40,12 @@ const PROVIDER_HANDLERS = {
     },
 };
 
+async function runAndSave(handler, interaction, client) {
+    const result = await handler(interaction, client);
+    saveSettings(settings);
+    return result;
+}
+
 module.exports.execute = async function (interaction, client) {
     const provider = interaction.options.getSubcommandGroup(false);
     const sub = interaction.options.getSubcommand();
@@ -48,10 +55,10 @@ module.exports.execute = async function (interaction, client) {
     }
 
     const common = COMMON_HANDLERS[sub];
-    if (common) return await common(interaction, client);
+    if (common) return await runAndSave(common, interaction, client);
 
     const providerHandler = PROVIDER_HANDLERS[provider]?.[sub];
-    if (providerHandler) return await providerHandler(interaction, client);
+    if (providerHandler) return await runAndSave(providerHandler, interaction, client);
 
     return await interaction.reply(t('userMustSpecifyAnyWordLocales', interaction.locale));
 };

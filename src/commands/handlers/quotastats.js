@@ -1,10 +1,30 @@
 'use strict';
 
 const fs = require('fs');
+const path = require('path');
 const { ApplicationCommandOptionType } = require('discord.js');
 const { messageLocales, descriptionLocales, commandNameLocales } = require('../../locales');
 const { settings } = require('../../settings');
 const { conv_en_to_en_US } = require('../../utils');
+
+function getSavedTweetUsageBytes(userId) {
+    const userDir = path.join('.', 'saves', userId);
+    if (!fs.existsSync(userDir)) return 0;
+
+    let used = 0;
+    const dirs = fs.readdirSync(userDir, { withFileTypes: true });
+    for (const dir of dirs) {
+        if (!dir.isDirectory()) continue;
+        const tweetDir = path.join(userDir, dir.name);
+        const files = fs.readdirSync(tweetDir, { withFileTypes: true });
+        for (const file of files) {
+            if (!file.isFile()) continue;
+            used += fs.statSync(path.join(tweetDir, file.name)).size;
+        }
+    }
+    return used;
+}
+
 module.exports.execute = async function (interaction, client) {
 
     let user = interaction.options.getUser('user');
@@ -12,17 +32,7 @@ module.exports.execute = async function (interaction, client) {
     const userid = user.id;
     let quota = 100 * 1024 * 1024;
     if (settings.save_tweet_quota_override[userid] !== undefined) quota = settings.save_tweet_quota_override[userid];
-    const dirs = fs.readdirSync('./saves/' + userid);
-    let used = 0;
-    for (let i = 0; i < dirs.length; i++) {
-        const element = dirs[i];
-        const dir2 = fs.readdirSync('./saves/' + userid + '/' + element);
-        for (let j = 0; j < dir2.length; j++) {
-            const element2 = dir2[j];
-            const stats = fs.statSync('./saves/' + userid + '/' + element + '/' + element2);
-            used += stats.size;
-        }
-    }
+    let used = getSavedTweetUsageBytes(userid);
     used = used / 1024 / 1024;
     quota = quota / 1024 / 1024;
     const usedDisplay = used >= 1024 ? (used / 1024).toFixed(2) + 'GB' : used.toFixed(2) + 'MB';
@@ -64,3 +74,5 @@ module.exports.definition = {
             }
         ]
     };
+
+module.exports._internal = { getSavedTweetUsageBytes };

@@ -4,9 +4,16 @@ const { ComponentType } = require('discord.js');
 const { t } = require('../locales');
 const { checkComponentIncludesDisabledButtonAndIfFindDeleteIt, detectProviderIdFromMessage } = require('../settings');
 
+function getAttachmentUrls(attachments) {
+    if (!attachments) return [];
+    if (typeof attachments.map === 'function') return attachments.map(a => a.url).filter(Boolean);
+    return Array.from(attachments).map(a => (Array.isArray(a) ? a[1]?.url : a?.url)).filter(Boolean);
+}
+
 async function handle(interaction, { buttons }) {
     const { showAttachmentsAsMediaButton, translateButton, deleteButton } = buttons;
 
+    const files = new Set(getAttachmentUrls(interaction.message.attachments));
     const messageObject = {
         components: [
             { type: ComponentType.ActionRow, components: [showAttachmentsAsMediaButton] },
@@ -20,8 +27,9 @@ async function handle(interaction, { buttons }) {
     });
 
     interaction.message.embeds.forEach(element => {
-        if (element.image) messageObject.files.push(element.image.url);
+        if (element.image) files.add(element.image.url);
     });
+    messageObject.files = [...files];
 
     const deepCopyEmbed0 = JSON.parse(JSON.stringify(interaction.message.embeds[0]));
     delete deepCopyEmbed0.image;

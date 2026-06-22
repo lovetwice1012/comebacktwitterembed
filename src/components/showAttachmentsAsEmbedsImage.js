@@ -5,15 +5,34 @@ const { t } = require('../locales');
 const { checkComponentIncludesDisabledButtonAndIfFindDeleteIt, detectProviderIdFromMessage } = require('../settings');
 const { videoExtensions } = require('../utils');
 
+function getAttachmentUrls(attachments) {
+    if (!attachments) return [];
+    if (typeof attachments.map === 'function') return attachments.map(a => a.url).filter(Boolean);
+    return Array.from(attachments).map(a => (Array.isArray(a) ? a[1]?.url : a?.url)).filter(Boolean);
+}
+
+function isVideoAttachment(url) {
+    const cleanUrl = url.split(/[?#]/)[0];
+    const extension = cleanUrl.split('.').pop()?.toLowerCase();
+    return videoExtensions.includes(extension);
+}
+
 async function handle(interaction, { buttons }) {
     const { showMediaAsAttachmentsButton, translateButton, deleteButton } = buttons;
 
     if (interaction.message.attachments === undefined || interaction.message.attachments === null) {
-        return interaction.reply('There are no attachments to show.');
+        return interaction.editReply('There are no attachments to show.');
     }
-    const attachments = interaction.message.attachments.map(a => a.url);
-    if (attachments.length > 4) {
-        return interaction.reply("You can't show more than 4 attachments as embeds image.");
+    const attachments = getAttachmentUrls(interaction.message.attachments);
+    const imageAttachments = [];
+    const videoAttachments = [];
+    attachments.forEach(url => {
+        if (isVideoAttachment(url)) videoAttachments.push(url);
+        else imageAttachments.push(url);
+    });
+
+    if (imageAttachments.length > 4) {
+        return interaction.editReply("You can't show more than 4 attachments as embeds image.");
     }
 
     const messageObject = {
@@ -21,7 +40,7 @@ async function handle(interaction, { buttons }) {
             { type: ComponentType.ActionRow, components: [showMediaAsAttachmentsButton] },
         ],
         embeds: [],
-        files: [],
+        files: videoAttachments,
     };
     messageObject.components.push({
         type: ComponentType.ActionRow,
@@ -30,12 +49,7 @@ async function handle(interaction, { buttons }) {
     const providerId = detectProviderIdFromMessage(interaction.message);
     messageObject.components = checkComponentIncludesDisabledButtonAndIfFindDeleteIt(messageObject.components, interaction.guildId, providerId);
 
-    attachments.forEach(element => {
-        const extension = element.split('?').pop().split('.').pop();
-        if (videoExtensions.includes(extension)) {
-            messageObject.files.push(element);
-            return;
-        }
+    imageAttachments.forEach(element => {
         if (messageObject.embeds.length === 0) {
             const src = interaction.message.embeds[0];
             const embed = {
@@ -58,7 +72,10 @@ async function handle(interaction, { buttons }) {
         });
     });
 
-    messageObject.files = [];
+    if (messageObject.embeds.length === 0 && interaction.message.embeds[0]) {
+        messageObject.embeds.push(JSON.parse(JSON.stringify(interaction.message.embeds[0])));
+    }
+
     await interaction.message.edit(messageObject);
     await interaction.editReply({ content: t('finishActionLocales', interaction.locale), ephemeral: true });
     setTimeout(() => { interaction.deleteReply(); }, 3000);

@@ -6,6 +6,12 @@ const { getSetting } = require('../providers/_provider_settings');
 
 const TRANSLATE_ENDPOINT = 'https://script.google.com/macros/s/AKfycbwmofa3n_K15ze_-4KrpH-B-eBHiKXmmgLeqsJInS3dJUDM0IJ-627h8Xu-w8PIc2f-ug/exec';
 
+function getAttachmentUrls(attachments) {
+    if (!attachments) return [];
+    if (typeof attachments.map === 'function') return attachments.map(a => a.url).filter(Boolean);
+    return Array.from(attachments).map(a => (Array.isArray(a) ? a[1]?.url : a?.url)).filter(Boolean);
+}
+
 async function handle(interaction) {
     const messageObject = { components: [], embeds: [] };
 
@@ -19,7 +25,7 @@ async function handle(interaction) {
         timestamp: sourceEmbed.timestamp,
         fields: sourceEmbed.fields,
     };
-    if (sourceEmbed.images) copyEmbed.image = sourceEmbed.image;
+    if (sourceEmbed.image) copyEmbed.image = sourceEmbed.image;
     if (sourceEmbed.thumbnail) copyEmbed.thumbnail = sourceEmbed.thumbnail;
     messageObject.embeds.push(copyEmbed);
 
@@ -60,10 +66,8 @@ async function handle(interaction) {
         || settings.editOriginalIfTranslate[interaction.guildId] === true;
 
     if (editOriginalIfTranslate) {
-        if (interaction.message.attachments.length > 0) {
-            messageObject.files = [];
-            interaction.message.attachments.forEach(a => messageObject.files.push(a.url));
-        }
+        const attachmentUrls = getAttachmentUrls(interaction.message.attachments);
+        if (attachmentUrls.length > 0) messageObject.files = attachmentUrls;
         messageObject.components = interaction.message.components;
         await interaction.message.edit(messageObject);
     }

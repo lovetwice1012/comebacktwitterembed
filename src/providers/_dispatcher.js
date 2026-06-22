@@ -10,6 +10,7 @@
 
 const { isUnknownMessageError, sendContentPromise } = require('../utils');
 const { checkComponentIncludesDisabledButtonAndIfFindDeleteIt } = require('../settings');
+const { incrementProcessedCounters } = require('../state');
 
 /**
  * @param {any} message - 元の Discord メッセージ
@@ -55,6 +56,9 @@ async function runSendSteps(message, steps, providerId = null) {
             }
         }
         previousSent = sent ?? previousSent;
+        if (sent) {
+            incrementProcessedCounters();
+        }
 
         if (step.suppressSourceEmbeds) {
             await message.suppressEmbeds(true).catch(() => {});

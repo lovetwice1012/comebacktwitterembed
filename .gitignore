@@ -135,4 +135,5 @@ settings.json
 sendwebhook.js
 package-lock.json
 saves
+data/stats_counters.json
 ```

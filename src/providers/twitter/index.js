@@ -168,12 +168,22 @@ function applyArticleMerge(embed, tweet) {
     }
 }
 
+function canRecurseQuoted(s, depth) {
+    if (s.quote_repost_do_not_extract === true) return false;
+    const maxDepth = s.quote_repost_max_depth ?? QUOTE_RECURSE_DEFAULT_DEPTH;
+    return maxDepth === 0 || depth < maxDepth;
+}
+
 // ---- メディアルーティング ---------------------------------------------------
 
 function routeMedia(tweet, baseEmbed, compact, lang, sendAsAttachmentsByDefault) {
     let mediaURLs = tweet.mediaURLs ? tweet.mediaURLs.slice() : [];
     if (mediaURLs.length === 0) {
         return { embeds: [baseEmbed], files: [], extraButton: null, compactSingleImageHandled: false };
+    }
+
+    if (compact && mediaURLs.length === 1 && !isVideoUrl(mediaURLs[0])) {
+        return { embeds: [baseEmbed], files: [], extraButton: null, compactSingleImageHandled: true };
     }
 
     let attachments = [];
@@ -291,12 +301,13 @@ async function extract(message, url, s, opts) {
         const shouldExtract =
             ((s.secondary_extract_mode_multiple_images ?? true) && containsMultiImg)
             || ((s.secondary_extract_mode_video ?? true) && containsVideo);
-        const wantsRecurse = ((mediaURLs.length > 0) || tweet.article) && !shouldExtract;
-        if (wantsRecurse && tweet.qrtURL) {
+        const shouldSuppress = !shouldExtract && (mediaURLs.length > 0 || !tweet.article);
+        if (shouldSuppress && tweet.qrtURL && canRecurseQuoted(s, depth)) {
             const r = await recurseQuoted(message, tweet.qrtURL, s, depth);
             if (r == null) return null;
             return Array.isArray(r) ? r : [r];
         }
+        if (shouldSuppress) return null;
     }
 
     // Embed
@@ -352,12 +363,9 @@ async function extract(message, url, s, opts) {
     const allSteps = [step];
 
     // 引用ポスト再帰展開
-    if (!quoted && tweet.qrtURL && s.quote_repost_do_not_extract !== true) {
-        const maxDepth = s.quote_repost_max_depth ?? QUOTE_RECURSE_DEFAULT_DEPTH;
-        if (maxDepth === 0 || depth + 1 < maxDepth) {
-            const childSteps = await extract(message, tweet.qrtURL, s, { quoted: true, depth: depth + 1 });
-            if (Array.isArray(childSteps)) allSteps.push(...childSteps);
-        }
+    if (tweet.qrtURL && canRecurseQuoted(s, depth)) {
+        const childSteps = await extract(message, tweet.qrtURL, s, { quoted: true, depth: depth + 1 });
+        if (Array.isArray(childSteps)) allSteps.push(...childSteps);
     }
 
     return allSteps;
@@ -365,9 +373,7 @@ async function extract(message, url, s, opts) {
 
 async function recurseQuoted(message, quoteUrl, s, depth) {
     if (!quoteUrl) return null;
-    if (s.quote_repost_do_not_extract === true) return null;
-    const maxDepth = s.quote_repost_max_depth ?? QUOTE_RECURSE_DEFAULT_DEPTH;
-    if (maxDepth !== 0 && depth + 1 >= maxDepth) return null;
+    if (!canRecurseQuoted(s, depth)) return null;
     return await extract(message, quoteUrl, s, { quoted: true, depth: depth + 1 });
 }
 

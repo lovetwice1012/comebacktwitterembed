@@ -15,11 +15,17 @@ try {
 
 function getDbCredentials() {
     const dbConfig = _config.db || {};
+    const legacyDbConfig = {
+        host: '192.168.100.22',
+        user: 'comebacktwitterembed',
+        password: 'bluebird',
+        database: 'ComebackTwitterEmbed',
+    };
     return {
-        host: process.env.DB_HOST || dbConfig.host,
-        user: process.env.DB_USER || dbConfig.user,
-        password: process.env.DB_PASSWORD || dbConfig.password,
-        database: process.env.DB_DATABASE || dbConfig.database,
+        host: process.env.DB_HOST || dbConfig.host || legacyDbConfig.host,
+        user: process.env.DB_USER || dbConfig.user || legacyDbConfig.user,
+        password: process.env.DB_PASSWORD || dbConfig.password || legacyDbConfig.password,
+        database: process.env.DB_DATABASE || dbConfig.database || legacyDbConfig.database,
     };
 }
 
@@ -31,8 +37,8 @@ function ensureConnection() {
     const cfg = getDbCredentials();
     if (!cfg.host || !cfg.user || !cfg.database) {
         throw new Error(
-            'DB credentials missing. Set DB_HOST/DB_USER/DB_PASSWORD/DB_DATABASE env vars '
-            + 'or add a "db" section to config.json.'
+            'DB credentials missing. Set DB_HOST/DB_USER/DB_PASSWORD/DB_DATABASE env vars, '
+            + 'add a "db" section to config.json, or configure the legacy DB fallback.'
         );
     }
     if (!_mysql) _mysql = require('mysql');

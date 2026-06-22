@@ -4,19 +4,32 @@ const { ApplicationCommandOptionType, PermissionsBitField } = require('discord.j
 const { t, messageLocales, descriptionLocales, commandNameLocales } = require('../../locales');
 const { settings } = require('../../settings');
 const { convertBoolToEnableDisable, conv_en_to_en_US } = require('../../utils');
+
+function getStringOption(interaction, name) {
+    try {
+        return interaction.options.getString(name);
+    } catch {
+        return null;
+    }
+}
+
+function getTargetGuildId(interaction) {
+    const optionGuildId = getStringOption(interaction, 'guildid') || getStringOption(interaction, 'guild');
+    return optionGuildId || interaction.guildId;
+}
+
 module.exports.execute = async function (interaction, client) {
 
-    if (interaction.options.getString('guildid') !== null && interaction.user.id !== '796972193287503913') return await interaction.reply(t('userDonthavePermissionLocales', interaction.locale));
-    let guildid = interaction.guildId;
-    if (interaction.options.getString('guildid') !== null) guildid = interaction.options.getString('guildid');
+    const guildid = getTargetGuildId(interaction);
+    if (guildid !== interaction.guildId && interaction.user.id !== '796972193287503913') return await interaction.reply(t('userDonthavePermissionLocales', interaction.locale));
     let embed = {};
     embed.title = 'ギルド設定';
     embed.color = 0x1DA1F2;
     embed.fields = [];
     //無効化されているチャンネル
-    if (settings.disable.channel[guildid] !== undefined) {
+    if (Array.isArray(settings.disable.channel) && settings.disable.channel.length !== 0) {
         let value = '';
-        settings.disable.channel[guildid].forEach(element => {
+        settings.disable.channel.forEach(element => {
             value += '<#' + element + '>\n';
         });
         embed.fields.push({
@@ -107,6 +120,7 @@ module.exports.execute = async function (interaction, client) {
         if (settings.button_invisible[guildid].showAttachmentsAsEmbedsImage === true) value += '埋め込みとして表示するボタン\n';
         if (settings.button_invisible[guildid].translate === true) value += '翻訳ボタン\n';
         if (settings.button_invisible[guildid].delete === true) value += '削除ボタン\n';
+        if (settings.button_invisible[guildid].savetweet === true) value += '保存したツイートを表示ボタン\n';
         if (value === '') value = 'なし';
         embed.fields.push({
             name: 'ボタンの非表示',

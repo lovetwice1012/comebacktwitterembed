@@ -23,7 +23,7 @@ module.exports = async function (interaction, client) {
     const provider = { id: providerId };
     const boolean = interaction.options.getBoolean('boolean');
     setSetting(provider, 'editOriginalIfTranslate', interaction.guildId, boolean);
-    if (providerId === 'twitter') settings.editoriginaliftranslate[interaction.guildId] = boolean;
+    if (providerId === 'twitter') settings.editOriginalIfTranslate[interaction.guildId] = boolean;
     await interaction.reply((t('seteditoriginaliftranslatetolocales', interaction.locale)) + convertBoolToEnableDisable(boolean, interaction.locale));
 
 };

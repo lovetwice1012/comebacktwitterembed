@@ -3,7 +3,7 @@
 // Posts an hourly stats embed to a dedicated stats channel and rotates the
 // per-minute / per-hour / per-day counters. The DB INSERT is currently disabled.
 
-const { counters } = require('../state');
+const { counters, resetCountersAfterStatsPost } = require('../state');
 
 const STATS_GUILD_ID = '1175729394782851123';
 const STATS_CHANNEL_ID = '1189083636574724167';
@@ -29,11 +29,7 @@ function start(client) {
             });
         }
 
-        // Rotate counters.
-        counters.processed = 0;
-        const now = new Date();
-        if (now.getMinutes() === 0) counters.processed_hour = 0;
-        if (now.getHours() === 0 && now.getMinutes() === 0) counters.processed_day = 0;
+        resetCountersAfterStatsPost();
 
         // DB persistence is currently disabled; see git history for the original INSERT.
     }, 60000);

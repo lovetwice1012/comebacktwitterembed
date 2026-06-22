@@ -69,31 +69,33 @@ module.exports = async function (interaction, client) {
             await interaction.reply(t('removedAllButtonLocales', interaction.locale));
         }
     } else {
+        const response = [];
         if (interaction.options.getBoolean('showmediaasattachments') !== null) {
             providerSetting.showMediaAsAttachments = interaction.options.getBoolean('showmediaasattachments');
             if (providerId === 'twitter') settings.button_invisible[interaction.guildId].showMediaAsAttachments = interaction.options.getBoolean('showmediaasattachments');
-            await interaction.reply((t('setshowmediaasattachmentsbuttonLocales', interaction.locale)) + convertBoolToEnableDisable(!interaction.options.getBoolean('showmediaasattachments'), interaction.locale));
+            response.push((t('setshowmediaasattachmentsbuttonLocales', interaction.locale)) + convertBoolToEnableDisable(!interaction.options.getBoolean('showmediaasattachments'), interaction.locale));
         }
         if (interaction.options.getBoolean('showattachmentsasembedsimage') !== null) {
             providerSetting.showAttachmentsAsEmbedsImage = interaction.options.getBoolean('showattachmentsasembedsimage');
             if (providerId === 'twitter') settings.button_invisible[interaction.guildId].showAttachmentsAsEmbedsImage = interaction.options.getBoolean('showattachmentsasembedsimage');
-            await interaction.reply((t('setshowattachmentsasembedsimagebuttonLocales', interaction.locale)) + convertBoolToEnableDisable(!interaction.options.getBoolean('showattachmentsasembedsimage'), interaction.locale));
+            response.push((t('setshowattachmentsasembedsimagebuttonLocales', interaction.locale)) + convertBoolToEnableDisable(!interaction.options.getBoolean('showattachmentsasembedsimage'), interaction.locale));
         }
         if (interaction.options.getBoolean('translate') !== null) {
             providerSetting.translate = interaction.options.getBoolean('translate');
             if (providerId === 'twitter') settings.button_invisible[interaction.guildId].translate = interaction.options.getBoolean('translate');
-            await interaction.reply((t('settranslatebuttonLocales', interaction.locale)) + convertBoolToEnableDisable(!interaction.options.getBoolean('translate'), interaction.locale));
+            response.push((t('settranslatebuttonLocales', interaction.locale)) + convertBoolToEnableDisable(!interaction.options.getBoolean('translate'), interaction.locale));
         }
         if (interaction.options.getBoolean('delete') !== null) {
             providerSetting.delete = interaction.options.getBoolean('delete');
             if (providerId === 'twitter') settings.button_invisible[interaction.guildId].delete = interaction.options.getBoolean('delete');
-            await interaction.reply((t('setdeletebuttonLocales', interaction.locale)) + convertBoolToEnableDisable(!interaction.options.getBoolean('delete'), interaction.locale));
+            response.push((t('setdeletebuttonLocales', interaction.locale)) + convertBoolToEnableDisable(!interaction.options.getBoolean('delete'), interaction.locale));
         }
         if (interaction.options.getBoolean('savetweet') !== null) {
             providerSetting.savetweet = interaction.options.getBoolean('savetweet');
             if (providerId === 'twitter') settings.button_invisible[interaction.guildId].savetweet = interaction.options.getBoolean('savetweet');
-            await interaction.reply((t('setsavetweetbuttonLocales', interaction.locale)) + convertBoolToEnableDisable(!interaction.options.getBoolean('savetweet'), interaction.locale));
+            response.push((t('setsavetweetbuttonLocales', interaction.locale)) + convertBoolToEnableDisable(!interaction.options.getBoolean('savetweet'), interaction.locale));
         }
+        await interaction.reply(response.join('\n'));
     }
 
 };
