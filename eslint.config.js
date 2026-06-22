@@ -14,7 +14,11 @@ module.exports = [
             },
         },
         rules: {
-            'no-unused-vars': ['warn', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
+            'no-unused-vars': ['warn', {
+                args: 'none',
+                caughtErrors: 'none',
+                varsIgnorePattern: '^_',
+            }],
             'no-empty': ['warn', { allowEmptyCatch: true }],
             'no-constant-condition': ['warn', { checkLoops: false }],
             'no-async-promise-executor': 'off',
@@ -27,6 +31,7 @@ module.exports = [
             'node_modules/**',
             'saves/**',
             'scripts/**',
+            '__*.js',
             'settings.json',
             'config.json',
         ],

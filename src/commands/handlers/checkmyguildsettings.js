@@ -1,23 +1,11 @@
 'use strict';
 
-const fs = require('fs');
-const path = require('path');
-const { ButtonBuilder, ButtonStyle, ComponentType, ApplicationCommandOptionType, PermissionsBitField, EmbedBuilder, ActionRowBuilder } = require('discord.js');
-const { t, getStringFromObject, messageLocales, descriptionLocales, commandNameLocales } = require('../../locales');
-const { settings, saveSettings, checkComponentIncludesDisabledButtonAndIfFindDeleteIt } = require('../../settings');
-const { connection, queryDatabase, ensureUserExistsInDatabase } = require('../../db');
-const {
-    button_disabled_template,
-    button_invisible_template,
-    antiDirectoryTraversalAttack,
-    ifUserHasRole,
-    convertBoolToEnableDisable,
-    conv_en_to_en_US,
-} = require('../../utils');
-
+const { ApplicationCommandOptionType, PermissionsBitField } = require('discord.js');
+const { t, messageLocales, descriptionLocales, commandNameLocales } = require('../../locales');
+const { settings } = require('../../settings');
+const { convertBoolToEnableDisable, conv_en_to_en_US } = require('../../utils');
 module.exports.execute = async function (interaction, client) {
 
-    const embeds = [];
     if (interaction.options.getString('guildid') !== null && interaction.user.id !== '796972193287503913') return await interaction.reply(t('userDonthavePermissionLocales', interaction.locale));
     let guildid = interaction.guildId;
     if (interaction.options.getString('guildid') !== null) guildid = interaction.options.getString('guildid');
@@ -155,7 +143,6 @@ module.exports.execute = async function (interaction, client) {
     interaction.reply({ embeds: [embed] });
 
 };
-
 
 module.exports.definition = {
         name: 'checkmyguildsettings',

@@ -6,6 +6,8 @@
 const { consoleBuffer } = require('../state');
 
 function start(client, webhookClient) {
+    if (!webhookClient) return;
+
     setInterval(() => {
         if (consoleBuffer.text === '') return;
         const chunks = consoleBuffer.text.match(/[\s\S]{1,1900}/g) || [];

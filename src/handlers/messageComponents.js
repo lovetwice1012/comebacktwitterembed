@@ -10,6 +10,7 @@ const HANDLERS = {
     delete: require('../components/delete'),
     translate: require('../components/translate'),
     savetweet: require('../components/savetweet'),
+    notifyBoothSale: require('../components/notifyBoothSale'),
 };
 
 function register(client) {
@@ -18,7 +19,8 @@ function register(client) {
         await interaction.deferReply({ ephemeral: true });
         if (!(await isAllowed(interaction))) return;
 
-        const handler = HANDLERS[interaction.customId];
+        const baseCustomId = typeof interaction.customId === 'string' ? interaction.customId.split(':')[0] : interaction.customId;
+        const handler = HANDLERS[baseCustomId];
         if (!handler) return;
 
         const ctx = { client, buttons: buildButtons(interaction) };

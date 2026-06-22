@@ -5,6 +5,7 @@ const presence = require('../lifecycle/presence');
 const deregisterNotifier = require('../lifecycle/deregisterNotifier');
 const statsPoster = require('../lifecycle/statsPoster');
 const consoleFlush = require('../lifecycle/consoleFlush');
+const boothSaleNotifier = require('../lifecycle/boothSaleNotifier');
 
 function register(client, webhookClient) {
     client.on('ready', () => {
@@ -16,6 +17,7 @@ function register(client, webhookClient) {
         deregisterNotifier.start(client);
         statsPoster.start(client);
         consoleFlush.start(client, webhookClient);
+        boothSaleNotifier.start(client);
     });
 }
 

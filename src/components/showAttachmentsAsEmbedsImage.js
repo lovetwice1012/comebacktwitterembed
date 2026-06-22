@@ -2,7 +2,7 @@
 
 const { ComponentType } = require('discord.js');
 const { t } = require('../locales');
-const { checkComponentIncludesDisabledButtonAndIfFindDeleteIt } = require('../settings');
+const { checkComponentIncludesDisabledButtonAndIfFindDeleteIt, detectProviderIdFromMessage } = require('../settings');
 const { videoExtensions } = require('../utils');
 
 async function handle(interaction, { buttons }) {
@@ -27,7 +27,8 @@ async function handle(interaction, { buttons }) {
         type: ComponentType.ActionRow,
         components: interaction.message.embeds[0].title ? [translateButton, deleteButton] : [deleteButton],
     });
-    messageObject.components = checkComponentIncludesDisabledButtonAndIfFindDeleteIt(messageObject.components, interaction.guildId);
+    const providerId = detectProviderIdFromMessage(interaction.message);
+    messageObject.components = checkComponentIncludesDisabledButtonAndIfFindDeleteIt(messageObject.components, interaction.guildId, providerId);
 
     attachments.forEach(element => {
         const extension = element.split('?').pop().split('.').pop();

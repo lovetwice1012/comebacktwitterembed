@@ -2,7 +2,7 @@
 
 const { ComponentType } = require('discord.js');
 const { t } = require('../locales');
-const { checkComponentIncludesDisabledButtonAndIfFindDeleteIt } = require('../settings');
+const { checkComponentIncludesDisabledButtonAndIfFindDeleteIt, detectProviderIdFromMessage } = require('../settings');
 
 async function handle(interaction, { buttons }) {
     const { showAttachmentsAsMediaButton, translateButton, deleteButton } = buttons;
@@ -27,7 +27,8 @@ async function handle(interaction, { buttons }) {
     delete deepCopyEmbed0.image;
     messageObject.embeds.push(deepCopyEmbed0);
 
-    messageObject.components = checkComponentIncludesDisabledButtonAndIfFindDeleteIt(messageObject.components, interaction.guildId);
+    const providerId = detectProviderIdFromMessage(interaction.message);
+    messageObject.components = checkComponentIncludesDisabledButtonAndIfFindDeleteIt(messageObject.components, interaction.guildId, providerId);
     await interaction.message.edit(messageObject);
     await interaction.editReply({ content: t('finishActionLocales', interaction.locale), ephemeral: true });
     setTimeout(() => { interaction.deleteReply(); }, 3000);

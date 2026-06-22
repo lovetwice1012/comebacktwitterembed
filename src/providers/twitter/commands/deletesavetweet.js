@@ -1,20 +1,9 @@
 'use strict';
 
 const fs = require('fs');
-const path = require('path');
-const { ButtonBuilder, ButtonStyle, ComponentType, ApplicationCommandOptionType, PermissionsBitField, EmbedBuilder, ActionRowBuilder } = require('discord.js');
-const { t, getStringFromObject, messageLocales, descriptionLocales, commandNameLocales } = require('../../locales');
-const { settings, saveSettings, checkComponentIncludesDisabledButtonAndIfFindDeleteIt } = require('../../settings');
-const { connection, queryDatabase, ensureUserExistsInDatabase } = require('../../db');
-const {
-    button_disabled_template,
-    button_invisible_template,
-    antiDirectoryTraversalAttack,
-    ifUserHasRole,
-    convertBoolToEnableDisable,
-    conv_en_to_en_US,
-} = require('../../utils');
-
+const { ApplicationCommandOptionType } = require('discord.js');
+const { t, descriptionLocales, commandNameLocales } = require('../../../locales');
+const { antiDirectoryTraversalAttack, conv_en_to_en_US } = require('../../../utils');
 module.exports.execute = async function (interaction, client) {
 
     //saves/{userid}があるか確認する
@@ -51,7 +40,6 @@ module.exports.execute = async function (interaction, client) {
     }
 
 };
-
 
 module.exports.definition = {
         name: 'deletesavetweet',

@@ -1,20 +1,10 @@
 'use strict';
 
-const fs = require('fs');
-const path = require('path');
-const { ButtonBuilder, ButtonStyle, ComponentType, ApplicationCommandOptionType, PermissionsBitField, EmbedBuilder, ActionRowBuilder } = require('discord.js');
-const { t, getStringFromObject, messageLocales, descriptionLocales, commandNameLocales } = require('../../../locales');
-const { settings, saveSettings, checkComponentIncludesDisabledButtonAndIfFindDeleteIt } = require('../../../settings');
-const { connection, queryDatabase, ensureUserExistsInDatabase } = require('../../../db');
-const {
-    button_disabled_template,
-    button_invisible_template,
-    antiDirectoryTraversalAttack,
-    ifUserHasRole,
-    convertBoolToEnableDisable,
-    conv_en_to_en_US,
-} = require('../../../utils');
-
+const { PermissionsBitField } = require('discord.js');
+const { t } = require('../../../locales');
+const { settings } = require('../../../settings');
+const { setSetting, getSetting } = require('../../../providers/_provider_settings');
+const { button_disabled_template } = require('../../../utils');
 function hasAdminPerm(member) {
     return (
         member.permissions.has(PermissionsBitField.Flags.ManageChannels)
@@ -28,7 +18,6 @@ module.exports = async function (interaction, client) {
         return await interaction.reply(t('userDonthavePermissionLocales', interaction.locale));
     }
 
-
     if (interaction.options.getUser('user') === null && interaction.options.getChannel('channel') === null && interaction.options.getRole('role') === null) {
         return await interaction.reply(t('userMustSpecifyAUserOrChannelLocales', interaction.locale));
     }
@@ -36,34 +25,44 @@ module.exports = async function (interaction, client) {
     if ((interaction.options.getUser('user') !== null && interaction.options.getChannel('channel') !== null && interaction.options.getRole('role') !== null) || (interaction.options.getUser('user') !== null && interaction.options.getChannel('channel') !== null) || (interaction.options.getUser('user') !== null && interaction.options.getRole('role') !== null) || (interaction.options.getChannel('channel') !== null && interaction.options.getRole('role') !== null)) {
         return await interaction.reply(t('userCantSpecifyBothAUserAndAChannelLocales', interaction.locale));
     }
-    if (settings.button_disabled[interaction.guildId] === undefined) settings.button_disabled[interaction.guildId] = button_disabled_template;
+    const providerId = interaction.options.getSubcommandGroup(false) || interaction.options.getString('provider') || 'twitter';
+    const provider = { id: providerId };
+    let guildSetting = getSetting(provider, 'button_disabled', interaction.guildId);
+    if (!guildSetting || typeof guildSetting !== 'object') guildSetting = { ...button_disabled_template, user: [], channel: [], role: [] };
+    if (!Array.isArray(guildSetting.user)) guildSetting.user = [];
+    if (!Array.isArray(guildSetting.channel)) guildSetting.channel = [];
+    if (!Array.isArray(guildSetting.role)) guildSetting.role = [];
+
     if (interaction.options.getUser('user') !== null) {
         const user = interaction.options.getUser('user');
-        if (settings.button_disabled[interaction.guildId].user.includes(user.id)) {
-            settings.button_disabled[interaction.guildId].user.splice(settings.button_disabled[interaction.guildId].user.indexOf(user.id), 1);
+        if (guildSetting.user.includes(user.id)) {
+            guildSetting.user.splice(guildSetting.user.indexOf(user.id), 1);
             await interaction.reply(t('removedUserFromDisableUserLocales', interaction.locale));
         } else {
-            settings.button_disabled[interaction.guildId].user.push(user.id);
+            guildSetting.user.push(user.id);
             await interaction.reply(t('addedUserToDisableUserLocales', interaction.locale));
         }
     } else if (interaction.options.getChannel('channel') !== null) {
         const channel = interaction.options.getChannel('channel');
-        if (settings.button_disabled[interaction.guildId].channel.includes(channel.id)) {
-            settings.button_disabled[interaction.guildId].channel.splice(settings.button_disabled[interaction.guildId].channel.indexOf(channel.id), 1);
+        if (guildSetting.channel.includes(channel.id)) {
+            guildSetting.channel.splice(guildSetting.channel.indexOf(channel.id), 1);
             await interaction.reply(t('removedChannelFromDisableChannelLocales', interaction.locale));
         } else {
-            settings.button_disabled[interaction.guildId].channel.push(channel.id);
+            guildSetting.channel.push(channel.id);
             await interaction.reply(t('addedChannelToDisableChannelLocales', interaction.locale));
         }
     } else if (interaction.options.getRole('role') !== null) {
         const role = interaction.options.getRole('role');
-        if (settings.button_disabled[interaction.guildId].role.includes(role.id)) {
-            settings.button_disabled[interaction.guildId].role.splice(settings.button_disabled[interaction.guildId].role.indexOf(role.id), 1);
+        if (guildSetting.role.includes(role.id)) {
+            guildSetting.role.splice(guildSetting.role.indexOf(role.id), 1);
             await interaction.reply(t('removedRoleFromDisableRoleLocales', interaction.locale));
         } else {
-            settings.button_disabled[interaction.guildId].role.push(role.id);
+            guildSetting.role.push(role.id);
             await interaction.reply(t('addedRoleToDisableRoleLocales', interaction.locale));
         }
     }
+
+    setSetting(provider, 'button_disabled', interaction.guildId, guildSetting);
+    if (providerId === 'twitter') settings.button_disabled[interaction.guildId] = guildSetting;
 
 };

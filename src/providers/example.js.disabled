@@ -1,0 +1,57 @@
+// このファイルは拡張子が .js.disabled なので loader に読み込まれません。
+// 新サイトを追加するときの参考用テンプレートです。
+// 有効化するときは "example.js" にリネームしてください。
+
+'use strict';
+
+const { literal, path } = require('./_engine');
+
+/** @type {import('./_types').Provider} */
+module.exports = {
+    id: 'example',
+
+    // 本文中の URL を検出 (グローバルフラグ必須)
+    urlPattern: /https?:\/\/example\.com\/p\/[^\s<>|]*/g,
+
+    // API 呼び出し (動的 URL / ヘッダ / クエリ / メソッド / ボディ すべて宣言可)
+    api: {
+        url:      (postUrl) => postUrl.replace('example.com', 'api.example.com'),
+        fallback: (postUrl) => postUrl.replace('example.com', 'api2.example.com'),
+        method:   'GET',                                // 省略可
+        headers:  { 'User-Agent': 'comeback-bot/1.0' }, // 静的 or (ctx) => {...}
+        query:    (ctx) => ({ from: ctx.url }),         // 任意; URL に追記される
+    },
+
+    // 取得後フック: false を返すと展開中止
+    shouldExpand: (data) => !data.is_blocked,
+
+    // Embed 宣言
+    embed: {
+        title:         'user.name',
+        url:           'permalink',
+        description:   (d) => (d.text || '').slice(0, 1500),
+        color:         (d) => d.is_nsfw ? 0xff0000 : 0x1da1f2,
+        footerText:    literal('powered by Example'),
+        footerIconUrl: 'site.icon_url',
+        timestamp:     (d) => new Date(d.created_at_ms),
+        thumbnailUrl:  'user.avatar_url',
+        imageUrl:      'media[0].url',                  // 単一画像なら image
+        imageUrls:     (d) => (d.media || []).map(m => m.url), // 複数なら添付ファイル
+    },
+
+    // メッセージレベル
+    message: {
+        content:               (d) => d.warning ? `:warning: ${d.warning}` : undefined,
+        replyMode:             literal('channel'),       // 'channel' | 'reply'
+        suppressSourceEmbeds:  (d, c) => c.message?.guild?.members?.me?.permissions?.has?.('ManageMessages') ?? false,
+        // files: (d) => [...]   // imageUrls の代わりに直接指定したい場合
+    },
+
+    // ボタン
+    buttons: [
+        { label: literal('Delete'), style: 4 /* Danger */, customId: literal('delete') },
+    ],
+
+    // 文字列を JSON パスではなくリテラルとして渡したい場合は literal('...')
+    // 明示的に JSON パス指定したい場合は path('user.name')
+};

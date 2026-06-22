@@ -1,20 +1,10 @@
 'use strict';
 
 const fs = require('fs');
-const path = require('path');
-const { ButtonBuilder, ButtonStyle, ComponentType, ApplicationCommandOptionType, PermissionsBitField, EmbedBuilder, ActionRowBuilder } = require('discord.js');
-const { t, getStringFromObject, messageLocales, descriptionLocales, commandNameLocales } = require('../../locales');
-const { settings, saveSettings, checkComponentIncludesDisabledButtonAndIfFindDeleteIt } = require('../../settings');
-const { connection, queryDatabase, ensureUserExistsInDatabase } = require('../../db');
-const {
-    button_disabled_template,
-    button_invisible_template,
-    antiDirectoryTraversalAttack,
-    ifUserHasRole,
-    convertBoolToEnableDisable,
-    conv_en_to_en_US,
-} = require('../../utils');
-
+const { ApplicationCommandOptionType } = require('discord.js');
+const { messageLocales, descriptionLocales, commandNameLocales } = require('../../locales');
+const { settings } = require('../../settings');
+const { conv_en_to_en_US } = require('../../utils');
 module.exports.execute = async function (interaction, client) {
 
     let user = interaction.options.getUser('user');
@@ -35,10 +25,8 @@ module.exports.execute = async function (interaction, client) {
     }
     used = used / 1024 / 1024;
     quota = quota / 1024 / 1024;
-    if (used >= 1024) used = (used / 1024).toFixed(2) + 'GB';
-    else used = used.toFixed(2) + 'MB';
-    if (quota >= 1024) quota = (quota / 1024).toFixed(2) + 'GB';
-    else quota = quota.toFixed(2) + 'MB';
+    const usedDisplay = used >= 1024 ? (used / 1024).toFixed(2) + 'GB' : used.toFixed(2) + 'MB';
+    const quotaDisplay = quota >= 1024 ? (quota / 1024).toFixed(2) + 'GB' : quota.toFixed(2) + 'MB';
     await interaction.reply({
         embeds: [
             {
@@ -47,11 +35,11 @@ module.exports.execute = async function (interaction, client) {
                 fields: [
                     {
                         name: 'Used',
-                        value: used.toString()
+                        value: usedDisplay
                     },
                     {
                         name: 'Quota',
-                        value: quota.toString()
+                        value: quotaDisplay
                     }
                 ]
             }
@@ -59,7 +47,6 @@ module.exports.execute = async function (interaction, client) {
     });
 
 };
-
 
 module.exports.definition = {
         name: 'quotastats',

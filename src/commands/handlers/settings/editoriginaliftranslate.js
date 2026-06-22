@@ -1,20 +1,10 @@
 'use strict';
 
-const fs = require('fs');
-const path = require('path');
-const { ButtonBuilder, ButtonStyle, ComponentType, ApplicationCommandOptionType, PermissionsBitField, EmbedBuilder, ActionRowBuilder } = require('discord.js');
-const { t, getStringFromObject, messageLocales, descriptionLocales, commandNameLocales } = require('../../../locales');
-const { settings, saveSettings, checkComponentIncludesDisabledButtonAndIfFindDeleteIt } = require('../../../settings');
-const { connection, queryDatabase, ensureUserExistsInDatabase } = require('../../../db');
-const {
-    button_disabled_template,
-    button_invisible_template,
-    antiDirectoryTraversalAttack,
-    ifUserHasRole,
-    convertBoolToEnableDisable,
-    conv_en_to_en_US,
-} = require('../../../utils');
-
+const { PermissionsBitField } = require('discord.js');
+const { t } = require('../../../locales');
+const { settings } = require('../../../settings');
+const { setSetting } = require('../../../providers/_provider_settings');
+const { convertBoolToEnableDisable } = require('../../../utils');
 function hasAdminPerm(member) {
     return (
         member.permissions.has(PermissionsBitField.Flags.ManageChannels)
@@ -28,10 +18,12 @@ module.exports = async function (interaction, client) {
         return await interaction.reply(t('userDonthavePermissionLocales', interaction.locale));
     }
 
-
     if (interaction.options.getBoolean('boolean') === null) return await interaction.reply(t('userMustSpecifyAnyWordLocales', interaction.locale));
+    const providerId = interaction.options.getSubcommandGroup(false) || interaction.options.getString('provider') || 'twitter';
+    const provider = { id: providerId };
     const boolean = interaction.options.getBoolean('boolean');
-    settings.editoriginaliftranslate[interaction.guildId] = boolean;
+    setSetting(provider, 'editOriginalIfTranslate', interaction.guildId, boolean);
+    if (providerId === 'twitter') settings.editoriginaliftranslate[interaction.guildId] = boolean;
     await interaction.reply((t('seteditoriginaliftranslatetolocales', interaction.locale)) + convertBoolToEnableDisable(boolean, interaction.locale));
 
 };

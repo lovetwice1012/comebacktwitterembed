@@ -91,11 +91,15 @@ function conv_en_to_en_US(obj) {
 }
 
 function cleanMessageContent(content) {
-    return content.replace(/<https?:\/\/(twitter\.com|x\.com)[^\s<>|]*>|(\|\|https?:\/\/(twitter\.com|x\.com)[^\s<>|]*\|\|)/g, '');
+    // 後方互換: src/providers/_loader.cleanContent() に委譲。
+    // 全プロバイダの cleanPattern を順に適用して `<URL>` / `||URL||` を除去する。
+    return require('./providers/_loader').cleanContent(content);
 }
 
 function extractTwitterUrls(content) {
-    return content.match(/https?:\/\/(twitter\.com|x\.com)\/[^\s<>|]*/g) || [];
+    // 後方互換: 全プロバイダから URL を抽出する。
+    // 命名は歴史的経緯で twitter のままだが、対象は登録済みの全サイト。
+    return require('./providers/_loader').extractAllUrls(content).map(e => e.url);
 }
 
 module.exports = {

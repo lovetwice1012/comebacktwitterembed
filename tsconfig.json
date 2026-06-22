@@ -3,6 +3,8 @@
         "target": "ES2022",
         "module": "commonjs",
         "moduleResolution": "node",
+        "lib": ["ES2022"],
+        "types": ["node"],
         "allowJs": true,
         "checkJs": true,
         "noEmit": true,
@@ -18,12 +20,12 @@
     },
     "include": [
         "index.js",
-        "src/**/*.js",
-        "twitter/**/*.js"
+        "src/**/*.js"
     ],
     "exclude": [
         "node_modules",
         "scripts",
-        "saves"
+        "saves",
+        "twitter"
     ]
 }

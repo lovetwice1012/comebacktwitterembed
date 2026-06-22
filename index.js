@@ -1,6 +1,7 @@
 //discord.js v14
 const { Client, GatewayIntentBits, Partials, WebhookClient } = require('discord.js');
-const config = require('./config.json');
+// 動的 require で TypeScript の静的解決を回避 (config.json は実行時に必須だが、型チェック時には存在を保証しない)
+const config = require(/** @type {string} */ ('./config.json'));
 const { consoleBuffer } = require('./src/state');
 
 const client = new Client({
@@ -12,17 +13,25 @@ const client = new Client({
     partials: [Partials.Channel],
     shards: 'auto',
 });
-const webhookClient = new WebhookClient({ url: config.URL });
+const webhookURL = typeof config.URL === 'string' ? config.URL.trim() : '';
+const webhookClient = webhookURL ? new WebhookClient({ url: webhookURL }) : null;
 
-// Buffer stdout/stderr for the periodic webhook flush in the ready handler.
-process.stdout.write = (write => function (string) {
-    consoleBuffer.text += string;
-    write.apply(process.stdout, arguments);
-})(process.stdout.write);
-process.stderr.write = (write => function (string) {
-    consoleBuffer.text += string;
-    write.apply(process.stderr, arguments);
-})(process.stderr.write);
+if (!webhookClient) {
+    console.warn('config.URL is not set. Console webhook forwarding is disabled.');
+}
+
+if (webhookClient) {
+    // Buffer stdout/stderr for the periodic webhook flush in the ready handler.
+    // JSDoc cast: write の戻り値を boolean に矯正して TypeScript の型互換を満たす。
+    process.stdout.write = /** @type {any} */ ((write => function (string) {
+        consoleBuffer.text += string;
+        return write.apply(process.stdout, arguments);
+    })(process.stdout.write));
+    process.stderr.write = /** @type {any} */ ((write => function (string) {
+        consoleBuffer.text += string;
+        return write.apply(process.stderr, arguments);
+    })(process.stderr.write));
+}
 
 process.on('unhandledRejection', error => {
     console.error('Unhandled promise rejection:', error);

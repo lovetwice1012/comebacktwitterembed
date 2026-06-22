@@ -1,20 +1,10 @@
 'use strict';
 
-const fs = require('fs');
-const path = require('path');
-const { ButtonBuilder, ButtonStyle, ComponentType, ApplicationCommandOptionType, PermissionsBitField, EmbedBuilder, ActionRowBuilder } = require('discord.js');
-const { t, getStringFromObject, messageLocales, descriptionLocales, commandNameLocales } = require('../../../locales');
-const { settings, saveSettings, checkComponentIncludesDisabledButtonAndIfFindDeleteIt } = require('../../../settings');
-const { connection, queryDatabase, ensureUserExistsInDatabase } = require('../../../db');
-const {
-    button_disabled_template,
-    button_invisible_template,
-    antiDirectoryTraversalAttack,
-    ifUserHasRole,
-    convertBoolToEnableDisable,
-    conv_en_to_en_US,
-} = require('../../../utils');
-
+const { PermissionsBitField } = require('discord.js');
+const { t } = require('../../../locales');
+const { settings } = require('../../../settings');
+const { setSetting } = require('../../../providers/_provider_settings');
+const { convertBoolToEnableDisable } = require('../../../utils');
 function hasAdminPerm(member) {
     return (
         member.permissions.has(PermissionsBitField.Flags.ManageChannels)
@@ -28,11 +18,12 @@ module.exports = async function (interaction, client) {
         return await interaction.reply(t('userDonthavePermissionLocales', interaction.locale));
     }
 
-
     if (interaction.options.getBoolean('boolean') === null) return await interaction.reply(t('userMustSpecifyAnyWordLocales', interaction.locale));
-    if (settings.extract_bot_message[interaction.guildId] === undefined) settings.extract_bot_message[interaction.guildId] = false;
+    const providerId = interaction.options.getSubcommandGroup(false) || interaction.options.getString('provider') || 'twitter';
+    const provider = { id: providerId };
     const boolean = interaction.options.getBoolean('boolean');
-    settings.extract_bot_message[interaction.guildId] = boolean;
+    setSetting(provider, 'extract_bot_message', interaction.guildId, boolean);
+    if (providerId === 'twitter') settings.extract_bot_message[interaction.guildId] = boolean;
     await interaction.reply((t('setextractbotmessagetolocales', interaction.locale)) + convertBoolToEnableDisable(boolean, interaction.locale));
 
 };

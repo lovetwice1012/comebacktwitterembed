@@ -6,7 +6,9 @@
 
 let _config = {};
 try {
-    _config = require('../config.json');
+    // 動的 require で TypeScript の静的解決を回避 (config.json は任意ファイル)
+    const requireFn = require;
+    _config = requireFn('../config.json');
 } catch {
     // config.json が無くても起動はできる (env のみで動かす想定)
 }
@@ -40,6 +42,7 @@ function ensureConnection() {
 
 // 既存コードは `connection.query(...)` の形で参照しているため、
 // 後方互換のため Proxy で遅延接続を提供する。
+/** @type {any} */
 const connection = new Proxy({}, {
     get(_target, prop) {
         const conn = ensureConnection();

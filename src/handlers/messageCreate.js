@@ -2,21 +2,43 @@
 
 const { Events } = require('discord.js');
 const { settings } = require('../settings');
-const { ifUserHasRole, cleanMessageContent, extractTwitterUrls } = require('../utils');
-const { sendTweetEmbed } = require('../twitter');
+const { ifUserHasRole, cleanMessageContent } = require('../utils');
+const { extractAllUrls } = require('../providers/_loader');
+const { isProviderEnabled, getProviderSettings } = require('../providers/_provider_settings');
+const { runSendSteps } = require('../providers/_dispatcher');
 
 function register(client) {
     function shouldIgnoreMessage(message) {
-        const isBotMessageNotExtracted = message.author.bot && settings.extract_bot_message[message.guild.id] !== true && !message.webhookId;
         const isMessageFromClient = message.author.id === client.user.id;
-        return isBotMessageNotExtracted || isMessageFromClient;
+        return isMessageFromClient;
     }
 
-    function isMessageDisabledForUserOrChannel(message) {
-        const isUserDisabled = settings.disable.user.includes(message.author.id);
-        const isChannelDisabled = settings.disable.channel.includes(message.channel.id);
-        const isRoleDisabled = !message.webhookId && settings.disable.role[message.guild.id] !== undefined && ifUserHasRole(message.member, settings.disable.role[message.guild.id]);
+    function normalizeDisableSetting(providerId, guildId, disableSetting) {
+        if (disableSetting && typeof disableSetting === 'object') {
+            return {
+                user: Array.isArray(disableSetting.user) ? disableSetting.user : [],
+                channel: Array.isArray(disableSetting.channel) ? disableSetting.channel : [],
+                role: Array.isArray(disableSetting.role) ? disableSetting.role : [],
+            };
+        }
 
+        // 旧 Twitter グローバル disable との互換
+        if (providerId === 'twitter') {
+            return {
+                user: Array.isArray(settings.disable.user) ? settings.disable.user : [],
+                channel: Array.isArray(settings.disable.channel) ? settings.disable.channel : [],
+                role: Array.isArray(settings.disable.role[guildId]) ? settings.disable.role[guildId] : [],
+            };
+        }
+
+        return { user: [], channel: [], role: [] };
+    }
+
+    function isMessageDisabledForProvider(message, providerId, providerSettings) {
+        const disable = normalizeDisableSetting(providerId, message.guild.id, providerSettings.disable);
+        const isUserDisabled = disable.user.includes(message.author.id);
+        const isChannelDisabled = disable.channel.includes(message.channel.id);
+        const isRoleDisabled = !message.webhookId && ifUserHasRole(message.member, disable.role);
         return isUserDisabled || isChannelDisabled || isRoleDisabled;
     }
 
@@ -36,15 +58,26 @@ function register(client) {
         if (shouldIgnoreMessage(message)) return;
 
         const content = cleanMessageContent(message.content);
-        const urls = extractTwitterUrls(content);
+        const matches = extractAllUrls(content);
 
-        if (urls.length === 0) return;
-        if (isMessageDisabledForUserOrChannel(message)) return;
+        if (matches.length === 0) return;
 
         //await ensureUserExistsInDatabase(message.author.id);
 
-        for (const url of urls) {
-            await sendTweetEmbed(message, url);
+        for (const { provider, url } of matches) {
+            if (!isProviderEnabled(provider, message.guild.id)) continue;
+            const providerSettings = getProviderSettings(provider, message.guild.id);
+            if (isMessageDisabledForProvider(message, provider.id, providerSettings)) continue;
+            if (message.author.bot && providerSettings.extract_bot_message !== true && !message.webhookId) continue;
+
+            let steps;
+            try {
+                steps = await provider.extract(message, url, providerSettings);
+            } catch (err) {
+                console.log(err);
+                continue;
+            }
+            if (Array.isArray(steps)) await runSendSteps(message, steps, provider.id);
         }
     });
 }

@@ -84,6 +84,8 @@ const messageLocales = {
     showSaveTweetButtonLabelLocales: { ja: '保存したツイートを表示', en: 'Show saved tweet' },
     setsavetweetbuttonLocales: { ja: '保存したツイートを表示ボタンを設定しました。 :', en: 'Set showSaveTweet button to ' },
     setadditionalautoextractslottolocales: { ja: '追加自動展開スロットを設定しました。 :', en: 'Set additionalautoextractslot to ' },
+    setPixivImagesPerStepToLocales:    { ja: 'pixiv の1回あたり表示枚数を設定しました。 : ', en: 'Set pixiv images_per_step to ' },
+    pixivImagesPerStepMustBe4Or10Locales: { ja: 'images_per_step には 4 または 10 を指定してください。', en: 'images_per_step must be 4 or 10.' },
 };
 
 const descriptionLocales = {
@@ -121,6 +123,9 @@ const descriptionLocales = {
     settingsAutoExtractDelete: { ja: '自動展開リストから削除します', en: 'Deletes from auto extract list.' },
     settingsAdditionalAutoExtractSlot: { ja: '追加自動展開スロットを設定します。', en: 'Sets additional auto extract slot.' },
     settingsAdditionalAutoExtractCheckFreeSlot: { ja: '空きスロット数を確認します。', en: 'Checks free slot.' },
+    settingsPixiv: { ja: 'pixiv の設定を変更します。', en: 'pixiv settings' },
+    settingsPixivImagesPerStep: { ja: 'pixiv の1回あたりの表示枚数を4枚または10枚に設定します。', en: 'Sets pixiv images per step to 4 or 10.' },
+    settingsPixivImagesPerStepValue: { ja: '1回あたりの表示枚数 (4 または 10)', en: '4 or 10 images per step' },
 };
 
 const commandNameLocales = {
@@ -176,6 +181,9 @@ const commandNameLocales = {
     additionalautoextractslot: { ja: '追加自動展開スロット', en: 'additionalautoextractslot' },
     slot: { ja: 'スロット', en: 'slot' },
     checkfreeslot: { ja: '空きスロット数を確認', en: 'checkfreeslot' },
+    pixiv: { ja: 'pixiv', en: 'pixiv' },
+    images_per_step: { ja: '表示枚数', en: 'images_per_step' },
+    value: { ja: '値', en: 'value' },
 };
 
 function getStringFromObject(object, locale, default_ja = false) {
