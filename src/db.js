@@ -17,12 +17,14 @@ function getDbCredentials() {
         user: 'comebacktwitterembed',
         password: 'bluebird',
         database: 'ComebackTwitterEmbed',
+        charset: 'utf8mb4',
     };
     return {
         host: process.env.DB_HOST || dbConfig.host || legacyDbConfig.host,
         user: process.env.DB_USER || dbConfig.user || legacyDbConfig.user,
         password: process.env.DB_PASSWORD || dbConfig.password || legacyDbConfig.password,
         database: process.env.DB_DATABASE || dbConfig.database || legacyDbConfig.database,
+        charset: process.env.DB_CHARSET || dbConfig.charset || legacyDbConfig.charset,
     };
 }
 

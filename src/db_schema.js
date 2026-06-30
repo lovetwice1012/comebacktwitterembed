@@ -2,9 +2,17 @@
 
 const TABLES = {
     users: 'users',
+    providers: 'providers',
+    guilds: 'guilds',
+    twitterAccounts: 'twitter_accounts',
+    webhookEndpoints: 'webhook_endpoints',
     autoExtractTargets: 'auto_extract_targets',
     guildProviderSettings: 'guild_provider_settings',
-    globalSettings: 'global_settings',
+    globalDisableTargets: 'global_disable_targets',
+    guildProviderDisableTargets: 'guild_provider_disable_targets',
+    guildProviderBannedWords: 'guild_provider_banned_words',
+    guildProviderButtonVisibility: 'guild_provider_button_visibility',
+    guildProviderButtonDisabledTargets: 'guild_provider_button_disabled_targets',
     deregisterReasons: 'deregister_reasons',
     deregisterNotifications: 'deregister_notifications',
 };
@@ -20,38 +28,153 @@ const SCHEMA_STATEMENTS = [
         updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
     ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
 
+    `CREATE TABLE IF NOT EXISTS ${TABLES.providers} (
+        provider_id VARCHAR(64) NOT NULL PRIMARY KEY,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
+
+    `CREATE TABLE IF NOT EXISTS ${TABLES.guilds} (
+        guild_id VARCHAR(32) NOT NULL PRIMARY KEY,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
+
+    `CREATE TABLE IF NOT EXISTS ${TABLES.twitterAccounts} (
+        twitter_username VARCHAR(191) NOT NULL PRIMARY KEY,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
+
+    `CREATE TABLE IF NOT EXISTS ${TABLES.webhookEndpoints} (
+        id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+        webhook_url_hash CHAR(64) NOT NULL,
+        webhook_url TEXT NOT NULL,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        UNIQUE KEY uniq_webhook_url_hash (webhook_url_hash)
+    ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
+
     `CREATE TABLE IF NOT EXISTS ${TABLES.autoExtractTargets} (
         id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
         user_id VARCHAR(32) NOT NULL,
         twitter_username VARCHAR(191) NOT NULL,
-        webhook_url TEXT NOT NULL,
+        webhook_endpoint_id BIGINT UNSIGNED NOT NULL,
         premium_slot TINYINT(1) NOT NULL DEFAULT 0,
         last_extracted_at_ms BIGINT NOT NULL DEFAULT 0,
         created_at_ms BIGINT NOT NULL,
         enabled TINYINT(1) NOT NULL DEFAULT 1,
         created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        UNIQUE KEY uniq_auto_extract_target (user_id, twitter_username, webhook_endpoint_id),
         INDEX idx_auto_extract_user (user_id),
         INDEX idx_auto_extract_premium (premium_slot),
         CONSTRAINT fk_auto_extract_user
             FOREIGN KEY (user_id) REFERENCES ${TABLES.users}(user_id)
+            ON DELETE CASCADE,
+        CONSTRAINT fk_auto_extract_twitter_account
+            FOREIGN KEY (twitter_username) REFERENCES ${TABLES.twitterAccounts}(twitter_username)
+            ON DELETE CASCADE,
+        CONSTRAINT fk_auto_extract_webhook
+            FOREIGN KEY (webhook_endpoint_id) REFERENCES ${TABLES.webhookEndpoints}(id)
             ON DELETE CASCADE
     ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
 
     `CREATE TABLE IF NOT EXISTS ${TABLES.guildProviderSettings} (
         provider_id VARCHAR(64) NOT NULL,
         guild_id VARCHAR(32) NOT NULL,
-        setting_key VARCHAR(128) NOT NULL,
-        setting_value LONGTEXT NOT NULL,
+        enabled TINYINT(1) NULL,
+        default_language VARCHAR(16) NULL,
+        edit_original_if_translate TINYINT(1) NULL,
+        extract_bot_message TINYINT(1) NULL,
+        legacy_mode TINYINT(1) NULL,
+        passive_mode TINYINT(1) NULL,
+        anonymous_expand TINYINT(1) NULL,
+        secondary_extract_mode TINYINT(1) NULL,
+        secondary_extract_mode_multiple_images TINYINT(1) NULL,
+        secondary_extract_mode_video TINYINT(1) NULL,
+        send_media_as_attachments_as_default TINYINT(1) NULL,
+        delete_if_only_posted_tweet_link TINYINT(1) NULL,
+        delete_if_only_posted_tweet_link_secondary_extract_mode TINYINT(1) NULL,
+        always_reply_if_posted_tweet_link TINYINT(1) NULL,
+        quote_repost_max_depth INT NULL,
+        quote_repost_do_not_extract TINYINT(1) NULL,
+        pixiv_images_per_step INT NULL,
         updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-        PRIMARY KEY (provider_id, guild_id, setting_key),
-        INDEX idx_guild_provider_settings_guild (guild_id)
+        PRIMARY KEY (provider_id, guild_id),
+        INDEX idx_guild_provider_settings_guild (guild_id),
+        CONSTRAINT fk_guild_provider_settings_provider
+            FOREIGN KEY (provider_id) REFERENCES ${TABLES.providers}(provider_id)
+            ON DELETE CASCADE,
+        CONSTRAINT fk_guild_provider_settings_guild
+            FOREIGN KEY (guild_id) REFERENCES ${TABLES.guilds}(guild_id)
+            ON DELETE CASCADE
     ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
 
-    `CREATE TABLE IF NOT EXISTS ${TABLES.globalSettings} (
-        setting_key VARCHAR(128) NOT NULL PRIMARY KEY,
-        setting_value LONGTEXT NOT NULL,
-        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    `CREATE TABLE IF NOT EXISTS ${TABLES.globalDisableTargets} (
+        target_type ENUM('user', 'channel') NOT NULL,
+        target_id VARCHAR(32) NOT NULL,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (target_type, target_id)
+    ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
+
+    `CREATE TABLE IF NOT EXISTS ${TABLES.guildProviderDisableTargets} (
+        provider_id VARCHAR(64) NOT NULL,
+        guild_id VARCHAR(32) NOT NULL,
+        target_type ENUM('user', 'channel', 'role') NOT NULL,
+        target_id VARCHAR(32) NOT NULL,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (provider_id, guild_id, target_type, target_id),
+        INDEX idx_provider_disable_guild (guild_id),
+        CONSTRAINT fk_provider_disable_provider
+            FOREIGN KEY (provider_id) REFERENCES ${TABLES.providers}(provider_id)
+            ON DELETE CASCADE,
+        CONSTRAINT fk_provider_disable_guild
+            FOREIGN KEY (guild_id) REFERENCES ${TABLES.guilds}(guild_id)
+            ON DELETE CASCADE
+    ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
+
+    `CREATE TABLE IF NOT EXISTS ${TABLES.guildProviderBannedWords} (
+        provider_id VARCHAR(64) NOT NULL,
+        guild_id VARCHAR(32) NOT NULL,
+        word VARCHAR(255) NOT NULL,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (provider_id, guild_id, word),
+        INDEX idx_banned_words_guild (guild_id),
+        CONSTRAINT fk_banned_words_provider
+            FOREIGN KEY (provider_id) REFERENCES ${TABLES.providers}(provider_id)
+            ON DELETE CASCADE,
+        CONSTRAINT fk_banned_words_guild
+            FOREIGN KEY (guild_id) REFERENCES ${TABLES.guilds}(guild_id)
+            ON DELETE CASCADE
+    ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
+
+    `CREATE TABLE IF NOT EXISTS ${TABLES.guildProviderButtonVisibility} (
+        provider_id VARCHAR(64) NOT NULL,
+        guild_id VARCHAR(32) NOT NULL,
+        button_key VARCHAR(64) NOT NULL,
+        hidden TINYINT(1) NOT NULL,
+        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        PRIMARY KEY (provider_id, guild_id, button_key),
+        CONSTRAINT fk_button_visibility_provider
+            FOREIGN KEY (provider_id) REFERENCES ${TABLES.providers}(provider_id)
+            ON DELETE CASCADE,
+        CONSTRAINT fk_button_visibility_guild
+            FOREIGN KEY (guild_id) REFERENCES ${TABLES.guilds}(guild_id)
+            ON DELETE CASCADE
+    ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
+
+    `CREATE TABLE IF NOT EXISTS ${TABLES.guildProviderButtonDisabledTargets} (
+        provider_id VARCHAR(64) NOT NULL,
+        guild_id VARCHAR(32) NOT NULL,
+        target_type ENUM('user', 'channel', 'role') NOT NULL,
+        target_id VARCHAR(32) NOT NULL,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (provider_id, guild_id, target_type, target_id),
+        INDEX idx_button_disabled_guild (guild_id),
+        CONSTRAINT fk_button_disabled_provider
+            FOREIGN KEY (provider_id) REFERENCES ${TABLES.providers}(provider_id)
+            ON DELETE CASCADE,
+        CONSTRAINT fk_button_disabled_guild
+            FOREIGN KEY (guild_id) REFERENCES ${TABLES.guilds}(guild_id)
+            ON DELETE CASCADE
     ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
 
     `CREATE TABLE IF NOT EXISTS ${TABLES.deregisterReasons} (
@@ -65,9 +188,7 @@ const SCHEMA_STATEMENTS = [
         notification_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
         auto_extract_target_id BIGINT UNSIGNED NULL,
         user_id VARCHAR(32) NOT NULL,
-        reason_id BIGINT UNSIGNED NULL,
-        reason TEXT NULL,
-        hint TEXT NULL,
+        reason_id BIGINT UNSIGNED NOT NULL,
         created_at_ms BIGINT NOT NULL,
         dm_sent TINYINT(1) NOT NULL DEFAULT 0,
         dm_sent_at_ms BIGINT NULL,
@@ -82,7 +203,7 @@ const SCHEMA_STATEMENTS = [
             ON DELETE SET NULL,
         CONSTRAINT fk_deregister_reason
             FOREIGN KEY (reason_id) REFERENCES ${TABLES.deregisterReasons}(reason_id)
-            ON DELETE SET NULL
+            ON DELETE CASCADE
     ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
 ];
 

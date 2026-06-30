@@ -14,6 +14,12 @@ async function queryDatabaseStub(sql, params) {
     if (sql.includes('COUNT(*) AS total')) {
         return [{ total: 0 }];
     }
+    if (sql.includes('INSERT INTO twitter_accounts')) {
+        return { affectedRows: 1 };
+    }
+    if (sql.includes('INSERT INTO webhook_endpoints')) {
+        return { insertId: 123 };
+    }
     if (sql.includes('INSERT INTO auto_extract_targets')) {
         return { affectedRows: 1 };
     }

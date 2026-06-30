@@ -15,10 +15,10 @@ function start(client) {
                 n.notification_id,
                 n.auto_extract_target_id,
                 n.user_id,
-                COALESCE(n.reason, r.reason) AS reason,
-                COALESCE(n.hint, r.hint) AS hint
+                r.reason,
+                r.hint
              FROM ${TABLES.deregisterNotifications} n
-             LEFT JOIN ${TABLES.deregisterReasons} r ON r.reason_id = n.reason_id
+             INNER JOIN ${TABLES.deregisterReasons} r ON r.reason_id = n.reason_id
              WHERE n.created_at_ms > ? AND n.dm_sent = 0`,
             [new Date().getTime() - 86400000]
         ).then(results => {

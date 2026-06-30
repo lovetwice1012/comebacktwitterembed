@@ -3,6 +3,7 @@
 const { t } = require('../../../locales');
 const { ensureUserExistsInDatabase, queryDatabase } = require('../../../db');
 const { TABLES } = require('../../../db_schema');
+const crypto = require('crypto');
 const fetch = require('node-fetch');
 
 const FREE_SLOT_LIMIT = 175;
@@ -11,6 +12,26 @@ const USER_FREE_SLOT_LIMIT = 5;
 async function countRows(sql, params) {
     const rows = await queryDatabase(sql, params);
     return rows[0]?.total ?? 0;
+}
+
+async function ensureTwitterAccount(username) {
+    await queryDatabase(
+        `INSERT INTO ${TABLES.twitterAccounts} (twitter_username)
+         VALUES (?)
+         ON DUPLICATE KEY UPDATE twitter_username = twitter_username`,
+        [username]
+    );
+}
+
+async function ensureWebhookEndpoint(webhookUrl) {
+    const hash = crypto.createHash('sha256').update(webhookUrl).digest('hex');
+    const result = await queryDatabase(
+        `INSERT INTO ${TABLES.webhookEndpoints} (webhook_url_hash, webhook_url)
+         VALUES (?, ?)
+         ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(id), webhook_url = VALUES(webhook_url)`,
+        [hash, webhookUrl]
+    );
+    return result.insertId;
 }
 
 function invalidWebhookReply() {
@@ -90,12 +111,18 @@ module.exports = async function (interaction) {
     }
 
     const registered = [];
+    await ensureTwitterAccount(username);
     for (const webhook of webhooks_array) {
+        const webhookEndpointId = await ensureWebhookEndpoint(webhook);
         await queryDatabase(
             `INSERT INTO ${TABLES.autoExtractTargets}
-             (user_id, twitter_username, last_extracted_at_ms, webhook_url, created_at_ms, premium_slot)
-             VALUES (?, ?, ?, ?, ?, ?)`,
-            [interaction.user.id, username, Date.now(), webhook, Date.now(), premium_flag]
+             (user_id, twitter_username, webhook_endpoint_id, last_extracted_at_ms, created_at_ms, premium_slot)
+             VALUES (?, ?, ?, ?, ?, ?)
+             ON DUPLICATE KEY UPDATE
+                enabled = 1,
+                premium_slot = VALUES(premium_slot),
+                last_extracted_at_ms = VALUES(last_extracted_at_ms)`,
+            [interaction.user.id, username, webhookEndpointId, Date.now(), Date.now(), premium_flag]
         );
         registered.push(webhook);
     }

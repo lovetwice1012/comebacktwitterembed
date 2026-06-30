@@ -39,7 +39,9 @@ async function main(argv = process.argv.slice(2)) {
 
     console.log(`Migrated settings from ${args.file}`);
     console.log(`Guild settings table: ${TABLES.guildProviderSettings}`);
-    console.log(`Global settings table: ${TABLES.globalSettings}`);
+    console.log(`Banned words table: ${TABLES.guildProviderBannedWords}`);
+    console.log(`Disable targets table: ${TABLES.guildProviderDisableTargets}`);
+    console.log(`Global disable targets table: ${TABLES.globalDisableTargets}`);
     console.log(`User settings table: ${TABLES.users}`);
 }
 

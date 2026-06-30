@@ -5,10 +5,11 @@ const { TABLES } = require('../../../db_schema');
 
 module.exports = async function (interaction, client) {
     const results = await queryDatabase(
-        `SELECT id, twitter_username, webhook_url
-         FROM ${TABLES.autoExtractTargets}
-         WHERE user_id = ? AND enabled = 1
-         ORDER BY id`,
+        `SELECT t.id, t.twitter_username, w.webhook_url
+         FROM ${TABLES.autoExtractTargets} t
+         INNER JOIN ${TABLES.webhookEndpoints} w ON w.id = t.webhook_endpoint_id
+         WHERE t.user_id = ? AND t.enabled = 1
+         ORDER BY t.id`,
         [interaction.user.id]
     );
 
