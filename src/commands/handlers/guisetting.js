@@ -66,6 +66,10 @@ const PROVIDER_LABEL_OVERRIDES = {
     twitch: 'Twitch',
     tiktok: 'TikTok',
     youtube: 'YouTube',
+    niconico: 'Niconico',
+    amazon: 'Amazon',
+    github: 'GitHub',
+    steam: 'Steam',
 };
 
 function getProviders() {

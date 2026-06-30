@@ -4,19 +4,70 @@ const { ComponentType } = require('discord.js');
 const { t } = require('../locales');
 const { checkComponentIncludesDisabledButtonAndIfFindDeleteIt, detectProviderIdFromMessage } = require('../settings');
 const { videoExtensions } = require('../utils');
+const {
+    getImageExtensionFromContentType,
+    getImageExtensionFromUrl,
+    resolveImageExtension,
+} = require('./showMediaAsAttachments')._internal;
 
 const audioExtensions = ['mp3', 'm4a', 'ogg', 'wav', 'flac', 'aac'];
+const imageExtensions = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'avif'];
 
-function getAttachmentUrls(attachments) {
+function getAttachmentItems(attachments) {
     if (!attachments) return [];
-    if (typeof attachments.map === 'function') return attachments.map(a => a.url).filter(Boolean);
-    return Array.from(attachments).map(a => (Array.isArray(a) ? a[1]?.url : a?.url)).filter(Boolean);
+    const normalize = (a) => ({
+        url: a?.url,
+        name: a?.name,
+        contentType: a?.contentType || a?.content_type,
+    });
+    if (typeof attachments.map === 'function') return attachments.map(a => normalize(a)).filter(a => a.url);
+    return Array.from(attachments)
+        .map(a => normalize(Array.isArray(a) ? a[1] : a))
+        .filter(a => a.url);
 }
 
-function isNonImageMediaAttachment(url) {
-    const cleanUrl = url.split(/[?#]/)[0];
-    const extension = cleanUrl.split('.').pop()?.toLowerCase();
+function getExtensionFromName(name) {
+    if (typeof name !== 'string') return null;
+    const ext = name.split('.').pop()?.toLowerCase();
+    if (!ext || ext === name.toLowerCase()) return null;
+    return ext === 'jpeg' ? 'jpg' : ext;
+}
+
+function getExtensionFromUrlPath(rawUrl) {
+    let u;
+    try { u = new URL(rawUrl); } catch { return null; }
+    const ext = u.pathname.split('.').pop()?.toLowerCase();
+    if (!ext || ext === u.pathname.toLowerCase()) return null;
+    return ext === 'jpeg' ? 'jpg' : ext;
+}
+
+function getAttachmentExtension(attachment) {
+    const fromContentType = getImageExtensionFromContentType(attachment.contentType);
+    if (fromContentType) return fromContentType;
+    return getExtensionFromName(attachment.name)
+        || getImageExtensionFromUrl(attachment.url)
+        || getExtensionFromUrlPath(attachment.url);
+}
+
+function isNonImageMediaAttachment(attachment) {
+    const contentType = String(attachment.contentType || '').toLowerCase();
+    if (contentType.startsWith('image/')) return false;
+    if (contentType.startsWith('video/') || contentType.startsWith('audio/')) return true;
+
+    const extension = getAttachmentExtension(attachment);
     return videoExtensions.includes(extension) || audioExtensions.includes(extension);
+}
+
+async function buildEmbedImageAttachment(attachment, index) {
+    const knownExtension = getAttachmentExtension(attachment);
+    const extension = imageExtensions.includes(knownExtension)
+        ? knownExtension
+        : await resolveImageExtension(attachment.url);
+    const name = `embed-image-${index}.${extension}`;
+    return {
+        file: { attachment: attachment.url, name },
+        embedUrl: `attachment://${name}`,
+    };
 }
 
 async function handle(interaction, { buttons }) {
@@ -25,12 +76,12 @@ async function handle(interaction, { buttons }) {
     if (interaction.message.attachments === undefined || interaction.message.attachments === null) {
         return interaction.editReply('There are no attachments to show.');
     }
-    const attachments = getAttachmentUrls(interaction.message.attachments);
+    const attachments = getAttachmentItems(interaction.message.attachments);
     const imageAttachments = [];
     const videoAttachments = [];
-    attachments.forEach(url => {
-        if (isNonImageMediaAttachment(url)) videoAttachments.push(url);
-        else imageAttachments.push(url);
+    attachments.forEach(attachment => {
+        if (isNonImageMediaAttachment(attachment)) videoAttachments.push(attachment.url);
+        else imageAttachments.push(attachment);
     });
 
     if (imageAttachments.length > 4) {
@@ -51,7 +102,9 @@ async function handle(interaction, { buttons }) {
     const providerId = detectProviderIdFromMessage(interaction.message);
     messageObject.components = await checkComponentIncludesDisabledButtonAndIfFindDeleteIt(messageObject.components, interaction.guildId, providerId);
 
-    imageAttachments.forEach(element => {
+    for (let index = 0; index < imageAttachments.length; index++) {
+        const element = await buildEmbedImageAttachment(imageAttachments[index], index + 1);
+        messageObject.files.push(element.file);
         if (messageObject.embeds.length === 0) {
             const src = interaction.message.embeds[0];
             const embed = {
@@ -60,19 +113,19 @@ async function handle(interaction, { buttons }) {
                 color: src.color,
                 author: src.author,
                 timestamp: src.timestamp,
-                image: { url: element },
+                image: { url: element.embedUrl },
             };
             if (src.title !== undefined) embed.title = src.title;
             if (src.footer !== undefined) embed.footer = src.footer;
             if (src.fields !== undefined) embed.fields = src.fields;
             messageObject.embeds.push(embed);
-            return;
+            continue;
         }
         messageObject.embeds.push({
             url: messageObject.embeds[0].url,
-            image: { url: element },
+            image: { url: element.embedUrl },
         });
-    });
+    }
 
     if (messageObject.embeds.length === 0 && interaction.message.embeds[0]) {
         messageObject.embeds.push(JSON.parse(JSON.stringify(interaction.message.embeds[0])));
@@ -84,3 +137,8 @@ async function handle(interaction, { buttons }) {
 }
 
 module.exports = { handle };
+module.exports._internal = {
+    getAttachmentItems,
+    isNonImageMediaAttachment,
+    buildEmbedImageAttachment,
+};

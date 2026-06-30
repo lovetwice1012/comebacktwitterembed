@@ -18,6 +18,7 @@ const HANDLERS = {
     savetweet: require('../components/savetweet'),
     notifyBoothSale: require('../components/notifyBoothSale'),
     downloadYouTubeVideo: require('../components/downloadYouTubeVideo'),
+    downloadNiconicoVideo: require('../components/downloadNiconicoVideo'),
 };
 
 function ignoredInteractionErrorType(err) {

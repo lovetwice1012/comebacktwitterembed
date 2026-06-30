@@ -67,9 +67,12 @@ test('showAttachmentsAsEmbedsImage keeps video attachments while embedding image
 
         await showAttachmentsAsEmbedsImage.handle(interaction, { buttons: buttons() });
 
-        assert.deepEqual(editedMessage.files, [videoUrl]);
+        assert.deepEqual(editedMessage.files, [
+            videoUrl,
+            { attachment: imageUrl, name: 'embed-image-1.jpg' },
+        ]);
         assert.equal(editedMessage.embeds.length, 1);
-        assert.equal(editedMessage.embeds[0].image.url, imageUrl);
+        assert.equal(editedMessage.embeds[0].image.url, 'attachment://embed-image-1.jpg');
         assert.equal(reply.content, 'Finished action.');
     });
 });
@@ -96,9 +99,12 @@ test('showAttachmentsAsEmbedsImage keeps audio attachments while embedding image
 
         await showAttachmentsAsEmbedsImage.handle(interaction, { buttons: buttons() });
 
-        assert.deepEqual(editedMessage.files, [audioUrl]);
+        assert.deepEqual(editedMessage.files, [
+            audioUrl,
+            { attachment: imageUrl, name: 'embed-image-1.jpg' },
+        ]);
         assert.equal(editedMessage.embeds.length, 1);
-        assert.equal(editedMessage.embeds[0].image.url, imageUrl);
+        assert.equal(editedMessage.embeds[0].image.url, 'attachment://embed-image-1.jpg');
     });
 });
 

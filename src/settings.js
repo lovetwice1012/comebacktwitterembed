@@ -682,6 +682,7 @@ function detectProviderIdFromMessage(message) {
     if (/twitch\.tv/.test(url)) return 'twitch';
     if (/instagram\.com/.test(url)) return 'instagram';
     if (/youtube\.com|youtu\.be|youtube-nocookie\.com/.test(url)) return 'youtube';
+    if (/nicovideo\.jp|nico\.ms/.test(url)) return 'niconico';
     if (/twitter\.com|x\.com|vxtwitter\.com|fxtwitter\.com|twidata\.sprink\.cloud/.test(url)) return 'twitter';
     return null;
 }

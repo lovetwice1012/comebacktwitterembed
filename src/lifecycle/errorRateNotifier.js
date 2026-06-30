@@ -26,6 +26,8 @@ const PROVIDER_LABELS = {
     twitch: 'Twitch',
     instagram: 'Instagram',
     tiktok: 'TikTok',
+    niconico: 'Niconico',
+    steam: 'Steam',
 };
 
 const ALERT_KINDS = [
