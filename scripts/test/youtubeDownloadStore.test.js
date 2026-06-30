@@ -40,7 +40,7 @@ async function makeTempRoot() {
 
 test('youtube download store cleanup deletes expired indexed files and old orphan dirs', async () => {
     const root = await makeTempRoot();
-    store.configureForTest(root, 'https://download.youtube.cbte.sprink.cloud');
+    store.configureForTest(root, 'https://cbte.sprink.cloud');
 
     try {
         const filesDir = store._internal.getFilesDir();
@@ -82,12 +82,12 @@ test('youtube download store cleanup deletes expired indexed files and old orpha
 
 test('youtube download store builds the requested public download URL', () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'cte-youtube-download-url-'));
-    store.configureForTest(root, 'https://download.youtube.cbte.sprink.cloud');
+    store.configureForTest(root, 'https://cbte.sprink.cloud');
 
     try {
         assert.equal(
             store.publicUrlForRecord({ token: 'abc123token', filename: 'video name.mp4' }),
-            'https://download.youtube.cbte.sprink.cloud/youtube-downloads/abc123token/video%20name.mp4'
+            'https://cbte.sprink.cloud/youtube-downloads/abc123token/video%20name.mp4'
         );
     } finally {
         fs.rmSync(root, { recursive: true, force: true });
@@ -161,7 +161,7 @@ test('youtube download store includes progress logs when yt-dlp fails', async ()
         }
         throw new Error(`unexpected url ${url}`);
     });
-    fakeStore.configureForTest(root, 'https://download.youtube.cbte.sprink.cloud');
+    fakeStore.configureForTest(root, 'https://cbte.sprink.cloud');
 
     try {
         await assert.rejects(

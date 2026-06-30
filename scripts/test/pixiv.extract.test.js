@@ -61,6 +61,20 @@ function createInfo() {
     };
 }
 
+function createRestrictedInfo() {
+    return {
+        ...createInfo(),
+        xRestrict: 1,
+        urls: {
+            mini: null,
+            thumb: null,
+            small: null,
+            regular: null,
+            original: null,
+        },
+    };
+}
+
 function createPages(imageCount) {
     return Array.from({ length: imageCount }, (_, index) => ({
         urls: {
@@ -89,6 +103,33 @@ test('pixiv extract: default mode shows 4 images in a single message', async () 
     assert.ok(!result[0].embeds[1].title, 'second embed has no title');
     assert.equal(result[0].embeds[0].fields.find(f => f.name === 'Pages').value, '1-4 / 55');
     assert.equal(result[0].embeds[0].image.url, 'https://www.phixiv.net/i/img-master/img/2024/01/01/00/00/00/123456_p0_master1200.jpg');
+});
+
+test('pixiv extract: pages 404 with hidden images returns null without logging an error', async () => {
+    const provider = loadPixivProviderWithFetch(async (url) => {
+        if (String(url).includes('/pages?')) {
+            return {
+                ok: false,
+                status: 404,
+                json: async () => ({ error: true, message: '', body: [] }),
+            };
+        }
+        return okJson(createRestrictedInfo());
+    });
+    const originalLog = console.log;
+    let logged = false;
+    console.log = () => {
+        logged = true;
+    };
+
+    try {
+        const result = await provider.extract(createMessage(), 'https://www.pixiv.net/artworks/115161455', {});
+
+        assert.equal(result, null);
+        assert.equal(logged, false);
+    } finally {
+        console.log = originalLog;
+    }
 });
 
 test('pixiv extract: 10-image mode shows 10 images in a single message', async () => {

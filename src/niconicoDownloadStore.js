@@ -24,7 +24,7 @@ try {
 const DEFAULT_TTL_MS = 30 * 60 * 1000;
 const DEFAULT_CLEANUP_INTERVAL_MS = 60 * 1000;
 const DEFAULT_ROOT_DIR = path.join(__dirname, '..', 'data', 'niconico_downloads');
-const DEFAULT_PUBLIC_BASE_URL = 'https://download.niconico.cbte.sprink.cloud';
+const DEFAULT_PUBLIC_BASE_URL = 'https://cbte.sprink.cloud';
 const ROUTE_PREFIX = '/niconico-downloads';
 
 let rootDirOverride = null;

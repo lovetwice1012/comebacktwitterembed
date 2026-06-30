@@ -118,13 +118,9 @@ async function fetchPixivInfo(id, language, index) {
     const infoApi = `${PIXIV_AJAX_BASE}/${id}?${params.toString()}`;
     const pagesApi = `${PIXIV_AJAX_BASE}/${id}/pages?${params.toString()}`;
 
-    const [infoJson, pagesJson] = await Promise.all([
-        fetchJson(infoApi),
-        fetchJson(pagesApi),
-    ]);
-
+    const infoJson = await fetchJson(infoApi);
     const body = unwrapPixivAjax(infoJson, infoApi);
-    const pages = unwrapPixivAjax(pagesJson, pagesApi);
+    const pages = await fetchPagesJson(pagesApi);
     const imageProxyUrls = collectPixivImageUrls(pages, body);
 
     return {
@@ -147,6 +143,16 @@ async function fetchJson(url) {
     const res = await fetch(url, { headers: PIXIV_REQUEST_HEADERS });
     if (!res.ok) throw new Error(`pixiv ajax ${res.status} for ${url}`);
     return /** @type {any} */ (await res.json());
+}
+
+async function fetchPagesJson(url) {
+    const res = await fetch(url, { headers: PIXIV_REQUEST_HEADERS });
+    if (res.status === 404) return [];
+    if (!res.ok) throw new Error(`pixiv ajax ${res.status} for ${url}`);
+
+    const json = await res.json();
+    if (json?.error === true && Array.isArray(json.body) && json.body.length === 0) return [];
+    return unwrapPixivAjax(json, url);
 }
 
 function unwrapPixivAjax(json, url) {

@@ -260,7 +260,7 @@ test('downloadYouTubeVideo returns a temporary public download link', async () =
             downloadYouTubeToCache: async (url) => {
                 calls.push(url);
                 return {
-                    publicUrl: 'https://download.youtube.cbte.sprink.cloud/youtube-downloads/token/video.mp4',
+                    publicUrl: 'https://cbte.sprink.cloud/youtube-downloads/token/video.mp4',
                     expiresAtMs: 1_800_000,
                     sizeBytes: 12 * 1024 * 1024,
                 };
@@ -291,7 +291,7 @@ test('downloadYouTubeVideo returns a temporary public download link', async () =
         assert.ok(replies[1].content.includes('Size: 12.0 MiB'));
         assert.equal(
             replies[1].components[0].components[0].data.url,
-            'https://download.youtube.cbte.sprink.cloud/youtube-downloads/token/video.mp4'
+            'https://cbte.sprink.cloud/youtube-downloads/token/video.mp4'
         );
     } finally {
         delete require.cache[componentPath];

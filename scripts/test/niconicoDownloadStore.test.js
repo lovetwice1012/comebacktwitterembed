@@ -99,12 +99,12 @@ function fakeSpawnFactory(calls) {
 
 test('niconico download store builds public download URL', () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'cte-niconico-download-url-'));
-    store.configureForTest(root, 'https://download.niconico.cbte.sprink.cloud');
+    store.configureForTest(root, 'https://cbte.sprink.cloud');
 
     try {
         assert.equal(
             store.publicUrlForRecord({ token: 'abc123token', filename: 'video name.mp4' }),
-            'https://download.niconico.cbte.sprink.cloud/niconico-downloads/abc123token/video%20name.mp4'
+            'https://cbte.sprink.cloud/niconico-downloads/abc123token/video%20name.mp4'
         );
     } finally {
         fs.rmSync(root, { recursive: true, force: true });

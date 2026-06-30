@@ -41,6 +41,33 @@ function okJson(json) {
     return { ok: true, json: async () => json };
 }
 
+function okText(text) {
+    return { ok: true, text: async () => text };
+}
+
+function okBuffer(buffer) {
+    return { ok: true, buffer: async () => buffer };
+}
+
+function onePixelPng() {
+    return Buffer.from(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADUlEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC',
+        'base64'
+    );
+}
+
+function contributionHtml() {
+    const start = Date.UTC(2026, 0, 4);
+    const cells = Array.from({ length: 14 }, (_value, index) => {
+        const date = new Date(start + index * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+        return `<td class="ContributionCalendar-day" data-date="${date}" data-level="${index % 5}"></td>`;
+    }).join('');
+    return `
+        <h2 id="js-contribution-activity-description">42 contributions in the last year</h2>
+        <table>${cells}</table>
+    `;
+}
+
 function fieldValue(embed, name) {
     return (embed.fields || []).find(field => field.name === name)?.value;
 }
@@ -49,6 +76,24 @@ test('github extract: builds a repository embed from GitHub REST metadata', asyn
     const requests = [];
     const provider = loadGitHubProviderWithFetch(async (url, options) => {
         requests.push({ url, options });
+        if (url.endsWith('/stats/commit_activity')) {
+            return okJson([
+                { week: 1767484800, total: 7, days: [0, 1, 2, 0, 3, 1, 0] },
+                { week: 1768089600, total: 5, days: [1, 0, 0, 2, 0, 2, 0] },
+            ]);
+        }
+        if (url.endsWith('/commits?per_page=100')) {
+            return okJson([
+                { commit: { committer: { date: '2026-01-05T00:00:00Z' } } },
+                { commit: { committer: { date: '2026-01-06T00:00:00Z' } } },
+            ]);
+        }
+        if (url.endsWith('/languages')) {
+            return okJson({ JavaScript: 8000, CSS: 2000 });
+        }
+        if (String(url).startsWith('https://avatars.example/openai.png')) {
+            return okBuffer(onePixelPng());
+        }
         return okJson({
             full_name: 'openai/codex',
             html_url: 'https://github.com/openai/codex',
@@ -70,8 +115,12 @@ test('github extract: builds a repository embed from GitHub REST metadata', asyn
     const url = 'https://github.com/openai/codex';
     const result = await provider.extract(createMessage(url), url, {});
 
-    assert.equal(requests.length, 1);
+    assert.equal(requests.length, 5);
     assert.equal(requests[0].url, 'https://api.github.com/repos/openai/codex');
+    assert.equal(requests[1].url, 'https://api.github.com/repos/openai/codex/stats/commit_activity');
+    assert.equal(requests[2].url, 'https://api.github.com/repos/openai/codex/commits?per_page=100');
+    assert.equal(requests[3].url, 'https://api.github.com/repos/openai/codex/languages');
+    assert.equal(requests[4].url, 'https://avatars.example/openai.png?s=180');
     assert.equal(requests[0].options.headers.Accept, 'application/vnd.github+json');
     assert.equal(result.length, 1);
 
@@ -87,6 +136,9 @@ test('github extract: builds a repository embed from GitHub REST metadata', asyn
     assert.equal(fieldValue(embed, 'Issues'), '78');
     assert.equal(fieldValue(embed, 'Language'), 'JavaScript');
     assert.equal(fieldValue(embed, 'License'), 'MIT');
+    assert.equal(embed.image.url, 'attachment://github-repo-card-openai_codex.png');
+    assert.equal(Buffer.isBuffer(step.files[0].attachment), true);
+    assert.equal(step.files[0].name, 'github-repo-card-openai_codex.png');
     assert.equal(step.components[0].components[0].data.url, 'https://github.com/openai/codex');
     assert.deepEqual(
         step.components[1].components.map(button => button.data.custom_id),
@@ -281,6 +333,9 @@ test('github extract: supports profile and gist URLs', async () => {
                 updated_at: '2026-06-06T00:00:00Z',
             });
         }
+        if (url === 'https://github.com/users/octocat/contributions') {
+            return okText(contributionHtml());
+        }
         return okJson({
             description: 'Example gist',
             html_url: 'https://gist.github.com/octocat/abcdef',
@@ -304,11 +359,16 @@ test('github extract: supports profile and gist URLs', async () => {
 
     assert.deepEqual(requests, [
         'https://api.github.com/users/octocat',
+        'https://github.com/users/octocat/contributions',
         'https://api.github.com/gists/abcdef',
     ]);
     assert.equal(profileResult[0].embeds[0].title, 'The Octocat');
     assert.equal(fieldValue(profileResult[0].embeds[0], 'Repositories'), '8');
     assert.equal(fieldValue(profileResult[0].embeds[0], 'Followers'), '100');
+    assert.equal(fieldValue(profileResult[0].embeds[0], 'Contributions'), '42');
+    assert.equal(profileResult[0].embeds[0].image.url, 'attachment://github-contributions-octocat.png');
+    assert.equal(Buffer.isBuffer(profileResult[0].files[0].attachment), true);
+    assert.equal(profileResult[0].files[0].name, 'github-contributions-octocat.png');
     assert.equal(gistResult[0].embeds[0].title, 'Example gist');
     assert.equal(gistResult[0].embeds[0].description, 'console.log("hello");');
     assert.equal(fieldValue(gistResult[0].embeds[0], 'Files'), 'hello.js');
