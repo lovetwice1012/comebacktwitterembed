@@ -162,6 +162,110 @@ test('twitter extract: forceSendMode overrides alwaysreply for command-driven se
     assert.equal(result[0].send, 'channel');
 });
 
+test('twitter extract: GUI output settings control text, stats, and quote layout', async () => {
+    const provider = loadTwitterProviderWithTweets({
+        1: createTweet('1', { qrtURL: 'https://twitter.com/a/status/2', replies: 1, retweets: 2, likes: 3 }),
+        2: createTweet('2'),
+    });
+
+    const result = await provider.extract(createMessage(), 'https://twitter.com/a/status/1', {
+        legacy_mode: true,
+        twitter_text_mode: 'link_only',
+        hidden_output_items: ['stats'],
+        twitter_quote_layout: 'inline',
+        quote_repost_do_not_extract: false,
+    });
+
+    assert.ok(Array.isArray(result));
+    assert.equal(result.length, 1);
+    assert.equal(result[0].embeds.length, 2);
+    assert.equal(result[0].embeds[0].description, '[View on Twitter](https://twitter.com/a/status/1)');
+    assert.doesNotMatch(result[0].embeds[0].description, /likes/);
+    assert.match(result[0].embeds[1].title, /^Quoted tweet: User 2/);
+});
+
+test('twitter extract: stats_layout fields moves stats out of the description', async () => {
+    const provider = loadTwitterProviderWithTweets({
+        1: createTweet('1', { replies: 1, retweets: 2, likes: 3 }),
+    });
+
+    const result = await provider.extract(createMessage(), 'https://twitter.com/a/status/1', {
+        legacy_mode: true,
+        twitter_stats_layout: 'fields',
+    });
+
+    assert.ok(Array.isArray(result));
+    assert.doesNotMatch(result[0].embeds[0].description, /likes/);
+    assert.deepEqual(result[0].embeds[0].fields.map(field => [field.name, field.value]), [
+        ['Replies', '1'],
+        ['Reposts', '2'],
+        ['Likes', '3'],
+    ]);
+});
+
+test('twitter extract: article card output items can be hidden individually', async () => {
+    const provider = loadTwitterProviderWithTweets({
+        1: createTweet('1', {
+            article: {
+                title: 'Article title',
+                preview_text: 'Article preview',
+                image: 'https://example.com/article.jpg',
+            },
+        }),
+    });
+
+    const partial = await provider.extract(createMessage(), 'https://twitter.com/a/status/1', {
+        legacy_mode: true,
+        hidden_output_items: ['article_preview', 'article_image'],
+    });
+
+    assert.ok(Array.isArray(partial));
+    assert.match(partial[0].embeds[0].description, /Article title/);
+    assert.doesNotMatch(partial[0].embeds[0].description, /Article preview/);
+    assert.equal(partial[0].embeds[0].image, undefined);
+
+    const hidden = await provider.extract(createMessage(), 'https://twitter.com/a/status/1', {
+        legacy_mode: true,
+        hidden_output_items: ['article_card'],
+    });
+
+    assert.ok(Array.isArray(hidden));
+    assert.doesNotMatch(hidden[0].embeds[0].description, /Article title/);
+    assert.doesNotMatch(hidden[0].embeds[0].description, /Article preview/);
+    assert.equal(hidden[0].embeds[0].image, undefined);
+});
+
+test('twitter extract: quote display mode can summarize or hide quoted tweets', async () => {
+    const provider = loadTwitterProviderWithTweets({
+        1: createTweet('1', { qrtURL: 'https://twitter.com/a/status/2' }),
+        2: createTweet('2', { qrtURL: 'https://twitter.com/a/status/3' }),
+        3: createTweet('3'),
+    });
+
+    const summary = await provider.extract(createMessage(), 'https://twitter.com/a/status/1', {
+        legacy_mode: true,
+        twitter_quote_mode: 'summary',
+        twitter_quote_layout: 'inline',
+        quote_repost_do_not_extract: false,
+    });
+
+    assert.ok(Array.isArray(summary));
+    assert.equal(summary.length, 1);
+    assert.equal(summary[0].embeds.length, 2);
+    assert.match(summary[0].embeds[1].title, /^Quoted tweet: User 2/);
+    assert.equal(summary[0].embeds[1].image, undefined);
+
+    const hidden = await provider.extract(createMessage(), 'https://twitter.com/a/status/1', {
+        legacy_mode: true,
+        twitter_quote_mode: 'hidden',
+        quote_repost_do_not_extract: false,
+    });
+
+    assert.ok(Array.isArray(hidden));
+    assert.equal(hidden.length, 1);
+    assert.equal(hidden[0].embeds.length, 1);
+});
+
 test('twitter extract: compact single-image tweet keeps bot embed image-free', async () => {
     const provider = loadTwitterProviderWithTweets({
         1: createTweet('1', { mediaURLs: ['https://pbs.twimg.com/media/one.jpg'] }),
@@ -176,6 +280,30 @@ test('twitter extract: compact single-image tweet keeps bot embed image-free', a
     assert.equal(result[0].embeds.length, 1);
     assert.equal(result[0].embeds[0].image, undefined);
     assert.deepEqual(result[0].components[0].components.map(b => b.data.custom_id), ['delete']);
+});
+
+test('twitter extract: display density and media display mode reshape tweet output', async () => {
+    const provider = loadTwitterProviderWithTweets({
+        1: createTweet('1', {
+            mediaURLs: ['https://pbs.twimg.com/media/one.jpg'],
+            replies: 1,
+            retweets: 2,
+            likes: 3,
+        }),
+    });
+
+    const result = await provider.extract(createMessage(), 'https://twitter.com/a/status/1', {
+        legacy_mode: true,
+        display_density: 'compact',
+        media_display_mode: 'link_only',
+    });
+
+    assert.ok(Array.isArray(result));
+    assert.equal(result[0].embeds[0].image, undefined);
+    assert.match(result[0].content, /Media: https:\/\/pbs\.twimg\.com\/media\/one\.jpg/);
+    assert.doesNotMatch(result[0].embeds[0].description, /likes/);
+    const customIds = result[0].components.flatMap(row => row.components.map(button => button.data.custom_id));
+    assert.equal(customIds.includes('showMediaAsAttachments'), false);
 });
 
 test('twitter extract: secondary mode can skip source tweet and expand matching quote tweet', async () => {

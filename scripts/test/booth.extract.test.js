@@ -54,6 +54,10 @@ function createInfo(imageCount, overrides = {}) {
     };
 }
 
+function fieldValue(embed, name) {
+    return (embed.fields || []).find(field => field.name === name)?.value;
+}
+
 test('booth extract: builds embeds for shop subdomain url', async () => {
     let calledUrl = null;
     const provider = loadBoothProviderWithFetch(async (apiUrl) => {
@@ -71,6 +75,29 @@ test('booth extract: builds embeds for shop subdomain url', async () => {
     assert.equal(result[0].embeds[0].title, 'sample item');
     assert.ok(result[0].embeds[0].fields.some(f => f.value === '1,000 JPY'));
     assert.ok(result[0].embeds[0].fields.some(f => f.value === 'VRoid'));
+});
+
+test('booth extract: media_display_mode attachment sends item images as files', async () => {
+    const provider = loadBoothProviderWithFetch(async () => ({
+        ok: true,
+        json: async () => createInfo(3),
+    }));
+
+    const url = 'https://shop.booth.pm/items/123456';
+    const result = await provider.extract(createMessage(url), url, {
+        media_display_mode: 'attachment',
+    });
+
+    const step = result[0];
+    assert.equal(step.embeds.length, 1);
+    assert.equal(step.embeds[0].image, undefined);
+    assert.equal(step.embeds[0].thumbnail, undefined);
+    assert.deepEqual(step.files, [
+        'https://i.example/1.jpg',
+        'https://i.example/2.jpg',
+        'https://i.example/3.jpg',
+    ]);
+    assert.equal(step.components[0].components[0].data.custom_id, 'translate');
 });
 
 test('booth extract: lang-prefixed booth.pm/ja/items url', async () => {
@@ -167,6 +194,53 @@ test('booth extract: shows up to 5 variations with prices', async () => {
     assert.ok(lines[2].includes('¥2,000'));
     assert.ok(lines[3].includes('売り切れ'));
     assert.ok(lines[5].includes('ほか 2'));
+});
+
+test('booth extract: GUI output setting can hide variations field', async () => {
+    const provider = loadBoothProviderWithFetch(async () => ({
+        ok: true,
+        json: async () => createInfo(1, {
+            variations: [
+                { id: 1, name: 'A', price: 0 },
+            ],
+        }),
+    }));
+
+    const url = 'https://shop.booth.pm/items/1';
+    const result = await provider.extract(createMessage(url), url, {
+        hidden_output_items: ['variations'],
+    });
+
+    const fields = result[0].embeds[0].fields || [];
+    assert.equal(fields.some(f => f.name === 'Variations' || f.name === 'バリエーション'), false);
+    assert.ok(fields.some(f => f.value === '1,000 JPY'));
+});
+
+test('booth extract: sale status and variation price range can be hidden', async () => {
+    const future = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    const provider = loadBoothProviderWithFetch(async () => ({
+        ok: true,
+        json: async () => createInfo(1, {
+            sale_starts_at: future.toISOString(),
+            variations: [
+                { id: 1, name: 'A', price: 0 },
+                { id: 2, name: 'B', price: 1500 },
+                { id: 3, name: 'C', price: '¥3,000' },
+            ],
+        }),
+    }));
+
+    const url = 'https://shop.booth.pm/items/1';
+    const visible = await provider.extract(createMessage(url), url, { defaultLanguage: 'en' });
+    assert.equal(fieldValue(visible[0].embeds[0], 'Status'), 'Upcoming');
+    assert.equal(fieldValue(visible[0].embeds[0], 'Price range'), 'Free - ¥3,000');
+
+    const hidden = await provider.extract(createMessage(url), url, {
+        defaultLanguage: 'en',
+        hidden_output_items: ['status', 'price_range'],
+    });
+    assert.equal(fieldValue(hidden[0].embeds[0], 'Status'), undefined);
+    assert.equal(fieldValue(hidden[0].embeds[0], 'Price range'), undefined);
 });
 
 test('booth extract: handles unnamed variation and missing price', async () => {

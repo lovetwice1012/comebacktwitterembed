@@ -247,8 +247,13 @@ test('guisetting import checks target permission only and skips channel/role tar
         values.set(settingKey('twitter', 'guild-source', 'button_invisible'), { translate: true });
         values.set(settingKey('twitter', 'guild-source', 'bannedWords'), ['blocked']);
         values.set(settingKey('twitter', 'guild-source', 'passive_mode'), true);
+        values.set(settingKey('twitter', 'guild-source', 'twitter_text_mode'), 'link_only');
         values.set(settingKey('pixiv', 'guild-source', 'pixiv_images_per_step'), 10);
+        values.set(settingKey('pixiv', 'guild-source', 'hidden_output_items'), ['tags']);
         values.set(settingKey('youtube', 'guild-source', 'youtube_description_max_length'), 500);
+        values.set(settingKey('tiktok', 'guild-source', 'tiktok_hq'), true);
+        values.set(settingKey('github', 'guild-source', 'github_card_style'), 'github');
+        values.set(settingKey('steam', 'guild-source', 'hidden_output_items'), ['price']);
 
         const interaction = {
             guildId: 'guild-target',
@@ -276,8 +281,13 @@ test('guisetting import checks target permission only and skips channel/role tar
         });
         assert.deepEqual(values.get(settingKey('twitter', 'guild-target', 'bannedWords')), ['blocked']);
         assert.equal(values.get(settingKey('twitter', 'guild-target', 'passive_mode')), true);
+        assert.equal(values.get(settingKey('twitter', 'guild-target', 'twitter_text_mode')), 'link_only');
         assert.equal(values.get(settingKey('pixiv', 'guild-target', 'pixiv_images_per_step')), 10);
+        assert.deepEqual(values.get(settingKey('pixiv', 'guild-target', 'hidden_output_items')), ['tags']);
         assert.equal(values.get(settingKey('youtube', 'guild-target', 'youtube_description_max_length')), 500);
+        assert.equal(values.get(settingKey('tiktok', 'guild-target', 'tiktok_hq')), true);
+        assert.equal(values.get(settingKey('github', 'guild-target', 'github_card_style')), 'github');
+        assert.deepEqual(values.get(settingKey('steam', 'guild-target', 'hidden_output_items')), ['price']);
     } finally {
         restore();
     }

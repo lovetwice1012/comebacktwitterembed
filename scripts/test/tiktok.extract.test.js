@@ -110,6 +110,19 @@ function createProfileData(overrides = {}) {
     };
 }
 
+function createPhotoPostData(count = 5, overrides = {}) {
+    return createVideoData({
+        id: '7335753580093164833',
+        video: { duration: 0 },
+        imagePost: {
+            images: Array.from({ length: count }, (_item, index) => ({
+                imageURL: { urlList: [`https://image.example/${index + 1}.jpg`] },
+            })),
+        },
+        ...overrides,
+    });
+}
+
 test('tiktok extract: builds self-owned embed and video attachment without reposting edited url', async () => {
     const provider = loadTikTokProviderWithFetch(async (requestUrl) => {
         if (requestUrl === 'https://www.tiktok.com/@i/video/7332187682480590112') {
@@ -150,20 +163,107 @@ test('tiktok extract: builds self-owned embed and video attachment without repos
     assert.equal(result[0].suppressSourceEmbeds, true);
 });
 
+test('tiktok extract: GUI output setting can hide post stats', async () => {
+    const provider = loadTikTokProviderWithFetch(async (requestUrl) => {
+        if (requestUrl === 'https://www.tiktok.com/@i/video/7332187682480590112') {
+            return { text: async () => videoPageHtml(createVideoData()) };
+        }
+        if (requestUrl === 'https://video.example/play') {
+            return {
+                ok: true,
+                status: 200,
+                headers: { get: () => null },
+                buffer: async () => Buffer.from('video'),
+            };
+        }
+        throw new Error(`unexpected fetch: ${requestUrl}`);
+    });
+
+    const url = 'https://www.tiktok.com/@creator/video/7332187682480590112';
+    const result = await provider.extract(createMessage(url), url, {
+        hidden_output_items: ['stats'],
+    });
+
+    assert.equal(result[0].embeds[0].description, 'sample caption #tag');
+    assert.doesNotMatch(result[0].embeds[0].description, /plays/);
+});
+
+test('tiktok extract: post metadata fields can be hidden individually', async () => {
+    const provider = loadTikTokProviderWithFetch(async (requestUrl) => {
+        if (requestUrl === 'https://www.tiktok.com/@i/video/7332187682480590112') {
+            return {
+                text: async () => videoPageHtml(createVideoData({
+                    desc: 'sample caption #tag #music',
+                    music: { title: 'Original sound', authorName: 'Creator' },
+                })),
+            };
+        }
+        throw new Error(`unexpected fetch: ${requestUrl}`);
+    });
+
+    const url = 'https://www.tiktok.com/@creator/video/7332187682480590112';
+    const visible = await provider.extract(createMessage(url), url, {
+        media_display_mode: 'link_only',
+    });
+
+    assert.deepEqual(visible[0].embeds[0].fields.map(field => [field.name, field.value]), [
+        ['Duration', '0:12'],
+        ['Music', 'Original sound - Creator'],
+        ['Hashtags', '#tag #music'],
+    ]);
+
+    const hidden = await provider.extract(createMessage(url), url, {
+        media_display_mode: 'link_only',
+        hidden_output_items: ['duration', 'music', 'tags'],
+    });
+
+    assert.equal(hidden[0].embeds[0].fields, undefined);
+});
+
+test('tiktok extract: media_display_mode link_only skips video download and shows video url', async () => {
+    const calledUrls = [];
+    const provider = loadTikTokProviderWithFetch(async (requestUrl) => {
+        calledUrls.push(requestUrl);
+        if (requestUrl === 'https://www.tiktok.com/@i/video/7332187682480590112') {
+            return { text: async () => videoPageHtml(createVideoData()) };
+        }
+        throw new Error(`unexpected fetch: ${requestUrl}`);
+    });
+
+    const url = 'https://www.tiktok.com/@creator/video/7332187682480590112';
+    const result = await provider.extract(createMessage(url), url, {
+        media_display_mode: 'link_only',
+    });
+
+    assert.deepEqual(calledUrls, ['https://www.tiktok.com/@i/video/7332187682480590112']);
+    assert.deepEqual(result[0].files, []);
+    assert.equal(result[0].embeds[0].thumbnail, undefined);
+    assert.equal(result[0].embeds[0].image, undefined);
+    assert.equal(result[0].content, 'Video: https://video.example/play');
+});
+
+test('tiktok extract: failure_display_policy error_summary returns a short failure step', async () => {
+    const provider = loadTikTokProviderWithFetch(async () => {
+        throw new Error('network down');
+    });
+
+    const url = 'https://www.tiktok.com/@creator/video/7332187682480590112';
+    const result = await provider.extract(createMessage(url), url, {
+        failure_display_policy: 'error_summary',
+    });
+
+    const step = result[0];
+    assert.match(step.content, /tiktok metadata fetch failed: network down/);
+    assert.equal(step.embeds, undefined);
+    assert.equal(step.components[0].components[0].data.url, url);
+    assert.equal(step.allowedMentions.repliedUser, false);
+});
+
 test('tiktok extract: builds image embeds for photo posts', async () => {
     const provider = loadTikTokProviderWithFetch(async (requestUrl) => {
         if (requestUrl === 'https://www.tiktok.com/@i/video/7335753580093164833') {
             return {
-                text: async () => videoPageHtml(createVideoData({
-                    id: '7335753580093164833',
-                    video: { duration: 0 },
-                    imagePost: {
-                        images: [
-                            { imageURL: { urlList: ['https://image.example/1.jpg'] } },
-                            { imageURL: { urlList: ['https://image.example/2.jpg'] } },
-                        ],
-                    },
-                })),
+                text: async () => videoPageHtml(createPhotoPostData(2)),
             };
         }
         throw new Error(`unexpected fetch: ${requestUrl}`);
@@ -178,6 +278,33 @@ test('tiktok extract: builds image embeds for photo posts', async () => {
     assert.equal(result[0].embeds[0].image.url, 'https://image.example/1.jpg');
     assert.equal(result[0].embeds[1].image.url, 'https://image.example/2.jpg');
     assert.equal(result[0].embeds[0].url, 'https://www.tiktok.com/@creator/photo/7335753580093164833');
+});
+
+test('tiktok extract: photo post image limit controls displayed images', async () => {
+    const provider = loadTikTokProviderWithFetch(async (requestUrl) => {
+        if (requestUrl === 'https://www.tiktok.com/@i/video/7335753580093164833') {
+            return { text: async () => videoPageHtml(createPhotoPostData(5)) };
+        }
+        throw new Error(`unexpected fetch: ${requestUrl}`);
+    });
+
+    const url = 'https://www.tiktok.com/@creator/photo/7335753580093164833';
+    const limited = await provider.extract(createMessage(url), url, {
+        tiktok_image_limit: 4,
+    });
+
+    assert.equal(limited[0].embeds.length, 4);
+    assert.equal(limited[0].embeds[0].image.url, 'https://image.example/1.jpg');
+    assert.equal(limited[0].embeds[3].image.url, 'https://image.example/4.jpg');
+    assert.ok(limited[0].embeds[0].fields.some(field => field.name === 'Images' && field.value === '4 / 5'));
+
+    const compact = await provider.extract(createMessage(url), url, {
+        display_density: 'compact',
+    });
+
+    assert.equal(compact[0].embeds.length, 1);
+    assert.equal(compact[0].embeds[0].image.url, 'https://image.example/1.jpg');
+    assert.equal((compact[0].embeds[0].fields || []).some(field => field.name === 'Images'), false);
 });
 
 test('tiktok extract: skips access-denied video candidates and uploads a working buffer', async () => {
@@ -245,6 +372,39 @@ test('tiktok extract: builds profile embeds for account links', async () => {
     assert.equal(result[0].embeds[0].thumbnail.url, 'https://image.example/avatar.jpg');
     assert.ok(result[0].embeds[0].fields.some(field => field.name === 'Followers' && field.value === '12.3K'));
     assert.equal(result[0].suppressSourceEmbeds, true);
+});
+
+test('tiktok extract: profile status and website fields are configurable', async () => {
+    const provider = loadTikTokProviderWithFetch(async (requestUrl) => {
+        if (requestUrl === 'https://www.tiktok.com/@creator') {
+            return {
+                text: async () => profilePageHtml(createProfileData({
+                    user: {
+                        nickname: 'Creator',
+                        uniqueId: 'creator',
+                        signature: 'profile bio',
+                        avatarMedium: 'https://image.example/avatar.jpg',
+                        verified: true,
+                        bioLink: { link: 'https://creator.example' },
+                    },
+                })),
+            };
+        }
+        throw new Error(`unexpected fetch: ${requestUrl}`);
+    });
+
+    const url = 'https://www.tiktok.com/@creator';
+    const visible = await provider.extract(createMessage(url), url, {});
+
+    assert.ok(visible[0].embeds[0].fields.some(field => field.name === 'Status' && field.value === 'Verified'));
+    assert.ok(visible[0].embeds[0].fields.some(field => field.name === 'Website' && field.value === '[Website](https://creator.example)'));
+
+    const hidden = await provider.extract(createMessage(url), url, {
+        hidden_output_items: ['profile_status', 'website'],
+    });
+
+    assert.equal(hidden[0].embeds[0].fields.some(field => field.name === 'Status'), false);
+    assert.equal(hidden[0].embeds[0].fields.some(field => field.name === 'Website'), false);
 });
 
 test('tiktok extract: resolves short links to profile embeds', async () => {

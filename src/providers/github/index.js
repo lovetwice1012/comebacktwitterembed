@@ -2,8 +2,14 @@
 
 const zlib = require('zlib');
 const fetch = require('node-fetch');
+const jpeg = require('jpeg-js');
 const { ButtonBuilder, ButtonStyle, ComponentType } = require('discord.js');
 const { recordProviderError } = require('../../errorTracking');
+const {
+    applyMediaDisplayToStep,
+    buildFailureResponse,
+    shouldShowOutputItem,
+} = require('../_output_controls');
 
 const GITHUB_COLOR = 0x24292f;
 const GITHUB_OPEN_COLOR = 0x1a7f37;
@@ -23,6 +29,9 @@ const REPO_CARD_WIDTH = 1200;
 const REPO_CARD_HEIGHT = 630;
 const REPO_CARD_LANGUAGE_BAR_HEIGHT = 36;
 const REPO_CARD_HEATMAP_WIDTH_RATIO = 0.75;
+
+/** @type {number[] | undefined} */
+let crc32Table;
 
 const LANGUAGE_COLORS = {
     Assembly: '#6e4c13',
@@ -93,9 +102,15 @@ const STR = {
     forks: { ja: 'Forks', en: 'Forks' },
     issues: { ja: 'Issues', en: 'Issues' },
     language: { ja: 'Language', en: 'Language' },
+    languageBreakdown: { ja: 'Languages', en: 'Languages' },
+    topics: { ja: 'Topics', en: 'Topics' },
+    defaultBranch: { ja: 'Default branch', en: 'Default branch' },
+    lastPush: { ja: 'Last push', en: 'Last push' },
     license: { ja: 'License', en: 'License' },
     state: { ja: 'State', en: 'State' },
     comments: { ja: 'Comments', en: 'Comments' },
+    mergeable: { ja: 'Mergeable', en: 'Mergeable' },
+    reviewState: { ja: 'Review', en: 'Review' },
     labels: { ja: 'Labels', en: 'Labels' },
     assignees: { ja: 'Assignees', en: 'Assignees' },
     changes: { ja: 'Changes', en: 'Changes' },
@@ -107,6 +122,7 @@ const STR = {
     tag: { ja: 'Tag', en: 'Tag' },
     type: { ja: 'Type', en: 'Type' },
     size: { ja: 'Size', en: 'Size' },
+    snippet: { ja: 'Snippet', en: 'Snippet' },
     followers: { ja: 'Followers', en: 'Followers' },
     repositories: { ja: 'Repositories', en: 'Repositories' },
     location: { ja: 'Location', en: 'Location' },
@@ -228,6 +244,11 @@ function addField(fields, name, value, inline = true) {
     fields.push({ name, value: text, inline });
 }
 
+function addVisibleField(fields, settings, key, name, value, inline = true) {
+    if (!shouldShowOutputItem(settings, key)) return;
+    addField(fields, name, value, inline);
+}
+
 function containsBannedWord(text, bannedWords) {
     if (!Array.isArray(bannedWords) || bannedWords.length === 0) return false;
     return bannedWords.some(word => word && String(text || '').includes(word));
@@ -244,6 +265,38 @@ function stateColor(data, isPullRequest = false) {
     if (state === 'merged') return GITHUB_MERGED_COLOR;
     if (state === 'closed') return GITHUB_CLOSED_COLOR;
     return GITHUB_COLOR;
+}
+
+function discordDate(value, style = 'R') {
+    const ms = Date.parse(value || '');
+    if (!Number.isFinite(ms)) return '';
+    return `<t:${Math.floor(ms / 1000)}:${style}>`;
+}
+
+function topicSummary(data) {
+    const topics = Array.isArray(data.topics) ? data.topics : [];
+    return topics.slice(0, 8).join(', ');
+}
+
+function languageBreakdown(languages) {
+    const normalized = normalizeLanguages(languages);
+    if (normalized.length === 0) return '';
+    return normalized
+        .slice(0, 5)
+        .map(item => `${item.name} ${Math.round(item.ratio * 100)}%`)
+        .join(', ');
+}
+
+function mergeableText(data) {
+    if (data.mergeable === true) return 'yes';
+    if (data.mergeable === false) return 'no';
+    return data.mergeable_state || '';
+}
+
+function reviewStateText(data) {
+    if (data.draft === true) return 'draft';
+    if (data.review_decision) return String(data.review_decision).toLowerCase().replace(/_/g, ' ');
+    return '';
 }
 
 function cleanRawUrl(rawUrl) {
@@ -379,8 +432,7 @@ function githubHeaders() {
 async function fetchJson(url) {
     const res = await fetch(url, { headers: githubHeaders() });
     if (!res.ok) {
-        const err = new Error(`github api ${res.status} for ${url}`);
-        err.status = res.status;
+        const err = Object.assign(new Error(`github api ${res.status} for ${url}`), { status: res.status });
         throw err;
     }
     return await res.json();
@@ -396,7 +448,12 @@ async function fetchOptionalJson(url) {
 
 async function fetchOptionalBuffer(url) {
     try {
-        const res = await fetch(url, { headers: { 'User-Agent': 'ComebackTwitterEmbed/1.0' } });
+        const res = await fetch(url, {
+            headers: {
+                Accept: 'image/png,image/*;q=0.9,*/*;q=0.8',
+                'User-Agent': 'ComebackTwitterEmbed/1.0',
+            },
+        });
         if (!res.ok || typeof res.buffer !== 'function') return null;
         return await res.buffer();
     } catch {
@@ -404,11 +461,18 @@ async function fetchOptionalBuffer(url) {
     }
 }
 
+async function fetchOptionalImageBuffer(urls) {
+    for (const url of urls.filter(Boolean)) {
+        const buffer = await fetchOptionalBuffer(url);
+        if (buffer && decodeRasterImage(buffer)) return buffer;
+    }
+    return null;
+}
+
 async function fetchText(url) {
     const res = await fetch(url, { headers: githubHeaders() });
     if (!res.ok) {
-        const err = new Error(`github page ${res.status} for ${url}`);
-        err.status = res.status;
+        const err = Object.assign(new Error(`github page ${res.status} for ${url}`), { status: res.status });
         throw err;
     }
     return await res.text();
@@ -488,9 +552,13 @@ async function fetchGitHubData(parsed) {
             fetchOptionalJson(apiUrl(`${repoPath}/commits?per_page=100`)),
             fetchOptionalJson(apiUrl(`${repoPath}/languages`)),
         ]);
-        const ownerAvatar = repoData.owner?.avatar_url
-            ? await fetchOptionalBuffer(`${repoData.owner.avatar_url}${repoData.owner.avatar_url.includes('?') ? '&' : '?'}s=180`)
-            : null;
+        const ownerLogin = repoData.owner?.login;
+        const ownerAvatar = await fetchOptionalImageBuffer([
+            repoData.owner?.avatar_url
+                ? `${repoData.owner.avatar_url}${repoData.owner.avatar_url.includes('?') ? '&' : '?'}s=180`
+                : null,
+            ownerLogin ? `https://github.com/${encodeURIComponent(ownerLogin)}.png?size=180` : null,
+        ]);
         const statsCalendar = commitActivityToCalendar(commitActivity);
         const commitsCalendar = recentCommitsToCalendar(recentCommits);
         const commitActivityCalendar = (statsCalendar?.total > 0 ? statsCalendar : commitsCalendar) || statsCalendar;
@@ -543,12 +611,19 @@ function repoName(data, parsed) {
 
 function buildRepoEmbed(data, parsed, message, settings, lang) {
     const fields = [];
-    addField(fields, tr(STR.stars, lang), formatNumber(data.stargazers_count));
-    addField(fields, tr(STR.forks, lang), formatNumber(data.forks_count));
-    addField(fields, tr(STR.issues, lang), formatNumber(data.open_issues_count));
-    addField(fields, tr(STR.language, lang), data.language);
-    addField(fields, tr(STR.license, lang), data.license?.spdx_id && data.license.spdx_id !== 'NOASSERTION' ? data.license.spdx_id : data.license?.name);
+    if (shouldShowOutputItem(settings, 'repo_stats')) {
+        addField(fields, tr(STR.stars, lang), formatNumber(data.stargazers_count));
+        addField(fields, tr(STR.forks, lang), formatNumber(data.forks_count));
+        addField(fields, tr(STR.issues, lang), formatNumber(data.open_issues_count));
+    }
+    addVisibleField(fields, settings, 'language', tr(STR.language, lang), data.language);
+    addVisibleField(fields, settings, 'language_breakdown', tr(STR.languageBreakdown, lang), languageBreakdown(data.languages), false);
+    addVisibleField(fields, settings, 'topics', tr(STR.topics, lang), topicSummary(data), false);
+    addVisibleField(fields, settings, 'default_branch', tr(STR.defaultBranch, lang), data.default_branch);
+    addVisibleField(fields, settings, 'last_push', tr(STR.lastPush, lang), discordDate(data.pushed_at));
+    addVisibleField(fields, settings, 'license', tr(STR.license, lang), data.license?.spdx_id && data.license.spdx_id !== 'NOASSERTION' ? data.license.spdx_id : data.license?.name);
 
+    /** @type {any} */
     const embed = {
         ...buildBaseEmbed(message, settings, lang),
         author: {
@@ -568,12 +643,12 @@ function buildRepoEmbed(data, parsed, message, settings, lang) {
 
 function buildIssueEmbed(data, parsed, message, settings, lang) {
     const fields = [];
-    addField(fields, tr(STR.state, lang), stateText(data), true);
-    addField(fields, tr(STR.comments, lang), formatNumber(data.comments), true);
+    addVisibleField(fields, settings, 'state', tr(STR.state, lang), stateText(data), true);
+    addVisibleField(fields, settings, 'comments', tr(STR.comments, lang), formatNumber(data.comments), true);
     const labels = Array.isArray(data.labels) ? data.labels.map(label => label.name).filter(Boolean).join(', ') : '';
-    addField(fields, tr(STR.labels, lang), labels, false);
+    addVisibleField(fields, settings, 'labels', tr(STR.labels, lang), labels, false);
     const assignees = Array.isArray(data.assignees) ? data.assignees.map(user => user.login).filter(Boolean).join(', ') : '';
-    addField(fields, tr(STR.assignees, lang), assignees, false);
+    addVisibleField(fields, settings, 'assignees', tr(STR.assignees, lang), assignees, false);
 
     return {
         ...buildBaseEmbed(message, settings, lang, stateColor(data)),
@@ -592,11 +667,13 @@ function buildIssueEmbed(data, parsed, message, settings, lang) {
 
 function buildPullEmbed(data, parsed, message, settings, lang) {
     const fields = [];
-    addField(fields, tr(STR.state, lang), stateText(data, true), true);
-    addField(fields, tr(STR.changes, lang), `+${formatNumber(data.additions)} / -${formatNumber(data.deletions)}`, true);
-    addField(fields, tr(STR.commits, lang), formatNumber(data.commits), true);
-    addField(fields, tr(STR.files, lang), formatNumber(data.changed_files), true);
-    addField(fields, tr(STR.comments, lang), formatNumber((data.comments || 0) + (data.review_comments || 0)), true);
+    addVisibleField(fields, settings, 'state', tr(STR.state, lang), stateText(data, true), true);
+    addVisibleField(fields, settings, 'changes', tr(STR.changes, lang), `+${formatNumber(data.additions)} / -${formatNumber(data.deletions)}`, true);
+    addVisibleField(fields, settings, 'commits', tr(STR.commits, lang), formatNumber(data.commits), true);
+    addVisibleField(fields, settings, 'files', tr(STR.files, lang), formatNumber(data.changed_files), true);
+    addVisibleField(fields, settings, 'comments', tr(STR.comments, lang), formatNumber((data.comments || 0) + (data.review_comments || 0)), true);
+    addVisibleField(fields, settings, 'mergeable', tr(STR.mergeable, lang), mergeableText(data), true);
+    addVisibleField(fields, settings, 'review_state', tr(STR.reviewState, lang), reviewStateText(data), true);
 
     return {
         ...buildBaseEmbed(message, settings, lang, stateColor(data, true)),
@@ -616,11 +693,11 @@ function buildPullEmbed(data, parsed, message, settings, lang) {
 function buildCommitEmbed(data, parsed, message, settings, lang) {
     const messageText = data.commit?.message || '';
     const fields = [];
-    addField(fields, tr(STR.sha, lang), data.sha || parsed.sha);
-    addField(fields, tr(STR.author, lang), data.author?.login || data.commit?.author?.name);
-    addField(fields, tr(STR.files, lang), formatNumber(Array.isArray(data.files) ? data.files.length : undefined));
+    addVisibleField(fields, settings, 'sha', tr(STR.sha, lang), data.sha || parsed.sha);
+    addVisibleField(fields, settings, 'author', tr(STR.author, lang), data.author?.login || data.commit?.author?.name);
+    addVisibleField(fields, settings, 'files', tr(STR.files, lang), formatNumber(Array.isArray(data.files) ? data.files.length : undefined));
     if (data.stats) {
-        addField(fields, tr(STR.changes, lang), `+${formatNumber(data.stats.additions)} / -${formatNumber(data.stats.deletions)}`);
+        addVisibleField(fields, settings, 'changes', tr(STR.changes, lang), `+${formatNumber(data.stats.additions)} / -${formatNumber(data.stats.deletions)}`);
     }
 
     return {
@@ -641,8 +718,8 @@ function buildCommitEmbed(data, parsed, message, settings, lang) {
 function buildReleaseEmbed(data, parsed, message, settings, lang) {
     const fields = [];
     addField(fields, tr(STR.tag, lang), data.tag_name || parsed.tag);
-    addField(fields, tr(STR.state, lang), data.draft ? 'draft' : data.prerelease ? 'prerelease' : 'published');
-    addField(fields, tr(STR.assets, lang), formatNumber(Array.isArray(data.assets) ? data.assets.length : undefined));
+    addVisibleField(fields, settings, 'state', tr(STR.state, lang), data.draft ? 'draft' : data.prerelease ? 'prerelease' : 'published');
+    addVisibleField(fields, settings, 'assets', tr(STR.assets, lang), formatNumber(Array.isArray(data.assets) ? data.assets.length : undefined));
 
     return {
         ...buildBaseEmbed(message, settings, lang),
@@ -667,20 +744,69 @@ function directoryListing(items) {
         .join('\n');
 }
 
+function codeFenceLanguage(path) {
+    const ext = String(path || '').split('.').pop()?.toLowerCase();
+    const map = {
+        js: 'js',
+        jsx: 'jsx',
+        ts: 'ts',
+        tsx: 'tsx',
+        py: 'py',
+        rb: 'rb',
+        go: 'go',
+        rs: 'rust',
+        java: 'java',
+        css: 'css',
+        html: 'html',
+        md: 'md',
+        json: 'json',
+        yml: 'yaml',
+        yaml: 'yaml',
+        toml: 'toml',
+        sh: 'sh',
+    };
+    return map[ext] || '';
+}
+
+function hasUnsupportedControlChars(value) {
+    for (let i = 0; i < value.length; i++) {
+        const code = value.charCodeAt(i);
+        if (code < 32 && code !== 9 && code !== 10 && code !== 13) return true;
+    }
+    return false;
+}
+
+function fileSnippet(item, parsed, settings) {
+    if (!shouldShowOutputItem(settings, 'snippet')) return '';
+    if (!item || item.type !== 'file' || item.encoding !== 'base64' || !item.content) return '';
+    let text = '';
+    try {
+        text = Buffer.from(String(item.content).replace(/\s+/g, ''), 'base64').toString('utf8');
+    } catch {
+        return '';
+    }
+    if (!text || hasUnsupportedControlChars(text)) return '';
+    const lines = text.replace(/\r\n/g, '\n').split('\n').slice(0, 8).join('\n').trimEnd();
+    if (!lines) return '';
+    const lang = codeFenceLanguage(item.name || parsed.path);
+    return truncate('```' + lang + '\n' + lines + '\n```', DESCRIPTION_MAX_LENGTH);
+}
+
 function buildContentEmbed(data, parsed, message, settings, lang) {
     const isDirectory = Array.isArray(data);
     const item = isDirectory ? null : data;
     const fields = [];
-    addField(fields, tr(STR.type, lang), isDirectory ? 'directory' : item?.type);
-    addField(fields, tr(STR.files, lang), isDirectory ? formatNumber(data.length) : undefined);
-    addField(fields, tr(STR.size, lang), item?.type === 'file' ? formatBytes(item.size) : undefined);
+    addVisibleField(fields, settings, 'type', tr(STR.type, lang), isDirectory ? 'directory' : item?.type);
+    addVisibleField(fields, settings, 'files', tr(STR.files, lang), isDirectory ? formatNumber(data.length) : undefined);
+    addVisibleField(fields, settings, 'size', tr(STR.size, lang), item?.type === 'file' ? formatBytes(item.size) : undefined);
 
     const titlePath = parsed.path || parsed.ref || repoName({}, parsed);
+    /** @type {any} */
     const embed = {
         ...buildBaseEmbed(message, settings, lang),
         title: titlePath,
         url: item?.html_url || parsed.canonicalUrl,
-        description: isDirectory ? directoryListing(data) : undefined,
+        description: isDirectory ? directoryListing(data) : fileSnippet(item, parsed, settings) || undefined,
         fields,
     };
     return embed;
@@ -688,12 +814,13 @@ function buildContentEmbed(data, parsed, message, settings, lang) {
 
 function buildUserEmbed(data, parsed, message, settings, lang) {
     const fields = [];
-    addField(fields, tr(STR.type, lang), data.type);
-    addField(fields, tr(STR.repositories, lang), formatNumber(data.public_repos));
-    addField(fields, tr(STR.followers, lang), formatNumber(data.followers));
-    addField(fields, tr(STR.location, lang), data.location);
-    addField(fields, tr(STR.contributions, lang), formatNumber(data.contributions?.total));
+    addVisibleField(fields, settings, 'type', tr(STR.type, lang), data.type);
+    addVisibleField(fields, settings, 'repositories', tr(STR.repositories, lang), formatNumber(data.public_repos));
+    addVisibleField(fields, settings, 'followers', tr(STR.followers, lang), formatNumber(data.followers));
+    addVisibleField(fields, settings, 'location', tr(STR.location, lang), data.location);
+    addVisibleField(fields, settings, 'contributions', tr(STR.contributions, lang), formatNumber(data.contributions?.total));
 
+    /** @type {any} */
     const embed = {
         ...buildBaseEmbed(message, settings, lang),
         author: {
@@ -714,9 +841,9 @@ function buildUserEmbed(data, parsed, message, settings, lang) {
 function buildGistEmbed(data, parsed, message, settings, lang) {
     const files = Object.values(data.files || {});
     const fields = [];
-    addField(fields, tr(STR.gistFiles, lang), files.map(file => file.filename).filter(Boolean).join('\n'), false);
-    addField(fields, tr(STR.comments, lang), formatNumber(data.comments));
-    addField(fields, tr(STR.state, lang), data.public === false ? 'secret' : 'public');
+    addVisibleField(fields, settings, 'gist_files', tr(STR.gistFiles, lang), files.map(file => file.filename).filter(Boolean).join('\n'), false);
+    addVisibleField(fields, settings, 'comments', tr(STR.comments, lang), formatNumber(data.comments));
+    addVisibleField(fields, settings, 'state', tr(STR.state, lang), data.public === false ? 'secret' : 'public');
 
     return {
         ...buildBaseEmbed(message, settings, lang),
@@ -813,15 +940,15 @@ function drawText(pixels, width, height, text, x, y, color, scale = 2) {
 }
 
 function crc32(buffer) {
-    if (!crc32.table) {
-        crc32.table = Array.from({ length: 256 }, (_value, index) => {
+    if (!crc32Table) {
+        crc32Table = Array.from({ length: 256 }, (_value, index) => {
             let c = index;
             for (let k = 0; k < 8; k++) c = (c & 1) ? (0xedb88320 ^ (c >>> 1)) : (c >>> 1);
             return c >>> 0;
         });
     }
     let crc = 0xffffffff;
-    for (const byte of buffer) crc = crc32.table[(crc ^ byte) & 0xff] ^ (crc >>> 8);
+    for (const byte of buffer) crc = crc32Table[(crc ^ byte) & 0xff] ^ (crc >>> 8);
     return (crc ^ 0xffffffff) >>> 0;
 }
 
@@ -943,6 +1070,22 @@ function decodePng(buffer) {
     }
 
     return { width, height, pixels: rgba };
+}
+
+function decodeJpeg(buffer) {
+    if (!Buffer.isBuffer(buffer) || buffer.length < 4) return null;
+    if (buffer[0] !== 0xff || buffer[1] !== 0xd8) return null;
+    try {
+        const image = jpeg.decode(buffer, { useTArray: true, maxMemoryUsageInMB: 128 });
+        if (!image?.width || !image?.height || !image.data) return null;
+        return { width: image.width, height: image.height, pixels: Buffer.from(image.data) };
+    } catch {
+        return null;
+    }
+}
+
+function decodeRasterImage(buffer) {
+    return decodePng(buffer) || decodeJpeg(buffer);
 }
 
 function blendPixel(pixels, width, height, x, y, rgba) {
@@ -1209,6 +1352,13 @@ function ellipsizeText(text, maxWidth, scale = 2) {
     return out.trimEnd() + '...';
 }
 
+function fitTextScale(text, maxWidth, preferredScale, minScale = 2) {
+    for (let scale = preferredScale; scale >= minScale; scale--) {
+        if (textWidth(text, scale) <= maxWidth) return scale;
+    }
+    return minScale;
+}
+
 function wrapText(text, maxWidth, scale = 2, maxLines = 3) {
     const words = String(text || '').replace(/\s+/g, ' ').trim().split(' ').filter(Boolean);
     const lines = [];
@@ -1308,7 +1458,7 @@ function drawOwnerAvatar(pixels, width, height, data) {
     const size = 170;
     const x = width - 80 - size;
     const y = 78;
-    const avatar = decodePng(data.ownerAvatar);
+    const avatar = decodeRasterImage(data.ownerAvatar);
     if (drawImageCoverCircle(pixels, width, height, avatar, x, y, size)) return;
 
     fillRoundedRect(pixels, width, height, x, y, size, size, 18, '#f6f8fa');
@@ -1317,8 +1467,9 @@ function drawOwnerAvatar(pixels, width, height, data) {
     drawText(pixels, width, height, initials, x + 35, y + 57, '#8c9ab2', 8);
 }
 
-function renderRepoCardPng(data, parsed) {
-    const languages = normalizeLanguages(data.languages);
+function renderRepoCardPng(data, parsed, settings) {
+    const showLanguages = shouldShowOutputItem(settings, 'language');
+    const languages = showLanguages ? normalizeLanguages(data.languages) : [];
     const calendar = data.commitActivityCalendar || commitActivityToCalendar(data.commitActivity);
     const width = REPO_CARD_WIDTH;
     const height = REPO_CARD_HEIGHT;
@@ -1328,13 +1479,17 @@ function renderRepoCardPng(data, parsed) {
     const repoTitle = repo || repoFullName;
     const description = data.description || `${repoTitle} on GitHub.`;
     const lines = wrapText(description, 690, 4, 3);
+    const titleMaxWidth = Math.floor(width * REPO_CARD_HEATMAP_WIDTH_RATIO) - 80;
+    const ownerLabel = `${owner || parsed.owner}/`;
+    const ownerScale = fitTextScale(ownerLabel, titleMaxWidth, 8, 5);
+    const repoScale = fitTextScale(repoTitle, titleMaxWidth, 9, 5);
 
     const titleBlockTop = 82;
     const descriptionTop = 316;
     const descriptionBottom = descriptionTop + (Math.max(1, lines.length) - 1) * 48 + 28;
     drawCommitHeatmapBackground(pixels, width, height, calendar, titleBlockTop, descriptionBottom - titleBlockTop);
-    drawText(pixels, width, height, `${owner || parsed.owner}/`, 80, 96, '#2f3742', 8);
-    drawText(pixels, width, height, ellipsizeText(repoTitle, 680, 9), 80, 190, '#24292f', 9);
+    drawText(pixels, width, height, ellipsizeText(ownerLabel, titleMaxWidth, ownerScale), 80, 96, '#2f3742', ownerScale);
+    drawText(pixels, width, height, ellipsizeText(repoTitle, titleMaxWidth, repoScale), 80, 190, '#24292f', repoScale);
     drawOwnerAvatar(pixels, width, height, data);
 
     for (let i = 0; i < lines.length; i++) {
@@ -1342,11 +1497,11 @@ function renderRepoCardPng(data, parsed) {
     }
 
     drawRepoStats(pixels, width, height, { ...data, commitActivityCalendar: calendar });
-    if (languages[0]) {
+    if (showLanguages && languages[0]) {
         drawText(pixels, width, height, languages[0].name, 880, 500, languages[0].color, 3);
     }
     drawText(pixels, width, height, 'GitHub', 980, 548, '#8c9ab2', 4);
-    drawLanguageBar(pixels, width, height, languages);
+    if (showLanguages) drawLanguageBar(pixels, width, height, languages);
     return encodePng(width, height, pixels);
 }
 
@@ -1355,9 +1510,9 @@ function repoCardAttachmentName(data, parsed) {
     return `github-repo-card-${safeName}.png`;
 }
 
-function buildRepoCardAttachment(data, parsed) {
+function buildRepoCardAttachment(data, parsed, settings) {
     if (!data || !parsed || parsed.type !== 'repo') return null;
-    const png = renderRepoCardPng(data, parsed);
+    const png = renderRepoCardPng(data, parsed, settings);
     if (!png) return null;
     return {
         attachment: png,
@@ -1365,12 +1520,30 @@ function buildRepoCardAttachment(data, parsed) {
     };
 }
 
-function buildVisualAttachment(data, parsed) {
+function githubRepoCardStyle(settings) {
+    if (!shouldShowOutputItem(settings, 'repo_card', { hideInCompact: false })) return 'none';
+    return settings?.github_card_style === 'github' ? 'github' : 'generated';
+}
+
+function officialGitHubRepoCardUrl(parsed) {
+    return `https://opengraph.githubassets.com/comebacktwitterembed/${encodePathPart(parsed.owner)}/${encodePathPart(parsed.repo)}`;
+}
+
+function buildRepoCardVisual(data, parsed, settings) {
+    const style = githubRepoCardStyle(settings);
+    if (style === 'none') return null;
+    if (style === 'github') return { imageUrl: officialGitHubRepoCardUrl(parsed) };
+    const attachment = buildRepoCardAttachment(data, parsed, settings);
+    return attachment ? { attachment } : null;
+}
+
+function buildVisualAttachment(data, parsed, settings) {
     if (parsed.type === 'user' && data?.contributions) {
-        return buildContributionAttachment(data.login || parsed.login, data.contributions);
+        const attachment = buildContributionAttachment(data.login || parsed.login, data.contributions);
+        return attachment ? { attachment } : null;
     }
     if (parsed.type === 'repo') {
-        return buildRepoCardAttachment(data, parsed);
+        return buildRepoCardVisual(data, parsed, settings);
     }
     return null;
 }
@@ -1414,6 +1587,15 @@ function buildComponents(lang, openUrl) {
     ];
 }
 
+function externalMediaUrlsFromStep(step) {
+    const urls = [];
+    for (const embed of step?.embeds || []) {
+        if (/^https?:\/\//i.test(embed?.image?.url || '')) urls.push(embed.image.url);
+        if (/^https?:\/\//i.test(embed?.thumbnail?.url || '')) urls.push(embed.thumbnail.url);
+    }
+    return urls;
+}
+
 /** @type {import('../_types').Extractor} */
 async function extract(message, url, settings) {
     settings = settings || {};
@@ -1426,10 +1608,11 @@ async function extract(message, url, settings) {
     } catch (err) {
         recordProviderError('github', err, message, url, { endpointKey: 'github/rest' });
         console.log(err);
-        return null;
+        return buildFailureResponse('github', url, settings, err);
     }
 
     const lang = normalizeLang(settings);
+    /** @type {any} */
     const embed = buildEmbed(data, parsed, message, settings, lang);
     if (!embed) return null;
 
@@ -1440,15 +1623,17 @@ async function extract(message, url, settings) {
     ].filter(Boolean).join('\n');
     if (containsBannedWord(bannedTarget, settings.bannedWords)) return null;
 
-    const visualAttachment = buildVisualAttachment(data, parsed);
-    if (visualAttachment) {
-        embed.image = { url: `attachment://${visualAttachment.name}` };
+    const visualAttachment = buildVisualAttachment(data, parsed, settings);
+    if (visualAttachment?.imageUrl) {
+        embed.image = { url: visualAttachment.imageUrl };
+    } else if (visualAttachment?.attachment) {
+        embed.image = { url: `attachment://${visualAttachment.attachment.name}` };
     }
 
     /** @type {import('../_types').SendStep} */
     const step = {
         embeds: [embed],
-        files: visualAttachment ? [visualAttachment] : [],
+        files: visualAttachment?.attachment ? [visualAttachment.attachment] : [],
         components: buildComponents(lang, embed.url || parsed.canonicalUrl),
         allowedMentions: { repliedUser: false },
         send: settings.alwaysreplyifpostedtweetlink === true ? 'reply-source' : 'channel',
@@ -1459,6 +1644,7 @@ async function extract(message, url, settings) {
         step.deleteSource = true;
     }
 
+    applyMediaDisplayToStep(step, settings, externalMediaUrlsFromStep(step), 'Image');
     return [step];
 }
 
@@ -1467,6 +1653,48 @@ const githubProvider = {
     id: 'github',
     enabledByDefault: false,
     urlPattern: GITHUB_URL_PATTERN,
+    settings: [
+        'bannedWords',
+        'anonymous_expand',
+        'alwaysreplyifpostedtweetlink',
+        'deletemessageifonlypostedtweetlink',
+        'display_density',
+        'media_display_mode',
+        'github_card_style',
+        {
+            key: 'hidden_output_items',
+            outputItems: [
+                { value: 'license', label: { en: 'License field', ja: 'License field' } },
+                { value: 'state', label: { en: 'State field', ja: 'State field' } },
+                { value: 'comments', label: { en: 'Comments field', ja: 'Comments field' } },
+                { value: 'mergeable', label: { en: 'Mergeable field', ja: 'Mergeable field' } },
+                { value: 'review_state', label: { en: 'Review state field', ja: 'Review state field' } },
+                { value: 'labels', label: { en: 'Labels field', ja: 'Labels field' } },
+                { value: 'assignees', label: { en: 'Assignees field', ja: 'Assignees field' } },
+                { value: 'changes', label: { en: 'Changes field', ja: 'Changes field' } },
+                { value: 'commits', label: { en: 'Commits field', ja: 'Commits field' } },
+                { value: 'files', label: { en: 'Files field', ja: 'Files field' } },
+                { value: 'sha', label: { en: 'SHA field', ja: 'SHA field' } },
+                { value: 'author', label: { en: 'Author field', ja: 'Author field' } },
+                { value: 'assets', label: { en: 'Assets field', ja: 'Assets field' } },
+                { value: 'type', label: { en: 'Type field', ja: 'Type field' } },
+                { value: 'size', label: { en: 'Size field', ja: 'Size field' } },
+                { value: 'snippet', label: { en: 'File snippet', ja: 'File snippet' } },
+                { value: 'repositories', label: { en: 'Repositories field', ja: 'Repositories field' } },
+                { value: 'followers', label: { en: 'Followers field', ja: 'Followers field' } },
+                { value: 'location', label: { en: 'Location field', ja: 'Location field' } },
+                { value: 'contributions', label: { en: 'Contributions field', ja: 'Contributions field' } },
+                { value: 'gist_files', label: { en: 'Gist files field', ja: 'Gist files field' } },
+                { value: 'language_breakdown', label: { en: 'Language breakdown field', ja: 'Language breakdown field' } },
+                { value: 'topics', label: { en: 'Topics field', ja: 'Topics field' } },
+                { value: 'default_branch', label: { en: 'Default branch field', ja: 'Default branch field' } },
+                { value: 'last_push', label: { en: 'Last push field', ja: 'Last push field' } },
+                { value: 'repo_card', label: { en: 'Repository card image', ja: 'リポジトリカード画像' } },
+                { value: 'language', label: { en: 'Language field/visual', ja: '言語欄/言語表示' } },
+                { value: 'repo_stats', label: { en: 'Stars/forks/issues fields', ja: 'スター/フォーク/Issue欄' } },
+            ],
+        },
+    ],
     extract,
 };
 

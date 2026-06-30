@@ -105,6 +105,70 @@ test('pixiv extract: default mode shows 4 images in a single message', async () 
     assert.equal(result[0].embeds[0].image.url, 'https://www.phixiv.net/i/img-master/img/2024/01/01/00/00/00/123456_p0_master1200.jpg');
 });
 
+test('pixiv extract: GUI output settings control description length and tags', async () => {
+    const provider = loadPixivProviderWithFetch(async (url) => {
+        if (String(url).includes('/pages?')) return okJson(createPages(1));
+        return okJson({
+            ...createInfo(),
+            description: '0123456789',
+            tags: { tags: [{ tag: 'hidden-tag' }] },
+        });
+    });
+
+    const result = await provider.extract(createMessage(), 'https://www.pixiv.net/artworks/123456', {
+        pixiv_caption_max_length: 5,
+        hidden_output_items: ['tags'],
+    });
+
+    assert.equal(result[0].embeds[0].description, '0123…');
+    assert.equal((result[0].embeds[0].fields || []).some(field => field.name === 'Tags'), false);
+});
+
+test('pixiv extract: tag limit and artwork labels are configurable', async () => {
+    const provider = loadPixivProviderWithFetch(async (url) => {
+        if (String(url).includes('/pages?')) return okJson(createPages(1));
+        return okJson({
+            ...createInfo(),
+            aiType: 2,
+            xRestrict: 2,
+            illustType: 2,
+            tags: { tags: Array.from({ length: 8 }, (_value, index) => ({ tag: `tag${index + 1}` })) },
+        });
+    });
+
+    const visible = await provider.extract(createMessage(), 'https://www.pixiv.net/artworks/123456', {
+        pixiv_tag_limit: 5,
+    });
+    const hidden = await provider.extract(createMessage(), 'https://www.pixiv.net/artworks/123456', {
+        hidden_output_items: ['ai', 'maturity', 'type'],
+        pixiv_tag_limit: 'all',
+    });
+
+    assert.equal(visible[0].embeds[0].title, '[AI] sample [R-18G]');
+    assert.equal(visible[0].embeds[0].fields.find(field => field.name === 'Tags').value, '#tag1 #tag2 #tag3 #tag4 #tag5');
+    assert.equal(visible[0].embeds[0].fields.find(field => field.name === 'Type').value, 'Ugoira');
+    assert.equal(hidden[0].embeds[0].title, 'sample');
+    assert.equal(hidden[0].embeds[0].fields.find(field => field.name === 'Type'), undefined);
+    assert.match(hidden[0].embeds[0].fields.find(field => field.name === 'Tags').value, /#tag8/);
+});
+
+test('pixiv extract: compact density and attachment media mode reduce fields and attach images', async () => {
+    const provider = loadPixivProviderWithFetch(createPixivFetch(3));
+
+    const result = await provider.extract(createMessage(), 'https://www.pixiv.net/artworks/123456', {
+        display_density: 'compact',
+        media_display_mode: 'attachment',
+    });
+
+    assert.ok(Array.isArray(result));
+    assert.equal(result[0].embeds.length, 3);
+    assert.equal(result[0].embeds[0].image, undefined);
+    assert.equal((result[0].embeds[0].fields || []).some(field => field.name === 'Pages'), false);
+    assert.equal((result[0].embeds[0].fields || []).some(field => field.name === 'Tags'), true);
+    assert.equal(result[0].files.length, 3);
+    assert.match(result[0].files[0], /https:\/\/www\.phixiv\.net\/i\/img-master\/img\/2024\/01\/01\/00\/00\/00\/123456_p0_master1200\.jpg/);
+});
+
 test('pixiv extract: pages 404 with hidden images returns null without logging an error', async () => {
     const provider = loadPixivProviderWithFetch(async (url) => {
         if (String(url).includes('/pages?')) {

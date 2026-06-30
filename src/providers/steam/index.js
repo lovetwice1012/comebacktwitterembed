@@ -3,12 +3,22 @@
 const fetch = require('node-fetch');
 const { ButtonBuilder, ButtonStyle, ComponentType } = require('discord.js');
 const { recordProviderError } = require('../../errorTracking');
+const {
+    applyEmbedMedia,
+    attachmentMediaUrls,
+    buildFailureResponse,
+    mediaButtonAllowed,
+    mediaLinksContent,
+    resolveDensityMaxLength,
+    shouldShowOutputItem,
+} = require('../_output_controls');
 
 const STEAM_COLOR = 0x171a21;
 const DESCRIPTION_MAX_LENGTH = 900;
 const FIELD_MAX_LENGTH = 1024;
 const STEAM_URL_PATTERN =
     /https?:\/\/(?:(?:store)\.steampowered\.com|(?:www\.)?steamcommunity\.com|s\.team)\/[^\s<>|]+/gi;
+const STEAM_IMAGE_SOURCES = new Set(['header', 'screenshot', 'thumbnail']);
 
 const REQUEST_HEADERS = {
     Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
@@ -36,12 +46,17 @@ const STR = {
     deleteButton: { ja: 'Delete', en: 'Delete' },
     typeField: { ja: 'Type', en: 'Type' },
     priceField: { ja: 'Price', en: 'Price' },
+    discountField: { ja: 'Discount', en: 'Discount' },
+    saleEndsField: { ja: 'Sale ends', en: 'Sale ends' },
     releaseDateField: { ja: 'Release date', en: 'Release date' },
     developerField: { ja: 'Developer', en: 'Developer' },
     publisherField: { ja: 'Publisher', en: 'Publisher' },
     genresField: { ja: 'Genres', en: 'Genres' },
     platformsField: { ja: 'Platforms', en: 'Platforms' },
     recommendationsField: { ja: 'Recommendations', en: 'Recommendations' },
+    currentPlayersField: { ja: 'Current players', en: 'Current players' },
+    reviewSummaryField: { ja: 'Review summary', en: 'Review summary' },
+    metacriticField: { ja: 'Metacritic', en: 'Metacritic' },
     idField: { ja: 'ID', en: 'ID' },
     requesterPrefix: { ja: 'Requested by ', en: 'Requested by ' },
     anonymousRequester: { ja: 'Anonymous requester', en: 'Anonymous requester' },
@@ -110,6 +125,14 @@ function truncate(value, maxLength) {
     if (!text || text.length <= maxLength) return text;
     if (maxLength <= 3) return text.slice(0, maxLength);
     return text.slice(0, maxLength - 3).trimEnd() + '...';
+}
+
+function steamDescriptionMaxLength(settings) {
+    return resolveDensityMaxLength(settings, 'steam_description_max_length', DESCRIPTION_MAX_LENGTH, {
+        compact: 200,
+        detail: DESCRIPTION_MAX_LENGTH,
+        hardMax: DESCRIPTION_MAX_LENGTH,
+    });
 }
 
 function extractAttr(tag, attrName) {
@@ -350,6 +373,48 @@ async function fetchSteamAppDetails(appId, settings) {
     return entry.data;
 }
 
+async function fetchSteamCurrentPlayers(appId) {
+    const apiUrl = new URL('https://api.steampowered.com/ISteamUserStats/GetNumberOfCurrentPlayers/v1/');
+    apiUrl.searchParams.set('appid', appId);
+    const res = await fetch(apiUrl.toString(), {
+        headers: {
+            Accept: 'application/json',
+            'User-Agent': REQUEST_HEADERS['User-Agent'],
+        },
+    });
+    if (!res.ok) throw new Error(`steam current players ${res.status} for ${appId}`);
+    const json = await res.json();
+    const count = Number(json?.response?.player_count);
+    return Number.isFinite(count) && count >= 0 ? formatNumber(count) : '';
+}
+
+async function fetchSteamReviewSummary(appId, settings) {
+    const apiUrl = new URL(`https://store.steampowered.com/appreviews/${encodeURIComponent(appId)}`);
+    apiUrl.searchParams.set('json', '1');
+    apiUrl.searchParams.set('language', steamApiLanguage(settings));
+    apiUrl.searchParams.set('purchase_type', 'all');
+    apiUrl.searchParams.set('num_per_page', '0');
+    const res = await fetch(apiUrl.toString(), {
+        headers: {
+            Accept: 'application/json',
+            'User-Agent': REQUEST_HEADERS['User-Agent'],
+        },
+    });
+    if (!res.ok) throw new Error(`steam appreviews ${res.status} for ${appId}`);
+    const json = await res.json();
+    const summary = json?.query_summary;
+    if ((json?.success !== 1 && json?.success !== true) || !summary) return '';
+    return formatReviewSummary(summary);
+}
+
+async function optionalSteamValue(factory) {
+    try {
+        return await factory();
+    } catch {
+        return '';
+    }
+}
+
 async function fetchSteamPage(rawUrl) {
     const res = await fetch(rawUrl, { headers: REQUEST_HEADERS, redirect: 'follow' });
     if (!res.ok) throw new Error(`steam page ${res.status} for ${rawUrl}`);
@@ -375,6 +440,36 @@ function formatPrice(data, lang) {
     return discount > 0 ? `${finalPrice} (${discount}% off)` : finalPrice;
 }
 
+function formatDiscount(data) {
+    const discount = Number(data?.price_overview?.discount_percent) || 0;
+    return discount > 0 ? `${discount}% off` : '';
+}
+
+function formatSaleEnds(data) {
+    const unix = Number(data?.price_overview?.discount_expiration);
+    if (!Number.isFinite(unix) || unix <= 0) return '';
+    return `<t:${Math.round(unix)}:R>`;
+}
+
+function formatMetacritic(data) {
+    const score = Number(data?.metacritic?.score);
+    if (!Number.isFinite(score) || score <= 0) return '';
+    return data?.metacritic?.url ? `[${score}](${data.metacritic.url})` : String(score);
+}
+
+function formatReviewSummary(summary) {
+    const label = cleanText(summary?.review_score_desc || '');
+    const total = Number(summary?.total_reviews);
+    const positive = Number(summary?.total_positive);
+    const totalText = Number.isFinite(total) && total > 0 ? formatNumber(total) : '';
+    if (label && totalText) return `${label} (${totalText})`;
+    if (label) return label;
+    if (Number.isFinite(positive) && Number.isFinite(total) && total > 0) {
+        return `${Math.round((positive / total) * 100)}% positive (${formatNumber(total)})`;
+    }
+    return totalText;
+}
+
 function formatList(value) {
     if (!Array.isArray(value)) return cleanText(value);
     return value
@@ -398,6 +493,27 @@ function formatPlatforms(platforms) {
     return out.join(', ');
 }
 
+function resolveSteamImageSource(settings) {
+    const value = String(settings?.steam_image_source || 'header').trim();
+    return STEAM_IMAGE_SOURCES.has(value) ? value : 'header';
+}
+
+function firstScreenshotImage(screenshots) {
+    if (!Array.isArray(screenshots)) return '';
+    const item = screenshots.find(screenshot => screenshot?.path_full || screenshot?.path_thumbnail);
+    return item?.path_full || item?.path_thumbnail || '';
+}
+
+function steamAppImageUrl(data, settings) {
+    const header = data?.header_image || data?.capsule_image || data?.library_600x900 || data?.background_raw || '';
+    const screenshot = firstScreenshotImage(data?.screenshots);
+    const thumbnail = data?.capsule_imagev5 || data?.capsule_image || data?.header_image || data?.library_600x900 || '';
+    const source = resolveSteamImageSource(settings);
+    if (source === 'screenshot') return screenshot || header || thumbnail || data?.background_raw || '';
+    if (source === 'thumbnail') return thumbnail || header || screenshot || data?.background_raw || '';
+    return header || screenshot || thumbnail || data?.background_raw || '';
+}
+
 function cleanSteamTitle(value) {
     return cleanText(value)
         .replace(/^Steam Community\s*::\s*/i, '')
@@ -406,23 +522,28 @@ function cleanSteamTitle(value) {
         .trim();
 }
 
-function normalizeSteamAppDetails(data, parsed, lang) {
+function normalizeSteamAppDetails(data, parsed, lang, settings, extras = {}) {
     return {
         title: cleanSteamTitle(data?.name) || `${tr(STR.fallbackAppTitle, lang)}${parsed.id}`,
-        description: truncate(cleanText(data?.short_description || data?.about_the_game || ''), DESCRIPTION_MAX_LENGTH),
-        imageUrl: data?.header_image || data?.capsule_image || data?.library_600x900 || data?.background_raw || '',
+        description: truncate(cleanText(data?.short_description || data?.about_the_game || ''), steamDescriptionMaxLength(settings)),
+        imageUrl: steamAppImageUrl(data, settings),
         typeLabel: formatAppType(data?.type),
         price: formatPrice(data, lang),
+        discount: formatDiscount(data),
+        saleEnds: formatSaleEnds(data),
         releaseDate: cleanText(data?.release_date?.date || ''),
         developers: formatList(data?.developers),
         publishers: formatList(data?.publishers),
         genres: formatList(data?.genres),
         platforms: formatPlatforms(data?.platforms),
         recommendations: data?.recommendations?.total ? formatNumber(data.recommendations.total) : '',
+        currentPlayers: extras.currentPlayers || '',
+        reviewSummary: extras.reviewSummary || '',
+        metacritic: formatMetacritic(data),
     };
 }
 
-function extractSteamPageInfo(html, parsed, baseUrl, lang) {
+function extractSteamPageInfo(html, parsed, baseUrl, lang, settings) {
     const title = cleanSteamTitle(
         readMetaContent(html, 'og:title')
         || readMetaContent(html, 'twitter:title')
@@ -430,7 +551,7 @@ function extractSteamPageInfo(html, parsed, baseUrl, lang) {
     );
     const description = truncate(
         cleanText(readMetaContent(html, 'og:description') || readMetaContent(html, 'description')),
-        DESCRIPTION_MAX_LENGTH
+        steamDescriptionMaxLength(settings)
     );
     const imageUrl = absoluteUrl(
         readMetaContent(html, 'og:image') || readMetaContent(html, 'twitter:image'),
@@ -455,21 +576,29 @@ function fallbackTitleFor(parsed, lang) {
 }
 
 function addField(fields, name, value, inline = true) {
-    const text = truncate(cleanText(value), FIELD_MAX_LENGTH);
+    const raw = String(value ?? '').trim();
+    const text = /^<t:\d+:[tTdDfFR]>$/.test(raw)
+        ? raw
+        : truncate(cleanText(raw), FIELD_MAX_LENGTH);
     if (!text) return;
     fields.push({ name, value: text, inline });
 }
 
-function addInfoFields(fields, parsed, info, lang) {
-    addField(fields, tr(STR.typeField, lang), info.typeLabel || KIND_LABELS[parsed.kind]);
-    addField(fields, tr(STR.priceField, lang), info.price);
-    addField(fields, tr(STR.releaseDateField, lang), info.releaseDate);
-    addField(fields, tr(STR.developerField, lang), info.developers);
-    addField(fields, tr(STR.publisherField, lang), info.publishers);
-    addField(fields, tr(STR.genresField, lang), info.genres);
-    addField(fields, tr(STR.platformsField, lang), info.platforms);
-    addField(fields, tr(STR.recommendationsField, lang), info.recommendations);
-    addField(fields, tr(STR.idField, lang), parsed.id);
+function addInfoFields(fields, parsed, info, lang, settings) {
+    if (shouldShowOutputItem(settings, 'type')) addField(fields, tr(STR.typeField, lang), info.typeLabel || KIND_LABELS[parsed.kind]);
+    if (shouldShowOutputItem(settings, 'price')) addField(fields, tr(STR.priceField, lang), info.price);
+    if (shouldShowOutputItem(settings, 'discount')) addField(fields, tr(STR.discountField, lang), info.discount);
+    if (shouldShowOutputItem(settings, 'sale_ends')) addField(fields, tr(STR.saleEndsField, lang), info.saleEnds);
+    if (shouldShowOutputItem(settings, 'release_date')) addField(fields, tr(STR.releaseDateField, lang), info.releaseDate);
+    if (shouldShowOutputItem(settings, 'developer')) addField(fields, tr(STR.developerField, lang), info.developers);
+    if (shouldShowOutputItem(settings, 'publisher')) addField(fields, tr(STR.publisherField, lang), info.publishers);
+    if (shouldShowOutputItem(settings, 'genres')) addField(fields, tr(STR.genresField, lang), info.genres);
+    if (shouldShowOutputItem(settings, 'platforms')) addField(fields, tr(STR.platformsField, lang), info.platforms);
+    if (shouldShowOutputItem(settings, 'recommendations')) addField(fields, tr(STR.recommendationsField, lang), info.recommendations);
+    if (shouldShowOutputItem(settings, 'current_players')) addField(fields, tr(STR.currentPlayersField, lang), info.currentPlayers);
+    if (shouldShowOutputItem(settings, 'review_summary')) addField(fields, tr(STR.reviewSummaryField, lang), info.reviewSummary);
+    if (shouldShowOutputItem(settings, 'metacritic')) addField(fields, tr(STR.metacriticField, lang), info.metacritic);
+    if (shouldShowOutputItem(settings, 'id')) addField(fields, tr(STR.idField, lang), parsed.id);
 }
 
 function containsBannedWord(text, bannedWords) {
@@ -496,7 +625,7 @@ function openButtonLabelFor(parsed, lang) {
     return tr(STR.openButton, lang);
 }
 
-function buildComponents(lang, parsed, hasImage) {
+function buildComponents(lang, parsed, hasImage, settings) {
     const rows = [];
     const firstRow = [
         new ButtonBuilder()
@@ -504,7 +633,7 @@ function buildComponents(lang, parsed, hasImage) {
             .setLabel(openButtonLabelFor(parsed, lang))
             .setURL(parsed.openUrl || parsed.canonicalUrl),
     ];
-    if (hasImage) {
+    if (hasImage && mediaButtonAllowed(settings)) {
         firstRow.push(
             new ButtonBuilder()
                 .setStyle(ButtonStyle.Primary)
@@ -531,7 +660,7 @@ function buildComponents(lang, parsed, hasImage) {
 
 function buildEmbed(parsed, info, message, settings, lang) {
     const fields = [];
-    addInfoFields(fields, parsed, info, lang);
+    addInfoFields(fields, parsed, info, lang, settings);
 
     const embed = {
         title: info.title || fallbackTitleFor(parsed, lang),
@@ -543,7 +672,7 @@ function buildEmbed(parsed, info, message, settings, lang) {
             text: `${tr(STR.requesterPrefix, lang)}${requesterName(message, lang, settings?.anonymous_expand === true)} - ${serviceNameFor(parsed)}`,
         },
     };
-    if (info.imageUrl) embed.image = { url: info.imageUrl };
+    applyEmbedMedia(embed, info.imageUrl, settings);
     return embed;
 }
 
@@ -552,9 +681,18 @@ async function resolveSteamInfo(parsed, settings) {
 
     if (parsed.kind === 'app') {
         try {
+            const appDetails = await fetchSteamAppDetails(parsed.id, settings);
+            const [currentPlayers, reviewSummary] = await Promise.all([
+                shouldShowOutputItem(settings, 'current_players')
+                    ? optionalSteamValue(() => fetchSteamCurrentPlayers(parsed.id))
+                    : '',
+                shouldShowOutputItem(settings, 'review_summary')
+                    ? optionalSteamValue(() => fetchSteamReviewSummary(parsed.id, settings))
+                    : '',
+            ]);
             return {
                 parsed,
-                info: normalizeSteamAppDetails(await fetchSteamAppDetails(parsed.id, settings), parsed, lang),
+                info: normalizeSteamAppDetails(appDetails, parsed, lang, settings, { currentPlayers, reviewSummary }),
             };
         } catch (err) {
             void err;
@@ -569,7 +707,7 @@ async function resolveSteamInfo(parsed, settings) {
 
     return {
         parsed: effectiveParsed,
-        info: extractSteamPageInfo(page.html, effectiveParsed, page.finalUrl, lang),
+        info: extractSteamPageInfo(page.html, effectiveParsed, page.finalUrl, lang, settings),
     };
 }
 
@@ -588,7 +726,7 @@ async function extract(message, url, s) {
         info = resolved.info;
     } catch (err) {
         recordProviderError('steam', err, message, url, { endpointKey: 'steam/api-or-page' });
-        return null;
+        return buildFailureResponse('steam', url, s, err);
     }
 
     const bannedTarget = [
@@ -603,11 +741,16 @@ async function extract(message, url, s) {
     /** @type {import('../_types').SendStep} */
     const step = {
         embeds: [buildEmbed(parsed, info, message, s, lang)],
-        components: buildComponents(lang, parsed, !!info.imageUrl),
+        components: buildComponents(lang, parsed, !!info.imageUrl, s),
         allowedMentions: { repliedUser: false },
         send: s.alwaysreplyifpostedtweetlink === true ? 'reply-source' : 'channel',
         suppressSourceEmbeds: true,
     };
+
+    const mediaFiles = attachmentMediaUrls(s, info.imageUrl);
+    if (mediaFiles.length > 0) step.files = mediaFiles;
+    const mediaContent = mediaLinksContent(s, info.imageUrl, 'Image');
+    if (mediaContent) step.content = mediaContent;
 
     if (s.deletemessageifonlypostedtweetlink === true && message.content.trim() === url) {
         step.deleteSource = true;
@@ -621,6 +764,35 @@ const steamProvider = {
     id: 'steam',
     enabledByDefault: false,
     urlPattern: STEAM_URL_PATTERN,
+    settings: [
+        'bannedWords',
+        'anonymous_expand',
+        'alwaysreplyifpostedtweetlink',
+        'deletemessageifonlypostedtweetlink',
+        'display_density',
+        'media_display_mode',
+        'steam_description_max_length',
+        'steam_image_source',
+        {
+            key: 'hidden_output_items',
+            outputItems: [
+                { value: 'discount', label: { en: 'Discount field', ja: 'Discount field' } },
+                { value: 'sale_ends', label: { en: 'Sale ends field', ja: 'Sale ends field' } },
+                { value: 'metacritic', label: { en: 'Metacritic field', ja: 'Metacritic field' } },
+                { value: 'type', label: { en: 'Type field', ja: 'Type field' } },
+                { value: 'release_date', label: { en: 'Release date field', ja: 'Release date field' } },
+                { value: 'developer', label: { en: 'Developer field', ja: 'Developer field' } },
+                { value: 'publisher', label: { en: 'Publisher field', ja: 'Publisher field' } },
+                { value: 'genres', label: { en: 'Genres field', ja: 'Genres field' } },
+                { value: 'price', label: { en: 'Price field', ja: '価格欄' } },
+                { value: 'platforms', label: { en: 'Platform field', ja: '対応OS欄' } },
+                { value: 'recommendations', label: { en: 'Recommendations field', ja: 'レビュー/おすすめ数欄' } },
+                { value: 'current_players', label: { en: 'Current players field', ja: 'Current players field' } },
+                { value: 'review_summary', label: { en: 'Review summary field', ja: 'Review summary field' } },
+                { value: 'id', label: { en: 'ID field', ja: 'ID欄' } },
+            ],
+        },
+    ],
     extract,
 };
 

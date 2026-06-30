@@ -4,6 +4,14 @@ const { ButtonBuilder, ButtonStyle, ComponentType } = require('discord.js');
 const { recordProviderError } = require('../../errorTracking');
 const niconicoDownloadStore = require('../../niconicoDownloadStore');
 const {
+    applyEmbedMedia,
+    attachmentMediaUrls,
+    buildFailureResponse,
+    mediaLinksContent,
+    resolveDensityMaxLength,
+    shouldShowOutputItem,
+} = require('../_output_controls');
+const {
     fetchWatchData,
     NICONICO_URL_PATTERN,
     niconicoVideoUrl,
@@ -27,6 +35,11 @@ const STR = {
     likes: { ja: 'Likes', en: 'Likes' },
     duration: { ja: 'Duration', en: 'Duration' },
     uploaded: { ja: 'Uploaded', en: 'Uploaded' },
+    series: { ja: 'Series', en: 'Series' },
+    uploader: { ja: 'Uploader', en: 'Uploader' },
+    userUploader: { ja: 'User', en: 'User' },
+    channelUploader: { ja: 'Channel', en: 'Channel' },
+    genre: { ja: 'Genre', en: 'Genre' },
     tags: { ja: 'Tags', en: 'Tags' },
 };
 
@@ -97,8 +110,33 @@ function addField(fields, name, value, inline = true) {
     fields.push({ name, value: truncate(String(value), FIELD_MAX_LENGTH), inline });
 }
 
+function niconicoDescriptionMaxLength(settings) {
+    return resolveDensityMaxLength(settings, 'niconico_description_max_length', DESCRIPTION_MAX_LENGTH, {
+        compact: 200,
+        detail: DESCRIPTION_MAX_LENGTH,
+        hardMax: DESCRIPTION_MAX_LENGTH,
+    });
+}
+
 function thumbnailUrl(thumbnail) {
     return thumbnail?.ogp || thumbnail?.largeUrl || thumbnail?.middleUrl || thumbnail?.url || null;
+}
+
+function pathValue(obj, path) {
+    let current = obj;
+    for (const part of path.split('.')) {
+        if (current == null) return undefined;
+        current = current[part];
+    }
+    return current;
+}
+
+function firstString(obj, paths) {
+    for (const path of paths) {
+        const value = pathValue(obj, path);
+        if (typeof value === 'string' && value.trim()) return value.trim();
+    }
+    return '';
 }
 
 function ownerInfo(watchData) {
@@ -119,6 +157,32 @@ function ownerInfo(watchData) {
     return { name: 'Niconico', url: 'https://www.nicovideo.jp/', iconUrl: undefined };
 }
 
+function uploaderType(watchData, lang) {
+    if (watchData?.channel?.id || watchData?.channel?.name) return tr(STR.channelUploader, lang);
+    if (watchData?.owner?.id || watchData?.owner?.nickname) return tr(STR.userUploader, lang);
+    return '';
+}
+
+function seriesName(watchData) {
+    return firstString(watchData, [
+        'series.title',
+        'series.name',
+        'video.series.title',
+        'video.series.name',
+    ]);
+}
+
+function genreName(watchData) {
+    return firstString(watchData, [
+        'genre.label',
+        'genre.name',
+        'genre.key',
+        'video.genre.label',
+        'video.genre.name',
+        'video.genre.key',
+    ]);
+}
+
 function tagSummary(watchData) {
     const tags = watchData?.tag?.items;
     if (!Array.isArray(tags)) return '';
@@ -134,14 +198,17 @@ function buildVideoEmbed(watchData, parsed, message, s) {
     const video = watchData?.video || {};
     const owner = ownerInfo(watchData);
     const fields = [];
-    addField(fields, tr(STR.views, lang), formatNumber(video.count?.view));
-    addField(fields, tr(STR.comments, lang), formatNumber(video.count?.comment));
-    addField(fields, tr(STR.mylists, lang), formatNumber(video.count?.mylist));
-    addField(fields, tr(STR.likes, lang), formatNumber(video.count?.like));
-    addField(fields, tr(STR.duration, lang), formatDuration(video.duration));
+    if (shouldShowOutputItem(s, 'views')) addField(fields, tr(STR.views, lang), formatNumber(video.count?.view));
+    if (shouldShowOutputItem(s, 'comments')) addField(fields, tr(STR.comments, lang), formatNumber(video.count?.comment));
+    if (shouldShowOutputItem(s, 'mylists')) addField(fields, tr(STR.mylists, lang), formatNumber(video.count?.mylist));
+    if (shouldShowOutputItem(s, 'likes')) addField(fields, tr(STR.likes, lang), formatNumber(video.count?.like));
+    if (shouldShowOutputItem(s, 'duration')) addField(fields, tr(STR.duration, lang), formatDuration(video.duration));
     const uploadedAt = unixTimestamp(video.registeredAt);
-    addField(fields, tr(STR.uploaded, lang), uploadedAt ? `<t:${uploadedAt}:d>` : null);
-    addField(fields, tr(STR.tags, lang), tagSummary(watchData), false);
+    if (shouldShowOutputItem(s, 'uploaded')) addField(fields, tr(STR.uploaded, lang), uploadedAt ? `<t:${uploadedAt}:d>` : null);
+    if (shouldShowOutputItem(s, 'series')) addField(fields, tr(STR.series, lang), seriesName(watchData));
+    if (shouldShowOutputItem(s, 'uploader')) addField(fields, tr(STR.uploader, lang), uploaderType(watchData, lang));
+    if (shouldShowOutputItem(s, 'genre')) addField(fields, tr(STR.genre, lang), genreName(watchData));
+    if (shouldShowOutputItem(s, 'tags')) addField(fields, tr(STR.tags, lang), tagSummary(watchData), false);
 
     const embed = {
         author: {
@@ -151,14 +218,14 @@ function buildVideoEmbed(watchData, parsed, message, s) {
         },
         title: video.title || parsed.id,
         url: parsed.originalUrl || niconicoVideoUrl(parsed.id),
-        description: truncate(decodeHtml(video.description), DESCRIPTION_MAX_LENGTH) || undefined,
+        description: truncate(decodeHtml(video.description), niconicoDescriptionMaxLength(s)) || undefined,
         color: EMBED_COLOR,
         fields,
         footer: { text: requesterFooter(message, lang, s?.anonymous_expand === true), icon_url: NICONICO_ICON },
     };
 
     const thumbnail = thumbnailUrl(video.thumbnail);
-    if (thumbnail) embed.image = { url: thumbnail };
+    applyEmbedMedia(embed, thumbnail, s);
     if (uploadedAt) embed.timestamp = new Date(uploadedAt * 1000).toISOString();
     return embed;
 }
@@ -174,7 +241,7 @@ function buildComponents(lang, includeDownload) {
     return [{ type: ComponentType.ActionRow, components }];
 }
 
-function buildStep(embed, message, url, s, lang) {
+function buildStep(embed, message, url, s, lang, mediaUrls = []) {
     /** @type {import('../_types').SendStep} */
     const step = {
         embeds: [embed],
@@ -183,6 +250,12 @@ function buildStep(embed, message, url, s, lang) {
         send: s.alwaysreplyifpostedtweetlink === true ? 'reply-source' : 'channel',
         suppressSourceEmbeds: true,
     };
+
+    const files = attachmentMediaUrls(s, mediaUrls);
+    if (files.length > 0) step.files = files;
+
+    const mediaContent = mediaLinksContent(s, mediaUrls, 'Thumbnail');
+    if (mediaContent) step.content = mediaContent;
 
     if (s.deletemessageifonlypostedtweetlink === true && message.content.trim() === url) {
         step.deleteSource = true;
@@ -200,10 +273,11 @@ async function extract(message, url, s) {
         const lang = normalizeLang(s);
         const watchData = await fetchWatchData(parsed.id);
         const embed = buildVideoEmbed(watchData, parsed, message, s);
-        return [buildStep(embed, message, url, s, lang)];
+        const mediaUrl = thumbnailUrl(watchData?.video?.thumbnail);
+        return [buildStep(embed, message, url, s, lang, mediaUrl ? [mediaUrl] : [])];
     } catch (err) {
         recordProviderError('niconico', err, message, url, { endpointKey: 'nicovideo/watch' });
-        return null;
+        return buildFailureResponse('niconico', url, s, err);
     }
 }
 
@@ -212,6 +286,29 @@ const niconicoProvider = {
     id: 'niconico',
     enabledByDefault: false,
     urlPattern: NICONICO_URL_PATTERN,
+    settings: [
+        'anonymous_expand',
+        'alwaysreplyifpostedtweetlink',
+        'deletemessageifonlypostedtweetlink',
+        'display_density',
+        'media_display_mode',
+        'niconico_description_max_length',
+        {
+            key: 'hidden_output_items',
+            outputItems: [
+                { value: 'views', label: { en: 'Views field', ja: 'Views field' } },
+                { value: 'comments', label: { en: 'Comments field', ja: 'Comments field' } },
+                { value: 'mylists', label: { en: 'Mylists field', ja: 'Mylists field' } },
+                { value: 'likes', label: { en: 'Likes field', ja: 'Likes field' } },
+                { value: 'duration', label: { en: 'Duration field', ja: 'Duration field' } },
+                { value: 'uploaded', label: { en: 'Uploaded field', ja: 'Uploaded field' } },
+                { value: 'series', label: { en: 'Series field', ja: 'Series field' } },
+                { value: 'uploader', label: { en: 'Uploader type field', ja: 'Uploader type field' } },
+                { value: 'genre', label: { en: 'Genre field', ja: 'Genre field' } },
+                { value: 'tags', label: { en: 'Tags field', ja: 'Tags field' } },
+            ],
+        },
+    ],
     extract,
 };
 

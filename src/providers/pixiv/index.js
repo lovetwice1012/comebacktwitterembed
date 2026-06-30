@@ -25,6 +25,13 @@
 const fetch = require('node-fetch');
 const { ButtonBuilder, ButtonStyle, ComponentType } = require('discord.js');
 const { recordProviderError } = require('../../errorTracking');
+const {
+    applyMediaDisplayToStep,
+    buildFailureResponse,
+    resolveDensityMaxLength,
+    resolveDisplayDensity,
+    shouldShowOutputItem,
+} = require('../_output_controls');
 
 // ---- inline 翻訳 (twitter provider と同じ手法) -----------------------------
 //
@@ -41,6 +48,8 @@ const STR = {
     anonRequester:                { ja: '匿名ユーザー',                         en: 'Anonymous requester' },
     aiPrefix:                     { ja: '[AI生成] ',                            en: '[AI] ' },
     fallbackTitle:                { ja: 'pixiv 作品 #',                         en: 'pixiv #' },
+    typeField:                    { ja: 'Type',                                  en: 'Type' },
+    ugoira:                       { ja: 'Ugoira',                                en: 'Ugoira' },
 };
 
 function tr(spec, lang) {
@@ -61,6 +70,7 @@ const IMAGES_PER_STEP_FULL = 10;
 const MAX_EMBEDS_PER_MESSAGE = 10; // Discord limit
 const IMAGES_PER_GROUP = 4;        // Discord が同一 url の embed をギャラリー表示する上限
 const DESCRIPTION_MAX_LENGTH = 350;
+const DESCRIPTION_LIMIT_MAX = 1200;
 const TAGS_MAX_LENGTH        = 256;
 
 // ---- URL parser -----------------------------------------------------------
@@ -218,13 +228,29 @@ function stripHtml(html) {
 
 function truncate(s, max) {
     if (!s) return '';
+    if (max <= 0) return '';
     if (s.length <= max) return s;
     return s.slice(0, max - 1) + '…';
 }
 
-function joinTags(tags) {
+function resolveTagLimit(settings) {
+    if (!shouldShowOutputItem(settings, 'tags', { hideInCompact: false })) return 0;
+    const raw = settings?.pixiv_tag_limit;
+    if (raw === 'all') return Infinity;
+    const n = Number(raw);
+    if ([0, 5, 10, 20].includes(n)) return n;
+    const density = resolveDisplayDensity(settings);
+    if (density === 'compact') return 5;
+    if (density === 'detail') return Infinity;
+    return 10;
+}
+
+function joinTags(tags, settings = {}) {
     if (!Array.isArray(tags) || tags.length === 0) return '';
-    return truncate(tags.join(' '), TAGS_MAX_LENGTH);
+    const limit = resolveTagLimit(settings);
+    if (limit <= 0) return '';
+    const selected = Number.isFinite(limit) ? tags.slice(0, limit) : tags;
+    return truncate(selected.join(' '), TAGS_MAX_LENGTH);
 }
 
 function pickLanguage(guildLang) {
@@ -239,10 +265,31 @@ function ageRestrictionLabel(x_restrict) {
     return '';
 }
 
+function showAiLabel(settings) {
+    return shouldShowOutputItem(settings, 'ai', { hideInCompact: false });
+}
+
+function showMaturityLabel(settings) {
+    return shouldShowOutputItem(settings, 'maturity', { hideInCompact: false });
+}
+
 function resolveImagesPerStep(value) {
     const n = Number(value);
     if (n === IMAGES_PER_STEP_FULL) return IMAGES_PER_STEP_FULL;
     return IMAGES_PER_STEP_PC;
+}
+
+function resolveCaptionMaxLength(value, settings = {}) {
+    if (value === undefined || value === null || value === '') {
+        return resolveDensityMaxLength(settings, 'pixiv_caption_max_length', DESCRIPTION_MAX_LENGTH, {
+            compact: 140,
+            detail: DESCRIPTION_LIMIT_MAX,
+            hardMax: DESCRIPTION_LIMIT_MAX,
+        });
+    }
+    const n = Number(value);
+    if (!Number.isFinite(n)) return DESCRIPTION_MAX_LENGTH;
+    return Math.max(0, Math.min(DESCRIPTION_LIMIT_MAX, Math.round(n)));
 }
 
 // ---- extract --------------------------------------------------------------
@@ -261,7 +308,7 @@ async function extract(message, url, s) {
     } catch (err) {
         recordProviderError('pixiv', err, message, url, { endpointKey: 'pixiv/ajax/illust' });
         console.log(err);
-        return null;
+        return buildFailureResponse('pixiv', url, s, err);
     }
 
     const images = Array.isArray(info.image_proxy_urls) ? info.image_proxy_urls : [];
@@ -276,12 +323,12 @@ async function extract(message, url, s) {
 
     const canonicalUrl = info.url || `https://www.pixiv.net/artworks/${info.illust_id || parsed.id}`;
     const title =
-        (info.ai_generated ? tr(STR.aiPrefix, lang) : '')
+        (info.ai_generated && showAiLabel(s) ? tr(STR.aiPrefix, lang) : '')
         + (info.title || `${tr(STR.fallbackTitle, lang)}${parsed.id}`)
-        + ageRestrictionLabel(Number(info.x_restrict) || 0);
+        + (showMaturityLabel(s) ? ageRestrictionLabel(Number(info.x_restrict) || 0) : '');
 
-    const description = truncate(stripHtml(info.description || ''), DESCRIPTION_MAX_LENGTH);
-    const tagsLine = joinTags(info.tags);
+    const description = truncate(stripHtml(info.description || ''), resolveCaptionMaxLength(s.pixiv_caption_max_length, s));
+    const tagsLine = joinTags(info.tags, s);
 
     const imagesPerStep = Math.min(resolveImagesPerStep(s.pixiv_images_per_step), MAX_EMBEDS_PER_MESSAGE);
 
@@ -322,12 +369,13 @@ async function extract(message, url, s) {
             };
             if (description) embed.description = description;
             const fields = [];
+            if (info.is_ugoira && shouldShowOutputItem(s, 'type')) fields.push({ name: tr(STR.typeField, lang), value: tr(STR.ugoira, lang), inline: true });
             if (tagsLine) fields.push({ name: tr(STR.tagsField, lang), value: tagsLine, inline: false });
             if (images.length > 1) {
                 const pagesText = displayImages.length === 1
                     ? `${pageStartIndex + 1} / ${images.length}`
                     : `${pageStartIndex + 1}-${pageStartIndex + displayImages.length} / ${images.length}`;
-                fields.push({ name: tr(STR.pagesField, lang), value: pagesText, inline: true });
+                if (shouldShowOutputItem(s, 'pages')) fields.push({ name: tr(STR.pagesField, lang), value: pagesText, inline: true });
             }
             if (fields.length > 0) embed.fields = fields;
             embed.footer = { text: `${tr(STR.requesterPrefix, lang)}${requesterName} · pixiv` };
@@ -366,6 +414,7 @@ async function extract(message, url, s) {
         step.suppressSourceEmbeds = true;
     }
 
+    applyMediaDisplayToStep(step, s, displayImages, 'Image');
     return [step];
 }
 
@@ -377,6 +426,27 @@ const pixivProvider = {
     // 既定は無効。ギルド管理者が `/provider` で明示的に有効化したときだけ動く。
     enabledByDefault: false,
     urlPattern: PIXIV_URL_PATTERN,
+    settings: [
+        'anonymous_expand',
+        'alwaysreplyifpostedtweetlink',
+        'deletemessageifonlypostedtweetlink',
+        'legacy_mode',
+        'display_density',
+        'media_display_mode',
+        'pixiv_images_per_step',
+        'pixiv_caption_max_length',
+        'pixiv_tag_limit',
+        {
+            key: 'hidden_output_items',
+            outputItems: [
+                { value: 'ai', label: { en: 'AI-generated label', ja: 'AI-generated label' } },
+                { value: 'maturity', label: { en: 'R-18/R-18G label', ja: 'R-18/R-18G label' } },
+                { value: 'type', label: { en: 'Artwork type field', ja: 'Artwork type field' } },
+                { value: 'pages', label: { en: 'Page count field', ja: 'Page count field' } },
+                { value: 'tags', label: { en: 'Tags field', ja: 'タグ欄' } },
+            ],
+        },
+    ],
     // cleanPattern は省略 → loader が urlPattern から自動生成 (<...> / ||...|| 除去)
     extract,
 };

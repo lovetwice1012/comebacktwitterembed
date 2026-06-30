@@ -2,7 +2,20 @@
 
 const fetch = require('node-fetch');
 const { ButtonBuilder, ButtonStyle, ComponentType } = require('discord.js');
+const { recordProviderError } = require('../../errorTracking');
 const { settings } = require('../../settings');
+const {
+    applyEmbedMedia,
+    attachmentMediaUrls,
+    buildFailureResponse,
+    mediaButtonAllowed,
+    mediaLinksContent,
+    resolveDensityMaxLength,
+    resolveDisplayDensity,
+    resolveMediaDisplayMode,
+    shouldAttachVideoMedia,
+    shouldShowOutputItem,
+} = require('../_output_controls');
 
 const TIKTOK_URL_PATTERN =
     /https?:\/\/(?:(?:www|m|vm|vt)\.)?tiktok\.com\/[^\s<>|]+/g;
@@ -10,6 +23,7 @@ const TIKTOK_URL_PATTERN =
 const EMBED_COLOR = 0xff0050;
 const MAX_DESCRIPTION_LENGTH = 900;
 const MAX_IMAGES_PER_MESSAGE = 10;
+const TIKTOK_IMAGE_LIMITS = new Set([1, 4, 10]);
 const IMAGES_PER_GROUP = 4;
 const MAX_VIDEO_UPLOAD_BYTES = 25 * 1024 * 1024;
 const AWEME_ID_PATTERN = /^\d{1,25}$/;
@@ -31,6 +45,12 @@ const STR = {
     profileLikes:                 { ja: 'Likes',                     en: 'Likes' },
     profileVideos:                { ja: 'Videos',                    en: 'Videos' },
     imagesField:                  { ja: 'Images',                    en: 'Images' },
+    durationField:                { ja: 'Duration',                  en: 'Duration' },
+    musicField:                   { ja: 'Music',                     en: 'Music' },
+    hashtagsField:                { ja: 'Hashtags',                  en: 'Hashtags' },
+    profileStatusField:           { ja: 'Status',                    en: 'Status' },
+    verifiedStatus:               { ja: 'Verified',                  en: 'Verified' },
+    websiteField:                 { ja: 'Website',                   en: 'Website' },
     fallbackTitle:                { ja: 'TikTok post',               en: 'TikTok post' },
     fallbackProfileTitle:         { ja: 'TikTok profile',            en: 'TikTok profile' },
 };
@@ -42,7 +62,9 @@ function tr(spec, lang) {
 
 function truncate(text, maxLength) {
     const value = String(text ?? '').trim();
+    if (maxLength <= 0) return '';
     if (value.length <= maxLength) return value;
+    if (maxLength <= 3) return value.slice(0, maxLength);
     return value.slice(0, maxLength - 3) + '...';
 }
 
@@ -53,6 +75,35 @@ function formatNumber(value) {
     if (num < 1000000) return strip((num / 1000).toFixed(1)) + 'K';
     if (num < 1000000000) return strip((num / 1000000).toFixed(1)) + 'M';
     return strip((num / 1000000000).toFixed(1)) + 'B';
+}
+
+function formatDuration(seconds) {
+    const total = Number(seconds);
+    if (!Number.isFinite(total) || total <= 0) return '';
+    const rounded = Math.round(total);
+    const mins = Math.floor(rounded / 60);
+    const secs = String(rounded % 60).padStart(2, '0');
+    return `${mins}:${secs}`;
+}
+
+function addField(fields, name, value, inline = true) {
+    if (value === null || value === undefined || value === '') return;
+    fields.push({ name, value: String(value), inline });
+}
+
+function uniqueTextMatches(text, pattern, limit = 10) {
+    if (!text) return '';
+    const seen = new Set();
+    const values = [];
+    for (const match of String(text).matchAll(pattern)) {
+        const value = match[0];
+        const key = value.toLowerCase();
+        if (seen.has(key)) continue;
+        seen.add(key);
+        values.push(value);
+        if (values.length >= limit) break;
+    }
+    return values.join(' ');
 }
 
 function commonHeaders(userAgent) {
@@ -278,6 +329,24 @@ function buildStatsLine(data, lang) {
     ].join(' | ');
 }
 
+function showTikTokStats(s) {
+    return shouldShowOutputItem(s, 'stats');
+}
+
+function tiktokDescriptionMaxLength(settings) {
+    return resolveDensityMaxLength(settings, 'tiktok_description_max_length', MAX_DESCRIPTION_LENGTH, {
+        compact: 200,
+        detail: MAX_DESCRIPTION_LENGTH,
+        hardMax: MAX_DESCRIPTION_LENGTH,
+    });
+}
+
+function resolveTikTokImageLimit(settings) {
+    const explicit = Number(settings?.tiktok_image_limit);
+    if (TIKTOK_IMAGE_LIMITS.has(explicit)) return explicit;
+    return resolveDisplayDensity(settings) === 'compact' ? 1 : MAX_IMAGES_PER_MESSAGE;
+}
+
 function buildButtons(lang, includeMediaButton) {
     const components = [];
     if (includeMediaButton) {
@@ -307,13 +376,13 @@ function buildButtons(lang, includeMediaButton) {
     return components;
 }
 
-function buildBaseEmbed(data, canonicalUrl, lang, requesterName) {
+function buildBaseEmbed(data, canonicalUrl, lang, requesterName, s) {
     const authorName = data?.author?.nickname || data?.author?.uniqueId || 'TikTok';
     const uniqueId = data?.author?.uniqueId;
     const title = uniqueId ? `${authorName} (@${uniqueId})` : (authorName || tr(STR.fallbackTitle, lang));
     const descriptionParts = [
-        truncate(data?.desc || '', MAX_DESCRIPTION_LENGTH),
-        buildStatsLine(data, lang),
+        truncate(data?.desc || '', tiktokDescriptionMaxLength(s)),
+        showTikTokStats(s) ? buildStatsLine(data, lang) : '',
     ].filter(Boolean);
 
     /** @type {any} */
@@ -331,27 +400,48 @@ function buildBaseEmbed(data, canonicalUrl, lang, requesterName) {
         timestamp: data?.createTime ? new Date(Number(data.createTime) * 1000) : undefined,
     };
 
+    const fields = [];
+    if (shouldShowOutputItem(s, 'duration')) addField(fields, tr(STR.durationField, lang), formatDuration(data?.video?.duration));
+    if (shouldShowOutputItem(s, 'music')) {
+        const musicTitle = pickFirstString(data?.music?.title, data?.music?.musicName);
+        const author = pickFirstString(data?.music?.authorName, data?.music?.author, data?.music?.ownerHandle);
+        addField(fields, tr(STR.musicField, lang), [musicTitle, author].filter(Boolean).join(' - '), false);
+    }
+    if (shouldShowOutputItem(s, 'tags')) {
+        addField(fields, tr(STR.hashtagsField, lang), uniqueTextMatches(data?.desc, /#[\p{L}\p{N}_]+/gu), false);
+    }
+    if (fields.length > 0) embed.fields = fields;
+
     return embed;
 }
 
-function buildProfileEmbed(profile, canonicalUrl, lang, requesterName) {
+function buildProfileEmbed(profile, canonicalUrl, lang, requesterName, s) {
     const user = profile?.user || {};
     const stats = profile?.stats || {};
     const uniqueId = user.uniqueId || canonicalUrl.split('/@')[1] || '';
     const nickname = user.nickname || uniqueId || tr(STR.fallbackProfileTitle, lang);
     const avatarUrl = pickFirstString(user.avatarMedium, user.avatarLarger, user.avatarThumb);
-    const fields = [
-        { name: tr(STR.profileFollowers, lang), value: formatNumber(stats.followerCount), inline: true },
-        { name: tr(STR.profileFollowing, lang), value: formatNumber(stats.followingCount), inline: true },
-        { name: tr(STR.profileLikes, lang), value: formatNumber(stats.heartCount), inline: true },
-        { name: tr(STR.profileVideos, lang), value: formatNumber(stats.videoCount), inline: true },
-    ];
+    const fields = showTikTokStats(s)
+        ? [
+            { name: tr(STR.profileFollowers, lang), value: formatNumber(stats.followerCount), inline: true },
+            { name: tr(STR.profileFollowing, lang), value: formatNumber(stats.followingCount), inline: true },
+            { name: tr(STR.profileLikes, lang), value: formatNumber(stats.heartCount), inline: true },
+            { name: tr(STR.profileVideos, lang), value: formatNumber(stats.videoCount), inline: true },
+        ]
+        : [];
+    if (shouldShowOutputItem(s, 'profile_status') && user.verified === true) {
+        addField(fields, tr(STR.profileStatusField, lang), tr(STR.verifiedStatus, lang));
+    }
+    const website = pickFirstString(user.bioLink?.link, user.bioLink?.url, user.bioUrl, user.externalUrl);
+    if (shouldShowOutputItem(s, 'website') && website) {
+        addField(fields, tr(STR.websiteField, lang), `[${tr(STR.websiteField, lang)}](${website})`);
+    }
 
     /** @type {any} */
     const embed = {
         title: uniqueId ? `${nickname} (@${uniqueId})` : nickname,
         url: canonicalUrl,
-        description: truncate(user.signature || '', MAX_DESCRIPTION_LENGTH),
+        description: truncate(user.signature || '', tiktokDescriptionMaxLength(s)),
         color: EMBED_COLOR,
         author: {
             name: uniqueId ? `@${uniqueId}` : 'TikTok',
@@ -359,15 +449,21 @@ function buildProfileEmbed(profile, canonicalUrl, lang, requesterName) {
             icon_url: avatarUrl || undefined,
         },
         thumbnail: avatarUrl ? { url: avatarUrl } : undefined,
-        fields,
         footer: { text: `${tr(STR.requesterPrefix, lang)}${requesterName} - TikTok` },
     };
+    if (fields.length > 0) embed.fields = fields;
 
     return embed;
 }
 
 function isPhotoPost(data) {
     return Array.isArray(data?.imagePost?.images) && data.imagePost.images.length > 0;
+}
+
+function addImageCountField(embed, shownCount, totalCount, lang, s) {
+    if (totalCount <= 1 || !shouldShowOutputItem(s, 'image_count')) return;
+    if (!Array.isArray(embed.fields)) embed.fields = [];
+    addField(embed.fields, tr(STR.imagesField, lang), `${shownCount} / ${totalCount}`);
 }
 
 /** @type {import('../_types').Extractor} */
@@ -386,8 +482,9 @@ async function extract(message, url, s) {
             ? await fetchProfileData(resolved.id)
             : await fetchVideoData(resolved.id);
     } catch (err) {
+        recordProviderError('tiktok', err, message, url, { endpointKey: 'tiktok/webapp' });
         console.log(err);
-        return null;
+        return buildFailureResponse('tiktok', url, s, err);
     }
 
     if (!data) return null;
@@ -402,7 +499,7 @@ async function extract(message, url, s) {
         const canonicalUrl = `https://www.tiktok.com/@${profileUniqueId}`;
         /** @type {import('../_types').SendStep} */
         const step = {
-            embeds: [buildProfileEmbed(data, canonicalUrl, lang, requesterName)],
+            embeds: [buildProfileEmbed(data, canonicalUrl, lang, requesterName, s)],
             components: buildButtons(lang, false),
             allowedMentions: { repliedUser: false },
             send: s.alwaysreplyifpostedtweetlink === true ? 'reply-source' : 'channel',
@@ -420,34 +517,47 @@ async function extract(message, url, s) {
         ? `https://www.tiktok.com/@${data.author.uniqueId}/${isPhotoPost(data) ? 'photo' : 'video'}/${data.id || resolved.id}`
         : resolved.canonicalUrl;
 
-    const baseEmbed = buildBaseEmbed(data, canonicalUrl, lang, requesterName);
+    const baseEmbed = buildBaseEmbed(data, canonicalUrl, lang, requesterName, s);
     const embeds = [];
     const files = [];
+    let mediaContent = '';
 
     if (isPhotoPost(data)) {
-        const images = pickImageUrls(data).slice(0, MAX_IMAGES_PER_MESSAGE);
-        images.forEach((imageUrl, idx) => {
-            const groupIdx = Math.floor(idx / IMAGES_PER_GROUP);
-            const groupUrl = groupIdx === 0 ? canonicalUrl : `${canonicalUrl}#g${groupIdx}`;
-            if (idx === 0) {
-                baseEmbed.url = groupUrl;
-                baseEmbed.image = { url: imageUrl };
-                if (images.length > 1) {
-                    baseEmbed.fields = [
-                        { name: tr(STR.imagesField, lang), value: `${images.length} / ${pickImageUrls(data).length}`, inline: true },
-                    ];
+        const allImages = pickImageUrls(data);
+        const images = allImages.slice(0, resolveTikTokImageLimit(s));
+        const mode = resolveMediaDisplayMode(s);
+        if (mode === 'embed') {
+            images.forEach((imageUrl, idx) => {
+                const groupIdx = Math.floor(idx / IMAGES_PER_GROUP);
+                const groupUrl = groupIdx === 0 ? canonicalUrl : `${canonicalUrl}#g${groupIdx}`;
+                if (idx === 0) {
+                    baseEmbed.url = groupUrl;
+                    baseEmbed.image = { url: imageUrl };
+                    addImageCountField(baseEmbed, images.length, allImages.length, lang, s);
+                    embeds.push(baseEmbed);
+                } else {
+                    embeds.push({ url: groupUrl, image: { url: imageUrl }, color: EMBED_COLOR });
                 }
-                embeds.push(baseEmbed);
-            } else {
-                embeds.push({ url: groupUrl, image: { url: imageUrl }, color: EMBED_COLOR });
-            }
-        });
+            });
+        } else {
+            applyEmbedMedia(baseEmbed, images[0], s, { asThumbnail: true });
+            addImageCountField(baseEmbed, images.length, allImages.length, lang, s);
+            files.push(...attachmentMediaUrls(s, images));
+            mediaContent = mediaLinksContent(s, images, 'Media');
+            embeds.push(baseEmbed);
+        }
     } else {
         const hq = s.tiktok_hq === true;
-        const videoFile = await downloadVideoAttachment(data, hq);
-        if (videoFile) files.push(videoFile);
+        const videoUrl = pickVideoUrl(data, hq);
+        if (shouldAttachVideoMedia(s)) {
+            const videoFile = await downloadVideoAttachment(data, hq);
+            if (videoFile) files.push(videoFile);
+            else if (resolveMediaDisplayMode(s) === 'attachment' && videoUrl) mediaContent = `Video: ${videoUrl}`;
+        } else if (resolveMediaDisplayMode(s) === 'link_only' && videoUrl) {
+            mediaContent = `Video: ${videoUrl}`;
+        }
         const cover = pickCoverUrl(data);
-        if (cover) baseEmbed.thumbnail = { url: cover };
+        applyEmbedMedia(baseEmbed, cover, s, { asThumbnail: true });
         embeds.push(baseEmbed);
     }
 
@@ -457,11 +567,12 @@ async function extract(message, url, s) {
     const step = {
         embeds,
         files,
-        components: buildButtons(lang, isPhotoPost(data)),
+        components: buildButtons(lang, mediaButtonAllowed(s) && isPhotoPost(data)),
         allowedMentions: { repliedUser: false },
         send: s.alwaysreplyifpostedtweetlink === true ? 'reply-source' : 'channel',
         suppressSourceEmbeds: true,
     };
+    if (mediaContent) step.content = mediaContent;
 
     if (s.deletemessageifonlypostedtweetlink === true && message.content.trim() === url) {
         step.deleteSource = true;
@@ -475,6 +586,28 @@ const tiktokProvider = {
     id: 'tiktok',
     enabledByDefault: false,
     urlPattern: TIKTOK_URL_PATTERN,
+    settings: [
+        'anonymous_expand',
+        'alwaysreplyifpostedtweetlink',
+        'deletemessageifonlypostedtweetlink',
+        'tiktok_hq',
+        'display_density',
+        'media_display_mode',
+        'tiktok_description_max_length',
+        'tiktok_image_limit',
+        {
+            key: 'hidden_output_items',
+            outputItems: [
+                { value: 'duration', label: { en: 'Duration field', ja: 'Duration field' } },
+                { value: 'music', label: { en: 'Music field', ja: 'Music field' } },
+                { value: 'tags', label: { en: 'Hashtags field', ja: 'Hashtags field' } },
+                { value: 'profile_status', label: { en: 'Profile status field', ja: 'Profile status field' } },
+                { value: 'website', label: { en: 'Profile website field', ja: 'Profile website field' } },
+                { value: 'image_count', label: { en: 'Photo count field', ja: 'Photo count field' } },
+                { value: 'stats', label: { en: 'Play/like/comment/share counts', ja: '再生/いいね/コメント/シェア数' } },
+            ],
+        },
+    ],
     extract,
 };
 

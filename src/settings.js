@@ -3,6 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 const { TABLES, ensureDatabaseSchema } = require('./db_schema');
+const { normalizeHiddenOutputItems } = require('./providers/_output_visibility');
 
 const SETTINGS_FILE = path.join(__dirname, '..', 'settings.json');
 
@@ -36,6 +37,16 @@ const SETTINGS_DEFAULT_FILE = {
     deletemessageifonlypostedtweetlink_secoundaryextractmode: {},
     quote_repost_max_depth: {},
     byProvider: {},
+    tiktok_hq: {},
+    twitter_stats_layout: {},
+    twitter_text_mode: {},
+    twitter_quote_mode: {},
+    twitter_quote_layout: {},
+    pixiv_caption_max_length: {},
+    instagram_caption_max_length: {},
+    instagram_media_limit: {},
+    github_card_style: {},
+    hidden_output_items: {},
 };
 
 const SETTINGS_MIGRATIONS = {
@@ -59,6 +70,16 @@ const SETTINGS_MIGRATIONS = {
     deletemessageifonlypostedtweetlink_secoundaryextractmode: {},
     quote_repost_max_depth: {},
     byProvider: {},
+    tiktok_hq: {},
+    twitter_stats_layout: {},
+    twitter_text_mode: {},
+    twitter_quote_mode: {},
+    twitter_quote_layout: {},
+    pixiv_caption_max_length: {},
+    instagram_caption_max_length: {},
+    instagram_media_limit: {},
+    github_card_style: {},
+    hidden_output_items: {},
 };
 
 const LEGACY_TWITTER_GUILD_KEYS = [
@@ -154,6 +175,46 @@ const PROVIDER_SETTING_COLUMNS = {
     youtube_description_max_length: {
         column: 'youtube_description_max_length',
         type: 'int',
+    },
+    tiktok_hq: {
+        column: 'tiktok_hq',
+        type: 'bool',
+    },
+    twitter_text_mode: {
+        column: 'twitter_text_mode',
+        type: 'string',
+    },
+    twitter_stats_layout: {
+        column: 'twitter_stats_layout',
+        type: 'string',
+    },
+    twitter_quote_mode: {
+        column: 'twitter_quote_mode',
+        type: 'string',
+    },
+    twitter_quote_layout: {
+        column: 'twitter_quote_layout',
+        type: 'string',
+    },
+    pixiv_caption_max_length: {
+        column: 'pixiv_caption_max_length',
+        type: 'int',
+    },
+    instagram_caption_max_length: {
+        column: 'instagram_caption_max_length',
+        type: 'int',
+    },
+    instagram_media_limit: {
+        column: 'instagram_media_limit',
+        type: 'int',
+    },
+    github_card_style: {
+        column: 'github_card_style',
+        type: 'string',
+    },
+    hidden_output_items: {
+        column: 'hidden_output_items',
+        type: 'jsonArray',
     },
 };
 
@@ -287,6 +348,7 @@ function convertDatabaseValue(row, spec) {
     if (raw === null || raw === undefined) return undefined;
     if (spec.type === 'bool') return raw === true || raw === 1;
     if (spec.type === 'int') return Number(raw);
+    if (spec.type === 'jsonArray') return normalizeHiddenOutputItems(raw);
     return raw;
 }
 
@@ -583,10 +645,12 @@ async function saveSettingsToDatabase(nextSettings) {
         await ensureProviderAndGuildRows(queryDatabase, providerIds, guildIds);
 
         for (const row of scalarRows) {
-            const values = PROVIDER_SETTING_COLUMN_NAMES.map(column => {
-                const value = row.values[column];
+            const columnSpecs = Object.values(PROVIDER_SETTING_COLUMNS);
+            const values = columnSpecs.map(spec => {
+                const value = row.values[spec.column];
                 if (value === undefined) return null;
                 if (typeof value === 'boolean') return value ? 1 : 0;
+                if (spec.type === 'jsonArray') return JSON.stringify(normalizeHiddenOutputItems(value));
                 return value;
             });
             await queryDatabase(

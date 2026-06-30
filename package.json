@@ -20,6 +20,7 @@
     "deepl-node": "^1.13.1",
     "discord.js": "^14.15.1",
     "express": "^4.21.2",
+    "jpeg-js": "^0.4.4",
     "mysql": "^2.18.1",
     "node-fetch": "^2.7.0"
   },

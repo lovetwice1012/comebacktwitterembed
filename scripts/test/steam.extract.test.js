@@ -61,6 +61,13 @@ function appDetailsPayload(appId = '730') {
                 name: 'Counter-Strike 2',
                 short_description: 'For over two decades, Counter-Strike has offered elite competitive action.',
                 header_image: 'https://cdn.example/steam/header.jpg',
+                capsule_image: 'https://cdn.example/steam/capsule.jpg',
+                screenshots: [
+                    {
+                        path_thumbnail: 'https://cdn.example/steam/screenshot-thumb.jpg',
+                        path_full: 'https://cdn.example/steam/screenshot-full.jpg',
+                    },
+                ],
                 is_free: true,
                 release_date: { coming_soon: false, date: 'Aug 21, 2012' },
                 developers: ['Valve'],
@@ -124,6 +131,127 @@ test('steam extract: builds a Steam app embed from appdetails data', async () =>
     assert.equal(step.components[0].components[0].data.url, 'https://store.steampowered.com/app/730/CounterStrike_2/');
     assert.equal(step.components[0].components[1].data.custom_id, 'showMediaAsAttachments');
     assert.equal(step.suppressSourceEmbeds, true);
+});
+
+test('steam extract: GUI output settings can hide price and platform fields', async () => {
+    const provider = loadSteamProviderWithFetch(async () => okJson(appDetailsPayload()));
+
+    const url = 'https://store.steampowered.com/app/730/CounterStrike_2/';
+    const result = await provider.extract(createMessage(url), url, {
+        hidden_output_items: ['price', 'platforms'],
+    });
+
+    const embed = result[0].embeds[0];
+    assert.equal(fieldValue(embed, 'Price'), undefined);
+    assert.equal(fieldValue(embed, 'Platforms'), undefined);
+    assert.equal(fieldValue(embed, 'Developer'), 'Valve');
+});
+
+test('steam extract: sale and review-adjacent fields can be hidden', async () => {
+    const payload = appDetailsPayload();
+    payload['730'].data.is_free = false;
+    payload['730'].data.price_overview = {
+        final_formatted: '$9.99',
+        discount_percent: 50,
+        discount_expiration: 1710003600,
+    };
+    payload['730'].data.metacritic = {
+        score: 88,
+        url: 'https://www.metacritic.com/game/counter-strike-2/',
+    };
+    const provider = loadSteamProviderWithFetch(async () => okJson(payload));
+
+    const url = 'https://store.steampowered.com/app/730/CounterStrike_2/';
+    const visible = await provider.extract(createMessage(url), url, {});
+    const visibleEmbed = visible[0].embeds[0];
+    assert.equal(fieldValue(visibleEmbed, 'Price'), '$9.99 (50% off)');
+    assert.equal(fieldValue(visibleEmbed, 'Discount'), '50% off');
+    assert.equal(fieldValue(visibleEmbed, 'Sale ends'), '<t:1710003600:R>');
+    assert.equal(fieldValue(visibleEmbed, 'Metacritic'), '[88](https://www.metacritic.com/game/counter-strike-2/)');
+
+    const hidden = await provider.extract(createMessage(url), url, {
+        hidden_output_items: ['discount', 'sale_ends', 'metacritic'],
+    });
+    const hiddenEmbed = hidden[0].embeds[0];
+    assert.equal(fieldValue(hiddenEmbed, 'Discount'), undefined);
+    assert.equal(fieldValue(hiddenEmbed, 'Sale ends'), undefined);
+    assert.equal(fieldValue(hiddenEmbed, 'Metacritic'), undefined);
+});
+
+test('steam extract: current players and review summary are optional fields', async () => {
+    const requests = [];
+    const provider = loadSteamProviderWithFetch(async (url) => {
+        const rawUrl = String(url);
+        requests.push(rawUrl);
+        if (rawUrl.includes('/api/appdetails')) return okJson(appDetailsPayload());
+        if (rawUrl.includes('/ISteamUserStats/GetNumberOfCurrentPlayers/')) {
+            return okJson({ response: { result: 1, player_count: 54321 } });
+        }
+        if (rawUrl.includes('/appreviews/730')) {
+            return okJson({
+                success: 1,
+                query_summary: {
+                    review_score_desc: 'Very Positive',
+                    total_reviews: 123456,
+                    total_positive: 110000,
+                    total_negative: 13456,
+                },
+            });
+        }
+        throw new Error(`Unexpected Steam fetch: ${rawUrl}`);
+    });
+
+    const url = 'https://store.steampowered.com/app/730/CounterStrike_2/';
+    const visible = await provider.extract(createMessage(url), url, {});
+    const visibleEmbed = visible[0].embeds[0];
+
+    assert.equal(fieldValue(visibleEmbed, 'Current players'), '54,321');
+    assert.equal(fieldValue(visibleEmbed, 'Review summary'), 'Very Positive (123,456)');
+    assert.ok(requests.some(request => request.includes('/ISteamUserStats/GetNumberOfCurrentPlayers/')));
+    assert.ok(requests.some(request => request.includes('/appreviews/730')));
+
+    requests.length = 0;
+    const hidden = await provider.extract(createMessage(url), url, {
+        hidden_output_items: ['current_players', 'review_summary'],
+    });
+    const hiddenEmbed = hidden[0].embeds[0];
+
+    assert.equal(fieldValue(hiddenEmbed, 'Current players'), undefined);
+    assert.equal(fieldValue(hiddenEmbed, 'Review summary'), undefined);
+    assert.equal(requests.some(request => request.includes('/ISteamUserStats/GetNumberOfCurrentPlayers/')), false);
+    assert.equal(requests.some(request => request.includes('/appreviews/730')), false);
+});
+
+test('steam extract: image source setting picks screenshots or capsule thumbnails', async () => {
+    const provider = loadSteamProviderWithFetch(async () => okJson(appDetailsPayload()));
+    const url = 'https://store.steampowered.com/app/730/CounterStrike_2/';
+
+    const screenshot = await provider.extract(createMessage(url), url, {
+        steam_image_source: 'screenshot',
+    });
+    assert.equal(screenshot[0].embeds[0].image.url, 'https://cdn.example/steam/screenshot-full.jpg');
+
+    const thumbnail = await provider.extract(createMessage(url), url, {
+        steam_image_source: 'thumbnail',
+    });
+    assert.equal(thumbnail[0].embeds[0].image.url, 'https://cdn.example/steam/capsule.jpg');
+});
+
+test('steam extract: compact density hides metadata and attachment mode sends image file', async () => {
+    const provider = loadSteamProviderWithFetch(async () => okJson(appDetailsPayload()));
+
+    const url = 'https://store.steampowered.com/app/730/CounterStrike_2/';
+    const result = await provider.extract(createMessage(url), url, {
+        display_density: 'compact',
+        media_display_mode: 'attachment',
+    });
+
+    const step = result[0];
+    const embed = step.embeds[0];
+    assert.equal(embed.image, undefined);
+    assert.deepEqual(embed.fields, []);
+    assert.deepEqual(step.files, ['https://cdn.example/steam/header.jpg']);
+    assert.equal(step.components[0].components.length, 1);
 });
 
 test('steam extract: falls back to OpenGraph metadata for Workshop links', async () => {

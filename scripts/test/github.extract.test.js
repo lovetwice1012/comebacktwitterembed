@@ -2,6 +2,7 @@
 
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
+const jpeg = require('jpeg-js');
 
 const githubModulePath = require.resolve('../../src/providers/github');
 const fetchModulePath = require.resolve('node-fetch');
@@ -49,11 +50,12 @@ function okBuffer(buffer) {
     return { ok: true, buffer: async () => buffer };
 }
 
-function onePixelPng() {
-    return Buffer.from(
-        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADUlEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC',
-        'base64'
-    );
+function onePixelJpeg() {
+    return jpeg.encode({
+        data: Buffer.from([36, 41, 47, 255]),
+        width: 1,
+        height: 1,
+    }, 90).data;
 }
 
 function contributionHtml() {
@@ -91,8 +93,8 @@ test('github extract: builds a repository embed from GitHub REST metadata', asyn
         if (url.endsWith('/languages')) {
             return okJson({ JavaScript: 8000, CSS: 2000 });
         }
-        if (String(url).startsWith('https://avatars.example/openai.png')) {
-            return okBuffer(onePixelPng());
+        if (String(url).startsWith('https://avatars.example/openai.jpg')) {
+            return okBuffer(onePixelJpeg());
         }
         return okJson({
             full_name: 'openai/codex',
@@ -103,11 +105,13 @@ test('github extract: builds a repository embed from GitHub REST metadata', asyn
             open_issues_count: 78,
             language: 'JavaScript',
             license: { spdx_id: 'MIT' },
+            topics: ['agent', 'coding'],
+            default_branch: 'main',
             pushed_at: '2026-06-01T12:00:00Z',
             owner: {
                 login: 'openai',
                 html_url: 'https://github.com/openai',
-                avatar_url: 'https://avatars.example/openai.png',
+                avatar_url: 'https://avatars.example/openai.jpg',
             },
         });
     });
@@ -120,7 +124,7 @@ test('github extract: builds a repository embed from GitHub REST metadata', asyn
     assert.equal(requests[1].url, 'https://api.github.com/repos/openai/codex/stats/commit_activity');
     assert.equal(requests[2].url, 'https://api.github.com/repos/openai/codex/commits?per_page=100');
     assert.equal(requests[3].url, 'https://api.github.com/repos/openai/codex/languages');
-    assert.equal(requests[4].url, 'https://avatars.example/openai.png?s=180');
+    assert.equal(requests[4].url, 'https://avatars.example/openai.jpg?s=180');
     assert.equal(requests[0].options.headers.Accept, 'application/vnd.github+json');
     assert.equal(result.length, 1);
 
@@ -130,11 +134,15 @@ test('github extract: builds a repository embed from GitHub REST metadata', asyn
     assert.equal(embed.url, 'https://github.com/openai/codex');
     assert.equal(embed.description, 'Lightweight coding agent.');
     assert.equal(embed.author.name, 'openai');
-    assert.equal(embed.thumbnail.url, 'https://avatars.example/openai.png');
+    assert.equal(embed.thumbnail.url, 'https://avatars.example/openai.jpg');
     assert.equal(fieldValue(embed, 'Stars'), '12,345');
     assert.equal(fieldValue(embed, 'Forks'), '456');
     assert.equal(fieldValue(embed, 'Issues'), '78');
     assert.equal(fieldValue(embed, 'Language'), 'JavaScript');
+    assert.equal(fieldValue(embed, 'Languages'), 'JavaScript 80%, CSS 20%');
+    assert.equal(fieldValue(embed, 'Topics'), 'agent, coding');
+    assert.equal(fieldValue(embed, 'Default branch'), 'main');
+    assert.match(fieldValue(embed, 'Last push'), /^<t:\d+:R>$/);
     assert.equal(fieldValue(embed, 'License'), 'MIT');
     assert.equal(embed.image.url, 'attachment://github-repo-card-openai_codex.png');
     assert.equal(Buffer.isBuffer(step.files[0].attachment), true);
@@ -145,6 +153,80 @@ test('github extract: builds a repository embed from GitHub REST metadata', asyn
         ['translate', 'delete:github']
     );
     assert.equal(step.suppressSourceEmbeds, true);
+});
+
+test('github extract: GUI output settings can use GitHub official repo cards and hide languages', async () => {
+    const provider = loadGitHubProviderWithFetch(async (url) => {
+        if (String(url).endsWith('/stats/commit_activity')) return okJson([]);
+        if (String(url).endsWith('/commits?per_page=100')) return okJson([]);
+        if (String(url).endsWith('/languages')) return okJson({ JavaScript: 1 });
+        if (String(url).startsWith('https://github.com/openai.png')) return { ok: false };
+        return okJson({
+            full_name: 'openai/codex',
+            html_url: 'https://github.com/openai/codex',
+            description: 'Lightweight coding agent.',
+            stargazers_count: 1,
+            forks_count: 2,
+            open_issues_count: 3,
+            language: 'JavaScript',
+            owner: {
+                login: 'openai',
+                html_url: 'https://github.com/openai',
+            },
+        });
+    });
+
+    const url = 'https://github.com/openai/codex';
+    const official = await provider.extract(createMessage(url), url, {
+        github_card_style: 'github',
+        hidden_output_items: ['language'],
+    });
+    const hidden = await provider.extract(createMessage(url), url, {
+        hidden_output_items: ['repo_card'],
+    });
+
+    assert.equal(official[0].embeds[0].image.url, 'https://opengraph.githubassets.com/comebacktwitterembed/openai/codex');
+    assert.deepEqual(official[0].files, []);
+    assert.equal(fieldValue(official[0].embeds[0], 'Language'), undefined);
+    assert.equal(hidden[0].embeds[0].image, undefined);
+    assert.deepEqual(hidden[0].files, []);
+});
+
+test('github extract: compact density and link-only media produce a lightweight repo card', async () => {
+    const provider = loadGitHubProviderWithFetch(async (url) => {
+        if (String(url).endsWith('/stats/commit_activity')) return okJson([]);
+        if (String(url).endsWith('/commits?per_page=100')) return okJson([]);
+        if (String(url).endsWith('/languages')) return okJson({ JavaScript: 1 });
+        return okJson({
+            full_name: 'openai/codex',
+            html_url: 'https://github.com/openai/codex',
+            description: 'Lightweight coding agent.',
+            stargazers_count: 1,
+            forks_count: 2,
+            open_issues_count: 3,
+            language: 'JavaScript',
+            license: { spdx_id: 'MIT' },
+            owner: {
+                login: 'openai',
+                html_url: 'https://github.com/openai',
+            },
+        });
+    });
+
+    const url = 'https://github.com/openai/codex';
+    const result = await provider.extract(createMessage(url), url, {
+        display_density: 'compact',
+        media_display_mode: 'link_only',
+        github_card_style: 'github',
+    });
+
+    const embed = result[0].embeds[0];
+    assert.equal(embed.image, undefined);
+    assert.match(result[0].content, /Image: https:\/\/opengraph\.githubassets\.com\/comebacktwitterembed\/openai\/codex/);
+    assert.equal(fieldValue(embed, 'Stars'), undefined);
+    assert.equal(fieldValue(embed, 'Language'), undefined);
+    assert.equal(fieldValue(embed, 'License'), undefined);
+    assert.deepEqual(result[0].files || [], []);
 });
 
 test('github extract: builds issue embeds with state, labels, and assignees', async () => {
@@ -195,6 +277,8 @@ test('github extract: builds pull request embeds with merged state and change su
             changed_files: 8,
             comments: 2,
             review_comments: 4,
+            mergeable: false,
+            review_decision: 'CHANGES_REQUESTED',
             updated_at: '2026-06-03T01:00:00Z',
             user: { login: 'contributor' },
         });
@@ -210,6 +294,8 @@ test('github extract: builds pull request embeds with merged state and change su
     assert.equal(fieldValue(embed, 'Commits'), '5');
     assert.equal(fieldValue(embed, 'Files'), '8');
     assert.equal(fieldValue(embed, 'Comments'), '6');
+    assert.equal(fieldValue(embed, 'Mergeable'), 'no');
+    assert.equal(fieldValue(embed, 'Review'), 'changes requested');
 });
 
 test('github extract: builds commit embeds from commit metadata', async () => {
@@ -288,6 +374,8 @@ test('github extract: builds blob and tree embeds from repository contents', asy
                 type: 'file',
                 name: 'README.md',
                 size: 1536,
+                encoding: 'base64',
+                content: Buffer.from('# Hello\n\nThis is a README.\n').toString('base64'),
                 html_url: 'https://github.com/owner/repo/blob/main/README.md',
             });
         }
@@ -309,10 +397,34 @@ test('github extract: builds blob and tree embeds from repository contents', asy
     assert.equal(blobResult[0].embeds[0].title, 'README.md');
     assert.equal(fieldValue(blobResult[0].embeds[0], 'Type'), 'file');
     assert.equal(fieldValue(blobResult[0].embeds[0], 'Size'), '1.5 KB');
+    assert.match(blobResult[0].embeds[0].description, /^```md\n# Hello/);
     assert.equal(treeResult[0].embeds[0].title, 'src');
     assert.equal(fieldValue(treeResult[0].embeds[0], 'Files'), '2');
     assert.ok(treeResult[0].embeds[0].description.includes('[file] index.js'));
     assert.ok(treeResult[0].embeds[0].description.includes('[dir] src'));
+});
+
+test('github extract: file snippets can be hidden', async () => {
+    const provider = loadGitHubProviderWithFetch(async (url) => {
+        assert.equal(url, 'https://api.github.com/repos/owner/repo/contents/src/index.js?ref=main');
+        return okJson({
+            type: 'file',
+            name: 'index.js',
+            size: 28,
+            encoding: 'base64',
+            content: Buffer.from('console.log("hello");\n').toString('base64'),
+            html_url: 'https://github.com/owner/repo/blob/main/src/index.js',
+        });
+    });
+
+    const url = 'https://github.com/owner/repo/blob/main/src/index.js';
+    const visible = await provider.extract(createMessage(url), url, {});
+    const hidden = await provider.extract(createMessage(url), url, {
+        hidden_output_items: ['snippet'],
+    });
+
+    assert.match(visible[0].embeds[0].description, /^```js\nconsole\.log/);
+    assert.equal(hidden[0].embeds[0].description, undefined);
 });
 
 test('github extract: supports profile and gist URLs', async () => {

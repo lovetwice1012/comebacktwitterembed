@@ -37,7 +37,7 @@ function createMessage(content) {
     };
 }
 
-function productJsonLdHtml(overrides = {}) {
+function productJsonLdHtml(overrides = {}, body = '') {
     const product = {
         '@context': 'https://schema.org',
         '@type': 'Product',
@@ -58,7 +58,7 @@ function productJsonLdHtml(overrides = {}) {
         },
         ...overrides,
     };
-    return `<html><head><script type="application/ld+json">${JSON.stringify(product)}</script></head></html>`;
+    return `<html><head><script type="application/ld+json">${JSON.stringify(product)}</script></head><body>${body}</body></html>`;
 }
 
 function productDomHtml() {
@@ -105,6 +105,15 @@ function primeVideoJsonLdHtml(overrides = {}) {
             ratingValue: '8.2',
             ratingCount: '4567',
         },
+        actor: [
+            { '@type': 'Person', name: 'Example Lead' },
+            { '@type': 'Person', name: 'Second Cast' },
+        ],
+        partOfSeason: {
+            '@type': 'TVSeason',
+            name: 'Season 2',
+            seasonNumber: 2,
+        },
         datePublished: '2024-05-03',
         contentRating: '16+',
         duration: 'PT1H42M',
@@ -147,11 +156,71 @@ test('amazon extract: builds an embed from JSON-LD product data', async () => {
     assert.equal(fieldValue(embed, 'Price'), 'USD 49.99');
     assert.equal(fieldValue(embed, 'Brand'), 'Amazon');
     assert.equal(fieldValue(embed, 'Rating'), '4.7 / 5 (12,345)');
+    assert.equal(fieldValue(embed, 'Review count'), '12,345');
     assert.equal(fieldValue(embed, 'Availability'), 'In Stock');
     assert.equal(fieldValue(embed, 'ASIN'), 'B08N5WRWNW');
     assert.equal(step.components[0].components[0].data.url, url);
     assert.equal(step.components[0].components[1].data.custom_id, 'showMediaAsAttachments');
     assert.equal(step.suppressSourceEmbeds, true);
+});
+
+test('amazon extract: GUI output setting can hide product price', async () => {
+    const provider = loadAmazonProviderWithFetch(async (url) => okHtml(productJsonLdHtml(), url));
+
+    const url = 'https://www.amazon.com/Echo-Dot/dp/B08N5WRWNW';
+    const result = await provider.extract(createMessage(url), url, {
+        hidden_output_items: ['price'],
+    });
+
+    const embed = result[0].embeds[0];
+    assert.equal(fieldValue(embed, 'Price'), undefined);
+    assert.equal(fieldValue(embed, 'Brand'), 'Amazon');
+});
+
+test('amazon extract: product seller and shipping fields can be hidden', async () => {
+    const html = productJsonLdHtml({
+        offers: {
+            '@type': 'Offer',
+            price: '49.99',
+            priceCurrency: 'USD',
+            availability: 'https://schema.org/InStock',
+            seller: { '@type': 'Organization', name: 'Amazon.com' },
+            shippingDetails: { '@type': 'OfferShippingDetails', name: 'Free shipping' },
+        },
+    });
+    const provider = loadAmazonProviderWithFetch(async (url) => okHtml(html, url));
+
+    const url = 'https://www.amazon.com/Echo-Dot/dp/B08N5WRWNW';
+    const visible = await provider.extract(createMessage(url), url, {});
+    assert.equal(fieldValue(visible[0].embeds[0], 'Seller'), 'Amazon.com');
+    assert.equal(fieldValue(visible[0].embeds[0], 'Shipping'), 'Free shipping');
+
+    const hidden = await provider.extract(createMessage(url), url, {
+        hidden_output_items: ['seller', 'shipping'],
+    });
+    assert.equal(fieldValue(hidden[0].embeds[0], 'Seller'), undefined);
+    assert.equal(fieldValue(hidden[0].embeds[0], 'Shipping'), undefined);
+});
+
+test('amazon extract: product review count, coupon, and deal fields can be hidden', async () => {
+    const html = productJsonLdHtml({}, `
+        <span id="couponText">Coupon: Save 10% with coupon</span>
+        <span id="dealBadge">Limited time deal</span>
+    `);
+    const provider = loadAmazonProviderWithFetch(async (url) => okHtml(html, url));
+
+    const url = 'https://www.amazon.com/Echo-Dot/dp/B08N5WRWNW';
+    const visible = await provider.extract(createMessage(url), url, {});
+    assert.equal(fieldValue(visible[0].embeds[0], 'Review count'), '12,345');
+    assert.equal(fieldValue(visible[0].embeds[0], 'Coupon'), 'Save 10% with coupon');
+    assert.equal(fieldValue(visible[0].embeds[0], 'Deal'), 'Limited time deal');
+
+    const hidden = await provider.extract(createMessage(url), url, {
+        hidden_output_items: ['review_count', 'coupon', 'deal'],
+    });
+    assert.equal(fieldValue(hidden[0].embeds[0], 'Review count'), undefined);
+    assert.equal(fieldValue(hidden[0].embeds[0], 'Coupon'), undefined);
+    assert.equal(fieldValue(hidden[0].embeds[0], 'Deal'), undefined);
 });
 
 test('amazon extract: falls back to product page DOM when JSON-LD is unavailable', async () => {
@@ -168,6 +237,7 @@ test('amazon extract: falls back to product page DOM when JSON-LD is unavailable
     assert.equal(fieldValue(embed, 'Price'), '$139.99');
     assert.equal(fieldValue(embed, 'Brand'), 'Kindle');
     assert.equal(fieldValue(embed, 'Rating'), '4.5 / 5 (1,234)');
+    assert.equal(fieldValue(embed, 'Review count'), '1,234');
 });
 
 test('amazon extract: resolves short links using the final fetch URL', async () => {
@@ -237,6 +307,8 @@ test('amazon extract: builds Prime Video embeds from primevideo.com detail links
     assert.equal(embed.description, 'A Prime Video original series.');
     assert.equal(embed.image.url, 'https://images.example/prime.jpg');
     assert.equal(fieldValue(embed, 'Genre'), 'Drama, Sci-Fi');
+    assert.equal(fieldValue(embed, 'Cast'), 'Example Lead, Second Cast');
+    assert.equal(fieldValue(embed, 'Season'), 'Season 2');
     assert.equal(fieldValue(embed, 'Year'), '2024');
     assert.equal(fieldValue(embed, 'Maturity'), '16+');
     assert.equal(fieldValue(embed, 'Duration'), '1h 42m');
@@ -244,6 +316,30 @@ test('amazon extract: builds Prime Video embeds from primevideo.com detail links
     assert.equal(fieldValue(embed, 'ID'), '0NQ1QFP6B4R6TM8O2590IV5716');
     assert.equal(step.components[0].components[0].data.label, 'Open in Prime Video');
     assert.ok(embed.footer.text.endsWith(' - Prime Video'));
+});
+
+test('amazon extract: hides Prime Video fields and supports link-only image media', async () => {
+    const provider = loadAmazonProviderWithFetch(async (url) => okHtml(primeVideoJsonLdHtml(), url));
+
+    const url = 'https://www.primevideo.com/detail/0NQ1QFP6B4R6TM8O2590IV5716';
+    const result = await provider.extract(createMessage(url), url, {
+        hidden_output_items: ['genre', 'cast', 'season', 'year', 'maturity', 'duration'],
+        media_display_mode: 'link_only',
+    });
+    const step = result[0];
+    const embed = step.embeds[0];
+
+    assert.equal(embed.image, undefined);
+    assert.equal(embed.thumbnail, undefined);
+    assert.equal(step.files, undefined);
+    assert.equal(step.content, 'Image: https://images.example/prime.jpg');
+    assert.equal(fieldValue(embed, 'Genre'), undefined);
+    assert.equal(fieldValue(embed, 'Cast'), undefined);
+    assert.equal(fieldValue(embed, 'Season'), undefined);
+    assert.equal(fieldValue(embed, 'Year'), undefined);
+    assert.equal(fieldValue(embed, 'Maturity'), undefined);
+    assert.equal(fieldValue(embed, 'Duration'), undefined);
+    assert.equal(fieldValue(embed, 'Rating'), '8.2 (4,567)');
 });
 
 test('amazon extract: supports amazon gp video detail links', async () => {

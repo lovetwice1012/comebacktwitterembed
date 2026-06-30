@@ -110,6 +110,29 @@ const SCHEMA_STATEMENTS = [
         quote_repost_max_depth INT NULL,
         quote_repost_do_not_extract TINYINT(1) NULL,
         pixiv_images_per_step INT NULL,
+        youtube_description_max_length INT NULL,
+        tiktok_hq TINYINT(1) NULL,
+        twitter_text_mode VARCHAR(32) NULL,
+        twitter_stats_layout VARCHAR(32) NULL,
+        twitter_quote_mode VARCHAR(32) NULL,
+        twitter_quote_layout VARCHAR(32) NULL,
+        pixiv_caption_max_length INT NULL,
+        instagram_caption_max_length INT NULL,
+        instagram_media_limit INT NULL,
+        github_card_style VARCHAR(32) NULL,
+        hidden_output_items TEXT NULL,
+        display_density VARCHAR(32) NULL,
+        media_display_mode VARCHAR(32) NULL,
+        failure_display_policy VARCHAR(32) NULL,
+        tiktok_description_max_length INT NULL,
+        tiktok_image_limit INT NULL,
+        niconico_description_max_length INT NULL,
+        spotify_description_max_length INT NULL,
+        twitch_description_max_length INT NULL,
+        steam_description_max_length INT NULL,
+        steam_image_source VARCHAR(32) NULL,
+        amazon_description_max_length INT NULL,
+        booth_description_max_length INT NULL,
         updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
         PRIMARY KEY (provider_id, guild_id),
         INDEX idx_guild_provider_settings_guild (guild_id),
@@ -336,12 +359,12 @@ async function applyMigrationFile(queryDatabase, file) {
     const sql = fs.readFileSync(path.join(MIGRATIONS_DIR, file), 'utf8');
     const statements = splitSqlStatements(sql);
 
-    try {
-        for (const statement of statements) {
+    for (const statement of statements) {
+        try {
             await queryDatabase(statement);
+        } catch (err) {
+            if (err?.code !== 'ER_DUP_FIELDNAME') throw err;
         }
-    } catch (err) {
-        if (err?.code !== 'ER_DUP_FIELDNAME') throw err;
     }
 
     await queryDatabase(

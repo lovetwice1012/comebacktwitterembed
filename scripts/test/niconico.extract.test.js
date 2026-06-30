@@ -73,6 +73,12 @@ function watchData() {
             nickname: 'Example Uploader',
             iconUrl: 'https://secure-dcdn.cdn.nimg.jp/nicoaccount/usericon/0/42.jpg',
         },
+        series: {
+            title: 'Example Series',
+        },
+        genre: {
+            label: 'Entertainment',
+        },
         tag: {
             items: [
                 { name: 'VOCALOID' },
@@ -120,6 +126,9 @@ test('niconico extract: builds a video embed from watch data with the download b
         assert.equal(embed.image.url, 'https://nicovideo.cdn.nimg.jp/thumbnails/9/9.12345.M');
         assert.ok(embed.fields.some(field => field.name === 'Views' && field.value === '1,234,567'));
         assert.ok(embed.fields.some(field => field.name === 'Duration' && field.value === '3:14'));
+        assert.ok(embed.fields.some(field => field.name === 'Series' && field.value === 'Example Series'));
+        assert.ok(embed.fields.some(field => field.name === 'Uploader' && field.value === 'User'));
+        assert.ok(embed.fields.some(field => field.name === 'Genre' && field.value === 'Entertainment'));
         assert.ok(embed.fields.some(field => field.name === 'Tags' && field.value.includes('VOCALOID')));
         assert.ok(embed.footer.text.includes('tester(id:user-1)'));
         assert.deepEqual(
@@ -166,6 +175,35 @@ test('niconico extract: honors reply, delete source, and anonymous settings', as
     assert.equal(result[0].send, 'reply-source');
     assert.equal(result[0].deleteSource, true);
     assert.ok(result[0].embeds[0].footer.text.includes('Anonymous requester'));
+});
+
+test('niconico extract: honors hidden output items and description length', async () => {
+    const provider = loadNiconicoProviderWithFetch(async () => okJson(watchResponse()));
+    const url = 'https://www.nicovideo.jp/watch/sm9';
+    const result = await provider.extract(createMessage(url), url, {
+        hidden_output_items: ['views', 'comments', 'mylists', 'likes', 'duration', 'uploaded', 'series', 'uploader', 'genre', 'tags'],
+        niconico_description_max_length: 8,
+    });
+
+    const embed = result[0].embeds[0];
+    assert.equal(embed.description, 'A gre...');
+    assert.deepEqual(embed.fields, []);
+});
+
+test('niconico extract: compact density hides metadata fields and thumbnail_only uses thumbnail media', async () => {
+    const provider = loadNiconicoProviderWithFetch(async () => okJson(watchResponse()));
+    const url = 'https://www.nicovideo.jp/watch/sm9';
+    const result = await provider.extract(createMessage(url), url, {
+        display_density: 'compact',
+        media_display_mode: 'thumbnail_only',
+    });
+
+    const embed = result[0].embeds[0];
+    assert.deepEqual(embed.fields, []);
+    assert.equal(embed.image, undefined);
+    assert.equal(embed.thumbnail.url, 'https://nicovideo.cdn.nimg.jp/thumbnails/9/9.12345.M');
+    assert.equal(result[0].files, undefined);
+    assert.equal(result[0].content, undefined);
 });
 
 test('niconico parse: rejects non-niconico urls', () => {

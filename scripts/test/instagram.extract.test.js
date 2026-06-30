@@ -113,6 +113,119 @@ test('instagram extract: carousel with more than four media is sent as attachmen
     assert.equal(result[0].components[0].components[0].data.custom_id, 'translate');
 });
 
+test('instagram extract: GUI output settings control caption length and media limit', async () => {
+    const provider = loadInstagramProviderWithFetch(async () => ({
+        ok: true,
+        text: async () => embedHtml(mediaNode({
+            edge_media_to_caption: { edges: [{ node: { text: 'caption should be hidden' } }] },
+            edge_sidecar_to_children: {
+                edges: Array.from({ length: 6 }, (_, index) => ({
+                    node: {
+                        __typename: 'GraphImage',
+                        display_url: `https://scontent-nrt1-1.cdninstagram.com/v/t51.2885-15/${index + 1}.jpg`,
+                    },
+                })),
+            },
+        })),
+    }));
+
+    const result = await provider.extract(createMessage(), 'https://www.instagram.com/p/CODE123/', {
+        instagram_caption_max_length: 0,
+        instagram_media_limit: 4,
+    });
+
+    assert.equal(result[0].embeds.length, 4);
+    assert.deepEqual(result[0].files, []);
+    assert.doesNotMatch(result[0].embeds[0].description, /caption should be hidden/);
+    assert.match(result[0].embeds[0].description, /View on Instagram/);
+});
+
+test('instagram extract: post metadata fields and caption entities are configurable', async () => {
+    const provider = loadInstagramProviderWithFetch(async () => ({
+        ok: true,
+        text: async () => embedHtml(mediaNode({
+            edge_media_to_caption: { edges: [{ node: { text: 'hello #art #東京 @friend' } }] },
+            edge_media_preview_like: { count: 1200 },
+            edge_media_to_comment: { count: 34 },
+            location: { name: 'Tokyo' },
+        })),
+    }));
+
+    const visible = await provider.extract(createMessage(), 'https://www.instagram.com/p/CODE123/', {});
+
+    assert.ok(Array.isArray(visible));
+    assert.deepEqual(visible[0].embeds[0].fields.map(field => [field.name, field.value]), [
+        ['Likes', '1,200'],
+        ['Comments', '34'],
+        ['Location', 'Tokyo'],
+        ['Hashtags', '#art #東京'],
+        ['Mentions', '@friend'],
+    ]);
+
+    const hidden = await provider.extract(createMessage(), 'https://www.instagram.com/p/CODE123/', {
+        hidden_output_items: ['likes', 'comments', 'location', 'hashtags', 'mentions'],
+    });
+
+    assert.ok(Array.isArray(hidden));
+    assert.equal(hidden[0].embeds[0].fields, undefined);
+});
+
+test('instagram extract: video duration and audio attribution are configurable', async () => {
+    const provider = loadInstagramProviderWithFetch(async () => ({
+        ok: true,
+        text: async () => embedHtml(mediaNode({
+            __typename: 'GraphVideo',
+            video_url: 'https://scontent-nrt1-1.cdninstagram.com/v/t50/video.mp4',
+            video_duration: 93.4,
+            clips_music_attribution_info: {
+                song_name: 'Midnight City',
+                artist_name: 'M83',
+            },
+        })),
+    }));
+
+    const visible = await provider.extract(createMessage(), 'https://www.instagram.com/reel/CODE123/', {});
+
+    assert.ok(Array.isArray(visible));
+    assert.ok(visible[0].embeds[0].fields.some(field => field.name === 'Duration' && field.value === '1:33'));
+    assert.ok(visible[0].embeds[0].fields.some(field => field.name === 'Audio' && field.value === 'Midnight City - M83'));
+
+    const hidden = await provider.extract(createMessage(), 'https://www.instagram.com/reel/CODE123/', {
+        hidden_output_items: ['duration', 'audio'],
+    });
+
+    assert.ok(Array.isArray(hidden));
+    assert.equal(hidden[0].embeds[0].fields, undefined);
+});
+
+test('instagram extract: compact density and link-only media produce a lightweight payload', async () => {
+    const provider = loadInstagramProviderWithFetch(async () => ({
+        ok: true,
+        text: async () => embedHtml(mediaNode({
+            edge_sidecar_to_children: {
+                edges: Array.from({ length: 3 }, (_, index) => ({
+                    node: {
+                        __typename: 'GraphImage',
+                        display_url: `https://scontent-nrt1-1.cdninstagram.com/v/t51.2885-15/${index + 1}.jpg`,
+                    },
+                })),
+            },
+        })),
+    }));
+
+    const result = await provider.extract(createMessage(), 'https://www.instagram.com/p/CODE123/', {
+        display_density: 'compact',
+        media_display_mode: 'link_only',
+    });
+
+    assert.ok(Array.isArray(result));
+    assert.equal(result[0].embeds.length, 1);
+    assert.equal(result[0].embeds[0].image, undefined);
+    assert.equal(result[0].embeds[0].fields, undefined);
+    assert.match(result[0].content, /Media: https:\/\/scontent\.cdninstagram\.com\/v\/t51\.2885-15\/1\.jpg/);
+    assert.doesNotMatch(result[0].content, /2\.jpg/);
+});
+
 test('instagram extract: share URLs are resolved before scraping', async () => {
     const requestedUrls = [];
     const provider = loadInstagramProviderWithFetch(async (url, options = {}) => {
@@ -230,6 +343,8 @@ test('instagram extract: profile links retry alternate profile API candidates', 
                             full_name: 'Artist Profile',
                             biography: 'profile bio',
                             profile_pic_url: 'https://scontent-nrt1-1.cdninstagram.com/v/t51.2885-19/profile.jpg',
+                            is_private: true,
+                            is_verified: true,
                             edge_owner_to_timeline_media: { count: 12 },
                         },
                     },
@@ -253,6 +368,7 @@ test('instagram extract: profile links retry alternate profile API candidates', 
     ]);
     assert.equal(result[0].embeds[0].title, 'Artist Profile (@artist.profile)');
     assert.equal(result[0].embeds[0].thumbnail.url, 'https://scontent.cdninstagram.com/v/t51.2885-19/profile.jpg');
+    assert.ok(result[0].embeds[0].fields.some(field => field.name === 'Status' && field.value === 'Verified / Private'));
 });
 
 test('instagram extract: profile links prefer crawler HTML to avoid profile API rate limits', async () => {

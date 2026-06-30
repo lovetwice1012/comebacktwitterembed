@@ -47,6 +47,8 @@ function videoInfo() {
         videoThumbnails: [{ url: 'https://i.ytimg.com/vi/dQw4w9WgXcQ/maxresdefault.jpg', width: 1280, height: 720 }],
         description: 'A <b>great</b> description &amp; details',
         publishedText: '2 years ago',
+        published: 1704067200,
+        lengthSeconds: 213,
         viewCount: 1234567,
         likeCount: 9876,
         author: 'Example Channel',
@@ -231,6 +233,9 @@ test('youtube extract: builds a self-owned video embed from Invidious metadata',
         assert.equal(result[0].embeds[0].description, 'A great description & details');
         assert.equal(result[0].embeds[0].image.url, 'https://i.ytimg.com/vi/dQw4w9WgXcQ/maxresdefault.jpg');
         assert.ok(result[0].embeds[0].fields.some(field => field.name === 'Views' && field.value === '1,234,567'));
+        assert.ok(result[0].embeds[0].fields.some(field => field.name === 'Type' && field.value === 'Video'));
+        assert.ok(result[0].embeds[0].fields.some(field => field.name === 'Duration' && field.value === '3:33'));
+        assert.ok(result[0].embeds[0].fields.some(field => field.name === 'Uploaded' && field.value === '<t:1704067200:d>'));
         assert.ok(result[0].embeds[0].footer.text.includes('tester(id:user-1)'));
         assert.equal(result[0].components.length, 1);
         assert.deepEqual(
@@ -267,6 +272,15 @@ test('youtube extract: falls back to YouTube page metadata when Invidious return
     assert.equal(result[0].embeds[0].title, 'Fallback Video');
     assert.equal(result[0].embeds[0].description, 'Fallback description');
     assert.ok(result[0].embeds[0].fields.some(field => field.name === 'Views' && field.value === '3,210'));
+});
+
+test('youtube extract: shorts URLs are labeled as Shorts', async () => {
+    const provider = loadYouTubeProviderWithFetch(async () => okJson(videoInfo()));
+
+    const url = 'https://www.youtube.com/shorts/dQw4w9WgXcQ';
+    const result = await provider.extract(createMessage(url), url, {});
+
+    assert.ok(result[0].embeds[0].fields.some(field => field.name === 'Type' && field.value === 'Shorts'));
 });
 
 test('youtube extract: honors the DB-backed description length setting', async () => {
@@ -335,6 +349,60 @@ test('youtube extract: builds playlist embeds from playlist metadata', async () 
         result[0].components[0].components.map(button => button.data.custom_id),
         ['translate', 'delete:youtube']
     );
+});
+
+test('youtube extract: GUI output settings can hide stats and playlist video list', async () => {
+    const provider = loadYouTubeProviderWithFetch(async () => okJson(playlistInfo()));
+
+    const url = 'https://www.youtube.com/playlist?list=PL123456789012345678';
+    const result = await provider.extract(createMessage(url), url, {
+        hidden_output_items: ['stats', 'video_list'],
+    });
+
+    const embed = result[0].embeds[0];
+    assert.equal(embed.description, 'Playlist description');
+    assert.equal(embed.fields.some(field => field.name === 'Views'), false);
+    assert.equal(embed.fields.some(field => field.name === 'Videos'), false);
+});
+
+test('youtube extract: video list count setting limits playlist items', async () => {
+    const provider = loadYouTubeProviderWithFetch(async () => okJson({
+        ...playlistInfo(),
+        videos: Array.from({ length: 6 }, (_value, index) => ({
+            title: `Listed video ${index + 1}`,
+            videoId: `video${index + 1}`,
+            videoThumbnails: [],
+        })),
+    }));
+
+    const url = 'https://www.youtube.com/playlist?list=PL123456789012345678';
+    const result = await provider.extract(createMessage(url), url, {
+        youtube_video_list_limit: 3,
+    });
+
+    const description = result[0].embeds[0].description;
+    assert.match(description, /1\. Listed video 1/);
+    assert.match(description, /3\. Listed video 3/);
+    assert.doesNotMatch(description, /4\. Listed video 4/);
+});
+
+test('youtube extract: compact density and link-only media produce a lightweight playlist embed', async () => {
+    const provider = loadYouTubeProviderWithFetch(async () => okJson(playlistInfo()));
+
+    const url = 'https://www.youtube.com/playlist?list=PL123456789012345678';
+    const result = await provider.extract(createMessage(url), url, {
+        display_density: 'compact',
+        media_display_mode: 'link_only',
+    });
+
+    const embed = result[0].embeds[0];
+    assert.ok(embed.description.includes('Playlist description'));
+    assert.ok(embed.description.includes('1. First video'));
+    assert.ok(embed.description.includes('2. Second video'));
+    assert.equal(embed.image, undefined);
+    assert.match(result[0].content, /Thumbnail: https:\/\/i\.ytimg\.com\/vi\/one\/maxresdefault\.jpg/);
+    assert.equal((embed.fields || []).some(field => field.name === 'Views'), false);
+    assert.equal((embed.fields || []).some(field => field.name === 'Videos'), false);
 });
 
 test('youtube extract: falls back to YouTube page metadata for playlists', async () => {

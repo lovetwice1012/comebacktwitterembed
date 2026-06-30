@@ -235,6 +235,25 @@ test('twitch extract: returns markdown video URL when clip is too large to uploa
     }
 });
 
+test('twitch extract: media_display_mode thumbnail_only skips clip video upload', async () => {
+    const calls = [];
+    const provider = loadTwitchProviderWithFetch(fakeTwitchFetch(calls, {
+        videoBody: Buffer.from('clip-video-data'),
+    }));
+
+    const url = 'https://clips.twitch.tv/SampleClip-abc_123';
+    const result = await provider.extract(createMessage(url), url, {
+        media_display_mode: 'thumbnail_only',
+    });
+
+    assert.equal(calls.length, 1);
+    const step = result[0];
+    assert.equal(step.files, undefined);
+    assert.equal(step.content, undefined);
+    assert.equal(step.embeds[0].image, undefined);
+    assert.equal(step.embeds[0].thumbnail.url, 'https://static-cdn.jtvnw.net/thumb.jpg');
+});
+
 test('twitch extract: honors link-only delete and anonymous requester settings', async () => {
     const calls = [];
     const provider = loadTwitchProviderWithFetch(fakeTwitchFetch(calls));
@@ -248,6 +267,21 @@ test('twitch extract: honors link-only delete and anonymous requester settings',
     assert.equal(result[0].deleteSource, true);
     assert.match(result[0].embeds[0].footer.text, /Anonymous requester/);
     assert.ok(!result[0].embeds[0].footer.text.includes('tester'));
+});
+
+test('twitch extract: honors hidden output items and description length for clips', async () => {
+    const calls = [];
+    const provider = loadTwitchProviderWithFetch(fakeTwitchFetch(calls));
+
+    const url = 'https://clips.twitch.tv/SampleClip-abc_123';
+    const result = await provider.extract(createMessage(url), url, {
+        twitch_description_max_length: 8,
+        hidden_output_items: ['views', 'duration', 'game', 'clipped_by'],
+    });
+
+    const embed = result[0].embeds[0];
+    assert.equal(embed.description, 'sampl...');
+    assert.equal(embed.fields, undefined);
 });
 
 test('twitch extract: expands channel urls with live stream metadata', async () => {
@@ -266,6 +300,19 @@ test('twitch extract: expands channel urls with live stream metadata', async () 
     assert.equal(result[0].embeds[0].image.url, 'https://static-cdn.jtvnw.net/previews-ttv/live_user_killin9hit-1280x720.jpg');
     assert.ok(result[0].embeds[0].fields.some(field => field.name === 'Status' && field.value === 'Live'));
     assert.ok(result[0].embeds[0].fields.some(field => field.name === 'Viewers' && field.value === '417'));
+});
+
+test('twitch extract: uses Japanese labels when default language is Japanese', async () => {
+    const calls = [];
+    const provider = loadTwitchProviderWithFetch(fakeTwitchFetch(calls));
+
+    const url = 'https://www.twitch.tv/killin9hit';
+    const result = await provider.extract(createMessage(url), url, { defaultLanguage: 'ja' });
+
+    const embed = result[0].embeds[0];
+    assert.ok(embed.fields.some(field => field.name === '状態' && field.value === 'ライブ中'));
+    assert.ok(embed.fields.some(field => field.name === '視聴者' && field.value === '417'));
+    assert.equal(result[0].components[0].components[1].data.label, '削除');
 });
 
 test('twitch internals parse supported twitch urls', () => {

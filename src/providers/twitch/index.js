@@ -3,6 +3,16 @@
 const fetch = require('node-fetch');
 const { ButtonBuilder, ButtonStyle, ComponentType } = require('discord.js');
 const { recordProviderError } = require('../../errorTracking');
+const {
+    applyEmbedMedia,
+    attachmentMediaUrls,
+    buildFailureResponse,
+    mediaLinksContent,
+    resolveDensityMaxLength,
+    resolveMediaDisplayMode,
+    shouldAttachVideoMedia,
+    shouldShowOutputItem,
+} = require('../_output_controls');
 
 const TWITCH_COLOR = 0x9146FF;
 const TWITCH_GQL_ENDPOINT = 'https://gql.twitch.tv/gql';
@@ -86,6 +96,24 @@ const STR = {
     fallbackTitle: 'Twitch clip',
 };
 
+const STR_JA = {
+    viewOnTwitch: 'Twitch で見る',
+    statusField: '状態',
+    liveStatus: 'ライブ中',
+    offlineStatus: 'オフライン',
+    viewsField: '再生数',
+    viewersField: '視聴者',
+    gameField: 'ゲーム',
+    startedField: '開始',
+    durationField: '長さ',
+    clippedByField: 'クリップ作成者',
+    requesterPrefix: '展開者: ',
+    anonRequester: '匿名ユーザー',
+    translateButton: '翻訳',
+    deleteButton: '削除',
+    fallbackTitle: 'Twitch クリップ',
+};
+
 const RESERVED_CHANNEL_PATHS = new Set([
     'videos',
     'directory',
@@ -112,6 +140,18 @@ function truncate(value, maxLength) {
     const text = String(value ?? '');
     if (text.length <= maxLength) return text;
     return text.slice(0, maxLength - 3) + '...';
+}
+
+function tr(key, lang) {
+    return lang === 'ja' ? (STR_JA[key] || STR[key]) : STR[key];
+}
+
+function twitchDescriptionMaxLength(settings) {
+    return resolveDensityMaxLength(settings, 'twitch_description_max_length', DESCRIPTION_MAX_LENGTH, {
+        compact: 200,
+        detail: DESCRIPTION_MAX_LENGTH,
+        hardMax: DESCRIPTION_MAX_LENGTH,
+    });
 }
 
 function formatNumber(value) {
@@ -340,31 +380,31 @@ async function downloadClipVideo(videoUrl, slug, maxBytes = clipUploadMaxBytes()
     };
 }
 
-function buildButtons() {
+function buildButtons(lang) {
     return [
-        new ButtonBuilder().setStyle(ButtonStyle.Primary).setLabel(STR.translateButton).setCustomId('translate'),
-        new ButtonBuilder().setStyle(ButtonStyle.Danger).setLabel(STR.deleteButton).setCustomId('delete:twitch'),
+        new ButtonBuilder().setStyle(ButtonStyle.Primary).setLabel(tr('translateButton', lang)).setCustomId('translate'),
+        new ButtonBuilder().setStyle(ButtonStyle.Danger).setLabel(tr('deleteButton', lang)).setCustomId('delete:twitch'),
     ];
 }
 
-function buildEmbed(info, parsed, requesterName) {
+function buildEmbed(info, parsed, requesterName, settings, lang) {
     const canonicalUrl = info.url || (parsed.channel
         ? `https://www.twitch.tv/${parsed.channel}/clip/${parsed.slug}`
         : `https://clips.twitch.tv/${parsed.slug}`);
     const broadcaster = info.broadcaster || {};
     const broadcasterName = broadcaster.displayName || broadcaster.login || 'Twitch';
-    const title = info.title || `${STR.fallbackTitle}: ${parsed.slug}`;
-    const description = truncate(`${title}\n\n[${STR.viewOnTwitch}](${canonicalUrl})`, DESCRIPTION_MAX_LENGTH);
+    const title = info.title || `${tr('fallbackTitle', lang)}: ${parsed.slug}`;
+    const description = truncate(`${title}\n\n[${tr('viewOnTwitch', lang)}](${canonicalUrl})`, twitchDescriptionMaxLength(settings));
 
     const fields = [];
     const views = formatNumber(info.viewCount);
-    if (views) fields.push({ name: STR.viewsField, value: views, inline: true });
+    if (shouldShowOutputItem(settings, 'views') && views) fields.push({ name: tr('viewsField', lang), value: views, inline: true });
     const duration = formatDuration(info.durationSeconds);
-    if (duration) fields.push({ name: STR.durationField, value: duration, inline: true });
+    if (shouldShowOutputItem(settings, 'duration') && duration) fields.push({ name: tr('durationField', lang), value: duration, inline: true });
     const game = info.game?.displayName || info.game?.name;
-    if (game) fields.push({ name: STR.gameField, value: game, inline: true });
+    if (shouldShowOutputItem(settings, 'game') && game) fields.push({ name: tr('gameField', lang), value: game, inline: true });
     const curator = info.curator?.displayName || info.curator?.login;
-    if (curator) fields.push({ name: STR.clippedByField, value: curator, inline: true });
+    if (shouldShowOutputItem(settings, 'clipped_by') && curator) fields.push({ name: tr('clippedByField', lang), value: curator, inline: true });
 
     const embed = {
         title: broadcasterName,
@@ -376,15 +416,15 @@ function buildEmbed(info, parsed, requesterName) {
             url: broadcaster.login ? `https://www.twitch.tv/${broadcaster.login}` : canonicalUrl,
             icon_url: broadcaster.profileImageURL || undefined,
         },
-        footer: { text: `${STR.requesterPrefix}${requesterName} | Twitch` },
+        footer: { text: `${tr('requesterPrefix', lang)}${requesterName} | Twitch` },
         timestamp: info.createdAt ? new Date(info.createdAt) : undefined,
     };
-    if (info.thumbnailURL) embed.image = { url: info.thumbnailURL };
+    applyEmbedMedia(embed, info.thumbnailURL, settings);
     if (fields.length > 0) embed.fields = fields;
     return embed;
 }
 
-function buildChannelEmbed(info, parsed, requesterName) {
+function buildChannelEmbed(info, parsed, requesterName, settings, lang) {
     const login = info.login || parsed.login;
     const canonicalUrl = `https://www.twitch.tv/${login}`;
     const displayName = info.displayName || login;
@@ -393,19 +433,20 @@ function buildChannelEmbed(info, parsed, requesterName) {
     const descriptionText = isLive
         ? (stream.title || `${displayName} is live on Twitch.`)
         : (info.description || `${displayName} on Twitch`);
-    const description = truncate(`${descriptionText}\n\n[${STR.viewOnTwitch}](${canonicalUrl})`, DESCRIPTION_MAX_LENGTH);
+    const description = truncate(`${descriptionText}\n\n[${tr('viewOnTwitch', lang)}](${canonicalUrl})`, twitchDescriptionMaxLength(settings));
 
-    const fields = [
-        { name: STR.statusField, value: isLive ? STR.liveStatus : STR.offlineStatus, inline: true },
-    ];
+    const fields = [];
+    if (shouldShowOutputItem(settings, 'status')) {
+        fields.push({ name: tr('statusField', lang), value: isLive ? tr('liveStatus', lang) : tr('offlineStatus', lang), inline: true });
+    }
     if (isLive) {
         const viewers = formatNumber(stream.viewersCount);
-        if (viewers) fields.push({ name: STR.viewersField, value: viewers, inline: true });
+        if (shouldShowOutputItem(settings, 'viewers') && viewers) fields.push({ name: tr('viewersField', lang), value: viewers, inline: true });
         const game = stream.game?.displayName || stream.game?.name;
-        if (game) fields.push({ name: STR.gameField, value: game, inline: true });
-        if (stream.createdAt) {
+        if (shouldShowOutputItem(settings, 'game') && game) fields.push({ name: tr('gameField', lang), value: game, inline: true });
+        if (shouldShowOutputItem(settings, 'started') && stream.createdAt) {
             const unix = Math.floor(new Date(stream.createdAt).getTime() / 1000);
-            if (Number.isFinite(unix)) fields.push({ name: STR.startedField, value: `<t:${unix}:R>`, inline: true });
+            if (Number.isFinite(unix)) fields.push({ name: tr('startedField', lang), value: `<t:${unix}:R>`, inline: true });
         }
     }
 
@@ -419,14 +460,25 @@ function buildChannelEmbed(info, parsed, requesterName) {
             url: canonicalUrl,
             icon_url: info.profileImageURL || undefined,
         },
-        footer: { text: `${STR.requesterPrefix}${requesterName} | Twitch` },
+        footer: { text: `${tr('requesterPrefix', lang)}${requesterName} | Twitch` },
         fields,
         timestamp: stream?.createdAt ? new Date(stream.createdAt) : undefined,
     };
-    if (stream?.previewImageURL) embed.image = { url: stream.previewImageURL };
-    else if (info.bannerImageURL) embed.image = { url: info.bannerImageURL };
-    else if (info.profileImageURL) embed.thumbnail = { url: info.profileImageURL };
+    if (stream?.previewImageURL) applyEmbedMedia(embed, stream.previewImageURL, settings);
+    else if (info.bannerImageURL) applyEmbedMedia(embed, info.bannerImageURL, settings);
+    else if (info.profileImageURL && ['embed', 'thumbnail_only'].includes(resolveMediaDisplayMode(settings))) {
+        embed.thumbnail = { url: info.profileImageURL };
+    }
     return embed;
+}
+
+function channelMediaUrl(info) {
+    return info?.stream?.previewImageURL || info?.bannerImageURL || info?.profileImageURL || '';
+}
+
+function appendContent(step, content) {
+    if (!content) return;
+    step.content = [step.content, content].filter(Boolean).join('\n');
 }
 
 /** @type {import('../_types').Extractor} */
@@ -436,7 +488,7 @@ async function extract(message, url, s) {
     if (!parsed) return null;
 
     const guildLang = s.defaultLanguage ?? 'en';
-    void guildLang;
+    const lang = guildLang === 'ja' ? 'ja' : 'en';
 
     let info;
     try {
@@ -446,18 +498,18 @@ async function extract(message, url, s) {
     } catch (err) {
         recordProviderError('twitch', err, message, url, { endpointKey: 'twitch/gql' });
         console.log(err);
-        return null;
+        return buildFailureResponse('twitch', url, s, err);
     }
 
     const requesterName = s.anonymous_expand === true
-        ? STR.anonRequester
+        ? tr('anonRequester', lang)
         : `${message.author?.username ?? message.user?.username}(id:${message.author?.id ?? message.user?.id})`;
 
     const embed = parsed.kind === 'clip'
-        ? buildEmbed(info, parsed, requesterName)
-        : buildChannelEmbed(info, parsed, requesterName);
+        ? buildEmbed(info, parsed, requesterName, s, lang)
+        : buildChannelEmbed(info, parsed, requesterName, s, lang);
     const components = [
-        { type: ComponentType.ActionRow, components: buildButtons() },
+        { type: ComponentType.ActionRow, components: buildButtons(lang) },
     ];
 
     /** @type {import('../_types').SendStep} */
@@ -467,7 +519,15 @@ async function extract(message, url, s) {
         allowedMentions: { repliedUser: false },
         send: s.alwaysreplyifpostedtweetlink === true ? 'reply-source' : 'channel',
     };
-    if (parsed.kind === 'clip' && info.videoUrl) {
+
+    if (parsed.kind === 'channel') {
+        const mediaUrl = channelMediaUrl(info);
+        const files = attachmentMediaUrls(s, mediaUrl);
+        if (files.length > 0) step.files = files;
+        appendContent(step, mediaLinksContent(s, mediaUrl, 'Media'));
+    } else if (info.videoUrl && resolveMediaDisplayMode(s) === 'link_only') {
+        appendContent(step, `Video: ${info.videoUrl}`);
+    } else if (parsed.kind === 'clip' && info.videoUrl && shouldAttachVideoMedia(s)) {
         try {
             const file = await downloadClipVideo(info.videoUrl, parsed.slug);
             if (file) step.files = [file];
@@ -493,6 +553,27 @@ const twitchProvider = {
     id: 'twitch',
     enabledByDefault: false,
     urlPattern: TWITCH_URL_PATTERN,
+    settings: [
+        'anonymous_expand',
+        'alwaysreplyifpostedtweetlink',
+        'deletemessageifonlypostedtweetlink',
+        'legacy_mode',
+        'display_density',
+        'media_display_mode',
+        'twitch_description_max_length',
+        {
+            key: 'hidden_output_items',
+            outputItems: [
+                { value: 'views', label: { en: 'Clip views field', ja: 'Clip views field' } },
+                { value: 'duration', label: { en: 'Clip duration field', ja: 'Clip duration field' } },
+                { value: 'game', label: { en: 'Game field', ja: 'Game field' } },
+                { value: 'clipped_by', label: { en: 'Clipped by field', ja: 'Clipped by field' } },
+                { value: 'status', label: { en: 'Channel status field', ja: 'Channel status field' } },
+                { value: 'viewers', label: { en: 'Live viewers field', ja: 'Live viewers field' } },
+                { value: 'started', label: { en: 'Live started field', ja: 'Live started field' } },
+            ],
+        },
+    ],
     extract,
 };
 

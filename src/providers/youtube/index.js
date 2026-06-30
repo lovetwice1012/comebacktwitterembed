@@ -4,6 +4,13 @@ const fetch = require('node-fetch');
 const { ButtonBuilder, ButtonStyle, ComponentType } = require('discord.js');
 const { recordProviderError } = require('../../errorTracking');
 const youtubeDownloadStore = require('../../youtubeDownloadStore');
+const {
+    applyMediaDisplayToStep,
+    buildFailureResponse,
+    resolveDensityMaxLength,
+    resolveDisplayDensity,
+    shouldShowOutputItem,
+} = require('../_output_controls');
 
 const INVIDIOUS_INSTANCES = [
     'https://iteroni.com',
@@ -76,6 +83,10 @@ const STR = {
     uploaded: { ja: '公開', en: 'Uploaded' },
     liveNow: { ja: 'ライブ配信中', en: 'Live now' },
     latestVideos: { ja: '最新動画', en: 'Latest videos' },
+    duration: { ja: 'Duration', en: 'Duration' },
+    type: { ja: 'Type', en: 'Type' },
+    shorts: { ja: 'Shorts', en: 'Shorts' },
+    premiere: { ja: 'Premiere', en: 'Premiere' },
 };
 
 function tr(spec, lang) {
@@ -126,11 +137,12 @@ function truncate(text, maxLength) {
 }
 
 function youtubeDescriptionMaxLength(s) {
-    const raw = s?.youtube_description_max_length ?? s?.youtubeDescriptionMaxLength;
-    if (raw === undefined || raw === null || raw === '') return DESCRIPTION_MAX_LENGTH;
-    const value = Number(raw);
-    if (!Number.isFinite(value)) return DESCRIPTION_MAX_LENGTH;
-    return Math.max(0, Math.min(DESCRIPTION_MAX_LENGTH, Math.round(value)));
+    return resolveDensityMaxLength(
+        { ...s, youtube_description_max_length: s?.youtube_description_max_length ?? s?.youtubeDescriptionMaxLength },
+        'youtube_description_max_length',
+        DESCRIPTION_MAX_LENGTH,
+        { compact: 200, detail: DESCRIPTION_MAX_LENGTH, hardMax: DESCRIPTION_MAX_LENGTH }
+    );
 }
 
 function truncateYouTubeDescription(text, s) {
@@ -139,12 +151,89 @@ function truncateYouTubeDescription(text, s) {
     return truncate(decodeHtml(text), maxLength);
 }
 
+function showYouTubeStats(s) {
+    return shouldShowOutputItem(s, 'stats');
+}
+
+function showYouTubeLatestVideos(s) {
+    return shouldShowOutputItem(s, 'video_list', { hideInCompact: false });
+}
+
+function resolveYouTubeVideoListLimit(s) {
+    if (!showYouTubeLatestVideos(s)) return 0;
+    const raw = s?.youtube_video_list_limit;
+    const value = Number(raw);
+    if ([0, 3, 5, 10].includes(value)) return value;
+    const density = resolveDisplayDensity(s);
+    if (density === 'compact') return 3;
+    if (density === 'detail') return 10;
+    return 5;
+}
+
 function formatNumber(value) {
     if (value === null || value === undefined || value === '') return null;
     if (typeof value === 'string') return value;
     const n = Number(value);
     if (!Number.isFinite(n)) return String(value);
     return n.toLocaleString('en-US');
+}
+
+function durationSeconds(value) {
+    if (value === null || value === undefined || value === '') return null;
+    if (typeof value === 'number' && Number.isFinite(value) && value > 0) return Math.round(value);
+    const text = String(value).trim();
+    if (/^\d+$/.test(text)) return Number(text);
+    const iso = text.match(/^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/i);
+    if (iso) return (Number(iso[1] || 0) * 3600) + (Number(iso[2] || 0) * 60) + Number(iso[3] || 0);
+    if (/^\d{1,2}(?::\d{2}){1,2}$/.test(text)) {
+        return text.split(':').reduce((total, part) => total * 60 + Number(part), 0);
+    }
+    return null;
+}
+
+function formatDurationValue(value) {
+    const seconds = durationSeconds(value);
+    if (!seconds) return typeof value === 'string' ? value : '';
+    const parts = [];
+    let remaining = seconds;
+    const hours = Math.floor(remaining / 3600);
+    remaining %= 3600;
+    const minutes = Math.floor(remaining / 60);
+    remaining %= 60;
+    if (hours > 0) parts.push(String(hours));
+    parts.push(hours > 0 ? String(minutes).padStart(2, '0') : String(minutes));
+    parts.push(String(remaining).padStart(2, '0'));
+    return parts.join(':');
+}
+
+function videoDuration(info) {
+    return formatDurationValue(info?.lengthSeconds ?? info?.length_seconds ?? info?.durationSeconds ?? info?.duration);
+}
+
+function timestampSeconds(value) {
+    if (value === null || value === undefined || value === '') return null;
+    if (typeof value === 'number' && Number.isFinite(value)) {
+        return Math.floor(value > 1e12 ? value / 1000 : value);
+    }
+    const text = String(value).trim();
+    if (/^\d+$/.test(text)) return timestampSeconds(Number(text));
+    if (!/^\d{4}-\d{2}-\d{2}/.test(text)) return null;
+    const parsed = Date.parse(text);
+    return Number.isFinite(parsed) ? Math.floor(parsed / 1000) : null;
+}
+
+function publishedText(info, lang) {
+    if (info?.liveNow) return tr(STR.liveNow, lang);
+    const timestamp = timestampSeconds(info?.published ?? info?.publishedAt ?? info?.publishedText);
+    if (timestamp) return `<t:${timestamp}:d>`;
+    return info?.publishedText || '';
+}
+
+function videoType(info, parsed, lang) {
+    if (info?.liveNow) return tr(STR.liveNow, lang);
+    if (info?.premiereTimestamp || info?.premiereDate || info?.isUpcoming) return tr(STR.premiere, lang);
+    if (parsed?.isShorts || info?.isShort || info?.isShorts) return tr(STR.shorts, lang);
+    return tr(STR.video, lang);
 }
 
 function absoluteUrl(value, baseUrl) {
@@ -446,6 +535,8 @@ function normalizePlayerResponse(player) {
         videoThumbnails: details.thumbnail?.thumbnails || microformat.thumbnail?.thumbnails || [],
         description: details.shortDescription || textFromRuns(microformat.description),
         publishedText: microformat.publishDate || microformat.uploadDate || '',
+        published: microformat.publishDate || microformat.uploadDate || '',
+        lengthSeconds: Number(details.lengthSeconds) || undefined,
         viewCount: Number(details.viewCount) || undefined,
         likeCount: undefined,
         author: details.author || microformat.ownerChannelName || '',
@@ -845,10 +936,14 @@ function buildVideoEmbed(info, parsed, baseUrl, message, s) {
     const thumbnail = pickThumbnail(info.videoThumbnails, baseUrl);
     const authorUrl = channelUrl(info.authorUrl, info.authorId);
     const fields = [];
-    addField(fields, tr(STR.views, lang), formatNumber(info.viewCount));
-    addField(fields, tr(STR.likes, lang), formatNumber(info.likeCount));
-    addField(fields, tr(STR.subscribers, lang), info.subCountText);
-    addField(fields, tr(STR.uploaded, lang), info.liveNow ? tr(STR.liveNow, lang) : info.publishedText);
+    if (showYouTubeStats(s)) {
+        addField(fields, tr(STR.views, lang), formatNumber(info.viewCount));
+        addField(fields, tr(STR.likes, lang), formatNumber(info.likeCount));
+        addField(fields, tr(STR.subscribers, lang), info.subCountText);
+    }
+    if (shouldShowOutputItem(s, 'type')) addField(fields, tr(STR.type, lang), videoType(info, parsed, lang));
+    if (shouldShowOutputItem(s, 'duration')) addField(fields, tr(STR.duration, lang), videoDuration(info));
+    if (shouldShowOutputItem(s, 'uploaded')) addField(fields, tr(STR.uploaded, lang), publishedText(info, lang));
 
     const titlePrefix = info.liveNow ? `${tr(STR.liveNow, lang)} · ` : '';
     const description = truncateYouTubeDescription(info.description, s);
@@ -875,7 +970,10 @@ function buildPlaylistDescription(info, lang, s) {
     const description = truncateYouTubeDescription(info.description, s);
     if (description) lines.push(description);
 
-    const videos = Array.isArray(info.videos) ? info.videos.filter(v => v?.title && v.title !== '[Private video]').slice(0, 5) : [];
+    const limit = resolveYouTubeVideoListLimit(s);
+    const videos = limit > 0 && Array.isArray(info.videos)
+        ? info.videos.filter(v => v?.title && v.title !== '[Private video]').slice(0, limit)
+        : [];
     if (videos.length > 0) {
         if (lines.length > 0) lines.push('');
         lines.push(`${tr(STR.videos, lang)}:`);
@@ -889,8 +987,10 @@ function buildPlaylistEmbed(info, parsed, baseUrl, message, s) {
     const lang = normalizeLang(s);
     const fields = [];
     addField(fields, tr(STR.channel, lang), info.author ? `[${info.author}](${channelUrl(info.authorUrl, info.authorId)})` : null);
-    addField(fields, tr(STR.views, lang), formatNumber(info.viewCount));
-    addField(fields, tr(STR.videos, lang), formatNumber(info.videoCount));
+    if (showYouTubeStats(s)) {
+        addField(fields, tr(STR.views, lang), formatNumber(info.viewCount));
+        addField(fields, tr(STR.videos, lang), formatNumber(info.videoCount));
+    }
     if (info.updated) addField(fields, tr(STR.updated, lang), `<t:${Number(info.updated)}:d>`);
 
     const embed = {
@@ -914,7 +1014,10 @@ function buildChannelDescription(info, lang, s) {
     const description = truncateYouTubeDescription(info.descriptionHtml || info.description, s);
     if (description) lines.push(description);
 
-    const videos = Array.isArray(info.latestVideos) ? info.latestVideos.filter(v => v?.title && v.title !== '[Private video]').slice(0, 5) : [];
+    const limit = resolveYouTubeVideoListLimit(s);
+    const videos = limit > 0 && Array.isArray(info.latestVideos)
+        ? info.latestVideos.filter(v => v?.title && v.title !== '[Private video]').slice(0, limit)
+        : [];
     if (videos.length > 0) {
         if (lines.length > 0) lines.push('');
         lines.push(`${tr(STR.latestVideos, lang)}:`);
@@ -927,8 +1030,10 @@ function buildChannelDescription(info, lang, s) {
 function buildChannelEmbed(info, parsed, baseUrl, message, s) {
     const lang = normalizeLang(s);
     const fields = [];
-    addField(fields, tr(STR.subscribers, lang), formatNumber(info.subCount));
-    addField(fields, tr(STR.views, lang), formatNumber(info.totalViews));
+    if (showYouTubeStats(s)) {
+        addField(fields, tr(STR.subscribers, lang), formatNumber(info.subCount));
+        addField(fields, tr(STR.views, lang), formatNumber(info.totalViews));
+    }
 
     const url = channelUrl(info.authorUrl, info.authorId || parsed.id);
     const embed = {
@@ -961,7 +1066,7 @@ function buildStep(embed, message, url, s, lang, includeDownload = false) {
     if (s.deletemessageifonlypostedtweetlink === true && message.content.trim() === url) {
         step.deleteSource = true;
     }
-    return step;
+    return applyMediaDisplayToStep(step, s, null, 'Thumbnail');
 }
 
 /** @type {import('../_types').Extractor} */
@@ -993,7 +1098,7 @@ async function extract(message, url, s) {
         return [buildStep(embed, message, url, s, lang, parsed.type === 'video')];
     } catch (err) {
         recordProviderError('youtube', err, message, url, { endpointKey: 'invidious/api' });
-        return null;
+        return buildFailureResponse('youtube', url, s, err);
     }
 }
 
@@ -1002,6 +1107,25 @@ const youtubeProvider = {
     id: 'youtube',
     enabledByDefault: false,
     urlPattern: YOUTUBE_URL_PATTERN,
+    settings: [
+        'anonymous_expand',
+        'alwaysreplyifpostedtweetlink',
+        'deletemessageifonlypostedtweetlink',
+        'display_density',
+        'media_display_mode',
+        'youtube_video_list_limit',
+        'youtube_description_max_length',
+        {
+            key: 'hidden_output_items',
+            outputItems: [
+                { value: 'duration', label: { en: 'Duration field', ja: 'Duration field' } },
+                { value: 'type', label: { en: 'Video type field', ja: 'Video type field' } },
+                { value: 'uploaded', label: { en: 'Uploaded field', ja: 'Uploaded field' } },
+                { value: 'stats', label: { en: 'View/like/subscriber counts', ja: '再生数/高評価/登録者数' } },
+                { value: 'video_list', label: { en: 'Playlist/channel video list', ja: 'プレイリスト/チャンネルの動画リスト' } },
+            ],
+        },
+    ],
     extract,
 };
 

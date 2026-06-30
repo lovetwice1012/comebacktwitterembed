@@ -158,6 +158,94 @@ test('spotify extract: preview attachment filename is based on sanitized track t
     assert.equal(result[0].files[0].name, 'spotify-preview-A_B_Test_Song.mp3');
 });
 
+test('spotify extract: honors hidden output items and description length', async () => {
+    const provider = loadSpotifyProviderWithFetch(async () => ({
+        ok: true,
+        text: async () => nextDataHtml(createTrackEntity()),
+    }));
+
+    const url = 'https://open.spotify.com/track/4cOdK2wGLETKBW3PvgPWqT';
+    const result = await provider.extract(createMessage(url), url, {
+        spotify_description_max_length: 8,
+        hidden_output_items: ['artist', 'duration', 'release_date', 'preview'],
+    });
+
+    const step = result[0];
+    const embed = step.embeds[0];
+    assert.equal(embed.description, undefined);
+    assert.equal(embed.author, undefined);
+    assert.equal(step.files.length, 0);
+    assert.ok(!(embed.fields || []).some(field => ['Artist', 'Duration', 'Release date', 'Preview'].includes(field.name)));
+});
+
+test('spotify extract: optional track metadata fields can be hidden', async () => {
+    const provider = loadSpotifyProviderWithFetch(async () => ({
+        ok: true,
+        text: async () => nextDataHtml(createTrackEntity({
+            album: { name: 'Whenever You Need Somebody' },
+            trackNumber: 1,
+            isExplicit: true,
+            audioPreview: null,
+        })),
+    }));
+
+    const url = 'https://open.spotify.com/track/4cOdK2wGLETKBW3PvgPWqT';
+    const visible = await provider.extract(createMessage(url), url, {});
+
+    assert.ok(visible[0].embeds[0].fields.some(field => field.name === 'Album' && field.value === 'Whenever You Need Somebody'));
+    assert.ok(visible[0].embeds[0].fields.some(field => field.name === 'Track #' && field.value === '1'));
+    assert.ok(visible[0].embeds[0].fields.some(field => field.name === 'Explicit' && field.value === 'Yes'));
+
+    const hidden = await provider.extract(createMessage(url), url, {
+        hidden_output_items: ['album', 'track_number', 'explicit'],
+    });
+
+    const names = (hidden[0].embeds[0].fields || []).map(field => field.name);
+    assert.equal(names.includes('Album'), false);
+    assert.equal(names.includes('Track #'), false);
+    assert.equal(names.includes('Explicit'), false);
+});
+
+test('spotify extract: media_display_mode link_only moves cover and preview to content', async () => {
+    const provider = loadSpotifyProviderWithFetch(async () => ({
+        ok: true,
+        text: async () => nextDataHtml(createTrackEntity()),
+    }));
+
+    const url = 'https://open.spotify.com/track/4cOdK2wGLETKBW3PvgPWqT';
+    const result = await provider.extract(createMessage(url), url, {
+        media_display_mode: 'link_only',
+    });
+
+    const step = result[0];
+    const embed = step.embeds[0];
+    assert.equal(embed.image, undefined);
+    assert.equal(embed.thumbnail, undefined);
+    assert.deepEqual(step.files, []);
+    assert.match(step.content, /Cover: https:\/\/image\.example\/640\.jpg/);
+    assert.match(step.content, /Preview: https:\/\/p\.scdn\.co\/mp3-preview\/sample/);
+    assert.equal((embed.fields || []).some(field => field.name === 'Preview'), false);
+});
+
+test('spotify extract: failure_display_policy source_link returns source link button', async () => {
+    const provider = loadSpotifyProviderWithFetch(async () => ({
+        ok: false,
+        status: 503,
+        text: async () => '',
+    }));
+
+    const url = 'https://open.spotify.com/track/4cOdK2wGLETKBW3PvgPWqT';
+    const result = await provider.extract(createMessage(url), url, {
+        failure_display_policy: 'source_link',
+    });
+
+    const step = result[0];
+    assert.equal(step.content, 'Source link');
+    assert.equal(step.embeds, undefined);
+    assert.equal(step.components[0].components[0].data.url, url);
+    assert.equal(step.allowedMentions.repliedUser, false);
+});
+
 test('spotify extract: supports intl-prefixed Spotify track urls', async () => {
     const provider = loadSpotifyProviderWithFetch(async () => ({
         ok: true,
@@ -195,8 +283,14 @@ test('spotify extract: supports album urls', async () => {
     assert.equal(embed.image.url, 'https://image.example/album-640.jpg');
     assert.ok(embed.fields.some(f => f.name === 'Artist' && f.value === 'The Killers'));
     assert.ok(embed.fields.some(f => f.name === 'Tracks' && f.value === '3'));
+    assert.ok(embed.fields.some(f => f.name === 'Total duration' && f.value === '11:41'));
     assert.ok(embed.fields.some(f => f.name === 'Top tracks' && f.value.includes('Mr. Brightside')));
     assert.equal(step.files.length, 0, 'album embeds should not attach a track preview');
+
+    const hidden = await provider.extract(createMessage(url), url, {
+        hidden_output_items: ['total_duration'],
+    });
+    assert.equal(hidden[0].embeds[0].fields.some(f => f.name === 'Total duration'), false);
 });
 
 test('spotify extract: supports artist urls', async () => {

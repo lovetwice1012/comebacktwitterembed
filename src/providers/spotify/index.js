@@ -3,6 +3,16 @@
 const fetch = require('node-fetch');
 const { ButtonBuilder, ButtonStyle, ComponentType } = require('discord.js');
 const { recordProviderError } = require('../../errorTracking');
+const {
+    applyEmbedMedia,
+    attachmentMediaUrls,
+    buildFailureResponse,
+    mediaButtonAllowed,
+    mediaLinksContent,
+    resolveDensityMaxLength,
+    resolveMediaDisplayMode,
+    shouldShowOutputItem,
+} = require('../_output_controls');
 
 const SPOTIFY_COLOR = 0x1DB954;
 const DESCRIPTION_MAX_LENGTH = 350;
@@ -18,6 +28,10 @@ const STR = {
     tracksField: { ja: 'Tracks', en: 'Tracks' },
     topTracksField: { ja: 'Top tracks', en: 'Top tracks' },
     durationField: { ja: 'Duration', en: 'Duration' },
+    totalDurationField: { ja: 'Total duration', en: 'Total duration' },
+    albumField: { ja: 'Album', en: 'Album' },
+    trackNumberField: { ja: 'Track #', en: 'Track #' },
+    explicitField: { ja: 'Explicit', en: 'Explicit' },
     releaseDateField: { ja: 'Release date', en: 'Release date' },
     previewField: { ja: 'Preview', en: 'Preview' },
     previewAttached: { ja: 'Attached below', en: 'Attached below' },
@@ -112,6 +126,17 @@ function normalizeTrackList(trackList) {
         .filter(track => track.title);
 }
 
+function entityExplicit(entity) {
+    if (entity?.isExplicit === true || entity?.explicit === true) return true;
+    const rating = entity?.contentRating?.label || entity?.contentRating?.rating || entity?.contentRating;
+    return typeof rating === 'string' && /explicit/i.test(rating);
+}
+
+function normalizeTrackNumber(value) {
+    const n = Number(value);
+    return Number.isFinite(n) && n > 0 ? Math.round(n) : null;
+}
+
 function normalizeSpotifyInfo(type, id, entity, fallback = {}) {
     const artists = Array.isArray(entity?.artists)
         ? entity.artists.map(a => ({ name: a?.name, uri: a?.uri })).filter(a => a.name)
@@ -130,6 +155,9 @@ function normalizeSpotifyInfo(type, id, entity, fallback = {}) {
         image: largestImage,
         releaseDate: entity?.releaseDate?.isoString || null,
         durationMs: typeof entity?.duration === 'number' ? entity.duration : null,
+        albumName: entity?.album?.name || entity?.albumOfTrack?.name || entity?.albumName || null,
+        trackNumber: normalizeTrackNumber(entity?.trackNumber ?? entity?.track_number ?? entity?.trackIndex),
+        explicit: entityExplicit(entity),
         trackList,
         canonicalUrl: `https://open.spotify.com/${type}/${id}`,
     };
@@ -167,6 +195,16 @@ function formatDuration(ms) {
     return `${minutes}:${seconds}`;
 }
 
+function albumDurationMs(item) {
+    if (Number.isFinite(item?.durationMs) && item.durationMs > 0) return item.durationMs;
+    if (!Array.isArray(item?.trackList)) return null;
+    const durations = item.trackList
+        .map(track => track.durationMs)
+        .filter(ms => Number.isFinite(ms) && ms > 0);
+    if (durations.length === 0) return null;
+    return durations.reduce((sum, ms) => sum + ms, 0);
+}
+
 function formatReleaseDate(isoString) {
     if (typeof isoString !== 'string' || !isoString) return '';
     return isoString.split('T')[0];
@@ -202,6 +240,14 @@ function buildDescription(item, artistsText) {
     if (item.type === 'album' && item.subtitle) return `Album by ${item.subtitle}`;
     if (item.type === 'artist' && item.subtitle) return item.subtitle;
     return '';
+}
+
+function spotifyDescriptionMaxLength(settings) {
+    return resolveDensityMaxLength(settings, 'spotify_description_max_length', DESCRIPTION_MAX_LENGTH, {
+        compact: 140,
+        detail: 700,
+        hardMax: 700,
+    });
 }
 
 function formatTopTracks(trackList) {
@@ -253,7 +299,7 @@ async function extract(message, url, s) {
     } catch (err) {
         recordProviderError('spotify', err, message, url, { endpointKey: 'spotify/embed-or-oembed' });
         console.log(err);
-        return null;
+        return buildFailureResponse('spotify', url, s, err);
     }
 
     const artistsText = item.artists.map(a => a.name).join(', ');
@@ -264,28 +310,46 @@ async function extract(message, url, s) {
 
     const fields = [];
     const artistFieldValue = artistsText || (item.type === 'album' ? item.subtitle : '');
-    if (artistFieldValue && item.type !== 'artist') fields.push({ name: tr(STR.artistField, lang), value: truncate(artistFieldValue, 256), inline: true });
-    if (item.type !== 'track' && item.trackList.length > 0) {
+    const showArtist = shouldShowOutputItem(s, 'artist');
+    const showPreview = shouldShowOutputItem(s, 'preview');
+    const mediaMode = resolveMediaDisplayMode(s);
+    if (showArtist && artistFieldValue && item.type !== 'artist') fields.push({ name: tr(STR.artistField, lang), value: truncate(artistFieldValue, 256), inline: true });
+    if (shouldShowOutputItem(s, 'tracks') && item.type !== 'track' && item.trackList.length > 0) {
         fields.push({ name: tr(STR.tracksField, lang), value: String(item.trackList.length), inline: true });
     }
     const duration = formatDuration(item.durationMs);
-    if (item.type === 'track' && duration) fields.push({ name: tr(STR.durationField, lang), value: duration, inline: true });
+    if (shouldShowOutputItem(s, 'duration') && item.type === 'track' && duration) fields.push({ name: tr(STR.durationField, lang), value: duration, inline: true });
+    const totalDuration = item.type === 'album' ? formatDuration(albumDurationMs(item)) : '';
+    if (shouldShowOutputItem(s, 'total_duration') && totalDuration) {
+        fields.push({ name: tr(STR.totalDurationField, lang), value: totalDuration, inline: true });
+    }
+    if (shouldShowOutputItem(s, 'album') && item.type === 'track' && item.albumName) {
+        fields.push({ name: tr(STR.albumField, lang), value: truncate(item.albumName, 256), inline: true });
+    }
+    if (shouldShowOutputItem(s, 'track_number') && item.type === 'track' && item.trackNumber) {
+        fields.push({ name: tr(STR.trackNumberField, lang), value: String(item.trackNumber), inline: true });
+    }
+    if (shouldShowOutputItem(s, 'explicit') && item.type === 'track' && item.explicit) {
+        fields.push({ name: tr(STR.explicitField, lang), value: 'Yes', inline: true });
+    }
     const releaseDate = formatReleaseDate(item.releaseDate);
-    if (releaseDate) fields.push({ name: tr(STR.releaseDateField, lang), value: releaseDate, inline: true });
-    if (item.previewUrl) fields.push({ name: tr(STR.previewField, lang), value: tr(STR.previewAttached, lang), inline: true });
-    const topTracks = item.type !== 'track' ? formatTopTracks(item.trackList) : '';
+    if (shouldShowOutputItem(s, 'release_date') && releaseDate) fields.push({ name: tr(STR.releaseDateField, lang), value: releaseDate, inline: true });
+    if (showPreview && mediaMode !== 'link_only' && mediaMode !== 'thumbnail_only' && item.previewUrl) {
+        fields.push({ name: tr(STR.previewField, lang), value: tr(STR.previewAttached, lang), inline: true });
+    }
+    const topTracks = shouldShowOutputItem(s, 'top_tracks') && item.type !== 'track' ? formatTopTracks(item.trackList) : '';
     if (topTracks) fields.push({ name: tr(STR.topTracksField, lang), value: truncate(topTracks, 1024), inline: false });
 
-    const description = buildDescription(item, artistsText);
+    const description = buildDescription(item, showArtist ? artistsText : '');
 
     const embed = {
         title: item.name || `${tr(getFallbackTitleKey(item.type), lang)}${parsed.id}`,
         url: item.canonicalUrl,
-        description: description ? truncate(description, DESCRIPTION_MAX_LENGTH) : undefined,
+        description: description ? truncate(description, spotifyDescriptionMaxLength(s)) : undefined,
         color: SPOTIFY_COLOR,
         footer: { text: `${tr(STR.requesterPrefix, lang)}${requesterName} - Spotify` },
     };
-    if (item.type === 'track' && artistsText) {
+    if (showArtist && item.type === 'track' && artistsText) {
         embed.author = {
             name: artistsText,
             url: firstArtistId ? `https://open.spotify.com/artist/${firstArtistId}` : undefined,
@@ -296,21 +360,29 @@ async function extract(message, url, s) {
             url: item.canonicalUrl,
         };
     }
-    if (item.image?.url) embed.image = { url: item.image.url };
+    applyEmbedMedia(embed, item.image?.url, s);
     if (fields.length > 0) embed.fields = fields;
 
-    const files = [];
-    const previewAttachment = buildPreviewAttachment(item.previewUrl, parsed.id, item.name);
+    const files = attachmentMediaUrls(s, item.image?.url);
+    const previewAttachment = showPreview && mediaMode !== 'link_only' && mediaMode !== 'thumbnail_only'
+        ? buildPreviewAttachment(item.previewUrl, parsed.id, item.name)
+        : null;
     if (previewAttachment) files.push(previewAttachment);
+
+    const content = [
+        mediaLinksContent(s, item.image?.url, 'Cover'),
+        showPreview && mediaMode === 'link_only' && item.previewUrl ? `Preview: ${item.previewUrl}` : '',
+    ].filter(Boolean).join('\n');
 
     /** @type {import('../_types').SendStep} */
     const step = {
         embeds: [embed],
         files,
-        components: buildButtons(lang, item.canonicalUrl, !!item.image?.url),
+        components: buildButtons(lang, item.canonicalUrl, mediaButtonAllowed(s) && !!item.image?.url),
         allowedMentions: { repliedUser: false },
         send: s.alwaysreplyifpostedtweetlink === true ? 'reply-source' : 'channel',
     };
+    if (content) step.content = content;
 
     if (s.deletemessageifonlypostedtweetlink === true && message.content.trim() === url) {
         step.deleteSource = true;
@@ -326,6 +398,30 @@ const spotifyProvider = {
     id: 'spotify',
     enabledByDefault: false,
     urlPattern: SPOTIFY_URL_PATTERN,
+    settings: [
+        'anonymous_expand',
+        'alwaysreplyifpostedtweetlink',
+        'deletemessageifonlypostedtweetlink',
+        'legacy_mode',
+        'display_density',
+        'media_display_mode',
+        'spotify_description_max_length',
+        {
+            key: 'hidden_output_items',
+            outputItems: [
+                { value: 'artist', label: { en: 'Artist field/author', ja: 'Artist field/author' } },
+                { value: 'tracks', label: { en: 'Track count field', ja: 'Track count field' } },
+                { value: 'duration', label: { en: 'Duration field', ja: 'Duration field' } },
+                { value: 'total_duration', label: { en: 'Total duration field', ja: 'Total duration field' } },
+                { value: 'album', label: { en: 'Album field', ja: 'Album field' } },
+                { value: 'track_number', label: { en: 'Track number field', ja: 'Track number field' } },
+                { value: 'explicit', label: { en: 'Explicit field', ja: 'Explicit field' } },
+                { value: 'release_date', label: { en: 'Release date field', ja: 'Release date field' } },
+                { value: 'preview', label: { en: 'Preview attachment/field', ja: 'Preview attachment/field' } },
+                { value: 'top_tracks', label: { en: 'Top tracks field', ja: 'Top tracks field' } },
+            ],
+        },
+    ],
     extract,
 };
 

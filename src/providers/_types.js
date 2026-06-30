@@ -56,6 +56,7 @@
  * @property {RegExp} urlPattern          本文中の URL を検出する g 付き正規表現
  * @property {RegExp} [cleanPattern]      `<URL>` / `||URL||` 除去用 (省略時は urlPattern から自動生成)
  * @property {Extractor} extract          メイン extractor (この 1 関数だけが必須インターフェース)
+ * @property {Array<string|object>|object} [settings] GUI-editable provider-specific settings.
  */
 
 module.exports = {};

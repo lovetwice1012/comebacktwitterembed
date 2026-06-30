@@ -28,6 +28,16 @@ const fetch = require('node-fetch');
 const { ButtonBuilder, ButtonStyle, ComponentType } = require('discord.js');
 const { extractSalePeriod } = require('./_sale');
 const { recordProviderError } = require('../../errorTracking');
+const {
+    applyEmbedMedia,
+    attachmentMediaUrls,
+    buildFailureResponse,
+    mediaButtonAllowed,
+    mediaLinksContent,
+    resolveDensityMaxLength,
+    resolveMediaDisplayMode,
+    shouldShowOutputItem,
+} = require('../_output_controls');
 
 const EMBED_COLOR = 0xfd494a;       // booth のテーマカラー
 const ADULT_EMBED_COLOR = 0x4d4d4d; // R-18 はやや抑え気味の色
@@ -59,6 +69,12 @@ const STR = {
     soldOut:                      { ja: '売り切れ',                             en: 'Sold out' },
     unnamedVariation:             { ja: '(名称なし)',                           en: '(unnamed)' },
     salePeriodField:              { ja: '販売期間',                             en: 'Sale period' },
+    statusField:                  { ja: 'Status',                               en: 'Status' },
+    priceRangeField:              { ja: 'Price range',                          en: 'Price range' },
+    statusUpcoming:               { ja: 'Upcoming',                             en: 'Upcoming' },
+    statusLive:                   { ja: 'Live',                                 en: 'Live' },
+    statusEnded:                  { ja: 'Ended',                                en: 'Ended' },
+    statusSoldOut:                { ja: 'Sold out',                             en: 'Sold out' },
     saleStartsAt:                 { ja: '販売開始: ',                           en: 'Starts: ' },
     saleEndsAt:                   { ja: '販売終了: ',                           en: 'Ends: ' },
     saleStartedAt:                { ja: '販売開始 (開催中): ',                  en: 'Started (live): ' },
@@ -161,6 +177,14 @@ function truncate(s, max) {
     return s.slice(0, max - 1) + '…';
 }
 
+function boothDescriptionMaxLength(settings) {
+    return resolveDensityMaxLength(settings, 'booth_description_max_length', DESCRIPTION_MAX_LENGTH, {
+        compact: 140,
+        detail: 700,
+        hardMax: 700,
+    });
+}
+
 function joinTags(tags, lang) {
     if (!Array.isArray(tags) || tags.length === 0) return '';
     const names = tags
@@ -210,6 +234,44 @@ function formatVariationPrice(price, lang) {
     const s = String(price).trim();
     if (s === '0' || s === '0 JPY' || s === '0円' || s === '¥0') return tr(STR.free, lang);
     return s;
+}
+
+function numericVariationPrice(price) {
+    if (typeof price === 'number' && Number.isFinite(price) && price >= 0) return price;
+    const text = String(price ?? '').replace(/,/g, '').trim();
+    if (!text) return null;
+    const match = text.match(/(?:¥|JPY\s*)?(\d+)(?:\s*JPY)?/i);
+    if (!match) return null;
+    const value = Number(match[1]);
+    return Number.isFinite(value) && value >= 0 ? value : null;
+}
+
+function buildVariationPriceRange(info, lang) {
+    if (!Array.isArray(info?.variations) || info.variations.length === 0) return '';
+    const values = info.variations
+        .map(variation => numericVariationPrice(variation?.price))
+        .filter(value => value !== null);
+    if (values.length === 0) return '';
+    const min = Math.min(...values);
+    const max = Math.max(...values);
+    if (min === max) return formatVariationPrice(min, lang);
+    return `${formatVariationPrice(min, lang)} - ${formatVariationPrice(max, lang)}`;
+}
+
+function isSoldOutInfo(info) {
+    if (info?.is_sold_out === true) return true;
+    if (info?.status === 'sold_out' || info?.sale_status === 'sold_out') return true;
+    if (!Array.isArray(info?.variations) || info.variations.length === 0) return false;
+    return info.variations.every(variation => variation?.status === 'sold_out' || variation?.is_sold_out === true);
+}
+
+function saleStatusLabel(info, salePeriod, lang) {
+    if (isSoldOutInfo(info)) return tr(STR.statusSoldOut, lang);
+    const now = Date.now();
+    if (salePeriod?.startAt && salePeriod.startAt.getTime() > now) return tr(STR.statusUpcoming, lang);
+    if (salePeriod?.endAt && salePeriod.endAt.getTime() <= now) return tr(STR.statusEnded, lang);
+    if (salePeriod?.startAt || salePeriod?.endAt) return tr(STR.statusLive, lang);
+    return '';
 }
 
 function buildVariationsLine(info, lang) {
@@ -275,7 +337,7 @@ async function extract(message, url, s) {
     } catch (err) {
         recordProviderError('booth', err, message, url, { endpointKey: 'booth/items.json' });
         console.log(err);
-        return null;
+        return buildFailureResponse('booth', url, s, err);
     }
 
     const images = pickImageUrls(info);
@@ -293,19 +355,22 @@ async function extract(message, url, s) {
         (info.name || `${tr(STR.fallbackTitle, lang)}${parsed.id}`)
         + adultLabel(isAdult, lang);
 
-    const description = truncate(stripHtml(info.description || ''), DESCRIPTION_MAX_LENGTH);
-    const tagsLine = joinTags(info.tags, lang);
+    const description = truncate(stripHtml(info.description || ''), boothDescriptionMaxLength(s));
+    const tagsLine = shouldShowOutputItem(s, 'tags') ? joinTags(info.tags, lang) : '';
     const priceText = formatPrice(info.price, lang);
     const categoryName = info.category?.name || '';
-    const variationsLine = buildVariationsLine(info, lang);
+    const variationsLine = shouldShowOutputItem(s, 'variations') ? buildVariationsLine(info, lang) : '';
     const salePeriod = extractSalePeriod(info);
-    const salePeriodLine = formatSalePeriod(salePeriod, lang);
+    const salePeriodLine = shouldShowOutputItem(s, 'sale_period') ? formatSalePeriod(salePeriod, lang) : '';
+    const statusLine = shouldShowOutputItem(s, 'status') ? saleStatusLabel(info, salePeriod, lang) : '';
+    const priceRangeLine = shouldShowOutputItem(s, 'price_range') ? buildVariationPriceRange(info, lang) : '';
     const color = isAdult ? ADULT_EMBED_COLOR : EMBED_COLOR;
 
     // 画像が無くてもテキスト Embed は出す
-    const groups = images.length > 0
-        ? images.slice(0, MAX_EMBEDS_PER_MESSAGE)
-        : [null];
+    const mediaMode = resolveMediaDisplayMode(s);
+    const groups = images.length === 0
+        ? [null]
+        : (mediaMode === 'embed' ? images.slice(0, MAX_EMBEDS_PER_MESSAGE) : [images[0]]);
 
     const embeds = groups.map((imgUrl, idx) => {
         const groupIdx = Math.floor(idx / IMAGES_PER_GROUP);
@@ -315,7 +380,7 @@ async function extract(message, url, s) {
             url: groupUrl,
             color,
         };
-        if (imgUrl) embed.image = { url: imgUrl };
+        applyEmbedMedia(embed, imgUrl, s);
         if (idx === 0) {
             embed.title = title;
             const shopName = info.shop?.name || parsed.shop || 'booth';
@@ -328,9 +393,11 @@ async function extract(message, url, s) {
             };
             if (description) embed.description = description;
             const fields = [];
-            if (priceText) fields.push({ name: tr(STR.priceField, lang), value: priceText, inline: true });
-            if (categoryName) fields.push({ name: tr(STR.categoryField, lang), value: categoryName, inline: true });
-            if (images.length > 1) {
+            if (statusLine) fields.push({ name: tr(STR.statusField, lang), value: statusLine, inline: true });
+            if (priceText && shouldShowOutputItem(s, 'price')) fields.push({ name: tr(STR.priceField, lang), value: priceText, inline: true });
+            if (priceRangeLine) fields.push({ name: tr(STR.priceRangeField, lang), value: priceRangeLine, inline: true });
+            if (categoryName && shouldShowOutputItem(s, 'category')) fields.push({ name: tr(STR.categoryField, lang), value: categoryName, inline: true });
+            if (images.length > 1 && shouldShowOutputItem(s, 'image_count')) {
                 fields.push({
                     name: tr(STR.pagesField, lang),
                     value: `${Math.min(images.length, MAX_EMBEDS_PER_MESSAGE)} / ${images.length}`,
@@ -370,7 +437,7 @@ async function extract(message, url, s) {
     }
 
     const components = [];
-    if (images.length > 0) {
+    if (images.length > 0 && mediaButtonAllowed(s)) {
         components.push({ type: ComponentType.ActionRow, components: [showMediaAsAttachmentsButton] });
     }
     components.push({ type: ComponentType.ActionRow, components: [translateButton, deleteButton] });
@@ -385,6 +452,12 @@ async function extract(message, url, s) {
         allowedMentions: { repliedUser: false },
         send: s.alwaysreplyifpostedtweetlink === true ? 'reply-source' : 'channel',
     };
+
+    const mediaUrls = images.slice(0, MAX_EMBEDS_PER_MESSAGE);
+    const mediaFiles = attachmentMediaUrls(s, mediaUrls);
+    if (mediaFiles.length > 0) step.files = mediaFiles;
+    const mediaContent = mediaLinksContent(s, mediaUrls, 'Media');
+    if (mediaContent) step.content = mediaContent;
 
     if (s.deletemessageifonlypostedtweetlink === true && message.content.trim() === url) {
         step.deleteSource = true;
@@ -404,6 +477,28 @@ const boothProvider = {
     // 既定は無効。ギルド管理者が `/provider` で明示的に有効化したときだけ動く。
     enabledByDefault: false,
     urlPattern: BOOTH_URL_PATTERN,
+    settings: [
+        'anonymous_expand',
+        'alwaysreplyifpostedtweetlink',
+        'deletemessageifonlypostedtweetlink',
+        'legacy_mode',
+        'display_density',
+        'media_display_mode',
+        'booth_description_max_length',
+        {
+            key: 'hidden_output_items',
+            outputItems: [
+                { value: 'status', label: { en: 'Sale status field', ja: 'Sale status field' } },
+                { value: 'price', label: { en: 'Price field', ja: '価格欄' } },
+                { value: 'price_range', label: { en: 'Variation price range field', ja: 'Variation price range field' } },
+                { value: 'category', label: { en: 'Category field', ja: 'カテゴリ欄' } },
+                { value: 'image_count', label: { en: 'Image count field', ja: '画像枚数欄' } },
+                { value: 'variations', label: { en: 'Variations field', ja: 'バリエーション欄' } },
+                { value: 'sale_period', label: { en: 'Sale period field', ja: '販売期間欄' } },
+                { value: 'tags', label: { en: 'Tags field', ja: 'タグ欄' } },
+            ],
+        },
+    ],
     extract,
 };
 module.exports = boothProvider;

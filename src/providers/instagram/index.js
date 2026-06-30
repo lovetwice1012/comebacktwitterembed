@@ -4,6 +4,13 @@ const fetch = require('node-fetch');
 const { ButtonBuilder, ButtonStyle, ComponentType } = require('discord.js');
 const { videoExtensions } = require('../../utils');
 const { recordProviderError } = require('../../errorTracking');
+const {
+    applyMediaDisplayToStep,
+    buildFailureResponse,
+    resolveDensityMaxLength,
+    resolveDisplayDensity,
+    shouldShowOutputItem,
+} = require('../_output_controls');
 
 const INSTAGRAM_URL_PATTERN =
     /https?:\/\/(?:www\.)?instagram\.com\/(?:(?:[A-Za-z0-9_.-]+\/)?(?:(?:p|reel|reels|tv)\/[A-Za-z0-9_-]+(?:\/\d+)?|share(?:\/reel)?\/[A-Za-z0-9_-]+)|(?!(?:p|reel|reels|tv|share|stories|explore|accounts|about|api|graphql|oauth|developer|directory|emails|challenge|web|static|privacy|terms|legal)(?:\/|$))[A-Za-z0-9._]{1,30})\/?(?:\?[^\s<>|]*)?/g;
@@ -58,6 +65,16 @@ const STR = {
     followersField:               { ja: '\u30d5\u30a9\u30ed\u30ef\u30fc', en: 'Followers' },
     followingField:               { ja: '\u30d5\u30a9\u30ed\u30fc\u4e2d', en: 'Following' },
     websiteLink:                  { ja: '\u30a6\u30a7\u30d6\u30b5\u30a4\u30c8', en: 'Website' },
+    likesField:                   { ja: 'Likes', en: 'Likes' },
+    commentsField:                { ja: 'Comments', en: 'Comments' },
+    locationField:                { ja: 'Location', en: 'Location' },
+    hashtagsField:                { ja: 'Hashtags', en: 'Hashtags' },
+    mentionsField:                { ja: 'Mentions', en: 'Mentions' },
+    durationField:                { ja: 'Duration', en: 'Duration' },
+    audioField:                   { ja: 'Audio', en: 'Audio' },
+    profileStatusField:           { ja: 'Status', en: 'Status' },
+    verifiedStatus:               { ja: 'Verified', en: 'Verified' },
+    privateStatus:                { ja: 'Private', en: 'Private' },
 };
 
 const dataCache = new Map();
@@ -181,6 +198,7 @@ async function resolveParsedUrl(parsed) {
 
 function truncate(value, max) {
     if (!value) return '';
+    if (max <= 0) return '';
     return value.length <= max ? value : value.slice(0, max - 3) + '...';
 }
 
@@ -424,6 +442,31 @@ function firstString(obj, paths) {
     return '';
 }
 
+function firstNumber(obj, paths) {
+    for (const path of paths) {
+        const value = getPath(obj, path);
+        const n = Number(value);
+        if (Number.isFinite(n) && n > 0) return n;
+    }
+    return null;
+}
+
+function firstStringFromNodes(nodes, paths) {
+    for (const node of nodes) {
+        const value = firstString(node, paths);
+        if (value) return value;
+    }
+    return '';
+}
+
+function firstNumberFromNodes(nodes, paths) {
+    for (const node of nodes) {
+        const value = firstNumber(node, paths);
+        if (value !== null) return value;
+    }
+    return null;
+}
+
 function findMediaNode(obj, depth = 0) {
     if (!obj || typeof obj !== 'object' || depth > 10) return null;
     if (obj.shortcode_media) return obj.shortcode_media;
@@ -499,7 +542,9 @@ function sidecarNodes(node) {
 function normalizeMediaNode(node) {
     if (!node || typeof node !== 'object') return null;
 
-    const medias = sidecarNodes(node)
+    const mediaNodes = sidecarNodes(node);
+    const inspectNodes = [node, ...mediaNodes.filter(media => media !== node)];
+    const medias = mediaNodes
         .map(media => ({
             typeName: media.__typename || (media.video_url || media.video_versions ? 'GraphVideo' : 'GraphImage'),
             url: mediaUrlFromNode(media),
@@ -515,6 +560,34 @@ function normalizeMediaNode(node) {
             'edge_media_to_caption.edges.0.node.text',
             'caption.text',
             'accessibility_caption',
+        ]),
+        likeCount: countFromPath(node, 'edge_media_preview_like'),
+        commentCount: countFromPath(node, 'edge_media_to_comment'),
+        locationName: firstString(node, ['location.name', 'location.city_name', 'location.short_name']),
+        videoDuration: firstNumberFromNodes(inspectNodes, [
+            'video_duration',
+            'videoDuration',
+            'clips_metadata.video_duration',
+            'clips_metadata.videoDuration',
+        ]),
+        audioTitle: firstStringFromNodes(inspectNodes, [
+            'clips_music_attribution_info.song_name',
+            'clips_music_attribution_info.original_sound_name',
+            'clips_music_attribution_info.audio_title',
+            'clips_music_attribution_info.title',
+            'music_metadata.song_name',
+            'music_metadata.audio_title',
+            'music_metadata.music_info.music_asset_info.title',
+            'audio.title',
+            'audio.name',
+        ]),
+        audioArtist: firstStringFromNodes(inspectNodes, [
+            'clips_music_attribution_info.artist_name',
+            'clips_music_attribution_info.author_username',
+            'music_metadata.artist_name',
+            'music_metadata.music_info.music_asset_info.display_artist',
+            'audio.artist_name',
+            'audio.artist',
         ]),
         timestamp: Number.isFinite(timestamp) && timestamp > 0 ? timestamp * 1000 : undefined,
         medias,
@@ -902,13 +975,33 @@ function isVideoMedia(media) {
     return videoExtensions.includes(ext);
 }
 
-function selectMedias(medias, mediaIndex) {
+function resolveCaptionMaxLength(value, settings = {}) {
+    if (value === undefined || value === null || value === '') {
+        return resolveDensityMaxLength(settings, 'instagram_caption_max_length', CAPTION_MAX_LENGTH, {
+            compact: 200,
+            detail: CAPTION_MAX_LENGTH,
+            hardMax: CAPTION_MAX_LENGTH,
+        });
+    }
+    const n = Number(value);
+    if (!Number.isFinite(n)) return CAPTION_MAX_LENGTH;
+    return Math.max(0, Math.min(CAPTION_MAX_LENGTH, Math.round(n)));
+}
+
+function resolveMediaLimit(value, settings = {}) {
+    const n = Number(value);
+    if (n === 1 || n === 4) return n;
+    if (resolveDisplayDensity(settings) === 'compact') return 1;
+    return MAX_MEDIA_PER_MESSAGE;
+}
+
+function selectMedias(medias, mediaIndex, limit = MAX_MEDIA_PER_MESSAGE) {
     if (!Array.isArray(medias) || medias.length === 0) return [];
     if (mediaIndex && mediaIndex > 0) {
         const index = Math.min(mediaIndex, medias.length) - 1;
         return [medias[index]];
     }
-    return medias.slice(0, MAX_MEDIA_PER_MESSAGE);
+    return medias.slice(0, Math.max(1, Math.min(MAX_MEDIA_PER_MESSAGE, limit)));
 }
 
 function displayRange(total, selectedCount, mediaIndex) {
@@ -917,8 +1010,43 @@ function displayRange(total, selectedCount, mediaIndex) {
     return selectedCount === total ? `1-${total} / ${total}` : `1-${selectedCount} / ${total}`;
 }
 
-function buildBaseEmbed(data, canonicalUrl, lang, requesterName, selectedCount, mediaIndex) {
-    const caption = truncate(data.caption || '', CAPTION_MAX_LENGTH);
+function uniqueTextMatches(text, pattern, limit = 10) {
+    if (!text) return '';
+    const seen = new Set();
+    const values = [];
+    for (const match of String(text).matchAll(pattern)) {
+        const value = match[0];
+        const key = value.toLowerCase();
+        if (seen.has(key)) continue;
+        seen.add(key);
+        values.push(value);
+        if (values.length >= limit) break;
+    }
+    return values.join(' ');
+}
+
+function formatDurationSeconds(value) {
+    const n = Number(value);
+    if (!Number.isFinite(n) || n <= 0) return '';
+    const total = Math.round(n);
+    const hours = Math.floor(total / 3600);
+    const minutes = Math.floor((total % 3600) / 60);
+    const seconds = String(total % 60).padStart(2, '0');
+    if (hours > 0) return `${hours}:${String(minutes).padStart(2, '0')}:${seconds}`;
+    return `${minutes}:${seconds}`;
+}
+
+function audioSummary(data) {
+    return [data.audioTitle, data.audioArtist].filter(Boolean).join(' - ');
+}
+
+function addField(fields, name, value, inline = true) {
+    if (value === null || value === undefined || value === '') return;
+    fields.push({ name, value: String(value), inline });
+}
+
+function buildBaseEmbed(data, canonicalUrl, lang, requesterName, selectedCount, mediaIndex, s) {
+    const caption = truncate(data.caption || '', resolveCaptionMaxLength(s?.instagram_caption_max_length, s));
     let description = [caption, `[${tr(STR.viewLink, lang)}](${canonicalUrl})`].filter(Boolean).join('\n\n');
     description = truncate(description, DESCRIPTION_MAX_LENGTH);
 
@@ -939,8 +1067,17 @@ function buildBaseEmbed(data, canonicalUrl, lang, requesterName, selectedCount, 
     }
     if (data.timestamp) embed.timestamp = new Date(data.timestamp);
 
-    const range = displayRange(data.medias.length, selectedCount, mediaIndex);
-    if (range) embed.fields = [{ name: tr(STR.mediaField, lang), value: range, inline: true }];
+    const fields = [];
+    const range = shouldShowOutputItem(s, 'media_range') ? displayRange(data.medias.length, selectedCount, mediaIndex) : '';
+    addField(fields, tr(STR.mediaField, lang), range);
+    if (shouldShowOutputItem(s, 'duration')) addField(fields, tr(STR.durationField, lang), formatDurationSeconds(data.videoDuration));
+    if (shouldShowOutputItem(s, 'audio')) addField(fields, tr(STR.audioField, lang), audioSummary(data));
+    if (shouldShowOutputItem(s, 'likes')) addField(fields, tr(STR.likesField, lang), formatCount(data.likeCount, lang));
+    if (shouldShowOutputItem(s, 'comments')) addField(fields, tr(STR.commentsField, lang), formatCount(data.commentCount, lang));
+    if (shouldShowOutputItem(s, 'location')) addField(fields, tr(STR.locationField, lang), data.locationName);
+    if (shouldShowOutputItem(s, 'hashtags')) addField(fields, tr(STR.hashtagsField, lang), uniqueTextMatches(data.caption, /#[\p{L}\p{N}_]+/gu), false);
+    if (shouldShowOutputItem(s, 'mentions')) addField(fields, tr(STR.mentionsField, lang), uniqueTextMatches(data.caption, /@[A-Za-z0-9._]+/g), false);
+    if (fields.length > 0) embed.fields = fields;
     return embed;
 }
 
@@ -950,7 +1087,7 @@ function formatCount(value, lang) {
     return new Intl.NumberFormat(lang === 'ja' ? 'ja-JP' : 'en-US').format(value);
 }
 
-function buildProfilePayload(profile, canonicalUrl, lang, requesterName) {
+function buildProfilePayload(profile, canonicalUrl, lang, requesterName, s) {
     const descriptionParts = [];
     if (profile.biography) descriptionParts.push(truncate(profile.biography, 1200));
     if (profile.externalUrl) descriptionParts.push(`[${tr(STR.websiteLink, lang)}](${profile.externalUrl})`);
@@ -975,16 +1112,26 @@ function buildProfilePayload(profile, canonicalUrl, lang, requesterName) {
     const posts = formatCount(profile.posts, lang);
     const followers = formatCount(profile.followers, lang);
     const following = formatCount(profile.following, lang);
-    if (posts !== null) fields.push({ name: tr(STR.postsField, lang), value: posts, inline: true });
-    if (followers !== null) fields.push({ name: tr(STR.followersField, lang), value: followers, inline: true });
-    if (following !== null) fields.push({ name: tr(STR.followingField, lang), value: following, inline: true });
+    if (shouldShowOutputItem(s, 'profile_counts')) {
+        if (posts !== null) fields.push({ name: tr(STR.postsField, lang), value: posts, inline: true });
+        if (followers !== null) fields.push({ name: tr(STR.followersField, lang), value: followers, inline: true });
+        if (following !== null) fields.push({ name: tr(STR.followingField, lang), value: following, inline: true });
+    }
+    if (shouldShowOutputItem(s, 'profile_status')) {
+        const status = [
+            profile.isVerified ? tr(STR.verifiedStatus, lang) : '',
+            profile.isPrivate ? tr(STR.privateStatus, lang) : '',
+        ].filter(Boolean).join(' / ');
+        addField(fields, tr(STR.profileStatusField, lang), status);
+    }
     if (fields.length > 0) embed.fields = fields;
 
-    return {
+    const payload = {
         embeds: [embed],
         files: [],
         components: buildButtons(lang, 'profile', false),
     };
+    return applyMediaDisplayToStep(payload, s, profile.profilePicUrl, 'Image');
 }
 
 function buildButtons(lang, mediaMode, includeSwitcher) {
@@ -1011,21 +1158,22 @@ function buildButtons(lang, mediaMode, includeSwitcher) {
 }
 
 function buildMediaPayload(data, canonicalUrl, lang, requesterName, s, mediaIndex) {
-    const selected = selectMedias(data.medias, mediaIndex);
+    const selected = selectMedias(data.medias, mediaIndex, resolveMediaLimit(s.instagram_media_limit, s));
     if (selected.length === 0) return null;
 
-    const baseEmbed = buildBaseEmbed(data, canonicalUrl, lang, requesterName, selected.length, mediaIndex);
+    const baseEmbed = buildBaseEmbed(data, canonicalUrl, lang, requesterName, selected.length, mediaIndex, s);
     const hasVideo = selected.some(isVideoMedia);
     const shouldUseAttachments = hasVideo || selected.length > 4 || s.sendMediaAsAttachmentsAsDefault === true;
 
     if (shouldUseAttachments) {
         const files = selected.map(media => media.url);
         const canSwitchBack = !hasVideo && selected.length <= 4;
-        return {
+        const payload = {
             embeds: [baseEmbed],
             files,
             components: buildButtons(lang, 'attachments', canSwitchBack),
         };
+        return applyMediaDisplayToStep(payload, s, selected.map(media => media.url), 'Media');
     }
 
     const embeds = selected.map((media, index) => {
@@ -1037,11 +1185,12 @@ function buildMediaPayload(data, canonicalUrl, lang, requesterName, s, mediaInde
         return embed;
     });
 
-    return {
+    const payload = {
         embeds,
         files: [],
         components: buildButtons(lang, 'embeds', selected.length > 0),
     };
+    return applyMediaDisplayToStep(payload, s, selected.map(media => media.url), 'Media');
 }
 
 /** @type {import('../_types').Extractor} */
@@ -1066,16 +1215,17 @@ async function extract(message, url, s, opts) {
         } catch (err) {
             console.warn(`[instagram] Failed to extract profile ${url}: ${err?.message || err}`);
             recordProviderError('instagram', err, message, url, { endpointKey: 'instagram/profile' });
-            return null;
+            return buildFailureResponse('instagram', url, s, err);
         }
         if (!profile) return null;
 
         const bannedTarget = [profile.username, profile.fullName, profile.biography].filter(Boolean).join('\n');
         if (containsBannedWord(bannedTarget, s.bannedWords)) return null;
 
-        const payload = buildProfilePayload(profile, canonicalUrl, lang, requesterName);
+        const payload = buildProfilePayload(profile, canonicalUrl, lang, requesterName, s);
         /** @type {import('../_types').SendStep} */
         const step = {
+            content: payload.content,
             embeds: payload.embeds,
             files: payload.files,
             components: payload.components,
@@ -1097,7 +1247,7 @@ async function extract(message, url, s, opts) {
         data = await fetchInstagramData(parsed);
     } catch (err) {
         recordProviderError('instagram', err, message, url, { endpointKey: 'instagram/embed-or-graphql' });
-        return null;
+        return buildFailureResponse('instagram', url, s, err);
     }
 
     if (containsBannedWord(data.caption || '', s.bannedWords)) return null;
@@ -1107,6 +1257,7 @@ async function extract(message, url, s, opts) {
 
     /** @type {import('../_types').SendStep} */
     const step = {
+        content: payload.content,
         embeds: payload.embeds,
         files: payload.files,
         components: payload.components,
@@ -1129,6 +1280,33 @@ const instagramProvider = {
     enabledByDefault: false,
     urlPattern: INSTAGRAM_URL_PATTERN,
     cleanPattern: INSTAGRAM_CLEAN_PATTERN,
+    settings: [
+        'bannedWords',
+        'sendMediaAsAttachmentsAsDefault',
+        'display_density',
+        'media_display_mode',
+        'anonymous_expand',
+        'alwaysreplyifpostedtweetlink',
+        'deletemessageifonlypostedtweetlink',
+        'legacy_mode',
+        'instagram_caption_max_length',
+        'instagram_media_limit',
+        {
+            key: 'hidden_output_items',
+            outputItems: [
+                { value: 'likes', label: { en: 'Likes field', ja: 'Likes field' } },
+                { value: 'comments', label: { en: 'Comments field', ja: 'Comments field' } },
+                { value: 'location', label: { en: 'Location field', ja: 'Location field' } },
+                { value: 'hashtags', label: { en: 'Hashtags field', ja: 'Hashtags field' } },
+                { value: 'mentions', label: { en: 'Mentions field', ja: 'Mentions field' } },
+                { value: 'duration', label: { en: 'Video duration field', ja: 'Video duration field' } },
+                { value: 'audio', label: { en: 'Audio field', ja: 'Audio field' } },
+                { value: 'profile_status', label: { en: 'Profile status field', ja: 'Profile status field' } },
+                { value: 'media_range', label: { en: 'Media count field', ja: 'メディア枚数欄' } },
+                { value: 'profile_counts', label: { en: 'Profile count fields', ja: 'プロフィール数値欄' } },
+            ],
+        },
+    ],
     extract,
 };
 

@@ -21,28 +21,26 @@ const {
     setProviderEnabled,
     setSetting,
 } = require('../../providers/_provider_settings');
+const {
+    BULK_SETTING_KEYS,
+    DEFAULT_SETTING_KEY,
+    getBulkSettingSpecs,
+    getProviderSettingSpecs,
+    overviewSpec,
+} = require('../../providers/_setting_specs');
+const { normalizeHiddenOutputItems } = require('../../providers/_output_visibility');
 const { button_invisible_template } = require('../../utils');
 const {
     catalogText,
+    localize,
     toDiscordLocalizationsForKey,
 } = require('../../i18n');
 
 const CUSTOM_ID_PREFIX = 'guisetting';
 const DEFAULT_PROVIDER_ID = 'twitter';
 const BULK_PROVIDER_ID = 'all';
-const DEFAULT_SETTING_KEY = 'overview';
 const BANNED_WORD_INPUT_ID = 'guisetting-banned-word';
 const COPY_SOURCE_GUILD_INPUT_ID = 'guisetting-copy-source-guild';
-
-const BULK_SETTING_KEYS = new Set([
-    'enabled',
-    'disable',
-    'defaultLanguage',
-    'editOriginalIfTranslate',
-    'extract_bot_message',
-    'button_invisible',
-    'button_disabled',
-]);
 
 const LOCAL_TEXT = {
     allProviders: { en: 'All providers', ja: 'すべてのプロバイダー' },
@@ -112,14 +110,27 @@ function localText(key, locale, replacements = {}) {
     return text;
 }
 
+function shouldPreferSpecText(locale) {
+    const normalized = String(locale || '').toLowerCase();
+    return normalized === 'en' || normalized.startsWith('en-') || normalized.startsWith('ja');
+}
+
+function specText(value, locale) {
+    if (value === undefined || value === null) return undefined;
+    if (typeof value === 'string') return value;
+    return localize(value, locale);
+}
+
 function specLabel(spec, locale) {
     if (spec.key === 'enabled') return `${uiText('provider', locale)}: ${uiText('enabled', locale)}`;
-    return catalogText(`gui.settings.${spec.key}.label`, locale) || spec.label;
+    const preferred = shouldPreferSpecText(locale) ? specText(spec.label, locale) : null;
+    return preferred || catalogText(`gui.settings.${spec.key}.label`, locale) || specText(spec.label, locale) || spec.label;
 }
 
 function specDescription(spec, locale) {
     if (spec.key === 'enabled') return `${uiText('enable', locale)} / ${uiText('disable', locale)} ${uiText('provider', locale)}`;
-    return catalogText(`gui.settings.${spec.key}.description`, locale) || spec.description;
+    const preferred = shouldPreferSpecText(locale) ? specText(spec.description, locale) : null;
+    return preferred || catalogText(`gui.settings.${spec.key}.description`, locale) || specText(spec.description, locale) || spec.description;
 }
 
 function buttonOptionLabel(option, locale) {
@@ -127,7 +138,16 @@ function buttonOptionLabel(option, locale) {
 }
 
 function choiceLabel(spec, choice, locale) {
-    return catalogText(`gui.choices.${spec.key}.${choice.value}`, locale) || choice.label;
+    const preferred = shouldPreferSpecText(locale) ? specText(choice.label, locale) : null;
+    return preferred || catalogText(`gui.choices.${spec.key}.${choice.value}`, locale) || specText(choice.label, locale) || choice.label;
+}
+
+function outputItemLabel(item, locale) {
+    return specText(item.label, locale) || item.label || item.value;
+}
+
+function outputItemDescription(item, locale) {
+    return specText(item.description, locale) || item.description;
 }
 
 const BUTTON_VISIBILITY_OPTIONS = [
@@ -138,218 +158,10 @@ const BUTTON_VISIBILITY_OPTIONS = [
     { key: 'savetweet', label: 'Save tweet' },
 ];
 
-const COMMON_SPECS = [
-    {
-        key: 'enabled',
-        label: 'Provider enabled',
-        description: 'Enable or disable this provider in the guild.',
-        kind: 'providerEnabled',
-        settingKey: 'enabled',
-    },
-    {
-        key: 'disable',
-        label: 'Disable extraction',
-        description: 'Toggle disabled users, channels, and roles.',
-        kind: 'targets',
-        settingKey: 'disable',
-    },
-    {
-        key: 'defaultLanguage',
-        label: 'Default language',
-        description: 'Language used by translate actions.',
-        kind: 'choice',
-        settingKey: 'defaultLanguage',
-        choices: [
-            { label: 'English', value: 'en' },
-            { label: 'Japanese', value: 'ja' },
-        ],
-    },
-    {
-        key: 'editOriginalIfTranslate',
-        label: 'Edit original after translate',
-        description: 'Edit the original response when translating.',
-        kind: 'bool',
-        settingKey: 'editOriginalIfTranslate',
-    },
-    {
-        key: 'extract_bot_message',
-        label: 'Extract bot messages',
-        description: 'Allow links posted by bots to be expanded.',
-        kind: 'bool',
-        settingKey: 'extract_bot_message',
-    },
-    {
-        key: 'button_invisible',
-        label: 'Hide buttons',
-        description: 'Choose which response buttons should be hidden.',
-        kind: 'buttonVisibility',
-        settingKey: 'button_invisible',
-    },
-    {
-        key: 'button_disabled',
-        label: 'Disable buttons for targets',
-        description: 'Toggle users, channels, and roles that cannot use buttons.',
-        kind: 'targets',
-        settingKey: 'button_disabled',
-    },
-];
-
-const TWITTER_SPECS = [
-    {
-        key: 'bannedWords',
-        label: 'Banned words',
-        description: 'Add or remove words blocked from expansion.',
-        kind: 'bannedWords',
-        settingKey: 'bannedWords',
-    },
-    {
-        key: 'sendMediaAsAttachmentsAsDefault',
-        label: 'Media as attachments by default',
-        description: 'Send media as attachments by default.',
-        kind: 'bool',
-        settingKey: 'sendMediaAsAttachmentsAsDefault',
-    },
-    {
-        key: 'deletemessageifonlypostedtweetlink',
-        label: 'Delete link-only message',
-        description: 'Delete the source message when it only contains a tweet link.',
-        kind: 'bool',
-        settingKey: 'deletemessageifonlypostedtweetlink',
-    },
-    {
-        key: 'deletemessageifonlypostedtweetlink_secoundaryextractmode',
-        label: 'Delete link-only in secondary mode',
-        description: 'Also delete link-only messages in secondary extract mode.',
-        kind: 'bool',
-        settingKey: 'deletemessageifonlypostedtweetlink_secoundaryextractmode',
-    },
-    {
-        key: 'alwaysreplyifpostedtweetlink',
-        label: 'Always reply to tweet links',
-        description: 'Always reply when a tweet link is posted.',
-        kind: 'bool',
-        settingKey: 'alwaysreplyifpostedtweetlink',
-    },
-    {
-        key: 'anonymous_expand',
-        label: 'Anonymous expand',
-        description: 'Hide requester and author information in expanded tweets.',
-        kind: 'bool',
-        settingKey: 'anonymous_expand',
-    },
-    {
-        key: 'quote_repost_do_not_extract',
-        label: 'Do not extract quote reposts',
-        description: 'Skip expansion for quoted repost content.',
-        kind: 'bool',
-        settingKey: 'quote_repost_do_not_extract',
-    },
-    {
-        key: 'quote_repost_max_depth',
-        label: 'Quote repost max depth',
-        description: 'Maximum quote repost expansion depth.',
-        kind: 'choice',
-        settingKey: 'quote_repost_max_depth',
-        choices: Array.from({ length: 11 }, (_value, index) => ({
-            label: index === 0 ? 'Unlimited' : String(index),
-            value: String(index),
-        })),
-        parseValue: value => Number(value),
-    },
-    {
-        key: 'legacy_mode',
-        label: 'Legacy mode',
-        description: 'Use legacy expansion behavior.',
-        kind: 'bool',
-        settingKey: 'legacy_mode',
-    },
-    {
-        key: 'passive_mode',
-        label: 'Passive mode',
-        description: 'Send only media-view buttons.',
-        kind: 'bool',
-        settingKey: 'passive_mode',
-    },
-    {
-        key: 'secondary_extract_mode',
-        label: 'Secondary extract mode',
-        description: 'Only send when selected secondary targets match.',
-        kind: 'bool',
-        settingKey: 'secondary_extract_mode',
-    },
-    {
-        key: 'secondary_extract_mode_multiple_images',
-        label: 'Secondary target: multiple images',
-        description: 'Match posts with multiple images in secondary mode.',
-        kind: 'bool',
-        settingKey: 'secondary_extract_mode_multiple_images',
-    },
-    {
-        key: 'secondary_extract_mode_video',
-        label: 'Secondary target: videos',
-        description: 'Match posts with videos in secondary mode.',
-        kind: 'bool',
-        settingKey: 'secondary_extract_mode_video',
-    },
-];
-
-const PIXIV_SPECS = [
-    {
-        key: 'pixiv_images_per_step',
-        label: 'Images per step',
-        description: 'Number of Pixiv images sent per response step.',
-        kind: 'choice',
-        settingKey: 'pixiv_images_per_step',
-        choices: [
-            { label: '4', value: '4' },
-            { label: '10', value: '10' },
-        ],
-        parseValue: value => Number(value),
-    },
-];
-
-const YOUTUBE_SPECS = [
-    {
-        key: 'youtube_description_max_length',
-        label: 'Description text length',
-        description: 'Maximum YouTube description text shown in embeds. 0 hides descriptions.',
-        kind: 'choice',
-        settingKey: 'youtube_description_max_length',
-        choices: [
-            { label: 'Hide descriptions', value: '0' },
-            { label: '200 characters', value: '200' },
-            { label: '500 characters', value: '500' },
-            { label: '700 characters', value: '700' },
-            { label: '1000 characters', value: '1000' },
-            { label: '1400 characters', value: '1400' },
-        ],
-        parseValue: value => Number(value),
-    },
-];
-
-function overviewSpec() {
-    return {
-        key: DEFAULT_SETTING_KEY,
-        label: 'Overview',
-        description: 'Current GUI-editable settings.',
-        kind: 'overview',
-    };
-}
-
-function getBulkSettingSpecs() {
-    return [
-        overviewSpec(),
-        ...COMMON_SPECS.filter(spec => BULK_SETTING_KEYS.has(spec.key)),
-    ];
-}
-
 function getSettingSpecs(providerId) {
     if (isBulkProvider(providerId)) return getBulkSettingSpecs();
-    const specs = [overviewSpec(), ...COMMON_SPECS];
-    if (providerId === 'twitter') return [...specs, ...TWITTER_SPECS];
-    if (providerId === 'pixiv') return [...specs, ...PIXIV_SPECS];
-    if (providerId === 'youtube') return [...specs, ...YOUTUBE_SPECS];
-    if (getProviderLabels()[providerId]) return specs;
+    const provider = getProviders().find(candidate => candidate.id === providerId)?.provider;
+    if (provider) return getProviderSettingSpecs(provider);
     return [overviewSpec()];
 }
 
@@ -507,6 +319,16 @@ function getButtonOptions(providerId) {
     return BUTTON_VISIBILITY_OPTIONS.filter(option => providerId === 'twitter' || option.key !== 'savetweet');
 }
 
+async function normalizeOutputVisibility(providerId, spec, guildId) {
+    const validKeys = new Set(getOutputItems(spec).map(item => item.value));
+    return normalizeHiddenOutputItems(await getSetting({ id: providerId }, spec.settingKey, guildId))
+        .filter(key => validKeys.has(key));
+}
+
+async function setOutputVisibility(providerId, settingKey, guildId, value) {
+    await setSetting({ id: providerId }, settingKey, guildId, normalizeHiddenOutputItems(value));
+}
+
 async function normalizeBannedWords(providerId, guildId) {
     const raw = await getSetting({ id: providerId }, 'bannedWords', guildId);
     return Array.isArray(raw) ? [...raw] : [];
@@ -655,6 +477,22 @@ async function applyButtonVisibilitySelection(providerId, guildId, hiddenButtonK
     return uiText('updatedHiddenButtons', locale);
 }
 
+async function applyOutputVisibilitySelection(providerId, spec, guildId, hiddenItemKeys, locale, visibleItemKeys = null) {
+    const validKeys = new Set(getOutputItems(spec).map(item => item.value));
+    const selected = normalizeHiddenOutputItems(hiddenItemKeys).filter(key => validKeys.has(key));
+    let next = selected;
+    if (Array.isArray(visibleItemKeys)) {
+        const visible = new Set(visibleItemKeys.filter(key => validKeys.has(key)));
+        const current = await normalizeOutputVisibility(providerId, spec, guildId);
+        next = current.filter(key => !visible.has(key));
+        for (const key of selected) {
+            if (!next.includes(key)) next.push(key);
+        }
+    }
+    await setOutputVisibility(providerId, spec.settingKey, guildId, next);
+    return `${specLabel(spec, locale)}: ${outputVisibilityValueSummary(spec, next, locale)}`;
+}
+
 async function applyBannedWordInput(providerId, guildId, rawWord, locale) {
     const word = String(rawWord ?? '').normalize('NFC').trim();
     if (!word) return uiText('bannedWordEmpty', locale);
@@ -719,6 +557,18 @@ function buttonVisibilityValueSummary(providerId, value, locale) {
     return hidden.length === 0 ? uiText('none', locale) : hidden.join(', ');
 }
 
+function getOutputItems(spec) {
+    return Array.isArray(spec.outputItems) ? spec.outputItems : [];
+}
+
+function outputVisibilityValueSummary(spec, value, locale) {
+    const hiddenKeys = new Set(normalizeHiddenOutputItems(value));
+    const hidden = getOutputItems(spec)
+        .filter(item => hiddenKeys.has(item.value))
+        .map(item => outputItemLabel(item, locale));
+    return hidden.length === 0 ? uiText('none', locale) : hidden.join(', ');
+}
+
 async function formatBulkSettingValue(spec, guildId, locale) {
     const values = await getBulkSettingValues(spec, guildId);
     if (values.length === 0) return uiText('none', locale);
@@ -732,6 +582,12 @@ async function formatBulkSettingValue(spec, guildId, locale) {
     if (spec.kind === 'buttonVisibility') {
         return values
             .map(item => `${item.label}: ${buttonVisibilityValueSummary(item.providerId, item.value, locale)}`)
+            .join('\n');
+    }
+
+    if (spec.kind === 'outputVisibility') {
+        return values
+            .map(item => `${item.label}: ${outputVisibilityValueSummary(spec, item.value, locale)}`)
             .join('\n');
     }
 
@@ -767,6 +623,11 @@ async function formatButtonVisibilitySummary(providerId, guildId, locale) {
     return hidden.length === 0 ? uiText('none', locale) : hidden.join('\n');
 }
 
+async function formatOutputVisibilitySummary(providerId, spec, guildId, locale) {
+    const value = await getSetting({ id: providerId }, spec.settingKey, guildId);
+    return outputVisibilityValueSummary(spec, value, locale);
+}
+
 async function formatBannedWordsSummary(providerId, guildId, locale) {
     const words = await normalizeBannedWords(providerId, guildId);
     if (words.length === 0) return uiText('none', locale);
@@ -781,6 +642,7 @@ async function formatSettingValue(providerId, spec, guildId, locale) {
     if (isBulkProvider(providerId)) return await formatBulkSettingValue(spec, guildId, locale);
     if (spec.kind === 'targets') return await formatTargetSummary(providerId, spec.settingKey, guildId, locale);
     if (spec.kind === 'buttonVisibility') return await formatButtonVisibilitySummary(providerId, guildId, locale);
+    if (spec.kind === 'outputVisibility') return await formatOutputVisibilitySummary(providerId, spec, guildId, locale);
     if (spec.kind === 'bannedWords') return await formatBannedWordsSummary(providerId, guildId, locale);
 
     if (spec.kind === 'providerEnabled') return boolLabel(await getBooleanSettingValue(providerId, spec, guildId), locale);
@@ -813,17 +675,23 @@ function buildProviderSelect(providerId, settingKey, locale) {
 }
 
 function buildSettingSelect(providerId, settingKey, locale) {
-    return new ActionRowBuilder().addComponents(
+    const options = getSettingSpecs(providerId).map(spec => ({
+        label: truncate(specLabel(spec, locale), 100),
+        value: spec.key,
+        description: truncate(specDescription(spec, locale), 100),
+        default: spec.key === settingKey,
+    }));
+    const chunks = [];
+    for (let i = 0; i < options.length; i += 25) chunks.push(options.slice(i, i + 25));
+
+    return chunks.map((chunk, index) => new ActionRowBuilder().addComponents(
         new StringSelectMenuBuilder()
-            .setCustomId(`${CUSTOM_ID_PREFIX}:setting:${providerId}`)
-            .setPlaceholder(uiText('setting', locale))
-            .addOptions(getSettingSpecs(providerId).map(spec => ({
-                label: truncate(specLabel(spec, locale), 100),
-                value: spec.key,
-                description: truncate(specDescription(spec, locale), 100),
-                default: spec.key === settingKey,
-            })))
-    );
+            .setCustomId(index === 0
+                ? `${CUSTOM_ID_PREFIX}:setting:${providerId}`
+                : `${CUSTOM_ID_PREFIX}:setting:${providerId}:${index}`)
+            .setPlaceholder(index === 0 ? uiText('setting', locale) : `${uiText('setting', locale)} ${index + 1}`)
+            .addOptions(chunk)
+    ));
 }
 
 function buildUtilityButtons(providerId, settingKey, locale) {
@@ -938,6 +806,58 @@ async function buildButtonVisibilityControls(providerId, guildId, locale) {
     ];
 }
 
+async function buildOutputVisibilityControls(providerId, spec, guildId, locale) {
+    const hiddenItems = new Set(await normalizeOutputVisibility(providerId, spec, guildId));
+    const options = getOutputItems(spec);
+    if (options.length === 0) return [buildUtilityButtons(providerId, spec.key, locale)];
+
+    const chunks = [];
+    for (let i = 0; i < options.length; i += 25) chunks.push(options.slice(i, i + 25));
+    const selectRows = chunks.map((chunk, index) => (
+        new ActionRowBuilder().addComponents(
+            new StringSelectMenuBuilder()
+                .setCustomId(chunks.length === 1
+                    ? `${CUSTOM_ID_PREFIX}:outputVisibility:${providerId}:${spec.key}`
+                    : `${CUSTOM_ID_PREFIX}:outputVisibility:${providerId}:${spec.key}:${index}`)
+                .setPlaceholder(chunks.length === 1 ? specLabel(spec, locale) : `${specLabel(spec, locale)} ${index + 1}`)
+                .setMinValues(0)
+                .setMaxValues(chunk.length)
+                .addOptions(chunk.map(option => {
+                    const out = {
+                        label: truncate(outputItemLabel(option, locale), 100),
+                        value: option.value,
+                        default: hiddenItems.has(option.value),
+                    };
+                    const description = outputItemDescription(option, locale);
+                    if (description) out.description = truncate(description, 100);
+                    return out;
+                }))
+        )
+    ));
+
+    return [
+        ...selectRows,
+        new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+                .setCustomId(`${CUSTOM_ID_PREFIX}:outputVisibilityPreset:${providerId}:${spec.key}:none`)
+                .setLabel(uiText('showAll', locale))
+                .setStyle(ButtonStyle.Secondary),
+            new ButtonBuilder()
+                .setCustomId(`${CUSTOM_ID_PREFIX}:outputVisibilityPreset:${providerId}:${spec.key}:all`)
+                .setLabel(uiText('hideAll', locale))
+                .setStyle(ButtonStyle.Secondary),
+            new ButtonBuilder()
+                .setCustomId(`${CUSTOM_ID_PREFIX}:refresh:${providerId}:${spec.key}`)
+                .setLabel(uiText('refresh', locale))
+                .setStyle(ButtonStyle.Secondary),
+            new ButtonBuilder()
+                .setCustomId(`${CUSTOM_ID_PREFIX}:close:${providerId}:${spec.key}`)
+                .setLabel(uiText('close', locale))
+                .setStyle(ButtonStyle.Secondary)
+        ),
+    ];
+}
+
 function buildTargetControls(providerId, spec, locale) {
     return [
         new ActionRowBuilder().addComponents(
@@ -1005,6 +925,7 @@ async function buildControls(providerId, spec, guildId, locale) {
     }
     if (spec.kind === 'choice') return await buildChoiceControls(providerId, spec, guildId, locale);
     if (spec.kind === 'buttonVisibility') return await buildButtonVisibilityControls(providerId, guildId, locale);
+    if (spec.kind === 'outputVisibility') return await buildOutputVisibilityControls(providerId, spec, guildId, locale);
     if (spec.kind === 'targets') return buildTargetControls(providerId, spec, locale);
     if (spec.kind === 'bannedWords') return await buildBannedWordControls(providerId, guildId, locale);
     if (spec.kind === 'overview') return [buildOverviewUtilityButtons(providerId, locale)];
@@ -1063,7 +984,7 @@ async function buildGuiPayload(providerId, settingKey, guildId, notice = null, l
         embeds: [embed],
         components: [
             buildProviderSelect(normalizedProviderId, normalizedSettingKey, locale),
-            buildSettingSelect(normalizedProviderId, normalizedSettingKey, locale),
+            ...buildSettingSelect(normalizedProviderId, normalizedSettingKey, locale),
             ...controls,
         ],
         allowedMentions: { parse: [] },
@@ -1136,6 +1057,8 @@ async function copySettingForProvider(providerId, spec, sourceGuildId, targetGui
         skippedTargets = copied.skipped;
     } else if (spec.kind === 'buttonVisibility') {
         value = await normalizeButtonVisibility(providerId, sourceGuildId);
+    } else if (spec.kind === 'outputVisibility') {
+        value = await normalizeOutputVisibility(providerId, spec, sourceGuildId);
     } else if (spec.kind === 'bannedWords') {
         value = await normalizeBannedWords(providerId, sourceGuildId);
     } else {
@@ -1241,6 +1164,8 @@ async function handleComponent(interaction) {
         'choice',
         'buttonVisibility',
         'buttonVisibilityPreset',
+        'outputVisibility',
+        'outputVisibilityPreset',
         'target',
         'bannedRemove',
     ].includes(action);
@@ -1278,6 +1203,19 @@ async function handleComponent(interaction) {
         settingKey = 'button_invisible';
         const optionKeys = parts[3] === 'all' ? getButtonOptions(providerId).map(option => option.key) : [];
         notice = await applyButtonVisibilitySelection(providerId, interaction.guildId, optionKeys, interaction.locale);
+    } else if (action === 'outputVisibility') {
+        settingKey = normalizeSettingKey(providerId, parts[3] || 'hidden_output_items');
+        const spec = findSpec(providerId, settingKey);
+        const pageIndex = Number(parts[4]);
+        const visibleItems = Number.isInteger(pageIndex) && pageIndex >= 0
+            ? getOutputItems(spec).slice(pageIndex * 25, pageIndex * 25 + 25).map(option => option.value)
+            : null;
+        notice = await applyOutputVisibilitySelection(providerId, spec, interaction.guildId, interaction.values || [], interaction.locale, visibleItems);
+    } else if (action === 'outputVisibilityPreset') {
+        settingKey = normalizeSettingKey(providerId, parts[3] || 'hidden_output_items');
+        const spec = findSpec(providerId, settingKey);
+        const optionKeys = parts[4] === 'all' ? getOutputItems(spec).map(option => option.value) : [];
+        notice = await applyOutputVisibilitySelection(providerId, spec, interaction.guildId, optionKeys, interaction.locale);
     } else if (action === 'target') {
         const spec = findSpec(providerId, settingKey);
         const targetType = parts[4];

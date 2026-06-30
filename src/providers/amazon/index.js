@@ -3,6 +3,15 @@
 const fetch = require('node-fetch');
 const { ButtonBuilder, ButtonStyle, ComponentType } = require('discord.js');
 const { recordProviderError } = require('../../errorTracking');
+const {
+    applyEmbedMedia,
+    attachmentMediaUrls,
+    buildFailureResponse,
+    mediaButtonAllowed,
+    mediaLinksContent,
+    resolveDensityMaxLength,
+    shouldShowOutputItem,
+} = require('../_output_controls');
 
 const AMAZON_COLOR = 0xff9900;
 const DESCRIPTION_MAX_LENGTH = 700;
@@ -44,12 +53,19 @@ const STR = {
     typeField: { ja: 'Type', en: 'Type' },
     priceField: { ja: 'Price', en: 'Price' },
     brandField: { ja: 'Brand', en: 'Brand' },
+    sellerField: { ja: 'Seller', en: 'Seller' },
+    shippingField: { ja: 'Shipping', en: 'Shipping' },
     ratingField: { ja: 'Rating', en: 'Rating' },
+    reviewCountField: { ja: 'Review count', en: 'Review count' },
     availabilityField: { ja: 'Availability', en: 'Availability' },
+    couponField: { ja: 'Coupon', en: 'Coupon' },
+    dealField: { ja: 'Deal', en: 'Deal' },
     artistField: { ja: 'Artist', en: 'Artist' },
     albumField: { ja: 'Album', en: 'Album' },
     dateField: { ja: 'Date', en: 'Date' },
     genreField: { ja: 'Genre', en: 'Genre' },
+    castField: { ja: 'Cast', en: 'Cast' },
+    seasonField: { ja: 'Season', en: 'Season' },
     yearField: { ja: 'Year', en: 'Year' },
     maturityField: { ja: 'Maturity', en: 'Maturity' },
     durationField: { ja: 'Duration', en: 'Duration' },
@@ -108,6 +124,14 @@ function truncate(value, maxLength) {
     return text.slice(0, maxLength - 3).trimEnd() + '...';
 }
 
+function amazonDescriptionMaxLength(settings) {
+    return resolveDensityMaxLength(settings, 'amazon_description_max_length', DESCRIPTION_MAX_LENGTH, {
+        compact: 200,
+        detail: DESCRIPTION_MAX_LENGTH,
+        hardMax: DESCRIPTION_MAX_LENGTH,
+    });
+}
+
 function extractAttr(tag, attrName) {
     if (!tag) return '';
     const re = new RegExp(`\\b${attrName}\\s*=\\s*("([^"]*)"|'([^']*)'|([^\\s>]+))`, 'i');
@@ -133,6 +157,14 @@ function readElementHtmlById(html, id) {
 
 function readElementTextById(html, id) {
     return cleanText(readElementHtmlById(html, id));
+}
+
+function readFirstElementTextById(html, ids) {
+    for (const id of ids) {
+        const text = readElementTextById(html, id);
+        if (text) return text;
+    }
+    return '';
 }
 
 function readTitleTag(html) {
@@ -525,6 +557,10 @@ function offerFromValue(value) {
         price: offer.price ?? offer.lowPrice ?? spec.price,
         currency: offer.priceCurrency ?? spec.priceCurrency,
         availability: offer.availability,
+        seller: thingName(offer.seller || offer.offeredBy || offer.vendor),
+        shipping: thingName(offer.shippingDetails)
+            || thingName(offer.availableDeliveryMethod)
+            || cleanText(offer.shippingDetails?.shippingRate?.value || ''),
     };
 }
 
@@ -556,6 +592,12 @@ function formatNumber(value) {
     const n = Number(value);
     if (!Number.isFinite(n)) return cleanText(value);
     return n.toLocaleString('en-US');
+}
+
+function reviewCountText(aggregateRating) {
+    if (!aggregateRating || typeof aggregateRating !== 'object') return '';
+    const count = aggregateRating.reviewCount ?? aggregateRating.ratingCount;
+    return count === undefined || count === null || count === '' ? '' : formatNumber(count);
 }
 
 function formatRating(aggregateRating) {
@@ -631,6 +673,40 @@ function readRatingFromHtml(html) {
     return reviewMatch ? `${ratingMatch[1]} / 5 (${reviewMatch[0]})` : `${ratingMatch[1]} / 5`;
 }
 
+function readReviewCountFromHtml(html) {
+    const reviewText = readElementTextById(html, 'acrCustomerReviewText');
+    const reviewMatch = reviewText.match(/[\d,.]+/);
+    return reviewMatch ? reviewMatch[0] : '';
+}
+
+function normalizePromoText(value) {
+    return cleanText(value)
+        .replace(/\s+/g, ' ')
+        .replace(/^Coupon:\s*/i, '')
+        .replace(/^Deal:\s*/i, '')
+        .trim();
+}
+
+function readCouponFromHtml(html) {
+    return normalizePromoText(readFirstElementTextById(html, [
+        'couponText',
+        'couponBadge',
+        'couponBadgeRegular',
+        'couponApplyText',
+    ]));
+}
+
+function readDealFromHtml(html) {
+    return normalizePromoText(readFirstElementTextById(html, [
+        'dealBadge',
+        'dealBadge_feature_div',
+        'dealprice_savings',
+        'priceblock_savings',
+        'priceSavingPercentage',
+        'promoPriceBlockMessage',
+    ]));
+}
+
 function readGenericImage(html, node, baseUrl) {
     return absoluteUrl(
         imageFromValue(node?.image)
@@ -640,10 +716,10 @@ function readGenericImage(html, node, baseUrl) {
     );
 }
 
-function readGenericDescription(html, node) {
+function readGenericDescription(html, node, settings) {
     return truncate(
         cleanText(node?.description || readMetaContent(html, 'og:description') || readMetaContent(html, 'description')),
-        DESCRIPTION_MAX_LENGTH
+        amazonDescriptionMaxLength(settings)
     );
 }
 
@@ -689,7 +765,18 @@ function yearFromDate(value) {
     return match?.[1] || '';
 }
 
-function extractProductInfo(html, parsed) {
+function seasonText(value) {
+    const item = firstArrayItem(value);
+    if (!item) return '';
+    if (typeof item === 'string' || typeof item === 'number') return cleanText(item);
+    if (typeof item !== 'object') return '';
+    const name = cleanText(item.name || item.title || '');
+    const number = cleanText(item.seasonNumber || item.position || '');
+    if (name && number && !name.includes(number)) return `${name} (${number})`;
+    return name || (number ? `Season ${number}` : '');
+}
+
+function extractProductInfo(html, parsed, settings) {
     const product = findProductJsonLd(html) || {};
     const offer = offerFromValue(product.offers);
     const baseUrl = parsed.canonicalUrl;
@@ -701,7 +788,7 @@ function extractProductInfo(html, parsed) {
     );
     const description = truncate(
         cleanText(product.description || readMetaContent(html, 'og:description') || readMetaContent(html, 'description')),
-        DESCRIPTION_MAX_LENGTH
+        amazonDescriptionMaxLength(settings)
     );
     const imageUrl = absoluteUrl(
         imageFromValue(product.image)
@@ -717,12 +804,17 @@ function extractProductInfo(html, parsed) {
         imageUrl,
         price: formatOfferPrice(product.offers) || readPriceFromHtml(html),
         brand: brandName(product.brand) || cleanText(readElementTextById(html, 'bylineInfo')).replace(/^Brand:\s*/i, ''),
+        seller: offer.seller,
+        shipping: offer.shipping,
         rating: formatRating(product.aggregateRating) || readRatingFromHtml(html),
+        reviewCount: reviewCountText(product.aggregateRating) || readReviewCountFromHtml(html),
         availability: availabilityText(offer.availability),
+        coupon: readCouponFromHtml(html),
+        deal: readDealFromHtml(html),
     };
 }
 
-function extractAmazonMusicInfo(html, parsed) {
+function extractAmazonMusicInfo(html, parsed, settings) {
     const music = findJsonLdByType(
         html,
         ['MusicAlbum', 'MusicRecording', 'MusicGroup', 'PodcastSeries', 'PodcastEpisode', 'Playlist', 'Event', 'CreativeWork'],
@@ -737,7 +829,7 @@ function extractAmazonMusicInfo(html, parsed) {
 
     return {
         title,
-        description: readGenericDescription(html, music),
+        description: readGenericDescription(html, music, settings),
         imageUrl: readGenericImage(html, music, parsed.canonicalUrl),
         musicType: musicTypeLabel(parsed.route),
         artist: thingNames(music.byArtist || music.artist || music.author || music.creator).join(', '),
@@ -746,7 +838,7 @@ function extractAmazonMusicInfo(html, parsed) {
     };
 }
 
-function extractPrimeVideoInfo(html, parsed) {
+function extractPrimeVideoInfo(html, parsed, settings) {
     const video = findJsonLdByType(
         html,
         ['Movie', 'TVSeries', 'TVSeason', 'TVEpisode', 'VideoObject', 'CreativeWork'],
@@ -762,9 +854,11 @@ function extractPrimeVideoInfo(html, parsed) {
 
     return {
         title,
-        description: readGenericDescription(html, video),
+        description: readGenericDescription(html, video, settings),
         imageUrl: readGenericImage(html, video, parsed.canonicalUrl),
         genre: formatList(video.genre),
+        cast: thingNames(video.actor || video.actors || video.performer || video.contributor).join(', '),
+        season: seasonText(video.partOfSeason || video.season || video.containsSeason),
         rating: formatAggregateRating(video.aggregateRating),
         year: yearFromDate(video.datePublished || video.releasedEvent?.startDate || ''),
         maturityRating: cleanText(video.contentRating || ''),
@@ -772,10 +866,10 @@ function extractPrimeVideoInfo(html, parsed) {
     };
 }
 
-function extractAmazonInfo(html, parsed) {
-    if (parsed.kind === 'music') return extractAmazonMusicInfo(html, parsed);
-    if (parsed.kind === 'primeVideo') return extractPrimeVideoInfo(html, parsed);
-    return extractProductInfo(html, parsed);
+function extractAmazonInfo(html, parsed, settings) {
+    if (parsed.kind === 'music') return extractAmazonMusicInfo(html, parsed, settings);
+    if (parsed.kind === 'primeVideo') return extractPrimeVideoInfo(html, parsed, settings);
+    return extractProductInfo(html, parsed, settings);
 }
 
 function addField(fields, name, value, inline = true) {
@@ -812,32 +906,39 @@ function fallbackTitleFor(parsed, lang) {
     return `${tr(STR.fallbackTitle, lang)}${parsed.asin || parsed.id}`;
 }
 
-function addProductFields(fields, info, parsed, lang) {
-    addField(fields, tr(STR.priceField, lang), info.price);
-    addField(fields, tr(STR.brandField, lang), info.brand);
-    addField(fields, tr(STR.ratingField, lang), info.rating);
-    addField(fields, tr(STR.availabilityField, lang), info.availability);
-    addField(fields, tr(STR.asinField, lang), parsed.asin);
+function addProductFields(fields, info, parsed, lang, s) {
+    if (shouldShowOutputItem(s, 'price')) addField(fields, tr(STR.priceField, lang), info.price);
+    if (shouldShowOutputItem(s, 'brand')) addField(fields, tr(STR.brandField, lang), info.brand);
+    if (shouldShowOutputItem(s, 'seller')) addField(fields, tr(STR.sellerField, lang), info.seller);
+    if (shouldShowOutputItem(s, 'shipping')) addField(fields, tr(STR.shippingField, lang), info.shipping);
+    if (shouldShowOutputItem(s, 'rating')) addField(fields, tr(STR.ratingField, lang), info.rating);
+    if (shouldShowOutputItem(s, 'review_count')) addField(fields, tr(STR.reviewCountField, lang), info.reviewCount);
+    if (shouldShowOutputItem(s, 'availability')) addField(fields, tr(STR.availabilityField, lang), info.availability);
+    if (shouldShowOutputItem(s, 'coupon')) addField(fields, tr(STR.couponField, lang), info.coupon);
+    if (shouldShowOutputItem(s, 'deal')) addField(fields, tr(STR.dealField, lang), info.deal);
+    if (shouldShowOutputItem(s, 'id')) addField(fields, tr(STR.asinField, lang), parsed.asin);
 }
 
-function addMusicFields(fields, info, parsed, lang) {
-    addField(fields, tr(STR.typeField, lang), info.musicType);
-    addField(fields, tr(STR.artistField, lang), info.artist);
-    addField(fields, tr(STR.albumField, lang), info.album);
-    addField(fields, tr(STR.dateField, lang), info.date);
-    addField(fields, tr(STR.idField, lang), parsed.id);
+function addMusicFields(fields, info, parsed, lang, s) {
+    if (shouldShowOutputItem(s, 'type')) addField(fields, tr(STR.typeField, lang), info.musicType);
+    if (shouldShowOutputItem(s, 'artist')) addField(fields, tr(STR.artistField, lang), info.artist);
+    if (shouldShowOutputItem(s, 'album')) addField(fields, tr(STR.albumField, lang), info.album);
+    if (shouldShowOutputItem(s, 'date')) addField(fields, tr(STR.dateField, lang), info.date);
+    if (shouldShowOutputItem(s, 'id')) addField(fields, tr(STR.idField, lang), parsed.id);
 }
 
-function addPrimeVideoFields(fields, info, parsed, lang) {
-    addField(fields, tr(STR.genreField, lang), info.genre);
-    addField(fields, tr(STR.yearField, lang), info.year);
-    addField(fields, tr(STR.maturityField, lang), info.maturityRating);
-    addField(fields, tr(STR.durationField, lang), info.duration);
-    addField(fields, tr(STR.ratingField, lang), info.rating);
-    addField(fields, tr(STR.idField, lang), parsed.id);
+function addPrimeVideoFields(fields, info, parsed, lang, s) {
+    if (shouldShowOutputItem(s, 'genre')) addField(fields, tr(STR.genreField, lang), info.genre);
+    if (shouldShowOutputItem(s, 'cast')) addField(fields, tr(STR.castField, lang), info.cast);
+    if (shouldShowOutputItem(s, 'season')) addField(fields, tr(STR.seasonField, lang), info.season);
+    if (shouldShowOutputItem(s, 'year')) addField(fields, tr(STR.yearField, lang), info.year);
+    if (shouldShowOutputItem(s, 'maturity')) addField(fields, tr(STR.maturityField, lang), info.maturityRating);
+    if (shouldShowOutputItem(s, 'duration')) addField(fields, tr(STR.durationField, lang), info.duration);
+    if (shouldShowOutputItem(s, 'rating')) addField(fields, tr(STR.ratingField, lang), info.rating);
+    if (shouldShowOutputItem(s, 'id')) addField(fields, tr(STR.idField, lang), parsed.id);
 }
 
-function buildComponents(lang, parsed, hasImage) {
+function buildComponents(lang, parsed, hasImage, settings) {
     const rows = [];
     const firstRow = [
         new ButtonBuilder()
@@ -845,7 +946,7 @@ function buildComponents(lang, parsed, hasImage) {
             .setLabel(openButtonLabelFor(parsed, lang))
             .setURL(parsed.openUrl || parsed.canonicalUrl),
     ];
-    if (hasImage) {
+    if (hasImage && mediaButtonAllowed(settings)) {
         firstRow.push(
             new ButtonBuilder()
                 .setStyle(ButtonStyle.Primary)
@@ -873,9 +974,9 @@ function buildComponents(lang, parsed, hasImage) {
 function buildEmbed(parsed, info, message, s) {
     const lang = normalizeLanguage(s);
     const fields = [];
-    if (parsed.kind === 'music') addMusicFields(fields, info, parsed, lang);
-    else if (parsed.kind === 'primeVideo') addPrimeVideoFields(fields, info, parsed, lang);
-    else addProductFields(fields, info, parsed, lang);
+    if (parsed.kind === 'music') addMusicFields(fields, info, parsed, lang, s);
+    else if (parsed.kind === 'primeVideo') addPrimeVideoFields(fields, info, parsed, lang, s);
+    else addProductFields(fields, info, parsed, lang, s);
 
     const embed = {
         title: info.title || fallbackTitleFor(parsed, lang),
@@ -885,7 +986,7 @@ function buildEmbed(parsed, info, message, s) {
         fields,
         footer: { text: `${tr(STR.requesterPrefix, lang)}${requesterName(message, lang, s?.anonymous_expand === true)} - ${serviceNameFor(parsed)}` },
     };
-    if (info.imageUrl) embed.image = { url: info.imageUrl };
+    applyEmbedMedia(embed, info.imageUrl, s);
     return embed;
 }
 
@@ -910,13 +1011,13 @@ async function extract(message, url, s) {
     } catch (err) {
         if (!initialParsed.id) {
             recordProviderError('amazon', err, message, url, { endpointKey: 'amazon/page' });
-            return null;
+            return buildFailureResponse('amazon', url, s, err);
         }
     }
 
     if (!parsed.id) return null;
 
-    const info = html ? extractAmazonInfo(html, parsed) : {};
+    const info = html ? extractAmazonInfo(html, parsed, s) : {};
     const bannedTarget = [
         info.title,
         info.description,
@@ -930,11 +1031,16 @@ async function extract(message, url, s) {
     /** @type {import('../_types').SendStep} */
     const step = {
         embeds: [buildEmbed(parsed, info, message, s)],
-        components: buildComponents(normalizeLanguage(s), parsed, !!info.imageUrl),
+        components: buildComponents(normalizeLanguage(s), parsed, !!info.imageUrl, s),
         allowedMentions: { repliedUser: false },
         send: s.alwaysreplyifpostedtweetlink === true ? 'reply-source' : 'channel',
         suppressSourceEmbeds: true,
     };
+
+    const mediaFiles = attachmentMediaUrls(s, info.imageUrl);
+    if (mediaFiles.length > 0) step.files = mediaFiles;
+    const mediaContent = mediaLinksContent(s, info.imageUrl, 'Image');
+    if (mediaContent) step.content = mediaContent;
 
     if (s.deletemessageifonlypostedtweetlink === true && message.content.trim() === url) {
         step.deleteSource = true;
@@ -948,6 +1054,40 @@ const amazonProvider = {
     id: 'amazon',
     enabledByDefault: false,
     urlPattern: AMAZON_URL_PATTERN,
+    settings: [
+        'bannedWords',
+        'anonymous_expand',
+        'alwaysreplyifpostedtweetlink',
+        'deletemessageifonlypostedtweetlink',
+        'display_density',
+        'media_display_mode',
+        'amazon_description_max_length',
+        {
+            key: 'hidden_output_items',
+            outputItems: [
+                { value: 'album', label: { en: 'Music album field', ja: 'Music album field' } },
+                { value: 'artist', label: { en: 'Music artist field', ja: 'Music artist field' } },
+                { value: 'brand', label: { en: 'Brand field', ja: 'Brand field' } },
+                { value: 'seller', label: { en: 'Seller field', ja: 'Seller field' } },
+                { value: 'shipping', label: { en: 'Shipping field', ja: 'Shipping field' } },
+                { value: 'review_count', label: { en: 'Review count field', ja: 'Review count field' } },
+                { value: 'coupon', label: { en: 'Coupon field', ja: 'Coupon field' } },
+                { value: 'deal', label: { en: 'Deal field', ja: 'Deal field' } },
+                { value: 'date', label: { en: 'Music date field', ja: 'Music date field' } },
+                { value: 'duration', label: { en: 'Prime Video duration field', ja: 'Prime Video duration field' } },
+                { value: 'genre', label: { en: 'Prime Video genre field', ja: 'Prime Video genre field' } },
+                { value: 'cast', label: { en: 'Prime Video cast field', ja: 'Prime Video cast field' } },
+                { value: 'season', label: { en: 'Prime Video season field', ja: 'Prime Video season field' } },
+                { value: 'maturity', label: { en: 'Prime Video maturity field', ja: 'Prime Video maturity field' } },
+                { value: 'type', label: { en: 'Music type field', ja: 'Music type field' } },
+                { value: 'year', label: { en: 'Prime Video year field', ja: 'Prime Video year field' } },
+                { value: 'price', label: { en: 'Price field', ja: '価格欄' } },
+                { value: 'rating', label: { en: 'Rating field', ja: '評価欄' } },
+                { value: 'availability', label: { en: 'Availability field', ja: '在庫/配信状況欄' } },
+                { value: 'id', label: { en: 'ASIN/ID field', ja: 'ASIN/ID欄' } },
+            ],
+        },
+    ],
     extract,
 };
 

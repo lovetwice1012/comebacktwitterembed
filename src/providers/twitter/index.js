@@ -18,6 +18,11 @@ const fetch = require('node-fetch');
 const { ButtonBuilder, ButtonStyle, ComponentType, PermissionsBitField } = require('discord.js');
 const { videoExtensions } = require('../../utils');
 const { recordProviderError } = require('../../errorTracking');
+const {
+    applyMediaDisplayToStep,
+    buildFailureResponse,
+    shouldShowOutputItem,
+} = require('../_output_controls');
 
 // ---- Twitter 内部定数 (このファイル外には出さない) -------------------------
 
@@ -25,6 +30,7 @@ const SAVED_MARKERS         = ['twidata.sprink.cloud', 'localhost:3088'];
 const VIDEO_MARKERS         = ['video.twimg.com'];
 const ATTACHMENT_THRESHOLD  = 4;
 const MAX_ATTACHMENTS       = 10;
+const MAX_EMBEDS_PER_STEP   = 10;
 const COLOR                 = 0x1DA1F2;
 const SAVED_COLOR           = 0x00FF00;
 const FOOTER_ICON           = 'https://abs.twimg.com/icons/apple-touch-icon-192x192.png';
@@ -106,6 +112,11 @@ const STR = {
     statsReposts:            { ja: '件のリポスト',                                      en: ' retweets' },
     statsLikes:              { ja: '件のいいね',                                        en: ' likes' },
     postedByPrefix:          { ja: '投稿者: ',                                          en: 'Posted by ' },
+    repliesField:            { ja: 'Replies',                                             en: 'Replies' },
+    repostsField:            { ja: 'Reposts',                                             en: 'Reposts' },
+    likesField:              { ja: 'Likes',                                               en: 'Likes' },
+    mediaCountField:         { ja: 'Media count',                                         en: 'Media count' },
+    mediaTypeField:          { ja: 'Media type',                                          en: 'Media type' },
 };
 
 function tr(spec, lang) {
@@ -117,6 +128,82 @@ function tr(spec, lang) {
 
 function isVideoUrl(el) {
     return VIDEO_MARKERS.some(m => el.includes(m)) || videoExtensions.some(ext => el.includes(ext));
+}
+
+function isImageUrl(el) {
+    return /(?:\.|format=)(?:jpe?g|png|webp)(?:[?#&]|$)/i.test(el) || el.includes('pbs.twimg.com/media/');
+}
+
+function firstTweetMediaArray(tweet) {
+    const candidates = [
+        tweet.media_extended,
+        tweet.mediaExtended,
+        tweet.extended_entities?.media,
+        tweet.entities?.media,
+        tweet.media,
+    ];
+    return candidates.find(value => Array.isArray(value) && value.length > 0) || [];
+}
+
+function mediaTypeFromUrl(url) {
+    if (typeof url !== 'string') return '';
+    const value = url.toLowerCase();
+    if (value.includes('tweet_video') || /\.(gif)(?:[?#]|$)/i.test(value)) return 'GIF';
+    if (isVideoUrl(value)) return 'Video';
+    if (isImageUrl(value)) return 'Image';
+    return '';
+}
+
+function mediaUrlFromObject(media) {
+    if (!media || typeof media !== 'object') return '';
+    return media.url
+        || media.media_url_https
+        || media.media_url
+        || media.mediaURL
+        || media.thumbnail_url
+        || media.thumbnailUrl
+        || media.video_info?.variants?.find(variant => variant?.url)?.url
+        || '';
+}
+
+function mediaTypeFromObject(media) {
+    if (!media || typeof media !== 'object') return '';
+    const rawType = String(media.type || media.media_type || media.kind || '').toLowerCase();
+    if (rawType.includes('animated') || rawType.includes('gif')) return 'GIF';
+    if (rawType.includes('video')) return 'Video';
+    if (rawType.includes('photo') || rawType.includes('image')) return 'Image';
+    return mediaTypeFromUrl(mediaUrlFromObject(media));
+}
+
+function mediaTypeCountsFromValues(values) {
+    const counts = new Map();
+    for (const type of values) {
+        if (!type) continue;
+        counts.set(type, (counts.get(type) || 0) + 1);
+    }
+    return counts;
+}
+
+function formatMediaTypeCounts(counts) {
+    const orderedTypes = ['Image', 'Video', 'GIF'];
+    return orderedTypes
+        .filter(type => counts.has(type))
+        .map(type => `${type} x${counts.get(type)}`)
+        .join(', ');
+}
+
+function summarizeTweetMedia(tweet) {
+    const mediaURLs = Array.isArray(tweet.mediaURLs)
+        ? tweet.mediaURLs.filter(url => typeof url === 'string' && url.trim())
+        : [];
+    const mediaObjects = firstTweetMediaArray(tweet);
+    const count = mediaURLs.length || mediaObjects.length;
+    if (count === 0) return { count: 0, typeSummary: '' };
+
+    const objectTypes = mediaObjects.map(mediaTypeFromObject).filter(Boolean);
+    const urlTypes = mediaURLs.map(mediaTypeFromUrl).filter(Boolean);
+    const typeCounts = mediaTypeCountsFromValues(objectTypes.length > 0 ? objectTypes : urlTypes);
+    return { count, typeSummary: formatMediaTypeCounts(typeCounts) };
 }
 
 function isSavedUrl(url) {
@@ -226,40 +313,87 @@ function buildButtons(lang, isFullEmbed) {
 
 // ---- Embed 構築 -------------------------------------------------------------
 
-/** @returns {any} */
-function buildFullEmbed(tweet, lang, requesterAuthorName, isAnon) {
-    const stats = ':speech_balloon:' + (tweet.replies ?? 0) + tr(STR.statsReplies, lang)
+function twitterTextMode(s) {
+    const mode = s?.twitter_text_mode;
+    if (mode === 'link_only' || mode === 'hidden') return mode;
+    return 'normal';
+}
+
+function twitterShowStats(s) {
+    return shouldShowOutputItem(s, 'stats');
+}
+
+function twitterStatsLayout(s) {
+    if (!twitterShowStats(s)) return 'hidden';
+    const layout = s?.twitter_stats_layout;
+    if (layout === 'fields' || layout === 'hidden') return layout;
+    return 'description';
+}
+
+function tweetStatsLine(tweet, lang, s) {
+    if (twitterStatsLayout(s) !== 'description') return '';
+    return ':speech_balloon:' + (tweet.replies ?? 0) + tr(STR.statsReplies, lang)
         + ' \u2022 :recycle:' + (tweet.retweets ?? 0) + tr(STR.statsReposts, lang)
         + ' \u2022 :heart:' + (tweet.likes ?? 0) + tr(STR.statsLikes, lang);
-    let description = (tweet.text ?? '') + '\n\n[' + tr(STR.viewLink, lang) + '](' + tweet.tweetURL + ')\n\n' + stats;
+}
 
+function addEmbedField(embed, name, value, inline = true) {
+    if (value === undefined || value === null || value === '') return;
+    if (!Array.isArray(embed.fields)) embed.fields = [];
+    embed.fields.push({ name, value: String(value), inline });
+}
+
+function applyTweetStatsFields(embed, tweet, lang, s) {
+    if (twitterStatsLayout(s) !== 'fields') return;
+    addEmbedField(embed, tr(STR.repliesField, lang), tweet.replies ?? 0);
+    addEmbedField(embed, tr(STR.repostsField, lang), tweet.retweets ?? 0);
+    addEmbedField(embed, tr(STR.likesField, lang), tweet.likes ?? 0);
+}
+
+function buildTweetDescription(tweet, lang, s, compact = false) {
+    const mode = twitterTextMode(s);
+    if (mode === 'hidden') return '';
+
+    const parts = [];
+    const stats = tweetStatsLine(tweet, lang, s);
+    if (!compact && mode === 'normal' && tweet.text) parts.push(tweet.text);
+    if (!compact) parts.push('[' + tr(STR.viewLink, lang) + '](' + tweet.tweetURL + ')');
+    if (stats) parts.push(stats);
+    return parts.join('\n\n');
+}
+
+/** @returns {any} */
+function buildFullEmbed(tweet, lang, requesterAuthorName, isAnon, s) {
+    const description = buildTweetDescription(tweet, lang, s);
     const title = isAnon ? tr(STR.anonAuthorTitle, lang) : tweet.user_name;
     const footerText = isAnon
         ? tr(STR.anonAuthorFooter, lang)
         : tr(STR.postedByPrefix, lang) + (tweet.user_name ?? '') + (tweet.user_screen_name ? ' (@' + tweet.user_screen_name + ')' : '');
 
-    return {
+    const embed = {
         author: { name: requesterAuthorName },
         title,
         url: tweet.tweetURL,
-        description,
         color: COLOR,
         footer: { text: footerText, icon_url: FOOTER_ICON },
         timestamp: tweet.date ? new Date(tweet.date) : undefined,
     };
+    if (description) embed.description = description;
+    applyTweetStatsFields(embed, tweet, lang, s);
+    return embed;
 }
 
-function buildCompactEmbed(tweet, lang, requesterAuthorName) {
-    const stats = ':speech_balloon:' + (tweet.replies ?? 0) + tr(STR.statsReplies, lang)
-        + ' \u2022 :recycle:' + (tweet.retweets ?? 0) + tr(STR.statsReposts, lang)
-        + ' \u2022 :heart:' + (tweet.likes ?? 0) + tr(STR.statsLikes, lang);
-    return {
+function buildCompactEmbed(tweet, lang, requesterAuthorName, s) {
+    const description = buildTweetDescription(tweet, lang, s, true);
+    const embed = {
         author: { name: requesterAuthorName },
         url: tweet.tweetURL,
-        description: stats,
         color: COLOR,
         timestamp: tweet.date ? new Date(tweet.date) : undefined,
     };
+    if (description) embed.description = description;
+    applyTweetStatsFields(embed, tweet, lang, s);
+    return embed;
 }
 
 function applySavedOverlay(embed, saved) {
@@ -269,10 +403,23 @@ function applySavedOverlay(embed, saved) {
     return embed;
 }
 
-function applyArticleMerge(embed, tweet) {
+function showArticleItem(s, key) {
+    return shouldShowOutputItem(s, 'article_card', { hideInCompact: false })
+        && shouldShowOutputItem(s, key, { hideInCompact: false });
+}
+
+function appendDescription(embed, text) {
+    if (!text) return;
+    embed.description = [embed.description, text].filter(Boolean).join('\n\n');
+    if (embed.description.length > DESC_MAX_LENGTH) embed.description = embed.description.slice(0, DESC_MAX_LENGTH - 3) + '...';
+}
+
+function applyArticleMerge(embed, tweet, s) {
     if (!tweet.article) return;
-    const titleLine = tweet.article.title ? STR.articleTitlePrefix + '**' + tweet.article.title + '**' : '';
-    let previewText = tweet.article.preview_text ?? '';
+    const titleLine = showArticleItem(s, 'article_title') && tweet.article.title
+        ? STR.articleTitlePrefix + '**' + tweet.article.title + '**'
+        : '';
+    let previewText = showArticleItem(s, 'article_preview') ? (tweet.article.preview_text ?? '') : '';
     if (previewText) {
         const currentLen = embed.description ? embed.description.length : 0;
         const titleLen = titleLine ? titleLine.length + 1 : 0;
@@ -281,18 +428,93 @@ function applyArticleMerge(embed, tweet) {
     }
     const articleText = [titleLine, previewText].filter(Boolean).join('\n');
     if (articleText && embed.description) {
-        embed.description = embed.description.replace(tweet.text, tweet.text + '\n\n' + articleText);
-        if (embed.description.length > DESC_MAX_LENGTH) embed.description = embed.description.slice(0, DESC_MAX_LENGTH - 3) + '...';
+        if (tweet.text && embed.description.includes(tweet.text)) {
+            embed.description = embed.description.replace(tweet.text, tweet.text + '\n\n' + articleText);
+            if (embed.description.length > DESC_MAX_LENGTH) embed.description = embed.description.slice(0, DESC_MAX_LENGTH - 3) + '...';
+        } else {
+            appendDescription(embed, articleText);
+        }
+    } else if (articleText) {
+        appendDescription(embed, articleText);
     }
-    if (tweet.article.image && (!tweet.mediaURLs || tweet.mediaURLs.length === 0)) {
+    if (showArticleItem(s, 'article_image') && tweet.article.image && (!tweet.mediaURLs || tweet.mediaURLs.length === 0)) {
         embed.image = { url: tweet.article.image };
     }
 }
 
 function canRecurseQuoted(s, depth) {
-    if (s.quote_repost_do_not_extract === true) return false;
+    if (twitterQuoteMode(s) === 'hidden') return false;
     const maxDepth = s.quote_repost_max_depth ?? QUOTE_RECURSE_DEFAULT_DEPTH;
     return maxDepth === 0 || depth < maxDepth;
+}
+
+function twitterQuoteMode(s) {
+    if (s?.quote_repost_do_not_extract === true) return 'hidden';
+    const mode = s?.twitter_quote_mode;
+    if (mode === 'summary' || mode === 'hidden') return mode;
+    return 'full';
+}
+
+function shouldInlineQuotes(s) {
+    return s?.twitter_quote_layout === 'inline';
+}
+
+function cloneInlineQuoteEmbed(embed, lang) {
+    const out = {
+        ...embed,
+        author: embed.author ? { ...embed.author } : undefined,
+        footer: embed.footer ? { ...embed.footer } : undefined,
+        image: embed.image ? { ...embed.image } : undefined,
+        thumbnail: embed.thumbnail ? { ...embed.thumbnail } : undefined,
+        fields: Array.isArray(embed.fields) ? embed.fields.map(field => ({ ...field })) : embed.fields,
+    };
+    const prefix = tr(STR.quotePrefix, lang).replace(/:$/, '');
+    if (out.title) out.title = `${prefix}: ${out.title}`;
+    else if (out.description) out.description = `${tr(STR.quotePrefix, lang)}\n${out.description}`;
+    else out.title = prefix;
+    return out;
+}
+
+function canInlineQuoteSteps(parentStep, childSteps) {
+    if (!Array.isArray(childSteps) || childSteps.length === 0) return false;
+    const childEmbeds = childSteps.flatMap(step => step.embeds || []);
+    if (childEmbeds.length === 0) return false;
+    if ((parentStep.embeds || []).length + childEmbeds.length > MAX_EMBEDS_PER_STEP) return false;
+    return childSteps.every(step => !Array.isArray(step.files) || step.files.length === 0);
+}
+
+function appendInlineQuoteSteps(parentStep, childSteps, lang) {
+    const quotedEmbeds = childSteps.flatMap(step => step.embeds || []).map(embed => cloneInlineQuoteEmbed(embed, lang));
+    parentStep.embeds.push(...quotedEmbeds);
+}
+
+function summarizeQuoteEmbed(embed, lang) {
+    /** @type {any} */
+    const out = {
+        url: embed?.url,
+        color: embed?.color ?? COLOR,
+    };
+    const prefix = tr(STR.quotePrefix, lang).replace(/:$/, '');
+    const title = embed?.title || embed?.author?.name || 'Tweet';
+    out.title = `${prefix}: ${title}`;
+    if (embed?.description) out.description = String(embed.description).slice(0, 280);
+    if (embed?.timestamp) out.timestamp = embed.timestamp;
+    return out;
+}
+
+function summarizeQuoteSteps(childSteps, lang) {
+    const embed = childSteps?.flatMap(step => step.embeds || [])[0];
+    if (!embed) return null;
+    /** @type {import('../_types').SendStep} */
+    const step = {
+        content: tr(STR.quotePrefix, lang),
+        embeds: [summarizeQuoteEmbed(embed, lang)],
+        files: [],
+        components: [],
+        allowedMentions: { repliedUser: false },
+        send: 'reply-previous',
+    };
+    return step;
 }
 
 // ---- メディアルーティング ---------------------------------------------------
@@ -380,7 +602,7 @@ async function extract(message, url, s, opts) {
         if (isExpectedNonExpandableTweetError(err)) return null;
         recordProviderError('twitter', err, message, url, { endpointKey: 'api.vxtwitter.com/status' });
         console.log(err);
-        return null;
+        return buildFailureResponse('twitter', url, s, err);
     }
     notifyAlttwitter(tweet.tweetURL);
 
@@ -434,12 +656,12 @@ async function extract(message, url, s, opts) {
 
     // Embed
     let embed = useCompactEmbed
-        ? buildCompactEmbed(tweet, lang, requesterAuthorName)
-        : buildFullEmbed(tweet, lang, requesterAuthorName, isAnon);
+        ? buildCompactEmbed(tweet, lang, requesterAuthorName, s)
+        : buildFullEmbed(tweet, lang, requesterAuthorName, isAnon, s);
 
     if (useCompactEmbed && s.passive_mode === true) delete embed.description;
     embed = applySavedOverlay(embed, saved);
-    applyArticleMerge(embed, tweet);
+    applyArticleMerge(embed, tweet, s);
 
     // routeMedia
     const route = routeMedia(tweet, embed, useCompactEmbed, lang, s.sendMediaAsAttachmentsAsDefault);
@@ -483,13 +705,33 @@ async function extract(message, url, s, opts) {
         }
     }
 
+    const mediaUrls = (tweet.mediaURLs && tweet.mediaURLs.length > 0)
+        ? tweet.mediaURLs
+        : (showArticleItem(s, 'article_image') && tweet.article?.image ? [tweet.article.image] : []);
+    applyMediaDisplayToStep(step, s, mediaUrls, 'Media');
+
     /** @type {import('../_types').SendStep[]} */
     const allSteps = [step];
 
     // 引用ポスト再帰展開
     if (tweet.qrtURL && canRecurseQuoted(s, depth)) {
-        const childSteps = await extract(message, tweet.qrtURL, s, { quoted: true, depth: depth + 1 });
-        if (Array.isArray(childSteps)) allSteps.push(...childSteps);
+        const quoteMode = twitterQuoteMode(s);
+        const childSettings = quoteMode === 'summary' ? { ...s, twitter_quote_mode: 'hidden' } : s;
+        const childSteps = await extract(message, tweet.qrtURL, childSettings, { quoted: true, depth: depth + 1 });
+        if (Array.isArray(childSteps)) {
+            if (quoteMode === 'summary') {
+                const summaryStep = summarizeQuoteSteps(childSteps, lang);
+                if (summaryStep && !quoted && shouldInlineQuotes(s) && (step.embeds || []).length < MAX_EMBEDS_PER_STEP) {
+                    step.embeds.push(summaryStep.embeds[0]);
+                } else if (summaryStep) {
+                    allSteps.push(summaryStep);
+                }
+            } else if (!quoted && shouldInlineQuotes(s) && canInlineQuoteSteps(step, childSteps)) {
+                appendInlineQuoteSteps(step, childSteps, lang);
+            } else {
+                allSteps.push(...childSteps);
+            }
+        }
     }
 
     return allSteps;
@@ -509,6 +751,37 @@ const twitterProvider = {
     enabledByDefault: true,
     urlPattern: /https?:\/\/(twitter\.com|x\.com)\/[^\s<>|]*/g,
     cleanPattern: /<https?:\/\/(twitter\.com|x\.com)[^\s<>|]*>|\|\|https?:\/\/(twitter\.com|x\.com)[^\s<>|]*\|\|/g,
+    settings: [
+        'bannedWords',
+        'sendMediaAsAttachmentsAsDefault',
+        'deletemessageifonlypostedtweetlink',
+        'deletemessageifonlypostedtweetlink_secoundaryextractmode',
+        'alwaysreplyifpostedtweetlink',
+        'anonymous_expand',
+        'display_density',
+        'media_display_mode',
+        'twitter_stats_layout',
+        'twitter_text_mode',
+        'twitter_quote_mode',
+        'twitter_quote_layout',
+        {
+            key: 'hidden_output_items',
+            outputItems: [
+                { value: 'article_card', label: { en: 'Article card', ja: 'Article card' } },
+                { value: 'article_title', label: { en: 'Article title', ja: 'Article title' } },
+                { value: 'article_preview', label: { en: 'Article preview', ja: 'Article preview' } },
+                { value: 'article_image', label: { en: 'Article image', ja: 'Article image' } },
+                { value: 'stats', label: { en: 'Reply/repost/like stats', ja: 'リプライ/リポスト/いいね数' } },
+            ],
+        },
+        'quote_repost_do_not_extract',
+        'quote_repost_max_depth',
+        'legacy_mode',
+        'passive_mode',
+        'secondary_extract_mode',
+        'secondary_extract_mode_multiple_images',
+        'secondary_extract_mode_video',
+    ],
     extract,
     // Twitter 専用 slash commands。registry が自動的に拾って Discord に登録する。
     commands: require('./commands'),
