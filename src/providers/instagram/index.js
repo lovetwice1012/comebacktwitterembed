@@ -26,6 +26,7 @@ const REQUEST_HEADERS = {
     'Accept-Language': 'en-US,en;q=0.9',
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
 };
+const MOBILE_USER_AGENT = 'Instagram 337.0.0.35.102 Android (30/11; 420dpi; 1080x1920; Google; Pixel 5; redfin; redfin; en_US; 540986477)';
 
 const GRAPHQL_DOC_ID = '25531498899829322';
 const GRAPHQL_HEADERS = {
@@ -597,21 +598,33 @@ function normalizeProfileData(data) {
     };
 }
 
-async function fetchProfileData(username) {
-    const cacheKey = `profile:${username.toLowerCase()}`;
-    const cached = dataCache.get(cacheKey);
-    if (cached && cached.expiresAt > Date.now()) return cached.data;
-    if (cached) dataCache.delete(cacheKey);
-
+function profileApiCandidates(username) {
     const params = new URLSearchParams({ username });
-    const apiUrl = `https://www.instagram.com/api/v1/users/web_profile_info/?${params.toString()}`;
-    const res = await fetch(apiUrl, {
-        headers: {
-            ...REQUEST_HEADERS,
-            Accept: 'application/json,text/plain,*/*',
-            'X-IG-App-ID': '936619743392459',
-        },
-    });
+    const query = params.toString();
+    const referer = `https://www.instagram.com/${username}/`;
+    const jsonHeaders = {
+        ...REQUEST_HEADERS,
+        Accept: 'application/json,text/plain,*/*',
+        Referer: referer,
+        'X-IG-App-ID': '936619743392459',
+        'X-Requested-With': 'XMLHttpRequest',
+    };
+    const mobileHeaders = {
+        ...jsonHeaders,
+        'User-Agent': MOBILE_USER_AGENT,
+    };
+
+    return [
+        { url: `https://www.instagram.com/api/v1/users/web_profile_info/?${query}`, headers: jsonHeaders },
+        { url: `https://i.instagram.com/api/v1/users/web_profile_info/?${query}`, headers: jsonHeaders },
+        { url: `https://www.instagram.com/api/v1/users/web_profile_info/?${query}`, headers: mobileHeaders },
+        { url: `https://i.instagram.com/api/v1/users/web_profile_info/?${query}`, headers: mobileHeaders },
+    ];
+}
+
+async function fetchProfileCandidate(candidate) {
+    const res = await fetch(candidate.url, { headers: candidate.headers });
+    const text = await res.text();
     if (!res.ok) {
         /** @type {Error & {status?: number}} */
         const err = new Error(`instagram profile ${res.status}`);
@@ -619,9 +632,43 @@ async function fetchProfileData(username) {
         throw err;
     }
 
-    const profile = normalizeProfileData(tryParseJson(await res.text()));
-    if (profile) dataCache.set(cacheKey, { data: profile, expiresAt: Date.now() + CACHE_TTL_MS });
+    const parsed = tryParseJson(text);
+    if (!parsed) {
+        /** @type {Error & {status?: number}} */
+        const err = new Error(`instagram profile non-json ${res.status}`);
+        err.status = res.status;
+        throw err;
+    }
+
+    const profile = normalizeProfileData(parsed);
+    if (!profile) {
+        /** @type {Error & {status?: number}} */
+        const err = new Error(`instagram profile missing user ${res.status}`);
+        err.status = res.status;
+        throw err;
+    }
+
     return profile;
+}
+
+async function fetchProfileData(username) {
+    const cacheKey = `profile:${username.toLowerCase()}`;
+    const cached = dataCache.get(cacheKey);
+    if (cached && cached.expiresAt > Date.now()) return cached.data;
+    if (cached) dataCache.delete(cacheKey);
+
+    let lastError = null;
+    for (const candidate of profileApiCandidates(username)) {
+        try {
+            const profile = await fetchProfileCandidate(candidate);
+            dataCache.set(cacheKey, { data: profile, expiresAt: Date.now() + CACHE_TTL_MS });
+            return profile;
+        } catch (err) {
+            lastError = err;
+        }
+    }
+
+    throw lastError || new Error('instagram profile data not found');
 }
 
 function buildGraphqlBody(shortcode) {
@@ -897,6 +944,7 @@ async function extract(message, url, s, opts) {
         try {
             profile = await fetchProfileData(parsed.username);
         } catch (err) {
+            console.warn(`[instagram] Failed to extract profile ${url}: ${err?.message || err}`);
             recordProviderError('instagram', err, message, url, { endpointKey: 'instagram/profile' });
             return null;
         }

@@ -26,28 +26,22 @@ module.exports.definition = {
         options: [
             {
                 name: 'list',
-                name_localizations: conv_en_to_en_US(commandNameLocales.autoextract_list),
                 description: 'list',
-                description_localizations: conv_en_to_en_US(descriptionLocales.settingsAutoExtractList),
                 type: ApplicationCommandOptionType.Subcommand,
             },
             {
                 name: 'add',
-                name_localizations: conv_en_to_en_US(commandNameLocales.autoextract_add),
                 description: 'add',
-                description_localizations: conv_en_to_en_US(descriptionLocales.settingsAutoExtractAdd),
                 type: ApplicationCommandOptionType.Subcommand,
                 options: [
                     {
                         name: 'username',
-                        name_localizations: conv_en_to_en_US(commandNameLocales.autoextract_username),
                         description: 'username',
                         type: ApplicationCommandOptionType.String,
                         required: true
                     },
                     {
                         name: 'webhook',
-                        name_localizations: conv_en_to_en_US(commandNameLocales.autoextract_webhook),
                         description: 'webhook',
                         type: ApplicationCommandOptionType.String,
                         required: true
@@ -56,14 +50,11 @@ module.exports.definition = {
             },
             {
                 name: 'delete',
-                name_localizations: conv_en_to_en_US(commandNameLocales.autoextract_delete),
                 description: 'delete',
-                description_localizations: conv_en_to_en_US(descriptionLocales.settingsAutoExtractDelete),
                 type: ApplicationCommandOptionType.Subcommand,
                 options: [
                     {
                         name: 'id',
-                        name_localizations: conv_en_to_en_US(commandNameLocales.autoextract_id),
                         description: 'id',
                         type: ApplicationCommandOptionType.Integer,
                         required: true
@@ -72,21 +63,17 @@ module.exports.definition = {
             },
             {
                 name: 'additionalautoextractslot',
-                name_localizations: conv_en_to_en_US(commandNameLocales.additionalautoextractslot),
                 description: 'ADMIN ONLY',
-                description_localizations: conv_en_to_en_US(descriptionLocales.settingsAdditionalAutoExtractSlot),
                 type: ApplicationCommandOptionType.Subcommand,
                 options: [
                     {
                         name: 'user',
-                        name_localizations: conv_en_to_en_US(commandNameLocales.user),
                         description: 'user',
                         type: ApplicationCommandOptionType.User,
                         required: true
                     },
                     {
                         name: 'slot',
-                        name_localizations: conv_en_to_en_US(commandNameLocales.slot),
                         description: 'slot',
                         type: ApplicationCommandOptionType.Integer,
                         required: true
@@ -95,9 +82,7 @@ module.exports.definition = {
             },
             {
                 name: 'checkfreeslot',
-                name_localizations: conv_en_to_en_US(commandNameLocales.checkfreeslot),
                 description: 'check free slot',
-                description_localizations: conv_en_to_en_US(descriptionLocales.settingsAdditionalAutoExtractCheckFreeSlot),
                 type: ApplicationCommandOptionType.Subcommand
             }
         ]

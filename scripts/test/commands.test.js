@@ -12,9 +12,9 @@ const buttonInvisible = require('../../src/commands/handlers/settings/button_inv
 const showSaveTweet = require('../../src/providers/twitter/commands/showsavetweet');
 const { buildSlashCommands } = require('../../src/commands');
 const { settings } = require('../../src/settings');
-const { loadProviders } = require('../../src/providers/_loader');
 
 const DISCORD_COMMAND_NAME_RE = /^[-_\p{L}\p{N}]{1,32}$/u;
+const MAX_DISCORD_COMMAND_JSON_LENGTH = 8000;
 
 function assertValidDiscordCommandName(value, pathLabel) {
     assert.equal(typeof value, 'string', `${pathLabel} must be a string`);
@@ -40,39 +40,39 @@ test('slash command names and name localizations are valid for Discord registrat
     }
 });
 
-test('settings command exposes a settings group for every provider', () => {
-    const settingsCommand = buildSlashCommands().find(command => command.name === 'settings');
-    assert.ok(settingsCommand, 'settings command should be registered');
-
-    const groupNames = new Set((settingsCommand.options || []).map(option => option.name));
-    for (const provider of loadProviders()) {
-        assert.ok(groupNames.has(provider.id), `settings command should include ${provider.id}`);
+test('slash command payloads stay under Discord registration size limit', () => {
+    for (const command of buildSlashCommands()) {
+        const jsonLength = JSON.stringify(command).length;
+        assert.ok(
+            jsonLength < MAX_DISCORD_COMMAND_JSON_LENGTH,
+            `${command.name} command payload is ${jsonLength} bytes`
+        );
     }
 });
 
-test('settings command exposes shared settings on every provider group', () => {
+test('settings command keeps quick common and provider-specific subcommands', () => {
     const settingsCommand = buildSlashCommands().find(command => command.name === 'settings');
-    const sharedSettings = [
-        'disable',
-        'defaultlanguage',
-        'editoriginaliftranslate',
-        'extractbotmessage',
-        'button_invisible',
-        'button_disabled',
-        'bannedwords',
-        'setdefaultmediaasattachments',
-        'deleteifonlypostedtweetlink',
-        'alwaysreplyifpostedtweetlink',
-        'anonymousexpand',
-        'legacymode',
-    ];
+    assert.ok(settingsCommand, 'settings command should be registered');
 
-    for (const group of settingsCommand.options || []) {
-        const optionNames = new Set((group.options || []).map(option => option.name));
-        for (const settingName of sharedSettings) {
-            assert.ok(optionNames.has(settingName), `${group.name} should include ${settingName}`);
-        }
-    }
+    const disableCommand = settingsCommand.options?.find(option => option.name === 'disable');
+    assert.ok(disableCommand, 'settings command should include common disable subcommand');
+    assert.equal(disableCommand.type, 1);
+
+    const providerOption = disableCommand.options?.find(option => option.name === 'provider');
+    assert.ok(providerOption, 'common settings should include provider option');
+    assert.equal(providerOption.type, 3);
+
+    const twitterGroup = settingsCommand.options?.find(option => option.name === 'twitter');
+    assert.ok(twitterGroup, 'settings command should include twitter group');
+    assert.equal(twitterGroup.type, 2);
+    const twitterSettingNames = new Set((twitterGroup.options || []).map(option => option.name));
+    assert.ok(twitterSettingNames.has('passivemode'));
+    assert.ok(twitterSettingNames.has('secondaryextractmode'));
+
+    const pixivGroup = settingsCommand.options?.find(option => option.name === 'pixiv');
+    assert.ok(pixivGroup, 'settings command should include pixiv group');
+    assert.equal(pixivGroup.type, 2);
+    assert.ok((pixivGroup.options || []).some(option => option.name === 'images_per_step'));
 });
 
 test('provider command no longer exposes set subcommand', () => {
