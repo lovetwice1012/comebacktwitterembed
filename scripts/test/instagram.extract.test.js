@@ -1,0 +1,129 @@
+'use strict';
+
+const { test } = require('node:test');
+const assert = require('node:assert/strict');
+
+const instagramModulePath = require.resolve('../../src/providers/instagram');
+const fetchModulePath = require.resolve('node-fetch');
+
+function loadInstagramProviderWithFetch(fakeFetch) {
+    const originalFetchModule = require.cache[fetchModulePath];
+    const originalInstagramModule = require.cache[instagramModulePath];
+
+    require.cache[fetchModulePath] = {
+        id: fetchModulePath,
+        filename: fetchModulePath,
+        loaded: true,
+        exports: fakeFetch,
+    };
+    delete require.cache[instagramModulePath];
+
+    try {
+        const provider = require(instagramModulePath);
+        provider.__test._clearCache();
+        return provider;
+    } finally {
+        delete require.cache[instagramModulePath];
+        if (originalInstagramModule) require.cache[instagramModulePath] = originalInstagramModule;
+        if (originalFetchModule) require.cache[fetchModulePath] = originalFetchModule;
+        else delete require.cache[fetchModulePath];
+    }
+}
+
+function createMessage(content = 'https://www.instagram.com/p/CODE123/') {
+    return {
+        guild: { id: 'guild-1' },
+        author: { username: 'tester', id: 'user-1' },
+        user: { username: 'tester', id: 'user-1' },
+        content,
+    };
+}
+
+function mediaNode(overrides = {}) {
+    return {
+        __typename: 'GraphImage',
+        owner: { username: 'artist' },
+        edge_media_to_caption: { edges: [{ node: { text: 'hello from instagram' } }] },
+        display_url: 'https://scontent-nrt1-1.cdninstagram.com/v/t51.2885-15/sample.jpg?sig=1',
+        taken_at_timestamp: 1704067200,
+        ...overrides,
+    };
+}
+
+function embedHtml(node) {
+    return `<html><body><script>window.__ig = ${JSON.stringify({ gql_data: { shortcode_media: node } })};</script></body></html>`;
+}
+
+test('instagram extract: single image creates an embed without requiring an InstaFix server', async () => {
+    const requestedUrls = [];
+    const provider = loadInstagramProviderWithFetch(async (url) => {
+        requestedUrls.push(String(url));
+        return {
+            ok: true,
+            text: async () => embedHtml(mediaNode()),
+        };
+    });
+
+    const result = await provider.extract(createMessage(), 'https://www.instagram.com/p/CODE123/', {});
+
+    assert.ok(Array.isArray(result));
+    assert.equal(result.length, 1);
+    assert.equal(requestedUrls[0], 'https://www.instagram.com/p/CODE123/embed/captioned/');
+    assert.equal(result[0].send, 'channel');
+    assert.equal(result[0].embeds.length, 1);
+    assert.equal(result[0].embeds[0].title, '@artist');
+    assert.equal(result[0].embeds[0].image.url.startsWith('https://scontent.cdninstagram.com/'), true);
+    assert.equal(result[0].components[1].components[1].data.custom_id, 'delete:instagram');
+});
+
+test('instagram extract: carousel with more than four media is sent as attachments', async () => {
+    const provider = loadInstagramProviderWithFetch(async () => ({
+        ok: true,
+        text: async () => embedHtml(mediaNode({
+            edge_sidecar_to_children: {
+                edges: Array.from({ length: 6 }, (_, index) => ({
+                    node: {
+                        __typename: 'GraphImage',
+                        display_url: `https://scontent-nrt1-1.cdninstagram.com/v/t51.2885-15/${index + 1}.jpg`,
+                    },
+                })),
+            },
+        })),
+    }));
+
+    const result = await provider.extract(createMessage(), 'https://www.instagram.com/p/CODE123/', {});
+
+    assert.ok(Array.isArray(result));
+    assert.equal(result[0].embeds.length, 1);
+    assert.equal(result[0].files.length, 6);
+    assert.equal(result[0].components[0].components[0].data.custom_id, 'translate');
+});
+
+test('instagram extract: share URLs are resolved before scraping', async () => {
+    const requestedUrls = [];
+    const provider = loadInstagramProviderWithFetch(async (url, options = {}) => {
+        requestedUrls.push(String(url));
+        if (options.method === 'HEAD') {
+            return {
+                headers: { get: key => key === 'location' ? 'https://www.instagram.com/reel/REALCODE/' : null },
+                url: String(url),
+            };
+        }
+        return {
+            ok: true,
+            text: async () => embedHtml(mediaNode({ __typename: 'GraphVideo', video_url: 'https://scontent-nrt1-1.cdninstagram.com/v/t50/video.mp4' })),
+        };
+    });
+
+    const result = await provider.extract(
+        createMessage('https://www.instagram.com/share/reel/SHARECODE/'),
+        'https://www.instagram.com/share/reel/SHARECODE/',
+        {}
+    );
+
+    assert.ok(Array.isArray(result));
+    assert.equal(requestedUrls[0], 'https://www.instagram.com/share/reel/SHARECODE/');
+    assert.equal(requestedUrls[1], 'https://www.instagram.com/reel/REALCODE/embed/captioned/');
+    assert.equal(result[0].embeds[0].url, 'https://www.instagram.com/reel/REALCODE/');
+    assert.equal(result[0].files[0].endsWith('/v/t50/video.mp4'), true);
+});

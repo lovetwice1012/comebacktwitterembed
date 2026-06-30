@@ -37,6 +37,9 @@ const PROVIDER_LABEL_OVERRIDES = {
     twitter: 'Twitter / X',
     pixiv: 'Pixiv',
     booth: 'Booth',
+    twitch: 'Twitch',
+    tiktok: 'TikTok',
+    youtube: 'YouTube',
 };
 
 function getProviders() {

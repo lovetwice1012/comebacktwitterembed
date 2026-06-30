@@ -5,16 +5,18 @@ const { t } = require('../locales');
 const { checkComponentIncludesDisabledButtonAndIfFindDeleteIt, detectProviderIdFromMessage } = require('../settings');
 const { videoExtensions } = require('../utils');
 
+const audioExtensions = ['mp3', 'm4a', 'ogg', 'wav', 'flac', 'aac'];
+
 function getAttachmentUrls(attachments) {
     if (!attachments) return [];
     if (typeof attachments.map === 'function') return attachments.map(a => a.url).filter(Boolean);
     return Array.from(attachments).map(a => (Array.isArray(a) ? a[1]?.url : a?.url)).filter(Boolean);
 }
 
-function isVideoAttachment(url) {
+function isNonImageMediaAttachment(url) {
     const cleanUrl = url.split(/[?#]/)[0];
     const extension = cleanUrl.split('.').pop()?.toLowerCase();
-    return videoExtensions.includes(extension);
+    return videoExtensions.includes(extension) || audioExtensions.includes(extension);
 }
 
 async function handle(interaction, { buttons }) {
@@ -27,7 +29,7 @@ async function handle(interaction, { buttons }) {
     const imageAttachments = [];
     const videoAttachments = [];
     attachments.forEach(url => {
-        if (isVideoAttachment(url)) videoAttachments.push(url);
+        if (isNonImageMediaAttachment(url)) videoAttachments.push(url);
         else imageAttachments.push(url);
     });
 

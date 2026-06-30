@@ -14,12 +14,18 @@
 // ============================================================================
 
 /**
+ * @typedef {object} FilePayload
+ * @property {string} attachment
+ * @property {string} [name]
+ */
+
+/**
  * @typedef {object} SendStep
  * 1 回の Discord 送信単位 + 送信後の後処理指示。
  * extract() は SendStep または SendStep[] を返す (または null = 何もしない)。
  *
  * @property {any[]} [embeds]                 送信する embeds
- * @property {string[]} [files]               添付ファイル URL
+ * @property {Array<string|FilePayload>} [files] 添付ファイル URL / Discord.js attachment payload
  * @property {any[]} [components]             button row 等のコンポーネント
  * @property {string} [content]               テキスト本文 (引用ポストの prefix 等)
  * @property {object} [allowedMentions]       Discord allowedMentions

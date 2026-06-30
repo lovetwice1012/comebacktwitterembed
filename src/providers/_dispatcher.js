@@ -12,6 +12,13 @@ const { isUnknownMessageError, sendContentPromise } = require('../utils');
 const { checkComponentIncludesDisabledButtonAndIfFindDeleteIt } = require('../settings');
 const { incrementProcessedCounters } = require('../state');
 
+function fileToFallbackText(file) {
+    if (typeof file === 'string') return file;
+    if (file && typeof file.attachment === 'string') return file.attachment;
+    if (file && typeof file.url === 'string') return file.url;
+    return String(file ?? '');
+}
+
 /**
  * @param {any} message - 元の Discord メッセージ
  * @param {import('./_types').SendStep[]} steps
@@ -47,7 +54,7 @@ async function runSendSteps(message, steps, providerId = null) {
         } catch (err) {
             if (!isUnknownMessageError(err)) {
                 if (messageObject.files !== undefined) {
-                    await sendContentPromise(message, messageObject.files);
+                    await sendContentPromise(message, messageObject.files.map(fileToFallbackText).filter(Boolean));
                     delete messageObject.files;
                     sent = await message.channel.send(messageObject).catch(e => { console.log(e); return null; });
                 } else {

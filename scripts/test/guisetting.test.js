@@ -8,6 +8,7 @@ const { buildSlashCommands } = require('../../src/commands');
 const guisetting = require('../../src/commands/handlers/guisetting');
 const { settings } = require('../../src/settings');
 const { getSetting, isProviderEnabled } = require('../../src/providers/_provider_settings');
+const { loadProviders } = require('../../src/providers/_loader');
 const { missingCatalogKeys, SUPPORTED_LOCALES } = require('../../src/i18n');
 
 function clone(value) {
@@ -33,6 +34,8 @@ test('guisetting payload renders provider and setting controls', () => {
     assert.equal(payload.components.length, 3);
     assert.equal(payload.components[0].components[0].data.custom_id, 'guisetting:provider:overview');
     assert.ok(payload.components[0].components[0].options.some(option => option.data.value === 'booth'));
+    assert.ok(payload.components[0].components[0].options.some(option => option.data.value === 'tiktok'));
+    assert.ok(payload.components[0].components[0].options.some(option => option.data.value === 'youtube'));
     assert.equal(payload.components[1].components[0].data.custom_id, 'guisetting:setting:twitter');
 });
 
@@ -97,9 +100,9 @@ test('guisetting covers every setting exposed by /settings', () => {
 });
 
 test('guisetting exposes provider enabled setting for every provider', () => {
-    for (const provider of ['twitter', 'pixiv', 'booth']) {
-        const actualSpecs = guisetting._internal.getSettingSpecs(provider).map(spec => spec.key);
-        assert.ok(actualSpecs.includes('enabled'), `${provider} is missing enabled`);
+    for (const provider of loadProviders()) {
+        const actualSpecs = guisetting._internal.getSettingSpecs(provider.id).map(spec => spec.key);
+        assert.ok(actualSpecs.includes('enabled'), `${provider.id} is missing enabled`);
     }
 });
 

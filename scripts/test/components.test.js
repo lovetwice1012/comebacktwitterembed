@@ -8,6 +8,7 @@ const showMediaAsAttachments = require('../../src/components/showMediaAsAttachme
 
 const imageUrl = 'https://pbs.twimg.com/media/image-one.jpg?format=jpg&name=large';
 const videoUrl = 'https://video.twimg.com/ext_tw_video/123/pu/vid/720x720/movie.mp4?tag=12';
+const audioUrl = 'https://cdn.discordapp.com/attachments/1/2/spotify-preview-track.mp3?ex=1';
 
 function buttons() {
     return {
@@ -69,6 +70,34 @@ test('showAttachmentsAsEmbedsImage keeps video attachments while embedding image
         assert.equal(editedMessage.embeds.length, 1);
         assert.equal(editedMessage.embeds[0].image.url, imageUrl);
         assert.equal(reply.content, 'Finished action.');
+    });
+});
+
+test('showAttachmentsAsEmbedsImage keeps audio attachments while embedding images', async () => {
+    await withoutTimers(async () => {
+        let editedMessage = null;
+        const interaction = {
+            guildId: 'guild-components',
+            locale: 'en',
+            message: {
+                attachments: [
+                    { url: imageUrl },
+                    { url: audioUrl },
+                ],
+                embeds: [baseEmbed({ url: 'https://open.spotify.com/track/1' })],
+                edit: async (payload) => {
+                    editedMessage = payload;
+                },
+            },
+            editReply: async () => {},
+            deleteReply: async () => {},
+        };
+
+        await showAttachmentsAsEmbedsImage.handle(interaction, { buttons: buttons() });
+
+        assert.deepEqual(editedMessage.files, [audioUrl]);
+        assert.equal(editedMessage.embeds.length, 1);
+        assert.equal(editedMessage.embeds[0].image.url, imageUrl);
     });
 });
 
