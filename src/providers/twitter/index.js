@@ -18,6 +18,7 @@ const fetch = require('node-fetch');
 const { ButtonBuilder, ButtonStyle, ComponentType, PermissionsBitField } = require('discord.js');
 const { settings } = require('../../settings');
 const { videoExtensions } = require('../../utils');
+const { recordProviderError } = require('../../errorTracking');
 
 // ---- Twitter 内部定数 (このファイル外には出さない) -------------------------
 
@@ -257,6 +258,7 @@ async function extract(message, url, s, opts) {
     try {
         tweet = await fetchTweetData(url);
     } catch (err) {
+        recordProviderError('twitter', err, message, url, { endpointKey: 'api.vxtwitter.com/status' });
         console.log(err);
         return null;
     }

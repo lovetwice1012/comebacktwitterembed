@@ -15,6 +15,9 @@ const TABLES = {
     guildProviderButtonDisabledTargets: 'guild_provider_button_disabled_targets',
     deregisterReasons: 'deregister_reasons',
     deregisterNotifications: 'deregister_notifications',
+    botErrorEvents: 'bot_error_events',
+    botErrorBuckets: 'bot_error_buckets',
+    botMetricBuckets: 'bot_metric_buckets',
 };
 
 const SCHEMA_STATEMENTS = [
@@ -204,6 +207,74 @@ const SCHEMA_STATEMENTS = [
         CONSTRAINT fk_deregister_reason
             FOREIGN KEY (reason_id) REFERENCES ${TABLES.deregisterReasons}(reason_id)
             ON DELETE CASCADE
+    ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
+
+    `CREATE TABLE IF NOT EXISTS ${TABLES.botErrorEvents} (
+        error_event_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+        occurred_at_ms BIGINT NOT NULL,
+        expires_at_ms BIGINT NULL,
+        error_type VARCHAR(96) NOT NULL,
+        severity ENUM('debug', 'info', 'warn', 'error', 'fatal') NOT NULL DEFAULT 'error',
+        source VARCHAR(96) NULL,
+        provider_id VARCHAR(64) NULL,
+        endpoint_key VARCHAR(191) NULL,
+        raw_url TEXT NULL,
+        normalized_url TEXT NULL,
+        url_hash CHAR(64) NULL,
+        author_user_id VARCHAR(32) NULL,
+        guild_id VARCHAR(32) NULL,
+        guild_name_snapshot VARCHAR(255) NULL,
+        channel_id VARCHAR(32) NULL,
+        channel_name_snapshot VARCHAR(255) NULL,
+        message_id VARCHAR(32) NULL,
+        command_name VARCHAR(64) NULL,
+        component_id VARCHAR(191) NULL,
+        discord_code INT NULL,
+        http_status INT NULL,
+        stack_hash CHAR(64) NULL,
+        message_hash CHAR(64) NULL,
+        details_json LONGTEXT NULL,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_error_events_time (occurred_at_ms),
+        INDEX idx_error_events_type_time (error_type, occurred_at_ms),
+        INDEX idx_error_events_provider_time (provider_id, occurred_at_ms),
+        INDEX idx_error_events_guild_time (guild_id, occurred_at_ms),
+        INDEX idx_error_events_url_hash (url_hash),
+        INDEX idx_error_events_stack_hash (stack_hash),
+        INDEX idx_error_events_expires (expires_at_ms)
+    ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
+
+    `CREATE TABLE IF NOT EXISTS ${TABLES.botErrorBuckets} (
+        bucket_start_ms BIGINT NOT NULL,
+        bucket_size_seconds INT NOT NULL,
+        error_type VARCHAR(96) NOT NULL,
+        severity ENUM('debug', 'info', 'warn', 'error', 'fatal') NOT NULL DEFAULT 'error',
+        provider_id VARCHAR(64) NOT NULL DEFAULT '',
+        guild_id VARCHAR(32) NOT NULL DEFAULT '',
+        endpoint_key VARCHAR(191) NOT NULL DEFAULT '',
+        count BIGINT UNSIGNED NOT NULL DEFAULT 0,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        PRIMARY KEY (bucket_start_ms, bucket_size_seconds, error_type, severity, provider_id, guild_id, endpoint_key),
+        INDEX idx_error_buckets_type_time (error_type, bucket_start_ms),
+        INDEX idx_error_buckets_provider_time (provider_id, bucket_start_ms),
+        INDEX idx_error_buckets_guild_time (guild_id, bucket_start_ms)
+    ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
+
+    `CREATE TABLE IF NOT EXISTS ${TABLES.botMetricBuckets} (
+        bucket_start_ms BIGINT NOT NULL,
+        bucket_size_seconds INT NOT NULL,
+        metric_name VARCHAR(96) NOT NULL,
+        provider_id VARCHAR(64) NOT NULL DEFAULT '',
+        guild_id VARCHAR(32) NOT NULL DEFAULT '',
+        endpoint_key VARCHAR(191) NOT NULL DEFAULT '',
+        count BIGINT UNSIGNED NOT NULL DEFAULT 0,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        PRIMARY KEY (bucket_start_ms, bucket_size_seconds, metric_name, provider_id, guild_id, endpoint_key),
+        INDEX idx_metric_buckets_name_time (metric_name, bucket_start_ms),
+        INDEX idx_metric_buckets_provider_time (provider_id, bucket_start_ms),
+        INDEX idx_metric_buckets_guild_time (guild_id, bucket_start_ms)
     ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
 ];
 

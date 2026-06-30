@@ -3,6 +3,7 @@
 const fetch = require('node-fetch');
 const { ButtonBuilder, ButtonStyle, ComponentType } = require('discord.js');
 const { settings } = require('../../settings');
+const { recordProviderError } = require('../../errorTracking');
 
 const TWITCH_COLOR = 0x9146FF;
 const TWITCH_GQL_ENDPOINT = 'https://gql.twitch.tv/gql';
@@ -267,6 +268,7 @@ async function extract(message, url, s) {
     try {
         info = await fetchClipInfo(parsed.slug);
     } catch (err) {
+        recordProviderError('twitch', err, message, url, { endpointKey: 'twitch/gql' });
         console.log(err);
         return null;
     }

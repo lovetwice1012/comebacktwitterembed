@@ -84,6 +84,14 @@ function isUnknownInteractionError(err) {
     return discordErrorCode(err) === 10062;
 }
 
+function isInteractionAlreadyAcknowledgedError(err) {
+    return discordErrorCode(err) === 40060;
+}
+
+function isIgnorableInteractionAckError(err) {
+    return isUnknownInteractionError(err) || isInteractionAlreadyAcknowledgedError(err);
+}
+
 function isMissingPermissionsError(err) {
     const code = discordErrorCode(err);
     return code === 50001 || code === 50013;
@@ -124,6 +132,8 @@ module.exports = {
     discordErrorCode,
     isUnknownMessageError,
     isUnknownInteractionError,
+    isInteractionAlreadyAcknowledgedError,
+    isIgnorableInteractionAckError,
     isMissingPermissionsError,
     sendContentPromise,
     conv_en_to_en_US,

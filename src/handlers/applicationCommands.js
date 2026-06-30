@@ -2,6 +2,7 @@
 
 const { Events, InteractionType } = require('discord.js');
 const { loadProviderCommands } = require('../providers/_loader');
+const { recordError, recordMetric } = require('../errorTracking');
 
 const CORE_HANDLERS = {
     "ping":                 require('../commands/handlers/ping').execute,
@@ -38,6 +39,13 @@ function shouldDeferEphemeral(interaction) {
 }
 
 async function replyCommandError(interaction, error) {
+    recordError(error, {
+        fallbackType: 'command_failed',
+        source: 'applicationCommands.execute',
+        interaction,
+        commandName: interaction.commandName,
+    });
+    recordMetric('command_error', { interaction, commandName: interaction.commandName });
     console.error(`Failed to execute /${interaction.commandName}:`, error);
     const payload = {
         content: 'Command failed. Please check the bot logs.',
@@ -57,9 +65,11 @@ function register(client) {
         if (interaction.type !== InteractionType.ApplicationCommand) return;
         const handler = handlers[interaction.commandName];
         if (!handler) return;
+        recordMetric('command_attempt', { interaction, commandName: interaction.commandName });
         try {
             await interaction.deferReply({ ephemeral: shouldDeferEphemeral(interaction) });
             await handler(interaction, client);
+            recordMetric('command_success', { interaction, commandName: interaction.commandName });
         } catch (err) {
             await replyCommandError(interaction, err);
         }

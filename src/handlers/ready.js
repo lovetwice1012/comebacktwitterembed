@@ -6,6 +6,7 @@ const deregisterNotifier = require('../lifecycle/deregisterNotifier');
 const statsPoster = require('../lifecycle/statsPoster');
 const consoleFlush = require('../lifecycle/consoleFlush');
 const boothSaleNotifier = require('../lifecycle/boothSaleNotifier');
+const { recordError } = require('../errorTracking');
 
 function register(client, webhookClient) {
     client.on('ready', async () => {
@@ -14,6 +15,7 @@ function register(client, webhookClient) {
         try {
             await client.application.commands.set(buildSlashCommands());
         } catch (err) {
+            recordError(err, { errorType: 'slash_command_registration_failed', source: 'ready.registerCommands' });
             console.error('Failed to register slash commands:', err);
         }
 

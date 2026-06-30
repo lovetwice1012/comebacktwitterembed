@@ -5,6 +5,7 @@ const config = require(/** @type {string} */ ('./config.json'));
 const { consoleBuffer } = require('./src/state');
 const { initializeSettings } = require('./src/settings');
 const { ensureDatabaseSchema } = require('./src/db_schema');
+const { recordError } = require('./src/errorTracking');
 
 const client = new Client({
     intents: [
@@ -36,9 +37,11 @@ if (webhookClient) {
 }
 
 process.on('unhandledRejection', error => {
+    recordError(error, { errorType: 'unhandled_rejection', severity: 'fatal', source: 'process.unhandledRejection' });
     console.error('Unhandled promise rejection:', error);
 });
 process.on('uncaughtException', error => {
+    recordError(error, { errorType: 'uncaught_exception', severity: 'fatal', source: 'process.uncaughtException' });
     console.error('Uncaught exception:', error);
 });
 
@@ -58,6 +61,7 @@ process.on('uncaughtException', error => {
 
     await client.login(config.token);
 })().catch(error => {
+    recordError(error, { errorType: 'startup_failed', severity: 'fatal', source: 'index.startup' });
     console.error('Failed to start application:', error);
     process.exitCode = 1;
 });

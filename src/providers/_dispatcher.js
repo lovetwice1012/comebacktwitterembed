@@ -11,6 +11,7 @@
 const { isMissingPermissionsError, isUnknownMessageError, sendContentPromise } = require('../utils');
 const { checkComponentIncludesDisabledButtonAndIfFindDeleteIt } = require('../settings');
 const { incrementProcessedCounters } = require('../state');
+const { recordError, recordMetric } = require('../errorTracking');
 
 function fileToFallbackText(file) {
     if (typeof file === 'string') return file;
@@ -58,14 +59,31 @@ async function runSendSteps(message, steps, providerId = null) {
         }
 
         let sent = null;
+        recordMetric('discord_send_attempt', { providerId, message });
         try {
             sent = await sender(messageObject);
         } catch (err) {
             if (isUnknownMessageError(err)) {
+                recordError(err, {
+                    errorType: 'discord_unknown_message',
+                    severity: 'warn',
+                    source: 'dispatcher.send',
+                    providerId,
+                    message,
+                });
+                recordMetric('discord_send_error', { providerId, message });
                 continue;
             }
 
             if (isMissingPermissionsError(err)) {
+                recordError(err, {
+                    errorType: 'discord_missing_permissions',
+                    severity: 'warn',
+                    source: 'dispatcher.send',
+                    providerId,
+                    message,
+                });
+                recordMetric('discord_send_error', { providerId, message });
                 logSendFailure(message, err);
                 continue;
             }
@@ -74,21 +92,45 @@ async function runSendSteps(message, steps, providerId = null) {
                 try {
                     await sendContentPromise(message, messageObject.files.map(fileToFallbackText).filter(Boolean));
                 } catch (fallbackErr) {
+                    recordError(fallbackErr, {
+                        fallbackType: 'discord_send_failed',
+                        source: 'dispatcher.fallbackFiles',
+                        providerId,
+                        message,
+                    });
+                    recordMetric('discord_send_error', { providerId, message });
                     logSendFailure(message, fallbackErr, 'send fallback attachment URLs');
                     continue;
                 }
 
                 delete messageObject.files;
                 sent = await message.channel.send(messageObject).catch(e => {
-                    if (!isUnknownMessageError(e)) logSendFailure(message, e, 'send response without files');
+                    if (!isUnknownMessageError(e)) {
+                        recordError(e, {
+                            fallbackType: 'discord_send_failed',
+                            source: 'dispatcher.retryWithoutFiles',
+                            providerId,
+                            message,
+                        });
+                        logSendFailure(message, e, 'send response without files');
+                    }
+                    recordMetric('discord_send_error', { providerId, message });
                     return null;
                 });
             } else {
+                recordError(err, {
+                    fallbackType: 'discord_send_failed',
+                    source: 'dispatcher.send',
+                    providerId,
+                    message,
+                });
+                recordMetric('discord_send_error', { providerId, message });
                 console.log(err);
             }
         }
         previousSent = sent ?? previousSent;
         if (sent) {
+            recordMetric('discord_send_success', { providerId, message });
             incrementProcessedCounters();
         }
 

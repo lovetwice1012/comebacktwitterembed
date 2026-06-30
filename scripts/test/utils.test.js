@@ -11,6 +11,8 @@ const {
     discordErrorCode,
     isUnknownMessageError,
     isUnknownInteractionError,
+    isInteractionAlreadyAcknowledgedError,
+    isIgnorableInteractionAckError,
     isMissingPermissionsError,
 } = require('../../src/utils');
 
@@ -73,6 +75,11 @@ test('discord API error helpers match common interaction and permission codes', 
     assert.equal(discordErrorCode({ rawError: { code: 10062 } }), 10062);
     assert.equal(isUnknownInteractionError({ code: 10062 }), true);
     assert.equal(isUnknownInteractionError({ code: 10008 }), false);
+    assert.equal(isInteractionAlreadyAcknowledgedError({ code: 40060 }), true);
+    assert.equal(isInteractionAlreadyAcknowledgedError({ rawError: { code: 40060 } }), true);
+    assert.equal(isIgnorableInteractionAckError({ code: 10062 }), true);
+    assert.equal(isIgnorableInteractionAckError({ code: 40060 }), true);
+    assert.equal(isIgnorableInteractionAckError({ code: 50013 }), false);
     assert.equal(isMissingPermissionsError({ code: 50013 }), true);
     assert.equal(isMissingPermissionsError({ rawError: { code: 50001 } }), true);
     assert.equal(isMissingPermissionsError({ code: 10062 }), false);

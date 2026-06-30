@@ -4,6 +4,7 @@ const fetch = require('node-fetch');
 const { ButtonBuilder, ButtonStyle, ComponentType } = require('discord.js');
 const { settings } = require('../../settings');
 const { videoExtensions } = require('../../utils');
+const { recordProviderError } = require('../../errorTracking');
 
 const INSTAGRAM_URL_PATTERN =
     /https?:\/\/(?:www\.)?instagram\.com\/(?:[A-Za-z0-9_.-]+\/)?(?:(?:p|reel|reels|tv)\/[A-Za-z0-9_-]+(?:\/\d+)?|share(?:\/reel)?\/[A-Za-z0-9_-]+)\/?(?:\?[^\s<>|]*)?/g;
@@ -712,6 +713,7 @@ async function extract(message, url, s, opts) {
     try {
         data = await fetchInstagramData(parsed);
     } catch (err) {
+        recordProviderError('instagram', err, message, url, { endpointKey: 'instagram/embed-or-graphql' });
         console.log(err);
         return null;
     }

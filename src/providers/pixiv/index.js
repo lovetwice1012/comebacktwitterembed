@@ -25,6 +25,7 @@
 const fetch = require('node-fetch');
 const { ButtonBuilder, ButtonStyle, ComponentType } = require('discord.js');
 const { settings } = require('../../settings');
+const { recordProviderError } = require('../../errorTracking');
 
 // ---- inline 翻訳 (twitter provider と同じ手法) -----------------------------
 //
@@ -167,6 +168,7 @@ async function extract(message, url, s) {
     try {
         info = await fetchPixivInfo(parsed.id, parsed.language, parsed.index);
     } catch (err) {
+        recordProviderError('pixiv', err, message, url, { endpointKey: 'phixiv/api/info' });
         console.log(err);
         return null;
     }

@@ -3,6 +3,7 @@
 const fetch = require('node-fetch');
 const { ButtonBuilder, ButtonStyle, ComponentType } = require('discord.js');
 const { settings } = require('../../settings');
+const { recordProviderError } = require('../../errorTracking');
 
 const SPOTIFY_COLOR = 0x1DB954;
 const DESCRIPTION_MAX_LENGTH = 350;
@@ -190,6 +191,7 @@ async function extract(message, url, s) {
     try {
         track = await fetchTrackInfo(parsed.id);
     } catch (err) {
+        recordProviderError('spotify', err, message, url, { endpointKey: 'spotify/embed-or-oembed' });
         console.log(err);
         return null;
     }

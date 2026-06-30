@@ -28,6 +28,7 @@ const fetch = require('node-fetch');
 const { ButtonBuilder, ButtonStyle, ComponentType } = require('discord.js');
 const { settings } = require('../../settings');
 const { extractSalePeriod } = require('./_sale');
+const { recordProviderError } = require('../../errorTracking');
 
 const EMBED_COLOR = 0xfd494a;       // booth のテーマカラー
 const ADULT_EMBED_COLOR = 0x4d4d4d; // R-18 はやや抑え気味の色
@@ -274,6 +275,7 @@ async function extract(message, url, s) {
     try {
         info = await fetchBoothInfo(parsed);
     } catch (err) {
+        recordProviderError('booth', err, message, url, { endpointKey: 'booth/items.json' });
         console.log(err);
         return null;
     }

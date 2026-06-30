@@ -6,6 +6,7 @@ const { ifUserHasRole, cleanMessageContent } = require('../utils');
 const { extractAllUrls } = require('../providers/_loader');
 const { isProviderEnabled, getProviderSettings } = require('../providers/_provider_settings');
 const { runSendSteps } = require('../providers/_dispatcher');
+const { recordError, recordMetric } = require('../errorTracking');
 
 function register(client) {
     function shouldIgnoreMessage(message) {
@@ -73,13 +74,27 @@ function register(client) {
             if (message.author.bot && providerSettings.extract_bot_message !== true && !message.webhookId) continue;
 
             let steps;
+            recordMetric('provider_extract_attempt', { providerId: provider.id, message, url });
             try {
                 steps = await provider.extract(message, url, providerSettings);
             } catch (err) {
+                recordError(err, {
+                    fallbackType: 'provider_extract_failed',
+                    source: 'messageCreate.providerExtract',
+                    providerId: provider.id,
+                    message,
+                    url,
+                });
+                recordMetric('provider_extract_error', { providerId: provider.id, message, url });
                 console.log(err);
                 continue;
             }
-            if (Array.isArray(steps)) await runSendSteps(message, steps, provider.id);
+            if (Array.isArray(steps)) {
+                recordMetric('provider_extract_success', { providerId: provider.id, message, url });
+                await runSendSteps(message, steps, provider.id);
+            } else {
+                recordMetric('provider_extract_empty', { providerId: provider.id, message, url });
+            }
         }
     });
 }

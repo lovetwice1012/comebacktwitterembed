@@ -2,6 +2,7 @@
 
 const fetch = require('node-fetch');
 const { ButtonBuilder, ButtonStyle, ComponentType } = require('discord.js');
+const { recordProviderError } = require('../../errorTracking');
 
 const INVIDIOUS_INSTANCES = [
     'https://iteroni.com',
@@ -441,6 +442,7 @@ async function extract(message, url, s) {
 
         return [buildStep(embed, message, url, s, lang)];
     } catch (err) {
+        recordProviderError('youtube', err, message, url, { endpointKey: 'invidious/api' });
         console.log(err);
         return null;
     }
