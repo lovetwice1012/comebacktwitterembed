@@ -12,6 +12,7 @@ const buttonInvisible = require('../../src/commands/handlers/settings/button_inv
 const showSaveTweet = require('../../src/providers/twitter/commands/showsavetweet');
 const { buildSlashCommands } = require('../../src/commands');
 const { settings } = require('../../src/settings');
+const { loadProviders } = require('../../src/providers/_loader');
 
 const DISCORD_COMMAND_NAME_RE = /^[-_\p{L}\p{N}]{1,32}$/u;
 
@@ -37,6 +38,49 @@ test('slash command names and name localizations are valid for Discord registrat
     for (const [index, command] of buildSlashCommands().entries()) {
         assertValidDefinitionNames(command, `commands[${index}]`);
     }
+});
+
+test('settings command exposes a settings group for every provider', () => {
+    const settingsCommand = buildSlashCommands().find(command => command.name === 'settings');
+    assert.ok(settingsCommand, 'settings command should be registered');
+
+    const groupNames = new Set((settingsCommand.options || []).map(option => option.name));
+    for (const provider of loadProviders()) {
+        assert.ok(groupNames.has(provider.id), `settings command should include ${provider.id}`);
+    }
+});
+
+test('settings command exposes shared settings on every provider group', () => {
+    const settingsCommand = buildSlashCommands().find(command => command.name === 'settings');
+    const sharedSettings = [
+        'disable',
+        'defaultlanguage',
+        'editoriginaliftranslate',
+        'extractbotmessage',
+        'button_invisible',
+        'button_disabled',
+        'bannedwords',
+        'setdefaultmediaasattachments',
+        'deleteifonlypostedtweetlink',
+        'alwaysreplyifpostedtweetlink',
+        'anonymousexpand',
+        'legacymode',
+    ];
+
+    for (const group of settingsCommand.options || []) {
+        const optionNames = new Set((group.options || []).map(option => option.name));
+        for (const settingName of sharedSettings) {
+            assert.ok(optionNames.has(settingName), `${group.name} should include ${settingName}`);
+        }
+    }
+});
+
+test('provider command no longer exposes set subcommand', () => {
+    const providerCommand = buildSlashCommands().find(command => command.name === 'provider');
+    assert.ok(providerCommand, 'provider command should be registered');
+
+    const subcommandNames = new Set((providerCommand.options || []).map(option => option.name));
+    assert.ok(!subcommandNames.has('set'), 'provider set should not be registered');
 });
 
 test('quotastats returns zero usage when user has no saves directory', async () => {

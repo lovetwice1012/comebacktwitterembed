@@ -742,7 +742,9 @@ async function buildBannedWordControls(providerId, guildId, locale) {
 }
 
 async function buildControls(providerId, spec, guildId, locale) {
-    if (spec.kind === 'bool') return await buildBoolControls(providerId, spec, guildId, locale);
+    if (spec.kind === 'bool' || spec.kind === 'providerEnabled') {
+        return await buildBoolControls(providerId, spec, guildId, locale);
+    }
     if (spec.kind === 'choice') return await buildChoiceControls(providerId, spec, guildId, locale);
     if (spec.kind === 'buttonVisibility') return await buildButtonVisibilityControls(providerId, guildId, locale);
     if (spec.kind === 'targets') return buildTargetControls(providerId, spec, locale);

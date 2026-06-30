@@ -12,6 +12,10 @@ function hasAdminPerm(member) {
     );
 }
 
+function providerFromInteraction(interaction) {
+    return { id: interaction.options.getSubcommandGroup(false) || interaction.options.getString('provider') || 'twitter' };
+}
+
 module.exports = async function (interaction, client) {
     if (!hasAdminPerm(interaction.member)) {
         return await interaction.editReply(t('userDonthavePermissionLocales', interaction.locale));
@@ -19,8 +23,9 @@ module.exports = async function (interaction, client) {
 
     if (interaction.options.getBoolean('boolean') === null) return await interaction.editReply(t('userMustSpecifyAnyWordLocales', interaction.locale));
     const boolean = interaction.options.getBoolean('boolean');
-    await setSetting({ id: 'twitter' }, 'legacy_mode', interaction.guildId, boolean);
-    if (boolean === true) await setSetting({ id: 'twitter' }, 'secondary_extract_mode', interaction.guildId, false);
+    const provider = providerFromInteraction(interaction);
+    await setSetting(provider, 'legacy_mode', interaction.guildId, boolean);
+    if (boolean === true) await setSetting(provider, 'secondary_extract_mode', interaction.guildId, false);
     await interaction.editReply((t('setlegacymodetolocales', interaction.locale)) + convertBoolToEnableDisable(boolean, interaction.locale));
     if (!interaction.guild.members.me.permissions.has(PermissionsBitField.Flags.ManageMessages)) await interaction.followUp("※BOTにメッセージの管理権限を付与するとdiscord純正の埋め込みのみを削除して今まで通りの展開が行われます。\nこのBOTにメッセージの管理権限を付与することを検討してみてください。\n(使用感はdiscordがリンクの展開を修正する前と変わらなくなります。)")
 

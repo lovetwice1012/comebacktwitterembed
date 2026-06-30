@@ -12,6 +12,10 @@ function hasAdminPerm(member) {
     );
 }
 
+function providerFromInteraction(interaction) {
+    return { id: interaction.options.getSubcommandGroup(false) || interaction.options.getString('provider') || 'twitter' };
+}
+
 module.exports = async function (interaction, client) {
     if (!hasAdminPerm(interaction.member)) {
         return await interaction.editReply(t('userDonthavePermissionLocales', interaction.locale));
@@ -19,11 +23,12 @@ module.exports = async function (interaction, client) {
 
     if (interaction.options.getBoolean('boolean') === null) return await interaction.editReply(t('userMustSpecifyAnyWordLocales', interaction.locale));
     const boolean = interaction.options.getBoolean('boolean');
-    await setSetting({ id: 'twitter' }, 'deletemessageifonlypostedtweetlink', interaction.guildId, boolean);
+    const provider = providerFromInteraction(interaction);
+    await setSetting(provider, 'deletemessageifonlypostedtweetlink', interaction.guildId, boolean);
     await interaction.editReply((t('setdeleteifonlypostedtweetlinktolocales', interaction.locale)) + convertBoolToEnableDisable(boolean, interaction.locale));
     if (interaction.options.getBoolean('secoundaryextractmode') !== null) {
         const sec = interaction.options.getBoolean('secoundaryextractmode');
-        await setSetting({ id: 'twitter' }, 'deletemessageifonlypostedtweetlink_secoundaryextractmode', interaction.guild.id, sec);
+        await setSetting(provider, 'deletemessageifonlypostedtweetlink_secoundaryextractmode', interaction.guildId, sec);
         await interaction.followUp((t('setdoitwhensecoundaryextractmodeisenabledtolocales', interaction.locale)) + convertBoolToEnableDisable(sec, interaction.locale));
     }
 

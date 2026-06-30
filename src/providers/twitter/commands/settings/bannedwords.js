@@ -12,6 +12,10 @@ function hasAdminPerm(member) {
     );
 }
 
+function providerFromInteraction(interaction) {
+    return { id: interaction.options.getSubcommandGroup(false) || interaction.options.getString('provider') || 'twitter' };
+}
+
 module.exports = async function (interaction, client) {
     if (!hasAdminPerm(interaction.member)) {
         return await interaction.editReply(t('userDonthavePermissionLocales', interaction.locale));
@@ -22,7 +26,7 @@ module.exports = async function (interaction, client) {
         return await interaction.editReply(t('iDonthavePermissionToManageMessagesLocales', interaction.locale));
     }
     const word = interaction.options.getString('word');
-    const provider = { id: 'twitter' };
+    const provider = providerFromInteraction(interaction);
     const list = await getSetting(provider, 'bannedWords', interaction.guildId);
     const bannedWords = Array.isArray(list) ? list : [];
 

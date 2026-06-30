@@ -10,6 +10,7 @@
 const { ApplicationCommandOptionType } = require('discord.js');
 const { t, commandNameLocales, descriptionLocales, messageLocales } = require('../../locales');
 const { conv_en_to_en_US } = require('../../utils');
+const { loadProviders } = require('../../providers/_loader');
 
 const COMMON_HANDLERS = {
     disable:                 require('./settings/disable'),
@@ -18,18 +19,18 @@ const COMMON_HANDLERS = {
     extractbotmessage:       require('./settings/extractbotmessage'),
     button_invisible:        require('./settings/button_invisible'),
     button_disabled:         require('./settings/button_disabled'),
+    bannedwords:                  require('../../providers/twitter/commands/settings/bannedwords'),
+    setdefaultmediaasattachments: require('../../providers/twitter/commands/settings/setdefaultmediaasattachments'),
+    deleteifonlypostedtweetlink:  require('../../providers/twitter/commands/settings/deleteifonlypostedtweetlink'),
+    alwaysreplyifpostedtweetlink: require('../../providers/twitter/commands/settings/alwaysreplyifpostedtweetlink'),
+    anonymousexpand:              require('../../providers/twitter/commands/settings/anonymousexpand'),
+    legacymode:                   require('../../providers/twitter/commands/settings/legacymode'),
 };
 
 const PROVIDER_HANDLERS = {
     twitter: {
-        bannedwords:                  require('../../providers/twitter/commands/settings/bannedwords'),
-        setdefaultmediaasattachments: require('../../providers/twitter/commands/settings/setdefaultmediaasattachments'),
-        deleteifonlypostedtweetlink:  require('../../providers/twitter/commands/settings/deleteifonlypostedtweetlink'),
-        alwaysreplyifpostedtweetlink: require('../../providers/twitter/commands/settings/alwaysreplyifpostedtweetlink'),
-        anonymousexpand:              require('../../providers/twitter/commands/settings/anonymousexpand'),
         quoterepostdonotextract:      require('../../providers/twitter/commands/settings/quoterepostdonotextract'),
         quoterepostmaxdepth:          require('../../providers/twitter/commands/settings/quoterepostmaxdepth'),
-        legacymode:                   require('../../providers/twitter/commands/settings/legacymode'),
         passivemode:                  require('../../providers/twitter/commands/settings/passivemode'),
         secondaryextractmode:         require('../../providers/twitter/commands/settings/secondaryextractmode'),
         secondaryextracttarget:       require('../../providers/twitter/commands/settings/secondaryextracttarget'),
@@ -116,7 +117,7 @@ function buildCommonOptions(includeSaveTweetOption) {
         });
     }
 
-    return [
+    const options = [
         {
             name: 'disable',
             name_localizations: conv_en_to_en_US(commandNameLocales.disable),
@@ -223,185 +224,222 @@ function buildCommonOptions(includeSaveTweetOption) {
             ],
         },
     ];
+
+    options.push(
+        {
+            name: 'bannedwords',
+            name_localizations: conv_en_to_en_US(commandNameLocales.bannedwords),
+            description: 'bannedWords',
+            description_localizations: conv_en_to_en_US(descriptionLocales.settingsBannedWords),
+            type: ApplicationCommandOptionType.Subcommand,
+            options: [
+                {
+                    name: 'word',
+                    name_localizations: conv_en_to_en_US(commandNameLocales.word),
+                    description: 'word',
+                    description_localizations: conv_en_to_en_US(descriptionLocales.settingsBannedWordsWord),
+                    type: ApplicationCommandOptionType.String,
+                    required: true,
+                },
+            ],
+        },
+        {
+            name: 'setdefaultmediaasattachments',
+            name_localizations: conv_en_to_en_US(commandNameLocales.setdefaultmediaasattachments),
+            description: 'setSendMediaAsAttachmentsAsDefault',
+            description_localizations: conv_en_to_en_US(descriptionLocales.settingsSendMediaAsAttachmentsAsDefault),
+            type: ApplicationCommandOptionType.Subcommand,
+            options: [boolOption],
+        },
+        {
+            name: 'deleteifonlypostedtweetlink',
+            name_localizations: conv_en_to_en_US(commandNameLocales.deleteifonlypostedtweetlink),
+            description: 'deleteIfOnlyPostedLink',
+            description_localizations: conv_en_to_en_US(descriptionLocales.settingsDeleteMessageIfOnlyPostedTweetLink),
+            type: ApplicationCommandOptionType.Subcommand,
+            options: [
+                boolOption,
+                ...(includeSaveTweetOption ? [{
+                    name: 'secoundaryextractmode',
+                    name_localizations: conv_en_to_en_US(commandNameLocales.doitwhensecondaryextractmodeisenabled),
+                    description: 'doItWhenSecondaryExtractModeIsEnabled',
+                    description_localizations: conv_en_to_en_US(descriptionLocales.settingsDoItWhenSecondaryExtractModeIsEnabled),
+                    type: ApplicationCommandOptionType.Boolean,
+                    required: false,
+                }] : []),
+            ],
+        },
+        {
+            name: 'alwaysreplyifpostedtweetlink',
+            name_localizations: conv_en_to_en_US(commandNameLocales.alwaysreplyifpostedtweetlink),
+            description: 'alwaysReplyIfPostedLink',
+            description_localizations: conv_en_to_en_US(descriptionLocales.settingsAlwaysReplyIfPostedTweetLink),
+            type: ApplicationCommandOptionType.Subcommand,
+            options: [boolOption],
+        },
+        {
+            name: 'anonymousexpand',
+            name_localizations: conv_en_to_en_US(commandNameLocales.anonymous_expand),
+            description: 'anonymous expand',
+            description_localizations: conv_en_to_en_US(descriptionLocales.settingsAnonymousExpand),
+            type: ApplicationCommandOptionType.Subcommand,
+            options: [boolOption],
+        },
+        {
+            name: 'legacymode',
+            name_localizations: conv_en_to_en_US(commandNameLocales.legacy_mode),
+            description: 'legacy mode',
+            description_localizations: conv_en_to_en_US(descriptionLocales.settingsLegacyMode),
+            type: ApplicationCommandOptionType.Subcommand,
+            options: [boolOption],
+        },
+    );
+
+    return options;
 }
 
-module.exports.definition = {
-    name: 'settings',
-    name_localizations: conv_en_to_en_US(commandNameLocales.settings),
-    description: 'change settings',
-    description_localizations: conv_en_to_en_US(descriptionLocales.settingscommand),
-    options: [
+function buildTwitterOptions() {
+    return [
         {
-            name: 'twitter',
-            description: 'twitter settings',
-            type: ApplicationCommandOptionType.SubcommandGroup,
+            name: 'quoterepostdonotextract',
+            name_localizations: conv_en_to_en_US(commandNameLocales.quote_repost_do_not_extract),
+            description: 'quote repost do not extract',
+            description_localizations: conv_en_to_en_US(descriptionLocales.settingsQuoteRepostDoNotExtract),
+            type: ApplicationCommandOptionType.Subcommand,
+            options: [boolOption],
+        },
+        {
+            name: 'quoterepostmaxdepth',
+            name_localizations: conv_en_to_en_US(commandNameLocales.quote_repost_max_depth),
+            description: 'quote repost max depth',
+            description_localizations: conv_en_to_en_US(descriptionLocales.settingsQuoteRepostMaxDepth),
+            type: ApplicationCommandOptionType.Subcommand,
             options: [
-                ...buildCommonOptions(true),
                 {
-                    name: 'bannedwords',
-                    name_localizations: conv_en_to_en_US(commandNameLocales.bannedwords),
-                    description: 'bannedWords',
-                    description_localizations: conv_en_to_en_US(descriptionLocales.settingsBannedWords),
-                    type: ApplicationCommandOptionType.Subcommand,
-                    options: [
-                        {
-                            name: 'word',
-                            name_localizations: conv_en_to_en_US(commandNameLocales.word),
-                            description: 'word',
-                            description_localizations: conv_en_to_en_US(descriptionLocales.settingsBannedWordsWord),
-                            type: ApplicationCommandOptionType.String,
-                            required: true,
-                        },
-                    ],
-                },
-                {
-                    name: 'setdefaultmediaasattachments',
-                    name_localizations: conv_en_to_en_US(commandNameLocales.setdefaultmediaasattachments),
-                    description: 'setSendMediaAsAttachmentsAsDefault',
-                    description_localizations: conv_en_to_en_US(descriptionLocales.settingsSendMediaAsAttachmentsAsDefault),
-                    type: ApplicationCommandOptionType.Subcommand,
-                    options: [boolOption],
-                },
-                {
-                    name: 'deleteifonlypostedtweetlink',
-                    name_localizations: conv_en_to_en_US(commandNameLocales.deleteifonlypostedtweetlink),
-                    description: 'deleteIfOnlyPostedTweetLink',
-                    description_localizations: conv_en_to_en_US(descriptionLocales.settingsDeleteMessageIfOnlyPostedTweetLink),
-                    type: ApplicationCommandOptionType.Subcommand,
-                    options: [
-                        boolOption,
-                        {
-                            name: 'secoundaryextractmode',
-                            name_localizations: conv_en_to_en_US(commandNameLocales.doitwhensecondaryextractmodeisenabled),
-                            description: 'doItWhenSecondaryExtractModeIsEnabled',
-                            description_localizations: conv_en_to_en_US(descriptionLocales.settingsDoItWhenSecondaryExtractModeIsEnabled),
-                            type: ApplicationCommandOptionType.Boolean,
-                            required: false,
-                        },
-                    ],
-                },
-                {
-                    name: 'alwaysreplyifpostedtweetlink',
-                    name_localizations: conv_en_to_en_US(commandNameLocales.alwaysreplyifpostedtweetlink),
-                    description: 'alwaysReplyIfPostedTweetLink',
-                    description_localizations: conv_en_to_en_US(descriptionLocales.settingsAlwaysReplyIfPostedTweetLink),
-                    type: ApplicationCommandOptionType.Subcommand,
-                    options: [boolOption],
-                },
-                {
-                    name: 'anonymousexpand',
-                    name_localizations: conv_en_to_en_US(commandNameLocales.anonymous_expand),
-                    description: 'anonymous expand',
-                    description_localizations: conv_en_to_en_US(descriptionLocales.settingsAnonymousExpand),
-                    type: ApplicationCommandOptionType.Subcommand,
-                    options: [boolOption],
-                },
-                {
-                    name: 'quoterepostdonotextract',
-                    name_localizations: conv_en_to_en_US(commandNameLocales.quote_repost_do_not_extract),
-                    description: 'quote repost do not extract',
-                    description_localizations: conv_en_to_en_US(descriptionLocales.settingsQuoteRepostDoNotExtract),
-                    type: ApplicationCommandOptionType.Subcommand,
-                    options: [boolOption],
-                },
-                {
-                    name: 'quoterepostmaxdepth',
-                    name_localizations: conv_en_to_en_US(commandNameLocales.quote_repost_max_depth),
-                    description: 'quote repost max depth',
-                    description_localizations: conv_en_to_en_US(descriptionLocales.settingsQuoteRepostMaxDepth),
-                    type: ApplicationCommandOptionType.Subcommand,
-                    options: [
-                        {
-                            name: 'depth',
-                            name_localizations: conv_en_to_en_US({ en: 'depth' }),
-                            description: 'max depth (0 for unlimited)',
-                            description_localizations: conv_en_to_en_US({ en: 'max depth (0 for unlimited)' }),
-                            type: ApplicationCommandOptionType.Integer,
-                            required: true,
-                            min_value: 0,
-                            max_value: 10,
-                        },
-                    ],
-                },
-                {
-                    name: 'legacymode',
-                    name_localizations: conv_en_to_en_US(commandNameLocales.legacy_mode),
-                    description: 'legacy mode',
-                    description_localizations: conv_en_to_en_US(descriptionLocales.settingsLegacyMode),
-                    type: ApplicationCommandOptionType.Subcommand,
-                    options: [boolOption],
-                },
-                {
-                    name: 'passivemode',
-                    name_localizations: conv_en_to_en_US(commandNameLocales.passive_mode),
-                    description: 'passive mode',
-                    description_localizations: conv_en_to_en_US(descriptionLocales.settingsPassiveMode),
-                    type: ApplicationCommandOptionType.Subcommand,
-                    options: [boolOption],
-                },
-                {
-                    name: 'secondaryextractmode',
-                    name_localizations: conv_en_to_en_US(commandNameLocales.secondary_extract_mode),
-                    description: 'secondary extract mode',
-                    description_localizations: conv_en_to_en_US(descriptionLocales.settingsSecondaryExtractMode),
-                    type: ApplicationCommandOptionType.Subcommand,
-                    options: [boolOption],
-                },
-                {
-                    name: 'secondaryextracttarget',
-                    name_localizations: conv_en_to_en_US(commandNameLocales.secondaryextracttarget),
-                    description: 'secondary extract target',
-                    description_localizations: conv_en_to_en_US(descriptionLocales.settingsSecondaryExtractTarget),
-                    type: ApplicationCommandOptionType.Subcommand,
-                    options: [
-                        {
-                            name: 'multipleimages',
-                            name_localizations: conv_en_to_en_US(commandNameLocales.multipleimages),
-                            description: 'multiple images',
-                            type: ApplicationCommandOptionType.Boolean,
-                            required: false,
-                        },
-                        {
-                            name: 'video',
-                            name_localizations: conv_en_to_en_US(commandNameLocales.video),
-                            description: 'video',
-                            type: ApplicationCommandOptionType.Boolean,
-                            required: false,
-                        },
-                    ],
+                    name: 'depth',
+                    name_localizations: conv_en_to_en_US({ en: 'depth' }),
+                    description: 'max depth (0 for unlimited)',
+                    description_localizations: conv_en_to_en_US({ en: 'max depth (0 for unlimited)' }),
+                    type: ApplicationCommandOptionType.Integer,
+                    required: true,
+                    min_value: 0,
+                    max_value: 10,
                 },
             ],
         },
         {
-            name: 'pixiv',
-            name_localizations: conv_en_to_en_US(commandNameLocales.pixiv),
-            description: 'pixiv settings',
-            description_localizations: conv_en_to_en_US(descriptionLocales.settingsPixiv),
-            type: ApplicationCommandOptionType.SubcommandGroup,
+            name: 'passivemode',
+            name_localizations: conv_en_to_en_US(commandNameLocales.passive_mode),
+            description: 'passive mode',
+            description_localizations: conv_en_to_en_US(descriptionLocales.settingsPassiveMode),
+            type: ApplicationCommandOptionType.Subcommand,
+            options: [boolOption],
+        },
+        {
+            name: 'secondaryextractmode',
+            name_localizations: conv_en_to_en_US(commandNameLocales.secondary_extract_mode),
+            description: 'secondary extract mode',
+            description_localizations: conv_en_to_en_US(descriptionLocales.settingsSecondaryExtractMode),
+            type: ApplicationCommandOptionType.Subcommand,
+            options: [boolOption],
+        },
+        {
+            name: 'secondaryextracttarget',
+            name_localizations: conv_en_to_en_US(commandNameLocales.secondaryextracttarget),
+            description: 'secondary extract target',
+            description_localizations: conv_en_to_en_US(descriptionLocales.settingsSecondaryExtractTarget),
+            type: ApplicationCommandOptionType.Subcommand,
             options: [
-                ...buildCommonOptions(false),
                 {
-                    name: 'images_per_step',
-                    name_localizations: conv_en_to_en_US(commandNameLocales.images_per_step),
+                    name: 'multipleimages',
+                    name_localizations: conv_en_to_en_US(commandNameLocales.multipleimages),
+                    description: 'multiple images',
+                    type: ApplicationCommandOptionType.Boolean,
+                    required: false,
+                },
+                {
+                    name: 'video',
+                    name_localizations: conv_en_to_en_US(commandNameLocales.video),
+                    description: 'video',
+                    type: ApplicationCommandOptionType.Boolean,
+                    required: false,
+                },
+            ],
+        },
+    ];
+}
+
+function buildPixivOptions() {
+    return [
+        {
+            name: 'images_per_step',
+            name_localizations: conv_en_to_en_US(commandNameLocales.images_per_step),
+            description: '4 or 10 images per step',
+            description_localizations: conv_en_to_en_US(descriptionLocales.settingsPixivImagesPerStep),
+            type: ApplicationCommandOptionType.Subcommand,
+            options: [
+                {
+                    name: 'value',
+                    name_localizations: conv_en_to_en_US(commandNameLocales.value),
                     description: '4 or 10 images per step',
-                    description_localizations: conv_en_to_en_US(descriptionLocales.settingsPixivImagesPerStep),
-                    type: ApplicationCommandOptionType.Subcommand,
-                    options: [
-                        {
-                            name: 'value',
-                            name_localizations: conv_en_to_en_US(commandNameLocales.value),
-                            description: '4 or 10 images per step',
-                            description_localizations: conv_en_to_en_US(descriptionLocales.settingsPixivImagesPerStepValue),
-                            type: ApplicationCommandOptionType.Integer,
-                            required: true,
-                            choices: [
-                                { name: '4', value: 4 },
-                                { name: '10', value: 10 },
-                            ],
-                        },
+                    description_localizations: conv_en_to_en_US(descriptionLocales.settingsPixivImagesPerStepValue),
+                    type: ApplicationCommandOptionType.Integer,
+                    required: true,
+                    choices: [
+                        { name: '4', value: 4 },
+                        { name: '10', value: 10 },
                     ],
                 },
             ],
         },
-    ],
+    ];
+}
+
+function buildProviderOptions(provider) {
+    return [
+        ...buildCommonOptions(provider.id === 'twitter'),
+        ...(provider.id === 'twitter' ? buildTwitterOptions() : []),
+        ...(provider.id === 'pixiv' ? buildPixivOptions() : []),
+    ];
+}
+
+function buildProviderGroup(provider) {
+    const group = {
+        name: provider.id,
+        description: `${provider.id} settings`,
+        type: ApplicationCommandOptionType.SubcommandGroup,
+        options: buildProviderOptions(provider),
+    };
+
+    if (provider.id === 'pixiv') {
+        group.name_localizations = conv_en_to_en_US(commandNameLocales.pixiv);
+        group.description_localizations = conv_en_to_en_US(descriptionLocales.settingsPixiv);
+    }
+
+    return group;
+}
+
+function sortProvidersForSettings(providers) {
+    return [...providers].sort((a, b) => {
+        if (a.id === 'twitter') return -1;
+        if (b.id === 'twitter') return 1;
+        return a.id.localeCompare(b.id);
+    });
+}
+
+function buildSettingsDefinition() {
+    return {
+        name: 'settings',
+        name_localizations: conv_en_to_en_US(commandNameLocales.settings),
+        description: 'change settings',
+        description_localizations: conv_en_to_en_US(descriptionLocales.settingscommand),
+        options: sortProvidersForSettings(loadProviders()).map(buildProviderGroup),
+    };
+}
+
+module.exports.definition = buildSettingsDefinition();
+module.exports._internal = {
+    buildSettingsDefinition,
+    buildProviderOptions,
+    sortProvidersForSettings,
 };

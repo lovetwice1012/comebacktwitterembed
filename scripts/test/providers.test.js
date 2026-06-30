@@ -30,6 +30,7 @@ test('loader: instagram provider is registered with required keys', () => {
     assert.ok(instagram.urlPattern instanceof RegExp);
     assert.ok(instagram.urlPattern.global, 'urlPattern must have global flag');
     assert.equal(typeof instagram.extract, 'function');
+    assert.equal(instagram.enabledByDefault, false);
 });
 
 test('loader: extractAllUrls returns provider-tagged matches', () => {
