@@ -48,6 +48,13 @@ test('loader: extractAllUrls detects instagram media URLs', () => {
     assert.equal(matches[1].provider.id, 'instagram');
 });
 
+test('loader: extractAllUrls detects instagram profile URLs', () => {
+    const matches = loader.extractAllUrls('profile https://www.instagram.com/artist.profile/ not https://www.instagram.com/accounts/login/');
+    assert.equal(matches.length, 1);
+    assert.equal(matches[0].provider.id, 'instagram');
+    assert.equal(matches[0].url, 'https://www.instagram.com/artist.profile/');
+});
+
 test('loader: extractAllUrls returns twitch clip matches', () => {
     const matches = loader.extractAllUrls('clip https://clips.twitch.tv/SampleClip-abc_123 and https://www.twitch.tv/u/clip/OtherClip-1');
     assert.equal(matches.length, 2);
@@ -58,11 +65,12 @@ test('loader: extractAllUrls returns twitch clip matches', () => {
 });
 
 test('loader: cleanContent strips bracketed and spoiler-wrapped urls of all providers', () => {
-    const input = 'a <https://twitter.com/u/1> b ||https://x.com/u/2|| c <https://clips.twitch.tv/SampleClip-abc_123> d https://twitter.com/u/3 e';
+    const input = 'a <https://twitter.com/u/1> b ||https://x.com/u/2|| c <https://clips.twitch.tv/SampleClip-abc_123> d ||https://www.instagram.com/artist.profile/|| e https://twitter.com/u/3 f';
     const cleaned = loader.cleanContent(input);
     assert.ok(!cleaned.includes('<https://twitter.com/u/1>'));
     assert.ok(!cleaned.includes('||https://x.com/u/2||'));
     assert.ok(!cleaned.includes('<https://clips.twitch.tv/SampleClip-abc_123>'));
+    assert.ok(!cleaned.includes('||https://www.instagram.com/artist.profile/||'));
     assert.ok(cleaned.includes('https://twitter.com/u/3'));
 });
 

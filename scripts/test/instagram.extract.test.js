@@ -161,6 +161,54 @@ test('instagram extract: falls back to oEmbed thumbnail when embed HTML has no m
     assert.equal(result[0].embeds[0].image.url, 'https://scontent.cdninstagram.com/v/t51.2885-15/fallback.jpg');
 });
 
+test('instagram extract: profile links build a profile card', async () => {
+    const requestedUrls = [];
+    const provider = loadInstagramProviderWithFetch(async (url) => {
+        const rawUrl = String(url);
+        requestedUrls.push(rawUrl);
+        if (rawUrl.includes('/api/v1/users/web_profile_info/')) {
+            return {
+                ok: true,
+                text: async () => JSON.stringify({
+                    data: {
+                        user: {
+                            username: 'artist.profile',
+                            full_name: 'Artist Profile',
+                            biography: 'profile bio',
+                            external_url: 'https://example.com',
+                            profile_pic_url_hd: 'https://scontent-nrt1-1.cdninstagram.com/v/t51.2885-19/profile.jpg',
+                            edge_owner_to_timeline_media: { count: 12 },
+                            edge_followed_by: { count: 3456 },
+                            edge_follow: { count: 78 },
+                        },
+                    },
+                }),
+            };
+        }
+        throw new Error(`Unexpected profile fetch: ${rawUrl}`);
+    });
+
+    const result = await provider.extract(
+        createMessage('https://www.instagram.com/artist.profile/'),
+        'https://www.instagram.com/artist.profile/',
+        {}
+    );
+
+    assert.ok(Array.isArray(result));
+    assert.equal(requestedUrls[0], 'https://www.instagram.com/api/v1/users/web_profile_info/?username=artist.profile');
+    assert.equal(result[0].embeds[0].title, 'Artist Profile (@artist.profile)');
+    assert.equal(result[0].embeds[0].url, 'https://www.instagram.com/artist.profile/');
+    assert.equal(result[0].embeds[0].thumbnail.url, 'https://scontent.cdninstagram.com/v/t51.2885-19/profile.jpg');
+    assert.equal(result[0].embeds[0].description.includes('profile bio'), true);
+    assert.equal(result[0].embeds[0].description.includes('[Website](https://example.com)'), true);
+    assert.deepEqual(result[0].embeds[0].fields.map(field => [field.name, field.value]), [
+        ['Posts', '12'],
+        ['Followers', '3,456'],
+        ['Following', '78'],
+    ]);
+    assert.equal(result[0].components[0].components[1].data.custom_id, 'delete:instagram');
+});
+
 test('instagram extract: blocked GraphQL fallback returns null without logging a stack', async () => {
     const provider = loadInstagramProviderWithFetch(async (url) => {
         if (String(url).includes('/graphql/query/')) {

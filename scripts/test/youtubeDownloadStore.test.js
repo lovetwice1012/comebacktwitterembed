@@ -68,3 +68,27 @@ test('youtube download store builds the requested public download URL', () => {
         fs.rmSync(root, { recursive: true, force: true });
     }
 });
+
+test('youtube download store uses audio-only format for YouTube Music links', () => {
+    const presets = store._internal.downloadPresetsForUrl('https://music.youtube.com/watch?v=dQw4w9WgXcQ');
+
+    assert.deepEqual(presets, [{
+        formatCode: '774/bestaudio',
+        presetKey: '774-opus',
+        audioOption: 'none',
+    }]);
+    assert.equal(
+        store._internal.requestBodyForPreset('https://music.youtube.com/watch?v=dQw4w9WgXcQ', presets[0]).formatCode,
+        '774/bestaudio'
+    );
+});
+
+test('youtube download store uses the best merged format for regular YouTube videos', () => {
+    const presets = store._internal.downloadPresetsForUrl('https://www.youtube.com/watch?v=dQw4w9WgXcQ');
+
+    assert.deepEqual(presets, [{
+        formatCode: 'bestvideo+bestaudio/best',
+        presetKey: 'best',
+        audioOption: 'none',
+    }]);
+});

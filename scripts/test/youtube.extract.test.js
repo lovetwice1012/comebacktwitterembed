@@ -119,6 +119,94 @@ function playerResponseHtml() {
     return `<html><script>var ytInitialPlayerResponse = ${JSON.stringify(player)};</script></html>`;
 }
 
+function initialDataHtml(data, meta = {}) {
+    const tags = Object.entries(meta)
+        .map(([name, value]) => `<meta property="${name}" content="${String(value).replace(/"/g, '&quot;')}">`)
+        .join('');
+    return `<html><head>${tags}</head><script>var ytInitialData = ${JSON.stringify(data)};</script></html>`;
+}
+
+function playlistInitialDataHtml() {
+    return initialDataHtml({
+        metadata: {
+            playlistMetadataRenderer: {
+                title: 'Fallback Playlist',
+                description: 'Fallback playlist description',
+            },
+        },
+        header: {
+            playlistHeaderRenderer: {
+                title: { simpleText: 'Fallback Playlist' },
+                numVideosText: { simpleText: '2 videos' },
+                viewCountText: { simpleText: '1,234 views' },
+                ownerText: {
+                    runs: [{
+                        text: 'Fallback Owner',
+                        navigationEndpoint: {
+                            browseEndpoint: { browseId: 'UCfallbackPlaylist' },
+                            commandMetadata: { webCommandMetadata: { url: '/channel/UCfallbackPlaylist' } },
+                        },
+                    }],
+                },
+                playlistHeaderBanner: {
+                    heroPlaylistThumbnailRenderer: {
+                        thumbnail: {
+                            thumbnails: [{ url: 'https://i.ytimg.com/vi/fallback/maxresdefault.jpg', width: 1280, height: 720 }],
+                        },
+                    },
+                },
+            },
+        },
+        contents: [
+            {
+                playlistVideoRenderer: {
+                    title: { runs: [{ text: 'Fallback first video' }] },
+                    videoId: 'fallbackone',
+                    thumbnail: { thumbnails: [{ url: 'https://i.ytimg.com/vi/fallbackone/hqdefault.jpg', width: 480, height: 360 }] },
+                },
+            },
+            {
+                playlistVideoRenderer: {
+                    title: { runs: [{ text: 'Fallback second video' }] },
+                    videoId: 'fallbacktwo',
+                    thumbnail: { thumbnails: [] },
+                },
+            },
+        ],
+    });
+}
+
+function channelInitialDataHtml() {
+    return initialDataHtml({
+        metadata: {
+            channelMetadataRenderer: {
+                title: 'Fallback Channel',
+                description: 'Fallback channel description',
+                externalId: 'UCfallback',
+                channelUrl: 'https://www.youtube.com/channel/UCfallback',
+                avatar: { thumbnails: [{ url: 'https://yt3.example/fallback-avatar.jpg', width: 88, height: 88 }] },
+            },
+        },
+        header: {
+            c4TabbedHeaderRenderer: {
+                title: 'Fallback Channel',
+                subscriberCountText: { simpleText: '123K subscribers' },
+                viewCountText: { simpleText: '4,567 views' },
+                banner: { thumbnails: [{ url: 'https://yt3.example/fallback-banner.jpg', width: 2120, height: 350 }] },
+                badges: [{ metadataBadgeRenderer: { style: 'BADGE_STYLE_TYPE_VERIFIED' } }],
+            },
+        },
+        contents: [
+            {
+                videoRenderer: {
+                    title: { runs: [{ text: 'Fallback newest upload' }] },
+                    videoId: 'newestvideo1',
+                },
+            },
+        ],
+    });
+}
+
 test('youtube extract: builds a self-owned video embed from Invidious metadata', async () => {
     const requests = [];
     const provider = loadYouTubeProviderWithFetch(async (url) => {
@@ -195,6 +283,33 @@ test('youtube extract: builds playlist embeds from playlist metadata', async () 
     );
 });
 
+test('youtube extract: falls back to YouTube page metadata for playlists', async () => {
+    const requests = [];
+    const provider = loadYouTubeProviderWithFetch(async (url) => {
+        requests.push(url);
+        if (url.includes('/api/v1/playlists/PL123456789012345678?hl=en')) {
+            return okJson({ error: 'Playlist unavailable' });
+        }
+        if (url.includes('https://www.youtube.com/playlist?list=PL123456789012345678')) {
+            return { ok: true, text: async () => playlistInitialDataHtml() };
+        }
+        throw new Error(`unexpected url ${url}`);
+    });
+
+    const url = 'https://www.youtube.com/playlist?list=PL123456789012345678';
+    const result = await provider.extract(createMessage(url), url, {});
+    const embed = result[0].embeds[0];
+
+    assert.ok(requests.some(request => request.includes('/api/v1/playlists/PL123456789012345678?hl=en')));
+    assert.ok(requests.some(request => request.includes('https://www.youtube.com/playlist?list=PL123456789012345678')));
+    assert.equal(embed.title, 'Fallback Playlist');
+    assert.ok(embed.description.includes('Fallback playlist description'));
+    assert.ok(embed.description.includes('1. Fallback first video'));
+    assert.ok(embed.fields.some(field => field.name === 'Videos' && field.value === '2'));
+    assert.ok(embed.fields.some(field => field.name === 'Views' && field.value === '1,234'));
+    assert.equal(embed.image.url, 'https://i.ytimg.com/vi/fallback/maxresdefault.jpg');
+});
+
 test('youtube extract: resolves handle urls before building channel embeds', async () => {
     const requests = [];
     const provider = loadYouTubeProviderWithFetch(async (url) => {
@@ -214,6 +329,33 @@ test('youtube extract: resolves handle urls before building channel embeds', asy
     assert.ok(embed.description.includes('1. Newest upload'));
     assert.equal(embed.thumbnail.url, 'https://yt3.example/avatar.jpg');
     assert.equal(embed.image.url, 'https://yt3.example/banner.jpg');
+});
+
+test('youtube extract: falls back to YouTube page metadata for channels', async () => {
+    const requests = [];
+    const provider = loadYouTubeProviderWithFetch(async (url) => {
+        requests.push(url);
+        if (url.includes('/api/v1/resolveurl?')) {
+            return { ok: false, status: 404 };
+        }
+        if (url.includes('https://www.youtube.com/@fallback')) {
+            return { ok: true, text: async () => channelInitialDataHtml() };
+        }
+        throw new Error(`unexpected url ${url}`);
+    });
+
+    const url = 'https://www.youtube.com/@fallback';
+    const result = await provider.extract(createMessage(url), url, {});
+    const embed = result[0].embeds[0];
+
+    assert.ok(requests.some(request => request.includes('/api/v1/resolveurl?')));
+    assert.ok(requests.some(request => request.includes('https://www.youtube.com/@fallback')));
+    assert.ok(embed.title.includes('Fallback Channel'));
+    assert.ok(embed.description.includes('Fallback channel description'));
+    assert.ok(embed.description.includes('1. Fallback newest upload'));
+    assert.ok(embed.fields.some(field => field.name === 'Subscribers' && field.value === '123,000'));
+    assert.equal(embed.thumbnail.url, 'https://yt3.example/fallback-avatar.jpg');
+    assert.equal(embed.image.url, 'https://yt3.example/fallback-banner.jpg');
 });
 
 test('youtube extract: honors reply, delete source, and anonymous settings', async () => {

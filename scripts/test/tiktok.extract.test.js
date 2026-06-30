@@ -37,20 +37,30 @@ function createMessage(content) {
     };
 }
 
-function pageHtml(itemStruct) {
+function hydrationHtml(defaultScope) {
     return [
         '<html><head></head><body>',
         '<script id="__UNIVERSAL_DATA_FOR_REHYDRATION__" type="application/json">',
-        JSON.stringify({
-            __DEFAULT_SCOPE__: {
-                'webapp.video-detail': {
-                    itemInfo: { itemStruct },
-                },
-            },
-        }),
+        JSON.stringify({ __DEFAULT_SCOPE__: defaultScope }),
         '</script>',
         '</body></html>',
     ].join('');
+}
+
+function videoPageHtml(itemStruct) {
+    return hydrationHtml({
+        'webapp.video-detail': {
+            itemInfo: { itemStruct },
+        },
+    });
+}
+
+function profilePageHtml(userInfo) {
+    return hydrationHtml({
+        'webapp.user-detail': {
+            userInfo,
+        },
+    });
 }
 
 function createVideoData(overrides = {}) {
@@ -82,10 +92,28 @@ function createVideoData(overrides = {}) {
     };
 }
 
+function createProfileData(overrides = {}) {
+    return {
+        user: {
+            nickname: 'Creator',
+            uniqueId: 'creator',
+            signature: 'profile bio',
+            avatarMedium: 'https://image.example/avatar.jpg',
+        },
+        stats: {
+            followerCount: 12345,
+            followingCount: 67,
+            heartCount: 890000,
+            videoCount: 42,
+        },
+        ...overrides,
+    };
+}
+
 test('tiktok extract: builds self-owned embed and video attachment without reposting edited url', async () => {
     const provider = loadTikTokProviderWithFetch(async (requestUrl) => {
         if (requestUrl === 'https://www.tiktok.com/@i/video/7332187682480590112') {
-            return { text: async () => pageHtml(createVideoData()) };
+            return { text: async () => videoPageHtml(createVideoData()) };
         }
         if (requestUrl === 'https://video.example/play') {
             return {
@@ -114,7 +142,7 @@ test('tiktok extract: builds image embeds for photo posts', async () => {
     const provider = loadTikTokProviderWithFetch(async (requestUrl) => {
         if (requestUrl === 'https://www.tiktok.com/@i/video/7335753580093164833') {
             return {
-                text: async () => pageHtml(createVideoData({
+                text: async () => videoPageHtml(createVideoData({
                     id: '7335753580093164833',
                     video: { duration: 0 },
                     imagePost: {
@@ -140,6 +168,53 @@ test('tiktok extract: builds image embeds for photo posts', async () => {
     assert.equal(result[0].embeds[0].url, 'https://www.tiktok.com/@creator/photo/7335753580093164833');
 });
 
+test('tiktok extract: builds profile embeds for account links', async () => {
+    const provider = loadTikTokProviderWithFetch(async (requestUrl) => {
+        if (requestUrl === 'https://www.tiktok.com/@creator') {
+            return { text: async () => profilePageHtml(createProfileData()) };
+        }
+        throw new Error(`unexpected fetch: ${requestUrl}`);
+    });
+
+    const url = 'https://www.tiktok.com/@creator?lang=en';
+    const result = await provider.extract(createMessage(url), url, {});
+
+    assert.equal(result[0].content, undefined);
+    assert.deepEqual(result[0].files, undefined);
+    assert.equal(result[0].embeds.length, 1);
+    assert.equal(result[0].embeds[0].title, 'Creator (@creator)');
+    assert.equal(result[0].embeds[0].url, 'https://www.tiktok.com/@creator');
+    assert.equal(result[0].embeds[0].description, 'profile bio');
+    assert.equal(result[0].embeds[0].thumbnail.url, 'https://image.example/avatar.jpg');
+    assert.ok(result[0].embeds[0].fields.some(field => field.name === 'Followers' && field.value === '12.3K'));
+    assert.equal(result[0].suppressSourceEmbeds, true);
+});
+
+test('tiktok extract: resolves short links to profile embeds', async () => {
+    const provider = loadTikTokProviderWithFetch(async (requestUrl) => {
+        if (requestUrl === 'https://vm.tiktok.com/profilelink/') {
+            return {
+                headers: {
+                    get: name => name.toLowerCase() === 'location'
+                        ? 'https://www.tiktok.com/@creator'
+                        : null,
+                },
+            };
+        }
+        if (requestUrl === 'https://www.tiktok.com/@creator') {
+            return { text: async () => profilePageHtml(createProfileData()) };
+        }
+        throw new Error(`unexpected fetch: ${requestUrl}`);
+    });
+
+    const url = 'https://vm.tiktok.com/profilelink/';
+    const result = await provider.extract(createMessage(url), url, {});
+
+    assert.equal(result[0].content, undefined);
+    assert.equal(result[0].embeds[0].url, 'https://www.tiktok.com/@creator');
+    assert.equal(result[0].embeds[0].title, 'Creator (@creator)');
+});
+
 test('tiktok extract: resolves short links internally before scraping', async () => {
     const provider = loadTikTokProviderWithFetch(async (requestUrl) => {
         if (requestUrl === 'https://vm.tiktok.com/ZPRKrbUB1/') {
@@ -152,7 +227,7 @@ test('tiktok extract: resolves short links internally before scraping', async ()
             };
         }
         if (requestUrl === 'https://www.tiktok.com/@i/video/7332187682480590112') {
-            return { text: async () => pageHtml(createVideoData()) };
+            return { text: async () => videoPageHtml(createVideoData()) };
         }
         if (requestUrl === 'https://video.example/play') {
             return { status: 200, headers: { get: () => null } };
@@ -171,7 +246,7 @@ test('tiktok extract: resolves short links internally before scraping', async ()
 test('tiktok extract: honors reply and delete source settings', async () => {
     const provider = loadTikTokProviderWithFetch(async (requestUrl) => {
         if (requestUrl === 'https://www.tiktok.com/@i/video/7332187682480590112') {
-            return { text: async () => pageHtml(createVideoData()) };
+            return { text: async () => videoPageHtml(createVideoData()) };
         }
         if (requestUrl === 'https://video.example/play') {
             return { status: 200, headers: { get: () => null } };

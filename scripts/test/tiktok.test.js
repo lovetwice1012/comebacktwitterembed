@@ -19,6 +19,7 @@ test('loader: extractAllUrls picks up tiktok variants', () => {
     const samples = [
         'https://www.tiktok.com/@user/video/7332187682480590112',
         'https://www.tiktok.com/@user/photo/7335753580093164833',
+        'https://www.tiktok.com/@user',
         'https://www.tiktok.com/@user/live',
         'https://m.tiktok.com/v/7332187682480590112.html',
         'https://www.tiktok.com/t/ZPRKrbUB1/',

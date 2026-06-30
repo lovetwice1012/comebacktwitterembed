@@ -21,7 +21,8 @@ const DEFAULT_ROOT_DIR = path.join(__dirname, '..', 'data', 'youtube_downloads')
 const DEFAULT_API_BASE_URL = 'https://yt-dlp.arcdc.jp';
 const DEFAULT_PUBLIC_BASE_URL = 'https://download.youtube.cbte.sprink.cloud';
 const ROUTE_PREFIX = '/youtube-downloads';
-const MP4_720_FORMAT = 'bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720][ext=mp4]/best[height<=720]';
+const BEST_FORMAT = 'bestvideo+bestaudio/best';
+const MUSIC_AUDIO_FORMAT = '774/bestaudio';
 
 let rootDirOverride = null;
 let publicBaseUrlOverride = null;
@@ -68,10 +69,49 @@ function ttlMs() {
 
 function downloadPreset() {
     return {
-        formatCode: youtubeDownloadConfig().formatCode || MP4_720_FORMAT,
-        presetKey: youtubeDownloadConfig().presetKey || 'mp4-720',
-        audioOption: youtubeDownloadConfig().audioOption || 'none',
+        formatCode: BEST_FORMAT,
+        presetKey: 'best',
+        audioOption: 'none',
     };
+}
+
+function musicDownloadPreset() {
+    return {
+        formatCode: MUSIC_AUDIO_FORMAT,
+        presetKey: '774-opus',
+        audioOption: 'none',
+    };
+}
+
+function isYouTubeMusicUrl(url) {
+    try {
+        return new URL(url).hostname.toLowerCase() === 'music.youtube.com';
+    } catch {
+        return false;
+    }
+}
+
+function presetKey(preset) {
+    return JSON.stringify({
+        formatCode: preset?.formatCode || '',
+        presetKey: preset?.presetKey || null,
+        audioOption: preset?.audioOption || 'none',
+    });
+}
+
+function uniquePresets(presets) {
+    const seen = new Set();
+    return presets.filter((preset) => {
+        const key = presetKey(preset);
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+    });
+}
+
+function downloadPresetsForUrl(url) {
+    if (isYouTubeMusicUrl(url)) return [musicDownloadPreset()];
+    return uniquePresets([downloadPreset()]);
 }
 
 async function ensureDirs() {
@@ -190,8 +230,19 @@ async function cleanupExpiredDownloads(nowMs = Date.now()) {
     return Object.keys(index).length;
 }
 
-async function startRemoteDownload(url) {
-    const body = { url, ...downloadPreset() };
+function requestBodyForPreset(url, preset) {
+    const body = {
+        url,
+        formatCode: preset.formatCode,
+        audioOption: preset.audioOption || 'none',
+    };
+    if (preset.presetKey) body.presetKey = preset.presetKey;
+    else body.presetKey = null;
+    return body;
+}
+
+async function startRemoteDownload(url, preset) {
+    const body = requestBodyForPreset(url, preset);
     const res = await fetch(`${getApiBaseUrl()}/api/download`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -210,15 +261,59 @@ async function startRemoteDownload(url) {
     return json.jobId;
 }
 
+async function readErrorBody(res) {
+    try {
+        const text = await res.text();
+        return String(text || '').slice(0, 1000);
+    } catch {
+        return '';
+    }
+}
+
 async function fetchRemoteFile(jobId) {
     const res = await fetch(`${getApiBaseUrl()}/api/download?jobId=${encodeURIComponent(jobId)}`);
     if (!res.ok) {
-        const err = Object.assign(new Error(`yt-dlp file fetch returned ${res.status}`), {
+        const body = await readErrorBody(res);
+        const details = body ? `: ${body}` : '';
+        const err = Object.assign(new Error(`yt-dlp file fetch returned ${res.status}${details}`), {
             status: res.status,
+            stage: 'file',
+            body,
         });
         throw err;
     }
     return res;
+}
+
+function shouldRetryWithNextPreset(err, presetIndex, presets) {
+    if (presetIndex >= presets.length - 1) return false;
+    if (err?.stage !== 'file') return false;
+    return Number(err.status) === 500;
+}
+
+function fallbackFilenameForPreset(token, preset) {
+    const formatCode = String(preset?.formatCode || '');
+    const audioOption = String(preset?.audioOption || 'none');
+    if (formatCode === MUSIC_AUDIO_FORMAT || (audioOption !== 'none' && /audio|774|bestaudio/.test(formatCode))) {
+        return `youtube-${token}.webm`;
+    }
+    return `youtube-${token}.mp4`;
+}
+
+async function createRemoteDownload(url, presets) {
+    let lastError = null;
+    for (let i = 0; i < presets.length; i++) {
+        const preset = presets[i];
+        try {
+            const jobId = await startRemoteDownload(url, preset);
+            const res = await fetchRemoteFile(jobId);
+            return { jobId, res, preset };
+        } catch (err) {
+            lastError = err;
+            if (!shouldRetryWithNextPreset(err, i, presets)) break;
+        }
+    }
+    throw lastError || new Error('yt-dlp download failed');
 }
 
 async function downloadYouTubeToCache(url, nowMs = Date.now()) {
@@ -226,9 +321,9 @@ async function downloadYouTubeToCache(url, nowMs = Date.now()) {
     await ensureDirs();
 
     const token = crypto.randomBytes(18).toString('base64url');
-    const jobId = await startRemoteDownload(url);
-    const res = await fetchRemoteFile(jobId);
-    const fallbackName = `youtube-${token}.mp4`;
+    const presets = downloadPresetsForUrl(url);
+    const { jobId, res, preset } = await createRemoteDownload(url, presets);
+    const fallbackName = fallbackFilenameForPreset(token, preset);
     const filename = filenameFromDisposition(res.headers?.get?.('content-disposition'), fallbackName);
     const dir = recordDir(token);
     await fsp.mkdir(dir, { recursive: true });
@@ -247,6 +342,9 @@ async function downloadYouTubeToCache(url, nowMs = Date.now()) {
             sizeBytes: stat.size,
             createdAtMs: nowMs,
             expiresAtMs: nowMs + ttlMs(),
+            formatCode: preset.formatCode,
+            presetKey: preset.presetKey || null,
+            audioOption: preset.audioOption || 'none',
         };
         await updateIndex(index => {
             index[token] = record;
@@ -331,11 +429,16 @@ module.exports = {
     startCleanupTimer,
     stopCleanupTimer,
     _internal: {
+        downloadPresetsForUrl,
         downloadPreset,
+        fallbackFilenameForPreset,
         filenameFromDisposition,
         getFilesDir,
         getIndexPath,
         getRootDir,
+        isYouTubeMusicUrl,
+        musicDownloadPreset,
+        requestBodyForPreset,
         readIndex,
         safeFilename,
         ttlMs,

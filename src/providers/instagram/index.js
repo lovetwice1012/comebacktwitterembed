@@ -6,9 +6,15 @@ const { videoExtensions } = require('../../utils');
 const { recordProviderError } = require('../../errorTracking');
 
 const INSTAGRAM_URL_PATTERN =
-    /https?:\/\/(?:www\.)?instagram\.com\/(?:[A-Za-z0-9_.-]+\/)?(?:(?:p|reel|reels|tv)\/[A-Za-z0-9_-]+(?:\/\d+)?|share(?:\/reel)?\/[A-Za-z0-9_-]+)\/?(?:\?[^\s<>|]*)?/g;
+    /https?:\/\/(?:www\.)?instagram\.com\/(?:(?:[A-Za-z0-9_.-]+\/)?(?:(?:p|reel|reels|tv)\/[A-Za-z0-9_-]+(?:\/\d+)?|share(?:\/reel)?\/[A-Za-z0-9_-]+)|(?!(?:p|reel|reels|tv|share|stories|explore|accounts|about|api|graphql|oauth|developer|directory|emails|challenge|web|static|privacy|terms|legal)(?:\/|$))[A-Za-z0-9._]{1,30})\/?(?:\?[^\s<>|]*)?/g;
+const INSTAGRAM_CLEAN_PATTERN = new RegExp(`<${INSTAGRAM_URL_PATTERN.source}>|\\|\\|${INSTAGRAM_URL_PATTERN.source}\\|\\|`, INSTAGRAM_URL_PATTERN.flags);
 
 const MEDIA_ROUTES = new Set(['p', 'reel', 'reels', 'tv']);
+const RESERVED_PROFILE_ROUTES = new Set([
+    'p', 'reel', 'reels', 'tv', 'share', 'stories', 'explore', 'accounts',
+    'about', 'api', 'graphql', 'oauth', 'developer', 'directory', 'emails',
+    'challenge', 'web', 'static', 'privacy', 'terms', 'legal',
+]);
 const EMBED_COLOR = 0xE4405F;
 const MAX_MEDIA_PER_MESSAGE = 10;
 const DESCRIPTION_MAX_LENGTH = 3500;
@@ -45,6 +51,10 @@ const STR = {
     showAttachmentsAsEmbedButton: { ja: '\u753b\u50cf\u3092\u57cb\u3081\u8fbc\u307f\u753b\u50cf\u3068\u3057\u3066\u8868\u793a\u3059\u308b', en: 'Show media in embeds image' },
     translateButton:              { ja: '\u7ffb\u8a33', en: 'Translate' },
     deleteButton:                 { ja: '\u524a\u9664', en: 'Delete' },
+    postsField:                   { ja: '\u6295\u7a3f', en: 'Posts' },
+    followersField:               { ja: '\u30d5\u30a9\u30ed\u30ef\u30fc', en: 'Followers' },
+    followingField:               { ja: '\u30d5\u30a9\u30ed\u30fc\u4e2d', en: 'Following' },
+    websiteLink:                  { ja: '\u30a6\u30a7\u30d6\u30b5\u30a4\u30c8', en: 'Website' },
 };
 
 const dataCache = new Map();
@@ -67,13 +77,18 @@ function parseMediaIndex(value) {
     return Math.max(0, Number(value));
 }
 
+function isValidProfileUsername(username) {
+    return /^[A-Za-z0-9._]{1,30}$/.test(username)
+        && !RESERVED_PROFILE_ROUTES.has(username.toLowerCase());
+}
+
 function parseInstagramUrl(rawUrl) {
     let u;
     try { u = new URL(rawUrl); } catch { return null; }
     if (!isInstagramHost(u.hostname)) return null;
 
     const parts = u.pathname.split('/').filter(Boolean);
-    if (parts.length < 2) return null;
+    if (parts.length < 1) return null;
     const queryIndex = parseMediaIndex(u.searchParams.get('img_index'));
 
     if (parts[0] === 'share') {
@@ -105,10 +120,20 @@ function parseInstagramUrl(rawUrl) {
         };
     }
 
+    if (parts.length === 1 && isValidProfileUsername(parts[0])) {
+        return {
+            kind: 'profile',
+            username: parts[0],
+        };
+    }
+
     return null;
 }
 
 function buildCanonicalUrl(parsed) {
+    if (parsed.kind === 'profile') {
+        return `https://www.instagram.com/${parsed.username}/`;
+    }
     return `https://www.instagram.com/${parsed.route}/${parsed.shortcode}/`;
 }
 
@@ -543,6 +568,62 @@ async function fetchOEmbedData(parsed) {
     return normalizeOEmbedData(data);
 }
 
+function normalizeCount(value) {
+    const n = Number(value);
+    return Number.isFinite(n) && n >= 0 ? n : null;
+}
+
+function countFromPath(obj, path) {
+    const value = getPath(obj, path);
+    if (value && typeof value === 'object' && 'count' in value) return normalizeCount(value.count);
+    return normalizeCount(value);
+}
+
+function normalizeProfileData(data) {
+    const user = data?.data?.user;
+    if (!user || typeof user !== 'object' || !user.username) return null;
+
+    return {
+        username: user.username,
+        fullName: user.full_name || '',
+        biography: user.biography || user.biography_with_entities?.raw_text || '',
+        profilePicUrl: normalizeCdnUrl(user.profile_pic_url_hd || user.profile_pic_url || ''),
+        externalUrl: user.external_url || '',
+        isPrivate: user.is_private === true,
+        isVerified: user.is_verified === true,
+        posts: countFromPath(user, 'edge_owner_to_timeline_media'),
+        followers: countFromPath(user, 'edge_followed_by'),
+        following: countFromPath(user, 'edge_follow'),
+    };
+}
+
+async function fetchProfileData(username) {
+    const cacheKey = `profile:${username.toLowerCase()}`;
+    const cached = dataCache.get(cacheKey);
+    if (cached && cached.expiresAt > Date.now()) return cached.data;
+    if (cached) dataCache.delete(cacheKey);
+
+    const params = new URLSearchParams({ username });
+    const apiUrl = `https://www.instagram.com/api/v1/users/web_profile_info/?${params.toString()}`;
+    const res = await fetch(apiUrl, {
+        headers: {
+            ...REQUEST_HEADERS,
+            Accept: 'application/json,text/plain,*/*',
+            'X-IG-App-ID': '936619743392459',
+        },
+    });
+    if (!res.ok) {
+        /** @type {Error & {status?: number}} */
+        const err = new Error(`instagram profile ${res.status}`);
+        err.status = res.status;
+        throw err;
+    }
+
+    const profile = normalizeProfileData(tryParseJson(await res.text()));
+    if (profile) dataCache.set(cacheKey, { data: profile, expiresAt: Date.now() + CACHE_TTL_MS });
+    return profile;
+}
+
 function buildGraphqlBody(shortcode) {
     return new URLSearchParams({
         av: '0',
@@ -697,6 +778,48 @@ function buildBaseEmbed(data, canonicalUrl, lang, requesterName, selectedCount, 
     return embed;
 }
 
+function formatCount(value, lang) {
+    if (value === null || value === undefined) return null;
+    return new Intl.NumberFormat(lang === 'ja' ? 'ja-JP' : 'en-US').format(value);
+}
+
+function buildProfilePayload(profile, canonicalUrl, lang, requesterName) {
+    const descriptionParts = [];
+    if (profile.biography) descriptionParts.push(truncate(profile.biography, 1200));
+    if (profile.externalUrl) descriptionParts.push(`[${tr(STR.websiteLink, lang)}](${profile.externalUrl})`);
+    descriptionParts.push(`[${tr(STR.viewLink, lang)}](${canonicalUrl})`);
+
+    const title = profile.fullName
+        ? `${profile.fullName} (@${profile.username})`
+        : `@${profile.username}`;
+
+    /** @type {any} */
+    const embed = {
+        title,
+        url: canonicalUrl,
+        description: truncate(descriptionParts.filter(Boolean).join('\n\n'), DESCRIPTION_MAX_LENGTH),
+        color: EMBED_COLOR,
+        footer: { text: `${tr(STR.requesterPrefix, lang)}${requesterName} - Instagram` },
+    };
+
+    if (profile.profilePicUrl) embed.thumbnail = { url: profile.profilePicUrl };
+
+    const fields = [];
+    const posts = formatCount(profile.posts, lang);
+    const followers = formatCount(profile.followers, lang);
+    const following = formatCount(profile.following, lang);
+    if (posts !== null) fields.push({ name: tr(STR.postsField, lang), value: posts, inline: true });
+    if (followers !== null) fields.push({ name: tr(STR.followersField, lang), value: followers, inline: true });
+    if (following !== null) fields.push({ name: tr(STR.followingField, lang), value: following, inline: true });
+    if (fields.length > 0) embed.fields = fields;
+
+    return {
+        embeds: [embed],
+        files: [],
+        components: buildButtons(lang, 'profile', false),
+    };
+}
+
 function buildButtons(lang, mediaMode, includeSwitcher) {
     const rows = [];
     if (includeSwitcher) {
@@ -761,7 +884,45 @@ async function extract(message, url, s, opts) {
     const lang = (s.defaultLanguage ?? 'en') === 'ja' ? 'ja' : 'en';
 
     const parsed = await resolveParsedUrl(parseInstagramUrl(url));
-    if (!parsed || parsed.kind !== 'media') return null;
+    if (!parsed || (parsed.kind !== 'media' && parsed.kind !== 'profile')) return null;
+
+    const isAnon = s.anonymous_expand === true;
+    const requesterName = isAnon
+        ? tr(STR.anonRequester, lang)
+        : `${message.author?.username ?? message.user?.username}(id:${message.author?.id ?? message.user?.id})`;
+    const canonicalUrl = buildCanonicalUrl(parsed);
+
+    if (parsed.kind === 'profile') {
+        let profile;
+        try {
+            profile = await fetchProfileData(parsed.username);
+        } catch (err) {
+            recordProviderError('instagram', err, message, url, { endpointKey: 'instagram/profile' });
+            return null;
+        }
+        if (!profile) return null;
+
+        const bannedTarget = [profile.username, profile.fullName, profile.biography].filter(Boolean).join('\n');
+        if (containsBannedWord(bannedTarget, s.bannedWords)) return null;
+
+        const payload = buildProfilePayload(profile, canonicalUrl, lang, requesterName);
+        /** @type {import('../_types').SendStep} */
+        const step = {
+            embeds: payload.embeds,
+            files: payload.files,
+            components: payload.components,
+            allowedMentions: { repliedUser: false },
+            send: opts.forceSendMode || (s.alwaysreplyifpostedtweetlink === true ? 'reply-source' : 'channel'),
+        };
+
+        if (s.deletemessageifonlypostedtweetlink === true && message.content.trim() === url) {
+            step.deleteSource = true;
+        } else if (s.legacy_mode === true) {
+            step.suppressSourceEmbeds = true;
+        }
+
+        return [step];
+    }
 
     let data;
     try {
@@ -773,12 +934,6 @@ async function extract(message, url, s, opts) {
 
     if (containsBannedWord(data.caption || '', s.bannedWords)) return null;
 
-    const isAnon = s.anonymous_expand === true;
-    const requesterName = isAnon
-        ? tr(STR.anonRequester, lang)
-        : `${message.author?.username ?? message.user?.username}(id:${message.author?.id ?? message.user?.id})`;
-
-    const canonicalUrl = buildCanonicalUrl(parsed);
     const payload = buildMediaPayload(data, canonicalUrl, lang, requesterName, s, parsed.mediaIndex);
     if (!payload) return null;
 
@@ -805,7 +960,7 @@ const instagramProvider = {
     id: 'instagram',
     enabledByDefault: false,
     urlPattern: INSTAGRAM_URL_PATTERN,
-    cleanPattern: /<https?:\/\/(?:www\.)?instagram\.com\/(?:[A-Za-z0-9_.-]+\/)?(?:(?:p|reel|reels|tv)\/[A-Za-z0-9_-]+(?:\/\d+)?|share(?:\/reel)?\/[A-Za-z0-9_-]+)\/?(?:\?[^\s<>|]*)?>|\|\|https?:\/\/(?:www\.)?instagram\.com\/(?:[A-Za-z0-9_.-]+\/)?(?:(?:p|reel|reels|tv)\/[A-Za-z0-9_-]+(?:\/\d+)?|share(?:\/reel)?\/[A-Za-z0-9_-]+)\/?(?:\?[^\s<>|]*)?\|\|/g,
+    cleanPattern: INSTAGRAM_CLEAN_PATTERN,
     extract,
 };
 

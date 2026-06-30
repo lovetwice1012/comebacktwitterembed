@@ -13,6 +13,7 @@ const MAX_IMAGES_PER_MESSAGE = 10;
 const IMAGES_PER_GROUP = 4;
 const AWEME_ID_PATTERN = /^\d{1,25}$/;
 const AWEME_LINK_PATTERN = /\/@?([\w\d_.-]+)\/(video|photo)\/(\d{1,25})/;
+const PROFILE_LINK_PATTERN = /^\/@([\w\d_.-]+)\/?$/;
 
 const STR = {
     showMediaAsAttachmentsButton: { ja: 'Show media as attachments', en: 'Show media as attachments' },
@@ -24,8 +25,13 @@ const STR = {
     statsLikes:                   { ja: 'likes',                     en: 'likes' },
     statsComments:                { ja: 'comments',                  en: 'comments' },
     statsShares:                  { ja: 'shares',                    en: 'shares' },
+    profileFollowers:             { ja: 'Followers',                 en: 'Followers' },
+    profileFollowing:             { ja: 'Following',                 en: 'Following' },
+    profileLikes:                 { ja: 'Likes',                     en: 'Likes' },
+    profileVideos:                { ja: 'Videos',                    en: 'Videos' },
     imagesField:                  { ja: 'Images',                    en: 'Images' },
     fallbackTitle:                { ja: 'TikTok post',               en: 'TikTok post' },
+    fallbackProfileTitle:         { ja: 'TikTok profile',            en: 'TikTok profile' },
 };
 
 function tr(spec, lang) {
@@ -98,6 +104,16 @@ function parseTikTokUrl(rawUrl) {
         };
     }
 
+    const profileMatch = url.pathname.match(PROFILE_LINK_PATTERN);
+    if (profileMatch) {
+        return {
+            needsResolve: false,
+            id: profileMatch[1],
+            kind: 'profile',
+            canonicalUrl: `https://www.tiktok.com/@${profileMatch[1]}`,
+        };
+    }
+
     return { needsResolve: true, url: rawUrl };
 }
 
@@ -124,6 +140,16 @@ async function fetchVideoData(id) {
     const jsonText = extractJsonFromScript(html, '__UNIVERSAL_DATA_FOR_REHYDRATION__');
     const json = JSON.parse(jsonText);
     return json?.__DEFAULT_SCOPE__?.['webapp.video-detail']?.itemInfo?.itemStruct || null;
+}
+
+async function fetchProfileData(uniqueId) {
+    if (!/^[\w\d_.-]+$/.test(uniqueId)) return null;
+    const url = `https://www.tiktok.com/@${uniqueId}`;
+    const res = await fetch(url, { headers: commonHeaders() });
+    const html = await res.text();
+    const jsonText = extractJsonFromScript(html, '__UNIVERSAL_DATA_FOR_REHYDRATION__');
+    const json = JSON.parse(jsonText);
+    return json?.__DEFAULT_SCOPE__?.['webapp.user-detail']?.userInfo || null;
 }
 
 function pickFirstString(...values) {
@@ -258,6 +284,38 @@ function buildBaseEmbed(data, canonicalUrl, lang, requesterName) {
     return embed;
 }
 
+function buildProfileEmbed(profile, canonicalUrl, lang, requesterName) {
+    const user = profile?.user || {};
+    const stats = profile?.stats || {};
+    const uniqueId = user.uniqueId || canonicalUrl.split('/@')[1] || '';
+    const nickname = user.nickname || uniqueId || tr(STR.fallbackProfileTitle, lang);
+    const avatarUrl = pickFirstString(user.avatarMedium, user.avatarLarger, user.avatarThumb);
+    const fields = [
+        { name: tr(STR.profileFollowers, lang), value: formatNumber(stats.followerCount), inline: true },
+        { name: tr(STR.profileFollowing, lang), value: formatNumber(stats.followingCount), inline: true },
+        { name: tr(STR.profileLikes, lang), value: formatNumber(stats.heartCount), inline: true },
+        { name: tr(STR.profileVideos, lang), value: formatNumber(stats.videoCount), inline: true },
+    ];
+
+    /** @type {any} */
+    const embed = {
+        title: uniqueId ? `${nickname} (@${uniqueId})` : nickname,
+        url: canonicalUrl,
+        description: truncate(user.signature || '', MAX_DESCRIPTION_LENGTH),
+        color: EMBED_COLOR,
+        author: {
+            name: uniqueId ? `@${uniqueId}` : 'TikTok',
+            url: canonicalUrl,
+            icon_url: avatarUrl || undefined,
+        },
+        thumbnail: avatarUrl ? { url: avatarUrl } : undefined,
+        fields,
+        footer: { text: `${tr(STR.requesterPrefix, lang)}${requesterName} - TikTok` },
+    };
+
+    return embed;
+}
+
 function isPhotoPost(data) {
     return Array.isArray(data?.imagePost?.images) && data.imagePost.images.length > 0;
 }
@@ -274,7 +332,9 @@ async function extract(message, url, s) {
     try {
         resolved = await resolveTikTokUrl(url);
         if (!resolved?.id) return null;
-        data = await fetchVideoData(resolved.id);
+        data = resolved.kind === 'profile'
+            ? await fetchProfileData(resolved.id)
+            : await fetchVideoData(resolved.id);
     } catch (err) {
         console.log(err);
         return null;
@@ -282,14 +342,33 @@ async function extract(message, url, s) {
 
     if (!data) return null;
 
-    const canonicalUrl = data?.author?.uniqueId
-        ? `https://www.tiktok.com/@${data.author.uniqueId}/${isPhotoPost(data) ? 'photo' : 'video'}/${data.id || resolved.id}`
-        : resolved.canonicalUrl;
-
     const isAnon = s.anonymous_expand === true;
     const requesterName = isAnon
         ? tr(STR.anonRequester, lang)
         : `${message.author?.username ?? message.user?.username}(id:${message.author?.id ?? message.user?.id})`;
+
+    if (resolved.kind === 'profile') {
+        const profileUniqueId = data?.user?.uniqueId || resolved.id;
+        const canonicalUrl = `https://www.tiktok.com/@${profileUniqueId}`;
+        /** @type {import('../_types').SendStep} */
+        const step = {
+            embeds: [buildProfileEmbed(data, canonicalUrl, lang, requesterName)],
+            components: buildButtons(lang, false),
+            allowedMentions: { repliedUser: false },
+            send: s.alwaysreplyifpostedtweetlink === true ? 'reply-source' : 'channel',
+            suppressSourceEmbeds: true,
+        };
+
+        if (s.deletemessageifonlypostedtweetlink === true && message.content.trim() === url) {
+            step.deleteSource = true;
+        }
+
+        return [step];
+    }
+
+    const canonicalUrl = data?.author?.uniqueId
+        ? `https://www.tiktok.com/@${data.author.uniqueId}/${isPhotoPost(data) ? 'photo' : 'video'}/${data.id || resolved.id}`
+        : resolved.canonicalUrl;
 
     const baseEmbed = buildBaseEmbed(data, canonicalUrl, lang, requesterName);
     const embeds = [];

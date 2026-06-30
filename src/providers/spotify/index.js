@@ -6,14 +6,17 @@ const { recordProviderError } = require('../../errorTracking');
 
 const SPOTIFY_COLOR = 0x1DB954;
 const DESCRIPTION_MAX_LENGTH = 350;
+const TOP_TRACKS_MAX_COUNT = 5;
 const SPOTIFY_URL_PATTERN =
-    /https?:\/\/open\.spotify\.com\/(?:intl-[a-zA-Z-]+\/)?track\/[A-Za-z0-9]+(?:\?[^\s<>|]*)?/g;
+    /https?:\/\/open\.spotify\.com\/(?:intl-[a-zA-Z-]+\/)?(?:track|album|artist)\/[A-Za-z0-9]+(?:\?[^\s<>|]*)?/g;
 
 const STR = {
     openButton: { ja: 'Open in Spotify', en: 'Open in Spotify' },
     showMediaAsAttachmentsButton: { ja: 'Show cover as attachment', en: 'Show cover as attachment' },
     deleteButton: { ja: 'Delete', en: 'Delete' },
     artistField: { ja: 'Artist', en: 'Artist' },
+    tracksField: { ja: 'Tracks', en: 'Tracks' },
+    topTracksField: { ja: 'Top tracks', en: 'Top tracks' },
     durationField: { ja: 'Duration', en: 'Duration' },
     releaseDateField: { ja: 'Release date', en: 'Release date' },
     previewField: { ja: 'Preview', en: 'Preview' },
@@ -21,6 +24,8 @@ const STR = {
     requesterPrefix: { ja: 'Requested by ', en: 'Requested by ' },
     anonRequester: { ja: 'Anonymous requester', en: 'Anonymous requester' },
     fallbackTitle: { ja: 'Spotify track #', en: 'Spotify track #' },
+    fallbackAlbumTitle: { ja: 'Spotify album #', en: 'Spotify album #' },
+    fallbackArtistTitle: { ja: 'Spotify artist #', en: 'Spotify artist #' },
 };
 
 function tr(spec, lang) {
@@ -28,7 +33,7 @@ function tr(spec, lang) {
     return spec[lang] ?? spec.en ?? '';
 }
 
-function parseSpotifyTrackUrl(rawUrl) {
+function parseSpotifyUrl(rawUrl) {
     let u;
     try { u = new URL(rawUrl); } catch { return null; }
     if (u.hostname !== 'open.spotify.com') return null;
@@ -36,12 +41,15 @@ function parseSpotifyTrackUrl(rawUrl) {
     const parts = u.pathname.split('/').filter(Boolean);
     let idx = 0;
     if (parts[0] && /^intl-[a-zA-Z-]+$/.test(parts[0])) idx = 1;
-    if (parts[idx] !== 'track' || !parts[idx + 1]) return null;
+    const type = parts[idx];
+    if (!['track', 'album', 'artist'].includes(type) || !parts[idx + 1]) return null;
 
     const id = parts[idx + 1];
     if (!/^[A-Za-z0-9]+$/.test(id)) return null;
-    return { id };
+    return { type, id };
 }
+
+const parseSpotifyTrackUrl = parseSpotifyUrl;
 
 function extractNextData(html) {
     const startTag = '<script id="__NEXT_DATA__" type="application/json">';
@@ -86,41 +94,63 @@ function artistIdFromUri(uri) {
     return parts[0] === 'spotify' && parts[1] === 'artist' ? parts[2] : null;
 }
 
-function normalizeTrackInfo(trackId, entity, fallback = {}) {
+function trackIdFromUri(uri) {
+    if (typeof uri !== 'string') return null;
+    const parts = uri.split(':');
+    return parts[0] === 'spotify' && parts[1] === 'track' ? parts[2] : null;
+}
+
+function normalizeTrackList(trackList) {
+    if (!Array.isArray(trackList)) return [];
+    return trackList
+        .map(track => ({
+            id: trackIdFromUri(track?.uri),
+            title: track?.title || track?.name,
+            subtitle: track?.subtitle,
+            durationMs: typeof track?.duration === 'number' ? track.duration : null,
+        }))
+        .filter(track => track.title);
+}
+
+function normalizeSpotifyInfo(type, id, entity, fallback = {}) {
     const artists = Array.isArray(entity?.artists)
         ? entity.artists.map(a => ({ name: a?.name, uri: a?.uri })).filter(a => a.name)
         : [];
     const largestImage = pickLargestImage(entity?.visualIdentity?.image)
         || (fallback.thumbnail_url ? { url: fallback.thumbnail_url, maxWidth: fallback.thumbnail_width, maxHeight: fallback.thumbnail_height } : null);
+    const trackList = normalizeTrackList(entity?.trackList);
 
     return {
-        id: entity?.id || trackId,
-        name: entity?.name || fallback.title || null,
+        type,
+        id: entity?.id || id,
+        name: entity?.name || entity?.title || fallback.title || null,
+        subtitle: entity?.subtitle || null,
         artists,
-        previewUrl: entity?.audioPreview?.url || null,
+        previewUrl: type === 'track' ? (entity?.audioPreview?.url || null) : null,
         image: largestImage,
         releaseDate: entity?.releaseDate?.isoString || null,
         durationMs: typeof entity?.duration === 'number' ? entity.duration : null,
-        canonicalUrl: `https://open.spotify.com/track/${trackId}`,
+        trackList,
+        canonicalUrl: `https://open.spotify.com/${type}/${id}`,
     };
 }
 
-async function fetchTrackInfo(trackId) {
+async function fetchSpotifyInfo(type, id) {
     const headers = spotifyHeaders();
-    const embedUrl = `https://open.spotify.com/embed/track/${trackId}?utm_source=comebacktwitterembed`;
+    const embedUrl = `https://open.spotify.com/embed/${type}/${id}?utm_source=comebacktwitterembed`;
     const html = await fetchText(embedUrl, headers);
     const nextData = extractNextData(html);
     const pageProps = nextData?.props?.pageProps || {};
     if (pageProps.status === 404 || pageProps.status === 500) {
-        throw new Error(`spotify track not found: ${trackId}`);
+        throw new Error(`spotify ${type} not found: ${id}`);
     }
 
     const entity = pageProps.state?.data?.entity;
-    if (entity) return normalizeTrackInfo(trackId, entity);
+    if (entity) return normalizeSpotifyInfo(type, id, entity);
 
-    const oembedUrl = `https://open.spotify.com/oembed?url=${encodeURIComponent(`https://open.spotify.com/track/${trackId}`)}`;
+    const oembedUrl = `https://open.spotify.com/oembed?url=${encodeURIComponent(`https://open.spotify.com/${type}/${id}`)}`;
     const fallback = await fetchJson(oembedUrl, { 'User-Agent': headers['User-Agent'] });
-    return normalizeTrackInfo(trackId, null, fallback);
+    return normalizeSpotifyInfo(type, id, null, fallback);
 }
 
 function truncate(s, max) {
@@ -148,6 +178,27 @@ function buildPreviewAttachment(previewUrl, trackId) {
         attachment: previewUrl,
         name: `spotify-preview-${trackId}.mp3`,
     };
+}
+
+function getFallbackTitleKey(type) {
+    if (type === 'album') return STR.fallbackAlbumTitle;
+    if (type === 'artist') return STR.fallbackArtistTitle;
+    return STR.fallbackTitle;
+}
+
+function buildDescription(item, artistsText) {
+    if (item.type === 'track' && artistsText) return `Song by ${artistsText}`;
+    if (item.type === 'album' && item.subtitle) return `Album by ${item.subtitle}`;
+    if (item.type === 'artist' && item.subtitle) return item.subtitle;
+    return '';
+}
+
+function formatTopTracks(trackList) {
+    if (!Array.isArray(trackList) || trackList.length === 0) return '';
+    return trackList
+        .slice(0, TOP_TRACKS_MAX_COUNT)
+        .map((track, index) => `${index + 1}. ${track.title}`)
+        .join('\n');
 }
 
 function buildButtons(lang, canonicalUrl, hasImage) {
@@ -179,60 +230,73 @@ function buildButtons(lang, canonicalUrl, hasImage) {
 /** @type {import('../_types').Extractor} */
 async function extract(message, url, s) {
     s = s || {};
-    const parsed = parseSpotifyTrackUrl(url);
+    const parsed = parseSpotifyUrl(url);
     if (!parsed) return null;
 
     const guildLang = s.defaultLanguage ?? 'en';
     const lang = guildLang === 'ja' ? 'ja' : 'en';
 
-    let track;
+    let item;
     try {
-        track = await fetchTrackInfo(parsed.id);
+        item = await fetchSpotifyInfo(parsed.type, parsed.id);
     } catch (err) {
         recordProviderError('spotify', err, message, url, { endpointKey: 'spotify/embed-or-oembed' });
         console.log(err);
         return null;
     }
 
-    const artistsText = track.artists.map(a => a.name).join(', ');
-    const firstArtistId = artistIdFromUri(track.artists[0]?.uri);
+    const artistsText = item.artists.map(a => a.name).join(', ');
+    const firstArtistId = artistIdFromUri(item.artists[0]?.uri);
     const requesterName = s.anonymous_expand === true
         ? tr(STR.anonRequester, lang)
         : `${message.author?.username ?? message.user?.username}(id:${message.author?.id ?? message.user?.id})`;
 
     const fields = [];
-    if (artistsText) fields.push({ name: tr(STR.artistField, lang), value: truncate(artistsText, 256), inline: true });
-    const duration = formatDuration(track.durationMs);
-    if (duration) fields.push({ name: tr(STR.durationField, lang), value: duration, inline: true });
-    const releaseDate = formatReleaseDate(track.releaseDate);
+    const artistFieldValue = artistsText || (item.type === 'album' ? item.subtitle : '');
+    if (artistFieldValue && item.type !== 'artist') fields.push({ name: tr(STR.artistField, lang), value: truncate(artistFieldValue, 256), inline: true });
+    if (item.type !== 'track' && item.trackList.length > 0) {
+        fields.push({ name: tr(STR.tracksField, lang), value: String(item.trackList.length), inline: true });
+    }
+    const duration = formatDuration(item.durationMs);
+    if (item.type === 'track' && duration) fields.push({ name: tr(STR.durationField, lang), value: duration, inline: true });
+    const releaseDate = formatReleaseDate(item.releaseDate);
     if (releaseDate) fields.push({ name: tr(STR.releaseDateField, lang), value: releaseDate, inline: true });
-    if (track.previewUrl) fields.push({ name: tr(STR.previewField, lang), value: tr(STR.previewAttached, lang), inline: true });
+    if (item.previewUrl) fields.push({ name: tr(STR.previewField, lang), value: tr(STR.previewAttached, lang), inline: true });
+    const topTracks = item.type !== 'track' ? formatTopTracks(item.trackList) : '';
+    if (topTracks) fields.push({ name: tr(STR.topTracksField, lang), value: truncate(topTracks, 1024), inline: false });
+
+    const description = buildDescription(item, artistsText);
 
     const embed = {
-        title: track.name || `${tr(STR.fallbackTitle, lang)}${parsed.id}`,
-        url: track.canonicalUrl,
-        description: artistsText ? truncate(`Song by ${artistsText}`, DESCRIPTION_MAX_LENGTH) : undefined,
+        title: item.name || `${tr(getFallbackTitleKey(item.type), lang)}${parsed.id}`,
+        url: item.canonicalUrl,
+        description: description ? truncate(description, DESCRIPTION_MAX_LENGTH) : undefined,
         color: SPOTIFY_COLOR,
         footer: { text: `${tr(STR.requesterPrefix, lang)}${requesterName} - Spotify` },
     };
-    if (artistsText) {
+    if (item.type === 'track' && artistsText) {
         embed.author = {
             name: artistsText,
             url: firstArtistId ? `https://open.spotify.com/artist/${firstArtistId}` : undefined,
         };
+    } else if (item.type !== 'track') {
+        embed.author = {
+            name: item.type === 'album' ? 'Spotify album' : 'Spotify artist',
+            url: item.canonicalUrl,
+        };
     }
-    if (track.image?.url) embed.image = { url: track.image.url };
+    if (item.image?.url) embed.image = { url: item.image.url };
     if (fields.length > 0) embed.fields = fields;
 
     const files = [];
-    const previewAttachment = buildPreviewAttachment(track.previewUrl, parsed.id);
+    const previewAttachment = buildPreviewAttachment(item.previewUrl, parsed.id);
     if (previewAttachment) files.push(previewAttachment);
 
     /** @type {import('../_types').SendStep} */
     const step = {
         embeds: [embed],
         files,
-        components: buildButtons(lang, track.canonicalUrl, !!track.image?.url),
+        components: buildButtons(lang, item.canonicalUrl, !!item.image?.url),
         allowedMentions: { repliedUser: false },
         send: s.alwaysreplyifpostedtweetlink === true ? 'reply-source' : 'channel',
     };
@@ -257,8 +321,10 @@ const spotifyProvider = {
 module.exports = spotifyProvider;
 module.exports._internal = {
     parseSpotifyTrackUrl,
+    parseSpotifyUrl,
     extractNextData,
-    normalizeTrackInfo,
+    normalizeTrackInfo: (trackId, entity, fallback) => normalizeSpotifyInfo('track', trackId, entity, fallback),
+    normalizeSpotifyInfo,
     formatDuration,
     formatReleaseDate,
 };
