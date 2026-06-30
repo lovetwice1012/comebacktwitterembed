@@ -1,10 +1,11 @@
 'use strict';
 
 const fs = require('fs');
+const fsp = require('fs/promises');
 const https = require('https');
 const fetch = require('node-fetch');
 const { t } = require('../locales');
-const { settings } = require('../settings');
+const { getSaveTweetQuotaOverride } = require('../providers/_provider_settings');
 
 const SAVES_ROOT = './saves';
 const DEFAULT_QUOTA_BYTES = 100 * 1024 * 1024; // 100 MB
@@ -20,26 +21,30 @@ function downloadToFile(url, destPath) {
     });
 }
 
-function dirSize(dirPath) {
+async function dirSize(dirPath) {
     let total = 0;
-    for (const entry of fs.readdirSync(dirPath)) {
-        for (const file of fs.readdirSync(`${dirPath}/${entry}`)) {
-            total += fs.statSync(`${dirPath}/${entry}/${file}`).size;
+    const entries = await fsp.readdir(dirPath, { withFileTypes: true });
+    for (const entry of entries) {
+        if (!entry.isDirectory()) continue;
+        const childDir = `${dirPath}/${entry.name}`;
+        const files = await fsp.readdir(childDir, { withFileTypes: true });
+        for (const file of files) {
+            if (!file.isFile()) continue;
+            total += (await fsp.stat(`${childDir}/${file.name}`)).size;
         }
     }
     return total;
 }
 
 async function handle(interaction) {
-    if (!fs.existsSync(SAVES_ROOT)) fs.mkdirSync(SAVES_ROOT);
     const userDir = `${SAVES_ROOT}/${interaction.user.id}`;
-    if (!fs.existsSync(userDir)) fs.mkdirSync(userDir);
+    await fsp.mkdir(userDir, { recursive: true });
 
     let tweetUrl = interaction.message.embeds[0].url.split('?')[0];
     tweetUrl = tweetUrl.replace('twitter.com', 'api.vxtwitter.com').replace('x.com', 'api.vxtwitter.com');
     const tweetId = tweetUrl.split('/').pop();
     const tweetDir = `${userDir}/${tweetId}`;
-    if (!fs.existsSync(tweetDir)) fs.mkdirSync(tweetDir);
+    await fsp.mkdir(tweetDir, { recursive: true });
 
     const fetchRes = await fetch(tweetUrl);
     const tweetData = await fetchRes.json();
@@ -61,11 +66,11 @@ async function handle(interaction) {
         const fileName = tweetData.mediaURLs[i].split('/').pop();
         tweetData.mediaURLs[i] = `${PUBLIC_BASE_URL}${interaction.user.id}/${tweetId}/${fileName}`;
     }
-    fs.writeFileSync(`${tweetDir}/data.json`, JSON.stringify(tweetData, null, 4));
+    await fsp.writeFile(`${tweetDir}/data.json`, JSON.stringify(tweetData, null, 4));
 
-    const quota = settings.save_tweet_quota_override[interaction.user.id] ?? DEFAULT_QUOTA_BYTES;
-    if (dirSize(userDir) > quota) {
-        fs.rmSync(tweetDir, { recursive: true });
+    const quota = await getSaveTweetQuotaOverride(interaction.user.id) ?? DEFAULT_QUOTA_BYTES;
+    if (await dirSize(userDir) > quota) {
+        await fsp.rm(tweetDir, { recursive: true, force: true });
         await interaction.editReply({
             content: 'あなたが保存したツイートのデータ量が許可された保存容量を超えています。新しくツイートを保存する前に既存のものを削除してください',
             ephemeral: true,

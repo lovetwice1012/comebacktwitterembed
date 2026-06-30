@@ -2,7 +2,6 @@
 
 const { PermissionsBitField } = require('discord.js');
 const { t } = require('../../../../locales');
-const { settings } = require('../../../../settings');
 const { getSetting, setSetting } = require('../../../../providers/_provider_settings');
 
 function hasAdminPerm(member) {
@@ -24,7 +23,7 @@ module.exports = async function (interaction, client) {
     }
     const word = interaction.options.getString('word');
     const provider = { id: 'twitter' };
-    const list = getSetting(provider, 'bannedWords', interaction.guildId);
+    const list = await getSetting(provider, 'bannedWords', interaction.guildId);
     const bannedWords = Array.isArray(list) ? list : [];
 
     if (bannedWords.includes(word)) {
@@ -35,7 +34,6 @@ module.exports = async function (interaction, client) {
         await interaction.editReply(t('addedWordToBannedWordsLocales', interaction.locale));
     }
 
-    setSetting(provider, 'bannedWords', interaction.guildId, bannedWords);
-    settings.bannedWords[interaction.guildId] = bannedWords;
+    await setSetting(provider, 'bannedWords', interaction.guildId, bannedWords);
 
 };

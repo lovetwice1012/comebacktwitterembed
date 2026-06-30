@@ -95,6 +95,30 @@ function channelInfo() {
     };
 }
 
+function playerResponseHtml() {
+    const player = {
+        videoDetails: {
+            videoId: 'W7G8NAhG6l8',
+            title: 'Fallback Video',
+            thumbnail: {
+                thumbnails: [{ url: 'https://i.ytimg.com/vi/W7G8NAhG6l8/hqdefault.jpg', width: 480, height: 360 }],
+            },
+            shortDescription: 'Fallback description',
+            viewCount: '3210',
+            author: 'Fallback Channel',
+            channelId: 'UCfallback',
+            isLiveContent: false,
+        },
+        microformat: {
+            playerMicroformatRenderer: {
+                ownerProfileUrl: 'https://www.youtube.com/@fallback',
+                publishDate: '2026-06-01',
+            },
+        },
+    };
+    return `<html><script>var ytInitialPlayerResponse = ${JSON.stringify(player)};</script></html>`;
+}
+
 test('youtube extract: builds a self-owned video embed from Invidious metadata', async () => {
     const requests = [];
     const provider = loadYouTubeProviderWithFetch(async (url) => {
@@ -120,6 +144,30 @@ test('youtube extract: builds a self-owned video embed from Invidious metadata',
     assert.equal(result[0].components.length, 1);
     assert.equal(result[0].send, 'channel');
     assert.equal(result[0].suppressSourceEmbeds, true);
+});
+
+test('youtube extract: falls back to YouTube page metadata when Invidious returns 404', async () => {
+    const requests = [];
+    const provider = loadYouTubeProviderWithFetch(async (url) => {
+        requests.push(url);
+        if (url.includes('/api/v1/videos/W7G8NAhG6l8?hl=en')) {
+            return { ok: false, status: 404 };
+        }
+        if (url.includes('https://www.youtube.com/watch?v=W7G8NAhG6l8')) {
+            return { ok: true, text: async () => playerResponseHtml() };
+        }
+        throw new Error(`unexpected url ${url}`);
+    });
+
+    const url = 'https://www.youtube.com/watch?v=W7G8NAhG6l8';
+    const result = await provider.extract(createMessage(url), url, {});
+
+    assert.ok(requests.filter(request => request.includes('/api/v1/videos/W7G8NAhG6l8?hl=en')).length >= 1);
+    assert.ok(requests.some(request => request.includes('https://www.youtube.com/watch?v=W7G8NAhG6l8')));
+    assert.equal(result.length, 1);
+    assert.equal(result[0].embeds[0].title, 'Fallback Video');
+    assert.equal(result[0].embeds[0].description, 'Fallback description');
+    assert.ok(result[0].embeds[0].fields.some(field => field.name === 'Views' && field.value === '3,210'));
 });
 
 test('youtube extract: builds playlist embeds from playlist metadata', async () => {

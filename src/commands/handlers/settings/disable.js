@@ -2,7 +2,6 @@
 
 const { PermissionsBitField } = require('discord.js');
 const { t } = require('../../../locales');
-const { settings } = require('../../../settings');
 const { getSetting, setSetting } = require('../../../providers/_provider_settings');
 
 function hasAdminPerm(member) {
@@ -13,30 +12,15 @@ function hasAdminPerm(member) {
     );
 }
 
-function normalizeDisableSetting(raw, guildId, providerId) {
+function normalizeDisableSetting(raw) {
     let out = raw;
     if (!out || typeof out !== 'object') {
-        if (providerId === 'twitter') {
-            out = {
-                user: Array.isArray(settings.disable.user) ? [...settings.disable.user] : [],
-                channel: Array.isArray(settings.disable.channel) ? [...settings.disable.channel] : [],
-                role: Array.isArray(settings.disable.role[guildId]) ? [...settings.disable.role[guildId]] : [],
-            };
-        } else {
-            out = { user: [], channel: [], role: [] };
-        }
+        out = { user: [], channel: [], role: [] };
     }
     if (!Array.isArray(out.user)) out.user = [];
     if (!Array.isArray(out.channel)) out.channel = [];
     if (!Array.isArray(out.role)) out.role = [];
     return out;
-}
-
-function syncTwitterLegacyDisable(guildId, providerId, guildSetting) {
-    if (providerId !== 'twitter') return;
-    settings.disable.user = [...guildSetting.user];
-    settings.disable.channel = [...guildSetting.channel];
-    settings.disable.role[guildId] = [...guildSetting.role];
 }
 
 function hasAnyTarget(interaction) {
@@ -57,7 +41,7 @@ function hasMultipleTargets(interaction) {
 module.exports = async function (interaction, client) {
     const providerId = interaction.options.getSubcommandGroup(false) || interaction.options.getString('provider') || 'twitter';
     const provider = { id: providerId };
-    let guildSetting = normalizeDisableSetting(getSetting(provider, 'disable', interaction.guildId), interaction.guildId, providerId);
+    let guildSetting = normalizeDisableSetting(await getSetting(provider, 'disable', interaction.guildId));
 
     if (!hasAdminPerm(interaction.member)) {
         if (!hasAnyTarget(interaction)) return await interaction.editReply(t('userMustSpecifyAUserOrChannelLocales', interaction.locale));
@@ -73,8 +57,7 @@ module.exports = async function (interaction, client) {
                 guildSetting.user.push(user.id);
                 await interaction.editReply(t('addedUserToDisableUserLocales', interaction.locale));
             }
-            setSetting(provider, 'disable', interaction.guildId, guildSetting);
-            syncTwitterLegacyDisable(interaction.guildId, providerId, guildSetting);
+            await setSetting(provider, 'disable', interaction.guildId, guildSetting);
         } else if (interaction.options.getChannel('channel') !== null || interaction.options.getRole('role') !== null) {
             return await interaction.editReply(t('userDonthavePermissionLocales', interaction.locale));
         }
@@ -113,7 +96,6 @@ module.exports = async function (interaction, client) {
         }
     }
 
-    setSetting(provider, 'disable', interaction.guildId, guildSetting);
-    syncTwitterLegacyDisable(interaction.guildId, providerId, guildSetting);
+    await setSetting(provider, 'disable', interaction.guildId, guildSetting);
 
 };

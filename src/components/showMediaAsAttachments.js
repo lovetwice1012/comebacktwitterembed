@@ -36,7 +36,7 @@ async function handle(interaction, { buttons }) {
     messageObject.embeds.push(deepCopyEmbed0);
 
     const providerId = detectProviderIdFromMessage(interaction.message);
-    messageObject.components = checkComponentIncludesDisabledButtonAndIfFindDeleteIt(messageObject.components, interaction.guildId, providerId);
+    messageObject.components = await checkComponentIncludesDisabledButtonAndIfFindDeleteIt(messageObject.components, interaction.guildId, providerId);
     await interaction.message.edit(messageObject);
     await interaction.editReply({ content: t('finishActionLocales', interaction.locale), ephemeral: true });
     setTimeout(() => { interaction.deleteReply(); }, 3000);

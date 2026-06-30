@@ -16,7 +16,6 @@
 
 const fetch = require('node-fetch');
 const { ButtonBuilder, ButtonStyle, ComponentType, PermissionsBitField } = require('discord.js');
-const { settings } = require('../../settings');
 const { videoExtensions } = require('../../utils');
 const { recordProviderError } = require('../../errorTracking');
 
@@ -367,8 +366,7 @@ async function extract(message, url, s, opts) {
     const depth = opts.depth ?? 0;
     s = s || {};
 
-    const guildId = message.guild.id;
-    const lang = s.defaultLanguage ?? settings.defaultLanguage[guildId] ?? 'en';
+    const lang = s.defaultLanguage ?? 'en';
 
     // legacy_mode 自動判定 (未設定なら ManageMessages 権限値で初期化)
     if (s.legacy_mode === undefined) {
@@ -521,7 +519,7 @@ module.exports = twitterProvider;
 /** @type {any} */ (module.exports).sendTweetEmbed = async function (message, url, opts = {}) {
     const { getProviderSettings } = require('../_provider_settings');
     const { runSendSteps } = require('../_dispatcher');
-    const s = getProviderSettings(module.exports, message.guild.id);
+    const s = await getProviderSettings(module.exports, message.guild.id);
     const steps = await extract(message, url, s, opts);
     if (Array.isArray(steps)) await runSendSteps(message, steps, 'twitter');
 };

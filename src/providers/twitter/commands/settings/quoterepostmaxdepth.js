@@ -2,7 +2,6 @@
 
 const { PermissionsBitField } = require('discord.js');
 const { t } = require('../../../../locales');
-const { settings } = require('../../../../settings');
 const { setSetting } = require('../../../../providers/_provider_settings');
 
 function hasAdminPerm(member) {
@@ -20,8 +19,7 @@ module.exports = async function (interaction, client) {
 
     const depth = interaction.options.getInteger('depth');
     if (depth === null) return await interaction.editReply(t('userMustSpecifyAnyWordLocales', interaction.locale));
-    setSetting({ id: 'twitter' }, 'quote_repost_max_depth', interaction.guildId, depth);
-    settings.quote_repost_max_depth[interaction.guildId] = depth;
+    await setSetting({ id: 'twitter' }, 'quote_repost_max_depth', interaction.guildId, depth);
     const depthText = depth === 0 ? (interaction.locale === 'ja' ? '無制限' : 'unlimited') : depth.toString();
     await interaction.editReply((t('setquoterepostmaxdepthtolocales', interaction.locale)) + depthText);
 

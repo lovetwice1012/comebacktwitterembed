@@ -10,7 +10,7 @@ const { ifUserHasRole } = require('../utils');
 async function isAllowed(interaction) {
     const providerId = detectProviderIdFromMessage(interaction.message) || 'twitter';
     const provider = { id: providerId };
-    const guildSetting = getSetting(provider, 'button_disabled', interaction.guildId);
+    const guildSetting = await getSetting(provider, 'button_disabled', interaction.guildId);
     if (guildSetting === undefined || guildSetting === null) return true;
 
     const users = Array.isArray(guildSetting.user) ? guildSetting.user : [];

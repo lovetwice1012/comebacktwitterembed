@@ -2,8 +2,7 @@
 
 const { PermissionsBitField } = require('discord.js');
 const { t } = require('../../../../locales');
-const { settings } = require('../../../../settings');
-const { getSetting, setSetting } = require('../../../../providers/_provider_settings');
+const { setSetting } = require('../../../../providers/_provider_settings');
 const { convertBoolToEnableDisable } = require('../../../../utils');
 function hasAdminPerm(member) {
     return (
@@ -22,22 +21,16 @@ module.exports = async function (interaction, client) {
         return await interaction.editReply(t('userMustSpecifyAnyWordLocales', interaction.locale));
     }
     const provider = { id: 'twitter' };
-    const currentImages = getSetting(provider, 'secondary_extract_mode_multiple_images', interaction.guildId);
-    const currentVideo = getSetting(provider, 'secondary_extract_mode_video', interaction.guildId);
-    if (settings.secondary_extract_mode_multiple_images[interaction.guildId] === undefined) settings.secondary_extract_mode_multiple_images[interaction.guildId] = currentImages ?? true;
-    if (settings.secondary_extract_mode_video[interaction.guildId] === undefined) settings.secondary_extract_mode_video[interaction.guildId] = currentVideo ?? true;
 
     const response = [];
     if (interaction.options.getBoolean('multipleimages') !== null) {
         const multipleImages = interaction.options.getBoolean('multipleimages');
-        setSetting(provider, 'secondary_extract_mode_multiple_images', interaction.guildId, multipleImages);
-        settings.secondary_extract_mode_multiple_images[interaction.guildId] = multipleImages;
+        await setSetting(provider, 'secondary_extract_mode_multiple_images', interaction.guildId, multipleImages);
         response.push((t('setsecondaryextracttargetmultipleimagestolocales', interaction.locale)) + convertBoolToEnableDisable(multipleImages, interaction.locale));
     }
     if (interaction.options.getBoolean('video') !== null) {
         const video = interaction.options.getBoolean('video');
-        setSetting(provider, 'secondary_extract_mode_video', interaction.guildId, video);
-        settings.secondary_extract_mode_video[interaction.guildId] = video;
+        await setSetting(provider, 'secondary_extract_mode_video', interaction.guildId, video);
         response.push((t('setsecondaryextracttargetvideotolocales', interaction.locale)) + convertBoolToEnableDisable(video, interaction.locale));
     }
     await interaction.editReply(response.join('\n'));

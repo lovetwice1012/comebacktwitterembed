@@ -59,6 +59,7 @@ process.on('uncaughtException', error => {
     require('./src/handlers/messageCreate').register(client);
     require('./src/handlers/applicationCommands').register(client);
     require('./src/handlers/messageComponents').register(client);
+    require('./src/lifecycle/dbBackup').startDailyDbDumps();
 
     client.rest.on('rateLimited', (data) => {
         console.log('Rate limited: ' + data.timeToReset + 'ms');

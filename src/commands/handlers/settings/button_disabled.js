@@ -2,7 +2,6 @@
 
 const { PermissionsBitField } = require('discord.js');
 const { t } = require('../../../locales');
-const { settings } = require('../../../settings');
 const { setSetting, getSetting } = require('../../../providers/_provider_settings');
 const { button_disabled_template } = require('../../../utils');
 function hasAdminPerm(member) {
@@ -27,7 +26,7 @@ module.exports = async function (interaction, client) {
     }
     const providerId = interaction.options.getSubcommandGroup(false) || interaction.options.getString('provider') || 'twitter';
     const provider = { id: providerId };
-    let guildSetting = getSetting(provider, 'button_disabled', interaction.guildId);
+    let guildSetting = await getSetting(provider, 'button_disabled', interaction.guildId);
     if (!guildSetting || typeof guildSetting !== 'object') guildSetting = { ...button_disabled_template, user: [], channel: [], role: [] };
     if (!Array.isArray(guildSetting.user)) guildSetting.user = [];
     if (!Array.isArray(guildSetting.channel)) guildSetting.channel = [];
@@ -62,7 +61,6 @@ module.exports = async function (interaction, client) {
         }
     }
 
-    setSetting(provider, 'button_disabled', interaction.guildId, guildSetting);
-    if (providerId === 'twitter') settings.button_disabled[interaction.guildId] = guildSetting;
+    await setSetting(provider, 'button_disabled', interaction.guildId, guildSetting);
 
 };

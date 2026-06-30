@@ -2,7 +2,6 @@
 
 const { PermissionsBitField } = require('discord.js');
 const { t } = require('../../../../locales');
-const { settings } = require('../../../../settings');
 const { setSetting } = require('../../../../providers/_provider_settings');
 const { convertBoolToEnableDisable } = require('../../../../utils');
 function hasAdminPerm(member) {
@@ -20,8 +19,7 @@ module.exports = async function (interaction, client) {
 
     if (interaction.options.getBoolean('boolean') === null) return await interaction.editReply(t('userMustSpecifyAnyWordLocales', interaction.locale));
     const boolean = interaction.options.getBoolean('boolean');
-    setSetting({ id: 'twitter' }, 'alwaysreplyifpostedtweetlink', interaction.guildId, boolean);
-    settings.alwaysreplyifpostedtweetlink[interaction.guildId] = boolean;
+    await setSetting({ id: 'twitter' }, 'alwaysreplyifpostedtweetlink', interaction.guildId, boolean);
     await interaction.editReply((t('setalwaysreplyifpostedtweetlinktolocales', interaction.locale)) + convertBoolToEnableDisable(boolean, interaction.locale));
 
 };

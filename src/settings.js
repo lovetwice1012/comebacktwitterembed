@@ -333,13 +333,6 @@ async function loadSettingsFromDatabase() {
     const nextSettings = cloneValue(SETTINGS_DEFAULT_FILE);
     let foundRows = 0;
 
-    const globalDisableRows = await queryDatabase(`SELECT target_type, target_id FROM ${TABLES.globalDisableTargets}`);
-    foundRows += globalDisableRows.length;
-    for (const row of globalDisableRows) {
-        if (row.target_type === 'user') nextSettings.disable.user.push(row.target_id);
-        else if (row.target_type === 'channel') nextSettings.disable.channel.push(row.target_id);
-    }
-
     const quotaRows = await queryDatabase(
         `SELECT user_id, save_tweet_quota_override_bytes
          FROM ${TABLES.users}
@@ -581,20 +574,9 @@ async function saveSettingsToDatabase(nextSettings) {
         await queryDatabase(`DELETE FROM ${TABLES.guildProviderBannedWords}`);
         await queryDatabase(`DELETE FROM ${TABLES.guildProviderDisableTargets}`);
         await queryDatabase(`DELETE FROM ${TABLES.guildProviderSettings}`);
-        await queryDatabase(`DELETE FROM ${TABLES.globalDisableTargets}`);
         await queryDatabase(`UPDATE ${TABLES.users} SET save_tweet_quota_override_bytes = NULL`);
 
         await ensureProviderAndGuildRows(queryDatabase, providerIds, guildIds);
-
-        for (const targetType of ['user', 'channel']) {
-            for (const targetId of new Set(normalized.disable?.[targetType] || [])) {
-                await queryDatabase(
-                    `INSERT INTO ${TABLES.globalDisableTargets} (target_type, target_id)
-                     VALUES (?, ?)`,
-                    [targetType, targetId]
-                );
-            }
-        }
 
         for (const row of scalarRows) {
             const values = PROVIDER_SETTING_COLUMN_NAMES.map(column => {
@@ -664,57 +646,28 @@ async function saveSettingsToDatabase(nextSettings) {
     }
 }
 
-let activeStorage = 'file';
-let saveQueue = Promise.resolve();
-const loaded = loadSettingsFromFile();
-const settings = loaded.settings;
+const settings = cloneValue(SETTINGS_DEFAULT_FILE);
 
 function saveSettings(nextSettings = settings) {
-    if (activeStorage === 'mysql') {
-        saveQueue = saveQueue.catch(() => {}).then(() => saveSettingsToDatabase(nextSettings));
-        return saveQueue;
-    }
-    writeSettingsFile(normalizeSettings(nextSettings).settings);
-    return Promise.resolve();
+    void nextSettings;
+    return Promise.reject(new Error('saveSettings(settings) is disabled. Use DB-scoped setting APIs instead.'));
 }
 
 async function initializeSettings() {
     const mode = getSettingsStorageMode();
 
     if (mode === 'file') {
-        activeStorage = 'file';
-        const fileSettings = loadSettingsFromFile();
-        replaceSettingsContents(settings, fileSettings.settings);
-        return settings;
+        throw new Error('SETTINGS_STORAGE=file is no longer supported. Use MySQL-backed settings.');
     }
 
-    activeStorage = 'mysql';
-    const databaseSettings = await loadSettingsFromDatabase();
-    if (databaseSettings) {
-        replaceSettingsContents(settings, databaseSettings.settings);
-        if (databaseSettings.changed) await saveSettings(settings);
-        return settings;
-    }
-
-    const defaults = cloneValue(SETTINGS_DEFAULT_FILE);
-    replaceSettingsContents(settings, defaults);
-    await saveSettings(settings);
-    console.warn(
-        'No settings found in the redesigned MySQL schema. '
-        + 'Default settings were created. Run scripts/migrate_settings_to_mysql.js to import settings.json.'
-    );
+    await ensureDatabaseSchema();
+    replaceSettingsContents(settings, cloneValue(SETTINGS_DEFAULT_FILE));
     return settings;
 }
 
-function getButtonInvisibleSettings(guildId, providerId = null, setting = null) {
-    setting = setting || settings;
-
-    if (providerId) {
-        const providerSettings = setting.byProvider?.[providerId]?.button_invisible;
-        if (providerSettings && providerSettings[guildId] !== undefined) return providerSettings[guildId];
-    }
-
-    return setting.button_invisible[guildId] || {};
+async function getButtonInvisibleSettings(guildId, providerId = null) {
+    const { getSetting } = require('./providers/_provider_settings');
+    return await getSetting({ id: providerId || 'twitter' }, 'button_invisible', guildId) || {};
 }
 
 function detectProviderIdFromMessage(message) {
@@ -729,9 +682,8 @@ function detectProviderIdFromMessage(message) {
     return null;
 }
 
-function checkComponentIncludesDisabledButtonAndIfFindDeleteIt(components, guildId, providerId = null, setting = null) {
-    setting = setting || settings;
-    const invisibleSettings = getButtonInvisibleSettings(guildId, providerId, setting);
+async function checkComponentIncludesDisabledButtonAndIfFindDeleteIt(components, guildId, providerId = null) {
+    const invisibleSettings = await getButtonInvisibleSettings(guildId, providerId);
 
     if (Object.values(invisibleSettings).every(value => value === false)) {
         return components;

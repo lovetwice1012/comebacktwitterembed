@@ -24,7 +24,6 @@
 
 const fetch = require('node-fetch');
 const { ButtonBuilder, ButtonStyle, ComponentType } = require('discord.js');
-const { settings } = require('../../settings');
 const { recordProviderError } = require('../../errorTracking');
 
 // ---- inline 翻訳 (twitter provider と同じ手法) -----------------------------
@@ -158,8 +157,7 @@ function resolveImagesPerStep(value) {
 /** @type {import('../_types').Extractor} */
 async function extract(message, url, s) {
     s = s || {};
-    const guildId = message.guild.id;
-    const guildLang = s.defaultLanguage ?? settings.defaultLanguage[guildId] ?? 'en';
+    const guildLang = s.defaultLanguage ?? 'en';
 
     const parsed = parsePixivUrl(url, pickLanguage(guildLang));
     if (!parsed) return null;

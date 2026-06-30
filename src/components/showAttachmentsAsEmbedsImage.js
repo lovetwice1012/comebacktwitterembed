@@ -49,7 +49,7 @@ async function handle(interaction, { buttons }) {
         components: interaction.message.embeds[0].title ? [translateButton, deleteButton] : [deleteButton],
     });
     const providerId = detectProviderIdFromMessage(interaction.message);
-    messageObject.components = checkComponentIncludesDisabledButtonAndIfFindDeleteIt(messageObject.components, interaction.guildId, providerId);
+    messageObject.components = await checkComponentIncludesDisabledButtonAndIfFindDeleteIt(messageObject.components, interaction.guildId, providerId);
 
     imageAttachments.forEach(element => {
         if (messageObject.embeds.length === 0) {

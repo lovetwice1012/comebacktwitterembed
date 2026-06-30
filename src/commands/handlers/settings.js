@@ -10,7 +10,6 @@
 const { ApplicationCommandOptionType } = require('discord.js');
 const { t, commandNameLocales, descriptionLocales, messageLocales } = require('../../locales');
 const { conv_en_to_en_US } = require('../../utils');
-const { saveSettings, settings } = require('../../settings');
 
 const COMMON_HANDLERS = {
     disable:                 require('./settings/disable'),
@@ -41,9 +40,7 @@ const PROVIDER_HANDLERS = {
 };
 
 async function runAndSave(handler, interaction, client) {
-    const result = await handler(interaction, client);
-    await saveSettings(settings);
-    return result;
+    return await handler(interaction, client);
 }
 
 module.exports.execute = async function (interaction, client) {

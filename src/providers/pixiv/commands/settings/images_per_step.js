@@ -22,6 +22,6 @@ module.exports = async function (interaction) {
         return await interaction.editReply(t('pixivImagesPerStepMustBe4Or10Locales', interaction.locale));
     }
 
-    setSetting({ id: 'pixiv' }, 'pixiv_images_per_step', interaction.guildId, imagesPerStep);
+    await setSetting({ id: 'pixiv' }, 'pixiv_images_per_step', interaction.guildId, imagesPerStep);
     return await interaction.editReply(t('setPixivImagesPerStepToLocales', interaction.locale) + imagesPerStep);
 };

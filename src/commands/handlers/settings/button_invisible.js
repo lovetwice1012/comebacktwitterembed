@@ -2,17 +2,12 @@
 
 const { PermissionsBitField } = require('discord.js');
 const { t } = require('../../../locales');
-const { settings } = require('../../../settings');
 const { button_invisible_template, convertBoolToEnableDisable } = require('../../../utils');
+const { getSetting, setSetting } = require('../../../providers/_provider_settings');
 
-function ensureProviderButtonInvisible(providerId, guildId) {
-    if (!settings.byProvider) settings.byProvider = {};
-    if (!settings.byProvider[providerId]) settings.byProvider[providerId] = {};
-    if (!settings.byProvider[providerId].button_invisible) settings.byProvider[providerId].button_invisible = {};
-    if (settings.byProvider[providerId].button_invisible[guildId] === undefined) {
-        settings.byProvider[providerId].button_invisible[guildId] = { ...button_invisible_template, savetweet: false };
-    }
-    return settings.byProvider[providerId].button_invisible[guildId];
+async function getProviderButtonInvisible(providerId, guildId) {
+    const raw = await getSetting({ id: providerId }, 'button_invisible', guildId);
+    return { ...button_invisible_template, savetweet: false, ...(raw || {}) };
 }
 
 function hasAdminPerm(member) {
@@ -29,10 +24,7 @@ module.exports = async function (interaction, client) {
     }
 
     const providerId = interaction.options.getSubcommandGroup(false) || interaction.options.getString('provider') || 'twitter';
-
-    if (settings.button_invisible[interaction.guildId] === undefined) settings.button_invisible[interaction.guildId] = { ...button_invisible_template, savetweet: false };
-    if (settings.button_invisible[interaction.guildId].savetweet === undefined) settings.button_invisible[interaction.guildId].savetweet = false;
-    const providerSetting = ensureProviderButtonInvisible(providerId, interaction.guildId);
+    const providerSetting = await getProviderButtonInvisible(providerId, interaction.guildId);
 
     //options: showMediaAsAttachments, showAttachmentsAsEmbedsImage, translate, delete, all;  all boolean
     if (interaction.options.getBoolean('showmediaasattachments') === null && interaction.options.getBoolean('showattachmentsasembedsimage') === null && interaction.options.getBoolean('translate') === null && interaction.options.getBoolean('delete') === null && interaction.options.getBoolean('savetweet') === null && interaction.options.getBoolean('all') === null) {
@@ -45,13 +37,7 @@ module.exports = async function (interaction, client) {
             providerSetting.translate = true;
             providerSetting.delete = true;
             providerSetting.savetweet = true;
-            if (providerId === 'twitter') {
-                settings.button_invisible[interaction.guildId].showMediaAsAttachments = true;
-                settings.button_invisible[interaction.guildId].showAttachmentsAsEmbedsImage = true;
-                settings.button_invisible[interaction.guildId].translate = true;
-                settings.button_invisible[interaction.guildId].delete = true;
-                settings.button_invisible[interaction.guildId].savetweet = true;
-            }
+            await setSetting({ id: providerId }, 'button_invisible', interaction.guildId, providerSetting);
             await interaction.editReply(t('addedAllButtonLocales', interaction.locale));
         } else {
             providerSetting.showMediaAsAttachments = false;
@@ -59,42 +45,32 @@ module.exports = async function (interaction, client) {
             providerSetting.translate = false;
             providerSetting.delete = false;
             providerSetting.savetweet = false;
-            if (providerId === 'twitter') {
-                settings.button_invisible[interaction.guildId].showMediaAsAttachments = false;
-                settings.button_invisible[interaction.guildId].showAttachmentsAsEmbedsImage = false;
-                settings.button_invisible[interaction.guildId].translate = false;
-                settings.button_invisible[interaction.guildId].delete = false;
-                settings.button_invisible[interaction.guildId].savetweet = false;
-            }
+            await setSetting({ id: providerId }, 'button_invisible', interaction.guildId, providerSetting);
             await interaction.editReply(t('removedAllButtonLocales', interaction.locale));
         }
     } else {
         const response = [];
         if (interaction.options.getBoolean('showmediaasattachments') !== null) {
             providerSetting.showMediaAsAttachments = interaction.options.getBoolean('showmediaasattachments');
-            if (providerId === 'twitter') settings.button_invisible[interaction.guildId].showMediaAsAttachments = interaction.options.getBoolean('showmediaasattachments');
             response.push((t('setshowmediaasattachmentsbuttonLocales', interaction.locale)) + convertBoolToEnableDisable(!interaction.options.getBoolean('showmediaasattachments'), interaction.locale));
         }
         if (interaction.options.getBoolean('showattachmentsasembedsimage') !== null) {
             providerSetting.showAttachmentsAsEmbedsImage = interaction.options.getBoolean('showattachmentsasembedsimage');
-            if (providerId === 'twitter') settings.button_invisible[interaction.guildId].showAttachmentsAsEmbedsImage = interaction.options.getBoolean('showattachmentsasembedsimage');
             response.push((t('setshowattachmentsasembedsimagebuttonLocales', interaction.locale)) + convertBoolToEnableDisable(!interaction.options.getBoolean('showattachmentsasembedsimage'), interaction.locale));
         }
         if (interaction.options.getBoolean('translate') !== null) {
             providerSetting.translate = interaction.options.getBoolean('translate');
-            if (providerId === 'twitter') settings.button_invisible[interaction.guildId].translate = interaction.options.getBoolean('translate');
             response.push((t('settranslatebuttonLocales', interaction.locale)) + convertBoolToEnableDisable(!interaction.options.getBoolean('translate'), interaction.locale));
         }
         if (interaction.options.getBoolean('delete') !== null) {
             providerSetting.delete = interaction.options.getBoolean('delete');
-            if (providerId === 'twitter') settings.button_invisible[interaction.guildId].delete = interaction.options.getBoolean('delete');
             response.push((t('setdeletebuttonLocales', interaction.locale)) + convertBoolToEnableDisable(!interaction.options.getBoolean('delete'), interaction.locale));
         }
         if (interaction.options.getBoolean('savetweet') !== null) {
             providerSetting.savetweet = interaction.options.getBoolean('savetweet');
-            if (providerId === 'twitter') settings.button_invisible[interaction.guildId].savetweet = interaction.options.getBoolean('savetweet');
             response.push((t('setsavetweetbuttonLocales', interaction.locale)) + convertBoolToEnableDisable(!interaction.options.getBoolean('savetweet'), interaction.locale));
         }
+        await setSetting({ id: providerId }, 'button_invisible', interaction.guildId, providerSetting);
         await interaction.editReply(response.join('\n'));
     }
 

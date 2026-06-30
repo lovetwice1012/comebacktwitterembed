@@ -172,6 +172,122 @@ async function fetchJsonFromInstances(path) {
     throw lastError || new Error(`Invidious request failed: ${path}`);
 }
 
+function extractBalancedJson(source, objectStart) {
+    let depth = 0;
+    let inString = false;
+    let escaped = false;
+
+    for (let i = objectStart; i < source.length; i++) {
+        const ch = source[i];
+        if (inString) {
+            if (escaped) {
+                escaped = false;
+            } else if (ch === '\\') {
+                escaped = true;
+            } else if (ch === '"') {
+                inString = false;
+            }
+            continue;
+        }
+
+        if (ch === '"') {
+            inString = true;
+        } else if (ch === '{') {
+            depth++;
+        } else if (ch === '}') {
+            depth--;
+            if (depth === 0) return source.slice(objectStart, i + 1);
+        }
+    }
+
+    return null;
+}
+
+function parseInitialPlayerResponse(html) {
+    const marker = 'ytInitialPlayerResponse';
+    const markerIndex = html.indexOf(marker);
+    if (markerIndex === -1) return null;
+
+    const objectStart = html.indexOf('{', markerIndex);
+    if (objectStart === -1) return null;
+
+    const jsonText = extractBalancedJson(html, objectStart);
+    if (!jsonText) return null;
+
+    return JSON.parse(jsonText);
+}
+
+function textFromRuns(value) {
+    if (!value) return '';
+    if (typeof value.simpleText === 'string') return value.simpleText;
+    if (Array.isArray(value.runs)) return value.runs.map(run => run.text || '').join('');
+    return '';
+}
+
+function normalizePlayerResponse(player) {
+    const details = player?.videoDetails || {};
+    const microformat = player?.microformat?.playerMicroformatRenderer || {};
+    if (!details.videoId || !details.title) return null;
+
+    return {
+        title: details.title,
+        videoThumbnails: details.thumbnail?.thumbnails || microformat.thumbnail?.thumbnails || [],
+        description: details.shortDescription || textFromRuns(microformat.description),
+        publishedText: microformat.publishDate || microformat.uploadDate || '',
+        viewCount: Number(details.viewCount) || undefined,
+        likeCount: undefined,
+        author: details.author || microformat.ownerChannelName || '',
+        authorUrl: microformat.ownerProfileUrl || (details.channelId ? `/channel/${details.channelId}` : ''),
+        authorId: details.channelId,
+        authorThumbnails: microformat.ownerProfileUrl ? [] : [],
+        subCountText: '',
+        liveNow: details.isLiveContent === true,
+        formatStreams: [],
+    };
+}
+
+async function fetchVideoInfoFromYouTubePage(videoId) {
+    const res = await fetch(`https://www.youtube.com/watch?v=${encodeURIComponent(videoId)}&hl=en`, {
+        headers: REQUEST_HEADERS,
+    });
+    if (!res.ok) throw new Error(`YouTube page ${res.status} for ${videoId}`);
+
+    const html = await res.text();
+    const player = parseInitialPlayerResponse(html);
+    const normalized = normalizePlayerResponse(player);
+    if (!normalized) throw new Error(`YouTube page did not contain player metadata for ${videoId}`);
+
+    return { json: normalized, baseUrl: 'https://www.youtube.com' };
+}
+
+async function fetchVideoInfoFromOEmbed(videoId) {
+    const target = `https://www.youtube.com/watch?v=${encodeURIComponent(videoId)}`;
+    const res = await fetch(`https://www.youtube.com/oembed?url=${encodeURIComponent(target)}&format=json`, {
+        headers: REQUEST_HEADERS,
+    });
+    if (!res.ok) throw new Error(`YouTube oEmbed ${res.status} for ${videoId}`);
+
+    const info = await res.json();
+    return {
+        json: {
+            title: info.title,
+            videoThumbnails: [{ url: info.thumbnail_url, width: info.thumbnail_width, height: info.thumbnail_height }],
+            description: '',
+            publishedText: '',
+            viewCount: undefined,
+            likeCount: undefined,
+            author: info.author_name,
+            authorUrl: info.author_url,
+            authorId: undefined,
+            authorThumbnails: [],
+            subCountText: '',
+            liveNow: false,
+            formatStreams: [],
+        },
+        baseUrl: 'https://www.youtube.com',
+    };
+}
+
 function parseYouTubeUrl(rawUrl) {
     let url;
     try {
@@ -236,6 +352,22 @@ function parseYouTubeUrl(rawUrl) {
 async function fetchVideoInfo(videoId) {
     const path = `/api/v1/videos/${encodeURIComponent(videoId)}?hl=en`;
     return fetchJsonFromInstances(path);
+}
+
+async function fetchVideoInfoWithFallback(videoId) {
+    try {
+        return await fetchVideoInfo(videoId);
+    } catch (invidiousError) {
+        try {
+            return await fetchVideoInfoFromYouTubePage(videoId);
+        } catch {
+            try {
+                return await fetchVideoInfoFromOEmbed(videoId);
+            } catch {
+                throw invidiousError;
+            }
+        }
+    }
 }
 
 async function fetchPlaylistInfo(playlistId) {
@@ -425,7 +557,7 @@ async function extract(message, url, s) {
         const lang = normalizeLang(s);
         let embed;
         if (parsed.type === 'video') {
-            const { json, baseUrl } = await fetchVideoInfo(parsed.id);
+            const { json, baseUrl } = await fetchVideoInfoWithFallback(parsed.id);
             if (!json || json.error) return null;
             embed = buildVideoEmbed(json, parsed, baseUrl, message, s);
         } else if (parsed.type === 'playlist') {
@@ -443,7 +575,6 @@ async function extract(message, url, s) {
         return [buildStep(embed, message, url, s, lang)];
     } catch (err) {
         recordProviderError('youtube', err, message, url, { endpointKey: 'invidious/api' });
-        console.log(err);
         return null;
     }
 }
@@ -461,6 +592,9 @@ module.exports._internal = {
     buildChannelEmbed,
     buildPlaylistEmbed,
     buildVideoEmbed,
+    fetchVideoInfoFromOEmbed,
+    fetchVideoInfoFromYouTubePage,
     parseYouTubeUrl,
+    parseInitialPlayerResponse,
     stripTracking,
 };

@@ -2,7 +2,6 @@
 
 const fetch = require('node-fetch');
 const { ButtonBuilder, ButtonStyle, ComponentType } = require('discord.js');
-const { settings } = require('../../settings');
 const { recordProviderError } = require('../../errorTracking');
 
 const TWITCH_COLOR = 0x9146FF;
@@ -260,8 +259,7 @@ async function extract(message, url, s) {
     const parsed = parseTwitchClipUrl(url);
     if (!parsed) return null;
 
-    const guildId = message.guild?.id ?? message.guildId;
-    const guildLang = s.defaultLanguage ?? settings.defaultLanguage[guildId] ?? 'en';
+    const guildLang = s.defaultLanguage ?? 'en';
     void guildLang;
 
     let info;

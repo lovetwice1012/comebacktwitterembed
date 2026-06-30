@@ -1,25 +1,26 @@
 'use strict';
 
 const fs = require('fs');
+const fsp = require('fs/promises');
 const path = require('path');
 const { ApplicationCommandOptionType } = require('discord.js');
 const { messageLocales, descriptionLocales, commandNameLocales } = require('../../locales');
-const { settings } = require('../../settings');
 const { conv_en_to_en_US } = require('../../utils');
+const { getSaveTweetQuotaOverride } = require('../../providers/_provider_settings');
 
-function getSavedTweetUsageBytes(userId) {
+async function getSavedTweetUsageBytes(userId) {
     const userDir = path.join('.', 'saves', userId);
     if (!fs.existsSync(userDir)) return 0;
 
     let used = 0;
-    const dirs = fs.readdirSync(userDir, { withFileTypes: true });
+    const dirs = await fsp.readdir(userDir, { withFileTypes: true });
     for (const dir of dirs) {
         if (!dir.isDirectory()) continue;
         const tweetDir = path.join(userDir, dir.name);
-        const files = fs.readdirSync(tweetDir, { withFileTypes: true });
+        const files = await fsp.readdir(tweetDir, { withFileTypes: true });
         for (const file of files) {
             if (!file.isFile()) continue;
-            used += fs.statSync(path.join(tweetDir, file.name)).size;
+            used += (await fsp.stat(path.join(tweetDir, file.name))).size;
         }
     }
     return used;
@@ -31,8 +32,8 @@ module.exports.execute = async function (interaction, client) {
     if (user === null) user = interaction.user;
     const userid = user.id;
     let quota = 100 * 1024 * 1024;
-    if (settings.save_tweet_quota_override[userid] !== undefined) quota = settings.save_tweet_quota_override[userid];
-    let used = getSavedTweetUsageBytes(userid);
+    quota = await getSaveTweetQuotaOverride(userid) ?? quota;
+    let used = await getSavedTweetUsageBytes(userid);
     used = used / 1024 / 1024;
     quota = quota / 1024 / 1024;
     const usedDisplay = used >= 1024 ? (used / 1024).toFixed(2) + 'GB' : used.toFixed(2) + 'MB';

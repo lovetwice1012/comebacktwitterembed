@@ -2,7 +2,6 @@
 
 const { PermissionsBitField } = require('discord.js');
 const { t } = require('../../../locales');
-const { settings } = require('../../../settings');
 const { setSetting } = require('../../../providers/_provider_settings');
 const { convertBoolToEnableDisable } = require('../../../utils');
 function hasAdminPerm(member) {
@@ -22,8 +21,7 @@ module.exports = async function (interaction, client) {
     const providerId = interaction.options.getSubcommandGroup(false) || interaction.options.getString('provider') || 'twitter';
     const provider = { id: providerId };
     const boolean = interaction.options.getBoolean('boolean');
-    setSetting(provider, 'extract_bot_message', interaction.guildId, boolean);
-    if (providerId === 'twitter') settings.extract_bot_message[interaction.guildId] = boolean;
+    await setSetting(provider, 'extract_bot_message', interaction.guildId, boolean);
     await interaction.editReply((t('setextractbotmessagetolocales', interaction.locale)) + convertBoolToEnableDisable(boolean, interaction.locale));
 
 };

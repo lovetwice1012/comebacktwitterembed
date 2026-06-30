@@ -2,8 +2,8 @@
 
 const { ApplicationCommandOptionType } = require('discord.js');
 const { t, descriptionLocales, commandNameLocales } = require('../../../locales');
-const { saveSettings, settings } = require('../../../settings');
 const { conv_en_to_en_US } = require('../../../utils');
+const { setSaveTweetQuotaOverride } = require('../../_provider_settings');
 module.exports.execute = async function (interaction, client) {
 
     if (interaction.user.id === '796972193287503913') {
@@ -12,8 +12,7 @@ module.exports.execute = async function (interaction, client) {
         let user = interaction.options.getUser('user');
         if (user === null) user = interaction.user;
         const userid = user.id;
-        settings.save_tweet_quota_override[userid] = quota;
-        await saveSettings(settings);
+        await setSaveTweetQuotaOverride(userid, quota);
         await interaction.editReply((t('setsavetweetquotaoverridetolocales', interaction.locale)) + quota.toString());
     } else {
         await interaction.editReply(t('userDonthavePermissionLocales', interaction.locale));

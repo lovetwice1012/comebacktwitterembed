@@ -2,7 +2,6 @@
 
 const { PermissionsBitField } = require('discord.js');
 const { t } = require('../../../locales');
-const { settings } = require('../../../settings');
 const { setSetting } = require('../../../providers/_provider_settings');
 
 function hasAdminPerm(member) {
@@ -23,8 +22,7 @@ module.exports = async function (interaction, client) {
     const provider = { id: providerId };
     const language = interaction.options.getString('language');
     if (language === 'en' || language === 'ja') {
-        setSetting(provider, 'defaultLanguage', interaction.guildId, language);
-        if (providerId === 'twitter') settings.defaultLanguage[interaction.guildId] = language;
+        await setSetting(provider, 'defaultLanguage', interaction.guildId, language);
         await interaction.editReply((t('setdefaultlanguagetolocales', interaction.locale)) + language.toString());
     } else {
         await interaction.editReply('You must specify either en or ja.');

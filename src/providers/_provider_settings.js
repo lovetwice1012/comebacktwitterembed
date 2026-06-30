@@ -1,30 +1,14 @@
 'use strict';
 
-/**
- * プロバイダ単位の設定名前空間アクセサ。
- *
- * 値の格納先:
- *   settings.byProvider[providerId][key][guildId]
- *
- * 読み出し時のフォールバック順:
- *   1. settings.byProvider[providerId][key][guildId]
- *   2. (Twitter のみ) settings[key][guildId]               ← レガシー互換
- *   3. PROVIDER_DEFAULTS[key]
- *   4. undefined
- *
- * これにより既存ギルドの Twitter 設定はそのまま動き続け、新サイトを追加しても
- * その設定は別 namespace に保存されて Twitter には影響しない。
- */
+const { TABLES, ensureDatabaseSchema } = require('../db_schema');
+const { button_disabled_template, button_invisible_template } = require('../utils');
 
-const { settings } = require('../settings');
-
-/** プロバイダ間で共通な機能の既定値 */
 const PROVIDER_DEFAULTS = {
-    enabled:                                              undefined, // provider.enabledByDefault が優先
+    enabled:                                              undefined,
     defaultLanguage:                                      undefined,
     editOriginalIfTranslate:                              false,
     extract_bot_message:                                  false,
-    legacy_mode:                                          undefined, // 起動時に権限から決定
+    legacy_mode:                                          undefined,
     passive_mode:                                         false,
     bannedWords:                                          [],
     button_invisible:                                     undefined,
@@ -42,99 +26,389 @@ const PROVIDER_DEFAULTS = {
     quote_repost_do_not_extract:                          false,
 };
 
-/** Twitter のレガシー global キー (settings.<key>[gid] で書かれていた) */
-const LEGACY_TWITTER_KEYS = new Set(Object.keys(PROVIDER_DEFAULTS).filter(k => k !== 'enabled'));
-
-const LEGACY_TWITTER_KEY_MAP = {
-    defaultLanguage: 'defaultLanguage',
-    editOriginalIfTranslate: 'editOriginalIfTranslate',
-    extract_bot_message: 'extract_bot_message',
-    legacy_mode: 'legacy_mode',
-    passive_mode: 'passive_mode',
-    bannedWords: 'bannedWords',
-    anonymous_expand: 'anonymous_expand',
-    secondary_extract_mode: 'secondary_extract_mode',
-    secondary_extract_mode_multiple_images: 'secondary_extract_mode_multiple_images',
-    secondary_extract_mode_video: 'secondary_extract_mode_video',
-    sendMediaAsAttachmentsAsDefault: 'sendMediaAsAttachmentsAsDefault',
-    deletemessageifonlypostedtweetlink: 'deletemessageifonlypostedtweetlink',
-    deletemessageifonlypostedtweetlink_secoundaryextractmode: 'deletemessageifonlypostedtweetlink_secoundaryextractmode',
-    alwaysreplyifpostedtweetlink: 'alwaysreplyifpostedtweetlink',
-    quote_repost_max_depth: 'quote_repost_max_depth',
-    quote_repost_do_not_extract: 'quote_repost_do_not_extract',
-    button_invisible: 'button_invisible',
-    button_disabled: 'button_disabled',
+const PROVIDER_SETTING_COLUMNS = {
+    enabled: {
+        column: 'enabled',
+        type: 'bool',
+    },
+    defaultLanguage: {
+        column: 'default_language',
+        type: 'string',
+    },
+    editOriginalIfTranslate: {
+        column: 'edit_original_if_translate',
+        type: 'bool',
+    },
+    extract_bot_message: {
+        column: 'extract_bot_message',
+        type: 'bool',
+    },
+    legacy_mode: {
+        column: 'legacy_mode',
+        type: 'bool',
+    },
+    passive_mode: {
+        column: 'passive_mode',
+        type: 'bool',
+    },
+    anonymous_expand: {
+        column: 'anonymous_expand',
+        type: 'bool',
+    },
+    secondary_extract_mode: {
+        column: 'secondary_extract_mode',
+        type: 'bool',
+    },
+    secondary_extract_mode_multiple_images: {
+        column: 'secondary_extract_mode_multiple_images',
+        type: 'bool',
+    },
+    secondary_extract_mode_video: {
+        column: 'secondary_extract_mode_video',
+        type: 'bool',
+    },
+    sendMediaAsAttachmentsAsDefault: {
+        column: 'send_media_as_attachments_as_default',
+        type: 'bool',
+    },
+    deletemessageifonlypostedtweetlink: {
+        column: 'delete_if_only_posted_tweet_link',
+        type: 'bool',
+    },
+    deletemessageifonlypostedtweetlink_secoundaryextractmode: {
+        column: 'delete_if_only_posted_tweet_link_secondary_extract_mode',
+        type: 'bool',
+    },
+    alwaysreplyifpostedtweetlink: {
+        column: 'always_reply_if_posted_tweet_link',
+        type: 'bool',
+    },
+    quote_repost_max_depth: {
+        column: 'quote_repost_max_depth',
+        type: 'int',
+    },
+    quote_repost_do_not_extract: {
+        column: 'quote_repost_do_not_extract',
+        type: 'bool',
+    },
+    pixiv_images_per_step: {
+        column: 'pixiv_images_per_step',
+        type: 'int',
+    },
 };
 
-function ensureNs(providerId, key) {
-    if (!settings.byProvider) settings.byProvider = {};
-    if (!settings.byProvider[providerId]) settings.byProvider[providerId] = {};
-    if (!settings.byProvider[providerId][key]) settings.byProvider[providerId][key] = {};
-    return settings.byProvider[providerId][key];
+function queryDatabase() {
+    return require('../db').queryDatabase;
 }
 
-/**
- * @param {{id: string}} provider
- * @returns {any}
- */
-function getSetting(provider, key, guildId) {
-    const ns = settings.byProvider?.[provider.id]?.[key];
-    if (ns && ns[guildId] !== undefined) return ns[guildId];
-    // Twitter レガシー互換
-    if (provider.id === 'twitter' && LEGACY_TWITTER_KEYS.has(key)) {
-        const legacyKey = LEGACY_TWITTER_KEY_MAP[key] || key;
-        if (settings[legacyKey] && settings[legacyKey][guildId] !== undefined) {
-            return settings[legacyKey][guildId];
-        }
-    }
+function normalizeProvider(provider) {
+    if (typeof provider === 'string') return { id: provider };
+    return provider || { id: 'twitter' };
+}
+
+function normalizeTargetSetting(raw) {
+    const source = raw && typeof raw === 'object' ? raw : {};
+    return {
+        user: Array.isArray(source.user) ? [...new Set(source.user)] : [],
+        channel: Array.isArray(source.channel) ? [...new Set(source.channel)] : [],
+        role: Array.isArray(source.role) ? [...new Set(source.role)] : [],
+    };
+}
+
+function normalizeButtonVisibility(raw) {
+    return {
+        ...button_invisible_template,
+        savetweet: false,
+        ...(raw && typeof raw === 'object' ? raw : {}),
+    };
+}
+
+function normalizeButtonDisabled(raw) {
+    return {
+        ...button_disabled_template,
+        ...normalizeTargetSetting(raw),
+    };
+}
+
+function convertDatabaseValue(raw, spec) {
+    if (raw === null || raw === undefined) return undefined;
+    if (spec.type === 'bool') return raw === true || raw === 1;
+    if (spec.type === 'int') return Number(raw);
+    return raw;
+}
+
+function toDatabaseValue(value, spec) {
+    if (value === undefined) return null;
+    if (spec.type === 'bool') return value === true ? 1 : 0;
+    if (spec.type === 'int') return Number(value);
+    return value;
+}
+
+async function ensureProviderAndGuild(providerId, guildId) {
+    await ensureDatabaseSchema();
+    const query = queryDatabase();
+    await query(
+        `INSERT INTO ${TABLES.providers} (provider_id)
+         VALUES (?)
+         ON DUPLICATE KEY UPDATE provider_id = provider_id`,
+        [providerId]
+    );
+    await query(
+        `INSERT INTO ${TABLES.guilds} (guild_id)
+         VALUES (?)
+         ON DUPLICATE KEY UPDATE guild_id = guild_id`,
+        [guildId]
+    );
+}
+
+function settingDefault(provider, key) {
+    if (key === 'enabled') return provider.enabledByDefault === true;
     return PROVIDER_DEFAULTS[key];
 }
 
-function setSetting(provider, key, guildId, value) {
-    const ns = ensureNs(provider.id, key);
-    ns[guildId] = value;
+async function getScalarSetting(provider, key, guildId) {
+    const spec = PROVIDER_SETTING_COLUMNS[key];
+    if (!spec) return settingDefault(provider, key);
+
+    await ensureDatabaseSchema();
+    const rows = await queryDatabase()(
+        `SELECT ${spec.column} AS value
+         FROM ${TABLES.guildProviderSettings}
+         WHERE provider_id = ? AND guild_id = ?
+         LIMIT 1`,
+        [provider.id, guildId]
+    );
+    const value = convertDatabaseValue(rows[0]?.value, spec);
+    return value === undefined ? settingDefault(provider, key) : value;
 }
 
-/**
- * provider 全設定をフラットなスナップショットで返す。
- * extractor へ渡す `settings` 引数を作る用。
- * 解決順は getSetting と同じ (per-provider → Twitter レガシー → defaults)。
- * @returns {Object<string, any>}
- */
-function getProviderSettings(provider, guildId) {
-    /** @type {any} */
+async function setScalarSetting(provider, key, guildId, value) {
+    const spec = PROVIDER_SETTING_COLUMNS[key];
+    if (!spec) return;
+
+    await ensureProviderAndGuild(provider.id, guildId);
+    await queryDatabase()(
+        `INSERT INTO ${TABLES.guildProviderSettings} (provider_id, guild_id, ${spec.column})
+         VALUES (?, ?, ?)
+         ON DUPLICATE KEY UPDATE ${spec.column} = VALUES(${spec.column})`,
+        [provider.id, guildId, toDatabaseValue(value, spec)]
+    );
+}
+
+async function getRowsByTargetTable(table, providerId, guildId) {
+    await ensureDatabaseSchema();
+    return await queryDatabase()(
+        `SELECT target_type, target_id
+         FROM ${table}
+         WHERE provider_id = ? AND guild_id = ?`,
+        [providerId, guildId]
+    );
+}
+
+function targetRowsToSetting(rows) {
+    const setting = { user: [], channel: [], role: [] };
+    for (const row of rows || []) {
+        if (setting[row.target_type]) setting[row.target_type].push(row.target_id);
+    }
+    return normalizeTargetSetting(setting);
+}
+
+async function getDisableSetting(provider, guildId) {
+    const providerRows = await getRowsByTargetTable(TABLES.guildProviderDisableTargets, provider.id, guildId);
+    return targetRowsToSetting(providerRows);
+}
+
+async function replaceTargetRows(table, providerId, guildId, value) {
+    const setting = normalizeTargetSetting(value);
+    await ensureProviderAndGuild(providerId, guildId);
+    const query = queryDatabase();
+    await query('START TRANSACTION');
+    try {
+        await query(`DELETE FROM ${table} WHERE provider_id = ? AND guild_id = ?`, [providerId, guildId]);
+        for (const targetType of ['user', 'channel', 'role']) {
+            for (const targetId of setting[targetType]) {
+                await query(
+                    `INSERT INTO ${table} (provider_id, guild_id, target_type, target_id)
+                     VALUES (?, ?, ?, ?)`,
+                    [providerId, guildId, targetType, targetId]
+                );
+            }
+        }
+        await query('COMMIT');
+    } catch (err) {
+        await query('ROLLBACK').catch(() => {});
+        throw err;
+    }
+}
+
+async function setDisableSetting(provider, guildId, value) {
+    const setting = normalizeTargetSetting(value);
+    await replaceTargetRows(TABLES.guildProviderDisableTargets, provider.id, guildId, setting);
+}
+
+async function getBannedWords(provider, guildId) {
+    await ensureDatabaseSchema();
+    const rows = await queryDatabase()(
+        `SELECT word
+         FROM ${TABLES.guildProviderBannedWords}
+         WHERE provider_id = ? AND guild_id = ?
+         ORDER BY word`,
+        [provider.id, guildId]
+    );
+    return rows.map(row => row.word);
+}
+
+async function setBannedWords(provider, guildId, words) {
+    await ensureProviderAndGuild(provider.id, guildId);
+    const normalizedWords = [];
+    const seen = new Set();
+    for (const word of words || []) {
+        const normalized = String(word ?? '').normalize('NFC').trim();
+        if (!normalized || seen.has(normalized)) continue;
+        seen.add(normalized);
+        normalizedWords.push(normalized);
+    }
+
+    const query = queryDatabase();
+    await query('START TRANSACTION');
+    try {
+        await query(
+            `DELETE FROM ${TABLES.guildProviderBannedWords}
+             WHERE provider_id = ? AND guild_id = ?`,
+            [provider.id, guildId]
+        );
+        for (const word of normalizedWords) {
+            await query(
+                `INSERT INTO ${TABLES.guildProviderBannedWords} (provider_id, guild_id, word)
+                 VALUES (?, ?, ?)`,
+                [provider.id, guildId, word]
+            );
+        }
+        await query('COMMIT');
+    } catch (err) {
+        await query('ROLLBACK').catch(() => {});
+        throw err;
+    }
+}
+
+async function getButtonVisibility(provider, guildId) {
+    await ensureDatabaseSchema();
+    const rows = await queryDatabase()(
+        `SELECT button_key, hidden
+         FROM ${TABLES.guildProviderButtonVisibility}
+         WHERE provider_id = ? AND guild_id = ?`,
+        [provider.id, guildId]
+    );
+    const value = {};
+    for (const row of rows) value[row.button_key] = row.hidden === true || row.hidden === 1;
+    return normalizeButtonVisibility(value);
+}
+
+async function setButtonVisibility(provider, guildId, value) {
+    const visibility = normalizeButtonVisibility(value);
+    if (provider.id !== 'twitter') delete visibility.savetweet;
+
+    await ensureProviderAndGuild(provider.id, guildId);
+    const query = queryDatabase();
+    await query('START TRANSACTION');
+    try {
+        await query(
+            `DELETE FROM ${TABLES.guildProviderButtonVisibility}
+             WHERE provider_id = ? AND guild_id = ?`,
+            [provider.id, guildId]
+        );
+        for (const [buttonKey, hidden] of Object.entries(visibility)) {
+            await query(
+                `INSERT INTO ${TABLES.guildProviderButtonVisibility} (provider_id, guild_id, button_key, hidden)
+                 VALUES (?, ?, ?, ?)`,
+                [provider.id, guildId, buttonKey, hidden === true ? 1 : 0]
+            );
+        }
+        await query('COMMIT');
+    } catch (err) {
+        await query('ROLLBACK').catch(() => {});
+        throw err;
+    }
+}
+
+async function getSetting(providerInput, key, guildId) {
+    const provider = normalizeProvider(providerInput);
+    if (key === 'disable') return await getDisableSetting(provider, guildId);
+    if (key === 'button_disabled') {
+        return normalizeButtonDisabled(targetRowsToSetting(
+            await getRowsByTargetTable(TABLES.guildProviderButtonDisabledTargets, provider.id, guildId)
+        ));
+    }
+    if (key === 'bannedWords') return await getBannedWords(provider, guildId);
+    if (key === 'button_invisible') return await getButtonVisibility(provider, guildId);
+    return await getScalarSetting(provider, key, guildId);
+}
+
+async function setSetting(providerInput, key, guildId, value) {
+    const provider = normalizeProvider(providerInput);
+    if (key === 'disable') return await setDisableSetting(provider, guildId, value);
+    if (key === 'button_disabled') {
+        return await replaceTargetRows(TABLES.guildProviderButtonDisabledTargets, provider.id, guildId, value);
+    }
+    if (key === 'bannedWords') return await setBannedWords(provider, guildId, value);
+    if (key === 'button_invisible') return await setButtonVisibility(provider, guildId, value);
+    return await setScalarSetting(provider, key, guildId, value);
+}
+
+async function getProviderSettings(providerInput, guildId) {
+    const provider = normalizeProvider(providerInput);
     const out = {};
     for (const key of Object.keys(PROVIDER_DEFAULTS)) {
-        const v = getSetting(provider, key, guildId);
-        if (v !== undefined) out[key] = v;
-    }
-    // provider が独自にセットしているキーも拾う
-    const ns = settings.byProvider?.[provider.id];
-    if (ns) {
-        for (const key of Object.keys(ns)) {
-            if (out[key] === undefined && ns[key][guildId] !== undefined) out[key] = ns[key][guildId];
-        }
+        const value = await getSetting(provider, key, guildId);
+        if (value !== undefined) out[key] = value;
     }
     return out;
 }
 
-/** プロバイダがそのギルドで有効か (`enabled[gid]` 未設定なら provider.enabledByDefault) */
-function isProviderEnabled(provider, guildId) {
-    const ns = settings.byProvider?.[provider.id]?.enabled;
-    if (ns && ns[guildId] !== undefined) return ns[guildId] === true;
-    return provider.enabledByDefault === true;
+async function isProviderEnabled(providerInput, guildId) {
+    return await getSetting(providerInput, 'enabled', guildId) === true;
 }
 
-function setProviderEnabled(provider, guildId, value) {
-    const ns = ensureNs(provider.id, 'enabled');
-    ns[guildId] = value === true;
+async function setProviderEnabled(providerInput, guildId, value) {
+    return await setSetting(providerInput, 'enabled', guildId, value === true);
+}
+
+async function getSaveTweetQuotaOverride(userId) {
+    await ensureDatabaseSchema();
+    const rows = await queryDatabase()(
+        `SELECT save_tweet_quota_override_bytes AS quota
+         FROM ${TABLES.users}
+         WHERE user_id = ?
+         LIMIT 1`,
+        [userId]
+    );
+    const quota = rows[0]?.quota;
+    return quota === null || quota === undefined ? undefined : Number(quota);
+}
+
+async function setSaveTweetQuotaOverride(userId, quota) {
+    await ensureDatabaseSchema();
+    await queryDatabase()(
+        `INSERT INTO ${TABLES.users} (user_id, registered_at_ms, save_tweet_quota_override_bytes)
+         VALUES (?, ?, ?)
+         ON DUPLICATE KEY UPDATE save_tweet_quota_override_bytes = VALUES(save_tweet_quota_override_bytes)`,
+        [userId, Date.now(), quota]
+    );
 }
 
 module.exports = {
     PROVIDER_DEFAULTS,
+    PROVIDER_SETTING_COLUMNS,
     getSetting,
     setSetting,
     getProviderSettings,
     isProviderEnabled,
     setProviderEnabled,
+    getSaveTweetQuotaOverride,
+    setSaveTweetQuotaOverride,
+    _internal: {
+        normalizeButtonDisabled,
+        normalizeButtonVisibility,
+        normalizeTargetSetting,
+    },
 };

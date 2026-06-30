@@ -23,7 +23,6 @@ const {
     isProviderEnabled,
     setProviderEnabled,
 } = require('../../providers/_provider_settings');
-const { saveSettings, settings } = require('../../settings');
 
 const SETTABLE_KEYS = Object.keys(PROVIDER_DEFAULTS).filter(k => k !== 'enabled');
 const MAX_REPLY_LENGTH = 1900;
@@ -88,11 +87,12 @@ async function execute(interaction) {
     const sub = interaction.options.getSubcommand();
 
     if (sub === 'list') {
-        const lines = loadProviders().map(p => {
-            const enabled = isProviderEnabled(p, interaction.guildId);
+        const lines = [];
+        for (const p of loadProviders()) {
+            const enabled = await isProviderEnabled(p, interaction.guildId);
             const def = p.enabledByDefault ? ' (default on)' : ' (default off)';
-            return `\u2022 **${p.id}** \u2014 ${enabled ? 'enabled' : 'disabled'}${def}`;
-        });
+            lines.push(`\u2022 **${p.id}** \u2014 ${enabled ? 'enabled' : 'disabled'}${def}`);
+        }
         return await replyLines(interaction, lines);
     }
 
@@ -105,15 +105,14 @@ async function execute(interaction) {
     }
 
     if (sub === 'enable' || sub === 'disable') {
-        setProviderEnabled(provider, interaction.guildId, sub === 'enable');
-        await saveSettings(settings);
+        await setProviderEnabled(provider, interaction.guildId, sub === 'enable');
         return await interaction.editReply({ content: `Provider \`${id}\` is now **${sub === 'enable' ? 'enabled' : 'disabled'}** in this guild.` });
     }
 
     if (sub === 'show') {
-        const lines = [`**${id}** in this guild:`, `\u2022 enabled: ${isProviderEnabled(provider, interaction.guildId)}`];
+        const lines = [`**${id}** in this guild:`, `\u2022 enabled: ${await isProviderEnabled(provider, interaction.guildId)}`];
         for (const k of SETTABLE_KEYS) {
-            const v = getSetting(provider, k, interaction.guildId);
+            const v = await getSetting(provider, k, interaction.guildId);
             lines.push(`\u2022 ${k}: \`${formatSettingValue(v)}\``);
         }
         return await replyLines(interaction, lines);
@@ -126,8 +125,7 @@ async function execute(interaction) {
         }
         const raw = interaction.options.getString('value', true);
         const value = parseValue(raw);
-        setSetting(provider, key, interaction.guildId, value);
-        await saveSettings(settings);
+        await setSetting(provider, key, interaction.guildId, value);
         return await interaction.editReply({ content: `\`${id}.${key}\` = \`${formatSettingValue(value)}\` (this guild)` });
     }
 }

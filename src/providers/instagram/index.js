@@ -2,7 +2,6 @@
 
 const fetch = require('node-fetch');
 const { ButtonBuilder, ButtonStyle, ComponentType } = require('discord.js');
-const { settings } = require('../../settings');
 const { videoExtensions } = require('../../utils');
 const { recordProviderError } = require('../../errorTracking');
 
@@ -703,8 +702,7 @@ function buildMediaPayload(data, canonicalUrl, lang, requesterName, s, mediaInde
 async function extract(message, url, s, opts) {
     s = s || {};
     opts = opts || {};
-    const guildId = message.guild.id;
-    const lang = (s.defaultLanguage ?? settings.defaultLanguage[guildId]) === 'ja' ? 'ja' : 'en';
+    const lang = (s.defaultLanguage ?? 'en') === 'ja' ? 'ja' : 'en';
 
     const parsed = await resolveParsedUrl(parseInstagramUrl(url));
     if (!parsed || parsed.kind !== 'media') return null;

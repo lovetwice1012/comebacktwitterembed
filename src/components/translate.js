@@ -1,7 +1,7 @@
 'use strict';
 
 const fetch = require('node-fetch');
-const { settings, checkComponentIncludesDisabledButtonAndIfFindDeleteIt, detectProviderIdFromMessage } = require('../settings');
+const { checkComponentIncludesDisabledButtonAndIfFindDeleteIt, detectProviderIdFromMessage } = require('../settings');
 const { getSetting } = require('../providers/_provider_settings');
 const { normalizeEmbed } = require('../interactionResponse');
 
@@ -60,12 +60,11 @@ async function handle(interaction) {
     }
 
     const providerId = detectProviderIdFromMessage(interaction.message);
-    messageObject.components = checkComponentIncludesDisabledButtonAndIfFindDeleteIt(interaction.message.components || [], interaction.guildId, providerId);
+    messageObject.components = await checkComponentIncludesDisabledButtonAndIfFindDeleteIt(interaction.message.components || [], interaction.guildId, providerId);
     messageObject.embeds = messageObject.embeds.map(normalizeEmbed);
     await interaction.editReply(messageObject);
 
-    const editOriginalIfTranslate = getSetting({ id: providerId || 'twitter' }, 'editOriginalIfTranslate', interaction.guildId) === true
-        || settings.editOriginalIfTranslate[interaction.guildId] === true;
+    const editOriginalIfTranslate = await getSetting({ id: providerId || 'twitter' }, 'editOriginalIfTranslate', interaction.guildId) === true;
 
     if (editOriginalIfTranslate) {
         const attachmentUrls = getAttachmentUrls(interaction.message.attachments);

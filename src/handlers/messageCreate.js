@@ -1,10 +1,9 @@
 'use strict';
 
 const { Events } = require('discord.js');
-const { settings } = require('../settings');
 const { ifUserHasRole, cleanMessageContent } = require('../utils');
 const { extractAllUrls } = require('../providers/_loader');
-const { isProviderEnabled, getProviderSettings } = require('../providers/_provider_settings');
+const { getProviderSettings } = require('../providers/_provider_settings');
 const { runSendSteps } = require('../providers/_dispatcher');
 const { recordError, recordMetric } = require('../errorTracking');
 
@@ -14,7 +13,7 @@ function register(client) {
         return isMessageFromClient;
     }
 
-    function normalizeDisableSetting(providerId, guildId, disableSetting) {
+    function normalizeDisableSetting(disableSetting) {
         if (disableSetting && typeof disableSetting === 'object') {
             return {
                 user: Array.isArray(disableSetting.user) ? disableSetting.user : [],
@@ -24,19 +23,11 @@ function register(client) {
         }
 
         // 旧 Twitter グローバル disable との互換
-        if (providerId === 'twitter') {
-            return {
-                user: Array.isArray(settings.disable.user) ? settings.disable.user : [],
-                channel: Array.isArray(settings.disable.channel) ? settings.disable.channel : [],
-                role: Array.isArray(settings.disable.role[guildId]) ? settings.disable.role[guildId] : [],
-            };
-        }
-
         return { user: [], channel: [], role: [] };
     }
 
-    function isMessageDisabledForProvider(message, providerId, providerSettings) {
-        const disable = normalizeDisableSetting(providerId, message.guild.id, providerSettings.disable);
+    function isMessageDisabledForProvider(message, providerSettings) {
+        const disable = normalizeDisableSetting(providerSettings.disable);
         const isUserDisabled = disable.user.includes(message.author.id);
         const isChannelDisabled = disable.channel.includes(message.channel.id);
         const isRoleDisabled = !message.webhookId && ifUserHasRole(message.member, disable.role);
@@ -68,9 +59,9 @@ function register(client) {
         //await ensureUserExistsInDatabase(message.author.id);
 
         for (const { provider, url } of matches) {
-            if (!isProviderEnabled(provider, message.guild.id)) continue;
-            const providerSettings = getProviderSettings(provider, message.guild.id);
-            if (isMessageDisabledForProvider(message, provider.id, providerSettings)) continue;
+            const providerSettings = await getProviderSettings(provider, message.guild.id);
+            if (providerSettings.enabled !== true) continue;
+            if (isMessageDisabledForProvider(message, providerSettings)) continue;
             if (message.author.bot && providerSettings.extract_bot_message !== true && !message.webhookId) continue;
 
             let steps;

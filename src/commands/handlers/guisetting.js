@@ -14,7 +14,6 @@ const {
     TextInputStyle,
     UserSelectMenuBuilder,
 } = require('discord.js');
-const { settings, saveSettings } = require('../../settings');
 const { loadProviders } = require('../../providers/_loader');
 const {
     getSetting,
@@ -79,27 +78,6 @@ function buttonOptionLabel(option, locale) {
 function choiceLabel(spec, choice, locale) {
     return catalogText(`gui.choices.${spec.key}.${choice.value}`, locale) || choice.label;
 }
-
-const TWITTER_LEGACY_KEYS = {
-    defaultLanguage: 'defaultLanguage',
-    editOriginalIfTranslate: 'editOriginalIfTranslate',
-    extract_bot_message: 'extract_bot_message',
-    legacy_mode: 'legacy_mode',
-    passive_mode: 'passive_mode',
-    bannedWords: 'bannedWords',
-    anonymous_expand: 'anonymous_expand',
-    secondary_extract_mode: 'secondary_extract_mode',
-    secondary_extract_mode_multiple_images: 'secondary_extract_mode_multiple_images',
-    secondary_extract_mode_video: 'secondary_extract_mode_video',
-    sendMediaAsAttachmentsAsDefault: 'sendMediaAsAttachmentsAsDefault',
-    deletemessageifonlypostedtweetlink: 'deletemessageifonlypostedtweetlink',
-    deletemessageifonlypostedtweetlink_secoundaryextractmode: 'deletemessageifonlypostedtweetlink_secoundaryextractmode',
-    alwaysreplyifpostedtweetlink: 'alwaysreplyifpostedtweetlink',
-    quote_repost_max_depth: 'quote_repost_max_depth',
-    quote_repost_do_not_extract: 'quote_repost_do_not_extract',
-    button_invisible: 'button_invisible',
-    button_disabled: 'button_disabled',
-};
 
 const BUTTON_VISIBILITY_OPTIONS = [
     { key: 'showMediaAsAttachments', label: 'Media as attachments' },
@@ -333,6 +311,28 @@ async function replyNoPermission(interaction) {
     return await interaction.reply(payload);
 }
 
+async function updateGuiMessage(interaction, payload) {
+    if (interaction.replied || interaction.deferred) {
+        return await interaction.editReply(payload);
+    }
+    return await interaction.update(payload);
+}
+
+async function deferGuiMessageUpdate(interaction) {
+    if (!interaction.replied && !interaction.deferred) {
+        await interaction.deferUpdate();
+    }
+}
+
+async function deferModalResult(interaction) {
+    if (interaction.replied || interaction.deferred) return;
+    if (interaction.isFromMessage()) {
+        await interaction.deferUpdate();
+        return;
+    }
+    await interaction.deferReply({ ephemeral: true });
+}
+
 function parseCustomId(customId) {
     const parts = String(customId || '').split(':');
     return parts[0] === CUSTOM_ID_PREFIX ? parts : null;
@@ -349,66 +349,32 @@ function boolLabel(value, locale) {
     return value === true ? uiText('enabled', locale) : uiText('disabled', locale);
 }
 
-function getBooleanSettingValue(providerId, spec, guildId) {
-    if (spec.kind === 'providerEnabled') return isProviderEnabled(findProviderDefinition(providerId), guildId);
-    return getSetting({ id: providerId }, spec.settingKey, guildId) === true;
+async function getBooleanSettingValue(providerId, spec, guildId) {
+    if (spec.kind === 'providerEnabled') return await isProviderEnabled(findProviderDefinition(providerId), guildId);
+    return await getSetting({ id: providerId }, spec.settingKey, guildId) === true;
 }
 
-function ensureLegacyBucket(key) {
-    if (!settings[key] || typeof settings[key] !== 'object') settings[key] = {};
-    return settings[key];
+async function setProviderGuildSetting(providerId, settingKey, guildId, value) {
+    await setSetting({ id: providerId }, settingKey, guildId, value);
 }
 
-function setProviderGuildSetting(providerId, settingKey, guildId, value) {
-    setSetting({ id: providerId }, settingKey, guildId, value);
-    if (providerId !== 'twitter') return;
-
-    const legacyKey = TWITTER_LEGACY_KEYS[settingKey];
-    if (!legacyKey) return;
-    ensureLegacyBucket(legacyKey)[guildId] = value;
-}
-
-function normalizeTargetSetting(providerId, settingKey, guildId) {
-    const raw = getSetting({ id: providerId }, settingKey, guildId);
+async function normalizeTargetSetting(providerId, settingKey, guildId) {
+    const raw = await getSetting({ id: providerId }, settingKey, guildId);
     let out = raw && typeof raw === 'object' ? {
         user: Array.isArray(raw.user) ? [...raw.user] : [],
         channel: Array.isArray(raw.channel) ? [...raw.channel] : [],
         role: Array.isArray(raw.role) ? [...raw.role] : [],
     } : null;
 
-    if (!out && providerId === 'twitter' && settingKey === 'disable') {
-        out = {
-            user: Array.isArray(settings.disable?.user) ? [...settings.disable.user] : [],
-            channel: Array.isArray(settings.disable?.channel) ? [...settings.disable.channel] : [],
-            role: Array.isArray(settings.disable?.role?.[guildId]) ? [...settings.disable.role[guildId]] : [],
-        };
-    }
-
     return out || { user: [], channel: [], role: [] };
 }
 
-function setTargetSetting(providerId, settingKey, guildId, value) {
-    setSetting({ id: providerId }, settingKey, guildId, value);
-    if (providerId !== 'twitter') return;
-
-    if (settingKey === 'disable') {
-        settings.disable.user = [...value.user];
-        settings.disable.channel = [...value.channel];
-        settings.disable.role[guildId] = [...value.role];
-        return;
-    }
-
-    if (settingKey === 'button_disabled') {
-        settings.button_disabled[guildId] = {
-            user: [...value.user],
-            channel: [...value.channel],
-            role: [...value.role],
-        };
-    }
+async function setTargetSetting(providerId, settingKey, guildId, value) {
+    await setSetting({ id: providerId }, settingKey, guildId, value);
 }
 
-function normalizeButtonVisibility(providerId, guildId) {
-    const raw = getSetting({ id: providerId }, 'button_invisible', guildId);
+async function normalizeButtonVisibility(providerId, guildId) {
+    const raw = await getSetting({ id: providerId }, 'button_invisible', guildId);
     const base = {
         ...button_invisible_template,
         savetweet: false,
@@ -417,21 +383,20 @@ function normalizeButtonVisibility(providerId, guildId) {
     return { ...base, ...raw };
 }
 
-function setButtonVisibility(providerId, guildId, value) {
-    setSetting({ id: providerId }, 'button_invisible', guildId, value);
-    if (providerId === 'twitter') settings.button_invisible[guildId] = { ...value };
+async function setButtonVisibility(providerId, guildId, value) {
+    await setSetting({ id: providerId }, 'button_invisible', guildId, value);
 }
 
 function getButtonOptions(providerId) {
     return BUTTON_VISIBILITY_OPTIONS.filter(option => providerId === 'twitter' || option.key !== 'savetweet');
 }
 
-function normalizeBannedWords(providerId, guildId) {
-    const raw = getSetting({ id: providerId }, 'bannedWords', guildId);
+async function normalizeBannedWords(providerId, guildId) {
+    const raw = await getSetting({ id: providerId }, 'bannedWords', guildId);
     return Array.isArray(raw) ? [...raw] : [];
 }
 
-function setBannedWords(providerId, guildId, words) {
+async function setBannedWords(providerId, guildId, words) {
     const uniqueWords = [];
     const seen = new Set();
     for (const word of words) {
@@ -440,23 +405,23 @@ function setBannedWords(providerId, guildId, words) {
         seen.add(normalized);
         uniqueWords.push(normalized);
     }
-    setProviderGuildSetting(providerId, 'bannedWords', guildId, uniqueWords);
+    await setProviderGuildSetting(providerId, 'bannedWords', guildId, uniqueWords);
 }
 
-function applySettingValue(providerId, settingKey, guildId, value) {
+async function applySettingValue(providerId, settingKey, guildId, value) {
     if (settingKey === 'enabled') {
-        setProviderEnabled(findProviderDefinition(providerId), guildId, value === true);
+        await setProviderEnabled(findProviderDefinition(providerId), guildId, value === true);
         return;
     }
 
-    setProviderGuildSetting(providerId, settingKey, guildId, value);
+    await setProviderGuildSetting(providerId, settingKey, guildId, value);
 
     if (providerId !== 'twitter') return;
     if (settingKey === 'legacy_mode' && value === true) {
-        setProviderGuildSetting(providerId, 'secondary_extract_mode', guildId, false);
+        await setProviderGuildSetting(providerId, 'secondary_extract_mode', guildId, false);
     }
     if (settingKey === 'secondary_extract_mode' && value === true) {
-        setProviderGuildSetting(providerId, 'legacy_mode', guildId, false);
+        await setProviderGuildSetting(providerId, 'legacy_mode', guildId, false);
     }
 }
 
@@ -491,11 +456,11 @@ function targetTypeLabel(targetType, locale) {
     return targetType;
 }
 
-function applyTargetToggle(providerId, settingKey, guildId, targetType, ids, locale) {
-    const current = normalizeTargetSetting(providerId, settingKey, guildId);
+async function applyTargetToggle(providerId, settingKey, guildId, targetType, ids, locale) {
+    const current = await normalizeTargetSetting(providerId, settingKey, guildId);
     const result = toggleValues(current[targetType] || [], ids);
     const next = { ...current, [targetType]: result.values };
-    setTargetSetting(providerId, settingKey, guildId, next);
+    await setTargetSetting(providerId, settingKey, guildId, next);
 
     if (ids.length === 1) {
         const textKey = result.added === 1 ? 'addedTarget' : 'removedTarget';
@@ -504,44 +469,44 @@ function applyTargetToggle(providerId, settingKey, guildId, targetType, ids, loc
     return uiText('updatedTargets', locale, { targetType: targetTypeLabel(targetType, locale) });
 }
 
-function applyButtonVisibilitySelection(providerId, guildId, hiddenButtonKeys, locale) {
+async function applyButtonVisibilitySelection(providerId, guildId, hiddenButtonKeys, locale) {
     const selected = new Set(hiddenButtonKeys);
-    const next = normalizeButtonVisibility(providerId, guildId);
+    const next = await normalizeButtonVisibility(providerId, guildId);
     for (const option of getButtonOptions(providerId)) {
         next[option.key] = selected.has(option.key);
     }
     if (providerId !== 'twitter') delete next.savetweet;
-    setButtonVisibility(providerId, guildId, next);
+    await setButtonVisibility(providerId, guildId, next);
     return uiText('updatedHiddenButtons', locale);
 }
 
-function applyBannedWordInput(providerId, guildId, rawWord, locale) {
+async function applyBannedWordInput(providerId, guildId, rawWord, locale) {
     const word = String(rawWord ?? '').normalize('NFC').trim();
     if (!word) return uiText('bannedWordEmpty', locale);
 
-    const words = normalizeBannedWords(providerId, guildId);
+    const words = await normalizeBannedWords(providerId, guildId);
     const index = words.indexOf(word);
     if (index === -1) {
         words.push(word);
-        setBannedWords(providerId, guildId, words);
+        await setBannedWords(providerId, guildId, words);
         return uiText('addedBannedWord', locale, { word });
     }
 
     words.splice(index, 1);
-    setBannedWords(providerId, guildId, words);
+    await setBannedWords(providerId, guildId, words);
     return uiText('removedBannedWord', locale, { word });
 }
 
-function removeBannedWords(providerId, guildId, selectedIndexes, locale) {
+async function removeBannedWords(providerId, guildId, selectedIndexes, locale) {
     const indexes = new Set(
         (selectedIndexes || [])
             .map(value => Number(value))
             .filter(value => Number.isInteger(value) && value >= 0)
     );
-    const currentWords = normalizeBannedWords(providerId, guildId);
+    const currentWords = await normalizeBannedWords(providerId, guildId);
     const words = currentWords.filter((_word, index) => !indexes.has(index));
     const removedCount = currentWords.length - words.length;
-    setBannedWords(providerId, guildId, words);
+    await setBannedWords(providerId, guildId, words);
     return uiText('removedBannedWordsCount', locale, { count: removedCount });
 }
 
@@ -556,8 +521,8 @@ function formatChoiceValue(spec, value, locale) {
     return choice ? choiceLabel(spec, choice, locale) : String(value ?? '(unset)');
 }
 
-function formatTargetSummary(providerId, settingKey, guildId, locale) {
-    const target = normalizeTargetSetting(providerId, settingKey, guildId);
+async function formatTargetSummary(providerId, settingKey, guildId, locale) {
+    const target = await normalizeTargetSetting(providerId, settingKey, guildId);
     return [
         `${uiText('users', locale)}: ${target.user.length}`,
         `${uiText('channels', locale)}: ${target.channel.length}`,
@@ -565,16 +530,16 @@ function formatTargetSummary(providerId, settingKey, guildId, locale) {
     ].join('\n');
 }
 
-function formatButtonVisibilitySummary(providerId, guildId, locale) {
-    const visibility = normalizeButtonVisibility(providerId, guildId);
+async function formatButtonVisibilitySummary(providerId, guildId, locale) {
+    const visibility = await normalizeButtonVisibility(providerId, guildId);
     const hidden = getButtonOptions(providerId)
         .filter(option => visibility[option.key] === true)
         .map(option => buttonOptionLabel(option, locale));
     return hidden.length === 0 ? uiText('none', locale) : hidden.join('\n');
 }
 
-function formatBannedWordsSummary(providerId, guildId, locale) {
-    const words = normalizeBannedWords(providerId, guildId);
+async function formatBannedWordsSummary(providerId, guildId, locale) {
+    const words = await normalizeBannedWords(providerId, guildId);
     if (words.length === 0) return uiText('none', locale);
     const shown = words.slice(0, 10).map(word => `\`${truncate(word, 80)}\``);
     const suffix = words.length > shown.length
@@ -583,13 +548,13 @@ function formatBannedWordsSummary(providerId, guildId, locale) {
     return shown.join('\n') + suffix;
 }
 
-function formatSettingValue(providerId, spec, guildId, locale) {
-    if (spec.kind === 'targets') return formatTargetSummary(providerId, spec.settingKey, guildId, locale);
-    if (spec.kind === 'buttonVisibility') return formatButtonVisibilitySummary(providerId, guildId, locale);
-    if (spec.kind === 'bannedWords') return formatBannedWordsSummary(providerId, guildId, locale);
+async function formatSettingValue(providerId, spec, guildId, locale) {
+    if (spec.kind === 'targets') return await formatTargetSummary(providerId, spec.settingKey, guildId, locale);
+    if (spec.kind === 'buttonVisibility') return await formatButtonVisibilitySummary(providerId, guildId, locale);
+    if (spec.kind === 'bannedWords') return await formatBannedWordsSummary(providerId, guildId, locale);
 
-    if (spec.kind === 'providerEnabled') return boolLabel(getBooleanSettingValue(providerId, spec, guildId), locale);
-    const value = getSetting({ id: providerId }, spec.settingKey, guildId);
+    if (spec.kind === 'providerEnabled') return boolLabel(await getBooleanSettingValue(providerId, spec, guildId), locale);
+    const value = await getSetting({ id: providerId }, spec.settingKey, guildId);
     if (spec.kind === 'bool') return boolLabel(value === true, locale);
     if (spec.kind === 'choice') return formatChoiceValue(spec, value, locale);
     return value === undefined ? '(unset)' : String(value);
@@ -635,8 +600,8 @@ function buildUtilityButtons(providerId, settingKey, locale) {
     );
 }
 
-function buildBoolControls(providerId, spec, guildId, locale) {
-    const value = getBooleanSettingValue(providerId, spec, guildId);
+async function buildBoolControls(providerId, spec, guildId, locale) {
+    const value = await getBooleanSettingValue(providerId, spec, guildId);
     return [
         new ActionRowBuilder().addComponents(
             new ButtonBuilder()
@@ -661,8 +626,8 @@ function buildBoolControls(providerId, spec, guildId, locale) {
     ];
 }
 
-function buildChoiceControls(providerId, spec, guildId, locale) {
-    const currentValue = getSetting({ id: providerId }, spec.settingKey, guildId);
+async function buildChoiceControls(providerId, spec, guildId, locale) {
+    const currentValue = await getSetting({ id: providerId }, spec.settingKey, guildId);
     return [
         new ActionRowBuilder().addComponents(
             new StringSelectMenuBuilder()
@@ -678,8 +643,8 @@ function buildChoiceControls(providerId, spec, guildId, locale) {
     ];
 }
 
-function buildButtonVisibilityControls(providerId, guildId, locale) {
-    const visibility = normalizeButtonVisibility(providerId, guildId);
+async function buildButtonVisibilityControls(providerId, guildId, locale) {
+    const visibility = await normalizeButtonVisibility(providerId, guildId);
     const options = getButtonOptions(providerId);
     return [
         new ActionRowBuilder().addComponents(
@@ -741,9 +706,9 @@ function buildTargetControls(providerId, spec, locale) {
     ];
 }
 
-function buildBannedWordControls(providerId, guildId, locale) {
+async function buildBannedWordControls(providerId, guildId, locale) {
     const rows = [];
-    const words = normalizeBannedWords(providerId, guildId);
+    const words = await normalizeBannedWords(providerId, guildId);
     if (words.length > 0) {
         const shownWords = words.slice(0, 25);
         rows.push(new ActionRowBuilder().addComponents(
@@ -776,12 +741,12 @@ function buildBannedWordControls(providerId, guildId, locale) {
     return rows;
 }
 
-function buildControls(providerId, spec, guildId, locale) {
-    if (spec.kind === 'bool') return buildBoolControls(providerId, spec, guildId, locale);
-    if (spec.kind === 'choice') return buildChoiceControls(providerId, spec, guildId, locale);
-    if (spec.kind === 'buttonVisibility') return buildButtonVisibilityControls(providerId, guildId, locale);
+async function buildControls(providerId, spec, guildId, locale) {
+    if (spec.kind === 'bool') return await buildBoolControls(providerId, spec, guildId, locale);
+    if (spec.kind === 'choice') return await buildChoiceControls(providerId, spec, guildId, locale);
+    if (spec.kind === 'buttonVisibility') return await buildButtonVisibilityControls(providerId, guildId, locale);
     if (spec.kind === 'targets') return buildTargetControls(providerId, spec, locale);
-    if (spec.kind === 'bannedWords') return buildBannedWordControls(providerId, guildId, locale);
+    if (spec.kind === 'bannedWords') return await buildBannedWordControls(providerId, guildId, locale);
     return [buildUtilityButtons(providerId, spec.key, locale)];
 }
 
@@ -789,12 +754,12 @@ function fallbackText(value, locale) {
     return value || uiText('empty', locale);
 }
 
-function buildFields(providerId, spec, guildId, locale) {
+async function buildFields(providerId, spec, guildId, locale) {
     if (spec.kind !== 'overview') {
         return [
             {
                 name: uiText('currentValue', locale),
-                value: fallbackText(truncate(formatSettingValue(providerId, spec, guildId, locale), 1024), locale),
+                value: fallbackText(truncate(await formatSettingValue(providerId, spec, guildId, locale), 1024), locale),
                 inline: false,
             },
             {
@@ -805,16 +770,18 @@ function buildFields(providerId, spec, guildId, locale) {
         ];
     }
 
-    return getSettingSpecs(providerId)
-        .filter(candidate => candidate.kind !== 'overview')
-        .map(candidate => ({
+    const fields = [];
+    for (const candidate of getSettingSpecs(providerId).filter(candidate => candidate.kind !== 'overview')) {
+        fields.push({
             name: truncate(specLabel(candidate, locale), 256),
-            value: fallbackText(truncate(formatSettingValue(providerId, candidate, guildId, locale), 1024), locale),
+            value: fallbackText(truncate(await formatSettingValue(providerId, candidate, guildId, locale), 1024), locale),
             inline: candidate.kind === 'bool' || candidate.kind === 'choice',
-        }));
+        });
+    }
+    return fields;
 }
 
-function buildGuiPayload(providerId, settingKey, guildId, notice = null, locale = 'en-US') {
+async function buildGuiPayload(providerId, settingKey, guildId, notice = null, locale = 'en-US') {
     const normalizedProviderId = normalizeProviderId(providerId);
     const normalizedSettingKey = normalizeSettingKey(normalizedProviderId, settingKey);
     const spec = findSpec(normalizedProviderId, normalizedSettingKey);
@@ -825,17 +792,18 @@ function buildGuiPayload(providerId, settingKey, guildId, notice = null, locale 
             ? uiText('selectSettingToEdit', locale)
             : uiText('editing', locale, { label: specLabel(spec, locale) }),
         color: 0x1DA1F2,
-        fields: buildFields(normalizedProviderId, spec, guildId, locale),
+        fields: await buildFields(normalizedProviderId, spec, guildId, locale),
     };
     if (notice) embed.footer = { text: truncate(notice, 2048) };
 
+    const controls = await buildControls(normalizedProviderId, spec, guildId, locale);
     return {
         content: '',
         embeds: [embed],
         components: [
             buildProviderSelect(normalizedProviderId, normalizedSettingKey, locale),
             buildSettingSelect(normalizedProviderId, normalizedSettingKey, locale),
-            ...buildControls(normalizedProviderId, spec, guildId, locale),
+            ...controls,
         ],
         allowedMentions: { parse: [] },
     };
@@ -865,7 +833,7 @@ async function execute(interaction) {
     }
 
     const providerId = normalizeProviderId(interaction.options.getString('provider') || DEFAULT_PROVIDER_ID);
-    return await interaction.editReply(buildGuiPayload(providerId, DEFAULT_SETTING_KEY, interaction.guildId, null, interaction.locale));
+    return await interaction.editReply(await buildGuiPayload(providerId, DEFAULT_SETTING_KEY, interaction.guildId, null, interaction.locale));
 }
 
 async function handleComponent(interaction) {
@@ -880,7 +848,8 @@ async function handleComponent(interaction) {
     const action = parts[1];
     if (action === 'modalOpen' && parts[2] === 'bannedWords') {
         if (!canManageMessages(interaction)) {
-            await interaction.update(buildGuiPayload(
+            await deferGuiMessageUpdate(interaction);
+            await updateGuiMessage(interaction, await buildGuiPayload(
                 parts[3],
                 'bannedWords',
                 interaction.guildId,
@@ -901,6 +870,18 @@ async function handleComponent(interaction) {
     let providerId = normalizeProviderId(parts[2]);
     let settingKey = normalizeSettingKey(providerId, parts[3] || DEFAULT_SETTING_KEY);
     let notice = null;
+    const needsPersistence = [
+        'bool',
+        'choice',
+        'buttonVisibility',
+        'buttonVisibilityPreset',
+        'target',
+        'bannedRemove',
+    ].includes(action);
+
+    if (needsPersistence) {
+        await deferGuiMessageUpdate(interaction);
+    }
 
     if (action === 'provider') {
         providerId = normalizeProviderId(interaction.values[0]);
@@ -910,37 +891,31 @@ async function handleComponent(interaction) {
         settingKey = normalizeSettingKey(providerId, interaction.values[0]);
     } else if (action === 'bool') {
         const spec = findSpec(providerId, settingKey);
-        applySettingValue(providerId, spec.settingKey, interaction.guildId, parts[4] === '1');
-        await saveSettings(settings);
+        await applySettingValue(providerId, spec.settingKey, interaction.guildId, parts[4] === '1');
         notice = `${specLabel(spec, interaction.locale)}: ${boolLabel(parts[4] === '1', interaction.locale)}`;
     } else if (action === 'choice') {
         const spec = findSpec(providerId, settingKey);
         const selectedValue = interaction.values[0];
         const value = typeof spec.parseValue === 'function' ? spec.parseValue(selectedValue) : selectedValue;
-        applySettingValue(providerId, spec.settingKey, interaction.guildId, value);
-        await saveSettings(settings);
+        await applySettingValue(providerId, spec.settingKey, interaction.guildId, value);
         notice = `${specLabel(spec, interaction.locale)}: ${formatChoiceValue(spec, value, interaction.locale)}`;
     } else if (action === 'buttonVisibility') {
         settingKey = 'button_invisible';
-        notice = applyButtonVisibilitySelection(providerId, interaction.guildId, interaction.values || [], interaction.locale);
-        await saveSettings(settings);
+        notice = await applyButtonVisibilitySelection(providerId, interaction.guildId, interaction.values || [], interaction.locale);
     } else if (action === 'buttonVisibilityPreset') {
         settingKey = 'button_invisible';
         const optionKeys = parts[3] === 'all' ? getButtonOptions(providerId).map(option => option.key) : [];
-        notice = applyButtonVisibilitySelection(providerId, interaction.guildId, optionKeys, interaction.locale);
-        await saveSettings(settings);
+        notice = await applyButtonVisibilitySelection(providerId, interaction.guildId, optionKeys, interaction.locale);
     } else if (action === 'target') {
         const spec = findSpec(providerId, settingKey);
         const targetType = parts[4];
-        notice = applyTargetToggle(providerId, spec.settingKey, interaction.guildId, targetType, interaction.values || [], interaction.locale);
-        await saveSettings(settings);
+        notice = await applyTargetToggle(providerId, spec.settingKey, interaction.guildId, targetType, interaction.values || [], interaction.locale);
     } else if (action === 'bannedRemove') {
         settingKey = 'bannedWords';
         if (!canManageMessages(interaction)) {
             notice = uiText('manageMessagesRequired', interaction.locale);
         } else {
-            notice = removeBannedWords(providerId, interaction.guildId, interaction.values || [], interaction.locale);
-            await saveSettings(settings);
+            notice = await removeBannedWords(providerId, interaction.guildId, interaction.values || [], interaction.locale);
         }
     } else if (action === 'refresh') {
         // Redraw current state below.
@@ -948,7 +923,7 @@ async function handleComponent(interaction) {
         notice = uiText('unknownGuiAction', interaction.locale);
     }
 
-    await interaction.update(buildGuiPayload(providerId, settingKey, interaction.guildId, notice, interaction.locale));
+    await updateGuiMessage(interaction, await buildGuiPayload(providerId, settingKey, interaction.guildId, notice, interaction.locale));
     return true;
 }
 
@@ -965,25 +940,24 @@ async function handleModalSubmit(interaction) {
     const providerId = normalizeProviderId(parts[3]);
     let notice = uiText('unknownForm', interaction.locale);
     let settingKey = DEFAULT_SETTING_KEY;
+    await deferModalResult(interaction);
 
     if (modalKey === 'bannedWords') {
         settingKey = 'bannedWords';
         if (!canManageMessages(interaction)) {
             notice = uiText('manageMessagesRequired', interaction.locale);
         } else {
-            notice = applyBannedWordInput(
+            notice = await applyBannedWordInput(
                 providerId,
                 interaction.guildId,
                 interaction.fields.getTextInputValue(BANNED_WORD_INPUT_ID),
                 interaction.locale
             );
-            await saveSettings(settings);
         }
     }
 
-    const payload = buildGuiPayload(providerId, settingKey, interaction.guildId, notice, interaction.locale);
-    if (interaction.isFromMessage()) await interaction.update(payload);
-    else await interaction.reply({ ...payload, ephemeral: true });
+    const payload = await buildGuiPayload(providerId, settingKey, interaction.guildId, notice, interaction.locale);
+    await interaction.editReply(payload);
     return true;
 }
 

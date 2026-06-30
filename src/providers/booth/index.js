@@ -26,7 +26,6 @@
 
 const fetch = require('node-fetch');
 const { ButtonBuilder, ButtonStyle, ComponentType } = require('discord.js');
-const { settings } = require('../../settings');
 const { extractSalePeriod } = require('./_sale');
 const { recordProviderError } = require('../../errorTracking');
 
@@ -264,8 +263,7 @@ function formatSalePeriod(period, lang) {
 /** @type {import('../_types').Extractor} */
 async function extract(message, url, s) {
     s = s || {};
-    const guildId = message.guild.id;
-    const guildLang = s.defaultLanguage ?? settings.defaultLanguage[guildId] ?? 'en';
+    const guildLang = s.defaultLanguage ?? 'en';
     const apiLang = pickLanguage(guildLang);
 
     const parsed = parseBoothUrl(url, apiLang);

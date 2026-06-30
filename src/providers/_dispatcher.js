@@ -44,7 +44,7 @@ async function runSendSteps(message, steps, providerId = null) {
         const messageObject = {};
         if (step.embeds && step.embeds.length > 0)         messageObject.embeds = step.embeds;
         if (step.files && step.files.length > 0)           messageObject.files = step.files;
-        if (step.components && step.components.length > 0) messageObject.components = checkComponentIncludesDisabledButtonAndIfFindDeleteIt(step.components, message.guildId, providerId);
+        if (step.components && step.components.length > 0) messageObject.components = await checkComponentIncludesDisabledButtonAndIfFindDeleteIt(step.components, message.guildId, providerId);
         if (step.content)                                  messageObject.content = step.content;
         if (step.allowedMentions)                          messageObject.allowedMentions = step.allowedMentions;
 
