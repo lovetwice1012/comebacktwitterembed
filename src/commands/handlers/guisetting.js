@@ -29,8 +29,35 @@ const {
 
 const CUSTOM_ID_PREFIX = 'guisetting';
 const DEFAULT_PROVIDER_ID = 'twitter';
+const BULK_PROVIDER_ID = 'all';
 const DEFAULT_SETTING_KEY = 'overview';
 const BANNED_WORD_INPUT_ID = 'guisetting-banned-word';
+const COPY_SOURCE_GUILD_INPUT_ID = 'guisetting-copy-source-guild';
+
+const BULK_SETTING_KEYS = new Set([
+    'enabled',
+    'disable',
+    'defaultLanguage',
+    'editOriginalIfTranslate',
+    'extract_bot_message',
+    'button_invisible',
+    'button_disabled',
+]);
+
+const LOCAL_TEXT = {
+    allProviders: { en: 'All providers', ja: 'すべてのプロバイダー' },
+    allProviderSettings: { en: 'Settings shared by all providers.', ja: 'すべてのプロバイダーに共通する設定です。' },
+    mixed: { en: 'Mixed', ja: '混在' },
+    importFromGuild: { en: 'Import from server', ja: 'サーバーから取り込み' },
+    copyModalTitle: { en: 'Import server settings', ja: 'サーバー設定を取り込み' },
+    sourceGuildId: { en: 'Source server ID', ja: 'コピー元サーバーID' },
+    sourceGuildPlaceholder: { en: 'Server A guild ID', ja: 'コピー元(A)のサーバーID' },
+    copySameGuild: { en: 'Source and destination servers must be different.', ja: 'コピー元とコピー先には別のサーバーを指定してください。' },
+    copyNoTargetPermission: { en: 'You need Manage Channels, Manage Server, or Administrator permission in this server before importing settings.', ja: 'このサーバーに設定を取り込むには、チャンネル管理、サーバー管理、または管理者権限が必要です。' },
+    copyDone: { en: 'Imported {settings} setting(s) from {source} across {providers} provider(s).', ja: '{source} から {providers} 個のプロバイダーにわたり {settings} 件の設定を取り込みました。' },
+    copySkippedTargets: { en: 'Skipped {count} channel/role target(s) because IDs differ between servers.', ja: 'サーバー間でIDが異なるため、チャンネル/ロール対象 {count} 件は取り込みませんでした。' },
+    updatedAllProvidersSetting: { en: 'Updated {setting} for all providers: {value}', ja: 'すべてのプロバイダーの「{setting}」を {value} にしました。' },
+};
 
 const PROVIDER_LABEL_OVERRIDES = {
     twitter: 'Twitter / X',
@@ -53,12 +80,32 @@ function getProviderLabels() {
     return Object.fromEntries(getProviders().map(provider => [provider.id, provider.label]));
 }
 
+function isBulkProvider(providerId) {
+    return providerId === BULK_PROVIDER_ID;
+}
+
+function getProviderLabel(providerId, locale) {
+    if (isBulkProvider(providerId)) return localText('allProviders', locale);
+    return getProviderLabels()[providerId] || providerId;
+}
+
 function findProviderDefinition(providerId) {
     return getProviders().find(provider => provider.id === providerId)?.provider || { id: providerId, enabledByDefault: false };
 }
 
 function uiText(key, locale, replacements = {}) {
     return catalogText(`gui.${key}`, locale, replacements) || key;
+}
+
+function localText(key, locale, replacements = {}) {
+    const bucket = LOCAL_TEXT[key];
+    if (!bucket) return key;
+    const lang = String(locale || '').toLowerCase().startsWith('ja') ? 'ja' : 'en';
+    let text = bucket[lang] || bucket.en || key;
+    for (const [name, value] of Object.entries(replacements)) {
+        text = text.replaceAll(`{${name}}`, String(value));
+    }
+    return text;
 }
 
 function specLabel(spec, locale) {
@@ -257,6 +304,25 @@ const PIXIV_SPECS = [
     },
 ];
 
+const YOUTUBE_SPECS = [
+    {
+        key: 'youtube_description_max_length',
+        label: 'Description text length',
+        description: 'Maximum YouTube description text shown in embeds. 0 hides descriptions.',
+        kind: 'choice',
+        settingKey: 'youtube_description_max_length',
+        choices: [
+            { label: 'Hide descriptions', value: '0' },
+            { label: '200 characters', value: '200' },
+            { label: '500 characters', value: '500' },
+            { label: '700 characters', value: '700' },
+            { label: '1000 characters', value: '1000' },
+            { label: '1400 characters', value: '1400' },
+        ],
+        parseValue: value => Number(value),
+    },
+];
+
 function overviewSpec() {
     return {
         key: DEFAULT_SETTING_KEY,
@@ -266,10 +332,19 @@ function overviewSpec() {
     };
 }
 
+function getBulkSettingSpecs() {
+    return [
+        overviewSpec(),
+        ...COMMON_SPECS.filter(spec => BULK_SETTING_KEYS.has(spec.key)),
+    ];
+}
+
 function getSettingSpecs(providerId) {
+    if (isBulkProvider(providerId)) return getBulkSettingSpecs();
     const specs = [overviewSpec(), ...COMMON_SPECS];
     if (providerId === 'twitter') return [...specs, ...TWITTER_SPECS];
     if (providerId === 'pixiv') return [...specs, ...PIXIV_SPECS];
+    if (providerId === 'youtube') return [...specs, ...YOUTUBE_SPECS];
     if (getProviderLabels()[providerId]) return specs;
     return [overviewSpec()];
 }
@@ -279,6 +354,7 @@ function findSpec(providerId, settingKey) {
 }
 
 function normalizeProviderId(providerId) {
+    if (providerId === BULK_PROVIDER_ID) return BULK_PROVIDER_ID;
     return getProviderLabels()[providerId] ? providerId : DEFAULT_PROVIDER_ID;
 }
 
@@ -296,13 +372,17 @@ function hasPermission(permissions, flag) {
     }
 }
 
-function hasAdminPerm(interaction) {
-    const permissions = interaction.memberPermissions || interaction.member?.permissions;
+function hasSettingsPermission(permissions) {
     return (
         hasPermission(permissions, PermissionsBitField.Flags.ManageChannels)
         || hasPermission(permissions, PermissionsBitField.Flags.ManageGuild)
         || hasPermission(permissions, PermissionsBitField.Flags.Administrator)
     );
+}
+
+function hasAdminPerm(interaction) {
+    const permissions = interaction.memberPermissions || interaction.member?.permissions;
+    return hasSettingsPermission(permissions);
 }
 
 async function replyNoPermission(interaction) {
@@ -349,7 +429,39 @@ function boolLabel(value, locale) {
     return value === true ? uiText('enabled', locale) : uiText('disabled', locale);
 }
 
+async function getSettingValueForSpec(providerId, spec, guildId) {
+    if (spec.kind === 'providerEnabled') return await isProviderEnabled(findProviderDefinition(providerId), guildId);
+    return await getSetting({ id: providerId }, spec.settingKey, guildId);
+}
+
+async function getBulkSettingValues(spec, guildId) {
+    const values = [];
+    for (const provider of getProviders()) {
+        values.push({
+            providerId: provider.id,
+            label: provider.label,
+            value: await getSettingValueForSpec(provider.id, spec, guildId),
+        });
+    }
+    return values;
+}
+
+function aggregateBoolean(values) {
+    if (values.every(item => item.value === true)) return true;
+    if (values.every(item => item.value !== true)) return false;
+    return null;
+}
+
+function aggregateChoice(values) {
+    if (values.length === 0) return undefined;
+    const first = values[0].value;
+    return values.every(item => String(item.value) === String(first)) ? first : undefined;
+}
+
 async function getBooleanSettingValue(providerId, spec, guildId) {
+    if (isBulkProvider(providerId)) {
+        return aggregateBoolean(await getBulkSettingValues(spec, guildId));
+    }
     if (spec.kind === 'providerEnabled') return await isProviderEnabled(findProviderDefinition(providerId), guildId);
     return await getSetting({ id: providerId }, spec.settingKey, guildId) === true;
 }
@@ -409,6 +521,15 @@ async function setBannedWords(providerId, guildId, words) {
 }
 
 async function applySettingValue(providerId, settingKey, guildId, value) {
+    if (isBulkProvider(providerId)) {
+        const spec = findSpec(providerId, settingKey);
+        if (!BULK_SETTING_KEYS.has(spec.key)) return;
+        for (const provider of getProviders()) {
+            await applySettingValue(provider.id, spec.settingKey, guildId, value);
+        }
+        return;
+    }
+
     if (settingKey === 'enabled') {
         await setProviderEnabled(findProviderDefinition(providerId), guildId, value === true);
         return;
@@ -457,6 +578,40 @@ function targetTypeLabel(targetType, locale) {
 }
 
 async function applyTargetToggle(providerId, settingKey, guildId, targetType, ids, locale) {
+    if (isBulkProvider(providerId)) {
+        const providers = getProviders();
+        const currentByProvider = [];
+        for (const provider of providers) {
+            currentByProvider.push({
+                provider,
+                current: await normalizeTargetSetting(provider.id, settingKey, guildId),
+            });
+        }
+
+        const shouldRemove = new Map(ids.map(id => [
+            id,
+            currentByProvider.every(item => (item.current[targetType] || []).includes(id)),
+        ]));
+
+        for (const item of currentByProvider) {
+            const nextValues = new Set(item.current[targetType] || []);
+            for (const id of ids) {
+                if (shouldRemove.get(id)) nextValues.delete(id);
+                else nextValues.add(id);
+            }
+            await setTargetSetting(item.provider.id, settingKey, guildId, {
+                ...item.current,
+                [targetType]: [...nextValues],
+            });
+        }
+
+        const spec = findSpec(BULK_PROVIDER_ID, settingKey);
+        return localText('updatedAllProvidersSetting', locale, {
+            setting: specLabel(spec, locale),
+            value: targetTypeLabel(targetType, locale),
+        });
+    }
+
     const current = await normalizeTargetSetting(providerId, settingKey, guildId);
     const result = toggleValues(current[targetType] || [], ids);
     const next = { ...current, [targetType]: result.values };
@@ -471,6 +626,22 @@ async function applyTargetToggle(providerId, settingKey, guildId, targetType, id
 
 async function applyButtonVisibilitySelection(providerId, guildId, hiddenButtonKeys, locale) {
     const selected = new Set(hiddenButtonKeys);
+    if (isBulkProvider(providerId)) {
+        const commonOptions = getButtonOptions(BULK_PROVIDER_ID);
+        for (const provider of getProviders()) {
+            const next = await normalizeButtonVisibility(provider.id, guildId);
+            for (const option of commonOptions) {
+                next[option.key] = selected.has(option.key);
+            }
+            if (provider.id !== 'twitter') delete next.savetweet;
+            await setButtonVisibility(provider.id, guildId, next);
+        }
+        return localText('updatedAllProvidersSetting', locale, {
+            setting: specLabel(findSpec(BULK_PROVIDER_ID, 'button_invisible'), locale),
+            value: uiText('updatedHiddenButtons', locale),
+        });
+    }
+
     const next = await normalizeButtonVisibility(providerId, guildId);
     for (const option of getButtonOptions(providerId)) {
         next[option.key] = selected.has(option.key);
@@ -521,6 +692,60 @@ function formatChoiceValue(spec, value, locale) {
     return choice ? choiceLabel(spec, choice, locale) : String(value ?? '(unset)');
 }
 
+function formatSpecValue(spec, value, locale) {
+    if (spec.kind === 'providerEnabled' || spec.kind === 'bool') return boolLabel(value === true, locale);
+    if (spec.kind === 'choice') return formatChoiceValue(spec, value, locale);
+    return value === undefined ? '(unset)' : String(value);
+}
+
+function targetCountSummary(setting, locale) {
+    const target = setting && typeof setting === 'object' ? setting : {};
+    return [
+        `${uiText('users', locale)}: ${Array.isArray(target.user) ? target.user.length : 0}`,
+        `${uiText('channels', locale)}: ${Array.isArray(target.channel) ? target.channel.length : 0}`,
+        `${uiText('roles', locale)}: ${Array.isArray(target.role) ? target.role.length : 0}`,
+    ].join(', ');
+}
+
+function buttonVisibilityValueSummary(providerId, value, locale) {
+    const visibility = value && typeof value === 'object' ? value : {};
+    const hidden = getButtonOptions(providerId)
+        .filter(option => visibility[option.key] === true)
+        .map(option => buttonOptionLabel(option, locale));
+    return hidden.length === 0 ? uiText('none', locale) : hidden.join(', ');
+}
+
+async function formatBulkSettingValue(spec, guildId, locale) {
+    const values = await getBulkSettingValues(spec, guildId);
+    if (values.length === 0) return uiText('none', locale);
+
+    if (spec.kind === 'targets') {
+        return values
+            .map(item => `${item.label}: ${targetCountSummary(item.value, locale)}`)
+            .join('\n');
+    }
+
+    if (spec.kind === 'buttonVisibility') {
+        return values
+            .map(item => `${item.label}: ${buttonVisibilityValueSummary(item.providerId, item.value, locale)}`)
+            .join('\n');
+    }
+
+    if (spec.kind === 'providerEnabled' || spec.kind === 'bool') {
+        const aggregate = aggregateBoolean(values);
+        if (aggregate !== null) return boolLabel(aggregate, locale);
+    }
+
+    if (spec.kind === 'choice') {
+        const aggregate = aggregateChoice(values);
+        if (aggregate !== undefined) return formatChoiceValue(spec, aggregate, locale);
+    }
+
+    return values
+        .map(item => `${item.label}: ${formatSpecValue(spec, item.value, locale)}`)
+        .join('\n');
+}
+
 async function formatTargetSummary(providerId, settingKey, guildId, locale) {
     const target = await normalizeTargetSetting(providerId, settingKey, guildId);
     return [
@@ -549,6 +774,7 @@ async function formatBannedWordsSummary(providerId, guildId, locale) {
 }
 
 async function formatSettingValue(providerId, spec, guildId, locale) {
+    if (isBulkProvider(providerId)) return await formatBulkSettingValue(spec, guildId, locale);
     if (spec.kind === 'targets') return await formatTargetSummary(providerId, spec.settingKey, guildId, locale);
     if (spec.kind === 'buttonVisibility') return await formatButtonVisibilitySummary(providerId, guildId, locale);
     if (spec.kind === 'bannedWords') return await formatBannedWordsSummary(providerId, guildId, locale);
@@ -561,15 +787,24 @@ async function formatSettingValue(providerId, spec, guildId, locale) {
 }
 
 function buildProviderSelect(providerId, settingKey, locale) {
+    const options = [
+        {
+            label: localText('allProviders', locale),
+            value: BULK_PROVIDER_ID,
+            default: providerId === BULK_PROVIDER_ID,
+        },
+        ...getProviders().map(provider => ({
+            label: provider.label,
+            value: provider.id,
+            default: provider.id === providerId,
+        })),
+    ];
+
     return new ActionRowBuilder().addComponents(
         new StringSelectMenuBuilder()
             .setCustomId(`${CUSTOM_ID_PREFIX}:provider:${settingKey}`)
             .setPlaceholder(uiText('provider', locale))
-            .addOptions(getProviders().map(provider => ({
-                label: provider.label,
-                value: provider.id,
-                default: provider.id === providerId,
-            })))
+            .addOptions(options)
     );
 }
 
@@ -600,6 +835,23 @@ function buildUtilityButtons(providerId, settingKey, locale) {
     );
 }
 
+function buildOverviewUtilityButtons(providerId, locale) {
+    return new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+            .setCustomId(`${CUSTOM_ID_PREFIX}:modalOpen:copyGuildSettings:${providerId}:${DEFAULT_SETTING_KEY}`)
+            .setLabel(localText('importFromGuild', locale))
+            .setStyle(ButtonStyle.Primary),
+        new ButtonBuilder()
+            .setCustomId(`${CUSTOM_ID_PREFIX}:refresh:${providerId}:${DEFAULT_SETTING_KEY}`)
+            .setLabel(uiText('refresh', locale))
+            .setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder()
+            .setCustomId(`${CUSTOM_ID_PREFIX}:close:${providerId}:${DEFAULT_SETTING_KEY}`)
+            .setLabel(uiText('close', locale))
+            .setStyle(ButtonStyle.Secondary)
+    );
+}
+
 async function buildBoolControls(providerId, spec, guildId, locale) {
     const value = await getBooleanSettingValue(providerId, spec, guildId);
     return [
@@ -607,13 +859,13 @@ async function buildBoolControls(providerId, spec, guildId, locale) {
             new ButtonBuilder()
                 .setCustomId(`${CUSTOM_ID_PREFIX}:bool:${providerId}:${spec.key}:1`)
                 .setLabel(uiText('enable', locale))
-                .setStyle(value ? ButtonStyle.Success : ButtonStyle.Secondary)
-                .setDisabled(value),
+                .setStyle(value === true ? ButtonStyle.Success : ButtonStyle.Secondary)
+                .setDisabled(value === true),
             new ButtonBuilder()
                 .setCustomId(`${CUSTOM_ID_PREFIX}:bool:${providerId}:${spec.key}:0`)
                 .setLabel(uiText('disable', locale))
-                .setStyle(value ? ButtonStyle.Secondary : ButtonStyle.Danger)
-                .setDisabled(!value),
+                .setStyle(value === false ? ButtonStyle.Danger : ButtonStyle.Secondary)
+                .setDisabled(value === false),
             new ButtonBuilder()
                 .setCustomId(`${CUSTOM_ID_PREFIX}:refresh:${providerId}:${spec.key}`)
                 .setLabel(uiText('refresh', locale))
@@ -627,7 +879,9 @@ async function buildBoolControls(providerId, spec, guildId, locale) {
 }
 
 async function buildChoiceControls(providerId, spec, guildId, locale) {
-    const currentValue = await getSetting({ id: providerId }, spec.settingKey, guildId);
+    const currentValue = isBulkProvider(providerId)
+        ? aggregateChoice(await getBulkSettingValues(spec, guildId))
+        : await getSetting({ id: providerId }, spec.settingKey, guildId);
     return [
         new ActionRowBuilder().addComponents(
             new StringSelectMenuBuilder()
@@ -749,6 +1003,7 @@ async function buildControls(providerId, spec, guildId, locale) {
     if (spec.kind === 'buttonVisibility') return await buildButtonVisibilityControls(providerId, guildId, locale);
     if (spec.kind === 'targets') return buildTargetControls(providerId, spec, locale);
     if (spec.kind === 'bannedWords') return await buildBannedWordControls(providerId, guildId, locale);
+    if (spec.kind === 'overview') return [buildOverviewUtilityButtons(providerId, locale)];
     return [buildUtilityButtons(providerId, spec.key, locale)];
 }
 
@@ -787,11 +1042,11 @@ async function buildGuiPayload(providerId, settingKey, guildId, notice = null, l
     const normalizedProviderId = normalizeProviderId(providerId);
     const normalizedSettingKey = normalizeSettingKey(normalizedProviderId, settingKey);
     const spec = findSpec(normalizedProviderId, normalizedSettingKey);
-    const providerLabel = getProviderLabels()[normalizedProviderId] || normalizedProviderId;
+    const providerLabel = getProviderLabel(normalizedProviderId, locale);
     const embed = {
         title: uiText('title', locale, { provider: providerLabel }),
         description: spec.kind === 'overview'
-            ? uiText('selectSettingToEdit', locale)
+            ? (isBulkProvider(normalizedProviderId) ? localText('allProviderSettings', locale) : uiText('selectSettingToEdit', locale))
             : uiText('editing', locale, { label: specLabel(spec, locale) }),
         color: 0x1DA1F2,
         fields: await buildFields(normalizedProviderId, spec, guildId, locale),
@@ -829,6 +1084,105 @@ function buildBannedWordModal(providerId, locale) {
         });
 }
 
+function buildCopySettingsModal(providerId, settingKey, locale) {
+    const sourceGuildInput = new TextInputBuilder()
+        .setCustomId(COPY_SOURCE_GUILD_INPUT_ID)
+        .setLabel(localText('sourceGuildId', locale))
+        .setPlaceholder(localText('sourceGuildPlaceholder', locale))
+        .setStyle(TextInputStyle.Short)
+        .setRequired(true)
+        .setMaxLength(32);
+
+    return new ModalBuilder()
+        .setCustomId(`${CUSTOM_ID_PREFIX}:modal:copyGuildSettings:${providerId}:${settingKey}`)
+        .setTitle(localText('copyModalTitle', locale))
+        .addComponents({
+            type: 1,
+            components: [sourceGuildInput.toJSON()],
+        });
+}
+
+function normalizeGuildIdInput(value) {
+    return String(value ?? '').trim();
+}
+
+function cloneSettingValue(value) {
+    if (value === undefined) return undefined;
+    return JSON.parse(JSON.stringify(value));
+}
+
+function onlyUserTargets(setting) {
+    const normalized = {
+        user: Array.isArray(setting?.user) ? [...new Set(setting.user.map(String).filter(Boolean))] : [],
+        channel: [],
+        role: [],
+    };
+    const skipped = (Array.isArray(setting?.channel) ? setting.channel.length : 0)
+        + (Array.isArray(setting?.role) ? setting.role.length : 0);
+    return { value: normalized, skipped };
+}
+
+async function copySettingForProvider(providerId, spec, sourceGuildId, targetGuildId) {
+    let skippedTargets = 0;
+    let value;
+
+    if (spec.kind === 'targets') {
+        const copied = onlyUserTargets(await normalizeTargetSetting(providerId, spec.settingKey, sourceGuildId));
+        value = copied.value;
+        skippedTargets = copied.skipped;
+    } else if (spec.kind === 'buttonVisibility') {
+        value = await normalizeButtonVisibility(providerId, sourceGuildId);
+    } else if (spec.kind === 'bannedWords') {
+        value = await normalizeBannedWords(providerId, sourceGuildId);
+    } else {
+        value = await getSettingValueForSpec(providerId, spec, sourceGuildId);
+    }
+
+    await applySettingValue(providerId, spec.settingKey, targetGuildId, cloneSettingValue(value));
+    return { copied: 1, skippedTargets };
+}
+
+async function copyGuiSettingsBetweenGuilds(sourceGuildId, targetGuildId) {
+    let copied = 0;
+    let skippedTargets = 0;
+    const providers = getProviders();
+
+    for (const provider of providers) {
+        const specs = getSettingSpecs(provider.id).filter(spec => spec.kind !== 'overview');
+        for (const spec of specs) {
+            const result = await copySettingForProvider(provider.id, spec, sourceGuildId, targetGuildId);
+            copied += result.copied;
+            skippedTargets += result.skippedTargets;
+        }
+    }
+
+    return {
+        copied,
+        skippedTargets,
+        providerCount: providers.length,
+    };
+}
+
+async function importSettingsFromGuild(interaction, sourceGuildId, targetGuildId) {
+    if (!sourceGuildId) return localText('sourceGuildId', interaction.locale);
+    if (sourceGuildId === targetGuildId) return localText('copySameGuild', interaction.locale);
+
+    if (!hasAdminPerm(interaction)) return localText('copyNoTargetPermission', interaction.locale);
+
+    const result = await copyGuiSettingsBetweenGuilds(sourceGuildId, targetGuildId);
+    const lines = [
+        localText('copyDone', interaction.locale, {
+            source: sourceGuildId,
+            settings: result.copied,
+            providers: result.providerCount,
+        }),
+    ];
+    if (result.skippedTargets > 0) {
+        lines.push(localText('copySkippedTargets', interaction.locale, { count: result.skippedTargets }));
+    }
+    return lines.join('\n');
+}
+
 async function execute(interaction) {
     if (!hasAdminPerm(interaction)) {
         return await interaction.editReply(uiText('noPermission', interaction.locale));
@@ -863,6 +1217,12 @@ async function handleComponent(interaction) {
         await interaction.showModal(buildBannedWordModal(normalizeProviderId(parts[3]), interaction.locale));
         return true;
     }
+    if (action === 'modalOpen' && parts[2] === 'copyGuildSettings') {
+        const providerId = normalizeProviderId(parts[3]);
+        const settingKey = normalizeSettingKey(providerId, parts[4] || DEFAULT_SETTING_KEY);
+        await interaction.showModal(buildCopySettingsModal(providerId, settingKey, interaction.locale));
+        return true;
+    }
 
     if (action === 'close') {
         await interaction.update({ content: uiText('closed', interaction.locale), embeds: [], components: [] });
@@ -894,13 +1254,19 @@ async function handleComponent(interaction) {
     } else if (action === 'bool') {
         const spec = findSpec(providerId, settingKey);
         await applySettingValue(providerId, spec.settingKey, interaction.guildId, parts[4] === '1');
-        notice = `${specLabel(spec, interaction.locale)}: ${boolLabel(parts[4] === '1', interaction.locale)}`;
+        const valueLabel = boolLabel(parts[4] === '1', interaction.locale);
+        notice = isBulkProvider(providerId)
+            ? localText('updatedAllProvidersSetting', interaction.locale, { setting: specLabel(spec, interaction.locale), value: valueLabel })
+            : `${specLabel(spec, interaction.locale)}: ${valueLabel}`;
     } else if (action === 'choice') {
         const spec = findSpec(providerId, settingKey);
         const selectedValue = interaction.values[0];
         const value = typeof spec.parseValue === 'function' ? spec.parseValue(selectedValue) : selectedValue;
         await applySettingValue(providerId, spec.settingKey, interaction.guildId, value);
-        notice = `${specLabel(spec, interaction.locale)}: ${formatChoiceValue(spec, value, interaction.locale)}`;
+        const valueLabel = formatChoiceValue(spec, value, interaction.locale);
+        notice = isBulkProvider(providerId)
+            ? localText('updatedAllProvidersSetting', interaction.locale, { setting: specLabel(spec, interaction.locale), value: valueLabel })
+            : `${specLabel(spec, interaction.locale)}: ${valueLabel}`;
     } else if (action === 'buttonVisibility') {
         settingKey = 'button_invisible';
         notice = await applyButtonVisibilitySelection(providerId, interaction.guildId, interaction.values || [], interaction.locale);
@@ -939,7 +1305,7 @@ async function handleModalSubmit(interaction) {
     }
 
     const modalKey = parts[2];
-    const providerId = normalizeProviderId(parts[3]);
+    let providerId = normalizeProviderId(parts[3]);
     let notice = uiText('unknownForm', interaction.locale);
     let settingKey = DEFAULT_SETTING_KEY;
     await deferModalResult(interaction);
@@ -956,6 +1322,14 @@ async function handleModalSubmit(interaction) {
                 interaction.locale
             );
         }
+    } else if (modalKey === 'copyGuildSettings') {
+        providerId = normalizeProviderId(parts[3]);
+        settingKey = normalizeSettingKey(providerId, parts[4] || DEFAULT_SETTING_KEY);
+        notice = await importSettingsFromGuild(
+            interaction,
+            normalizeGuildIdInput(interaction.fields.getTextInputValue(COPY_SOURCE_GUILD_INPUT_ID)),
+            interaction.guildId
+        );
     }
 
     const payload = await buildGuiPayload(providerId, settingKey, interaction.guildId, notice, interaction.locale);
@@ -978,7 +1352,10 @@ module.exports.definition = {
             description_localizations: toDiscordLocalizationsForKey('gui.providerOptionDescription'),
             type: ApplicationCommandOptionType.String,
             required: false,
-            choices: getProviders().map(provider => ({ name: provider.label, value: provider.id })),
+            choices: [
+                { name: 'All providers', value: BULK_PROVIDER_ID },
+                ...getProviders().map(provider => ({ name: provider.label, value: provider.id })),
+            ],
         },
     ],
 };
@@ -987,7 +1364,9 @@ module.exports._internal = {
     applyBannedWordInput,
     applySettingValue,
     buildGuiPayload,
+    copyGuiSettingsBetweenGuilds,
     getSettingSpecs,
+    importSettingsFromGuild,
     normalizeButtonVisibility,
     normalizeTargetSetting,
 };

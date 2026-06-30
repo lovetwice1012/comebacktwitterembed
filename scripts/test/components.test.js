@@ -7,6 +7,7 @@ const showAttachmentsAsEmbedsImage = require('../../src/components/showAttachmen
 const showMediaAsAttachments = require('../../src/components/showMediaAsAttachments');
 
 const imageUrl = 'https://pbs.twimg.com/media/image-one.jpg?format=jpg&name=large';
+const extensionlessImageUrl = 'https://image-cdn-ak.spotifycdn.com/image/ab67616d0000b27315ebbedaacef61af244262a8';
 const videoUrl = 'https://video.twimg.com/ext_tw_video/123/pu/vid/720x720/movie.mp4?tag=12';
 const audioUrl = 'https://cdn.discordapp.com/attachments/1/2/spotify-preview-track.mp3?ex=1';
 
@@ -124,6 +125,73 @@ test('showMediaAsAttachments preserves existing video attachments', async () => 
 
         assert.deepEqual(editedMessage.files, [videoUrl, imageUrl]);
         assert.equal(editedMessage.embeds.length, 1);
+        assert.equal(editedMessage.embeds[0].image, undefined);
+    });
+});
+
+test('showMediaAsAttachments gives extensionless embed images a filename', async () => {
+    await withoutTimers(async () => {
+        const componentPath = require.resolve('../../src/components/showMediaAsAttachments');
+        const fetchPath = require.resolve('node-fetch');
+        const settingsPath = require.resolve('../../src/settings');
+        const originalComponent = require.cache[componentPath];
+        const originalFetch = require.cache[fetchPath];
+        const originalSettings = require.cache[settingsPath];
+
+        require.cache[fetchPath] = {
+            id: fetchPath,
+            filename: fetchPath,
+            loaded: true,
+            exports: async () => ({
+                headers: {
+                    get: (name) => name.toLowerCase() === 'content-type' ? 'image/png' : null,
+                },
+            }),
+        };
+        require.cache[settingsPath] = {
+            id: settingsPath,
+            filename: settingsPath,
+            loaded: true,
+            exports: {
+                checkComponentIncludesDisabledButtonAndIfFindDeleteIt: async components => components,
+                detectProviderIdFromMessage: () => 'spotify',
+            },
+        };
+        delete require.cache[componentPath];
+        const component = require(componentPath);
+        let editedMessage = null;
+        const interaction = {
+            guildId: 'guild-components',
+            locale: 'en',
+            message: {
+                attachments: [],
+                embeds: [baseEmbed({
+                    url: 'https://open.spotify.com/track/1',
+                    image: { url: extensionlessImageUrl },
+                })],
+                edit: async (payload) => {
+                    editedMessage = payload;
+                },
+            },
+            editReply: async () => {},
+            deleteReply: async () => {},
+        };
+
+        try {
+            await component.handle(interaction, { buttons: buttons() });
+        } finally {
+            delete require.cache[componentPath];
+            if (originalComponent) require.cache[componentPath] = originalComponent;
+            if (originalFetch) require.cache[fetchPath] = originalFetch;
+            else delete require.cache[fetchPath];
+            if (originalSettings) require.cache[settingsPath] = originalSettings;
+            else delete require.cache[settingsPath];
+        }
+
+        assert.deepEqual(editedMessage.files, [{
+            attachment: extensionlessImageUrl,
+            name: 'embed-image-1.png',
+        }]);
         assert.equal(editedMessage.embeds[0].image, undefined);
     });
 });

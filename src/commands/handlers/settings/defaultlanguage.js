@@ -2,7 +2,10 @@
 
 const { PermissionsBitField } = require('discord.js');
 const { t } = require('../../../locales');
+const { loadProviders } = require('../../../providers/_loader');
 const { setSetting } = require('../../../providers/_provider_settings');
+
+const ALL_PROVIDERS_ID = 'all';
 
 function hasAdminPerm(member) {
     return (
@@ -19,11 +22,14 @@ module.exports = async function (interaction, client) {
 
     if (interaction.options.getString('language') === null) return await interaction.editReply(t('userMustSpecifyAnyWordLocales', interaction.locale));
     const providerId = interaction.options.getSubcommandGroup(false) || interaction.options.getString('provider') || 'twitter';
-    const provider = { id: providerId };
     const language = interaction.options.getString('language');
     if (language === 'en' || language === 'ja') {
-        await setSetting(provider, 'defaultLanguage', interaction.guildId, language);
-        await interaction.editReply((t('setdefaultlanguagetolocales', interaction.locale)) + language.toString());
+        const providers = providerId === ALL_PROVIDERS_ID ? loadProviders() : [{ id: providerId }];
+        for (const provider of providers) {
+            await setSetting(provider, 'defaultLanguage', interaction.guildId, language);
+        }
+        const prefix = providerId === ALL_PROVIDERS_ID ? 'All providers: ' : '';
+        await interaction.editReply(prefix + (t('setdefaultlanguagetolocales', interaction.locale)) + language.toString());
     } else {
         await interaction.editReply('You must specify either en or ja.');
     }

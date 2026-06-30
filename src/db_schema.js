@@ -1,6 +1,10 @@
 'use strict';
 
+const fs = require('fs');
+const path = require('path');
+
 const TABLES = {
+    schemaMigrations: 'schema_migrations',
     users: 'users',
     providers: 'providers',
     guilds: 'guilds',
@@ -22,6 +26,11 @@ const TABLES = {
 };
 
 const SCHEMA_STATEMENTS = [
+    `CREATE TABLE IF NOT EXISTS ${TABLES.schemaMigrations} (
+        migration_id VARCHAR(191) NOT NULL PRIMARY KEY,
+        applied_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
+
     `CREATE TABLE IF NOT EXISTS ${TABLES.users} (
         user_id VARCHAR(32) NOT NULL PRIMARY KEY,
         registered_at_ms BIGINT NOT NULL,
@@ -295,7 +304,63 @@ const SCHEMA_STATEMENTS = [
     ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
 ];
 
+const MIGRATIONS_DIR = path.join(__dirname, '..', 'migrations');
+
 let schemaReady = null;
+
+function splitSqlStatements(sql) {
+    return String(sql || '')
+        .split(/;\s*(?:\r?\n|$)/)
+        .map(statement => statement
+            .split(/\r?\n/)
+            .filter(line => !line.trim().startsWith('--'))
+            .join('\n')
+            .trim())
+        .filter(Boolean);
+}
+
+async function appliedMigrationIds(queryDatabase) {
+    const rows = await queryDatabase(`SELECT migration_id FROM ${TABLES.schemaMigrations}`);
+    return new Set(rows.map(row => row.migration_id));
+}
+
+function listMigrationFiles() {
+    if (!fs.existsSync(MIGRATIONS_DIR)) return [];
+    return fs.readdirSync(MIGRATIONS_DIR)
+        .filter(file => file.endsWith('.sql'))
+        .sort();
+}
+
+async function applyMigrationFile(queryDatabase, file) {
+    const migrationId = path.basename(file, '.sql');
+    const sql = fs.readFileSync(path.join(MIGRATIONS_DIR, file), 'utf8');
+    const statements = splitSqlStatements(sql);
+
+    try {
+        for (const statement of statements) {
+            await queryDatabase(statement);
+        }
+    } catch (err) {
+        if (err?.code !== 'ER_DUP_FIELDNAME') throw err;
+    }
+
+    await queryDatabase(
+        `INSERT INTO ${TABLES.schemaMigrations} (migration_id)
+         VALUES (?)
+         ON DUPLICATE KEY UPDATE migration_id = migration_id`,
+        [migrationId]
+    );
+}
+
+async function applySchemaMigrations(queryDatabase) {
+    const applied = await appliedMigrationIds(queryDatabase);
+    for (const file of listMigrationFiles()) {
+        const migrationId = path.basename(file, '.sql');
+        if (applied.has(migrationId)) continue;
+        await applyMigrationFile(queryDatabase, file);
+        applied.add(migrationId);
+    }
+}
 
 async function ensureDatabaseSchema() {
     if (schemaReady) return schemaReady;
@@ -304,6 +369,7 @@ async function ensureDatabaseSchema() {
         for (const statement of SCHEMA_STATEMENTS) {
             await queryDatabase(statement);
         }
+        await applySchemaMigrations(queryDatabase);
     })();
     try {
         await schemaReady;
@@ -313,4 +379,13 @@ async function ensureDatabaseSchema() {
     }
 }
 
-module.exports = { TABLES, SCHEMA_STATEMENTS, ensureDatabaseSchema };
+module.exports = {
+    TABLES,
+    SCHEMA_STATEMENTS,
+    MIGRATIONS_DIR,
+    ensureDatabaseSchema,
+    _internal: {
+        listMigrationFiles,
+        splitSqlStatements,
+    },
+};

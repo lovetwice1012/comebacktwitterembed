@@ -119,8 +119,24 @@ function decodeHtml(text) {
 
 function truncate(text, maxLength) {
     const s = String(text ?? '').trim();
+    if (maxLength <= 0) return '';
     if (s.length <= maxLength) return s;
+    if (maxLength <= 3) return s.slice(0, maxLength);
     return s.slice(0, maxLength - 3).trimEnd() + '...';
+}
+
+function youtubeDescriptionMaxLength(s) {
+    const raw = s?.youtube_description_max_length ?? s?.youtubeDescriptionMaxLength;
+    if (raw === undefined || raw === null || raw === '') return DESCRIPTION_MAX_LENGTH;
+    const value = Number(raw);
+    if (!Number.isFinite(value)) return DESCRIPTION_MAX_LENGTH;
+    return Math.max(0, Math.min(DESCRIPTION_MAX_LENGTH, Math.round(value)));
+}
+
+function truncateYouTubeDescription(text, s) {
+    const maxLength = youtubeDescriptionMaxLength(s);
+    if (maxLength <= 0) return '';
+    return truncate(decodeHtml(text), maxLength);
 }
 
 function formatNumber(value) {
@@ -835,7 +851,7 @@ function buildVideoEmbed(info, parsed, baseUrl, message, s) {
     addField(fields, tr(STR.uploaded, lang), info.liveNow ? tr(STR.liveNow, lang) : info.publishedText);
 
     const titlePrefix = info.liveNow ? `${tr(STR.liveNow, lang)} · ` : '';
-    const description = truncate(decodeHtml(info.description), DESCRIPTION_MAX_LENGTH);
+    const description = truncateYouTubeDescription(info.description, s);
     const requester = requesterFooter(message, lang, s?.anonymous_expand === true);
     const embed = {
         author: {
@@ -854,9 +870,9 @@ function buildVideoEmbed(info, parsed, baseUrl, message, s) {
     return embed;
 }
 
-function buildPlaylistDescription(info, lang) {
+function buildPlaylistDescription(info, lang, s) {
     const lines = [];
-    const description = truncate(decodeHtml(info.description), 500);
+    const description = truncateYouTubeDescription(info.description, s);
     if (description) lines.push(description);
 
     const videos = Array.isArray(info.videos) ? info.videos.filter(v => v?.title && v.title !== '[Private video]').slice(0, 5) : [];
@@ -881,7 +897,7 @@ function buildPlaylistEmbed(info, parsed, baseUrl, message, s) {
         author: { name: tr(STR.playlist, lang), icon_url: YOUTUBE_ICON },
         title: info.title || parsed.id,
         url: parsed.originalUrl || `https://www.youtube.com/playlist?list=${parsed.id}`,
-        description: buildPlaylistDescription(info, lang) || undefined,
+        description: buildPlaylistDescription(info, lang, s) || undefined,
         color: EMBED_COLOR,
         fields,
         footer: { text: requesterFooter(message, lang, s?.anonymous_expand === true), icon_url: YOUTUBE_ICON },
@@ -893,9 +909,9 @@ function buildPlaylistEmbed(info, parsed, baseUrl, message, s) {
     return embed;
 }
 
-function buildChannelDescription(info, lang) {
+function buildChannelDescription(info, lang, s) {
     const lines = [];
-    const description = truncate(decodeHtml(info.descriptionHtml || info.description), 600);
+    const description = truncateYouTubeDescription(info.descriptionHtml || info.description, s);
     if (description) lines.push(description);
 
     const videos = Array.isArray(info.latestVideos) ? info.latestVideos.filter(v => v?.title && v.title !== '[Private video]').slice(0, 5) : [];
@@ -919,7 +935,7 @@ function buildChannelEmbed(info, parsed, baseUrl, message, s) {
         author: { name: tr(STR.channel, lang), icon_url: YOUTUBE_ICON },
         title: `${info.author || parsed.id}${info.authorVerified ? ' ✓' : ''}`,
         url,
-        description: buildChannelDescription(info, lang) || undefined,
+        description: buildChannelDescription(info, lang, s) || undefined,
         color: EMBED_COLOR,
         fields,
         footer: { text: requesterFooter(message, lang, s?.anonymous_expand === true), icon_url: YOUTUBE_ICON },

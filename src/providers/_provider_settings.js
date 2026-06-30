@@ -24,6 +24,7 @@ const PROVIDER_DEFAULTS = {
     alwaysreplyifpostedtweetlink:                         false,
     quote_repost_max_depth:                               0,
     quote_repost_do_not_extract:                          false,
+    youtube_description_max_length:                       undefined,
 };
 
 const PROVIDER_SETTING_COLUMNS = {
@@ -95,6 +96,10 @@ const PROVIDER_SETTING_COLUMNS = {
         column: 'pixiv_images_per_step',
         type: 'int',
     },
+    youtube_description_max_length: {
+        column: 'youtube_description_max_length',
+        type: 'int',
+    },
 };
 
 function queryDatabase() {
@@ -163,6 +168,7 @@ async function ensureProviderAndGuild(providerId, guildId) {
 
 function settingDefault(provider, key) {
     if (key === 'enabled') return provider.enabledByDefault === true;
+    if (key === 'youtube_description_max_length') return provider.id === 'youtube' ? 1400 : undefined;
     return PROVIDER_DEFAULTS[key];
 }
 

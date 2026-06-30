@@ -11,7 +11,18 @@ const { ApplicationCommandOptionType } = require('discord.js');
 const { t, commandNameLocales, descriptionLocales, messageLocales } = require('../../locales');
 const { loadProviders } = require('../../providers/_loader');
 
+const ALL_PROVIDERS_ID = 'all';
+const BULK_PROVIDER_SUBCOMMANDS = new Set([
+    'disable',
+    'defaultlanguage',
+    'editoriginaliftranslate',
+    'extractbotmessage',
+    'button_invisible',
+    'button_disabled',
+]);
+
 const COMMON_HANDLERS = {
+    import:                 require('./settings/import'),
     disable:                 require('./settings/disable'),
     defaultlanguage:         require('./settings/defaultlanguage'),
     editoriginaliftranslate: require('./settings/editoriginaliftranslate'),
@@ -57,13 +68,16 @@ module.exports.execute = async function (interaction, client) {
     const sub = interaction.options.getSubcommand(false);
 
     if (!sub) {
-        return await require('./guisetting').execute(interaction, client);
+        return await require('./guisetting').execute(interaction);
     }
 
     const provider = group || interaction.options.getString('provider') || DEFAULT_PROVIDER_BY_SUBCOMMAND[sub] || 'twitter';
 
     if (!provider) {
         return await interaction.editReply(t('userMustSpecifyAnyWordLocales', interaction.locale));
+    }
+    if (provider === ALL_PROVIDERS_ID && !BULK_PROVIDER_SUBCOMMANDS.has(sub)) {
+        return await interaction.editReply('provider: all can only be used with common provider settings. Use /provider enable all or /provider disable all for provider enable/disable.');
     }
 
     const common = COMMON_HANDLERS[sub];
@@ -92,10 +106,11 @@ function cloneOption(option) {
     };
 }
 
-function buildProviderOption(_providers) {
+function buildProviderOption(providers, allowAll = false) {
+    void providers;
     return {
         name: 'provider',
-        description: 'provider',
+        description: allowAll ? 'provider id or all' : 'provider id',
         type: ApplicationCommandOptionType.String,
         required: false,
     };
@@ -103,9 +118,10 @@ function buildProviderOption(_providers) {
 
 function withProviderOption(option, providers) {
     const out = cloneOption(option);
+    const allowAll = BULK_PROVIDER_SUBCOMMANDS.has(out.name);
     out.options = [
         ...(out.options || []),
-        buildProviderOption(providers),
+        buildProviderOption(providers, allowAll),
     ];
     return out;
 }
@@ -347,6 +363,22 @@ function buildCommonOptions(includeSaveTweetOption) {
     return options;
 }
 
+function buildImportOption() {
+    return {
+        name: 'import',
+        description: 'Import GUI-editable settings from another server',
+        type: ApplicationCommandOptionType.Subcommand,
+        options: [
+            {
+                name: 'source_guild',
+                description: 'Source server ID to copy settings from',
+                type: ApplicationCommandOptionType.String,
+                required: true,
+            },
+        ],
+    };
+}
+
 function buildTwitterOptions() {
     return [
         {
@@ -468,6 +500,7 @@ function buildSettingsDefinition() {
         description: 'change settings',
         description_localizations: omitLocalization(descriptionLocales.settingscommand),
         options: [
+            buildImportOption(),
             ...buildCommonOptions(true).map(option => withProviderOption(option, providers)),
             {
                 name: 'twitter',
@@ -489,6 +522,7 @@ function buildSettingsDefinition() {
 module.exports.definition = buildSettingsDefinition();
 module.exports._internal = {
     buildSettingsDefinition,
+    buildImportOption,
     buildProviderOptions,
     sortProvidersForSettings,
 };

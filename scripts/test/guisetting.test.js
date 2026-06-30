@@ -89,6 +89,16 @@ test('guisetting covers every setting exposed by /settings', () => {
             'button_disabled',
             'pixiv_images_per_step',
         ],
+        youtube: [
+            'enabled',
+            'disable',
+            'defaultLanguage',
+            'editOriginalIfTranslate',
+            'extract_bot_message',
+            'button_invisible',
+            'button_disabled',
+            'youtube_description_max_length',
+        ],
     };
 
     for (const [provider, expectedSpecs] of Object.entries(expectedSpecsByProvider)) {

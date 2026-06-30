@@ -2,8 +2,11 @@
 
 const { PermissionsBitField } = require('discord.js');
 const { t } = require('../../../locales');
+const { loadProviders } = require('../../../providers/_loader');
 const { setSetting } = require('../../../providers/_provider_settings');
 const { convertBoolToEnableDisable } = require('../../../utils');
+
+const ALL_PROVIDERS_ID = 'all';
 function hasAdminPerm(member) {
     return (
         member.permissions.has(PermissionsBitField.Flags.ManageChannels)
@@ -19,9 +22,12 @@ module.exports = async function (interaction, client) {
 
     if (interaction.options.getBoolean('boolean') === null) return await interaction.editReply(t('userMustSpecifyAnyWordLocales', interaction.locale));
     const providerId = interaction.options.getSubcommandGroup(false) || interaction.options.getString('provider') || 'twitter';
-    const provider = { id: providerId };
     const boolean = interaction.options.getBoolean('boolean');
-    await setSetting(provider, 'extract_bot_message', interaction.guildId, boolean);
-    await interaction.editReply((t('setextractbotmessagetolocales', interaction.locale)) + convertBoolToEnableDisable(boolean, interaction.locale));
+    const providers = providerId === ALL_PROVIDERS_ID ? loadProviders() : [{ id: providerId }];
+    for (const provider of providers) {
+        await setSetting(provider, 'extract_bot_message', interaction.guildId, boolean);
+    }
+    const prefix = providerId === ALL_PROVIDERS_ID ? 'All providers: ' : '';
+    await interaction.editReply(prefix + (t('setextractbotmessagetolocales', interaction.locale)) + convertBoolToEnableDisable(boolean, interaction.locale));
 
 };

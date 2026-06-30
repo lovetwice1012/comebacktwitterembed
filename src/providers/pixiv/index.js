@@ -49,6 +49,12 @@ function tr(spec, lang) {
 }
 
 const PHIXIV_HOST = 'www.phixiv.net';
+const PIXIV_HOST = 'www.pixiv.net';
+const PIXIV_AJAX_BASE = `https://${PIXIV_HOST}/ajax/illust`;
+const PIXIV_REQUEST_HEADERS = {
+    'User-Agent': 'Mozilla/5.0 (compatible; ComebackTwitterEmbed/1.0)',
+    Referer: `https://${PIXIV_HOST}/`,
+};
 const EMBED_COLOR = 0x0096fa;  // pixiv のテーマカラー
 const IMAGES_PER_STEP_PC = 4;
 const IMAGES_PER_STEP_FULL = 10;
@@ -62,7 +68,7 @@ const TAGS_MAX_LENGTH        = 256;
 // pixiv.net / phixiv.net / ppxiv.net / c.phixiv / c.ppxiv 全部受け付ける。
 // 末尾の `>` `|` 等はマッチさせない (cleanPattern で <...> や ||...|| を剥がす想定)。
 const PIXIV_URL_PATTERN =
-    /https?:\/\/(?:www\.|c\.)?(?:pixiv|phixiv|ppxiv)\.net\/(?:[a-z]{2}\/)?(?:artworks\/\d+(?:\/\d+(?:-\d+)?)?|i\/\d+|member_illust\.php\?[^\s<>|]*)/g;
+    /https?:\/\/(?:www\.|c\.)?(?:pixiv|phixiv|ppxiv)\.net\/(?:[a-z]{2}\/)?(?:artworks\/\d+(?:\/\d+(?:-\d+)?)?(?:\?[^\s<>|#]*)?(?:#(?:\d+|big_\d+))?|i\/\d+|member_illust\.php\?[^\s<>|]*)/g;
 
 /**
  * URL から illust_id / language / image_index を抽出。
@@ -80,7 +86,7 @@ function parsePixivUrl(rawUrl, defaultLanguage) {
         return {
             id: artworks[2],
             language: artworks[1] || defaultLanguage,
-            index: artworks[3] ? Number(artworks[3]) : 0,
+            index: artworks[3] ? Number(artworks[3]) : parsePixivHashIndex(u.hash),
         };
     }
 
@@ -99,13 +105,94 @@ function parsePixivUrl(rawUrl, defaultLanguage) {
     return null;
 }
 
+function parsePixivHashIndex(hash) {
+    const value = String(hash || '').replace(/^#/, '');
+    if (/^\d+$/.test(value)) return Number(value);
+    const big = value.match(/^big_(\d+)$/);
+    if (big) return Number(big[1]) + 1;
+    return 0;
+}
+
 async function fetchPixivInfo(id, language, index) {
-    const params = new URLSearchParams({ id, language });
-    if (index && index > 0) params.set('index', String(index));
-    const api = `https://${PHIXIV_HOST}/api/info?${params.toString()}`;
-    const res = await fetch(api);
-    if (!res.ok) throw new Error(`phixiv api ${res.status} for ${api}`);
+    const params = new URLSearchParams({ lang: language });
+    const infoApi = `${PIXIV_AJAX_BASE}/${id}?${params.toString()}`;
+    const pagesApi = `${PIXIV_AJAX_BASE}/${id}/pages?${params.toString()}`;
+
+    const [infoJson, pagesJson] = await Promise.all([
+        fetchJson(infoApi),
+        fetchJson(pagesApi),
+    ]);
+
+    const body = unwrapPixivAjax(infoJson, infoApi);
+    const pages = unwrapPixivAjax(pagesJson, pagesApi);
+    const imageProxyUrls = collectPixivImageUrls(pages, body);
+
+    return {
+        title: body.title || body.illustTitle,
+        description: body.description || body.illustComment,
+        tags: normalizePixivTags(body.tags?.tags),
+        url: `https://${PIXIV_HOST}/artworks/${body.illustId || body.id || id}`,
+        author_name: body.userName,
+        author_id: body.userId,
+        profile_image_url: proxyPixivImageUrl(body.userImage || body.profileImageUrl),
+        ai_generated: Number(body.aiType) === 2,
+        x_restrict: Number(body.xRestrict ?? body.x_restrict) || 0,
+        is_ugoira: Number(body.illustType) === 2,
+        illust_id: body.illustId || body.id || id,
+        image_proxy_urls: imageProxyUrls,
+    };
+}
+
+async function fetchJson(url) {
+    const res = await fetch(url, { headers: PIXIV_REQUEST_HEADERS });
+    if (!res.ok) throw new Error(`pixiv ajax ${res.status} for ${url}`);
     return /** @type {any} */ (await res.json());
+}
+
+function unwrapPixivAjax(json, url) {
+    if (!json || json.error === true) {
+        const message = json?.message ? `: ${json.message}` : '';
+        throw new Error(`pixiv ajax error for ${url}${message}`);
+    }
+    return json.body;
+}
+
+function collectPixivImageUrls(pages, info) {
+    const out = [];
+    const pageList = Array.isArray(pages) ? pages : [];
+    for (const page of pageList) {
+        const raw = page?.urls?.regular || page?.urls?.original;
+        const proxied = proxyPixivImageUrl(raw);
+        if (proxied) out.push(proxied);
+    }
+
+    if (out.length === 0) {
+        const raw = info?.urls?.regular || info?.urls?.original;
+        const proxied = proxyPixivImageUrl(raw);
+        if (proxied) out.push(proxied);
+    }
+
+    return out;
+}
+
+function proxyPixivImageUrl(rawUrl) {
+    if (!rawUrl) return '';
+    let u;
+    try { u = new URL(rawUrl); } catch { return rawUrl; }
+    if (u.hostname !== 'i.pximg.net') return rawUrl;
+    return `https://${PHIXIV_HOST}/i${u.pathname}`;
+}
+
+function normalizePixivTags(tags) {
+    if (!Array.isArray(tags)) return [];
+    return tags
+        .map(tag => {
+            if (typeof tag === 'string') return tag.startsWith('#') ? tag : `#${tag}`;
+            const name = tag?.tag;
+            if (!name) return '';
+            return String(name).startsWith('#') ? String(name) : `#${name}`;
+        })
+        .filter(Boolean);
 }
 
 // ---- 文字列処理 -----------------------------------------------------------
@@ -166,7 +253,7 @@ async function extract(message, url, s) {
     try {
         info = await fetchPixivInfo(parsed.id, parsed.language, parsed.index);
     } catch (err) {
-        recordProviderError('pixiv', err, message, url, { endpointKey: 'phixiv/api/info' });
+        recordProviderError('pixiv', err, message, url, { endpointKey: 'pixiv/ajax/illust' });
         console.log(err);
         return null;
     }

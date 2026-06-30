@@ -4,7 +4,8 @@ const { ApplicationCommandOptionType } = require('discord.js');
 const { t, messageLocales } = require('../../locales');
 const { conv_en_to_en_US } = require('../../utils');
 const { sendFieldEmbeds } = require('../../interactionResponse');
-const { getProviderSettings } = require('../../providers/_provider_settings');
+const { loadProviders } = require('../../providers/_loader');
+const { getProviderSettings, isProviderEnabled } = require('../../providers/_provider_settings');
 const { catalogText } = require('../../i18n');
 
 const COMMAND_DESCRIPTION_LOCALES = { ja: 'ギルド設定を確認します', en: 'Check guild settings' };
@@ -12,6 +13,7 @@ const GUILD_OPTION_NAME_LOCALES = { ja: 'ギルド', en: 'guild' };
 const GUILD_OPTION_DESCRIPTION_LOCALES = { ja: '確認するギルドID', en: 'Guild ID to check' };
 
 const CHECK_TEXT = {
+    enabledProviders: { ja: '有効なプロバイダー', en: 'Enabled providers' },
     guildSettings: { ja: 'ギルド設定', en: 'Guild settings' },
     mode: { ja: '動作モード', en: 'Mode' },
     normalMode: { ja: '通常モード', en: 'Normal' },
@@ -103,6 +105,14 @@ function modeText(settings, locale) {
     return localText('normalMode', locale);
 }
 
+async function enabledProvidersSummary(guildId, locale) {
+    const enabled = [];
+    for (const provider of loadProviders()) {
+        if (await isProviderEnabled(provider, guildId)) enabled.push(`**${provider.id}**`);
+    }
+    return enabled.length > 0 ? enabled.join(', ') : noneText(locale);
+}
+
 module.exports.execute = async function (interaction) {
     const guildId = getTargetGuildId(interaction);
     if (guildId !== interaction.guildId && interaction.user.id !== '796972193287503913') {
@@ -112,6 +122,7 @@ module.exports.execute = async function (interaction) {
     const s = await getProviderSettings({ id: 'twitter', enabledByDefault: true }, guildId);
     const locale = interaction.locale;
     const fields = [
+        { name: localText('enabledProviders', locale), value: await enabledProvidersSummary(guildId, locale), inline: false },
         { name: `${uiText('provider', locale, {}, 'Provider')}: ${uiText('enabled', locale, {}, 'Enabled')}`, value: boolText(s.enabled, locale), inline: true },
         { name: localText('mode', locale), value: modeText(s, locale), inline: true },
         {

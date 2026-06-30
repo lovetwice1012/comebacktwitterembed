@@ -269,6 +269,34 @@ test('youtube extract: falls back to YouTube page metadata when Invidious return
     assert.ok(result[0].embeds[0].fields.some(field => field.name === 'Views' && field.value === '3,210'));
 });
 
+test('youtube extract: honors the DB-backed description length setting', async () => {
+    const provider = loadYouTubeProviderWithFetch(async () => okJson({
+        ...videoInfo(),
+        description: '0123456789abcdefghijklmnopqrstuvwxyz',
+    }));
+
+    const url = 'https://www.youtube.com/watch?v=dQw4w9WgXcQ';
+    const result = await provider.extract(createMessage(url), url, {
+        youtube_description_max_length: 10,
+    });
+
+    assert.equal(result[0].embeds[0].description, '0123456...');
+});
+
+test('youtube extract: can hide YouTube descriptions', async () => {
+    const provider = loadYouTubeProviderWithFetch(async () => okJson({
+        ...videoInfo(),
+        description: 'This description should be hidden.',
+    }));
+
+    const url = 'https://www.youtube.com/watch?v=dQw4w9WgXcQ';
+    const result = await provider.extract(createMessage(url), url, {
+        youtube_description_max_length: 0,
+    });
+
+    assert.equal(result[0].embeds[0].description, undefined);
+});
+
 test('youtube extract: can re-enable the temporary download button with env flag', async () => {
     const oldEnabled = process.env.YOUTUBE_DOWNLOAD_BUTTON_ENABLED;
     process.env.YOUTUBE_DOWNLOAD_BUTTON_ENABLED = 'true';

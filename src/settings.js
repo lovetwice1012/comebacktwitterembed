@@ -151,6 +151,10 @@ const PROVIDER_SETTING_COLUMNS = {
         column: 'pixiv_images_per_step',
         type: 'int',
     },
+    youtube_description_max_length: {
+        column: 'youtube_description_max_length',
+        type: 'int',
+    },
 };
 
 const PROVIDER_SETTING_COLUMN_NAMES = Object.values(PROVIDER_SETTING_COLUMNS).map(spec => spec.column);

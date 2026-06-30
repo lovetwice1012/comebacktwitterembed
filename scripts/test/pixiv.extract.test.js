@@ -37,24 +37,47 @@ function createMessage() {
     };
 }
 
-function createInfo(imageCount) {
+function okJson(body) {
     return {
+        ok: true,
+        json: async () => ({ error: false, message: '', body }),
+    };
+}
+
+function createInfo() {
+    return {
+        illustId: '123456',
         title: 'sample',
         description: 'desc',
-        url: 'https://www.pixiv.net/artworks/123456',
-        author_name: 'artist',
-        author_id: '77',
-        tags: ['#tag'],
-        image_proxy_urls: Array.from({ length: imageCount }, (_, index) => `https://i.example/${index + 1}.jpg`),
+        userName: 'artist',
+        userId: '77',
+        tags: { tags: [{ tag: 'tag' }] },
+        aiType: 1,
+        xRestrict: 0,
+        illustType: 0,
+        urls: {
+            regular: 'https://i.pximg.net/img-master/img/2024/01/01/00/00/00/123456_p0_master1200.jpg',
+        },
+    };
+}
+
+function createPages(imageCount) {
+    return Array.from({ length: imageCount }, (_, index) => ({
+        urls: {
+            regular: `https://i.pximg.net/img-master/img/2024/01/01/00/00/00/123456_p${index}_master1200.jpg`,
+        },
+    }));
+}
+
+function createPixivFetch(imageCount) {
+    return async (url) => {
+        if (String(url).includes('/pages?')) return okJson(createPages(imageCount));
+        return okJson(createInfo());
     };
 }
 
 test('pixiv extract: default mode shows 4 images in a single message', async () => {
-    const provider = loadPixivProviderWithFetch(async () => ({
-        ok: true,
-        json: async () => createInfo(55),
-    }));
-
+    const provider = loadPixivProviderWithFetch(createPixivFetch(55));
     const result = await provider.extract(createMessage(), 'https://www.pixiv.net/artworks/123456', {});
 
     assert.ok(Array.isArray(result));
@@ -65,13 +88,11 @@ test('pixiv extract: default mode shows 4 images in a single message', async () 
     assert.ok(result[0].embeds[0].title, 'first embed has title');
     assert.ok(!result[0].embeds[1].title, 'second embed has no title');
     assert.equal(result[0].embeds[0].fields.find(f => f.name === 'Pages').value, '1-4 / 55');
+    assert.equal(result[0].embeds[0].image.url, 'https://www.phixiv.net/i/img-master/img/2024/01/01/00/00/00/123456_p0_master1200.jpg');
 });
 
 test('pixiv extract: 10-image mode shows 10 images in a single message', async () => {
-    const provider = loadPixivProviderWithFetch(async () => ({
-        ok: true,
-        json: async () => createInfo(120),
-    }));
+    const provider = loadPixivProviderWithFetch(createPixivFetch(120));
 
     const result = await provider.extract(createMessage(), 'https://www.pixiv.net/artworks/123456', { pixiv_images_per_step: 10 });
 
@@ -93,10 +114,7 @@ test('pixiv extract: 10-image mode shows 10 images in a single message', async (
 });
 
 test('pixiv extract: shows fewer embeds when image count is less than mode limit', async () => {
-    const provider = loadPixivProviderWithFetch(async () => ({
-        ok: true,
-        json: async () => createInfo(3),
-    }));
+    const provider = loadPixivProviderWithFetch(createPixivFetch(3));
 
     const result = await provider.extract(createMessage(), 'https://www.pixiv.net/artworks/123456', {});
 
@@ -104,4 +122,15 @@ test('pixiv extract: shows fewer embeds when image count is less than mode limit
     assert.equal(result.length, 1);
     assert.equal(result[0].embeds.length, 3, 'shows all 3 available images');
     assert.equal(result[0].embeds[0].fields.find(f => f.name === 'Pages').value, '1-3 / 3');
+});
+
+test('pixiv extract: hash page selector shows that single image', async () => {
+    const provider = loadPixivProviderWithFetch(createPixivFetch(3));
+
+    const result = await provider.extract(createMessage(), 'https://www.pixiv.net/artworks/123456#2', {});
+
+    assert.ok(Array.isArray(result));
+    assert.equal(result[0].embeds.length, 1);
+    assert.equal(result[0].embeds[0].image.url, 'https://www.phixiv.net/i/img-master/img/2024/01/01/00/00/00/123456_p1_master1200.jpg');
+    assert.equal(result[0].embeds[0].fields.find(f => f.name === 'Pages').value, '2 / 3');
 });

@@ -19,6 +19,7 @@ test('loader: extractAllUrls picks up pixiv variants (artworks / i / member_illu
     const samples = [
         'https://www.pixiv.net/artworks/124748386',
         'https://pixiv.net/en/artworks/124748386',
+        'https://www.pixiv.net/artworks/124748386#1',
         'https://www.pixiv.net/artworks/124748386/2',
         'https://www.pixiv.net/artworks/124748386/1-3',
         'https://www.pixiv.net/i/124748386',
