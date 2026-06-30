@@ -3,6 +3,7 @@
 const { Events, InteractionType } = require('discord.js');
 const { buildButtons } = require('../components/_buttons');
 const { isAllowed } = require('../components/_permissionCheck');
+const guisetting = require('../commands/handlers/guisetting');
 
 const HANDLERS = {
     showMediaAsAttachments: require('../components/showMediaAsAttachments'),
@@ -15,11 +16,21 @@ const HANDLERS = {
 
 function register(client) {
     client.on(Events.InteractionCreate, async (interaction) => {
+        const baseCustomId = typeof interaction.customId === 'string' ? interaction.customId.split(':')[0] : interaction.customId;
+        if (interaction.type === InteractionType.ModalSubmit && baseCustomId === 'guisetting') {
+            await guisetting.handleModalSubmit(interaction);
+            return;
+        }
+
         if (interaction.type !== InteractionType.MessageComponent) return;
+        if (baseCustomId === 'guisetting') {
+            await guisetting.handleComponent(interaction);
+            return;
+        }
+
         await interaction.deferReply({ ephemeral: true });
         if (!(await isAllowed(interaction))) return;
 
-        const baseCustomId = typeof interaction.customId === 'string' ? interaction.customId.split(':')[0] : interaction.customId;
         const handler = HANDLERS[baseCustomId];
         if (!handler) return;
 

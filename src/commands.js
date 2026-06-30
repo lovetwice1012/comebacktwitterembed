@@ -20,6 +20,7 @@ const HANDLER_NAMES = [
     "invite",
     "support",
     "settings",
+    "guisetting",
     "quotastats",
     "checkmyguildsettings",
     "autoextract",

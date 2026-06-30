@@ -9,6 +9,7 @@ const CORE_HANDLERS = {
     "invite":               require('../commands/handlers/invite').execute,
     "support":              require('../commands/handlers/support').execute,
     "settings":             require('../commands/handlers/settings').execute,
+    "guisetting":           require('../commands/handlers/guisetting').execute,
     "quotastats":           require('../commands/handlers/quotastats').execute,
     "checkmyguildsettings": require('../commands/handlers/checkmyguildsettings').execute,
     "autoextract":          require('../commands/handlers/autoextract').execute,
@@ -25,6 +26,7 @@ function buildHandlers() {
 }
 
 function shouldDeferEphemeral(interaction) {
+    if (interaction.commandName === 'guisetting') return true;
     if (interaction.commandName === 'provider') return true;
     if (interaction.commandName === 'autoextract') {
         return interaction.options.getSubcommand() === 'list';

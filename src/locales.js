@@ -1,9 +1,11 @@
 'use strict';
 
+const { collectCatalogValues, localize } = require('./i18n');
+
 // すべてのロケール定義 (メッセージ / コマンド説明 / コマンド名)
 // および取り出しヘルパーをまとめる。
 
-const messageLocales = {
+const rawMessageLocales = {
     showAttachmentsAsEmbedsImagebuttonLocales: { ja: '画像を埋め込み画像として表示する', en: 'Show media in embeds image' },
     showMediaAsAttachmentsButtonLocales: { ja: 'メディアを添付ファイルとして表示する', en: 'Show media as attachments' },
     finishActionLocales: { ja: '操作を完了しました。', en: 'Finished action.' },
@@ -88,7 +90,7 @@ const messageLocales = {
     pixivImagesPerStepMustBe4Or10Locales: { ja: 'images_per_step には 4 または 10 を指定してください。', en: 'images_per_step must be 4 or 10.' },
 };
 
-const descriptionLocales = {
+const rawDescriptionLocales = {
     helpcommand: { ja: 'ヘルプメッセージを表示します。', en: 'Shows help message.' },
     pingcommand: { ja: 'Pong!', en: 'Pong!' },
     invitecommand: { ja: 'このbotをあなたのサーバーに招待するためのリンクを表示します', en: 'Invite me to your server!' },
@@ -128,7 +130,7 @@ const descriptionLocales = {
     settingsPixivImagesPerStepValue: { ja: '1回あたりの表示枚数 (4 または 10)', en: '4 or 10 images per step' },
 };
 
-const commandNameLocales = {
+const rawCommandNameLocales = {
     help: { ja: 'ヘルプ', en: 'help' },
     ping: { ja: '遅延確認', en: 'ping' },
     invite: { ja: '招待', en: 'invite' },
@@ -186,14 +188,25 @@ const commandNameLocales = {
     value: { ja: '値', en: 'value' },
 };
 
+function withCatalogDictionary(namespace, dictionary) {
+    return Object.fromEntries(Object.entries(dictionary).map(([key, fallbackValues]) => {
+        const catalogValues = collectCatalogValues(`legacy.${namespace}.${key}`);
+        const values = { ...fallbackValues, ...catalogValues };
+        if (values['en-US'] !== undefined && values.en === undefined) values.en = values['en-US'];
+        return [key, values];
+    }));
+}
+
+const messageLocales = withCatalogDictionary('messages', rawMessageLocales);
+const descriptionLocales = withCatalogDictionary('descriptions', rawDescriptionLocales);
+const commandNameLocales = withCatalogDictionary('commandNames', rawCommandNameLocales);
+
 function getStringFromObject(object, locale, default_ja = false) {
-    if (object[locale] !== undefined) return object[locale];
-    if (default_ja && object["ja"] !== undefined) return object["ja"];
-    return object["en"];
+    return localize(object, locale, { defaultJa: default_ja });
 }
 
 function t(key, locale, defaultJa = false) {
-    return getStringFromObject(messageLocales[key], locale, defaultJa);
+    return getStringFromObject(messageLocales[key], locale, defaultJa) || key;
 }
 
 module.exports = {

@@ -85,9 +85,7 @@ async function sendContentPromise(message, content) {
 
 // commandLocalizations / descriptionLocalizations 用。`en` を `en-US` にリネーム。
 function conv_en_to_en_US(obj) {
-    if (!obj || obj.en === undefined) return undefined;
-    const { en, ...rest } = obj;
-    return { ...rest, 'en-US': en };
+    return require('./i18n').toDiscordLocalizations(obj);
 }
 
 function cleanMessageContent(content) {
