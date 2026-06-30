@@ -67,6 +67,17 @@ function ttlMs() {
     return Number.isFinite(configured) && configured > 0 ? configured : DEFAULT_TTL_MS;
 }
 
+function boolFromConfig(value) {
+    if (value === true || value === false) return value;
+    if (value === undefined || value === null || value === '') return false;
+    return /^(1|true|yes|on)$/i.test(String(value));
+}
+
+function isDownloadButtonEnabled() {
+    return boolFromConfig(process.env.YOUTUBE_DOWNLOAD_BUTTON_ENABLED)
+        || boolFromConfig(youtubeDownloadConfig().buttonEnabled);
+}
+
 function downloadPreset() {
     return {
         formatCode: BEST_FORMAT,
@@ -250,9 +261,12 @@ async function startRemoteDownload(url, preset) {
     });
     if (!res.ok) {
         const retryAfter = res.headers?.get ? res.headers.get('retry-after') : null;
-        const err = Object.assign(new Error(`yt-dlp API returned ${res.status}`), {
+        const errorBody = await readErrorBody(res);
+        const details = errorBody ? `: ${errorBody}` : '';
+        const err = Object.assign(new Error(`yt-dlp API returned ${res.status}${details}`), {
             status: res.status,
             retryAfter,
+            body: errorBody,
         });
         throw err;
     }
@@ -270,15 +284,102 @@ async function readErrorBody(res) {
     }
 }
 
+function readNodeStreamText(stream, timeoutMs = 2500, maxChars = 6000) {
+    return new Promise((resolve) => {
+        let text = '';
+        let settled = false;
+        const timer = setTimeout(() => finish(), timeoutMs);
+        if (typeof timer.unref === 'function') timer.unref();
+
+        function cleanup() {
+            clearTimeout(timer);
+            stream.off?.('data', onData);
+            stream.off?.('end', finish);
+            stream.off?.('error', finish);
+        }
+
+        function finish() {
+            if (settled) return;
+            settled = true;
+            cleanup();
+            if (typeof stream.destroy === 'function') stream.destroy();
+            resolve(text.slice(0, maxChars));
+        }
+
+        function onData(chunk) {
+            text += Buffer.isBuffer(chunk) ? chunk.toString('utf8') : String(chunk);
+            if (text.length >= maxChars) finish();
+        }
+
+        stream.on?.('data', onData);
+        stream.on?.('end', finish);
+        stream.on?.('error', finish);
+    });
+}
+
+function progressTextFromSse(raw) {
+    const lines = [];
+    const blocks = String(raw || '').replace(/\r/g, '').split(/\n\n+/);
+    for (const block of blocks) {
+        let eventName = '';
+        const dataLines = [];
+        for (const line of block.split('\n')) {
+            if (line.startsWith('event:')) eventName = line.slice(6).trim();
+            else if (line.startsWith('data:')) dataLines.push(line.slice(5).trimStart());
+        }
+
+        const dataText = dataLines.join('\n').trim();
+        if (!dataText) continue;
+
+        let message = dataText;
+        try {
+            const parsed = JSON.parse(dataText);
+            if (typeof parsed === 'string') message = parsed;
+            else message = parsed.error || parsed.message || parsed.log || parsed.line || parsed.status || parsed.filename || JSON.stringify(parsed);
+        } catch {
+            // Plain text SSE data is expected from log events.
+        }
+
+        lines.push(eventName && eventName !== 'message' ? `${eventName}: ${message}` : message);
+    }
+    return lines.join('\n').trim().slice(0, 4000);
+}
+
+async function fetchProgressLog(jobId) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 2500);
+    if (typeof timer.unref === 'function') timer.unref();
+
+    try {
+        const res = await fetch(`${getApiBaseUrl()}/api/progress?jobId=${encodeURIComponent(jobId)}`, {
+            headers: { Accept: 'text/event-stream' },
+            signal: controller.signal,
+        });
+        if (!res.ok || !res.body) return '';
+        const raw = await readNodeStreamText(res.body);
+        return progressTextFromSse(raw);
+    } catch {
+        return '';
+    } finally {
+        clearTimeout(timer);
+    }
+}
+
 async function fetchRemoteFile(jobId) {
     const res = await fetch(`${getApiBaseUrl()}/api/download?jobId=${encodeURIComponent(jobId)}`);
     if (!res.ok) {
         const body = await readErrorBody(res);
-        const details = body ? `: ${body}` : '';
-        const err = Object.assign(new Error(`yt-dlp file fetch returned ${res.status}${details}`), {
+        const progressLog = await fetchProgressLog(jobId);
+        const details = [
+            body,
+            progressLog ? `progress:\n${progressLog}` : '',
+        ].filter(Boolean).join('\n');
+        const suffix = details ? `: ${details}` : '';
+        const err = Object.assign(new Error(`yt-dlp file fetch returned ${res.status}${suffix}`), {
             status: res.status,
             stage: 'file',
             body,
+            progressLog,
         });
         throw err;
     }
@@ -309,6 +410,11 @@ async function createRemoteDownload(url, presets) {
             const res = await fetchRemoteFile(jobId);
             return { jobId, res, preset };
         } catch (err) {
+            err.formatCode = preset.formatCode;
+            err.presetKey = preset.presetKey || null;
+            if (err instanceof Error && !err.message.includes('formatCode=')) {
+                err.message += ` (formatCode=${preset.formatCode}, presetKey=${preset.presetKey || 'none'})`;
+            }
             lastError = err;
             if (!shouldRetryWithNextPreset(err, i, presets)) break;
         }
@@ -425,10 +531,12 @@ module.exports = {
     downloadYouTubeToCache,
     getPublicBaseUrl,
     handleDownloadRequest,
+    isDownloadButtonEnabled,
     publicUrlForRecord,
     startCleanupTimer,
     stopCleanupTimer,
     _internal: {
+        boolFromConfig,
         downloadPresetsForUrl,
         downloadPreset,
         fallbackFilenameForPreset,

@@ -9,8 +9,34 @@ const TWITCH_GQL_ENDPOINT = 'https://gql.twitch.tv/gql';
 const TWITCH_TOKEN_ENDPOINT = 'https://id.twitch.tv/oauth2/token';
 const TWITCH_WEB_CLIENT_ID = process.env.TWITCH_GQL_CLIENT_ID || 'kimne78kx3ncx6brgo4mv6wki5h1ko';
 const DESCRIPTION_MAX_LENGTH = 1500;
+const DEFAULT_CLIP_UPLOAD_MAX_BYTES = 25 * 1024 * 1024;
 
 const VIDEO_ACCESS_TOKEN_HASH = '6fd3af2b22989506269b9ac02dd87eb4a6688392d67d94e41a6886f1e9f5c00f';
+
+const CHANNEL_METADATA_QUERY = `
+query ChannelMetadataFallback($login: String!) {
+  user(login: $login) {
+    id
+    login
+    displayName
+    description
+    profileImageURL(width: 300)
+    bannerImageURL
+    stream {
+      id
+      title
+      type
+      viewersCount
+      createdAt
+      previewImageURL(width: 1280, height: 720)
+      game {
+        id
+        name
+        displayName
+      }
+    }
+  }
+}`;
 
 const CLIP_METADATA_QUERY = `
 query ClipMetadataFallback($slug: ID!) {
@@ -44,8 +70,13 @@ query ClipMetadataFallback($slug: ID!) {
 
 const STR = {
     viewOnTwitch: 'View on Twitch',
+    statusField: 'Status',
+    liveStatus: 'Live',
+    offlineStatus: 'Offline',
     viewsField: 'Views',
+    viewersField: 'Viewers',
     gameField: 'Game',
+    startedField: 'Started',
     durationField: 'Duration',
     clippedByField: 'Clipped by',
     requesterPrefix: 'Requested by ',
@@ -55,8 +86,25 @@ const STR = {
     fallbackTitle: 'Twitch clip',
 };
 
-const TWITCH_CLIP_URL_PATTERN =
-    /https?:\/\/(?:(?:www|m)\.)?(?:(?:clips\.twitch\.tv\/[A-Za-z0-9_-]+)|(?:twitch\.tv\/[^/\s<>|]+\/clip\/[A-Za-z0-9_-]+))(?:[^\s<>|]*)?/g;
+const RESERVED_CHANNEL_PATHS = new Set([
+    'videos',
+    'directory',
+    'downloads',
+    'jobs',
+    'p',
+    'settings',
+    'subscriptions',
+    'turbo',
+    'wallet',
+    'popout',
+    'team',
+    'communities',
+    'moderator',
+    'creatorcamp',
+]);
+
+const TWITCH_URL_PATTERN =
+    /https?:\/\/(?:(?:www|m)\.)?(?:(?:clips\.twitch\.tv\/[A-Za-z0-9_-]+\/?)|(?:twitch\.tv\/(?!(?:videos|directory|downloads|jobs|p|settings|subscriptions|turbo|wallet|popout|team|communities|moderator|creatorcamp)(?:[/?#]|$))[A-Za-z0-9_]{3,25}(?:\/clip\/[A-Za-z0-9_-]+\/?|\/?)))(?=$|[\s<>|?#])(?:[?#][^\s<>|]*)?/g;
 
 let cachedAppToken = null;
 
@@ -107,7 +155,26 @@ function parseTwitchClipUrl(rawUrl) {
     }
 
     if (!slug || !/^[A-Za-z0-9_-]+$/.test(slug)) return null;
-    return { slug, channel };
+    return { kind: 'clip', slug, channel };
+}
+
+function parseTwitchChannelUrl(rawUrl) {
+    let u;
+    try { u = new URL(rawUrl); } catch { return null; }
+
+    const host = u.hostname.replace(/^(?:www|m)\./, '').toLowerCase();
+    if (host !== 'twitch.tv') return null;
+
+    const parts = u.pathname.split('/').filter(Boolean);
+    if (parts.length !== 1) return null;
+
+    const login = parts[0].toLowerCase();
+    if (RESERVED_CHANNEL_PATHS.has(login) || !/^[a-z0-9_]{3,25}$/.test(login)) return null;
+    return { kind: 'channel', login };
+}
+
+function parseTwitchUrl(rawUrl) {
+    return parseTwitchClipUrl(rawUrl) || parseTwitchChannelUrl(rawUrl);
 }
 
 async function fetchTwitchAppToken() {
@@ -209,6 +276,70 @@ async function fetchClipInfo(slug) {
     };
 }
 
+async function fetchChannelInfo(login) {
+    const payload = {
+        operationName: 'ChannelMetadataFallback',
+        variables: { login },
+        query: CHANNEL_METADATA_QUERY,
+    };
+
+    const res = await fetch(TWITCH_GQL_ENDPOINT, {
+        method: 'POST',
+        headers: await buildGqlHeaders(),
+        body: JSON.stringify(payload),
+    });
+    if (!res.ok) throw new Error(`twitch gql ${res.status}`);
+
+    const data = await res.json();
+    const user = data?.data?.user;
+    if (!user) {
+        const firstError = data?.errors?.[0]?.message || 'missing channel metadata';
+        throw new Error(`twitch gql: ${firstError}`);
+    }
+    return user;
+}
+
+function clipUploadMaxBytes() {
+    const configured = Number(process.env.TWITCH_CLIP_UPLOAD_MAX_BYTES);
+    return Number.isFinite(configured) && configured > 0 ? configured : DEFAULT_CLIP_UPLOAD_MAX_BYTES;
+}
+
+async function readResponseBufferWithLimit(res, maxBytes) {
+    const chunks = [];
+    let total = 0;
+    for await (const chunk of res.body) {
+        const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+        total += buf.length;
+        if (total > maxBytes) {
+            if (typeof res.body.destroy === 'function') res.body.destroy();
+            return null;
+        }
+        chunks.push(buf);
+    }
+    return Buffer.concat(chunks, total);
+}
+
+async function downloadClipVideo(videoUrl, slug, maxBytes = clipUploadMaxBytes()) {
+    if (!videoUrl) return null;
+    const res = await fetch(videoUrl, {
+        headers: {
+            'User-Agent': 'Mozilla/5.0 (compatible; comebacktwitterembed/1.0)',
+        },
+    });
+    if (!res.ok || !res.body) throw new Error(`twitch clip video ${res.status}`);
+
+    const length = Number(res.headers?.get?.('content-length'));
+    if (Number.isFinite(length) && length > maxBytes) return null;
+
+    const buffer = await readResponseBufferWithLimit(res, maxBytes);
+    if (!buffer) return null;
+
+    return {
+        attachment: buffer,
+        name: `twitch-${slug}.mp4`,
+    };
+}
+
 function buildButtons() {
     return [
         new ButtonBuilder().setStyle(ButtonStyle.Primary).setLabel(STR.translateButton).setCustomId('translate'),
@@ -253,10 +384,55 @@ function buildEmbed(info, parsed, requesterName) {
     return embed;
 }
 
+function buildChannelEmbed(info, parsed, requesterName) {
+    const login = info.login || parsed.login;
+    const canonicalUrl = `https://www.twitch.tv/${login}`;
+    const displayName = info.displayName || login;
+    const stream = info.stream || null;
+    const isLive = !!stream;
+    const descriptionText = isLive
+        ? (stream.title || `${displayName} is live on Twitch.`)
+        : (info.description || `${displayName} on Twitch`);
+    const description = truncate(`${descriptionText}\n\n[${STR.viewOnTwitch}](${canonicalUrl})`, DESCRIPTION_MAX_LENGTH);
+
+    const fields = [
+        { name: STR.statusField, value: isLive ? STR.liveStatus : STR.offlineStatus, inline: true },
+    ];
+    if (isLive) {
+        const viewers = formatNumber(stream.viewersCount);
+        if (viewers) fields.push({ name: STR.viewersField, value: viewers, inline: true });
+        const game = stream.game?.displayName || stream.game?.name;
+        if (game) fields.push({ name: STR.gameField, value: game, inline: true });
+        if (stream.createdAt) {
+            const unix = Math.floor(new Date(stream.createdAt).getTime() / 1000);
+            if (Number.isFinite(unix)) fields.push({ name: STR.startedField, value: `<t:${unix}:R>`, inline: true });
+        }
+    }
+
+    const embed = {
+        title: isLive ? `${displayName} is live` : displayName,
+        url: canonicalUrl,
+        description,
+        color: TWITCH_COLOR,
+        author: {
+            name: displayName,
+            url: canonicalUrl,
+            icon_url: info.profileImageURL || undefined,
+        },
+        footer: { text: `${STR.requesterPrefix}${requesterName} | Twitch` },
+        fields,
+        timestamp: stream?.createdAt ? new Date(stream.createdAt) : undefined,
+    };
+    if (stream?.previewImageURL) embed.image = { url: stream.previewImageURL };
+    else if (info.bannerImageURL) embed.image = { url: info.bannerImageURL };
+    else if (info.profileImageURL) embed.thumbnail = { url: info.profileImageURL };
+    return embed;
+}
+
 /** @type {import('../_types').Extractor} */
 async function extract(message, url, s) {
     s = s || {};
-    const parsed = parseTwitchClipUrl(url);
+    const parsed = parseTwitchUrl(url);
     if (!parsed) return null;
 
     const guildLang = s.defaultLanguage ?? 'en';
@@ -264,7 +440,9 @@ async function extract(message, url, s) {
 
     let info;
     try {
-        info = await fetchClipInfo(parsed.slug);
+        info = parsed.kind === 'clip'
+            ? await fetchClipInfo(parsed.slug)
+            : await fetchChannelInfo(parsed.login);
     } catch (err) {
         recordProviderError('twitch', err, message, url, { endpointKey: 'twitch/gql' });
         console.log(err);
@@ -275,7 +453,9 @@ async function extract(message, url, s) {
         ? STR.anonRequester
         : `${message.author?.username ?? message.user?.username}(id:${message.author?.id ?? message.user?.id})`;
 
-    const embed = buildEmbed(info, parsed, requesterName);
+    const embed = parsed.kind === 'clip'
+        ? buildEmbed(info, parsed, requesterName)
+        : buildChannelEmbed(info, parsed, requesterName);
     const components = [
         { type: ComponentType.ActionRow, components: buildButtons() },
     ];
@@ -287,7 +467,17 @@ async function extract(message, url, s) {
         allowedMentions: { repliedUser: false },
         send: s.alwaysreplyifpostedtweetlink === true ? 'reply-source' : 'channel',
     };
-    if (info.videoUrl) step.files = [info.videoUrl];
+    if (parsed.kind === 'clip' && info.videoUrl) {
+        try {
+            const file = await downloadClipVideo(info.videoUrl, parsed.slug);
+            if (file) step.files = [file];
+            else step.content = `[動画URL](${info.videoUrl})`;
+        } catch (err) {
+            recordProviderError('twitch', err, message, url, { endpointKey: 'twitch/video' });
+            console.log(err);
+            step.content = `[動画URL](${info.videoUrl})`;
+        }
+    }
 
     if (s.deletemessageifonlypostedtweetlink === true && message.content.trim() === url) {
         step.deleteSource = true;
@@ -302,13 +492,16 @@ async function extract(message, url, s) {
 const twitchProvider = {
     id: 'twitch',
     enabledByDefault: false,
-    urlPattern: TWITCH_CLIP_URL_PATTERN,
+    urlPattern: TWITCH_URL_PATTERN,
     extract,
 };
 
 module.exports = twitchProvider;
 module.exports._internal = {
+    parseTwitchChannelUrl,
     parseTwitchClipUrl,
+    parseTwitchUrl,
     buildVideoUrl,
+    downloadClipVideo,
     formatDuration,
 };

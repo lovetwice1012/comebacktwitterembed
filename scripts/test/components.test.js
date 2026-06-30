@@ -182,6 +182,7 @@ test('downloadYouTubeVideo returns a temporary public download link', async () =
         filename: storePath,
         loaded: true,
         exports: {
+            isDownloadButtonEnabled: () => true,
             downloadYouTubeToCache: async (url) => {
                 calls.push(url);
                 return {
@@ -218,6 +219,53 @@ test('downloadYouTubeVideo returns a temporary public download link', async () =
             replies[1].components[0].components[0].data.url,
             'https://download.youtube.cbte.sprink.cloud/youtube-downloads/token/video.mp4'
         );
+    } finally {
+        delete require.cache[componentPath];
+        if (originalComponent) require.cache[componentPath] = originalComponent;
+        if (originalStore) require.cache[storePath] = originalStore;
+        else delete require.cache[storePath];
+    }
+});
+
+test('downloadYouTubeVideo is temporarily disabled when the button flag is off', async () => {
+    const componentPath = require.resolve('../../src/components/downloadYouTubeVideo');
+    const storePath = require.resolve('../../src/youtubeDownloadStore');
+    const originalComponent = require.cache[componentPath];
+    const originalStore = require.cache[storePath];
+    const calls = [];
+
+    require.cache[storePath] = {
+        id: storePath,
+        filename: storePath,
+        loaded: true,
+        exports: {
+            isDownloadButtonEnabled: () => false,
+            downloadYouTubeToCache: async (url) => {
+                calls.push(url);
+                throw new Error('should not download');
+            },
+        },
+    };
+    delete require.cache[componentPath];
+
+    try {
+        const component = require(componentPath);
+        const replies = [];
+        const interaction = {
+            message: {
+                embeds: [{
+                    url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+                }],
+            },
+            editReply: async (payload) => {
+                replies.push(payload);
+            },
+        };
+
+        await component.handle(interaction);
+
+        assert.deepEqual(calls, []);
+        assert.equal(replies[0].content, 'YouTube downloads are temporarily unavailable.');
     } finally {
         delete require.cache[componentPath];
         if (originalComponent) require.cache[componentPath] = originalComponent;

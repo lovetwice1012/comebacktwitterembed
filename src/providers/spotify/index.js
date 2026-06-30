@@ -172,11 +172,22 @@ function formatReleaseDate(isoString) {
     return isoString.split('T')[0];
 }
 
-function buildPreviewAttachment(previewUrl, trackId) {
+function buildPreviewFileName(trackName, fallbackId) {
+    const baseName = String(trackName || fallbackId || 'track')
+        .trim()
+        .replace(/\s+/g, '_')
+        .replace(/[<>:"/\\|?*]/g, '_')
+        .split('')
+        .map(ch => ch.charCodeAt(0) < 32 ? '_' : ch)
+        .join('');
+    return `spotify-preview-${baseName || fallbackId || 'track'}.mp3`;
+}
+
+function buildPreviewAttachment(previewUrl, trackId, trackName) {
     if (!previewUrl) return null;
     return {
         attachment: previewUrl,
-        name: `spotify-preview-${trackId}.mp3`,
+        name: buildPreviewFileName(trackName, trackId),
     };
 }
 
@@ -289,7 +300,7 @@ async function extract(message, url, s) {
     if (fields.length > 0) embed.fields = fields;
 
     const files = [];
-    const previewAttachment = buildPreviewAttachment(item.previewUrl, parsed.id);
+    const previewAttachment = buildPreviewAttachment(item.previewUrl, parsed.id, item.name);
     if (previewAttachment) files.push(previewAttachment);
 
     /** @type {import('../_types').SendStep} */
@@ -325,6 +336,7 @@ module.exports._internal = {
     extractNextData,
     normalizeTrackInfo: (trackId, entity, fallback) => normalizeSpotifyInfo('track', trackId, entity, fallback),
     normalizeSpotifyInfo,
+    buildPreviewFileName,
     formatDuration,
     formatReleaseDate,
 };

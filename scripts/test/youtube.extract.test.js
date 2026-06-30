@@ -208,34 +208,41 @@ function channelInitialDataHtml() {
 }
 
 test('youtube extract: builds a self-owned video embed from Invidious metadata', async () => {
-    const requests = [];
-    const provider = loadYouTubeProviderWithFetch(async (url) => {
-        requests.push(url);
-        assert.ok(url.includes('/api/v1/videos/dQw4w9WgXcQ?hl=en'));
-        return okJson(videoInfo());
-    });
+    const oldEnabled = process.env.YOUTUBE_DOWNLOAD_BUTTON_ENABLED;
+    delete process.env.YOUTUBE_DOWNLOAD_BUTTON_ENABLED;
+    try {
+        const requests = [];
+        const provider = loadYouTubeProviderWithFetch(async (url) => {
+            requests.push(url);
+            assert.ok(url.includes('/api/v1/videos/dQw4w9WgXcQ?hl=en'));
+            return okJson(videoInfo());
+        });
 
-    const url = 'https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=43s&si=tracking';
-    const result = await provider.extract(createMessage(url), url, {});
+        const url = 'https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=43s&si=tracking';
+        const result = await provider.extract(createMessage(url), url, {});
 
-    assert.equal(requests.length, 1);
-    assert.equal(result.length, 1);
-    assert.equal(result[0].content, undefined);
-    assert.equal(result[0].embeds.length, 1);
-    assert.equal(result[0].embeds[0].title, 'Example Video');
-    assert.equal(result[0].embeds[0].url, 'https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=43s');
-    assert.equal(result[0].embeds[0].author.name, 'Example Channel');
-    assert.equal(result[0].embeds[0].description, 'A great description & details');
-    assert.equal(result[0].embeds[0].image.url, 'https://i.ytimg.com/vi/dQw4w9WgXcQ/maxresdefault.jpg');
-    assert.ok(result[0].embeds[0].fields.some(field => field.name === 'Views' && field.value === '1,234,567'));
-    assert.ok(result[0].embeds[0].footer.text.includes('tester(id:user-1)'));
-    assert.equal(result[0].components.length, 1);
-    assert.deepEqual(
-        result[0].components[0].components.map(button => button.data.custom_id),
-        ['translate', 'downloadYouTubeVideo', 'delete:youtube']
-    );
-    assert.equal(result[0].send, 'channel');
-    assert.equal(result[0].suppressSourceEmbeds, true);
+        assert.equal(requests.length, 1);
+        assert.equal(result.length, 1);
+        assert.equal(result[0].content, undefined);
+        assert.equal(result[0].embeds.length, 1);
+        assert.equal(result[0].embeds[0].title, 'Example Video');
+        assert.equal(result[0].embeds[0].url, 'https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=43s');
+        assert.equal(result[0].embeds[0].author.name, 'Example Channel');
+        assert.equal(result[0].embeds[0].description, 'A great description & details');
+        assert.equal(result[0].embeds[0].image.url, 'https://i.ytimg.com/vi/dQw4w9WgXcQ/maxresdefault.jpg');
+        assert.ok(result[0].embeds[0].fields.some(field => field.name === 'Views' && field.value === '1,234,567'));
+        assert.ok(result[0].embeds[0].footer.text.includes('tester(id:user-1)'));
+        assert.equal(result[0].components.length, 1);
+        assert.deepEqual(
+            result[0].components[0].components.map(button => button.data.custom_id),
+            ['translate', 'delete:youtube']
+        );
+        assert.equal(result[0].send, 'channel');
+        assert.equal(result[0].suppressSourceEmbeds, true);
+    } finally {
+        if (oldEnabled === undefined) delete process.env.YOUTUBE_DOWNLOAD_BUTTON_ENABLED;
+        else process.env.YOUTUBE_DOWNLOAD_BUTTON_ENABLED = oldEnabled;
+    }
 });
 
 test('youtube extract: falls back to YouTube page metadata when Invidious returns 404', async () => {
@@ -260,6 +267,25 @@ test('youtube extract: falls back to YouTube page metadata when Invidious return
     assert.equal(result[0].embeds[0].title, 'Fallback Video');
     assert.equal(result[0].embeds[0].description, 'Fallback description');
     assert.ok(result[0].embeds[0].fields.some(field => field.name === 'Views' && field.value === '3,210'));
+});
+
+test('youtube extract: can re-enable the temporary download button with env flag', async () => {
+    const oldEnabled = process.env.YOUTUBE_DOWNLOAD_BUTTON_ENABLED;
+    process.env.YOUTUBE_DOWNLOAD_BUTTON_ENABLED = 'true';
+    const provider = loadYouTubeProviderWithFetch(async () => okJson(videoInfo()));
+
+    try {
+        const url = 'https://www.youtube.com/watch?v=dQw4w9WgXcQ';
+        const result = await provider.extract(createMessage(url), url, {});
+
+        assert.deepEqual(
+            result[0].components[0].components.map(button => button.data.custom_id),
+            ['translate', 'downloadYouTubeVideo', 'delete:youtube']
+        );
+    } finally {
+        if (oldEnabled === undefined) delete process.env.YOUTUBE_DOWNLOAD_BUTTON_ENABLED;
+        else process.env.YOUTUBE_DOWNLOAD_BUTTON_ENABLED = oldEnabled;
+    }
 });
 
 test('youtube extract: builds playlist embeds from playlist metadata', async () => {

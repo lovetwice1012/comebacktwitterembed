@@ -6,8 +6,33 @@ const fs = require('fs');
 const fsp = require('fs/promises');
 const os = require('os');
 const path = require('path');
+const { Readable } = require('stream');
 
 const store = require('../../src/youtubeDownloadStore');
+const storeModulePath = require.resolve('../../src/youtubeDownloadStore');
+const fetchModulePath = require.resolve('node-fetch');
+
+function loadStoreWithFetch(fakeFetch) {
+    const originalFetchModule = require.cache[fetchModulePath];
+    const originalStoreModule = require.cache[storeModulePath];
+
+    require.cache[fetchModulePath] = {
+        id: fetchModulePath,
+        filename: fetchModulePath,
+        loaded: true,
+        exports: fakeFetch,
+    };
+    delete require.cache[storeModulePath];
+
+    try {
+        return require(storeModulePath);
+    } finally {
+        delete require.cache[storeModulePath];
+        if (originalStoreModule) require.cache[storeModulePath] = originalStoreModule;
+        if (originalFetchModule) require.cache[fetchModulePath] = originalFetchModule;
+        else delete require.cache[fetchModulePath];
+    }
+}
 
 async function makeTempRoot() {
     return await fsp.mkdtemp(path.join(os.tmpdir(), 'cte-youtube-downloads-'));
@@ -91,4 +116,69 @@ test('youtube download store uses the best merged format for regular YouTube vid
         presetKey: 'best',
         audioOption: 'none',
     }]);
+});
+
+test('youtube download store keeps the download button disabled unless explicitly enabled', () => {
+    const oldEnabled = process.env.YOUTUBE_DOWNLOAD_BUTTON_ENABLED;
+    try {
+        delete process.env.YOUTUBE_DOWNLOAD_BUTTON_ENABLED;
+        assert.equal(store.isDownloadButtonEnabled(), false);
+
+        process.env.YOUTUBE_DOWNLOAD_BUTTON_ENABLED = 'true';
+        assert.equal(store.isDownloadButtonEnabled(), true);
+    } finally {
+        if (oldEnabled === undefined) delete process.env.YOUTUBE_DOWNLOAD_BUTTON_ENABLED;
+        else process.env.YOUTUBE_DOWNLOAD_BUTTON_ENABLED = oldEnabled;
+    }
+});
+
+test('youtube download store includes progress logs when yt-dlp fails', async () => {
+    const root = await makeTempRoot();
+    const calls = [];
+    const fakeStore = loadStoreWithFetch(async (url, options = {}) => {
+        calls.push({ url, options });
+
+        if (url === 'https://yt-dlp.arcdc.jp/api/download' && options.method === 'POST') {
+            return { ok: true, json: async () => ({ jobId: 'job-1' }) };
+        }
+        if (url === 'https://yt-dlp.arcdc.jp/api/download?jobId=job-1') {
+            return {
+                ok: false,
+                status: 500,
+                text: async () => '{"error":"yt-dlp exited with code 1"}',
+            };
+        }
+        if (url === 'https://yt-dlp.arcdc.jp/api/progress?jobId=job-1') {
+            return {
+                ok: true,
+                body: Readable.from([
+                    'event: log\n',
+                    'data: [download] Downloading item\n\n',
+                    'event: log\n',
+                    'data: ERROR: Requested format is not available\n\n',
+                ]),
+            };
+        }
+        throw new Error(`unexpected url ${url}`);
+    });
+    fakeStore.configureForTest(root, 'https://download.youtube.cbte.sprink.cloud');
+
+    try {
+        await assert.rejects(
+            () => fakeStore.downloadYouTubeToCache('https://www.youtube.com/watch?v=dQw4w9WgXcQ'),
+            (err) => {
+                assert.match(err.message, /yt-dlp exited with code 1/);
+                assert.match(err.message, /Requested format is not available/);
+                assert.match(err.message, /formatCode=bestvideo\+bestaudio\/best/);
+                assert.equal(err.progressLog.includes('ERROR: Requested format is not available'), true);
+                return true;
+            }
+        );
+
+        const post = calls.find(call => call.url === 'https://yt-dlp.arcdc.jp/api/download');
+        assert.equal(JSON.parse(post.options.body).formatCode, 'bestvideo+bestaudio/best');
+        assert.ok(calls.some(call => call.url === 'https://yt-dlp.arcdc.jp/api/progress?jobId=job-1'));
+    } finally {
+        await fsp.rm(root, { recursive: true, force: true });
+    }
 });

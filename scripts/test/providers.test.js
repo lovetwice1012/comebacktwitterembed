@@ -56,12 +56,12 @@ test('loader: extractAllUrls detects instagram profile URLs', () => {
 });
 
 test('loader: extractAllUrls returns twitch clip matches', () => {
-    const matches = loader.extractAllUrls('clip https://clips.twitch.tv/SampleClip-abc_123 and https://www.twitch.tv/u/clip/OtherClip-1');
+    const matches = loader.extractAllUrls('clip https://clips.twitch.tv/SampleClip-abc_123 and https://www.twitch.tv/user123/clip/OtherClip-1');
     assert.equal(matches.length, 2);
     assert.equal(matches[0].provider.id, 'twitch');
     assert.equal(matches[0].url, 'https://clips.twitch.tv/SampleClip-abc_123');
     assert.equal(matches[1].provider.id, 'twitch');
-    assert.equal(matches[1].url, 'https://www.twitch.tv/u/clip/OtherClip-1');
+    assert.equal(matches[1].url, 'https://www.twitch.tv/user123/clip/OtherClip-1');
 });
 
 test('loader: cleanContent strips bracketed and spoiler-wrapped urls of all providers', () => {

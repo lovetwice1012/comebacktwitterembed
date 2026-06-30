@@ -141,9 +141,21 @@ test('spotify extract: builds a Discord embed from Spotify embed page data', asy
     assert.ok(embed.fields.some(f => f.name === 'Release date' && f.value === '1987-11-12'));
     assert.deepEqual(step.files, [{
         attachment: 'https://p.scdn.co/mp3-preview/sample',
-        name: 'spotify-preview-4cOdK2wGLETKBW3PvgPWqT.mp3',
+        name: 'spotify-preview-Never_Gonna_Give_You_Up.mp3',
     }]);
     assert.equal(step.send, 'channel');
+});
+
+test('spotify extract: preview attachment filename is based on sanitized track title', async () => {
+    const provider = loadSpotifyProviderWithFetch(async () => ({
+        ok: true,
+        text: async () => nextDataHtml(createTrackEntity({ name: 'A/B Test Song' })),
+    }));
+
+    const url = 'https://open.spotify.com/track/4cOdK2wGLETKBW3PvgPWqT';
+    const result = await provider.extract(createMessage(url), url, {});
+
+    assert.equal(result[0].files[0].name, 'spotify-preview-A_B_Test_Song.mp3');
 });
 
 test('spotify extract: supports intl-prefixed Spotify track urls', async () => {

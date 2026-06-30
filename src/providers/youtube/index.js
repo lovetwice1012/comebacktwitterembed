@@ -3,6 +3,7 @@
 const fetch = require('node-fetch');
 const { ButtonBuilder, ButtonStyle, ComponentType } = require('discord.js');
 const { recordProviderError } = require('../../errorTracking');
+const youtubeDownloadStore = require('../../youtubeDownloadStore');
 
 const INVIDIOUS_INSTANCES = [
     'https://iteroni.com',
@@ -801,7 +802,7 @@ function buildComponents(lang, includeDownload) {
     const components = [
         new ButtonBuilder().setStyle(ButtonStyle.Primary).setLabel(tr(STR.translateButton, lang)).setCustomId('translate'),
     ];
-    if (includeDownload) {
+    if (includeDownload && youtubeDownloadStore.isDownloadButtonEnabled()) {
         components.push(new ButtonBuilder().setStyle(ButtonStyle.Secondary).setLabel('Download').setCustomId('downloadYouTubeVideo'));
     }
     components.push(new ButtonBuilder().setStyle(ButtonStyle.Danger).setLabel(tr(STR.deleteButton, lang)).setCustomId('delete:youtube'));

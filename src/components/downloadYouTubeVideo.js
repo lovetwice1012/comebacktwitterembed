@@ -20,6 +20,11 @@ function formatSize(bytes) {
 }
 
 async function handle(interaction) {
+    if (!downloadStore.isDownloadButtonEnabled()) {
+        await interaction.editReply({ content: 'YouTube downloads are temporarily unavailable.' });
+        return;
+    }
+
     const url = getYouTubeUrl(interaction);
     if (!url) {
         await interaction.editReply({ content: 'No downloadable YouTube video URL was found on this embed.' });
