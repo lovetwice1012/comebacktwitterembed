@@ -203,6 +203,41 @@ test('twitter extract: stats_layout fields moves stats out of the description', 
     ]);
 });
 
+test('twitter extract: media count and type fields can be shown or hidden', async () => {
+    const provider = loadTwitterProviderWithTweets({
+        1: createTweet('1', {
+            mediaURLs: [
+                'https://pbs.twimg.com/media/one.jpg',
+                'https://video.twimg.com/ext_tw_video/two.mp4',
+                'https://video.twimg.com/tweet_video/three.mp4',
+            ],
+            media_extended: [
+                { type: 'photo' },
+                { type: 'video' },
+                { type: 'animated_gif' },
+            ],
+        }),
+    });
+
+    const result = await provider.extract(createMessage(), 'https://twitter.com/a/status/1', {
+        legacy_mode: true,
+    });
+
+    assert.ok(Array.isArray(result));
+    assert.deepEqual(result[0].embeds[0].fields.map(field => [field.name, field.value]), [
+        ['Media count', '3'],
+        ['Media type', 'Image x1, Video x1, GIF x1'],
+    ]);
+
+    const hidden = await provider.extract(createMessage(), 'https://twitter.com/a/status/1', {
+        legacy_mode: true,
+        hidden_output_items: ['media_count', 'media_type'],
+    });
+
+    assert.ok(Array.isArray(hidden));
+    assert.equal(hidden[0].embeds[0].fields, undefined);
+});
+
 test('twitter extract: article card output items can be hidden individually', async () => {
     const provider = loadTwitterProviderWithTweets({
         1: createTweet('1', {
@@ -302,6 +337,7 @@ test('twitter extract: display density and media display mode reshape tweet outp
     assert.equal(result[0].embeds[0].image, undefined);
     assert.match(result[0].content, /Media: https:\/\/pbs\.twimg\.com\/media\/one\.jpg/);
     assert.doesNotMatch(result[0].embeds[0].description, /likes/);
+    assert.equal(result[0].embeds[0].fields, undefined);
     const customIds = result[0].components.flatMap(row => row.components.map(button => button.data.custom_id));
     assert.equal(customIds.includes('showMediaAsAttachments'), false);
 });

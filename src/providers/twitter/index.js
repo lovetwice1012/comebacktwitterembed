@@ -156,13 +156,14 @@ function mediaTypeFromUrl(url) {
 
 function mediaUrlFromObject(media) {
     if (!media || typeof media !== 'object') return '';
+    const variants = Array.isArray(media.video_info?.variants) ? media.video_info.variants : [];
     return media.url
         || media.media_url_https
         || media.media_url
         || media.mediaURL
         || media.thumbnail_url
         || media.thumbnailUrl
-        || media.video_info?.variants?.find(variant => variant?.url)?.url
+        || variants.find(variant => variant?.url)?.url
         || '';
 }
 
@@ -350,6 +351,13 @@ function applyTweetStatsFields(embed, tweet, lang, s) {
     addEmbedField(embed, tr(STR.likesField, lang), tweet.likes ?? 0);
 }
 
+function applyTweetMediaFields(embed, tweet, lang, s) {
+    const media = summarizeTweetMedia(tweet);
+    if (media.count <= 0) return;
+    if (shouldShowOutputItem(s, 'media_count')) addEmbedField(embed, tr(STR.mediaCountField, lang), media.count);
+    if (shouldShowOutputItem(s, 'media_type')) addEmbedField(embed, tr(STR.mediaTypeField, lang), media.typeSummary);
+}
+
 function buildTweetDescription(tweet, lang, s, compact = false) {
     const mode = twitterTextMode(s);
     if (mode === 'hidden') return '';
@@ -380,6 +388,7 @@ function buildFullEmbed(tweet, lang, requesterAuthorName, isAnon, s) {
     };
     if (description) embed.description = description;
     applyTweetStatsFields(embed, tweet, lang, s);
+    applyTweetMediaFields(embed, tweet, lang, s);
     return embed;
 }
 
@@ -393,6 +402,7 @@ function buildCompactEmbed(tweet, lang, requesterAuthorName, s) {
     };
     if (description) embed.description = description;
     applyTweetStatsFields(embed, tweet, lang, s);
+    applyTweetMediaFields(embed, tweet, lang, s);
     return embed;
 }
 
@@ -771,6 +781,8 @@ const twitterProvider = {
                 { value: 'article_title', label: { en: 'Article title', ja: 'Article title' } },
                 { value: 'article_preview', label: { en: 'Article preview', ja: 'Article preview' } },
                 { value: 'article_image', label: { en: 'Article image', ja: 'Article image' } },
+                { value: 'media_count', label: { en: 'Media count', ja: 'Media count' } },
+                { value: 'media_type', label: { en: 'Media type', ja: 'Media type' } },
                 { value: 'stats', label: { en: 'Reply/repost/like stats', ja: 'リプライ/リポスト/いいね数' } },
             ],
         },
