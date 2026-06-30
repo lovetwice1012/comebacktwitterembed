@@ -117,8 +117,17 @@ test('tiktok extract: builds self-owned embed and video attachment without repos
         }
         if (requestUrl === 'https://video.example/play') {
             return {
-                status: 302,
-                headers: { get: name => name.toLowerCase() === 'location' ? 'https://cdn.example/video.mp4' : null },
+                ok: true,
+                status: 200,
+                headers: {
+                    get: name => {
+                        const key = name.toLowerCase();
+                        if (key === 'content-type') return 'video/mp4';
+                        if (key === 'content-length') return '9';
+                        return null;
+                    },
+                },
+                buffer: async () => Buffer.from('fakevideo'),
             };
         }
         throw new Error(`unexpected fetch: ${requestUrl}`);
@@ -133,7 +142,10 @@ test('tiktok extract: builds self-owned embed and video attachment without repos
     assert.equal(result[0].embeds[0].title, 'Creator (@creator)');
     assert.equal(result[0].embeds[0].url, 'https://www.tiktok.com/@creator/video/7332187682480590112');
     assert.equal(result[0].embeds[0].thumbnail.url, 'https://image.example/cover.jpg');
-    assert.deepEqual(result[0].files, ['https://cdn.example/video.mp4']);
+    assert.equal(result[0].files.length, 1);
+    assert.ok(Buffer.isBuffer(result[0].files[0].attachment));
+    assert.equal(result[0].files[0].attachment.toString(), 'fakevideo');
+    assert.equal(result[0].files[0].name, 'tiktok-7332187682480590112.mp4');
     assert.equal(result[0].send, 'channel');
     assert.equal(result[0].suppressSourceEmbeds, true);
 });
@@ -166,6 +178,51 @@ test('tiktok extract: builds image embeds for photo posts', async () => {
     assert.equal(result[0].embeds[0].image.url, 'https://image.example/1.jpg');
     assert.equal(result[0].embeds[1].image.url, 'https://image.example/2.jpg');
     assert.equal(result[0].embeds[0].url, 'https://www.tiktok.com/@creator/photo/7335753580093164833');
+});
+
+test('tiktok extract: skips access-denied video candidates and uploads a working buffer', async () => {
+    const provider = loadTikTokProviderWithFetch(async (requestUrl) => {
+        if (requestUrl === 'https://www.tiktok.com/@i/video/7332187682480590112') {
+            return {
+                text: async () => videoPageHtml(createVideoData({
+                    video: {
+                        duration: 12,
+                        cover: 'https://image.example/cover.jpg',
+                        PlayAddrStruct: {
+                            UrlList: [
+                                'https://video.example/access-denied',
+                                'https://video.example/working',
+                            ],
+                        },
+                    },
+                })),
+            };
+        }
+        if (requestUrl === 'https://video.example/access-denied') {
+            return {
+                ok: false,
+                status: 403,
+                headers: { get: () => null },
+                buffer: async () => Buffer.from('Access Denied'),
+            };
+        }
+        if (requestUrl === 'https://video.example/working') {
+            return {
+                ok: true,
+                status: 200,
+                headers: { get: name => name.toLowerCase() === 'content-type' ? 'video/mp4' : null },
+                buffer: async () => Buffer.from('workingvideo'),
+            };
+        }
+        throw new Error(`unexpected fetch: ${requestUrl}`);
+    });
+
+    const url = 'https://www.tiktok.com/@creator/video/7332187682480590112';
+    const result = await provider.extract(createMessage(url), url, {});
+
+    assert.equal(result[0].files.length, 1);
+    assert.ok(Buffer.isBuffer(result[0].files[0].attachment));
+    assert.equal(result[0].files[0].attachment.toString(), 'workingvideo');
 });
 
 test('tiktok extract: builds profile embeds for account links', async () => {
@@ -230,7 +287,12 @@ test('tiktok extract: resolves short links internally before scraping', async ()
             return { text: async () => videoPageHtml(createVideoData()) };
         }
         if (requestUrl === 'https://video.example/play') {
-            return { status: 200, headers: { get: () => null } };
+            return {
+                ok: true,
+                status: 200,
+                headers: { get: () => null },
+                buffer: async () => Buffer.from('shortvideo'),
+            };
         }
         throw new Error(`unexpected fetch: ${requestUrl}`);
     });
@@ -240,7 +302,9 @@ test('tiktok extract: resolves short links internally before scraping', async ()
 
     assert.equal(result[0].content, undefined);
     assert.equal(result[0].embeds[0].url, 'https://www.tiktok.com/@creator/video/7332187682480590112');
-    assert.deepEqual(result[0].files, ['https://video.example/play']);
+    assert.equal(result[0].files.length, 1);
+    assert.ok(Buffer.isBuffer(result[0].files[0].attachment));
+    assert.equal(result[0].files[0].attachment.toString(), 'shortvideo');
 });
 
 test('tiktok extract: honors reply and delete source settings', async () => {
@@ -249,7 +313,12 @@ test('tiktok extract: honors reply and delete source settings', async () => {
             return { text: async () => videoPageHtml(createVideoData()) };
         }
         if (requestUrl === 'https://video.example/play') {
-            return { status: 200, headers: { get: () => null } };
+            return {
+                ok: true,
+                status: 200,
+                headers: { get: () => null },
+                buffer: async () => Buffer.from('settingsvideo'),
+            };
         }
         throw new Error(`unexpected fetch: ${requestUrl}`);
     });

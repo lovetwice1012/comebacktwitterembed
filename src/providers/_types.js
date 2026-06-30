@@ -15,8 +15,9 @@
 
 /**
  * @typedef {object} FilePayload
- * @property {string} attachment
+ * @property {any} attachment
  * @property {string} [name]
+ * @property {string} [fallbackUrl]
  */
 
 /**

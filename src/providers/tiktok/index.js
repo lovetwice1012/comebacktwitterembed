@@ -11,6 +11,7 @@ const EMBED_COLOR = 0xff0050;
 const MAX_DESCRIPTION_LENGTH = 900;
 const MAX_IMAGES_PER_MESSAGE = 10;
 const IMAGES_PER_GROUP = 4;
+const MAX_VIDEO_UPLOAD_BYTES = 25 * 1024 * 1024;
 const AWEME_ID_PATTERN = /^\d{1,25}$/;
 const AWEME_LINK_PATTERN = /\/@?([\w\d_.-]+)\/(video|photo)\/(\d{1,25})/;
 const PROFILE_LINK_PATTERN = /^\/@([\w\d_.-]+)\/?$/;
@@ -59,6 +60,15 @@ function commonHeaders(userAgent) {
         Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
         'Accept-Language': 'en-US,en;q=0.9,ja;q=0.8',
         'User-Agent': userAgent || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36',
+    };
+}
+
+function mediaHeaders() {
+    return {
+        ...commonHeaders(),
+        Accept: '*/*',
+        Referer: 'https://www.tiktok.com/',
+        Range: 'bytes=0-',
     };
 }
 
@@ -152,15 +162,90 @@ async function fetchProfileData(uniqueId) {
     return json?.__DEFAULT_SCOPE__?.['webapp.user-detail']?.userInfo || null;
 }
 
-function pickFirstString(...values) {
+function pickStrings(...values) {
+    const out = [];
     for (const value of values) {
-        if (typeof value === 'string' && value) return value;
+        if (typeof value === 'string' && value) out.push(value);
         if (Array.isArray(value)) {
-            const found = value.find(item => typeof item === 'string' && item);
-            if (found) return found;
+            out.push(...value.filter(item => typeof item === 'string' && item));
         }
     }
-    return '';
+    return out;
+}
+
+function pickFirstString(...values) {
+    return pickStrings(...values)[0] || '';
+}
+
+function dedupeStrings(values) {
+    const out = [];
+    const seen = new Set();
+    for (const value of values) {
+        if (!value || seen.has(value)) continue;
+        seen.add(value);
+        out.push(value);
+    }
+    return out;
+}
+
+function extensionFromContentType(contentType) {
+    if (/webm/i.test(contentType || '')) return 'webm';
+    if (/quicktime|mov/i.test(contentType || '')) return 'mov';
+    return 'mp4';
+}
+
+function isTooLargeResponse(res) {
+    const length = Number(res.headers?.get?.('content-length') || 0);
+    return Number.isFinite(length) && length > MAX_VIDEO_UPLOAD_BYTES;
+}
+
+async function downloadVideoCandidate(url, id) {
+    const res = await fetch(url, {
+        headers: mediaHeaders(),
+        redirect: 'follow',
+    });
+    if (!res.ok || isTooLargeResponse(res)) return null;
+
+    const attachment = await res.buffer();
+    if (!attachment || attachment.length === 0 || attachment.length > MAX_VIDEO_UPLOAD_BYTES) return null;
+
+    const contentType = res.headers?.get?.('content-type') || 'video/mp4';
+    return {
+        attachment,
+        name: `tiktok-${id}.${extensionFromContentType(contentType)}`,
+    };
+}
+
+async function downloadVideoAttachment(data, hq) {
+    const candidates = getVideoUrlCandidates(data, hq);
+    for (const candidate of candidates) {
+        try {
+            const file = await downloadVideoCandidate(candidate, data?.id || 'video');
+            if (file) return file;
+        } catch (err) {
+            console.log(err);
+        }
+    }
+    return null;
+}
+
+function getVideoUrlCandidates(data, hq) {
+    const video = data?.video;
+    if (!video) return [];
+    const urls = [];
+    if (hq) {
+        const h265 = video.bitrateInfo?.filter(item => String(item?.CodecType || '').includes('h265')) || [];
+        for (const item of h265) urls.push(...pickStrings(item?.PlayAddr?.UrlList));
+    }
+    urls.push(...pickStrings(video.PlayAddrStruct?.UrlList, video.playAddr, video.downloadAddr));
+    for (const item of video.bitrateInfo || []) {
+        urls.push(...pickStrings(item?.PlayAddr?.UrlList));
+    }
+    return dedupeStrings(urls);
+}
+
+function pickVideoUrl(data, hq) {
+    return getVideoUrlCandidates(data, hq)[0] || '';
 }
 
 function pickCoverUrl(data) {
@@ -181,41 +266,6 @@ function pickImageUrls(data) {
     return images
         .map(image => pickFirstString(image?.imageURL?.urlList, image?.imageURL?.urlPrefix, image?.imageURL?.uri))
         .filter(Boolean);
-}
-
-function pickVideoUrl(data, hq) {
-    const video = data?.video;
-    if (!video) return '';
-    if (hq) {
-        const h265 = video.bitrateInfo?.find(item => String(item?.CodecType || '').includes('h265'));
-        const h265Url = pickFirstString(h265?.PlayAddr?.UrlList, h265?.PlayAddr?.UrlList?.[0]);
-        if (h265Url) return h265Url;
-    }
-    return pickFirstString(
-        video.PlayAddrStruct?.UrlList,
-        video.playAddr,
-        video.downloadAddr,
-        video.bitrateInfo?.[0]?.PlayAddr?.UrlList
-    );
-}
-
-async function resolveDirectMediaUrl(mediaUrl) {
-    if (!mediaUrl) return '';
-    try {
-        const res = await fetch(mediaUrl, {
-            headers: {
-                ...commonHeaders(),
-                Accept: '*/*',
-            },
-            redirect: 'manual',
-        });
-        if (res.status === 301 || res.status === 302 || res.status === 303 || res.status === 307 || res.status === 308) {
-            return res.headers?.get?.('Location') || res.headers?.get?.('location') || mediaUrl;
-        }
-    } catch (err) {
-        console.log(err);
-    }
-    return mediaUrl;
 }
 
 function buildStatsLine(data, lang) {
@@ -394,8 +444,8 @@ async function extract(message, url, s) {
         });
     } else {
         const hq = s.tiktok_hq === true;
-        const videoUrl = await resolveDirectMediaUrl(pickVideoUrl(data, hq));
-        if (videoUrl) files.push(videoUrl);
+        const videoFile = await downloadVideoAttachment(data, hq);
+        if (videoFile) files.push(videoFile);
         const cover = pickCoverUrl(data);
         if (cover) baseEmbed.thumbnail = { url: cover };
         embeds.push(baseEmbed);

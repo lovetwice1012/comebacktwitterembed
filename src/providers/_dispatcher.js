@@ -16,8 +16,9 @@ const { recordError, recordMetric } = require('../errorTracking');
 function fileToFallbackText(file) {
     if (typeof file === 'string') return file;
     if (file && typeof file.attachment === 'string') return file.attachment;
+    if (file && typeof file.fallbackUrl === 'string') return file.fallbackUrl;
     if (file && typeof file.url === 'string') return file.url;
-    return String(file ?? '');
+    return '';
 }
 
 function formatSendError(err) {
