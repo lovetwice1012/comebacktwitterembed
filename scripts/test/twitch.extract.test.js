@@ -282,6 +282,55 @@ test('twitch extract: honors hidden output items and description length for clip
     const embed = result[0].embeds[0];
     assert.equal(embed.description, 'sampl...');
     assert.equal(embed.fields, undefined);
+
+    const hidden = await provider.extract(createMessage(url), url, {
+        twitch_description_max_length: 0,
+    });
+    assert.equal(hidden[0].embeds[0].description, undefined);
+});
+
+test('twitch extract: compact display density hides compact clip and channel fields', async () => {
+    const calls = [];
+    const provider = loadTwitchProviderWithFetch(fakeTwitchFetch(calls));
+
+    const clipUrl = 'https://clips.twitch.tv/SampleClip-abc_123';
+    const standardClip = await provider.extract(createMessage(clipUrl), clipUrl, {
+        media_display_mode: 'thumbnail_only',
+    });
+    const compactClip = await provider.extract(createMessage(clipUrl), clipUrl, {
+        display_density: 'compact',
+        media_display_mode: 'thumbnail_only',
+    });
+    const standardClipFieldNames = (standardClip[0].embeds[0].fields || []).map(field => field.name);
+    const compactClipFieldNames = (compactClip[0].embeds[0].fields || []).map(field => field.name);
+
+    assert.ok(standardClipFieldNames.includes('Views'));
+    assert.ok(standardClipFieldNames.includes('Duration'));
+    assert.ok(standardClipFieldNames.includes('Game'));
+    assert.ok(standardClipFieldNames.includes('Clipped by'));
+    assert.equal(compactClipFieldNames.includes('Views'), false);
+    assert.equal(compactClipFieldNames.includes('Duration'), false);
+    assert.equal(compactClipFieldNames.includes('Game'), false);
+    assert.equal(compactClipFieldNames.includes('Clipped by'), false);
+    assert.ok(compactClipFieldNames.length < standardClipFieldNames.length);
+
+    const channelUrl = 'https://www.twitch.tv/killin9hit';
+    const standardChannel = await provider.extract(createMessage(channelUrl), channelUrl, {});
+    const compactChannel = await provider.extract(createMessage(channelUrl), channelUrl, {
+        display_density: 'compact',
+    });
+    const standardChannelFieldNames = (standardChannel[0].embeds[0].fields || []).map(field => field.name);
+    const compactChannelFieldNames = (compactChannel[0].embeds[0].fields || []).map(field => field.name);
+
+    assert.ok(standardChannelFieldNames.includes('Status'));
+    assert.ok(standardChannelFieldNames.includes('Viewers'));
+    assert.ok(standardChannelFieldNames.includes('Game'));
+    assert.ok(standardChannelFieldNames.includes('Started'));
+    assert.equal(compactChannelFieldNames.includes('Status'), false);
+    assert.equal(compactChannelFieldNames.includes('Viewers'), false);
+    assert.equal(compactChannelFieldNames.includes('Game'), false);
+    assert.equal(compactChannelFieldNames.includes('Started'), false);
+    assert.ok(compactChannelFieldNames.length < standardChannelFieldNames.length);
 });
 
 test('twitch extract: expands channel urls with live stream metadata', async () => {

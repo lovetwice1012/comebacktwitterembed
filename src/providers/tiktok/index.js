@@ -24,6 +24,7 @@ const EMBED_COLOR = 0xff0050;
 const MAX_DESCRIPTION_LENGTH = 900;
 const MAX_IMAGES_PER_MESSAGE = 10;
 const TIKTOK_IMAGE_LIMITS = new Set([1, 4, 10]);
+const TIKTOK_VIDEO_FALLBACK_MODES = new Set(['video_url', 'thumbnail_only', 'silent']);
 const IMAGES_PER_GROUP = 4;
 const MAX_VIDEO_UPLOAD_BYTES = 25 * 1024 * 1024;
 const AWEME_ID_PATTERN = /^\d{1,25}$/;
@@ -347,6 +348,11 @@ function resolveTikTokImageLimit(settings) {
     return resolveDisplayDensity(settings) === 'compact' ? 1 : MAX_IMAGES_PER_MESSAGE;
 }
 
+function resolveTikTokVideoFallbackMode(settings) {
+    const mode = String(settings?.tiktok_video_fallback_mode || '').trim();
+    return TIKTOK_VIDEO_FALLBACK_MODES.has(mode) ? mode : 'video_url';
+}
+
 function buildButtons(lang, includeMediaButton) {
     const components = [];
     if (includeMediaButton) {
@@ -549,15 +555,21 @@ async function extract(message, url, s) {
     } else {
         const hq = s.tiktok_hq === true;
         const videoUrl = pickVideoUrl(data, hq);
+        let forceThumbnailFallback = false;
         if (shouldAttachVideoMedia(s)) {
             const videoFile = await downloadVideoAttachment(data, hq);
             if (videoFile) files.push(videoFile);
-            else if (resolveMediaDisplayMode(s) === 'attachment' && videoUrl) mediaContent = `Video: ${videoUrl}`;
+            else {
+                const fallbackMode = resolveTikTokVideoFallbackMode(s);
+                if (fallbackMode === 'video_url' && videoUrl) mediaContent = `Video: ${videoUrl}`;
+                else if (fallbackMode === 'thumbnail_only') forceThumbnailFallback = true;
+            }
         } else if (resolveMediaDisplayMode(s) === 'link_only' && videoUrl) {
             mediaContent = `Video: ${videoUrl}`;
         }
         const cover = pickCoverUrl(data);
-        applyEmbedMedia(baseEmbed, cover, s, { asThumbnail: true });
+        if (forceThumbnailFallback && cover) baseEmbed.thumbnail = { url: cover };
+        else applyEmbedMedia(baseEmbed, cover, s, { asThumbnail: true });
         embeds.push(baseEmbed);
     }
 
@@ -595,6 +607,7 @@ const tiktokProvider = {
         'media_display_mode',
         'tiktok_description_max_length',
         'tiktok_image_limit',
+        'tiktok_video_fallback_mode',
         {
             key: 'hidden_output_items',
             outputItems: [

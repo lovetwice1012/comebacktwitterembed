@@ -26,12 +26,14 @@ const PROVIDER_DEFAULTS = {
     quote_repost_max_depth:                               0,
     quote_repost_do_not_extract:                          false,
     youtube_description_max_length:                       undefined,
+    youtube_video_list_limit:                             undefined,
     tiktok_hq:                                             false,
     twitter_stats_layout:                                  'description',
     twitter_text_mode:                                     'normal',
     twitter_quote_mode:                                    'full',
     twitter_quote_layout:                                  'separate',
     pixiv_caption_max_length:                              undefined,
+    pixiv_tag_limit:                                       undefined,
     instagram_caption_max_length:                          undefined,
     instagram_media_limit:                                 undefined,
     github_card_style:                                     'generated',
@@ -41,6 +43,7 @@ const PROVIDER_DEFAULTS = {
     failure_display_policy:                                'silent',
     tiktok_description_max_length:                         undefined,
     tiktok_image_limit:                                    undefined,
+    tiktok_video_fallback_mode:                            undefined,
     niconico_description_max_length:                       undefined,
     spotify_description_max_length:                        undefined,
     twitch_description_max_length:                         undefined,
@@ -48,6 +51,8 @@ const PROVIDER_DEFAULTS = {
     steam_image_source:                                    'header',
     amazon_description_max_length:                         undefined,
     booth_description_max_length:                          undefined,
+    booth_image_limit:                                     undefined,
+    booth_adult_display_mode:                              'normal',
 };
 
 const PROVIDER_SETTING_COLUMNS = {
@@ -123,6 +128,10 @@ const PROVIDER_SETTING_COLUMNS = {
         column: 'youtube_description_max_length',
         type: 'int',
     },
+    youtube_video_list_limit: {
+        column: 'youtube_video_list_limit',
+        type: 'int',
+    },
     tiktok_hq: {
         column: 'tiktok_hq',
         type: 'bool',
@@ -146,6 +155,10 @@ const PROVIDER_SETTING_COLUMNS = {
     pixiv_caption_max_length: {
         column: 'pixiv_caption_max_length',
         type: 'int',
+    },
+    pixiv_tag_limit: {
+        column: 'pixiv_tag_limit',
+        type: 'string',
     },
     instagram_caption_max_length: {
         column: 'instagram_caption_max_length',
@@ -182,6 +195,18 @@ const PROVIDER_SETTING_COLUMNS = {
     tiktok_image_limit: {
         column: 'tiktok_image_limit',
         type: 'int',
+    },
+    tiktok_video_fallback_mode: {
+        column: 'tiktok_video_fallback_mode',
+        type: 'string',
+    },
+    booth_image_limit: {
+        column: 'booth_image_limit',
+        type: 'int',
+    },
+    booth_adult_display_mode: {
+        column: 'booth_adult_display_mode',
+        type: 'string',
     },
     niconico_description_max_length: {
         column: 'niconico_description_max_length',
@@ -286,6 +311,7 @@ function settingDefault(provider, key) {
     if (key === 'instagram_caption_max_length') return provider.id === 'instagram' ? 3000 : undefined;
     if (key === 'instagram_media_limit') return provider.id === 'instagram' ? 10 : undefined;
     if (key === 'tiktok_description_max_length') return provider.id === 'tiktok' ? 900 : undefined;
+    if (key === 'tiktok_video_fallback_mode') return provider.id === 'tiktok' ? 'video_url' : undefined;
     if (key === 'niconico_description_max_length') return provider.id === 'niconico' ? 1400 : undefined;
     if (key === 'spotify_description_max_length') return provider.id === 'spotify' ? 350 : undefined;
     if (key === 'twitch_description_max_length') return provider.id === 'twitch' ? 1500 : undefined;
@@ -293,6 +319,7 @@ function settingDefault(provider, key) {
     if (key === 'steam_image_source') return provider.id === 'steam' ? 'header' : undefined;
     if (key === 'amazon_description_max_length') return provider.id === 'amazon' ? 700 : undefined;
     if (key === 'booth_description_max_length') return provider.id === 'booth' ? 350 : undefined;
+    if (key === 'booth_adult_display_mode') return provider.id === 'booth' ? 'normal' : undefined;
     return PROVIDER_DEFAULTS[key];
 }
 

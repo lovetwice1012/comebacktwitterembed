@@ -28,8 +28,10 @@ const { recordProviderError } = require('../../errorTracking');
 const {
     applyMediaDisplayToStep,
     buildFailureResponse,
+    mediaLinksContent,
     resolveDensityMaxLength,
     resolveDisplayDensity,
+    shouldAttachVideoMedia,
     shouldShowOutputItem,
 } = require('../_output_controls');
 
@@ -72,6 +74,7 @@ const IMAGES_PER_GROUP = 4;        // Discord が同一 url の embed をギャ�
 const DESCRIPTION_MAX_LENGTH = 350;
 const DESCRIPTION_LIMIT_MAX = 1200;
 const TAGS_MAX_LENGTH        = 256;
+const DIRECT_UGOIRA_MEDIA_RE = /^https?:\/\/\S+\.(?:mp4|gif|webm)(?:[?#].*)?$/i;
 
 // ---- URL parser -----------------------------------------------------------
 
@@ -132,6 +135,8 @@ async function fetchPixivInfo(id, language, index) {
     const body = unwrapPixivAjax(infoJson, infoApi);
     const pages = await fetchPagesJson(pagesApi);
     const imageProxyUrls = collectPixivImageUrls(pages, body);
+    const isUgoira = Number(body.illustType) === 2;
+    const ugoiraMeta = isUgoira ? await fetchUgoiraMeta(id, language) : null;
 
     return {
         title: body.title || body.illustTitle,
@@ -143,9 +148,10 @@ async function fetchPixivInfo(id, language, index) {
         profile_image_url: proxyPixivImageUrl(body.userImage || body.profileImageUrl),
         ai_generated: Number(body.aiType) === 2,
         x_restrict: Number(body.xRestrict ?? body.x_restrict) || 0,
-        is_ugoira: Number(body.illustType) === 2,
+        is_ugoira: isUgoira,
         illust_id: body.illustId || body.id || id,
         image_proxy_urls: imageProxyUrls,
+        ugoira_media_urls: collectDirectUgoiraMediaUrls(body, ugoiraMeta),
     };
 }
 
@@ -163,6 +169,17 @@ async function fetchPagesJson(url) {
     const json = await res.json();
     if (json?.error === true && Array.isArray(json.body) && json.body.length === 0) return [];
     return unwrapPixivAjax(json, url);
+}
+
+async function fetchUgoiraMeta(id, language) {
+    const params = new URLSearchParams({ lang: language });
+    const url = `${PIXIV_AJAX_BASE}/${id}/ugoira_meta?${params.toString()}`;
+    try {
+        const json = await fetchJson(url);
+        return unwrapPixivAjax(json, url);
+    } catch {
+        return null;
+    }
 }
 
 function unwrapPixivAjax(json, url) {
@@ -197,6 +214,29 @@ function proxyPixivImageUrl(rawUrl) {
     try { u = new URL(rawUrl); } catch { return rawUrl; }
     if (u.hostname !== 'i.pximg.net') return rawUrl;
     return `https://${PHIXIV_HOST}/i${u.pathname}`;
+}
+
+function collectDirectUgoiraMediaUrls(...values) {
+    const out = [];
+    const seen = new Set();
+    const visit = (value, depth = 0) => {
+        if (depth > 5 || value === null || value === undefined) return;
+        if (typeof value === 'string') {
+            if (!DIRECT_UGOIRA_MEDIA_RE.test(value) || seen.has(value)) return;
+            seen.add(value);
+            out.push(proxyPixivImageUrl(value));
+            return;
+        }
+        if (Array.isArray(value)) {
+            value.forEach(item => visit(item, depth + 1));
+            return;
+        }
+        if (typeof value === 'object') {
+            Object.values(value).forEach(item => visit(item, depth + 1));
+        }
+    };
+    values.forEach(value => visit(value));
+    return out;
 }
 
 function normalizePixivTags(tags) {
@@ -292,6 +332,30 @@ function resolveCaptionMaxLength(value, settings = {}) {
     return Math.max(0, Math.min(DESCRIPTION_LIMIT_MAX, Math.round(n)));
 }
 
+function appendStepContent(step, content) {
+    if (!content) return;
+    step.content = [step.content, content].filter(Boolean).join('\n');
+}
+
+function appendUniqueFiles(step, urls) {
+    if (!Array.isArray(urls) || urls.length === 0) return;
+    const files = Array.isArray(step.files) ? [...step.files] : [];
+    const seen = new Set(files.map(file => (typeof file === 'string' ? file : file?.attachment)).filter(Boolean));
+    for (const url of urls) {
+        if (!url || seen.has(url)) continue;
+        seen.add(url);
+        files.push(url);
+    }
+    if (files.length > 0) step.files = files;
+}
+
+function applyUgoiraMediaToStep(step, settings, urls) {
+    const mediaUrls = Array.isArray(urls) ? urls.filter(Boolean) : [];
+    if (mediaUrls.length === 0 || !shouldShowOutputItem(settings, 'ugoira_media', { hideInCompact: false })) return;
+    if (shouldAttachVideoMedia(settings)) appendUniqueFiles(step, mediaUrls);
+    appendStepContent(step, mediaLinksContent(settings, mediaUrls, 'Ugoira'));
+}
+
 // ---- extract --------------------------------------------------------------
 
 /** @type {import('../_types').Extractor} */
@@ -312,6 +376,7 @@ async function extract(message, url, s) {
     }
 
     const images = Array.isArray(info.image_proxy_urls) ? info.image_proxy_urls : [];
+    const ugoiraMediaUrls = Array.isArray(info.ugoira_media_urls) ? info.ugoira_media_urls : [];
     if (images.length === 0) return null;
 
     const lang = guildLang === 'ja' ? 'ja' : 'en';
@@ -415,6 +480,7 @@ async function extract(message, url, s) {
     }
 
     applyMediaDisplayToStep(step, s, displayImages, 'Image');
+    applyUgoiraMediaToStep(step, s, ugoiraMediaUrls);
     return [step];
 }
 
@@ -442,6 +508,7 @@ const pixivProvider = {
                 { value: 'ai', label: { en: 'AI-generated label', ja: 'AI-generated label' } },
                 { value: 'maturity', label: { en: 'R-18/R-18G label', ja: 'R-18/R-18G label' } },
                 { value: 'type', label: { en: 'Artwork type field', ja: 'Artwork type field' } },
+                { value: 'ugoira_media', label: { en: 'Ugoira media attachment/link', ja: 'Ugoira media attachment/link' } },
                 { value: 'pages', label: { en: 'Page count field', ja: 'Page count field' } },
                 { value: 'tags', label: { en: 'Tags field', ja: 'タグ欄' } },
             ],

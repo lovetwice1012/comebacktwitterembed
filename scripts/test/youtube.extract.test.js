@@ -283,6 +283,42 @@ test('youtube extract: shorts URLs are labeled as Shorts', async () => {
     assert.ok(result[0].embeds[0].fields.some(field => field.name === 'Type' && field.value === 'Shorts'));
 });
 
+test('youtube extract: live videos are labeled as Live now and the type field can be hidden', async () => {
+    const provider = loadYouTubeProviderWithFetch(async () => okJson({
+        ...videoInfo(),
+        liveNow: true,
+    }));
+
+    const url = 'https://www.youtube.com/watch?v=dQw4w9WgXcQ';
+    const result = await provider.extract(createMessage(url), url, {});
+
+    assert.ok(result[0].embeds[0].fields.some(field => field.name === 'Type' && field.value === 'Live now'));
+
+    const hiddenResult = await provider.extract(createMessage(url), url, {
+        hidden_output_items: ['type'],
+    });
+
+    assert.equal(hiddenResult[0].embeds[0].fields.some(field => field.name === 'Type'), false);
+});
+
+test('youtube extract: premieres are labeled as Premiere and the type field can be hidden', async () => {
+    const provider = loadYouTubeProviderWithFetch(async () => okJson({
+        ...videoInfo(),
+        premiereTimestamp: 1800000000,
+    }));
+
+    const url = 'https://www.youtube.com/watch?v=dQw4w9WgXcQ';
+    const result = await provider.extract(createMessage(url), url, {});
+
+    assert.ok(result[0].embeds[0].fields.some(field => field.name === 'Type' && field.value === 'Premiere'));
+
+    const hiddenResult = await provider.extract(createMessage(url), url, {
+        hidden_output_items: ['type'],
+    });
+
+    assert.equal(hiddenResult[0].embeds[0].fields.some(field => field.name === 'Type'), false);
+});
+
 test('youtube extract: honors the DB-backed description length setting', async () => {
     const provider = loadYouTubeProviderWithFetch(async () => okJson({
         ...videoInfo(),

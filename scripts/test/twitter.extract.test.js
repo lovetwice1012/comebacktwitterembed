@@ -238,6 +238,30 @@ test('twitter extract: media count and type fields can be shown or hidden', asyn
     assert.equal(hidden[0].embeds[0].fields, undefined);
 });
 
+test('twitter extract: sensitive media flag can be shown or hidden', async () => {
+    const provider = loadTwitterProviderWithTweets({
+        1: createTweet('1', {
+            mediaURLs: ['https://pbs.twimg.com/media/one.jpg'],
+            possibly_sensitive: true,
+        }),
+    });
+
+    const visible = await provider.extract(createMessage(), 'https://twitter.com/a/status/1', {
+        legacy_mode: true,
+    });
+
+    assert.ok(Array.isArray(visible));
+    assert.ok(visible[0].embeds[0].fields.some(field => field.name === 'Sensitive media' && field.value === 'Yes'));
+
+    const hidden = await provider.extract(createMessage(), 'https://twitter.com/a/status/1', {
+        legacy_mode: true,
+        hidden_output_items: ['sensitive_media'],
+    });
+
+    assert.ok(Array.isArray(hidden));
+    assert.equal(hidden[0].embeds[0].fields.some(field => field.name === 'Sensitive media'), false);
+});
+
 test('twitter extract: article card output items can be hidden individually', async () => {
     const provider = loadTwitterProviderWithTweets({
         1: createTweet('1', {

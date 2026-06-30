@@ -37,16 +37,35 @@ const SETTINGS_DEFAULT_FILE = {
     deletemessageifonlypostedtweetlink_secoundaryextractmode: {},
     quote_repost_max_depth: {},
     byProvider: {},
+    pixiv_images_per_step: {},
+    youtube_description_max_length: {},
     tiktok_hq: {},
     twitter_stats_layout: {},
     twitter_text_mode: {},
     twitter_quote_mode: {},
     twitter_quote_layout: {},
+    youtube_video_list_limit: {},
     pixiv_caption_max_length: {},
+    pixiv_tag_limit: {},
     instagram_caption_max_length: {},
     instagram_media_limit: {},
     github_card_style: {},
     hidden_output_items: {},
+    display_density: {},
+    media_display_mode: {},
+    failure_display_policy: {},
+    tiktok_description_max_length: {},
+    tiktok_image_limit: {},
+    tiktok_video_fallback_mode: {},
+    niconico_description_max_length: {},
+    spotify_description_max_length: {},
+    twitch_description_max_length: {},
+    steam_description_max_length: {},
+    steam_image_source: {},
+    amazon_description_max_length: {},
+    booth_description_max_length: {},
+    booth_image_limit: {},
+    booth_adult_display_mode: {},
 };
 
 const SETTINGS_MIGRATIONS = {
@@ -70,16 +89,35 @@ const SETTINGS_MIGRATIONS = {
     deletemessageifonlypostedtweetlink_secoundaryextractmode: {},
     quote_repost_max_depth: {},
     byProvider: {},
+    pixiv_images_per_step: {},
+    youtube_description_max_length: {},
     tiktok_hq: {},
     twitter_stats_layout: {},
     twitter_text_mode: {},
     twitter_quote_mode: {},
     twitter_quote_layout: {},
+    youtube_video_list_limit: {},
     pixiv_caption_max_length: {},
+    pixiv_tag_limit: {},
     instagram_caption_max_length: {},
     instagram_media_limit: {},
     github_card_style: {},
     hidden_output_items: {},
+    display_density: {},
+    media_display_mode: {},
+    failure_display_policy: {},
+    tiktok_description_max_length: {},
+    tiktok_image_limit: {},
+    tiktok_video_fallback_mode: {},
+    niconico_description_max_length: {},
+    spotify_description_max_length: {},
+    twitch_description_max_length: {},
+    steam_description_max_length: {},
+    steam_image_source: {},
+    amazon_description_max_length: {},
+    booth_description_max_length: {},
+    booth_image_limit: {},
+    booth_adult_display_mode: {},
 };
 
 const LEGACY_TWITTER_GUILD_KEYS = [
@@ -176,6 +214,10 @@ const PROVIDER_SETTING_COLUMNS = {
         column: 'youtube_description_max_length',
         type: 'int',
     },
+    youtube_video_list_limit: {
+        column: 'youtube_video_list_limit',
+        type: 'int',
+    },
     tiktok_hq: {
         column: 'tiktok_hq',
         type: 'bool',
@@ -200,6 +242,10 @@ const PROVIDER_SETTING_COLUMNS = {
         column: 'pixiv_caption_max_length',
         type: 'int',
     },
+    pixiv_tag_limit: {
+        column: 'pixiv_tag_limit',
+        type: 'string',
+    },
     instagram_caption_max_length: {
         column: 'instagram_caption_max_length',
         type: 'int',
@@ -215,6 +261,66 @@ const PROVIDER_SETTING_COLUMNS = {
     hidden_output_items: {
         column: 'hidden_output_items',
         type: 'jsonArray',
+    },
+    display_density: {
+        column: 'display_density',
+        type: 'string',
+    },
+    media_display_mode: {
+        column: 'media_display_mode',
+        type: 'string',
+    },
+    failure_display_policy: {
+        column: 'failure_display_policy',
+        type: 'string',
+    },
+    tiktok_description_max_length: {
+        column: 'tiktok_description_max_length',
+        type: 'int',
+    },
+    tiktok_image_limit: {
+        column: 'tiktok_image_limit',
+        type: 'int',
+    },
+    tiktok_video_fallback_mode: {
+        column: 'tiktok_video_fallback_mode',
+        type: 'string',
+    },
+    niconico_description_max_length: {
+        column: 'niconico_description_max_length',
+        type: 'int',
+    },
+    spotify_description_max_length: {
+        column: 'spotify_description_max_length',
+        type: 'int',
+    },
+    twitch_description_max_length: {
+        column: 'twitch_description_max_length',
+        type: 'int',
+    },
+    steam_description_max_length: {
+        column: 'steam_description_max_length',
+        type: 'int',
+    },
+    steam_image_source: {
+        column: 'steam_image_source',
+        type: 'string',
+    },
+    amazon_description_max_length: {
+        column: 'amazon_description_max_length',
+        type: 'int',
+    },
+    booth_description_max_length: {
+        column: 'booth_description_max_length',
+        type: 'int',
+    },
+    booth_image_limit: {
+        column: 'booth_image_limit',
+        type: 'int',
+    },
+    booth_adult_display_mode: {
+        column: 'booth_adult_display_mode',
+        type: 'string',
     },
 };
 

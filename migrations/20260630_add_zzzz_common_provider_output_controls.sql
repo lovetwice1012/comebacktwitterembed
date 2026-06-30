@@ -9,7 +9,9 @@ ALTER TABLE guild_provider_settings
 ALTER TABLE guild_provider_settings
     ADD COLUMN tiktok_image_limit INT NULL AFTER tiktok_description_max_length;
 ALTER TABLE guild_provider_settings
-    ADD COLUMN niconico_description_max_length INT NULL AFTER tiktok_image_limit;
+    ADD COLUMN tiktok_video_fallback_mode VARCHAR(32) NULL AFTER tiktok_image_limit;
+ALTER TABLE guild_provider_settings
+    ADD COLUMN niconico_description_max_length INT NULL AFTER tiktok_video_fallback_mode;
 ALTER TABLE guild_provider_settings
     ADD COLUMN spotify_description_max_length INT NULL AFTER niconico_description_max_length;
 ALTER TABLE guild_provider_settings
@@ -22,3 +24,7 @@ ALTER TABLE guild_provider_settings
     ADD COLUMN amazon_description_max_length INT NULL AFTER steam_image_source;
 ALTER TABLE guild_provider_settings
     ADD COLUMN booth_description_max_length INT NULL AFTER amazon_description_max_length;
+ALTER TABLE guild_provider_settings
+    ADD COLUMN booth_image_limit INT NULL AFTER booth_description_max_length;
+ALTER TABLE guild_provider_settings
+    ADD COLUMN booth_adult_display_mode VARCHAR(32) NULL AFTER booth_image_limit;

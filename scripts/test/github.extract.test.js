@@ -263,7 +263,12 @@ test('github extract: builds issue embeds with state, labels, and assignees', as
 });
 
 test('github extract: builds pull request embeds with merged state and change summary', async () => {
+    const requests = [];
     const provider = loadGitHubProviderWithFetch(async (url) => {
+        requests.push(url);
+        if (url === 'https://api.github.com/repos/owner/repo/commits/head123/status') {
+            return okJson({ state: 'failure', total_count: 2 });
+        }
         assert.equal(url, 'https://api.github.com/repos/owner/repo/pulls/7');
         return okJson({
             title: 'Add provider dispatch',
@@ -279,6 +284,7 @@ test('github extract: builds pull request embeds with merged state and change su
             review_comments: 4,
             mergeable: false,
             review_decision: 'CHANGES_REQUESTED',
+            head: { sha: 'head123' },
             updated_at: '2026-06-03T01:00:00Z',
             user: { login: 'contributor' },
         });
@@ -296,6 +302,17 @@ test('github extract: builds pull request embeds with merged state and change su
     assert.equal(fieldValue(embed, 'Comments'), '6');
     assert.equal(fieldValue(embed, 'Mergeable'), 'no');
     assert.equal(fieldValue(embed, 'Review'), 'changes requested');
+    assert.equal(fieldValue(embed, 'Checks'), 'failure (2)');
+
+    const hidden = await provider.extract(createMessage(url), url, {
+        hidden_output_items: ['checks'],
+    });
+    assert.equal(fieldValue(hidden[0].embeds[0], 'Checks'), undefined);
+    assert.deepEqual(requests, [
+        'https://api.github.com/repos/owner/repo/pulls/7',
+        'https://api.github.com/repos/owner/repo/commits/head123/status',
+        'https://api.github.com/repos/owner/repo/pulls/7',
+    ]);
 });
 
 test('github extract: builds commit embeds from commit metadata', async () => {
@@ -363,6 +380,13 @@ test('github extract: builds latest and tagged release embeds', async () => {
     assert.equal(fieldValue(taggedResult[0].embeds[0], 'Tag'), 'v1.2.3');
     assert.equal(fieldValue(taggedResult[0].embeds[0], 'State'), 'prerelease');
     assert.equal(fieldValue(taggedResult[0].embeds[0], 'Assets'), '1');
+
+    const hidden = await provider.extract(createMessage(tagged), tagged, {
+        hidden_output_items: ['tag', 'state', 'assets'],
+    });
+    assert.equal(fieldValue(hidden[0].embeds[0], 'Tag'), undefined);
+    assert.equal(fieldValue(hidden[0].embeds[0], 'State'), undefined);
+    assert.equal(fieldValue(hidden[0].embeds[0], 'Assets'), undefined);
 });
 
 test('github extract: builds blob and tree embeds from repository contents', async () => {
@@ -484,6 +508,64 @@ test('github extract: supports profile and gist URLs', async () => {
     assert.equal(gistResult[0].embeds[0].title, 'Example gist');
     assert.equal(gistResult[0].embeds[0].description, 'console.log("hello");');
     assert.equal(fieldValue(gistResult[0].embeds[0], 'Files'), 'hello.js');
+});
+
+test('github extract: user and gist fields can be hidden individually', async () => {
+    const provider = loadGitHubProviderWithFetch(async (url) => {
+        if (url === 'https://api.github.com/users/octocat') {
+            return okJson({
+                login: 'octocat',
+                name: 'The Octocat',
+                bio: 'GitHub mascot.',
+                html_url: 'https://github.com/octocat',
+                avatar_url: 'https://avatars.example/octocat.png',
+                type: 'User',
+                public_repos: 8,
+                followers: 100,
+                location: 'San Francisco',
+            });
+        }
+        if (url === 'https://github.com/users/octocat/contributions') {
+            return okText(contributionHtml());
+        }
+        if (url === 'https://api.github.com/gists/abcdef') {
+            return okJson({
+                description: 'Example gist',
+                html_url: 'https://gist.github.com/octocat/abcdef',
+                public: false,
+                comments: 2,
+                owner: { login: 'octocat' },
+                files: {
+                    'hello.js': {
+                        filename: 'hello.js',
+                        content: 'console.log("hello");\n',
+                    },
+                },
+            });
+        }
+        throw new Error(`unexpected github request: ${url}`);
+    });
+
+    const profile = 'https://github.com/octocat';
+    const gist = 'https://gist.github.com/octocat/abcdef';
+    const profileResult = await provider.extract(createMessage(profile), profile, {
+        hidden_output_items: ['type', 'repositories', 'followers', 'location', 'contributions'],
+    });
+    const gistResult = await provider.extract(createMessage(gist), gist, {
+        hidden_output_items: ['gist_files', 'comments', 'state'],
+    });
+
+    const profileEmbed = profileResult[0].embeds[0];
+    assert.equal(fieldValue(profileEmbed, 'Type'), undefined);
+    assert.equal(fieldValue(profileEmbed, 'Repositories'), undefined);
+    assert.equal(fieldValue(profileEmbed, 'Followers'), undefined);
+    assert.equal(fieldValue(profileEmbed, 'Location'), undefined);
+    assert.equal(fieldValue(profileEmbed, 'Contributions'), undefined);
+
+    const gistEmbed = gistResult[0].embeds[0];
+    assert.equal(fieldValue(gistEmbed, 'Files'), undefined);
+    assert.equal(fieldValue(gistEmbed, 'Comments'), undefined);
+    assert.equal(fieldValue(gistEmbed, 'State'), undefined);
 });
 
 test('github extract: honors reply, delete source, anonymous, and banned word settings', async () => {

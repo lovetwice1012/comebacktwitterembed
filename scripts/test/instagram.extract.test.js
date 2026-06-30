@@ -138,6 +138,14 @@ test('instagram extract: GUI output settings control caption length and media li
     assert.deepEqual(result[0].files, []);
     assert.doesNotMatch(result[0].embeds[0].description, /caption should be hidden/);
     assert.match(result[0].embeds[0].description, /View on Instagram/);
+
+    const shortened = await provider.extract(createMessage(), 'https://www.instagram.com/p/CODE123/', {
+        instagram_caption_max_length: 10,
+        instagram_media_limit: 1,
+    });
+
+    assert.match(shortened[0].embeds[0].description, /^caption\.\.\./);
+    assert.doesNotMatch(shortened[0].embeds[0].description, /should be hidden/);
 });
 
 test('instagram extract: post metadata fields and caption entities are configurable', async () => {

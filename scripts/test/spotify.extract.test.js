@@ -158,6 +158,36 @@ test('spotify extract: preview attachment filename is based on sanitized track t
     assert.equal(result[0].files[0].name, 'spotify-preview-A_B_Test_Song.mp3');
 });
 
+test('spotify extract: compact display density hides compact track fields and preview', async () => {
+    const provider = loadSpotifyProviderWithFetch(async () => ({
+        ok: true,
+        text: async () => nextDataHtml(createTrackEntity()),
+    }));
+
+    const url = 'https://open.spotify.com/track/4cOdK2wGLETKBW3PvgPWqT';
+    const standard = await provider.extract(createMessage(url), url, {});
+    const compact = await provider.extract(createMessage(url), url, {
+        display_density: 'compact',
+    });
+
+    const standardEmbed = standard[0].embeds[0];
+    const compactEmbed = compact[0].embeds[0];
+    const standardFieldNames = (standardEmbed.fields || []).map(field => field.name);
+    const compactFieldNames = (compactEmbed.fields || []).map(field => field.name);
+
+    assert.ok(standardFieldNames.includes('Artist'));
+    assert.ok(standardFieldNames.includes('Duration'));
+    assert.ok(standardFieldNames.includes('Release date'));
+    assert.ok(standardFieldNames.includes('Preview'));
+    assert.equal(compactFieldNames.includes('Artist'), false);
+    assert.equal(compactFieldNames.includes('Duration'), false);
+    assert.equal(compactFieldNames.includes('Release date'), false);
+    assert.equal(compactFieldNames.includes('Preview'), false);
+    assert.ok(compactFieldNames.length < standardFieldNames.length);
+    assert.equal(standard[0].files.length, 1);
+    assert.equal(compact[0].files.length, 0);
+});
+
 test('spotify extract: honors hidden output items and description length', async () => {
     const provider = loadSpotifyProviderWithFetch(async () => ({
         ok: true,
@@ -176,6 +206,11 @@ test('spotify extract: honors hidden output items and description length', async
     assert.equal(embed.author, undefined);
     assert.equal(step.files.length, 0);
     assert.ok(!(embed.fields || []).some(field => ['Artist', 'Duration', 'Release date', 'Preview'].includes(field.name)));
+
+    const hiddenDescription = await provider.extract(createMessage(url), url, {
+        spotify_description_max_length: 0,
+    });
+    assert.equal(hiddenDescription[0].embeds[0].description, undefined);
 });
 
 test('spotify extract: optional track metadata fields can be hidden', async () => {

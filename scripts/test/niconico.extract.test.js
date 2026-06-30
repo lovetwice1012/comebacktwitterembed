@@ -181,13 +181,20 @@ test('niconico extract: honors hidden output items and description length', asyn
     const provider = loadNiconicoProviderWithFetch(async () => okJson(watchResponse()));
     const url = 'https://www.nicovideo.jp/watch/sm9';
     const result = await provider.extract(createMessage(url), url, {
-        hidden_output_items: ['views', 'comments', 'mylists', 'likes', 'duration', 'uploaded', 'series', 'uploader', 'genre', 'tags'],
+        hidden_output_items: ['views', 'comments', 'mylists', 'likes', 'duration', 'uploaded', 'series', 'owner', 'uploader', 'genre', 'tags'],
         niconico_description_max_length: 8,
     });
 
     const embed = result[0].embeds[0];
     assert.equal(embed.description, 'A gre...');
+    assert.equal(embed.author.name, 'Niconico');
     assert.deepEqual(embed.fields, []);
+
+    const noDescription = await provider.extract(createMessage(url), url, {
+        niconico_description_max_length: 0,
+    });
+
+    assert.equal(noDescription[0].embeds[0].description, undefined);
 });
 
 test('niconico extract: compact density hides metadata fields and thumbnail_only uses thumbnail media', async () => {

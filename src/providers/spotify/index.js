@@ -183,6 +183,7 @@ async function fetchSpotifyInfo(type, id) {
 
 function truncate(s, max) {
     if (!s) return '';
+    if (max <= 0) return '';
     if (s.length <= max) return s;
     return s.slice(0, max - 3) + '...';
 }
@@ -340,12 +341,12 @@ async function extract(message, url, s) {
     const topTracks = shouldShowOutputItem(s, 'top_tracks') && item.type !== 'track' ? formatTopTracks(item.trackList) : '';
     if (topTracks) fields.push({ name: tr(STR.topTracksField, lang), value: truncate(topTracks, 1024), inline: false });
 
-    const description = buildDescription(item, showArtist ? artistsText : '');
+    const description = truncate(buildDescription(item, showArtist ? artistsText : ''), spotifyDescriptionMaxLength(s));
 
     const embed = {
         title: item.name || `${tr(getFallbackTitleKey(item.type), lang)}${parsed.id}`,
         url: item.canonicalUrl,
-        description: description ? truncate(description, spotifyDescriptionMaxLength(s)) : undefined,
+        description: description || undefined,
         color: SPOTIFY_COLOR,
         footer: { text: `${tr(STR.requesterPrefix, lang)}${requesterName} - Spotify` },
     };

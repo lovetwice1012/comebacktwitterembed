@@ -122,11 +122,18 @@ test('pixiv extract: GUI output settings control description length and tags', a
 
     assert.equal(result[0].embeds[0].description, '0123…');
     assert.equal((result[0].embeds[0].fields || []).some(field => field.name === 'Tags'), false);
+
+    const noDescription = await provider.extract(createMessage(), 'https://www.pixiv.net/artworks/123456', {
+        pixiv_caption_max_length: 0,
+    });
+
+    assert.equal(noDescription[0].embeds[0].description, undefined);
 });
 
 test('pixiv extract: tag limit and artwork labels are configurable', async () => {
     const provider = loadPixivProviderWithFetch(async (url) => {
         if (String(url).includes('/pages?')) return okJson(createPages(1));
+        if (String(url).includes('/ugoira_meta?')) return okJson({});
         return okJson({
             ...createInfo(),
             aiType: 2,
@@ -150,6 +157,36 @@ test('pixiv extract: tag limit and artwork labels are configurable', async () =>
     assert.equal(hidden[0].embeds[0].title, 'sample');
     assert.equal(hidden[0].embeds[0].fields.find(field => field.name === 'Type'), undefined);
     assert.match(hidden[0].embeds[0].fields.find(field => field.name === 'Tags').value, /#tag8/);
+});
+
+test('pixiv extract: ugoira direct media URLs can be attached, linked, or hidden', async () => {
+    const provider = loadPixivProviderWithFetch(async (url) => {
+        if (String(url).includes('/pages?')) return okJson(createPages(1));
+        if (String(url).includes('/ugoira_meta?')) {
+            return okJson({
+                src: 'https://cdn.example/ugoira-preview.mp4',
+                originalSrc: 'https://i.pximg.net/img-zip-ugoira/img/2024/01/01/00/00/00/123456_ugoira1920x1080.zip',
+            });
+        }
+        return okJson({
+            ...createInfo(),
+            illustType: 2,
+        });
+    });
+
+    const attached = await provider.extract(createMessage(), 'https://www.pixiv.net/artworks/123456', {});
+    assert.deepEqual(attached[0].files, ['https://cdn.example/ugoira-preview.mp4']);
+
+    const linked = await provider.extract(createMessage(), 'https://www.pixiv.net/artworks/123456', {
+        media_display_mode: 'link_only',
+    });
+    assert.equal(linked[0].files, undefined);
+    assert.match(linked[0].content, /Ugoira: https:\/\/cdn\.example\/ugoira-preview\.mp4/);
+
+    const hidden = await provider.extract(createMessage(), 'https://www.pixiv.net/artworks/123456', {
+        hidden_output_items: ['ugoira_media'],
+    });
+    assert.equal(hidden[0].files, undefined);
 });
 
 test('pixiv extract: compact density and attachment media mode reduce fields and attach images', async () => {

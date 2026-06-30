@@ -77,6 +77,28 @@ test('booth extract: builds embeds for shop subdomain url', async () => {
     assert.ok(result[0].embeds[0].fields.some(f => f.value === 'VRoid'));
 });
 
+test('booth extract: honors description length setting', async () => {
+    const provider = loadBoothProviderWithFetch(async () => ({
+        ok: true,
+        json: async () => createInfo(1, {
+            description: '<p>0123456789abcdefghijklmnopqrstuvwxyz</p>',
+        }),
+    }));
+
+    const url = 'https://shop.booth.pm/items/123456';
+    const result = await provider.extract(createMessage(url), url, {
+        booth_description_max_length: 8,
+    });
+
+    assert.equal(result[0].embeds[0].description, '0123456\u2026');
+
+    const hidden = await provider.extract(createMessage(url), url, {
+        booth_description_max_length: 0,
+    });
+
+    assert.equal(hidden[0].embeds[0].description, undefined);
+});
+
 test('booth extract: media_display_mode attachment sends item images as files', async () => {
     const provider = loadBoothProviderWithFetch(async () => ({
         ok: true,
@@ -127,6 +149,72 @@ test('booth extract: caps embeds at 10 and groups image urls every 4', async () 
     assert.equal(urls[0], urls[3], 'images 1-4 share group url');
     assert.notEqual(urls[3], urls[4], 'image 5 starts new group');
     assert.equal(urls[4], urls[7], 'images 5-8 share group url');
+});
+
+test('booth extract: image limit controls embeds and attachment media', async () => {
+    const provider = loadBoothProviderWithFetch(async () => ({
+        ok: true, json: async () => createInfo(6),
+    }));
+
+    const url = 'https://shop.booth.pm/items/1';
+    const limited = await provider.extract(createMessage(url), url, {
+        booth_image_limit: 4,
+    });
+
+    assert.equal(limited[0].embeds.length, 4);
+    assert.equal(fieldValue(limited[0].embeds[0], 'Images'), '4 / 6');
+
+    const attachments = await provider.extract(createMessage(url), url, {
+        media_display_mode: 'attachment',
+        booth_image_limit: 4,
+    });
+
+    assert.equal(attachments[0].embeds.length, 1);
+    assert.deepEqual(attachments[0].files, [
+        'https://i.example/1.jpg',
+        'https://i.example/2.jpg',
+        'https://i.example/3.jpg',
+        'https://i.example/4.jpg',
+    ]);
+
+    const compact = await provider.extract(createMessage(url), url, {
+        display_density: 'compact',
+    });
+
+    assert.equal(compact[0].embeds.length, 1);
+    assert.equal(fieldValue(compact[0].embeds[0], 'Images'), undefined);
+});
+
+test('booth extract: adult display mode can hide media or send spoiler attachments', async () => {
+    const provider = loadBoothProviderWithFetch(async () => ({
+        ok: true, json: async () => createInfo(3, { is_adult: true }),
+    }));
+
+    const url = 'https://shop.booth.pm/items/1';
+    const metadataOnly = await provider.extract(createMessage(url), url, {
+        booth_adult_display_mode: 'metadata_only',
+    });
+
+    assert.equal(metadataOnly[0].embeds.length, 1);
+    assert.equal(metadataOnly[0].embeds[0].title, 'sample item [R-18]');
+    assert.equal(metadataOnly[0].embeds[0].image, undefined);
+    assert.equal(metadataOnly[0].files, undefined);
+    assert.equal(metadataOnly[0].content, undefined);
+    assert.equal(fieldValue(metadataOnly[0].embeds[0], 'Images'), undefined);
+
+    const spoiler = await provider.extract(createMessage(url), url, {
+        booth_adult_display_mode: 'spoiler_attachment',
+    });
+
+    assert.equal(spoiler[0].embeds.length, 1);
+    assert.equal(spoiler[0].embeds[0].image, undefined);
+    assert.deepEqual(spoiler[0].files, [
+        { attachment: 'https://i.example/1.jpg', name: 'SPOILER_booth-1-1.jpg', fallbackUrl: 'https://i.example/1.jpg' },
+        { attachment: 'https://i.example/2.jpg', name: 'SPOILER_booth-1-2.jpg', fallbackUrl: 'https://i.example/2.jpg' },
+        { attachment: 'https://i.example/3.jpg', name: 'SPOILER_booth-1-3.jpg', fallbackUrl: 'https://i.example/3.jpg' },
+    ]);
+    assert.equal(spoiler[0].components[0].components[0].data.custom_id, 'translate');
+    assert.equal(fieldValue(spoiler[0].embeds[0], 'Images'), '3 / 3');
 });
 
 test('booth extract: returns null for non-booth url', async () => {
@@ -241,6 +329,44 @@ test('booth extract: sale status and variation price range can be hidden', async
     });
     assert.equal(fieldValue(hidden[0].embeds[0], 'Status'), undefined);
     assert.equal(fieldValue(hidden[0].embeds[0], 'Price range'), undefined);
+});
+
+test('booth extract: sale status distinguishes live ended and sold out items', async () => {
+    const now = Date.now();
+    const cases = [
+        {
+            overrides: {
+                sale_starts_at: new Date(now - 60 * 60 * 1000).toISOString(),
+                sale_ends_at: new Date(now + 60 * 60 * 1000).toISOString(),
+            },
+            expected: 'Live',
+        },
+        {
+            overrides: {
+                sale_starts_at: new Date(now - 2 * 60 * 60 * 1000).toISOString(),
+                sale_ends_at: new Date(now - 60 * 60 * 1000).toISOString(),
+            },
+            expected: 'Ended',
+        },
+        {
+            overrides: {
+                is_sold_out: true,
+                sale_starts_at: new Date(now - 60 * 60 * 1000).toISOString(),
+                sale_ends_at: new Date(now + 60 * 60 * 1000).toISOString(),
+            },
+            expected: 'Sold out',
+        },
+    ];
+
+    for (const { overrides, expected } of cases) {
+        const provider = loadBoothProviderWithFetch(async () => ({
+            ok: true,
+            json: async () => createInfo(1, overrides),
+        }));
+        const url = 'https://shop.booth.pm/items/1';
+        const result = await provider.extract(createMessage(url), url, { defaultLanguage: 'en' });
+        assert.equal(fieldValue(result[0].embeds[0], 'Status'), expected);
+    }
 });
 
 test('booth extract: handles unnamed variation and missing price', async () => {

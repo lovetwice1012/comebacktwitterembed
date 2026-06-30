@@ -9,7 +9,9 @@ ALTER TABLE guild_provider_settings
 ALTER TABLE guild_provider_settings
     ADD COLUMN pixiv_caption_max_length INT NULL AFTER twitter_quote_layout;
 ALTER TABLE guild_provider_settings
-    ADD COLUMN instagram_caption_max_length INT NULL AFTER pixiv_caption_max_length;
+    ADD COLUMN pixiv_tag_limit VARCHAR(32) NULL AFTER pixiv_caption_max_length;
+ALTER TABLE guild_provider_settings
+    ADD COLUMN instagram_caption_max_length INT NULL AFTER pixiv_tag_limit;
 ALTER TABLE guild_provider_settings
     ADD COLUMN instagram_media_limit INT NULL AFTER instagram_caption_max_length;
 ALTER TABLE guild_provider_settings

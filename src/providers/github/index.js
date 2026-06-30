@@ -111,6 +111,7 @@ const STR = {
     comments: { ja: 'Comments', en: 'Comments' },
     mergeable: { ja: 'Mergeable', en: 'Mergeable' },
     reviewState: { ja: 'Review', en: 'Review' },
+    checks: { ja: 'Checks', en: 'Checks' },
     labels: { ja: 'Labels', en: 'Labels' },
     assignees: { ja: 'Assignees', en: 'Assignees' },
     changes: { ja: 'Changes', en: 'Changes' },
@@ -297,6 +298,13 @@ function reviewStateText(data) {
     if (data.draft === true) return 'draft';
     if (data.review_decision) return String(data.review_decision).toLowerCase().replace(/_/g, ' ');
     return '';
+}
+
+function checksText(data) {
+    const status = data?.status;
+    if (!status?.state) return '';
+    const count = Number(status.total_count ?? (Array.isArray(status.statuses) ? status.statuses.length : NaN));
+    return Number.isFinite(count) && count > 0 ? `${status.state} (${count})` : status.state;
 }
 
 function cleanRawUrl(rawUrl) {
@@ -540,7 +548,7 @@ async function fetchContributionCalendar(login) {
     return parseContributionCalendar(html);
 }
 
-async function fetchGitHubData(parsed) {
+async function fetchGitHubData(parsed, settings = {}) {
     const owner = parsed.owner ? encodePathPart(parsed.owner) : '';
     const repo = parsed.repo ? encodePathPart(parsed.repo) : '';
     const repoPath = `/repos/${owner}/${repo}`;
@@ -577,7 +585,15 @@ async function fetchGitHubData(parsed) {
         return { ...profile, contributions };
     }
     if (parsed.type === 'issue') return await fetchJson(apiUrl(`${repoPath}/issues/${parsed.number}`));
-    if (parsed.type === 'pull') return await fetchJson(apiUrl(`${repoPath}/pulls/${parsed.number}`));
+    if (parsed.type === 'pull') {
+        const pull = await fetchJson(apiUrl(`${repoPath}/pulls/${parsed.number}`));
+        const headSha = pull?.head?.sha;
+        if (headSha && shouldShowOutputItem(settings, 'checks')) {
+            const status = await fetchOptionalJson(apiUrl(`${repoPath}/commits/${encodePathPart(headSha)}/status`));
+            if (status) pull.status = status;
+        }
+        return pull;
+    }
     if (parsed.type === 'commit') return await fetchJson(apiUrl(`${repoPath}/commits/${encodePathPart(parsed.sha)}`));
     if (parsed.type === 'release') {
         if (parsed.latest) return await fetchJson(apiUrl(`${repoPath}/releases/latest`));
@@ -674,6 +690,7 @@ function buildPullEmbed(data, parsed, message, settings, lang) {
     addVisibleField(fields, settings, 'comments', tr(STR.comments, lang), formatNumber((data.comments || 0) + (data.review_comments || 0)), true);
     addVisibleField(fields, settings, 'mergeable', tr(STR.mergeable, lang), mergeableText(data), true);
     addVisibleField(fields, settings, 'review_state', tr(STR.reviewState, lang), reviewStateText(data), true);
+    addVisibleField(fields, settings, 'checks', tr(STR.checks, lang), checksText(data), true);
 
     return {
         ...buildBaseEmbed(message, settings, lang, stateColor(data, true)),
@@ -717,7 +734,7 @@ function buildCommitEmbed(data, parsed, message, settings, lang) {
 
 function buildReleaseEmbed(data, parsed, message, settings, lang) {
     const fields = [];
-    addField(fields, tr(STR.tag, lang), data.tag_name || parsed.tag);
+    addVisibleField(fields, settings, 'tag', tr(STR.tag, lang), data.tag_name || parsed.tag);
     addVisibleField(fields, settings, 'state', tr(STR.state, lang), data.draft ? 'draft' : data.prerelease ? 'prerelease' : 'published');
     addVisibleField(fields, settings, 'assets', tr(STR.assets, lang), formatNumber(Array.isArray(data.assets) ? data.assets.length : undefined));
 
@@ -1604,7 +1621,7 @@ async function extract(message, url, settings) {
 
     let data;
     try {
-        data = await fetchGitHubData(parsed);
+        data = await fetchGitHubData(parsed, settings);
     } catch (err) {
         recordProviderError('github', err, message, url, { endpointKey: 'github/rest' });
         console.log(err);
@@ -1669,6 +1686,7 @@ const githubProvider = {
                 { value: 'comments', label: { en: 'Comments field', ja: 'Comments field' } },
                 { value: 'mergeable', label: { en: 'Mergeable field', ja: 'Mergeable field' } },
                 { value: 'review_state', label: { en: 'Review state field', ja: 'Review state field' } },
+                { value: 'checks', label: { en: 'Checks field', ja: 'Checks field' } },
                 { value: 'labels', label: { en: 'Labels field', ja: 'Labels field' } },
                 { value: 'assignees', label: { en: 'Assignees field', ja: 'Assignees field' } },
                 { value: 'changes', label: { en: 'Changes field', ja: 'Changes field' } },
@@ -1676,6 +1694,7 @@ const githubProvider = {
                 { value: 'files', label: { en: 'Files field', ja: 'Files field' } },
                 { value: 'sha', label: { en: 'SHA field', ja: 'SHA field' } },
                 { value: 'author', label: { en: 'Author field', ja: 'Author field' } },
+                { value: 'tag', label: { en: 'Tag field', ja: 'Tag field' } },
                 { value: 'assets', label: { en: 'Assets field', ja: 'Assets field' } },
                 { value: 'type', label: { en: 'Type field', ja: 'Type field' } },
                 { value: 'size', label: { en: 'Size field', ja: 'Size field' } },

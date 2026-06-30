@@ -404,6 +404,21 @@ const SETTING_SPEC_CATALOG = {
         ],
         parseValue: value => Number(value),
     },
+    tiktok_video_fallback_mode: {
+        key: 'tiktok_video_fallback_mode',
+        label: text('TikTok video attachment fallback', 'TikTok video attachment fallback'),
+        description: text(
+            'Chooses what to show when a TikTok video cannot be attached as a file.',
+            'Chooses what to show when a TikTok video cannot be attached as a file.'
+        ),
+        kind: 'choice',
+        settingKey: 'tiktok_video_fallback_mode',
+        choices: [
+            { label: text('Show video URL', 'Show video URL'), value: 'video_url' },
+            { label: text('Thumbnail only', 'Thumbnail only'), value: 'thumbnail_only' },
+            { label: text('Send nothing extra', 'Send nothing extra'), value: 'silent' },
+        ],
+    },
     niconico_description_max_length: descriptionLengthSpec('niconico_description_max_length', 'Niconico', 1400, 1400),
     spotify_description_max_length: descriptionLengthSpec('spotify_description_max_length', 'Spotify', 350, 700),
     twitch_description_max_length: descriptionLengthSpec('twitch_description_max_length', 'Twitch', 1500, 1500),
@@ -425,6 +440,37 @@ const SETTING_SPEC_CATALOG = {
     },
     amazon_description_max_length: descriptionLengthSpec('amazon_description_max_length', 'Amazon', 700, 700),
     booth_description_max_length: descriptionLengthSpec('booth_description_max_length', 'Booth', 350, 700),
+    booth_image_limit: {
+        key: 'booth_image_limit',
+        label: text('Booth image count', 'Booth image count'),
+        description: text(
+            'Controls how many Booth item images are shown. If unset, compact density shows 1 and standard/detail show up to 10.',
+            'Controls how many Booth item images are shown. If unset, compact density shows 1 and standard/detail show up to 10.'
+        ),
+        kind: 'choice',
+        settingKey: 'booth_image_limit',
+        choices: [
+            { label: '1', value: '1' },
+            { label: '4', value: '4' },
+            { label: '10', value: '10' },
+        ],
+        parseValue: value => Number(value),
+    },
+    booth_adult_display_mode: {
+        key: 'booth_adult_display_mode',
+        label: text('Booth adult item media', 'Booth adult item media'),
+        description: text(
+            'Controls media display for Booth items explicitly marked adult by Booth metadata.',
+            'Controls media display for Booth items explicitly marked adult by Booth metadata.'
+        ),
+        kind: 'choice',
+        settingKey: 'booth_adult_display_mode',
+        choices: [
+            { label: text('Normal media', 'Normal media'), value: 'normal' },
+            { label: text('Metadata only', 'Metadata only'), value: 'metadata_only' },
+            { label: text('Spoiler attachments', 'Spoiler attachments'), value: 'spoiler_attachment' },
+        ],
+    },
     twitter_stats_layout: {
         key: 'twitter_stats_layout',
         label: text('Twitter stats layout', 'Twitter stats layout'),

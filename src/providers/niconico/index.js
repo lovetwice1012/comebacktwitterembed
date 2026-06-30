@@ -197,6 +197,9 @@ function buildVideoEmbed(watchData, parsed, message, s) {
     const lang = normalizeLang(s);
     const video = watchData?.video || {};
     const owner = ownerInfo(watchData);
+    const visibleOwner = shouldShowOutputItem(s, 'owner', { hideInCompact: false })
+        ? owner
+        : { name: 'Niconico', url: 'https://www.nicovideo.jp/', iconUrl: NICONICO_ICON };
     const fields = [];
     if (shouldShowOutputItem(s, 'views')) addField(fields, tr(STR.views, lang), formatNumber(video.count?.view));
     if (shouldShowOutputItem(s, 'comments')) addField(fields, tr(STR.comments, lang), formatNumber(video.count?.comment));
@@ -212,9 +215,9 @@ function buildVideoEmbed(watchData, parsed, message, s) {
 
     const embed = {
         author: {
-            name: owner.name || 'Niconico',
-            url: owner.url,
-            icon_url: owner.iconUrl || undefined,
+            name: visibleOwner.name || 'Niconico',
+            url: visibleOwner.url,
+            icon_url: visibleOwner.iconUrl || undefined,
         },
         title: video.title || parsed.id,
         url: parsed.originalUrl || niconicoVideoUrl(parsed.id),
@@ -303,6 +306,7 @@ const niconicoProvider = {
                 { value: 'duration', label: { en: 'Duration field', ja: 'Duration field' } },
                 { value: 'uploaded', label: { en: 'Uploaded field', ja: 'Uploaded field' } },
                 { value: 'series', label: { en: 'Series field', ja: 'Series field' } },
+                { value: 'owner', label: { en: 'Owner author', ja: 'Owner author' } },
                 { value: 'uploader', label: { en: 'Uploader type field', ja: 'Uploader type field' } },
                 { value: 'genre', label: { en: 'Genre field', ja: 'Genre field' } },
                 { value: 'tags', label: { en: 'Tags field', ja: 'Tags field' } },

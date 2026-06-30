@@ -117,6 +117,8 @@ const STR = {
     likesField:              { ja: 'Likes',                                               en: 'Likes' },
     mediaCountField:         { ja: 'Media count',                                         en: 'Media count' },
     mediaTypeField:          { ja: 'Media type',                                          en: 'Media type' },
+    sensitiveMediaField:     { ja: 'Sensitive media',                                     en: 'Sensitive media' },
+    sensitiveMediaValue:     { ja: 'Yes',                                                 en: 'Yes' },
 };
 
 function tr(spec, lang) {
@@ -205,6 +207,38 @@ function summarizeTweetMedia(tweet) {
     const urlTypes = mediaURLs.map(mediaTypeFromUrl).filter(Boolean);
     const typeCounts = mediaTypeCountsFromValues(objectTypes.length > 0 ? objectTypes : urlTypes);
     return { count, typeSummary: formatMediaTypeCounts(typeCounts) };
+}
+
+function isTruthyApiFlag(value) {
+    if (value === true) return true;
+    if (typeof value === 'number') return value > 0;
+    if (typeof value === 'string') return /^(true|yes|1|sensitive|nsfw|adult)$/i.test(value.trim());
+    return false;
+}
+
+function tweetHasSensitiveMedia(tweet) {
+    const directFlags = [
+        tweet?.possibly_sensitive,
+        tweet?.possiblySensitive,
+        tweet?.sensitive,
+        tweet?.is_sensitive,
+        tweet?.isSensitive,
+        tweet?.nsfw,
+        tweet?.adult_content,
+        tweet?.adultContent,
+    ];
+    if (directFlags.some(isTruthyApiFlag)) return true;
+
+    return firstTweetMediaArray(tweet).some(media => [
+        media?.possibly_sensitive,
+        media?.possiblySensitive,
+        media?.sensitive,
+        media?.is_sensitive,
+        media?.isSensitive,
+        media?.nsfw,
+        media?.adult_content,
+        media?.adultContent,
+    ].some(isTruthyApiFlag));
 }
 
 function isSavedUrl(url) {
@@ -353,9 +387,13 @@ function applyTweetStatsFields(embed, tweet, lang, s) {
 
 function applyTweetMediaFields(embed, tweet, lang, s) {
     const media = summarizeTweetMedia(tweet);
-    if (media.count <= 0) return;
-    if (shouldShowOutputItem(s, 'media_count')) addEmbedField(embed, tr(STR.mediaCountField, lang), media.count);
-    if (shouldShowOutputItem(s, 'media_type')) addEmbedField(embed, tr(STR.mediaTypeField, lang), media.typeSummary);
+    if (media.count > 0) {
+        if (shouldShowOutputItem(s, 'media_count')) addEmbedField(embed, tr(STR.mediaCountField, lang), media.count);
+        if (shouldShowOutputItem(s, 'media_type')) addEmbedField(embed, tr(STR.mediaTypeField, lang), media.typeSummary);
+    }
+    if (tweetHasSensitiveMedia(tweet) && shouldShowOutputItem(s, 'sensitive_media', { hideInCompact: true })) {
+        addEmbedField(embed, tr(STR.sensitiveMediaField, lang), tr(STR.sensitiveMediaValue, lang));
+    }
 }
 
 function buildTweetDescription(tweet, lang, s, compact = false) {
@@ -783,6 +821,7 @@ const twitterProvider = {
                 { value: 'article_image', label: { en: 'Article image', ja: 'Article image' } },
                 { value: 'media_count', label: { en: 'Media count', ja: 'Media count' } },
                 { value: 'media_type', label: { en: 'Media type', ja: 'Media type' } },
+                { value: 'sensitive_media', label: { en: 'Sensitive media flag', ja: 'Sensitive media flag' } },
                 { value: 'stats', label: { en: 'Reply/repost/like stats', ja: 'リプライ/リポスト/いいね数' } },
             ],
         },

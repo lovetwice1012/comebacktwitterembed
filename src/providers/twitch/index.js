@@ -138,6 +138,7 @@ let cachedAppToken = null;
 
 function truncate(value, maxLength) {
     const text = String(value ?? '');
+    if (maxLength <= 0) return '';
     if (text.length <= maxLength) return text;
     return text.slice(0, maxLength - 3) + '...';
 }
@@ -409,7 +410,7 @@ function buildEmbed(info, parsed, requesterName, settings, lang) {
     const embed = {
         title: broadcasterName,
         url: canonicalUrl,
-        description,
+        description: description || undefined,
         color: TWITCH_COLOR,
         author: {
             name: broadcasterName,
@@ -453,7 +454,7 @@ function buildChannelEmbed(info, parsed, requesterName, settings, lang) {
     const embed = {
         title: isLive ? `${displayName} is live` : displayName,
         url: canonicalUrl,
-        description,
+        description: description || undefined,
         color: TWITCH_COLOR,
         author: {
             name: displayName,

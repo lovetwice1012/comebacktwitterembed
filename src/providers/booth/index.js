@@ -35,6 +35,7 @@ const {
     mediaButtonAllowed,
     mediaLinksContent,
     resolveDensityMaxLength,
+    resolveDisplayDensity,
     resolveMediaDisplayMode,
     shouldShowOutputItem,
 } = require('../_output_controls');
@@ -43,6 +44,8 @@ const EMBED_COLOR = 0xfd494a;       // booth のテーマカラー
 const ADULT_EMBED_COLOR = 0x4d4d4d; // R-18 はやや抑え気味の色
 const MAX_EMBEDS_PER_MESSAGE = 10;
 const IMAGES_PER_GROUP = 4;
+const BOOTH_IMAGE_LIMITS = new Set([1, 4, 10]);
+const BOOTH_ADULT_DISPLAY_MODES = new Set(['normal', 'metadata_only', 'spoiler_attachment']);
 const DESCRIPTION_MAX_LENGTH = 350;
 const TAGS_MAX_LENGTH        = 256;
 const VARIATIONS_MAX_COUNT   = 5;
@@ -173,6 +176,7 @@ function stripHtml(html) {
 
 function truncate(s, max) {
     if (!s) return '';
+    if (max <= 0) return '';
     if (s.length <= max) return s;
     return s.slice(0, max - 1) + '…';
 }
@@ -183,6 +187,18 @@ function boothDescriptionMaxLength(settings) {
         detail: 700,
         hardMax: 700,
     });
+}
+
+function resolveBoothImageLimit(settings) {
+    const explicit = Number(settings?.booth_image_limit);
+    if (BOOTH_IMAGE_LIMITS.has(explicit)) return explicit;
+    return resolveDisplayDensity(settings) === 'compact' ? 1 : MAX_EMBEDS_PER_MESSAGE;
+}
+
+function resolveBoothAdultDisplayMode(settings, isAdult) {
+    if (!isAdult) return 'normal';
+    const mode = String(settings?.booth_adult_display_mode || '').trim();
+    return BOOTH_ADULT_DISPLAY_MODES.has(mode) ? mode : 'normal';
 }
 
 function joinTags(tags, lang) {
@@ -222,6 +238,24 @@ function pickImageUrls(info) {
         if (typeof url === 'string' && url) out.push(url);
     }
     return out;
+}
+
+function imageExtensionFromUrl(url) {
+    try {
+        const pathname = new URL(url).pathname;
+        const match = pathname.match(/\.([a-z0-9]+)$/i);
+        const ext = match?.[1]?.toLowerCase();
+        if (['jpg', 'jpeg', 'png', 'webp', 'gif'].includes(ext)) return ext;
+    } catch {}
+    return 'jpg';
+}
+
+function spoilerImageFiles(urls, itemId) {
+    return urls.map((url, index) => ({
+        attachment: url,
+        name: `SPOILER_booth-${itemId}-${index + 1}.${imageExtensionFromUrl(url)}`,
+        fallbackUrl: url,
+    }));
 }
 
 // variation.price は数値 (JPY) または文字列。表示用にフォーマットする。
@@ -350,6 +384,10 @@ async function extract(message, url, s) {
         : `${message.author?.username ?? message.user?.username}(id:${message.author?.id ?? message.user?.id})`;
 
     const isAdult = info.is_adult === true;
+    const adultDisplayMode = resolveBoothAdultDisplayMode(s, isAdult);
+    const hideAdultMedia = adultDisplayMode === 'metadata_only';
+    const spoilerAdultMedia = adultDisplayMode === 'spoiler_attachment';
+    const displayImages = hideAdultMedia ? [] : images.slice(0, resolveBoothImageLimit(s));
     const canonicalUrl = buildCanonicalUrl(parsed, info);
     const title =
         (info.name || `${tr(STR.fallbackTitle, lang)}${parsed.id}`)
@@ -368,9 +406,9 @@ async function extract(message, url, s) {
 
     // 画像が無くてもテキスト Embed は出す
     const mediaMode = resolveMediaDisplayMode(s);
-    const groups = images.length === 0
+    const groups = displayImages.length === 0 || spoilerAdultMedia
         ? [null]
-        : (mediaMode === 'embed' ? images.slice(0, MAX_EMBEDS_PER_MESSAGE) : [images[0]]);
+        : (mediaMode === 'embed' ? displayImages : [displayImages[0]]);
 
     const embeds = groups.map((imgUrl, idx) => {
         const groupIdx = Math.floor(idx / IMAGES_PER_GROUP);
@@ -397,10 +435,10 @@ async function extract(message, url, s) {
             if (priceText && shouldShowOutputItem(s, 'price')) fields.push({ name: tr(STR.priceField, lang), value: priceText, inline: true });
             if (priceRangeLine) fields.push({ name: tr(STR.priceRangeField, lang), value: priceRangeLine, inline: true });
             if (categoryName && shouldShowOutputItem(s, 'category')) fields.push({ name: tr(STR.categoryField, lang), value: categoryName, inline: true });
-            if (images.length > 1 && shouldShowOutputItem(s, 'image_count')) {
+            if (!hideAdultMedia && images.length > 1 && shouldShowOutputItem(s, 'image_count')) {
                 fields.push({
                     name: tr(STR.pagesField, lang),
-                    value: `${Math.min(images.length, MAX_EMBEDS_PER_MESSAGE)} / ${images.length}`,
+                    value: `${displayImages.length} / ${images.length}`,
                     inline: true,
                 });
             }
@@ -437,7 +475,7 @@ async function extract(message, url, s) {
     }
 
     const components = [];
-    if (images.length > 0 && mediaButtonAllowed(s)) {
+    if (displayImages.length > 0 && mediaButtonAllowed(s) && !spoilerAdultMedia) {
         components.push({ type: ComponentType.ActionRow, components: [showMediaAsAttachmentsButton] });
     }
     components.push({ type: ComponentType.ActionRow, components: [translateButton, deleteButton] });
@@ -453,10 +491,10 @@ async function extract(message, url, s) {
         send: s.alwaysreplyifpostedtweetlink === true ? 'reply-source' : 'channel',
     };
 
-    const mediaUrls = images.slice(0, MAX_EMBEDS_PER_MESSAGE);
-    const mediaFiles = attachmentMediaUrls(s, mediaUrls);
+    const mediaUrls = displayImages;
+    const mediaFiles = spoilerAdultMedia ? spoilerImageFiles(mediaUrls, parsed.id) : attachmentMediaUrls(s, mediaUrls);
     if (mediaFiles.length > 0) step.files = mediaFiles;
-    const mediaContent = mediaLinksContent(s, mediaUrls, 'Media');
+    const mediaContent = spoilerAdultMedia ? '' : mediaLinksContent(s, mediaUrls, 'Media');
     if (mediaContent) step.content = mediaContent;
 
     if (s.deletemessageifonlypostedtweetlink === true && message.content.trim() === url) {
@@ -485,6 +523,8 @@ const boothProvider = {
         'display_density',
         'media_display_mode',
         'booth_description_max_length',
+        'booth_image_limit',
+        'booth_adult_display_mode',
         {
             key: 'hidden_output_items',
             outputItems: [

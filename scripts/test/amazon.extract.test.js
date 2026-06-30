@@ -177,6 +177,61 @@ test('amazon extract: GUI output setting can hide product price', async () => {
     assert.equal(fieldValue(embed, 'Brand'), 'Amazon');
 });
 
+test('amazon extract: compact display density hides compact product fields', async () => {
+    const provider = loadAmazonProviderWithFetch(async (url) => okHtml(productJsonLdHtml(), url));
+
+    const url = 'https://www.amazon.com/Echo-Dot/dp/B08N5WRWNW';
+    const standard = await provider.extract(createMessage(url), url, {});
+    const compact = await provider.extract(createMessage(url), url, {
+        display_density: 'compact',
+    });
+
+    const standardEmbed = standard[0].embeds[0];
+    const compactEmbed = compact[0].embeds[0];
+
+    assert.equal(fieldValue(standardEmbed, 'Price'), 'USD 49.99');
+    assert.equal(fieldValue(standardEmbed, 'Rating'), '4.7 / 5 (12,345)');
+    assert.equal(fieldValue(standardEmbed, 'Availability'), 'In Stock');
+    assert.equal(fieldValue(compactEmbed, 'Price'), undefined);
+    assert.equal(fieldValue(compactEmbed, 'Rating'), undefined);
+    assert.equal(fieldValue(compactEmbed, 'Availability'), undefined);
+    assert.ok((compactEmbed.fields || []).length < (standardEmbed.fields || []).length);
+});
+
+test('amazon extract: honors product description length setting', async () => {
+    const provider = loadAmazonProviderWithFetch(async (url) => okHtml(productJsonLdHtml({
+        description: '0123456789abcdefghijklmnopqrstuvwxyz',
+    }), url));
+
+    const url = 'https://www.amazon.com/Echo-Dot/dp/B08N5WRWNW';
+    const limited = await provider.extract(createMessage(url), url, {
+        amazon_description_max_length: 10,
+    });
+
+    assert.equal(limited[0].embeds[0].description, '0123456...');
+
+    const hidden = await provider.extract(createMessage(url), url, {
+        amazon_description_max_length: 0,
+    });
+
+    assert.equal(hidden[0].embeds[0].description, undefined);
+});
+
+test('amazon extract: product rating and availability fields can be hidden', async () => {
+    const provider = loadAmazonProviderWithFetch(async (url) => okHtml(productJsonLdHtml(), url));
+
+    const url = 'https://www.amazon.com/Echo-Dot/dp/B08N5WRWNW';
+    const visible = await provider.extract(createMessage(url), url, {});
+    assert.equal(fieldValue(visible[0].embeds[0], 'Rating'), '4.7 / 5 (12,345)');
+    assert.equal(fieldValue(visible[0].embeds[0], 'Availability'), 'In Stock');
+
+    const hidden = await provider.extract(createMessage(url), url, {
+        hidden_output_items: ['rating', 'availability'],
+    });
+    assert.equal(fieldValue(hidden[0].embeds[0], 'Rating'), undefined);
+    assert.equal(fieldValue(hidden[0].embeds[0], 'Availability'), undefined);
+});
+
 test('amazon extract: product seller and shipping fields can be hidden', async () => {
     const html = productJsonLdHtml({
         offers: {
@@ -323,7 +378,7 @@ test('amazon extract: hides Prime Video fields and supports link-only image medi
 
     const url = 'https://www.primevideo.com/detail/0NQ1QFP6B4R6TM8O2590IV5716';
     const result = await provider.extract(createMessage(url), url, {
-        hidden_output_items: ['genre', 'cast', 'season', 'year', 'maturity', 'duration'],
+        hidden_output_items: ['genre', 'cast', 'season', 'year', 'maturity', 'duration', 'rating'],
         media_display_mode: 'link_only',
     });
     const step = result[0];
@@ -339,7 +394,7 @@ test('amazon extract: hides Prime Video fields and supports link-only image medi
     assert.equal(fieldValue(embed, 'Year'), undefined);
     assert.equal(fieldValue(embed, 'Maturity'), undefined);
     assert.equal(fieldValue(embed, 'Duration'), undefined);
-    assert.equal(fieldValue(embed, 'Rating'), '8.2 (4,567)');
+    assert.equal(fieldValue(embed, 'Rating'), undefined);
 });
 
 test('amazon extract: supports amazon gp video detail links', async () => {

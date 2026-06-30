@@ -147,6 +147,25 @@ test('steam extract: GUI output settings can hide price and platform fields', as
     assert.equal(fieldValue(embed, 'Developer'), 'Valve');
 });
 
+test('steam extract: honors description length setting', async () => {
+    const payload = appDetailsPayload();
+    payload['730'].data.short_description = '0123456789abcdefghijklmnopqrstuvwxyz';
+    const provider = loadSteamProviderWithFetch(async () => okJson(payload));
+
+    const url = 'https://store.steampowered.com/app/730/CounterStrike_2/';
+    const limited = await provider.extract(createMessage(url), url, {
+        steam_description_max_length: 10,
+    });
+
+    assert.equal(limited[0].embeds[0].description, '0123456...');
+
+    const hidden = await provider.extract(createMessage(url), url, {
+        steam_description_max_length: 0,
+    });
+
+    assert.equal(hidden[0].embeds[0].description, undefined);
+});
+
 test('steam extract: sale and review-adjacent fields can be hidden', async () => {
     const payload = appDetailsPayload();
     payload['730'].data.is_free = false;

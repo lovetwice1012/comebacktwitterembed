@@ -188,6 +188,36 @@ test('tiktok extract: GUI output setting can hide post stats', async () => {
     assert.doesNotMatch(result[0].embeds[0].description, /plays/);
 });
 
+test('tiktok extract: honors description length setting for captions', async () => {
+    const provider = loadTikTokProviderWithFetch(async (requestUrl) => {
+        if (requestUrl === 'https://www.tiktok.com/@i/video/7332187682480590112') {
+            return {
+                text: async () => videoPageHtml(createVideoData({
+                    desc: '0123456789abcdefghijklmnopqrstuvwxyz',
+                })),
+            };
+        }
+        throw new Error(`unexpected fetch: ${requestUrl}`);
+    });
+
+    const url = 'https://www.tiktok.com/@creator/video/7332187682480590112';
+    const limited = await provider.extract(createMessage(url), url, {
+        media_display_mode: 'link_only',
+        hidden_output_items: ['stats'],
+        tiktok_description_max_length: 10,
+    });
+
+    assert.equal(limited[0].embeds[0].description, '0123456...');
+
+    const hidden = await provider.extract(createMessage(url), url, {
+        media_display_mode: 'link_only',
+        hidden_output_items: ['stats'],
+        tiktok_description_max_length: 0,
+    });
+
+    assert.equal(hidden[0].embeds[0].description, '');
+});
+
 test('tiktok extract: post metadata fields can be hidden individually', async () => {
     const provider = loadTikTokProviderWithFetch(async (requestUrl) => {
         if (requestUrl === 'https://www.tiktok.com/@i/video/7332187682480590112') {
@@ -240,6 +270,43 @@ test('tiktok extract: media_display_mode link_only skips video download and show
     assert.equal(result[0].embeds[0].thumbnail, undefined);
     assert.equal(result[0].embeds[0].image, undefined);
     assert.equal(result[0].content, 'Video: https://video.example/play');
+});
+
+test('tiktok extract: video fallback mode controls failed video uploads', async () => {
+    const provider = loadTikTokProviderWithFetch(async (requestUrl) => {
+        if (requestUrl === 'https://www.tiktok.com/@i/video/7332187682480590112') {
+            return { text: async () => videoPageHtml(createVideoData()) };
+        }
+        if (requestUrl === 'https://video.example/play') {
+            return {
+                ok: false,
+                status: 403,
+                headers: { get: () => null },
+                buffer: async () => Buffer.from('Access Denied'),
+            };
+        }
+        throw new Error(`unexpected fetch: ${requestUrl}`);
+    });
+
+    const url = 'https://www.tiktok.com/@creator/video/7332187682480590112';
+    const defaultFallback = await provider.extract(createMessage(url), url, {});
+    assert.equal(defaultFallback[0].content, 'Video: https://video.example/play');
+    assert.deepEqual(defaultFallback[0].files, []);
+    assert.equal(defaultFallback[0].embeds[0].thumbnail.url, 'https://image.example/cover.jpg');
+
+    const thumbnailOnly = await provider.extract(createMessage(url), url, {
+        media_display_mode: 'attachment',
+        tiktok_video_fallback_mode: 'thumbnail_only',
+    });
+    assert.equal(thumbnailOnly[0].content, undefined);
+    assert.deepEqual(thumbnailOnly[0].files, []);
+    assert.equal(thumbnailOnly[0].embeds[0].thumbnail.url, 'https://image.example/cover.jpg');
+
+    const silent = await provider.extract(createMessage(url), url, {
+        tiktok_video_fallback_mode: 'silent',
+    });
+    assert.equal(silent[0].content, undefined);
+    assert.deepEqual(silent[0].files, []);
 });
 
 test('tiktok extract: failure_display_policy error_summary returns a short failure step', async () => {
