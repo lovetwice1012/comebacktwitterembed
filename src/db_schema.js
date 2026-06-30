@@ -134,7 +134,7 @@ const SCHEMA_STATEMENTS = [
     `CREATE TABLE IF NOT EXISTS ${TABLES.guildProviderBannedWords} (
         provider_id VARCHAR(64) NOT NULL,
         guild_id VARCHAR(32) NOT NULL,
-        word VARCHAR(255) NOT NULL,
+        word VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
         created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
         PRIMARY KEY (provider_id, guild_id, word),
         INDEX idx_banned_words_guild (guild_id),

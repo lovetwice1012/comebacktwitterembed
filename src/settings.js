@@ -512,8 +512,9 @@ function collectDisableTargetRows(normalized) {
 function collectBannedWordRows(normalized) {
     const rows = new Map();
     const put = (providerId, guildId, word) => {
-        if (!word) return;
-        rows.set(`${providerId}\0${guildId}\0${word}`, { providerId, guildId, word });
+        const normalizedWord = String(word ?? '').normalize('NFC').trim();
+        if (!normalizedWord) return;
+        rows.set(`${providerId}\0${guildId}\0${normalizedWord}`, { providerId, guildId, word: normalizedWord });
     };
 
     for (const [guildId, words] of Object.entries(normalized.bannedWords || {})) {
@@ -623,7 +624,8 @@ async function saveSettingsToDatabase(nextSettings) {
             await queryDatabase(
                 `INSERT INTO ${TABLES.guildProviderBannedWords}
                  (provider_id, guild_id, word)
-                 VALUES (?, ?, ?)`,
+                 VALUES (?, ?, ?)
+                 ON DUPLICATE KEY UPDATE word = VALUES(word)`,
                 [row.providerId, row.guildId, row.word]
             );
         }
