@@ -8,7 +8,7 @@
  * extractor 内部の挙動はこの dispatcher 自身は一切知らない。
  */
 
-const { isUnknownMessageError, sendContentPromise } = require('../utils');
+const { isMissingPermissionsError, isUnknownMessageError, sendContentPromise } = require('../utils');
 const { checkComponentIncludesDisabledButtonAndIfFindDeleteIt } = require('../settings');
 const { incrementProcessedCounters } = require('../state');
 
@@ -17,6 +17,15 @@ function fileToFallbackText(file) {
     if (file && typeof file.attachment === 'string') return file.attachment;
     if (file && typeof file.url === 'string') return file.url;
     return String(file ?? '');
+}
+
+function formatSendError(err) {
+    return err?.rawError?.message || err?.message || String(err);
+}
+
+function logSendFailure(message, err, action = 'send response') {
+    const channelId = message.channelId ?? message.channel?.id ?? 'unknown';
+    console.warn(`[dispatcher] Failed to ${action} in channel ${channelId}: ${formatSendError(err)}`);
 }
 
 /**
@@ -52,14 +61,30 @@ async function runSendSteps(message, steps, providerId = null) {
         try {
             sent = await sender(messageObject);
         } catch (err) {
-            if (!isUnknownMessageError(err)) {
-                if (messageObject.files !== undefined) {
+            if (isUnknownMessageError(err)) {
+                continue;
+            }
+
+            if (isMissingPermissionsError(err)) {
+                logSendFailure(message, err);
+                continue;
+            }
+
+            if (messageObject.files !== undefined) {
+                try {
                     await sendContentPromise(message, messageObject.files.map(fileToFallbackText).filter(Boolean));
-                    delete messageObject.files;
-                    sent = await message.channel.send(messageObject).catch(e => { console.log(e); return null; });
-                } else {
-                    console.log(err);
+                } catch (fallbackErr) {
+                    logSendFailure(message, fallbackErr, 'send fallback attachment URLs');
+                    continue;
                 }
+
+                delete messageObject.files;
+                sent = await message.channel.send(messageObject).catch(e => {
+                    if (!isUnknownMessageError(e)) logSendFailure(message, e, 'send response without files');
+                    return null;
+                });
+            } else {
+                console.log(err);
             }
         }
         previousSent = sent ?? previousSent;

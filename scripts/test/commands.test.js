@@ -10,7 +10,34 @@ const quotastats = require('../../src/commands/handlers/quotastats');
 const checkmyguildsettings = require('../../src/commands/handlers/checkmyguildsettings');
 const buttonInvisible = require('../../src/commands/handlers/settings/button_invisible');
 const showSaveTweet = require('../../src/providers/twitter/commands/showsavetweet');
+const { buildSlashCommands } = require('../../src/commands');
 const { settings } = require('../../src/settings');
+
+const DISCORD_COMMAND_NAME_RE = /^[-_\p{L}\p{N}]{1,32}$/u;
+
+function assertValidDiscordCommandName(value, pathLabel) {
+    assert.equal(typeof value, 'string', `${pathLabel} must be a string`);
+    assert.match(value, DISCORD_COMMAND_NAME_RE, `${pathLabel} is not a valid Discord command name`);
+    assert.equal(value, value.toLocaleLowerCase(), `${pathLabel} must be lowercase`);
+}
+
+function assertValidDefinitionNames(definition, pathLabel) {
+    assertValidDiscordCommandName(definition.name, `${pathLabel}.name`);
+
+    for (const [locale, value] of Object.entries(definition.name_localizations ?? {})) {
+        assertValidDiscordCommandName(value, `${pathLabel}.name_localizations.${locale}`);
+    }
+
+    for (const [index, option] of (definition.options ?? []).entries()) {
+        assertValidDefinitionNames(option, `${pathLabel}.options[${index}]`);
+    }
+}
+
+test('slash command names and name localizations are valid for Discord registration', () => {
+    for (const [index, command] of buildSlashCommands().entries()) {
+        assertValidDefinitionNames(command, `commands[${index}]`);
+    }
+});
 
 test('quotastats returns zero usage when user has no saves directory', async () => {
     let reply = null;

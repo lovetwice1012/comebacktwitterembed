@@ -72,8 +72,21 @@ function convertBoolToEnableDisable(bool, locale) {
     return (labels[locale] ?? labels.en)[bool ? 1 : 0];
 }
 
+function discordErrorCode(err) {
+    return err?.code ?? err?.rawError?.code;
+}
+
 function isUnknownMessageError(err) {
-    return err?.code === 10008 || err?.rawError?.code === 10008;
+    return discordErrorCode(err) === 10008;
+}
+
+function isUnknownInteractionError(err) {
+    return discordErrorCode(err) === 10062;
+}
+
+function isMissingPermissionsError(err) {
+    const code = discordErrorCode(err);
+    return code === 50001 || code === 50013;
 }
 
 async function sendContentPromise(message, content) {
@@ -108,7 +121,10 @@ module.exports = {
     antiDirectoryTraversalAttack,
     ifUserHasRole,
     convertBoolToEnableDisable,
+    discordErrorCode,
     isUnknownMessageError,
+    isUnknownInteractionError,
+    isMissingPermissionsError,
     sendContentPromise,
     conv_en_to_en_US,
     cleanMessageContent,

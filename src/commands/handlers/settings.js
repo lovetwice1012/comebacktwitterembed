@@ -112,7 +112,7 @@ function buildCommonOptions(includeSaveTweetOption) {
     if (includeSaveTweetOption) {
         invisibleOptions.splice(4, 0, {
             name: 'savetweet',
-            name_localizations: conv_en_to_en_US(messageLocales.savetweetButtonLabelLocales),
+            name_localizations: conv_en_to_en_US(commandNameLocales.savetweet),
             description: 'showSaveTweet',
             description_localizations: conv_en_to_en_US(messageLocales.showSaveTweetButtonLabelLocales),
             type: ApplicationCommandOptionType.Boolean,

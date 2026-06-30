@@ -65,3 +65,34 @@ test('dispatcher: increments processed counters for sent steps', async () => {
         fs.rmSync(tmpDir, { recursive: true, force: true });
     }
 });
+
+test('dispatcher: missing send permissions are non-fatal', async () => {
+    const originalWarn = console.warn;
+    const warnings = [];
+    console.warn = (message) => {
+        warnings.push(message);
+    };
+
+    const message = {
+        guildId: 'guild-1',
+        channelId: 'channel-1',
+        channel: {
+            send: async () => {
+                throw { code: 50013, rawError: { message: 'Missing Permissions' } };
+            },
+        },
+        reply: async () => {
+            throw { code: 50013, rawError: { message: 'Missing Permissions' } };
+        },
+        suppressEmbeds: async () => {},
+        delete: async () => {},
+    };
+
+    try {
+        await assert.doesNotReject(runSendSteps(message, [{ content: 'hello' }], 'twitter'));
+        assert.equal(warnings.length, 1);
+        assert.match(warnings[0], /Missing Permissions/);
+    } finally {
+        console.warn = originalWarn;
+    }
+});

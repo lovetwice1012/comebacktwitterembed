@@ -167,6 +167,7 @@ const rawCommandNameLocales = {
     legacy_mode: { ja: 'レガシーモード', en: 'legacy_mode' },
     passive_mode: { ja: 'パッシブモード', en: 'passive_mode' },
     secondary_extract_mode: { ja: 'セカンダリー展開モード', en: 'secondary_extract_mode' },
+    savetweet: { ja: 'savetweet', en: 'savetweet' },
     showSaveTweet: { ja: '保存したツイートを表示', en: 'showsavedtweet' },
     id: { ja: 'id', en: 'id' },
     save_tweet_quota_override: { ja: 'ツイート保存クオータオーバーライド', en: 'save_tweet_quota_override' },

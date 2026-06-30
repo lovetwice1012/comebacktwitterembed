@@ -8,7 +8,10 @@ const {
     cleanMessageContent,
     extractTwitterUrls,
     conv_en_to_en_US,
+    discordErrorCode,
     isUnknownMessageError,
+    isUnknownInteractionError,
+    isMissingPermissionsError,
 } = require('../../src/utils');
 
 test('convertBoolToEnableDisable: ja true', () => {
@@ -64,4 +67,13 @@ test('isUnknownMessageError: matches code 10008 in either shape', () => {
     assert.equal(isUnknownMessageError({ code: 50001 }), false);
     assert.equal(isUnknownMessageError(null), false);
     assert.equal(isUnknownMessageError(undefined), false);
+});
+
+test('discord API error helpers match common interaction and permission codes', () => {
+    assert.equal(discordErrorCode({ rawError: { code: 10062 } }), 10062);
+    assert.equal(isUnknownInteractionError({ code: 10062 }), true);
+    assert.equal(isUnknownInteractionError({ code: 10008 }), false);
+    assert.equal(isMissingPermissionsError({ code: 50013 }), true);
+    assert.equal(isMissingPermissionsError({ rawError: { code: 50001 } }), true);
+    assert.equal(isMissingPermissionsError({ code: 10062 }), false);
 });
