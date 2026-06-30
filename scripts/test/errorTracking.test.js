@@ -15,9 +15,11 @@ test('error tracking schema declares event and bucket tables', () => {
     assert.equal(TABLES.botErrorEvents, 'bot_error_events');
     assert.equal(TABLES.botErrorBuckets, 'bot_error_buckets');
     assert.equal(TABLES.botMetricBuckets, 'bot_metric_buckets');
+    assert.equal(TABLES.botErrorAlerts, 'bot_error_alerts');
     assert.ok(SCHEMA_STATEMENTS.some(statement => statement.includes(TABLES.botErrorEvents)));
     assert.ok(SCHEMA_STATEMENTS.some(statement => statement.includes(TABLES.botErrorBuckets)));
     assert.ok(SCHEMA_STATEMENTS.some(statement => statement.includes(TABLES.botMetricBuckets)));
+    assert.ok(SCHEMA_STATEMENTS.some(statement => statement.includes(TABLES.botErrorAlerts)));
 });
 
 test('error tracking normalizes urls and derives endpoint keys', () => {

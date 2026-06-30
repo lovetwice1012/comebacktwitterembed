@@ -83,7 +83,7 @@ async function runSendSteps(message, steps, providerId = null) {
                     providerId,
                     message,
                 });
-                recordMetric('discord_send_error', { providerId, message });
+                recordMetric('discord_send_permission_denied', { providerId, message });
                 logSendFailure(message, err);
                 continue;
             }

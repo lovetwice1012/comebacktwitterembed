@@ -17,7 +17,13 @@ const client = new Client({
     shards: 'auto',
 });
 const webhookURL = typeof config.URL === 'string' ? config.URL.trim() : '';
+const errorNotificationURL = typeof config.errorNotificationURL === 'string' && config.errorNotificationURL.trim()
+    ? config.errorNotificationURL.trim()
+    : webhookURL;
 const webhookClient = webhookURL ? new WebhookClient({ url: webhookURL }) : null;
+const errorNotificationWebhookClient = errorNotificationURL
+    ? (errorNotificationURL === webhookURL ? webhookClient : new WebhookClient({ url: errorNotificationURL }))
+    : null;
 
 if (!webhookClient) {
     console.warn('config.URL is not set. Console webhook forwarding is disabled.');
@@ -49,7 +55,7 @@ process.on('uncaughtException', error => {
     await ensureDatabaseSchema();
     await initializeSettings();
 
-    require('./src/handlers/ready').register(client, webhookClient);
+    require('./src/handlers/ready').register(client, webhookClient, errorNotificationWebhookClient);
     require('./src/handlers/messageCreate').register(client);
     require('./src/handlers/applicationCommands').register(client);
     require('./src/handlers/messageComponents').register(client);

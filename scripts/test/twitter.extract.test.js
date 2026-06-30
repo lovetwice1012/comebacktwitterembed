@@ -5,10 +5,12 @@ const assert = require('node:assert/strict');
 
 const twitterModulePath = require.resolve('../../src/providers/twitter');
 const fetchModulePath = require.resolve('node-fetch');
+const errorTrackingModulePath = require.resolve('../../src/errorTracking');
 
-function loadTwitterProviderWithFetch(fetchImpl) {
+function loadTwitterProviderWithFetch(fetchImpl, errorTrackingExports = null) {
     const originalFetchModule = require.cache[fetchModulePath];
     const originalTwitterModule = require.cache[twitterModulePath];
+    const originalErrorTrackingModule = require.cache[errorTrackingModulePath];
 
     require.cache[fetchModulePath] = {
         id: fetchModulePath,
@@ -16,6 +18,14 @@ function loadTwitterProviderWithFetch(fetchImpl) {
         loaded: true,
         exports: fetchImpl,
     };
+    if (errorTrackingExports) {
+        require.cache[errorTrackingModulePath] = {
+            id: errorTrackingModulePath,
+            filename: errorTrackingModulePath,
+            loaded: true,
+            exports: errorTrackingExports,
+        };
+    }
     delete require.cache[twitterModulePath];
 
     try {
@@ -25,6 +35,10 @@ function loadTwitterProviderWithFetch(fetchImpl) {
         if (originalTwitterModule) require.cache[twitterModulePath] = originalTwitterModule;
         if (originalFetchModule) require.cache[fetchModulePath] = originalFetchModule;
         else delete require.cache[fetchModulePath];
+        if (errorTrackingExports) {
+            if (originalErrorTrackingModule) require.cache[errorTrackingModulePath] = originalErrorTrackingModule;
+            else delete require.cache[errorTrackingModulePath];
+        }
     }
 }
 
@@ -108,6 +122,30 @@ test('twitter extract: fxtwitter fallback keeps the normalized status URL', asyn
         'https://api.vxtwitter.com/a/status/1',
         'https://api.fxtwitter.com/a/status/1',
     ]);
+});
+
+test('twitter extract: expected inaccessible tweets are skipped without error tracking', async () => {
+    let recordedErrors = 0;
+    const provider = loadTwitterProviderWithFetch(async (url) => {
+        const rawUrl = String(url);
+        assert.match(rawUrl, /api\.vxtwitter\.com/);
+        return {
+            text: async () => JSON.stringify({
+                error: 'This Tweet is unavailable because it may contain sensitive content or requires login.',
+            }),
+        };
+    }, {
+        recordProviderError: () => {
+            recordedErrors++;
+        },
+    });
+
+    const result = await provider.extract(createMessage(), 'https://twitter.com/a/status/1', {
+        legacy_mode: false,
+    });
+
+    assert.equal(result, null);
+    assert.equal(recordedErrors, 0);
 });
 
 test('twitter extract: forceSendMode overrides alwaysreply for command-driven sends', async () => {

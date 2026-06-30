@@ -9,6 +9,31 @@ const path = require('path');
 const { runSendSteps } = require('../../src/providers/_dispatcher');
 const { counters, loadCounters, _internal } = require('../../src/state');
 
+const dispatcherModulePath = require.resolve('../../src/providers/_dispatcher');
+const errorTrackingModulePath = require.resolve('../../src/errorTracking');
+
+function loadDispatcherWithErrorTracking(errorTrackingExports) {
+    const originalDispatcherModule = require.cache[dispatcherModulePath];
+    const originalErrorTrackingModule = require.cache[errorTrackingModulePath];
+
+    require.cache[errorTrackingModulePath] = {
+        id: errorTrackingModulePath,
+        filename: errorTrackingModulePath,
+        loaded: true,
+        exports: errorTrackingExports,
+    };
+    delete require.cache[dispatcherModulePath];
+
+    try {
+        return require(dispatcherModulePath);
+    } finally {
+        delete require.cache[dispatcherModulePath];
+        if (originalDispatcherModule) require.cache[dispatcherModulePath] = originalDispatcherModule;
+        if (originalErrorTrackingModule) require.cache[errorTrackingModulePath] = originalErrorTrackingModule;
+        else delete require.cache[errorTrackingModulePath];
+    }
+}
+
 test('dispatcher: increments processed counters for sent steps', async () => {
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cte-dispatcher-'));
     const statsFile = path.join(tmpDir, 'stats.json');
@@ -92,6 +117,40 @@ test('dispatcher: missing send permissions are non-fatal', async () => {
         await assert.doesNotReject(runSendSteps(message, [{ content: 'hello' }], 'twitter'));
         assert.equal(warnings.length, 1);
         assert.match(warnings[0], /Missing Permissions/);
+    } finally {
+        console.warn = originalWarn;
+    }
+});
+
+test('dispatcher: missing permissions are excluded from global send error metric', async () => {
+    const metrics = [];
+    const errors = [];
+    const dispatcher = loadDispatcherWithErrorTracking({
+        recordError: (_err, context) => errors.push(context),
+        recordMetric: (metricName) => metrics.push(metricName),
+    });
+    const originalWarn = console.warn;
+    console.warn = () => {};
+
+    const message = {
+        guildId: 'guild-1',
+        channelId: 'channel-1',
+        channel: {
+            send: async () => {
+                throw { code: 50013, rawError: { message: 'Missing Permissions' } };
+            },
+        },
+        suppressEmbeds: async () => {},
+        delete: async () => {},
+    };
+
+    try {
+        await dispatcher.runSendSteps(message, [{ content: 'hello' }], 'twitter');
+
+        assert.deepEqual(metrics, ['discord_send_attempt', 'discord_send_permission_denied']);
+        assert.equal(errors.length, 1);
+        assert.equal(errors[0].errorType, 'discord_missing_permissions');
+        assert.ok(!metrics.includes('discord_send_error'));
     } finally {
         console.warn = originalWarn;
     }

@@ -18,6 +18,7 @@ const TABLES = {
     botErrorEvents: 'bot_error_events',
     botErrorBuckets: 'bot_error_buckets',
     botMetricBuckets: 'bot_metric_buckets',
+    botErrorAlerts: 'bot_error_alerts',
 };
 
 const SCHEMA_STATEMENTS = [
@@ -275,6 +276,22 @@ const SCHEMA_STATEMENTS = [
         INDEX idx_metric_buckets_name_time (metric_name, bucket_start_ms),
         INDEX idx_metric_buckets_provider_time (provider_id, bucket_start_ms),
         INDEX idx_metric_buckets_guild_time (guild_id, bucket_start_ms)
+    ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
+
+    `CREATE TABLE IF NOT EXISTS ${TABLES.botErrorAlerts} (
+        alert_key VARCHAR(191) NOT NULL PRIMARY KEY,
+        provider_id VARCHAR(64) NOT NULL DEFAULT '',
+        alert_kind VARCHAR(64) NOT NULL,
+        dominant_error_type VARCHAR(96) NULL,
+        last_sent_at_ms BIGINT NOT NULL,
+        last_current_rate DOUBLE NOT NULL DEFAULT 0,
+        last_baseline_rate DOUBLE NOT NULL DEFAULT 0,
+        last_current_errors BIGINT UNSIGNED NOT NULL DEFAULT 0,
+        last_current_attempts BIGINT UNSIGNED NOT NULL DEFAULT 0,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        INDEX idx_error_alerts_sent (last_sent_at_ms),
+        INDEX idx_error_alerts_provider (provider_id)
     ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
 ];
 

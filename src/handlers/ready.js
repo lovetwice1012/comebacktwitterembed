@@ -6,9 +6,10 @@ const deregisterNotifier = require('../lifecycle/deregisterNotifier');
 const statsPoster = require('../lifecycle/statsPoster');
 const consoleFlush = require('../lifecycle/consoleFlush');
 const boothSaleNotifier = require('../lifecycle/boothSaleNotifier');
+const errorRateNotifier = require('../lifecycle/errorRateNotifier');
 const { recordError } = require('../errorTracking');
 
-function register(client, webhookClient) {
+function register(client, webhookClient, errorNotificationWebhookClient = webhookClient) {
     client.on('ready', async () => {
         console.log(`${client.user.tag} is ready!`);
 
@@ -24,6 +25,7 @@ function register(client, webhookClient) {
         statsPoster.start(client);
         consoleFlush.start(client, webhookClient);
         boothSaleNotifier.start(client);
+        errorRateNotifier.start(errorNotificationWebhookClient);
     });
 }
 
