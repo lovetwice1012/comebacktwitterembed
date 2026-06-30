@@ -26,6 +26,8 @@ const {
 const { saveSettings, settings } = require('../../settings');
 
 const SETTABLE_KEYS = Object.keys(PROVIDER_DEFAULTS).filter(k => k !== 'enabled');
+const MAX_REPLY_LENGTH = 1900;
+const MAX_SETTING_VALUE_LENGTH = 240;
 
 function findProvider(id) {
     return loadProviders().find(p => p.id === id);
@@ -33,11 +35,11 @@ function findProvider(id) {
 
 async function ensureGuildAdmin(interaction) {
     if (!interaction.guild) {
-        await interaction.reply({ content: 'This command must be used in a guild.', ephemeral: true });
+        await interaction.editReply({ content: 'This command must be used in a guild.' });
         return false;
     }
     if (!interaction.memberPermissions?.has(PermissionsBitField.Flags.ManageGuild)) {
-        await interaction.reply({ content: 'Manage Server permission is required.', ephemeral: true });
+        await interaction.editReply({ content: 'Manage Server permission is required.' });
         return false;
     }
     return true;
@@ -50,6 +52,38 @@ function parseValue(raw) {
     return raw;
 }
 
+function formatSettingValue(value) {
+    if (value === undefined) return '(unset)';
+    const serialized = JSON.stringify(value);
+    const display = serialized === undefined ? String(value) : serialized;
+    if (display.length <= MAX_SETTING_VALUE_LENGTH) return display;
+    return display.slice(0, MAX_SETTING_VALUE_LENGTH - 3) + '...';
+}
+
+async function replyLines(interaction, lines) {
+    const chunks = [];
+    let current = '';
+
+    for (const line of lines) {
+        if (current && current.length + line.length + 1 > MAX_REPLY_LENGTH) {
+            chunks.push(current);
+            current = line;
+        } else {
+            current = current ? current + '\n' + line : line;
+        }
+    }
+    if (current) chunks.push(current);
+
+    if (chunks.length === 0) {
+        return await interaction.editReply({ content: 'No providers loaded.' });
+    }
+
+    await interaction.editReply({ content: chunks[0] });
+    for (const chunk of chunks.slice(1)) {
+        await interaction.followUp({ content: chunk, ephemeral: true });
+    }
+}
+
 async function execute(interaction) {
     const sub = interaction.options.getSubcommand();
 
@@ -59,7 +93,7 @@ async function execute(interaction) {
             const def = p.enabledByDefault ? ' (default on)' : ' (default off)';
             return `\u2022 **${p.id}** \u2014 ${enabled ? 'enabled' : 'disabled'}${def}`;
         });
-        return await interaction.reply({ content: lines.join('\n') || 'No providers loaded.', ephemeral: true });
+        return await replyLines(interaction, lines);
     }
 
     if (!await ensureGuildAdmin(interaction)) return;
@@ -67,34 +101,34 @@ async function execute(interaction) {
     const id = interaction.options.getString('id', true);
     const provider = findProvider(id);
     if (!provider) {
-        return await interaction.reply({ content: `Unknown provider: ${id}`, ephemeral: true });
+        return await interaction.editReply({ content: `Unknown provider: ${id}` });
     }
 
     if (sub === 'enable' || sub === 'disable') {
         setProviderEnabled(provider, interaction.guildId, sub === 'enable');
         await saveSettings(settings);
-        return await interaction.reply({ content: `Provider \`${id}\` is now **${sub === 'enable' ? 'enabled' : 'disabled'}** in this guild.`, ephemeral: true });
+        return await interaction.editReply({ content: `Provider \`${id}\` is now **${sub === 'enable' ? 'enabled' : 'disabled'}** in this guild.` });
     }
 
     if (sub === 'show') {
         const lines = [`**${id}** in this guild:`, `\u2022 enabled: ${isProviderEnabled(provider, interaction.guildId)}`];
         for (const k of SETTABLE_KEYS) {
             const v = getSetting(provider, k, interaction.guildId);
-            lines.push(`\u2022 ${k}: \`${v === undefined ? '(unset)' : JSON.stringify(v)}\``);
+            lines.push(`\u2022 ${k}: \`${formatSettingValue(v)}\``);
         }
-        return await interaction.reply({ content: lines.join('\n'), ephemeral: true });
+        return await replyLines(interaction, lines);
     }
 
     if (sub === 'set') {
         const key = interaction.options.getString('key', true);
         if (!SETTABLE_KEYS.includes(key)) {
-            return await interaction.reply({ content: `Unknown key: ${key}\nAvailable: ${SETTABLE_KEYS.join(', ')}`, ephemeral: true });
+            return await interaction.editReply({ content: `Unknown key: ${key}\nAvailable: ${SETTABLE_KEYS.join(', ')}` });
         }
         const raw = interaction.options.getString('value', true);
         const value = parseValue(raw);
         setSetting(provider, key, interaction.guildId, value);
         await saveSettings(settings);
-        return await interaction.reply({ content: `\`${id}.${key}\` = \`${JSON.stringify(value)}\` (this guild)`, ephemeral: true });
+        return await interaction.editReply({ content: `\`${id}.${key}\` = \`${formatSettingValue(value)}\` (this guild)` });
     }
 }
 

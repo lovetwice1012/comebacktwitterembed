@@ -15,14 +15,14 @@ function hasAdminPerm(member) {
 
 module.exports = async function (interaction, client) {
     if (!hasAdminPerm(interaction.member)) {
-        return await interaction.reply(t('userDonthavePermissionLocales', interaction.locale));
+        return await interaction.editReply(t('userDonthavePermissionLocales', interaction.locale));
     }
 
-    if (interaction.options.getBoolean('boolean') === null) return await interaction.reply(t('userMustSpecifyAnyWordLocales', interaction.locale));
+    if (interaction.options.getBoolean('boolean') === null) return await interaction.editReply(t('userMustSpecifyAnyWordLocales', interaction.locale));
     const boolean = interaction.options.getBoolean('boolean');
     setSetting({ id: 'twitter' }, 'deletemessageifonlypostedtweetlink', interaction.guildId, boolean);
     settings.deletemessageifonlypostedtweetlink[interaction.guildId] = boolean;
-    await interaction.reply((t('setdeleteifonlypostedtweetlinktolocales', interaction.locale)) + convertBoolToEnableDisable(boolean, interaction.locale));
+    await interaction.editReply((t('setdeleteifonlypostedtweetlinktolocales', interaction.locale)) + convertBoolToEnableDisable(boolean, interaction.locale));
     if (interaction.options.getBoolean('secoundaryextractmode') !== null) {
         const sec = interaction.options.getBoolean('secoundaryextractmode');
         setSetting({ id: 'twitter' }, 'deletemessageifonlypostedtweetlink_secoundaryextractmode', interaction.guild.id, sec);

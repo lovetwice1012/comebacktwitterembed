@@ -1,4 +1,4 @@
-﻿'use strict';
+'use strict';
 
 const { PermissionsBitField } = require('discord.js');
 const { t } = require('../../../locales');
@@ -15,15 +15,15 @@ function hasAdminPerm(member) {
 
 module.exports = async function (interaction, client) {
     if (!hasAdminPerm(interaction.member)) {
-        return await interaction.reply(t('userDonthavePermissionLocales', interaction.locale));
+        return await interaction.editReply(t('userDonthavePermissionLocales', interaction.locale));
     }
 
-    if (interaction.user.id !== '796972193287503913') return await interaction.reply(t('userDonthavePermissionLocales', interaction.locale));
+    if (interaction.user.id !== '796972193287503913') return await interaction.editReply(t('userDonthavePermissionLocales', interaction.locale));
     const slot = interaction.options.getInteger('slot');
     const user = interaction.options.getUser('user');
 
-    if (slot === null) return await interaction.reply(t('userMustSpecifyAnyWordLocales', interaction.locale));
-    if (slot < 1) return await interaction.reply('Slot must be 1 or greater.');
+    if (slot === null) return await interaction.editReply(t('userMustSpecifyAnyWordLocales', interaction.locale));
+    if (slot < 1) return await interaction.editReply('Slot must be 1 or greater.');
 
     await queryDatabase(
         `INSERT INTO ${TABLES.users} (user_id, registered_at_ms, additional_auto_extract_slots)
@@ -32,5 +32,5 @@ module.exports = async function (interaction, client) {
         [user.id, Date.now(), slot]
     );
 
-    await interaction.reply({ embeds: [{ title: 'Auto extract additional slot', description: 'Additional slot setting saved.', color: 0x1DA1F2 }] });
+    await interaction.editReply({ embeds: [{ title: 'Auto extract additional slot', description: 'Additional slot setting saved.', color: 0x1DA1F2 }] });
 };

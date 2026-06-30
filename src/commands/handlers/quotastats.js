@@ -37,7 +37,7 @@ module.exports.execute = async function (interaction, client) {
     quota = quota / 1024 / 1024;
     const usedDisplay = used >= 1024 ? (used / 1024).toFixed(2) + 'GB' : used.toFixed(2) + 'MB';
     const quotaDisplay = quota >= 1024 ? (quota / 1024).toFixed(2) + 'GB' : quota.toFixed(2) + 'MB';
-    await interaction.reply({
+    await interaction.editReply({
         embeds: [
             {
                 title: 'Quota stats',

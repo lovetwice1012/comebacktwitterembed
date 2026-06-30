@@ -14,14 +14,14 @@ function hasAdminPerm(member) {
 
 module.exports = async function (interaction) {
     if (!hasAdminPerm(interaction.member)) {
-        return await interaction.reply(t('userDonthavePermissionLocales', interaction.locale));
+        return await interaction.editReply(t('userDonthavePermissionLocales', interaction.locale));
     }
 
     const imagesPerStep = interaction.options.getInteger('value');
     if (imagesPerStep !== 4 && imagesPerStep !== 10) {
-        return await interaction.reply(t('pixivImagesPerStepMustBe4Or10Locales', interaction.locale));
+        return await interaction.editReply(t('pixivImagesPerStepMustBe4Or10Locales', interaction.locale));
     }
 
     setSetting({ id: 'pixiv' }, 'pixiv_images_per_step', interaction.guildId, imagesPerStep);
-    return await interaction.reply(t('setPixivImagesPerStepToLocales', interaction.locale) + imagesPerStep);
+    return await interaction.editReply(t('setPixivImagesPerStepToLocales', interaction.locale) + imagesPerStep);
 };

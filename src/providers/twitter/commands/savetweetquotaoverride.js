@@ -7,16 +7,16 @@ const { conv_en_to_en_US } = require('../../../utils');
 module.exports.execute = async function (interaction, client) {
 
     if (interaction.user.id === '796972193287503913') {
-        if (interaction.options.getInteger('newquota') === null) return await interaction.reply(t('userMustSpecifyAnyWordLocales', interaction.locale));
+        if (interaction.options.getInteger('newquota') === null) return await interaction.editReply(t('userMustSpecifyAnyWordLocales', interaction.locale));
         const quota = interaction.options.getInteger('newquota');
         let user = interaction.options.getUser('user');
         if (user === null) user = interaction.user;
         const userid = user.id;
         settings.save_tweet_quota_override[userid] = quota;
         await saveSettings(settings);
-        await interaction.reply((t('setsavetweetquotaoverridetolocales', interaction.locale)) + quota.toString());
+        await interaction.editReply((t('setsavetweetquotaoverridetolocales', interaction.locale)) + quota.toString());
     } else {
-        await interaction.reply(t('userDonthavePermissionLocales', interaction.locale));
+        await interaction.editReply(t('userDonthavePermissionLocales', interaction.locale));
     }
 
 };

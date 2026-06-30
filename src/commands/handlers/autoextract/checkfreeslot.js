@@ -1,4 +1,4 @@
-﻿'use strict';
+'use strict';
 
 const { queryDatabase } = require('../../../db');
 const { TABLES } = require('../../../db_schema');
@@ -46,5 +46,5 @@ module.exports = async function (interaction, client) {
     content += 'Your additional slots used: ' + user_using_premium_slot + '/' + premium_slot + '\n';
     content += 'Your additional slot quota: ' + user_using_premium_slot + '/' + user_have_additional_autoextraction_slot + '\n';
     content += 'Total usage: ' + all_using_slot + '/' + all_slot + ' (' + all_using_slot_percent + '%)\n';
-    await interaction.reply({ embeds: [{ title: 'Auto extract check free slot', description: content, color: 0x1DA1F2 }] });
+    await interaction.editReply({ embeds: [{ title: 'Auto extract check free slot', description: content, color: 0x1DA1F2 }] });
 };

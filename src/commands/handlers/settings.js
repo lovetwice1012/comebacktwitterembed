@@ -51,7 +51,7 @@ module.exports.execute = async function (interaction, client) {
     const sub = interaction.options.getSubcommand();
 
     if (!provider) {
-        return await interaction.reply(t('userMustSpecifyAnyWordLocales', interaction.locale));
+        return await interaction.editReply(t('userMustSpecifyAnyWordLocales', interaction.locale));
     }
 
     const common = COMMON_HANDLERS[sub];
@@ -60,7 +60,7 @@ module.exports.execute = async function (interaction, client) {
     const providerHandler = PROVIDER_HANDLERS[provider]?.[sub];
     if (providerHandler) return await runAndSave(providerHandler, interaction, client);
 
-    return await interaction.reply(t('userMustSpecifyAnyWordLocales', interaction.locale));
+    return await interaction.editReply(t('userMustSpecifyAnyWordLocales', interaction.locale));
 };
 
 const boolOption = {

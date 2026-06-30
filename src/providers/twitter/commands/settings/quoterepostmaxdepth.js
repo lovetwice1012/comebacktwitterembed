@@ -15,14 +15,14 @@ function hasAdminPerm(member) {
 
 module.exports = async function (interaction, client) {
     if (!hasAdminPerm(interaction.member)) {
-        return await interaction.reply(t('userDonthavePermissionLocales', interaction.locale));
+        return await interaction.editReply(t('userDonthavePermissionLocales', interaction.locale));
     }
 
     const depth = interaction.options.getInteger('depth');
-    if (depth === null) return await interaction.reply(t('userMustSpecifyAnyWordLocales', interaction.locale));
+    if (depth === null) return await interaction.editReply(t('userMustSpecifyAnyWordLocales', interaction.locale));
     setSetting({ id: 'twitter' }, 'quote_repost_max_depth', interaction.guildId, depth);
     settings.quote_repost_max_depth[interaction.guildId] = depth;
     const depthText = depth === 0 ? (interaction.locale === 'ja' ? '無制限' : 'unlimited') : depth.toString();
-    await interaction.reply((t('setquoterepostmaxdepthtolocales', interaction.locale)) + depthText);
+    await interaction.editReply((t('setquoterepostmaxdepthtolocales', interaction.locale)) + depthText);
 
 };

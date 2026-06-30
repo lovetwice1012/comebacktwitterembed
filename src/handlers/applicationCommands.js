@@ -24,14 +24,44 @@ function buildHandlers() {
     return merged;
 }
 
+function shouldDeferEphemeral(interaction) {
+    if (interaction.commandName === 'provider') return true;
+    if (interaction.commandName === 'autoextract') {
+        return interaction.options.getSubcommand() === 'list';
+    }
+    if (interaction.commandName === 'showsavetweet') {
+        return interaction.options.getString('id') !== null;
+    }
+    return false;
+}
+
+async function replyCommandError(interaction, error) {
+    console.error(`Failed to execute /${interaction.commandName}:`, error);
+    const payload = {
+        content: 'Command failed. Please check the bot logs.',
+    };
+    if (interaction.deferred || interaction.replied) {
+        await interaction.editReply(payload).catch(async () => {
+            await interaction.followUp(payload).catch(() => {});
+        });
+        return;
+    }
+    await interaction.reply({ ...payload, ephemeral: true }).catch(() => {});
+}
+
 function register(client) {
     const handlers = buildHandlers();
     client.on(Events.InteractionCreate, async (interaction) => {
         if (interaction.type !== InteractionType.ApplicationCommand) return;
         const handler = handlers[interaction.commandName];
         if (!handler) return;
-        await handler(interaction, client);
+        try {
+            await interaction.deferReply({ ephemeral: shouldDeferEphemeral(interaction) });
+            await handler(interaction, client);
+        } catch (err) {
+            await replyCommandError(interaction, err);
+        }
     });
 }
 
-module.exports = { register };
+module.exports = { register, _internal: { shouldDeferEphemeral } };

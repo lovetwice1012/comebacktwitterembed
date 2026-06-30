@@ -28,7 +28,7 @@ test('autoextract checkfreeslot handles users row missing', async () => {
         let reply = null;
         const interaction = {
             user: { id: 'user-without-row' },
-            reply: async (payload) => {
+            editReply: async (payload) => {
                 reply = payload;
             },
         };

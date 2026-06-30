@@ -15,19 +15,19 @@ function hasAdminPerm(member) {
 
 module.exports = async function (interaction, client) {
     if (!hasAdminPerm(interaction.member)) {
-        return await interaction.reply(t('userDonthavePermissionLocales', interaction.locale));
+        return await interaction.editReply(t('userDonthavePermissionLocales', interaction.locale));
     }
 
-    if (interaction.options.getString('language') === null) return await interaction.reply(t('userMustSpecifyAnyWordLocales', interaction.locale));
+    if (interaction.options.getString('language') === null) return await interaction.editReply(t('userMustSpecifyAnyWordLocales', interaction.locale));
     const providerId = interaction.options.getSubcommandGroup(false) || interaction.options.getString('provider') || 'twitter';
     const provider = { id: providerId };
     const language = interaction.options.getString('language');
     if (language === 'en' || language === 'ja') {
         setSetting(provider, 'defaultLanguage', interaction.guildId, language);
         if (providerId === 'twitter') settings.defaultLanguage[interaction.guildId] = language;
-        await interaction.reply((t('setdefaultlanguagetolocales', interaction.locale)) + language.toString());
+        await interaction.editReply((t('setdefaultlanguagetolocales', interaction.locale)) + language.toString());
     } else {
-        await interaction.reply('You must specify either en or ja.');
+        await interaction.editReply('You must specify either en or ja.');
     }
 
 };

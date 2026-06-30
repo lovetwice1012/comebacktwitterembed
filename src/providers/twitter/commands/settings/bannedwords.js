@@ -15,12 +15,12 @@ function hasAdminPerm(member) {
 
 module.exports = async function (interaction, client) {
     if (!hasAdminPerm(interaction.member)) {
-        return await interaction.reply(t('userDonthavePermissionLocales', interaction.locale));
+        return await interaction.editReply(t('userDonthavePermissionLocales', interaction.locale));
     }
 
-    if (interaction.options.getString('word') === null) return await interaction.reply(t('userMustSpecifyAnyWordLocales', interaction.locale));
+    if (interaction.options.getString('word') === null) return await interaction.editReply(t('userMustSpecifyAnyWordLocales', interaction.locale));
     if (!interaction.guild.members.me.permissions.has(PermissionsBitField.Flags.ManageMessages)) {
-        return await interaction.reply(t('iDonthavePermissionToManageMessagesLocales', interaction.locale));
+        return await interaction.editReply(t('iDonthavePermissionToManageMessagesLocales', interaction.locale));
     }
     const word = interaction.options.getString('word');
     const provider = { id: 'twitter' };
@@ -29,10 +29,10 @@ module.exports = async function (interaction, client) {
 
     if (bannedWords.includes(word)) {
         bannedWords.splice(bannedWords.indexOf(word), 1);
-        await interaction.reply(t('removedWordFromBannedWordsLocales', interaction.locale));
+        await interaction.editReply(t('removedWordFromBannedWordsLocales', interaction.locale));
     } else {
         bannedWords.push(word);
-        await interaction.reply(t('addedWordToBannedWordsLocales', interaction.locale));
+        await interaction.editReply(t('addedWordToBannedWordsLocales', interaction.locale));
     }
 
     setSetting(provider, 'bannedWords', interaction.guildId, bannedWords);

@@ -25,7 +25,7 @@ function hasAdminPerm(member) {
 
 module.exports = async function (interaction, client) {
     if (!hasAdminPerm(interaction.member)) {
-        return await interaction.reply(t('userDonthavePermissionLocales', interaction.locale));
+        return await interaction.editReply(t('userDonthavePermissionLocales', interaction.locale));
     }
 
     const providerId = interaction.options.getSubcommandGroup(false) || interaction.options.getString('provider') || 'twitter';
@@ -36,7 +36,7 @@ module.exports = async function (interaction, client) {
 
     //options: showMediaAsAttachments, showAttachmentsAsEmbedsImage, translate, delete, all;  all boolean
     if (interaction.options.getBoolean('showmediaasattachments') === null && interaction.options.getBoolean('showattachmentsasembedsimage') === null && interaction.options.getBoolean('translate') === null && interaction.options.getBoolean('delete') === null && interaction.options.getBoolean('savetweet') === null && interaction.options.getBoolean('all') === null) {
-        return await interaction.reply(t('userMustSpecifyAnyWordLocales', interaction.locale));
+        return await interaction.editReply(t('userMustSpecifyAnyWordLocales', interaction.locale));
     }
     if (interaction.options.getBoolean('all') !== null) {
         if (interaction.options.getBoolean('all') === true) {
@@ -52,7 +52,7 @@ module.exports = async function (interaction, client) {
                 settings.button_invisible[interaction.guildId].delete = true;
                 settings.button_invisible[interaction.guildId].savetweet = true;
             }
-            await interaction.reply(t('addedAllButtonLocales', interaction.locale));
+            await interaction.editReply(t('addedAllButtonLocales', interaction.locale));
         } else {
             providerSetting.showMediaAsAttachments = false;
             providerSetting.showAttachmentsAsEmbedsImage = false;
@@ -66,7 +66,7 @@ module.exports = async function (interaction, client) {
                 settings.button_invisible[interaction.guildId].delete = false;
                 settings.button_invisible[interaction.guildId].savetweet = false;
             }
-            await interaction.reply(t('removedAllButtonLocales', interaction.locale));
+            await interaction.editReply(t('removedAllButtonLocales', interaction.locale));
         }
     } else {
         const response = [];
@@ -95,7 +95,7 @@ module.exports = async function (interaction, client) {
             if (providerId === 'twitter') settings.button_invisible[interaction.guildId].savetweet = interaction.options.getBoolean('savetweet');
             response.push((t('setsavetweetbuttonLocales', interaction.locale)) + convertBoolToEnableDisable(!interaction.options.getBoolean('savetweet'), interaction.locale));
         }
-        await interaction.reply(response.join('\n'));
+        await interaction.editReply(response.join('\n'));
     }
 
 };

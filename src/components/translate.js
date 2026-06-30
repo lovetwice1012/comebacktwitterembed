@@ -3,6 +3,7 @@
 const fetch = require('node-fetch');
 const { settings, checkComponentIncludesDisabledButtonAndIfFindDeleteIt, detectProviderIdFromMessage } = require('../settings');
 const { getSetting } = require('../providers/_provider_settings');
+const { normalizeEmbed } = require('../interactionResponse');
 
 const TRANSLATE_ENDPOINT = 'https://script.google.com/macros/s/AKfycbwmofa3n_K15ze_-4KrpH-B-eBHiKXmmgLeqsJInS3dJUDM0IJ-627h8Xu-w8PIc2f-ug/exec';
 
@@ -60,6 +61,7 @@ async function handle(interaction) {
 
     const providerId = detectProviderIdFromMessage(interaction.message);
     messageObject.components = checkComponentIncludesDisabledButtonAndIfFindDeleteIt(interaction.message.components || [], interaction.guildId, providerId);
+    messageObject.embeds = messageObject.embeds.map(normalizeEmbed);
     await interaction.editReply(messageObject);
 
     const editOriginalIfTranslate = getSetting({ id: providerId || 'twitter' }, 'editOriginalIfTranslate', interaction.guildId) === true
@@ -69,6 +71,7 @@ async function handle(interaction) {
         const attachmentUrls = getAttachmentUrls(interaction.message.attachments);
         if (attachmentUrls.length > 0) messageObject.files = attachmentUrls;
         messageObject.components = interaction.message.components;
+        messageObject.embeds = messageObject.embeds.map(normalizeEmbed);
         await interaction.message.edit(messageObject);
     }
 }

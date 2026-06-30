@@ -4,7 +4,7 @@ const { descriptionLocales, commandNameLocales } = require('../../locales');
 const { conv_en_to_en_US } = require('../../utils');
 module.exports.execute = async function (interaction, client) {
 
-    await interaction.reply({
+    await interaction.editReply({
         embeds: [
             {
                 title: 'Invite',

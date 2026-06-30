@@ -15,13 +15,13 @@ function hasAdminPerm(member) {
 
 module.exports = async function (interaction, client) {
     if (!hasAdminPerm(interaction.member)) {
-        return await interaction.reply(t('userDonthavePermissionLocales', interaction.locale));
+        return await interaction.editReply(t('userDonthavePermissionLocales', interaction.locale));
     }
 
-    if (interaction.options.getBoolean('boolean') === null) return await interaction.reply(t('userMustSpecifyAnyWordLocales', interaction.locale));
+    if (interaction.options.getBoolean('boolean') === null) return await interaction.editReply(t('userMustSpecifyAnyWordLocales', interaction.locale));
     const boolean = interaction.options.getBoolean('boolean');
     setSetting({ id: 'twitter' }, 'alwaysreplyifpostedtweetlink', interaction.guildId, boolean);
     settings.alwaysreplyifpostedtweetlink[interaction.guildId] = boolean;
-    await interaction.reply((t('setalwaysreplyifpostedtweetlinktolocales', interaction.locale)) + convertBoolToEnableDisable(boolean, interaction.locale));
+    await interaction.editReply((t('setalwaysreplyifpostedtweetlinktolocales', interaction.locale)) + convertBoolToEnableDisable(boolean, interaction.locale));
 
 };

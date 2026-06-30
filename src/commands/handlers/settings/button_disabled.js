@@ -15,15 +15,15 @@ function hasAdminPerm(member) {
 
 module.exports = async function (interaction, client) {
     if (!hasAdminPerm(interaction.member)) {
-        return await interaction.reply(t('userDonthavePermissionLocales', interaction.locale));
+        return await interaction.editReply(t('userDonthavePermissionLocales', interaction.locale));
     }
 
     if (interaction.options.getUser('user') === null && interaction.options.getChannel('channel') === null && interaction.options.getRole('role') === null) {
-        return await interaction.reply(t('userMustSpecifyAUserOrChannelLocales', interaction.locale));
+        return await interaction.editReply(t('userMustSpecifyAUserOrChannelLocales', interaction.locale));
     }
 
     if ((interaction.options.getUser('user') !== null && interaction.options.getChannel('channel') !== null && interaction.options.getRole('role') !== null) || (interaction.options.getUser('user') !== null && interaction.options.getChannel('channel') !== null) || (interaction.options.getUser('user') !== null && interaction.options.getRole('role') !== null) || (interaction.options.getChannel('channel') !== null && interaction.options.getRole('role') !== null)) {
-        return await interaction.reply(t('userCantSpecifyBothAUserAndAChannelLocales', interaction.locale));
+        return await interaction.editReply(t('userCantSpecifyBothAUserAndAChannelLocales', interaction.locale));
     }
     const providerId = interaction.options.getSubcommandGroup(false) || interaction.options.getString('provider') || 'twitter';
     const provider = { id: providerId };
@@ -37,28 +37,28 @@ module.exports = async function (interaction, client) {
         const user = interaction.options.getUser('user');
         if (guildSetting.user.includes(user.id)) {
             guildSetting.user.splice(guildSetting.user.indexOf(user.id), 1);
-            await interaction.reply(t('removedUserFromDisableUserLocales', interaction.locale));
+            await interaction.editReply(t('removedUserFromDisableUserLocales', interaction.locale));
         } else {
             guildSetting.user.push(user.id);
-            await interaction.reply(t('addedUserToDisableUserLocales', interaction.locale));
+            await interaction.editReply(t('addedUserToDisableUserLocales', interaction.locale));
         }
     } else if (interaction.options.getChannel('channel') !== null) {
         const channel = interaction.options.getChannel('channel');
         if (guildSetting.channel.includes(channel.id)) {
             guildSetting.channel.splice(guildSetting.channel.indexOf(channel.id), 1);
-            await interaction.reply(t('removedChannelFromDisableChannelLocales', interaction.locale));
+            await interaction.editReply(t('removedChannelFromDisableChannelLocales', interaction.locale));
         } else {
             guildSetting.channel.push(channel.id);
-            await interaction.reply(t('addedChannelToDisableChannelLocales', interaction.locale));
+            await interaction.editReply(t('addedChannelToDisableChannelLocales', interaction.locale));
         }
     } else if (interaction.options.getRole('role') !== null) {
         const role = interaction.options.getRole('role');
         if (guildSetting.role.includes(role.id)) {
             guildSetting.role.splice(guildSetting.role.indexOf(role.id), 1);
-            await interaction.reply(t('removedRoleFromDisableRoleLocales', interaction.locale));
+            await interaction.editReply(t('removedRoleFromDisableRoleLocales', interaction.locale));
         } else {
             guildSetting.role.push(role.id);
-            await interaction.reply(t('addedRoleToDisableRoleLocales', interaction.locale));
+            await interaction.editReply(t('addedRoleToDisableRoleLocales', interaction.locale));
         }
     }
 

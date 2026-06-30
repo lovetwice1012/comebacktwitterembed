@@ -60,56 +60,56 @@ module.exports = async function (interaction, client) {
     let guildSetting = normalizeDisableSetting(getSetting(provider, 'disable', interaction.guildId), interaction.guildId, providerId);
 
     if (!hasAdminPerm(interaction.member)) {
-        if (!hasAnyTarget(interaction)) return await interaction.reply(t('userMustSpecifyAUserOrChannelLocales', interaction.locale));
-        if (hasMultipleTargets(interaction)) return await interaction.reply(t('userCantSpecifyBothAUserAndAChannelLocales', interaction.locale));
+        if (!hasAnyTarget(interaction)) return await interaction.editReply(t('userMustSpecifyAUserOrChannelLocales', interaction.locale));
+        if (hasMultipleTargets(interaction)) return await interaction.editReply(t('userCantSpecifyBothAUserAndAChannelLocales', interaction.locale));
 
         if (interaction.options.getUser('user') !== null) {
             const user = interaction.options.getUser('user');
-            if (user.id !== interaction.user.id) return await interaction.reply(t('userCantUseThisCommandForOtherUsersLocales', interaction.locale));
+            if (user.id !== interaction.user.id) return await interaction.editReply(t('userCantUseThisCommandForOtherUsersLocales', interaction.locale));
             if (guildSetting.user.includes(user.id)) {
                 guildSetting.user.splice(guildSetting.user.indexOf(user.id), 1);
-                await interaction.reply(t('removedUserFromDisableUserLocales', interaction.locale));
+                await interaction.editReply(t('removedUserFromDisableUserLocales', interaction.locale));
             } else {
                 guildSetting.user.push(user.id);
-                await interaction.reply(t('addedUserToDisableUserLocales', interaction.locale));
+                await interaction.editReply(t('addedUserToDisableUserLocales', interaction.locale));
             }
             setSetting(provider, 'disable', interaction.guildId, guildSetting);
             syncTwitterLegacyDisable(interaction.guildId, providerId, guildSetting);
         } else if (interaction.options.getChannel('channel') !== null || interaction.options.getRole('role') !== null) {
-            return await interaction.reply(t('userDonthavePermissionLocales', interaction.locale));
+            return await interaction.editReply(t('userDonthavePermissionLocales', interaction.locale));
         }
         return;
     }
 
-    if (!hasAnyTarget(interaction)) return await interaction.reply(t('userMustSpecifyAUserOrChannelLocales', interaction.locale));
-    if (hasMultipleTargets(interaction)) return await interaction.reply(t('userCantSpecifyBothAUserAndAChannelLocales', interaction.locale));
+    if (!hasAnyTarget(interaction)) return await interaction.editReply(t('userMustSpecifyAUserOrChannelLocales', interaction.locale));
+    if (hasMultipleTargets(interaction)) return await interaction.editReply(t('userCantSpecifyBothAUserAndAChannelLocales', interaction.locale));
 
     if (interaction.options.getUser('user') !== null) {
         const user = interaction.options.getUser('user');
         if (guildSetting.user.includes(user.id)) {
             guildSetting.user.splice(guildSetting.user.indexOf(user.id), 1);
-            await interaction.reply(t('removedUserFromDisableUserLocales', interaction.locale));
+            await interaction.editReply(t('removedUserFromDisableUserLocales', interaction.locale));
         } else {
             guildSetting.user.push(user.id);
-            await interaction.reply(t('addedUserToDisableUserLocales', interaction.locale));
+            await interaction.editReply(t('addedUserToDisableUserLocales', interaction.locale));
         }
     } else if (interaction.options.getChannel('channel') !== null) {
         const channel = interaction.options.getChannel('channel');
         if (guildSetting.channel.includes(channel.id)) {
             guildSetting.channel.splice(guildSetting.channel.indexOf(channel.id), 1);
-            await interaction.reply(t('removedChannelFromDisableChannelLocales', interaction.locale));
+            await interaction.editReply(t('removedChannelFromDisableChannelLocales', interaction.locale));
         } else {
             guildSetting.channel.push(channel.id);
-            await interaction.reply(t('addedChannelToDisableChannelLocales', interaction.locale));
+            await interaction.editReply(t('addedChannelToDisableChannelLocales', interaction.locale));
         }
     } else if (interaction.options.getRole('role') !== null) {
         const role = interaction.options.getRole('role');
         if (guildSetting.role.includes(role.id)) {
             guildSetting.role.splice(guildSetting.role.indexOf(role.id), 1);
-            await interaction.reply(t('removedRoleFromDisableRoleLocales', interaction.locale));
+            await interaction.editReply(t('removedRoleFromDisableRoleLocales', interaction.locale));
         } else {
             guildSetting.role.push(role.id);
-            await interaction.reply(t('addedRoleToDisableRoleLocales', interaction.locale));
+            await interaction.editReply(t('addedRoleToDisableRoleLocales', interaction.locale));
         }
     }
 

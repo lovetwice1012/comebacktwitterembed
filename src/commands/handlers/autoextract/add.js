@@ -1,4 +1,4 @@
-﻿'use strict';
+'use strict';
 
 const { t } = require('../../../locales');
 const { ensureUserExistsInDatabase, queryDatabase } = require('../../../db');
@@ -60,7 +60,7 @@ module.exports = async function (interaction) {
     );
     const limit_free_check = freeUsed < FREE_SLOT_LIMIT;
     if (!limit_free_check && additional_autoextraction_slot === 0) {
-        return await interaction.reply({ embeds: [{ title: 'Auto extract add', description: 'The free auto extract slots are full.', color: 0x1DA1F2 }] });
+        return await interaction.editReply({ embeds: [{ title: 'Auto extract add', description: 'The free auto extract slots are full.', color: 0x1DA1F2 }] });
     }
 
     const userFreeUsed = await countRows(
@@ -69,7 +69,7 @@ module.exports = async function (interaction) {
     );
     const over_5_check = userFreeUsed < USER_FREE_SLOT_LIMIT;
     if (!over_5_check && additional_autoextraction_slot === 0) {
-        return await interaction.reply({ embeds: [{ title: 'Auto extract add', description: 'You cannot register more than 5 free auto extracts.', color: 0x1DA1F2 }] });
+        return await interaction.editReply({ embeds: [{ title: 'Auto extract add', description: 'You cannot register more than 5 free auto extracts.', color: 0x1DA1F2 }] });
     }
 
     const now_using_additional_autoextraction_slot = await countRows(
@@ -77,7 +77,7 @@ module.exports = async function (interaction) {
         [interaction.user.id]
     );
     if (additional_autoextraction_slot !== 0 && (now_using_additional_autoextraction_slot >= additional_autoextraction_slot) && (!over_5_check || !limit_free_check)) {
-        return await interaction.reply({ embeds: [{ title: 'Auto extract add', description: 'Your additional auto extract slots are full.', color: 0x1DA1F2 }] });
+        return await interaction.editReply({ embeds: [{ title: 'Auto extract add', description: 'Your additional auto extract slots are full.', color: 0x1DA1F2 }] });
     } else if (additional_autoextraction_slot !== 0 && (now_using_additional_autoextraction_slot < additional_autoextraction_slot) && (over_5_check || limit_free_check)) {
         premium_flag = 1;
     }
@@ -85,13 +85,13 @@ module.exports = async function (interaction) {
     const username = interaction.options.getString('username');
     const webhooks = interaction.options.getString('webhook');
     const webhooks_array = (webhooks || '').split(',').map(webhook => webhook.trim()).filter(Boolean);
-    if (username === null || webhooks_array.length === 0) return await interaction.reply(t('userMustSpecifyAnyWordLocales', interaction.locale));
+    if (username === null || webhooks_array.length === 0) return await interaction.editReply(t('userMustSpecifyAnyWordLocales', interaction.locale));
     if (!username.match(/^[0-9a-zA-Z_]+$/)) {
-        return await interaction.reply({ embeds: [{ title: 'Auto extract add', description: 'The specified Twitter username is invalid.\n[Input](https://twitter.com/' + username + ')', color: 0x1DA1F2 }] });
+        return await interaction.editReply({ embeds: [{ title: 'Auto extract add', description: 'The specified Twitter username is invalid.\n[Input](https://twitter.com/' + username + ')', color: 0x1DA1F2 }] });
     }
 
     for (const webhook of webhooks_array) {
-        if (!webhook.match(/^https:\/\/discord.com\/api\/webhooks\/[0-9]+\/[a-zA-Z0-9_-]+$/)) return await interaction.reply(invalidWebhookReply());
+        if (!webhook.match(/^https:\/\/discord.com\/api\/webhooks\/[0-9]+\/[a-zA-Z0-9_-]+$/)) return await interaction.editReply(invalidWebhookReply());
     }
 
     for (const webhook of webhooks_array) {
@@ -107,7 +107,7 @@ module.exports = async function (interaction) {
                 }],
             }),
         });
-        if (webhookResponse.status !== 204) return await interaction.reply(invalidWebhookReply());
+        if (webhookResponse.status !== 204) return await interaction.editReply(invalidWebhookReply());
     }
 
     const registered = [];
@@ -127,7 +127,7 @@ module.exports = async function (interaction) {
         registered.push(webhook);
     }
 
-    return await interaction.reply({
+    return await interaction.editReply({
         embeds: [{
             title: 'Auto extract add',
             description: 'Registration completed.\n[Registered user](https://twitter.com/' + username + ')' + (registered.length > 1 ? '\nWEBHOOK: ' + registered.length : ''),

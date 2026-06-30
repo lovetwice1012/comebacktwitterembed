@@ -2,16 +2,23 @@
 
 const { ActivityType } = require('discord.js');
 
-function start(client) {
-    setInterval(() => {
-        client.user.setPresence({
-            status: 'online',
-            activities: [{
-                name: client.guilds.cache.size + 'servers | No special setup is required, just post the tweet link.',
-                type: ActivityType.Watching,
-            }],
-        });
-    }, 60000);
+let presenceTimer = null;
+
+function updatePresence(client) {
+    client.user.setPresence({
+        status: 'online',
+        activities: [{
+            name: client.guilds.cache.size + 'servers | No special setup is required, just post the tweet link.',
+            type: ActivityType.Watching,
+        }],
+    });
 }
 
-module.exports = { start };
+function start(client) {
+    updatePresence(client);
+
+    if (presenceTimer) clearInterval(presenceTimer);
+    presenceTimer = setInterval(() => updatePresence(client), 60000);
+}
+
+module.exports = { start, updatePresence };

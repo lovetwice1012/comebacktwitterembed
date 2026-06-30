@@ -4,6 +4,7 @@ const { ApplicationCommandOptionType, PermissionsBitField } = require('discord.j
 const { t, messageLocales, descriptionLocales, commandNameLocales } = require('../../locales');
 const { settings } = require('../../settings');
 const { convertBoolToEnableDisable, conv_en_to_en_US } = require('../../utils');
+const { sendFieldEmbeds } = require('../../interactionResponse');
 
 function getStringOption(interaction, name) {
     try {
@@ -21,7 +22,7 @@ function getTargetGuildId(interaction) {
 module.exports.execute = async function (interaction, client) {
 
     const guildid = getTargetGuildId(interaction);
-    if (guildid !== interaction.guildId && interaction.user.id !== '796972193287503913') return await interaction.reply(t('userDonthavePermissionLocales', interaction.locale));
+    if (guildid !== interaction.guildId && interaction.user.id !== '796972193287503913') return await interaction.editReply(t('userDonthavePermissionLocales', interaction.locale));
     let embed = {};
     embed.title = 'ギルド設定';
     embed.color = 0x1DA1F2;
@@ -37,7 +38,7 @@ module.exports.execute = async function (interaction, client) {
             value: value
         });
     }
-    //無効化されているロール    
+    //無効化されているロール
     if (settings.disable.role[guildid] !== undefined) {
         let value = '';
         settings.disable.role[guildid].forEach(element => {
@@ -154,7 +155,7 @@ module.exports.execute = async function (interaction, client) {
             value: value
         });
     }
-    interaction.reply({ embeds: [embed] });
+    await sendFieldEmbeds(interaction, embed);
 
 };
 

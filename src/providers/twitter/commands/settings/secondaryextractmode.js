@@ -15,15 +15,15 @@ function hasAdminPerm(member) {
 
 module.exports = async function (interaction, client) {
     if (!hasAdminPerm(interaction.member)) {
-        return await interaction.reply(t('userDonthavePermissionLocales', interaction.locale));
+        return await interaction.editReply(t('userDonthavePermissionLocales', interaction.locale));
     }
 
     if (settings.legacy_mode[interaction.guildId] === true) settings.legacy_mode[interaction.guildId] = false; 
-    if (interaction.options.getBoolean('boolean') === null) return await interaction.reply(t('userMustSpecifyAnyWordLocales', interaction.locale));
+    if (interaction.options.getBoolean('boolean') === null) return await interaction.editReply(t('userMustSpecifyAnyWordLocales', interaction.locale));
     const boolean = interaction.options.getBoolean('boolean');
     setSetting({ id: 'twitter' }, 'secondary_extract_mode', interaction.guildId, boolean);
     if (boolean === true) setSetting({ id: 'twitter' }, 'legacy_mode', interaction.guildId, false);
     settings.secondary_extract_mode[interaction.guildId] = boolean;
-    await interaction.reply((t('setsecondaryextractmodetolocales', interaction.locale)) + convertBoolToEnableDisable(boolean, interaction.locale));
+    await interaction.editReply((t('setsecondaryextractmodetolocales', interaction.locale)) + convertBoolToEnableDisable(boolean, interaction.locale));
 
 };

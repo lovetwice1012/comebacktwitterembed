@@ -67,7 +67,7 @@ test('autoextract add posts webhook validation with node-fetch import and replie
                     return null;
                 },
             },
-            reply: async (payload) => {
+            editReply: async (payload) => {
                 replies.push(payload);
             },
         };

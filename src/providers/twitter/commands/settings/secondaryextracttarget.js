@@ -15,11 +15,11 @@ function hasAdminPerm(member) {
 
 module.exports = async function (interaction, client) {
     if (!hasAdminPerm(interaction.member)) {
-        return await interaction.reply(t('userDonthavePermissionLocales', interaction.locale));
+        return await interaction.editReply(t('userDonthavePermissionLocales', interaction.locale));
     }
 
     if (interaction.options.getBoolean('multipleimages') === null && interaction.options.getBoolean('video') === null) {
-        return await interaction.reply(t('userMustSpecifyAnyWordLocales', interaction.locale));
+        return await interaction.editReply(t('userMustSpecifyAnyWordLocales', interaction.locale));
     }
     const provider = { id: 'twitter' };
     const currentImages = getSetting(provider, 'secondary_extract_mode_multiple_images', interaction.guildId);
@@ -40,6 +40,6 @@ module.exports = async function (interaction, client) {
         settings.secondary_extract_mode_video[interaction.guildId] = video;
         response.push((t('setsecondaryextracttargetvideotolocales', interaction.locale)) + convertBoolToEnableDisable(video, interaction.locale));
     }
-    await interaction.reply(response.join('\n'));
+    await interaction.editReply(response.join('\n'));
 
 };
