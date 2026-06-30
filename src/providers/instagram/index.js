@@ -20,6 +20,7 @@ const MAX_MEDIA_PER_MESSAGE = 10;
 const DESCRIPTION_MAX_LENGTH = 3500;
 const CAPTION_MAX_LENGTH = 3000;
 const CACHE_TTL_MS = 30 * 60 * 1000;
+const PROFILE_API_RATE_LIMIT_BACKOFF_MS = 10 * 60 * 1000;
 
 const REQUEST_HEADERS = {
     'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
@@ -27,6 +28,7 @@ const REQUEST_HEADERS = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
 };
 const MOBILE_USER_AGENT = 'Instagram 337.0.0.35.102 Android (30/11; 420dpi; 1080x1920; Google; Pixel 5; redfin; redfin; en_US; 540986477)';
+const CRAWLER_USER_AGENT = 'Mozilla/5.0 (compatible; Discordbot/2.0; +https://discordapp.com)';
 
 const GRAPHQL_DOC_ID = '25531498899829322';
 const GRAPHQL_HEADERS = {
@@ -59,6 +61,7 @@ const STR = {
 };
 
 const dataCache = new Map();
+let profileApiBackoffUntil = 0;
 
 function tr(spec, lang) {
     if (typeof spec === 'string') return spec;
@@ -598,6 +601,66 @@ function normalizeProfileData(data) {
     };
 }
 
+function profileCountFromText(value) {
+    if (!value) return null;
+    const text = String(value).trim();
+    return text || null;
+}
+
+function parseProfileCounts(description) {
+    const match = String(description || '').match(/([\d.,]+[KMB]?)\s+Followers,\s*([\d.,]+[KMB]?)\s+Following,\s*([\d.,]+[KMB]?)\s+Posts/i);
+    if (!match) return {};
+    return {
+        followers: profileCountFromText(match[1]),
+        following: profileCountFromText(match[2]),
+        posts: profileCountFromText(match[3]),
+    };
+}
+
+function escapeRegExp(value) {
+    return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function normalizeProfileTitle(title, fallbackUsername) {
+    const clean = stripHtml(title)
+        .replace(/\s+\u2022\s+Instagram.*$/i, '')
+        .trim();
+    if (!clean) return { username: fallbackUsername, fullName: '' };
+
+    const usernameMatch = clean.match(/\(@([A-Za-z0-9._]{1,30})\)\s*$/);
+    const username = usernameMatch?.[1] || fallbackUsername;
+    const fullName = usernameMatch
+        ? clean.slice(0, usernameMatch.index).trim()
+        : clean.replace(new RegExp(`^@?${escapeRegExp(fallbackUsername)}$`, 'i'), '').trim();
+    return { username, fullName };
+}
+
+function normalizeProfileHtmlData(username, html) {
+    const ogTitle = getMetaContent(html, 'og:title');
+    const ogDescription = getMetaContent(html, 'og:description');
+    const seoDescription = getMetaContent(html, 'description');
+    const profilePicUrl = normalizeCdnUrl(getMetaContent(html, 'og:image'));
+    const titleData = normalizeProfileTitle(ogTitle, username);
+    const counts = parseProfileCounts(seoDescription || ogDescription);
+    const bioMatch = String(seoDescription || '').match(/\bon Instagram:\s*"([\s\S]*)"\s*$/i);
+    const biography = bioMatch ? bioMatch[1].trim() : '';
+
+    if (!titleData.username || (!titleData.fullName && !profilePicUrl && !ogDescription && !seoDescription)) return null;
+
+    return {
+        username: titleData.username,
+        fullName: titleData.fullName,
+        biography,
+        profilePicUrl,
+        externalUrl: '',
+        isPrivate: false,
+        isVerified: false,
+        posts: counts.posts ?? null,
+        followers: counts.followers ?? null,
+        following: counts.following ?? null,
+    };
+}
+
 function profileApiCandidates(username) {
     const params = new URLSearchParams({ username });
     const query = params.toString();
@@ -651,6 +714,48 @@ async function fetchProfileCandidate(candidate) {
     return profile;
 }
 
+async function fetchProfileFromApi(username) {
+    let lastError = null;
+    for (const candidate of profileApiCandidates(username)) {
+        try {
+            return await fetchProfileCandidate(candidate);
+        } catch (err) {
+            lastError = err;
+            if (err?.status === 429) {
+                profileApiBackoffUntil = Date.now() + PROFILE_API_RATE_LIMIT_BACKOFF_MS;
+                throw err;
+            }
+        }
+    }
+    throw lastError || new Error('instagram profile data not found');
+}
+
+async function fetchProfileFromHtml(username) {
+    const res = await fetch(`https://www.instagram.com/${username}/`, {
+        headers: {
+            ...REQUEST_HEADERS,
+            Accept: 'text/html,*/*',
+            'User-Agent': CRAWLER_USER_AGENT,
+        },
+    });
+    const text = await res.text();
+    if (!res.ok) {
+        /** @type {Error & {status?: number}} */
+        const err = new Error(`instagram profile html ${res.status}`);
+        err.status = res.status;
+        throw err;
+    }
+
+    const profile = normalizeProfileHtmlData(username, text);
+    if (!profile) {
+        /** @type {Error & {status?: number}} */
+        const err = new Error(`instagram profile html missing user ${res.status}`);
+        err.status = res.status;
+        throw err;
+    }
+    return profile;
+}
+
 async function fetchProfileData(username) {
     const cacheKey = `profile:${username.toLowerCase()}`;
     const cached = dataCache.get(cacheKey);
@@ -658,13 +763,27 @@ async function fetchProfileData(username) {
     if (cached) dataCache.delete(cacheKey);
 
     let lastError = null;
-    for (const candidate of profileApiCandidates(username)) {
+    try {
+        const profile = await fetchProfileFromHtml(username);
+        dataCache.set(cacheKey, { data: profile, expiresAt: Date.now() + CACHE_TTL_MS });
+        return profile;
+    } catch (err) {
+        lastError = err;
+    }
+
+    if (Date.now() >= profileApiBackoffUntil) {
         try {
-            const profile = await fetchProfileCandidate(candidate);
+            const profile = await fetchProfileFromApi(username);
             dataCache.set(cacheKey, { data: profile, expiresAt: Date.now() + CACHE_TTL_MS });
             return profile;
         } catch (err) {
-            lastError = err;
+            if (err?.status === 429) {
+                /** @type {Error & {status?: number}} */
+                const combined = new Error(`instagram profile api rate limited after HTML fallback failed: ${lastError?.message || lastError}`);
+                combined.status = err.status;
+                throw combined;
+            }
+            throw err;
         }
     }
 
@@ -827,6 +946,7 @@ function buildBaseEmbed(data, canonicalUrl, lang, requesterName, selectedCount, 
 
 function formatCount(value, lang) {
     if (value === null || value === undefined) return null;
+    if (typeof value === 'string') return value.trim() || null;
     return new Intl.NumberFormat(lang === 'ja' ? 'ja-JP' : 'en-US').format(value);
 }
 
@@ -1018,5 +1138,8 @@ module.exports.__test = {
     parseInstagramHtml,
     normalizeMediaNode,
     resolveShareUrl,
-    _clearCache: () => dataCache.clear(),
+    _clearCache: () => {
+        dataCache.clear();
+        profileApiBackoffUntil = 0;
+    },
 };
