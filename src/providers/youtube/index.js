@@ -396,16 +396,16 @@ function requesterFooter(message, lang, anonymous) {
     return `${tr(STR.requesterPrefix, lang)}${requester} · YouTube`;
 }
 
-function buildComponents(lang) {
-    return [
-        {
-            type: ComponentType.ActionRow,
-            components: [
-                new ButtonBuilder().setStyle(ButtonStyle.Primary).setLabel(tr(STR.translateButton, lang)).setCustomId('translate'),
-                new ButtonBuilder().setStyle(ButtonStyle.Danger).setLabel(tr(STR.deleteButton, lang)).setCustomId('delete:youtube'),
-            ],
-        },
+function buildComponents(lang, includeDownload) {
+    const components = [
+        new ButtonBuilder().setStyle(ButtonStyle.Primary).setLabel(tr(STR.translateButton, lang)).setCustomId('translate'),
     ];
+    if (includeDownload) {
+        components.push(new ButtonBuilder().setStyle(ButtonStyle.Secondary).setLabel('Download').setCustomId('downloadYouTubeVideo'));
+    }
+    components.push(new ButtonBuilder().setStyle(ButtonStyle.Danger).setLabel(tr(STR.deleteButton, lang)).setCustomId('delete:youtube'));
+
+    return [{ type: ComponentType.ActionRow, components }];
 }
 
 function addField(fields, name, value, inline = true) {
@@ -530,11 +530,11 @@ function buildChannelEmbed(info, parsed, baseUrl, message, s) {
     return embed;
 }
 
-function buildStep(embed, message, url, s, lang) {
+function buildStep(embed, message, url, s, lang, includeDownload = false) {
     /** @type {import('../_types').SendStep} */
     const step = {
         embeds: [embed],
-        components: buildComponents(lang),
+        components: buildComponents(lang, includeDownload),
         allowedMentions: { repliedUser: false },
         send: s.alwaysreplyifpostedtweetlink === true ? 'reply-source' : 'channel',
         suppressSourceEmbeds: true,
@@ -572,7 +572,7 @@ async function extract(message, url, s) {
             return null;
         }
 
-        return [buildStep(embed, message, url, s, lang)];
+        return [buildStep(embed, message, url, s, lang, parsed.type === 'video')];
     } catch (err) {
         recordProviderError('youtube', err, message, url, { endpointKey: 'invidious/api' });
         return null;

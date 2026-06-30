@@ -7,6 +7,7 @@ const statsPoster = require('../lifecycle/statsPoster');
 const consoleFlush = require('../lifecycle/consoleFlush');
 const boothSaleNotifier = require('../lifecycle/boothSaleNotifier');
 const errorRateNotifier = require('../lifecycle/errorRateNotifier');
+const youtubeDownloadServer = require('../lifecycle/youtubeDownloadServer');
 const { recordError } = require('../errorTracking');
 
 function register(client, webhookClient, errorNotificationWebhookClient = webhookClient) {
@@ -26,6 +27,7 @@ function register(client, webhookClient, errorNotificationWebhookClient = webhoo
         consoleFlush.start(client, webhookClient);
         boothSaleNotifier.start(client);
         errorRateNotifier.start(errorNotificationWebhookClient);
+        youtubeDownloadServer.start();
     });
 }
 

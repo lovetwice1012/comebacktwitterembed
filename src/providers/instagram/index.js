@@ -502,6 +502,47 @@ function parseInstagramHtml(html) {
     return scrapeFromEmbedHtml(html);
 }
 
+function usernameFromAuthorUrl(authorUrl) {
+    if (!authorUrl) return '';
+    try {
+        const u = new URL(authorUrl);
+        return u.pathname.split('/').filter(Boolean)[0] || '';
+    } catch {
+        return '';
+    }
+}
+
+function normalizeOEmbedData(oembed) {
+    if (!oembed || typeof oembed !== 'object') return null;
+
+    const thumbnailUrl = normalizeCdnUrl(oembed.thumbnail_url || '');
+    if (!thumbnailUrl) return null;
+
+    const username = usernameFromAuthorUrl(oembed.author_url) || oembed.author_name || '';
+    return {
+        username,
+        caption: oembed.title || '',
+        medias: [{
+            typeName: 'GraphImage',
+            url: thumbnailUrl,
+        }],
+    };
+}
+
+async function fetchOEmbedData(parsed) {
+    const params = new URLSearchParams({ url: buildCanonicalUrl(parsed) });
+    const apiUrl = `https://www.instagram.com/api/v1/oembed/?${params.toString()}`;
+    const res = await fetch(apiUrl, {
+        headers: {
+            ...REQUEST_HEADERS,
+            Accept: 'application/json,text/plain,*/*',
+        },
+    });
+    if (!res.ok) return null;
+    const data = tryParseJson(await res.text());
+    return normalizeOEmbedData(data);
+}
+
 function buildGraphqlBody(shortcode) {
     return new URLSearchParams({
         av: '0',
@@ -537,9 +578,15 @@ async function fetchGraphqlData(shortcode) {
         headers: GRAPHQL_HEADERS,
         body: buildGraphqlBody(shortcode).toString(),
     });
-    if (!res.ok) throw new Error(`instagram graphql ${res.status}`);
+    if (!res.ok) {
+        if (res.status === 401 || res.status === 403 || res.status === 429) return null;
+        /** @type {Error & {status?: number}} */
+        const err = new Error(`instagram graphql ${res.status}`);
+        err.status = res.status;
+        throw err;
+    }
     const text = await res.text();
-    if (text.includes('require_login')) throw new Error('instagram graphql requires login');
+    if (text.includes('require_login')) return null;
     const parsed = tryParseJson(text);
     const node = findMediaNode(parsed);
     return normalizeMediaNode(node);
@@ -572,6 +619,15 @@ async function fetchInstagramData(parsed) {
         } catch (err) {
             lastError = err;
         }
+    }
+
+    const oembedData = await fetchOEmbedData(parsed).catch(err => {
+        lastError = err;
+        return null;
+    });
+    if (oembedData) {
+        dataCache.set(parsed.shortcode, { data: oembedData, expiresAt: Date.now() + CACHE_TTL_MS });
+        return oembedData;
     }
 
     const graphqlData = await fetchGraphqlData(parsed.shortcode).catch(err => {
@@ -712,7 +768,6 @@ async function extract(message, url, s, opts) {
         data = await fetchInstagramData(parsed);
     } catch (err) {
         recordProviderError('instagram', err, message, url, { endpointKey: 'instagram/embed-or-graphql' });
-        console.log(err);
         return null;
     }
 

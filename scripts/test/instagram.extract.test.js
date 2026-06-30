@@ -127,3 +127,59 @@ test('instagram extract: share URLs are resolved before scraping', async () => {
     assert.equal(result[0].embeds[0].url, 'https://www.instagram.com/reel/REALCODE/');
     assert.equal(result[0].files[0].endsWith('/v/t50/video.mp4'), true);
 });
+
+test('instagram extract: falls back to oEmbed thumbnail when embed HTML has no media payload', async () => {
+    const requestedUrls = [];
+    const provider = loadInstagramProviderWithFetch(async (url) => {
+        const rawUrl = String(url);
+        requestedUrls.push(rawUrl);
+        if (rawUrl.includes('/api/v1/oembed/')) {
+            return {
+                ok: true,
+                text: async () => JSON.stringify({
+                    title: 'fallback caption',
+                    author_name: 'artist',
+                    author_url: 'https://www.instagram.com/artist/',
+                    thumbnail_url: 'https://scontent-nrt1-1.cdninstagram.com/v/t51.2885-15/fallback.jpg',
+                }),
+            };
+        }
+        if (rawUrl.includes('/embed/captioned/')) {
+            return { ok: true, text: async () => '<html><body>no public media data</body></html>' };
+        }
+        throw new Error(`Unexpected fetch after oEmbed fallback: ${rawUrl}`);
+    });
+
+    const result = await provider.extract(createMessage(), 'https://www.instagram.com/p/CODE123/', {});
+
+    assert.ok(Array.isArray(result));
+    assert.equal(requestedUrls[0], 'https://www.instagram.com/p/CODE123/embed/captioned/');
+    assert.ok(requestedUrls.includes('https://www.instagram.com/api/v1/oembed/?url=https%3A%2F%2Fwww.instagram.com%2Fp%2FCODE123%2F'));
+    assert.equal(requestedUrls.some(url => url.includes('/graphql/query/')), false);
+    assert.equal(result[0].embeds[0].title, '@artist');
+    assert.equal(result[0].embeds[0].description.includes('fallback caption'), true);
+    assert.equal(result[0].embeds[0].image.url, 'https://scontent.cdninstagram.com/v/t51.2885-15/fallback.jpg');
+});
+
+test('instagram extract: blocked GraphQL fallback returns null without logging a stack', async () => {
+    const provider = loadInstagramProviderWithFetch(async (url) => {
+        if (String(url).includes('/graphql/query/')) {
+            return { ok: false, status: 403, text: async () => 'Forbidden' };
+        }
+        if (String(url).includes('/api/v1/oembed/')) {
+            return { ok: false, status: 404, text: async () => 'Not found' };
+        }
+        return { ok: true, text: async () => '<html><body>no public media data</body></html>' };
+    });
+
+    const originalLog = console.log;
+    const logged = [];
+    console.log = (...args) => { logged.push(args); };
+    try {
+        const result = await provider.extract(createMessage(), 'https://www.instagram.com/p/CODE123/', {});
+        assert.equal(result, null);
+        assert.equal(logged.length, 0);
+    } finally {
+        console.log = originalLog;
+    }
+});

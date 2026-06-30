@@ -17,6 +17,7 @@ const HANDLERS = {
     translate: require('../components/translate'),
     savetweet: require('../components/savetweet'),
     notifyBoothSale: require('../components/notifyBoothSale'),
+    downloadYouTubeVideo: require('../components/downloadYouTubeVideo'),
 };
 
 function ignoredInteractionErrorType(err) {

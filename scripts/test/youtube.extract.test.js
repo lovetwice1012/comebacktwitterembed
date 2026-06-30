@@ -142,6 +142,10 @@ test('youtube extract: builds a self-owned video embed from Invidious metadata',
     assert.ok(result[0].embeds[0].fields.some(field => field.name === 'Views' && field.value === '1,234,567'));
     assert.ok(result[0].embeds[0].footer.text.includes('tester(id:user-1)'));
     assert.equal(result[0].components.length, 1);
+    assert.deepEqual(
+        result[0].components[0].components.map(button => button.data.custom_id),
+        ['translate', 'downloadYouTubeVideo', 'delete:youtube']
+    );
     assert.equal(result[0].send, 'channel');
     assert.equal(result[0].suppressSourceEmbeds, true);
 });
@@ -185,6 +189,10 @@ test('youtube extract: builds playlist embeds from playlist metadata', async () 
     assert.ok(embed.description.includes('1. First video'));
     assert.ok(embed.fields.some(field => field.name === 'Videos' && field.value === '42'));
     assert.equal(embed.image.url, 'https://i.ytimg.com/vi/one/maxresdefault.jpg');
+    assert.deepEqual(
+        result[0].components[0].components.map(button => button.data.custom_id),
+        ['translate', 'delete:youtube']
+    );
 });
 
 test('youtube extract: resolves handle urls before building channel embeds', async () => {
