@@ -72,7 +72,7 @@ async function execute(interaction) {
 
     if (sub === 'enable' || sub === 'disable') {
         setProviderEnabled(provider, interaction.guildId, sub === 'enable');
-        saveSettings(settings);
+        await saveSettings(settings);
         return await interaction.reply({ content: `Provider \`${id}\` is now **${sub === 'enable' ? 'enabled' : 'disabled'}** in this guild.`, ephemeral: true });
     }
 
@@ -93,7 +93,7 @@ async function execute(interaction) {
         const raw = interaction.options.getString('value', true);
         const value = parseValue(raw);
         setSetting(provider, key, interaction.guildId, value);
-        saveSettings(settings);
+        await saveSettings(settings);
         return await interaction.reply({ content: `\`${id}.${key}\` = \`${JSON.stringify(value)}\` (this guild)`, ephemeral: true });
     }
 }

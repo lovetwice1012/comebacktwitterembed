@@ -1,9 +1,8 @@
 'use strict';
 
-const fs = require('fs');
 const { ApplicationCommandOptionType } = require('discord.js');
 const { t, descriptionLocales, commandNameLocales } = require('../../../locales');
-const { settings } = require('../../../settings');
+const { saveSettings, settings } = require('../../../settings');
 const { conv_en_to_en_US } = require('../../../utils');
 module.exports.execute = async function (interaction, client) {
 
@@ -14,11 +13,11 @@ module.exports.execute = async function (interaction, client) {
         if (user === null) user = interaction.user;
         const userid = user.id;
         settings.save_tweet_quota_override[userid] = quota;
+        await saveSettings(settings);
         await interaction.reply((t('setsavetweetquotaoverridetolocales', interaction.locale)) + quota.toString());
     } else {
         await interaction.reply(t('userDonthavePermissionLocales', interaction.locale));
     }
-    fs.writeFileSync('./settings.json', JSON.stringify(settings, null, 4));
 
 };
 

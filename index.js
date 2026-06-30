@@ -3,6 +3,8 @@ const { Client, GatewayIntentBits, Partials, WebhookClient } = require('discord.
 // 動的 require で TypeScript の静的解決を回避 (config.json は実行時に必須だが、型チェック時には存在を保証しない)
 const config = require(/** @type {string} */ ('./config.json'));
 const { consoleBuffer } = require('./src/state');
+const { initializeSettings } = require('./src/settings');
+const { ensureDatabaseSchema } = require('./src/db_schema');
 
 const client = new Client({
     intents: [
@@ -40,14 +42,22 @@ process.on('uncaughtException', error => {
     console.error('Uncaught exception:', error);
 });
 
-require('./src/handlers/ready').register(client, webhookClient);
-require('./src/handlers/messageCreate').register(client);
-require('./src/handlers/applicationCommands').register(client);
-require('./src/handlers/messageComponents').register(client);
+(async () => {
+    await ensureDatabaseSchema();
+    await initializeSettings();
 
-client.rest.on('rateLimited', (data) => {
-    console.log('Rate limited: ' + data.timeToReset + 'ms');
-    console.log(data);
+    require('./src/handlers/ready').register(client, webhookClient);
+    require('./src/handlers/messageCreate').register(client);
+    require('./src/handlers/applicationCommands').register(client);
+    require('./src/handlers/messageComponents').register(client);
+
+    client.rest.on('rateLimited', (data) => {
+        console.log('Rate limited: ' + data.timeToReset + 'ms');
+        console.log(data);
+    });
+
+    await client.login(config.token);
+})().catch(error => {
+    console.error('Failed to start application:', error);
+    process.exitCode = 1;
 });
-
-client.login(config.token);

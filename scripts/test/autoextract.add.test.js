@@ -7,28 +7,17 @@ const handlerPath = require.resolve('../../src/commands/handlers/autoextract/add
 const dbPath = require.resolve('../../src/db');
 const fetchPath = require.resolve('node-fetch');
 
-function queryStub(sql, params, cb) {
-    if (sql.startsWith('SELECT * FROM users WHERE userid = ?')) {
-        cb(null, [{ additional_autoextraction_slot: 0 }]);
-        return;
+async function queryDatabaseStub(sql, params) {
+    if (sql.includes('additional_auto_extract_slots')) {
+        return [{ additional_auto_extract_slots: 0 }];
     }
-    if (sql.startsWith('SELECT * FROM rss WHERE premium_flag = 0')) {
-        cb(null, []);
-        return;
+    if (sql.includes('COUNT(*) AS total')) {
+        return [{ total: 0 }];
     }
-    if (sql.startsWith('SELECT * FROM rss WHERE userid = ? AND premium_flag = 0')) {
-        cb(null, []);
-        return;
+    if (sql.includes('INSERT INTO auto_extract_targets')) {
+        return { affectedRows: 1 };
     }
-    if (sql.startsWith('SELECT * FROM rss WHERE userid = ? AND premium_flag = 1')) {
-        cb(null, []);
-        return;
-    }
-    if (sql.startsWith('INSERT INTO rss')) {
-        cb(null, { affectedRows: 1 });
-        return;
-    }
-    cb(null, []);
+    return [];
 }
 
 test('autoextract add posts webhook validation with node-fetch import and replies once for multiple webhooks', async () => {
@@ -42,7 +31,10 @@ test('autoextract add posts webhook validation with node-fetch import and replie
         id: dbPath,
         filename: dbPath,
         loaded: true,
-        exports: { connection: { query: queryStub } },
+        exports: {
+            ensureUserExistsInDatabase: async () => {},
+            queryDatabase: queryDatabaseStub,
+        },
     };
     require.cache[fetchPath] = {
         id: fetchPath,

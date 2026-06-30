@@ -42,7 +42,7 @@ const PROVIDER_HANDLERS = {
 
 async function runAndSave(handler, interaction, client) {
     const result = await handler(interaction, client);
-    saveSettings(settings);
+    await saveSettings(settings);
     return result;
 }
 

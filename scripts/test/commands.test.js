@@ -2,10 +2,14 @@
 
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
 
 const quotastats = require('../../src/commands/handlers/quotastats');
 const checkmyguildsettings = require('../../src/commands/handlers/checkmyguildsettings');
 const buttonInvisible = require('../../src/commands/handlers/settings/button_invisible');
+const showSaveTweet = require('../../src/providers/twitter/commands/showsavetweet');
 const { settings } = require('../../src/settings');
 
 test('quotastats returns zero usage when user has no saves directory', async () => {
@@ -93,5 +97,94 @@ test('button_invisible replies once when multiple button options are changed', a
     } finally {
         settings.button_invisible = originalButtonInvisible;
         settings.byProvider = originalByProvider;
+    }
+});
+
+test('showsavetweet edits the deferred reply when requested saved tweet is missing', async () => {
+    const originalCwd = process.cwd();
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cte-showsavetweet-'));
+
+    try {
+        process.chdir(tmpDir);
+        fs.mkdirSync(path.join('saves', 'user-1', 'existing'), { recursive: true });
+        fs.writeFileSync(path.join('saves', 'user-1', 'existing', 'data.json'), JSON.stringify({
+            text: 'existing saved tweet',
+            user_name: 'SavedUser',
+        }));
+
+        let deferred = false;
+        const calls = [];
+        const interaction = {
+            user: { id: 'user-1' },
+            locale: 'en',
+            options: {
+                getString: (name) => (name === 'id' ? 'missing' : null),
+            },
+            deferReply: async () => {
+                deferred = true;
+                calls.push('defer');
+            },
+            reply: async () => {
+                calls.push(deferred ? 'reply-after-defer' : 'reply');
+            },
+            editReply: async () => {
+                calls.push('edit');
+            },
+        };
+
+        await showSaveTweet.execute(interaction, {});
+
+        assert.deepEqual(calls, ['defer', 'edit']);
+    } finally {
+        process.chdir(originalCwd);
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+});
+
+test('showsavetweet forces channel send mode for deferred saved-tweet display', async () => {
+    const originalCwd = process.cwd();
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cte-showsavetweet-'));
+    const twitterProviderPath = require.resolve('../../src/providers/twitter');
+    const originalProvider = require.cache[twitterProviderPath];
+
+    try {
+        process.chdir(tmpDir);
+        fs.mkdirSync(path.join('saves', 'user-1', 'tweet-1'), { recursive: true });
+        fs.writeFileSync(path.join('saves', 'user-1', 'tweet-1', 'data.json'), JSON.stringify({
+            text: 'saved tweet',
+            user_name: 'SavedUser',
+        }));
+
+        let sendOptions = null;
+        require.cache[twitterProviderPath] = {
+            id: twitterProviderPath,
+            filename: twitterProviderPath,
+            loaded: true,
+            exports: {
+                sendTweetEmbed: async (_interaction, _url, options) => {
+                    sendOptions = options;
+                },
+            },
+        };
+
+        const interaction = {
+            user: { id: 'user-1' },
+            locale: 'en',
+            options: {
+                getString: (name) => (name === 'id' ? 'tweet-1' : null),
+            },
+            deferReply: async () => {},
+            reply: async () => {},
+            editReply: async () => {},
+        };
+
+        await showSaveTweet.execute(interaction, {});
+
+        assert.deepEqual(sendOptions, { forceSendMode: 'channel' });
+    } finally {
+        process.chdir(originalCwd);
+        if (originalProvider) require.cache[twitterProviderPath] = originalProvider;
+        else delete require.cache[twitterProviderPath];
+        fs.rmSync(tmpDir, { recursive: true, force: true });
     }
 });

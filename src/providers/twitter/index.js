@@ -83,7 +83,7 @@ async function fetchTweetData(url) {
     let text = await (await fetch(api)).text();
     if (text.startsWith('T')) console.log('<<RATE LIMIT>>:' + text + new Date().toLocaleString());
     if (text.startsWith('<')) {
-        text = await (await fetch(url.replace(/twitter\.com|x\.com/g, 'api.fxtwitter.com'))).text();
+        text = await (await fetch(api.replace('api.vxtwitter.com', 'api.fxtwitter.com'))).text();
     }
     return JSON.parse(text);
 }
@@ -341,6 +341,8 @@ async function extract(message, url, s, opts) {
         step.send = 'reply-previous';
         const qp = tr(STR.quotePrefix, lang);
         if (qp) step.content = qp;
+    } else if (opts.forceSendMode) {
+        step.send = opts.forceSendMode;
     } else {
         step.send = (s.alwaysreplyifpostedtweetlink === true) ? 'reply-source' : 'channel';
     }
@@ -392,10 +394,10 @@ const twitterProvider = {
 module.exports = twitterProvider;
 
 // 後方互換: showsavetweet コマンドが直接呼ぶエントリ
-/** @type {any} */ (module.exports).sendTweetEmbed = async function (message, url) {
+/** @type {any} */ (module.exports).sendTweetEmbed = async function (message, url, opts = {}) {
     const { getProviderSettings } = require('../_provider_settings');
     const { runSendSteps } = require('../_dispatcher');
     const s = getProviderSettings(module.exports, message.guild.id);
-    const steps = await extract(message, url, s);
+    const steps = await extract(message, url, s, opts);
     if (Array.isArray(steps)) await runSendSteps(message, steps, 'twitter');
 };

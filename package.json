@@ -5,6 +5,9 @@
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
+    "init:db": "node scripts/init_database.js",
+    "seed:settings": "node scripts/migrate_settings_to_mysql.js",
+    "migrate:settings:mysql": "node scripts/migrate_settings_to_mysql.js",
     "test": "node --test \"scripts/test/**/*.test.js\"",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit"

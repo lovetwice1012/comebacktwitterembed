@@ -1,23 +1,23 @@
-'use strict';
+﻿'use strict';
 
 const { t } = require('../../../locales');
-const { connection } = require('../../../db');
+const { ensureUserExistsInDatabase, queryDatabase } = require('../../../db');
+const { TABLES } = require('../../../db_schema');
 const fetch = require('node-fetch');
 
-function queryAsync(sql, params) {
-    return new Promise((resolve, reject) => {
-        connection.query(sql, params, (error, results) => {
-            if (error) reject(error);
-            else resolve(results);
-        });
-    });
+const FREE_SLOT_LIMIT = 175;
+const USER_FREE_SLOT_LIMIT = 5;
+
+async function countRows(sql, params) {
+    const rows = await queryDatabase(sql, params);
+    return rows[0]?.total ?? 0;
 }
 
 function invalidWebhookReply() {
     return {
         embeds: [{
             title: 'Auto extract add',
-            description: '指定されたWEBHOOKは正しい形式ではないか、無効です。',
+            description: 'The specified webhook is invalid.',
             color: 0x1DA1F2,
         }],
     };
@@ -26,30 +26,37 @@ function invalidWebhookReply() {
 module.exports = async function (interaction) {
     let premium_flag = 0;
 
-    const userRows = await queryAsync('SELECT * FROM users WHERE userid = ?', [interaction.user.id]);
-    let additional_autoextraction_slot = 0;
-    if (userRows.length === 0) {
-        await queryAsync('INSERT INTO users (userid, register_date) VALUES (?, ?)', [interaction.user.id, new Date().getTime()]);
-    } else {
-        additional_autoextraction_slot = userRows[0].additional_autoextraction_slot ?? 0;
-    }
+    await ensureUserExistsInDatabase(interaction.user.id);
+    const userRows = await queryDatabase(
+        `SELECT additional_auto_extract_slots FROM ${TABLES.users} WHERE user_id = ?`,
+        [interaction.user.id]
+    );
+    const additional_autoextraction_slot = userRows[0]?.additional_auto_extract_slots ?? 0;
 
-    const freeRows = await queryAsync('SELECT * FROM rss WHERE premium_flag = 0', []);
-    const limit_free_check = freeRows.length < 175;
+    const freeUsed = await countRows(
+        `SELECT COUNT(*) AS total FROM ${TABLES.autoExtractTargets} WHERE premium_slot = 0 AND enabled = 1`,
+        []
+    );
+    const limit_free_check = freeUsed < FREE_SLOT_LIMIT;
     if (!limit_free_check && additional_autoextraction_slot === 0) {
-        return await interaction.reply({ embeds: [{ title: 'Auto extract add', description: '無料枠の登録は上限に達しているため追加できません。', color: 0x1DA1F2 }] });
+        return await interaction.reply({ embeds: [{ title: 'Auto extract add', description: 'The free auto extract slots are full.', color: 0x1DA1F2 }] });
     }
 
-    const userFreeRows = await queryAsync('SELECT * FROM rss WHERE userid = ? AND premium_flag = 0', [interaction.user.id]);
-    const over_5_check = userFreeRows.length < 5;
+    const userFreeUsed = await countRows(
+        `SELECT COUNT(*) AS total FROM ${TABLES.autoExtractTargets} WHERE user_id = ? AND premium_slot = 0 AND enabled = 1`,
+        [interaction.user.id]
+    );
+    const over_5_check = userFreeUsed < USER_FREE_SLOT_LIMIT;
     if (!over_5_check && additional_autoextraction_slot === 0) {
-        return await interaction.reply({ embeds: [{ title: 'Auto extract add', description: '5件以上の登録はできません。', color: 0x1DA1F2 }] });
+        return await interaction.reply({ embeds: [{ title: 'Auto extract add', description: 'You cannot register more than 5 free auto extracts.', color: 0x1DA1F2 }] });
     }
 
-    const userPremiumRows = await queryAsync('SELECT * FROM rss WHERE userid = ? AND premium_flag = 1', [interaction.user.id]);
-    const now_using_additional_autoextraction_slot = userPremiumRows.length;
+    const now_using_additional_autoextraction_slot = await countRows(
+        `SELECT COUNT(*) AS total FROM ${TABLES.autoExtractTargets} WHERE user_id = ? AND premium_slot = 1 AND enabled = 1`,
+        [interaction.user.id]
+    );
     if (additional_autoextraction_slot !== 0 && (now_using_additional_autoextraction_slot >= additional_autoextraction_slot) && (!over_5_check || !limit_free_check)) {
-        return await interaction.reply({ embeds: [{ title: 'Auto extract add', description: '支援者優先枠の登録上限に達しているため追加できません。', color: 0x1DA1F2 }] });
+        return await interaction.reply({ embeds: [{ title: 'Auto extract add', description: 'Your additional auto extract slots are full.', color: 0x1DA1F2 }] });
     } else if (additional_autoextraction_slot !== 0 && (now_using_additional_autoextraction_slot < additional_autoextraction_slot) && (over_5_check || limit_free_check)) {
         premium_flag = 1;
     }
@@ -59,7 +66,7 @@ module.exports = async function (interaction) {
     const webhooks_array = (webhooks || '').split(',').map(webhook => webhook.trim()).filter(Boolean);
     if (username === null || webhooks_array.length === 0) return await interaction.reply(t('userMustSpecifyAnyWordLocales', interaction.locale));
     if (!username.match(/^[0-9a-zA-Z_]+$/)) {
-        return await interaction.reply({ embeds: [{ title: 'Auto extract add', description: '指定されたユーザーは無効です。\n[入力されたユーザー](https://twitter.com/' + username + ')', color: 0x1DA1F2 }] });
+        return await interaction.reply({ embeds: [{ title: 'Auto extract add', description: 'The specified Twitter username is invalid.\n[Input](https://twitter.com/' + username + ')', color: 0x1DA1F2 }] });
     }
 
     for (const webhook of webhooks_array) {
@@ -74,8 +81,8 @@ module.exports = async function (interaction) {
             },
             body: JSON.stringify({
                 embeds: [{
-                    title: 'このチャンネルにツイートを送信します',
-                    description: 'これはComebackTwitterEmbedの新着自動展開機能の登録確認メッセージです。\n今後このチャンネルに[' + username + '](https://twitter.com/' + username + ')のツイートが更新されるたびに通知を行います。',
+                    title: 'Auto extract registered',
+                    description: 'ComebackTwitterEmbed will post updates for [' + username + '](https://twitter.com/' + username + ') to this channel.',
                 }],
             }),
         });
@@ -84,14 +91,19 @@ module.exports = async function (interaction) {
 
     const registered = [];
     for (const webhook of webhooks_array) {
-        await queryAsync('INSERT INTO rss (userid, username, lastextracted, webhook, created_at, premium_flag) VALUES (?, ?, ?, ?, ?, ?)', [interaction.user.id, username, new Date().getTime(), webhook, new Date().getTime(), premium_flag]);
+        await queryDatabase(
+            `INSERT INTO ${TABLES.autoExtractTargets}
+             (user_id, twitter_username, last_extracted_at_ms, webhook_url, created_at_ms, premium_slot)
+             VALUES (?, ?, ?, ?, ?, ?)`,
+            [interaction.user.id, username, Date.now(), webhook, Date.now(), premium_flag]
+        );
         registered.push(webhook);
     }
 
     return await interaction.reply({
         embeds: [{
             title: 'Auto extract add',
-            description: '登録が完了しました。\n[登録されたユーザー](https://twitter.com/' + username + ')' + (registered.length > 1 ? '\nWEBHOOK: ' + registered.length : ''),
+            description: 'Registration completed.\n[Registered user](https://twitter.com/' + username + ')' + (registered.length > 1 ? '\nWEBHOOK: ' + registered.length : ''),
             color: 0x1DA1F2,
         }],
     });

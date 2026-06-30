@@ -6,7 +6,7 @@ const assert = require('node:assert/strict');
 const twitterModulePath = require.resolve('../../src/providers/twitter');
 const fetchModulePath = require.resolve('node-fetch');
 
-function loadTwitterProviderWithTweets(tweetsById) {
+function loadTwitterProviderWithFetch(fetchImpl) {
     const originalFetchModule = require.cache[fetchModulePath];
     const originalTwitterModule = require.cache[twitterModulePath];
 
@@ -14,16 +14,7 @@ function loadTwitterProviderWithTweets(tweetsById) {
         id: fetchModulePath,
         filename: fetchModulePath,
         loaded: true,
-        exports: async (url) => {
-            const rawUrl = String(url);
-            if (rawUrl.includes('altterx.sprink.cloud')) {
-                return { text: async () => 'ok' };
-            }
-            const id = rawUrl.match(/status\/(\d+)/)?.[1];
-            const tweet = tweetsById[id];
-            if (!tweet) throw new Error(`No tweet fixture for ${rawUrl}`);
-            return { text: async () => JSON.stringify(tweet) };
-        },
+        exports: fetchImpl,
     };
     delete require.cache[twitterModulePath];
 
@@ -35,6 +26,19 @@ function loadTwitterProviderWithTweets(tweetsById) {
         if (originalFetchModule) require.cache[fetchModulePath] = originalFetchModule;
         else delete require.cache[fetchModulePath];
     }
+}
+
+function loadTwitterProviderWithTweets(tweetsById) {
+    return loadTwitterProviderWithFetch(async (url) => {
+        const rawUrl = String(url);
+        if (rawUrl.includes('altterx.sprink.cloud')) {
+            return { text: async () => 'ok' };
+        }
+        const id = rawUrl.match(/status\/(\d+)/)?.[1];
+        const tweet = tweetsById[id];
+        if (!tweet) throw new Error(`No tweet fixture for ${rawUrl}`);
+        return { text: async () => JSON.stringify(tweet) };
+    });
 }
 
 function createMessage(id = '1') {
@@ -79,6 +83,45 @@ test('twitter extract: secondary mode suppresses single-image tweet when target 
     });
 
     assert.equal(result, null);
+});
+
+test('twitter extract: fxtwitter fallback keeps the normalized status URL', async () => {
+    const requestedUrls = [];
+    const provider = loadTwitterProviderWithFetch(async (url) => {
+        const rawUrl = String(url);
+        requestedUrls.push(rawUrl);
+        if (rawUrl.includes('altterx.sprink.cloud')) {
+            return { text: async () => 'ok' };
+        }
+        if (rawUrl.includes('api.vxtwitter.com')) {
+            return { text: async () => '<html>temporary error</html>' };
+        }
+        return { text: async () => JSON.stringify(createTweet('1')) };
+    });
+
+    const result = await provider.extract(createMessage(), 'https://twitter.com/a/status/1/photo/1', {
+        legacy_mode: false,
+    });
+
+    assert.ok(Array.isArray(result));
+    assert.deepEqual(requestedUrls.slice(0, 2), [
+        'https://api.vxtwitter.com/a/status/1',
+        'https://api.fxtwitter.com/a/status/1',
+    ]);
+});
+
+test('twitter extract: forceSendMode overrides alwaysreply for command-driven sends', async () => {
+    const provider = loadTwitterProviderWithTweets({
+        1: createTweet('1'),
+    });
+
+    const result = await provider.extract(createMessage(), 'https://twitter.com/a/status/1', {
+        legacy_mode: true,
+        alwaysreplyifpostedtweetlink: true,
+    }, { forceSendMode: 'channel' });
+
+    assert.ok(Array.isArray(result));
+    assert.equal(result[0].send, 'channel');
 });
 
 test('twitter extract: compact single-image tweet keeps bot embed image-free', async () => {

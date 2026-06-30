@@ -41,11 +41,11 @@ module.exports.execute = async function (interaction, client) {
         try{
             antiDirectoryTraversalAttack(filePath)
         }catch (e){
-            return await interaction.reply(t('userDonthaveSavedTweetLocales', interaction.locale));
+            return await interaction.editReply(t('userDonthaveSavedTweetLocales', interaction.locale));
         }
         if (!fs.existsSync("./saves/" + filePath)) return await interaction.editReply(t('userDonthaveSavedTweetLocales', interaction.locale));
         await interaction.editReply({ content: '処理中です...' });;
-        await sendTweetEmbed(interaction, "https://twidata.sprink.cloud/data/" + filePath + "/data.json", false);
+        await sendTweetEmbed(interaction, "https://twidata.sprink.cloud/data/" + filePath + "/data.json", { forceSendMode: 'channel' });
         //await sendTweetEmbed(interaction, "http://localhost:3088/data/" + filePath+ "/data.json", false);
         await interaction.editReply({ content: t('finishActionLocales', interaction.locale), ephemeral: true });
     }

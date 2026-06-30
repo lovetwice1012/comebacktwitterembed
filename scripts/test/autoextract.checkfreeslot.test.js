@@ -6,8 +6,9 @@ const assert = require('node:assert/strict');
 const handlerPath = require.resolve('../../src/commands/handlers/autoextract/checkfreeslot');
 const dbPath = require.resolve('../../src/db');
 
-function queryStub(sql, params, cb) {
-    cb(null, []);
+async function queryDatabaseStub(sql, params) {
+    if (sql.includes('COUNT(*) AS total')) return [{ total: 0 }];
+    return [];
 }
 
 test('autoextract checkfreeslot handles users row missing', async () => {
@@ -18,7 +19,7 @@ test('autoextract checkfreeslot handles users row missing', async () => {
         id: dbPath,
         filename: dbPath,
         loaded: true,
-        exports: { connection: { query: queryStub } },
+        exports: { queryDatabase: queryDatabaseStub },
     };
     delete require.cache[handlerPath];
 

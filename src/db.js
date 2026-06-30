@@ -1,22 +1,19 @@
-'use strict';
+﻿'use strict';
 
-// MySQL 接続。資格情報は環境変数 (DB_HOST / DB_USER / DB_PASSWORD / DB_DATABASE)
-// または config.json の "db" セクションから読み取る。env が優先。
-// mysql モジュール本体と接続は最初の使用時まで遅延ロードされる。
+const { TABLES } = require('./db_schema');
 
 let _config = {};
 try {
-    // 動的 require で TypeScript の静的解決を回避 (config.json は任意ファイル)
     const requireFn = require;
     _config = requireFn('../config.json');
 } catch {
-    // config.json が無くても起動はできる (env のみで動かす想定)
+    _config = {};
 }
 
 function getDbCredentials() {
     const dbConfig = _config.db || {};
     const legacyDbConfig = {
-        host: '192.168.100.22',
+        host: 'localhost',
         user: 'comebacktwitterembed',
         password: 'bluebird',
         database: 'ComebackTwitterEmbed',
@@ -46,8 +43,6 @@ function ensureConnection() {
     return _connection;
 }
 
-// 既存コードは `connection.query(...)` の形で参照しているため、
-// 後方互換のため Proxy で遅延接続を提供する。
 /** @type {any} */
 const connection = new Proxy({}, {
     get(_target, prop) {
@@ -57,7 +52,7 @@ const connection = new Proxy({}, {
     },
 });
 
-async function queryDatabase(query, params) {
+async function queryDatabase(query, params = []) {
     return new Promise((resolve, reject) => {
         ensureConnection().query(query, params, (err, results) => {
             if (err) {
@@ -71,10 +66,28 @@ async function queryDatabase(query, params) {
 }
 
 async function ensureUserExistsInDatabase(userId) {
-    const userExists = await queryDatabase('SELECT EXISTS (SELECT * FROM users WHERE userid = ? LIMIT 1)', [userId]);
+    const userExists = await queryDatabase(
+        `SELECT EXISTS (SELECT * FROM ${TABLES.users} WHERE user_id = ? LIMIT 1)`,
+        [userId]
+    );
     if (userExists[0][Object.keys(userExists[0])[0]] === 0) {
-        await queryDatabase('INSERT INTO users (userid, register_date) VALUES (?, ?)', [userId, new Date().getTime()]);
+        await queryDatabase(
+            `INSERT INTO ${TABLES.users} (user_id, registered_at_ms) VALUES (?, ?)`,
+            [userId, Date.now()]
+        );
     }
 }
 
-module.exports = { connection, queryDatabase, ensureUserExistsInDatabase, getDbCredentials };
+async function closeDatabaseConnection() {
+    if (!_connection) return;
+    const conn = _connection;
+    _connection = null;
+    await new Promise((resolve, reject) => {
+        conn.end((err) => {
+            if (err) reject(err);
+            else resolve();
+        });
+    });
+}
+
+module.exports = { connection, queryDatabase, ensureUserExistsInDatabase, getDbCredentials, closeDatabaseConnection };
