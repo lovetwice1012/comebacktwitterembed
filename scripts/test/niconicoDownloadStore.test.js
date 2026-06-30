@@ -111,14 +111,14 @@ test('niconico download store builds public download URL', () => {
     }
 });
 
-test('niconico download store keeps the download button disabled unless explicitly enabled', () => {
+test('niconico download store shows the download button by default but allows explicit disable', () => {
     const oldEnabled = process.env.NICONICO_DOWNLOAD_BUTTON_ENABLED;
     try {
         delete process.env.NICONICO_DOWNLOAD_BUTTON_ENABLED;
-        assert.equal(store.isDownloadButtonEnabled(), false);
-
-        process.env.NICONICO_DOWNLOAD_BUTTON_ENABLED = 'true';
         assert.equal(store.isDownloadButtonEnabled(), true);
+
+        process.env.NICONICO_DOWNLOAD_BUTTON_ENABLED = 'false';
+        assert.equal(store.isDownloadButtonEnabled(), false);
     } finally {
         if (oldEnabled === undefined) delete process.env.NICONICO_DOWNLOAD_BUTTON_ENABLED;
         else process.env.NICONICO_DOWNLOAD_BUTTON_ENABLED = oldEnabled;

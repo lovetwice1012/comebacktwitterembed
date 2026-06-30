@@ -79,8 +79,17 @@ function boolFromConfig(value) {
 }
 
 function isDownloadButtonEnabled() {
-    return boolFromConfig(process.env.NICONICO_DOWNLOAD_BUTTON_ENABLED)
-        || boolFromConfig(niconicoDownloadConfig().buttonEnabled);
+    const envValue = process.env.NICONICO_DOWNLOAD_BUTTON_ENABLED;
+    if (envValue !== undefined && envValue !== null && envValue !== '') {
+        return boolFromConfig(envValue);
+    }
+
+    const configured = niconicoDownloadConfig().buttonEnabled;
+    if (configured !== undefined && configured !== null && configured !== '') {
+        return boolFromConfig(configured);
+    }
+
+    return true;
 }
 
 async function ensureDirs() {

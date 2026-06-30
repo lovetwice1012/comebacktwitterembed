@@ -96,7 +96,7 @@ function watchResponse() {
     };
 }
 
-test('niconico extract: builds a video embed from watch data', async () => {
+test('niconico extract: builds a video embed from watch data with the download button by default', async () => {
     const oldEnabled = process.env.NICONICO_DOWNLOAD_BUTTON_ENABLED;
     delete process.env.NICONICO_DOWNLOAD_BUTTON_ENABLED;
     try {
@@ -124,7 +124,7 @@ test('niconico extract: builds a video embed from watch data', async () => {
         assert.ok(embed.footer.text.includes('tester(id:user-1)'));
         assert.deepEqual(
             result[0].components[0].components.map(button => button.data.custom_id),
-            ['translate', 'delete:niconico']
+            ['translate', 'downloadNiconicoVideo', 'delete:niconico']
         );
         assert.equal(result[0].send, 'channel');
         assert.equal(result[0].suppressSourceEmbeds, true);
@@ -134,9 +134,9 @@ test('niconico extract: builds a video embed from watch data', async () => {
     }
 });
 
-test('niconico extract: can show the temporary download button with env flag', async () => {
+test('niconico extract: can hide the temporary download button with env flag', async () => {
     const oldEnabled = process.env.NICONICO_DOWNLOAD_BUTTON_ENABLED;
-    process.env.NICONICO_DOWNLOAD_BUTTON_ENABLED = 'true';
+    process.env.NICONICO_DOWNLOAD_BUTTON_ENABLED = 'false';
     const provider = loadNiconicoProviderWithFetch(async () => okJson(watchResponse()));
 
     try {
@@ -145,7 +145,7 @@ test('niconico extract: can show the temporary download button with env flag', a
 
         assert.deepEqual(
             result[0].components[0].components.map(button => button.data.custom_id),
-            ['translate', 'downloadNiconicoVideo', 'delete:niconico']
+            ['translate', 'delete:niconico']
         );
     } finally {
         if (oldEnabled === undefined) delete process.env.NICONICO_DOWNLOAD_BUTTON_ENABLED;
