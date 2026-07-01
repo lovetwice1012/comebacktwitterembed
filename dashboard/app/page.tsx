@@ -7,6 +7,9 @@ import { createTranslator } from "@/lib/i18n";
 import { getDashboardLocale } from "@/lib/server-locale";
 import { getDashboardSession } from "@/lib/server-session";
 
+const BOT_INVITE_URL =
+  "https://discord.com/oauth2/authorize?client_id=1161267455335862282&permissions=274877958144&scope=bot%20applications.commands";
+
 export default async function HomePage() {
   const locale = await getDashboardLocale();
   const t = createTranslator(locale);
@@ -34,7 +37,7 @@ export default async function HomePage() {
             <SignInButton locale={locale} />
           )}
           <Button asChild className="w-full sm:w-auto" variant="outline">
-            <a href="https://discord.com/oauth2/authorize" target="_blank" rel="noreferrer">
+            <a href={BOT_INVITE_URL} target="_blank" rel="noreferrer">
               <ExternalLink size={16} />
               {t("home.inviteBot")}
             </a>
