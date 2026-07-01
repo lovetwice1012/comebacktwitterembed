@@ -41,6 +41,40 @@ function hasProductionBuild(dashboardDir) {
     return fs.existsSync(path.join(dashboardDir, '.next', 'BUILD_ID'));
 }
 
+function latestMtimeMs(targetPath) {
+    if (!fs.existsSync(targetPath)) return 0;
+    const stat = fs.statSync(targetPath);
+    if (!stat.isDirectory()) return stat.mtimeMs;
+    let latest = stat.mtimeMs;
+    for (const entry of fs.readdirSync(targetPath, { withFileTypes: true })) {
+        if (entry.name === '.next' || entry.name === 'node_modules') continue;
+        latest = Math.max(latest, latestMtimeMs(path.join(targetPath, entry.name)));
+    }
+    return latest;
+}
+
+function productionBuildIsStale(dashboardDir) {
+    const buildIdPath = path.join(dashboardDir, '.next', 'BUILD_ID');
+    if (!fs.existsSync(buildIdPath)) return true;
+    const buildTime = fs.statSync(buildIdPath).mtimeMs;
+    const sourcePaths = [
+        'app',
+        'components',
+        'features',
+        'lib',
+        'prisma',
+        'public',
+        'scripts',
+        'package.json',
+        'next.config.js',
+        'next.config.mjs',
+        'tailwind.config.ts',
+        'tailwind.config.js',
+        'tsconfig.json',
+    ];
+    return sourcePaths.some(sourcePath => latestMtimeMs(path.join(dashboardDir, sourcePath)) > buildTime);
+}
+
 const mode = process.argv[2] === 'start' ? 'start' : 'dev';
 const config = readConfig();
 const dashboard = config.dashboard || {};
@@ -75,8 +109,8 @@ if (mediaDelivery.serverMode) env.MEDIA_DELIVERY_SERVER_MODE = mediaDelivery.ser
 const dashboardDir = path.resolve(__dirname, '..');
 const nextCli = path.join(dashboardDir, 'node_modules', 'next', 'dist', 'bin', 'next');
 
-if (mode === 'start' && !hasProductionBuild(dashboardDir)) {
-    console.warn('[dashboard] production build was not found. Running `npm run build` before start.');
+if (mode === 'start' && (!hasProductionBuild(dashboardDir) || productionBuildIsStale(dashboardDir))) {
+    console.warn('[dashboard] production build is missing or stale. Running `npm run build` before start.');
     const build = spawnSync(npmCommand(), ['run', 'build'], {
         cwd: dashboardDir,
         env,

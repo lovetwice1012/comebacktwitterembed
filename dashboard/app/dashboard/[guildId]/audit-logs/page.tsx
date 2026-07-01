@@ -1,8 +1,8 @@
-import { redirect } from "next/navigation";
+import { AuditLogsPage } from "@/features/audit/audit-logs-page";
 
 type Params = { params: Promise<{ guildId: string }> };
 
-export default async function AuditLogsAliasPage({ params }: Params) {
+export default async function AuditLogsRoutePage({ params }: Params) {
   const { guildId } = await params;
-  redirect(`/dashboard/${guildId}/logs`);
+  return <AuditLogsPage guildId={guildId} />;
 }
