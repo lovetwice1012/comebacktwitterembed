@@ -50,12 +50,12 @@ export default async function GuildOverviewPage({ params }: Params) {
   return (
     <DashboardShell guildId={guildId} guildName={access.name} canEdit={access.canEdit} locale={locale}>
       <div className="space-y-5">
-        <header className="flex flex-wrap items-center justify-between gap-3">
-          <div>
+        <header className="flex flex-col items-stretch gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0">
             <h1 className="text-2xl font-semibold">{access.name}</h1>
-            <p className="text-sm text-muted-foreground">guild_id: {guildId}</p>
+            <p className="break-words text-sm text-muted-foreground">guild_id: {guildId}</p>
           </div>
-          <Button asChild>
+          <Button asChild className="w-full sm:w-auto">
             <Link href={`/dashboard/${guildId}/providers`}>
               <Layers3 size={16} />
               {t("overview.configureProviders")}
@@ -99,14 +99,14 @@ export default async function GuildOverviewPage({ params }: Params) {
               </CardTitle>
               <CardDescription>{t("overview.firstSettingsDesc")}</CardDescription>
             </CardHeader>
-            <CardContent className="flex flex-wrap gap-2">
-              <Button asChild variant="outline">
+            <CardContent className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+              <Button asChild className="w-full sm:w-auto" variant="outline">
                 <Link href={`/dashboard/${guildId}/settings`}>{t("overview.crossSearch")}</Link>
               </Button>
-              <Button asChild variant="outline">
+              <Button asChild className="w-full sm:w-auto" variant="outline">
                 <Link href={`/dashboard/${guildId}/preview`}>{t("overview.outputPreview")}</Link>
               </Button>
-              <Button asChild variant="outline">
+              <Button asChild className="w-full sm:w-auto" variant="outline">
                 <Link href={`/dashboard/${guildId}/diagnostics`}>{t("overview.settingsDiagnostics")}</Link>
               </Button>
             </CardContent>
@@ -122,9 +122,9 @@ export default async function GuildOverviewPage({ params }: Params) {
             </CardHeader>
             <CardContent className="space-y-2 text-sm">
               {providerOverview.slice(0, 6).map((provider) => (
-                <div key={provider.providerId} className="flex flex-wrap items-center justify-between gap-2 rounded-md bg-muted p-2">
-                  <span>{provider.label}</span>
-                  <span className="text-muted-foreground">
+                <div key={provider.providerId} className="flex flex-col gap-1 rounded-md bg-muted p-2 sm:flex-row sm:items-center sm:justify-between sm:gap-2">
+                  <span className="min-w-0 break-words">{provider.label}</span>
+                  <span className="min-w-0 break-words text-muted-foreground">
                     {String(provider.displayDensity)} / {String(provider.mediaDisplayMode)}
                   </span>
                 </div>

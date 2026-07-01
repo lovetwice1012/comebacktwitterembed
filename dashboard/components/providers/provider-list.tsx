@@ -40,13 +40,13 @@ export function ProviderList({ guildId, providers, locale }: { guildId: string; 
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap gap-3">
-        <div className="relative min-w-64 flex-1">
+        <div className="relative min-w-0 flex-1 basis-full sm:min-w-64 sm:basis-auto">
           <Search className="pointer-events-none absolute left-3 top-3 text-muted-foreground" size={16} />
           <Input className="pl-9" placeholder={t("providers.searchPlaceholder")} value={query} onChange={(event) => setQuery(event.target.value)} />
         </div>
-        <div className="flex items-center gap-2 rounded-md border bg-card px-2">
+        <div className="flex w-full items-center gap-2 rounded-md border bg-card px-2 sm:w-auto">
           <Filter size={15} className="text-muted-foreground" />
-          <select className="h-9 bg-transparent text-sm outline-none" value={filter} onChange={(event) => setFilter(event.target.value as typeof filter)}>
+          <select className="h-9 min-w-0 flex-1 bg-transparent text-sm outline-none sm:flex-none" value={filter} onChange={(event) => setFilter(event.target.value as typeof filter)}>
             <option value="all">{t("providers.filter.all")}</option>
             <option value="enabled">{t("providers.filter.enabled")}</option>
             <option value="disabled">{t("providers.filter.disabled")}</option>
@@ -60,12 +60,12 @@ export function ProviderList({ guildId, providers, locale }: { guildId: string; 
           <Link key={provider.providerId} href={`/dashboard/${guildId}/providers/${provider.providerId}`}>
             <Card className="h-full transition hover:border-primary">
               <CardHeader>
-                <div className="flex items-start justify-between gap-3">
-                  <div>
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="min-w-0">
                     <CardTitle>{provider.label}</CardTitle>
                     <CardDescription>{provider.domain || provider.providerId}</CardDescription>
                   </div>
-                  <Badge tone={provider.enabled ? "success" : "muted"}>{provider.enabled ? t("providers.enabled") : t("providers.disabled")}</Badge>
+                  <Badge className="shrink-0" tone={provider.enabled ? "success" : "muted"}>{provider.enabled ? t("providers.enabled") : t("providers.disabled")}</Badge>
                 </div>
               </CardHeader>
               <CardContent className="space-y-3">

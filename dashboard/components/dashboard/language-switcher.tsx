@@ -17,11 +17,11 @@ export function LanguageSwitcher({ locale }: { locale: DashboardLocale }) {
   }
 
   return (
-    <label className="flex items-center gap-2 rounded-md border bg-card px-2 text-sm text-muted-foreground">
+    <label className="flex h-9 min-w-0 max-w-full items-center gap-2 rounded-md border bg-card px-2 text-sm text-muted-foreground">
       <Globe2 size={15} />
       <span className="sr-only">{t("language.label")}</span>
       <select
-        className="h-9 bg-transparent text-sm outline-none"
+        className="h-9 min-w-0 max-w-[10rem] bg-transparent text-sm outline-none sm:max-w-none"
         value={locale}
         aria-label={t("language.label")}
         onChange={(event) => setLocale(event.target.value as DashboardLocale)}

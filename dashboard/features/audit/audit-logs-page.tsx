@@ -29,8 +29,8 @@ export async function AuditLogsPage({ guildId }: { guildId: string }) {
           {logs.map((log) => (
             <Card key={log.auditLogId}>
               <CardHeader>
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div>
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="min-w-0">
                     <CardTitle>{String(log.action)}</CardTitle>
                     <CardDescription>{formatDateTime(log.createdAt, locale)} · {String(log.actorUsernameSnapshot || log.actorUserId)}</CardDescription>
                   </div>
@@ -41,8 +41,8 @@ export async function AuditLogsPage({ guildId }: { guildId: string }) {
                 </div>
               </CardHeader>
               <CardContent className="grid gap-3 lg:grid-cols-2">
-                <pre className="max-h-64 overflow-auto rounded-md bg-muted p-3 text-xs">{JSON.stringify(log.before, null, 2)}</pre>
-                <pre className="max-h-64 overflow-auto rounded-md bg-muted p-3 text-xs">{JSON.stringify(log.after, null, 2)}</pre>
+                <pre className="max-h-64 min-w-0 overflow-auto rounded-md bg-muted p-3 text-xs">{JSON.stringify(log.before, null, 2)}</pre>
+                <pre className="max-h-64 min-w-0 overflow-auto rounded-md bg-muted p-3 text-xs">{JSON.stringify(log.after, null, 2)}</pre>
               </CardContent>
             </Card>
           ))}

@@ -30,6 +30,7 @@ body {
   min-height: 100vh;
   background: hsl(var(--background));
   color: hsl(var(--foreground));
+  overflow-x: hidden;
 }
 
 button,
@@ -44,8 +45,34 @@ textarea {
   grid-template-columns: 240px minmax(0, 1fr);
 }
 
+.dashboard-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  align-self: start;
+}
+
 @media (max-width: 900px) {
   .dashboard-grid {
     grid-template-columns: 1fr;
+  }
+
+  .dashboard-sidebar {
+    margin-inline: -0.75rem;
+    padding-inline: 0.75rem;
+    padding-bottom: 0.25rem;
+    flex-direction: row;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+
+  .dashboard-sidebar::-webkit-scrollbar {
+    display: none;
+  }
+
+  .dashboard-sidebar a {
+    flex: 0 0 auto;
+    white-space: nowrap;
   }
 }

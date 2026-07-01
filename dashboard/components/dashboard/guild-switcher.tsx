@@ -90,10 +90,10 @@ export function GuildSwitcher({
   }
 
   return (
-    <div className="relative min-w-0">
+    <div className="relative min-w-0 flex-1 sm:flex-none">
       <button
         type="button"
-        className="flex h-9 max-w-[240px] items-center gap-2 rounded-md border bg-card px-2 text-left text-sm transition hover:bg-muted md:max-w-[320px]"
+        className="flex h-9 w-full min-w-0 max-w-none items-center gap-2 rounded-md border bg-card px-2 text-left text-sm transition hover:bg-muted sm:max-w-[240px] md:max-w-[320px]"
         onClick={() => {
           setOpen((value) => !value);
           if (!open) void ensureOptionsLoaded();
@@ -102,11 +102,11 @@ export function GuildSwitcher({
         aria-expanded={open}
       >
         <span className="hidden shrink-0 text-muted-foreground sm:inline">{t("shell.guildSwitcher.label")}</span>
-        <span className={cn("truncate", selected.length === 0 && "text-muted-foreground")}>{label}</span>
+        <span className={cn("min-w-0 flex-1 truncate", selected.length === 0 && "text-muted-foreground")}>{label}</span>
         <ChevronDown size={15} className="shrink-0 text-muted-foreground" />
       </button>
       {open ? (
-        <div className="absolute right-0 top-11 z-50 w-[min(360px,calc(100vw-2rem))] rounded-md border bg-card p-2 shadow-soft">
+        <div className="absolute left-0 top-11 z-50 w-[min(360px,calc(100vw-1.5rem))] rounded-md border bg-card p-2 shadow-soft sm:left-auto sm:right-0 sm:w-[min(360px,calc(100vw-2rem))]">
           <div className="mb-2 text-xs text-muted-foreground">{t("shell.guildSwitcher.help")}</div>
           <Input
             className="mb-2 h-9"

@@ -24,8 +24,8 @@ export default async function MediaPage({ params }: Params) {
   return (
     <DashboardShell guildId={guildId} guildName={access.name} canEdit={access.canEdit} locale={locale}>
       <div className="space-y-4">
-        <header className="flex flex-wrap items-center justify-between gap-3">
-          <div>
+        <header className="flex flex-col items-stretch gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0">
             <h1 className="text-2xl font-semibold">{t("media.title")}</h1>
             <p className="text-sm text-muted-foreground">{t("media.description")}</p>
           </div>
@@ -56,8 +56,8 @@ export default async function MediaPage({ params }: Params) {
         {status.providers.map((provider) => (
           <Card key={provider.providerId}>
             <CardHeader>
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div className="min-w-0">
                   <CardTitle>{provider.label}</CardTitle>
                   <CardDescription>{provider.domain}</CardDescription>
                 </div>

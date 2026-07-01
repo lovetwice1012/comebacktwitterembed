@@ -42,11 +42,11 @@ export default async function DiagnosticsPage({ params }: Params) {
               <CardContent className="space-y-2">
                 {issues.map((issue) => (
                   <Link key={`${provider.id}:${issue.title}:${issue.settingKey}`} href={`/dashboard/${guildId}/providers/${provider.id}`} className="block rounded-md border p-3 hover:border-primary">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div className="font-medium">{issue.title}</div>
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="min-w-0 break-words font-medium">{issue.title}</div>
                       <Badge tone={issue.level === "danger" ? "danger" : issue.level === "warning" ? "warning" : "muted"}>{levelLabel(issue.level, locale)}</Badge>
                     </div>
-                    <div className="mt-1 text-sm text-muted-foreground">{issue.detail}</div>
+                    <div className="mt-1 break-words text-sm text-muted-foreground">{issue.detail}</div>
                   </Link>
                 ))}
               </CardContent>

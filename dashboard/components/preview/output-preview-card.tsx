@@ -26,11 +26,11 @@ export function OutputPreviewCard({ preview }: { preview: ProviderPreview; local
             </a>
           ) : null}
 
-          <div className="mt-2 max-w-[560px] overflow-hidden rounded bg-[#2b2d31]" style={{ borderLeft: `4px solid ${preview.accentColor}` }}>
+          <div className="mt-2 w-full max-w-[560px] overflow-hidden rounded bg-[#2b2d31]" style={{ borderLeft: `4px solid ${preview.accentColor}` }}>
             <div className="flex gap-3 p-3">
               <div className="min-w-0 flex-1">
                 <div className="text-xs font-medium text-[#f2f3f5]">{preview.author}</div>
-                <a className="mt-1 block text-base font-semibold leading-5 text-[#00a8fc] hover:underline" href={preview.sourceUrl} target="_blank" rel="noreferrer">
+                <a className="mt-1 block break-words text-base font-semibold leading-5 text-[#00a8fc] hover:underline" href={preview.sourceUrl} target="_blank" rel="noreferrer">
                   {preview.title}
                 </a>
 
@@ -59,7 +59,7 @@ export function OutputPreviewCard({ preview }: { preview: ProviderPreview; local
                   </div>
                 ) : null}
 
-                <div className="mt-3 flex items-center gap-2 text-[11px] text-[#949ba4]">
+                <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px] text-[#949ba4]">
                   <span>{preview.footer}</span>
                   <span>•</span>
                   <span>{preview.requester}</span>
@@ -78,10 +78,10 @@ export function OutputPreviewCard({ preview }: { preview: ProviderPreview; local
           </div>
 
           {preview.attachments.length ? (
-            <div className="mt-2 grid max-w-[560px] gap-2">
+            <div className="mt-2 grid w-full max-w-[560px] gap-2">
               {preview.attachments.map((attachment) => (
                 <div key={attachment.filename} className="flex items-center gap-3 rounded border border-[#3f4147] bg-[#2b2d31] p-2">
-                  <div className="flex h-12 w-12 items-center justify-center rounded bg-[#1e1f22] text-[#b5bac1]">
+                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded bg-[#1e1f22] text-[#b5bac1]">
                     <FileImage size={20} />
                   </div>
                   <div className="min-w-0">
@@ -94,12 +94,12 @@ export function OutputPreviewCard({ preview }: { preview: ProviderPreview; local
           ) : null}
 
           {preview.buttons.length ? (
-            <div className="mt-2 flex max-w-[560px] flex-wrap gap-2">
+            <div className="mt-2 flex w-full max-w-[560px] flex-wrap gap-2">
               {preview.buttons.map((button) => (
                 <button
                   key={button.key}
                   className={[
-                    "h-8 rounded px-3 text-xs font-medium text-white",
+                    "min-h-8 min-w-0 rounded px-3 py-1.5 text-xs font-medium leading-tight text-white",
                     button.danger ? "bg-[#da373c]" : "bg-[#4e5058]",
                   ].join(" ")}
                   disabled
@@ -107,7 +107,7 @@ export function OutputPreviewCard({ preview }: { preview: ProviderPreview; local
                   {button.label}
                 </button>
               ))}
-              <a className="flex h-8 items-center gap-1 rounded bg-[#4e5058] px-3 text-xs font-medium text-white" href={preview.sourceUrl} target="_blank" rel="noreferrer">
+              <a className="flex min-h-8 min-w-0 items-center gap-1 rounded bg-[#4e5058] px-3 py-1.5 text-xs font-medium leading-tight text-white" href={preview.sourceUrl} target="_blank" rel="noreferrer">
                 <ExternalLink size={13} />
                 {preview.sourceButtonLabel}
               </a>

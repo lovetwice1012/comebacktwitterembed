@@ -109,24 +109,24 @@ export function GuildList({ guilds, locale }: { guilds: Guild[]; locale: Dashboa
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-3">
-        <div className="relative min-w-64 flex-1">
+        <div className="relative min-w-0 flex-1 basis-full sm:min-w-64 sm:basis-auto">
           <Search className="pointer-events-none absolute left-3 top-3 text-muted-foreground" size={16} />
           <Input className="pl-9" placeholder={t("guildList.searchPlaceholder")} value={query} onChange={(event) => setQuery(event.target.value)} />
         </div>
         {!copyMode ? (
-          <Button variant="outline" disabled={!sourceGuildId} onClick={() => setCopyMode(true)}>
+          <Button className="w-full sm:w-auto" variant="outline" disabled={!sourceGuildId} onClick={() => setCopyMode(true)}>
             <ArrowRightLeft size={16} />
             {t("guildList.copySettings")}
           </Button>
         ) : (
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
             <Badge tone="default">{t("guildList.copySource", { source: sourceGuild?.name || sourceGuildId })}</Badge>
             <Badge tone={targetGuildIds.length ? "success" : "muted"}>{t("guildList.copyTargets", { count: targetGuildIds.length })}</Badge>
-            <Button onClick={copySettings} disabled={busy || !targetGuildIds.length}>
+            <Button className="flex-1 sm:flex-none" onClick={copySettings} disabled={busy || !targetGuildIds.length}>
               <ArrowRightLeft size={16} />
               {busy ? t("sync.busy") : t("guildList.copyRun")}
             </Button>
-            <Button variant="ghost" onClick={cancelCopyMode} disabled={busy}>
+            <Button className="flex-1 sm:flex-none" variant="ghost" onClick={cancelCopyMode} disabled={busy}>
               <X size={16} />
               {t("guildList.copyCancel")}
             </Button>
@@ -177,7 +177,7 @@ export function GuildList({ guilds, locale }: { guilds: Guild[]; locale: Dashboa
                     <Server size={18} />
                   </div>
                 )}
-                <div className="min-w-0">
+                <div className="min-w-0 flex-1">
                   <CardTitle className="truncate">{guild.name}</CardTitle>
                   <CardDescription className="truncate">{guild.guildId}</CardDescription>
                 </div>

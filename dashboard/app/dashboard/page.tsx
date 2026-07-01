@@ -15,13 +15,13 @@ export default async function DashboardPage() {
   const guilds = await listVisibleGuilds(session);
 
   return (
-    <main className="mx-auto min-h-screen max-w-7xl space-y-6 px-4 py-6">
-      <header className="flex flex-wrap items-center justify-between gap-3">
-        <div>
+    <main className="mx-auto min-h-screen max-w-7xl space-y-5 px-3 py-4 sm:space-y-6 sm:px-4 sm:py-6">
+      <header className="flex flex-col items-stretch gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
           <h1 className="text-2xl font-semibold">{t("dashboard.guilds.title")}</h1>
           <p className="text-sm text-muted-foreground">{t("dashboard.guilds.selectHelp")}</p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex w-full min-w-0 flex-wrap items-center gap-2 sm:w-auto sm:justify-end">
           <GuildSwitcher selectedGuildIds={[]} guilds={guilds.map((guild) => ({ guildId: guild.guildId, name: guild.name }))} locale={locale} />
           <LanguageSwitcher locale={locale} />
           <SignOutButton locale={locale} />

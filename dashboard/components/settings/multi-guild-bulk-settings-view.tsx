@@ -176,9 +176,9 @@ export function MultiGuildBulkSettingsView({ guilds, locale }: { guilds: Guild[]
           </CardTitle>
           <CardDescription>{t("multiBulk.presetsDesc")}</CardDescription>
         </CardHeader>
-        <CardContent className="flex flex-wrap gap-2">
+        <CardContent className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
           {presets.map((preset) => (
-            <Button key={preset.labelKey} variant="outline" disabled={!editableGuilds.length || saving !== null} onClick={() => applyPreset(t(preset.labelKey), preset.changes)}>
+            <Button className="w-full sm:w-auto" key={preset.labelKey} variant="outline" disabled={!editableGuilds.length || saving !== null} onClick={() => applyPreset(t(preset.labelKey), preset.changes)}>
               {saving === t(preset.labelKey) ? t("settingsCross.saving") : t(preset.labelKey)}
             </Button>
           ))}
@@ -186,9 +186,9 @@ export function MultiGuildBulkSettingsView({ guilds, locale }: { guilds: Guild[]
       </Card>
 
       <Card>
-        <CardContent className="flex items-center gap-3 pt-4 text-sm text-muted-foreground">
+        <CardContent className="flex items-start gap-3 pt-4 text-sm text-muted-foreground">
           <Server size={16} />
-          {t("multiBulk.note")}
+          <span className="min-w-0 break-words">{t("multiBulk.note")}</span>
         </CardContent>
       </Card>
 
@@ -207,7 +207,7 @@ export function MultiGuildBulkSettingsView({ guilds, locale }: { guilds: Guild[]
                 <label className="space-y-1 text-sm">
                   <span className="font-medium">{t("multiBulk.provider")}</span>
                   <select
-                    className="h-10 w-full rounded-md border bg-card px-3 text-sm"
+                    className="h-10 w-full min-w-0 rounded-md border bg-card px-3 text-sm"
                     value={selectedProviderId}
                     onChange={(event) => setSelectedProviderId(event.target.value)}
                   >
@@ -218,7 +218,7 @@ export function MultiGuildBulkSettingsView({ guilds, locale }: { guilds: Guild[]
                 </label>
                 <div className="space-y-1 text-sm">
                   <div className="font-medium">{t("multiBulk.baseline")}</div>
-                  <div className="rounded-md border bg-muted px-3 py-2">{baselineGuild.name}</div>
+                  <div className="min-w-0 break-words rounded-md border bg-muted px-3 py-2">{baselineGuild.name}</div>
                 </div>
               </div>
               <p className="text-xs text-muted-foreground">{t("multiBulk.detailTargetsNote")}</p>

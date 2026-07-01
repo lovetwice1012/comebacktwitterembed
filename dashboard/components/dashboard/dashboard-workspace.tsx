@@ -51,8 +51,8 @@ function equalIds(a: string[], b: string[]) {
 function ServerLayout({ guildId, locale, children }: { guildId: string; locale: DashboardLocale; children: ReactNode }) {
   const t = createTranslator(locale);
   return (
-    <div className="dashboard-grid mx-auto max-w-7xl gap-5 px-4 py-5">
-      <aside className="space-y-2">
+    <div className="dashboard-grid mx-auto max-w-7xl gap-4 px-3 py-4 sm:gap-5 sm:px-4 sm:py-5">
+      <aside className="dashboard-sidebar">
         {navItems.map((item) => {
           const Icon = item.icon;
           const href = item.href ? `/dashboard/${guildId}/${item.href}` : `/dashboard/${guildId}`;
@@ -110,7 +110,7 @@ function GuildChooserPane({ locale }: { locale: DashboardLocale }) {
   }, [guilds, query]);
 
   return (
-    <div className="mx-auto max-w-7xl space-y-4 px-4 py-5">
+    <div className="mx-auto max-w-7xl space-y-4 px-3 py-4 sm:px-4 sm:py-5">
       <header>
         <h1 className="text-2xl font-semibold">{t("dashboard.guilds.title")}</h1>
         <p className="text-sm text-muted-foreground">{t("dashboard.guilds.selectHelp")}</p>
@@ -120,7 +120,7 @@ function GuildChooserPane({ locale }: { locale: DashboardLocale }) {
       {error ? <div className="rounded-md border bg-card p-4 text-sm text-destructive">{error}</div> : null}
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
         {filtered.map((guild) => (
-          <button key={guild.guildId} type="button" className="block text-left" onClick={() => pushGuildSelection([guild.guildId])}>
+          <button key={guild.guildId} type="button" className="block min-w-0 text-left" onClick={() => pushGuildSelection([guild.guildId])}>
             <Card className="h-full transition hover:border-primary hover:shadow-soft">
               <CardHeader className="flex flex-row items-center gap-3 space-y-0">
                 {guild.iconUrl ? (
@@ -130,7 +130,7 @@ function GuildChooserPane({ locale }: { locale: DashboardLocale }) {
                     <Server size={18} />
                   </div>
                 )}
-                <div className="min-w-0">
+                <div className="min-w-0 flex-1">
                   <CardTitle className="truncate">{guild.name}</CardTitle>
                   <CardDescription className="truncate">{guild.guildId}</CardDescription>
                 </div>
@@ -215,13 +215,13 @@ function MultiGuildBulkPane({ guildIds, locale }: { guildIds: string[]; locale: 
   }, [guildIds, guilds]);
 
   return (
-    <div className="mx-auto max-w-7xl space-y-4 px-4 py-5">
-      <header className="flex flex-wrap items-center justify-between gap-3">
-        <div>
+    <div className="mx-auto max-w-7xl space-y-4 px-3 py-4 sm:px-4 sm:py-5">
+      <header className="flex flex-col items-stretch gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
           <h1 className="text-2xl font-semibold">{t("multiBulk.title")}</h1>
           <p className="text-sm text-muted-foreground">{t("multiBulk.description")}</p>
         </div>
-        <Badge tone="default">{t("multiBulk.badge", { count: guildIds.length })}</Badge>
+        <Badge className="shrink-0" tone="default">{t("multiBulk.badge", { count: guildIds.length })}</Badge>
       </header>
       {loading ? <div className="rounded-md border bg-card p-4 text-sm text-muted-foreground">{t("shell.guildSwitcher.loading")}</div> : null}
       {error ? <div className="rounded-md border bg-card p-4 text-sm text-destructive">{error}</div> : null}

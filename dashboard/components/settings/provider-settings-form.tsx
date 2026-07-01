@@ -208,20 +208,20 @@ export function ProviderSettingsForm({
 
   return (
     <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
-      <div className="space-y-4">
+      <div className="min-w-0 space-y-4">
         {hasChanges || message ? (
-        <div className="sticky top-16 z-20 rounded-lg border bg-card p-3 shadow-soft">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
+        <div className="rounded-lg border bg-card p-3 shadow-soft sm:sticky sm:top-16 sm:z-20">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0">
               <div className="font-medium">{hasChanges ? t("form.unsavedCount", { count: Object.keys(changes).length }) : t("form.noUnsavedChanges")}</div>
               {hasChanges ? <div className="text-sm text-muted-foreground">{t("form.unsavedHelp")}</div> : null}
             </div>
-            <div className="flex flex-wrap gap-2">
-              <Button variant="outline" onClick={() => form.reset(clone(savedValues))} disabled={!hasChanges || saving}>
+            <div className="flex flex-wrap gap-2 sm:justify-end">
+              <Button className="flex-1 sm:flex-none" variant="outline" onClick={() => form.reset(clone(savedValues))} disabled={!hasChanges || saving}>
                 <RotateCcw size={16} />
                 {t("form.discard")}
               </Button>
-              <Button onClick={save} disabled={!canEdit || !hasChanges || saving}>
+              <Button className="flex-1 sm:flex-none" onClick={save} disabled={!canEdit || !hasChanges || saving}>
                 <Save size={16} />
                 {t("form.save")}
               </Button>
@@ -247,7 +247,7 @@ export function ProviderSettingsForm({
         </div>
       </div>
 
-      <aside className="space-y-4">
+      <aside className="min-w-0 space-y-4">
         <Card>
           <CardHeader>
             <CardTitle>{t("form.diffTitle")}</CardTitle>
@@ -258,12 +258,12 @@ export function ProviderSettingsForm({
               Object.entries(changes).map(([key, value]) => {
                 const setting = settings.find((item) => item.key === key);
                 return (
-                  <div key={key} className="rounded-md border p-2 text-sm">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="font-medium">{setting ? labelText(setting.spec.label, locale) : key}</span>
+                  <div key={key} className="min-w-0 rounded-md border p-2 text-sm">
+                    <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between sm:gap-2">
+                      <span className="min-w-0 break-words font-medium">{setting ? labelText(setting.spec.label, locale) : key}</span>
                       <Badge tone={setting?.spec.impactLevel === "danger" ? "danger" : setting?.spec.impactLevel === "high" ? "warning" : "muted"}>{impactLabel(setting?.spec.impactLevel, locale)}</Badge>
                     </div>
-                    <div className="mt-1 text-muted-foreground">{valueLabel(savedValues[key], locale)} → {valueLabel(value, locale)}</div>
+                    <div className="mt-1 break-words text-muted-foreground">{valueLabel(savedValues[key], locale)} → {valueLabel(value, locale)}</div>
                   </div>
                 );
               })
@@ -311,8 +311,8 @@ function SettingEditor({
   return (
     <Card>
       <CardHeader>
-        <div className="flex flex-wrap items-start justify-between gap-2">
-          <div>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0">
             <CardTitle>{labelText(spec.label, locale)}</CardTitle>
             <CardDescription>{labelText(spec.description, locale)}</CardDescription>
           </div>
@@ -340,7 +340,7 @@ function renderControl(setting: SettingState, value: SettingValue, setValue: (va
   const t = createTranslator(locale);
   if (spec.kind === "bool" || spec.kind === "providerEnabled") {
     return (
-      <label className="flex items-center gap-2 text-sm">
+      <label className="flex min-w-0 items-center gap-2 text-sm">
         <input type="checkbox" checked={value === true} disabled={disabled} onChange={(event) => setValue(event.target.checked)} />
         {value === true ? t("form.enabled") : t("form.disabled")}
       </label>
@@ -349,7 +349,7 @@ function renderControl(setting: SettingState, value: SettingValue, setValue: (va
 
   if (spec.kind === "choice") {
     return (
-      <select className="h-10 w-full rounded-md border bg-card px-3 text-sm" value={String(value ?? "")} disabled={disabled} onChange={(event) => setValue(event.target.value)}>
+      <select className="h-10 w-full min-w-0 rounded-md border bg-card px-3 text-sm" value={String(value ?? "")} disabled={disabled} onChange={(event) => setValue(event.target.value)}>
         {spec.choices?.map((choice) => (
           <option key={choice.value} value={choice.value}>{labelText(choice.label, locale)}</option>
         ))}
@@ -362,7 +362,7 @@ function renderControl(setting: SettingState, value: SettingValue, setValue: (va
     return (
       <div className="grid gap-2 md:grid-cols-2">
         {spec.choices?.map((choice) => (
-          <label key={choice.value} className="flex items-start gap-2 rounded-md border p-2 text-sm">
+          <label key={choice.value} className="flex min-w-0 items-start gap-2 rounded-md border p-2 text-sm">
             <input
               type="checkbox"
               disabled={disabled}
@@ -374,7 +374,7 @@ function renderControl(setting: SettingState, value: SettingValue, setValue: (va
                 setValue([...next]);
               }}
             />
-            <span className="font-medium">{labelText(choice.label, locale)}</span>
+            <span className="min-w-0 break-words font-medium">{labelText(choice.label, locale)}</span>
           </label>
         ))}
       </div>
@@ -410,9 +410,9 @@ function renderControl(setting: SettingState, value: SettingValue, setValue: (va
     return (
       <div className="grid gap-2 md:grid-cols-2">
         {keys.map((key) => (
-          <label key={key} className="flex items-center gap-2 rounded-md border p-2 text-sm">
+          <label key={key} className="flex min-w-0 items-center gap-2 rounded-md border p-2 text-sm">
             <input type="checkbox" disabled={disabled} checked={visibility[key] === true} onChange={(event) => setValue({ ...visibility, [key]: event.target.checked })} />
-            {t("form.hideButton", { key: buttonLabel(key, locale) })}
+            <span className="min-w-0 break-words">{t("form.hideButton", { key: buttonLabel(key, locale) })}</span>
           </label>
         ))}
       </div>
@@ -424,7 +424,7 @@ function renderControl(setting: SettingState, value: SettingValue, setValue: (va
     return (
       <div className="grid gap-2 md:grid-cols-2">
         {spec.outputItems?.map((item) => (
-          <label key={item.value} className="flex items-start gap-2 rounded-md border p-2 text-sm">
+          <label key={item.value} className="flex min-w-0 items-start gap-2 rounded-md border p-2 text-sm">
             <input
               type="checkbox"
               disabled={disabled}
@@ -436,7 +436,7 @@ function renderControl(setting: SettingState, value: SettingValue, setValue: (va
                 setValue([...next]);
               }}
             />
-            <span>
+            <span className="min-w-0 break-words">
               <span className="font-medium">{labelText(item.label, locale)}</span>
               {item.description ? <span className="block text-xs text-muted-foreground">{labelText(item.description, locale)}</span> : null}
             </span>

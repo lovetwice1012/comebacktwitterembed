@@ -87,9 +87,9 @@ export function CrossSettingsView({
           </CardTitle>
           <CardDescription>{t("settingsCross.presetsDesc")}</CardDescription>
         </CardHeader>
-        <CardContent className="flex flex-wrap gap-2">
+        <CardContent className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
           {presets.map((preset) => (
-            <Button key={preset.labelKey} variant="outline" disabled={!canManage || saving !== null} onClick={() => applyPreset(t(preset.labelKey), preset.changes)}>
+            <Button className="w-full sm:w-auto" key={preset.labelKey} variant="outline" disabled={!canManage || saving !== null} onClick={() => applyPreset(t(preset.labelKey), preset.changes)}>
               {saving === t(preset.labelKey) ? t("settingsCross.saving") : t(preset.labelKey)}
             </Button>
           ))}
@@ -105,10 +105,10 @@ export function CrossSettingsView({
         {filtered.map(({ providerId, providerLabel, setting }) => (
           <Link key={`${providerId}:${setting.key}`} href={`/dashboard/${guildId}/providers/${providerId}`} className="block">
             <Card className="transition hover:border-primary">
-              <CardContent className="flex flex-wrap items-center justify-between gap-3 pt-4">
-                <div className="min-w-0">
+              <CardContent className="flex flex-col items-stretch gap-3 pt-4 sm:flex-row sm:items-center sm:justify-between">
+                <div className="min-w-0 flex-1">
                   <div className="font-medium">{labelText(setting.spec.label, locale)}</div>
-                  <div className="truncate text-sm text-muted-foreground">{providerLabel} · {labelText(setting.spec.description, locale)}</div>
+                  <div className="break-words text-sm text-muted-foreground sm:truncate">{providerLabel} · {labelText(setting.spec.description, locale)}</div>
                 </div>
                 <div className="flex flex-wrap gap-2">
                   {setting.spec.impactLevel === "danger" || setting.spec.impactLevel === "high" ? (
