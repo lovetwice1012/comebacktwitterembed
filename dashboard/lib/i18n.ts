@@ -1,7 +1,13 @@
 import type { LocaleText, SettingValue } from "@/lib/types";
+import {
+  DASHBOARD_LOCALES,
+  DEFAULT_DASHBOARD_LOCALE,
+  normalizeDiscordLocale,
+  type DiscordLocale,
+} from "@/lib/discord-locales";
 
-export const DASHBOARD_LOCALES = ["ja", "en"] as const;
-export type DashboardLocale = (typeof DASHBOARD_LOCALES)[number];
+export { DASHBOARD_LOCALES };
+export type DashboardLocale = DiscordLocale;
 
 const ja = {
   "language.label": "表示言語",
@@ -637,13 +643,31 @@ const en: Record<keyof typeof ja, string> = {
   "warning.boothAdultNormal": "Adult Booth media will be displayed normally. Confirm this matches server rules.",
 };
 
-const dictionaries = { ja, en };
-
 export type TranslationKey = keyof typeof ja;
+type Dictionary = Record<TranslationKey, string>;
+
+const dictionaries: Record<"ja" | "en", Dictionary> = { ja, en };
+
+type DictionaryLocale = keyof typeof dictionaries;
+
+function dictionaryLocale(locale: DashboardLocale): DictionaryLocale {
+  return locale === "ja" ? "ja" : "en";
+}
+
+function dictionaryForLocale(locale: DashboardLocale): Dictionary {
+  return dictionaries[dictionaryLocale(locale)];
+}
 
 export function normalizeDashboardLocale(value: string | null | undefined): DashboardLocale {
-  const text = String(value || "").toLowerCase();
-  return text.startsWith("ja") ? "ja" : "en";
+  const candidates = String(value || "")
+    .split(",")
+    .map((item) => item.split(";")[0]?.trim())
+    .filter(Boolean);
+  for (const candidate of candidates) {
+    const locale = normalizeDiscordLocale(candidate);
+    if (locale) return locale;
+  }
+  return DEFAULT_DASHBOARD_LOCALE;
 }
 
 export function createTranslator(locale: DashboardLocale) {
@@ -651,13 +675,15 @@ export function createTranslator(locale: DashboardLocale) {
 }
 
 export function translate(locale: DashboardLocale, key: TranslationKey, vars: Record<string, string | number | null | undefined> = {}) {
-  const template = dictionaries[locale][key] || dictionaries.en[key] || String(key);
+  const dictionary = dictionaryForLocale(locale);
+  const template = dictionary[key] || dictionaries.en[key] || dictionaries.ja[key] || String(key);
   return template.replace(/\{(\w+)\}/g, (_, name: string) => String(vars[name] ?? ""));
 }
 
 export function localizedText(value: LocaleText, locale: DashboardLocale) {
   if (typeof value === "string") return value;
-  return value[locale] || value.en || value.ja || Object.values(value).find(Boolean) || "";
+  const fallbackLocale = dictionaryLocale(locale);
+  return value[locale] || value[fallbackLocale] || value.en || value["en-US"] || value.ja || Object.values(value).find(Boolean) || "";
 }
 
 export function labelText(value: LocaleText, locale: DashboardLocale) {
@@ -694,12 +720,12 @@ export function categoryLabel(category: string | null | undefined, locale: Dashb
 
 export function impactLabel(impact: string | null | undefined, locale: DashboardLocale) {
   const key = `impact.${impact || "low"}` as TranslationKey;
-  return dictionaries[locale][key] ? translate(locale, key) : impact || translate(locale, "impact.low");
+  return dictionaryForLocale(locale)[key] ? translate(locale, key) : impact || translate(locale, "impact.low");
 }
 
 export function levelLabel(level: string | null | undefined, locale: DashboardLocale) {
   const key = `level.${level || "info"}` as TranslationKey;
-  return dictionaries[locale][key] ? translate(locale, key) : level || translate(locale, "level.info");
+  return dictionaryForLocale(locale)[key] ? translate(locale, key) : level || translate(locale, "level.info");
 }
 
 export function valueLabel(value: SettingValue | undefined, locale: DashboardLocale) {

@@ -357,6 +357,30 @@ function renderControl(setting: SettingState, value: SettingValue, setValue: (va
     );
   }
 
+  if (spec.kind === "multiChoice") {
+    const selected = new Set(Array.isArray(value) ? value.map(String) : []);
+    return (
+      <div className="grid gap-2 md:grid-cols-2">
+        {spec.choices?.map((choice) => (
+          <label key={choice.value} className="flex items-start gap-2 rounded-md border p-2 text-sm">
+            <input
+              type="checkbox"
+              disabled={disabled}
+              checked={selected.has(choice.value)}
+              onChange={(event) => {
+                const next = new Set(selected);
+                if (event.target.checked) next.add(choice.value);
+                else next.delete(choice.value);
+                setValue([...next]);
+              }}
+            />
+            <span className="font-medium">{labelText(choice.label, locale)}</span>
+          </label>
+        ))}
+      </div>
+    );
+  }
+
   if (spec.kind === "bannedWords") {
     return <Textarea disabled={disabled} value={textareaList(value)} onChange={(event) => setValue(parseTextareaList(event.target.value))} placeholder={t("form.bannedWordsPlaceholder")} />;
   }

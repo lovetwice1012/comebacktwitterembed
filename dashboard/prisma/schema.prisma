@@ -53,6 +53,7 @@ model GuildProviderSetting {
   steamDescriptionMaxLength                    Int?     @map("steam_description_max_length")
   steamImageSource                             String?  @map("steam_image_source") @db.VarChar(32)
   amazonDescriptionMaxLength                   Int?     @map("amazon_description_max_length")
+  amazonExtractTargets                         String?  @map("amazon_extract_targets") @db.Text
   boothDescriptionMaxLength                    Int?     @map("booth_description_max_length")
   boothImageLimit                              Int?     @map("booth_image_limit")
   boothAdultDisplayMode                        String?  @map("booth_adult_display_mode") @db.VarChar(32)

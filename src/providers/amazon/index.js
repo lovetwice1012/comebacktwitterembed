@@ -35,6 +35,12 @@ const AMAZON_MUSIC_ROUTE_LABELS = {
     'live/events': 'Live event',
     stations: 'Station',
 };
+const AMAZON_EXTRACT_TARGETS = ['product', 'prime_video', 'music'];
+const AMAZON_KIND_TARGET = {
+    product: 'product',
+    primeVideo: 'prime_video',
+    music: 'music',
+};
 const REQUEST_HEADERS = {
     Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
     'Accept-Language': 'en-US,en;q=0.9,ja;q=0.8',
@@ -91,6 +97,27 @@ function tr(spec, lang) {
 
 function normalizeLanguage(settings) {
     return settings?.defaultLanguage === 'ja' ? 'ja' : 'en';
+}
+
+function normalizeAmazonExtractTargets(settings) {
+    if (!Object.prototype.hasOwnProperty.call(settings || {}, 'amazon_extract_targets')) {
+        return AMAZON_EXTRACT_TARGETS;
+    }
+    const values = Array.isArray(settings.amazon_extract_targets) ? settings.amazon_extract_targets : [];
+    const allowed = new Set(AMAZON_EXTRACT_TARGETS);
+    const out = [];
+    for (const value of values) {
+        const key = String(value || '').trim();
+        if (allowed.has(key) && !out.includes(key)) out.push(key);
+    }
+    return out;
+}
+
+function shouldExtractAmazonParsed(parsed, settings) {
+    if (!parsed || parsed.kind === 'short') return true;
+    const target = AMAZON_KIND_TARGET[parsed.kind];
+    if (!target) return true;
+    return normalizeAmazonExtractTargets(settings).includes(target);
 }
 
 function decodeHtml(value) {
@@ -505,6 +532,7 @@ function parseJsonSafely(value) {
 async function fetchJsonPage(rawUrl, headers = REQUEST_HEADERS) {
     const res = await fetch(rawUrl, { headers, redirect: 'follow' });
     if (!res.ok) {
+        /** @type {Error & {status?: number}} */
         const err = new Error(`amazon json ${res.status} for ${rawUrl}`);
         err.status = res.status;
         throw err;
@@ -512,6 +540,7 @@ async function fetchJsonPage(rawUrl, headers = REQUEST_HEADERS) {
     const text = await res.text();
     const parsed = parseJsonSafely(text);
     if (!parsed || typeof parsed !== 'object') {
+        /** @type {Error & {status?: number}} */
         const err = new Error(`amazon json parse failed for ${rawUrl}`);
         err.status = res.status;
         throw err;
@@ -1484,6 +1513,8 @@ async function extract(message, url, s) {
     s = s || {};
     const initialParsed = parseAmazonUrl(url);
     if (!initialParsed) return null;
+    if (normalizeAmazonExtractTargets(s).length === 0) return null;
+    if (!shouldExtractAmazonParsed(initialParsed, s)) return null;
 
     let parsed = initialParsed;
     let html = '';
@@ -1505,6 +1536,7 @@ async function extract(message, url, s) {
     }
 
     if (!parsed.id) return null;
+    if (!shouldExtractAmazonParsed(parsed, s)) return null;
 
     let supplement = null;
     if (parsed.kind === 'music') {
@@ -1561,6 +1593,7 @@ const amazonProvider = {
         'display_density',
         'media_display_mode',
         'amazon_description_max_length',
+        'amazon_extract_targets',
         {
             key: 'hidden_output_items',
             outputItems: [

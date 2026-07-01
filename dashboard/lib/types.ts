@@ -5,6 +5,7 @@ export type SettingKind =
   | "providerEnabled"
   | "bool"
   | "choice"
+  | "multiChoice"
   | "targets"
   | "buttonVisibility"
   | "bannedWords"

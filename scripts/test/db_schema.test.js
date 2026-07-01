@@ -92,6 +92,17 @@ test('common provider output controls migration is present', () => {
     }
 });
 
+test('amazon extract targets migration is present', () => {
+    const file = path.join(MIGRATIONS_DIR, '20260701_add_amazon_extract_targets.sql');
+    const sql = fs.readFileSync(file, 'utf8');
+
+    assert.ok(_internal.listMigrationFiles().includes('20260701_add_amazon_extract_targets.sql'));
+    assert.ok(sql.includes('ALTER TABLE guild_provider_settings'));
+    assert.ok(sql.includes('amazon_extract_targets'));
+    assert.equal(PROVIDER_SETTING_COLUMNS.amazon_extract_targets.column, 'amazon_extract_targets');
+    assert.equal(PROVIDER_SETTING_COLUMNS.amazon_extract_targets.type, 'jsonArray');
+});
+
 test('providers route metadata fetch failures through common failure display policy', () => {
     const providerIds = [
         'twitter',

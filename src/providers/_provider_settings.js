@@ -6,7 +6,7 @@ const { normalizeHiddenOutputItems } = require('./_output_visibility');
 
 const PROVIDER_DEFAULTS = {
     enabled:                                              undefined,
-    defaultLanguage:                                      undefined,
+    defaultLanguage:                                      'ja',
     editOriginalIfTranslate:                              false,
     extract_bot_message:                                  false,
     legacy_mode:                                          undefined,
@@ -51,6 +51,7 @@ const PROVIDER_DEFAULTS = {
     steam_description_max_length:                          undefined,
     steam_image_source:                                    'header',
     amazon_description_max_length:                         undefined,
+    amazon_extract_targets:                                 ['product', 'prime_video', 'music'],
     booth_description_max_length:                          undefined,
     booth_image_limit:                                     undefined,
     booth_adult_display_mode:                              'normal',
@@ -233,6 +234,10 @@ const PROVIDER_SETTING_COLUMNS = {
         column: 'amazon_description_max_length',
         type: 'int',
     },
+    amazon_extract_targets: {
+        column: 'amazon_extract_targets',
+        type: 'jsonArray',
+    },
     booth_description_max_length: {
         column: 'booth_description_max_length',
         type: 'int',
@@ -379,6 +384,7 @@ function settingDefault(provider, key) {
     if (key === 'steam_description_max_length') return provider.id === 'steam' ? 900 : undefined;
     if (key === 'steam_image_source') return provider.id === 'steam' ? 'header' : undefined;
     if (key === 'amazon_description_max_length') return provider.id === 'amazon' ? 700 : undefined;
+    if (key === 'amazon_extract_targets') return provider.id === 'amazon' ? cloneValue(PROVIDER_DEFAULTS.amazon_extract_targets) : undefined;
     if (key === 'booth_description_max_length') return provider.id === 'booth' ? 350 : undefined;
     if (key === 'booth_adult_display_mode') return provider.id === 'booth' ? 'normal' : undefined;
     return PROVIDER_DEFAULTS[key];

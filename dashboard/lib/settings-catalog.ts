@@ -1,5 +1,6 @@
 import "server-only";
 
+import { DASHBOARD_LOCALE_OPTIONS } from "@/lib/discord-locales";
 import { requireBotModule } from "@/lib/bot-require";
 import type { LocaleText, ProviderCatalogItem, SettingKind, SettingSpec } from "@/lib/types";
 
@@ -471,6 +472,20 @@ function outputItemLabelFor(item: { value: string; label: LocaleText }) {
   return OUTPUT_ITEM_LABELS[item.value] || item.label;
 }
 
+function choicesForSpec(key: string, spec: BotSettingSpec) {
+  if (key === "defaultLanguage") {
+    return DASHBOARD_LOCALE_OPTIONS.map((option) => ({
+      label: `${option.flag} ${option.nativeName}`,
+      value: option.value,
+    }));
+  }
+
+  return spec.choices?.map((choice) => ({
+    label: textValue(choiceLabelFor(key, choice), String(choice.value)),
+    value: String(choice.value),
+  }));
+}
+
 function categoryFor(spec: BotSettingSpec) {
   const key = spec.key || spec.settingKey || "";
   if (spec.kind === "providerEnabled") return "basic";
@@ -478,6 +493,7 @@ function categoryFor(spec: BotSettingSpec) {
   if (spec.kind === "buttonVisibility") return "buttons";
   if (spec.kind === "bannedWords") return "suppression";
   if (spec.kind === "outputVisibility") return "advanced";
+  if (spec.kind === "multiChoice") return "provider";
   if (key.includes("language") || key.includes("translate")) return "translation";
   if (key.includes("media") || key.includes("image") || key.includes("attachment") || key.includes("download")) return "media";
   if (key.includes("delete") || key.includes("legacy") || key.includes("passive") || key.includes("banned")) return "suppression";
@@ -500,7 +516,7 @@ function impactFor(spec: BotSettingSpec) {
   if (key.includes("attachment") || key.includes("media_display_mode") || key.includes("failure_display_policy") || key.includes("legacy") || key.includes("secondary")) {
     return "high" as const;
   }
-  if (spec.kind === "targets" || spec.kind === "buttonVisibility" || spec.kind === "outputVisibility") return "medium" as const;
+  if (spec.kind === "targets" || spec.kind === "buttonVisibility" || spec.kind === "outputVisibility" || spec.kind === "multiChoice") return "medium" as const;
   return "low" as const;
 }
 
@@ -544,10 +560,7 @@ function serializeSpec(spec: BotSettingSpec): SettingSpec | null {
     label: textValue(override?.label || spec.label, key),
     description: textValue(override?.description || spec.description, key),
     kind: spec.kind,
-    choices: spec.choices?.map((choice) => ({
-      label: textValue(choiceLabelFor(key, choice), String(choice.value)),
-      value: String(choice.value),
-    })),
+    choices: choicesForSpec(key, spec),
     outputItems: spec.outputItems?.map((item) => ({
       value: item.value,
       label: textValue(outputItemLabelFor(item), item.value),

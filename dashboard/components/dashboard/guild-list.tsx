@@ -1,13 +1,14 @@
 "use client";
 
 import { ArrowRightLeft, Search, Server, X } from "lucide-react";
-import Link from "next/link";
 import { useMemo, useState } from "react";
+import { pushGuildSelection } from "@/components/dashboard/guild-options";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { createTranslator, type DashboardLocale } from "@/lib/i18n";
+import { cn } from "@/lib/utils";
 
 type Guild = {
   guildId: string;
@@ -55,6 +56,23 @@ export function GuildList({ guilds, locale }: { guilds: Guild[]; locale: Dashboa
       if (checked) return [...new Set([...current, guildId])];
       return current.filter((id) => id !== guildId);
     });
+  }
+
+  function cancelCopyMode() {
+    setCopyMode(false);
+    setSourceGuildId("");
+    setTargetGuildIds([]);
+    setMessage(null);
+  }
+
+  function handleCardAction(guild: Guild, disabled: boolean, checked: boolean) {
+    if (busy) return;
+    if (copyMode) {
+      if (disabled) return;
+      toggleTarget(guild.guildId, !checked);
+      return;
+    }
+    pushGuildSelection([guild.guildId]);
   }
 
   async function copySettings() {
@@ -108,7 +126,7 @@ export function GuildList({ guilds, locale }: { guilds: Guild[]; locale: Dashboa
               <ArrowRightLeft size={16} />
               {busy ? t("sync.busy") : t("guildList.copyRun")}
             </Button>
-            <Button variant="ghost" onClick={() => { setCopyMode(false); setTargetGuildIds([]); }} disabled={busy}>
+            <Button variant="ghost" onClick={cancelCopyMode} disabled={busy}>
               <X size={16} />
               {t("guildList.copyCancel")}
             </Button>
@@ -123,18 +141,34 @@ export function GuildList({ guilds, locale }: { guilds: Guild[]; locale: Dashboa
           const checked = copyMode ? targetGuildIds.includes(guild.guildId) : isSource;
           const disabled = copyMode && (isSource || !guild.canManageGuild);
           return (
-            <Card key={guild.guildId} className="relative h-full transition hover:border-primary hover:shadow-soft">
-              <input
-                type="checkbox"
-                className="absolute left-3 top-3 z-10 h-4 w-4"
-                checked={checked}
-                disabled={disabled || busy}
-                aria-label={copyMode ? t("guildList.copyTargetCheckbox") : t("guildList.copySourceCheckbox")}
-                onChange={(event) => {
-                  if (copyMode) toggleTarget(guild.guildId, event.target.checked);
-                  else toggleSource(guild.guildId, event.target.checked);
-                }}
-              />
+            <Card
+              key={guild.guildId}
+              className={cn(
+                "relative h-full transition hover:border-primary hover:shadow-soft",
+                copyMode && disabled ? "cursor-not-allowed opacity-70" : "cursor-pointer",
+              )}
+              role="button"
+              tabIndex={0}
+              onClick={() => handleCardAction(guild, disabled, checked)}
+              onKeyDown={(event) => {
+                if (event.key !== "Enter" && event.key !== " ") return;
+                event.preventDefault();
+                handleCardAction(guild, disabled, checked);
+              }}
+            >
+              <div className="absolute left-0 top-0 z-10 flex h-11 w-11 items-start justify-start p-3" onClick={(event) => event.stopPropagation()}>
+                <input
+                  type="checkbox"
+                  className="h-4 w-4"
+                  checked={checked}
+                  disabled={disabled || busy}
+                  aria-label={copyMode ? t("guildList.copyTargetCheckbox") : t("guildList.copySourceCheckbox")}
+                  onChange={(event) => {
+                    if (copyMode) toggleTarget(guild.guildId, event.target.checked);
+                    else toggleSource(guild.guildId, event.target.checked);
+                  }}
+                />
+              </div>
               <CardHeader className="flex flex-row items-center gap-3 space-y-0 pl-10">
                 {guild.iconUrl ? (
                   <img src={guild.iconUrl} alt="" className="h-10 w-10 rounded-md" />
@@ -162,9 +196,6 @@ export function GuildList({ guilds, locale }: { guilds: Guild[]; locale: Dashboa
                     {t("guildList.providerSummary", { enabled: guild.providerSummary.enabled, total: guild.providerSummary.total })}
                   </div>
                 ) : null}
-                <Button asChild variant="outline" size="sm">
-                  <Link href={`/dashboard/${guild.guildId}`}>{t("guildList.open")}</Link>
-                </Button>
               </CardContent>
             </Card>
           );

@@ -439,6 +439,21 @@ const SETTING_SPEC_CATALOG = {
         ],
     },
     amazon_description_max_length: descriptionLengthSpec('amazon_description_max_length', 'Amazon', 700, 700),
+    amazon_extract_targets: {
+        key: 'amazon_extract_targets',
+        label: text('Amazon expansion targets', 'Amazon expansion targets'),
+        description: text(
+            'Chooses which Amazon surfaces this provider expands: product pages, Prime Video, and Amazon Music.',
+            'Chooses which Amazon surfaces this provider expands: product pages, Prime Video, and Amazon Music.'
+        ),
+        kind: 'multiChoice',
+        settingKey: 'amazon_extract_targets',
+        choices: [
+            { label: text('Amazon products', 'Amazon products'), value: 'product' },
+            { label: text('Prime Video', 'Prime Video'), value: 'prime_video' },
+            { label: text('Amazon Music', 'Amazon Music'), value: 'music' },
+        ],
+    },
     booth_description_max_length: descriptionLengthSpec('booth_description_max_length', 'Booth', 350, 700),
     booth_image_limit: {
         key: 'booth_image_limit',

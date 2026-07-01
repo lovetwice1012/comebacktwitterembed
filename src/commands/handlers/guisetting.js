@@ -274,6 +274,21 @@ function aggregateChoice(values) {
     return values.every(item => String(item.value) === String(first)) ? first : undefined;
 }
 
+function choiceOptions(spec) {
+    return Array.isArray(spec.choices) ? spec.choices : [];
+}
+
+function normalizeMultiChoiceValue(spec, value) {
+    const validKeys = new Set(choiceOptions(spec).map(item => String(item.value)));
+    const out = [];
+    const source = Array.isArray(value) ? value : [];
+    for (const item of source) {
+        const key = String(item || '').trim();
+        if (validKeys.has(key) && !out.includes(key)) out.push(key);
+    }
+    return out;
+}
+
 async function getBooleanSettingValue(providerId, spec, guildId) {
     if (isBulkProvider(providerId)) {
         return aggregateBoolean(await getBulkSettingValues(spec, guildId));
@@ -327,6 +342,14 @@ async function normalizeOutputVisibility(providerId, spec, guildId) {
 
 async function setOutputVisibility(providerId, settingKey, guildId, value) {
     await setSetting({ id: providerId }, settingKey, guildId, normalizeHiddenOutputItems(value));
+}
+
+async function normalizeMultiChoiceSetting(providerId, spec, guildId) {
+    return normalizeMultiChoiceValue(spec, await getSetting({ id: providerId }, spec.settingKey, guildId));
+}
+
+async function setMultiChoiceSetting(providerId, spec, guildId, value) {
+    await setSetting({ id: providerId }, spec.settingKey, guildId, normalizeMultiChoiceValue(spec, value));
 }
 
 async function normalizeBannedWords(providerId, guildId) {
@@ -493,6 +516,12 @@ async function applyOutputVisibilitySelection(providerId, spec, guildId, hiddenI
     return `${specLabel(spec, locale)}: ${outputVisibilityValueSummary(spec, next, locale)}`;
 }
 
+async function applyMultiChoiceSelection(providerId, spec, guildId, selectedKeys, locale) {
+    const next = normalizeMultiChoiceValue(spec, selectedKeys);
+    await setMultiChoiceSetting(providerId, spec, guildId, next);
+    return `${specLabel(spec, locale)}: ${multiChoiceValueSummary(spec, next, locale)}`;
+}
+
 async function applyBannedWordInput(providerId, guildId, rawWord, locale) {
     const word = String(rawWord ?? '').normalize('NFC').trim();
     if (!word) return uiText('bannedWordEmpty', locale);
@@ -534,9 +563,18 @@ function formatChoiceValue(spec, value, locale) {
     return choice ? choiceLabel(spec, choice, locale) : String(value ?? '(unset)');
 }
 
+function multiChoiceValueSummary(spec, value, locale) {
+    const selected = new Set(normalizeMultiChoiceValue(spec, value));
+    const labels = choiceOptions(spec)
+        .filter(choice => selected.has(String(choice.value)))
+        .map(choice => choiceLabel(spec, choice, locale));
+    return labels.length === 0 ? uiText('none', locale) : labels.join(', ');
+}
+
 function formatSpecValue(spec, value, locale) {
     if (spec.kind === 'providerEnabled' || spec.kind === 'bool') return boolLabel(value === true, locale);
     if (spec.kind === 'choice') return formatChoiceValue(spec, value, locale);
+    if (spec.kind === 'multiChoice') return multiChoiceValueSummary(spec, value, locale);
     return value === undefined ? '(unset)' : String(value);
 }
 
@@ -588,6 +626,12 @@ async function formatBulkSettingValue(spec, guildId, locale) {
     if (spec.kind === 'outputVisibility') {
         return values
             .map(item => `${item.label}: ${outputVisibilityValueSummary(spec, item.value, locale)}`)
+            .join('\n');
+    }
+
+    if (spec.kind === 'multiChoice') {
+        return values
+            .map(item => `${item.label}: ${multiChoiceValueSummary(spec, item.value, locale)}`)
             .join('\n');
     }
 
@@ -649,6 +693,7 @@ async function formatSettingValue(providerId, spec, guildId, locale) {
     const value = await getSetting({ id: providerId }, spec.settingKey, guildId);
     if (spec.kind === 'bool') return boolLabel(value === true, locale);
     if (spec.kind === 'choice') return formatChoiceValue(spec, value, locale);
+    if (spec.kind === 'multiChoice') return multiChoiceValueSummary(spec, value, locale);
     return value === undefined ? '(unset)' : String(value);
 }
 
@@ -763,6 +808,30 @@ async function buildChoiceControls(providerId, spec, guildId, locale) {
                     label: truncate(choiceLabel(spec, choice, locale), 100),
                     value: String(choice.value),
                     default: String(choice.value) === String(currentValue),
+                })))
+        ),
+        buildUtilityButtons(providerId, spec.key, locale),
+    ];
+}
+
+async function buildMultiChoiceControls(providerId, spec, guildId, locale) {
+    const currentValues = new Set(isBulkProvider(providerId)
+        ? []
+        : await normalizeMultiChoiceSetting(providerId, spec, guildId));
+    const options = choiceOptions(spec);
+    if (options.length === 0) return [buildUtilityButtons(providerId, spec.key, locale)];
+
+    return [
+        new ActionRowBuilder().addComponents(
+            new StringSelectMenuBuilder()
+                .setCustomId(`${CUSTOM_ID_PREFIX}:multiChoice:${providerId}:${spec.key}`)
+                .setPlaceholder(specLabel(spec, locale))
+                .setMinValues(0)
+                .setMaxValues(options.length)
+                .addOptions(options.map(choice => ({
+                    label: truncate(choiceLabel(spec, choice, locale), 100),
+                    value: String(choice.value),
+                    default: currentValues.has(String(choice.value)),
                 })))
         ),
         buildUtilityButtons(providerId, spec.key, locale),
@@ -924,6 +993,7 @@ async function buildControls(providerId, spec, guildId, locale) {
         return await buildBoolControls(providerId, spec, guildId, locale);
     }
     if (spec.kind === 'choice') return await buildChoiceControls(providerId, spec, guildId, locale);
+    if (spec.kind === 'multiChoice') return await buildMultiChoiceControls(providerId, spec, guildId, locale);
     if (spec.kind === 'buttonVisibility') return await buildButtonVisibilityControls(providerId, guildId, locale);
     if (spec.kind === 'outputVisibility') return await buildOutputVisibilityControls(providerId, spec, guildId, locale);
     if (spec.kind === 'targets') return buildTargetControls(providerId, spec, locale);
@@ -1162,6 +1232,7 @@ async function handleComponent(interaction) {
     const needsPersistence = [
         'bool',
         'choice',
+        'multiChoice',
         'buttonVisibility',
         'buttonVisibilityPreset',
         'outputVisibility',
@@ -1196,6 +1267,9 @@ async function handleComponent(interaction) {
         notice = isBulkProvider(providerId)
             ? localText('updatedAllProvidersSetting', interaction.locale, { setting: specLabel(spec, interaction.locale), value: valueLabel })
             : `${specLabel(spec, interaction.locale)}: ${valueLabel}`;
+    } else if (action === 'multiChoice') {
+        const spec = findSpec(providerId, settingKey);
+        notice = await applyMultiChoiceSelection(providerId, spec, interaction.guildId, interaction.values || [], interaction.locale);
     } else if (action === 'buttonVisibility') {
         settingKey = 'button_invisible';
         notice = await applyButtonVisibilitySelection(providerId, interaction.guildId, interaction.values || [], interaction.locale);

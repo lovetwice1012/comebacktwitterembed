@@ -10,12 +10,17 @@ export function formatBytes(bytes: number) {
   return `${value.toFixed(value >= 10 || unit === 0 ? 0 : 1)} ${units[unit]}`;
 }
 
-export function formatDateTime(value: unknown, locale: "ja" | "en" = "ja") {
+export function formatDateTime(value: unknown, locale: string = "ja") {
   if (!value) return "-";
   const date = typeof value === "number" ? new Date(value) : new Date(String(value));
   if (Number.isNaN(date.getTime())) return "-";
-  return new Intl.DateTimeFormat(locale === "ja" ? "ja-JP" : "en-US", {
+  const options: Intl.DateTimeFormatOptions = {
     dateStyle: "medium",
     timeStyle: "short",
-  }).format(date);
+  };
+  try {
+    return new Intl.DateTimeFormat(locale === "ja" ? "ja-JP" : locale, options).format(date);
+  } catch {
+    return new Intl.DateTimeFormat("ja-JP", options).format(date);
+  }
 }

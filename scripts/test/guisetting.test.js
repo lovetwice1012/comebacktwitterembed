@@ -349,6 +349,7 @@ test('guisetting covers every setting exposed by /settings', () => {
             'display_density',
             'media_display_mode',
             'amazon_description_max_length',
+            'amazon_extract_targets',
             'hidden_output_items',
         ],
         booth: [

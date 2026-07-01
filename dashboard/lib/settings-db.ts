@@ -87,6 +87,7 @@ function providerSettingDefault(provider: { id: string; enabledByDefault?: boole
   if (key === "steam_description_max_length") return provider.id === "steam" ? 900 : undefined;
   if (key === "steam_image_source") return provider.id === "steam" ? "header" : undefined;
   if (key === "amazon_description_max_length") return provider.id === "amazon" ? 700 : undefined;
+  if (key === "amazon_extract_targets") return provider.id === "amazon" ? ["product", "prime_video", "music"] : undefined;
   if (key === "booth_description_max_length") return provider.id === "booth" ? 350 : undefined;
   if (key === "booth_adult_display_mode") return provider.id === "booth" ? "normal" : undefined;
   const base = getProviderDefaults()[key];

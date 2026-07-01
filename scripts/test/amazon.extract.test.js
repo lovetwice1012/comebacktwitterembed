@@ -379,6 +379,33 @@ test('amazon extract: resolves short links using the final fetch URL', async () 
     assert.equal(result[0].components[0].components[0].data.url, url);
 });
 
+test('amazon extract: target setting skips disabled direct Amazon surfaces before fetch', async () => {
+    const requests = [];
+    const provider = loadAmazonProviderWithFetch(async (url) => {
+        requests.push(url);
+        return okHtml(productJsonLdHtml(), url);
+    });
+
+    const productUrl = 'https://www.amazon.com/Echo-Dot/dp/B08N5WRWNW';
+    const musicUrl = 'https://music.amazon.com/tracks/B0TRACK123';
+    const primeUrl = 'https://www.primevideo.com/detail/0NQ1QFP6B4R6TM8O2590IV5716';
+
+    assert.equal(await provider.extract(createMessage(productUrl), productUrl, {
+        amazon_extract_targets: ['music'],
+    }), null);
+    assert.equal(await provider.extract(createMessage(musicUrl), musicUrl, {
+        amazon_extract_targets: ['product'],
+    }), null);
+    assert.equal(await provider.extract(createMessage(primeUrl), primeUrl, {
+        amazon_extract_targets: ['product'],
+    }), null);
+    assert.equal(await provider.extract(createMessage(productUrl), productUrl, {
+        amazon_extract_targets: [],
+    }), null);
+
+    assert.deepEqual(requests, []);
+});
+
 test('amazon extract: builds Amazon Music embeds from music.amazon track links', async () => {
     const provider = loadAmazonProviderWithFetch(async (url) => okHtml(musicJsonLdHtml(), url));
 
@@ -444,6 +471,22 @@ test('amazon extract: resolves short links to Amazon Music URLs', async () => {
     assert.equal(embed.url, 'https://music.amazon.co.jp/playlists/B0PLAYLIST1');
     assert.equal(fieldValue(embed, 'Type'), 'Playlist');
     assert.equal(fieldValue(embed, 'ID'), 'B0PLAYLIST1');
+});
+
+test('amazon extract: target setting skips short links after resolving disabled surfaces', async () => {
+    const requests = [];
+    const provider = loadAmazonProviderWithFetch(async (url) => {
+        requests.push(url);
+        return okHtml(musicJsonLdHtml({ name: 'Short Music Link' }), 'https://music.amazon.co.jp/playlists/B0PLAYLIST1');
+    });
+
+    const url = 'https://amzn.to/music123';
+    const result = await provider.extract(createMessage(url), url, {
+        amazon_extract_targets: ['product'],
+    });
+
+    assert.equal(result, null);
+    assert.deepEqual(requests, [url]);
 });
 
 test('amazon extract: builds Prime Video embeds from primevideo.com detail links', async () => {

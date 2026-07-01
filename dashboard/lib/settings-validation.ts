@@ -64,6 +64,17 @@ function parseScalarChoice(spec: SettingSpec, value: unknown, locale: DashboardL
   return textValue;
 }
 
+function parseMultiChoice(spec: SettingSpec, value: unknown, locale: DashboardLocale) {
+  const t = createTranslator(locale);
+  const values = z.array(z.string().min(1).max(64)).parse(Array.isArray(value) ? value : []);
+  const allowed = new Set(spec.choices?.map((choice) => String(choice.value)) || []);
+  const invalid = values.filter((item) => !allowed.has(item));
+  if (invalid.length > 0) {
+    throw new Error(t("validation.invalidChoice", { key: spec.key, values: [...allowed].join(", ") }));
+  }
+  return uniqueStrings(values);
+}
+
 function validateOutputItems(spec: SettingSpec, value: unknown, locale: DashboardLocale) {
   const t = createTranslator(locale);
   const values = hiddenOutputItemsSchema.parse(Array.isArray(value) ? value : []);
@@ -79,13 +90,14 @@ function validateSpecValue(providerId: string, spec: SettingSpec, value: unknown
   const t = createTranslator(locale);
   if (value === null) {
     if (spec.kind === "targets") return { user: [], channel: [], role: [] };
-    if (spec.kind === "bannedWords" || spec.kind === "outputVisibility") return [];
+    if (spec.kind === "bannedWords" || spec.kind === "outputVisibility" || spec.kind === "multiChoice") return [];
     if (spec.kind === "buttonVisibility") return {};
     return null;
   }
 
   if (spec.kind === "providerEnabled" || spec.kind === "bool") return z.boolean().parse(value);
   if (spec.kind === "choice") return parseScalarChoice(spec, value, locale);
+  if (spec.kind === "multiChoice") return parseMultiChoice(spec, value, locale);
   if (spec.kind === "targets") return normalizeTargets(value);
   if (spec.kind === "buttonVisibility") return normalizeButtonVisibility(providerId, value);
   if (spec.kind === "bannedWords") return uniqueStrings(z.array(z.string().min(1).max(255)).parse(value || []));

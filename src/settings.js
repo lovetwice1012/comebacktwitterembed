@@ -63,6 +63,7 @@ const SETTINGS_DEFAULT_FILE = {
     steam_description_max_length: {},
     steam_image_source: {},
     amazon_description_max_length: {},
+    amazon_extract_targets: {},
     booth_description_max_length: {},
     booth_image_limit: {},
     booth_adult_display_mode: {},
@@ -115,6 +116,7 @@ const SETTINGS_MIGRATIONS = {
     steam_description_max_length: {},
     steam_image_source: {},
     amazon_description_max_length: {},
+    amazon_extract_targets: {},
     booth_description_max_length: {},
     booth_image_limit: {},
     booth_adult_display_mode: {},
@@ -309,6 +311,10 @@ const PROVIDER_SETTING_COLUMNS = {
     amazon_description_max_length: {
         column: 'amazon_description_max_length',
         type: 'int',
+    },
+    amazon_extract_targets: {
+        column: 'amazon_extract_targets',
+        type: 'jsonArray',
     },
     booth_description_max_length: {
         column: 'booth_description_max_length',

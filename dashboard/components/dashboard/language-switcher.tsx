@@ -2,7 +2,8 @@
 
 import { Globe2 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { createTranslator, DASHBOARD_LOCALES, type DashboardLocale } from "@/lib/i18n";
+import { DASHBOARD_LOCALE_OPTIONS } from "@/lib/discord-locales";
+import { createTranslator, type DashboardLocale } from "@/lib/i18n";
 
 const COOKIE_MAX_AGE = 60 * 60 * 24 * 365;
 
@@ -25,9 +26,9 @@ export function LanguageSwitcher({ locale }: { locale: DashboardLocale }) {
         aria-label={t("language.label")}
         onChange={(event) => setLocale(event.target.value as DashboardLocale)}
       >
-        {DASHBOARD_LOCALES.map((item) => (
-          <option key={item} value={item}>
-            {t(item === "ja" ? "language.ja" : "language.en")}
+        {DASHBOARD_LOCALE_OPTIONS.map((item) => (
+          <option key={item.value} value={item.value}>
+            {item.flag} {item.nativeName}
           </option>
         ))}
       </select>
