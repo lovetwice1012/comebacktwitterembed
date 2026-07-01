@@ -315,6 +315,16 @@ export async function getProvidersOverview(guildId: string, locale: DashboardLoc
   );
 }
 
+export async function getCrossProviderSettings(guildId: string, locale: DashboardLocale = "ja") {
+  const providers = getBotProviders();
+  return (
+    await Promise.all(providers.map(async (provider) => {
+      const settings = await getProviderSettingsState(provider.id, guildId, locale);
+      return settings.map((setting) => ({ providerId: provider.id, providerLabel: providerLabel(provider), setting }));
+    }))
+  ).flat();
+}
+
 export async function getProviderSummary(guildId: string): Promise<ProviderSummary> {
   const overview = await getProvidersOverview(guildId);
   const enabled = overview.filter((provider) => provider.enabled).length;
@@ -440,4 +450,63 @@ export async function saveBulkProviderSettings(
     results.push({ providerId, warnings: result.warnings });
   }
   return { updatedProviders: results };
+}
+
+function cloneSettingValue<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value));
+}
+
+function valueForGuildSync(state: SettingState) {
+  if (state.kind !== "targets") return { value: cloneSettingValue(state.value), skippedTargets: 0 };
+  const targets = normalizeTargetSetting(state.value as TargetSetting);
+  return {
+    value: {
+      user: targets.user,
+      channel: [],
+      role: [],
+    },
+    skippedTargets: targets.channel.length + targets.role.length,
+  };
+}
+
+export async function syncGuildSettings(
+  sourceGuildId: string,
+  targetGuildId: string,
+  actor: AuditActor,
+  meta: { requestId?: string | null; ip?: string | null; userAgent?: string | null } = {},
+  locale: DashboardLocale = "ja",
+) {
+  if (!sourceGuildId || !targetGuildId || sourceGuildId === targetGuildId) {
+    throw new Error(createTranslator(locale)("sync.sameGuild"));
+  }
+
+  let copied = 0;
+  let skippedTargets = 0;
+  const providerCount = getBotProviders().length;
+
+  await prisma.$transaction(async (tx) => {
+    for (const provider of getBotProviders()) {
+      const specs = new Map(editableSpecs(provider.id).map((spec) => [spec.key, spec]));
+      const sourceStates = await getProviderSettingsState(provider.id, sourceGuildId, locale);
+      for (const sourceState of sourceStates) {
+        const spec = specs.get(sourceState.key);
+        if (!spec) continue;
+        const copiedValue = valueForGuildSync(sourceState);
+        skippedTargets += copiedValue.skippedTargets;
+        await writeValue(tx, provider.id, targetGuildId, spec, copiedValue.value === null ? undefined : copiedValue.value);
+        copied += 1;
+      }
+    }
+
+    await recordAuditLog(tx, {
+      guildId: targetGuildId,
+      actor,
+      action: "guild.sync",
+      before: { sourceGuildId, targetGuildId },
+      after: { sourceGuildId, targetGuildId, providerCount, copied, skippedTargets },
+      ...meta,
+    });
+  });
+
+  return { sourceGuildId, targetGuildId, providerCount, copied, skippedTargets };
 }

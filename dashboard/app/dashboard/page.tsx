@@ -1,4 +1,7 @@
 import { GuildList } from "@/components/dashboard/guild-list";
+import { GuildSwitcher } from "@/components/dashboard/guild-switcher";
+import { GuildSyncPanel } from "@/components/dashboard/guild-sync-panel";
+import { DashboardWorkspace } from "@/components/dashboard/dashboard-workspace";
 import { SignOutButton } from "@/components/dashboard/auth-buttons";
 import { LanguageSwitcher } from "@/components/dashboard/language-switcher";
 import { listVisibleGuilds } from "@/lib/discord";
@@ -17,14 +20,18 @@ export default async function DashboardPage() {
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold">{t("dashboard.guilds.title")}</h1>
-          <p className="text-sm text-muted-foreground">{t("dashboard.guilds.loggedInAs", { name: session.user.globalName || session.user.username })}</p>
+          <p className="text-sm text-muted-foreground">{t("dashboard.guilds.selectHelp")}</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          <GuildSwitcher selectedGuildIds={[]} guilds={guilds.map((guild) => ({ guildId: guild.guildId, name: guild.name }))} locale={locale} />
           <LanguageSwitcher locale={locale} />
           <SignOutButton locale={locale} />
         </div>
       </header>
-      <GuildList guilds={guilds} locale={locale} />
+      <DashboardWorkspace initialGuildIds={[]} locale={locale} defaultLayout="plain">
+        {guilds.length > 1 ? <GuildSyncPanel guilds={guilds.map((guild) => ({ guildId: guild.guildId, name: guild.name, canManageGuild: guild.canManageGuild }))} locale={locale} /> : null}
+        <GuildList guilds={guilds} locale={locale} />
+      </DashboardWorkspace>
     </main>
   );
 }

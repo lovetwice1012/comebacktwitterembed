@@ -1,20 +1,11 @@
 import Link from "next/link";
-import { Activity, ClipboardList, FileClock, Gauge, Layers3, Search, Server, Video } from "lucide-react";
+import { Server } from "lucide-react";
 import { SignOutButton } from "@/components/dashboard/auth-buttons";
+import { GuildSwitcher } from "@/components/dashboard/guild-switcher";
+import { DashboardWorkspace } from "@/components/dashboard/dashboard-workspace";
 import { LanguageSwitcher } from "@/components/dashboard/language-switcher";
 import { Badge } from "@/components/ui/badge";
-import { createTranslator, type DashboardLocale, type TranslationKey } from "@/lib/i18n";
-import { cn } from "@/lib/utils";
-
-const navItems = [
-  { href: "", labelKey: "shell.nav.overview", icon: Gauge },
-  { href: "providers", labelKey: "shell.nav.providers", icon: Layers3 },
-  { href: "settings", labelKey: "shell.nav.settings", icon: Search },
-  { href: "preview", labelKey: "shell.nav.preview", icon: ClipboardList },
-  { href: "diagnostics", labelKey: "shell.nav.diagnostics", icon: Activity },
-  { href: "media", labelKey: "shell.nav.media", icon: Video },
-  { href: "logs", labelKey: "shell.nav.logs", icon: FileClock },
-] satisfies Array<{ href: string; labelKey: TranslationKey; icon: typeof Gauge }>;
+import { createTranslator, type DashboardLocale } from "@/lib/i18n";
 
 export function DashboardShell({
   guildId,
@@ -38,35 +29,17 @@ export function DashboardShell({
             <Server size={18} />
             comebacktwitterembed
           </Link>
-          <div className="flex min-w-0 items-center gap-3">
-            <span className="hidden truncate text-sm text-muted-foreground md:inline">{guildName}</span>
+          <div className="flex min-w-0 items-center gap-2">
+            <GuildSwitcher selectedGuildIds={[guildId]} guilds={[{ guildId, name: guildName }]} locale={locale} />
             <Badge tone={canEdit ? "success" : "muted"}>{canEdit ? t("shell.badge.canEdit") : t("shell.badge.viewOnly")}</Badge>
             <LanguageSwitcher locale={locale} />
             <SignOutButton locale={locale} />
           </div>
         </div>
       </header>
-      <div className="dashboard-grid mx-auto max-w-7xl gap-5 px-4 py-5">
-        <aside className="space-y-2">
-          {navItems.map((item) => {
-            const Icon = item.icon;
-            const href = item.href ? `/dashboard/${guildId}/${item.href}` : `/dashboard/${guildId}`;
-            return (
-              <Link
-                key={item.href || "overview"}
-                href={href}
-                className={cn(
-                  "flex items-center gap-2 rounded-md px-3 py-2 text-sm text-muted-foreground transition hover:bg-muted hover:text-foreground",
-                )}
-              >
-                <Icon size={16} />
-                {t(item.labelKey)}
-              </Link>
-            );
-          })}
-        </aside>
-        <main className="min-w-0">{children}</main>
-      </div>
+      <DashboardWorkspace initialGuildIds={[guildId]} locale={locale} defaultLayout="server" defaultGuildId={guildId}>
+        {children}
+      </DashboardWorkspace>
     </div>
   );
 }

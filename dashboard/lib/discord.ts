@@ -158,6 +158,30 @@ export async function listVisibleGuilds(session: DashboardSession) {
     .sort((a, b) => Number(b.canEdit) - Number(a.canEdit) || a.name.localeCompare(b.name));
 }
 
+export async function listSwitcherGuilds(session: DashboardSession) {
+  const [userGuilds, installed] = await Promise.all([
+    fetchUserGuilds(session.accessToken),
+    fetchBotGuildIds(),
+  ]);
+
+  return userGuilds
+    .map((guild) => {
+      const permissions = parsePermissions(guild.owner ? BigInt("9223372036854775807") : guild.permissions || "0");
+      const botInstalled = installed.has(guild.id);
+      const canView = botInstalled && canViewSettings(permissions);
+      return {
+        guildId: guild.id,
+        name: guild.name,
+        iconUrl: guildIconUrl(guild),
+        canView,
+        canEdit: botInstalled && canEditSettings(permissions),
+        canManageGuild: botInstalled && canManageGuildSettings(permissions),
+      };
+    })
+    .filter((guild) => guild.canView)
+    .sort((a, b) => Number(b.canEdit) - Number(a.canEdit) || a.name.localeCompare(b.name));
+}
+
 export async function getGuildAccess(session: DashboardSession, guildId: string): Promise<GuildAccess | null> {
   const [userGuilds, installed] = await Promise.all([
     fetchUserGuilds(session.accessToken),

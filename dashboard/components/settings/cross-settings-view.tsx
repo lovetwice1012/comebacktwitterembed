@@ -24,7 +24,19 @@ const presets = [
   { labelKey: "settingsCross.preset.admin", changes: { display_density: "detail", failure_display_policy: "error_summary", media_display_mode: "embed" } },
 ] satisfies Array<{ labelKey: TranslationKey; changes: Record<string, unknown> }>;
 
-export function CrossSettingsView({ guildId, items, canManage, locale }: { guildId: string; items: Item[]; canManage: boolean; locale: DashboardLocale }) {
+export function CrossSettingsView({
+  guildId,
+  items,
+  canManage,
+  locale,
+  onSaved,
+}: {
+  guildId: string;
+  items: Item[];
+  canManage: boolean;
+  locale: DashboardLocale;
+  onSaved?: () => void;
+}) {
   const t = createTranslator(locale);
   const router = useRouter();
   const [query, setQuery] = useState("");
@@ -58,7 +70,8 @@ export function CrossSettingsView({ guildId, items, canManage, locale }: { guild
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || t("settingsCross.applyFailed"));
-      router.refresh();
+      if (onSaved) onSaved();
+      else router.refresh();
     } finally {
       setSaving(null);
     }
