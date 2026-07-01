@@ -11,6 +11,7 @@ const PROVIDER_DEFAULTS = {
     extract_bot_message:                                  false,
     legacy_mode:                                          undefined,
     passive_mode:                                         false,
+    disable:                                              undefined,
     bannedWords:                                          [],
     button_invisible:                                     undefined,
     button_disabled:                                      undefined,
@@ -240,6 +241,66 @@ const PROVIDER_SETTING_COLUMNS = {
 
 function queryDatabase() {
     return require('../db').queryDatabase;
+}
+
+const TEST_MEMORY_VALUES = new Map();
+
+function isTestStorageMode() {
+    return process.env.NODE_ENV === 'test';
+}
+
+function cloneValue(value) {
+    if (value === undefined) return undefined;
+    return JSON.parse(JSON.stringify(value));
+}
+
+function testMemoryKey(providerId, guildId, key) {
+    return `${providerId}\0${guildId}\0${key}`;
+}
+
+function getLegacyTestSetting(provider, key, guildId) {
+    let legacySettings;
+    try {
+        legacySettings = require('../settings').settings;
+    } catch {
+        return undefined;
+    }
+
+    const providerBucket = legacySettings.byProvider?.[provider.id]?.[key];
+    if (providerBucket && Object.prototype.hasOwnProperty.call(providerBucket, guildId)) {
+        return cloneValue(providerBucket[guildId]);
+    }
+
+    if (provider.id !== 'twitter') return undefined;
+    if (key === 'disable') {
+        return normalizeTargetSetting({
+            user: legacySettings.disable?.user || [],
+            channel: legacySettings.disable?.channel || [],
+            role: legacySettings.disable?.role?.[guildId] || [],
+        });
+    }
+
+    const legacyBucket = legacySettings[key];
+    if (legacyBucket && typeof legacyBucket === 'object' && Object.prototype.hasOwnProperty.call(legacyBucket, guildId)) {
+        return cloneValue(legacyBucket[guildId]);
+    }
+    return undefined;
+}
+
+function getTestMemorySetting(provider, key, guildId) {
+    const stored = TEST_MEMORY_VALUES.get(testMemoryKey(provider.id, guildId, key));
+    if (stored !== undefined) return cloneValue(stored);
+    const legacy = getLegacyTestSetting(provider, key, guildId);
+    if (legacy !== undefined) return legacy;
+    if (key === 'disable') return normalizeTargetSetting();
+    if (key === 'button_disabled') return normalizeButtonDisabled();
+    if (key === 'bannedWords') return [];
+    if (key === 'button_invisible') return normalizeButtonVisibility();
+    return settingDefault(provider, key);
+}
+
+function setTestMemorySetting(provider, key, guildId, value) {
+    TEST_MEMORY_VALUES.set(testMemoryKey(provider.id, guildId, key), cloneValue(value));
 }
 
 function normalizeProvider(provider) {
@@ -490,6 +551,7 @@ async function setButtonVisibility(provider, guildId, value) {
 
 async function getSetting(providerInput, key, guildId) {
     const provider = normalizeProvider(providerInput);
+    if (isTestStorageMode()) return getTestMemorySetting(provider, key, guildId);
     if (key === 'disable') return await getDisableSetting(provider, guildId);
     if (key === 'button_disabled') {
         return normalizeButtonDisabled(targetRowsToSetting(
@@ -503,6 +565,7 @@ async function getSetting(providerInput, key, guildId) {
 
 async function setSetting(providerInput, key, guildId, value) {
     const provider = normalizeProvider(providerInput);
+    if (isTestStorageMode()) return setTestMemorySetting(provider, key, guildId, value);
     if (key === 'disable') return await setDisableSetting(provider, guildId, value);
     if (key === 'button_disabled') {
         return await replaceTargetRows(TABLES.guildProviderButtonDisabledTargets, provider.id, guildId, value);
@@ -531,6 +594,10 @@ async function setProviderEnabled(providerInput, guildId, value) {
 }
 
 async function getSaveTweetQuotaOverride(userId) {
+    if (isTestStorageMode()) {
+        const value = TEST_MEMORY_VALUES.get(testMemoryKey('user', userId, 'save_tweet_quota_override'));
+        return value === undefined ? undefined : Number(value);
+    }
     await ensureDatabaseSchema();
     const rows = await queryDatabase()(
         `SELECT save_tweet_quota_override_bytes AS quota
@@ -544,6 +611,10 @@ async function getSaveTweetQuotaOverride(userId) {
 }
 
 async function setSaveTweetQuotaOverride(userId, quota) {
+    if (isTestStorageMode()) {
+        TEST_MEMORY_VALUES.set(testMemoryKey('user', userId, 'save_tweet_quota_override'), quota);
+        return;
+    }
     await ensureDatabaseSchema();
     await queryDatabase()(
         `INSERT INTO ${TABLES.users} (user_id, registered_at_ms, save_tweet_quota_override_bytes)
@@ -567,5 +638,6 @@ module.exports = {
         normalizeButtonDisabled,
         normalizeButtonVisibility,
         normalizeTargetSetting,
+        TEST_MEMORY_VALUES,
     },
 };

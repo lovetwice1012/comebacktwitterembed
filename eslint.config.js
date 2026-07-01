@@ -29,6 +29,7 @@ module.exports = [
     {
         ignores: [
             'node_modules/**',
+            'dashboard/**',
             'saves/**',
             'scripts/**',
             '__*.js',

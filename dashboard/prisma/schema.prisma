@@ -1,0 +1,85 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model GuildProviderSetting {
+  providerId String @map("provider_id") @db.VarChar(64)
+  guildId    String @map("guild_id") @db.VarChar(32)
+
+  enabled                                      Boolean? @map("enabled")
+  defaultLanguage                              String?  @map("default_language") @db.VarChar(16)
+  editOriginalIfTranslate                      Boolean? @map("edit_original_if_translate")
+  extractBotMessage                            Boolean? @map("extract_bot_message")
+  legacyMode                                   Boolean? @map("legacy_mode")
+  passiveMode                                  Boolean? @map("passive_mode")
+  anonymousExpand                              Boolean? @map("anonymous_expand")
+  secondaryExtractMode                         Boolean? @map("secondary_extract_mode")
+  secondaryExtractModeMultipleImages           Boolean? @map("secondary_extract_mode_multiple_images")
+  secondaryExtractModeVideo                    Boolean? @map("secondary_extract_mode_video")
+  sendMediaAsAttachmentsAsDefault              Boolean? @map("send_media_as_attachments_as_default")
+  deleteIfOnlyPostedTweetLink                  Boolean? @map("delete_if_only_posted_tweet_link")
+  deleteIfOnlyPostedTweetLinkSecondaryExtractMode Boolean? @map("delete_if_only_posted_tweet_link_secondary_extract_mode")
+  alwaysReplyIfPostedTweetLink                 Boolean? @map("always_reply_if_posted_tweet_link")
+  quoteRepostMaxDepth                          Int?     @map("quote_repost_max_depth")
+  quoteRepostDoNotExtract                      Boolean? @map("quote_repost_do_not_extract")
+  pixivImagesPerStep                           Int?     @map("pixiv_images_per_step")
+  youtubeDescriptionMaxLength                  Int?     @map("youtube_description_max_length")
+  youtubeVideoListLimit                        Int?     @map("youtube_video_list_limit")
+  tiktokHq                                     Boolean? @map("tiktok_hq")
+  twitterTextMode                              String?  @map("twitter_text_mode") @db.VarChar(32)
+  twitterStatsLayout                           String?  @map("twitter_stats_layout") @db.VarChar(32)
+  twitterQuoteMode                             String?  @map("twitter_quote_mode") @db.VarChar(32)
+  twitterQuoteLayout                           String?  @map("twitter_quote_layout") @db.VarChar(32)
+  pixivCaptionMaxLength                        Int?     @map("pixiv_caption_max_length")
+  pixivTagLimit                                String?  @map("pixiv_tag_limit") @db.VarChar(32)
+  instagramCaptionMaxLength                    Int?     @map("instagram_caption_max_length")
+  instagramMediaLimit                          Int?     @map("instagram_media_limit")
+  githubCardStyle                              String?  @map("github_card_style") @db.VarChar(32)
+  hiddenOutputItems                            String?  @map("hidden_output_items") @db.Text
+  displayDensity                               String?  @map("display_density") @db.VarChar(32)
+  mediaDisplayMode                             String?  @map("media_display_mode") @db.VarChar(32)
+  failureDisplayPolicy                         String?  @map("failure_display_policy") @db.VarChar(32)
+  tiktokDescriptionMaxLength                   Int?     @map("tiktok_description_max_length")
+  tiktokImageLimit                             Int?     @map("tiktok_image_limit")
+  tiktokVideoFallbackMode                      String?  @map("tiktok_video_fallback_mode") @db.VarChar(32)
+  niconicoDescriptionMaxLength                 Int?     @map("niconico_description_max_length")
+  spotifyDescriptionMaxLength                  Int?     @map("spotify_description_max_length")
+  twitchDescriptionMaxLength                   Int?     @map("twitch_description_max_length")
+  steamDescriptionMaxLength                    Int?     @map("steam_description_max_length")
+  steamImageSource                             String?  @map("steam_image_source") @db.VarChar(32)
+  amazonDescriptionMaxLength                   Int?     @map("amazon_description_max_length")
+  boothDescriptionMaxLength                    Int?     @map("booth_description_max_length")
+  boothImageLimit                              Int?     @map("booth_image_limit")
+  boothAdultDisplayMode                        String?  @map("booth_adult_display_mode") @db.VarChar(32)
+  updatedAt                                    DateTime @updatedAt @map("updated_at")
+
+  @@id([providerId, guildId])
+  @@map("guild_provider_settings")
+}
+
+model DashboardAuditLog {
+  auditLogId            BigInt   @id @default(autoincrement()) @map("audit_log_id") @db.UnsignedBigInt
+  guildId               String   @map("guild_id") @db.VarChar(32)
+  providerId            String?  @map("provider_id") @db.VarChar(64)
+  settingKey            String?  @map("setting_key") @db.VarChar(191)
+  actorUserId           String   @map("actor_user_id") @db.VarChar(32)
+  actorUsernameSnapshot String?  @map("actor_username_snapshot") @db.VarChar(255)
+  action                String   @map("action") @db.VarChar(64)
+  beforeJson            String?  @map("before_json") @db.LongText
+  afterJson             String?  @map("after_json") @db.LongText
+  requestId             String?  @map("request_id") @db.VarChar(64)
+  ipHash                String?  @map("ip_hash") @db.Char(64)
+  userAgentHash         String?  @map("user_agent_hash") @db.Char(64)
+  createdAt             DateTime @default(now()) @map("created_at")
+
+  @@index([guildId, createdAt], map: "idx_dashboard_audit_guild_time")
+  @@index([actorUserId, createdAt], map: "idx_dashboard_audit_actor_time")
+  @@index([providerId, createdAt], map: "idx_dashboard_audit_provider_time")
+  @@index([settingKey, createdAt], map: "idx_dashboard_audit_setting_time")
+  @@map("dashboard_audit_logs")
+}

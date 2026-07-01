@@ -134,6 +134,7 @@ checkguild.js
 settings.json
 sendwebhook.js
 package-lock.json
+!dashboard/package-lock.json
 saves
 data/stats_counters.json
 ```

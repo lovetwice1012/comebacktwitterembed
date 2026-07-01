@@ -9,7 +9,7 @@
     "reset:db": "node scripts/reset_database.js",
     "seed:settings": "node scripts/migrate_settings_to_mysql.js",
     "migrate:settings:mysql": "node scripts/migrate_settings_to_mysql.js",
-    "test": "node --test \"scripts/test/**/*.test.js\"",
+    "test": "node scripts/run_node_tests.js",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit"
   },

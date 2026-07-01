@@ -310,6 +310,24 @@ async function getRecord(token) {
     return index[token] || null;
 }
 
+async function listCachedDownloads() {
+    await ensureDirs();
+    const index = await readIndex();
+    return Object.values(index);
+}
+
+async function deleteCachedDownload(token) {
+    if (!/^[A-Za-z0-9_-]{16,}$/.test(String(token || ''))) return false;
+    let record = null;
+    await updateIndex(index => {
+        record = index[token] || null;
+        if (record) delete index[token];
+        return record;
+    });
+    await deleteRecordFiles(token);
+    return Boolean(record);
+}
+
 async function handleDownloadRequest(req, res) {
     await cleanupExpiredDownloads();
     const token = String(req.params.token || '');
@@ -372,9 +390,11 @@ module.exports = {
     configureForTest,
     contentTypeForFilename,
     downloadNiconicoToCache,
+    deleteCachedDownload,
     getPublicBaseUrl,
     handleDownloadRequest,
     isDownloadButtonEnabled,
+    listCachedDownloads,
     publicUrlForRecord,
     startCleanupTimer,
     stopCleanupTimer,

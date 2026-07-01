@@ -1,0 +1,51 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: 210 22% 97%;
+  --foreground: 224 24% 12%;
+  --card: 0 0% 100%;
+  --card-foreground: 224 24% 12%;
+  --primary: 221 74% 48%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 154 42% 92%;
+  --secondary-foreground: 154 42% 16%;
+  --muted: 220 16% 93%;
+  --muted-foreground: 224 10% 42%;
+  --accent: 28 90% 94%;
+  --accent-foreground: 27 74% 25%;
+  --destructive: 0 72% 48%;
+  --destructive-foreground: 0 0% 100%;
+  --border: 220 16% 86%;
+  --input: 220 16% 86%;
+  --ring: 221 74% 48%;
+}
+
+* {
+  border-color: hsl(var(--border));
+}
+
+body {
+  min-height: 100vh;
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr);
+}
+
+@media (max-width: 900px) {
+  .dashboard-grid {
+    grid-template-columns: 1fr;
+  }
+}
