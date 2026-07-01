@@ -408,12 +408,26 @@ function listMigrationFiles() {
         .sort();
 }
 
+function parseAddColumnStatement(statement) {
+    const match = String(statement || '').match(/^ALTER\s+TABLE\s+`?([A-Za-z0-9_]+)`?\s+ADD\s+COLUMN\s+`?([A-Za-z0-9_]+)`?\b/i);
+    if (!match) return null;
+    return { table: match[1], column: match[2] };
+}
+
+async function shouldSkipMigrationStatement(queryDatabase, statement) {
+    const addColumn = parseAddColumnStatement(statement);
+    if (!addColumn) return false;
+    const rows = await queryDatabase(`SHOW COLUMNS FROM ${addColumn.table} LIKE ?`, [addColumn.column]);
+    return rows.length > 0;
+}
+
 async function applyMigrationFile(queryDatabase, file) {
     const migrationId = path.basename(file, '.sql');
     const sql = fs.readFileSync(path.join(MIGRATIONS_DIR, file), 'utf8');
     const statements = splitSqlStatements(sql);
 
     for (const statement of statements) {
+        if (await shouldSkipMigrationStatement(queryDatabase, statement)) continue;
         try {
             await queryDatabase(statement);
         } catch (err) {
@@ -472,6 +486,8 @@ module.exports = {
     ensureDatabaseSchema,
     _internal: {
         listMigrationFiles,
+        parseAddColumnStatement,
+        shouldSkipMigrationStatement,
         splitSqlStatements,
         ensureGuildProviderSettingsColumns,
     },

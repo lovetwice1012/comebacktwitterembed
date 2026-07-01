@@ -125,3 +125,23 @@ test('database schema can split simple SQL migration files', () => {
         ['SELECT 1', 'SELECT 2']
     );
 });
+
+test('database schema can detect add-column migrations before execution', async () => {
+    assert.deepEqual(
+        _internal.parseAddColumnStatement('ALTER TABLE guild_provider_settings ADD COLUMN tiktok_hq TINYINT(1) NULL AFTER youtube_video_list_limit'),
+        { table: 'guild_provider_settings', column: 'tiktok_hq' }
+    );
+    assert.equal(_internal.parseAddColumnStatement('CREATE TABLE example (id INT)'), null);
+
+    const queries = [];
+    const skip = await _internal.shouldSkipMigrationStatement(async (sql, params) => {
+        queries.push({ sql, params });
+        return [{ Field: params[0] }];
+    }, 'ALTER TABLE guild_provider_settings ADD COLUMN tiktok_hq TINYINT(1) NULL');
+
+    assert.equal(skip, true);
+    assert.deepEqual(queries, [{
+        sql: 'SHOW COLUMNS FROM guild_provider_settings LIKE ?',
+        params: ['tiktok_hq'],
+    }]);
+});
