@@ -73,7 +73,9 @@ function convertBoolToEnableDisable(bool, locale) {
 }
 
 function discordErrorCode(err) {
-    return err?.code ?? err?.rawError?.code;
+    const code = err?.code ?? err?.rawError?.code;
+    const numericCode = Number(code);
+    return Number.isInteger(numericCode) ? numericCode : undefined;
 }
 
 function isUnknownMessageError(err) {

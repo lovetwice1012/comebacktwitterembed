@@ -26,6 +26,7 @@ const DEFAULT_CLEANUP_INTERVAL_MS = 60 * 1000;
 const DEFAULT_ROOT_DIR = path.join(__dirname, '..', 'data', 'niconico_downloads');
 const DEFAULT_PUBLIC_BASE_URL = 'https://cbte.sprink.cloud';
 const ROUTE_PREFIX = '/niconico-downloads';
+const UNIFIED_ROUTE_PREFIX = '/media/niconico';
 
 let rootDirOverride = null;
 let publicBaseUrlOverride = null;
@@ -37,9 +38,18 @@ function niconicoDownloadConfig() {
     return _config.niconicoDownload || _config.niconico_download || {};
 }
 
+function dashboardConfig() {
+    return _config.dashboard || {};
+}
+
+function mediaDeliveryConfig() {
+    return _config.mediaDelivery || _config.media_delivery || {};
+}
+
 function getRootDir() {
     return rootDirOverride
         || process.env.NICONICO_DOWNLOAD_DIR
+        || mediaDeliveryConfig().niconicoDownloadDir
         || niconicoDownloadConfig().dir
         || DEFAULT_ROOT_DIR;
 }
@@ -55,20 +65,37 @@ function getIndexPath() {
 function getPublicBaseUrl() {
     return (publicBaseUrlOverride
         || process.env.NICONICO_DOWNLOAD_PUBLIC_BASE_URL
+        || process.env.MEDIA_DELIVERY_PUBLIC_BASE_URL
+        || process.env.DASHBOARD_PUBLIC_BASE_URL
+        || process.env.NEXTAUTH_URL
+        || mediaDeliveryConfig().publicBaseUrl
+        || dashboardConfig().publicBaseUrl
+        || dashboardConfig().baseUrl
         || niconicoDownloadConfig().publicBaseUrl
         || _config.publicBaseUrl
         || DEFAULT_PUBLIC_BASE_URL).replace(/\/+$/, '');
 }
 
+function useLegacyPublicRoute() {
+    const configured = mediaDeliveryConfig().useLegacyRoutes;
+    if (configured === true || configured === false) return configured;
+    return /^(1|true|yes|on)$/i.test(String(process.env.MEDIA_DELIVERY_USE_LEGACY_ROUTES || ''));
+}
+
+function publicRoutePrefix() {
+    return useLegacyPublicRoute() ? ROUTE_PREFIX : UNIFIED_ROUTE_PREFIX;
+}
+
 function getFfmpegPath() {
     return process.env.FFMPEG_PATH
         || process.env.NICONICO_FFMPEG_PATH
+        || mediaDeliveryConfig().ffmpegPath
         || niconicoDownloadConfig().ffmpegPath
         || 'ffmpeg';
 }
 
 function ttlMs() {
-    const configured = Number(process.env.NICONICO_DOWNLOAD_TTL_MS || niconicoDownloadConfig().ttlMs);
+    const configured = Number(process.env.NICONICO_DOWNLOAD_TTL_MS || mediaDeliveryConfig().ttlMs || niconicoDownloadConfig().ttlMs);
     return Number.isFinite(configured) && configured > 0 ? configured : DEFAULT_TTL_MS;
 }
 
@@ -82,6 +109,11 @@ function isDownloadButtonEnabled() {
     const envValue = process.env.NICONICO_DOWNLOAD_BUTTON_ENABLED;
     if (envValue !== undefined && envValue !== null && envValue !== '') {
         return boolFromConfig(envValue);
+    }
+
+    const mediaDeliveryValue = mediaDeliveryConfig().niconicoDownloadButtonEnabled;
+    if (mediaDeliveryValue !== undefined && mediaDeliveryValue !== null && mediaDeliveryValue !== '') {
+        return boolFromConfig(mediaDeliveryValue);
     }
 
     const configured = niconicoDownloadConfig().buttonEnabled;
@@ -153,7 +185,7 @@ function contentDisposition(filename) {
 }
 
 function publicUrlForRecord(record) {
-    return `${getPublicBaseUrl()}${ROUTE_PREFIX}/${encodeURIComponent(record.token)}/${encodeURIComponent(record.filename)}`;
+    return `${getPublicBaseUrl()}${publicRoutePrefix()}/${encodeURIComponent(record.token)}/${encodeURIComponent(record.filename)}`;
 }
 
 function recordDir(token) {
@@ -386,6 +418,7 @@ function configureForTest(rootDir, publicBaseUrl = 'https://example.test', nextS
 
 module.exports = {
     ROUTE_PREFIX,
+    UNIFIED_ROUTE_PREFIX,
     cleanupExpiredDownloads,
     configureForTest,
     contentTypeForFilename,
@@ -406,6 +439,7 @@ module.exports = {
         getFfmpegPath,
         getIndexPath,
         getRootDir,
+        publicRoutePrefix,
         readIndex,
         runFfmpeg,
         safeFilename,

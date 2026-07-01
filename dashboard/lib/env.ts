@@ -6,7 +6,27 @@ import path from "node:path";
 type RootConfig = {
   token?: string;
   clientId?: string;
+  clientSecret?: string;
   publicBaseUrl?: string;
+  nextAuthSecret?: string;
+  dashboard?: {
+    enabled?: boolean;
+    port?: number;
+    publicBaseUrl?: string;
+    baseUrl?: string;
+    clientId?: string;
+    clientSecret?: string;
+    nextAuthSecret?: string;
+    useBotGuildApi?: boolean;
+    loadGuildProviderSummary?: boolean;
+    discordApiTimeoutMs?: number;
+    auditHashSecret?: string;
+  };
+  mediaDelivery?: {
+    publicBaseUrl?: string;
+    useLegacyRoutes?: boolean;
+    serverMode?: string;
+  };
   db?: {
     host?: string;
     user?: string;
@@ -58,9 +78,48 @@ export function getBotToken() {
 }
 
 export function getClientId() {
-  return process.env.DISCORD_CLIENT_ID || readRootConfig().clientId || "";
+  const cfg = readRootConfig();
+  return process.env.DISCORD_CLIENT_ID || cfg.dashboard?.clientId || cfg.clientId || "";
+}
+
+export function getClientSecret() {
+  const cfg = readRootConfig();
+  return process.env.DISCORD_CLIENT_SECRET || cfg.dashboard?.clientSecret || cfg.clientSecret || "";
+}
+
+export function getNextAuthSecret() {
+  const cfg = readRootConfig();
+  return process.env.NEXTAUTH_SECRET || cfg.dashboard?.nextAuthSecret || cfg.nextAuthSecret || "";
 }
 
 export function getDashboardBaseUrl() {
-  return (process.env.NEXTAUTH_URL || process.env.DASHBOARD_BASE_URL || "http://localhost:3000").replace(/\/+$/, "");
+  const cfg = readRootConfig();
+  const port = Number(process.env.DASHBOARD_PORT || cfg.dashboard?.port || 30987);
+  return (
+    process.env.NEXTAUTH_URL
+    || process.env.DASHBOARD_BASE_URL
+    || cfg.dashboard?.publicBaseUrl
+    || cfg.dashboard?.baseUrl
+    || cfg.mediaDelivery?.publicBaseUrl
+    || cfg.publicBaseUrl
+    || `http://localhost:${port}`
+  ).replace(/\/+$/, "");
+}
+
+export function getDashboardFlag(key: "useBotGuildApi" | "loadGuildProviderSummary", envName: string) {
+  const envValue = process.env[envName];
+  if (envValue !== undefined && envValue !== "") return /^(1|true|yes|on)$/i.test(envValue);
+  return readRootConfig().dashboard?.[key] === true;
+}
+
+export function getDashboardNumber(key: "discordApiTimeoutMs", envName: string, fallback: number) {
+  const envValue = Number(process.env[envName]);
+  if (Number.isFinite(envValue) && envValue > 0) return envValue;
+  const configValue = Number(readRootConfig().dashboard?.[key]);
+  return Number.isFinite(configValue) && configValue > 0 ? configValue : fallback;
+}
+
+export function getAuditHashSecret() {
+  const cfg = readRootConfig();
+  return process.env.DASHBOARD_AUDIT_HASH_SECRET || cfg.dashboard?.auditHashSecret || getNextAuthSecret() || "dashboard-audit";
 }

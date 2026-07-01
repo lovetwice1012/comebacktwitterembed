@@ -1,15 +1,16 @@
 import type { NextAuthOptions } from "next-auth";
 import DiscordProvider from "next-auth/providers/discord";
-import { getClientId } from "@/lib/env";
+import { getClientId, getClientSecret, getNextAuthSecret } from "@/lib/env";
 
 export const authOptions: NextAuthOptions = {
+  secret: getNextAuthSecret(),
   session: {
     strategy: "jwt",
   },
   providers: [
     DiscordProvider({
       clientId: getClientId(),
-      clientSecret: process.env.DISCORD_CLIENT_SECRET || "",
+      clientSecret: getClientSecret(),
       authorization: {
         params: {
           scope: "identify guilds",

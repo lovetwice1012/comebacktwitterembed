@@ -104,7 +104,7 @@ test('niconico download store builds public download URL', () => {
     try {
         assert.equal(
             store.publicUrlForRecord({ token: 'abc123token', filename: 'video name.mp4' }),
-            'https://cbte.sprink.cloud/niconico-downloads/abc123token/video%20name.mp4'
+            'https://cbte.sprink.cloud/media/niconico/abc123token/video%20name.mp4'
         );
     } finally {
         fs.rmSync(root, { recursive: true, force: true });
@@ -157,7 +157,7 @@ test('niconico download store creates an HLS session and runs ffmpeg with domand
 
         assert.equal(record.filename, 'Nico Test _ Title.mp4');
         assert.equal(record.outputLabel, '720p');
-        assert.equal(record.publicUrl.startsWith('https://download.example.test/niconico-downloads/'), true);
+        assert.equal(record.publicUrl.startsWith('https://download.example.test/media/niconico/'), true);
         assert.equal(requests.length, 2);
         assert.equal(spawnCalls.length, 1);
         assert.ok(spawnCalls[0].args.includes('https://asset.domand.nicovideo.jp/hls/master.m3u8'));

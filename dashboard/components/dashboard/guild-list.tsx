@@ -63,7 +63,9 @@ export function GuildList({ guilds }: { guilds: Guild[] }) {
                   {guild.permissions.manageChannels ? <Badge tone="default">Manage Channels</Badge> : null}
                 </div>
                 <div className="text-sm text-muted-foreground">
-                  Provider: {guild.providerSummary.enabled} enabled / {guild.providerSummary.total} total
+                  {guild.providerSummary.total > 0
+                    ? `Provider: ${guild.providerSummary.enabled} enabled / ${guild.providerSummary.total} total`
+                    : "Provider summary: open server dashboard"}
                 </div>
               </CardContent>
             </Card>

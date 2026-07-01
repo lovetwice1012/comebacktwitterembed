@@ -2,6 +2,7 @@ import "server-only";
 
 import crypto from "node:crypto";
 import type { Prisma, PrismaClient } from "@prisma/client";
+import { getAuditHashSecret } from "@/lib/env";
 import { prisma } from "@/lib/prisma";
 import type { AuditActor } from "@/lib/types";
 
@@ -33,7 +34,7 @@ export async function ensureAuditLogTable(db: Tx = prisma) {
 
 function hashValue(value: string | null | undefined) {
   if (!value) return null;
-  const secret = process.env.DASHBOARD_AUDIT_HASH_SECRET || process.env.NEXTAUTH_SECRET || "dashboard-audit";
+  const secret = getAuditHashSecret();
   return crypto.createHash("sha256").update(secret).update(value).digest("hex");
 }
 

@@ -3,9 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "node scripts/start-dashboard.js dev",
     "build": "prisma generate && next build",
-    "start": "next start",
+    "start": "node scripts/start-dashboard.js start",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "prisma:generate": "prisma generate"

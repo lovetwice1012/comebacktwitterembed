@@ -334,6 +334,55 @@ const SCHEMA_STATEMENTS = [
 
 const MIGRATIONS_DIR = path.join(__dirname, '..', 'migrations');
 
+const GUILD_PROVIDER_SETTING_COLUMN_DEFINITIONS = {
+    enabled: 'TINYINT(1) NULL',
+    default_language: 'VARCHAR(16) NULL',
+    edit_original_if_translate: 'TINYINT(1) NULL',
+    extract_bot_message: 'TINYINT(1) NULL',
+    legacy_mode: 'TINYINT(1) NULL',
+    passive_mode: 'TINYINT(1) NULL',
+    anonymous_expand: 'TINYINT(1) NULL',
+    secondary_extract_mode: 'TINYINT(1) NULL',
+    secondary_extract_mode_multiple_images: 'TINYINT(1) NULL',
+    secondary_extract_mode_video: 'TINYINT(1) NULL',
+    send_media_as_attachments_as_default: 'TINYINT(1) NULL',
+    delete_if_only_posted_tweet_link: 'TINYINT(1) NULL',
+    delete_if_only_posted_tweet_link_secondary_extract_mode: 'TINYINT(1) NULL',
+    always_reply_if_posted_tweet_link: 'TINYINT(1) NULL',
+    quote_repost_max_depth: 'INT NULL',
+    quote_repost_do_not_extract: 'TINYINT(1) NULL',
+    pixiv_images_per_step: 'INT NULL',
+    youtube_description_max_length: 'INT NULL',
+    youtube_video_list_limit: 'INT NULL',
+    tiktok_hq: 'TINYINT(1) NULL',
+    twitter_text_mode: 'VARCHAR(32) NULL',
+    twitter_stats_layout: 'VARCHAR(32) NULL',
+    twitter_quote_mode: 'VARCHAR(32) NULL',
+    twitter_quote_layout: 'VARCHAR(32) NULL',
+    pixiv_caption_max_length: 'INT NULL',
+    pixiv_tag_limit: 'VARCHAR(32) NULL',
+    instagram_caption_max_length: 'INT NULL',
+    instagram_media_limit: 'INT NULL',
+    github_card_style: 'VARCHAR(32) NULL',
+    hidden_output_items: 'TEXT NULL',
+    display_density: 'VARCHAR(32) NULL',
+    media_display_mode: 'VARCHAR(32) NULL',
+    failure_display_policy: 'VARCHAR(32) NULL',
+    tiktok_description_max_length: 'INT NULL',
+    tiktok_image_limit: 'INT NULL',
+    tiktok_video_fallback_mode: 'VARCHAR(32) NULL',
+    niconico_description_max_length: 'INT NULL',
+    spotify_description_max_length: 'INT NULL',
+    twitch_description_max_length: 'INT NULL',
+    steam_description_max_length: 'INT NULL',
+    steam_image_source: 'VARCHAR(32) NULL',
+    amazon_description_max_length: 'INT NULL',
+    booth_description_max_length: 'INT NULL',
+    booth_image_limit: 'INT NULL',
+    booth_adult_display_mode: 'VARCHAR(32) NULL',
+    updated_at: 'TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP',
+};
+
 let schemaReady = null;
 
 function splitSqlStatements(sql) {
@@ -390,6 +439,14 @@ async function applySchemaMigrations(queryDatabase) {
     }
 }
 
+async function ensureGuildProviderSettingsColumns(queryDatabase) {
+    for (const [column, definition] of Object.entries(GUILD_PROVIDER_SETTING_COLUMN_DEFINITIONS)) {
+        const rows = await queryDatabase(`SHOW COLUMNS FROM ${TABLES.guildProviderSettings} LIKE ?`, [column]);
+        if (rows.length > 0) continue;
+        await queryDatabase(`ALTER TABLE ${TABLES.guildProviderSettings} ADD COLUMN ${column} ${definition}`);
+    }
+}
+
 async function ensureDatabaseSchema() {
     if (schemaReady) return schemaReady;
     schemaReady = (async () => {
@@ -397,6 +454,7 @@ async function ensureDatabaseSchema() {
         for (const statement of SCHEMA_STATEMENTS) {
             await queryDatabase(statement);
         }
+        await ensureGuildProviderSettingsColumns(queryDatabase);
         await applySchemaMigrations(queryDatabase);
     })();
     try {
@@ -415,5 +473,6 @@ module.exports = {
     _internal: {
         listMigrationFiles,
         splitSqlStatements,
+        ensureGuildProviderSettingsColumns,
     },
 };

@@ -21,6 +21,7 @@ const DEFAULT_ROOT_DIR = path.join(__dirname, '..', 'data', 'youtube_downloads')
 const DEFAULT_API_BASE_URL = 'https://yt-dlp.arcdc.jp';
 const DEFAULT_PUBLIC_BASE_URL = 'https://cbte.sprink.cloud';
 const ROUTE_PREFIX = '/youtube-downloads';
+const UNIFIED_ROUTE_PREFIX = '/media/youtube';
 const BEST_FORMAT = 'bestvideo+bestaudio/best';
 const MUSIC_AUDIO_FORMAT = '774/bestaudio';
 
@@ -33,9 +34,18 @@ function youtubeDownloadConfig() {
     return _config.youtubeDownload || _config.youtube_download || {};
 }
 
+function dashboardConfig() {
+    return _config.dashboard || {};
+}
+
+function mediaDeliveryConfig() {
+    return _config.mediaDelivery || _config.media_delivery || {};
+}
+
 function getRootDir() {
     return rootDirOverride
         || process.env.YOUTUBE_DOWNLOAD_DIR
+        || mediaDeliveryConfig().youtubeDownloadDir
         || youtubeDownloadConfig().dir
         || DEFAULT_ROOT_DIR;
 }
@@ -57,13 +67,29 @@ function getApiBaseUrl() {
 function getPublicBaseUrl() {
     return (publicBaseUrlOverride
         || process.env.YOUTUBE_DOWNLOAD_PUBLIC_BASE_URL
+        || process.env.MEDIA_DELIVERY_PUBLIC_BASE_URL
+        || process.env.DASHBOARD_PUBLIC_BASE_URL
+        || process.env.NEXTAUTH_URL
+        || mediaDeliveryConfig().publicBaseUrl
+        || dashboardConfig().publicBaseUrl
+        || dashboardConfig().baseUrl
         || youtubeDownloadConfig().publicBaseUrl
         || _config.publicBaseUrl
         || DEFAULT_PUBLIC_BASE_URL).replace(/\/+$/, '');
 }
 
+function useLegacyPublicRoute() {
+    const configured = mediaDeliveryConfig().useLegacyRoutes;
+    if (configured === true || configured === false) return configured;
+    return /^(1|true|yes|on)$/i.test(String(process.env.MEDIA_DELIVERY_USE_LEGACY_ROUTES || ''));
+}
+
+function publicRoutePrefix() {
+    return useLegacyPublicRoute() ? ROUTE_PREFIX : UNIFIED_ROUTE_PREFIX;
+}
+
 function ttlMs() {
-    const configured = Number(process.env.YOUTUBE_DOWNLOAD_TTL_MS || youtubeDownloadConfig().ttlMs);
+    const configured = Number(process.env.YOUTUBE_DOWNLOAD_TTL_MS || mediaDeliveryConfig().ttlMs || youtubeDownloadConfig().ttlMs);
     return Number.isFinite(configured) && configured > 0 ? configured : DEFAULT_TTL_MS;
 }
 
@@ -75,6 +101,7 @@ function boolFromConfig(value) {
 
 function isDownloadButtonEnabled() {
     return boolFromConfig(process.env.YOUTUBE_DOWNLOAD_BUTTON_ENABLED)
+        || boolFromConfig(mediaDeliveryConfig().youtubeDownloadButtonEnabled)
         || boolFromConfig(youtubeDownloadConfig().buttonEnabled);
 }
 
@@ -194,7 +221,7 @@ function contentDisposition(filename) {
 }
 
 function publicUrlForRecord(record) {
-    return `${getPublicBaseUrl()}${ROUTE_PREFIX}/${encodeURIComponent(record.token)}/${encodeURIComponent(record.filename)}`;
+    return `${getPublicBaseUrl()}${publicRoutePrefix()}/${encodeURIComponent(record.token)}/${encodeURIComponent(record.filename)}`;
 }
 
 function recordDir(token) {
@@ -543,6 +570,7 @@ function configureForTest(rootDir, publicBaseUrl = 'https://example.test') {
 
 module.exports = {
     ROUTE_PREFIX,
+    UNIFIED_ROUTE_PREFIX,
     cleanupExpiredDownloads,
     configureForTest,
     contentTypeForFilename,
@@ -558,6 +586,7 @@ module.exports = {
     _internal: {
         boolFromConfig,
         downloadPresetsForUrl,
+        publicRoutePrefix,
         downloadPreset,
         fallbackFilenameForPreset,
         filenameFromDisposition,

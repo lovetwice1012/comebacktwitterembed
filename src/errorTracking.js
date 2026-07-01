@@ -170,6 +170,8 @@ function createErrorEventRow(err, context = {}) {
         error_message: errorMessage || null,
         error_code: err?.code ?? err?.rawError?.code ?? null,
     };
+    const rawDiscordCode = discordErrorCode(err);
+    const discordCode = Number(rawDiscordCode);
 
     return {
         occurred_at_ms: occurredAtMs,
@@ -190,7 +192,7 @@ function createErrorEventRow(err, context = {}) {
         message_id: toDbString(merged.messageId ?? merged.message_id, 32),
         command_name: toDbString(merged.commandName ?? merged.command_name, 64),
         component_id: toDbString(merged.componentId ?? merged.component_id, 191),
-        discord_code: discordErrorCode(err) ?? null,
+        discord_code: Number.isInteger(discordCode) ? discordCode : null,
         http_status: merged.httpStatus ?? httpStatusFromError(err),
         stack_hash: hashValue(err?.stack || errorMessage),
         message_hash: hashValue(errorMessage),

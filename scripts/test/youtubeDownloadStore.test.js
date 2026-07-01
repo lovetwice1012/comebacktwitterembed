@@ -87,7 +87,7 @@ test('youtube download store builds the requested public download URL', () => {
     try {
         assert.equal(
             store.publicUrlForRecord({ token: 'abc123token', filename: 'video name.mp4' }),
-            'https://cbte.sprink.cloud/youtube-downloads/abc123token/video%20name.mp4'
+            'https://cbte.sprink.cloud/media/youtube/abc123token/video%20name.mp4'
         );
     } finally {
         fs.rmSync(root, { recursive: true, force: true });

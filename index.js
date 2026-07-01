@@ -6,6 +6,7 @@ const { consoleBuffer } = require('./src/state');
 const { initializeSettings } = require('./src/settings');
 const { ensureDatabaseSchema } = require('./src/db_schema');
 const { recordError } = require('./src/errorTracking');
+const dashboardServer = require('./src/lifecycle/dashboardServer');
 
 const client = new Client({
     intents: [
@@ -54,6 +55,7 @@ process.on('uncaughtException', error => {
 (async () => {
     await ensureDatabaseSchema();
     await initializeSettings();
+    dashboardServer.start();
 
     require('./src/handlers/ready').register(client, webhookClient, errorNotificationWebhookClient);
     require('./src/handlers/messageCreate').register(client);
@@ -71,4 +73,14 @@ process.on('uncaughtException', error => {
     recordError(error, { errorType: 'startup_failed', severity: 'fatal', source: 'index.startup' });
     console.error('Failed to start application:', error);
     process.exitCode = 1;
+});
+
+process.once('SIGINT', () => {
+    dashboardServer.stop();
+    process.exit(130);
+});
+
+process.once('SIGTERM', () => {
+    dashboardServer.stop();
+    process.exit(143);
 });
