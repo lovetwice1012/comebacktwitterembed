@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { categoryLabel, createTranslator, impactLabel, labelText, type DashboardLocale, type TranslationKey, valueLabel } from "@/lib/i18n";
+import { categoryLabel, createTranslator, impactLabel, labelText, type DashboardLocale, type TranslationKey } from "@/lib/i18n";
 import type { SettingState } from "@/lib/types";
 
 type Item = {
@@ -95,12 +95,13 @@ export function CrossSettingsView({ guildId, items, canManage, locale }: { guild
               <CardContent className="flex flex-wrap items-center justify-between gap-3 pt-4">
                 <div className="min-w-0">
                   <div className="font-medium">{labelText(setting.spec.label, locale)}</div>
-                  <div className="truncate text-sm text-muted-foreground">{providerLabel} · {setting.key} · {setting.spec.dbColumn || "-"}</div>
+                  <div className="truncate text-sm text-muted-foreground">{providerLabel} · {labelText(setting.spec.description, locale)}</div>
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  <Badge tone={setting.spec.impactLevel === "danger" ? "danger" : setting.spec.impactLevel === "high" ? "warning" : "muted"}>{impactLabel(setting.spec.impactLevel, locale)}</Badge>
+                  {setting.spec.impactLevel === "danger" || setting.spec.impactLevel === "high" ? (
+                    <Badge tone={setting.spec.impactLevel === "danger" ? "danger" : "warning"}>{impactLabel(setting.spec.impactLevel, locale)}</Badge>
+                  ) : null}
                   <Badge tone={setting.changedFromDefault ? "warning" : "muted"}>{setting.changedFromDefault ? t("state.changed") : t("state.default")}</Badge>
-                  <Badge tone="muted">{valueLabel(setting.value, locale)}</Badge>
                 </div>
               </CardContent>
             </Card>

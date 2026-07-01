@@ -9,6 +9,7 @@ import {
   getProviderDefaults,
   getProviderSettingColumns,
   getProviderSpecs,
+  providerDomain,
   providerLabel,
 } from "@/lib/settings-catalog";
 import { deepEqual } from "@/lib/settings-diff";
@@ -295,10 +296,11 @@ export async function getProvidersOverview(guildId: string, locale: DashboardLoc
       const states = await getProviderSettingsState(provider.id, guildId, locale);
       const enabled = states.find((state) => state.key === "enabled")?.value === true;
       const customizedSettingCount = states.filter((state) => state.changedFromDefault).length;
-      const warnings = states.flatMap((state) => state.warnings.map((warning) => `${state.key}: ${warning}`));
+      const warnings = states.flatMap((state) => state.warnings);
       return {
         providerId: provider.id,
         label: providerLabel(provider),
+        domain: providerDomain(provider.id),
         enabled,
         enabledByDefault: provider.enabledByDefault === true,
         changedFromDefault: customizedSettingCount > 0,

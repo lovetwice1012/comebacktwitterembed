@@ -1,6 +1,6 @@
 import { AccessDenied } from "@/components/dashboard/access-denied";
 import { DashboardShell } from "@/components/dashboard/dashboard-shell";
-import { Badge } from "@/components/ui/badge";
+import { OutputPreviewCard } from "@/components/preview/output-preview-card";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { getGuildAccess } from "@/lib/discord";
 import { createTranslator } from "@/lib/i18n";
@@ -36,16 +36,10 @@ export default async function PreviewPage({ params }: Params) {
             <Card key={provider.id}>
               <CardHeader>
                 <CardTitle>{providerLabel(provider)}</CardTitle>
-                <CardDescription>{preview.density} / {preview.mediaMode}</CardDescription>
+                <CardDescription>{preview.sourceUrl}</CardDescription>
               </CardHeader>
-              <CardContent className="space-y-3">
-                <div className="rounded-md border-l-4 border-primary bg-muted p-3 text-sm">
-                  {preview.lines.map((line) => <div key={line}>{line}</div>)}
-                  <div className="mt-2 text-muted-foreground">{preview.media}</div>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {preview.buttons.map((button) => <Badge key={button} tone="muted">{button}</Badge>)}
-                </div>
+              <CardContent>
+                <OutputPreviewCard preview={preview} locale={locale} />
               </CardContent>
             </Card>
           ))}

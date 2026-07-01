@@ -4,11 +4,12 @@ import { AlertTriangle, RotateCcw, Save, Search } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { useRouter } from "next/navigation";
+import { OutputPreviewCard } from "@/components/preview/output-preview-card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input, Textarea } from "@/components/ui/input";
-import { categoryLabel, createTranslator, impactLabel, labelText, type DashboardLocale, valueLabel } from "@/lib/i18n";
+import { createTranslator, impactLabel, labelText, type DashboardLocale, type TranslationKey, valueLabel } from "@/lib/i18n";
 import { buildPreview } from "@/lib/settings-preview";
 import { deepEqual } from "@/lib/settings-diff";
 import type { ButtonVisibility, SettingState, SettingValue, TargetSetting } from "@/lib/types";
@@ -34,6 +35,30 @@ function parseTextareaList(value: string) {
 function targetTextarea(value: unknown, key: keyof TargetSetting) {
   const targets = value as TargetSetting;
   return Array.isArray(targets?.[key]) ? targets[key].join("\n") : "";
+}
+
+const targetLabelKeys = {
+  user: "form.target.user",
+  channel: "form.target.channel",
+  role: "form.target.role",
+} satisfies Record<keyof TargetSetting, TranslationKey>;
+
+const buttonLabelKeys: Record<string, TranslationKey> = {
+  showMediaAsAttachments: "form.button.showMediaAsAttachments",
+  showAttachmentsAsEmbedsImage: "form.button.showAttachmentsAsEmbedsImage",
+  translate: "form.button.translate",
+  delete: "form.button.delete",
+  savetweet: "form.button.savetweet",
+  all: "form.button.all",
+};
+
+function targetLabel(target: keyof TargetSetting, locale: DashboardLocale) {
+  return createTranslator(locale)(targetLabelKeys[target]);
+}
+
+function buttonLabel(key: string, locale: DashboardLocale) {
+  const labelKey = buttonLabelKeys[key];
+  return labelKey ? createTranslator(locale)(labelKey) : key;
 }
 
 export function ProviderSettingsForm({
@@ -99,10 +124,8 @@ export function ProviderSettingsForm({
     return settings.filter((setting) => {
       const haystack = [
         setting.key,
-        setting.spec.dbColumn,
         labelText(setting.spec.label, locale),
         labelText(setting.spec.description, locale),
-        categoryLabel(setting.spec.category, locale),
         setting.spec.category,
       ]
         .filter(Boolean)
@@ -161,11 +184,12 @@ export function ProviderSettingsForm({
   return (
     <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
       <div className="space-y-4">
+        {hasChanges || message ? (
         <div className="sticky top-16 z-20 rounded-lg border bg-card p-3 shadow-soft">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <div className="font-medium">{hasChanges ? t("form.unsavedCount", { count: Object.keys(changes).length }) : t("form.noUnsavedChanges")}</div>
-              <div className="text-sm text-muted-foreground">{t("form.unsavedHelp")}</div>
+              {hasChanges ? <div className="text-sm text-muted-foreground">{t("form.unsavedHelp")}</div> : null}
             </div>
             <div className="flex flex-wrap gap-2">
               <Button variant="outline" onClick={() => form.reset(clone(defaults))} disabled={!hasChanges || saving}>
@@ -180,6 +204,7 @@ export function ProviderSettingsForm({
           </div>
           {message ? <div className="mt-2 text-sm text-muted-foreground">{message}</div> : null}
         </div>
+        ) : null}
 
         <Card>
           <CardContent className="pt-4">
@@ -226,16 +251,9 @@ export function ProviderSettingsForm({
         <Card>
           <CardHeader>
             <CardTitle>{t("form.livePreview")}</CardTitle>
-            <CardDescription>{preview.density} / {preview.mediaMode}</CardDescription>
           </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="rounded-md border-l-4 border-primary bg-muted p-3">
-              {preview.lines.map((line) => <div key={line} className="text-sm">{line}</div>)}
-              <div className="mt-2 text-sm text-muted-foreground">{preview.media}</div>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {preview.buttons.map((button) => <Badge key={button} tone="muted">{button}</Badge>)}
-            </div>
+          <CardContent>
+            <OutputPreviewCard preview={preview} locale={locale} />
           </CardContent>
         </Card>
 
@@ -261,8 +279,8 @@ function SettingEditor({
   disabled: boolean;
   locale: DashboardLocale;
 }) {
-  const t = createTranslator(locale);
   const spec = setting.spec;
+  const showImpact = spec.impactLevel === "danger" || spec.impactLevel === "high";
   return (
     <Card>
       <CardHeader>
@@ -272,19 +290,14 @@ function SettingEditor({
             <CardDescription>{labelText(spec.description, locale)}</CardDescription>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Badge tone={spec.impactLevel === "danger" ? "danger" : spec.impactLevel === "high" ? "warning" : "muted"}>{impactLabel(spec.impactLevel, locale)}</Badge>
-            {spec.advanced ? <Badge tone="muted">{t("form.advanced")}</Badge> : null}
-            <Badge tone="muted">{categoryLabel(spec.category, locale)}</Badge>
+            {showImpact ? (
+              <Badge tone={spec.impactLevel === "danger" ? "danger" : "warning"}>{impactLabel(spec.impactLevel, locale)}</Badge>
+            ) : null}
           </div>
         </div>
       </CardHeader>
       <CardContent className="space-y-3">
         {renderControl(setting, value, setValue, disabled, locale)}
-        <div className="grid gap-2 text-xs text-muted-foreground md:grid-cols-3">
-          <span>{t("form.meta.key", { value: setting.key })}</span>
-          <span>{t("form.meta.db", { value: spec.dbColumn || "-" })}</span>
-          <span>{t("form.meta.default", { value: valueLabel(setting.defaultValue, locale) })}</span>
-        </div>
         {setting.warnings.length ? (
           <div className="space-y-1 rounded-md bg-amber-50 p-2 text-sm text-amber-900">
             {setting.warnings.map((warning) => <div key={warning}>{warning}</div>)}
@@ -327,12 +340,12 @@ function renderControl(setting: SettingState, value: SettingValue, setValue: (va
       <div className="grid gap-3 md:grid-cols-3">
         {(["user", "channel", "role"] as const).map((key) => (
           <label key={key} className="space-y-1 text-sm">
-            <span className="font-medium">{key}</span>
+            <span className="font-medium">{targetLabel(key, locale)}</span>
             <Textarea
               disabled={disabled}
               value={targetTextarea(targets, key)}
               onChange={(event) => setValue({ ...targets, [key]: parseTextareaList(event.target.value) })}
-              placeholder={t("form.idsPlaceholder", { target: key })}
+              placeholder={t("form.idsPlaceholder", { target: targetLabel(key, locale) })}
             />
           </label>
         ))}
@@ -348,7 +361,7 @@ function renderControl(setting: SettingState, value: SettingValue, setValue: (va
         {keys.map((key) => (
           <label key={key} className="flex items-center gap-2 rounded-md border p-2 text-sm">
             <input type="checkbox" disabled={disabled} checked={visibility[key] === true} onChange={(event) => setValue({ ...visibility, [key]: event.target.checked })} />
-            {t("form.hideButton", { key })}
+            {t("form.hideButton", { key: buttonLabel(key, locale) })}
           </label>
         ))}
       </div>
@@ -374,7 +387,7 @@ function renderControl(setting: SettingState, value: SettingValue, setValue: (va
             />
             <span>
               <span className="font-medium">{labelText(item.label, locale)}</span>
-              <span className="block text-xs text-muted-foreground">{item.value}</span>
+              {item.description ? <span className="block text-xs text-muted-foreground">{labelText(item.description, locale)}</span> : null}
             </span>
           </label>
         ))}

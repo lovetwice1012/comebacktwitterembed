@@ -11,14 +11,12 @@ import { createTranslator, type DashboardLocale } from "@/lib/i18n";
 type ProviderOverview = {
   providerId: string;
   label: string;
+  domain?: string;
   enabled: boolean;
   enabledByDefault: boolean;
   changedFromDefault: boolean;
   settingCount: number;
   customizedSettingCount: number;
-  displayDensity?: unknown;
-  mediaDisplayMode?: unknown;
-  failureDisplayPolicy?: unknown;
   warnings: string[];
 };
 
@@ -65,7 +63,7 @@ export function ProviderList({ guildId, providers, locale }: { guildId: string; 
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <CardTitle>{provider.label}</CardTitle>
-                    <CardDescription>{provider.providerId}</CardDescription>
+                    <CardDescription>{provider.domain || provider.providerId}</CardDescription>
                   </div>
                   <Badge tone={provider.enabled ? "success" : "muted"}>{provider.enabled ? t("providers.enabled") : t("providers.disabled")}</Badge>
                 </div>
@@ -74,12 +72,6 @@ export function ProviderList({ guildId, providers, locale }: { guildId: string; 
                 <div className="flex flex-wrap gap-2">
                   <Badge tone={provider.enabledByDefault ? "default" : "muted"}>{provider.enabledByDefault ? t("providers.defaultOn") : t("providers.defaultOff")}</Badge>
                   <Badge tone={provider.changedFromDefault ? "warning" : "muted"}>{t("providers.changedCount", { count: provider.customizedSettingCount })}</Badge>
-                  <Badge tone="muted">{t("providers.settingCount", { count: provider.settingCount })}</Badge>
-                </div>
-                <div className="grid gap-2 text-sm text-muted-foreground md:grid-cols-3">
-                  <span>{t("providers.density", { value: String(provider.displayDensity || "standard") })}</span>
-                  <span>{t("providers.media", { value: String(provider.mediaDisplayMode || "embed") })}</span>
-                  <span>{t("providers.failure", { value: String(provider.failureDisplayPolicy || "silent") })}</span>
                 </div>
                 {provider.warnings.length ? (
                   <div className="flex items-start gap-2 rounded-md bg-amber-50 p-2 text-sm text-amber-900">

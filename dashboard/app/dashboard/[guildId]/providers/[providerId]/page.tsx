@@ -4,7 +4,7 @@ import { ProviderSettingsForm } from "@/components/settings/provider-settings-fo
 import { getGuildAccess } from "@/lib/discord";
 import { createTranslator } from "@/lib/i18n";
 import { getDashboardLocale } from "@/lib/server-locale";
-import { getProviderCatalog } from "@/lib/settings-catalog";
+import { getProviderCatalog, providerDomain } from "@/lib/settings-catalog";
 import { getProviderSettingsState } from "@/lib/settings-db";
 import { requireDashboardSession } from "@/lib/server-session";
 
@@ -27,7 +27,7 @@ export default async function ProviderDetailPage({ params }: Params) {
         <header>
           <h1 className="text-2xl font-semibold">{provider.label}</h1>
           <p className="text-sm text-muted-foreground">
-            provider_id: {provider.providerId} / {t("providers.detail.default", { value: provider.enabledByDefault ? t("providers.detail.defaultEnabled") : t("providers.detail.defaultDisabled") })}
+            {providerDomain(provider.providerId)} / {t("providers.detail.default", { value: provider.enabledByDefault ? t("providers.detail.defaultEnabled") : t("providers.detail.defaultDisabled") })}
           </p>
         </header>
         <ProviderSettingsForm guildId={guildId} providerId={providerId} providerLabel={provider.label} canEdit={access.canEdit} settings={settings} locale={locale} />

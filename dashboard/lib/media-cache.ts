@@ -3,6 +3,7 @@ import "server-only";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { requireBotModule } from "@/lib/bot-require";
+import { getProvider, providerDomain, providerLabel } from "@/lib/settings-catalog";
 
 type StoreModule = {
   ROUTE_PREFIX: string;
@@ -92,6 +93,27 @@ export async function getMediaCacheStatus() {
     totalCacheCount: providers.reduce((sum, provider) => sum + provider.cacheCount, 0),
     totalSizeBytes: providers.reduce((sum, provider) => sum + provider.totalSizeBytes, 0),
     expiredCount: providers.reduce((sum, provider) => sum + provider.expiredCount, 0),
+  };
+}
+
+export async function getMediaDashboardStatus() {
+  const status = await getMediaCacheStatus();
+  return {
+    running: status.running,
+    providers: status.providers.map((provider) => {
+      const providerDef = getProvider(provider.providerId);
+      return {
+        providerId: provider.providerId,
+        label: providerDef ? providerLabel(providerDef) : provider.providerId,
+        domain: providerDomain(provider.providerId),
+        cacheCount: provider.cacheCount,
+        expiredCount: provider.expiredCount,
+        totalSizeBytes: provider.totalSizeBytes,
+      };
+    }),
+    totalCacheCount: status.totalCacheCount,
+    totalSizeBytes: status.totalSizeBytes,
+    expiredCount: status.expiredCount,
   };
 }
 

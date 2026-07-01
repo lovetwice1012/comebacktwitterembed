@@ -64,11 +64,11 @@ export function GuildList({ guilds, locale }: { guilds: Guild[]; locale: Dashboa
                   {guild.permissions.manageGuild ? <Badge tone="default">Manage Server</Badge> : null}
                   {guild.permissions.manageChannels ? <Badge tone="default">Manage Channels</Badge> : null}
                 </div>
-                <div className="text-sm text-muted-foreground">
-                  {guild.providerSummary.total > 0
-                    ? t("guildList.providerSummary", { enabled: guild.providerSummary.enabled, total: guild.providerSummary.total })
-                    : t("guildList.providerSummaryEmpty")}
-                </div>
+                {guild.providerSummary.total > 0 ? (
+                  <div className="text-sm text-muted-foreground">
+                    {t("guildList.providerSummary", { enabled: guild.providerSummary.enabled, total: guild.providerSummary.total })}
+                  </div>
+                ) : null}
               </CardContent>
             </Card>
           </Link>
