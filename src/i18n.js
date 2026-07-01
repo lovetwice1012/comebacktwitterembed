@@ -1,17 +1,15 @@
 'use strict';
 
-const { Locale } = require('discord.js');
+const {
+    DEFAULT_DISCORD_LOCALE,
+    DISCORD_LOCALES,
+    DISCORD_LOCALE_SET,
+    LOCALE_ALIASES,
+    normalizeDiscordLocale,
+} = require('./discordLocales');
 
-const DEFAULT_LOCALE = 'en-US';
-const DEFAULT_DISCORD_LOCALE = 'en-US';
-const DISCORD_LOCALES = Object.freeze(Object.values(Locale));
-const DISCORD_LOCALE_SET = new Set(DISCORD_LOCALES);
+const DEFAULT_LOCALE = DEFAULT_DISCORD_LOCALE;
 const SUPPORTED_LOCALES = DISCORD_LOCALES;
-
-const LOCALE_ALIASES = Object.freeze({
-    en: 'en-US',
-    'ko-KR': 'ko',
-});
 
 function loadCatalog(locale) {
     const catalog = require(`./i18n/locales/${locale}`);
@@ -25,8 +23,7 @@ const CATALOGS = Object.fromEntries(SUPPORTED_LOCALES.map(locale => [
 ]));
 
 function normalizeLocale(locale) {
-    const raw = locale ? String(locale) : DEFAULT_LOCALE;
-    return LOCALE_ALIASES[raw] || raw;
+    return normalizeDiscordLocale(locale, locale ? String(locale) : DEFAULT_LOCALE);
 }
 
 function getLocaleCandidates(locale, options = {}) {

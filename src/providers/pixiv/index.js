@@ -34,6 +34,10 @@ const {
     shouldAttachVideoMedia,
     shouldShowOutputItem,
 } = require('../_output_controls');
+const {
+    normalizeDiscordLocale,
+    toApiLocaleFamily,
+} = require('../../discordLocales');
 
 // ---- inline 翻訳 (twitter provider と同じ手法) -----------------------------
 //
@@ -294,8 +298,9 @@ function joinTags(tags, settings = {}) {
 }
 
 function pickLanguage(guildLang) {
-    // phixiv は pixiv ajax の lang をそのまま渡す。pixiv は 'ja'/'en'/'zh' 等を受ける。
-    if (guildLang === 'ja') return 'ja';
+    const normalized = normalizeDiscordLocale(guildLang, 'en-US');
+    if (normalized === 'ja') return 'ja';
+    if (normalized === 'zh-CN' || normalized === 'zh-TW') return 'zh';
     return 'en';
 }
 
@@ -379,7 +384,7 @@ async function extract(message, url, s) {
     const ugoiraMediaUrls = Array.isArray(info.ugoira_media_urls) ? info.ugoira_media_urls : [];
     if (images.length === 0) return null;
 
-    const lang = guildLang === 'ja' ? 'ja' : 'en';
+    const lang = toApiLocaleFamily(guildLang);
 
     const isAnon = s.anonymous_expand === true;
     const requesterName = isAnon

@@ -68,8 +68,8 @@ function ifUserHasRole(user, roleidlist) {
 }
 
 function convertBoolToEnableDisable(bool, locale) {
-    const labels = { ja: ['無効', '有効'], en: ['Disable', 'Enable'] };
-    return (labels[locale] ?? labels.en)[bool ? 1 : 0];
+    const key = bool ? 'enabled' : 'disabled';
+    return require('./i18n').catalogText(`gui.${key}`, locale) || (bool ? 'Enable' : 'Disable');
 }
 
 function discordErrorCode(err) {

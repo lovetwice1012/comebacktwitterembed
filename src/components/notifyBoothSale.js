@@ -13,6 +13,10 @@
 //   3. サブスクリプションを保存し、登録完了を返信
 
 const subs = require('../providers/booth/_notifications');
+const {
+    normalizeDiscordLocale,
+    toApiLocaleFamily,
+} = require('../discordLocales');
 
 const STR = {
     ja: {
@@ -31,9 +35,20 @@ const STR = {
     },
 };
 
+const BOOTH_SITE_LANGUAGE_BY_DISCORD_LOCALE = Object.freeze({
+    ja: 'ja',
+    ko: 'ko',
+    'zh-CN': 'zh-cn',
+    'zh-TW': 'zh-tw',
+});
+
 function pickLangByLocale(locale) {
-    if (typeof locale === 'string' && locale.startsWith('ja')) return 'ja';
-    return 'en';
+    return normalizeDiscordLocale(locale, 'en-US');
+}
+
+function boothSiteLanguage(locale) {
+    const normalized = normalizeDiscordLocale(locale, 'en-US');
+    return BOOTH_SITE_LANGUAGE_BY_DISCORD_LOCALE[normalized] || toApiLocaleFamily(normalized);
 }
 
 function parseCustomId(customId) {
@@ -41,7 +56,7 @@ function parseCustomId(customId) {
     const parts = customId.split(':');
     if (parts.length < 4 || parts[0] !== 'notifyBoothSale') return null;
     const itemId = parts[1];
-    const lang = parts[2] === 'ja' ? 'ja' : 'en';
+    const lang = normalizeDiscordLocale(parts[2], 'en-US');
     const unix = Number(parts[3]);
     if (!itemId || !Number.isFinite(unix)) return null;
     return { itemId, lang, notifyAt: new Date(unix * 1000) };
@@ -61,7 +76,8 @@ function getItemNameFromMessage(interaction) {
 async function handle(interaction) {
     const parsed = parseCustomId(interaction.customId);
     const lang = parsed?.lang || pickLangByLocale(interaction.locale);
-    const s = STR[lang];
+    const textLang = toApiLocaleFamily(lang);
+    const s = STR[textLang];
 
     if (!parsed) {
         await interaction.editReply({ content: s.invalid });
@@ -85,7 +101,7 @@ async function handle(interaction) {
     try {
         const user = await interaction.client.users.fetch(interaction.user.id);
         await user.send({
-            content: lang === 'ja'
+            content: textLang === 'ja'
                 ? '🔔 販売開始通知の登録を受け付けました。販売開始時にこのDMでお知らせします。'
                 : "🔔 Sale notification registered. We'll DM you here when it goes on sale.",
         });
@@ -99,7 +115,7 @@ async function handle(interaction) {
     const itemName = getItemNameFromMessage(interaction);
     subs.addSubscription({
         itemId: parsed.itemId,
-        itemUrl: itemUrl || `https://booth.pm/${lang}/items/${parsed.itemId}`,
+        itemUrl: itemUrl || `https://booth.pm/${boothSiteLanguage(lang)}/items/${parsed.itemId}`,
         itemName,
         userId: interaction.user.id,
         guildId: interaction.guildId || null,

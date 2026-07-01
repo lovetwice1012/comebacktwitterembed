@@ -12,6 +12,7 @@ const {
     resolveDensityMaxLength,
     shouldShowOutputItem,
 } = require('../_output_controls');
+const { toApiLocaleFamily } = require('../../discordLocales');
 
 const AMAZON_COLOR = 0xff9900;
 const DESCRIPTION_MAX_LENGTH = 700;
@@ -96,7 +97,7 @@ function tr(spec, lang) {
 }
 
 function normalizeLanguage(settings) {
-    return settings?.defaultLanguage === 'ja' ? 'ja' : 'en';
+    return toApiLocaleFamily(settings?.defaultLanguage);
 }
 
 function normalizeAmazonExtractTargets(settings) {

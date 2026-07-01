@@ -13,6 +13,7 @@ const {
     shouldAttachVideoMedia,
     shouldShowOutputItem,
 } = require('../_output_controls');
+const { toApiLocaleFamily } = require('../../discordLocales');
 
 const TWITCH_COLOR = 0x9146FF;
 const TWITCH_GQL_ENDPOINT = 'https://gql.twitch.tv/gql';
@@ -489,7 +490,7 @@ async function extract(message, url, s) {
     if (!parsed) return null;
 
     const guildLang = s.defaultLanguage ?? 'en';
-    const lang = guildLang === 'ja' ? 'ja' : 'en';
+    const lang = toApiLocaleFamily(guildLang);
 
     let info;
     try {

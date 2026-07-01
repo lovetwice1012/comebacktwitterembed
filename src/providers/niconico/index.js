@@ -17,6 +17,7 @@ const {
     niconicoVideoUrl,
     parseNiconicoUrl,
 } = require('../../niconicoApi');
+const { toApiLocaleFamily } = require('../../discordLocales');
 
 const EMBED_COLOR = 0x252525;
 const DESCRIPTION_MAX_LENGTH = 1400;
@@ -48,8 +49,7 @@ function tr(spec, lang) {
 }
 
 function normalizeLang(s) {
-    const lang = s?.defaultLanguage;
-    return lang === 'ja' ? 'ja' : 'en';
+    return toApiLocaleFamily(s?.defaultLanguage);
 }
 
 function decodeHtml(text) {

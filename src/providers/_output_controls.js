@@ -2,6 +2,7 @@
 
 const { ButtonBuilder, ButtonStyle, ComponentType } = require('discord.js');
 const { isOutputHidden } = require('./_output_visibility');
+const { toApiLocaleFamily } = require('../discordLocales');
 
 const DISPLAY_DENSITIES = new Set(['compact', 'standard', 'detail']);
 const MEDIA_DISPLAY_MODES = new Set(['embed', 'attachment', 'thumbnail_only', 'link_only']);
@@ -309,7 +310,7 @@ function applyMediaDisplayToStep(step, settings, urls, label = 'Media') {
 }
 
 function failureMessage(providerId, err, settings) {
-    const lang = settings?.defaultLanguage === 'ja' ? 'ja' : 'en';
+    const lang = toApiLocaleFamily(settings?.defaultLanguage);
     const raw = String(err?.message || err || '').replace(/\s+/g, ' ').trim();
     const summary = raw ? raw.slice(0, 180) : 'unknown error';
     if (lang === 'ja') return `${providerId} metadata fetch failed: ${summary}`;
@@ -317,7 +318,7 @@ function failureMessage(providerId, err, settings) {
 }
 
 function sourceLinkButton(url, settings) {
-    const lang = settings?.defaultLanguage === 'ja' ? 'ja' : 'en';
+    const lang = toApiLocaleFamily(settings?.defaultLanguage);
     return {
         type: ComponentType.ActionRow,
         components: [
@@ -344,7 +345,7 @@ function buildFailureResponse(providerId, url, settings, err = null) {
     };
 
     if (policy === 'source_link') {
-        step.content = settings?.defaultLanguage === 'ja' ? 'Source link' : 'Source link';
+        step.content = toApiLocaleFamily(settings?.defaultLanguage) === 'ja' ? 'Source link' : 'Source link';
     } else {
         step.content = failureMessage(providerId, err, settings);
     }

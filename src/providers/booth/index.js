@@ -39,6 +39,10 @@ const {
     resolveMediaDisplayMode,
     shouldShowOutputItem,
 } = require('../_output_controls');
+const {
+    normalizeDiscordLocale,
+    toApiLocaleFamily,
+} = require('../../discordLocales');
 
 const EMBED_COLOR = 0xfd494a;       // booth のテーマカラー
 const ADULT_EMBED_COLOR = 0x4d4d4d; // R-18 はやや抑え気味の色
@@ -213,9 +217,13 @@ function joinTags(tags, lang) {
 }
 
 function pickLanguage(guildLang) {
-    // booth は ja/en/ko/zh-cn/zh-tw を受ける。簡略化のため ja/en にだけ寄せる。
-    if (guildLang === 'ja') return 'ja';
-    return 'en';
+    const normalized = normalizeDiscordLocale(guildLang, 'en-US');
+    return {
+        ja: 'ja',
+        ko: 'ko',
+        'zh-CN': 'zh-cn',
+        'zh-TW': 'zh-tw',
+    }[normalized] || 'en';
 }
 
 function adultLabel(isAdult, lang) {
@@ -376,7 +384,7 @@ async function extract(message, url, s) {
 
     const images = pickImageUrls(info);
 
-    const lang = guildLang === 'ja' ? 'ja' : 'en';
+    const lang = toApiLocaleFamily(guildLang);
 
     const isAnon = s.anonymous_expand === true;
     const requesterName = isAnon
@@ -467,11 +475,12 @@ async function extract(message, url, s) {
     // 販売開始時刻が未来であれば「DM で通知」ボタンを追加
     let notifyButton = null;
     if (salePeriod && salePeriod.startAt && salePeriod.startAt.getTime() > Date.now()) {
+        const notifyLocale = normalizeDiscordLocale(guildLang, 'en-US');
         const unix = Math.floor(salePeriod.startAt.getTime() / 1000);
         notifyButton = new ButtonBuilder()
             .setStyle(ButtonStyle.Success)
             .setLabel(tr(STR.notifySaleButton, lang))
-            .setCustomId(`notifyBoothSale:${parsed.id}:${lang}:${unix}`);
+            .setCustomId(`notifyBoothSale:${parsed.id}:${notifyLocale}:${unix}`);
     }
 
     const components = [];

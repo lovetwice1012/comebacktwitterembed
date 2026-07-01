@@ -432,7 +432,7 @@ test('booth extract: adds notify-on-sale button when start time is in the future
     const parts = notifyBtn.data.custom_id.split(':');
     assert.equal(parts[0], 'notifyBoothSale');
     assert.equal(parts[1], '1');
-    assert.equal(parts[2], 'en');
+    assert.equal(parts[2], 'en-US');
     assert.equal(Number(parts[3]), Math.floor(future.getTime() / 1000));
 });
 

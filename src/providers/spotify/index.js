@@ -13,6 +13,7 @@ const {
     resolveMediaDisplayMode,
     shouldShowOutputItem,
 } = require('../_output_controls');
+const { toApiLocaleFamily } = require('../../discordLocales');
 
 const SPOTIFY_COLOR = 0x1DB954;
 const DESCRIPTION_MAX_LENGTH = 350;
@@ -292,7 +293,7 @@ async function extract(message, url, s) {
     if (!parsed) return null;
 
     const guildLang = s.defaultLanguage ?? 'en';
-    const lang = guildLang === 'ja' ? 'ja' : 'en';
+    const lang = toApiLocaleFamily(guildLang);
 
     let item;
     try {

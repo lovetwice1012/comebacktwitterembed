@@ -9,12 +9,13 @@
 // 5 回失敗で諦めて notified=true 扱いにする。
 
 const subs = require('../providers/booth/_notifications');
+const { toApiLocaleFamily } = require('../discordLocales');
 
 const POLL_INTERVAL_MS = 60 * 1000;
 const MAX_ATTEMPTS = 5;
 
 function buildMessage(record) {
-    const lang = record.language === 'ja' ? 'ja' : 'en';
+    const lang = toApiLocaleFamily(record.language);
     if (lang === 'ja') {
         return [
             `🛎️ booth.pm の商品の販売が開始されました。`,

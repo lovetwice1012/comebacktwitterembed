@@ -6,7 +6,7 @@ const { conv_en_to_en_US } = require('../../utils');
 const { sendFieldEmbeds } = require('../../interactionResponse');
 const { loadProviders } = require('../../providers/_loader');
 const { getProviderSettings, isProviderEnabled } = require('../../providers/_provider_settings');
-const { catalogText } = require('../../i18n');
+const { catalogText, localize } = require('../../i18n');
 
 const COMMAND_DESCRIPTION_LOCALES = { ja: 'ギルド設定を確認します', en: 'Check guild settings' };
 const GUILD_OPTION_NAME_LOCALES = { ja: 'ギルド', en: 'guild' };
@@ -37,7 +37,7 @@ function getTargetGuildId(interaction) {
 function localText(key, locale) {
     const localized = CHECK_TEXT[key];
     if (!localized) return key;
-    return localized[String(locale || '').toLowerCase().startsWith('ja') ? 'ja' : 'en'];
+    return localize(localized, locale) || localized.en || key;
 }
 
 function uiText(key, locale, replacements = {}, fallback = key) {

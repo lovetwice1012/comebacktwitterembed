@@ -11,6 +11,7 @@ const {
     resolveDisplayDensity,
     shouldShowOutputItem,
 } = require('../_output_controls');
+const { toApiLocaleFamily } = require('../../discordLocales');
 
 const INVIDIOUS_INSTANCES = [
     'https://iteroni.com',
@@ -94,8 +95,7 @@ function tr(spec, lang) {
 }
 
 function normalizeLang(s) {
-    const lang = s?.defaultLanguage;
-    return lang === 'ja' ? 'ja' : 'en';
+    return toApiLocaleFamily(s?.defaultLanguage);
 }
 
 function getInstances() {

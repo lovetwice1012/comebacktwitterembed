@@ -2,9 +2,17 @@
 
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
+const { Locale } = require('discord.js');
 
 const { t, getStringFromObject, messageLocales, descriptionLocales, commandNameLocales } = require('../../src/locales');
 const { missingCatalogKeys, normalizeLocale, toDiscordLocalizations } = require('../../src/i18n');
+const {
+    DISCORD_LOCALE_OPTIONS,
+    DISCORD_LOCALES,
+    formatDiscordLocaleName,
+    normalizeDiscordLocale,
+    toApiLocaleFamily,
+} = require('../../src/discordLocales');
 
 test('getStringFromObject: returns matching locale', () => {
     const obj = { ja: 'やあ', en: 'hi' };
@@ -45,8 +53,21 @@ test('legacy locale catalog contains every key for every Discord locale', () => 
 test('normalizeLocale: maps Discord locale aliases intentionally', () => {
     assert.equal(normalizeLocale('en'), 'en-US');
     assert.equal(normalizeLocale('en-GB'), 'en-GB');
+    assert.equal(normalizeLocale('jp'), 'ja');
     assert.equal(normalizeLocale('ko-KR'), 'ko');
     assert.equal(normalizeLocale('kr'), 'kr');
+});
+
+test('discord locale helpers cover every Discord supported locale', () => {
+    assert.deepEqual(DISCORD_LOCALE_OPTIONS.map(option => option.value).sort(), Object.values(Locale).sort());
+    assert.deepEqual([...DISCORD_LOCALES].sort(), Object.values(Locale).sort());
+    assert.equal(normalizeDiscordLocale('en'), 'en-US');
+    assert.equal(normalizeDiscordLocale('EN-gb'), 'en-GB');
+    assert.equal(normalizeDiscordLocale('jp'), 'ja');
+    assert.equal(normalizeDiscordLocale('kr'), null);
+    assert.equal(toApiLocaleFamily('ja'), 'ja');
+    assert.equal(toApiLocaleFamily('fr'), 'en');
+    assert.match(formatDiscordLocaleName('zh-CN'), /zh-CN/);
 });
 
 test('toDiscordLocalizations: accepts legacy en as en-US', () => {

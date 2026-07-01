@@ -25,8 +25,8 @@ test('convertBoolToEnableDisable: ja false', () => {
 });
 
 test('convertBoolToEnableDisable: en fallback', () => {
-    assert.equal(convertBoolToEnableDisable(true, 'en'), 'Enable');
-    assert.equal(convertBoolToEnableDisable(false, 'en-US'), 'Disable');
+    assert.equal(convertBoolToEnableDisable(true, 'en'), 'Enabled');
+    assert.equal(convertBoolToEnableDisable(false, 'en-US'), 'Disabled');
 });
 
 test('extractTwitterUrls: extracts twitter.com and x.com', () => {

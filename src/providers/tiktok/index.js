@@ -16,6 +16,7 @@ const {
     shouldAttachVideoMedia,
     shouldShowOutputItem,
 } = require('../_output_controls');
+const { toApiLocaleFamily } = require('../../discordLocales');
 
 const TIKTOK_URL_PATTERN =
     /https?:\/\/(?:(?:www|m|vm|vt)\.)?tiktok\.com\/[^\s<>|]+/g;
@@ -477,7 +478,7 @@ async function extract(message, url, s) {
     s = s || {};
     const guildId = message.guild.id;
     const guildLang = s.defaultLanguage ?? settings.defaultLanguage[guildId] ?? 'en';
-    const lang = guildLang === 'ja' ? 'ja' : 'en';
+    const lang = toApiLocaleFamily(guildLang);
 
     let resolved;
     let data;

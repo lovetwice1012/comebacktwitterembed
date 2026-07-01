@@ -35,12 +35,18 @@ const {
     localize,
     toDiscordLocalizationsForKey,
 } = require('../../i18n');
+const {
+    DISCORD_LOCALE_OPTIONS,
+    formatDiscordLocaleName,
+    normalizeDiscordLocale,
+} = require('../../discordLocales');
 
 const CUSTOM_ID_PREFIX = 'guisetting';
 const DEFAULT_PROVIDER_ID = 'twitter';
 const BULK_PROVIDER_ID = 'all';
 const BANNED_WORD_INPUT_ID = 'guisetting-banned-word';
 const COPY_SOURCE_GUILD_INPUT_ID = 'guisetting-copy-source-guild';
+const DEFAULT_LANGUAGE_INPUT_ID = 'guisetting-default-language';
 
 const LOCAL_TEXT = {
     allProviders: { en: 'All providers', ja: 'すべてのプロバイダー' },
@@ -55,6 +61,9 @@ const LOCAL_TEXT = {
     copyDone: { en: 'Imported {settings} setting(s) from {source} across {providers} provider(s).', ja: '{source} から {providers} 個のプロバイダーにわたり {settings} 件の設定を取り込みました。' },
     copySkippedTargets: { en: 'Skipped {count} channel/role target(s) because IDs differ between servers.', ja: 'サーバー間でIDが異なるため、チャンネル/ロール対象 {count} 件は取り込みませんでした。' },
     updatedAllProvidersSetting: { en: 'Updated {setting} for all providers: {value}', ja: 'すべてのプロバイダーの「{setting}」を {value} にしました。' },
+    setDefaultLanguage: { en: 'Set default language', ja: 'デフォルト言語を設定' },
+    defaultLanguagePlaceholder: { en: 'en-US, ja, fr, ko, zh-CN...', ja: 'en-US, ja, fr, ko, zh-CN...' },
+    unsupportedLocale: { en: 'Unsupported locale: {value}. Supported locales: {locales}', ja: '未対応のロケールです: {value}。対応ロケール: {locales}' },
 };
 
 const PROVIDER_LABEL_OVERRIDES = {
@@ -102,8 +111,7 @@ function uiText(key, locale, replacements = {}) {
 function localText(key, locale, replacements = {}) {
     const bucket = LOCAL_TEXT[key];
     if (!bucket) return key;
-    const lang = String(locale || '').toLowerCase().startsWith('ja') ? 'ja' : 'en';
-    let text = bucket[lang] || bucket.en || key;
+    let text = localize(bucket, locale) || bucket.en || key;
     for (const [name, value] of Object.entries(replacements)) {
         text = text.replaceAll(`{${name}}`, String(value));
     }
@@ -539,6 +547,28 @@ async function applyBannedWordInput(providerId, guildId, rawWord, locale) {
     return uiText('removedBannedWord', locale, { word });
 }
 
+function supportedLocaleCodes() {
+    return DISCORD_LOCALE_OPTIONS.map(option => option.value).join(', ');
+}
+
+async function applyDefaultLanguageInput(providerId, settingKey, guildId, rawValue, locale) {
+    const raw = String(rawValue ?? '').trim();
+    const normalized = normalizeDiscordLocale(raw);
+    if (!normalized) {
+        return localText('unsupportedLocale', locale, {
+            value: raw || uiText('empty', locale),
+            locales: supportedLocaleCodes(),
+        });
+    }
+
+    const spec = findSpec(providerId, settingKey);
+    await applySettingValue(providerId, spec.settingKey, guildId, normalized);
+    const valueLabel = formatDiscordLocaleName(normalized);
+    return isBulkProvider(providerId)
+        ? localText('updatedAllProvidersSetting', locale, { setting: specLabel(spec, locale), value: valueLabel })
+        : `${specLabel(spec, locale)}: ${valueLabel}`;
+}
+
 async function removeBannedWords(providerId, guildId, selectedIndexes, locale) {
     const indexes = new Set(
         (selectedIndexes || [])
@@ -559,6 +589,10 @@ function canManageMessages(interaction) {
 }
 
 function formatChoiceValue(spec, value, locale) {
+    if (spec.key === 'defaultLanguage') {
+        const normalized = normalizeDiscordLocale(value);
+        if (normalized) return formatDiscordLocaleName(normalized);
+    }
     const choice = (spec.choices || []).find(option => String(option.value) === String(value));
     return choice ? choiceLabel(spec, choice, locale) : String(value ?? '(unset)');
 }
@@ -799,6 +833,9 @@ async function buildChoiceControls(providerId, spec, guildId, locale) {
     const currentValue = isBulkProvider(providerId)
         ? aggregateChoice(await getBulkSettingValues(spec, guildId))
         : await getSetting({ id: providerId }, spec.settingKey, guildId);
+    if (spec.key === 'defaultLanguage') {
+        return buildDefaultLanguageControls(providerId, spec, currentValue, locale);
+    }
     return [
         new ActionRowBuilder().addComponents(
             new StringSelectMenuBuilder()
@@ -811,6 +848,34 @@ async function buildChoiceControls(providerId, spec, guildId, locale) {
                 })))
         ),
         buildUtilityButtons(providerId, spec.key, locale),
+    ];
+}
+
+function buildDefaultLanguageControls(providerId, spec, currentValue, locale) {
+    const normalized = normalizeDiscordLocale(currentValue);
+    const currentLabel = normalized ? formatDiscordLocaleName(normalized) : uiText('empty', locale);
+    return [
+        new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+                .setCustomId(`${CUSTOM_ID_PREFIX}:modalOpen:defaultLanguage:${providerId}:${spec.key}`)
+                .setLabel(localText('setDefaultLanguage', locale))
+                .setStyle(ButtonStyle.Primary),
+            new ButtonBuilder()
+                .setCustomId(`${CUSTOM_ID_PREFIX}:refresh:${providerId}:${spec.key}`)
+                .setLabel(uiText('refresh', locale))
+                .setStyle(ButtonStyle.Secondary),
+            new ButtonBuilder()
+                .setCustomId(`${CUSTOM_ID_PREFIX}:close:${providerId}:${spec.key}`)
+                .setLabel(uiText('close', locale))
+                .setStyle(ButtonStyle.Secondary)
+        ),
+        new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+                .setCustomId(`${CUSTOM_ID_PREFIX}:noop:${providerId}:${spec.key}`)
+                .setLabel(truncate(currentLabel, 80))
+                .setStyle(ButtonStyle.Secondary)
+                .setDisabled(true)
+        ),
     ];
 }
 
@@ -1079,6 +1144,24 @@ function buildBannedWordModal(providerId, locale) {
         });
 }
 
+function buildDefaultLanguageModal(providerId, settingKey, locale) {
+    const languageInput = new TextInputBuilder()
+        .setCustomId(DEFAULT_LANGUAGE_INPUT_ID)
+        .setLabel(localText('setDefaultLanguage', locale))
+        .setPlaceholder(localText('defaultLanguagePlaceholder', locale))
+        .setStyle(TextInputStyle.Short)
+        .setRequired(true)
+        .setMaxLength(16);
+
+    return new ModalBuilder()
+        .setCustomId(`${CUSTOM_ID_PREFIX}:modal:defaultLanguage:${providerId}:${settingKey}`)
+        .setTitle(localText('setDefaultLanguage', locale))
+        .addComponents({
+            type: 1,
+            components: [languageInput.toJSON()],
+        });
+}
+
 function buildCopySettingsModal(providerId, settingKey, locale) {
     const sourceGuildInput = new TextInputBuilder()
         .setCustomId(COPY_SOURCE_GUILD_INPUT_ID)
@@ -1214,6 +1297,12 @@ async function handleComponent(interaction) {
         await interaction.showModal(buildBannedWordModal(normalizeProviderId(parts[3]), interaction.locale));
         return true;
     }
+    if (action === 'modalOpen' && parts[2] === 'defaultLanguage') {
+        const providerId = normalizeProviderId(parts[3]);
+        const settingKey = normalizeSettingKey(providerId, parts[4] || 'defaultLanguage');
+        await interaction.showModal(buildDefaultLanguageModal(providerId, settingKey, interaction.locale));
+        return true;
+    }
     if (action === 'modalOpen' && parts[2] === 'copyGuildSettings') {
         const providerId = normalizeProviderId(parts[3]);
         const settingKey = normalizeSettingKey(providerId, parts[4] || DEFAULT_SETTING_KEY);
@@ -1338,6 +1427,16 @@ async function handleModalSubmit(interaction) {
                 interaction.locale
             );
         }
+    } else if (modalKey === 'defaultLanguage') {
+        providerId = normalizeProviderId(parts[3]);
+        settingKey = normalizeSettingKey(providerId, parts[4] || 'defaultLanguage');
+        notice = await applyDefaultLanguageInput(
+            providerId,
+            settingKey,
+            interaction.guildId,
+            interaction.fields.getTextInputValue(DEFAULT_LANGUAGE_INPUT_ID),
+            interaction.locale
+        );
     } else if (modalKey === 'copyGuildSettings') {
         providerId = normalizeProviderId(parts[3]);
         settingKey = normalizeSettingKey(providerId, parts[4] || DEFAULT_SETTING_KEY);
@@ -1378,6 +1477,7 @@ module.exports.definition = {
 
 module.exports._internal = {
     applyBannedWordInput,
+    applyDefaultLanguageInput,
     applySettingValue,
     buildGuiPayload,
     copyGuiSettingsBetweenGuilds,

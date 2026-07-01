@@ -1,5 +1,7 @@
 'use strict';
 
+const { DISCORD_LOCALE_OPTIONS } = require('../discordLocales');
+
 const DEFAULT_SETTING_KEY = 'overview';
 
 function text(en, ja) {
@@ -71,10 +73,10 @@ const COMMON_SETTING_SPECS = [
         ),
         kind: 'choice',
         settingKey: 'defaultLanguage',
-        choices: [
-            { label: text('English', '英語'), value: 'en' },
-            { label: text('Japanese', '日本語'), value: 'ja' },
-        ],
+        choices: DISCORD_LOCALE_OPTIONS.map(option => ({
+            label: `${option.flag} ${option.nativeName}`,
+            value: option.value,
+        })),
     },
     {
         key: 'editOriginalIfTranslate',

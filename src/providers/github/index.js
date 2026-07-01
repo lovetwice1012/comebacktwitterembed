@@ -10,6 +10,7 @@ const {
     buildFailureResponse,
     shouldShowOutputItem,
 } = require('../_output_controls');
+const { toApiLocaleFamily } = require('../../discordLocales');
 
 const GITHUB_COLOR = 0x24292f;
 const GITHUB_OPEN_COLOR = 0x1a7f37;
@@ -190,7 +191,7 @@ function tr(spec, lang) {
 }
 
 function normalizeLang(settings) {
-    return settings?.defaultLanguage === 'ja' ? 'ja' : 'en';
+    return toApiLocaleFamily(settings?.defaultLanguage);
 }
 
 function truncate(value, maxLength = DESCRIPTION_MAX_LENGTH) {

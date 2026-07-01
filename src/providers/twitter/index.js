@@ -23,6 +23,7 @@ const {
     buildFailureResponse,
     shouldShowOutputItem,
 } = require('../_output_controls');
+const { toApiLocaleFamily } = require('../../discordLocales');
 
 // ---- Twitter 内部定数 (このファイル外には出さない) -------------------------
 
@@ -636,7 +637,7 @@ async function extract(message, url, s, opts) {
     const depth = opts.depth ?? 0;
     s = s || {};
 
-    const lang = s.defaultLanguage ?? 'en';
+    const lang = toApiLocaleFamily(s.defaultLanguage);
 
     // legacy_mode 自動判定 (未設定なら ManageMessages 権限値で初期化)
     if (s.legacy_mode === undefined) {

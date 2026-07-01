@@ -42,6 +42,7 @@ export const DASHBOARD_LOCALES = DASHBOARD_LOCALE_OPTIONS.map((option) => option
 
 const LOCALE_ALIASES: Record<string, DiscordLocale> = {
   en: "en-US",
+  jp: "ja",
   "ko-KR": "ko",
 };
 

@@ -12,6 +12,7 @@ const {
     resolveDensityMaxLength,
     shouldShowOutputItem,
 } = require('../_output_controls');
+const { toApiLocaleFamily } = require('../../discordLocales');
 
 const STEAM_COLOR = 0x171a21;
 const DESCRIPTION_MAX_LENGTH = 900;
@@ -85,7 +86,7 @@ function tr(spec, lang) {
 }
 
 function normalizeLanguage(settings) {
-    return settings?.defaultLanguage === 'ja' ? 'ja' : 'en';
+    return toApiLocaleFamily(settings?.defaultLanguage);
 }
 
 function decodeHtml(value) {
@@ -346,11 +347,11 @@ function parseSteamUrl(rawUrl) {
 }
 
 function steamApiLanguage(settings) {
-    return settings?.defaultLanguage === 'ja' ? 'japanese' : 'english';
+    return toApiLocaleFamily(settings?.defaultLanguage) === 'ja' ? 'japanese' : 'english';
 }
 
 function steamApiCountry(settings) {
-    return settings?.defaultLanguage === 'ja' ? 'jp' : 'us';
+    return toApiLocaleFamily(settings?.defaultLanguage) === 'ja' ? 'jp' : 'us';
 }
 
 async function fetchSteamAppDetails(appId, settings) {

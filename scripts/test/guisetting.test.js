@@ -92,6 +92,29 @@ test('guisetting payload renders provider and setting controls', async () => {
     }
 });
 
+test('guisetting default language accepts every Discord locale through modal input', async () => {
+    const { getSetting, guisetting, restore } = loadGuisettingWithFakeProviderSettings();
+    const guildId = 'guild-gui-default-language';
+
+    try {
+        const payload = await guisetting._internal.buildGuiPayload('twitter', 'defaultLanguage', guildId, null, 'en-US');
+        const controls = payload.components.flatMap(row => row.components);
+
+        assert.ok(controls.some(component => component.data?.custom_id === 'guisetting:modalOpen:defaultLanguage:twitter:defaultLanguage'));
+        assert.equal(controls.some(component => component.data?.custom_id?.startsWith('guisetting:choice:twitter:defaultLanguage')), false);
+
+        for (const locale of Object.values(Locale)) {
+            await guisetting._internal.applyDefaultLanguageInput('twitter', 'defaultLanguage', guildId, locale, 'en-US');
+            assert.equal(await getSetting({ id: 'twitter' }, 'defaultLanguage', guildId), locale);
+        }
+
+        await guisetting._internal.applyDefaultLanguageInput('twitter', 'defaultLanguage', guildId, 'EN', 'en-US');
+        assert.equal(await getSetting({ id: 'twitter' }, 'defaultLanguage', guildId), 'en-US');
+    } finally {
+        restore();
+    }
+});
+
 test('guisetting payload renders Japanese UI', async () => {
     const { guisetting, restore } = loadGuisettingWithFakeProviderSettings();
 

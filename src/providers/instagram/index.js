@@ -11,6 +11,7 @@ const {
     resolveDisplayDensity,
     shouldShowOutputItem,
 } = require('../_output_controls');
+const { toApiLocaleFamily } = require('../../discordLocales');
 
 const INSTAGRAM_URL_PATTERN =
     /https?:\/\/(?:www\.)?instagram\.com\/(?:(?:[A-Za-z0-9_.-]+\/)?(?:(?:p|reel|reels|tv)\/[A-Za-z0-9_-]+(?:\/\d+)?|share(?:\/reel)?\/[A-Za-z0-9_-]+)|(?!(?:p|reel|reels|tv|share|stories|explore|accounts|about|api|graphql|oauth|developer|directory|emails|challenge|web|static|privacy|terms|legal)(?:\/|$))[A-Za-z0-9._]{1,30})\/?(?:\?[^\s<>|]*)?/g;
@@ -1197,7 +1198,7 @@ function buildMediaPayload(data, canonicalUrl, lang, requesterName, s, mediaInde
 async function extract(message, url, s, opts) {
     s = s || {};
     opts = opts || {};
-    const lang = (s.defaultLanguage ?? 'en') === 'ja' ? 'ja' : 'en';
+    const lang = toApiLocaleFamily(s.defaultLanguage);
 
     const parsed = await resolveParsedUrl(parseInstagramUrl(url));
     if (!parsed || (parsed.kind !== 'media' && parsed.kind !== 'profile')) return null;
