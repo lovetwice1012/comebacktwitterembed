@@ -1,9 +1,10 @@
 "use client";
 
-import { Search, Server } from "lucide-react";
+import { ArrowRightLeft, Search, Server, X } from "lucide-react";
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { createTranslator, type DashboardLocale } from "@/lib/i18n";
@@ -13,6 +14,7 @@ type Guild = {
   name: string;
   iconUrl: string | null;
   canEdit: boolean;
+  canManageGuild: boolean;
   permissions: {
     administrator: boolean;
     manageGuild: boolean;
@@ -28,23 +30,112 @@ type Guild = {
 export function GuildList({ guilds, locale }: { guilds: Guild[]; locale: DashboardLocale }) {
   const t = createTranslator(locale);
   const [query, setQuery] = useState("");
+  const [sourceGuildId, setSourceGuildId] = useState("");
+  const [copyMode, setCopyMode] = useState(false);
+  const [targetGuildIds, setTargetGuildIds] = useState<string[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return guilds;
     return guilds.filter((guild) => guild.name.toLowerCase().includes(q) || guild.guildId.includes(q));
   }, [guilds, query]);
+  const sourceGuild = guilds.find((guild) => guild.guildId === sourceGuildId);
+
+  function toggleSource(guildId: string, checked: boolean) {
+    setMessage(null);
+    setSourceGuildId(checked ? guildId : "");
+    setCopyMode(false);
+    setTargetGuildIds([]);
+  }
+
+  function toggleTarget(guildId: string, checked: boolean) {
+    setMessage(null);
+    setTargetGuildIds((current) => {
+      if (checked) return [...new Set([...current, guildId])];
+      return current.filter((id) => id !== guildId);
+    });
+  }
+
+  async function copySettings() {
+    if (!sourceGuildId) {
+      setMessage(t("guildList.copyNoSource"));
+      return;
+    }
+    if (!targetGuildIds.length) {
+      setMessage(t("guildList.copyNoTargets"));
+      return;
+    }
+    if (!confirm(t("guildList.copyConfirm", { source: sourceGuild?.name || sourceGuildId, count: targetGuildIds.length }))) return;
+    setBusy(true);
+    setMessage(null);
+    try {
+      const res = await fetch("/api/guilds/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sourceGuildId, targetGuildIds }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error || t("sync.failed"));
+      setMessage(t("guildList.copyDone", { count: json.targetCount || targetGuildIds.length }));
+      setCopyMode(false);
+      setSourceGuildId("");
+      setTargetGuildIds([]);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : t("sync.failed"));
+    } finally {
+      setBusy(false);
+    }
+  }
 
   return (
     <div className="space-y-4">
-      <div className="relative max-w-xl">
-        <Search className="pointer-events-none absolute left-3 top-3 text-muted-foreground" size={16} />
-        <Input className="pl-9" placeholder={t("guildList.searchPlaceholder")} value={query} onChange={(event) => setQuery(event.target.value)} />
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="relative min-w-64 flex-1">
+          <Search className="pointer-events-none absolute left-3 top-3 text-muted-foreground" size={16} />
+          <Input className="pl-9" placeholder={t("guildList.searchPlaceholder")} value={query} onChange={(event) => setQuery(event.target.value)} />
+        </div>
+        {!copyMode ? (
+          <Button variant="outline" disabled={!sourceGuildId} onClick={() => setCopyMode(true)}>
+            <ArrowRightLeft size={16} />
+            {t("guildList.copySettings")}
+          </Button>
+        ) : (
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge tone="default">{t("guildList.copySource", { source: sourceGuild?.name || sourceGuildId })}</Badge>
+            <Badge tone={targetGuildIds.length ? "success" : "muted"}>{t("guildList.copyTargets", { count: targetGuildIds.length })}</Badge>
+            <Button onClick={copySettings} disabled={busy || !targetGuildIds.length}>
+              <ArrowRightLeft size={16} />
+              {busy ? t("sync.busy") : t("guildList.copyRun")}
+            </Button>
+            <Button variant="ghost" onClick={() => { setCopyMode(false); setTargetGuildIds([]); }} disabled={busy}>
+              <X size={16} />
+              {t("guildList.copyCancel")}
+            </Button>
+          </div>
+        )}
       </div>
+      {message ? <div className="rounded-md border bg-card p-3 text-sm text-muted-foreground">{message}</div> : null}
+      {copyMode ? <div className="rounded-md border bg-muted p-3 text-sm text-muted-foreground">{t("guildList.copyModeHelp")}</div> : null}
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-        {filtered.map((guild) => (
-          <Link key={guild.guildId} href={`/dashboard/${guild.guildId}`} className="block">
-            <Card className="h-full transition hover:border-primary hover:shadow-soft">
-              <CardHeader className="flex flex-row items-center gap-3 space-y-0">
+        {filtered.map((guild) => {
+          const isSource = guild.guildId === sourceGuildId;
+          const checked = copyMode ? targetGuildIds.includes(guild.guildId) : isSource;
+          const disabled = copyMode && (isSource || !guild.canManageGuild);
+          return (
+            <Card key={guild.guildId} className="relative h-full transition hover:border-primary hover:shadow-soft">
+              <input
+                type="checkbox"
+                className="absolute left-3 top-3 z-10 h-4 w-4"
+                checked={checked}
+                disabled={disabled || busy}
+                aria-label={copyMode ? t("guildList.copyTargetCheckbox") : t("guildList.copySourceCheckbox")}
+                onChange={(event) => {
+                  if (copyMode) toggleTarget(guild.guildId, event.target.checked);
+                  else toggleSource(guild.guildId, event.target.checked);
+                }}
+              />
+              <CardHeader className="flex flex-row items-center gap-3 space-y-0 pl-10">
                 {guild.iconUrl ? (
                   <img src={guild.iconUrl} alt="" className="h-10 w-10 rounded-md" />
                 ) : (
@@ -60,6 +151,8 @@ export function GuildList({ guilds, locale }: { guilds: Guild[]; locale: Dashboa
               <CardContent className="space-y-3">
                 <div className="flex flex-wrap gap-2">
                   <Badge tone={guild.canEdit ? "success" : "muted"}>{guild.canEdit ? t("guildList.canEdit") : t("guildList.viewOnly")}</Badge>
+                  {copyMode && isSource ? <Badge tone="default">{t("guildList.copySourceBadge")}</Badge> : null}
+                  {copyMode && !isSource && !guild.canManageGuild ? <Badge tone="warning">{t("guildList.copyTargetLocked")}</Badge> : null}
                   {guild.permissions.administrator ? <Badge tone="danger">Administrator</Badge> : null}
                   {guild.permissions.manageGuild ? <Badge tone="default">Manage Server</Badge> : null}
                   {guild.permissions.manageChannels ? <Badge tone="default">Manage Channels</Badge> : null}
@@ -69,10 +162,13 @@ export function GuildList({ guilds, locale }: { guilds: Guild[]; locale: Dashboa
                     {t("guildList.providerSummary", { enabled: guild.providerSummary.enabled, total: guild.providerSummary.total })}
                   </div>
                 ) : null}
+                <Button asChild variant="outline" size="sm">
+                  <Link href={`/dashboard/${guild.guildId}`}>{t("guildList.open")}</Link>
+                </Button>
               </CardContent>
             </Card>
-          </Link>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

@@ -1,6 +1,5 @@
 import { GuildList } from "@/components/dashboard/guild-list";
 import { GuildSwitcher } from "@/components/dashboard/guild-switcher";
-import { GuildSyncPanel } from "@/components/dashboard/guild-sync-panel";
 import { DashboardWorkspace } from "@/components/dashboard/dashboard-workspace";
 import { SignOutButton } from "@/components/dashboard/auth-buttons";
 import { LanguageSwitcher } from "@/components/dashboard/language-switcher";
@@ -29,7 +28,6 @@ export default async function DashboardPage() {
         </div>
       </header>
       <DashboardWorkspace initialGuildIds={[]} locale={locale} defaultLayout="plain">
-        {guilds.length > 1 ? <GuildSyncPanel guilds={guilds.map((guild) => ({ guildId: guild.guildId, name: guild.name, canManageGuild: guild.canManageGuild }))} locale={locale} /> : null}
         <GuildList guilds={guilds} locale={locale} />
       </DashboardWorkspace>
     </main>

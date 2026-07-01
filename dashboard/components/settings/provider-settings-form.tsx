@@ -68,6 +68,10 @@ export function ProviderSettingsForm({
   canEdit,
   settings,
   locale,
+  draftKeyOverride,
+  onSaveChanges,
+  onSaved,
+  showResetProvider = true,
 }: {
   guildId: string;
   providerId: string;
@@ -75,16 +79,26 @@ export function ProviderSettingsForm({
   canEdit: boolean;
   settings: SettingState[];
   locale: DashboardLocale;
+  draftKeyOverride?: string;
+  onSaveChanges?: (changes: Record<string, SettingValue>) => Promise<{ warnings?: string[] } | void>;
+  onSaved?: () => void;
+  showResetProvider?: boolean;
 }) {
   const router = useRouter();
   const t = createTranslator(locale);
   const defaults = useMemo(() => initialValues(settings), [settings]);
-  const draftKey = `dashboard:draft:${guildId}:${providerId}`;
+  const [savedValues, setSavedValues] = useState<FormValues>(defaults);
+  const draftKey = draftKeyOverride || `dashboard:draft:${guildId}:${providerId}`;
   const form = useForm<FormValues>({ defaultValues: defaults });
   const watched = form.watch();
   const [query, setQuery] = useState("");
   const [message, setMessage] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    setSavedValues(defaults);
+    form.reset(defaults);
+  }, [defaults]);
 
   useEffect(() => {
     const raw = window.localStorage.getItem(draftKey);
@@ -99,8 +113,8 @@ export function ProviderSettingsForm({
   }, [draftKey]);
 
   const changes = useMemo(() => {
-    return Object.fromEntries(Object.entries(watched).filter(([key, value]) => !deepEqual(value, defaults[key]))) as FormValues;
-  }, [defaults, watched]);
+    return Object.fromEntries(Object.entries(watched).filter(([key, value]) => !deepEqual(value, savedValues[key]))) as FormValues;
+  }, [savedValues, watched]);
   const hasChanges = Object.keys(changes).length > 0;
 
   useEffect(() => {
@@ -147,16 +161,27 @@ export function ProviderSettingsForm({
     setSaving(true);
     setMessage(null);
     try {
-      const res = await fetch(`/api/guilds/${guildId}/providers/${providerId}/settings`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ changes }),
-      });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error || t("form.saveFailed"));
+      let warnings: string[] = [];
+      if (onSaveChanges) {
+        const result = await onSaveChanges(changes);
+        warnings = result?.warnings || [];
+      } else {
+        const res = await fetch(`/api/guilds/${guildId}/providers/${providerId}/settings`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ changes }),
+        });
+        const json = await res.json();
+        if (!res.ok) throw new Error(json.error || t("form.saveFailed"));
+        warnings = json.warnings || [];
+      }
       window.localStorage.removeItem(draftKey);
-      setMessage(json.warnings?.length ? t("form.saveSuccessWarnings", { warnings: json.warnings.join(" ") }) : t("form.saveSuccess"));
-      router.refresh();
+      const nextValues = clone(watched);
+      setSavedValues(nextValues);
+      form.reset(nextValues);
+      setMessage(warnings.length ? t("form.saveSuccessWarnings", { warnings: warnings.join(" ") }) : t("form.saveSuccess"));
+      if (onSaved) onSaved();
+      else router.refresh();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : t("form.saveFailed"));
     } finally {
@@ -192,7 +217,7 @@ export function ProviderSettingsForm({
               {hasChanges ? <div className="text-sm text-muted-foreground">{t("form.unsavedHelp")}</div> : null}
             </div>
             <div className="flex flex-wrap gap-2">
-              <Button variant="outline" onClick={() => form.reset(clone(defaults))} disabled={!hasChanges || saving}>
+              <Button variant="outline" onClick={() => form.reset(clone(savedValues))} disabled={!hasChanges || saving}>
                 <RotateCcw size={16} />
                 {t("form.discard")}
               </Button>
@@ -238,7 +263,7 @@ export function ProviderSettingsForm({
                       <span className="font-medium">{setting ? labelText(setting.spec.label, locale) : key}</span>
                       <Badge tone={setting?.spec.impactLevel === "danger" ? "danger" : setting?.spec.impactLevel === "high" ? "warning" : "muted"}>{impactLabel(setting?.spec.impactLevel, locale)}</Badge>
                     </div>
-                    <div className="mt-1 text-muted-foreground">{valueLabel(defaults[key], locale)} → {valueLabel(value, locale)}</div>
+                    <div className="mt-1 text-muted-foreground">{valueLabel(savedValues[key], locale)} → {valueLabel(value, locale)}</div>
                   </div>
                 );
               })
@@ -257,10 +282,12 @@ export function ProviderSettingsForm({
           </CardContent>
         </Card>
 
-        <Button variant="destructive" className="w-full" disabled={!canEdit || saving} onClick={resetProvider}>
-          <AlertTriangle size={16} />
-          {t("form.resetProvider")}
-        </Button>
+        {showResetProvider ? (
+          <Button variant="destructive" className="w-full" disabled={!canEdit || saving} onClick={resetProvider}>
+            <AlertTriangle size={16} />
+            {t("form.resetProvider")}
+          </Button>
+        ) : null}
       </aside>
     </div>
   );

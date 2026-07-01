@@ -92,6 +92,47 @@ function musicJsonLdHtml(overrides = {}) {
     return `<html><head><script type="application/ld+json">${JSON.stringify(track)}</script></head></html>`;
 }
 
+function musicSocialHtml() {
+    return `
+        <html>
+            <head>
+                <meta property="og:title" content="Fallback Song \u2013 Fallback Artist">
+                <meta property="og:description" content="On Amazon Music">
+                <meta property="og:image" content="https://images.example/social.jpg">
+                <meta property="music:duration" content="245">
+            </head>
+        </html>
+    `;
+}
+
+function musicOembedJson() {
+    return {
+        version: '1.0',
+        provider_name: 'Amazon Music',
+        title: 'Fallback Song',
+        thumbnail_url: 'https://images.example/oembed.jpg',
+        html: '<iframe src="https://music.amazon.com/embed/B0TRACK123/?id=test"></iframe>',
+    };
+}
+
+function musicEmbedHtml() {
+    return `
+        <html>
+            <head><title>Amazon Music - Track Fallback Song</title></head>
+            <body>
+                <input id="ALBUM_TITLE" type="hidden" value="Fallback Album">
+                <a aria-label="song, Fallback Song">Fallback Song</a>
+                <a aria-label="artist, Fallback Artist">Fallback Artist</a>
+                <picture role="none" class="imageWrapper loaded">
+                    <source type="image/webp" srcset="https://images.example/embed._UX358_FMwebp_QL85_.jpg 1x, https://images.example/embed._UX716_FMwebp_QL85_.jpg 2x">
+                    <source srcset="https://images.example/embed._UX358_FMjpg_QL85_.jpg 1x, https://images.example/embed._UX716_FMjpg_QL85_.jpg 2x">
+                    <img role="none" loading="lazy" data-src="https://images.example/embed-original.jpg" src="https://images.example/embed._UX358_FMjpg_QL85_.jpg" alt="Fallback Artist">
+                </picture>
+            </body>
+        </html>
+    `;
+}
+
 function primeVideoJsonLdHtml(overrides = {}) {
     const video = {
         '@context': 'https://schema.org',
@@ -120,6 +161,33 @@ function primeVideoJsonLdHtml(overrides = {}) {
         ...overrides,
     };
     return `<html><head><script type="application/ld+json">${JSON.stringify(video)}</script></head></html>`;
+}
+
+function primeVideoDomHtml() {
+    return `
+        <html>
+            <head><meta property="og:description" content="A rental romcom on Prime Video."></head>
+            <body>
+                <picture>
+                    <source type="image/avif" srcset="https://images.example/show._SX360_FMavif_.jpg 360w, https://images.example/show._SX1920_FMavif_.jpg 1920w">
+                    <source type="image/webp" srcset="https://images.example/show._SX720_FMwebp_.jpg 720w">
+                    <source type="image/jpeg" srcset="https://images.example/show._SX360_FMjpg_.jpg 360w, https://images.example/show._SX1920_FMjpg_.jpg 1920w">
+                    <img alt="\u5f7c\u5973\u3001\u304a\u501f\u308a\u3057\u307e\u3059" src="https://images.example/show._SX1080_FMjpg_.jpg" data-testid="base-image">
+                </picture>
+                <div data-testid="dv-node-dp-genres">
+                    <span data-testid="genre-texts"><a>\u30a2\u30cb\u30e1</a></span>
+                    <span data-testid="genre-texts"><a>\u30b3\u30e1\u30c7\u30a3</a></span>
+                    <span data-testid="genre-texts"><a>\u30ed\u30de\u30f3\u30b9</a></span>
+                </div>
+                <div data-testid="star-rating-badge" data-automation-id="star-rating-badge" aria-label="9\u4eba\u306eAmazon\u30ab\u30b9\u30bf\u30de\u30fc\u306b\u3088\u308a\u30015\u3064\u661f\u306e\u3046\u30612.4\u306e\u8a55\u4fa1\u304c\u3055\u308c\u3066\u3044\u307e\u3059\u3002">
+                    <span>2.4/5</span>
+                </div>
+                <span role="img" data-automation-id="imdb-rating-badge" aria-label="IMDb\u306e\u8a55\u4fa1\uff1a6.7">IMDb 6.7/10</span>
+                <span role="img" data-automation-id="release-year-badge" aria-label="\u516c\u958b\u5e74: 2020">2020</span>
+                <span role="img" aria-label="\u30b7\u30fc\u30ba\u30f3\u6570\uff1a5">\u30b7\u30fc\u30ba\u30f3\u6570\uff1a5</span>
+            </body>
+        </html>
+    `;
 }
 
 function okHtml(html, finalUrl) {
@@ -333,10 +401,39 @@ test('amazon extract: builds Amazon Music embeds from music.amazon track links',
     assert.ok(embed.footer.text.endsWith(' - Amazon Music'));
 });
 
+test('amazon extract: enriches Amazon Music embeds from oEmbed and embed markup', async () => {
+    const requests = [];
+    const provider = loadAmazonProviderWithFetch(async (url) => {
+        requests.push(url);
+        if (String(url).includes('/embed/oembed')) return okHtml(JSON.stringify(musicOembedJson()), url);
+        if (String(url).includes('/embed/B0TRACK123')) return okHtml(musicEmbedHtml(), url);
+        return okHtml(musicSocialHtml(), url);
+    });
+
+    const url = 'https://music.amazon.com/tracks/B0TRACK123';
+    const result = await provider.extract(createMessage(url), url, {});
+    const embed = result[0].embeds[0];
+
+    assert.deepEqual(requests, [
+        url,
+        'https://music.amazon.com/tracks/B0TRACK123',
+        'https://music.amazon.com/embed/oembed?url=https%3A%2F%2Fmusic.amazon.com%2Ftracks%2FB0TRACK123',
+        'https://music.amazon.com/embed/B0TRACK123/?id=test',
+    ]);
+    assert.equal(embed.title, 'Fallback Song');
+    assert.equal(embed.description, undefined);
+    assert.equal(embed.image.url, 'https://images.example/embed-original.jpg');
+    assert.equal(fieldValue(embed, 'Artist'), 'Fallback Artist');
+    assert.equal(fieldValue(embed, 'Album'), 'Fallback Album');
+    assert.equal(fieldValue(embed, 'Duration'), '4m 5s');
+});
+
 test('amazon extract: resolves short links to Amazon Music URLs', async () => {
     const provider = loadAmazonProviderWithFetch(async (url) => {
-        assert.equal(url, 'https://amzn.to/music123');
-        return okHtml(musicJsonLdHtml({ name: 'Short Music Link' }), 'https://music.amazon.co.jp/playlists/B0PLAYLIST1');
+        if (url === 'https://amzn.to/music123') {
+            return okHtml(musicJsonLdHtml({ name: 'Short Music Link' }), 'https://music.amazon.co.jp/playlists/B0PLAYLIST1');
+        }
+        return okHtml(JSON.stringify(musicOembedJson()), url);
     });
 
     const url = 'https://amzn.to/music123';
@@ -371,6 +468,23 @@ test('amazon extract: builds Prime Video embeds from primevideo.com detail links
     assert.equal(fieldValue(embed, 'ID'), '0NQ1QFP6B4R6TM8O2590IV5716');
     assert.equal(step.components[0].components[0].data.label, 'Open in Prime Video');
     assert.ok(embed.footer.text.endsWith(' - Prime Video'));
+});
+
+test('amazon extract: falls back to Prime Video DOM picture and badges', async () => {
+    const provider = loadAmazonProviderWithFetch(async (url) => okHtml(primeVideoDomHtml(), url));
+
+    const url = 'https://www.amazon.co.jp/gp/video/detail/B0H569Z3BN/ref=atv_dp_share_cu_r';
+    const result = await provider.extract(createMessage(url), url, {});
+    const embed = result[0].embeds[0];
+
+    assert.equal(embed.title, '\u5f7c\u5973\u3001\u304a\u501f\u308a\u3057\u307e\u3059');
+    assert.equal(embed.url, 'https://amazon.co.jp/gp/video/detail/B0H569Z3BN');
+    assert.equal(embed.description, 'A rental romcom on Prime Video.');
+    assert.equal(embed.image.url, 'https://images.example/show._SX1920_FMjpg_.jpg');
+    assert.equal(fieldValue(embed, 'Genre'), '\u30a2\u30cb\u30e1, \u30b3\u30e1\u30c7\u30a3, \u30ed\u30de\u30f3\u30b9');
+    assert.equal(fieldValue(embed, 'Season'), '\u30b7\u30fc\u30ba\u30f3\u6570\uff1a5');
+    assert.equal(fieldValue(embed, 'Year'), '2020');
+    assert.equal(fieldValue(embed, 'Rating'), 'Amazon 2.4/5 (9), IMDb 6.7/10');
 });
 
 test('amazon extract: hides Prime Video fields and supports link-only image media', async () => {
@@ -441,6 +555,7 @@ test('amazon parse: rejects non-product Amazon pages', () => {
         provider._internal.parseAmazonUrl('https://www.amazon.com/dp/B08N5WRWNW).').asin,
         'B08N5WRWNW'
     );
+    assert.equal(provider._internal.parseAmazonUrl('https://music.amazon.com/tracks/B0TRACK123').id, 'B0TRACK123');
     assert.equal(provider._internal.parseAmazonUrl('https://music.amazon.com/search/example'), null);
     assert.equal(provider._internal.parseAmazonUrl('https://www.amazon.com/s?k=headphones'), null);
     assert.equal(provider._internal.parseAmazonUrl('https://example.com/dp/B08N5WRWNW'), null);
