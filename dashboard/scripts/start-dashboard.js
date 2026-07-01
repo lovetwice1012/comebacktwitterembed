@@ -33,6 +33,14 @@ function dashboardBaseUrl(config, port) {
     ).replace(/\/+$/, '');
 }
 
+function npmCommand() {
+    return process.platform === 'win32' ? 'npm.cmd' : 'npm';
+}
+
+function hasProductionBuild(dashboardDir) {
+    return fs.existsSync(path.join(dashboardDir, '.next', 'BUILD_ID'));
+}
+
 const mode = process.argv[2] === 'start' ? 'start' : 'dev';
 const config = readConfig();
 const dashboard = config.dashboard || {};
@@ -43,6 +51,7 @@ const baseUrl = dashboardBaseUrl(config, port);
 const env = {
     ...process.env,
     PORT: String(port),
+    NEXT_TELEMETRY_DISABLED: '1',
     NEXTAUTH_URL: baseUrl,
     DASHBOARD_BASE_URL: baseUrl,
     DASHBOARD_INTEGRATED_MEDIA_SERVER: 'true',
@@ -65,6 +74,24 @@ if (mediaDelivery.serverMode) env.MEDIA_DELIVERY_SERVER_MODE = mediaDelivery.ser
 
 const dashboardDir = path.resolve(__dirname, '..');
 const nextCli = path.join(dashboardDir, 'node_modules', 'next', 'dist', 'bin', 'next');
+
+if (mode === 'start' && !hasProductionBuild(dashboardDir)) {
+    console.warn('[dashboard] production build was not found. Running `npm run build` before start.');
+    const build = spawnSync(npmCommand(), ['run', 'build'], {
+        cwd: dashboardDir,
+        env,
+        stdio: 'inherit',
+        windowsHide: true,
+    });
+    if (build.error) {
+        console.error(build.error);
+        process.exit(1);
+    }
+    if (build.status !== 0) {
+        process.exit(build.status ?? 1);
+    }
+}
+
 const result = spawnSync(process.execPath, [nextCli, mode, '--port', String(port)], {
     cwd: dashboardDir,
     env,

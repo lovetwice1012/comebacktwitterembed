@@ -14,6 +14,7 @@ import {
 import { deepEqual } from "@/lib/settings-diff";
 import { settingWarnings, validateProviderChanges } from "@/lib/settings-validation";
 import { recordAuditLog } from "@/lib/audit-log";
+import { createTranslator, type DashboardLocale } from "@/lib/i18n";
 import type {
   AuditActor,
   ButtonVisibility,
@@ -114,15 +115,13 @@ async function ensureProviderAndGuild(db: Tx, providerId: string, guildId: strin
   await db.$executeRaw`INSERT INTO guilds (guild_id) VALUES (${guildId}) ON DUPLICATE KEY UPDATE guild_id = guild_id`;
 }
 
-async function getScalarRaw(providerId: string, guildId: string, key: string) {
-  const columnSpec = getProviderSettingColumns()[key];
-  if (!columnSpec) return undefined;
-  const rows = await prisma.$queryRawUnsafe<Array<{ value: unknown }>>(
-    `SELECT ${columnSpec.column} AS value FROM guild_provider_settings WHERE provider_id = ? AND guild_id = ? LIMIT 1`,
+async function readScalarRow(providerId: string, guildId: string): Promise<Record<string, unknown> | null> {
+  const rows = await prisma.$queryRawUnsafe<Array<Record<string, unknown>>>(
+    "SELECT * FROM guild_provider_settings WHERE provider_id = ? AND guild_id = ? LIMIT 1",
     providerId,
     guildId,
   );
-  return convertDatabaseValue(rows[0]?.value, columnSpec);
+  return rows[0] || null;
 }
 
 async function setScalar(db: Tx, providerId: string, guildId: string, key: string, value: SettingValue | undefined) {
@@ -207,11 +206,40 @@ async function replaceButtonVisibility(db: Tx, providerId: string, guildId: stri
   }
 }
 
-async function readRawValue(providerId: string, guildId: string, spec: SettingSpec): Promise<SettingValue | undefined> {
-  if (spec.kind === "targets") return readTargetRows(SPECIAL_TARGET_TABLES[spec.key], providerId, guildId);
-  if (spec.kind === "bannedWords") return readBannedWords(providerId, guildId);
-  if (spec.kind === "buttonVisibility") return readButtonVisibility(providerId, guildId);
-  return getScalarRaw(providerId, guildId, spec.key);
+async function readRawValues(providerId: string, guildId: string, specs: SettingSpec[]) {
+  const columns = getProviderSettingColumns();
+  const needsScalarRow = specs.some((spec) => spec.kind !== "targets" && spec.kind !== "bannedWords" && spec.kind !== "buttonVisibility" && columns[spec.key]);
+  const targetSpecs = specs.filter((spec) => spec.kind === "targets" && SPECIAL_TARGET_TABLES[spec.key]);
+  const needsBannedWords = specs.some((spec) => spec.kind === "bannedWords");
+  const needsButtonVisibility = specs.some((spec) => spec.kind === "buttonVisibility");
+
+  const [scalarRow, targetValues, bannedWords, buttonVisibility] = await Promise.all([
+    needsScalarRow ? readScalarRow(providerId, guildId) : Promise.resolve(null),
+    Promise.all(targetSpecs.map(async (spec) => [spec.key, await readTargetRows(SPECIAL_TARGET_TABLES[spec.key], providerId, guildId)] as const)),
+    needsBannedWords ? readBannedWords(providerId, guildId) : Promise.resolve(undefined),
+    needsButtonVisibility ? readButtonVisibility(providerId, guildId) : Promise.resolve(undefined),
+  ]);
+
+  const values = new Map<string, SettingValue | undefined>();
+  for (const spec of specs) {
+    if (spec.kind === "targets") {
+      const target = targetValues.find(([key]) => key === spec.key);
+      values.set(spec.key, target?.[1]);
+      continue;
+    }
+    if (spec.kind === "bannedWords") {
+      values.set(spec.key, bannedWords);
+      continue;
+    }
+    if (spec.kind === "buttonVisibility") {
+      values.set(spec.key, buttonVisibility);
+      continue;
+    }
+
+    const columnSpec = columns[spec.key];
+    values.set(spec.key, columnSpec ? convertDatabaseValue(scalarRow?.[columnSpec.column], columnSpec) : undefined);
+  }
+  return values;
 }
 
 async function writeValue(db: Tx, providerId: string, guildId: string, spec: SettingSpec, value: SettingValue | undefined) {
@@ -228,43 +256,43 @@ function defaultForSpec(provider: { id: string; enabledByDefault?: boolean }, sp
   return providerSettingDefault(provider, spec.key);
 }
 
-export async function getProviderSettingsState(providerId: string, guildId: string): Promise<SettingState[]> {
+export async function getProviderSettingsState(providerId: string, guildId: string, locale: DashboardLocale = "ja"): Promise<SettingState[]> {
+  const t = createTranslator(locale);
   const provider = getProvider(providerId);
-  if (!provider) throw new Error(`Unknown provider: ${providerId}`);
+  if (!provider) throw new Error(t("validation.unknownProvider", { providerId }));
   const specs = editableSpecs(providerId);
-  const rawStates = await Promise.all(
-    specs.map(async (spec) => {
-      const rawValue = await readRawValue(providerId, guildId, spec);
-      const defaultValue = defaultForSpec(provider, spec);
-      const value = rawValue === undefined ? defaultValue : rawValue;
-      return {
-        key: spec.key,
-        kind: spec.kind,
-        spec,
-        value: (value === undefined ? null : value) as SettingValue,
-        rawValue,
-        defaultValue,
-        customized: rawValue !== undefined && !deepEqual(rawValue, defaultValue),
-        changedFromDefault: !deepEqual(value, defaultValue),
-        warnings: [],
-        dependencies: spec.dependencies,
-        conflicts: spec.conflicts,
-      } satisfies SettingState;
-    }),
-  );
+  const rawValues = await readRawValues(providerId, guildId, specs);
+  const rawStates = specs.map((spec) => {
+    const rawValue = rawValues.get(spec.key);
+    const defaultValue = defaultForSpec(provider, spec);
+    const value = rawValue === undefined ? defaultValue : rawValue;
+    return {
+      key: spec.key,
+      kind: spec.kind,
+      spec,
+      value: (value === undefined ? null : value) as SettingValue,
+      rawValue,
+      defaultValue,
+      customized: rawValue !== undefined && !deepEqual(rawValue, defaultValue),
+      changedFromDefault: !deepEqual(value, defaultValue),
+      warnings: [],
+      dependencies: spec.dependencies,
+      conflicts: spec.conflicts,
+    } satisfies SettingState;
+  });
 
   const values = Object.fromEntries(rawStates.map((state) => [state.key, state.value]));
   return rawStates.map((state) => ({
     ...state,
-    warnings: settingWarnings(state.key, state.value, values),
+    warnings: settingWarnings(state.key, state.value, values, locale),
   }));
 }
 
-export async function getProvidersOverview(guildId: string) {
+export async function getProvidersOverview(guildId: string, locale: DashboardLocale = "ja") {
   const providers = getBotProviders();
   return Promise.all(
     providers.map(async (provider) => {
-      const states = await getProviderSettingsState(provider.id, guildId);
+      const states = await getProviderSettingsState(provider.id, guildId, locale);
       const enabled = states.find((state) => state.key === "enabled")?.value === true;
       const customizedSettingCount = states.filter((state) => state.changedFromDefault).length;
       const warnings = states.flatMap((state) => state.warnings.map((warning) => `${state.key}: ${warning}`));
@@ -310,12 +338,14 @@ export async function saveProviderSettings(
   body: unknown,
   actor: AuditActor,
   meta: { requestId?: string | null; ip?: string | null; userAgent?: string | null } = {},
+  locale: DashboardLocale = "ja",
 ) {
+  const t = createTranslator(locale);
   const provider = getProvider(providerId);
-  if (!provider) throw new Error(`Unknown provider: ${providerId}`);
-  const validated = validateProviderChanges(providerId, body);
+  if (!provider) throw new Error(t("validation.unknownProvider", { providerId }));
+  const validated = validateProviderChanges(providerId, body, locale);
   const specs = new Map(editableSpecs(providerId).map((spec) => [spec.key, spec]));
-  const before = await getProviderSettingsState(providerId, guildId);
+  const before = await getProviderSettingsState(providerId, guildId, locale);
   const beforeByKey = new Map(before.map((state) => [state.key, state]));
 
   await prisma.$transaction(async (tx) => {
@@ -340,7 +370,7 @@ export async function saveProviderSettings(
   return {
     providerId,
     warnings: validated.warnings,
-    settings: await getProviderSettingsState(providerId, guildId),
+    settings: await getProviderSettingsState(providerId, guildId, locale),
   };
 }
 
@@ -349,10 +379,12 @@ export async function resetProviderSettings(
   providerId: string,
   actor: AuditActor,
   meta: { requestId?: string | null; ip?: string | null; userAgent?: string | null } = {},
+  locale: DashboardLocale = "ja",
 ) {
+  const t = createTranslator(locale);
   const provider = getProvider(providerId);
-  if (!provider) throw new Error(`Unknown provider: ${providerId}`);
-  const before = await getProviderSettingsState(providerId, guildId);
+  if (!provider) throw new Error(t("validation.unknownProvider", { providerId }));
+  const before = await getProviderSettingsState(providerId, guildId, locale);
   const specs = editableSpecs(providerId);
 
   await prisma.$transaction(async (tx) => {
@@ -384,7 +416,7 @@ export async function resetProviderSettings(
 
   return {
     providerId,
-    settings: await getProviderSettingsState(providerId, guildId),
+    settings: await getProviderSettingsState(providerId, guildId, locale),
   };
 }
 
@@ -393,6 +425,7 @@ export async function saveBulkProviderSettings(
   body: unknown,
   actor: AuditActor,
   meta: { requestId?: string | null; ip?: string | null; userAgent?: string | null } = {},
+  locale: DashboardLocale = "ja",
 ) {
   const input = body as {
     providerIds?: string[];
@@ -401,7 +434,7 @@ export async function saveBulkProviderSettings(
   const providerIds = input.providerIds?.length ? input.providerIds : getBotProviders().map((provider) => provider.id);
   const results = [];
   for (const providerId of providerIds) {
-    const result = await saveProviderSettings(guildId, providerId, { changes: input.changes || {} }, actor, meta);
+    const result = await saveProviderSettings(guildId, providerId, { changes: input.changes || {} }, actor, meta, locale);
     results.push({ providerId, warnings: result.warnings });
   }
   return { updatedProviders: results };

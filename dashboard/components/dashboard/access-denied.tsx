@@ -1,20 +1,28 @@
 import { ShieldAlert } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { createTranslator, type DashboardLocale } from "@/lib/i18n";
 
-export function AccessDenied({ required = "Manage Channels / Manage Server / Administrator" }: { required?: string }) {
+export function AccessDenied({
+  required = "Manage Channels / Manage Server / Administrator",
+  locale = "ja",
+}: {
+  required?: string;
+  locale?: DashboardLocale;
+}) {
+  const t = createTranslator(locale);
   return (
     <main className="mx-auto max-w-2xl p-6">
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <ShieldAlert size={18} />
-            権限が不足しています
+            {t("accessDenied.title")}
           </CardTitle>
-          <CardDescription>Botが導入されていない、またはこのサーバーのDashboard閲覧権限がありません。</CardDescription>
+          <CardDescription>{t("accessDenied.description")}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-2 text-sm">
-          <div>必要権限: {required}</div>
-          <div className="text-muted-foreground">管理者に、Bot導入状態とあなたのDiscord権限を確認してもらってください。</div>
+          <div>{t("accessDenied.required", { required })}</div>
+          <div className="text-muted-foreground">{t("accessDenied.adminHelp")}</div>
         </CardContent>
       </Card>
     </main>

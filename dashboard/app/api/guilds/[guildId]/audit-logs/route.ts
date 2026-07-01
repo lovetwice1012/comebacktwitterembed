@@ -1,13 +1,15 @@
 import { NextRequest } from "next/server";
 import { errorResponse, json, requireGuildPermission } from "@/lib/api";
 import { listAuditLogs } from "@/lib/audit-log";
+import { getDashboardLocaleFromRequest } from "@/lib/server-locale";
 
 type Params = { params: Promise<{ guildId: string }> };
 
 export async function GET(req: NextRequest, { params }: Params) {
+  const locale = getDashboardLocaleFromRequest(req);
   try {
     const { guildId } = await params;
-    await requireGuildPermission(guildId, "manage");
+    await requireGuildPermission(guildId, "manage", locale);
     const search = req.nextUrl.searchParams;
     return json(await listAuditLogs(guildId, {
       provider_id: search.get("provider_id") || undefined,
@@ -18,6 +20,6 @@ export async function GET(req: NextRequest, { params }: Params) {
       date_to: search.get("date_to") || undefined,
     }));
   } catch (error) {
-    return errorResponse(error);
+    return errorResponse(error, locale);
   }
 }

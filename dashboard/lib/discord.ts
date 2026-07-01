@@ -22,8 +22,33 @@ type DiscordUser = {
 };
 
 const DISCORD_API_TIMEOUT_MS = getDashboardNumber("discordApiTimeoutMs", "DISCORD_API_TIMEOUT_MS", 8000);
+const GUILD_CACHE_TTL_MS = getDashboardNumber("guildCacheTtlMs", "DASHBOARD_GUILD_CACHE_TTL_MS", 60_000);
 const USE_BOT_GUILD_API = getDashboardFlag("useBotGuildApi", "DASHBOARD_USE_BOT_GUILD_API");
 const LOAD_GUILD_PROVIDER_SUMMARY = getDashboardFlag("loadGuildProviderSummary", "DASHBOARD_LOAD_GUILD_PROVIDER_SUMMARY");
+
+type CacheEntry<T> = {
+  expiresAt: number;
+  promise: Promise<T>;
+};
+
+const userGuildCache = new Map<string, CacheEntry<DiscordGuild[]>>();
+let botGuildDiscordCache: CacheEntry<Set<string> | null> | null = null;
+let botGuildDatabaseCache: CacheEntry<Set<string>> | null = null;
+
+function cached<T>(entry: CacheEntry<T> | null, load: () => Promise<T>): CacheEntry<T> {
+  if (entry && entry.expiresAt > Date.now()) return entry;
+  return {
+    expiresAt: Date.now() + GUILD_CACHE_TTL_MS,
+    promise: load(),
+  };
+}
+
+function cachedByKey<T>(map: Map<string, CacheEntry<T>>, key: string, load: () => Promise<T>) {
+  const current = map.get(key) || null;
+  const next = cached(current, load);
+  if (next !== current) map.set(key, next);
+  return next.promise;
+}
 
 async function discordFetch<T>(path: string, token: string, authType: "Bearer" | "Bot") {
   const controller = new AbortController();
@@ -63,19 +88,25 @@ export async function fetchDiscordMe(accessToken: string) {
 }
 
 export const fetchUserGuilds = cache(async (accessToken: string) => {
-  return discordFetch<DiscordGuild[]>("/users/@me/guilds", accessToken, "Bearer");
+  return cachedByKey(userGuildCache, accessToken, () => discordFetch<DiscordGuild[]>("/users/@me/guilds", accessToken, "Bearer"));
 });
 
 const fetchBotGuildIdsFromDiscord = cache(async () => {
   const token = getBotToken();
   if (!token) return null;
-  const guilds = await discordFetch<DiscordGuild[]>("/users/@me/guilds", token, "Bot");
-  return new Set(guilds.map((guild) => guild.id));
+  botGuildDiscordCache = cached(botGuildDiscordCache, async () => {
+    const guilds = await discordFetch<DiscordGuild[]>("/users/@me/guilds", token, "Bot");
+    return new Set(guilds.map((guild) => guild.id));
+  });
+  return botGuildDiscordCache.promise;
 });
 
 const fetchBotGuildIdsFromDatabase = cache(async () => {
-  const rows = await prisma.$queryRaw<Array<{ guild_id: string }>>`SELECT guild_id FROM guilds`;
-  return new Set(rows.map((row) => row.guild_id));
+  botGuildDatabaseCache = cached(botGuildDatabaseCache, async () => {
+    const rows = await prisma.$queryRaw<Array<{ guild_id: string }>>`SELECT guild_id FROM guilds`;
+    return new Set(rows.map((row) => row.guild_id));
+  });
+  return botGuildDatabaseCache.promise;
 });
 
 export const fetchBotGuildIds = cache(async () => {
@@ -128,6 +159,24 @@ export async function listVisibleGuilds(session: DashboardSession) {
 }
 
 export async function getGuildAccess(session: DashboardSession, guildId: string): Promise<GuildAccess | null> {
-  const guilds = await listVisibleGuilds(session);
-  return guilds.find((guild) => guild.guildId === guildId) || null;
+  const [userGuilds, installed] = await Promise.all([
+    fetchUserGuilds(session.accessToken),
+    fetchBotGuildIds(),
+  ]);
+  const guild = userGuilds.find((item) => item.id === guildId);
+  if (!guild || !installed.has(guild.id)) return null;
+
+  const permissions = parsePermissions(guild.owner ? BigInt("9223372036854775807") : guild.permissions || "0");
+  if (!canViewSettings(permissions)) return null;
+
+  return {
+    guildId: guild.id,
+    name: guild.name,
+    iconUrl: guildIconUrl(guild),
+    botInstalled: true,
+    canView: true,
+    canEdit: canEditSettings(permissions),
+    canManageGuild: canManageGuildSettings(permissions),
+    permissions,
+  };
 }

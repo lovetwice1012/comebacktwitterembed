@@ -8,8 +8,9 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input, Textarea } from "@/components/ui/input";
+import { categoryLabel, createTranslator, impactLabel, labelText, type DashboardLocale, valueLabel } from "@/lib/i18n";
 import { buildPreview } from "@/lib/settings-preview";
-import { deepEqual, labelText, valueLabel } from "@/lib/settings-diff";
+import { deepEqual } from "@/lib/settings-diff";
 import type { ButtonVisibility, SettingState, SettingValue, TargetSetting } from "@/lib/types";
 
 type FormValues = Record<string, SettingValue>;
@@ -41,14 +42,17 @@ export function ProviderSettingsForm({
   providerLabel,
   canEdit,
   settings,
+  locale,
 }: {
   guildId: string;
   providerId: string;
   providerLabel: string;
   canEdit: boolean;
   settings: SettingState[];
+  locale: DashboardLocale;
 }) {
   const router = useRouter();
+  const t = createTranslator(locale);
   const defaults = useMemo(() => initialValues(settings), [settings]);
   const draftKey = `dashboard:draft:${guildId}:${providerId}`;
   const form = useForm<FormValues>({ defaultValues: defaults });
@@ -63,7 +67,7 @@ export function ProviderSettingsForm({
     try {
       const parsed = JSON.parse(raw) as FormValues;
       form.reset({ ...defaults, ...parsed }, { keepDirty: true });
-      setMessage("保存されていない下書きを復元しました。");
+      setMessage(t("form.draftRestored"));
     } catch {
       window.localStorage.removeItem(draftKey);
     }
@@ -96,8 +100,9 @@ export function ProviderSettingsForm({
       const haystack = [
         setting.key,
         setting.spec.dbColumn,
-        labelText(setting.spec.label),
-        labelText(setting.spec.description),
+        labelText(setting.spec.label, locale),
+        labelText(setting.spec.description, locale),
+        categoryLabel(setting.spec.category, locale),
         setting.spec.category,
       ]
         .filter(Boolean)
@@ -111,11 +116,11 @@ export function ProviderSettingsForm({
     ...setting,
     value: watched[setting.key] ?? setting.value,
   }));
-  const preview = buildPreview(providerId, previewStates);
+  const preview = buildPreview(providerId, previewStates, locale);
 
   async function save() {
     const dangerousKeys = Object.keys(changes).filter((key) => settings.find((setting) => setting.key === key)?.spec.impactLevel === "danger");
-    if (dangerousKeys.length && !confirm(`危険設定を変更します: ${dangerousKeys.join(", ")}`)) return;
+    if (dangerousKeys.length && !confirm(t("form.dangerConfirm", { keys: dangerousKeys.join(", ") }))) return;
     setSaving(true);
     setMessage(null);
     try {
@@ -125,29 +130,29 @@ export function ProviderSettingsForm({
         body: JSON.stringify({ changes }),
       });
       const json = await res.json();
-      if (!res.ok) throw new Error(json.error || "Save failed");
+      if (!res.ok) throw new Error(json.error || t("form.saveFailed"));
       window.localStorage.removeItem(draftKey);
-      setMessage(json.warnings?.length ? `保存しました: ${json.warnings.join(" ")}` : "保存しました。");
+      setMessage(json.warnings?.length ? t("form.saveSuccessWarnings", { warnings: json.warnings.join(" ") }) : t("form.saveSuccess"));
       router.refresh();
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "保存に失敗しました。");
+      setMessage(error instanceof Error ? error.message : t("form.saveFailed"));
     } finally {
       setSaving(false);
     }
   }
 
   async function resetProvider() {
-    if (!confirm(`${providerLabel} の設定をデフォルトへ戻します。`)) return;
+    if (!confirm(t("form.resetConfirm", { providerLabel }))) return;
     setSaving(true);
     try {
       const res = await fetch(`/api/guilds/${guildId}/providers/${providerId}/reset`, { method: "POST" });
       const json = await res.json();
-      if (!res.ok) throw new Error(json.error || "Reset failed");
+      if (!res.ok) throw new Error(json.error || t("form.resetFailed"));
       window.localStorage.removeItem(draftKey);
-      setMessage("provider設定をリセットしました。");
+      setMessage(t("form.resetSuccess"));
       router.refresh();
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "リセットに失敗しました。");
+      setMessage(error instanceof Error ? error.message : t("form.resetFailed"));
     } finally {
       setSaving(false);
     }
@@ -159,17 +164,17 @@ export function ProviderSettingsForm({
         <div className="sticky top-16 z-20 rounded-lg border bg-card p-3 shadow-soft">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <div className="font-medium">{hasChanges ? `${Object.keys(changes).length}件の未保存変更` : "未保存変更はありません"}</div>
-              <div className="text-sm text-muted-foreground">保存前に差分と危険度を確認できます。</div>
+              <div className="font-medium">{hasChanges ? t("form.unsavedCount", { count: Object.keys(changes).length }) : t("form.noUnsavedChanges")}</div>
+              <div className="text-sm text-muted-foreground">{t("form.unsavedHelp")}</div>
             </div>
             <div className="flex flex-wrap gap-2">
               <Button variant="outline" onClick={() => form.reset(clone(defaults))} disabled={!hasChanges || saving}>
                 <RotateCcw size={16} />
-                破棄
+                {t("form.discard")}
               </Button>
               <Button onClick={save} disabled={!canEdit || !hasChanges || saving}>
                 <Save size={16} />
-                保存
+                {t("form.save")}
               </Button>
             </div>
           </div>
@@ -180,14 +185,14 @@ export function ProviderSettingsForm({
           <CardContent className="pt-4">
             <div className="relative">
               <Search className="pointer-events-none absolute left-3 top-3 text-muted-foreground" size={16} />
-              <Input className="pl-9" placeholder="設定キー、ラベル、DBカラムで検索" value={query} onChange={(event) => setQuery(event.target.value)} />
+              <Input className="pl-9" placeholder={t("form.searchPlaceholder")} value={query} onChange={(event) => setQuery(event.target.value)} />
             </div>
           </CardContent>
         </Card>
 
         <div className="space-y-3">
           {filteredSettings.map((setting) => (
-            <SettingEditor key={setting.key} setting={setting} value={watched[setting.key]} setValue={(value) => form.setValue(setting.key, value, { shouldDirty: true })} disabled={!canEdit || saving} />
+            <SettingEditor key={setting.key} setting={setting} value={watched[setting.key]} setValue={(value) => form.setValue(setting.key, value, { shouldDirty: true })} disabled={!canEdit || saving} locale={locale} />
           ))}
         </div>
       </div>
@@ -195,8 +200,8 @@ export function ProviderSettingsForm({
       <aside className="space-y-4">
         <Card>
           <CardHeader>
-            <CardTitle>変更差分</CardTitle>
-            <CardDescription>保存される値だけを表示します。</CardDescription>
+            <CardTitle>{t("form.diffTitle")}</CardTitle>
+            <CardDescription>{t("form.diffDesc")}</CardDescription>
           </CardHeader>
           <CardContent className="space-y-2">
             {Object.entries(changes).length ? (
@@ -205,22 +210,22 @@ export function ProviderSettingsForm({
                 return (
                   <div key={key} className="rounded-md border p-2 text-sm">
                     <div className="flex items-center justify-between gap-2">
-                      <span className="font-medium">{setting ? labelText(setting.spec.label) : key}</span>
-                      <Badge tone={setting?.spec.impactLevel === "danger" ? "danger" : setting?.spec.impactLevel === "high" ? "warning" : "muted"}>{setting?.spec.impactLevel || "low"}</Badge>
+                      <span className="font-medium">{setting ? labelText(setting.spec.label, locale) : key}</span>
+                      <Badge tone={setting?.spec.impactLevel === "danger" ? "danger" : setting?.spec.impactLevel === "high" ? "warning" : "muted"}>{impactLabel(setting?.spec.impactLevel, locale)}</Badge>
                     </div>
-                    <div className="mt-1 text-muted-foreground">{valueLabel(defaults[key])} → {valueLabel(value)}</div>
+                    <div className="mt-1 text-muted-foreground">{valueLabel(defaults[key], locale)} → {valueLabel(value, locale)}</div>
                   </div>
                 );
               })
             ) : (
-              <div className="text-sm text-muted-foreground">差分はありません。</div>
+              <div className="text-sm text-muted-foreground">{t("form.noDiff")}</div>
             )}
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader>
-            <CardTitle>ライブプレビュー</CardTitle>
+            <CardTitle>{t("form.livePreview")}</CardTitle>
             <CardDescription>{preview.density} / {preview.mediaMode}</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
@@ -236,7 +241,7 @@ export function ProviderSettingsForm({
 
         <Button variant="destructive" className="w-full" disabled={!canEdit || saving} onClick={resetProvider}>
           <AlertTriangle size={16} />
-          providerをデフォルトへ戻す
+          {t("form.resetProvider")}
         </Button>
       </aside>
     </div>
@@ -248,34 +253,37 @@ function SettingEditor({
   value,
   setValue,
   disabled,
+  locale,
 }: {
   setting: SettingState;
   value: SettingValue;
   setValue: (value: SettingValue) => void;
   disabled: boolean;
+  locale: DashboardLocale;
 }) {
+  const t = createTranslator(locale);
   const spec = setting.spec;
   return (
     <Card>
       <CardHeader>
         <div className="flex flex-wrap items-start justify-between gap-2">
           <div>
-            <CardTitle>{labelText(spec.label)}</CardTitle>
-            <CardDescription>{labelText(spec.description)}</CardDescription>
+            <CardTitle>{labelText(spec.label, locale)}</CardTitle>
+            <CardDescription>{labelText(spec.description, locale)}</CardDescription>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Badge tone={spec.impactLevel === "danger" ? "danger" : spec.impactLevel === "high" ? "warning" : "muted"}>{spec.impactLevel}</Badge>
-            {spec.advanced ? <Badge tone="muted">advanced</Badge> : null}
-            <Badge tone="muted">{spec.category}</Badge>
+            <Badge tone={spec.impactLevel === "danger" ? "danger" : spec.impactLevel === "high" ? "warning" : "muted"}>{impactLabel(spec.impactLevel, locale)}</Badge>
+            {spec.advanced ? <Badge tone="muted">{t("form.advanced")}</Badge> : null}
+            <Badge tone="muted">{categoryLabel(spec.category, locale)}</Badge>
           </div>
         </div>
       </CardHeader>
       <CardContent className="space-y-3">
-        {renderControl(setting, value, setValue, disabled)}
+        {renderControl(setting, value, setValue, disabled, locale)}
         <div className="grid gap-2 text-xs text-muted-foreground md:grid-cols-3">
-          <span>key: {setting.key}</span>
-          <span>DB: {spec.dbColumn || "-"}</span>
-          <span>default: {valueLabel(setting.defaultValue)}</span>
+          <span>{t("form.meta.key", { value: setting.key })}</span>
+          <span>{t("form.meta.db", { value: spec.dbColumn || "-" })}</span>
+          <span>{t("form.meta.default", { value: valueLabel(setting.defaultValue, locale) })}</span>
         </div>
         {setting.warnings.length ? (
           <div className="space-y-1 rounded-md bg-amber-50 p-2 text-sm text-amber-900">
@@ -287,13 +295,14 @@ function SettingEditor({
   );
 }
 
-function renderControl(setting: SettingState, value: SettingValue, setValue: (value: SettingValue) => void, disabled: boolean) {
+function renderControl(setting: SettingState, value: SettingValue, setValue: (value: SettingValue) => void, disabled: boolean, locale: DashboardLocale) {
   const spec = setting.spec;
+  const t = createTranslator(locale);
   if (spec.kind === "bool" || spec.kind === "providerEnabled") {
     return (
       <label className="flex items-center gap-2 text-sm">
         <input type="checkbox" checked={value === true} disabled={disabled} onChange={(event) => setValue(event.target.checked)} />
-        {value === true ? "有効" : "無効"}
+        {value === true ? t("form.enabled") : t("form.disabled")}
       </label>
     );
   }
@@ -302,14 +311,14 @@ function renderControl(setting: SettingState, value: SettingValue, setValue: (va
     return (
       <select className="h-10 w-full rounded-md border bg-card px-3 text-sm" value={String(value ?? "")} disabled={disabled} onChange={(event) => setValue(event.target.value)}>
         {spec.choices?.map((choice) => (
-          <option key={choice.value} value={choice.value}>{labelText(choice.label)}</option>
+          <option key={choice.value} value={choice.value}>{labelText(choice.label, locale)}</option>
         ))}
       </select>
     );
   }
 
   if (spec.kind === "bannedWords") {
-    return <Textarea disabled={disabled} value={textareaList(value)} onChange={(event) => setValue(parseTextareaList(event.target.value))} placeholder="1行に1語、またはCSV貼り付け" />;
+    return <Textarea disabled={disabled} value={textareaList(value)} onChange={(event) => setValue(parseTextareaList(event.target.value))} placeholder={t("form.bannedWordsPlaceholder")} />;
   }
 
   if (spec.kind === "targets") {
@@ -323,7 +332,7 @@ function renderControl(setting: SettingState, value: SettingValue, setValue: (va
               disabled={disabled}
               value={targetTextarea(targets, key)}
               onChange={(event) => setValue({ ...targets, [key]: parseTextareaList(event.target.value) })}
-              placeholder={`${key} IDs`}
+              placeholder={t("form.idsPlaceholder", { target: key })}
             />
           </label>
         ))}
@@ -339,7 +348,7 @@ function renderControl(setting: SettingState, value: SettingValue, setValue: (va
         {keys.map((key) => (
           <label key={key} className="flex items-center gap-2 rounded-md border p-2 text-sm">
             <input type="checkbox" disabled={disabled} checked={visibility[key] === true} onChange={(event) => setValue({ ...visibility, [key]: event.target.checked })} />
-            {key} を非表示
+            {t("form.hideButton", { key })}
           </label>
         ))}
       </div>
@@ -364,7 +373,7 @@ function renderControl(setting: SettingState, value: SettingValue, setValue: (va
               }}
             />
             <span>
-              <span className="font-medium">{labelText(item.label)}</span>
+              <span className="font-medium">{labelText(item.label, locale)}</span>
               <span className="block text-xs text-muted-foreground">{item.value}</span>
             </span>
           </label>
@@ -373,5 +382,5 @@ function renderControl(setting: SettingState, value: SettingValue, setValue: (va
     );
   }
 
-  return <div className="text-sm text-muted-foreground">この設定種別は表示専用です。</div>;
+  return <div className="text-sm text-muted-foreground">{t("form.readOnlyKind")}</div>;
 }

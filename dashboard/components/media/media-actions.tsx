@@ -4,8 +4,10 @@ import { Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
+import { createTranslator, type DashboardLocale } from "@/lib/i18n";
 
-export function CleanupExpiredButton({ guildId }: { guildId: string }) {
+export function CleanupExpiredButton({ guildId, locale }: { guildId: string; locale: DashboardLocale }) {
+  const t = createTranslator(locale);
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   async function cleanup() {
@@ -24,16 +26,17 @@ export function CleanupExpiredButton({ guildId }: { guildId: string }) {
   return (
     <Button onClick={cleanup} disabled={busy} variant="outline">
       <Trash2 size={16} />
-      {busy ? "cleanup中" : "期限切れをcleanup"}
+      {busy ? t("media.cleanupBusy") : t("media.cleanup")}
     </Button>
   );
 }
 
-export function DeleteProviderCacheButton({ guildId, providerId }: { guildId: string; providerId: string }) {
+export function DeleteProviderCacheButton({ guildId, providerId, locale }: { guildId: string; providerId: string; locale: DashboardLocale }) {
+  const t = createTranslator(locale);
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   async function run() {
-    if (!confirm(`${providerId} のcacheを削除します。`)) return;
+    if (!confirm(t("media.deleteProviderConfirm", { providerId }))) return;
     setBusy(true);
     try {
       await fetch(`/api/guilds/${guildId}/media`, {
@@ -49,16 +52,17 @@ export function DeleteProviderCacheButton({ guildId, providerId }: { guildId: st
   return (
     <Button onClick={run} disabled={busy} variant="destructive" size="sm">
       <Trash2 size={15} />
-      provider cache削除
+      {t("media.deleteProvider")}
     </Button>
   );
 }
 
-export function DeleteTokenCacheButton({ guildId, providerId, token }: { guildId: string; providerId: string; token: string }) {
+export function DeleteTokenCacheButton({ guildId, providerId, token, locale }: { guildId: string; providerId: string; token: string; locale: DashboardLocale }) {
+  const t = createTranslator(locale);
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   async function run() {
-    if (!confirm(`token ${token} を削除します。`)) return;
+    if (!confirm(t("media.deleteTokenConfirm", { token }))) return;
     setBusy(true);
     try {
       await fetch(`/api/guilds/${guildId}/media`, {
@@ -72,7 +76,7 @@ export function DeleteTokenCacheButton({ guildId, providerId, token }: { guildId
     }
   }
   return (
-    <Button onClick={run} disabled={busy} variant="ghost" size="icon" title="Delete cache item">
+    <Button onClick={run} disabled={busy} variant="ghost" size="icon" title={t("media.deleteTokenTitle")}>
       <Trash2 size={15} />
     </Button>
   );

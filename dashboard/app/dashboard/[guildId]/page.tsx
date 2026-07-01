@@ -1,33 +1,54 @@
 import Link from "next/link";
 import { AlertTriangle, Layers3, Settings, Wand2 } from "lucide-react";
+import { AccessDenied } from "@/components/dashboard/access-denied";
 import { DashboardShell } from "@/components/dashboard/dashboard-shell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { getGuildAccess } from "@/lib/discord";
 import { diagnoseProvider } from "@/lib/diagnostics";
+import { createTranslator } from "@/lib/i18n";
 import { getMediaCacheStatus } from "@/lib/media-cache";
-import { getProvidersOverview, getProviderSettingsState } from "@/lib/settings-db";
+import { getDashboardLocale } from "@/lib/server-locale";
+import { getBotProviders, providerLabel } from "@/lib/settings-catalog";
+import { getProviderSettingsState } from "@/lib/settings-db";
 import { requireDashboardSession } from "@/lib/server-session";
 
 type Params = { params: Promise<{ guildId: string }> };
 
 export default async function GuildOverviewPage({ params }: Params) {
   const { guildId } = await params;
+  const locale = await getDashboardLocale();
+  const t = createTranslator(locale);
   const session = await requireDashboardSession();
   const access = await getGuildAccess(session, guildId);
-  if (!access) return <div className="p-6">権限が不足しているか、Botが導入されていません。</div>;
+  if (!access) return <AccessDenied locale={locale} />;
 
-  const providers = await getProvidersOverview(guildId);
-  const enabled = providers.filter((provider) => provider.enabled);
-  const changed = providers.filter((provider) => provider.changedFromDefault);
-  const diagnosticCount = (
-    await Promise.all(providers.map(async (provider) => diagnoseProvider(provider.providerId, await getProviderSettingsState(provider.providerId, guildId))))
-  ).flat().length;
+  const providers = await Promise.all(getBotProviders().map(async (provider) => {
+    const states = await getProviderSettingsState(provider.id, guildId, locale);
+    return { provider, states };
+  }));
+  const providerOverview = providers.map(({ provider, states }) => {
+    const enabled = states.find((state) => state.key === "enabled")?.value === true;
+    const customizedSettingCount = states.filter((state) => state.changedFromDefault).length;
+    const warnings = states.flatMap((state) => state.warnings.map((warning) => `${state.key}: ${warning}`));
+    return {
+      providerId: provider.id,
+      label: providerLabel(provider),
+      enabled,
+      changedFromDefault: customizedSettingCount > 0,
+      displayDensity: states.find((state) => state.key === "display_density")?.value,
+      mediaDisplayMode: states.find((state) => state.key === "media_display_mode")?.value,
+      warnings,
+    };
+  });
+  const enabled = providerOverview.filter((provider) => provider.enabled);
+  const changed = providerOverview.filter((provider) => provider.changedFromDefault);
+  const diagnosticCount = providers.flatMap(({ provider, states }) => diagnoseProvider(provider.id, states, locale)).length;
   const media = await getMediaCacheStatus().catch(() => null);
 
   return (
-    <DashboardShell guildId={guildId} guildName={access.name} canEdit={access.canEdit}>
+    <DashboardShell guildId={guildId} guildName={access.name} canEdit={access.canEdit} locale={locale}>
       <div className="space-y-5">
         <header className="flex flex-wrap items-center justify-between gap-3">
           <div>
@@ -37,7 +58,7 @@ export default async function GuildOverviewPage({ params }: Params) {
           <Button asChild>
             <Link href={`/dashboard/${guildId}/providers`}>
               <Layers3 size={16} />
-              Providersを設定
+              {t("overview.configureProviders")}
             </Link>
           </Button>
         </header>
@@ -46,25 +67,25 @@ export default async function GuildOverviewPage({ params }: Params) {
           <Card>
             <CardHeader>
               <CardTitle>{enabled.length}</CardTitle>
-              <CardDescription>有効provider</CardDescription>
+              <CardDescription>{t("overview.enabledProviders")}</CardDescription>
             </CardHeader>
           </Card>
           <Card>
             <CardHeader>
-              <CardTitle>{providers.length - enabled.length}</CardTitle>
-              <CardDescription>無効provider</CardDescription>
+              <CardTitle>{providerOverview.length - enabled.length}</CardTitle>
+              <CardDescription>{t("overview.disabledProviders")}</CardDescription>
             </CardHeader>
           </Card>
           <Card>
             <CardHeader>
               <CardTitle>{changed.length}</CardTitle>
-              <CardDescription>デフォルト変更あり</CardDescription>
+              <CardDescription>{t("overview.changedFromDefault")}</CardDescription>
             </CardHeader>
           </Card>
           <Card>
             <CardHeader>
               <CardTitle>{diagnosticCount}</CardTitle>
-              <CardDescription>診断項目</CardDescription>
+              <CardDescription>{t("overview.diagnostics")}</CardDescription>
             </CardHeader>
           </Card>
         </div>
@@ -74,19 +95,19 @@ export default async function GuildOverviewPage({ params }: Params) {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Wand2 size={18} />
-                まずここを設定
+                {t("overview.firstSettingsTitle")}
               </CardTitle>
-              <CardDescription>よく使う設定から安全に始められます。</CardDescription>
+              <CardDescription>{t("overview.firstSettingsDesc")}</CardDescription>
             </CardHeader>
             <CardContent className="flex flex-wrap gap-2">
               <Button asChild variant="outline">
-                <Link href={`/dashboard/${guildId}/settings`}>横断検索</Link>
+                <Link href={`/dashboard/${guildId}/settings`}>{t("overview.crossSearch")}</Link>
               </Button>
               <Button asChild variant="outline">
-                <Link href={`/dashboard/${guildId}/preview`}>出力プレビュー</Link>
+                <Link href={`/dashboard/${guildId}/preview`}>{t("overview.outputPreview")}</Link>
               </Button>
               <Button asChild variant="outline">
-                <Link href={`/dashboard/${guildId}/diagnostics`}>設定診断</Link>
+                <Link href={`/dashboard/${guildId}/diagnostics`}>{t("overview.settingsDiagnostics")}</Link>
               </Button>
             </CardContent>
           </Card>
@@ -95,12 +116,12 @@ export default async function GuildOverviewPage({ params }: Params) {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Settings size={18} />
-                出力モード概要
+                {t("overview.outputModeTitle")}
               </CardTitle>
-              <CardDescription>provider横断の現在値です。</CardDescription>
+              <CardDescription>{t("overview.outputModeDesc")}</CardDescription>
             </CardHeader>
             <CardContent className="space-y-2 text-sm">
-              {providers.slice(0, 6).map((provider) => (
+              {providerOverview.slice(0, 6).map((provider) => (
                 <div key={provider.providerId} className="flex flex-wrap items-center justify-between gap-2 rounded-md bg-muted p-2">
                   <span>{provider.label}</span>
                   <span className="text-muted-foreground">
@@ -116,14 +137,14 @@ export default async function GuildOverviewPage({ params }: Params) {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <AlertTriangle size={18} />
-              注意状態
+              {t("overview.warningStateTitle")}
             </CardTitle>
-            <CardDescription>危険設定、依存関係、メディア配信状態をまとめます。</CardDescription>
+            <CardDescription>{t("overview.warningStateDesc")}</CardDescription>
           </CardHeader>
           <CardContent className="flex flex-wrap gap-2">
-            <Badge tone={diagnosticCount ? "warning" : "success"}>{diagnosticCount ? `${diagnosticCount} diagnostics` : "診断OK"}</Badge>
-            <Badge tone={media?.expiredCount ? "warning" : "muted"}>expired media: {media?.expiredCount ?? "-"}</Badge>
-            <Badge tone="muted">cache items: {media?.totalCacheCount ?? "-"}</Badge>
+            <Badge tone={diagnosticCount ? "warning" : "success"}>{diagnosticCount ? `${diagnosticCount} diagnostics` : t("overview.diagnosticsOk")}</Badge>
+            <Badge tone={media?.expiredCount ? "warning" : "muted"}>{t("overview.expiredMedia", { count: media?.expiredCount ?? "-" })}</Badge>
+            <Badge tone="muted">{t("overview.cacheItems", { count: media?.totalCacheCount ?? "-" })}</Badge>
           </CardContent>
         </Card>
       </div>

@@ -6,6 +6,7 @@ import { useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { createTranslator, type DashboardLocale } from "@/lib/i18n";
 
 type Guild = {
   guildId: string;
@@ -24,7 +25,8 @@ type Guild = {
   };
 };
 
-export function GuildList({ guilds }: { guilds: Guild[] }) {
+export function GuildList({ guilds, locale }: { guilds: Guild[]; locale: DashboardLocale }) {
+  const t = createTranslator(locale);
   const [query, setQuery] = useState("");
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -36,7 +38,7 @@ export function GuildList({ guilds }: { guilds: Guild[] }) {
     <div className="space-y-4">
       <div className="relative max-w-xl">
         <Search className="pointer-events-none absolute left-3 top-3 text-muted-foreground" size={16} />
-        <Input className="pl-9" placeholder="サーバー名またはguild IDで検索" value={query} onChange={(event) => setQuery(event.target.value)} />
+        <Input className="pl-9" placeholder={t("guildList.searchPlaceholder")} value={query} onChange={(event) => setQuery(event.target.value)} />
       </div>
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
         {filtered.map((guild) => (
@@ -57,15 +59,15 @@ export function GuildList({ guilds }: { guilds: Guild[] }) {
               </CardHeader>
               <CardContent className="space-y-3">
                 <div className="flex flex-wrap gap-2">
-                  <Badge tone={guild.canEdit ? "success" : "muted"}>{guild.canEdit ? "設定変更可能" : "閲覧のみ"}</Badge>
+                  <Badge tone={guild.canEdit ? "success" : "muted"}>{guild.canEdit ? t("guildList.canEdit") : t("guildList.viewOnly")}</Badge>
                   {guild.permissions.administrator ? <Badge tone="danger">Administrator</Badge> : null}
                   {guild.permissions.manageGuild ? <Badge tone="default">Manage Server</Badge> : null}
                   {guild.permissions.manageChannels ? <Badge tone="default">Manage Channels</Badge> : null}
                 </div>
                 <div className="text-sm text-muted-foreground">
                   {guild.providerSummary.total > 0
-                    ? `Provider: ${guild.providerSummary.enabled} enabled / ${guild.providerSummary.total} total`
-                    : "Provider summary: open server dashboard"}
+                    ? t("guildList.providerSummary", { enabled: guild.providerSummary.enabled, total: guild.providerSummary.total })
+                    : t("guildList.providerSummaryEmpty")}
                 </div>
               </CardContent>
             </Card>

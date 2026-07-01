@@ -81,17 +81,17 @@ function textValue(value: LocaleText | undefined, fallback: string): LocaleText 
 
 function categoryFor(spec: BotSettingSpec) {
   const key = spec.key || spec.settingKey || "";
-  if (spec.kind === "providerEnabled") return "基本";
-  if (spec.kind === "targets") return "対象制御";
-  if (spec.kind === "buttonVisibility") return "ボタン";
-  if (spec.kind === "bannedWords") return "削除・抑制";
-  if (spec.kind === "outputVisibility") return "高度な設定";
-  if (key.includes("language") || key.includes("translate")) return "翻訳";
-  if (key.includes("media") || key.includes("image") || key.includes("attachment") || key.includes("download")) return "メディア";
-  if (key.includes("delete") || key.includes("legacy") || key.includes("passive") || key.includes("banned")) return "削除・抑制";
-  if (key.includes("failure") || key.includes("fallback")) return "失敗時動作";
-  if (key.includes("density") || key.includes("description") || key.includes("caption") || key.includes("text") || key.includes("layout") || key.includes("stats")) return "出力表示";
-  return "provider専用";
+  if (spec.kind === "providerEnabled") return "basic";
+  if (spec.kind === "targets") return "targetControl";
+  if (spec.kind === "buttonVisibility") return "buttons";
+  if (spec.kind === "bannedWords") return "suppression";
+  if (spec.kind === "outputVisibility") return "advanced";
+  if (key.includes("language") || key.includes("translate")) return "translation";
+  if (key.includes("media") || key.includes("image") || key.includes("attachment") || key.includes("download")) return "media";
+  if (key.includes("delete") || key.includes("legacy") || key.includes("passive") || key.includes("banned")) return "suppression";
+  if (key.includes("failure") || key.includes("fallback")) return "failure";
+  if (key.includes("density") || key.includes("description") || key.includes("caption") || key.includes("text") || key.includes("layout") || key.includes("stats")) return "output";
+  return "provider";
 }
 
 function impactFor(spec: BotSettingSpec) {

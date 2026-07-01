@@ -49,7 +49,7 @@ When the dashboard and media delivery use the same domain, set the same URL in `
 
 New download URLs prefer the unified `/media/...` routes. Set `MEDIA_DELIVERY_USE_LEGACY_ROUTES=true` only if new Bot messages must keep generating legacy download URLs.
 
-The dashboard uses the historical media server port by default:
+For local Dashboard-only development:
 
 ```bash
 npm run dev
@@ -58,11 +58,12 @@ npm run dev
 
 When the Bot starts, it also starts this dashboard as a child process on `30987`.
 The Bot process sets dashboard-integrated media mode automatically, so it does not start the old Express listener on the same port.
+Bot-managed startup uses `npm run start` by default. If the production build is missing, the start script runs `npm run build` once before `next start`, so users do not see Next.js development tools during normal Bot startup.
 
 Useful `config.json` switches:
 
 - `dashboard.enabled: false` disables automatic dashboard startup from the Bot process.
-- `dashboard.npmScript: "start"` forces the child process script. By default, production uses `start` when a build exists, and normal local Bot startup uses `dev`.
+- `dashboard.npmScript: "dev"` intentionally forces development mode. Leave it unset or set `"start"` for normal operation.
 - `mediaDelivery.serverMode: "express"` intentionally uses the standalone Express media server instead of dashboard-integrated routes.
 
 ## Commands

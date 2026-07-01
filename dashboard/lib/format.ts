@@ -10,11 +10,11 @@ export function formatBytes(bytes: number) {
   return `${value.toFixed(value >= 10 || unit === 0 ? 0 : 1)} ${units[unit]}`;
 }
 
-export function formatDateTime(value: unknown) {
+export function formatDateTime(value: unknown, locale: "ja" | "en" = "ja") {
   if (!value) return "-";
   const date = typeof value === "number" ? new Date(value) : new Date(String(value));
   if (Number.isNaN(date.getTime())) return "-";
-  return new Intl.DateTimeFormat("ja-JP", {
+  return new Intl.DateTimeFormat(locale === "ja" ? "ja-JP" : "en-US", {
     dateStyle: "medium",
     timeStyle: "short",
   }).format(date);

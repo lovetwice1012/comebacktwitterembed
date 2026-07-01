@@ -70,8 +70,10 @@ function hasProductionBuild() {
 function scriptName() {
     if (process.env.DASHBOARD_NPM_SCRIPT) return process.env.DASHBOARD_NPM_SCRIPT;
     if (dashboardConfig().npmScript) return dashboardConfig().npmScript;
-    if (process.env.NODE_ENV === 'production' && hasProductionBuild()) return 'start';
-    return 'dev';
+    if (!hasProductionBuild()) {
+        console.warn('[dashboardServer] production build was not found. Dashboard will run `npm run build` once before `next start`.');
+    }
+    return 'start';
 }
 
 function start() {
@@ -94,6 +96,7 @@ function start() {
     const env = {
         ...process.env,
         PORT: String(port),
+        NEXT_TELEMETRY_DISABLED: '1',
         NEXTAUTH_URL: baseUrl,
         DASHBOARD_BASE_URL: baseUrl,
         DASHBOARD_INTEGRATED_MEDIA_SERVER: 'true',

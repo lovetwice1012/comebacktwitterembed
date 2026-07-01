@@ -5,6 +5,7 @@ import { getServerSession } from "next-auth";
 import { NextRequest, NextResponse } from "next/server";
 import { authOptions } from "@/features/auth/options";
 import { getGuildAccess } from "@/lib/discord";
+import { createTranslator, type DashboardLocale } from "@/lib/i18n";
 import { permissionRequirementText } from "@/lib/permissions";
 import type { DashboardSession } from "@/lib/types";
 
@@ -22,17 +23,19 @@ export function json(data: unknown, status = 200) {
   return NextResponse.json(data, { status });
 }
 
-export function errorResponse(error: unknown) {
+export function errorResponse(error: unknown, locale: DashboardLocale = "ja") {
+  const t = createTranslator(locale);
   if (error instanceof ApiError) {
     return json({ error: error.message, details: error.details || null }, error.status);
   }
-  const message = error instanceof Error ? error.message : "Internal Server Error";
+  const message = error instanceof Error ? error.message : t("api.internalServerError");
   return json({ error: message }, 500);
 }
 
-export async function requireSession(): Promise<DashboardSession> {
+export async function requireSession(locale: DashboardLocale = "ja"): Promise<DashboardSession> {
+  const t = createTranslator(locale);
   const session = await getServerSession(authOptions);
-  if (!session?.user?.id || !session.accessToken) throw new ApiError(401, "Login required");
+  if (!session?.user?.id || !session.accessToken) throw new ApiError(401, t("api.loginRequired"));
   return {
     user: {
       id: session.user.id,
@@ -48,14 +51,16 @@ export async function requireSession(): Promise<DashboardSession> {
 export async function requireGuildPermission(
   guildId: string,
   mode: "view" | "edit" | "manage" | "media",
+  locale: DashboardLocale = "ja",
 ) {
-  const session = await requireSession();
+  const t = createTranslator(locale);
+  const session = await requireSession(locale);
   const access = await getGuildAccess(session, guildId);
   if (!access) {
-    throw new ApiError(403, "You do not have dashboard access for this guild", {
+    throw new ApiError(403, t("api.noGuildAccess"), {
       required: permissionRequirementText(mode),
       current: null,
-      adminHelp: "Ask a server administrator to grant Manage Channels, Manage Server, or Administrator and confirm the bot is installed.",
+      adminHelp: t("api.noGuildAccessHelp"),
     });
   }
 
@@ -69,10 +74,10 @@ export async function requireGuildPermission(
           : access.permissions.administrator;
 
   if (!allowed) {
-    throw new ApiError(403, "Insufficient Discord permissions", {
+    throw new ApiError(403, t("api.insufficientPermissions"), {
       required: permissionRequirementText(mode),
       current: access.permissions,
-      adminHelp: "The dashboard disables unsafe operations unless the Discord permission is present and the API verifies it again.",
+      adminHelp: t("api.insufficientPermissionsHelp"),
     });
   }
 

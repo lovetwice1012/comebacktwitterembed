@@ -1,4 +1,5 @@
 import type { LocaleText, SettingState, SettingValue } from "@/lib/types";
+import { categoryLabel, labelText as localizedLabelText, type DashboardLocale, valueLabel as localizedValueLabel } from "@/lib/i18n";
 
 export function deepEqual(a: unknown, b: unknown) {
   return JSON.stringify(stable(a)) === JSON.stringify(stable(b));
@@ -16,20 +17,15 @@ function stable(value: unknown): unknown {
   return value;
 }
 
-export function labelText(label: LocaleText) {
-  if (typeof label === "string") return label;
-  return label.ja || label.en || Object.values(label).find(Boolean) || "";
+export function labelText(label: LocaleText, locale: DashboardLocale = "ja") {
+  return localizedLabelText(label, locale);
 }
 
-export function valueLabel(value: SettingValue | undefined) {
-  if (value === undefined) return "default";
-  if (value === null) return "unset";
-  if (Array.isArray(value)) return value.length ? value.join(", ") : "none";
-  if (typeof value === "object") return JSON.stringify(value);
-  return String(value);
+export function valueLabel(value: SettingValue | undefined, locale: DashboardLocale = "ja") {
+  return localizedValueLabel(value, locale);
 }
 
-export function diffSettings(before: SettingState[], after: SettingState[]) {
+export function diffSettings(before: SettingState[], after: SettingState[], locale: DashboardLocale = "ja") {
   const beforeByKey = new Map(before.map((setting) => [setting.key, setting]));
   return after
     .map((next) => {
@@ -37,12 +33,12 @@ export function diffSettings(before: SettingState[], after: SettingState[]) {
       if (!prev || deepEqual(prev.value, next.value)) return null;
       return {
         key: next.key,
-        label: labelText(next.spec.label),
+        label: labelText(next.spec.label, locale),
         before: prev.value,
         after: next.value,
         defaultValue: next.defaultValue,
         impactLevel: next.spec.impactLevel || "low",
-        category: next.spec.category || "provider専用",
+        category: categoryLabel(next.spec.category, locale),
       };
     })
     .filter(Boolean);

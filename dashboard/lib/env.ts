@@ -20,6 +20,7 @@ type RootConfig = {
     useBotGuildApi?: boolean;
     loadGuildProviderSummary?: boolean;
     discordApiTimeoutMs?: number;
+    guildCacheTtlMs?: number;
     auditHashSecret?: string;
   };
   mediaDelivery?: {
@@ -112,7 +113,7 @@ export function getDashboardFlag(key: "useBotGuildApi" | "loadGuildProviderSumma
   return readRootConfig().dashboard?.[key] === true;
 }
 
-export function getDashboardNumber(key: "discordApiTimeoutMs", envName: string, fallback: number) {
+export function getDashboardNumber(key: "discordApiTimeoutMs" | "guildCacheTtlMs", envName: string, fallback: number) {
   const envValue = Number(process.env[envName]);
   if (Number.isFinite(envValue) && envValue > 0) return envValue;
   const configValue = Number(readRootConfig().dashboard?.[key]);

@@ -2,6 +2,7 @@ import "server-only";
 
 import { z } from "zod";
 import { editableSpecs, getProvider, getProviderSettingColumns } from "@/lib/settings-catalog";
+import { createTranslator, type DashboardLocale } from "@/lib/i18n";
 import type { ButtonVisibility, SettingSpec, SettingValue, TargetSetting } from "@/lib/types";
 
 const snowflakeSchema = z.string().regex(/^\d{5,32}$/);
@@ -50,11 +51,12 @@ function normalizeButtonVisibility(providerId: string, value: unknown): ButtonVi
   return parsed;
 }
 
-function parseScalarChoice(spec: SettingSpec, value: unknown) {
+function parseScalarChoice(spec: SettingSpec, value: unknown, locale: DashboardLocale) {
+  const t = createTranslator(locale);
   const choices = spec.choices?.map((choice) => String(choice.value)) || [];
   const textValue = String(value);
   if (!choices.includes(textValue)) {
-    throw new Error(`Invalid value for ${spec.key}. Allowed values: ${choices.join(", ")}`);
+    throw new Error(t("validation.invalidChoice", { key: spec.key, values: choices.join(", ") }));
   }
 
   const columnType = getProviderSettingColumns()[spec.key]?.type;
@@ -62,17 +64,19 @@ function parseScalarChoice(spec: SettingSpec, value: unknown) {
   return textValue;
 }
 
-function validateOutputItems(spec: SettingSpec, value: unknown) {
+function validateOutputItems(spec: SettingSpec, value: unknown, locale: DashboardLocale) {
+  const t = createTranslator(locale);
   const values = hiddenOutputItemsSchema.parse(Array.isArray(value) ? value : []);
   const allowed = new Set((spec.outputItems || []).map((item) => item.value));
   const invalid = values.filter((item) => !allowed.has(item));
   if (invalid.length > 0) {
-    throw new Error(`Invalid hidden output item for ${spec.key}: ${invalid.join(", ")}`);
+    throw new Error(t("validation.invalidOutputItem", { key: spec.key, values: invalid.join(", ") }));
   }
   return uniqueStrings(values);
 }
 
-function validateSpecValue(providerId: string, spec: SettingSpec, value: unknown): SettingValue {
+function validateSpecValue(providerId: string, spec: SettingSpec, value: unknown, locale: DashboardLocale): SettingValue {
+  const t = createTranslator(locale);
   if (value === null) {
     if (spec.kind === "targets") return { user: [], channel: [], role: [] };
     if (spec.kind === "bannedWords" || spec.kind === "outputVisibility") return [];
@@ -81,13 +85,13 @@ function validateSpecValue(providerId: string, spec: SettingSpec, value: unknown
   }
 
   if (spec.kind === "providerEnabled" || spec.kind === "bool") return z.boolean().parse(value);
-  if (spec.kind === "choice") return parseScalarChoice(spec, value);
+  if (spec.kind === "choice") return parseScalarChoice(spec, value, locale);
   if (spec.kind === "targets") return normalizeTargets(value);
   if (spec.kind === "buttonVisibility") return normalizeButtonVisibility(providerId, value);
   if (spec.kind === "bannedWords") return uniqueStrings(z.array(z.string().min(1).max(255)).parse(value || []));
-  if (spec.kind === "outputVisibility") return validateOutputItems(spec, value);
+  if (spec.kind === "outputVisibility") return validateOutputItems(spec, value, locale);
 
-  throw new Error(`Setting ${spec.key} cannot be edited`);
+  throw new Error(t("validation.readOnlySetting", { key: spec.key }));
 }
 
 function isDangerousSetting(key: string, value: SettingValue) {
@@ -100,9 +104,10 @@ function isDangerousSetting(key: string, value: SettingValue) {
   return false;
 }
 
-export function validateProviderChanges(providerId: string, input: unknown): ValidatedChanges {
+export function validateProviderChanges(providerId: string, input: unknown, locale: DashboardLocale = "ja"): ValidatedChanges {
+  const t = createTranslator(locale);
   const provider = getProvider(providerId);
-  if (!provider) throw new Error(`Unknown provider: ${providerId}`);
+  if (!provider) throw new Error(t("validation.unknownProvider", { providerId }));
 
   const body = z.object({ changes: z.record(z.unknown()).default({}) }).parse(input || {});
   const specs = new Map(editableSpecs(providerId).map((spec) => [spec.key, spec]));
@@ -112,47 +117,48 @@ export function validateProviderChanges(providerId: string, input: unknown): Val
 
   for (const [key, rawValue] of Object.entries(body.changes)) {
     const spec = specs.get(key);
-    if (!spec) throw new Error(`Provider ${providerId} does not support setting ${key}`);
-    const value = validateSpecValue(providerId, spec, rawValue);
+    if (!spec) throw new Error(t("validation.unsupportedSetting", { providerId, key }));
+    const value = validateSpecValue(providerId, spec, rawValue, locale);
     changes[key] = value;
     if (isDangerousSetting(key, value)) dangerous = true;
   }
 
   if (changes.legacy_mode === true && changes.secondary_extract_mode !== false) {
     changes.secondary_extract_mode = false;
-    warnings.push("legacy_mode=true requires secondary_extract_mode=false. The dashboard applied that compatibility rule.");
+    warnings.push(t("validation.legacyConflict"));
   }
 
   if (changes.secondary_extract_mode === true && changes.legacy_mode !== false) {
     changes.legacy_mode = false;
-    warnings.push("secondary_extract_mode=true requires legacy_mode=false. The dashboard applied that compatibility rule.");
+    warnings.push(t("validation.secondaryConflict"));
   }
 
   return { changes, warnings, dangerous };
 }
 
-export function settingWarnings(key: string, value: SettingValue, currentValues: Record<string, SettingValue | undefined>) {
+export function settingWarnings(key: string, value: SettingValue, currentValues: Record<string, SettingValue | undefined>, locale: DashboardLocale = "ja") {
+  const t = createTranslator(locale);
   const warnings: string[] = [];
   if (key === "secondary_extract_mode_multiple_images" && currentValues.secondary_extract_mode !== true) {
-    warnings.push("secondary_extract_mode is off, so this image condition has no effect.");
+    warnings.push(t("warning.secondaryImagesNoEffect"));
   }
   if (key === "secondary_extract_mode_video" && currentValues.secondary_extract_mode !== true) {
-    warnings.push("secondary_extract_mode is off, so this video condition has no effect.");
+    warnings.push(t("warning.secondaryVideoNoEffect"));
   }
   if (key === "quote_repost_max_depth" && currentValues.twitter_quote_mode === "hidden") {
-    warnings.push("twitter_quote_mode=hidden makes quote depth mostly irrelevant.");
+    warnings.push(t("warning.quoteDepthIrrelevant"));
   }
   if (key === "quote_repost_max_depth" && Number(value) === 0) {
-    warnings.push("Unlimited quote depth can produce noisy output.");
+    warnings.push(t("warning.unlimitedQuoteDepth"));
   }
   if (key === "media_display_mode" && value === "attachment") {
-    warnings.push("Attachment media mode can make busy media channels heavier.");
+    warnings.push(t("warning.attachmentHeavy"));
   }
   if (key === "failure_display_policy" && value === "error_summary") {
-    warnings.push("error_summary can add noise in normal channels.");
+    warnings.push(t("warning.errorSummaryNoisy"));
   }
   if (key === "booth_adult_display_mode" && value === "normal") {
-    warnings.push("Adult Booth media will be displayed normally. Confirm this matches server rules.");
+    warnings.push(t("warning.boothAdultNormal"));
   }
   return warnings;
 }
