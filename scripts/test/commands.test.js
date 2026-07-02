@@ -302,6 +302,58 @@ test('et command sends tweet with per-command quote depth override', async () =>
     }
 });
 
+test('et command requires url and depth options in the slash command definition', () => {
+    const etCommand = buildSlashCommands().find(command => command.name === 'et');
+    assert.ok(etCommand, 'et command should be registered');
+
+    const requiredOptions = new Set((etCommand.options || [])
+        .filter(option => option.required)
+        .map(option => option.name));
+
+    assert.ok(requiredOptions.has('url'));
+    assert.ok(requiredOptions.has('depth'));
+});
+
+test('et command rejects missing depth before sending', async () => {
+    const twitterProviderPath = require.resolve('../../src/providers/twitter');
+    const originalProvider = require.cache[twitterProviderPath];
+
+    try {
+        let sent = false;
+        require.cache[twitterProviderPath] = {
+            id: twitterProviderPath,
+            filename: twitterProviderPath,
+            loaded: true,
+            exports: {
+                sendTweetEmbed: async () => {
+                    sent = true;
+                },
+            },
+        };
+
+        let reply = null;
+        const interaction = {
+            user: { id: 'user-1' },
+            options: {
+                getString: (name) => (name === 'url' ? 'https://x.com/example/status/12345' : null),
+                getInteger: () => null,
+                getBoolean: () => false,
+            },
+            editReply: async (payload) => {
+                reply = payload;
+            },
+        };
+
+        await expandTweet.execute(interaction, {});
+
+        assert.equal(sent, false);
+        assert.equal(reply.content, 'depth is required.');
+    } finally {
+        if (originalProvider) require.cache[twitterProviderPath] = originalProvider;
+        else delete require.cache[twitterProviderPath];
+    }
+});
+
 test('et command builds a tweet URL from account and id, then saves account depth automatically', async () => {
     const twitterProviderPath = require.resolve('../../src/providers/twitter');
     const providerSettingsPath = require.resolve('../../src/providers/_provider_settings');
@@ -457,7 +509,7 @@ test('et command rejects invalid tweet URLs before sending', async () => {
             user: { id: 'user-1' },
             options: {
                 getString: (name) => (name === 'url' ? 'https://example.com/not-a-tweet' : null),
-                getInteger: () => null,
+                getInteger: (name) => (name === 'depth' ? 1 : null),
                 getBoolean: () => false,
             },
             editReply: async (payload) => {

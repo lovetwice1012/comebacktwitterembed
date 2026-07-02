@@ -109,6 +109,10 @@ module.exports.execute = async function (interaction) {
     const depth = interaction.options.getInteger('depth');
     const rawAccount = interaction.options.getString('account');
 
+    if (depth === null) {
+        return await interaction.editReply({ content: 'depth is required.' });
+    }
+
     let url;
     let account;
     try {
@@ -118,9 +122,6 @@ module.exports.execute = async function (interaction) {
         return await interaction.editReply({ content: err.message });
     }
     const save = interaction.options.getBoolean('save') === true || !!account;
-    if (save && depth === null) {
-        return await interaction.editReply({ content: 'depth is required when save is true or account is set.' });
-    }
 
     const sendOptions = {
         forceSendMode: 'channel',
@@ -168,7 +169,7 @@ module.exports.definition = {
                 ja: '引用RTを展開する深さ。0 は無制限です。',
             },
             type: ApplicationCommandOptionType.Integer,
-            required: false,
+            required: true,
             min_value: 0,
         },
         {

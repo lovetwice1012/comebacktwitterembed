@@ -122,6 +122,27 @@ test('dispatcher: missing send permissions are non-fatal', async () => {
     }
 });
 
+test('dispatcher: source embed suppression is skipped for interaction commands', async () => {
+    const sentPayloads = [];
+    const interaction = {
+        guildId: 'guild-1',
+        channelId: 'channel-1',
+        channel: {
+            send: async (payload) => {
+                sentPayloads.push(payload);
+                return { id: 'sent-message' };
+            },
+        },
+    };
+
+    await assert.doesNotReject(runSendSteps(interaction, [{
+        content: 'expanded from command',
+        suppressSourceEmbeds: true,
+    }], 'twitter'));
+
+    assert.deepEqual(sentPayloads, [{ content: 'expanded from command' }]);
+});
+
 test('dispatcher: missing permissions are excluded from global send error metric', async () => {
     const metrics = [];
     const errors = [];

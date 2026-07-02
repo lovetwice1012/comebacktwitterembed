@@ -43,6 +43,16 @@ function hasSendablePayload(messageObject) {
     );
 }
 
+async function suppressSourceEmbeds(message) {
+    if (typeof message?.suppressEmbeds !== 'function') return;
+    await message.suppressEmbeds(true).catch(() => {});
+}
+
+async function deleteSourceMessage(message) {
+    if (typeof message?.delete !== 'function') return;
+    await message.delete().catch(() => {});
+}
+
 /**
  * @param {any} message - 元の Discord メッセージ
  * @param {import('./_types').SendStep[]} steps
@@ -194,11 +204,9 @@ async function runSendSteps(message, steps, providerId = null) {
             });
         }
 
-        if (step.suppressSourceEmbeds) {
-            await message.suppressEmbeds(true).catch(() => {});
-        }
+        if (step.suppressSourceEmbeds) await suppressSourceEmbeds(message);
         if (step.deleteSource) {
-            await message.delete().catch(() => {});
+            await deleteSourceMessage(message);
         }
     }
 }
