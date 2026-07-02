@@ -92,6 +92,36 @@ test('common provider output controls migration is present', () => {
     }
 });
 
+test('provider hourly aggregate migration is present', () => {
+    const file = path.join(MIGRATIONS_DIR, '20260702_add_bot_provider_hourly_aggregates.sql');
+    const sql = fs.readFileSync(file, 'utf8');
+
+    assert.ok(_internal.listMigrationFiles().includes('20260702_add_bot_provider_hourly_aggregates.sql'));
+    assert.equal(TABLES.botProviderHourlyAggregates, 'bot_provider_hourly_aggregates');
+    assert.equal(TABLES.botProviderHourlyUniqueKeys, 'bot_provider_hourly_unique_keys');
+    assert.ok(sql.includes('CREATE TABLE IF NOT EXISTS bot_provider_hourly_aggregates'));
+    assert.ok(sql.includes('CREATE TABLE IF NOT EXISTS bot_provider_hourly_unique_keys'));
+    assert.ok(sql.includes('schema_version'));
+    assert.ok(sql.includes('enrichment_duration_sum_ms'));
+});
+
+test('provider facet observation metadata migration is present', () => {
+    const file = path.join(MIGRATIONS_DIR, '20260702_add_provider_content_facet_observation_metadata.sql');
+    const sql = fs.readFileSync(file, 'utf8');
+
+    assert.ok(_internal.listMigrationFiles().includes('20260702_add_provider_content_facet_observation_metadata.sql'));
+    for (const column of ['metric_stage', 'metric_source', 'collected_at_ms', 'schema_version', 'collection_success', 'collection_timeout_ms']) {
+        assert.ok(sql.includes(column), `${column} missing from migration`);
+        assert.ok(SCHEMA_STATEMENTS.some(statement => statement.includes(column)), `${column} missing from schema`);
+    }
+    assert.ok(sql.includes('idx_content_facets_stage_schema_time'));
+    assert.ok(sql.includes('idx_content_facets_source_time'));
+    assert.deepEqual(
+        _internal.parseAddIndexStatement('ALTER TABLE bot_provider_content_facets ADD INDEX idx_content_facets_source_time (metric_source, occurred_at_ms)'),
+        { table: 'bot_provider_content_facets', index: 'idx_content_facets_source_time' }
+    );
+});
+
 test('amazon extract targets migration is present', () => {
     const file = path.join(MIGRATIONS_DIR, '20260701_add_amazon_extract_targets.sql');
     const sql = fs.readFileSync(file, 'utf8');
@@ -101,6 +131,17 @@ test('amazon extract targets migration is present', () => {
     assert.ok(sql.includes('amazon_extract_targets'));
     assert.equal(PROVIDER_SETTING_COLUMNS.amazon_extract_targets.column, 'amazon_extract_targets');
     assert.equal(PROVIDER_SETTING_COLUMNS.amazon_extract_targets.type, 'jsonArray');
+});
+
+test('twitter account quote depth migration is present', () => {
+    const file = path.join(MIGRATIONS_DIR, '20260702_add_twitter_quote_depth_by_account.sql');
+    const sql = fs.readFileSync(file, 'utf8');
+
+    assert.ok(_internal.listMigrationFiles().includes('20260702_add_twitter_quote_depth_by_account.sql'));
+    assert.ok(sql.includes('ALTER TABLE guild_provider_settings'));
+    assert.ok(sql.includes('quote_repost_depth_by_account'));
+    assert.equal(PROVIDER_SETTING_COLUMNS.quote_repost_depth_by_account.column, 'quote_repost_depth_by_account');
+    assert.equal(PROVIDER_SETTING_COLUMNS.quote_repost_depth_by_account.type, 'jsonObject');
 });
 
 test('providers route metadata fetch failures through common failure display policy', () => {

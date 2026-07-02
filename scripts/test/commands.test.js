@@ -9,6 +9,7 @@ const path = require('path');
 const quotastats = require('../../src/commands/handlers/quotastats');
 const checkmyguildsettings = require('../../src/commands/handlers/checkmyguildsettings');
 const buttonInvisible = require('../../src/commands/handlers/settings/button_invisible');
+const expandTweet = require('../../src/providers/twitter/commands/expandtweet');
 const showSaveTweet = require('../../src/providers/twitter/commands/showsavetweet');
 const { buildSlashCommands } = require('../../src/commands');
 const { settings } = require('../../src/settings');
@@ -247,5 +248,229 @@ test('showsavetweet forces channel send mode for deferred saved-tweet display', 
         if (originalProvider) require.cache[twitterProviderPath] = originalProvider;
         else delete require.cache[twitterProviderPath];
         fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+});
+
+test('et command sends tweet with per-command quote depth override', async () => {
+    const twitterProviderPath = require.resolve('../../src/providers/twitter');
+    const originalProvider = require.cache[twitterProviderPath];
+
+    try {
+        let sendCall = null;
+        require.cache[twitterProviderPath] = {
+            id: twitterProviderPath,
+            filename: twitterProviderPath,
+            loaded: true,
+            exports: {
+                sendTweetEmbed: async (_interaction, url, options) => {
+                    sendCall = { url, options };
+                },
+            },
+        };
+
+        const replies = [];
+        const interaction = {
+            user: { id: 'user-1' },
+            options: {
+                getString: (name) => {
+                    if (name === 'url') return 'https://x.com/example/status/12345';
+                    return null;
+                },
+                getInteger: (name) => (name === 'depth' ? 2 : null),
+                getBoolean: () => false,
+            },
+            editReply: async (payload) => {
+                replies.push(payload);
+            },
+        };
+
+        await expandTweet.execute(interaction, {});
+
+        assert.equal(sendCall.url, 'https://x.com/example/status/12345');
+        assert.deepEqual(sendCall.options, {
+            forceSendMode: 'channel',
+            settingsOverride: {
+                secondary_extract_mode: false,
+                quote_repost_max_depth: 2,
+                quote_repost_do_not_extract: false,
+            },
+        });
+        assert.match(replies.at(-1).content, /Quote repost depth: 2/);
+    } finally {
+        if (originalProvider) require.cache[twitterProviderPath] = originalProvider;
+        else delete require.cache[twitterProviderPath];
+    }
+});
+
+test('et command builds a tweet URL from account and id, then saves account depth automatically', async () => {
+    const twitterProviderPath = require.resolve('../../src/providers/twitter');
+    const providerSettingsPath = require.resolve('../../src/providers/_provider_settings');
+    const originalProvider = require.cache[twitterProviderPath];
+    const originalProviderSettings = require.cache[providerSettingsPath];
+
+    try {
+        let sendUrl = null;
+        const setCalls = [];
+        require.cache[twitterProviderPath] = {
+            id: twitterProviderPath,
+            filename: twitterProviderPath,
+            loaded: true,
+            exports: {
+                sendTweetEmbed: async (_interaction, url) => {
+                    sendUrl = url;
+                },
+            },
+        };
+        require.cache[providerSettingsPath] = {
+            id: providerSettingsPath,
+            filename: providerSettingsPath,
+            loaded: true,
+            exports: {
+                getSetting: async () => ({ other: 3 }),
+                setSetting: async (provider, key, guildId, value) => {
+                    setCalls.push({ providerId: provider.id, key, guildId, value });
+                },
+            },
+        };
+
+        let reply = null;
+        const interaction = {
+            guildId: 'guild-et',
+            user: { id: 'user-1' },
+            options: {
+                getString: (name) => {
+                    if (name === 'url') return '12345';
+                    if (name === 'account') return '@example';
+                    return null;
+                },
+                getInteger: (name) => (name === 'depth' ? 1 : null),
+                getBoolean: () => false,
+            },
+            editReply: async (payload) => {
+                reply = payload;
+            },
+        };
+
+        await expandTweet.execute(interaction, {});
+
+        assert.equal(sendUrl, 'https://twitter.com/example/status/12345');
+        assert.deepEqual(setCalls, [{
+            providerId: 'twitter',
+            key: 'quote_repost_depth_by_account',
+            guildId: 'guild-et',
+            value: { other: 3, example: 1 },
+        }]);
+        assert.match(reply.content, /Saved future depth for @example/);
+    } finally {
+        if (originalProvider) require.cache[twitterProviderPath] = originalProvider;
+        else delete require.cache[twitterProviderPath];
+        if (originalProviderSettings) require.cache[providerSettingsPath] = originalProviderSettings;
+        else delete require.cache[providerSettingsPath];
+    }
+});
+
+test('et command save option stores the future guild default depth', async () => {
+    const twitterProviderPath = require.resolve('../../src/providers/twitter');
+    const providerSettingsPath = require.resolve('../../src/providers/_provider_settings');
+    const originalProvider = require.cache[twitterProviderPath];
+    const originalProviderSettings = require.cache[providerSettingsPath];
+
+    try {
+        const setCalls = [];
+        require.cache[twitterProviderPath] = {
+            id: twitterProviderPath,
+            filename: twitterProviderPath,
+            loaded: true,
+            exports: {
+                sendTweetEmbed: async () => {},
+            },
+        };
+        require.cache[providerSettingsPath] = {
+            id: providerSettingsPath,
+            filename: providerSettingsPath,
+            loaded: true,
+            exports: {
+                setSetting: async (provider, key, guildId, value) => {
+                    setCalls.push({ providerId: provider.id, key, guildId, value });
+                },
+            },
+        };
+
+        let reply = null;
+        const interaction = {
+            guildId: 'guild-et',
+            user: { id: 'user-1' },
+            options: {
+                getString: (name) => (name === 'url' ? 'https://x.com/example/status/12345' : null),
+                getInteger: (name) => (name === 'depth' ? 2 : null),
+                getBoolean: (name) => name === 'save',
+            },
+            editReply: async (payload) => {
+                reply = payload;
+            },
+        };
+
+        await expandTweet.execute(interaction, {});
+
+        assert.deepEqual(setCalls, [
+            {
+                providerId: 'twitter',
+                key: 'quote_repost_max_depth',
+                guildId: 'guild-et',
+                value: 2,
+            },
+            {
+                providerId: 'twitter',
+                key: 'quote_repost_do_not_extract',
+                guildId: 'guild-et',
+                value: false,
+            },
+        ]);
+        assert.match(reply.content, /Saved future default quote repost depth/);
+    } finally {
+        if (originalProvider) require.cache[twitterProviderPath] = originalProvider;
+        else delete require.cache[twitterProviderPath];
+        if (originalProviderSettings) require.cache[providerSettingsPath] = originalProviderSettings;
+        else delete require.cache[providerSettingsPath];
+    }
+});
+
+test('et command rejects invalid tweet URLs before sending', async () => {
+    const twitterProviderPath = require.resolve('../../src/providers/twitter');
+    const originalProvider = require.cache[twitterProviderPath];
+
+    try {
+        let sent = false;
+        require.cache[twitterProviderPath] = {
+            id: twitterProviderPath,
+            filename: twitterProviderPath,
+            loaded: true,
+            exports: {
+                sendTweetEmbed: async () => {
+                    sent = true;
+                },
+            },
+        };
+
+        let reply = null;
+        const interaction = {
+            user: { id: 'user-1' },
+            options: {
+                getString: (name) => (name === 'url' ? 'https://example.com/not-a-tweet' : null),
+                getInteger: () => null,
+                getBoolean: () => false,
+            },
+            editReply: async (payload) => {
+                reply = payload;
+            },
+        };
+
+        await expandTweet.execute(interaction, {});
+
+        assert.equal(sent, false);
+        assert.match(reply.content, /Twitter\/X status URL/);
+    } finally {
+        if (originalProvider) require.cache[twitterProviderPath] = originalProvider;
+        else delete require.cache[twitterProviderPath];
     }
 });

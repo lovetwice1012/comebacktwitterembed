@@ -8,6 +8,7 @@
  */
 
 module.exports = [
+    require('./expandtweet'),
     require('./showsavetweet'),
     require('./deletesavetweet'),
     require('./savetweetquotaoverride'),

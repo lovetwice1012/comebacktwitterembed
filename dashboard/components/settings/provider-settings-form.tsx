@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, RotateCcw, Save, Search } from "lucide-react";
+import { AlertTriangle, Check, Clipboard, Plus, RotateCcw, Save, Search, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { useRouter } from "next/navigation";
@@ -12,7 +12,8 @@ import { Input, Textarea } from "@/components/ui/input";
 import { createTranslator, impactLabel, labelText, type DashboardLocale, type TranslationKey, valueLabel } from "@/lib/i18n";
 import { buildPreview } from "@/lib/settings-preview";
 import { deepEqual } from "@/lib/settings-diff";
-import type { ButtonVisibility, SettingState, SettingValue, TargetSetting } from "@/lib/types";
+import { settingCommandsForValue, type SettingCommand } from "@/lib/setting-commands";
+import type { AccountDepthMap, ButtonVisibility, SettingState, SettingValue, TargetSetting } from "@/lib/types";
 
 type FormValues = Record<string, SettingValue>;
 
@@ -30,6 +31,21 @@ function textareaList(value: unknown) {
 
 function parseTextareaList(value: string) {
   return [...new Set(value.split(/[\n,]/).map((item) => item.normalize("NFC").trim()).filter(Boolean))];
+}
+
+function accountDepthEntries(value: SettingValue | undefined) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return [];
+  return Object.entries(value as AccountDepthMap)
+    .map(([account, depth]) => ({
+      account,
+      depth: Number(depth),
+    }))
+    .filter((entry) => entry.account && Number.isInteger(entry.depth) && entry.depth >= 0)
+    .sort((a, b) => a.account.localeCompare(b.account));
+}
+
+function normalizeAccountInput(value: string) {
+  return value.trim().replace(/^@/, "").toLowerCase();
 }
 
 function targetTextarea(value: unknown, key: keyof TargetSetting) {
@@ -242,7 +258,16 @@ export function ProviderSettingsForm({
 
         <div className="space-y-3">
           {filteredSettings.map((setting) => (
-            <SettingEditor key={setting.key} setting={setting} value={watched[setting.key]} setValue={(value) => form.setValue(setting.key, value, { shouldDirty: true })} disabled={!canEdit || saving} locale={locale} />
+            <SettingEditor
+              key={setting.key}
+              providerId={providerId}
+              setting={setting}
+              value={watched[setting.key]}
+              values={watched}
+              setValue={(value) => form.setValue(setting.key, value, { shouldDirty: true })}
+              disabled={!canEdit || saving}
+              locale={locale}
+            />
           ))}
         </div>
       </div>
@@ -294,20 +319,25 @@ export function ProviderSettingsForm({
 }
 
 function SettingEditor({
+  providerId,
   setting,
   value,
+  values,
   setValue,
   disabled,
   locale,
 }: {
+  providerId: string;
   setting: SettingState;
   value: SettingValue;
+  values: Record<string, SettingValue | undefined>;
   setValue: (value: SettingValue) => void;
   disabled: boolean;
   locale: DashboardLocale;
 }) {
   const spec = setting.spec;
   const showImpact = spec.impactLevel === "danger" || spec.impactLevel === "high";
+  const commands = settingCommandsForValue(providerId, setting, value, values);
   return (
     <Card>
       <CardHeader>
@@ -325,6 +355,7 @@ function SettingEditor({
       </CardHeader>
       <CardContent className="space-y-3">
         {renderControl(setting, value, setValue, disabled, locale)}
+        {commands.length ? <SettingCommandList commands={commands} locale={locale} /> : null}
         {setting.warnings.length ? (
           <div className="space-y-1 rounded-md bg-amber-50 p-2 text-sm text-amber-900">
             {setting.warnings.map((warning) => <div key={warning}>{warning}</div>)}
@@ -335,6 +366,50 @@ function SettingEditor({
   );
 }
 
+function SettingCommandList({ commands, locale }: { commands: SettingCommand[]; locale: DashboardLocale }) {
+  const t = createTranslator(locale);
+  const [copiedCommand, setCopiedCommand] = useState<string | null>(null);
+
+  async function writeClipboard(command: string) {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(command);
+      return;
+    }
+    const textarea = document.createElement("textarea");
+    textarea.value = command;
+    textarea.style.position = "fixed";
+    textarea.style.opacity = "0";
+    document.body.appendChild(textarea);
+    textarea.select();
+    document.execCommand("copy");
+    textarea.remove();
+  }
+
+  async function copy(command: string) {
+    await writeClipboard(command);
+    setCopiedCommand(command);
+    window.setTimeout(() => setCopiedCommand((current) => (current === command ? null : current)), 1600);
+  }
+
+  return (
+    <div className="space-y-2 rounded-md border bg-muted/45 p-2 text-sm">
+      <div className="font-medium text-muted-foreground">{t("form.commandLabel")}</div>
+      {commands.map(({ command }) => {
+        const copied = copiedCommand === command;
+        return (
+          <div key={command} className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center">
+            <code className="min-w-0 flex-1 break-all rounded bg-card px-2 py-1 text-xs text-foreground">{command}</code>
+            <Button type="button" size="sm" variant="outline" className="shrink-0" onClick={() => copy(command)}>
+              {copied ? <Check size={14} /> : <Clipboard size={14} />}
+              {copied ? t("form.copiedCommand") : t("form.copyCommand")}
+            </Button>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function renderControl(setting: SettingState, value: SettingValue, setValue: (value: SettingValue) => void, disabled: boolean, locale: DashboardLocale) {
   const spec = setting.spec;
   const t = createTranslator(locale);
@@ -342,7 +417,7 @@ function renderControl(setting: SettingState, value: SettingValue, setValue: (va
     return (
       <label className="flex min-w-0 items-center gap-2 text-sm">
         <input type="checkbox" checked={value === true} disabled={disabled} onChange={(event) => setValue(event.target.checked)} />
-        {value === true ? t("form.enabled") : t("form.disabled")}
+        {t("form.enabled")}
       </label>
     );
   }
@@ -446,5 +521,91 @@ function renderControl(setting: SettingState, value: SettingValue, setValue: (va
     );
   }
 
+  if (spec.kind === "accountDepthMap") {
+    return <AccountDepthMapEditor value={value} setValue={setValue} disabled={disabled} locale={locale} />;
+  }
+
   return <div className="text-sm text-muted-foreground">{t("form.readOnlyKind")}</div>;
+}
+
+function AccountDepthMapEditor({
+  value,
+  setValue,
+  disabled,
+  locale,
+}: {
+  value: SettingValue;
+  setValue: (value: SettingValue) => void;
+  disabled: boolean;
+  locale: DashboardLocale;
+}) {
+  const t = createTranslator(locale);
+  const serialized = JSON.stringify(value || {});
+  const [rows, setRows] = useState(() => accountDepthEntries(value));
+
+  useEffect(() => {
+    setRows(accountDepthEntries(value));
+  }, [serialized]);
+
+  function commit(nextRows: Array<{ account: string; depth: number }>) {
+    setRows(nextRows);
+    const next: AccountDepthMap = {};
+    for (const row of nextRows) {
+      const account = normalizeAccountInput(row.account);
+      if (!/^[a-z0-9_]{1,15}$/.test(account)) continue;
+      if (!Number.isInteger(row.depth) || row.depth < 0) continue;
+      next[account] = row.depth;
+    }
+    setValue(next);
+  }
+
+  function updateRow(index: number, patch: Partial<{ account: string; depth: number }>) {
+    commit(rows.map((row, rowIndex) => (rowIndex === index ? { ...row, ...patch } : row)));
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className="grid gap-2">
+        {rows.map((row, index) => (
+          <div key={`${row.account || "new"}-${index}`} className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_140px_auto]">
+            <Input
+              disabled={disabled}
+              value={row.account}
+              onChange={(event) => updateRow(index, { account: normalizeAccountInput(event.target.value) })}
+              placeholder={t("form.accountPlaceholder")}
+            />
+            <select
+              className="h-10 rounded-md border bg-card px-3 text-sm"
+              disabled={disabled}
+              value={String(row.depth)}
+              onChange={(event) => updateRow(index, { depth: Number(event.target.value) })}
+            >
+              {Array.from({ length: 11 }, (_value, depth) => (
+                <option key={depth} value={depth}>{depth === 0 ? t("form.unlimitedDepth") : depth}</option>
+              ))}
+            </select>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={disabled}
+              title={t("form.removeAccount")}
+              aria-label={t("form.removeAccount")}
+              onClick={() => commit(rows.filter((_row, rowIndex) => rowIndex !== index))}
+            >
+              <Trash2 size={16} />
+            </Button>
+          </div>
+        ))}
+      </div>
+      <Button
+        type="button"
+        variant="outline"
+        disabled={disabled}
+        onClick={() => setRows([...rows, { account: "", depth: 1 }])}
+      >
+        <Plus size={16} />
+        {t("form.addAccount")}
+      </Button>
+    </div>
+  );
 }

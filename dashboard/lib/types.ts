@@ -9,7 +9,8 @@ export type SettingKind =
   | "targets"
   | "buttonVisibility"
   | "bannedWords"
-  | "outputVisibility";
+  | "outputVisibility"
+  | "accountDepthMap";
 
 export type SettingChoice = {
   label: LocaleText;
@@ -53,6 +54,7 @@ export type TargetSetting = {
 };
 
 export type ButtonVisibility = Record<string, boolean>;
+export type AccountDepthMap = Record<string, number>;
 
 export type SettingValue =
   | string
@@ -61,7 +63,8 @@ export type SettingValue =
   | null
   | string[]
   | TargetSetting
-  | ButtonVisibility;
+  | ButtonVisibility
+  | AccountDepthMap;
 
 export type SettingState = {
   key: string;
@@ -82,6 +85,7 @@ export type DashboardUser = {
   username: string;
   globalName?: string | null;
   avatarUrl?: string | null;
+  isAdmin: boolean;
 };
 
 export type DashboardSession = {

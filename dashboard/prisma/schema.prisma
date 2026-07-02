@@ -27,6 +27,7 @@ model GuildProviderSetting {
   alwaysReplyIfPostedTweetLink                 Boolean? @map("always_reply_if_posted_tweet_link")
   quoteRepostMaxDepth                          Int?     @map("quote_repost_max_depth")
   quoteRepostDoNotExtract                      Boolean? @map("quote_repost_do_not_extract")
+  quoteRepostDepthByAccount                    String?  @map("quote_repost_depth_by_account") @db.Text
   pixivImagesPerStep                           Int?     @map("pixiv_images_per_step")
   youtubeDescriptionMaxLength                  Int?     @map("youtube_description_max_length")
   youtubeVideoListLimit                        Int?     @map("youtube_video_list_limit")

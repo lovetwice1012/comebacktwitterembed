@@ -18,6 +18,7 @@ const {
     parseNiconicoUrl,
 } = require('../../niconicoApi');
 const { toApiLocaleFamily } = require('../../discordLocales');
+const { createProviderAnalytics, facet, finiteNumber, tagFacets } = require('../../analytics/providerMetrics');
 
 const EMBED_COLOR = 0x252525;
 const DESCRIPTION_MAX_LENGTH = 1400;
@@ -193,6 +194,12 @@ function tagSummary(watchData) {
         .join(', ');
 }
 
+function tagList(watchData) {
+    const tags = watchData?.tag?.items;
+    if (!Array.isArray(tags)) return [];
+    return tags.map(tag => tag?.name).filter(Boolean);
+}
+
 function buildVideoEmbed(watchData, parsed, message, s) {
     const lang = normalizeLang(s);
     const video = watchData?.video || {};
@@ -244,7 +251,42 @@ function buildComponents(lang, includeDownload) {
     return [{ type: ComponentType.ActionRow, components }];
 }
 
-function buildStep(embed, message, url, s, lang, mediaUrls = []) {
+function buildNiconicoAnalytics(watchData, parsed) {
+    const video = watchData?.video || {};
+    const owner = ownerInfo(watchData);
+    const durationSeconds = finiteNumber(video.duration);
+    return createProviderAnalytics({
+        content: {
+            accountKey: watchData?.owner?.id ? `user/${watchData.owner.id}` : (watchData?.channel?.id ? `channel/${watchData.channel.id}` : owner.name),
+            contentId: video.id || parsed.id,
+            contentType: 'video',
+            contentUrl: parsed.originalUrl || niconicoVideoUrl(parsed.id),
+            title: video.title,
+            descriptionPreview: decodeHtml(video.description),
+            authorName: owner.name,
+            publishedAtMs: video.registeredAt ? Date.parse(video.registeredAt) : null,
+            mediaCount: thumbnailUrl(video.thumbnail) ? 1 : 0,
+            durationSeconds,
+        },
+        metrics: {
+            views: finiteNumber(video.count?.view),
+            comments: finiteNumber(video.count?.comment),
+            mylists: finiteNumber(video.count?.mylist),
+            likes: finiteNumber(video.count?.like),
+            duration_seconds: durationSeconds,
+        },
+        facets: [
+            facet('type', 'video'),
+            facet('uploader_type', watchData?.channel?.id ? 'channel' : (watchData?.owner?.id ? 'user' : null)),
+            facet('series', seriesName(watchData)),
+            facet('category', genreName(watchData)),
+            facet('genre', genreName(watchData)),
+            ...tagFacets('tag', tagList(watchData)),
+        ],
+    });
+}
+
+function buildStep(embed, message, url, s, lang, mediaUrls = [], analytics = null) {
     /** @type {import('../_types').SendStep} */
     const step = {
         embeds: [embed],
@@ -252,6 +294,7 @@ function buildStep(embed, message, url, s, lang, mediaUrls = []) {
         allowedMentions: { repliedUser: false },
         send: s.alwaysreplyifpostedtweetlink === true ? 'reply-source' : 'channel',
         suppressSourceEmbeds: true,
+        analytics,
     };
 
     const files = attachmentMediaUrls(s, mediaUrls);
@@ -277,7 +320,7 @@ async function extract(message, url, s) {
         const watchData = await fetchWatchData(parsed.id);
         const embed = buildVideoEmbed(watchData, parsed, message, s);
         const mediaUrl = thumbnailUrl(watchData?.video?.thumbnail);
-        return [buildStep(embed, message, url, s, lang, mediaUrl ? [mediaUrl] : [])];
+        return [buildStep(embed, message, url, s, lang, mediaUrl ? [mediaUrl] : [], buildNiconicoAnalytics(watchData, parsed))];
     } catch (err) {
         recordProviderError('niconico', err, message, url, { endpointKey: 'nicovideo/watch' });
         return buildFailureResponse('niconico', url, s, err);

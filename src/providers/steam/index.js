@@ -13,6 +13,7 @@ const {
     shouldShowOutputItem,
 } = require('../_output_controls');
 const { toApiLocaleFamily } = require('../../discordLocales');
+const { createProviderAnalytics, facet, finiteNumber, tagFacets } = require('../../analytics/providerMetrics');
 
 const STEAM_COLOR = 0x171a21;
 const DESCRIPTION_MAX_LENGTH = 900;
@@ -494,6 +495,13 @@ function formatPlatforms(platforms) {
     return out.join(', ');
 }
 
+function splitList(value) {
+    return String(value || '')
+        .split(',')
+        .map(item => item.trim())
+        .filter(Boolean);
+}
+
 function resolveSteamImageSource(settings) {
     const value = String(settings?.steam_image_source || 'header').trim();
     return STEAM_IMAGE_SOURCES.has(value) ? value : 'header';
@@ -677,6 +685,74 @@ function buildEmbed(parsed, info, message, settings, lang) {
     return embed;
 }
 
+function buildSteamAnalytics(parsed, info) {
+    const developers = splitList(info.developers);
+    const publishers = splitList(info.publishers);
+    const genres = splitList(info.genres);
+    const platforms = splitList(info.platforms);
+    return createProviderAnalytics({
+        content: {
+            accountKey: developers[0] || publishers[0] || parsed.kind,
+            contentId: parsed.id,
+            contentType: parsed.kind || 'app',
+            contentUrl: parsed.canonicalUrl,
+            title: info.title,
+            descriptionPreview: info.description,
+            authorName: developers[0] || publishers[0],
+            mediaCount: info.imageUrl ? 1 : 0,
+        },
+        metrics: {
+            price: finiteNumber(info.price),
+            discount_percent: finiteNumber(info.discount),
+            recommendations: finiteNumber(info.recommendations),
+            current_players: finiteNumber(info.currentPlayers),
+            review_count: finiteNumber(info.reviewSummary),
+            rating: finiteNumber(info.metacritic),
+        },
+        facets: [
+            facet('type', info.typeLabel || parsed.kind),
+            facet('kind', parsed.kind),
+            facet('price_label', info.price),
+            facet('review_summary', info.reviewSummary),
+            facet('release_label', info.releaseDate),
+            ...tagFacets('developer', developers),
+            ...tagFacets('publisher', publishers),
+            ...tagFacets('genre', genres),
+            ...tagFacets('platform', platforms),
+        ],
+    });
+}
+
+function buildSteamAnalyticsEnrichers(parsed, settings, info) {
+    if (parsed.kind !== 'app') return [];
+    const needsCurrentPlayers = !info.currentPlayers;
+    const needsReviewSummary = !info.reviewSummary;
+    if (!needsCurrentPlayers && !needsReviewSummary) return [];
+
+    const job = async () => {
+        const [currentPlayers, reviewSummary] = await Promise.all([
+            needsCurrentPlayers ? optionalSteamValue(() => fetchSteamCurrentPlayers(parsed.id)) : info.currentPlayers,
+            needsReviewSummary ? optionalSteamValue(() => fetchSteamReviewSummary(parsed.id, settings)) : info.reviewSummary,
+        ]);
+        return createProviderAnalytics({
+            metrics: {
+                current_players: finiteNumber(currentPlayers),
+                review_count: finiteNumber(reviewSummary),
+            },
+            facets: [
+                facet('review_summary', reviewSummary),
+            ],
+        });
+    };
+    job.analyticsMetadata = {
+        source: 'steam.analytics.enrichment',
+        schemaVersion: 'steam.v1',
+        stage: 'enriched',
+        timeoutMs: 3000,
+    };
+    return [job];
+}
+
 async function resolveSteamInfo(parsed, settings) {
     const lang = normalizeLanguage(settings);
 
@@ -746,6 +822,8 @@ async function extract(message, url, s) {
         allowedMentions: { repliedUser: false },
         send: s.alwaysreplyifpostedtweetlink === true ? 'reply-source' : 'channel',
         suppressSourceEmbeds: true,
+        analytics: buildSteamAnalytics(parsed, info),
+        analyticsEnrichers: buildSteamAnalyticsEnrichers(parsed, s, info),
     };
 
     const mediaFiles = attachmentMediaUrls(s, info.imageUrl);

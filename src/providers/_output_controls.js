@@ -241,6 +241,27 @@ function clearEmbedMedia(embeds) {
     }
 }
 
+function hasText(value) {
+    return typeof value === 'string' && value.trim().length > 0;
+}
+
+function hasVisibleEmbedPayload(embed) {
+    if (!embed || typeof embed !== 'object') return false;
+    if (hasText(embed.title) || hasText(embed.description)) return true;
+    if (embed.image?.url || embed.thumbnail?.url || embed.video?.url) return true;
+    if (hasText(embed.author?.name) || hasText(embed.footer?.text)) return true;
+    if (Array.isArray(embed.fields) && embed.fields.some(field => hasText(field?.name) && hasText(field?.value))) return true;
+    if (embed.timestamp) return true;
+    return false;
+}
+
+function pruneEmptyEmbeds(step) {
+    if (!Array.isArray(step?.embeds)) return;
+    const embeds = step.embeds.filter(hasVisibleEmbedPayload);
+    if (embeds.length > 0) step.embeds = embeds;
+    else delete step.embeds;
+}
+
 function moveEmbedImagesToThumbnails(embeds, urls) {
     if (!Array.isArray(embeds) || embeds.length === 0) return;
     for (const embed of embeds) {
@@ -298,6 +319,7 @@ function applyMediaDisplayToStep(step, settings, urls, label = 'Media') {
     }
 
     clearEmbedMedia(step.embeds);
+    pruneEmptyEmbeds(step);
 
     if (mode === 'attachment') {
         if (mediaUrls.length > 0) step.files = appendUniqueFiles(step.files, mediaUrls);

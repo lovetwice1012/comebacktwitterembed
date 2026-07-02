@@ -22,6 +22,11 @@ const TABLES = {
     botErrorEvents: 'bot_error_events',
     botErrorBuckets: 'bot_error_buckets',
     botMetricBuckets: 'bot_metric_buckets',
+    botAnalyticsEvents: 'bot_analytics_events',
+    botProviderContentEvents: 'bot_provider_content_events',
+    botProviderContentFacets: 'bot_provider_content_facets',
+    botProviderHourlyAggregates: 'bot_provider_hourly_aggregates',
+    botProviderHourlyUniqueKeys: 'bot_provider_hourly_unique_keys',
     botErrorAlerts: 'bot_error_alerts',
 };
 
@@ -109,6 +114,7 @@ const SCHEMA_STATEMENTS = [
         always_reply_if_posted_tweet_link TINYINT(1) NULL,
         quote_repost_max_depth INT NULL,
         quote_repost_do_not_extract TINYINT(1) NULL,
+        quote_repost_depth_by_account TEXT NULL,
         pixiv_images_per_step INT NULL,
         youtube_description_max_length INT NULL,
         youtube_video_list_limit INT NULL,
@@ -316,6 +322,153 @@ const SCHEMA_STATEMENTS = [
         INDEX idx_metric_buckets_guild_time (guild_id, bucket_start_ms)
     ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
 
+    `CREATE TABLE IF NOT EXISTS ${TABLES.botAnalyticsEvents} (
+        analytics_event_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+        occurred_at_ms BIGINT NOT NULL,
+        event_type VARCHAR(64) NOT NULL,
+        source VARCHAR(96) NULL,
+        provider_id VARCHAR(64) NULL,
+        account_key VARCHAR(191) NULL,
+        endpoint_key VARCHAR(191) NULL,
+        raw_url TEXT NULL,
+        normalized_url TEXT NULL,
+        url_hash CHAR(64) NULL,
+        guild_id VARCHAR(32) NULL,
+        guild_name_snapshot VARCHAR(255) NULL,
+        channel_id VARCHAR(32) NULL,
+        channel_name_snapshot VARCHAR(255) NULL,
+        author_user_id VARCHAR(32) NULL,
+        message_id VARCHAR(32) NULL,
+        command_name VARCHAR(64) NULL,
+        component_id VARCHAR(191) NULL,
+        success TINYINT(1) NULL,
+        duration_ms INT UNSIGNED NULL,
+        count BIGINT UNSIGNED NOT NULL DEFAULT 1,
+        details_json LONGTEXT NULL,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_analytics_time (occurred_at_ms),
+        INDEX idx_analytics_event_time (event_type, occurred_at_ms),
+        INDEX idx_analytics_provider_account_time (provider_id, account_key, occurred_at_ms),
+        INDEX idx_analytics_url_hash (url_hash),
+        INDEX idx_analytics_guild_time (guild_id, occurred_at_ms),
+        INDEX idx_analytics_user_time (author_user_id, occurred_at_ms),
+        INDEX idx_analytics_command_time (command_name, occurred_at_ms),
+        INDEX idx_analytics_component_time (component_id, occurred_at_ms)
+    ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
+
+    `CREATE TABLE IF NOT EXISTS ${TABLES.botProviderContentEvents} (
+        content_event_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+        occurred_at_ms BIGINT NOT NULL,
+        provider_id VARCHAR(64) NOT NULL,
+        account_key VARCHAR(191) NULL,
+        content_id VARCHAR(191) NULL,
+        content_type VARCHAR(64) NULL,
+        content_url TEXT NULL,
+        normalized_url TEXT NULL,
+        url_hash CHAR(64) NULL,
+        title TEXT NULL,
+        description_preview TEXT NULL,
+        author_name VARCHAR(255) NULL,
+        language VARCHAR(32) NULL,
+        published_at_ms BIGINT NULL,
+        sensitive TINYINT(1) NULL,
+        media_count INT UNSIGNED NULL,
+        duration_seconds INT UNSIGNED NULL,
+        guild_id VARCHAR(32) NULL,
+        channel_id VARCHAR(32) NULL,
+        author_user_id VARCHAR(32) NULL,
+        source VARCHAR(96) NULL,
+        raw_metrics_json LONGTEXT NULL,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_content_provider_account_time (provider_id, account_key, occurred_at_ms),
+        INDEX idx_content_provider_type_time (provider_id, content_type, occurred_at_ms),
+        INDEX idx_content_guild_time (guild_id, occurred_at_ms),
+        INDEX idx_content_user_time (author_user_id, occurred_at_ms),
+        INDEX idx_content_url_hash (url_hash)
+    ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
+
+    `CREATE TABLE IF NOT EXISTS ${TABLES.botProviderContentFacets} (
+        facet_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+        content_event_id BIGINT UNSIGNED NOT NULL,
+        provider_id VARCHAR(64) NOT NULL,
+        account_key VARCHAR(191) NULL,
+        facet_key VARCHAR(191) NOT NULL,
+        facet_value VARCHAR(512) NULL,
+        numeric_value DOUBLE NULL,
+        json_value LONGTEXT NULL,
+        metric_stage VARCHAR(32) NOT NULL DEFAULT 'initial',
+        metric_source VARCHAR(96) NULL,
+        collected_at_ms BIGINT NULL,
+        schema_version VARCHAR(64) NULL,
+        collection_success TINYINT(1) NULL,
+        collection_timeout_ms INT UNSIGNED NULL,
+        occurred_at_ms BIGINT NOT NULL,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_content_facets_stage_schema_time (metric_stage, schema_version, occurred_at_ms),
+        INDEX idx_content_facets_source_time (metric_source, occurred_at_ms),
+        INDEX idx_content_facets_key_value_time (facet_key, facet_value, occurred_at_ms),
+        INDEX idx_content_facets_provider_key_time (provider_id, facet_key, occurred_at_ms),
+        INDEX idx_content_facets_account_key_time (provider_id, account_key, facet_key, occurred_at_ms),
+        CONSTRAINT fk_content_facets_event
+            FOREIGN KEY (content_event_id) REFERENCES ${TABLES.botProviderContentEvents}(content_event_id)
+            ON DELETE CASCADE
+    ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
+
+    `CREATE TABLE IF NOT EXISTS ${TABLES.botProviderHourlyAggregates} (
+        bucket_start_ms BIGINT NOT NULL,
+        bucket_size_seconds INT NOT NULL DEFAULT 3600,
+        provider_id VARCHAR(64) NOT NULL DEFAULT '',
+        account_key VARCHAR(191) NOT NULL DEFAULT '',
+        guild_id VARCHAR(32) NOT NULL DEFAULT '',
+        content_type VARCHAR(64) NOT NULL DEFAULT '',
+        event_type VARCHAR(64) NOT NULL DEFAULT '',
+        schema_version VARCHAR(64) NOT NULL DEFAULT '',
+        content_events BIGINT UNSIGNED NOT NULL DEFAULT 0,
+        analytics_events BIGINT UNSIGNED NOT NULL DEFAULT 0,
+        extract_events BIGINT UNSIGNED NOT NULL DEFAULT 0,
+        extract_successes BIGINT UNSIGNED NOT NULL DEFAULT 0,
+        extract_failures BIGINT UNSIGNED NOT NULL DEFAULT 0,
+        send_events BIGINT UNSIGNED NOT NULL DEFAULT 0,
+        send_successes BIGINT UNSIGNED NOT NULL DEFAULT 0,
+        send_failures BIGINT UNSIGNED NOT NULL DEFAULT 0,
+        enrichment_jobs BIGINT UNSIGNED NOT NULL DEFAULT 0,
+        enrichment_successes BIGINT UNSIGNED NOT NULL DEFAULT 0,
+        enrichment_failures BIGINT UNSIGNED NOT NULL DEFAULT 0,
+        analytics_duration_sum_ms BIGINT UNSIGNED NOT NULL DEFAULT 0,
+        analytics_duration_count BIGINT UNSIGNED NOT NULL DEFAULT 0,
+        analytics_duration_max_ms INT UNSIGNED NOT NULL DEFAULT 0,
+        enrichment_duration_sum_ms BIGINT UNSIGNED NOT NULL DEFAULT 0,
+        enrichment_duration_count BIGINT UNSIGNED NOT NULL DEFAULT 0,
+        enrichment_duration_max_ms INT UNSIGNED NOT NULL DEFAULT 0,
+        media_count_sum BIGINT UNSIGNED NOT NULL DEFAULT 0,
+        duration_seconds_sum BIGINT UNSIGNED NOT NULL DEFAULT 0,
+        duration_seconds_count BIGINT UNSIGNED NOT NULL DEFAULT 0,
+        sensitive_events BIGINT UNSIGNED NOT NULL DEFAULT 0,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        PRIMARY KEY (bucket_start_ms, provider_id, account_key, guild_id, content_type, event_type, schema_version),
+        INDEX idx_provider_hourly_provider_time (provider_id, bucket_start_ms),
+        INDEX idx_provider_hourly_account_time (provider_id, account_key, bucket_start_ms),
+        INDEX idx_provider_hourly_guild_time (guild_id, bucket_start_ms),
+        INDEX idx_provider_hourly_event_time (event_type, bucket_start_ms),
+        INDEX idx_provider_hourly_schema_time (schema_version, bucket_start_ms)
+    ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
+
+    `CREATE TABLE IF NOT EXISTS ${TABLES.botProviderHourlyUniqueKeys} (
+        bucket_start_ms BIGINT NOT NULL,
+        provider_id VARCHAR(64) NOT NULL DEFAULT '',
+        account_key VARCHAR(191) NOT NULL DEFAULT '',
+        guild_id VARCHAR(32) NOT NULL DEFAULT '',
+        content_type VARCHAR(64) NOT NULL DEFAULT '',
+        event_type VARCHAR(64) NOT NULL DEFAULT '',
+        key_type ENUM('author_user', 'guild', 'url') NOT NULL,
+        key_hash CHAR(64) NOT NULL,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (bucket_start_ms, provider_id, account_key, guild_id, content_type, event_type, key_type, key_hash),
+        INDEX idx_provider_hourly_unique_lookup (provider_id, account_key, bucket_start_ms, key_type),
+        INDEX idx_provider_hourly_unique_guild (guild_id, bucket_start_ms, key_type)
+    ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
+
     `CREATE TABLE IF NOT EXISTS ${TABLES.botErrorAlerts} (
         alert_key VARCHAR(191) NOT NULL PRIMARY KEY,
         provider_id VARCHAR(64) NOT NULL DEFAULT '',
@@ -352,6 +505,7 @@ const GUILD_PROVIDER_SETTING_COLUMN_DEFINITIONS = {
     always_reply_if_posted_tweet_link: 'TINYINT(1) NULL',
     quote_repost_max_depth: 'INT NULL',
     quote_repost_do_not_extract: 'TINYINT(1) NULL',
+    quote_repost_depth_by_account: 'TEXT NULL',
     pixiv_images_per_step: 'INT NULL',
     youtube_description_max_length: 'INT NULL',
     youtube_video_list_limit: 'INT NULL',
@@ -416,11 +570,24 @@ function parseAddColumnStatement(statement) {
     return { table: match[1], column: match[2] };
 }
 
+function parseAddIndexStatement(statement) {
+    const match = String(statement || '').match(/^ALTER\s+TABLE\s+`?([A-Za-z0-9_]+)`?\s+ADD\s+(?:INDEX|KEY)\s+`?([A-Za-z0-9_]+)`?\b/i);
+    if (!match) return null;
+    return { table: match[1], index: match[2] };
+}
+
 async function shouldSkipMigrationStatement(queryDatabase, statement) {
     const addColumn = parseAddColumnStatement(statement);
-    if (!addColumn) return false;
-    const rows = await queryDatabase(`SHOW COLUMNS FROM ${addColumn.table} LIKE ?`, [addColumn.column]);
-    return rows.length > 0;
+    if (addColumn) {
+        const rows = await queryDatabase(`SHOW COLUMNS FROM ${addColumn.table} LIKE ?`, [addColumn.column]);
+        return rows.length > 0;
+    }
+    const addIndex = parseAddIndexStatement(statement);
+    if (addIndex) {
+        const rows = await queryDatabase(`SHOW INDEX FROM ${addIndex.table} WHERE Key_name = ?`, [addIndex.index]);
+        return rows.length > 0;
+    }
+    return false;
 }
 
 async function applyMigrationFile(queryDatabase, file) {
@@ -433,7 +600,7 @@ async function applyMigrationFile(queryDatabase, file) {
         try {
             await queryDatabase(statement);
         } catch (err) {
-            if (err?.code !== 'ER_DUP_FIELDNAME') throw err;
+            if (!['ER_DUP_FIELDNAME', 'ER_DUP_KEYNAME'].includes(err?.code)) throw err;
         }
     }
 
@@ -489,6 +656,7 @@ module.exports = {
     _internal: {
         listMigrationFiles,
         parseAddColumnStatement,
+        parseAddIndexStatement,
         shouldSkipMigrationStatement,
         splitSqlStatements,
         ensureGuildProviderSettingsColumns,

@@ -11,6 +11,20 @@ const SAVES_ROOT = './saves';
 const DEFAULT_QUOTA_BYTES = 100 * 1024 * 1024; // 100 MB
 const PUBLIC_BASE_URL = 'https://twidata.sprink.cloud/data/';
 
+function stripDiscordUrlMarkup(value) {
+    return String(value || '').trim().replace(/^<(.+)>$/, '$1').replace(/^\|\|(.+)\|\|$/, '$1');
+}
+
+function tweetIdFromUrl(tweetUrl) {
+    const match = String(tweetUrl || '').match(/\/status\/(\d+)/);
+    return match ? match[1] : '';
+}
+
+function tweetApiUrl(tweetUrl) {
+    const cleanUrl = stripDiscordUrlMarkup(tweetUrl).split('?')[0];
+    return cleanUrl.replace(/twitter\.com|x\.com/g, 'api.vxtwitter.com');
+}
+
 function downloadToFile(url, destPath) {
     return new Promise(resolve => {
         https.get(url, res => {
@@ -36,18 +50,20 @@ async function dirSize(dirPath) {
     return total;
 }
 
-async function handle(interaction) {
-    const userDir = `${SAVES_ROOT}/${interaction.user.id}`;
+async function saveTweetByUrl(userId, tweetUrl) {
+    const userDir = `${SAVES_ROOT}/${userId}`;
     await fsp.mkdir(userDir, { recursive: true });
 
-    let tweetUrl = interaction.message.embeds[0].url.split('?')[0];
-    tweetUrl = tweetUrl.replace('twitter.com', 'api.vxtwitter.com').replace('x.com', 'api.vxtwitter.com');
-    const tweetId = tweetUrl.split('/').pop();
+    const apiUrl = tweetApiUrl(tweetUrl);
+    const tweetId = tweetIdFromUrl(apiUrl);
+    if (!tweetId) throw new Error('Could not determine tweet id for saving.');
+
     const tweetDir = `${userDir}/${tweetId}`;
     await fsp.mkdir(tweetDir, { recursive: true });
 
-    const fetchRes = await fetch(tweetUrl);
+    const fetchRes = await fetch(apiUrl);
     const tweetData = await fetchRes.json();
+    if (!Array.isArray(tweetData.mediaURLs)) tweetData.mediaURLs = [];
 
     for (let i = 0; i < tweetData.mediaURLs.length; i++) {
         const cleanUrl = tweetData.mediaURLs[i].split('?')[0];
@@ -55,24 +71,34 @@ async function handle(interaction) {
         await downloadToFile(cleanUrl, `${tweetDir}/${fileName}`);
     }
 
-    tweetData.user_profile_image_url = tweetData.user_profile_image_url.split('?')[0];
-    {
+    if (typeof tweetData.user_profile_image_url === 'string' && tweetData.user_profile_image_url) {
+        tweetData.user_profile_image_url = tweetData.user_profile_image_url.split('?')[0];
         const fileName = tweetData.user_profile_image_url.split('/').pop();
         await downloadToFile(tweetData.user_profile_image_url, `${tweetDir}/${fileName}`);
-        tweetData.user_profile_image_url = `${PUBLIC_BASE_URL}${interaction.user.id}/${tweetId}/${fileName}`;
+        tweetData.user_profile_image_url = `${PUBLIC_BASE_URL}${userId}/${tweetId}/${fileName}`;
     }
 
     for (let i = 0; i < tweetData.mediaURLs.length; i++) {
         const fileName = tweetData.mediaURLs[i].split('/').pop();
-        tweetData.mediaURLs[i] = `${PUBLIC_BASE_URL}${interaction.user.id}/${tweetId}/${fileName}`;
+        tweetData.mediaURLs[i] = `${PUBLIC_BASE_URL}${userId}/${tweetId}/${fileName}`;
     }
     await fsp.writeFile(`${tweetDir}/data.json`, JSON.stringify(tweetData, null, 4));
 
-    const quota = await getSaveTweetQuotaOverride(interaction.user.id) ?? DEFAULT_QUOTA_BYTES;
+    const quota = await getSaveTweetQuotaOverride(userId) ?? DEFAULT_QUOTA_BYTES;
     if (await dirSize(userDir) > quota) {
         await fsp.rm(tweetDir, { recursive: true, force: true });
+        return { saved: false, reason: 'quota', tweetId };
+    }
+
+    return { saved: true, tweetId };
+}
+
+async function handle(interaction) {
+    const tweetUrl = interaction.message.embeds[0].url;
+    const result = await saveTweetByUrl(interaction.user.id, tweetUrl);
+    if (!result.saved && result.reason === 'quota') {
         await interaction.editReply({
-            content: 'あなたが保存したツイートのデータ量が許可された保存容量を超えています。新しくツイートを保存する前に既存のものを削除してください',
+            content: 'Saved tweet quota exceeded. Delete old saved tweets before saving a new one.',
             ephemeral: true,
         });
         setTimeout(() => { interaction.deleteReply(); }, 3000);
@@ -82,4 +108,11 @@ async function handle(interaction) {
     await interaction.editReply({ content: t('finishActionLocales', interaction.locale), ephemeral: true });
 }
 
-module.exports = { handle };
+module.exports = {
+    handle,
+    saveTweetByUrl,
+    _internal: {
+        tweetApiUrl,
+        tweetIdFromUrl,
+    },
+};

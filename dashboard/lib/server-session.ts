@@ -3,6 +3,7 @@ import "server-only";
 import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
 import { authOptions } from "@/features/auth/options";
+import { isDashboardAdminUserId } from "@/lib/admin";
 import type { DashboardSession } from "@/lib/types";
 
 export async function getDashboardSession(): Promise<DashboardSession | null> {
@@ -14,6 +15,7 @@ export async function getDashboardSession(): Promise<DashboardSession | null> {
       username: session.user.username || session.user.name || "",
       globalName: session.user.globalName,
       avatarUrl: session.user.avatarUrl,
+      isAdmin: isDashboardAdminUserId(session.user.id),
     },
     accessToken: session.accessToken,
     expiresAt: session.expiresAt,

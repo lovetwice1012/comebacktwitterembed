@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import { getServerSession } from "next-auth";
 import { NextRequest, NextResponse } from "next/server";
 import { authOptions } from "@/features/auth/options";
+import { isDashboardAdminUserId } from "@/lib/admin";
 import { getGuildAccess } from "@/lib/discord";
 import { createTranslator, type DashboardLocale } from "@/lib/i18n";
 import { permissionRequirementText } from "@/lib/permissions";
@@ -42,10 +43,23 @@ export async function requireSession(locale: DashboardLocale = "ja"): Promise<Da
       username: session.user.username || session.user.name || "",
       globalName: session.user.globalName,
       avatarUrl: session.user.avatarUrl,
+      isAdmin: isDashboardAdminUserId(session.user.id),
     },
     accessToken: session.accessToken,
     expiresAt: session.expiresAt,
   };
+}
+
+export async function requireAdminSession(locale: DashboardLocale = "ja"): Promise<DashboardSession> {
+  const t = createTranslator(locale);
+  const session = await requireSession(locale);
+  if (!session.user.isAdmin) {
+    throw new ApiError(403, t("api.insufficientPermissions"), {
+      required: "Dashboard administrator",
+      current: { userId: session.user.id },
+    });
+  }
+  return session;
 }
 
 export async function requireGuildPermission(

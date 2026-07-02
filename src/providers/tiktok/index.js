@@ -4,6 +4,7 @@ const fetch = require('node-fetch');
 const { ButtonBuilder, ButtonStyle, ComponentType } = require('discord.js');
 const { recordProviderError } = require('../../errorTracking');
 const { settings } = require('../../settings');
+const { createProviderAnalytics, facet, tagFacets } = require('../../analytics/providerMetrics');
 const {
     applyEmbedMedia,
     attachmentMediaUrls,
@@ -467,6 +468,71 @@ function isPhotoPost(data) {
     return Array.isArray(data?.imagePost?.images) && data.imagePost.images.length > 0;
 }
 
+function textTags(text, regex) {
+    return [...new Set([...String(text || '').matchAll(regex)].map(match => String(match[1] || match[0]).replace(/^[@#]/, '').toLowerCase()))];
+}
+
+function buildTikTokProfileAnalytics(data, canonicalUrl) {
+    const user = data?.user || {};
+    const stats = data?.stats || {};
+    const uniqueId = user.uniqueId || canonicalUrl.split('/@')[1] || '';
+    return createProviderAnalytics({
+        content: {
+            accountKey: uniqueId,
+            contentId: uniqueId,
+            contentType: 'profile',
+            contentUrl: canonicalUrl,
+            title: user.nickname || uniqueId,
+            descriptionPreview: user.signature,
+            authorName: uniqueId,
+            mediaCount: 1,
+        },
+        metrics: {
+            followers: stats.followerCount,
+            following: stats.followingCount,
+            likes: stats.heartCount,
+            videos: stats.videoCount,
+        },
+        facets: [
+            facet('verified', user.verified ? 'yes' : 'no'),
+        ],
+    });
+}
+
+function buildTikTokContentAnalytics(data, canonicalUrl, resolved) {
+    const stats = data?.stats || {};
+    const musicTitle = pickFirstString(data?.music?.title, data?.music?.musicName);
+    const musicAuthor = pickFirstString(data?.music?.authorName, data?.music?.author, data?.music?.ownerHandle);
+    const photo = isPhotoPost(data);
+    return createProviderAnalytics({
+        content: {
+            accountKey: data?.author?.uniqueId,
+            contentId: data?.id || resolved.id,
+            contentType: photo ? 'photo' : 'video',
+            contentUrl: canonicalUrl,
+            title: data?.author?.nickname || data?.author?.uniqueId,
+            descriptionPreview: data?.desc,
+            authorName: data?.author?.uniqueId,
+            publishedAtMs: data?.createTime ? Number(data.createTime) * 1000 : null,
+            mediaCount: photo ? data.imagePost.images.length : 1,
+            durationSeconds: data?.video?.duration,
+        },
+        metrics: {
+            plays: stats.playCount,
+            likes: stats.diggCount,
+            comments: stats.commentCount,
+            shares: stats.shareCount,
+            duration_seconds: data?.video?.duration,
+        },
+        facets: [
+            ...tagFacets('hashtag', textTags(data?.desc, /#([\p{L}\p{N}_]+)/gu)),
+            ...tagFacets('mention', textTags(data?.desc, /@([A-Za-z0-9_.-]+)/g)),
+            facet('music', [musicTitle, musicAuthor].filter(Boolean).join(' - ')),
+            facet('type', photo ? 'photo' : 'video'),
+        ],
+    });
+}
+
 function addImageCountField(embed, shownCount, totalCount, lang, s) {
     if (totalCount <= 1 || !shouldShowOutputItem(s, 'image_count')) return;
     if (!Array.isArray(embed.fields)) embed.fields = [];
@@ -511,6 +577,7 @@ async function extract(message, url, s) {
             allowedMentions: { repliedUser: false },
             send: s.alwaysreplyifpostedtweetlink === true ? 'reply-source' : 'channel',
             suppressSourceEmbeds: true,
+            analytics: buildTikTokProfileAnalytics(data, canonicalUrl),
         };
 
         if (s.deletemessageifonlypostedtweetlink === true && message.content.trim() === url) {
@@ -584,6 +651,7 @@ async function extract(message, url, s) {
         allowedMentions: { repliedUser: false },
         send: s.alwaysreplyifpostedtweetlink === true ? 'reply-source' : 'channel',
         suppressSourceEmbeds: true,
+        analytics: buildTikTokContentAnalytics(data, canonicalUrl, resolved),
     };
     if (mediaContent) step.content = mediaContent;
 

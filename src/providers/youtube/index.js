@@ -4,6 +4,7 @@ const fetch = require('node-fetch');
 const { ButtonBuilder, ButtonStyle, ComponentType } = require('discord.js');
 const { recordProviderError } = require('../../errorTracking');
 const youtubeDownloadStore = require('../../youtubeDownloadStore');
+const { createProviderAnalytics, facet } = require('../../analytics/providerMetrics');
 const {
     applyMediaDisplayToStep,
     buildFailureResponse,
@@ -1053,7 +1054,82 @@ function buildChannelEmbed(info, parsed, baseUrl, message, s) {
     return embed;
 }
 
-function buildStep(embed, message, url, s, lang, includeDownload = false) {
+function buildYouTubeAnalytics(parsed, info, sourceUrl) {
+    if (parsed.type === 'video') {
+        return createProviderAnalytics({
+            content: {
+                accountKey: info.authorId || info.author || parsed.id,
+                contentId: parsed.id,
+                contentType: info.liveNow ? 'live_video' : (parsed.isShorts ? 'shorts' : 'video'),
+                contentUrl: parsed.originalUrl || videoUrl(parsed.id),
+                title: info.title,
+                descriptionPreview: info.description,
+                authorName: info.author,
+                publishedAtMs: info.published ? Number(info.published) * 1000 : null,
+                durationSeconds: info.lengthSeconds,
+                mediaCount: 1,
+            },
+            metrics: {
+                views: info.viewCount,
+                likes: info.likeCount,
+                subscribers: info.subCount,
+                duration_seconds: info.lengthSeconds,
+            },
+            facets: [
+                facet('type', info.liveNow ? 'live' : (parsed.isShorts ? 'shorts' : 'video')),
+                facet('date_label', publishedText(info, 'en')),
+                facet('channel', info.author || info.authorId),
+            ],
+        });
+    }
+    if (parsed.type === 'playlist') {
+        return createProviderAnalytics({
+            content: {
+                accountKey: info.authorId || info.author || parsed.id,
+                contentId: parsed.id,
+                contentType: 'playlist',
+                contentUrl: parsed.originalUrl || sourceUrl,
+                title: info.title,
+                descriptionPreview: info.description,
+                authorName: info.author,
+                publishedAtMs: info.updated ? Number(info.updated) * 1000 : null,
+                mediaCount: Array.isArray(info.videos) ? info.videos.length : null,
+            },
+            metrics: {
+                views: info.viewCount,
+                video_count: info.videoCount ?? (Array.isArray(info.videos) ? info.videos.length : null),
+            },
+            facets: [
+                facet('type', 'playlist'),
+                facet('channel', info.author || info.authorId),
+            ],
+        });
+    }
+    return createProviderAnalytics({
+        content: {
+            accountKey: info.authorId || info.author || parsed.id,
+            contentId: info.authorId || parsed.id,
+            contentType: 'channel',
+            contentUrl: channelUrl(info.authorUrl, info.authorId || parsed.id),
+            title: info.author || parsed.id,
+            descriptionPreview: info.descriptionHtml || info.description,
+            authorName: info.author,
+            mediaCount: Array.isArray(info.latestVideos) ? info.latestVideos.length : null,
+        },
+        metrics: {
+            subscribers: info.subCount,
+            views: info.totalViews,
+            latest_video_count: Array.isArray(info.latestVideos) ? info.latestVideos.length : null,
+        },
+        facets: [
+            facet('type', 'channel'),
+            facet('channel', info.author || info.authorId || parsed.id),
+            facet('verified', info.authorVerified ? 'yes' : 'no'),
+        ],
+    });
+}
+
+function buildStep(embed, message, url, s, lang, includeDownload = false, analytics = null) {
     /** @type {import('../_types').SendStep} */
     const step = {
         embeds: [embed],
@@ -1061,6 +1137,7 @@ function buildStep(embed, message, url, s, lang, includeDownload = false) {
         allowedMentions: { repliedUser: false },
         send: s.alwaysreplyifpostedtweetlink === true ? 'reply-source' : 'channel',
         suppressSourceEmbeds: true,
+        analytics,
     };
 
     if (s.deletemessageifonlypostedtweetlink === true && message.content.trim() === url) {
@@ -1083,19 +1160,20 @@ async function extract(message, url, s) {
             const { json, baseUrl } = await fetchVideoInfoWithFallback(parsed.id);
             if (!json || json.error) return null;
             embed = buildVideoEmbed(json, parsed, baseUrl, message, s);
+            return [buildStep(embed, message, url, s, lang, true, buildYouTubeAnalytics(parsed, json, url))];
         } else if (parsed.type === 'playlist') {
             const { json, baseUrl } = await fetchPlaylistInfoWithFallback(parsed.id);
             if (!json || json.error) return null;
             embed = buildPlaylistEmbed(json, parsed, baseUrl, message, s);
+            return [buildStep(embed, message, url, s, lang, false, buildYouTubeAnalytics(parsed, json, url))];
         } else if (parsed.type === 'channel') {
             const result = await fetchChannelInfoWithFallback(parsed.id, parsed.resolved);
             if (!result || !result.json || result.json.error) return null;
             embed = buildChannelEmbed(result.json, parsed, result.baseUrl, message, s);
+            return [buildStep(embed, message, url, s, lang, false, buildYouTubeAnalytics(parsed, result.json, url))];
         } else {
             return null;
         }
-
-        return [buildStep(embed, message, url, s, lang, parsed.type === 'video')];
     } catch (err) {
         recordProviderError('youtube', err, message, url, { endpointKey: 'invidious/api' });
         return buildFailureResponse('youtube', url, s, err);

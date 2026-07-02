@@ -27,6 +27,7 @@ const SETTINGS_DEFAULT_FILE = {
     button_disabled: {},
     extract_bot_message: {},
     quote_repost_do_not_extract: {},
+    quote_repost_depth_by_account: {},
     legacy_mode: {},
     passive_mode: {},
     anonymous_expand: {},
@@ -80,6 +81,7 @@ const SETTINGS_MIGRATIONS = {
     button_disabled: {},
     extract_bot_message: {},
     quote_repost_do_not_extract: {},
+    quote_repost_depth_by_account: {},
     legacy_mode: {},
     passive_mode: {},
     anonymous_expand: {},
@@ -133,6 +135,7 @@ const LEGACY_TWITTER_GUILD_KEYS = [
     'button_disabled',
     'extract_bot_message',
     'quote_repost_do_not_extract',
+    'quote_repost_depth_by_account',
     'legacy_mode',
     'passive_mode',
     'anonymous_expand',
@@ -207,6 +210,10 @@ const PROVIDER_SETTING_COLUMNS = {
     quote_repost_do_not_extract: {
         column: 'quote_repost_do_not_extract',
         type: 'bool',
+    },
+    quote_repost_depth_by_account: {
+        column: 'quote_repost_depth_by_account',
+        type: 'jsonObject',
     },
     pixiv_images_per_step: {
         column: 'pixiv_images_per_step',
@@ -461,7 +468,30 @@ function convertDatabaseValue(row, spec) {
     if (spec.type === 'bool') return raw === true || raw === 1;
     if (spec.type === 'int') return Number(raw);
     if (spec.type === 'jsonArray') return normalizeHiddenOutputItems(raw);
+    if (spec.type === 'jsonObject') return normalizeQuoteDepthByAccount(raw);
     return raw;
+}
+
+function normalizeQuoteDepthByAccount(raw) {
+    let source = raw;
+    if (typeof source === 'string') {
+        try {
+            source = source.trim() ? JSON.parse(source) : {};
+        } catch {
+            source = {};
+        }
+    }
+    if (!source || typeof source !== 'object' || Array.isArray(source)) return {};
+
+    const out = {};
+    for (const [account, depth] of Object.entries(source)) {
+        const handle = String(account || '').trim().replace(/^@/, '').toLowerCase();
+        const numericDepth = Number(depth);
+        if (!/^[a-z0-9_]{1,15}$/.test(handle)) continue;
+        if (!Number.isInteger(numericDepth) || numericDepth < 0) continue;
+        out[handle] = numericDepth;
+    }
+    return out;
 }
 
 function makeArraySetting(values) {
@@ -763,6 +793,7 @@ async function saveSettingsToDatabase(nextSettings) {
                 if (value === undefined) return null;
                 if (typeof value === 'boolean') return value ? 1 : 0;
                 if (spec.type === 'jsonArray') return JSON.stringify(normalizeHiddenOutputItems(value));
+                if (spec.type === 'jsonObject') return JSON.stringify(normalizeQuoteDepthByAccount(value));
                 return value;
             });
             await queryDatabase(

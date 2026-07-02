@@ -12,6 +12,8 @@ const {
 
 const audioExtensions = ['mp3', 'm4a', 'ogg', 'wav', 'flac', 'aac'];
 const imageExtensions = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'avif'];
+const IMAGES_PER_GROUP = 4;
+const MAX_FILES_PER_MESSAGE = 10;
 
 function getAttachmentItems(attachments) {
     if (!attachments) return [];
@@ -70,6 +72,19 @@ async function buildEmbedImageAttachment(attachment, index) {
     };
 }
 
+function embedGroupUrl(baseUrl, index) {
+    if (!baseUrl) return undefined;
+    const groupIndex = Math.floor(index / IMAGES_PER_GROUP);
+    if (groupIndex === 0) return baseUrl;
+    try {
+        const url = new URL(baseUrl);
+        url.hash = `g${groupIndex}`;
+        return url.toString();
+    } catch {
+        return `${baseUrl}#g${groupIndex}`;
+    }
+}
+
 async function handle(interaction, { buttons }) {
     const { showMediaAsAttachmentsButton, translateButton, deleteButton } = buttons;
 
@@ -84,8 +99,9 @@ async function handle(interaction, { buttons }) {
         else imageAttachments.push(attachment);
     });
 
-    if (imageAttachments.length > 4) {
-        return interaction.editReply("You can't show more than 4 attachments as embeds image.");
+    const maxImageEmbeds = Math.max(0, MAX_FILES_PER_MESSAGE - videoAttachments.length);
+    if (imageAttachments.length > maxImageEmbeds) {
+        return interaction.editReply(`You can't show more than ${maxImageEmbeds} image attachments as embeds image while keeping non-image attachments.`);
     }
 
     const messageObject = {
@@ -102,27 +118,30 @@ async function handle(interaction, { buttons }) {
     const providerId = detectProviderIdFromMessage(interaction.message);
     messageObject.components = await checkComponentIncludesDisabledButtonAndIfFindDeleteIt(messageObject.components, interaction.guildId, providerId);
 
+    const sourceEmbed = interaction.message.embeds[0];
+    const baseUrl = sourceEmbed?.url;
     for (let index = 0; index < imageAttachments.length; index++) {
         const element = await buildEmbedImageAttachment(imageAttachments[index], index + 1);
         messageObject.files.push(element.file);
         if (messageObject.embeds.length === 0) {
-            const src = interaction.message.embeds[0];
+            const src = sourceEmbed;
             const embed = {
-                url: src.url,
-                description: src.description,
-                color: src.color,
-                author: src.author,
-                timestamp: src.timestamp,
+                url: embedGroupUrl(baseUrl, index),
+                description: src?.description,
+                color: src?.color,
+                author: src?.author,
+                timestamp: src?.timestamp,
                 image: { url: element.embedUrl },
             };
-            if (src.title !== undefined) embed.title = src.title;
-            if (src.footer !== undefined) embed.footer = src.footer;
-            if (src.fields !== undefined) embed.fields = src.fields;
+            if (src?.title !== undefined) embed.title = src.title;
+            if (src?.footer !== undefined) embed.footer = src.footer;
+            if (src?.fields !== undefined) embed.fields = src.fields;
             messageObject.embeds.push(embed);
             continue;
         }
         messageObject.embeds.push({
-            url: messageObject.embeds[0].url,
+            url: embedGroupUrl(baseUrl, index),
+            color: sourceEmbed?.color,
             image: { url: element.embedUrl },
         });
     }
@@ -138,6 +157,7 @@ async function handle(interaction, { buttons }) {
 
 module.exports = { handle };
 module.exports._internal = {
+    embedGroupUrl,
     getAttachmentItems,
     isNonImageMediaAttachment,
     buildEmbedImageAttachment,

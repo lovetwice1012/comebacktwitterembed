@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Bot, ExternalLink } from "lucide-react";
+import { Bot, ExternalLink, ShieldCheck } from "lucide-react";
 import { SignInButton } from "@/components/dashboard/auth-buttons";
 import { LanguageSwitcher } from "@/components/dashboard/language-switcher";
 import { Button } from "@/components/ui/button";
@@ -30,9 +30,19 @@ export default async function HomePage() {
         </div>
         <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
           {session ? (
-            <Button asChild className="w-full sm:w-auto">
-              <Link href="/dashboard">{t("home.openGuilds")}</Link>
-            </Button>
+            <>
+              <Button asChild className="w-full sm:w-auto">
+                <Link href="/dashboard">{t("home.openGuilds")}</Link>
+              </Button>
+              {session.user.isAdmin ? (
+                <Button asChild className="w-full sm:w-auto" variant="secondary">
+                  <Link href="/admin">
+                    <ShieldCheck size={16} />
+                    Admin
+                  </Link>
+                </Button>
+              ) : null}
+            </>
           ) : (
             <SignInButton locale={locale} />
           )}

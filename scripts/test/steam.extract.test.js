@@ -239,6 +239,15 @@ test('steam extract: current players and review summary are optional fields', as
     assert.equal(fieldValue(hiddenEmbed, 'Review summary'), undefined);
     assert.equal(requests.some(request => request.includes('/ISteamUserStats/GetNumberOfCurrentPlayers/')), false);
     assert.equal(requests.some(request => request.includes('/appreviews/730')), false);
+    assert.equal(hidden[0].analytics.metrics.current_players, undefined);
+    assert.equal(hidden[0].analytics.metrics.review_count, undefined);
+    assert.equal(hidden[0].analyticsEnrichers.length, 1);
+
+    const enriched = await hidden[0].analyticsEnrichers[0]();
+    assert.equal(requests.some(request => request.includes('/ISteamUserStats/GetNumberOfCurrentPlayers/')), true);
+    assert.equal(requests.some(request => request.includes('/appreviews/730')), true);
+    assert.equal(enriched.metrics.current_players, 54321);
+    assert.equal(enriched.metrics.review_count, 123456);
 });
 
 test('steam extract: image source setting picks screenshots or capsule thumbnails', async () => {

@@ -144,6 +144,10 @@ test('spotify extract: builds a Discord embed from Spotify embed page data', asy
         name: 'spotify-preview-Never_Gonna_Give_You_Up.mp3',
     }]);
     assert.equal(step.send, 'channel');
+    assert.equal(step.analytics.content.contentType, 'track');
+    assert.equal(step.analytics.metrics.duration_seconds, 214);
+    assert.equal(step.analytics.metrics.preview_available, 1);
+    assert.ok(step.analytics.facets.some(facet => facet.key === 'artist' && facet.value === 'Rick Astley'));
 });
 
 test('spotify extract: preview attachment filename is based on sanitized track title', async () => {

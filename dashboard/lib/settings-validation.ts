@@ -51,6 +51,23 @@ function normalizeButtonVisibility(providerId: string, value: unknown): ButtonVi
   return parsed;
 }
 
+function normalizeQuoteDepthByAccount(value: unknown): Record<string, number> {
+  const raw = z.record(z.unknown()).parse(value || {});
+  const out: Record<string, number> = {};
+  for (const [account, depth] of Object.entries(raw)) {
+    const handle = String(account || "").trim().replace(/^@/, "").toLowerCase();
+    if (!/^[a-z0-9_]{1,15}$/.test(handle)) {
+      throw new Error(`Invalid Twitter/X account: ${account}`);
+    }
+    const numericDepth = Number(depth);
+    if (!Number.isInteger(numericDepth) || numericDepth < 0) {
+      throw new Error(`Invalid quote depth for @${handle}`);
+    }
+    out[handle] = numericDepth;
+  }
+  return out;
+}
+
 function parseScalarChoice(spec: SettingSpec, value: unknown, locale: DashboardLocale) {
   const t = createTranslator(locale);
   const choices = spec.choices?.map((choice) => String(choice.value)) || [];
@@ -92,6 +109,7 @@ function validateSpecValue(providerId: string, spec: SettingSpec, value: unknown
     if (spec.kind === "targets") return { user: [], channel: [], role: [] };
     if (spec.kind === "bannedWords" || spec.kind === "outputVisibility" || spec.kind === "multiChoice") return [];
     if (spec.kind === "buttonVisibility") return {};
+    if (spec.kind === "accountDepthMap") return {};
     return null;
   }
 
@@ -102,6 +120,7 @@ function validateSpecValue(providerId: string, spec: SettingSpec, value: unknown
   if (spec.kind === "buttonVisibility") return normalizeButtonVisibility(providerId, value);
   if (spec.kind === "bannedWords") return uniqueStrings(z.array(z.string().min(1).max(255)).parse(value || []));
   if (spec.kind === "outputVisibility") return validateOutputItems(spec, value, locale);
+  if (spec.kind === "accountDepthMap") return normalizeQuoteDepthByAccount(value);
 
   throw new Error(t("validation.readOnlySetting", { key: spec.key }));
 }

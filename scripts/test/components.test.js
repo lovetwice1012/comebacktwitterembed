@@ -108,6 +108,124 @@ test('showAttachmentsAsEmbedsImage keeps audio attachments while embedding image
     });
 });
 
+test('showAttachmentsAsEmbedsImage rebuilds multi-image embed groups from attachments', async () => {
+    await withoutTimers(async () => {
+        let editedMessage = null;
+        const images = Array.from({ length: 6 }, (_value, index) => ({
+            url: `https://img.example/artwork-${index + 1}.jpg`,
+        }));
+        const interaction = {
+            guildId: 'guild-components',
+            locale: 'en',
+            message: {
+                attachments: images,
+                embeds: [baseEmbed({ url: 'https://www.pixiv.net/artworks/123456' })],
+                edit: async (payload) => {
+                    editedMessage = payload;
+                },
+            },
+            editReply: async () => {},
+            deleteReply: async () => {},
+        };
+
+        await showAttachmentsAsEmbedsImage.handle(interaction, { buttons: buttons() });
+
+        assert.equal(editedMessage.embeds.length, 6);
+        assert.deepEqual(editedMessage.embeds.map(embed => embed.url), [
+            'https://www.pixiv.net/artworks/123456',
+            'https://www.pixiv.net/artworks/123456',
+            'https://www.pixiv.net/artworks/123456',
+            'https://www.pixiv.net/artworks/123456',
+            'https://www.pixiv.net/artworks/123456#g1',
+            'https://www.pixiv.net/artworks/123456#g1',
+        ]);
+        assert.equal(editedMessage.embeds[0].title, 'Tweet author');
+        assert.equal(editedMessage.embeds[1].title, undefined);
+        assert.equal(editedMessage.embeds[5].image.url, 'attachment://embed-image-6.jpg');
+        assert.deepEqual(editedMessage.files, images.map((image, index) => ({
+            attachment: image.url,
+            name: `embed-image-${index + 1}.jpg`,
+        })));
+    });
+});
+
+test('showAttachmentsAsEmbedsImage keeps mixed video attachments while grouping image embeds', async () => {
+    await withoutTimers(async () => {
+        let editedMessage = null;
+        const images = Array.from({ length: 5 }, (_value, index) => ({
+            url: `https://pbs.twimg.com/media/mixed-${index + 1}.jpg`,
+        }));
+        const interaction = {
+            guildId: 'guild-components',
+            locale: 'en',
+            message: {
+                attachments: [
+                    { url: videoUrl },
+                    ...images,
+                ],
+                embeds: [baseEmbed({ url: 'https://twitter.com/a/status/1' })],
+                edit: async (payload) => {
+                    editedMessage = payload;
+                },
+            },
+            editReply: async () => {},
+            deleteReply: async () => {},
+        };
+
+        await showAttachmentsAsEmbedsImage.handle(interaction, { buttons: buttons() });
+
+        assert.equal(editedMessage.embeds.length, 5);
+        assert.deepEqual(editedMessage.embeds.map(embed => embed.url), [
+            'https://twitter.com/a/status/1',
+            'https://twitter.com/a/status/1',
+            'https://twitter.com/a/status/1',
+            'https://twitter.com/a/status/1',
+            'https://twitter.com/a/status/1#g1',
+        ]);
+        assert.deepEqual(editedMessage.files, [
+            videoUrl,
+            ...images.map((image, index) => ({
+                attachment: image.url,
+                name: `embed-image-${index + 1}.jpg`,
+            })),
+        ]);
+    });
+});
+
+test('showAttachmentsAsEmbedsImage refuses image embeds that would exceed file slots with videos', async () => {
+    await withoutTimers(async () => {
+        let editedMessage = null;
+        let reply = null;
+        const audioAttachments = Array.from({ length: 9 }, (_value, index) => ({
+            url: `https://cdn.example/audio-${index + 1}.mp3`,
+        }));
+        const interaction = {
+            guildId: 'guild-components',
+            locale: 'en',
+            message: {
+                attachments: [
+                    ...audioAttachments,
+                    { url: 'https://img.example/one.jpg' },
+                    { url: 'https://img.example/two.jpg' },
+                ],
+                embeds: [baseEmbed()],
+                edit: async (payload) => {
+                    editedMessage = payload;
+                },
+            },
+            editReply: async (payload) => {
+                reply = payload;
+            },
+            deleteReply: async () => {},
+        };
+
+        await showAttachmentsAsEmbedsImage.handle(interaction, { buttons: buttons() });
+
+        assert.equal(editedMessage, null);
+        assert.equal(reply, "You can't show more than 1 image attachments as embeds image while keeping non-image attachments.");
+    });
+});
+
 test('showMediaAsAttachments preserves existing video attachments', async () => {
     await withoutTimers(async () => {
         let editedMessage = null;

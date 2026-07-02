@@ -2,7 +2,7 @@
 
 const { Events, InteractionType } = require('discord.js');
 const { loadProviderCommands } = require('../providers/_loader');
-const { recordError, recordMetric } = require('../errorTracking');
+const { recordAnalyticsEvent = () => {}, recordError, recordMetric } = require('../errorTracking');
 
 const CORE_HANDLERS = {
     "ping":                 require('../commands/handlers/ping').execute,
@@ -35,6 +35,7 @@ function shouldDeferEphemeral(interaction) {
     if (interaction.commandName === 'showsavetweet') {
         return interaction.options.getString('id') !== null;
     }
+    if (interaction.commandName === 'et') return true;
     return false;
 }
 
@@ -65,12 +66,28 @@ function register(client) {
         if (interaction.type !== InteractionType.ApplicationCommand) return;
         const handler = handlers[interaction.commandName];
         if (!handler) return;
+        const startedAt = Date.now();
         recordMetric('command_attempt', { interaction, commandName: interaction.commandName });
         try {
             await interaction.deferReply({ ephemeral: shouldDeferEphemeral(interaction) });
             await handler(interaction, client);
             recordMetric('command_success', { interaction, commandName: interaction.commandName });
+            recordAnalyticsEvent('command', {
+                source: 'applicationCommands.execute',
+                interaction,
+                commandName: interaction.commandName,
+                success: true,
+                durationMs: Date.now() - startedAt,
+            });
         } catch (err) {
+            recordAnalyticsEvent('command', {
+                source: 'applicationCommands.execute',
+                interaction,
+                commandName: interaction.commandName,
+                success: false,
+                durationMs: Date.now() - startedAt,
+                details: { error_name: err?.name || null },
+            });
             await replyCommandError(interaction, err);
         }
     });

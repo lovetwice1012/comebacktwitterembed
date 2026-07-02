@@ -5,9 +5,49 @@ const { ifUserHasRole, cleanMessageContent } = require('../utils');
 const { extractAllUrls } = require('../providers/_loader');
 const { getProviderSettings } = require('../providers/_provider_settings');
 const { runSendSteps } = require('../providers/_dispatcher');
-const { recordError, recordMetric } = require('../errorTracking');
+const { recordAnalyticsEvent = () => {}, recordError, recordMetric, recordProviderContentEvent = () => {} } = require('../errorTracking');
 
 function register(client) {
+    function truncateText(value, maxLength = 1000) {
+        if (value === undefined || value === null) return null;
+        const text = String(value);
+        return text.length > maxLength ? text.slice(0, maxLength) : text;
+    }
+
+    function summarizeEmbed(embed) {
+        const data = typeof embed?.toJSON === 'function' ? embed.toJSON() : embed;
+        if (!data || typeof data !== 'object') return null;
+        return {
+            title: truncateText(data.title),
+            description: truncateText(data.description, 2000),
+            url: truncateText(data.url, 2000),
+            author: truncateText(data.author?.name),
+            provider: truncateText(data.provider?.name),
+            footer: truncateText(data.footer?.text),
+            fields: Array.isArray(data.fields)
+                ? data.fields.slice(0, 12).map(field => ({
+                    name: truncateText(field?.name, 300),
+                    value: truncateText(field?.value, 1000),
+                }))
+                : [],
+        };
+    }
+
+    function summarizeSendSteps(steps) {
+        if (!Array.isArray(steps)) return null;
+        return {
+            step_count: steps.length,
+            embeds: steps
+                .flatMap(step => Array.isArray(step.embeds) ? step.embeds : [])
+                .map(summarizeEmbed)
+                .filter(Boolean)
+                .slice(0, 8),
+            file_count: steps.reduce((sum, step) => sum + (Array.isArray(step.files) ? step.files.length : 0), 0),
+            component_count: steps.reduce((sum, step) => sum + (Array.isArray(step.components) ? step.components.length : 0), 0),
+            content: steps.map(step => truncateText(step.content, 1000)).filter(Boolean).slice(0, 8),
+        };
+    }
+
     function shouldIgnoreMessage(message) {
         const isMessageFromClient = message.author.id === client.user.id;
         return isMessageFromClient;
@@ -65,6 +105,7 @@ function register(client) {
             if (message.author.bot && providerSettings.extract_bot_message !== true && !message.webhookId) continue;
 
             let steps;
+            const startedAt = Date.now();
             recordMetric('provider_extract_attempt', { providerId: provider.id, message, url });
             try {
                 steps = await provider.extract(message, url, providerSettings);
@@ -77,14 +118,51 @@ function register(client) {
                     url,
                 });
                 recordMetric('provider_extract_error', { providerId: provider.id, message, url });
+                recordAnalyticsEvent('provider_extract', {
+                    source: 'messageCreate.providerExtract',
+                    providerId: provider.id,
+                    message,
+                    url,
+                    success: false,
+                    durationMs: Date.now() - startedAt,
+                    details: { outcome: 'error', error_name: err?.name || null },
+                });
                 console.log(err);
                 continue;
             }
             if (Array.isArray(steps)) {
                 recordMetric('provider_extract_success', { providerId: provider.id, message, url });
+                recordAnalyticsEvent('provider_extract', {
+                    source: 'messageCreate.providerExtract',
+                    providerId: provider.id,
+                    message,
+                    url,
+                    success: true,
+                    durationMs: Date.now() - startedAt,
+                    details: { outcome: 'success', extracted: summarizeSendSteps(steps) },
+                });
+                recordProviderContentEvent({
+                    source: 'messageCreate.providerExtract',
+                    providerId: provider.id,
+                    steps,
+                    message,
+                    url,
+                    guildId: message.guildId ?? message.guild?.id,
+                    channelId: message.channelId ?? message.channel?.id,
+                    authorUserId: message.author?.id,
+                });
                 await runSendSteps(message, steps, provider.id);
             } else {
                 recordMetric('provider_extract_empty', { providerId: provider.id, message, url });
+                recordAnalyticsEvent('provider_extract', {
+                    source: 'messageCreate.providerExtract',
+                    providerId: provider.id,
+                    message,
+                    url,
+                    success: null,
+                    durationMs: Date.now() - startedAt,
+                    details: { outcome: 'empty' },
+                });
             }
         }
     });

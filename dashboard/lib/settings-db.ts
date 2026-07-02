@@ -53,6 +53,28 @@ function normalizeHiddenOutputItems(value: unknown): string[] {
   return [];
 }
 
+function normalizeQuoteDepthByAccount(value: unknown): Record<string, number> {
+  let source = value;
+  if (typeof source === "string") {
+    try {
+      source = source.trim() ? JSON.parse(source) : {};
+    } catch {
+      source = {};
+    }
+  }
+  if (!source || typeof source !== "object" || Array.isArray(source)) return {};
+
+  const out: Record<string, number> = {};
+  for (const [account, depth] of Object.entries(source)) {
+    const handle = String(account || "").trim().replace(/^@/, "").toLowerCase();
+    const numericDepth = Number(depth);
+    if (!/^[a-z0-9_]{1,15}$/.test(handle)) continue;
+    if (!Number.isInteger(numericDepth) || numericDepth < 0) continue;
+    out[handle] = numericDepth;
+  }
+  return out;
+}
+
 function normalizeTargetSetting(raw: Partial<TargetSetting> | null | undefined): TargetSetting {
   return {
     user: [...new Set(raw?.user || [])],
@@ -92,6 +114,7 @@ function providerSettingDefault(provider: { id: string; enabledByDefault?: boole
   if (key === "booth_adult_display_mode") return provider.id === "booth" ? "normal" : undefined;
   const base = getProviderDefaults()[key];
   if (Array.isArray(base)) return [...base] as string[];
+  if (base && typeof base === "object") return cloneSettingValue(base) as SettingValue;
   if (base === undefined) return undefined;
   return base as SettingValue;
 }
@@ -101,6 +124,7 @@ function convertDatabaseValue(raw: unknown, spec: { type: string }): SettingValu
   if (spec.type === "bool") return raw === true || raw === 1 || raw === BigInt(1);
   if (spec.type === "int") return Number(raw);
   if (spec.type === "jsonArray") return normalizeHiddenOutputItems(raw);
+  if (spec.type === "jsonObject") return normalizeQuoteDepthByAccount(raw);
   return String(raw);
 }
 
@@ -109,6 +133,7 @@ function toDatabaseValue(value: SettingValue | undefined, spec: { type: string }
   if (spec.type === "bool") return value === true ? 1 : 0;
   if (spec.type === "int") return Number(value);
   if (spec.type === "jsonArray") return JSON.stringify(normalizeHiddenOutputItems(value));
+  if (spec.type === "jsonObject") return JSON.stringify(normalizeQuoteDepthByAccount(value));
   return String(value);
 }
 
@@ -255,6 +280,7 @@ function defaultForSpec(provider: { id: string; enabledByDefault?: boolean }, sp
   if (spec.kind === "targets") return { user: [], channel: [], role: [] };
   if (spec.kind === "bannedWords" || spec.kind === "outputVisibility") return [];
   if (spec.kind === "buttonVisibility") return buttonDefaults(provider.id);
+  if (spec.kind === "accountDepthMap") return {};
   return providerSettingDefault(provider, spec.key);
 }
 

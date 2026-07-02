@@ -28,6 +28,7 @@ const fetch = require('node-fetch');
 const { ButtonBuilder, ButtonStyle, ComponentType } = require('discord.js');
 const { extractSalePeriod } = require('./_sale');
 const { recordProviderError } = require('../../errorTracking');
+const { createProviderAnalytics, facet, finiteNumber, tagFacets } = require('../../analytics/providerMetrics');
 const {
     applyEmbedMedia,
     attachmentMediaUrls,
@@ -316,6 +317,36 @@ function saleStatusLabel(info, salePeriod, lang) {
     return '';
 }
 
+function buildBoothAnalytics(parsed, info, canonicalUrl, salePeriod) {
+    return createProviderAnalytics({
+        content: {
+            accountKey: info.shop?.subdomain || parsed.shop || info.shop?.name,
+            contentId: parsed.id,
+            contentType: 'item',
+            contentUrl: canonicalUrl,
+            title: info.name,
+            descriptionPreview: stripHtml(info.description || ''),
+            authorName: info.shop?.name || parsed.shop,
+            sensitive: info.is_adult === true ? 1 : 0,
+            mediaCount: Array.isArray(info.images) ? info.images.length : null,
+            publishedAtMs: salePeriod?.startAt ? salePeriod.startAt.getTime() : null,
+        },
+        metrics: {
+            price: finiteNumber(info.price),
+            favorites: info.wish_lists_count,
+            variation_count: Array.isArray(info.variations) ? info.variations.length : null,
+        },
+        facets: [
+            facet('category', info.category?.name),
+            facet('shop', info.shop?.name || parsed.shop),
+            facet('stock_status', isSoldOutInfo(info) ? 'sold_out' : 'available'),
+            facet('adult', info.is_adult === true ? 'yes' : 'no'),
+            facet('sale_status', saleStatusLabel(info, salePeriod, 'en')),
+            ...tagFacets('tag', Array.isArray(info.tags) ? info.tags.map(tag => tag?.name) : []),
+        ],
+    });
+}
+
 function buildVariationsLine(info, lang) {
     if (!Array.isArray(info?.variations) || info.variations.length === 0) return '';
     const total = info.variations.length;
@@ -498,6 +529,7 @@ async function extract(message, url, s) {
         components,
         allowedMentions: { repliedUser: false },
         send: s.alwaysreplyifpostedtweetlink === true ? 'reply-source' : 'channel',
+        analytics: buildBoothAnalytics(parsed, info, canonicalUrl, salePeriod),
     };
 
     const mediaUrls = displayImages;

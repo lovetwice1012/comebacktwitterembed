@@ -155,3 +155,50 @@ test('dispatcher: missing permissions are excluded from global send error metric
         console.warn = originalWarn;
     }
 });
+
+test('dispatcher: attachment fallback preserves reply-source mode and preview embeds', async () => {
+    const replyPayloads = [];
+    const channelPayloads = [];
+    let replyAttempts = 0;
+    const message = {
+        guildId: 'guild-1',
+        channelId: 'channel-1',
+        channel: {
+            send: async (payload) => {
+                channelPayloads.push(JSON.parse(JSON.stringify(payload)));
+                return { id: 'channel-message' };
+            },
+        },
+        reply: async (payload) => {
+            replyPayloads.push(JSON.parse(JSON.stringify(payload)));
+            replyAttempts += 1;
+            if (replyAttempts === 1) {
+                throw { code: 400, rawError: { message: 'Cannot upload attachment' } };
+            }
+            return {
+                id: 'reply-message',
+                reply: async (replyPayload) => {
+                    replyPayloads.push(JSON.parse(JSON.stringify(replyPayload)));
+                    return { id: 'nested-reply' };
+                },
+            };
+        },
+        suppressEmbeds: async () => {},
+        delete: async () => {},
+    };
+
+    await runSendSteps(message, [{
+        send: 'reply-source',
+        embeds: [{ title: 'pixiv metadata', description: 'preview info' }],
+        files: ['https://img.example/artwork-1.jpg'],
+        allowedMentions: { repliedUser: false },
+    }], 'pixiv');
+
+    assert.equal(channelPayloads.length, 0);
+    assert.equal(replyPayloads.length, 2);
+    assert.deepEqual(replyPayloads[0].files, ['https://img.example/artwork-1.jpg']);
+    assert.equal(replyPayloads[1].files, undefined);
+    assert.deepEqual(replyPayloads[1].embeds, [{ title: 'pixiv metadata', description: 'preview info' }]);
+    assert.match(replyPayloads[1].content, /https:\/\/img\.example\/artwork-1\.jpg/);
+    assert.deepEqual(replyPayloads[1].allowedMentions, { repliedUser: false });
+});

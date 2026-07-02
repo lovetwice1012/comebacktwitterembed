@@ -366,6 +366,33 @@ test('twitter extract: display density and media display mode reshape tweet outp
     assert.equal(customIds.includes('showMediaAsAttachments'), false);
 });
 
+test('twitter extract: attachment mode prunes media-only embeds while keeping metadata', async () => {
+    const provider = loadTwitterProviderWithTweets({
+        1: createTweet('1', {
+            mediaURLs: [
+                'https://pbs.twimg.com/media/one.jpg',
+                'https://pbs.twimg.com/media/two.jpg',
+            ],
+        }),
+    });
+
+    const result = await provider.extract(createMessage(), 'https://twitter.com/a/status/1', {
+        legacy_mode: true,
+        media_display_mode: 'attachment',
+        alwaysreplyifpostedtweetlink: true,
+    });
+
+    assert.ok(Array.isArray(result));
+    assert.equal(result[0].send, 'reply-source');
+    assert.equal(result[0].embeds.length, 1);
+    assert.equal(result[0].embeds[0].title, 'User 1');
+    assert.equal(result[0].embeds[0].image, undefined);
+    assert.deepEqual(result[0].files, [
+        'https://pbs.twimg.com/media/one.jpg',
+        'https://pbs.twimg.com/media/two.jpg',
+    ]);
+});
+
 test('twitter extract: secondary mode can skip source tweet and expand matching quote tweet', async () => {
     const provider = loadTwitterProviderWithTweets({
         1: createTweet('1', {
@@ -450,4 +477,22 @@ test('twitter extract: quote recursion continues through quoted tweets up to max
     assert.equal(result.length, 3);
     assert.equal(result[1].embeds[0].url, 'https://twitter.com/a/status/2');
     assert.equal(result[2].embeds[0].url, 'https://twitter.com/a/status/3');
+});
+
+test('twitter extract: account quote depth override applies to matching tweet author', async () => {
+    const provider = loadTwitterProviderWithTweets({
+        1: createTweet('1', { user_screen_name: 'special', qrtURL: 'https://twitter.com/a/status/2' }),
+        2: createTweet('2', { qrtURL: 'https://twitter.com/a/status/3' }),
+        3: createTweet('3'),
+    });
+
+    const result = await provider.extract(createMessage(), 'https://twitter.com/a/status/1', {
+        legacy_mode: true,
+        quote_repost_do_not_extract: true,
+        quote_repost_depth_by_account: { special: 1 },
+    });
+
+    assert.ok(Array.isArray(result));
+    assert.equal(result.length, 2);
+    assert.equal(result[1].embeds[0].url, 'https://twitter.com/a/status/2');
 });

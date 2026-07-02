@@ -1,3 +1,4 @@
+import { redirect } from "next/navigation";
 import { GuildList } from "@/components/dashboard/guild-list";
 import { GuildSwitcher } from "@/components/dashboard/guild-switcher";
 import { DashboardWorkspace } from "@/components/dashboard/dashboard-workspace";
@@ -8,10 +9,14 @@ import { createTranslator } from "@/lib/i18n";
 import { getDashboardLocale } from "@/lib/server-locale";
 import { requireDashboardSession } from "@/lib/server-session";
 
-export default async function DashboardPage() {
+type Props = { searchParams: Promise<{ mode?: string }> };
+
+export default async function DashboardPage({ searchParams }: Props) {
   const locale = await getDashboardLocale();
   const t = createTranslator(locale);
   const session = await requireDashboardSession();
+  const mode = (await searchParams).mode;
+  if (session.user.isAdmin && mode !== "user") redirect("/admin");
   const guilds = await listVisibleGuilds(session);
 
   return (

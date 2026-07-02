@@ -30,6 +30,12 @@
  * @property {any[]} [components]             button row 等のコンポーネント
  * @property {string} [content]               テキスト本文 (引用ポストの prefix 等)
  * @property {object} [allowedMentions]       Discord allowedMentions
+ * @property {object} [analytics]             Provider native analytics metadata.
+ *   Successful provider sends must populate this from fetched provider data, not from embed fields.
+ * @property {Array<Function>} [analyticsEnrichers]
+ *   Optional non-blocking analytics fetchers. These run after extract returns and must not be awaited
+ *   by embed generation. Each function should expose analyticsMetadata/source/schemaVersion/timeoutMs
+ *   so enrichment reliability and schema coverage can be audited separately from provider extract latency.
  * @property {'channel'|'reply-source'|'reply-previous'} [send]
  *   送信モード:
  *   - 'channel'        = message.channel.send (デフォルト: 配列の最初のステップ)

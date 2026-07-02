@@ -18,6 +18,7 @@ const fetch = require('node-fetch');
 const { ButtonBuilder, ButtonStyle, ComponentType, PermissionsBitField } = require('discord.js');
 const { videoExtensions } = require('../../utils');
 const { recordProviderError } = require('../../errorTracking');
+const { createProviderAnalytics, facet, tagFacets } = require('../../analytics/providerMetrics');
 const {
     applyMediaDisplayToStep,
     buildFailureResponse,
@@ -240,6 +241,44 @@ function tweetHasSensitiveMedia(tweet) {
         media?.adult_content,
         media?.adultContent,
     ].some(isTruthyApiFlag));
+}
+
+function wordsFromText(text, regex) {
+    return [...new Set([...String(text || '').matchAll(regex)].map(match => String(match[1] || '').toLowerCase()))];
+}
+
+function buildTwitterAnalytics(tweet, url) {
+    const hashtags = wordsFromText(tweet.text, /#([\p{L}\p{N}_]+)/gu);
+    const mentions = wordsFromText(tweet.text, /@([A-Za-z0-9_]{1,15})/g);
+    const media = summarizeTweetMedia(tweet);
+    return createProviderAnalytics({
+        content: {
+            accountKey: tweet.user_screen_name || tweet.user_name,
+            contentId: tweet.tweetID || tweet.id,
+            contentType: 'tweet',
+            contentUrl: tweet.tweetURL || url,
+            title: tweet.user_name || tweet.user_screen_name,
+            descriptionPreview: tweet.text,
+            authorName: tweet.user_name || tweet.user_screen_name,
+            publishedAtMs: tweet.date ? Date.parse(tweet.date) : null,
+            sensitive: tweetHasSensitiveMedia(tweet) ? 1 : 0,
+            mediaCount: media.count,
+        },
+        metrics: {
+            likes: tweet.likes,
+            replies: tweet.replies,
+            reposts: tweet.retweets,
+            media: media.count,
+        },
+        facets: [
+            ...tagFacets('hashtag', hashtags),
+            ...tagFacets('mention', mentions),
+            facet('media_type', media.typeSummary),
+            facet('sensitive', tweetHasSensitiveMedia(tweet) ? 'yes' : 'no'),
+            facet('has_article', tweet.article ? 'yes' : 'no'),
+            facet('has_quote', tweet.qrtURL ? 'yes' : 'no'),
+        ],
+    });
 }
 
 function isSavedUrl(url) {
@@ -491,6 +530,46 @@ function applyArticleMerge(embed, tweet, s) {
     }
 }
 
+function normalizeTwitterAccount(value) {
+    const handle = String(value || '').trim().replace(/^@/, '').toLowerCase();
+    return /^[a-z0-9_]{1,15}$/.test(handle) ? handle : '';
+}
+
+function accountFromTweetUrl(url) {
+    const match = String(url || '').match(/https?:\/\/(?:twitter\.com|x\.com)\/([^/?#]+)\/status\/\d+/i);
+    return normalizeTwitterAccount(match?.[1]);
+}
+
+function quoteDepthByAccount(s) {
+    const value = s?.quote_repost_depth_by_account;
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+    const out = {};
+    for (const [account, depth] of Object.entries(value)) {
+        const handle = normalizeTwitterAccount(account);
+        const numericDepth = Number(depth);
+        if (!handle || !Number.isInteger(numericDepth) || numericDepth < 0) continue;
+        out[handle] = numericDepth;
+    }
+    return out;
+}
+
+function accountQuoteDepthForTweet(tweet, s) {
+    const account = normalizeTwitterAccount(tweet?.user_screen_name) || accountFromTweetUrl(tweet?.tweetURL);
+    if (!account) return undefined;
+    const depths = quoteDepthByAccount(s);
+    return Object.prototype.hasOwnProperty.call(depths, account) ? depths[account] : undefined;
+}
+
+function applyAccountQuoteDepth(s, tweet) {
+    const depth = accountQuoteDepthForTweet(tweet, s);
+    if (depth === undefined) return s;
+    return {
+        ...s,
+        quote_repost_max_depth: depth,
+        quote_repost_do_not_extract: false,
+    };
+}
+
 function canRecurseQuoted(s, depth) {
     if (twitterQuoteMode(s) === 'hidden') return false;
     const maxDepth = s.quote_repost_max_depth ?? QUOTE_RECURSE_DEFAULT_DEPTH;
@@ -654,6 +733,7 @@ async function extract(message, url, s, opts) {
         return buildFailureResponse('twitter', url, s, err);
     }
     notifyAlttwitter(tweet.tweetURL);
+    s = applyAccountQuoteDepth(s, tweet);
 
     // ---- banned word: extractor 内で完結処理 (副作用直接) ----
     if (containsBannedWord(tweet.text, s.bannedWords)) {
@@ -729,6 +809,7 @@ async function extract(message, url, s, opts) {
         files: route.files,
         components,
         allowedMentions: { repliedUser: false },
+        analytics: buildTwitterAnalytics(tweet, url),
     };
     if (quoted) {
         step.send = 'reply-previous';
@@ -844,7 +925,17 @@ module.exports = twitterProvider;
 /** @type {any} */ (module.exports).sendTweetEmbed = async function (message, url, opts = {}) {
     const { getProviderSettings } = require('../_provider_settings');
     const { runSendSteps } = require('../_dispatcher');
-    const s = await getProviderSettings(module.exports, message.guild.id);
-    const steps = await extract(message, url, s, opts);
+    const options = /** @type {any} */ (opts || {});
+    const settingsOverride = options.settingsOverride && typeof options.settingsOverride === 'object'
+        ? options.settingsOverride
+        : {};
+    const extractOpts = { ...options };
+    delete extractOpts.settingsOverride;
+    const s = {
+        ...(await getProviderSettings(module.exports, message.guild.id)),
+        ...settingsOverride,
+    };
+    const steps = await extract(message, url, s, extractOpts);
     if (Array.isArray(steps)) await runSendSteps(message, steps, 'twitter');
+    return steps;
 };

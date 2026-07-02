@@ -3,6 +3,7 @@
 const fetch = require('node-fetch');
 const { ButtonBuilder, ButtonStyle, ComponentType } = require('discord.js');
 const { recordProviderError } = require('../../errorTracking');
+const { createProviderAnalytics, facet, finiteNumber } = require('../../analytics/providerMetrics');
 const {
     applyEmbedMedia,
     attachmentMediaUrls,
@@ -1509,6 +1510,37 @@ function buildEmbed(parsed, info, message, s) {
     return embed;
 }
 
+function buildAmazonAnalytics(parsed, info) {
+    return createProviderAnalytics({
+        content: {
+            accountKey: info.brand || info.artist || parsed.kind,
+            contentId: parsed.id,
+            contentType: parsed.kind || 'product',
+            contentUrl: parsed.canonicalUrl,
+            title: info.title,
+            descriptionPreview: info.description,
+            authorName: info.brand || info.artist || info.album,
+            mediaCount: info.imageUrl ? 1 : null,
+            durationSeconds: finiteNumber(info.duration),
+        },
+        metrics: {
+            price: finiteNumber(info.price),
+            rating: finiteNumber(info.rating),
+            reviews: finiteNumber(info.reviewCount),
+            duration_seconds: finiteNumber(info.duration),
+        },
+        facets: [
+            facet('brand', info.brand),
+            facet('category', info.category || parsed.kind),
+            facet('availability', info.availability),
+            facet('artist', info.artist),
+            facet('album', info.album),
+            facet('genre', info.genre),
+            facet('type', parsed.kind || 'product'),
+        ],
+    });
+}
+
 /** @type {import('../_types').Extractor} */
 async function extract(message, url, s) {
     s = s || {};
@@ -1567,6 +1599,7 @@ async function extract(message, url, s) {
         allowedMentions: { repliedUser: false },
         send: s.alwaysreplyifpostedtweetlink === true ? 'reply-source' : 'channel',
         suppressSourceEmbeds: true,
+        analytics: buildAmazonAnalytics(parsed, info),
     };
 
     const mediaFiles = attachmentMediaUrls(s, info.imageUrl);

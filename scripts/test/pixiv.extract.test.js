@@ -55,6 +55,11 @@ function createInfo() {
         aiType: 1,
         xRestrict: 0,
         illustType: 0,
+        viewCount: 1000,
+        bookmarkCount: 200,
+        likeCount: 300,
+        commentCount: 40,
+        createDate: '2024-01-01T00:00:00+09:00',
         urls: {
             regular: 'https://i.pximg.net/img-master/img/2024/01/01/00/00/00/123456_p0_master1200.jpg',
         },
@@ -103,6 +108,10 @@ test('pixiv extract: default mode shows 4 images in a single message', async () 
     assert.ok(!result[0].embeds[1].title, 'second embed has no title');
     assert.equal(result[0].embeds[0].fields.find(f => f.name === 'Pages').value, '1-4 / 55');
     assert.equal(result[0].embeds[0].image.url, 'https://www.phixiv.net/i/img-master/img/2024/01/01/00/00/00/123456_p0_master1200.jpg');
+    assert.equal(result[0].analytics.content.contentType, 'illustration');
+    assert.equal(result[0].analytics.metrics.views, 1000);
+    assert.equal(result[0].analytics.metrics.bookmarks, 200);
+    assert.ok(result[0].analytics.facets.some(facet => facet.key === 'tag' && facet.value === 'tag'));
 });
 
 test('pixiv extract: GUI output settings control description length and tags', async () => {
@@ -195,10 +204,13 @@ test('pixiv extract: compact density and attachment media mode reduce fields and
     const result = await provider.extract(createMessage(), 'https://www.pixiv.net/artworks/123456', {
         display_density: 'compact',
         media_display_mode: 'attachment',
+        alwaysreplyifpostedtweetlink: true,
     });
 
     assert.ok(Array.isArray(result));
-    assert.equal(result[0].embeds.length, 3);
+    assert.equal(result[0].send, 'reply-source');
+    assert.equal(result[0].embeds.length, 1);
+    assert.equal(result[0].embeds[0].title, 'sample');
     assert.equal(result[0].embeds[0].image, undefined);
     assert.equal((result[0].embeds[0].fields || []).some(field => field.name === 'Pages'), false);
     assert.equal((result[0].embeds[0].fields || []).some(field => field.name === 'Tags'), true);

@@ -32,7 +32,7 @@ type BotSpecs = {
 
 type BotProviderSettings = {
   PROVIDER_DEFAULTS: Record<string, unknown>;
-  PROVIDER_SETTING_COLUMNS: Record<string, { column: string; type: "bool" | "int" | "string" | "jsonArray" }>;
+  PROVIDER_SETTING_COLUMNS: Record<string, { column: string; type: "bool" | "int" | "string" | "jsonArray" | "jsonObject" }>;
 };
 
 const PROVIDER_LABELS: Record<string, string> = {
@@ -78,6 +78,20 @@ const PROVIDER_DISPLAY_NAMES: Record<string, { ja: string; en: string }> = {
   twitch: { ja: "Twitch", en: "Twitch" },
   twitter: { ja: "Twitter / X", en: "Twitter / X" },
   youtube: { ja: "YouTube", en: "YouTube" },
+};
+
+const TWITTER_ACCOUNT_DEPTH_SPEC: BotSettingSpec = {
+  key: "quote_repost_depth_by_account",
+  settingKey: "quote_repost_depth_by_account",
+  label: {
+    ja: "Twitter/X アカウント別引用RT展開数",
+    en: "Twitter account quote depth",
+  },
+  description: {
+    ja: "アカウントごとに引用RTの展開数を上書きします。/et で account を指定した場合もここへ保存されます。",
+    en: "Per-account quote repost expansion depth. Account overrides are also saved by /et when account is set.",
+  },
+  kind: "accountDepthMap",
 };
 
 const SETTING_TEXT_OVERRIDES: Record<string, { label?: LocaleText; description?: LocaleText; choices?: Record<string, LocaleText> }> = {
@@ -494,6 +508,7 @@ function categoryFor(spec: BotSettingSpec) {
   if (spec.kind === "bannedWords") return "suppression";
   if (spec.kind === "outputVisibility") return "advanced";
   if (spec.kind === "multiChoice") return "provider";
+  if (spec.kind === "accountDepthMap") return "advanced";
   if (key.includes("language") || key.includes("translate")) return "translation";
   if (key.includes("media") || key.includes("image") || key.includes("attachment") || key.includes("download")) return "media";
   if (key.includes("delete") || key.includes("legacy") || key.includes("passive") || key.includes("banned")) return "suppression";
@@ -504,6 +519,7 @@ function categoryFor(spec: BotSettingSpec) {
 
 function impactFor(spec: BotSettingSpec) {
   const key = spec.key || spec.settingKey || "";
+  if (spec.kind === "accountDepthMap") return "high" as const;
   if (
     key.includes("adult_display_mode") ||
     key.includes("quote_repost_max_depth") ||
@@ -526,6 +542,7 @@ function dependenciesFor(spec: BotSettingSpec) {
     return ["secondary_extract_mode"];
   }
   if (key === "quote_repost_max_depth") return ["twitter_quote_mode", "quote_repost_do_not_extract"];
+  if (key === "quote_repost_depth_by_account") return ["twitter_quote_mode"];
   return [];
 }
 
@@ -541,6 +558,7 @@ function isAdvanced(spec: BotSettingSpec) {
   const key = spec.key || spec.settingKey || "";
   return (
     spec.kind === "outputVisibility" ||
+    spec.kind === "accountDepthMap" ||
     key.includes("legacy") ||
     key.includes("secondary") ||
     key.includes("fallback") ||
@@ -594,10 +612,15 @@ export function getProviderDefaults() {
 
 export function getProviderSpecs(provider: BotProvider, options: { includeOverview?: boolean; includeCommon?: boolean } = {}) {
   const specsModule = requireBotModule<BotSpecs>("src/providers/_setting_specs.js");
-  return specsModule
+  const specs = specsModule
     .getProviderSettingSpecs(provider, options)
     .map(serializeSpec)
     .filter((spec): spec is SettingSpec => Boolean(spec));
+  if (provider.id === "twitter" && !specs.some((spec) => spec.key === TWITTER_ACCOUNT_DEPTH_SPEC.key)) {
+    const spec = serializeSpec(TWITTER_ACCOUNT_DEPTH_SPEC);
+    if (spec) specs.push(spec);
+  }
+  return specs;
 }
 
 export function getCatalog(): ProviderCatalogItem[] {

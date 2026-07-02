@@ -26,6 +26,7 @@ const PROVIDER_DEFAULTS = {
     alwaysreplyifpostedtweetlink:                         false,
     quote_repost_max_depth:                               0,
     quote_repost_do_not_extract:                          false,
+    quote_repost_depth_by_account:                        {},
     youtube_description_max_length:                       undefined,
     youtube_video_list_limit:                             undefined,
     tiktok_hq:                                             false,
@@ -121,6 +122,10 @@ const PROVIDER_SETTING_COLUMNS = {
     quote_repost_do_not_extract: {
         column: 'quote_repost_do_not_extract',
         type: 'bool',
+    },
+    quote_repost_depth_by_account: {
+        column: 'quote_repost_depth_by_account',
+        type: 'jsonObject',
     },
     pixiv_images_per_step: {
         column: 'pixiv_images_per_step',
@@ -337,11 +342,34 @@ function normalizeButtonDisabled(raw) {
     };
 }
 
+function normalizeQuoteDepthByAccount(raw) {
+    let source = raw;
+    if (typeof source === 'string') {
+        try {
+            source = source.trim() ? JSON.parse(source) : {};
+        } catch {
+            source = {};
+        }
+    }
+    if (!source || typeof source !== 'object' || Array.isArray(source)) return {};
+
+    const out = {};
+    for (const [account, depth] of Object.entries(source)) {
+        const handle = String(account || '').trim().replace(/^@/, '').toLowerCase();
+        const numericDepth = Number(depth);
+        if (!/^[a-z0-9_]{1,15}$/.test(handle)) continue;
+        if (!Number.isInteger(numericDepth) || numericDepth < 0) continue;
+        out[handle] = numericDepth;
+    }
+    return out;
+}
+
 function convertDatabaseValue(raw, spec) {
     if (raw === null || raw === undefined) return undefined;
     if (spec.type === 'bool') return raw === true || raw === 1;
     if (spec.type === 'int') return Number(raw);
     if (spec.type === 'jsonArray') return normalizeHiddenOutputItems(raw);
+    if (spec.type === 'jsonObject') return normalizeQuoteDepthByAccount(raw);
     return raw;
 }
 
@@ -350,6 +378,7 @@ function toDatabaseValue(value, spec) {
     if (spec.type === 'bool') return value === true ? 1 : 0;
     if (spec.type === 'int') return Number(value);
     if (spec.type === 'jsonArray') return JSON.stringify(normalizeHiddenOutputItems(value));
+    if (spec.type === 'jsonObject') return JSON.stringify(normalizeQuoteDepthByAccount(value));
     return value;
 }
 
@@ -387,7 +416,10 @@ function settingDefault(provider, key) {
     if (key === 'amazon_extract_targets') return provider.id === 'amazon' ? cloneValue(PROVIDER_DEFAULTS.amazon_extract_targets) : undefined;
     if (key === 'booth_description_max_length') return provider.id === 'booth' ? 350 : undefined;
     if (key === 'booth_adult_display_mode') return provider.id === 'booth' ? 'normal' : undefined;
-    return PROVIDER_DEFAULTS[key];
+    if (key === 'quote_repost_depth_by_account') return provider.id === 'twitter' ? {} : undefined;
+    const value = PROVIDER_DEFAULTS[key];
+    if (value && typeof value === 'object') return cloneValue(value);
+    return value;
 }
 
 async function getScalarSetting(provider, key, guildId) {
@@ -643,6 +675,7 @@ module.exports = {
     _internal: {
         normalizeButtonDisabled,
         normalizeButtonVisibility,
+        normalizeQuoteDepthByAccount,
         normalizeTargetSetting,
         TEST_MEMORY_VALUES,
     },

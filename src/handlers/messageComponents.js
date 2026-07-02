@@ -8,7 +8,7 @@ const {
     isIgnorableInteractionAckError,
     isInteractionAlreadyAcknowledgedError,
 } = require('../utils');
-const { recordError, recordMetric } = require('../errorTracking');
+const { recordAnalyticsEvent = () => {}, recordError, recordMetric } = require('../errorTracking');
 
 const HANDLERS = {
     showMediaAsAttachments: require('../components/showMediaAsAttachments'),
@@ -86,12 +86,20 @@ async function replyComponentError(interaction, err) {
 
 function register(client) {
     client.on(Events.InteractionCreate, async (interaction) => {
+        const startedAt = Date.now();
+        const baseCustomId = typeof interaction.customId === 'string' ? interaction.customId.split(':')[0] : interaction.customId;
         try {
-            const baseCustomId = typeof interaction.customId === 'string' ? interaction.customId.split(':')[0] : interaction.customId;
             if (interaction.type === InteractionType.ModalSubmit && baseCustomId === 'guisetting') {
                 recordMetric('modal_submit_attempt', { interaction, componentId: baseCustomId });
                 await guisetting.handleModalSubmit(interaction);
                 recordMetric('modal_submit_success', { interaction, componentId: baseCustomId });
+                recordAnalyticsEvent('modal_submit', {
+                    source: 'messageComponents.modalSubmit',
+                    interaction,
+                    componentId: baseCustomId,
+                    success: true,
+                    durationMs: Date.now() - startedAt,
+                });
                 return;
             }
 
@@ -100,22 +108,73 @@ function register(client) {
             if (baseCustomId === 'guisetting') {
                 await guisetting.handleComponent(interaction);
                 recordMetric('component_success', { interaction, componentId: baseCustomId });
+                recordAnalyticsEvent('component', {
+                    source: 'messageComponents.guisetting',
+                    interaction,
+                    componentId: baseCustomId,
+                    success: true,
+                    durationMs: Date.now() - startedAt,
+                });
                 return;
             }
 
-            if (!(await deferComponentReply(interaction))) return;
-            if (!(await isAllowed(interaction))) return;
+            if (!(await deferComponentReply(interaction))) {
+                recordAnalyticsEvent('component', {
+                    source: 'messageComponents.defer',
+                    interaction,
+                    componentId: baseCustomId,
+                    success: false,
+                    durationMs: Date.now() - startedAt,
+                    details: { outcome: 'defer_failed' },
+                });
+                return;
+            }
+            if (!(await isAllowed(interaction))) {
+                recordAnalyticsEvent('component', {
+                    source: 'messageComponents.permission',
+                    interaction,
+                    componentId: baseCustomId,
+                    success: false,
+                    durationMs: Date.now() - startedAt,
+                    details: { outcome: 'permission_denied' },
+                });
+                return;
+            }
 
             const handler = HANDLERS[baseCustomId];
             if (!handler) {
                 await interaction.deleteReply().catch(() => {});
+                recordAnalyticsEvent('component', {
+                    source: 'messageComponents.unknown',
+                    interaction,
+                    componentId: baseCustomId,
+                    success: false,
+                    durationMs: Date.now() - startedAt,
+                    details: { outcome: 'unknown_component' },
+                });
                 return;
             }
 
             const ctx = { client, buttons: buildButtons(interaction) };
             await handler.handle(interaction, ctx);
             recordMetric('component_success', { interaction, componentId: baseCustomId });
+            recordAnalyticsEvent('component', {
+                source: 'messageComponents.handle',
+                interaction,
+                componentId: baseCustomId,
+                success: true,
+                durationMs: Date.now() - startedAt,
+            });
         } catch (err) {
+            const eventType = interaction.type === InteractionType.ModalSubmit ? 'modal_submit' : 'component';
+            recordAnalyticsEvent(eventType, {
+                source: 'messageComponents.handle',
+                interaction,
+                componentId: baseCustomId,
+                success: false,
+                durationMs: Date.now() - startedAt,
+                details: { error_name: err?.name || null },
+            });
             await replyComponentError(interaction, err);
         }
     });

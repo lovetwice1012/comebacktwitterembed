@@ -14,6 +14,7 @@ const {
     shouldShowOutputItem,
 } = require('../_output_controls');
 const { toApiLocaleFamily } = require('../../discordLocales');
+const { createProviderAnalytics, facet, tagFacets } = require('../../analytics/providerMetrics');
 
 const SPOTIFY_COLOR = 0x1DB954;
 const DESCRIPTION_MAX_LENGTH = 350;
@@ -244,6 +245,47 @@ function buildDescription(item, artistsText) {
     return '';
 }
 
+function spotifyDurationSeconds(item) {
+    const durationMs = item.type === 'album' ? albumDurationMs(item) : item.durationMs;
+    return Number.isFinite(durationMs) && durationMs > 0 ? Math.round(durationMs / 1000) : null;
+}
+
+function buildSpotifyAnalytics(item, parsed, artistsText) {
+    const durationSeconds = spotifyDurationSeconds(item);
+    const artistNames = Array.isArray(item.artists) ? item.artists.map(artist => artist.name).filter(Boolean) : [];
+    const primaryArtist = artistNames[0] || (item.type === 'album' ? item.subtitle : null);
+    const trackCount = item.type === 'track' ? 1 : (Array.isArray(item.trackList) ? item.trackList.length : null);
+    return createProviderAnalytics({
+        content: {
+            accountKey: primaryArtist || item.id || parsed.type,
+            contentId: item.id || parsed.id,
+            contentType: item.type || parsed.type,
+            contentUrl: item.canonicalUrl || `https://open.spotify.com/${parsed.type}/${parsed.id}`,
+            title: item.name,
+            descriptionPreview: buildDescription(item, artistsText),
+            authorName: artistsText || item.subtitle || primaryArtist,
+            mediaCount: item.image?.url ? 1 : 0,
+            durationSeconds,
+        },
+        metrics: {
+            duration_seconds: durationSeconds,
+            image_count: item.image?.url ? 1 : 0,
+            preview_available: item.previewUrl ? 1 : 0,
+            track_count: trackCount,
+            track_number: item.trackNumber,
+        },
+        facets: [
+            facet('type', item.type || parsed.type),
+            facet('album', item.albumName || (item.type === 'album' ? item.name : null)),
+            facet('explicit', item.explicit ? 'explicit' : 'clean'),
+            facet('has_preview', item.previewUrl ? 'yes' : 'no'),
+            facet('preview_available', item.previewUrl ? 'yes' : 'no'),
+            facet('release_label', formatReleaseDate(item.releaseDate) || item.releaseDate),
+            ...tagFacets('artist', artistNames.length ? artistNames : [primaryArtist]),
+        ],
+    });
+}
+
 function spotifyDescriptionMaxLength(settings) {
     return resolveDensityMaxLength(settings, 'spotify_description_max_length', DESCRIPTION_MAX_LENGTH, {
         compact: 140,
@@ -383,6 +425,7 @@ async function extract(message, url, s) {
         components: buildButtons(lang, item.canonicalUrl, mediaButtonAllowed(s) && !!item.image?.url),
         allowedMentions: { repliedUser: false },
         send: s.alwaysreplyifpostedtweetlink === true ? 'reply-source' : 'channel',
+        analytics: buildSpotifyAnalytics(item, parsed, artistsText),
     };
     if (content) step.content = content;
 

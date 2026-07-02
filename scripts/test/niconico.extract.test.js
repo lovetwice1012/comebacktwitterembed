@@ -137,6 +137,10 @@ test('niconico extract: builds a video embed from watch data with the download b
         );
         assert.equal(result[0].send, 'channel');
         assert.equal(result[0].suppressSourceEmbeds, true);
+        assert.equal(result[0].analytics.content.contentType, 'video');
+        assert.equal(result[0].analytics.metrics.views, 1234567);
+        assert.equal(result[0].analytics.metrics.duration_seconds, 194);
+        assert.ok(result[0].analytics.facets.some(facet => facet.key === 'tag' && facet.value === 'VOCALOID'));
     } finally {
         if (oldEnabled === undefined) delete process.env.NICONICO_DOWNLOAD_BUTTON_ENABLED;
         else process.env.NICONICO_DOWNLOAD_BUTTON_ENABLED = oldEnabled;

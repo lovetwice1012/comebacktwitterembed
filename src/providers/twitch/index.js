@@ -14,6 +14,7 @@ const {
     shouldShowOutputItem,
 } = require('../_output_controls');
 const { toApiLocaleFamily } = require('../../discordLocales');
+const { createProviderAnalytics, facet, finiteNumber } = require('../../analytics/providerMetrics');
 
 const TWITCH_COLOR = 0x9146FF;
 const TWITCH_GQL_ENDPOINT = 'https://gql.twitch.tv/gql';
@@ -426,6 +427,45 @@ function buildEmbed(info, parsed, requesterName, settings, lang) {
     return embed;
 }
 
+function canonicalTwitchClipUrl(info, parsed) {
+    return info.url || (parsed.channel
+        ? `https://www.twitch.tv/${parsed.channel}/clip/${parsed.slug}`
+        : `https://clips.twitch.tv/${parsed.slug}`);
+}
+
+function buildTwitchClipAnalytics(info, parsed) {
+    const broadcaster = info.broadcaster || {};
+    const broadcasterName = broadcaster.displayName || broadcaster.login || 'Twitch';
+    const game = info.game?.displayName || info.game?.name;
+    const curator = info.curator?.displayName || info.curator?.login;
+    const durationSeconds = finiteNumber(info.durationSeconds);
+    return createProviderAnalytics({
+        content: {
+            accountKey: broadcaster.login || broadcasterName,
+            contentId: info.id || parsed.slug,
+            contentType: 'clip',
+            contentUrl: canonicalTwitchClipUrl(info, parsed),
+            title: info.title,
+            authorName: broadcasterName,
+            publishedAtMs: info.createdAt ? Date.parse(info.createdAt) : null,
+            mediaCount: info.thumbnailURL ? 1 : 0,
+            durationSeconds,
+        },
+        metrics: {
+            views: finiteNumber(info.viewCount),
+            duration_seconds: durationSeconds,
+            video_url_available: info.videoUrl ? 1 : 0,
+        },
+        facets: [
+            facet('type', 'clip'),
+            facet('game', game),
+            facet('curator', curator),
+            facet('broadcaster', broadcasterName),
+            facet('broadcaster_login', broadcaster.login),
+        ],
+    });
+}
+
 function buildChannelEmbed(info, parsed, requesterName, settings, lang) {
     const login = info.login || parsed.login;
     const canonicalUrl = `https://www.twitch.tv/${login}`;
@@ -474,6 +514,38 @@ function buildChannelEmbed(info, parsed, requesterName, settings, lang) {
     return embed;
 }
 
+function buildTwitchChannelAnalytics(info, parsed) {
+    const login = info.login || parsed.login;
+    const canonicalUrl = `https://www.twitch.tv/${login}`;
+    const displayName = info.displayName || login;
+    const stream = info.stream || null;
+    const game = stream?.game?.displayName || stream?.game?.name;
+    return createProviderAnalytics({
+        content: {
+            accountKey: login,
+            contentId: info.id || login,
+            contentType: 'channel',
+            contentUrl: canonicalUrl,
+            title: stream?.title || displayName,
+            descriptionPreview: info.description,
+            authorName: displayName,
+            publishedAtMs: stream?.createdAt ? Date.parse(stream.createdAt) : null,
+            mediaCount: channelMediaUrl(info) ? 1 : 0,
+        },
+        metrics: {
+            live_viewers: finiteNumber(stream?.viewersCount),
+            live_status: stream ? 1 : 0,
+        },
+        facets: [
+            facet('type', 'channel'),
+            facet('live_status', stream ? 'live' : 'offline'),
+            facet('game', game),
+            facet('broadcaster', displayName),
+            facet('broadcaster_login', login),
+        ],
+    });
+}
+
 function channelMediaUrl(info) {
     return info?.stream?.previewImageURL || info?.bannerImageURL || info?.profileImageURL || '';
 }
@@ -520,6 +592,9 @@ async function extract(message, url, s) {
         components,
         allowedMentions: { repliedUser: false },
         send: s.alwaysreplyifpostedtweetlink === true ? 'reply-source' : 'channel',
+        analytics: parsed.kind === 'clip'
+            ? buildTwitchClipAnalytics(info, parsed)
+            : buildTwitchChannelAnalytics(info, parsed),
     };
 
     if (parsed.kind === 'channel') {

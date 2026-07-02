@@ -204,6 +204,10 @@ test('twitch extract: uploads clip video as a bot attachment without oauth env',
     assert.ok(Buffer.isBuffer(step.files[0].attachment));
     assert.equal(step.files[0].attachment.toString(), 'clip-video-data');
     assert.equal(step.files[0].fallbackUrl, undefined);
+    assert.equal(step.analytics.content.contentType, 'clip');
+    assert.equal(step.analytics.metrics.views, 12345);
+    assert.equal(step.analytics.metrics.duration_seconds, 26);
+    assert.ok(step.analytics.facets.some(facet => facet.key === 'game' && facet.value === 'Game Name'));
 });
 
 test('twitch extract: returns markdown video URL when clip is too large to upload', async () => {

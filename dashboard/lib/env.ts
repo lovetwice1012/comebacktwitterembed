@@ -22,6 +22,7 @@ type RootConfig = {
     discordApiTimeoutMs?: number;
     guildCacheTtlMs?: number;
     auditHashSecret?: string;
+    adminUserIds?: string[] | string;
   };
   mediaDelivery?: {
     publicBaseUrl?: string;

@@ -38,6 +38,7 @@ const {
     normalizeDiscordLocale,
     toApiLocaleFamily,
 } = require('../../discordLocales');
+const { createProviderAnalytics, facet, finiteNumber, tagFacets } = require('../../analytics/providerMetrics');
 
 // ---- inline 翻訳 (twitter provider と同じ手法) -----------------------------
 //
@@ -154,6 +155,11 @@ async function fetchPixivInfo(id, language, index) {
         x_restrict: Number(body.xRestrict ?? body.x_restrict) || 0,
         is_ugoira: isUgoira,
         illust_id: body.illustId || body.id || id,
+        created_at: body.createDate || body.uploadDate || body.create_date,
+        view_count: body.viewCount,
+        bookmark_count: body.bookmarkCount,
+        like_count: body.likeCount,
+        comment_count: body.commentCount,
         image_proxy_urls: imageProxyUrls,
         ugoira_media_urls: collectDirectUgoiraMediaUrls(body, ugoiraMeta),
     };
@@ -361,6 +367,53 @@ function applyUgoiraMediaToStep(step, settings, urls) {
     appendStepContent(step, mediaLinksContent(settings, mediaUrls, 'Ugoira'));
 }
 
+function maturityFacetValue(xRestrict) {
+    const value = Number(xRestrict) || 0;
+    if (value === 1) return 'r18';
+    if (value === 2) return 'r18g';
+    return 'safe';
+}
+
+function normalizePixivAnalyticsTags(tags) {
+    if (!Array.isArray(tags)) return [];
+    return tags.map(tag => String(tag || '').replace(/^#/, '').trim()).filter(Boolean);
+}
+
+function buildPixivAnalytics(info, parsed, canonicalUrl, images, ugoiraMediaUrls) {
+    const mediaCount = Array.isArray(images) ? images.length : 0;
+    const ugoiraMediaCount = Array.isArray(ugoiraMediaUrls) ? ugoiraMediaUrls.length : 0;
+    return createProviderAnalytics({
+        content: {
+            accountKey: info.author_id ? `users/${info.author_id}` : info.author_name,
+            contentId: info.illust_id || parsed.id,
+            contentType: info.is_ugoira ? 'ugoira' : 'illustration',
+            contentUrl: canonicalUrl,
+            title: info.title,
+            descriptionPreview: stripHtml(info.description || ''),
+            authorName: info.author_name,
+            publishedAtMs: info.created_at ? Date.parse(info.created_at) : null,
+            sensitive: Number(info.x_restrict) > 0 ? 1 : 0,
+            mediaCount,
+        },
+        metrics: {
+            views: finiteNumber(info.view_count),
+            bookmarks: finiteNumber(info.bookmark_count),
+            likes: finiteNumber(info.like_count),
+            comments: finiteNumber(info.comment_count),
+            page_count: mediaCount,
+            ugoira_media_count: ugoiraMediaCount,
+            ai_generated: info.ai_generated ? 1 : 0,
+            x_restrict: Number(info.x_restrict) || 0,
+        },
+        facets: [
+            facet('type', info.is_ugoira ? 'ugoira' : 'illustration'),
+            facet('age_restricted', maturityFacetValue(info.x_restrict)),
+            facet('ai_generated', info.ai_generated ? 'yes' : 'no'),
+            ...tagFacets('tag', normalizePixivAnalyticsTags(info.tags)),
+        ],
+    });
+}
+
 // ---- extract --------------------------------------------------------------
 
 /** @type {import('../_types').Extractor} */
@@ -475,6 +528,7 @@ async function extract(message, url, s) {
         ],
         allowedMentions: { repliedUser: false },
         send: s.alwaysreplyifpostedtweetlink === true ? 'reply-source' : 'channel',
+        analytics: buildPixivAnalytics(info, parsed, canonicalUrl, images, ugoiraMediaUrls),
     };
 
     if (s.deletemessageifonlypostedtweetlink === true && message.content.trim() === url) {

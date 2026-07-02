@@ -8,10 +8,10 @@
  * extractor 内部の挙動はこの dispatcher 自身は一切知らない。
  */
 
-const { isMissingPermissionsError, isUnknownMessageError, sendContentPromise } = require('../utils');
+const { isMissingPermissionsError, isUnknownMessageError } = require('../utils');
 const { checkComponentIncludesDisabledButtonAndIfFindDeleteIt } = require('../settings');
 const { incrementProcessedCounters } = require('../state');
-const { recordError, recordMetric } = require('../errorTracking');
+const { recordAnalyticsEvent = () => {}, recordError, recordMetric } = require('../errorTracking');
 
 function fileToFallbackText(file) {
     if (typeof file === 'string') return file;
@@ -28,6 +28,19 @@ function formatSendError(err) {
 function logSendFailure(message, err, action = 'send response') {
     const channelId = message.channelId ?? message.channel?.id ?? 'unknown';
     console.warn(`[dispatcher] Failed to ${action} in channel ${channelId}: ${formatSendError(err)}`);
+}
+
+function appendContent(messageObject, content) {
+    if (!content) return;
+    messageObject.content = [messageObject.content, content].filter(Boolean).join('\n');
+}
+
+function hasSendablePayload(messageObject) {
+    return Boolean(
+        messageObject.content
+        || (Array.isArray(messageObject.embeds) && messageObject.embeds.length > 0)
+        || (Array.isArray(messageObject.files) && messageObject.files.length > 0)
+    );
 }
 
 /**
@@ -60,6 +73,8 @@ async function runSendSteps(message, steps, providerId = null) {
         }
 
         let sent = null;
+        let sendFailure = null;
+        const startedAt = Date.now();
         recordMetric('discord_send_attempt', { providerId, message });
         try {
             sent = await sender(messageObject);
@@ -73,6 +88,14 @@ async function runSendSteps(message, steps, providerId = null) {
                     message,
                 });
                 recordMetric('discord_send_error', { providerId, message });
+                recordAnalyticsEvent('discord_send', {
+                    source: 'dispatcher.send',
+                    providerId,
+                    message,
+                    success: false,
+                    durationMs: Date.now() - startedAt,
+                    details: { send_mode: sendMode, step_index: i, outcome: 'unknown_message' },
+                });
                 continue;
             }
 
@@ -85,27 +108,44 @@ async function runSendSteps(message, steps, providerId = null) {
                     message,
                 });
                 recordMetric('discord_send_permission_denied', { providerId, message });
+                recordAnalyticsEvent('discord_send', {
+                    source: 'dispatcher.send',
+                    providerId,
+                    message,
+                    success: false,
+                    durationMs: Date.now() - startedAt,
+                    details: { send_mode: sendMode, step_index: i, outcome: 'missing_permissions' },
+                });
                 logSendFailure(message, err);
                 continue;
             }
 
             if (messageObject.files !== undefined) {
-                try {
-                    await sendContentPromise(message, messageObject.files.map(fileToFallbackText).filter(Boolean));
-                } catch (fallbackErr) {
-                    recordError(fallbackErr, {
+                const fallbackText = messageObject.files.map(fileToFallbackText).filter(Boolean).join('\n');
+                delete messageObject.files;
+                appendContent(messageObject, fallbackText);
+
+                if (!hasSendablePayload(messageObject)) {
+                    recordError(err, {
                         fallbackType: 'discord_send_failed',
-                        source: 'dispatcher.fallbackFiles',
+                        source: 'dispatcher.retryWithoutFiles',
                         providerId,
                         message,
                     });
                     recordMetric('discord_send_error', { providerId, message });
-                    logSendFailure(message, fallbackErr, 'send fallback attachment URLs');
+                    recordAnalyticsEvent('discord_send', {
+                        source: 'dispatcher.retryWithoutFiles',
+                        providerId,
+                        message,
+                        success: false,
+                        durationMs: Date.now() - startedAt,
+                        details: { send_mode: sendMode, step_index: i, outcome: 'no_fallback_payload' },
+                    });
+                    logSendFailure(message, err, 'send response without files');
                     continue;
                 }
 
-                delete messageObject.files;
-                sent = await message.channel.send(messageObject).catch(e => {
+                sent = await sender(messageObject).catch(e => {
                     if (!isUnknownMessageError(e)) {
                         recordError(e, {
                             fallbackType: 'discord_send_failed',
@@ -116,6 +156,7 @@ async function runSendSteps(message, steps, providerId = null) {
                         logSendFailure(message, e, 'send response without files');
                     }
                     recordMetric('discord_send_error', { providerId, message });
+                    sendFailure = 'retry_without_files_failed';
                     return null;
                 });
             } else {
@@ -126,13 +167,31 @@ async function runSendSteps(message, steps, providerId = null) {
                     message,
                 });
                 recordMetric('discord_send_error', { providerId, message });
+                sendFailure = 'send_failed';
                 console.log(err);
             }
         }
         previousSent = sent ?? previousSent;
         if (sent) {
             recordMetric('discord_send_success', { providerId, message });
+            recordAnalyticsEvent('discord_send', {
+                source: 'dispatcher.send',
+                providerId,
+                message,
+                success: true,
+                durationMs: Date.now() - startedAt,
+                details: { send_mode: sendMode, step_index: i },
+            });
             incrementProcessedCounters();
+        } else {
+            recordAnalyticsEvent('discord_send', {
+                source: 'dispatcher.send',
+                providerId,
+                message,
+                success: false,
+                durationMs: Date.now() - startedAt,
+                details: { send_mode: sendMode, step_index: i, outcome: sendFailure || 'not_sent' },
+            });
         }
 
         if (step.suppressSourceEmbeds) {

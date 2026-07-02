@@ -513,7 +513,31 @@ async function deleteCachedDownload(token) {
     return Boolean(record);
 }
 
+function recordMediaDeliveryEvent(record, success, status, startedAt, details = {}) {
+    if (!record) return;
+    try {
+        const { recordAnalyticsEvent } = require('./errorTracking');
+        if (typeof recordAnalyticsEvent !== 'function') return;
+        recordAnalyticsEvent('media_delivery', {
+            source: 'express.media_delivery',
+            providerId: 'youtube',
+            url: record.url,
+            success,
+            durationMs: Date.now() - startedAt,
+            details: {
+                status,
+                size_bytes: record.sizeBytes || null,
+                expires_at_ms: record.expiresAtMs || null,
+                ...details,
+            },
+        });
+    } catch {
+        // Analytics recording must never affect media delivery.
+    }
+}
+
 async function handleDownloadRequest(req, res) {
+    const startedAt = Date.now();
     await cleanupExpiredDownloads();
     const token = String(req.params.token || '');
     if (!/^[A-Za-z0-9_-]{16,}$/.test(token)) {
@@ -524,6 +548,7 @@ async function handleDownloadRequest(req, res) {
     const record = await getRecord(token);
     if (!record || Number(record.expiresAtMs) <= Date.now()) {
         if (record) await cleanupExpiredDownloads();
+        recordMediaDeliveryEvent(record, false, 410, startedAt, { outcome: 'expired' });
         res.status(410).send('Expired');
         return;
     }
@@ -532,15 +557,18 @@ async function handleDownloadRequest(req, res) {
     const root = path.resolve(getFilesDir());
     const target = path.resolve(filePath);
     if (!target.startsWith(root + path.sep)) {
+        recordMediaDeliveryEvent(record, false, 404, startedAt, { outcome: 'path_rejected' });
         res.status(404).send('Not found');
         return;
     }
 
     if (!fs.existsSync(target)) {
+        recordMediaDeliveryEvent(record, false, 404, startedAt, { outcome: 'missing_file' });
         res.status(404).send('Not found');
         return;
     }
 
+    recordMediaDeliveryEvent(record, true, 200, startedAt, { outcome: 'served' });
     res.setHeader('Content-Type', contentTypeForFilename(record.filename));
     res.setHeader('Content-Disposition', contentDisposition(record.filename));
     res.setHeader('Cache-Control', 'no-store');
