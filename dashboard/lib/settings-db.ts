@@ -31,6 +31,8 @@ type Tx = Prisma.TransactionClient | PrismaClient;
 
 const SPECIAL_TARGET_TABLES: Record<string, string> = {
   disable: "guild_provider_disable_targets",
+  sensitive_content_allowed_targets: "guild_provider_sensitive_content_allowed_targets",
+  sensitive_content_excluded_targets: "guild_provider_sensitive_content_excluded_targets",
   button_disabled: "guild_provider_button_disabled_targets",
 };
 
@@ -99,6 +101,8 @@ function providerSettingDefault(provider: { id: string; enabledByDefault?: boole
   if (key === "enabled") return provider.enabledByDefault === true;
   if (key === "youtube_description_max_length") return provider.id === "youtube" ? 1400 : undefined;
   if (key === "pixiv_caption_max_length") return provider.id === "pixiv" ? 350 : undefined;
+  if (key === "pixiv_r18_display_mode") return provider.id === "pixiv" ? "normal" : undefined;
+  if (key === "pixiv_r18g_display_mode") return provider.id === "pixiv" ? "normal" : undefined;
   if (key === "instagram_caption_max_length") return provider.id === "instagram" ? 3000 : undefined;
   if (key === "instagram_media_limit") return provider.id === "instagram" ? 10 : undefined;
   if (key === "tiktok_description_max_length") return provider.id === "tiktok" ? 900 : undefined;
@@ -110,6 +114,7 @@ function providerSettingDefault(provider: { id: string; enabledByDefault?: boole
   if (key === "steam_image_source") return provider.id === "steam" ? "header" : undefined;
   if (key === "amazon_description_max_length") return provider.id === "amazon" ? 700 : undefined;
   if (key === "amazon_extract_targets") return provider.id === "amazon" ? ["product", "prime_video", "music"] : undefined;
+  if (key === "non_nsfw_channel_sensitive_display_mode") return "normal";
   if (key === "booth_description_max_length") return provider.id === "booth" ? 350 : undefined;
   if (key === "booth_adult_display_mode") return provider.id === "booth" ? "normal" : undefined;
   const base = getProviderDefaults()[key];
@@ -439,6 +444,8 @@ export async function resetProviderSettings(
       );
     }
     await tx.$executeRaw`DELETE FROM guild_provider_disable_targets WHERE provider_id = ${providerId} AND guild_id = ${guildId}`;
+    await tx.$executeRaw`DELETE FROM guild_provider_sensitive_content_allowed_targets WHERE provider_id = ${providerId} AND guild_id = ${guildId}`;
+    await tx.$executeRaw`DELETE FROM guild_provider_sensitive_content_excluded_targets WHERE provider_id = ${providerId} AND guild_id = ${guildId}`;
     await tx.$executeRaw`DELETE FROM guild_provider_button_disabled_targets WHERE provider_id = ${providerId} AND guild_id = ${guildId}`;
     await tx.$executeRaw`DELETE FROM guild_provider_banned_words WHERE provider_id = ${providerId} AND guild_id = ${guildId}`;
     await tx.$executeRaw`DELETE FROM guild_provider_button_visibility WHERE provider_id = ${providerId} AND guild_id = ${guildId}`;

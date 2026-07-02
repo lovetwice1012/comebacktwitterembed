@@ -72,6 +72,20 @@ async function runSendSteps(message, steps, providerId = null) {
         if (step.content)                                  messageObject.content = step.content;
         if (step.allowedMentions)                          messageObject.allowedMentions = step.allowedMentions;
 
+        if (!hasSendablePayload(messageObject)) {
+            recordAnalyticsEvent('discord_send', {
+                source: 'dispatcher.send',
+                providerId,
+                message,
+                success: null,
+                durationMs: 0,
+                details: { send_mode: sendMode, step_index: i, outcome: 'no_sendable_payload' },
+            });
+            if (step.suppressSourceEmbeds) await suppressSourceEmbeds(message);
+            if (step.deleteSource) await deleteSourceMessage(message);
+            continue;
+        }
+
         let sender;
         if (sendMode === 'reply-source') {
             sender = (obj) => message.reply(obj);

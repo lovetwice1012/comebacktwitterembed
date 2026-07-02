@@ -28,6 +28,7 @@ const { recordProviderError } = require('../../errorTracking');
 const {
     applyMediaDisplayToStep,
     buildFailureResponse,
+    mediaButtonAllowed,
     mediaLinksContent,
     resolveDensityMaxLength,
     resolveDisplayDensity,
@@ -39,6 +40,12 @@ const {
     toApiLocaleFamily,
 } = require('../../discordLocales');
 const { createProviderAnalytics, facet, finiteNumber, tagFacets } = require('../../analytics/providerMetrics');
+const {
+    buildSensitiveSuppressedStep,
+    resolveEffectiveSensitiveDisplayMode,
+    resolveSensitiveDisplayMode,
+    spoilerFiles,
+} = require('../_sensitive_controls');
 
 // ---- inline 翻訳 (twitter provider と同じ手法) -----------------------------
 //
@@ -80,6 +87,7 @@ const DESCRIPTION_MAX_LENGTH = 350;
 const DESCRIPTION_LIMIT_MAX = 1200;
 const TAGS_MAX_LENGTH        = 256;
 const DIRECT_UGOIRA_MEDIA_RE = /^https?:\/\/\S+\.(?:mp4|gif|webm)(?:[?#].*)?$/i;
+const ADULT_EMBED_COLOR = 0x4d4d4d;
 
 // ---- URL parser -----------------------------------------------------------
 
@@ -316,6 +324,13 @@ function ageRestrictionLabel(x_restrict) {
     return '';
 }
 
+function resolvePixivAgeDisplayMode(settings, xRestrict) {
+    const value = Number(xRestrict) || 0;
+    if (value === 1) return resolveSensitiveDisplayMode(settings, 'pixiv_r18_display_mode', 'normal');
+    if (value === 2) return resolveSensitiveDisplayMode(settings, 'pixiv_r18g_display_mode', 'normal');
+    return 'normal';
+}
+
 function showAiLabel(settings) {
     return shouldShowOutputItem(settings, 'ai', { hideInCompact: false });
 }
@@ -362,9 +377,13 @@ function appendUniqueFiles(step, urls) {
 
 function applyUgoiraMediaToStep(step, settings, urls) {
     const mediaUrls = Array.isArray(urls) ? urls.filter(Boolean) : [];
-    if (mediaUrls.length === 0 || !shouldShowOutputItem(settings, 'ugoira_media', { hideInCompact: false })) return;
+    if (mediaUrls.length === 0 || !shouldShowUgoiraMedia(settings)) return;
     if (shouldAttachVideoMedia(settings)) appendUniqueFiles(step, mediaUrls);
     appendStepContent(step, mediaLinksContent(settings, mediaUrls, 'Ugoira'));
+}
+
+function shouldShowUgoiraMedia(settings) {
+    return shouldShowOutputItem(settings, 'ugoira_media', { hideInCompact: false });
 }
 
 function maturityFacetValue(xRestrict) {
@@ -435,7 +454,15 @@ async function extract(message, url, s) {
 
     const images = Array.isArray(info.image_proxy_urls) ? info.image_proxy_urls : [];
     const ugoiraMediaUrls = Array.isArray(info.ugoira_media_urls) ? info.ugoira_media_urls : [];
-    if (images.length === 0) return null;
+    const xRestrict = Number(info.x_restrict) || 0;
+    const isAdult = xRestrict > 0;
+    const adultDisplayMode = isAdult
+        ? resolveEffectiveSensitiveDisplayMode(message, s, resolvePixivAgeDisplayMode(s, xRestrict))
+        : 'normal';
+    if (adultDisplayMode === 'suppress') {
+        return [buildSensitiveSuppressedStep(message, url, s)];
+    }
+    if (images.length === 0 && adultDisplayMode !== 'metadata_only') return null;
 
     const lang = toApiLocaleFamily(guildLang);
 
@@ -448,7 +475,7 @@ async function extract(message, url, s) {
     const title =
         (info.ai_generated && showAiLabel(s) ? tr(STR.aiPrefix, lang) : '')
         + (info.title || `${tr(STR.fallbackTitle, lang)}${parsed.id}`)
-        + (showMaturityLabel(s) ? ageRestrictionLabel(Number(info.x_restrict) || 0) : '');
+        + (showMaturityLabel(s) ? ageRestrictionLabel(xRestrict) : '');
 
     const description = truncate(stripHtml(info.description || ''), resolveCaptionMaxLength(s.pixiv_caption_max_length, s));
     const tagsLine = joinTags(info.tags, s);
@@ -466,7 +493,10 @@ async function extract(message, url, s) {
         displayImages = images.slice(0, imagesPerStep);
     }
 
-    if (displayImages.length === 0) return null;
+    const hideAdultMedia = adultDisplayMode === 'metadata_only';
+    const spoilerAdultMedia = adultDisplayMode === 'spoiler_attachment';
+    if (hideAdultMedia) displayImages = [];
+    if (displayImages.length === 0 && !hideAdultMedia) return null;
 
     // Discord は 同じ url を持つ複数の embed を「1 個のカード」にマージし、
     // image を 2x2 グリッド (最大64枚) として表示する。
@@ -474,15 +504,16 @@ async function extract(message, url, s) {
     // (フラグメントで区別) を付与することで、Discord 上で複数の
     // 4枚グリッドカードとして並ぶようにする。
     // 1枚目のembedにのみメタデータを付与し、2枚目以降は画像のみ。
-    const embeds = displayImages.map((imgUrl, idx) => {
+    const embedImages = (hideAdultMedia || spoilerAdultMedia) ? [null] : displayImages;
+    const embeds = embedImages.map((imgUrl, idx) => {
         const groupIdx = Math.floor(idx / IMAGES_PER_GROUP);
         const groupUrl = groupIdx === 0 ? canonicalUrl : `${canonicalUrl}#g${groupIdx}`;
         /** @type {any} */
         const embed = {
             url: groupUrl,
-            image: { url: imgUrl },
-            color: EMBED_COLOR,
+            color: isAdult ? ADULT_EMBED_COLOR : EMBED_COLOR,
         };
+        if (imgUrl) embed.image = { url: imgUrl };
         if (idx === 0) {
             embed.title = title;
             embed.author = {
@@ -494,7 +525,7 @@ async function extract(message, url, s) {
             const fields = [];
             if (info.is_ugoira && shouldShowOutputItem(s, 'type')) fields.push({ name: tr(STR.typeField, lang), value: tr(STR.ugoira, lang), inline: true });
             if (tagsLine) fields.push({ name: tr(STR.tagsField, lang), value: tagsLine, inline: false });
-            if (images.length > 1) {
+            if (!hideAdultMedia && images.length > 1) {
                 const pagesText = displayImages.length === 1
                     ? `${pageStartIndex + 1} / ${images.length}`
                     : `${pageStartIndex + 1}-${pageStartIndex + displayImages.length} / ${images.length}`;
@@ -519,13 +550,16 @@ async function extract(message, url, s) {
         .setLabel(tr(STR.deleteButton, lang))
         .setCustomId('delete:pixiv');
 
+    const components = [];
+    if (displayImages.length > 0 && mediaButtonAllowed(s) && !spoilerAdultMedia) {
+        components.push({ type: ComponentType.ActionRow, components: [showMediaAsAttachmentsButton] });
+    }
+    components.push({ type: ComponentType.ActionRow, components: [translateButton, deleteButton] });
+
     /** @type {import('../_types').SendStep} */
     const step = {
         embeds,
-        components: [
-            { type: ComponentType.ActionRow, components: [showMediaAsAttachmentsButton] },
-            { type: ComponentType.ActionRow, components: [translateButton, deleteButton] },
-        ],
+        components,
         allowedMentions: { repliedUser: false },
         send: s.alwaysreplyifpostedtweetlink === true ? 'reply-source' : 'channel',
         analytics: buildPixivAnalytics(info, parsed, canonicalUrl, images, ugoiraMediaUrls),
@@ -538,8 +572,17 @@ async function extract(message, url, s) {
         step.suppressSourceEmbeds = true;
     }
 
-    applyMediaDisplayToStep(step, s, displayImages, 'Image');
-    applyUgoiraMediaToStep(step, s, ugoiraMediaUrls);
+    if (spoilerAdultMedia) {
+        const illustId = info.illust_id || parsed.id;
+        const files = [
+            ...spoilerFiles(displayImages, `pixiv-${illustId}`, { offset: pageStartIndex }),
+            ...(shouldShowUgoiraMedia(s) ? spoilerFiles(ugoiraMediaUrls, `pixiv-${illustId}-ugoira`, { fallbackExtension: 'mp4' }) : []),
+        ];
+        if (files.length > 0) step.files = files;
+    } else if (!hideAdultMedia) {
+        applyMediaDisplayToStep(step, s, displayImages, 'Image');
+        applyUgoiraMediaToStep(step, s, ugoiraMediaUrls);
+    }
     return [step];
 }
 
@@ -558,9 +601,14 @@ const pixivProvider = {
         'legacy_mode',
         'display_density',
         'media_display_mode',
+        'non_nsfw_channel_sensitive_display_mode',
+        'sensitive_content_allowed_targets',
+        'sensitive_content_excluded_targets',
         'pixiv_images_per_step',
         'pixiv_caption_max_length',
         'pixiv_tag_limit',
+        'pixiv_r18_display_mode',
+        'pixiv_r18g_display_mode',
         {
             key: 'hidden_output_items',
             outputItems: [

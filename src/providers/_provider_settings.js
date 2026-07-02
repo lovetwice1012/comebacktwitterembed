@@ -16,6 +16,9 @@ const PROVIDER_DEFAULTS = {
     button_invisible:                                     undefined,
     button_disabled:                                      undefined,
     anonymous_expand:                                     false,
+    non_nsfw_channel_sensitive_display_mode:              'normal',
+    sensitive_content_allowed_targets:                    undefined,
+    sensitive_content_excluded_targets:                   undefined,
     pixiv_images_per_step:                                undefined,
     secondary_extract_mode:                               false,
     secondary_extract_mode_multiple_images:               true,
@@ -36,6 +39,8 @@ const PROVIDER_DEFAULTS = {
     twitter_quote_layout:                                  'separate',
     pixiv_caption_max_length:                              undefined,
     pixiv_tag_limit:                                       undefined,
+    pixiv_r18_display_mode:                                'normal',
+    pixiv_r18g_display_mode:                               'normal',
     instagram_caption_max_length:                          undefined,
     instagram_media_limit:                                 undefined,
     github_card_style:                                     'generated',
@@ -127,6 +132,10 @@ const PROVIDER_SETTING_COLUMNS = {
         column: 'quote_repost_depth_by_account',
         type: 'jsonObject',
     },
+    non_nsfw_channel_sensitive_display_mode: {
+        column: 'non_nsfw_channel_sensitive_display_mode',
+        type: 'string',
+    },
     pixiv_images_per_step: {
         column: 'pixiv_images_per_step',
         type: 'int',
@@ -165,6 +174,14 @@ const PROVIDER_SETTING_COLUMNS = {
     },
     pixiv_tag_limit: {
         column: 'pixiv_tag_limit',
+        type: 'string',
+    },
+    pixiv_r18_display_mode: {
+        column: 'pixiv_r18_display_mode',
+        type: 'string',
+    },
+    pixiv_r18g_display_mode: {
+        column: 'pixiv_r18g_display_mode',
         type: 'string',
     },
     instagram_caption_max_length: {
@@ -303,6 +320,8 @@ function getTestMemorySetting(provider, key, guildId) {
     const legacy = getLegacyTestSetting(provider, key, guildId);
     if (legacy !== undefined) return legacy;
     if (key === 'disable') return normalizeTargetSetting();
+    if (key === 'sensitive_content_allowed_targets') return normalizeTargetSetting();
+    if (key === 'sensitive_content_excluded_targets') return normalizeTargetSetting();
     if (key === 'button_disabled') return normalizeButtonDisabled();
     if (key === 'bannedWords') return [];
     if (key === 'button_invisible') return normalizeButtonVisibility();
@@ -403,6 +422,8 @@ function settingDefault(provider, key) {
     if (key === 'enabled') return provider.enabledByDefault === true;
     if (key === 'youtube_description_max_length') return provider.id === 'youtube' ? 1400 : undefined;
     if (key === 'pixiv_caption_max_length') return provider.id === 'pixiv' ? 350 : undefined;
+    if (key === 'pixiv_r18_display_mode') return provider.id === 'pixiv' ? 'normal' : undefined;
+    if (key === 'pixiv_r18g_display_mode') return provider.id === 'pixiv' ? 'normal' : undefined;
     if (key === 'instagram_caption_max_length') return provider.id === 'instagram' ? 3000 : undefined;
     if (key === 'instagram_media_limit') return provider.id === 'instagram' ? 10 : undefined;
     if (key === 'tiktok_description_max_length') return provider.id === 'tiktok' ? 900 : undefined;
@@ -591,6 +612,12 @@ async function getSetting(providerInput, key, guildId) {
     const provider = normalizeProvider(providerInput);
     if (isTestStorageMode()) return getTestMemorySetting(provider, key, guildId);
     if (key === 'disable') return await getDisableSetting(provider, guildId);
+    if (key === 'sensitive_content_allowed_targets') {
+        return targetRowsToSetting(await getRowsByTargetTable(TABLES.guildProviderSensitiveContentAllowedTargets, provider.id, guildId));
+    }
+    if (key === 'sensitive_content_excluded_targets') {
+        return targetRowsToSetting(await getRowsByTargetTable(TABLES.guildProviderSensitiveContentExcludedTargets, provider.id, guildId));
+    }
     if (key === 'button_disabled') {
         return normalizeButtonDisabled(targetRowsToSetting(
             await getRowsByTargetTable(TABLES.guildProviderButtonDisabledTargets, provider.id, guildId)
@@ -605,6 +632,12 @@ async function setSetting(providerInput, key, guildId, value) {
     const provider = normalizeProvider(providerInput);
     if (isTestStorageMode()) return setTestMemorySetting(provider, key, guildId, value);
     if (key === 'disable') return await setDisableSetting(provider, guildId, value);
+    if (key === 'sensitive_content_allowed_targets') {
+        return await replaceTargetRows(TABLES.guildProviderSensitiveContentAllowedTargets, provider.id, guildId, value);
+    }
+    if (key === 'sensitive_content_excluded_targets') {
+        return await replaceTargetRows(TABLES.guildProviderSensitiveContentExcludedTargets, provider.id, guildId, value);
+    }
     if (key === 'button_disabled') {
         return await replaceTargetRows(TABLES.guildProviderButtonDisabledTargets, provider.id, guildId, value);
     }

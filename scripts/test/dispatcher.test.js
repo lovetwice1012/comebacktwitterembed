@@ -143,6 +143,29 @@ test('dispatcher: source embed suppression is skipped for interaction commands',
     assert.deepEqual(sentPayloads, [{ content: 'expanded from command' }]);
 });
 
+test('dispatcher: empty suppression steps do not send a message', async () => {
+    let sendCount = 0;
+    let suppressCount = 0;
+    const message = {
+        guildId: 'guild-1',
+        channelId: 'channel-1',
+        channel: {
+            send: async () => {
+                sendCount += 1;
+                return { id: 'sent-message' };
+            },
+        },
+        suppressEmbeds: async () => {
+            suppressCount += 1;
+        },
+    };
+
+    await runSendSteps(message, [{ suppressSourceEmbeds: true }], 'pixiv');
+
+    assert.equal(sendCount, 0);
+    assert.equal(suppressCount, 1);
+});
+
 test('dispatcher: missing permissions are excluded from global send error metric', async () => {
     const metrics = [];
     const errors = [];

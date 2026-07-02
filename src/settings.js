@@ -31,6 +31,9 @@ const SETTINGS_DEFAULT_FILE = {
     legacy_mode: {},
     passive_mode: {},
     anonymous_expand: {},
+    non_nsfw_channel_sensitive_display_mode: {},
+    sensitive_content_allowed_targets: {},
+    sensitive_content_excluded_targets: {},
     secondary_extract_mode: {},
     secondary_extract_mode_multiple_images: {},
     secondary_extract_mode_video: {},
@@ -48,6 +51,8 @@ const SETTINGS_DEFAULT_FILE = {
     youtube_video_list_limit: {},
     pixiv_caption_max_length: {},
     pixiv_tag_limit: {},
+    pixiv_r18_display_mode: {},
+    pixiv_r18g_display_mode: {},
     instagram_caption_max_length: {},
     instagram_media_limit: {},
     github_card_style: {},
@@ -85,6 +90,9 @@ const SETTINGS_MIGRATIONS = {
     legacy_mode: {},
     passive_mode: {},
     anonymous_expand: {},
+    non_nsfw_channel_sensitive_display_mode: {},
+    sensitive_content_allowed_targets: {},
+    sensitive_content_excluded_targets: {},
     secondary_extract_mode: {},
     secondary_extract_mode_multiple_images: {},
     secondary_extract_mode_video: {},
@@ -102,6 +110,8 @@ const SETTINGS_MIGRATIONS = {
     youtube_video_list_limit: {},
     pixiv_caption_max_length: {},
     pixiv_tag_limit: {},
+    pixiv_r18_display_mode: {},
+    pixiv_r18g_display_mode: {},
     instagram_caption_max_length: {},
     instagram_media_limit: {},
     github_card_style: {},
@@ -215,6 +225,10 @@ const PROVIDER_SETTING_COLUMNS = {
         column: 'quote_repost_depth_by_account',
         type: 'jsonObject',
     },
+    non_nsfw_channel_sensitive_display_mode: {
+        column: 'non_nsfw_channel_sensitive_display_mode',
+        type: 'string',
+    },
     pixiv_images_per_step: {
         column: 'pixiv_images_per_step',
         type: 'int',
@@ -253,6 +267,14 @@ const PROVIDER_SETTING_COLUMNS = {
     },
     pixiv_tag_limit: {
         column: 'pixiv_tag_limit',
+        type: 'string',
+    },
+    pixiv_r18_display_mode: {
+        column: 'pixiv_r18_display_mode',
+        type: 'string',
+    },
+    pixiv_r18g_display_mode: {
+        column: 'pixiv_r18g_display_mode',
         type: 'string',
     },
     instagram_caption_max_length: {
@@ -575,6 +597,32 @@ async function loadSettingsFromDatabase() {
         setProviderGuildSetting(nextSettings, group.providerId, group.guildId, 'disable', group.value);
     }
 
+    const sensitiveAllowedGroups = new Map();
+    const sensitiveAllowedRows = await queryDatabase(
+        `SELECT provider_id, guild_id, target_type, target_id
+         FROM ${TABLES.guildProviderSensitiveContentAllowedTargets}`
+    );
+    foundRows += sensitiveAllowedRows.length;
+    for (const row of sensitiveAllowedRows) {
+        getGroupedTarget(sensitiveAllowedGroups, row.provider_id, row.guild_id)[row.target_type].push(row.target_id);
+    }
+    for (const group of sensitiveAllowedGroups.values()) {
+        setProviderGuildSetting(nextSettings, group.providerId, group.guildId, 'sensitive_content_allowed_targets', group.value);
+    }
+
+    const sensitiveExcludedGroups = new Map();
+    const sensitiveExcludedRows = await queryDatabase(
+        `SELECT provider_id, guild_id, target_type, target_id
+         FROM ${TABLES.guildProviderSensitiveContentExcludedTargets}`
+    );
+    foundRows += sensitiveExcludedRows.length;
+    for (const row of sensitiveExcludedRows) {
+        getGroupedTarget(sensitiveExcludedGroups, row.provider_id, row.guild_id)[row.target_type].push(row.target_id);
+    }
+    for (const group of sensitiveExcludedGroups.values()) {
+        setProviderGuildSetting(nextSettings, group.providerId, group.guildId, 'sensitive_content_excluded_targets', group.value);
+    }
+
     const bannedWordRows = await queryDatabase(
         `SELECT provider_id, guild_id, word
          FROM ${TABLES.guildProviderBannedWords}`
@@ -767,11 +815,13 @@ async function saveSettingsToDatabase(nextSettings) {
     const guildIds = new Set();
     const scalarRows = collectProviderScalarRows(normalized);
     const disableRows = collectDisableTargetRows(normalized);
+    const sensitiveAllowedRows = collectTargetRows(normalized, 'sensitive_content_allowed_targets', null);
+    const sensitiveExcludedRows = collectTargetRows(normalized, 'sensitive_content_excluded_targets', null);
     const bannedWordRows = collectBannedWordRows(normalized);
     const buttonVisibilityRows = collectButtonVisibilityRows(normalized);
     const buttonDisabledRows = collectTargetRows(normalized, 'button_disabled', normalized.button_disabled);
 
-    for (const row of [...scalarRows, ...disableRows, ...bannedWordRows, ...buttonVisibilityRows, ...buttonDisabledRows]) {
+    for (const row of [...scalarRows, ...disableRows, ...sensitiveAllowedRows, ...sensitiveExcludedRows, ...bannedWordRows, ...buttonVisibilityRows, ...buttonDisabledRows]) {
         addProviderGuild(providerIds, guildIds, row.providerId, row.guildId);
     }
 
@@ -780,6 +830,8 @@ async function saveSettingsToDatabase(nextSettings) {
         await queryDatabase(`DELETE FROM ${TABLES.guildProviderButtonDisabledTargets}`);
         await queryDatabase(`DELETE FROM ${TABLES.guildProviderButtonVisibility}`);
         await queryDatabase(`DELETE FROM ${TABLES.guildProviderBannedWords}`);
+        await queryDatabase(`DELETE FROM ${TABLES.guildProviderSensitiveContentAllowedTargets}`);
+        await queryDatabase(`DELETE FROM ${TABLES.guildProviderSensitiveContentExcludedTargets}`);
         await queryDatabase(`DELETE FROM ${TABLES.guildProviderDisableTargets}`);
         await queryDatabase(`DELETE FROM ${TABLES.guildProviderSettings}`);
         await queryDatabase(`UPDATE ${TABLES.users} SET save_tweet_quota_override_bytes = NULL`);
@@ -807,6 +859,24 @@ async function saveSettingsToDatabase(nextSettings) {
         for (const row of disableRows) {
             await queryDatabase(
                 `INSERT INTO ${TABLES.guildProviderDisableTargets}
+                 (provider_id, guild_id, target_type, target_id)
+                 VALUES (?, ?, ?, ?)`,
+                [row.providerId, row.guildId, row.targetType, row.targetId]
+            );
+        }
+
+        for (const row of sensitiveAllowedRows) {
+            await queryDatabase(
+                `INSERT INTO ${TABLES.guildProviderSensitiveContentAllowedTargets}
+                 (provider_id, guild_id, target_type, target_id)
+                 VALUES (?, ?, ?, ?)`,
+                [row.providerId, row.guildId, row.targetType, row.targetId]
+            );
+        }
+
+        for (const row of sensitiveExcludedRows) {
+            await queryDatabase(
+                `INSERT INTO ${TABLES.guildProviderSensitiveContentExcludedTargets}
                  (provider_id, guild_id, target_type, target_id)
                  VALUES (?, ?, ?, ?)`,
                 [row.providerId, row.guildId, row.targetType, row.targetId]

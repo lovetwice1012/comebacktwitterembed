@@ -33,6 +33,22 @@ function descriptionLengthSpec(key, providerName, defaultLength, maxLength) {
     };
 }
 
+function sensitiveDisplayModeSpec(key, label, description) {
+    return {
+        key,
+        label,
+        description,
+        kind: 'choice',
+        settingKey: key,
+        choices: [
+            { label: text('Normal media', '通常表示'), value: 'normal' },
+            { label: text('Metadata only', 'メタ情報のみ'), value: 'metadata_only' },
+            { label: text('Spoiler attachments', 'spoiler添付'), value: 'spoiler_attachment' },
+            { label: text('Suppress expansion', '展開しない'), value: 'suppress' },
+        ],
+    };
+}
+
 const BULK_SETTING_KEYS = new Set([
     'enabled',
     'disable',
@@ -195,6 +211,34 @@ const SETTING_SPEC_CATALOG = {
         ),
         kind: 'bool',
         settingKey: 'anonymous_expand',
+    },
+    non_nsfw_channel_sensitive_display_mode: sensitiveDisplayModeSpec(
+        'non_nsfw_channel_sensitive_display_mode',
+        text('Sensitive content in non-NSFW channels', '非NSFWチャンネルでのセンシティブコンテンツの取り扱い'),
+        text(
+            'Overrides sensitive media display in channels that are not marked NSFW unless an allow target matches.',
+            'NSFW指定されていないチャンネルでのセンシティブメディア表示を、許可ターゲットが一致しない場合に上書きします。'
+        )
+    ),
+    sensitive_content_allowed_targets: {
+        key: 'sensitive_content_allowed_targets',
+        label: text('Sensitive content allow targets', 'センシティブ許可ターゲット'),
+        description: text(
+            'Users, channels, or roles allowed to bypass the non-NSFW channel sensitive-content policy.',
+            '非NSFWチャンネル用のセンシティブ制限を上書きして許可するユーザー、チャンネル、ロールです。'
+        ),
+        kind: 'targets',
+        settingKey: 'sensitive_content_allowed_targets',
+    },
+    sensitive_content_excluded_targets: {
+        key: 'sensitive_content_excluded_targets',
+        label: text('Sensitive content block targets', 'センシティブ除外ターゲット'),
+        description: text(
+            'Users, channels, or roles where sensitive content expansion is suppressed.',
+            'センシティブコンテンツの展開を抑止するユーザー、チャンネル、ロールです。'
+        ),
+        kind: 'targets',
+        settingKey: 'sensitive_content_excluded_targets',
     },
     quote_repost_do_not_extract: {
         key: 'quote_repost_do_not_extract',
@@ -486,6 +530,7 @@ const SETTING_SPEC_CATALOG = {
             { label: text('Normal media', 'Normal media'), value: 'normal' },
             { label: text('Metadata only', 'Metadata only'), value: 'metadata_only' },
             { label: text('Spoiler attachments', 'Spoiler attachments'), value: 'spoiler_attachment' },
+            { label: text('Suppress expansion', 'Suppress expansion'), value: 'suppress' },
         ],
     },
     twitter_stats_layout: {
@@ -583,6 +628,22 @@ const SETTING_SPEC_CATALOG = {
         ],
         parseValue: value => (value === 'all' ? 'all' : Number(value)),
     },
+    pixiv_r18_display_mode: sensitiveDisplayModeSpec(
+        'pixiv_r18_display_mode',
+        text('Pixiv R-18 media', 'Pixiv R-18メディア'),
+        text(
+            'Controls how Pixiv artworks marked R-18 are expanded.',
+            'PixivでR-18として取得された作品の展開方法を選びます。'
+        )
+    ),
+    pixiv_r18g_display_mode: sensitiveDisplayModeSpec(
+        'pixiv_r18g_display_mode',
+        text('Pixiv R-18G media', 'Pixiv R-18Gメディア'),
+        text(
+            'Controls how Pixiv artworks marked R-18G are expanded.',
+            'PixivでR-18Gとして取得された作品の展開方法を選びます。'
+        )
+    ),
     instagram_caption_max_length: {
         key: 'instagram_caption_max_length',
         label: text('Instagram caption length', 'Instagramキャプションの長さ'),

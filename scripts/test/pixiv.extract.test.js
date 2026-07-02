@@ -28,12 +28,15 @@ function loadPixivProviderWithFetch(fakeFetch) {
     }
 }
 
-function createMessage() {
+function createMessage(overrides = {}) {
     return {
         guild: { id: 'guild-1' },
         author: { username: 'tester', id: 'user-1' },
         user: { username: 'tester', id: 'user-1' },
+        channel: { id: 'channel-1', nsfw: false },
+        channelId: 'channel-1',
         content: 'https://www.pixiv.net/artworks/123456',
+        ...overrides,
     };
 }
 
@@ -166,6 +169,75 @@ test('pixiv extract: tag limit and artwork labels are configurable', async () =>
     assert.equal(hidden[0].embeds[0].title, 'sample');
     assert.equal(hidden[0].embeds[0].fields.find(field => field.name === 'Type'), undefined);
     assert.match(hidden[0].embeds[0].fields.find(field => field.name === 'Tags').value, /#tag8/);
+});
+
+test('pixiv extract: R-18 display mode can hide media or send spoiler attachments', async () => {
+    const provider = loadPixivProviderWithFetch(async (url) => {
+        if (String(url).includes('/pages?')) return okJson(createPages(3));
+        return okJson({
+            ...createInfo(),
+            xRestrict: 1,
+        });
+    });
+
+    const metadataOnly = await provider.extract(createMessage(), 'https://www.pixiv.net/artworks/123456', {
+        pixiv_r18_display_mode: 'metadata_only',
+    });
+
+    assert.equal(metadataOnly[0].embeds.length, 1);
+    assert.equal(metadataOnly[0].embeds[0].image, undefined);
+    assert.equal(metadataOnly[0].files, undefined);
+    assert.equal(metadataOnly[0].embeds[0].title, 'sample [R-18]');
+    assert.equal((metadataOnly[0].embeds[0].fields || []).some(field => field.name === 'Pages'), false);
+    assert.equal(metadataOnly[0].components[0].components[0].data.custom_id, 'translate');
+
+    const spoiler = await provider.extract(createMessage(), 'https://www.pixiv.net/artworks/123456', {
+        pixiv_r18_display_mode: 'spoiler_attachment',
+    });
+
+    assert.equal(spoiler[0].embeds.length, 1);
+    assert.equal(spoiler[0].embeds[0].image, undefined);
+    assert.deepEqual(spoiler[0].files, [
+        { attachment: 'https://www.phixiv.net/i/img-master/img/2024/01/01/00/00/00/123456_p0_master1200.jpg', name: 'SPOILER_pixiv-123456-1.jpg', fallbackUrl: 'https://www.phixiv.net/i/img-master/img/2024/01/01/00/00/00/123456_p0_master1200.jpg' },
+        { attachment: 'https://www.phixiv.net/i/img-master/img/2024/01/01/00/00/00/123456_p1_master1200.jpg', name: 'SPOILER_pixiv-123456-2.jpg', fallbackUrl: 'https://www.phixiv.net/i/img-master/img/2024/01/01/00/00/00/123456_p1_master1200.jpg' },
+        { attachment: 'https://www.phixiv.net/i/img-master/img/2024/01/01/00/00/00/123456_p2_master1200.jpg', name: 'SPOILER_pixiv-123456-3.jpg', fallbackUrl: 'https://www.phixiv.net/i/img-master/img/2024/01/01/00/00/00/123456_p2_master1200.jpg' },
+    ]);
+    assert.equal(spoiler[0].embeds[0].fields.find(field => field.name === 'Pages').value, '1-3 / 3');
+    assert.equal(spoiler[0].components[0].components[0].data.custom_id, 'translate');
+});
+
+test('pixiv extract: R-18G and non-NSFW channel policies can suppress sensitive expansion', async () => {
+    const provider = loadPixivProviderWithFetch(async (url) => {
+        if (String(url).includes('/pages?')) return okJson(createPages(2));
+        return okJson({
+            ...createInfo(),
+            xRestrict: 2,
+        });
+    });
+
+    const r18gSuppressed = await provider.extract(createMessage(), 'https://www.pixiv.net/artworks/123456', {
+        pixiv_r18g_display_mode: 'suppress',
+    });
+    assert.deepEqual(r18gSuppressed, [{
+        suppressSourceEmbeds: true,
+        allowedMentions: { repliedUser: false },
+    }]);
+
+    const nonNsfwSuppressed = await provider.extract(createMessage(), 'https://www.pixiv.net/artworks/123456', {
+        non_nsfw_channel_sensitive_display_mode: 'suppress',
+    });
+    assert.equal(nonNsfwSuppressed[0].suppressSourceEmbeds, true);
+
+    const explicitlyAllowed = await provider.extract(createMessage(), 'https://www.pixiv.net/artworks/123456', {
+        non_nsfw_channel_sensitive_display_mode: 'suppress',
+        sensitive_content_allowed_targets: { user: [], channel: ['channel-1'], role: [] },
+    });
+    assert.equal(explicitlyAllowed[0].embeds[0].image.url, 'https://www.phixiv.net/i/img-master/img/2024/01/01/00/00/00/123456_p0_master1200.jpg');
+
+    const nsfwChannel = await provider.extract(createMessage({ channel: { id: 'channel-1', nsfw: true } }), 'https://www.pixiv.net/artworks/123456', {
+        non_nsfw_channel_sensitive_display_mode: 'suppress',
+    });
+    assert.equal(nsfwChannel[0].embeds[0].image.url, 'https://www.phixiv.net/i/img-master/img/2024/01/01/00/00/00/123456_p0_master1200.jpg');
 });
 
 test('pixiv extract: ugoira direct media URLs can be attached, linked, or hidden', async () => {

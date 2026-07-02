@@ -185,11 +185,12 @@ const SETTING_TEXT_OVERRIDES: Record<string, { label?: LocaleText; description?:
   },
   booth_adult_display_mode: {
     label: { ja: "成人向けBooth商品の表示", en: "Adult Booth media display" },
-    description: { ja: "成人向けBooth商品のメディアを通常表示、メタ情報のみ、spoiler添付のどれで扱うかを選びます。", en: "Chooses how adult Booth item media is displayed." },
+    description: { ja: "成人向けBooth商品のメディアを通常表示、メタ情報のみ、spoiler添付、展開しないのどれで扱うかを選びます。", en: "Chooses whether adult Booth item media is shown normally, metadata-only, as spoiler attachments, or not expanded." },
     choices: {
       normal: { ja: "通常表示", en: "Normal display" },
       metadata_only: { ja: "メタ情報のみ", en: "Metadata only" },
       spoiler_attachment: { ja: "spoiler添付", en: "Spoiler attachments" },
+      suppress: { ja: "展開しない", en: "Suppress expansion" },
     },
   },
   github_card_style: {
@@ -510,7 +511,7 @@ function categoryFor(spec: BotSettingSpec) {
   if (spec.kind === "multiChoice") return "provider";
   if (spec.kind === "accountDepthMap") return "advanced";
   if (key.includes("language") || key.includes("translate")) return "translation";
-  if (key.includes("media") || key.includes("image") || key.includes("attachment") || key.includes("download")) return "media";
+  if (key.includes("media") || key.includes("image") || key.includes("attachment") || key.includes("download") || key.includes("sensitive") || key.includes("r18")) return "media";
   if (key.includes("delete") || key.includes("legacy") || key.includes("passive") || key.includes("banned")) return "suppression";
   if (key.includes("failure") || key.includes("fallback")) return "failure";
   if (key.includes("density") || key.includes("description") || key.includes("caption") || key.includes("text") || key.includes("layout") || key.includes("stats")) return "output";
@@ -522,6 +523,9 @@ function impactFor(spec: BotSettingSpec) {
   if (spec.kind === "accountDepthMap") return "high" as const;
   if (
     key.includes("adult_display_mode") ||
+    key.includes("sensitive_display_mode") ||
+    key.includes("r18_display_mode") ||
+    key.includes("r18g_display_mode") ||
     key.includes("quote_repost_max_depth") ||
     key.includes("delete_if_only") ||
     key.includes("deletemessage") ||
@@ -563,7 +567,10 @@ function isAdvanced(spec: BotSettingSpec) {
     key.includes("secondary") ||
     key.includes("fallback") ||
     key.includes("quote_repost") ||
-    key.includes("adult_display_mode")
+    key.includes("adult_display_mode") ||
+    key.includes("sensitive_display_mode") ||
+    key.includes("r18_display_mode") ||
+    key.includes("r18g_display_mode")
   );
 }
 
@@ -596,6 +603,8 @@ function serializeSpec(spec: BotSettingSpec): SettingSpec | null {
 
 function specialSettingDbTarget(key: string) {
   if (key === "disable") return "guild_provider_disable_targets";
+  if (key === "sensitive_content_allowed_targets") return "guild_provider_sensitive_content_allowed_targets";
+  if (key === "sensitive_content_excluded_targets") return "guild_provider_sensitive_content_excluded_targets";
   if (key === "button_disabled") return "guild_provider_button_disabled_targets";
   if (key === "button_invisible") return "guild_provider_button_visibility";
   if (key === "bannedWords") return "guild_provider_banned_words";

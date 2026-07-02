@@ -44,13 +44,18 @@ const {
     normalizeDiscordLocale,
     toApiLocaleFamily,
 } = require('../../discordLocales');
+const {
+    buildSensitiveSuppressedStep,
+    resolveEffectiveSensitiveDisplayMode,
+    resolveSensitiveDisplayMode,
+} = require('../_sensitive_controls');
 
 const EMBED_COLOR = 0xfd494a;       // booth のテーマカラー
 const ADULT_EMBED_COLOR = 0x4d4d4d; // R-18 はやや抑え気味の色
 const MAX_EMBEDS_PER_MESSAGE = 10;
 const IMAGES_PER_GROUP = 4;
 const BOOTH_IMAGE_LIMITS = new Set([1, 4, 10]);
-const BOOTH_ADULT_DISPLAY_MODES = new Set(['normal', 'metadata_only', 'spoiler_attachment']);
+const BOOTH_ADULT_DISPLAY_MODES = new Set(['normal', 'metadata_only', 'spoiler_attachment', 'suppress']);
 const DESCRIPTION_MAX_LENGTH = 350;
 const TAGS_MAX_LENGTH        = 256;
 const VARIATIONS_MAX_COUNT   = 5;
@@ -202,7 +207,7 @@ function resolveBoothImageLimit(settings) {
 
 function resolveBoothAdultDisplayMode(settings, isAdult) {
     if (!isAdult) return 'normal';
-    const mode = String(settings?.booth_adult_display_mode || '').trim();
+    const mode = resolveSensitiveDisplayMode(settings, 'booth_adult_display_mode', 'normal');
     return BOOTH_ADULT_DISPLAY_MODES.has(mode) ? mode : 'normal';
 }
 
@@ -423,7 +428,12 @@ async function extract(message, url, s) {
         : `${message.author?.username ?? message.user?.username}(id:${message.author?.id ?? message.user?.id})`;
 
     const isAdult = info.is_adult === true;
-    const adultDisplayMode = resolveBoothAdultDisplayMode(s, isAdult);
+    const adultDisplayMode = isAdult
+        ? resolveEffectiveSensitiveDisplayMode(message, s, resolveBoothAdultDisplayMode(s, isAdult))
+        : 'normal';
+    if (adultDisplayMode === 'suppress') {
+        return [buildSensitiveSuppressedStep(message, url, s)];
+    }
     const hideAdultMedia = adultDisplayMode === 'metadata_only';
     const spoilerAdultMedia = adultDisplayMode === 'spoiler_attachment';
     const displayImages = hideAdultMedia ? [] : images.slice(0, resolveBoothImageLimit(s));
@@ -563,6 +573,9 @@ const boothProvider = {
         'legacy_mode',
         'display_density',
         'media_display_mode',
+        'non_nsfw_channel_sensitive_display_mode',
+        'sensitive_content_allowed_targets',
+        'sensitive_content_excluded_targets',
         'booth_description_max_length',
         'booth_image_limit',
         'booth_adult_display_mode',

@@ -34,6 +34,8 @@ function createMessage(content) {
         guild: { id: 'guild-1' },
         author: { username: 'tester', id: 'user-1' },
         user: { username: 'tester', id: 'user-1' },
+        channel: { id: 'channel-1', nsfw: false },
+        channelId: 'channel-1',
         content: url,
     };
 }
@@ -215,6 +217,25 @@ test('booth extract: adult display mode can hide media or send spoiler attachmen
     ]);
     assert.equal(spoiler[0].components[0].components[0].data.custom_id, 'translate');
     assert.equal(fieldValue(spoiler[0].embeds[0], 'Images'), '3 / 3');
+
+    const suppressed = await provider.extract(createMessage(url), url, {
+        booth_adult_display_mode: 'suppress',
+    });
+    assert.deepEqual(suppressed, [{
+        suppressSourceEmbeds: true,
+        allowedMentions: { repliedUser: false },
+    }]);
+
+    const nonNsfwSuppressed = await provider.extract(createMessage(url), url, {
+        non_nsfw_channel_sensitive_display_mode: 'suppress',
+    });
+    assert.equal(nonNsfwSuppressed[0].suppressSourceEmbeds, true);
+
+    const explicitlyAllowed = await provider.extract(createMessage(url), url, {
+        non_nsfw_channel_sensitive_display_mode: 'suppress',
+        sensitive_content_allowed_targets: { user: [], channel: ['channel-1'], role: [] },
+    });
+    assert.equal(explicitlyAllowed[0].embeds[0].image.url, 'https://i.example/1.jpg');
 });
 
 test('booth extract: returns null for non-booth url', async () => {
