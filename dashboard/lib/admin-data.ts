@@ -1605,7 +1605,7 @@ async function getProviderAccountSummary(startMs: number) {
        COUNT(DISTINCT normalized_url) AS unique_urls,
        AVG(media_count) AS avg_media_count,
        AVG(duration_seconds) AS avg_duration_seconds,
-       SUM(sensitive = 1) AS sensitive_events,
+       SUM(\`sensitive\` = 1) AS sensitive_events,
        MAX(occurred_at_ms) AS last_seen_ms
      FROM bot_provider_content_events
      WHERE occurred_at_ms >= ?
@@ -2759,7 +2759,7 @@ async function getDetailedSummary(filters: AdminDetailedAnalyticsFilters, window
          COUNT(DISTINCT c.normalized_url) AS urls,
          COUNT(DISTINCT c.guild_id) AS guilds,
          COUNT(DISTINCT c.author_user_id) AS users,
-         SUM(c.sensitive = 1) AS sensitive_events,
+         SUM(c.\`sensitive\` = 1) AS sensitive_events,
          AVG(c.media_count) AS avg_media_count,
          AVG(c.duration_seconds) AS avg_duration_seconds
        FROM bot_provider_content_events c
@@ -2854,7 +2854,7 @@ async function getDetailedProviderAccounts(filters: AdminDetailedAnalyticsFilter
        COUNT(DISTINCT c.author_user_id) AS users,
        COUNT(DISTINCT c.guild_id) AS guilds,
        COUNT(DISTINCT c.normalized_url) AS urls,
-       SUM(c.sensitive = 1) AS sensitive_events,
+       SUM(c.\`sensitive\` = 1) AS sensitive_events,
        AVG(c.media_count) AS avg_media_count,
        AVG(c.duration_seconds) AS avg_duration_seconds,
        MAX(c.occurred_at_ms) AS latest_ms

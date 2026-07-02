@@ -371,7 +371,7 @@ const SCHEMA_STATEMENTS = [
         author_name VARCHAR(255) NULL,
         language VARCHAR(32) NULL,
         published_at_ms BIGINT NULL,
-        sensitive TINYINT(1) NULL,
+        \`sensitive\` TINYINT(1) NULL,
         media_count INT UNSIGNED NULL,
         duration_seconds INT UNSIGNED NULL,
         guild_id VARCHAR(32) NULL,

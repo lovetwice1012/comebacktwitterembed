@@ -105,6 +105,18 @@ test('provider hourly aggregate migration is present', () => {
     assert.ok(sql.includes('enrichment_duration_sum_ms'));
 });
 
+test('bot analytics migration quotes sensitive content column for MySQL', () => {
+    const file = path.join(MIGRATIONS_DIR, '20260702_add_bot_analytics_events.sql');
+    const sql = fs.readFileSync(file, 'utf8');
+
+    assert.ok(_internal.listMigrationFiles().includes('20260702_add_bot_analytics_events.sql'));
+    assert.equal(TABLES.botAnalyticsEvents, 'bot_analytics_events');
+    assert.equal(TABLES.botProviderContentEvents, 'bot_provider_content_events');
+    assert.ok(sql.includes('CREATE TABLE IF NOT EXISTS bot_provider_content_events'));
+    assert.ok(sql.includes('`sensitive` TINYINT(1) NULL'));
+    assert.ok(SCHEMA_STATEMENTS.some(statement => statement.includes('`sensitive` TINYINT(1) NULL')));
+});
+
 test('provider facet observation metadata migration is present', () => {
     const file = path.join(MIGRATIONS_DIR, '20260702_add_provider_content_facet_observation_metadata.sql');
     const sql = fs.readFileSync(file, 'utf8');

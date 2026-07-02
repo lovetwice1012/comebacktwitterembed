@@ -1003,7 +1003,7 @@ async function insertProviderContentEvent(queryDatabase, item) {
         `INSERT INTO ${TABLES.botProviderContentEvents} (
             occurred_at_ms, provider_id, account_key, content_id, content_type, content_url,
             normalized_url, url_hash, title, description_preview, author_name, language,
-            published_at_ms, sensitive, media_count, duration_seconds, guild_id, channel_id,
+            published_at_ms, \`sensitive\`, media_count, duration_seconds, guild_id, channel_id,
             author_user_id, source, raw_metrics_json
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
