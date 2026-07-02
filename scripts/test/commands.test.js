@@ -8,6 +8,7 @@ const path = require('path');
 
 const quotastats = require('../../src/commands/handlers/quotastats');
 const checkmyguildsettings = require('../../src/commands/handlers/checkmyguildsettings');
+const help = require('../../src/commands/handlers/help');
 const buttonInvisible = require('../../src/commands/handlers/settings/button_invisible');
 const expandTweet = require('../../src/providers/twitter/commands/expandtweet');
 const showSaveTweet = require('../../src/providers/twitter/commands/showsavetweet');
@@ -82,6 +83,26 @@ test('provider command no longer exposes set subcommand', () => {
 
     const subcommandNames = new Set((providerCommand.options || []).map(option => option.name));
     assert.ok(!subcommandNames.has('set'), 'provider set should not be registered');
+});
+
+test('help command output includes webui dashboard guidance', async () => {
+    let reply = null;
+    const interaction = {
+        guildId: 'guild-help',
+        locale: 'ja',
+        editReply: async (payload) => {
+            reply = payload;
+        },
+    };
+
+    await help.execute(interaction, {});
+
+    const fields = reply.embeds[0].fields;
+    const webui = fields.find(field => field.name === 'Web UI');
+    assert.ok(webui, 'help output should include a Web UI field');
+    assert.match(webui.value, /dashboard\/guild-help\/settings/);
+    assert.match(webui.value, /高度なカスタマイズ/);
+    assert.match(webui.value, /サポートされなくなる予定/);
 });
 
 test('quotastats returns zero usage when user has no saves directory', async () => {

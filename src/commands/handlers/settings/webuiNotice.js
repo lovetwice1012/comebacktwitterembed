@@ -186,6 +186,8 @@ function markTestWebuiUsage(guildId) {
 const dashboardSettingsUrlPlaceholder = '__DASHBOARD_SETTINGS_URL__';
 
 module.exports = {
+    dashboardBaseUrl,
+    dashboardSettingsUrl,
     maybeSendSettingsWebuiNotice,
     _internal: {
         buildSettingsWebuiNoticeEmbed,
