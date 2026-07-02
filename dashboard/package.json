@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "node scripts/start-dashboard.js dev",
-    "build": "prisma generate && next build",
+    "build": "node scripts/start-dashboard.js build",
     "start": "node scripts/start-dashboard.js start",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",

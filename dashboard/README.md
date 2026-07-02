@@ -58,7 +58,11 @@ npm run dev
 
 When the Bot starts, it also starts this dashboard as a child process on `30987`.
 The Bot process sets dashboard-integrated media mode automatically, so it does not start the old Express listener on the same port.
-Bot-managed startup uses `npm run start` by default. If the production build is missing, the start script runs `npm run build` once before `next start`, so users do not see Next.js development tools during normal Bot startup.
+Bot-managed startup uses the production start wrapper by default. If the production build is missing, the wrapper creates one before `next start`, so users do not see Next.js development tools during normal Bot startup.
+
+Production dashboard builds are written to versioned directories under `dashboard/.next-builds/` and activated through `dashboard/.next-builds/current.json`. This keeps new builds separate from the build currently used by `next start`, so you can run `npm run build` while the Bot-managed dashboard is online. When the build pointer changes, the dashboard wrapper restarts only the Next.js child process and the Bot keeps running.
+
+To keep online rebuilds from touching DLLs loaded by the running dashboard on Windows, `npm run build` reuses an existing Prisma Client. If `prisma/schema.prisma` changes and regenerated Prisma types are required, stop the dashboard, set `DASHBOARD_FORCE_PRISMA_GENERATE=1`, and run `npm run build`.
 
 Useful `config.json` switches:
 

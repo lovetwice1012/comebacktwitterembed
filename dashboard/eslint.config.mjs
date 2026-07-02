@@ -3,7 +3,7 @@ import tseslint from "typescript-eslint";
 
 export default [
   {
-    ignores: [".next/**", "node_modules/**", "next-env.d.ts"],
+    ignores: [".next/**", ".next-build/**", ".next-builds/**", ".next-dev/**", "node_modules/**", "next-env.d.ts"],
   },
   js.configs.recommended,
   ...tseslint.configs.recommended,
@@ -13,8 +13,12 @@ export default [
       globals: {
         __dirname: "readonly",
         console: "readonly",
+        clearInterval: "readonly",
+        clearTimeout: "readonly",
         process: "readonly",
         require: "readonly",
+        setInterval: "readonly",
+        setTimeout: "readonly",
       },
     },
     rules: {

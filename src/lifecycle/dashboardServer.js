@@ -39,6 +39,36 @@ function npmCommand() {
     return process.platform === 'win32' ? 'npm.cmd' : 'npm';
 }
 
+function npmCliPath() {
+    const candidate = path.join(path.dirname(process.execPath), 'node_modules', 'npm', 'bin', 'npm-cli.js');
+    return fs.existsSync(candidate) ? candidate : null;
+}
+
+function launchCommand(script) {
+    if (script === 'start' || script === 'dev' || script === 'build') {
+        return {
+            command: process.execPath,
+            args: [path.join(dashboardDir(), 'scripts', 'start-dashboard.js'), script],
+            label: `node scripts/start-dashboard.js ${script}`,
+        };
+    }
+
+    const npmCli = npmCliPath();
+    if (npmCli) {
+        return {
+            command: process.execPath,
+            args: [npmCli, 'run', script],
+            label: `npm run ${script}`,
+        };
+    }
+
+    return {
+        command: npmCommand(),
+        args: ['run', script],
+        label: `npm run ${script}`,
+    };
+}
+
 function dashboardConfig() {
     return readConfig().dashboard || {};
 }
@@ -64,14 +94,21 @@ function dashboardBaseUrl(port = dashboardPort()) {
 }
 
 function hasProductionBuild() {
-    return fs.existsSync(path.join(dashboardDir(), '.next', 'BUILD_ID'));
+    const dir = dashboardDir();
+    try {
+        const current = JSON.parse(fs.readFileSync(path.join(dir, '.next-builds', 'current.json'), 'utf8'));
+        if (typeof current.distDir === 'string' && fs.existsSync(path.join(dir, current.distDir, 'BUILD_ID'))) return true;
+    } catch {
+        // Fall back to the legacy in-place Next.js build below.
+    }
+    return fs.existsSync(path.join(dir, '.next', 'BUILD_ID'));
 }
 
 function scriptName() {
     if (process.env.DASHBOARD_NPM_SCRIPT) return process.env.DASHBOARD_NPM_SCRIPT;
     if (dashboardConfig().npmScript) return dashboardConfig().npmScript;
     if (!hasProductionBuild()) {
-        console.warn('[dashboardServer] production build was not found. Dashboard will run `npm run build` once before `next start`.');
+        console.warn('[dashboardServer] production build was not found. Dashboard will create one before `next start`.');
     }
     return 'start';
 }
@@ -126,7 +163,8 @@ function start() {
     if (env.MEDIA_DELIVERY_SERVER_MODE) process.env.MEDIA_DELIVERY_SERVER_MODE = env.MEDIA_DELIVERY_SERVER_MODE;
 
     const script = scriptName();
-    child = spawn(npmCommand(), ['run', script], {
+    const launch = launchCommand(script);
+    child = spawn(launch.command, launch.args, {
         cwd: dashboardDir(),
         env,
         stdio: ['ignore', 'pipe', 'pipe'],
@@ -147,7 +185,7 @@ function start() {
         child = null;
     });
 
-    console.log(`[dashboardServer] starting dashboard on ${baseUrl} with npm run ${script}`);
+    console.log(`[dashboardServer] starting dashboard on ${baseUrl} with ${launch.label}`);
     return child;
 }
 
