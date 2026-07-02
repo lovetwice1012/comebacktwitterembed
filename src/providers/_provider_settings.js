@@ -19,6 +19,9 @@ const PROVIDER_DEFAULTS = {
     non_nsfw_channel_sensitive_restriction_enabled:       false,
     sensitive_content_allowed_targets:                    undefined,
     sensitive_content_excluded_targets:                   undefined,
+    pixiv_sensitive_non_nsfw_channel_sensitive_restriction_enabled: false,
+    pixiv_sensitive_sensitive_content_allowed_targets:     undefined,
+    pixiv_sensitive_sensitive_content_excluded_targets:    undefined,
     pixiv_r18_non_nsfw_channel_sensitive_restriction_enabled: false,
     pixiv_r18_sensitive_content_allowed_targets:          undefined,
     pixiv_r18_sensitive_content_excluded_targets:         undefined,
@@ -45,6 +48,7 @@ const PROVIDER_DEFAULTS = {
     twitter_quote_layout:                                  'separate',
     pixiv_caption_max_length:                              undefined,
     pixiv_tag_limit:                                       undefined,
+    pixiv_sensitive_display_mode:                          'normal',
     pixiv_r18_display_mode:                                'normal',
     pixiv_r18g_display_mode:                               'normal',
     instagram_caption_max_length:                          undefined,
@@ -182,6 +186,10 @@ const PROVIDER_SETTING_COLUMNS = {
         column: 'pixiv_tag_limit',
         type: 'string',
     },
+    pixiv_sensitive_display_mode: {
+        column: 'pixiv_sensitive_display_mode',
+        type: 'string',
+    },
     pixiv_r18_display_mode: {
         column: 'pixiv_r18_display_mode',
         type: 'string',
@@ -189,6 +197,10 @@ const PROVIDER_SETTING_COLUMNS = {
     pixiv_r18g_display_mode: {
         column: 'pixiv_r18g_display_mode',
         type: 'string',
+    },
+    pixiv_sensitive_non_nsfw_channel_sensitive_restriction_enabled: {
+        column: 'pixiv_sensitive_non_nsfw_channel_sensitive_restriction_enabled',
+        type: 'bool',
     },
     pixiv_r18_non_nsfw_channel_sensitive_restriction_enabled: {
         column: 'pixiv_r18_non_nsfw_channel_sensitive_restriction_enabled',
@@ -283,6 +295,8 @@ const PROVIDER_SETTING_COLUMNS = {
 const TARGET_SETTING_TABLES = {
     sensitive_content_allowed_targets: TABLES.guildProviderSensitiveContentAllowedTargets,
     sensitive_content_excluded_targets: TABLES.guildProviderSensitiveContentExcludedTargets,
+    pixiv_sensitive_sensitive_content_allowed_targets: TABLES.guildProviderPixivSensitiveContentAllowedTargets,
+    pixiv_sensitive_sensitive_content_excluded_targets: TABLES.guildProviderPixivSensitiveContentExcludedTargets,
     pixiv_r18_sensitive_content_allowed_targets: TABLES.guildProviderPixivR18SensitiveContentAllowedTargets,
     pixiv_r18_sensitive_content_excluded_targets: TABLES.guildProviderPixivR18SensitiveContentExcludedTargets,
     pixiv_r18g_sensitive_content_allowed_targets: TABLES.guildProviderPixivR18gSensitiveContentAllowedTargets,
@@ -444,6 +458,7 @@ function settingDefault(provider, key) {
     if (key === 'enabled') return provider.enabledByDefault === true;
     if (key === 'youtube_description_max_length') return provider.id === 'youtube' ? 1400 : undefined;
     if (key === 'pixiv_caption_max_length') return provider.id === 'pixiv' ? 350 : undefined;
+    if (key === 'pixiv_sensitive_display_mode') return provider.id === 'pixiv' ? 'normal' : undefined;
     if (key === 'pixiv_r18_display_mode') return provider.id === 'pixiv' ? 'normal' : undefined;
     if (key === 'pixiv_r18g_display_mode') return provider.id === 'pixiv' ? 'normal' : undefined;
     if (key === 'instagram_caption_max_length') return provider.id === 'instagram' ? 3000 : undefined;

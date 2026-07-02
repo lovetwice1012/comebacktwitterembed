@@ -123,6 +123,26 @@ test('sensitive content controls migration is present', () => {
     }
 });
 
+test('pixiv general sensitive controls migration is present', () => {
+    const file = path.join(MIGRATIONS_DIR, '20260702_add_zz_pixiv_general_sensitive_controls.sql');
+    const sql = fs.readFileSync(file, 'utf8');
+    const expected = {
+        pixiv_sensitive_display_mode: 'string',
+        pixiv_sensitive_non_nsfw_channel_sensitive_restriction_enabled: 'bool',
+    };
+
+    assert.ok(_internal.listMigrationFiles().includes('20260702_add_zz_pixiv_general_sensitive_controls.sql'));
+    assert.ok(sql.includes('ALTER TABLE guild_provider_settings'));
+    assert.equal(TABLES.guildProviderPixivSensitiveContentAllowedTargets, 'guild_provider_pixiv_sensitive_content_allowed_targets');
+    assert.equal(TABLES.guildProviderPixivSensitiveContentExcludedTargets, 'guild_provider_pixiv_sensitive_content_excluded_targets');
+    assert.ok(sql.includes('CREATE TABLE IF NOT EXISTS guild_provider_pixiv_sensitive_content_allowed_targets'));
+    assert.ok(sql.includes('CREATE TABLE IF NOT EXISTS guild_provider_pixiv_sensitive_content_excluded_targets'));
+    for (const [key, type] of Object.entries(expected)) {
+        assert.ok(sql.includes(PROVIDER_SETTING_COLUMNS[key].column), `${key} missing from migration`);
+        assert.equal(PROVIDER_SETTING_COLUMNS[key].type, type);
+    }
+});
+
 test('provider hourly aggregate migration is present', () => {
     const file = path.join(MIGRATIONS_DIR, '20260702_add_bot_provider_hourly_aggregates.sql');
     const sql = fs.readFileSync(file, 'utf8');

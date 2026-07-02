@@ -88,6 +88,7 @@ const DESCRIPTION_LIMIT_MAX = 1200;
 const TAGS_MAX_LENGTH        = 256;
 const DIRECT_UGOIRA_MEDIA_RE = /^https?:\/\/\S+\.(?:mp4|gif|webm)(?:[?#].*)?$/i;
 const ADULT_EMBED_COLOR = 0x4d4d4d;
+const PIXIV_GENERAL_SENSITIVE_LEVEL = 4;
 
 // ---- URL parser -----------------------------------------------------------
 
@@ -161,6 +162,7 @@ async function fetchPixivInfo(id, language, index) {
         profile_image_url: proxyPixivImageUrl(body.userImage || body.profileImageUrl),
         ai_generated: Number(body.aiType) === 2,
         x_restrict: Number(body.xRestrict ?? body.x_restrict) || 0,
+        sensitive_level: Number(body.sl ?? body.sensitiveLevel ?? body.sensitive_level) || 0,
         is_ugoira: isUgoira,
         illust_id: body.illustId || body.id || id,
         created_at: body.createDate || body.uploadDate || body.create_date,
@@ -318,29 +320,67 @@ function pickLanguage(guildLang) {
     return 'en';
 }
 
-function ageRestrictionLabel(x_restrict) {
-    if (x_restrict === 1) return ' [R-18]';
-    if (x_restrict === 2) return ' [R-18G]';
+function maturityLabel(sensitivityKind) {
+    if (sensitivityKind === 'r18') return ' [R-18]';
+    if (sensitivityKind === 'r18g') return ' [R-18G]';
     return '';
 }
 
-function resolvePixivAgeDisplayMode(settings, xRestrict) {
-    const value = Number(xRestrict) || 0;
-    if (value === 1) return resolveSensitiveDisplayMode(settings, 'pixiv_r18_display_mode', 'normal');
-    if (value === 2) return resolveSensitiveDisplayMode(settings, 'pixiv_r18g_display_mode', 'normal');
+function normalizePixivMaturityTagName(tag) {
+    const value = typeof tag === 'string' ? tag : tag?.tag;
+    return String(value || '')
+        .replace(/^#+/, '')
+        .replace(/[−ー―‐]/g, '-')
+        .trim()
+        .toUpperCase();
+}
+
+function pixivTagSensitivityKind(tags) {
+    const values = Array.isArray(tags) ? tags.map(normalizePixivMaturityTagName) : [];
+    if (values.some(value => value === 'R-18G' || value === 'R18G')) return 'r18g';
+    if (values.some(value => value === 'R-18' || value === 'R18')) return 'r18';
+    return null;
+}
+
+function pixivSensitivityKind(infoOrXRestrict, sensitiveLevel = 0, tags = []) {
+    const value = typeof infoOrXRestrict === 'object'
+        ? Number(infoOrXRestrict?.x_restrict ?? infoOrXRestrict?.xRestrict) || 0
+        : Number(infoOrXRestrict) || 0;
+    const level = typeof infoOrXRestrict === 'object'
+        ? Number(infoOrXRestrict?.sensitive_level ?? infoOrXRestrict?.sl) || 0
+        : Number(sensitiveLevel) || 0;
+    const tagKind = typeof infoOrXRestrict === 'object'
+        ? pixivTagSensitivityKind(infoOrXRestrict?.tags)
+        : pixivTagSensitivityKind(tags);
+    if (value === 2 || tagKind === 'r18g') return 'r18g';
+    if (value > 0 || tagKind === 'r18') return 'r18';
+    if (level >= PIXIV_GENERAL_SENSITIVE_LEVEL) return 'sensitive';
+    return 'safe';
+}
+
+function resolvePixivSensitiveDisplayMode(settings, sensitivityKind) {
+    if (sensitivityKind === 'r18') return resolveSensitiveDisplayMode(settings, 'pixiv_r18_display_mode', 'normal');
+    if (sensitivityKind === 'r18g') return resolveSensitiveDisplayMode(settings, 'pixiv_r18g_display_mode', 'normal');
+    if (sensitivityKind === 'sensitive') return resolveSensitiveDisplayMode(settings, 'pixiv_sensitive_display_mode', 'normal');
     return 'normal';
 }
 
-function pixivSensitiveControlKeys(xRestrict) {
-    const value = Number(xRestrict) || 0;
-    if (value === 1) {
+function pixivSensitiveControlKeys(sensitivityKind) {
+    if (sensitivityKind === 'sensitive') {
+        return {
+            nonNsfwRestrictionEnabledKey: 'pixiv_sensitive_non_nsfw_channel_sensitive_restriction_enabled',
+            allowedTargetsKey: 'pixiv_sensitive_sensitive_content_allowed_targets',
+            excludedTargetsKey: 'pixiv_sensitive_sensitive_content_excluded_targets',
+        };
+    }
+    if (sensitivityKind === 'r18') {
         return {
             nonNsfwRestrictionEnabledKey: 'pixiv_r18_non_nsfw_channel_sensitive_restriction_enabled',
             allowedTargetsKey: 'pixiv_r18_sensitive_content_allowed_targets',
             excludedTargetsKey: 'pixiv_r18_sensitive_content_excluded_targets',
         };
     }
-    if (value === 2) {
+    if (sensitivityKind === 'r18g') {
         return {
             nonNsfwRestrictionEnabledKey: 'pixiv_r18g_non_nsfw_channel_sensitive_restriction_enabled',
             allowedTargetsKey: 'pixiv_r18g_sensitive_content_allowed_targets',
@@ -405,10 +445,10 @@ function shouldShowUgoiraMedia(settings) {
     return shouldShowOutputItem(settings, 'ugoira_media', { hideInCompact: false });
 }
 
-function maturityFacetValue(xRestrict) {
-    const value = Number(xRestrict) || 0;
-    if (value === 1) return 'r18';
-    if (value === 2) return 'r18g';
+function maturityFacetValue(sensitivityKind) {
+    if (sensitivityKind === 'r18') return 'r18';
+    if (sensitivityKind === 'r18g') return 'r18g';
+    if (sensitivityKind === 'sensitive') return 'sensitive';
     return 'safe';
 }
 
@@ -420,6 +460,7 @@ function normalizePixivAnalyticsTags(tags) {
 function buildPixivAnalytics(info, parsed, canonicalUrl, images, ugoiraMediaUrls) {
     const mediaCount = Array.isArray(images) ? images.length : 0;
     const ugoiraMediaCount = Array.isArray(ugoiraMediaUrls) ? ugoiraMediaUrls.length : 0;
+    const sensitivityKind = pixivSensitivityKind(info);
     return createProviderAnalytics({
         content: {
             accountKey: info.author_id ? `users/${info.author_id}` : info.author_name,
@@ -430,7 +471,7 @@ function buildPixivAnalytics(info, parsed, canonicalUrl, images, ugoiraMediaUrls
             descriptionPreview: stripHtml(info.description || ''),
             authorName: info.author_name,
             publishedAtMs: info.created_at ? Date.parse(info.created_at) : null,
-            sensitive: Number(info.x_restrict) > 0 ? 1 : 0,
+            sensitive: sensitivityKind === 'safe' ? 0 : 1,
             mediaCount,
         },
         metrics: {
@@ -442,10 +483,11 @@ function buildPixivAnalytics(info, parsed, canonicalUrl, images, ugoiraMediaUrls
             ugoira_media_count: ugoiraMediaCount,
             ai_generated: info.ai_generated ? 1 : 0,
             x_restrict: Number(info.x_restrict) || 0,
+            sensitive_level: Number(info.sensitive_level) || 0,
         },
         facets: [
             facet('type', info.is_ugoira ? 'ugoira' : 'illustration'),
-            facet('age_restricted', maturityFacetValue(info.x_restrict)),
+            facet('age_restricted', maturityFacetValue(sensitivityKind)),
             facet('ai_generated', info.ai_generated ? 'yes' : 'no'),
             ...tagFacets('tag', normalizePixivAnalyticsTags(info.tags)),
         ],
@@ -474,14 +516,16 @@ async function extract(message, url, s) {
     const images = Array.isArray(info.image_proxy_urls) ? info.image_proxy_urls : [];
     const ugoiraMediaUrls = Array.isArray(info.ugoira_media_urls) ? info.ugoira_media_urls : [];
     const xRestrict = Number(info.x_restrict) || 0;
-    const isAdult = xRestrict > 0;
-    const adultDisplayMode = isAdult
-        ? resolveEffectiveSensitiveDisplayMode(message, s, resolvePixivAgeDisplayMode(s, xRestrict), pixivSensitiveControlKeys(xRestrict))
+    const sensitiveLevel = Number(info.sensitive_level) || 0;
+    const sensitivityKind = pixivSensitivityKind(xRestrict, sensitiveLevel, info.tags);
+    const isSensitive = sensitivityKind !== 'safe';
+    const sensitiveDisplayMode = isSensitive
+        ? resolveEffectiveSensitiveDisplayMode(message, s, resolvePixivSensitiveDisplayMode(s, sensitivityKind), pixivSensitiveControlKeys(sensitivityKind))
         : 'normal';
-    if (adultDisplayMode === 'suppress') {
+    if (sensitiveDisplayMode === 'suppress') {
         return [buildSensitiveSuppressedStep(message, url, s)];
     }
-    if (images.length === 0 && adultDisplayMode !== 'metadata_only') return null;
+    if (images.length === 0 && sensitiveDisplayMode !== 'metadata_only') return null;
 
     const lang = toApiLocaleFamily(guildLang);
 
@@ -494,7 +538,7 @@ async function extract(message, url, s) {
     const title =
         (info.ai_generated && showAiLabel(s) ? tr(STR.aiPrefix, lang) : '')
         + (info.title || `${tr(STR.fallbackTitle, lang)}${parsed.id}`)
-        + (showMaturityLabel(s) ? ageRestrictionLabel(xRestrict) : '');
+        + (showMaturityLabel(s) ? maturityLabel(sensitivityKind) : '');
 
     const description = truncate(stripHtml(info.description || ''), resolveCaptionMaxLength(s.pixiv_caption_max_length, s));
     const tagsLine = joinTags(info.tags, s);
@@ -512,10 +556,10 @@ async function extract(message, url, s) {
         displayImages = images.slice(0, imagesPerStep);
     }
 
-    const hideAdultMedia = adultDisplayMode === 'metadata_only';
-    const spoilerAdultMedia = adultDisplayMode === 'spoiler_attachment';
-    if (hideAdultMedia) displayImages = [];
-    if (displayImages.length === 0 && !hideAdultMedia) return null;
+    const hideSensitiveMedia = sensitiveDisplayMode === 'metadata_only';
+    const spoilerSensitiveMedia = sensitiveDisplayMode === 'spoiler_attachment';
+    if (hideSensitiveMedia) displayImages = [];
+    if (displayImages.length === 0 && !hideSensitiveMedia) return null;
 
     // Discord は 同じ url を持つ複数の embed を「1 個のカード」にマージし、
     // image を 2x2 グリッド (最大64枚) として表示する。
@@ -523,14 +567,14 @@ async function extract(message, url, s) {
     // (フラグメントで区別) を付与することで、Discord 上で複数の
     // 4枚グリッドカードとして並ぶようにする。
     // 1枚目のembedにのみメタデータを付与し、2枚目以降は画像のみ。
-    const embedImages = (hideAdultMedia || spoilerAdultMedia) ? [null] : displayImages;
+    const embedImages = (hideSensitiveMedia || spoilerSensitiveMedia) ? [null] : displayImages;
     const embeds = embedImages.map((imgUrl, idx) => {
         const groupIdx = Math.floor(idx / IMAGES_PER_GROUP);
         const groupUrl = groupIdx === 0 ? canonicalUrl : `${canonicalUrl}#g${groupIdx}`;
         /** @type {any} */
         const embed = {
             url: groupUrl,
-            color: isAdult ? ADULT_EMBED_COLOR : EMBED_COLOR,
+            color: isSensitive ? ADULT_EMBED_COLOR : EMBED_COLOR,
         };
         if (imgUrl) embed.image = { url: imgUrl };
         if (idx === 0) {
@@ -544,7 +588,7 @@ async function extract(message, url, s) {
             const fields = [];
             if (info.is_ugoira && shouldShowOutputItem(s, 'type')) fields.push({ name: tr(STR.typeField, lang), value: tr(STR.ugoira, lang), inline: true });
             if (tagsLine) fields.push({ name: tr(STR.tagsField, lang), value: tagsLine, inline: false });
-            if (!hideAdultMedia && images.length > 1) {
+            if (!hideSensitiveMedia && images.length > 1) {
                 const pagesText = displayImages.length === 1
                     ? `${pageStartIndex + 1} / ${images.length}`
                     : `${pageStartIndex + 1}-${pageStartIndex + displayImages.length} / ${images.length}`;
@@ -570,7 +614,7 @@ async function extract(message, url, s) {
         .setCustomId('delete:pixiv');
 
     const components = [];
-    if (displayImages.length > 0 && mediaButtonAllowed(s) && !spoilerAdultMedia) {
+    if (displayImages.length > 0 && mediaButtonAllowed(s) && !spoilerSensitiveMedia) {
         components.push({ type: ComponentType.ActionRow, components: [showMediaAsAttachmentsButton] });
     }
     components.push({ type: ComponentType.ActionRow, components: [translateButton, deleteButton] });
@@ -591,14 +635,14 @@ async function extract(message, url, s) {
         step.suppressSourceEmbeds = true;
     }
 
-    if (spoilerAdultMedia) {
+    if (spoilerSensitiveMedia) {
         const illustId = info.illust_id || parsed.id;
         const files = [
             ...spoilerFiles(displayImages, `pixiv-${illustId}`, { offset: pageStartIndex }),
             ...(shouldShowUgoiraMedia(s) ? spoilerFiles(ugoiraMediaUrls, `pixiv-${illustId}-ugoira`, { fallbackExtension: 'mp4' }) : []),
         ];
         if (files.length > 0) step.files = files;
-    } else if (!hideAdultMedia) {
+    } else if (!hideSensitiveMedia) {
         applyMediaDisplayToStep(step, s, displayImages, 'Image');
         applyUgoiraMediaToStep(step, s, ugoiraMediaUrls);
     }
@@ -623,8 +667,12 @@ const pixivProvider = {
         'pixiv_images_per_step',
         'pixiv_caption_max_length',
         'pixiv_tag_limit',
+        'pixiv_sensitive_display_mode',
         'pixiv_r18_display_mode',
         'pixiv_r18g_display_mode',
+        'pixiv_sensitive_non_nsfw_channel_sensitive_restriction_enabled',
+        'pixiv_sensitive_sensitive_content_allowed_targets',
+        'pixiv_sensitive_sensitive_content_excluded_targets',
         'pixiv_r18_non_nsfw_channel_sensitive_restriction_enabled',
         'pixiv_r18_sensitive_content_allowed_targets',
         'pixiv_r18_sensitive_content_excluded_targets',

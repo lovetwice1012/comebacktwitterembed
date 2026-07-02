@@ -34,6 +34,9 @@ const SETTINGS_DEFAULT_FILE = {
     non_nsfw_channel_sensitive_restriction_enabled: {},
     sensitive_content_allowed_targets: {},
     sensitive_content_excluded_targets: {},
+    pixiv_sensitive_non_nsfw_channel_sensitive_restriction_enabled: {},
+    pixiv_sensitive_sensitive_content_allowed_targets: {},
+    pixiv_sensitive_sensitive_content_excluded_targets: {},
     pixiv_r18_non_nsfw_channel_sensitive_restriction_enabled: {},
     pixiv_r18_sensitive_content_allowed_targets: {},
     pixiv_r18_sensitive_content_excluded_targets: {},
@@ -57,6 +60,7 @@ const SETTINGS_DEFAULT_FILE = {
     youtube_video_list_limit: {},
     pixiv_caption_max_length: {},
     pixiv_tag_limit: {},
+    pixiv_sensitive_display_mode: {},
     pixiv_r18_display_mode: {},
     pixiv_r18g_display_mode: {},
     instagram_caption_max_length: {},
@@ -99,6 +103,9 @@ const SETTINGS_MIGRATIONS = {
     non_nsfw_channel_sensitive_restriction_enabled: {},
     sensitive_content_allowed_targets: {},
     sensitive_content_excluded_targets: {},
+    pixiv_sensitive_non_nsfw_channel_sensitive_restriction_enabled: {},
+    pixiv_sensitive_sensitive_content_allowed_targets: {},
+    pixiv_sensitive_sensitive_content_excluded_targets: {},
     pixiv_r18_non_nsfw_channel_sensitive_restriction_enabled: {},
     pixiv_r18_sensitive_content_allowed_targets: {},
     pixiv_r18_sensitive_content_excluded_targets: {},
@@ -122,6 +129,7 @@ const SETTINGS_MIGRATIONS = {
     youtube_video_list_limit: {},
     pixiv_caption_max_length: {},
     pixiv_tag_limit: {},
+    pixiv_sensitive_display_mode: {},
     pixiv_r18_display_mode: {},
     pixiv_r18g_display_mode: {},
     instagram_caption_max_length: {},
@@ -281,6 +289,10 @@ const PROVIDER_SETTING_COLUMNS = {
         column: 'pixiv_tag_limit',
         type: 'string',
     },
+    pixiv_sensitive_display_mode: {
+        column: 'pixiv_sensitive_display_mode',
+        type: 'string',
+    },
     pixiv_r18_display_mode: {
         column: 'pixiv_r18_display_mode',
         type: 'string',
@@ -288,6 +300,10 @@ const PROVIDER_SETTING_COLUMNS = {
     pixiv_r18g_display_mode: {
         column: 'pixiv_r18g_display_mode',
         type: 'string',
+    },
+    pixiv_sensitive_non_nsfw_channel_sensitive_restriction_enabled: {
+        column: 'pixiv_sensitive_non_nsfw_channel_sensitive_restriction_enabled',
+        type: 'bool',
     },
     pixiv_r18_non_nsfw_channel_sensitive_restriction_enabled: {
         column: 'pixiv_r18_non_nsfw_channel_sensitive_restriction_enabled',
@@ -384,6 +400,8 @@ const PROVIDER_SETTING_COLUMN_NAMES = Object.values(PROVIDER_SETTING_COLUMNS).ma
 const PROVIDER_TARGET_SETTING_TABLES = {
     sensitive_content_allowed_targets: TABLES.guildProviderSensitiveContentAllowedTargets,
     sensitive_content_excluded_targets: TABLES.guildProviderSensitiveContentExcludedTargets,
+    pixiv_sensitive_sensitive_content_allowed_targets: TABLES.guildProviderPixivSensitiveContentAllowedTargets,
+    pixiv_sensitive_sensitive_content_excluded_targets: TABLES.guildProviderPixivSensitiveContentExcludedTargets,
     pixiv_r18_sensitive_content_allowed_targets: TABLES.guildProviderPixivR18SensitiveContentAllowedTargets,
     pixiv_r18_sensitive_content_excluded_targets: TABLES.guildProviderPixivR18SensitiveContentExcludedTargets,
     pixiv_r18g_sensitive_content_allowed_targets: TABLES.guildProviderPixivR18gSensitiveContentAllowedTargets,

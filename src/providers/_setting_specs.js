@@ -644,20 +644,52 @@ const SETTING_SPEC_CATALOG = {
         ],
         parseValue: value => (value === 'all' ? 'all' : Number(value)),
     },
+    pixiv_sensitive_display_mode: sensitiveDisplayModeSpec(
+        'pixiv_sensitive_display_mode',
+        text('Pixiv sensitive (general) media', 'Pixiv センシティブ(全年齢)メディア'),
+        text(
+            'Controls how Pixiv artworks fetched as sensitive, but not R-18/R-18G, are expanded.',
+            'PixivでR-18/R-18Gではないセンシティブ作品として取得された作品の展開方法を選びます。'
+        )
+    ),
     pixiv_r18_display_mode: sensitiveDisplayModeSpec(
         'pixiv_r18_display_mode',
         text('Pixiv R-18 media', 'Pixiv R-18メディア'),
         text(
-            'Controls how Pixiv artworks marked R-18 are expanded.',
-            'PixivでR-18として取得された作品の展開方法を選びます。'
+            'Controls how Pixiv artworks marked R-18, or explicitly tagged R-18, are expanded.',
+            'PixivでR-18として取得された作品、またはR-18タグが付いた作品の展開方法を選びます。'
         )
     ),
     pixiv_r18g_display_mode: sensitiveDisplayModeSpec(
         'pixiv_r18g_display_mode',
         text('Pixiv R-18G media', 'Pixiv R-18Gメディア'),
         text(
-            'Controls how Pixiv artworks marked R-18G are expanded.',
-            'PixivでR-18Gとして取得された作品の展開方法を選びます。'
+            'Controls how Pixiv artworks marked R-18G, or explicitly tagged R-18G, are expanded.',
+            'PixivでR-18Gとして取得された作品、またはR-18Gタグが付いた作品の展開方法を選びます。'
+        )
+    ),
+    pixiv_sensitive_non_nsfw_channel_sensitive_restriction_enabled: nonNsfwSensitiveRestrictionSpec(
+        'pixiv_sensitive_non_nsfw_channel_sensitive_restriction_enabled',
+        text('Pixiv sensitive (general) in non-NSFW channels', 'Pixiv センシティブ(全年齢): 非NSFWチャンネルでの取り扱い'),
+        text(
+            'Suppresses Pixiv sensitive expansion in channels that are not marked NSFW unless a sensitive allow target matches.',
+            'NSFW指定されていないチャンネルでは、センシティブ用の許可ターゲットが一致しない場合にPixivセンシティブ作品の展開を抑止します。'
+        )
+    ),
+    pixiv_sensitive_sensitive_content_allowed_targets: sensitiveTargetSpec(
+        'pixiv_sensitive_sensitive_content_allowed_targets',
+        text('Pixiv sensitive (general) allow targets', 'Pixiv センシティブ(全年齢)許可ターゲット'),
+        text(
+            'Users, channels, or roles allowed to bypass the Pixiv sensitive non-NSFW channel restriction.',
+            'Pixivセンシティブ作品の非NSFWチャンネル制限を上書きして許可するユーザー、チャンネル、ロールです。'
+        )
+    ),
+    pixiv_sensitive_sensitive_content_excluded_targets: sensitiveTargetSpec(
+        'pixiv_sensitive_sensitive_content_excluded_targets',
+        text('Pixiv sensitive (general) block targets', 'Pixiv センシティブ(全年齢)除外ターゲット'),
+        text(
+            'Users, channels, or roles where Pixiv sensitive expansion is suppressed.',
+            'Pixivセンシティブ作品の展開を抑止するユーザー、チャンネル、ロールです。'
         )
     ),
     pixiv_r18_non_nsfw_channel_sensitive_restriction_enabled: nonNsfwSensitiveRestrictionSpec(
