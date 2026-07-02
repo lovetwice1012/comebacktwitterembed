@@ -305,7 +305,7 @@ test('pixiv extract: exact R-18/R-18G tags are conservative rating fallbacks', a
     assert.ok(nonExact[0].analytics.facets.some(facet => facet.key === 'age_restricted' && facet.value === 'safe'));
 });
 
-test('pixiv extract: general sensitive level uses Pixiv sensitive policies separately', async () => {
+test('pixiv extract: general sensitive level uses Pixiv R-18 policies', async () => {
     const provider = loadPixivProviderWithFetch(async (url) => {
         if (String(url).includes('/pages?')) return okJson(createPages(2));
         return okJson({
@@ -316,31 +316,25 @@ test('pixiv extract: general sensitive level uses Pixiv sensitive policies separ
     });
 
     const metadataOnly = await provider.extract(createMessage(), 'https://www.pixiv.net/artworks/123456', {
-        pixiv_sensitive_display_mode: 'metadata_only',
+        pixiv_r18_display_mode: 'metadata_only',
     });
     assert.equal(metadataOnly[0].embeds.length, 1);
     assert.equal(metadataOnly[0].embeds[0].image, undefined);
-    assert.equal(metadataOnly[0].embeds[0].title, 'sample');
+    assert.equal(metadataOnly[0].embeds[0].title, 'sample [R-18]');
     assert.equal(metadataOnly[0].analytics.content.sensitive, 1);
     assert.equal(metadataOnly[0].analytics.metrics.sensitive_level, 4);
-    assert.ok(metadataOnly[0].analytics.facets.some(facet => facet.key === 'age_restricted' && facet.value === 'sensitive'));
+    assert.ok(metadataOnly[0].analytics.facets.some(facet => facet.key === 'age_restricted' && facet.value === 'r18'));
 
     const nonNsfwSuppressed = await provider.extract(createMessage(), 'https://www.pixiv.net/artworks/123456', {
-        pixiv_sensitive_non_nsfw_channel_sensitive_restriction_enabled: true,
+        pixiv_r18_non_nsfw_channel_sensitive_restriction_enabled: true,
     });
     assert.equal(nonNsfwSuppressed[0].suppressSourceEmbeds, true);
 
     const explicitlyAllowed = await provider.extract(createMessage(), 'https://www.pixiv.net/artworks/123456', {
-        pixiv_sensitive_non_nsfw_channel_sensitive_restriction_enabled: true,
-        pixiv_sensitive_sensitive_content_allowed_targets: { user: [], channel: ['channel-1'], role: [] },
+        pixiv_r18_non_nsfw_channel_sensitive_restriction_enabled: true,
+        pixiv_r18_sensitive_content_allowed_targets: { user: [], channel: ['channel-1'], role: [] },
     });
     assert.equal(explicitlyAllowed[0].embeds[0].image.url, 'https://www.phixiv.net/i/img-master/img/2024/01/01/00/00/00/123456_p0_master1200.jpg');
-
-    const r18SettingsIgnored = await provider.extract(createMessage(), 'https://www.pixiv.net/artworks/123456', {
-        pixiv_r18_display_mode: 'metadata_only',
-        pixiv_r18_non_nsfw_channel_sensitive_restriction_enabled: true,
-    });
-    assert.equal(r18SettingsIgnored[0].embeds[0].image.url, 'https://www.phixiv.net/i/img-master/img/2024/01/01/00/00/00/123456_p0_master1200.jpg');
 });
 
 test('pixiv extract: ugoira direct media URLs can be attached, linked, or hidden', async () => {

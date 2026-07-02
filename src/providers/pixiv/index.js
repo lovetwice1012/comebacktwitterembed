@@ -354,25 +354,17 @@ function pixivSensitivityKind(infoOrXRestrict, sensitiveLevel = 0, tags = []) {
         : pixivTagSensitivityKind(tags);
     if (value === 2 || tagKind === 'r18g') return 'r18g';
     if (value > 0 || tagKind === 'r18') return 'r18';
-    if (level >= PIXIV_GENERAL_SENSITIVE_LEVEL) return 'sensitive';
+    if (level >= PIXIV_GENERAL_SENSITIVE_LEVEL) return 'r18';
     return 'safe';
 }
 
 function resolvePixivSensitiveDisplayMode(settings, sensitivityKind) {
     if (sensitivityKind === 'r18') return resolveSensitiveDisplayMode(settings, 'pixiv_r18_display_mode', 'normal');
     if (sensitivityKind === 'r18g') return resolveSensitiveDisplayMode(settings, 'pixiv_r18g_display_mode', 'normal');
-    if (sensitivityKind === 'sensitive') return resolveSensitiveDisplayMode(settings, 'pixiv_sensitive_display_mode', 'normal');
     return 'normal';
 }
 
 function pixivSensitiveControlKeys(sensitivityKind) {
-    if (sensitivityKind === 'sensitive') {
-        return {
-            nonNsfwRestrictionEnabledKey: 'pixiv_sensitive_non_nsfw_channel_sensitive_restriction_enabled',
-            allowedTargetsKey: 'pixiv_sensitive_sensitive_content_allowed_targets',
-            excludedTargetsKey: 'pixiv_sensitive_sensitive_content_excluded_targets',
-        };
-    }
     if (sensitivityKind === 'r18') {
         return {
             nonNsfwRestrictionEnabledKey: 'pixiv_r18_non_nsfw_channel_sensitive_restriction_enabled',
@@ -448,7 +440,6 @@ function shouldShowUgoiraMedia(settings) {
 function maturityFacetValue(sensitivityKind) {
     if (sensitivityKind === 'r18') return 'r18';
     if (sensitivityKind === 'r18g') return 'r18g';
-    if (sensitivityKind === 'sensitive') return 'sensitive';
     return 'safe';
 }
 
@@ -667,12 +658,8 @@ const pixivProvider = {
         'pixiv_images_per_step',
         'pixiv_caption_max_length',
         'pixiv_tag_limit',
-        'pixiv_sensitive_display_mode',
         'pixiv_r18_display_mode',
         'pixiv_r18g_display_mode',
-        'pixiv_sensitive_non_nsfw_channel_sensitive_restriction_enabled',
-        'pixiv_sensitive_sensitive_content_allowed_targets',
-        'pixiv_sensitive_sensitive_content_excluded_targets',
         'pixiv_r18_non_nsfw_channel_sensitive_restriction_enabled',
         'pixiv_r18_sensitive_content_allowed_targets',
         'pixiv_r18_sensitive_content_excluded_targets',

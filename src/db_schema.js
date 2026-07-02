@@ -16,8 +16,6 @@ const TABLES = {
     guildProviderDisableTargets: 'guild_provider_disable_targets',
     guildProviderSensitiveContentAllowedTargets: 'guild_provider_sensitive_content_allowed_targets',
     guildProviderSensitiveContentExcludedTargets: 'guild_provider_sensitive_content_excluded_targets',
-    guildProviderPixivSensitiveContentAllowedTargets: 'guild_provider_pixiv_sensitive_content_allowed_targets',
-    guildProviderPixivSensitiveContentExcludedTargets: 'guild_provider_pixiv_sensitive_content_excluded_targets',
     guildProviderPixivR18SensitiveContentAllowedTargets: 'guild_provider_pixiv_r18_sensitive_content_allowed_targets',
     guildProviderPixivR18SensitiveContentExcludedTargets: 'guild_provider_pixiv_r18_sensitive_content_excluded_targets',
     guildProviderPixivR18gSensitiveContentAllowedTargets: 'guild_provider_pixiv_r18g_sensitive_content_allowed_targets',
@@ -134,10 +132,8 @@ const SCHEMA_STATEMENTS = [
         twitter_quote_layout VARCHAR(32) NULL,
         pixiv_caption_max_length INT NULL,
         pixiv_tag_limit VARCHAR(32) NULL,
-        pixiv_sensitive_display_mode VARCHAR(32) NULL,
         pixiv_r18_display_mode VARCHAR(32) NULL,
         pixiv_r18g_display_mode VARCHAR(32) NULL,
-        pixiv_sensitive_non_nsfw_channel_sensitive_restriction_enabled TINYINT(1) NULL,
         pixiv_r18_non_nsfw_channel_sensitive_restriction_enabled TINYINT(1) NULL,
         pixiv_r18g_non_nsfw_channel_sensitive_restriction_enabled TINYINT(1) NULL,
         instagram_caption_max_length INT NULL,
@@ -222,38 +218,6 @@ const SCHEMA_STATEMENTS = [
             FOREIGN KEY (provider_id) REFERENCES ${TABLES.providers}(provider_id)
             ON DELETE CASCADE,
         CONSTRAINT fk_sensitive_excluded_guild
-            FOREIGN KEY (guild_id) REFERENCES ${TABLES.guilds}(guild_id)
-            ON DELETE CASCADE
-    ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
-
-    `CREATE TABLE IF NOT EXISTS ${TABLES.guildProviderPixivSensitiveContentAllowedTargets} (
-        provider_id VARCHAR(64) NOT NULL,
-        guild_id VARCHAR(32) NOT NULL,
-        target_type ENUM('user', 'channel', 'role') NOT NULL,
-        target_id VARCHAR(32) NOT NULL,
-        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        PRIMARY KEY (provider_id, guild_id, target_type, target_id),
-        INDEX idx_pixiv_sensitive_allowed_guild (guild_id),
-        CONSTRAINT fk_pixiv_sensitive_allowed_provider
-            FOREIGN KEY (provider_id) REFERENCES ${TABLES.providers}(provider_id)
-            ON DELETE CASCADE,
-        CONSTRAINT fk_pixiv_sensitive_allowed_guild
-            FOREIGN KEY (guild_id) REFERENCES ${TABLES.guilds}(guild_id)
-            ON DELETE CASCADE
-    ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
-
-    `CREATE TABLE IF NOT EXISTS ${TABLES.guildProviderPixivSensitiveContentExcludedTargets} (
-        provider_id VARCHAR(64) NOT NULL,
-        guild_id VARCHAR(32) NOT NULL,
-        target_type ENUM('user', 'channel', 'role') NOT NULL,
-        target_id VARCHAR(32) NOT NULL,
-        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        PRIMARY KEY (provider_id, guild_id, target_type, target_id),
-        INDEX idx_pixiv_sensitive_excluded_guild (guild_id),
-        CONSTRAINT fk_pixiv_sensitive_excluded_provider
-            FOREIGN KEY (provider_id) REFERENCES ${TABLES.providers}(provider_id)
-            ON DELETE CASCADE,
-        CONSTRAINT fk_pixiv_sensitive_excluded_guild
             FOREIGN KEY (guild_id) REFERENCES ${TABLES.guilds}(guild_id)
             ON DELETE CASCADE
     ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
@@ -660,10 +624,8 @@ const GUILD_PROVIDER_SETTING_COLUMN_DEFINITIONS = {
     twitter_quote_layout: 'VARCHAR(32) NULL',
     pixiv_caption_max_length: 'INT NULL',
     pixiv_tag_limit: 'VARCHAR(32) NULL',
-    pixiv_sensitive_display_mode: 'VARCHAR(32) NULL',
     pixiv_r18_display_mode: 'VARCHAR(32) NULL',
     pixiv_r18g_display_mode: 'VARCHAR(32) NULL',
-    pixiv_sensitive_non_nsfw_channel_sensitive_restriction_enabled: 'TINYINT(1) NULL',
     pixiv_r18_non_nsfw_channel_sensitive_restriction_enabled: 'TINYINT(1) NULL',
     pixiv_r18g_non_nsfw_channel_sensitive_restriction_enabled: 'TINYINT(1) NULL',
     instagram_caption_max_length: 'INT NULL',
@@ -720,6 +682,12 @@ function parseAddColumnStatement(statement) {
     return { table: match[1], column: match[2] };
 }
 
+function parseDropColumnStatement(statement) {
+    const match = String(statement || '').match(/^ALTER\s+TABLE\s+`?([A-Za-z0-9_]+)`?\s+DROP\s+COLUMN\s+`?([A-Za-z0-9_]+)`?\b/i);
+    if (!match) return null;
+    return { table: match[1], column: match[2] };
+}
+
 function parseAddIndexStatement(statement) {
     const match = String(statement || '').match(/^ALTER\s+TABLE\s+`?([A-Za-z0-9_]+)`?\s+ADD\s+(?:INDEX|KEY)\s+`?([A-Za-z0-9_]+)`?\b/i);
     if (!match) return null;
@@ -731,6 +699,11 @@ async function shouldSkipMigrationStatement(queryDatabase, statement) {
     if (addColumn) {
         const rows = await queryDatabase(`SHOW COLUMNS FROM ${addColumn.table} LIKE ?`, [addColumn.column]);
         return rows.length > 0;
+    }
+    const dropColumn = parseDropColumnStatement(statement);
+    if (dropColumn) {
+        const rows = await queryDatabase(`SHOW COLUMNS FROM ${dropColumn.table} LIKE ?`, [dropColumn.column]);
+        return rows.length === 0;
     }
     const addIndex = parseAddIndexStatement(statement);
     if (addIndex) {
@@ -806,6 +779,7 @@ module.exports = {
     _internal: {
         listMigrationFiles,
         parseAddColumnStatement,
+        parseDropColumnStatement,
         parseAddIndexStatement,
         shouldSkipMigrationStatement,
         splitSqlStatements,

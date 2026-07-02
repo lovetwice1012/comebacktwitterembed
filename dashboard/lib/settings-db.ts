@@ -33,8 +33,6 @@ const SPECIAL_TARGET_TABLES: Record<string, string> = {
   disable: "guild_provider_disable_targets",
   sensitive_content_allowed_targets: "guild_provider_sensitive_content_allowed_targets",
   sensitive_content_excluded_targets: "guild_provider_sensitive_content_excluded_targets",
-  pixiv_sensitive_sensitive_content_allowed_targets: "guild_provider_pixiv_sensitive_content_allowed_targets",
-  pixiv_sensitive_sensitive_content_excluded_targets: "guild_provider_pixiv_sensitive_content_excluded_targets",
   pixiv_r18_sensitive_content_allowed_targets: "guild_provider_pixiv_r18_sensitive_content_allowed_targets",
   pixiv_r18_sensitive_content_excluded_targets: "guild_provider_pixiv_r18_sensitive_content_excluded_targets",
   pixiv_r18g_sensitive_content_allowed_targets: "guild_provider_pixiv_r18g_sensitive_content_allowed_targets",
@@ -107,7 +105,6 @@ function providerSettingDefault(provider: { id: string; enabledByDefault?: boole
   if (key === "enabled") return provider.enabledByDefault === true;
   if (key === "youtube_description_max_length") return provider.id === "youtube" ? 1400 : undefined;
   if (key === "pixiv_caption_max_length") return provider.id === "pixiv" ? 350 : undefined;
-  if (key === "pixiv_sensitive_display_mode") return provider.id === "pixiv" ? "normal" : undefined;
   if (key === "pixiv_r18_display_mode") return provider.id === "pixiv" ? "normal" : undefined;
   if (key === "pixiv_r18g_display_mode") return provider.id === "pixiv" ? "normal" : undefined;
   if (key === "instagram_caption_max_length") return provider.id === "instagram" ? 3000 : undefined;
@@ -122,7 +119,6 @@ function providerSettingDefault(provider: { id: string; enabledByDefault?: boole
   if (key === "amazon_description_max_length") return provider.id === "amazon" ? 700 : undefined;
   if (key === "amazon_extract_targets") return provider.id === "amazon" ? ["product", "prime_video", "music"] : undefined;
   if (key === "non_nsfw_channel_sensitive_restriction_enabled") return false;
-  if (key === "pixiv_sensitive_non_nsfw_channel_sensitive_restriction_enabled") return false;
   if (key === "pixiv_r18_non_nsfw_channel_sensitive_restriction_enabled") return false;
   if (key === "pixiv_r18g_non_nsfw_channel_sensitive_restriction_enabled") return false;
   if (key === "booth_description_max_length") return provider.id === "booth" ? 350 : undefined;

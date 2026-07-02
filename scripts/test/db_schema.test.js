@@ -123,24 +123,24 @@ test('sensitive content controls migration is present', () => {
     }
 });
 
-test('pixiv general sensitive controls migration is present', () => {
-    const file = path.join(MIGRATIONS_DIR, '20260702_add_zz_pixiv_general_sensitive_controls.sql');
-    const sql = fs.readFileSync(file, 'utf8');
-    const expected = {
-        pixiv_sensitive_display_mode: 'string',
-        pixiv_sensitive_non_nsfw_channel_sensitive_restriction_enabled: 'bool',
-    };
+test('pixiv general sensitive controls are reversed by a later migration', () => {
+    const migrationFiles = _internal.listMigrationFiles();
+    const addFile = '20260702_add_zz_pixiv_general_sensitive_controls.sql';
+    const dropFile = '20260702_add_zzz_drop_pixiv_general_sensitive_controls.sql';
+    const addSql = fs.readFileSync(path.join(MIGRATIONS_DIR, addFile), 'utf8');
+    const dropSql = fs.readFileSync(path.join(MIGRATIONS_DIR, dropFile), 'utf8');
 
-    assert.ok(_internal.listMigrationFiles().includes('20260702_add_zz_pixiv_general_sensitive_controls.sql'));
-    assert.ok(sql.includes('ALTER TABLE guild_provider_settings'));
-    assert.equal(TABLES.guildProviderPixivSensitiveContentAllowedTargets, 'guild_provider_pixiv_sensitive_content_allowed_targets');
-    assert.equal(TABLES.guildProviderPixivSensitiveContentExcludedTargets, 'guild_provider_pixiv_sensitive_content_excluded_targets');
-    assert.ok(sql.includes('CREATE TABLE IF NOT EXISTS guild_provider_pixiv_sensitive_content_allowed_targets'));
-    assert.ok(sql.includes('CREATE TABLE IF NOT EXISTS guild_provider_pixiv_sensitive_content_excluded_targets'));
-    for (const [key, type] of Object.entries(expected)) {
-        assert.ok(sql.includes(PROVIDER_SETTING_COLUMNS[key].column), `${key} missing from migration`);
-        assert.equal(PROVIDER_SETTING_COLUMNS[key].type, type);
-    }
+    assert.ok(migrationFiles.includes(addFile));
+    assert.ok(migrationFiles.includes(dropFile));
+    assert.ok(migrationFiles.indexOf(addFile) < migrationFiles.indexOf(dropFile));
+    assert.ok(addSql.includes('pixiv_sensitive_display_mode'));
+    assert.ok(addSql.includes('guild_provider_pixiv_sensitive_content_allowed_targets'));
+    assert.ok(dropSql.includes('DROP COLUMN pixiv_sensitive_display_mode'));
+    assert.ok(dropSql.includes('DROP COLUMN pixiv_sensitive_non_nsfw_channel_sensitive_restriction_enabled'));
+    assert.ok(dropSql.includes('DROP TABLE IF EXISTS guild_provider_pixiv_sensitive_content_allowed_targets'));
+    assert.ok(dropSql.includes('DROP TABLE IF EXISTS guild_provider_pixiv_sensitive_content_excluded_targets'));
+    assert.equal(PROVIDER_SETTING_COLUMNS.pixiv_sensitive_display_mode, undefined);
+    assert.equal(PROVIDER_SETTING_COLUMNS.pixiv_sensitive_non_nsfw_channel_sensitive_restriction_enabled, undefined);
 });
 
 test('provider hourly aggregate migration is present', () => {
@@ -259,4 +259,27 @@ test('database schema can detect add-column migrations before execution', async 
         sql: 'SHOW COLUMNS FROM guild_provider_settings LIKE ?',
         params: ['tiktok_hq'],
     }]);
+});
+
+test('database schema can skip drop-column migrations when column is absent', async () => {
+    assert.deepEqual(
+        _internal.parseDropColumnStatement('ALTER TABLE guild_provider_settings DROP COLUMN pixiv_sensitive_display_mode'),
+        { table: 'guild_provider_settings', column: 'pixiv_sensitive_display_mode' }
+    );
+    assert.equal(_internal.parseDropColumnStatement('DROP TABLE IF EXISTS example'), null);
+
+    const queries = [];
+    const skipMissing = await _internal.shouldSkipMigrationStatement(async (sql, params) => {
+        queries.push({ sql, params });
+        return [];
+    }, 'ALTER TABLE guild_provider_settings DROP COLUMN pixiv_sensitive_display_mode');
+
+    assert.equal(skipMissing, true);
+    assert.deepEqual(queries, [{
+        sql: 'SHOW COLUMNS FROM guild_provider_settings LIKE ?',
+        params: ['pixiv_sensitive_display_mode'],
+    }]);
+
+    const skipExisting = await _internal.shouldSkipMigrationStatement(async () => [{ Field: 'pixiv_sensitive_display_mode' }], 'ALTER TABLE guild_provider_settings DROP COLUMN pixiv_sensitive_display_mode');
+    assert.equal(skipExisting, false);
 });
