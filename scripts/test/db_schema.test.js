@@ -96,17 +96,27 @@ test('sensitive content controls migration is present', () => {
     const file = path.join(MIGRATIONS_DIR, '20260702_add_sensitive_content_controls.sql');
     const sql = fs.readFileSync(file, 'utf8');
     const expected = {
-        non_nsfw_channel_sensitive_display_mode: 'string',
+        non_nsfw_channel_sensitive_restriction_enabled: 'bool',
         pixiv_r18_display_mode: 'string',
         pixiv_r18g_display_mode: 'string',
+        pixiv_r18_non_nsfw_channel_sensitive_restriction_enabled: 'bool',
+        pixiv_r18g_non_nsfw_channel_sensitive_restriction_enabled: 'bool',
     };
 
     assert.ok(_internal.listMigrationFiles().includes('20260702_add_sensitive_content_controls.sql'));
     assert.ok(sql.includes('ALTER TABLE guild_provider_settings'));
     assert.equal(TABLES.guildProviderSensitiveContentAllowedTargets, 'guild_provider_sensitive_content_allowed_targets');
     assert.equal(TABLES.guildProviderSensitiveContentExcludedTargets, 'guild_provider_sensitive_content_excluded_targets');
+    assert.equal(TABLES.guildProviderPixivR18SensitiveContentAllowedTargets, 'guild_provider_pixiv_r18_sensitive_content_allowed_targets');
+    assert.equal(TABLES.guildProviderPixivR18SensitiveContentExcludedTargets, 'guild_provider_pixiv_r18_sensitive_content_excluded_targets');
+    assert.equal(TABLES.guildProviderPixivR18gSensitiveContentAllowedTargets, 'guild_provider_pixiv_r18g_sensitive_content_allowed_targets');
+    assert.equal(TABLES.guildProviderPixivR18gSensitiveContentExcludedTargets, 'guild_provider_pixiv_r18g_sensitive_content_excluded_targets');
     assert.ok(sql.includes('CREATE TABLE IF NOT EXISTS guild_provider_sensitive_content_allowed_targets'));
     assert.ok(sql.includes('CREATE TABLE IF NOT EXISTS guild_provider_sensitive_content_excluded_targets'));
+    assert.ok(sql.includes('CREATE TABLE IF NOT EXISTS guild_provider_pixiv_r18_sensitive_content_allowed_targets'));
+    assert.ok(sql.includes('CREATE TABLE IF NOT EXISTS guild_provider_pixiv_r18_sensitive_content_excluded_targets'));
+    assert.ok(sql.includes('CREATE TABLE IF NOT EXISTS guild_provider_pixiv_r18g_sensitive_content_allowed_targets'));
+    assert.ok(sql.includes('CREATE TABLE IF NOT EXISTS guild_provider_pixiv_r18g_sensitive_content_excluded_targets'));
     for (const [key, type] of Object.entries(expected)) {
         assert.ok(sql.includes(PROVIDER_SETTING_COLUMNS[key].column), `${key} missing from migration`);
         assert.equal(PROVIDER_SETTING_COLUMNS[key].type, type);

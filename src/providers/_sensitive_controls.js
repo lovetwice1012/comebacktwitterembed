@@ -3,12 +3,6 @@
 const { ifUserHasRole } = require('../utils');
 
 const SENSITIVE_DISPLAY_MODES = new Set(['normal', 'metadata_only', 'spoiler_attachment', 'suppress']);
-const DISPLAY_MODE_RANK = {
-    normal: 0,
-    spoiler_attachment: 1,
-    metadata_only: 2,
-    suppress: 3,
-};
 
 function resolveSensitiveDisplayMode(settings, key, fallback = 'normal') {
     const mode = String(settings?.[key] || '').trim();
@@ -34,13 +28,13 @@ function messageHasRole(message, roleIds) {
     }
 }
 
-function sensitiveContentTargetMatches(message, settings) {
-    const targets = normalizeTargetSetting(settings?.sensitive_content_excluded_targets);
+function sensitiveContentTargetMatches(message, settings, key = 'sensitive_content_excluded_targets') {
+    const targets = normalizeTargetSetting(settings?.[key]);
     return messageMatchesTargets(message, targets);
 }
 
-function sensitiveContentAllowedTargetMatches(message, settings) {
-    const targets = normalizeTargetSetting(settings?.sensitive_content_allowed_targets);
+function sensitiveContentAllowedTargetMatches(message, settings, key = 'sensitive_content_allowed_targets') {
+    const targets = normalizeTargetSetting(settings?.[key]);
     return messageMatchesTargets(message, targets);
 }
 
@@ -66,18 +60,28 @@ function shouldSuppressSensitiveContent(message, settings) {
     return resolveEffectiveSensitiveDisplayMode(message, settings, 'normal') === 'suppress';
 }
 
-function resolveEffectiveSensitiveDisplayMode(message, settings, baseMode = 'normal') {
-    if (sensitiveContentTargetMatches(message, settings)) return 'suppress';
+function resolveEffectiveSensitiveDisplayMode(message, settings, baseMode = 'normal', options = {}) {
+    const excludedTargetsKey = options.excludedTargetsKey || 'sensitive_content_excluded_targets';
+    const allowedTargetsKey = options.allowedTargetsKey || 'sensitive_content_allowed_targets';
+    const nonNsfwRestrictionEnabledKey = options.nonNsfwRestrictionEnabledKey || 'non_nsfw_channel_sensitive_restriction_enabled';
+    if (sensitiveContentTargetMatches(message, settings, excludedTargetsKey)) return 'suppress';
     const normalizedBaseMode = SENSITIVE_DISPLAY_MODES.has(baseMode) ? baseMode : 'normal';
-    if (!isNsfwChannel(message) && !sensitiveContentAllowedTargetMatches(message, settings)) {
-        const nonNsfwMode = resolveSensitiveDisplayMode(settings, 'non_nsfw_channel_sensitive_display_mode', 'normal');
-        if (nonNsfwMode !== 'normal') return moreRestrictiveMode(normalizedBaseMode, nonNsfwMode);
+    if (
+        nonNsfwChannelSensitiveRestrictionEnabled(settings, nonNsfwRestrictionEnabledKey)
+        && !isNsfwChannel(message)
+        && !sensitiveContentAllowedTargetMatches(message, settings, allowedTargetsKey)
+    ) {
+        return 'suppress';
     }
     return normalizedBaseMode;
 }
 
-function moreRestrictiveMode(first, second) {
-    return (DISPLAY_MODE_RANK[second] || 0) > (DISPLAY_MODE_RANK[first] || 0) ? second : first;
+function nonNsfwChannelSensitiveRestrictionEnabled(settings, key = 'non_nsfw_channel_sensitive_restriction_enabled') {
+    if (settings?.[key] === true) return true;
+    const legacyMode = key === 'non_nsfw_channel_sensitive_restriction_enabled'
+        ? resolveSensitiveDisplayMode(settings, 'non_nsfw_channel_sensitive_display_mode', 'normal')
+        : 'normal';
+    return legacyMode !== 'normal';
 }
 
 function buildSensitiveSuppressedStep(message, url, settings, options = {}) {
@@ -118,6 +122,7 @@ module.exports = {
     SENSITIVE_DISPLAY_MODES,
     buildSensitiveSuppressedStep,
     isNsfwChannel,
+    nonNsfwChannelSensitiveRestrictionEnabled,
     normalizeTargetSetting,
     resolveEffectiveSensitiveDisplayMode,
     resolveSensitiveDisplayMode,

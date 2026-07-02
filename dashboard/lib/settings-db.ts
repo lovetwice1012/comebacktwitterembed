@@ -33,6 +33,10 @@ const SPECIAL_TARGET_TABLES: Record<string, string> = {
   disable: "guild_provider_disable_targets",
   sensitive_content_allowed_targets: "guild_provider_sensitive_content_allowed_targets",
   sensitive_content_excluded_targets: "guild_provider_sensitive_content_excluded_targets",
+  pixiv_r18_sensitive_content_allowed_targets: "guild_provider_pixiv_r18_sensitive_content_allowed_targets",
+  pixiv_r18_sensitive_content_excluded_targets: "guild_provider_pixiv_r18_sensitive_content_excluded_targets",
+  pixiv_r18g_sensitive_content_allowed_targets: "guild_provider_pixiv_r18g_sensitive_content_allowed_targets",
+  pixiv_r18g_sensitive_content_excluded_targets: "guild_provider_pixiv_r18g_sensitive_content_excluded_targets",
   button_disabled: "guild_provider_button_disabled_targets",
 };
 
@@ -114,7 +118,9 @@ function providerSettingDefault(provider: { id: string; enabledByDefault?: boole
   if (key === "steam_image_source") return provider.id === "steam" ? "header" : undefined;
   if (key === "amazon_description_max_length") return provider.id === "amazon" ? 700 : undefined;
   if (key === "amazon_extract_targets") return provider.id === "amazon" ? ["product", "prime_video", "music"] : undefined;
-  if (key === "non_nsfw_channel_sensitive_display_mode") return "normal";
+  if (key === "non_nsfw_channel_sensitive_restriction_enabled") return false;
+  if (key === "pixiv_r18_non_nsfw_channel_sensitive_restriction_enabled") return false;
+  if (key === "pixiv_r18g_non_nsfw_channel_sensitive_restriction_enabled") return false;
   if (key === "booth_description_max_length") return provider.id === "booth" ? 350 : undefined;
   if (key === "booth_adult_display_mode") return provider.id === "booth" ? "normal" : undefined;
   const base = getProviderDefaults()[key];
@@ -443,9 +449,10 @@ export async function resetProviderSettings(
         guildId,
       );
     }
-    await tx.$executeRaw`DELETE FROM guild_provider_disable_targets WHERE provider_id = ${providerId} AND guild_id = ${guildId}`;
-    await tx.$executeRaw`DELETE FROM guild_provider_sensitive_content_allowed_targets WHERE provider_id = ${providerId} AND guild_id = ${guildId}`;
-    await tx.$executeRaw`DELETE FROM guild_provider_sensitive_content_excluded_targets WHERE provider_id = ${providerId} AND guild_id = ${guildId}`;
+    const targetTables = [...new Set(specs.filter((spec) => spec.kind === "targets").map((spec) => SPECIAL_TARGET_TABLES[spec.key]).filter(Boolean))];
+    for (const table of targetTables) {
+      await tx.$executeRawUnsafe(`DELETE FROM ${table} WHERE provider_id = ? AND guild_id = ?`, providerId, guildId);
+    }
     await tx.$executeRaw`DELETE FROM guild_provider_button_disabled_targets WHERE provider_id = ${providerId} AND guild_id = ${guildId}`;
     await tx.$executeRaw`DELETE FROM guild_provider_banned_words WHERE provider_id = ${providerId} AND guild_id = ${guildId}`;
     await tx.$executeRaw`DELETE FROM guild_provider_button_visibility WHERE provider_id = ${providerId} AND guild_id = ${guildId}`;

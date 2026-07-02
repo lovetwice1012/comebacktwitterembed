@@ -16,9 +16,15 @@ const PROVIDER_DEFAULTS = {
     button_invisible:                                     undefined,
     button_disabled:                                      undefined,
     anonymous_expand:                                     false,
-    non_nsfw_channel_sensitive_display_mode:              'normal',
+    non_nsfw_channel_sensitive_restriction_enabled:       false,
     sensitive_content_allowed_targets:                    undefined,
     sensitive_content_excluded_targets:                   undefined,
+    pixiv_r18_non_nsfw_channel_sensitive_restriction_enabled: false,
+    pixiv_r18_sensitive_content_allowed_targets:          undefined,
+    pixiv_r18_sensitive_content_excluded_targets:         undefined,
+    pixiv_r18g_non_nsfw_channel_sensitive_restriction_enabled: false,
+    pixiv_r18g_sensitive_content_allowed_targets:         undefined,
+    pixiv_r18g_sensitive_content_excluded_targets:        undefined,
     pixiv_images_per_step:                                undefined,
     secondary_extract_mode:                               false,
     secondary_extract_mode_multiple_images:               true,
@@ -132,9 +138,9 @@ const PROVIDER_SETTING_COLUMNS = {
         column: 'quote_repost_depth_by_account',
         type: 'jsonObject',
     },
-    non_nsfw_channel_sensitive_display_mode: {
-        column: 'non_nsfw_channel_sensitive_display_mode',
-        type: 'string',
+    non_nsfw_channel_sensitive_restriction_enabled: {
+        column: 'non_nsfw_channel_sensitive_restriction_enabled',
+        type: 'bool',
     },
     pixiv_images_per_step: {
         column: 'pixiv_images_per_step',
@@ -183,6 +189,14 @@ const PROVIDER_SETTING_COLUMNS = {
     pixiv_r18g_display_mode: {
         column: 'pixiv_r18g_display_mode',
         type: 'string',
+    },
+    pixiv_r18_non_nsfw_channel_sensitive_restriction_enabled: {
+        column: 'pixiv_r18_non_nsfw_channel_sensitive_restriction_enabled',
+        type: 'bool',
+    },
+    pixiv_r18g_non_nsfw_channel_sensitive_restriction_enabled: {
+        column: 'pixiv_r18g_non_nsfw_channel_sensitive_restriction_enabled',
+        type: 'bool',
     },
     instagram_caption_max_length: {
         column: 'instagram_caption_max_length',
@@ -266,6 +280,15 @@ const PROVIDER_SETTING_COLUMNS = {
     },
 };
 
+const TARGET_SETTING_TABLES = {
+    sensitive_content_allowed_targets: TABLES.guildProviderSensitiveContentAllowedTargets,
+    sensitive_content_excluded_targets: TABLES.guildProviderSensitiveContentExcludedTargets,
+    pixiv_r18_sensitive_content_allowed_targets: TABLES.guildProviderPixivR18SensitiveContentAllowedTargets,
+    pixiv_r18_sensitive_content_excluded_targets: TABLES.guildProviderPixivR18SensitiveContentExcludedTargets,
+    pixiv_r18g_sensitive_content_allowed_targets: TABLES.guildProviderPixivR18gSensitiveContentAllowedTargets,
+    pixiv_r18g_sensitive_content_excluded_targets: TABLES.guildProviderPixivR18gSensitiveContentExcludedTargets,
+};
+
 function queryDatabase() {
     return require('../db').queryDatabase;
 }
@@ -320,8 +343,7 @@ function getTestMemorySetting(provider, key, guildId) {
     const legacy = getLegacyTestSetting(provider, key, guildId);
     if (legacy !== undefined) return legacy;
     if (key === 'disable') return normalizeTargetSetting();
-    if (key === 'sensitive_content_allowed_targets') return normalizeTargetSetting();
-    if (key === 'sensitive_content_excluded_targets') return normalizeTargetSetting();
+    if (TARGET_SETTING_TABLES[key]) return normalizeTargetSetting();
     if (key === 'button_disabled') return normalizeButtonDisabled();
     if (key === 'bannedWords') return [];
     if (key === 'button_invisible') return normalizeButtonVisibility();
@@ -612,11 +634,8 @@ async function getSetting(providerInput, key, guildId) {
     const provider = normalizeProvider(providerInput);
     if (isTestStorageMode()) return getTestMemorySetting(provider, key, guildId);
     if (key === 'disable') return await getDisableSetting(provider, guildId);
-    if (key === 'sensitive_content_allowed_targets') {
-        return targetRowsToSetting(await getRowsByTargetTable(TABLES.guildProviderSensitiveContentAllowedTargets, provider.id, guildId));
-    }
-    if (key === 'sensitive_content_excluded_targets') {
-        return targetRowsToSetting(await getRowsByTargetTable(TABLES.guildProviderSensitiveContentExcludedTargets, provider.id, guildId));
+    if (TARGET_SETTING_TABLES[key]) {
+        return targetRowsToSetting(await getRowsByTargetTable(TARGET_SETTING_TABLES[key], provider.id, guildId));
     }
     if (key === 'button_disabled') {
         return normalizeButtonDisabled(targetRowsToSetting(
@@ -632,11 +651,8 @@ async function setSetting(providerInput, key, guildId, value) {
     const provider = normalizeProvider(providerInput);
     if (isTestStorageMode()) return setTestMemorySetting(provider, key, guildId, value);
     if (key === 'disable') return await setDisableSetting(provider, guildId, value);
-    if (key === 'sensitive_content_allowed_targets') {
-        return await replaceTargetRows(TABLES.guildProviderSensitiveContentAllowedTargets, provider.id, guildId, value);
-    }
-    if (key === 'sensitive_content_excluded_targets') {
-        return await replaceTargetRows(TABLES.guildProviderSensitiveContentExcludedTargets, provider.id, guildId, value);
+    if (TARGET_SETTING_TABLES[key]) {
+        return await replaceTargetRows(TARGET_SETTING_TABLES[key], provider.id, guildId, value);
     }
     if (key === 'button_disabled') {
         return await replaceTargetRows(TABLES.guildProviderButtonDisabledTargets, provider.id, guildId, value);

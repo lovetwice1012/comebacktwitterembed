@@ -27,6 +27,10 @@ function componentIds(payload) {
     return payload.components.flatMap(row => row.components.map(component => component.data.custom_id));
 }
 
+function componentById(payload, customId) {
+    return payload.components.flatMap(row => row.components).find(component => component.data.custom_id === customId);
+}
+
 test('guisetting provider enabled renders enable and disable buttons', async () => {
     enabled = false;
 
@@ -36,9 +40,8 @@ test('guisetting provider enabled renders enable and disable buttons', async () 
     assert.ok(ids.includes('guisetting:bool:pixiv:enabled:1'));
     assert.ok(ids.includes('guisetting:bool:pixiv:enabled:0'));
 
-    const controlRow = payload.components[2].components;
-    assert.equal(controlRow[0].data.disabled, false);
-    assert.equal(controlRow[1].data.disabled, true);
+    assert.equal(componentById(payload, 'guisetting:bool:pixiv:enabled:1').data.disabled, false);
+    assert.equal(componentById(payload, 'guisetting:bool:pixiv:enabled:0').data.disabled, true);
 });
 
 test('guisetting provider enabled buttons update provider state', async () => {
@@ -62,7 +65,6 @@ test('guisetting provider enabled buttons update provider state', async () => {
     assert.equal(await guisetting.handleComponent(interaction), true);
     assert.equal(enabled, true);
 
-    const controlRow = editedPayload.components[2].components;
-    assert.equal(controlRow[0].data.disabled, true);
-    assert.equal(controlRow[1].data.disabled, false);
+    assert.equal(componentById(editedPayload, 'guisetting:bool:pixiv:enabled:1').data.disabled, true);
+    assert.equal(componentById(editedPayload, 'guisetting:bool:pixiv:enabled:0').data.disabled, false);
 });

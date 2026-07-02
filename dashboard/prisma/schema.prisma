@@ -28,7 +28,7 @@ model GuildProviderSetting {
   quoteRepostMaxDepth                          Int?     @map("quote_repost_max_depth")
   quoteRepostDoNotExtract                      Boolean? @map("quote_repost_do_not_extract")
   quoteRepostDepthByAccount                    String?  @map("quote_repost_depth_by_account") @db.Text
-  nonNsfwChannelSensitiveDisplayMode           String?  @map("non_nsfw_channel_sensitive_display_mode") @db.VarChar(32)
+  nonNsfwChannelSensitiveRestrictionEnabled    Boolean? @map("non_nsfw_channel_sensitive_restriction_enabled")
   pixivImagesPerStep                           Int?     @map("pixiv_images_per_step")
   youtubeDescriptionMaxLength                  Int?     @map("youtube_description_max_length")
   youtubeVideoListLimit                        Int?     @map("youtube_video_list_limit")
@@ -41,6 +41,8 @@ model GuildProviderSetting {
   pixivTagLimit                                String?  @map("pixiv_tag_limit") @db.VarChar(32)
   pixivR18DisplayMode                          String?  @map("pixiv_r18_display_mode") @db.VarChar(32)
   pixivR18gDisplayMode                         String?  @map("pixiv_r18g_display_mode") @db.VarChar(32)
+  pixivR18NonNsfwChannelSensitiveRestrictionEnabled  Boolean? @map("pixiv_r18_non_nsfw_channel_sensitive_restriction_enabled")
+  pixivR18gNonNsfwChannelSensitiveRestrictionEnabled Boolean? @map("pixiv_r18g_non_nsfw_channel_sensitive_restriction_enabled")
   instagramCaptionMaxLength                    Int?     @map("instagram_caption_max_length")
   instagramMediaLimit                          Int?     @map("instagram_media_limit")
   githubCardStyle                              String?  @map("github_card_style") @db.VarChar(32)

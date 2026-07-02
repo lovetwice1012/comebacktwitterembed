@@ -331,6 +331,25 @@ function resolvePixivAgeDisplayMode(settings, xRestrict) {
     return 'normal';
 }
 
+function pixivSensitiveControlKeys(xRestrict) {
+    const value = Number(xRestrict) || 0;
+    if (value === 1) {
+        return {
+            nonNsfwRestrictionEnabledKey: 'pixiv_r18_non_nsfw_channel_sensitive_restriction_enabled',
+            allowedTargetsKey: 'pixiv_r18_sensitive_content_allowed_targets',
+            excludedTargetsKey: 'pixiv_r18_sensitive_content_excluded_targets',
+        };
+    }
+    if (value === 2) {
+        return {
+            nonNsfwRestrictionEnabledKey: 'pixiv_r18g_non_nsfw_channel_sensitive_restriction_enabled',
+            allowedTargetsKey: 'pixiv_r18g_sensitive_content_allowed_targets',
+            excludedTargetsKey: 'pixiv_r18g_sensitive_content_excluded_targets',
+        };
+    }
+    return {};
+}
+
 function showAiLabel(settings) {
     return shouldShowOutputItem(settings, 'ai', { hideInCompact: false });
 }
@@ -457,7 +476,7 @@ async function extract(message, url, s) {
     const xRestrict = Number(info.x_restrict) || 0;
     const isAdult = xRestrict > 0;
     const adultDisplayMode = isAdult
-        ? resolveEffectiveSensitiveDisplayMode(message, s, resolvePixivAgeDisplayMode(s, xRestrict))
+        ? resolveEffectiveSensitiveDisplayMode(message, s, resolvePixivAgeDisplayMode(s, xRestrict), pixivSensitiveControlKeys(xRestrict))
         : 'normal';
     if (adultDisplayMode === 'suppress') {
         return [buildSensitiveSuppressedStep(message, url, s)];
@@ -601,14 +620,17 @@ const pixivProvider = {
         'legacy_mode',
         'display_density',
         'media_display_mode',
-        'non_nsfw_channel_sensitive_display_mode',
-        'sensitive_content_allowed_targets',
-        'sensitive_content_excluded_targets',
         'pixiv_images_per_step',
         'pixiv_caption_max_length',
         'pixiv_tag_limit',
         'pixiv_r18_display_mode',
         'pixiv_r18g_display_mode',
+        'pixiv_r18_non_nsfw_channel_sensitive_restriction_enabled',
+        'pixiv_r18_sensitive_content_allowed_targets',
+        'pixiv_r18_sensitive_content_excluded_targets',
+        'pixiv_r18g_non_nsfw_channel_sensitive_restriction_enabled',
+        'pixiv_r18g_sensitive_content_allowed_targets',
+        'pixiv_r18g_sensitive_content_excluded_targets',
         {
             key: 'hidden_output_items',
             outputItems: [

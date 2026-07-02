@@ -227,12 +227,12 @@ test('booth extract: adult display mode can hide media or send spoiler attachmen
     }]);
 
     const nonNsfwSuppressed = await provider.extract(createMessage(url), url, {
-        non_nsfw_channel_sensitive_display_mode: 'suppress',
+        non_nsfw_channel_sensitive_restriction_enabled: true,
     });
     assert.equal(nonNsfwSuppressed[0].suppressSourceEmbeds, true);
 
     const explicitlyAllowed = await provider.extract(createMessage(url), url, {
-        non_nsfw_channel_sensitive_display_mode: 'suppress',
+        non_nsfw_channel_sensitive_restriction_enabled: true,
         sensitive_content_allowed_targets: { user: [], channel: ['channel-1'], role: [] },
     });
     assert.equal(explicitlyAllowed[0].embeds[0].image.url, 'https://i.example/1.jpg');

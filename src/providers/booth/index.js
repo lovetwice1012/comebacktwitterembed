@@ -573,12 +573,12 @@ const boothProvider = {
         'legacy_mode',
         'display_density',
         'media_display_mode',
-        'non_nsfw_channel_sensitive_display_mode',
-        'sensitive_content_allowed_targets',
-        'sensitive_content_excluded_targets',
         'booth_description_max_length',
         'booth_image_limit',
         'booth_adult_display_mode',
+        'non_nsfw_channel_sensitive_restriction_enabled',
+        'sensitive_content_allowed_targets',
+        'sensitive_content_excluded_targets',
         {
             key: 'hidden_output_items',
             outputItems: [

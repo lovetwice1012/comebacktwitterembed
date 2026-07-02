@@ -224,18 +224,29 @@ test('pixiv extract: R-18G and non-NSFW channel policies can suppress sensitive 
     }]);
 
     const nonNsfwSuppressed = await provider.extract(createMessage(), 'https://www.pixiv.net/artworks/123456', {
-        non_nsfw_channel_sensitive_display_mode: 'suppress',
+        pixiv_r18g_non_nsfw_channel_sensitive_restriction_enabled: true,
     });
     assert.equal(nonNsfwSuppressed[0].suppressSourceEmbeds, true);
 
     const explicitlyAllowed = await provider.extract(createMessage(), 'https://www.pixiv.net/artworks/123456', {
-        non_nsfw_channel_sensitive_display_mode: 'suppress',
-        sensitive_content_allowed_targets: { user: [], channel: ['channel-1'], role: [] },
+        pixiv_r18g_non_nsfw_channel_sensitive_restriction_enabled: true,
+        pixiv_r18g_sensitive_content_allowed_targets: { user: [], channel: ['channel-1'], role: [] },
     });
     assert.equal(explicitlyAllowed[0].embeds[0].image.url, 'https://www.phixiv.net/i/img-master/img/2024/01/01/00/00/00/123456_p0_master1200.jpg');
 
+    const r18OnlyRestrictionIgnored = await provider.extract(createMessage(), 'https://www.pixiv.net/artworks/123456', {
+        pixiv_r18_non_nsfw_channel_sensitive_restriction_enabled: true,
+    });
+    assert.equal(r18OnlyRestrictionIgnored[0].embeds[0].image.url, 'https://www.phixiv.net/i/img-master/img/2024/01/01/00/00/00/123456_p0_master1200.jpg');
+
+    const r18AllowTargetIgnored = await provider.extract(createMessage(), 'https://www.pixiv.net/artworks/123456', {
+        pixiv_r18g_non_nsfw_channel_sensitive_restriction_enabled: true,
+        pixiv_r18_sensitive_content_allowed_targets: { user: [], channel: ['channel-1'], role: [] },
+    });
+    assert.equal(r18AllowTargetIgnored[0].suppressSourceEmbeds, true);
+
     const nsfwChannel = await provider.extract(createMessage({ channel: { id: 'channel-1', nsfw: true } }), 'https://www.pixiv.net/artworks/123456', {
-        non_nsfw_channel_sensitive_display_mode: 'suppress',
+        pixiv_r18g_non_nsfw_channel_sensitive_restriction_enabled: true,
     });
     assert.equal(nsfwChannel[0].embeds[0].image.url, 'https://www.phixiv.net/i/img-master/img/2024/01/01/00/00/00/123456_p0_master1200.jpg');
 });

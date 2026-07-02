@@ -563,6 +563,8 @@ function isAdvanced(spec: BotSettingSpec) {
   return (
     spec.kind === "outputVisibility" ||
     spec.kind === "accountDepthMap" ||
+    key.includes("sensitive_content_") ||
+    key.includes("sensitive_restriction") ||
     key.includes("legacy") ||
     key.includes("secondary") ||
     key.includes("fallback") ||
@@ -605,6 +607,10 @@ function specialSettingDbTarget(key: string) {
   if (key === "disable") return "guild_provider_disable_targets";
   if (key === "sensitive_content_allowed_targets") return "guild_provider_sensitive_content_allowed_targets";
   if (key === "sensitive_content_excluded_targets") return "guild_provider_sensitive_content_excluded_targets";
+  if (key === "pixiv_r18_sensitive_content_allowed_targets") return "guild_provider_pixiv_r18_sensitive_content_allowed_targets";
+  if (key === "pixiv_r18_sensitive_content_excluded_targets") return "guild_provider_pixiv_r18_sensitive_content_excluded_targets";
+  if (key === "pixiv_r18g_sensitive_content_allowed_targets") return "guild_provider_pixiv_r18g_sensitive_content_allowed_targets";
+  if (key === "pixiv_r18g_sensitive_content_excluded_targets") return "guild_provider_pixiv_r18g_sensitive_content_excluded_targets";
   if (key === "button_disabled") return "guild_provider_button_disabled_targets";
   if (key === "button_invisible") return "guild_provider_button_visibility";
   if (key === "bannedWords") return "guild_provider_banned_words";

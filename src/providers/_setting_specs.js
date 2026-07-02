@@ -49,6 +49,26 @@ function sensitiveDisplayModeSpec(key, label, description) {
     };
 }
 
+function nonNsfwSensitiveRestrictionSpec(key, label, description) {
+    return {
+        key,
+        label,
+        description,
+        kind: 'bool',
+        settingKey: key,
+    };
+}
+
+function sensitiveTargetSpec(key, label, description) {
+    return {
+        key,
+        label,
+        description,
+        kind: 'targets',
+        settingKey: key,
+    };
+}
+
 const BULK_SETTING_KEYS = new Set([
     'enabled',
     'disable',
@@ -212,34 +232,30 @@ const SETTING_SPEC_CATALOG = {
         kind: 'bool',
         settingKey: 'anonymous_expand',
     },
-    non_nsfw_channel_sensitive_display_mode: sensitiveDisplayModeSpec(
-        'non_nsfw_channel_sensitive_display_mode',
+    non_nsfw_channel_sensitive_restriction_enabled: nonNsfwSensitiveRestrictionSpec(
+        'non_nsfw_channel_sensitive_restriction_enabled',
         text('Sensitive content in non-NSFW channels', '非NSFWチャンネルでのセンシティブコンテンツの取り扱い'),
         text(
-            'Overrides sensitive media display in channels that are not marked NSFW unless an allow target matches.',
-            'NSFW指定されていないチャンネルでのセンシティブメディア表示を、許可ターゲットが一致しない場合に上書きします。'
+            'Suppresses sensitive content expansion in channels that are not marked NSFW unless an allow target matches.',
+            'NSFW指定されていないチャンネルでは、許可ターゲットが一致しない場合にセンシティブコンテンツの展開を抑止します。'
         )
     ),
-    sensitive_content_allowed_targets: {
-        key: 'sensitive_content_allowed_targets',
-        label: text('Sensitive content allow targets', 'センシティブ許可ターゲット'),
-        description: text(
+    sensitive_content_allowed_targets: sensitiveTargetSpec(
+        'sensitive_content_allowed_targets',
+        text('Sensitive content allow targets', 'センシティブ許可ターゲット'),
+        text(
             'Users, channels, or roles allowed to bypass the non-NSFW channel sensitive-content policy.',
             '非NSFWチャンネル用のセンシティブ制限を上書きして許可するユーザー、チャンネル、ロールです。'
-        ),
-        kind: 'targets',
-        settingKey: 'sensitive_content_allowed_targets',
-    },
-    sensitive_content_excluded_targets: {
-        key: 'sensitive_content_excluded_targets',
-        label: text('Sensitive content block targets', 'センシティブ除外ターゲット'),
-        description: text(
+        )
+    ),
+    sensitive_content_excluded_targets: sensitiveTargetSpec(
+        'sensitive_content_excluded_targets',
+        text('Sensitive content block targets', 'センシティブ除外ターゲット'),
+        text(
             'Users, channels, or roles where sensitive content expansion is suppressed.',
             'センシティブコンテンツの展開を抑止するユーザー、チャンネル、ロールです。'
-        ),
-        kind: 'targets',
-        settingKey: 'sensitive_content_excluded_targets',
-    },
+        )
+    ),
     quote_repost_do_not_extract: {
         key: 'quote_repost_do_not_extract',
         label: text('Skip quoted reposts', '引用リポストを展開しない'),
@@ -642,6 +658,54 @@ const SETTING_SPEC_CATALOG = {
         text(
             'Controls how Pixiv artworks marked R-18G are expanded.',
             'PixivでR-18Gとして取得された作品の展開方法を選びます。'
+        )
+    ),
+    pixiv_r18_non_nsfw_channel_sensitive_restriction_enabled: nonNsfwSensitiveRestrictionSpec(
+        'pixiv_r18_non_nsfw_channel_sensitive_restriction_enabled',
+        text('Pixiv R-18 in non-NSFW channels', 'Pixiv R-18: 非NSFWチャンネルでの取り扱い'),
+        text(
+            'Suppresses Pixiv R-18 expansion in channels that are not marked NSFW unless an R-18 allow target matches.',
+            'NSFW指定されていないチャンネルでは、R-18用の許可ターゲットが一致しない場合にPixiv R-18の展開を抑止します。'
+        )
+    ),
+    pixiv_r18_sensitive_content_allowed_targets: sensitiveTargetSpec(
+        'pixiv_r18_sensitive_content_allowed_targets',
+        text('Pixiv R-18 allow targets', 'Pixiv R-18許可ターゲット'),
+        text(
+            'Users, channels, or roles allowed to bypass the Pixiv R-18 non-NSFW channel restriction.',
+            'Pixiv R-18の非NSFWチャンネル制限を上書きして許可するユーザー、チャンネル、ロールです。'
+        )
+    ),
+    pixiv_r18_sensitive_content_excluded_targets: sensitiveTargetSpec(
+        'pixiv_r18_sensitive_content_excluded_targets',
+        text('Pixiv R-18 block targets', 'Pixiv R-18除外ターゲット'),
+        text(
+            'Users, channels, or roles where Pixiv R-18 expansion is suppressed.',
+            'Pixiv R-18の展開を抑止するユーザー、チャンネル、ロールです。'
+        )
+    ),
+    pixiv_r18g_non_nsfw_channel_sensitive_restriction_enabled: nonNsfwSensitiveRestrictionSpec(
+        'pixiv_r18g_non_nsfw_channel_sensitive_restriction_enabled',
+        text('Pixiv R-18G in non-NSFW channels', 'Pixiv R-18G: 非NSFWチャンネルでの取り扱い'),
+        text(
+            'Suppresses Pixiv R-18G expansion in channels that are not marked NSFW unless an R-18G allow target matches.',
+            'NSFW指定されていないチャンネルでは、R-18G用の許可ターゲットが一致しない場合にPixiv R-18Gの展開を抑止します。'
+        )
+    ),
+    pixiv_r18g_sensitive_content_allowed_targets: sensitiveTargetSpec(
+        'pixiv_r18g_sensitive_content_allowed_targets',
+        text('Pixiv R-18G allow targets', 'Pixiv R-18G許可ターゲット'),
+        text(
+            'Users, channels, or roles allowed to bypass the Pixiv R-18G non-NSFW channel restriction.',
+            'Pixiv R-18Gの非NSFWチャンネル制限を上書きして許可するユーザー、チャンネル、ロールです。'
+        )
+    ),
+    pixiv_r18g_sensitive_content_excluded_targets: sensitiveTargetSpec(
+        'pixiv_r18g_sensitive_content_excluded_targets',
+        text('Pixiv R-18G block targets', 'Pixiv R-18G除外ターゲット'),
+        text(
+            'Users, channels, or roles where Pixiv R-18G expansion is suppressed.',
+            'Pixiv R-18Gの展開を抑止するユーザー、チャンネル、ロールです。'
         )
     ),
     instagram_caption_max_length: {
