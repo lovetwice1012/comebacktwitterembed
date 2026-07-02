@@ -10,6 +10,7 @@
 const { ApplicationCommandOptionType } = require('discord.js');
 const { t, commandNameLocales, descriptionLocales, messageLocales } = require('../../locales');
 const { loadProviders } = require('../../providers/_loader');
+const { maybeSendSettingsWebuiNotice } = require('./settings/webuiNotice');
 
 const ALL_PROVIDERS_ID = 'all';
 const BULK_PROVIDER_SUBCOMMANDS = new Set([
@@ -60,7 +61,9 @@ const DEFAULT_PROVIDER_BY_SUBCOMMAND = {
 };
 
 async function runAndSave(handler, interaction, client) {
-    return await handler(interaction, client);
+    const result = await handler(interaction, client);
+    await maybeSendSettingsWebuiNotice(interaction);
+    return result;
 }
 
 module.exports.execute = async function (interaction, client) {
@@ -68,7 +71,9 @@ module.exports.execute = async function (interaction, client) {
     const sub = interaction.options.getSubcommand(false);
 
     if (!sub) {
-        return await require('./guisetting').execute(interaction);
+        const result = await require('./guisetting').execute(interaction);
+        await maybeSendSettingsWebuiNotice(interaction);
+        return result;
     }
 
     const provider = group || interaction.options.getString('provider') || DEFAULT_PROVIDER_BY_SUBCOMMAND[sub] || 'twitter';

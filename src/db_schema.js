@@ -34,6 +34,8 @@ const TABLES = {
     botProviderHourlyAggregates: 'bot_provider_hourly_aggregates',
     botProviderHourlyUniqueKeys: 'bot_provider_hourly_unique_keys',
     botErrorAlerts: 'bot_error_alerts',
+    dashboardAuditLogs: 'dashboard_audit_logs',
+    guildSettingsWebuiNoticeState: 'guild_settings_webui_notice_state',
 };
 
 const SCHEMA_STATEMENTS = [
@@ -590,6 +592,17 @@ const SCHEMA_STATEMENTS = [
         updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
         INDEX idx_error_alerts_sent (last_sent_at_ms),
         INDEX idx_error_alerts_provider (provider_id)
+    ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
+
+    `CREATE TABLE IF NOT EXISTS ${TABLES.guildSettingsWebuiNoticeState} (
+        guild_id VARCHAR(32) NOT NULL PRIMARY KEY,
+        sent_at_ms BIGINT NOT NULL,
+        command_user_id VARCHAR(32) NULL,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        CONSTRAINT fk_settings_webui_notice_guild
+            FOREIGN KEY (guild_id) REFERENCES ${TABLES.guilds}(guild_id)
+            ON DELETE CASCADE
     ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
 ];
 

@@ -13,6 +13,18 @@ test('database schema declares migration tracking', () => {
     assert.ok(SCHEMA_STATEMENTS.some(statement => statement.includes(TABLES.schemaMigrations)));
 });
 
+test('database schema declares settings webui notice state', () => {
+    const file = path.join(MIGRATIONS_DIR, '20260702_add_settings_webui_notice_state.sql');
+    const sql = fs.readFileSync(file, 'utf8');
+
+    assert.equal(TABLES.dashboardAuditLogs, 'dashboard_audit_logs');
+    assert.equal(TABLES.guildSettingsWebuiNoticeState, 'guild_settings_webui_notice_state');
+    assert.ok(_internal.listMigrationFiles().includes('20260702_add_settings_webui_notice_state.sql'));
+    assert.ok(sql.includes('CREATE TABLE IF NOT EXISTS guild_settings_webui_notice_state'));
+    assert.ok(sql.includes('command_user_id'));
+    assert.ok(SCHEMA_STATEMENTS.some(statement => statement.includes(TABLES.guildSettingsWebuiNoticeState)));
+});
+
 test('youtube description length migration is present', () => {
     const file = path.join(MIGRATIONS_DIR, '20260630_add_youtube_description_max_length.sql');
     const sql = fs.readFileSync(file, 'utf8');
