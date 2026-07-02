@@ -127,14 +127,30 @@ function quoteIdentifier(name: string) {
   return `\`${name}\``;
 }
 
-function serialize(value: unknown): unknown {
+function serialize(value: unknown, seen = new WeakSet<object>()): unknown {
+  if (typeof value === "function" || typeof value === "symbol") return null;
   if (typeof value === "bigint") return value.toString();
+  if (typeof value === "number") return Number.isFinite(value) ? value : null;
   if (value instanceof Date) return value.toISOString();
-  if (Array.isArray(value)) return value.map(serialize);
+  if (Array.isArray(value)) return value.map((item) => serialize(item, seen));
   if (value && typeof value === "object") {
-    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, serialize(item)]));
+    if (seen.has(value)) return "[Circular]";
+    seen.add(value);
+    try {
+      const jsonValue = typeof (value as { toJSON?: unknown }).toJSON === "function"
+        ? (value as { toJSON: () => unknown }).toJSON()
+        : value;
+      if (jsonValue !== value) return serialize(jsonValue, seen);
+      return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, serialize(item, seen)]));
+    } finally {
+      seen.delete(value);
+    }
   }
   return value;
+}
+
+function clientSafe<T>(value: T): T {
+  return serialize(value) as T;
 }
 
 let cachedAnonymizationSalt: string | null = null;
@@ -4164,7 +4180,7 @@ export async function getAdminDetailedAnalytics(rawFilters: AdminDetailedAnalyti
     optionalQuery([], () => getDetailedRawSamples(filters, window, limit)),
   ]);
 
-  return {
+  return clientSafe({
     generatedAt: new Date().toISOString(),
     durationMs: Date.now() - startedAt,
     filters: {
@@ -4207,7 +4223,7 @@ export async function getAdminDetailedAnalytics(rawFilters: AdminDetailedAnalyti
     interestBreakdown,
     failureReasons,
     rawSamples,
-  };
+  });
 }
 
 export type AdminGuildAnalyticsPreviewFilters = {
@@ -5936,7 +5952,7 @@ export async function getAdminGuildAnalyticsPreview(rawFilters: AdminGuildAnalyt
     previewCard("平均処理時間", analytics.avg_duration_ms, "ms"),
   ];
 
-  return {
+  return clientSafe({
     generatedAt: new Date().toISOString(),
     durationMs: Date.now() - startedAt,
     audience: "guild_admin",
@@ -5982,7 +5998,7 @@ export async function getAdminGuildAnalyticsPreview(rawFilters: AdminGuildAnalyt
       audienceInterests: protectUserFacingPreviewRows(interestBreakdown),
       recentSamples: [],
     },
-  };
+  });
 }
 
 export async function getAdminProviderMarketingPreview(rawFilters: AdminProviderMarketingPreviewFilters) {
@@ -6085,7 +6101,7 @@ export async function getAdminProviderMarketingPreview(rawFilters: AdminProvider
     previewCard("処理成功率", analytics.success_rate, "インフラ上の成功割合", "muted"),
   ];
 
-  return {
+  return clientSafe({
     generatedAt: new Date().toISOString(),
     durationMs: Date.now() - startedAt,
     audience: "provider_marketing",
@@ -6135,7 +6151,7 @@ export async function getAdminProviderMarketingPreview(rawFilters: AdminProvider
       metricSchemaCoverage: protectUserFacingPreviewRows(metricSchemaCoverage),
       providerQualityGates,
     },
-  };
+  });
 }
 
 async function getAdvancedAnalytics(now = Date.now()) {
@@ -6245,7 +6261,7 @@ async function getAdvancedAnalytics(now = Date.now()) {
     eventDaySpikes30d,
   });
 
-  return {
+  return clientSafe({
     windows: {
       generatedAt: new Date(now).toISOString(),
       dayStart: new Date(dayStart).toISOString(),
@@ -6302,7 +6318,7 @@ async function getAdvancedAnalytics(now = Date.now()) {
     decisionInsights,
     settingAdoption,
     autoExtract,
-  };
+  });
 }
 
 export function adminDatabaseTables() {
@@ -6360,7 +6376,7 @@ export async function getAdminOverview() {
     optionalQuery(null, () => getAdvancedAnalytics()),
   ]);
 
-  return {
+  return clientSafe({
     generatedAt: new Date().toISOString(),
     durationMs: Date.now() - startedAt,
     tables: tableSummaries,
@@ -6390,7 +6406,7 @@ export async function getAdminOverview() {
         databaseUrlConfigured: Boolean(getDatabaseUrl()),
       },
     },
-  };
+  });
 }
 
 export async function getAdminLogs(filters: {
@@ -6454,7 +6470,7 @@ export async function getAdminLogs(filters: {
     }),
   ]);
 
-  return { auditLogs, errorEvents, limit };
+  return clientSafe({ auditLogs, errorEvents, limit });
 }
 
 export async function getAdminDatabaseTable(tableName: string | null | undefined, rawLimit?: string | number | null) {
@@ -6475,19 +6491,19 @@ export async function getAdminDatabaseTable(tableName: string | null | undefined
     }),
   ]);
 
-  return {
+  return clientSafe({
     selectedTable: selected.name,
     tables: adminDatabaseTables(),
     summary,
     columns,
     rows,
     limit,
-  };
+  });
 }
 
 export async function getAdminProviderCatalog(locale: DashboardLocale = "ja") {
   const textLocale = locale === "ja" ? "ja" : "en";
-  return getCatalog().map((provider) => ({
+  return clientSafe(getCatalog().map((provider) => ({
     providerId: provider.providerId,
     label: provider.label,
     enabledByDefault: provider.enabledByDefault,
@@ -6498,7 +6514,7 @@ export async function getAdminProviderCatalog(locale: DashboardLocale = "ja") {
       dbColumn: setting.dbColumn,
       choices: setting.choices?.map((choice) => ({ value: choice.value, label: text(choice.label, textLocale) })),
     })),
-  }));
+  })));
 }
 
 export async function getAdminGuildSettings(guildId: string, providerId: string, locale: DashboardLocale = "ja") {
@@ -6510,7 +6526,7 @@ export async function getAdminGuildSettings(guildId: string, providerId: string,
     getProviderSettingsState(providerId, guildId, locale),
     getAdminLogs({ guildId, providerId, limit: 20 }).then((logs) => logs.auditLogs),
   ]);
-  return {
+  return clientSafe({
     guildId,
     providerId,
     providerLabel: providerLabel(provider),
@@ -6523,7 +6539,7 @@ export async function getAdminGuildSettings(guildId: string, providerId: string,
       dbColumn: setting.dbColumn,
       choices: setting.choices?.map((choice) => ({ value: choice.value, label: text(choice.label, textLocale) })),
     })),
-  };
+  });
 }
 
 export async function saveAdminGuildSettings(
@@ -6560,10 +6576,10 @@ export async function saveAdminGuildSettings(
     meta,
     locale,
   );
-  return {
+  return clientSafe({
     guildId,
     providerId,
     changedKeys: Object.keys(changes),
     result,
-  };
+  });
 }
