@@ -15,7 +15,7 @@ import {
   ShieldCheck,
   SlidersHorizontal,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { SignOutButton } from "@/components/dashboard/auth-buttons";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -38,6 +38,12 @@ type TableSummary = {
 type AdminOverview = {
   generatedAt: string;
   durationMs: number;
+  cache?: {
+    updatedAt: string | null;
+    nextUpdateAt: string | null;
+    refreshIntervalMs: number;
+    refreshing: boolean;
+  };
   tables: TableSummary[];
   totals: Record<string, number>;
   recent: {
@@ -344,6 +350,12 @@ function formatPercent(value: unknown) {
   const numeric = Number(value);
   if (!Number.isFinite(numeric)) return "-";
   return `${(numeric * 100).toFixed(1)}%`;
+}
+
+function rate(numerator: unknown, denominator: unknown) {
+  const top = Number(numerator) || 0;
+  const bottom = Number(denominator) || 0;
+  return bottom > 0 ? top / bottom : 0;
 }
 
 function withPercentRows(rows: Row[], keys: string[]) {
@@ -1486,20 +1498,72 @@ function DataTable({ rows, maxColumns = 8 }: { rows: Row[]; maxColumns?: number 
   );
 }
 
-function OverviewPanel({ overview, onRefresh, refreshing }: { overview: AdminOverview; onRefresh: () => void; refreshing: boolean }) {
+function AsyncPanelState({
+  title,
+  message,
+  loading,
+  error,
+  onRetry,
+}: {
+  title: string;
+  message: string;
+  loading: boolean;
+  error?: string | null;
+  onRetry: () => void;
+}) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          {loading ? <Loader2 size={18} className="animate-spin" /> : <Activity size={18} />}
+          {title}
+        </CardTitle>
+        <CardDescription>{error || message}</CardDescription>
+      </CardHeader>
+      <CardContent>
+        {error ? (
+          <Button type="button" variant="outline" onClick={onRetry} disabled={loading}>
+            {loading ? <Loader2 size={16} className="animate-spin" /> : <RefreshCcw size={16} />}
+            再読み込み
+          </Button>
+        ) : null}
+      </CardContent>
+    </Card>
+  );
+}
+
+function OverviewPanel({
+  overview,
+  onRefresh,
+  refreshing,
+  error,
+}: {
+  overview: AdminOverview;
+  onRefresh: () => void;
+  refreshing: boolean;
+  error?: string | null;
+}) {
   const unavailable = overview.tables.filter((table) => !table.available);
+  const cache = overview.cache;
   return (
     <div className="space-y-4">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h2 className="text-xl font-semibold">管理統計</h2>
-          <p className="text-sm text-muted-foreground">更新 {formatDate(overview.generatedAt)} / {overview.durationMs}ms</p>
+          <p className="text-sm text-muted-foreground">
+            更新 {formatDate(overview.generatedAt)} / {overview.durationMs}ms
+            {cache?.nextUpdateAt ? ` / cache next ${formatDate(cache.nextUpdateAt)}` : ""}
+          </p>
         </div>
-        <Button type="button" variant="outline" onClick={onRefresh} disabled={refreshing}>
-          {refreshing ? <Loader2 size={16} className="animate-spin" /> : <RefreshCcw size={16} />}
-          更新
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          {cache ? <Badge tone={cache.refreshing ? "warning" : "muted"}>{cache.refreshing ? "更新中" : "5分キャッシュ"}</Badge> : null}
+          <Button type="button" variant="outline" onClick={onRefresh} disabled={refreshing}>
+            {refreshing ? <Loader2 size={16} className="animate-spin" /> : <RefreshCcw size={16} />}
+            今すぐ更新
+          </Button>
+        </div>
       </div>
+      {error ? <div className="rounded-md border border-destructive/40 bg-card p-3 text-sm text-destructive">{error}</div> : null}
 
       <div className="grid gap-3 md:grid-cols-4">
         <StatCard label="サーバー" value={overview.totals.guilds} tone="success" />
@@ -1618,6 +1682,333 @@ function buildDetailedAnalyticsSearch(filters: DetailedFilterState) {
   return search;
 }
 
+type DetailedCompoundRow = Row & {
+  provider_id: string;
+  account_key: string;
+  content_events: number;
+  users: number;
+  guilds: number;
+  urls: number;
+  content_share: number;
+  success_rate: number | null;
+  failures: number;
+  avg_duration_ms: number | null;
+  value_score: number;
+  segment_score: number;
+  opportunity_score: number;
+  risk_score: number;
+  best_signal: string;
+  weak_event_type: string;
+  verdict: string;
+  next_action: string;
+  reason: string;
+  guardrail: string;
+};
+
+type ReliabilityAggregate = {
+  events: number;
+  successes: number;
+  failures: number;
+  durationWeightedMs: number;
+  durationEvents: number;
+  worstSuccessRate: number | null;
+  weakEventType: string;
+};
+
+function providerAccountCompoundKey(providerId: unknown, accountKey: unknown) {
+  const provider = String(providerId || "").trim();
+  const account = String(accountKey || "").trim();
+  return provider ? `${provider}\u0001${account}` : "";
+}
+
+function compoundKeyFromRow(row: Row) {
+  return providerAccountCompoundKey(row.provider_id, row.account_key);
+}
+
+function bestRowsByKey(rows: Row[], scoreKey: string) {
+  const byKey = new Map<string, Row>();
+  for (const row of rows) {
+    const key = compoundKeyFromRow(row);
+    if (!key) continue;
+    const current = byKey.get(key);
+    if (!current || asNumber(row[scoreKey]) > asNumber(current[scoreKey])) byKey.set(key, row);
+  }
+  return byKey;
+}
+
+function aggregateReliabilityRows(rows: Row[]) {
+  const byKey = new Map<string, ReliabilityAggregate>();
+  for (const row of rows) {
+    const key = compoundKeyFromRow(row);
+    if (!key) continue;
+    const current = byKey.get(key) || {
+      events: 0,
+      successes: 0,
+      failures: 0,
+      durationWeightedMs: 0,
+      durationEvents: 0,
+      worstSuccessRate: null,
+      weakEventType: "",
+    };
+    const events = asNumber(row.events);
+    const successes = asNumber(row.successes);
+    const failures = asNumber(row.failures);
+    const avgDuration = maybeNumber(row.avg_duration_ms);
+    const successRate = maybeNumber(row.success_rate);
+    current.events += events;
+    current.successes += successes;
+    current.failures += failures;
+    if (avgDuration !== null && events > 0) {
+      current.durationWeightedMs += avgDuration * events;
+      current.durationEvents += events;
+    }
+    if (successRate !== null && (current.worstSuccessRate === null || successRate < current.worstSuccessRate)) {
+      current.worstSuccessRate = successRate;
+      current.weakEventType = String(row.event_type || "");
+    }
+    byKey.set(key, current);
+  }
+  return byKey;
+}
+
+function logScore(value: unknown, weight: number) {
+  return Math.log1p(Math.max(0, asNumber(value))) * weight;
+}
+
+function detailedVerdict(row: {
+  successRate: number | null;
+  valueScore: number;
+  segmentScore: number;
+  contentShare: number;
+  riskScore: number;
+}) {
+  if (row.successRate !== null && row.successRate < 0.9) return "需要あり・品質改善優先";
+  if (row.riskScore >= 55) return "伸ばす前にリスク確認";
+  if (row.valueScore >= 80 || row.segmentScore >= 80) return "伸長施策の候補";
+  if (row.contentShare >= 0.45) return "依存度を監視";
+  if (row.valueScore >= 35 || row.segmentScore >= 35) return "仮説検証の候補";
+  return "観測継続";
+}
+
+function detailedNextAction(row: {
+  successRate: number | null;
+  valueScore: number;
+  segmentScore: number;
+  contentShare: number;
+  riskScore: number;
+}) {
+  if (row.successRate !== null && row.successRate < 0.9) return "抽出/送信失敗の原因を先に潰す";
+  if (row.riskScore >= 55) return "失敗率と偏りを確認してから露出を増やす";
+  if (row.valueScore >= 80 || row.segmentScore >= 80) return "対象を絞ったレポートや推奨枠で検証する";
+  if (row.contentShare >= 0.45) return "単一アカウント依存になっていないか確認する";
+  return "期間を広げて傾向が再現するか見る";
+}
+
+function detailedGuardrail(row: {
+  contentEvents: number;
+  users: number;
+  guilds: number;
+  successRate: number | null;
+  contentShare: number;
+}) {
+  if (row.contentEvents < 20 || row.users < 5 || row.guilds < 2) return "母数が小さいため主張は控えめに扱う";
+  if (row.successRate === null) return "成功率が未計測のため品質判断は保留";
+  if (row.contentShare >= 0.5) return "全体の半分以上を占めるため偏りを明記する";
+  return "複数指標で整合";
+}
+
+function buildDetailedCompoundRows(analytics: AdminDetailedAnalytics | null): DetailedCompoundRow[] {
+  if (!analytics) return [];
+  const providerAccounts = analytics.providerAccounts || [];
+  const totalContent = asNumber(analytics.summary.content.content_events)
+    || providerAccounts.reduce((sum, row) => sum + asNumber(row.content_events), 0);
+  const reliabilityByKey = aggregateReliabilityRows(analytics.providerReliability || []);
+  const valueByKey = bestRowsByKey(analytics.valueDrivers || [], "value_score");
+  const segmentByKey = bestRowsByKey(analytics.providerSegments || [], "segment_score");
+  const fallbackSuccessRate = maybeNumber(analytics.summary.analytics.success_rate);
+
+  return providerAccounts.map((accountRow) => {
+    const providerId = String(accountRow.provider_id || "");
+    const accountKey = String(accountRow.account_key || "");
+    const key = providerAccountCompoundKey(providerId, accountKey);
+    const providerOnlyKey = providerAccountCompoundKey(providerId, "");
+    const reliability = reliabilityByKey.get(key) || reliabilityByKey.get(providerOnlyKey);
+    const valueRow = valueByKey.get(key) || valueByKey.get(providerOnlyKey);
+    const segmentRow = segmentByKey.get(key) || segmentByKey.get(providerOnlyKey);
+    const contentEvents = asNumber(accountRow.content_events);
+    const users = asNumber(accountRow.users);
+    const guilds = asNumber(accountRow.guilds);
+    const urls = asNumber(accountRow.urls);
+    const valueScore = asNumber(valueRow?.value_score);
+    const segmentScore = asNumber(segmentRow?.segment_score);
+    const successRate = reliability
+      ? (reliability.successes + reliability.failures > 0 ? rate(reliability.successes, reliability.successes + reliability.failures) : reliability.worstSuccessRate)
+      : fallbackSuccessRate;
+    const failures = reliability?.failures || 0;
+    const avgDurationMs = reliability && reliability.durationEvents > 0
+      ? reliability.durationWeightedMs / reliability.durationEvents
+      : null;
+    const contentShare = totalContent > 0 ? contentEvents / totalContent : 0;
+    const reliabilityRisk = successRate === null ? 12 : Math.max(0, 0.97 - successRate) * 140;
+    const failurePressure = failures > 0 ? Math.log1p(failures) * 18 : 0;
+    const concentrationRisk = Math.max(0, contentShare - 0.35) * 80;
+    const riskScore = Math.round(reliabilityRisk + failurePressure + concentrationRisk);
+    const reachScore = logScore(contentEvents, 20) + logScore(users, 18) + logScore(guilds, 16) + logScore(urls, 8);
+    const valueSignalScore = Math.min(valueScore, 180) * 0.35 + Math.min(segmentScore, 180) * 0.25;
+    const reliabilityMultiplier = successRate === null ? 0.85 : 0.65 + Math.max(0, Math.min(1, successRate)) * 0.35;
+    const opportunityScore = Math.max(0, Math.round((reachScore + valueSignalScore) * reliabilityMultiplier - riskScore * 0.35));
+    const bestSignal = valueRow
+      ? signalLabel(valueRow.value_signal || valueRow.value_tier)
+      : formatCell(segmentRow?.axis_label || segmentRow?.metric_label || "-");
+    const verdictInput = { successRate, valueScore, segmentScore, contentShare, riskScore };
+    const guardrailInput = { contentEvents, users, guilds, successRate, contentShare };
+    const reason = [
+      `${formatCount(contentEvents)}件`,
+      `${formatCount(users)}ユーザー`,
+      `${formatCount(guilds)}サーバー`,
+      valueScore ? `価値 ${formatCount(valueScore)}` : null,
+      segmentScore ? `軸 ${formatCount(segmentScore)}` : null,
+      successRate !== null ? `成功率 ${formatPercent(successRate)}` : "成功率未計測",
+    ].filter(Boolean).join(" / ");
+
+    return {
+      provider_id: providerId,
+      account_key: accountKey,
+      content_events: contentEvents,
+      users,
+      guilds,
+      urls,
+      content_share: contentShare,
+      success_rate: successRate,
+      failures,
+      avg_duration_ms: avgDurationMs,
+      value_score: valueScore,
+      segment_score: segmentScore,
+      opportunity_score: opportunityScore,
+      risk_score: riskScore,
+      best_signal: bestSignal,
+      weak_event_type: reliability?.weakEventType || "-",
+      verdict: detailedVerdict(verdictInput),
+      next_action: detailedNextAction(verdictInput),
+      reason,
+      guardrail: detailedGuardrail(guardrailInput),
+    };
+  }).sort((left, right) => right.opportunity_score - left.opportunity_score || right.risk_score - left.risk_score);
+}
+
+function buildDetailedActionRows(rows: DetailedCompoundRow[]) {
+  const selected = new Map<string, DetailedCompoundRow>();
+  for (const row of [...rows].sort((left, right) => right.risk_score - left.risk_score || right.opportunity_score - left.opportunity_score).slice(0, 4)) {
+    selected.set(providerAccountCompoundKey(row.provider_id, row.account_key), row);
+  }
+  for (const row of rows.slice(0, 6)) {
+    selected.set(providerAccountCompoundKey(row.provider_id, row.account_key), row);
+  }
+  return [...selected.values()].slice(0, 8).map((row) => ({
+    target: formatEntity(row, ["provider_id", "account_key"]),
+    priority: row.risk_score >= 55 ? "品質改善" : row.opportunity_score >= 90 ? "伸長施策" : row.verdict,
+    action: row.next_action,
+    opportunity_score: row.opportunity_score,
+    risk_score: row.risk_score,
+    basis: row.reason,
+    guardrail: row.guardrail,
+  }));
+}
+
+function CompoundAnalysisPanel({ analytics }: { analytics: AdminDetailedAnalytics | null }) {
+  const compoundRows = useMemo(() => buildDetailedCompoundRows(analytics), [analytics]);
+  const actionRows = useMemo(() => buildDetailedActionRows(compoundRows), [compoundRows]);
+  const topOpportunity = compoundRows[0];
+  const topRisk = topBy(compoundRows, "risk_score") as DetailedCompoundRow | undefined;
+  const totalContent = asNumber(analytics?.summary.content.content_events);
+  const totalUsers = asNumber(analytics?.summary.content.users);
+  const topShare = maybeNumber(topOpportunity?.content_share) || 0;
+  const confidenceTone = totalContent >= 100 && totalUsers >= 10 ? "success" : totalContent >= 20 ? "muted" : "warning";
+  const confidenceText = totalContent >= 100 && totalUsers >= 10
+    ? "判断材料として十分な母数があります。"
+    : totalContent >= 20
+      ? "方向性は見えますが、期間や条件を変えて再確認してください。"
+      : "母数が少ないため仮説として扱ってください。";
+  const insightItems: InsightItem[] = [
+    {
+      label: "攻める候補",
+      value: topOpportunity ? formatEntity(topOpportunity, ["provider_id", "account_key"]) : "-",
+      body: topOpportunity ? `${topOpportunity.verdict}。${topOpportunity.reason}` : "まだ十分な対象がありません。",
+      tone: topOpportunity ? "success" : "muted",
+    },
+    {
+      label: "先に直す候補",
+      value: topRisk && topRisk.risk_score > 0 ? formatEntity(topRisk, ["provider_id", "account_key"]) : "大きなリスクなし",
+      body: topRisk && topRisk.risk_score > 0 ? `${topRisk.next_action}。失敗 ${formatCount(topRisk.failures)}件 / 成功率 ${formatPercent(topRisk.success_rate)}` : "この範囲では品質面の強い警告はありません。",
+      tone: topRisk && topRisk.risk_score >= 55 ? "warning" : "success",
+    },
+    {
+      label: "偏り",
+      value: formatPercent(topShare),
+      body: topOpportunity ? `最上位対象が全体の ${formatPercent(topShare)} を占めます。高すぎる場合は分析主張に偏りを明記します。` : "偏りを計算できるデータがありません。",
+      tone: topShare >= 0.5 ? "warning" : "muted",
+    },
+    {
+      label: "分析信頼度",
+      value: `${formatCount(totalContent)}件 / ${formatCount(totalUsers)}ユーザー`,
+      body: confidenceText,
+      tone: confidenceTone,
+    },
+  ];
+  const opportunityRows = displayRows(compoundRows.slice(0, 10), [
+    { label: "対象", key: "provider_id", format: (_value, row) => formatEntity(row, ["provider_id", "account_key"]) },
+    { label: "複合優先度", key: "opportunity_score" },
+    { label: "リスク", key: "risk_score" },
+    { label: "展開数", key: "content_events" },
+    { label: "ユーザー", key: "users" },
+    { label: "サーバー", key: "guilds" },
+    { label: "占有率", key: "content_share", format: formatPercent },
+    { label: "成功率", key: "success_rate", format: formatPercent },
+    { label: "価値", key: "value_score" },
+    { label: "軸", key: "segment_score" },
+    { label: "判断", key: "verdict" },
+  ]);
+  const priorityRows = displayRows(actionRows, [
+    { label: "対象", key: "target" },
+    { label: "優先", key: "priority" },
+    { label: "次の打ち手", key: "action" },
+    { label: "攻め", key: "opportunity_score" },
+    { label: "リスク", key: "risk_score" },
+    { label: "根拠", key: "basis" },
+    { label: "注意", key: "guardrail" },
+  ]);
+
+  return (
+    <div className="space-y-4">
+      <Card>
+        <CardHeader>
+          <CardTitle>複合シグナル分析</CardTitle>
+          <CardDescription>単純な件数順ではなく、到達量、利用者、サーバー広がり、成功率、失敗、価値指標、セグメント反応、偏りを合わせて判断します。</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <InsightGrid items={insightItems} />
+        </CardContent>
+      </Card>
+      <div className="grid gap-4 xl:grid-cols-2">
+        <Card>
+          <CardHeader>
+            <CardTitle>優先アクション</CardTitle>
+            <CardDescription>伸ばす前に直すべきものと、すぐ検証しやすいものを混ぜて並べています。</CardDescription>
+          </CardHeader>
+          <CardContent><DataTable rows={priorityRows} maxColumns={7} /></CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle>複合スコア内訳</CardTitle>
+            <CardDescription>判断の根拠になる指標を同じ行にまとめています。</CardDescription>
+          </CardHeader>
+          <CardContent><DataTable rows={opportunityRows} maxColumns={11} /></CardContent>
+        </Card>
+      </div>
+    </div>
+  );
+}
+
 function DetailedAnalyticsPanel() {
   const [filters, setFilters] = useState<DetailedFilterState>(defaultDetailedFilters);
   const [analytics, setAnalytics] = useState<AdminDetailedAnalytics | null>(null);
@@ -1681,9 +2072,9 @@ function DetailedAnalyticsPanel() {
   const successRate = maybeNumber(eventSummary.success_rate);
   const detailedInsights: InsightItem[] = [
     {
-      label: "一番反応がある対象",
+      label: "反応量の起点",
       value: formatEntity(topProviderAccount, ["provider_id", "account_key"]),
-      body: `${formatCount(topProviderAccount?.content_events)}件、${formatCount(topProviderAccount?.users)}ユーザー、${formatCount(topProviderAccount?.guilds)}サーバーで反応があります。`,
+      body: `${formatCount(topProviderAccount?.content_events)}件、${formatCount(topProviderAccount?.users)}ユーザー、${formatCount(topProviderAccount?.guilds)}サーバーで観測されています。偏りは下の複合分析で確認します。`,
       tone: "success",
     },
     {
@@ -1693,13 +2084,13 @@ function DetailedAnalyticsPanel() {
       tone: successRate !== null && successRate < 0.95 ? "warning" : "success",
     },
     {
-      label: "伸びている要因",
+      label: "伸び方の仮説",
       value: signalLabel(topValueDriver?.value_signal || topValueDriver?.value_tier),
-      body: `${formatEntity(topValueDriver, ["provider_id", "account_key", "content_type", "content_url"])} が注目度 ${formatCount(topValueDriver?.value_score)} です。`,
+      body: `${formatEntity(topValueDriver, ["provider_id", "account_key", "content_type", "content_url"])} の複合スコアは ${formatCount(topValueDriver?.value_score)} です。単独では結論にせず、成功率や母数と合わせて見ます。`,
       tone: "default",
     },
     {
-      label: "先に見るべきリスク",
+      label: "先に確認するリスク",
       value: topFailure ? formatEntity(topFailure, ["error_type", "provider_id"]) : "大きな失敗なし",
       body: topFailure ? `${formatCount(topFailure.errors)}件の失敗があります。HTTP/Discordコードと発生元を確認してください。` : "この範囲では目立つ失敗はありません。",
       tone: topFailure && asNumber(topFailure.errors) > 0 ? "warning" : "success",
@@ -1957,7 +2348,7 @@ function DetailedAnalyticsPanel() {
 
       <ReportHighlights
         title="レポート要約"
-        description="まず見るべき反応量、安定性、伸びている要因、失敗リスクをまとめています。下の表は根拠データです。"
+        description="単独指標ではなく、反応量、安定性、伸びている要因、失敗リスクを並べて、追加分析の入口を示します。"
         insights={detailedInsights}
         trendRows={detailedTimeSeries}
         rankingTitle="反応が多いサービス/アカウント"
@@ -1965,6 +2356,8 @@ function DetailedAnalyticsPanel() {
         rankingValueKey="content_events"
         rankingLabelKeys={["provider_id", "account_key"]}
       />
+
+      <CompoundAnalysisPanel analytics={analytics} />
 
       <div className="grid gap-3 md:grid-cols-4">
         <StatCard label="展開コンテンツ" value={contentSummary.content_events} tone="success" />
@@ -3284,31 +3677,83 @@ function SupportPanel({ catalog }: { catalog: CatalogProvider[] }) {
 
 export function AdminConsole({
   user,
-  initialOverview,
-  initialLogs,
-  initialDatabase,
   catalog,
 }: {
   user: DashboardUser;
-  initialOverview: AdminOverview;
-  initialLogs: AdminLogs;
-  initialDatabase: AdminDatabase;
   catalog: CatalogProvider[];
 }) {
   const [tab, setTab] = useState<AdminTab>("overview");
-  const [overview, setOverview] = useState(initialOverview);
-  const [logs, setLogs] = useState(initialLogs);
-  const [database, setDatabase] = useState(initialDatabase);
+  const [overview, setOverview] = useState<AdminOverview | null>(null);
+  const [logs, setLogs] = useState<AdminLogs | null>(null);
+  const [database, setDatabase] = useState<AdminDatabase | null>(null);
+  const [overviewLoading, setOverviewLoading] = useState(true);
+  const [logsLoading, setLogsLoading] = useState(false);
+  const [databaseLoading, setDatabaseLoading] = useState(false);
+  const [overviewError, setOverviewError] = useState<string | null>(null);
+  const [logsError, setLogsError] = useState<string | null>(null);
+  const [databaseError, setDatabaseError] = useState<string | null>(null);
+  const [logsRequested, setLogsRequested] = useState(false);
+  const [databaseRequested, setDatabaseRequested] = useState(false);
   const [refreshingOverview, setRefreshingOverview] = useState(false);
 
-  async function refreshOverview() {
-    setRefreshingOverview(true);
-    try {
-      setOverview(await fetchJson<AdminOverview>("/api/admin/overview"));
-    } finally {
-      setRefreshingOverview(false);
+  const loadOverview = useCallback(async (forceRefresh = false) => {
+    if (forceRefresh) {
+      setRefreshingOverview(true);
+    } else {
+      setOverviewLoading(true);
     }
-  }
+    setOverviewError(null);
+    try {
+      const url = forceRefresh ? "/api/admin/overview?refresh=1" : "/api/admin/overview";
+      setOverview(await fetchJson<AdminOverview>(url, forceRefresh ? { method: "POST" } : undefined));
+    } catch (err) {
+      setOverviewError(err instanceof Error ? err.message : "管理統計の読み込みに失敗しました");
+    } finally {
+      if (forceRefresh) {
+        setRefreshingOverview(false);
+      } else {
+        setOverviewLoading(false);
+      }
+    }
+  }, []);
+
+  const loadLogs = useCallback(async () => {
+    setLogsRequested(true);
+    setLogsLoading(true);
+    setLogsError(null);
+    try {
+      setLogs(await fetchJson<AdminLogs>("/api/admin/logs?limit=80"));
+    } catch (err) {
+      setLogsError(err instanceof Error ? err.message : "ログの読み込みに失敗しました");
+    } finally {
+      setLogsLoading(false);
+    }
+  }, []);
+
+  const loadDatabase = useCallback(async () => {
+    setDatabaseRequested(true);
+    setDatabaseLoading(true);
+    setDatabaseError(null);
+    try {
+      setDatabase(await fetchJson<AdminDatabase>("/api/admin/database?table=guild_provider_settings&limit=50"));
+    } catch (err) {
+      setDatabaseError(err instanceof Error ? err.message : "DB テーブルの読み込みに失敗しました");
+    } finally {
+      setDatabaseLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadOverview(false);
+  }, [loadOverview]);
+
+  useEffect(() => {
+    if (tab === "logs" && !logsRequested) void loadLogs();
+  }, [loadLogs, logsRequested, tab]);
+
+  useEffect(() => {
+    if (tab === "database" && !databaseRequested) void loadDatabase();
+  }, [databaseRequested, loadDatabase, tab]);
 
   return (
     <div className="min-h-screen bg-background">
@@ -3354,12 +3799,53 @@ export function AdminConsole({
           })}
         </nav>
 
-        {tab === "overview" ? <OverviewPanel overview={overview} onRefresh={refreshOverview} refreshing={refreshingOverview} /> : null}
+        {tab === "overview" ? (
+          overview ? (
+            <OverviewPanel
+              overview={overview}
+              onRefresh={() => void loadOverview(true)}
+              refreshing={refreshingOverview}
+              error={overviewError}
+            />
+          ) : (
+            <AsyncPanelState
+              title="管理統計を読み込み中"
+              message="集計はバックグラウンドキャッシュから AJAX で取得します。"
+              loading={overviewLoading}
+              error={overviewError}
+              onRetry={() => void loadOverview(false)}
+            />
+          )
+        ) : null}
         {tab === "analytics" ? <DetailedAnalyticsPanel /> : null}
         {tab === "guildPreview" ? <GuildAdminPreviewPanel /> : null}
         {tab === "providerPreview" ? <ProviderMarketingPreviewPanel /> : null}
-        {tab === "logs" ? <LogsPanel logs={logs} setLogs={setLogs} /> : null}
-        {tab === "database" ? <DatabasePanel database={database} setDatabase={setDatabase} /> : null}
+        {tab === "logs" ? (
+          logs ? (
+            <LogsPanel logs={logs} setLogs={setLogs} />
+          ) : (
+            <AsyncPanelState
+              title="ログを読み込み中"
+              message="ログはタブを開いたタイミングで取得します。"
+              loading={logsLoading}
+              error={logsError}
+              onRetry={() => void loadLogs()}
+            />
+          )
+        ) : null}
+        {tab === "database" ? (
+          database ? (
+            <DatabasePanel database={database} setDatabase={setDatabase} />
+          ) : (
+            <AsyncPanelState
+              title="DB テーブルを読み込み中"
+              message="DB テーブルはタブを開いたタイミングで取得します。"
+              loading={databaseLoading}
+              error={databaseError}
+              onRetry={() => void loadDatabase()}
+            />
+          )
+        ) : null}
         {tab === "support" ? <SupportPanel catalog={catalog} /> : null}
       </main>
     </div>

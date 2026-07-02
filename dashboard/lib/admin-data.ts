@@ -45,6 +45,7 @@ const sensitiveColumn = /(token|secret|password|webhook_url)$/i;
 const personalIdentifierColumn = /(^|_)(author_user_id|actor_user_id|user_id|target_user_id|message_id)$/i;
 const HOUR_MS = 60 * 60 * 1000;
 const DAY_MS = 24 * HOUR_MS;
+const ADMIN_OVERVIEW_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
 const PRIVACY_MIN_GROUP_SIZE = 5;
 const SMALL_GROUP_LABEL = "少数";
 const smallGroupDetailColumns = new Set([
@@ -6297,7 +6298,87 @@ export function adminDatabaseTables() {
   return DATABASE_TABLES.map((table) => ({ ...table }));
 }
 
-export async function getAdminOverview() {
+type AdminOverviewSnapshot = Awaited<ReturnType<typeof buildAdminOverview>>;
+
+type AdminOverviewCacheState = {
+  snapshot: AdminOverviewSnapshot | null;
+  updatedAtMs: number;
+  refreshPromise: Promise<AdminOverviewSnapshot> | null;
+  timer: ReturnType<typeof setInterval> | null;
+};
+
+const adminOverviewCacheState = ((globalThis as typeof globalThis & {
+  __cbteAdminOverviewCache?: AdminOverviewCacheState;
+}).__cbteAdminOverviewCache ??= {
+  snapshot: null,
+  updatedAtMs: 0,
+  refreshPromise: null,
+  timer: null,
+});
+
+function ensureAdminOverviewBatchRefresh() {
+  if (adminOverviewCacheState.timer) return;
+  const timer = setInterval(() => {
+    void refreshAdminOverviewCache().catch(() => undefined);
+  }, ADMIN_OVERVIEW_REFRESH_INTERVAL_MS);
+  (timer as { unref?: () => void }).unref?.();
+  adminOverviewCacheState.timer = timer;
+}
+
+function withAdminOverviewCacheState(snapshot: AdminOverviewSnapshot) {
+  const updatedAtMs = adminOverviewCacheState.updatedAtMs || Date.now();
+  return clientSafe({
+    ...snapshot,
+    cache: {
+      updatedAt: new Date(updatedAtMs).toISOString(),
+      nextUpdateAt: new Date(updatedAtMs + ADMIN_OVERVIEW_REFRESH_INTERVAL_MS).toISOString(),
+      refreshIntervalMs: ADMIN_OVERVIEW_REFRESH_INTERVAL_MS,
+      refreshing: Boolean(adminOverviewCacheState.refreshPromise),
+    },
+  });
+}
+
+function refreshAdminOverviewCache() {
+  if (!adminOverviewCacheState.refreshPromise) {
+    adminOverviewCacheState.refreshPromise = buildAdminOverview()
+      .then((snapshot) => {
+        adminOverviewCacheState.snapshot = snapshot;
+        adminOverviewCacheState.updatedAtMs = Date.now();
+        return snapshot;
+      })
+      .finally(() => {
+        adminOverviewCacheState.refreshPromise = null;
+      });
+  }
+  return adminOverviewCacheState.refreshPromise;
+}
+
+export function warmAdminOverviewCache() {
+  ensureAdminOverviewBatchRefresh();
+  if (!adminOverviewCacheState.snapshot && !adminOverviewCacheState.refreshPromise) {
+    void refreshAdminOverviewCache().catch(() => undefined);
+  }
+}
+
+export async function getAdminOverview(options: { forceRefresh?: boolean } = {}) {
+  ensureAdminOverviewBatchRefresh();
+  if (options.forceRefresh) {
+    return withAdminOverviewCacheState(await refreshAdminOverviewCache());
+  }
+
+  const snapshot = adminOverviewCacheState.snapshot;
+  if (snapshot) {
+    const cacheAgeMs = Date.now() - adminOverviewCacheState.updatedAtMs;
+    if (cacheAgeMs >= ADMIN_OVERVIEW_REFRESH_INTERVAL_MS && !adminOverviewCacheState.refreshPromise) {
+      void refreshAdminOverviewCache().catch(() => undefined);
+    }
+    return withAdminOverviewCacheState(snapshot);
+  }
+
+  return withAdminOverviewCacheState(await refreshAdminOverviewCache());
+}
+
+async function buildAdminOverview() {
   await ensureAuditLogTable().catch(() => undefined);
   const startedAt = Date.now();
   const tableSummaries = await Promise.all(DATABASE_TABLES.map((table) => tableCount(table.name)));
