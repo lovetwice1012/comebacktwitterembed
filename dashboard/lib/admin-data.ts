@@ -48,19 +48,11 @@ const DAY_MS = 24 * HOUR_MS;
 const PRIVACY_MIN_GROUP_SIZE = 5;
 const SMALL_GROUP_LABEL = "少数";
 const smallGroupDetailColumns = new Set([
-  "account_key",
-  "author_name",
   "author_user_id",
   "channel_id",
   "content_event_id",
   "content_id",
-  "description_preview",
-  "facet_value",
-  "guild_id",
-  "interest_account_key",
   "message_id",
-  "target_account_key",
-  "title",
 ]);
 const privacyUserCountColumns = new Set([
   "users",
@@ -77,23 +69,7 @@ const privacyUserCountColumns = new Set([
   "retained_users",
   "cohort_users",
 ]);
-const privacyScopeCountColumns = new Set([
-  "guilds",
-  "unique_guilds",
-  "content_guilds",
-  "shared_guilds",
-  "target_guilds",
-  "interest_guilds",
-  "total_guilds",
-  "active_guilds",
-  "configured_guilds",
-  "enabled_guilds",
-  "disabled_guilds",
-  "affected_guilds",
-  "peer_guilds",
-  "reached_guilds",
-]);
-const privacyCountColumns = new Set([...privacyUserCountColumns, ...privacyScopeCountColumns]);
+const privacyCountColumns = new Set([...privacyUserCountColumns]);
 
 const ANALYTICS_METRICS = [
   "provider_extract_attempt",
@@ -218,9 +194,6 @@ function protectSmallGroupRow(row: Row, extraDetailColumns: string[] = []) {
   const protectedColumns = new Set([...smallGroupDetailColumns, ...extraDetailColumns]);
   return Object.fromEntries(
     Object.entries(row).map(([key, value]) => {
-      if (privacyCountColumns.has(key) && finiteRowNumber(value) !== null && Number(value) < PRIVACY_MIN_GROUP_SIZE) {
-        return [key, SMALL_GROUP_LABEL];
-      }
       if (protectedColumns.has(key)) return [key, SMALL_GROUP_LABEL];
       return [key, value];
     }),
@@ -1503,7 +1476,7 @@ async function getAggregateAudienceCorrelation(startMs: number) {
     };
   });
 
-  return protectSmallGroupRows(rows, ["target_account_key", "interest_account_key", "interest_content_type"]);
+  return protectSmallGroupRows(rows);
 }
 
 async function getSettingAdoption() {
@@ -1872,7 +1845,7 @@ async function getSettingAttributionSummary(startMs: number) {
     };
   });
 
-  return protectSmallGroupRows(rows, ["setting_key"]);
+  return protectSmallGroupRows(rows);
 }
 
 async function getWeeklyCohortAnalytics(startMs: number) {
@@ -3363,7 +3336,7 @@ async function getDetailedUrlParameterBreakdown(filters: AdminDetailedAnalyticsF
     values_stored: false,
     analysis_model: "url_query_param_summary",
     metric_source: "url.query_param.extract",
-  })), ["query_key"]);
+  })));
 }
 
 function providerAxisDefinitions(providerId: unknown) {
@@ -3536,7 +3509,6 @@ async function getDetailedProviderMarketingSegments(filters: AdminDetailedAnalyt
     decoratedRows
       .sort((left, right) => rowNumber(right, "segment_score") - rowNumber(left, "segment_score"))
       .slice(0, limit * 4),
-    ["facet_value", "account_key"],
   );
 }
 
@@ -4083,7 +4055,7 @@ async function getDetailedSettingImpact(filters: AdminDetailedAnalyticsFilters, 
     change_rate: rate(rowNumber(row, "content_after") - rowNumber(row, "content_before"), row.content_before),
     attribution_window_days: 7,
     analysis_model: "scoped_user_facing_setting_impact",
-  })), ["setting_key"]);
+  })));
 }
 
 async function getDetailedRawSamples(filters: AdminDetailedAnalyticsFilters, window: { startMs: number; endMs: number }, limit: number) {
@@ -5450,8 +5422,8 @@ function publicPreviewStatus(urlVisibility: PreviewUrlVisibility) {
     adminPreviewOnly: true,
     rawDiscordMessagesStored: false,
     privacyMinGroupSize: PRIVACY_MIN_GROUP_SIZE,
-    smallGroupsSuppressed: true,
-    personalIdentifiers: "anonymized_or_suppressed",
+    smallGroupsSuppressed: false,
+    personalIdentifiers: "anonymized_or_hidden",
     channelIdentifiers: "not_exposed",
     messageIdentifiers: "not_exposed",
     rowLevelSamples: "disabled",
@@ -5935,13 +5907,13 @@ export async function getAdminGuildAnalyticsPreview(rawFilters: AdminGuildAnalyt
   const protectedAudienceRetention = protectUserFacingPreviewRow(audienceRetention);
   const protectedProviderAccounts = protectUserFacingPreviewRows(providerAccounts);
   const protectedValueDrivers = applyPreviewUrlPolicyRows(protectUserFacingPreviewRows(valueDrivers), urlVisibility);
-  const protectedUrlParameters = protectUserFacingPreviewRows(urlParameterBreakdown, ["query_key"]);
-  const protectedProviderSegments = protectUserFacingPreviewRows(providerSegments, ["facet_value", "account_key"]);
+  const protectedUrlParameters = protectUserFacingPreviewRows(urlParameterBreakdown);
+  const protectedProviderSegments = protectUserFacingPreviewRows(providerSegments);
   const protectedFunnelAnalytics = protectUserFacingPreviewRows(funnelAnalytics);
   const protectedWeeklyCohorts = protectUserFacingPreviewRows(weeklyCohorts);
   const protectedContentLifetime = applyPreviewUrlPolicyRows(protectUserFacingPreviewRows(contentLifetime), urlVisibility);
   const protectedUrlReuse = applyPreviewUrlPolicyRows(protectUserFacingPreviewRows(urlReuse), urlVisibility);
-  const protectedSettingImpact = protectUserFacingPreviewRows(settingImpact, ["setting_key"]);
+  const protectedSettingImpact = protectUserFacingPreviewRows(settingImpact);
   const reportReadiness = userFacingPreviewReadinessRows("guild_admin", content, analytics, urlVisibility);
   const cards = [
     previewCard("表示されたコンテンツ", content.content_events, "URL 展開や provider 出力の合計", "success"),
@@ -6080,8 +6052,8 @@ export async function getAdminProviderMarketingPreview(rawFilters: AdminProvider
   const protectedInterestBreakdown = protectUserFacingPreviewRows(interestBreakdown);
   const protectedFailureReasons = protectUserFacingPreviewRows(failureReasons);
   const protectedValueDrivers = applyPreviewUrlPolicyRows(protectUserFacingPreviewRows(valueDrivers), urlVisibility);
-  const protectedUrlParameters = protectUserFacingPreviewRows(urlParameterBreakdown, ["query_key"]);
-  const protectedProviderSegments = protectUserFacingPreviewRows(providerSegments, ["facet_value", "account_key"]);
+  const protectedUrlParameters = protectUserFacingPreviewRows(urlParameterBreakdown);
+  const protectedProviderSegments = protectUserFacingPreviewRows(providerSegments);
   const protectedFacetBreakdown = protectUserFacingPreviewRows(facetBreakdown);
   const protectedNumericFacetStats = protectUserFacingPreviewRows(numericFacetStats);
   const protectedFunnelAnalytics = protectUserFacingPreviewRows(funnelAnalytics);

@@ -312,9 +312,16 @@ function asNumber(value: unknown) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+function maybeNumber(value: unknown) {
+  if (value === null || value === undefined || value === "") return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
 function formatCount(value: unknown) {
   if (value === null || value === undefined) return "-";
-  return asNumber(value).toLocaleString("ja-JP");
+  const numeric = maybeNumber(value);
+  return numeric === null ? formatCell(value) : numeric.toLocaleString("ja-JP");
 }
 
 function formatDate(value: unknown) {
@@ -333,6 +340,7 @@ function formatCell(value: unknown) {
 }
 
 function formatPercent(value: unknown) {
+  if (value === null || value === undefined || value === "") return "-";
   const numeric = Number(value);
   if (!Number.isFinite(numeric)) return "-";
   return `${(numeric * 100).toFixed(1)}%`;
@@ -368,10 +376,83 @@ function formatAverage(value: unknown, unit = "") {
   return `${numeric.toFixed(numeric >= 100 ? 0 : 1)}${unit}`;
 }
 
+function formatShortNumber(value: unknown) {
+  const numeric = maybeNumber(value);
+  if (numeric === null) return formatCell(value);
+  if (Math.abs(numeric) >= 1000000) return `${(numeric / 1000000).toFixed(1)}M`;
+  if (Math.abs(numeric) >= 1000) return `${(numeric / 1000).toFixed(1)}k`;
+  return formatCount(numeric);
+}
+
+function formatEntity(row: Row | undefined, keys: string[], fallback = "未分類") {
+  if (!row) return fallback;
+  const parts = keys
+    .map((key) => (key === "content_url" ? displayUrl(undefined, row) : row[key]))
+    .map(formatCell)
+    .filter((value) => value && value !== "-" && value !== "null")
+    .slice(0, 2);
+  return parts.length ? parts.join(" / ") : fallback;
+}
+
+function topBy(rows: Row[], valueKey: string) {
+  return rows.reduce<Row | undefined>((best, row) => {
+    if (!best) return row;
+    return asNumber(row[valueKey]) > asNumber(best[valueKey]) ? row : best;
+  }, undefined);
+}
+
+function signalLabel(value: unknown) {
+  const text = String(value || "");
+  const labels: Record<string, string> = {
+    cross_guild_reach: "複数サーバーに広がっています",
+    repeat_interest: "同じ層が繰り返し見ています",
+    high_volume: "表示量が多いです",
+    early_signal: "初期反応です",
+    demand_with_reliability_risk: "需要はありますが成功率に注意です",
+    core_driver: "主力要因",
+    growth_driver: "伸びている要因",
+    emerging_driver: "伸び始め",
+    watch: "様子見",
+  };
+  return labels[text] || text || "-";
+}
+
+function sensitivityLabel(value: unknown) {
+  const text = String(value || "");
+  const labels: Record<string, string> = {
+    high: "高",
+    medium: "中",
+    marketing: "マーケ用途",
+    low: "低",
+  };
+  return labels[text] || text || "-";
+}
+
+function queryFamilyLabel(value: unknown) {
+  const text = String(value || "");
+  const labels: Record<string, string> = {
+    campaign: "キャンペーン",
+    ad_tracking: "広告計測",
+    referral: "参照元",
+    credential_risk: "認証情報の可能性",
+    identifier_risk: "識別子の可能性",
+    general: "一般",
+  };
+  return labels[text] || text || "-";
+}
+
 function formatWeekday(value: unknown) {
   const names = ["", "日", "月", "火", "水", "木", "金", "土"];
   const index = Number(value);
   return Number.isInteger(index) && names[index] ? `${names[index]}曜` : formatCell(value);
+}
+
+function formatLocalHourFromUtc(value: unknown) {
+  const hour = Number(value);
+  if (!Number.isFinite(hour)) return formatCell(value);
+  const offsetHours = -new Date().getTimezoneOffset() / 60;
+  const localHour = ((Math.round(hour + offsetHours) % 24) + 24) % 24;
+  return `${String(localHour).padStart(2, "0")}:00`;
 }
 
 function pretty(value: unknown) {
@@ -472,77 +553,169 @@ function PreviewCards({ cards }: { cards: AdminPreviewCard[] }) {
   );
 }
 
-function marketingMetricRows(rows: Row[]) {
-  return rows.map((row) => ({
-    Provider: row.provider_id,
-    アカウント: row.account_key,
-    指標: row.facet_key,
-    値: row.facet_value,
-    回数: row.events,
-    合計: row.sum_value ? formatAverage(row.sum_value) : undefined,
-    平均: row.avg_value !== undefined ? formatAverage(row.avg_value) : formatAverage(row.avg_numeric_value),
-    最大: row.max_value !== undefined ? formatAverage(row.max_value) : formatAverage(row.max_numeric_value),
-    利用ユーザー: row.users,
-    サーバー: row.guilds,
-  }));
+type InsightItem = {
+  label: string;
+  value: unknown;
+  body: string;
+  tone?: "default" | "warning" | "success" | "muted";
+};
+
+function InsightGrid({ items }: { items: InsightItem[] }) {
+  return (
+    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+      {items.map((item) => (
+        <div key={item.label} className="rounded-md border bg-background p-3">
+          <div className="flex items-start justify-between gap-2">
+            <div className="text-xs font-medium text-muted-foreground">{item.label}</div>
+            <Badge tone={item.tone || "muted"}>{item.tone === "warning" ? "要確認" : item.tone === "success" ? "良好" : "確認"}</Badge>
+          </div>
+          <div className="mt-2 break-words text-xl font-semibold leading-tight">{formatCell(item.value)}</div>
+          <p className="mt-1 break-words text-sm text-muted-foreground">{item.body}</p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ReportTrendChart({ title, rows, valueKey }: { title: string; rows: Row[]; valueKey: string }) {
+  const recent = rows.slice(-14);
+  const max = Math.max(...recent.map((row) => asNumber(row[valueKey])), 1);
+  if (!recent.length) {
+    return <div className="rounded-md border bg-muted/30 p-3 text-sm text-muted-foreground">{title}: データなし</div>;
+  }
+
+  return (
+    <div className="rounded-md border bg-muted/30 p-3">
+      <div className="mb-3 text-sm font-medium">{title}</div>
+      <div className="flex h-36 items-end gap-1">
+        {recent.map((row, index) => {
+          const value = asNumber(row[valueKey]);
+          const height = Math.max(6, Math.round((value / max) * 100));
+          return (
+            <div key={String(row.bucket_start_ms || index)} className="flex min-w-0 flex-1 flex-col items-center gap-1">
+              <div
+                className="w-full rounded-t bg-primary/70"
+                style={{ height: `${height}%` }}
+                title={`${formatDate(row.bucket_start_ms)} / ${formatCount(value)}`}
+              />
+              <span className="max-w-full break-words text-center text-[10px] text-muted-foreground">{formatShortNumber(value)}</span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function ReportBarList({
+  title,
+  rows,
+  valueKey,
+  labelKeys,
+  detailKeys = [],
+}: {
+  title: string;
+  rows: Row[];
+  valueKey: string;
+  labelKeys: string[];
+  detailKeys?: string[];
+}) {
+  const visibleRows = rows.filter((row) => maybeNumber(row[valueKey]) !== null).slice(0, 6);
+  const max = Math.max(...visibleRows.map((row) => asNumber(row[valueKey])), 1);
+  if (!visibleRows.length) {
+    return <div className="rounded-md border bg-muted/30 p-3 text-sm text-muted-foreground">{title}: データなし</div>;
+  }
+
+  return (
+    <div className="rounded-md border bg-muted/30 p-3">
+      <div className="mb-3 text-sm font-medium">{title}</div>
+      <div className="space-y-3">
+        {visibleRows.map((row, index) => {
+          const value = asNumber(row[valueKey]);
+          const width = Math.max(4, Math.round((value / max) * 100));
+          const detail = detailKeys.map((key) => `${key}: ${formatCell(row[key])}`).join(" / ");
+          return (
+            <div key={`${formatEntity(row, labelKeys)}-${index}`} className="space-y-1">
+              <div className="flex items-start justify-between gap-3 text-sm">
+                <span className="min-w-0 break-words">{formatEntity(row, labelKeys)}</span>
+                <span className="shrink-0 font-medium">{formatCount(value)}</span>
+              </div>
+              <div className="h-2 overflow-hidden rounded bg-background">
+                <div className="h-full rounded bg-primary/70" style={{ width: `${width}%` }} />
+              </div>
+              {detail ? <div className="break-words text-xs text-muted-foreground">{detail}</div> : null}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function ReportHighlights({
+  title,
+  description,
+  insights,
+  trendRows,
+  trendValueKey = "content_events",
+  rankingTitle,
+  rankingRows,
+  rankingValueKey,
+  rankingLabelKeys,
+}: {
+  title: string;
+  description: string;
+  insights: InsightItem[];
+  trendRows: Row[];
+  trendValueKey?: string;
+  rankingTitle: string;
+  rankingRows: Row[];
+  rankingValueKey: string;
+  rankingLabelKeys: string[];
+}) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>{title}</CardTitle>
+        <CardDescription>{description}</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <InsightGrid items={insights} />
+        <div className="grid gap-4 xl:grid-cols-2">
+          <ReportTrendChart title="推移" rows={trendRows} valueKey={trendValueKey} />
+          <ReportBarList title={rankingTitle} rows={rankingRows} valueKey={rankingValueKey} labelKeys={rankingLabelKeys} />
+        </div>
+      </CardContent>
+    </Card>
+  );
 }
 
 function ProviderMetricProfilePanel({ profile }: { profile?: AdminProviderMetricProfile }) {
   if (!profile) {
-    return <div className="rounded-md border bg-card p-4 text-sm text-muted-foreground">provider 固有指標を読み込めませんでした。</div>;
+    return <div className="rounded-md border bg-card p-4 text-sm text-muted-foreground">サービス固有の指標を読み込めませんでした。</div>;
   }
 
   return (
-    <div className="space-y-4">
-      <Card>
-        <CardHeader>
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <CardTitle>{profile.title}</CardTitle>
-              <CardDescription>{profile.description}</CardDescription>
-            </div>
-            <Badge tone={profile.mode === "provider_specific" ? "success" : profile.mode === "select_provider" ? "warning" : "muted"}>
-              {profile.mode}
-            </Badge>
+    <Card>
+      <CardHeader>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <CardTitle>{profile.title}</CardTitle>
+            <CardDescription>サービスごとの意味に合わせた主要KPIだけを表示します。</CardDescription>
           </div>
-        </CardHeader>
-        <CardContent>
-          {profile.cards.length ? <PreviewCards cards={profile.cards} /> : (
-            <div className="rounded-md border bg-muted p-4 text-sm text-muted-foreground">
-              provider_id を指定すると、Twitter / YouTube など provider ごとの意味に合わせた指標が表示されます。
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {profile.successCriteria?.length ? (
-        <Card>
-          <CardHeader>
-            <CardTitle>達成条件</CardTitle>
-            <CardDescription>provider 固有の分析として欠けてはいけない収集・表示契約です。</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <ul className="space-y-2 text-sm">
-              {profile.successCriteria.map((item) => (
-                <li key={item} className="rounded-md border bg-muted/40 px-3 py-2">{item}</li>
-              ))}
-            </ul>
-          </CardContent>
-        </Card>
-      ) : null}
-
-      {profile.sections.map((section) => (
-        <Card key={section.id}>
-          <CardHeader>
-            <CardTitle>{section.title}</CardTitle>
-            <CardDescription>{section.description}</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <DataTable rows={marketingMetricRows(section.rows)} maxColumns={10} />
-          </CardContent>
-        </Card>
-      ))}
-    </div>
+          <Badge tone={profile.mode === "provider_specific" ? "success" : profile.mode === "select_provider" ? "warning" : "muted"}>
+            {profile.mode === "provider_specific" ? "対象サービス" : profile.mode === "select_provider" ? "サービス未指定" : "共通指標"}
+          </Badge>
+        </div>
+      </CardHeader>
+      <CardContent>
+        {profile.cards.length ? <PreviewCards cards={profile.cards} /> : (
+          <div className="rounded-md border bg-muted p-4 text-sm text-muted-foreground">
+            サービスIDを指定すると、Twitter / YouTube などサービスごとの意味に合わせた主要KPIが表示されます。
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -1293,7 +1466,7 @@ function DataTable({ rows, maxColumns = 8 }: { rows: Row[]; maxColumns?: number 
         <thead className="bg-muted text-muted-foreground">
           <tr>
             {columns.map((column) => (
-              <th key={column} className="whitespace-nowrap px-3 py-2 font-medium">{column}</th>
+              <th key={column} className="whitespace-normal break-words px-3 py-2 font-medium">{column}</th>
             ))}
           </tr>
         </thead>
@@ -1301,7 +1474,7 @@ function DataTable({ rows, maxColumns = 8 }: { rows: Row[]; maxColumns?: number 
           {rows.map((row, index) => (
             <tr key={String(row.id || row.auditLogId || row.error_event_id || index)} className="border-t">
               {columns.map((column) => (
-                <td key={column} className="max-w-72 truncate px-3 py-2 align-top" title={formatCell(row[column])}>
+                <td key={column} className="min-w-24 max-w-[28rem] whitespace-normal break-words px-3 py-2 align-top" title={formatCell(row[column])}>
                   {formatCell(row[column])}
                 </td>
               ))}
@@ -1498,8 +1671,42 @@ function DetailedAnalyticsPanel() {
   const eventSummary = analytics?.summary.analytics || {};
   const scope = analytics?.filters.guildId ? `サーバー ${formatCell(analytics.filters.guildId)}` : "全サーバー";
   const period = analytics ? `${formatDate(analytics.window.startMs)} - ${formatDate(analytics.window.endMs)}` : "-";
+  const detailedTimeSeries = analytics?.timeSeries || [];
+  const detailedProviderAccounts = analytics?.providerAccounts || [];
+  const detailedValueDrivers = analytics?.valueDrivers || [];
+  const detailedFailures = analytics?.failureReasons || [];
+  const topProviderAccount = topBy(detailedProviderAccounts, "content_events");
+  const topValueDriver = topBy(detailedValueDrivers, "value_score");
+  const topFailure = topBy(detailedFailures, "errors");
+  const successRate = maybeNumber(eventSummary.success_rate);
+  const detailedInsights: InsightItem[] = [
+    {
+      label: "一番反応がある対象",
+      value: formatEntity(topProviderAccount, ["provider_id", "account_key"]),
+      body: `${formatCount(topProviderAccount?.content_events)}件、${formatCount(topProviderAccount?.users)}ユーザー、${formatCount(topProviderAccount?.guilds)}サーバーで反応があります。`,
+      tone: "success",
+    },
+    {
+      label: "処理の安定性",
+      value: formatPercent(eventSummary.success_rate),
+      body: successRate === null ? "成功率を計算できるデータがありません。" : successRate >= 0.95 ? "抽出と送信はおおむね安定しています。" : "抽出または送信で失敗が目立ちます。失敗理由を確認してください。",
+      tone: successRate !== null && successRate < 0.95 ? "warning" : "success",
+    },
+    {
+      label: "伸びている要因",
+      value: signalLabel(topValueDriver?.value_signal || topValueDriver?.value_tier),
+      body: `${formatEntity(topValueDriver, ["provider_id", "account_key", "content_type", "content_url"])} が注目度 ${formatCount(topValueDriver?.value_score)} です。`,
+      tone: "default",
+    },
+    {
+      label: "先に見るべきリスク",
+      value: topFailure ? formatEntity(topFailure, ["error_type", "provider_id"]) : "大きな失敗なし",
+      body: topFailure ? `${formatCount(topFailure.errors)}件の失敗があります。HTTP/Discordコードと発生元を確認してください。` : "この範囲では目立つ失敗はありません。",
+      tone: topFailure && asNumber(topFailure.errors) > 0 ? "warning" : "success",
+    },
+  ];
 
-  const timeRows = displayRows(analytics?.timeSeries || [], [
+  const timeRows = displayRows(detailedTimeSeries, [
     { label: "時間", key: "bucket_start_ms", format: formatDate },
     { label: "展開数", key: "content_events" },
     { label: "利用ユーザー", key: "content_users" },
@@ -1508,8 +1715,8 @@ function DetailedAnalyticsPanel() {
     { label: "成功率", key: "success_rate", format: formatPercent },
     { label: "平均ms", key: "avg_duration_ms", format: (value) => formatAverage(value, "ms") },
   ]);
-  const providerRows = displayRows(analytics?.providerAccounts || [], [
-    { label: "Provider", key: "provider_id" },
+  const providerRows = displayRows(detailedProviderAccounts, [
+    { label: "サービス", key: "provider_id" },
     { label: "アカウント", key: "account_key" },
     { label: "展開数", key: "content_events" },
     { label: "利用ユーザー", key: "users" },
@@ -1520,7 +1727,7 @@ function DetailedAnalyticsPanel() {
     { label: "最新", key: "latest_ms", format: formatDate },
   ]);
   const reliabilityRows = displayRows(analytics?.providerReliability || [], [
-    { label: "Provider", key: "provider_id" },
+    { label: "サービス", key: "provider_id" },
     { label: "アカウント", key: "account_key" },
     { label: "イベント種別", key: "event_type" },
     { label: "回数", key: "events" },
@@ -1530,7 +1737,7 @@ function DetailedAnalyticsPanel() {
     { label: "平均ms", key: "avg_duration_ms", format: (value) => formatAverage(value, "ms") },
   ]);
   const contentTypeRows = displayRows(analytics?.contentTypes || [], [
-    { label: "Provider", key: "provider_id" },
+    { label: "サービス", key: "provider_id" },
     { label: "種類", key: "content_type" },
     { label: "展開数", key: "content_events" },
     { label: "アカウント", key: "accounts" },
@@ -1541,7 +1748,7 @@ function DetailedAnalyticsPanel() {
   const guildRows = displayRows(analytics?.guildBreakdown || [], [
     { label: "サーバー", key: "guild_id" },
     { label: "展開数", key: "content_events" },
-    { label: "Provider", key: "providers" },
+    { label: "サービス数", key: "providers" },
     { label: "アカウント", key: "accounts" },
     { label: "利用ユーザー", key: "users" },
     { label: "URL", key: "urls" },
@@ -1551,12 +1758,12 @@ function DetailedAnalyticsPanel() {
     { label: "ユーザー数", key: "users" },
     { label: "展開数", key: "content_events" },
     { label: "平均利用", key: "avg_events_per_user", format: (value) => formatAverage(value) },
-    { label: "平均Provider", key: "avg_providers_per_user", format: (value) => formatAverage(value) },
+    { label: "平均サービス数", key: "avg_providers_per_user", format: (value) => formatAverage(value) },
     { label: "平均URL", key: "avg_urls_per_user", format: (value) => formatAverage(value) },
     { label: "最新", key: "latest_ms", format: formatDate },
   ]);
   const urlRows = displayRows(analytics?.urlBreakdown || [], [
-    { label: "Provider", key: "provider_id" },
+    { label: "サービス", key: "provider_id" },
     { label: "アカウント", key: "account_key" },
     { label: "URL", key: "content_url", format: displayUrl },
     { label: "タイトル", key: "title" },
@@ -1567,44 +1774,44 @@ function DetailedAnalyticsPanel() {
     { label: "最新", key: "latest_ms", format: formatDate },
   ]);
   const valueDriverRows = displayRows(analytics?.valueDrivers || [], [
-    { label: "Driver", key: "driver_type" },
-    { label: "Provider", key: "provider_id" },
-    { label: "Account", key: "account_key" },
-    { label: "Content type", key: "content_type" },
+    { label: "切り口", key: "driver_type" },
+    { label: "サービス", key: "provider_id" },
+    { label: "アカウント", key: "account_key" },
+    { label: "種類", key: "content_type" },
     { label: "URL", key: "content_url", format: displayUrl },
-    { label: "Value score", key: "value_score" },
-    { label: "Signal", key: "value_signal" },
-    { label: "Success", key: "success_rate", format: formatPercent },
-    { label: "Users", key: "users" },
-    { label: "Guilds", key: "guilds" },
-    { label: "Latest", key: "latest_ms", format: formatDate },
+    { label: "注目度", key: "value_score" },
+    { label: "理由", key: "value_signal", format: signalLabel },
+    { label: "成功率", key: "success_rate", format: formatPercent },
+    { label: "ユーザー", key: "users" },
+    { label: "サーバー", key: "guilds" },
+    { label: "最新", key: "latest_ms", format: formatDate },
   ]);
   const urlParameterRows = displayRows(analytics?.urlParameterBreakdown || [], [
-    { label: "Provider", key: "provider_id" },
-    { label: "Account", key: "account_key" },
-    { label: "Content type", key: "content_type" },
-    { label: "Query key", key: "query_key" },
-    { label: "Family", key: "query_key_family" },
-    { label: "Sensitivity", key: "privacy_sensitivity" },
-    { label: "Events", key: "content_events" },
-    { label: "Users", key: "users" },
-    { label: "Guilds", key: "guilds" },
+    { label: "サービス", key: "provider_id" },
+    { label: "アカウント", key: "account_key" },
+    { label: "種類", key: "content_type" },
+    { label: "URLパラメータ", key: "query_key" },
+    { label: "分類", key: "query_key_family", format: queryFamilyLabel },
+    { label: "注意度", key: "privacy_sensitivity", format: sensitivityLabel },
+    { label: "件数", key: "content_events" },
+    { label: "ユーザー", key: "users" },
+    { label: "サーバー", key: "guilds" },
     { label: "URLs", key: "urls" },
   ]);
   const providerSegmentRows = displayRows(analytics?.providerSegments || [], [
-    { label: "Provider", key: "provider_id" },
-    { label: "Axis", key: "axis_label" },
-    { label: "Metric", key: "metric_key" },
-    { label: "Value", key: "facet_value" },
-    { label: "Events", key: "events" },
-    { label: "Users", key: "users" },
-    { label: "Guilds", key: "guilds" },
+    { label: "サービス", key: "provider_id" },
+    { label: "軸", key: "axis_label" },
+    { label: "指標", key: "metric_label" },
+    { label: "値", key: "facet_value" },
+    { label: "件数", key: "events" },
+    { label: "ユーザー", key: "users" },
+    { label: "サーバー", key: "guilds" },
     { label: "URLs", key: "urls" },
-    { label: "Avg", key: "avg_numeric_value", format: (value) => formatAverage(value) },
-    { label: "Score", key: "segment_score" },
+    { label: "平均", key: "avg_numeric_value", format: (value) => formatAverage(value) },
+    { label: "スコア", key: "segment_score" },
   ]);
   const facetRows = displayRows(analytics?.facetBreakdown || [], [
-    { label: "Provider", key: "provider_id" },
+    { label: "サービス", key: "provider_id" },
     { label: "アカウント", key: "account_key" },
     { label: "分析軸", key: "facet_key" },
     { label: "値", key: "facet_value" },
@@ -1614,7 +1821,7 @@ function DetailedAnalyticsPanel() {
     { label: "平均値", key: "avg_numeric_value", format: (value) => formatAverage(value) },
   ]);
   const numericFacetRows = displayRows(analytics?.numericFacetStats || [], [
-    { label: "Provider", key: "provider_id" },
+    { label: "サービス", key: "provider_id" },
     { label: "アカウント", key: "account_key" },
     { label: "数値指標", key: "facet_key" },
     { label: "回数", key: "events" },
@@ -1624,7 +1831,7 @@ function DetailedAnalyticsPanel() {
     { label: "合計", key: "sum_value", format: (value) => formatAverage(value) },
   ]);
   const guildAccountRows = displayRows(analytics?.guildAccountMatrix || [], [
-    { label: "Provider", key: "provider_id" },
+    { label: "サービス", key: "provider_id" },
     { label: "アカウント", key: "account_key" },
     { label: "サーバー", key: "guild_id" },
     { label: "展開数", key: "content_events" },
@@ -1632,7 +1839,7 @@ function DetailedAnalyticsPanel() {
     { label: "URL", key: "urls" },
   ]);
   const hourRows = displayRows(analytics?.hourDistribution || [], [
-    { label: "Provider", key: "provider_id" },
+    { label: "サービス", key: "provider_id" },
     { label: "アカウント", key: "account_key" },
     { label: "UTC時間帯", key: "hour_utc", format: (value) => `${formatCell(value)}:00` },
     { label: "展開数", key: "content_events" },
@@ -1640,7 +1847,7 @@ function DetailedAnalyticsPanel() {
     { label: "サーバー", key: "guilds" },
   ]);
   const eventHourRows = displayRows(analytics?.eventHourDistribution || [], [
-    { label: "Provider", key: "provider_id" },
+    { label: "サービス", key: "provider_id" },
     { label: "アカウント", key: "account_key" },
     { label: "イベント", key: "event_type" },
     { label: "UTC時間帯", key: "hour_utc", format: (value) => `${formatCell(value)}:00` },
@@ -1659,9 +1866,9 @@ function DetailedAnalyticsPanel() {
     { label: "平均ms", key: "avg_duration_ms", format: (value) => formatAverage(value, "ms") },
   ]);
   const interestRows = displayRows(analytics?.interestBreakdown || [], [
-    { label: "対象Provider", key: "target_provider_id" },
+    { label: "対象サービス", key: "target_provider_id" },
     { label: "対象アカウント", key: "target_account_key" },
-    { label: "併読Provider", key: "interest_provider_id" },
+    { label: "併読サービス", key: "interest_provider_id" },
     { label: "併読アカウント", key: "interest_account_key" },
     { label: "併読種類", key: "interest_content_type" },
     { label: "共起数", key: "co_events" },
@@ -1669,20 +1876,20 @@ function DetailedAnalyticsPanel() {
     { label: "共通サーバー", key: "shared_guilds" },
   ]);
   const failureReasonRows = displayRows(analytics?.failureReasons || [], [
-    { label: "Provider", key: "provider_id" },
-    { label: "Source", key: "source" },
-    { label: "Error", key: "error_type" },
-    { label: "Severity", key: "severity" },
-    { label: "Command", key: "command_name" },
+    { label: "サービス", key: "provider_id" },
+    { label: "発生元", key: "source" },
+    { label: "失敗理由", key: "error_type" },
+    { label: "重要度", key: "severity" },
+    { label: "操作", key: "command_name" },
     { label: "HTTP", key: "http_status" },
     { label: "Discord", key: "discord_code" },
-    { label: "Errors", key: "errors" },
-    { label: "Users", key: "users" },
-    { label: "Latest", key: "latest_ms", format: formatDate },
+    { label: "失敗数", key: "errors" },
+    { label: "ユーザー", key: "users" },
+    { label: "最新", key: "latest_ms", format: formatDate },
   ]);
   const sampleRows = displayRows(analytics?.rawSamples || [], [
     { label: "時刻", key: "occurred_at_ms", format: formatDate },
-    { label: "Provider", key: "provider_id" },
+    { label: "サービス", key: "provider_id" },
     { label: "アカウント", key: "account_key" },
     { label: "種類", key: "content_type" },
     { label: "URL", key: "content_url", format: displayUrl },
@@ -1706,17 +1913,17 @@ function DetailedAnalyticsPanel() {
       <Card>
         <CardHeader>
           <CardTitle>分析条件</CardTitle>
-          <CardDescription>provider、アカウント、サーバー、ユーザー、期間、facet で同じ統計を切り替えます。</CardDescription>
+          <CardDescription>サービス、アカウント、サーバー、期間、分析軸で同じ統計を切り替えます。</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
           <div className="grid gap-3 lg:grid-cols-4">
-            <Input value={filters.guildId} onChange={(event) => setFilter("guildId", event.target.value)} placeholder="guild_id" />
-            <Input value={filters.providerId} onChange={(event) => setFilter("providerId", event.target.value)} placeholder="provider_id" />
-            <Input value={filters.accountKey} onChange={(event) => setFilter("accountKey", event.target.value)} placeholder="account_key" />
-            <Input value={filters.contentType} onChange={(event) => setFilter("contentType", event.target.value)} placeholder="content_type" />
-            <Input value={filters.facetKey} onChange={(event) => setFilter("facetKey", event.target.value)} placeholder="facet_key" />
-            <Input value={filters.commandName} onChange={(event) => setFilter("commandName", event.target.value)} placeholder="command_name" />
-            <Input value={filters.componentId} onChange={(event) => setFilter("componentId", event.target.value)} placeholder="component_id" />
+            <Input value={filters.guildId} onChange={(event) => setFilter("guildId", event.target.value)} placeholder="サーバーID" />
+            <Input value={filters.providerId} onChange={(event) => setFilter("providerId", event.target.value)} placeholder="サービスID" />
+            <Input value={filters.accountKey} onChange={(event) => setFilter("accountKey", event.target.value)} placeholder="アカウント" />
+            <Input value={filters.contentType} onChange={(event) => setFilter("contentType", event.target.value)} placeholder="種類" />
+            <Input value={filters.facetKey} onChange={(event) => setFilter("facetKey", event.target.value)} placeholder="分析軸" />
+            <Input value={filters.commandName} onChange={(event) => setFilter("commandName", event.target.value)} placeholder="操作名" />
+            <Input value={filters.componentId} onChange={(event) => setFilter("componentId", event.target.value)} placeholder="ボタンID" />
           </div>
           <div className="grid gap-3 lg:grid-cols-[1fr_1fr_160px_120px_160px_auto]">
             <Input type="datetime-local" value={filters.dateFrom} onChange={(event) => setFilter("dateFrom", event.target.value)} />
@@ -1733,7 +1940,7 @@ function DetailedAnalyticsPanel() {
               <option value="hour">時間別</option>
               <option value="day">日別</option>
             </select>
-            <Input value={filters.limit} onChange={(event) => setFilter("limit", event.target.value)} inputMode="numeric" placeholder="limit" />
+            <Input value={filters.limit} onChange={(event) => setFilter("limit", event.target.value)} inputMode="numeric" placeholder="表示件数" />
             <div className="flex gap-2">
               <Button type="button" onClick={() => load()} disabled={loading}>
                 {loading ? <Loader2 size={16} className="animate-spin" /> : <Search size={16} />}
@@ -1747,6 +1954,17 @@ function DetailedAnalyticsPanel() {
           {error ? <div className="rounded-md border border-destructive/40 bg-card p-3 text-sm text-destructive">{error}</div> : null}
         </CardContent>
       </Card>
+
+      <ReportHighlights
+        title="レポート要約"
+        description="まず見るべき反応量、安定性、伸びている要因、失敗リスクをまとめています。下の表は根拠データです。"
+        insights={detailedInsights}
+        trendRows={detailedTimeSeries}
+        rankingTitle="反応が多いサービス/アカウント"
+        rankingRows={detailedProviderAccounts}
+        rankingValueKey="content_events"
+        rankingLabelKeys={["provider_id", "account_key"]}
+      />
 
       <div className="grid gap-3 md:grid-cols-4">
         <StatCard label="展開コンテンツ" value={contentSummary.content_events} tone="success" />
@@ -1771,7 +1989,7 @@ function DetailedAnalyticsPanel() {
         </Card>
         <Card>
           <CardHeader>
-            <CardTitle>Provider / アカウント別</CardTitle>
+            <CardTitle>サービス/アカウント別</CardTitle>
             <CardDescription>どのアカウントがどのサーバーやユーザーに届いているかを見ます。</CardDescription>
           </CardHeader>
           <CardContent>
@@ -1783,7 +2001,7 @@ function DetailedAnalyticsPanel() {
       <div className="grid gap-4 xl:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardTitle>Provider 成功率</CardTitle>
+            <CardTitle>サービス別の成功率</CardTitle>
             <CardDescription>抽出、送信、コマンドなどのイベント種別ごとの安定性です。</CardDescription>
           </CardHeader>
           <CardContent>
@@ -1793,7 +2011,7 @@ function DetailedAnalyticsPanel() {
         <Card>
           <CardHeader>
             <CardTitle>コンテンツ種類</CardTitle>
-            <CardDescription>投稿、動画、画像など provider ごとの種類別の反応です。</CardDescription>
+            <CardDescription>投稿、動画、画像などサービスごとの種類別の反応です。</CardDescription>
           </CardHeader>
           <CardContent>
             <DataTable rows={contentTypeRows} maxColumns={7} />
@@ -1824,8 +2042,8 @@ function DetailedAnalyticsPanel() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Value drivers</CardTitle>
-          <CardDescription>Provider, account, content type, and URL layers ranked by reach, repeat usage, and exact reliability signals when available.</CardDescription>
+          <CardTitle>反応を伸ばしている要因</CardTitle>
+          <CardDescription>サービス、アカウント、種類、URL のどれが反応量や継続利用に効いているかを並べます。</CardDescription>
         </CardHeader>
         <CardContent>
           <DataTable rows={valueDriverRows} maxColumns={11} />
@@ -1834,8 +2052,8 @@ function DetailedAnalyticsPanel() {
 
       <Card>
         <CardHeader>
-          <CardTitle>URL query parameters</CardTitle>
-          <CardDescription>Parameter keys collected as values-free facets so raw URL inspection can be paired with privacy risk monitoring.</CardDescription>
+          <CardTitle>流入パラメータ</CardTitle>
+          <CardDescription>URL のパラメータ名だけを集計し、キャンペーンや参照元の傾向を見ます。値そのものは保存していません。</CardDescription>
         </CardHeader>
         <CardContent>
           <DataTable rows={urlParameterRows} maxColumns={10} />
@@ -1844,8 +2062,8 @@ function DetailedAnalyticsPanel() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Provider axis segments</CardTitle>
-          <CardDescription>Provider-specific schema axes ranked by observed reach and usage without converting different provider metrics into one KPI.</CardDescription>
+          <CardTitle>マーケティング軸別の反応</CardTitle>
+          <CardDescription>サービスごとの指標を、投稿形式・話題・数値レンジなどの軸で見やすくまとめます。</CardDescription>
         </CardHeader>
         <CardContent>
           <DataTable rows={providerSegmentRows} maxColumns={10} />
@@ -1865,7 +2083,7 @@ function DetailedAnalyticsPanel() {
         <Card>
           <CardHeader>
             <CardTitle>Facet 分析</CardTitle>
-            <CardDescription>hashtag、mention、YouTube views、duration など provider 固有の分析軸です。</CardDescription>
+            <CardDescription>ハッシュタグ、メンション、再生数、動画時間などサービス固有の分析軸です。</CardDescription>
           </CardHeader>
           <CardContent>
             <DataTable rows={facetRows} maxColumns={8} />
@@ -1886,7 +2104,7 @@ function DetailedAnalyticsPanel() {
         <Card>
           <CardHeader>
             <CardTitle>サーバー x アカウント</CardTitle>
-            <CardDescription>各サーバーでどの provider アカウントが反応されているかを見ます。</CardDescription>
+            <CardDescription>各サーバーでどのサービス/アカウントが反応されているかを見ます。</CardDescription>
           </CardHeader>
           <CardContent>
             <DataTable rows={guildAccountRows} maxColumns={6} />
@@ -1948,8 +2166,8 @@ function DetailedAnalyticsPanel() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Failure reasons</CardTitle>
-          <CardDescription>Aggregated error types, sources, HTTP status, and Discord codes without user, message, or channel identifiers.</CardDescription>
+          <CardTitle>失敗理由</CardTitle>
+          <CardDescription>ユーザー、メッセージ、チャンネルを出さずに、失敗の種類と発生元だけを集計します。</CardDescription>
         </CardHeader>
         <CardContent>
           <DataTable rows={failureReasonRows} maxColumns={10} />
@@ -2066,176 +2284,120 @@ function GuildAdminPreviewPanel() {
   }
 
   const retention = previewSectionRow(preview, "audienceRetention");
-  const readinessRows = displayRows(previewSectionRows(preview, "reportReadiness"), [
-    { label: "Check", key: "check" },
-    { label: "Status", key: "status" },
-    { label: "Evidence", key: "evidence" },
-    { label: "Action", key: "recommended_action" },
-    { label: "Users", key: "users" },
-    { label: "Guilds", key: "guilds" },
-    { label: "Success", key: "success_rate", format: formatPercent },
-  ]);
+  const guildTimeSeries = previewSectionRows(preview, "timeSeries");
+  const guildProviderAccounts = previewSectionRows(preview, "providerAccounts");
+  const guildTopContent = previewSectionRows(preview, "topContent");
+  const guildSummaryAnalytics = preview?.summary.analytics || {};
+  const guildTopProvider = topBy(guildProviderAccounts, "content_events");
+  const guildTopContentRow = topBy(guildTopContent, "content_events");
+  const guildSuccessRate = maybeNumber(guildSummaryAnalytics.success_rate);
+  const guildInsights: InsightItem[] = [
+    {
+      label: "このサーバーで人気",
+      value: formatEntity(guildTopProvider, ["provider_id", "account_key"]),
+      body: `${formatCount(guildTopProvider?.content_events)}件の表示、${formatCount(guildTopProvider?.users)}ユーザーが反応しています。`,
+      tone: "success",
+    },
+    {
+      label: "よく見られた投稿",
+      value: formatEntity(guildTopContentRow, ["title", "content_url"]),
+      body: `${formatCount(guildTopContentRow?.content_events)}件の表示があります。URLやタイトルは下のランキングで確認できます。`,
+      tone: "default",
+    },
+    {
+      label: "継続反応",
+      value: formatPercent(retention.returning_rate),
+      body: `${formatCount(retention.returning_users)}人が繰り返し反応しています。新規は ${formatCount(retention.first_seen_users)} 人です。`,
+      tone: asNumber(retention.returning_users) > 0 ? "success" : "muted",
+    },
+    {
+      label: "表示の安定性",
+      value: guildSuccessRate !== null ? formatPercent(guildSuccessRate) : "確認中",
+      body: guildSuccessRate === null ? "表示できた割合を計算できるデータがまだありません。" : guildSuccessRate >= 0.95 ? "投稿の展開は安定しています。" : "一部の投稿で表示まで届きにくい傾向があります。",
+      tone: guildSuccessRate !== null && guildSuccessRate < 0.95 ? "warning" : "success",
+    },
+  ];
   const timeRows = displayRows(previewSectionRows(preview, "timeSeries"), [
     { label: "日付", key: "bucket_start_ms", format: formatDate },
     { label: "表示数", key: "content_events" },
     { label: "利用ユーザー", key: "content_users" },
-    { label: "イベント", key: "analytics_events" },
+    { label: "反応数", key: "analytics_events" },
     { label: "成功率", key: "success_rate", format: formatPercent },
   ]);
   const providerRows = displayRows(previewSectionRows(preview, "providerAccounts"), [
-    { label: "Provider", key: "provider_id" },
+    { label: "サービス", key: "provider_id" },
     { label: "アカウント", key: "account_key" },
     { label: "表示数", key: "content_events" },
     { label: "利用ユーザー", key: "users" },
     { label: "URL", key: "urls" },
     { label: "最新", key: "latest_ms", format: formatDate },
-  ]);
-  const peerRows = displayRows(previewSectionRows(preview, "peerGuilds"), [
-    { label: "サーバー", key: "guild_id" },
-    { label: "表示数", key: "content_events" },
-    { label: "Provider", key: "providers" },
-    { label: "アカウント", key: "accounts" },
-    { label: "利用ユーザー", key: "users" },
-    { label: "URL", key: "urls" },
   ]);
   const userRows = displayRows(previewSectionRows(preview, "activeUsers"), [
     { label: "利用量", key: "usage_bucket" },
     { label: "ユーザー数", key: "users" },
     { label: "表示数", key: "content_events" },
     { label: "平均利用", key: "avg_events_per_user", format: (value) => formatAverage(value) },
-    { label: "平均Provider", key: "avg_providers_per_user", format: (value) => formatAverage(value) },
+    { label: "平均サービス数", key: "avg_providers_per_user", format: (value) => formatAverage(value) },
     { label: "最新", key: "latest_ms", format: formatDate },
   ]);
   const contentRows = displayRows(previewSectionRows(preview, "topContent"), [
-    { label: "Provider", key: "provider_id" },
+    { label: "サービス", key: "provider_id" },
     { label: "アカウント", key: "account_key" },
     { label: "タイトル", key: "title" },
     { label: "URL", key: "content_url", format: displayUrl },
     { label: "表示数", key: "content_events" },
     { label: "利用ユーザー", key: "users" },
   ]);
-  const valueRows = displayRows(previewSectionRows(preview, "valueDrivers"), [
-    { label: "Driver", key: "driver_type" },
-    { label: "Provider", key: "provider_id" },
-    { label: "Account", key: "account_key" },
-    { label: "Content type", key: "content_type" },
-    { label: "URL", key: "content_url", format: displayUrl },
-    { label: "Value score", key: "value_score" },
-    { label: "Signal", key: "value_signal" },
-    { label: "Success", key: "success_rate", format: formatPercent },
-    { label: "Users", key: "users" },
-  ]);
-  const urlParameterRows = displayRows(previewSectionRows(preview, "urlParameters"), [
-    { label: "Provider", key: "provider_id" },
-    { label: "Account", key: "account_key" },
-    { label: "Query key", key: "query_key" },
-    { label: "Family", key: "query_key_family" },
-    { label: "Sensitivity", key: "privacy_sensitivity" },
-    { label: "Events", key: "content_events" },
-    { label: "Users", key: "users" },
-  ]);
-  const providerSegmentRows = displayRows(previewSectionRows(preview, "providerSegments"), [
-    { label: "Provider", key: "provider_id" },
-    { label: "Axis", key: "axis_label" },
-    { label: "Metric", key: "metric_key" },
-    { label: "Value", key: "facet_value" },
-    { label: "Events", key: "events" },
-    { label: "Users", key: "users" },
-    { label: "Guilds", key: "guilds" },
-    { label: "Score", key: "segment_score" },
-  ]);
-  const topicRows = displayRows(previewSectionRows(preview, "topics"), [
-    { label: "分析軸", key: "facet_key" },
-    { label: "値", key: "facet_value" },
-    { label: "回数", key: "events" },
-    { label: "利用ユーザー", key: "users" },
-    { label: "平均値", key: "avg_numeric_value", format: (value) => formatAverage(value) },
-  ]);
   const hourRows = displayRows(previewSectionRows(preview, "bestHours"), [
-    { label: "Provider", key: "provider_id" },
+    { label: "サービス", key: "provider_id" },
     { label: "アカウント", key: "account_key" },
-    { label: "UTC時間", key: "hour_utc", format: (value) => `${formatCell(value)}:00` },
+    { label: "時間帯", key: "hour_utc", format: formatLocalHourFromUtc },
     { label: "表示数", key: "content_events" },
     { label: "利用ユーザー", key: "users" },
   ]);
   const weekdayRows = displayRows(previewSectionRows(preview, "bestWeekdays"), [
-    { label: "Provider", key: "provider_id" },
+    { label: "サービス", key: "provider_id" },
     { label: "アカウント", key: "account_key" },
     { label: "曜日", key: "weekday_utc", format: formatWeekday },
     { label: "表示数", key: "content_events" },
     { label: "利用ユーザー", key: "users" },
   ]);
-  const commandRows = displayRows(previewSectionRows(preview, "commandUsage"), [
-    { label: "種別", key: "event_type" },
-    { label: "操作", key: "action_key" },
-    { label: "回数", key: "events" },
-    { label: "成功率", key: "success_rate", format: formatPercent },
-    { label: "利用ユーザー", key: "users" },
-  ]);
-  const failureRows = displayRows(previewSectionRows(preview, "failureReasons"), [
-    { label: "Provider", key: "provider_id" },
-    { label: "Source", key: "source" },
-    { label: "Error", key: "error_type" },
-    { label: "Severity", key: "severity" },
-    { label: "HTTP", key: "http_status" },
-    { label: "Discord", key: "discord_code" },
-    { label: "Errors", key: "errors" },
-    { label: "Users", key: "users" },
-  ]);
   const funnelRows = displayRows(previewSectionRows(preview, "funnelAnalytics"), [
-    { label: "Provider", key: "provider_id" },
-    { label: "Account", key: "account_key" },
-    { label: "URL posts", key: "url_posts" },
-    { label: "Extract success", key: "extract_success_rate", format: formatPercent },
-    { label: "Send success", key: "send_success_rate", format: formatPercent },
-    { label: "Interactions", key: "interaction_events" },
-    { label: "Interaction rate", key: "interaction_rate", format: formatPercent },
-    { label: "Users", key: "users" },
+    { label: "サービス", key: "provider_id" },
+    { label: "アカウント", key: "account_key" },
+    { label: "URL投稿", key: "url_posts" },
+    { label: "カード表示率", key: "extract_success_rate", format: formatPercent },
+    { label: "表示完了率", key: "send_success_rate", format: formatPercent },
+    { label: "反応数", key: "interaction_events" },
+    { label: "反応率", key: "interaction_rate", format: formatPercent },
+    { label: "ユーザー", key: "users" },
   ]);
   const cohortRows = displayRows(previewSectionRows(preview, "weeklyCohorts"), [
-    { label: "Cohort week", key: "cohort_week_ms", format: formatDate },
-    { label: "Activity week", key: "activity_week_ms", format: formatDate },
-    { label: "Age", key: "age_weeks" },
-    { label: "Cohort users", key: "cohort_users" },
-    { label: "Retained", key: "retained_users" },
-    { label: "Retention", key: "retention_rate", format: formatPercent },
+    { label: "初回週", key: "cohort_week_ms", format: formatDate },
+    { label: "反応週", key: "activity_week_ms", format: formatDate },
+    { label: "経過週", key: "age_weeks" },
+    { label: "対象ユーザー", key: "cohort_users" },
+    { label: "継続ユーザー", key: "retained_users" },
+    { label: "継続率", key: "retention_rate", format: formatPercent },
   ]);
   const lifetimeRows = displayRows(previewSectionRows(preview, "contentLifetime"), [
-    { label: "Provider", key: "provider_id" },
-    { label: "Account", key: "account_key" },
-    { label: "Title", key: "title" },
+    { label: "サービス", key: "provider_id" },
+    { label: "アカウント", key: "account_key" },
+    { label: "タイトル", key: "title" },
     { label: "URL", key: "content_url", format: displayUrl },
-    { label: "Events", key: "content_events" },
-    { label: "Users", key: "users" },
-    { label: "Lifetime", key: "lifetime_hours", format: (value) => formatAverage(value, "h") },
+    { label: "件数", key: "content_events" },
+    { label: "ユーザー", key: "users" },
+    { label: "継続時間", key: "lifetime_hours", format: (value) => formatAverage(value, "h") },
   ]);
   const reuseRows = displayRows(previewSectionRows(preview, "urlReuse"), [
-    { label: "Provider", key: "provider_id" },
-    { label: "Account", key: "account_key" },
+    { label: "サービス", key: "provider_id" },
+    { label: "アカウント", key: "account_key" },
     { label: "URL", key: "content_url", format: displayUrl },
-    { label: "Events", key: "content_events" },
-    { label: "Users", key: "users" },
-    { label: "Guilds", key: "guilds" },
-    { label: "Velocity/day", key: "spread_velocity_per_day", format: (value) => formatAverage(value) },
+    { label: "件数", key: "content_events" },
+    { label: "ユーザー", key: "users" },
+    { label: "サーバー", key: "guilds" },
+    { label: "1日あたり拡散", key: "spread_velocity_per_day", format: (value) => formatAverage(value) },
   ]);
-  const settingImpactRows = displayRows(previewSectionRows(preview, "settingImpact"), [
-    { label: "Provider", key: "provider_id" },
-    { label: "Setting", key: "setting_key" },
-    { label: "Action", key: "action" },
-    { label: "Changes", key: "changes" },
-    { label: "Before", key: "content_before" },
-    { label: "After", key: "content_after" },
-    { label: "Change", key: "change_rate", format: formatPercent },
-    { label: "Users", key: "users_after" },
-  ]);
-  const interestRows = displayRows(previewSectionRows(preview, "audienceInterests"), [
-    { label: "対象", key: "target_account_key" },
-    { label: "あわせて反応", key: "interest_account_key" },
-    { label: "種類", key: "interest_content_type" },
-    { label: "共起数", key: "co_events" },
-    { label: "共通ユーザー", key: "shared_users" },
-  ]);
-
   return (
     <div className="space-y-4">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
@@ -2255,10 +2417,10 @@ function GuildAdminPreviewPanel() {
         </CardHeader>
         <CardContent className="space-y-3">
           <div className="grid gap-3 lg:grid-cols-4">
-            <Input value={filters.guildId} onChange={(event) => setFilter("guildId", event.target.value)} placeholder="guild_id" />
-            <Input value={filters.providerId} onChange={(event) => setFilter("providerId", event.target.value)} placeholder="provider_id" />
-            <Input value={filters.accountKey} onChange={(event) => setFilter("accountKey", event.target.value)} placeholder="account_key" />
-            <Input value={filters.contentType} onChange={(event) => setFilter("contentType", event.target.value)} placeholder="content_type" />
+            <Input value={filters.guildId} onChange={(event) => setFilter("guildId", event.target.value)} placeholder="サーバーID" />
+            <Input value={filters.providerId} onChange={(event) => setFilter("providerId", event.target.value)} placeholder="サービスID" />
+            <Input value={filters.accountKey} onChange={(event) => setFilter("accountKey", event.target.value)} placeholder="アカウント" />
+            <Input value={filters.contentType} onChange={(event) => setFilter("contentType", event.target.value)} placeholder="種類" />
           </div>
           <div className="grid gap-3 lg:grid-cols-[1fr_1fr_120px_120px_150px_auto]">
             <Input type="datetime-local" value={filters.dateFrom} onChange={(event) => setFilter("dateFrom", event.target.value)} />
@@ -2288,13 +2450,16 @@ function GuildAdminPreviewPanel() {
 
       <PreviewCards cards={preview?.cards || []} />
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Report readiness</CardTitle>
-          <CardDescription>Privacy, sample-size, URL visibility, and reliability checks for the future server-admin report.</CardDescription>
-        </CardHeader>
-        <CardContent><DataTable rows={readinessRows} maxColumns={7} /></CardContent>
-      </Card>
+      <ReportHighlights
+        title="サーバーレポート要約"
+        description="サーバー管理者が先に見るべき人気、継続、表示の安定性をまとめています。"
+        insights={guildInsights}
+        trendRows={guildTimeSeries}
+        rankingTitle="よく見られた投稿/URL"
+        rankingRows={guildTopContent}
+        rankingValueKey="content_events"
+        rankingLabelKeys={["title", "content_url", "provider_id"]}
+      />
 
       <div className="grid gap-3 md:grid-cols-3">
         <MetricCard label="リピートユーザー" value={retention.returning_users} />
@@ -2312,7 +2477,7 @@ function GuildAdminPreviewPanel() {
         </Card>
         <Card>
           <CardHeader>
-            <CardTitle>人気の provider / アカウント</CardTitle>
+            <CardTitle>人気のサービス/アカウント</CardTitle>
             <CardDescription>サーバー内でよく反応されるアカウントです。</CardDescription>
           </CardHeader>
           <CardContent><DataTable rows={providerRows} maxColumns={6} /></CardContent>
@@ -2320,13 +2485,6 @@ function GuildAdminPreviewPanel() {
       </div>
 
       <div className="grid gap-4 xl:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle>他サーバーとの比較</CardTitle>
-            <CardDescription>同じ期間で反応が多いサーバーを比較します。</CardDescription>
-          </CardHeader>
-          <CardContent><DataTable rows={peerRows} maxColumns={6} /></CardContent>
-        </Card>
         <Card>
           <CardHeader>
             <CardTitle>利用ユーザー</CardTitle>
@@ -2340,37 +2498,9 @@ function GuildAdminPreviewPanel() {
         <Card>
           <CardHeader>
             <CardTitle>よく見られた投稿 / URL</CardTitle>
-            <CardDescription>URL と展開メタデータのみを表示します。</CardDescription>
+            <CardDescription>URL と取得したタイトルなど、投稿を判断しやすい情報だけを表示します。</CardDescription>
           </CardHeader>
           <CardContent><DataTable rows={contentRows} maxColumns={6} /></CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle>Value drivers</CardTitle>
-            <CardDescription>URL, provider, account, and content type signals prepared for future server-admin analytics.</CardDescription>
-          </CardHeader>
-          <CardContent><DataTable rows={valueRows} maxColumns={9} /></CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle>URL query parameters</CardTitle>
-            <CardDescription>Values-free query key trends with small-group suppression for future server-admin views.</CardDescription>
-          </CardHeader>
-          <CardContent><DataTable rows={urlParameterRows} maxColumns={7} /></CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle>Provider axis segments</CardTitle>
-            <CardDescription>Provider-specific metric axes prepared for future server-admin analytics without exposing row-level identifiers.</CardDescription>
-          </CardHeader>
-          <CardContent><DataTable rows={providerSegmentRows} maxColumns={8} /></CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle>興味トピック</CardTitle>
-            <CardDescription>hashtag、mention、動画指標などから見える傾向です。</CardDescription>
-          </CardHeader>
-          <CardContent><DataTable rows={topicRows} maxColumns={5} /></CardContent>
         </Card>
       </div>
 
@@ -2389,67 +2519,38 @@ function GuildAdminPreviewPanel() {
           </CardHeader>
           <CardContent><DataTable rows={weekdayRows} maxColumns={5} /></CardContent>
         </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle>操作ランキング</CardTitle>
-            <CardDescription>コマンドやボタンなどの利用です。</CardDescription>
-          </CardHeader>
-          <CardContent><DataTable rows={commandRows} maxColumns={5} /></CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle>Failure reasons</CardTitle>
-            <CardDescription>Aggregated error causes without user, message, or channel identifiers.</CardDescription>
-          </CardHeader>
-          <CardContent><DataTable rows={failureRows} maxColumns={6} /></CardContent>
-        </Card>
       </div>
 
       <div className="grid gap-4 xl:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardTitle>Conversion funnel</CardTitle>
-            <CardDescription>URL post to provider extraction, Discord send, and interaction conversion for this server preview.</CardDescription>
+            <CardTitle>反応までの流れ</CardTitle>
+            <CardDescription>URL投稿が表示され、反応につながるまでの流れを見ます。</CardDescription>
           </CardHeader>
           <CardContent><DataTable rows={funnelRows} maxColumns={8} /></CardContent>
         </Card>
         <Card>
           <CardHeader>
-            <CardTitle>Weekly retention cohorts</CardTitle>
-            <CardDescription>First-use week cohorts with small audience counts suppressed before display.</CardDescription>
+            <CardTitle>週別の継続反応</CardTitle>
+            <CardDescription>初回反応した週ごとに、その後も反応しているかを確認します。</CardDescription>
           </CardHeader>
           <CardContent><DataTable rows={cohortRows} maxColumns={6} /></CardContent>
         </Card>
         <Card>
           <CardHeader>
-            <CardTitle>Content lifetime</CardTitle>
-            <CardDescription>URLs that keep receiving activity over time, shown with the selected raw or normalized URL visibility.</CardDescription>
+            <CardTitle>長く見られるコンテンツ</CardTitle>
+            <CardDescription>一度だけでなく、時間をまたいで反応され続けるURLを確認します。</CardDescription>
           </CardHeader>
           <CardContent><DataTable rows={lifetimeRows} maxColumns={7} /></CardContent>
         </Card>
         <Card>
           <CardHeader>
-            <CardTitle>URL reuse and spread</CardTitle>
-            <CardDescription>Repeated URLs and spread velocity across users or servers without message-level tracking.</CardDescription>
+            <CardTitle>URLの再利用と広がり</CardTitle>
+            <CardDescription>同じURLがどれだけ繰り返し使われ、どのくらい広がったかを見ます。</CardDescription>
           </CardHeader>
           <CardContent><DataTable rows={reuseRows} maxColumns={7} /></CardContent>
         </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle>Setting impact</CardTitle>
-            <CardDescription>Before and after usage around setting or provider changes, grouped for future server-admin guidance.</CardDescription>
-          </CardHeader>
-          <CardContent><DataTable rows={settingImpactRows} maxColumns={8} /></CardContent>
-        </Card>
       </div>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>あわせて反応される興味</CardTitle>
-          <CardDescription>同じユーザーが他に反応している provider/account の組み合わせです。</CardDescription>
-        </CardHeader>
-        <CardContent><DataTable rows={interestRows} maxColumns={5} /></CardContent>
-      </Card>
     </div>
   );
 }
@@ -2504,25 +2605,43 @@ function ProviderMarketingPreviewPanel() {
   }
 
   const retention = previewSectionRow(preview, "audienceRetention");
-  const readinessRows = displayRows(previewSectionRows(preview, "reportReadiness"), [
-    { label: "Check", key: "check" },
-    { label: "Status", key: "status" },
-    { label: "Evidence", key: "evidence" },
-    { label: "Action", key: "recommended_action" },
-    { label: "Providers", key: "providers" },
-    { label: "Events", key: "events" },
-    { label: "Jobs", key: "jobs" },
-    { label: "Errors", key: "errors" },
-    { label: "Extract", key: "min_extract_success_rate", format: formatPercent },
-    { label: "Enrichment", key: "min_enrichment_success_rate", format: formatPercent },
-    { label: "Error rate", key: "max_error_rate", format: formatPercent },
-    { label: "Users", key: "users" },
-    { label: "Guilds", key: "guilds" },
-    { label: "Required", key: "min_required_coverage_rate", format: formatPercent },
-    { label: "Coverage", key: "min_metric_coverage_rate", format: formatPercent },
-  ]);
+  const providerTimeSeries = previewSectionRows(preview, "timeSeries");
+  const providerAccounts = previewSectionRows(preview, "providerAccounts");
+  const providerTopContent = previewSectionRows(preview, "topContent");
+  const providerSegments = previewSectionRows(preview, "providerSegments");
+  const providerSummaryAnalytics = preview?.summary.analytics || {};
+  const providerTopAccount = topBy(providerAccounts, "content_events");
+  const providerTopContentRow = topBy(providerTopContent, "content_events");
+  const providerTopSegment = topBy(providerSegments, "segment_score");
+  const providerSuccessRate = maybeNumber(providerSummaryAnalytics.success_rate);
+  const providerInsights: InsightItem[] = [
+    {
+      label: "一番見られている対象",
+      value: formatEntity(providerTopAccount, ["provider_id", "account_key"]),
+      body: `${formatCount(providerTopAccount?.content_events)}件、${formatCount(providerTopAccount?.guilds)}サーバーに届いています。`,
+      tone: "success",
+    },
+    {
+      label: "人気コンテンツ",
+      value: formatEntity(providerTopContentRow, ["title", "content_url"]),
+      body: `${formatCount(providerTopContentRow?.content_events)}件表示。どの投稿が伸びたかを先に確認できます。`,
+      tone: "default",
+    },
+    {
+      label: "強いマーケティング軸",
+      value: formatEntity(providerTopSegment, ["axis_label", "facet_value", "metric_label"]),
+      body: `${formatCount(providerTopSegment?.events)}件の反応があります。投稿内容・形式・流入のどれが効いているかを見る軸です。`,
+      tone: "default",
+    },
+    {
+      label: "表示の安定性",
+      value: providerSuccessRate !== null ? formatPercent(providerSuccessRate) : "確認中",
+      body: providerSuccessRate === null ? "表示できた割合を計算できるデータがまだありません。" : providerSuccessRate >= 0.95 ? "投稿の展開は安定しています。" : "一部の投稿で表示まで届きにくい傾向があります。",
+      tone: providerSuccessRate !== null && providerSuccessRate < 0.95 ? "warning" : "success",
+    },
+  ];
   const accountRows = displayRows(previewSectionRows(preview, "providerAccounts"), [
-    { label: "Provider", key: "provider_id" },
+    { label: "サービス", key: "provider_id" },
     { label: "アカウント", key: "account_key" },
     { label: "表示数", key: "content_events" },
     { label: "利用ユーザー", key: "users" },
@@ -2559,35 +2678,33 @@ function ProviderMarketingPreviewPanel() {
     { label: "サーバー", key: "guilds" },
   ]);
   const valueRows = displayRows(previewSectionRows(preview, "valueDrivers"), [
-    { label: "Driver", key: "driver_type" },
-    { label: "Provider", key: "provider_id" },
-    { label: "Account", key: "account_key" },
-    { label: "Content type", key: "content_type" },
+    { label: "切り口", key: "driver_type" },
+    { label: "サービス", key: "provider_id" },
+    { label: "アカウント", key: "account_key" },
+    { label: "種類", key: "content_type" },
     { label: "URL", key: "content_url", format: displayUrl },
-    { label: "Value score", key: "value_score" },
-    { label: "Signal", key: "value_signal" },
-    { label: "Success", key: "success_rate", format: formatPercent },
-    { label: "Guilds", key: "guilds" },
+    { label: "注目度", key: "value_score" },
+    { label: "理由", key: "value_signal", format: signalLabel },
+    { label: "サーバー", key: "guilds" },
   ]);
   const urlParameterRows = displayRows(previewSectionRows(preview, "urlParameters"), [
-    { label: "Provider", key: "provider_id" },
-    { label: "Account", key: "account_key" },
-    { label: "Query key", key: "query_key" },
-    { label: "Family", key: "query_key_family" },
-    { label: "Sensitivity", key: "privacy_sensitivity" },
-    { label: "Events", key: "content_events" },
-    { label: "Guilds", key: "guilds" },
+    { label: "サービス", key: "provider_id" },
+    { label: "アカウント", key: "account_key" },
+    { label: "URLパラメータ", key: "query_key" },
+    { label: "分類", key: "query_key_family", format: queryFamilyLabel },
+    { label: "件数", key: "content_events" },
+    { label: "サーバー", key: "guilds" },
   ]);
   const providerSegmentRows = displayRows(previewSectionRows(preview, "providerSegments"), [
-    { label: "Provider", key: "provider_id" },
-    { label: "Axis", key: "axis_label" },
-    { label: "Metric", key: "metric_key" },
-    { label: "Value", key: "facet_value" },
-    { label: "Events", key: "events" },
-    { label: "Users", key: "users" },
-    { label: "Guilds", key: "guilds" },
-    { label: "Avg", key: "avg_numeric_value", format: (value) => formatAverage(value) },
-    { label: "Score", key: "segment_score" },
+    { label: "サービス", key: "provider_id" },
+    { label: "軸", key: "axis_label" },
+    { label: "指標", key: "metric_label" },
+    { label: "値", key: "facet_value" },
+    { label: "件数", key: "events" },
+    { label: "ユーザー", key: "users" },
+    { label: "サーバー", key: "guilds" },
+    { label: "平均", key: "avg_numeric_value", format: (value) => formatAverage(value) },
+    { label: "スコア", key: "segment_score" },
   ]);
   const numericRows = displayRows(previewSectionRows(preview, "numericSignals"), [
     { label: "指標", key: "facet_key" },
@@ -2597,7 +2714,7 @@ function ProviderMarketingPreviewPanel() {
     { label: "合計", key: "sum_value", format: (value) => formatAverage(value) },
   ]);
   const contentTypeRows = displayRows(previewSectionRows(preview, "contentTypes"), [
-    { label: "Provider", key: "provider_id" },
+    { label: "サービス", key: "provider_id" },
     { label: "種類", key: "content_type" },
     { label: "表示数", key: "content_events" },
     { label: "利用ユーザー", key: "users" },
@@ -2605,105 +2722,53 @@ function ProviderMarketingPreviewPanel() {
   ]);
   const hourRows = displayRows(previewSectionRows(preview, "bestHours"), [
     { label: "アカウント", key: "account_key" },
-    { label: "UTC時間", key: "hour_utc", format: (value) => `${formatCell(value)}:00` },
+    { label: "時間帯", key: "hour_utc", format: formatLocalHourFromUtc },
     { label: "表示数", key: "content_events" },
     { label: "利用ユーザー", key: "users" },
     { label: "サーバー", key: "guilds" },
   ]);
   const interestRows = displayRows(previewSectionRows(preview, "audienceInterests"), [
     { label: "対象アカウント", key: "target_account_key" },
-    { label: "併読Provider", key: "interest_provider_id" },
+    { label: "併読サービス", key: "interest_provider_id" },
     { label: "併読アカウント", key: "interest_account_key" },
     { label: "共起数", key: "co_events" },
     { label: "共通ユーザー", key: "shared_users" },
     { label: "共通サーバー", key: "shared_guilds" },
   ]);
-  const failureRows = displayRows(previewSectionRows(preview, "failureReasons"), [
-    { label: "Provider", key: "provider_id" },
-    { label: "Source", key: "source" },
-    { label: "Error", key: "error_type" },
-    { label: "Severity", key: "severity" },
-    { label: "HTTP", key: "http_status" },
-    { label: "Discord", key: "discord_code" },
-    { label: "Errors", key: "errors" },
-    { label: "Users", key: "users" },
-  ]);
-  const reliabilityRows = displayRows(previewSectionRows(preview, "providerReliability"), [
-    { label: "Provider", key: "provider_id" },
-    { label: "アカウント", key: "account_key" },
-    { label: "イベント", key: "event_type" },
-    { label: "回数", key: "events" },
-    { label: "成功率", key: "success_rate", format: formatPercent },
-    { label: "平均ms", key: "avg_duration_ms", format: (value) => formatAverage(value, "ms") },
-  ]);
-  const schemaSummaryRows = displayRows(previewSectionRows(preview, "metricSchemaSummary"), [
-    { label: "Provider", key: "provider_id" },
-    { label: "Schema", key: "schema_version" },
-    { label: "Coverage", key: "coverage_rate", format: formatPercent },
-    { label: "Required", key: "required_coverage_rate", format: formatPercent },
-    { label: "Enriched", key: "enriched_coverage_rate", format: formatPercent },
-    { label: "表示軸", key: "display_axes" },
-  ]);
-  const schemaCoverageRows = displayRows(previewSectionRows(preview, "metricSchemaCoverage"), [
-    { label: "Metric", key: "metric_key" },
-    { label: "Stage", key: "stage" },
-    { label: "Required", key: "required" },
-    { label: "Status", key: "coverage_status" },
-    { label: "Events", key: "events" },
-    { label: "Users", key: "users" },
-  ]);
-  const providerQualityGateRows = displayRows(previewSectionRows(preview, "providerQualityGates"), [
-    { label: "Provider", key: "provider_id" },
-    { label: "Status", key: "quality_status" },
-    { label: "Score", key: "readiness_score" },
-    { label: "Action", key: "recommended_action" },
-    { label: "Content", key: "content_events" },
-    { label: "Users", key: "users" },
-    { label: "Guilds", key: "guilds" },
-    { label: "Extract events", key: "extract_events" },
-    { label: "Extract success", key: "extract_success_rate", format: formatPercent },
-    { label: "Enrichment jobs", key: "enrichment_jobs" },
-    { label: "Enrichment success", key: "enrichment_success_rate", format: formatPercent },
-    { label: "Errors", key: "error_events" },
-    { label: "Error rate", key: "error_rate", format: formatPercent },
-    { label: "Top error", key: "top_error_type" },
-    { label: "Required coverage", key: "required_coverage_rate", format: formatPercent },
-    { label: "Metric coverage", key: "coverage_rate", format: formatPercent },
-  ]);
   const funnelRows = displayRows(previewSectionRows(preview, "funnelAnalytics"), [
-    { label: "Provider", key: "provider_id" },
-    { label: "Account", key: "account_key" },
-    { label: "URL posts", key: "url_posts" },
-    { label: "Extract success", key: "extract_success_rate", format: formatPercent },
-    { label: "Send success", key: "send_success_rate", format: formatPercent },
-    { label: "Interactions", key: "interaction_events" },
-    { label: "Interaction rate", key: "interaction_rate", format: formatPercent },
-    { label: "Guilds", key: "guilds" },
+    { label: "サービス", key: "provider_id" },
+    { label: "アカウント", key: "account_key" },
+    { label: "URL投稿", key: "url_posts" },
+    { label: "カード表示率", key: "extract_success_rate", format: formatPercent },
+    { label: "表示完了率", key: "send_success_rate", format: formatPercent },
+    { label: "反応数", key: "interaction_events" },
+    { label: "反応率", key: "interaction_rate", format: formatPercent },
+    { label: "サーバー", key: "guilds" },
   ]);
   const cohortRows = displayRows(previewSectionRows(preview, "weeklyCohorts"), [
-    { label: "Cohort week", key: "cohort_week_ms", format: formatDate },
-    { label: "Activity week", key: "activity_week_ms", format: formatDate },
-    { label: "Age", key: "age_weeks" },
-    { label: "Cohort users", key: "cohort_users" },
-    { label: "Retained", key: "retained_users" },
-    { label: "Retention", key: "retention_rate", format: formatPercent },
+    { label: "初回週", key: "cohort_week_ms", format: formatDate },
+    { label: "反応週", key: "activity_week_ms", format: formatDate },
+    { label: "経過週", key: "age_weeks" },
+    { label: "対象ユーザー", key: "cohort_users" },
+    { label: "継続ユーザー", key: "retained_users" },
+    { label: "継続率", key: "retention_rate", format: formatPercent },
   ]);
   const lifetimeRows = displayRows(previewSectionRows(preview, "contentLifetime"), [
-    { label: "Account", key: "account_key" },
-    { label: "Title", key: "title" },
-    { label: "Content type", key: "content_type" },
+    { label: "アカウント", key: "account_key" },
+    { label: "タイトル", key: "title" },
+    { label: "種類", key: "content_type" },
     { label: "URL", key: "content_url", format: displayUrl },
-    { label: "Events", key: "content_events" },
-    { label: "Guilds", key: "guilds" },
-    { label: "Lifetime", key: "lifetime_hours", format: (value) => formatAverage(value, "h") },
+    { label: "件数", key: "content_events" },
+    { label: "サーバー", key: "guilds" },
+    { label: "継続時間", key: "lifetime_hours", format: (value) => formatAverage(value, "h") },
   ]);
   const reuseRows = displayRows(previewSectionRows(preview, "urlReuse"), [
-    { label: "Account", key: "account_key" },
+    { label: "アカウント", key: "account_key" },
     { label: "URL", key: "content_url", format: displayUrl },
-    { label: "Events", key: "content_events" },
-    { label: "Users", key: "users" },
-    { label: "Guilds", key: "guilds" },
-    { label: "Velocity/day", key: "spread_velocity_per_day", format: (value) => formatAverage(value) },
+    { label: "件数", key: "content_events" },
+    { label: "ユーザー", key: "users" },
+    { label: "サーバー", key: "guilds" },
+    { label: "1日あたり拡散", key: "spread_velocity_per_day", format: (value) => formatAverage(value) },
   ]);
 
   return (
@@ -2721,15 +2786,15 @@ function ProviderMarketingPreviewPanel() {
       <Card>
         <CardHeader>
           <CardTitle>プレビュー条件</CardTitle>
-          <CardDescription>provider_id と account_key を指定すると、アカウントホルダー向けの見え方に近づきます。</CardDescription>
+          <CardDescription>サービスIDとアカウントを指定すると、アカウント担当者向けの見え方に近づきます。</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
           <div className="grid gap-3 lg:grid-cols-5">
-            <Input value={filters.providerId} onChange={(event) => setFilter("providerId", event.target.value)} placeholder="provider_id" />
-            <Input value={filters.accountKey} onChange={(event) => setFilter("accountKey", event.target.value)} placeholder="account_key" />
-            <Input value={filters.guildId} onChange={(event) => setFilter("guildId", event.target.value)} placeholder="guild_id" />
-            <Input value={filters.contentType} onChange={(event) => setFilter("contentType", event.target.value)} placeholder="content_type" />
-            <Input value={filters.facetKey} onChange={(event) => setFilter("facetKey", event.target.value)} placeholder="facet_key" />
+            <Input value={filters.providerId} onChange={(event) => setFilter("providerId", event.target.value)} placeholder="サービスID" />
+            <Input value={filters.accountKey} onChange={(event) => setFilter("accountKey", event.target.value)} placeholder="アカウント" />
+            <Input value={filters.guildId} onChange={(event) => setFilter("guildId", event.target.value)} placeholder="サーバーID" />
+            <Input value={filters.contentType} onChange={(event) => setFilter("contentType", event.target.value)} placeholder="種類" />
+            <Input value={filters.facetKey} onChange={(event) => setFilter("facetKey", event.target.value)} placeholder="分析軸" />
           </div>
           <div className="grid gap-3 lg:grid-cols-[1fr_1fr_120px_120px_150px_auto]">
             <Input type="datetime-local" value={filters.dateFrom} onChange={(event) => setFilter("dateFrom", event.target.value)} />
@@ -2758,62 +2823,42 @@ function ProviderMarketingPreviewPanel() {
       </Card>
 
       <ProviderMetricProfilePanel profile={preview?.metricProfile} />
-      <Card>
-        <CardHeader>
-          <CardTitle>Report readiness</CardTitle>
-          <CardDescription>Privacy, sample-size, URL visibility, reliability, and schema checks for future provider-facing reports.</CardDescription>
-        </CardHeader>
-        <CardContent><DataTable rows={readinessRows} maxColumns={11} /></CardContent>
-      </Card>
-      <Card>
-        <CardHeader>
-          <CardTitle>Provider report quality gates</CardTitle>
-          <CardDescription>Provider-level release checks for extraction, enrichment, error pressure, and metric schema coverage.</CardDescription>
-        </CardHeader>
-        <CardContent><DataTable rows={providerQualityGateRows} maxColumns={12} /></CardContent>
-      </Card>
+      <ReportHighlights
+        title="マーケティングレポート要約"
+        description="人気コンテンツ、強い軸、継続反応を先に読み取れるようにまとめています。"
+        insights={providerInsights}
+        trendRows={providerTimeSeries}
+        rankingTitle="反応が多いコンテンツ"
+        rankingRows={providerTopContent}
+        rankingValueKey="content_events"
+        rankingLabelKeys={["title", "content_url", "account_key"]}
+      />
       <div className="grid gap-4 xl:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardTitle>Provider schema coverage</CardTitle>
-            <CardDescription>provider ごとに、収集できるはずの指標が実データで観測されているかを確認します。</CardDescription>
-          </CardHeader>
-          <CardContent><DataTable rows={schemaSummaryRows} maxColumns={6} /></CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle>Metric coverage detail</CardTitle>
-            <CardDescription>provider_id を指定すると required / optional / enriched の指標単位で欠損を確認できます。</CardDescription>
-          </CardHeader>
-          <CardContent><DataTable rows={schemaCoverageRows} maxColumns={6} /></CardContent>
-        </Card>
-      </div>
-      <div className="grid gap-4 xl:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle>Conversion funnel</CardTitle>
-            <CardDescription>Provider extraction, Discord delivery, and interaction conversion for future account-holder reports.</CardDescription>
+            <CardTitle>反応までの流れ</CardTitle>
+            <CardDescription>URL投稿が表示され、反応につながるまでの流れを見ます。</CardDescription>
           </CardHeader>
           <CardContent><DataTable rows={funnelRows} maxColumns={8} /></CardContent>
         </Card>
         <Card>
           <CardHeader>
-            <CardTitle>Weekly retention cohorts</CardTitle>
-            <CardDescription>Audience retention by first-seen week, with small cohorts suppressed before display.</CardDescription>
+            <CardTitle>週別の継続反応</CardTitle>
+            <CardDescription>初回反応した週ごとに、その後も反応しているかを確認します。</CardDescription>
           </CardHeader>
           <CardContent><DataTable rows={cohortRows} maxColumns={6} /></CardContent>
         </Card>
         <Card>
           <CardHeader>
-            <CardTitle>Content lifetime</CardTitle>
-            <CardDescription>Content that keeps drawing reactions over time, using the selected URL visibility policy.</CardDescription>
+            <CardTitle>長く見られるコンテンツ</CardTitle>
+            <CardDescription>一度だけでなく、時間をまたいで反応され続けるURLを確認します。</CardDescription>
           </CardHeader>
           <CardContent><DataTable rows={lifetimeRows} maxColumns={7} /></CardContent>
         </Card>
         <Card>
           <CardHeader>
-            <CardTitle>URL reuse and spread</CardTitle>
-            <CardDescription>Repeated URLs and cross-server spread velocity for provider marketing analysis.</CardDescription>
+            <CardTitle>URLの再利用と広がり</CardTitle>
+            <CardDescription>同じURLがどれだけ繰り返し使われ、どのくらい広がったかを見ます。</CardDescription>
           </CardHeader>
           <CardContent><DataTable rows={reuseRows} maxColumns={6} /></CardContent>
         </Card>
@@ -2847,35 +2892,35 @@ function ProviderMarketingPreviewPanel() {
         <Card>
           <CardHeader>
             <CardTitle>反応ユーザー</CardTitle>
-            <CardDescription>どのユーザー層が反応しているかの元データです。</CardDescription>
+            <CardDescription>利用量ごとに、どのユーザー層が反応しているかを確認します。</CardDescription>
           </CardHeader>
           <CardContent><DataTable rows={audienceRows} maxColumns={5} /></CardContent>
         </Card>
         <Card>
           <CardHeader>
             <CardTitle>人気コンテンツ</CardTitle>
-            <CardDescription>URL と取得済みメタデータ単位のランキングです。</CardDescription>
+            <CardDescription>URL と取得したタイトルなどを使ったランキングです。</CardDescription>
           </CardHeader>
           <CardContent><DataTable rows={topContentRows} maxColumns={6} /></CardContent>
         </Card>
         <Card>
           <CardHeader>
-            <CardTitle>Value drivers</CardTitle>
-            <CardDescription>Marketing-ready provider, account, content type, and URL value signals with raw URL visibility controlled by the preview setting.</CardDescription>
+            <CardTitle>反応を伸ばしている要因</CardTitle>
+            <CardDescription>サービス、アカウント、種類、URL のどれが反応量や継続利用に効いているかを並べます。</CardDescription>
           </CardHeader>
-          <CardContent><DataTable rows={valueRows} maxColumns={9} /></CardContent>
+          <CardContent><DataTable rows={valueRows} maxColumns={8} /></CardContent>
         </Card>
         <Card>
           <CardHeader>
-            <CardTitle>URL query parameters</CardTitle>
-            <CardDescription>Values-free query key trends for campaign, referral, and privacy-sensitive URL parameter monitoring.</CardDescription>
+            <CardTitle>流入パラメータ</CardTitle>
+            <CardDescription>キャンペーンや参照元の手がかりになるURLパラメータ名を集計します。</CardDescription>
           </CardHeader>
           <CardContent><DataTable rows={urlParameterRows} maxColumns={7} /></CardContent>
         </Card>
         <Card>
           <CardHeader>
-            <CardTitle>Provider axis segments</CardTitle>
-            <CardDescription>Provider-specific marketing axes ranked by observed reach, not by a cross-provider generic KPI.</CardDescription>
+            <CardTitle>マーケティング軸別の反応</CardTitle>
+            <CardDescription>投稿形式、話題、数値レンジなど、サービスごとの意味がある軸で見ます。</CardDescription>
           </CardHeader>
           <CardContent><DataTable rows={providerSegmentRows} maxColumns={9} /></CardContent>
         </Card>
@@ -2885,7 +2930,7 @@ function ProviderMarketingPreviewPanel() {
         <Card>
           <CardHeader>
             <CardTitle>興味・トピック</CardTitle>
-            <CardDescription>hashtag、mention、動画指標など provider 固有の分析軸です。</CardDescription>
+            <CardDescription>ハッシュタグ、メンション、動画指標などサービス固有の分析軸です。</CardDescription>
           </CardHeader>
           <CardContent><DataTable rows={topicRows} maxColumns={5} /></CardContent>
         </Card>
@@ -2912,20 +2957,6 @@ function ProviderMarketingPreviewPanel() {
             <CardDescription>UTC 時間帯の分布です。</CardDescription>
           </CardHeader>
           <CardContent><DataTable rows={hourRows} maxColumns={5} /></CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle>インフラ成功率</CardTitle>
-            <CardDescription>抽出や送信が安定しているかを確認します。</CardDescription>
-          </CardHeader>
-          <CardContent><DataTable rows={reliabilityRows} maxColumns={6} /></CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle>Failure reasons</CardTitle>
-            <CardDescription>Aggregated provider/API/Discord failure causes without user, message, or channel identifiers.</CardDescription>
-          </CardHeader>
-          <CardContent><DataTable rows={failureRows} maxColumns={6} /></CardContent>
         </Card>
       </div>
 

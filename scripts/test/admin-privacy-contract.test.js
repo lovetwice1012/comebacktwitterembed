@@ -15,38 +15,24 @@ test('admin analytics responses anonymize personal identifiers before display', 
     assert.match(source, /personalIdentifierColumn\.test\(key\)/);
     assert.match(source, /PRIVACY_MIN_GROUP_SIZE = 5/);
     assert.match(source, /function protectSmallGroupRow/);
-    assert.match(source, /const privacyScopeCountColumns = new Set/);
     assert.match(source, /const privacyCountColumns = new Set/);
     assert.match(source, /function hasSmallPrivacyGroup/);
     assert.match(source, /function getDetailedUserCohortBreakdown/);
-    assert.match(source, /smallGroupsSuppressed: true/);
+    assert.match(source, /smallGroupsSuppressed: false/);
     assert.match(source, /smallGroupDetailColumns/);
     assert.match(source, /"author_user_id"/);
     assert.match(source, /"guild_id"/);
     assert.match(source, /"message_id"/);
 
-    const privacyScopeCountColumnsSource = source.match(/const privacyScopeCountColumns = new Set\(\[([\s\S]*?)\]\);/)?.[1] || '';
     const privacyCountColumnsSource = source.match(/const privacyCountColumns = new Set\(([\s\S]*?)\);/)?.[1] || '';
     const hasSmallPrivacyGroupSource = source.match(/function hasSmallPrivacyGroup\(row: Row\) \{([\s\S]*?)\n\}/)?.[1] || '';
     const protectSmallGroupRowSource = source.match(/function protectSmallGroupRow\(row: Row, extraDetailColumns: string\[] = \[]\) \{([\s\S]*?)\n\}/)?.[1] || '';
 
-    for (const token of [
-        '"guilds"',
-        '"content_guilds"',
-        '"shared_guilds"',
-        '"target_guilds"',
-        '"interest_guilds"',
-        '"configured_guilds"',
-        '"enabled_guilds"',
-        '"disabled_guilds"',
-        '"affected_guilds"',
-    ]) {
-        assert.match(privacyScopeCountColumnsSource, new RegExp(token));
-    }
     assert.match(privacyCountColumnsSource, /\.\.\.privacyUserCountColumns/);
-    assert.match(privacyCountColumnsSource, /\.\.\.privacyScopeCountColumns/);
+    assert.doesNotMatch(privacyCountColumnsSource, /guilds/);
     assert.match(hasSmallPrivacyGroupSource, /for \(const key of privacyCountColumns\)/);
-    assert.match(protectSmallGroupRowSource, /privacyCountColumns\.has\(key\)[\s\S]*Number\(value\) < PRIVACY_MIN_GROUP_SIZE[\s\S]*return \[key, SMALL_GROUP_LABEL\]/);
+    assert.doesNotMatch(protectSmallGroupRowSource, /privacyCountColumns\.has\(key\)[\s\S]*return \[key, SMALL_GROUP_LABEL\]/);
+    assert.match(protectSmallGroupRowSource, /protectedColumns\.has\(key\)[\s\S]*SMALL_GROUP_LABEL/);
 });
 
 test('admin analytics UI does not expose raw author user id filters', () => {
@@ -57,10 +43,8 @@ test('admin analytics UI does not expose raw author user id filters', () => {
     assert.doesNotMatch(source, /previewSectionRows\(preview, "activeUsers"\)[\s\S]{0,500}author_user_id/);
     assert.doesNotMatch(source, /previewSectionRows\(preview, "audienceUsers"\)[\s\S]{0,500}author_user_id/);
     assert.match(source, /usage_bucket/);
-    assert.match(source, /Failure reasons/);
-    assert.match(source, /Value drivers/);
-    assert.match(source, /URL query parameters/);
-    assert.match(source, /previewSectionRows\(preview, "failureReasons"\)/);
+    assert.match(source, /反応を伸ばしている要因/);
+    assert.match(source, /流入パラメータ/);
     assert.match(source, /previewSectionRows\(preview, "valueDrivers"\)/);
     assert.match(source, /previewSectionRows\(preview, "urlParameters"\)/);
     assert.doesNotMatch(source, /failureRows[\s\S]{0,500}message_id/);
@@ -102,7 +86,7 @@ test('user-facing analytics previews separate raw and normalized URL visibility'
     assert.match(dataSource, /topContent: applyPreviewUrlPolicyRows\(protectUserFacingPreviewRows\(urlBreakdown\), urlVisibility\)/);
     assert.match(dataSource, /const protectedValueDrivers = applyPreviewUrlPolicyRows\(protectUserFacingPreviewRows\(valueDrivers\), urlVisibility\)/);
     assert.match(dataSource, /valueDrivers: protectedValueDrivers/);
-    assert.match(dataSource, /const protectedUrlParameters = protectUserFacingPreviewRows\(urlParameterBreakdown, \["query_key"\]\)/);
+    assert.match(dataSource, /const protectedUrlParameters = protectUserFacingPreviewRows\(urlParameterBreakdown\)/);
     assert.match(dataSource, /urlParameters: protectedUrlParameters/);
     assert.match(dataSource, /recentSamples: \[\]/);
     assert.match(guildRoute, /urlVisibility: search\.get\("url_visibility"\)/);
@@ -161,14 +145,14 @@ test('provider marketing previews expose provider axis segments without row iden
 
     const providerPreviewSource = dataSource.slice(previewStart, previewEnd);
     assert.match(providerPreviewSource, /optionalQuery\(\[\], \(\) => getDetailedProviderMarketingSegments\(filters, window, limit\)\)/);
-    assert.match(providerPreviewSource, /const protectedProviderSegments = protectUserFacingPreviewRows\(providerSegments, \["facet_value", "account_key"\]\)/);
+    assert.match(providerPreviewSource, /const protectedProviderSegments = protectUserFacingPreviewRows\(providerSegments\)/);
     assert.match(providerPreviewSource, /sections: \{[\s\S]*providerSegments: protectedProviderSegments/);
 
     const providerSegmentsIndex = uiSource.indexOf('previewSectionRows(preview, "providerSegments")');
     const providerSegmentsEnd = uiSource.indexOf(']);', providerSegmentsIndex);
     assert.notEqual(providerSegmentsIndex, -1, 'provider marketing UI must read preview sections.providerSegments');
     assert.notEqual(providerSegmentsEnd, -1, 'providerSegments preview row mapping must be bounded');
-    assert.match(uiSource, /Provider axis segments/);
+    assert.match(uiSource, /マーケティング軸別の反応/);
 
     const providerSegmentsUi = uiSource.slice(providerSegmentsIndex, providerSegmentsEnd);
     for (const token of ['message_id', 'channel_id', 'author_user_id']) {
@@ -273,7 +257,7 @@ test('analytics quality dashboard exposes provider metric readiness contracts', 
     assert.match(enrichmentSloCard, /withPercentRows\(analyticsQuality\.enrichmentSlo, \["success_rate", "failure_rate", "slo_breach_rate"\]\)/);
 });
 
-test('user-facing analytics previews expose report readiness without row identifiers', () => {
+test('stakeholder analytics previews keep internal readiness checks out of report panels', () => {
     const dataSource = fs.readFileSync(path.join(repoRoot, 'dashboard', 'lib', 'admin-data.ts'), 'utf8');
     const uiSource = fs.readFileSync(path.join(repoRoot, 'dashboard', 'components', 'admin', 'admin-console.tsx'), 'utf8');
     const helperStart = dataSource.indexOf('function userFacingPreviewReadinessRows');
@@ -281,16 +265,24 @@ test('user-facing analytics previews expose report readiness without row identif
     const guildPreviewStart = dataSource.indexOf('export async function getAdminGuildAnalyticsPreview');
     const providerPreviewStart = dataSource.indexOf('export async function getAdminProviderMarketingPreview');
     const providerPreviewEnd = dataSource.indexOf('\nasync function getAdvancedAnalytics', providerPreviewStart);
+    const guildPanelStart = uiSource.indexOf('function GuildAdminPreviewPanel');
+    const providerPanelStart = uiSource.indexOf('function ProviderMarketingPreviewPanel');
+    const providerPanelEnd = uiSource.indexOf('\nfunction LogsPanel', providerPanelStart);
 
     assert.notEqual(helperStart, -1, 'report readiness helper must exist');
     assert.notEqual(helperEnd, -1, 'report readiness helper must be isolated before preview functions');
     assert.notEqual(guildPreviewStart, -1, 'guild preview must exist');
     assert.notEqual(providerPreviewStart, -1, 'provider preview must exist');
     assert.notEqual(providerPreviewEnd, -1, 'provider preview must be isolated');
+    assert.notEqual(guildPanelStart, -1, 'guild preview panel must exist');
+    assert.notEqual(providerPanelStart, -1, 'provider preview panel must exist');
+    assert.notEqual(providerPanelEnd, -1, 'provider preview panel must be isolated');
 
     const helperSource = dataSource.slice(helperStart, helperEnd);
     const guildPreviewSource = dataSource.slice(guildPreviewStart, providerPreviewStart);
     const providerPreviewSource = dataSource.slice(providerPreviewStart, providerPreviewEnd);
+    const guildPanelSource = uiSource.slice(guildPanelStart, providerPanelStart);
+    const providerPanelSource = uiSource.slice(providerPanelStart, providerPanelEnd);
 
     assert.match(helperSource, /privacy_controls/);
     assert.match(helperSource, /small_group_privacy/);
@@ -314,12 +306,42 @@ test('user-facing analytics previews expose report readiness without row identif
     assert.match(dataSource, /observed\.get\(providerMetricObservationRowKey\(providerId, metric\.key\)\)/);
     assert.doesNotMatch(dataSource, /observed\.get\(metric\.key\)/);
 
-    assert.match(uiSource, /previewSectionRows\(preview, "reportReadiness"\)/);
-    assert.match(uiSource, /previewSectionRows\(preview, "providerQualityGates"\)/);
-    assert.match(uiSource, /Report readiness/);
-    assert.match(uiSource, /Provider report quality gates/);
-    assert.match(uiSource, /future server-admin report/);
-    assert.match(uiSource, /future provider-facing reports/);
+    for (const panelSource of [guildPanelSource, providerPanelSource]) {
+        assert.doesNotMatch(panelSource, /previewSectionRows\(preview, "reportReadiness"\)/);
+        assert.doesNotMatch(panelSource, /公開前チェック/);
+        assert.doesNotMatch(panelSource, /レポート品質チェック/);
+        assert.doesNotMatch(panelSource, /取得指標のそろい具合/);
+        assert.doesNotMatch(panelSource, /指標ごとの取得状況/);
+        assert.doesNotMatch(panelSource, /失敗理由/);
+        assert.doesNotMatch(panelSource, /HTTP/);
+        assert.doesNotMatch(panelSource, /Discord/);
+    }
+
+    assert.doesNotMatch(providerPanelSource, /previewSectionRows\(preview, "providerQualityGates"\)/);
+    assert.doesNotMatch(providerPanelSource, /達成条件/);
+    for (const serverOnlyForbidden of [
+        /他サーバーとの比較/,
+        /反応を伸ばしている要因/,
+        /流入パラメータ/,
+        /マーケティング軸別の反応/,
+        /興味トピック/,
+        /操作ランキング/,
+        /設定変更の影響/,
+        /あわせて反応される興味/,
+    ]) {
+        assert.doesNotMatch(guildPanelSource, serverOnlyForbidden);
+    }
+    for (const marketingForbidden of [/インフラ成功率/, /品質ゲート/, /quality_status/, /recommended_action/, /http_status/, /discord_code/]) {
+        assert.doesNotMatch(providerPanelSource, marketingForbidden);
+    }
+    assert.match(guildPanelSource, /サーバーレポート要約/);
+    assert.match(guildPanelSource, /表示の安定性/);
+    assert.match(providerPanelSource, /マーケティングレポート要約/);
+    assert.match(providerPanelSource, /反応を伸ばしている要因/);
+    assert.match(providerPanelSource, /流入パラメータ/);
+    assert.match(providerPanelSource, /マーケティング軸別の反応/);
+    assert.match(providerPanelSource, /カード表示率/);
+    assert.match(providerPanelSource, /表示完了率/);
 
     for (const token of ['account_key', 'source', 'message_id', 'channel_id', 'author_user_id', 'url_hash', 'stack_hash', 'message_hash']) {
         assert.doesNotMatch(helperSource, new RegExp(`\\b${token}\\b`));
@@ -334,16 +356,24 @@ test('user-facing analytics previews expose scoped advanced decision analytics',
     const guildPreviewStart = dataSource.indexOf('export async function getAdminGuildAnalyticsPreview');
     const providerPreviewStart = dataSource.indexOf('export async function getAdminProviderMarketingPreview');
     const providerPreviewEnd = dataSource.indexOf('\nasync function getAdvancedAnalytics', providerPreviewStart);
+    const guildPanelStart = uiSource.indexOf('function GuildAdminPreviewPanel');
+    const providerPanelStart = uiSource.indexOf('function ProviderMarketingPreviewPanel');
+    const providerPanelEnd = uiSource.indexOf('\nfunction LogsPanel', providerPanelStart);
 
     assert.notEqual(helperStart, -1, 'scoped advanced preview helpers must exist');
     assert.notEqual(helperEnd, -1, 'scoped advanced preview helpers must be isolated before raw samples');
     assert.notEqual(guildPreviewStart, -1, 'guild preview must exist');
     assert.notEqual(providerPreviewStart, -1, 'provider preview must exist');
     assert.notEqual(providerPreviewEnd, -1, 'provider preview must be isolated');
+    assert.notEqual(guildPanelStart, -1, 'guild preview panel must exist');
+    assert.notEqual(providerPanelStart, -1, 'provider preview panel must exist');
+    assert.notEqual(providerPanelEnd, -1, 'provider preview panel must be isolated');
 
     const helperSource = dataSource.slice(helperStart, helperEnd);
     const guildPreviewSource = dataSource.slice(guildPreviewStart, providerPreviewStart);
     const providerPreviewSource = dataSource.slice(providerPreviewStart, providerPreviewEnd);
+    const guildPanelSource = uiSource.slice(guildPanelStart, providerPanelStart);
+    const providerPanelSource = uiSource.slice(providerPanelStart, providerPanelEnd);
 
     for (const name of [
         'getDetailedFunnelAnalytics',
@@ -383,14 +413,17 @@ test('user-facing analytics previews expose scoped advanced decision analytics',
         assert.match(uiSource, new RegExp(`previewSectionRows\\(preview, "${section}"\\)`));
     }
     assert.match(guildPreviewSource, /settingImpact: protectedSettingImpact/);
-    assert.match(uiSource, /previewSectionRows\(preview, "settingImpact"\)/);
+    assert.doesNotMatch(guildPanelSource, /previewSectionRows\(preview, "settingImpact"\)/);
+    assert.doesNotMatch(guildPanelSource, /設定変更の影響/);
+    assert.doesNotMatch(providerPanelSource, /previewSectionRows\(preview, "settingImpact"\)/);
     assert.match(guildPreviewSource, /applyPreviewUrlPolicyRows\(protectUserFacingPreviewRows\(contentLifetime\), urlVisibility\)/);
     assert.match(providerPreviewSource, /applyPreviewUrlPolicyRows\(protectUserFacingPreviewRows\(urlReuse\), urlVisibility\)/);
-    assert.match(uiSource, /Conversion funnel/);
-    assert.match(uiSource, /Weekly retention cohorts/);
-    assert.match(uiSource, /Content lifetime/);
-    assert.match(uiSource, /URL reuse and spread/);
-    assert.match(uiSource, /Setting impact/);
+    for (const panelSource of [guildPanelSource, providerPanelSource]) {
+        assert.match(panelSource, /反応までの流れ/);
+        assert.match(panelSource, /週別の継続反応/);
+        assert.match(panelSource, /長く見られるコンテンツ/);
+        assert.match(panelSource, /URLの再利用と広がり/);
+    }
 
     for (const token of ['message_id', 'channel_id', 'url_hash', 'stack_hash', 'message_hash', 'content_event_id']) {
         assert.doesNotMatch(helperSource, new RegExp(`\\b${token}\\b`));
@@ -458,7 +491,7 @@ test('admin advanced analytics exposes funnel, cohort, attribution, and account 
     assert.match(dataSource, /"target_users"/);
     assert.match(dataSource, /"interest_users"/);
     assert.match(dataSource, /"total_users"/);
-    assert.match(dataSource, /protectSmallGroupRows\(rows, \["target_account_key", "interest_account_key", "interest_content_type"\]\)/);
+    assert.match(dataSource, /return protectSmallGroupRows\(rows\);/);
     for (const label of [
         'Funnel analytics 7d',
         'Media delivery value 7d',
