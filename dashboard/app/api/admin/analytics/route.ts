@@ -22,7 +22,7 @@ export async function GET(req: NextRequest) {
       dateTo: search.get("date_to"),
       bucket: search.get("bucket"),
       limit: search.get("limit"),
-    }));
+    }, { forceRefresh: search.get("refresh") === "1" }));
   } catch (error) {
     return errorResponse(error, locale);
   }

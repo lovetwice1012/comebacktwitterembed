@@ -43,6 +43,7 @@ type AdminOverview = {
     nextUpdateAt: string | null;
     refreshIntervalMs: number;
     refreshing: boolean;
+    ready?: boolean;
   };
   tables: TableSummary[];
   totals: Record<string, number>;
@@ -151,6 +152,13 @@ type AdminAnalytics = {
 type AdminDetailedAnalytics = {
   generatedAt: string;
   durationMs: number;
+  cache?: {
+    updatedAt: string | null;
+    nextUpdateAt: string | null;
+    refreshIntervalMs: number;
+    refreshing: boolean;
+    ready?: boolean;
+  };
   filters: Row;
   window: {
     startMs: number;

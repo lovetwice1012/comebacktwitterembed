@@ -514,6 +514,33 @@ test('admin advanced analytics exposes funnel, cohort, attribution, and account 
     }
 });
 
+test('admin analytics snapshots are produced by background batches instead of regular GET fallback work', () => {
+    const dataSource = fs.readFileSync(path.join(repoRoot, 'dashboard', 'lib', 'admin-data.ts'), 'utf8');
+    const adminPageSource = fs.readFileSync(path.join(repoRoot, 'dashboard', 'app', 'admin', 'page.tsx'), 'utf8');
+    const instrumentationSource = fs.readFileSync(path.join(repoRoot, 'dashboard', 'instrumentation.ts'), 'utf8');
+    const overviewBody = dataSource.match(/export async function getAdminOverview\([\s\S]*?\n\}/)?.[0] || '';
+    const detailedBody = dataSource.match(/export async function getAdminDetailedAnalytics\([\s\S]*?export type AdminGuildAnalyticsPreviewFilters/)?.[0] || '';
+
+    assert.match(dataSource, /ADMIN_ANALYTICS_BATCH_INTERVAL_MS = 5 \* 60 \* 1000/);
+    assert.match(dataSource, /ADMIN_ANALYTICS_QUERY_CONCURRENCY = 2/);
+    assert.match(dataSource, /function enqueueAdminAnalyticsBuild/);
+    assert.match(dataSource, /function ensureAdminOverviewBatchRefresh\(\)[\s\S]*setInterval/);
+    assert.match(dataSource, /function ensureAdminDetailedAnalyticsBatchRefresh\(\)[\s\S]*setInterval/);
+    assert.match(dataSource, /refreshPromise = enqueueAdminAnalyticsBuild\(\(\) => buildAdminOverview\(\)\)/);
+    assert.match(dataSource, /refreshPromise = enqueueAdminAnalyticsBuild\(\(\) => buildAdminDetailedAnalytics\(entry\.filters\)\)/);
+    assert.match(dataSource, /async function buildAdminDetailedAnalytics[\s\S]*await runLimited/);
+    assert.match(dataSource, /async function getAdvancedAnalytics[\s\S]*await runLimited/);
+    assert.match(dataSource, /function emptyAdminOverviewSnapshot/);
+    assert.match(dataSource, /function emptyAdminDetailedAnalyticsSnapshot/);
+    assert.match(overviewBody, /emptyAdminOverviewSnapshot\(\)/);
+    assert.equal((overviewBody.match(/await refreshAdminOverviewCache\(\)/g) || []).length, 1);
+    assert.match(detailedBody, /emptyAdminDetailedAnalyticsSnapshot\(filters\)/);
+    assert.doesNotMatch(detailedBody, /buildAdminDetailedAnalytics\(filters\)/);
+    assert.doesNotMatch(adminPageSource, /warmAdminOverviewCache/);
+    assert.match(instrumentationSource, /warmAdminOverviewCache\(\)/);
+    assert.match(instrumentationSource, /warmAdminDetailedAnalyticsCache\(\)/);
+});
+
 test('media delivery routes record non-blocking analytics events', () => {
     const source = fs.readFileSync(path.join(repoRoot, 'dashboard', 'lib', 'media-delivery.ts'), 'utf8');
     const youtubeStore = fs.readFileSync(path.join(repoRoot, 'src', 'youtubeDownloadStore.js'), 'utf8');

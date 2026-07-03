@@ -45,7 +45,9 @@ const sensitiveColumn = /(token|secret|password|webhook_url)$/i;
 const personalIdentifierColumn = /(^|_)(author_user_id|actor_user_id|user_id|target_user_id|message_id)$/i;
 const HOUR_MS = 60 * 60 * 1000;
 const DAY_MS = 24 * HOUR_MS;
-const ADMIN_OVERVIEW_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
+const ADMIN_ANALYTICS_BATCH_INTERVAL_MS = 5 * 60 * 1000;
+const ADMIN_OVERVIEW_REFRESH_INTERVAL_MS = ADMIN_ANALYTICS_BATCH_INTERVAL_MS;
+const ADMIN_ANALYTICS_QUERY_CONCURRENCY = 2;
 const PRIVACY_MIN_GROUP_SIZE = 5;
 const SMALL_GROUP_LABEL = "少数";
 const smallGroupDetailColumns = new Set([
@@ -308,6 +310,43 @@ async function optionalQuery<T>(fallback: T, load: () => Promise<T>) {
   } catch {
     return fallback;
   }
+}
+
+function yieldToEventLoop() {
+  return new Promise<void>((resolve) => {
+    setImmediate(resolve);
+  });
+}
+
+async function runLimited<const Tasks extends readonly (() => Promise<unknown>)[]>(
+  tasks: Tasks,
+  concurrency = ADMIN_ANALYTICS_QUERY_CONCURRENCY,
+): Promise<{ [Index in keyof Tasks]: Awaited<ReturnType<Tasks[Index]>> }> {
+  const results = new Array<unknown>(tasks.length);
+  let nextIndex = 0;
+  const workerCount = Math.max(1, Math.min(concurrency, tasks.length));
+  await Promise.all(Array.from({ length: workerCount }, async () => {
+    while (nextIndex < tasks.length) {
+      const index = nextIndex;
+      nextIndex += 1;
+      await yieldToEventLoop();
+      results[index] = await tasks[index]();
+    }
+  }));
+  return results as { [Index in keyof Tasks]: Awaited<ReturnType<Tasks[Index]>> };
+}
+
+let adminAnalyticsBuildQueue: Promise<void> = Promise.resolve();
+
+function enqueueAdminAnalyticsBuild<T>(build: () => Promise<T>) {
+  const run = adminAnalyticsBuildQueue
+    .catch(() => undefined)
+    .then(async () => {
+      await yieldToEventLoop();
+      return build();
+    });
+  adminAnalyticsBuildQueue = run.then(() => undefined, () => undefined);
+  return run;
 }
 
 function rate(numerator: unknown, denominator: unknown) {
@@ -4089,9 +4128,8 @@ async function getDetailedRawSamples(filters: AdminDetailedAnalyticsFilters, win
   return rows.map(maskRow);
 }
 
-export async function getAdminDetailedAnalytics(rawFilters: AdminDetailedAnalyticsFilters) {
-  const startedAt = Date.now();
-  const filters: AdminDetailedAnalyticsFilters = {
+function normalizeDetailedAnalyticsFilters(rawFilters: AdminDetailedAnalyticsFilters): AdminDetailedAnalyticsFilters {
+  return {
     providerId: cleanFilter(rawFilters.providerId),
     accountKey: cleanFilter(rawFilters.accountKey),
     guildId: cleanFilter(rawFilters.guildId),
@@ -4106,6 +4144,70 @@ export async function getAdminDetailedAnalytics(rawFilters: AdminDetailedAnalyti
     bucket: cleanFilter(rawFilters.bucket),
     limit: rawFilters.limit,
   };
+}
+
+function detailedAnalyticsCacheKey(filters: AdminDetailedAnalyticsFilters) {
+  return JSON.stringify({
+    providerId: filters.providerId || null,
+    accountKey: filters.accountKey || null,
+    guildId: filters.guildId || null,
+    authorUserId: filters.authorUserId || null,
+    eventType: filters.eventType || null,
+    commandName: filters.commandName || null,
+    componentId: filters.componentId || null,
+    contentType: filters.contentType || null,
+    facetKey: filters.facetKey || null,
+    dateFrom: cleanFilter(filters.dateFrom),
+    dateTo: cleanFilter(filters.dateTo),
+    bucket: filters.bucket || null,
+    limit: limitValue(filters.limit, 50),
+  });
+}
+
+function emptyAdminDetailedAnalyticsSnapshot(filters: AdminDetailedAnalyticsFilters) {
+  const limit = limitValue(filters.limit, 50);
+  const window = detailedAnalyticsWindow(filters);
+  return clientSafe({
+    generatedAt: new Date().toISOString(),
+    durationMs: 0,
+    filters: {
+      providerId: filters.providerId,
+      accountKey: filters.accountKey,
+      guildId: filters.guildId,
+      authorUserId: filters.authorUserId ? anonymizeIdentifier(filters.authorUserId, "author_user_id") : null,
+      eventType: filters.eventType,
+      commandName: filters.commandName,
+      componentId: filters.componentId,
+      contentType: filters.contentType,
+      facetKey: filters.facetKey,
+      limit,
+    },
+    window: previewWindowPayload(window),
+    summary: { content: {}, analytics: { success_rate: 0 } },
+    timeSeries: [],
+    providerAccounts: [],
+    providerReliability: [],
+    contentTypes: [],
+    guildBreakdown: [],
+    userBreakdown: [],
+    urlBreakdown: [],
+    valueDrivers: [],
+    urlParameterBreakdown: [],
+    providerSegments: [],
+    facetBreakdown: [],
+    numericFacetStats: [],
+    guildAccountMatrix: [],
+    hourDistribution: [],
+    eventHourDistribution: [],
+    commandBreakdown: [],
+    interestBreakdown: [],
+    failureReasons: [],
+    rawSamples: [],
+  });
+}
+
+async function buildAdminDetailedAnalytics(filters: AdminDetailedAnalyticsFilters) {
+  const startedAt = Date.now();
   const limit = limitValue(filters.limit, 50);
   const window = detailedAnalyticsWindow(filters);
 
@@ -4130,28 +4232,28 @@ export async function getAdminDetailedAnalytics(rawFilters: AdminDetailedAnalyti
     interestBreakdown,
     failureReasons,
     rawSamples,
-  ] = await Promise.all([
-    optionalQuery({ content: {}, analytics: { success_rate: 0 } }, () => getDetailedSummary(filters, window)),
-    optionalQuery([], () => getDetailedTimeSeries(filters, window)),
-    optionalQuery([], () => getDetailedProviderAccounts(filters, window, limit)),
-    optionalQuery([], () => getDetailedProviderReliability(filters, window, limit)),
-    optionalQuery([], () => getDetailedContentTypeBreakdown(filters, window, limit)),
-    optionalQuery([], () => getDetailedGuildBreakdown(filters, window, limit)),
-    optionalQuery([], () => getDetailedUserCohortBreakdown(filters, window, limit)),
-    optionalQuery([], () => getDetailedUrlBreakdown(filters, window, limit)),
-    getDetailedValueDrivers(filters, window, limit),
-    optionalQuery([], () => getDetailedUrlParameterBreakdown(filters, window, limit)),
-    optionalQuery([], () => getDetailedProviderMarketingSegments(filters, window, limit)),
-    optionalQuery([], () => getDetailedFacetBreakdown(filters, window, limit)),
-    optionalQuery([], () => getDetailedNumericFacetStats(filters, window, limit)),
-    optionalQuery([], () => getDetailedGuildAccountMatrix(filters, window, limit)),
-    optionalQuery([], () => getDetailedHourDistribution(filters, window, limit)),
-    optionalQuery([], () => getDetailedEventHourDistribution(filters, window, limit)),
-    optionalQuery([], () => getDetailedCommandBreakdown(filters, window, limit)),
-    optionalQuery([], () => getDetailedInterestBreakdown(filters, window, limit)),
-    optionalQuery([], () => getDetailedFailureReasons(filters, window, limit)),
-    optionalQuery([], () => getDetailedRawSamples(filters, window, limit)),
-  ]);
+  ] = await runLimited([
+    () => optionalQuery({ content: {}, analytics: { success_rate: 0 } }, () => getDetailedSummary(filters, window)),
+    () => optionalQuery([], () => getDetailedTimeSeries(filters, window)),
+    () => optionalQuery([], () => getDetailedProviderAccounts(filters, window, limit)),
+    () => optionalQuery([], () => getDetailedProviderReliability(filters, window, limit)),
+    () => optionalQuery([], () => getDetailedContentTypeBreakdown(filters, window, limit)),
+    () => optionalQuery([], () => getDetailedGuildBreakdown(filters, window, limit)),
+    () => optionalQuery([], () => getDetailedUserCohortBreakdown(filters, window, limit)),
+    () => optionalQuery([], () => getDetailedUrlBreakdown(filters, window, limit)),
+    () => getDetailedValueDrivers(filters, window, limit),
+    () => optionalQuery([], () => getDetailedUrlParameterBreakdown(filters, window, limit)),
+    () => optionalQuery([], () => getDetailedProviderMarketingSegments(filters, window, limit)),
+    () => optionalQuery([], () => getDetailedFacetBreakdown(filters, window, limit)),
+    () => optionalQuery([], () => getDetailedNumericFacetStats(filters, window, limit)),
+    () => optionalQuery([], () => getDetailedGuildAccountMatrix(filters, window, limit)),
+    () => optionalQuery([], () => getDetailedHourDistribution(filters, window, limit)),
+    () => optionalQuery([], () => getDetailedEventHourDistribution(filters, window, limit)),
+    () => optionalQuery([], () => getDetailedCommandBreakdown(filters, window, limit)),
+    () => optionalQuery([], () => getDetailedInterestBreakdown(filters, window, limit)),
+    () => optionalQuery([], () => getDetailedFailureReasons(filters, window, limit)),
+    () => optionalQuery([], () => getDetailedRawSamples(filters, window, limit)),
+  ] as const);
 
   return clientSafe({
     generatedAt: new Date().toISOString(),
@@ -4197,6 +4299,113 @@ export async function getAdminDetailedAnalytics(rawFilters: AdminDetailedAnalyti
     failureReasons,
     rawSamples,
   });
+}
+
+type AdminDetailedAnalyticsSnapshot = Awaited<ReturnType<typeof buildAdminDetailedAnalytics>>;
+
+type AdminDetailedAnalyticsCacheEntry = {
+  filters: AdminDetailedAnalyticsFilters;
+  snapshot: AdminDetailedAnalyticsSnapshot | null;
+  updatedAtMs: number;
+  lastAccessedAtMs: number;
+  refreshPromise: Promise<AdminDetailedAnalyticsSnapshot> | null;
+};
+
+type AdminDetailedAnalyticsCacheState = {
+  entries: Map<string, AdminDetailedAnalyticsCacheEntry>;
+  timer: ReturnType<typeof setInterval> | null;
+};
+
+const adminDetailedAnalyticsCacheState = ((globalThis as typeof globalThis & {
+  __cbteAdminDetailedAnalyticsCache?: AdminDetailedAnalyticsCacheState;
+}).__cbteAdminDetailedAnalyticsCache ??= {
+  entries: new Map<string, AdminDetailedAnalyticsCacheEntry>(),
+  timer: null,
+});
+
+function getAdminDetailedAnalyticsCacheEntry(filters: AdminDetailedAnalyticsFilters) {
+  const key = detailedAnalyticsCacheKey(filters);
+  let entry = adminDetailedAnalyticsCacheState.entries.get(key);
+  if (!entry) {
+    entry = {
+      filters,
+      snapshot: null,
+      updatedAtMs: 0,
+      lastAccessedAtMs: Date.now(),
+      refreshPromise: null,
+    };
+    adminDetailedAnalyticsCacheState.entries.set(key, entry);
+  } else {
+    entry.filters = filters;
+    entry.lastAccessedAtMs = Date.now();
+  }
+  return entry;
+}
+
+function refreshAdminDetailedAnalyticsCacheEntry(entry: AdminDetailedAnalyticsCacheEntry) {
+  if (!entry.refreshPromise) {
+    entry.refreshPromise = enqueueAdminAnalyticsBuild(() => buildAdminDetailedAnalytics(entry.filters))
+      .then((snapshot) => {
+        entry.snapshot = snapshot;
+        entry.updatedAtMs = Date.now();
+        return snapshot;
+      })
+      .finally(() => {
+        entry.refreshPromise = null;
+      });
+  }
+  return entry.refreshPromise;
+}
+
+function ensureAdminDetailedAnalyticsBatchRefresh() {
+  if (adminDetailedAnalyticsCacheState.timer) return;
+  const timer = setInterval(() => {
+    for (const entry of adminDetailedAnalyticsCacheState.entries.values()) {
+      void refreshAdminDetailedAnalyticsCacheEntry(entry).catch(() => undefined);
+    }
+  }, ADMIN_ANALYTICS_BATCH_INTERVAL_MS);
+  (timer as { unref?: () => void }).unref?.();
+  adminDetailedAnalyticsCacheState.timer = timer;
+}
+
+function withAdminDetailedAnalyticsCacheState(snapshot: AdminDetailedAnalyticsSnapshot, entry: AdminDetailedAnalyticsCacheEntry) {
+  const updatedAtMs = entry.updatedAtMs || 0;
+  return clientSafe({
+    ...snapshot,
+    cache: {
+      updatedAt: updatedAtMs ? new Date(updatedAtMs).toISOString() : null,
+      nextUpdateAt: updatedAtMs ? new Date(updatedAtMs + ADMIN_ANALYTICS_BATCH_INTERVAL_MS).toISOString() : null,
+      refreshIntervalMs: ADMIN_ANALYTICS_BATCH_INTERVAL_MS,
+      refreshing: Boolean(entry.refreshPromise) || !entry.snapshot,
+      ready: Boolean(entry.snapshot),
+    },
+  });
+}
+
+export function warmAdminDetailedAnalyticsCache(rawFilters: AdminDetailedAnalyticsFilters = {}) {
+  ensureAdminDetailedAnalyticsBatchRefresh();
+  const filters = normalizeDetailedAnalyticsFilters(rawFilters);
+  const entry = getAdminDetailedAnalyticsCacheEntry(filters);
+  void refreshAdminDetailedAnalyticsCacheEntry(entry).catch(() => undefined);
+}
+
+export async function getAdminDetailedAnalytics(
+  rawFilters: AdminDetailedAnalyticsFilters,
+  options: { forceRefresh?: boolean } = {},
+) {
+  ensureAdminDetailedAnalyticsBatchRefresh();
+  const filters = normalizeDetailedAnalyticsFilters(rawFilters);
+  const entry = getAdminDetailedAnalyticsCacheEntry(filters);
+
+  if (options.forceRefresh) {
+    return withAdminDetailedAnalyticsCacheState(await refreshAdminDetailedAnalyticsCacheEntry(entry), entry);
+  }
+
+  if (!entry.snapshot) {
+    return withAdminDetailedAnalyticsCacheState(emptyAdminDetailedAnalyticsSnapshot(filters), entry);
+  }
+
+  return withAdminDetailedAnalyticsCacheState(entry.snapshot, entry);
 }
 
 export type AdminGuildAnalyticsPreviewFilters = {
@@ -6170,56 +6379,56 @@ async function getAdvancedAnalytics(now = Date.now()) {
     settingAdoption,
     autoExtract,
     realtimeGuildIds,
-  ] = await Promise.all([
-    optionalQuery([], () => getMetricTotals(dayStart)),
-    optionalQuery([], () => getMetricTotals(weekStart)),
-    optionalQuery([], () => getProviderAnalytics(dayStart)),
-    optionalQuery([], () => getProviderAnalytics(weekStart)),
-    optionalQuery([], () => getHourlyTrend(dayStart)),
-    optionalQuery([], () => getTopGuildAnalytics(dayStart)),
-    optionalQuery([], () => getEndpointAnalytics(dayStart)),
-    optionalQuery([], () => getCommandUsageAnalytics(dayStart)),
-    optionalQuery([], () => getUserUsageAnalytics(dayStart)),
-    optionalQuery([], () => getProviderAccountSummary(weekStart)),
-    optionalQuery([], () => getProviderAccountHourly(weekStart)),
-    optionalQuery([], () => getProviderGuildShare(weekStart)),
-    optionalQuery([], () => getProviderContentHourly(weekStart)),
-    optionalQuery([], () => getProviderContentGuildShare(weekStart)),
-    optionalQuery([], () => getProviderContentFacets(weekStart)),
-    optionalQuery([], () => getProviderContentUrls(weekStart)),
-    optionalQuery([], () => getUrlAnalytics(weekStart)),
-    optionalQuery([], () => getMediaDeliveryAnalytics(weekStart)),
-    optionalQuery([], () => getAudienceInterestAnalytics(weekStart)),
-    optionalQuery({ actions: [], actors: [], guilds: [] }, () => getAuditAnalytics(weekStart)),
-    optionalQuery({ commands: [], components: [], httpStatuses: [] }, () => getCommandAndComponentErrors(dayStart)),
-    optionalQuery({ missingNativeAnalytics: [], enrichmentReliability: [], extractVsEnrichment: [], enrichmentSchemaVersions: [], enrichmentQueueOutcomes: [], providerRateLimits: [], providerDataErrors: [], metricNullRates: [], metricObservationQuality: [], requiredMetricCoverage: [], metricSchemaDrift: [], enrichmentSlo: [] }, () => getAnalyticsQualityDashboard(weekStart)),
-    optionalQuery({ summary: { analytics_event_coverage_rate: 0, content_event_coverage_rate: 0, aggregate_lag_ms: null, aggregate_lag_hours: null, aggregate_stale: 0, data_source: "bot_provider_hourly_aggregates" }, providers: [], schemaVersions: [] }, () => getDerivedAggregateStatus(weekStart)),
-    optionalQuery({ hourly: [], providerAccounts: [], contentTypes: [] }, () => getAggregateOperationalTrend(weekStart)),
-    optionalQuery([], () => getFunnelAnalytics(weekStart)),
-    optionalQuery([], () => getSettingChangeImpact(weekStart)),
-    optionalQuery([], () => getSettingAttributionSummary(monthStart)),
-    optionalQuery([], () => getWeeklyCohortAnalytics(weekStart)),
-    optionalQuery([], () => getContentLifetimeAnalytics(monthStart)),
-    optionalQuery([], () => getUrlReuseAnalytics(monthStart)),
-    optionalQuery([], () => getProviderAccountHealth(weekStart)),
-    optionalQuery([], () => getProviderAnomalySignals(now)),
-    optionalQuery({ hours: [], weekdays: [], providerWeekdays: [] }, () => getAggregateSeasonalityAnalytics(monthStart)),
-    optionalQuery({ days: [], providers: [] }, () => getAggregateEventDaySpikes(monthStart)),
-    optionalQuery([], () => getAggregateAudienceCorrelation(weekStart)),
-    optionalQuery([], () => getSettingAdoption()),
-    optionalQuery({ summary: {}, topUsers: [], topAccounts: [] }, () => getAutoExtractAnalytics()),
-    optionalQuery(null, () => fetchBotGuildIds()),
-  ]);
+  ] = await runLimited([
+    () => optionalQuery([], () => getMetricTotals(dayStart)),
+    () => optionalQuery([], () => getMetricTotals(weekStart)),
+    () => optionalQuery([], () => getProviderAnalytics(dayStart)),
+    () => optionalQuery([], () => getProviderAnalytics(weekStart)),
+    () => optionalQuery([], () => getHourlyTrend(dayStart)),
+    () => optionalQuery([], () => getTopGuildAnalytics(dayStart)),
+    () => optionalQuery([], () => getEndpointAnalytics(dayStart)),
+    () => optionalQuery([], () => getCommandUsageAnalytics(dayStart)),
+    () => optionalQuery([], () => getUserUsageAnalytics(dayStart)),
+    () => optionalQuery([], () => getProviderAccountSummary(weekStart)),
+    () => optionalQuery([], () => getProviderAccountHourly(weekStart)),
+    () => optionalQuery([], () => getProviderGuildShare(weekStart)),
+    () => optionalQuery([], () => getProviderContentHourly(weekStart)),
+    () => optionalQuery([], () => getProviderContentGuildShare(weekStart)),
+    () => optionalQuery([], () => getProviderContentFacets(weekStart)),
+    () => optionalQuery([], () => getProviderContentUrls(weekStart)),
+    () => optionalQuery([], () => getUrlAnalytics(weekStart)),
+    () => optionalQuery([], () => getMediaDeliveryAnalytics(weekStart)),
+    () => optionalQuery([], () => getAudienceInterestAnalytics(weekStart)),
+    () => optionalQuery({ actions: [], actors: [], guilds: [] }, () => getAuditAnalytics(weekStart)),
+    () => optionalQuery({ commands: [], components: [], httpStatuses: [] }, () => getCommandAndComponentErrors(dayStart)),
+    () => optionalQuery({ missingNativeAnalytics: [], enrichmentReliability: [], extractVsEnrichment: [], enrichmentSchemaVersions: [], enrichmentQueueOutcomes: [], providerRateLimits: [], providerDataErrors: [], metricNullRates: [], metricObservationQuality: [], requiredMetricCoverage: [], metricSchemaDrift: [], enrichmentSlo: [] }, () => getAnalyticsQualityDashboard(weekStart)),
+    () => optionalQuery({ summary: { analytics_event_coverage_rate: 0, content_event_coverage_rate: 0, aggregate_lag_ms: null, aggregate_lag_hours: null, aggregate_stale: 0, data_source: "bot_provider_hourly_aggregates" }, providers: [], schemaVersions: [] }, () => getDerivedAggregateStatus(weekStart)),
+    () => optionalQuery({ hourly: [], providerAccounts: [], contentTypes: [] }, () => getAggregateOperationalTrend(weekStart)),
+    () => optionalQuery([], () => getFunnelAnalytics(weekStart)),
+    () => optionalQuery([], () => getSettingChangeImpact(weekStart)),
+    () => optionalQuery([], () => getSettingAttributionSummary(monthStart)),
+    () => optionalQuery([], () => getWeeklyCohortAnalytics(weekStart)),
+    () => optionalQuery([], () => getContentLifetimeAnalytics(monthStart)),
+    () => optionalQuery([], () => getUrlReuseAnalytics(monthStart)),
+    () => optionalQuery([], () => getProviderAccountHealth(weekStart)),
+    () => optionalQuery([], () => getProviderAnomalySignals(now)),
+    () => optionalQuery({ hours: [], weekdays: [], providerWeekdays: [] }, () => getAggregateSeasonalityAnalytics(monthStart)),
+    () => optionalQuery({ days: [], providers: [] }, () => getAggregateEventDaySpikes(monthStart)),
+    () => optionalQuery([], () => getAggregateAudienceCorrelation(weekStart)),
+    () => optionalQuery([], () => getSettingAdoption()),
+    () => optionalQuery({ summary: {}, topUsers: [], topAccounts: [] }, () => getAutoExtractAnalytics()),
+    () => optionalQuery(null, () => fetchBotGuildIds()),
+  ] as const);
 
-  const [activeGuilds24h, activeProviders24h, activeGuilds7d, activeProviders7d, errors30d, analyticsEvents24h, analyticsUsers24h] = await Promise.all([
-    optionalQuery(0, () => scalarCount("SELECT COUNT(DISTINCT guild_id) AS count FROM bot_metric_buckets WHERE bucket_start_ms >= ? AND guild_id <> ''", dayStart)),
-    optionalQuery(0, () => scalarCount("SELECT COUNT(DISTINCT provider_id) AS count FROM bot_metric_buckets WHERE bucket_start_ms >= ? AND provider_id <> ''", dayStart)),
-    optionalQuery(0, () => scalarCount("SELECT COUNT(DISTINCT guild_id) AS count FROM bot_metric_buckets WHERE bucket_start_ms >= ? AND guild_id <> ''", weekStart)),
-    optionalQuery(0, () => scalarCount("SELECT COUNT(DISTINCT provider_id) AS count FROM bot_metric_buckets WHERE bucket_start_ms >= ? AND provider_id <> ''", weekStart)),
-    optionalQuery(0, () => scalarCount("SELECT COUNT(*) AS count FROM bot_error_events WHERE occurred_at_ms >= ?", monthStart)),
-    optionalQuery(0, () => scalarCount("SELECT COUNT(*) AS count FROM bot_analytics_events WHERE occurred_at_ms >= ?", dayStart)),
-    optionalQuery(0, () => scalarCount("SELECT COUNT(DISTINCT author_user_id) AS count FROM bot_analytics_events WHERE occurred_at_ms >= ? AND author_user_id IS NOT NULL", dayStart)),
-  ]);
+  const [activeGuilds24h, activeProviders24h, activeGuilds7d, activeProviders7d, errors30d, analyticsEvents24h, analyticsUsers24h] = await runLimited([
+    () => optionalQuery(0, () => scalarCount("SELECT COUNT(DISTINCT guild_id) AS count FROM bot_metric_buckets WHERE bucket_start_ms >= ? AND guild_id <> ''", dayStart)),
+    () => optionalQuery(0, () => scalarCount("SELECT COUNT(DISTINCT provider_id) AS count FROM bot_metric_buckets WHERE bucket_start_ms >= ? AND provider_id <> ''", dayStart)),
+    () => optionalQuery(0, () => scalarCount("SELECT COUNT(DISTINCT guild_id) AS count FROM bot_metric_buckets WHERE bucket_start_ms >= ? AND guild_id <> ''", weekStart)),
+    () => optionalQuery(0, () => scalarCount("SELECT COUNT(DISTINCT provider_id) AS count FROM bot_metric_buckets WHERE bucket_start_ms >= ? AND provider_id <> ''", weekStart)),
+    () => optionalQuery(0, () => scalarCount("SELECT COUNT(*) AS count FROM bot_error_events WHERE occurred_at_ms >= ?", monthStart)),
+    () => optionalQuery(0, () => scalarCount("SELECT COUNT(*) AS count FROM bot_analytics_events WHERE occurred_at_ms >= ?", dayStart)),
+    () => optionalQuery(0, () => scalarCount("SELECT COUNT(DISTINCT author_user_id) AS count FROM bot_analytics_events WHERE occurred_at_ms >= ? AND author_user_id IS NOT NULL", dayStart)),
+  ] as const);
 
   const decisionInsights = buildDecisionInsights({
     analyticsQuality,
@@ -6316,6 +6525,47 @@ const adminOverviewCacheState = ((globalThis as typeof globalThis & {
   timer: null,
 });
 
+function emptyAdminOverviewSnapshot(): AdminOverviewSnapshot {
+  return clientSafe({
+    generatedAt: new Date().toISOString(),
+    durationMs: 0,
+    tables: DATABASE_TABLES.map((table) => ({
+      table: table.name,
+      label: table.label,
+      available: false,
+      count: 0,
+      error: "analytics cache warming",
+    })),
+    totals: {
+      users: 0,
+      guilds: 0,
+      providers: 0,
+      settings: 0,
+      autoExtractTargets: 0,
+      auditLogs: 0,
+      botErrorEvents: 0,
+    },
+    recent: {
+      audit24h: 0,
+      errors24h: 0,
+      topErrorTypes: [],
+      latestMetrics: [],
+    },
+    providerRows: [],
+    analytics: null,
+    health: {
+      database: { ok: false, latencyMs: 0, serverTime: null },
+      environment: {
+        nodeEnv: process.env.NODE_ENV || "development",
+        botTokenConfigured: false,
+        clientIdConfigured: false,
+        databaseUrlConfigured: false,
+        status: "analytics_cache_warming",
+      },
+    },
+  }) as AdminOverviewSnapshot;
+}
+
 function ensureAdminOverviewBatchRefresh() {
   if (adminOverviewCacheState.timer) return;
   const timer = setInterval(() => {
@@ -6326,21 +6576,22 @@ function ensureAdminOverviewBatchRefresh() {
 }
 
 function withAdminOverviewCacheState(snapshot: AdminOverviewSnapshot) {
-  const updatedAtMs = adminOverviewCacheState.updatedAtMs || Date.now();
+  const updatedAtMs = adminOverviewCacheState.updatedAtMs || 0;
   return clientSafe({
     ...snapshot,
     cache: {
-      updatedAt: new Date(updatedAtMs).toISOString(),
-      nextUpdateAt: new Date(updatedAtMs + ADMIN_OVERVIEW_REFRESH_INTERVAL_MS).toISOString(),
+      updatedAt: updatedAtMs ? new Date(updatedAtMs).toISOString() : null,
+      nextUpdateAt: updatedAtMs ? new Date(updatedAtMs + ADMIN_OVERVIEW_REFRESH_INTERVAL_MS).toISOString() : null,
       refreshIntervalMs: ADMIN_OVERVIEW_REFRESH_INTERVAL_MS,
-      refreshing: Boolean(adminOverviewCacheState.refreshPromise),
+      refreshing: Boolean(adminOverviewCacheState.refreshPromise) || !adminOverviewCacheState.snapshot,
+      ready: Boolean(adminOverviewCacheState.snapshot),
     },
   });
 }
 
 function refreshAdminOverviewCache() {
   if (!adminOverviewCacheState.refreshPromise) {
-    adminOverviewCacheState.refreshPromise = buildAdminOverview()
+    adminOverviewCacheState.refreshPromise = enqueueAdminAnalyticsBuild(() => buildAdminOverview())
       .then((snapshot) => {
         adminOverviewCacheState.snapshot = snapshot;
         adminOverviewCacheState.updatedAtMs = Date.now();
@@ -6368,20 +6619,16 @@ export async function getAdminOverview(options: { forceRefresh?: boolean } = {})
 
   const snapshot = adminOverviewCacheState.snapshot;
   if (snapshot) {
-    const cacheAgeMs = Date.now() - adminOverviewCacheState.updatedAtMs;
-    if (cacheAgeMs >= ADMIN_OVERVIEW_REFRESH_INTERVAL_MS && !adminOverviewCacheState.refreshPromise) {
-      void refreshAdminOverviewCache().catch(() => undefined);
-    }
     return withAdminOverviewCacheState(snapshot);
   }
 
-  return withAdminOverviewCacheState(await refreshAdminOverviewCache());
+  return withAdminOverviewCacheState(emptyAdminOverviewSnapshot());
 }
 
 async function buildAdminOverview() {
   await ensureAuditLogTable().catch(() => undefined);
   const startedAt = Date.now();
-  const tableSummaries = await Promise.all(DATABASE_TABLES.map((table) => tableCount(table.name)));
+  const tableSummaries = await runLimited(DATABASE_TABLES.map((table) => () => tableCount(table.name)));
   const latencyStartedAt = Date.now();
   const dbPing = await optionalQuery<{ ok: boolean; latencyMs: number; serverTime: unknown }>(
     { ok: false, latencyMs: 0, serverTime: null },
@@ -6392,10 +6639,10 @@ async function buildAdminOverview() {
   );
   const since24h = Date.now() - 24 * 60 * 60 * 1000;
 
-  const [audit24h, errors24h, topErrorTypes, providerRows, latestMetrics, analytics] = await Promise.all([
-    optionalQuery(0, () => scalarCount("SELECT COUNT(*) AS count FROM dashboard_audit_logs WHERE created_at >= ?", new Date(since24h))),
-    optionalQuery(0, () => scalarCount("SELECT COUNT(*) AS count FROM bot_error_events WHERE occurred_at_ms >= ?", since24h)),
-    optionalQuery([], async () => {
+  const [audit24h, errors24h, topErrorTypes, providerRows, latestMetrics, analytics] = await runLimited([
+    () => optionalQuery(0, () => scalarCount("SELECT COUNT(*) AS count FROM dashboard_audit_logs WHERE created_at >= ?", new Date(since24h))),
+    () => optionalQuery(0, () => scalarCount("SELECT COUNT(*) AS count FROM bot_error_events WHERE occurred_at_ms >= ?", since24h)),
+    () => optionalQuery([], async () => {
       const rows = await prisma.$queryRawUnsafe<Array<Record<string, unknown>>>(
         `SELECT error_type, severity, provider_id, COUNT(*) AS count
          FROM bot_error_events
@@ -6407,7 +6654,7 @@ async function buildAdminOverview() {
       );
       return rows.map(maskRow);
     }),
-    optionalQuery([], async () => {
+    () => optionalQuery([], async () => {
       const rows = await prisma.$queryRawUnsafe<Array<Record<string, unknown>>>(
         `SELECT provider_id, COUNT(*) AS configured_guilds, SUM(enabled = 1) AS enabled_guilds
          FROM guild_provider_settings
@@ -6417,7 +6664,7 @@ async function buildAdminOverview() {
       );
       return rows.map(maskRow);
     }),
-    optionalQuery([], async () => {
+    () => optionalQuery([], async () => {
       const rows = await prisma.$queryRawUnsafe<Array<Record<string, unknown>>>(
         `SELECT metric_name, provider_id, guild_id, endpoint_key, count, bucket_start_ms
          FROM bot_metric_buckets
@@ -6426,8 +6673,8 @@ async function buildAdminOverview() {
       );
       return rows.map(maskRow);
     }),
-    optionalQuery(null, () => getAdvancedAnalytics()),
-  ]);
+    () => optionalQuery(null, () => getAdvancedAnalytics()),
+  ] as const);
 
   return clientSafe({
     generatedAt: new Date().toISOString(),
