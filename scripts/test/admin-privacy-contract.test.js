@@ -518,6 +518,8 @@ test('admin analytics snapshots are produced by background batches instead of re
     const dataSource = fs.readFileSync(path.join(repoRoot, 'dashboard', 'lib', 'admin-data.ts'), 'utf8');
     const adminPageSource = fs.readFileSync(path.join(repoRoot, 'dashboard', 'app', 'admin', 'page.tsx'), 'utf8');
     const instrumentationSource = fs.readFileSync(path.join(repoRoot, 'dashboard', 'instrumentation.ts'), 'utf8');
+    const adminLoaderSource = fs.readFileSync(path.join(repoRoot, 'dashboard', 'components', 'admin', 'admin-console-loader.tsx'), 'utf8');
+    const adminCatalogRouteSource = fs.readFileSync(path.join(repoRoot, 'dashboard', 'app', 'api', 'admin', 'catalog', 'route.ts'), 'utf8');
     const overviewBody = dataSource.match(/export async function getAdminOverview\([\s\S]*?\n\}/)?.[0] || '';
     const detailedBody = dataSource.match(/export async function getAdminDetailedAnalytics\([\s\S]*?export type AdminGuildAnalyticsPreviewFilters/)?.[0] || '';
 
@@ -536,7 +538,12 @@ test('admin analytics snapshots are produced by background batches instead of re
     assert.equal((overviewBody.match(/await refreshAdminOverviewCache\(\)/g) || []).length, 1);
     assert.match(detailedBody, /emptyAdminDetailedAnalyticsSnapshot\(filters\)/);
     assert.doesNotMatch(detailedBody, /buildAdminDetailedAnalytics\(filters\)/);
+    assert.doesNotMatch(adminPageSource, /getAdminProviderCatalog/);
+    assert.match(adminPageSource, /AdminConsoleLoader/);
     assert.doesNotMatch(adminPageSource, /warmAdminOverviewCache/);
+    assert.match(adminLoaderSource, /dynamic\(/);
+    assert.match(adminLoaderSource, /ssr: false/);
+    assert.match(adminCatalogRouteSource, /getAdminProviderCatalog/);
     assert.match(instrumentationSource, /warmAdminOverviewCache\(\)/);
     assert.match(instrumentationSource, /warmAdminDetailedAnalyticsCache\(\)/);
 });

@@ -3506,10 +3506,12 @@ function DatabasePanel({ database, setDatabase }: { database: AdminDatabase; set
   );
 }
 
-function SupportPanel({ catalog }: { catalog: CatalogProvider[] }) {
-  const defaultProvider = catalog[0]?.providerId || "twitter";
+function SupportPanel() {
+  const [catalog, setCatalog] = useState<CatalogProvider[]>([]);
+  const [catalogLoading, setCatalogLoading] = useState(true);
+  const [catalogError, setCatalogError] = useState<string | null>(null);
   const [guildId, setGuildId] = useState("");
-  const [providerId, setProviderId] = useState(defaultProvider);
+  const [providerId, setProviderId] = useState("twitter");
   const [settingKey, setSettingKey] = useState("");
   const [valueText, setValueText] = useState("true");
   const [changesText, setChangesText] = useState("");
@@ -3521,6 +3523,30 @@ function SupportPanel({ catalog }: { catalog: CatalogProvider[] }) {
 
   const provider = useMemo(() => catalog.find((item) => item.providerId === providerId) || catalog[0], [catalog, providerId]);
   const settingOptions = settings?.specs.length ? settings.specs : provider?.settings || [];
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadCatalog() {
+      setCatalogLoading(true);
+      setCatalogError(null);
+      try {
+        const payload = await fetchJson<CatalogProvider[]>("/api/admin/catalog");
+        if (cancelled) return;
+        setCatalog(payload);
+        if (!payload.some((item) => item.providerId === providerId) && payload[0]) {
+          setProviderId(payload[0].providerId);
+        }
+      } catch (err) {
+        if (!cancelled) setCatalogError(err instanceof Error ? err.message : "provider catalog の読み込みに失敗しました");
+      } finally {
+        if (!cancelled) setCatalogLoading(false);
+      }
+    }
+    void loadCatalog();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     if (!settingOptions.length) return;
@@ -3591,15 +3617,16 @@ function SupportPanel({ catalog }: { catalog: CatalogProvider[] }) {
           <CardDescription>guild_id と provider_id を指定してサポート対応します</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
+          {catalogError ? <div className="rounded-md border border-destructive/40 bg-card p-3 text-sm text-destructive">{catalogError}</div> : null}
           <div className="grid gap-3 lg:grid-cols-[1fr_220px_auto]">
             <Input value={guildId} onChange={(event) => setGuildId(event.target.value)} placeholder="guild_id" />
-            <select className={controlClass} value={providerId} onChange={(event) => setProviderId(event.target.value)}>
+            <select className={controlClass} value={providerId} onChange={(event) => setProviderId(event.target.value)} disabled={catalogLoading || !catalog.length}>
               {catalog.map((item) => (
                 <option key={item.providerId} value={item.providerId}>{item.label}</option>
               ))}
             </select>
-            <Button type="button" variant="outline" onClick={loadSettings} disabled={loading}>
-              {loading ? <Loader2 size={16} className="animate-spin" /> : <Search size={16} />}
+            <Button type="button" variant="outline" onClick={loadSettings} disabled={loading || catalogLoading || !catalog.length}>
+              {loading || catalogLoading ? <Loader2 size={16} className="animate-spin" /> : <Search size={16} />}
               読込
             </Button>
           </div>
@@ -3685,10 +3712,8 @@ function SupportPanel({ catalog }: { catalog: CatalogProvider[] }) {
 
 export function AdminConsole({
   user,
-  catalog,
 }: {
   user: DashboardUser;
-  catalog: CatalogProvider[];
 }) {
   const [tab, setTab] = useState<AdminTab>("overview");
   const [overview, setOverview] = useState<AdminOverview | null>(null);
@@ -3854,7 +3879,7 @@ export function AdminConsole({
             />
           )
         ) : null}
-        {tab === "support" ? <SupportPanel catalog={catalog} /> : null}
+        {tab === "support" ? <SupportPanel /> : null}
       </main>
     </div>
   );
