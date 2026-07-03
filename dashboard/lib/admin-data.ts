@@ -48,6 +48,8 @@ const DAY_MS = 24 * HOUR_MS;
 const ADMIN_ANALYTICS_BATCH_INTERVAL_MS = 5 * 60 * 1000;
 const ADMIN_OVERVIEW_REFRESH_INTERVAL_MS = ADMIN_ANALYTICS_BATCH_INTERVAL_MS;
 const ADMIN_ANALYTICS_QUERY_CONCURRENCY = 2;
+const ADMIN_ANALYTICS_CACHE_MAX_ENTRIES = 12;
+const ADMIN_ANALYTICS_CACHE_ACTIVE_MS = 60 * 60 * 1000;
 const PRIVACY_MIN_GROUP_SIZE = 5;
 const SMALL_GROUP_LABEL = "少数";
 const smallGroupDetailColumns = new Set([
@@ -4323,6 +4325,21 @@ const adminDetailedAnalyticsCacheState = ((globalThis as typeof globalThis & {
   timer: null,
 });
 
+function isActiveAnalyticsCacheEntry(entry: { lastAccessedAtMs: number }) {
+  return Date.now() - entry.lastAccessedAtMs <= ADMIN_ANALYTICS_CACHE_ACTIVE_MS;
+}
+
+function pruneAnalyticsCacheEntries<Entry extends { lastAccessedAtMs: number; refreshPromise: Promise<unknown> | null }>(entries: Map<string, Entry>) {
+  const removable = [...entries.entries()]
+    .filter(([, entry]) => !entry.refreshPromise)
+    .sort((left, right) => left[1].lastAccessedAtMs - right[1].lastAccessedAtMs);
+
+  for (const [key, entry] of removable) {
+    if (entries.size <= ADMIN_ANALYTICS_CACHE_MAX_ENTRIES && isActiveAnalyticsCacheEntry(entry)) break;
+    entries.delete(key);
+  }
+}
+
 function getAdminDetailedAnalyticsCacheEntry(filters: AdminDetailedAnalyticsFilters) {
   const key = detailedAnalyticsCacheKey(filters);
   let entry = adminDetailedAnalyticsCacheState.entries.get(key);
@@ -4360,7 +4377,9 @@ function refreshAdminDetailedAnalyticsCacheEntry(entry: AdminDetailedAnalyticsCa
 function ensureAdminDetailedAnalyticsBatchRefresh() {
   if (adminDetailedAnalyticsCacheState.timer) return;
   const timer = setInterval(() => {
+    pruneAnalyticsCacheEntries(adminDetailedAnalyticsCacheState.entries);
     for (const entry of adminDetailedAnalyticsCacheState.entries.values()) {
+      if (!isActiveAnalyticsCacheEntry(entry)) continue;
       void refreshAdminDetailedAnalyticsCacheEntry(entry).catch(() => undefined);
     }
   }, ADMIN_ANALYTICS_BATCH_INTERVAL_MS);
@@ -6041,7 +6060,36 @@ function userFacingPreviewReadinessRows(
   return protectUserFacingPreviewRows(rows);
 }
 
-export async function getAdminGuildAnalyticsPreview(rawFilters: AdminGuildAnalyticsPreviewFilters) {
+function normalizeGuildAnalyticsPreviewFilters(rawFilters: AdminGuildAnalyticsPreviewFilters): AdminGuildAnalyticsPreviewFilters {
+  return {
+    guildId: cleanFilter(rawFilters.guildId),
+    providerId: cleanFilter(rawFilters.providerId),
+    accountKey: cleanFilter(rawFilters.accountKey),
+    contentType: cleanFilter(rawFilters.contentType),
+    dateFrom: rawFilters.dateFrom,
+    dateTo: rawFilters.dateTo,
+    bucket: cleanFilter(rawFilters.bucket),
+    limit: rawFilters.limit,
+    urlVisibility: previewUrlVisibility(rawFilters.urlVisibility),
+  };
+}
+
+function normalizeProviderMarketingPreviewFilters(rawFilters: AdminProviderMarketingPreviewFilters): AdminProviderMarketingPreviewFilters {
+  return {
+    providerId: cleanFilter(rawFilters.providerId),
+    accountKey: cleanFilter(rawFilters.accountKey),
+    guildId: cleanFilter(rawFilters.guildId),
+    contentType: cleanFilter(rawFilters.contentType),
+    facetKey: cleanFilter(rawFilters.facetKey),
+    dateFrom: rawFilters.dateFrom,
+    dateTo: rawFilters.dateTo,
+    bucket: cleanFilter(rawFilters.bucket),
+    limit: rawFilters.limit,
+    urlVisibility: previewUrlVisibility(rawFilters.urlVisibility),
+  };
+}
+
+async function buildAdminGuildAnalyticsPreview(rawFilters: AdminGuildAnalyticsPreviewFilters) {
   const startedAt = Date.now();
   const urlVisibility = previewUrlVisibility(rawFilters.urlVisibility);
   const filters: AdminDetailedAnalyticsFilters = {
@@ -6084,33 +6132,33 @@ export async function getAdminGuildAnalyticsPreview(rawFilters: AdminGuildAnalyt
     contentLifetime,
     urlReuse,
     settingImpact,
-  ] = await Promise.all([
-    optionalQuery({ content: {}, analytics: { success_rate: 0 } }, () => getDetailedSummary(filters, window)),
-    optionalQuery({ active_users: 0, first_seen_users: 0, returning_users: 0, returning_rate: 0 }, () => getDetailedAudienceRetention(filters, window)),
-    optionalQuery([], () => getDetailedTimeSeries(filters, window)),
-    optionalQuery([], () => getDetailedProviderAccounts(filters, window, limit)),
-    optionalQuery([], () => getDetailedProviderReliability(filters, window, limit)),
-    optionalQuery([], () => getDetailedContentTypeBreakdown(filters, window, limit)),
-    optionalQuery([], () => getDetailedGuildBreakdown(filters, window, limit)),
-    optionalQuery([], () => getDetailedGuildBreakdown(comparisonFilters, window, limit)),
-    optionalQuery([], () => getDetailedUserCohortBreakdown(filters, window, limit)),
-    optionalQuery([], () => getDetailedUrlBreakdown(filters, window, limit)),
-    getDetailedValueDrivers(filters, window, limit),
-    optionalQuery([], () => getDetailedUrlParameterBreakdown(filters, window, limit)),
-    optionalQuery([], () => getDetailedProviderMarketingSegments(filters, window, limit)),
-    optionalQuery([], () => getDetailedFacetBreakdown(filters, window, limit)),
-    optionalQuery([], () => getDetailedNumericFacetStats(filters, window, limit)),
-    optionalQuery([], () => getDetailedHourDistribution(filters, window, limit)),
-    optionalQuery([], () => getDetailedWeekdayDistribution(filters, window, limit)),
-    optionalQuery([], () => getDetailedCommandBreakdown(filters, window, limit)),
-    optionalQuery([], () => getDetailedInterestBreakdown(filters, window, limit)),
-    optionalQuery([], () => getDetailedFailureReasons(filters, window, limit)),
-    getDetailedFunnelAnalytics(filters, window, limit),
-    getDetailedWeeklyCohorts(filters, window, limit),
-    getDetailedContentLifetime(filters, window, limit),
-    getDetailedUrlReuse(filters, window, limit),
-    getDetailedSettingImpact(filters, window, limit),
-  ]);
+  ] = await runLimited([
+    () => optionalQuery({ content: {}, analytics: { success_rate: 0 } }, () => getDetailedSummary(filters, window)),
+    () => optionalQuery({ active_users: 0, first_seen_users: 0, returning_users: 0, returning_rate: 0 }, () => getDetailedAudienceRetention(filters, window)),
+    () => optionalQuery([], () => getDetailedTimeSeries(filters, window)),
+    () => optionalQuery([], () => getDetailedProviderAccounts(filters, window, limit)),
+    () => optionalQuery([], () => getDetailedProviderReliability(filters, window, limit)),
+    () => optionalQuery([], () => getDetailedContentTypeBreakdown(filters, window, limit)),
+    () => optionalQuery([], () => getDetailedGuildBreakdown(filters, window, limit)),
+    () => optionalQuery([], () => getDetailedGuildBreakdown(comparisonFilters, window, limit)),
+    () => optionalQuery([], () => getDetailedUserCohortBreakdown(filters, window, limit)),
+    () => optionalQuery([], () => getDetailedUrlBreakdown(filters, window, limit)),
+    () => getDetailedValueDrivers(filters, window, limit),
+    () => optionalQuery([], () => getDetailedUrlParameterBreakdown(filters, window, limit)),
+    () => optionalQuery([], () => getDetailedProviderMarketingSegments(filters, window, limit)),
+    () => optionalQuery([], () => getDetailedFacetBreakdown(filters, window, limit)),
+    () => optionalQuery([], () => getDetailedNumericFacetStats(filters, window, limit)),
+    () => optionalQuery([], () => getDetailedHourDistribution(filters, window, limit)),
+    () => optionalQuery([], () => getDetailedWeekdayDistribution(filters, window, limit)),
+    () => optionalQuery([], () => getDetailedCommandBreakdown(filters, window, limit)),
+    () => optionalQuery([], () => getDetailedInterestBreakdown(filters, window, limit)),
+    () => optionalQuery([], () => getDetailedFailureReasons(filters, window, limit)),
+    () => getDetailedFunnelAnalytics(filters, window, limit),
+    () => getDetailedWeeklyCohorts(filters, window, limit),
+    () => getDetailedContentLifetime(filters, window, limit),
+    () => getDetailedUrlReuse(filters, window, limit),
+    () => getDetailedSettingImpact(filters, window, limit),
+  ] as const);
 
   const content = protectUserFacingPreviewRow(summary.content || {});
   const analytics = protectUserFacingPreviewRow(summary.analytics || {});
@@ -6183,7 +6231,7 @@ export async function getAdminGuildAnalyticsPreview(rawFilters: AdminGuildAnalyt
   });
 }
 
-export async function getAdminProviderMarketingPreview(rawFilters: AdminProviderMarketingPreviewFilters) {
+async function buildAdminProviderMarketingPreview(rawFilters: AdminProviderMarketingPreviewFilters) {
   const startedAt = Date.now();
   const urlVisibility = previewUrlVisibility(rawFilters.urlVisibility);
   const filters: AdminDetailedAnalyticsFilters = {
@@ -6225,32 +6273,32 @@ export async function getAdminProviderMarketingPreview(rawFilters: AdminProvider
     weeklyCohorts,
     contentLifetime,
     urlReuse,
-  ] = await Promise.all([
-    optionalQuery({ content: {}, analytics: { success_rate: 0 } }, () => getDetailedSummary(filters, window)),
-    optionalQuery({ active_users: 0, first_seen_users: 0, returning_users: 0, returning_rate: 0 }, () => getDetailedAudienceRetention(filters, window)),
-    optionalQuery([], () => getDetailedTimeSeries(filters, window)),
-    optionalQuery([], () => getDetailedProviderAccounts(filters, window, limit)),
-    optionalQuery([], () => getDetailedProviderReliability(filters, window, limit)),
-    optionalQuery([], () => getDetailedContentTypeBreakdown(filters, window, limit)),
-    optionalQuery([], () => getDetailedGuildBreakdown(filters, window, limit)),
-    optionalQuery([], () => getDetailedUserCohortBreakdown(filters, window, limit)),
-    optionalQuery([], () => getDetailedUrlBreakdown(filters, window, limit)),
-    getDetailedValueDrivers(filters, window, limit),
-    optionalQuery([], () => getDetailedUrlParameterBreakdown(filters, window, limit)),
-    optionalQuery([], () => getDetailedProviderMarketingSegments(filters, window, limit)),
-    optionalQuery([], () => getDetailedFacetBreakdown(filters, window, limit)),
-    optionalQuery([], () => getDetailedNumericFacetStats(filters, window, limit)),
-    optionalQuery([], () => getProviderMetricObservedRows(filters, window)),
-    optionalQuery([], () => getDetailedHourDistribution(filters, window, limit)),
-    optionalQuery([], () => getDetailedWeekdayDistribution(filters, window, limit)),
-    optionalQuery([], () => getDetailedCommandBreakdown(filters, window, limit)),
-    optionalQuery([], () => getDetailedInterestBreakdown(filters, window, limit)),
-    optionalQuery([], () => getDetailedFailureReasons(filters, window, limit)),
-    getDetailedFunnelAnalytics(filters, window, limit),
-    getDetailedWeeklyCohorts(filters, window, limit),
-    getDetailedContentLifetime(filters, window, limit),
-    getDetailedUrlReuse(filters, window, limit),
-  ]);
+  ] = await runLimited([
+    () => optionalQuery({ content: {}, analytics: { success_rate: 0 } }, () => getDetailedSummary(filters, window)),
+    () => optionalQuery({ active_users: 0, first_seen_users: 0, returning_users: 0, returning_rate: 0 }, () => getDetailedAudienceRetention(filters, window)),
+    () => optionalQuery([], () => getDetailedTimeSeries(filters, window)),
+    () => optionalQuery([], () => getDetailedProviderAccounts(filters, window, limit)),
+    () => optionalQuery([], () => getDetailedProviderReliability(filters, window, limit)),
+    () => optionalQuery([], () => getDetailedContentTypeBreakdown(filters, window, limit)),
+    () => optionalQuery([], () => getDetailedGuildBreakdown(filters, window, limit)),
+    () => optionalQuery([], () => getDetailedUserCohortBreakdown(filters, window, limit)),
+    () => optionalQuery([], () => getDetailedUrlBreakdown(filters, window, limit)),
+    () => getDetailedValueDrivers(filters, window, limit),
+    () => optionalQuery([], () => getDetailedUrlParameterBreakdown(filters, window, limit)),
+    () => optionalQuery([], () => getDetailedProviderMarketingSegments(filters, window, limit)),
+    () => optionalQuery([], () => getDetailedFacetBreakdown(filters, window, limit)),
+    () => optionalQuery([], () => getDetailedNumericFacetStats(filters, window, limit)),
+    () => optionalQuery([], () => getProviderMetricObservedRows(filters, window)),
+    () => optionalQuery([], () => getDetailedHourDistribution(filters, window, limit)),
+    () => optionalQuery([], () => getDetailedWeekdayDistribution(filters, window, limit)),
+    () => optionalQuery([], () => getDetailedCommandBreakdown(filters, window, limit)),
+    () => optionalQuery([], () => getDetailedInterestBreakdown(filters, window, limit)),
+    () => optionalQuery([], () => getDetailedFailureReasons(filters, window, limit)),
+    () => getDetailedFunnelAnalytics(filters, window, limit),
+    () => getDetailedWeeklyCohorts(filters, window, limit),
+    () => getDetailedContentLifetime(filters, window, limit),
+    () => getDetailedUrlReuse(filters, window, limit),
+  ] as const);
 
   const content = protectUserFacingPreviewRow(summary.content || {});
   const analytics = protectUserFacingPreviewRow(summary.analytics || {});
@@ -6334,6 +6382,329 @@ export async function getAdminProviderMarketingPreview(rawFilters: AdminProvider
       providerQualityGates,
     },
   });
+}
+
+type AdminGuildAnalyticsPreviewSnapshot = Awaited<ReturnType<typeof buildAdminGuildAnalyticsPreview>>;
+type AdminProviderMarketingPreviewSnapshot = Awaited<ReturnType<typeof buildAdminProviderMarketingPreview>>;
+
+type AdminPreviewCacheEntry<Filters, Snapshot> = {
+  filters: Filters;
+  snapshot: Snapshot | null;
+  updatedAtMs: number;
+  lastAccessedAtMs: number;
+  refreshPromise: Promise<Snapshot> | null;
+};
+
+type AdminPreviewCacheState<Filters, Snapshot> = {
+  entries: Map<string, AdminPreviewCacheEntry<Filters, Snapshot>>;
+  timer: ReturnType<typeof setInterval> | null;
+};
+
+const adminGuildAnalyticsPreviewCacheState = ((globalThis as typeof globalThis & {
+  __cbteAdminGuildAnalyticsPreviewCache?: AdminPreviewCacheState<AdminGuildAnalyticsPreviewFilters, AdminGuildAnalyticsPreviewSnapshot>;
+}).__cbteAdminGuildAnalyticsPreviewCache ??= {
+  entries: new Map<string, AdminPreviewCacheEntry<AdminGuildAnalyticsPreviewFilters, AdminGuildAnalyticsPreviewSnapshot>>(),
+  timer: null,
+});
+
+const adminProviderMarketingPreviewCacheState = ((globalThis as typeof globalThis & {
+  __cbteAdminProviderMarketingPreviewCache?: AdminPreviewCacheState<AdminProviderMarketingPreviewFilters, AdminProviderMarketingPreviewSnapshot>;
+}).__cbteAdminProviderMarketingPreviewCache ??= {
+  entries: new Map<string, AdminPreviewCacheEntry<AdminProviderMarketingPreviewFilters, AdminProviderMarketingPreviewSnapshot>>(),
+  timer: null,
+});
+
+function previewCacheKey(filters: AdminGuildAnalyticsPreviewFilters | AdminProviderMarketingPreviewFilters) {
+  return JSON.stringify({
+    guildId: cleanFilter(filters.guildId),
+    providerId: cleanFilter(filters.providerId),
+    accountKey: cleanFilter(filters.accountKey),
+    contentType: cleanFilter(filters.contentType),
+    facetKey: "facetKey" in filters ? cleanFilter(filters.facetKey) : null,
+    dateFrom: cleanFilter(filters.dateFrom),
+    dateTo: cleanFilter(filters.dateTo),
+    bucket: cleanFilter(filters.bucket),
+    limit: limitValue(filters.limit, 40),
+    urlVisibility: previewUrlVisibility(filters.urlVisibility),
+  });
+}
+
+function emptyGuildAnalyticsPreviewSnapshot(rawFilters: AdminGuildAnalyticsPreviewFilters): AdminGuildAnalyticsPreviewSnapshot {
+  const filters = normalizeGuildAnalyticsPreviewFilters(rawFilters);
+  const urlVisibility = previewUrlVisibility(filters.urlVisibility);
+  const details: AdminDetailedAnalyticsFilters = {
+    guildId: cleanFilter(filters.guildId),
+    providerId: cleanFilter(filters.providerId),
+    accountKey: cleanFilter(filters.accountKey),
+    contentType: cleanFilter(filters.contentType),
+    dateFrom: filters.dateFrom,
+    dateTo: filters.dateTo,
+    bucket: cleanFilter(filters.bucket),
+    limit: filters.limit,
+  };
+  const limit = limitValue(filters.limit, 40);
+  const window = detailedAnalyticsWindow(details);
+  const content = {};
+  const analytics = { success_rate: 0 };
+  return clientSafe({
+    generatedAt: new Date().toISOString(),
+    durationMs: 0,
+    audience: "guild_admin",
+    title: details.guildId ? "サーバー統計プレビュー" : "サーバー統計 全体比較プレビュー",
+    scopeLabel: details.guildId ? `guild:${details.guildId}` : "all-guilds",
+    status: publicPreviewStatus(urlVisibility),
+    filters: {
+      guildId: details.guildId,
+      providerId: details.providerId,
+      accountKey: details.accountKey,
+      contentType: details.contentType,
+      limit,
+      urlVisibility,
+    },
+    window: previewWindowPayload(window),
+    cards: [],
+    summary: { content, analytics },
+    sections: {
+      reportReadiness: userFacingPreviewReadinessRows("guild_admin", content, analytics, urlVisibility),
+      timeSeries: [],
+      providerAccounts: [],
+      providerReliability: [],
+      contentTypes: [],
+      currentGuilds: [],
+      peerGuilds: [],
+      activeUsers: [],
+      topContent: [],
+      valueDrivers: [],
+      urlParameters: [],
+      providerSegments: [],
+      topics: [],
+      numericSignals: [],
+      bestHours: [],
+      bestWeekdays: [],
+      commandUsage: [],
+      failureReasons: [],
+      funnelAnalytics: [],
+      weeklyCohorts: [],
+      contentLifetime: [],
+      urlReuse: [],
+      settingImpact: [],
+      audienceRetention: {},
+      audienceInterests: [],
+      recentSamples: [],
+    },
+  }) as AdminGuildAnalyticsPreviewSnapshot;
+}
+
+function emptyProviderMarketingPreviewSnapshot(rawFilters: AdminProviderMarketingPreviewFilters): AdminProviderMarketingPreviewSnapshot {
+  const filters = normalizeProviderMarketingPreviewFilters(rawFilters);
+  const urlVisibility = previewUrlVisibility(filters.urlVisibility);
+  const details: AdminDetailedAnalyticsFilters = {
+    providerId: cleanFilter(filters.providerId),
+    accountKey: cleanFilter(filters.accountKey),
+    guildId: cleanFilter(filters.guildId),
+    contentType: cleanFilter(filters.contentType),
+    facetKey: cleanFilter(filters.facetKey),
+    dateFrom: filters.dateFrom,
+    dateTo: filters.dateTo,
+    bucket: cleanFilter(filters.bucket),
+    limit: filters.limit,
+  };
+  const limit = limitValue(filters.limit, 40);
+  const window = detailedAnalyticsWindow(details);
+  const content = {};
+  const analytics = { success_rate: 0 };
+  const metricProfile = providerMarketingMetricProfile(details.providerId, details.accountKey, [], [], []);
+  const metricSchemaSummary: Row[] = [];
+  const providerQualityGates: Row[] = [];
+  return clientSafe({
+    generatedAt: new Date().toISOString(),
+    durationMs: 0,
+    audience: "provider_marketing",
+    title: details.providerId ? "プロバイダー マーケティング分析プレビュー" : "全プロバイダー マーケティング比較プレビュー",
+    scopeLabel: [details.providerId, details.accountKey].filter(Boolean).join(":") || "all-providers",
+    status: publicPreviewStatus(urlVisibility),
+    filters: {
+      providerId: details.providerId,
+      accountKey: details.accountKey,
+      guildId: details.guildId,
+      contentType: details.contentType,
+      facetKey: details.facetKey,
+      limit,
+      urlVisibility,
+    },
+    window: previewWindowPayload(window),
+    cards: metricProfile.cards,
+    deliveryContextCards: [],
+    metricProfile,
+    summary: { content, analytics },
+    sections: {
+      reportReadiness: userFacingPreviewReadinessRows("provider_marketing", content, analytics, urlVisibility, metricSchemaSummary, providerQualityGates),
+      timeSeries: [],
+      providerAccounts: [],
+      providerReliability: [],
+      contentTypes: [],
+      reachByGuild: [],
+      audienceUsers: [],
+      topContent: [],
+      valueDrivers: [],
+      urlParameters: [],
+      providerSegments: [],
+      topics: [],
+      numericSignals: [],
+      bestHours: [],
+      bestWeekdays: [],
+      commandUsage: [],
+      failureReasons: [],
+      funnelAnalytics: [],
+      weeklyCohorts: [],
+      contentLifetime: [],
+      urlReuse: [],
+      audienceRetention: {},
+      audienceInterests: [],
+      recentSamples: [],
+      metricSchemaSummary,
+      metricSchemaCoverage: [],
+      providerQualityGates,
+    },
+  }) as unknown as AdminProviderMarketingPreviewSnapshot;
+}
+
+function getAdminPreviewCacheEntry<Filters, Snapshot>(
+  state: AdminPreviewCacheState<Filters, Snapshot>,
+  key: string,
+  filters: Filters,
+) {
+  let entry = state.entries.get(key);
+  if (!entry) {
+    entry = {
+      filters,
+      snapshot: null,
+      updatedAtMs: 0,
+      lastAccessedAtMs: Date.now(),
+      refreshPromise: null,
+    };
+    state.entries.set(key, entry);
+  } else {
+    entry.filters = filters;
+    entry.lastAccessedAtMs = Date.now();
+  }
+  return entry;
+}
+
+function withAdminPreviewCacheState<Snapshot>(snapshot: Snapshot, entry: AdminPreviewCacheEntry<unknown, Snapshot>) {
+  const updatedAtMs = entry.updatedAtMs || 0;
+  return clientSafe({
+    ...snapshot,
+    cache: {
+      updatedAt: updatedAtMs ? new Date(updatedAtMs).toISOString() : null,
+      nextUpdateAt: updatedAtMs ? new Date(updatedAtMs + ADMIN_ANALYTICS_BATCH_INTERVAL_MS).toISOString() : null,
+      refreshIntervalMs: ADMIN_ANALYTICS_BATCH_INTERVAL_MS,
+      refreshing: Boolean(entry.refreshPromise) || !entry.snapshot,
+      ready: Boolean(entry.snapshot),
+    },
+  });
+}
+
+function refreshAdminGuildAnalyticsPreviewCacheEntry(entry: AdminPreviewCacheEntry<AdminGuildAnalyticsPreviewFilters, AdminGuildAnalyticsPreviewSnapshot>) {
+  if (!entry.refreshPromise) {
+    entry.refreshPromise = enqueueAdminAnalyticsBuild(() => buildAdminGuildAnalyticsPreview(entry.filters))
+      .then((snapshot) => {
+        entry.snapshot = snapshot;
+        entry.updatedAtMs = Date.now();
+        return snapshot;
+      })
+      .finally(() => {
+        entry.refreshPromise = null;
+      });
+  }
+  return entry.refreshPromise;
+}
+
+function refreshAdminProviderMarketingPreviewCacheEntry(entry: AdminPreviewCacheEntry<AdminProviderMarketingPreviewFilters, AdminProviderMarketingPreviewSnapshot>) {
+  if (!entry.refreshPromise) {
+    entry.refreshPromise = enqueueAdminAnalyticsBuild(() => buildAdminProviderMarketingPreview(entry.filters))
+      .then((snapshot) => {
+        entry.snapshot = snapshot;
+        entry.updatedAtMs = Date.now();
+        return snapshot;
+      })
+      .finally(() => {
+        entry.refreshPromise = null;
+      });
+  }
+  return entry.refreshPromise;
+}
+
+function ensureAdminGuildAnalyticsPreviewBatchRefresh() {
+  if (adminGuildAnalyticsPreviewCacheState.timer) return;
+  const timer = setInterval(() => {
+    pruneAnalyticsCacheEntries(adminGuildAnalyticsPreviewCacheState.entries);
+    for (const entry of adminGuildAnalyticsPreviewCacheState.entries.values()) {
+      if (!isActiveAnalyticsCacheEntry(entry)) continue;
+      void refreshAdminGuildAnalyticsPreviewCacheEntry(entry).catch(() => undefined);
+    }
+  }, ADMIN_ANALYTICS_BATCH_INTERVAL_MS);
+  (timer as { unref?: () => void }).unref?.();
+  adminGuildAnalyticsPreviewCacheState.timer = timer;
+}
+
+function ensureAdminProviderMarketingPreviewBatchRefresh() {
+  if (adminProviderMarketingPreviewCacheState.timer) return;
+  const timer = setInterval(() => {
+    pruneAnalyticsCacheEntries(adminProviderMarketingPreviewCacheState.entries);
+    for (const entry of adminProviderMarketingPreviewCacheState.entries.values()) {
+      if (!isActiveAnalyticsCacheEntry(entry)) continue;
+      void refreshAdminProviderMarketingPreviewCacheEntry(entry).catch(() => undefined);
+    }
+  }, ADMIN_ANALYTICS_BATCH_INTERVAL_MS);
+  (timer as { unref?: () => void }).unref?.();
+  adminProviderMarketingPreviewCacheState.timer = timer;
+}
+
+export function warmAdminGuildAnalyticsPreviewCache(rawFilters: AdminGuildAnalyticsPreviewFilters = {}) {
+  ensureAdminGuildAnalyticsPreviewBatchRefresh();
+  const filters = normalizeGuildAnalyticsPreviewFilters(rawFilters);
+  const entry = getAdminPreviewCacheEntry(adminGuildAnalyticsPreviewCacheState, previewCacheKey(filters), filters);
+  void refreshAdminGuildAnalyticsPreviewCacheEntry(entry).catch(() => undefined);
+}
+
+export function warmAdminProviderMarketingPreviewCache(rawFilters: AdminProviderMarketingPreviewFilters = {}) {
+  ensureAdminProviderMarketingPreviewBatchRefresh();
+  const filters = normalizeProviderMarketingPreviewFilters(rawFilters);
+  const entry = getAdminPreviewCacheEntry(adminProviderMarketingPreviewCacheState, previewCacheKey(filters), filters);
+  void refreshAdminProviderMarketingPreviewCacheEntry(entry).catch(() => undefined);
+}
+
+export async function getAdminGuildAnalyticsPreview(
+  rawFilters: AdminGuildAnalyticsPreviewFilters,
+  options: { forceRefresh?: boolean } = {},
+) {
+  ensureAdminGuildAnalyticsPreviewBatchRefresh();
+  const filters = normalizeGuildAnalyticsPreviewFilters(rawFilters);
+  const entry = getAdminPreviewCacheEntry(adminGuildAnalyticsPreviewCacheState, previewCacheKey(filters), filters);
+  if (options.forceRefresh) {
+    return withAdminPreviewCacheState(await refreshAdminGuildAnalyticsPreviewCacheEntry(entry), entry);
+  }
+  if (!entry.snapshot) {
+    return withAdminPreviewCacheState(emptyGuildAnalyticsPreviewSnapshot(filters), entry);
+  }
+  return withAdminPreviewCacheState(entry.snapshot, entry);
+}
+
+export async function getAdminProviderMarketingPreview(
+  rawFilters: AdminProviderMarketingPreviewFilters,
+  options: { forceRefresh?: boolean } = {},
+) {
+  ensureAdminProviderMarketingPreviewBatchRefresh();
+  const filters = normalizeProviderMarketingPreviewFilters(rawFilters);
+  const entry = getAdminPreviewCacheEntry(adminProviderMarketingPreviewCacheState, previewCacheKey(filters), filters);
+  if (options.forceRefresh) {
+    return withAdminPreviewCacheState(await refreshAdminProviderMarketingPreviewCacheEntry(entry), entry);
+  }
+  if (!entry.snapshot) {
+    return withAdminPreviewCacheState(emptyProviderMarketingPreviewSnapshot(filters), entry);
+  }
+  return withAdminPreviewCacheState(entry.snapshot, entry);
 }
 
 async function getAdvancedAnalytics(now = Date.now()) {

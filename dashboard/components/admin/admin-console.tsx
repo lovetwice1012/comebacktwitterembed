@@ -219,6 +219,13 @@ type AdminProviderMetricProfile = {
 type AdminUserFacingPreview = {
   generatedAt: string;
   durationMs: number;
+  cache?: {
+    updatedAt: string | null;
+    nextUpdateAt: string | null;
+    refreshIntervalMs: number;
+    refreshing: boolean;
+    ready?: boolean;
+  };
   audience: string;
   title: string;
   scopeLabel: string;

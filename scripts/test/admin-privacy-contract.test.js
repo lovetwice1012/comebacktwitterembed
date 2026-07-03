@@ -134,8 +134,8 @@ test('user-facing analytics previews strip row-level identifiers and samples', (
 test('provider marketing previews expose provider axis segments without row identifiers', () => {
     const dataSource = fs.readFileSync(path.join(repoRoot, 'dashboard', 'lib', 'admin-data.ts'), 'utf8');
     const uiSource = fs.readFileSync(path.join(repoRoot, 'dashboard', 'components', 'admin', 'admin-console.tsx'), 'utf8');
-    const previewStart = dataSource.indexOf('export async function getAdminProviderMarketingPreview');
-    const previewEnd = dataSource.indexOf('\nasync function getAdvancedAnalytics', previewStart);
+    const previewStart = dataSource.indexOf('async function buildAdminProviderMarketingPreview');
+    const previewEnd = dataSource.indexOf('\ntype AdminGuildAnalyticsPreviewSnapshot', previewStart);
 
     assert.match(dataSource, /const PROVIDER_MARKETING_AXIS_SEGMENTS/);
     assert.match(dataSource, /function getDetailedProviderMarketingSegments/);
@@ -261,10 +261,10 @@ test('stakeholder analytics previews keep internal readiness checks out of repor
     const dataSource = fs.readFileSync(path.join(repoRoot, 'dashboard', 'lib', 'admin-data.ts'), 'utf8');
     const uiSource = fs.readFileSync(path.join(repoRoot, 'dashboard', 'components', 'admin', 'admin-console.tsx'), 'utf8');
     const helperStart = dataSource.indexOf('function userFacingPreviewReadinessRows');
-    const helperEnd = dataSource.indexOf('\nexport async function getAdminGuildAnalyticsPreview', helperStart);
-    const guildPreviewStart = dataSource.indexOf('export async function getAdminGuildAnalyticsPreview');
-    const providerPreviewStart = dataSource.indexOf('export async function getAdminProviderMarketingPreview');
-    const providerPreviewEnd = dataSource.indexOf('\nasync function getAdvancedAnalytics', providerPreviewStart);
+    const helperEnd = dataSource.indexOf('\nfunction normalizeGuildAnalyticsPreviewFilters', helperStart);
+    const guildPreviewStart = dataSource.indexOf('async function buildAdminGuildAnalyticsPreview');
+    const providerPreviewStart = dataSource.indexOf('async function buildAdminProviderMarketingPreview');
+    const providerPreviewEnd = dataSource.indexOf('\ntype AdminGuildAnalyticsPreviewSnapshot', providerPreviewStart);
     const guildPanelStart = uiSource.indexOf('function GuildAdminPreviewPanel');
     const providerPanelStart = uiSource.indexOf('function ProviderMarketingPreviewPanel');
     const providerPanelEnd = uiSource.indexOf('\nfunction LogsPanel', providerPanelStart);
@@ -353,9 +353,9 @@ test('user-facing analytics previews expose scoped advanced decision analytics',
     const uiSource = fs.readFileSync(path.join(repoRoot, 'dashboard', 'components', 'admin', 'admin-console.tsx'), 'utf8');
     const helperStart = dataSource.indexOf('async function getDetailedFunnelAnalytics');
     const helperEnd = dataSource.indexOf('\nasync function getDetailedRawSamples', helperStart);
-    const guildPreviewStart = dataSource.indexOf('export async function getAdminGuildAnalyticsPreview');
-    const providerPreviewStart = dataSource.indexOf('export async function getAdminProviderMarketingPreview');
-    const providerPreviewEnd = dataSource.indexOf('\nasync function getAdvancedAnalytics', providerPreviewStart);
+    const guildPreviewStart = dataSource.indexOf('async function buildAdminGuildAnalyticsPreview');
+    const providerPreviewStart = dataSource.indexOf('async function buildAdminProviderMarketingPreview');
+    const providerPreviewEnd = dataSource.indexOf('\ntype AdminGuildAnalyticsPreviewSnapshot', providerPreviewStart);
     const guildPanelStart = uiSource.indexOf('function GuildAdminPreviewPanel');
     const providerPanelStart = uiSource.indexOf('function ProviderMarketingPreviewPanel');
     const providerPanelEnd = uiSource.indexOf('\nfunction LogsPanel', providerPanelStart);
@@ -522,22 +522,38 @@ test('admin analytics snapshots are produced by background batches instead of re
     const adminCatalogRouteSource = fs.readFileSync(path.join(repoRoot, 'dashboard', 'app', 'api', 'admin', 'catalog', 'route.ts'), 'utf8');
     const overviewBody = dataSource.match(/export async function getAdminOverview\([\s\S]*?\n\}/)?.[0] || '';
     const detailedBody = dataSource.match(/export async function getAdminDetailedAnalytics\([\s\S]*?export type AdminGuildAnalyticsPreviewFilters/)?.[0] || '';
+    const guildPreviewBody = dataSource.match(/export async function getAdminGuildAnalyticsPreview\([\s\S]*?export async function getAdminProviderMarketingPreview/)?.[0] || '';
+    const providerPreviewBody = dataSource.match(/export async function getAdminProviderMarketingPreview\([\s\S]*?\n\}/)?.[0] || '';
 
     assert.match(dataSource, /ADMIN_ANALYTICS_BATCH_INTERVAL_MS = 5 \* 60 \* 1000/);
     assert.match(dataSource, /ADMIN_ANALYTICS_QUERY_CONCURRENCY = 2/);
     assert.match(dataSource, /function enqueueAdminAnalyticsBuild/);
     assert.match(dataSource, /function ensureAdminOverviewBatchRefresh\(\)[\s\S]*setInterval/);
     assert.match(dataSource, /function ensureAdminDetailedAnalyticsBatchRefresh\(\)[\s\S]*setInterval/);
+    assert.match(dataSource, /function ensureAdminGuildAnalyticsPreviewBatchRefresh\(\)[\s\S]*setInterval/);
+    assert.match(dataSource, /function ensureAdminProviderMarketingPreviewBatchRefresh\(\)[\s\S]*setInterval/);
     assert.match(dataSource, /refreshPromise = enqueueAdminAnalyticsBuild\(\(\) => buildAdminOverview\(\)\)/);
     assert.match(dataSource, /refreshPromise = enqueueAdminAnalyticsBuild\(\(\) => buildAdminDetailedAnalytics\(entry\.filters\)\)/);
+    assert.match(dataSource, /refreshPromise = enqueueAdminAnalyticsBuild\(\(\) => buildAdminGuildAnalyticsPreview\(entry\.filters\)\)/);
+    assert.match(dataSource, /refreshPromise = enqueueAdminAnalyticsBuild\(\(\) => buildAdminProviderMarketingPreview\(entry\.filters\)\)/);
     assert.match(dataSource, /async function buildAdminDetailedAnalytics[\s\S]*await runLimited/);
+    assert.match(dataSource, /async function buildAdminGuildAnalyticsPreview[\s\S]*await runLimited/);
+    assert.match(dataSource, /async function buildAdminProviderMarketingPreview[\s\S]*await runLimited/);
     assert.match(dataSource, /async function getAdvancedAnalytics[\s\S]*await runLimited/);
+    assert.match(dataSource, /ADMIN_ANALYTICS_CACHE_MAX_ENTRIES = 12/);
+    assert.match(dataSource, /ADMIN_ANALYTICS_CACHE_ACTIVE_MS = 60 \* 60 \* 1000/);
     assert.match(dataSource, /function emptyAdminOverviewSnapshot/);
     assert.match(dataSource, /function emptyAdminDetailedAnalyticsSnapshot/);
+    assert.match(dataSource, /function emptyGuildAnalyticsPreviewSnapshot/);
+    assert.match(dataSource, /function emptyProviderMarketingPreviewSnapshot/);
     assert.match(overviewBody, /emptyAdminOverviewSnapshot\(\)/);
     assert.equal((overviewBody.match(/await refreshAdminOverviewCache\(\)/g) || []).length, 1);
     assert.match(detailedBody, /emptyAdminDetailedAnalyticsSnapshot\(filters\)/);
     assert.doesNotMatch(detailedBody, /buildAdminDetailedAnalytics\(filters\)/);
+    assert.match(guildPreviewBody, /emptyGuildAnalyticsPreviewSnapshot\(filters\)/);
+    assert.doesNotMatch(guildPreviewBody, /buildAdminGuildAnalyticsPreview\(filters\)/);
+    assert.match(providerPreviewBody, /emptyProviderMarketingPreviewSnapshot\(filters\)/);
+    assert.doesNotMatch(providerPreviewBody, /buildAdminProviderMarketingPreview\(filters\)/);
     assert.doesNotMatch(adminPageSource, /getAdminProviderCatalog/);
     assert.match(adminPageSource, /AdminConsoleLoader/);
     assert.doesNotMatch(adminPageSource, /warmAdminOverviewCache/);
@@ -546,6 +562,8 @@ test('admin analytics snapshots are produced by background batches instead of re
     assert.match(adminCatalogRouteSource, /getAdminProviderCatalog/);
     assert.match(instrumentationSource, /warmAdminOverviewCache\(\)/);
     assert.match(instrumentationSource, /warmAdminDetailedAnalyticsCache\(\)/);
+    assert.match(instrumentationSource, /warmAdminGuildAnalyticsPreviewCache\(\)/);
+    assert.match(instrumentationSource, /warmAdminProviderMarketingPreviewCache\(\)/);
 });
 
 test('media delivery routes record non-blocking analytics events', () => {

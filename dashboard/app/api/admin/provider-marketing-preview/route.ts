@@ -19,7 +19,7 @@ export async function GET(req: NextRequest) {
       bucket: search.get("bucket"),
       limit: search.get("limit"),
       urlVisibility: search.get("url_visibility"),
-    }));
+    }, { forceRefresh: search.get("refresh") === "1" }));
   } catch (error) {
     return errorResponse(error, locale);
   }
