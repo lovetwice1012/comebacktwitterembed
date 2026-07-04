@@ -200,6 +200,45 @@ test('dispatcher: missing permissions are excluded from global send error metric
     }
 });
 
+test('dispatcher: source delete permission failures are recorded', async () => {
+    const metrics = [];
+    const errors = [];
+    const dispatcher = loadDispatcherWithErrorTracking({
+        recordError: (_err, context) => errors.push(context),
+        recordMetric: (metricName) => metrics.push(metricName),
+        recordAnalyticsEvent: () => {},
+    });
+    const originalWarn = console.warn;
+    const warnings = [];
+    console.warn = (message) => warnings.push(message);
+
+    const message = {
+        guildId: 'guild-1',
+        channelId: 'channel-1',
+        channel: {
+            send: async () => ({ id: 'sent-message' }),
+        },
+        delete: async () => {
+            throw { code: 50013, rawError: { message: 'Missing Permissions' } };
+        },
+    };
+
+    try {
+        await dispatcher.runSendSteps(message, [{ content: 'hello', deleteSource: true }], 'twitter');
+
+        assert.deepEqual(metrics, [
+            'discord_send_attempt',
+            'discord_send_success',
+            'discord_source_delete_permission_denied',
+        ]);
+        assert.equal(errors.length, 1);
+        assert.equal(errors[0].errorType, 'discord_source_delete_missing_permissions');
+        assert.match(warnings[0], /delete source message/);
+    } finally {
+        console.warn = originalWarn;
+    }
+});
+
 test('dispatcher: attachment fallback preserves reply-source mode and preview embeds', async () => {
     const replyPayloads = [];
     const channelPayloads = [];

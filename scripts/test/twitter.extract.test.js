@@ -341,6 +341,22 @@ test('twitter extract: compact single-image tweet keeps bot embed image-free', a
     assert.deepEqual(result[0].components[0].components.map(b => b.data.custom_id), ['delete']);
 });
 
+test('twitter extract: delete source accepts whitespace around an only-url message', async () => {
+    const provider = loadTwitterProviderWithTweets({
+        1: createTweet('1'),
+    });
+    const message = createMessage();
+    message.content = '\n  https://twitter.com/a/status/1  \n';
+
+    const result = await provider.extract(message, 'https://twitter.com/a/status/1', {
+        legacy_mode: false,
+        deletemessageifonlypostedtweetlink: true,
+    });
+
+    assert.ok(Array.isArray(result));
+    assert.equal(result[0].deleteSource, true);
+});
+
 test('twitter extract: display density and media display mode reshape tweet output', async () => {
     const provider = loadTwitterProviderWithTweets({
         1: createTweet('1', {

@@ -16,7 +16,7 @@
 
 const fetch = require('node-fetch');
 const { ButtonBuilder, ButtonStyle, ComponentType, PermissionsBitField } = require('discord.js');
-const { videoExtensions } = require('../../utils');
+const { isOnlyUrlMessageContent, videoExtensions } = require('../../utils');
 const { recordProviderError } = require('../../errorTracking');
 const { createProviderAnalytics, facet, tagFacets } = require('../../analytics/providerMetrics');
 const {
@@ -757,12 +757,13 @@ async function extract(message, url, s, opts) {
         ? tr(STR.anonRequester, lang)
         : (message.author?.username ?? message.user.username) + '(id:' + (message.author?.id ?? message.user.id) + ')';
     const requesterAuthorName = tr(STR.requesterPrefix, lang) + requesterDisplayName;
+    const sourceMessageIsOnlyUrl = isOnlyUrlMessageContent(message.content, url);
 
     // compact 判定
     const useCompactEmbed =
         s.legacy_mode === false
         && !quoted
-        && (s.deletemessageifonlypostedtweetlink !== true || message.content !== url)
+        && (s.deletemessageifonlypostedtweetlink !== true || !sourceMessageIsOnlyUrl)
         && !saved;
 
     // ---- secondary_extract pre-check ----
@@ -827,7 +828,7 @@ async function extract(message, url, s, opts) {
     }
 
     // deleteSourceIfOnlyLink
-    if (!quoted && s.deletemessageifonlypostedtweetlink === true && message.content === url) {
+    if (!quoted && s.deletemessageifonlypostedtweetlink === true && sourceMessageIsOnlyUrl) {
         if (s.deletemessageifonlypostedtweetlink_secoundaryextractmode === true && s.secondary_extract_mode === true) {
             step.suppressSourceEmbeds = true;
         } else {

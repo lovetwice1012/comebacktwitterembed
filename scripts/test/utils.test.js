@@ -14,6 +14,7 @@ const {
     isInteractionAlreadyAcknowledgedError,
     isIgnorableInteractionAckError,
     isMissingPermissionsError,
+    isOnlyUrlMessageContent,
 } = require('../../src/utils');
 
 test('convertBoolToEnableDisable: ja true', () => {
@@ -49,6 +50,14 @@ test('cleanMessageContent: strips angle-bracketed and spoiler-wrapped twitter UR
 test('cleanMessageContent: leaves bare urls intact', () => {
     const cleaned = cleanMessageContent('hello https://twitter.com/abc world');
     assert.equal(cleaned, 'hello https://twitter.com/abc world');
+});
+
+test('isOnlyUrlMessageContent: accepts whitespace and Discord URL decorations', () => {
+    const url = 'https://twitter.com/foo/status/1';
+    assert.equal(isOnlyUrlMessageContent(`\n ${url} \n`, url), true);
+    assert.equal(isOnlyUrlMessageContent(`<${url}>`, url), true);
+    assert.equal(isOnlyUrlMessageContent(`||${url}||`, url), true);
+    assert.equal(isOnlyUrlMessageContent(`look ${url}`, url), false);
 });
 
 test('conv_en_to_en_US: renames en to en-US', () => {

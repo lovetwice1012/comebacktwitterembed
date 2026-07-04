@@ -48,9 +48,24 @@ async function suppressSourceEmbeds(message) {
     await message.suppressEmbeds(true).catch(() => {});
 }
 
-async function deleteSourceMessage(message) {
+async function deleteSourceMessage(message, providerId = null) {
     if (typeof message?.delete !== 'function') return;
-    await message.delete().catch(() => {});
+    try {
+        await message.delete();
+        recordMetric('discord_source_delete_success', { providerId, message });
+    } catch (err) {
+        const missingPermissions = isMissingPermissionsError(err);
+        const unknownMessage = isUnknownMessageError(err);
+        recordMetric(missingPermissions ? 'discord_source_delete_permission_denied' : 'discord_source_delete_error', { providerId, message });
+        recordError(err, {
+            errorType: missingPermissions ? 'discord_source_delete_missing_permissions' : (unknownMessage ? 'discord_source_delete_unknown_message' : 'discord_source_delete_failed'),
+            severity: 'warn',
+            source: 'dispatcher.deleteSource',
+            providerId,
+            message,
+        });
+        if (!unknownMessage) logSendFailure(message, err, 'delete source message');
+    }
 }
 
 /**
@@ -82,7 +97,7 @@ async function runSendSteps(message, steps, providerId = null) {
                 details: { send_mode: sendMode, step_index: i, outcome: 'no_sendable_payload' },
             });
             if (step.suppressSourceEmbeds) await suppressSourceEmbeds(message);
-            if (step.deleteSource) await deleteSourceMessage(message);
+            if (step.deleteSource) await deleteSourceMessage(message, providerId);
             continue;
         }
 
@@ -220,7 +235,7 @@ async function runSendSteps(message, steps, providerId = null) {
 
         if (step.suppressSourceEmbeds) await suppressSourceEmbeds(message);
         if (step.deleteSource) {
-            await deleteSourceMessage(message);
+            await deleteSourceMessage(message, providerId);
         }
     }
 }

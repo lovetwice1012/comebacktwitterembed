@@ -99,6 +99,17 @@ function isMissingPermissionsError(err) {
     return code === 50001 || code === 50013;
 }
 
+function unwrapDiscordUrlDecoration(content) {
+    let text = String(content ?? '').trim();
+    if (text.startsWith('<') && text.endsWith('>')) text = text.slice(1, -1).trim();
+    if (text.startsWith('||') && text.endsWith('||')) text = text.slice(2, -2).trim();
+    return text;
+}
+
+function isOnlyUrlMessageContent(content, url) {
+    return unwrapDiscordUrlDecoration(content) === String(url ?? '').trim();
+}
+
 async function sendContentPromise(message, content) {
     return new Promise((resolve, reject) => {
         if (content.length == 0) return resolve();
@@ -137,6 +148,7 @@ module.exports = {
     isInteractionAlreadyAcknowledgedError,
     isIgnorableInteractionAckError,
     isMissingPermissionsError,
+    isOnlyUrlMessageContent,
     sendContentPromise,
     conv_en_to_en_US,
     cleanMessageContent,
