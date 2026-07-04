@@ -7102,6 +7102,17 @@ export async function getAdminLogs(filters: {
     auditParams.push(value);
   }
 
+  const errorClauses: string[] = [];
+  const errorParams: unknown[] = [];
+  for (const [column, value] of [
+    ["guild_id", filters.guildId],
+    ["provider_id", filters.providerId],
+  ] as const) {
+    if (!value) continue;
+    errorClauses.push(`${column} = ?`);
+    errorParams.push(value);
+  }
+
   const [auditLogs, errorEvents] = await Promise.all([
     optionalQuery([], async () => {
       const rows = await prisma.$queryRawUnsafe<Array<Record<string, unknown>>>(
@@ -7131,10 +7142,10 @@ export async function getAdminLogs(filters: {
       const rows = await prisma.$queryRawUnsafe<Array<Record<string, unknown>>>(
         `SELECT error_event_id, occurred_at_ms, error_type, severity, source, provider_id, endpoint_key, guild_id, channel_id, message_id, command_name, component_id, discord_code, http_status, stack_hash, message_hash, created_at
          FROM bot_error_events
-         ${filters.guildId ? "WHERE guild_id = ?" : ""}
+         ${errorClauses.length ? `WHERE ${errorClauses.join(" AND ")}` : ""}
          ORDER BY occurred_at_ms DESC
          LIMIT ?`,
-        ...(filters.guildId ? [filters.guildId] : []),
+        ...errorParams,
         limit,
       );
       return rows.map(maskRow);
