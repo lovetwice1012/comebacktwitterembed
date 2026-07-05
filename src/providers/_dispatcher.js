@@ -11,7 +11,12 @@
 const { isMissingPermissionsError, isUnknownMessageError } = require('../utils');
 const { checkComponentIncludesDisabledButtonAndIfFindDeleteIt } = require('../settings');
 const { incrementProcessedCounters } = require('../state');
-const { recordAnalyticsEvent = () => {}, recordError, recordMetric } = require('../errorTracking');
+const {
+    recordAnalyticsEvent = () => {},
+    recordError,
+    recordMetric,
+    runWithErrorContext = (_context, fn) => fn(),
+} = require('../errorTracking');
 
 function fileToFallbackText(file) {
     if (typeof file === 'string') return file;
@@ -48,21 +53,21 @@ async function suppressSourceEmbeds(message) {
     await message.suppressEmbeds(true).catch(() => {});
 }
 
-async function deleteSourceMessage(message, providerId = null) {
+async function deleteSourceMessage(message, providerId = null, context = {}) {
+    const trackingContext = /** @type {Record<string, any>} */ ({ ...context, providerId, message });
     if (typeof message?.delete !== 'function') return;
     try {
         await message.delete();
-        recordMetric('discord_source_delete_success', { providerId, message });
+        recordMetric('discord_source_delete_success', trackingContext);
     } catch (err) {
         const missingPermissions = isMissingPermissionsError(err);
         const unknownMessage = isUnknownMessageError(err);
-        recordMetric(missingPermissions ? 'discord_source_delete_permission_denied' : 'discord_source_delete_error', { providerId, message });
+        recordMetric(missingPermissions ? 'discord_source_delete_permission_denied' : 'discord_source_delete_error', trackingContext);
         recordError(err, {
+            ...trackingContext,
             errorType: missingPermissions ? 'discord_source_delete_missing_permissions' : (unknownMessage ? 'discord_source_delete_unknown_message' : 'discord_source_delete_failed'),
             severity: 'warn',
             source: 'dispatcher.deleteSource',
-            providerId,
-            message,
         });
         if (!unknownMessage) logSendFailure(message, err, 'delete source message');
     }
@@ -72,7 +77,14 @@ async function deleteSourceMessage(message, providerId = null) {
  * @param {any} message - 元の Discord メッセージ
  * @param {import('./_types').SendStep[]} steps
  */
-async function runSendSteps(message, steps, providerId = null) {
+async function runSendSteps(message, steps, providerId = null, context = {}) {
+    const trackingContext = /** @type {Record<string, any>} */ ({ ...context, providerId, message });
+    if (trackingContext.url === undefined && trackingContext.rawUrl !== undefined) trackingContext.url = trackingContext.rawUrl;
+    return runWithErrorContext(trackingContext, () => runSendStepsNow(message, steps, trackingContext));
+}
+
+async function runSendStepsNow(message, steps, trackingContext) {
+    const providerId = trackingContext.providerId;
     if (!Array.isArray(steps) || steps.length === 0) return;
 
     let previousSent = null;
@@ -89,15 +101,14 @@ async function runSendSteps(message, steps, providerId = null) {
 
         if (!hasSendablePayload(messageObject)) {
             recordAnalyticsEvent('discord_send', {
+                ...trackingContext,
                 source: 'dispatcher.send',
-                providerId,
-                message,
                 success: null,
                 durationMs: 0,
                 details: { send_mode: sendMode, step_index: i, outcome: 'no_sendable_payload' },
             });
             if (step.suppressSourceEmbeds) await suppressSourceEmbeds(message);
-            if (step.deleteSource) await deleteSourceMessage(message, providerId);
+            if (step.deleteSource) await deleteSourceMessage(message, providerId, trackingContext);
             continue;
         }
 
@@ -114,23 +125,22 @@ async function runSendSteps(message, steps, providerId = null) {
         let sent = null;
         let sendFailure = null;
         const startedAt = Date.now();
-        recordMetric('discord_send_attempt', { providerId, message });
+        recordMetric('discord_send_attempt', trackingContext);
         try {
             sent = await sender(messageObject);
         } catch (err) {
             if (isUnknownMessageError(err)) {
                 recordError(err, {
+                    ...trackingContext,
                     errorType: 'discord_unknown_message',
                     severity: 'warn',
                     source: 'dispatcher.send',
-                    providerId,
-                    message,
+                    details: { send_mode: sendMode, step_index: i, outcome: 'unknown_message' },
                 });
-                recordMetric('discord_send_error', { providerId, message });
+                recordMetric('discord_send_error', trackingContext);
                 recordAnalyticsEvent('discord_send', {
+                    ...trackingContext,
                     source: 'dispatcher.send',
-                    providerId,
-                    message,
                     success: false,
                     durationMs: Date.now() - startedAt,
                     details: { send_mode: sendMode, step_index: i, outcome: 'unknown_message' },
@@ -140,17 +150,16 @@ async function runSendSteps(message, steps, providerId = null) {
 
             if (isMissingPermissionsError(err)) {
                 recordError(err, {
+                    ...trackingContext,
                     errorType: 'discord_missing_permissions',
                     severity: 'warn',
                     source: 'dispatcher.send',
-                    providerId,
-                    message,
+                    details: { send_mode: sendMode, step_index: i, outcome: 'missing_permissions' },
                 });
-                recordMetric('discord_send_permission_denied', { providerId, message });
+                recordMetric('discord_send_permission_denied', trackingContext);
                 recordAnalyticsEvent('discord_send', {
+                    ...trackingContext,
                     source: 'dispatcher.send',
-                    providerId,
-                    message,
                     success: false,
                     durationMs: Date.now() - startedAt,
                     details: { send_mode: sendMode, step_index: i, outcome: 'missing_permissions' },
@@ -166,16 +175,15 @@ async function runSendSteps(message, steps, providerId = null) {
 
                 if (!hasSendablePayload(messageObject)) {
                     recordError(err, {
+                        ...trackingContext,
                         fallbackType: 'discord_send_failed',
                         source: 'dispatcher.retryWithoutFiles',
-                        providerId,
-                        message,
+                        details: { send_mode: sendMode, step_index: i, outcome: 'no_fallback_payload' },
                     });
-                    recordMetric('discord_send_error', { providerId, message });
+                    recordMetric('discord_send_error', trackingContext);
                     recordAnalyticsEvent('discord_send', {
+                        ...trackingContext,
                         source: 'dispatcher.retryWithoutFiles',
-                        providerId,
-                        message,
                         success: false,
                         durationMs: Date.now() - startedAt,
                         details: { send_mode: sendMode, step_index: i, outcome: 'no_fallback_payload' },
@@ -187,36 +195,35 @@ async function runSendSteps(message, steps, providerId = null) {
                 sent = await sender(messageObject).catch(e => {
                     if (!isUnknownMessageError(e)) {
                         recordError(e, {
+                            ...trackingContext,
                             fallbackType: 'discord_send_failed',
                             source: 'dispatcher.retryWithoutFiles',
-                            providerId,
-                            message,
+                            details: { send_mode: sendMode, step_index: i, outcome: 'retry_without_files_failed' },
                         });
                         logSendFailure(message, e, 'send response without files');
                     }
-                    recordMetric('discord_send_error', { providerId, message });
+                    recordMetric('discord_send_error', trackingContext);
                     sendFailure = 'retry_without_files_failed';
                     return null;
                 });
             } else {
                 recordError(err, {
+                    ...trackingContext,
                     fallbackType: 'discord_send_failed',
                     source: 'dispatcher.send',
-                    providerId,
-                    message,
+                    details: { send_mode: sendMode, step_index: i, outcome: 'send_failed' },
                 });
-                recordMetric('discord_send_error', { providerId, message });
+                recordMetric('discord_send_error', trackingContext);
                 sendFailure = 'send_failed';
                 console.log(err);
             }
         }
         previousSent = sent ?? previousSent;
         if (sent) {
-            recordMetric('discord_send_success', { providerId, message });
+            recordMetric('discord_send_success', trackingContext);
             recordAnalyticsEvent('discord_send', {
+                ...trackingContext,
                 source: 'dispatcher.send',
-                providerId,
-                message,
                 success: true,
                 durationMs: Date.now() - startedAt,
                 details: { send_mode: sendMode, step_index: i },
@@ -224,9 +231,8 @@ async function runSendSteps(message, steps, providerId = null) {
             incrementProcessedCounters();
         } else {
             recordAnalyticsEvent('discord_send', {
+                ...trackingContext,
                 source: 'dispatcher.send',
-                providerId,
-                message,
                 success: false,
                 durationMs: Date.now() - startedAt,
                 details: { send_mode: sendMode, step_index: i, outcome: sendFailure || 'not_sent' },
@@ -235,7 +241,7 @@ async function runSendSteps(message, steps, providerId = null) {
 
         if (step.suppressSourceEmbeds) await suppressSourceEmbeds(message);
         if (step.deleteSource) {
-            await deleteSourceMessage(message, providerId);
+            await deleteSourceMessage(message, providerId, trackingContext);
         }
     }
 }

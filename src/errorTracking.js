@@ -1,5 +1,6 @@
 'use strict';
 
+const { AsyncLocalStorage } = require('async_hooks');
 const crypto = require('crypto');
 const { TABLES } = require('./db_schema');
 const { discordErrorCode } = require('./utils');
@@ -17,8 +18,10 @@ const PROVIDER_ANALYTICS_ENRICHMENT_BACKOFF_MS = 1000;
 const PROVIDER_ANALYTICS_ENRICHMENT_RATE_LIMIT_MS = 5000;
 const MAX_EVENT_QUEUE = 5000;
 const MAX_DETAILS_LENGTH = 12000;
+const MAX_INPUT_PREVIEW_LENGTH = 1000;
 const SEVERITIES = new Set(['debug', 'info', 'warn', 'error', 'fatal']);
 
+const errorContextStore = new AsyncLocalStorage();
 const eventQueue = [];
 const analyticsEventQueue = [];
 const providerContentQueue = [];
@@ -74,6 +77,12 @@ function safeJsonStringify(value) {
     });
     if (!json) return null;
     return json.length > MAX_DETAILS_LENGTH ? json.slice(0, MAX_DETAILS_LENGTH) : json;
+}
+
+function truncateForDetails(value, maxLength = MAX_INPUT_PREVIEW_LENGTH) {
+    if (value === undefined || value === null) return null;
+    const text = String(value);
+    return text.length > maxLength ? text.slice(0, maxLength) : text;
 }
 
 function normalizeUrlForStorage(rawUrl) {
@@ -194,18 +203,77 @@ function extractInteractionContext(interaction) {
     };
 }
 
+function simplifyInteractionOption(option) {
+    if (!option || typeof option !== 'object') return null;
+    return {
+        name: truncateForDetails(option.name, 128),
+        type: option.type ?? null,
+        value: option.value === undefined ? null : truncateForDetails(option.value, 1000),
+        options: Array.isArray(option.options)
+            ? option.options.map(simplifyInteractionOption).filter(Boolean)
+            : [],
+    };
+}
+
+function extractInteractionOptions(interaction) {
+    const options = interaction?.options?.data;
+    if (!Array.isArray(options) || options.length === 0) return null;
+    return options.map(simplifyInteractionOption).filter(Boolean);
+}
+
+function currentErrorContext() {
+    return { ...(errorContextStore.getStore() || {}) };
+}
+
 /**
  * @param {Record<string, any>} context
  * @returns {Record<string, any>}
  */
 function mergeContext(context = {}) {
-    const messageContext = extractMessageContext(context.message);
-    const interactionContext = extractInteractionContext(context.interaction);
+    const storeContext = currentErrorContext();
+    const combined = {
+        ...storeContext,
+        ...context,
+    };
+    const messageContext = extractMessageContext(combined.message);
+    const interactionContext = extractInteractionContext(combined.interaction);
     return {
         ...messageContext,
         ...interactionContext,
+        ...storeContext,
         ...context,
     };
+}
+
+function runWithErrorContext(context, fn) {
+    const merged = mergeContext(context);
+    return errorContextStore.run(merged, fn);
+}
+
+function createInputDetails(merged, rawUrl, normalizedUrl) {
+    const details = {};
+    if (rawUrl) {
+        details.url = rawUrl;
+        if (normalizedUrl && normalizedUrl !== rawUrl) details.normalized_url = normalizedUrl;
+    }
+
+    const inputValue = merged.input
+        ?? merged.inputValue
+        ?? merged.inputText
+        ?? merged.messageContent
+        ?? merged.message?.content
+        ?? merged.interaction?.message?.content;
+    if (inputValue !== undefined && inputValue !== null) {
+        const inputText = String(inputValue);
+        details.message_content_preview = truncateForDetails(inputText);
+        details.message_content_length = inputText.length;
+        details.message_content_hash = hashValue(inputText);
+    }
+
+    const commandOptions = merged.commandOptions ?? extractInteractionOptions(merged.interaction);
+    if (commandOptions) details.command_options = commandOptions;
+
+    return Object.keys(details).length > 0 ? details : null;
 }
 
 function createErrorEventRow(err, context = {}) {
@@ -215,12 +283,14 @@ function createErrorEventRow(err, context = {}) {
     const rawUrl = toDbString(merged.url ?? merged.rawUrl);
     const normalizedUrl = toDbString(merged.normalizedUrl ?? normalizeUrlForStorage(rawUrl));
     const errorMessage = err?.message ? String(err.message) : String(err ?? '');
+    const inputDetails = createInputDetails(merged, rawUrl, normalizedUrl);
     const details = {
         ...(merged.details && typeof merged.details === 'object' ? merged.details : {}),
         error_name: err?.name ?? null,
         error_message: errorMessage || null,
         error_code: err?.code ?? err?.rawError?.code ?? null,
     };
+    if (inputDetails && details.input === undefined) details.input = inputDetails;
     const rawDiscordCode = discordErrorCode(err);
     const discordCode = Number(rawDiscordCode);
 
@@ -1239,6 +1309,8 @@ module.exports = {
     recordMetric,
     recordProviderContentEvent,
     recordProviderError,
+    currentErrorContext,
+    runWithErrorContext,
     _internal: {
         bucketStartMs,
         createAnalyticsEventRow,
@@ -1246,6 +1318,7 @@ module.exports = {
         createContentHourlyAggregateRow,
         createErrorEventRow,
         createProviderHourlyUniqueRows,
+        createInputDetails,
         httpStatusFromError,
         isJsonDecodeError,
         providerAnalyticsEnrichmentJobMetadata,

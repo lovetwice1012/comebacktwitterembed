@@ -239,6 +239,42 @@ test('dispatcher: source delete permission failures are recorded', async () => {
     }
 });
 
+test('dispatcher: send failures keep source url in error context', async () => {
+    const errors = [];
+    const dispatcher = loadDispatcherWithErrorTracking({
+        recordError: (_err, context) => errors.push(context),
+        recordMetric: () => {},
+        recordAnalyticsEvent: () => {},
+        runWithErrorContext: (_context, fn) => fn(),
+    });
+    const originalLog = console.log;
+    console.log = () => {};
+
+    const message = {
+        guildId: 'guild-1',
+        channelId: 'channel-1',
+        content: 'https://x.com/u/status/1',
+        channel: {
+            send: async () => {
+                throw new Error('send exploded');
+            },
+        },
+    };
+
+    try {
+        await dispatcher.runSendSteps(message, [{ content: 'hello' }], 'twitter', {
+            url: 'https://x.com/u/status/1?tracking=1',
+        });
+
+        assert.equal(errors.length, 1);
+        assert.equal(errors[0].providerId, 'twitter');
+        assert.equal(errors[0].url, 'https://x.com/u/status/1?tracking=1');
+        assert.deepEqual(errors[0].details, { send_mode: 'channel', step_index: 0, outcome: 'send_failed' });
+    } finally {
+        console.log = originalLog;
+    }
+});
+
 test('dispatcher: attachment fallback preserves reply-source mode and preview embeds', async () => {
     const replyPayloads = [];
     const channelPayloads = [];

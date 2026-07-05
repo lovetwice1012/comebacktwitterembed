@@ -8,7 +8,12 @@ const {
     isIgnorableInteractionAckError,
     isInteractionAlreadyAcknowledgedError,
 } = require('../utils');
-const { recordAnalyticsEvent = () => {}, recordError, recordMetric } = require('../errorTracking');
+const {
+    recordAnalyticsEvent = () => {},
+    recordError,
+    recordMetric,
+    runWithErrorContext = (_context, fn) => fn(),
+} = require('../errorTracking');
 
 const HANDLERS = {
     showMediaAsAttachments: require('../components/showMediaAsAttachments'),
@@ -88,6 +93,11 @@ function register(client) {
     client.on(Events.InteractionCreate, async (interaction) => {
         const startedAt = Date.now();
         const baseCustomId = typeof interaction.customId === 'string' ? interaction.customId.split(':')[0] : interaction.customId;
+        return runWithErrorContext({
+            source: 'messageComponents.handle',
+            interaction,
+            componentId: baseCustomId,
+        }, async () => {
         try {
             if (interaction.type === InteractionType.ModalSubmit && baseCustomId === 'guisetting') {
                 recordMetric('modal_submit_attempt', { interaction, componentId: baseCustomId });
@@ -177,6 +187,7 @@ function register(client) {
             });
             await replyComponentError(interaction, err);
         }
+        });
     });
 }
 

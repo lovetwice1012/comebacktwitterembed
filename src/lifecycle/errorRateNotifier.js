@@ -233,7 +233,7 @@ function buildResolutionEmbed(incident) {
     }
     return {
         title: '障害解消',
-        description: '異常条件を満たさなくなりました。',
+        description: '下記の障害は解消されました。',
         color: RESOLUTION_COLOR,
         fields,
         timestamp: new Date(resolvedAtMs).toISOString(),

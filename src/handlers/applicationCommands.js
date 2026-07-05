@@ -2,7 +2,12 @@
 
 const { Events, InteractionType } = require('discord.js');
 const { loadProviderCommands } = require('../providers/_loader');
-const { recordAnalyticsEvent = () => {}, recordError, recordMetric } = require('../errorTracking');
+const {
+    recordAnalyticsEvent = () => {},
+    recordError,
+    recordMetric,
+    runWithErrorContext = (_context, fn) => fn(),
+} = require('../errorTracking');
 
 const CORE_HANDLERS = {
     "ping":                 require('../commands/handlers/ping').execute,
@@ -62,7 +67,11 @@ async function replyCommandError(interaction, error) {
 
 function register(client) {
     const handlers = buildHandlers();
-    client.on(Events.InteractionCreate, async (interaction) => {
+    client.on(Events.InteractionCreate, async (interaction) => runWithErrorContext({
+        source: 'applicationCommands.execute',
+        interaction,
+        commandName: interaction.commandName,
+    }, async () => {
         if (interaction.type !== InteractionType.ApplicationCommand) return;
         const handler = handlers[interaction.commandName];
         if (!handler) return;
@@ -90,7 +99,7 @@ function register(client) {
             });
             await replyCommandError(interaction, err);
         }
-    });
+    }));
 }
 
 module.exports = { register, _internal: { shouldDeferEphemeral } };

@@ -5,7 +5,13 @@ const { ifUserHasRole, cleanMessageContent } = require('../utils');
 const { extractAllUrls } = require('../providers/_loader');
 const { getProviderSettings } = require('../providers/_provider_settings');
 const { runSendSteps } = require('../providers/_dispatcher');
-const { recordAnalyticsEvent = () => {}, recordError, recordMetric, recordProviderContentEvent = () => {} } = require('../errorTracking');
+const {
+    recordAnalyticsEvent = () => {},
+    recordError,
+    recordMetric,
+    recordProviderContentEvent = () => {},
+    runWithErrorContext = (_context, fn) => fn(),
+} = require('../errorTracking');
 
 function register(client) {
     const fetchedMessageMembers = new WeakMap();
@@ -118,7 +124,10 @@ function register(client) {
         }
     });
 
-    client.on(Events.MessageCreate, async (message) => {
+    client.on(Events.MessageCreate, async (message) => runWithErrorContext({
+        source: 'messageCreate',
+        message,
+    }, async () => {
         if (!message.guild) return;
         if (shouldIgnoreMessage(message)) return;
 
@@ -130,10 +139,16 @@ function register(client) {
         //await ensureUserExistsInDatabase(message.author.id);
 
         for (const { provider, url } of matches) {
+            await runWithErrorContext({
+                source: 'messageCreate.provider',
+                providerId: provider.id,
+                message,
+                url,
+            }, async () => {
             const providerSettings = await getProviderSettings(provider, message.guild.id);
-            if (providerSettings.enabled !== true) continue;
-            if (await isMessageDisabledForProvider(message, providerSettings)) continue;
-            if (message.author.bot && providerSettings.extract_bot_message !== true && !message.webhookId) continue;
+            if (providerSettings.enabled !== true) return;
+            if (await isMessageDisabledForProvider(message, providerSettings)) return;
+            if (message.author.bot && providerSettings.extract_bot_message !== true && !message.webhookId) return;
 
             let steps;
             const startedAt = Date.now();
@@ -159,7 +174,7 @@ function register(client) {
                     details: { outcome: 'error', error_name: err?.name || null },
                 });
                 console.log(err);
-                continue;
+                return;
             }
             if (Array.isArray(steps)) {
                 recordMetric('provider_extract_success', { providerId: provider.id, message, url });
@@ -182,7 +197,7 @@ function register(client) {
                     channelId: message.channelId ?? message.channel?.id,
                     authorUserId: message.author?.id,
                 });
-                await runSendSteps(message, steps, provider.id);
+                await runSendSteps(message, steps, provider.id, { url });
             } else {
                 recordMetric('provider_extract_empty', { providerId: provider.id, message, url });
                 recordAnalyticsEvent('provider_extract', {
@@ -195,8 +210,9 @@ function register(client) {
                     details: { outcome: 'empty' },
                 });
             }
+            });
         }
-    });
+    }));
 }
 
 module.exports = { register };

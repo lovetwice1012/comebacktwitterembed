@@ -5,7 +5,7 @@ const config = require(/** @type {string} */ ('./config.json'));
 const { consoleBuffer } = require('./src/state');
 const { initializeSettings } = require('./src/settings');
 const { ensureDatabaseSchema } = require('./src/db_schema');
-const { recordError } = require('./src/errorTracking');
+const { currentErrorContext, recordError } = require('./src/errorTracking');
 const dashboardServer = require('./src/lifecycle/dashboardServer');
 
 const client = new Client({
@@ -44,11 +44,21 @@ if (webhookClient) {
 }
 
 process.on('unhandledRejection', error => {
-    recordError(error, { errorType: 'unhandled_rejection', severity: 'fatal', source: 'process.unhandledRejection' });
+    recordError(error, {
+        ...currentErrorContext(),
+        errorType: 'unhandled_rejection',
+        severity: 'fatal',
+        source: 'process.unhandledRejection',
+    });
     console.error('Unhandled promise rejection:', error);
 });
 process.on('uncaughtException', error => {
-    recordError(error, { errorType: 'uncaught_exception', severity: 'fatal', source: 'process.uncaughtException' });
+    recordError(error, {
+        ...currentErrorContext(),
+        errorType: 'uncaught_exception',
+        severity: 'fatal',
+        source: 'process.uncaughtException',
+    });
     console.error('Uncaught exception:', error);
 });
 

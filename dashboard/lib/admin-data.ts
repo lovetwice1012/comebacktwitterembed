@@ -7172,7 +7172,7 @@ export async function getAdminLogs(filters: {
     }),
     optionalQuery([], async () => {
       const rows = await prisma.$queryRawUnsafe<Array<Record<string, unknown>>>(
-        `SELECT error_event_id, occurred_at_ms, error_type, severity, source, provider_id, endpoint_key, guild_id, channel_id, message_id, command_name, component_id, discord_code, http_status, stack_hash, message_hash, created_at
+        `SELECT error_event_id, occurred_at_ms, error_type, severity, source, provider_id, endpoint_key, raw_url, normalized_url, guild_id, channel_id, message_id, command_name, component_id, discord_code, http_status, stack_hash, message_hash, details_json, created_at
          FROM bot_error_events
          ${errorClauses.length ? `WHERE ${errorClauses.join(" AND ")}` : ""}
          ORDER BY occurred_at_ms DESC
@@ -7180,7 +7180,33 @@ export async function getAdminLogs(filters: {
         ...errorParams,
         limit,
       );
-      return rows.map(maskRow);
+      return rows.map((row) => {
+        const details = parseJson(row.details_json);
+        const input = details && typeof details === "object" && !Array.isArray(details) ? (details as Row).input : null;
+        return maskRow({
+          error_event_id: row.error_event_id,
+          occurred_at_ms: row.occurred_at_ms,
+          error_type: row.error_type,
+          severity: row.severity,
+          source: row.source,
+          provider_id: row.provider_id,
+          endpoint_key: row.endpoint_key,
+          raw_url: row.raw_url,
+          input,
+          normalized_url: row.normalized_url,
+          guild_id: row.guild_id,
+          channel_id: row.channel_id,
+          message_id: row.message_id,
+          command_name: row.command_name,
+          component_id: row.component_id,
+          discord_code: row.discord_code,
+          http_status: row.http_status,
+          stack_hash: row.stack_hash,
+          message_hash: row.message_hash,
+          details,
+          created_at: row.created_at,
+        });
+      });
     }),
   ]);
 

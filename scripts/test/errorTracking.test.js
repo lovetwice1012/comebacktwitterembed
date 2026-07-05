@@ -9,6 +9,7 @@ const {
     classifyErrorType,
     endpointKeyFromUrl,
     normalizeUrlForStorage,
+    runWithErrorContext,
     _internal,
 } = require('../../src/errorTracking');
 
@@ -231,6 +232,7 @@ test('error event rows include trace context without dropping investigation fiel
             guild: { id: 'guild-1', name: 'Guild Name' },
             channelId: 'channel-1',
             channel: { id: 'channel-1', name: 'general' },
+            content: 'please expand https://x.com/someone/status/123?tracking=1',
         },
     });
 
@@ -248,4 +250,44 @@ test('error event rows include trace context without dropping investigation fiel
     assert.ok(row.url_hash);
     assert.ok(row.stack_hash);
     assert.ok(row.expires_at_ms > row.occurred_at_ms);
+
+    const details = JSON.parse(row.details_json);
+    assert.equal(details.input.url, 'https://x.com/someone/status/123?tracking=1');
+    assert.equal(details.input.normalized_url, 'https://x.com/someone/status/123');
+    assert.equal(details.input.message_content_preview, 'please expand https://x.com/someone/status/123?tracking=1');
+    assert.equal(details.input.message_content_length, 'please expand https://x.com/someone/status/123?tracking=1'.length);
+    assert.ok(details.input.message_content_hash);
+});
+
+test('async error context is applied to later error rows', async () => {
+    let row;
+    await runWithErrorContext({
+        source: 'messageCreate.provider',
+        providerId: 'youtube',
+        url: 'https://www.youtube.com/watch?v=abc123&feature=share',
+        message: {
+            id: 'message-async',
+            author: { id: 'user-async' },
+            guildId: 'guild-async',
+            channelId: 'channel-async',
+            content: 'watch this https://www.youtube.com/watch?v=abc123&feature=share',
+        },
+    }, async () => {
+        await Promise.resolve();
+        row = _internal.createErrorEventRow(new Error('background failure'), {
+            fallbackType: 'unhandled_rejection',
+            source: 'process.unhandledRejection',
+        });
+    });
+
+    assert.equal(row.provider_id, 'youtube');
+    assert.equal(row.raw_url, 'https://www.youtube.com/watch?v=abc123&feature=share');
+    assert.equal(row.normalized_url, 'https://www.youtube.com/watch');
+    assert.equal(row.message_id, 'message-async');
+    assert.equal(row.guild_id, 'guild-async');
+
+    const details = JSON.parse(row.details_json);
+    assert.equal(details.input.url, 'https://www.youtube.com/watch?v=abc123&feature=share');
+    assert.equal(details.input.message_content_preview, 'watch this https://www.youtube.com/watch?v=abc123&feature=share');
+    assert.ok(details.input.message_content_hash);
 });

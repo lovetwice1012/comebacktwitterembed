@@ -937,6 +937,6 @@ module.exports = twitterProvider;
         ...settingsOverride,
     };
     const steps = await extract(message, url, s, extractOpts);
-    if (Array.isArray(steps)) await runSendSteps(message, steps, 'twitter');
+    if (Array.isArray(steps)) await runSendSteps(message, steps, 'twitter', { url });
     return steps;
 };
