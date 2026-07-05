@@ -2,7 +2,7 @@ import "server-only";
 
 import { createHash } from "crypto";
 import { prisma } from "@/lib/prisma";
-import { getBotToken, getClientId, getDatabaseUrl } from "@/lib/env";
+import { getBotToken, getClientId, getDashboardAdminAnalyticsPrewarm, getDatabaseUrl } from "@/lib/env";
 import { ensureAuditLogTable } from "@/lib/audit-log";
 import { fetchBotGuildIds } from "@/lib/discord";
 import { getCatalog, getProvider, getProviderSpecs, providerLabel, text } from "@/lib/settings-catalog";
@@ -50,6 +50,7 @@ const ADMIN_OVERVIEW_REFRESH_INTERVAL_MS = ADMIN_ANALYTICS_BATCH_INTERVAL_MS;
 const ADMIN_ANALYTICS_QUERY_CONCURRENCY = 2;
 const ADMIN_ANALYTICS_CACHE_MAX_ENTRIES = 12;
 const ADMIN_ANALYTICS_CACHE_ACTIVE_MS = 60 * 60 * 1000;
+const ADMIN_ANALYTICS_BUILD_QUEUE_MAX = 4;
 const PRIVACY_MIN_GROUP_SIZE = 5;
 const SMALL_GROUP_LABEL = "少数";
 const smallGroupDetailColumns = new Set([
@@ -339,16 +340,28 @@ async function runLimited<const Tasks extends readonly (() => Promise<unknown>)[
 }
 
 let adminAnalyticsBuildQueue: Promise<void> = Promise.resolve();
+let adminAnalyticsPendingBuilds = 0;
 
 function enqueueAdminAnalyticsBuild<T>(build: () => Promise<T>) {
+  if (adminAnalyticsPendingBuilds >= ADMIN_ANALYTICS_BUILD_QUEUE_MAX) {
+    return Promise.reject(new Error("Admin analytics build queue is saturated."));
+  }
+  adminAnalyticsPendingBuilds += 1;
   const run = adminAnalyticsBuildQueue
     .catch(() => undefined)
     .then(async () => {
       await yieldToEventLoop();
       return build();
+    })
+    .finally(() => {
+      adminAnalyticsPendingBuilds = Math.max(0, adminAnalyticsPendingBuilds - 1);
     });
   adminAnalyticsBuildQueue = run.then(() => undefined, () => undefined);
   return run;
+}
+
+function shouldPrewarmAdminAnalyticsCache() {
+  return getDashboardAdminAnalyticsPrewarm();
 }
 
 function rate(numerator: unknown, denominator: unknown) {
@@ -4329,6 +4342,12 @@ function isActiveAnalyticsCacheEntry(entry: { lastAccessedAtMs: number }) {
   return Date.now() - entry.lastAccessedAtMs <= ADMIN_ANALYTICS_CACHE_ACTIVE_MS;
 }
 
+function shouldRefreshAnalyticsCacheEntry(entry: { updatedAtMs: number; refreshPromise: Promise<unknown> | null }) {
+  if (entry.refreshPromise) return false;
+  if (!entry.updatedAtMs) return true;
+  return Date.now() - entry.updatedAtMs >= ADMIN_ANALYTICS_BATCH_INTERVAL_MS;
+}
+
 function pruneAnalyticsCacheEntries<Entry extends { lastAccessedAtMs: number; refreshPromise: Promise<unknown> | null }>(entries: Map<string, Entry>) {
   const removable = [...entries.entries()]
     .filter(([, entry]) => !entry.refreshPromise)
@@ -4338,6 +4357,21 @@ function pruneAnalyticsCacheEntries<Entry extends { lastAccessedAtMs: number; re
     if (entries.size <= ADMIN_ANALYTICS_CACHE_MAX_ENTRIES && isActiveAnalyticsCacheEntry(entry)) break;
     entries.delete(key);
   }
+}
+
+function refreshNextActiveAnalyticsCacheEntry<Entry extends {
+  lastAccessedAtMs: number;
+  updatedAtMs: number;
+  refreshPromise: Promise<unknown> | null;
+}>(
+  entries: Map<string, Entry>,
+  refresh: (entry: Entry) => Promise<unknown>,
+) {
+  pruneAnalyticsCacheEntries(entries);
+  const entry = [...entries.values()]
+    .filter((item) => isActiveAnalyticsCacheEntry(item) && shouldRefreshAnalyticsCacheEntry(item))
+    .sort((left, right) => left.updatedAtMs - right.updatedAtMs)[0];
+  if (entry) void refresh(entry).catch(() => undefined);
 }
 
 function getAdminDetailedAnalyticsCacheEntry(filters: AdminDetailedAnalyticsFilters) {
@@ -4377,11 +4411,7 @@ function refreshAdminDetailedAnalyticsCacheEntry(entry: AdminDetailedAnalyticsCa
 function ensureAdminDetailedAnalyticsBatchRefresh() {
   if (adminDetailedAnalyticsCacheState.timer) return;
   const timer = setInterval(() => {
-    pruneAnalyticsCacheEntries(adminDetailedAnalyticsCacheState.entries);
-    for (const entry of adminDetailedAnalyticsCacheState.entries.values()) {
-      if (!isActiveAnalyticsCacheEntry(entry)) continue;
-      void refreshAdminDetailedAnalyticsCacheEntry(entry).catch(() => undefined);
-    }
+    refreshNextActiveAnalyticsCacheEntry(adminDetailedAnalyticsCacheState.entries, refreshAdminDetailedAnalyticsCacheEntry);
   }, ADMIN_ANALYTICS_BATCH_INTERVAL_MS);
   (timer as { unref?: () => void }).unref?.();
   adminDetailedAnalyticsCacheState.timer = timer;
@@ -4403,6 +4433,7 @@ function withAdminDetailedAnalyticsCacheState(snapshot: AdminDetailedAnalyticsSn
 
 export function warmAdminDetailedAnalyticsCache(rawFilters: AdminDetailedAnalyticsFilters = {}) {
   ensureAdminDetailedAnalyticsBatchRefresh();
+  if (!shouldPrewarmAdminAnalyticsCache()) return;
   const filters = normalizeDetailedAnalyticsFilters(rawFilters);
   const entry = getAdminDetailedAnalyticsCacheEntry(filters);
   void refreshAdminDetailedAnalyticsCacheEntry(entry).catch(() => undefined);
@@ -4416,8 +4447,8 @@ export async function getAdminDetailedAnalytics(
   const filters = normalizeDetailedAnalyticsFilters(rawFilters);
   const entry = getAdminDetailedAnalyticsCacheEntry(filters);
 
-  if (options.forceRefresh) {
-    return withAdminDetailedAnalyticsCacheState(await refreshAdminDetailedAnalyticsCacheEntry(entry), entry);
+  if (options.forceRefresh || !entry.snapshot) {
+    void refreshAdminDetailedAnalyticsCacheEntry(entry).catch(() => undefined);
   }
 
   if (!entry.snapshot) {
@@ -6638,11 +6669,7 @@ function refreshAdminProviderMarketingPreviewCacheEntry(entry: AdminPreviewCache
 function ensureAdminGuildAnalyticsPreviewBatchRefresh() {
   if (adminGuildAnalyticsPreviewCacheState.timer) return;
   const timer = setInterval(() => {
-    pruneAnalyticsCacheEntries(adminGuildAnalyticsPreviewCacheState.entries);
-    for (const entry of adminGuildAnalyticsPreviewCacheState.entries.values()) {
-      if (!isActiveAnalyticsCacheEntry(entry)) continue;
-      void refreshAdminGuildAnalyticsPreviewCacheEntry(entry).catch(() => undefined);
-    }
+    refreshNextActiveAnalyticsCacheEntry(adminGuildAnalyticsPreviewCacheState.entries, refreshAdminGuildAnalyticsPreviewCacheEntry);
   }, ADMIN_ANALYTICS_BATCH_INTERVAL_MS);
   (timer as { unref?: () => void }).unref?.();
   adminGuildAnalyticsPreviewCacheState.timer = timer;
@@ -6651,11 +6678,7 @@ function ensureAdminGuildAnalyticsPreviewBatchRefresh() {
 function ensureAdminProviderMarketingPreviewBatchRefresh() {
   if (adminProviderMarketingPreviewCacheState.timer) return;
   const timer = setInterval(() => {
-    pruneAnalyticsCacheEntries(adminProviderMarketingPreviewCacheState.entries);
-    for (const entry of adminProviderMarketingPreviewCacheState.entries.values()) {
-      if (!isActiveAnalyticsCacheEntry(entry)) continue;
-      void refreshAdminProviderMarketingPreviewCacheEntry(entry).catch(() => undefined);
-    }
+    refreshNextActiveAnalyticsCacheEntry(adminProviderMarketingPreviewCacheState.entries, refreshAdminProviderMarketingPreviewCacheEntry);
   }, ADMIN_ANALYTICS_BATCH_INTERVAL_MS);
   (timer as { unref?: () => void }).unref?.();
   adminProviderMarketingPreviewCacheState.timer = timer;
@@ -6663,6 +6686,7 @@ function ensureAdminProviderMarketingPreviewBatchRefresh() {
 
 export function warmAdminGuildAnalyticsPreviewCache(rawFilters: AdminGuildAnalyticsPreviewFilters = {}) {
   ensureAdminGuildAnalyticsPreviewBatchRefresh();
+  if (!shouldPrewarmAdminAnalyticsCache()) return;
   const filters = normalizeGuildAnalyticsPreviewFilters(rawFilters);
   const entry = getAdminPreviewCacheEntry(adminGuildAnalyticsPreviewCacheState, previewCacheKey(filters), filters);
   void refreshAdminGuildAnalyticsPreviewCacheEntry(entry).catch(() => undefined);
@@ -6670,6 +6694,7 @@ export function warmAdminGuildAnalyticsPreviewCache(rawFilters: AdminGuildAnalyt
 
 export function warmAdminProviderMarketingPreviewCache(rawFilters: AdminProviderMarketingPreviewFilters = {}) {
   ensureAdminProviderMarketingPreviewBatchRefresh();
+  if (!shouldPrewarmAdminAnalyticsCache()) return;
   const filters = normalizeProviderMarketingPreviewFilters(rawFilters);
   const entry = getAdminPreviewCacheEntry(adminProviderMarketingPreviewCacheState, previewCacheKey(filters), filters);
   void refreshAdminProviderMarketingPreviewCacheEntry(entry).catch(() => undefined);
@@ -6682,8 +6707,8 @@ export async function getAdminGuildAnalyticsPreview(
   ensureAdminGuildAnalyticsPreviewBatchRefresh();
   const filters = normalizeGuildAnalyticsPreviewFilters(rawFilters);
   const entry = getAdminPreviewCacheEntry(adminGuildAnalyticsPreviewCacheState, previewCacheKey(filters), filters);
-  if (options.forceRefresh) {
-    return withAdminPreviewCacheState(await refreshAdminGuildAnalyticsPreviewCacheEntry(entry), entry);
+  if (options.forceRefresh || !entry.snapshot) {
+    void refreshAdminGuildAnalyticsPreviewCacheEntry(entry).catch(() => undefined);
   }
   if (!entry.snapshot) {
     return withAdminPreviewCacheState(emptyGuildAnalyticsPreviewSnapshot(filters), entry);
@@ -6698,8 +6723,8 @@ export async function getAdminProviderMarketingPreview(
   ensureAdminProviderMarketingPreviewBatchRefresh();
   const filters = normalizeProviderMarketingPreviewFilters(rawFilters);
   const entry = getAdminPreviewCacheEntry(adminProviderMarketingPreviewCacheState, previewCacheKey(filters), filters);
-  if (options.forceRefresh) {
-    return withAdminPreviewCacheState(await refreshAdminProviderMarketingPreviewCacheEntry(entry), entry);
+  if (options.forceRefresh || !entry.snapshot) {
+    void refreshAdminProviderMarketingPreviewCacheEntry(entry).catch(() => undefined);
   }
   if (!entry.snapshot) {
     return withAdminPreviewCacheState(emptyProviderMarketingPreviewSnapshot(filters), entry);
@@ -6883,6 +6908,7 @@ type AdminOverviewSnapshot = Awaited<ReturnType<typeof buildAdminOverview>>;
 type AdminOverviewCacheState = {
   snapshot: AdminOverviewSnapshot | null;
   updatedAtMs: number;
+  lastAccessedAtMs: number;
   refreshPromise: Promise<AdminOverviewSnapshot> | null;
   timer: ReturnType<typeof setInterval> | null;
 };
@@ -6892,6 +6918,7 @@ const adminOverviewCacheState = ((globalThis as typeof globalThis & {
 }).__cbteAdminOverviewCache ??= {
   snapshot: null,
   updatedAtMs: 0,
+  lastAccessedAtMs: 0,
   refreshPromise: null,
   timer: null,
 });
@@ -6940,6 +6967,8 @@ function emptyAdminOverviewSnapshot(): AdminOverviewSnapshot {
 function ensureAdminOverviewBatchRefresh() {
   if (adminOverviewCacheState.timer) return;
   const timer = setInterval(() => {
+    if (!adminOverviewCacheState.lastAccessedAtMs || !isActiveAnalyticsCacheEntry(adminOverviewCacheState)) return;
+    if (!shouldRefreshAnalyticsCacheEntry(adminOverviewCacheState)) return;
     void refreshAdminOverviewCache().catch(() => undefined);
   }, ADMIN_OVERVIEW_REFRESH_INTERVAL_MS);
   (timer as { unref?: () => void }).unref?.();
@@ -6977,6 +7006,8 @@ function refreshAdminOverviewCache() {
 
 export function warmAdminOverviewCache() {
   ensureAdminOverviewBatchRefresh();
+  if (!shouldPrewarmAdminAnalyticsCache()) return;
+  adminOverviewCacheState.lastAccessedAtMs = Date.now();
   if (!adminOverviewCacheState.snapshot && !adminOverviewCacheState.refreshPromise) {
     void refreshAdminOverviewCache().catch(() => undefined);
   }
@@ -6984,8 +7015,9 @@ export function warmAdminOverviewCache() {
 
 export async function getAdminOverview(options: { forceRefresh?: boolean } = {}) {
   ensureAdminOverviewBatchRefresh();
-  if (options.forceRefresh) {
-    return withAdminOverviewCacheState(await refreshAdminOverviewCache());
+  adminOverviewCacheState.lastAccessedAtMs = Date.now();
+  if (options.forceRefresh || !adminOverviewCacheState.snapshot) {
+    void refreshAdminOverviewCache().catch(() => undefined);
   }
 
   const snapshot = adminOverviewCacheState.snapshot;

@@ -1,5 +1,6 @@
 'use strict';
 
+const crypto = require('crypto');
 const { TABLES } = require('../db_schema');
 const { queryDatabase } = require('../db');
 
@@ -7,7 +8,6 @@ const CHECK_INTERVAL_MS = 15 * 60 * 1000;
 const CURRENT_WINDOW_MS = 60 * 60 * 1000;
 const BASELINE_WINDOW_MS = 21 * 24 * 60 * 60 * 1000;
 const BASELINE_GAP_MS = 2 * 60 * 60 * 1000;
-const ALERT_COOLDOWN_MS = 6 * 60 * 60 * 1000;
 const MIN_CURRENT_ATTEMPTS = 20;
 const MIN_CURRENT_ERRORS = 5;
 const MIN_BASELINE_ATTEMPTS = 100;
@@ -16,6 +16,8 @@ const MIN_RATE_INCREASE = 0.05;
 const RATE_MULTIPLIER = 3;
 const DOMINANT_ERROR_SHARE_THRESHOLD = 0.5;
 const ALERT_COLOR = 0xD97706;
+const RESOLUTION_COLOR = 0x16A34A;
+const UNKNOWN_INCIDENT_ID = 'unknown';
 
 const PROVIDER_LABELS = {
     twitter: 'Twitter / X',
@@ -126,6 +128,22 @@ function formatPercent(value) {
     return `${(value * 100).toFixed(1)}%`;
 }
 
+function formatDuration(ms) {
+    if (!Number.isFinite(ms) || ms < 0) return null;
+    const totalMinutes = Math.max(1, Math.round(ms / 60000));
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = totalMinutes % 60;
+    if (hours > 0 && minutes > 0) return `${hours}h ${minutes}m`;
+    if (hours > 0) return `${hours}h`;
+    return `${minutes}m`;
+}
+
+function createIncidentId(nowMs = Date.now()) {
+    const timestamp = Math.max(0, Math.floor(nowMs)).toString(36).toUpperCase().padStart(8, '0');
+    const random = crypto.randomBytes(3).toString('hex').toUpperCase();
+    return `CBTE-${timestamp}-${random}`;
+}
+
 function targetLabel(alert) {
     return alert.kind === 'discord_send'
         ? '展開結果送信'
@@ -143,11 +161,16 @@ function buildDetectionSummary(alert) {
 
 function buildNotificationEmbed(alert) {
     const cause = classifyCause(alert);
+    const incidentId = alert.incidentId || alert.incident_id || null;
     return {
         title: cause.title || alert.title,
         description: '通常範囲超過 / 直近1時間',
         color: ALERT_COLOR,
         fields: [
+            ...(incidentId ? [{
+                name: '障害ID',
+                value: incidentId,
+            }] : []),
             {
                 name: 'プロバイダ',
                 value: providerLabel(alert.providerId),
@@ -179,6 +202,42 @@ function buildNotificationEmbed(alert) {
         ],
         timestamp: new Date(alert.detectedAtMs || Date.now()).toISOString(),
         footer: { text: 'ComebackTwitterEmbed 異常検知システム' },
+    };
+}
+
+function buildResolutionEmbed(incident) {
+    const resolvedAtMs = Number.isFinite(incident.resolvedAtMs) ? incident.resolvedAtMs : Date.now();
+    const detectedAtMs = Number(incident.detectedAtMs);
+    const duration = Number.isFinite(detectedAtMs)
+        ? formatDuration(resolvedAtMs - detectedAtMs)
+        : null;
+    const fields = [
+        {
+            name: '障害ID',
+            value: incident.incidentId || UNKNOWN_INCIDENT_ID,
+        },
+        {
+            name: 'プロバイダ',
+            value: providerLabel(incident.providerId),
+        },
+        {
+            name: '監視対象',
+            value: targetLabel(incident),
+        },
+    ];
+    if (duration) {
+        fields.push({
+            name: '継続時間',
+            value: duration,
+        });
+    }
+    return {
+        title: '障害解消',
+        description: '異常条件を満たさなくなりました。',
+        color: RESOLUTION_COLOR,
+        fields,
+        timestamp: new Date(resolvedAtMs).toISOString(),
+        footer: { text: 'ComebackTwitterEmbed incident monitor' },
     };
 }
 
@@ -232,27 +291,51 @@ async function loadDominantErrorSummary(providerId, startMs, endMs, totalErrors)
     };
 }
 
-async function wasRecentlySent(key, nowMs) {
-    const rows = await queryDatabase(
-        `SELECT last_sent_at_ms
-        FROM ${TABLES.botErrorAlerts}
-        WHERE alert_key = ?
-        LIMIT 1`,
-        [key],
-    );
-    if (!rows[0]) return false;
-    return nowMs - Number(rows[0].last_sent_at_ms) < ALERT_COOLDOWN_MS;
+function alertStateFromRow(row) {
+    if (!row) return null;
+    return {
+        key: row.alert_key,
+        providerId: row.provider_id || '',
+        kind: row.alert_kind,
+        dominantErrorType: row.dominant_error_type || null,
+        incidentId: row.incident_id || UNKNOWN_INCIDENT_ID,
+        active: row.active === 1 || row.active === true,
+        detectedAtMs: Number(row.detected_at_ms ?? row.last_sent_at_ms),
+        lastSeenAtMs: Number(row.last_seen_at_ms ?? row.last_sent_at_ms),
+        resolvedAtMs: Number(row.resolved_at_ms),
+        currentRate: Number(row.last_current_rate) || 0,
+        baselineRate: Number(row.last_baseline_rate) || 0,
+        currentErrors: Number(row.last_current_errors) || 0,
+        currentAttempts: Number(row.last_current_attempts) || 0,
+    };
 }
 
-async function markSent(alert, nowMs) {
+async function loadActiveIncidentStates() {
+    const rows = await queryDatabase(
+        `SELECT alert_key, provider_id, alert_kind, dominant_error_type, incident_id, active,
+            detected_at_ms, last_seen_at_ms, resolved_at_ms, last_sent_at_ms,
+            last_current_rate, last_baseline_rate, last_current_errors, last_current_attempts
+        FROM ${TABLES.botErrorAlerts}
+        WHERE active = 1`,
+    );
+    return rows.map(alertStateFromRow).filter(Boolean);
+}
+
+async function markIncidentDetected(alert, nowMs) {
     await queryDatabase(
         `INSERT INTO ${TABLES.botErrorAlerts} (
-            alert_key, provider_id, alert_kind, dominant_error_type, last_sent_at_ms,
+            alert_key, provider_id, alert_kind, incident_id, active, detected_at_ms,
+            last_seen_at_ms, resolved_at_ms, dominant_error_type, last_sent_at_ms,
             last_current_rate, last_baseline_rate, last_current_errors, last_current_attempts
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, 1, ?, ?, NULL, ?, ?, ?, ?, ?, ?)
         ON DUPLICATE KEY UPDATE
             provider_id = VALUES(provider_id),
             alert_kind = VALUES(alert_kind),
+            incident_id = VALUES(incident_id),
+            active = 1,
+            detected_at_ms = VALUES(detected_at_ms),
+            last_seen_at_ms = VALUES(last_seen_at_ms),
+            resolved_at_ms = NULL,
             dominant_error_type = VALUES(dominant_error_type),
             last_sent_at_ms = VALUES(last_sent_at_ms),
             last_current_rate = VALUES(last_current_rate),
@@ -264,6 +347,9 @@ async function markSent(alert, nowMs) {
             alert.key,
             alert.providerId || '',
             alert.kind,
+            alert.incidentId,
+            nowMs,
+            nowMs,
             alert.dominantErrorType,
             nowMs,
             alert.currentRate,
@@ -274,7 +360,45 @@ async function markSent(alert, nowMs) {
     );
 }
 
-async function collectAlerts(nowMs = Date.now()) {
+async function markIncidentStillActive(alert, nowMs) {
+    await queryDatabase(
+        `UPDATE ${TABLES.botErrorAlerts}
+        SET provider_id = ?,
+            alert_kind = ?,
+            dominant_error_type = ?,
+            last_seen_at_ms = ?,
+            last_current_rate = ?,
+            last_baseline_rate = ?,
+            last_current_errors = ?,
+            last_current_attempts = ?,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE alert_key = ? AND active = 1`,
+        [
+            alert.providerId || '',
+            alert.kind,
+            alert.dominantErrorType,
+            nowMs,
+            alert.currentRate,
+            alert.baselineRate,
+            alert.currentErrors,
+            alert.currentAttempts,
+            alert.key,
+        ],
+    );
+}
+
+async function markIncidentResolved(incident, nowMs) {
+    await queryDatabase(
+        `UPDATE ${TABLES.botErrorAlerts}
+        SET active = 0,
+            resolved_at_ms = ?,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE alert_key = ? AND active = 1`,
+        [nowMs, incident.key],
+    );
+}
+
+async function collectCurrentAlerts(nowMs = Date.now()) {
     const currentStart = nowMs - CURRENT_WINDOW_MS;
     const baselineEnd = nowMs - BASELINE_GAP_MS;
     const baselineStart = baselineEnd - BASELINE_WINDOW_MS;
@@ -307,8 +431,6 @@ async function collectAlerts(nowMs = Date.now()) {
             if (!shouldAlert(cErrors, cAttempts, bErrors, bAttempts)) continue;
 
             const key = alertKey(kind.key, providerId);
-            if (await wasRecentlySent(key, nowMs)) continue;
-
             const dominantError = await loadDominantErrorSummary(providerId, currentStart, nowMs, cErrors);
             const alert = {
                 key,
@@ -332,22 +454,70 @@ async function collectAlerts(nowMs = Date.now()) {
     return alerts;
 }
 
-async function sendAlert(webhookClient, alert, nowMs = Date.now()) {
+async function collectIncidentNotifications(nowMs = Date.now()) {
+    const [currentAlerts, activeIncidents] = await Promise.all([
+        collectCurrentAlerts(nowMs),
+        loadActiveIncidentStates(),
+    ]);
+    const activeIncidentByKey = new Map(activeIncidents.map(incident => [incident.key, incident]));
+    const currentKeys = new Set(currentAlerts.map(alert => alert.key));
+    const detections = [];
+    const ongoing = [];
+    const resolutions = activeIncidents
+        .filter(incident => !currentKeys.has(incident.key))
+        .map(incident => ({ ...incident, resolvedAtMs: nowMs }));
+
+    for (const alert of currentAlerts) {
+        const activeIncident = activeIncidentByKey.get(alert.key);
+        if (activeIncident) {
+            ongoing.push({
+                ...alert,
+                incidentId: activeIncident.incidentId,
+                detectedAtMs: activeIncident.detectedAtMs,
+            });
+            continue;
+        }
+        detections.push({
+            ...alert,
+            incidentId: createIncidentId(nowMs),
+            detectedAtMs: nowMs,
+        });
+    }
+
+    return { detections, ongoing, resolutions };
+}
+
+async function sendDetectionAlert(webhookClient, alert, nowMs = Date.now()) {
     await webhookClient.send({
         embeds: [buildNotificationEmbed({ ...alert, detectedAtMs: nowMs })],
         username: 'ComebackTwitterEmbed 異常検知システム',
         allowedMentions: { parse: [] },
     });
-    await markSent(alert, nowMs);
+    await markIncidentDetected(alert, nowMs);
+}
+
+async function sendResolutionAlert(webhookClient, incident, nowMs = Date.now()) {
+    await webhookClient.send({
+        embeds: [buildResolutionEmbed({ ...incident, resolvedAtMs: nowMs })],
+        username: 'ComebackTwitterEmbed incident monitor',
+        allowedMentions: { parse: [] },
+    });
+    await markIncidentResolved(incident, nowMs);
 }
 
 async function tick(webhookClient, nowMs = Date.now()) {
     if (!webhookClient || running) return;
     running = true;
     try {
-        const alerts = await collectAlerts(nowMs);
-        for (const alert of alerts) {
-            await sendAlert(webhookClient, alert, nowMs);
+        const { detections, ongoing, resolutions } = await collectIncidentNotifications(nowMs);
+        for (const alert of ongoing) {
+            await markIncidentStillActive(alert, nowMs);
+        }
+        for (const alert of detections) {
+            await sendDetectionAlert(webhookClient, alert, nowMs);
+        }
+        for (const incident of resolutions) {
+            await sendResolutionAlert(webhookClient, incident, nowMs);
         }
     } catch (err) {
         console.warn('[errorRateNotifier] check failed:', err?.message || err);
@@ -369,14 +539,17 @@ module.exports = {
     start,
     tick,
     _internal: {
-        ALERT_COOLDOWN_MS,
         BASELINE_GAP_MS,
         BASELINE_WINDOW_MS,
         CHECK_INTERVAL_MS,
         CURRENT_WINDOW_MS,
         buildNotificationEmbed,
         buildNotificationMessage,
+        buildResolutionEmbed,
         classifyCause,
+        collectCurrentAlerts,
+        collectIncidentNotifications,
+        createIncidentId,
         shouldSuppressAlert,
         shouldAlert,
     },

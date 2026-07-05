@@ -582,6 +582,11 @@ const SCHEMA_STATEMENTS = [
         alert_key VARCHAR(191) NOT NULL PRIMARY KEY,
         provider_id VARCHAR(64) NOT NULL DEFAULT '',
         alert_kind VARCHAR(64) NOT NULL,
+        incident_id VARCHAR(64) NULL,
+        active TINYINT(1) NOT NULL DEFAULT 0,
+        detected_at_ms BIGINT NULL,
+        last_seen_at_ms BIGINT NULL,
+        resolved_at_ms BIGINT NULL,
         dominant_error_type VARCHAR(96) NULL,
         last_sent_at_ms BIGINT NOT NULL,
         last_current_rate DOUBLE NOT NULL DEFAULT 0,
@@ -591,7 +596,8 @@ const SCHEMA_STATEMENTS = [
         created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
         INDEX idx_error_alerts_sent (last_sent_at_ms),
-        INDEX idx_error_alerts_provider (provider_id)
+        INDEX idx_error_alerts_provider (provider_id),
+        INDEX idx_error_alerts_active (active, updated_at)
     ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
 
     `CREATE TABLE IF NOT EXISTS ${TABLES.guildSettingsWebuiNoticeState} (

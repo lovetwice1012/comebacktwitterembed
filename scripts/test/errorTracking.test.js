@@ -31,6 +31,10 @@ test('error tracking schema declares event and bucket tables', () => {
     assert.ok(SCHEMA_STATEMENTS.some(statement => statement.includes(TABLES.botProviderHourlyAggregates)));
     assert.ok(SCHEMA_STATEMENTS.some(statement => statement.includes(TABLES.botProviderHourlyUniqueKeys)));
     assert.ok(SCHEMA_STATEMENTS.some(statement => statement.includes(TABLES.botErrorAlerts)));
+    const alertsSchema = SCHEMA_STATEMENTS.find(statement => statement.includes(`CREATE TABLE IF NOT EXISTS ${TABLES.botErrorAlerts}`));
+    assert.match(alertsSchema, /incident_id VARCHAR\(64\) NULL/);
+    assert.match(alertsSchema, /active TINYINT\(1\) NOT NULL DEFAULT 0/);
+    assert.match(alertsSchema, /resolved_at_ms BIGINT NULL/);
 });
 
 test('error tracking normalizes urls and derives endpoint keys', () => {

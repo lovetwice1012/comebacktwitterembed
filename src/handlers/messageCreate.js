@@ -8,6 +8,8 @@ const { runSendSteps } = require('../providers/_dispatcher');
 const { recordAnalyticsEvent = () => {}, recordError, recordMetric, recordProviderContentEvent = () => {} } = require('../errorTracking');
 
 function register(client) {
+    const fetchedMessageMembers = new WeakMap();
+
     function truncateText(value, maxLength = 1000) {
         if (value === undefined || value === null) return null;
         const text = String(value);
@@ -66,12 +68,41 @@ function register(client) {
         return { user: [], channel: [], role: [] };
     }
 
-    function isMessageDisabledForProvider(message, providerSettings) {
+    async function fetchMessageMember(message) {
+        const userId = message?.author?.id;
+        if (!userId || typeof message?.guild?.members?.fetch !== 'function') return null;
+        try {
+            return await message.guild.members.fetch(userId);
+        } catch (err) {
+            recordError(err, {
+                fallbackType: 'message_member_fetch_failed',
+                source: 'messageCreate.fetchMember',
+                message,
+                userId,
+            });
+            return null;
+        }
+    }
+
+    async function getMessageMember(message) {
+        if (message.member) return message.member;
+        if (!message || typeof message !== 'object') return null;
+        if (!fetchedMessageMembers.has(message)) {
+            fetchedMessageMembers.set(message, fetchMessageMember(message));
+        }
+        return fetchedMessageMembers.get(message);
+    }
+
+    async function isMessageDisabledForProvider(message, providerSettings) {
         const disable = normalizeDisableSetting(providerSettings.disable);
         const isUserDisabled = disable.user.includes(message.author.id);
         const isChannelDisabled = disable.channel.includes(message.channel.id);
-        const isRoleDisabled = !message.webhookId && ifUserHasRole(message.member, disable.role);
-        return isUserDisabled || isChannelDisabled || isRoleDisabled;
+        if (isUserDisabled || isChannelDisabled) return true;
+        if (message.webhookId || disable.role.length === 0) return false;
+
+        const member = await getMessageMember(message);
+        if (!member) return false;
+        return ifUserHasRole(member, disable.role);
     }
 
     client.on(Events.MessageCreate, async message => {
@@ -101,7 +132,7 @@ function register(client) {
         for (const { provider, url } of matches) {
             const providerSettings = await getProviderSettings(provider, message.guild.id);
             if (providerSettings.enabled !== true) continue;
-            if (isMessageDisabledForProvider(message, providerSettings)) continue;
+            if (await isMessageDisabledForProvider(message, providerSettings)) continue;
             if (message.author.bot && providerSettings.extract_bot_message !== true && !message.webhookId) continue;
 
             let steps;

@@ -4,6 +4,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 
 const {
+    ifUserHasRole,
     convertBoolToEnableDisable,
     cleanMessageContent,
     extractTwitterUrls,
@@ -58,6 +59,14 @@ test('isOnlyUrlMessageContent: accepts whitespace and Discord URL decorations', 
     assert.equal(isOnlyUrlMessageContent(`<${url}>`, url), true);
     assert.equal(isOnlyUrlMessageContent(`||${url}||`, url), true);
     assert.equal(isOnlyUrlMessageContent(`look ${url}`, url), false);
+});
+
+test('ifUserHasRole: accepts a role list or a single role id', () => {
+    const member = { roles: { cache: new Map([['role-1', { id: 'role-1' }]]) } };
+    assert.equal(ifUserHasRole(member, ['role-1', 'role-2']), true);
+    assert.equal(ifUserHasRole(member, 'role-1'), true);
+    assert.equal(ifUserHasRole(member, 'role'), false);
+    assert.equal(ifUserHasRole(member, []), false);
 });
 
 test('conv_en_to_en_US: renames en to en-US', () => {

@@ -9,6 +9,32 @@ function fieldValue(embed, name) {
     return embed.fields.find(field => field.name === name)?.value;
 }
 
+function loadNotifierWithQuery(queryDatabase) {
+    const notifierPath = require.resolve('../../src/lifecycle/errorRateNotifier');
+    const dbPath = require.resolve('../../src/db');
+    const originalNotifierModule = require.cache[notifierPath];
+    const originalDbModule = require.cache[dbPath];
+
+    delete require.cache[notifierPath];
+    require.cache[dbPath] = {
+        id: dbPath,
+        filename: dbPath,
+        loaded: true,
+        exports: { queryDatabase },
+    };
+
+    const loadedNotifier = require(notifierPath);
+    return {
+        notifier: loadedNotifier,
+        restore() {
+            delete require.cache[notifierPath];
+            if (originalNotifierModule) require.cache[notifierPath] = originalNotifierModule;
+            if (originalDbModule) require.cache[dbPath] = originalDbModule;
+            else delete require.cache[dbPath];
+        },
+    };
+}
+
 test('error rate notifier triggers only on meaningful spikes', () => {
     const { shouldAlert } = notifier._internal;
 
@@ -47,6 +73,37 @@ test('error rate notification embed is an anomaly detection report', () => {
     assert.doesNotMatch(message, /<@|@everyone|@here/);
     assert.doesNotMatch(message, /JSON|provider_api|stack|HTTP|500|discord_missing_permissions/i);
     assert.doesNotMatch(message, /NSFW|ログイン必須|年齢制限|センシティブ|非公開/);
+});
+
+test('error rate notification embed includes incident id when assigned', () => {
+    const embed = notifier._internal.buildNotificationEmbed({
+        title: '逡ｰ蟶ｸ讀懃衍: 繝ｪ繝ｳ繧ｯ螻暮幕螟ｱ謨礼紫荳頑・',
+        kind: 'provider_extract',
+        providerId: 'twitter',
+        dominantErrorType: 'provider_api_http_error',
+        dominantErrorShare: 0.9,
+        currentRate: 0.25,
+        baselineRate: 0.02,
+        incidentId: 'CBTE-TEST-001',
+    });
+
+    assert.equal(fieldValue(embed, '障害ID'), 'CBTE-TEST-001');
+});
+
+test('error rate resolution embed identifies the resolved incident', () => {
+    const embed = notifier._internal.buildResolutionEmbed({
+        key: 'provider_extract:twitter',
+        kind: 'provider_extract',
+        providerId: 'twitter',
+        incidentId: 'CBTE-TEST-002',
+        detectedAtMs: Date.UTC(2026, 6, 5, 0, 0, 0),
+        resolvedAtMs: Date.UTC(2026, 6, 5, 1, 5, 0),
+    });
+
+    assert.equal(embed.color, 0x16A34A);
+    assert.equal(fieldValue(embed, '障害ID'), 'CBTE-TEST-002');
+    assert.equal(fieldValue(embed, 'プロバイダ'), 'Twitter / X');
+    assert.equal(fieldValue(embed, '継続時間'), '1h 5m');
 });
 
 test('error rate notification labels CBTE-side send failures clearly', () => {
@@ -92,6 +149,79 @@ test('error rate notifier suppresses server-scoped permission spikes', () => {
         currentRate: 0.2,
         baselineRate: 0.03,
     }), false);
+});
+
+test('error rate notifier creates a new incident for a new outage', async () => {
+    const nowMs = Date.UTC(2026, 6, 5, 0, 0, 0);
+    const { notifier: loadedNotifier, restore } = loadNotifierWithQuery(async (sql, params = []) => {
+        if (sql.includes('FROM bot_metric_buckets')) {
+            const [metricName,, endMs] = params;
+            const current = endMs === nowMs;
+            if (current && metricName === 'provider_extract_attempt') return [{ provider_id: 'twitter', count: 100 }];
+            if (current && metricName === 'provider_extract_error') return [{ provider_id: 'twitter', count: 30 }];
+            if (!current && metricName === 'provider_extract_attempt') return [{ provider_id: 'twitter', count: 1000 }];
+            if (!current && metricName === 'provider_extract_error') return [{ provider_id: 'twitter', count: 20 }];
+            return [];
+        }
+        if (sql.includes('FROM bot_error_buckets')) {
+            return [{ error_type: 'provider_api_http_error', count: 30 }];
+        }
+        if (sql.includes('FROM bot_error_alerts') && sql.includes('WHERE active = 1')) {
+            return [];
+        }
+        throw new Error(`Unexpected query: ${sql}`);
+    });
+
+    try {
+        const notifications = await loadedNotifier._internal.collectIncidentNotifications(nowMs);
+
+        assert.equal(notifications.detections.length, 1);
+        assert.equal(notifications.ongoing.length, 0);
+        assert.equal(notifications.resolutions.length, 0);
+        assert.equal(notifications.detections[0].key, 'provider_extract:twitter');
+        assert.match(notifications.detections[0].incidentId, /^CBTE-[0-9A-Z]+-[0-9A-F]{6}$/);
+    } finally {
+        restore();
+    }
+});
+
+test('error rate notifier resolves active incident when alert condition clears', async () => {
+    const nowMs = Date.UTC(2026, 6, 5, 2, 0, 0);
+    const detectedAtMs = Date.UTC(2026, 6, 5, 0, 0, 0);
+    const { notifier: loadedNotifier, restore } = loadNotifierWithQuery(async (sql) => {
+        if (sql.includes('FROM bot_metric_buckets')) return [];
+        if (sql.includes('FROM bot_error_alerts') && sql.includes('WHERE active = 1')) {
+            return [{
+                alert_key: 'provider_extract:twitter',
+                provider_id: 'twitter',
+                alert_kind: 'provider_extract',
+                dominant_error_type: 'provider_api_http_error',
+                incident_id: 'CBTE-ACTIVE-1',
+                active: 1,
+                detected_at_ms: detectedAtMs,
+                last_seen_at_ms: detectedAtMs + 15 * 60 * 1000,
+                resolved_at_ms: null,
+                last_sent_at_ms: detectedAtMs,
+                last_current_rate: 0.3,
+                last_baseline_rate: 0.02,
+                last_current_errors: 30,
+                last_current_attempts: 100,
+            }];
+        }
+        throw new Error(`Unexpected query: ${sql}`);
+    });
+
+    try {
+        const notifications = await loadedNotifier._internal.collectIncidentNotifications(nowMs);
+
+        assert.equal(notifications.detections.length, 0);
+        assert.equal(notifications.ongoing.length, 0);
+        assert.equal(notifications.resolutions.length, 1);
+        assert.equal(notifications.resolutions[0].incidentId, 'CBTE-ACTIVE-1');
+        assert.equal(notifications.resolutions[0].resolvedAtMs, nowMs);
+    } finally {
+        restore();
+    }
 });
 
 test('error rate notification avoids over-specific causes when errors are mixed', () => {

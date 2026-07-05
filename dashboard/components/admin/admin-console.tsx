@@ -26,6 +26,7 @@ import type { DashboardUser, SettingState } from "@/lib/types";
 
 type AdminTab = "overview" | "analytics" | "guildPreview" | "providerPreview" | "logs" | "database" | "support";
 type Row = Record<string, unknown>;
+const REPORT_CACHE_POLL_MS = 5000;
 
 type TableSummary = {
   table: string;
@@ -2055,8 +2056,8 @@ function DetailedAnalyticsPanel() {
     setFilters((current) => ({ ...current, [key]: value }));
   }
 
-  async function load(nextFilters = filters) {
-    setLoading(true);
+  const load = useCallback(async (nextFilters = filters, options: { silent?: boolean } = {}) => {
+    if (!options.silent) setLoading(true);
     setError(null);
     try {
       const search = buildDetailedAnalyticsSearch(nextFilters);
@@ -2064,14 +2065,22 @@ function DetailedAnalyticsPanel() {
     } catch (err) {
       setError(err instanceof Error ? err.message : "詳細分析の読み込みに失敗しました");
     } finally {
-      setLoading(false);
+      if (!options.silent) setLoading(false);
     }
-  }
+  }, [filters]);
 
   async function reset() {
     setFilters(defaultDetailedFilters);
     await load(defaultDetailedFilters);
   }
+
+  useEffect(() => {
+    if (!analytics?.cache?.refreshing) return;
+    const timer = window.setTimeout(() => {
+      void load(filters, { silent: true });
+    }, REPORT_CACHE_POLL_MS);
+    return () => window.clearTimeout(timer);
+  }, [analytics, filters, load]);
 
   const contentSummary = analytics?.summary.content || {};
   const eventSummary = analytics?.summary.analytics || {};
@@ -2673,8 +2682,8 @@ function GuildAdminPreviewPanel() {
     setFilters((current) => ({ ...current, [key]: value }));
   }
 
-  async function load(nextFilters = filters) {
-    setLoading(true);
+  const load = useCallback(async (nextFilters = filters, options: { silent?: boolean } = {}) => {
+    if (!options.silent) setLoading(true);
     setError(null);
     try {
       const search = buildGuildPreviewSearch(nextFilters);
@@ -2682,14 +2691,22 @@ function GuildAdminPreviewPanel() {
     } catch (err) {
       setError(err instanceof Error ? err.message : "サーバー分析プレビューの読み込みに失敗しました");
     } finally {
-      setLoading(false);
+      if (!options.silent) setLoading(false);
     }
-  }
+  }, [filters]);
 
   async function reset() {
     setFilters(defaultGuildPreviewFilters);
     await load(defaultGuildPreviewFilters);
   }
+
+  useEffect(() => {
+    if (!preview?.cache?.refreshing) return;
+    const timer = window.setTimeout(() => {
+      void load(filters, { silent: true });
+    }, REPORT_CACHE_POLL_MS);
+    return () => window.clearTimeout(timer);
+  }, [preview, filters, load]);
 
   const retention = previewSectionRow(preview, "audienceRetention");
   const guildTimeSeries = previewSectionRows(preview, "timeSeries");
@@ -2994,8 +3011,8 @@ function ProviderMarketingPreviewPanel() {
     setFilters((current) => ({ ...current, [key]: value }));
   }
 
-  async function load(nextFilters = filters) {
-    setLoading(true);
+  const load = useCallback(async (nextFilters = filters, options: { silent?: boolean } = {}) => {
+    if (!options.silent) setLoading(true);
     setError(null);
     try {
       const search = buildProviderPreviewSearch(nextFilters);
@@ -3003,14 +3020,22 @@ function ProviderMarketingPreviewPanel() {
     } catch (err) {
       setError(err instanceof Error ? err.message : "マーケティング分析プレビューの読み込みに失敗しました");
     } finally {
-      setLoading(false);
+      if (!options.silent) setLoading(false);
     }
-  }
+  }, [filters]);
 
   async function reset() {
     setFilters(defaultProviderPreviewFilters);
     await load(defaultProviderPreviewFilters);
   }
+
+  useEffect(() => {
+    if (!preview?.cache?.refreshing) return;
+    const timer = window.setTimeout(() => {
+      void load(filters, { silent: true });
+    }, REPORT_CACHE_POLL_MS);
+    return () => window.clearTimeout(timer);
+  }, [preview, filters, load]);
 
   const retention = previewSectionRow(preview, "audienceRetention");
   const providerTimeSeries = previewSectionRows(preview, "timeSeries");
@@ -3736,10 +3761,10 @@ export function AdminConsole({
   const [databaseRequested, setDatabaseRequested] = useState(false);
   const [refreshingOverview, setRefreshingOverview] = useState(false);
 
-  const loadOverview = useCallback(async (forceRefresh = false) => {
+  const loadOverview = useCallback(async (forceRefresh = false, options: { silent?: boolean } = {}) => {
     if (forceRefresh) {
       setRefreshingOverview(true);
-    } else {
+    } else if (!options.silent) {
       setOverviewLoading(true);
     }
     setOverviewError(null);
@@ -3751,7 +3776,7 @@ export function AdminConsole({
     } finally {
       if (forceRefresh) {
         setRefreshingOverview(false);
-      } else {
+      } else if (!options.silent) {
         setOverviewLoading(false);
       }
     }
@@ -3786,6 +3811,14 @@ export function AdminConsole({
   useEffect(() => {
     void loadOverview(false);
   }, [loadOverview]);
+
+  useEffect(() => {
+    if (!overview?.cache?.refreshing) return;
+    const timer = window.setTimeout(() => {
+      void loadOverview(false, { silent: true });
+    }, REPORT_CACHE_POLL_MS);
+    return () => window.clearTimeout(timer);
+  }, [overview, loadOverview]);
 
   useEffect(() => {
     if (tab === "logs" && !logsRequested) void loadLogs();

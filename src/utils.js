@@ -64,7 +64,21 @@ function antiDirectoryTraversalAttack(userInput) {
 }
 
 function ifUserHasRole(user, roleidlist) {
-    return user.roles.cache.some(role => roleidlist.includes(role.id));
+    const roleIds = (Array.isArray(roleidlist) ? roleidlist : [roleidlist])
+        .map(roleId => String(roleId ?? ''))
+        .filter(Boolean);
+    if (roleIds.length === 0) return false;
+
+    const roles = user.roles.cache;
+    if (typeof roles.has === 'function') {
+        return roleIds.some(roleId => roles.has(roleId));
+    }
+
+    if (typeof roles.some === 'function') {
+        return roles.some(role => roleIds.includes(String(role?.id ?? '')));
+    }
+
+    return false;
 }
 
 function convertBoolToEnableDisable(bool, locale) {

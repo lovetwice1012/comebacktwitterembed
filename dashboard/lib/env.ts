@@ -23,6 +23,8 @@ type RootConfig = {
     guildCacheTtlMs?: number;
     auditHashSecret?: string;
     adminUserIds?: string[] | string;
+    adminAnalyticsPrewarm?: boolean;
+    dbConnectionLimit?: number;
   };
   mediaDelivery?: {
     publicBaseUrl?: string;
@@ -63,7 +65,7 @@ function encodePart(value: string) {
 }
 
 export function getDatabaseUrl() {
-  if (process.env.DATABASE_URL) return process.env.DATABASE_URL;
+  if (process.env.DATABASE_URL) return withDashboardConnectionLimit(process.env.DATABASE_URL);
 
   const cfg = readRootConfig().db || {};
   const host = process.env.DB_HOST || cfg.host || "localhost";
@@ -72,7 +74,31 @@ export function getDatabaseUrl() {
   const database = process.env.DB_DATABASE || cfg.database || "ComebackTwitterEmbed";
   const charset = process.env.DB_CHARSET || cfg.charset || "utf8mb4";
 
-  return `mysql://${encodePart(user)}:${encodePart(password)}@${host}:3306/${database}?charset=${charset}`;
+  return withDashboardConnectionLimit(`mysql://${encodePart(user)}:${encodePart(password)}@${host}:3306/${database}?charset=${charset}`);
+}
+
+function getDashboardDbConnectionLimit() {
+  const envValue = Number(process.env.DASHBOARD_DB_CONNECTION_LIMIT);
+  if (Number.isFinite(envValue) && envValue > 0) return Math.floor(envValue);
+  if (process.env.DASHBOARD_DB_CONNECTION_LIMIT === "0") return 0;
+  const configValue = Number(readRootConfig().dashboard?.dbConnectionLimit);
+  return Number.isFinite(configValue) && configValue > 0 ? Math.floor(configValue) : 2;
+}
+
+function withDashboardConnectionLimit(rawUrl: string) {
+  const limit = getDashboardDbConnectionLimit();
+  if (!limit) return rawUrl;
+  try {
+    const url = new URL(rawUrl);
+    if (!/^mysql/i.test(url.protocol.replace(/:$/, ""))) return rawUrl;
+    if (!url.searchParams.has("connection_limit")) {
+      url.searchParams.set("connection_limit", String(limit));
+    }
+    return url.toString();
+  } catch {
+    if (/[?&]connection_limit=/.test(rawUrl)) return rawUrl;
+    return `${rawUrl}${rawUrl.includes("?") ? "&" : "?"}connection_limit=${limit}`;
+  }
 }
 
 export function getBotToken() {
@@ -124,4 +150,10 @@ export function getDashboardNumber(key: "discordApiTimeoutMs" | "guildCacheTtlMs
 export function getAuditHashSecret() {
   const cfg = readRootConfig();
   return process.env.DASHBOARD_AUDIT_HASH_SECRET || cfg.dashboard?.auditHashSecret || getNextAuthSecret() || "dashboard-audit";
+}
+
+export function getDashboardAdminAnalyticsPrewarm() {
+  const envValue = process.env.DASHBOARD_ADMIN_ANALYTICS_PREWARM;
+  if (envValue !== undefined && envValue !== "") return /^(1|true|yes|on)$/i.test(envValue);
+  return readRootConfig().dashboard?.adminAnalyticsPrewarm === true;
 }
