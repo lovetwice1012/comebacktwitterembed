@@ -829,7 +829,7 @@ async function extract(message, url, s, opts) {
 
     // deleteSourceIfOnlyLink
     if (!quoted && s.deletemessageifonlypostedtweetlink === true && sourceMessageIsOnlyUrl) {
-        if (s.deletemessageifonlypostedtweetlink_secoundaryextractmode === true && s.secondary_extract_mode === true) {
+        if (s.secondary_extract_mode === true && s.deletemessageifonlypostedtweetlink_secoundaryextractmode !== true) {
             step.suppressSourceEmbeds = true;
         } else {
             step.deleteSource = true;

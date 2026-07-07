@@ -357,6 +357,44 @@ test('twitter extract: delete source accepts whitespace around an only-url messa
     assert.equal(result[0].deleteSource, true);
 });
 
+test('twitter extract: secondary mode deletes link-only source when secondary delete is enabled', async () => {
+    const provider = loadTwitterProviderWithTweets({
+        1: createTweet('1', { mediaURLs: ['https://video.twimg.com/ext_tw_video/1/pu/vid/1280x720/video.mp4'] }),
+    });
+
+    const result = await provider.extract(createMessage(), 'https://twitter.com/a/status/1', {
+        legacy_mode: false,
+        secondary_extract_mode: true,
+        secondary_extract_mode_multiple_images: true,
+        secondary_extract_mode_video: true,
+        deletemessageifonlypostedtweetlink: true,
+        deletemessageifonlypostedtweetlink_secoundaryextractmode: true,
+    });
+
+    assert.ok(Array.isArray(result));
+    assert.equal(result[0].deleteSource, true);
+    assert.equal(result[0].suppressSourceEmbeds, undefined);
+});
+
+test('twitter extract: secondary mode only suppresses link-only source when secondary delete is disabled', async () => {
+    const provider = loadTwitterProviderWithTweets({
+        1: createTweet('1', { mediaURLs: ['https://video.twimg.com/ext_tw_video/1/pu/vid/1280x720/video.mp4'] }),
+    });
+
+    const result = await provider.extract(createMessage(), 'https://twitter.com/a/status/1', {
+        legacy_mode: false,
+        secondary_extract_mode: true,
+        secondary_extract_mode_multiple_images: true,
+        secondary_extract_mode_video: true,
+        deletemessageifonlypostedtweetlink: true,
+        deletemessageifonlypostedtweetlink_secoundaryextractmode: false,
+    });
+
+    assert.ok(Array.isArray(result));
+    assert.equal(result[0].deleteSource, undefined);
+    assert.equal(result[0].suppressSourceEmbeds, true);
+});
+
 test('twitter extract: display density and media display mode reshape tweet output', async () => {
     const provider = loadTwitterProviderWithTweets({
         1: createTweet('1', {
