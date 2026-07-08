@@ -1,2 +1,2 @@
 ALTER TABLE guild_provider_settings
-    ADD COLUMN suppress_source_embeds_if_only_posted_tweet_link_secondary_extract_mode TINYINT(1) NULL AFTER delete_if_only_posted_tweet_link_secondary_extract_mode;
+    ADD COLUMN suppress_source_embeds_secondary_extract_mode TINYINT(1) NULL AFTER delete_if_only_posted_tweet_link_secondary_extract_mode;

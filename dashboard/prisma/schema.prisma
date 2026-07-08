@@ -24,7 +24,7 @@ model GuildProviderSetting {
   sendMediaAsAttachmentsAsDefault              Boolean? @map("send_media_as_attachments_as_default")
   deleteIfOnlyPostedTweetLink                  Boolean? @map("delete_if_only_posted_tweet_link")
   deleteIfOnlyPostedTweetLinkSecondaryExtractMode Boolean? @map("delete_if_only_posted_tweet_link_secondary_extract_mode")
-  suppressSourceEmbedsIfOnlyPostedTweetLinkSecondaryExtractMode Boolean? @map("suppress_source_embeds_if_only_posted_tweet_link_secondary_extract_mode")
+  suppressSourceEmbedsIfOnlyPostedTweetLinkSecondaryExtractMode Boolean? @map("suppress_source_embeds_secondary_extract_mode")
   alwaysReplyIfPostedTweetLink                 Boolean? @map("always_reply_if_posted_tweet_link")
   quoteRepostMaxDepth                          Int?     @map("quote_repost_max_depth")
   quoteRepostDoNotExtract                      Boolean? @map("quote_repost_do_not_extract")

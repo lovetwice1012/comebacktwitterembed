@@ -124,7 +124,7 @@ const PROVIDER_SETTING_COLUMNS = {
         type: 'bool',
     },
     suppress_source_embeds_if_only_posted_tweet_link_secondary_extract_mode: {
-        column: 'suppress_source_embeds_if_only_posted_tweet_link_secondary_extract_mode',
+        column: 'suppress_source_embeds_secondary_extract_mode',
         type: 'bool',
     },
     alwaysreplyifpostedtweetlink: {

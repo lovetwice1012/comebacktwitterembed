@@ -226,8 +226,18 @@ test('twitter secondary source embed suppression migration is present', () => {
 
     assert.ok(_internal.listMigrationFiles().includes('20260708_add_twitter_secondary_source_embed_suppression.sql'));
     assert.ok(sql.includes('ALTER TABLE guild_provider_settings'));
+    assert.equal(PROVIDER_SETTING_COLUMNS[key].column, 'suppress_source_embeds_secondary_extract_mode');
     assert.ok(sql.includes(PROVIDER_SETTING_COLUMNS[key].column));
     assert.equal(PROVIDER_SETTING_COLUMNS[key].type, 'bool');
+});
+
+test('provider setting column identifiers fit MySQL identifier limits', () => {
+    for (const [key, spec] of Object.entries(PROVIDER_SETTING_COLUMNS)) {
+        assert.ok(
+            spec.column.length <= 64,
+            `${key} maps to MySQL column identifier longer than 64 characters: ${spec.column}`
+        );
+    }
 });
 
 test('providers route metadata fetch failures through common failure display policy', () => {
