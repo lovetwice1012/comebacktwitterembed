@@ -176,6 +176,9 @@ export function settingWarnings(key: string, value: SettingValue, currentValues:
   if (key === "secondary_extract_mode_video" && currentValues.secondary_extract_mode !== true) {
     warnings.push(t("warning.secondaryVideoNoEffect"));
   }
+  if (key === "suppress_source_embeds_if_only_posted_tweet_link_secondary_extract_mode" && currentValues.secondary_extract_mode !== true) {
+    warnings.push(t("warning.secondarySourcePreviewNoEffect"));
+  }
   if (key === "quote_repost_max_depth" && currentValues.twitter_quote_mode === "hidden") {
     warnings.push(t("warning.quoteDepthIrrelevant"));
   }

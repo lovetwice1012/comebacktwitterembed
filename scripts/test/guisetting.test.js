@@ -183,6 +183,7 @@ test('guisetting covers every setting exposed by /settings', () => {
             'sendMediaAsAttachmentsAsDefault',
             'deletemessageifonlypostedtweetlink',
             'deletemessageifonlypostedtweetlink_secoundaryextractmode',
+            'suppress_source_embeds_if_only_posted_tweet_link_secondary_extract_mode',
             'alwaysreplyifpostedtweetlink',
             'anonymous_expand',
             'display_density',

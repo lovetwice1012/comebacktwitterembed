@@ -728,6 +728,21 @@ UX:
 * secondary extract modeがOFFの場合は無効状態または依存警告を表示
 * ONにすると元投稿削除の条件が変わることを説明する
 
+suppress_source_embeds_if_only_posted_tweet_link_secondary_extract_mode
+
+secondary extract mode時、条件に一致して展開されたリンクのみ投稿のDiscord標準リンクプレビューを抑制する。
+
+注意:
+
+* 元のユーザーメッセージ自体は削除しない
+* deletemessageifonlypostedtweetlink_secoundaryextractmode がONで削除される場合は削除を優先する
+* BotにManage Messages権限が必要
+
+UX:
+
+* secondary extract modeがOFFの場合は無効状態または依存警告を表示
+* リンク以外の本文がある投稿では抑制しないことを説明する
+
 alwaysreplyifpostedtweetlink
 
 Botの展開結果を元投稿への返信として送信する。

@@ -362,7 +362,7 @@ test('twitter extract: secondary mode deletes link-only source when secondary de
         1: createTweet('1', { mediaURLs: ['https://video.twimg.com/ext_tw_video/1/pu/vid/1280x720/video.mp4'] }),
     });
 
-    const result = await provider.extract(createMessage(), 'https://twitter.com/a/status/1', {
+    const result = await provider.extract(createMessage('1'), 'https://twitter.com/a/status/1', {
         legacy_mode: false,
         secondary_extract_mode: true,
         secondary_extract_mode_multiple_images: true,
@@ -376,7 +376,7 @@ test('twitter extract: secondary mode deletes link-only source when secondary de
     assert.equal(result[0].suppressSourceEmbeds, undefined);
 });
 
-test('twitter extract: secondary mode only suppresses link-only source when secondary delete is disabled', async () => {
+test('twitter extract: secondary mode leaves link-only source when secondary delete is disabled', async () => {
     const provider = loadTwitterProviderWithTweets({
         1: createTweet('1', { mediaURLs: ['https://video.twimg.com/ext_tw_video/1/pu/vid/1280x720/video.mp4'] }),
     });
@@ -392,7 +392,62 @@ test('twitter extract: secondary mode only suppresses link-only source when seco
 
     assert.ok(Array.isArray(result));
     assert.equal(result[0].deleteSource, undefined);
-    assert.equal(result[0].suppressSourceEmbeds, true);
+    assert.equal(result[0].suppressSourceEmbeds, undefined);
+});
+
+test('twitter extract: secondary mode can suppress link-only source preview without deleting the source', async () => {
+    const provider = loadTwitterProviderWithTweets({
+        1: createTweet('1', { mediaURLs: ['https://video.twimg.com/ext_tw_video/1/pu/vid/1280x720/video.mp4'] }),
+        2: createTweet('2', {
+            mediaURLs: [
+                'https://pbs.twimg.com/media/one.jpg',
+                'https://pbs.twimg.com/media/two.jpg',
+            ],
+        }),
+    });
+
+    const video = await provider.extract(createMessage('1'), 'https://twitter.com/a/status/1', {
+        legacy_mode: false,
+        secondary_extract_mode: true,
+        secondary_extract_mode_multiple_images: true,
+        secondary_extract_mode_video: true,
+        suppress_source_embeds_if_only_posted_tweet_link_secondary_extract_mode: true,
+    });
+
+    const multiImage = await provider.extract(createMessage('2'), 'https://twitter.com/a/status/2', {
+        legacy_mode: false,
+        secondary_extract_mode: true,
+        secondary_extract_mode_multiple_images: true,
+        secondary_extract_mode_video: true,
+        suppress_source_embeds_if_only_posted_tweet_link_secondary_extract_mode: true,
+    });
+
+    assert.ok(Array.isArray(video));
+    assert.equal(video[0].deleteSource, undefined);
+    assert.equal(video[0].suppressSourceEmbeds, true);
+    assert.ok(Array.isArray(multiImage));
+    assert.equal(multiImage[0].deleteSource, undefined);
+    assert.equal(multiImage[0].suppressSourceEmbeds, true);
+});
+
+test('twitter extract: secondary preview suppression keeps source preview when matching tweet is posted with extra text', async () => {
+    const provider = loadTwitterProviderWithTweets({
+        1: createTweet('1', { mediaURLs: ['https://video.twimg.com/ext_tw_video/1/pu/vid/1280x720/video.mp4'] }),
+    });
+    const message = createMessage('1');
+    message.content = `watch this https://twitter.com/a/status/1`;
+
+    const result = await provider.extract(message, 'https://twitter.com/a/status/1', {
+        legacy_mode: false,
+        secondary_extract_mode: true,
+        secondary_extract_mode_multiple_images: true,
+        secondary_extract_mode_video: true,
+        suppress_source_embeds_if_only_posted_tweet_link_secondary_extract_mode: true,
+    });
+
+    assert.ok(Array.isArray(result));
+    assert.equal(result[0].deleteSource, undefined);
+    assert.equal(result[0].suppressSourceEmbeds, undefined);
 });
 
 test('twitter extract: display density and media display mode reshape tweet output', async () => {

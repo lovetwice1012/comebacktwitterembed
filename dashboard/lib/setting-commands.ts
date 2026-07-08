@@ -96,6 +96,9 @@ function twitterCommand(setting: SettingState, value: SettingValue, values: Reco
     ].filter((option): option is string => Boolean(option));
     return options.length ? [{ command: `/settings twitter secondaryextracttarget ${options.join(" ")}` }] : [];
   }
+  if (setting.key === "suppress_source_embeds_if_only_posted_tweet_link_secondary_extract_mode") {
+    return [{ command: `/settings twitter secondarysourcepreview boolean:${boolOption(value)}` }];
+  }
   return [];
 }
 

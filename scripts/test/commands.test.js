@@ -70,6 +70,7 @@ test('settings command keeps quick common and provider-specific subcommands', ()
     const twitterSettingNames = new Set((twitterGroup.options || []).map(option => option.name));
     assert.ok(twitterSettingNames.has('passivemode'));
     assert.ok(twitterSettingNames.has('secondaryextractmode'));
+    assert.ok(twitterSettingNames.has('secondarysourcepreview'));
 
     const pixivGroup = settingsCommand.options?.find(option => option.name === 'pixiv');
     assert.ok(pixivGroup, 'settings command should include pixiv group');

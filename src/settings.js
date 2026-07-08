@@ -45,6 +45,7 @@ const SETTINGS_DEFAULT_FILE = {
     secondary_extract_mode_video: {},
     save_tweet_quota_override: {},
     deletemessageifonlypostedtweetlink_secoundaryextractmode: {},
+    suppress_source_embeds_if_only_posted_tweet_link_secondary_extract_mode: {},
     quote_repost_max_depth: {},
     byProvider: {},
     pixiv_images_per_step: {},
@@ -110,6 +111,7 @@ const SETTINGS_MIGRATIONS = {
     secondary_extract_mode_video: {},
     save_tweet_quota_override: {},
     deletemessageifonlypostedtweetlink_secoundaryextractmode: {},
+    suppress_source_embeds_if_only_posted_tweet_link_secondary_extract_mode: {},
     quote_repost_max_depth: {},
     byProvider: {},
     pixiv_images_per_step: {},
@@ -165,6 +167,7 @@ const LEGACY_TWITTER_GUILD_KEYS = [
     'secondary_extract_mode_multiple_images',
     'secondary_extract_mode_video',
     'deletemessageifonlypostedtweetlink_secoundaryextractmode',
+    'suppress_source_embeds_if_only_posted_tweet_link_secondary_extract_mode',
     'quote_repost_max_depth',
 ];
 
@@ -219,6 +222,10 @@ const PROVIDER_SETTING_COLUMNS = {
     },
     deletemessageifonlypostedtweetlink_secoundaryextractmode: {
         column: 'delete_if_only_posted_tweet_link_secondary_extract_mode',
+        type: 'bool',
+    },
+    suppress_source_embeds_if_only_posted_tweet_link_secondary_extract_mode: {
+        column: 'suppress_source_embeds_if_only_posted_tweet_link_secondary_extract_mode',
         type: 'bool',
     },
     alwaysreplyifpostedtweetlink: {

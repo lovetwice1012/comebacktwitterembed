@@ -156,6 +156,10 @@ const SETTING_TEXT_OVERRIDES: Record<string, { label?: LocaleText; description?:
     label: { ja: "secondary extract時も元投稿を削除", en: "Delete source message in secondary extract mode" },
     description: { ja: "secondary extract modeで展開した場合も、リンクだけの元投稿を削除します。", en: "Also deletes link-only source messages when secondary extract mode expands them." },
   },
+  suppress_source_embeds_if_only_posted_tweet_link_secondary_extract_mode: {
+    label: { ja: "セカンダリ展開時の元リンクプレビュー抑制", en: "Suppress source preview in secondary extract mode" },
+    description: { ja: "secondary extract modeで条件に合うツイートを展開したとき、元投稿がリンクのみならDiscord標準リンクプレビューを抑制します。", en: "Suppresses Discord's built-in link preview for link-only source messages when secondary extract mode expands a matching tweet." },
+  },
   display_density: {
     label: { ja: "出力密度", en: "Output density" },
     description: { ja: "埋め込みに含める情報量を選びます。", en: "Chooses how much optional metadata this provider includes in embeds." },
@@ -542,7 +546,12 @@ function impactFor(spec: BotSettingSpec) {
 
 function dependenciesFor(spec: BotSettingSpec) {
   const key = spec.key || spec.settingKey || "";
-  if (key === "secondary_extract_mode_multiple_images" || key === "secondary_extract_mode_video" || key === "deletemessageifonlypostedtweetlink_secoundaryextractmode") {
+  if (
+    key === "secondary_extract_mode_multiple_images"
+    || key === "secondary_extract_mode_video"
+    || key === "deletemessageifonlypostedtweetlink_secoundaryextractmode"
+    || key === "suppress_source_embeds_if_only_posted_tweet_link_secondary_extract_mode"
+  ) {
     return ["secondary_extract_mode"];
   }
   if (key === "quote_repost_max_depth") return ["twitter_quote_mode", "quote_repost_do_not_extract"];

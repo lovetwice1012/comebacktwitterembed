@@ -705,6 +705,7 @@ function routeMedia(tweet, baseEmbed, compact, lang, sendAsAttachmentsByDefault)
  *                              secondary_extract_mode_video, sendMediaAsAttachmentsAsDefault,
  *                              deletemessageifonlypostedtweetlink,
  *                              deletemessageifonlypostedtweetlink_secoundaryextractmode,
+ *                              suppress_source_embeds_if_only_posted_tweet_link_secondary_extract_mode,
  *                              alwaysreplyifpostedtweetlink, quote_repost_max_depth,
  *                              quote_repost_do_not_extract }
  * @param {object} [opts]    - 内部用: { quoted, depth }
@@ -827,12 +828,24 @@ async function extract(message, url, s, opts) {
         step.suppressSourceEmbeds = true;
     }
 
-    // deleteSourceIfOnlyLink
-    if (!quoted && s.deletemessageifonlypostedtweetlink === true && sourceMessageIsOnlyUrl) {
-        if (s.secondary_extract_mode === true && s.deletemessageifonlypostedtweetlink_secoundaryextractmode !== true) {
+    // deleteSourceIfOnlyLink / secondary source preview handling
+    if (!quoted && sourceMessageIsOnlyUrl) {
+        if (s.deletemessageifonlypostedtweetlink === true) {
+            if (s.secondary_extract_mode === true) {
+                if (s.deletemessageifonlypostedtweetlink_secoundaryextractmode === true) {
+                    step.deleteSource = true;
+                }
+            } else {
+                step.deleteSource = true;
+            }
+        }
+
+        if (
+            !step.deleteSource
+            && s.secondary_extract_mode === true
+            && s.suppress_source_embeds_if_only_posted_tweet_link_secondary_extract_mode === true
+        ) {
             step.suppressSourceEmbeds = true;
-        } else {
-            step.deleteSource = true;
         }
     }
 
@@ -887,6 +900,7 @@ const twitterProvider = {
         'sendMediaAsAttachmentsAsDefault',
         'deletemessageifonlypostedtweetlink',
         'deletemessageifonlypostedtweetlink_secoundaryextractmode',
+        'suppress_source_embeds_if_only_posted_tweet_link_secondary_extract_mode',
         'alwaysreplyifpostedtweetlink',
         'anonymous_expand',
         'display_density',

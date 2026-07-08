@@ -206,11 +206,21 @@ const SETTING_SPEC_CATALOG = {
         key: 'deletemessageifonlypostedtweetlink_secoundaryextractmode',
         label: text('Delete link-only in secondary mode', 'セカンダリ展開でも元投稿を削除'),
         description: text(
-            'For Twitter/X secondary extract mode, also removes the original link-only message instead of just suppressing previews.',
-            'Twitter/Xのセカンダリ展開モードでも、プレビュー抑制だけでなくリンクだけの元投稿を削除します。'
+            'For Twitter/X secondary extract mode, also deletes the original link-only message after a matching tweet is expanded.',
+            'Twitter/Xのセカンダリ展開モードでも、条件に合うツイートを展開したときリンクだけの元投稿を削除します。'
         ),
         kind: 'bool',
         settingKey: 'deletemessageifonlypostedtweetlink_secoundaryextractmode',
+    },
+    suppress_source_embeds_if_only_posted_tweet_link_secondary_extract_mode: {
+        key: 'suppress_source_embeds_if_only_posted_tweet_link_secondary_extract_mode',
+        label: text('Suppress link preview in secondary mode', 'セカンダリ展開時の元リンクプレビュー抑制'),
+        description: text(
+            'For Twitter/X secondary extract mode, suppresses Discord\'s built-in preview when a matching tweet was posted as the only message content.',
+            'Twitter/Xのセカンダリ展開モードで条件に合うツイートを展開したとき、元投稿がリンクのみならDiscord標準リンクプレビューを抑制します。'
+        ),
+        kind: 'bool',
+        settingKey: 'suppress_source_embeds_if_only_posted_tweet_link_secondary_extract_mode',
     },
     alwaysreplyifpostedtweetlink: {
         key: 'alwaysreplyifpostedtweetlink',

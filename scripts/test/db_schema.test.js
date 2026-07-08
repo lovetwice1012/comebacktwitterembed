@@ -219,6 +219,17 @@ test('twitter account quote depth migration is present', () => {
     assert.equal(PROVIDER_SETTING_COLUMNS.quote_repost_depth_by_account.type, 'jsonObject');
 });
 
+test('twitter secondary source embed suppression migration is present', () => {
+    const file = path.join(MIGRATIONS_DIR, '20260708_add_twitter_secondary_source_embed_suppression.sql');
+    const sql = fs.readFileSync(file, 'utf8');
+    const key = 'suppress_source_embeds_if_only_posted_tweet_link_secondary_extract_mode';
+
+    assert.ok(_internal.listMigrationFiles().includes('20260708_add_twitter_secondary_source_embed_suppression.sql'));
+    assert.ok(sql.includes('ALTER TABLE guild_provider_settings'));
+    assert.ok(sql.includes(PROVIDER_SETTING_COLUMNS[key].column));
+    assert.equal(PROVIDER_SETTING_COLUMNS[key].type, 'bool');
+});
+
 test('providers route metadata fetch failures through common failure display policy', () => {
     const providerIds = [
         'twitter',

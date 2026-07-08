@@ -45,6 +45,7 @@ const PROVIDER_HANDLERS = {
         passivemode:                  require('../../providers/twitter/commands/settings/passivemode'),
         secondaryextractmode:         require('../../providers/twitter/commands/settings/secondaryextractmode'),
         secondaryextracttarget:       require('../../providers/twitter/commands/settings/secondaryextracttarget'),
+        secondarysourcepreview:       require('../../providers/twitter/commands/settings/secondarysourcepreview'),
     },
     pixiv: {
         images_per_step: require('../../providers/pixiv/commands/settings/images_per_step'),
@@ -57,6 +58,7 @@ const DEFAULT_PROVIDER_BY_SUBCOMMAND = {
     passivemode: 'twitter',
     secondaryextractmode: 'twitter',
     secondaryextracttarget: 'twitter',
+    secondarysourcepreview: 'twitter',
     images_per_step: 'pixiv',
 };
 
@@ -451,6 +453,14 @@ function buildTwitterOptions() {
                     required: false,
                 },
             ],
+        },
+        {
+            name: 'secondarysourcepreview',
+            name_localizations: jaOnly(commandNameLocales.secondarysourcepreview),
+            description: 'suppress source preview in secondary extract mode',
+            description_localizations: omitLocalization(descriptionLocales.settingsSecondarySourcePreview),
+            type: ApplicationCommandOptionType.Subcommand,
+            options: [boolOption],
         },
     ];
 }

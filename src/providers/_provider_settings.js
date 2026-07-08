@@ -32,6 +32,7 @@ const PROVIDER_DEFAULTS = {
     sendMediaAsAttachmentsAsDefault:                      false,
     deletemessageifonlypostedtweetlink:                   false,
     deletemessageifonlypostedtweetlink_secoundaryextractmode: false,
+    suppress_source_embeds_if_only_posted_tweet_link_secondary_extract_mode: false,
     alwaysreplyifpostedtweetlink:                         false,
     quote_repost_max_depth:                               0,
     quote_repost_do_not_extract:                          false,
@@ -120,6 +121,10 @@ const PROVIDER_SETTING_COLUMNS = {
     },
     deletemessageifonlypostedtweetlink_secoundaryextractmode: {
         column: 'delete_if_only_posted_tweet_link_secondary_extract_mode',
+        type: 'bool',
+    },
+    suppress_source_embeds_if_only_posted_tweet_link_secondary_extract_mode: {
+        column: 'suppress_source_embeds_if_only_posted_tweet_link_secondary_extract_mode',
         type: 'bool',
     },
     alwaysreplyifpostedtweetlink: {
