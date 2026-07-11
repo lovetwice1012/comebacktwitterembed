@@ -1,7 +1,12 @@
 'use strict';
 
 const { Events } = require('discord.js');
-const { ifUserHasRole, cleanMessageContent } = require('../utils');
+const {
+    ifUserHasRole,
+    cleanMessageContent,
+    isMissingPermissionsError,
+    isUnknownMessageError,
+} = require('../utils');
 const { extractAllUrls } = require('../providers/_loader');
 const { getProviderSettings } = require('../providers/_provider_settings');
 const { runSendSteps } = require('../providers/_dispatcher');
@@ -112,19 +117,32 @@ function register(client) {
     }
 
     client.on(Events.MessageCreate, async message => {
-       if (!message.guild) return;
-       if (message.guild.id !== '1132814274734067772' || message.channel.id !== '1279100351034953738') return;
-       
-         if (message.crosspostable) {
-           message.crosspost()
-           .then(() => message.react("✅"))
-           .catch(console.error);
-         } else {
-           message.react("❌")
+        if (!message.guild) return;
+        if (message.guild.id !== '1132814274734067772' || message.channel.id !== '1279100351034953738') return;
+
+        try {
+            if (message.crosspostable) {
+                await message.crosspost();
+                await message.react('✅');
+            } else {
+                await message.react('❌');
+            }
+        } catch (err) {
+            const expected = isUnknownMessageError(err) || isMissingPermissionsError(err);
+            recordError(err, {
+                errorType: isUnknownMessageError(err)
+                    ? 'discord_unknown_message'
+                    : (isMissingPermissionsError(err) ? 'discord_missing_permissions' : 'discord_announcement_failed'),
+                severity: expected ? 'warn' : 'error',
+                source: 'messageCreate.announcement',
+                message,
+            });
+            const detail = err?.rawError?.message || err?.message || String(err);
+            console.warn(`[messageCreate] Announcement action failed: ${detail}`);
         }
     });
 
-    client.on(Events.MessageCreate, async (message) => runWithErrorContext({
+    client.on(Events.MessageCreate, (message) => Promise.resolve().then(() => runWithErrorContext({
         source: 'messageCreate',
         message,
     }, async () => {
@@ -212,6 +230,13 @@ function register(client) {
             }
             });
         }
+    })).catch(err => {
+        recordError(err, {
+            fallbackType: 'message_create_failed',
+            source: 'messageCreate.handle',
+            message,
+        });
+        console.error('[messageCreate] Failed to process message:', err);
     }));
 }
 

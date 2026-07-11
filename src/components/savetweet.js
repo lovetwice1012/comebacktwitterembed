@@ -101,7 +101,7 @@ async function handle(interaction) {
             content: 'Saved tweet quota exceeded. Delete old saved tweets before saving a new one.',
             ephemeral: true,
         });
-        setTimeout(() => { interaction.deleteReply(); }, 3000);
+        setTimeout(() => { interaction.deleteReply().catch(() => {}); }, 3000);
         return;
     }
 

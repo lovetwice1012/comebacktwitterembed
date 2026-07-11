@@ -48,6 +48,21 @@ function hasSendablePayload(messageObject) {
     );
 }
 
+const FILE_FALLBACK_HTTP_STATUSES = new Set([400, 413, 415, 422]);
+const FILE_RESOLUTION_ERROR_CODES = new Set(['ENOENT', 'FileNotFound', 'ReqResourceType']);
+
+function shouldRetryWithoutFiles(err) {
+    // A JSON parse failure can happen after Discord accepted the POST but returned
+    // an empty/truncated response. Retrying that request could create a duplicate.
+    if (err?.name === 'SyntaxError' || err instanceof SyntaxError) return false;
+
+    const errorCode = String(err?.code ?? '');
+    if (FILE_RESOLUTION_ERROR_CODES.has(errorCode)) return true;
+
+    const status = Number(err?.status ?? err?.statusCode ?? err?.response?.status);
+    return Number.isInteger(status) && FILE_FALLBACK_HTTP_STATUSES.has(status);
+}
+
 async function suppressSourceEmbeds(message) {
     if (typeof message?.suppressEmbeds !== 'function') return;
     await message.suppressEmbeds(true).catch(() => {});
@@ -168,7 +183,7 @@ async function runSendStepsNow(message, steps, trackingContext) {
                 continue;
             }
 
-            if (messageObject.files !== undefined) {
+            if (messageObject.files !== undefined && shouldRetryWithoutFiles(err)) {
                 const fallbackText = messageObject.files.map(fileToFallbackText).filter(Boolean).join('\n');
                 delete messageObject.files;
                 appendContent(messageObject, fallbackText);

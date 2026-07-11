@@ -25,7 +25,7 @@ async function isAllowed(interaction) {
     if (!denied) return true;
 
     await interaction.editReply({ content: t('userDonthavePermissionLocales', interaction.locale), ephemeral: true });
-    setTimeout(() => { interaction.deleteReply(); }, 3000);
+    setTimeout(() => { interaction.deleteReply().catch(() => {}); }, 3000);
     return false;
 }
 

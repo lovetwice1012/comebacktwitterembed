@@ -1,6 +1,6 @@
 'use strict';
 
-const { test } = require('node:test');
+const { after, test } = require('node:test');
 const assert = require('node:assert/strict');
 
 const { TABLES, SCHEMA_STATEMENTS } = require('../../src/db_schema');
@@ -12,6 +12,8 @@ const {
     runWithErrorContext,
     _internal,
 } = require('../../src/errorTracking');
+
+after(() => _internal.clearBackgroundWorkForTest());
 
 test('error tracking schema declares event and bucket tables', () => {
     assert.equal(TABLES.botErrorEvents, 'bot_error_events');
@@ -60,6 +62,8 @@ test('error tracking classifies json decode, http, and Discord permission errors
     assert.equal(classifyErrorType(new SyntaxError('Unexpected token < in JSON')), 'provider_api_json_decode_error');
     assert.equal(classifyErrorType(new Error('phixiv api 503 for https://example.test')), 'provider_api_http_error');
     assert.equal(classifyErrorType({ code: 50013, rawError: { message: 'Missing Permissions' } }), 'discord_missing_permissions');
+    assert.equal(classifyErrorType({ code: 'UND_ERR_CONNECT_TIMEOUT' }), 'network_transport_error');
+    assert.equal(classifyErrorType({ code: 'ECONNRESET' }), 'network_transport_error');
 });
 
 test('provider analytics enrichment jobs are collected from send steps without running during extraction', () => {

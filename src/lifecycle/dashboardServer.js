@@ -7,6 +7,7 @@ const path = require('path');
 const DEFAULT_PORT = 30987;
 
 let child = null;
+let preparation = null;
 
 function readConfig() {
     try {
@@ -45,11 +46,11 @@ function npmCliPath() {
 }
 
 function launchCommand(script) {
-    if (script === 'start' || script === 'dev' || script === 'build') {
+    if (script === 'start' || script === 'dev' || script === 'build' || script === 'prepare') {
         return {
             command: process.execPath,
             args: [path.join(dashboardDir(), 'scripts', 'start-dashboard.js'), script],
-            label: `node scripts/start-dashboard.js ${script}`,
+            label: path.basename(process.execPath) + ' scripts/start-dashboard.js ' + script,
         };
     }
 
@@ -111,6 +112,54 @@ function scriptName() {
         console.warn('[dashboardServer] production build was not found. Dashboard will create one before `next start`.');
     }
     return 'start';
+}
+
+function prepare() {
+    if (child || isDisabled()) return Promise.resolve(true);
+    if (!fs.existsSync(path.join(dashboardDir(), 'package.json'))) return Promise.resolve(true);
+    if (preparation) return preparation;
+
+    const launch = launchCommand('prepare');
+    console.log('[dashboardServer] preparing a fresh dashboard build before Discord login with ' + launch.label);
+    const preparingChild = spawn(launch.command, launch.args, {
+        cwd: dashboardDir(),
+        env: process.env,
+        stdio: ['ignore', 'pipe', 'pipe'],
+        windowsHide: true,
+    });
+
+    preparingChild.stdout.on('data', chunk => {
+        String(chunk).split(/\r?\n/).filter(Boolean).forEach(line => console.log('[dashboard] ' + line));
+    });
+    preparingChild.stderr.on('data', chunk => {
+        String(chunk).split(/\r?\n/).filter(Boolean).forEach(line => console.warn('[dashboard] ' + line));
+    });
+
+    preparation = new Promise(resolve => {
+        let settled = false;
+        const settle = value => {
+            if (settled) return;
+            settled = true;
+            resolve(value);
+        };
+        preparingChild.once('error', err => {
+            console.warn('[dashboardServer] preparation failed to start:', err?.message || err);
+            settle(false);
+        });
+        preparingChild.once('exit', (code, signal) => {
+            if (code !== 0) {
+                console.warn(
+                    '[dashboardServer] preparation exited'
+                    + (signal ? ' by ' + signal : '')
+                    + (code === null ? '' : ' with code ' + code) + '.'
+                );
+            }
+            settle(code === 0);
+        });
+    }).finally(() => {
+        preparation = null;
+    });
+    return preparation;
 }
 
 function start() {
@@ -198,6 +247,7 @@ function stop(signal = 'SIGTERM') {
 
 module.exports = {
     DEFAULT_PORT,
+    prepare,
     start,
     stop,
     _internal: {

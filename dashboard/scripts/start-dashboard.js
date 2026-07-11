@@ -463,7 +463,7 @@ function startManagedProductionServer(dashboardDir, env, port, baseUrl) {
 }
 
 const modeArg = process.argv[2] || 'dev';
-const mode = modeArg === 'start' || modeArg === 'build' ? modeArg : 'dev';
+const mode = ['start', 'build', 'prepare'].includes(modeArg) ? modeArg : 'dev';
 const config = readConfig();
 const dashboard = config.dashboard || {};
 const mediaDelivery = config.mediaDelivery || {};
@@ -500,6 +500,11 @@ delete env.DASHBOARD_NEXT_DIST_DIR;
 
 if (mode === 'build') {
     process.exit(runProductionBuild(dashboardDir, env));
+}
+
+if (mode === 'prepare') {
+    ensureFreshProductionBuild(dashboardDir, env);
+    process.exit(0);
 }
 
 if (mode === 'start') {

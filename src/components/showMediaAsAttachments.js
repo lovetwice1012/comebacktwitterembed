@@ -149,7 +149,7 @@ async function handle(interaction, { buttons }) {
     messageObject.components = await checkComponentIncludesDisabledButtonAndIfFindDeleteIt(messageObject.components, interaction.guildId, providerId);
     await interaction.message.edit(messageObject);
     await interaction.editReply({ content: t('finishActionLocales', interaction.locale), ephemeral: true });
-    setTimeout(() => { interaction.deleteReply(); }, 3000);
+    setTimeout(() => { interaction.deleteReply().catch(() => {}); }, 3000);
 }
 
 module.exports = { handle };

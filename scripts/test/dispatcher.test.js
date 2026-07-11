@@ -292,7 +292,11 @@ test('dispatcher: attachment fallback preserves reply-source mode and preview em
             replyPayloads.push(JSON.parse(JSON.stringify(payload)));
             replyAttempts += 1;
             if (replyAttempts === 1) {
-                throw { code: 400, rawError: { message: 'Cannot upload attachment' } };
+                throw {
+                    status: 400,
+                    code: 40005,
+                    rawError: { code: 40005, message: 'Request entity too large' },
+                };
             }
             return {
                 id: 'reply-message',
@@ -320,4 +324,73 @@ test('dispatcher: attachment fallback preserves reply-source mode and preview em
     assert.deepEqual(replyPayloads[1].embeds, [{ title: 'pixiv metadata', description: 'preview info' }]);
     assert.match(replyPayloads[1].content, /https:\/\/img\.example\/artwork-1\.jpg/);
     assert.deepEqual(replyPayloads[1].allowedMentions, { repliedUser: false });
+});
+
+test('dispatcher: ambiguous REST JSON parse failure does not retry attachment send', async () => {
+    const dispatcher = loadDispatcherWithErrorTracking({
+        recordError: () => {},
+        recordMetric: () => {},
+        recordAnalyticsEvent: () => {},
+        runWithErrorContext: (_context, fn) => fn(),
+    });
+    const sentPayloads = [];
+    const originalLog = console.log;
+    console.log = () => {};
+    const message = {
+        guildId: 'guild-1',
+        channelId: 'channel-1',
+        channel: {
+            send: async (payload) => {
+                sentPayloads.push(JSON.parse(JSON.stringify(payload)));
+                throw new SyntaxError('Unexpected end of JSON input');
+            },
+        },
+    };
+
+    try {
+        await dispatcher.runSendSteps(message, [{
+            content: 'preview',
+            files: ['https://img.example/artwork-1.jpg'],
+        }], 'pixiv');
+
+        assert.equal(sentPayloads.length, 1);
+        assert.deepEqual(sentPayloads[0].files, ['https://img.example/artwork-1.jpg']);
+    } finally {
+        console.log = originalLog;
+    }
+});
+
+test('dispatcher: ambiguous network failure does not retry attachment send', async () => {
+    const dispatcher = loadDispatcherWithErrorTracking({
+        recordError: () => {},
+        recordMetric: () => {},
+        recordAnalyticsEvent: () => {},
+        runWithErrorContext: (_context, fn) => fn(),
+    });
+    let sendAttempts = 0;
+    const originalLog = console.log;
+    console.log = () => {};
+    const message = {
+        guildId: 'guild-1',
+        channelId: 'channel-1',
+        channel: {
+            send: async () => {
+                sendAttempts += 1;
+                const err = new TypeError('fetch failed');
+                err.cause = { code: 'ECONNRESET' };
+                throw err;
+            },
+        },
+    };
+
+    try {
+        await dispatcher.runSendSteps(message, [{
+            content: 'preview',
+            files: ['https://img.example/artwork-1.jpg'],
+        }], 'pixiv');
+
+        assert.equal(sendAttempts, 1);
+    } finally {
+        console.log = originalLog;
+    }
 });

@@ -20,6 +20,17 @@ const MAX_EVENT_QUEUE = 5000;
 const MAX_DETAILS_LENGTH = 12000;
 const MAX_INPUT_PREVIEW_LENGTH = 1000;
 const SEVERITIES = new Set(['debug', 'info', 'warn', 'error', 'fatal']);
+const NETWORK_ERROR_CODES = new Set([
+    'UND_ERR_CONNECT_TIMEOUT',
+    'UND_ERR_HEADERS_TIMEOUT',
+    'UND_ERR_SOCKET',
+    'ECONNRESET',
+    'ECONNREFUSED',
+    'ETIMEDOUT',
+    'EHOSTUNREACH',
+    'ENETUNREACH',
+    'EAI_AGAIN',
+]);
 
 const errorContextStore = new AsyncLocalStorage();
 const eventQueue = [];
@@ -164,6 +175,13 @@ function isJsonDecodeError(err) {
         || /JSON|Unexpected token|Unexpected end of JSON/i.test(message);
 }
 
+function isNetworkTransportError(err) {
+    const code = String(err?.code ?? err?.cause?.code ?? '');
+    if (NETWORK_ERROR_CODES.has(code)) return true;
+    const message = String(err?.message || '');
+    return /connect timeout|handshake has timed out|socket hang up|before secure TLS|network socket/i.test(message);
+}
+
 function classifyErrorType(err, fallbackType = 'unknown') {
     const code = discordErrorCode(err);
     if (code === 10008) return 'discord_unknown_message';
@@ -171,6 +189,7 @@ function classifyErrorType(err, fallbackType = 'unknown') {
     if (code === 40060) return 'discord_interaction_already_acknowledged';
     if (code === 50001 || code === 50013) return 'discord_missing_permissions';
     if (code === 20028 || code === 31001 || code === 429) return 'discord_rate_limited';
+    if (isNetworkTransportError(err)) return 'network_transport_error';
     if (isJsonDecodeError(err)) return 'provider_api_json_decode_error';
     if (httpStatusFromError(err)) return 'provider_api_http_error';
     return fallbackType;
@@ -371,6 +390,21 @@ function scheduleFlush() {
         flushErrorTrackingQueue().catch(warnFlushFailure);
     }, DEFAULT_FLUSH_DELAY_MS);
     if (typeof flushTimer.unref === 'function') flushTimer.unref();
+}
+
+function clearBackgroundWorkForTest() {
+    if (flushTimer) clearTimeout(flushTimer);
+    if (enrichmentQueueTimer) clearTimeout(enrichmentQueueTimer);
+    flushTimer = null;
+    enrichmentQueueTimer = null;
+    enrichmentQueueTimerDueAt = 0;
+    activeProviderAnalyticsEnrichments = 0;
+    eventQueue.length = 0;
+    analyticsEventQueue.length = 0;
+    providerContentQueue.length = 0;
+    providerAnalyticsEnrichmentQueue.length = 0;
+    providerAnalyticsEnrichmentRateLimits.clear();
+    bucketIncrements.clear();
 }
 
 function warnFlushFailure(err) {
@@ -598,7 +632,6 @@ function scheduleProviderAnalyticsEnrichmentQueue(delayMs = 0) {
         enrichmentQueueTimerDueAt = 0;
         drainProviderAnalyticsEnrichmentQueue();
     }, Math.max(0, delayMs));
-    if (typeof enrichmentQueueTimer.unref === 'function') enrichmentQueueTimer.unref();
 }
 
 function nextProviderAnalyticsEnrichmentDelay() {
@@ -1321,6 +1354,7 @@ module.exports = {
         createInputDetails,
         httpStatusFromError,
         isJsonDecodeError,
+        isNetworkTransportError,
         providerAnalyticsEnrichmentJobMetadata,
         providerAnalyticsEnrichmentJobs,
         providerAnalyticsEnrichmentQueueState,
@@ -1329,5 +1363,6 @@ module.exports = {
         normalizeProviderAnalyticsEnrichmentResult,
         runProviderAnalyticsEnrichers,
         safeJsonStringify,
+        clearBackgroundWorkForTest,
     },
 };

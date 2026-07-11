@@ -3,26 +3,36 @@
   "version": "1.0.0",
   "description": "",
   "main": "index.js",
+  "packageManager": "bun@1.3.14",
   "scripts": {
-    "start": "node index.js",
+    "start": "bun index.js",
+    "start:node": "node index.js",
     "init:db": "node scripts/init_database.js",
     "reset:db": "node scripts/reset_database.js",
     "seed:settings": "node scripts/migrate_settings_to_mysql.js",
     "migrate:settings:mysql": "node scripts/migrate_settings_to_mysql.js",
     "test": "node scripts/run_node_tests.js",
+    "test:bun": "bun scripts/run_bun_tests.js",
+    "smoke:bun": "bun scripts/bun_runtime_smoke.js",
+    "smoke:discord": "bun scripts/discord_network_smoke.js",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit"
   },
   "author": "",
   "license": "ISC",
+  "engines": {
+    "bun": "1.3.14",
+    "node": ">=22.12.0"
+  },
   "dependencies": {
     "archiver": "^6.0.1",
     "deepl-node": "^1.13.1",
-    "discord.js": "^14.15.1",
+    "discord.js": "14.26.5",
     "express": "^4.21.2",
     "jpeg-js": "^0.4.4",
     "mysql": "^2.18.1",
-    "node-fetch": "^2.7.0"
+    "node-fetch": "^2.7.0",
+    "undici": "6.24.1"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",

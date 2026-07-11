@@ -7,6 +7,7 @@ const guisetting = require('../commands/handlers/guisetting');
 const {
     isIgnorableInteractionAckError,
     isInteractionAlreadyAcknowledgedError,
+    isUnknownMessageError,
 } = require('../utils');
 const {
     recordAnalyticsEvent = () => {},
@@ -27,6 +28,7 @@ const HANDLERS = {
 };
 
 function ignoredInteractionErrorType(err) {
+    if (isUnknownMessageError(err)) return 'discord_unknown_message';
     return isInteractionAlreadyAcknowledgedError(err)
         ? 'discord_interaction_already_acknowledged'
         : 'discord_unknown_interaction';
@@ -34,6 +36,9 @@ function ignoredInteractionErrorType(err) {
 
 function ignoredInteractionWarning(err, interaction) {
     const interactionId = interaction.id ?? '';
+    if (isUnknownMessageError(err)) {
+        return `[components] Ignoring action for deleted message on interaction ${interactionId}`;
+    }
     if (isInteractionAlreadyAcknowledgedError(err)) {
         return `[components] Ignoring already acknowledged interaction ${interactionId}`;
     }
@@ -65,7 +70,7 @@ async function deferComponentReply(interaction) {
 }
 
 async function replyComponentError(interaction, err) {
-    if (isIgnorableInteractionAckError(err)) {
+    if (isIgnorableInteractionAckError(err) || isUnknownMessageError(err)) {
         recordIgnoredInteraction(err, interaction, 'messageComponents.handle');
         return;
     }

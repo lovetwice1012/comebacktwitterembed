@@ -37,7 +37,7 @@ function getRequesterIdFromMessage(interaction) {
 async function handle(interaction) {
     const finishAndCleanup = async () => {
         await interaction.editReply({ content: t('finishActionLocales', interaction.locale), ephemeral: true });
-        setTimeout(() => { interaction.deleteReply(); }, 3000);
+        setTimeout(() => { interaction.deleteReply().catch(() => {}); }, 3000);
     };
 
     if (interaction.member.permissions.has(PermissionsBitField.Flags.ManageMessages)) {
@@ -50,7 +50,7 @@ async function handle(interaction) {
     const requesterId = getRequesterIdFromMessage(interaction);
     if (!requesterId || requesterId !== interaction.user.id) {
         await interaction.editReply({ content: t('youcantdeleteotherusersmessagesLocales', interaction.locale), ephemeral: true });
-        setTimeout(() => { interaction.deleteReply(); }, 3000);
+        setTimeout(() => { interaction.deleteReply().catch(() => {}); }, 3000);
         return;
     }
     await interaction.message.delete();
