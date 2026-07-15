@@ -16,7 +16,7 @@ try {
 }
 
 const DEFAULT_TTL_MS = 30 * 60 * 1000;
-const DEFAULT_CLEANUP_INTERVAL_MS = 60 * 1000;
+const DEFAULT_CLEANUP_INTERVAL_MS = 10 * 60 * 1000;
 const DEFAULT_ROOT_DIR = path.join(__dirname, '..', 'data', 'youtube_downloads');
 const DEFAULT_API_BASE_URL = 'https://yt-dlp.arcdc.jp';
 const DEFAULT_PUBLIC_BASE_URL = 'https://cbte.sprink.cloud';
@@ -28,6 +28,7 @@ const MUSIC_AUDIO_FORMAT = '774/bestaudio';
 let rootDirOverride = null;
 let publicBaseUrlOverride = null;
 let cleanupTimer = null;
+let cleanupInProgress = false;
 let indexQueue = Promise.resolve();
 
 function youtubeDownloadConfig() {
@@ -241,6 +242,9 @@ async function deleteRecordFiles(token) {
 }
 
 async function cleanupExpiredDownloads(nowMs = Date.now()) {
+    if (cleanupInProgress) return null;
+    cleanupInProgress = true;
+    try {
     await ensureDirs();
     const index = await readIndex();
     let changed = false;
@@ -266,6 +270,9 @@ async function cleanupExpiredDownloads(nowMs = Date.now()) {
 
     if (changed) await writeIndex(index);
     return Object.keys(index).length;
+    } finally {
+        cleanupInProgress = false;
+    }
 }
 
 function requestBodyForPreset(url, preset) {

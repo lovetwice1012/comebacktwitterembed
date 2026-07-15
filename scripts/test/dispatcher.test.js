@@ -7,7 +7,7 @@ const os = require('os');
 const path = require('path');
 
 const { runSendSteps } = require('../../src/providers/_dispatcher');
-const { counters, loadCounters, _internal } = require('../../src/state');
+const { counters, loadCounters, persistCounters, _internal } = require('../../src/state');
 
 const dispatcherModulePath = require.resolve('../../src/providers/_dispatcher');
 const errorTrackingModulePath = require.resolve('../../src/errorTracking');
@@ -76,6 +76,7 @@ test('dispatcher: increments processed counters for sent steps', async () => {
             { embeds: [{ description: 'two' }] },
         ], 'twitter');
 
+        persistCounters();
         const saved = JSON.parse(fs.readFileSync(statsFile, 'utf8'));
 
         assert.equal(sentMessages.length, 2);

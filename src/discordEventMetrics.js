@@ -25,6 +25,10 @@ function createDiscordEventMetrics(options = {}) {
     const secondBuckets = new Map();
     const eventTypeCounts = new Map();
     const shardCounts = new Map();
+    // Gateway dispatches can arrive in bursts.  Keep their analytics counts
+    // locally and hand them to the database queue as a small batch instead of
+    // doing context normalisation and queue scheduling for every dispatch.
+    const pendingMetricCounts = new Map();
     const registrations = new WeakMap();
     const rawStartedAtMs = Number(now());
     const startedAtMs = Number.isFinite(rawStartedAtMs) ? rawStartedAtMs : Date.now();
@@ -46,19 +50,35 @@ function createDiscordEventMetrics(options = {}) {
         lastPrunedSecond = nowSecond;
     }
 
-    function persistMetric(eventType, timestampMs) {
-        try {
-            // One metric name keeps the admin total compact; endpoint_key retains
-            // the Gateway event type for optional drill-down without payload data.
-            metricRecorder(TOTAL_METRIC_NAME, {
-                occurredAtMs: timestampMs,
-                endpointKey: eventType,
-            });
-        } catch (err) {
-            if (timestampMs - lastMetricWarningAt < MINUTE_SECONDS * 1000) return;
-            lastMetricWarningAt = timestampMs;
-            console.warn('[discordEventMetrics] Failed to record metric:', err?.message || err);
+    function flushAnalytics(timestampMs = readNowMs()) {
+        if (pendingMetricCounts.size === 0) return 0;
+
+        const pending = [...pendingMetricCounts.entries()];
+        pendingMetricCounts.clear();
+        let flushed = 0;
+        for (let index = 0; index < pending.length; index += 1) {
+            const [eventType, count] = pending[index];
+            try {
+                // One metric name keeps the admin total compact; endpoint_key retains
+                // the Gateway event type for optional drill-down without payload data.
+                metricRecorder(TOTAL_METRIC_NAME, {
+                    occurredAtMs: timestampMs,
+                    endpointKey: eventType,
+                }, count);
+                flushed += count;
+            } catch (err) {
+                // Preserve this and later entries without duplicating the entries
+                // that were accepted before the recorder failed.
+                for (const [pendingEventType, pendingCount] of pending.slice(index)) {
+                    pendingMetricCounts.set(pendingEventType, (pendingMetricCounts.get(pendingEventType) || 0) + pendingCount);
+                }
+                if (timestampMs - lastMetricWarningAt < MINUTE_SECONDS * 1000) return flushed;
+                lastMetricWarningAt = timestampMs;
+                console.warn('[discordEventMetrics] Failed to record metric:', err?.message || err);
+                return flushed;
+            }
         }
+        return flushed;
     }
 
     function record(packet, shardId) {
@@ -71,12 +91,12 @@ function createDiscordEventMetrics(options = {}) {
         secondBuckets.set(second, (secondBuckets.get(second) || 0) + 1);
         eventTypeCounts.set(eventType, (eventTypeCounts.get(eventType) || 0) + 1);
         shardCounts.set(shardKey, (shardCounts.get(shardKey) || 0) + 1);
+        pendingMetricCounts.set(eventType, (pendingMetricCounts.get(eventType) || 0) + 1);
 
         if (second < lastPrunedSecond || second - lastPrunedSecond >= MINUTE_SECONDS) {
             pruneBuckets(second);
         }
 
-        persistMetric(eventType, timestampMs);
     }
 
     function register(client) {
@@ -136,7 +156,7 @@ function createDiscordEventMetrics(options = {}) {
         };
     }
 
-    return { record, register, unregister, snapshot };
+    return { record, register, unregister, snapshot, flushAnalytics };
 }
 
 const defaultMetrics = createDiscordEventMetrics();

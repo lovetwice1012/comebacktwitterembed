@@ -16,7 +16,7 @@ test('discord event metrics: registers once and counts raw gateway events by typ
     const recordedMetrics = [];
     const metrics = createDiscordEventMetrics({
         now: () => nowMs,
-        recordMetric: (metricName, context) => recordedMetrics.push({ metricName, context }),
+        recordMetric: (metricName, context, count) => recordedMetrics.push({ metricName, context, count }),
     });
     const client = new EventEmitter();
 
@@ -44,17 +44,18 @@ test('discord event metrics: registers once and counts raw gateway events by typ
         { shardId: '1', count: 1 },
     ]);
 
+    assert.equal(recordedMetrics.length, 0);
+    assert.equal(metrics.flushAnalytics(), 3);
     assert.deepEqual(recordedMetrics.map(item => item.metricName), [
-        _internal.TOTAL_METRIC_NAME,
         _internal.TOTAL_METRIC_NAME,
         _internal.TOTAL_METRIC_NAME,
     ]);
     assert.deepEqual(recordedMetrics.map(item => item.context.endpointKey), [
         'MESSAGE_CREATE',
-        'MESSAGE_CREATE',
         'INTERACTION_CREATE',
     ]);
     assert.ok(recordedMetrics.every(item => item.context.occurredAtMs <= nowMs));
+    assert.deepEqual(recordedMetrics.map(item => item.count), [2, 1]);
 
     assert.equal(metrics.unregister(client), true);
     assert.equal(metrics.unregister(client), false);
@@ -112,10 +113,26 @@ test('discord event metrics: normalizes missing event types without retaining pa
         { eventType: 'CUSTOM EVENT!', count: 1 },
         { eventType: 'UNKNOWN', count: 1 },
     ]);
+    assert.equal(metrics.flushAnalytics(), 2);
     assert.deepEqual(recordedContexts, [
         { occurredAtMs: 1000, endpointKey: 'UNKNOWN' },
         { occurredAtMs: 1000, endpointKey: 'CUSTOM EVENT!' },
     ]);
+});
+
+test('discord event metrics: batches high-volume analytics by event type', () => {
+    const recorded = [];
+    const metrics = createDiscordEventMetrics({
+        recordMetric: (name, context, count) => recorded.push({ name, context, count }),
+    });
+
+    for (let index = 0; index < 1000; index += 1) {
+        metrics.record({ t: index % 2 === 0 ? 'MESSAGE_CREATE' : 'PRESENCE_UPDATE' }, 0);
+    }
+
+    assert.equal(recorded.length, 0);
+    assert.equal(metrics.flushAnalytics(), 1000);
+    assert.deepEqual(recorded.map(item => item.count), [500, 500]);
 });
 
 test('discord event metrics: application registers the raw listener before login', () => {

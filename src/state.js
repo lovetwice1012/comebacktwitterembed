@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 
 const DEFAULT_STATS_FILE = path.join(__dirname, '..', 'data', 'stats_counters.json');
+const STATS_PERSIST_DELAY_MS = 5000;
 
 const counters = {
     processed: 0,
@@ -22,6 +23,7 @@ const consoleBuffer = {
 };
 
 let statsFile = DEFAULT_STATS_FILE;
+let statsPersistTimer = null;
 
 function pad2(value) {
     return String(value).padStart(2, '0');
@@ -92,6 +94,15 @@ function persistCounters(now = new Date(), file = statsFile) {
     }
 }
 
+function schedulePersistCounters() {
+    if (statsPersistTimer !== null) return;
+    statsPersistTimer = setTimeout(() => {
+        statsPersistTimer = null;
+        persistCounters();
+    }, STATS_PERSIST_DELAY_MS);
+    if (typeof statsPersistTimer.unref === 'function') statsPersistTimer.unref();
+}
+
 function loadCounters(now = new Date(), file = statsFile) {
     if (!fs.existsSync(file)) {
         applyCounters({});
@@ -116,7 +127,10 @@ function incrementProcessedCounters(now = new Date()) {
     counters.processed++;
     counters.processed_hour++;
     counters.processed_day++;
-    persistCounters(now);
+    // A synchronous write for every processed message stalls the whole bot.
+    // Batch persistence; counters remain accurate in memory and are still
+    // written promptly after the stream of messages settles.
+    schedulePersistCounters();
 }
 
 function resetCountersAfterStatsPost(now = new Date()) {
@@ -142,6 +156,8 @@ module.exports = {
         configureStatsPersistenceForTest,
         periodKeys,
         rotateExpiredCounters,
+        schedulePersistCounters,
+        STATS_PERSIST_DELAY_MS,
         DEFAULT_STATS_FILE,
     },
 };

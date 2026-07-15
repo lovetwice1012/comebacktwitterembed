@@ -57,6 +57,7 @@ CREATE TABLE IF NOT EXISTS bot_provider_content_events (
     raw_metrics_json LONGTEXT NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     INDEX idx_content_provider_account_time (provider_id, account_key, occurred_at_ms),
+    INDEX idx_content_time (occurred_at_ms),
     INDEX idx_content_provider_type_time (provider_id, content_type, occurred_at_ms),
     INDEX idx_content_guild_time (guild_id, occurred_at_ms),
     INDEX idx_content_user_time (author_user_id, occurred_at_ms),
@@ -75,6 +76,7 @@ CREATE TABLE IF NOT EXISTS bot_provider_content_facets (
     occurred_at_ms BIGINT NOT NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     INDEX idx_content_facets_key_value_time (facet_key, facet_value, occurred_at_ms),
+    INDEX idx_content_facets_time (occurred_at_ms),
     INDEX idx_content_facets_provider_key_time (provider_id, facet_key, occurred_at_ms),
     INDEX idx_content_facets_account_key_time (provider_id, account_key, facet_key, occurred_at_ms),
     CONSTRAINT fk_content_facets_event

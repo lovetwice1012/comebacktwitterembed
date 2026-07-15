@@ -15,6 +15,9 @@ let statsTimer = null;
 async function tick(client, eventMetrics = discordEventMetrics) {
     try {
         const eventCounts = eventMetrics.snapshot();
+        // Flush the in-memory Gateway aggregate once per reporting interval.
+        // This avoids doing analytics work on every incoming Gateway packet.
+        if (typeof eventMetrics.flushAnalytics === 'function') eventMetrics.flushAnalytics();
         const guild = client.guilds.cache.get(STATS_GUILD_ID);
         const channel = guild && guild.channels.cache.get(STATS_CHANNEL_ID);
         if (channel) {

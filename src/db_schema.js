@@ -34,6 +34,7 @@ const TABLES = {
     botProviderHourlyAggregates: 'bot_provider_hourly_aggregates',
     botProviderHourlyUniqueKeys: 'bot_provider_hourly_unique_keys',
     botErrorAlerts: 'bot_error_alerts',
+    providerSettingsCacheInvalidations: 'provider_settings_cache_invalidations',
     dashboardAuditLogs: 'dashboard_audit_logs',
     guildSettingsWebuiNoticeState: 'guild_settings_webui_notice_state',
 };
@@ -428,6 +429,7 @@ const SCHEMA_STATEMENTS = [
         updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
         PRIMARY KEY (bucket_start_ms, bucket_size_seconds, metric_name, provider_id, guild_id, endpoint_key),
         INDEX idx_metric_buckets_name_time (metric_name, bucket_start_ms),
+        INDEX idx_metric_buckets_time (bucket_start_ms),
         INDEX idx_metric_buckets_provider_time (provider_id, bucket_start_ms),
         INDEX idx_metric_buckets_guild_time (guild_id, bucket_start_ms)
     ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
@@ -491,6 +493,7 @@ const SCHEMA_STATEMENTS = [
         raw_metrics_json LONGTEXT NULL,
         created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
         INDEX idx_content_provider_account_time (provider_id, account_key, occurred_at_ms),
+        INDEX idx_content_time (occurred_at_ms),
         INDEX idx_content_provider_type_time (provider_id, content_type, occurred_at_ms),
         INDEX idx_content_guild_time (guild_id, occurred_at_ms),
         INDEX idx_content_user_time (author_user_id, occurred_at_ms),
@@ -515,6 +518,7 @@ const SCHEMA_STATEMENTS = [
         occurred_at_ms BIGINT NOT NULL,
         created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
         INDEX idx_content_facets_stage_schema_time (metric_stage, schema_version, occurred_at_ms),
+        INDEX idx_content_facets_time (occurred_at_ms),
         INDEX idx_content_facets_source_time (metric_source, occurred_at_ms),
         INDEX idx_content_facets_key_value_time (facet_key, facet_value, occurred_at_ms),
         INDEX idx_content_facets_provider_key_time (provider_id, facet_key, occurred_at_ms),

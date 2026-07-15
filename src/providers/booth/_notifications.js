@@ -23,6 +23,9 @@ const path = require('path');
 
 const DATA_DIR = path.resolve(process.cwd(), 'data');
 const FILE = path.join(DATA_DIR, 'booth_sale_notifications.json');
+const SAVE_DELAY_MS = 1000;
+let cachedList = null;
+let saveTimer = null;
 
 function ensureFile() {
     if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -30,19 +33,33 @@ function ensureFile() {
 }
 
 function load() {
+    if (cachedList) return cachedList;
     ensureFile();
     try {
         const raw = fs.readFileSync(FILE, 'utf8');
         const arr = JSON.parse(raw);
-        return Array.isArray(arr) ? arr : [];
+        cachedList = Array.isArray(arr) ? arr : [];
+        return cachedList;
     } catch {
-        return [];
+        cachedList = [];
+        return cachedList;
     }
 }
 
 function save(list) {
+    cachedList = list;
     ensureFile();
     fs.writeFileSync(FILE, JSON.stringify(list, null, 2), 'utf8');
+}
+
+function scheduleSave(list) {
+    cachedList = list;
+    if (saveTimer !== null) return;
+    saveTimer = setTimeout(() => {
+        saveTimer = null;
+        save(cachedList || []);
+    }, SAVE_DELAY_MS);
+    if (typeof saveTimer.unref === 'function') saveTimer.unref();
 }
 
 function genId() {
@@ -60,7 +77,7 @@ function addSubscription(entry) {
     const list = load();
     const record = { id: genId(), notified: false, attempts: 0, registeredAt: new Date().toISOString(), ...entry };
     list.push(record);
-    save(list);
+    scheduleSave(list);
     return record;
 }
 
@@ -78,7 +95,7 @@ function markNotified(id) {
     if (idx === -1) return;
     list[idx].notified = true;
     list[idx].notifiedAt = new Date().toISOString();
-    save(list);
+    scheduleSave(list);
 }
 
 function bumpAttempts(id) {
@@ -86,7 +103,7 @@ function bumpAttempts(id) {
     const idx = list.findIndex(r => r.id === id);
     if (idx === -1) return 0;
     list[idx].attempts = (list[idx].attempts || 0) + 1;
-    save(list);
+    scheduleSave(list);
     return list[idx].attempts;
 }
 
@@ -98,7 +115,7 @@ function pruneOld(retentionMs = 30 * 24 * 60 * 60 * 1000, now = new Date()) {
         const ts = new Date(r.notifiedAt || r.registeredAt).getTime();
         return ts >= cutoff;
     });
-    if (next.length !== list.length) save(next);
+    if (next.length !== list.length) scheduleSave(next);
 }
 
 module.exports = {
@@ -111,4 +128,5 @@ module.exports = {
     markNotified,
     bumpAttempts,
     pruneOld,
+    _internal: { scheduleSave },
 };

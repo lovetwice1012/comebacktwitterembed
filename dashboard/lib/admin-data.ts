@@ -51,6 +51,7 @@ const ADMIN_ANALYTICS_QUERY_CONCURRENCY = 2;
 const ADMIN_ANALYTICS_CACHE_MAX_ENTRIES = 12;
 const ADMIN_ANALYTICS_CACHE_ACTIVE_MS = 60 * 60 * 1000;
 const ADMIN_ANALYTICS_BUILD_QUEUE_MAX = 4;
+const ADMIN_ANALYTICS_BUILD_CONCURRENCY = 2;
 const PRIVACY_MIN_GROUP_SIZE = 5;
 const SMALL_GROUP_LABEL = "少数";
 const smallGroupDetailColumns = new Set([
@@ -339,25 +340,51 @@ async function runLimited<const Tasks extends readonly (() => Promise<unknown>)[
   return results as { [Index in keyof Tasks]: Awaited<ReturnType<Tasks[Index]>> };
 }
 
-let adminAnalyticsBuildQueue: Promise<void> = Promise.resolve();
+type AdminAnalyticsBuildJob<T> = {
+  build: () => Promise<T>;
+  resolve: (value: T) => void;
+  reject: (reason?: unknown) => void;
+};
+
 let adminAnalyticsPendingBuilds = 0;
+let adminAnalyticsRunningBuilds = 0;
+const adminAnalyticsBuildJobs: AdminAnalyticsBuildJob<unknown>[] = [];
+
+function runNextAdminAnalyticsBuild() {
+  while (adminAnalyticsRunningBuilds < ADMIN_ANALYTICS_BUILD_CONCURRENCY && adminAnalyticsBuildJobs.length) {
+    const job = adminAnalyticsBuildJobs.shift();
+    if (!job) return;
+    adminAnalyticsRunningBuilds += 1;
+    void (async () => {
+      try {
+        job.resolve(await job.build());
+      } catch (error) {
+        job.reject(error);
+      } finally {
+        adminAnalyticsRunningBuilds = Math.max(0, adminAnalyticsRunningBuilds - 1);
+        adminAnalyticsPendingBuilds = Math.max(0, adminAnalyticsPendingBuilds - 1);
+        runNextAdminAnalyticsBuild();
+      }
+    })();
+  }
+}
 
 function enqueueAdminAnalyticsBuild<T>(build: () => Promise<T>) {
   if (adminAnalyticsPendingBuilds >= ADMIN_ANALYTICS_BUILD_QUEUE_MAX) {
     return Promise.reject(new Error("Admin analytics build queue is saturated."));
   }
   adminAnalyticsPendingBuilds += 1;
-  const run = adminAnalyticsBuildQueue
-    .catch(() => undefined)
-    .then(async () => {
-      await yieldToEventLoop();
-      return build();
-    })
-    .finally(() => {
-      adminAnalyticsPendingBuilds = Math.max(0, adminAnalyticsPendingBuilds - 1);
+  return new Promise<T>((resolve, reject) => {
+    adminAnalyticsBuildJobs.push({
+      build: async () => {
+        await yieldToEventLoop();
+        return build();
+      },
+      resolve: resolve as (value: unknown) => void,
+      reject,
     });
-  adminAnalyticsBuildQueue = run.then(() => undefined, () => undefined);
-  return run;
+    runNextAdminAnalyticsBuild();
+  });
 }
 
 function shouldPrewarmAdminAnalyticsCache() {
@@ -6904,6 +6931,7 @@ export function adminDatabaseTables() {
 }
 
 type AdminOverviewSnapshot = Awaited<ReturnType<typeof buildAdminOverview>>;
+type AdminAdvancedAnalyticsSnapshot = Awaited<ReturnType<typeof getAdvancedAnalytics>>;
 
 type AdminOverviewCacheState = {
   snapshot: AdminOverviewSnapshot | null;
@@ -6921,6 +6949,20 @@ const adminOverviewCacheState = ((globalThis as typeof globalThis & {
   lastAccessedAtMs: 0,
   refreshPromise: null,
   timer: null,
+});
+
+type AdminAdvancedAnalyticsCacheState = {
+  snapshot: AdminAdvancedAnalyticsSnapshot | null;
+  updatedAtMs: number;
+  refreshPromise: Promise<AdminAdvancedAnalyticsSnapshot> | null;
+};
+
+const adminAdvancedAnalyticsCacheState = ((globalThis as typeof globalThis & {
+  __cbteAdminAdvancedAnalyticsCache?: AdminAdvancedAnalyticsCacheState;
+}).__cbteAdminAdvancedAnalyticsCache ??= {
+  snapshot: null,
+  updatedAtMs: 0,
+  refreshPromise: null,
 });
 
 function emptyAdminOverviewSnapshot(): AdminOverviewSnapshot {
@@ -6977,16 +7019,36 @@ function ensureAdminOverviewBatchRefresh() {
 
 function withAdminOverviewCacheState(snapshot: AdminOverviewSnapshot) {
   const updatedAtMs = adminOverviewCacheState.updatedAtMs || 0;
+  const analyticsUpdatedAtMs = adminAdvancedAnalyticsCacheState.updatedAtMs || 0;
   return clientSafe({
     ...snapshot,
+    analytics: adminAdvancedAnalyticsCacheState.snapshot,
     cache: {
       updatedAt: updatedAtMs ? new Date(updatedAtMs).toISOString() : null,
       nextUpdateAt: updatedAtMs ? new Date(updatedAtMs + ADMIN_OVERVIEW_REFRESH_INTERVAL_MS).toISOString() : null,
       refreshIntervalMs: ADMIN_OVERVIEW_REFRESH_INTERVAL_MS,
-      refreshing: Boolean(adminOverviewCacheState.refreshPromise) || !adminOverviewCacheState.snapshot,
+      refreshing: Boolean(adminOverviewCacheState.refreshPromise || adminAdvancedAnalyticsCacheState.refreshPromise)
+        || !adminOverviewCacheState.snapshot
+        || !adminAdvancedAnalyticsCacheState.snapshot,
       ready: Boolean(adminOverviewCacheState.snapshot),
+      analyticsUpdatedAt: analyticsUpdatedAtMs ? new Date(analyticsUpdatedAtMs).toISOString() : null,
     },
   });
+}
+
+function refreshAdminAdvancedAnalyticsCache() {
+  if (!adminAdvancedAnalyticsCacheState.refreshPromise) {
+    adminAdvancedAnalyticsCacheState.refreshPromise = enqueueAdminAnalyticsBuild(() => getAdvancedAnalytics())
+      .then((snapshot) => {
+        adminAdvancedAnalyticsCacheState.snapshot = snapshot;
+        adminAdvancedAnalyticsCacheState.updatedAtMs = Date.now();
+        return snapshot;
+      })
+      .finally(() => {
+        adminAdvancedAnalyticsCacheState.refreshPromise = null;
+      });
+  }
+  return adminAdvancedAnalyticsCacheState.refreshPromise;
 }
 
 function refreshAdminOverviewCache() {
@@ -7019,6 +7081,9 @@ export async function getAdminOverview(options: { forceRefresh?: boolean } = {})
   if (options.forceRefresh || !adminOverviewCacheState.snapshot) {
     void refreshAdminOverviewCache().catch(() => undefined);
   }
+  if (options.forceRefresh || !adminAdvancedAnalyticsCacheState.snapshot || shouldRefreshAnalyticsCacheEntry(adminAdvancedAnalyticsCacheState)) {
+    void refreshAdminAdvancedAnalyticsCache().catch(() => undefined);
+  }
 
   const snapshot = adminOverviewCacheState.snapshot;
   if (snapshot) {
@@ -7042,7 +7107,7 @@ async function buildAdminOverview() {
   );
   const since24h = Date.now() - 24 * 60 * 60 * 1000;
 
-  const [audit24h, errors24h, topErrorTypes, providerRows, latestMetrics, analytics] = await runLimited([
+  const [audit24h, errors24h, topErrorTypes, providerRows, latestMetrics] = await runLimited([
     () => optionalQuery(0, () => scalarCount("SELECT COUNT(*) AS count FROM dashboard_audit_logs WHERE created_at >= ?", new Date(since24h))),
     () => optionalQuery(0, () => scalarCount("SELECT COUNT(*) AS count FROM bot_error_events WHERE occurred_at_ms >= ?", since24h)),
     () => optionalQuery([], async () => {
@@ -7076,7 +7141,6 @@ async function buildAdminOverview() {
       );
       return rows.map(maskRow);
     }),
-    () => optionalQuery(null, () => getAdvancedAnalytics()),
   ] as const);
 
   return clientSafe({
@@ -7099,7 +7163,9 @@ async function buildAdminOverview() {
       latestMetrics,
     },
     providerRows,
-    analytics,
+    // Heavy aggregate reports are maintained independently so a slow report
+    // cannot prevent the operational overview from becoming usable.
+    analytics: null as AdminAdvancedAnalyticsSnapshot | null,
     health: {
       database: dbPing,
       environment: {

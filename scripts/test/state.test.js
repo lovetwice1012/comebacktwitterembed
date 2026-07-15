@@ -37,6 +37,9 @@ test('state: persists counters and reloads them after process memory is reset', 
 
         incrementProcessedCounters(now);
         incrementProcessedCounters(now);
+        // The hot path batches disk I/O; persist explicitly when checking the
+        // restart file contract.
+        require('../../src/state').persistCounters(now);
 
         counters.processed = 0;
         counters.processed_hour = 0;

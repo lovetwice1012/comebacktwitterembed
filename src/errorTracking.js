@@ -1063,6 +1063,26 @@ async function insertErrorEvent(queryDatabase, row) {
     );
 }
 
+async function insertErrorEvents(queryDatabase, rows) {
+    if (rows.length === 0) return;
+    if (rows.length === 1) return await insertErrorEvent(queryDatabase, rows[0]);
+    const values = rows.map(row => [
+        row.occurred_at_ms, row.expires_at_ms, row.error_type, row.severity, row.source, row.provider_id,
+        row.endpoint_key, row.raw_url, row.normalized_url, row.url_hash, row.author_user_id, row.guild_id,
+        row.guild_name_snapshot, row.channel_id, row.channel_name_snapshot, row.message_id, row.command_name,
+        row.component_id, row.discord_code, row.http_status, row.stack_hash, row.message_hash, row.details_json,
+    ]);
+    await queryDatabase(
+        `INSERT INTO ${TABLES.botErrorEvents} (
+            occurred_at_ms, expires_at_ms, error_type, severity, source, provider_id, endpoint_key,
+            raw_url, normalized_url, url_hash, author_user_id, guild_id, guild_name_snapshot,
+            channel_id, channel_name_snapshot, message_id, command_name, component_id,
+            discord_code, http_status, stack_hash, message_hash, details_json
+        ) VALUES ?`,
+        [values],
+    );
+}
+
 async function insertAnalyticsEvent(queryDatabase, row) {
     await queryDatabase(
         `INSERT INTO ${TABLES.botAnalyticsEvents} (
@@ -1097,6 +1117,31 @@ async function insertAnalyticsEvent(queryDatabase, row) {
     await upsertProviderHourlyAggregate(queryDatabase, createAnalyticsHourlyAggregateRow(row));
     for (const uniqueRow of createProviderHourlyUniqueRows(row, row.event_type)) {
         await insertProviderHourlyUniqueKey(queryDatabase, uniqueRow);
+    }
+}
+
+async function insertAnalyticsEvents(queryDatabase, rows) {
+    if (rows.length === 0) return;
+    if (rows.length === 1) return await insertAnalyticsEvent(queryDatabase, rows[0]);
+    const values = rows.map(row => [
+        row.occurred_at_ms, row.event_type, row.source, row.provider_id, row.account_key, row.endpoint_key,
+        row.raw_url, row.normalized_url, row.url_hash, row.guild_id, row.guild_name_snapshot, row.channel_id,
+        row.channel_name_snapshot, row.author_user_id, row.message_id, row.command_name, row.component_id,
+        row.success, row.duration_ms, row.count, row.details_json,
+    ]);
+    await queryDatabase(
+        `INSERT INTO ${TABLES.botAnalyticsEvents} (
+            occurred_at_ms, event_type, source, provider_id, account_key, endpoint_key,
+            raw_url, normalized_url, url_hash, guild_id, guild_name_snapshot, channel_id, channel_name_snapshot,
+            author_user_id, message_id, command_name, component_id, success, duration_ms, count, details_json
+        ) VALUES ?`,
+        [values],
+    );
+    for (const row of rows) {
+        await upsertProviderHourlyAggregate(queryDatabase, createAnalyticsHourlyAggregateRow(row));
+        for (const uniqueRow of createProviderHourlyUniqueRows(row, row.event_type)) {
+            await insertProviderHourlyUniqueKey(queryDatabase, uniqueRow);
+        }
     }
 }
 
@@ -1288,6 +1333,26 @@ async function upsertMetricBucket(queryDatabase, row) {
     );
 }
 
+async function upsertBuckets(queryDatabase, table, rows) {
+    if (rows.length === 0) return;
+    if (rows.length === 1) {
+        if (table === TABLES.botErrorBuckets) return await upsertErrorBucket(queryDatabase, rows[0].row);
+        return await upsertMetricBucket(queryDatabase, rows[0].row);
+    }
+    const isError = table === TABLES.botErrorBuckets;
+    const columns = isError
+        ? 'bucket_start_ms, bucket_size_seconds, error_type, severity, provider_id, guild_id, endpoint_key, count'
+        : 'bucket_start_ms, bucket_size_seconds, metric_name, provider_id, guild_id, endpoint_key, count';
+    const values = rows.map(({ row }) => isError
+        ? [row.bucket_start_ms, row.bucket_size_seconds, row.error_type, row.severity, row.provider_id, row.guild_id, row.endpoint_key, row.count]
+        : [row.bucket_start_ms, row.bucket_size_seconds, row.metric_name, row.provider_id, row.guild_id, row.endpoint_key, row.count]);
+    await queryDatabase(
+        `INSERT INTO ${table} (${columns}) VALUES ?
+         ON DUPLICATE KEY UPDATE count = count + VALUES(count), updated_at = CURRENT_TIMESTAMP`,
+        [values],
+    );
+}
+
 async function pruneExpiredErrorEvents(queryDatabase, timestampMs = nowMs()) {
     await queryDatabase(
         `DELETE FROM ${TABLES.botErrorEvents}
@@ -1310,13 +1375,11 @@ async function flushErrorTrackingQueue() {
 
     try {
         const { queryDatabase } = require('./db');
-        for (const row of events) await insertErrorEvent(queryDatabase, row);
-        for (const row of analyticsEvents) await insertAnalyticsEvent(queryDatabase, row);
+        await insertErrorEvents(queryDatabase, events);
+        await insertAnalyticsEvents(queryDatabase, analyticsEvents);
         for (const item of providerContentEvents) await insertProviderContentEvent(queryDatabase, item);
-        for (const item of buckets) {
-            if (item.table === TABLES.botErrorBuckets) await upsertErrorBucket(queryDatabase, item.row);
-            else if (item.table === TABLES.botMetricBuckets) await upsertMetricBucket(queryDatabase, item.row);
-        }
+        await upsertBuckets(queryDatabase, TABLES.botErrorBuckets, buckets.filter(item => item.table === TABLES.botErrorBuckets));
+        await upsertBuckets(queryDatabase, TABLES.botMetricBuckets, buckets.filter(item => item.table === TABLES.botMetricBuckets));
         const timestamp = nowMs();
         if (timestamp - lastPruneAt > DEFAULT_PRUNE_INTERVAL_MS) {
             lastPruneAt = timestamp;

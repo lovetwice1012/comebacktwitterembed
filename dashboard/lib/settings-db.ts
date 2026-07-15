@@ -415,6 +415,11 @@ export async function saveProviderSettings(
         ...meta,
       });
     }
+    await tx.$executeRawUnsafe(
+      "INSERT INTO provider_settings_cache_invalidations (provider_id, guild_id) VALUES (?, ?)",
+      providerId,
+      guildId,
+    );
   });
 
   return {
@@ -465,6 +470,11 @@ export async function resetProviderSettings(
       after: null,
       ...meta,
     });
+    await tx.$executeRawUnsafe(
+      "INSERT INTO provider_settings_cache_invalidations (provider_id, guild_id) VALUES (?, ?)",
+      providerId,
+      guildId,
+    );
   });
 
   return {

@@ -139,6 +139,7 @@ test('stats poster: awaits and catches Discord sends before resetting counters',
     });
     const eventMetrics = {
         snapshot: () => ({ lastMinute: 11, lastHour: 22, lastDay: 33, total: 44 }),
+        flushAnalytics: () => 11,
     };
 
     try {

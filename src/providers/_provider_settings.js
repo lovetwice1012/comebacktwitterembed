@@ -4,6 +4,14 @@ const { TABLES, ensureDatabaseSchema } = require('../db_schema');
 const { button_disabled_template, button_invisible_template } = require('../utils');
 const { normalizeHiddenOutputItems } = require('./_output_visibility');
 
+const SETTINGS_CACHE_TTL_MS = 30 * 1000;
+const SETTINGS_INVALIDATION_POLL_MS = 250;
+const providerSettingsCache = new Map();
+let lastInvalidationRevision = 0;
+let lastInvalidationPollAt = 0;
+let invalidationPoll = null;
+let invalidationInitialized = false;
+
 const PROVIDER_DEFAULTS = {
     enabled:                                              undefined,
     defaultLanguage:                                      'ja',
@@ -654,26 +662,119 @@ async function getSetting(providerInput, key, guildId) {
 
 async function setSetting(providerInput, key, guildId, value) {
     const provider = normalizeProvider(providerInput);
-    if (isTestStorageMode()) return setTestMemorySetting(provider, key, guildId, value);
-    if (key === 'disable') return await setDisableSetting(provider, guildId, value);
-    if (TARGET_SETTING_TABLES[key]) {
-        return await replaceTargetRows(TARGET_SETTING_TABLES[key], provider.id, guildId, value);
+    if (isTestStorageMode()) {
+        const result = setTestMemorySetting(provider, key, guildId, value);
+        clearProviderSettingsCache(provider.id, guildId);
+        return result;
     }
-    if (key === 'button_disabled') {
-        return await replaceTargetRows(TABLES.guildProviderButtonDisabledTargets, provider.id, guildId, value);
-    }
-    if (key === 'bannedWords') return await setBannedWords(provider, guildId, value);
-    if (key === 'button_invisible') return await setButtonVisibility(provider, guildId, value);
-    return await setScalarSetting(provider, key, guildId, value);
+    if (key === 'disable') await setDisableSetting(provider, guildId, value);
+    else if (TARGET_SETTING_TABLES[key]) await replaceTargetRows(TARGET_SETTING_TABLES[key], provider.id, guildId, value);
+    else if (key === 'button_disabled') await replaceTargetRows(TABLES.guildProviderButtonDisabledTargets, provider.id, guildId, value);
+    else if (key === 'bannedWords') await setBannedWords(provider, guildId, value);
+    else if (key === 'button_invisible') await setButtonVisibility(provider, guildId, value);
+    else await setScalarSetting(provider, key, guildId, value);
+    await publishProviderSettingsInvalidation(provider.id, guildId);
 }
 
 async function getProviderSettings(providerInput, guildId) {
     const provider = normalizeProvider(providerInput);
+    if (isTestStorageMode()) return await loadProviderSettings(provider, guildId);
+
+    await refreshProviderSettingsInvalidations();
+    const key = providerSettingsCacheKey(provider.id, guildId);
+    const cached = providerSettingsCache.get(key);
+    if (cached && cached.expiresAt > Date.now()) return cached.value;
+
+    const value = await loadProviderSettings(provider, guildId);
+    providerSettingsCache.set(key, { value, expiresAt: Date.now() + SETTINGS_CACHE_TTL_MS });
+    return value;
+}
+
+function providerSettingsCacheKey(providerId, guildId) {
+    return `${providerId}\u0001${guildId}`;
+}
+
+function clearProviderSettingsCache(providerId = null, guildId = null) {
+    if (providerId === null || guildId === null) {
+        providerSettingsCache.clear();
+        return;
+    }
+    providerSettingsCache.delete(providerSettingsCacheKey(providerId, guildId));
+}
+
+async function publishProviderSettingsInvalidation(providerId, guildId) {
+    clearProviderSettingsCache(providerId, guildId);
+    if (isTestStorageMode()) return;
+    await queryDatabase()(
+        `INSERT INTO ${TABLES.providerSettingsCacheInvalidations} (provider_id, guild_id)
+         VALUES (?, ?)`,
+        [providerId, guildId],
+    );
+}
+
+async function refreshProviderSettingsInvalidations(now = Date.now()) {
+    if (invalidationPoll) return await invalidationPoll;
+    if (now - lastInvalidationPollAt < SETTINGS_INVALIDATION_POLL_MS) return;
+    lastInvalidationPollAt = now;
+    invalidationPoll = (async () => {
+        await ensureDatabaseSchema();
+        if (!invalidationInitialized) {
+            const rows = await queryDatabase()(
+                `SELECT MAX(revision) AS revision FROM ${TABLES.providerSettingsCacheInvalidations}`,
+            );
+            lastInvalidationRevision = Number(rows[0]?.revision) || 0;
+            invalidationInitialized = true;
+            return;
+        }
+        const rows = await queryDatabase()(
+            `SELECT revision, provider_id, guild_id
+             FROM ${TABLES.providerSettingsCacheInvalidations}
+             WHERE revision > ?
+             ORDER BY revision ASC`,
+            [lastInvalidationRevision],
+        );
+        for (const row of rows) {
+            clearProviderSettingsCache(row.provider_id, row.guild_id);
+            lastInvalidationRevision = Math.max(lastInvalidationRevision, Number(row.revision) || 0);
+        }
+    })().finally(() => {
+        invalidationPoll = null;
+    });
+    return await invalidationPoll;
+}
+
+async function loadProviderSettings(provider, guildId) {
+    if (isTestStorageMode()) {
+        const out = {};
+        for (const key of Object.keys(PROVIDER_DEFAULTS)) {
+            const value = await getSetting(provider, key, guildId);
+            if (value !== undefined) out[key] = value;
+        }
+        return out;
+    }
+
+    await ensureDatabaseSchema();
+    const query = queryDatabase();
+    const [scalarRows, ...specialValues] = await Promise.all([
+        query(`SELECT * FROM ${TABLES.guildProviderSettings} WHERE provider_id = ? AND guild_id = ? LIMIT 1`, [provider.id, guildId]),
+        getDisableSetting(provider, guildId).then(value => ({ key: 'disable', value })),
+        ...Object.entries(TARGET_SETTING_TABLES).map(async ([key, table]) => ({
+            key,
+            value: targetRowsToSetting(await getRowsByTargetTable(table, provider.id, guildId)),
+        })),
+        getBannedWords(provider, guildId).then(value => ({ key: 'bannedWords', value })),
+        getButtonVisibility(provider, guildId).then(value => ({ key: 'button_invisible', value })),
+        getSetting(provider, 'button_disabled', guildId).then(value => ({ key: 'button_disabled', value })),
+    ]);
+    const scalarRow = scalarRows[0];
     const out = {};
     for (const key of Object.keys(PROVIDER_DEFAULTS)) {
-        const value = await getSetting(provider, key, guildId);
-        if (value !== undefined) out[key] = value;
+        const spec = PROVIDER_SETTING_COLUMNS[key];
+        const value = spec ? convertDatabaseValue(scalarRow?.[spec.column], spec) : undefined;
+        const fallback = value === undefined ? settingDefault(provider, key) : value;
+        if (fallback !== undefined) out[key] = fallback;
     }
+    for (const { key, value } of specialValues) out[key] = value;
     return out;
 }
 
@@ -732,5 +833,9 @@ module.exports = {
         normalizeQuoteDepthByAccount,
         normalizeTargetSetting,
         TEST_MEMORY_VALUES,
+        clearProviderSettingsCache,
+        loadProviderSettings,
+        providerSettingsCache,
+        refreshProviderSettingsInvalidations,
     },
 };
