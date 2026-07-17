@@ -32,7 +32,7 @@
     "jpeg-js": "^0.4.4",
     "mysql": "^2.18.1",
     "node-fetch": "^2.7.0",
-    "undici": "6.24.1"
+    "undici": "6.27.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",
