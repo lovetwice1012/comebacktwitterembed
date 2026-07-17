@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Activity, ClipboardList, FileClock, Gauge, Layers3, Search, Server, Video } from "lucide-react";
+import { Activity, ClipboardList, FileClock, Gauge, Layers3, Search, Server, ShieldCheck, Video } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   type GuildOption,
@@ -41,6 +41,7 @@ const navItems = [
   { href: "diagnostics", labelKey: "shell.nav.diagnostics", icon: Activity },
   { href: "media", labelKey: "shell.nav.media", icon: Video },
   { href: "logs", labelKey: "shell.nav.logs", icon: FileClock },
+  { href: "access", labelKey: "shell.nav.access", icon: ShieldCheck },
 ] satisfies Array<{ href: string; labelKey: TranslationKey; icon: typeof Gauge }>;
 
 function equalIds(a: string[], b: string[]) {

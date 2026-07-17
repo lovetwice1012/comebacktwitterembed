@@ -52,6 +52,7 @@ const ADMIN_ANALYTICS_CACHE_MAX_ENTRIES = 12;
 const ADMIN_ANALYTICS_CACHE_ACTIVE_MS = 60 * 60 * 1000;
 const ADMIN_ANALYTICS_BUILD_QUEUE_MAX = 4;
 const ADMIN_ANALYTICS_BUILD_CONCURRENCY = 2;
+const ADMIN_REPORT_SNAPSHOT_MAX_AGE_MS = 15 * 60 * 1000;
 const PRIVACY_MIN_GROUP_SIZE = 5;
 const SMALL_GROUP_LABEL = "少数";
 const smallGroupDetailColumns = new Set([
@@ -4351,6 +4352,7 @@ type AdminDetailedAnalyticsCacheEntry = {
   updatedAtMs: number;
   lastAccessedAtMs: number;
   refreshPromise: Promise<AdminDetailedAnalyticsSnapshot> | null;
+  persistentSnapshotLoaded: boolean;
 };
 
 type AdminDetailedAnalyticsCacheState = {
@@ -4411,6 +4413,7 @@ function getAdminDetailedAnalyticsCacheEntry(filters: AdminDetailedAnalyticsFilt
       updatedAtMs: 0,
       lastAccessedAtMs: Date.now(),
       refreshPromise: null,
+      persistentSnapshotLoaded: false,
     };
     adminDetailedAnalyticsCacheState.entries.set(key, entry);
   } else {
@@ -4420,12 +4423,55 @@ function getAdminDetailedAnalyticsCacheEntry(filters: AdminDetailedAnalyticsFilt
   return entry;
 }
 
+function persistedReportSnapshotKey(reportType: string, key: string) {
+  return createHash("sha256").update(`${reportType}:${key}`).digest("hex");
+}
+
+async function loadPersistedDetailedAnalyticsSnapshot(entry: AdminDetailedAnalyticsCacheEntry) {
+  if (entry.persistentSnapshotLoaded) return;
+  entry.persistentSnapshotLoaded = true;
+  const snapshotKey = persistedReportSnapshotKey("detailed", detailedAnalyticsCacheKey(entry.filters));
+  const rows = await optionalQuery<Array<{ payload_json: string; generated_at_ms: number }>>([], () => prisma.$queryRawUnsafe(
+    `SELECT payload_json, generated_at_ms
+     FROM bot_admin_report_snapshots
+     WHERE report_type = ? AND snapshot_key = ? AND generated_at_ms >= ?
+     LIMIT 1`,
+    "detailed",
+    snapshotKey,
+    Date.now() - ADMIN_REPORT_SNAPSHOT_MAX_AGE_MS,
+  ));
+  const row = rows[0];
+  if (!row?.payload_json) return;
+  try {
+    const snapshot = JSON.parse(row.payload_json) as AdminDetailedAnalyticsSnapshot;
+    if (!snapshot || typeof snapshot !== "object") return;
+    entry.snapshot = snapshot;
+    entry.updatedAtMs = Number(row.generated_at_ms) || 0;
+  } catch {
+    // A malformed historical cache entry must never block report generation.
+  }
+}
+
+async function persistDetailedAnalyticsSnapshot(entry: AdminDetailedAnalyticsCacheEntry, snapshot: AdminDetailedAnalyticsSnapshot) {
+  const snapshotKey = persistedReportSnapshotKey("detailed", detailedAnalyticsCacheKey(entry.filters));
+  await optionalQuery(undefined, () => prisma.$executeRawUnsafe(
+    `INSERT INTO bot_admin_report_snapshots (report_type, snapshot_key, generated_at_ms, payload_json)
+     VALUES (?, ?, ?, ?)
+     ON DUPLICATE KEY UPDATE generated_at_ms = VALUES(generated_at_ms), payload_json = VALUES(payload_json)`,
+    "detailed",
+    snapshotKey,
+    Date.now(),
+    JSON.stringify(snapshot),
+  ));
+}
+
 function refreshAdminDetailedAnalyticsCacheEntry(entry: AdminDetailedAnalyticsCacheEntry) {
   if (!entry.refreshPromise) {
     entry.refreshPromise = enqueueAdminAnalyticsBuild(() => buildAdminDetailedAnalytics(entry.filters))
       .then((snapshot) => {
         entry.snapshot = snapshot;
         entry.updatedAtMs = Date.now();
+        void persistDetailedAnalyticsSnapshot(entry, snapshot);
         return snapshot;
       })
       .finally(() => {
@@ -4463,7 +4509,9 @@ export function warmAdminDetailedAnalyticsCache(rawFilters: AdminDetailedAnalyti
   if (!shouldPrewarmAdminAnalyticsCache()) return;
   const filters = normalizeDetailedAnalyticsFilters(rawFilters);
   const entry = getAdminDetailedAnalyticsCacheEntry(filters);
-  void refreshAdminDetailedAnalyticsCacheEntry(entry).catch(() => undefined);
+  void loadPersistedDetailedAnalyticsSnapshot(entry)
+    .then(() => refreshAdminDetailedAnalyticsCacheEntry(entry))
+    .catch(() => undefined);
 }
 
 export async function getAdminDetailedAnalytics(
@@ -4473,6 +4521,8 @@ export async function getAdminDetailedAnalytics(
   ensureAdminDetailedAnalyticsBatchRefresh();
   const filters = normalizeDetailedAnalyticsFilters(rawFilters);
   const entry = getAdminDetailedAnalyticsCacheEntry(filters);
+
+  await loadPersistedDetailedAnalyticsSnapshot(entry);
 
   if (options.forceRefresh || !entry.snapshot) {
     void refreshAdminDetailedAnalyticsCacheEntry(entry).catch(() => undefined);
