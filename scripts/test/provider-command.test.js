@@ -57,6 +57,32 @@ test('provider enable and disable commands accept all as an id choice', () => {
     }
 });
 
+test('provider command has no static Discord permission gate and still checks permissions at runtime', async () => {
+    const { handler, restore } = loadProviderHandlerWithProviderSettings();
+
+    try {
+        assert.equal(handler.definition.default_member_permissions, null);
+
+        let reply = null;
+        await handler.execute({
+            guild: { id: 'guild-provider-list' },
+            guildId: 'guild-provider-list',
+            memberPermissions: { has: () => false },
+            options: {
+                getSubcommand: () => 'list',
+                getString: () => null,
+            },
+            editReply: async (payload) => {
+                reply = payload;
+            },
+        });
+
+        assert.match(reply.content, /Manage Server permission is required/);
+    } finally {
+        restore();
+    }
+});
+
 for (const [subcommand, enabled] of [['enable', true], ['disable', false]]) {
     test(`provider ${subcommand} all updates every loaded provider`, async () => {
         const calls = [];

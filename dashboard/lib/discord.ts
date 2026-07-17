@@ -2,6 +2,14 @@ import "server-only";
 
 import { cache } from "react";
 import { getBotToken, getDashboardFlag, getDashboardNumber } from "@/lib/env";
+import {
+  delegatedAccessEnabled,
+  delegatedAccessLevelForTargets,
+  isDiscordSnowflake,
+  listDelegatedAccess,
+  type DelegatedAccessLevel,
+  type DelegatedAccessTargetType,
+} from "@/lib/delegated-access";
 import { prisma } from "@/lib/prisma";
 import { canEditSettings, canManageGuildSettings, canViewSettings, parsePermissions } from "@/lib/permissions";
 import type { DashboardSession, GuildAccess } from "@/lib/types";
@@ -19,6 +27,36 @@ type DiscordUser = {
   username: string;
   global_name?: string | null;
   avatar?: string | null;
+};
+
+type DiscordGuildMember = {
+  user?: DiscordUser;
+  nick?: string | null;
+  avatar?: string | null;
+  roles: string[];
+};
+
+type DiscordRole = {
+  id: string;
+  name: string;
+  color: number;
+  managed: boolean;
+  position: number;
+};
+
+export type GuildAccessMember = {
+  id: string;
+  username: string;
+  nickname: string | null;
+  avatarUrl: string | null;
+};
+
+export type GuildAccessRole = {
+  id: string;
+  name: string;
+  color: string | null;
+  managed: boolean;
+  position: number;
 };
 
 const DISCORD_API_TIMEOUT_MS = getDashboardNumber("discordApiTimeoutMs", "DISCORD_API_TIMEOUT_MS", 8000);
@@ -50,16 +88,22 @@ function cachedByKey<T>(map: Map<string, CacheEntry<T>>, key: string, load: () =
   return next.promise;
 }
 
-async function discordFetch<T>(path: string, token: string, authType: "Bearer" | "Bot") {
+async function discordFetch<T>(
+  path: string,
+  token: string,
+  authType: "Bearer" | "Bot",
+  cacheMode: "default" | "no-store" = "default",
+) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), DISCORD_API_TIMEOUT_MS);
   try {
+    const cacheOptions = cacheMode === "no-store" ? { cache: "no-store" as const } : { next: { revalidate: 30 } };
     const res = await fetch(`https://discord.com/api/v10${path}`, {
       headers: {
         Authorization: `${authType} ${token}`,
         "User-Agent": "comebacktwitterembed-dashboard",
       },
-      next: { revalidate: 30 },
+      ...cacheOptions,
       signal: controller.signal,
     });
     if (!res.ok) {
@@ -125,6 +169,130 @@ export function guildIconUrl(guild: Pick<DiscordGuild, "id" | "icon">) {
   return guild.icon ? `https://cdn.discordapp.com/icons/${guild.id}/${guild.icon}.png?size=128` : null;
 }
 
+function memberAvatarUrl(guildId: string, member: DiscordGuildMember) {
+  const user = member.user;
+  if (!user) return null;
+  if (member.avatar) return `https://cdn.discordapp.com/guilds/${guildId}/users/${user.id}/avatars/${member.avatar}.png?size=128`;
+  return user.avatar ? `https://cdn.discordapp.com/avatars/${user.id}/${user.avatar}.png?size=128` : null;
+}
+
+async function fetchGuildMemberRoleIds(guildId: string, userId: string): Promise<string[] | null> {
+  if (!delegatedAccessEnabled() || !isDiscordSnowflake(guildId) || !isDiscordSnowflake(userId)) return null;
+  const token = getBotToken();
+  if (!token) return null;
+  try {
+    const member = await discordFetch<DiscordGuildMember>(`/guilds/${guildId}/members/${userId}`, token, "Bot", "no-store");
+    return Array.isArray(member.roles) ? member.roles.filter(isDiscordSnowflake) : null;
+  } catch {
+    // A failed membership lookup must never turn into delegated access.
+    return null;
+  }
+}
+
+async function delegatedAccessForGuild(guildId: string, userId: string): Promise<DelegatedAccessLevel | null> {
+  if (!delegatedAccessEnabled()) return null;
+  const grants = (await listDelegatedAccess(guildId)).filter(
+    (grant) => grant.targetType !== "role" || grant.targetId !== guildId,
+  );
+  if (grants.length === 0) return null;
+  const roleIds = await fetchGuildMemberRoleIds(guildId, userId);
+  // Confirm that the Discord account is still a current member before honoring
+  // either a direct-user grant or a role grant. This fails closed on API errors.
+  if (!roleIds) return null;
+  return delegatedAccessLevelForTargets(grants, userId, roleIds);
+}
+
+export async function fetchGuildAccessDirectory(guildId: string, query: string) {
+  if (!delegatedAccessEnabled() || !isDiscordSnowflake(guildId)) {
+    return { members: [] as GuildAccessMember[], roles: [] as GuildAccessRole[], directoryError: null };
+  }
+
+  const token = getBotToken();
+  if (!token) {
+    return { members: [] as GuildAccessMember[], roles: [] as GuildAccessRole[], directoryError: "Discord bot token is unavailable." };
+  }
+
+  const trimmedQuery = query.trim().slice(0, 100);
+  const [membersResult, rolesResult] = await Promise.allSettled([
+    trimmedQuery
+      ? discordFetch<DiscordGuildMember[]>(`/guilds/${guildId}/members/search?query=${encodeURIComponent(trimmedQuery)}&limit=25`, token, "Bot", "no-store")
+      : Promise.resolve([] as DiscordGuildMember[]),
+    discordFetch<DiscordRole[]>(`/guilds/${guildId}/roles`, token, "Bot", "no-store"),
+  ]);
+
+  const members = membersResult.status === "fulfilled"
+    ? membersResult.value
+      .filter((member) => member.user && isDiscordSnowflake(member.user.id))
+      .map((member) => ({
+        id: member.user!.id,
+        username: member.user!.username,
+        nickname: member.nick || null,
+        avatarUrl: memberAvatarUrl(guildId, member),
+      }))
+    : [];
+  const roles = rolesResult.status === "fulfilled"
+    ? rolesResult.value
+      .filter((role) => isDiscordSnowflake(role.id) && role.id !== guildId)
+      .sort((a, b) => b.position - a.position)
+      .map((role) => ({
+        id: role.id,
+        name: role.name,
+        color: role.color ? `#${role.color.toString(16).padStart(6, "0")}` : null,
+        managed: role.managed,
+        position: role.position,
+      }))
+    : [];
+
+  return {
+    members,
+    roles,
+    directoryError: membersResult.status === "rejected" || rolesResult.status === "rejected"
+      ? "Discord member or role data is temporarily unavailable."
+      : null,
+  };
+}
+
+export async function validateGuildAccessTargets(
+  guildId: string,
+  targetType: DelegatedAccessTargetType,
+  targetIds: string[],
+) {
+  if (!delegatedAccessEnabled() || !isDiscordSnowflake(guildId) || targetIds.some((id) => !isDiscordSnowflake(id))) {
+    return false;
+  }
+  const token = getBotToken();
+  if (!token) return false;
+
+  if (targetType === "role") {
+    try {
+      const roles = await discordFetch<DiscordRole[]>(`/guilds/${guildId}/roles`, token, "Bot", "no-store");
+      const roleIds = new Set(roles.map((role) => role.id));
+      return targetIds.every((id) => id !== guildId && roleIds.has(id));
+    } catch {
+      return false;
+    }
+  }
+
+  // Validate users as current guild members. Keep the request fan-out bounded
+  // so a bulk action cannot exhaust the Discord API rate limit.
+  let next = 0;
+  let valid = true;
+  const worker = async () => {
+    while (valid) {
+      const index = next;
+      next += 1;
+      if (index >= targetIds.length) return;
+      try {
+        await discordFetch<DiscordGuildMember>(`/guilds/${guildId}/members/${targetIds[index]}`, token, "Bot", "no-store");
+      } catch {
+        valid = false;
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(5, targetIds.length) }, worker));
+  return valid;
+}
+
 export async function listVisibleGuilds(session: DashboardSession) {
   const [userGuilds, installed] = await Promise.all([
     fetchUserGuilds(session.accessToken),
@@ -135,8 +303,10 @@ export async function listVisibleGuilds(session: DashboardSession) {
     userGuilds.map(async (guild) => {
       const permissions = parsePermissions(guild.owner ? BigInt("9223372036854775807") : guild.permissions || "0");
       const botInstalled = installed.has(guild.id);
-      const canView = botInstalled && canViewSettings(permissions);
-      const canEdit = botInstalled && canEditSettings(permissions);
+      const nativeCanView = canViewSettings(permissions);
+      const delegatedAccess = botInstalled && !nativeCanView ? await delegatedAccessForGuild(guild.id, session.user.id) : null;
+      const canView = botInstalled && (nativeCanView || delegatedAccess !== null);
+      const canEdit = botInstalled && (canEditSettings(permissions) || delegatedAccess === "edit");
       const canManageGuild = botInstalled && canManageGuildSettings(permissions);
       const providerSummary = canView ? await providerSummaryForGuild(guild.id) : { enabled: 0, disabled: 0, total: 0 };
       return {
@@ -164,20 +334,25 @@ export async function listSwitcherGuilds(session: DashboardSession) {
     fetchBotGuildIds(),
   ]);
 
-  return userGuilds
-    .map((guild) => {
+  const out = await Promise.all(
+    userGuilds.map(async (guild) => {
       const permissions = parsePermissions(guild.owner ? BigInt("9223372036854775807") : guild.permissions || "0");
       const botInstalled = installed.has(guild.id);
-      const canView = botInstalled && canViewSettings(permissions);
+      const nativeCanView = canViewSettings(permissions);
+      const delegatedAccess = botInstalled && !nativeCanView ? await delegatedAccessForGuild(guild.id, session.user.id) : null;
+      const canView = botInstalled && (nativeCanView || delegatedAccess !== null);
       return {
         guildId: guild.id,
         name: guild.name,
         iconUrl: guildIconUrl(guild),
         canView,
-        canEdit: botInstalled && canEditSettings(permissions),
+        canEdit: botInstalled && (canEditSettings(permissions) || delegatedAccess === "edit"),
         canManageGuild: botInstalled && canManageGuildSettings(permissions),
       };
-    })
+    }),
+  );
+
+  return out
     .filter((guild) => guild.canView)
     .sort((a, b) => Number(b.canEdit) - Number(a.canEdit) || a.name.localeCompare(b.name));
 }
@@ -191,7 +366,9 @@ export async function getGuildAccess(session: DashboardSession, guildId: string)
   if (!guild || !installed.has(guild.id)) return null;
 
   const permissions = parsePermissions(guild.owner ? BigInt("9223372036854775807") : guild.permissions || "0");
-  if (!canViewSettings(permissions)) return null;
+  const nativeCanView = canViewSettings(permissions);
+  const delegatedAccess = !nativeCanView ? await delegatedAccessForGuild(guild.id, session.user.id) : null;
+  if (!nativeCanView && !delegatedAccess) return null;
 
   return {
     guildId: guild.id,
@@ -199,7 +376,7 @@ export async function getGuildAccess(session: DashboardSession, guildId: string)
     iconUrl: guildIconUrl(guild),
     botInstalled: true,
     canView: true,
-    canEdit: canEditSettings(permissions),
+    canEdit: canEditSettings(permissions) || delegatedAccess === "edit",
     canManageGuild: canManageGuildSettings(permissions),
     permissions,
   };

@@ -71,6 +71,7 @@ To keep online rebuilds from touching DLLs loaded by the running dashboard on Wi
 Useful `config.json` switches:
 
 - `dashboard.enabled: false` disables automatic dashboard startup from the Bot process.
+- `dashboard.delegatedAccessEnabled: true` enables delegated Dashboard and settings-command access after the Discord Members Intent review is approved. It is disabled by default; `DASHBOARD_DELEGATED_ACCESS_ENABLED=true` is the equivalent emergency override.
 - `dashboard.npmScript: "dev"` intentionally forces development mode. Leave it unset or set `"start"` for normal operation.
 - `mediaDelivery.serverMode: "express"` intentionally uses the standalone Express media server instead of dashboard-integrated routes.
 
@@ -85,3 +86,5 @@ npm run build
 ```
 
 The dashboard writes provider settings to the same tables consumed by `src/providers/_provider_settings.js`. The audit table is created by `migrations/20260701_add_dashboard_audit_logs.sql` and also guarded at runtime with `CREATE TABLE IF NOT EXISTS`.
+
+Delegated access grants are stored in `dashboard_delegated_access_grants`. After enabling the switch, restart the Bot and dashboard so the Bot reads the new configuration; existing grants then take effect without a data migration.

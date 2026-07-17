@@ -78,6 +78,8 @@ async function replyLines(interaction, lines) {
 async function execute(interaction) {
     const sub = interaction.options.getSubcommand();
 
+    if (!await ensureGuildAdmin(interaction)) return;
+
     if (sub === 'list') {
         const lines = [];
         for (const p of loadProviders()) {
@@ -87,8 +89,6 @@ async function execute(interaction) {
         }
         return await replyLines(interaction, lines);
     }
-
-    if (!await ensureGuildAdmin(interaction)) return;
 
     const id = interaction.options.getString('id', true);
     if (sub === 'enable' || sub === 'disable') {
@@ -145,7 +145,9 @@ module.exports.execute = execute;
 module.exports.definition = {
     name: 'provider',
     description: 'Manage embed providers (enable/disable per guild)',
-    default_member_permissions: String(PermissionsBitField.Flags.ManageGuild),
+    // Runtime authorization supports DB-backed delegated editors, which Discord's
+    // static command permission field cannot represent.
+    default_member_permissions: null,
     options: [
         { name: 'list',    description: 'List all loaded providers and their status', type: ApplicationCommandOptionType.Subcommand },
         { name: 'enable',  description: 'Enable a provider in this guild',  type: ApplicationCommandOptionType.Subcommand, options: [idOrAllOption] },

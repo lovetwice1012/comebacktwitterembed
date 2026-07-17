@@ -25,6 +25,7 @@ type RootConfig = {
     adminUserIds?: string[] | string;
     adminAnalyticsPrewarm?: boolean;
     dbConnectionLimit?: number;
+    delegatedAccessEnabled?: boolean;
   };
   mediaDelivery?: {
     publicBaseUrl?: string;
@@ -134,7 +135,7 @@ export function getDashboardBaseUrl() {
   ).replace(/\/+$/, "");
 }
 
-export function getDashboardFlag(key: "useBotGuildApi" | "loadGuildProviderSummary", envName: string) {
+export function getDashboardFlag(key: "useBotGuildApi" | "loadGuildProviderSummary" | "delegatedAccessEnabled", envName: string) {
   const envValue = process.env[envName];
   if (envValue !== undefined && envValue !== "") return /^(1|true|yes|on)$/i.test(envValue);
   return readRootConfig().dashboard?.[key] === true;

@@ -1,6 +1,8 @@
 import { AccessDenied } from "@/components/dashboard/access-denied";
+import { AccessManagement } from "@/components/dashboard/access-management";
 import { AccessManagementMock } from "@/components/dashboard/access-management-mock";
 import { DashboardShell } from "@/components/dashboard/dashboard-shell";
+import { delegatedAccessEnabled } from "@/lib/delegated-access";
 import { getGuildAccess } from "@/lib/discord";
 import { getDashboardLocale } from "@/lib/server-locale";
 import { requireDashboardSession } from "@/lib/server-session";
@@ -16,7 +18,7 @@ export default async function AccessManagementPage({ params }: Params) {
 
   return (
     <DashboardShell guildId={guildId} guildName={access.name} canEdit={access.canEdit} locale={locale}>
-      <AccessManagementMock />
+      {delegatedAccessEnabled() ? <AccessManagement guildId={guildId} /> : <AccessManagementMock />}
     </DashboardShell>
   );
 }

@@ -2,6 +2,7 @@
 
 const { Events, InteractionType } = require('discord.js');
 const { loadProviderCommands } = require('../providers/_loader');
+const { applyDelegatedEditPermissions } = require('../delegatedAccess');
 const {
     recordAnalyticsEvent = () => {},
     recordError,
@@ -21,6 +22,22 @@ const CORE_HANDLERS = {
     "autoextract":          require('../commands/handlers/autoextract').execute,
     "provider":             require('../commands/handlers/provider').execute,
 };
+
+async function resolveDelegatedEditPermissions(interaction) {
+    try {
+        return await applyDelegatedEditPermissions(interaction);
+    } catch (error) {
+        // Delegated access is optional; fail closed without blocking native Discord permissions.
+        recordError(error, {
+            fallbackType: 'delegated_access_lookup_failed',
+            source: 'applicationCommands.delegatedAccess',
+            interaction,
+            commandName: interaction.commandName,
+        });
+        console.error('Failed to resolve delegated access:', error);
+        return () => {};
+    }
+}
 
 // provider が export する slash command を統合して dispatch table を構築する。
 function buildHandlers() {
@@ -77,8 +94,10 @@ function register(client) {
         if (!handler) return;
         const startedAt = Date.now();
         recordMetric('command_attempt', { interaction, commandName: interaction.commandName });
+        let restoreDelegatedPermissions = () => {};
         try {
             await interaction.deferReply({ ephemeral: shouldDeferEphemeral(interaction) });
+            restoreDelegatedPermissions = await resolveDelegatedEditPermissions(interaction);
             await handler(interaction, client);
             recordMetric('command_success', { interaction, commandName: interaction.commandName });
             recordAnalyticsEvent('command', {
@@ -98,8 +117,16 @@ function register(client) {
                 details: { error_name: err?.name || null },
             });
             await replyCommandError(interaction, err);
+        } finally {
+            restoreDelegatedPermissions();
         }
     }));
 }
 
-module.exports = { register, _internal: { shouldDeferEphemeral } };
+module.exports = {
+    register,
+    _internal: {
+        shouldDeferEphemeral,
+        resolveDelegatedEditPermissions,
+    },
+};

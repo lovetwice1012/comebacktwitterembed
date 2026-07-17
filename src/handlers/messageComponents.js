@@ -4,6 +4,7 @@ const { Events, InteractionType } = require('discord.js');
 const { buildButtons } = require('../components/_buttons');
 const { isAllowed } = require('../components/_permissionCheck');
 const guisetting = require('../commands/handlers/guisetting');
+const { applyDelegatedEditPermissions } = require('../delegatedAccess');
 const {
     isIgnorableInteractionAckError,
     isInteractionAlreadyAcknowledgedError,
@@ -94,6 +95,31 @@ async function replyComponentError(interaction, err) {
     await interaction.reply(payload).catch(() => {});
 }
 
+async function resolveGuisettingDelegatedEditPermissions(interaction) {
+    try {
+        return await applyDelegatedEditPermissions(interaction);
+    } catch (error) {
+        // Delegated access is optional; retain native Discord authorization if its lookup fails.
+        recordError(error, {
+            fallbackType: 'delegated_access_lookup_failed',
+            source: 'messageComponents.delegatedAccess',
+            interaction,
+            componentId: 'guisetting',
+        });
+        console.error('Failed to resolve delegated access:', error);
+        return () => {};
+    }
+}
+
+async function withGuisettingDelegatedEditPermissions(interaction, callback) {
+    const restore = await resolveGuisettingDelegatedEditPermissions(interaction);
+    try {
+        return await callback();
+    } finally {
+        restore();
+    }
+}
+
 function register(client) {
     client.on(Events.InteractionCreate, async (interaction) => {
         const startedAt = Date.now();
@@ -106,7 +132,9 @@ function register(client) {
         try {
             if (interaction.type === InteractionType.ModalSubmit && baseCustomId === 'guisetting') {
                 recordMetric('modal_submit_attempt', { interaction, componentId: baseCustomId });
-                await guisetting.handleModalSubmit(interaction);
+                await withGuisettingDelegatedEditPermissions(interaction, async () => {
+                    await guisetting.handleModalSubmit(interaction);
+                });
                 recordMetric('modal_submit_success', { interaction, componentId: baseCustomId });
                 recordAnalyticsEvent('modal_submit', {
                     source: 'messageComponents.modalSubmit',
@@ -121,7 +149,9 @@ function register(client) {
             if (interaction.type !== InteractionType.MessageComponent) return;
             recordMetric('component_attempt', { interaction, componentId: baseCustomId });
             if (baseCustomId === 'guisetting') {
-                await guisetting.handleComponent(interaction);
+                await withGuisettingDelegatedEditPermissions(interaction, async () => {
+                    await guisetting.handleComponent(interaction);
+                });
                 recordMetric('component_success', { interaction, componentId: baseCustomId });
                 recordAnalyticsEvent('component', {
                     source: 'messageComponents.guisetting',
@@ -196,4 +226,10 @@ function register(client) {
     });
 }
 
-module.exports = { register };
+module.exports = {
+    register,
+    _internal: {
+        resolveGuisettingDelegatedEditPermissions,
+        withGuisettingDelegatedEditPermissions,
+    },
+};
