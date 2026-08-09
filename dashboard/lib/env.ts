@@ -83,7 +83,7 @@ function getDashboardDbConnectionLimit() {
   if (Number.isFinite(envValue) && envValue > 0) return Math.floor(envValue);
   if (process.env.DASHBOARD_DB_CONNECTION_LIMIT === "0") return 0;
   const configValue = Number(readRootConfig().dashboard?.dbConnectionLimit);
-  return Number.isFinite(configValue) && configValue > 0 ? Math.floor(configValue) : 2;
+  return Number.isFinite(configValue) && configValue > 0 ? Math.floor(configValue) : 16;
 }
 
 function withDashboardConnectionLimit(rawUrl: string) {

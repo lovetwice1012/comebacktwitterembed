@@ -168,6 +168,15 @@ test('provider hourly aggregate migration is present', () => {
     assert.ok(sql.includes('enrichment_duration_sum_ms'));
 });
 
+test('audience analytics join indexes are migrated independently of report features', () => {
+    const file = path.join(MIGRATIONS_DIR, '20260809_add_admin_analytics_join_indexes.sql');
+    const sql = fs.readFileSync(file, 'utf8');
+
+    assert.ok(_internal.listMigrationFiles().includes('20260809_add_admin_analytics_join_indexes.sql'));
+    assert.match(sql, /idx_provider_hourly_unique_event_key_time/);
+    assert.match(sql, /idx_analytics_event_user_time/);
+});
+
 test('bot analytics migration quotes sensitive content column for MySQL', () => {
     const file = path.join(MIGRATIONS_DIR, '20260702_add_bot_analytics_events.sql');
     const sql = fs.readFileSync(file, 'utf8');

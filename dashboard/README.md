@@ -20,7 +20,7 @@ Dashboard and media delivery configuration is read from the root `config.json`.
     "useBotGuildApi": false,
     "loadGuildProviderSummary": false,
     "discordApiTimeoutMs": 8000,
-    "dbConnectionLimit": 2,
+    "dbConnectionLimit": 16,
     "adminAnalyticsPrewarm": false
   },
   "mediaDelivery": {
@@ -36,9 +36,9 @@ Dashboard and media delivery configuration is read from the root `config.json`.
 
 `DISCORD_BOT_TOKEN` is not required for Dashboard login. The dashboard normally checks bot-installed guilds from the existing MySQL `guilds` table. Set `dashboard.useBotGuildApi` to `true` only if you explicitly want the dashboard to call Discord's bot guild API, which can be slow for bots installed in many guilds.
 
-Database connection can be provided by `DATABASE_URL`. If it is absent, the dashboard derives the MySQL URL from the root `config.json` `db` section or the legacy DB defaults used by the bot. The dashboard appends a Prisma MySQL `connection_limit` of `2` by default so analytics pages cannot occupy the database pool; override with `DASHBOARD_DB_CONNECTION_LIMIT` or `dashboard.dbConnectionLimit`.
+Database connection can be provided by `DATABASE_URL`. If it is absent, the dashboard derives the MySQL URL from the root `config.json` `db` section or the legacy DB defaults used by the bot. The dashboard appends a Prisma MySQL `connection_limit` of `16` by default so normal concurrent settings and dashboard requests do not exhaust the pool; override with `DASHBOARD_DB_CONNECTION_LIMIT` or `dashboard.dbConnectionLimit` after checking the database server's connection budget.
 
-Admin analytics reports are served from in-memory snapshots. Requests and manual refreshes queue background regeneration and return immediately with the latest available snapshot. Startup prewarming is disabled by default; set `DASHBOARD_ADMIN_ANALYTICS_PREWARM=1` or `dashboard.adminAnalyticsPrewarm: true` only on hosts that can absorb report generation during boot.
+Admin analytics reports are served from in-memory and durable MySQL snapshots. Requests and manual refreshes queue one background report build at a time and return immediately with the latest available snapshot, including the last completed snapshot after a dashboard restart. Startup prewarming is disabled by default; set `DASHBOARD_ADMIN_ANALYTICS_PREWARM=1` or `dashboard.adminAnalyticsPrewarm: true` only on hosts that can absorb report generation during boot.
 
 ## Integrated media routes
 

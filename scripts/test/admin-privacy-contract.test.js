@@ -529,6 +529,7 @@ test('admin analytics snapshots are produced by background batches instead of re
 
     assert.match(dataSource, /ADMIN_ANALYTICS_BATCH_INTERVAL_MS = 5 \* 60 \* 1000/);
     assert.match(dataSource, /ADMIN_ANALYTICS_QUERY_CONCURRENCY = 2/);
+    assert.match(dataSource, /ADMIN_ANALYTICS_BUILD_CONCURRENCY = 1/);
     assert.match(dataSource, /ADMIN_ANALYTICS_BUILD_QUEUE_MAX = 4/);
     assert.match(dataSource, /function enqueueAdminAnalyticsBuild/);
     assert.match(dataSource, /function shouldPrewarmAdminAnalyticsCache/);
@@ -540,6 +541,9 @@ test('admin analytics snapshots are produced by background batches instead of re
     assert.match(dataSource, /function ensureAdminGuildAnalyticsPreviewBatchRefresh\(\)[\s\S]*setInterval/);
     assert.match(dataSource, /function ensureAdminProviderMarketingPreviewBatchRefresh\(\)[\s\S]*setInterval/);
     assert.match(dataSource, /refreshPromise = enqueueAdminAnalyticsBuild\(\(\) => buildAdminOverview\(\)\)/);
+    assert.match(dataSource, /function loadPersistedAdvancedAnalyticsSnapshot/);
+    assert.match(dataSource, /function persistAdvancedAnalyticsSnapshot/);
+    assert.match(overviewBody, /await loadPersistedAdvancedAnalyticsSnapshot\(\)/);
     assert.match(dataSource, /refreshPromise = enqueueAdminAnalyticsBuild\(\(\) => buildAdminDetailedAnalytics\(entry\.filters\)\)/);
     assert.match(dataSource, /refreshPromise = enqueueAdminAnalyticsBuild\(\(\) => buildAdminGuildAnalyticsPreview\(entry\.filters\)\)/);
     assert.match(dataSource, /refreshPromise = enqueueAdminAnalyticsBuild\(\(\) => buildAdminProviderMarketingPreview\(entry\.filters\)\)/);

@@ -51,7 +51,10 @@ const ADMIN_ANALYTICS_QUERY_CONCURRENCY = 2;
 const ADMIN_ANALYTICS_CACHE_MAX_ENTRIES = 12;
 const ADMIN_ANALYTICS_CACHE_ACTIVE_MS = 60 * 60 * 1000;
 const ADMIN_ANALYTICS_BUILD_QUEUE_MAX = 4;
-const ADMIN_ANALYTICS_BUILD_CONCURRENCY = 2;
+// A report build can contain multiple aggregation queries. Keep only one
+// build active so analytics cannot consume the connections reserved for
+// concurrent dashboard setting changes.
+const ADMIN_ANALYTICS_BUILD_CONCURRENCY = 1;
 const ADMIN_REPORT_SNAPSHOT_MAX_AGE_MS = 15 * 60 * 1000;
 const PRIVACY_MIN_GROUP_SIZE = 5;
 const SMALL_GROUP_LABEL = "少数";
@@ -1447,25 +1450,9 @@ async function getAggregateEventDaySpikes(startMs: number) {
 }
 
 async function getAggregateAudienceCorrelation(startMs: number) {
-  const [pairRows, targetTotals, interestTotals, totalRows] = await Promise.all([
-    prisma.$queryRawUnsafe<Array<Record<string, unknown>>>(
-      `SELECT
-         target.provider_id AS target_provider_id,
-         target.account_key AS target_account_key,
-         other.provider_id AS interest_provider_id,
-         other.account_key AS interest_account_key,
-         other.content_type AS interest_content_type,
-         COUNT(DISTINCT target.key_hash) AS shared_users
-       FROM (
-         SELECT DISTINCT provider_id, account_key, key_hash
-         FROM bot_provider_hourly_unique_keys
-         WHERE bucket_start_ms >= ?
-           AND event_type = 'provider_content'
-           AND key_type = 'author_user'
-           AND provider_id <> ''
-           AND account_key <> ''
-       ) target
-       JOIN (
+  const [pairRows, targetTotals, interestTotals, totalRows] = await runLimited([
+    () => prisma.$queryRawUnsafe<Array<Record<string, unknown>>>(
+      `WITH scoped AS (
          SELECT DISTINCT provider_id, account_key, content_type, key_hash
          FROM bot_provider_hourly_unique_keys
          WHERE bucket_start_ms >= ?
@@ -1473,7 +1460,24 @@ async function getAggregateAudienceCorrelation(startMs: number) {
            AND key_type = 'author_user'
            AND provider_id <> ''
            AND account_key <> ''
-       ) other
+       ),
+       target AS (
+         SELECT DISTINCT provider_id, account_key, key_hash
+         FROM scoped
+       ),
+       other AS (
+         SELECT provider_id, account_key, content_type, key_hash
+         FROM scoped
+       )
+       SELECT
+         target.provider_id AS target_provider_id,
+         target.account_key AS target_account_key,
+         other.provider_id AS interest_provider_id,
+         other.account_key AS interest_account_key,
+         other.content_type AS interest_content_type,
+         COUNT(DISTINCT target.key_hash) AS shared_users
+       FROM target
+       JOIN other
          ON other.key_hash = target.key_hash
         AND (
           other.provider_id <> target.provider_id
@@ -1483,9 +1487,8 @@ async function getAggregateAudienceCorrelation(startMs: number) {
        ORDER BY shared_users DESC
        LIMIT 160`,
       startMs,
-      startMs,
     ),
-    prisma.$queryRawUnsafe<Array<Record<string, unknown>>>(
+    () => prisma.$queryRawUnsafe<Array<Record<string, unknown>>>(
       `SELECT
          provider_id,
          account_key,
@@ -1499,7 +1502,7 @@ async function getAggregateAudienceCorrelation(startMs: number) {
        GROUP BY provider_id, account_key`,
       startMs,
     ),
-    prisma.$queryRawUnsafe<Array<Record<string, unknown>>>(
+    () => prisma.$queryRawUnsafe<Array<Record<string, unknown>>>(
       `SELECT
          provider_id,
          account_key,
@@ -1514,15 +1517,15 @@ async function getAggregateAudienceCorrelation(startMs: number) {
        GROUP BY provider_id, account_key, content_type`,
       startMs,
     ),
-    prisma.$queryRawUnsafe<Array<Record<string, unknown>>>(
+    () => prisma.$queryRawUnsafe<Array<Record<string, unknown>>>(
       `SELECT COUNT(DISTINCT key_hash) AS total_users
        FROM bot_provider_hourly_unique_keys
        WHERE bucket_start_ms >= ?
          AND event_type = 'provider_content'
-         AND key_type = 'author_user'`,
+       AND key_type = 'author_user'`,
       startMs,
     ),
-  ]);
+  ], 1);
 
   const targetMap = new Map<string, Row>();
   for (const row of targetTotals) {
@@ -2689,26 +2692,46 @@ async function getUrlAnalytics(startMs: number) {
 
 async function getAudienceInterestAnalytics(startMs: number) {
   const rows = await prisma.$queryRawUnsafe<Array<Record<string, unknown>>>(
-    `SELECT
+    `WITH target_events AS (
+       SELECT
+         author_user_id,
+         provider_id,
+         account_key,
+         guild_id,
+         COUNT(*) AS activity_count
+       FROM bot_analytics_events
+       WHERE occurred_at_ms >= ?
+         AND event_type = 'provider_extract'
+         AND author_user_id IS NOT NULL
+         AND account_key IS NOT NULL
+       GROUP BY author_user_id, provider_id, account_key, guild_id
+     ),
+     other_events AS (
+       SELECT
+         author_user_id,
+         provider_id,
+         account_key,
+         endpoint_key,
+         COUNT(*) AS activity_count
+       FROM bot_analytics_events
+       WHERE occurred_at_ms >= ?
+         AND event_type = 'provider_extract'
+         AND provider_id IS NOT NULL
+       GROUP BY author_user_id, provider_id, account_key, endpoint_key
+     )
+     SELECT
        target.provider_id AS target_provider_id,
        target.account_key AS target_account_key,
        other.provider_id AS interest_provider_id,
        other.account_key AS interest_account_key,
        other.endpoint_key AS interest_endpoint_key,
-       COUNT(*) AS co_activity,
+       SUM(target.activity_count * other.activity_count) AS co_activity,
        COUNT(DISTINCT target.author_user_id) AS shared_users,
        COUNT(DISTINCT target.guild_id) AS shared_guilds
-     FROM bot_analytics_events target
-     JOIN bot_analytics_events other
+     FROM target_events target
+     JOIN other_events other
        ON other.author_user_id = target.author_user_id
-      AND other.event_type = 'provider_extract'
-      AND other.occurred_at_ms >= ?
-     WHERE target.occurred_at_ms >= ?
-       AND target.event_type = 'provider_extract'
-       AND target.author_user_id IS NOT NULL
-       AND target.account_key IS NOT NULL
-       AND other.provider_id IS NOT NULL
-       AND (
+     WHERE (
          other.provider_id <> target.provider_id
          OR COALESCE(other.account_key, '') <> COALESCE(target.account_key, '')
        )
@@ -7005,6 +7028,7 @@ type AdminAdvancedAnalyticsCacheState = {
   snapshot: AdminAdvancedAnalyticsSnapshot | null;
   updatedAtMs: number;
   refreshPromise: Promise<AdminAdvancedAnalyticsSnapshot> | null;
+  persistentSnapshotLoaded: boolean;
 };
 
 const adminAdvancedAnalyticsCacheState = ((globalThis as typeof globalThis & {
@@ -7013,6 +7037,7 @@ const adminAdvancedAnalyticsCacheState = ((globalThis as typeof globalThis & {
   snapshot: null,
   updatedAtMs: 0,
   refreshPromise: null,
+  persistentSnapshotLoaded: false,
 });
 
 function emptyAdminOverviewSnapshot(): AdminOverviewSnapshot {
@@ -7086,12 +7111,51 @@ function withAdminOverviewCacheState(snapshot: AdminOverviewSnapshot) {
   });
 }
 
+async function loadPersistedAdvancedAnalyticsSnapshot() {
+  if (adminAdvancedAnalyticsCacheState.persistentSnapshotLoaded) return;
+  adminAdvancedAnalyticsCacheState.persistentSnapshotLoaded = true;
+  const snapshotKey = persistedReportSnapshotKey("advanced", "default");
+  const rows = await optionalQuery<Array<{ payload_json: string; generated_at_ms: number }>>([], () => prisma.$queryRawUnsafe(
+    `SELECT payload_json, generated_at_ms
+     FROM bot_admin_report_snapshots
+     WHERE report_type = ? AND snapshot_key = ?
+     ORDER BY generated_at_ms DESC
+     LIMIT 1`,
+    "advanced",
+    snapshotKey,
+  ));
+  const row = rows[0];
+  if (!row?.payload_json) return;
+  try {
+    const snapshot = JSON.parse(row.payload_json) as AdminAdvancedAnalyticsSnapshot;
+    if (!snapshot || typeof snapshot !== "object") return;
+    adminAdvancedAnalyticsCacheState.snapshot = snapshot;
+    adminAdvancedAnalyticsCacheState.updatedAtMs = Number(row.generated_at_ms) || 0;
+  } catch {
+    // A malformed historical cache entry must never block report generation.
+  }
+}
+
+async function persistAdvancedAnalyticsSnapshot(snapshot: AdminAdvancedAnalyticsSnapshot) {
+  const snapshotKey = persistedReportSnapshotKey("advanced", "default");
+  await optionalQuery(undefined, () => prisma.$executeRawUnsafe(
+    `INSERT INTO bot_admin_report_snapshots (report_type, snapshot_key, generated_at_ms, payload_json)
+     VALUES (?, ?, ?, ?)
+     ON DUPLICATE KEY UPDATE generated_at_ms = VALUES(generated_at_ms), payload_json = VALUES(payload_json)`,
+    "advanced",
+    snapshotKey,
+    Date.now(),
+    JSON.stringify(snapshot),
+  ));
+}
+
 function refreshAdminAdvancedAnalyticsCache() {
   if (!adminAdvancedAnalyticsCacheState.refreshPromise) {
     adminAdvancedAnalyticsCacheState.refreshPromise = enqueueAdminAnalyticsBuild(() => getAdvancedAnalytics())
       .then((snapshot) => {
         adminAdvancedAnalyticsCacheState.snapshot = snapshot;
         adminAdvancedAnalyticsCacheState.updatedAtMs = Date.now();
+        void persistAdvancedAnalyticsSnapshot(snapshot);
         return snapshot;
       })
       .finally(() => {
@@ -7128,6 +7192,7 @@ export function warmAdminOverviewCache() {
 export async function getAdminOverview(options: { forceRefresh?: boolean } = {}) {
   ensureAdminOverviewBatchRefresh();
   adminOverviewCacheState.lastAccessedAtMs = Date.now();
+  await loadPersistedAdvancedAnalyticsSnapshot();
   if (options.forceRefresh || !adminOverviewCacheState.snapshot) {
     void refreshAdminOverviewCache().catch(() => undefined);
   }
