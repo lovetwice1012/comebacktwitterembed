@@ -1,11 +1,10 @@
 'use strict';
 
 const assert = require('assert/strict');
-const { assertSupportedRuntime } = require('../src/runtime');
 const { loadDiscordRuntime } = require('../src/discordTransport');
 
 async function main() {
-    assert.equal(assertSupportedRuntime(), 'bun');
+    assert.ok(process.versions.bun, 'This smoke test must run under Bun.');
 
     const nativeWebSocket = globalThis.WebSocket;
     const runtime = loadDiscordRuntime({ isBun: true });

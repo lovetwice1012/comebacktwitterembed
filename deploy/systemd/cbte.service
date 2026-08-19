@@ -1,0 +1,22 @@
+[Unit]
+Description=ComebackTwitterEmbed BOT
+Wants=network-online.target
+After=network-online.target mysql.service
+# Retrying a transient startup failure is preferable to leaving the bot down.
+StartLimitIntervalSec=0
+
+[Service]
+Type=exec
+User=root
+Group=root
+WorkingDirectory=/root/comebacktwitterembed
+# Keep Bun out of the production process tree. dashboardServer inherits this
+# executable for the dashboard build and Next.js child processes as well.
+ExecStart=/usr/local/bin/node ./index.js
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=30s
+LimitCORE=infinity
+
+[Install]
+WantedBy=multi-user.target
