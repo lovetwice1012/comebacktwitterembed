@@ -11,6 +11,7 @@ import type { AuditActor, SettingValue } from "@/lib/types";
 import type { DashboardLocale } from "@/lib/i18n";
 import { detailedInterestQuery } from "@/lib/analytics-interest-query";
 import { audienceInterestQuery } from "@/lib/audience-interest-query";
+import { providerFacetSummaryQuery } from "@/lib/provider-facet-summary-query";
 import { loadSnapshotOnce, pruneReportEntries, refreshReportSnapshot, withReportCacheMetadata, type ReportFailureState } from "@/lib/report-cache";
 import { limitAnalyticsReads, QueryLimiter } from "@/lib/analytics-query-limit";
 import { runReportBuild } from "@/lib/report-execution";
@@ -2609,20 +2610,8 @@ async function getProviderContentGuildShare(startMs: number) {
 
 async function getProviderContentFacets(startMs: number) {
   const rows = await prisma.$queryRawUnsafe<Array<Record<string, unknown>>>(
-    `SELECT /*+ INDEX(bot_provider_content_facets idx_content_facets_time) */
-       provider_id,
-       account_key,
-       facet_key,
-       facet_value,
-       COUNT(*) AS count,
-       AVG(numeric_value) AS avg_numeric_value,
-       SUM(numeric_value) AS sum_numeric_value,
-       COUNT(DISTINCT content_event_id) AS content_events
-     FROM bot_provider_content_facets
-     WHERE occurred_at_ms >= ?
-     GROUP BY provider_id, account_key, facet_key, facet_value
-     ORDER BY count DESC
-     LIMIT 200`,
+    providerFacetSummaryQuery,
+    startMs,
     startMs,
   );
   return rows.map(maskRow);

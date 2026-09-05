@@ -1,6 +1,8 @@
 // Avoid multiplying a user's account activity by every guild before ranking.
 // The winning account pairs keep the same weighted activity and user counts;
 // distinct guild counts are calculated only for those winning pairs.
+// Both inputs are unique per user and account tuple, so each joined pair has
+// exactly one row per shared user; COUNT(*) avoids a redundant DISTINCT sort.
 export const audienceInterestQuery = `WITH target_events AS (
   SELECT /*+ INDEX(bot_analytics_events idx_analytics_event_time) */ author_user_id, provider_id, account_key, guild_id, COUNT(*) AS activity_count
   FROM bot_analytics_events
@@ -21,7 +23,7 @@ export const audienceInterestQuery = `WITH target_events AS (
     other.provider_id AS interest_provider_id, other.account_key AS interest_account_key,
     other.endpoint_key AS interest_endpoint_key,
     SUM(target.activity_count * other.activity_count) AS co_activity,
-    COUNT(DISTINCT target.author_user_id) AS shared_users
+    COUNT(*) AS shared_users
   FROM target_accounts target JOIN other_events other ON other.author_user_id=target.author_user_id
   WHERE other.provider_id <> target.provider_id
     OR COALESCE(other.account_key,'') <> COALESCE(target.account_key,'')

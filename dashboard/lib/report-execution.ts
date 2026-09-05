@@ -5,7 +5,7 @@ const executions = new AsyncLocalStorage<Execution>();
 const configured = Number(process.env.DASHBOARD_REPORT_QUERY_TIMEOUT_MS);
 export const queryTimeoutMs = Number.isInteger(configured) && configured >= 1000 && configured <= 300000 ? configured : 60000;
 export const reportResourceHints = [
-  'SET_VAR(tmp_table_size=67108864)',
+  'SET_VAR(tmp_table_size=268435456)',
   'SET_VAR(max_heap_table_size=67108864)',
   'SET_VAR(sort_buffer_size=4194304)',
 ];
