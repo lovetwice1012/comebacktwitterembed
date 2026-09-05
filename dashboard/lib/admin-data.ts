@@ -12,6 +12,8 @@ import type { DashboardLocale } from "@/lib/i18n";
 import { detailedInterestQuery } from "@/lib/analytics-interest-query";
 import { audienceInterestQuery } from "@/lib/audience-interest-query";
 import { providerFacetSummaryQuery } from "@/lib/provider-facet-summary-query";
+import { settingImpactSummaryQuery } from "@/lib/setting-attribution-query";
+import { facetObservationCountsQuery, facetSchemaDriftQuery } from "@/lib/facet-quality-queries";
 import { loadSnapshotOnce, pruneReportEntries, refreshReportSnapshot, withReportCacheMetadata, type ReportFailureState } from "@/lib/report-cache";
 import { limitAnalyticsReads, QueryLimiter } from "@/lib/analytics-query-limit";
 import { runReportBuild } from "@/lib/report-execution";
@@ -1861,44 +1863,8 @@ async function getSettingAttributionSummary(startMs: number) {
   const auditScope = settingAttributionAuditScopeSql();
   const [impactRows, uniqueRows] = await Promise.all([
     prisma.$queryRawUnsafe<Array<Record<string, unknown>>>(
-      `SELECT
-         a.attribution_type,
-         a.setting_direction,
-         a.provider_id,
-         a.setting_key,
-         a.action,
-         COUNT(DISTINCT a.audit_log_id) AS changes,
-         COUNT(DISTINCT a.guild_id) AS affected_guilds,
-         SUM(CASE WHEN h.bucket_start_ms < a.changed_at_ms THEN h.content_events ELSE 0 END) AS content_before,
-         SUM(CASE WHEN h.bucket_start_ms >= a.changed_at_ms THEN h.content_events ELSE 0 END) AS content_after,
-         SUM(CASE WHEN h.bucket_start_ms < a.changed_at_ms THEN h.extract_events ELSE 0 END) AS extract_before,
-         SUM(CASE WHEN h.bucket_start_ms >= a.changed_at_ms THEN h.extract_events ELSE 0 END) AS extract_after,
-         SUM(CASE WHEN h.bucket_start_ms < a.changed_at_ms THEN h.extract_successes ELSE 0 END) AS extract_successes_before,
-         SUM(CASE WHEN h.bucket_start_ms >= a.changed_at_ms THEN h.extract_successes ELSE 0 END) AS extract_successes_after,
-         SUM(CASE WHEN h.bucket_start_ms < a.changed_at_ms THEN h.send_events ELSE 0 END) AS send_before,
-         SUM(CASE WHEN h.bucket_start_ms >= a.changed_at_ms THEN h.send_events ELSE 0 END) AS send_after,
-         SUM(CASE WHEN h.bucket_start_ms < a.changed_at_ms THEN h.send_successes ELSE 0 END) AS send_successes_before,
-         SUM(CASE WHEN h.bucket_start_ms >= a.changed_at_ms THEN h.send_successes ELSE 0 END) AS send_successes_after,
-         SUM(CASE WHEN h.bucket_start_ms < a.changed_at_ms THEN h.enrichment_jobs ELSE 0 END) AS enrichment_before,
-         SUM(CASE WHEN h.bucket_start_ms >= a.changed_at_ms THEN h.enrichment_jobs ELSE 0 END) AS enrichment_after,
-         SUM(CASE WHEN h.bucket_start_ms < a.changed_at_ms THEN h.enrichment_successes ELSE 0 END) AS enrichment_successes_before,
-         SUM(CASE WHEN h.bucket_start_ms >= a.changed_at_ms THEN h.enrichment_successes ELSE 0 END) AS enrichment_successes_after,
-         SUM(CASE WHEN h.bucket_start_ms < a.changed_at_ms THEN h.analytics_duration_sum_ms ELSE 0 END) AS analytics_duration_sum_before,
-         SUM(CASE WHEN h.bucket_start_ms >= a.changed_at_ms THEN h.analytics_duration_sum_ms ELSE 0 END) AS analytics_duration_sum_after,
-         SUM(CASE WHEN h.bucket_start_ms < a.changed_at_ms THEN h.analytics_duration_count ELSE 0 END) AS analytics_duration_count_before,
-         SUM(CASE WHEN h.bucket_start_ms >= a.changed_at_ms THEN h.analytics_duration_count ELSE 0 END) AS analytics_duration_count_after,
-         MAX(h.bucket_start_ms) AS latest_bucket_ms
-       FROM (${auditScope}) a
-       LEFT JOIN bot_provider_hourly_aggregates h
-         ON h.bucket_start_ms >= a.changed_at_ms - ?
-        AND h.bucket_start_ms < a.changed_at_ms + ?
-        AND (a.guild_id IS NULL OR h.guild_id = a.guild_id)
-        AND (a.provider_id IS NULL OR h.provider_id = a.provider_id)
-       GROUP BY a.attribution_type, a.setting_direction, a.provider_id, a.setting_key, a.action
-       ORDER BY content_after DESC, changes DESC
-       LIMIT 120`,
+      settingImpactSummaryQuery(auditScope),
       new Date(startMs),
-      windowMs,
       windowMs,
     ),
     prisma.$queryRawUnsafe<Array<Record<string, unknown>>>(
@@ -5211,17 +5177,7 @@ async function getProviderMetricNullRates(startMs: number) {
       startMs,
     ),
     prisma.$queryRawUnsafe<Array<Record<string, unknown>>>(
-      `SELECT /*+ INDEX(f idx_content_facets_time) */
-         f.provider_id,
-         f.facet_key,
-         COALESCE(c.content_type, '') AS content_type,
-         COUNT(*) AS facet_rows,
-         COUNT(DISTINCT f.content_event_id) AS observed_events,
-         SUM(f.facet_value IS NULL AND f.numeric_value IS NULL AND f.json_value IS NULL) AS null_facets
-       FROM bot_provider_content_facets f
-       JOIN bot_provider_content_events c ON c.content_event_id = f.content_event_id
-       WHERE f.occurred_at_ms >= ?
-       GROUP BY f.provider_id, f.facet_key, c.content_type`,
+      facetObservationCountsQuery,
       startMs,
     ),
   ]);
@@ -5429,21 +5385,7 @@ function isSystemAnalyticsFacet(key: string) {
 
 async function getProviderMetricSchemaDrift(startMs: number) {
   const rows = await prisma.$queryRawUnsafe<Array<Record<string, unknown>>>(
-    `SELECT /*+ INDEX(bot_provider_content_facets idx_content_facets_time) */
-       provider_id,
-       facet_key,
-       COALESCE(metric_stage, 'unknown') AS metric_stage,
-       COALESCE(schema_version, 'unknown') AS schema_version,
-       COALESCE(metric_source, 'unknown') AS metric_source,
-       COUNT(*) AS observations,
-       COUNT(DISTINCT content_event_id) AS observed_events,
-       SUM(collection_success = 0) AS failed_observations,
-       MAX(occurred_at_ms) AS latest_ms
-     FROM bot_provider_content_facets
-     WHERE occurred_at_ms >= ?
-     GROUP BY provider_id, facet_key, metric_stage, schema_version, metric_source
-     ORDER BY observations DESC
-     LIMIT 500`,
+    facetSchemaDriftQuery,
     startMs,
   );
 

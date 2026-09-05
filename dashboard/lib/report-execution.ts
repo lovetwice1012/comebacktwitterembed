@@ -26,7 +26,7 @@ export function recordQueryFailure(reason: unknown) {
 export function reportLane() { return executions.getStore()?.lane; }
 
 export async function runReportBuild<T>(build: () => Promise<T>, lane: "analytics" | "overview" = "analytics"): Promise<T> {
-  return executions.run({ deadline: Date.now() + 180000, failure: null, lane }, async () => {
+  return executions.run({ deadline: Date.now() + 300000, failure: null, lane }, async () => {
     const value = await build();
     const failure = executions.getStore()?.failure;
     if (failure) throw failure;

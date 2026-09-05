@@ -146,8 +146,10 @@ test('provider metric quality denominators are content-type aware', () => {
     assert.match(source, /facetContentTypes\?: Record<string, string\[\]>/);
     assert.match(source, /function sumProviderMetricContentEvents/);
     assert.match(source, /function providerMetricObservedTotals/);
-    assert.match(nullRateSource, /JOIN bot_provider_content_events c ON c\.content_event_id = f\.content_event_id/);
-    assert.match(nullRateSource, /GROUP BY f\.provider_id, f\.facet_key, c\.content_type/);
+    const qualityQuerySource = fs.readFileSync(path.join(path.dirname(adminDataPath), 'facet-quality-queries.ts'), 'utf8');
+    assert.match(nullRateSource, /facetObservationCountsQuery/);
+    assert.match(qualityQuerySource, /JOIN bot_provider_content_events c ON c\.content_event_id\s*=\s*f\.content_event_id/);
+    assert.match(qualityQuerySource, /GROUP BY f\.provider_id,\s*f\.facet_key,\s*c\.content_type/);
     assert.match(nullRateSource, /denominator_scope: spec\.appliesToContentTypes\.length \? "content_type" : "provider"/);
     assert.match(nullRateSource, /applies_to_content_types: spec\.appliesToContentTypes\.length/);
 

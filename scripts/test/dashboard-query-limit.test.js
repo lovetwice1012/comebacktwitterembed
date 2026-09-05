@@ -4,6 +4,22 @@ const assert = require('node:assert/strict');
 const loadDashboard = require('./helpers/load-dashboard.cjs');
 const { QueryLimiter, limitAnalyticsReads } = loadDashboard('lib/analytics-query-limit.ts');
 
+test('large temporary-table work gets all heavy slots without starving later jobs', async () => {
+    const limiter = new QueryLimiter(3);
+    const events = [];
+    let releaseFirst, releaseLarge;
+    const first = limiter.run(() => new Promise(resolve => { releaseFirst = resolve; events.push('first'); }));
+    const large = limiter.run(() => new Promise(resolve => { releaseLarge = resolve; events.push('large'); }), 3);
+    const later = limiter.run(async () => { events.push('later'); });
+    await new Promise(resolve => setImmediate(resolve));
+    assert.deepEqual(events, ['first']);
+    releaseFirst(); await first;
+    await new Promise(resolve => setImmediate(resolve));
+    assert.deepEqual(events, ['first', 'large']);
+    releaseLarge(); await Promise.all([large, later]);
+    assert.deepEqual(events, ['first', 'large', 'later']);
+});
+
 test('separately loaded production route modules share one Prisma connection pool', () => {
     const previous = globalThis.prisma;
     const previousEnv = process.env.NODE_ENV;

@@ -3,21 +3,28 @@ import { createHash } from "node:crypto";
 
 export class QueryLimiter {
   private active = 0;
-  private waiting: Array<() => void> = [];
+  private waiting: Array<{ weight: number; resolve: () => void }> = [];
   constructor(private concurrency = 4) {}
+  get capacity() { return this.concurrency; }
 
-  async run<T>(query: () => PromiseLike<T>): Promise<T> {
+  private drain() {
+    while (this.waiting.length && this.active + this.waiting[0].weight <= this.concurrency) {
+      const next = this.waiting.shift()!;
+      this.active += next.weight;
+      next.resolve();
+    }
+  }
+
+  async run<T>(query: () => PromiseLike<T>, requestedWeight = 1): Promise<T> {
+    const weight = Math.max(1, Math.min(this.concurrency, Math.floor(requestedWeight) || 1));
     await new Promise<void>(resolve => {
-      if (this.active < this.concurrency) {
-        this.active++;
-        resolve();
-      } else this.waiting.push(resolve);
+      this.waiting.push({ weight, resolve });
+      this.drain();
     });
     try { return await query(); }
     finally {
-      const next = this.waiting.shift();
-      if (next) next(); // Transfer the occupied slot before accepting new work.
-      else this.active--;
+      this.active -= weight;
+      this.drain();
     }
   }
 }
@@ -52,8 +59,13 @@ export function limitAnalyticsReads<T extends object>(client: T, limiter: QueryL
             }
           }
         });
-        return (...args: unknown[]) => reportLane() === "analytics" && heavyLimiter !== limiter
-          ? heavyLimiter.run(() => run(...args)) : run(...args);
+        return (...args: unknown[]) => {
+          const sql = Array.isArray(args[0]) ? args[0].join('?') : String(args[0]);
+          const requestedTempBytes = Number(sql.match(/SET_VAR\(\s*tmp_table_size\s*=\s*(\d+)/i)?.[1] || 0);
+          const weight = requestedTempBytes > 268435456 ? heavyLimiter.capacity : 1;
+          return reportLane() === "analytics" && heavyLimiter !== limiter
+            ? heavyLimiter.run(() => run(...args), weight) : run(...args);
+        };
       }
       return typeof value === "function" ? value.bind(target) : value;
     },
