@@ -3,7 +3,7 @@ import tseslint from "typescript-eslint";
 
 export default [
   {
-    ignores: [".next/**", ".next-build/**", ".next-builds/**", ".next-dev/**", ".next-performance-check/**", "node_modules/**", "next-env.d.ts"],
+    ignores: [".next/**", ".next-build/**", ".next-builds/**", ".next-dev/**", ".next-performance-check/**", ".next-admin-local-preview/**", "node_modules/**", "next-env.d.ts"],
   },
   js.configs.recommended,
   ...tseslint.configs.recommended,

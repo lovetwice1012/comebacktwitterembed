@@ -21,6 +21,7 @@ import (
 )
 
 var version = "1.0.0"
+
 const timestampLayout = "2006-01-02T15:04:05.000000000Z"
 
 type Config struct {

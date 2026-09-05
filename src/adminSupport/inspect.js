@@ -103,7 +103,7 @@ async function inspect(input, actionId, options = {}) {
         guild_id: input.guildId, channel_id: input.channelId, user_id: input.userId, provider_id: provider.id,
         url, trigger_type: 'diagnostic', preview: true, httpAttempts, events, parentEvents, plannedEffects, resultState,
         providerSourceId: input.sourceId, providerSourceFallback: typeof input.sourceFallback === 'boolean' ? input.sourceFallback : undefined,
-        replay: replay ? input.httpAttempts || [] : null, replayState: { consumed: new Set() } }, async () => {
+        replay: replay ? input.httpAttempts || [] : null, replayState: { consumed: new Set() }, captureFinalizers: new Set() }, async () => {
         const started = performance.now();
         telemetry.event('request', 'request.started', { input: url, settings, settingsHash: originalHash });
         let steps = null, error = null;
@@ -117,10 +117,11 @@ async function inspect(input, actionId, options = {}) {
             try {
                 const message = makeMessage(context, url, plannedEffects, input.messageContent || url);
                 steps = await provider.extract(message, url, settings, { preview: true });
-                await telemetry.settle();
             } catch (cause) {
                 error = telemetry.errorData(cause);
                 telemetry.markOutcome('failed', 'extract_exception', { error });
+            } finally {
+                await telemetry.settle();
             }
         }
         const serializedSteps = telemetry.serializable(steps || []);

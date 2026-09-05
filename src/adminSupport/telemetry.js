@@ -40,7 +40,8 @@ function errorData(error, depth = 0) {
     if (!error) return null;
     return { name: error.name || 'Error', message: String(error.message || error), code: error.code,
         status: error.status || error.statusCode, stack: error.stack,
-        rawError: error.rawError, cause: depth < 4 && error.cause ? errorData(error.cause, depth + 1) : undefined };
+        rawError: error.rawError, originalError: error.originalError, reconciliation: error.reconciliation,
+        cause: depth < 4 && error.cause ? errorData(error.cause, depth + 1) : undefined };
 }
 function contextFromMessage(message) {
     const interaction = Boolean(message?.customId || message?.commandName || message?.isChatInputCommand);
@@ -111,7 +112,20 @@ function pending(promise) {
     promise.finally(() => pendingTasks.delete(promise)).catch(() => {});
     return promise;
 }
-async function settle() { await Promise.allSettled([...pendingTasks]); }
+function deferCapture(finalize) {
+    const context = current();
+    if (!context) return;
+    context.captureFinalizers ||= new Set();
+    context.captureFinalizers.add(finalize);
+}
+async function settle() {
+    const finalizers = current()?.captureFinalizers;
+    if (finalizers?.size) {
+        const callbacks = [...finalizers]; finalizers.clear();
+        await Promise.allSettled(callbacks.map(callback => callback()));
+    }
+    await Promise.allSettled([...pendingTasks]);
+}
 async function flush() { spoolWorker?.postMessage({ type: 'flush' }); }
 async function stop() {
     clearInterval(timer); timer = null;
@@ -152,5 +166,5 @@ function planEffect(type, input, execute) {
     }
     return execute();
 }
-module.exports = { run, current, event, start, stop, flush, settle, pending, enabled, markOutcome, planEffect,
+module.exports = { run, current, event, start, stop, flush, settle, deferCapture, pending, enabled, markOutcome, planEffect,
     contextFromMessage, errorData, serializable, bootId };

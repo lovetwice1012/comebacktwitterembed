@@ -91,6 +91,7 @@ dashboard/.next-build/
 dashboard/.next-builds/
 dashboard/.next-dev/
 dashboard/.next-performance-check/
+dashboard/.next-admin-local-preview/
 out
 
 # Nuxt.js build / generate output

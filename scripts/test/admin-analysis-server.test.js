@@ -21,10 +21,10 @@ const fs = require('node:fs');
   if (request.type === 'invalid') { process.stdout.write('not-json'); process.exit(0); }
   if (request.type === 'large') { process.stdout.write('x'.repeat(33*1024*1024)); return; }
   if (request.type === 'stderr') process.stderr.write('x'.repeat(100000));
-  const failure=request.type === 'application.failure';
+  const failure=request.type === 'application.failure' || request.type === 'application.deadline';
   process.stdout.write(JSON.stringify({ok:!failure,data:{actionId:request.actionId,input:request.input,
     childAgentToken:process.env.ADMIN_AGENT_TOKEN,telemetryEnabled:process.env.ADMIN_TELEMETRY_ENABLED},
-    error:failure?{code:'FIXTURE_APPLICATION_FAILURE',message:'Expected fixture failure'}:undefined,
+    error:failure?{code:request.type==='application.deadline'?'WORKER_DEADLINE':'FIXTURE_APPLICATION_FAILURE',message:'Expected fixture failure'}:undefined,
     events:[{event_id:'fixture-event',kind:'fixture',details:{preserved:true}}]}),()=>process.exit(failure?1:0));
 })().catch(error=>{console.error(error);process.exit(2);});
 `;
@@ -127,18 +127,28 @@ test('exit code 1 with valid worker JSON preserves application failure and evide
     assert.equal(stored.data.state, 'completed');
 });
 
+test('legacy inner worker deadline is normalized to unknown without losing its original error or events', async t => {
+    const fixture = await setup(t);
+    const result = await post(fixture.url, { actionId: 'inner-deadline', type: 'application.deadline', input: {} });
+    assert.equal(result.data.error.code, 'ACTION_OUTCOME_UNKNOWN');
+    assert.equal(result.data.error.originalError.code, 'WORKER_DEADLINE');
+    assert.equal(result.data.events[0].details.preserved, true);
+    assert.equal(result.data.data.actionId, 'inner-deadline');
+    assert.equal((await receipt(fixture.url, 'inner-deadline')).data.state, 'unknown');
+});
+
 test('deadline and invalid worker result become durable unknown outcomes that are never replayed', async t => {
     const fixture = await setup(t, { deadlineMs: 180 });
     const request = { actionId: 'deadline', type: 'delay', input: { ms: 10000 } };
     const result = await post(fixture.url, request);
-    assert.equal(result.data.error.code, 'DELIVERY_UNKNOWN');
+    assert.equal(result.data.error.code, 'ACTION_OUTCOME_UNKNOWN');
     assert.equal(result.data.error.causeCode, 'WORKER_DEADLINE');
     assert.equal((await receipt(fixture.url, 'deadline')).data.state, 'unknown');
     const count = await fixture.count();
     assert.deepEqual((await post(fixture.url, request)).data, result.data);
     assert.deepEqual(await fixture.count(), count);
     const invalid = await post(fixture.url, { actionId: 'invalid', type: 'invalid', input: {} });
-    assert.equal(invalid.data.error.code, 'DELIVERY_UNKNOWN');
+    assert.equal(invalid.data.error.code, 'ACTION_OUTCOME_UNKNOWN');
 });
 
 test('orphaned running receipt is reconciled to unknown on startup without spawning a worker', async t => {
@@ -151,7 +161,7 @@ test('orphaned running receipt is reconciled to unknown on startup without spawn
     }));
     const restarted = await fixture.start();
     const result = await post(restarted.url, request);
-    assert.equal(result.data.error.code, 'DELIVERY_UNKNOWN');
+    assert.equal(result.data.error.code, 'ACTION_OUTCOME_UNKNOWN');
     assert.equal(result.data.error.causeCode, 'WORKER_INTERRUPTED');
     assert.equal((await receipt(restarted.url, 'orphaned')).data.state, 'unknown');
     assert.deepEqual(await fixture.count(), []);

@@ -30,6 +30,7 @@ type App struct {
 	stateMu         sync.Mutex
 	lastSnapshot    Object
 	lastMonitorSave time.Time
+	hasMonitorSave  bool
 	failures        map[string]int
 }
 
@@ -262,14 +263,30 @@ func (a *App) health(w http.ResponseWriter, r *http.Request) {
 		fail(w, 503, "STORE_ERROR", e.Error())
 		return
 	}
-	_ = a.store.db.QueryRow("SELECT COUNT(*) FROM actions WHERE status IN ('queued','running')").Scan(&pending)
-	_ = a.store.db.QueryRow("SELECT COUNT(*) FROM actions WHERE status='unknown'").Scan(&unknown)
+	if e = a.store.db.QueryRow("SELECT COUNT(*) FROM actions WHERE status IN ('queued','running')").Scan(&pending); e != nil {
+		fail(w, 503, "STORE_ERROR", e.Error())
+		return
+	}
+	if e = a.store.db.QueryRow("SELECT COUNT(*) FROM actions WHERE status='unknown'").Scan(&unknown); e != nil {
+		fail(w, 503, "STORE_ERROR", e.Error())
+		return
+	}
 	a.stateMu.Lock()
 	snapshot := a.lastSnapshot
+	lastMonitorSave, hasMonitorSave := a.lastMonitorSave, a.hasMonitorSave
 	a.stateMu.Unlock()
 	passwordHash := a.cfg.PasswordHash
 	_ = a.store.getSetting("password_hash", &passwordHash)
-	jsonResponse(w, 200, Object{"ok": true, "version": version, "bootId": a.boot, "time": now(), "cursor": cursor, "pendingActions": pending, "unknownActions": unknown, "snapshot": snapshot, "journalCollectors": a.journalHealth(), "capabilities": Object{"worker": a.cfg.Worker != "" || a.cfg.WorkerURL != "", "workerIsolation": map[bool]string{true: "independent-service", false: "local-child"}[a.cfg.WorkerURL != ""], "localLogin": passwordHash != "", "executor": a.cfg.ExecutorSocket != "", "discordNotifications": a.cfg.DiscordWebhook != "", "secondaryNotifications": a.cfg.PushWebhook != "", "llm": false, "messageViews": false, "linkClicks": false}})
+	monitorState := "not_observed"
+	var savedAt any
+	if hasMonitorSave {
+		savedAt = lastMonitorSave.UTC().Format(timestampLayout)
+		monitorState = "progressing"
+		if time.Since(lastMonitorSave) > max(60*time.Second, 3*a.cfg.MonitorInterval) {
+			monitorState = "stalled"
+		}
+	}
+	jsonResponse(w, 200, Object{"ok": true, "version": version, "bootId": a.boot, "time": now(), "cursor": cursor, "pendingActions": pending, "unknownActions": unknown, "monitor": Object{"state": monitorState, "lastPersistedAt": savedAt, "scope": "management_observation_loop_only"}, "snapshot": snapshot, "journalCollectors": a.journalHealth(), "capabilities": Object{"worker": a.cfg.Worker != "" || a.cfg.WorkerURL != "", "workerIsolation": map[bool]string{true: "independent-service", false: "local-child"}[a.cfg.WorkerURL != ""], "localLogin": passwordHash != "", "executor": a.cfg.ExecutorSocket != "", "discordNotifications": a.cfg.DiscordWebhook != "", "secondaryNotifications": a.cfg.PushWebhook != "", "llm": false, "messageViews": false, "linkClicks": false}})
 }
 func (a *App) ingest(w http.ResponseWriter, r *http.Request) {
 	var raw json.RawMessage

@@ -338,15 +338,26 @@ type SupportSettings = {
 };
 
 const tabs = [
-  { value: "management", label: "稼働・調査・操作", icon: ShieldCheck },
-  { value: "guildPreview", label: "サーバー分析", icon: Activity },
-  { value: "providerPreview", label: "マーケ分析", icon: ClipboardList },
-  { value: "analytics", label: "詳細分析", icon: BarChart3 },
-  { value: "overview", label: "統計", icon: Gauge },
-  { value: "logs", label: "ログ", icon: FileClock },
-  { value: "database", label: "DB", icon: Database },
-  { value: "support", label: "サポート", icon: SlidersHorizontal },
+  { value: "management", label: "要求結果・サポート", icon: ShieldCheck },
+  { value: "guildPreview", label: "サーバー別利用", icon: Activity },
+  { value: "providerPreview", label: "コンテンツ・共有傾向", icon: ClipboardList },
+  { value: "analytics", label: "共有・処理の詳細", icon: BarChart3 },
+  { value: "overview", label: "運用情報・集計一覧", icon: Gauge },
+  { value: "logs", label: "エラー・変更履歴", icon: FileClock },
+  { value: "database", label: "DBテーブル", icon: Database },
+  { value: "support", label: "設定の直接編集", icon: SlidersHorizontal },
 ] satisfies Array<{ value: AdminTab; label: string; icon: typeof Gauge }>;
+
+const tabDescriptions: Record<AdminTab, string> = {
+  management: "展開要求の結果、障害の根拠、URL検証、設定変更と復旧操作を確認します。",
+  guildPreview: "選択したサーバーの共有件数、利用者、利用時間帯と継続利用を確認します。",
+  providerPreview: "外部サービス上の投稿指標と、Botで共有されたコンテンツの属性を確認します。",
+  analytics: "保存された共有・取得・送信の記録を、期間やサービス、利用者などで絞り込みます。",
+  overview: "DBの保存規模、稼働情報、期間別の集計結果を一覧で確認します。",
+  logs: "エラーの原文と管理者による設定変更履歴を、サーバーIDと日時から調べます。",
+  database: "管理対象テーブルの保存データと全項目を確認します。",
+  support: "プロバイダーごとの設定を現在値・JSONから直接編集します。",
+};
 
 const controlClass =
   "h-10 w-full rounded-md border bg-card px-3 text-sm outline-none transition focus:ring-2 focus:ring-ring";
@@ -3477,7 +3488,8 @@ export function AdminConsole({
   const [overview, setOverview] = useState<AdminOverview | null>(null);
   const [logs, setLogs] = useState<AdminLogs | null>(null);
   const [database, setDatabase] = useState<AdminDatabase | null>(null);
-  const [overviewLoading, setOverviewLoading] = useState(true);
+  const [overviewLoading, setOverviewLoading] = useState(false);
+  const [overviewRequested, setOverviewRequested] = useState(false);
   const [logsLoading, setLogsLoading] = useState(false);
   const [databaseLoading, setDatabaseLoading] = useState(false);
   const [overviewError, setOverviewError] = useState<string | null>(null);
@@ -3488,6 +3500,7 @@ export function AdminConsole({
   const [refreshingOverview, setRefreshingOverview] = useState(false);
 
   const loadOverview = useCallback(async (forceRefresh = false, options: { silent?: boolean } = {}) => {
+    setOverviewRequested(true);
     if (forceRefresh) {
       setRefreshingOverview(true);
     } else if (!options.silent) {
@@ -3535,8 +3548,8 @@ export function AdminConsole({
   }, []);
 
   useEffect(() => {
-    void loadOverview(false);
-  }, [loadOverview]);
+    if (tab === "overview" && !overviewRequested) void loadOverview(false);
+  }, [loadOverview, tab, overviewRequested]);
 
   useEffect(() => {
     if (tab !== "overview" || !overview?.cache?.refreshing) return;
@@ -3599,6 +3612,7 @@ export function AdminConsole({
             );
           })}
         </nav>
+        <p className="text-sm text-muted-foreground">{tabDescriptions[tab]}</p>
 
         {tab === "overview" ? (
           overview ? (

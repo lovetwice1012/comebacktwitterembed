@@ -20,7 +20,7 @@ func (a *App) rootRuns(w http.ResponseWriter, r *http.Request) {
 	}
 	cutoff := time.Now().UTC().Add(-max(600*time.Second, 2*a.cfg.WorkerTimeout)).Format(timestampLayout)
 	outcome := `COALESCE(json_extract(c.payload,'$.outcome'),json_extract(c.payload,'$.details.outcome'),'X')`
-	query := `SELECT * FROM (SELECT s.run_id,s.seq,s.occurred_at,COALESCE(c.occurred_at,s.occurred_at),s.guild_id,s.payload,(SELECT COUNT(*) FROM events z WHERE z.run_id=s.run_id) AS event_count,CASE WHEN c.seq IS NULL THEN CASE WHEN s.occurred_at<? THEN 'X' ELSE 'I' END WHEN ` + outcome + ` IN ('F','D','P','E','U','S','C','I','X') THEN ` + outcome + ` ELSE 'X' END AS outcome FROM events s LEFT JOIN events c ON c.seq=(SELECT MAX(t.seq) FROM events t WHERE t.run_id=s.run_id AND t.kind='request.completed') WHERE s.kind='request.started' AND s.occurred_at>=? AND s.occurred_at<? AND s.seq=(SELECT MIN(z.seq) FROM events z WHERE z.run_id=s.run_id AND z.kind='request.started')`
+	query := `SELECT * FROM (SELECT s.run_id,s.seq,s.occurred_at,COALESCE(c.occurred_at,s.occurred_at),s.guild_id,s.payload,(SELECT COUNT(*) FROM events z WHERE z.run_id=s.run_id) AS event_count,CASE WHEN c.seq IS NULL THEN CASE WHEN s.occurred_at<? THEN 'X' ELSE 'I' END WHEN ` + outcome + ` IN ('F','D','P','E','U','S','C','I','X') THEN ` + outcome + ` ELSE 'X' END AS outcome FROM events s LEFT JOIN events c ON c.seq=(SELECT MAX(t.seq) FROM events t WHERE t.run_id=s.run_id AND t.kind='request.completed') WHERE s.kind='request.started' AND s.run_id<>'' AND s.occurred_at>=? AND s.occurred_at<? AND s.seq=(SELECT MIN(z.seq) FROM events z WHERE z.run_id=s.run_id AND z.kind='request.started')`
 	args := []any{cutoff, from, to}
 	if guild := r.URL.Query().Get("guildId"); guild != "" {
 		query += " AND s.guild_id=?"

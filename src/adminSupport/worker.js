@@ -91,15 +91,47 @@ async function execute(request) {
     const db = require('../db');
     await ensureDatabaseSchema();
     const inputHash = crypto.createHash('sha256').update(JSON.stringify({ type, input })).digest('hex');
-    return db.withDatabaseTransaction(async query => {
+    let readyToCommit = false;
+    let existingReceiptResult = /** @type {any} */ (null);
+    try { return await db.withDatabaseTransaction(async query => {
         await query(`INSERT IGNORE INTO ${TABLES.adminSupportActionReceipts} (action_id,action_type,input_hash) VALUES (?,?,?)`, [requestWithId.actionId,type,inputHash]);
         const rows = await query(`SELECT * FROM ${TABLES.adminSupportActionReceipts} WHERE action_id=? FOR UPDATE`, [requestWithId.actionId]);
         if (rows[0].input_hash !== inputHash || rows[0].action_type !== type) throw Object.assign(new Error('The action ID is already associated with different input.'), { code: 'IDEMPOTENCY_CONFLICT' });
-        if (rows[0].result_json) return { ...JSON.parse(rows[0].result_json), replayedReceipt: true };
+        if (rows[0].result_json) {
+            existingReceiptResult = { ...JSON.parse(rows[0].result_json), replayedReceipt: true };
+            return existingReceiptResult;
+        }
         const result = await executeAction(requestWithId);
         await query(`UPDATE ${TABLES.adminSupportActionReceipts} SET result_json=? WHERE action_id=?`, [JSON.stringify(result),requestWithId.actionId]);
+        readyToCommit = true;
         return result;
-    });
+    }); } catch (error) {
+        // Errors while connecting/validating/running statements are ordinary
+        // failures. Only loss of the COMMIT response after our result receipt
+        // was written makes a transaction's final outcome uncertain.
+        const transportFailure = /^(ECONNRESET|ECONNREFUSED|ETIMEDOUT|EPIPE|EHOSTUNREACH|ENETUNREACH|PROTOCOL_CONNECTION_LOST|PROTOCOL_SEQUENCE_TIMEOUT|PROTOCOL_ENQUEUE_AFTER_FATAL_ERROR|PROTOCOL_ENQUEUE_AFTER_QUIT|ER_SERVER_SHUTDOWN|ER_CLIENT_INTERACTION_TIMEOUT)$/.test(String(error.code || ''));
+        if (existingReceiptResult && transportFailure) return { ...existingReceiptResult, reconciledAfterCommitError: true, commitError: telemetry.errorData(error) };
+        if (!readyToCommit || !transportFailure) throw error;
+        const reconciliation = { actionId: requestWithId.actionId, status: 'not_confirmed' };
+        try {
+            // Read from a fresh pooled connection. A locking read waits for the
+            // original receipt transaction to resolve; absence still does not
+            // justify retrying a possibly committed external operation.
+            const receipts = await db.queryDatabase(`SELECT action_type,input_hash,result_json FROM ${TABLES.adminSupportActionReceipts} WHERE action_id=? LOCK IN SHARE MODE`, [requestWithId.actionId], { timeoutMs: 5000 });
+            const receipt = receipts[0];
+            if (receipt?.input_hash === inputHash && receipt?.action_type === type && receipt?.result_json) {
+                return { ...JSON.parse(receipt.result_json), replayedReceipt: true, reconciledAfterCommitError: true,
+                    commitError: telemetry.errorData(error) };
+            }
+            reconciliation.status = receipt ? 'receipt_not_complete_or_mismatched' : 'receipt_not_observed';
+        } catch (readError) {
+            reconciliation.status = 'receipt_lookup_failed';
+            reconciliation.error = telemetry.errorData(readError);
+        }
+        throw Object.assign(new Error('The database COMMIT response was lost and its durable action receipt could not confirm the result. Do not repeat the operation without reconciliation.'), {
+            code: 'ACTION_OUTCOME_UNKNOWN', originalError: telemetry.errorData(error), reconciliation, cause: error,
+        });
+    }
 }
 
 async function main() {
@@ -113,7 +145,8 @@ async function main() {
     const request = JSON.parse(input);
     const events = [];
     const deadline = setTimeout(() => {
-        process.stdout.write(JSON.stringify({ ok: false, error: { code: 'WORKER_DEADLINE', message: 'Support operation exceeded its deadline. External operation outcome may be unknown.' }, events }), () => process.exit(124));
+        const originalError = { code: 'WORKER_DEADLINE', message: 'Support operation exceeded its deadline. External operation outcome may be unknown.' };
+        process.stdout.write(JSON.stringify({ ok: false, error: { code: 'ACTION_OUTCOME_UNKNOWN', message: originalError.message, originalError }, events }), () => process.exit(124));
     }, Math.min(request.type === 'reports.build' ? 900000 : 240000, Math.max(1000, Number(process.env.ADMIN_WORKER_DEADLINE_MS) || 110000)));
     try {
         const data = await telemetry.run({ operation_id: request.actionId, trace_id: request.actionId, trigger_type: 'admin_operation',

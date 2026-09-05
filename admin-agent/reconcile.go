@@ -87,7 +87,7 @@ func (a *App) reconcileUnknown(ctx context.Context) {
 				status = "failed"
 			}
 		}
-		if p, ok := problem.(map[string]any); ok && str(p["code"]) == "DELIVERY_UNKNOWN" {
+		if p, ok := problem.(map[string]any); ok && (str(p["code"]) == "DELIVERY_UNKNOWN" || str(p["code"]) == "ACTION_OUTCOME_UNKNOWN" || str(p["code"]) == "WORKER_DEADLINE") {
 			status = "unknown"
 		}
 		if e = a.store.finish(ac.ID, status, receipt.Result.Data, problem); e != nil {

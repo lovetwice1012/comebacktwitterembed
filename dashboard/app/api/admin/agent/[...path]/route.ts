@@ -34,7 +34,9 @@ async function proxy(req: NextRequest, context: { params: Promise<{ path: string
     } catch (error) {
       return NextResponse.json({ error: "管理デーモンに接続できません。処理が受付済みの場合は履歴で結果を確認してください。", state: "unavailable", detail: error instanceof Error ? error.message : String(error), independentUrl: independentAdminUrl() }, { status: 503 });
     }
-    const data = await response.json();
+    let data;
+    try { data = await response.json(); }
+    catch { return NextResponse.json({ error: `管理デーモンの応答を読み取れません（HTTP ${response.status}）。受付済みの操作は同じキーで結果を確認してください。`, state: "invalid_response", independentUrl: independentAdminUrl() }, { status: 503, headers: { "cache-control": "no-store" } }); }
     if (path[0] === "health") data.independentUrl = independentAdminUrl();
     return NextResponse.json(data, { status: response.status, headers: { "cache-control": "no-store" } });
   } catch (error) { return errorResponse(error); }

@@ -36,7 +36,7 @@ func (a *App) metrics(w http.ResponseWriter, r *http.Request) {
 		fail(w, 400, "INVALID_FILTER", e.Error())
 		return
 	}
-	where := "s.kind='request.started' AND s.occurred_at>=? AND s.occurred_at<?"
+	where := "s.kind='request.started' AND s.run_id<>'' AND s.occurred_at>=? AND s.occurred_at<?"
 	args := []any{from, to}
 	if guild := r.URL.Query().Get("guildId"); guild != "" {
 		where += " AND s.guild_id=?"
@@ -147,10 +147,12 @@ func (a *App) metrics(w http.ResponseWriter, r *http.Request) {
 	for outcome, vals := range durations {
 		latency[outcome] = Object{"sampleCount": len(vals), "p50Ms": quantile(vals, .50), "p95Ms": quantile(vals, .95), "method": "exact_nearest_rank"}
 	}
-	var cursor int64
-	var firstAt, lastAt sql.NullString
-	_ = a.store.db.QueryRow("SELECT COALESCE(MAX(seq),0),MIN(occurred_at),MAX(occurred_at) FROM events WHERE kind='request.started'").Scan(&cursor, &firstAt, &lastAt)
-	jsonResponse(w, 200, Object{"definitionVersion": "root-request-v1", "snapshotAt": now(), "from": from, "to": to, "timezone": "UTC (display Asia/Tokyo)", "requestCount": total, "outcomes": counts, "outcomeLabels": outcomeNames, "fullSuccess": Object{"numerator": counts["F"], "denominator": denom, "ratio": ratio, "formula": "F / (F+D+P+E+U+X)"}, "problemRequestCount": counts["D"] + counts["P"] + counts["E"] + counts["U"] + counts["X"], "skippedRequestCount": counts["S"], "affectedGuildCount": len(affected), "affectedUnknownGuildRequests": missingGuild, "activeGuildCount": len(guilds), "humanUserCount": len(users), "sharedMessageCount": len(messages), "sharedContentCount": len(contents), "oldestUnfinishedAgeMs": oldest, "latencyByOutcome": latency, "byProvider": byProvider, "excluded": Object{"diagnosticRequests": diagnostic, "adminRequests": admin}, "coverage": Object{"state": map[bool]string{true: "no_root_request_records", false: "instrumented_records_only"}[total == 0], "firstRecordedRequestAt": nullable(firstAt), "latestRecordedRequestAt": nullable(lastAt), "watermark": cursor, "historicalUninstrumentedData": "not_reconstructed", "missingCompletionAfterSeconds": 600}, "notAvailable": []string{"Discord message views", "read receipts", "URL clicks", "link button clicks"}})
+	coverage, e := a.measurementCoverage(ctx, from, to, total)
+	if e != nil {
+		fail(w, 503, "METRICS_COVERAGE_FAILED", e.Error())
+		return
+	}
+	jsonResponse(w, 200, Object{"definitionVersion": "root-request-v1", "snapshotAt": now(), "from": from, "to": to, "timezone": "UTC (display Asia/Tokyo)", "requestCount": total, "outcomes": counts, "outcomeLabels": outcomeNames, "fullSuccess": Object{"numerator": counts["F"], "denominator": denom, "ratio": ratio, "formula": "F / (F+D+P+E+U+X)"}, "problemRequestCount": counts["D"] + counts["P"] + counts["E"] + counts["U"] + counts["X"], "skippedRequestCount": counts["S"], "affectedGuildCount": len(affected), "affectedUnknownGuildRequests": missingGuild, "activeGuildCount": len(guilds), "humanUserCount": len(users), "sharedMessageCount": len(messages), "sharedContentCount": len(contents), "oldestUnfinishedAgeMs": oldest, "latencyByOutcome": latency, "byProvider": byProvider, "excluded": Object{"diagnosticRequests": diagnostic, "adminRequests": admin}, "coverage": coverage, "notAvailable": []string{"Discord message views", "read receipts", "URL clicks", "link button clicks"}})
 }
 func nullable(s sql.NullString) any {
 	if s.Valid {

@@ -190,6 +190,57 @@ func TestZeroDenominatorIsNull(t *testing.T) {
 		t.Fatal("no data must not be zero percent")
 	}
 }
+
+func TestCoverageDoesNotTreatDiagnosticOnlyDataAsProductionMeasurement(t *testing.T) {
+	a := testApp(t)
+	_, _, e := a.store.ingest([]Object{{"id": "d-start", "kind": "request.started", "runId": "diagnostic", "triggerType": "diagnostic", "occurredAt": now()}, {"id": "d-end", "kind": "request.completed", "runId": "diagnostic", "outcome": "F", "occurredAt": now()}})
+	if e != nil {
+		t.Fatal(e)
+	}
+	w := request(t, a, "GET", "/v1/metrics", nil)
+	if w.Code != 200 {
+		t.Fatal(w.Body.String())
+	}
+	v := object(t, w)
+	coverage := nested(v, "coverage")
+	if coverage["measurementState"] != "not_measured" || coverage["firstRecordedRequestAt"] != nil || coverage["recordedProductionRequests"] != float64(0) {
+		t.Fatalf("diagnostic data created false production coverage: %v", coverage)
+	}
+}
+func TestCoverageUsesOccurredHeartbeatTimeInsteadOfDelayedIngestTime(t *testing.T) {
+	a := testApp(t)
+	old := time.Now().UTC().Add(-48 * time.Hour).Format(timestampLayout)
+	_, _, e := a.store.ingest([]Object{{"id": "old-start", "kind": "request.started", "runId": "real", "triggerType": "human_message", "occurredAt": old}, {"id": "old-heartbeat", "kind": "heartbeat", "occurredAt": old}})
+	if e != nil {
+		t.Fatal(e)
+	}
+	v := object(t, request(t, a, "GET", "/v1/metrics", nil))
+	coverage := nested(v, "coverage")
+	if coverage["collectionState"] != "heartbeat_stale" || coverage["measurementState"] != "not_measured" {
+		t.Fatalf("delayed heartbeat falsely established live measurement: %v", coverage)
+	}
+	_, _, e = a.store.ingest([]Object{{"id": "new-heartbeat", "kind": "heartbeat", "occurredAt": now()}})
+	if e != nil {
+		t.Fatal(e)
+	}
+	coverage = nested(object(t, request(t, a, "GET", "/v1/metrics", nil)), "coverage")
+	if coverage["measurementState"] != "no_matching_requests" || coverage["collectionState"] != "recent_heartbeat" {
+		t.Fatalf("no-record and unavailable states not distinguished: %v", coverage)
+	}
+}
+func TestHealthSeparatesAPIResponseFromMonitorProgress(t *testing.T) {
+	a := testApp(t)
+	v := object(t, request(t, a, "GET", "/v1/health", nil))
+	if nested(v, "monitor")["state"] != "not_observed" {
+		t.Fatal("fresh process falsely claims monitoring evidence")
+	}
+	a.lastMonitorSave = time.Now().Add(-5 * time.Minute)
+	a.hasMonitorSave = true
+	v = object(t, request(t, a, "GET", "/v1/health", nil))
+	if nested(v, "monitor")["state"] != "stalled" {
+		t.Fatal("stalled monitor presented as current")
+	}
+}
 func TestTimestampTiePagination(t *testing.T) {
 	a := testApp(t)
 	stamp := now()

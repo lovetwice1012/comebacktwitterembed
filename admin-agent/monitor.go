@@ -246,6 +246,7 @@ func (a *App) monitorOnce(ctx context.Context) {
 	}
 	a.stateMu.Lock()
 	a.lastMonitorSave = time.Now()
+	a.hasMonitorSave = true
 	a.stateMu.Unlock()
 	notifySystemd("WATCHDOG=1\nSTATUS=State store and monitor progressing")
 	p, e := a.loadPolicy()

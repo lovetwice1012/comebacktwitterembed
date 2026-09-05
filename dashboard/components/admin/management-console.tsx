@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { AgentRecoveryPanel } from "@/components/admin/agent-recovery-panel";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input, Textarea } from "@/components/ui/input";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
@@ -12,6 +12,9 @@ type Action = { id: string; type: string; status: string; input?: Data; result?:
 type CatalogAction = { type: string; label?: string; description?: string; inputExample?: Data; mutating?: boolean };
 type Tab = "search" | "inspect" | "send" | "settings" | "operations" | "incidents" | "metrics" | "policies";
 const tabs: [Tab, string][] = [["search", "事象・履歴"], ["inspect", "URL実行検証"], ["send", "指定先へ送信"], ["settings", "設定確認・変更"], ["operations", "管理操作"], ["incidents", "障害・診断"], ["metrics", "稼働・影響"], ["policies", "監視・自動修復"]];
+const PENDING_ACTION_KEY = "cbte-admin-pending-action-v1";
+const LAST_ACTION_KEY = "cbte-admin-last-action-v1";
+function saveSession(key: string, value: unknown) { try { if (value === null) sessionStorage.removeItem(key); else sessionStorage.setItem(key, JSON.stringify(value)); } catch { /* The daemon remains the durable record; show the receipt key even if browser storage is full. */ } }
 const selectClass = "h-10 w-full rounded-md border bg-card px-3 text-sm";
 const obj = (value: unknown): Data => value && typeof value === "object" && !Array.isArray(value) ? value as Data : {};
 const list = (value: unknown): unknown[] => Array.isArray(value) ? value : [];
@@ -23,8 +26,12 @@ function parseObject(value: string, label: string): Data { const result = JSON.p
 function jstIso(value: string) { if (!value) return undefined; const d = new Date(`${value}:00+09:00`); if (!Number.isFinite(d.getTime())) throw new Error("日時が不正です"); return d.toISOString(); }
 
 async function api<T = Data>(path: string, method = "GET", body?: unknown): Promise<T> {
-  const response = await fetch(`/api/admin/agent/${path}`, { method, credentials: "same-origin", cache: "no-store", headers: body ? { "content-type": "application/json" } : undefined, body: body ? JSON.stringify(body) : undefined });
-  const value = await response.json();
+  let response: Response;
+  try { response = await fetch(`/api/admin/agent/${path}`, { method, credentials: "same-origin", cache: "no-store", headers: body ? { "content-type": "application/json" } : undefined, body: body ? JSON.stringify(body) : undefined, signal: AbortSignal.timeout(30000) }); }
+  catch (error) { throw new Error(`管理APIへ接続できません。${error instanceof Error ? error.message : String(error)}。受付済みの操作は再送せず同じキーで確認します。`); }
+  let value: Data;
+  try { value = await response.json(); }
+  catch { throw Object.assign(new Error(`管理APIの応答を読み取れません（HTTP ${response.status}）。接続を確認して同じ操作の結果を再取得してください。`), { status: response.status }); }
   if (!response.ok) { const e = obj(value.error); throw Object.assign(new Error(text(e.message ?? value.error ?? response.status)), { status: response.status, independentUrl: value.independentUrl }); }
   return value as T;
 }
@@ -32,12 +39,36 @@ async function api<T = Data>(path: string, method = "GET", body?: unknown): Prom
 export function RawEvidence({ value, label = "全項目・原文", expanded = false }: { value: unknown; label?: string; expanded?: boolean }) {
   const [filter, setFilter] = useState("");
   const [feedback, setFeedback] = useState("");
-  const raw = pretty(value);
+  const [isOpen, setIsOpen] = useState(expanded);
+  const raw = useMemo(() => isOpen ? pretty(value) : "", [isOpen, value]);
   const displayed = filter ? raw.split("\n").filter(line => line.toLowerCase().includes(filter.toLowerCase())).join("\n") : raw;
-  return <details open={expanded} className="rounded-md border p-3"><summary className="cursor-pointer text-sm font-medium">{label}</summary><div className="mt-3 space-y-2">
+  return <details open={isOpen} onToggle={event => setIsOpen(event.currentTarget.open)} className="rounded-md border p-3"><summary className="cursor-pointer text-sm font-medium">{label}</summary>{isOpen ? <div className="mt-3 space-y-2">
     <div className="flex flex-wrap gap-2"><Input className="max-w-xs" aria-label="原文検索" placeholder="原文を検索" value={filter} onChange={e => setFilter(e.target.value)} /><Button variant="outline" onClick={async () => { try { await navigator.clipboard.writeText(raw); setFeedback("コピーしました"); } catch { setFeedback("コピーできません。原文を選択してください。"); } }}>全体をコピー</Button><Button variant="outline" onClick={() => { const u = URL.createObjectURL(new Blob([raw], { type: "application/json" })); const a = document.createElement("a"); a.href = u; a.download = "admin-evidence.json"; a.click(); URL.revokeObjectURL(u); }}>JSON保存</Button></div>
     {feedback ? <p className="text-xs">{feedback}</p> : null}<pre className="max-h-[36rem] overflow-auto whitespace-pre-wrap break-all rounded bg-muted p-3 text-xs">{displayed || "一致なし"}</pre>
-  </div></details>;
+  </div> : null}</details>;
+}
+
+export function readableHttpBody(attempt: Data) {
+  const encoding = String(attempt.bodyEncoding || "utf8");
+  if (attempt.body === undefined || attempt.body === null) return { available: false, format: "未取得", text: "本文は記録されていません。未読込・読込失敗・保持期限などを処理経過で確認してください。", encoding };
+  if (encoding === "base64") return { available: true, format: "バイナリ（Base64）", text: String(attempt.body), encoding };
+  const raw = typeof attempt.body === "string" ? attempt.body : JSON.stringify(attempt.body);
+  try { return { available: true, format: "JSON（整形表示）", text: JSON.stringify(JSON.parse(raw), null, 2), encoding }; }
+  catch { return { available: true, format: "テキスト原文", text: raw, encoding }; }
+}
+
+export function HttpAttemptCard({ value, index }: { value: unknown; index: number }) {
+  const attempt = obj(value); const body = useMemo(() => readableHttpBody(attempt), [attempt]);
+  const headers = obj(attempt.headers); const error = obj(attempt.error);
+  const [copied, setCopied] = useState(false);
+  return <article className="space-y-3 rounded border bg-card p-3"><div><h4 className="break-all text-sm font-semibold">{index + 1}. {text(attempt.method || "GET")} {text(attempt.url)}</h4><p className="mt-1 text-sm">HTTP {text(attempt.status)} {text(attempt.statusText || "")} / {text(attempt.durationMs)} ms / {text(attempt.bytes)} bytes</p></div>
+    <div className="flex flex-wrap gap-2 text-xs"><span className="rounded border px-2 py-1">{body.format}</span><span className="rounded border px-2 py-1">Encoding: {body.encoding}</span><span className={`rounded border px-2 py-1 ${attempt.truncated ? "border-destructive text-destructive" : ""}`}>{attempt.truncated ? "本文は一部のみ保存" : attempt.bodyState === "complete" ? "本文保存済み" : text(attempt.bodyState)}</span>{attempt.credentialsRedacted ? <span className="rounded border px-2 py-1">資格情報は省略済み</span> : null}{attempt.replayed ? <span className="rounded border px-2 py-1">保存応答の再利用</span> : null}</div>
+    {attempt.responseUrl && attempt.responseUrl !== attempt.url ? <p className="break-all text-xs">最終応答URL: {text(attempt.responseUrl)}</p> : null}{headers["content-type"] ? <p className="text-xs">Content-Type: {text(headers["content-type"])}</p> : null}
+    {attempt.error ? <p role="alert" className="whitespace-pre-wrap break-words text-sm text-destructive">{text(error.code || error.name || "HTTPエラー")}: {text(error.message)}</p> : null}
+    <div><div className="mb-2 flex flex-wrap items-center justify-between gap-2"><h5 className="text-sm font-medium">応答本文</h5>{body.available ? <Button variant="outline" size="sm" onClick={async () => { try { await navigator.clipboard.writeText(body.text); setCopied(true); } catch { setCopied(false); } }}>{copied ? "コピー済み" : "表示本文をコピー"}</Button> : null}</div>{body.available && body.encoding === "base64" ? <p className="text-xs text-muted-foreground">バイナリ本文は、下の原記録からBase64として確認・保存できます。</p> : <pre className="max-h-96 overflow-auto whitespace-pre-wrap break-all rounded bg-muted p-3 text-xs">{body.text || "（空の本文）"}</pre>}</div>
+    <RawEvidence value={{ requestHeaders: attempt.requestHeaders, requestBody: attempt.requestBody, headers: attempt.headers, timeoutMs: attempt.timeoutMs, headersMs: attempt.headersMs, error: attempt.error }} label="リクエスト・ヘッダー・エラー詳細" />
+    <RawEvidence value={attempt} label="HTTP試行の原記録（本文を含む全項目）" />
+  </article>;
 }
 
 function Field({ label, value, onChange, placeholder = "", type = "text" }: { label: string; value: string; onChange: (v: string) => void; placeholder?: string; type?: string }) {
@@ -70,16 +101,24 @@ function SettingValueEditor({ snapshot, settingKey, value, onKey, onValue }: { s
   </div>;
 }
 
+function actionStateLabel(value: string) {
+  return ({ queued: "受付済み", running: "実行中", succeeded: "完了", failed: "操作に失敗", unknown: "成否未確認" } as Record<string, string>)[value] || "状態の詳細を確認";
+}
+
+function outcomeLabel(value: unknown, sending: boolean) {
+  return ({ preview_generated: "展開プレビューを生成", failed: sending ? "送信に失敗" : "取得・展開に失敗", skipped: "設定により見送り", no_output_reason_unrecorded: "出力なし（理由の記録なし）", full_success: "予定した出力の送信を確認", partial_success: "一部の出力だけ送信を確認", delivery_unknown: "送信結果を確認できない", not_sent: "未送信", restricted: "取得対象の制約により展開できない", unavailable: "取得対象を利用できない" } as Record<string, string>)[String(value)] || "判定の詳細を確認";
+}
+
 function ActionResult({ action, onOpen }: { action: Action; onOpen?: (id: string) => void }) {
   const result = obj(action.result ?? action.data); const attempts = list(result.httpAttempts); const steps = result.steps ?? result.planned_outputs; const deliverySteps = list(result.steps).filter(step => obj(step).messageId || obj(step).error);
-  return <Card><CardHeader><CardTitle>実行結果: {action.status}</CardTitle><CardDescription>{action.type} / {action.id} / {date(action.createdAt)} JST</CardDescription></CardHeader><CardContent className="space-y-3">
+  return <Card><CardHeader><CardTitle>操作の完了状態: {actionStateLabel(action.status)}</CardTitle><CardDescription>{action.type} / {action.id} / {date(action.createdAt)} JST</CardDescription></CardHeader><CardContent className="space-y-3">
     {action.error || result.error ? <div role="alert" className="rounded border border-destructive p-3"><pre className="whitespace-pre-wrap break-all text-sm">{pretty(action.error ?? result.error)}</pre></div> : null}
-    {result.outcome ? <p className="font-medium">判定: {text(result.outcome)} {result.reason ? ` / 理由: ${text(result.reason)}` : ""}</p> : null}{result.context ? <RawEvidence value={result.context} label="使用したサーバー・権限・未評価条件" /> : null}
-    {steps ? <div className="grid gap-4 xl:grid-cols-2"><div><h3 className="mb-2 font-semibold">展開結果（Discord表示の参考）</h3><OutputPreview value={steps} /></div><div className="space-y-2"><h3 className="font-semibold">外部APIの試行と応答</h3>{attempts.length ? attempts.map((attempt, i) => <RawEvidence key={i} value={attempt} label={`${i + 1}. ${text(obj(attempt).method ?? "GET")} ${text(obj(attempt).url)} / HTTP ${text(obj(attempt).status)}`} />) : <p className="text-sm">HTTP試行の記録なし。キャッシュ・保存応答の利用・取得前の失敗は原文を確認してください。</p>}</div></div> : null}
+    {result.outcome ? <p className="font-medium">{action.type.startsWith("message.") ? "送信の判定" : "展開の判定"}: {outcomeLabel(result.outcome, action.type.startsWith("message."))} {result.reason ? ` / 理由: ${text(result.reason)}` : ""}</p> : null}{result.context ? <RawEvidence value={result.context} label="使用したサーバー・権限・未評価条件" /> : null}
+    {steps ? <div className="grid gap-4 xl:grid-cols-2"><div><h3 className="mb-2 font-semibold">展開結果（Discord表示の参考）</h3><OutputPreview value={steps} /></div><div className="space-y-2"><h3 className="font-semibold">外部APIの試行と応答</h3>{attempts.length ? attempts.map((attempt, i) => <HttpAttemptCard key={i} value={attempt} index={i} />) : <p className="text-sm">HTTP試行の記録なし。キャッシュ・保存応答の利用・取得前の失敗は原文を確認してください。</p>}</div></div> : null}
     {result.sourcePolicy ? <RawEvidence value={result.sourcePolicy} label="使用した取得元ポリシー" /> : null}
     {result.plannedEffects ? <RawEvidence value={result.plannedEffects} label="予定された後処理・設定による変更" /> : null}
     {[...list(result.messages), ...deliverySteps].map((m, i) => { const row = obj(m); const u = safeUrl(row.url ?? row.jumpUrl); return <p key={i}>送信済みID: {text(row.id ?? row.messageId)} {u ? <a href={u} target="_blank" rel="noreferrer" className="underline">Discordで開く</a> : null}</p>; })}
-    {result.baseline && result.candidate ? <div className="grid gap-3 xl:grid-cols-2"><div><h3 className="mb-2 font-semibold">変更前: {text(obj(result.baseline).outcome)}</h3><OutputPreview value={obj(result.baseline).steps} /><RawEvidence value={obj(result.baseline).settings} label="変更前の設定" /></div><div><h3 className="mb-2 font-semibold">変更後: {text(obj(result.candidate).outcome)}</h3><OutputPreview value={obj(result.candidate).steps} /><RawEvidence value={obj(result.candidate).settings} label="変更後の設定" /></div></div> : null}
+    {result.baseline && result.candidate ? <div className="grid gap-3 xl:grid-cols-2"><div><h3 className="mb-2 font-semibold">変更前: {outcomeLabel(obj(result.baseline).outcome, false)}</h3><OutputPreview value={obj(result.baseline).steps} /><RawEvidence value={obj(result.baseline).settings} label="変更前の設定" /></div><div><h3 className="mb-2 font-semibold">変更後: {outcomeLabel(obj(result.candidate).outcome, false)}</h3><OutputPreview value={obj(result.candidate).steps} /><RawEvidence value={obj(result.candidate).settings} label="変更後の設定" /></div></div> : null}
     {list(result.events).length ? <div className="rounded border p-3"><h3 className="mb-2 font-semibold">処理経過</h3>{list(result.events).map((event, i) => { const row = obj(event); return <div className="my-2 border-l-2 pl-3" key={i}><p className="text-sm">{text(row.stage)} / {text(row.kind)} / {text(obj(row.details).reason ?? obj(row.details).outcome ?? "")}</p><RawEvidence value={event} label="この段階の証拠" /></div>; })}</div> : null}
     <RawEvidence value={action} label="実行履歴・入力・設定・API応答・エラーの全項目" />{onOpen ? <Button variant="outline" onClick={() => onOpen(action.id)}>最新状態を取得</Button> : null}
   </CardContent></Card>;
@@ -88,7 +127,7 @@ function ActionResult({ action, onOpen }: { action: Action; onOpen?: (id: string
 export function ManagementConsole({ initialTab = "search", standalone = false }: { initialTab?: Tab; standalone?: boolean }) {
   const [tab, setTab] = useState<Tab>(initialTab);
   const [health, setHealth] = useState<Data | null>(null);
-  const [connectionError, setConnectionError] = useState("");
+  const [connectionError, setConnectionError] = useState(""); const [catalogError, setCatalogError] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [pendingSubmission, setPendingSubmission] = useState<{ type: string; input: Data; idempotencyKey: string } | null>(null);
@@ -105,18 +144,44 @@ export function ManagementConsole({ initialTab = "search", standalone = false }:
   const [metricData, setMetricData] = useState<Data | null>(null); const [policies, setPolicies] = useState<Data | null>(null); const [policyText, setPolicyText] = useState("{}");
   const [password, setPassword] = useState(""); const [passwordAgain, setPasswordAgain] = useState(""); const [accountMessage, setAccountMessage] = useState("");
 
-  const refreshConnection = useCallback(async () => { try { const [h, c] = await Promise.all([api("health"), api<{ actions: CatalogAction[] }>("catalog")]); setHealth(h); setCatalog(c.actions || []); setConnectionError(""); } catch (e) { setConnectionError(text(e instanceof Error ? e.message : e)); const independentUrl = (e as { independentUrl?: string }).independentUrl; if (independentUrl) setHealth({ independentUrl }); } }, []);
+  const refreshConnection = useCallback(async () => {
+    const [h, c] = await Promise.allSettled([api("health"), api<{ actions: CatalogAction[] }>("catalog")]);
+    if (h.status === "fulfilled") { setHealth(h.value); setConnectionError(""); }
+    else { const e = h.reason; setConnectionError(text(e instanceof Error ? e.message : e)); const independentUrl = (e as { independentUrl?: string }).independentUrl; setHealth(previous => ({ independentUrl: independentUrl || previous?.independentUrl, ok: false })); }
+    if (c.status === "fulfilled") { setCatalog(Array.isArray(c.value.actions) ? c.value.actions : []); setCatalogError(""); }
+    else setCatalogError(`操作カタログの取得に失敗しました。URL検証・送信先確認は個別に実行できます。${text(c.reason instanceof Error ? c.reason.message : c.reason)}`);
+  }, []);
   useEffect(() => { void refreshConnection(); }, [refreshConnection]);
+  useEffect(() => { const timer = setTimeout(() => void refreshConnection(), connectionError || catalogError ? 10000 : 30000); return () => clearTimeout(timer); }, [connectionError, catalogError, refreshConnection, health]);
+  useEffect(() => {
+    try {
+      const pending = JSON.parse(sessionStorage.getItem(PENDING_ACTION_KEY) || "null");
+      if (pending && typeof pending.type === "string" && typeof pending.idempotencyKey === "string" && pending.input && typeof pending.input === "object") setPendingSubmission(pending);
+      const last = JSON.parse(sessionStorage.getItem(LAST_ACTION_KEY) || "null");
+      if (last && typeof last.id === "string" && /^[A-Za-z0-9:_.-]+$/.test(last.id)) setAction({ id: last.id, type: last.type || "前回の操作", status: "running" });
+    } catch { /* Malformed browser state never triggers an operation. */ }
+  }, []);
   useEffect(() => { if (tab !== "metrics" || !health?.ok || metricData) return; let cancelled = false; api("metrics").then(data => { if (!cancelled) setMetricData(data); }).catch(e => { if (!cancelled) setError(text(e.message)); }); return () => { cancelled = true; }; }, [tab, health, metricData]);
   useEffect(() => { setResolved(null); }, [guildId, channelId, replyTo]);
   useEffect(() => { setSettingResult(null); setSettingKey(""); }, [guildId, provider]);
-  const openAction = useCallback(async (id: string) => { const a = await api<Action>(`actions/${encodeURIComponent(id)}`); setAction(a); return a; }, []);
+  const openAction = useCallback(async (id: string) => { const a = await api<Action>(`actions/${encodeURIComponent(id)}`); setAction(a); saveSession(LAST_ACTION_KEY, { id: a.id, type: a.type }); return a; }, []);
   useEffect(() => {
     if (!action || !["queued", "running"].includes(action.status)) return;
     let cancelled = false;
-    const timer = setTimeout(() => { api<Action>(`actions/${encodeURIComponent(action.id)}`).then(a => { if (!cancelled) setAction(a); }).catch(e => { if (!cancelled) setError(`結果の取得に失敗しました。操作ID ${action.id}: ${text(e.message)}`); }); }, 2000);
+    let timer: ReturnType<typeof setTimeout>;
+    const poll = async () => {
+      try { const next = await api<Action>(`actions/${encodeURIComponent(action.id)}`); if (!cancelled) { setAction(next); setError(""); } }
+      catch (e) {
+        if (cancelled) return;
+        if (!((e as { status?: number }).status) || ((e as { status?: number }).status || 0) >= 500) void refreshConnection();
+        setError(`結果の取得に失敗しました。操作ID ${action.id}: ${text(e instanceof Error ? e.message : e)}。GETでの確認を再試行します。`);
+        if ([401, 403, 404].includes((e as { status?: number }).status || 0)) setAction(current => current?.id === action.id ? { ...current, status: "unknown" } : current);
+        else timer = setTimeout(() => void poll(), 8000);
+      }
+    };
+    timer = setTimeout(() => void poll(), 2000);
     return () => { cancelled = true; clearTimeout(timer); };
-  }, [action]);
+  }, [action, refreshConnection]);
   useEffect(() => {
     if (action?.status !== "succeeded") return;
     const result = obj(action.result ?? action.data);
@@ -130,8 +195,8 @@ export function ManagementConsole({ initialTab = "search", standalone = false }:
     const idempotencyKey = crypto.randomUUID();
     // Display the key before dispatch; an ambiguous response must be investigated rather than retried as a new operation.
     setDetail({ submittedType: type, idempotencyKey, submittedAt: new Date().toISOString(), input });
-    const request = { type, input, idempotencyKey }; setPendingSubmission(request);
-    try { const a = await api<Action>("actions", "POST", request); setAction(a); setPendingSubmission(null); } catch (e) { const status = (e as { status?: number }).status; if (status && status >= 400 && status < 500 && status !== 408 && status !== 429) setPendingSubmission(null); throw e; }
+    const request = { type, input, idempotencyKey }; setPendingSubmission(request); saveSession(PENDING_ACTION_KEY, request);
+    try { const a = await api<Action>("actions", "POST", request); setAction(a); saveSession(LAST_ACTION_KEY, { id: a.id, type: a.type }); setPendingSubmission(null); saveSession(PENDING_ACTION_KEY, null); } catch (e) { const status = (e as { status?: number }).status; if (status && status >= 400 && status < 500 && status !== 408 && status !== 429) { setPendingSubmission(null); saveSession(PENDING_ACTION_KEY, null); } throw e; }
   }
   function context(): Data { return { ...(guildId ? { guildId: guildId.trim() } : {}), ...(channelId ? { channelId: channelId.trim() } : {}), ...(userId ? { userId: userId.trim() } : {}) }; }
   function query(cursor?: string, outcome?: string) { const q = new URLSearchParams({ limit: "100" }); if (guildId) q.set("guildId", guildId.trim()); const start = jstIso(from); const end = jstIso(to); if (start) q.set("from", start); if (end) q.set("to", end); if (start && end && start >= end) throw new Error("終了日時は開始日時より後にしてください"); if (cursor) q.set("cursor", cursor); if (outcome) q.set("outcome", outcome); return q; }
@@ -149,23 +214,29 @@ export function ManagementConsole({ initialTab = "search", standalone = false }:
 
   return <div className={standalone ? "mx-auto min-h-screen max-w-[1600px] space-y-4 bg-background p-4 md:p-6" : "space-y-4"}>
     <div className="flex flex-wrap items-start justify-between gap-3"><div><h1 className="text-xl font-semibold">管理サポートコンソール</h1><p className="text-sm text-muted-foreground">サーバーIDと時間帯から調査・設定変更・復旧確認。管理デーモンと履歴を共有します。</p></div><div className="flex gap-2"><Link href="/admin" className="rounded border px-3 py-2 text-sm">従来の分析・設定</Link><Button variant="outline" onClick={() => void refreshConnection()}>接続確認</Button>{safeUrl(health?.independentUrl) ? <a className="rounded border px-3 py-2 text-sm" href={safeUrl(health?.independentUrl)} target="_blank" rel="noreferrer">独立管理Web</a> : null}</div></div>
-    {connectionError ? <div role="alert" className="rounded border border-destructive p-3 text-sm">{connectionError} この画面の停止後も受付済み操作は管理デーモンで継続します。再接続後に履歴を確認してください。</div> : <p className="text-xs text-muted-foreground">管理デーモン {health ? "接続済み" : "接続確認中"} / 時刻: {date(health?.time)} JST</p>}
+    {connectionError ? <div role="alert" className="rounded border border-destructive p-3 text-sm">{connectionError} この画面の停止後も受付済み操作は管理デーモンで継続します。再接続後に履歴を確認してください。</div> : <p className="text-xs text-muted-foreground">管理デーモンのAPI {health?.ok ? "接続済み（Botの稼働・計測状態は別途確認）" : "接続確認中"} / 時刻: {date(health?.time)} JST</p>}
+    {catalogError ? <p role="status" className="rounded border p-3 text-sm">{catalogError}</p> : null}
     <details open={Boolean(connectionError)} className="rounded border p-3"><summary className="mb-2 cursor-pointer text-sm font-medium">管理デーモンの独立確認・復旧</summary><AgentRecoveryPanel onRecovered={refreshConnection} /></details>
     <nav className="flex flex-wrap gap-2">{tabs.map(([key, label]) => <Button variant={tab === key ? "default" : "outline"} key={key} onClick={() => { setTab(key); if (key === "incidents") { setSource("incidents"); setHistory([]); setNextCursor(null); } setError(""); }}>{label}</Button>)}</nav>
     <Card><CardContent className="grid gap-3 pt-5 md:grid-cols-3"><Field label="サーバーID" value={guildId} onChange={setGuild} placeholder="例: 123456789012345678" /><Field label="チャンネルID" value={channelId} onChange={setChannel} placeholder="調査・送信対象（必要な操作のみ）" /><Field label="対象ユーザーID" value={userId} onChange={setUser} placeholder="設定判定対象（省略時は未評価）" /></CardContent></Card>
     {error ? <p role="alert" className="rounded border border-destructive p-3 text-sm">{error}</p> : null}
-    {pendingSubmission ? <div className="rounded border p-3 text-sm"><p>操作の受付結果を確認中です。新しい操作IDでは再実行しません。キー: {pendingSubmission.idempotencyKey}</p><Button variant="outline" disabled={busy} onClick={() => void perform(async () => { const a = await api<Action>("actions", "POST", pendingSubmission); setAction(a); setPendingSubmission(null); })}>同じ受付キーで結果を確認</Button></div> : null}
+    {pendingSubmission ? <div className="rounded border p-3 text-sm"><p>操作の受付結果を確認中です。新しい操作IDでは再実行しません。キー: {pendingSubmission.idempotencyKey}</p><Button variant="outline" disabled={busy} onClick={() => void perform(async () => { const a = await api<Action>("actions", "POST", pendingSubmission); setAction(a); saveSession(LAST_ACTION_KEY, { id: a.id, type: a.type }); setPendingSubmission(null); saveSession(PENDING_ACTION_KEY, null); })}>同じ受付キーで結果を確認</Button></div> : null}
 
     {tab === "search" || tab === "incidents" ? <Card><CardHeader><CardTitle>{tab === "incidents" ? "障害・診断・通知" : "事象・操作履歴"}</CardTitle><CardDescription>日時はJST。記録なしと未取得を区別し、各行から原文と処理経過を確認します。</CardDescription></CardHeader><CardContent className="space-y-4"><div className="grid gap-3 md:grid-cols-4"><Field label="開始（含む）" type="datetime-local" value={from} onChange={setFrom} /><Field label="終了（含まない）" type="datetime-local" value={to} onChange={setTo} /><label className="space-y-1 text-sm"><span>記録種別</span><select className={selectClass} value={source} onChange={e => { setSource(e.target.value); setHistory([]); setNextCursor(null); }}><option value="runs">処理要求</option><option value="events">段階別の証拠</option><option value="actions">管理操作</option><option value="incidents">障害・診断</option><option value="notifications">通知</option></select></label><Button className="self-end" disabled={busy} onClick={() => void perform(() => search())}>検索</Button></div>
       {history.map((item, i) => { const r = obj(item); const id = text(r.id ?? r.runId ?? r.traceId ?? r.event_id); return <div key={`${id}-${i}`} className="rounded border p-3"><div className="flex flex-wrap items-center justify-between gap-2"><p className="break-all text-sm">{date(r.createdAt ?? r.occurredAt ?? r.occurred_at_ms)} / {text(r.type ?? r.kind ?? r.stage)} / {text(r.status ?? r.outcome)} / {id}</p>{["actions", "runs", "incidents"].includes(source) && id !== "未取得" ? <Button variant="outline" onClick={() => void perform(async () => { if (source === "actions") await openAction(id); else setDetail(await api(`${source}/${encodeURIComponent(id)}`)); })}>処理経過を開く</Button> : null}</div><RawEvidence value={item} /></div>; })}
       {!history.length ? <p className="text-sm text-muted-foreground">取得した記録はありません。検索結果が0件でも、当時の記録・受信が完全だったとは限りません。</p> : null}{nextCursor ? <Button disabled={busy} variant="outline" onClick={() => void perform(() => search(nextCursor))}>次の100件を追加</Button> : null}
     </CardContent></Card> : null}
 
-    {tab === "inspect" ? <Card><CardHeader><CardTitle>URL実行検証</CardTitle><CardDescription>実際の取得元から取得し、展開payloadとHTTP応答を保存します。検証は診断用途として通常利用統計から分離され、Discordへ投稿しません。</CardDescription></CardHeader><CardContent className="space-y-4"><Field label="検証するURL" value={url} onChange={setUrl} placeholder="https://..." />{/https?:\/\/(?:www\.)?(?:x|twitter|fxtwitter|vxtwitter)\.com\//i.test(url) ? <div className="flex flex-wrap items-end gap-3"><label className="text-sm">Xの取得元<select className={selectClass} value={sourceId} onChange={e => setSourceId(e.target.value)}><option value="default">稼働中の設定を使用</option><option value="vxtwitter">vxtwitter</option><option value="fxtwitter">fxtwitter</option></select></label><label className="text-sm">別の取得元への切り替え<select className={selectClass} value={sourceFallback} onChange={e => setSourceFallback(e.target.value)}><option value="default">稼働中の設定を使用</option><option value="true">許可する</option><option value="false">許可しない</option></select></label></div> : null}<div className="grid gap-3 md:grid-cols-2"><label className="text-sm">設定上書き（省略した値はサーバー設定）<Textarea rows={5} className="mt-1 font-mono" value={settingsText} onChange={e => setSettingsText(e.target.value)} /></label><label className="text-sm">同じ保存応答と比較する設定<Textarea rows={5} className="mt-1 font-mono" value={candidateText} onChange={e => setCandidateText(e.target.value)} /></label></div><div className="flex flex-wrap gap-2"><Button disabled={!canSubmit()} onClick={() => void perform(() => inspect("url.inspect"))}>実際に取得して展開</Button><Button variant="outline" disabled={!canSubmit() || !baseline} onClick={() => void perform(() => inspect("url.reparse"))}>保存応答を再解析</Button><Button variant="outline" disabled={!canSubmit() || !baseline} onClick={() => void perform(() => inspect("url.compare"))}>同じ応答で設定比較</Button><Button variant="outline" disabled={!baseline} onClick={() => { setSendMode("captured"); setTab("send"); }}>この出力を指定先へ送る</Button></div></CardContent></Card> : null}
+    {tab === "inspect" ? <Card><CardHeader><CardTitle>URL実行検証</CardTitle><CardDescription>実際の取得元から取得し、展開payloadとHTTP応答を保存します。サーバーIDを省略すると既定設定で検証し、設定DBが停止していても調査できます。Discordへ投稿しません。</CardDescription></CardHeader><CardContent className="space-y-4"><Field label="検証するURL" value={url} onChange={setUrl} placeholder="https://..." />{/https?:\/\/(?:www\.)?(?:x|twitter|fxtwitter|vxtwitter)\.com\//i.test(url) ? <div className="flex flex-wrap items-end gap-3"><label className="text-sm">Xの取得元<select className={selectClass} value={sourceId} onChange={e => setSourceId(e.target.value)}><option value="default">稼働中の設定を使用</option><option value="vxtwitter">vxtwitter</option><option value="fxtwitter">fxtwitter</option></select></label><label className="text-sm">別の取得元への切り替え<select className={selectClass} value={sourceFallback} onChange={e => setSourceFallback(e.target.value)}><option value="default">稼働中の設定を使用</option><option value="true">許可する</option><option value="false">許可しない</option></select></label></div> : null}<div className="grid gap-3 md:grid-cols-2"><label className="text-sm">設定上書き（省略した値はサーバー設定）<Textarea rows={5} className="mt-1 font-mono" value={settingsText} onChange={e => setSettingsText(e.target.value)} /></label><label className="text-sm">同じ保存応答と比較する設定<Textarea rows={5} className="mt-1 font-mono" value={candidateText} onChange={e => setCandidateText(e.target.value)} /></label></div><div className="flex flex-wrap gap-2"><Button disabled={!canSubmit()} onClick={() => void perform(() => inspect("url.inspect"))}>実際に取得して展開</Button><Button variant="outline" disabled={!canSubmit() || !baseline} onClick={() => void perform(() => inspect("url.reparse"))}>保存応答を再解析</Button><Button variant="outline" disabled={!canSubmit() || !baseline} onClick={() => void perform(() => inspect("url.compare"))}>同じ応答で設定比較</Button><Button variant="outline" disabled={!baseline} onClick={() => { setSendMode("captured"); setTab("send"); }}>この出力を指定先へ送る</Button></div></CardContent></Card> : null}
 
     {tab === "send" ? <Card><CardHeader><CardTitle>サーバー・チャンネル指定送信</CardTitle><CardDescription>送信先を照合後、明示的に送信します。URL取得・手入力・検証済み出力に対応し、API応答と各メッセージIDを記録します。</CardDescription></CardHeader><CardContent className="space-y-4"><div className="grid gap-3 md:grid-cols-2"><label className="text-sm">送信内容<select value={sendMode} onChange={e => setSendMode(e.target.value)} className={selectClass}><option value="manual">手入力の本文・Embed・添付</option><option value="url">URLを取得して展開</option><option value="captured">URL検証で確認した出力</option></select></label><Field label="返信先メッセージID（任意）" value={replyTo} onChange={setReplyTo} /></div>
       {sendMode === "manual" ? <><label className="block text-sm">本文<Textarea rows={5} value={content} onChange={e => setContent(e.target.value)} /></label><label className="block text-sm">Embed・添付等のpayload（JSON / embeds, files, components）<Textarea rows={7} className="font-mono" value={payloadText} onChange={e => setPayloadText(e.target.value)} /></label><p className="text-xs text-muted-foreground">メンションは既定で通知しません。添付は管理workerが受け付けるHTTPS URLを指定してください。</p></> : sendMode === "url" ? <Field label="展開するURL" value={url} onChange={setUrl} /> : <OutputPreview value={baseline?.steps} />}
-      <div className="flex flex-wrap gap-2"><Button variant="outline" disabled={!canSubmit() || !guildId || !channelId} onClick={() => void perform(() => submit("message.resolve", { guildId, channelId, ...(replyTo ? { replyTo } : {}) }))}>サーバー・チャンネルと権限を確認</Button><Button disabled={!canSubmit() || !resolved} onClick={() => void perform(send)}>確認した送信先へ送信</Button></div>{resolved ? <RawEvidence value={resolved} label="照合した送信先・権限" expanded /> : null}</CardContent></Card> : null}
+      <div className="flex flex-wrap gap-2"><Button variant="outline" disabled={!canSubmit() || !guildId || !channelId} onClick={() => void perform(() => submit("message.resolve", { guildId, channelId, ...(replyTo ? { replyTo } : {}) }))}>サーバー・チャンネルを照合</Button><Button disabled={!canSubmit() || !resolved} onClick={() => void perform(send)}>確認した送信先へ送信</Button></div>{resolved ? <div className="space-y-3 rounded border p-3">
+        <p className="font-medium">送信先: {text(obj(resolved.guild).name)} / #{text(obj(resolved.channel).name)}</p>
+        <p className="break-all text-sm">サーバーID: {text(obj(resolved.guild).id)} / チャンネルID: {text(obj(resolved.channel).id)}</p>
+        <p className="text-xs text-muted-foreground">Discord APIで宛先へのアクセスを照合済み。個別の送信権限は未評価です。実際の送信応答で成功・拒否・成否不明を記録します。</p>
+        <RawEvidence value={resolved} label="照合結果・権限情報の全項目" />
+      </div> : null}</CardContent></Card> : null}
 
     {tab === "settings" ? <Card><CardHeader><CardTitle>サーバー設定</CardTitle><CardDescription>全設定の現在値と既定値を取得し、変更・復元・コピーの結果とBotが使う設定版を確認します。</CardDescription></CardHeader><CardContent className="space-y-4"><div className="flex flex-wrap items-end gap-3"><Field label="プロバイダー" value={provider} onChange={setProvider} /><Button disabled={!canSubmit()} onClick={() => void perform(() => submit("settings.get", { guildId, providerId: provider }))}>現在の設定を取得</Button><Button variant="outline" disabled={!canSubmit()} onClick={() => void perform(() => submit("settings.catalog", {}))}>全項目の説明・型を取得</Button></div>
       {settingResult ? <RawEvidence value={settingResult} label="設定値・既定値・説明・版の全項目" expanded /> : null}<SettingValueEditor snapshot={settingResult} settingKey={settingKey} value={settingValue} onKey={setSettingKey} onValue={setSettingValue} /><div className="flex flex-wrap gap-2"><Button disabled={!canSubmit() || !settingResult || !settingKey} onClick={() => void perform(() => submit("settings.change", { guildId, providerId: provider, key: settingKey, value: JSON.parse(settingValue), expectedHash: settingResult?.settingsHash ?? settingResult?.hash }))}>変更して反映を確認</Button><Button variant="outline" disabled={!canSubmit() || !settingResult || !settingKey} onClick={() => void perform(() => submit("settings.reset", { guildId, providerId: provider, key: settingKey, expectedHash: settingResult?.settingsHash ?? settingResult?.hash }))}>指定キーを既定値へ戻す</Button></div><div className="flex flex-wrap items-end gap-3"><Field label="コピー元サーバーID" value={sourceGuild} onChange={setSourceGuild} /><Button variant="outline" disabled={!canSubmit() || !settingResult || !sourceGuild} onClick={() => void perform(() => submit("settings.copy", { guildId, sourceGuildId: sourceGuild, providerId: provider, expectedHash: settingResult?.settingsHash ?? settingResult?.hash }))}>現在のサーバーへコピー</Button></div><p className="text-xs text-muted-foreground">変更履歴は「事象・履歴」の管理操作から確認できます。従来の設定フォームも /admin のサポートタブから利用できます。</p></CardContent></Card> : null}
@@ -177,13 +248,14 @@ export function ManagementConsole({ initialTab = "search", standalone = false }:
     {tab === "policies" ? <Card><CardHeader><CardTitle>監視・自動修復ポリシー</CardTitle><CardDescription>LLMを使わず診断ルールと証拠で判定します。適用済みの版を指定して更新し、競合を防ぎます。</CardDescription></CardHeader><CardContent className="space-y-4"><Button variant="outline" disabled={busy} onClick={() => void perform(async () => { const p = await api("policies"); setPolicies(p); setPolicyText(pretty(p)); })}>現在のポリシーを取得</Button><Textarea aria-label="監視ポリシーJSON" rows={15} className="font-mono" value={policyText} onChange={e => setPolicyText(e.target.value)} /><Button disabled={busy || !policies} onClick={() => void perform(async () => { const p = await api("policies", "PUT", { ...parseObject(policyText, "ポリシー"), expectedRevision: policies?.revision }); setPolicies(p); setPolicyText(pretty(p)); })}>ポリシーを更新</Button>{policies ? <RawEvidence value={policies} label="適用されたポリシー" /> : null}</CardContent></Card> : null}
 
     {tab === "policies" ? <Card><CardHeader><CardTitle>独立管理Webのログイン</CardTitle><CardDescription>通常ダッシュボードやDiscord OAuthが停止した場合に使う管理者パスワードを設定します。管理デーモンの接続トークンをブラウザーへ渡しません。</CardDescription></CardHeader><CardContent className="space-y-3"><div className="grid gap-3 md:grid-cols-2"><Field label="新しい管理者パスワード" type="password" value={password} onChange={setPassword} /><Field label="新しいパスワード（再入力）" type="password" value={passwordAgain} onChange={setPasswordAgain} /></div><Button disabled={busy || !password || password !== passwordAgain} onClick={() => void perform(async () => { await api("account/password", "POST", { password }); setPassword(""); setPasswordAgain(""); setAccountMessage("独立管理Webのパスワードを更新しました。"); })}>パスワードを設定</Button>{accountMessage ? <p role="status" className="text-sm">{accountMessage}</p> : null}</CardContent></Card> : null}
-    {action ? <ActionResult action={action} onOpen={id => void perform(() => openAction(id))} /> : null}
-    {detail ? <RawEvidence value={detail} label="選択した事象・実行受付の詳細" /> : null}
+    {action && tab !== "metrics" && tab !== "policies" ? <ActionResult action={action} onOpen={id => void perform(() => openAction(id))} /> : null}
+    {detail && tab !== "metrics" && tab !== "policies" ? <RawEvidence value={detail} label="選択した事象・実行受付の詳細" /> : null}
   </div>;
 }
 
-function MetricsView({ data, onDrill }: { data: Data; onDrill: (outcome?: string) => void }) {
+export function MetricsView({ data, onDrill }: { data: Data; onDrill: (outcome?: string) => void }) {
   const outcomes = obj(data.outcomes); const labels = obj(data.outcomeLabels); const success = obj(data.fullSuccess); const coverage = obj(data.coverage);
+  const unmeasured = coverage.measurementState === "not_measured" || (!coverage.measurementState && coverage.state === "no_root_request_records");
   const cards: { label: string; value: string; note: string; outcome?: string }[] = [
     { label: "展開要求数", value: text(data.requestCount), note: "根要求IDで重複排除。引用・再試行は加算しません。" },
     { label: "完全成功を確認できた割合", value: success.ratio == null ? "対象なし" : `${(Number(success.ratio) * 100).toFixed(2)}%`, note: `${text(success.numerator)} / ${text(success.denominator)} 要求（F / F+D+P+E+U+X）`, outcome: "F" },
@@ -192,10 +264,10 @@ function MetricsView({ data, onDrill }: { data: Data; onDrill: (outcome?: string
     { label: "影響サーバー数", value: text(data.affectedGuildCount), note: `問題のある要求のサーバー集合。サーバー不明の要求: ${text(data.affectedUnknownGuildRequests)}`, outcome: "D,P,E,U,X" },
     { label: "未完了の最長経過時間", value: data.oldestUnfinishedAgeMs == null ? "対象なし" : `${(Number(data.oldestUnfinishedAgeMs) / 1000).toFixed(1)}秒`, note: "完了時間の分布には混ぜません", outcome: "I,X" },
   ];
-  return <div className="space-y-4"><p className="text-xs text-muted-foreground">{date(data.from)} ～ {date(data.to)} JST（終了を含まない） / 定義 {text(data.definitionVersion)} / 集計時点 {date(data.snapshotAt)}</p><div className="grid gap-3 md:grid-cols-3">{cards.map(card => <button key={card.label} className="rounded border bg-card p-4 text-left" onClick={() => onDrill(card.outcome)}><span className="text-sm">{card.label}</span><p className="my-2 text-2xl font-semibold">{card.value}</p><p className="text-xs text-muted-foreground">{card.note}</p></button>)}</div>
-    <div className="rounded border p-3"><p className="font-medium">要求結果の内訳</p><div className="mt-2 flex flex-wrap gap-2">{Object.entries(outcomes).map(([key, value]) => <Button key={key} variant="outline" onClick={() => onDrill(key)}>{text(labels[key] ?? key)}: {text(value)}</Button>)}</div></div>
-    <div className="grid gap-3 lg:grid-cols-2"><div className="rounded border p-3"><h3 className="mb-2 font-medium">完了時間（結果別）</h3>{Object.entries(obj(data.latencyByOutcome)).map(([key, value]) => { const row = obj(value); return <p className="mb-2 text-sm" key={key}>{text(labels[key] ?? key)} / {text(row.sampleCount)}件 / P50 {row.p50Ms == null ? "未取得" : `${(Number(row.p50Ms) / 1000).toFixed(3)}秒`} / P95 {row.p95Ms == null ? "未取得" : `${(Number(row.p95Ms) / 1000).toFixed(3)}秒`}</p>; })}<p className="text-xs text-muted-foreground">原データのnearest-rank分位点。対象0件の分位点は未取得です。</p></div><div className="rounded border p-3"><h3 className="mb-2 font-medium">計測状態</h3><p className="text-sm">状態: {text(coverage.state)} / 最初の要求記録: {date(coverage.firstRecordedRequestAt)} / 最新: {date(coverage.latestRecordedRequestAt)}</p><p className="mt-2 text-xs text-muted-foreground">旧記録からの要求結果の復元は行いません。記録されていない期間を成功や0件として判断しないでください。</p><RawEvidence value={{ coverage, excluded: data.excluded }} label="記録状態と診断・管理操作の除外件数" /></div></div>
-    <div className="rounded border p-3"><h3 className="mb-2 font-medium">サービス別の結果</h3>{Object.entries(obj(data.byProvider)).map(([provider, value]) => <p className="mb-2 text-sm" key={provider}>{provider}: {Object.entries(obj(value)).map(([outcome, count]) => `${text(labels[outcome] ?? outcome)} ${text(count)}`).join(" / ")}</p>)}</div>
-    <Button variant="outline" onClick={() => onDrill()}>この条件の根要求と結果を開く</Button><RawEvidence value={data} label="指標辞書・分子分母・計測状態（全項目）" />
+  return <div className="space-y-4"><p className="text-xs text-muted-foreground">{date(data.from)} ～ {date(data.to)} JST（終了を含まない） / 定義 {text(data.definitionVersion)} / 集計時点 {date(data.snapshotAt)}</p><div className="grid gap-3 md:grid-cols-3">{cards.map(card => <button key={card.label} className="rounded border bg-card p-4 text-left" disabled={unmeasured} onClick={() => onDrill(card.outcome)}><span className="text-sm">{card.label}</span><p className="my-2 text-2xl font-semibold">{unmeasured ? "未計測" : card.value}</p><p className="text-xs text-muted-foreground">{unmeasured ? "本番の要求を観測できたことを確認できません。" : card.note}</p></button>)}</div>
+    <div className="rounded border p-3"><p className="font-medium">要求結果の内訳</p><div className="mt-2 flex flex-wrap gap-2">{unmeasured ? <p className="text-sm">未計測。本番の要求記録または収集状態を確認できていません。</p> : Object.entries(outcomes).map(([key, value]) => <Button key={key} variant="outline" onClick={() => onDrill(key)}>{text(labels[key] ?? key)}: {text(value)}</Button>)}</div></div>
+    <div className="grid gap-3 lg:grid-cols-2"><div className="rounded border p-3"><h3 className="mb-2 font-medium">完了時間（結果別）</h3>{unmeasured ? <p className="text-sm">未計測</p> : Object.entries(obj(data.latencyByOutcome)).map(([key, value]) => { const row = obj(value); return <p className="mb-2 text-sm" key={key}>{text(labels[key] ?? key)} / {text(row.sampleCount)}件 / P50 {row.p50Ms == null ? "未取得" : `${(Number(row.p50Ms) / 1000).toFixed(3)}秒`} / P95 {row.p95Ms == null ? "未取得" : `${(Number(row.p95Ms) / 1000).toFixed(3)}秒`}</p>; })}<p className="text-xs text-muted-foreground">保存された完了記録のnearest-rank分位点。未計測と、観測済みで対象0件の状態を区別します。</p></div><div className="rounded border p-3"><h3 className="mb-2 font-medium">計測状態</h3><p className="text-sm">状態: {unmeasured ? "未計測" : "保存された観測結果"} / 収集: {text(coverage.collectionState)} / 最終heartbeat: {date(coverage.lastHeartbeatAt)} / 最初の要求記録: {date(coverage.firstRecordedRequestAt)} / 最新: {date(coverage.latestRecordedRequestAt)}</p><p className="mt-2 text-xs text-muted-foreground">旧記録からの要求結果の復元は行いません。記録されていない期間を成功や0件として判断しないでください。</p><RawEvidence value={{ coverage, excluded: data.excluded }} label="記録状態と診断・管理操作の除外件数" /></div></div>
+    <div className="rounded border p-3"><h3 className="mb-2 font-medium">サービス別の結果</h3>{unmeasured ? <p className="text-sm">未計測</p> : Object.entries(obj(data.byProvider)).map(([provider, value]) => <p className="mb-2 text-sm" key={provider}>{provider}: {Object.entries(obj(value)).map(([outcome, count]) => `${text(labels[outcome] ?? outcome)} ${text(count)}`).join(" / ")}</p>)}</div>
+    <Button variant="outline" disabled={unmeasured} onClick={() => onDrill()}>この条件の根要求と結果を開く</Button><RawEvidence value={data} label="指標辞書・分子分母・計測状態（全項目）" />
   </div>;
 }

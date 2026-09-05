@@ -28,7 +28,7 @@ function authorized(received, expected) {
 }
 
 function unknownResult(causeCode, message, details = {}) {
-    return { ok: false, error: { code: 'DELIVERY_UNKNOWN', causeCode, message,
+    return { ok: false, error: { code: 'ACTION_OUTCOME_UNKNOWN', causeCode, message, originalError: { code: causeCode, message },
         ...details }, events: [] };
 }
 
@@ -124,16 +124,19 @@ function runWorker(request, config) {
             const diagnostics = { exitCode, signal: signal || null,
                 stderr: Buffer.concat(stderr).toString('utf8').split(config.token).join('[service-token-omitted]'), stderrTruncated };
             let result;
-            if (cancelled) result = unknownResult(cancelled.code, cancelled.message);
-            else if (spawnError) result = unknownResult('WORKER_START_FAILED', 'The configured analysis worker could not be started.', { systemCode: spawnError.code });
-            else {
-                try {
-                    result = JSON.parse(Buffer.concat(output).toString('utf8'));
-                    if (!result || typeof result !== 'object' || Array.isArray(result) || typeof result.ok !== 'boolean') throw new Error('Invalid worker result.');
-                } catch {
-                    result = unknownResult('WORKER_RESULT_INVALID', 'The worker did not return a complete structured result. The operation will not be repeated automatically.');
-                }
-            }
+            let parsed;
+            try {
+                parsed = JSON.parse(Buffer.concat(output).toString('utf8'));
+                if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed) || typeof parsed.ok !== 'boolean') parsed = null;
+            } catch { parsed = null; }
+            if (cancelled) {
+                result = unknownResult(cancelled.code, cancelled.message, parsed?.error ? { originalError: parsed.error } : {});
+                if (parsed) { result.data = parsed.data; result.events = parsed.events || []; }
+            } else if (spawnError) result = { ok: false, error: { code: 'WORKER_START_FAILED', message: 'The configured analysis worker could not be started.', systemCode: spawnError.code }, events: [] };
+            else if (!parsed) result = unknownResult('WORKER_RESULT_INVALID', 'The worker did not return a complete structured result. The operation will not be repeated automatically.');
+            else if (['WORKER_DEADLINE', 'ACTION_DEADLINE'].includes(parsed.error?.code)) {
+                result = { ...parsed, ok: false, error: { ...parsed.error, code: 'ACTION_OUTCOME_UNKNOWN', originalError: parsed.error } };
+            } else result = parsed;
             // Valid {ok:false,...} from exit code 1 is an application result;
             // preserve all returned evidence instead of replacing it with stderr.
             resolve({ result, diagnostics });
@@ -208,7 +211,7 @@ async function createAnalysisServer(options = {}) {
         active.cancel = running.cancel;
         if (closing) running.cancel('SERVICE_STOPPING', 'The analysis service is stopping; the operation result is unconfirmed.');
         const { result, diagnostics } = await running.promise;
-        const unknown = result?.error?.code === 'DELIVERY_UNKNOWN' || result?.data?.outcome === 'delivery_unknown' || result?.error?.code === 'WORKER_DEADLINE';
+        const unknown = ['ACTION_OUTCOME_UNKNOWN', 'DELIVERY_UNKNOWN', 'WORKER_DEADLINE'].includes(result?.error?.code) || result?.data?.outcome === 'delivery_unknown';
         const finished = { ...receipt, state: unknown ? 'unknown' : 'completed', completedAt: timestamp(), result, diagnostics };
         try {
             await atomicWrite(filename(request.actionId), finished);
