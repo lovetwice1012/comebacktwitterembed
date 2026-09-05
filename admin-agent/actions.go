@@ -201,7 +201,11 @@ func (a *App) execute(parent context.Context, ac Action) {
 			workerURL = a.cfg.ReportWorkerURL
 		}
 		if (a.cfg.Worker == "" && workerURL == "") || (ac.Type == "reports.build" && workerURL == "") {
-			problem = Object{"code": "WORKER_UNCONFIGURED", "message": "ADMIN_AGENT_WORKER has not been configured"}
+			if ac.Type == "reports.build" {
+				problem = Object{"code": "REPORT_WORKER_UNCONFIGURED", "message": "ADMIN_AGENT_REPORT_WORKER_URL has not been configured. Complete reports require their own worker; the interactive support worker is not used as a fallback.", "lane": "reports", "configuration": "ADMIN_AGENT_REPORT_WORKER_URL", "availability": "unconfigured", "executionStarted": false}
+			} else {
+				problem = Object{"code": "WORKER_UNCONFIGURED", "message": "Configure ADMIN_AGENT_WORKER_URL or ADMIN_AGENT_WORKER for interactive support actions.", "lane": "interactive", "configuration": []string{"ADMIN_AGENT_WORKER_URL", "ADMIN_AGENT_WORKER"}, "availability": "unconfigured", "executionStarted": false}
+			}
 		} else {
 			out := &boundedBuffer{limit: 24 << 20}
 			errout := &boundedBuffer{limit: 256 << 10}

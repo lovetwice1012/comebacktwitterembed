@@ -1,6 +1,8 @@
 "use client";
 
 import Link from "next/link";
+import { ReportErrorBoundary } from "@/components/admin/report-error-boundary";
+import { reportDisplayStatus, type AdminReportCache } from "@/lib/admin-report-status";
 import { ManagementConsole, RawEvidence } from "@/components/admin/management-console";
 import {
   Activity,
@@ -29,15 +31,17 @@ type AdminTab = "management" | "overview" | "analytics" | "guildPreview" | "prov
 type Row = Record<string, unknown>;
 const REPORT_CACHE_POLL_MS = 5000;
 
-function ReportStatus({ cache, onRetry }: {
-  cache?: { ready?: boolean; refreshing?: boolean; lastError?: string | null; updatedAt?: string | null };
-  onRetry: () => void;
-}) {
-  if (!cache || (cache.ready !== false && !cache.lastError)) return null;
-  return <div className="rounded-md border bg-card p-4 text-sm" role="status">
-    <p>{cache.lastError || "統計を集計しています。完了すると結果を表示します。"}</p>
-    {cache.ready && cache.updatedAt ? <p className="mt-1 text-muted-foreground">最終成功時の結果: {formatDate(cache.updatedAt)}</p> : null}
-    {cache.lastError ? <Button className="mt-3" variant="outline" onClick={onRetry} disabled={cache.refreshing}>再試行</Button> : null}
+function ReportStatus({ cache, onRetry }: { cache?: AdminReportCache; onRetry: () => void }) {
+  if (!cache) return null;
+  const status = reportDisplayStatus(cache);
+  return <div className="space-y-2 rounded-md border bg-card p-4 text-sm" role={status.error ? "alert" : "status"} data-report-state={status.state}>
+    <p className="font-medium">{status.title}</p>{status.message ? <p>{status.message}</p> : null}
+    {status.error ? <p className="whitespace-pre-wrap break-words text-destructive">{status.error}</p> : null}
+    {cache.ready && cache.updatedAt ? <p className="text-muted-foreground">最終成功時の結果: {formatDate(cache.updatedAt)}</p> : null}
+    {cache.failedAt ? <p className="text-muted-foreground">失敗日時: {formatDate(cache.failedAt)}</p> : null}
+    {cache.actionId ? <p className="break-all text-muted-foreground">生成操作ID: {cache.actionId}</p> : null}
+    {status.error ? <RawEvidence value={cache.lastErrorDetails ?? cache.lastError} label="生成エラーの原記録・コード・詳細" /> : null}
+    {!cache.refreshing && (status.error || cache.ready === false) ? <Button variant="outline" onClick={onRetry}>{status.error ? "再試行" : "生成を開始"}</Button> : null}
   </div>;
 }
 
@@ -58,7 +62,7 @@ type AdminOverview = {
     refreshIntervalMs: number;
     refreshing: boolean;
     ready?: boolean;
-    lastError?: string | null;
+    lastError?: unknown;
     failedAt?: string | null;
   };
   tables: TableSummary[];
@@ -174,7 +178,7 @@ type AdminDetailedAnalytics = {
     refreshIntervalMs: number;
     refreshing: boolean;
     ready?: boolean;
-    lastError?: string | null;
+    lastError?: unknown;
     failedAt?: string | null;
   };
   filters: Row;
@@ -243,7 +247,7 @@ type AdminUserFacingPreview = {
     refreshIntervalMs: number;
     refreshing: boolean;
     ready?: boolean;
-    lastError?: string | null;
+    lastError?: unknown;
     failedAt?: string | null;
   };
   audience: string;
@@ -1587,9 +1591,9 @@ function OverviewPanel({
   refreshing: boolean;
   error?: string | null;
 }) {
-  const unavailable = overview.tables.filter((table) => !table.available);
   const cache = overview.cache;
-  if (cache?.ready === false) return <ReportStatus cache={cache} onRetry={onRefresh} />;
+  if (cache?.ready === false || !Array.isArray(overview.tables)) return <ReportStatus cache={{ ...cache, ready: false }} onRetry={onRefresh} />;
+  const unavailable = overview.tables.filter((table) => !table.available);
   return (
     <div className="space-y-4">
       <ReportStatus cache={cache} onRetry={onRefresh} />
@@ -3614,6 +3618,7 @@ export function AdminConsole({
         </nav>
         <p className="text-sm text-muted-foreground">{tabDescriptions[tab]}</p>
 
+        <ReportErrorBoundary key={tab}>
         {tab === "overview" ? (
           overview ? (
             <OverviewPanel
@@ -3635,6 +3640,7 @@ export function AdminConsole({
         {tab === "analytics" ? <DetailedAnalyticsPanel /> : null}
         {tab === "guildPreview" ? <GuildAdminPreviewPanel /> : null}
         {tab === "providerPreview" ? <ProviderMarketingPreviewPanel /> : null}
+        </ReportErrorBoundary>
         {tab === "logs" ? (
           logs ? (
             <LogsPanel logs={logs} setLogs={setLogs} />

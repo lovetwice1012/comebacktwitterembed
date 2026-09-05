@@ -74,9 +74,15 @@ process.on('SIGINT', () => stop()); process.on('SIGTERM', () => stop());
         ...common, ADMIN_ANALYSIS_LISTEN: '127.0.0.1:34190', ADMIN_ANALYSIS_STATE_DIR: path.join(dir, 'interactive'),
     });
     await waitFor('http://127.0.0.1:34190/health');
+    launch(process.execPath, [path.join(repo, 'admin-agent/analysis-server.cjs')], {
+        ...common, ADMIN_ANALYSIS_LISTEN: '127.0.0.1:34191', ADMIN_ANALYSIS_STATE_DIR: path.join(dir, 'reports'),
+        ADMIN_ANALYSIS_ACTIONS: 'reports.build', ADMIN_WORKER_DEADLINE_MS: '640000',
+    });
+    await waitFor('http://127.0.0.1:34191/health');
     launch(binary, [], { ...common, ADMIN_AGENT_LISTEN: '127.0.0.1:34188', ADMIN_AGENT_STATE_DIR: path.join(dir, 'core'),
         ADMIN_AGENT_PASSWORD_HASH: passwordHash, ADMIN_AGENT_COOKIE_SECURE: 'false', ADMIN_AGENT_BASE_PATH: '',
         ADMIN_AGENT_PUBLIC_URL: 'http://127.0.0.1:34188/', ADMIN_AGENT_WORKER_URL: 'http://127.0.0.1:34190/execute',
+        ADMIN_AGENT_REPORT_WORKER_URL: 'http://127.0.0.1:34191/execute',
         ADMIN_AGENT_LOCAL_HEALTH_URL: 'http://127.0.0.1:34190/health', ADMIN_AGENT_PUBLIC_HEALTH_URL: '',
         ADMIN_AGENT_NODE: process.execPath,
     });

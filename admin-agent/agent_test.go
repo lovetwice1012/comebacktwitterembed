@@ -453,6 +453,51 @@ func TestWorkerHTTPPreservesFailedProtocolAndUnknown(t *testing.T) {
 	}
 }
 
+func TestUnconfiguredReportWorkerNamesCorrectLaneWithoutInteractiveFallback(t *testing.T) {
+	a := testApp(t)
+	called := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called = true
+		jsonResponse(w, 200, Object{"ok": true, "data": Object{"wrongLane": true}})
+	}))
+	defer server.Close()
+	a.cfg.Worker = "configured-interactive-worker.js"
+	a.cfg.WorkerURL = server.URL
+	ac, _, e := a.store.enqueue("reports.build", Object{"kind": "analytics", "filters": Object{}}, "report-lane-unconfigured", a.cfg.Owner, "test")
+	if e != nil {
+		t.Fatal(e)
+	}
+	a.execute(context.Background(), ac)
+	result, e := a.store.action(ac.ID)
+	if e != nil {
+		t.Fatal(e)
+	}
+	problem, _ := result.Error.(map[string]any)
+	if result.Status != "failed" || problem["code"] != "REPORT_WORKER_UNCONFIGURED" || problem["configuration"] != "ADMIN_AGENT_REPORT_WORKER_URL" || problem["availability"] != "unconfigured" || problem["executionStarted"] != false {
+		t.Fatalf("incorrect report-worker availability: %+v", result)
+	}
+	if called {
+		t.Fatal("report execution incorrectly fell back to the interactive worker")
+	}
+}
+
+func TestUnconfiguredInteractiveWorkerNamesBothSupportedConfigurationPaths(t *testing.T) {
+	a := testApp(t)
+	ac, _, e := a.store.enqueue("url.inspect", Object{}, "interactive-unconfigured", a.cfg.Owner, "test")
+	if e != nil {
+		t.Fatal(e)
+	}
+	a.execute(context.Background(), ac)
+	result, e := a.store.action(ac.ID)
+	if e != nil {
+		t.Fatal(e)
+	}
+	problem, _ := result.Error.(map[string]any)
+	if result.Status != "failed" || problem["code"] != "WORKER_UNCONFIGURED" || problem["lane"] != "interactive" || problem["executionStarted"] != false || !strings.Contains(str(problem["message"]), "ADMIN_AGENT_WORKER_URL") {
+		t.Fatalf("incorrect interactive-worker configuration failure: %+v", result)
+	}
+}
+
 func TestReportSnapshotsDeduplicateAndKeepCompleteResultOnFailure(t *testing.T) {
 	a := testApp(t)
 	w := request(t, a, "POST", "/v1/reports/analytics", Object{"filters": Object{"days": "7", "guildId": "g1"}})

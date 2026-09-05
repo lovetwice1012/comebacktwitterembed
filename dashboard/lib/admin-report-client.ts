@@ -1,16 +1,17 @@
 import "server-only";
 import { adminAgentEndpoint } from "@/lib/admin-agent";
+import { reportErrorMessage, type AdminReportCache } from "@/lib/admin-report-status";
 
 export type ReportKind = "overview" | "analytics" | "guild-preview" | "provider-preview";
 type Row = Record<string, unknown>;
-type RemoteReport = { report?: Row | null; cache?: { ready?: boolean; refreshing?: boolean; updatedAt?: string | null; lastError?: string | null; failedAt?: string | null }; key?: string; actionId?: string | null; status?: string; metadata?: Row; filters?: Row; lastSuccessfulActionId?: string | null };
+type RemoteReport = { report?: Row | null; cache?: AdminReportCache; key?: string; actionId?: string | null; status?: string; metadata?: Row; filters?: Row; lastSuccessfulActionId?: string | null };
 
 export function independentReportsEnabled() { return Boolean(process.env.ADMIN_AGENT_TOKEN); }
 
 export function reportForDashboard(kind: ReportKind, value: RemoteReport) {
   // Panels stop at cache.ready=false. Keep the old overview's pre-render shape valid.
   const empty = kind === "overview" ? { tables: [], totals: {}, recent: { audit24h: 0, errors24h: 0, topErrorTypes: [], latestMetrics: [] }, providerRows: [], analytics: null, health: { database: { ok: false }, environment: {} } } : {};
-  return { ...(value.report || empty), reportMetadata: { ...value.metadata, kind, filters: value.filters, key: value.key, lastSuccessfulActionId: value.lastSuccessfulActionId }, cache: { ...value.cache, ready: Boolean(value.report), refreshing: value.cache?.refreshing === true, refreshIntervalMs: 300000, source: "independent_report_worker", actionId: value.actionId, key: value.key } };
+  return { ...(value.report || empty), reportMetadata: { ...value.metadata, kind, filters: value.filters, key: value.key, lastSuccessfulActionId: value.lastSuccessfulActionId }, cache: { ...value.cache, lastError: reportErrorMessage(value.cache?.lastError), lastErrorDetails: value.cache?.lastErrorDetails ?? value.cache?.lastError ?? null, ready: Boolean(value.report), refreshing: value.cache?.refreshing === true, refreshIntervalMs: 300000, source: "independent_report_worker", actionId: value.actionId, key: value.key } };
 }
 
 /** Read or queue a complete snapshot. Never fall back to heavy computation in Next. */
