@@ -885,7 +885,7 @@ async function getDerivedAggregateStatus(startMs: number) {
        WHERE bucket_start_ms >= ?
          AND provider_id <> ''
        GROUP BY provider_id
-       ORDER BY (content_events + analytics_events) DESC
+       ORDER BY (SUM(content_events) + SUM(analytics_events)) DESC
        LIMIT 80`,
       startMs,
     ),
@@ -1721,7 +1721,7 @@ async function getProviderAccountSummary(startMs: number) {
 
 async function getFunnelAnalytics(startMs: number) {
   const rows = await prisma.$queryRawUnsafe<Array<Record<string, unknown>>>(
-    `SELECT
+    `SELECT /*+ INDEX(bot_analytics_events idx_analytics_time) */
        provider_id,
        account_key,
        SUM(event_type = 'provider_extract') AS url_posts,
@@ -2089,7 +2089,7 @@ async function getProviderAccountHealth(startMs: number) {
        COALESCE(reliability.avg_enrichment_duration_ms, 0) AS avg_enrichment_duration_ms,
        COALESCE(errors.error_events, 0) AS error_events
      FROM (
-       SELECT
+       SELECT /*+ INDEX(bot_provider_content_events idx_content_time) */
          provider_id,
          account_key,
          COUNT(*) AS content_events,
@@ -2104,7 +2104,7 @@ async function getProviderAccountHealth(startMs: number) {
        GROUP BY provider_id, account_key
      ) content
      LEFT JOIN (
-       SELECT
+       SELECT /*+ INDEX(bot_analytics_events idx_analytics_time) */
          provider_id,
          account_key,
          SUM(event_type = 'provider_extract') AS extract_events,
@@ -2577,7 +2577,7 @@ async function getProviderContentHourly(startMs: number) {
 
 async function getProviderContentGuildShare(startMs: number) {
   const rows = await prisma.$queryRawUnsafe<Array<Record<string, unknown>>>(
-    `SELECT
+    `SELECT /*+ INDEX(bot_provider_content_events idx_content_time) */
        provider_id,
        account_key,
        guild_id,
@@ -2609,7 +2609,7 @@ async function getProviderContentGuildShare(startMs: number) {
 
 async function getProviderContentFacets(startMs: number) {
   const rows = await prisma.$queryRawUnsafe<Array<Record<string, unknown>>>(
-    `SELECT
+    `SELECT /*+ INDEX(bot_provider_content_facets idx_content_facets_time) */
        provider_id,
        account_key,
        facet_key,
@@ -2630,7 +2630,7 @@ async function getProviderContentFacets(startMs: number) {
 
 async function getProviderContentUrls(startMs: number) {
   const rows = await prisma.$queryRawUnsafe<Array<Record<string, unknown>>>(
-    `SELECT
+    `SELECT /*+ INDEX(bot_provider_content_events idx_content_time) */
        provider_id,
        account_key,
        content_type,
@@ -2654,7 +2654,7 @@ async function getProviderContentUrls(startMs: number) {
 
 async function getProviderGuildShare(startMs: number) {
   const rows = await prisma.$queryRawUnsafe<Array<Record<string, unknown>>>(
-    `SELECT
+    `SELECT /*+ INDEX(bot_analytics_events idx_analytics_event_time) */
        provider_id,
        account_key,
        guild_id,
@@ -2687,7 +2687,7 @@ async function getProviderGuildShare(startMs: number) {
 
 async function getUrlAnalytics(startMs: number) {
   const rows = await prisma.$queryRawUnsafe<Array<Record<string, unknown>>>(
-    `SELECT
+    `SELECT /*+ INDEX(bot_analytics_events idx_analytics_event_time) */
        provider_id,
        account_key,
        raw_url,
@@ -5214,7 +5214,7 @@ function providerMetricObservedTotals(observed: Map<string, Row>, providerId: st
 async function getProviderMetricNullRates(startMs: number) {
   const [contentRows, facetRowsRaw] = await Promise.all([
     prisma.$queryRawUnsafe<Array<Record<string, unknown>>>(
-      `SELECT provider_id, COALESCE(content_type, '') AS content_type, COUNT(*) AS content_events
+      `SELECT /*+ INDEX(bot_provider_content_events idx_content_time) */ provider_id, COALESCE(content_type, '') AS content_type, COUNT(*) AS content_events
        FROM bot_provider_content_events
        WHERE occurred_at_ms >= ?
          AND provider_id IS NOT NULL
@@ -5222,7 +5222,7 @@ async function getProviderMetricNullRates(startMs: number) {
       startMs,
     ),
     prisma.$queryRawUnsafe<Array<Record<string, unknown>>>(
-      `SELECT
+      `SELECT /*+ INDEX(f idx_content_facets_time) */
          f.provider_id,
          f.facet_key,
          COALESCE(c.content_type, '') AS content_type,
@@ -5325,7 +5325,7 @@ async function getProviderMetricNullRates(startMs: number) {
 
 async function getProviderMetricObservationQuality(startMs: number) {
   const rows = await prisma.$queryRawUnsafe<Array<Record<string, unknown>>>(
-    `SELECT
+    `SELECT /*+ INDEX(bot_provider_content_facets idx_content_facets_time) */
        provider_id,
        account_key,
        metric_stage,
@@ -5440,7 +5440,7 @@ function isSystemAnalyticsFacet(key: string) {
 
 async function getProviderMetricSchemaDrift(startMs: number) {
   const rows = await prisma.$queryRawUnsafe<Array<Record<string, unknown>>>(
-    `SELECT
+    `SELECT /*+ INDEX(bot_provider_content_facets idx_content_facets_time) */
        provider_id,
        facet_key,
        COALESCE(metric_stage, 'unknown') AS metric_stage,

@@ -1,4 +1,4 @@
-import { recordQueryFailure, reportLane, statementBudget, withSelectTimeout } from "./report-execution";
+import { recordQueryFailure, reportLane, reportResourceHints, statementBudget, withSelectTimeout } from "./report-execution";
 import { createHash } from "node:crypto";
 
 export class QueryLimiter {
@@ -32,12 +32,12 @@ export function limitAnalyticsReads<T extends object>(client: T, limiter: QueryL
           try {
             const budget = statementBudget();
             if (property === "$queryRawUnsafe" && typeof args[0] === "string") {
-              return await value.apply(target, [withSelectTimeout(args[0], budget), ...args.slice(1)]);
+              return await value.apply(target, [withSelectTimeout(args[0], budget, reportResourceHints), ...args.slice(1)]);
             }
             if (property === "$queryRaw" && Array.isArray(args[0])) {
               const query = Reflect.get(target, "$queryRawUnsafe", target);
               if (typeof query !== "function") throw new Error('Raw SQL execution is unavailable');
-              return await query.apply(target, [withSelectTimeout(args[0].join('?'), budget), ...args.slice(1)]);
+              return await query.apply(target, [withSelectTimeout(args[0].join('?'), budget, reportResourceHints), ...args.slice(1)]);
             }
             return await value.apply(target, args);
           } catch (error) { recordQueryFailure(error); throw error; }

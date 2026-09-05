@@ -31,12 +31,12 @@ async function main() {
                 const tables = [];
                 function visit(value) {
                     if (!value || typeof value !== 'object') return;
-                    if (value.table_name) tables.push({ table: value.table_name, access: value.access_type, index: value.key, rows: value.rows_examined_per_scan, parts: value.used_key_parts });
+                    if (value.table_name) tables.push({ table: value.table_name, access: value.access_type, index: value.key, rows: value.rows_examined_per_scan, filtered: value.filtered, produced: value.rows_produced_per_join, parts: value.used_key_parts });
                     for (const child of Object.values(value)) visit(child);
                 }
                 visit(plan);
-                console.log(JSON.stringify({ key, sql: sql.replace(/\s+/g, ' ').slice(0, 240), tables }));
-            } catch (error) { console.log(JSON.stringify({ key, error: error.message })); }
+                console.log(JSON.stringify({ key, sql: sql.replace(/\/\*\+[^]*?\*\//g, '').replace(/\s+/g, ' ').slice(0, 240), tables }));
+            } catch (error) { console.log(JSON.stringify({ key, sql: sql.slice(0, 300), error: error.message })); }
         }
     } finally { await db.close(); }
 }

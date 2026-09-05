@@ -4,6 +4,11 @@ type Execution = { deadline: number; failure: Error | null; lane: "analytics" | 
 const executions = new AsyncLocalStorage<Execution>();
 const configured = Number(process.env.DASHBOARD_REPORT_QUERY_TIMEOUT_MS);
 export const queryTimeoutMs = Number.isInteger(configured) && configured >= 1000 && configured <= 300000 ? configured : 60000;
+export const reportResourceHints = [
+  'SET_VAR(tmp_table_size=67108864)',
+  'SET_VAR(max_heap_table_size=67108864)',
+  'SET_VAR(sort_buffer_size=4194304)',
+];
 
 export function statementBudget() {
   const execution = executions.getStore();
@@ -31,8 +36,9 @@ export async function runReportBuild<T>(build: () => Promise<T>, lane: "analytic
 
 // Find the top-level SELECT, including WITH queries. Hints inside a CTE do
 // not bound the outer query. Never alter bound parameter values.
-export function withSelectTimeout(sql: string, milliseconds: number) {
+export function withSelectTimeout(sql: string, milliseconds: number, resources: string[] = []) {
   const timeout = Math.max(1, Math.floor(milliseconds));
+  const hints = `MAX_EXECUTION_TIME(${timeout})${resources.length ? ' ' + resources.join(' ') : ''}`;
   let depth = 0;
   let quote = '';
   for (let index = 0; index < sql.length; index++) {
@@ -66,11 +72,11 @@ export function withSelectTimeout(sql: string, milliseconds: number) {
       if (/^\s*\/\*\+/.test(suffix)) {
         // Existing optimizer hints must remain in a single hint comment.
         if (/^\s*\/\*\+[^]*?MAX_EXECUTION_TIME\s*\(/i.test(suffix.split('*/')[0])) {
-          return sql.slice(0, end) + suffix.replace(/MAX_EXECUTION_TIME\s*\(\s*\d+\s*\)/i, `MAX_EXECUTION_TIME(${timeout})`);
+          return sql.slice(0, end) + suffix.replace(/MAX_EXECUTION_TIME\s*\(\s*\d+\s*\)/i, hints);
         }
-        return sql.slice(0, end) + suffix.replace('/*+', `/*+ MAX_EXECUTION_TIME(${timeout})`);
+        return sql.slice(0, end) + suffix.replace('/*+', `/*+ ${hints}`);
       }
-      return `${sql.slice(0, end)} /*+ MAX_EXECUTION_TIME(${timeout}) */${suffix}`;
+      return `${sql.slice(0, end)} /*+ ${hints} */${suffix}`;
     }
   }
   return sql;
