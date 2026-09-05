@@ -1693,7 +1693,7 @@ async function getUserUsageAnalytics(startMs: number) {
 
 async function getProviderAccountSummary(startMs: number) {
   const rows = await prisma.$queryRawUnsafe<Array<Record<string, unknown>>>(
-    `SELECT
+    `SELECT /*+ INDEX(bot_provider_content_events idx_content_time) */
        provider_id,
        account_key,
        COUNT(*) AS content_events,
@@ -2497,7 +2497,7 @@ function buildDecisionInsights(input: {
 
 async function getProviderAccountHourly(startMs: number) {
   const rows = await prisma.$queryRawUnsafe<Array<Record<string, unknown>>>(
-    `SELECT
+    `SELECT /*+ INDEX(bot_analytics_events idx_analytics_event_time) */
        provider_id,
        account_key,
        HOUR(FROM_UNIXTIME(occurred_at_ms / 1000)) AS hour_of_day,
