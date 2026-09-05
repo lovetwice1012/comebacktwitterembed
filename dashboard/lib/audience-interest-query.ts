@@ -42,7 +42,7 @@ export const audienceInterestQuery = `WITH target_events AS (
   SELECT other_id,MIN(provider_id) AS provider_id,MIN(account_key) AS account_key,MIN(endpoint_key) AS endpoint_key
   FROM other_events GROUP BY other_id
 )
-SELECT target_label.provider_id AS target_provider_id,target_label.account_key AS target_account_key,
+SELECT /*+ SET_VAR(tmp_table_size=2147483648) */ target_label.provider_id AS target_provider_id,target_label.account_key AS target_account_key,
   other_label.provider_id AS interest_provider_id,other_label.account_key AS interest_account_key,
   other_label.endpoint_key AS interest_endpoint_key,pairs.co_activity,pairs.shared_users,
   (SELECT COUNT(DISTINCT target.guild_id) FROM target_events target

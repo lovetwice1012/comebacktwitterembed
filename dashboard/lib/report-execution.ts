@@ -38,7 +38,6 @@ export async function runReportBuild<T>(build: () => Promise<T>, lane: "analytic
 // not bound the outer query. Never alter bound parameter values.
 export function withSelectTimeout(sql: string, milliseconds: number, resources: string[] = []) {
   const timeout = Math.max(1, Math.floor(milliseconds));
-  const hints = `MAX_EXECUTION_TIME(${timeout})${resources.length ? ' ' + resources.join(' ') : ''}`;
   let depth = 0;
   let quote = '';
   for (let index = 0; index < sql.length; index++) {
@@ -69,6 +68,13 @@ export function withSelectTimeout(sql: string, milliseconds: number, resources: 
     else if (depth === 0 && /^select\b/i.test(sql.slice(index)) && (index === 0 || !/[\w]/.test(sql[index - 1]))) {
       const end = index + 6;
       const suffix = sql.slice(end);
+      const existingHint = /^\s*\/\*\+/.test(suffix) ? suffix.split('*/')[0] : '';
+      const explicitVariables = new Set([...existingHint.matchAll(/SET_VAR\(\s*(\w+)\s*=/gi)].map(match => match[1].toLowerCase()));
+      const defaults = resources.filter(hint => {
+        const variable = hint.match(/^SET_VAR\(\s*(\w+)\s*=/i)?.[1]?.toLowerCase();
+        return !variable || !explicitVariables.has(variable);
+      });
+      const hints = `MAX_EXECUTION_TIME(${timeout})${defaults.length ? ' ' + defaults.join(' ') : ''}`;
       if (/^\s*\/\*\+/.test(suffix)) {
         // Existing optimizer hints must remain in a single hint comment.
         if (/^\s*\/\*\+[^]*?MAX_EXECUTION_TIME\s*\(/i.test(suffix.split('*/')[0])) {

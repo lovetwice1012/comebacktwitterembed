@@ -14,6 +14,9 @@ test('query deadlines apply to the outer SELECT of CTEs without changing quoted 
     const scoped = execution.withSelectTimeout("WITH t AS (SELECT 1) SELECT * FROM t", 1000, execution.reportResourceHints);
     assert.match(scoped, /\) SELECT \/\*\+ MAX_EXECUTION_TIME\(1000\) SET_VAR\(tmp_table_size=268435456\)/);
     assert.equal((scoped.match(/SET_VAR\(sort_buffer_size/g) || []).length, 1);
+    const overridden = execution.withSelectTimeout('SELECT /*+ SET_VAR(tmp_table_size=2147483648) */ 1', 1000, execution.reportResourceHints);
+    assert.equal((overridden.match(/SET_VAR\(tmp_table_size/g) || []).length, 1);
+    assert.match(overridden, /SET_VAR\(tmp_table_size=2147483648\)/);
 });
 
 test('caught SQL failures cannot publish fallback zeros as a successful report', async () => {
