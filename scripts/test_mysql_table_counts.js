@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const { connect } = require('./lib/counter-database');
 const counts = require('../src/tableCounts');
 const { SCHEMA_STATEMENTS } = require('../src/db_schema');
+const loadDashboard = require('./test/helpers/load-dashboard.cjs');
 
 async function main() {
     const name = `cbte_counter_test_${process.pid}_${Date.now()}`;
@@ -62,6 +63,22 @@ async function main() {
         await query("INSERT INTO bot_error_events (occurred_at_ms,error_type) VALUES (1,'test')");
         await query("INSERT INTO bot_error_buckets (bucket_start_ms,bucket_size_seconds,error_type,severity) VALUES (1,60,'test','error')");
         await query("INSERT INTO bot_analytics_events (occurred_at_ms,event_type) VALUES (1,'test')");
+        await query('CREATE INDEX idx_analytics_event_time ON bot_analytics_events(event_type,occurred_at_ms)');
+        for (let guild = 0; guild < 10; guild++) {
+            await query(`INSERT INTO bot_analytics_events (occurred_at_ms,event_type,author_user_id,provider_id,account_key,guild_id,endpoint_key)
+                VALUES (100,'provider_extract','u','twitter','a',?,'/a'),(100,'provider_extract','u','twitter','a',?,'/a')`, [String(guild), String(guild)]);
+        }
+        for (let i = 0; i < 5; i++) await query(`INSERT INTO bot_analytics_events
+            (occurred_at_ms,event_type,author_user_id,provider_id,account_key,guild_id,endpoint_key)
+            VALUES (100,'provider_extract','u','youtube','b','g','/b')`);
+        const { audienceInterestQuery } = loadDashboard('lib/audience-interest-query.ts');
+        const audience = await query(audienceInterestQuery, [50, 50]);
+        assert.equal(audience.length, 2);
+        for (const row of audience) {
+            assert.equal(BigInt(row.co_activity), 100n);
+            assert.equal(BigInt(row.shared_users), 1n);
+            assert.equal(BigInt(row.shared_guilds), row.target_provider_id === 'twitter' ? 10n : 1n);
+        }
         const verified = [];
         for (const { table } of counts.TABLES) verified.push(await counts.verify(query, table));
         await counts.seed(query, 'bot_metric_buckets', { reseed: true });

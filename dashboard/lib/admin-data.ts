@@ -10,6 +10,7 @@ import { getProviderSettingsState, saveProviderSettings } from "@/lib/settings-d
 import type { AuditActor, SettingValue } from "@/lib/types";
 import type { DashboardLocale } from "@/lib/i18n";
 import { detailedInterestQuery } from "@/lib/analytics-interest-query";
+import { audienceInterestQuery } from "@/lib/audience-interest-query";
 import { loadSnapshotOnce, pruneReportEntries, refreshReportSnapshot, withReportCacheMetadata, type ReportFailureState } from "@/lib/report-cache";
 import { limitAnalyticsReads, QueryLimiter } from "@/lib/analytics-query-limit";
 import { runReportBuild } from "@/lib/report-execution";
@@ -2713,52 +2714,7 @@ async function getUrlAnalytics(startMs: number) {
 
 async function getAudienceInterestAnalytics(startMs: number) {
   const rows = await prisma.$queryRawUnsafe<Array<Record<string, unknown>>>(
-    `WITH target_events AS (
-       SELECT
-         author_user_id,
-         provider_id,
-         account_key,
-         guild_id,
-         COUNT(*) AS activity_count
-       FROM bot_analytics_events
-       WHERE occurred_at_ms >= ?
-         AND event_type = 'provider_extract'
-         AND author_user_id IS NOT NULL
-         AND account_key IS NOT NULL
-       GROUP BY author_user_id, provider_id, account_key, guild_id
-     ),
-     other_events AS (
-       SELECT
-         author_user_id,
-         provider_id,
-         account_key,
-         endpoint_key,
-         COUNT(*) AS activity_count
-       FROM bot_analytics_events
-       WHERE occurred_at_ms >= ?
-         AND event_type = 'provider_extract'
-         AND provider_id IS NOT NULL
-       GROUP BY author_user_id, provider_id, account_key, endpoint_key
-     )
-     SELECT
-       target.provider_id AS target_provider_id,
-       target.account_key AS target_account_key,
-       other.provider_id AS interest_provider_id,
-       other.account_key AS interest_account_key,
-       other.endpoint_key AS interest_endpoint_key,
-       SUM(target.activity_count * other.activity_count) AS co_activity,
-       COUNT(DISTINCT target.author_user_id) AS shared_users,
-       COUNT(DISTINCT target.guild_id) AS shared_guilds
-     FROM target_events target
-     JOIN other_events other
-       ON other.author_user_id = target.author_user_id
-     WHERE (
-         other.provider_id <> target.provider_id
-         OR COALESCE(other.account_key, '') <> COALESCE(target.account_key, '')
-       )
-     GROUP BY target.provider_id, target.account_key, other.provider_id, other.account_key, other.endpoint_key
-     ORDER BY co_activity DESC
-     LIMIT 100`,
+    audienceInterestQuery,
     startMs,
     startMs,
   );
@@ -4441,7 +4397,9 @@ function getAdminDetailedAnalyticsCacheEntry(filters: AdminDetailedAnalyticsFilt
 }
 
 function persistedReportSnapshotKey(reportType: string, key: string) {
-  return createHash("sha256").update(`${reportType}:${key}`).digest("hex");
+  // Earlier builds could persist fallback zeros after failed optional SQL.
+  // Only snapshots produced by the strict report builder are reused.
+  return createHash("sha256").update(`complete-v2:${reportType}:${key}`).digest("hex");
 }
 
 async function loadPersistedDetailedAnalyticsSnapshot(entry: AdminDetailedAnalyticsCacheEntry) {
