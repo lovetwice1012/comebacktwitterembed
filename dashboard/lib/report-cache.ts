@@ -31,3 +31,30 @@ export function pruneReportEntries<Entry extends { lastAccessedAtMs: number; ref
 export function withReportCacheMetadata<Snapshot, Metadata>(snapshot: Snapshot, cache: Metadata) {
   return { ...snapshot, cache };
 }
+
+export type ReportFailureState = { lastError?: string | null; failedAtMs?: number; retryAfterMs?: number };
+
+export function refreshReportSnapshot<T>(
+  entry: ReportFailureState & { snapshot: T | null; updatedAtMs: number; refreshPromise: Promise<T> | null },
+  build: () => Promise<T>, persist?: (snapshot: T) => Promise<void>,
+): Promise<T> {
+  if (!entry.refreshPromise) {
+    entry.refreshPromise = Promise.resolve().then(build).then(snapshot => {
+      entry.snapshot = snapshot;
+      entry.updatedAtMs = Date.now();
+      entry.lastError = null;
+      entry.failedAtMs = 0;
+      entry.retryAfterMs = 0;
+      if (persist) void persist(snapshot).catch(error => console.warn('[adminAnalytics] Snapshot persistence failed:', error?.message));
+      return snapshot;
+    }).catch(error => {
+      entry.lastError = /time|deadline|interrupted/i.test(String(error?.message))
+        ? '集計が実行時間の上限に達しました。' : '統計の更新に失敗しました。';
+      entry.failedAtMs = Date.now();
+      entry.retryAfterMs = entry.failedAtMs + 60000;
+      console.warn('[adminAnalytics] Report update failed:', String(error?.message || error).slice(0, 500));
+      throw error;
+    }).finally(() => { entry.refreshPromise = null; });
+  }
+  return entry.refreshPromise;
+}

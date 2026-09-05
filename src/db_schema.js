@@ -2,6 +2,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { SCHEMA: TABLE_COUNT_SCHEMA } = require('./tableCounts');
 
 const TABLES = {
     schemaMigrations: 'schema_migrations',
@@ -38,6 +39,8 @@ const TABLES = {
     dashboardAuditLogs: 'dashboard_audit_logs',
     guildSettingsWebuiNoticeState: 'guild_settings_webui_notice_state',
     dashboardDelegatedAccessGrants: 'dashboard_delegated_access_grants',
+    tableCountBaselines: 'bot_table_count_baselines',
+    tableCountDeltas: 'bot_table_count_deltas',
 };
 
 const SCHEMA_STATEMENTS = [
@@ -629,6 +632,7 @@ const SCHEMA_STATEMENTS = [
             FOREIGN KEY (guild_id) REFERENCES ${TABLES.guilds}(guild_id)
             ON DELETE CASCADE
     ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
+    ...TABLE_COUNT_SCHEMA,
 ];
 
 const MIGRATIONS_DIR = path.join(__dirname, '..', 'migrations');

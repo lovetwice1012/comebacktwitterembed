@@ -8,6 +8,7 @@ const dashboardRoot = path.resolve(__dirname, '../../../dashboard');
 module.exports = function loadDashboard(relativePath, mocks = {}, expose = []) {
     const cache = new Map();
     function load(filename, exportsToExpose = []) {
+        if (filename.endsWith('.json')) return JSON.parse(fs.readFileSync(filename, 'utf8'));
         if (cache.has(filename)) return cache.get(filename).exports;
         const mod = new Module(filename, module);
         mod.filename = filename;

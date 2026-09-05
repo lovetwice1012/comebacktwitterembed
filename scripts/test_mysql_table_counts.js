@@ -1,0 +1,80 @@
+'use strict';
+const assert = require('node:assert/strict');
+const { connect } = require('./lib/counter-database');
+const counts = require('../src/tableCounts');
+const { SCHEMA_STATEMENTS } = require('../src/db_schema');
+
+async function main() {
+    const name = `cbte_counter_test_${process.pid}_${Date.now()}`;
+    const admin = await connect(undefined);
+    let db;
+    let concurrent;
+    try {
+        await admin.query(`CREATE DATABASE \`${name}\``);
+        db = await connect(name);
+        concurrent = await connect(name);
+        const query = db.query;
+        for (const { table } of counts.TABLES) {
+            const definition = SCHEMA_STATEMENTS.find(sql => sql.startsWith(`CREATE TABLE IF NOT EXISTS ${table} (`));
+            assert.ok(definition, table);
+            await query(definition);
+        }
+        const metric = `INSERT INTO bot_metric_buckets (bucket_start_ms,bucket_size_seconds,metric_name)
+            VALUES (?,60,'counter-test') ON DUPLICATE KEY UPDATE count=count+1`;
+        await query(metric, [1]); // Existing data before triggers.
+        await counts.install(query);
+        await counts.install(query); // Idempotent and never clears deltas.
+        await query(metric, [2]);
+        await counts.seed(query, 'bot_metric_buckets', { afterCount: async () => {
+            await concurrent.query(metric, [3]); // Commits between count and delta reads.
+            await concurrent.query('DELETE FROM bot_metric_buckets WHERE bucket_start_ms=1');
+        } });
+        assert.equal(await counts.observedCount(query, 'bot_metric_buckets'), 2n);
+        for (const { table } of counts.TABLES) await counts.seed(query, table);
+        await query(metric, [2]); // UPSERT existing row must not increment row count.
+        assert.equal(await counts.observedCount(query, 'bot_metric_buckets'), 2n);
+        await query('START TRANSACTION');
+        await query(metric, [4]);
+        await query('ROLLBACK');
+        assert.equal(await counts.observedCount(query, 'bot_metric_buckets'), 2n);
+        await query('DELETE FROM bot_metric_buckets WHERE bucket_start_ms=2');
+        assert.equal(await counts.observedCount(query, 'bot_metric_buckets'), 1n);
+        await query(`INSERT INTO bot_provider_content_events (occurred_at_ms,provider_id) VALUES (1,'test')`);
+        await query(`INSERT INTO bot_provider_content_facets (content_event_id,provider_id,facet_key,occurred_at_ms)
+            VALUES (1,'test','one',1),(1,'test','two',1),(1,'test','three',1)`);
+        assert.equal(await counts.observedCount(query, 'bot_provider_content_facets'), 3n);
+        await query('START TRANSACTION');
+        await query('DELETE FROM bot_provider_content_events WHERE content_event_id=1');
+        assert.equal(await counts.observedCount(query, 'bot_provider_content_facets'), 0n);
+        await query('ROLLBACK');
+        assert.equal(await counts.observedCount(query, 'bot_provider_content_facets'), 3n);
+        await query('DELETE FROM bot_provider_content_facets WHERE facet_id=1');
+        await query('DELETE FROM bot_provider_content_events WHERE content_event_id=1');
+        assert.equal(await counts.observedCount(query, 'bot_provider_content_facets'), 0n);
+        const unique = `INSERT IGNORE INTO bot_provider_hourly_unique_keys (bucket_start_ms,key_type,key_hash)
+            VALUES (1,'author_user','test')`;
+        await query(unique);
+        await query(unique);
+        assert.equal(await counts.observedCount(query, 'bot_provider_hourly_unique_keys'), 1n);
+        await query("INSERT INTO bot_provider_hourly_aggregates (bucket_start_ms) VALUES (1) ON DUPLICATE KEY UPDATE content_events=content_events+1");
+        await query("INSERT INTO bot_provider_hourly_aggregates (bucket_start_ms) VALUES (1) ON DUPLICATE KEY UPDATE content_events=content_events+1");
+        assert.equal(await counts.observedCount(query, 'bot_provider_hourly_aggregates'), 1n);
+        await query("INSERT INTO bot_error_events (occurred_at_ms,error_type) VALUES (1,'test')");
+        await query("INSERT INTO bot_error_buckets (bucket_start_ms,bucket_size_seconds,error_type,severity) VALUES (1,60,'test','error')");
+        await query("INSERT INTO bot_analytics_events (occurred_at_ms,event_type) VALUES (1,'test')");
+        const verified = [];
+        for (const { table } of counts.TABLES) verified.push(await counts.verify(query, table));
+        await counts.seed(query, 'bot_metric_buckets', { reseed: true });
+        assert.equal(await counts.observedCount(query, 'bot_metric_buckets'), 1n);
+        console.log(JSON.stringify({ mysqlCounterTests: 'passed', verified }, null, 2));
+    } finally {
+        if (concurrent) await concurrent.close();
+        if (db) await db.close();
+        // This script can drop only the fresh validation database it created.
+        if (!/^cbte_counter_test_\d+_\d+$/.test(name)) throw new Error('Invalid validation database name');
+        await admin.query(`DROP DATABASE IF EXISTS \`${name}\``);
+        await admin.close();
+    }
+}
+
+main().catch(error => { console.error(error.message); process.exitCode = 1; });

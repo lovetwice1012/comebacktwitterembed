@@ -28,6 +28,18 @@ type AdminTab = "overview" | "analytics" | "guildPreview" | "providerPreview" | 
 type Row = Record<string, unknown>;
 const REPORT_CACHE_POLL_MS = 5000;
 
+function ReportStatus({ cache, onRetry }: {
+  cache?: { ready?: boolean; refreshing?: boolean; lastError?: string | null; updatedAt?: string | null };
+  onRetry: () => void;
+}) {
+  if (!cache || (cache.ready !== false && !cache.lastError)) return null;
+  return <div className="rounded-md border bg-card p-4 text-sm" role="status">
+    <p>{cache.lastError || "統計を集計しています。完了すると結果を表示します。"}</p>
+    {cache.ready && cache.updatedAt ? <p className="mt-1 text-muted-foreground">最終成功時の結果: {formatDate(cache.updatedAt)}</p> : null}
+    {cache.lastError ? <Button className="mt-3" variant="outline" onClick={onRetry} disabled={cache.refreshing}>再試行</Button> : null}
+  </div>;
+}
+
 type TableSummary = {
   table: string;
   label: string;
@@ -45,6 +57,8 @@ type AdminOverview = {
     refreshIntervalMs: number;
     refreshing: boolean;
     ready?: boolean;
+    lastError?: string | null;
+    failedAt?: string | null;
   };
   tables: TableSummary[];
   totals: Record<string, number>;
@@ -159,6 +173,8 @@ type AdminDetailedAnalytics = {
     refreshIntervalMs: number;
     refreshing: boolean;
     ready?: boolean;
+    lastError?: string | null;
+    failedAt?: string | null;
   };
   filters: Row;
   window: {
@@ -226,6 +242,8 @@ type AdminUserFacingPreview = {
     refreshIntervalMs: number;
     refreshing: boolean;
     ready?: boolean;
+    lastError?: string | null;
+    failedAt?: string | null;
   };
   audience: string;
   title: string;
@@ -1561,8 +1579,10 @@ function OverviewPanel({
 }) {
   const unavailable = overview.tables.filter((table) => !table.available);
   const cache = overview.cache;
+  if (cache?.ready === false) return <ReportStatus cache={cache} onRetry={onRefresh} />;
   return (
     <div className="space-y-4">
+      <ReportStatus cache={cache} onRetry={onRefresh} />
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h2 className="text-xl font-semibold">管理統計</h2>
@@ -2063,6 +2083,7 @@ function DetailedAnalyticsPanel() {
     setError(null);
     try {
       const search = buildDetailedAnalyticsSearch(nextFilters);
+      if (!options.silent) search.set("refresh", "1");
       setAnalytics(await fetchJson<AdminDetailedAnalytics>(`/api/admin/analytics?${search.toString()}`));
     } catch (err) {
       setError(err instanceof Error ? err.message : "詳細分析の読み込みに失敗しました");
@@ -2083,6 +2104,8 @@ function DetailedAnalyticsPanel() {
     }, REPORT_CACHE_POLL_MS);
     return () => window.clearTimeout(timer);
   }, [analytics, appliedFilters, load]);
+
+  if (analytics?.cache?.ready === false) return <ReportStatus cache={analytics.cache} onRetry={() => void load(appliedFilters)} />;
 
   const contentSummary = analytics?.summary.content || {};
   const eventSummary = analytics?.summary.analytics || {};
@@ -2317,6 +2340,7 @@ function DetailedAnalyticsPanel() {
 
   return (
     <div className="space-y-4">
+      <ReportStatus cache={analytics?.cache} onRetry={() => void load(appliedFilters)} />
       <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h2 className="text-xl font-semibold">詳細分析</h2>
@@ -2691,6 +2715,7 @@ function GuildAdminPreviewPanel() {
     setError(null);
     try {
       const search = buildGuildPreviewSearch(nextFilters);
+      if (!options.silent) search.set("refresh", "1");
       setPreview(await fetchJson<AdminUserFacingPreview>(`/api/admin/guild-analytics-preview?${search.toString()}`));
     } catch (err) {
       setError(err instanceof Error ? err.message : "サーバー分析プレビューの読み込みに失敗しました");
@@ -2711,6 +2736,8 @@ function GuildAdminPreviewPanel() {
     }, REPORT_CACHE_POLL_MS);
     return () => window.clearTimeout(timer);
   }, [preview, appliedFilters, load]);
+
+  if (preview?.cache?.ready === false) return <ReportStatus cache={preview.cache} onRetry={() => void load(appliedFilters)} />;
 
   const retention = previewSectionRow(preview, "audienceRetention");
   const guildTimeSeries = previewSectionRows(preview, "timeSeries");
@@ -2829,6 +2856,7 @@ function GuildAdminPreviewPanel() {
   ]);
   return (
     <div className="space-y-4">
+      <ReportStatus cache={preview?.cache} onRetry={() => void load(appliedFilters)} />
       <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h2 className="text-xl font-semibold">サーバー管理者向け統計プレビュー</h2>
@@ -3022,6 +3050,7 @@ function ProviderMarketingPreviewPanel() {
     setError(null);
     try {
       const search = buildProviderPreviewSearch(nextFilters);
+      if (!options.silent) search.set("refresh", "1");
       setPreview(await fetchJson<AdminUserFacingPreview>(`/api/admin/provider-marketing-preview?${search.toString()}`));
     } catch (err) {
       setError(err instanceof Error ? err.message : "マーケティング分析プレビューの読み込みに失敗しました");
@@ -3042,6 +3071,8 @@ function ProviderMarketingPreviewPanel() {
     }, REPORT_CACHE_POLL_MS);
     return () => window.clearTimeout(timer);
   }, [preview, appliedFilters, load]);
+
+  if (preview?.cache?.ready === false) return <ReportStatus cache={preview.cache} onRetry={() => void load(appliedFilters)} />;
 
   const retention = previewSectionRow(preview, "audienceRetention");
   const providerTimeSeries = previewSectionRows(preview, "timeSeries");
@@ -3212,6 +3243,7 @@ function ProviderMarketingPreviewPanel() {
 
   return (
     <div className="space-y-4">
+      <ReportStatus cache={preview?.cache} onRetry={() => void load(appliedFilters)} />
       <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h2 className="text-xl font-semibold">プロバイダー向けマーケティング分析プレビュー</h2>

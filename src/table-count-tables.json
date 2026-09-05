@@ -1,0 +1,10 @@
+[
+  { "table": "bot_error_events", "key": ["error_event_id"], "alias": "errors" },
+  { "table": "bot_error_buckets", "key": ["bucket_start_ms", "bucket_size_seconds", "error_type", "severity", "provider_id", "guild_id", "endpoint_key"], "alias": "error_buckets" },
+  { "table": "bot_metric_buckets", "key": ["bucket_start_ms", "bucket_size_seconds", "metric_name", "provider_id", "guild_id", "endpoint_key"], "alias": "metrics" },
+  { "table": "bot_analytics_events", "key": ["analytics_event_id"], "alias": "analytics" },
+  { "table": "bot_provider_content_events", "key": ["content_event_id"], "alias": "content" },
+  { "table": "bot_provider_content_facets", "key": ["facet_id"], "alias": "facets" },
+  { "table": "bot_provider_hourly_aggregates", "key": ["bucket_start_ms", "provider_id", "account_key", "guild_id", "content_type", "event_type", "schema_version"], "alias": "hourly" },
+  { "table": "bot_provider_hourly_unique_keys", "key": ["bucket_start_ms", "provider_id", "account_key", "guild_id", "content_type", "event_type", "key_type", "key_hash"], "alias": "unique_keys" }
+]

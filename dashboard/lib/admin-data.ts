@@ -10,13 +10,18 @@ import { getProviderSettingsState, saveProviderSettings } from "@/lib/settings-d
 import type { AuditActor, SettingValue } from "@/lib/types";
 import type { DashboardLocale } from "@/lib/i18n";
 import { detailedInterestQuery } from "@/lib/analytics-interest-query";
-import { loadSnapshotOnce, pruneReportEntries, withReportCacheMetadata } from "@/lib/report-cache";
+import { loadSnapshotOnce, pruneReportEntries, refreshReportSnapshot, withReportCacheMetadata, type ReportFailureState } from "@/lib/report-cache";
 import { limitAnalyticsReads, QueryLimiter } from "@/lib/analytics-query-limit";
+import { runReportBuild } from "@/lib/report-execution";
+import { countedTables, loadExactTableCounts } from "@/lib/table-counts";
 
 const analyticsQueryLimiter = ((globalThis as typeof globalThis & {
   __cbteAdminQueryLimiter?: QueryLimiter;
 }).__cbteAdminQueryLimiter ??= new QueryLimiter(4));
-const prisma = limitAnalyticsReads(sharedPrisma, analyticsQueryLimiter);
+const heavyQueryLimiter = ((globalThis as typeof globalThis & {
+  __cbteAdminHeavyQueryLimiter?: QueryLimiter;
+}).__cbteAdminHeavyQueryLimiter ??= new QueryLimiter(3));
+const prisma = limitAnalyticsReads(sharedPrisma, analyticsQueryLimiter, heavyQueryLimiter);
 
 const MAX_LIMIT = 200;
 type Row = Record<string, unknown>;
@@ -301,13 +306,15 @@ async function scalarCount(sql: string, ...params: unknown[]) {
   return Number(value);
 }
 
-async function tableCount(name: string) {
+async function tableCount(name: string, exactCounts?: Map<string, number>) {
   try {
     return {
       table: name,
       label: tableMap.get(name)?.label || name,
       available: true,
-      count: await scalarCount(`SELECT COUNT(*) AS count FROM ${quoteIdentifier(name)}`),
+      count: countedTables.has(name)
+        ? (exactCounts ?? await loadExactTableCounts(sql => prisma.$queryRawUnsafe(sql))).get(name)!
+        : await scalarCount(`SELECT COUNT(*) AS count FROM ${quoteIdentifier(name)}`),
     };
   } catch (error) {
     return {
@@ -341,7 +348,7 @@ async function runLimited<const Tasks extends readonly (() => Promise<unknown>)[
   const results = new Array<unknown>(tasks.length);
   let nextIndex = 0;
   const workerCount = Math.max(1, Math.min(concurrency, tasks.length));
-  await Promise.all(Array.from({ length: workerCount }, async () => {
+  const workers = await Promise.allSettled(Array.from({ length: workerCount }, async () => {
     while (nextIndex < tasks.length) {
       const index = nextIndex;
       nextIndex += 1;
@@ -349,6 +356,8 @@ async function runLimited<const Tasks extends readonly (() => Promise<unknown>)[
       results[index] = await tasks[index]();
     }
   }));
+  const failed = workers.find((result): result is PromiseRejectedResult => result.status === "rejected");
+  if (failed) throw failed.reason;
   return results as { [Index in keyof Tasks]: Awaited<ReturnType<Tasks[Index]>> };
 }
 
@@ -361,41 +370,45 @@ type AdminAnalyticsBuildJob<T> = {
 const adminAnalyticsScheduler = ((globalThis as typeof globalThis & {
   __cbteAdminBuildScheduler?: { pending: number; running: number; jobs: AdminAnalyticsBuildJob<unknown>[] };
 }).__cbteAdminBuildScheduler ??= { pending: 0, running: 0, jobs: [] });
+const overviewScheduler = ((globalThis as typeof globalThis & {
+  __cbteAdminOverviewScheduler?: typeof adminAnalyticsScheduler;
+}).__cbteAdminOverviewScheduler ??= { pending: 0, running: 0, jobs: [] });
 
-function runNextAdminAnalyticsBuild() {
-  while (adminAnalyticsScheduler.running < ADMIN_ANALYTICS_BUILD_CONCURRENCY && adminAnalyticsScheduler.jobs.length) {
-    const job = adminAnalyticsScheduler.jobs.shift();
+function runNextAdminAnalyticsBuild(scheduler = adminAnalyticsScheduler) {
+  while (scheduler.running < ADMIN_ANALYTICS_BUILD_CONCURRENCY && scheduler.jobs.length) {
+    const job = scheduler.jobs.shift();
     if (!job) return;
-    adminAnalyticsScheduler.running += 1;
+    scheduler.running += 1;
     void (async () => {
       try {
         job.resolve(await job.build());
       } catch (error) {
         job.reject(error);
       } finally {
-        adminAnalyticsScheduler.running = Math.max(0, adminAnalyticsScheduler.running - 1);
-        adminAnalyticsScheduler.pending = Math.max(0, adminAnalyticsScheduler.pending - 1);
-        runNextAdminAnalyticsBuild();
+        scheduler.running = Math.max(0, scheduler.running - 1);
+        scheduler.pending = Math.max(0, scheduler.pending - 1);
+        runNextAdminAnalyticsBuild(scheduler);
       }
     })();
   }
 }
 
-function enqueueAdminAnalyticsBuild<T>(build: () => Promise<T>) {
-  if (adminAnalyticsScheduler.pending >= ADMIN_ANALYTICS_BUILD_QUEUE_MAX) {
+function enqueueAdminAnalyticsBuild<T>(build: () => Promise<T>, lane: "analytics" | "overview" = "analytics") {
+  const scheduler = lane === "overview" ? overviewScheduler : adminAnalyticsScheduler;
+  if (scheduler.pending >= ADMIN_ANALYTICS_BUILD_QUEUE_MAX) {
     return Promise.reject(new Error("Admin analytics build queue is saturated."));
   }
-  adminAnalyticsScheduler.pending += 1;
+  scheduler.pending += 1;
   return new Promise<T>((resolve, reject) => {
-    adminAnalyticsScheduler.jobs.push({
+    scheduler.jobs.push({
       build: async () => {
         await yieldToEventLoop();
-        return build();
+        return runReportBuild(build, lane);
       },
       resolve: resolve as (value: unknown) => void,
       reject,
     });
-    runNextAdminAnalyticsBuild();
+    runNextAdminAnalyticsBuild(scheduler);
   });
 }
 
@@ -4354,7 +4367,7 @@ async function buildAdminDetailedAnalytics(filters: AdminDetailedAnalyticsFilter
 
 type AdminDetailedAnalyticsSnapshot = Awaited<ReturnType<typeof buildAdminDetailedAnalytics>>;
 
-type AdminDetailedAnalyticsCacheEntry = {
+type AdminDetailedAnalyticsCacheEntry = ReportFailureState & {
   filters: AdminDetailedAnalyticsFilters;
   snapshot: AdminDetailedAnalyticsSnapshot | null;
   updatedAtMs: number;
@@ -4380,8 +4393,9 @@ function isActiveAnalyticsCacheEntry(entry: { lastAccessedAtMs: number }) {
   return Date.now() - entry.lastAccessedAtMs <= ADMIN_ANALYTICS_CACHE_ACTIVE_MS;
 }
 
-function shouldRefreshAnalyticsCacheEntry(entry: { updatedAtMs: number; refreshPromise: Promise<unknown> | null }) {
+function shouldRefreshAnalyticsCacheEntry(entry: ReportFailureState & { updatedAtMs: number; refreshPromise: Promise<unknown> | null }) {
   if (entry.refreshPromise) return false;
+  if (entry.retryAfterMs && Date.now() < entry.retryAfterMs) return false;
   if (!entry.updatedAtMs) return true;
   return Date.now() - entry.updatedAtMs >= ADMIN_ANALYTICS_BATCH_INTERVAL_MS;
 }
@@ -4472,19 +4486,9 @@ async function persistDetailedAnalyticsSnapshot(entry: AdminDetailedAnalyticsCac
 }
 
 function refreshAdminDetailedAnalyticsCacheEntry(entry: AdminDetailedAnalyticsCacheEntry) {
-  if (!entry.refreshPromise) {
-    entry.refreshPromise = enqueueAdminAnalyticsBuild(() => buildAdminDetailedAnalytics(entry.filters))
-      .then((snapshot) => {
-        entry.snapshot = snapshot;
-        entry.updatedAtMs = Date.now();
-        void persistDetailedAnalyticsSnapshot(entry, snapshot);
-        return snapshot;
-      })
-      .finally(() => {
-        entry.refreshPromise = null;
-      });
-  }
-  return entry.refreshPromise;
+  return refreshReportSnapshot(entry,
+    () => enqueueAdminAnalyticsBuild(() => buildAdminDetailedAnalytics(entry.filters)),
+    snapshot => persistDetailedAnalyticsSnapshot(entry, snapshot));
 }
 
 function ensureAdminDetailedAnalyticsBatchRefresh() {
@@ -4502,8 +4506,10 @@ function withAdminDetailedAnalyticsCacheState(snapshot: AdminDetailedAnalyticsSn
       updatedAt: updatedAtMs ? new Date(updatedAtMs).toISOString() : null,
       nextUpdateAt: updatedAtMs ? new Date(updatedAtMs + ADMIN_ANALYTICS_BATCH_INTERVAL_MS).toISOString() : null,
       refreshIntervalMs: ADMIN_ANALYTICS_BATCH_INTERVAL_MS,
-      refreshing: Boolean(entry.refreshPromise) || !entry.snapshot,
+      refreshing: Boolean(entry.refreshPromise),
       ready: Boolean(entry.snapshot),
+      lastError: entry.lastError || null,
+      failedAt: entry.failedAtMs ? new Date(entry.failedAtMs).toISOString() : null,
   });
 }
 
@@ -6498,7 +6504,7 @@ async function buildAdminProviderMarketingPreview(rawFilters: AdminProviderMarke
 type AdminGuildAnalyticsPreviewSnapshot = Awaited<ReturnType<typeof buildAdminGuildAnalyticsPreview>>;
 type AdminProviderMarketingPreviewSnapshot = Awaited<ReturnType<typeof buildAdminProviderMarketingPreview>>;
 
-type AdminPreviewCacheEntry<Filters, Snapshot> = {
+type AdminPreviewCacheEntry<Filters, Snapshot> = ReportFailureState & {
   filters: Filters;
   snapshot: Snapshot | null;
   updatedAtMs: number;
@@ -6709,39 +6715,19 @@ function withAdminPreviewCacheState<Snapshot>(snapshot: Snapshot, entry: AdminPr
       updatedAt: updatedAtMs ? new Date(updatedAtMs).toISOString() : null,
       nextUpdateAt: updatedAtMs ? new Date(updatedAtMs + ADMIN_ANALYTICS_BATCH_INTERVAL_MS).toISOString() : null,
       refreshIntervalMs: ADMIN_ANALYTICS_BATCH_INTERVAL_MS,
-      refreshing: Boolean(entry.refreshPromise) || !entry.snapshot,
+      refreshing: Boolean(entry.refreshPromise),
       ready: Boolean(entry.snapshot),
+      lastError: entry.lastError || null,
+      failedAt: entry.failedAtMs ? new Date(entry.failedAtMs).toISOString() : null,
   });
 }
 
 function refreshAdminGuildAnalyticsPreviewCacheEntry(entry: AdminPreviewCacheEntry<AdminGuildAnalyticsPreviewFilters, AdminGuildAnalyticsPreviewSnapshot>) {
-  if (!entry.refreshPromise) {
-    entry.refreshPromise = enqueueAdminAnalyticsBuild(() => buildAdminGuildAnalyticsPreview(entry.filters))
-      .then((snapshot) => {
-        entry.snapshot = snapshot;
-        entry.updatedAtMs = Date.now();
-        return snapshot;
-      })
-      .finally(() => {
-        entry.refreshPromise = null;
-      });
-  }
-  return entry.refreshPromise;
+  return refreshReportSnapshot(entry, () => enqueueAdminAnalyticsBuild(() => buildAdminGuildAnalyticsPreview(entry.filters)));
 }
 
 function refreshAdminProviderMarketingPreviewCacheEntry(entry: AdminPreviewCacheEntry<AdminProviderMarketingPreviewFilters, AdminProviderMarketingPreviewSnapshot>) {
-  if (!entry.refreshPromise) {
-    entry.refreshPromise = enqueueAdminAnalyticsBuild(() => buildAdminProviderMarketingPreview(entry.filters))
-      .then((snapshot) => {
-        entry.snapshot = snapshot;
-        entry.updatedAtMs = Date.now();
-        return snapshot;
-      })
-      .finally(() => {
-        entry.refreshPromise = null;
-      });
-  }
-  return entry.refreshPromise;
+  return refreshReportSnapshot(entry, () => enqueueAdminAnalyticsBuild(() => buildAdminProviderMarketingPreview(entry.filters)));
 }
 
 function ensureAdminGuildAnalyticsPreviewBatchRefresh() {
@@ -6984,12 +6970,14 @@ export function adminDatabaseTables() {
 type AdminOverviewSnapshot = Awaited<ReturnType<typeof buildAdminOverview>>;
 type AdminAdvancedAnalyticsSnapshot = Awaited<ReturnType<typeof getAdvancedAnalytics>>;
 
-type AdminOverviewCacheState = {
+type AdminOverviewCacheState = ReportFailureState & {
   snapshot: AdminOverviewSnapshot | null;
   updatedAtMs: number;
   lastAccessedAtMs: number;
   refreshPromise: Promise<AdminOverviewSnapshot> | null;
   timer: ReturnType<typeof setInterval> | null;
+  persistentSnapshotLoaded?: boolean;
+  persistentSnapshotLoadPromise?: Promise<void> | null;
 };
 
 const adminOverviewCacheState = ((globalThis as typeof globalThis & {
@@ -7002,7 +6990,7 @@ const adminOverviewCacheState = ((globalThis as typeof globalThis & {
   timer: null,
 });
 
-type AdminAdvancedAnalyticsCacheState = {
+type AdminAdvancedAnalyticsCacheState = ReportFailureState & {
   snapshot: AdminAdvancedAnalyticsSnapshot | null;
   updatedAtMs: number;
   refreshPromise: Promise<AdminAdvancedAnalyticsSnapshot> | null;
@@ -7081,11 +7069,12 @@ function withAdminOverviewCacheState(snapshot: AdminOverviewSnapshot) {
       updatedAt: updatedAtMs ? new Date(updatedAtMs).toISOString() : null,
       nextUpdateAt: updatedAtMs ? new Date(updatedAtMs + ADMIN_OVERVIEW_REFRESH_INTERVAL_MS).toISOString() : null,
       refreshIntervalMs: ADMIN_OVERVIEW_REFRESH_INTERVAL_MS,
-      refreshing: Boolean(adminOverviewCacheState.refreshPromise || adminAdvancedAnalyticsCacheState.refreshPromise)
-        || !adminOverviewCacheState.snapshot
-        || !adminAdvancedAnalyticsCacheState.snapshot,
+      refreshing: Boolean(adminOverviewCacheState.refreshPromise || adminAdvancedAnalyticsCacheState.refreshPromise),
       ready: Boolean(adminOverviewCacheState.snapshot),
       analyticsUpdatedAt: analyticsUpdatedAtMs ? new Date(analyticsUpdatedAtMs).toISOString() : null,
+      lastError: adminOverviewCacheState.lastError || adminAdvancedAnalyticsCacheState.lastError || null,
+      failedAt: Math.max(adminOverviewCacheState.failedAtMs || 0, adminAdvancedAnalyticsCacheState.failedAtMs || 0)
+        ? new Date(Math.max(adminOverviewCacheState.failedAtMs || 0, adminAdvancedAnalyticsCacheState.failedAtMs || 0)).toISOString() : null,
   });
 }
 
@@ -7131,34 +7120,41 @@ async function persistAdvancedAnalyticsSnapshot(snapshot: AdminAdvancedAnalytics
 }
 
 function refreshAdminAdvancedAnalyticsCache() {
-  if (!adminAdvancedAnalyticsCacheState.refreshPromise) {
-    adminAdvancedAnalyticsCacheState.refreshPromise = enqueueAdminAnalyticsBuild(() => getAdvancedAnalytics())
-      .then((snapshot) => {
-        adminAdvancedAnalyticsCacheState.snapshot = snapshot;
-        adminAdvancedAnalyticsCacheState.updatedAtMs = Date.now();
-        void persistAdvancedAnalyticsSnapshot(snapshot);
-        return snapshot;
-      })
-      .finally(() => {
-        adminAdvancedAnalyticsCacheState.refreshPromise = null;
-      });
-  }
-  return adminAdvancedAnalyticsCacheState.refreshPromise;
+  return refreshReportSnapshot(adminAdvancedAnalyticsCacheState,
+    () => enqueueAdminAnalyticsBuild(() => getAdvancedAnalytics()), persistAdvancedAnalyticsSnapshot);
 }
 
 function refreshAdminOverviewCache() {
-  if (!adminOverviewCacheState.refreshPromise) {
-    adminOverviewCacheState.refreshPromise = enqueueAdminAnalyticsBuild(() => buildAdminOverview())
-      .then((snapshot) => {
-        adminOverviewCacheState.snapshot = snapshot;
-        adminOverviewCacheState.updatedAtMs = Date.now();
-        return snapshot;
-      })
-      .finally(() => {
-        adminOverviewCacheState.refreshPromise = null;
-      });
+  return refreshReportSnapshot(adminOverviewCacheState,
+    () => enqueueAdminAnalyticsBuild(() => buildAdminOverview(), "overview"), persistOverviewSnapshot);
+}
+
+async function persistOverviewSnapshot(snapshot: AdminOverviewSnapshot) {
+  await sharedPrisma.$executeRawUnsafe(
+    `INSERT INTO bot_admin_report_snapshots (report_type, snapshot_key, generated_at_ms, payload_json)
+     VALUES (?, ?, ?, ?) ON DUPLICATE KEY UPDATE generated_at_ms=VALUES(generated_at_ms), payload_json=VALUES(payload_json)`,
+    "overview", persistedReportSnapshotKey("overview", "default"), adminOverviewCacheState.updatedAtMs, JSON.stringify(snapshot));
+}
+
+async function loadPersistedOverviewSnapshot() {
+  if (adminOverviewCacheState.persistentSnapshotLoaded) return;
+  if (!adminOverviewCacheState.persistentSnapshotLoadPromise) {
+    adminOverviewCacheState.persistentSnapshotLoadPromise = (async () => {
+      const rows = await sharedPrisma.$queryRawUnsafe<Array<{ payload_json: string; generated_at_ms: number }>>(
+        `SELECT payload_json, generated_at_ms FROM bot_admin_report_snapshots
+         WHERE report_type=? AND snapshot_key=? LIMIT 1`, "overview", persistedReportSnapshotKey("overview", "default"));
+      const row = rows[0];
+      if (row?.payload_json) {
+        const snapshot = JSON.parse(row.payload_json) as AdminOverviewSnapshot;
+        if (Array.isArray(snapshot?.tables) && snapshot.totals && Number(row.generated_at_ms) >= adminOverviewCacheState.updatedAtMs) {
+          adminOverviewCacheState.snapshot = snapshot;
+          adminOverviewCacheState.updatedAtMs = Number(row.generated_at_ms);
+        }
+      }
+      adminOverviewCacheState.persistentSnapshotLoaded = true;
+    })().catch(() => {}).finally(() => { adminOverviewCacheState.persistentSnapshotLoadPromise = null; });
   }
-  return adminOverviewCacheState.refreshPromise;
+  await adminOverviewCacheState.persistentSnapshotLoadPromise;
 }
 
 export function warmAdminOverviewCache() {
@@ -7173,11 +7169,11 @@ export function warmAdminOverviewCache() {
 export async function getAdminOverview(options: { forceRefresh?: boolean } = {}) {
   ensureAdminOverviewBatchRefresh();
   adminOverviewCacheState.lastAccessedAtMs = Date.now();
-  await loadPersistedAdvancedAnalyticsSnapshot();
+  await Promise.all([loadPersistedOverviewSnapshot(), loadPersistedAdvancedAnalyticsSnapshot()]);
   if (options.forceRefresh || shouldRefreshAnalyticsCacheEntry(adminOverviewCacheState)) {
     void refreshAdminOverviewCache().catch(() => undefined);
   }
-  if (options.forceRefresh || !adminAdvancedAnalyticsCacheState.snapshot || shouldRefreshAnalyticsCacheEntry(adminAdvancedAnalyticsCacheState)) {
+  if (options.forceRefresh || shouldRefreshAnalyticsCacheEntry(adminAdvancedAnalyticsCacheState)) {
     void refreshAdminAdvancedAnalyticsCache().catch(() => undefined);
   }
 
@@ -7192,7 +7188,8 @@ export async function getAdminOverview(options: { forceRefresh?: boolean } = {})
 async function buildAdminOverview() {
   await ensureAuditLogTable().catch(() => undefined);
   const startedAt = Date.now();
-  const tableSummaries = await runLimited(DATABASE_TABLES.map((table) => () => tableCount(table.name)));
+  const exactCounts = await loadExactTableCounts(sql => prisma.$queryRawUnsafe(sql));
+  const tableSummaries = await runLimited(DATABASE_TABLES.map((table) => () => tableCount(table.name, exactCounts)));
   const latencyStartedAt = Date.now();
   const dbPing = await optionalQuery<{ ok: boolean; latencyMs: number; serverTime: unknown }>(
     { ok: false, latencyMs: 0, serverTime: null },
