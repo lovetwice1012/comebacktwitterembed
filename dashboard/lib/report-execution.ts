@@ -3,7 +3,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 type Execution = { deadline: number; failure: Error | null; lane: "analytics" | "overview" };
 const executions = new AsyncLocalStorage<Execution>();
 const configured = Number(process.env.DASHBOARD_REPORT_QUERY_TIMEOUT_MS);
-export const queryTimeoutMs = Number.isInteger(configured) && configured >= 1000 && configured <= 300000 ? configured : 60000;
+export const queryTimeoutMs = Number.isInteger(configured) && configured >= 1000 && configured <= 300000 ? configured : 120000;
 export const reportResourceHints = [
   'SET_VAR(tmp_table_size=268435456)',
   'SET_VAR(max_heap_table_size=67108864)',
@@ -26,7 +26,7 @@ export function recordQueryFailure(reason: unknown) {
 export function reportLane() { return executions.getStore()?.lane; }
 
 export async function runReportBuild<T>(build: () => Promise<T>, lane: "analytics" | "overview" = "analytics"): Promise<T> {
-  return executions.run({ deadline: Date.now() + 300000, failure: null, lane }, async () => {
+  return executions.run({ deadline: Date.now() + 600000, failure: null, lane }, async () => {
     const value = await build();
     const failure = executions.getStore()?.failure;
     if (failure) throw failure;

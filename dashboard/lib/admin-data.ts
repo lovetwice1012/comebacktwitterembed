@@ -10,6 +10,7 @@ import { getProviderSettingsState, saveProviderSettings } from "@/lib/settings-d
 import type { AuditActor, SettingValue } from "@/lib/types";
 import type { DashboardLocale } from "@/lib/i18n";
 import { detailedInterestQuery } from "@/lib/analytics-interest-query";
+import { aggregateAudienceCorrelationQuery } from "@/lib/aggregate-audience-query";
 import { aggregateCalendarQuery } from "@/lib/aggregate-calendar-query";
 import { contentReachQuery } from "@/lib/content-reach-query";
 import { audienceInterestQuery } from "@/lib/audience-interest-query";
@@ -1355,40 +1356,7 @@ async function getAggregateEventDaySpikes(startMs: number) {
 async function getAggregateAudienceCorrelation(startMs: number) {
   const [pairRows, targetTotals, interestTotals, totalRows] = await runLimited([
     () => prisma.$queryRawUnsafe<Array<Record<string, unknown>>>(
-      `WITH scoped AS (
-         SELECT DISTINCT provider_id, account_key, content_type, key_hash
-         FROM bot_provider_hourly_unique_keys
-         WHERE bucket_start_ms >= ?
-           AND event_type = 'provider_content'
-           AND key_type = 'author_user'
-           AND provider_id <> ''
-           AND account_key <> ''
-       ),
-       target AS (
-         SELECT DISTINCT provider_id, account_key, key_hash
-         FROM scoped
-       ),
-       other AS (
-         SELECT provider_id, account_key, content_type, key_hash
-         FROM scoped
-       )
-       SELECT
-         target.provider_id AS target_provider_id,
-         target.account_key AS target_account_key,
-         other.provider_id AS interest_provider_id,
-         other.account_key AS interest_account_key,
-         other.content_type AS interest_content_type,
-         COUNT(DISTINCT target.key_hash) AS shared_users
-       FROM target
-       JOIN other
-         ON other.key_hash = target.key_hash
-        AND (
-          other.provider_id <> target.provider_id
-          OR other.account_key <> target.account_key
-        )
-       GROUP BY target.provider_id, target.account_key, other.provider_id, other.account_key, other.content_type
-       ORDER BY shared_users DESC
-       LIMIT 160`,
+      aggregateAudienceCorrelationQuery,
       startMs,
     ),
     () => prisma.$queryRawUnsafe<Array<Record<string, unknown>>>(
