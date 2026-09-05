@@ -42,6 +42,9 @@ export async function loadGuildOptions() {
     const json = await res.json().catch(() => null);
     if (!res.ok) throw new Error(json?.error || "Failed to load servers.");
     return json as GuildOption[];
+  }).catch(error => {
+    guildOptionsPromise = null;
+    throw error;
   });
   return guildOptionsPromise;
 }

@@ -258,6 +258,17 @@ async function readRawValues(providerId: string, guildId: string, specs: Setting
     needsButtonVisibility ? readButtonVisibility(providerId, guildId) : Promise.resolve(undefined),
   ]);
 
+  return rawValuesFromRows(specs, scalarRow, targetValues, bannedWords, buttonVisibility);
+}
+
+function rawValuesFromRows(
+  specs: SettingSpec[],
+  scalarRow: Record<string, unknown> | null,
+  targetValues: (readonly [string, TargetSetting])[],
+  bannedWords: string[] | undefined,
+  buttonVisibility: ButtonVisibility | undefined,
+) {
+  const columns = getProviderSettingColumns();
   const values = new Map<string, SettingValue | undefined>();
   for (const spec of specs) {
     if (spec.kind === "targets") {
@@ -280,6 +291,63 @@ async function readRawValues(providerId: string, guildId: string, specs: Setting
   return values;
 }
 
+async function readAllProviderRawValues(guildId: string) {
+  const providers = getBotProviders();
+  const specsByProvider = new Map(providers.map(provider => [provider.id, editableSpecs(provider.id)]));
+  const ids = providers.map(provider => provider.id);
+  if (!ids.length) return new Map<string, Map<string, SettingValue | undefined>>();
+  const scope = `guild_id = ? AND provider_id IN (${ids.map(() => "?").join(", ")})`;
+  const params = [guildId, ...ids];
+  const allSpecs = [...specsByProvider.values()].flat();
+  const targetKeys = [...new Set(allSpecs.filter(spec => spec.kind === "targets" && SPECIAL_TARGET_TABLES[spec.key]).map(spec => spec.key))];
+  const targets = new Map<string, Map<string, TargetSetting>>();
+  const [scalarRows, bannedRows, buttonRows] = await Promise.all([
+    prisma.$queryRawUnsafe<Array<Record<string, unknown>>>(`SELECT * FROM guild_provider_settings WHERE ${scope}`, ...params),
+    allSpecs.some(spec => spec.kind === "bannedWords")
+      ? prisma.$queryRawUnsafe<Array<{ provider_id: string; word: string }>>(`SELECT provider_id, word FROM guild_provider_banned_words WHERE ${scope} ORDER BY word`, ...params)
+      : Promise.resolve([]),
+    allSpecs.some(spec => spec.kind === "buttonVisibility")
+      ? prisma.$queryRawUnsafe<Array<{ provider_id: string; button_key: string; hidden: boolean | number }>>(`SELECT provider_id, button_key, hidden FROM guild_provider_button_visibility WHERE ${scope}`, ...params)
+      : Promise.resolve([]),
+    // Three reads run alongside a single target-table reader, bounding this
+    // page to four queries even with every provider enabled.
+    (async () => {
+      for (const key of targetKeys) {
+        const rows = await prisma.$queryRawUnsafe<Array<{ provider_id: string; target_type: keyof TargetSetting; target_id: string }>>(
+          `SELECT provider_id, target_type, target_id FROM ${SPECIAL_TARGET_TABLES[key]} WHERE ${scope}`, ...params,
+        );
+        const byProvider = new Map<string, TargetSetting>();
+        for (const row of rows) {
+          const value = byProvider.get(row.provider_id) || { user: [], channel: [], role: [] };
+          value[row.target_type]?.push(row.target_id);
+          byProvider.set(row.provider_id, value);
+        }
+        targets.set(key, byProvider);
+      }
+    })(),
+  ]);
+  const scalars = new Map(scalarRows.map(row => [String(row.provider_id), row]));
+  const banned = new Map<string, string[]>();
+  for (const row of bannedRows) {
+    const words = banned.get(row.provider_id) || [];
+    words.push(row.word);
+    banned.set(row.provider_id, words);
+  }
+  const buttons = new Map<string, ButtonVisibility>();
+  for (const row of buttonRows) {
+    const value = buttons.get(row.provider_id) || {};
+    value[row.button_key] = row.hidden === true || row.hidden === 1;
+    buttons.set(row.provider_id, value);
+  }
+  return new Map(providers.map(provider => [provider.id, rawValuesFromRows(
+    specsByProvider.get(provider.id) || [],
+    scalars.get(provider.id) || null,
+    targetKeys.map(key => [key, normalizeTargetSetting(targets.get(key)?.get(provider.id))] as const),
+    banned.get(provider.id) || [],
+    normalizeButtonVisibility(provider.id, buttons.get(provider.id)),
+  )]));
+}
+
 async function writeValue(db: Tx, providerId: string, guildId: string, spec: SettingSpec, value: SettingValue | undefined) {
   if (spec.kind === "targets") return replaceTargetRows(db, SPECIAL_TARGET_TABLES[spec.key], providerId, guildId, value || { user: [], channel: [], role: [] });
   if (spec.kind === "bannedWords") return replaceBannedWords(db, providerId, guildId, value || []);
@@ -295,12 +363,12 @@ function defaultForSpec(provider: { id: string; enabledByDefault?: boolean }, sp
   return providerSettingDefault(provider, spec.key);
 }
 
-export async function getProviderSettingsState(providerId: string, guildId: string, locale: DashboardLocale = "ja"): Promise<SettingState[]> {
+export async function getProviderSettingsState(providerId: string, guildId: string, locale: DashboardLocale = "ja", loadedValues?: Map<string, SettingValue | undefined>): Promise<SettingState[]> {
   const t = createTranslator(locale);
   const provider = getProvider(providerId);
   if (!provider) throw new Error(t("validation.unknownProvider", { providerId }));
   const specs = editableSpecs(providerId);
-  const rawValues = await readRawValues(providerId, guildId, specs);
+  const rawValues = loadedValues ?? await readRawValues(providerId, guildId, specs);
   const rawStates = specs.map((spec) => {
     const rawValue = rawValues.get(spec.key);
     const defaultValue = defaultForSpec(provider, spec);
@@ -329,9 +397,10 @@ export async function getProviderSettingsState(providerId: string, guildId: stri
 
 export async function getProvidersOverview(guildId: string, locale: DashboardLocale = "ja") {
   const providers = getBotProviders();
+  const rawValues = await readAllProviderRawValues(guildId);
   return Promise.all(
     providers.map(async (provider) => {
-      const states = await getProviderSettingsState(provider.id, guildId, locale);
+      const states = await getProviderSettingsState(provider.id, guildId, locale, rawValues.get(provider.id));
       const enabled = states.find((state) => state.key === "enabled")?.value === true;
       const customizedSettingCount = states.filter((state) => state.changedFromDefault).length;
       const warnings = states.flatMap((state) => state.warnings);
@@ -355,21 +424,29 @@ export async function getProvidersOverview(guildId: string, locale: DashboardLoc
 
 export async function getCrossProviderSettings(guildId: string, locale: DashboardLocale = "ja") {
   const providers = getBotProviders();
+  const rawValues = await readAllProviderRawValues(guildId);
   return (
     await Promise.all(providers.map(async (provider) => {
-      const settings = await getProviderSettingsState(provider.id, guildId, locale);
+      const settings = await getProviderSettingsState(provider.id, guildId, locale, rawValues.get(provider.id));
       return settings.map((setting) => ({ providerId: provider.id, providerLabel: providerLabel(provider), setting }));
     }))
   ).flat();
 }
 
 export async function getProviderSummary(guildId: string): Promise<ProviderSummary> {
-  const overview = await getProvidersOverview(guildId);
-  const enabled = overview.filter((provider) => provider.enabled).length;
+  const providers = getBotProviders();
+  const rows = await prisma.$queryRawUnsafe<Array<{ provider_id: string; enabled: boolean | number | bigint | null }>>(
+    "SELECT provider_id, enabled FROM guild_provider_settings WHERE guild_id = ?", guildId,
+  );
+  const byProvider = new Map(rows.map(row => [row.provider_id, row.enabled]));
+  const enabled = providers.filter(provider => {
+    const value = byProvider.get(provider.id);
+    return value === null || value === undefined ? provider.enabledByDefault === true : convertDatabaseValue(value, { type: "bool" }) === true;
+  }).length;
   return {
     enabled,
-    disabled: overview.length - enabled,
-    total: overview.length,
+    disabled: providers.length - enabled,
+    total: providers.length,
   };
 }
 

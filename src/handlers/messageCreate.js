@@ -10,6 +10,8 @@ const {
 const { extractAllUrls } = require('../providers/_loader');
 const { getProviderSettings } = require('../providers/_provider_settings');
 const { runSendSteps } = require('../providers/_dispatcher');
+const { retainMessageMember } = require('../discordCache');
+const { messageWorkQueue } = require('../workQueue');
 const {
     recordAnalyticsEvent = () => {},
     recordError,
@@ -20,6 +22,7 @@ const {
 
 function register(client) {
     const fetchedMessageMembers = new WeakMap();
+    const recentMessageIds = new Map();
 
     function truncateText(value, maxLength = 1000) {
         if (value === undefined || value === null) return null;
@@ -142,102 +145,132 @@ function register(client) {
         }
     });
 
-    client.on(Events.MessageCreate, (message) => Promise.resolve().then(() => runWithErrorContext({
-        source: 'messageCreate',
-        message,
-    }, async () => {
-        if (!message.guild) return;
-        if (shouldIgnoreMessage(message)) return;
-
-        const content = cleanMessageContent(message.content);
-        const matches = extractAllUrls(content);
-
-        if (matches.length === 0) return;
-
-        //await ensureUserExistsInDatabase(message.author.id);
-
-        for (const { provider, url } of matches) {
-            await runWithErrorContext({
-                source: 'messageCreate.provider',
-                providerId: provider.id,
-                message,
-                url,
-            }, async () => {
-            const providerSettings = await getProviderSettings(provider, message.guild.id);
-            if (providerSettings.enabled !== true) return;
-            if (await isMessageDisabledForProvider(message, providerSettings)) return;
-            if (message.author.bot && providerSettings.extract_bot_message !== true && !message.webhookId) return;
-
-            let steps;
-            const startedAt = Date.now();
-            recordMetric('provider_extract_attempt', { providerId: provider.id, message, url });
-            try {
-                steps = await provider.extract(message, url, providerSettings);
-            } catch (err) {
-                recordError(err, {
-                    fallbackType: 'provider_extract_failed',
-                    source: 'messageCreate.providerExtract',
+    let lastOverloadWarningAt = -Infinity;
+    client.on(Events.MessageCreate, message => {
+        // All supported URLs contain ://. Skip ordinary chat before creating
+        // promises, error contexts, or running every provider's regex.
+        if (!message.guild || shouldIgnoreMessage(message) || !message.content?.includes('://')) return;
+        let matches;
+        try {
+            matches = extractAllUrls(cleanMessageContent(message.content));
+            if (matches.length === 0) return;
+            const now = Date.now();
+            for (const [id, timestamp] of recentMessageIds) {
+                if (timestamp > now - 300000) break;
+                recentMessageIds.delete(id);
+            }
+            if (message.id && recentMessageIds.has(message.id)) return;
+            retainMessageMember(message);
+            if (message.id) {
+                if (recentMessageIds.size >= 10000) recentMessageIds.delete(recentMessageIds.keys().next().value);
+                recentMessageIds.set(message.id, now);
+            }
+        } catch (err) {
+            recordError(err, { fallbackType: 'message_create_failed', source: 'messageCreate.match', message });
+            return;
+        }
+        return messageWorkQueue.run(() => runWithErrorContext({
+            source: 'messageCreate',
+            message,
+        }, async () => {
+            // A referenced/forwarded message can evict the sender even while
+            // discord.js constructs this message. Restore its member once,
+            // before any provider's synchronous role-sensitive checks run.
+            if (!message.member && !message.webhookId) {
+                retainMessageMember(message, await getMessageMember(message));
+            }
+            for (const { provider, url } of matches) {
+                await runWithErrorContext({
+                    source: 'messageCreate.provider',
                     providerId: provider.id,
                     message,
                     url,
+                }, async () => {
+                    const providerSettings = await getProviderSettings(provider, message.guild.id);
+                    if (providerSettings.enabled !== true) return;
+                    if (await isMessageDisabledForProvider(message, providerSettings)) return;
+                    if (message.author.bot && providerSettings.extract_bot_message !== true && !message.webhookId) return;
+
+                    let steps;
+                    const startedAt = Date.now();
+                    recordMetric('provider_extract_attempt', { providerId: provider.id, message, url });
+                    try {
+                        steps = await provider.extract(message, url, providerSettings);
+                    } catch (err) {
+                        recordError(err, {
+                            fallbackType: 'provider_extract_failed',
+                            source: 'messageCreate.providerExtract',
+                            providerId: provider.id,
+                            message,
+                            url,
+                        });
+                        recordMetric('provider_extract_error', { providerId: provider.id, message, url });
+                        recordAnalyticsEvent('provider_extract', {
+                            source: 'messageCreate.providerExtract',
+                            providerId: provider.id,
+                            message,
+                            url,
+                            success: false,
+                            durationMs: Date.now() - startedAt,
+                            details: { outcome: 'error', error_name: err?.name || null },
+                        });
+                        console.log(err);
+                        return;
+                    }
+                    if (Array.isArray(steps)) {
+                        recordMetric('provider_extract_success', { providerId: provider.id, message, url });
+                        recordAnalyticsEvent('provider_extract', {
+                            source: 'messageCreate.providerExtract',
+                            providerId: provider.id,
+                            message,
+                            url,
+                            success: true,
+                            durationMs: Date.now() - startedAt,
+                            details: { outcome: 'success', extracted: summarizeSendSteps(steps) },
+                        });
+                        recordProviderContentEvent({
+                            source: 'messageCreate.providerExtract',
+                            providerId: provider.id,
+                            steps,
+                            message,
+                            url,
+                            guildId: message.guildId ?? message.guild?.id,
+                            channelId: message.channelId ?? message.channel?.id,
+                            authorUserId: message.author?.id,
+                        });
+                        await runSendSteps(message, steps, provider.id, { url });
+                    } else {
+                        recordMetric('provider_extract_empty', { providerId: provider.id, message, url });
+                        recordAnalyticsEvent('provider_extract', {
+                            source: 'messageCreate.providerExtract',
+                            providerId: provider.id,
+                            message,
+                            url,
+                            success: null,
+                            durationMs: Date.now() - startedAt,
+                            details: { outcome: 'empty' },
+                        });
+                    }
                 });
-                recordMetric('provider_extract_error', { providerId: provider.id, message, url });
-                recordAnalyticsEvent('provider_extract', {
-                    source: 'messageCreate.providerExtract',
-                    providerId: provider.id,
-                    message,
-                    url,
-                    success: false,
-                    durationMs: Date.now() - startedAt,
-                    details: { outcome: 'error', error_name: err?.name || null },
-                });
-                console.log(err);
+            }
+        })).catch(err => {
+            if (err?.code === 'WORK_QUEUE_FULL' || err?.code === 'WORK_QUEUE_EXPIRED') {
+                recentMessageIds.delete(message.id);
+                recordMetric('message_processing_rejected', { message, endpointKey: err.code });
+                if (Date.now() - lastOverloadWarningAt >= 60000) {
+                    lastOverloadWarningAt = Date.now();
+                    console.warn('[messageCreate] Overloaded:', err.code, messageWorkQueue.snapshot());
+                }
                 return;
             }
-            if (Array.isArray(steps)) {
-                recordMetric('provider_extract_success', { providerId: provider.id, message, url });
-                recordAnalyticsEvent('provider_extract', {
-                    source: 'messageCreate.providerExtract',
-                    providerId: provider.id,
-                    message,
-                    url,
-                    success: true,
-                    durationMs: Date.now() - startedAt,
-                    details: { outcome: 'success', extracted: summarizeSendSteps(steps) },
-                });
-                recordProviderContentEvent({
-                    source: 'messageCreate.providerExtract',
-                    providerId: provider.id,
-                    steps,
-                    message,
-                    url,
-                    guildId: message.guildId ?? message.guild?.id,
-                    channelId: message.channelId ?? message.channel?.id,
-                    authorUserId: message.author?.id,
-                });
-                await runSendSteps(message, steps, provider.id, { url });
-            } else {
-                recordMetric('provider_extract_empty', { providerId: provider.id, message, url });
-                recordAnalyticsEvent('provider_extract', {
-                    source: 'messageCreate.providerExtract',
-                    providerId: provider.id,
-                    message,
-                    url,
-                    success: null,
-                    durationMs: Date.now() - startedAt,
-                    details: { outcome: 'empty' },
-                });
-            }
+            recordError(err, {
+                fallbackType: 'message_create_failed',
+                source: 'messageCreate.handle',
+                message,
             });
-        }
-    })).catch(err => {
-        recordError(err, {
-            fallbackType: 'message_create_failed',
-            source: 'messageCreate.handle',
-            message,
+            console.error('[messageCreate] Failed to process message:', err);
         });
-        console.error('[messageCreate] Failed to process message:', err);
-    }));
+    });
 }
 
 module.exports = { register };

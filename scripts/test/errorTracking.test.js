@@ -15,6 +15,29 @@ const {
 
 after(() => _internal.clearBackgroundWorkForTest());
 
+test('metric batching preserves all increments for the same bucket', async () => {
+    _internal.clearBackgroundWorkForTest();
+    const tracking = require('../../src/errorTracking');
+    const dbPath = require.resolve('../../src/db');
+    const original = require.cache[dbPath];
+    const calls = [];
+    require.cache[dbPath] = { id: dbPath, filename: dbPath, loaded: true, exports: {
+        queryDatabase: async (sql, params) => { calls.push({ sql, params }); return []; },
+    } };
+    try {
+        for (let i = 0; i < 100; i++) tracking.recordMetric('test_burst', { occurredAtMs: 1000 }, 3);
+        await tracking.flushErrorTrackingQueue();
+        const insert = calls.find(call => call.sql.includes('INSERT INTO bot_metric_buckets'));
+        assert.ok(insert);
+        assert.equal(calls.filter(call => call.sql.includes('INSERT INTO bot_metric_buckets')).length, 1);
+        assert.equal(insert.params.at(-1), 300);
+    } finally {
+        if (original) require.cache[dbPath] = original;
+        else delete require.cache[dbPath];
+        _internal.clearBackgroundWorkForTest();
+    }
+});
+
 test('error tracking schema declares event and bucket tables', () => {
     assert.equal(TABLES.botErrorEvents, 'bot_error_events');
     assert.equal(TABLES.botErrorBuckets, 'bot_error_buckets');

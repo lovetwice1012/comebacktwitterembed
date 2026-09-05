@@ -27,7 +27,7 @@ async function tick(client, eventMetrics = discordEventMetrics) {
                     description: client.guilds.cache.size + 'servers',
                     color: 0x1DA1F2,
                     fields: [
-                        { name: 'ユーザー数', value: client.users.cache.size + 'users' },
+                        { name: 'キャッシュ中のユーザー数', value: client.users.cache.size + 'users' },
                         { name: 'チャンネル数', value: client.channels.cache.size + 'channels' },
                         { name: '一分間に処理したメッセージ数', value: counters.processed + 'messages' },
                         { name: '一時間に処理したメッセージ数', value: counters.processed_hour + 'messages' },

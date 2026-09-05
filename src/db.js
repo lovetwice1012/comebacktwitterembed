@@ -1,6 +1,7 @@
 ﻿'use strict';
 
 const { TABLES } = require('./db_schema');
+const { createDatabasePool } = require('./databasePool');
 
 let _config = {};
 try {
@@ -29,10 +30,10 @@ function getDbCredentials() {
 }
 
 let _mysql = null;
-let _connection = null;
+let _database = null;
 
-function ensureConnection() {
-    if (_connection) return _connection;
+function ensureDatabase() {
+    if (_database) return _database;
     const cfg = getDbCredentials();
     if (!cfg.host || !cfg.user || !cfg.database) {
         throw new Error(
@@ -41,30 +42,38 @@ function ensureConnection() {
         );
     }
     if (!_mysql) _mysql = require('mysql');
-    _connection = _mysql.createConnection(cfg);
-    return _connection;
+    _database = createDatabasePool({
+        createPool: options => _mysql.createPool(options),
+        credentials: cfg,
+        onError: (error, options) => {
+            if (shouldLogDatabaseError(error, options)) console.error(error);
+        },
+    });
+    return _database;
 }
 
 /** @type {any} */
 const connection = new Proxy({}, {
     get(_target, prop) {
-        const conn = ensureConnection();
+        const conn = ensureDatabase().pool;
         const value = conn[prop];
         return typeof value === 'function' ? value.bind(conn) : value;
     },
 });
 
-async function queryDatabase(query, params = []) {
-    return new Promise((resolve, reject) => {
-        ensureConnection().query(query, params, (err, results) => {
-            if (err) {
-                console.error(err);
-                reject(err);
-                return;
-            }
-            resolve(results);
-        });
-    });
+function shouldLogDatabaseError(err, options) {
+    const suppressedErrorCodes = Array.isArray(options?.suppressErrorCodes)
+        ? options.suppressErrorCodes
+        : [];
+    return !suppressedErrorCodes.includes(err?.code);
+}
+
+async function queryDatabase(query, params = [], options = {}) {
+    return ensureDatabase().query(query, params, options);
+}
+
+async function withDatabaseTransaction(work) {
+    return ensureDatabase().withTransaction(work);
 }
 
 async function ensureUserExistsInDatabase(userId) {
@@ -81,15 +90,18 @@ async function ensureUserExistsInDatabase(userId) {
 }
 
 async function closeDatabaseConnection() {
-    if (!_connection) return;
-    const conn = _connection;
-    _connection = null;
-    await new Promise((resolve, reject) => {
-        conn.end((err) => {
-            if (err) reject(err);
-            else resolve();
-        });
-    });
+    if (!_database) return;
+    const database = _database;
+    _database = null;
+    await database.close();
 }
 
-module.exports = { connection, queryDatabase, ensureUserExistsInDatabase, getDbCredentials, closeDatabaseConnection };
+module.exports = {
+    connection,
+    queryDatabase,
+    withDatabaseTransaction,
+    ensureUserExistsInDatabase,
+    getDbCredentials,
+    closeDatabaseConnection,
+    _internal: { shouldLogDatabaseError },
+};

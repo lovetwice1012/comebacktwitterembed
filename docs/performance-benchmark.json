@@ -1,0 +1,42 @@
+{
+  "runtime": "v24.15.0",
+  "workload": "100,000 messages per timing trial; median of 5; heap: 500 guilds x 200 distinct senders",
+  "ordinaryMessages": {
+    "before": {
+      "medianMs": 1656.3,
+      "matches": 0
+    },
+    "after": {
+      "medianMs": 3.7,
+      "matches": 0
+    }
+  },
+  "mixedMessages": {
+    "before": {
+      "medianMs": 1694.6,
+      "matches": 25000
+    },
+    "after": {
+      "medianMs": 15.1,
+      "matches": 25000
+    }
+  },
+  "settingsBurst": {
+    "concurrentRequests": 100,
+    "databaseLoads": 1
+  },
+  "heap": {
+    "default": {
+      "addedHeapMiB": 265.5,
+      "messages": 100000,
+      "members": 100500,
+      "users": 100001
+    },
+    "bounded": {
+      "addedHeapMiB": 3.2,
+      "messages": 0,
+      "members": 1000,
+      "users": 1000
+    }
+  }
+}

@@ -15,4 +15,6 @@ export const prisma =
     },
   });
 
-if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma;
+// Instrumentation and route bundles can evaluate this module independently.
+// They must share one pool in production too.
+globalForPrisma.prisma = prisma;

@@ -1,0 +1,26 @@
+{
+  "runtime": "v24.15.0",
+  "interestQuery": {
+    "engine": "node:sqlite in-memory",
+    "inputEvents": 10000,
+    "users": 50,
+    "resultRows": 2,
+    "identicalResults": true,
+    "beforeMedianMs": 1411.51,
+    "afterMedianMs": 9.71
+  },
+  "reportPolling": {
+    "reportRows": 5000,
+    "jsonBytes": 706772,
+    "identicalJson": true,
+    "beforeMedianMs": 10.84,
+    "afterMedianMs": 1.73
+  },
+  "settingsQueries": {
+    "providers": 12,
+    "before": 59,
+    "after": 11,
+    "summaryAfter": 1,
+    "evidence": "dashboard-settings-performance.test.js"
+  }
+}

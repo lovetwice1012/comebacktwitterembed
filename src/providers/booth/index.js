@@ -24,7 +24,7 @@
 //   wish_lists_count: number
 // ============================================================================
 
-const fetch = require('node-fetch');
+const fetch = require('../../providerFetch').withDeadline(require('node-fetch'));
 const { ButtonBuilder, ButtonStyle, ComponentType } = require('discord.js');
 const { extractSalePeriod } = require('./_sale');
 const { recordProviderError } = require('../../errorTracking');

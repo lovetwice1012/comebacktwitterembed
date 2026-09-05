@@ -9,9 +9,11 @@ const boothSaleNotifier = require('../lifecycle/boothSaleNotifier');
 const errorRateNotifier = require('../lifecycle/errorRateNotifier');
 const mediaDeliveryServer = require('../lifecycle/mediaDeliveryServer');
 const { recordError } = require('../errorTracking');
+const runtimeDiagnostics = require('../lifecycle/runtimeDiagnostics');
 
 async function initialize(readyClient, webhookClient, errorNotificationWebhookClient) {
     console.log(`${readyClient.user.tag} is ready!`);
+    runtimeDiagnostics.start();
 
     try {
         await readyClient.application.commands.set(buildSlashCommands());

@@ -4,18 +4,22 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 
 const {
+    BUN_RUNTIME_DISABLED_MESSAGE,
     MINIMUM_NODE_VERSION,
-    SUPPORTED_BUN_VERSION,
     assertSupportedRuntime,
 } = require('../../src/runtime');
 
-test('runtime guard accepts supported Node and Bun versions', () => {
+const fs = require('node:fs');
+const path = require('node:path');
+
+const repoRoot = path.resolve(__dirname, '..', '..');
+
+test('runtime guard accepts supported Node versions', () => {
     assert.equal(assertSupportedRuntime({ node: '24.0.0' }), 'node');
     assert.equal(assertSupportedRuntime({ node: MINIMUM_NODE_VERSION }), 'node');
-    assert.equal(assertSupportedRuntime({ node: '22.0.0', bun: SUPPORTED_BUN_VERSION }), 'bun');
 });
 
-test('runtime guard rejects old runtimes with actionable version requirements', () => {
+test('runtime guard rejects old Node and all Bun runtimes with actionable errors', () => {
     assert.throws(
         () => assertSupportedRuntime({ node: '22.11.9' }),
         error => {
@@ -25,19 +29,22 @@ test('runtime guard rejects old runtimes with actionable version requirements', 
         }
     );
     assert.throws(
-        () => assertSupportedRuntime({ node: '24.0.0', bun: '1.3.13' }),
+        () => assertSupportedRuntime({ node: '24.0.0', bun: '1.3.14' }),
         error => {
-            assert.match(error.message, /Unsupported Bun version: 1\.3\.13/);
-            assert.match(error.message, new RegExp('Bun ' + SUPPORTED_BUN_VERSION));
+            assert.equal(error.message, BUN_RUNTIME_DISABLED_MESSAGE);
             return true;
         }
     );
-    assert.throws(
-        () => assertSupportedRuntime({ node: '24.0.0', bun: '1.4.0' }),
-        error => {
-            assert.match(error.message, /Unsupported Bun version: 1\.4\.0/);
-            assert.match(error.message, new RegExp('Bun ' + SUPPORTED_BUN_VERSION));
-            return true;
-        }
-    );
+});
+
+test('production startup remains pinned to Node rather than Bun', () => {
+    const packageJson = JSON.parse(fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf8'));
+    const serviceUnit = fs.readFileSync(path.join(repoRoot, 'deploy', 'systemd', 'cbte.service'), 'utf8');
+
+    assert.equal(packageJson.scripts.start, 'node index.js');
+    assert.equal(packageJson.engines.node, '>=22.12.0');
+    assert.equal(packageJson.engines.bun, undefined);
+    assert.match(serviceUnit, /^ExecStart=\/usr\/local\/bin\/node \.\/index\.js$/m);
+    assert.match(serviceUnit, /^Restart=on-failure$/m);
+    assert.doesNotMatch(serviceUnit, /bun \.\/index\.js/);
 });

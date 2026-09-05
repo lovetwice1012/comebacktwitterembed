@@ -691,6 +691,7 @@ const GUILD_PROVIDER_SETTING_COLUMN_DEFINITIONS = {
 };
 
 let schemaReady = null;
+const IDEMPOTENT_MIGRATION_ERROR_CODES = ['ER_DUP_FIELDNAME', 'ER_DUP_KEYNAME'];
 
 function splitSqlStatements(sql) {
     return String(sql || '')
@@ -760,9 +761,12 @@ async function applyMigrationFile(queryDatabase, file) {
     for (const statement of statements) {
         if (await shouldSkipMigrationStatement(queryDatabase, statement)) continue;
         try {
-            await queryDatabase(statement);
+            // A concurrent/previous deployment can create the same column or
+            // index after the existence check. The migration handles that
+            // expected race below, so do not emit a full MySQL error stack.
+            await queryDatabase(statement, [], { suppressErrorCodes: IDEMPOTENT_MIGRATION_ERROR_CODES });
         } catch (err) {
-            if (!['ER_DUP_FIELDNAME', 'ER_DUP_KEYNAME'].includes(err?.code)) throw err;
+            if (!IDEMPOTENT_MIGRATION_ERROR_CODES.includes(err?.code)) throw err;
         }
     }
 

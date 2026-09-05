@@ -5,6 +5,16 @@ const assert = require('node:assert/strict');
 
 const loader = require('../../src/providers/_loader');
 
+test('cached URL regexes preserve repeated-call results and explicit URL suppression', () => {
+    const input = 'hello <https://x.com/u/status/1> ||https://github.com/a/b|| https://x.com/u/status/2';
+    const expected = [{ provider: 'twitter', url: 'https://x.com/u/status/2' }];
+    for (let i = 0; i < 20; i++) {
+        assert.deepEqual(loader.extractAllUrls(loader.cleanContent(input)).map(item => ({ provider: item.provider.id, url: item.url })), expected);
+    }
+    loader._resetForTest();
+    assert.equal(loader.extractAllUrls('https://x.com/u/status/2').length, 1);
+});
+
 test('loader: twitter provider is registered with required keys', () => {
     const providers = loader.loadProviders();
     const twitter = providers.find(p => p.id === 'twitter');

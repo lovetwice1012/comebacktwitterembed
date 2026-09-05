@@ -15,8 +15,10 @@ const { ensureDatabaseSchema } = require('./src/db_schema');
 const { currentErrorContext, recordError } = require('./src/errorTracking');
 const discordEventMetrics = require('./src/discordEventMetrics');
 const dashboardServer = require('./src/lifecycle/dashboardServer');
+const { createDiscordCacheOptions } = require('./src/discordCache');
 
 const client = new Client({
+    ...createDiscordCacheOptions(discordRuntime.discord),
     intents: [
         GatewayIntentBits.Guilds,
         GatewayIntentBits.GuildMessages,

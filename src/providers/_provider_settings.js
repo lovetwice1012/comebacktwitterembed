@@ -3,10 +3,11 @@
 const { TABLES, ensureDatabaseSchema } = require('../db_schema');
 const { button_disabled_template, button_invisible_template } = require('../utils');
 const { normalizeHiddenOutputItems } = require('./_output_visibility');
+const { AsyncTtlCache } = require('../asyncTtlCache');
 
 const SETTINGS_CACHE_TTL_MS = 30 * 1000;
 const SETTINGS_INVALIDATION_POLL_MS = 250;
-const providerSettingsCache = new Map();
+const providerSettingsCache = new AsyncTtlCache({ maxSize: 2048, ttlMs: SETTINGS_CACHE_TTL_MS });
 let lastInvalidationRevision = 0;
 let lastInvalidationPollAt = 0;
 let invalidationPoll = null;
@@ -533,9 +534,7 @@ async function getDisableSetting(provider, guildId) {
 async function replaceTargetRows(table, providerId, guildId, value) {
     const setting = normalizeTargetSetting(value);
     await ensureProviderAndGuild(providerId, guildId);
-    const query = queryDatabase();
-    await query('START TRANSACTION');
-    try {
+    await require('../db').withDatabaseTransaction(async query => {
         await query(`DELETE FROM ${table} WHERE provider_id = ? AND guild_id = ?`, [providerId, guildId]);
         for (const targetType of ['user', 'channel', 'role']) {
             for (const targetId of setting[targetType]) {
@@ -546,11 +545,7 @@ async function replaceTargetRows(table, providerId, guildId, value) {
                 );
             }
         }
-        await query('COMMIT');
-    } catch (err) {
-        await query('ROLLBACK').catch(() => {});
-        throw err;
-    }
+    });
 }
 
 async function setDisableSetting(provider, guildId, value) {
@@ -581,9 +576,7 @@ async function setBannedWords(provider, guildId, words) {
         normalizedWords.push(normalized);
     }
 
-    const query = queryDatabase();
-    await query('START TRANSACTION');
-    try {
+    await require('../db').withDatabaseTransaction(async query => {
         await query(
             `DELETE FROM ${TABLES.guildProviderBannedWords}
              WHERE provider_id = ? AND guild_id = ?`,
@@ -596,11 +589,7 @@ async function setBannedWords(provider, guildId, words) {
                 [provider.id, guildId, word]
             );
         }
-        await query('COMMIT');
-    } catch (err) {
-        await query('ROLLBACK').catch(() => {});
-        throw err;
-    }
+    });
 }
 
 async function getButtonVisibility(provider, guildId) {
@@ -621,9 +610,7 @@ async function setButtonVisibility(provider, guildId, value) {
     if (provider.id !== 'twitter') delete visibility.savetweet;
 
     await ensureProviderAndGuild(provider.id, guildId);
-    const query = queryDatabase();
-    await query('START TRANSACTION');
-    try {
+    await require('../db').withDatabaseTransaction(async query => {
         await query(
             `DELETE FROM ${TABLES.guildProviderButtonVisibility}
              WHERE provider_id = ? AND guild_id = ?`,
@@ -636,11 +623,7 @@ async function setButtonVisibility(provider, guildId, value) {
                 [provider.id, guildId, buttonKey, hidden === true ? 1 : 0]
             );
         }
-        await query('COMMIT');
-    } catch (err) {
-        await query('ROLLBACK').catch(() => {});
-        throw err;
-    }
+    });
 }
 
 async function getSetting(providerInput, key, guildId) {
@@ -682,12 +665,7 @@ async function getProviderSettings(providerInput, guildId) {
 
     await refreshProviderSettingsInvalidations();
     const key = providerSettingsCacheKey(provider.id, guildId);
-    const cached = providerSettingsCache.get(key);
-    if (cached && cached.expiresAt > Date.now()) return cached.value;
-
-    const value = await loadProviderSettings(provider, guildId);
-    providerSettingsCache.set(key, { value, expiresAt: Date.now() + SETTINGS_CACHE_TTL_MS });
-    return value;
+    return await providerSettingsCache.getOrLoad(key, () => loadProviderSettings(provider, guildId));
 }
 
 function providerSettingsCacheKey(providerId, guildId) {

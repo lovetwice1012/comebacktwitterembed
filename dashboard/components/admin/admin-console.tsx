@@ -2027,6 +2027,7 @@ function CompoundAnalysisPanel({ analytics }: { analytics: AdminDetailedAnalytic
 
 function DetailedAnalyticsPanel() {
   const [filters, setFilters] = useState<DetailedFilterState>(defaultDetailedFilters);
+  const [appliedFilters, setAppliedFilters] = useState(defaultDetailedFilters);
   const [analytics, setAnalytics] = useState<AdminDetailedAnalytics | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -2057,6 +2058,7 @@ function DetailedAnalyticsPanel() {
   }
 
   const load = useCallback(async (nextFilters = filters, options: { silent?: boolean } = {}) => {
+    if (!options.silent) setAppliedFilters(nextFilters);
     if (!options.silent) setLoading(true);
     setError(null);
     try {
@@ -2077,10 +2079,10 @@ function DetailedAnalyticsPanel() {
   useEffect(() => {
     if (!analytics?.cache?.refreshing) return;
     const timer = window.setTimeout(() => {
-      void load(filters, { silent: true });
+      void load(appliedFilters, { silent: true });
     }, REPORT_CACHE_POLL_MS);
     return () => window.clearTimeout(timer);
-  }, [analytics, filters, load]);
+  }, [analytics, appliedFilters, load]);
 
   const contentSummary = analytics?.summary.content || {};
   const eventSummary = analytics?.summary.analytics || {};
@@ -2653,6 +2655,7 @@ function buildProviderPreviewSearch(filters: ProviderPreviewFilterState) {
 
 function GuildAdminPreviewPanel() {
   const [filters, setFilters] = useState<GuildPreviewFilterState>(defaultGuildPreviewFilters);
+  const [appliedFilters, setAppliedFilters] = useState(defaultGuildPreviewFilters);
   const [preview, setPreview] = useState<AdminUserFacingPreview | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -2683,6 +2686,7 @@ function GuildAdminPreviewPanel() {
   }
 
   const load = useCallback(async (nextFilters = filters, options: { silent?: boolean } = {}) => {
+    if (!options.silent) setAppliedFilters(nextFilters);
     if (!options.silent) setLoading(true);
     setError(null);
     try {
@@ -2703,10 +2707,10 @@ function GuildAdminPreviewPanel() {
   useEffect(() => {
     if (!preview?.cache?.refreshing) return;
     const timer = window.setTimeout(() => {
-      void load(filters, { silent: true });
+      void load(appliedFilters, { silent: true });
     }, REPORT_CACHE_POLL_MS);
     return () => window.clearTimeout(timer);
-  }, [preview, filters, load]);
+  }, [preview, appliedFilters, load]);
 
   const retention = previewSectionRow(preview, "audienceRetention");
   const guildTimeSeries = previewSectionRows(preview, "timeSeries");
@@ -2982,6 +2986,7 @@ function GuildAdminPreviewPanel() {
 
 function ProviderMarketingPreviewPanel() {
   const [filters, setFilters] = useState<ProviderPreviewFilterState>(defaultProviderPreviewFilters);
+  const [appliedFilters, setAppliedFilters] = useState(defaultProviderPreviewFilters);
   const [preview, setPreview] = useState<AdminUserFacingPreview | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -3012,6 +3017,7 @@ function ProviderMarketingPreviewPanel() {
   }
 
   const load = useCallback(async (nextFilters = filters, options: { silent?: boolean } = {}) => {
+    if (!options.silent) setAppliedFilters(nextFilters);
     if (!options.silent) setLoading(true);
     setError(null);
     try {
@@ -3032,10 +3038,10 @@ function ProviderMarketingPreviewPanel() {
   useEffect(() => {
     if (!preview?.cache?.refreshing) return;
     const timer = window.setTimeout(() => {
-      void load(filters, { silent: true });
+      void load(appliedFilters, { silent: true });
     }, REPORT_CACHE_POLL_MS);
     return () => window.clearTimeout(timer);
-  }, [preview, filters, load]);
+  }, [preview, appliedFilters, load]);
 
   const retention = previewSectionRow(preview, "audienceRetention");
   const providerTimeSeries = previewSectionRows(preview, "timeSeries");
@@ -3813,12 +3819,12 @@ export function AdminConsole({
   }, [loadOverview]);
 
   useEffect(() => {
-    if (!overview?.cache?.refreshing) return;
+    if (tab !== "overview" || !overview?.cache?.refreshing) return;
     const timer = window.setTimeout(() => {
       void loadOverview(false, { silent: true });
     }, REPORT_CACHE_POLL_MS);
     return () => window.clearTimeout(timer);
-  }, [overview, loadOverview]);
+  }, [overview, loadOverview, tab]);
 
   useEffect(() => {
     if (tab === "logs" && !logsRequested) void loadLogs();

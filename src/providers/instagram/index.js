@@ -1,6 +1,6 @@
 'use strict';
 
-const fetch = require('node-fetch');
+const fetch = require('../../providerFetch').withDeadline(require('node-fetch'));
 const { ButtonBuilder, ButtonStyle, ComponentType } = require('discord.js');
 const { videoExtensions } = require('../../utils');
 const { recordProviderError } = require('../../errorTracking');

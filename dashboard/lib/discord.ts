@@ -1,6 +1,8 @@
 import "server-only";
 
 import { cache } from "react";
+import { createHash } from "node:crypto";
+import { BoundedAsyncCache } from "@/lib/bounded-cache";
 import { getBotToken, getDashboardFlag, getDashboardNumber } from "@/lib/env";
 import {
   delegatedAccessEnabled,
@@ -64,29 +66,9 @@ const GUILD_CACHE_TTL_MS = getDashboardNumber("guildCacheTtlMs", "DASHBOARD_GUIL
 const USE_BOT_GUILD_API = getDashboardFlag("useBotGuildApi", "DASHBOARD_USE_BOT_GUILD_API");
 const LOAD_GUILD_PROVIDER_SUMMARY = getDashboardFlag("loadGuildProviderSummary", "DASHBOARD_LOAD_GUILD_PROVIDER_SUMMARY");
 
-type CacheEntry<T> = {
-  expiresAt: number;
-  promise: Promise<T>;
-};
-
-const userGuildCache = new Map<string, CacheEntry<DiscordGuild[]>>();
-let botGuildDiscordCache: CacheEntry<Set<string> | null> | null = null;
-let botGuildDatabaseCache: CacheEntry<Set<string>> | null = null;
-
-function cached<T>(entry: CacheEntry<T> | null, load: () => Promise<T>): CacheEntry<T> {
-  if (entry && entry.expiresAt > Date.now()) return entry;
-  return {
-    expiresAt: Date.now() + GUILD_CACHE_TTL_MS,
-    promise: load(),
-  };
-}
-
-function cachedByKey<T>(map: Map<string, CacheEntry<T>>, key: string, load: () => Promise<T>) {
-  const current = map.get(key) || null;
-  const next = cached(current, load);
-  if (next !== current) map.set(key, next);
-  return next.promise;
-}
+const userGuildCache = new BoundedAsyncCache<DiscordGuild[]>(256, GUILD_CACHE_TTL_MS);
+const botGuildDiscordCache = new BoundedAsyncCache<Set<string> | null>(1, GUILD_CACHE_TTL_MS);
+const botGuildDatabaseCache = new BoundedAsyncCache<Set<string>>(1, GUILD_CACHE_TTL_MS);
 
 async function discordFetch<T>(
   path: string,
@@ -132,25 +114,24 @@ export async function fetchDiscordMe(accessToken: string) {
 }
 
 export const fetchUserGuilds = cache(async (accessToken: string) => {
-  return cachedByKey(userGuildCache, accessToken, () => discordFetch<DiscordGuild[]>("/users/@me/guilds", accessToken, "Bearer"));
+  const key = createHash("sha256").update(accessToken).digest("hex");
+  return userGuildCache.get(key, () => discordFetch<DiscordGuild[]>("/users/@me/guilds", accessToken, "Bearer"));
 });
 
 const fetchBotGuildIdsFromDiscord = cache(async () => {
   const token = getBotToken();
   if (!token) return null;
-  botGuildDiscordCache = cached(botGuildDiscordCache, async () => {
+  return botGuildDiscordCache.get("bot", async () => {
     const guilds = await discordFetch<DiscordGuild[]>("/users/@me/guilds", token, "Bot");
     return new Set(guilds.map((guild) => guild.id));
   });
-  return botGuildDiscordCache.promise;
 });
 
 const fetchBotGuildIdsFromDatabase = cache(async () => {
-  botGuildDatabaseCache = cached(botGuildDatabaseCache, async () => {
+  return botGuildDatabaseCache.get("bot", async () => {
     const rows = await prisma.$queryRaw<Array<{ guild_id: string }>>`SELECT guild_id FROM guilds`;
     return new Set(rows.map((row) => row.guild_id));
   });
-  return botGuildDatabaseCache.promise;
 });
 
 export const fetchBotGuildIds = cache(async () => {

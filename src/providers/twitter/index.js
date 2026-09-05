@@ -14,7 +14,7 @@
 // dispatcher が自動的に呼び出してくれる。
 // ============================================================================
 
-const fetch = require('node-fetch');
+const fetch = require('../../providerFetch').withDeadline(require('node-fetch'));
 const { ButtonBuilder, ButtonStyle, ComponentType, PermissionsBitField } = require('discord.js');
 const { isOnlyUrlMessageContent, videoExtensions } = require('../../utils');
 const { recordProviderError } = require('../../errorTracking');
@@ -363,17 +363,18 @@ async function fetchTweetData(url) {
     let api = url.replace(/twitter\.com|x\.com/g, 'api.vxtwitter.com');
     const parts = api.split('/');
     if (parts.length > 6 && !api.includes('twidata.sprink.cloud')) api = parts.slice(0, 6).join('/');
-    let text = await (await fetch(api)).text();
+    const requestOptions = { timeout: 15000, size: 4 * 1024 * 1024 };
+    let text = await (await fetch(api, requestOptions)).text();
     if (text.startsWith('T')) console.log('<<RATE LIMIT>>:' + text + new Date().toLocaleString());
     if (text.trimStart().startsWith('<') && !looksLikeExpectedNonExpandable(text)) {
-        text = await (await fetch(api.replace('api.vxtwitter.com', 'api.fxtwitter.com'))).text();
+        text = await (await fetch(api.replace('api.vxtwitter.com', 'api.fxtwitter.com'), requestOptions)).text();
     }
     return parseTweetApiResponse(text);
 }
 
 function notifyAlttwitter(tweetURL) {
     if (!tweetURL) return;
-    fetch(tweetURL.replace(/twitter\.com/g, 'altterx.sprink.cloud'))
+    fetch(tweetURL.replace(/twitter\.com/g, 'altterx.sprink.cloud'), { timeout: 15000, size: 4 * 1024 * 1024 })
         .then(r => r.text())
         .catch(() => {});
 }

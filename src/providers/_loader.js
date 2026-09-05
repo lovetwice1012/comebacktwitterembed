@@ -23,6 +23,7 @@ const PROVIDERS_DIR = __dirname;
 
 /** @type {import('./_types').Provider[] | null} */
 let _providers = null;
+let _patterns = null;
 
 function loadProviders() {
     if (_providers) return _providers;
@@ -61,12 +62,23 @@ function loadProviders() {
     return list;
 }
 
-function _resetForTest() { _providers = null; }
+function _resetForTest() { _providers = null; _patterns = null; }
+
+function patterns() {
+    if (!_patterns) {
+        _patterns = loadProviders().map(provider => ({
+            provider,
+            url: new RegExp(provider.urlPattern.source, provider.urlPattern.flags),
+            clean: provider.cleanPattern || buildDefaultCleanPattern(provider.urlPattern),
+        }));
+    }
+    return _patterns;
+}
 
 function extractAllUrls(content) {
     const out = [];
-    for (const p of loadProviders()) {
-        const re = new RegExp(p.urlPattern.source, p.urlPattern.flags);
+    for (const { provider: p, url: re } of patterns()) {
+        re.lastIndex = 0;
         const matches = content.match(re);
         if (!matches) continue;
         for (const url of matches) out.push({ provider: p, url });
@@ -76,8 +88,8 @@ function extractAllUrls(content) {
 
 function cleanContent(content) {
     let out = content;
-    for (const p of loadProviders()) {
-        const cleanRe = p.cleanPattern || buildDefaultCleanPattern(p.urlPattern);
+    for (const { clean: cleanRe } of patterns()) {
+        cleanRe.lastIndex = 0;
         out = out.replace(cleanRe, '');
     }
     return out;

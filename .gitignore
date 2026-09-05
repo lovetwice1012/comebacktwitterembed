@@ -90,6 +90,7 @@ web_modules/
 dashboard/.next-build/
 dashboard/.next-builds/
 dashboard/.next-dev/
+dashboard/.next-performance-check/
 out
 
 # Nuxt.js build / generate output

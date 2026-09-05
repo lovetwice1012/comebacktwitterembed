@@ -1,7 +1,7 @@
 'use strict';
 
 const zlib = require('zlib');
-const fetch = require('node-fetch');
+const fetch = require('../../providerFetch').withDeadline(require('node-fetch'));
 const jpeg = require('jpeg-js');
 const { ButtonBuilder, ButtonStyle, ComponentType } = require('discord.js');
 const { recordProviderError } = require('../../errorTracking');

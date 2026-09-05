@@ -362,7 +362,7 @@ function enqueueBucket(table, row) {
     const key = bucketKey(table, row);
     const current = bucketIncrements.get(key);
     if (current) {
-        current.count += row.count;
+        current.row.count += row.count;
         return;
     }
     bucketIncrements.set(key, { table, row: { ...row } });

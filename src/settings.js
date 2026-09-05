@@ -836,7 +836,7 @@ function collectButtonVisibilityRows(normalized) {
 }
 
 async function saveSettingsToDatabase(nextSettings) {
-    const { queryDatabase } = require('./db');
+    const { withDatabaseTransaction } = require('./db');
     await ensureDatabaseSchema();
 
     const normalized = normalizeSettings(nextSettings).settings;
@@ -857,8 +857,7 @@ async function saveSettingsToDatabase(nextSettings) {
         addProviderGuild(providerIds, guildIds, row.providerId, row.guildId);
     }
 
-    await queryDatabase('START TRANSACTION');
-    try {
+    await withDatabaseTransaction(async queryDatabase => {
         await queryDatabase(`DELETE FROM ${TABLES.guildProviderButtonDisabledTargets}`);
         await queryDatabase(`DELETE FROM ${TABLES.guildProviderButtonVisibility}`);
         await queryDatabase(`DELETE FROM ${TABLES.guildProviderBannedWords}`);
@@ -946,11 +945,7 @@ async function saveSettingsToDatabase(nextSettings) {
             );
         }
 
-        await queryDatabase('COMMIT');
-    } catch (err) {
-        await queryDatabase('ROLLBACK').catch(() => {});
-        throw err;
-    }
+    });
 }
 
 const settings = cloneValue(SETTINGS_DEFAULT_FILE);

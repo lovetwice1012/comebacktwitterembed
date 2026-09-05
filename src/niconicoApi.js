@@ -1,6 +1,6 @@
 'use strict';
 
-const fetch = require('node-fetch');
+const fetch = require('./providerFetch').withDeadline(require('node-fetch'));
 
 const VIDEO_ID_RE = /^(?:[a-z]{0,4})?\d+$/i;
 const NICONICO_URL_PATTERN =

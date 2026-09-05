@@ -79,6 +79,77 @@ function createClient() {
     };
 }
 
+test('ordinary chat skips regex, settings and asynchronous error contexts', async () => {
+    await withMessageCreateMocks({
+        utils: { cleanMessageContent: () => assert.fail('ordinary message was cleaned') },
+        loader: { extractAllUrls: () => assert.fail('ordinary message was scanned') },
+        providerSettings: { getProviderSettings: () => assert.fail('DB accessed') },
+        dispatcher: {},
+        errorTracking: { runWithErrorContext: () => assert.fail('async context created') },
+    }, ({ register }) => {
+        const { client, listeners } = createClient();
+        register(client);
+        const message = { guild: { id: 'guild' }, author: { id: 'user' }, content: 'こんにちは！今日もよろしくお願いします。' };
+        assert.equal(listeners[1](message), undefined);
+    });
+});
+
+test('active messages retain role restrictions across cache eviction and duplicate Gateway delivery', async () => {
+    let member = { roles: { cache: new Map([['disabled', {}]]) } };
+    let checks = 0;
+    const provider = { id: 'twitter', extract: () => assert.fail('role restriction lost') };
+    await withMessageCreateMocks({
+        utils: { cleanMessageContent: content => content, ifUserHasRole: realUtils.ifUserHasRole },
+        loader: { extractAllUrls: () => [{ provider, url: 'https://x.com/u/status/1' }] },
+        providerSettings: { getProviderSettings: async () => {
+            checks++;
+            member = null;
+            return { enabled: true, disable: { role: ['disabled'] } };
+        } },
+        dispatcher: { runSendSteps: () => assert.fail() },
+        errorTracking: { recordError: () => assert.fail('unexpected handler error') },
+    }, async ({ register }) => {
+        const { client, listeners } = createClient();
+        register(client);
+        const message = {
+            id: 'message', guild: { id: 'guild' }, channel: { id: 'channel' },
+            author: { id: 'user' }, content: 'https://x.com/u/status/1',
+            get member() { return member; },
+        };
+        await listeners[1](message);
+        await listeners[1](message);
+        assert.equal(checks, 1);
+    });
+});
+
+test('member evicted while constructing a reply is restored before provider role checks', async () => {
+    const member = { id: 'user', roles: { cache: new Map([['restricted', {}]]) } };
+    let fetched = 0;
+    let extracted = 0;
+    const provider = { id: 'twitter', extract: async message => {
+        assert.equal(message.member, member);
+        extracted++;
+        return null;
+    } };
+    await withMessageCreateMocks({
+        utils: { cleanMessageContent: content => content },
+        loader: { extractAllUrls: () => [{ provider, url: 'https://x.com/u/status/1' }] },
+        providerSettings: { getProviderSettings: async () => ({ enabled: true }) },
+        dispatcher: {},
+        errorTracking: { recordMetric() {}, recordError: () => assert.fail() },
+    }, async ({ register }) => {
+        const { client, listeners } = createClient();
+        register(client);
+        await listeners[1]({
+            id: 'reply', guild: { id: 'guild', members: { fetch: async () => { fetched++; return member; } } },
+            channel: { id: 'channel' }, author: { id: 'user' }, member: null,
+            content: 'https://x.com/u/status/1',
+        });
+        assert.equal(fetched, 1);
+        assert.equal(extracted, 1);
+    });
+});
+
 test('messageCreate fetches uncached guild member before role disable check', async () => {
     const disabledRoleId = 'role-disabled';
     const provider = {
@@ -145,4 +216,3 @@ test('messageCreate fetches uncached guild member before role disable check', as
     assert.deepEqual(fetchCalls, ['user-1']);
     assert.equal(sendCalls.length, 0);
 });
-
