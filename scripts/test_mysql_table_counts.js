@@ -89,6 +89,16 @@ async function main() {
             assert.equal(BigInt(row.shared_users), 1n);
             assert.equal(BigInt(row.shared_guilds), row.target_provider_id === 'twitter' ? 10n : 1n);
         }
+        await query(`INSERT INTO bot_provider_content_events (content_event_id,occurred_at_ms,provider_id,account_key)
+            VALUES (10,100,'p','a'),(11,100,'p','a')`);
+        await query(`INSERT INTO bot_provider_content_facets (content_event_id,provider_id,account_key,facet_key,numeric_value,occurred_at_ms)
+            VALUES (10,'p','a','metric',3,100),(10,'p','a','metric',4,100),(11,'p','a','metric',5,100)`);
+        const { providerFacetSummaryQuery } = loadDashboard('lib/provider-facet-summary-query.ts');
+        const [facetSummary] = await query(providerFacetSummaryQuery, [50, 50]);
+        assert.equal(Number(facetSummary.count), 3);
+        assert.equal(Number(facetSummary.avg_numeric_value), 4);
+        assert.equal(Number(facetSummary.sum_numeric_value), 12);
+        assert.equal(Number(facetSummary.content_events), 2);
         const verified = [];
         for (const { table } of counts.TABLES) verified.push(await counts.verify(query, table));
         await counts.seed(query, 'bot_metric_buckets', { reseed: true });
