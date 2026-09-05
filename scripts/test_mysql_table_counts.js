@@ -74,7 +74,6 @@ async function main() {
         await Promise.all([query(bulk), concurrent.query(bulk)]);
         await Promise.all([query('ROLLBACK'), concurrent.query('ROLLBACK')]);
         assert.equal(await counts.observedCount(query, 'bot_error_events'), 1n);
-        await query('CREATE INDEX idx_analytics_event_time ON bot_analytics_events(event_type,occurred_at_ms)');
         for (let guild = 0; guild < 10; guild++) {
             await query(`INSERT INTO bot_analytics_events (occurred_at_ms,event_type,author_user_id,provider_id,account_key,guild_id,endpoint_key)
                 VALUES (100,'provider_extract','u','twitter','a',?,'/a'),(100,'provider_extract','u','twitter','a',?,'/a')`, [String(guild), String(guild)]);
