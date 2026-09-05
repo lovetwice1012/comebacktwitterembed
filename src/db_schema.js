@@ -597,7 +597,8 @@ const SCHEMA_STATEMENTS = [
         created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
         PRIMARY KEY (bucket_start_ms, provider_id, account_key, guild_id, content_type, event_type, key_type, key_hash),
         INDEX idx_provider_hourly_unique_lookup (provider_id, account_key, bucket_start_ms, key_type),
-        INDEX idx_provider_hourly_unique_guild (guild_id, bucket_start_ms, key_type)
+        INDEX idx_provider_hourly_unique_guild (guild_id, bucket_start_ms, key_type),
+        INDEX idx_provider_hourly_unique_event_key_time (event_type, key_type, bucket_start_ms)
     ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
 
     `CREATE TABLE IF NOT EXISTS ${TABLES.botErrorAlerts} (

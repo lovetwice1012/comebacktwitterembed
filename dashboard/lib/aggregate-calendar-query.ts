@@ -10,9 +10,10 @@ export function aggregateCalendarQuery(grain: 'hour' | 'weekday' | 'day', provid
   const providerCounts = providerScoped ? '' : `,provider_members AS (SELECT DISTINCT ${period},NULLIF(provider_id,'') AS member FROM periods),
     provider_counts AS (SELECT ${period},COUNT(member) AS providers FROM provider_members GROUP BY ${period})`;
   return `WITH periods AS (
-      SELECT ${expression} AS ${period},provider_id,account_key,${measures.join(',')}
+      SELECT ${expression} AS ${period},provider_id,account_key,COUNT(*) AS aggregate_rows,${sums}
       FROM bot_provider_hourly_aggregates WHERE bucket_start_ms>=? ${providerScoped ? "AND provider_id<>''" : ''}
-    ),totals AS (SELECT ${keys.join(',')},${providerScoped ? '' : 'COUNT(*) AS aggregate_rows,'}${sums}
+      GROUP BY ${period},provider_id,account_key
+    ),totals AS (SELECT ${keys.join(',')},${providerScoped ? '' : 'SUM(aggregate_rows) AS aggregate_rows,'}${sums}
       FROM periods GROUP BY ${keys.join(',')}),
     account_members AS (SELECT DISTINCT ${keys.join(',')},NULLIF(account_key,'') AS member FROM periods),
     account_counts AS (SELECT ${keys.join(',')},COUNT(member) AS accounts FROM account_members GROUP BY ${keys.join(',')})
