@@ -48,8 +48,10 @@ export function refreshReportSnapshot<T>(
       if (persist) void persist(snapshot).catch(error => console.warn('[adminAnalytics] Snapshot persistence failed:', error?.message));
       return snapshot;
     }).catch(error => {
-      entry.lastError = /time|deadline|interrupted/i.test(String(error?.message))
-        ? '集計が実行時間の上限に達しました。' : '統計の更新に失敗しました。';
+      entry.lastError = /Exact table count/i.test(String(error?.message))
+        ? '統計データの初期集計が完了していません。'
+        : /time|deadline|interrupted/i.test(String(error?.message))
+          ? '集計が実行時間の上限に達しました。' : '統計の更新に失敗しました。';
       entry.failedAtMs = Date.now();
       entry.retryAfterMs = entry.failedAtMs + 60000;
       console.warn('[adminAnalytics] Report update failed:', String(error?.message || error).slice(0, 500));

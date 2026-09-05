@@ -7131,7 +7131,9 @@ export async function getAdminOverview(options: { forceRefresh?: boolean } = {})
   if (options.forceRefresh || shouldRefreshAnalyticsCacheEntry(adminOverviewCacheState)) {
     void refreshAdminOverviewCache().catch(() => undefined);
   }
-  if (options.forceRefresh || shouldRefreshAnalyticsCacheEntry(adminAdvancedAnalyticsCacheState)) {
+  // During the one-time counter initialization, do not compete with the
+  // maintenance scan. The next poll starts the full report once overview is ready.
+  if (adminOverviewCacheState.snapshot && (options.forceRefresh || shouldRefreshAnalyticsCacheEntry(adminAdvancedAnalyticsCacheState))) {
     void refreshAdminAdvancedAnalyticsCache().catch(() => undefined);
   }
 
