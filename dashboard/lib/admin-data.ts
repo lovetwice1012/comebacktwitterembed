@@ -12,7 +12,7 @@ import type { DashboardLocale } from "@/lib/i18n";
 import { detailedInterestQuery } from "@/lib/analytics-interest-query";
 import { audienceInterestQuery } from "@/lib/audience-interest-query";
 import { providerFacetSummaryQuery } from "@/lib/provider-facet-summary-query";
-import { settingImpactSummaryQuery } from "@/lib/setting-attribution-query";
+import { settingImpactSummaryQuery, settingChangeImpactQuery } from "@/lib/setting-attribution-query";
 import { facetObservationCountsQuery, facetSchemaDriftQuery } from "@/lib/facet-quality-queries";
 import { loadSnapshotOnce, pruneReportEntries, refreshReportSnapshot, withReportCacheMetadata, type ReportFailureState } from "@/lib/report-cache";
 import { limitAnalyticsReads, QueryLimiter } from "@/lib/analytics-query-limit";
@@ -1785,46 +1785,13 @@ async function getMediaDeliveryAnalytics(startMs: number) {
 
 async function getSettingChangeImpact(startMs: number) {
   const rows = await prisma.$queryRawUnsafe<Array<Record<string, unknown>>>(
-    `SELECT
-       a.audit_log_id,
-       a.guild_id,
-       a.provider_id,
-       a.setting_key,
-       a.action,
-       UNIX_TIMESTAMP(a.created_at) * 1000 AS changed_at_ms,
-       (
-         SELECT COUNT(*)
-         FROM bot_provider_content_events c
-         WHERE c.occurred_at_ms >= (UNIX_TIMESTAMP(a.created_at) * 1000) - ?
-           AND c.occurred_at_ms < UNIX_TIMESTAMP(a.created_at) * 1000
-           AND (a.guild_id IS NULL OR c.guild_id = a.guild_id)
-           AND (a.provider_id IS NULL OR c.provider_id = a.provider_id)
-       ) AS content_before,
-       (
-         SELECT COUNT(*)
-         FROM bot_provider_content_events c
-         WHERE c.occurred_at_ms >= UNIX_TIMESTAMP(a.created_at) * 1000
-           AND c.occurred_at_ms < (UNIX_TIMESTAMP(a.created_at) * 1000) + ?
-           AND (a.guild_id IS NULL OR c.guild_id = a.guild_id)
-           AND (a.provider_id IS NULL OR c.provider_id = a.provider_id)
-       ) AS content_after,
-       (
-         SELECT COUNT(DISTINCT c.author_user_id)
-         FROM bot_provider_content_events c
-         WHERE c.occurred_at_ms >= UNIX_TIMESTAMP(a.created_at) * 1000
-           AND c.occurred_at_ms < (UNIX_TIMESTAMP(a.created_at) * 1000) + ?
-           AND (a.guild_id IS NULL OR c.guild_id = a.guild_id)
-           AND (a.provider_id IS NULL OR c.provider_id = a.provider_id)
-       ) AS users_after
-     FROM dashboard_audit_logs a
-     WHERE a.created_at >= ?
-       AND (a.provider_id IS NOT NULL OR a.guild_id IS NOT NULL)
-     ORDER BY a.created_at DESC
-     LIMIT 60`,
-    7 * DAY_MS,
-    7 * DAY_MS,
-    7 * DAY_MS,
+    settingChangeImpactQuery(`SELECT audit_log_id,guild_id,provider_id,setting_key,action,
+      UNIX_TIMESTAMP(created_at)*1000 AS changed_at_ms
+      FROM dashboard_audit_logs WHERE created_at>=?
+        AND (provider_id IS NOT NULL OR guild_id IS NOT NULL)
+      ORDER BY created_at DESC LIMIT 60`),
     new Date(startMs),
+    7 * DAY_MS,
   );
   return protectSmallGroupRows(rows.map((row) => ({
     ...maskRow(row),

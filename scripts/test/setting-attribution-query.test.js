@@ -31,3 +31,30 @@ test('scoped audit aggregation preserves wildcard scopes, overlapping windows, n
     try { assert.deepEqual(normalize(db.prepare(settingImpactSummaryQuery(scope)).all(0,10)),normalize(db.prepare(original).all(0,10,10))); }
     finally { db.close(); }
 });
+
+test('latest setting impacts select the requested audits before scoped content joins', () => {
+    const { settingChangeImpactQuery } = loadDashboard('lib/setting-attribution-query.ts');
+    const db = new DatabaseSync(':memory:');
+    db.exec(`CREATE TABLE audit_input(audit_log_id INTEGER,guild_id TEXT,provider_id TEXT,setting_key TEXT,action TEXT,changed_at_ms INTEGER);
+      CREATE TABLE bot_provider_content_events(guild_id TEXT,provider_id TEXT,occurred_at_ms INTEGER,author_user_id TEXT)`);
+    const insertAudit = db.prepare('INSERT INTO audit_input VALUES (?,?,?,?,?,?)');
+    for (let i=0;i<80;i++) {
+        const [guild,provider] = [['g1','p1'],['g1',null],[null,'p1'],['missing','missing'],['','p1']][i%5];
+        insertAudit.run(i,guild,provider,null,'change',100+i);
+    }
+    const insertFact = db.prepare('INSERT INTO bot_provider_content_events VALUES (?,?,?,?)');
+    for (const time of [99,100,109,110,119,120,129,130,139,159,179,189]) for (const guild of ['g1','g2','']) for (const provider of ['p1','p2']) {
+        insertFact.run(guild,provider,time,'u1'); insertFact.run(guild,provider,time,'u1'); insertFact.run(guild,provider,time,null);
+    }
+    const scope = 'SELECT * FROM audit_input WHERE changed_at_ms>=? ORDER BY changed_at_ms DESC LIMIT 60';
+    const matching = '(a.guild_id IS NULL OR c.guild_id=a.guild_id) AND (a.provider_id IS NULL OR c.provider_id=a.provider_id)';
+    const original = `SELECT a.*,
+      (SELECT COUNT(*) FROM bot_provider_content_events c WHERE ${matching} AND c.occurred_at_ms>=a.changed_at_ms-? AND c.occurred_at_ms<a.changed_at_ms) AS content_before,
+      (SELECT COUNT(*) FROM bot_provider_content_events c WHERE ${matching} AND c.occurred_at_ms>=a.changed_at_ms AND c.occurred_at_ms<a.changed_at_ms+?) AS content_after,
+      (SELECT COUNT(DISTINCT c.author_user_id) FROM bot_provider_content_events c WHERE ${matching} AND c.occurred_at_ms>=a.changed_at_ms AND c.occurred_at_ms<a.changed_at_ms+?) AS users_after
+      FROM (${scope}) a ORDER BY changed_at_ms DESC`;
+    try {
+        assert.deepEqual(db.prepare(settingChangeImpactQuery(scope)).all(0,10),db.prepare(original).all(10,10,10,0));
+        assert.deepEqual(db.prepare(settingChangeImpactQuery(scope)).all(999,10),[]);
+    } finally { db.close(); }
+});
