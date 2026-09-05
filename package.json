@@ -37,6 +37,7 @@
     "@types/node": "^22.19.17",
     "eslint": "^9.39.4",
     "globals": "^15.15.0",
+    "mysql2": "3.24.3",
     "typescript": "^5.9.3"
   }
 }

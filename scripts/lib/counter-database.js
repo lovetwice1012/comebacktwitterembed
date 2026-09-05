@@ -1,6 +1,7 @@
 'use strict';
 const fs = require('node:fs');
-const mysql = require('mysql');
+// MySQL 8 administrative accounts can use caching_sha2_password.
+const mysql = require('mysql2');
 
 function option(name, fallback = undefined) {
     const index = process.argv.indexOf(name);
