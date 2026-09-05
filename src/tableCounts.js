@@ -33,7 +33,7 @@ function shardExpression(target, record) {
     return `MOD(CRC32(CONCAT_WS(CHAR(31), ${target.key.map(key => `${record}.\`${key}\``).join(', ')})), ${SHARDS})`;
 }
 
-function triggerDefinitions(table) {
+function triggerDefinitions(table, legacyShards = false) {
     const target = targetFor(table);
     const definitions = ['INSERT', 'DELETE'].map(event => {
         const sign = event === 'INSERT' ? '+' : '-';
@@ -41,14 +41,14 @@ function triggerDefinitions(table) {
         const record = event === 'INSERT' ? 'NEW' : 'OLD';
         return {
             name: `cbte_tc_${target.alias}_${event === 'INSERT' ? 'ai' : 'ad'}_v1`,
-            table, timing: 'AFTER', event,
+            table, timing: 'AFTER', event, replace: false,
             body: `INSERT INTO ${DELTAS} (table_name, shard_id, delta)
-                VALUES ('${table}', ${shardExpression(target, record)}, ${value})
+                VALUES ('${table}', ${legacyShards ? shardExpression(target, record) : `MOD(CONNECTION_ID(), ${SHARDS})`}, ${value})
                 ON DUPLICATE KEY UPDATE delta = delta ${sign} 1`,
         };
     });
     if (table === 'bot_provider_content_events') definitions.unshift({
-        name: 'cbte_tc_content_bd_v1', table, timing: 'BEFORE', event: 'DELETE',
+        name: 'cbte_tc_content_bd_v1', table, timing: 'BEFORE', event: 'DELETE', replace: false,
         // InnoDB cascades do not fire child DELETE triggers. Delete children
         // explicitly first; the existing FK cascade then has nothing left.
         body: 'DELETE FROM bot_provider_content_facets WHERE content_event_id = OLD.content_event_id',
@@ -58,7 +58,7 @@ function triggerDefinitions(table) {
 
 function canonicalSql(sql) { return String(sql).replace(/`/g, '').replace(/\s+/g, ' ').trim().toLowerCase(); }
 
-async function assertTriggers(query, table, allowMissing = false) {
+async function assertTriggers(query, table, allowMissing = false, upgradeOwned = false) {
     const rows = await query(`SELECT TRIGGER_NAME, ACTION_TIMING, EVENT_MANIPULATION, ACTION_STATEMENT
         FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA = DATABASE() AND EVENT_OBJECT_TABLE = ?`, [table]);
     const byName = new Map(rows.map(row => [row.TRIGGER_NAME, row]));
@@ -71,13 +71,19 @@ async function assertTriggers(query, table, allowMissing = false) {
         }
         if (row.ACTION_TIMING !== trigger.timing || row.EVENT_MANIPULATION !== trigger.event
             || canonicalSql(row.ACTION_STATEMENT) !== canonicalSql(trigger.body)) {
+            const previous = triggerDefinitions(table, true).find(item => item.name === trigger.name);
+            if (upgradeOwned && row.ACTION_TIMING === trigger.timing && row.EVENT_MANIPULATION === trigger.event
+                && previous && canonicalSql(row.ACTION_STATEMENT) === canonicalSql(previous.body)) {
+                missing.push({ ...trigger, replace: true });
+                continue;
+            }
             throw new Error(`Counter trigger definition mismatch: ${trigger.name}`);
         }
     }
     return missing;
 }
 
-async function install(query) {
+async function install(query, upgradeOwned = false) {
     const lock = await query("SELECT GET_LOCK('cbte_table_counts_install_v1', 5) AS acquired");
     if (Number(lock[0]?.acquired) !== 1) throw new Error('Another counter installation is running.');
     try {
@@ -95,12 +101,13 @@ async function install(query) {
         const ordered = [...TABLES.filter(item => item.table !== 'bot_provider_content_events'), targetFor('bot_provider_content_events')];
         for (const { table } of ordered) {
             await query(`INSERT IGNORE INTO ${BASELINES} (table_name, counter_version) VALUES (?, ?)`, [table, VERSION]);
-            const missing = await assertTriggers(query, table, true);
+            const missing = await assertTriggers(query, table, true, upgradeOwned);
             if (missing.length) {
                 // Keep old baseline/deltas for a consistent reseed; never reset deltas
                 // underneath active writers or claim an untracked interval is exact.
                 await query(`UPDATE ${BASELINES} SET ready = 0 WHERE table_name = ?`, [table]);
                 for (const trigger of missing) {
+                    if (trigger.replace) await query(`DROP TRIGGER \`${trigger.name}\``);
                     await query(`CREATE TRIGGER \`${trigger.name}\` ${trigger.timing} ${trigger.event} ON \`${table}\`
                         FOR EACH ROW ${trigger.body}`);
                 }

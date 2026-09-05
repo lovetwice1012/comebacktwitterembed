@@ -63,6 +63,17 @@ async function main() {
         await query("INSERT INTO bot_error_events (occurred_at_ms,error_type) VALUES (1,'test')");
         await query("INSERT INTO bot_error_buckets (bucket_start_ms,bucket_size_seconds,error_type,severity) VALUES (1,60,'test','error')");
         await query("INSERT INTO bot_analytics_events (occurred_at_ms,event_type) VALUES (1,'test')");
+        // Each writer owns one counter shard for a transaction. A bulk insert
+        // must not hold all 16 shards and block another unrelated bulk insert.
+        const [firstId] = await query('SELECT MOD(CONNECTION_ID(),16) AS shard');
+        const [secondId] = await concurrent.query('SELECT MOD(CONNECTION_ID(),16) AS shard');
+        assert.notEqual(firstId.shard, secondId.shard, 'validation connections need distinct shards');
+        await query('START TRANSACTION');
+        await concurrent.query('START TRANSACTION');
+        const bulk = `INSERT INTO bot_error_events (occurred_at_ms,error_type) VALUES ${Array(50).fill("(1,'parallel')").join(',')}`;
+        await Promise.all([query(bulk), concurrent.query(bulk)]);
+        await Promise.all([query('ROLLBACK'), concurrent.query('ROLLBACK')]);
+        assert.equal(await counts.observedCount(query, 'bot_error_events'), 1n);
         await query('CREATE INDEX idx_analytics_event_time ON bot_analytics_events(event_type,occurred_at_ms)');
         for (let guild = 0; guild < 10; guild++) {
             await query(`INSERT INTO bot_analytics_events (occurred_at_ms,event_type,author_user_id,provider_id,account_key,guild_id,endpoint_key)

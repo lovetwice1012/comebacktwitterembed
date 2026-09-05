@@ -12,7 +12,7 @@ async function main() {
     const db = await connect(database, timeout);
     try {
         if (action === 'install') {
-            await counts.install(db.query);
+            await counts.install(db.query, process.argv.includes('--upgrade-owned'));
             console.log(JSON.stringify({ action, database, tables: counts.TABLES.length }));
             return;
         }
