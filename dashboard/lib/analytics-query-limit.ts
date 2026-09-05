@@ -1,5 +1,6 @@
 import { recordQueryFailure, reportLane, reportResourceHints, statementBudget, withSelectTimeout } from "./report-execution";
 import { createHash } from "node:crypto";
+import { compactUniqueMembershipCount } from "./unique-membership-query";
 
 export class QueryLimiter {
   private active = 0;
@@ -39,12 +40,12 @@ export function limitAnalyticsReads<T extends object>(client: T, limiter: QueryL
           try {
             const budget = statementBudget();
             if (property === "$queryRawUnsafe" && typeof args[0] === "string") {
-              return await value.apply(target, [withSelectTimeout(args[0], budget, reportResourceHints), ...args.slice(1)]);
+              return await value.apply(target, [withSelectTimeout(compactUniqueMembershipCount(args[0]), budget, reportResourceHints), ...args.slice(1)]);
             }
             if (property === "$queryRaw" && Array.isArray(args[0])) {
               const query = Reflect.get(target, "$queryRawUnsafe", target);
               if (typeof query !== "function") throw new Error('Raw SQL execution is unavailable');
-              return await query.apply(target, [withSelectTimeout(args[0].join('?'), budget, reportResourceHints), ...args.slice(1)]);
+              return await query.apply(target, [withSelectTimeout(compactUniqueMembershipCount(args[0].join('?')), budget, reportResourceHints), ...args.slice(1)]);
             }
             return await value.apply(target, args);
           } catch (error) { recordQueryFailure(error); throw error; }
@@ -61,7 +62,7 @@ export function limitAnalyticsReads<T extends object>(client: T, limiter: QueryL
         });
         return (...args: unknown[]) => {
           const sql = Array.isArray(args[0]) ? args[0].join('?') : String(args[0]);
-          const requestedTempBytes = Number(sql.match(/SET_VAR\(\s*tmp_table_size\s*=\s*(\d+)/i)?.[1] || 0);
+          const requestedTempBytes = Number(compactUniqueMembershipCount(sql).match(/SET_VAR\(\s*tmp_table_size\s*=\s*(\d+)/i)?.[1] || 0);
           const weight = requestedTempBytes > 268435456 ? heavyLimiter.capacity : 1;
           return reportLane() === "analytics" && heavyLimiter !== limiter
             ? heavyLimiter.run(() => run(...args), weight) : run(...args);
