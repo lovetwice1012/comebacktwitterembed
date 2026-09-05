@@ -1,0 +1,5 @@
+/cbte-admin
+/cbte-admin.exe
+/state/
+*.db*
+*.test

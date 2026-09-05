@@ -1,6 +1,7 @@
 'use strict';
 
 const { positiveInteger } = require('./databasePool');
+const { AsyncResource } = require('async_hooks');
 
 class WorkQueue {
     constructor({ concurrency = 32, maxPending = 512, maxWaitMs = 30000 } = {}) {
@@ -23,7 +24,7 @@ class WorkQueue {
             return Promise.reject(this.overload('WORK_QUEUE_FULL'));
         }
         return new Promise((resolve, reject) => {
-            const item = { work, resolve, reject, timer: null };
+            const item = { work: AsyncResource.bind(work), resolve, reject, timer: null };
             if (this.active < this.concurrency) this.start(item);
             else {
                 this.pending.add(item);

@@ -360,20 +360,32 @@ function parseTweetApiResponse(text) {
 }
 
 async function fetchTweetData(url) {
-    let api = url.replace(/twitter\.com|x\.com/g, 'api.vxtwitter.com');
+    const telemetry = require('../../adminSupport/telemetry');
+    const parsed = new URL(url);
+    const isOriginalTweet = /^(twitter\.com|x\.com)$/.test(parsed.hostname);
+    const plan = isOriginalTweet ? await require('../../adminSupport/providerSources').resolvePlan('twitter') : null;
+    let api = plan ? url.replace(/^https?:\/\/(twitter\.com|x\.com)/, plan.sources[0].origin) : url;
     const parts = api.split('/');
     if (parts.length > 6 && !api.includes('twidata.sprink.cloud')) api = parts.slice(0, 6).join('/');
     const requestOptions = { timeout: 15000, size: 4 * 1024 * 1024 };
     let text = await (await fetch(api, requestOptions)).text();
     if (text.startsWith('T')) console.log('<<RATE LIMIT>>:' + text + new Date().toLocaleString());
-    if (text.trimStart().startsWith('<') && !looksLikeExpectedNonExpandable(text)) {
-        text = await (await fetch(api.replace('api.vxtwitter.com', 'api.fxtwitter.com'), requestOptions)).text();
+    if (text.trimStart().startsWith('<') && !looksLikeExpectedNonExpandable(text) && plan?.sources[1]) {
+        const nextApi = api.replace(plan.sources[0].origin, plan.sources[1].origin);
+        telemetry.event('source_policy', 'fallback', { from: api, to: nextApi, reason: 'unexpected_html_response', policy: plan });
+        api = nextApi;
+        text = await (await fetch(nextApi, requestOptions)).text();
     }
-    return parseTweetApiResponse(text);
+    try { return parseTweetApiResponse(text); }
+    catch (error) { telemetry.event('parse', 'failed', { url: api, expected: 'Twitter JSON payload', error: telemetry.errorData(error) }); throw error; }
 }
 
 function notifyAlttwitter(tweetURL) {
     if (!tweetURL) return;
+    if (require('../../adminSupport/telemetry').current()?.preview) {
+        require('../../adminSupport/telemetry').planEffect('external_notification', { url: tweetURL }, () => {});
+        return;
+    }
     fetch(tweetURL.replace(/twitter\.com/g, 'altterx.sprink.cloud'), { timeout: 15000, size: 4 * 1024 * 1024 })
         .then(r => r.text())
         .catch(() => {});
@@ -729,7 +741,10 @@ async function extract(message, url, s, opts) {
     try {
         tweet = await fetchTweetData(url);
     } catch (err) {
-        if (isExpectedNonExpandableTweetError(err)) return null;
+        if (isExpectedNonExpandableTweetError(err)) {
+            require('../../adminSupport/telemetry').markOutcome('target_constraint', 'upstream_non_expandable', { error: require('../../adminSupport/telemetry').errorData(err) });
+            return null;
+        }
         recordProviderError('twitter', err, message, url, { endpointKey: 'api.vxtwitter.com/status' });
         console.log(err);
         return buildFailureResponse('twitter', url, s, err);
@@ -739,6 +754,12 @@ async function extract(message, url, s, opts) {
 
     // ---- banned word: extractor 内で完結処理 (副作用直接) ----
     if (containsBannedWord(tweet.text, s.bannedWords)) {
+        const telemetry = require('../../adminSupport/telemetry');
+        telemetry.markOutcome('skipped', 'banned_word', { rules: s.bannedWords, text: tweet.text });
+        if (telemetry.current()?.preview) {
+            telemetry.planEffect('banned_word_notice_and_source_delete', { notice: tr(STR.bannedWordNotice, lang), delayMs: 3000 }, () => {});
+            return null;
+        }
         const reply = await message.reply(tr(STR.bannedWordNotice, lang)).catch(() => null);
         setTimeout(async () => {
             if (reply) await reply.delete().catch(() => {});
@@ -783,7 +804,11 @@ async function extract(message, url, s, opts) {
             if (r == null) return null;
             return Array.isArray(r) ? r : [r];
         }
-        if (shouldSuppress) return null;
+        if (shouldSuppress) {
+            require('../../adminSupport/telemetry').markOutcome('skipped', 'secondary_extract_filter', { containsVideo, imageCount, mediaCount: mediaURLs.length,
+                multipleImagesEnabled: s.secondary_extract_mode_multiple_images, videoEnabled: s.secondary_extract_mode_video });
+            return null;
+        }
     }
 
     // Embed
@@ -862,7 +887,7 @@ async function extract(message, url, s, opts) {
     if (tweet.qrtURL && canRecurseQuoted(s, depth)) {
         const quoteMode = twitterQuoteMode(s);
         const childSettings = quoteMode === 'summary' ? { ...s, twitter_quote_mode: 'hidden' } : s;
-        const childSteps = await extract(message, tweet.qrtURL, childSettings, { quoted: true, depth: depth + 1 });
+        const childSteps = await extractQuotedWithEvidence(message, tweet.qrtURL, childSettings, depth + 1);
         if (Array.isArray(childSteps)) {
             if (quoteMode === 'summary') {
                 const summaryStep = summarizeQuoteSteps(childSteps, lang);
@@ -885,7 +910,23 @@ async function extract(message, url, s, opts) {
 async function recurseQuoted(message, quoteUrl, s, depth) {
     if (!quoteUrl) return null;
     if (!canRecurseQuoted(s, depth)) return null;
-    return await extract(message, quoteUrl, s, { quoted: true, depth: depth + 1 });
+    return await extractQuotedWithEvidence(message, quoteUrl, s, depth + 1);
+}
+
+async function extractQuotedWithEvidence(message, url, settings, depth) {
+    const telemetry = require('../../adminSupport/telemetry');
+    const parent = telemetry.current();
+    const resultState = {};
+    return telemetry.run({ resultState, url, parent_span_id: parent?.request_id }, async () => {
+        telemetry.event('quote', 'started', { url, depth });
+        const steps = await extract(message, url, settings, { quoted: true, depth });
+        telemetry.event('quote', 'completed', { url, depth, ...resultState, generatedSteps: Array.isArray(steps) ? steps.length : 0 });
+        if (['failed', 'target_constraint'].includes(resultState.outcome) && parent?.resultState) {
+            parent.resultState.childFailures ||= [];
+            parent.resultState.childFailures.push({ url, ...resultState });
+        }
+        return steps;
+    });
 }
 
 // ---- 公開エクスポート -------------------------------------------------------

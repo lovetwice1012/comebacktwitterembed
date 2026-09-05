@@ -1,4 +1,5 @@
 import { NextRequest } from "next/server";
+import { getIndependentAdminReport, independentReportsEnabled } from "@/lib/admin-report-client";
 import { errorResponse, json, requireAdminSession } from "@/lib/api";
 import { getAdminDetailedAnalytics } from "@/lib/admin-data";
 import { getDashboardLocaleFromRequest } from "@/lib/server-locale";
@@ -6,9 +7,9 @@ import { getDashboardLocaleFromRequest } from "@/lib/server-locale";
 export async function GET(req: NextRequest) {
   const locale = getDashboardLocaleFromRequest(req);
   try {
-    await requireAdminSession(locale);
+    const session = await requireAdminSession(locale);
     const search = req.nextUrl.searchParams;
-    return json(await getAdminDetailedAnalytics({
+    const filters = {
       providerId: search.get("provider_id"),
       accountKey: search.get("account_key"),
       guildId: search.get("guild_id"),
@@ -22,7 +23,10 @@ export async function GET(req: NextRequest) {
       dateTo: search.get("date_to"),
       bucket: search.get("bucket"),
       limit: search.get("limit"),
-    }, { forceRefresh: search.get("refresh") === "1" }));
+    };
+    const forceRefresh = search.get("refresh") === "1";
+    if (independentReportsEnabled()) return json(await getIndependentAdminReport("analytics", filters, session.user.id, forceRefresh));
+    return json(await getAdminDetailedAnalytics(filters, { forceRefresh }));
   } catch (error) {
     return errorResponse(error, locale);
   }

@@ -643,7 +643,7 @@ async function getSetting(providerInput, key, guildId) {
     return await getScalarSetting(provider, key, guildId);
 }
 
-async function setSetting(providerInput, key, guildId, value) {
+async function setSettingNow(providerInput, key, guildId, value) {
     const provider = normalizeProvider(providerInput);
     if (isTestStorageMode()) {
         const result = setTestMemorySetting(provider, key, guildId, value);
@@ -657,6 +657,27 @@ async function setSetting(providerInput, key, guildId, value) {
     else if (key === 'button_invisible') await setButtonVisibility(provider, guildId, value);
     else await setScalarSetting(provider, key, guildId, value);
     await publishProviderSettingsInvalidation(provider.id, guildId);
+}
+
+async function setSetting(providerInput, key, guildId, value) {
+    if (isTestStorageMode()) return setSettingNow(providerInput, key, guildId, value);
+    const provider = normalizeProvider(providerInput);
+    await ensureDatabaseSchema();
+    const telemetry = require('../adminSupport/telemetry');
+    const context = telemetry.current();
+    const result = await require('../db').withDatabaseTransaction(async query => {
+        await ensureProviderAndGuild(provider.id, guildId);
+        await query(`INSERT IGNORE INTO ${TABLES.guildProviderSettings} (provider_id,guild_id) VALUES (?,?)`, [provider.id,guildId]);
+        await query(`SELECT guild_id FROM ${TABLES.guildProviderSettings} WHERE provider_id=? AND guild_id=? FOR UPDATE`, [provider.id,guildId]);
+        const before = await getSetting(provider, key, guildId);
+        await setSettingNow(provider, key, guildId, value);
+        const after = await getSetting(provider, key, guildId);
+        await query(`INSERT INTO ${TABLES.dashboardAuditLogs} (guild_id,provider_id,setting_key,actor_user_id,action,before_json,after_json,request_id) VALUES (?,?,?,?,?,?,?,?)`,
+            [guildId,provider.id,key,context?.user_id || process.env.ADMIN_OWNER_ID || 'system','setting.set',JSON.stringify(before) ?? null,JSON.stringify(after) ?? null,context?.operation_id || null]);
+        return { before, after };
+    });
+    telemetry.event('settings', 'changed', { guildId, providerId: provider.id, key, ...result });
+    return undefined;
 }
 
 async function getProviderSettings(providerInput, guildId) {
@@ -806,6 +827,7 @@ module.exports = {
     getSaveTweetQuotaOverride,
     setSaveTweetQuotaOverride,
     _internal: {
+        settingDefault,
         normalizeButtonDisabled,
         normalizeButtonVisibility,
         normalizeQuoteDepthByAccount,

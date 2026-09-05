@@ -1,0 +1,32 @@
+[Unit]
+Description=CBTE bounded privileged management executor
+After=local-fs.target
+StartLimitIntervalSec=300
+StartLimitBurst=3
+
+[Service]
+Type=simple
+User=root
+Group=root
+EnvironmentFile=/etc/cbte-admin/executor.env
+ExecStart=/opt/cbte-admin/current/cbte-admin executor
+StateDirectory=cbte-admin-executor
+StateDirectoryMode=0700
+RuntimeDirectory=cbte-admin-executor
+RuntimeDirectoryMode=0750
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=10
+KillMode=control-group
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/cbte-admin-executor /run/cbte-admin-executor
+RestrictAddressFamilies=AF_UNIX
+MemoryMax=128M
+CPUQuota=20%
+TasksMax=32
+
+[Install]
+WantedBy=multi-user.target

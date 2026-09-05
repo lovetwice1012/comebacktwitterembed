@@ -1,0 +1,29 @@
+[Unit]
+Description=CBTE independent external management witness
+After=network.target
+StartLimitIntervalSec=300
+StartLimitBurst=3
+
+[Service]
+Type=notify
+User=cbte-admin-witness
+Group=cbte-admin-witness
+EnvironmentFile=/etc/cbte-admin/witness.env
+ExecStart=/opt/cbte-admin/current/cbte-admin witness
+StateDirectory=cbte-admin-witness
+StateDirectoryMode=0700
+Restart=on-failure
+RestartSec=5
+WatchdogSec=90
+TimeoutStopSec=10
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/cbte-admin-witness
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+MemoryMax=128M
+CPUQuota=15%
+
+[Install]
+WantedBy=multi-user.target

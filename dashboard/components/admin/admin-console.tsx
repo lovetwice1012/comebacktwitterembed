@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { ManagementConsole, RawEvidence } from "@/components/admin/management-console";
 import {
   Activity,
   BarChart3,
@@ -24,7 +25,7 @@ import { Input, Textarea } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import type { DashboardUser, SettingState } from "@/lib/types";
 
-type AdminTab = "overview" | "analytics" | "guildPreview" | "providerPreview" | "logs" | "database" | "support";
+type AdminTab = "management" | "overview" | "analytics" | "guildPreview" | "providerPreview" | "logs" | "database" | "support";
 type Row = Record<string, unknown>;
 const REPORT_CACHE_POLL_MS = 5000;
 
@@ -296,6 +297,8 @@ type AdminAuditLog = {
 };
 
 type AdminLogs = {
+  nextCursor?: string | null;
+  availability?: Record<string, { state: string; error?: string }>;
   auditLogs: AdminAuditLog[];
   errorEvents: Row[];
   limit: number;
@@ -335,6 +338,7 @@ type SupportSettings = {
 };
 
 const tabs = [
+  { value: "management", label: "稼働・調査・操作", icon: ShieldCheck },
   { value: "guildPreview", label: "サーバー分析", icon: Activity },
   { value: "providerPreview", label: "マーケ分析", icon: ClipboardList },
   { value: "analytics", label: "詳細分析", icon: BarChart3 },
@@ -370,7 +374,7 @@ function formatDate(value: unknown) {
     ? new Date(Number(value))
     : new Date(String(value));
   if (Number.isNaN(date.getTime())) return String(value);
-  return new Intl.DateTimeFormat("ja-JP", { dateStyle: "short", timeStyle: "medium" }).format(date);
+  return new Intl.DateTimeFormat("ja-JP", { dateStyle: "short", timeStyle: "medium", timeZone: "Asia/Tokyo" }).format(date);
 }
 
 function formatCell(value: unknown) {
@@ -380,16 +384,10 @@ function formatCell(value: unknown) {
 }
 
 function formatPercent(value: unknown) {
-  if (value === null || value === undefined || value === "") return "-";
+  if (value === null || value === undefined || value === "") return "対象なし / 未取得";
   const numeric = Number(value);
   if (!Number.isFinite(numeric)) return "-";
   return `${(numeric * 100).toFixed(1)}%`;
-}
-
-function rate(numerator: unknown, denominator: unknown) {
-  const top = Number(numerator) || 0;
-  const bottom = Number(denominator) || 0;
-  return bottom > 0 ? top / bottom : 0;
 }
 
 function withPercentRows(rows: Row[], keys: string[]) {
@@ -453,7 +451,7 @@ function signalLabel(value: unknown) {
     cross_guild_reach: "複数サーバーに広がっています",
     repeat_interest: "同じ層が繰り返し見ています",
     high_volume: "表示量が多いです",
-    early_signal: "初期反応です",
+    early_signal: "初期利用です",
     demand_with_reliability_risk: "需要はありますが成功率に注意です",
     core_driver: "主力要因",
     growth_driver: "伸びている要因",
@@ -855,7 +853,7 @@ function AdvancedAnalyticsPanel({ analytics }: { analytics: AdminAnalytics | nul
       <Card>
         <CardHeader>
           <CardTitle>Decision insights</CardTitle>
-          <CardDescription>異常、品質欠損、低 health、設定変更効果、media delivery 価値から優先対応を並べます</CardDescription>
+          <CardDescription>処理失敗と計測不足の根拠を確認します。自動診断と修復は「稼働・調査・操作」に表示します</CardDescription>
         </CardHeader>
         <CardContent>
           <DataTable rows={withPercentRows(analytics.decisionInsights, ["current_rate", "baseline_rate", "delta_rate"])} maxColumns={9} />
@@ -1091,7 +1089,7 @@ function AdvancedAnalyticsPanel({ analytics }: { analytics: AdminAnalytics | nul
           <CardHeader>
             <CardTitle>Aggregate operational trend 7d</CardTitle>
             <CardDescription>
-              Heavy analytics computed from bot_provider_hourly_aggregates and bot_provider_hourly_unique_keys, including anonymized reach and URL uniqueness.
+              Heavy analytics computed from bot_provider_hourly_aggregates and bot_provider_hourly_unique_keys, including exact observed unique users, guilds and URLs.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -1202,7 +1200,7 @@ function AdvancedAnalyticsPanel({ analytics }: { analytics: AdminAnalytics | nul
         <Card>
           <CardHeader>
             <CardTitle>Content lifetime 30d</CardTitle>
-            <CardDescription>同じ URL / content がどれくらいの期間反応され続けているかを確認します。</CardDescription>
+            <CardDescription>同じ URL / content がどれくらいの期間利用され続けているかを確認します。</CardDescription>
           </CardHeader>
           <CardContent>
             <DataTable rows={analytics.contentLifetime} maxColumns={9} />
@@ -1222,7 +1220,7 @@ function AdvancedAnalyticsPanel({ analytics }: { analytics: AdminAnalytics | nul
         <Card>
           <CardHeader>
             <CardTitle>Seasonality 30d</CardTitle>
-            <CardDescription>Hourly and weekday demand from hourly aggregates, with anonymized unique reach.</CardDescription>
+            <CardDescription>Hourly and weekday demand from hourly aggregates, with unique users and guilds that shared content.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div>
@@ -1375,7 +1373,7 @@ function AdvancedAnalyticsPanel({ analytics }: { analytics: AdminAnalytics | nul
         <Card>
           <CardHeader>
             <CardTitle>Provider content URLs 7d</CardTitle>
-            <CardDescription>URL・タイトル単位の反応、ユニークユーザー、guild 数</CardDescription>
+            <CardDescription>URL・タイトル単位の利用、ユニークユーザー、guild 数</CardDescription>
           </CardHeader>
           <CardContent>
             <DataTable rows={analytics.providerContentUrls7d} maxColumns={9} />
@@ -1385,7 +1383,7 @@ function AdvancedAnalyticsPanel({ analytics }: { analytics: AdminAnalytics | nul
         <Card>
           <CardHeader>
             <CardTitle>Audience interests 7d</CardTitle>
-            <CardDescription>同じユーザーが他に反応した provider/account/endpoint</CardDescription>
+            <CardDescription>同じユーザーが他に利用した provider/account/endpoint</CardDescription>
           </CardHeader>
           <CardContent>
             <DataTable rows={analytics.audienceInterest7d} maxColumns={9} />
@@ -1510,7 +1508,7 @@ function DataTable({ rows, maxColumns = 8 }: { rows: Row[]; maxColumns?: number 
     <div className="overflow-auto rounded-md border">
       <table className="min-w-full border-collapse text-left text-xs">
         <thead className="bg-muted text-muted-foreground">
-          <tr>
+          <tr><th className="px-3 py-2">詳細</th>
             {columns.map((column) => (
               <th key={column} className="whitespace-normal break-words px-3 py-2 font-medium">{column}</th>
             ))}
@@ -1519,6 +1517,7 @@ function DataTable({ rows, maxColumns = 8 }: { rows: Row[]; maxColumns?: number 
         <tbody>
           {rows.map((row, index) => (
             <tr key={String(row.id || row.auditLogId || row.error_event_id || index)} className="border-t">
+              <td className="min-w-40 px-3 py-2 align-top"><RawEvidence value={row} label="全項目を開く" /></td>
               {columns.map((column) => (
                 <td key={column} className="min-w-24 max-w-[28rem] whitespace-normal break-words px-3 py-2 align-top" title={formatCell(row[column])}>
                   {formatCell(row[column])}
@@ -1703,6 +1702,7 @@ function buildDetailedAnalyticsSearch(filters: DetailedFilterState) {
     ["provider_id", filters.providerId],
     ["account_key", filters.accountKey],
     ["guild_id", filters.guildId],
+    ["author_user_id", filters.authorUserId],
     ["event_type", filters.eventType],
     ["command_name", filters.commandName],
     ["component_id", filters.componentId],
@@ -1718,331 +1718,8 @@ function buildDetailedAnalyticsSearch(filters: DetailedFilterState) {
   return search;
 }
 
-type DetailedCompoundRow = Row & {
-  provider_id: string;
-  account_key: string;
-  content_events: number;
-  users: number;
-  guilds: number;
-  urls: number;
-  content_share: number;
-  success_rate: number | null;
-  failures: number;
-  avg_duration_ms: number | null;
-  value_score: number;
-  segment_score: number;
-  opportunity_score: number;
-  risk_score: number;
-  best_signal: string;
-  weak_event_type: string;
-  verdict: string;
-  next_action: string;
-  reason: string;
-  guardrail: string;
-};
-
-type ReliabilityAggregate = {
-  events: number;
-  successes: number;
-  failures: number;
-  durationWeightedMs: number;
-  durationEvents: number;
-  worstSuccessRate: number | null;
-  weakEventType: string;
-};
-
-function providerAccountCompoundKey(providerId: unknown, accountKey: unknown) {
-  const provider = String(providerId || "").trim();
-  const account = String(accountKey || "").trim();
-  return provider ? `${provider}\u0001${account}` : "";
-}
-
-function compoundKeyFromRow(row: Row) {
-  return providerAccountCompoundKey(row.provider_id, row.account_key);
-}
-
-function bestRowsByKey(rows: Row[], scoreKey: string) {
-  const byKey = new Map<string, Row>();
-  for (const row of rows) {
-    const key = compoundKeyFromRow(row);
-    if (!key) continue;
-    const current = byKey.get(key);
-    if (!current || asNumber(row[scoreKey]) > asNumber(current[scoreKey])) byKey.set(key, row);
-  }
-  return byKey;
-}
-
-function aggregateReliabilityRows(rows: Row[]) {
-  const byKey = new Map<string, ReliabilityAggregate>();
-  for (const row of rows) {
-    const key = compoundKeyFromRow(row);
-    if (!key) continue;
-    const current = byKey.get(key) || {
-      events: 0,
-      successes: 0,
-      failures: 0,
-      durationWeightedMs: 0,
-      durationEvents: 0,
-      worstSuccessRate: null,
-      weakEventType: "",
-    };
-    const events = asNumber(row.events);
-    const successes = asNumber(row.successes);
-    const failures = asNumber(row.failures);
-    const avgDuration = maybeNumber(row.avg_duration_ms);
-    const successRate = maybeNumber(row.success_rate);
-    current.events += events;
-    current.successes += successes;
-    current.failures += failures;
-    if (avgDuration !== null && events > 0) {
-      current.durationWeightedMs += avgDuration * events;
-      current.durationEvents += events;
-    }
-    if (successRate !== null && (current.worstSuccessRate === null || successRate < current.worstSuccessRate)) {
-      current.worstSuccessRate = successRate;
-      current.weakEventType = String(row.event_type || "");
-    }
-    byKey.set(key, current);
-  }
-  return byKey;
-}
-
-function logScore(value: unknown, weight: number) {
-  return Math.log1p(Math.max(0, asNumber(value))) * weight;
-}
-
-function detailedVerdict(row: {
-  successRate: number | null;
-  valueScore: number;
-  segmentScore: number;
-  contentShare: number;
-  riskScore: number;
-}) {
-  if (row.successRate !== null && row.successRate < 0.9) return "需要あり・品質改善優先";
-  if (row.riskScore >= 55) return "伸ばす前にリスク確認";
-  if (row.valueScore >= 80 || row.segmentScore >= 80) return "伸長施策の候補";
-  if (row.contentShare >= 0.45) return "依存度を監視";
-  if (row.valueScore >= 35 || row.segmentScore >= 35) return "仮説検証の候補";
-  return "観測継続";
-}
-
-function detailedNextAction(row: {
-  successRate: number | null;
-  valueScore: number;
-  segmentScore: number;
-  contentShare: number;
-  riskScore: number;
-}) {
-  if (row.successRate !== null && row.successRate < 0.9) return "抽出/送信失敗の原因を先に潰す";
-  if (row.riskScore >= 55) return "失敗率と偏りを確認してから露出を増やす";
-  if (row.valueScore >= 80 || row.segmentScore >= 80) return "対象を絞ったレポートや推奨枠で検証する";
-  if (row.contentShare >= 0.45) return "単一アカウント依存になっていないか確認する";
-  return "期間を広げて傾向が再現するか見る";
-}
-
-function detailedGuardrail(row: {
-  contentEvents: number;
-  users: number;
-  guilds: number;
-  successRate: number | null;
-  contentShare: number;
-}) {
-  if (row.contentEvents < 20 || row.users < 5 || row.guilds < 2) return "母数が小さいため主張は控えめに扱う";
-  if (row.successRate === null) return "成功率が未計測のため品質判断は保留";
-  if (row.contentShare >= 0.5) return "全体の半分以上を占めるため偏りを明記する";
-  return "複数指標で整合";
-}
-
-function buildDetailedCompoundRows(analytics: AdminDetailedAnalytics | null): DetailedCompoundRow[] {
-  if (!analytics) return [];
-  const providerAccounts = analytics.providerAccounts || [];
-  const totalContent = asNumber(analytics.summary.content.content_events)
-    || providerAccounts.reduce((sum, row) => sum + asNumber(row.content_events), 0);
-  const reliabilityByKey = aggregateReliabilityRows(analytics.providerReliability || []);
-  const valueByKey = bestRowsByKey(analytics.valueDrivers || [], "value_score");
-  const segmentByKey = bestRowsByKey(analytics.providerSegments || [], "segment_score");
-  const fallbackSuccessRate = maybeNumber(analytics.summary.analytics.success_rate);
-
-  return providerAccounts.map((accountRow) => {
-    const providerId = String(accountRow.provider_id || "");
-    const accountKey = String(accountRow.account_key || "");
-    const key = providerAccountCompoundKey(providerId, accountKey);
-    const providerOnlyKey = providerAccountCompoundKey(providerId, "");
-    const reliability = reliabilityByKey.get(key) || reliabilityByKey.get(providerOnlyKey);
-    const valueRow = valueByKey.get(key) || valueByKey.get(providerOnlyKey);
-    const segmentRow = segmentByKey.get(key) || segmentByKey.get(providerOnlyKey);
-    const contentEvents = asNumber(accountRow.content_events);
-    const users = asNumber(accountRow.users);
-    const guilds = asNumber(accountRow.guilds);
-    const urls = asNumber(accountRow.urls);
-    const valueScore = asNumber(valueRow?.value_score);
-    const segmentScore = asNumber(segmentRow?.segment_score);
-    const successRate = reliability
-      ? (reliability.successes + reliability.failures > 0 ? rate(reliability.successes, reliability.successes + reliability.failures) : reliability.worstSuccessRate)
-      : fallbackSuccessRate;
-    const failures = reliability?.failures || 0;
-    const avgDurationMs = reliability && reliability.durationEvents > 0
-      ? reliability.durationWeightedMs / reliability.durationEvents
-      : null;
-    const contentShare = totalContent > 0 ? contentEvents / totalContent : 0;
-    const reliabilityRisk = successRate === null ? 12 : Math.max(0, 0.97 - successRate) * 140;
-    const failurePressure = failures > 0 ? Math.log1p(failures) * 18 : 0;
-    const concentrationRisk = Math.max(0, contentShare - 0.35) * 80;
-    const riskScore = Math.round(reliabilityRisk + failurePressure + concentrationRisk);
-    const reachScore = logScore(contentEvents, 20) + logScore(users, 18) + logScore(guilds, 16) + logScore(urls, 8);
-    const valueSignalScore = Math.min(valueScore, 180) * 0.35 + Math.min(segmentScore, 180) * 0.25;
-    const reliabilityMultiplier = successRate === null ? 0.85 : 0.65 + Math.max(0, Math.min(1, successRate)) * 0.35;
-    const opportunityScore = Math.max(0, Math.round((reachScore + valueSignalScore) * reliabilityMultiplier - riskScore * 0.35));
-    const bestSignal = valueRow
-      ? signalLabel(valueRow.value_signal || valueRow.value_tier)
-      : formatCell(segmentRow?.axis_label || segmentRow?.metric_label || "-");
-    const verdictInput = { successRate, valueScore, segmentScore, contentShare, riskScore };
-    const guardrailInput = { contentEvents, users, guilds, successRate, contentShare };
-    const reason = [
-      `${formatCount(contentEvents)}件`,
-      `${formatCount(users)}ユーザー`,
-      `${formatCount(guilds)}サーバー`,
-      valueScore ? `価値 ${formatCount(valueScore)}` : null,
-      segmentScore ? `軸 ${formatCount(segmentScore)}` : null,
-      successRate !== null ? `成功率 ${formatPercent(successRate)}` : "成功率未計測",
-    ].filter(Boolean).join(" / ");
-
-    return {
-      provider_id: providerId,
-      account_key: accountKey,
-      content_events: contentEvents,
-      users,
-      guilds,
-      urls,
-      content_share: contentShare,
-      success_rate: successRate,
-      failures,
-      avg_duration_ms: avgDurationMs,
-      value_score: valueScore,
-      segment_score: segmentScore,
-      opportunity_score: opportunityScore,
-      risk_score: riskScore,
-      best_signal: bestSignal,
-      weak_event_type: reliability?.weakEventType || "-",
-      verdict: detailedVerdict(verdictInput),
-      next_action: detailedNextAction(verdictInput),
-      reason,
-      guardrail: detailedGuardrail(guardrailInput),
-    };
-  }).sort((left, right) => right.opportunity_score - left.opportunity_score || right.risk_score - left.risk_score);
-}
-
-function buildDetailedActionRows(rows: DetailedCompoundRow[]) {
-  const selected = new Map<string, DetailedCompoundRow>();
-  for (const row of [...rows].sort((left, right) => right.risk_score - left.risk_score || right.opportunity_score - left.opportunity_score).slice(0, 4)) {
-    selected.set(providerAccountCompoundKey(row.provider_id, row.account_key), row);
-  }
-  for (const row of rows.slice(0, 6)) {
-    selected.set(providerAccountCompoundKey(row.provider_id, row.account_key), row);
-  }
-  return [...selected.values()].slice(0, 8).map((row) => ({
-    target: formatEntity(row, ["provider_id", "account_key"]),
-    priority: row.risk_score >= 55 ? "品質改善" : row.opportunity_score >= 90 ? "伸長施策" : row.verdict,
-    action: row.next_action,
-    opportunity_score: row.opportunity_score,
-    risk_score: row.risk_score,
-    basis: row.reason,
-    guardrail: row.guardrail,
-  }));
-}
-
 function CompoundAnalysisPanel({ analytics }: { analytics: AdminDetailedAnalytics | null }) {
-  const compoundRows = useMemo(() => buildDetailedCompoundRows(analytics), [analytics]);
-  const actionRows = useMemo(() => buildDetailedActionRows(compoundRows), [compoundRows]);
-  const topOpportunity = compoundRows[0];
-  const topRisk = topBy(compoundRows, "risk_score") as DetailedCompoundRow | undefined;
-  const totalContent = asNumber(analytics?.summary.content.content_events);
-  const totalUsers = asNumber(analytics?.summary.content.users);
-  const topShare = maybeNumber(topOpportunity?.content_share) || 0;
-  const confidenceTone = totalContent >= 100 && totalUsers >= 10 ? "success" : totalContent >= 20 ? "muted" : "warning";
-  const confidenceText = totalContent >= 100 && totalUsers >= 10
-    ? "判断材料として十分な母数があります。"
-    : totalContent >= 20
-      ? "方向性は見えますが、期間や条件を変えて再確認してください。"
-      : "母数が少ないため仮説として扱ってください。";
-  const insightItems: InsightItem[] = [
-    {
-      label: "攻める候補",
-      value: topOpportunity ? formatEntity(topOpportunity, ["provider_id", "account_key"]) : "-",
-      body: topOpportunity ? `${topOpportunity.verdict}。${topOpportunity.reason}` : "まだ十分な対象がありません。",
-      tone: topOpportunity ? "success" : "muted",
-    },
-    {
-      label: "先に直す候補",
-      value: topRisk && topRisk.risk_score > 0 ? formatEntity(topRisk, ["provider_id", "account_key"]) : "大きなリスクなし",
-      body: topRisk && topRisk.risk_score > 0 ? `${topRisk.next_action}。失敗 ${formatCount(topRisk.failures)}件 / 成功率 ${formatPercent(topRisk.success_rate)}` : "この範囲では品質面の強い警告はありません。",
-      tone: topRisk && topRisk.risk_score >= 55 ? "warning" : "success",
-    },
-    {
-      label: "偏り",
-      value: formatPercent(topShare),
-      body: topOpportunity ? `最上位対象が全体の ${formatPercent(topShare)} を占めます。高すぎる場合は分析主張に偏りを明記します。` : "偏りを計算できるデータがありません。",
-      tone: topShare >= 0.5 ? "warning" : "muted",
-    },
-    {
-      label: "分析信頼度",
-      value: `${formatCount(totalContent)}件 / ${formatCount(totalUsers)}ユーザー`,
-      body: confidenceText,
-      tone: confidenceTone,
-    },
-  ];
-  const opportunityRows = displayRows(compoundRows.slice(0, 10), [
-    { label: "対象", key: "provider_id", format: (_value, row) => formatEntity(row, ["provider_id", "account_key"]) },
-    { label: "複合優先度", key: "opportunity_score" },
-    { label: "リスク", key: "risk_score" },
-    { label: "展開数", key: "content_events" },
-    { label: "ユーザー", key: "users" },
-    { label: "サーバー", key: "guilds" },
-    { label: "占有率", key: "content_share", format: formatPercent },
-    { label: "成功率", key: "success_rate", format: formatPercent },
-    { label: "価値", key: "value_score" },
-    { label: "軸", key: "segment_score" },
-    { label: "判断", key: "verdict" },
-  ]);
-  const priorityRows = displayRows(actionRows, [
-    { label: "対象", key: "target" },
-    { label: "優先", key: "priority" },
-    { label: "次の打ち手", key: "action" },
-    { label: "攻め", key: "opportunity_score" },
-    { label: "リスク", key: "risk_score" },
-    { label: "根拠", key: "basis" },
-    { label: "注意", key: "guardrail" },
-  ]);
-
-  return (
-    <div className="space-y-4">
-      <Card>
-        <CardHeader>
-          <CardTitle>複合シグナル分析</CardTitle>
-          <CardDescription>単純な件数順ではなく、到達量、利用者、サーバー広がり、成功率、失敗、価値指標、セグメント反応、偏りを合わせて判断します。</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <InsightGrid items={insightItems} />
-        </CardContent>
-      </Card>
-      <div className="grid gap-4 xl:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle>優先アクション</CardTitle>
-            <CardDescription>伸ばす前に直すべきものと、すぐ検証しやすいものを混ぜて並べています。</CardDescription>
-          </CardHeader>
-          <CardContent><DataTable rows={priorityRows} maxColumns={7} /></CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle>複合スコア内訳</CardTitle>
-            <CardDescription>判断の根拠になる指標を同じ行にまとめています。</CardDescription>
-          </CardHeader>
-          <CardContent><DataTable rows={opportunityRows} maxColumns={11} /></CardContent>
-        </Card>
-      </div>
-    </div>
-  );
+  return <Card><CardHeader><CardTitle>利用量と処理結果の根拠</CardTitle><CardDescription>共有の件数・利用者・サーバー数を個別表示します。成功率は取得・送信など同じ処理段階ごとに確認してください。独自の健康度・価値・機会スコアは使用しません。</CardDescription></CardHeader><CardContent className="space-y-3"><DataTable rows={analytics?.providerAccounts || []} maxColumns={8} /><DataTable rows={analytics?.providerReliability || []} maxColumns={9} /></CardContent></Card>;
 }
 
 function DetailedAnalyticsPanel() {
@@ -2116,26 +1793,26 @@ function DetailedAnalyticsPanel() {
   const detailedValueDrivers = analytics?.valueDrivers || [];
   const detailedFailures = analytics?.failureReasons || [];
   const topProviderAccount = topBy(detailedProviderAccounts, "content_events");
-  const topValueDriver = topBy(detailedValueDrivers, "value_score");
+  const topValueDriver = topBy(detailedValueDrivers, "content_events");
   const topFailure = topBy(detailedFailures, "errors");
   const successRate = maybeNumber(eventSummary.success_rate);
   const detailedInsights: InsightItem[] = [
     {
-      label: "反応量の起点",
+      label: "利用量の起点",
       value: formatEntity(topProviderAccount, ["provider_id", "account_key"]),
-      body: `${formatCount(topProviderAccount?.content_events)}件、${formatCount(topProviderAccount?.users)}ユーザー、${formatCount(topProviderAccount?.guilds)}サーバーで観測されています。偏りは下の複合分析で確認します。`,
+      body: `${formatCount(topProviderAccount?.content_events)}件、${formatCount(topProviderAccount?.users)}ユーザー、${formatCount(topProviderAccount?.guilds)}サーバーで観測されています。母数と段階別結果を下表で確認します。`,
       tone: "success",
     },
     {
       label: "処理の安定性",
       value: formatPercent(eventSummary.success_rate),
-      body: successRate === null ? "成功率を計算できるデータがありません。" : successRate >= 0.95 ? "抽出と送信はおおむね安定しています。" : "抽出または送信で失敗が目立ちます。失敗理由を確認してください。",
+      body: successRate === null ? "段階を混ぜた成功率は算出しません。稼働・影響の要求結果、またはイベント種類別の結果を確認してください。" : "選択したイベント種類の成功数 / 成否が記録された同種イベント数です。根要求の完了割合とは別です。",
       tone: successRate !== null && successRate < 0.95 ? "warning" : "success",
     },
     {
-      label: "伸び方の仮説",
-      value: signalLabel(topValueDriver?.value_signal || topValueDriver?.value_tier),
-      body: `${formatEntity(topValueDriver, ["provider_id", "account_key", "content_type", "content_url"])} の複合スコアは ${formatCount(topValueDriver?.value_score)} です。単独では結論にせず、成功率や母数と合わせて見ます。`,
+      label: "共有数が多い対象",
+      value: formatEntity(topValueDriver, ["provider_id", "account_key"]),
+      body: `共有 ${formatCount(topValueDriver?.content_events)}件、利用者 ${formatCount(topValueDriver?.users)}人、サーバー ${formatCount(topValueDriver?.guilds)}件。閲覧やリンククリックは含みません。`,
       tone: "default",
     },
     {
@@ -2219,7 +1896,7 @@ function DetailedAnalyticsPanel() {
     { label: "アカウント", key: "account_key" },
     { label: "種類", key: "content_type" },
     { label: "URL", key: "content_url", format: displayUrl },
-    { label: "注目度", key: "value_score" },
+    { label: "共有記録数", key: "content_events" },
     { label: "理由", key: "value_signal", format: signalLabel },
     { label: "成功率", key: "success_rate", format: formatPercent },
     { label: "ユーザー", key: "users" },
@@ -2248,7 +1925,7 @@ function DetailedAnalyticsPanel() {
     { label: "サーバー", key: "guilds" },
     { label: "URLs", key: "urls" },
     { label: "平均", key: "avg_numeric_value", format: (value) => formatAverage(value) },
-    { label: "スコア", key: "segment_score" },
+    { label: "観測件数", key: "events" },
   ]);
   const facetRows = displayRows(analytics?.facetBreakdown || [], [
     { label: "サービス", key: "provider_id" },
@@ -2281,7 +1958,7 @@ function DetailedAnalyticsPanel() {
   const hourRows = displayRows(analytics?.hourDistribution || [], [
     { label: "サービス", key: "provider_id" },
     { label: "アカウント", key: "account_key" },
-    { label: "UTC時間帯", key: "hour_utc", format: (value) => `${formatCell(value)}:00` },
+    { label: "JST時間帯", key: "hour_jst", format: (value) => `${formatCell(value)}:00` },
     { label: "展開数", key: "content_events" },
     { label: "利用ユーザー", key: "users" },
     { label: "サーバー", key: "guilds" },
@@ -2290,7 +1967,7 @@ function DetailedAnalyticsPanel() {
     { label: "サービス", key: "provider_id" },
     { label: "アカウント", key: "account_key" },
     { label: "イベント", key: "event_type" },
-    { label: "UTC時間帯", key: "hour_utc", format: (value) => `${formatCell(value)}:00` },
+    { label: "JST時間帯", key: "hour_jst", format: (value) => `${formatCell(value)}:00` },
     { label: "回数", key: "events" },
     { label: "成功率", key: "success_rate", format: formatPercent },
     { label: "平均ms", key: "avg_duration_ms", format: (value) => formatAverage(value, "ms") },
@@ -2335,7 +2012,7 @@ function DetailedAnalyticsPanel() {
     { label: "URL", key: "content_url", format: displayUrl },
     { label: "タイトル", key: "title" },
     { label: "サーバー", key: "guild_id" },
-    { label: "匿名ユーザー", key: "author_user_id" },
+    { label: "ユーザーID", key: "author_user_id" },
   ]);
 
   return (
@@ -2361,6 +2038,7 @@ function DetailedAnalyticsPanel() {
             <Input value={filters.guildId} onChange={(event) => setFilter("guildId", event.target.value)} placeholder="サーバーID" />
             <Input value={filters.providerId} onChange={(event) => setFilter("providerId", event.target.value)} placeholder="サービスID" />
             <Input value={filters.accountKey} onChange={(event) => setFilter("accountKey", event.target.value)} placeholder="アカウント" />
+            <Input value={filters.authorUserId} onChange={(event) => setFilter("authorUserId", event.target.value)} placeholder="author_user_id" />
             <Input value={filters.contentType} onChange={(event) => setFilter("contentType", event.target.value)} placeholder="種類" />
             <Input value={filters.facetKey} onChange={(event) => setFilter("facetKey", event.target.value)} placeholder="分析軸" />
             <Input value={filters.commandName} onChange={(event) => setFilter("commandName", event.target.value)} placeholder="操作名" />
@@ -2398,10 +2076,10 @@ function DetailedAnalyticsPanel() {
 
       <ReportHighlights
         title="レポート要約"
-        description="単独指標ではなく、反応量、安定性、伸びている要因、失敗リスクを並べて、追加分析の入口を示します。"
+        description="観測した共有件数、同種イベントの結果、失敗原文を確認します。定義版 legacy-observations-v2。根要求数と完全成功率は「稼働・調査・操作」に表示します。"
         insights={detailedInsights}
         trendRows={detailedTimeSeries}
-        rankingTitle="反応が多いサービス/アカウント"
+        rankingTitle="利用が多いサービス/アカウント"
         rankingRows={detailedProviderAccounts}
         rankingValueKey="content_events"
         rankingLabelKeys={["provider_id", "account_key"]}
@@ -2412,7 +2090,7 @@ function DetailedAnalyticsPanel() {
       <div className="grid gap-3 md:grid-cols-4">
         <StatCard label="展開コンテンツ" value={contentSummary.content_events} tone="success" />
         <StatCard label="利用ユーザー" value={contentSummary.users} />
-        <StatCard label="反応サーバー" value={contentSummary.guilds} />
+        <StatCard label="利用サーバー" value={contentSummary.guilds} />
         <StatCard label="対象アカウント" value={contentSummary.accounts} />
         <StatCard label="URL種類" value={contentSummary.urls} />
         <StatCard label="分析イベント" value={eventSummary.analytics_events} />
@@ -2454,7 +2132,7 @@ function DetailedAnalyticsPanel() {
         <Card>
           <CardHeader>
             <CardTitle>コンテンツ種類</CardTitle>
-            <CardDescription>投稿、動画、画像などサービスごとの種類別の反応です。</CardDescription>
+            <CardDescription>投稿、動画、画像などサービスごとの種類別の利用です。</CardDescription>
           </CardHeader>
           <CardContent>
             <DataTable rows={contentTypeRows} maxColumns={7} />
@@ -2465,7 +2143,7 @@ function DetailedAnalyticsPanel() {
       <div className="grid gap-4 xl:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardTitle>サーバー別の反応</CardTitle>
+            <CardTitle>サーバー別の利用</CardTitle>
             <CardDescription>将来サーバー管理者へ見せる統計の元データです。</CardDescription>
           </CardHeader>
           <CardContent>
@@ -2485,8 +2163,8 @@ function DetailedAnalyticsPanel() {
 
       <Card>
         <CardHeader>
-          <CardTitle>反応を伸ばしている要因</CardTitle>
-          <CardDescription>サービス、アカウント、種類、URL のどれが反応量や継続利用に効いているかを並べます。</CardDescription>
+          <CardTitle>対象別の共有件数</CardTitle>
+          <CardDescription>サービス、アカウント、種類、URLごとの共有件数と利用者・サーバー数を並べます。増減の原因は別途調査します。</CardDescription>
         </CardHeader>
         <CardContent>
           <DataTable rows={valueDriverRows} maxColumns={11} />
@@ -2495,7 +2173,7 @@ function DetailedAnalyticsPanel() {
 
       <Card>
         <CardHeader>
-          <CardTitle>流入パラメータ</CardTitle>
+          <CardTitle>URLパラメータの観測</CardTitle>
           <CardDescription>URL のパラメータ名だけを集計し、キャンペーンや参照元の傾向を見ます。値そのものは保存していません。</CardDescription>
         </CardHeader>
         <CardContent>
@@ -2505,7 +2183,7 @@ function DetailedAnalyticsPanel() {
 
       <Card>
         <CardHeader>
-          <CardTitle>マーケティング軸別の反応</CardTitle>
+          <CardTitle>マーケティング軸別の利用</CardTitle>
           <CardDescription>サービスごとの指標を、投稿形式・話題・数値レンジなどの軸で見やすくまとめます。</CardDescription>
         </CardHeader>
         <CardContent>
@@ -2516,8 +2194,8 @@ function DetailedAnalyticsPanel() {
       <div className="grid gap-4 xl:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardTitle>URL / 投稿別の反応</CardTitle>
-            <CardDescription>URL、タイトル、投稿者単位での反応です。Discord の生メッセージは含みません。</CardDescription>
+            <CardTitle>URL / 投稿別の利用</CardTitle>
+            <CardDescription>URL、タイトル、投稿者単位での利用です。Discord の生メッセージは含みません。</CardDescription>
           </CardHeader>
           <CardContent>
             <DataTable rows={urlRows} maxColumns={9} />
@@ -2547,7 +2225,7 @@ function DetailedAnalyticsPanel() {
         <Card>
           <CardHeader>
             <CardTitle>サーバー x アカウント</CardTitle>
-            <CardDescription>各サーバーでどのサービス/アカウントが反応されているかを見ます。</CardDescription>
+            <CardDescription>各サーバーでどのサービス/アカウントが利用されているかを見ます。</CardDescription>
           </CardHeader>
           <CardContent>
             <DataTable rows={guildAccountRows} maxColumns={6} />
@@ -2589,7 +2267,7 @@ function DetailedAnalyticsPanel() {
         <Card>
           <CardHeader>
             <CardTitle>興味傾向</CardTitle>
-            <CardDescription>同じユーザーがあわせて反応している provider/account の組み合わせです。</CardDescription>
+            <CardDescription>同じユーザーがあわせて利用している provider/account の組み合わせです。</CardDescription>
           </CardHeader>
           <CardContent>
             <DataTable rows={interestRows} maxColumns={8} />
@@ -2751,19 +2429,19 @@ function GuildAdminPreviewPanel() {
     {
       label: "このサーバーで人気",
       value: formatEntity(guildTopProvider, ["provider_id", "account_key"]),
-      body: `${formatCount(guildTopProvider?.content_events)}件の表示、${formatCount(guildTopProvider?.users)}ユーザーが反応しています。`,
+      body: `${formatCount(guildTopProvider?.content_events)}件の表示、${formatCount(guildTopProvider?.users)}ユーザーが利用しています。`,
       tone: "success",
     },
     {
-      label: "よく見られた投稿",
+      label: "よく共有された投稿",
       value: formatEntity(guildTopContentRow, ["title", "content_url"]),
       body: `${formatCount(guildTopContentRow?.content_events)}件の表示があります。URLやタイトルは下のランキングで確認できます。`,
       tone: "default",
     },
     {
-      label: "継続反応",
+      label: "継続利用",
       value: formatPercent(retention.returning_rate),
-      body: `${formatCount(retention.returning_users)}人が繰り返し反応しています。新規は ${formatCount(retention.first_seen_users)} 人です。`,
+      body: `${formatCount(retention.returning_users)}人が繰り返し利用しています。新規は ${formatCount(retention.first_seen_users)} 人です。`,
       tone: asNumber(retention.returning_users) > 0 ? "success" : "muted",
     },
     {
@@ -2777,7 +2455,7 @@ function GuildAdminPreviewPanel() {
     { label: "日付", key: "bucket_start_ms", format: formatDate },
     { label: "表示数", key: "content_events" },
     { label: "利用ユーザー", key: "content_users" },
-    { label: "反応数", key: "analytics_events" },
+    { label: "利用数", key: "analytics_events" },
     { label: "成功率", key: "success_rate", format: formatPercent },
   ]);
   const providerRows = displayRows(previewSectionRows(preview, "providerAccounts"), [
@@ -2807,14 +2485,14 @@ function GuildAdminPreviewPanel() {
   const hourRows = displayRows(previewSectionRows(preview, "bestHours"), [
     { label: "サービス", key: "provider_id" },
     { label: "アカウント", key: "account_key" },
-    { label: "時間帯", key: "hour_utc", format: formatLocalHourFromUtc },
+    { label: "時間帯", key: "hour_jst", format: formatLocalHourFromUtc },
     { label: "表示数", key: "content_events" },
     { label: "利用ユーザー", key: "users" },
   ]);
   const weekdayRows = displayRows(previewSectionRows(preview, "bestWeekdays"), [
     { label: "サービス", key: "provider_id" },
     { label: "アカウント", key: "account_key" },
-    { label: "曜日", key: "weekday_utc", format: formatWeekday },
+    { label: "曜日", key: "weekday_jst", format: formatWeekday },
     { label: "表示数", key: "content_events" },
     { label: "利用ユーザー", key: "users" },
   ]);
@@ -2822,15 +2500,15 @@ function GuildAdminPreviewPanel() {
     { label: "サービス", key: "provider_id" },
     { label: "アカウント", key: "account_key" },
     { label: "URL投稿", key: "url_posts" },
-    { label: "カード表示率", key: "extract_success_rate", format: formatPercent },
-    { label: "表示完了率", key: "send_success_rate", format: formatPercent },
-    { label: "反応数", key: "interaction_events" },
-    { label: "反応率", key: "interaction_rate", format: formatPercent },
+    { label: "取得成功率", key: "extract_success_rate", format: formatPercent },
+    { label: "Discord送信成功率", key: "send_success_rate", format: formatPercent },
+    { label: "利用数", key: "interaction_events" },
+    { label: "利用率", key: "interaction_rate", format: formatPercent },
     { label: "ユーザー", key: "users" },
   ]);
   const cohortRows = displayRows(previewSectionRows(preview, "weeklyCohorts"), [
     { label: "初回週", key: "cohort_week_ms", format: formatDate },
-    { label: "反応週", key: "activity_week_ms", format: formatDate },
+    { label: "利用週", key: "activity_week_ms", format: formatDate },
     { label: "経過週", key: "age_weeks" },
     { label: "対象ユーザー", key: "cohort_users" },
     { label: "継続ユーザー", key: "retained_users" },
@@ -2912,7 +2590,7 @@ function GuildAdminPreviewPanel() {
         description="サーバー管理者が先に見るべき人気、継続、表示の安定性をまとめています。"
         insights={guildInsights}
         trendRows={guildTimeSeries}
-        rankingTitle="よく見られた投稿/URL"
+        rankingTitle="よく共有された投稿/URL"
         rankingRows={guildTopContent}
         rankingValueKey="content_events"
         rankingLabelKeys={["title", "content_url", "provider_id"]}
@@ -2920,7 +2598,7 @@ function GuildAdminPreviewPanel() {
 
       <div className="grid gap-3 md:grid-cols-3">
         <MetricCard label="リピートユーザー" value={retention.returning_users} />
-        <MetricCard label="新規反応ユーザー" value={retention.first_seen_users} />
+        <MetricCard label="保存履歴上の初観測ユーザー" value={retention.first_seen_users} />
         <MetricCard label="リピート率" value={formatPercent(retention.returning_rate)} />
       </div>
 
@@ -2935,7 +2613,7 @@ function GuildAdminPreviewPanel() {
         <Card>
           <CardHeader>
             <CardTitle>人気のサービス/アカウント</CardTitle>
-            <CardDescription>サーバー内でよく反応されるアカウントです。</CardDescription>
+            <CardDescription>サーバー内でよく利用されるアカウントです。</CardDescription>
           </CardHeader>
           <CardContent><DataTable rows={providerRows} maxColumns={6} /></CardContent>
         </Card>
@@ -2954,7 +2632,7 @@ function GuildAdminPreviewPanel() {
       <div className="grid gap-4 xl:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardTitle>よく見られた投稿 / URL</CardTitle>
+            <CardTitle>よく共有された投稿 / URL</CardTitle>
             <CardDescription>URL と取得したタイトルなど、投稿を判断しやすい情報だけを表示します。</CardDescription>
           </CardHeader>
           <CardContent><DataTable rows={contentRows} maxColumns={6} /></CardContent>
@@ -2964,8 +2642,8 @@ function GuildAdminPreviewPanel() {
       <div className="grid gap-4 xl:grid-cols-3">
         <Card>
           <CardHeader>
-            <CardTitle>反応されやすい時間</CardTitle>
-            <CardDescription>UTC 時間帯で集計しています。</CardDescription>
+            <CardTitle>利用されやすい時間</CardTitle>
+            <CardDescription>JST 時間帯で集計しています。</CardDescription>
           </CardHeader>
           <CardContent><DataTable rows={hourRows} maxColumns={5} /></CardContent>
         </Card>
@@ -2981,22 +2659,22 @@ function GuildAdminPreviewPanel() {
       <div className="grid gap-4 xl:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardTitle>反応までの流れ</CardTitle>
-            <CardDescription>URL投稿が表示され、反応につながるまでの流れを見ます。</CardDescription>
+            <CardTitle>利用までの流れ</CardTitle>
+            <CardDescription>URL投稿が表示され、利用につながるまでの流れを見ます。</CardDescription>
           </CardHeader>
           <CardContent><DataTable rows={funnelRows} maxColumns={8} /></CardContent>
         </Card>
         <Card>
           <CardHeader>
-            <CardTitle>週別の継続反応</CardTitle>
-            <CardDescription>初回反応した週ごとに、その後も反応しているかを確認します。</CardDescription>
+            <CardTitle>週別の継続利用</CardTitle>
+            <CardDescription>初回利用した週ごとに、その後も利用しているかを確認します。</CardDescription>
           </CardHeader>
           <CardContent><DataTable rows={cohortRows} maxColumns={6} /></CardContent>
         </Card>
         <Card>
           <CardHeader>
             <CardTitle>長く見られるコンテンツ</CardTitle>
-            <CardDescription>一度だけでなく、時間をまたいで反応され続けるURLを確認します。</CardDescription>
+            <CardDescription>一度だけでなく、時間をまたいで利用され続けるURLを確認します。</CardDescription>
           </CardHeader>
           <CardContent><DataTable rows={lifetimeRows} maxColumns={7} /></CardContent>
         </Card>
@@ -3082,7 +2760,7 @@ function ProviderMarketingPreviewPanel() {
   const providerSummaryAnalytics = preview?.summary.analytics || {};
   const providerTopAccount = topBy(providerAccounts, "content_events");
   const providerTopContentRow = topBy(providerTopContent, "content_events");
-  const providerTopSegment = topBy(providerSegments, "segment_score");
+  const providerTopSegment = topBy(providerSegments, "events");
   const providerSuccessRate = maybeNumber(providerSummaryAnalytics.success_rate);
   const providerInsights: InsightItem[] = [
     {
@@ -3100,7 +2778,7 @@ function ProviderMarketingPreviewPanel() {
     {
       label: "強いマーケティング軸",
       value: formatEntity(providerTopSegment, ["axis_label", "facet_value", "metric_label"]),
-      body: `${formatCount(providerTopSegment?.events)}件の反応があります。投稿内容・形式・流入のどれが効いているかを見る軸です。`,
+      body: `${formatCount(providerTopSegment?.events)}件の利用があります。投稿内容・形式・流入のどれが効いているかを見る軸です。`,
       tone: "default",
     },
     {
@@ -3153,7 +2831,7 @@ function ProviderMarketingPreviewPanel() {
     { label: "アカウント", key: "account_key" },
     { label: "種類", key: "content_type" },
     { label: "URL", key: "content_url", format: displayUrl },
-    { label: "注目度", key: "value_score" },
+    { label: "共有記録数", key: "content_events" },
     { label: "理由", key: "value_signal", format: signalLabel },
     { label: "サーバー", key: "guilds" },
   ]);
@@ -3174,7 +2852,7 @@ function ProviderMarketingPreviewPanel() {
     { label: "ユーザー", key: "users" },
     { label: "サーバー", key: "guilds" },
     { label: "平均", key: "avg_numeric_value", format: (value) => formatAverage(value) },
-    { label: "スコア", key: "segment_score" },
+    { label: "観測件数", key: "events" },
   ]);
   const numericRows = displayRows(previewSectionRows(preview, "numericSignals"), [
     { label: "指標", key: "facet_key" },
@@ -3192,7 +2870,7 @@ function ProviderMarketingPreviewPanel() {
   ]);
   const hourRows = displayRows(previewSectionRows(preview, "bestHours"), [
     { label: "アカウント", key: "account_key" },
-    { label: "時間帯", key: "hour_utc", format: formatLocalHourFromUtc },
+    { label: "時間帯", key: "hour_jst", format: formatLocalHourFromUtc },
     { label: "表示数", key: "content_events" },
     { label: "利用ユーザー", key: "users" },
     { label: "サーバー", key: "guilds" },
@@ -3209,15 +2887,15 @@ function ProviderMarketingPreviewPanel() {
     { label: "サービス", key: "provider_id" },
     { label: "アカウント", key: "account_key" },
     { label: "URL投稿", key: "url_posts" },
-    { label: "カード表示率", key: "extract_success_rate", format: formatPercent },
-    { label: "表示完了率", key: "send_success_rate", format: formatPercent },
-    { label: "反応数", key: "interaction_events" },
-    { label: "反応率", key: "interaction_rate", format: formatPercent },
+    { label: "取得成功率", key: "extract_success_rate", format: formatPercent },
+    { label: "Discord送信成功率", key: "send_success_rate", format: formatPercent },
+    { label: "利用数", key: "interaction_events" },
+    { label: "利用率", key: "interaction_rate", format: formatPercent },
     { label: "サーバー", key: "guilds" },
   ]);
   const cohortRows = displayRows(previewSectionRows(preview, "weeklyCohorts"), [
     { label: "初回週", key: "cohort_week_ms", format: formatDate },
-    { label: "反応週", key: "activity_week_ms", format: formatDate },
+    { label: "利用週", key: "activity_week_ms", format: formatDate },
     { label: "経過週", key: "age_weeks" },
     { label: "対象ユーザー", key: "cohort_users" },
     { label: "継続ユーザー", key: "retained_users" },
@@ -3296,10 +2974,10 @@ function ProviderMarketingPreviewPanel() {
       <ProviderMetricProfilePanel profile={preview?.metricProfile} />
       <ReportHighlights
         title="マーケティングレポート要約"
-        description="人気コンテンツ、強い軸、継続反応を先に読み取れるようにまとめています。"
+        description="人気コンテンツ、強い軸、継続利用を先に読み取れるようにまとめています。"
         insights={providerInsights}
         trendRows={providerTimeSeries}
-        rankingTitle="反応が多いコンテンツ"
+        rankingTitle="利用が多いコンテンツ"
         rankingRows={providerTopContent}
         rankingValueKey="content_events"
         rankingLabelKeys={["title", "content_url", "account_key"]}
@@ -3307,22 +2985,22 @@ function ProviderMarketingPreviewPanel() {
       <div className="grid gap-4 xl:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardTitle>反応までの流れ</CardTitle>
-            <CardDescription>URL投稿が表示され、反応につながるまでの流れを見ます。</CardDescription>
+            <CardTitle>利用までの流れ</CardTitle>
+            <CardDescription>URL投稿が表示され、利用につながるまでの流れを見ます。</CardDescription>
           </CardHeader>
           <CardContent><DataTable rows={funnelRows} maxColumns={8} /></CardContent>
         </Card>
         <Card>
           <CardHeader>
-            <CardTitle>週別の継続反応</CardTitle>
-            <CardDescription>初回反応した週ごとに、その後も反応しているかを確認します。</CardDescription>
+            <CardTitle>週別の継続利用</CardTitle>
+            <CardDescription>初回利用した週ごとに、その後も利用しているかを確認します。</CardDescription>
           </CardHeader>
           <CardContent><DataTable rows={cohortRows} maxColumns={6} /></CardContent>
         </Card>
         <Card>
           <CardHeader>
             <CardTitle>長く見られるコンテンツ</CardTitle>
-            <CardDescription>一度だけでなく、時間をまたいで反応され続けるURLを確認します。</CardDescription>
+            <CardDescription>一度だけでなく、時間をまたいで利用され続けるURLを確認します。</CardDescription>
           </CardHeader>
           <CardContent><DataTable rows={lifetimeRows} maxColumns={7} /></CardContent>
         </Card>
@@ -3337,8 +3015,8 @@ function ProviderMarketingPreviewPanel() {
       <PreviewCards cards={preview?.deliveryContextCards || []} />
 
       <div className="grid gap-3 md:grid-cols-3">
-        <MetricCard label="継続反応ユーザー" value={retention.returning_users} />
-        <MetricCard label="新規反応ユーザー" value={retention.first_seen_users} />
+        <MetricCard label="継続利用ユーザー" value={retention.returning_users} />
+        <MetricCard label="保存履歴上の初観測ユーザー" value={retention.first_seen_users} />
         <MetricCard label="継続率" value={formatPercent(retention.returning_rate)} />
       </div>
 
@@ -3353,7 +3031,7 @@ function ProviderMarketingPreviewPanel() {
         <Card>
           <CardHeader>
             <CardTitle>届いているサーバー</CardTitle>
-            <CardDescription>どのサーバーで反応が出ているかを見ます。</CardDescription>
+            <CardDescription>どのサーバーで利用が出ているかを見ます。</CardDescription>
           </CardHeader>
           <CardContent><DataTable rows={reachRows} maxColumns={4} /></CardContent>
         </Card>
@@ -3362,8 +3040,8 @@ function ProviderMarketingPreviewPanel() {
       <div className="grid gap-4 xl:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardTitle>反応ユーザー</CardTitle>
-            <CardDescription>利用量ごとに、どのユーザー層が反応しているかを確認します。</CardDescription>
+            <CardTitle>利用ユーザー</CardTitle>
+            <CardDescription>利用量ごとに、どのユーザー層が利用しているかを確認します。</CardDescription>
           </CardHeader>
           <CardContent><DataTable rows={audienceRows} maxColumns={5} /></CardContent>
         </Card>
@@ -3376,21 +3054,21 @@ function ProviderMarketingPreviewPanel() {
         </Card>
         <Card>
           <CardHeader>
-            <CardTitle>反応を伸ばしている要因</CardTitle>
-            <CardDescription>サービス、アカウント、種類、URL のどれが反応量や継続利用に効いているかを並べます。</CardDescription>
+            <CardTitle>対象別の共有件数</CardTitle>
+            <CardDescription>サービス、アカウント、種類、URLごとの共有件数と利用者・サーバー数を並べます。増減の原因は別途調査します。</CardDescription>
           </CardHeader>
           <CardContent><DataTable rows={valueRows} maxColumns={8} /></CardContent>
         </Card>
         <Card>
           <CardHeader>
-            <CardTitle>流入パラメータ</CardTitle>
+            <CardTitle>URLパラメータの観測</CardTitle>
             <CardDescription>キャンペーンや参照元の手がかりになるURLパラメータ名を集計します。</CardDescription>
           </CardHeader>
           <CardContent><DataTable rows={urlParameterRows} maxColumns={7} /></CardContent>
         </Card>
         <Card>
           <CardHeader>
-            <CardTitle>マーケティング軸別の反応</CardTitle>
+            <CardTitle>マーケティング軸別の利用</CardTitle>
             <CardDescription>投稿形式、話題、数値レンジなど、サービスごとの意味がある軸で見ます。</CardDescription>
           </CardHeader>
           <CardContent><DataTable rows={providerSegmentRows} maxColumns={9} /></CardContent>
@@ -3424,8 +3102,8 @@ function ProviderMarketingPreviewPanel() {
         </Card>
         <Card>
           <CardHeader>
-            <CardTitle>反応されやすい時間</CardTitle>
-            <CardDescription>UTC 時間帯の分布です。</CardDescription>
+            <CardTitle>利用されやすい時間</CardTitle>
+            <CardDescription>JST 時間帯の分布です。</CardDescription>
           </CardHeader>
           <CardContent><DataTable rows={hourRows} maxColumns={5} /></CardContent>
         </Card>
@@ -3434,7 +3112,7 @@ function ProviderMarketingPreviewPanel() {
       <Card>
         <CardHeader>
           <CardTitle>併読・興味の近さ</CardTitle>
-          <CardDescription>同じユーザーがあわせて反応している provider/account を表示します。</CardDescription>
+          <CardDescription>同じユーザーがあわせて利用している provider/account を表示します。</CardDescription>
         </CardHeader>
         <CardContent><DataTable rows={interestRows} maxColumns={6} /></CardContent>
       </Card>
@@ -3446,10 +3124,12 @@ function LogsPanel({ logs, setLogs }: { logs: AdminLogs; setLogs: (logs: AdminLo
   const [guildId, setGuildId] = useState("");
   const [providerId, setProviderId] = useState("");
   const [action, setAction] = useState("");
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  async function refresh() {
+  async function refresh(cursor?: string) {
     setLoading(true);
     setError(null);
     try {
@@ -3458,7 +3138,11 @@ function LogsPanel({ logs, setLogs }: { logs: AdminLogs; setLogs: (logs: AdminLo
       if (providerId.trim()) search.set("provider_id", providerId.trim());
       if (action.trim()) search.set("action", action.trim());
       search.set("limit", String(logs.limit || 100));
-      setLogs(await fetchJson<AdminLogs>(`/api/admin/logs?${search.toString()}`));
+      if (from) search.set("from", new Date(`${from}:00+09:00`).toISOString());
+      if (to) search.set("to", new Date(`${to}:00+09:00`).toISOString());
+      if (cursor) search.set("cursor", cursor);
+      const result = await fetchJson<AdminLogs>(`/api/admin/logs?${search.toString()}`);
+      setLogs(cursor ? { ...result, auditLogs: [...logs.auditLogs, ...result.auditLogs], errorEvents: [...logs.errorEvents, ...result.errorEvents] } : result);
     } catch (err) {
       setError(err instanceof Error ? err.message : "ログ取得に失敗しました");
     } finally {
@@ -3472,13 +3156,16 @@ function LogsPanel({ logs, setLogs }: { logs: AdminLogs; setLogs: (logs: AdminLo
         <Input value={guildId} onChange={(event) => setGuildId(event.target.value)} placeholder="guild_id" />
         <Input value={providerId} onChange={(event) => setProviderId(event.target.value)} placeholder="provider_id" />
         <Input value={action} onChange={(event) => setAction(event.target.value)} placeholder="action" />
-        <Button type="button" onClick={refresh} disabled={loading}>
+        <Button type="button" onClick={() => void refresh()} disabled={loading}>
           {loading ? <Loader2 size={16} className="animate-spin" /> : <Search size={16} />}
           検索
         </Button>
       </div>
       {error ? <div className="rounded-md border border-destructive/40 bg-card p-3 text-sm text-destructive">{error}</div> : null}
 
+      <div className="grid gap-3 md:grid-cols-2"><label className="text-sm">開始日時（JST）<Input type="datetime-local" value={from} onChange={e => setFrom(e.target.value)} /></label><label className="text-sm">終了日時（JST・含まない）<Input type="datetime-local" value={to} onChange={e => setTo(e.target.value)} /></label></div>
+      {logs.availability ? Object.entries(logs.availability).filter(([, v]) => v.state !== "available").map(([k, v]) => <p key={k} role="alert" className="text-destructive">{k}: 未取得 — {v.error}</p>) : null}
+      {logs.nextCursor ? <Button disabled={loading} variant="outline" onClick={() => void refresh(logs.nextCursor!)}>次の記録を追加</Button> : null}
       <div className="grid gap-4 xl:grid-cols-2">
         <Card>
           <CardHeader>
@@ -3569,6 +3256,7 @@ function DatabasePanel({ database, setDatabase }: { database: AdminDatabase; set
               <Badge key={String(column.Field || index)} tone="muted">{formatCell(column.Field || column.field)}</Badge>
             ))}
           </div>
+          {database.summary.error ? <p role="alert" className="text-sm text-destructive">{database.summary.error}</p> : null}
           <DataTable rows={database.rows} maxColumns={10} />
         </CardContent>
       </Card>
@@ -3785,7 +3473,7 @@ export function AdminConsole({
 }: {
   user: DashboardUser;
 }) {
-  const [tab, setTab] = useState<AdminTab>("overview");
+  const [tab, setTab] = useState<AdminTab>("management");
   const [overview, setOverview] = useState<AdminOverview | null>(null);
   const [logs, setLogs] = useState<AdminLogs | null>(null);
   const [database, setDatabase] = useState<AdminDatabase | null>(null);
@@ -3883,13 +3571,15 @@ export function AdminConsole({
             <Button asChild variant="outline" size="sm">
               <Link href="/dashboard?mode=user">ユーザー画面</Link>
             </Button>
+            <Button asChild variant="outline" size="sm"><Link href="/admin/url-inspector">URL検証</Link></Button>
+            <Button asChild variant="outline" size="sm"><Link href="/admin/send-message">指定先送信</Link></Button>
             <SignOutButton locale="ja" />
           </div>
         </div>
       </header>
 
       <main className="mx-auto max-w-7xl space-y-4 px-3 py-4 sm:px-4 sm:py-5">
-        <nav className="grid gap-2 sm:grid-cols-3 lg:grid-cols-7">
+        <nav className="grid gap-2 sm:grid-cols-3 lg:grid-cols-8">
           {tabs.map((item) => {
             const Icon = item.icon;
             const active = tab === item.value;
@@ -3958,6 +3648,7 @@ export function AdminConsole({
           )
         ) : null}
         {tab === "support" ? <SupportPanel /> : null}
+        {tab === "management" ? <ManagementConsole initialTab="metrics" /> : null}
       </main>
     </div>
   );

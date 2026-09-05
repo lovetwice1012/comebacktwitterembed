@@ -406,7 +406,7 @@ async function fetchSteamReviewSummary(appId, settings) {
     const json = await res.json();
     const summary = json?.query_summary;
     if ((json?.success !== 1 && json?.success !== true) || !summary) return '';
-    return formatReviewSummary(summary);
+    return { label: formatReviewSummary(summary), total: finiteNumber(summary.total_reviews) };
 }
 
 async function optionalSteamValue(factory) {
@@ -547,7 +547,15 @@ function normalizeSteamAppDetails(data, parsed, lang, settings, extras = {}) {
         platforms: formatPlatforms(data?.platforms),
         recommendations: data?.recommendations?.total ? formatNumber(data.recommendations.total) : '',
         currentPlayers: extras.currentPlayers || '',
-        reviewSummary: extras.reviewSummary || '',
+        reviewSummary: extras.reviewSummary?.label ?? extras.reviewSummary ?? '',
+        reviewCount: extras.reviewSummary?.total ?? null,
+        priceCurrency: data?.price_overview?.currency || null,
+        nativeMetrics: {
+            price: data?.is_free === true ? 0 : finiteNumber(data?.price_overview?.final_formatted, { kind: 'money' }),
+            discount_percent: finiteNumber(data?.price_overview?.discount_percent),
+            recommendations: finiteNumber(data?.recommendations?.total),
+            rating: finiteNumber(data?.metacritic?.score),
+        },
         metacritic: formatMetacritic(data),
     };
 }
@@ -702,17 +710,18 @@ function buildSteamAnalytics(parsed, info) {
             mediaCount: info.imageUrl ? 1 : 0,
         },
         metrics: {
-            price: finiteNumber(info.price),
-            discount_percent: finiteNumber(info.discount),
-            recommendations: finiteNumber(info.recommendations),
+            price: info.nativeMetrics?.price ?? finiteNumber(info.price, { kind: 'money' }),
+            discount_percent: info.nativeMetrics?.discount_percent ?? finiteNumber(info.discount, { kind: 'percent' }),
+            recommendations: info.nativeMetrics?.recommendations ?? finiteNumber(info.recommendations),
             current_players: finiteNumber(info.currentPlayers),
-            review_count: finiteNumber(info.reviewSummary),
-            rating: finiteNumber(info.metacritic),
+            review_count: info.reviewCount ?? finiteNumber(info.reviewSummary),
+            rating: info.nativeMetrics?.rating ?? finiteNumber(info.metacritic),
         },
         facets: [
             facet('type', info.typeLabel || parsed.kind),
             facet('kind', parsed.kind),
             facet('price_label', info.price),
+            facet('price_currency', info.priceCurrency),
             facet('review_summary', info.reviewSummary),
             facet('release_label', info.releaseDate),
             ...tagFacets('developer', developers),
@@ -737,10 +746,10 @@ function buildSteamAnalyticsEnrichers(parsed, settings, info) {
         return createProviderAnalytics({
             metrics: {
                 current_players: finiteNumber(currentPlayers),
-                review_count: finiteNumber(reviewSummary),
+                review_count: reviewSummary?.total ?? info.reviewCount ?? finiteNumber(reviewSummary),
             },
             facets: [
-                facet('review_summary', reviewSummary),
+                facet('review_summary', reviewSummary?.label ?? reviewSummary),
             ],
         });
     };

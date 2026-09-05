@@ -304,6 +304,14 @@ function removeMediaFiles(existingFiles, mediaUrls) {
 }
 
 function applyMediaDisplayToStep(step, settings, urls, label = 'Media') {
+    const telemetry = require('../adminSupport/telemetry');
+    const before = telemetry.current() || telemetry.enabled() ? telemetry.serializable(step) : null;
+    const result = applyMediaDisplayToStepNow(step, settings, urls, label);
+    if (before) telemetry.event('output_policy', 'applied', { rule: 'media_display_mode', mode: resolveMediaDisplayMode(settings), before, after: result });
+    return result;
+}
+
+function applyMediaDisplayToStepNow(step, settings, urls, label = 'Media') {
     if (!step || typeof step !== 'object') return step;
     const mode = resolveMediaDisplayMode(settings);
     const mediaUrls = cleanMediaUrls(urls && cleanMediaUrls(urls).length > 0 ? urls : embeddedMediaUrls(step.embeds));
@@ -356,11 +364,16 @@ function sourceLinkButton(url, settings) {
  * @returns {import('./_types').SendStep[] | null}
  */
 function buildFailureResponse(providerId, url, settings, err = null) {
+    require('../adminSupport/telemetry').markOutcome('failed', 'provider_fetch_or_parse_failed', {
+        providerId, url, error: require('../adminSupport/telemetry').errorData(err),
+        failure_display_policy: resolveFailureDisplayPolicy(settings),
+    });
     const policy = resolveFailureDisplayPolicy(settings);
     if (policy === 'silent') return null;
 
     /** @type {import('./_types').SendStep} */
     const step = {
+        outputRole: 'failure_notice',
         allowedMentions: { repliedUser: false },
         components: [sourceLinkButton(url, settings)],
         send: settings?.alwaysreplyifpostedtweetlink === true ? 'reply-source' : 'channel',

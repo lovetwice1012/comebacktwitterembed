@@ -29,6 +29,7 @@
  * @property {Array<string|FilePayload>} [files] 添付ファイル URL / Discord.js attachment payload
  * @property {any[]} [components]             button row 等のコンポーネント
  * @property {string} [content]               テキスト本文 (引用ポストの prefix 等)
+ * @property {string} [outputRole]            Distinguishes content from failure notices.
  * @property {object} [allowedMentions]       Discord allowedMentions
  * @property {object} [analytics]             Provider native analytics metadata.
  *   Successful provider sends must populate this from fetched provider data, not from embed fields.

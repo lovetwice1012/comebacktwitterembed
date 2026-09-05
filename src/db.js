@@ -2,6 +2,8 @@
 
 const { TABLES } = require('./db_schema');
 const { createDatabasePool } = require('./databasePool');
+const { AsyncLocalStorage } = require('async_hooks');
+const transactionContext = new AsyncLocalStorage();
 
 let _config = {};
 try {
@@ -69,11 +71,15 @@ function shouldLogDatabaseError(err, options) {
 }
 
 async function queryDatabase(query, params = [], options = {}) {
+    const transactionQuery = transactionContext.getStore();
+    if (transactionQuery) return transactionQuery(query, params, options);
     return ensureDatabase().query(query, params, options);
 }
 
 async function withDatabaseTransaction(work) {
-    return ensureDatabase().withTransaction(work);
+    const transactionQuery = transactionContext.getStore();
+    if (transactionQuery) return work(transactionQuery);
+    return ensureDatabase().withTransaction(query => transactionContext.run(query, () => work(query)));
 }
 
 async function ensureUserExistsInDatabase(userId) {

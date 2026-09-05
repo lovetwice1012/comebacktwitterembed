@@ -90,6 +90,7 @@ function register(client) {
         commandName: interaction.commandName,
     }, async () => {
         if (interaction.type !== InteractionType.ApplicationCommand) return;
+        require('../adminSupport/telemetry').event('input', 'command.received', { command: interaction.commandName, options: interaction.options?.data, interactionId: interaction.id });
         const handler = handlers[interaction.commandName];
         if (!handler) return;
         const startedAt = Date.now();

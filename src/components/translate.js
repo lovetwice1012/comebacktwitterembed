@@ -1,11 +1,19 @@
 'use strict';
 
-const fetch = require('node-fetch');
+const fetch = require('../providerFetch').withDeadline(require('node-fetch'));
 const { checkComponentIncludesDisabledButtonAndIfFindDeleteIt, detectProviderIdFromMessage } = require('../settings');
 const { getSetting } = require('../providers/_provider_settings');
 const { normalizeEmbed } = require('../interactionResponse');
 
 const TRANSLATE_ENDPOINT = 'https://script.google.com/macros/s/AKfycbwmofa3n_K15ze_-4KrpH-B-eBHiKXmmgLeqsJInS3dJUDM0IJ-627h8Xu-w8PIc2f-ug/exec';
+
+async function translateText(text, target) {
+    if (typeof text !== 'string' || text.length > 6000) throw new Error('Translation text must contain at most 6000 characters.');
+    if (!/^[a-zA-Z]{2,3}(-[a-zA-Z]{2,4})?$/.test(target)) throw new Error('Invalid translation target language.');
+    const response = await fetch(`${TRANSLATE_ENDPOINT}?target=${encodeURIComponent(target)}&text=${encodeURIComponent(text)}`, { timeout: 30000, size: 1048576 });
+    if (response.ok === false) throw Object.assign(new Error(`Translation HTTP ${response.status}`), { status: response.status });
+    return await response.text();
+}
 
 function getAttachmentUrls(attachments) {
     if (!attachments) return [];
@@ -54,8 +62,7 @@ async function handle(interaction) {
     }
 
     if (translatable.trim().length > 0) {
-        const res = await fetch(`${TRANSLATE_ENDPOINT}?target=${target}&text=${encodeURIComponent(translatable)}`);
-        const translated = await res.text();
+        const translated = await translateText(translatable, target);
         messageObject.embeds[0].description = trailingTail ? `${translated}\n${trailingTail}` : translated;
     }
 
@@ -75,4 +82,4 @@ async function handle(interaction) {
     }
 }
 
-module.exports = { handle };
+module.exports = { handle, translateText };

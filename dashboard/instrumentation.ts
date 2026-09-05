@@ -1,4 +1,6 @@
 export async function register() {
+  // The independent report worker owns complete report generation when connected.
+  if (process.env.ADMIN_AGENT_TOKEN) return;
   if (process.env.NEXT_RUNTIME === "nodejs") {
     const {
       warmAdminDetailedAnalyticsCache,

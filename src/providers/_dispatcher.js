@@ -8,6 +8,8 @@
  * extractor 内部の挙動はこの dispatcher 自身は一切知らない。
  */
 
+const telemetry = require('../adminSupport/telemetry');
+
 const { isMissingPermissionsError, isUnknownMessageError } = require('../utils');
 const { checkComponentIncludesDisabledButtonAndIfFindDeleteIt } = require('../settings');
 const { incrementProcessedCounters } = require('../state');
@@ -65,7 +67,8 @@ function shouldRetryWithoutFiles(err) {
 
 async function suppressSourceEmbeds(message) {
     if (typeof message?.suppressEmbeds !== 'function') return;
-    await message.suppressEmbeds(true).catch(() => {});
+    try { await message.suppressEmbeds(true); telemetry.event('postprocess', 'completed', { operation: 'suppress_embeds' }); return true; }
+    catch (error) { telemetry.event('postprocess', 'failed', { operation: 'suppress_embeds', error: telemetry.errorData(error) }); return false; }
 }
 
 async function deleteSourceMessage(message, providerId = null, context = {}) {
@@ -74,6 +77,8 @@ async function deleteSourceMessage(message, providerId = null, context = {}) {
     try {
         await message.delete();
         recordMetric('discord_source_delete_success', trackingContext);
+        telemetry.event('postprocess', 'completed', { operation: 'delete_source' });
+        return true;
     } catch (err) {
         const missingPermissions = isMissingPermissionsError(err);
         const unknownMessage = isUnknownMessageError(err);
@@ -85,6 +90,8 @@ async function deleteSourceMessage(message, providerId = null, context = {}) {
             source: 'dispatcher.deleteSource',
         });
         if (!unknownMessage) logSendFailure(message, err, 'delete source message');
+        telemetry.event('postprocess', 'failed', { operation: 'delete_source', error: telemetry.errorData(err) });
+        return false;
     }
 }
 
@@ -102,6 +109,7 @@ async function runSendStepsNow(message, steps, trackingContext) {
     const providerId = trackingContext.providerId;
     if (!Array.isArray(steps) || steps.length === 0) return;
 
+    const result = { sent: [], attempts: [], postprocess: [], fallback: false, plannedSteps: steps.length };
     let previousSent = null;
     for (let i = 0; i < steps.length; i++) {
         const step = steps[i];
@@ -122,8 +130,8 @@ async function runSendStepsNow(message, steps, trackingContext) {
                 durationMs: 0,
                 details: { send_mode: sendMode, step_index: i, outcome: 'no_sendable_payload' },
             });
-            if (step.suppressSourceEmbeds) await suppressSourceEmbeds(message);
-            if (step.deleteSource) await deleteSourceMessage(message, providerId, trackingContext);
+            if (step.suppressSourceEmbeds) result.postprocess.push({ stepIndex: i, operation: 'suppress_embeds', success: await suppressSourceEmbeds(message) });
+            if (step.deleteSource) result.postprocess.push({ stepIndex: i, operation: 'delete_source', success: await deleteSourceMessage(message, providerId, trackingContext) });
             continue;
         }
 
@@ -137,6 +145,22 @@ async function runSendStepsNow(message, steps, trackingContext) {
             sender = (obj) => message.channel.send(obj);
         }
 
+        const originalSender = sender;
+        sender = async payload => {
+            const attempt = { stepIndex: i, payload: telemetry.serializable(payload), startedAt: new Date().toISOString() };
+            telemetry.event('discord_send', 'started', attempt);
+            try {
+                const output = await originalSender(payload);
+                Object.assign(attempt, { outcome: 'confirmed', messageId: output?.id, channelId: output?.channelId });
+                result.sent.push({ stepIndex: i, messageId: output?.id, channelId: output?.channelId });
+                telemetry.event('discord_send', 'completed', attempt);
+                return output;
+            } catch (error) {
+                Object.assign(attempt, { outcome: (Number(error.status) >= 500 || !error.status && /ECONN|ETIMEDOUT|Abort|SyntaxError/.test(`${error.code} ${error.name}`)) ? 'delivery_unknown' : 'failed', error: telemetry.errorData(error) });
+                telemetry.event('discord_send', 'failed', attempt);
+                throw error;
+            } finally { result.attempts.push(attempt); }
+        };
         let sent = null;
         let sendFailure = null;
         const startedAt = Date.now();
@@ -184,6 +208,7 @@ async function runSendStepsNow(message, steps, trackingContext) {
             }
 
             if (messageObject.files !== undefined && shouldRetryWithoutFiles(err)) {
+                result.fallback = true;
                 const fallbackText = messageObject.files.map(fileToFallbackText).filter(Boolean).join('\n');
                 delete messageObject.files;
                 appendContent(messageObject, fallbackText);
@@ -241,7 +266,7 @@ async function runSendStepsNow(message, steps, trackingContext) {
                 source: 'dispatcher.send',
                 success: true,
                 durationMs: Date.now() - startedAt,
-                details: { send_mode: sendMode, step_index: i },
+                details: { send_mode: sendMode, step_index: i, message_id: sent.id, fallback: result.fallback, attempts: result.attempts.filter(item => item.stepIndex === i) },
             });
             incrementProcessedCounters();
         } else {
@@ -254,11 +279,17 @@ async function runSendStepsNow(message, steps, trackingContext) {
             });
         }
 
-        if (step.suppressSourceEmbeds) await suppressSourceEmbeds(message);
+        if (step.suppressSourceEmbeds) result.postprocess.push({ stepIndex: i, operation: 'suppress_embeds', success: await suppressSourceEmbeds(message) });
         if (step.deleteSource) {
-            await deleteSourceMessage(message, providerId, trackingContext);
+            result.postprocess.push({ stepIndex: i, operation: 'delete_source', success: await deleteSourceMessage(message, providerId, trackingContext) });
         }
     }
+    const failedPostprocess = result.postprocess.some(item => item.success === false);
+    const sendable = steps.filter(step => hasSendablePayload(step)).length;
+    result.outcome = result.attempts.some(item => item.outcome === 'delivery_unknown') ? 'U'
+        : result.sent.length === sendable && !failedPostprocess ? result.fallback ? 'D' : 'F'
+            : result.sent.length ? 'P' : 'E';
+    return result;
 }
 
 module.exports = { runSendSteps };

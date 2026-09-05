@@ -1,0 +1,32 @@
+[Unit]
+Description=CBTE isolated complete analytics report worker
+After=network.target
+StartLimitIntervalSec=300
+StartLimitBurst=3
+
+[Service]
+Type=simple
+User=cbte-admin
+Group=cbte-admin
+EnvironmentFile=/etc/cbte-admin/reports.env
+ExecStart=/usr/local/bin/node /opt/cbte-admin/worker-runtime/admin-agent/analysis-server.cjs
+WorkingDirectory=/opt/cbte-admin/worker-runtime
+StateDirectory=cbte-admin-reports cbte-admin-shared
+StateDirectoryMode=0700
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=15
+KillMode=mixed
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/cbte-admin-reports /var/lib/cbte-admin-shared
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+MemoryHigh=512M
+MemoryMax=1G
+CPUQuota=50%
+TasksMax=128
+
+[Install]
+WantedBy=multi-user.target

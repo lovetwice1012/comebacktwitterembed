@@ -1,0 +1,37 @@
+[Unit]
+Description=CBTE independent administration and monitoring
+After=network.target
+StartLimitIntervalSec=300
+StartLimitBurst=3
+
+[Service]
+Type=notify
+User=cbte-admin
+Group=cbte-admin
+SupplementaryGroups=systemd-journal
+EnvironmentFile=/etc/cbte-admin/core.env
+ExecStart=/opt/cbte-admin/current/cbte-admin
+WorkingDirectory=/var/lib/cbte-admin
+StateDirectory=cbte-admin
+StateDirectoryMode=0700
+RuntimeDirectory=cbte-admin
+RuntimeDirectoryMode=0700
+Restart=on-failure
+RestartSec=5
+WatchdogSec=120
+TimeoutStopSec=15
+KillMode=control-group
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/cbte-admin
+ReadWritePaths=-/opt/cbte-admin/worker-runtime
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+MemoryHigh=192M
+MemoryMax=384M
+CPUQuota=50%
+TasksMax=128
+
+[Install]
+WantedBy=multi-user.target

@@ -1521,13 +1521,13 @@ function buildAmazonAnalytics(parsed, info) {
             descriptionPreview: info.description,
             authorName: info.brand || info.artist || info.album,
             mediaCount: info.imageUrl ? 1 : null,
-            durationSeconds: finiteNumber(info.duration),
+            durationSeconds: finiteNumber(info.duration, { kind: 'duration' }),
         },
         metrics: {
-            price: finiteNumber(info.price),
-            rating: finiteNumber(info.rating),
+            price: finiteNumber(info.price, { kind: 'money' }),
+            rating: finiteNumber(info.rating, { kind: 'rating' }),
             reviews: finiteNumber(info.reviewCount),
-            duration_seconds: finiteNumber(info.duration),
+            duration_seconds: finiteNumber(info.duration, { kind: 'duration' }),
         },
         facets: [
             facet('brand', info.brand),

@@ -85,6 +85,11 @@ function nonNsfwChannelSensitiveRestrictionEnabled(settings, key = 'non_nsfw_cha
 }
 
 function buildSensitiveSuppressedStep(message, url, settings, options = {}) {
+    require('../adminSupport/telemetry').markOutcome('skipped', 'sensitive_content_policy', {
+        url, nsfw: isNsfwChannel(message), userId: message?.author?.id || message?.user?.id,
+        channelId: message?.channelId || message?.channel?.id, options,
+        rules: Object.fromEntries(Object.entries(settings || {}).filter(([key]) => /sensitive|r18/.test(key))),
+    });
     const step = {
         suppressSourceEmbeds: true,
         allowedMentions: { repliedUser: false },

@@ -14,6 +14,9 @@ export async function GET(req: NextRequest) {
       actorUserId: search.get("actor_user_id"),
       action: search.get("action"),
       limit: search.get("limit"),
+      from: search.get("from"),
+      to: search.get("to"),
+      cursor: search.get("cursor"),
     }));
   } catch (error) {
     return errorResponse(error, locale);

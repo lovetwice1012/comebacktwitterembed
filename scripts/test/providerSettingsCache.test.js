@@ -21,9 +21,11 @@ test('production settings reads share cold DB queries and reload after a local s
             await new Promise(resolve => setImmediate(resolve));
             if (sql.includes('SELECT MAX(revision)')) return [{ revision: 0 }];
             if (sql.includes(`SELECT * FROM ${schema.TABLES.guildProviderSettings}`)) return [{ enabled: enabled ? 1 : 0 }];
+            if (sql.includes('SELECT enabled AS value')) return [{ value: enabled ? 1 : 0 }];
             if (sql.includes(`INSERT INTO ${schema.TABLES.guildProviderSettings}`)) enabled = Boolean(params[2]);
             return [];
         },
+        withDatabaseTransaction: async work => work(require.cache[dbPath].exports.queryDatabase),
     } };
     delete require.cache[providerPath];
     try {
@@ -36,7 +38,11 @@ test('production settings reads share cold DB queries and reload after a local s
         assert.equal(queries.filter(sql => sql.startsWith('SELECT')).length, 12);
         await settings.setSetting(provider, 'enabled', 'guild', false);
         assert.equal((await read()).enabled, false);
-        assert.equal(queries.filter(sql => sql.startsWith('SELECT')).length, 23);
+        // The mutation also locks the setting row and reads before/after for
+        // its transactionally committed audit record.
+        assert.equal(queries.filter(sql => sql.startsWith('SELECT')).length, 26);
+        assert.ok(queries.some(sql => sql.includes('FOR UPDATE')));
+        assert.ok(queries.some(sql => sql.includes(`INSERT INTO ${schema.TABLES.dashboardAuditLogs}`)));
     } finally {
         if (originalEnv === undefined) delete process.env.NODE_ENV;
         else process.env.NODE_ENV = originalEnv;

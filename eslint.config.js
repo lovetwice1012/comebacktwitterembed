@@ -27,6 +27,12 @@ module.exports = [
         },
     },
     {
+        files: ['admin-agent/web/**/*.js'],
+        languageOptions: {
+            globals: globals.browser,
+        },
+    },
+    {
         ignores: [
             'node_modules/**',
             'dashboard/**',

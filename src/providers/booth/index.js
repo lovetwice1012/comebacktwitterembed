@@ -337,7 +337,7 @@ function buildBoothAnalytics(parsed, info, canonicalUrl, salePeriod) {
             publishedAtMs: salePeriod?.startAt ? salePeriod.startAt.getTime() : null,
         },
         metrics: {
-            price: finiteNumber(info.price),
+            price: finiteNumber(info.price, { kind: 'money' }),
             favorites: info.wish_lists_count,
             variation_count: Array.isArray(info.variations) ? info.variations.length : null,
         },

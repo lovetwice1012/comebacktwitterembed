@@ -1,6 +1,7 @@
 'use strict';
 
 const { AsyncLocalStorage } = require('async_hooks');
+const telemetry = require('./adminSupport/telemetry');
 const crypto = require('crypto');
 const { TABLES } = require('./db_schema');
 const { discordErrorCode } = require('./utils');
@@ -87,7 +88,7 @@ function safeJsonStringify(value) {
         return current;
     });
     if (!json) return null;
-    return json.length > MAX_DETAILS_LENGTH ? json.slice(0, MAX_DETAILS_LENGTH) : json;
+    return json.length > MAX_DETAILS_LENGTH ? JSON.stringify({ truncated: true, originalLength: json.length, preview: json.slice(0, MAX_DETAILS_LENGTH - 200) }) : json;
 }
 
 function truncateForDetails(value, maxLength = MAX_INPUT_PREVIEW_LENGTH) {
@@ -266,7 +267,7 @@ function mergeContext(context = {}) {
 
 function runWithErrorContext(context, fn) {
     const merged = mergeContext(context);
-    return errorContextStore.run(merged, fn);
+    return telemetry.run({ ...telemetry.contextFromMessage(merged.message || merged.interaction), provider_id: merged.providerId, url: merged.url, source: merged.source }, () => errorContextStore.run(merged, fn));
 }
 
 function createInputDetails(merged, rawUrl, normalizedUrl) {
@@ -428,6 +429,7 @@ function incrementErrorBucket(row) {
 }
 
 function recordMetric(metricName, context = {}, count = 1) {
+    if (telemetry.current()?.preview) return;
     if (!metricName || !Number.isFinite(count) || count <= 0) return;
     const merged = mergeContext(context);
     const occurredAtMs = Number.isFinite(merged.occurredAtMs) ? Math.floor(merged.occurredAtMs) : nowMs();
@@ -478,6 +480,9 @@ function createAnalyticsEventRow(eventType, context = {}) {
 }
 
 function recordAnalyticsEvent(eventType, context = {}) {
+    const merged = mergeContext(context);
+    telemetry.event('analytics', eventType, { source: merged.source, success: merged.success, durationMs: merged.durationMs, details: merged.details, commandName: merged.commandName, componentId: merged.componentId });
+    if (telemetry.current()?.preview) return;
     try {
         enqueueAnalyticsEvent(createAnalyticsEventRow(eventType, context));
         scheduleFlush();
@@ -850,6 +855,7 @@ function recordProviderContentEventNow(context = {}) {
 }
 
 function recordProviderContentEvent(context = {}) {
+    if (telemetry.current()?.preview) return;
     const jobs = providerAnalyticsEnrichmentJobs(context.steps);
     if (jobs.length === 0) {
         recordProviderContentEventNow(context);
@@ -995,6 +1001,9 @@ function createProviderHourlyUniqueRows(row, eventType, contentType = '') {
 
 function recordError(err, context = {}) {
     try {
+        const merged = mergeContext(context);
+        telemetry.event('error', 'failed', { error: telemetry.errorData(err), source: merged.source, details: merged.details, input: merged.message?.content || merged.interaction?.customId, url: merged.url });
+        if (telemetry.current()?.preview) return;
         const row = createErrorEventRow(err, context);
         enqueueEvent(row);
         incrementErrorBucket(row);

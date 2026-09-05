@@ -1,4 +1,6 @@
 import "server-only";
+import { metricObservationQuery, observedRatio, aggregateNumericFacet } from "@/lib/metric-observation-query";
+import { decodeLogCursor, logConditions, type LogSearch, type LogCursor } from "@/lib/admin-log-query";
 
 import { createHash } from "crypto";
 import { prisma as sharedPrisma } from "@/lib/prisma";
@@ -62,7 +64,6 @@ const DATABASE_TABLES = [
 
 const tableMap = new Map<string, (typeof DATABASE_TABLES)[number]>(DATABASE_TABLES.map((table) => [table.name, table]));
 const sensitiveColumn = /(token|secret|password|webhook_url)$/i;
-const personalIdentifierColumn = /(^|_)(author_user_id|actor_user_id|user_id|target_user_id|message_id)$/i;
 const HOUR_MS = 60 * 60 * 1000;
 const DAY_MS = 24 * HOUR_MS;
 const ADMIN_ANALYTICS_BATCH_INTERVAL_MS = 5 * 60 * 1000;
@@ -200,7 +201,6 @@ function maskRow(row: Record<string, unknown>) {
     Object.entries(row).map(([key, value]) => {
       if (sensitiveColumn.test(key)) return [key, value ? "[masked]" : value];
       const serialized = serialize(value);
-      if (personalIdentifierColumn.test(key)) return [key, anonymizeIdentifier(serialized, key)];
       return [key, serialized];
     }),
   );
@@ -232,7 +232,9 @@ function protectSmallGroupRow(row: Row, extraDetailColumns: string[] = []) {
 }
 
 function protectSmallGroupRows(rows: Row[], extraDetailColumns: string[] = []) {
-  return rows.map((row) => protectSmallGroupRow(row, extraDetailColumns));
+  // Admin-only analytics retain complete evidence; public previews apply their own privacy boundary.
+  void extraDetailColumns;
+  return rows;
 }
 
 const previewHiddenDetailColumns = new Set([
@@ -424,20 +426,11 @@ function shouldPrewarmAdminAnalyticsCache() {
 }
 
 function rate(numerator: unknown, denominator: unknown) {
-  const top = Number(numerator) || 0;
-  const bottom = Number(denominator) || 0;
-  return bottom > 0 ? top / bottom : 0;
+  return observedRatio(numerator, denominator);
 }
 
 function optionalRate(numerator: unknown, denominator: unknown) {
-  const top = Number(numerator) || 0;
-  const bottom = Number(denominator) || 0;
-  return bottom > 0 ? top / bottom : null;
-}
-
-function clamp01(value: number) {
-  if (!Number.isFinite(value)) return 0;
-  return Math.max(0, Math.min(1, value));
+  return observedRatio(numerator, denominator);
 }
 
 function metricSelect(name: string, alias: string) {
@@ -1153,9 +1146,9 @@ async function getAggregateOperationalTrend(startMs: number) {
 }
 
 function aggregateSeasonalityKey(kind: "hour" | "weekday" | "provider_weekday", row: Row) {
-  if (kind === "hour") return String(row.hour_utc ?? "");
-  if (kind === "weekday") return String(row.weekday_utc ?? "");
-  return [row.provider_id || "", row.weekday_utc || ""].join("\u0001");
+  if (kind === "hour") return String(row.hour_jst ?? "");
+  if (kind === "weekday") return String(row.weekday_jst ?? "");
+  return [row.provider_id || "", row.weekday_jst || ""].join("\u0001");
 }
 
 function aggregateDayKey(row: Row) {
@@ -1166,7 +1159,7 @@ function decorateAggregateSeasonalityRow(row: Row, extra: Row = {}) {
   return decorateAggregateOperationalRow(row, {
     ...extra,
     analysis_model: "seasonality",
-    aggregation_grain: row.provider_id ? "provider_weekday" : row.weekday_utc ? "weekday" : "hour",
+    aggregation_grain: row.provider_id ? "provider_weekday" : row.weekday_jst ? "weekday" : "hour",
   });
 }
 
@@ -1177,7 +1170,7 @@ function decorateEventDaySpikeRows(rows: Row[], uniqueMap: Map<string, Row>, bas
   );
   return rows
     .map((row) => {
-      const baseline = baselineByProvider?.get(String(row.provider_id || "")) ?? globalBaseline;
+      const baseline = baselineByProvider?.get(String(row.provider_id || "")) ?? globalBaseline ?? 0;
       const contentEvents = rowNumber(row, "content_events");
       const lift = baseline > 0 ? contentEvents / baseline : 0;
       return decorateAggregateOperationalRow(
@@ -1188,12 +1181,12 @@ function decorateEventDaySpikeRows(rows: Row[], uniqueMap: Map<string, Row>, bas
           baseline_content_events_per_day: baseline,
           delta_content_events: contentEvents - baseline,
           event_day_lift: lift,
-          event_day_score: contentEvents * lift,
+          event_day_score: null,
           analysis_model: "event_day_seasonality",
         },
       );
     })
-    .sort((left, right) => rowNumber(right, "event_day_score") - rowNumber(left, "event_day_score"));
+    .sort((left, right) => rowNumber(right, "delta_content_events") - rowNumber(left, "delta_content_events"));
 }
 
 async function getAggregateSeasonalityAnalytics(startMs: number) {
@@ -1212,13 +1205,13 @@ async function getAggregateSeasonalityAnalytics(startMs: number) {
     ),
     prisma.$queryRawUnsafe<Array<Record<string, unknown>>>(
       `SELECT
-         FLOOR(MOD(FLOOR(bucket_start_ms / ?), 24)) AS hour_utc,
+         FLOOR(MOD(FLOOR((bucket_start_ms + 32400000) / ?), 24)) AS hour_jst,
          key_type,
          COUNT(DISTINCT key_hash) AS unique_count
        FROM bot_provider_hourly_unique_keys
        WHERE bucket_start_ms >= ?
          AND event_type = 'provider_content'
-       GROUP BY hour_utc, key_type`,
+       GROUP BY hour_jst, key_type`,
       HOUR_MS,
       startMs,
     ),
@@ -1228,13 +1221,13 @@ async function getAggregateSeasonalityAnalytics(startMs: number) {
     ),
     prisma.$queryRawUnsafe<Array<Record<string, unknown>>>(
       `SELECT
-         DAYOFWEEK(FROM_UNIXTIME(bucket_start_ms / 1000)) AS weekday_utc,
+         (MOD(FLOOR((bucket_start_ms + 32400000) / 86400000) + 3, 7) + 1) AS weekday_jst,
          key_type,
          COUNT(DISTINCT key_hash) AS unique_count
        FROM bot_provider_hourly_unique_keys
        WHERE bucket_start_ms >= ?
          AND event_type = 'provider_content'
-       GROUP BY weekday_utc, key_type`,
+       GROUP BY weekday_jst, key_type`,
       startMs,
     ),
     prisma.$queryRawUnsafe<Array<Record<string, unknown>>>(
@@ -1244,14 +1237,14 @@ async function getAggregateSeasonalityAnalytics(startMs: number) {
     prisma.$queryRawUnsafe<Array<Record<string, unknown>>>(
       `SELECT
          provider_id,
-         DAYOFWEEK(FROM_UNIXTIME(bucket_start_ms / 1000)) AS weekday_utc,
+         (MOD(FLOOR((bucket_start_ms + 32400000) / 86400000) + 3, 7) + 1) AS weekday_jst,
          key_type,
          COUNT(DISTINCT key_hash) AS unique_count
        FROM bot_provider_hourly_unique_keys
        WHERE bucket_start_ms >= ?
          AND event_type = 'provider_content'
          AND provider_id <> ''
-       GROUP BY provider_id, weekday_utc, key_type`,
+       GROUP BY provider_id, weekday_jst, key_type`,
       startMs,
     ),
   ]);
@@ -1290,7 +1283,7 @@ async function getAggregateEventDaySpikes(startMs: number) {
     ),
     prisma.$queryRawUnsafe<Array<Record<string, unknown>>>(
       `SELECT
-         FLOOR(bucket_start_ms / ?) * ? AS day_start_ms,
+         (FLOOR((bucket_start_ms + 32400000) / ?) * ? - 32400000) AS day_start_ms,
          key_type,
          COUNT(DISTINCT key_hash) AS unique_count
        FROM bot_provider_hourly_unique_keys
@@ -1310,7 +1303,7 @@ async function getAggregateEventDaySpikes(startMs: number) {
     prisma.$queryRawUnsafe<Array<Record<string, unknown>>>(
       `SELECT
          provider_id,
-         FLOOR(bucket_start_ms / ?) * ? AS day_start_ms,
+         (FLOOR((bucket_start_ms + 32400000) / ?) * ? - 32400000) AS day_start_ms,
          key_type,
          COUNT(DISTINCT key_hash) AS unique_count
        FROM bot_provider_hourly_unique_keys
@@ -1344,7 +1337,7 @@ async function getAggregateEventDaySpikes(startMs: number) {
   }
   const providerBaselines = new Map<string, number>();
   for (const [provider, value] of providerSums.entries()) {
-    providerBaselines.set(provider, rate(value.total, Math.max(1, value.days)));
+    providerBaselines.set(provider, value.total / Math.max(1, value.days));
   }
 
   return {
@@ -1418,7 +1411,7 @@ async function getAggregateAudienceCorrelation(startMs: number) {
     const sharedUsers = rowNumber(row, "shared_users");
     const targetShare = rate(sharedUsers, targetUsers);
     const baselineShare = rate(interestUsers, totalUsers);
-    const lift = baselineShare > 0 ? targetShare / baselineShare : 0;
+    const lift = baselineShare !== null && baselineShare > 0 && targetShare !== null ? targetShare / baselineShare : null;
     return {
       ...maskRow(row),
       target_users: targetUsers,
@@ -1427,7 +1420,7 @@ async function getAggregateAudienceCorrelation(startMs: number) {
       target_share: targetShare,
       baseline_share: baselineShare,
       lift,
-      affinity_score: sharedUsers * lift,
+      affinity_score: null,
       analysis_model: "audience_correlation",
       data_source: "bot_provider_hourly_unique_keys",
     };
@@ -1597,8 +1590,10 @@ async function getFunnelAnalytics(startMs: number) {
     ...maskRow(row),
     extract_success_rate: rate(row.extract_successes, row.url_posts),
     send_success_rate: rate(row.send_successes, row.send_attempts),
-    interaction_rate: rate(row.interaction_events, row.send_successes),
-    media_delivery_rate: rate(row.media_delivery_successes, row.send_successes),
+    interaction_rate: null,
+    interaction_rate_state: "output_interaction_link_not_recorded",
+    media_delivery_rate: null,
+    media_delivery_rate_state: "output_delivery_link_not_recorded",
   })));
 }
 
@@ -1746,7 +1741,7 @@ async function getWeeklyCohortAnalytics(startMs: number) {
      FROM (
        SELECT
          author_user_id,
-         FLOOR(MIN(occurred_at_ms) / ?) * ? AS cohort_week_ms
+         (FLOOR((MIN(occurred_at_ms) - 313200000) / ?) * ? + 313200000) AS cohort_week_ms
        FROM bot_provider_content_events
        WHERE author_user_id IS NOT NULL
        GROUP BY author_user_id
@@ -1756,7 +1751,7 @@ async function getWeeklyCohortAnalytics(startMs: number) {
        FROM (
          SELECT
            author_user_id,
-           FLOOR(MIN(occurred_at_ms) / ?) * ? AS cohort_week_ms
+           (FLOOR((MIN(occurred_at_ms) - 313200000) / ?) * ? + 313200000) AS cohort_week_ms
          FROM bot_provider_content_events
          WHERE author_user_id IS NOT NULL
          GROUP BY author_user_id
@@ -1766,7 +1761,7 @@ async function getWeeklyCohortAnalytics(startMs: number) {
      JOIN (
        SELECT
          author_user_id,
-         FLOOR(occurred_at_ms / ?) * ? AS activity_week_ms
+         (FLOOR((occurred_at_ms - 313200000) / ?) * ? + 313200000) AS activity_week_ms
        FROM bot_provider_content_events
        WHERE occurred_at_ms >= ?
          AND author_user_id IS NOT NULL
@@ -1788,7 +1783,9 @@ async function getWeeklyCohortAnalytics(startMs: number) {
   return protectSmallGroupRows(rows.map((row) => ({
     ...maskRow(row),
     age_weeks: Math.max(0, Math.round((Number(row.activity_week_ms || 0) - Number(row.cohort_week_ms || 0)) / (7 * DAY_MS))),
-    retention_rate: rate(row.retained_users, row.cohort_users),
+    retention_rate: Number(row.activity_week_ms) + 7 * DAY_MS <= Date.now() ? rate(row.retained_users, row.cohort_users) : null,
+    observed_retention_rate: rate(row.retained_users, row.cohort_users),
+    cohort_window_state: Number(row.activity_week_ms) + 7 * DAY_MS <= Date.now() ? "complete_week" : "incomplete_week",
   })));
 }
 
@@ -1804,7 +1801,7 @@ async function getUrlReuseAnalytics(startMs: number) {
   const rows = await prisma.$queryRawUnsafe<Array<Record<string, unknown>>>(contentReachQuery('reuse'), startMs);
   return protectSmallGroupRows(rows.map((row) => ({
     ...maskRow(row),
-    spread_velocity_per_day: rate(row.guilds, Math.max(1, rate(Number(row.last_seen_ms || 0) - Number(row.first_seen_ms || 0), DAY_MS))),
+    spread_velocity_per_day: rate(row.guilds, Math.max(1, (Number(row.last_seen_ms || 0) - Number(row.first_seen_ms || 0)) / DAY_MS)),
   })));
 }
 
@@ -1871,23 +1868,17 @@ async function getProviderAccountHealth(startMs: number) {
     startMs,
   );
   return protectSmallGroupRows(rows.map((row) => {
-    const extractSuccessRate = rate(row.extract_successes, Number(row.extract_successes || 0) + Number(row.extract_failures || 0));
-    const enrichmentSuccessRate = Number(row.enrichment_jobs || 0) > 0
-      ? rate(row.enrichment_successes, Number(row.enrichment_successes || 0) + Number(row.enrichment_failures || 0))
-      : 1;
-    const popularity = clamp01(Math.log10(Number(row.content_events || 0) + 1) / 3);
-    const reach = clamp01(Math.log10(Number(row.unique_guilds || 0) + 1) / 2);
-    const reliability = clamp01((extractSuccessRate * 0.7) + (enrichmentSuccessRate * 0.3));
-    const errorPenalty = clamp01(rate(row.error_events, Number(row.extract_events || 0) + Number(row.content_events || 0)));
-    const freshness = clamp01(1 - rate(Date.now() - Number(row.last_seen_ms || 0), 30 * DAY_MS));
-    const healthScore = Math.round(100 * clamp01((popularity * 0.25) + (reach * 0.2) + (reliability * 0.35) + (freshness * 0.2) - (errorPenalty * 0.3)));
     return {
       ...maskRow(row),
-      extract_success_rate: extractSuccessRate,
-      enrichment_success_rate: enrichmentSuccessRate,
-      error_rate: errorPenalty,
-      freshness_score: freshness,
-      health_score: healthScore,
+      extract_success_rate: optionalRate(row.extract_successes, Number(row.extract_successes || 0) + Number(row.extract_failures || 0)),
+      enrichment_success_rate: optionalRate(row.enrichment_successes, Number(row.enrichment_successes || 0) + Number(row.enrichment_failures || 0)),
+      provider_error_events: row.error_events,
+      error_rate: null,
+      freshness_age_ms: Math.max(0, Date.now() - Number(row.last_seen_ms || 0)),
+      freshness_score: null,
+      health_score: null,
+      score_state: "retired_composite",
+      metric_definition: "legacy-observations-v2",
     };
   }));
 }
@@ -1978,7 +1969,7 @@ async function getProviderAnomalySignals(now: number) {
     const currentMediaFailureRate = rate(row.current_media_delivery_failures, currentMediaRequests);
     const baselineMediaFailureRate = rate(row.baseline_media_delivery_failures, baselineMediaRequests);
 
-    if (currentExtractEvents >= 5 && baselineExtractEvents >= 20 && baselineExtractSuccessRate - currentExtractSuccessRate >= 0.15) {
+    if (currentExtractSuccessRate !== null && baselineExtractSuccessRate !== null && currentExtractErrorRate !== null && currentExtractEvents >= 5 && baselineExtractEvents >= 20 && baselineExtractSuccessRate - currentExtractSuccessRate >= 0.15) {
       alerts.push({
         provider_id: row.provider_id,
         alert_type: "extract_success_drop",
@@ -1987,10 +1978,10 @@ async function getProviderAnomalySignals(now: number) {
         current_rate: currentExtractSuccessRate,
         baseline_rate: baselineExtractSuccessRate,
         delta_rate: currentExtractSuccessRate - baselineExtractSuccessRate,
-        severity_score: Math.round(100 * clamp01((baselineExtractSuccessRate - currentExtractSuccessRate) + currentExtractErrorRate)),
+        severity_basis: "observed_same_stage_change; threshold specified by alert_type",
       });
     }
-    if (currentExtractEvents >= 5 && baselineExtractEvents >= 20 && currentExtractErrorRate - baselineExtractErrorRate >= 0.2) {
+    if (currentExtractErrorRate !== null && baselineExtractErrorRate !== null && currentExtractEvents >= 5 && baselineExtractEvents >= 20 && currentExtractErrorRate - baselineExtractErrorRate >= 0.2) {
       alerts.push({
         provider_id: row.provider_id,
         alert_type: "extract_error_spike",
@@ -1999,7 +1990,7 @@ async function getProviderAnomalySignals(now: number) {
         current_rate: currentExtractErrorRate,
         baseline_rate: baselineExtractErrorRate,
         delta_rate: currentExtractErrorRate - baselineExtractErrorRate,
-        severity_score: Math.round(100 * clamp01((currentExtractErrorRate - baselineExtractErrorRate) + rate(row.current_extract_failures, 10))),
+        severity_basis: "observed_same_stage_change; threshold specified by alert_type",
       });
     }
     if (currentExtractEvents >= 5 && baselineDuration > 0 && currentDuration >= Math.max(1000, baselineDuration * 2)) {
@@ -2011,10 +2002,10 @@ async function getProviderAnomalySignals(now: number) {
         current_avg_duration_ms: currentDuration,
         baseline_avg_duration_ms: baselineDuration,
         duration_ratio: rate(currentDuration, baselineDuration),
-        severity_score: Math.round(100 * clamp01(rate(currentDuration - baselineDuration, baselineDuration * 3))),
+        severity_basis: "observed_same_stage_change; threshold specified by alert_type",
       });
     }
-    if (currentEnrichmentJobs >= 3 && baselineEnrichmentJobs >= 10 && currentEnrichmentFailureRate - baselineEnrichmentFailureRate >= 0.25) {
+    if (currentEnrichmentFailureRate !== null && baselineEnrichmentFailureRate !== null && currentEnrichmentJobs >= 3 && baselineEnrichmentJobs >= 10 && currentEnrichmentFailureRate - baselineEnrichmentFailureRate >= 0.25) {
       alerts.push({
         provider_id: row.provider_id,
         alert_type: "enrichment_failure_spike",
@@ -2023,10 +2014,10 @@ async function getProviderAnomalySignals(now: number) {
         current_rate: currentEnrichmentFailureRate,
         baseline_rate: baselineEnrichmentFailureRate,
         delta_rate: currentEnrichmentFailureRate - baselineEnrichmentFailureRate,
-        severity_score: Math.round(100 * clamp01(currentEnrichmentFailureRate - baselineEnrichmentFailureRate)),
+        severity_basis: "observed_same_stage_change; threshold specified by alert_type",
       });
     }
-    if (currentMediaRequests >= 5 && baselineMediaRequests >= 10 && currentMediaFailureRate - baselineMediaFailureRate >= 0.2) {
+    if (currentMediaFailureRate !== null && baselineMediaFailureRate !== null && currentMediaRequests >= 5 && baselineMediaRequests >= 10 && currentMediaFailureRate - baselineMediaFailureRate >= 0.2) {
       alerts.push({
         provider_id: row.provider_id,
         alert_type: "media_delivery_failure_spike",
@@ -2035,12 +2026,12 @@ async function getProviderAnomalySignals(now: number) {
         current_rate: currentMediaFailureRate,
         baseline_rate: baselineMediaFailureRate,
         delta_rate: currentMediaFailureRate - baselineMediaFailureRate,
-        severity_score: Math.round(100 * clamp01(currentMediaFailureRate - baselineMediaFailureRate)),
+        severity_basis: "observed_same_stage_change; threshold specified by alert_type",
       });
     }
   }
   return alerts
-    .sort((a, b) => Number(b.severity_score || 0) - Number(a.severity_score || 0))
+    .sort((a, b) => Number(b.current_events || 0) - Number(a.current_events || 0))
     .slice(0, 80)
     .map(maskRow);
 }
@@ -2063,175 +2054,28 @@ function buildDecisionInsights(input: {
   eventDaySpikes30d?: { days?: Row[]; providers?: Row[] };
 }) {
   const insights: Row[] = [];
-  for (const row of input.providerAnomalySignals.slice(0, 12)) {
-    insights.push({
-      priority_score: rowNumber(row, "severity_score"),
-      audience: "operations",
-      insight_type: row.alert_type || "provider_anomaly",
-      provider_id: row.provider_id,
-      account_key: row.account_key || null,
-      title: "Provider degradation detected",
-      recommendation: "Check provider API status, recent parser changes, and rate-limit/error logs before it affects user-facing reliability.",
-      evidence: `current=${row.current_rate ?? row.current_avg_duration_ms}, baseline=${row.baseline_rate ?? row.baseline_avg_duration_ms}`,
-    });
+  for (const row of input.providerAnomalySignals) {
+    insights.push({ ...row, audience: "operations", insight_type: row.alert_type, title: "同じ処理段階で前期間との差を観測",
+      recommendation: "対応するHTTP試行・例外原文・コード版を調査してください。前期間との差だけで原因は確定しません。",
+      evidence: { currentCount: row.current_events, baselineCount: row.baseline_events, currentRate: row.current_rate, baselineRate: row.baseline_rate, currentDurationMs: row.current_avg_duration_ms, baselineDurationMs: row.baseline_avg_duration_ms },
+      metric_definition: "legacy-observations-v2" });
   }
-
-  for (const row of (input.analyticsQuality.metricNullRates || []).slice(0, 40)) {
-    const nullRate = rowNumber(row, "null_rate");
-    const required = row.required === true || String(row.required) === "1";
-    if (rowNumber(row, "content_events") < PRIVACY_MIN_GROUP_SIZE || (!required && nullRate < 0.7) || (required && nullRate < 0.3)) continue;
-    insights.push({
-      priority_score: Math.round(100 * clamp01(nullRate + (required ? 0.25 : 0))),
-      audience: "data_quality",
-      insight_type: required ? "required_metric_gap" : "optional_metric_gap",
-      provider_id: row.provider_id,
-      metric_key: row.metric_key,
-      title: required ? "Required provider metric coverage is weak" : "Provider metric is often unavailable",
-      recommendation: required
-        ? "Prioritize parser/API validation for this provider metric because downstream marketing dashboards depend on it."
-        : "Keep this as a quality watch item; promote it only after coverage improves.",
-      evidence: `coverage=${row.coverage_rate}, null=${row.null_rate}, events=${row.content_events}`,
-    });
+  for (const row of input.funnelAnalytics) {
+    const failed = rowNumber(row, "extract_failures") + rowNumber(row, "send_failures");
+    if (failed === 0) continue;
+    insights.push({ provider_id: row.provider_id, account_key: row.account_key, insight_type: "observed_stage_failures", title: "取得・送信の失敗記録あり",
+      recommendation: "取得失敗と送信失敗を別々に開き、各要求の入力・応答・設定を確認してください。",
+      observed_failure_events: failed, extract_failures: row.extract_failures, send_failures: row.send_failures,
+      extract_attempts: row.url_posts, send_attempts: row.send_attempts, extract_success_rate: row.extract_success_rate, send_success_rate: row.send_success_rate });
   }
-
-  for (const row of input.providerAccountHealth.slice(0, 30)) {
-    const health = rowNumber(row, "health_score");
-    if (health >= 55) continue;
-    insights.push({
-      priority_score: 100 - health,
-      audience: "provider_marketing",
-      insight_type: "provider_account_health_low",
-      provider_id: row.provider_id,
-      account_key: row.account_key,
-      title: "Provider account health is weak",
-      recommendation: "Review extraction reliability, enrichment success, freshness, and provider errors before showing this account as a marketing success case.",
-      evidence: `health=${health}, extract=${row.extract_success_rate}, enrichment=${row.enrichment_success_rate}, errors=${row.error_rate}`,
-    });
+  for (const row of input.analyticsQuality.metricNullRates || []) {
+    if (row.null_rate == null || rowNumber(row, "null_rate") === 0) continue;
+    insights.push({ ...row, insight_type: "metric_observation_gap", title: "取得できていない外部指標あり", recommendation: "対応する指標定義と取得応答を確認してください。取得元が値を提供しない場合と解析失敗を区別します。" });
   }
-
-  for (const row of input.settingChangeImpact.slice(0, 20)) {
-    const changeRate = rowNumber(row, "change_rate");
-    if (Math.abs(changeRate) < 0.2) continue;
-    insights.push({
-      priority_score: Math.round(70 * clamp01(Math.abs(changeRate))),
-      audience: "guild_admin_preview",
-      insight_type: changeRate > 0 ? "setting_positive_impact" : "setting_negative_impact",
-      provider_id: row.provider_id,
-      setting_key: row.setting_key,
-      title: changeRate > 0 ? "Setting change appears to increase usage" : "Setting change may have reduced usage",
-      recommendation: changeRate > 0
-        ? "Consider surfacing this as a recommended configuration pattern after more data accumulates."
-        : "Review this setting change before exposing similar recommendations to server administrators.",
-      evidence: `before=${row.content_before}, after=${row.content_after}, change=${row.change_rate}`,
-    });
+  for (const row of input.settingChangeImpact) {
+    insights.push({ ...row, insight_type: "setting_before_after_observation", title: "設定変更前後の観測件数", recommendation: "同じ期間長・機能・利用量で比較してください。重なる変更や未完了期間があり、設定の因果効果はこの値だけでは確認できません。" });
   }
-
-  for (const row of (input.settingAttributionSummary || []).slice(0, 20)) {
-    const changes = rowNumber(row, "changes");
-    const usersAfter = rowNumber(row, "unique_users");
-    const changeRate = rowNumber(row, "change_rate");
-    if (changes < 1 || usersAfter < PRIVACY_MIN_GROUP_SIZE || changeRate < 0.25) continue;
-    insights.push({
-      priority_score: Math.round(Math.min(100, 35 + changeRate * 40 + usersAfter)),
-      audience: "guild_admin_preview",
-      insight_type: "setting_attribution",
-      provider_id: row.provider_id,
-      setting_key: row.setting_key,
-      title: "A setting change is associated with higher usage",
-      recommendation: "Review this setting pattern for rollout guidance; compare success rates and user reach before applying it broadly.",
-      evidence: `type=${row.attribution_type}, direction=${row.setting_direction}, change_rate=${row.change_rate}, users=${row.unique_users}`,
-    });
-  }
-
-  for (const row of input.funnelAnalytics.slice(0, 30)) {
-    const extractSuccess = rowNumber(row, "extract_success_rate");
-    const sendSuccess = rowNumber(row, "send_success_rate");
-    const events = rowNumber(row, "url_posts");
-    if (events < 20 || (extractSuccess >= 0.9 && sendSuccess >= 0.95)) continue;
-    insights.push({
-      priority_score: Math.round(100 * clamp01((1 - extractSuccess) + (1 - sendSuccess))),
-      audience: "operations",
-      insight_type: "funnel_dropoff",
-      provider_id: row.provider_id,
-      account_key: row.account_key,
-      title: "Funnel drop-off is visible",
-      recommendation: "Inspect extract failures and Discord send failures for this provider/account; improving this path directly raises user-visible value.",
-      evidence: `posts=${row.url_posts}, extract=${row.extract_success_rate}, send=${row.send_success_rate}`,
-    });
-  }
-
-  for (const row of input.mediaDelivery7d.slice(0, 12)) {
-    const requests = rowNumber(row, "requests");
-    const successRate = rowNumber(row, "success_rate");
-    if (requests < 10 || successRate < 0.9) continue;
-    insights.push({
-      priority_score: Math.round(30 + Math.min(50, requests)),
-      audience: "guild_admin_preview",
-      insight_type: "media_delivery_value",
-      provider_id: row.provider_id,
-      account_key: row.account_key,
-      title: "Media delivery is proving user value",
-      recommendation: "Use this provider/account as evidence that attachments/download flows create measurable value beyond embeds.",
-      evidence: `requests=${row.requests}, success=${row.success_rate}, urls=${row.urls}`,
-    });
-  }
-
-  for (const row of (input.audienceCorrelation7d || []).slice(0, 12)) {
-    const sharedUsers = rowNumber(row, "shared_users");
-    const lift = rowNumber(row, "lift");
-    if (sharedUsers < PRIVACY_MIN_GROUP_SIZE || lift < 1.5) continue;
-    insights.push({
-      priority_score: Math.round(Math.min(100, sharedUsers * lift)),
-      audience: "provider_marketing_preview",
-      insight_type: "audience_affinity",
-      provider_id: row.target_provider_id,
-      account_key: row.target_account_key,
-      title: "Audience affinity is measurably above baseline",
-      recommendation: "Use the paired provider/account as a targeting, collaboration, or content-positioning clue; the score is computed from anonymized aggregate reach.",
-      evidence: `shared_users=${row.shared_users}, lift=${row.lift}, interest=${row.interest_provider_id}/${row.interest_account_key}`,
-    });
-  }
-
-  const peakHours = [...(input.seasonality30d?.hours || [])]
-    .sort((left, right) => rowNumber(right, "content_events") - rowNumber(left, "content_events"))
-    .slice(0, 6);
-  for (const row of peakHours) {
-    const contentEvents = rowNumber(row, "content_events");
-    const uniqueUsers = rowNumber(row, "unique_users");
-    if (contentEvents < 10 || uniqueUsers < PRIVACY_MIN_GROUP_SIZE) continue;
-    insights.push({
-      priority_score: Math.round(Math.min(80, 20 + contentEvents / 5)),
-      audience: "guild_admin_preview",
-      insight_type: "seasonal_peak_hour",
-      provider_id: null,
-      account_key: null,
-      title: "A repeatable peak usage hour is visible",
-      recommendation: "Surface this hour in server-admin analytics as the best timing hint for announcements and provider rollout checks.",
-      evidence: `hour_utc=${row.hour_utc}, content_events=${row.content_events}, users=${row.unique_users}`,
-    });
-  }
-
-  for (const row of (input.eventDaySpikes30d?.providers || []).slice(0, 12)) {
-    const lift = rowNumber(row, "event_day_lift");
-    const contentEvents = rowNumber(row, "content_events");
-    const uniqueUsers = rowNumber(row, "unique_users");
-    if (contentEvents < 10 || uniqueUsers < PRIVACY_MIN_GROUP_SIZE || lift < 1.75) continue;
-    insights.push({
-      priority_score: Math.round(Math.min(100, 25 + contentEvents * lift)),
-      audience: "provider_marketing_preview",
-      insight_type: "event_day_spike",
-      provider_id: row.provider_id,
-      account_key: null,
-      title: "A provider had an event-day response spike",
-      recommendation: "Review the day, provider, and content mix to identify launches, external events, campaigns, or community moments worth repeating.",
-      evidence: `day=${row.day_at}, provider=${row.provider_id}, lift=${row.event_day_lift}, content_events=${row.content_events}`,
-    });
-  }
-
-  return insights
-    .sort((a, b) => rowNumber(b, "priority_score") - rowNumber(a, "priority_score"))
-    .slice(0, 80)
-    .map(maskRow);
+  return insights.map(maskRow);
 }
 
 async function getProviderAccountHourly(startMs: number) {
@@ -2239,7 +2083,7 @@ async function getProviderAccountHourly(startMs: number) {
     `SELECT /*+ INDEX(bot_analytics_events idx_analytics_event_time) */
        provider_id,
        account_key,
-       HOUR(FROM_UNIXTIME(occurred_at_ms / 1000)) AS hour_of_day,
+       MOD(FLOOR((occurred_at_ms + 32400000) / 3600000), 24) AS hour_of_day,
        COUNT(*) AS extracts,
        COUNT(DISTINCT author_user_id) AS unique_users,
        COUNT(DISTINCT guild_id) AS unique_guilds
@@ -2262,7 +2106,7 @@ async function getProviderContentHourly(startMs: number) {
       `SELECT
          provider_id,
          account_key,
-         HOUR(FROM_UNIXTIME(bucket_start_ms / 1000)) AS hour_of_day,
+         MOD(FLOOR((bucket_start_ms + 32400000) / 3600000), 24) AS hour_of_day,
          SUM(content_events) AS content_events,
          SUM(media_count_sum) AS media_count_sum,
          SUM(duration_seconds_sum) AS duration_seconds_sum,
@@ -2281,7 +2125,7 @@ async function getProviderContentHourly(startMs: number) {
       `SELECT
          provider_id,
          account_key,
-         HOUR(FROM_UNIXTIME(bucket_start_ms / 1000)) AS hour_of_day,
+         MOD(FLOOR((bucket_start_ms + 32400000) / 3600000), 24) AS hour_of_day,
          key_type,
          COUNT(DISTINCT key_hash) AS unique_count
        FROM bot_provider_hourly_unique_keys
@@ -2475,8 +2319,10 @@ function parseTimestampMs(value: string | number | null | undefined) {
   if (!cleaned) return null;
   const numeric = Number(cleaned);
   if (Number.isFinite(numeric) && numeric > 0) return numeric;
-  const parsed = Date.parse(cleaned);
-  return Number.isFinite(parsed) ? parsed : null;
+  const timestamp = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$/.test(cleaned) ? `${cleaned}+09:00` : /^\d{4}-\d{2}-\d{2}$/.test(cleaned) ? `${cleaned}T00:00:00+09:00` : cleaned;
+  const parsed = Date.parse(timestamp);
+  if (!Number.isFinite(parsed)) throw new Error("Invalid analytics timestamp");
+  return parsed;
 }
 
 function detailedAnalyticsWindow(filters: AdminDetailedAnalyticsFilters) {
@@ -2485,8 +2331,9 @@ function detailedAnalyticsWindow(filters: AdminDetailedAnalyticsFilters) {
   const requestedEnd = parseTimestampMs(filters.dateTo);
   const rawStart = requestedStart ?? now - 7 * DAY_MS;
   const rawEnd = requestedEnd ?? now;
-  const startMs = Math.min(rawStart, rawEnd);
-  const endMs = Math.max(rawStart, rawEnd);
+  if (rawStart >= rawEnd) throw new Error("終了日時は開始日時より後にしてください。");
+  const startMs = rawStart;
+  const endMs = rawEnd;
   const spanMs = Math.max(endMs - startMs, HOUR_MS);
   const requestedBucket = cleanFilter(filters.bucket);
   const bucketMs = requestedBucket === "day" ? DAY_MS : requestedBucket === "hour" ? HOUR_MS : spanMs > 14 * DAY_MS ? DAY_MS : HOUR_MS;
@@ -2506,7 +2353,7 @@ function contentWhere(
   alias = "c",
   options: { includeFacetFilter?: boolean } = {},
 ) {
-  const clauses = [`${alias}.occurred_at_ms >= ?`, `${alias}.occurred_at_ms <= ?`];
+  const clauses = [`${alias}.occurred_at_ms >= ?`, `${alias}.occurred_at_ms < ?`];
   const params: unknown[] = [window.startMs, window.endMs];
   appendEquals(clauses, params, `${alias}.provider_id`, filters.providerId);
   appendEquals(clauses, params, `${alias}.account_key`, filters.accountKey);
@@ -2529,7 +2376,7 @@ function contentWhere(
 }
 
 function analyticsWhere(filters: AdminDetailedAnalyticsFilters, window: { startMs: number; endMs: number }, alias = "a") {
-  const clauses = [`${alias}.occurred_at_ms >= ?`, `${alias}.occurred_at_ms <= ?`];
+  const clauses = [`${alias}.occurred_at_ms >= ?`, `${alias}.occurred_at_ms < ?`];
   const params: unknown[] = [window.startMs, window.endMs];
   appendEquals(clauses, params, `${alias}.provider_id`, filters.providerId);
   appendEquals(clauses, params, `${alias}.account_key`, filters.accountKey);
@@ -2553,8 +2400,8 @@ async function getDetailedSummary(filters: AdminDetailedAnalyticsFilters, window
       `SELECT
          COUNT(*) AS content_events,
          COUNT(DISTINCT c.provider_id) AS providers,
-         COUNT(DISTINCT c.account_key) AS accounts,
-         COUNT(DISTINCT c.content_id) AS content_ids,
+         COUNT(DISTINCT c.provider_id, c.account_key) AS accounts,
+         COUNT(DISTINCT c.provider_id, c.content_id) AS content_ids,
          COUNT(DISTINCT c.normalized_url) AS urls,
          COUNT(DISTINCT c.guild_id) AS guilds,
          COUNT(DISTINCT c.author_user_id) AS users,
@@ -2570,7 +2417,7 @@ async function getDetailedSummary(filters: AdminDetailedAnalyticsFilters, window
          COUNT(*) AS analytics_events,
          SUM(a.count) AS weighted_events,
          COUNT(DISTINCT a.provider_id) AS providers,
-         COUNT(DISTINCT a.account_key) AS accounts,
+         COUNT(DISTINCT a.provider_id, a.account_key) AS accounts,
          COUNT(DISTINCT a.guild_id) AS guilds,
          COUNT(DISTINCT a.author_user_id) AS users,
          SUM(a.success = 1) AS successes,
@@ -2587,7 +2434,9 @@ async function getDetailedSummary(filters: AdminDetailedAnalyticsFilters, window
     content: firstMaskedRow(contentRows),
     analytics: {
       ...maskRow(analyticsSummary),
-      success_rate: rate(analyticsSummary.successes, Number(analyticsSummary.successes || 0) + Number(analyticsSummary.failures || 0)),
+      success_rate: filters.eventType ? optionalRate(analyticsSummary.successes, Number(analyticsSummary.successes || 0) + Number(analyticsSummary.failures || 0)) : null,
+      metric_definition: "legacy-observations-v2",
+      result_scope: filters.eventType || "mixed_stages_not_a_request_rate",
     },
   };
 }
@@ -2598,11 +2447,11 @@ async function getDetailedTimeSeries(filters: AdminDetailedAnalyticsFilters, win
   const [contentRows, analyticsRows] = await Promise.all([
     prisma.$queryRawUnsafe<Array<Record<string, unknown>>>(
       `SELECT
-         FLOOR(c.occurred_at_ms / ?) * ? AS bucket_start_ms,
+         (FLOOR((c.occurred_at_ms + 32400000) / ?) * ? - 32400000) AS bucket_start_ms,
          COUNT(*) AS content_events,
          COUNT(DISTINCT c.author_user_id) AS content_users,
          COUNT(DISTINCT c.guild_id) AS content_guilds,
-         COUNT(DISTINCT c.account_key) AS content_accounts
+         COUNT(DISTINCT c.provider_id, c.account_key) AS content_accounts
        FROM bot_provider_content_events c
        WHERE ${content.whereSql}
        GROUP BY bucket_start_ms
@@ -2614,7 +2463,7 @@ async function getDetailedTimeSeries(filters: AdminDetailedAnalyticsFilters, win
     ),
     prisma.$queryRawUnsafe<Array<Record<string, unknown>>>(
       `SELECT
-         FLOOR(a.occurred_at_ms / ?) * ? AS bucket_start_ms,
+         (FLOOR((a.occurred_at_ms + 32400000) / ?) * ? - 32400000) AS bucket_start_ms,
          COUNT(*) AS analytics_events,
          SUM(a.success = 1) AS successes,
          SUM(a.success = 0) AS failures,
@@ -2637,7 +2486,7 @@ async function getDetailedTimeSeries(filters: AdminDetailedAnalyticsFilters, win
     byBucket.set(key, {
       ...existing,
       ...maskRow(row),
-      success_rate: rate(row.successes, Number(row.successes || 0) + Number(row.failures || 0)),
+      success_rate: filters.eventType ? optionalRate(row.successes, Number(row.successes || 0) + Number(row.failures || 0)) : null,
     });
   }
   return [...byBucket.values()].sort((left, right) => Number(left.bucket_start_ms || 0) - Number(right.bucket_start_ms || 0));
@@ -2708,7 +2557,7 @@ async function getDetailedContentTypeBreakdown(filters: AdminDetailedAnalyticsFi
        c.provider_id,
        c.content_type,
        COUNT(*) AS content_events,
-       COUNT(DISTINCT c.account_key) AS accounts,
+       COUNT(DISTINCT c.provider_id, c.account_key) AS accounts,
        COUNT(DISTINCT c.author_user_id) AS users,
        COUNT(DISTINCT c.guild_id) AS guilds,
        AVG(c.media_count) AS avg_media_count,
@@ -2731,7 +2580,7 @@ async function getDetailedGuildBreakdown(filters: AdminDetailedAnalyticsFilters,
        c.guild_id,
        COUNT(*) AS content_events,
        COUNT(DISTINCT c.provider_id) AS providers,
-       COUNT(DISTINCT c.account_key) AS accounts,
+       COUNT(DISTINCT c.provider_id, c.account_key) AS accounts,
        COUNT(DISTINCT c.author_user_id) AS users,
        COUNT(DISTINCT c.normalized_url) AS urls
      FROM bot_provider_content_events c
@@ -2781,7 +2630,7 @@ async function getDetailedUserCohortBreakdown(filters: AdminDetailedAnalyticsFil
            c.author_user_id,
            COUNT(*) AS content_events,
            COUNT(DISTINCT c.provider_id) AS providers,
-           COUNT(DISTINCT c.account_key) AS accounts,
+           COUNT(DISTINCT c.provider_id, c.account_key) AS accounts,
            COUNT(DISTINCT c.guild_id) AS guilds,
            COUNT(DISTINCT c.normalized_url) AS urls,
            MAX(c.occurred_at_ms) AS latest_ms
@@ -2836,24 +2685,6 @@ function valueDriverMergeKey(row: Row) {
   ].map(String).join("\x1f");
 }
 
-function valueDriverTier(score: number) {
-  if (score >= 120) return "core_driver";
-  if (score >= 60) return "growth_driver";
-  if (score >= 25) return "emerging_driver";
-  return "watch";
-}
-
-function valueDriverSignal(row: Row, successRate: number | null) {
-  const users = rowNumber(row, "users");
-  const guilds = rowNumber(row, "guilds");
-  const events = rowNumber(row, "content_events");
-  if (successRate !== null && successRate < 0.85) return "demand_with_reliability_risk";
-  if (guilds >= 5 && users >= 5) return "cross_guild_reach";
-  if (users >= 5 && events >= users * 3) return "repeat_interest";
-  if (events >= 20) return "high_volume";
-  return "early_signal";
-}
-
 function decorateValueDriverRows(rows: Row[], reliabilityRows: Row[]) {
   const reliabilityByKey = new Map(reliabilityRows.map((row) => [valueDriverMergeKey(row), row]));
   const decorated = rows.map((row) => {
@@ -2864,18 +2695,8 @@ function decorateValueDriverRows(rows: Row[], reliabilityRows: Row[]) {
     const extractFailures = rowNumber(reliability || {}, "provider_extract_failures");
     const sendSuccesses = rowNumber(reliability || {}, "discord_send_successes");
     const sendFailures = rowNumber(reliability || {}, "discord_send_failures");
-    const successRate = optionalRate(successes, successes + failures);
     const extractSuccessRate = optionalRate(extractSuccesses, extractSuccesses + extractFailures);
     const sendSuccessRate = optionalRate(sendSuccesses, sendSuccesses + sendFailures);
-    const contentEvents = rowNumber(row, "content_events");
-    const users = rowNumber(row, "users");
-    const guilds = rowNumber(row, "guilds");
-    const urls = Math.max(rowNumber(row, "urls"), row.driver_type === "url" ? 1 : 0);
-    const accounts = rowNumber(row, "accounts");
-    const contentIds = rowNumber(row, "content_ids");
-    const baseScore = contentEvents + users * 4 + guilds * 3 + urls * 2 + accounts * 2 + contentIds;
-    const reliabilityMultiplier = successRate === null ? 1 : 0.6 + successRate * 0.4;
-    const valueScore = Math.round(baseScore * reliabilityMultiplier);
     const visibleRow = { ...row };
     delete visibleRow.url_hash;
     const contentUrl = typeof row.content_url === "string" ? row.content_url : "";
@@ -2884,20 +2705,20 @@ function decorateValueDriverRows(rows: Row[], reliabilityRows: Row[]) {
       analytics_events: reliability ? reliability.analytics_events : null,
       successes: reliability ? successes : null,
       failures: reliability ? failures : null,
-      success_rate: successRate,
+      success_rate: null,
       provider_extract_success_rate: extractSuccessRate,
       discord_send_success_rate: sendSuccessRate,
       avg_analytics_duration_ms: reliability ? reliability.avg_duration_ms : null,
       url_query_present: contentUrl.includes("?") || contentUrl.includes("#"),
-      value_score: valueScore,
-      value_tier: valueDriverTier(valueScore),
-      value_signal: valueDriverSignal(row, successRate),
+      value_score: null,
+      value_tier: "retired_composite",
+      value_signal: "observed_content_count",
       analysis_model: "value_driver_summary",
       value_data_sources: reliability ? "bot_provider_content_events+bot_analytics_events" : "bot_provider_content_events",
     });
   });
   return protectSmallGroupRows(
-    decorated.sort((left, right) => rowNumber(right, "value_score") - rowNumber(left, "value_score")),
+    decorated.sort((left, right) => rowNumber(right, "content_events") - rowNumber(left, "content_events")),
   );
 }
 
@@ -2928,7 +2749,7 @@ async function getDetailedValueDrivers(filters: AdminDetailedAnalyticsFilters, w
          COUNT(DISTINCT c.author_user_id) AS users,
          COUNT(DISTINCT c.guild_id) AS guilds,
          1 AS urls,
-         COUNT(DISTINCT c.content_id) AS content_ids,
+         COUNT(DISTINCT c.provider_id, c.content_id) AS content_ids,
          AVG(c.media_count) AS avg_media_count,
          AVG(c.duration_seconds) AS avg_duration_seconds,
          MAX(c.occurred_at_ms) AS latest_ms
@@ -2951,11 +2772,11 @@ async function getDetailedValueDrivers(filters: AdminDetailedAnalyticsFilters, w
          NULL AS normalized_url,
          NULL AS url_hash,
          COUNT(*) AS content_events,
-         COUNT(DISTINCT c.account_key) AS accounts,
+         COUNT(DISTINCT c.provider_id, c.account_key) AS accounts,
          COUNT(DISTINCT c.author_user_id) AS users,
          COUNT(DISTINCT c.guild_id) AS guilds,
          COUNT(DISTINCT COALESCE(c.normalized_url, c.content_url)) AS urls,
-         COUNT(DISTINCT c.content_id) AS content_ids,
+         COUNT(DISTINCT c.provider_id, c.content_id) AS content_ids,
          AVG(c.media_count) AS avg_media_count,
          AVG(c.duration_seconds) AS avg_duration_seconds,
          MAX(c.occurred_at_ms) AS latest_ms
@@ -2981,7 +2802,7 @@ async function getDetailedValueDrivers(filters: AdminDetailedAnalyticsFilters, w
          COUNT(DISTINCT c.author_user_id) AS users,
          COUNT(DISTINCT c.guild_id) AS guilds,
          COUNT(DISTINCT COALESCE(c.normalized_url, c.content_url)) AS urls,
-         COUNT(DISTINCT c.content_id) AS content_ids,
+         COUNT(DISTINCT c.provider_id, c.content_id) AS content_ids,
          AVG(c.media_count) AS avg_media_count,
          AVG(c.duration_seconds) AS avg_duration_seconds,
          MAX(c.occurred_at_ms) AS latest_ms
@@ -3003,11 +2824,11 @@ async function getDetailedValueDrivers(filters: AdminDetailedAnalyticsFilters, w
          NULL AS normalized_url,
          NULL AS url_hash,
          COUNT(*) AS content_events,
-         COUNT(DISTINCT c.account_key) AS accounts,
+         COUNT(DISTINCT c.provider_id, c.account_key) AS accounts,
          COUNT(DISTINCT c.author_user_id) AS users,
          COUNT(DISTINCT c.guild_id) AS guilds,
          COUNT(DISTINCT COALESCE(c.normalized_url, c.content_url)) AS urls,
-         COUNT(DISTINCT c.content_id) AS content_ids,
+         COUNT(DISTINCT c.provider_id, c.content_id) AS content_ids,
          AVG(c.media_count) AS avg_media_count,
          AVG(c.duration_seconds) AS avg_duration_seconds,
          MAX(c.occurred_at_ms) AS latest_ms
@@ -3259,7 +3080,7 @@ async function getDetailedProviderMarketingSegments(filters: AdminDetailedAnalyt
        COUNT(DISTINCT segment.guild_id) AS guilds,
        COUNT(DISTINCT segment.display_url) AS urls,
        AVG(segment.numeric_value) AS avg_numeric_value,
-       SUM(segment.numeric_value) AS sum_numeric_value,
+       NULL AS sum_numeric_value,
        MIN(segment.numeric_value) AS min_numeric_value,
        MAX(segment.numeric_value) AS max_numeric_value,
        MAX(segment.occurred_at_ms) AS latest_ms
@@ -3301,7 +3122,6 @@ async function getDetailedProviderMarketingSegments(filters: AdminDetailedAnalyt
       metricDefinitionCache.set(provider, metricDefinitions);
     }
     const metricDefinition = metricDefinitions.get(metricKey);
-    const segmentScore = rowNumber(row, "events") + rowNumber(row, "users") * 4 + rowNumber(row, "guilds") * 3 + rowNumber(row, "urls") * 2;
     return axes.map((axis) => maskRow({
       ...row,
       axis_id: axis.id,
@@ -3310,14 +3130,14 @@ async function getDetailedProviderMarketingSegments(filters: AdminDetailedAnalyt
       metric_stage: metricDefinition?.stage || "initial",
       metric_required: metricDefinition?.required || false,
       numeric_value_available: row.avg_numeric_value !== null && row.avg_numeric_value !== undefined,
-      segment_score: segmentScore,
+      segment_score: null,
       analysis_model: "provider_specific_axis_segment",
     }));
   });
 
   return protectSmallGroupRows(
     decoratedRows
-      .sort((left, right) => rowNumber(right, "segment_score") - rowNumber(left, "segment_score"))
+      .sort((left, right) => rowNumber(right, "events") - rowNumber(left, "events"))
       .slice(0, limit * 4),
   );
 }
@@ -3358,56 +3178,14 @@ async function getDetailedFacetBreakdown(filters: AdminDetailedAnalyticsFilters,
 async function getDetailedNumericFacetStats(filters: AdminDetailedAnalyticsFilters, window: { startMs: number; endMs: number }, limit: number) {
   const content = contentWhere(filters, window, "c", { includeFacetFilter: false });
   const facetKey = cleanFilter(filters.facetKey);
-  const clauses = [content.whereSql, "f.numeric_value IS NOT NULL"];
-  const params = [...content.params];
-  if (facetKey) {
-    clauses.push("f.facet_key = ?");
-    params.push(facetKey);
-  }
-  const rows = await prisma.$queryRawUnsafe<Array<Record<string, unknown>>>(
-    `SELECT
-       f.provider_id,
-       f.account_key,
-       f.facet_key,
-       COUNT(*) AS events,
-       COUNT(DISTINCT c.author_user_id) AS users,
-       COUNT(DISTINCT c.guild_id) AS guilds,
-       AVG(f.numeric_value) AS avg_value,
-       MIN(f.numeric_value) AS min_value,
-       MAX(f.numeric_value) AS max_value,
-       SUM(f.numeric_value) AS sum_value
-     FROM bot_provider_content_facets f
-     JOIN bot_provider_content_events c ON c.content_event_id = f.content_event_id
-     WHERE ${clauses.join(" AND ")}
-     GROUP BY f.provider_id, f.account_key, f.facet_key
-     ORDER BY events DESC
-     LIMIT ?`,
-    ...params,
-    limit,
-  );
+  const where = content.whereSql + (facetKey ? " AND f.facet_key = ?" : "");
+  const rows = await prisma.$queryRawUnsafe<Row[]>(metricObservationQuery(where, true), ...content.params, ...(facetKey ? [facetKey] : []), limit);
   return rows.map(maskRow);
 }
 
 async function getProviderMetricObservedRows(filters: AdminDetailedAnalyticsFilters, window: { startMs: number; endMs: number }) {
   const content = contentWhere(filters, window, "c", { includeFacetFilter: false });
-  const rows = await prisma.$queryRawUnsafe<Array<Record<string, unknown>>>(
-    `SELECT
-       f.provider_id,
-       f.facet_key,
-       COUNT(*) AS events,
-       COUNT(DISTINCT c.author_user_id) AS users,
-       COUNT(DISTINCT c.guild_id) AS guilds,
-       AVG(f.numeric_value) AS avg_value,
-       SUM(f.numeric_value) AS sum_value
-     FROM bot_provider_content_facets f
-     JOIN bot_provider_content_events c ON c.content_event_id = f.content_event_id
-     WHERE ${content.whereSql}
-       AND f.facet_key IS NOT NULL
-     GROUP BY f.provider_id, f.facet_key
-     ORDER BY events DESC
-     LIMIT 1000`,
-    ...content.params,
-  );
+  const rows = await prisma.$queryRawUnsafe<Row[]>(metricObservationQuery(content.whereSql, false, false), ...content.params, 1000);
   return rows.map(maskRow);
 }
 
@@ -3439,13 +3217,13 @@ async function getDetailedHourDistribution(filters: AdminDetailedAnalyticsFilter
     `SELECT
        c.provider_id,
        c.account_key,
-       FLOOR(MOD(FLOOR(c.occurred_at_ms / ?), 24)) AS hour_utc,
+       FLOOR(MOD(FLOOR((c.occurred_at_ms + 32400000) / ?), 24)) AS hour_jst,
        COUNT(*) AS content_events,
        COUNT(DISTINCT c.author_user_id) AS users,
        COUNT(DISTINCT c.guild_id) AS guilds
      FROM bot_provider_content_events c
      WHERE ${content.whereSql}
-     GROUP BY c.provider_id, c.account_key, hour_utc
+     GROUP BY c.provider_id, c.account_key, hour_jst
      ORDER BY content_events DESC
      LIMIT ?`,
     HOUR_MS,
@@ -3462,14 +3240,14 @@ async function getDetailedEventHourDistribution(filters: AdminDetailedAnalyticsF
        a.provider_id,
        a.account_key,
        a.event_type,
-       FLOOR(MOD(FLOOR(a.occurred_at_ms / ?), 24)) AS hour_utc,
+       FLOOR(MOD(FLOOR((a.occurred_at_ms + 32400000) / ?), 24)) AS hour_jst,
        COUNT(*) AS events,
        SUM(a.success = 1) AS successes,
        SUM(a.success = 0) AS failures,
        AVG(a.duration_ms) AS avg_duration_ms
      FROM bot_analytics_events a
      WHERE ${analytics.whereSql}
-     GROUP BY a.provider_id, a.account_key, a.event_type, hour_utc
+     GROUP BY a.provider_id, a.account_key, a.event_type, hour_jst
      ORDER BY events DESC
      LIMIT ?`,
     HOUR_MS,
@@ -3488,14 +3266,14 @@ async function getDetailedWeekdayDistribution(filters: AdminDetailedAnalyticsFil
     `SELECT
        c.provider_id,
        c.account_key,
-       DAYOFWEEK(FROM_UNIXTIME(c.occurred_at_ms / 1000)) AS weekday_utc,
+       (MOD(FLOOR((c.occurred_at_ms + 32400000) / 86400000) + 3, 7) + 1) AS weekday_jst,
        COUNT(*) AS content_events,
        COUNT(DISTINCT c.author_user_id) AS users,
        COUNT(DISTINCT c.guild_id) AS guilds,
        COUNT(DISTINCT c.normalized_url) AS urls
      FROM bot_provider_content_events c
      WHERE ${content.whereSql}
-     GROUP BY c.provider_id, c.account_key, weekday_utc
+     GROUP BY c.provider_id, c.account_key, weekday_jst
      ORDER BY content_events DESC
      LIMIT ?`,
     ...content.params,
@@ -3506,7 +3284,7 @@ async function getDetailedWeekdayDistribution(filters: AdminDetailedAnalyticsFil
 
 async function getDetailedAudienceRetention(filters: AdminDetailedAnalyticsFilters, window: { startMs: number; endMs: number }): Promise<Row> {
   const current = contentWhere(filters, window, "c");
-  const previous = contentWhere(filters, { startMs: 0, endMs: Math.max(0, window.startMs - 1) }, "p");
+  const previous = contentWhere(filters, { startMs: 0, endMs: window.startMs }, "p");
   const rows = await prisma.$queryRawUnsafe<Array<Record<string, unknown>>>(
     `SELECT
        COUNT(*) AS active_users,
@@ -3575,7 +3353,7 @@ async function getDetailedInterestBreakdown(filters: AdminDetailedAnalyticsFilte
 }
 
 function errorWhere(filters: AdminDetailedAnalyticsFilters, window: { startMs: number; endMs: number }, alias = "e") {
-  const clauses = [`${alias}.occurred_at_ms >= ?`, `${alias}.occurred_at_ms <= ?`];
+  const clauses = [`${alias}.occurred_at_ms >= ?`, `${alias}.occurred_at_ms < ?`];
   const params: unknown[] = [window.startMs, window.endMs];
   appendEquals(clauses, params, `${alias}.provider_id`, filters.providerId);
   appendEquals(clauses, params, `${alias}.guild_id`, filters.guildId);
@@ -3650,8 +3428,10 @@ async function getDetailedFunnelAnalytics(filters: AdminDetailedAnalyticsFilters
     ...maskRow(row),
     extract_success_rate: rate(row.extract_successes, row.url_posts),
     send_success_rate: rate(row.send_successes, row.send_attempts),
-    interaction_rate: rate(row.interaction_events, row.send_successes),
-    media_delivery_rate: rate(row.media_delivery_successes, row.send_successes),
+    interaction_rate: null,
+    interaction_rate_state: "output_interaction_link_not_recorded",
+    media_delivery_rate: null,
+    media_delivery_rate_state: "output_delivery_link_not_recorded",
     analysis_model: "scoped_user_facing_funnel",
   })));
 }
@@ -3669,7 +3449,7 @@ async function getDetailedWeeklyCohorts(filters: AdminDetailedAnalyticsFilters, 
      FROM (
        SELECT
          c_first.author_user_id,
-         FLOOR(MIN(c_first.occurred_at_ms) / ?) * ? AS cohort_week_ms
+         (FLOOR((MIN(c_first.occurred_at_ms) - 313200000) / ?) * ? + 313200000) AS cohort_week_ms
        FROM bot_provider_content_events c_first
        WHERE ${allScope.whereSql}
          AND c_first.author_user_id IS NOT NULL
@@ -3680,7 +3460,7 @@ async function getDetailedWeeklyCohorts(filters: AdminDetailedAnalyticsFilters, 
        FROM (
          SELECT
            c_size.author_user_id,
-           FLOOR(MIN(c_size.occurred_at_ms) / ?) * ? AS cohort_week_ms
+           (FLOOR((MIN(c_size.occurred_at_ms) - 313200000) / ?) * ? + 313200000) AS cohort_week_ms
          FROM bot_provider_content_events c_size
          WHERE ${allScopeForSizes.whereSql}
            AND c_size.author_user_id IS NOT NULL
@@ -3691,7 +3471,7 @@ async function getDetailedWeeklyCohorts(filters: AdminDetailedAnalyticsFilters, 
      JOIN (
        SELECT
          c_activity.author_user_id,
-         FLOOR(c_activity.occurred_at_ms / ?) * ? AS activity_week_ms
+         (FLOOR((c_activity.occurred_at_ms - 313200000) / ?) * ? + 313200000) AS activity_week_ms
        FROM bot_provider_content_events c_activity
        WHERE ${activity.whereSql}
          AND c_activity.author_user_id IS NOT NULL
@@ -3716,7 +3496,9 @@ async function getDetailedWeeklyCohorts(filters: AdminDetailedAnalyticsFilters, 
   return protectSmallGroupRows(rows.map((row) => ({
     ...maskRow(row),
     age_weeks: Math.max(0, Math.round((Number(row.activity_week_ms || 0) - Number(row.cohort_week_ms || 0)) / (7 * DAY_MS))),
-    retention_rate: rate(row.retained_users, row.cohort_users),
+    retention_rate: Number(row.activity_week_ms) + 7 * DAY_MS <= Date.now() ? rate(row.retained_users, row.cohort_users) : null,
+    observed_retention_rate: rate(row.retained_users, row.cohort_users),
+    cohort_window_state: Number(row.activity_week_ms) + 7 * DAY_MS <= Date.now() ? "complete_week" : "incomplete_week",
     analysis_model: "scoped_user_facing_weekly_cohort",
   })));
 }
@@ -3779,7 +3561,7 @@ async function getDetailedUrlReuse(filters: AdminDetailedAnalyticsFilters, windo
     limit,
   );
   return protectSmallGroupRows(rows.map((row) => {
-    const spreadDays = Math.max(1, rate(Number(row.last_seen_ms || 0) - Number(row.first_seen_ms || 0), DAY_MS));
+    const spreadDays = Math.max(1, (Number(row.last_seen_ms || 0) - Number(row.first_seen_ms || 0)) / DAY_MS);
     return {
       ...maskRow(row),
       spread_days: spreadDays,
@@ -3921,7 +3703,7 @@ function emptyAdminDetailedAnalyticsSnapshot(filters: AdminDetailedAnalyticsFilt
       providerId: filters.providerId,
       accountKey: filters.accountKey,
       guildId: filters.guildId,
-      authorUserId: filters.authorUserId ? anonymizeIdentifier(filters.authorUserId, "author_user_id") : null,
+      authorUserId: filters.authorUserId || null,
       eventType: filters.eventType,
       commandName: filters.commandName,
       componentId: filters.componentId,
@@ -3930,7 +3712,7 @@ function emptyAdminDetailedAnalyticsSnapshot(filters: AdminDetailedAnalyticsFilt
       limit,
     },
     window: previewWindowPayload(window),
-    summary: { content: {}, analytics: { success_rate: 0 } },
+    summary: { content: {}, analytics: { success_rate: null } },
     timeSeries: [],
     providerAccounts: [],
     providerReliability: [],
@@ -3980,7 +3762,7 @@ async function buildAdminDetailedAnalytics(filters: AdminDetailedAnalyticsFilter
     failureReasons,
     rawSamples,
   ] = await runLimited([
-    () => optionalQuery({ content: {}, analytics: { success_rate: 0 } }, () => getDetailedSummary(filters, window)),
+    () => optionalQuery({ content: {}, analytics: { success_rate: null } }, () => getDetailedSummary(filters, window)),
     () => optionalQuery([], () => getDetailedTimeSeries(filters, window)),
     () => optionalQuery([], () => getDetailedProviderAccounts(filters, window, limit)),
     () => optionalQuery([], () => getDetailedProviderReliability(filters, window, limit)),
@@ -4009,7 +3791,7 @@ async function buildAdminDetailedAnalytics(filters: AdminDetailedAnalyticsFilter
       providerId: filters.providerId,
       accountKey: filters.accountKey,
       guildId: filters.guildId,
-      authorUserId: filters.authorUserId ? anonymizeIdentifier(filters.authorUserId, "author_user_id") : null,
+      authorUserId: filters.authorUserId || null,
       eventType: filters.eventType,
       commandName: filters.commandName,
       componentId: filters.componentId,
@@ -4126,7 +3908,7 @@ function getAdminDetailedAnalyticsCacheEntry(filters: AdminDetailedAnalyticsFilt
 function persistedReportSnapshotKey(reportType: string, key: string) {
   // Earlier builds could persist fallback zeros after failed optional SQL.
   // Only snapshots produced by the strict report builder are reused.
-  return createHash("sha256").update(`complete-v2:${reportType}:${key}`).digest("hex");
+  return createHash("sha256").update(`legacy-observations-v2:${reportType}:${key}`).digest("hex");
 }
 
 async function loadPersistedDetailedAnalyticsSnapshot(entry: AdminDetailedAnalyticsCacheEntry) {
@@ -4283,8 +4065,7 @@ function prefixedFacetRows(rows: Row[], prefix: string) {
 }
 
 function firstNumericFacet(rows: Row[], facetKey: string, valueKey = "sum_value") {
-  const row = rows.find((item) => item.facet_key === facetKey);
-  return row?.[valueKey] ?? row?.avg_value ?? row?.events ?? null;
+  return aggregateNumericFacet(rows, facetKey, valueKey);
 }
 
 function providerMetricCard(label: string, value: unknown, detail: unknown = null, tone = "default") {
@@ -5237,9 +5018,9 @@ async function getProviderEnrichmentSloDashboard(startMs: number) {
 function providerProfileCard(spec: ProviderProfileSpec["cards"][number], facetBreakdown: Row[], numericFacetStats: Row[]) {
   const numericRow = numericFacetStats.find((row) => row.facet_key === spec.facetKey);
   const facetRow = facetBreakdown.find((row) => row.facet_key === spec.facetKey);
-  const value = spec.valueKey
-    ? numericRow?.[spec.valueKey] ?? facetRow?.[spec.valueKey]
-    : numericRow?.sum_value ?? numericRow?.avg_value ?? facetRow?.facet_value ?? facetRow?.events ?? null;
+  if (numericRow?.aggregation_status === "unsupported_aggregation") return providerMetricCard(spec.label, null, "通貨・尺度・単位が未定義のため集計対象外。個別の観測を確認してください。", "warning");
+  const value = numericRow ? aggregateNumericFacet(numericFacetStats, spec.facetKey, spec.valueKey || "sum_value")
+    : spec.valueKey ? facetRow?.[spec.valueKey] ?? null : facetRow?.facet_value ?? facetRow?.events ?? null;
   return providerMetricCard(spec.label, value, spec.detail || spec.facetKey, spec.tone || "default");
 }
 
@@ -5318,9 +5099,9 @@ function providerMarketingMetricProfile(providerId: unknown, accountKey: unknown
       title: "Twitter / X 固有マーケティング指標",
       description: "likes、replies、reposts、hashtag、mention、media、sensitive など Twitter/X で意味を持つ軸だけを主指標にします。",
       cards: [
-        providerMetricCard("推定 likes 合計", firstNumericFacet(numericFacetStats, "twitter.likes"), "twitter.likes", "success"),
-        providerMetricCard("推定 reposts 合計", firstNumericFacet(numericFacetStats, "twitter.reposts"), "twitter.reposts"),
-        providerMetricCard("推定 replies 合計", firstNumericFacet(numericFacetStats, "twitter.replies"), "twitter.replies"),
+        providerMetricCard("外部 likes の最新観測合計", firstNumericFacet(numericFacetStats, "twitter.likes"), "twitter.likes", "success"),
+        providerMetricCard("外部 reposts の最新観測合計", firstNumericFacet(numericFacetStats, "twitter.reposts"), "twitter.reposts"),
+        providerMetricCard("外部 replies の最新観測合計", firstNumericFacet(numericFacetStats, "twitter.replies"), "twitter.replies"),
         providerMetricCard("上位 hashtag", topCell(hashtagRows, "facet_value"), topCell(hashtagRows, "events")),
       ],
       sections: [
@@ -5372,9 +5153,9 @@ function providerMarketingMetricProfile(providerId: unknown, accountKey: unknown
       title: "YouTube 固有マーケティング指標",
       description: "views、likes、subscribers、duration、動画種別など YouTube で意味を持つ軸だけを主指標にします。",
       cards: [
-        providerMetricCard("推定 views 合計", firstNumericFacet(numericFacetStats, "youtube.views"), "youtube.views", "success"),
-        providerMetricCard("推定 likes 合計", firstNumericFacet(numericFacetStats, "youtube.likes"), "youtube.likes"),
-        providerMetricCard("購読者指標", firstNumericFacet(numericFacetStats, "youtube.subscribers"), "youtube.subscribers"),
+        providerMetricCard("外部 views の最新観測合計", firstNumericFacet(numericFacetStats, "youtube.views"), "youtube.views", "success"),
+        providerMetricCard("外部 likes の最新観測合計", firstNumericFacet(numericFacetStats, "youtube.likes"), "youtube.likes"),
+        providerMetricCard("チャンネル購読者の平均観測値", firstNumericFacet(numericFacetStats, "youtube.subscribers", "avg_value"), "youtube.subscribers"),
         providerMetricCard("平均動画秒数", firstNumericFacet(numericFacetStats, "youtube.duration_seconds", "avg_value"), "youtube.duration_seconds"),
       ],
       sections: [
@@ -5441,7 +5222,7 @@ function publicPreviewStatus(urlVisibility: PreviewUrlVisibility) {
 }
 
 function readinessStatusFromRate(value: unknown, healthy = 0.95, warning = 0.8) {
-  const numeric = Number(value);
+  const numeric = value === null || value === undefined || value === "" ? NaN : Number(value);
   if (!Number.isFinite(numeric)) return "unknown";
   if (numeric >= healthy) return "ready";
   if (numeric >= warning) return "monitor";
@@ -5460,6 +5241,7 @@ function previewReadinessRow(check: string, status: string, evidence: string, re
 
 function finiteMetricValues(rows: Row[], key: string) {
   return rows
+    .filter(row => row[key] !== null && row[key] !== undefined && row[key] !== "")
     .map((row) => Number(row[key]))
     .filter(Number.isFinite);
 }
@@ -5486,12 +5268,12 @@ function providerQualityStatus(row: Row) {
   if (!hasActivity) return "no_data";
   if (rowNumber(row, "content_events") > 0 && rowNumber(row, "extract_events") <= 0) return "needs_attention";
 
-  const requiredCoverage = Number(row.required_coverage_rate);
+  const requiredCoverage = row.required_coverage_rate == null ? NaN : Number(row.required_coverage_rate);
   if (Number.isFinite(requiredCoverage) && requiredCoverage < 1) return "schema_incomplete";
 
-  const extractRate = Number(row.extract_success_rate);
-  const enrichmentRate = Number(row.enrichment_success_rate);
-  const errorRate = Number(row.error_rate);
+  const extractRate = row.extract_success_rate == null ? NaN : Number(row.extract_success_rate);
+  const enrichmentRate = row.enrichment_success_rate == null ? NaN : Number(row.enrichment_success_rate);
+  const errorRate = row.error_rate == null ? NaN : Number(row.error_rate);
   const hasEnrichmentJobs = rowNumber(row, "enrichment_jobs") > 0;
   if ((Number.isFinite(extractRate) && extractRate < 0.9)
     || (hasEnrichmentJobs && Number.isFinite(enrichmentRate) && enrichmentRate < 0.9)
@@ -5653,24 +5435,15 @@ async function getProviderPreviewQualityGates(
   const rows = [...providers.values()].map((row) => {
     const provider = String(row.provider_id || "").trim().toLowerCase();
     const topError = topErrors.get(provider);
-    const activityEvents = rowNumber(row, "content_events") + rowNumber(row, "extract_events") + rowNumber(row, "enrichment_jobs");
     const errorEvents = rowNumber(row, "error_events");
-    const errorRate = activityEvents > 0 ? rate(errorEvents, activityEvents) : errorEvents > 0 ? 1 : 0;
-    const extractRate = Number(row.extract_success_rate);
-    const enrichmentRate = Number(row.enrichment_success_rate);
-    const requiredCoverage = Number(row.required_coverage_rate);
-    const extractScore = Number.isFinite(extractRate) ? extractRate : rowNumber(row, "content_events") > 0 ? 0 : 1;
-    const enrichmentScore = Number.isFinite(enrichmentRate) ? enrichmentRate : 1;
-    const schemaScore = Number.isFinite(requiredCoverage) ? requiredCoverage : 1;
-    const errorScore = clamp01(1 - errorRate);
-    const readinessScore = Math.round(100 * clamp01((extractScore * 0.35) + (enrichmentScore * 0.2) + (schemaScore * 0.3) + (errorScore * 0.15)));
+    const errorRate = null; // Error event totals do not define a rate of root requests.
     const withScores = {
       ...row,
       error_events: errorEvents,
       error_rate: errorRate,
       top_error_type: topError?.error_type || null,
       top_error_severity: topError?.severity || null,
-      readiness_score: readinessScore,
+      readiness_score: null,
     };
     const status = providerQualityStatus(withScores);
     return {
@@ -5681,7 +5454,7 @@ async function getProviderPreviewQualityGates(
   });
 
   return protectUserFacingPreviewRows(rows)
-    .sort((left, right) => rowNumber(right, "readiness_score") - rowNumber(left, "readiness_score"))
+    .sort((left, right) => rowNumber(right, "error_events") - rowNumber(left, "error_events"))
     .slice(0, limit);
 }
 
@@ -5911,7 +5684,7 @@ async function buildAdminGuildAnalyticsPreview(rawFilters: AdminGuildAnalyticsPr
     urlReuse,
     settingImpact,
   ] = await runLimited([
-    () => optionalQuery({ content: {}, analytics: { success_rate: 0 } }, () => getDetailedSummary(filters, window)),
+    () => optionalQuery({ content: {}, analytics: { success_rate: null } }, () => getDetailedSummary(filters, window)),
     () => optionalQuery({ active_users: 0, first_seen_users: 0, returning_users: 0, returning_rate: 0 }, () => getDetailedAudienceRetention(filters, window)),
     () => optionalQuery([], () => getDetailedTimeSeries(filters, window)),
     () => optionalQuery([], () => getDetailedProviderAccounts(filters, window, limit)),
@@ -5956,7 +5729,7 @@ async function buildAdminGuildAnalyticsPreview(rawFilters: AdminGuildAnalyticsPr
     previewCard("利用ユーザー", content.users, `${protectedAudienceRetention.returning_users || 0} 人がリピート`),
     previewCard("反応したサーバー", content.guilds, filters.guildId ? "指定サーバー内" : "全体"),
     previewCard("対象アカウント", content.accounts, topCell(protectedProviderAccounts, "account_key")),
-    previewCard("成功率", analytics.success_rate, "抽出・送信・操作イベントの成功割合"),
+    previewCard("同種イベントの成功率", analytics.success_rate, "イベント種別未選択時は対象なし。要求結果は稼働・影響を参照"),
     previewCard("平均処理時間", analytics.avg_duration_ms, "ms"),
   ];
 
@@ -6052,7 +5825,7 @@ async function buildAdminProviderMarketingPreview(rawFilters: AdminProviderMarke
     contentLifetime,
     urlReuse,
   ] = await runLimited([
-    () => optionalQuery({ content: {}, analytics: { success_rate: 0 } }, () => getDetailedSummary(filters, window)),
+    () => optionalQuery({ content: {}, analytics: { success_rate: null } }, () => getDetailedSummary(filters, window)),
     () => optionalQuery({ active_users: 0, first_seen_users: 0, returning_users: 0, returning_rate: 0 }, () => getDetailedAudienceRetention(filters, window)),
     () => optionalQuery([], () => getDetailedTimeSeries(filters, window)),
     () => optionalQuery([], () => getDetailedProviderAccounts(filters, window, limit)),
@@ -6223,7 +5996,7 @@ function emptyGuildAnalyticsPreviewSnapshot(rawFilters: AdminGuildAnalyticsPrevi
   const limit = limitValue(filters.limit, 40);
   const window = detailedAnalyticsWindow(details);
   const content = {};
-  const analytics = { success_rate: 0 };
+  const analytics = { success_rate: null };
   return clientSafe({
     generatedAt: new Date().toISOString(),
     durationMs: 0,
@@ -6290,7 +6063,7 @@ function emptyProviderMarketingPreviewSnapshot(rawFilters: AdminProviderMarketin
   const limit = limitValue(filters.limit, 40);
   const window = detailedAnalyticsWindow(details);
   const content = {};
-  const analytics = { success_rate: 0 };
+  const analytics = { success_rate: null };
   const metricProfile = providerMarketingMetricProfile(details.providerId, details.accountKey, [], [], []);
   const metricSchemaSummary: Row[] = [];
   const providerQualityGates: Row[] = [];
@@ -6628,6 +6401,30 @@ export function adminDatabaseTables() {
   return DATABASE_TABLES.map((table) => ({ ...table }));
 }
 
+/** Full report generation for the independent report worker. No route cache or Next server is required. */
+export async function buildAdminReportSnapshot(kind: string, rawFilters: Record<string, unknown> = {}) {
+  const startedAt = Date.now();
+  let filters: AdminDetailedAnalyticsFilters | AdminGuildAnalyticsPreviewFilters | AdminProviderMarketingPreviewFilters = {};
+  let report: unknown;
+  if (kind === "overview") {
+    report = await runReportBuild(async () => {
+      const overview = await buildAdminOverview();
+      const analytics = await getAdvancedAnalytics();
+      return { ...overview, analytics, durationMs: Date.now() - startedAt };
+    });
+  } else if (kind === "analytics") {
+    filters = normalizeDetailedAnalyticsFilters(rawFilters as AdminDetailedAnalyticsFilters);
+    report = await runReportBuild(() => buildAdminDetailedAnalytics(filters as AdminDetailedAnalyticsFilters));
+  } else if (kind === "guild-preview") {
+    filters = normalizeGuildAnalyticsPreviewFilters(rawFilters as AdminGuildAnalyticsPreviewFilters);
+    report = await runReportBuild(() => buildAdminGuildAnalyticsPreview(filters as AdminGuildAnalyticsPreviewFilters));
+  } else if (kind === "provider-preview") {
+    filters = normalizeProviderMarketingPreviewFilters(rawFilters as AdminProviderMarketingPreviewFilters);
+    report = await runReportBuild(() => buildAdminProviderMarketingPreview(filters as AdminProviderMarketingPreviewFilters));
+  } else throw new Error("Unsupported report kind");
+  return clientSafe({ kind, filters, report, generatedAt: new Date().toISOString(), definitionVersion: "legacy-observations-v2", durationMs: Date.now() - startedAt, complete: true });
+}
+
 type AdminOverviewSnapshot = Awaited<ReturnType<typeof buildAdminOverview>>;
 type AdminAdvancedAnalyticsSnapshot = Awaited<ReturnType<typeof getAdvancedAnalytics>>;
 
@@ -6934,105 +6731,37 @@ async function buildAdminOverview() {
   });
 }
 
-export async function getAdminLogs(filters: {
-  guildId?: string | null;
-  providerId?: string | null;
-  actorUserId?: string | null;
-  action?: string | null;
-  limit?: string | number | null;
-}) {
-  await ensureAuditLogTable().catch(() => undefined);
+export async function getAdminLogs(filters: LogSearch) {
   const limit = limitValue(filters.limit, 100);
-  const auditClauses: string[] = [];
-  const auditParams: unknown[] = [];
-  for (const [column, value] of [
-    ["guild_id", filters.guildId],
-    ["provider_id", filters.providerId],
-    ["actor_user_id", filters.actorUserId],
-    ["action", filters.action],
-  ] as const) {
-    if (!value) continue;
-    auditClauses.push(`${column} = ?`);
-    auditParams.push(value);
-  }
-
-  const errorClauses: string[] = [];
-  const errorParams: unknown[] = [];
-  for (const [column, value] of [
-    ["guild_id", filters.guildId],
-    ["provider_id", filters.providerId],
-  ] as const) {
-    if (!value) continue;
-    errorClauses.push(`${column} = ?`);
-    errorParams.push(value);
-  }
-
-  const [auditLogs, errorEvents] = await Promise.all([
-    optionalQuery([], async () => {
-      const rows = await prisma.$queryRawUnsafe<Array<Record<string, unknown>>>(
-        `SELECT audit_log_id, guild_id, provider_id, setting_key, actor_user_id, actor_username_snapshot, action, before_json, after_json, request_id, created_at
-         FROM dashboard_audit_logs
-         ${auditClauses.length ? `WHERE ${auditClauses.join(" AND ")}` : ""}
-         ORDER BY created_at DESC
-         LIMIT ?`,
-        ...auditParams,
-        limit,
-      );
-      return rows.map((row) => ({
-        auditLogId: String(row.audit_log_id),
-        guildId: row.guild_id,
-        providerId: row.provider_id,
-        settingKey: row.setting_key,
-        actorUserId: row.actor_user_id,
-        actorUsernameSnapshot: row.actor_username_snapshot,
-        action: row.action,
-        before: parseJson(row.before_json),
-        after: parseJson(row.after_json),
-        requestId: row.request_id,
-        createdAt: serialize(row.created_at),
-      }));
-    }),
-    optionalQuery([], async () => {
-      const rows = await prisma.$queryRawUnsafe<Array<Record<string, unknown>>>(
-        `SELECT error_event_id, occurred_at_ms, error_type, severity, source, provider_id, endpoint_key, raw_url, normalized_url, guild_id, channel_id, message_id, command_name, component_id, discord_code, http_status, stack_hash, message_hash, details_json, created_at
-         FROM bot_error_events
-         ${errorClauses.length ? `WHERE ${errorClauses.join(" AND ")}` : ""}
-         ORDER BY occurred_at_ms DESC
-         LIMIT ?`,
-        ...errorParams,
-        limit,
-      );
-      return rows.map((row) => {
-        const details = parseJson(row.details_json);
-        const input = details && typeof details === "object" && !Array.isArray(details) ? (details as Row).input : null;
-        return maskRow({
-          error_event_id: row.error_event_id,
-          occurred_at_ms: row.occurred_at_ms,
-          error_type: row.error_type,
-          severity: row.severity,
-          source: row.source,
-          provider_id: row.provider_id,
-          endpoint_key: row.endpoint_key,
-          raw_url: row.raw_url,
-          input,
-          normalized_url: row.normalized_url,
-          guild_id: row.guild_id,
-          channel_id: row.channel_id,
-          message_id: row.message_id,
-          command_name: row.command_name,
-          component_id: row.component_id,
-          discord_code: row.discord_code,
-          http_status: row.http_status,
-          stack_hash: row.stack_hash,
-          message_hash: row.message_hash,
-          details,
-          created_at: row.created_at,
-        });
-      });
-    }),
+  const cursor = decodeLogCursor(filters.cursor);
+  const audits = logConditions("audit", filters, cursor.audit);
+  const errors = logConditions("errors", filters, cursor.errors);
+  const [auditResult, errorResult] = await Promise.allSettled([
+    cursor.audit === "done" ? Promise.resolve([] as Row[]) : sharedPrisma.$queryRawUnsafe<Row[]>(
+      `SELECT /*+ MAX_EXECUTION_TIME(10000) */ audit_log_id, guild_id, provider_id, setting_key, actor_user_id, actor_username_snapshot, action, before_json, after_json, request_id, created_at
+       FROM dashboard_audit_logs ${audits.where} ${audits.order} LIMIT ?`, ...audits.params, limit + 1),
+    cursor.errors === "done" ? Promise.resolve([] as Row[]) : sharedPrisma.$queryRawUnsafe<Row[]>(
+      `SELECT /*+ MAX_EXECUTION_TIME(10000) */ * FROM bot_error_events ${errors.where} ${errors.order} LIMIT ?`, ...errors.params, limit + 1),
   ]);
-
-  return clientSafe({ auditLogs, errorEvents, limit });
+  const auditRows = auditResult.status === "fulfilled" ? auditResult.value.slice(0, limit) : [];
+  const errorRows = errorResult.status === "fulfilled" ? errorResult.value.slice(0, limit) : [];
+  function next(result: PromiseSettledResult<Row[]>, kind: "audit" | "errors"): LogCursor {
+    if (result.status !== "fulfilled") return cursor[kind] || "done";
+    if (result.value.length <= limit) return "done";
+    const row = result.value[limit - 1];
+    return { id: String(row[kind === "audit" ? "audit_log_id" : "error_event_id"]), time: kind === "audit" ? String(serialize(row.created_at)) : Number(row.occurred_at_ms) };
+  }
+  const nextPosition = { audit: next(auditResult, "audit"), errors: next(errorResult, "errors") };
+  const availability = {
+    audit: auditResult.status === "fulfilled" ? { state: "available" } : { state: "unavailable", error: String(auditResult.reason) },
+    errors: errorResult.status === "fulfilled" ? { state: "available" } : { state: "unavailable", error: String(errorResult.reason) },
+  };
+  return clientSafe({
+    auditLogs: auditRows.map(row => ({ auditLogId: String(row.audit_log_id), guildId: row.guild_id, providerId: row.provider_id, settingKey: row.setting_key, actorUserId: row.actor_user_id, actorUsernameSnapshot: row.actor_username_snapshot, action: row.action, before: parseJson(row.before_json), after: parseJson(row.after_json), requestId: row.request_id, createdAt: row.created_at })),
+    errorEvents: errorRows.map(row => ({ ...maskRow(row), details: parseJson(row.details_json) })),
+    limit, availability, filters, timezone: "Asia/Tokyo",
+    nextCursor: auditResult.status === "fulfilled" && errorResult.status === "fulfilled" && (nextPosition.audit !== "done" || nextPosition.errors !== "done") ? Buffer.from(JSON.stringify(nextPosition)).toString("base64url") : null,
+  });
 }
 
 export async function getAdminDatabaseTable(tableName: string | null | undefined, rawLimit?: string | number | null) {

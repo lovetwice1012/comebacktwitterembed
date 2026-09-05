@@ -18,7 +18,7 @@ function createDatabasePool({ createPool, credentials, env = process.env, onErro
 
     function queryOn(target, sql, params = [], options = {}) {
         return new Promise((resolve, reject) => {
-            target.query({ sql, timeout: queryTimeout }, params, (error, results) => {
+            target.query({ sql, timeout: positiveInteger(options.timeoutMs, queryTimeout, 300000) }, params, (error, results) => {
                 if (error) {
                     onError(error, options);
                     reject(error);

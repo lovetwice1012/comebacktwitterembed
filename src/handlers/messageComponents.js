@@ -130,6 +130,11 @@ function register(client) {
             componentId: baseCustomId,
         }, async () => {
         try {
+            if (interaction.type === InteractionType.ModalSubmit || interaction.type === InteractionType.MessageComponent) {
+                require('../adminSupport/telemetry').event('input', 'interaction.received', { customId: interaction.customId, interactionId: interaction.id,
+                    sourceMessageId: interaction.message?.id, values: interaction.values,
+                    fields: interaction.fields?.fields ? [...interaction.fields.fields.values()] : undefined });
+            }
             if (interaction.type === InteractionType.ModalSubmit && baseCustomId === 'guisetting') {
                 recordMetric('modal_submit_attempt', { interaction, componentId: baseCustomId });
                 await withGuisettingDelegatedEditPermissions(interaction, async () => {

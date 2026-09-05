@@ -39,11 +39,20 @@ const TABLES = {
     dashboardAuditLogs: 'dashboard_audit_logs',
     guildSettingsWebuiNoticeState: 'guild_settings_webui_notice_state',
     dashboardDelegatedAccessGrants: 'dashboard_delegated_access_grants',
+    adminSupportActionReceipts: 'admin_support_action_receipts',
     tableCountBaselines: 'bot_table_count_baselines',
     tableCountDeltas: 'bot_table_count_deltas',
 };
 
 const SCHEMA_STATEMENTS = [
+    `CREATE TABLE IF NOT EXISTS ${TABLES.adminSupportActionReceipts} (
+        action_id VARCHAR(96) NOT NULL PRIMARY KEY,
+        action_type VARCHAR(64) NOT NULL,
+        input_hash CHAR(64) NOT NULL,
+        result_json LONGTEXT NULL,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_admin_support_receipt_created (created_at)
+    ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
     `CREATE TABLE IF NOT EXISTS ${TABLES.schemaMigrations} (
         migration_id VARCHAR(191) NOT NULL PRIMARY KEY,
         applied_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP

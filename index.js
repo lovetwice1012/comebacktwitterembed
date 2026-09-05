@@ -16,6 +16,7 @@ const { currentErrorContext, recordError } = require('./src/errorTracking');
 const discordEventMetrics = require('./src/discordEventMetrics');
 const dashboardServer = require('./src/lifecycle/dashboardServer');
 const { createDiscordCacheOptions } = require('./src/discordCache');
+const adminTelemetry = require('./src/adminSupport/telemetry');
 
 const client = new Client({
     ...createDiscordCacheOptions(discordRuntime.discord),
@@ -35,6 +36,9 @@ const client = new Client({
     },
     ...(discordRuntime.restOptions ? { rest: discordRuntime.restOptions } : {}),
 });
+// Recording begins before MySQL initialization and Discord login, so startup
+// failures are visible to the independently supervised management service.
+adminTelemetry.start(client);
 const webhookURL = typeof config.URL === 'string' ? config.URL.trim() : '';
 const errorNotificationURL = typeof config.errorNotificationURL === 'string' && config.errorNotificationURL.trim()
     ? config.errorNotificationURL.trim()
@@ -145,12 +149,23 @@ client.on(Events.ShardResume, (shardId, replayedEvents) => {
     process.exitCode = 1;
 });
 
-process.once('SIGINT', () => {
+let shuttingDown = false;
+async function shutdown(signal, exitCode) {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    adminTelemetry.event('runtime', 'stopping', { signal, pid: process.pid });
     dashboardServer.stop();
-    process.exit(130);
-});
+    const deadline = setTimeout(() => process.exit(exitCode), 8000);
+    try {
+        client.destroy();
+        await adminTelemetry.stop();
+    } catch (error) {
+        console.error('[shutdown] Failed to drain admin evidence:', error?.message || error);
+    } finally {
+        clearTimeout(deadline);
+        process.exit(exitCode);
+    }
+}
 
-process.once('SIGTERM', () => {
-    dashboardServer.stop();
-    process.exit(143);
-});
+process.once('SIGINT', () => { void shutdown('SIGINT', 130); });
+process.once('SIGTERM', () => { void shutdown('SIGTERM', 143); });

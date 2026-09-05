@@ -7,12 +7,11 @@ const path = require('node:path');
 
 const repoRoot = path.join(__dirname, '..', '..');
 
-test('admin analytics responses anonymize personal identifiers before display', () => {
+test('admin keeps real identifiers and small group evidence while preview privacy remains separate', () => {
     const source = fs.readFileSync(path.join(repoRoot, 'dashboard', 'lib', 'admin-data.ts'), 'utf8');
     assert.match(source, /createHash/);
-    assert.match(source, /personalIdentifierColumn/);
     assert.match(source, /function anonymizeIdentifier/);
-    assert.match(source, /personalIdentifierColumn\.test\(key\)/);
+    assert.doesNotMatch(source.slice(source.indexOf("function maskRow"), source.indexOf("function finiteRowNumber")), /anonymizeIdentifier/);
     assert.match(source, /PRIVACY_MIN_GROUP_SIZE = 5/);
     assert.match(source, /function protectSmallGroupRow/);
     assert.match(source, /const privacyCountColumns = new Set/);
@@ -35,16 +34,16 @@ test('admin analytics responses anonymize personal identifiers before display', 
     assert.match(protectSmallGroupRowSource, /protectedColumns\.has\(key\)[\s\S]*SMALL_GROUP_LABEL/);
 });
 
-test('admin analytics UI does not expose raw author user id filters', () => {
+test('admin analytics exposes author filters and full row evidence', () => {
     const source = fs.readFileSync(path.join(repoRoot, 'dashboard', 'components', 'admin', 'admin-console.tsx'), 'utf8');
-    assert.doesNotMatch(source, /\["author_user_id",\s*filters\.authorUserId\]/);
-    assert.doesNotMatch(source, /placeholder="author_user_id"/);
-    assert.match(source, /匿名ユーザー/);
+    assert.match(source, /\["author_user_id",\s*filters\.authorUserId\]/);
+    assert.match(source, /placeholder="author_user_id"/);
+    assert.match(source, /ユーザーID/);
     assert.doesNotMatch(source, /previewSectionRows\(preview, "activeUsers"\)[\s\S]{0,500}author_user_id/);
     assert.doesNotMatch(source, /previewSectionRows\(preview, "audienceUsers"\)[\s\S]{0,500}author_user_id/);
     assert.match(source, /usage_bucket/);
-    assert.match(source, /反応を伸ばしている要因/);
-    assert.match(source, /流入パラメータ/);
+    assert.match(source, /対象別の共有件数/);
+    assert.match(source, /URLパラメータの観測/);
     assert.match(source, /previewSectionRows\(preview, "valueDrivers"\)/);
     assert.match(source, /previewSectionRows\(preview, "urlParameters"\)/);
     assert.doesNotMatch(source, /failureRows[\s\S]{0,500}message_id/);
@@ -152,7 +151,7 @@ test('provider marketing previews expose provider axis segments without row iden
     const providerSegmentsEnd = uiSource.indexOf(']);', providerSegmentsIndex);
     assert.notEqual(providerSegmentsIndex, -1, 'provider marketing UI must read preview sections.providerSegments');
     assert.notEqual(providerSegmentsEnd, -1, 'providerSegments preview row mapping must be bounded');
-    assert.match(uiSource, /マーケティング軸別の反応/);
+    assert.match(uiSource, /マーケティング軸別の利用/);
 
     const providerSegmentsUi = uiSource.slice(providerSegmentsIndex, providerSegmentsEnd);
     for (const token of ['message_id', 'channel_id', 'author_user_id']) {
@@ -314,20 +313,20 @@ test('stakeholder analytics previews keep internal readiness checks out of repor
         assert.doesNotMatch(panelSource, /指標ごとの取得状況/);
         assert.doesNotMatch(panelSource, /失敗理由/);
         assert.doesNotMatch(panelSource, /HTTP/);
-        assert.doesNotMatch(panelSource, /Discord/);
+        // Discord送信成功は観測したAPI動作を明示するため表示する。
     }
 
     assert.doesNotMatch(providerPanelSource, /previewSectionRows\(preview, "providerQualityGates"\)/);
     assert.doesNotMatch(providerPanelSource, /達成条件/);
     for (const serverOnlyForbidden of [
         /他サーバーとの比較/,
-        /反応を伸ばしている要因/,
-        /流入パラメータ/,
-        /マーケティング軸別の反応/,
+        /対象別の共有件数/,
+        /URLパラメータの観測/,
+        /マーケティング軸別の利用/,
         /興味トピック/,
         /操作ランキング/,
         /設定変更の影響/,
-        /あわせて反応される興味/,
+        /あわせて利用される興味/,
     ]) {
         assert.doesNotMatch(guildPanelSource, serverOnlyForbidden);
     }
@@ -337,11 +336,11 @@ test('stakeholder analytics previews keep internal readiness checks out of repor
     assert.match(guildPanelSource, /サーバーレポート要約/);
     assert.match(guildPanelSource, /表示の安定性/);
     assert.match(providerPanelSource, /マーケティングレポート要約/);
-    assert.match(providerPanelSource, /反応を伸ばしている要因/);
-    assert.match(providerPanelSource, /流入パラメータ/);
-    assert.match(providerPanelSource, /マーケティング軸別の反応/);
-    assert.match(providerPanelSource, /カード表示率/);
-    assert.match(providerPanelSource, /表示完了率/);
+    assert.match(providerPanelSource, /対象別の共有件数/);
+    assert.match(providerPanelSource, /URLパラメータの観測/);
+    assert.match(providerPanelSource, /マーケティング軸別の利用/);
+    assert.match(providerPanelSource, /取得成功率/);
+    assert.match(providerPanelSource, /Discord送信成功率/);
 
     for (const token of ['account_key', 'source', 'message_id', 'channel_id', 'author_user_id', 'url_hash', 'stack_hash', 'message_hash']) {
         assert.doesNotMatch(helperSource, new RegExp(`\\b${token}\\b`));
@@ -419,8 +418,8 @@ test('user-facing analytics previews expose scoped advanced decision analytics',
     assert.match(guildPreviewSource, /applyPreviewUrlPolicyRows\(protectUserFacingPreviewRows\(contentLifetime\), urlVisibility\)/);
     assert.match(providerPreviewSource, /applyPreviewUrlPolicyRows\(protectUserFacingPreviewRows\(urlReuse\), urlVisibility\)/);
     for (const panelSource of [guildPanelSource, providerPanelSource]) {
-        assert.match(panelSource, /反応までの流れ/);
-        assert.match(panelSource, /週別の継続反応/);
+        assert.match(panelSource, /利用までの流れ/);
+        assert.match(panelSource, /週別の継続利用/);
         assert.match(panelSource, /長く見られるコンテンツ/);
         assert.match(panelSource, /URLの再利用と広がり/);
     }

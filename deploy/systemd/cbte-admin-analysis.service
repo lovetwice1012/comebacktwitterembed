@@ -1,0 +1,33 @@
+[Unit]
+Description=CBTE isolated support and analysis worker
+After=network.target
+StartLimitIntervalSec=300
+StartLimitBurst=3
+
+[Service]
+Type=simple
+User=cbte-admin
+Group=cbte-admin
+EnvironmentFile=/etc/cbte-admin/analysis.env
+ExecStart=/usr/local/bin/node /opt/cbte-admin/worker-runtime/admin-agent/analysis-server.cjs
+WorkingDirectory=/opt/cbte-admin/worker-runtime
+StateDirectory=cbte-admin-analysis cbte-admin-shared
+StateDirectoryMode=0700
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=125
+KillMode=mixed
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/cbte-admin-analysis /var/lib/cbte-admin-shared
+BindPaths=-/root/comebacktwitterembed/saves:/var/lib/cbte-admin-analysis/saves
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+MemoryHigh=512M
+MemoryMax=768M
+CPUQuota=50%
+TasksMax=128
+
+[Install]
+WantedBy=multi-user.target
