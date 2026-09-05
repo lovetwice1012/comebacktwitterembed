@@ -10,6 +10,8 @@ import { getProviderSettingsState, saveProviderSettings } from "@/lib/settings-d
 import type { AuditActor, SettingValue } from "@/lib/types";
 import type { DashboardLocale } from "@/lib/i18n";
 import { detailedInterestQuery } from "@/lib/analytics-interest-query";
+import { aggregateCalendarQuery } from "@/lib/aggregate-calendar-query";
+import { contentReachQuery } from "@/lib/content-reach-query";
 import { audienceInterestQuery } from "@/lib/audience-interest-query";
 import { providerFacetSummaryQuery } from "@/lib/provider-facet-summary-query";
 import { settingImpactSummaryQuery, settingChangeImpactQuery } from "@/lib/setting-attribution-query";
@@ -1203,31 +1205,7 @@ async function getAggregateSeasonalityAnalytics(startMs: number) {
     providerWeekdayUniqueRows,
   ] = await Promise.all([
     prisma.$queryRawUnsafe<Array<Record<string, unknown>>>(
-      `SELECT
-         FLOOR(MOD(FLOOR(bucket_start_ms / ?), 24)) AS hour_utc,
-         COUNT(*) AS aggregate_rows,
-         COUNT(DISTINCT NULLIF(provider_id, '')) AS providers,
-         COUNT(DISTINCT NULLIF(account_key, '')) AS accounts,
-         SUM(content_events) AS content_events,
-         SUM(analytics_events) AS analytics_events,
-         SUM(extract_events) AS extract_events,
-         SUM(extract_successes) AS extract_successes,
-         SUM(send_events) AS send_events,
-         SUM(send_successes) AS send_successes,
-         SUM(enrichment_jobs) AS enrichment_jobs,
-         SUM(enrichment_successes) AS enrichment_successes,
-         SUM(sensitive_events) AS sensitive_events,
-         SUM(media_count_sum) AS media_count_sum,
-         SUM(duration_seconds_sum) AS duration_seconds_sum,
-         SUM(duration_seconds_count) AS duration_seconds_count,
-         SUM(analytics_duration_sum_ms) AS analytics_duration_sum_ms,
-         SUM(analytics_duration_count) AS analytics_duration_count,
-         SUM(enrichment_duration_sum_ms) AS enrichment_duration_sum_ms,
-         SUM(enrichment_duration_count) AS enrichment_duration_count
-       FROM bot_provider_hourly_aggregates
-       WHERE bucket_start_ms >= ?
-       GROUP BY hour_utc
-       ORDER BY hour_utc ASC`,
+      aggregateCalendarQuery('hour', false),
       HOUR_MS,
       startMs,
     ),
@@ -1244,31 +1222,7 @@ async function getAggregateSeasonalityAnalytics(startMs: number) {
       startMs,
     ),
     prisma.$queryRawUnsafe<Array<Record<string, unknown>>>(
-      `SELECT
-         DAYOFWEEK(FROM_UNIXTIME(bucket_start_ms / 1000)) AS weekday_utc,
-         COUNT(*) AS aggregate_rows,
-         COUNT(DISTINCT NULLIF(provider_id, '')) AS providers,
-         COUNT(DISTINCT NULLIF(account_key, '')) AS accounts,
-         SUM(content_events) AS content_events,
-         SUM(analytics_events) AS analytics_events,
-         SUM(extract_events) AS extract_events,
-         SUM(extract_successes) AS extract_successes,
-         SUM(send_events) AS send_events,
-         SUM(send_successes) AS send_successes,
-         SUM(enrichment_jobs) AS enrichment_jobs,
-         SUM(enrichment_successes) AS enrichment_successes,
-         SUM(sensitive_events) AS sensitive_events,
-         SUM(media_count_sum) AS media_count_sum,
-         SUM(duration_seconds_sum) AS duration_seconds_sum,
-         SUM(duration_seconds_count) AS duration_seconds_count,
-         SUM(analytics_duration_sum_ms) AS analytics_duration_sum_ms,
-         SUM(analytics_duration_count) AS analytics_duration_count,
-         SUM(enrichment_duration_sum_ms) AS enrichment_duration_sum_ms,
-         SUM(enrichment_duration_count) AS enrichment_duration_count
-       FROM bot_provider_hourly_aggregates
-       WHERE bucket_start_ms >= ?
-       GROUP BY weekday_utc
-       ORDER BY weekday_utc ASC`,
+      aggregateCalendarQuery('weekday', false),
       startMs,
     ),
     prisma.$queryRawUnsafe<Array<Record<string, unknown>>>(
@@ -1283,32 +1237,7 @@ async function getAggregateSeasonalityAnalytics(startMs: number) {
       startMs,
     ),
     prisma.$queryRawUnsafe<Array<Record<string, unknown>>>(
-      `SELECT
-         provider_id,
-         DAYOFWEEK(FROM_UNIXTIME(bucket_start_ms / 1000)) AS weekday_utc,
-         COUNT(DISTINCT NULLIF(account_key, '')) AS accounts,
-         SUM(content_events) AS content_events,
-         SUM(analytics_events) AS analytics_events,
-         SUM(extract_events) AS extract_events,
-         SUM(extract_successes) AS extract_successes,
-         SUM(send_events) AS send_events,
-         SUM(send_successes) AS send_successes,
-         SUM(enrichment_jobs) AS enrichment_jobs,
-         SUM(enrichment_successes) AS enrichment_successes,
-         SUM(sensitive_events) AS sensitive_events,
-         SUM(media_count_sum) AS media_count_sum,
-         SUM(duration_seconds_sum) AS duration_seconds_sum,
-         SUM(duration_seconds_count) AS duration_seconds_count,
-         SUM(analytics_duration_sum_ms) AS analytics_duration_sum_ms,
-         SUM(analytics_duration_count) AS analytics_duration_count,
-         SUM(enrichment_duration_sum_ms) AS enrichment_duration_sum_ms,
-         SUM(enrichment_duration_count) AS enrichment_duration_count
-       FROM bot_provider_hourly_aggregates
-       WHERE bucket_start_ms >= ?
-         AND provider_id <> ''
-       GROUP BY provider_id, weekday_utc
-       ORDER BY content_events DESC
-       LIMIT 160`,
+      aggregateCalendarQuery('weekday', true),
       startMs,
     ),
     prisma.$queryRawUnsafe<Array<Record<string, unknown>>>(
@@ -1353,32 +1282,7 @@ async function getAggregateSeasonalityAnalytics(startMs: number) {
 async function getAggregateEventDaySpikes(startMs: number) {
   const [dailyRows, dailyUniqueRows, providerDailyRows, providerDailyUniqueRows] = await Promise.all([
     prisma.$queryRawUnsafe<Array<Record<string, unknown>>>(
-      `SELECT
-         FLOOR(bucket_start_ms / ?) * ? AS day_start_ms,
-         COUNT(*) AS aggregate_rows,
-         COUNT(DISTINCT NULLIF(provider_id, '')) AS providers,
-         COUNT(DISTINCT NULLIF(account_key, '')) AS accounts,
-         SUM(content_events) AS content_events,
-         SUM(analytics_events) AS analytics_events,
-         SUM(extract_events) AS extract_events,
-         SUM(extract_successes) AS extract_successes,
-         SUM(send_events) AS send_events,
-         SUM(send_successes) AS send_successes,
-         SUM(enrichment_jobs) AS enrichment_jobs,
-         SUM(enrichment_successes) AS enrichment_successes,
-         SUM(sensitive_events) AS sensitive_events,
-         SUM(media_count_sum) AS media_count_sum,
-         SUM(duration_seconds_sum) AS duration_seconds_sum,
-         SUM(duration_seconds_count) AS duration_seconds_count,
-         SUM(analytics_duration_sum_ms) AS analytics_duration_sum_ms,
-         SUM(analytics_duration_count) AS analytics_duration_count,
-         SUM(enrichment_duration_sum_ms) AS enrichment_duration_sum_ms,
-         SUM(enrichment_duration_count) AS enrichment_duration_count
-       FROM bot_provider_hourly_aggregates
-       WHERE bucket_start_ms >= ?
-       GROUP BY day_start_ms
-       ORDER BY day_start_ms DESC
-       LIMIT 45`,
+      aggregateCalendarQuery('day', false),
       DAY_MS,
       DAY_MS,
       startMs,
@@ -1397,33 +1301,7 @@ async function getAggregateEventDaySpikes(startMs: number) {
       startMs,
     ),
     prisma.$queryRawUnsafe<Array<Record<string, unknown>>>(
-      `SELECT
-         provider_id,
-         FLOOR(bucket_start_ms / ?) * ? AS day_start_ms,
-         COUNT(DISTINCT NULLIF(account_key, '')) AS accounts,
-         SUM(content_events) AS content_events,
-         SUM(analytics_events) AS analytics_events,
-         SUM(extract_events) AS extract_events,
-         SUM(extract_successes) AS extract_successes,
-         SUM(send_events) AS send_events,
-         SUM(send_successes) AS send_successes,
-         SUM(enrichment_jobs) AS enrichment_jobs,
-         SUM(enrichment_successes) AS enrichment_successes,
-         SUM(sensitive_events) AS sensitive_events,
-         SUM(media_count_sum) AS media_count_sum,
-         SUM(duration_seconds_sum) AS duration_seconds_sum,
-         SUM(duration_seconds_count) AS duration_seconds_count,
-         SUM(analytics_duration_sum_ms) AS analytics_duration_sum_ms,
-         SUM(analytics_duration_count) AS analytics_duration_count,
-         SUM(enrichment_duration_sum_ms) AS enrichment_duration_sum_ms,
-         SUM(enrichment_duration_count) AS enrichment_duration_count
-       FROM bot_provider_hourly_aggregates
-       WHERE bucket_start_ms >= ?
-         AND provider_id <> ''
-       GROUP BY provider_id, day_start_ms
-       HAVING content_events > 0
-       ORDER BY content_events DESC
-       LIMIT 240`,
+      aggregateCalendarQuery('day', true),
       DAY_MS,
       DAY_MS,
       startMs,
@@ -1947,28 +1825,7 @@ async function getWeeklyCohortAnalytics(startMs: number) {
 }
 
 async function getContentLifetimeAnalytics(startMs: number) {
-  const rows = await prisma.$queryRawUnsafe<Array<Record<string, unknown>>>(
-    `SELECT
-       provider_id,
-       account_key,
-       content_type,
-       content_url,
-       normalized_url,
-       MAX(title) AS title,
-       COUNT(*) AS content_events,
-       COUNT(DISTINCT author_user_id) AS users,
-       COUNT(DISTINCT guild_id) AS guilds,
-       MIN(occurred_at_ms) AS first_seen_ms,
-       MAX(occurred_at_ms) AS last_seen_ms
-     FROM bot_provider_content_events
-     WHERE occurred_at_ms >= ?
-       AND (content_url IS NOT NULL OR normalized_url IS NOT NULL)
-     GROUP BY provider_id, account_key, content_type, content_url, normalized_url
-     HAVING content_events > 1 OR guilds > 1
-     ORDER BY (last_seen_ms - first_seen_ms) DESC, content_events DESC
-     LIMIT 100`,
-    startMs,
-  );
+  const rows = await prisma.$queryRawUnsafe<Array<Record<string, unknown>>>(contentReachQuery('lifetime'), startMs);
   return protectSmallGroupRows(rows.map((row) => ({
     ...maskRow(row),
     lifetime_hours: rate(Number(row.last_seen_ms || 0) - Number(row.first_seen_ms || 0), HOUR_MS),
@@ -1976,27 +1833,7 @@ async function getContentLifetimeAnalytics(startMs: number) {
 }
 
 async function getUrlReuseAnalytics(startMs: number) {
-  const rows = await prisma.$queryRawUnsafe<Array<Record<string, unknown>>>(
-    `SELECT
-       provider_id,
-       account_key,
-       content_url,
-       normalized_url,
-       MAX(title) AS title,
-       COUNT(*) AS content_events,
-       COUNT(DISTINCT guild_id) AS guilds,
-       COUNT(DISTINCT author_user_id) AS users,
-       MIN(occurred_at_ms) AS first_seen_ms,
-       MAX(occurred_at_ms) AS last_seen_ms
-     FROM bot_provider_content_events
-     WHERE occurred_at_ms >= ?
-       AND (content_url IS NOT NULL OR normalized_url IS NOT NULL)
-     GROUP BY provider_id, account_key, content_url, normalized_url
-     HAVING guilds > 1
-     ORDER BY guilds DESC, content_events DESC
-     LIMIT 100`,
-    startMs,
-  );
+  const rows = await prisma.$queryRawUnsafe<Array<Record<string, unknown>>>(contentReachQuery('reuse'), startMs);
   return protectSmallGroupRows(rows.map((row) => ({
     ...maskRow(row),
     spread_velocity_per_day: rate(row.guilds, Math.max(1, rate(Number(row.last_seen_ms || 0) - Number(row.first_seen_ms || 0), DAY_MS))),
