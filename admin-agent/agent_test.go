@@ -557,3 +557,44 @@ func TestReportPressurePauseIsBoundedAndRequiresRepeatedEvidence(t *testing.T) {
 		t.Fatal("report pause must have bounded automatic expiry")
 	}
 }
+
+func TestManualReportsNeverScheduleByAge(t *testing.T) {
+	a := testApp(t)
+	for _, kind := range []string{"analytics", "guild-preview", "provider-preview"} {
+		input := Object{"filters": Object{}}
+		first := object(t, request(t, a, "POST", "/v1/reports/"+kind, input))
+		id := str(first["actionId"])
+		result := Object{"report": Object{"complete": true}}
+		if e := a.store.finish(id, "succeeded", result, nil); e != nil {
+			t.Fatal(e)
+		}
+		if e := a.completeReport(id, "succeeded", result, nil); e != nil {
+			t.Fatal(e)
+		}
+		old := time.Now().UTC().Add(-48 * time.Hour).Format(timestampLayout)
+		if _, e := a.store.db.Exec("UPDATE reports SET updated_at=?,generated_at=? WHERE current_action_id=?", old, old, id); e != nil {
+			t.Fatal(e)
+		}
+		a.scheduleReportRefresh(defaultPolicy())
+		var active int
+		if e := a.store.db.QueryRow("SELECT COUNT(*) FROM actions WHERE type='reports.build' AND status IN ('queued','running')").Scan(&active); e != nil {
+			t.Fatal(e)
+		}
+		if active != 0 {
+			t.Fatal("manual report was scheduled by age")
+		}
+		read := object(t, request(t, a, "GET", "/v1/reports/"+kind, nil))
+		if nested(read, "cache")["ready"] != true {
+			t.Fatal("old completed report disappeared")
+		}
+		if _, e := a.store.db.Exec("UPDATE reports SET generated_at=? WHERE current_action_id=?", now(), id); e != nil {
+			t.Fatal(e)
+		}
+		next := object(t, request(t, a, "POST", "/v1/reports/"+kind, input))
+		if str(next["actionId"]) == id {
+			t.Fatal("explicit generation reused completed job")
+		}
+		a.store.finish(str(next["actionId"]), "failed", nil, Object{"code": "test"})
+		a.completeReport(str(next["actionId"]), "failed", nil, Object{"code": "test"})
+	}
+}
