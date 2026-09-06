@@ -9,9 +9,21 @@
   heading.append(text('h1', 'NASバックアップからの緊急復旧'), refreshButton);
   const status = text('p', '復旧状態はまだ取得していません。'); status.setAttribute('role', 'status');
   const content = document.createElement('div');
-  panel.append(heading, text('p', 'バックアップの準備状況、二重稼働を防ぐ起動許可、OCIへの切り替え条件を確認します。savedataのファイルは移行対象外です。'), status, content);
+  const logsPanel = document.createElement('article'); logsPanel.className = 'panel';
+  const logControls = document.createElement('div'); logControls.className = 'toolbar';
+  const component = document.createElement('select'); component.setAttribute('aria-label', 'ログの処理');
+  for (const [name, label] of [['bot', 'Bot・起動処理'], ['interactive', '分析・サポートworker'], ['reports', 'レポートworker']]) { const option = text('option', label); option.value = name; component.append(option); }
+  const archive = document.createElement('select'); archive.setAttribute('aria-label', 'ログ世代'); const currentLog = text('option', '現在のログ'); currentLog.value = '0'; archive.append(currentLog);
+  const lines = document.createElement('select'); lines.setAttribute('aria-label', '表示する末尾行数');
+  for (const count of [100, 200, 500, 1000]) { const option = text('option', `末尾 ${count} 行`); option.value = String(count); option.selected = count === 200; lines.append(option); }
+  const logRefresh = text('button', 'ログを更新'); logControls.append(component, archive, lines, logRefresh);
+  const logStatus = text('p', 'OCIの起動後に、選択した処理の保存済みログを確認できます。'); logStatus.setAttribute('role', 'status');
+  const logDetails = document.createElement('div'); const logTail = document.createElement('pre'); logTail.setAttribute('aria-label', '保存済みログの末尾');
+  logsPanel.append(text('h2', '起動・取得処理の実ログ'), text('p', '選択されたOCI候補の実行ログを読み取ります。最大256KiB・1000行の末尾表示です。起動に失敗した場合も、記録された原因を確認できます。'), logControls, logStatus, logDetails, logTail);
+  panel.append(heading, text('p', 'バックアップの準備状況、二重稼働を防ぐ起動許可、OCIへの切り替え条件を確認します。savedataのファイルは移行対象外です。'), status, content, logsPanel);
   document.getElementById('nav').append(navigation); app.append(panel);
   let pending = false; let snapshot = null;
+  let logPending = false; let lastLogAt = null;
   const phases = {
     UNCONFIGURED: '未設定', INITIALIZING: '初期化中', DOWNLOADING: 'バックアップ取得中',
     RESTORING_ISOLATED: '隔離したDBへ復元中', VALIDATING: '復元結果を検証中',
@@ -66,10 +78,40 @@
       status.textContent = `${error.message}${snapshot ? ` 以下は ${time(snapshot.fetchedAt)} に取得した最後の応答です。現在の状態ではありません。` : ' 復旧準備済みとは判断できません。他の管理機能は引き続き利用できます。'}`;
     } finally { pending = false; refreshButton.disabled = false; }
   }
-  navigation.addEventListener('click', () => { show('recovery'); void refresh(); });
+  async function refreshLogs() {
+    if (logPending || app.hidden || panel.hidden) return;
+    logPending = true; logRefresh.disabled = true; logStatus.textContent = '保存済みログを取得しています。';
+    const selected = component.value; const selectedArchive = archive.value; const selectedLines = lines.value;
+    try {
+      const query = new URLSearchParams({ component: selected, archive: selectedArchive, bytes: '262144', lines: selectedLines });
+      const value = await api(`v1/recovery/workload-logs?${query}`);
+      if (component.value !== selected || archive.value !== selectedArchive || lines.value !== selectedLines) return;
+      lastLogAt = value.fetchedAt; logDetails.replaceChildren(); logTail.textContent = value.text || '';
+      const choices = new Set([0, ...(value.files || []).filter(item => item.available === true).map(item => item.archive)]);
+      archive.replaceChildren(); for (const index of [...choices].sort((a, b) => a - b)) { const option = text('option', index === 0 ? '現在のログ' : `保存済みログ ${index}世代前`); option.value = String(index); archive.append(option); } archive.value = choices.has(Number(selectedArchive)) ? selectedArchive : '0';
+      if (value.available !== true) {
+        const absent = { not_started: 'OCI稼働グループはまだ起動していません。', runtime_absent: 'この候補の実行ディレクトリはまだ作成されていません。', logs_absent: 'ログディレクトリはまだ作成されていません。', log_absent: '選択したログは未生成、または保持されていません。', activation_metadata_absent: '起動記録が未生成のため、ログの対応を確認できません。', not_configured: 'ログ取得先が未設定です。' };
+        logStatus.className = ''; logStatus.textContent = absent[value.state] || value.message || 'このログは現在取得できません。';
+        if (value.logHealth) { const h = value.logHealth; raw(logDetails, h, true, 'ログファイル不在時の保存・欠落の記録'); if (h.writeError || h.readError || Number(h.droppedBytes) > 0 || Number(h.trimmedBytes) > 0) { logStatus.className = 'error'; logStatus.textContent += ' 保存エラー・欠落の記録があります。処理が出力しなかったとは判断できません。'; } }
+        return;
+      }
+      const health = value.logHealth || {};
+      const loss = Number(health.droppedBytes) > 0 || Number(health.trimmedBytes) > 0 || health.writeError || health.readError;
+      logStatus.className = loss ? 'error' : '';
+      logStatus.textContent = `${value.truncated ? '表示上限に合わせて末尾だけを表示しています。' : '選択したファイルの範囲を表示しています。'}${loss ? ' 保存時の欠落・エラーが記録されています。完全なログではありません。' : ''}${value.snapshotChanged ? ' 読み取り中に更新・ローテーションがありました。再取得で最新状態を確認できます。' : ''}${value.currentActivation === false ? ' 過去の起動世代のログです。' : ''}`;
+      logDetails.append(rows('ログの範囲と保存状態', [['対象ログ', `${value.component}.log / 世代 ${value.archive}`], ['候補ID', value.candidateId], ['起動世代 / 現在の選択世代', `${value.activationEpoch} / ${value.pointerEpoch}`], ['起動状態', value.phase], ['ファイル更新', time(value.fileUpdatedAt)], ['取得時刻', time(value.fetchedAt)], ['表示', `${value.returnedBytes} / ${value.fileBytes} bytes・${value.returnedLines} 行`], ['表示から省略', `${value.omittedBytes} bytes`], ['先頭行', value.firstLinePartial ? '途中から表示' : '行頭から表示'], ['保存時に受信 / 書込 / 破棄', `${health.receivedBytes ?? '未取得'} / ${health.writtenBytes ?? '未取得'} / ${health.droppedBytes ?? '未取得'} bytes`], ['保持上限による切り詰め', health.trimmedBytes], ['ローテーション回数', health.rotations], ['書込 / 読取エラー', `${health.writeError || 'なし'} / ${health.readError || 'なし'}`], ['未書込キュー', health.queuedChunks], ['起動記録の更新', value.activationUpdatedAt ? time(Number(value.activationUpdatedAt) * 1000) : '未取得']]));
+      raw(logDetails, { files: value.files, logHealth: value.logHealth, encoding: value.encoding, controlCredentialsRedacted: value.controlCredentialsRedacted }, false, '保持世代・欠落の詳細');
+    } catch (error) {
+      logStatus.className = 'error'; logStatus.textContent = `${error.message}${lastLogAt ? ` 表示中の本文は ${time(lastLogAt)} に取得した過去の内容です。` : ' ログが空とは判断できません。'}`;
+    } finally { logPending = false; logRefresh.disabled = false; if (component.value !== selected || archive.value !== selectedArchive || lines.value !== selectedLines) queueMicrotask(() => void refreshLogs()); }
+  }
+  navigation.addEventListener('click', () => { show('recovery'); void refresh(); void refreshLogs(); });
   refreshButton.addEventListener('click', () => void refresh());
-  const observe = new MutationObserver(() => { if (!app.hidden && !panel.hidden) void refresh(); });
+  logRefresh.addEventListener('click', () => void refreshLogs());
+  component.addEventListener('change', () => { archive.replaceChildren(); const option = text('option', '現在のログ'); option.value = '0'; archive.append(option); logTail.textContent = ''; logDetails.replaceChildren(); lastLogAt = null; void refreshLogs(); });
+  archive.addEventListener('change', () => void refreshLogs()); lines.addEventListener('change', () => void refreshLogs());
+  const observe = new MutationObserver(() => { if (!app.hidden && !panel.hidden) { void refresh(); void refreshLogs(); } });
   observe.observe(app, { attributes: true, attributeFilter: ['hidden'] });
   observe.observe(panel, { attributes: true, attributeFilter: ['hidden'] });
-  setInterval(() => { if (!document.hidden && !app.hidden && !panel.hidden) void refresh(); }, 30000);
+  setInterval(() => { if (!document.hidden && !app.hidden && !panel.hidden) { void refresh(); void refreshLogs(); } }, 30000);
 })();

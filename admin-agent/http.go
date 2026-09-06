@@ -136,6 +136,7 @@ func (a *App) routes() http.Handler {
 	})
 	mux.HandleFunc("GET /v1/health", a.protect(a.health))
 	mux.HandleFunc("GET /v1/recovery", a.protect(a.recoveryStatus))
+	mux.HandleFunc("GET /v1/recovery/workload-logs", a.protect(a.recoveryWorkloadLogs))
 	mux.HandleFunc("GET /v1/catalog", a.protect(func(w http.ResponseWriter, r *http.Request) {
 		jsonResponse(w, 200, Object{"actions": catalogForConfig(a.cfg), "version": 2, "serviceControls": serviceControls(a.cfg)})
 	}))

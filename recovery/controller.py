@@ -578,6 +578,24 @@ def make_server(controller, config):
             self.wfile.write(body)
 
         def do_GET(self):
+            route = urllib.parse.urlsplit(self.path)
+            if route.path == "/v1/workload-logs":
+                if not hmac.compare_digest(self.headers.get("Authorization", "").encode(), ("Bearer " + config["statusToken"]).encode()):
+                    self.reply(401, {"ok": False, "error": {"code": "UNAUTHORIZED", "message": "Status credential required"}})
+                    return
+                try:
+                    try:
+                        from .workload_logs import read_workload_logs, WorkloadLogError
+                    except ImportError:
+                        from workload_logs import read_workload_logs, WorkloadLogError
+                    self.reply(200, read_workload_logs(config, route.query))
+                except WorkloadLogError as error:
+                    self.reply(error.status, {"ok": False, "available": False, "error": {"code": error.code, "message": str(error)}})
+                except (BrokenPipeError, ConnectionResetError):
+                    return
+                except Exception:
+                    self.reply(503, {"ok": False, "available": False, "error": {"code": "WORKLOAD_LOGS_UNAVAILABLE", "message": "Root-verified workload log evidence could not be read"}})
+                return
             if self.path == "/health":
                 status, value = 200, {"ok": True, "scope": "recovery_controller_http_only"}
             elif self.path != "/v1/status":

@@ -67,7 +67,7 @@ func serviceControls(cfg Config) Object {
 		value["limitations"] = []string{
 			"分析・レポートworkerの個別systemd操作は未対応です。技術診断とBot稼働グループの操作を利用してください。",
 			"MySQLコンテナの単独再起動は未対応です。DB診断で疎通を確認できます。",
-			"Botログは起動許可監視unitのjournalです。個別workerのファイルログは含みません。",
+			"Botログ操作は起動許可監視unitのjournalです。Bot・分析・レポートの実行ファイルログは緊急復旧タブで確認できます。",
 		}
 	} else {
 		value["description"] = "Bot・管理コア・分析worker・MySQLの固定systemdサービスを操作します。"
