@@ -11,6 +11,7 @@ import hashlib
 import hmac
 import http.server
 import json
+import math
 import os
 from pathlib import Path
 import re
@@ -34,11 +35,11 @@ class IntentError(Exception):
 
 try:
     from .restore_mysql import atomic_json, read_json, verify_artifact, prepare, run
-    from .standby_retention import ensure_capacity, quarantine_interrupted_candidate
+    from .standby_retention import ensure_capacity, quarantine_interrupted_candidate, private_json
     from .cipher_retention import prune_validated_cache
 except ImportError:
     from restore_mysql import atomic_json, read_json, verify_artifact, prepare, run
-    from standby_retention import ensure_capacity, quarantine_interrupted_candidate
+    from standby_retention import ensure_capacity, quarantine_interrupted_candidate, private_json
     from cipher_retention import prune_validated_cache
 
 
@@ -64,6 +65,13 @@ def same_backup_source(left, right):
         return False
     return all(isinstance(left.get(key), str) and bool(left[key]) and left[key] == right.get(key)
                for key in ("backupId", "sourceSha256", "sourceTimestamp"))
+
+
+def download_progress(manifest, state, received, **proof):
+    source, export = manifest.get("source") or {}, manifest["export"]
+    return {"exportId": manifest["exportId"], "backupId": source.get("backupId"), "sourceSha256": source.get("sourceSha256"),
+            "exportSha256": export["sha256"], "expectedBytes": int(export["bytes"]), "receivedBytes": received,
+            "state": state, "checksumVerified": state == "verified", **proof}
 
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -166,6 +174,7 @@ class Controller:
                 # unknown container is never silently forgotten or deleted.
                 self.update(phase="PREPARATION_INTERRUPTED", candidate=candidate or None, backup=None,
                             lastError={"code": "RESTORE_QUARANTINE_UNCONFIRMED", "message": str(error)})
+        self.normalize_validated_download()
 
     def update(self, **changes):
         with self.lock:
@@ -176,6 +185,44 @@ class Controller:
     def snapshot(self):
         with self.lock:
             return json.loads(json.dumps(self.state))
+
+    def normalize_validated_download(self):
+        """Repair legacy display state from a matching historical restore proof."""
+        state = self.snapshot()
+        candidate, prior = state.get("candidate") or {}, state.get("download") or {}
+        if state.get("phase") != "STANDBY_READY" or candidate.get("phase") != "VALIDATED":
+            return False
+        source = candidate_source(candidate)
+        if not same_backup_source(state.get("backup"), source) or (state.get("pendingBackup") and not same_backup_source(state["pendingBackup"], source)):
+            return False
+        try:
+            identifier = candidate["id"]
+            if not re.fullmatch(r"[0-9a-f]{24}", identifier):
+                return False
+            directory = Path(self.config["candidateRoot"]) / identifier
+            if candidate.get("directory") != str(directory):
+                return False
+            receipt = private_json(directory / "receipt.json")
+            if receipt.get("phase") != "VALIDATED" or any(receipt.get(key) != candidate.get(key) for key in ("id", "directory", "container", "mysqlImage", "manifest", "checks")):
+                return False
+            checks, manifest = receipt.get("checks") or {}, receipt["manifest"]
+            export = manifest["export"]
+            verified_at = receipt.get("validatedAt")
+            if checks.get("ciphertextVerified") is not True or checks.get("importCompleted") is not True or not same_backup_source(manifest.get("source"), source):
+                return False
+            if type(export.get("bytes")) is not int or export["bytes"] <= 0 or not re.fullmatch(r"[0-9a-f]{64}", export.get("sha256", "")) or not re.fullmatch(r"[0-9a-f]{64}", manifest.get("exportId", "")) or export.get("ociRecipient") != self.config["ociRecipient"]:
+                return False
+            if isinstance(verified_at, bool) or not isinstance(verified_at, (int, float)) or not math.isfinite(verified_at) or verified_at <= 0:
+                return False
+            if (prior.get("exportId") and prior["exportId"] != manifest["exportId"]) or (prior.get("backupId") and prior["backupId"] != source["backupId"]):
+                return False
+            if prior.get("state") == "verified" and prior.get("checksumVerified") is True and prior.get("receivedBytes") == export["bytes"] and prior.get("expectedBytes") == export["bytes"] and prior.get("exportId") == manifest["exportId"]:
+                return False
+            stamp = dt.datetime.fromtimestamp(verified_at, dt.timezone.utc).isoformat().replace("+00:00", "Z")
+        except Exception:
+            return False
+        self.update(download=download_progress(manifest, "verified", export["bytes"], verificationSource="validated_restore_receipt", verifiedAt=stamp, normalizedAt=iso_now(), transferredNow=False))
+        return True
 
     def authority(self):
         return request_json(self.config["authorityUrl"], self.config["authorityControllerToken"], "/v1/status", timeout=10)
@@ -344,13 +391,20 @@ class Controller:
             raise ValueError("Export exceeds the OCI ciphertext size limit")
         destination = self.cache / (export_id + ".sql.zst.age")
         if destination.exists():
-            verify_artifact(destination, expected_hash, expected_bytes)
+            self.update(download=download_progress(manifest, "verifying_cache", 0))
+            try:
+                verify_artifact(destination, expected_hash, expected_bytes)
+            except Exception:
+                self.update(download=download_progress(manifest, "failed", 0))
+                raise
+            self.update(download=download_progress(manifest, "verified", expected_bytes, verificationSource="cache_checksum_verified", verifiedAt=iso_now(), transferredNow=False))
             return destination
         temporary = destination.with_name(destination.name + "." + secrets.token_hex(5) + ".partial")
         request = urllib.request.Request(endpoint(self.config["exporterUrl"], "/v1/exports/" + export_id + "/data"),
                                          headers={"Authorization": "Bearer " + self.config["exporterToken"]})
         digest, received, last_update = hashlib.sha256(), 0, 0.0
         deadline = time.monotonic() + int(self.config.get("downloadTimeoutSeconds", 1800))
+        self.update(phase="DOWNLOADING", download=download_progress(manifest, "downloading", 0))
         try:
             fd = os.open(temporary, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
             with os.fdopen(fd, "wb") as output, urllib.request.build_opener(NoRedirect()).open(request, timeout=90) as response:
@@ -364,7 +418,7 @@ class Controller:
                     digest.update(chunk)
                     output.write(chunk)
                     if time.monotonic() - last_update >= 15:
-                        self.update(phase="DOWNLOADING", download={"receivedBytes": received, "expectedBytes": expected_bytes})
+                        self.update(phase="DOWNLOADING", download=download_progress(manifest, "downloading", received))
                         last_update = time.monotonic()
                 output.flush()
                 os.fsync(output.fileno())
@@ -372,7 +426,11 @@ class Controller:
                 raise ValueError("Downloaded encrypted backup failed checksum verification")
             os.replace(temporary, destination)
             verify_artifact(destination, expected_hash, expected_bytes)
+            self.update(download=download_progress(manifest, "verified", expected_bytes, verificationSource="download_checksum_verified", verifiedAt=iso_now(), transferredNow=True))
             return destination
+        except Exception:
+            self.update(download=download_progress(manifest, "failed", received))
+            raise
         finally:
             if temporary.exists():
                 temporary.unlink()
@@ -386,6 +444,7 @@ class Controller:
         current = self.state.get("candidate") or {}
         if same_backup_source(candidate_source(current), newest) and current.get("phase") == "VALIDATED":
             self.update(backup=candidate_source(current), pendingBackup=None)
+            self.normalize_validated_download()
             self.prune_candidates(current["id"])
             return
         self.update(phase="PINNING_BACKUP", lastError=None)
