@@ -48,7 +48,10 @@ function statementTimeout(sql) {
 async function runRegisteredQuery({ sql, values = [], connectionId, databaseUser, databaseName, query }) {
     const queryId = crypto.randomUUID();
     const file = filename(queryId);
-    const marker = `/*cbte-report-query:${queryId}*/`;
+    // The MySQL prepared-statement parser can interpret :a... inside a comment
+    // as a named parameter when a UUID starts with a letter. Keep this marker
+    // colon-free so ordinary ? parameters retain their original meaning.
+    const marker = `/*cbte-report-query ${queryId}*/`;
     const timeoutMs = statementTimeout(sql);
     const record = { version: 1, queryId, actionId: telemetry.current()?.operation_id || null,
         ownerPid: process.pid, ownerBootId: telemetry.bootId, connectionId: String(connectionId),

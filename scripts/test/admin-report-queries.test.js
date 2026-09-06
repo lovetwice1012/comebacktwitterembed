@@ -70,3 +70,13 @@ test('automatic cancellation refuses a registered query before its deadline and 
     const completed = await cancelQuery({ queryId: f.entry.queryId }, { query: () => { throw new Error('Completed query must not be touched'); } });
     assert.equal(completed.reason, 'query_not_running');
 });
+
+test('report ownership comments do not introduce named parameters into positional MySQL statements', async t => {
+    const f = await fixture(t);
+    assert.match(f.entry.marker, /^\/\*cbte-report-query [0-9a-f-]{36}\*\/$/);
+    assert.equal(f.entry.marker.includes(':'), false);
+    assert.equal(f.markedSql(), `${f.entry.marker} SELECT /*+ MAX_EXECUTION_TIME(1000) */ ? AS value`);
+    assert.equal(f.entry.parameterCount, 1);
+    f.resolve([{ value: 3 }]);
+    assert.deepEqual(await f.work, [{ value: 3 }]);
+});
