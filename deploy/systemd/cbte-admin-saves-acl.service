@@ -1,0 +1,25 @@
+[Unit]
+Description=CBTE bounded existing saved-data access repair
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+UMask=0077
+ExecStart=/usr/bin/python3 /opt/cbte-admin/worker-runtime/deploy/admin-platform/prepare-saves-access.py --budget-seconds 2 --max-entries 128 --max-acl-writes 16
+StateDirectory=cbte-admin-saves-acl
+StateDirectoryMode=0700
+Nice=19
+IOSchedulingClass=idle
+CPUQuota=10%
+MemoryMax=128M
+TasksMax=8
+TimeoutStartSec=10
+TimeoutStopSec=2
+KillMode=control-group
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/root/comebacktwitterembed/saves /var/lib/cbte-admin-saves-acl
+RestrictAddressFamilies=AF_UNIX

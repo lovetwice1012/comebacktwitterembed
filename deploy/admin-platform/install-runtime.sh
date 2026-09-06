@@ -38,17 +38,15 @@ if ! test -f "$runtime/.runtime-ready"; then
 fi
 install -d -m 0755 "/opt/cbte-admin/releases/$revision"
 install -m 0755 "$binary" "/opt/cbte-admin/releases/$revision/cbte-admin"
-if test -d "$source_root/saves"; then
-    test "$(readlink -f "$source_root/saves")" = "$source_root/saves"
-    setfacl -R -m u:cbte-admin:rwX "$source_root/saves"
-    find "$source_root/saves" -type d -exec setfacl -m d:u:cbte-admin:rwx {} +
-fi
+# Existing saves permission repair is an independent, bounded maintenance job.
+# Management startup must not wait for a recursive metadata rewrite.
 for unit in cbte-admin cbte-admin-analysis cbte-admin-reports cbte-admin-executor; do
     if systemctl is-active --quiet "$unit.service"; then
         echo "Stop $unit before changing the independent runtime pointers." >&2
         exit 1
     fi
 done
+install -m 0644 "$source_root/deploy/systemd/cbte-admin-saves-acl.service" /etc/systemd/system/cbte-admin-saves-acl.service
 for name in current worker-runtime; do
     if test -e "/opt/cbte-admin/$name" && ! test -L "/opt/cbte-admin/$name"; then
         echo "Refusing to replace a non-symlink: /opt/cbte-admin/$name" >&2
@@ -66,3 +64,4 @@ done
 install -D -m 0644 "$source_root/deploy/admin-platform/90-admin-platform.conf" /etc/systemd/system/cbte.service.d/90-admin-platform.conf
 systemctl daemon-reload
 echo "Prepared independent release $revision. Services and public routing have not been changed yet."
+echo "Optional existing-saves ACL repair: systemctl start cbte-admin-saves-acl.service; inspect its JSON journal progress and repeat bounded batches if pending."
