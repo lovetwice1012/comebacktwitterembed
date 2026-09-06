@@ -89,6 +89,54 @@ func TestWrappedBotUsesChildAndGrandchildResources(t *testing.T) {
 	}
 }
 
+func TestWrappedBotMembershipUsesActualV1V2AndHybridSystemdHierarchy(t *testing.T) {
+	group := "/system.slice/cbte.service"
+	for _, scenario := range []struct {
+		name, processGroups, hierarchy, mount string
+	}{
+		{"full-v1", "7:cpu,cpuacct:" + group + "\n1:name=systemd:" + group + "\n", "systemd", "systemd"},
+		{"full-v2", "0::" + group + "\n", "unified", ""},
+		{"hybrid-legacy-first", "1:name=systemd:" + group + "\n0::" + group + "\n", "systemd", "systemd"},
+		{"hybrid-unified-first", "0::" + group + "\n1:name=systemd:" + group + "\n", "systemd", "systemd"},
+	} {
+		t.Run(scenario.name, func(t *testing.T) {
+			f := newWorkloadFixture(t)
+			f.process(t, 200, "node", "/usr/local/bin/node\x00index.js\x00", "2000", group, "actual-bot")
+			for _, pid := range []int{100, 200} {
+				fixtureFile(t, filepath.Join(f.proc, strconv.Itoa(pid), "cgroup"), scenario.processGroups)
+			}
+			fixtureFile(t, filepath.Join(f.cgroups, scenario.mount, "system.slice", "cbte.service", "cgroup.procs"), "100\n200\n")
+			if strings.HasPrefix(scenario.name, "hybrid") {
+				// Real hybrid layout: the separate unified tree is below unified/;
+				// no pure-v2 cgroup.procs exists directly at the cgroup mount root.
+				fixtureFile(t, filepath.Join(f.cgroups, "unified", "system.slice", "cbte.service", "cgroup.procs"), "999\n")
+			}
+			identity, process := f.collect(f.heartbeat(200), Object{}, f.when)
+			if identity["available"] != true || exactProcessID(identity["pid"]) != 200 || identity["unitCgroupHierarchy"] != scenario.hierarchy || str(nested(process, "status")["raw"]) != "actual-bot" {
+				t.Fatalf("failed %s process binding: %#v %#v", scenario.name, identity, process)
+			}
+			retained, _ := f.collect(f.heartbeat(200), identity, f.when.Add(-5*time.Minute))
+			if retained["available"] != true || retained["source"] != "retained_verified_heartbeat" {
+				t.Fatalf("hung-workload evidence was lost in %s: %#v", scenario.name, retained)
+			}
+		})
+	}
+}
+
+func TestHybridMembershipCannotUseUnifiedTreeToAuthorizeOutsideBot(t *testing.T) {
+	f := newWorkloadFixture(t)
+	group := "/system.slice/cbte.service"
+	fixtureFile(t, filepath.Join(f.proc, "100", "cgroup"), "0::"+group+"\n1:name=systemd:"+group+"\n")
+	fixtureFile(t, filepath.Join(f.cgroups, "systemd", "system.slice", "cbte.service", "cgroup.procs"), "100\n")
+	// A decoy candidate occurs only in the other hierarchy. Its /proc files do
+	// not exist: rejection must precede reading any candidate resources.
+	fixtureFile(t, filepath.Join(f.cgroups, "unified", "system.slice", "cbte.service", "cgroup.procs"), "100\n200\n")
+	identity, process := f.collect(f.heartbeat(200), Object{}, f.when)
+	if identity["available"] != false || identity["reason"] != "heartbeat_pid_outside_bot_workload" || process["status"] != nil {
+		t.Fatalf("hybrid fallback authorized an outside process: %#v %#v", identity, process)
+	}
+}
+
 func TestWrappedProcessWithoutFreshVerifiedHeartbeatIsUnavailable(t *testing.T) {
 	f := newWorkloadFixture(t)
 	f.members(t, 100, 200)

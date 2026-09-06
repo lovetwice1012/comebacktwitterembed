@@ -130,14 +130,14 @@ func isBotNodeCommand(comm, command []byte) bool {
 type systemdCgroup struct{ hierarchy, name string }
 
 func parseSystemdCgroup(data []byte) (systemdCgroup, bool) {
-	var legacy systemdCgroup
+	var legacy, unified systemdCgroup
 	for _, line := range strings.Split(string(data), "\n") {
 		parts := strings.SplitN(line, ":", 3)
 		if len(parts) != 3 || !strings.HasPrefix(parts[2], "/") || path.Clean(parts[2]) != parts[2] || parts[2] == "/" {
 			continue
 		}
 		if parts[0] == "0" && parts[1] == "" {
-			return systemdCgroup{"unified", parts[2]}, true
+			unified = systemdCgroup{"unified", parts[2]}
 		}
 		for _, controller := range strings.Split(parts[1], ",") {
 			if controller == "name=systemd" {
@@ -145,7 +145,13 @@ func parseSystemdCgroup(data []byte) (systemdCgroup, bool) {
 			}
 		}
 	}
-	return legacy, legacy.name != ""
+	// Hybrid hosts expose both hierarchies in /proc. systemd still owns the
+	// explicit name=systemd hierarchy there, mounted at /sys/fs/cgroup/systemd;
+	// selecting 0:: would incorrectly look for a pure-v2 root membership file.
+	if legacy.name != "" {
+		return legacy, true
+	}
+	return unified, unified.name != ""
 }
 
 func (p *procFiles) group(pid int) (systemdCgroup, bool) {
@@ -229,6 +235,7 @@ func workloadProcessEvidence(procRoot, cgroupRoot string, unit, heartbeat, previ
 			return unavailable("supervisor_unit_cgroup_unverified")
 		}
 		identity["unitControlGroup"] = group.name
+		identity["unitCgroupHierarchy"] = group.hierarchy
 		source = "fresh_authenticated_heartbeat"
 		if freshProcessHeartbeat(heartbeat, occurred, persisted, at) {
 			pid = exactProcessID(nested(heartbeat, "details")["pid"])
