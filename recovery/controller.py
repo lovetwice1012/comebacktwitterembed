@@ -385,6 +385,46 @@ class Controller:
             run(["systemctl", "start", "cbte-recovery-workload.service"], timeout=30)
             status = run(["systemctl", "show", "cbte-recovery-workload.service", "--property=ActiveState", "--value"], timeout=10).strip()
         self.update(phase="VERIFYING" if status == "active" else "ACTIVATING", candidate=active, workloadUnitState=status, operatorIntentReason=None)
+
+    def notify_user_failover(self, authority):
+        """Send one user-facing notice only after the public OCI route verifies."""
+        delivered = self.state.get("userFailoverNotice") or {}
+        if delivered.get("epoch") == authority["epoch"] and delivered.get("status") == "accepted":
+            return
+        try:
+            path = Path(self.config.get("userNotificationConfig", "/etc/cbte-recovery/notification-webhook.json"))
+            info = path.lstat()
+            if not path.is_file() or path.is_symlink() or (os.name == "posix" and (info.st_uid != 0 or info.st_mode & 0o077)):
+                raise ValueError("User notification webhook configuration is not a private root-owned file")
+            value = json.loads(path.read_text(encoding="utf-8"))
+            url = value.get("webhookUrl")
+            parsed = urllib.parse.urlsplit(url if isinstance(url, str) else "")
+            if parsed.scheme != "https" or parsed.hostname not in {"discord.com", "discordapp.com"} or not parsed.path.startswith("/api/webhooks/") or parsed.query or parsed.fragment:
+                raise ValueError("User notification webhook URL is invalid")
+            payload = {
+                "username": value.get("name") if isinstance(value.get("name"), str) else "ComebackTwitterEmbed お知らせ",
+                "allowed_mentions": {"parse": []},
+                "embeds": [{
+                    "title": "予備のクラウドサーバーでサービスを継続しています",
+                    "description": "メインサーバーの障害を検知したため、現在は予備のクラウドサーバーでサービスを継続しています。",
+                    "color": 3447003,
+                    "fields": [
+                        {"name": "ご利用への影響", "value": "一部の機能が一時的に利用できない場合や、設定・集計の反映が遅れる場合があります。", "inline": False},
+                        {"name": "復旧作業", "value": "移行先の準備が整うまで、予備のクラウドサーバーでサービスを継続します。目安は30分ほどです。", "inline": False},
+                    ],
+                    "timestamp": iso_now(),
+                }],
+            }
+            if isinstance(value.get("avatarUrl"), str) and value["avatarUrl"].startswith("https://"):
+                payload["avatar_url"] = value["avatarUrl"]
+            request = urllib.request.Request(url + ("&" if "?" in url else "?") + "wait=true", data=json.dumps(payload, ensure_ascii=False).encode("utf-8"), headers={"Content-Type": "application/json", "User-Agent": "CBTE-Recovery/1.0"}, method="POST")
+            with urllib.request.urlopen(request, timeout=10) as response:
+                if not 200 <= response.status < 300:
+                    raise ValueError("User notification webhook was not accepted")
+                receipt = json.loads(response.read(65537))
+            self.update(userFailoverNotice={"epoch": authority["epoch"], "status": "accepted", "messageId": receipt.get("id"), "channelId": value.get("channelId"), "sentAt": iso_now()})
+        except Exception as error:
+            self.update(userFailoverNotice={"epoch": authority["epoch"], "status": "pending", "error": type(error).__name__, "updatedAt": iso_now()})
         if status == "active":
             self.verify_active(authority, active)
 
@@ -577,6 +617,8 @@ class Controller:
             result = ensure_routes(load_config(routing_path), authority["epoch"])
             self.update(phase="ACTIVE" if result.get("ok") else "VERIFYING_PUBLIC_ROUTE",
                         routing=result, activationProof=proof, lastError=None)
+            if result.get("ok"):
+                self.notify_user_failover(authority)
         except Exception as error:
             self.update(phase="VERIFYING_PUBLIC_ROUTE", activationProof=proof,
                         lastError={"code": getattr(error, "code", "ROUTING_UNCONFIRMED"), "message": str(error)})
