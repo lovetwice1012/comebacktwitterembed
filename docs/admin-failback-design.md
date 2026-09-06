@@ -1,15 +1,15 @@
 # OCI から本体への切り戻し設計
 
-2026-09-06。現行コードの読み取りに基づく設計。切り戻し機能はまだ実装・本番検証されていない。この文書の作成ではサービス、DB、起動許可、公開経路を変更していない。
+2026-09-06。復旧デーモンの自動切り戻し実装と、本番配置前後の境界を記録する。切り戻しは、移行先の準備が終わるまで移行元を停止しない。
 
 ## 現在、本体の起動だけでは戻らない理由
 
-現在の復旧基盤は本体から OCI への一方向である。OCI が正本になった後、本体の OS が起動しても、本体 guardian は起動許可を取得できず Bot を待機させる。これは二重処理と OCI 稼働後の更新消失を防ぐが、復帰まで自動化したい運用を満たすには追加実装が必要である。
+以前の復旧基盤は本体から OCI への一方向であった。`recovery/failback_orchestrator.py` と専用systemd unitを追加し、現在は予備のクラウドサーバー上で本体の準備完了を待つ自動処理を配置している。OSが起動しただけでは切り替えず、DB・管理サービス・guardian・スナップショットの検証が終わるまでBotの稼働元を維持する。
 
 | 現行コード | 実際の制約 |
 | --- | --- |
-| `recovery/authority.py` の `promote()` | `target != "oci"` を `FAILBACK_FORBIDDEN` として拒否する。本体へ所有権を戻す API はない |
-| `recovery/controller.py` の `tick()` | `activeNode == "oci"` では既存の OCI DB と workload を維持し、本体へのデータ転送・役割変更は行わない |
+| `recovery/authority.py` の `failback()` | 固定した最終コピー証拠、現在epoch、primary enrollment、OCI lease失効・排水を照合し、CASで本体へ所有権を戻す。通常の `promote()` はOCI方向のまま |
+| `recovery/failback_orchestrator.py` | 本体準備中はOCIを維持し、準備完了後にユーザー通知、OCI停止、epoch更新、本体検証、公開経路、完了通知を順に実行する |
 | `recovery/routing.py` の `ensure_routes()` | OCI の node・epoch・instanceId と固定 tunnel を検証する一方向処理。本体の tunnel へ戻す機能はない |
 | `recovery/start_workload.py` の `active_container_command()` | MySQL は `--skip-log-bin`。現在までの OCI 更新を既存 binlog から差分転送することはできない |
 | `recovery/active_backup.py` の `create()` | 有効な OCI lease が必要。Bot 停止・lease 返却後の最終転送に、そのまま流用できない |
@@ -29,13 +29,19 @@
 
 現在の OCI 正本を本体へ移すのが基本方針である。本体の旧 DB と OCI の両方に存在する固有更新は別途差分を調査し、衝突する設定・受付結果を黙って選択しない。旧 DB の保全を、差分統合済みという意味で表示しない。
 
-## 最小実装と進行状態
+## 自動実装と進行状態
 
 最初の実装は、書き込み停止を伴う整合性優先の全量転送とする。現在の MySQL 構成では、稼働中の全量コピー一回だけで更新の取りこぼしを防ぐことはできない。実際のデータ量・本体 I/O・回線速度に応じた停止時間が必要であり、短時間や無停止を約束しない。
 
 | 状態 | 処理と完了条件 | この時点の書き込み元 |
 | --- | --- | --- |
-| `OCI_ACTIVE` | 通常の緊急稼働。切り戻し要求を一つの operation ID で永続化 | OCI |
+| `WAITING_PRIMARY` | 本体のboot ID、暗号化スナップショット、復元完了記録、39表と主要件数、管理サービス、guardian起動を定期確認。失敗時はこの状態で待機 | OCI |
+| `PRIMARY_PREPARED` | 固定したoperation IDで「メインが復旧したので今から移行開始する」通知を送信。通知が受理されるまで移行元を停止しない | OCI |
+| `SOURCE_FROZEN` | OCI controllerとworkloadを停止し、lease・cgroupを確認。root所有handoff markerを保存する | なし |
+| `OWNERSHIP_COMMITTING` | authorityをhandoff marker付きで再起動し、通常の再起動quarantineを短縮。新epoch・コピー証拠で専用failback APIを一度だけ実行 | なし |
+| `PRIMARY_VERIFYING` | 本体guardianの新epoch lease、dashboard・DB・管理サービスを確認 | 本体 |
+| `ROUTING_PRIMARY` | 固定した本体tunnelへ2 hostnameを切り替え、各公開応答のnode・epoch・instanceIdを検証 | 本体 |
+| `PRIMARY_ACTIVE` | 「メインに移行完了。全ての機能が使用可能」通知後、OCI controllerだけを待機系として再開 | 本体 |
 | `PRIMARY_CHECKING` | 新 bootId、SSH、DB 版、空き容量、実ファイルの作成・fsync・読み戻し、管理 agent、guardian 導入証明、到達経路を確認。限定した検査に期限を設ける | OCI |
 | `PRIMARY_PREPARING` | 本体旧 DB と設定を保全。別 DB インスタンスまたは別の候補領域、同じアプリ版・秘密設定・認証方式・公開 tunnel を準備。本体の Bot・worker は待機 | OCI |
 | `SOURCE_QUIESCING` | OCI の運転指示を切り戻し用保守状態に CAS 更新。新しい変更操作を受け付けず、既存操作の完了または結果不明を記録。Bot・Next の変更 API・分析 worker・通知・保存などの全 writer を停止 | 停止に移行 |
@@ -62,7 +68,9 @@
 - authority の更新時に発生する既存の隔離期間も考慮する。OCI が通常稼働中に authority を不用意に再起動せず、計画した停止段階とまとめる。
 - 切り戻し後は古い OCI 候補を直ちに次の自動昇格対象に戻さない。本体の新しい正本から作った検証済み候補へ更新してから待機を整える。候補が古いままである状態を明示する。
 
-復帰まで完全自動にする場合は、この状態機械を同じ条件で進める自動ポリシーを追加する。本体の一定期間の健全性、容量・同期の実測、停止時間の予算、連続切り替えを防ぐ待機期間を条件とし、失敗時には OCI を継続する。今回の切り戻し操作の認可と、将来の自動実行ポリシーの設定値を混同しない。
+`cbte-recovery-failback.service` はOCIで常駐し、PCの接続やCodexの実行を必要としない。準備、通知、停止、所有権、公開経路の各段階をstate.jsonへ保存し、再起動後も同じoperation IDで再開する。準備前のエラーはOCI継続、所有権変更後のエラーは本体のlease・公開identityを再検証して無効なDNS切り替えを完了扱いにしない。
+
+ユーザー通知は `recovery/user_notifications.py` の4段階に固定する。通知名は「ComebackTwitterEmbed お知らせ」とし、内部ホスト名、管理画面、障害ID、Captenhookは含めない。依存API障害の通知Webhookは別の「ComebackTwitterEmbed 障害情報」として維持する。
 
 ## DB 以外で移す状態
 

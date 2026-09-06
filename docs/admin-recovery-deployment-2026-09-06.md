@@ -2,6 +2,52 @@
 
 2026-09-06。実環境で確認した事実を記録する。構成と手順は [復旧設計](admin-disaster-recovery.md)、通常の管理機能は [実装状況](admin-platform-implementation-status.md) を参照。
 
+最新の稼働確認は16:19 JST。OCIのBot PID `212262` が修正後のコードでGateway readyとなり、Web・DB・対話worker・レポートworkerも正常応答した。epoch 3を維持し、稼働先はOCI。本体はVM 100の起動処理が未完了で、本体への切り戻し機能も未実装。以下には障害・修復の途中経過も時刻付きで残す。
+
+## OCIへの緊急切り替え（15:57 JST確認）
+
+15:57 JST時点で本番Botと通常ダッシュボードのOCI稼働を確認。authorityは `activeNode=oci`、epoch 3、自動切り替え有効。Bot PID `182640` の新鮮なGateway ready記録、DB応答、公開 `cbte.sprink.cloud/api/health` と `twidata.sprink.cloud/api/health` のHTTP 200を確認した。両URLのnode・epoch・instanceIdが同時点のOCI guardianと一致した。
+
+本体の導入中に残した保守状態・自動昇格無効のため、最初は自動切り替えが実行されなかった。本体復旧待ちを優先して緊急稼働を遅らせた。依頼済みのOCI緊急復旧を実施するため、管理画面と同じ認証付き操作経路で候補・世代・バックアップを固定した一回限りの承認を記録した。旧本体の起動許可の失効・待機期間・バックアップ検証など他の条件は維持した。
+
+- 稼働許可世代: 3、instanceId: `oci:55e2d534946ca0d291c023c0ffd39abd33496e9d358a8432`
+- 一回限りの操作ID: `22c77190cafeceb1d4da122fcd9d0b0519f3426c51588fbd`（消費済み）
+- Bot起動: 15:45:29 JST。現在のBoot ID: `1d260d2c-602e-4b44-93e2-85db56f4cf6f`
+- 公開経路: `cbte.sprink.cloud` と `twidata.sprink.cloud` の2件をOCIの専用tunnelへ変更し、公開応答を検証。
+- 管理コア・executor: `1.1.0+ed082fd`。controllerも `ed082fd`、guardian・authorityは既存の登録済み版を維持。
+- 本体は管理者から起動の申告があるが、Cloudflare SSHと専用管理リンクの復帰は未確認。本体への切り戻しは未実施。
+
+**現行実装には本体への自動切り戻し・OCI更新データの逆同期がない。** authorityの昇格APIと公開経路処理はOCI方向だけを許可する。DNSだけ戻すと、OCIで処理したデータの欠落や二重稼働につながる。本体の旧DBを保存し、OCIの最終更新・復旧時の通知隔離状態を検証して移す処理が必要。
+
+15:59:39 JSTにOCIの監督プロセスが応答確認失敗を理由に稼働グループを停止した。完全レポートの実検証と時間帯が重なり、同サービスのメモリ最大使用量は8.3Gだった。16:00 JST時点では新guardianが旧許可の失効・待機期間を待っており、公開Webは502。管理・集計用エンドポイントの失敗をBot全体の停止条件に含めている実装を調査している。権限サーバーとcontrollerのプロセスは継続稼働し、管理者の稼働指示revision 25にも変更はない。
+
+### 再起動後の修復（16:08 JST確認）
+
+- 自動再起動後のBot PIDは `197333`、guardian instanceIdは `oci:7ab37c59bec6d6902b97d29e37ebb9f8d93f114922338c34`。epochは3のまま。新しいGateway ready、controller `ACTIVE`・lastErrorなし、両公開URLのHTTP 200を確認。
+- メモリ増加は完全レポート開始前からBot自身で起きていた。レポート負荷を停止原因とする初期推測は訂正する。停止を決めた個別の応答確認項目は旧版が記録しておらず、特定できていない。
+- 復元された17個の集計トリガーに `debian-sys-maint@localhost` のDEFINERが残る一方、そのアカウントがOCIに存在せず、分析イベントINSERTが失敗していた。SQL全文を含むDBエラーがコンソール転送・分析記録へ循環していた。
+- OCIに当該アカウントを `ACCOUNT LOCK` で作成し、対象8表のTRIGGER、件数差分表のSELECT/INSERT/UPDATE、参照・削除対象の2表に必要な権限だけを付与した。トリガー定義・利用者データを置換していない。INSERT/DELETE後にROLLBACKする検証が成功し、検証行は残っていない。その後の新しい分析イベントINSERTも確認した。
+- `18c202d` の監督処理を次回起動用に配備。稼働開始後のレポート機能単独の不調は状態表示に残し、Bot全体を停止しない。初回起動、Bot・対話操作・Web・DB・起動許可の条件は維持する。稼働中の監督プロセスは再起動しておらず、まだ旧コードを実行している。
+- DBログの循環を防ぐ修正は、元の例外を呼出元に返しつつ、内部の記録失敗をSQL全文ごと再転送しない。関連24テスト、型チェック、変更した本体コードのlintが成功。稼働プロセスへの反映状況は配布記録で区別する。
+
+この間にDBへ保存できなかった分析イベントは、正常に記録されたデータとして扱わない。本体への切り戻しの未実装範囲は [切り戻し設計](admin-failback-design.md) に記載した。
+
+### OCIで更新したDBのNAS保存
+
+初回の実バックアップ `20260906T070638Z`（16:06:38 JST開始）が16:13:06 JSTに完了。epoch 3、候補 `75e2608efe3942eec4a82864` のDBを、平文ファイルを作らずmysqldump → zstd → ageで暗号化した。
+
+- 暗号文: 820,611,119 bytes
+- SHA256: `abba8226127293a560bde91636a41e1c39e59b0883309f3577ae9bfec46cd0a3`
+- 専用サービス: exit 0 / Result success、ローカル受領記録UPLOADED
+- 別途実行した認証付きNAS GET: HTTP 200 / stored true。source、DB名、世代、epoch、候補、サイズ、SHA256が一致
+- 元の本体バックアップと別領域へ保存。保持規則を変更せず、未送信データの削除・追加の平文ダンプ・重複dumpは実施していない
+
+この保存確認後、16:15:14 JSTにOCIのBot稼働グループを一度再起動するよう要求した。目的は `18c202d` と `d890e72` の修正の読込み。authorityは再起動せず、既存の許可失効・待機時間を短縮しない。完了は新しいBot PID・Gateway ready・公開応答で確認する。
+
+16:19:00 JSTに新しいBot PID `212262` のGateway readyを確認し、controllerはACTIVE、lastErrorなし。`applicationHealth`のDB・Web・対話・レポートがすべてtrue、reportingDegradedはfalse。新しいguardian instanceIdは `oci:10f841717d16ba9a77380348c803fe02308425a59f381ce6`。`18c202d` と `d890e72` の反映待ちは解消した。
+
+さらに `bf33421` の復元時トリガー・アカウント・権限検証を配備し、controllerだけを再起動して読み込ませた。17個の既知トリガーの定義、ログイン不可のDEFINERアカウント、表単位の14権限を照合し、未知の定義・広い権限・ロール・動的権限・PROXY権限は受け入れない。実際のOCI DBの読み取り検証と、隔離したMySQLで欠落の再現・自動作成・トリガー動作・再実行を検証した。MySQLのDEFINER権限の扱いは [公式資料](https://dev.mysql.com/doc/refman/8.0/en/create-trigger.html) に基づく。
+
 ## 公開・認証
 
 - 緊急管理画面: https://cbte-recovery.sprink.cloud/ops/
@@ -29,11 +75,11 @@
 | 対象 | 確認結果 |
 | --- | --- |
 | 本体Next | 本番ビルド成功。Build ID `3RnzbwEh11cRUiPIfDMpt`。公開 `/api/health` の200と管理APIの401を確認 |
-| OCI Next | ARM64上でPrismaを生成し、本番ビルド成功。Build ID `KF49Gx576K_1U3jFEY0t9`。Botは起動していない |
-| OCI独立管理 | `1.1.0+81ca02c` 稼働。root executorへの状態取得と接続UID制限、待機中の誤通知抑制を実機確認 |
+| OCI Next | ARM64上でPrismaを生成し、本番ビルド成功。Build ID `KF49Gx576K_1U3jFEY0t9`。現在はBotとともに本番稼働 |
+| OCI独立管理 | `1.1.0+ed082fd` 稼働。root executorへの状態取得と接続UID制限、待機中の誤通知抑制を実機確認 |
 | 本体独立管理・guardian | 本体revision `54b320cee9d78e938cc372db64bc6f9e4dbe67e9` を配備。4つの管理サービスを起動し、guardian PID `1717233` とBot子PID `1717340`、epoch 2の許可取得・本体登録を確認。その後OSの書き込み停止が発生し、本体管理コアは応答不能。復旧後の再検証が必要 |
 
-本体の既存Git履歴と利用者データを維持し、変更はcherry-pickで取り込んだ。Botはguardianへの切替で一度再起動した。OSやMySQLの再起動は実施していない。[書き込み停止の観測](primary-io-stall-2026-09-06.md)を別記した。
+本体の既存Git履歴と利用者データを維持し、変更はcherry-pickで取り込んだ。Botはguardianへの切替で一度再起動した。その後のOS書き込み停止に対し、管理者の明示承認を受けて15:05 JST頃にSysRqによる強制再起動を要求した。正常起動の完了は未確認。[書き込み停止の観測](primary-io-stall-2026-09-06.md)を別記した。
 
 本体の件数管理は読み取り専用の152msの検査で、8表すべてready・17トリガーの定義一致を確認。完全レポートの本番生成は本体復旧後に検証する。
 
@@ -43,18 +89,18 @@ NAS上の既存暗号鍵はNASから持ち出さず、検証済みのバック�
 
 - 最新対象: `20260905T173004Z`（2026-09-06 02:30 JST）。暗号化原本853,371,535 bytes。
 - 復元候補: `75e2608efe3942eec4a82864`。ネットワークを無効にしたMySQL 8.0.42コンテナへ復元・検証済み。
-- DBは読み取り専用の待機状態。38テーブル、guilds 17,118、users 36、guild_provider_settings 18,557、auto_extract_targets 28を検証。
+- 待機時に読み取り専用で38テーブル、guilds 17,118、users 36、guild_provider_settings 18,557、auto_extract_targets 28を検証。現在はこの候補が書き込み可能な本番DBとして稼働し、件数は変化している。
 - 容量見積もりは実測済み旧DB約25.51GBに対して27GB、空き容量4GiBを割る前に復元を中断する。
 - 既存の未稼働候補は退役記録を残して置換。最新候補の検証とNAS上の旧exportを確認後、監査付き整理で旧候補のローカル暗号文840,794,562 bytesを解放。新候補の暗号文と全受領・退役記録は保持。空き容量は約6.02GiB。
 - コントローラーを再起動して新しいログ取得・保持処理を読み込み済み。runtimeReady・routingReadyはtrue、OCIの初期待機revisionは24。
-- **自動切り替えはまだ無効。** 本体のディスク書き込みと管理サービスの復旧、実レポート、本体の運転指示の再確認後に有効化する。本体とtwidataのDNSは変更していない。
+- 自動切り替えを有効化し、今回の候補への昇格は完了。OCI初期待機revision 24から稼働指示revision 25へ移行。本体の保守指示は書き換えず、今回だけの明示承認を使用した。本体が戻っても自動切り戻しは実装されていない。
 
 ## OCIでの取り扱い
 
 - 旧savedataは移行しない。OCIで新しく作られる保存メディアには、専用の公開ディレクトリを使用する。
 - 復元時点の古い未送信通知は隔離し、送信し直さない。
 - OCI Botの従来のgzipダンプは無効にし、暗号化してNASへ送る専用バックアップ処理を使用する。
-- バックアップの日次timerと転送再試行timerを有効化。稼働グループは自動起動を登録したが、現在は未起動。OCI Botの本番ログインは行っていない。
+- バックアップの日次timerと転送再試行timerを有効化。OCI Botの本番ログインと現在のGateway readyを確認。待機時のtimerは起動許可なしとして正常スキップした。OCI稼働後の初回バックアップ結果は別途確認する。
 - 子プロセスのログは各16MiB×4世代、書き込みが追いつかない場合の欠落量も記録する。緊急画面には認証付きで最大256KiB・1000行の末尾を表示する。
 - 保存・一覧・表示・削除・使用量計算の保存先を統一。`SAVES_DIR`を使うOCIでも新しい保存データを扱えるようにした。旧ファイルの移動は行っていない。
 - `mysql@2.18.1`に合わせ、復旧用DBユーザーは固定したMySQL 8.0の `mysql_native_password` で作成・再確認する。
