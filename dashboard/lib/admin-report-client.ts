@@ -11,7 +11,7 @@ export function independentReportsEnabled() { return Boolean(process.env.ADMIN_A
 export function reportForDashboard(kind: ReportKind, value: RemoteReport) {
   // Panels stop at cache.ready=false. Keep the old overview's pre-render shape valid.
   const empty = kind === "overview" ? { tables: [], totals: {}, recent: { audit24h: 0, errors24h: 0, topErrorTypes: [], latestMetrics: [] }, providerRows: [], analytics: null, health: { database: { ok: false }, environment: {} } } : {};
-  return { ...(value.report || empty), reportMetadata: { ...value.metadata, kind, filters: value.filters, key: value.key, lastSuccessfulActionId: value.lastSuccessfulActionId }, cache: { ...value.cache, lastError: reportErrorMessage(value.cache?.lastError), lastErrorDetails: value.cache?.lastErrorDetails ?? value.cache?.lastError ?? null, ready: Boolean(value.report), refreshing: value.cache?.refreshing === true, refreshIntervalMs: 300000, source: "independent_report_worker", actionId: value.actionId, key: value.key } };
+  return { ...(value.report || empty), reportMetadata: { ...value.metadata, kind, filters: value.filters, key: value.key, lastSuccessfulActionId: value.lastSuccessfulActionId }, cache: { ...value.cache, lastError: reportErrorMessage(value.cache?.lastError), lastErrorDetails: value.cache?.lastErrorDetails ?? value.cache?.lastError ?? null, ready: Boolean(value.report), refreshing: value.cache?.refreshing === true, refreshIntervalMs: kind === "overview" ? 300000 : 0, generationMode: kind === "overview" ? "automatic" : "manual", source: "independent_report_worker", actionId: value.actionId, key: value.key } };
 }
 
 /** Read or queue a complete snapshot. Never fall back to heavy computation in Next. */
@@ -29,7 +29,7 @@ export async function getIndependentAdminReport(kind: ReportKind, filters: Row, 
   const previous = await read("GET");
   // GET never starts work in the core; queue only through its durable dedicated report lane.
   const age = previous.cache?.updatedAt ? Date.now() - Date.parse(previous.cache.updatedAt) : Infinity;
-  if (!previous.cache?.refreshing && (forceRefresh || (!previous.cache?.lastError && (!previous.report || age >= 300000)))) {
+  if (!previous.cache?.refreshing && (forceRefresh || (kind === "overview" && !previous.cache?.lastError && (!previous.report || age >= 300000)))) {
     try { return reportForDashboard(kind, await read("POST")); }
     catch (error) {
       if (!previous.report) throw error;

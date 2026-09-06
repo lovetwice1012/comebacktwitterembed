@@ -11,7 +11,8 @@ import { getCatalog, getProvider, getProviderSpecs, providerLabel, text } from "
 import { getProviderSettingsState, saveProviderSettings } from "@/lib/settings-db";
 import type { AuditActor, SettingValue } from "@/lib/types";
 import type { DashboardLocale } from "@/lib/i18n";
-import { detailedInterestQuery } from "@/lib/analytics-interest-query";
+import { detailedSecondaryInterestQuery, detailedContentLifetimeQuery, detailedUrlReuseQuery, detailedSettingImpactQuery } from "@/lib/detailed-secondary-queries";
+import { detailedFacetBreakdownQuery, detailedProviderMarketingSegmentsQuery } from "@/lib/detailed-facet-queries";
 import { aggregateAudienceCorrelationQuery } from "@/lib/aggregate-audience-query";
 import { aggregateCalendarQuery } from "@/lib/aggregate-calendar-query";
 import { contentReachQuery } from "@/lib/content-reach-query";
@@ -76,7 +77,6 @@ const ADMIN_ANALYTICS_BUILD_QUEUE_MAX = 4;
 // build active so analytics cannot consume the connections reserved for
 // concurrent dashboard setting changes.
 const ADMIN_ANALYTICS_BUILD_CONCURRENCY = 1;
-const ADMIN_REPORT_SNAPSHOT_MAX_AGE_MS = 15 * 60 * 1000;
 const PRIVACY_MIN_GROUP_SIZE = 5;
 const SMALL_GROUP_LABEL = "少数";
 const smallGroupDetailColumns = new Set([
@@ -3070,43 +3070,10 @@ async function getDetailedProviderMarketingSegments(filters: AdminDetailedAnalyt
     END
   END`;
   const rows = await prisma.$queryRawUnsafe<Array<Record<string, unknown>>>(
-    `SELECT
-       segment.provider_id,
-       segment.account_key,
-       segment.metric_key,
-       segment.facet_value,
-       COUNT(*) AS events,
-       COUNT(DISTINCT segment.author_user_id) AS users,
-       COUNT(DISTINCT segment.guild_id) AS guilds,
-       COUNT(DISTINCT segment.display_url) AS urls,
-       AVG(segment.numeric_value) AS avg_numeric_value,
-       NULL AS sum_numeric_value,
-       MIN(segment.numeric_value) AS min_numeric_value,
-       MAX(segment.numeric_value) AS max_numeric_value,
-       MAX(segment.occurred_at_ms) AS latest_ms
-     FROM (
-       SELECT
-         f.content_event_id,
-         f.provider_id,
-         f.account_key,
-         f.facet_key AS metric_key,
-         ${segmentValueSql} AS facet_value,
-         AVG(f.numeric_value) AS numeric_value,
-         MAX(c.author_user_id) AS author_user_id,
-         MAX(c.guild_id) AS guild_id,
-         MAX(COALESCE(c.normalized_url, c.content_url)) AS display_url,
-         MAX(c.occurred_at_ms) AS occurred_at_ms
-       FROM bot_provider_content_facets f
-       JOIN bot_provider_content_events c ON c.content_event_id = f.content_event_id
-       WHERE ${content.whereSql}
-         AND f.facet_key IN (${placeholders})
-       GROUP BY f.content_event_id, f.provider_id, f.account_key, f.facet_key, ${segmentValueSql}
-     ) segment
-     GROUP BY segment.provider_id, segment.account_key, segment.metric_key, segment.facet_value
-     ORDER BY events DESC, users DESC, guilds DESC
-     LIMIT ?`,
+    detailedProviderMarketingSegmentsQuery(content.whereSql, placeholders, segmentValueSql),
     ...content.params,
     ...metricParams,
+    limit * 8,
     limit * 8,
   );
 
@@ -3152,23 +3119,7 @@ async function getDetailedFacetBreakdown(filters: AdminDetailedAnalyticsFilters,
     params.push(facetKey);
   }
   const rows = await prisma.$queryRawUnsafe<Array<Record<string, unknown>>>(
-    `SELECT
-       f.provider_id,
-       f.account_key,
-       f.facet_key,
-       f.facet_value,
-       COUNT(*) AS events,
-       COUNT(DISTINCT c.author_user_id) AS users,
-       COUNT(DISTINCT c.guild_id) AS guilds,
-       AVG(f.numeric_value) AS avg_numeric_value,
-       MIN(f.numeric_value) AS min_numeric_value,
-       MAX(f.numeric_value) AS max_numeric_value
-     FROM bot_provider_content_facets f
-     JOIN bot_provider_content_events c ON c.content_event_id = f.content_event_id
-     WHERE ${clauses.join(" AND ")}
-     GROUP BY f.provider_id, f.account_key, f.facet_key, f.facet_value
-     ORDER BY events DESC
-     LIMIT ?`,
+    detailedFacetBreakdownQuery(clauses.join(" AND ")),
     ...params,
     limit,
   );
@@ -3343,7 +3294,7 @@ async function getDetailedCommandBreakdown(filters: AdminDetailedAnalyticsFilter
 async function getDetailedInterestBreakdown(filters: AdminDetailedAnalyticsFilters, window: { startMs: number; endMs: number }, limit: number) {
   const target = contentWhere(filters, window, "target");
   const rows = await prisma.$queryRawUnsafe<Array<Record<string, unknown>>>(
-    detailedInterestQuery(target.whereSql),
+    detailedSecondaryInterestQuery(target.whereSql),
     ...target.params,
     window.startMs,
     window.endMs,
@@ -3506,25 +3457,7 @@ async function getDetailedWeeklyCohorts(filters: AdminDetailedAnalyticsFilters, 
 async function getDetailedContentLifetime(filters: AdminDetailedAnalyticsFilters, window: { startMs: number; endMs: number }, limit: number) {
   const content = contentWhere(filters, window);
   const rows = await prisma.$queryRawUnsafe<Array<Record<string, unknown>>>(
-    `SELECT
-       c.provider_id,
-       c.account_key,
-       c.content_type,
-       c.content_url,
-       c.normalized_url,
-       MAX(c.title) AS title,
-       COUNT(*) AS content_events,
-       COUNT(DISTINCT c.author_user_id) AS users,
-       COUNT(DISTINCT c.guild_id) AS guilds,
-       MIN(c.occurred_at_ms) AS first_seen_ms,
-       MAX(c.occurred_at_ms) AS last_seen_ms
-     FROM bot_provider_content_events c
-     WHERE ${content.whereSql}
-       AND (c.content_url IS NOT NULL OR c.normalized_url IS NOT NULL)
-     GROUP BY c.provider_id, c.account_key, c.content_type, c.content_url, c.normalized_url
-     HAVING content_events > 1 OR users > 1 OR guilds > 1
-     ORDER BY (last_seen_ms - first_seen_ms) DESC, content_events DESC
-     LIMIT ?`,
+    detailedContentLifetimeQuery(content.whereSql),
     ...content.params,
     limit,
   );
@@ -3539,24 +3472,7 @@ async function getDetailedContentLifetime(filters: AdminDetailedAnalyticsFilters
 async function getDetailedUrlReuse(filters: AdminDetailedAnalyticsFilters, window: { startMs: number; endMs: number }, limit: number) {
   const content = contentWhere(filters, window);
   const rows = await prisma.$queryRawUnsafe<Array<Record<string, unknown>>>(
-    `SELECT
-       c.provider_id,
-       c.account_key,
-       c.content_url,
-       c.normalized_url,
-       MAX(c.title) AS title,
-       COUNT(*) AS content_events,
-       COUNT(DISTINCT c.guild_id) AS guilds,
-       COUNT(DISTINCT c.author_user_id) AS users,
-       MIN(c.occurred_at_ms) AS first_seen_ms,
-       MAX(c.occurred_at_ms) AS last_seen_ms
-     FROM bot_provider_content_events c
-     WHERE ${content.whereSql}
-       AND (c.content_url IS NOT NULL OR c.normalized_url IS NOT NULL)
-     GROUP BY c.provider_id, c.account_key, c.content_url, c.normalized_url
-     HAVING content_events > 1 OR users > 1 OR guilds > 1
-     ORDER BY guilds DESC, users DESC, content_events DESC
-     LIMIT ?`,
+    detailedUrlReuseQuery(content.whereSql),
     ...content.params,
     limit,
   );
@@ -3577,41 +3493,7 @@ async function getDetailedSettingImpact(filters: AdminDetailedAnalyticsFilters, 
   appendEquals(clauses, params, "a.guild_id", filters.guildId);
   appendEquals(clauses, params, "a.provider_id", filters.providerId);
   const rows = await prisma.$queryRawUnsafe<Array<Record<string, unknown>>>(
-    `SELECT
-       a.provider_id,
-       COALESCE(a.setting_key, '__provider__') AS setting_key,
-       a.action,
-       COUNT(DISTINCT a.audit_log_id) AS changes,
-       COUNT(DISTINCT a.guild_id) AS guilds,
-       SUM((
-         SELECT COUNT(*)
-         FROM bot_provider_content_events c
-         WHERE c.occurred_at_ms >= (UNIX_TIMESTAMP(a.created_at) * 1000) - ?
-           AND c.occurred_at_ms < UNIX_TIMESTAMP(a.created_at) * 1000
-           AND (a.guild_id IS NULL OR c.guild_id = a.guild_id)
-           AND (a.provider_id IS NULL OR c.provider_id = a.provider_id)
-       )) AS content_before,
-       SUM((
-         SELECT COUNT(*)
-         FROM bot_provider_content_events c
-         WHERE c.occurred_at_ms >= UNIX_TIMESTAMP(a.created_at) * 1000
-           AND c.occurred_at_ms < (UNIX_TIMESTAMP(a.created_at) * 1000) + ?
-           AND (a.guild_id IS NULL OR c.guild_id = a.guild_id)
-           AND (a.provider_id IS NULL OR c.provider_id = a.provider_id)
-       )) AS content_after,
-       SUM((
-         SELECT COUNT(DISTINCT c.author_user_id)
-         FROM bot_provider_content_events c
-         WHERE c.occurred_at_ms >= UNIX_TIMESTAMP(a.created_at) * 1000
-           AND c.occurred_at_ms < (UNIX_TIMESTAMP(a.created_at) * 1000) + ?
-           AND (a.guild_id IS NULL OR c.guild_id = a.guild_id)
-           AND (a.provider_id IS NULL OR c.provider_id = a.provider_id)
-       )) AS users_after
-     FROM dashboard_audit_logs a
-     WHERE ${clauses.join(" AND ")}
-     GROUP BY a.provider_id, COALESCE(a.setting_key, '__provider__'), a.action
-     ORDER BY content_after DESC, changes DESC
-     LIMIT ?`,
+    detailedSettingImpactQuery(clauses.join(" AND ")),
     7 * DAY_MS,
     7 * DAY_MS,
     7 * DAY_MS,
@@ -3869,20 +3751,6 @@ function pruneAnalyticsCacheEntries<Entry extends { lastAccessedAtMs: number; re
   pruneReportEntries(entries, ADMIN_ANALYTICS_CACHE_MAX_ENTRIES, ADMIN_ANALYTICS_CACHE_ACTIVE_MS);
 }
 
-function refreshNextActiveAnalyticsCacheEntry<Entry extends {
-  lastAccessedAtMs: number;
-  updatedAtMs: number;
-  refreshPromise: Promise<unknown> | null;
-}>(
-  entries: Map<string, Entry>,
-  refresh: (entry: Entry) => Promise<unknown>,
-) {
-  pruneAnalyticsCacheEntries(entries);
-  const entry = [...entries.values()]
-    .filter((item) => isActiveAnalyticsCacheEntry(item) && shouldRefreshAnalyticsCacheEntry(item))
-    .sort((left, right) => left.updatedAtMs - right.updatedAtMs)[0];
-  if (entry) void refresh(entry).catch(() => undefined);
-}
 
 function getAdminDetailedAnalyticsCacheEntry(filters: AdminDetailedAnalyticsFilters) {
   const key = detailedAnalyticsCacheKey(filters);
@@ -3917,11 +3785,10 @@ async function loadPersistedDetailedAnalyticsSnapshot(entry: AdminDetailedAnalyt
     const rows = await prisma.$queryRawUnsafe<Array<{ payload_json: string; generated_at_ms: number }>>(
       `SELECT payload_json, generated_at_ms
        FROM bot_admin_report_snapshots
-       WHERE report_type = ? AND snapshot_key = ? AND generated_at_ms >= ?
+       WHERE report_type = ? AND snapshot_key = ?
        LIMIT 1`,
       "detailed",
       snapshotKey,
-      Date.now() - ADMIN_REPORT_SNAPSHOT_MAX_AGE_MS,
     );
     const row = rows[0];
     if (!row?.payload_json) return;
@@ -3958,21 +3825,14 @@ function refreshAdminDetailedAnalyticsCacheEntry(entry: AdminDetailedAnalyticsCa
     snapshot => persistDetailedAnalyticsSnapshot(entry, snapshot));
 }
 
-function ensureAdminDetailedAnalyticsBatchRefresh() {
-  if (adminDetailedAnalyticsCacheState.timer) return;
-  const timer = setInterval(() => {
-    refreshNextActiveAnalyticsCacheEntry(adminDetailedAnalyticsCacheState.entries, refreshAdminDetailedAnalyticsCacheEntry);
-  }, ADMIN_ANALYTICS_BATCH_INTERVAL_MS);
-  (timer as { unref?: () => void }).unref?.();
-  adminDetailedAnalyticsCacheState.timer = timer;
-}
 
 function withAdminDetailedAnalyticsCacheState(snapshot: AdminDetailedAnalyticsSnapshot, entry: AdminDetailedAnalyticsCacheEntry) {
   const updatedAtMs = entry.updatedAtMs || 0;
   return withReportCacheMetadata(snapshot, {
       updatedAt: updatedAtMs ? new Date(updatedAtMs).toISOString() : null,
-      nextUpdateAt: updatedAtMs ? new Date(updatedAtMs + ADMIN_ANALYTICS_BATCH_INTERVAL_MS).toISOString() : null,
-      refreshIntervalMs: ADMIN_ANALYTICS_BATCH_INTERVAL_MS,
+      nextUpdateAt: null,
+      refreshIntervalMs: 0,
+      generationMode: 'manual',
       refreshing: Boolean(entry.refreshPromise),
       ready: Boolean(entry.snapshot),
       lastError: entry.lastError || null,
@@ -3980,27 +3840,18 @@ function withAdminDetailedAnalyticsCacheState(snapshot: AdminDetailedAnalyticsSn
   });
 }
 
-export function warmAdminDetailedAnalyticsCache(rawFilters: AdminDetailedAnalyticsFilters = {}) {
-  ensureAdminDetailedAnalyticsBatchRefresh();
-  if (!shouldPrewarmAdminAnalyticsCache()) return;
-  const filters = normalizeDetailedAnalyticsFilters(rawFilters);
-  const entry = getAdminDetailedAnalyticsCacheEntry(filters);
-  void loadPersistedDetailedAnalyticsSnapshot(entry)
-    .then(() => refreshAdminDetailedAnalyticsCacheEntry(entry))
-    .catch(() => undefined);
-}
 
 export async function getAdminDetailedAnalytics(
   rawFilters: AdminDetailedAnalyticsFilters,
   options: { forceRefresh?: boolean } = {},
 ) {
-  ensureAdminDetailedAnalyticsBatchRefresh();
+
   const filters = normalizeDetailedAnalyticsFilters(rawFilters);
   const entry = getAdminDetailedAnalyticsCacheEntry(filters);
 
   await loadPersistedDetailedAnalyticsSnapshot(entry);
 
-  if (options.forceRefresh || shouldRefreshAnalyticsCacheEntry(entry)) {
+  if (options.forceRefresh) {
     void refreshAdminDetailedAnalyticsCacheEntry(entry).catch(() => undefined);
   }
 
@@ -5939,6 +5790,8 @@ type AdminGuildAnalyticsPreviewSnapshot = Awaited<ReturnType<typeof buildAdminGu
 type AdminProviderMarketingPreviewSnapshot = Awaited<ReturnType<typeof buildAdminProviderMarketingPreview>>;
 
 type AdminPreviewCacheEntry<Filters, Snapshot> = ReportFailureState & {
+  persistentSnapshotLoaded: boolean;
+  persistentSnapshotLoadPromise?: Promise<void> | null;
   filters: Filters;
   snapshot: Snapshot | null;
   updatedAtMs: number;
@@ -6129,6 +5982,7 @@ function getAdminPreviewCacheEntry<Filters, Snapshot>(
   if (!entry) {
     entry = {
       filters,
+      persistentSnapshotLoaded: false,
       snapshot: null,
       updatedAtMs: 0,
       lastAccessedAtMs: Date.now(),
@@ -6147,8 +6001,9 @@ function withAdminPreviewCacheState<Snapshot>(snapshot: Snapshot, entry: AdminPr
   const updatedAtMs = entry.updatedAtMs || 0;
   return withReportCacheMetadata(snapshot, {
       updatedAt: updatedAtMs ? new Date(updatedAtMs).toISOString() : null,
-      nextUpdateAt: updatedAtMs ? new Date(updatedAtMs + ADMIN_ANALYTICS_BATCH_INTERVAL_MS).toISOString() : null,
-      refreshIntervalMs: ADMIN_ANALYTICS_BATCH_INTERVAL_MS,
+      nextUpdateAt: null,
+      refreshIntervalMs: 0,
+      generationMode: 'manual',
       refreshing: Boolean(entry.refreshPromise),
       ready: Boolean(entry.snapshot),
       lastError: entry.lastError || null,
@@ -6156,56 +6011,47 @@ function withAdminPreviewCacheState<Snapshot>(snapshot: Snapshot, entry: AdminPr
   });
 }
 
+async function loadPersistedPreviewSnapshot<Filters, Snapshot>(kind: string, entry: AdminPreviewCacheEntry<Filters, Snapshot>) {
+  await loadSnapshotOnce(entry, async () => {
+    const rows = await prisma.$queryRawUnsafe<Array<{payload_json: string; generated_at_ms: number}>>(
+      'SELECT payload_json,generated_at_ms FROM bot_admin_report_snapshots WHERE report_type=? AND snapshot_key=? LIMIT 1',
+      kind, persistedReportSnapshotKey(kind, previewCacheKey(entry.filters as AdminGuildAnalyticsPreviewFilters)));
+    if (!rows[0]?.payload_json) return;
+    const snapshot = JSON.parse(rows[0].payload_json) as Snapshot;
+    if (snapshot && typeof snapshot === 'object' && Number(rows[0].generated_at_ms) >= entry.updatedAtMs) {
+      entry.snapshot = snapshot; entry.updatedAtMs = Number(rows[0].generated_at_ms);
+    }
+  });
+}
+
+async function persistPreviewSnapshot<Filters, Snapshot>(kind: string, entry: AdminPreviewCacheEntry<Filters, Snapshot>, snapshot: Snapshot) {
+  await sharedPrisma.$executeRawUnsafe(
+    `INSERT INTO bot_admin_report_snapshots (report_type,snapshot_key,generated_at_ms,payload_json) VALUES (?,?,?,?)
+     ON DUPLICATE KEY UPDATE generated_at_ms=VALUES(generated_at_ms),payload_json=VALUES(payload_json)`,
+    kind, persistedReportSnapshotKey(kind, previewCacheKey(entry.filters as AdminGuildAnalyticsPreviewFilters)), entry.updatedAtMs, JSON.stringify(snapshot));
+}
+
 function refreshAdminGuildAnalyticsPreviewCacheEntry(entry: AdminPreviewCacheEntry<AdminGuildAnalyticsPreviewFilters, AdminGuildAnalyticsPreviewSnapshot>) {
-  return refreshReportSnapshot(entry, () => enqueueAdminAnalyticsBuild(() => buildAdminGuildAnalyticsPreview(entry.filters)));
+  return refreshReportSnapshot(entry, () => enqueueAdminAnalyticsBuild(() => buildAdminGuildAnalyticsPreview(entry.filters)), snapshot => persistPreviewSnapshot("guild-preview", entry, snapshot));
 }
 
 function refreshAdminProviderMarketingPreviewCacheEntry(entry: AdminPreviewCacheEntry<AdminProviderMarketingPreviewFilters, AdminProviderMarketingPreviewSnapshot>) {
-  return refreshReportSnapshot(entry, () => enqueueAdminAnalyticsBuild(() => buildAdminProviderMarketingPreview(entry.filters)));
+  return refreshReportSnapshot(entry, () => enqueueAdminAnalyticsBuild(() => buildAdminProviderMarketingPreview(entry.filters)), snapshot => persistPreviewSnapshot("provider-preview", entry, snapshot));
 }
 
-function ensureAdminGuildAnalyticsPreviewBatchRefresh() {
-  if (adminGuildAnalyticsPreviewCacheState.timer) return;
-  const timer = setInterval(() => {
-    refreshNextActiveAnalyticsCacheEntry(adminGuildAnalyticsPreviewCacheState.entries, refreshAdminGuildAnalyticsPreviewCacheEntry);
-  }, ADMIN_ANALYTICS_BATCH_INTERVAL_MS);
-  (timer as { unref?: () => void }).unref?.();
-  adminGuildAnalyticsPreviewCacheState.timer = timer;
-}
 
-function ensureAdminProviderMarketingPreviewBatchRefresh() {
-  if (adminProviderMarketingPreviewCacheState.timer) return;
-  const timer = setInterval(() => {
-    refreshNextActiveAnalyticsCacheEntry(adminProviderMarketingPreviewCacheState.entries, refreshAdminProviderMarketingPreviewCacheEntry);
-  }, ADMIN_ANALYTICS_BATCH_INTERVAL_MS);
-  (timer as { unref?: () => void }).unref?.();
-  adminProviderMarketingPreviewCacheState.timer = timer;
-}
 
-export function warmAdminGuildAnalyticsPreviewCache(rawFilters: AdminGuildAnalyticsPreviewFilters = {}) {
-  ensureAdminGuildAnalyticsPreviewBatchRefresh();
-  if (!shouldPrewarmAdminAnalyticsCache()) return;
-  const filters = normalizeGuildAnalyticsPreviewFilters(rawFilters);
-  const entry = getAdminPreviewCacheEntry(adminGuildAnalyticsPreviewCacheState, previewCacheKey(filters), filters);
-  void refreshAdminGuildAnalyticsPreviewCacheEntry(entry).catch(() => undefined);
-}
 
-export function warmAdminProviderMarketingPreviewCache(rawFilters: AdminProviderMarketingPreviewFilters = {}) {
-  ensureAdminProviderMarketingPreviewBatchRefresh();
-  if (!shouldPrewarmAdminAnalyticsCache()) return;
-  const filters = normalizeProviderMarketingPreviewFilters(rawFilters);
-  const entry = getAdminPreviewCacheEntry(adminProviderMarketingPreviewCacheState, previewCacheKey(filters), filters);
-  void refreshAdminProviderMarketingPreviewCacheEntry(entry).catch(() => undefined);
-}
 
 export async function getAdminGuildAnalyticsPreview(
   rawFilters: AdminGuildAnalyticsPreviewFilters,
   options: { forceRefresh?: boolean } = {},
 ) {
-  ensureAdminGuildAnalyticsPreviewBatchRefresh();
+
   const filters = normalizeGuildAnalyticsPreviewFilters(rawFilters);
   const entry = getAdminPreviewCacheEntry(adminGuildAnalyticsPreviewCacheState, previewCacheKey(filters), filters);
-  if (options.forceRefresh || shouldRefreshAnalyticsCacheEntry(entry)) {
+  await loadPersistedPreviewSnapshot('guild-preview', entry);
+  if (options.forceRefresh) {
     void refreshAdminGuildAnalyticsPreviewCacheEntry(entry).catch(() => undefined);
   }
   if (!entry.snapshot) {
@@ -6218,10 +6064,11 @@ export async function getAdminProviderMarketingPreview(
   rawFilters: AdminProviderMarketingPreviewFilters,
   options: { forceRefresh?: boolean } = {},
 ) {
-  ensureAdminProviderMarketingPreviewBatchRefresh();
+
   const filters = normalizeProviderMarketingPreviewFilters(rawFilters);
   const entry = getAdminPreviewCacheEntry(adminProviderMarketingPreviewCacheState, previewCacheKey(filters), filters);
-  if (options.forceRefresh || shouldRefreshAnalyticsCacheEntry(entry)) {
+  await loadPersistedPreviewSnapshot('provider-preview', entry);
+  if (options.forceRefresh) {
     void refreshAdminProviderMarketingPreviewCacheEntry(entry).catch(() => undefined);
   }
   if (!entry.snapshot) {

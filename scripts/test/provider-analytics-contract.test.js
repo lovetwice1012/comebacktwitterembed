@@ -120,7 +120,14 @@ test('provider-specific marketing axis segments cover every production provider'
         assert.match(axisSegments, new RegExp(metricKey.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), `${metricKey} must be mapped to a provider axis`);
     }
 
-    assert.match(source, /GROUP BY f\.content_event_id, f\.provider_id, f\.account_key, f\.facet_key/);
+    const marketingQuerySource = fs.readFileSync(path.join(path.dirname(adminDataPath), 'detailed-facet-queries.ts'), 'utf8')
+        .split('export function detailedProviderMarketingSegmentsQuery')[1];
+    assert.ok(marketingQuerySource, 'marketing segment query helper must exist');
+    assert.match(source, /detailedProviderMarketingSegmentsQuery\s*\(\s*content\.whereSql\s*,\s*placeholders\s*,\s*segmentValueSql\s*\)/);
+    assert.match(marketingQuerySource, /WITH\s+segments\s+AS\s*\([\s\S]*?AVG\s*\(\s*f\.numeric_value\s*\)\s+AS\s+numeric_value[\s\S]*?GROUP\s+BY\s+f\.content_event_id\s*,\s*f\.provider_id\s*,\s*f\.account_key\s*,\s*f\.facet_key\s*,\s*\$\{segmentValueSql\}/,
+        'repeated observations must be averaged within each event and segment');
+    assert.match(marketingQuerySource, /totals\s+AS\s*\([\s\S]*?AVG\s*\(\s*numeric_value\s*\)\s+AS\s+avg_numeric_value[\s\S]*?FROM\s+segments\s+GROUP\s+BY\s+provider_id\s*,\s*account_key\s*,\s*metric_key\s*,\s*facet_value/,
+        'segment totals must average the per-event values rather than raw observations');
     assert.match(source, /duration:<15s/);
     assert.match(source, /price:1000-4999/);
     assert.match(source, /audience:1k-9k/);

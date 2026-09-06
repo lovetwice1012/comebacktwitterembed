@@ -160,7 +160,7 @@ func (a *App) buildReport(w http.ResponseWriter, r *http.Request) {
 	if t, e := time.Parse(time.RFC3339Nano, generated.String); e == nil {
 		recent = time.Since(t) < 5*time.Minute
 	}
-	if status.String == "queued" || status.String == "running" || !in.Force && recent {
+	if status.String == "queued" || status.String == "running" || !in.Force && recent && kind == "overview" {
 		tx.Rollback()
 		snapshot, e := a.reportSnapshot(key)
 		if e != nil {
@@ -224,7 +224,7 @@ func (a *App) scheduleReportRefresh(p Policy) {
 		return
 	}
 	var key, kind, filters string
-	e = tx.QueryRow("SELECT cache_key,kind,filters FROM reports WHERE status IN ('succeeded','failed') AND updated_at<? AND (status='succeeded' OR updated_at<?) ORDER BY updated_at LIMIT 1", time.Now().UTC().Add(-interval).Format(timestampLayout), time.Now().UTC().Add(-time.Hour).Format(timestampLayout)).Scan(&key, &kind, &filters)
+	e = tx.QueryRow("SELECT cache_key,kind,filters FROM reports WHERE kind='overview' AND status IN ('succeeded','failed') AND updated_at<? AND (status='succeeded' OR updated_at<?) ORDER BY updated_at LIMIT 1", time.Now().UTC().Add(-interval).Format(timestampLayout), time.Now().UTC().Add(-time.Hour).Format(timestampLayout)).Scan(&key, &kind, &filters)
 	if e != nil {
 		return
 	}
