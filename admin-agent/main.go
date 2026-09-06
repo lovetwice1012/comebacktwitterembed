@@ -28,6 +28,7 @@ type Config struct {
 	Listen, StateDir, Token, PasswordHash, Owner, PublicURL, BasePath            string
 	Node, Worker, WorkerDir, BotUnit, ExecutorSocket, WorkerURL, ReportWorkerURL string
 	LocalHealthURL, PublicHealthURL, DiscordWebhook, PushWebhook                 string
+	DiscordNotificationName, DiscordNotificationAvatar                           string
 	WorkerTimeout, MonitorInterval, ReportTimeout                                time.Duration
 	CookieSecure                                                                 bool
 	AllowedUserIDs                                                               []string
@@ -63,10 +64,12 @@ func config() Config {
 		BotUnit: env("ADMIN_AGENT_BOT_UNIT", "cbte.service"), ExecutorSocket: env("ADMIN_AGENT_EXECUTOR_SOCKET", "/run/cbte-admin-executor/executor.sock"),
 		LocalHealthURL: os.Getenv("ADMIN_AGENT_LOCAL_HEALTH_URL"), PublicHealthURL: os.Getenv("ADMIN_AGENT_PUBLIC_HEALTH_URL"),
 		DiscordWebhook: os.Getenv("ADMIN_AGENT_DISCORD_WEBHOOK"), PushWebhook: os.Getenv("ADMIN_AGENT_PUSH_WEBHOOK"),
-		WorkerTimeout:   time.Duration(max(5, min(600, envInt("ADMIN_AGENT_WORKER_TIMEOUT_SECONDS", 120)))) * time.Second,
-		ReportTimeout:   time.Duration(max(30, min(3600, envInt("ADMIN_AGENT_REPORT_TIMEOUT_SECONDS", 660)))) * time.Second,
-		MonitorInterval: time.Duration(max(5, envInt("ADMIN_AGENT_MONITOR_SECONDS", 15))) * time.Second,
-		CookieSecure:    env("ADMIN_AGENT_COOKIE_SECURE", "true") != "false",
+		DiscordNotificationName:   env("ADMIN_AGENT_DISCORD_NOTIFICATION_NAME", "ComebackTwitterEmbed お知らせ"),
+		DiscordNotificationAvatar: os.Getenv("ADMIN_AGENT_DISCORD_NOTIFICATION_AVATAR"),
+		WorkerTimeout:             time.Duration(max(5, min(600, envInt("ADMIN_AGENT_WORKER_TIMEOUT_SECONDS", 120)))) * time.Second,
+		ReportTimeout:             time.Duration(max(30, min(3600, envInt("ADMIN_AGENT_REPORT_TIMEOUT_SECONDS", 660)))) * time.Second,
+		MonitorInterval:           time.Duration(max(5, envInt("ADMIN_AGENT_MONITOR_SECONDS", 15))) * time.Second,
+		CookieSecure:              env("ADMIN_AGENT_COOKIE_SECURE", "true") != "false",
 	}
 }
 

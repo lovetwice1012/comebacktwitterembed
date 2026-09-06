@@ -40,8 +40,24 @@ func (a *App) sendOneNotification(ctx context.Context) {
 	if channel == "discord" {
 		target = a.cfg.DiscordWebhook
 		item, _ := decode(payload).(map[string]any)
-		text := fmt.Sprintf("[CBTE 管理監視] %s\n状態: %s\n障害ID: %s / revision %v\n%s", str(item["title"]), str(item["status"]), str(item["incidentId"]), item["revision"], str(item["url"]))
-		content = encode(Object{"content": text, "allowed_mentions": Object{"parse": []any{}}})
+		color := 0xE67E22
+		if str(item["status"]) == "Resolved" {
+			color = 0x2ECC71
+		}
+		embed := Object{
+			"title":       str(item["title"]),
+			"description": "サービスの状態に変化がありました。ご利用への影響がある場合は、ここでお知らせします。",
+			"color":       color,
+			"fields": []any{
+				Object{"name": "状態", "value": str(item["status"]), "inline": true},
+				Object{"name": "お知らせ", "value": str(item["title"]), "inline": false},
+			},
+		}
+		body := Object{"username": a.cfg.DiscordNotificationName, "embeds": []any{embed}, "allowed_mentions": Object{"parse": []any{}}}
+		if a.cfg.DiscordNotificationAvatar != "" {
+			body["avatar_url"] = a.cfg.DiscordNotificationAvatar
+		}
+		content = encode(body)
 		if !strings.Contains(target, "?") {
 			target += "?wait=true"
 		} else {
