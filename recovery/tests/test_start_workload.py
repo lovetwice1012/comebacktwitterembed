@@ -5,6 +5,7 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import re
 import stat
 import tempfile
 import time
@@ -46,6 +47,7 @@ class FakeBackend:
         self.events_value = None
         self.events_tokens = []
         self.bootstrap_complete = True
+        self.database_users = {}
     def container(self, network):
         directory = Path(self.candidate["directory"])
         return {"Config": {"Image": self.candidate["mysqlImage"], "Labels": {"cbte.recovery": "true", "cbte.restore-id": self.candidate["id"]}, "Cmd": ["--bind-address=127.0.0.1", "--port=3306", "--mysqlx=OFF", "--event-scheduler=OFF"]}, "HostConfig": {"NetworkMode": network}, "State": {"Running": True}, "Mounts": [{"Type": "bind", "Destination": "/var/lib/mysql", "Source": str(directory / "data"), "RW": True}, {"Type": "bind", "Destination": "/run/cbte-secrets", "Source": str(directory / "secrets"), "RW": False}]}
@@ -57,6 +59,14 @@ class FakeBackend:
         self.commands.append((argv, input))
         if self.fail_mysql and input == b"SELECT 1;":
             raise workload.ActivationError("Fixture MySQL failure")
+        if input:
+            for operation, user, host, plugin, password in re.findall(r"(CREATE USER IF NOT EXISTS|ALTER USER) '([^']+)'@'([^']+)' IDENTIFIED WITH ([a-z0-9_]+) BY '([a-f0-9]{64})';", input.decode()):
+                identity = (user, host)
+                value = {"plugin": plugin, "password": password}
+                if operation == "CREATE USER IF NOT EXISTS":
+                    self.database_users.setdefault(identity, value)
+                else:
+                    self.database_users[identity] = value
         if argv[1] == "inspect":
             return json.dumps([self.info]) if self.info else None
         if argv[1] == "stop":
@@ -235,6 +245,24 @@ class WorkloadTests(unittest.TestCase):
         self.assertEqual(credentials["password"], first["password"])
         self.assertFalse(any(command[0][1] in {"run", "stop", "rm"} for command in self.backend.commands))
         self.assertFalse(any("age" in argument or "zstd" in argument for command, _ in self.backend.commands for argument in command))
+
+    def test_recovery_account_creation_and_reentry_use_the_production_driver_supported_plugin(self):
+        credentials = self.prepare()
+        account = ("cbte_oci", "127.0.0.1")
+        self.assertEqual(self.backend.database_users[account], {"plugin": "mysql_native_password", "password": credentials["password"]})
+        # A restored/existing account may have MySQL 8's incompatible default.
+        # IF NOT EXISTS alone would leave this account unusable by mysql@2.18.1.
+        self.backend.database_users[account] = {"plugin": "caching_sha2_password", "password": "old"}
+        self.backend.commands.clear()
+        retry = workload.Workload(self.config, self.backend, self.environment)
+        retry.load_candidate(); retry.prepare_runtime()
+        repeated = retry.activate_database()
+        self.assertEqual(repeated["password"], credentials["password"])
+        self.assertEqual(self.backend.database_users[account], {"plugin": "mysql_native_password", "password": credentials["password"]})
+        self.assertEqual(set(self.backend.database_users), {account})
+        sql = b"\n".join(value for _, value in self.backend.commands if value)
+        self.assertNotIn(b"default_authentication_plugin", sql)
+        self.assertNotIn(b"GRANT ALL PRIVILEGES ON *.*", sql)
 
     def test_fresh_oci_state_and_forced_environment_do_not_replay_primary_jobs(self):
         credentials = self.prepare()

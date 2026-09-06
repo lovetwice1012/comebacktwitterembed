@@ -406,9 +406,13 @@ class Workload:
             atomic_json(credentials_file, credentials)
         self.authority_check()
         password = credentials["password"]
+        # The production Node driver is mysql@2.18.1, whose authentication
+        # switch handler supports mysql_native_password, not MySQL 8's default
+        # caching_sha2_password. Pin this account's plugin on creation AND on
+        # reentry; the candidate engine is separately constrained to MySQL 8.0.
         self.mysql("SET GLOBAL super_read_only=OFF; SET GLOBAL read_only=OFF;\n"
-                   f"CREATE USER IF NOT EXISTS 'cbte_oci'@'127.0.0.1' IDENTIFIED BY '{password}';\n"
-                   f"ALTER USER 'cbte_oci'@'127.0.0.1' IDENTIFIED BY '{password}';\n"
+                   f"CREATE USER IF NOT EXISTS 'cbte_oci'@'127.0.0.1' IDENTIFIED WITH mysql_native_password BY '{password}';\n"
+                   f"ALTER USER 'cbte_oci'@'127.0.0.1' IDENTIFIED WITH mysql_native_password BY '{password}';\n"
                    "GRANT ALL PRIVILEGES ON ComebackTwitterEmbed.* TO 'cbte_oci'@'127.0.0.1';\n", timeout=15)
         return credentials
 
