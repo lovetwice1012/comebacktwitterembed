@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "verifiedAt": "2026-09-06T07:24:07.448653+00:00",
+  "actionId": "3dcf2593adcf69a7ae75d67846ab10f1a459bfee2c60c1d1",
+  "reportKind": "overview",
+  "status": "succeeded",
+  "complete": true,
+  "reportDurationMs": 241637,
+  "sql": {
+    "completed": 104,
+    "running": 0,
+    "failed": 0
+  },
+  "cache": {
+    "ready": true,
+    "refreshing": false,
+    "updatedAt": "2026-09-06T07:23:50.147068820Z"
+  },
+  "sectionNames": [
+    "analytics",
+    "durationMs",
+    "generatedAt",
+    "health",
+    "providerRows",
+    "recent",
+    "tables",
+    "totals"
+  ],
+  "bot": {
+    "pid": 212262,
+    "activationPhase": "ACTIVE",
+    "reportingDegraded": false,
+    "rssKiB": 1923488
+  },
+  "reportWorker": {
+    "ok": true,
+    "service": "cbte-admin-analysis",
+    "busy": false
+  },
+  "privateServerEvidence": "/tmp/cbte-oci-overview-patched-20260906.json",
+  "sqlMarkerFixCommit": "53e95d9cff7cbffe2fe5e62e2e0996d277a32195"
+}
