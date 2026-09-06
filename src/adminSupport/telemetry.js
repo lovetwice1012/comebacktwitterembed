@@ -65,13 +65,14 @@ function event(stage, kind, details = {}, extra = {}) {
         parent_span_id: context.parent_span_id, span_id: extra.span_id || crypto.randomUUID(),
         sequence: ++sequence, stage, kind, occurred_at: new Date().toISOString(),
         boot_id: bootId, build_revision: process.env.BOT_BUILD_REVISION || 'unknown', instrumentation_version: 1,
+        fleet_node: process.env.CBTE_FLEET_NODE, fleet_epoch: process.env.CBTE_FLEET_EPOCH,
         trigger_type: context.trigger_type || 'user', guild_id: context.guild_id, channel_id: context.channel_id,
         user_id: context.user_id, message_id: context.message_id, provider_id: context.provider_id,
         interaction_id: context.interaction_id,
-        url: context.url, ...extra, details });
+        url: context.url, ...extra, actor_id: context.actor_id, initiated_via: context.initiated_via, details });
     Object.assign(row, { eventId: row.event_id, runId: row.request_id || row.trace_id, requestId: row.request_id,
         guildId: row.guild_id, channelId: row.channel_id, userId: row.user_id, provider: row.provider_id,
-        triggerType: row.trigger_type, occurredAt: row.occurred_at });
+        triggerType: row.trigger_type, occurredAt: row.occurred_at, actorId: row.actor_id, initiatedVia: row.initiated_via });
     if (context.events) context.events.push(row);
     if (context.parentEvents && context.parentEvents !== context.events) context.parentEvents.push(row);
     if (context.preview) return row;

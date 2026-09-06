@@ -70,7 +70,8 @@ async function switchSource(input) {
     if (input.sourceId === 'default') delete next.overrides[input.providerId];
     else next.overrides[input.providerId] = {
         sourceId: input.sourceId, createdAt: new Date().toISOString(), expiresAt: new Date(Date.now() + ttlSeconds * 1000).toISOString(),
-        actionId: telemetry.current()?.operation_id || null, actorUserId: process.env.ADMIN_OWNER_ID || 'system',
+        actionId: telemetry.current()?.operation_id || null, actorUserId: require('./actor').currentActorId(),
+        initiatedVia: telemetry.current()?.initiated_via || 'automation',
     };
     await writeState(next);
     const after = next.overrides[input.providerId] || null;

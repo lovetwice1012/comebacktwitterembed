@@ -1,0 +1,25 @@
+[Unit]
+Description=CBTE independent emergency administration
+After=network.target
+
+[Service]
+Type=notify
+ExecStart=/opt/cbte-recovery/bin/cbte-admin
+EnvironmentFile=/etc/cbte-recovery/admin/core.env
+WorkingDirectory=/opt/cbte-recovery
+User=cbte-admin
+Group=cbte-admin
+SupplementaryGroups=systemd-journal
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=15
+WatchdogSec=90
+KillMode=control-group
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+MemoryHigh=256M
+MemoryMax=384M
+
+[Install]
+WantedBy=multi-user.target

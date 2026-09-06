@@ -22,7 +22,7 @@ const fs = require('node:fs');
   if (request.type === 'large') { process.stdout.write('x'.repeat(33*1024*1024)); return; }
   if (request.type === 'stderr') process.stderr.write('x'.repeat(100000));
   const failure=request.type === 'application.failure' || request.type === 'application.deadline';
-  process.stdout.write(JSON.stringify({ok:!failure,data:{actionId:request.actionId,input:request.input,
+  process.stdout.write(JSON.stringify({ok:!failure,data:{actionId:request.actionId,input:request.input,actorId:request.actorId,initiatedVia:request.initiatedVia,
     childAgentToken:process.env.ADMIN_AGENT_TOKEN,telemetryEnabled:process.env.ADMIN_TELEMETRY_ENABLED},
     error:failure?{code:request.type==='application.deadline'?'WORKER_DEADLINE':'FIXTURE_APPLICATION_FAILURE',message:'Expected fixture failure'}:undefined,
     events:[{event_id:'fixture-event',kind:'fixture',details:{preserved:true}}]}),()=>process.exit(failure?1:0));
@@ -37,7 +37,7 @@ async function setup(t, overrides = {}) {
     await fs.writeFile(worker, fakeCLI);
     const instances = [];
     const options = { token: TOKEN, worker, workerDir: directory, stateDir, deadlineMs: 3000,
-        childEnv: { FIXTURE_COUNT_FILE: countFile }, ...overrides };
+        ...overrides, childEnv: { FIXTURE_COUNT_FILE: countFile, ...(overrides.childEnv || {}) } };
     async function start() {
         const app = await createAnalysisServer(options);
         const address = await app.listen(0);
@@ -113,6 +113,41 @@ test('same action with different input conflicts and separate jobs cannot run co
     const identical = post(fixture.url, { actionId: 'busy', type: 'delay', input: { ms: 350 } });
     assert.deepEqual((await identical).data, (await running).data);
     assert.deepEqual(await fixture.count(), ['busy']);
+});
+
+test('authenticated actor metadata survives the bridge and another administrator cannot reuse its action ID', async t => {
+    const fixture = await setup(t);
+    const original = await post(fixture.url, { actionId: 'actor-owned', type: 'echo', actorId: '796972193287503913', initiatedVia: 'dashboard', input: {} });
+    assert.equal(original.data.data.actorId, '796972193287503913');
+    const second = await post(fixture.url, { actionId: 'actor-second', type: 'echo', actorId: '933314562487386122', initiatedVia: 'standalone', input: { actorId: '796972193287503913' } });
+    assert.equal(second.data.data.actorId, '933314562487386122');
+    assert.equal(second.data.data.initiatedVia, 'standalone');
+    const stored = await receipt(fixture.url, 'actor-second');
+    assert.equal(stored.data.actorId, '933314562487386122');
+    assert.equal(stored.data.initiatedVia, 'standalone');
+    assert.equal((await post(fixture.url, { actionId: 'actor-owned', type: 'echo', actorId: '933314562487386122', initiatedVia: 'dashboard', input: {} })).status, 409);
+    assert.equal((await post(fixture.url, { actionId: 'actor-owned', type: 'echo', actorId: '796972193287503913', initiatedVia: 'standalone', input: {} })).status, 409);
+    assert.equal((await post(fixture.url, { actionId: 'outsider', type: 'echo', actorId: '111111111111111111', input: {} })).status, 403);
+    assert.deepEqual(await fixture.count(), ['actor-owned', 'actor-second']);
+});
+
+test('the HTTP boundary applies the same configured actor allowlist as its child worker', async t => {
+    const fixture = await setup(t, { childEnv: {
+        ADMIN_ALLOWED_USER_IDS: '933314562487386122', ADMIN_OWNER_ID: '222222222222222222',
+    } });
+    // Rejected work must not reach the child, even when its default owner was
+    // valid in the service's parent environment.
+    const denied = await post(fixture.url, { actionId: 'old-owner', type: 'echo', input: {} });
+    assert.equal(denied.status, 403);
+    assert.equal(denied.data.error.code, 'ADMIN_ACTOR_FORBIDDEN');
+    const invalidOrigin = await post(fixture.url, { actionId: 'bad-origin', type: 'echo', actorId: '933314562487386122', initiatedVia: 'bad\norigin', input: {} });
+    assert.equal(invalidOrigin.status, 400);
+    assert.deepEqual(await fixture.count(), []);
+    const allowed = await post(fixture.url, { actionId: 'allowed-actor', type: 'echo', actorId: '933314562487386122', input: {} });
+    assert.equal(allowed.data.data.actorId, '933314562487386122');
+    const owner = await post(fixture.url, { actionId: 'configured-owner', type: 'echo', actorId: '222222222222222222', input: {} });
+    assert.equal(owner.data.data.actorId, '222222222222222222');
+    assert.deepEqual(await fixture.count(), ['allowed-actor', 'configured-owner']);
 });
 
 test('exit code 1 with valid worker JSON preserves application failure and evidence', async t => {

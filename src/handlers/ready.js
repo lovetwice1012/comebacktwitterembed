@@ -10,10 +10,14 @@ const errorRateNotifier = require('../lifecycle/errorRateNotifier');
 const mediaDeliveryServer = require('../lifecycle/mediaDeliveryServer');
 const { recordError } = require('../errorTracking');
 const runtimeDiagnostics = require('../lifecycle/runtimeDiagnostics');
+const recoveryBootstrap = require('../recoveryBootstrap');
 
 async function initialize(readyClient, webhookClient, errorNotificationWebhookClient) {
     console.log(`${readyClient.user.tag} is ready!`);
     runtimeDiagnostics.start();
+    // A restored database/local notification file must never wake old outgoing
+    // work before candidate-specific quarantine evidence is durable.
+    await recoveryBootstrap.initialize();
 
     try {
         await readyClient.application.commands.set(buildSlashCommands());
@@ -31,6 +35,7 @@ async function initialize(readyClient, webhookClient, errorNotificationWebhookCl
 }
 
 function register(client, webhookClient, errorNotificationWebhookClient = webhookClient) {
+    recoveryBootstrap.begin(); // Capture the boundary before client.login.
     client.once(Events.ClientReady, readyClient => {
         initialize(readyClient, webhookClient, errorNotificationWebhookClient).catch(err => {
             recordError(err, { errorType: 'ready_initialization_failed', severity: 'fatal', source: 'ready.initialize' });

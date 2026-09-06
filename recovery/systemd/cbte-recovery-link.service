@@ -1,0 +1,15 @@
+[Unit]
+Description=CBTE primary private recovery control link
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStart=/usr/bin/ssh -NT -i /etc/cbte-recovery/authority-ssh -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/etc/cbte-recovery/oci-known-hosts -o ExitOnForwardFailure=yes -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -o ConnectTimeout=10 -L 127.0.0.1:34211:127.0.0.1:34210 -L 127.0.0.1:34213:127.0.0.1:34212 -R 127.0.0.1:34222:127.0.0.1:22 -R 127.0.0.1:34224:127.0.0.1:30988 cbte-primary-link@158.101.74.163
+Restart=always
+RestartSec=5
+TimeoutStopSec=10
+NoNewPrivileges=true
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

@@ -8,8 +8,6 @@ export const dynamic = "force-dynamic";
 export async function POST(req: NextRequest) {
   try {
     const session = await requireAdminSession();
-    const ownerId = process.env.ADMIN_OWNER_ID || "796972193287503913";
-    if (session.user.id !== ownerId) throw new ApiError(403, "この復旧操作は所有者だけが実行できます。");
     const origin = req.headers.get("origin");
     const expected = new URL(process.env.NEXTAUTH_URL || req.url).origin;
     if (!origin || (origin !== expected && origin !== req.nextUrl.origin)) throw new ApiError(403, "Same-origin request required");
@@ -18,7 +16,7 @@ export async function POST(req: NextRequest) {
     const raw = await req.text();
     if (Buffer.byteLength(raw) > 4096) throw new ApiError(413, "復旧操作の入力が上限を超えています。");
     let request;
-    try { request = validateRecoveryRequest(JSON.parse(raw), ownerId); }
+    try { request = validateRecoveryRequest(JSON.parse(raw), session.user.id); }
     catch (error) { throw new ApiError(400, error instanceof Error ? error.message : "Invalid recovery request"); }
     try {
       const result = await requestAgentRecovery(request);

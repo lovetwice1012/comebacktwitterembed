@@ -92,6 +92,8 @@ dashboard/.next-builds/
 dashboard/.next-dev/
 dashboard/.next-performance-check/
 dashboard/.next-admin-local-preview/
+__pycache__/
+*.pyc
 out
 
 # Nuxt.js build / generate output

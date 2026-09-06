@@ -1,0 +1,23 @@
+[Unit]
+Description=CBTE lease-guarded emergency workload on OCI
+After=network-online.target docker.service cbte-recovery-authority.service
+Wants=network-online.target
+Requires=docker.service
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /opt/cbte-recovery/guardian.py --config /etc/cbte-recovery/oci-guardian.json
+Restart=always
+RestartSec=5
+TimeoutStopSec=10
+KillMode=control-group
+UMask=0077
+RuntimeDirectory=cbte-recovery
+RuntimeDirectoryMode=0755
+RuntimeDirectoryPreserve=yes
+MemoryHigh=8G
+MemoryMax=10G
+
+[Install]
+WantedBy=multi-user.target

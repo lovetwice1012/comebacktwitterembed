@@ -3,7 +3,7 @@ import "server-only";
 import { readRootConfig } from "@/lib/env";
 import type { DashboardSession } from "@/lib/types";
 
-const DEFAULT_ADMIN_USER_IDS = ["796972193287503913"];
+const DEFAULT_ADMIN_USER_IDS = ["796972193287503913", "933314562487386122"];
 
 function normalizeUserIds(value: unknown): string[] {
   if (Array.isArray(value)) return value.flatMap(normalizeUserIds);

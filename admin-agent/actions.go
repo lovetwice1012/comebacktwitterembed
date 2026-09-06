@@ -175,17 +175,17 @@ func (a *App) execute(parent context.Context, ac Action) {
 	defer cancel()
 	var data any
 	var problem any
+	serviceIntentBlocked := false
 	status := "succeeded"
 	if ac.Type == "diagnostics.collect" {
 		data = a.collect(ctx, true)
 	} else if strings.HasPrefix(ac.Type, "service.") || strings.HasPrefix(ac.Type, "agent.") || strings.HasPrefix(ac.Type, "analysis.") || strings.HasPrefix(ac.Type, "database.") || ac.Type == "logs.read" || ac.Type == "logs.previous_boot" || ac.Type == "logs.boots" || ac.Type == "kernel.logs" {
-		if ac.Type == "service.stop" || ac.Type == "service.start" {
-			desired := "running"
-			if ac.Type == "service.stop" {
-				desired = "stopped"
-			}
-			if _, e := a.store.db.Exec("UPDATE settings SET value=json_set(value,'$.desiredState',?,'$.revision',json_extract(value,'$.revision')+1) WHERE key='policy'", desired); e != nil {
-				problem = Object{"code": "POLICY_SAVE_FAILED", "message": e.Error()}
+		if ac.Type == "service.stop" || ac.Type == "service.start" || ac.Type == "service.restart" {
+			a.recoveryIntentMu.Lock()
+			defer a.recoveryIntentMu.Unlock()
+			if issue := a.saveServicePolicy(ctx, ac); issue != nil {
+				problem = issue
+				serviceIntentBlocked = true
 			}
 		}
 		if problem == nil {
@@ -211,7 +211,7 @@ func (a *App) execute(parent context.Context, ac Action) {
 			errout := &boundedBuffer{limit: 256 << 10}
 			var exitErr error
 			if workerURL != "" {
-				req, e := http.NewRequestWithContext(ctx, "POST", workerURL, strings.NewReader(encode(Object{"actionId": ac.ID, "type": ac.Type, "input": input})))
+				req, e := http.NewRequestWithContext(ctx, "POST", workerURL, strings.NewReader(encode(Object{"actionId": ac.ID, "type": ac.Type, "input": input, "actorId": ac.Actor, "initiatedVia": ac.Via})))
 				if e != nil {
 					exitErr = e
 				} else {
@@ -234,7 +234,7 @@ func (a *App) execute(parent context.Context, ac Action) {
 				cmd := exec.CommandContext(ctx, a.cfg.Node, a.cfg.Worker)
 				cmd.Dir = a.cfg.WorkerDir
 				configureProcess(cmd)
-				cmd.Stdin = strings.NewReader(encode(Object{"actionId": ac.ID, "type": ac.Type, "input": input}) + "\n")
+				cmd.Stdin = strings.NewReader(encode(Object{"actionId": ac.ID, "type": ac.Type, "input": input, "actorId": ac.Actor, "initiatedVia": ac.Via}) + "\n")
 				cmd.Stdout = out
 				cmd.Stderr = errout
 				exitErr = cmd.Run()
@@ -300,7 +300,7 @@ func (a *App) execute(parent context.Context, ac Action) {
 	if p, ok := problem.(map[string]any); ok && (str(p["code"]) == "DELIVERY_UNKNOWN" || str(p["code"]) == "ACTION_OUTCOME_UNKNOWN" || str(p["code"]) == "WORKER_DEADLINE") {
 		status = "unknown"
 	}
-	if ctx.Err() != nil {
+	if ctx.Err() != nil && !serviceIntentBlocked {
 		problem = Object{"code": "ACTION_DEADLINE", "message": "Action deadline reached; inspect receipts before any retry"}
 		if mutating(ac.Type) {
 			status = "unknown"

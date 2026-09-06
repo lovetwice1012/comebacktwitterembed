@@ -1,0 +1,11 @@
+tunnel: 30451f0b-c6dd-46db-9ab4-ab82b8f757ba
+credentials-file: /etc/cbte-recovery/tunnel.json
+metrics: 127.0.0.1:34216
+ingress:
+  - hostname: cbte-recovery.sprink.cloud
+    service: http://127.0.0.1:30986
+  - hostname: cbte.sprink.cloud
+    service: http://127.0.0.1:30987
+  - hostname: twidata.sprink.cloud
+    service: http://127.0.0.1:30985
+  - service: http_status:404

@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily active OCI database backup and pending transfer retry
+
+[Timer]
+OnCalendar=*-*-* 02:30:00 Asia/Tokyo
+OnBootSec=5min
+Persistent=true
+Unit=cbte-recovery-backup.service
+
+[Install]
+WantedBy=timers.target

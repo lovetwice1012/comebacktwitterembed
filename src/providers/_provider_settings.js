@@ -673,7 +673,7 @@ async function setSetting(providerInput, key, guildId, value) {
         await setSettingNow(provider, key, guildId, value);
         const after = await getSetting(provider, key, guildId);
         await query(`INSERT INTO ${TABLES.dashboardAuditLogs} (guild_id,provider_id,setting_key,actor_user_id,action,before_json,after_json,request_id) VALUES (?,?,?,?,?,?,?,?)`,
-            [guildId,provider.id,key,context?.user_id || process.env.ADMIN_OWNER_ID || 'system','setting.set',JSON.stringify(before) ?? null,JSON.stringify(after) ?? null,context?.operation_id || null]);
+            [guildId,provider.id,key,context?.actor_id || context?.user_id || process.env.ADMIN_OWNER_ID || 'system','setting.set',JSON.stringify(before) ?? null,JSON.stringify(after) ?? null,context?.operation_id || null]);
         return { before, after };
     });
     telemetry.event('settings', 'changed', { guildId, providerId: provider.id, key, ...result });

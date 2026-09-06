@@ -5,6 +5,7 @@
 
 const { queryDatabase } = require('../db');
 const { TABLES } = require('../db_schema');
+const recoveryBootstrap = require('../recoveryBootstrap');
 
 function start(client) {
     setInterval(() => {
@@ -15,6 +16,7 @@ function start(client) {
                 n.notification_id,
                 n.auto_extract_target_id,
                 n.user_id,
+                n.created_at_ms,
                 r.reason,
                 r.hint
              FROM ${TABLES.deregisterNotifications} n
@@ -23,6 +25,7 @@ function start(client) {
             [new Date().getTime() - 86400000]
         ).then(results => {
             results.forEach(result => {
+                if (!recoveryBootstrap.notificationAllowed('deregister', result, Number(result.created_at_ms))) return;
                 client.users.fetch(result.user_id).then(async user => {
                     user.send({
                         embeds: [{

@@ -63,13 +63,13 @@ test('recovery transport bounds time, response size and rejects truncated respon
   }
 });
 
-test('recovery route requires authenticated owner and same origin before touching executor', async () => {
+test('recovery route requires an allowed administrator and same origin before touching executor', async () => {
   let user = owner, calls = 0;
   class ApiError extends Error { constructor(status, message) { super(message); this.status = status; } }
   const validation = load('lib/admin-agent-recovery.ts');
   const route = load('app/api/admin/agent-recovery/route.ts', {
     'next/server': { NextResponse: { json: (body, options) => ({ body, status: options?.status || 200 }) } },
-    '@/lib/api': { ApiError, requireAdminSession: async () => { if (!user) throw new ApiError(401, 'login required'); return { user: { id: user } }; }, errorResponse: error => ({ status: error.status || 500, body: { error: error.message } }) },
+    '@/lib/api': { ApiError, requireAdminSession: async () => { if (!user) throw new ApiError(401, 'login required'); if (![owner, '933314562487386122'].includes(user)) throw new ApiError(403, 'administrator required'); return { user: { id: user } }; }, errorResponse: error => ({ status: error.status || 500, body: { error: error.message } }) },
     '@/lib/admin-agent-recovery': { validateRecoveryRequest: validation.validateRecoveryRequest, requestAgentRecovery: async () => { calls++; return { ok: true, data: { data: { InvocationID: invocation, ActiveState: 'failed' }, error: null } }; } },
   });
   const request = (origin, type = 'agent.status') => ({ url: 'https://cbte.example/api/admin/agent-recovery', nextUrl: { origin: 'https://cbte.example' }, headers: new Map([['origin', origin], ['content-type', 'application/json']]), text: async () => JSON.stringify({ type, input: {}, idempotencyKey: key }) });
@@ -85,4 +85,7 @@ test('recovery route requires authenticated owner and same origin before touchin
   assert.equal(response.status, 200);
   assert.equal(response.body.data.data.InvocationID, invocation);
   assert.equal(calls, 1);
+  user = '933314562487386122';
+  assert.equal((await route.POST(request('https://cbte.example'))).status, 200);
+  assert.equal(calls, 2);
 });

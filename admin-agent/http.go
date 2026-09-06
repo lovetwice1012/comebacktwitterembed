@@ -23,15 +23,20 @@ import (
 var assets embed.FS
 
 type App struct {
-	cfg             Config
-	store           *Store
-	boot            string
-	wake            chan struct{}
-	stateMu         sync.Mutex
-	lastSnapshot    Object
-	lastMonitorSave time.Time
-	hasMonitorSave  bool
-	failures        map[string]int
+	cfg              Config
+	store            *Store
+	boot             string
+	wake             chan struct{}
+	stateMu          sync.Mutex
+	lastSnapshot     Object
+	lastMonitorSave  time.Time
+	hasMonitorSave   bool
+	failures         map[string]int
+	authOnce         sync.Once
+	authStorageError error
+	oauthClient      *http.Client
+	oauthStartMu     sync.Mutex
+	recoveryIntentMu sync.Mutex
 }
 
 func newApp(cfg Config, s *Store) *App {
@@ -59,34 +64,49 @@ func tokenHash(token string) string {
 	return hex.EncodeToString(x[:])
 }
 func (a *App) authenticate(r *http.Request) (string, string, bool) {
+	if a.ensureAuthStorage() != nil {
+		return "", "", false
+	}
 	token := r.Header.Get("X-Admin-Agent-Token")
 	if token == "" {
 		token = strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
 	}
 	if len(a.cfg.Token) > 0 && subtle.ConstantTimeCompare([]byte(token), []byte(a.cfg.Token)) == 1 {
 		actor := r.Header.Get("X-Admin-Actor")
-		if actor != "" && actor != a.cfg.Owner {
+		if actor == "" {
+			actor = a.cfg.Owner
+		}
+		if !a.allowedAdmin(actor) {
 			return "", "", false
 		}
-		return a.cfg.Owner, "dashboard", true
+		return actor, "dashboard", true
 	}
 	c, e := r.Cookie("cbte_admin_session")
 	if e != nil {
 		return "", "", false
 	}
-	var csrf, expires string
-	if a.store.db.QueryRow("SELECT csrf,expires_at FROM sessions WHERE hash=?", tokenHash(c.Value)).Scan(&csrf, &expires) != nil || expires < now() {
+	var csrf, expires, principal, method string
+	if a.store.db.QueryRow("SELECT csrf,expires_at,principal,auth_method FROM sessions WHERE hash=?", tokenHash(c.Value)).Scan(&csrf, &expires, &principal, &method) != nil || expires < now() {
+		return "", "", false
+	}
+	if principal == "" {
+		principal = a.cfg.Owner
+	}
+	if !a.allowedAdmin(principal) {
 		return "", "", false
 	}
 	if r.Method != "GET" && r.Method != "HEAD" && subtle.ConstantTimeCompare([]byte(csrf), []byte(r.Header.Get("X-CSRF-Token"))) != 1 {
 		return "", "", false
 	}
-	return a.cfg.Owner, "standalone", true
+	if r.Method != "GET" && r.Method != "HEAD" && !a.sameOrigin(r) {
+		return "", "", false
+	}
+	return principal, "standalone", true
 }
 func (a *App) protect(h http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if _, _, ok := a.authenticate(r); !ok {
-			fail(w, 401, "UNAUTHORIZED", "Owner authentication is required")
+			fail(w, 401, "UNAUTHORIZED", "An allowed administrator must authenticate")
 			return
 		}
 		h(w, r)
@@ -95,6 +115,7 @@ func (a *App) protect(h http.HandlerFunc) http.HandlerFunc {
 func (a *App) routes() http.Handler {
 	mux := http.NewServeMux()
 	a.passkeyRoutes(mux)
+	a.discordOAuthRoutes(mux)
 	mux.HandleFunc("POST /auth/login", a.login)
 	mux.HandleFunc("GET /auth/session", a.session)
 	mux.HandleFunc("POST /auth/logout", a.protect(a.logout))
@@ -114,6 +135,7 @@ func (a *App) routes() http.Handler {
 		jsonResponse(w, 200, Object{"ok": true, "version": version})
 	})
 	mux.HandleFunc("GET /v1/health", a.protect(a.health))
+	mux.HandleFunc("GET /v1/recovery", a.protect(a.recoveryStatus))
 	mux.HandleFunc("GET /v1/catalog", a.protect(func(w http.ResponseWriter, r *http.Request) {
 		jsonResponse(w, 200, Object{"actions": catalog(), "version": 1})
 	}))
@@ -164,6 +186,10 @@ func clientAddress(r *http.Request) string {
 	return host
 }
 func (a *App) login(w http.ResponseWriter, r *http.Request) {
+	if !a.sameOrigin(r) {
+		fail(w, 403, "ORIGIN_REJECTED", "Login origin does not match the management origin")
+		return
+	}
 	passwordHash := a.cfg.PasswordHash
 	_ = a.store.getSetting("password_hash", &passwordHash)
 
@@ -194,16 +220,10 @@ func (a *App) login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_, _ = a.store.db.Exec("DELETE FROM auth_attempts WHERE address=?", host)
-	token, csrf := randomID(), randomID()
-	expiry := time.Now().UTC().Add(8 * time.Hour)
-	if _, e := a.store.db.Exec("INSERT INTO sessions(hash,csrf,expires_at) VALUES(?,?,?)", tokenHash(token), csrf, expiry.Format(timestampLayout)); e != nil {
-		fail(w, 503, "STORE_ERROR", e.Error())
-		return
-	}
-	http.SetCookie(w, &http.Cookie{Name: "cbte_admin_session", Value: token, Path: a.cookiePath(), HttpOnly: true, Secure: a.cfg.CookieSecure, SameSite: http.SameSiteStrictMode, Expires: expiry})
-	jsonResponse(w, 200, Object{"ok": true, "csrf": csrf, "owner": a.cfg.Owner, "expiresAt": expiry.Format(timestampLayout)})
+	a.issueAdminSession(w, a.cfg.Owner, "password", "")
 }
 func (a *App) changePassword(w http.ResponseWriter, r *http.Request) {
+	actor, via, _ := a.authenticate(r)
 	var in struct {
 		Password string `json:"password"`
 	}
@@ -229,6 +249,9 @@ func (a *App) changePassword(w http.ResponseWriter, r *http.Request) {
 		_, e = tx.Exec("DELETE FROM sessions")
 	}
 	if e == nil {
+		e = a.auditAuthTx(tx, "admin.password.changed", actor, via, Object{"sessionsRevoked": true})
+	}
+	if e == nil {
 		e = tx.Commit()
 	}
 	if e != nil {
@@ -238,15 +261,16 @@ func (a *App) changePassword(w http.ResponseWriter, r *http.Request) {
 	jsonResponse(w, 200, Object{"ok": true, "sessionsRevoked": true})
 }
 func (a *App) session(w http.ResponseWriter, r *http.Request) {
-	if _, _, ok := a.authenticate(r); !ok {
+	actor, _, ok := a.authenticate(r)
+	if !ok {
 		fail(w, 401, "UNAUTHORIZED", "Login required")
 		return
 	}
-	var csrf string
+	var csrf, method, username string
 	if c, e := r.Cookie("cbte_admin_session"); e == nil {
-		_ = a.store.db.QueryRow("SELECT csrf FROM sessions WHERE hash=?", tokenHash(c.Value)).Scan(&csrf)
+		_ = a.store.db.QueryRow("SELECT csrf,auth_method,username FROM sessions WHERE hash=?", tokenHash(c.Value)).Scan(&csrf, &method, &username)
 	}
-	jsonResponse(w, 200, Object{"ok": true, "csrf": csrf, "owner": a.cfg.Owner})
+	jsonResponse(w, 200, Object{"ok": true, "csrf": csrf, "owner": actor, "actor": actor, "authMethod": method, "user": Object{"id": actor, "username": username}})
 }
 func (a *App) logout(w http.ResponseWriter, r *http.Request) {
 	if c, e := r.Cookie("cbte_admin_session"); e == nil {

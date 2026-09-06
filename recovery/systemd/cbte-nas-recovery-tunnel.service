@@ -1,0 +1,17 @@
+[Unit]
+Description=CBTE private NAS export tunnel to OCI
+After=network-online.target cbte-nas-exporter.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/cbte-recovery/nas-tunnel.env
+ExecStart=/usr/bin/ssh -NT -i /etc/cbte-recovery/nas-tunnel -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/etc/cbte-recovery/oci-known-hosts -o ExitOnForwardFailure=yes -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -o ConnectTimeout=10 -R 127.0.0.1:33443:127.0.0.1:34220 ${OCI_SSH_TARGET}
+Restart=always
+RestartSec=10
+TimeoutStopSec=10
+UMask=0077
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

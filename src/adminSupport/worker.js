@@ -5,6 +5,7 @@ const telemetry = require('./telemetry');
 const { inspect } = require('./inspect');
 const discord = require('./discord');
 const operations = require('./operations');
+const { actorFromRequest, DEFAULT_OWNER_ID } = require('./actor');
 
 const ACTIONS = [
     'capabilities', 'url.inspect', 'url.reparse', 'url.compare', 'url.test_send',
@@ -17,6 +18,7 @@ const ACTIONS = [
 ];
 async function executeAction(request) {
     const { type, input = {} } = request;
+    if (type !== 'capabilities') require('../recoveryLease').install();
     const actionId = request.actionId || crypto.randomUUID();
     if (!ACTIONS.includes(type)) throw Object.assign(new Error(`Unsupported support action: ${type}`), { code: 'UNSUPPORTED_ACTION' });
     if (type === 'capabilities') return { actions: ACTIONS, providers: operations.catalog(),
@@ -80,6 +82,14 @@ async function executeAction(request) {
 }
 
 async function execute(request) {
+    const actor = actorFromRequest(request);
+    const actionId = request.actionId || crypto.randomUUID();
+    return telemetry.run({ actor_id: actor.actorId, initiated_via: actor.initiatedVia,
+        operation_id: actionId, trigger_type: telemetry.current()?.trigger_type || 'admin_operation' }, () => executeScoped({ ...request, ...actor, actionId }));
+}
+
+async function executeScoped(request) {
+    if (request.type !== 'capabilities') require('../recoveryLease').install();
     const requestWithId = { ...request, actionId: request.actionId || crypto.randomUUID() };
     const type = request.type || '';
     const input = request.input || {};
@@ -90,13 +100,15 @@ async function execute(request) {
     const { ensureDatabaseSchema, TABLES } = require('../db_schema');
     const db = require('../db');
     await ensureDatabaseSchema();
-    const inputHash = crypto.createHash('sha256').update(JSON.stringify({ type, input })).digest('hex');
+    const legacyHash = crypto.createHash('sha256').update(JSON.stringify({ type, input })).digest('hex');
+    const inputHash = crypto.createHash('sha256').update(JSON.stringify({ type, input, actorId: request.actorId, initiatedVia: request.initiatedVia })).digest('hex');
+    const matchesReceiptHash = hash => hash === inputHash || request.actorId === DEFAULT_OWNER_ID && hash === legacyHash;
     let readyToCommit = false;
     let existingReceiptResult = /** @type {any} */ (null);
     try { return await db.withDatabaseTransaction(async query => {
         await query(`INSERT IGNORE INTO ${TABLES.adminSupportActionReceipts} (action_id,action_type,input_hash) VALUES (?,?,?)`, [requestWithId.actionId,type,inputHash]);
         const rows = await query(`SELECT * FROM ${TABLES.adminSupportActionReceipts} WHERE action_id=? FOR UPDATE`, [requestWithId.actionId]);
-        if (rows[0].input_hash !== inputHash || rows[0].action_type !== type) throw Object.assign(new Error('The action ID is already associated with different input.'), { code: 'IDEMPOTENCY_CONFLICT' });
+        if (!matchesReceiptHash(rows[0].input_hash) || rows[0].action_type !== type) throw Object.assign(new Error('The action ID is already associated with different input or administrator.'), { code: 'IDEMPOTENCY_CONFLICT' });
         if (rows[0].result_json) {
             existingReceiptResult = { ...JSON.parse(rows[0].result_json), replayedReceipt: true };
             return existingReceiptResult;
@@ -119,7 +131,7 @@ async function execute(request) {
             // justify retrying a possibly committed external operation.
             const receipts = await db.queryDatabase(`SELECT action_type,input_hash,result_json FROM ${TABLES.adminSupportActionReceipts} WHERE action_id=? LOCK IN SHARE MODE`, [requestWithId.actionId], { timeoutMs: 5000 });
             const receipt = receipts[0];
-            if (receipt?.input_hash === inputHash && receipt?.action_type === type && receipt?.result_json) {
+            if (matchesReceiptHash(receipt?.input_hash) && receipt?.action_type === type && receipt?.result_json) {
                 return { ...JSON.parse(receipt.result_json), replayedReceipt: true, reconciledAfterCommitError: true,
                     commitError: telemetry.errorData(error) };
             }

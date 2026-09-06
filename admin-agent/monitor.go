@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -84,6 +83,9 @@ func (a *App) putPolicy(w http.ResponseWriter, r *http.Request) {
 		}
 		p.ReportsPausedUntil = t.UTC().Format(timestampLayout)
 	}
+	actor, via, _ := a.authenticate(r)
+	a.recoveryIntentMu.Lock()
+	defer a.recoveryIntentMu.Unlock()
 	tx, e := a.store.db.Begin()
 	if e != nil {
 		fail(w, 503, "STORE_ERROR", e.Error())
@@ -109,12 +111,21 @@ func (a *App) putPolicy(w http.ResponseWriter, r *http.Request) {
 		fail(w, 503, "STORE_ERROR", e.Error())
 		return
 	}
+	if e = a.auditAuthTx(tx, "admin.policy.changed", actor, via, Object{"before": current, "after": p}); e == nil {
+		e = a.saveRecoveryIntentTx(tx, p, actor, via)
+	}
+	if e != nil {
+		fail(w, 503, "STORE_ERROR", e.Error())
+		return
+	}
 	if e = tx.Commit(); e != nil {
 		fail(w, 503, "STORE_ERROR", e.Error())
 		return
 	}
-	actor, via, _ := a.authenticate(r)
-	_, _, _ = a.store.ingest([]Object{{"id": randomID(), "kind": "admin.policy.changed", "occurredAt": now(), "actor": actor, "initiatedVia": via, "before": current, "after": p}})
+	if problem := a.confirmPolicyRecoveryIntent(r.Context(), p, actor); problem != nil {
+		jsonResponse(w, 503, Object{"ok": false, "error": problem, "policy": p})
+		return
+	}
 	jsonResponse(w, 200, p)
 }
 func jsonUnmarshal(s string, v any) error { return json.Unmarshal([]byte(s), v) }
@@ -191,27 +202,35 @@ func (a *App) collect(ctx context.Context, deep bool) Object {
 	if a.cfg.WorkerURL != "" {
 		v["analysisHTTP"] = a.httpProbe(ctx, strings.TrimSuffix(a.cfg.WorkerURL, "/execute")+"/health")
 	}
-	if pid, e := strconv.Atoi(str(unit["MainPID"])); e == nil && pid > 0 {
-		root := filepath.Join("/proc", strconv.Itoa(pid))
-		proc := Object{"pid": pid, "status": readEvidence(filepath.Join(root, "status")), "io": readEvidence(filepath.Join(root, "io")), "stat": readEvidence(filepath.Join(root, "stat"))}
-		fds, e := os.ReadDir(filepath.Join(root, "fd"))
-		if e == nil {
-			proc["fdCount"] = len(fds)
-		} else {
-			proc["fdCountUnavailable"] = e.Error()
-		}
-		v["process"] = proc
-	}
-	var payload, persisted string
-	e := a.store.db.QueryRow("SELECT payload,persisted_at FROM events WHERE kind IN ('heartbeat','bot.heartbeat','runtime.heartbeat') ORDER BY seq DESC LIMIT 1").Scan(&payload, &persisted)
+	var payload, occurred, persisted string
+	heartbeat := Object{}
+	e := a.store.db.QueryRowContext(ctx, "SELECT payload,occurred_at,persisted_at FROM events WHERE kind IN ('heartbeat','bot.heartbeat','runtime.heartbeat') AND COALESCE(json_extract(payload,'$.triggerType'),json_extract(payload,'$.trigger_type'),'') NOT IN ('diagnostic','admin_operation') ORDER BY seq DESC LIMIT 1").Scan(&payload, &occurred, &persisted)
 	if e == nil {
-		v["heartbeat"] = decode(payload)
+		heartbeat, _ = decode(payload).(map[string]any)
+		v["heartbeat"] = heartbeat
+		v["heartbeatOccurredAt"] = occurred
 		v["heartbeatPersistedAt"] = persisted
-		t, _ := time.Parse(time.RFC3339Nano, persisted)
-		v["heartbeatAgeSeconds"] = time.Since(t).Seconds()
+		if t, err := time.Parse(time.RFC3339Nano, occurred); err == nil {
+			age := time.Since(t).Seconds()
+			v["heartbeatAgeSeconds"] = age
+			v["heartbeatState"] = "observed"
+			if age < -30 {
+				v["heartbeatState"] = "clock_skew"
+			}
+		} else {
+			v["heartbeatState"] = "invalid_timestamp"
+		}
+		if t, err := time.Parse(time.RFC3339Nano, persisted); err == nil {
+			v["heartbeatPersistedAgeSeconds"] = time.Since(t).Seconds()
+		}
 	} else {
 		v["heartbeatState"] = "unobserved"
 	}
+	a.stateMu.Lock()
+	previous := nested(a.lastSnapshot, "workloadIdentity")
+	a.stateMu.Unlock()
+	identity, process := workloadProcessEvidence("/proc", "/sys/fs/cgroup", unit, heartbeat, previous, occurred, persisted, time.Now())
+	v["workloadIdentity"], v["process"] = identity, process
 	if deep {
 		v["journal"] = safeCommand(ctx, "journalctl", "-u", a.cfg.BotUnit, "--since", "-30 minutes", "-n", "200", "--no-pager", "-o", "short-iso")
 		v["kernelJournal"] = safeCommand(ctx, "journalctl", "-k", "--since", "-30 minutes", "-n", "150", "--no-pager", "-o", "short-iso")
@@ -235,6 +254,7 @@ func (a *App) monitor(ctx context.Context) {
 	}
 }
 func (a *App) monitorOnce(ctx context.Context) {
+	a.retryRecoveryIntent(ctx)
 	snapshot := a.collect(ctx, false)
 	a.stateMu.Lock()
 	a.lastSnapshot = snapshot
@@ -267,15 +287,21 @@ func (a *App) monitorOnce(ctx context.Context) {
 			if a.failures["bot.process.unavailable"] >= 2 {
 				a.detect("bot.process.unavailable", "Botプロセスが停止しています", Object{"claim": "systemd reports inactive or failed. Exit cause requires the unit result and journal.", "supports": evidence, "unconfirmed": []string{"stop intent outside management core", "kernel OOM attribution"}, "nextActions": []string{"diagnostics.collect", "logs.read"}}, p)
 			}
-		} else if active == "active" {
+		} else if active == "active" && nested(snapshot, "workloadIdentity")["available"] == true {
 			a.good("bot.process.unavailable", evidence)
+			a.good("bot.workload.unverified", evidence)
+		} else if active == "active" {
+			a.bad("bot.workload.unverified")
+			if a.failures["bot.workload.unverified"] >= 3 {
+				a.detect("bot.workload.unverified", "Botの実プロセスを確認できません", Object{"claim": "The systemd unit is active, but no current Bot Node process identity is verified. The unit MainPID may be a guardian or workload wrapper.", "supports": evidence, "nextActions": []string{"diagnostics.collect", "logs.read"}}, p)
+			}
 		}
-		if age, ok := snapshot["heartbeatAgeSeconds"].(float64); ok && age > float64(p.HeartbeatGraceSeconds) && active == "active" {
+		if age, ok := snapshot["heartbeatAgeSeconds"].(float64); ok && age > float64(p.HeartbeatGraceSeconds) && active == "active" && verifiedHeartbeatMatchesWorkload(snapshot) {
 			a.bad("bot.heartbeat.stale")
 			if a.failures["bot.heartbeat.stale"] >= 3 {
-				a.detect("bot.heartbeat.stale", "Botの進捗記録が停止しています", Object{"claim": "systemd is active but the last durable heartbeat is stale. This is not by itself proof of a process hang.", "supports": evidence, "unconfirmed": []string{"producer spool backlog", "event loop responsiveness", "database health"}, "nextActions": []string{"diagnostics.collect", "diagnostics.db"}}, p)
+				a.detect("bot.heartbeat.stale", "Botの進捗記録が停止しています", Object{"claim": "The unit is active and the heartbeat from its verified Bot workload is stale by occurrence time. This is not by itself proof of a process hang.", "supports": evidence, "unconfirmed": []string{"producer spool backlog", "event loop responsiveness", "database health"}, "nextActions": []string{"diagnostics.collect", "diagnostics.db"}}, p)
 			}
-		} else if age, ok := snapshot["heartbeatAgeSeconds"].(float64); ok && age < 30 && active == "active" {
+		} else if age, ok := snapshot["heartbeatAgeSeconds"].(float64); ok && age >= -30 && age < 30 && active == "active" && verifiedHeartbeatMatchesWorkload(snapshot) {
 			a.good("bot.heartbeat.stale", Object{"scope": "Heartbeat delivery and systemd activity recovered; content fetching and Discord delivery remain separate capabilities.", "supports": evidence})
 		}
 	}
@@ -365,10 +391,7 @@ func (a *App) maybeRepairHungBot(ctx context.Context, snapshot Object, p Policy)
 	if str(unit["ActiveState"]) != "active" || str(unit["InvocationID"]) == "" || str(unit["Job"]) != "" && str(unit["Job"]) != "0" {
 		return
 	}
-	heartbeat := nested(snapshot, "heartbeat")
-	heartbeatPID := number(nested(heartbeat, "details")["pid"], 0)
-	currentPID, _ := strconv.Atoi(str(unit["MainPID"]))
-	if heartbeatPID == 0 || heartbeatPID != currentPID {
+	if !verifiedHeartbeatMatchesWorkload(snapshot) {
 		return
 	}
 	age, ok := snapshot["heartbeatAgeSeconds"].(float64)
@@ -394,7 +417,7 @@ func (a *App) maybeRepairHungBot(ctx context.Context, snapshot Object, p Policy)
 	if count >= p.RestartDailyLimit || last.Valid && time.Since(lt) < time.Duration(p.RestartCooldownSeconds)*time.Second {
 		return
 	}
-	_, _, _ = a.store.enqueue("service.restart", Object{"expectedInvocationId": str(unit["InvocationID"]), "reason": "Policy-authorized recovery: stale heartbeat, local HTTP failure, active process, recent successful independent DB diagnosis", "policyRevision": p.Revision}, "hung-repair:"+str(unit["InvocationID"]), a.cfg.Owner, "automation")
+	_, _, _ = a.store.enqueue("service.restart", Object{"expectedInvocationId": str(unit["InvocationID"]), "reason": "Policy-authorized recovery: stale verified Bot-workload heartbeat, local HTTP failure, active unit, recent successful independent DB diagnosis", "observedWorkloadPID": nested(snapshot, "workloadIdentity")["pid"], "observedWorkloadStartTicks": nested(snapshot, "workloadIdentity")["processStartTicks"], "policyRevision": p.Revision}, "hung-repair:"+str(unit["InvocationID"]), a.cfg.Owner, "automation")
 }
 
 func diskSnapshot(dir string) Object { return platformDiskSnapshot(dir) }

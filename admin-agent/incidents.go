@@ -156,7 +156,15 @@ func (a *App) incident(w http.ResponseWriter, r *http.Request) {
 	jsonResponse(w, 200, item)
 }
 func (a *App) acknowledge(w http.ResponseWriter, r *http.Request) {
-	res, e := a.store.db.Exec("UPDATE incidents SET acknowledged=1,updated_at=? WHERE id=?", now(), r.PathValue("id"))
+	actor, via, _ := a.authenticate(r)
+	tx, e := a.store.db.Begin()
+	if e != nil {
+		fail(w, 503, "STORE_ERROR", e.Error())
+		return
+	}
+	defer tx.Rollback()
+	id := r.PathValue("id")
+	res, e := tx.Exec("UPDATE incidents SET acknowledged=1,updated_at=? WHERE id=?", now(), id)
 	if e != nil {
 		fail(w, 503, "STORE_ERROR", e.Error())
 		return
@@ -164,6 +172,13 @@ func (a *App) acknowledge(w http.ResponseWriter, r *http.Request) {
 	n, _ := res.RowsAffected()
 	if n == 0 {
 		fail(w, 404, "NOT_FOUND", "Incident not found")
+		return
+	}
+	if e = a.auditAuthTx(tx, "admin.incident.acknowledged", actor, via, Object{"incidentId": id, "acknowledged": true}); e == nil {
+		e = tx.Commit()
+	}
+	if e != nil {
+		fail(w, 503, "STORE_ERROR", e.Error())
 		return
 	}
 	jsonResponse(w, 200, Object{"ok": true, "acknowledged": true})

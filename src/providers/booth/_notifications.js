@@ -20,6 +20,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const recoveryBootstrap = require('../../recoveryBootstrap');
 
 const DATA_DIR = path.resolve(process.cwd(), 'data');
 const FILE = path.join(DATA_DIR, 'booth_sale_notifications.json');
@@ -70,7 +71,8 @@ function genId() {
  * 重複登録 (同 user × 同 item × 未通知) があれば true。
  */
 function hasActiveSubscription(userId, itemId) {
-    return load().some(r => r.userId === userId && String(r.itemId) === String(itemId) && !r.notified);
+    return load().some(r => r.userId === userId && String(r.itemId) === String(itemId) && !r.notified
+        && recoveryBootstrap.notificationAllowed('booth_sale', r, r.registeredAt));
 }
 
 function addSubscription(entry) {
@@ -86,7 +88,8 @@ function addSubscription(entry) {
  */
 function findDue(now = new Date()) {
     const list = load();
-    return list.filter(r => !r.notified && new Date(r.notifyAt) <= now);
+    return list.filter(r => !r.notified && new Date(r.notifyAt) <= now
+        && recoveryBootstrap.notificationAllowed('booth_sale', r, r.registeredAt));
 }
 
 function markNotified(id) {

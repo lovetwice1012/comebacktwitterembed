@@ -8,6 +8,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const { spawn } = require('node:child_process');
+const { actorFromRequest, DEFAULT_OWNER_ID: LEGACY_ACTOR } = require('../src/adminSupport/actor');
 
 const DEFAULT_STATE = '/var/lib/cbte-admin-analysis/state';
 const MAX_BYTES = 32 * 1024 * 1024;
@@ -72,12 +73,18 @@ async function readJSON(request) {
     catch { throw Object.assign(new Error('Request must be a single JSON object.'), { status: 400 }); }
 }
 
-function validateRequest(request) {
+function validateRequest(request, env) {
     if (!request || Array.isArray(request) || typeof request !== 'object') throw Object.assign(new Error('Request must be an object.'), { status: 400 });
     if (typeof request.actionId !== 'string' || !/^[A-Za-z0-9_.:-]{1,128}$/.test(request.actionId)) throw Object.assign(new Error('Invalid actionId.'), { status: 400 });
     if (typeof request.type !== 'string' || !/^[A-Za-z0-9_.-]{1,80}$/.test(request.type)) throw Object.assign(new Error('Invalid action type.'), { status: 400 });
     if (request.input !== undefined && (!request.input || typeof request.input !== 'object' || Array.isArray(request.input))) throw Object.assign(new Error('input must be an object.'), { status: 400 });
-    return { actionId: request.actionId, type: request.type, input: request.input || {} };
+    try {
+        const actor = actorFromRequest(request, env);
+        return { actionId: request.actionId, type: request.type, input: request.input || {}, ...actor };
+    } catch (error) {
+        error.status = error.code === 'ADMIN_ACTOR_FORBIDDEN' ? 403 : 400;
+        throw error;
+    }
 }
 
 function runWorker(request, config) {
@@ -202,7 +209,7 @@ async function createAnalysisServer(options = {}) {
     let persistenceError = null;
 
     async function execute(request, inputHash) {
-        const receipt = { version: 1, actionId: request.actionId, type: request.type, inputHash, state: 'running', startedAt: timestamp() };
+        const receipt = { version: 2, actionId: request.actionId, type: request.type, actorId: request.actorId, initiatedVia: request.initiatedVia, inputHash, state: 'running', startedAt: timestamp() };
         // Save running before spawn. A crash between this write and spawning is
         // intentionally conservative: an uncertain operation stays uncertain.
         await atomicWrite(filename(request.actionId), receipt);
@@ -245,18 +252,20 @@ async function createAnalysisServer(options = {}) {
             if (request.method !== 'POST' || url.pathname !== '/execute') {
                 sendJSON(response, 404, { ok: false, error: { code: 'NOT_FOUND' } }); return;
             }
-            const input = validateRequest(await readJSON(request));
+            const input = validateRequest(await readJSON(request), config.childEnv);
             if (config.allowedActions ? !config.allowedActions.includes(input.type) : input.type === 'reports.build') {
                 sendJSON(response, 403, { ok: false, error: { code: 'ACTION_NOT_ALLOWED', message: 'This analysis lane does not allow that action type.' } }); return;
             }
-            const inputHash = hash(canonicalJSON({ type: input.type, input: input.input }));
+            const legacyHash = hash(canonicalJSON({ type: input.type, input: input.input }));
+            const inputHash = hash(canonicalJSON({ type: input.type, input: input.input, actorId: input.actorId, initiatedVia: input.initiatedVia }));
             if (active?.actionId === input.actionId) {
                 if (active.inputHash !== inputHash) { sendJSON(response, 409, { ok: false, error: { code: 'IDEMPOTENCY_CONFLICT', message: 'The action ID belongs to different input.' } }); return; }
                 sendJSON(response, 200, await active.promise); return;
             }
             const receipt = receipts.get(input.actionId);
             if (receipt) {
-                if (receipt.inputHash !== inputHash) { sendJSON(response, 409, { ok: false, error: { code: 'IDEMPOTENCY_CONFLICT', message: 'The action ID belongs to different input.' } }); return; }
+                const legacyOwnerReceipt = receipt.actorId === undefined && input.actorId === LEGACY_ACTOR && receipt.inputHash === legacyHash;
+                if (receipt.inputHash !== inputHash && !legacyOwnerReceipt) { sendJSON(response, 409, { ok: false, error: { code: 'IDEMPOTENCY_CONFLICT', message: 'The action ID belongs to different input or administrator.' } }); return; }
                 if (receipt.state !== 'running') { sendJSON(response, 200, receipt.result); return; }
                 if (active?.actionId === input.actionId) { sendJSON(response, 200, await active.promise); return; }
                 sendJSON(response, 200, unknownResult('WORKER_INTERRUPTED', 'No live worker owns the running receipt. It will not be repeated.')); return;
@@ -271,7 +280,7 @@ async function createAnalysisServer(options = {}) {
             // the browser/core request never cancels a running external action.
             sendJSON(response, 200, await task);
         } catch (error) {
-            sendJSON(response, error.status || 500, { ok: false, error: { code: error.status ? 'INVALID_REQUEST' : 'ANALYSIS_FAILURE', message: error.status ? error.message : 'The analysis operation could not be completed.' } });
+            sendJSON(response, error.status || 500, { ok: false, error: { code: error.code || (error.status ? 'INVALID_REQUEST' : 'ANALYSIS_FAILURE'), message: error.status ? error.message : 'The analysis operation could not be completed.' } });
         }
     });
     server.requestTimeout = 15000;

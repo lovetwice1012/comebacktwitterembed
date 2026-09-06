@@ -1,0 +1,10 @@
+[Unit]
+Description=Hourly retry of pending encrypted CBTE backups
+
+[Timer]
+OnBootSec=10min
+OnUnitInactiveSec=1h
+Unit=cbte-recovery-backup-retry.service
+
+[Install]
+WantedBy=timers.target

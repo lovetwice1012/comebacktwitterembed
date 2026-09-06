@@ -10,6 +10,7 @@ const specs = require('../providers/_setting_specs');
 const { TABLES, ensureDatabaseSchema } = require('../db_schema');
 const db = require('../db');
 const telemetry = require('./telemetry');
+const { currentActorId } = require('./actor');
 
 function providerFor(value) {
     const provider = providers().find(item => item.id === value);
@@ -83,7 +84,7 @@ async function settingAction(type, input) {
             const after = await settings._internal.loadProviderSettings(provider, guildId);
             const actionId = telemetry.current()?.operation_id || null;
             await query(`INSERT INTO ${TABLES.dashboardAuditLogs} (guild_id,provider_id,setting_key,actor_user_id,actor_username_snapshot,action,before_json,after_json,request_id) VALUES (?,?,?,?,?,?,?,?,?)`,
-                [guildId,provider.id,Object.keys(changes).join(',').slice(0,191),process.env.ADMIN_OWNER_ID || '796972193287503913','admin-support-worker',type,JSON.stringify(before),JSON.stringify(after),actionId]);
+                [guildId,provider.id,Object.keys(changes).join(',').slice(0,191),currentActorId(),`admin-support:${telemetry.current()?.initiated_via || 'automation'}`,type,JSON.stringify(before),JSON.stringify(after),actionId]);
             return { guildId, providerId: provider.id, before, settings: after, hash: hash(after), appliedKeys: Object.keys(changes),
                 reflectionStatus: 'saved; invalidation committed atomically. A Bot settings event with this hash confirms actual use.' };
         });
@@ -213,7 +214,7 @@ async function accessAction(type, input) {
     const targetId = id(input.targetId, 'targetId');
     if (type === 'access.delete') return db.queryDatabase(`DELETE FROM ${TABLES.dashboardDelegatedAccessGrants} WHERE guild_id=? AND target_type=? AND target_id=?`, [guildId, input.targetType, targetId]);
     if (!['view', 'edit'].includes(input.accessLevel)) throw new Error('accessLevel must be view or edit.');
-    const actor = id(process.env.ADMIN_OWNER_ID || '796972193287503913', 'ADMIN_OWNER_ID');
+    const actor = id(currentActorId(), 'actorId');
     await db.queryDatabase(`INSERT INTO ${TABLES.dashboardDelegatedAccessGrants} (guild_id,target_type,target_id,access_level,granted_by_user_id) VALUES (?,?,?,?,?) ON DUPLICATE KEY UPDATE access_level=VALUES(access_level),granted_by_user_id=VALUES(granted_by_user_id)`, [guildId, input.targetType, targetId, input.accessLevel, actor]);
     return { guildId, targetType: input.targetType, targetId, accessLevel: input.accessLevel };
 }

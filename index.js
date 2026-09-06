@@ -1,9 +1,12 @@
 //discord.js v14
+const recoveryLease = require('./src/recoveryLease');
+recoveryLease.install();
 const { assertSupportedRuntime } = require('./src/runtime');
 const { loadDiscordRuntime } = require('./src/discordTransport');
 
 const runtimeName = assertSupportedRuntime();
 const discordRuntime = loadDiscordRuntime({ isBun: runtimeName === 'bun' });
+recoveryLease.guardDiscord(discordRuntime.discord);
 
 const { ActivityType, Client, Events, GatewayIntentBits, Partials, WebhookClient } = discordRuntime.discord;
 // 動的 require で TypeScript の静的解決を回避 (config.json は実行時に必須だが、型チェック時には存在を保証しない)

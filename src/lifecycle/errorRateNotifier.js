@@ -3,6 +3,7 @@
 const crypto = require('crypto');
 const { TABLES } = require('../db_schema');
 const { queryDatabase } = require('../db');
+const recoveryBootstrap = require('../recoveryBootstrap');
 
 const CHECK_INTERVAL_MS = 15 * 60 * 1000;
 const CURRENT_WINDOW_MS = 60 * 60 * 1000;
@@ -318,7 +319,7 @@ async function loadActiveIncidentStates() {
         FROM ${TABLES.botErrorAlerts}
         WHERE active = 1`,
     );
-    return rows.map(alertStateFromRow).filter(Boolean);
+    return rows.map(alertStateFromRow).filter(Boolean).filter(recoveryBootstrap.incidentAllowed);
 }
 
 async function markIncidentDetected(alert, nowMs) {
@@ -399,7 +400,7 @@ async function markIncidentResolved(incident, nowMs) {
 }
 
 async function collectCurrentAlerts(nowMs = Date.now()) {
-    const currentStart = nowMs - CURRENT_WINDOW_MS;
+    const currentStart = recoveryBootstrap.currentWindowStart(nowMs - CURRENT_WINDOW_MS);
     const baselineEnd = nowMs - BASELINE_GAP_MS;
     const baselineStart = baselineEnd - BASELINE_WINDOW_MS;
     const alerts = [];

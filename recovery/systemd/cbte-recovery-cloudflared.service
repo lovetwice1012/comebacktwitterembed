@@ -1,0 +1,17 @@
+[Unit]
+Description=CBTE emergency public connector
+After=network-online.target nginx.service
+Wants=network-online.target
+
+[Service]
+ExecStart=/opt/cbte-recovery/cloudflared tunnel --config /etc/cbte-recovery/cloudflared.yml run
+Restart=always
+RestartSec=5
+TimeoutStopSec=15
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+MemoryMax=256M
+
+[Install]
+WantedBy=multi-user.target

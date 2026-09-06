@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { EmergencyRecoveryPanel } from "@/components/admin/emergency-recovery-panel";
 import { AgentRecoveryPanel } from "@/components/admin/agent-recovery-panel";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -10,8 +11,8 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/com
 type Data = Record<string, unknown>;
 type Action = { id: string; type: string; status: string; input?: Data; result?: unknown; data?: unknown; error?: unknown; createdAt?: string; updatedAt?: string };
 type CatalogAction = { type: string; label?: string; description?: string; inputExample?: Data; mutating?: boolean };
-type Tab = "search" | "inspect" | "send" | "settings" | "operations" | "incidents" | "metrics" | "policies";
-const tabs: [Tab, string][] = [["search", "事象・履歴"], ["inspect", "URL実行検証"], ["send", "指定先へ送信"], ["settings", "設定確認・変更"], ["operations", "管理操作"], ["incidents", "障害・診断"], ["metrics", "稼働・影響"], ["policies", "監視・自動修復"]];
+type Tab = "recovery" | "search" | "inspect" | "send" | "settings" | "operations" | "incidents" | "metrics" | "policies";
+const tabs: [Tab, string][] = [["search", "事象・履歴"], ["inspect", "URL実行検証"], ["send", "指定先へ送信"], ["settings", "設定確認・変更"], ["operations", "管理操作"], ["incidents", "障害・診断"], ["metrics", "稼働・影響"], ["policies", "監視・自動修復"], ["recovery", "緊急復旧"]];
 const PENDING_ACTION_KEY = "cbte-admin-pending-action-v1";
 const LAST_ACTION_KEY = "cbte-admin-last-action-v1";
 function saveSession(key: string, value: unknown) { try { if (value === null) sessionStorage.removeItem(key); else sessionStorage.setItem(key, JSON.stringify(value)); } catch { /* The daemon remains the durable record; show the receipt key even if browser storage is full. */ } }
@@ -245,6 +246,7 @@ export function ManagementConsole({ initialTab = "search", standalone = false }:
 
     {tab === "metrics" ? <Card><CardHeader><CardTitle>要求単位の稼働・影響</CardTitle><CardDescription>根要求を一件として集計。閲覧・既読・リンククリックはDiscord APIから取得できず、統計へ含めません。分母・対象期間・観測状態を併記します。</CardDescription></CardHeader><CardContent className="space-y-4"><div className="flex flex-wrap items-end gap-3"><Field label="開始（JST）" type="datetime-local" value={from} onChange={setFrom} /><Field label="終了（JST）" type="datetime-local" value={to} onChange={setTo} /><Button disabled={busy} onClick={() => void perform(async () => setMetricData(await api(`metrics?${query()}`)))}>集計する</Button></div>{metricData ? <MetricsView data={metricData} onDrill={outcome => { setSource("runs"); setTab("search"); void perform(() => search(undefined, "runs", outcome)); }} /> : <p className="text-sm">サーバーと期間を指定して集計してください。過去の旧イベントを要求数へ推定変換しません。</p>}</CardContent></Card> : null}
 
+    {tab === "recovery" ? <EmergencyRecoveryPanel /> : null}
     {tab === "policies" ? <Card><CardHeader><CardTitle>監視・自動修復ポリシー</CardTitle><CardDescription>LLMを使わず診断ルールと証拠で判定します。適用済みの版を指定して更新し、競合を防ぎます。</CardDescription></CardHeader><CardContent className="space-y-4"><Button variant="outline" disabled={busy} onClick={() => void perform(async () => { const p = await api("policies"); setPolicies(p); setPolicyText(pretty(p)); })}>現在のポリシーを取得</Button><Textarea aria-label="監視ポリシーJSON" rows={15} className="font-mono" value={policyText} onChange={e => setPolicyText(e.target.value)} /><Button disabled={busy || !policies} onClick={() => void perform(async () => { const p = await api("policies", "PUT", { ...parseObject(policyText, "ポリシー"), expectedRevision: policies?.revision }); setPolicies(p); setPolicyText(pretty(p)); })}>ポリシーを更新</Button>{policies ? <RawEvidence value={policies} label="適用されたポリシー" /> : null}</CardContent></Card> : null}
 
     {tab === "policies" ? <Card><CardHeader><CardTitle>独立管理Webのログイン</CardTitle><CardDescription>通常ダッシュボードやDiscord OAuthが停止した場合に使う管理者パスワードを設定します。管理デーモンの接続トークンをブラウザーへ渡しません。</CardDescription></CardHeader><CardContent className="space-y-3"><div className="grid gap-3 md:grid-cols-2"><Field label="新しい管理者パスワード" type="password" value={password} onChange={setPassword} /><Field label="新しいパスワード（再入力）" type="password" value={passwordAgain} onChange={setPasswordAgain} /></div><Button disabled={busy || !password || password !== passwordAgain} onClick={() => void perform(async () => { await api("account/password", "POST", { password }); setPassword(""); setPasswordAgain(""); setAccountMessage("独立管理Webのパスワードを更新しました。"); })}>パスワードを設定</Button>{accountMessage ? <p role="status" className="text-sm">{accountMessage}</p> : null}</CardContent></Card> : null}

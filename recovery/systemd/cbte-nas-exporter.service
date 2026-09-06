@@ -1,0 +1,19 @@
+[Unit]
+Description=CBTE verified NAS backup export
+After=docker.service network-online.target
+Requires=docker.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /opt/cbte-recovery/nas_exporter.py --config /etc/cbte-recovery/nas-exporter.json
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=15
+KillMode=control-group
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+MemoryMax=384M
+
+[Install]
+WantedBy=multi-user.target

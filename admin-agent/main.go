@@ -30,6 +30,10 @@ type Config struct {
 	LocalHealthURL, PublicHealthURL, DiscordWebhook, PushWebhook                 string
 	WorkerTimeout, MonitorInterval, ReportTimeout                                time.Duration
 	CookieSecure                                                                 bool
+	AllowedUserIDs                                                               []string
+	DiscordClientID, DiscordClientSecret, DiscordRedirectURI                     string
+	RecoveryControllerURL, RecoveryControllerToken                               string
+	RecoveryIntentToken, RecoveryNode                                            string
 }
 
 func env(key, fallback string) string {
@@ -48,7 +52,11 @@ func envInt(key string, fallback int) int {
 func config() Config {
 	return Config{
 		Listen: env("ADMIN_AGENT_LISTEN", "127.0.0.1:30988"), StateDir: env("ADMIN_AGENT_STATE_DIR", "/var/lib/cbte-admin"),
-		Token: os.Getenv("ADMIN_AGENT_TOKEN"), PasswordHash: os.Getenv("ADMIN_AGENT_PASSWORD_HASH"), Owner: env("ADMIN_OWNER_ID", "owner"), PublicURL: os.Getenv("ADMIN_AGENT_PUBLIC_URL"), BasePath: strings.TrimRight(os.Getenv("ADMIN_AGENT_BASE_PATH"), "/"),
+		Token: os.Getenv("ADMIN_AGENT_TOKEN"), PasswordHash: os.Getenv("ADMIN_AGENT_PASSWORD_HASH"), Owner: env("ADMIN_OWNER_ID", "796972193287503913"), PublicURL: os.Getenv("ADMIN_AGENT_PUBLIC_URL"), BasePath: strings.TrimRight(os.Getenv("ADMIN_AGENT_BASE_PATH"), "/"),
+		AllowedUserIDs:  strings.Split(env("ADMIN_ALLOWED_USER_IDS", "933314562487386122,796972193287503913"), ","),
+		DiscordClientID: os.Getenv("ADMIN_DISCORD_CLIENT_ID"), DiscordClientSecret: os.Getenv("ADMIN_DISCORD_CLIENT_SECRET"), DiscordRedirectURI: os.Getenv("ADMIN_DISCORD_REDIRECT_URI"),
+		RecoveryControllerURL: os.Getenv("RECOVERY_CONTROLLER_URL"), RecoveryControllerToken: os.Getenv("RECOVERY_CONTROLLER_TOKEN"),
+		RecoveryIntentToken: os.Getenv("RECOVERY_INTENT_TOKEN"), RecoveryNode: os.Getenv("RECOVERY_NODE"),
 		Node: env("ADMIN_AGENT_NODE", "/usr/bin/node"), Worker: os.Getenv("ADMIN_AGENT_WORKER"), WorkerDir: os.Getenv("ADMIN_AGENT_WORKER_DIR"), WorkerURL: os.Getenv("ADMIN_AGENT_WORKER_URL"), ReportWorkerURL: os.Getenv("ADMIN_AGENT_REPORT_WORKER_URL"),
 		BotUnit: env("ADMIN_AGENT_BOT_UNIT", "cbte.service"), ExecutorSocket: env("ADMIN_AGENT_EXECUTOR_SOCKET", "/run/cbte-admin-executor/executor.sock"),
 		LocalHealthURL: os.Getenv("ADMIN_AGENT_LOCAL_HEALTH_URL"), PublicHealthURL: os.Getenv("ADMIN_AGENT_PUBLIC_HEALTH_URL"),
@@ -116,6 +124,12 @@ func main() {
 	}
 	defer s.db.Close()
 	a := newApp(cfg, s)
+	if !a.allowedAdmin(cfg.Owner) {
+		log.Fatal("ADMIN_OWNER_ID must be present in ADMIN_ALLOWED_USER_IDS")
+	}
+	if e := a.ensureAuthStorage(); e != nil {
+		log.Fatal(e)
+	}
 	if e := s.recoverActions(); e != nil {
 		log.Fatal(e)
 	}

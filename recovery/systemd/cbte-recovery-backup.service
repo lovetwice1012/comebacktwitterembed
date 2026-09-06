@@ -1,0 +1,15 @@
+[Unit]
+Description=Back up the active OCI CBTE database to NAS
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /opt/cbte-recovery/active_backup.py --config /etc/cbte-recovery/active-backup.json
+TimeoutStartSec=3900
+TimeoutStopSec=15
+KillMode=control-group
+UMask=0077
+NoNewPrivileges=true
+MemoryMax=384M
+Nice=10
