@@ -41,6 +41,7 @@ except ImportError:
 
 COMMAND_TIMEOUT = 20.0
 PROBE_TIMEOUT = 5.0
+PROBE_USER_AGENT = "CBTE-Recovery/1.0"
 MIN_LEASE_REMAINING = 40.0
 LOCAL_HEALTH = "http://127.0.0.1:30989/api/health"
 MAX_OUTPUT_BYTES = 32768
@@ -136,7 +137,10 @@ class Backend:
         self.opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect())
 
     def json_get(self, url, token=None):
-        headers = {"Cache-Control": "no-cache, no-store"}
+        # Identify this first-party health checker explicitly. Some edge
+        # integrity policies reject urllib's generic default agent before the
+        # request reaches our origin, obscuring actual workload readiness.
+        headers = {"Cache-Control": "no-cache, no-store", "User-Agent": PROBE_USER_AGENT, "Accept": "application/json"}
         if token:
             headers["Authorization"] = "Bearer " + token
         request = urllib.request.Request(url, headers=headers)

@@ -216,5 +216,33 @@ class OwnershipTests(unittest.TestCase):
             with self.assertRaises(routing.RoutingError): routing.check_ownership(value,0o077,"BAD","bad",posix=True)
 
 
+class HTTPProbeTests(unittest.TestCase):
+    def test_public_probe_identifies_the_recovery_service_without_browser_impersonation_or_credentials(self):
+        backend = routing.Backend()
+        response = mock.MagicMock(status=200, headers={})
+        response.read.return_value = b'{"ok":true,"node":"oci","epoch":7,"instanceId":"current"}'
+        with mock.patch.object(backend.opener, "open") as opened:
+            opened.return_value.__enter__.return_value = response
+            result = backend.probe("https://cbte.sprink.cloud/api/health")
+        request = opened.call_args.args[0]
+        self.assertEqual(request.get_header("User-agent"), "CBTE-Recovery/1.0")
+        self.assertNotIn("Mozilla", request.get_header("User-agent"))
+        self.assertEqual(request.get_header("Accept"), "application/json")
+        self.assertEqual(request.get_header("Cache-control"), "no-cache, no-store")
+        self.assertIsNone(request.get_header("Authorization"))
+        self.assertTrue(request.full_url.startswith("https://cbte.sprink.cloud/api/health?recovery_probe="))
+        self.assertEqual(opened.call_args.kwargs["timeout"], routing.PROBE_TIMEOUT)
+        response.read.assert_called_once_with(65537)
+        self.assertTrue(routing.verified_health(result, 7, "current"))
+
+    def test_identified_probe_still_rejects_edge_errors_as_unverified(self):
+        backend = routing.Backend()
+        error = routing.urllib.error.HTTPError("https://cbte.sprink.cloud/api/health", 403, "Forbidden", {}, io.BytesIO(b"error code: 1010"))
+        with mock.patch.object(backend.opener, "open", side_effect=error):
+            result = backend.probe("https://cbte.sprink.cloud/api/health")
+        self.assertEqual(result, {"status": 403, "error": "HTTP_REJECTED"})
+        self.assertFalse(routing.verified_health(result, 7, "current"))
+
+
 if __name__ == "__main__":
     unittest.main()
