@@ -131,6 +131,22 @@ class AuthorityTests(unittest.TestCase):
         self.assertEqual(self.call("/v1/failback", expectedEpoch=promoted["epoch"], idempotencyKey="to-primary", handoff=handoff), failed_back)
         self.assert_code("NOT_ACTIVE_NODE", lambda: self.acquire("oci-two", "oci"))
 
+    def test_handoff_marker_skips_restart_quarantine_only_for_fenced_previous_epoch(self):
+        self.ready()
+        lease = self.acquire()
+        self.clock.advance(TTL + DRAIN)
+        promoted = self.call("/v1/promote", target="oci", expectedEpoch=1, idempotencyKey="marker-oci")
+        self.call("/v1/lease/release", "oci", **self.lease_body(self.acquire("oci-marker", "oci")))
+        marker = Path(self.directory.name) / "handoff.json"
+        marker.write_text(json.dumps({"version": 1, "sourceNode": "oci", "sourceEpoch": promoted["epoch"], "sourceFenced": True, "createdAt": self.clock.wall()}))
+        os.chmod(marker, 0o600)
+        self.config["handoffMarker"] = str(marker)
+        self.authority.close()
+        self.authority = Authority(self.config, self.clock)
+        status = self.status()
+        self.assertEqual(status["epoch"], promoted["epoch"] + 1)
+        self.assertLessEqual(status["quarantineUntil"], self.clock.wall())
+
     def test_release_does_not_shorten_original_grace(self):
         self.ready()
         lease = self.acquire()

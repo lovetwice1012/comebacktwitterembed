@@ -119,17 +119,38 @@ CREATE TABLE IF NOT EXISTS node_observations(node TEXT NOT NULL CHECK(node IN ('
                 if previous is not None and previous["cluster_id"] != self.cluster_id:
                     raise ValueError("Authority database belongs to a different cluster")
                 quarantine = self.last_wall + TTL + DRAIN
+                handoff = config.get("handoffMarker")
+                handoff_ready = False
+                if isinstance(handoff, str) and handoff:
+                    try:
+                        marker = Path(handoff)
+                        info = marker.lstat()
+                        value = json.loads(marker.read_text(encoding="utf-8"))
+                        handoff_ready = (stat.S_ISREG(info.st_mode) and not marker.is_symlink()
+                                         and (os.name != "posix" or (info.st_uid == 0 and not (stat.S_IMODE(info.st_mode) & 0o077)))
+                                         and isinstance(value, dict) and value.get("version") == 1
+                                         and value.get("sourceNode") == "oci" and value.get("sourceEpoch") == (previous["epoch"] if previous else None)
+                                         and value.get("sourceFenced") is True
+                                         and self.last_wall - float(value.get("createdAt", 0)) <= 300)
+                    except (OSError, ValueError, TypeError, json.JSONDecodeError):
+                        handoff_ready = False
+                if handoff_ready:
+                    # The marker is created only after the source cgroup and
+                    # database are fenced.  Avoid adding the normal restart
+                    # quarantine to this already-drained ownership handoff.
+                    quarantine = self.last_wall
                 if previous is None:
                     self.db.execute("INSERT INTO authority(id,cluster_id,epoch,active_node,quarantine_until,boot_id,last_wall) VALUES(1,?,1,'primary',?,?,?)", (self.cluster_id, quarantine, self.boot_id, self.last_wall))
                 else:
-                    quarantine = max(quarantine, previous["quarantine_until"], previous["lease_expires"] + DRAIN, previous["last_wall"] + TTL + DRAIN)
+                    if not handoff_ready:
+                        quarantine = max(quarantine, previous["quarantine_until"], previous["lease_expires"] + DRAIN, previous["last_wall"] + TTL + DRAIN)
                     self.db.execute("UPDATE authority SET epoch=epoch+1,lease_id=NULL,lease_node=NULL,lease_instance=NULL,quarantine_until=?,drain_until=MAX(drain_until,?),boot_id=?,last_wall=?,revision=revision+1 WHERE id=1", (quarantine, quarantine, self.boot_id, self.last_wall))
                     if previous["primary_enrolled"]:
                         saved_proof = json.loads(previous["enrollment"])["proof"]
                         policy = self.config.get("enrollmentPolicy", {})
                         if any(saved_proof.get(key) != policy.get(key) for key in ("unit", "installationId", "guardianSha256", "commandSha256")):
                             self.db.execute("UPDATE authority SET primary_enrolled=0,armed=0 WHERE id=1")
-                self._event("authority.started", {"bootId": self.boot_id, "quarantineUntil": quarantine})
+                self._event("authority.started", {"bootId": self.boot_id, "quarantineUntil": quarantine, "handoffRestart": handoff_ready})
                 self.db.execute("COMMIT")
             except BaseException:
                 self.db.execute("ROLLBACK")
