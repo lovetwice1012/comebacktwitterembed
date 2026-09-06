@@ -2,7 +2,7 @@
 
 Only completed single-standby retirement journals authorize a candidate's
 ciphertext to become eligible. A newer, fully validated candidate and its
-verified ciphertext must exist; one retired rollback generation stays local.
+verified ciphertext must exist; the configured retired rollback count is kept.
 """
 from __future__ import annotations
 import datetime as dt
@@ -89,6 +89,9 @@ def retired_proof(config, receipt):
 
 
 def prune_validated_cache(config, protected_id):
+    keep = config.get("keepRetiredCiphertexts", 1)
+    if type(keep) is not int or not 0 <= keep <= 3:
+        raise ValueError("keepRetiredCiphertexts must be an integer between 0 and 3")
     state_root = regular_path(config["stateDir"], directory=True, private=True)
     candidate_root = regular_path(config["candidateRoot"], directory=True, private=True)
     cache = regular_path(state_root / "ciphertexts", directory=True, private=True)
@@ -122,7 +125,6 @@ def prune_validated_cache(config, protected_id):
         group["receipts"].append(receipt)
         group["eligible"] = group["eligible"] and timestamp < current_time and retired_proof(config, receipt)
     eligible = sorted(((key, value) for key, value in references.items() if value["eligible"] and key != current_id), key=lambda item: (item[1]["timestamp"], item[0]), reverse=True)
-    keep = 1
     protected = {key for key, value in references.items() if not value["eligible"]} | {key for key, _ in eligible[:keep]}
     journal_root = state_root / "cipher-retirements"
     journal_root.mkdir(mode=0o700, exist_ok=True)

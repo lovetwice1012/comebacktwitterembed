@@ -101,6 +101,31 @@ class CipherRetentionTests(unittest.TestCase):
         self.assertTrue(self.artifact(1).exists())
         self.assertIn(self.receipts[1]["manifest"]["exportId"], result["protectedExportIds"])
 
+    def test_zero_retired_retention_preserves_current_pending_unknown_and_all_receipts(self):
+        self.config["keepRetiredCiphertexts"] = 0
+        self.make_candidate(4, "IMPORTING", self.receipts[1]["manifest"])
+        self.make_candidate(6, "UNCLASSIFIED")
+        unknown = self.cache / ("f" * 64 + ".sql.zst.age")
+        unknown.write_bytes(b"unknown artifact")
+        metadata = {path: path.read_bytes() for path in self.candidates.rglob("receipt.json")}
+        result = self.prune()
+        self.assertEqual(result["keepRetiredRollbackGenerations"], 0)
+        self.assertEqual(set(result["removedExportIds"]), {self.receipts[day]["manifest"]["exportId"] for day in [2, 3]})
+        self.assertTrue(self.artifact(1).exists(), "pending imports protect a shared retired ciphertext")
+        self.assertTrue(self.artifact(5).exists(), "current validated ciphertext stays available")
+        self.assertTrue(self.artifact(6).exists(), "unknown candidate state is protected")
+        self.assertTrue(unknown.exists())
+        self.assertEqual(metadata, {path: path.read_bytes() for path in metadata})
+
+    def test_retired_retention_accepts_three_and_rejects_invalid_counts(self):
+        self.config["keepRetiredCiphertexts"] = 3
+        self.assertEqual(self.prune()["removedExportIds"], [])
+        for value in [-1, 4, True, 0.0, "0", None]:
+            self.config["keepRetiredCiphertexts"] = value
+            with self.subTest(value=value), self.assertRaisesRegex(ValueError, "keepRetiredCiphertexts"):
+                self.prune()
+        self.assertTrue(all(self.artifact(day).exists() for day in [1, 2, 3, 5]))
+
     def test_no_cleanup_before_validation_or_when_active_pointer_exists(self):
         for mutation in ["importing", "active", "bad_current_checksum"]:
             with self.subTest(mutation=mutation):
