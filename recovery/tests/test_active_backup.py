@@ -166,6 +166,27 @@ class ActiveBackupTests(unittest.TestCase):
         self.assertEqual(list(self.nas.config.archive_root.iterdir()), [])
         self.assertFalse(list(self.nas.config.active_backup_root.rglob(".incoming-*")))
 
+    def test_small_disk_retention_keeps_one_local_copy_all_receipts_and_nas_data(self):
+        self.config["keepUploadedBackups"] = 1
+        backup = self.backup()
+        payload = nas.AGE_HEADER + b"fixture immutable ciphertext" * 10
+        for day in range(1, 5):
+            backup_id = f"2026090{day}T173004Z"
+            base = f"{backup_id}__oci_5"
+            receipt = {"schemaVersion": 1, "state": "UPLOADED" if day < 4 else "PENDING", "source": "oci", "database": "ComebackTwitterEmbed", "epoch": 5, "backupId": backup_id, "candidateId": self.identifier, "filename": base + ".sql.zst.age", "sha256": hashlib.sha256(payload).hexdigest(), "bytes": len(payload), "uploadedAt": time.time()}
+            if day < 4:
+                receipt["nasManifest"] = self.nas.receive_active_backup(5, backup_id, self.identifier, receipt["sha256"], len(payload), io.BytesIO(payload))["manifest"]
+            self.private(backup.root / (base + ".json"), receipt)
+            (backup.root / receipt["filename"]).write_bytes(payload)
+        durable_before = {p: p.read_bytes() for p in self.nas.config.active_backup_root.rglob("*") if p.is_file()}
+        backup.prune_uploaded()
+        self.assertEqual(len(list(backup.root.glob("*.json"))), 4)
+        self.assertEqual({p.name for p in backup.root.glob("*.sql.zst.age")}, {"20260903T173004Z__oci_5.sql.zst.age", "20260904T173004Z__oci_5.sql.zst.age"})
+        self.assertEqual(len(backup.pending()), 1)
+        self.assertEqual(durable_before, {p: p.read_bytes() for p in self.nas.config.active_backup_root.rglob("*") if p.is_file()})
+        backup.prune_uploaded()
+        self.assertEqual(len(list(backup.root.glob("*.json"))), 4)
+
     def test_real_http_upload_and_receipt_reconciliation_use_existing_tunnel_protocol(self):
         server = nas.server_for(self.nas, port=0)
         thread = threading.Thread(target=server.serve_forever, daemon=True); thread.start()

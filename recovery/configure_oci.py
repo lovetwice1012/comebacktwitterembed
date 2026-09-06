@@ -214,7 +214,10 @@ def configure(release_dir, node, admin_binary, config_dir):
         "stateDir": str(STATE / "routing"), "authorityUrl": authority_url, "authorityToken": roles["oci"], "leaseFile": LEASE}
     backup = {"candidatePointer": candidate_pointer, "candidateRoot": str(candidate_root), "leaseFile": LEASE,
         "authorityUrl": authority_url, "authorityToken": roles["oci"], "nasUrl": "http://127.0.0.1:33443",
-        "nasToken": exporter_token, "nasRecipient": NAS_RECIPIENT, "spoolRoot": str(STATE / "active-backups")}
+        "nasToken": exporter_token, "nasRecipient": NAS_RECIPIENT, "spoolRoot": str(STATE / "active-backups"),
+        # The 50 GB OCI volume keeps one NAS-confirmed local ciphertext plus
+        # space for the next dump. Pending ciphertext and all receipts remain.
+        "keepUploadedBackups": 1, "minimumFreeBytes": 4 * 1024**3}
     common = {"ADMIN_AGENT_TOKEN": management_token, "ADMIN_OWNER_ID": OWNER, "ADMIN_ALLOWED_USER_IDS": ADMINS,
         "DASHBOARD_ADMIN_USER_IDS": ADMINS, "ADMIN_AGENT_URL": "http://127.0.0.1:30988", "NODE_ENV": "production",
         "ADMIN_AGENT_WORKER": str(release / "src/adminSupport/worker.js"), "ADMIN_AGENT_WORKER_DIR": str(release),

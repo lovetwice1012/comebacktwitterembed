@@ -110,6 +110,8 @@ class ConfigureOCITests(unittest.TestCase):
         self.assertEqual(self.read("routing.json")["hostnames"], ["cbte.sprink.cloud", "twidata.sprink.cloud"])
         self.assertEqual(self.read("active-backup.json")["nasRecipient"], configure.NAS_RECIPIENT)
         self.assertEqual(self.read("active-backup.json")["nasToken"], self.controller["exporterToken"])
+        self.assertEqual(self.read("active-backup.json")["keepUploadedBackups"], 1)
+        self.assertEqual(self.read("active-backup.json")["minimumFreeBytes"], 4 * 1024**3)
         if os.name == "posix":
             for path in self.directory.rglob("*"):
                 self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o700 if path.is_dir() else 0o600)

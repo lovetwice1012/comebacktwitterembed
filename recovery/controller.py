@@ -35,9 +35,11 @@ class IntentError(Exception):
 try:
     from .restore_mysql import atomic_json, read_json, verify_artifact, prepare, run
     from .standby_retention import ensure_capacity, quarantine_interrupted_candidate
+    from .cipher_retention import prune_validated_cache
 except ImportError:
     from restore_mysql import atomic_json, read_json, verify_artifact, prepare, run
     from standby_retention import ensure_capacity, quarantine_interrupted_candidate
+    from cipher_retention import prune_validated_cache
 
 
 def iso_now():
@@ -384,6 +386,7 @@ class Controller:
         current = self.state.get("candidate") or {}
         if same_backup_source(candidate_source(current), newest) and current.get("phase") == "VALIDATED":
             self.update(backup=candidate_source(current), pendingBackup=None)
+            self.prune_candidates(current["id"])
             return
         self.update(phase="PINNING_BACKUP", lastError=None)
         job = self.exporter("/v1/exports", {"backupId": newest["backupId"]})
@@ -411,42 +414,17 @@ class Controller:
         self.prune_candidates(candidate["id"])
 
     def prune_candidates(self, protected_id):
-        """Only discard old, owned, never-activated isolated restore attempts."""
-        root = Path(self.config["candidateRoot"]).resolve()
-        active = read_json(self.root / "active-candidate.json") or {}
-        candidates = []
-        for path in root.iterdir():
-            if path.is_symlink() or not path.is_dir() or not re.fullmatch(r"[0-9a-f]{24}", path.name):
-                continue
-            receipt = read_json(path / "receipt.json") or {}
-            if receipt.get("id") != path.name or receipt.get("phase") not in ("VALIDATED", "QUARANTINED"):
-                continue
-            if path.name in (protected_id, active.get("id")):
-                continue
-            candidates.append((float(receipt.get("createdAt", 0)), path, receipt))
-        # Retain the previous candidate as well as the newly validated one.
-        for _, path, receipt in sorted(candidates, reverse=True)[1:]:
-            container = "cbte-dr-" + path.name
-            try:
-                info = json.loads(run(["docker", "inspect", container]))[0]
-                labels = info["Config"].get("Labels") or {}
-                if labels.get("cbte.restore-id") != path.name or labels.get("cbte.recovery") != "true" or info["HostConfig"]["NetworkMode"] != "none":
-                    continue
-                run(["docker", "rm", "--force", container], timeout=30)
-            except Exception:
-                continue  # Unconfirmed ownership is never a deletion permit.
-            if path.resolve().parent != root or path.is_symlink():
-                raise ValueError("Unsafe candidate retention path")
-            shutil.rmtree(path)
-        keep_hashes = set()
-        for path in root.glob("*/receipt.json"):
-            value = read_json(path) or {}
-            export_id = (value.get("manifest") or {}).get("exportId")
-            if export_id:
-                keep_hashes.add(export_id)
-        for artifact in self.cache.glob("*.sql.zst.age"):
-            if re.fullmatch(r"[0-9a-f]{64}\.sql\.zst\.age", artifact.name) and artifact.name.split(".")[0] not in keep_hashes and not artifact.is_symlink():
-                artifact.unlink()
+        """Keep receipt history; database retirement has its own ownership journal."""
+        try:
+            result = prune_validated_cache(self.config, protected_id)
+        except Exception as error:
+            # A validated standby remains usable even when cache ownership or
+            # verification is uncertain. Never turn cleanup failure into a lost
+            # candidate, or continue with destructive fallback cleanup.
+            result = {"state": "blocked", "code": type(error).__name__,
+                      "message": str(error), "receiptsPreserved": True,
+                      "checkedAt": time.time()}
+        self.update(ciphertextRetention=result)
 
     def activate(self, authority):
         candidate = self.state["candidate"]
