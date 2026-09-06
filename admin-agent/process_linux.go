@@ -20,6 +20,7 @@ func platformDiskSnapshot(dir string) Object {
 }
 
 func configureProcess(cmd *exec.Cmd) {
+	isolateSystemdNotificationEnvironment(cmd)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	cmd.Cancel = func() error {
 		if cmd.Process == nil {
