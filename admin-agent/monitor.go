@@ -345,8 +345,10 @@ func (a *App) monitorOnce(ctx context.Context) {
 			a.good("management.storage.pressure", Object{"freeBytes": free, "scope": "Management storage capacity"})
 		}
 	}
-	if p.AutoPauseReports {
+	if p.AutoPauseReports && !plannedOCIAbsence(a.cfg, p, time.Now()) {
 		a.maybePauseReports(snapshot, p, eventID)
+	} else if plannedOCIAbsence(a.cfg, p, time.Now()) {
+		a.failures["reports.io_pressure"] = 0
 	}
 	a.monitorAnalysis(ctx, snapshot, p, maintenance, eventID)
 	a.diagnoseProviderOutcomes(ctx, p)
@@ -419,6 +421,10 @@ func (a *App) maybeRepairHungBot(ctx context.Context, snapshot Object, p Policy)
 func diskSnapshot(dir string) Object { return platformDiskSnapshot(dir) }
 
 func (a *App) maybePauseReports(snapshot Object, p Policy, eventID string) {
+	if plannedOCIAbsence(a.cfg, p, time.Now()) {
+		a.failures["reports.io_pressure"] = 0
+		return // Restore-host pressure must not mutate the controller-owned standby policy.
+	}
 	raw := str(nested(nested(snapshot, "host"), "pressureIO")["raw"])
 	pressure := 0.0
 	for _, line := range strings.Split(raw, "\n") {
@@ -439,6 +445,22 @@ func (a *App) maybePauseReports(snapshot Object, p Policy, eventID string) {
 	if a.failures["reports.io_pressure"] < 3 {
 		return
 	}
+	// A Web stop/maintenance action may have changed the policy since this
+	// monitor snapshot. Serialize the final re-read with those writers, without
+	// blocking monitor progress on an in-flight service operation.
+	if !a.recoveryIntentMu.TryLock() {
+		return
+	}
+	defer a.recoveryIntentMu.Unlock()
+	current, err := a.loadPolicy()
+	if err != nil || !current.AutoPauseReports {
+		return
+	}
+	if plannedOCIAbsence(a.cfg, current, time.Now()) {
+		a.failures["reports.io_pressure"] = 0
+		return
+	}
+	p = current
 	until, _ := time.Parse(time.RFC3339Nano, p.ReportsPausedUntil)
 	if time.Until(until) > 2*time.Minute {
 		return

@@ -14,4 +14,6 @@ The OCI monitor does not raise absent-worker incidents while operator policy say
 
 Previously recorded Bot-process, local-dashboard and analysis-worker absence incidents become `Suppressed` under planned OCI stopped/maintenance policy. The reason is `planned_standby`, with `endpointHealth=not_established`: this is not a successful health recovery. Original evidence and classification events remain in history, pending notification retries are suppressed, and a later real failure under running policy reopens the incident. Other incident fingerprints are unchanged.
 
+While OCI is intentionally stopped or under maintenance, restore-host I/O pressure does not change `reportsPausedUntil` or the standby policy revision. Automatic report pausing resumes under running policy after repeated pressure evidence. Before mutation it rechecks the latest policy under the same lock as Web service/intent changes, so a stale running snapshot cannot advance a newly selected maintenance revision.
+
 Install `systemd/cbte-admin-executor.service` with a root-owned mode-0600 `/etc/cbte-recovery/admin/executor.env` based on `oci-executor.env.example`. Set the actual `cbte-admin` UID/GID and enable the executor. The core environment must use the same service profile, Bot unit, and Unix socket. This installation does not start the Bot workload or change fleet ownership.
