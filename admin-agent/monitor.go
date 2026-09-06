@@ -231,10 +231,15 @@ func (a *App) collect(ctx context.Context, deep bool) Object {
 	a.stateMu.Unlock()
 	identity, process := workloadProcessEvidence("/proc", "/sys/fs/cgroup", unit, heartbeat, previous, occurred, persisted, time.Now())
 	v["workloadIdentity"], v["process"] = identity, process
+	v["serviceControls"] = serviceControls(a.cfg)
 	if deep {
 		v["journal"] = safeCommand(ctx, "journalctl", "-u", a.cfg.BotUnit, "--since", "-30 minutes", "-n", "200", "--no-pager", "-o", "short-iso")
 		v["kernelJournal"] = safeCommand(ctx, "journalctl", "-k", "--since", "-30 minutes", "-n", "150", "--no-pager", "-o", "short-iso")
-		v["mysqlUnit"] = unitSnapshot(ctx, "mysql.service")
+		if reason := serviceActionUnavailable(a.cfg, "database.status", Object{}); reason != "" {
+			v["mysqlUnit"] = Object{"available": false, "state": "not_applicable", "reason": reason}
+		} else {
+			v["mysqlUnit"] = unitSnapshot(ctx, "mysql.service")
+		}
 		v["diskIO"] = readEvidence("/proc/diskstats")
 		v["vmstat"] = readEvidence("/proc/vmstat")
 	}
@@ -305,7 +310,8 @@ func (a *App) monitorOnce(ctx context.Context) {
 			a.good("bot.heartbeat.stale", Object{"scope": "Heartbeat delivery and systemd activity recovered; content fetching and Discord delivery remain separate capabilities.", "supports": evidence})
 		}
 	}
-	if local["configured"] == true {
+	observeWorkloadEndpoints := !maintenance || serviceProfile(a.cfg) != "oci-guarded"
+	if local["configured"] == true && observeWorkloadEndpoints {
 		if local["ok"] == false {
 			a.bad("dashboard.local.unavailable")
 			if a.failures["dashboard.local.unavailable"] >= 3 {
@@ -315,7 +321,7 @@ func (a *App) monitorOnce(ctx context.Context) {
 			a.good("dashboard.local.unavailable", Object{"scope": "Local HTTP health endpoint only", "supports": evidence})
 		}
 	}
-	if pub["configured"] == true && local["ok"] == true {
+	if pub["configured"] == true && local["ok"] == true && observeWorkloadEndpoints {
 		if pub["ok"] == false {
 			a.bad("dashboard.public.path")
 			if a.failures["dashboard.public.path"] >= 3 {
@@ -339,20 +345,7 @@ func (a *App) monitorOnce(ctx context.Context) {
 	if p.AutoPauseReports {
 		a.maybePauseReports(snapshot, p, eventID)
 	}
-	if analysis := nested(snapshot, "analysisHTTP"); analysis["configured"] == true {
-		if analysis["ok"] == false {
-			a.bad("analysis.unavailable")
-			if a.failures["analysis.unavailable"] >= 3 {
-				workerUnit := unitSnapshot(ctx, "cbte-admin-analysis.service")
-				a.detect("analysis.unavailable", "独立分析workerが応答していません", Object{"eventIds": []string{eventID}, "http": analysis, "unit": workerUnit, "nextActions": []string{"analysis.status", "analysis.restart"}}, p)
-				if p.AutoRestartAnalysis && !maintenance && str(workerUnit["InvocationID"]) != "" && (str(workerUnit["ActiveState"]) == "failed" || str(workerUnit["ActiveState"]) == "inactive") {
-					_, _, _ = a.store.enqueue("analysis.restart", Object{"expectedInvocationId": str(workerUnit["InvocationID"]), "reason": "Independent worker failed three health probes and systemd reports failed/inactive"}, "analysis-repair:"+str(workerUnit["InvocationID"]), a.cfg.Owner, "automation")
-				}
-			}
-		} else if analysis["ok"] == true {
-			a.good("analysis.unavailable", Object{"eventIds": []string{eventID}, "scope": "Independent analysis HTTP recovered; provider or database operations require their own checks"})
-		}
-	}
+	a.monitorAnalysis(ctx, snapshot, p, maintenance, eventID)
 	a.diagnoseProviderOutcomes(ctx, p)
 	if p.AutoCancelOverdueQueries && a.cfg.ReportWorkerURL != "" {
 		a.cancelOwnedOverdueQueries()

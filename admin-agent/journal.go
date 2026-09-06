@@ -12,6 +12,10 @@ import (
 func (a *App) journalHealth() Object {
 	collectors := Object{}
 	for _, source := range []string{"bot", "database", "kernel", "nginx", "core", "analysis"} {
+		if reason := serviceActionUnavailable(a.cfg, "logs.previous_boot", Object{"source": source}); reason != "" {
+			collectors[source] = Object{"state": "not_applicable", "available": false, "reason": reason}
+			continue
+		}
 		var info Object
 		if a.store.getSetting("journal_health_"+source, &info) == nil {
 			collectors[source] = info
@@ -27,6 +31,9 @@ func (a *App) journalHealth() Object {
 // `journalctl -n` response would silently skip backlog entries.
 func (a *App) collectJournals(ctx context.Context) {
 	for _, source := range []string{"bot", "database", "kernel", "nginx", "core", "analysis"} {
+		if serviceActionUnavailable(a.cfg, "logs.previous_boot", Object{"source": source}) != "" {
+			continue
+		}
 		go func(source string) {
 			ticker := time.NewTicker(15 * time.Second)
 			defer ticker.Stop()
@@ -43,6 +50,9 @@ func (a *App) collectJournals(ctx context.Context) {
 	<-ctx.Done()
 }
 func (a *App) collectJournalBatch(ctx context.Context, source string) {
+	if serviceActionUnavailable(a.cfg, "logs.previous_boot", Object{"source": source}) != "" {
+		return
+	}
 	var cursor string
 	_ = a.store.getSetting("journal_cursor_"+source, &cursor)
 	args := []string{"--no-pager", "--output=json", "--follow", "--no-tail"}

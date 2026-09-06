@@ -23,6 +23,9 @@ type ExecutorRequest struct {
 }
 
 func (a *App) executor(ctx context.Context, id, typ string, input Object) (any, error) {
+	if reason := serviceActionUnavailable(a.cfg, typ, input); reason != "" {
+		return nil, errors.New(reason)
+	}
 	d := net.Dialer{Timeout: 3 * time.Second}
 	conn, e := d.DialContext(ctx, "unix", a.cfg.ExecutorSocket)
 	if e != nil {
@@ -128,23 +131,16 @@ func serveExecutor(ctx context.Context, cfg Config) error {
 	}
 }
 func executePrivileged(parent context.Context, s *Store, cfg Config, req ExecutorRequest) (any, error) {
+	if e := validateServiceProfile(cfg); e != nil {
+		return nil, e
+	}
+	if reason := serviceActionUnavailable(cfg, req.Type, req.Input); reason != "" {
+		return nil, errors.New(reason)
+	}
 	if req.Type != "service.status" && req.Type != "service.start" && req.Type != "service.stop" && req.Type != "service.restart" && req.Type != "logs.read" && req.Type != "kernel.logs" && req.Type != "agent.status" && req.Type != "agent.restart" && req.Type != "database.status" && req.Type != "database.restart" && req.Type != "analysis.status" && req.Type != "analysis.restart" && req.Type != "logs.previous_boot" && req.Type != "logs.boots" {
 		return nil, errors.New("executor action is not allowed")
 	}
-	unit := cfg.BotUnit
-	verb := strings.TrimPrefix(req.Type, "service.")
-	if strings.HasPrefix(req.Type, "agent.") {
-		unit = "cbte-admin.service"
-		verb = strings.TrimPrefix(req.Type, "agent.")
-	}
-	if strings.HasPrefix(req.Type, "database.") {
-		unit = "mysql.service"
-		verb = strings.TrimPrefix(req.Type, "database.")
-	}
-	if strings.HasPrefix(req.Type, "analysis.") {
-		unit = "cbte-admin-analysis.service"
-		verb = strings.TrimPrefix(req.Type, "analysis.")
-	}
+	unit, verb := privilegedActionUnit(cfg, req.Type)
 	ctx, cancel := context.WithTimeout(parent, 35*time.Second)
 	defer cancel()
 	var savedInput, status string

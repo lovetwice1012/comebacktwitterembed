@@ -137,7 +137,7 @@ func (a *App) routes() http.Handler {
 	mux.HandleFunc("GET /v1/health", a.protect(a.health))
 	mux.HandleFunc("GET /v1/recovery", a.protect(a.recoveryStatus))
 	mux.HandleFunc("GET /v1/catalog", a.protect(func(w http.ResponseWriter, r *http.Request) {
-		jsonResponse(w, 200, Object{"actions": catalog(), "version": 1})
+		jsonResponse(w, 200, Object{"actions": catalogForConfig(a.cfg), "version": 2, "serviceControls": serviceControls(a.cfg)})
 	}))
 	mux.HandleFunc("POST /v1/account/password", a.protect(a.changePassword))
 	mux.HandleFunc("POST /v1/events", a.protect(a.ingest))
@@ -509,6 +509,10 @@ func (a *App) createAction(w http.ResponseWriter, r *http.Request) {
 	}
 	if !knownAction(in.Type) {
 		fail(w, 400, "UNKNOWN_ACTION", "Action is not in the supported catalog")
+		return
+	}
+	if reason := serviceActionUnavailable(a.cfg, in.Type, in.Input); reason != "" {
+		fail(w, 501, "ACTION_UNAVAILABLE_IN_DEPLOYMENT", reason)
 		return
 	}
 	actor, via, _ := a.authenticate(r)

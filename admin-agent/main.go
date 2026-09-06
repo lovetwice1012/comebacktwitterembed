@@ -34,6 +34,7 @@ type Config struct {
 	DiscordClientID, DiscordClientSecret, DiscordRedirectURI                     string
 	RecoveryControllerURL, RecoveryControllerToken                               string
 	RecoveryIntentToken, RecoveryNode                                            string
+	ServiceControlProfile                                                        string
 }
 
 func env(key, fallback string) string {
@@ -57,7 +58,8 @@ func config() Config {
 		DiscordClientID: os.Getenv("ADMIN_DISCORD_CLIENT_ID"), DiscordClientSecret: os.Getenv("ADMIN_DISCORD_CLIENT_SECRET"), DiscordRedirectURI: os.Getenv("ADMIN_DISCORD_REDIRECT_URI"),
 		RecoveryControllerURL: os.Getenv("RECOVERY_CONTROLLER_URL"), RecoveryControllerToken: os.Getenv("RECOVERY_CONTROLLER_TOKEN"),
 		RecoveryIntentToken: os.Getenv("RECOVERY_INTENT_TOKEN"), RecoveryNode: os.Getenv("RECOVERY_NODE"),
-		Node: env("ADMIN_AGENT_NODE", "/usr/bin/node"), Worker: os.Getenv("ADMIN_AGENT_WORKER"), WorkerDir: os.Getenv("ADMIN_AGENT_WORKER_DIR"), WorkerURL: os.Getenv("ADMIN_AGENT_WORKER_URL"), ReportWorkerURL: os.Getenv("ADMIN_AGENT_REPORT_WORKER_URL"),
+		ServiceControlProfile: os.Getenv("ADMIN_AGENT_SERVICE_PROFILE"),
+		Node:                  env("ADMIN_AGENT_NODE", "/usr/bin/node"), Worker: os.Getenv("ADMIN_AGENT_WORKER"), WorkerDir: os.Getenv("ADMIN_AGENT_WORKER_DIR"), WorkerURL: os.Getenv("ADMIN_AGENT_WORKER_URL"), ReportWorkerURL: os.Getenv("ADMIN_AGENT_REPORT_WORKER_URL"),
 		BotUnit: env("ADMIN_AGENT_BOT_UNIT", "cbte.service"), ExecutorSocket: env("ADMIN_AGENT_EXECUTOR_SOCKET", "/run/cbte-admin-executor/executor.sock"),
 		LocalHealthURL: os.Getenv("ADMIN_AGENT_LOCAL_HEALTH_URL"), PublicHealthURL: os.Getenv("ADMIN_AGENT_PUBLIC_HEALTH_URL"),
 		DiscordWebhook: os.Getenv("ADMIN_AGENT_DISCORD_WEBHOOK"), PushWebhook: os.Getenv("ADMIN_AGENT_PUSH_WEBHOOK"),
@@ -96,6 +98,9 @@ func main() {
 		return
 	}
 	cfg := config()
+	if e := validateServiceProfile(cfg); e != nil {
+		log.Fatal(e)
+	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	if len(os.Args) > 1 && os.Args[1] == "executor" {

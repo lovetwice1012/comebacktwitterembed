@@ -177,7 +177,9 @@ func (a *App) execute(parent context.Context, ac Action) {
 	var problem any
 	serviceIntentBlocked := false
 	status := "succeeded"
-	if ac.Type == "diagnostics.collect" {
+	if reason := serviceActionUnavailable(a.cfg, ac.Type, input); reason != "" {
+		problem = Object{"code": "ACTION_UNAVAILABLE_IN_DEPLOYMENT", "message": reason}
+	} else if ac.Type == "diagnostics.collect" {
 		data = a.collect(ctx, true)
 	} else if strings.HasPrefix(ac.Type, "service.") || strings.HasPrefix(ac.Type, "agent.") || strings.HasPrefix(ac.Type, "analysis.") || strings.HasPrefix(ac.Type, "database.") || ac.Type == "logs.read" || ac.Type == "logs.previous_boot" || ac.Type == "logs.boots" || ac.Type == "kernel.logs" {
 		if ac.Type == "service.stop" || ac.Type == "service.start" || ac.Type == "service.restart" {
