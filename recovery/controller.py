@@ -37,10 +37,12 @@ try:
     from .restore_mysql import atomic_json, read_json, verify_artifact, prepare, run
     from .standby_retention import ensure_capacity, quarantine_interrupted_candidate, private_json
     from .cipher_retention import prune_validated_cache
+    from .manual_activation import ManualApprovals, ApprovalError
 except ImportError:
     from restore_mysql import atomic_json, read_json, verify_artifact, prepare, run
     from standby_retention import ensure_capacity, quarantine_interrupted_candidate, private_json
     from cipher_retention import prune_validated_cache
+    from manual_activation import ManualApprovals, ApprovalError
 
 
 def iso_now():
@@ -124,7 +126,7 @@ def is_seeded_oci_intent(intent, config):
             and intent.get("desiredState") == "maintenance" and intent.get("revision") == seed)
 
 
-def promotion_gates(authority, backup, candidate, config, primary_intent=None, oci_intent=None):
+def promotion_gates(authority, backup, candidate, config, primary_intent=None, oci_intent=None, manual_approval=None):
     now = time.time()
     source = candidate_source(candidate)
     bound = same_backup_source(backup, source)
@@ -141,7 +143,7 @@ def promotion_gates(authority, backup, candidate, config, primary_intent=None, o
         gate("SAVEDATA_CONSTRAINT", "savedataを移行しない制約の合意", config.get("allowMissingSavedata") is True),
         gate("PRIMARY_ENROLLED", "本体の起動許可・停止監視の導入証明", authority.get("primaryEnrolled")),
         gate("AUTOMATION_ARMED", "自動切り替えの有効化", authority.get("armed")),
-        gate("PRIMARY_OPERATOR_RUNNING", "本体で最後に確認した管理者の運転指示が稼働中", intent_wants_running(primary_intent)),
+        gate("PRIMARY_OPERATOR_RUNNING", "本体の運転指示、またはこの候補だけに有効な一回限りの明示承認", intent_wants_running(primary_intent) or manual_approval is not None) | ({"overrideApprovalId": manual_approval["approvalId"], "overrideScope": "one_time_primary_intent_only"} if manual_approval else {}),
         gate("OCI_OPERATOR_PERMITS_PROMOTION", "OCIの運転指示が稼働中、または未変更の初期待機設定", intent_wants_running(oci_intent, fresh=True) or is_seeded_oci_intent(oci_intent, config)),
         gate("OLD_LEASE_EXPIRED", "本体の起動許可が失効している", not lease.get("valid") and now >= float(lease.get("expiresAt") or 0)),
         gate("LEASE_DRAIN_COMPLETE", "旧プロセス停止後の待機期間が経過", now >= max(float(authority.get("quarantineUntil") or 0), float(authority.get("drainUntil") or 0), float(lease.get("expiresAt") or 0) + 60)),
@@ -163,6 +165,7 @@ class Controller:
         self.state = read_json(self.state_path, {"phase": "UNCONFIGURED", "gates": [], "candidate": None, "backup": None})
         self._policies = {}
         self._intent_observer = None
+        self.manual_approvals = ManualApprovals(self)
         if self.state.get("phase") in ("RESTORING_ISOLATED", "VALIDATING", "INITIALIZING"):
             candidate = self.state.get("candidate") or {}
             try:
@@ -494,12 +497,22 @@ class Controller:
         candidate = self.state["candidate"]
         primary_intent = self.refresh_operator_intent("primary")
         oci_intent = self.refresh_operator_intent("oci")
-        if not intent_wants_running(primary_intent) or not (intent_wants_running(oci_intent, fresh=True) or is_seeded_oci_intent(oci_intent, self.config)):
+        manual = self.manual_approvals.current(authority) if not intent_wants_running(primary_intent) else None
+        gates = promotion_gates(authority, self.state.get("backup"), candidate, self.config, primary_intent, oci_intent, manual)
+        if not all(gate["ready"] for gate in gates):
             self.update(phase="OPERATOR_PROMOTION_BLOCKED", operatorIntentReason="管理者の運転指示が昇格直前に変更されたか、確認できなくなったため昇格を中止しました。")
             return
-        key = f"oci-{authority['epoch']}-{candidate['id']}"
+        if manual:
+            manual = self.manual_approvals.current(authority, reserve=True)
+            if manual is None:
+                self.update(phase="OPERATOR_PROMOTION_BLOCKED", operatorIntentReason="手動承認の期限・対象・運転指示が変わったため昇格を中止しました。")
+                return
+        key = manual["promotionKey"] if manual else f"oci-{authority['epoch']}-{candidate['id']}"
         policy_plan = {"state": "pending", "seedRevision": oci_intent["revision"], "reservedAt": iso_now()} if is_seeded_oci_intent(oci_intent, self.config) else None
         self.update(phase="PROMOTION_RESERVED", promotionKey=key, ociActivationPolicy=policy_plan)
+        if manual and self.manual_approvals.current(authority) is None:
+            self.update(phase="OPERATOR_PROMOTION_BLOCKED", operatorIntentReason="予約後に手動承認が無効になったため昇格を中止しました。")
+            return
         # The exact key is persisted before the request. A lost response is
         # reconciled against authority state instead of selecting another owner.
         result = request_json(self.config["authorityUrl"], self.config["authorityControllerToken"], "/v1/promote",
@@ -508,6 +521,7 @@ class Controller:
         candidate = dict(candidate, epoch=epoch)
         atomic_json(self.root / "active-candidate.json", candidate)
         self.update(phase="ACTIVATING", epoch=epoch, activeNode="oci", candidate=candidate)
+        self.manual_approvals.consume({"activeNode": "oci", "epoch": epoch}, candidate)
         self.reconcile_oci_workload(self.authority(), candidate)
 
     def verify_active(self, authority, candidate):
@@ -577,13 +591,14 @@ class Controller:
             active = read_json(self.root / "active-candidate.json")
             if not active:
                 prepared = read_json(self.root / "prepared-candidate.json")
-                if not prepared or self.state.get("promotionKey") != f"oci-{authority['epoch'] - 1}-{prepared['id']}":
+                if not prepared or (self.state.get("promotionKey") != f"oci-{authority['epoch'] - 1}-{prepared['id']}" and not self.manual_approvals.matches_promotion(authority, prepared)):
                     self.update(phase="ACTIVE_STATE_UNKNOWN", lastError={"code": "ACTIVE_POINTER_MISSING", "message": "OCI所有権に対応するDBを確認できないため再復元せず停止しています。"})
                     return
                 active = dict(prepared, epoch=authority["epoch"])
                 atomic_json(self.root / "active-candidate.json", active)
             active["epoch"] = authority["epoch"]
             atomic_json(self.root / "active-candidate.json", active)
+            self.manual_approvals.consume(authority, active)
             self.reconcile_oci_workload(authority, active)
             return
         self.refresh_operator_intent("primary")
@@ -601,7 +616,9 @@ class Controller:
             # any stop/maintenance intent entered while preparation was busy.
             self.refresh_operator_intent("primary")
             self.refresh_operator_intent("oci")
-        gates = promotion_gates(authority, self.state.get("backup"), self.state.get("candidate"), self.config, self.state.get("primaryIntent"), self.state.get("ociIntent"))
+        stored_approval = self.manual_approvals.current(authority)
+        manual = stored_approval if not intent_wants_running(self.state.get("primaryIntent")) else None
+        gates = promotion_gates(authority, self.state.get("backup"), self.state.get("candidate"), self.config, self.state.get("primaryIntent"), self.state.get("ociIntent"), manual)
         if all(gate["ready"] for gate in gates):
             self.update(gates=gates)
             self.activate(authority)
@@ -673,7 +690,7 @@ def make_server(controller, config):
 
         def do_POST(self):
             try:
-                if self.path != "/v1/intent":
+                if self.path not in {"/v1/intent", "/v1/emergency-approvals"}:
                     raise IntentError("NOT_FOUND", "Unknown intent endpoint", 404)
                 tokens = {node: config.get(node + "IntentToken") for node in ("primary", "oci")}
                 if any(not isinstance(token, str) or not 32 <= len(token) <= 4096 for token in tokens.values()) or len(set(tokens.values())) != 2 or config.get("statusToken") in tokens.values():
@@ -698,9 +715,11 @@ def make_server(controller, config):
                         result[key] = value
                     return result
                 value = json.loads(raw, object_pairs_hook=pairs)
-                result = controller.record_operator_intent(matches[0], value)
+                result = controller.manual_approvals.approve(matches[0], value) if self.path == "/v1/emergency-approvals" else controller.record_operator_intent(matches[0], value)
                 self.reply(200, result)
             except IntentError as error:
+                self.reply(error.status, {"ok": False, "error": {"code": error.code, "message": str(error)}})
+            except ApprovalError as error:
                 self.reply(error.status, {"ok": False, "error": {"code": error.code, "message": str(error)}})
             except (ValueError, UnicodeError, TypeError):
                 self.reply(400, {"ok": False, "error": {"code": "INVALID_INTENT", "message": "Invalid intent JSON or request metadata"}})

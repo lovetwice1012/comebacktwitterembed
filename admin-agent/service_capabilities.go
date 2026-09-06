@@ -33,6 +33,9 @@ func validateServiceProfile(cfg Config) error {
 }
 
 func serviceActionUnavailable(cfg Config, typ string, input Object) string {
+	if typ == "recovery.emergency.approve" && (serviceProfile(cfg) != "oci-guarded" || cfg.RecoveryNode != "oci" || len(cfg.RecoveryIntentToken) < 32) {
+		return "この明示承認はOCIの独立管理画面から行います。OCI管理者用の承認通信設定が必要です。"
+	}
 	if serviceProfile(cfg) != "oci-guarded" {
 		return ""
 	}

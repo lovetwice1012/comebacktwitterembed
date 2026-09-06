@@ -103,8 +103,8 @@ func (a *App) recoveryStatus(w http.ResponseWriter, r *http.Request) {
 		recoveryUnavailable(w, "invalid_response", "緊急復旧コントローラーの状態を読み取れません。", true, 503)
 		return
 	}
-	result := Object{"configured": true, "available": true, "fetchedAt": now()}
-	for _, key := range []string{"phase", "updatedAt", "backup", "candidate", "gates", "lastError", "primaryEnrolled", "activeNode", "epoch", "download", "import", "nextPrepareAt", "nodeObservations", "authorityObservationFetchedAt"} {
+	result := Object{"configured": true, "available": true, "fetchedAt": now(), "manualApprovalAvailable": serviceActionUnavailable(a.cfg, "recovery.emergency.approve", Object{}) == ""}
+	for _, key := range []string{"phase", "updatedAt", "backup", "candidate", "gates", "lastError", "primaryEnrolled", "activeNode", "epoch", "download", "import", "nextPrepareAt", "nodeObservations", "authorityObservationFetchedAt", "primaryIntent", "ociIntent", "manualEmergencyApproval"} {
 		if item, exists := value[key]; exists {
 			result[key] = redactRecovery(item, a.cfg.RecoveryControllerToken)
 		}

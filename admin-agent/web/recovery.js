@@ -77,6 +77,7 @@
     }
     if (!value.gates?.length) gates.append(text('p', '切り替え条件はまだ確認できていません。'));
     content.append(gates);
+    if (value.manualEmergencyApproval) { const approval = value.manualEmergencyApproval; const record = rows('候補限定の手動承認', [['承認ID', approval.approvalId], ['状態', approval.state], ['対象候補', approval.candidateId], ['対象バックアップ', approval.backupId], ['承認者', approval.actorId], ['理由', approval.reason], ['有効期限', time(Number(approval.expiresAt) * 1000)], ['免除する条件', approval.overriddenGate], ['本体指示', '元の運転指示を保持'], ['自動有効化', 'この承認では変更しません']]); raw(record, approval, false, '承認履歴・固定した世代とSHA-256'); content.append(record); }
     if (value.lastError) { const failure = rows('最後に記録されたエラー', []); failure.setAttribute('role', 'alert'); raw(failure, value.lastError, true, '原因・詳細'); content.append(failure); }
     raw(content, value, false, 'コントローラー応答の全詳細');
   }
