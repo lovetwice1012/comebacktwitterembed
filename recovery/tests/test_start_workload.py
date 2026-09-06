@@ -1,13 +1,17 @@
 import copy
 from contextlib import contextmanager
 from datetime import datetime, timezone
+import errno
 import importlib.util
+import itertools
 import json
 import os
 from pathlib import Path
 import re
 import stat
+import sys
 import tempfile
+import threading
 import time
 import unittest
 from unittest import mock
@@ -316,10 +320,15 @@ class WorkloadTests(unittest.TestCase):
         self.assertEqual(state["phase"], "ACTIVATION_FAILED")
 
     def test_subprocess_launch_does_not_create_detached_process_groups(self):
+        log = mock.Mock()
         with mock.patch.object(workload.subprocess, "Popen") as popen:
-            workload.Backend().spawn(["node", "index.js"], "/fixture", {"KEY": "value"}, None)
+            workload.Backend().spawn(["node", "index.js"], "/fixture", {"KEY": "value"}, log)
         self.assertFalse(popen.call_args.kwargs["start_new_session"])
         self.assertNotIn("shell", popen.call_args.kwargs)
+        self.assertEqual(popen.call_args.kwargs["stdout"], workload.subprocess.PIPE)
+        self.assertEqual(popen.call_args.kwargs["stderr"], workload.subprocess.STDOUT)
+        self.assertEqual(popen.call_args.kwargs["bufsize"], 0)
+        log.attach.assert_called_once_with(popen.return_value.stdout)
 
     def test_external_core_is_not_spawned_and_its_occupied_port_is_preserved(self):
         self.config["externalAdminCore"] = True
@@ -398,7 +407,7 @@ class WorkloadTests(unittest.TestCase):
     def test_external_core_missing_before_activation_never_produces_active_receipt(self):
         self.config.update(externalAdminCore=True, startupTimeoutSeconds=30)
         self.backend.events_error = True
-        with mock.patch.object(workload.time, "monotonic", side_effect=[0, 0, 31, 32]):
+        with mock.patch.object(workload.time, "monotonic", side_effect=itertools.chain([0, 0, 31], itertools.repeat(32))):
             self.assertEqual(self.wrapper.run(), 1)
         receipt = json.loads((self.directory / "receipt.json").read_text())
         self.assertFalse(self.wrapper.activated)
@@ -413,7 +422,7 @@ class WorkloadTests(unittest.TestCase):
             self.backend.fail_mysql = True
             return True
         self.backend.health = endpoint_health
-        with mock.patch.object(workload.time, "monotonic", side_effect=[0, 0, 31, 32]):
+        with mock.patch.object(workload.time, "monotonic", side_effect=itertools.chain([0, 0, 31], itertools.repeat(32))):
             self.assertEqual(self.wrapper.run(), 1)
         self.assertIsNotNone(self.wrapper.gateway_proof)
         self.assertFalse(self.wrapper.activated)
@@ -580,6 +589,19 @@ class WorkloadTests(unittest.TestCase):
         self.assertTrue(self.wrapper.activated)
         self.assertTrue(all(child.poll() is not None for _, child in self.wrapper.children))
 
+    def test_log_disk_failure_is_reported_without_failing_a_healthy_activated_workload(self):
+        self.config["externalAdminCore"] = True
+        def tick(_seconds):
+            self.assertTrue(self.wrapper.activated)
+            receipt = json.loads((self.wrapper.runtime / "activation.json").read_text())
+            self.assertEqual(len(receipt["childLogs"]), 3)
+            self.assertTrue(all(value["writeError"] for value in receipt["childLogs"]))
+            self.wrapper.stop_event.set()
+        with mock.patch.object(workload.RotatingChildLog, "_open", side_effect=OSError(errno.ENOSPC, "fixture disk full")), \
+                mock.patch.object(self.wrapper.stop_event, "wait", side_effect=tick):
+            self.assertEqual(self.wrapper.run(), 0)
+        self.assertTrue(self.wrapper.activated)
+
     def test_admin_events_api_uses_service_authentication_and_bounded_nonredirecting_request(self):
         response = mock.MagicMock()
         response.status = 200
@@ -603,6 +625,127 @@ class WorkloadTests(unittest.TestCase):
         self.private(path, json.dumps(self.lease))
         with self.assertRaises(workload.ActivationError):
             self.wrapper.guardian_lease_check()
+
+
+class ChildLogTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory(prefix="cbte-child-log-")
+        self.root = Path(self.temp.name)
+        self.children, self.logs = [], []
+
+    def tearDown(self):
+        for child in self.children:
+            if child.poll() is None:
+                child.kill(); child.wait(timeout=3)
+        for log in self.logs:
+            log.close(timeout=2)
+        self.temp.cleanup()
+
+    def sink(self, **options):
+        log = workload.RotatingChildLog(self.root / "bot.log", max_bytes=65536, file_count=4, **options)
+        self.logs.append(log)
+        return log
+
+    def launch(self, code, log):
+        child = workload.Backend().spawn([sys.executable, "-c", code], str(self.root), os.environ.copy(), log)
+        self.children.append(child)
+        return child
+
+    def test_real_subprocess_output_rotates_within_size_and_count_limits(self):
+        log = self.sink()
+        code = "import sys,time\nfor i in range(24):\n sys.stdout.buffer.write(bytes([65+i%26])*65536);sys.stdout.buffer.flush();time.sleep(0.03)\ntime.sleep(0.1)\nsys.stderr.buffer.write(b'FINAL-DIAGNOSTIC\\n');sys.stderr.buffer.flush()"
+        child = self.launch(code, log)
+        self.assertEqual(child.wait(timeout=8), 0)
+        log.close(timeout=2)
+        files = list(self.root.glob("bot.log*"))
+        self.assertLessEqual(len(files), 4)
+        self.assertTrue(all(file.stat().st_size <= 65536 for file in files))
+        self.assertLessEqual(sum(file.stat().st_size for file in files), 4 * 65536)
+        self.assertTrue((self.root / "bot.log").read_bytes().endswith(b"FINAL-DIAGNOSTIC\n"))
+        status = log.snapshot()
+        self.assertGreater(status["rotations"], 1)
+        self.assertEqual(status["receivedBytes"], 24 * 65536 + len(b"FINAL-DIAGNOSTIC\n"))
+        self.assertEqual(status["writtenBytes"] + status["droppedBytes"], status["receivedBytes"])
+        self.assertFalse(status["readerRunning"])
+        self.assertFalse(status["writerRunning"])
+        if os.name == "posix":
+            self.assertTrue(all(stat.S_IMODE(file.stat().st_mode) == 0o600 for file in files))
+
+    def test_missing_disk_keeps_draining_a_real_child_and_reports_bounded_loss(self):
+        with mock.patch.object(workload.RotatingChildLog, "_open", side_effect=OSError(errno.ENOSPC, "fixture disk full")):
+            log = self.sink()
+            child = self.launch("import sys;sys.stdout.buffer.write(b'x'*(4*1024*1024));sys.stdout.buffer.flush()", log)
+            self.assertEqual(child.wait(timeout=5), 0)
+            log.close(timeout=2)
+        status = log.snapshot()
+        self.assertEqual(status["receivedBytes"], 4 * 1024 * 1024)
+        self.assertEqual(status["droppedBytes"], status["receivedBytes"])
+        self.assertEqual(status["writtenBytes"], 0)
+        self.assertIn(str(errno.ENOSPC), status["writeError"])
+        self.assertEqual(status["queuedChunks"], 0)
+        self.assertFalse(status["readerRunning"])
+        self.assertFalse(status["writerRunning"])
+        self.assertEqual(list(self.root.iterdir()), [])
+
+    def test_slow_disk_queue_is_bounded_and_close_does_not_wait_for_a_stalled_writer(self):
+        log = self.sink()
+        release = threading.Event()
+        entered = threading.Event()
+        write = log._write
+        def stalled(chunk):
+            entered.set()
+            release.wait(timeout=5)
+            write(chunk)
+        log._write = stalled
+        try:
+            child = self.launch("import sys;sys.stdout.buffer.write(b'x'*(8*1024*1024));sys.stdout.buffer.flush()", log)
+            self.assertTrue(entered.wait(timeout=2))
+            # An 8 MiB child finishes while its log writer is still blocked.
+            self.assertEqual(child.wait(timeout=5), 0)
+            status = log.snapshot()
+            self.assertLessEqual(status["queuedChunks"], workload.LOG_QUEUE_CHUNKS)
+            self.assertEqual(status["queueCapacityBytes"], 512 * 1024)
+            self.assertGreater(status["droppedBytes"], 0)
+            started = time.monotonic()
+            log.close(timeout=0.05)
+            self.assertLess(time.monotonic() - started, 0.5)
+        finally:
+            release.set()
+            log.close(timeout=2)
+        self.assertFalse(log.snapshot()["writerRunning"])
+
+    def test_preexisting_oversized_logs_are_capped_without_removing_unrelated_files(self):
+        prefix = b"old" * 65536
+        tail = b"t" * 65536
+        for index in range(8):
+            filename = self.root / ("bot.log" if index == 0 else f"bot.log.{index}")
+            filename.write_bytes(prefix + tail)
+            filename.chmod(0o600)
+        unrelated = self.root / "operator-note.txt"
+        unrelated.write_text("keep")
+        log = workload.RotatingChildLog(self.root / "bot.log", max_bytes=65536, file_count=2)
+        self.logs.append(log)
+        log.close()
+        self.assertEqual(sorted(file.name for file in self.root.iterdir()), ["bot.log", "bot.log.1", "operator-note.txt"])
+        self.assertEqual((self.root / "bot.log").read_bytes(), tail)
+        self.assertEqual((self.root / "bot.log.1").read_bytes(), tail)
+        self.assertEqual(unrelated.read_text(), "keep")
+        self.assertEqual(log.snapshot()["trimmedBytes"], len(prefix) * 2)
+
+    def test_foreign_log_directory_is_preserved_and_not_used_as_an_output_file(self):
+        target = self.root / "bot.log"
+        target.mkdir()
+        original = target / "keep"
+        original.write_text("preserve")
+        log = self.sink()
+        self.assertIsNotNone(log.snapshot()["writeError"])
+        log.close()
+        self.assertEqual(original.read_text(), "preserve")
+        with self.assertRaises(workload.ActivationError):
+            workload.RotatingChildLog(self.root / "foreign.log")
+        for size, count in [(0, 4), (workload.LOG_MAX_BYTES + 1, 4), (65536, 0), (65536, 9), (True, 4)]:
+            with self.subTest(size=size, count=count), self.assertRaises(workload.ActivationError):
+                workload.RotatingChildLog(self.root / "bot.log", max_bytes=size, file_count=count)
 
 
 if __name__ == "__main__":

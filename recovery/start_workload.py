@@ -13,6 +13,7 @@ import json
 import math
 import os
 from pathlib import Path
+import queue
 import re
 import secrets
 import shlex
@@ -31,6 +32,11 @@ class ActivationError(Exception):
 
 
 PUBLIC_MEDIA_ROOT = Path("/var/lib/cbte-recovery")
+LOG_CHUNK_BYTES = 64 * 1024
+LOG_QUEUE_CHUNKS = 8
+LOG_DEFAULT_BYTES = 16 * 1024 * 1024
+LOG_MAX_BYTES = 32 * 1024 * 1024
+LOG_MAX_FILES = 8
 
 
 def plain(path: Path, directory: bool = False, private: bool = False):
@@ -106,11 +112,14 @@ def env_file(path: Path) -> dict[str, str]:
 
 def validate_config(config: dict):
     required = {"candidatePointer", "candidateRoot", "releaseDir", "nodePath", "botConfigPath", "authorityUrl", "authorityToken", "leaseFile", "adminBinary", "adminConfigDir", "publicUrl"}
-    optional = {"runtimeRoot", "mysqlMemory", "startupTimeoutSeconds", "externalAdminCore", "publicMediaLink"}
+    optional = {"runtimeRoot", "mysqlMemory", "startupTimeoutSeconds", "externalAdminCore", "publicMediaLink", "childLogMaxBytes", "childLogFileCount"}
     if not isinstance(config, dict) or required - set(config) or set(config) - required - optional:
         raise ActivationError("Activation configuration is incomplete or has unsupported keys.")
     if type(config.get("externalAdminCore", False)) is not bool:
         raise ActivationError("externalAdminCore must be a boolean.")
+    log_bytes, log_files = config.get("childLogMaxBytes", LOG_DEFAULT_BYTES), config.get("childLogFileCount", 4)
+    if type(log_bytes) is not int or not LOG_CHUNK_BYTES <= log_bytes <= LOG_MAX_BYTES or type(log_files) is not int or not 1 <= log_files <= LOG_MAX_FILES:
+        raise ActivationError("Child logs require 64 KiB..32 MiB per file and 1..8 retained files per child.")
     for key in required - {"authorityUrl", "authorityToken", "publicUrl"}:
         value = config[key]
         if not isinstance(value, str) or not Path(value).is_absolute() or ".." in Path(value).parts:
@@ -138,6 +147,238 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
         raise ActivationError("Authority redirects are not permitted.")
 
 
+class RotatingChildLog:
+    """A bounded pipe drain independent of disk speed, with fixed owned paths."""
+    def __init__(self, filename, max_bytes=LOG_DEFAULT_BYTES, file_count=4):
+        self.path = Path(filename)
+        if not self.path.is_absolute() or ".." in self.path.parts or self.path.name not in {"bot.log", "interactive.log", "reports.log", "core.log"}:
+            raise ActivationError("Unexpected child diagnostic log path.")
+        if type(max_bytes) is not int or not LOG_CHUNK_BYTES <= max_bytes <= LOG_MAX_BYTES or type(file_count) is not int or not 1 <= file_count <= LOG_MAX_FILES:
+            raise ActivationError("Invalid child diagnostic log limits.")
+        self.max_bytes, self.file_count = max_bytes, file_count
+        self.closed = False
+        self._fd, self._size = None, 0
+        self._queue = queue.Queue(maxsize=LOG_QUEUE_CHUNKS)
+        self._closing, self._reader_done = threading.Event(), threading.Event()
+        self._lock = threading.Lock()
+        self._enqueue_lock = threading.Lock()
+        self._reader = self._writer = self._pipe = None
+        self._retry_at = 0
+        self._health = {"name": self.path.name, "maxBytesPerFile": max_bytes, "fileCount": file_count,
+                        "receivedBytes": 0, "writtenBytes": 0, "droppedBytes": 0, "trimmedBytes": 0,
+                        "rotations": 0, "writeError": None, "readError": None}
+        try:
+            self._open()
+        except Exception as error:
+            self._failed(error)
+
+    def _archive(self, index):
+        return self.path if index == 0 else self.path.with_name(f"{self.path.name}.{index}")
+
+    def _owned(self, filename):
+        try:
+            info = filename.lstat()
+        except FileNotFoundError:
+            return None
+        if not stat.S_ISREG(info.st_mode) or (os.name == "posix" and (info.st_uid != 0 or stat.S_IMODE(info.st_mode) != 0o600)):
+            raise ActivationError("An existing child log is not a root-owned private regular file.")
+        return info
+
+    @staticmethod
+    def _write_all(descriptor, data):
+        offset = 0
+        while offset < len(data):
+            count = os.write(descriptor, data[offset:])
+            if count <= 0:
+                raise OSError("Diagnostic log write made no progress.")
+            offset += count
+
+    def _cap_existing(self, filename, size):
+        if size <= self.max_bytes:
+            return
+        # Preserve the most recent tail in-place, using constant-sized buffers.
+        # This also works on a full disk without creating another large file.
+        descriptor = os.open(filename, os.O_RDWR | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_BINARY", 0))
+        try:
+            read_offset, write_offset = size - self.max_bytes, 0
+            while write_offset < self.max_bytes:
+                os.lseek(descriptor, read_offset, os.SEEK_SET)
+                chunk = os.read(descriptor, min(LOG_CHUNK_BYTES, self.max_bytes - write_offset))
+                if not chunk:
+                    raise OSError("Diagnostic log changed while its tail was retained.")
+                os.lseek(descriptor, write_offset, os.SEEK_SET)
+                self._write_all(descriptor, chunk)
+                read_offset += len(chunk)
+                write_offset += len(chunk)
+            os.ftruncate(descriptor, self.max_bytes)
+        finally:
+            os.close(descriptor)
+        with self._lock:
+            self._health["trimmedBytes"] += size - self.max_bytes
+
+    def _open(self):
+        info = plain(self.path.parent, directory=True)
+        if os.name == "posix" and info.st_uid != 0:
+            raise ActivationError("The diagnostic log directory is not owned by root.")
+        existing = [(self._archive(index), self._owned(self._archive(index))) for index in range(LOG_MAX_FILES)]
+        # Check every owned slot before modifying any, and leave unrelated names
+        # untouched. Reconfiguration cannot leave older excess archives growing.
+        for index, (filename, info) in enumerate(existing):
+            if info is None:
+                continue
+            if index >= self.file_count:
+                filename.unlink()
+            else:
+                self._cap_existing(filename, info.st_size)
+        self._fd = os.open(self.path, os.O_WRONLY | os.O_APPEND | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_BINARY", 0), 0o600)
+        self._size = os.fstat(self._fd).st_size
+        with self._lock:
+            self._health["writeError"] = None
+        self._retry_at = 0
+
+    def _close_fd(self):
+        descriptor, self._fd = self._fd, None
+        if descriptor is not None:
+            try:
+                os.close(descriptor)
+            except OSError:
+                pass
+
+    def _failed(self, error):
+        self._close_fd()
+        self._retry_at = time.monotonic() + 30
+        message = f"{type(error).__name__}:{getattr(error, 'errno', None) or 'log_write_failed'}"
+        with self._lock:
+            changed = self._health["writeError"] != message
+            self._health["writeError"] = message
+        if changed:
+            try:
+                os.write(2, f"Child log {self.path.name} unavailable ({message}); output is drained with bounded loss accounting.\n".encode())
+            except OSError:
+                pass
+
+    def _drop(self, count):
+        with self._lock:
+            self._health["droppedBytes"] += count
+
+    def _rotate(self):
+        self._close_fd()
+        for index in range(LOG_MAX_FILES):
+            self._owned(self._archive(index))
+        last = self._archive(self.file_count - 1)
+        last.unlink(missing_ok=True)
+        for index in range(self.file_count - 2, -1, -1):
+            current = self._archive(index)
+            if current.exists():
+                os.replace(current, self._archive(index + 1))
+        self._open()
+        with self._lock:
+            self._health["rotations"] += 1
+
+    def _write(self, chunk):
+        offset = 0
+        try:
+            if self._fd is None:
+                if time.monotonic() < self._retry_at:
+                    self._drop(len(chunk))
+                    return
+                self._open()
+            while offset < len(chunk):
+                if self._size >= self.max_bytes:
+                    self._rotate()
+                size = min(len(chunk) - offset, self.max_bytes - self._size)
+                written = os.write(self._fd, chunk[offset:offset + size])
+                if written <= 0:
+                    raise OSError("Diagnostic log write made no progress.")
+                self._size += written
+                offset += written
+                with self._lock:
+                    self._health["writtenBytes"] += written
+        except Exception as error:
+            self._drop(len(chunk) - offset)
+            self._failed(error)
+
+    def _offer(self, chunk):
+        with self._enqueue_lock:
+            if self._closing.is_set():
+                self._drop(len(chunk))
+                return
+            try:
+                self._queue.put_nowait(chunk)
+            except queue.Full:
+                # Keep the newest diagnostic tail during a log storm. The
+                # pipe reader never waits for the disk writer to catch up.
+                try:
+                    stale = self._queue.get_nowait()
+                    self._queue.task_done()
+                    self._drop(len(stale))
+                except queue.Empty:
+                    pass
+                try:
+                    self._queue.put_nowait(chunk)
+                except queue.Full:
+                    self._drop(len(chunk))
+
+    def _drain(self):
+        try:
+            while True:
+                chunk = self._pipe.read(LOG_CHUNK_BYTES)
+                if not chunk:
+                    break
+                with self._lock:
+                    self._health["receivedBytes"] += len(chunk)
+                self._offer(chunk)
+        except Exception as error:
+            with self._lock:
+                self._health["readError"] = type(error).__name__
+        finally:
+            self._reader_done.set()
+            self._pipe.close()
+
+    def _persist(self):
+        try:
+            while not ((self._closing.is_set() or self._reader_done.is_set()) and self._queue.empty()):
+                try:
+                    chunk = self._queue.get(timeout=0.1)
+                except queue.Empty:
+                    continue
+                try:
+                    self._write(chunk)
+                finally:
+                    self._queue.task_done()
+        finally:
+            self._close_fd()
+
+    def attach(self, pipe):
+        if self._reader is not None or self.closed:
+            raise ActivationError("A child log drain cannot be attached twice.")
+        self._pipe = pipe
+        self._writer = threading.Thread(target=self._persist, name=f"{self.path.name}-writer", daemon=True)
+        self._reader = threading.Thread(target=self._drain, name=f"{self.path.name}-reader", daemon=True)
+        self._writer.start()
+        self._reader.start()
+
+    def snapshot(self):
+        with self._lock:
+            return dict(self._health, queuedChunks=self._queue.qsize(), queueCapacityBytes=LOG_QUEUE_CHUNKS * LOG_CHUNK_BYTES,
+                        readerRunning=bool(self._reader and self._reader.is_alive()), writerRunning=bool(self._writer and self._writer.is_alive()))
+
+    def close(self, timeout=1):
+        deadline = time.monotonic() + max(0, timeout)
+        # Give an already-exited process's pipe a bounded opportunity to drain
+        # before discarding further output. Descendants can keep a pipe open;
+        # those daemon reader threads must not delay the guardian's final fence.
+        if self._reader:
+            self._reader.join(timeout=max(0, deadline - time.monotonic()))
+        with self._enqueue_lock:
+            self._closing.set()
+        if self._writer:
+            self._writer.join(timeout=max(0, deadline - time.monotonic()))
+        else:
+            self._close_fd()
+        self.closed = True
+
+
 class Backend:
     def run(self, argv, *, input=None, timeout=30, optional=False):
         result = subprocess.run(argv, input=input, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=timeout, check=False)
@@ -163,7 +404,10 @@ class Backend:
             return connection.connect_ex(("127.0.0.1", port)) == 0
 
     def spawn(self, argv, cwd, environment, log):
-        return subprocess.Popen(argv, cwd=cwd, env=environment, stdin=subprocess.DEVNULL, stdout=log, stderr=log, start_new_session=False, close_fds=True)
+        child = subprocess.Popen(argv, cwd=cwd, env=environment, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                                 stderr=subprocess.STDOUT, bufsize=0, start_new_session=False, close_fds=True)
+        log.attach(child.stdout)
+        return child
 
     def health(self, url, token=None):
         request = urllib.request.Request(url, headers={"Authorization": "Bearer " + token} if token else {})
@@ -475,10 +719,11 @@ class Workload:
         for key in ["gatewayReadyAt", "botPid", "bootId", "botSpawnedAt", "gatewayProofVerifiedAt"]:
             record.pop(key, None)
         proof = self.gateway_proof or {}
-        record.update(proof, observabilityDegraded=self.observability_degraded, bootstrapComplete=self.bootstrap_verified)
+        log_health = [log.snapshot() for log in self.logs]
+        record.update(proof, observabilityDegraded=self.observability_degraded, bootstrapComplete=self.bootstrap_verified, childLogs=log_health)
         atomic_json(Path(self.candidate["directory"]) / "receipt.json", record)
         if self.runtime:
-            atomic_json(self.runtime / "activation.json", {"candidateId": self.candidate["id"], "container": self.candidate["container"], "phase": phase, "epoch": self.candidate["epoch"], "updatedAt": time.time(), "savedataMigrated": False, "reason": reason, "observabilityDegraded": self.observability_degraded, "bootstrapComplete": self.bootstrap_verified, **proof, "children": [{"name": name, "pid": process.pid} for name, process in self.children]})
+            atomic_json(self.runtime / "activation.json", {"candidateId": self.candidate["id"], "container": self.candidate["container"], "phase": phase, "epoch": self.candidate["epoch"], "updatedAt": time.time(), "savedataMigrated": False, "reason": reason, "observabilityDegraded": self.observability_degraded, "bootstrapComplete": self.bootstrap_verified, "childLogs": log_health, **proof, "children": [{"name": name, "pid": process.pid} for name, process in self.children]})
         self.last_receipt_write_at = time.time()
 
     def start_children(self, environments):
@@ -495,8 +740,8 @@ class Workload:
         for name, command in commands:
             if self.stop_event.is_set():
                 raise ActivationError("Activation was stopped before all child processes started.")
-            log = open(self.runtime / "logs" / f"{name}.log", "ab", buffering=0)
-            os.chmod(log.name, 0o600)
+            log = RotatingChildLog(self.runtime / "logs" / f"{name}.log",
+                                   self.config.get("childLogMaxBytes", LOG_DEFAULT_BYTES), self.config.get("childLogFileCount", 4))
             self.logs.append(log)
             if name == "bot":
                 self.bot_spawned_at = time.time()
@@ -591,8 +836,9 @@ class Workload:
                     child.wait(timeout=max(0.01, deadline - time.monotonic()))
                 except subprocess.TimeoutExpired:
                     child.kill()
+        log_deadline = time.monotonic() + 1
         for log in self.logs:
-            log.close()
+            log.close(timeout=max(0, log_deadline - time.monotonic()))
         # The guardian then kills every remaining descendant in its verified
         # systemd cgroup, including any per-action worker process groups.
 
