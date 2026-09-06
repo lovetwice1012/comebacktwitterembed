@@ -48,6 +48,9 @@ KILL_GRACE = 2.0
 STOP_BUDGET = 12.0
 KILL_SIGNAL = getattr(signal, "SIGKILL", 9)
 PRIMARY_COMPANIONS = ("cbte-admin-analysis.service", "cbte-admin-reports.service")
+IO_SAMPLE_INTERVAL = 5.0
+IO_SAMPLE_BUDGET = 1.0
+IO_MAX_SAMPLE_GAP = 15.0
 
 
 class RemoteError(Exception):
@@ -115,7 +118,192 @@ def validate_command(config):
         expected = set(PRIMARY_COMPANIONS) if config["node"] == "primary" else set()
         if not isinstance(configured_companions, list) or set(configured_companions) != expected:
             raise ValueError("Only the fixed primary analysis/reports companion units are permitted")
+    primary_io_policy(config)
     return list(command)
+
+
+def primary_io_policy(config):
+    value = config.get("primaryIoWatch")
+    if value is None:
+        return None
+    allowed = {"enabled", "physicalDevice", "logicalDevice", "thresholdSeconds", "startupGraceSeconds"}
+    if not isinstance(value, dict) or set(value) - allowed or type(value.get("enabled")) is not bool:
+        raise ValueError("primaryIoWatch must be an explicit bounded policy object")
+    if not value["enabled"]:
+        return None
+    if config.get("node") != "primary" or value.get("physicalDevice") != "sda" or value.get("logicalDevice") != "dm-0":
+        raise ValueError("The primary I/O watch is restricted to primary, physical sda and logical dm-0")
+    threshold, grace = value.get("thresholdSeconds", 180), value.get("startupGraceSeconds", 300)
+    if type(threshold) is not int or not 180 <= threshold <= 86400 or type(grace) is not int or not 300 <= grace <= 86400:
+        raise ValueError("I/O watch threshold must be 180..86400 seconds and startup grace 300..86400 seconds")
+    return {"enabled": True, "physicalDevice": "sda", "logicalDevice": "dm-0", "thresholdSeconds": threshold, "startupGraceSeconds": grace}
+
+
+def _bounded_kernel_text(filename, limit):
+    with open(filename, "rb", buffering=0) as source:
+        data = source.read(limit + 1)
+    if len(data) > limit:
+        raise ValueError("Kernel sample exceeds bound")
+    return data.decode("ascii", "strict")
+
+
+def _io_process_stat(text, pid, parent_pid):
+    prefix, separator, remainder = text.rpartition(") ")
+    fields = remainder.split()
+    if not separator or prefix.split(" (", 1)[0] != str(pid) or len(fields) < 20 or fields[0] not in {"R", "S", "D", "T", "t", "Z", "X", "I"}:
+        raise ValueError("Invalid process sample")
+    owner, start = int(fields[1]), int(fields[19])
+    if owner != parent_pid or start <= 0:
+        raise ValueError("The sample does not belong to the guardian's direct child")
+    return {"pid": pid, "parentPid": owner, "startTicks": start, "state": fields[0]}
+
+
+def sample_primary_io(pid, parent_pid):
+    """Only fixed proc/debugfs reads. Called on a disposable daemon thread."""
+    before = _io_process_stat(_bounded_kernel_text(f"/proc/{pid}/stat", 4096), pid, parent_pid)
+    devices = {}
+    for line in _bounded_kernel_text("/proc/diskstats", 1024 * 1024).splitlines():
+        fields = line.split()
+        if len(fields) < 3 or fields[2] not in {"sda", "dm-0"}:
+            continue
+        if len(fields) < 14 or fields[2] in devices or not all(value.isdigit() for value in fields[3:14]):
+            raise ValueError("Invalid disk statistics")
+        devices[fields[2]] = {"writes": int(fields[7]), "inflight": int(fields[11])}
+    if set(devices) != {"sda", "dm-0"}:
+        raise ValueError("Configured disk statistics are unavailable")
+    credits = {}
+    for line in _bounded_kernel_text("/sys/kernel/debug/block/sda/rqos/wbt/inflight", 4096).splitlines():
+        match = re.fullmatch(r"([012]): inflight ([0-9]+)", line.strip())
+        if not match or match[1] in credits:
+            raise ValueError("Invalid WBT counters")
+        credits[match[1]] = int(match[2])
+    if set(credits) != {"0", "1", "2"}:
+        raise ValueError("WBT counters are incomplete")
+    after = _io_process_stat(_bounded_kernel_text(f"/proc/{pid}/stat", 4096), pid, parent_pid)
+    if before != after:
+        raise ValueError("Process identity or state changed during sampling")
+    return dict(after, physicalWrites=devices["sda"]["writes"], logicalWrites=devices["dm-0"]["writes"],
+                physicalInflight=devices["sda"]["inflight"], logicalInflight=devices["dm-0"]["inflight"], wbtInflight=sum(credits.values()))
+
+
+class PrimaryIoWatch:
+    """Narrow sustained-stall detector; unknown evidence never fences."""
+    def __init__(self, policy, pid, parent_pid, clock, sampler=None):
+        self.policy, self.pid, self.parent_pid, self.clock = policy, pid, parent_pid, clock
+        self.sampler = sampler or sample_primary_io
+        self.started_at = clock.monotonic()
+        self.start_ticks = None
+        self.identity_lost = False
+        self.confirmed = False
+        self.previous = None
+        self.previous_at = None
+        self.since = None
+        self.pending = None
+        self.pending_at = None
+        self.results = queue.Queue(maxsize=1)
+        self.next_sample = self.started_at
+        self.observation = {}
+        self.reset("awaiting_sample")
+
+    def _report(self, state, reason, sample=None):
+        now = self.clock.monotonic()
+        evidence = {key: sample[key] for key in ("state", "physicalWrites", "logicalWrites", "physicalInflight", "logicalInflight", "wbtInflight")} if sample else None
+        self.observation = dict(self.policy, state=state, reason=reason, childPid=self.pid, childStartTicks=self.start_ticks,
+                                observedAtUnixMs=int(self.clock.wall() * 1000), continuousSeconds=round(max(0, now - self.since), 3) if self.since is not None else 0,
+                                evidence=evidence)
+
+    def reset(self, reason):
+        if self.confirmed:
+            return
+        self.previous = None
+        self.previous_at = None
+        self.since = None
+        self._report("unknown", reason)
+
+    def observe(self, sample):
+        if self.confirmed:
+            return True
+        now = self.clock.monotonic()
+        numeric = {"pid", "parentPid", "startTicks", "physicalWrites", "logicalWrites", "physicalInflight", "logicalInflight", "wbtInflight"}
+        if (not isinstance(sample, dict) or set(sample) != numeric | {"state"}
+                or any(type(sample[key]) is not int or not 0 <= sample[key] <= 2**64 - 1 for key in numeric)
+                or not isinstance(sample["state"], str) or sample["state"] not in {"R", "S", "D", "T", "t", "Z", "X", "I"} or sample["startTicks"] <= 0):
+            self.reset("invalid_sample")
+            return False
+        if self.identity_lost or sample["pid"] != self.pid or sample["parentPid"] != self.parent_pid or (self.start_ticks is not None and sample["startTicks"] != self.start_ticks):
+            self.identity_lost = True
+            self.reset("child_identity_changed")
+            return False
+        self.start_ticks = sample["startTicks"]
+        previous, previous_at = self.previous, self.previous_at
+        self.previous, self.previous_at = dict(sample), now
+        if now - self.started_at < self.policy["startupGraceSeconds"]:
+            self.since = None
+            self._report("startup_grace", "startup_grace", sample)
+            return False
+        if previous is None or previous_at is None or not 0 <= now - previous_at <= IO_MAX_SAMPLE_GAP:
+            self.since = None
+            self._report("unknown", "baseline_required", sample)
+            return False
+        if sample["physicalWrites"] < previous["physicalWrites"] or sample["logicalWrites"] < previous["logicalWrites"]:
+            self.reset("counter_reset")
+            return False
+        if sample["physicalWrites"] != previous["physicalWrites"] or sample["logicalWrites"] != previous["logicalWrites"]:
+            self.since = None
+            self._report("clear", "write_progress", sample)
+            return False
+        if sample["state"] != "D" or sample["physicalInflight"] != 0 or sample["logicalInflight"] <= 0 or sample["wbtInflight"] <= 0:
+            self.since = None
+            self._report("clear", "stall_conjunction_not_present", sample)
+            return False
+        if self.since is None:
+            self.since = now
+        self.confirmed = now - self.since >= self.policy["thresholdSeconds"]
+        self._report("confirmed" if self.confirmed else "observing", "primary_io_stall" if self.confirmed else "continuous_stall_candidate", sample)
+        return self.confirmed
+
+    def poll(self):
+        if self.confirmed:
+            return True
+        now = self.clock.monotonic()
+        try:
+            started, finished, sample = self.results.get_nowait()
+        except queue.Empty:
+            pass
+        else:
+            self.pending = None
+            self.pending_at = None
+            self.next_sample = now + IO_SAMPLE_INTERVAL
+            if not 0 <= finished - started <= IO_SAMPLE_BUDGET or not 0 <= now - finished <= IO_SAMPLE_INTERVAL:
+                self.reset("sample_too_late")
+            else:
+                self.observe(sample)
+        if self.pending is not None:
+            if now - self.pending_at > IO_SAMPLE_BUDGET:
+                self.reset("sample_timeout")
+            # A stuck kernel read gets ONE thread, never replacement threads.
+            return self.confirmed
+        if now >= self.next_sample and not self.confirmed:
+            self.pending_at = now
+            started = now
+            def collect():
+                try:
+                    value = self.sampler(self.pid, self.parent_pid)
+                except Exception:
+                    value = None
+                self.results.put_nowait((started, self.clock.monotonic(), value))
+            self.pending = threading.Thread(target=collect, daemon=True, name="primary-io-sample")
+            try:
+                self.pending.start()
+            except Exception:
+                self.pending = None
+                self.pending_at = None
+                self.next_sample = now + IO_SAMPLE_INTERVAL
+                self.reset("sampler_start_failed")
+        return self.confirmed
+
+    def snapshot(self):
+        return dict(self.observation)
 
 
 def cgroup_directory(group):
@@ -322,7 +510,7 @@ def stop_group(process, clock=None):
 
 
 class Guardian:
-    def __init__(self, config, client=None, clock=None, proof_builder=installation_proof, process_factory=None, fencer=None):
+    def __init__(self, config, client=None, clock=None, proof_builder=installation_proof, process_factory=None, fencer=None, io_sampler=None):
         self.config = config
         self.command = validate_command(config)
         self.node = config["node"]
@@ -344,6 +532,12 @@ class Guardian:
         self.status_path = Path(config["leaseFile"])
         self.status_path.parent.mkdir(parents=True, exist_ok=True, mode=0o755)
         self._lock_file = None
+        self.io_policy = primary_io_policy(config)
+        self.io_sampler = io_sampler
+        self.io_watch = None
+        self._fence_lock = threading.Lock()
+        self._fence_started = False
+        self._publish_lock = threading.Lock()
 
     def _spawn(self):
         environment = {key: value for key, value in os.environ.items() if value != self.config["token"] and key not in {"CBTE_AUTHORITY_TOKEN", "CBTE_RECOVERY_TOKEN", "RECOVERY_PRIMARY_TOKEN", "RECOVERY_OCI_TOKEN", "RECOVERY_CONTROLLER_TOKEN"}}
@@ -364,8 +558,16 @@ class Guardian:
             self._lock_file = None
 
     def publish(self, state, reason=None):
+        with self._publish_lock:
+            self._publish_locked(state, reason)
+
+    def _publish_locked(self, state, reason=None):
+        if self.io_watch and self.io_watch.confirmed:
+            state, reason = "io_stalled", "PRIMARY_IO_STALL"
         valid_until = int((self.clock.wall() + max(0, self.local_deadline - self.clock.monotonic())) * 1000) if self.local_deadline is not None and state in ("active", "renewal_unconfirmed") else 0
         value = {"version": 1, "node": self.node, "instanceId": self.instance_id, "state": state, "updatedAt": self.clock.wall(), "epoch": self.lease.get("epoch") if self.lease else None, "expiresAt": self.lease.get("expiresAt") if self.lease else None, "validUntilUnixMs": valid_until, "localStopDeadline": self.local_deadline, "childPid": self.child.pid if self.child else None, "reason": reason}
+        if self.io_watch:
+            value["primaryIoWatch"] = self.io_watch.snapshot()
         temporary = self.status_path.with_name(self.status_path.name + ".tmp-" + secrets.token_hex(8))
         fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
         os.chmod(temporary, 0o644)
@@ -386,6 +588,8 @@ class Guardian:
                 temporary.unlink()
 
     def call(self, method, path, data=None, deadline=None, allow_stopping=False):
+        if not allow_stopping and (self.stop_event.is_set() or self.fence_event.is_set()):
+            raise RemoteError("CANCELLED")
         if self.pending_thread and self.pending_thread.is_alive():
             raise RemoteError("REQUEST_IN_FLIGHT")
         results = queue.Queue(maxsize=1)
@@ -393,6 +597,8 @@ class Guardian:
 
         def send():
             try:
+                if not allow_stopping and (self.stop_event.is_set() or self.fence_event.is_set()):
+                    raise RemoteError("CANCELLED")
                 results.put((self.client.request(method, path, data), None))
             except Exception as error:
                 results.put((None, error))
@@ -437,18 +643,51 @@ class Guardian:
 
     def start_watchdog(self):
         self.child_done.clear()
+        if self.io_policy:
+            self.io_watch = PrimaryIoWatch(self.io_policy, self.child.pid, os.getpid(), self.clock, self.io_sampler)
 
         def supervise():
             while not self.child_done.is_set():
                 if self.stop_event.is_set() or self.clock.monotonic() >= self.local_deadline - STOP_BUDGET:
                     self.fence_event.set()
                     # No disk writes or authority I/O on the deadline path.
-                    self.fencer.fence()
+                    self._fence_once()
+                    return
+                io_stalled = False
+                if self.io_watch:
+                    try:
+                        io_stalled = self.io_watch.poll()
+                    except Exception:
+                        self.io_watch.reset("sampler_failed")
+                if io_stalled:
+                    self.fence_event.set()
+                    self.stop_event.set()
+                    # Status is best effort and never precedes the safety latch.
+                    # Neither a failed write nor a blocked sampler can delay fencing.
+                    try:
+                        threading.Thread(target=self._publish_io_failure, daemon=True).start()
+                    except Exception:
+                        pass
+                    self._fence_once()
                     return
                 self.child_done.wait(0.05)
 
         self.watchdog = threading.Thread(target=supervise, daemon=True)
         self.watchdog.start()
+
+    def _publish_io_failure(self):
+        try:
+            self.publish("io_stalled", "PRIMARY_IO_STALL")
+        except Exception:
+            pass
+
+    def _fence_once(self):
+        with self._fence_lock:
+            if self._fence_started:
+                return
+            self._fence_started = True
+        self.stop_event.set()
+        self.fencer.fence()
 
     def lease_body(self):
         return {"node": self.node, "instanceId": self.instance_id, "epoch": self.lease["epoch"], "leaseId": self.lease["leaseId"]}
@@ -507,7 +746,7 @@ class Guardian:
                         stop_group(self.child, self.clock)
                         # Detached children remain in this systemd unit. Never
                         # reacquire after merely stopping the leader's PG.
-                        self.fencer.fence()
+                        self._fence_once()
                         self.child_done.set()
                         self.child = None
                     if self.lease:
