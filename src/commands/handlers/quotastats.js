@@ -7,20 +7,21 @@ const { ApplicationCommandOptionType } = require('discord.js');
 const { messageLocales, descriptionLocales, commandNameLocales } = require('../../locales');
 const { conv_en_to_en_US } = require('../../utils');
 const { getSaveTweetQuotaOverride } = require('../../providers/_provider_settings');
+const { resolveSavedPath } = require('../../savedRoot');
 
 async function getSavedTweetUsageBytes(userId) {
-    const userDir = path.join('.', 'saves', userId);
+    const userDir = resolveSavedPath(userId);
     if (!fs.existsSync(userDir)) return 0;
 
     let used = 0;
     const dirs = await fsp.readdir(userDir, { withFileTypes: true });
     for (const dir of dirs) {
-        if (!dir.isDirectory()) continue;
-        const tweetDir = path.join(userDir, dir.name);
+        if (!dir.isDirectory() || dir.name.startsWith('.')) continue;
+        const tweetDir = resolveSavedPath(path.join(userId, dir.name), { mustExist: true });
         const files = await fsp.readdir(tweetDir, { withFileTypes: true });
         for (const file of files) {
             if (!file.isFile()) continue;
-            used += (await fsp.stat(path.join(tweetDir, file.name))).size;
+            used += (await fsp.stat(resolveSavedPath(path.join(userId, dir.name, file.name), { mustExist: true }))).size;
         }
     }
     return used;

@@ -11,6 +11,7 @@ const { TABLES, ensureDatabaseSchema } = require('../db_schema');
 const db = require('../db');
 const telemetry = require('./telemetry');
 const { currentActorId } = require('./actor');
+const { getSavedRoot, resolveSavedPath, assertSavedPath } = require('../savedRoot');
 
 function providerFor(value) {
     const provider = providers().find(item => item.id === value);
@@ -150,16 +151,8 @@ async function autoextractAction(type, input) {
     return { id: result.insertId, userId, username: input.username, webhookEndpointId: webhookId, premium: usePremium };
 }
 async function safeSavedPath(userId, tweetId) {
-    const root = path.resolve(process.env.SAVES_DIR || path.join(process.env.ADMIN_SUPPORT_DATA_DIR || path.resolve(__dirname, '../..'), 'saves'));
-    const target = path.resolve(root, id(userId, 'userId'), ...(tweetId ? [rowId(tweetId)] : []));
-    if (!target.startsWith(root + path.sep)) throw new Error('Saved data path is outside saves.');
-    let cursor = root;
-    for (const part of path.relative(root, target).split(path.sep)) {
-        cursor = path.join(cursor, part);
-        const stat = await fs.lstat(cursor).catch(error => { if (error.code === 'ENOENT') return null; throw error; });
-        if (stat?.isSymbolicLink()) throw new Error('Symbolic links are not accepted for saved-data operations.');
-    }
-    return target;
+    const root = getSavedRoot(path.resolve(__dirname, '../..'));
+    return resolveSavedPath([id(userId, 'userId'), ...(tweetId ? [rowId(tweetId)] : [])].join('/'), { root });
 }
 async function savedAction(type, input) {
     const userId = id(input.userId, 'userId');
@@ -185,7 +178,7 @@ async function savedAction(type, input) {
         const names = entries.filter(entry => entry.isDirectory() && /^\d+$/.test(entry.name)).map(entry => entry.name).sort().filter(name => !input.afterId || name > input.afterId);
         const rows = [];
         for (const tweetId of names.slice(0, 100)) {
-            try { rows.push({ tweetId, data: JSON.parse(await fs.readFile(path.join(userPath, tweetId, 'data.json'), 'utf8')) }); }
+            try { rows.push({ tweetId, data: JSON.parse(await fs.readFile(assertSavedPath(path.join(userPath, tweetId, 'data.json'), { root: path.dirname(userPath), mustExist: true }), 'utf8')) }); }
             catch (error) { rows.push({ tweetId, error: telemetry.errorData(error) }); }
         }
         return { rows, nextCursor: names.length > 100 ? names[99] : null };
@@ -196,12 +189,13 @@ async function savedAction(type, input) {
         await fs.access(target);
         // Keep a recoverable trash copy; never recurse through a computed link.
         const trash = path.join(path.dirname(userPath), '.admin-trash');
+        assertSavedPath(trash, { root: path.dirname(userPath) });
         await fs.mkdir(trash, { recursive: true });
         const receipt = `${userId}-${rowId(input.tweetId)}-${crypto.randomUUID()}`;
         await fs.rename(target, path.join(trash, receipt));
         return { deleted: true, userId, tweetId: input.tweetId, recoveryReceipt: receipt };
     }
-    const data = JSON.parse(await fs.readFile(path.join(target, 'data.json'), 'utf8'));
+    const data = JSON.parse(await fs.readFile(assertSavedPath(path.join(target, 'data.json'), { root: path.dirname(userPath), mustExist: true }), 'utf8'));
     const files = [];
     for (const entry of await fs.readdir(target, { withFileTypes: true })) if (entry.isFile()) files.push({ name: entry.name, bytes: (await fs.stat(path.join(target, entry.name))).size });
     return { userId, tweetId: input.tweetId, data, files };

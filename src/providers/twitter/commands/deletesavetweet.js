@@ -5,12 +5,15 @@ const { ApplicationCommandOptionType } = require('discord.js');
 const { t, descriptionLocales, commandNameLocales } = require('../../../locales');
 const { antiDirectoryTraversalAttack, conv_en_to_en_US } = require('../../../utils');
 const { sendEmbedPages } = require('../../../interactionResponse');
+const { resolveSavedPath } = require('../../../savedRoot');
 module.exports.execute = async function (interaction, client) {
 
     //saves/{userid}があるか確認する
     const userid = interaction.user.id;
-    if (!fs.existsSync('./saves/' + userid)) return await interaction.editReply(t('userDonthaveSavedTweetLocales', interaction.locale));
-    const dirs = fs.readdirSync('./saves/' + userid);
+    let userPath;
+    try { userPath = resolveSavedPath(userid, { mustExist: true }); }
+    catch { return await interaction.editReply(t('userDonthaveSavedTweetLocales', interaction.locale)); }
+    const dirs = fs.readdirSync(userPath, { withFileTypes: true }).filter(entry => entry.isDirectory() && !entry.name.startsWith('.')).map(entry => entry.name);
     if (dirs.length === 0) return await interaction.editReply(t('userDonthaveSavedTweetLocales', interaction.locale));
     //options: idが指定されているか確認する。設定されているならそのツイートを削除する。設定されていないなら一覧を表示する。
     if (interaction.options.getString('id') === null) {
@@ -22,6 +25,7 @@ module.exports.execute = async function (interaction, client) {
         });
     } else {
         const id = interaction.options.getString('id');
+        if (typeof id !== 'string' || !/^[A-Za-z0-9_-]+$/.test(id)) return await interaction.editReply(t('userDonthaveSavedTweetLocales', interaction.locale));
         let filePath = userid + '/' + id;
         try{
             filePath = antiDirectoryTraversalAttack(filePath)
@@ -29,7 +33,7 @@ module.exports.execute = async function (interaction, client) {
             return await interaction.editReply(t('userDonthaveSavedTweetLocales', interaction.locale));
         }
         if (!fs.existsSync(filePath)) return await interaction.editReply(t('userDonthaveSavedTweetLocales', interaction.locale));
-        fs.rmdirSync(filePath, { recursive: true });
+        fs.rmSync(filePath, { recursive: true });
         await interaction.editReply(t('deletedSavedTweetLocales', interaction.locale));
     }
 

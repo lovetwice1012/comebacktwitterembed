@@ -6,8 +6,8 @@ const crypto = require('crypto');
 const fetch = require('../providerFetch').withDeadline(require('node-fetch'));
 const { t } = require('../locales');
 const { getSaveTweetQuotaOverride } = require('../providers/_provider_settings');
+const { getSavedRoot, assertSavedPath } = require('../savedRoot');
 
-const SAVES_ROOT = process.env.SAVES_DIR || require('path').join(process.env.ADMIN_SUPPORT_DATA_DIR || '.', 'saves');
 const DEFAULT_QUOTA_BYTES = 100 * 1024 * 1024; // 100 MB
 const PUBLIC_BASE_URL = 'https://twidata.sprink.cloud/data/';
 
@@ -74,7 +74,9 @@ async function saveTweetByUrl(userId, tweetUrl) {
     const apiUrl = tweetApiUrl(tweetUrl);
     const tweetId = tweetIdFromUrl(apiUrl);
     if (!/^\d{1,22}$/.test(tweetId)) throw new Error('Could not determine tweet id for saving.');
-    const root = path.resolve(SAVES_ROOT), userDir = path.join(root, userId), tweetDir = path.join(userDir, tweetId);
+    const root = getSavedRoot(), userDir = path.join(root, userId), tweetDir = path.join(userDir, tweetId);
+    assertSavedPath(root, { root, allowRoot: true });
+    assertSavedPath(tweetDir, { root });
     await assertPlainDirectory(root); await assertPlainDirectory(userDir);
     const lockPath = path.join(userDir, '.admin-save.lock');
     let lock;

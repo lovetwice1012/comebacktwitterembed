@@ -2,37 +2,13 @@ const express = require('express');
 const fs = require('fs');
 const path = require('path');
 const archiver = require('archiver');
+const { antiDirectoryTraversalAttack } = require('../src/utils');
 
 const app = express();
 const port = 3088;
 const tempDir = path.join(__dirname, 'temp');
 
 
-
-
-function antiDirectoryTraversalAttack(userInput) {
-    const baseDirectory = path.resolve('saves');
-    const invalidPathPattern = /(\.\.(\/|\\|$))/;
-    const joinedPath = path.join(baseDirectory, userInput);
-    let realPath;
-    try {
-        realPath = fs.realpathSync(joinedPath);
-    } catch (err) {
-        throw new Error('不正なパスが検出されました。');
-    }
-    const relativePath = path.relative(baseDirectory, realPath);
-    if (
-        userInput.includes('\0') ||
-        invalidPathPattern.test(userInput) ||
-        relativePath.startsWith('..') ||
-        path.isAbsolute(relativePath) ||
-        relativePath.includes('\0') ||
-        !realPath.startsWith(baseDirectory)
-    ) {
-        throw new Error('不正なパスが検出されました。');
-    }
-    return realPath;
-}
 
 
 // 一時的なディレクトリが存在しない場合は作成

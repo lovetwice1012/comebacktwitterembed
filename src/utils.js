@@ -1,7 +1,6 @@
 'use strict';
 
-const fs = require('fs');
-const path = require('path');
+const { resolveSavedPath } = require('./savedRoot');
 
 // 動画拡張子。embed の判定で使用。
 const videoExtensions = [
@@ -40,27 +39,7 @@ const warning_this_bot_is_not_main_instance_and_going_to_be_closed_embed = {
 };
 
 function antiDirectoryTraversalAttack(userInput) {
-    const baseDirectory = path.resolve('saves');
-    const invalidPathPattern = /(\.\.(\/|\\|$))/;
-    const joinedPath = path.join(baseDirectory, userInput);
-    let realPath;
-    try {
-        realPath = fs.realpathSync(joinedPath);
-    } catch (err) {
-        throw new Error('不正なパスが検出されました。');
-    }
-    const relativePath = path.relative(baseDirectory, realPath);
-    if (
-        userInput.includes('\0') ||
-        invalidPathPattern.test(userInput) ||
-        relativePath.startsWith('..') ||
-        path.isAbsolute(relativePath) ||
-        relativePath.includes('\0') ||
-        !realPath.startsWith(baseDirectory)
-    ) {
-        throw new Error('不正なパスが検出されました。');
-    }
-    return realPath;
+    return resolveSavedPath(userInput, { mustExist: true });
 }
 
 function ifUserHasRole(user, roleidlist) {
