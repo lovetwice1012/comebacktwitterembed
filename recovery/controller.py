@@ -386,9 +386,10 @@ class Controller:
             status = run(["systemctl", "show", "cbte-recovery-workload.service", "--property=ActiveState", "--value"], timeout=10).strip()
         self.update(phase="VERIFYING" if status == "active" else "ACTIVATING", candidate=active, workloadUnitState=status, operatorIntentReason=None)
 
-    def notify_user_failover(self, authority):
-        """Send one user-facing notice only after the public OCI route verifies."""
-        delivered = self.state.get("userFailoverNotice") or {}
+    def notify_user_failover(self, authority, starting=False):
+        """Send one user-facing notice for each verified failover transition."""
+        state_key = "userFailoverStartNotice" if starting else "userFailoverNotice"
+        delivered = self.state.get(state_key) or {}
         if delivered.get("epoch") == authority["epoch"] and delivered.get("status") == "accepted":
             return
         try:
@@ -401,17 +402,28 @@ class Controller:
             parsed = urllib.parse.urlsplit(url if isinstance(url, str) else "")
             if parsed.scheme != "https" or parsed.hostname not in {"discord.com", "discordapp.com"} or not parsed.path.startswith("/api/webhooks/") or parsed.query or parsed.fragment:
                 raise ValueError("User notification webhook URL is invalid")
+            if starting:
+                title = "予備のクラウドサーバーへ移行を開始します"
+                description = "メインサーバーの障害を検知したため、予備のクラウドサーバーへの移行を開始します。"
+                fields = [
+                    {"name": "起動の目安", "value": "30分ほどで起動完了する見込みです。", "inline": False},
+                    {"name": "ご利用への影響", "value": "起動中はBotが一時的に応答しない場合や、設定・集計が最新バックアップ時点へ戻る場合があります。", "inline": False},
+                ]
+            else:
+                title = "予備のクラウドサーバー上で稼働中です"
+                description = "現在、Botとダッシュボードは予備のクラウドサーバーで稼働しています。"
+                fields = [
+                    {"name": "今後の移行", "value": "メインサーバーが復旧したら、自動でメインサーバーへの移行を開始します。", "inline": False},
+                    {"name": "ご利用への影響", "value": "一部の機能に制限がかかる場合があります。", "inline": False},
+                ]
             payload = {
                 "username": value.get("name") if isinstance(value.get("name"), str) else "ComebackTwitterEmbed お知らせ",
                 "allowed_mentions": {"parse": []},
                 "embeds": [{
-                    "title": "予備のクラウドサーバーでサービスを継続しています",
-                    "description": "メインサーバーの障害を検知したため、現在は予備のクラウドサーバーでサービスを継続しています。",
+                    "title": title,
+                    "description": description,
                     "color": 3447003,
-                    "fields": [
-                        {"name": "ご利用への影響", "value": "一部の機能が一時的に利用できない場合や、設定・集計の反映が遅れる場合があります。", "inline": False},
-                        {"name": "復旧作業", "value": "移行先の準備が整うまで、予備のクラウドサーバーでサービスを継続します。目安は30分ほどです。", "inline": False},
-                    ],
+                    "fields": fields,
                     "timestamp": iso_now(),
                 }],
             }
@@ -422,9 +434,9 @@ class Controller:
                 if not 200 <= response.status < 300:
                     raise ValueError("User notification webhook was not accepted")
                 receipt = json.loads(response.read(65537))
-            self.update(userFailoverNotice={"epoch": authority["epoch"], "status": "accepted", "messageId": receipt.get("id"), "channelId": value.get("channelId"), "sentAt": iso_now()})
+            self.update(**{state_key: {"epoch": authority["epoch"], "status": "accepted", "messageId": receipt.get("id"), "channelId": value.get("channelId"), "sentAt": iso_now()}})
         except Exception as error:
-            self.update(userFailoverNotice={"epoch": authority["epoch"], "status": "pending", "error": type(error).__name__, "updatedAt": iso_now()})
+            self.update(**{state_key: {"epoch": authority["epoch"], "status": "pending", "error": type(error).__name__, "updatedAt": iso_now()}})
         if status == "active":
             self.verify_active(authority, active)
 
@@ -549,6 +561,7 @@ class Controller:
                 return
         key = manual["promotionKey"] if manual else f"oci-{authority['epoch']}-{candidate['id']}"
         policy_plan = {"state": "pending", "seedRevision": oci_intent["revision"], "reservedAt": iso_now()} if is_seeded_oci_intent(oci_intent, self.config) else None
+        self.notify_user_failover(authority, starting=True)
         self.update(phase="PROMOTION_RESERVED", promotionKey=key, ociActivationPolicy=policy_plan)
         if manual and self.manual_approvals.current(authority) is None:
             self.update(phase="OPERATOR_PROMOTION_BLOCKED", operatorIntentReason="予約後に手動承認が無効になったため昇格を中止しました。")
