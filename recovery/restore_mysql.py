@@ -16,6 +16,11 @@ import signal
 import subprocess
 import time
 
+try:
+    from .restore_definers import ensure_restore_definers
+except ImportError:
+    from restore_definers import ensure_restore_definers
+
 
 def atomic_json(path, value):
     path = Path(path)
@@ -196,6 +201,10 @@ def prepare(config, manifest, artifact, progress=lambda _value: None):
         scheduler = mysql(container, "SELECT @@GLOBAL.event_scheduler;").strip()
         if scheduler not in ("OFF", "DISABLED"):
             raise RuntimeError("Restored SQL event scheduler is not disabled")
+        # CREATE TRIGGER preserves a dump's DEFINER but database-only backups
+        # do not recreate mysql.user. Never declare a write-broken candidate
+        # valid, or blindly recreate a privileged maintenance account.
+        definers = ensure_restore_definers(lambda sql: mysql(container, sql, timeout=10))
         counts = {}
         for table in required:
             if not re.fullmatch(r"[a-z_]+", table):
@@ -205,7 +214,7 @@ def prepare(config, manifest, artifact, progress=lambda _value: None):
         receipt.update(phase="VALIDATED", validatedAt=time.time(), databaseState="isolated_read_only",
                        checks={"engine": version, "tableCount": len(tables), "requiredTableCounts": counts,
                                "eventScheduler": scheduler, "ciphertextVerified": True, "importCompleted": True,
-                               "network": "none", "savedataMigrated": False})
+                               "network": "none", "savedataMigrated": False, "storedObjectDefiners": definers})
         atomic_json(receipt_path, receipt)
         return receipt
     except BaseException as error:

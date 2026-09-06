@@ -48,6 +48,7 @@ class RecoveryFixture(unittest.TestCase):
 
     @staticmethod
     def fake_mysql(container, sql, timeout=30):
+        if sql.startswith("/*cbte-definer:triggers*/") or sql.startswith("/*cbte-definer:other-objects*/"): return ""
         if sql == "SELECT 1;": return "1\n"
         if "information_schema.TABLES" in sql: return "guilds\nusers\nguild_provider_settings\nauto_extract_targets\n"
         if sql == "SELECT VERSION();": return "8.0.42\n"
@@ -198,6 +199,14 @@ class ControllerArtifactTests(RecoveryFixture):
 
 
 class RestoreIsolationTests(RecoveryFixture):
+    def test_unverified_definer_quarantines_candidate_instead_of_marking_validated(self):
+        with mock.patch.object(restore_mysql, "run", return_value="ok"), mock.patch.object(restore_mysql, "mysql", side_effect=self.fake_mysql), mock.patch.object(restore_mysql, "stream_import"), mock.patch.object(restore_mysql, "ensure_restore_definers", side_effect=RuntimeError("Definer policy rejected")):
+            with self.assertRaisesRegex(RuntimeError, "Definer policy rejected"):
+                restore_mysql.prepare(self.config, self.manifest, self.artifact)
+        receipts = list(Path(self.config["candidateRoot"]).glob("*/receipt.json"))
+        self.assertEqual(len(receipts), 1)
+        self.assertEqual(restore_mysql.read_json(receipts[0])["phase"], "QUARANTINED")
+
     def test_bad_checksum_is_rejected_before_any_docker_action(self):
         self.artifact.write_bytes(self.artifact.read_bytes()[:-1]+b"Z")
         with mock.patch.object(restore_mysql,"run") as run:
