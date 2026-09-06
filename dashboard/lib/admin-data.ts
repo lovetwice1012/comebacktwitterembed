@@ -12,6 +12,7 @@ import { getProviderSettingsState, saveProviderSettings } from "@/lib/settings-d
 import type { AuditActor, SettingValue } from "@/lib/types";
 import type { DashboardLocale } from "@/lib/i18n";
 import { detailedSecondaryInterestQuery, detailedContentLifetimeQuery, detailedUrlReuseQuery, detailedSettingImpactQuery } from "@/lib/detailed-secondary-queries";
+import { detailedProviderReliabilityQuery } from "@/lib/detailed-reliability-query";
 import { detailedFacetBreakdownQuery, detailedProviderMarketingSegmentsQuery } from "@/lib/detailed-facet-queries";
 import { aggregateAudienceCorrelationQuery } from "@/lib/aggregate-audience-query";
 import { aggregateCalendarQuery } from "@/lib/aggregate-calendar-query";
@@ -2523,24 +2524,7 @@ async function getDetailedProviderAccounts(filters: AdminDetailedAnalyticsFilter
 async function getDetailedProviderReliability(filters: AdminDetailedAnalyticsFilters, window: { startMs: number; endMs: number }, limit: number) {
   const analytics = analyticsWhere(filters, window);
   const rows = await prisma.$queryRawUnsafe<Array<Record<string, unknown>>>(
-    `SELECT
-       a.provider_id,
-       a.account_key,
-       a.event_type,
-       COUNT(*) AS events,
-       SUM(a.success = 1) AS successes,
-       SUM(a.success = 0) AS failures,
-       COUNT(DISTINCT a.author_user_id) AS users,
-       COUNT(DISTINCT a.guild_id) AS guilds,
-       AVG(a.duration_ms) AS avg_duration_ms,
-       MAX(a.duration_ms) AS max_duration_ms
-     FROM bot_analytics_events a
-     WHERE ${analytics.whereSql}
-       AND a.provider_id IS NOT NULL
-       AND a.success IS NOT NULL
-     GROUP BY a.provider_id, a.account_key, a.event_type
-     ORDER BY events DESC
-     LIMIT ?`,
+    detailedProviderReliabilityQuery(analytics.whereSql),
     ...analytics.params,
     limit,
   );
