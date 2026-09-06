@@ -89,6 +89,8 @@ class ConfigureOCITests(unittest.TestCase):
         self.assertEqual(core["RECOVERY_CONTROLLER_TOKEN"], self.controller["statusToken"])
         self.assertEqual(core["RECOVERY_INTENT_TOKEN"], self.controller["ociIntentToken"])
         self.assertEqual(core["RECOVERY_NODE"], "oci")
+        self.assertEqual(core["ADMIN_AGENT_EXECUTOR_SOCKET"], "/run/cbte-admin-executor/executor.sock")
+        self.assertEqual(core["ADMIN_AGENT_SERVICE_PROFILE"], "oci-guarded")
         self.assertEqual(environments["bot"]["RECOVERY_CONTROLLER_TOKEN"], self.controller["statusToken"])
         self.assertEqual(core["ADMIN_AGENT_DISCORD_WEBHOOK"], "")
         for name in ["common", "analysis", "reports", "bot"]:
@@ -134,6 +136,22 @@ class ConfigureOCITests(unittest.TestCase):
         with self.assertRaises(configure.ConfigurationError):
             self.run_generator()
         self.assertEqual(snapshot, {path: path.read_bytes() for path in snapshot})
+
+    def test_rerun_preserves_installed_oci_executor_and_does_not_rewrite_executor_credentials(self):
+        self.run_generator()
+        core_path = self.directory / "admin/core.env"
+        core = configure.read_env(core_path)
+        core.update(ADMIN_AGENT_EXECUTOR_SOCKET="/run/cbte-admin-executor/executor.sock", ADMIN_AGENT_SERVICE_PROFILE="oci-guarded")
+        core_path.write_text(configure.env_text(core), encoding="utf-8")
+        executor = self.directory / "admin/executor.env"
+        executor.write_text('ADMIN_AGENT_EXECUTOR_ALLOWED_UID="993"\nADMIN_AGENT_EXECUTOR_GROUP_GID="985"\n', encoding="utf-8")
+        executor.chmod(0o600)
+        before = executor.read_bytes()
+        self.run_generator()
+        regenerated = self.environments()["core"]
+        self.assertEqual(regenerated["ADMIN_AGENT_EXECUTOR_SOCKET"], core["ADMIN_AGENT_EXECUTOR_SOCKET"])
+        self.assertEqual(regenerated["ADMIN_AGENT_SERVICE_PROFILE"], core["ADMIN_AGENT_SERVICE_PROFILE"])
+        self.assertEqual(executor.read_bytes(), before)
 
     def test_existing_bootstrap_is_reused_after_partial_generation(self):
         bootstrap = self.directory / "bootstrap-password"

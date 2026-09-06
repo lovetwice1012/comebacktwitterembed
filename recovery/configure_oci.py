@@ -226,7 +226,8 @@ def configure(release_dir, node, admin_binary, config_dir):
         "ADMIN_AGENT_WORKER_TIMEOUT_SECONDS": "120", "ADMIN_AGENT_REPORT_TIMEOUT_SECONDS": "900",
         "ADMIN_AGENT_LOCAL_HEALTH_URL": "http://127.0.0.1:30989/api/health", "ADMIN_AGENT_PUBLIC_HEALTH_URL": PUBLIC_URL + "/api/health",
         "ADMIN_DISCORD_CLIENT_ID": client_id, "ADMIN_DISCORD_CLIENT_SECRET": client_secret,
-        "ADMIN_DISCORD_REDIRECT_URI": MANAGEMENT_URL + "auth/discord/callback", "ADMIN_AGENT_EXECUTOR_SOCKET": "",
+        "ADMIN_DISCORD_REDIRECT_URI": MANAGEMENT_URL + "auth/discord/callback",
+        "ADMIN_AGENT_EXECUTOR_SOCKET": "/run/cbte-admin-executor/executor.sock", "ADMIN_AGENT_SERVICE_PROFILE": "oci-guarded",
         "RECOVERY_CONTROLLER_URL": "http://127.0.0.1:34212", "RECOVERY_CONTROLLER_TOKEN": status_token,
         "ADMIN_AGENT_DISCORD_WEBHOOK": "", "ADMIN_AGENT_PUSH_WEBHOOK": ""}
     if controller.get("ociIntentToken"):
