@@ -441,6 +441,8 @@ class Workload:
         self.activated = False
         self.bot_spawned_at = None
         self.gateway_proof = None
+        self.application_health_evidence = {}
+        self.reporting_degraded = False
         self.observability_degraded = False
         self.last_receipt_write_at = 0
         self.bootstrap_verified = False
@@ -720,10 +722,11 @@ class Workload:
             record.pop(key, None)
         proof = self.gateway_proof or {}
         log_health = [log.snapshot() for log in self.logs]
-        record.update(proof, observabilityDegraded=self.observability_degraded, bootstrapComplete=self.bootstrap_verified, childLogs=log_health)
+        record.update(proof, observabilityDegraded=self.observability_degraded, reportingDegraded=self.reporting_degraded,
+                      applicationHealth=self.application_health_evidence, bootstrapComplete=self.bootstrap_verified, childLogs=log_health)
         atomic_json(Path(self.candidate["directory"]) / "receipt.json", record)
         if self.runtime:
-            atomic_json(self.runtime / "activation.json", {"candidateId": self.candidate["id"], "container": self.candidate["container"], "phase": phase, "epoch": self.candidate["epoch"], "updatedAt": time.time(), "savedataMigrated": False, "reason": reason, "observabilityDegraded": self.observability_degraded, "bootstrapComplete": self.bootstrap_verified, "childLogs": log_health, **proof, "children": [{"name": name, "pid": process.pid} for name, process in self.children]})
+            atomic_json(self.runtime / "activation.json", {"candidateId": self.candidate["id"], "container": self.candidate["container"], "phase": phase, "epoch": self.candidate["epoch"], "updatedAt": time.time(), "savedataMigrated": False, "reason": reason, "observabilityDegraded": self.observability_degraded, "reportingDegraded": self.reporting_degraded, "applicationHealth": self.application_health_evidence, "bootstrapComplete": self.bootstrap_verified, "childLogs": log_health, **proof, "children": [{"name": name, "pid": process.pid} for name, process in self.children]})
         self.last_receipt_write_at = time.time()
 
     def start_children(self, environments):
@@ -787,14 +790,22 @@ class Workload:
             return None
 
     def application_health(self):
-        healthy = all([self.backend.health("http://127.0.0.1:30990/health"),
-                       self.backend.health("http://127.0.0.1:30991/health"),
-                       self.backend.health("http://127.0.0.1:30989/api/health")])
+        endpoints = {"interactive": self.backend.health("http://127.0.0.1:30990/health"),
+                     "reports": self.backend.health("http://127.0.0.1:30991/health"),
+                     "dashboard": self.backend.health("http://127.0.0.1:30989/api/health")}
         try:
             database_ready = self.mysql("SELECT 1;", timeout=3).strip() == "1"
         except Exception:
             database_ready = False
-        return healthy and database_ready
+        reports = next((child for name, child in self.children if name == "reports"), None)
+        report_exit = reports.poll() if reports is not None else None
+        self.reporting_degraded = not endpoints["reports"] or report_exit is not None
+        self.application_health_evidence = {"observedAt": time.time(), **endpoints, "database": database_ready,
+                                           "reportsRequiredForInitialActivation": not self.activated, "reportProcessExitCode": report_exit}
+        # Report computation/response delivery is not a prerequisite for an
+        # already verified Bot to keep serving. Initial activation still waits
+        # for the complete service group; interactive/dashboard/DB remain required.
+        return endpoints["interactive"] and endpoints["dashboard"] and database_ready and (self.activated or not self.reporting_degraded)
 
     def bootstrap_ready(self):
         try:
@@ -859,9 +870,13 @@ class Workload:
             while not self.stop_event.is_set():
                 for name, child in self.children:
                     if child.poll() is not None:
+                        if self.activated and name == "reports":
+                            continue
                         raise ActivationError(f"OCI workload child exited: {name}.")
                 self.guardian_lease_check()
+                prior_reporting_degraded = self.reporting_degraded
                 healthy = self.application_health()
+                reporting_changed = prior_reporting_degraded != self.reporting_degraded
                 proof = self.gateway_readiness(environments["core"]["ADMIN_AGENT_TOKEN"])
                 self.guardian_lease_check()  # Network/SQL probes must not outlive the lease.
                 if proof:
@@ -879,14 +894,17 @@ class Workload:
                     if not self.activated:
                         self.activated = True
                         self.write_phase("ACTIVE", "A fresh heartbeat confirms this OCI Bot is Gateway-ready; MySQL and workload endpoints are healthy. Saved media was intentionally not migrated.")
+                    elif reporting_changed:
+                        self.write_phase("ACTIVE", "Report worker health is unconfirmed; the independently verified Bot and required endpoints remain running." if self.reporting_degraded else "Report worker health has recovered without restarting the Bot.")
                     elif observation_changed:
                         self.write_phase("ACTIVE", "Management observation is unavailable; the independently healthy OCI workload remains running." if degraded else "Management observation of the current OCI Bot has recovered.")
                     elif proof and proof["gatewayProofVerifiedAt"] - self.last_receipt_write_at >= 15:
-                        self.write_phase("ACTIVE", "The current OCI Bot remains Gateway-ready with a live database and healthy workload endpoints.")
+                        self.write_phase("ACTIVE", "The current OCI Bot remains Gateway-ready with a live database and healthy required endpoints; report health is recorded separately.")
                 elif self.activated:
                     failures += 1
                     if failures >= 3:
-                        raise ActivationError("An OCI application endpoint stopped responding.")
+                        failed = [name for name in ("interactive", "dashboard", "database") if self.application_health_evidence.get(name) is False]
+                        raise ActivationError("Required OCI application checks failed: " + (", ".join(failed) or "Gateway proof"))
                 elif time.monotonic() - started > startup_limit:
                     raise ActivationError("OCI application group did not become healthy before its startup deadline.")
                 self.stop_event.wait(2)

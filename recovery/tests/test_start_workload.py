@@ -448,6 +448,83 @@ class WorkloadTests(unittest.TestCase):
             self.assertEqual(self.wrapper.run(), 0)
         self.assertEqual(len(iterations), 5)
 
+    def test_report_endpoint_outage_after_activation_does_not_stop_healthy_bot(self):
+        self.config["externalAdminCore"] = True
+        ticks = []
+        def tick(_):
+            ticks.append(self.wrapper.activated)
+            self.assertTrue(self.wrapper.activated)
+            self.assertTrue(all(child.poll() is None for _, child in self.wrapper.children))
+            if len(ticks) == 1:
+                self.backend.failed_health.add("http://127.0.0.1:30991/health")
+            else:
+                receipt = json.loads((self.directory / "receipt.json").read_text())
+                self.assertEqual(receipt["phase"], "ACTIVE")
+                self.assertTrue(receipt["reportingDegraded"])
+                self.assertFalse(receipt["applicationHealth"]["reports"])
+                self.assertTrue(receipt["applicationHealth"]["database"])
+                self.assertTrue(receipt["applicationHealth"]["interactive"])
+            if len(ticks) == 5: self.wrapper.stop_event.set()
+        with mock.patch.object(self.wrapper.stop_event, "wait", side_effect=tick):
+            self.assertEqual(self.wrapper.run(), 0)
+        self.assertEqual(len(ticks), 5)
+
+    def test_exited_report_child_is_degraded_without_killing_healthy_bot(self):
+        self.config["externalAdminCore"] = True
+        ticks = []
+        def tick(_):
+            ticks.append(True)
+            bot = next(child for name, child in self.wrapper.children if name == "bot")
+            self.assertIsNone(bot.poll())
+            if len(ticks) == 1:
+                next(child for name, child in self.wrapper.children if name == "reports").code = 19
+            else:
+                receipt = json.loads((self.directory / "receipt.json").read_text())
+                self.assertTrue(receipt["reportingDegraded"])
+                self.assertEqual(receipt["applicationHealth"]["reportProcessExitCode"], 19)
+            if len(ticks) == 4: self.wrapper.stop_event.set()
+        with mock.patch.object(self.wrapper.stop_event, "wait", side_effect=tick):
+            self.assertEqual(self.wrapper.run(), 0)
+
+    def test_first_activation_still_requires_report_readiness(self):
+        self.config.update(externalAdminCore=True, startupTimeoutSeconds=30)
+        self.backend.failed_health.add("http://127.0.0.1:30991/health")
+        with mock.patch.object(workload.time, "monotonic", side_effect=itertools.chain([0, 0, 31], itertools.repeat(32))):
+            self.assertEqual(self.wrapper.run(), 1)
+        self.assertFalse(self.wrapper.activated)
+        receipt = json.loads((self.directory / "receipt.json").read_text())
+        self.assertFalse(receipt["applicationHealth"]["reports"])
+        self.assertEqual(receipt["phase"], "ACTIVATION_FAILED")
+
+    def test_report_degradation_does_not_hide_required_database_failure(self):
+        self.config["externalAdminCore"] = True
+        def tick(_):
+            self.backend.failed_health.add("http://127.0.0.1:30991/health")
+            self.backend.fail_mysql = True
+        with mock.patch.object(self.wrapper.stop_event, "wait", side_effect=tick):
+            self.assertEqual(self.wrapper.run(), 1)
+        receipt = json.loads((self.directory / "receipt.json").read_text())
+        self.assertIn("database", receipt["activationReason"])
+        self.assertFalse(receipt["applicationHealth"]["database"])
+        self.assertFalse(receipt["applicationHealth"]["reports"])
+
+    def test_exited_interactive_child_still_stops_the_workload(self):
+        self.config["externalAdminCore"] = True
+        def tick(_): next(child for name, child in self.wrapper.children if name == "interactive").code = 23
+        with mock.patch.object(self.wrapper.stop_event, "wait", side_effect=tick):
+            self.assertEqual(self.wrapper.run(), 1)
+        self.assertIn("child exited: interactive", json.loads((self.directory / "receipt.json").read_text())["activationReason"])
+
+    def test_report_degradation_never_bypasses_expired_guardian_lease(self):
+        self.config["externalAdminCore"] = True
+        def tick(_):
+            self.backend.failed_health.add("http://127.0.0.1:30991/health")
+            self.lease["validUntilUnixMs"] = 0
+            self.private(Path(self.config["leaseFile"]), json.dumps(self.lease))
+        with mock.patch.object(self.wrapper.stop_event, "wait", side_effect=tick):
+            self.assertEqual(self.wrapper.run(), 1)
+        self.assertIn("lease", json.loads((self.directory / "receipt.json").read_text())["activationReason"].lower())
+
     def test_gateway_proof_waits_for_candidate_bootstrap_completion_before_active(self):
         self.config["externalAdminCore"] = True
         self.backend.bootstrap_complete = False
@@ -554,11 +631,11 @@ class WorkloadTests(unittest.TestCase):
                 self.wrapper.prepare_public_media()
         self.assertEqual(self.backend.commands, [])
 
-    def test_external_core_does_not_hide_worker_dashboard_or_database_failure(self):
+    def test_external_core_does_not_hide_interactive_dashboard_or_database_failure(self):
         self.config["externalAdminCore"] = True
         # Each subcase runs against the same owned candidate after its previous
         # workload has fully stopped; no primary state or live service is used.
-        for failed in ["http://127.0.0.1:30990/health", "http://127.0.0.1:30991/health", "http://127.0.0.1:30989/api/health", "mysql"]:
+        for failed in ["http://127.0.0.1:30990/health", "http://127.0.0.1:30989/api/health", "mysql"]:
             with self.subTest(failed=failed):
                 self.backend = FakeBackend(self.candidate)
                 self.wrapper = workload.Workload(self.config, self.backend, self.environment)
