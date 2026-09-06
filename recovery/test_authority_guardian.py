@@ -115,6 +115,22 @@ class AuthorityTests(unittest.TestCase):
         self.assertEqual(self.acquire("oci-one", "oci")["epoch"], 2)
         self.assert_code("FAILBACK_FORBIDDEN", lambda: self.call("/v1/promote", target="primary", expectedEpoch=2, idempotencyKey="failback"))
 
+    def test_failback_requires_fenced_oci_and_fixed_handoff_evidence(self):
+        self.ready()
+        primary = self.acquire()
+        self.clock.advance(TTL + DRAIN)
+        promoted = self.call("/v1/promote", target="oci", expectedEpoch=1, idempotencyKey="to-oci")
+        oci = self.acquire("oci-one", "oci")
+        handoff = {"handoffId": "h" * 16, "sourceBackupSha256": "a" * 64, "sourceEpoch": promoted["epoch"], "primaryBootId": "boot-new", "acceptPrimaryDivergence": True}
+        self.assert_code("OCI_LEASE_ACTIVE", lambda: self.call("/v1/failback", expectedEpoch=promoted["epoch"], idempotencyKey="to-primary", handoff=handoff))
+        self.call("/v1/lease/release", "oci", **self.lease_body(oci))
+        self.clock.advance(TTL + DRAIN)
+        failed_back = self.call("/v1/failback", expectedEpoch=promoted["epoch"], idempotencyKey="to-primary", handoff=handoff)
+        self.assertEqual(failed_back["activeNode"], "primary")
+        self.assertEqual(failed_back["epoch"], promoted["epoch"] + 1)
+        self.assertEqual(self.call("/v1/failback", expectedEpoch=promoted["epoch"], idempotencyKey="to-primary", handoff=handoff), failed_back)
+        self.assert_code("NOT_ACTIVE_NODE", lambda: self.acquire("oci-two", "oci"))
+
     def test_release_does_not_shorten_original_grace(self):
         self.ready()
         lease = self.acquire()

@@ -21,6 +21,7 @@ import json
 import math
 import os
 from pathlib import Path
+import re
 import secrets
 import signal
 import sqlite3
@@ -202,6 +203,8 @@ CREATE TABLE IF NOT EXISTS node_observations(node TEXT NOT NULL CHECK(node IN ('
             return self.arm(role, data)
         if path == "/v1/promote":
             return self.promote(role, data)
+        if path == "/v1/failback":
+            return self.failback(role, data)
         raise AuthorityError("NOT_FOUND", "Unknown recovery endpoint", 404)
 
     def status(self, role):
@@ -407,6 +410,54 @@ CREATE TABLE IF NOT EXISTS node_observations(node TEXT NOT NULL CHECK(node IN ('
         result = {"ok": True, "activeNode": "oci", "epoch": epoch, "previousEpoch": row["epoch"], "promotedAt": self.clock.wall(), "idempotencyKey": key}
         self.db.execute("INSERT INTO promotions(idempotency_key,input_hash,result) VALUES(?,?,?)", (key, digest, canonical(result)))
         self._event("authority.promoted", result)
+        return result
+
+    def failback(self, role, data):
+        """Transfer a drained OCI role back to the enrolled primary.
+
+        This is deliberately not automatic.  The caller must create and verify
+        the final application-data handoff before this control-plane commit.
+        The authority only owns leases, epochs and the durable audit decision.
+        """
+        if role != "controller":
+            raise AuthorityError("CONTROLLER_REQUIRED", "Controller role required", 403)
+        key = data.get("idempotencyKey")
+        handoff = data.get("handoff")
+        if not isinstance(key, str) or not 1 <= len(key) <= 200:
+            raise AuthorityError("IDEMPOTENCY_REQUIRED", "A bounded idempotencyKey is required", 400)
+        if not isinstance(handoff, dict) or set(handoff) != {"handoffId", "sourceBackupSha256", "sourceEpoch", "primaryBootId", "acceptPrimaryDivergence"}:
+            raise AuthorityError("HANDOFF_EVIDENCE_REQUIRED", "A fixed final-copy handoff record is required", 400)
+        if (not isinstance(handoff["handoffId"], str) or not 16 <= len(handoff["handoffId"]) <= 128
+                or not isinstance(handoff["sourceBackupSha256"], str) or not re.fullmatch(r"[0-9a-f]{64}", handoff["sourceBackupSha256"])
+                or type(handoff["sourceEpoch"]) is not int or handoff["sourceEpoch"] < 1
+                or not isinstance(handoff["primaryBootId"], str) or not 1 <= len(handoff["primaryBootId"]) <= 128
+                or handoff["acceptPrimaryDivergence"] is not True):
+            raise AuthorityError("INVALID_HANDOFF_EVIDENCE", "Final-copy evidence is malformed or primary divergence was not acknowledged", 400)
+        digest = hashlib.sha256(canonical(data).encode()).hexdigest()
+        prior = self.db.execute("SELECT * FROM promotions WHERE idempotency_key=?", (key,)).fetchone()
+        if prior is not None:
+            if prior["input_hash"] != digest:
+                raise AuthorityError("IDEMPOTENCY_CONFLICT", "Promotion key belongs to different input")
+            return json.loads(prior["result"])
+        row = self._state()
+        self._epoch(data, row)
+        if not row["primary_enrolled"]:
+            raise AuthorityError("PRIMARY_NOT_ENROLLED", "An enrolled primary guardian is required", 409)
+        if row["active_node"] != "oci":
+            raise AuthorityError("NOT_OCI_ACTIVE", "Failback requires OCI to be the current active node", 409)
+        if handoff["sourceEpoch"] != row["epoch"]:
+            raise AuthorityError("HANDOFF_EPOCH_MISMATCH", "Final-copy evidence belongs to another epoch", 409, currentEpoch=row["epoch"])
+        if row["lease_id"] and row["lease_expires"] > self.clock.wall():
+            raise AuthorityError("OCI_LEASE_ACTIVE", "OCI workload must be fenced before failback", 409)
+        if self.clock.wall() < max(row["drain_until"], row["lease_expires"] + DRAIN):
+            raise AuthorityError("LEASE_DRAINING", "The OCI lease has not completed its safety drain", 409, retryAfterSeconds=math.ceil(max(row["drain_until"], row["lease_expires"] + DRAIN) - self.clock.wall()))
+        epoch = row["epoch"] + 1
+        changed = self.db.execute("UPDATE authority SET active_node='primary',epoch=?,lease_id=NULL,lease_node=NULL,lease_instance=NULL,revision=revision+1 WHERE id=1 AND epoch=? AND active_node='oci'", (epoch, row["epoch"])).rowcount
+        if changed != 1:
+            raise AuthorityError("CAS_CONFLICT", "Authority changed during failback")
+        result = {"ok": True, "activeNode": "primary", "epoch": epoch, "previousEpoch": row["epoch"], "failedBackAt": self.clock.wall(), "idempotencyKey": key, "handoff": handoff}
+        self.db.execute("INSERT INTO promotions(idempotency_key,input_hash,result) VALUES(?,?,?)", (key, digest, canonical(result)))
+        self._event("authority.failed_back", result)
         return result
 
 
