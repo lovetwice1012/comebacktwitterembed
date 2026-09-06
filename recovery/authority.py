@@ -29,6 +29,11 @@ import threading
 import time
 from urllib.parse import urlsplit
 
+try:
+    from .node_observation import primary_io_observation
+except ImportError:
+    from node_observation import primary_io_observation
+
 TTL = 90.0
 STOP_MARGIN = 20.0
 DRAIN = 60.0
@@ -100,6 +105,7 @@ CREATE TABLE IF NOT EXISTS authority(
 CREATE TABLE IF NOT EXISTS ledger(seq INTEGER PRIMARY KEY AUTOINCREMENT,event TEXT NOT NULL,at REAL NOT NULL,payload TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS challenges(id TEXT PRIMARY KEY,instance_id TEXT NOT NULL,nonce TEXT NOT NULL,expires REAL NOT NULL,used INTEGER NOT NULL DEFAULT 0);
 CREATE TABLE IF NOT EXISTS promotions(idempotency_key TEXT PRIMARY KEY,input_hash TEXT NOT NULL,result TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS node_observations(node TEXT NOT NULL CHECK(node IN ('primary','oci')),instance_id TEXT NOT NULL,epoch INTEGER NOT NULL,received_at REAL NOT NULL,payload TEXT NOT NULL,PRIMARY KEY(node,instance_id));
 """)
         os.chmod(database, 0o600)
         self.boot_id = secrets.token_hex(24)
@@ -200,7 +206,52 @@ CREATE TABLE IF NOT EXISTS promotions(idempotency_key TEXT PRIMARY KEY,input_has
 
     def status(self, role):
         row = self._state()
-        return {"ok": True, "clusterId": self.cluster_id, "epoch": row["epoch"], "activeNode": row["active_node"], "armed": bool(row["armed"]), "primaryEnrolled": bool(row["primary_enrolled"]), "authorityBootId": row["boot_id"], "serverTime": self.clock.wall(), "leaseTtlSeconds": TTL, "stopMarginSeconds": STOP_MARGIN, "promotionDrainSeconds": DRAIN, "quarantineUntil": row["quarantine_until"], "drainUntil": row["drain_until"], "lease": {"node": row["lease_node"], "instanceId": row["lease_instance"], "expiresAt": row["lease_expires"], "valid": bool(row["lease_id"]) and row["lease_expires"] > self.clock.wall()}, "revision": row["revision"]}
+        return {"ok": True, "clusterId": self.cluster_id, "epoch": row["epoch"], "activeNode": row["active_node"], "armed": bool(row["armed"]), "primaryEnrolled": bool(row["primary_enrolled"]), "authorityBootId": row["boot_id"], "serverTime": self.clock.wall(), "leaseTtlSeconds": TTL, "stopMarginSeconds": STOP_MARGIN, "promotionDrainSeconds": DRAIN, "quarantineUntil": row["quarantine_until"], "drainUntil": row["drain_until"], "lease": {"node": row["lease_node"], "instanceId": row["lease_instance"], "expiresAt": row["lease_expires"], "valid": bool(row["lease_id"]) and row["lease_expires"] > self.clock.wall()}, "revision": row["revision"], "nodeObservations": self.observations(row)}
+
+    def observations(self, authority):
+        result = {}
+        for node in ("primary", "oci"):
+            row = self.db.execute("SELECT instance_id,epoch,received_at,payload FROM node_observations WHERE node=? ORDER BY received_at DESC,rowid DESC LIMIT 1", (node,)).fetchone()
+            if row is None:
+                continue
+            observation = primary_io_observation(json.loads(row["payload"]))
+            if observation is None:
+                continue
+            received_age = max(0, self.clock.wall() - row["received_at"])
+            source_age = self.clock.wall() - observation["observedAtUnixMs"] / 1000
+            matches = authority["lease_node"] == node and authority["lease_instance"] == row["instance_id"] and authority["epoch"] == row["epoch"]
+            lease_valid = matches and bool(authority["lease_id"]) and authority["lease_expires"] > self.clock.wall()
+            # Keep uint64 kernel counters exact through Go/JavaScript JSON
+            # decoders. Stored/incoming evidence remains the validated integer schema.
+            reported = dict(observation)
+            if reported["childStartTicks"] is not None:
+                reported["childStartTicks"] = str(reported["childStartTicks"])
+            if reported["evidence"] is not None:
+                reported["evidence"] = {key: value if key == "state" else str(value) for key, value in reported["evidence"].items()}
+            result[node] = {"node": node, "instanceId": row["instance_id"], "epoch": row["epoch"], "receivedAt": row["received_at"],
+                            "ageSeconds": received_age, "sourceAgeSeconds": source_age, "sourceClockSkew": source_age < -30,
+                            "matchesCurrentLease": matches, "leaseValid": lease_valid,
+                            "stale": received_age > 30 or source_age > 30 or source_age < -30 or not lease_valid,
+                            "scope": "last_reported_observation_not_current_health", "counterEncoding": "decimal_string", "primaryIoWatch": reported}
+        return result
+
+    def save_observation(self, role, row, value):
+        if role != "primary":
+            return "ignored_role"
+        observation = primary_io_observation(value)
+        if observation is None:
+            return "ignored_invalid"
+        self.db.execute("SAVEPOINT optional_observation")
+        try:
+            self.db.execute("INSERT INTO node_observations(node,instance_id,epoch,received_at,payload) VALUES(?,?,?,?,?) ON CONFLICT(node,instance_id) DO UPDATE SET epoch=excluded.epoch,received_at=excluded.received_at,payload=excluded.payload", (role, row["lease_instance"], row["epoch"], self.clock.wall(), canonical(observation)))
+            # Keep at most the two most recently reporting instances per node.
+            self.db.execute("DELETE FROM node_observations WHERE node=? AND rowid NOT IN (SELECT rowid FROM node_observations WHERE node=? ORDER BY received_at DESC,rowid DESC LIMIT 2)", (role, role))
+        except sqlite3.Error:
+            self.db.execute("ROLLBACK TO optional_observation")
+            self.db.execute("RELEASE optional_observation")
+            return "ignored_storage_error"
+        self.db.execute("RELEASE optional_observation")
+        return "accepted"
 
     def _node(self, role, data):
         node, instance = data.get("node"), data.get("instanceId")
@@ -257,7 +308,10 @@ CREATE TABLE IF NOT EXISTS promotions(idempotency_key TEXT PRIMARY KEY,input_has
             raise AuthorityError("LEASE_EXPIRED", "An expired lease cannot be renewed")
         expires = self.clock.wall() + TTL
         self.db.execute("UPDATE authority SET lease_expires=?,drain_until=?,revision=revision+1 WHERE id=1", (expires, expires + DRAIN))
-        return self._lease_response(self._state())
+        result = self._lease_response(self._state())
+        if "primaryIoWatch" in data:
+            result["observationStatus"] = self.save_observation(role, row, data["primaryIoWatch"])
+        return result
 
     def release(self, role, data):
         row = self._holder(role, data)

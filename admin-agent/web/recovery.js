@@ -46,6 +46,20 @@
       ['本体への起動許可の導入', value.primaryEnrolled === true ? '登録済み' : value.primaryEnrolled === false ? '未登録' : '未取得'],
       ['コントローラー最終更新', time(value.updatedAt)], ['画面の取得時刻', time(value.fetchedAt)]
     ]));
+    const primaryReport = value.nodeObservations?.primary;
+    const io = primaryReport?.primaryIoWatch;
+    if (io) {
+      const receivedAge = (Date.now() - Number(primaryReport.receivedAt) * 1000) / 1000;
+      const sampleAge = (Date.now() - Number(io.observedAtUnixMs)) / 1000;
+      const stale = primaryReport.stale === true || !Number.isFinite(receivedAge) || !Number.isFinite(sampleAge) || receivedAge > 30 || sampleAge > 30 || receivedAge < -30 || sampleAge < -30;
+      const ioStates = { unknown: '観測不能・未確定', startup_grace: '起動猶予中', clear: 'その観測時点では停止条件なし', observing: '停止条件の継続を観測中（未確定）', confirmed: '本体が停止条件の確認を報告' };
+      const evidence = io.evidence || {};
+      const observed = rows('本体I/Oの最終外部保存記録', [['報告された状態', `${ioStates[io.state] || display(io.state)} / ${display(io.reason)}`], ['情報の古さ', stale ? '古い・時刻差あり・現在の起動許可と不一致の可能性があります' : '直近の報告です。現在の健康状態を保証しません'], ['本体の観測時刻', time(io.observedAtUnixMs)], ['権限サーバーの受信時刻', time(Number(primaryReport.receivedAt) * 1000)], ['受信からの経過', Number.isFinite(receivedAge) ? `${Math.max(0, Math.round(receivedAge))} 秒` : '未取得'], ['観測したguardian', primaryReport.instanceId], ['報告の起動世代', primaryReport.epoch], ['Bot PID / 開始ticks', `${display(io.childPid)} / ${display(io.childStartTicks)}`], ['観測したプロセス状態', evidence.state], ['条件の継続 / 確認しきい値', `${display(io.continuousSeconds)} / ${display(io.thresholdSeconds)} 秒`], ['物理 / 論理の書込完了数', `${display(evidence.physicalWrites)} / ${display(evidence.logicalWrites)}`], ['物理 / 論理 / WBTの処理中要求', `${display(evidence.physicalInflight)} / ${display(evidence.logicalInflight)} / ${display(evidence.wbtInflight)}`], ['権限サーバー応答時のlease有効性', primaryReport.leaseValid === true ? '同じ起動インスタンスの許可を確認' : '確認できない・失効・別インスタンス'], ['コントローラーの取得時刻', time(value.authorityObservationFetchedAt)]]);
+      observed.append(text('p', 'これは本体が過去に報告した観測です。停止直前の最終報告が届かない場合もあります。未確定の観測や更新停止だけから、確定故障や現在の健康状態を推定しません。', stale ? 'error' : 'muted'));
+      raw(observed, primaryReport, false, '本体報告・外部受信時刻・対応する起動インスタンス'); content.append(observed);
+    } else {
+      content.append(rows('本体I/Oの最終外部保存記録', [['観測記録', 'まだ受信していません。I/O監視の有効化・対応版の配備・更新時の送信が必要です。']]));
+    }
     const backup = value.backup || {};
     const age = Date.parse(backup.sourceTimestamp); const elapsed = Math.floor((Date.now() - age) / 60000);
     content.append(rows('バックアップ', [

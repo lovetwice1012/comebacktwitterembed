@@ -104,7 +104,7 @@ func (a *App) recoveryStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	result := Object{"configured": true, "available": true, "fetchedAt": now()}
-	for _, key := range []string{"phase", "updatedAt", "backup", "candidate", "gates", "lastError", "primaryEnrolled", "activeNode", "epoch", "download", "import", "nextPrepareAt"} {
+	for _, key := range []string{"phase", "updatedAt", "backup", "candidate", "gates", "lastError", "primaryEnrolled", "activeNode", "epoch", "download", "import", "nextPrepareAt", "nodeObservations", "authorityObservationFetchedAt"} {
 		if item, exists := value[key]; exists {
 			result[key] = redactRecovery(item, a.cfg.RecoveryControllerToken)
 		}

@@ -38,8 +38,10 @@ from urllib.parse import urlsplit
 
 try:
     from .authority import Clock, PROOF_DOMAIN, STOP_MARGIN, canonical, load_root_config
+    from .node_observation import primary_io_observation
 except ImportError:
     from authority import Clock, PROOF_DOMAIN, STOP_MARGIN, canonical, load_root_config
+    from node_observation import primary_io_observation
 
 RENEW_INTERVAL = 10.0
 REQUEST_BUDGET = 5.0
@@ -689,8 +691,15 @@ class Guardian:
         self.stop_event.set()
         self.fencer.fence()
 
-    def lease_body(self):
-        return {"node": self.node, "instanceId": self.instance_id, "epoch": self.lease["epoch"], "leaseId": self.lease["leaseId"]}
+    def lease_body(self, include_observation=False):
+        value = {"node": self.node, "instanceId": self.instance_id, "epoch": self.lease["epoch"], "leaseId": self.lease["leaseId"]}
+        if include_observation and self.node == "primary" and self.io_watch:
+            if self.io_watch.confirmed or self.stop_event.is_set() or self.fence_event.is_set():
+                raise RemoteError("PRIMARY_IO_STALL")
+            observation = primary_io_observation(self.io_watch.snapshot())
+            if observation is not None:
+                value["primaryIoWatch"] = observation
+        return value
 
     def wait(self, seconds):
         self.stop_event.wait(seconds)
@@ -732,7 +741,7 @@ class Guardian:
                             break
                         if self.clock.monotonic() >= next_renewal:
                             try:
-                                renewed, request_started = self.call("POST", "/v1/lease/renew", self.lease_body(), deadline=self.local_deadline - STOP_BUDGET)
+                                renewed, request_started = self.call("POST", "/v1/lease/renew", self.lease_body(include_observation=True), deadline=self.local_deadline - STOP_BUDGET)
                                 self.adopt(renewed, request_started)
                                 self.publish("active")
                             except Exception as error:

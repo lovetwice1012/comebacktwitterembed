@@ -307,6 +307,7 @@ class Controller:
 
     def observe_intents_once(self):
         live = self.authority()
+        self.remember_authority_observations(live)
         if live.get("activeNode") == "primary":
             self.refresh_operator_intent("primary")
             self.refresh_operator_intent("oci")
@@ -315,6 +316,10 @@ class Controller:
         else:
             raise ValueError("Unknown fleet owner while observing operator intent")
         self.update(intentObserver={"state": "observing", "checkedAt": iso_now(), "intervalSeconds": 15})
+
+    def remember_authority_observations(self, value):
+        if isinstance(value.get("nodeObservations"), dict):
+            self.update(nodeObservations=value["nodeObservations"], authorityObservationFetchedAt=iso_now())
 
     def start_intent_observer(self):
         with self.lock:
@@ -564,6 +569,7 @@ class Controller:
 
     def tick(self):
         authority = self.authority()
+        self.remember_authority_observations(authority)
         self.update(primaryEnrolled=authority["primaryEnrolled"], activeNode=authority["activeNode"], epoch=authority["epoch"])
         if authority["activeNode"] == "oci":
             # Never import a daily-old primary dump over an OCI database that

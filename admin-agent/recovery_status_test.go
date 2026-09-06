@@ -21,8 +21,10 @@ func TestRecoveryStatusBothAdminsAndCredentialBoundary(t *testing.T) {
 			t.Error("administrator session was forwarded to controller")
 		}
 		jsonResponse(w, 200, Object{"phase": "STANDBY_READY", "activeNode": "primary", "primaryEnrolled": true,
-			"candidate": Object{"checks": Object{"ciphertextVerified": true}, "statusToken": "must-not-reach-browser"},
-			"lastError": Object{"message": "header accidentally contained " + token}, "authorityControllerToken": "must-not-reach-browser"})
+			"candidate":                     Object{"checks": Object{"ciphertextVerified": true}, "statusToken": "must-not-reach-browser"},
+			"nodeObservations":              Object{"primary": Object{"instanceId": "primary:observed-instance", "receivedAt": 1234, "stale": true, "scope": "last_reported_observation_not_current_health", "primaryIoWatch": Object{"state": "observing", "reason": "continuous_stall_candidate", "continuousSeconds": 175, "evidence": Object{"physicalWrites": "18446744073709551615"}}}},
+			"authorityObservationFetchedAt": "2026-09-06T05:00:00Z",
+			"lastError":                     Object{"message": "header accidentally contained " + token}, "authorityControllerToken": "must-not-reach-browser"})
 	}))
 	defer controller.Close()
 	a.cfg.RecoveryControllerURL, a.cfg.RecoveryControllerToken = controller.URL, token
@@ -33,6 +35,10 @@ func TestRecoveryStatusBothAdminsAndCredentialBoundary(t *testing.T) {
 		}
 		if strings.Contains(w.Body.String(), token) || strings.Contains(w.Body.String(), "must-not-reach-browser") {
 			t.Fatal("controller credentials escaped to browser")
+		}
+		observed := nested(nested(object(t, w), "nodeObservations"), "primary")
+		if observed["stale"] != true || nested(observed, "primaryIoWatch")["state"] != "observing" || nested(nested(observed, "primaryIoWatch"), "evidence")["physicalWrites"] != "18446744073709551615" {
+			t.Fatal("last reported I/O observation was dropped or misrepresented")
 		}
 	}
 	if denied := principalRequest(a, "GET", "/v1/recovery", "111111111111111111", nil, nil, ""); denied.Code != 401 {
