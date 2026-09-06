@@ -1,0 +1,53 @@
+{
+  "schemaVersion": 1,
+  "verification": "confirmed",
+  "backup": {
+    "backupId": "20260906T070638Z",
+    "source": "oci",
+    "database": "ComebackTwitterEmbed",
+    "epoch": 3,
+    "candidateId": "75e2608efe3942eec4a82864",
+    "filename": "20260906T070638Z__oci_3.sql.zst.age",
+    "compression": "zstd",
+    "encryption": "age",
+    "bytes": 820611119,
+    "sha256": "abba8226127293a560bde91636a41e1c39e59b0883309f3577ae9bfec46cd0a3"
+  },
+  "service": {
+    "unit": "cbte-recovery-backup.service",
+    "startedAt": "2026-09-06T07:06:38Z",
+    "exitedAt": "2026-09-06T07:13:06Z",
+    "result": "success",
+    "exitCode": 0,
+    "stateAfterCompletion": "inactive",
+    "mainPidAfterCompletion": 0
+  },
+  "localReceipt": {
+    "state": "UPLOADED",
+    "uploadedAtUnixSeconds": 1788678786.854776
+  },
+  "nasVerification": {
+    "method": "GET",
+    "path": "/v1/active-backups/3/20260906T070638Z",
+    "probeStartedAt": "2026-09-06T07:14:34.862325Z",
+    "httpStatus": 200,
+    "stored": true,
+    "manifestMatchesLocalReceipt": true,
+    "matchedFields": [
+      "source",
+      "database",
+      "backupId",
+      "epoch",
+      "candidateId",
+      "bytes",
+      "sha256"
+    ]
+  },
+  "coordination": {
+    "heavyReportWorkPausedBeforeStart": true,
+    "backupSafeSignalAt": "2026-09-06T07:06:04Z",
+    "botPidAtStart": 197333,
+    "freeBytesBeforeStart": 6208815104,
+    "configuredMinimumFreeBytes": 4294967296
+  }
+}
