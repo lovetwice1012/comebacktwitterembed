@@ -292,6 +292,19 @@ class WorkloadTests(unittest.TestCase):
         with self.assertRaises(workload.ActivationError):
             self.wrapper.prepare_runtime()
 
+    def test_oci_forces_legacy_plaintext_dump_scheduler_off_after_all_environment_merges(self):
+        self.wrapper.environment.update(DB_DUMP_DISABLED="false", DB_DUMP_RUN_ON_START="true")
+        common = self.env_dir / "common.env"
+        original = common.read_text() + "DB_DUMP_DISABLED=false\nDB_DUMP_RUN_ON_START=true\n"
+        self.private(common, original)
+        self.private(self.env_dir / "bot.env", "DB_DUMP_DISABLED=0\nDB_DUMP_RUN_ON_START=1\n")
+        credentials = self.prepare()
+        environments = self.wrapper.environments(credentials)
+        self.assertEqual(environments["bot"]["DB_DUMP_DISABLED"], "true")
+        self.assertEqual(environments["bot"]["DB_DUMP_RUN_ON_START"], "false")
+        self.assertEqual(common.read_text(), original)
+        self.assertEqual((self.env_dir / "bot.env").read_text(), "DB_DUMP_DISABLED=0\nDB_DUMP_RUN_ON_START=1\n")
+
     def test_child_failure_stops_group_children_and_fences_database_read_only(self):
         self.backend.fail_bot = True
         self.assertEqual(self.wrapper.run(), 1)

@@ -444,6 +444,9 @@ class Workload:
         result["reports"].update(ADMIN_ANALYSIS_LISTEN="127.0.0.1:30991", ADMIN_ANALYSIS_STATE_DIR=str(self.runtime / "reports"), ADMIN_ANALYSIS_ACTIONS="reports.build", ADMIN_WORKER_DEADLINE_MS="780000")
         result["interactive"].pop("ADMIN_ANALYSIS_ACTIONS", None)
         result["bot"].update(DASHBOARD_DISABLED="false", DISABLE_DASHBOARD="false",
+                             # OCI backups belong exclusively to the encrypted
+                             # active-backup timer; never run legacy plain gzip dumps.
+                             DB_DUMP_DISABLED="true", DB_DUMP_RUN_ON_START="false",
                              CBTE_RECOVERY_BOOTSTRAP_ID=self.candidate["id"],
                              CBTE_RECOVERY_BOOTSTRAP_DIR=str(self.runtime / "bootstrap"))
         return result
