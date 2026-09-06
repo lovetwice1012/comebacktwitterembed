@@ -7,6 +7,7 @@ const fetch = require('../providerFetch').withDeadline(require('node-fetch'));
 const { t } = require('../locales');
 const { getSaveTweetQuotaOverride } = require('../providers/_provider_settings');
 const { getSavedRoot, assertSavedPath } = require('../savedRoot');
+const saveControl = require('../savedControl');
 
 const DEFAULT_QUOTA_BYTES = 100 * 1024 * 1024; // 100 MB
 const PUBLIC_BASE_URL = 'https://twidata.sprink.cloud/data/';
@@ -38,7 +39,19 @@ function safeMediaFileName(url) {
 async function assertPlainDirectory(directory) {
     const stat = await fsp.lstat(directory).catch(error => { if (error.code === 'ENOENT') return null; throw error; });
     if (stat?.isSymbolicLink() || stat && !stat.isDirectory()) throw new Error('Saved-data directories must not be symbolic links or files.');
-    if (!stat) await fsp.mkdir(directory, { recursive: true });
+    if (!stat) {
+        if (saveControl.configuredGid() === null) await fsp.mkdir(directory, { recursive: true });
+        else {
+            try { await fsp.mkdir(directory); }
+            catch (error) {
+                if (error.code !== 'EEXIST') throw error;
+                const concurrent = await fsp.lstat(directory);
+                if (concurrent.isSymbolicLink() || !concurrent.isDirectory()) throw new Error('Concurrent saved-data path is not a plain directory.');
+                return; // Another creator owns its permissions; do not chmod it.
+            }
+            await saveControl.prepareCreatedDirectory(directory);
+        }
+    }
 }
 async function downloadToFile(url, destPath) {
     const response = await fetch(url, { timeout: 30000, size: 25 * 1024 * 1024 });
@@ -80,17 +93,21 @@ async function saveTweetByUrl(userId, tweetUrl) {
     await assertPlainDirectory(root); await assertPlainDirectory(userDir);
     const lockPath = path.join(userDir, '.admin-save.lock');
     let lock;
-    try { lock = await fsp.open(lockPath, 'wx', 0o600); }
+    try { lock = await saveControl.create(lockPath); }
     catch (error) {
         if (error.code !== 'EEXIST') throw error;
-        const previous = JSON.parse(await fsp.readFile(lockPath, 'utf8'));
+        const record = await saveControl.read(lockPath, 'lock');
+        const previous = record.value;
+        if (!previous || typeof previous !== 'object' || !Number.isSafeInteger(previous.pid) || previous.pid < 1 || previous.pid > 2147483647 || typeof previous.tweetId !== 'string' || !/^\d{1,22}$/.test(previous.tweetId)) {
+            throw Object.assign(new Error('The existing save lock is incomplete or unrecognized; it was preserved.'), { code: 'SAVE_BUSY' });
+        }
         let alive = true;
         try { process.kill(previous.pid, 0); } catch (cause) { if (cause.code === 'ESRCH') alive = false; }
         if (alive) throw Object.assign(new Error('Another save is in progress for this user.'), { code: 'SAVE_BUSY' });
-        await fsp.unlink(lockPath); lock = await fsp.open(lockPath, 'wx', 0o600);
+        await saveControl.removeOwned(lockPath, record.identity); lock = await saveControl.create(lockPath);
     }
-    try { await lock.writeFile(JSON.stringify({ pid: process.pid, tweetId })); }
-    catch (error) { await lock.close(); await fsp.unlink(lockPath).catch(() => {}); throw error; }
+    try { await lock.handle.writeFile(JSON.stringify({ pid: process.pid, tweetId })); await lock.handle.sync(); }
+    catch (error) { await lock.handle.close(); await saveControl.removeOwned(lockPath, lock.identity).catch(() => {}); throw error; }
     const stageRoot = path.join(root, '.admin-staging'), trashRoot = path.join(root, '.admin-trash');
     const journal = path.join(userDir, '.admin-save-journal.json');
     const receipt = `${userId}-${tweetId}-${crypto.randomUUID()}`;
@@ -100,21 +117,22 @@ async function saveTweetByUrl(userId, tweetUrl) {
         await assertPlainDirectory(stageRoot); await assertPlainDirectory(trashRoot);
         // Recover a process interruption between the two directory renames.
         if (await pathExists(journal)) {
-            const old = JSON.parse(await fsp.readFile(journal, 'utf8'));
+            const record = await saveControl.read(journal, 'journal');
+            const old = record.value;
             const oldTarget = path.resolve(old.target || ''), oldBackup = path.resolve(old.backup || ''), oldStage = path.resolve(old.stage || '');
             if (path.dirname(oldTarget) !== userDir || !/^\d{1,22}$/.test(path.basename(oldTarget))
                 || path.dirname(oldBackup) !== trashRoot || path.dirname(oldStage) !== stageRoot
                 || !path.basename(oldBackup).startsWith(`${userId}-`) || !path.basename(oldStage).startsWith(`${userId}-`)) throw new Error('Invalid saved-data recovery journal.');
             if (!await pathExists(oldTarget) && await pathExists(oldBackup)) await fsp.rename(oldBackup, oldTarget);
             await fsp.rm(oldStage, { recursive: true, force: true });
-            await fsp.unlink(journal);
+            await saveControl.removeOwned(journal, record.identity);
         }
         const existing = await fsp.lstat(tweetDir).catch(error => { if (error.code === 'ENOENT') return null; throw error; });
         if (existing?.isSymbolicLink() || existing && !existing.isDirectory()) throw new Error('Existing saved tweet is not a plain directory.');
         const quota = await getSaveTweetQuotaOverride(userId) ?? DEFAULT_QUOTA_BYTES;
         const retainedBytes = await userSavedSize(userDir) - await treeSize(tweetDir);
         if (retainedBytes >= quota) return { saved: false, reason: 'quota', tweetId };
-        await fsp.mkdir(stage);
+        await assertPlainDirectory(stage);
         const response = await fetch(apiUrl, { timeout: 30000, size: 4 * 1024 * 1024 });
         if (!response.ok) throw new Error(`Saved tweet HTTP ${response.status}`);
         const tweetData = await response.json();
@@ -140,19 +158,19 @@ async function saveTweetByUrl(userId, tweetUrl) {
         // leaves it untouched and removes only this newly created staging tree.
         const resultingBytes = retainedBytes + await treeSize(stage);
         if (resultingBytes > quota) return { saved: false, reason: 'quota', tweetId };
-        const journalHandle = await fsp.open(journal, 'w', 0o600);
-        try { await journalHandle.writeFile(JSON.stringify({ target: tweetDir, stage, backup })); await journalHandle.sync(); } finally { await journalHandle.close(); }
+        const journalFile = await saveControl.create(journal);
+        try { await journalFile.handle.writeFile(JSON.stringify({ target: tweetDir, stage, backup })); await journalFile.handle.sync(); } finally { await journalFile.handle.close(); }
         if (existing) await fsp.rename(tweetDir, backup);
         try { await fsp.rename(stage, tweetDir); installed = true; }
         catch (error) {
             if (existing && await pathExists(backup) && !await pathExists(tweetDir)) await fsp.rename(backup, tweetDir);
             throw error;
         }
-        await fsp.unlink(journal);
+        await saveControl.removeOwned(journal, journalFile.identity);
         return { saved: true, tweetId, ...(existing ? { previousVersionReceipt: receipt } : {}) };
     } finally {
         if (!installed) await fsp.rm(stage, { recursive: true, force: true }).catch(() => {});
-        await lock.close(); await fsp.unlink(lockPath).catch(() => {});
+        await lock.handle.close(); await saveControl.removeOwned(lockPath, lock.identity).catch(() => {});
     }
 }
 

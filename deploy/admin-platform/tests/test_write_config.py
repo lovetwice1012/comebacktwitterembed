@@ -71,6 +71,10 @@ class PrimaryConfigurationTests(unittest.TestCase):
         self.assertEqual(core["ADMIN_AGENT_WORKER_DIR"], "/opt/cbte-admin/worker-runtime")
         self.assertEqual(core["ADMIN_AGENT_BOT_UNIT"], "cbte.service")
         self.assertEqual(self.read("analysis")["SAVES_DIR"], "/var/lib/cbte-admin-analysis/saves")
+        self.assertEqual(self.read("analysis")["ADMIN_SAVE_CONTROL_GID"], "456")
+        self.assertEqual(self.read("bot")["ADMIN_SAVE_CONTROL_GID"], "456")
+        self.assertNotIn("ADMIN_SAVE_CONTROL_GID", self.read("core"))
+        self.assertNotIn("ADMIN_SAVE_CONTROL_GID", self.read("reports"))
         self.assertEqual(self.read("reports")["ADMIN_ANALYSIS_STATE_DIR"], "/var/lib/cbte-admin-reports")
         self.assertEqual(self.read("executor")["ADMIN_AGENT_EXECUTOR_ALLOWED_UID"], "123")
         self.assertEqual(self.read("bot")["PORT"], "30989")
@@ -140,6 +144,11 @@ class PrimaryConfigurationTests(unittest.TestCase):
         self.config_path.write_text(json.dumps(self.config), encoding="utf-8")
         self.generate()
         self.assertEqual(self.read("core")["ADMIN_DISCORD_CLIENT_SECRET"], self.config["clientSecret"])
+
+    def test_save_control_group_must_be_a_nonzero_bounded_integer(self):
+        for value in [0, -1, 2147483648, "456", True]:
+            with self.subTest(value=value), self.assertRaises(writer.ConfigurationError):
+                writer.write_configuration(self.source, self.revision, self.directory, SimpleNamespace(pw_uid=123, pw_gid=value))
 
 
 if __name__ == "__main__":

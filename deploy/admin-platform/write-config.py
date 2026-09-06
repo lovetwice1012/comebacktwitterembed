@@ -100,6 +100,8 @@ def hash_password(binary, password):
 def write_configuration(source, revision, directory, account, binary=pathlib.Path("/opt/cbte-admin/current/cbte-admin")):
     if not re.fullmatch(r"[0-9a-f]{40}", revision):
         raise ConfigurationError("Invalid release revision")
+    if type(account.pw_gid) is not int or not 1 <= account.pw_gid <= 2147483647:
+        raise ConfigurationError("cbte-admin must have a numeric nonzero group ID")
     if directory.is_symlink():
         raise ConfigurationError("Refusing a symbolic-link configuration directory")
     directory.mkdir(mode=0o700, exist_ok=True)
@@ -164,6 +166,7 @@ def write_configuration(source, revision, directory, account, binary=pathlib.Pat
     }
     analysis = {
         **common, "ADMIN_ANALYSIS_LISTEN": "127.0.0.1:30990",
+        "ADMIN_SAVE_CONTROL_GID": str(account.pw_gid),
         "ADMIN_ANALYSIS_STATE_DIR": "/var/lib/cbte-admin-analysis",
         "SAVES_DIR": "/var/lib/cbte-admin-analysis/saves", "ADMIN_WORKER_DEADLINE_MS": "110000",
     }
@@ -182,6 +185,7 @@ def write_configuration(source, revision, directory, account, binary=pathlib.Pat
     bot = {
         "ADMIN_AGENT_TOKEN": token, "ADMIN_OWNER_ID": owner, "ADMIN_AGENT_URL": "http://127.0.0.1:30988",
         "ADMIN_ALLOWED_USER_IDS": ADMINS, "DASHBOARD_ADMIN_USER_IDS": ADMINS,
+        "ADMIN_SAVE_CONTROL_GID": str(account.pw_gid),
         "ADMIN_AGENT_PUBLIC_URL": public + "/ops/",
         "ADMIN_AGENT_EXECUTOR_SOCKET": "/run/cbte-admin-executor/executor.sock",
         "ADMIN_TELEMETRY_DIR": "/var/lib/cbte-admin-bot-spool",
