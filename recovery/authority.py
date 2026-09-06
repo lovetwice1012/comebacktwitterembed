@@ -144,7 +144,8 @@ CREATE TABLE IF NOT EXISTS node_observations(node TEXT NOT NULL CHECK(node IN ('
                 else:
                     if not handoff_ready:
                         quarantine = max(quarantine, previous["quarantine_until"], previous["lease_expires"] + DRAIN, previous["last_wall"] + TTL + DRAIN)
-                    self.db.execute("UPDATE authority SET epoch=epoch+1,lease_id=NULL,lease_node=NULL,lease_instance=NULL,quarantine_until=?,drain_until=MAX(drain_until,?),boot_id=?,last_wall=?,revision=revision+1 WHERE id=1", (quarantine, quarantine, self.boot_id, self.last_wall))
+                    drain_until = quarantine if handoff_ready else max(previous["drain_until"], quarantine)
+                    self.db.execute("UPDATE authority SET epoch=epoch+1,lease_id=NULL,lease_node=NULL,lease_instance=NULL,quarantine_until=?,drain_until=?,boot_id=?,last_wall=?,revision=revision+1 WHERE id=1", (quarantine, drain_until, self.boot_id, self.last_wall))
                     if previous["primary_enrolled"]:
                         saved_proof = json.loads(previous["enrollment"])["proof"]
                         policy = self.config.get("enrollmentPolicy", {})
