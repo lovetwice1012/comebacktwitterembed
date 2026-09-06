@@ -184,5 +184,78 @@ class NativeAclTests(unittest.TestCase):
             try: self.assertEqual(access.parse_acl(native.read(descriptor, default=True)), {})
             finally: os.close(descriptor)
 
+    def test_native_access_and_default_mask_changes_preserve_other_principals(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            native = access.NativeAcl()
+            for default in [False, True]:
+                target = Path(temporary) / ("directory" if default else "data.json")
+                if default: target.mkdir()
+                else: target.write_text("fixture")
+                descriptor = os.open(target, os.O_RDONLY | os.O_NOFOLLOW)
+                try:
+                    original = "user::rwx\nuser:22345:rwx\ngroup::rwx\ngroup:32345:rwx\nmask::r--\nother::---\n"
+                    native.write(descriptor, original, default)
+                    before = access.parse_acl(native.read(descriptor, default))
+                    updated = access.repair_acl(native.read(descriptor, default), 12345, 7 if default else 6, 0, 0, {12345}, default)
+                    native.write(descriptor, updated, default)
+                    after = access.parse_acl(native.read(descriptor, default))
+                    for key in [("user", "22345"), ("group", ""), ("group", "32345")]:
+                        self.assertEqual(before[key] & before[("mask", "")], after[key] & after[("mask", "")])
+                    self.assertIsNone(access.repair_acl(native.read(descriptor, default), 12345, 7 if default else 6, 0, 0, {12345}, default))
+                finally: os.close(descriptor)
+
+    def test_native_checkpoint_batches_skip_links_and_controls_and_do_not_rescan_completion(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            root, state, outside = directory / "saves", directory / "state", directory / "outside"
+            (root / "user").mkdir(parents=True); outside.mkdir()
+            (outside / "keep").write_text("outside fixture")
+            (root / "user" / "data.json").write_text("saved fixture")
+            (root / "hard1").write_text("hardlink fixture")
+            os.link(root / "hard1", root / "hard2")
+            (root / "link").symlink_to(outside, target_is_directory=True)
+            (root / ".admin-save.lock").write_text("private fixture")
+            native = access.NativeAcl()
+            with mock.patch.object(native, "read", wraps=native.read) as reads, mock.patch.object(native, "write", wraps=native.write) as writes:
+                for _ in range(30):
+                    result = access.run_batch(root, state, 12345, {12345}, native, max_entries=4, max_writes=2)
+                    self.assertLessEqual(result["changed"], 2)
+                    if result["state"] != "pending": break
+                self.assertEqual(result["state"], "needs_review")
+                self.assertEqual(result["deferredPaths"], 2)
+                self.assertEqual(result["controlPathsExcluded"], 1)
+                before = (reads.call_count, writes.call_count)
+                access.run_batch(root, state, 12345, {12345}, native)
+                self.assertEqual((reads.call_count, writes.call_count), before)
+            root_fd = os.open(root, os.O_RDONLY | os.O_DIRECTORY)
+            try:
+                with self.assertRaises(OSError): access.pin(root_fd, "link/keep")
+                with self.assertRaises(ValueError): access.pin(root_fd, "../outside/keep")
+            finally: os.close(root_fd)
+            self.assertEqual((outside / "keep").read_text(), "outside fixture")
+            self.assertEqual((root / ".admin-save.lock").read_text(), "private fixture")
+
+    def test_native_ctime_change_and_expired_budget_prevent_acl_writes(self):
+        for mode in ["ctime", "budget"]:
+            with self.subTest(mode=mode), tempfile.TemporaryDirectory() as temporary:
+                directory = Path(temporary)
+                root, state = directory / "saves", directory / "state"
+                root.mkdir(mode=0o750)
+                native = access.NativeAcl()
+                read = native.read
+                def changed(descriptor, default=False):
+                    value = read(descriptor, default)
+                    if mode == "ctime": os.fchmod(descriptor, stat.S_IMODE(os.fstat(descriptor).st_mode) ^ 0o010)
+                    else: time.sleep(0.08)
+                    return value
+                with mock.patch.object(native, "read", side_effect=changed), mock.patch.object(native, "write", wraps=native.write) as writes:
+                    if mode == "ctime":
+                        with self.assertRaisesRegex(ValueError, "inode_changed_during_acl_read"):
+                            access.run_batch(root, state, 12345, {12345}, native)
+                    else:
+                        result = access.run_batch(root, state, 12345, {12345}, native, budget=0.05)
+                        self.assertEqual(result["changed"], 0)
+                    writes.assert_not_called()
+
 
 if __name__ == "__main__": unittest.main()
