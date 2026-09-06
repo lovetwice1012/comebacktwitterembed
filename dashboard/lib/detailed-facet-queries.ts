@@ -31,7 +31,7 @@ export function detailedFacetBreakdownQuery(whereSql: string) {
     FROM participants p JOIN bot_provider_content_events c ON c.content_event_id=p.content_event_id
     GROUP BY p.group_no
   )
-  SELECT /*+ SET_VAR(tmp_table_size=1073741824) */ r.provider_id,r.account_key,r.facet_key,r.facet_value,
+  SELECT /*+ SET_VAR(tmp_table_size=2147483648) */ r.provider_id,r.account_key,r.facet_key,r.facet_value,
     r.events,a.users,a.guilds,r.avg_numeric_value,r.min_numeric_value,r.max_numeric_value
   FROM ranked r JOIN audiences a ON a.group_no=r.group_no ORDER BY r.events DESC`;
 }
@@ -75,7 +75,7 @@ export function detailedProviderMarketingSegmentsQuery(whereSql: string, metricP
     JOIN bot_provider_content_events c ON c.content_event_id=s.content_event_id
     GROUP BY r.group_no
   )
-  SELECT /*+ SET_VAR(tmp_table_size=1073741824) */ r.provider_id,r.account_key,r.metric_key,r.facet_value,
+  SELECT /*+ SET_VAR(tmp_table_size=2147483648) */ r.provider_id,r.account_key,r.metric_key,r.facet_value,
     r.events,a.users,a.guilds,a.urls,r.avg_numeric_value,NULL AS sum_numeric_value,
     r.min_numeric_value,r.max_numeric_value,a.latest_ms
   FROM candidates r JOIN audiences a ON a.group_no=r.group_no
