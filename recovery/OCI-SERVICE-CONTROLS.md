@@ -12,4 +12,6 @@ The emergency recovery tab reads bounded Bot, interactive worker and report work
 
 The OCI monitor does not raise absent-worker incidents while operator policy says stopped/maintenance, and never queues independent analysis-service restarts. Unsupported unit journal collectors report `not_applicable`. Primary installations retain the existing full systemd controls.
 
+Previously recorded Bot-process, local-dashboard and analysis-worker absence incidents become `Suppressed` under planned OCI stopped/maintenance policy. The reason is `planned_standby`, with `endpointHealth=not_established`: this is not a successful health recovery. Original evidence and classification events remain in history, pending notification retries are suppressed, and a later real failure under running policy reopens the incident. Other incident fingerprints are unchanged.
+
 Install `systemd/cbte-admin-executor.service` with a root-owned mode-0600 `/etc/cbte-recovery/admin/executor.env` based on `oci-executor.env.example`. Set the actual `cbte-admin` UID/GID and enable the executor. The core environment must use the same service profile, Bot unit, and Unix socket. This installation does not start the Bot workload or change fleet ownership.

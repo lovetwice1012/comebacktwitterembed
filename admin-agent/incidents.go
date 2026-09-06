@@ -36,16 +36,16 @@ func (a *App) upsertIncident(fingerprint, title string, evidence Object) (string
 	var id, status string
 	var revision int
 	e = tx.QueryRow("SELECT id,status,revision FROM incidents WHERE fingerprint=?", fingerprint).Scan(&id, &status, &revision)
-	changed := errors.Is(e, sql.ErrNoRows) || status == "Resolved"
+	changed := errors.Is(e, sql.ErrNoRows) || status == "Resolved" || status == "Suppressed"
 	if errors.Is(e, sql.ErrNoRows) {
 		id = randomID()
 		revision = 1
 		_, e = tx.Exec("INSERT INTO incidents(id,fingerprint,title,status,revision,created_at,updated_at,evidence) VALUES(?,?,?,'Confirmed',?,?,?,?)", id, fingerprint, title, revision, now(), now(), encode(evidence))
 	} else if e == nil {
-		if status == "Resolved" {
+		if status == "Resolved" || status == "Suppressed" {
 			revision++
 		}
-		_, e = tx.Exec("UPDATE incidents SET title=?,status='Confirmed',revision=?,updated_at=?,evidence=?,recovery_count=0,recovery_start=NULL WHERE id=?", title, revision, now(), encode(evidence), id)
+		_, e = tx.Exec("UPDATE incidents SET title=?,status='Confirmed',revision=?,updated_at=?,evidence=?,acknowledged=CASE WHEN status IN ('Resolved','Suppressed') THEN 0 ELSE acknowledged END,recovery_count=0,recovery_start=NULL WHERE id=?", title, revision, now(), encode(evidence), id)
 	}
 	if e != nil {
 		return "", false, e
@@ -67,7 +67,7 @@ func (a *App) recoverIncident(fingerprint string, evidence Object) error {
 	var revision, count int
 	var start sql.NullString
 	e = tx.QueryRow("SELECT id,title,status,revision,recovery_count,recovery_start FROM incidents WHERE fingerprint=?", fingerprint).Scan(&id, &title, &status, &revision, &count, &start)
-	if errors.Is(e, sql.ErrNoRows) || status == "Resolved" {
+	if errors.Is(e, sql.ErrNoRows) || status == "Resolved" || status == "Suppressed" {
 		return nil
 	}
 	if e != nil {
@@ -101,7 +101,7 @@ func scanIncident(row interface{ Scan(...any) error }) (Object, error) {
 	var revision, ack, count int
 	var recovery sql.NullString
 	e := row.Scan(&id, &fingerprint, &title, &status, &revision, &created, &updated, &evidence, &ack, &count, &recovery)
-	return Object{"id": id, "fingerprint": fingerprint, "title": title, "status": status, "revision": revision, "createdAt": created, "updatedAt": updated, "evidence": decode(evidence), "acknowledged": ack == 1, "recoverySuccessCount": count, "recoveryStartedAt": nullable(recovery)}, e
+	return Object{"id": id, "fingerprint": fingerprint, "title": title, "status": status, "actionable": status != "Resolved" && status != "Suppressed", "revision": revision, "createdAt": created, "updatedAt": updated, "evidence": decode(evidence), "acknowledged": ack == 1, "recoverySuccessCount": count, "recoveryStartedAt": nullable(recovery)}, e
 }
 
 const incidentColumns = "id,fingerprint,title,status,revision,created_at,updated_at,evidence,acknowledged,recovery_count,recovery_start"
@@ -110,7 +110,7 @@ func (a *App) incidents(w http.ResponseWriter, r *http.Request) {
 	where := "1=1"
 	args := []any{}
 	if r.URL.Query().Get("status") == "active" {
-		where = "status<>'Resolved'"
+		where = "status NOT IN ('Resolved','Suppressed')"
 	}
 	if c := r.URL.Query().Get("cursor"); c != "" {
 		where += " AND updated_at<?"

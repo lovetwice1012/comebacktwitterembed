@@ -311,7 +311,11 @@ func (a *App) health(w http.ResponseWriter, r *http.Request) {
 			monitorState = "stalled"
 		}
 	}
-	jsonResponse(w, 200, Object{"ok": true, "version": version, "bootId": a.boot, "time": now(), "cursor": cursor, "pendingActions": pending, "unknownActions": unknown, "monitor": Object{"state": monitorState, "lastPersistedAt": savedAt, "scope": "management_observation_loop_only"}, "snapshot": snapshot, "journalCollectors": a.journalHealth(), "capabilities": Object{"worker": a.cfg.Worker != "" || a.cfg.WorkerURL != "", "workerIsolation": map[bool]string{true: "independent-service", false: "local-child"}[a.cfg.WorkerURL != ""], "localLogin": passwordHash != "", "executor": a.cfg.ExecutorSocket != "", "discordNotifications": a.cfg.DiscordWebhook != "", "secondaryNotifications": a.cfg.PushWebhook != "", "llm": false, "messageViews": false, "linkClicks": false}})
+	workloadMonitoring := Object{"state": "unknown"}
+	if policy, e := a.loadPolicy(); e == nil {
+		workloadMonitoring = workloadMonitoringState(a.cfg, policy)
+	}
+	jsonResponse(w, 200, Object{"ok": true, "version": version, "bootId": a.boot, "time": now(), "cursor": cursor, "pendingActions": pending, "unknownActions": unknown, "monitor": Object{"state": monitorState, "lastPersistedAt": savedAt, "scope": "management_observation_loop_only"}, "workloadMonitoring": workloadMonitoring, "snapshot": snapshot, "journalCollectors": a.journalHealth(), "capabilities": Object{"worker": a.cfg.Worker != "" || a.cfg.WorkerURL != "", "workerIsolation": map[bool]string{true: "independent-service", false: "local-child"}[a.cfg.WorkerURL != ""], "localLogin": passwordHash != "", "executor": a.cfg.ExecutorSocket != "", "discordNotifications": a.cfg.DiscordWebhook != "", "secondaryNotifications": a.cfg.PushWebhook != "", "llm": false, "messageViews": false, "linkClicks": false}})
 }
 func (a *App) ingest(w http.ResponseWriter, r *http.Request) {
 	var raw json.RawMessage

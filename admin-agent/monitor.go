@@ -282,6 +282,9 @@ func (a *App) monitorOnce(ctx context.Context) {
 	if t, e := time.Parse(time.RFC3339Nano, p.MaintenanceUntil); e == nil && time.Now().Before(t) {
 		maintenance = true
 	}
+	if e := a.suppressPlannedOCIIncidents(p, eventID); e != nil {
+		log.Printf("planned OCI incident classification failed: %v", e)
+	}
 	unit := nested(snapshot, "unit")
 	local, pub := nested(snapshot, "localHTTP"), nested(snapshot, "publicHTTP")
 	active := str(unit["ActiveState"])
