@@ -38,6 +38,42 @@ test('metric batching preserves all increments for the same bucket', async () =>
     }
 });
 
+test('failed telemetry persistence does not recapture its SQL batch through console forwarding', async () => {
+    _internal.clearBackgroundWorkForTest();
+    const tracking = require('../../src/errorTracking');
+    const capture = require('../../src/consoleCapture');
+    const dbPath = require.resolve('../../src/db');
+    const original = require.cache[dbPath];
+    const originalWarn = console.warn;
+    const buffer = { text: '' };
+    let queries = 0;
+    let directLogs = 0;
+    console.warn = (...args) => capture.append(buffer, args.join(' '));
+    require.cache[dbPath] = { id: dbPath, filename: dbPath, loaded: true, exports: {
+        queryDatabase: async (_sql, _params, options) => {
+            queries++;
+            if (options?.logErrors !== false) {
+                directLogs++;
+                tracking.recordMetric('recursive_database_log');
+            }
+            throw Object.assign(new Error('definer missing'), { code: 'ER_NO_SUCH_USER' });
+        },
+    } };
+    try {
+        tracking.recordMetric('initial_metric');
+        await tracking.flushErrorTrackingQueue();
+        await tracking.flushErrorTrackingQueue();
+        assert.equal(queries, 1);
+        assert.equal(directLogs, 0);
+        assert.equal(buffer.text, '');
+    } finally {
+        console.warn = originalWarn;
+        if (original) require.cache[dbPath] = original;
+        else delete require.cache[dbPath];
+        _internal.clearBackgroundWorkForTest();
+    }
+});
+
 test('error tracking schema declares event and bucket tables', () => {
     assert.equal(TABLES.botErrorEvents, 'bot_error_events');
     assert.equal(TABLES.botErrorBuckets, 'bot_error_buckets');

@@ -48,7 +48,7 @@ function ensureDatabase() {
         createPool: options => _mysql.createPool(options),
         credentials: cfg,
         onError: (error, options) => {
-            if (shouldLogDatabaseError(error, options)) console.error(error);
+            if (shouldLogDatabaseError(error, options)) console.error('[database]', databaseErrorDiagnostic(error));
         },
     });
     return _database;
@@ -64,10 +64,26 @@ const connection = new Proxy({}, {
 });
 
 function shouldLogDatabaseError(err, options) {
+    if (options?.logErrors === false) return false;
     const suppressedErrorCodes = Array.isArray(options?.suppressErrorCodes)
         ? options.suppressErrorCodes
         : [];
     return !suppressedErrorCodes.includes(err?.code);
+}
+
+function databaseErrorDiagnostic(err) {
+    // mysql errors can contain the entire rendered SQL statement, including a
+    // batch of prior diagnostic payloads. Never feed that batch into console
+    // forwarding again. The caller still receives the original error object.
+    const text = (value, limit) => value == null ? null : String(value).slice(0, limit);
+    return {
+        name: text(err?.name, 128),
+        code: text(err?.code, 128),
+        errno: Number.isFinite(err?.errno) ? err.errno : null,
+        sqlState: text(err?.sqlState, 16),
+        message: text(err?.sqlMessage || err?.message || err, 4096),
+        stack: text(err?.stack, 8192),
+    };
 }
 
 async function queryDatabase(query, params = [], options = {}) {
@@ -109,5 +125,5 @@ module.exports = {
     ensureUserExistsInDatabase,
     getDbCredentials,
     closeDatabaseConnection,
-    _internal: { shouldLogDatabaseError },
+    _internal: { shouldLogDatabaseError, databaseErrorDiagnostic },
 };

@@ -412,7 +412,7 @@ function warnFlushFailure(err) {
     const timestamp = nowMs();
     if (timestamp - lastFlushWarningAt < 60000) return;
     lastFlushWarningAt = timestamp;
-    console.warn('[errorTracking] Failed to flush error tracking queue:', err?.message || err);
+    console.warn('[errorTracking] Failed to flush error tracking queue:', String(err?.message || err).slice(0, 4096));
 }
 
 function incrementErrorBucket(row) {
@@ -1383,7 +1383,11 @@ async function flushErrorTrackingQueue() {
     bucketIncrements.clear();
 
     try {
-        const { queryDatabase } = require('./db');
+        const { queryDatabase: executeQuery } = require('./db');
+        // Persistence errors have one bounded, rate-limited diagnostic above.
+        // Logging their rendered SQL would recapture the failed telemetry batch
+        // through the console webhook and multiply the next failed batch.
+        const queryDatabase = (sql, params = [], options = {}) => executeQuery(sql, params, { ...options, logErrors: false });
         await insertErrorEvents(queryDatabase, events);
         await insertAnalyticsEvents(queryDatabase, analyticsEvents);
         for (const item of providerContentEvents) await insertProviderContentEvent(queryDatabase, item);

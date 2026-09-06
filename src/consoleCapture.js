@@ -5,7 +5,7 @@ const TRUNCATION_MARKER = '\n[consoleCapture] Older buffered output was truncate
 
 function shouldBuffer(value) {
     const text = String(value ?? '');
-    return !text.startsWith('[dashboard] ') && !text.startsWith('[consoleFlush] ');
+    return !['[dashboard] ', '[consoleFlush] ', '[database] ', '[errorTracking] '].some(prefix => text.startsWith(prefix));
 }
 
 function append(consoleBuffer, value) {

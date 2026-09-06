@@ -12,6 +12,8 @@ test('console capture excludes dashboard build output and its own delivery error
 
     assert.equal(consoleCapture.append(buffer, '[dashboard] compiling routes'), false);
     assert.equal(consoleCapture.append(buffer, '[consoleFlush] webhook failed'), false);
+    assert.equal(consoleCapture.append(buffer, '[database] missing definer'), false);
+    assert.equal(consoleCapture.append(buffer, '[errorTracking] Failed to flush error tracking queue: unavailable'), false);
     assert.equal(consoleCapture.append(buffer, '[discord] shard reconnecting'), true);
     assert.equal(buffer.text, '[discord] shard reconnecting');
 });
