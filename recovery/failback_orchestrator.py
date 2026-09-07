@@ -122,6 +122,9 @@ class Failback:
 
     def save(self, **updates):
         previous = self.state.get("phase")
+        if updates.get("lastError") is None:
+            for key in ("lastErrorMessage", "lastErrorPhase", "lastErrorAt"):
+                self.state.pop(key, None)
         self.state.update(updates, updatedAt=now_iso())
         atomic_json(self.state_path, self.state)
         current = self.state.get("phase")
