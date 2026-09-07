@@ -3186,7 +3186,14 @@ async function getDetailedNumericFacetStats(filters: AdminDetailedAnalyticsFilte
 
 async function getProviderMetricObservedRows(filters: AdminDetailedAnalyticsFilters, window: { startMs: number; endMs: number }) {
   const content = contentWhere(filters, window, "c", { includeFacetFilter: false });
-  const rows = await prisma.$queryRawUnsafe<Row[]>(metricObservationQuery(content.whereSql, false, false), ...content.params, 1000);
+  const requestedProvider = cleanFilter(filters.providerId)?.toLowerCase();
+  const providers = requestedProvider && PROVIDER_METRIC_SCHEMA_REGISTRY[requestedProvider]
+    ? [requestedProvider]
+    : Object.keys(PROVIDER_METRIC_SCHEMA_REGISTRY);
+  const metricKeys = [...new Set(providers.flatMap((provider) => PROVIDER_METRIC_SCHEMA_REGISTRY[provider]?.metrics.map((metric) => metric.key) || []))];
+  if (!metricKeys.length) return [];
+  const metricWhere = `${content.whereSql} AND f.facet_key IN (${metricKeys.map(() => "?").join(",")})`;
+  const rows = await prisma.$queryRawUnsafe<Row[]>(metricObservationQuery(metricWhere, false, false), ...content.params, ...metricKeys, 1000);
   return rows.map(maskRow);
 }
 
