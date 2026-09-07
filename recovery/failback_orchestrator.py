@@ -359,7 +359,8 @@ class Failback:
         return self.state
 
     def run(self):
-        retry_seconds = max(5, int(self.config.get("pollSeconds", 30)))
+        poll_seconds = max(15, int(self.config.get("pollSeconds", 30)))
+        retry_seconds = max(5, min(int(self.config.get("retrySeconds", 5)), poll_seconds))
         while self.state["phase"] != "PRIMARY_ACTIVE":
             before = self.state["phase"]
             self.step()
@@ -369,10 +370,11 @@ class Failback:
             if after != before:
                 # Successful transitions are chained immediately.  Waiting at
                 # every phase made a healthy failback look like a long outage.
-                retry_seconds = max(5, int(self.config.get("pollSeconds", 30)))
+                retry_seconds = max(5, min(int(self.config.get("retrySeconds", 5)), poll_seconds))
                 continue
             LOG.info("phase %s is waiting; retrying in %ss", after, retry_seconds)
             time.sleep(retry_seconds)
+            retry_seconds = min(poll_seconds, max(retry_seconds * 2, 5))
         return 0
 
 

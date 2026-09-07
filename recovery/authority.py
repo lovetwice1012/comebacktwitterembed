@@ -145,7 +145,13 @@ CREATE TABLE IF NOT EXISTS node_observations(node TEXT NOT NULL CHECK(node IN ('
                     if not handoff_ready:
                         quarantine = max(quarantine, previous["quarantine_until"], previous["lease_expires"] + DRAIN, previous["last_wall"] + TTL + DRAIN)
                     drain_until = quarantine if handoff_ready else max(previous["drain_until"], quarantine)
-                    self.db.execute("UPDATE authority SET epoch=epoch+1,lease_id=NULL,lease_node=NULL,lease_instance=NULL,quarantine_until=?,drain_until=?,boot_id=?,last_wall=?,revision=revision+1 WHERE id=1", (quarantine, drain_until, self.boot_id, self.last_wall))
+                    # A handoff marker is written only after the source cgroup
+                    # is fenced.  Clear the old lease timestamp as well as its
+                    # identity; otherwise failback() still applies
+                    # `lease_expires + DRAIN` and waits for a lease that no
+                    # longer exists.
+                    lease_expires = self.last_wall if handoff_ready else previous["lease_expires"]
+                    self.db.execute("UPDATE authority SET epoch=epoch+1,lease_id=NULL,lease_node=NULL,lease_instance=NULL,lease_expires=?,quarantine_until=?,drain_until=?,boot_id=?,last_wall=?,revision=revision+1 WHERE id=1", (lease_expires, quarantine, drain_until, self.boot_id, self.last_wall))
                     if previous["primary_enrolled"]:
                         saved_proof = json.loads(previous["enrollment"])["proof"]
                         policy = self.config.get("enrollmentPolicy", {})
