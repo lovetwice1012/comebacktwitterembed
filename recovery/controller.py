@@ -402,9 +402,14 @@ class Controller:
             self.update(manualSwitch=dict(record, state="failed", updatedAt=iso_now(), lastError={"code": "INVALID_MANUAL_SWITCH", "message": "保存された手動切り替え対象が不正です。"}))
             return True
         if authority.get("activeNode") == target:
-            if record.get("state") != "completed":
-                self.update(manualSwitch=dict(record, state="completed", updatedAt=iso_now(), completedAt=iso_now(), lastError=None))
-            return False
+            complete = self.state.get("phase") == "ACTIVE" if target == "oci" else self._failback_completed()
+            if complete:
+                if record.get("state") != "completed":
+                    self.update(manualSwitch=dict(record, state="completed", updatedAt=iso_now(), completedAt=iso_now(), lastError=None))
+                return False
+            # Let the OCI verifier or the independent failback coordinator
+            # finish its evidence stages before the scheduler declares success.
+            return target == "primary"
         try:
             execute_timestamp = dt.datetime.fromisoformat(str(record.get("executeAt", "")).replace("Z", "+00:00")).timestamp()
         except (TypeError, ValueError, OverflowError):
@@ -438,6 +443,15 @@ class Controller:
         except Exception as error:
             self.update(manualSwitch=dict(record, updatedAt=iso_now(), lastError={"code": "FAILBACK_SERVICE_START_FAILED", "message": str(error)[:240]}))
         return False
+
+    def _failback_completed(self):
+        path = Path(self.config.get("failbackStatePath", "/var/lib/cbte-recovery/failback/state.json"))
+        if not path.exists():
+            return False
+        try:
+            return (private_json(path) or {}).get("phase") == "PRIMARY_ACTIVE"
+        except Exception:
+            return False
 
     def record_operator_intent(self, role, value):
         if not isinstance(value, dict) or set(value) != {"node", "desiredState", "revision", "actorId"}:
