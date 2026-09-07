@@ -47,6 +47,129 @@ export function metricObservationQuery(whereSql: string, groupAccount: boolean, 
     ORDER BY events DESC LIMIT ?`;
 }
 
+
+export type MetricObservationRollupRange = { fullStartMs: number; fullEndMs: number };
+
+const HOUR_MS = 60 * 60 * 1000;
+
+export function metricObservationRollupRange(
+  window: { startMs: number; endMs: number },
+  coverageStartMs: number,
+): MetricObservationRollupRange | null {
+  if (!Number.isFinite(coverageStartMs) || coverageStartMs <= 0) return null;
+  const fullStartMs = Math.max(
+    Math.ceil(window.startMs / HOUR_MS) * HOUR_MS,
+    Math.ceil(coverageStartMs / HOUR_MS) * HOUR_MS,
+  );
+  const fullEndMs = Math.floor(window.endMs / HOUR_MS) * HOUR_MS;
+  return fullStartMs < fullEndMs ? { fullStartMs, fullEndMs } : null;
+}
+
+export function metricObservationRollupParams(
+  baseParams: unknown[],
+  range: MetricObservationRollupRange,
+  prefilterCandidates: boolean,
+  limit: number,
+) {
+  return [
+    ...(prefilterCandidates ? baseParams : []),
+    ...baseParams,
+    range.fullStartMs,
+    range.fullEndMs,
+    range.fullStartMs,
+    range.fullEndMs,
+    ...baseParams,
+    limit,
+  ];
+}
+
+/**
+ * Use hourly latest rows for the expensive latest-subject ranking while keeping
+ * exact event/user/guild counts and boundary-hour semantics from raw rows.
+ */
+export function metricObservationRollupQuery(
+  whereSql: string,
+  groupAccount: boolean,
+  range: MetricObservationRollupRange,
+  numericOnly = true,
+  prefilterCandidates = numericOnly,
+) {
+  const keys = groupAccount ? "provider_id, account_key, facet_key" : "provider_id, facet_key";
+  const join = groupAccount
+    ? "t.provider_id <=> o.provider_id AND t.account_key <=> o.account_key AND t.facet_key <=> o.facet_key"
+    : "t.provider_id <=> o.provider_id AND t.facet_key <=> o.facet_key";
+  const rollupWhere = whereSql.replace(/\bc\./g, "r.").replace(/\bf\./g, "r.");
+  const candidateKeys = prefilterCandidates ? `numeric_keys AS (
+    SELECT /*+ JOIN_ORDER(c,f) */ DISTINCT f.provider_id,f.facet_key
+    FROM bot_provider_content_facets f
+    JOIN bot_provider_content_events c ON c.content_event_id=f.content_event_id
+    WHERE ${whereSql} AND f.facet_key IS NOT NULL AND f.numeric_value IS NOT NULL
+  ),` : "";
+  const candidateJoin = prefilterCandidates
+    ? " JOIN numeric_keys nk ON nk.provider_id <=> f.provider_id AND nk.facet_key <=> f.facet_key"
+    : "";
+  const rollupCandidateJoin = prefilterCandidates
+    ? " JOIN numeric_keys nk ON nk.provider_id <=> r.provider_id AND nk.facet_key <=> r.facet_key"
+    : "";
+  const comparable = "facet_key REGEXP '[.](likes|views|plays|comments|shares|retweets|reposts|replies|quotes|bookmarks|favorites|stars|forks|followers|subscribers|following|follower_count|subscriber_count|media_count|video_count|duration_seconds|duration_ms|size_bytes)$'";
+  return `WITH ${candidateKeys}raw_base AS (
+    SELECT f.provider_id,f.account_key,f.facet_key,f.numeric_value,f.facet_id,
+      c.author_user_id,c.guild_id,c.occurred_at_ms,c.content_event_id,
+      COALESCE(f.collected_at_ms,c.occurred_at_ms) AS observed_at_ms,
+      CASE WHEN f.facet_key REGEXP '[.](followers|subscribers|following|follower_count|subscriber_count)$'
+        THEN CONCAT('account:',COALESCE(NULLIF(f.account_key,''),CONCAT('unknown:',c.content_event_id)))
+        ELSE CONCAT('content:',COALESCE(NULLIF(c.content_id,''),NULLIF(c.normalized_url,''),NULLIF(c.content_url,''),CONCAT('unknown:',c.content_event_id))) END AS subject_key
+    FROM bot_provider_content_facets f JOIN bot_provider_content_events c ON c.content_event_id=f.content_event_id${candidateJoin}
+    WHERE ${whereSql} AND f.facet_key IS NOT NULL
+  ), raw_observations AS (
+    SELECT raw_base.*,UNHEX(SHA2(subject_key,256)) AS subject_hash
+    FROM raw_base
+  ), edge_observations AS (
+    SELECT provider_id,account_key,facet_key,numeric_value,facet_id,
+      author_user_id,guild_id,occurred_at_ms,content_event_id,observed_at_ms,subject_key,subject_hash
+    FROM raw_observations
+    WHERE occurred_at_ms < ? OR occurred_at_ms >= ?
+  ), rollup_observations AS (
+    SELECT r.provider_id,r.account_key,r.facet_key,r.numeric_value,r.facet_id,
+      r.author_user_id,r.guild_id,r.occurred_at_ms,r.content_event_id,r.observed_at_ms,
+      r.subject_key,r.subject_hash
+    FROM bot_provider_metric_observation_hourly r${rollupCandidateJoin}
+    WHERE r.bucket_start_ms >= ? AND r.bucket_start_ms < ?
+      AND ${rollupWhere} AND r.facet_key IS NOT NULL
+  ), observations AS (
+    SELECT * FROM edge_observations
+    UNION ALL
+    SELECT * FROM rollup_observations
+  ), ranked AS (
+    SELECT observations.*,ROW_NUMBER() OVER (
+      PARTITION BY provider_id,subject_hash,facet_key
+      ORDER BY observed_at_ms DESC,content_event_id DESC,facet_id DESC
+    ) AS observation_rank
+    FROM observations
+  ), latest_values AS (
+    SELECT ${keys},COUNT(*) AS content_count,COUNT(numeric_value) AS numeric_subject_count,
+      CASE WHEN ${comparable} THEN AVG(numeric_value) ELSE NULL END AS avg_value,
+      CASE WHEN ${comparable} THEN MIN(numeric_value) ELSE NULL END AS min_value,
+      CASE WHEN ${comparable} THEN MAX(numeric_value) ELSE NULL END AS max_value,
+      CASE WHEN facet_key REGEXP '[.](likes|views|plays|comments|shares|retweets|reposts|replies|quotes|bookmarks|favorites|stars|forks)$'
+        THEN SUM(numeric_value) ELSE NULL END AS sum_value,
+      CASE WHEN ${comparable} THEN 'available' ELSE 'unsupported_aggregation' END AS aggregation_status,
+      CASE WHEN ${comparable} THEN NULL ELSE 'currency_scale_or_unit_not_defined; inspect individual observations' END AS aggregation_note
+    FROM ranked WHERE observation_rank=1 GROUP BY ${keys} ${numericOnly ? "HAVING COUNT(numeric_value)>0" : ""}
+  ), observation_counts AS (
+    SELECT ${keys},COUNT(*) AS events,COUNT(DISTINCT author_user_id) AS users,
+      COUNT(DISTINCT guild_id) AS guilds,MIN(observed_at_ms) AS oldest_observation_ms,
+      MAX(observed_at_ms) AS latest_observation_ms
+    FROM raw_observations GROUP BY ${keys}
+  )
+  SELECT t.*,o.events,o.users,o.guilds,o.oldest_observation_ms,o.latest_observation_ms,
+    'latest_subject_observation_v3_hourly_rollup' AS aggregation,
+    'latest_observation_of_requests_in_selected_window' AS observation_window,
+    'external_service_not_discord' AS metric_origin
+  FROM latest_values t JOIN observation_counts o ON ${join}
+  ORDER BY o.events DESC LIMIT ?`;
+}
+
 // Provider schema coverage only needs the observed event/user/server counts.
 // It does not consume latest numeric values; using the full latest-subject
 // window for this auxiliary section needlessly sorts every observation again.

@@ -32,6 +32,7 @@ const TABLES = {
     botAnalyticsEvents: 'bot_analytics_events',
     botProviderContentEvents: 'bot_provider_content_events',
     botProviderContentFacets: 'bot_provider_content_facets',
+    botProviderMetricObservationHourly: 'bot_provider_metric_observation_hourly',
     botProviderHourlyAggregates: 'bot_provider_hourly_aggregates',
     botProviderHourlyUniqueKeys: 'bot_provider_hourly_unique_keys',
     botErrorAlerts: 'bot_error_alerts',
@@ -552,6 +553,27 @@ const SCHEMA_STATEMENTS = [
         CONSTRAINT fk_content_facets_event
             FOREIGN KEY (content_event_id) REFERENCES ${TABLES.botProviderContentEvents}(content_event_id)
             ON DELETE CASCADE
+    ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
+
+    `CREATE TABLE IF NOT EXISTS ${TABLES.botProviderMetricObservationHourly} (
+        bucket_start_ms BIGINT NOT NULL,
+        provider_id VARCHAR(64) NOT NULL,
+        account_key VARCHAR(191) NULL,
+        facet_key VARCHAR(191) NOT NULL,
+        subject_hash BINARY(32) NOT NULL,
+        subject_key TEXT NOT NULL,
+        content_event_id BIGINT UNSIGNED NOT NULL,
+        facet_id BIGINT UNSIGNED NOT NULL,
+        occurred_at_ms BIGINT NOT NULL,
+        observed_at_ms BIGINT NOT NULL,
+        author_user_id VARCHAR(32) NULL,
+        guild_id VARCHAR(32) NULL,
+        content_type VARCHAR(64) NULL,
+        numeric_value DOUBLE NULL,
+        PRIMARY KEY (bucket_start_ms, provider_id, facet_key, subject_hash),
+        INDEX idx_metric_rollup_window (bucket_start_ms, provider_id, facet_key),
+        INDEX idx_metric_rollup_subject (provider_id, subject_hash, facet_key, observed_at_ms),
+        INDEX idx_metric_rollup_event (content_event_id)
     ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
 
     `CREATE TABLE IF NOT EXISTS ${TABLES.botProviderHourlyAggregates} (

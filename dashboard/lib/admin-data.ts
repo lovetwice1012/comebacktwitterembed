@@ -1,5 +1,5 @@
 import "server-only";
-import { metricObservationQuery, providerMetricObservationCountsQuery, observedRatio, aggregateNumericFacet } from "@/lib/metric-observation-query";
+import { metricObservationQuery, metricObservationRollupQuery, metricObservationRollupParams, metricObservationRollupRange, providerMetricObservationCountsQuery, observedRatio, aggregateNumericFacet } from "@/lib/metric-observation-query";
 import { decodeLogCursor, logConditions, type LogSearch, type LogCursor } from "@/lib/admin-log-query";
 
 import { createHash } from "crypto";
@@ -58,6 +58,7 @@ const DATABASE_TABLES = [
   { name: "bot_analytics_events", label: "Bot analytics events", orderBy: "created_at" },
   { name: "bot_provider_content_events", label: "Provider content events", orderBy: "created_at" },
   { name: "bot_provider_content_facets", label: "Provider content facets", orderBy: "created_at" },
+  { name: "bot_provider_metric_observation_hourly", label: "Metric observation rollups", orderBy: "bucket_start_ms" },
   { name: "bot_provider_hourly_aggregates", label: "Provider hourly aggregates", orderBy: "updated_at" },
   { name: "bot_provider_hourly_unique_keys", label: "Provider hourly unique keys", orderBy: "created_at" },
   { name: "bot_error_alerts", label: "Bot error alerts", orderBy: "updated_at" },
@@ -3130,9 +3131,26 @@ async function getDetailedNumericFacetStats(
   const where = content.whereSql + (selectedFacetKeys.length ? ` AND f.facet_key IN (${selectedFacetKeys.map(() => "?").join(",")})` : "");
   const metricParams = [...content.params, ...selectedFacetKeys];
   const prefilterCandidates = !allowedFacetKeys?.length;
-  const queryParams = prefilterCandidates ? [...metricParams, ...metricParams] : metricParams;
-  const rows = await prisma.$queryRawUnsafe<Row[]>(metricObservationQuery(where, true, true, prefilterCandidates), ...queryParams, limit);
-  return rows.map(maskRow);
+  const rawQuery = metricObservationQuery(where, true, true, prefilterCandidates);
+  const rawParams = prefilterCandidates ? [...metricParams, ...metricParams] : metricParams;
+  const rollupCoverageStartMs = Number(process.env.DASHBOARD_METRIC_ROLLUP_START_MS);
+  const rollupRange = metricObservationRollupRange(window, rollupCoverageStartMs);
+  if (!rollupRange) {
+    const rows = await prisma.$queryRawUnsafe<Row[]>(rawQuery, ...rawParams, limit);
+    return rows.map(maskRow);
+  }
+  try {
+    const rows = await prisma.$queryRawUnsafe<Row[]>(
+      metricObservationRollupQuery(where, true, rollupRange, true, prefilterCandidates),
+      ...metricObservationRollupParams(metricParams, rollupRange, prefilterCandidates, limit),
+    );
+    return rows.map(maskRow);
+  } catch {
+    // A partial rollout must never replace a complete report with an empty
+    // metric section. Fall back to the exact raw query until the rollup is fixed.
+    const rows = await prisma.$queryRawUnsafe<Row[]>(rawQuery, ...rawParams, limit);
+    return rows.map(maskRow);
+  }
 }
 
 async function getProviderMetricObservedRows(filters: AdminDetailedAnalyticsFilters, window: { startMs: number; endMs: number }) {
