@@ -1,18 +1,18 @@
 /** Numeric values are snapshots, not independent increments. Latest is selected per subject and metric. */
-export function metricObservationQuery(whereSql: string, groupAccount: boolean, numericOnly = true) {
+export function metricObservationQuery(whereSql: string, groupAccount: boolean, numericOnly = true, prefilterCandidates = numericOnly) {
   const keys = groupAccount ? "provider_id, account_key, facet_key" : "provider_id, facet_key";
   const join = groupAccount ? "t.provider_id <=> o.provider_id AND t.account_key <=> o.account_key AND t.facet_key <=> o.facet_key" : "t.provider_id <=> o.provider_id AND t.facet_key <=> o.facet_key";
   // Numeric reports do not need to rank facet keys that have no numeric
   // observation in the selected window. Keep every row for a candidate key so
   // a later non-numeric observation still suppresses an older numeric value,
   // while avoiding the window sort for unrelated text-only facets.
-  const candidateKeys = numericOnly ? `numeric_keys AS (
+  const candidateKeys = prefilterCandidates ? `numeric_keys AS (
     SELECT /*+ JOIN_ORDER(c,f) */ DISTINCT f.provider_id,f.facet_key
     FROM bot_provider_content_facets f
     JOIN bot_provider_content_events c ON c.content_event_id=f.content_event_id
     WHERE ${whereSql} AND f.facet_key IS NOT NULL AND f.numeric_value IS NOT NULL
   ),` : "";
-  const candidateJoin = numericOnly ? " JOIN numeric_keys nk ON nk.provider_id <=> f.provider_id AND nk.facet_key <=> f.facet_key" : "";
+  const candidateJoin = prefilterCandidates ? " JOIN numeric_keys nk ON nk.provider_id <=> f.provider_id AND nk.facet_key <=> f.facet_key" : "";
   // Currency, rating scales and unknown units cannot be averaged merely because values are numeric.
   const comparable = "facet_key REGEXP '[.](likes|views|plays|comments|shares|retweets|reposts|replies|quotes|bookmarks|favorites|stars|forks|followers|subscribers|following|follower_count|subscriber_count|media_count|video_count|duration_seconds|duration_ms|size_bytes)$'";
   return `WITH ${candidateKeys}observations AS (

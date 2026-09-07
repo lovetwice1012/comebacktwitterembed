@@ -3129,7 +3129,9 @@ async function getDetailedNumericFacetStats(
   const selectedFacetKeys = allowedFacetKeys?.length ? allowedFacetKeys : facetKey ? [facetKey] : [];
   const where = content.whereSql + (selectedFacetKeys.length ? ` AND f.facet_key IN (${selectedFacetKeys.map(() => "?").join(",")})` : "");
   const metricParams = [...content.params, ...selectedFacetKeys];
-  const rows = await prisma.$queryRawUnsafe<Row[]>(metricObservationQuery(where, true), ...metricParams, ...metricParams, limit);
+  const prefilterCandidates = !allowedFacetKeys?.length;
+  const queryParams = prefilterCandidates ? [...metricParams, ...metricParams] : metricParams;
+  const rows = await prisma.$queryRawUnsafe<Row[]>(metricObservationQuery(where, true, true, prefilterCandidates), ...queryParams, limit);
   return rows.map(maskRow);
 }
 
