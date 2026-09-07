@@ -6,11 +6,14 @@ import argparse
 import datetime as dt
 import hashlib
 import json
+import logging
 import os
 from pathlib import Path
 import secrets
+import shlex
 import stat
 import subprocess
+import sys
 import time
 import urllib.parse
 import urllib.request
@@ -21,6 +24,7 @@ except ImportError:
     from user_notifications import send as notify
 
 PHASES = {"WAITING_PRIMARY", "PRIMARY_PREPARED", "SOURCE_FROZEN", "OWNERSHIP_COMMITTING", "PRIMARY_VERIFYING", "ROUTING_PRIMARY", "PRIMARY_ACTIVE", "FAILED"}
+LOG = logging.getLogger("cbte-recovery.failback")
 
 
 class FailbackError(Exception):
@@ -94,16 +98,24 @@ class Failback:
         return value
 
     def save(self, **updates):
+        previous = self.state.get("phase")
         self.state.update(updates, updatedAt=now_iso())
         atomic_json(self.state_path, self.state)
+        current = self.state.get("phase")
+        if current != previous:
+            LOG.info("phase %s -> %s", previous, current)
 
     @staticmethod
     def command(argv, timeout=30):
         try:
             result = subprocess.run(argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=timeout, check=False, env={"PATH": os.defpath})
-        except (OSError, subprocess.TimeoutExpired):
-            raise FailbackError("A bounded recovery command did not complete") from None
+        except subprocess.TimeoutExpired:
+            raise FailbackError("A bounded recovery command timed out") from None
+        except OSError:
+            raise FailbackError("A bounded recovery command could not start") from None
         if result.returncode != 0:
+            # Do not persist stdout/stderr: a remote command may contain paths
+            # or deployment details that are not needed for the state machine.
             raise FailbackError("A bounded recovery command failed")
         return result.stdout.strip()
 
@@ -126,18 +138,56 @@ class Failback:
         return value
 
     def primary_ready(self):
-        marker = self.config["primaryReadyMarker"]
-        commands = ["test -s %s" % marker, "test -s %s" % self.config["primarySnapshotPath"], "systemctl start cbte-admin.service cbte-admin-executor.service cbte-admin-analysis.service cbte-admin-reports.service", "test \"$(systemctl is-active cbte.service)\" = active", "cat /proc/sys/kernel/random/boot_id", "mysql --defaults-file=/etc/mysql/debian.cnf --batch --skip-column-names -e \"SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='ComebackTwitterEmbed';\"", "mysql --defaults-file=/etc/mysql/debian.cnf --batch --skip-column-names -e \"SELECT COUNT(*) FROM ComebackTwitterEmbed.guilds;\"", "sha256sum %s | awk '{print $1}'" % self.config["primarySnapshotPath"]]
-        values = []
-        for command in commands:
-            values.append(self.ssh(command, timeout=45))
-        if values[5] != "39" or not values[6] or not __import__("re").fullmatch(r"[0-9a-f]{64}", values[7]):
+        marker = shlex.quote(self.config["primaryReadyMarker"])
+        snapshot = shlex.quote(self.config["primarySnapshotPath"])
+        cached = self.state.get("primary") if isinstance(self.state.get("primary"), dict) else {}
+        cached_meta = cached.get("snapshotMeta", "")
+        cached_hash = cached.get("snapshotSha256", "")
+        # One SSH session performs all checks.  The snapshot is immutable while
+        # this operation is in progress, so a matching stat tuple safely reuses
+        # the verified digest on later phase checks.
+        cached_meta_literal = shlex.quote(cached_meta) if isinstance(cached_meta, str) else "''"
+        cached_hash_literal = shlex.quote(cached_hash) if isinstance(cached_hash, str) else "''"
+        command = "\n".join([
+            "set -eu",
+            f"test -s {marker}",
+            f"test -s {snapshot}",
+            "systemctl start cbte-admin.service cbte-admin-executor.service cbte-admin-analysis.service cbte-admin-reports.service",
+            "test \"$(systemctl is-active cbte.service)\" = active",
+            "printf 'CBTE_BOOT=%s\\n' \"$(cat /proc/sys/kernel/random/boot_id)\"",
+            "printf 'CBTE_TABLES=%s\\n' \"$(mysql --defaults-file=/etc/mysql/debian.cnf --batch --skip-column-names -e \"SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='ComebackTwitterEmbed';\")\"",
+            "printf 'CBTE_GUILDS=%s\\n' \"$(mysql --defaults-file=/etc/mysql/debian.cnf --batch --skip-column-names -e \"SELECT COUNT(*) FROM ComebackTwitterEmbed.guilds;\")\"",
+            f"snapshot_meta=$(stat -c '%s:%Y:%Z:%i' {snapshot})",
+            f"if [ \"$snapshot_meta\" = {cached_meta_literal} ] && printf '%s' {cached_hash_literal} | grep -Eq '^[0-9a-f]{{64}}$'; then snapshot_hash={cached_hash_literal}; else snapshot_hash=$(sha256sum {snapshot} | awk '{{print $1}}'); fi",
+            "printf 'CBTE_SNAPSHOT_META=%s\\n' \"$snapshot_meta\"",
+            "printf 'CBTE_SNAPSHOT_SHA256=%s\\n' \"$snapshot_hash\"",
+        ])
+        output = self.ssh(command, timeout=90)
+        values = {}
+        for line in output.splitlines():
+            if "=" in line:
+                key, value = line.split("=", 1)
+                values[key] = value.strip()
+        import re
+        if not re.fullmatch(r"[0-9a-f-]{8,128}", values.get("CBTE_BOOT", "")):
+            raise FailbackError("Primary boot identity is unavailable")
+        if values.get("CBTE_TABLES") != "39" or not values.get("CBTE_GUILDS") or not re.fullmatch(r"[0-9a-f]{64}", values.get("CBTE_SNAPSHOT_SHA256", "")):
             raise FailbackError("Primary snapshot or database validation is incomplete")
-        return {"bootId": values[4], "tables": int(values[5]), "guilds": int(values[6]), "snapshotSha256": values[7]}
+        return {"bootId": values["CBTE_BOOT"], "tables": int(values["CBTE_TABLES"]), "guilds": int(values["CBTE_GUILDS"]), "snapshotSha256": values["CBTE_SNAPSHOT_SHA256"], "snapshotMeta": values.get("CBTE_SNAPSHOT_META", "")}
 
     def fence_source(self):
-        self.runner(["systemctl", "stop", "cbte-recovery-controller.service"], timeout=30)
-        self.runner(["systemctl", "stop", "cbte-recovery-workload.service"], timeout=30)
+        # Queue the stop and poll the unit instead of waiting on a systemd job
+        # that can inherit the workload's container shutdown timeout.
+        for unit in ("cbte-recovery-controller.service", "cbte-recovery-workload.service"):
+            self.runner(["systemctl", "stop", "--no-block", unit], timeout=10)
+            deadline = time.monotonic() + 35
+            while True:
+                state = self.runner(["systemctl", "is-active", unit], timeout=5).strip()
+                if state in {"inactive", "failed"}:
+                    break
+                if time.monotonic() >= deadline:
+                    raise FailbackError("Source workload did not stop within the fence deadline")
+                time.sleep(0.25)
         for unit in ("cbte-recovery-controller.service", "cbte-recovery-workload.service"):
             state = subprocess.run(["systemctl", "is-active", unit], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, timeout=10, check=False).stdout.strip()
             if state not in {"inactive", "failed"}:
@@ -265,9 +315,20 @@ class Failback:
         return self.state
 
     def run(self):
+        retry_seconds = max(5, int(self.config.get("pollSeconds", 30)))
         while self.state["phase"] != "PRIMARY_ACTIVE":
+            before = self.state["phase"]
             self.step()
-            time.sleep(max(15, int(self.config.get("pollSeconds", 30))))
+            after = self.state["phase"]
+            if after == "PRIMARY_ACTIVE":
+                break
+            if after != before:
+                # Successful transitions are chained immediately.  Waiting at
+                # every phase made a healthy failback look like a long outage.
+                retry_seconds = max(5, int(self.config.get("pollSeconds", 30)))
+                continue
+            LOG.info("phase %s is waiting; retrying in %ss", after, retry_seconds)
+            time.sleep(retry_seconds)
         return 0
 
 
@@ -276,6 +337,7 @@ def main():
     parser.add_argument("--config", required=True)
     parser.add_argument("--once", action="store_true")
     args = parser.parse_args()
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s", stream=sys.stderr)
     try:
         process = Failback(private_json(args.config))
         if args.once:
