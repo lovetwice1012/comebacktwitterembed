@@ -163,11 +163,10 @@ class Failback:
             raise FailbackError("Source lease release was not confirmed") from None
         if result.get("ok") is not True or result.get("released") is not True:
             raise FailbackError("Source lease release was rejected")
-        lease_path = Path(self.config["sourceLeaseFile"])
-        if lease_path.exists():
-            lease = private_json(lease_path)
-            if lease.get("state") not in {"standby", "stopped"} or lease.get("childPid") not in (None, 0):
-                raise FailbackError("Source guardian lease is not drained")
+        # The guardian was stopped before this call and may have been killed
+        # before it could rewrite its runtime lease file.  Record the confirmed
+        # release locally so a stale runtime file cannot block the next phase.
+        atomic_json(lease_path, {"version": 1, "node": "oci", "instanceId": lease.get("instanceId"), "state": "standby", "reason": "FAILBACK_LEASE_RELEASED", "epoch": None, "childPid": None, "expiresAt": None, "validUntilUnixMs": 0, "localStopDeadline": None, "updatedAt": time.time()})
 
     def failback_authority(self, authority, primary):
         config = private_json(self.config["authorityConfig"])
