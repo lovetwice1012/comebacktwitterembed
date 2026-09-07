@@ -3114,7 +3114,8 @@ async function getDetailedNumericFacetStats(filters: AdminDetailedAnalyticsFilte
   const content = contentWhere(filters, window, "c", { includeFacetFilter: false });
   const facetKey = cleanFilter(filters.facetKey);
   const where = content.whereSql + (facetKey ? " AND f.facet_key = ?" : "");
-  const rows = await prisma.$queryRawUnsafe<Row[]>(metricObservationQuery(where, true), ...content.params, ...(facetKey ? [facetKey] : []), limit);
+  const metricParams = [...content.params, ...(facetKey ? [facetKey] : [])];
+  const rows = await prisma.$queryRawUnsafe<Row[]>(metricObservationQuery(where, true), ...metricParams, ...metricParams, limit);
   return rows.map(maskRow);
 }
 
