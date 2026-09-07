@@ -150,6 +150,12 @@ class Failback:
         lease = private_json(lease_path)
         if lease.get("state") not in {"active", "renewal_unconfirmed"}:
             return
+        # The runtime lease intentionally omits its secret leaseId.  The
+        # authority clears it atomically when the fenced handoff marker is
+        # consumed during the planned authority restart; never send a forged
+        # release request with a missing identity.
+        if not isinstance(lease.get("leaseId"), str) or not lease["leaseId"]:
+            return
         child_pid = lease.get("childPid")
         if type(child_pid) is int and child_pid > 1 and Path(f"/proc/{child_pid}").exists():
             raise FailbackError("Source workload child is still alive")

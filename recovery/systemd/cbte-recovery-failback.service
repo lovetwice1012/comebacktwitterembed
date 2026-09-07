@@ -6,7 +6,7 @@ Wants=network-online.target
 [Service]
 Type=simple
 ExecStart=/usr/bin/python3 /opt/cbte-recovery/failback_orchestrator.py --config /etc/cbte-recovery/failback.json
-Restart=always
+Restart=on-failure
 RestartSec=15
 TimeoutStopSec=10
 KillMode=control-group
