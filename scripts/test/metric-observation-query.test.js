@@ -49,5 +49,6 @@ test('numeric metric observations prefilter candidate facet keys without changin
         assert.equal(db.prepare(optimized).all(...params, ...params, 50).some(row => row.facet_key === 'metric.label'), false);
         assert.match(metricObservationQuery(where, true, true), /numeric_keys AS/);
         assert.doesNotMatch(metricObservationQuery(where, true, false), /numeric_keys AS/);
+        assert.doesNotMatch(metricObservationQuery(`${where} AND f.facet_key IN (?)`, true, true, false), /numeric_keys AS/);
     } finally { db.close(); }
 });
