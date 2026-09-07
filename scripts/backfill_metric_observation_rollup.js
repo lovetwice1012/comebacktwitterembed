@@ -31,13 +31,8 @@ function parseArgs(argv) {
     return args;
 }
 
-const newer = `(VALUES(observed_at_ms) > observed_at_ms
-    OR (VALUES(observed_at_ms) = observed_at_ms AND
-      (VALUES(content_event_id) > content_event_id
-       OR (VALUES(content_event_id) = content_event_id AND VALUES(facet_id) > facet_id))))`;
-
 function hourInsertSql() {
-    return `INSERT INTO ${TABLES.botProviderMetricObservationHourly} (
+    return `INSERT IGNORE INTO ${TABLES.botProviderMetricObservationHourly} (
         bucket_start_ms, provider_id, account_key, facet_key, subject_hash, subject_key,
         content_event_id, facet_id, occurred_at_ms, observed_at_ms, author_user_id, guild_id,
         content_type, numeric_value
@@ -66,16 +61,7 @@ function hourInsertSql() {
       ) source
     ) ranked
     WHERE row_rank=1
-    ON DUPLICATE KEY UPDATE
-      subject_key = IF(${newer}, VALUES(subject_key), subject_key),
-      content_event_id = IF(${newer}, VALUES(content_event_id), content_event_id),
-      facet_id = IF(${newer}, VALUES(facet_id), facet_id),
-      occurred_at_ms = IF(${newer}, VALUES(occurred_at_ms), occurred_at_ms),
-      author_user_id = IF(${newer}, VALUES(author_user_id), author_user_id),
-      guild_id = IF(${newer}, VALUES(guild_id), guild_id),
-      content_type = IF(${newer}, VALUES(content_type), content_type),
-      numeric_value = IF(${newer}, VALUES(numeric_value), numeric_value),
-      observed_at_ms = IF(${newer}, VALUES(observed_at_ms), observed_at_ms)`;
+    `;
 }
 
 async function main(argv = process.argv.slice(2)) {
