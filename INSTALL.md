@@ -280,6 +280,10 @@ sudo journalctl -u cbte-recovery-failback.service -f
 
 本体のDB・管理サービス・guardian・スナップショット・件数検証が揃うまでは予備側workloadを停止しません。切り戻し状態は`/var/lib/cbte-recovery/failback/state.json`へ保存され、成功した段階は再起動後も再開されます。`PRIMARY_ACTIVE`到達後にだけ本体を正本として扱います。
 
+管理画面の「復旧先の手動切り替え・日時予約」から、現在の稼働先とは逆方向への切り替えを即時受付または日時指定で登録できます。予約はcontrollerのroot所有stateへ保存され、実行時に現在epoch、lease、候補・バックアップ、DB、管理サービス、公開経路を再検証します。予約時刻は画面では端末のJSTとして入力し、保存時にUTCへ正規化します。指定時刻は現在から30秒前〜30日後、実行開始前のキャンセルが可能です。条件が変わった場合は所有権を変更せず`blocked`または`failed`で停止します。
+
+OCI方向の手動実行は既存の候補限定昇格処理を通り、primary方向の手動実行は`cbte-recovery-failback.service`の最終同期・writer停止・handoff・lease排水・公開経路検証を通ります。確認チェックを省略してleaseやDBを直接変更する操作は提供しません。
+
 通常のDNS変更だけで切り替えたり、authority SQLiteのepoch/leaseを手編集したりしないでください。失敗時は状態ファイル、authorityのledger、両ホストのsystemd/journalを保存してから再試行します。
 
 ## ローカル開発・画面検証
