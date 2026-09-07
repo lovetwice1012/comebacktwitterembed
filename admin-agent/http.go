@@ -149,6 +149,7 @@ func (a *App) routes() http.Handler {
 	mux.HandleFunc("GET /v1/actions", a.protect(a.actions))
 	mux.HandleFunc("GET /v1/actions/{id}", a.protect(a.action))
 	mux.HandleFunc("GET /v1/metrics", a.protect(a.metrics))
+	mux.HandleFunc("GET /v1/shards", a.protect(a.shards))
 	mux.HandleFunc("GET /v1/reports/{kind}", a.protect(a.getReport))
 	mux.HandleFunc("POST /v1/reports/{kind}", a.protect(a.buildReport))
 	mux.HandleFunc("GET /v1/incidents", a.protect(a.incidents))

@@ -5,12 +5,24 @@ import (
 	"database/sql"
 	"encoding/json"
 	"math"
+	"net/http"
 	"strconv"
 	"strings"
 	"time"
 )
 
 const shardHeartbeatGrace = 45 * time.Second
+
+func (a *App) shards(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	defer cancel()
+	value, err := a.shardMetrics(ctx, time.Now())
+	if err != nil {
+		fail(w, 503, "SHARD_METRICS_QUERY_FAILED", err.Error())
+		return
+	}
+	jsonResponse(w, 200, value)
+}
 
 // shardMetrics is deliberately built from the latest persisted runtime
 // heartbeat and persisted request events.  It never turns a missing heartbeat

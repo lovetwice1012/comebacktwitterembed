@@ -204,8 +204,8 @@ func TestMetricsIncludesFreshShardStateAndProcessingWindows(t *testing.T) {
 	if _, _, e := a.store.ingest(events); e != nil {
 		t.Fatal(e)
 	}
-	v := object(t, request(t, a, "GET", "/v1/metrics", nil))
-	shards := nested(v, "shards")
+	v := object(t, request(t, a, "GET", "/v1/shards", nil))
+	shards := v
 	if shards["state"] != "recent_heartbeat" || shards["online"] != float64(1) || shards["offline"] != float64(1) || shards["unknown"] != float64(0) {
 		t.Fatalf("unexpected shard summary: %v", shards)
 	}

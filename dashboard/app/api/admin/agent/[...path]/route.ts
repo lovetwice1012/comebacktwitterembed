@@ -4,7 +4,7 @@ import { adminAgentEndpoint, independentAdminUrl } from "@/lib/admin-agent";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-const ROOTS = new Set(["health", "catalog", "actions", "runs", "events", "metrics", "incidents", "policies", "notifications", "evidence", "account"]);
+const ROOTS = new Set(["health", "catalog", "actions", "runs", "events", "metrics", "shards", "incidents", "policies", "notifications", "evidence", "account"]);
 
 async function proxy(req: NextRequest, context: { params: Promise<{ path: string[] }> }) {
   try {

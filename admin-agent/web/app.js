@@ -22,13 +22,15 @@ function durationLabel(value){if(value==null)return '未計測';return value>=10
 function probeLabel(probe){if(!probe?.configured)return '未設定';if(probe.ok===true)return `正常${probe.status?' (HTTP '+probe.status+')':''}`;if(probe.ok===false)return `応答失敗${probe.status?' (HTTP '+probe.status+')':''}`;return '未観測'}
 function sectionFailure(id,title,error){const target=clear(id);target.append(text('p',title,'error'),text('p',error.message||String(error),'error'));if(error.responseText)raw(target,{httpStatus:error.httpStatus,response:error.responseText},false,'管理APIの失敗応答')}
 async function overview(){
-  const values=await Promise.allSettled([api('v1/health'),api('v1/metrics'),api('v1/incidents?status=active')]);
+  const values=await Promise.allSettled([api('v1/health'),api('v1/metrics'),api('v1/shards'),api('v1/incidents?status=active')]);
   const health=values[0].status==='fulfilled'?values[0].value:null;
   const metrics=values[1].status==='fulfilled'?values[1].value:null;
+  const shards=values[2].status==='fulfilled'?values[2].value:metrics?.shards;
   $('connection').textContent=health?`${health.workloadMonitoring?.state==='planned_standby'?'OCI 待機・保守設定中 · ':''}管理API応答あり · ${time(health.time)}${values.some(v=>v.status==='rejected')?' · 一部情報の取得失敗':''}`:'管理APIの接続・取得に失敗';
-  if(metrics){try{renderOverviewMetrics(metrics)}catch(error){sectionFailure('metric-cards','統計の表示に失敗しました',error);clear('metric-detail');clear('shards')}}else{sectionFailure('metric-cards','統計を取得できません。0件とは扱いません。',values[1].reason);clear('metric-detail');clear('shards')}
+  if(metrics){try{renderOverviewMetrics(metrics)}catch(error){sectionFailure('metric-cards','統計の表示に失敗しました',error);clear('metric-detail')}}else{sectionFailure('metric-cards','統計を取得できません。0件とは扱いません。',values[1].reason);clear('metric-detail')}
+  if(shards){try{renderOverviewShards(shards)}catch(error){sectionFailure('shards','シャード状態の表示に失敗しました',error)}}else{sectionFailure('shards','シャード状態を取得できません。オフラインとは判定しません。',values[2].reason);clear('shards')}
   if(health){try{renderOverviewHealth(health,metrics)}catch(error){sectionFailure('health','稼働状態の表示に失敗しました',error)}}else sectionFailure('health','現在の稼働状態を確認できません。',values[0].reason);
-  if(values[2].status==='fulfilled'){try{renderOverviewIncidents(values[2].value)}catch(error){sectionFailure('incidents','障害一覧の表示に失敗しました',error)}}else sectionFailure('incidents','障害一覧を取得できません。障害なしとは判断しません。',values[2].reason);
+  if(values[3].status==='fulfilled'){try{renderOverviewIncidents(values[3].value)}catch(error){sectionFailure('incidents','障害一覧の表示に失敗しました',error)}}else sectionFailure('incidents','障害一覧を取得できません。障害なしとは判断しません。',values[3].reason);
 }
 function renderOverviewMetrics(metrics){
     const measurement=globalThis.CBTEView.measurement(metrics);const cards=clear('metric-cards');const pct=metrics.fullSuccess.ratio==null?'対象なし':`${(metrics.fullSuccess.ratio*100).toFixed(2)}%`;
@@ -41,7 +43,6 @@ function renderOverviewMetrics(metrics){
       ['実行中 / 結果不明',`${metrics.outcomes.I} / ${metrics.outcomes.X}`,'完了していない要求と、確認できなかった結果を分けて表示します。','I,X']
     ];
     for(const[label,value,detail,outcome]of definitions){const card=document.createElement('div');card.className='card';card.append(text('small',label),text('strong',measurement.unavailable?'未計測':value),text('small',measurement.unavailable?'本番の計測記録を確認できません。':detail));const button=text('button','該当する要求を見る');button.disabled=measurement.unavailable;button.addEventListener('click',()=>{state.supportWindow={from:metrics.from,to:metrics.to};$('support-guild').value='';$('support-from').value=localDate(metrics.from);$('support-to').value=localDate(metrics.to);$('support-kind').value='runs';$('support-outcome').value=outcome;$('support-window-note').textContent=`概要と同じ期間: ${time(metrics.from)} ～ ${time(metrics.to)}`;show('support');search()});card.append(button);cards.append(card)}
-    renderOverviewShards(metrics);
     const detail=clear('metric-detail');detail.append(text('p',measurement.message,measurement.unavailable?'error':'muted'),text('p',measurement.collection,metrics.coverage?.collectionState==='recent_heartbeat'?'muted':'error'));detail.append(text('p',`対象期間: ${time(metrics.from)} ～ ${time(metrics.to)} / 集計時点: ${time(metrics.snapshotAt)}`));
     const outcomeRows=Object.entries(metrics.outcomes).map(([code,count])=>({code,label:metrics.outcomeLabels?.[code]||code,count}));
     table(detail,outcomeRows,[['要求の結果',row=>row.label],['要求数',row=>measurement.unavailable?'未計測':String(row.count)+' 件']]);
@@ -52,8 +53,8 @@ function renderOverviewMetrics(metrics){
     detail.append(text('p','見送り・取消・実行中は完全成功割合の評価対象から外し、件数を別に表示します。結果不明は評価対象に含めます。閲覧やリンククリックを示す指標ではありません。'));
     raw(detail,{outcomes:metrics.outcomes,latencyByOutcome:metrics.latencyByOutcome,byProvider:metrics.byProvider,excluded:metrics.excluded,coverage:metrics.coverage},false,'指標の原データ・プロバイダー別内訳');
 }
-function renderOverviewShards(metrics){
-    const root=clear('shards');const shards=metrics.shards||{};const items=Array.isArray(shards.items)?shards.items:[];
+function renderOverviewShards(data){
+    const root=clear('shards');const shards=data?.shards||data||{};const items=Array.isArray(shards.items)?shards.items:[];
     root.append(text('p',`${shards.state||'未観測'} / heartbeat: ${time(shards.heartbeatAt)} / オンライン ${shards.online??'未取得'} / オフライン ${shards.offline??'未取得'} / 未観測 ${shards.unknown??'未取得'}`,'muted'));
     root.append(text('p','オンラインは最新heartbeat（45秒以内）のdiscord.js状態で判定します。処理数は保存されたrequestイベントの完了件数で、直近1分はローリング、本日はJSTの日付境界です。','muted'));
     if(items.length){
