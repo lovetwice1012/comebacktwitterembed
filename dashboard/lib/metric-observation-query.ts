@@ -74,7 +74,6 @@ export function metricObservationRollupParams(
   return [
     ...(prefilterCandidates ? baseParams : []),
     ...baseParams,
-    ...baseParams,
     range.fullStartMs,
     range.fullEndMs,
     range.fullStartMs,
@@ -85,8 +84,8 @@ export function metricObservationRollupParams(
 }
 
 /**
- * Use hourly latest rows for the expensive latest-subject ranking while keeping
- * exact event/user/guild counts and boundary-hour semantics from raw rows.
+ * Use hourly latest rows for the expensive latest-subject ranking. Boundary
+ * hours stay raw; exact event/user/guild counts are fetched separately.
  */
 export function metricObservationRollupQuery(
   whereSql: string,
@@ -96,9 +95,6 @@ export function metricObservationRollupQuery(
   prefilterCandidates = numericOnly,
 ) {
   const keys = groupAccount ? "provider_id, account_key, facet_key" : "provider_id, facet_key";
-  const join = groupAccount
-    ? "t.provider_id <=> o.provider_id AND t.account_key <=> o.account_key AND t.facet_key <=> o.facet_key"
-    : "t.provider_id <=> o.provider_id AND t.facet_key <=> o.facet_key";
   const rollupWhere = whereSql.replace(/\bc\./g, "r.").replace(/\bf\./g, "r.");
   const candidateKeys = prefilterCandidates ? `numeric_keys AS (
     SELECT /*+ JOIN_ORDER(c,f) */ DISTINCT f.provider_id,f.facet_key
@@ -113,13 +109,7 @@ export function metricObservationRollupQuery(
     ? " JOIN numeric_keys nk ON nk.provider_id <=> r.provider_id AND nk.facet_key <=> r.facet_key"
     : "";
   const comparable = "facet_key REGEXP '[.](likes|views|plays|comments|shares|retweets|reposts|replies|quotes|bookmarks|favorites|stars|forks|followers|subscribers|following|follower_count|subscriber_count|media_count|video_count|duration_seconds|duration_ms|size_bytes)$'";
-  return `WITH ${candidateKeys}raw_counts AS (
-    SELECT f.provider_id,f.account_key,f.facet_key,
-      c.author_user_id,c.guild_id,c.occurred_at_ms,
-      COALESCE(f.collected_at_ms,c.occurred_at_ms) AS observed_at_ms
-    FROM bot_provider_content_facets f JOIN bot_provider_content_events c ON c.content_event_id=f.content_event_id${candidateJoin}
-    WHERE ${whereSql} AND f.facet_key IS NOT NULL
-  ), edge_base AS (
+  return `WITH ${candidateKeys}edge_base AS (
     SELECT f.provider_id,f.account_key,f.facet_key,f.numeric_value,f.facet_id,
       c.author_user_id,c.guild_id,c.occurred_at_ms,c.content_event_id,
       COALESCE(f.collected_at_ms,c.occurred_at_ms) AS observed_at_ms,
@@ -153,28 +143,36 @@ export function metricObservationRollupQuery(
       ORDER BY observed_at_ms DESC,content_event_id DESC,facet_id DESC
     ) AS observation_rank
     FROM observations
-  ), latest_values AS (
-    SELECT ${keys},COUNT(*) AS content_count,COUNT(numeric_value) AS numeric_subject_count,
-      CASE WHEN ${comparable} THEN AVG(numeric_value) ELSE NULL END AS avg_value,
-      CASE WHEN ${comparable} THEN MIN(numeric_value) ELSE NULL END AS min_value,
-      CASE WHEN ${comparable} THEN MAX(numeric_value) ELSE NULL END AS max_value,
-      CASE WHEN facet_key REGEXP '[.](likes|views|plays|comments|shares|retweets|reposts|replies|quotes|bookmarks|favorites|stars|forks)$'
-        THEN SUM(numeric_value) ELSE NULL END AS sum_value,
-      CASE WHEN ${comparable} THEN 'available' ELSE 'unsupported_aggregation' END AS aggregation_status,
-      CASE WHEN ${comparable} THEN NULL ELSE 'currency_scale_or_unit_not_defined; inspect individual observations' END AS aggregation_note
-    FROM ranked WHERE observation_rank=1 GROUP BY ${keys} ${numericOnly ? "HAVING COUNT(numeric_value)>0" : ""}
-  ), observation_counts AS (
-    SELECT ${keys},COUNT(*) AS events,COUNT(DISTINCT author_user_id) AS users,
-      COUNT(DISTINCT guild_id) AS guilds,MIN(observed_at_ms) AS oldest_observation_ms,
-      MAX(observed_at_ms) AS latest_observation_ms
-    FROM raw_counts GROUP BY ${keys}
   )
-  SELECT t.*,o.events,o.users,o.guilds,o.oldest_observation_ms,o.latest_observation_ms,
+  SELECT ${keys},COUNT(*) AS content_count,COUNT(numeric_value) AS numeric_subject_count,
+    CASE WHEN ${comparable} THEN AVG(numeric_value) ELSE NULL END AS avg_value,
+    CASE WHEN ${comparable} THEN MIN(numeric_value) ELSE NULL END AS min_value,
+    CASE WHEN ${comparable} THEN MAX(numeric_value) ELSE NULL END AS max_value,
+    CASE WHEN facet_key REGEXP '[.](likes|views|plays|comments|shares|retweets|reposts|replies|quotes|bookmarks|favorites|stars|forks)$'
+      THEN SUM(numeric_value) ELSE NULL END AS sum_value,
+    CASE WHEN ${comparable} THEN 'available' ELSE 'unsupported_aggregation' END AS aggregation_status,
+    CASE WHEN ${comparable} THEN NULL ELSE 'currency_scale_or_unit_not_defined; inspect individual observations' END AS aggregation_note,
     'latest_subject_observation_v3_hourly_rollup' AS aggregation,
     'latest_observation_of_requests_in_selected_window' AS observation_window,
     'external_service_not_discord' AS metric_origin
-  FROM latest_values t JOIN observation_counts o ON ${join}
-  ORDER BY o.events DESC LIMIT ?`;
+  FROM ranked WHERE observation_rank=1 GROUP BY ${keys} ${numericOnly ? "HAVING COUNT(numeric_value)>0" : ""}
+  ORDER BY content_count DESC LIMIT ?`;
+}
+
+export function metricObservationCountsQuery(whereSql: string, groupAccount: boolean) {
+  const keys = groupAccount
+    ? "f.provider_id AS provider_id,f.account_key AS account_key,f.facet_key AS facet_key"
+    : "f.provider_id AS provider_id,f.facet_key AS facet_key";
+  const groups = groupAccount ? "f.provider_id,f.account_key,f.facet_key" : "f.provider_id,f.facet_key";
+  return `SELECT /*+ SET_VAR(tmp_table_size=1073741824) */
+      ${keys},COUNT(*) AS events,COUNT(DISTINCT c.author_user_id) AS users,
+      COUNT(DISTINCT c.guild_id) AS guilds,
+      MIN(COALESCE(f.collected_at_ms,c.occurred_at_ms)) AS oldest_observation_ms,
+      MAX(COALESCE(f.collected_at_ms,c.occurred_at_ms)) AS latest_observation_ms
+    FROM bot_provider_content_facets f
+    JOIN bot_provider_content_events c ON c.content_event_id=f.content_event_id
+    WHERE ${whereSql} AND f.facet_key IS NOT NULL
+    GROUP BY ${groups}`;
 }
 
 // Provider schema coverage only needs the observed event/user/server counts.

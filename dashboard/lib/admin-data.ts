@@ -1,5 +1,5 @@
 import "server-only";
-import { metricObservationQuery, metricObservationRollupQuery, metricObservationRollupParams, metricObservationRollupRange, providerMetricObservationCountsQuery, observedRatio, aggregateNumericFacet } from "@/lib/metric-observation-query";
+import { metricObservationQuery, metricObservationRollupQuery, metricObservationRollupParams, metricObservationRollupRange, metricObservationCountsQuery, providerMetricObservationCountsQuery, observedRatio, aggregateNumericFacet } from "@/lib/metric-observation-query";
 import { decodeLogCursor, logConditions, type LogSearch, type LogCursor } from "@/lib/admin-log-query";
 
 import { createHash } from "crypto";
@@ -3140,11 +3140,21 @@ async function getDetailedNumericFacetStats(
     return rows.map(maskRow);
   }
   try {
-    const rows = await prisma.$queryRawUnsafe<Row[]>(
-      metricObservationRollupQuery(where, true, rollupRange, true, prefilterCandidates),
-      ...metricObservationRollupParams(metricParams, rollupRange, prefilterCandidates, limit),
-    );
-    return rows.map(maskRow);
+    const [latestRows, countRows] = await Promise.all([
+      prisma.$queryRawUnsafe<Row[]>(
+        metricObservationRollupQuery(where, true, rollupRange, true, prefilterCandidates),
+        ...metricObservationRollupParams(metricParams, rollupRange, prefilterCandidates, limit),
+      ),
+      prisma.$queryRawUnsafe<Row[]>(metricObservationCountsQuery(where, true), ...metricParams),
+    ]);
+    const counts = new Map(countRows.map((row) => [
+      `${row.provider_id ?? ""}\x1f${row.account_key ?? ""}\x1f${row.facet_key ?? ""}`,
+      row,
+    ]));
+    return latestRows.map((row) => {
+      const count = counts.get(`${row.provider_id ?? ""}\x1f${row.account_key ?? ""}\x1f${row.facet_key ?? ""}`);
+      return maskRow({ ...row, ...(count || {}) });
+    });
   } catch {
     // A partial rollout must never replace a complete report with an empty
     // metric section. Fall back to the exact raw query until the rollup is fixed.
