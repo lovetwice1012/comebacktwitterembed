@@ -47,6 +47,9 @@ for unit in cbte-admin cbte-admin-analysis cbte-admin-reports cbte-admin-executo
     fi
 done
 install -m 0644 "$source_root/deploy/systemd/cbte-admin-saves-acl.service" /etc/systemd/system/cbte-admin-saves-acl.service
+install -m 0755 "$source_root/deploy/admin-platform/metric-rollup-refresh.sh" "$runtime/deploy/admin-platform/metric-rollup-refresh.sh"
+install -m 0644 "$source_root/deploy/systemd/cbte-metric-rollup-refresh.service" /etc/systemd/system/cbte-metric-rollup-refresh.service
+install -m 0644 "$source_root/deploy/systemd/cbte-metric-rollup-refresh.timer" /etc/systemd/system/cbte-metric-rollup-refresh.timer
 for name in current worker-runtime; do
     if test -e "/opt/cbte-admin/$name" && ! test -L "/opt/cbte-admin/$name"; then
         echo "Refusing to replace a non-symlink: /opt/cbte-admin/$name" >&2
@@ -63,5 +66,6 @@ for unit in cbte-admin cbte-admin-analysis cbte-admin-reports cbte-admin-executo
 done
 install -D -m 0644 "$source_root/deploy/admin-platform/90-admin-platform.conf" /etc/systemd/system/cbte.service.d/90-admin-platform.conf
 systemctl daemon-reload
+systemctl enable cbte-metric-rollup-refresh.timer
 echo "Prepared independent release $revision. Services and public routing have not been changed yet."
 echo "Optional existing-saves ACL repair: systemctl start cbte-admin-saves-acl.service; inspect its JSON journal progress and repeat bounded batches if pending."
