@@ -97,7 +97,7 @@ class Failback:
         self.state_path = Path(self.config["statePath"])
         self.state = self.load_state()
         manual = self.manual_switch_record()
-        if (self.state.get("phase") == "PRIMARY_ACTIVE" and isinstance(manual, dict)
+        if (self.state.get("phase") in {"PRIMARY_ACTIVE", "FAILED"} and isinstance(manual, dict)
                 and manual.get("targetNode") == "primary" and manual.get("state") in {"scheduled", "executing"}
                 and manual.get("operationId") != self.state.get("operationId")):
             self.state = {"version": 1, "phase": "WAITING_PRIMARY", "operationId": manual["operationId"], "manualSwitchId": manual["operationId"], "updatedAt": now_iso()}
