@@ -58,7 +58,7 @@ test('numeric metric observations prefilter candidate facet keys without changin
 test('hourly metric rollup keeps partial boundary hours on the raw path', () => {
     const range = metricObservationRollupRange({ startMs: 15 * 60 * 1000, endMs: 5 * 60 * 60 * 1000 + 45 * 60 * 1000 }, 1);
     assert.deepEqual(range, { fullStartMs: 60 * 60 * 1000, fullEndMs: 5 * 60 * 60 * 1000 });
-    assert.deepEqual(metricObservationRollupParams([1, 2], range, true, 50), [1, 2, 1, 2, range.fullStartMs, range.fullEndMs, range.fullStartMs, range.fullEndMs, 1, 2, 50]);
+    assert.deepEqual(metricObservationRollupParams([1, 2], range, true, 50), [1, 2, 1, 2, 1, 2, range.fullStartMs, range.fullEndMs, range.fullStartMs, range.fullEndMs, 1, 2, 50]);
     const sql = metricObservationRollupQuery('c.occurred_at_ms >= ? AND c.occurred_at_ms < ?', true, range, true, false);
     const params = metricObservationRollupParams([0, 100], range, false, 50);
     assert.match(sql, /bot_provider_metric_observation_hourly/);

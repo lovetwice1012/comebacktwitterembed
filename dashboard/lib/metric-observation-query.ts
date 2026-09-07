@@ -74,6 +74,7 @@ export function metricObservationRollupParams(
   return [
     ...(prefilterCandidates ? baseParams : []),
     ...baseParams,
+    ...baseParams,
     range.fullStartMs,
     range.fullEndMs,
     range.fullStartMs,
@@ -112,7 +113,13 @@ export function metricObservationRollupQuery(
     ? " JOIN numeric_keys nk ON nk.provider_id <=> r.provider_id AND nk.facet_key <=> r.facet_key"
     : "";
   const comparable = "facet_key REGEXP '[.](likes|views|plays|comments|shares|retweets|reposts|replies|quotes|bookmarks|favorites|stars|forks|followers|subscribers|following|follower_count|subscriber_count|media_count|video_count|duration_seconds|duration_ms|size_bytes)$'";
-  return `WITH ${candidateKeys}raw_base AS (
+  return `WITH ${candidateKeys}raw_counts AS (
+    SELECT f.provider_id,f.account_key,f.facet_key,
+      c.author_user_id,c.guild_id,c.occurred_at_ms,
+      COALESCE(f.collected_at_ms,c.occurred_at_ms) AS observed_at_ms
+    FROM bot_provider_content_facets f JOIN bot_provider_content_events c ON c.content_event_id=f.content_event_id${candidateJoin}
+    WHERE ${whereSql} AND f.facet_key IS NOT NULL
+  ), edge_base AS (
     SELECT f.provider_id,f.account_key,f.facet_key,f.numeric_value,f.facet_id,
       c.author_user_id,c.guild_id,c.occurred_at_ms,c.content_event_id,
       COALESCE(f.collected_at_ms,c.occurred_at_ms) AS observed_at_ms,
@@ -121,14 +128,10 @@ export function metricObservationRollupQuery(
         ELSE CONCAT('content:',COALESCE(NULLIF(c.content_id,''),NULLIF(c.normalized_url,''),NULLIF(c.content_url,''),CONCAT('unknown:',c.content_event_id))) END AS subject_key
     FROM bot_provider_content_facets f JOIN bot_provider_content_events c ON c.content_event_id=f.content_event_id${candidateJoin}
     WHERE ${whereSql} AND f.facet_key IS NOT NULL
-  ), raw_observations AS (
-    SELECT raw_base.*,UNHEX(SHA2(subject_key,256)) AS subject_hash
-    FROM raw_base
+      AND (c.occurred_at_ms < ? OR c.occurred_at_ms >= ?)
   ), edge_observations AS (
-    SELECT provider_id,account_key,facet_key,numeric_value,facet_id,
-      author_user_id,guild_id,occurred_at_ms,content_event_id,observed_at_ms,subject_key,subject_hash
-    FROM raw_observations
-    WHERE occurred_at_ms < ? OR occurred_at_ms >= ?
+    SELECT edge_base.*,UNHEX(SHA2(subject_key,256)) AS subject_hash
+    FROM edge_base
   ), rollup_observations AS (
     SELECT r.provider_id,r.account_key,r.facet_key,r.numeric_value,r.facet_id,
       r.author_user_id,r.guild_id,r.occurred_at_ms,r.content_event_id,r.observed_at_ms,
@@ -137,9 +140,13 @@ export function metricObservationRollupQuery(
     WHERE r.bucket_start_ms >= ? AND r.bucket_start_ms < ?
       AND ${rollupWhere} AND r.facet_key IS NOT NULL
   ), observations AS (
-    SELECT * FROM edge_observations
+    SELECT provider_id,account_key,facet_key,numeric_value,facet_id,
+      author_user_id,guild_id,occurred_at_ms,content_event_id,observed_at_ms,subject_key,subject_hash
+    FROM edge_observations
     UNION ALL
-    SELECT * FROM rollup_observations
+    SELECT provider_id,account_key,facet_key,numeric_value,facet_id,
+      author_user_id,guild_id,occurred_at_ms,content_event_id,observed_at_ms,subject_key,subject_hash
+    FROM rollup_observations
   ), ranked AS (
     SELECT observations.*,ROW_NUMBER() OVER (
       PARTITION BY provider_id,subject_hash,facet_key
@@ -160,7 +167,7 @@ export function metricObservationRollupQuery(
     SELECT ${keys},COUNT(*) AS events,COUNT(DISTINCT author_user_id) AS users,
       COUNT(DISTINCT guild_id) AS guilds,MIN(observed_at_ms) AS oldest_observation_ms,
       MAX(observed_at_ms) AS latest_observation_ms
-    FROM raw_observations GROUP BY ${keys}
+    FROM raw_counts GROUP BY ${keys}
   )
   SELECT t.*,o.events,o.users,o.guilds,o.oldest_observation_ms,o.latest_observation_ms,
     'latest_subject_observation_v3_hourly_rollup' AS aggregation,
