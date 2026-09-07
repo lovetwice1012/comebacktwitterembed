@@ -146,6 +146,7 @@ class AuthorityTests(unittest.TestCase):
         status = self.status()
         self.assertEqual(status["epoch"], promoted["epoch"] + 1)
         self.assertLessEqual(status["quarantineUntil"], self.clock.wall())
+        self.assertLessEqual(status["lease"]["expiresAt"], self.clock.wall())
 
     def test_release_does_not_shorten_original_grace(self):
         self.ready()
