@@ -142,6 +142,27 @@ class Failback:
             state = subprocess.run(["systemctl", "is-active", unit], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, timeout=10, check=False).stdout.strip()
             if state not in {"inactive", "failed"}:
                 raise FailbackError("Source workload is still active")
+
+    def release_source_lease(self):
+        lease_path = Path(self.config["sourceLeaseFile"])
+        if not lease_path.exists():
+            return
+        lease = private_json(lease_path)
+        if lease.get("state") not in {"active", "renewal_unconfirmed"}:
+            return
+        child_pid = lease.get("childPid")
+        if type(child_pid) is int and child_pid > 1 and Path(f"/proc/{child_pid}").exists():
+            raise FailbackError("Source workload child is still alive")
+        config = private_json(self.config["authorityConfig"])
+        body = {key: lease.get(key) for key in ("node", "instanceId", "epoch", "leaseId")}
+        request = urllib.request.Request(self.config["authorityUrl"].rstrip("/") + "/v1/lease/release", data=json.dumps(body).encode(), headers={"Authorization": "Bearer " + config["tokens"]["oci"], "Content-Type": "application/json"}, method="POST")
+        try:
+            with urllib.request.urlopen(request, timeout=10) as response:
+                result = json.loads(response.read(65537))
+        except Exception:
+            raise FailbackError("Source lease release was not confirmed") from None
+        if result.get("ok") is not True or result.get("released") is not True:
+            raise FailbackError("Source lease release was rejected")
         lease_path = Path(self.config["sourceLeaseFile"])
         if lease_path.exists():
             lease = private_json(lease_path)
@@ -190,6 +211,7 @@ class Failback:
         if phase == "PRIMARY_PREPARED":
             try:
                 self.fence_source()
+                self.release_source_lease()
                 authority = self.authority()
                 self.save(phase="SOURCE_FROZEN", sourceEpoch=authority["epoch"])
             except Exception as error:
