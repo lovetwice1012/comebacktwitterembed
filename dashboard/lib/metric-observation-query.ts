@@ -47,6 +47,20 @@ export function metricObservationQuery(whereSql: string, groupAccount: boolean, 
     FROM totals t JOIN observation_counts o ON ${join} ORDER BY o.events DESC LIMIT ?`;
 }
 
+// Provider schema coverage only needs the observed event/user/server counts.
+// It does not consume latest numeric values; using the full latest-subject
+// window for this auxiliary section needlessly sorts every observation again.
+export function providerMetricObservationCountsQuery(whereSql: string) {
+  return `SELECT /*+ SET_VAR(tmp_table_size=1073741824) */
+      f.provider_id,f.facet_key,COUNT(*) AS events,
+      COUNT(DISTINCT c.author_user_id) AS users,COUNT(DISTINCT c.guild_id) AS guilds
+    FROM bot_provider_content_facets f
+    JOIN bot_provider_content_events c ON c.content_event_id=f.content_event_id
+    WHERE ${whereSql}
+    GROUP BY f.provider_id,f.facet_key
+    ORDER BY events DESC LIMIT ?`;
+}
+
 /** Ratio absence is not zero percent; keep the observed zero numerator. */
 export function observedRatio(numerator: unknown, denominator: unknown): number | null {
   if (numerator == null || denominator == null || numerator === "" || denominator === "") return null;

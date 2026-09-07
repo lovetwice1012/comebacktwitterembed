@@ -3,7 +3,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { DatabaseSync } = require('node:sqlite');
 const loadDashboard = require('./helpers/load-dashboard.cjs');
-const { metricObservationQuery } = loadDashboard('lib/metric-observation-query.ts');
+const { metricObservationQuery, providerMetricObservationCountsQuery } = loadDashboard('lib/metric-observation-query.ts');
 
 function sqliteQuery(sql) {
     return sql
@@ -50,5 +50,6 @@ test('numeric metric observations prefilter candidate facet keys without changin
         assert.match(metricObservationQuery(where, true, true), /numeric_keys AS/);
         assert.doesNotMatch(metricObservationQuery(where, true, false), /numeric_keys AS/);
         assert.doesNotMatch(metricObservationQuery(`${where} AND f.facet_key IN (?)`, true, true, false), /numeric_keys AS/);
+        assert.match(providerMetricObservationCountsQuery(`${where} AND f.facet_key IN (?)`), /GROUP BY f\.provider_id,f\.facet_key/);
     } finally { db.close(); }
 });
