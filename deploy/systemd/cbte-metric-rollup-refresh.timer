@@ -3,7 +3,7 @@ Description=Refresh CBTE metric observation rollup periodically
 
 [Timer]
 OnBootSec=10min
-OnUnitActiveSec=15min
+OnActiveSec=15min
 Persistent=true
 Unit=cbte-metric-rollup-refresh.service
 
