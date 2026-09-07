@@ -25,6 +25,7 @@ except ImportError:
 
 PHASES = {"WAITING_PRIMARY", "PRIMARY_PREPARED", "SOURCE_FROZEN", "OWNERSHIP_COMMITTING", "PRIMARY_VERIFYING", "ROUTING_PRIMARY", "PRIMARY_ACTIVE", "FAILED"}
 LOG = logging.getLogger("cbte-recovery.failback")
+DEFAULT_CONTROLLER_STATE = "/var/lib/cbte-recovery/controller/state.json"
 
 
 class FailbackError(Exception):
@@ -95,6 +96,12 @@ class Failback:
         self.runner = runner or self.command
         self.state_path = Path(self.config["statePath"])
         self.state = self.load_state()
+        manual = self.manual_switch_record()
+        if (self.state.get("phase") == "PRIMARY_ACTIVE" and isinstance(manual, dict)
+                and manual.get("targetNode") == "primary" and manual.get("state") in {"scheduled", "executing"}
+                and manual.get("operationId") != self.state.get("operationId")):
+            self.state = {"version": 1, "phase": "WAITING_PRIMARY", "operationId": manual["operationId"], "manualSwitchId": manual["operationId"], "updatedAt": now_iso()}
+            self.save()
 
     @staticmethod
     def validate(config):
@@ -105,6 +112,10 @@ class Failback:
             path = Path(config[key])
             if not path.is_absolute() or path == Path(path.anchor) or ".." in path.parts:
                 raise FailbackError("Failback paths must be absolute and non-root")
+        if "controllerStatePath" in config:
+            controller_state = Path(config["controllerStatePath"])
+            if not controller_state.is_absolute() or controller_state == Path(controller_state.anchor) or ".." in controller_state.parts:
+                raise FailbackError("Controller state path must be absolute and non-root")
         if config["primaryHostnames"] != ["cbte.sprink.cloud", "twidata.sprink.cloud"]:
             raise FailbackError("Failback hostnames are fixed policy")
         parsed = urllib.parse.urlsplit(config["authorityUrl"])
@@ -119,6 +130,38 @@ class Failback:
         if value.get("version") != 1 or value.get("phase") not in PHASES or not isinstance(value.get("operationId"), str):
             raise FailbackError("Failback state is invalid")
         return value
+
+    def manual_switch_record(self):
+        path = Path(self.config.get("controllerStatePath", DEFAULT_CONTROLLER_STATE))
+        if not path.exists():
+            return None
+        value = private_json(path)
+        record = value.get("manualSwitch")
+        return record if isinstance(record, dict) else None
+
+    def bind_manual_switch(self, authority):
+        """Return whether a scheduled primary handoff may run now.
+
+        A future reservation must hold the automatic failback state machine at
+        WAITING_PRIMARY.  Once due, the normal evidence, fencing and handoff
+        phases are reused unchanged.
+        """
+        record = self.manual_switch_record()
+        if not isinstance(record, dict) or record.get("targetNode") != "primary" or record.get("state") not in {"scheduled", "executing"}:
+            return True
+        try:
+            execute_at = dt.datetime.fromisoformat(str(record.get("executeAt", "")).replace("Z", "+00:00"))
+            if execute_at.tzinfo is None:
+                raise ValueError
+        except (TypeError, ValueError, OverflowError):
+            raise FailbackError("Manual switch reservation has an invalid time")
+        if time.time() < execute_at.timestamp():
+            return False
+        if self.state.get("operationId") != record.get("operationId"):
+            if self.state.get("phase") in {"WAITING_PRIMARY", "FAILED", "PRIMARY_ACTIVE"}:
+                self.state = {"version": 1, "phase": "WAITING_PRIMARY", "operationId": record["operationId"], "manualSwitchId": record["operationId"], "updatedAt": now_iso()}
+                self.save()
+        return True
 
     def save(self, **updates):
         previous = self.state.get("phase")
@@ -303,6 +346,8 @@ class Failback:
             try:
                 authority = self.authority()
                 if authority.get("activeNode") != "oci":
+                    return self.state
+                if not self.bind_manual_switch(authority):
                     return self.state
                 primary = self.primary_ready()
                 notify(self.config["notificationConfig"], "failback-start", authority["epoch"], self.state["operationId"])

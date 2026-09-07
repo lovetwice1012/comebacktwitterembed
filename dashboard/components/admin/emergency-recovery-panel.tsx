@@ -5,9 +5,10 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
 type RecordValue = Record<string, unknown>;
-type RecoveryStatus = RecordValue & { configured?: boolean; available?: boolean; phase?: string; message?: string; fetchedAt?: string; updatedAt?: string; backup?: RecordValue | null; candidate?: RecordValue | null; gates?: unknown[]; lastError?: unknown; primaryEnrolled?: boolean; activeNode?: unknown; epoch?: unknown };
+type RecoveryStatus = RecordValue & { configured?: boolean; available?: boolean; phase?: string; message?: string; fetchedAt?: string; updatedAt?: string; backup?: RecordValue | null; candidate?: RecordValue | null; gates?: unknown[]; lastError?: unknown; primaryEnrolled?: boolean; activeNode?: unknown; epoch?: unknown; manualSwitch?: RecordValue | null };
 const object = (value: unknown): RecordValue => value && typeof value === "object" && !Array.isArray(value) ? value as RecordValue : {};
 const display = (value: unknown) => value == null || value === "" ? "未取得" : typeof value === "object" ? JSON.stringify(value, null, 2) : String(value);
+const pretty = (value: unknown) => JSON.stringify(value ?? null, null, 2);
 
 function instant(value: unknown) {
   if (value == null || value === "") return null;
@@ -25,6 +26,57 @@ export function backupAge(value: unknown, now = Date.now()) {
   return `${days ? `${days}日 ` : ""}${hours}時間 ${minutes}分前`;
 }
 const phaseLabels: Record<string, string> = { idle: "待機中", monitoring: "監視中", waiting_for_backup: "バックアップ待ち", downloading: "バックアップ取得中", restoring: "復元中", validating: "復旧候補を検証中", ready: "準備済み（復旧条件を確認）", blocked: "条件不足で停止中", failed: "処理に失敗", active: "稼働中" };
+
+function localDateTime(value = Date.now()) {
+  const date = new Date(value); date.setMinutes(date.getMinutes() - date.getTimezoneOffset());
+  return date.toISOString().slice(0, 16);
+}
+
+async function recoveryAction(type: string, input: RecordValue) {
+  const idempotencyKey = crypto.randomUUID();
+  const create = await fetch("/api/admin/agent/actions", { method: "POST", credentials: "same-origin", headers: { "content-type": "application/json" }, body: JSON.stringify({ type, input, idempotencyKey }), cache: "no-store", signal: AbortSignal.timeout(15000) });
+  const first = await create.json() as RecordValue;
+  if (!create.ok) throw new Error(display(object(first.error).message || first.error || `HTTP ${create.status}`));
+  let action = first;
+  for (let attempt = 0; attempt < 120 && ["queued", "running"].includes(String(action.status)); attempt++) {
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    const response = await fetch(`/api/admin/agent/actions/${encodeURIComponent(String(action.id))}`, { credentials: "same-origin", cache: "no-store", signal: AbortSignal.timeout(15000) });
+    action = await response.json() as RecordValue;
+    if (!response.ok) throw new Error(display(object(action.error).message || action.error || `HTTP ${response.status}`));
+  }
+  return action;
+}
+
+function ManualSwitchPanel({ status, onRefresh }: { status: RecoveryStatus; onRefresh: () => Promise<void> }) {
+  const active = status.activeNode === "oci" ? "oci" : status.activeNode === "primary" ? "primary" : "";
+  const [target, setTarget] = useState(active === "oci" ? "primary" : "oci");
+  const [executeAt, setExecuteAt] = useState(localDateTime());
+  const [reason, setReason] = useState("");
+  const [confirm, setConfirm] = useState(false); const [risk, setRisk] = useState(false); const [override, setOverride] = useState(false);
+  const [busy, setBusy] = useState(false); const [message, setMessage] = useState(""); const [error, setError] = useState("");
+  useEffect(() => { if (active) setTarget(active === "oci" ? "primary" : "oci"); }, [active]);
+  const candidate = object(status.candidate), backup = object(status.backup), pending = object(status.manualSwitch);
+  const pendingState = String(pending.state || "");
+  async function schedule() {
+    if (!active || !status.epoch || candidate.phase !== "VALIDATED" && target === "oci") throw new Error("現在の復旧候補を確認してから実行してください");
+    const date = new Date(`${executeAt}:00`); if (!Number.isFinite(date.getTime())) throw new Error("実行日時が不正です");
+    setBusy(true); setError(""); setMessage("");
+    try {
+      const action = await recoveryAction("recovery.manual_switch", { targetNode: target, executeAt: date.toISOString(), expectedEpoch: Number(status.epoch), expectedCandidateId: target === "oci" ? String(candidate.id || "") : "", expectedBackupId: target === "oci" ? String(backup.backupId || "") : "", expectedBackupSha256: target === "oci" ? String(backup.sourceSha256 || "") : "", expectedBackupTimestamp: target === "oci" ? String(backup.sourceTimestamp || "") : "", reason: reason.trim(), confirm, acceptDataRisk: risk, acceptPrimaryIntentOverride: override });
+      if (String(action.status) !== "succeeded") throw new Error(display(action.error || action.result || "手動切り替えを受け付けられませんでした"));
+      const result = object(action.result); setMessage(`手動切り替えを受け付けました。操作ID: ${String(action.id || "未取得")} / ${display(object(result.manualSwitch).state || action.status)}`); setReason(""); setConfirm(false); setRisk(false); setOverride(false); await onRefresh();
+    } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+    finally { setBusy(false); }
+  }
+  async function cancel() {
+    if (!pending.operationId || !["scheduled", "blocked"].includes(pendingState)) return;
+    setBusy(true); setError(""); setMessage("");
+    try { const action = await recoveryAction("recovery.manual_switch.cancel", { operationId: String(pending.operationId) }); if (String(action.status) !== "succeeded") throw new Error(display(action.error || action.result || "予約をキャンセルできませんでした")); setMessage(`予約をキャンセルしました。操作ID: ${String(action.id || "未取得")}`); await onRefresh(); }
+    catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+    finally { setBusy(false); }
+  }
+  return <div className="space-y-3 rounded border p-4"><div className="flex flex-wrap items-baseline justify-between gap-2"><h3 className="font-semibold">復旧先の手動切り替え・日時予約</h3>{pending.operationId ? <span className="text-xs">現在の予約: {String(pending.state)} / {String(pending.targetNode)} / {date(pending.executeAt)}</span> : null}</div><p className="text-sm">指定時刻に復旧条件をもう一度検証してから切り替えます。予約しても、候補・epoch・lease・DB・公開経路の条件が満たされなければ実行せず停止します。</p>{!active ? <p className="text-sm text-muted-foreground">現在の稼働ノードを確認できないため操作できません。</p> : <><div className="grid gap-3 md:grid-cols-2"><label className="text-sm">切り替え先<select className="mt-1 h-10 w-full rounded-md border bg-card px-3" value={target} onChange={e => setTarget(e.target.value)} disabled={busy}><option value="oci">予備のクラウドサーバー</option><option value="primary">メインサーバー</option></select></label><label className="text-sm">実行日時（端末のJST）<input className="mt-1 h-10 w-full rounded-md border bg-card px-3" type="datetime-local" min={localDateTime()} value={executeAt} onChange={e => setExecuteAt(e.target.value)} disabled={busy} /></label></div><label className="block text-sm">切り替え理由<textarea className="mt-1 min-h-24 w-full rounded-md border bg-card p-2" maxLength={1000} value={reason} onChange={e => setReason(e.target.value)} disabled={busy} placeholder="調査・切り替えの理由（5文字以上）" /></label><label className="flex gap-2 text-sm"><input type="checkbox" checked={confirm} onChange={e => setConfirm(e.target.checked)} disabled={busy} />指定時刻にサービスの切り替え処理を行うことを確認しました</label><label className="flex gap-2 text-sm"><input type="checkbox" checked={risk} onChange={e => setRisk(e.target.checked)} disabled={busy} />データ同期時点によって設定・受付履歴が戻る可能性を確認しました（savedataは移行対象外）</label><label className="flex gap-2 text-sm"><input type="checkbox" checked={override} onChange={e => setOverride(e.target.checked)} disabled={busy} />既存の停止・保守指示に反して切り替える可能性がある場合も、明示操作として確認しました</label><div className="flex flex-wrap gap-2"><Button disabled={busy || !reason.trim() || reason.trim().length < 5 || !confirm || !risk || !override || !active || (target === active) || (target === "oci" && candidate.phase !== "VALIDATED")} onClick={() => void schedule()}>{executeAt && new Date(`${executeAt}:00`).getTime() > Date.now() + 60_000 ? "切り替えを予約" : "今すぐ切り替えを受付"}</Button><Button type="button" variant="outline" disabled={busy || !["scheduled", "blocked"].includes(pendingState)} onClick={() => void cancel()}>予約をキャンセル</Button></div></>}{message ? <p role="status" className="text-sm">{message}</p> : null}{error ? <p role="alert" className="whitespace-pre-wrap text-sm text-destructive">{error}</p> : null}<details className="rounded border p-2"><summary className="cursor-pointer text-sm">手動切り替えの予約・実行記録</summary><pre className="mt-2 max-h-72 overflow-auto whitespace-pre-wrap break-all text-xs">{pretty(status.manualSwitch || null)}</pre></details></div>;
+}
 
 export function RecoveryStatusView({ status, stale = false }: { status: RecoveryStatus; stale?: boolean }) {
   const backup = object(status.backup), candidate = object(status.candidate);
@@ -65,6 +117,6 @@ export function EmergencyRecoveryPanel() {
   return <Card><CardHeader><div className="flex flex-wrap items-center justify-between gap-3"><CardTitle>緊急復旧の状態</CardTitle><Button variant="outline" disabled={loading} onClick={() => void refresh()}>{loading ? "取得中" : "状態を更新"}</Button></div><CardDescription>バックアップ、復旧候補、本番系の登録状態と復旧条件を30秒ごとに確認します。</CardDescription></CardHeader><CardContent className="space-y-4">
     {error ? <div role={connectionState === "not_configured" ? "status" : "alert"} className="rounded border p-3 text-sm"><p className="font-medium">{connectionState === "not_configured" || connectionState === "invalid_configuration" ? "緊急復旧コントローラーが未設定です" : "緊急復旧コントローラーの状態は未取得です"}</p><p className="mt-1 whitespace-pre-wrap break-words">{error}</p></div> : null}
     {!snapshot && loading ? <p role="status" className="text-sm text-muted-foreground">復旧状態を取得しています。</p> : null}
-    {snapshot ? <RecoveryStatusView status={snapshot} stale={connectionState !== "available"} /> : null}
+    {snapshot ? <><RecoveryStatusView status={snapshot} stale={connectionState !== "available"} /><ManualSwitchPanel status={snapshot} onRefresh={refresh} /></> : null}
   </CardContent></Card>;
 }

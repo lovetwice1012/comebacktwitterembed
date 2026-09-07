@@ -26,6 +26,8 @@ type CatalogItem struct {
 func catalog() []CatalogItem {
 	return []CatalogItem{
 		{"recovery.emergency.approve", "候補限定の緊急起動を一度承認", "バックアップ以後の変更消失とsavedata未移行を確認し、本体運転指示の条件だけを10分間・一回限り免除します。本体の指示を書き換えず、自動有効化や他の安全条件の免除は行いません。", Object{"expectedEpoch": 0, "candidateId": "", "backupId": "", "backupSha256": "", "sourceTimestamp": "", "expectedPrimaryIntentRevision": nil, "expectedPrimaryIntentState": "unknown", "expectedOciPolicyRevision": 0, "reason": "", "acceptBackupRollback": false, "acceptMissingSavedata": false, "acceptPrimaryIntentOverride": false}, true},
+		{"recovery.manual_switch", "復旧先を手動で切り替え（即時・予約）", "メインサーバーと予備のクラウドサーバーの間で、指定時刻に安全条件を再確認して切り替えます。epoch・候補・バックアップを固定し、既存のフェンス、通知、公開経路検証を通します。", Object{"targetNode": "oci", "executeAt": "", "expectedEpoch": 0, "expectedCandidateId": "", "expectedBackupId": "", "expectedBackupSha256": "", "expectedBackupTimestamp": "", "reason": "", "confirm": false, "acceptDataRisk": false, "acceptPrimaryIntentOverride": false}, true},
+		{"recovery.manual_switch.cancel", "予約した復旧切り替えをキャンセル", "実行開始前の手動切り替え予約をキャンセルします。実行中の切り替えは停止せず、履歴と現在状態を確認します。", Object{"operationId": ""}, true},
 		{"diagnostics.queries", "実行中の管理SQL", "登録された管理worker自身のSQLと期限を確認。", Object{"includeCompleted": false}, false},
 		{"diagnostics.query.cancel", "管理SQLを中止", "登録queryIdと実行SQLの所有・一致を再検証して中止。任意SQL/接続IDは受け付けません。", Object{"queryId": "", "onlyIfOverdue": true}, true},
 		{"provider.sources", "取得元一覧", "登録済みの取得元と一時的な切り替え状態を確認。", Object{}, false},
@@ -182,6 +184,10 @@ func (a *App) execute(parent context.Context, ac Action) {
 		problem = Object{"code": "ACTION_UNAVAILABLE_IN_DEPLOYMENT", "message": reason}
 	} else if ac.Type == "recovery.emergency.approve" {
 		data, problem = a.approveEmergencyRecovery(ctx, ac, input)
+	} else if ac.Type == "recovery.manual_switch" {
+		data, problem = a.submitManualSwitch(ctx, ac, input)
+	} else if ac.Type == "recovery.manual_switch.cancel" {
+		data, problem = a.cancelManualSwitch(ctx, ac, input)
 	} else if ac.Type == "diagnostics.collect" {
 		data = a.collect(ctx, true)
 	} else if strings.HasPrefix(ac.Type, "service.") || strings.HasPrefix(ac.Type, "agent.") || strings.HasPrefix(ac.Type, "analysis.") || strings.HasPrefix(ac.Type, "database.") || ac.Type == "logs.read" || ac.Type == "logs.previous_boot" || ac.Type == "logs.boots" || ac.Type == "kernel.logs" {

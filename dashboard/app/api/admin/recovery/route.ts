@@ -56,7 +56,7 @@ export async function GET() {
       value = JSON.parse(Buffer.concat(chunks).toString("utf8"));
       if (!value || Array.isArray(value) || typeof value.phase !== "string") throw new Error("invalid status");
     } catch { await response.body?.cancel().catch(() => {}); return unavailable("invalid_response", "緊急復旧コントローラーの状態を読み取れません。最後の取得結果と現在の状態を区別してください。", true, 503); }
-    const status = Object.fromEntries(["phase", "updatedAt", "backup", "candidate", "gates", "lastError", "primaryEnrolled", "activeNode", "epoch"].filter(key => key in value).map(key => [key, redact(value[key], token)]));
+    const status = Object.fromEntries(["phase", "updatedAt", "backup", "candidate", "gates", "lastError", "primaryEnrolled", "activeNode", "epoch", "manualSwitch"].filter(key => key in value).map(key => [key, redact(value[key], token)]));
     return NextResponse.json({ ...status, configured: true, available: true, fetchedAt: new Date().toISOString() }, { headers });
   } catch (error) { return errorResponse(error); }
 }

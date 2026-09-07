@@ -9,6 +9,23 @@
   heading.append(text('h1', 'NASバックアップからの緊急復旧'), refreshButton);
   const status = text('p', '復旧状態はまだ取得していません。'); status.setAttribute('role', 'status');
   const content = document.createElement('div');
+  const manualPanel = document.createElement('article'); manualPanel.className = 'panel';
+  const manualTarget = document.createElement('select'); manualTarget.setAttribute('aria-label', '手動切り替え先');
+  for (const [value, label] of [['oci', '予備のクラウドサーバー'], ['primary', 'メインサーバー']]) { const option = text('option', label); option.value = value; manualTarget.append(option); }
+  const manualTime = document.createElement('input'); manualTime.type = 'datetime-local'; manualTime.setAttribute('aria-label', '手動切り替え日時');
+  const manualReason = document.createElement('textarea'); manualReason.rows = 3; manualReason.maxLength = 1000; manualReason.placeholder = '切り替え理由（5文字以上）';
+  const manualConfirm = document.createElement('input'); manualConfirm.type = 'checkbox';
+  const manualRisk = document.createElement('input'); manualRisk.type = 'checkbox';
+  const manualOverride = document.createElement('input'); manualOverride.type = 'checkbox';
+  const manualSubmit = text('button', '手動切り替えを受付'); manualSubmit.type = 'button';
+  const manualCancel = text('button', '予約をキャンセル'); manualCancel.type = 'button'; manualCancel.disabled = true;
+  const manualStatus = text('p', '即時実行または将来の日時を指定できます。実行時にも全条件を再確認します。'); manualStatus.setAttribute('role', 'status');
+  const manualResult = document.createElement('div'); manualResult.id = 'recovery-manual-result';
+  const manualForm = document.createElement('div'); manualForm.className = 'inline';
+  manualForm.append(text('label', '切り替え先'), manualTarget, text('label', '実行日時（端末の時刻）'), manualTime);
+  const confirmationList = document.createElement('div'); confirmationList.className = 'stack';
+  for (const [input, label] of [[manualConfirm, '指定時刻に切り替え処理を行うことを確認しました'], [manualRisk, '設定・受付履歴が戻る可能性とsavedata非移行を確認しました'], [manualOverride, '停止・保守指示に反して切り替える可能性も明示確認しました']]) { const row = text('label', ''); row.append(input, text('span', label)); confirmationList.append(row); }
+  manualPanel.append(text('h2', '復旧先の手動切り替え・日時予約'), text('p', '予約は復旧コントローラーへ保存され、指定時刻にlease・候補・DB・公開経路を再検証します。条件を満たさない場合は切り替えません。'), manualForm, text('label', '切り替え理由'), manualReason, confirmationList, manualSubmit, manualCancel, manualStatus, manualResult);
   const logsPanel = document.createElement('article'); logsPanel.className = 'panel';
   const logControls = document.createElement('div'); logControls.className = 'toolbar';
   const component = document.createElement('select'); component.setAttribute('aria-label', 'ログの処理');
@@ -20,7 +37,7 @@
   const logStatus = text('p', 'OCIの起動後に、選択した処理の保存済みログを確認できます。'); logStatus.setAttribute('role', 'status');
   const logDetails = document.createElement('div'); const logTail = document.createElement('pre'); logTail.setAttribute('aria-label', '保存済みログの末尾');
   logsPanel.append(text('h2', '起動・取得処理の実ログ'), text('p', '選択されたOCI候補の実行ログを読み取ります。最大256KiB・1000行の末尾表示です。起動に失敗した場合も、記録された原因を確認できます。'), logControls, logStatus, logDetails, logTail);
-  panel.append(heading, text('p', 'バックアップの準備状況、二重稼働を防ぐ起動許可、OCIへの切り替え条件を確認します。savedataのファイルは移行対象外です。'), status, content, logsPanel);
+  panel.append(heading, text('p', 'バックアップの準備状況、二重稼働を防ぐ起動許可、OCIへの切り替え条件を確認します。savedataのファイルは移行対象外です。'), status, content, manualPanel, logsPanel);
   document.getElementById('nav').append(navigation); app.append(panel);
   let pending = false; let snapshot = null;
   let logPending = false; let lastLogAt = null;
@@ -79,8 +96,38 @@
     content.append(gates);
     if (value.manualEmergencyApproval) { const approval = value.manualEmergencyApproval; const record = rows('候補限定の手動承認', [['承認ID', approval.approvalId], ['状態', approval.state], ['対象候補', approval.candidateId], ['対象バックアップ', approval.backupId], ['承認者', approval.actorId], ['理由', approval.reason], ['有効期限', time(Number(approval.expiresAt) * 1000)], ['免除する条件', approval.overriddenGate], ['本体指示', '元の運転指示を保持'], ['自動有効化', 'この承認では変更しません']]); raw(record, approval, false, '承認履歴・固定した世代とSHA-256'); content.append(record); }
     if (value.lastError) { const failure = rows('最後に記録されたエラー', []); failure.setAttribute('role', 'alert'); raw(failure, value.lastError, true, '原因・詳細'); content.append(failure); }
+    const active = value.activeNode === 'oci' ? 'oci' : value.activeNode === 'primary' ? 'primary' : '';
+    for (const option of manualTarget.options) option.disabled = !active || option.value === active;
+    if (active && (!manualTarget.value || manualTarget.value === active)) manualTarget.value = active === 'oci' ? 'primary' : 'oci';
+    const scheduled = value.manualSwitch || {};
+    if (scheduled.operationId) {
+      manualStatus.textContent = `現在の予約: ${display(scheduled.state)} / ${display(scheduled.targetNode)} / ${time(scheduled.executeAt)} / ${display(scheduled.operationId)}`;
+      manualCancel.disabled = !['scheduled', 'blocked'].includes(String(scheduled.state));
+    } else {
+      manualStatus.textContent = '即時実行または将来の日時を指定できます。実行時にも全条件を再確認します。';
+      manualCancel.disabled = true;
+    }
     raw(content, value, false, 'コントローラー応答の全詳細');
   }
+  function localDateTime(value = Date.now()) { const d = new Date(value); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0, 16); }
+  manualTime.value = localDateTime(); manualTime.min = localDateTime();
+  manualSubmit.addEventListener('click', async () => {
+    if (!snapshot || !manualTarget.value || !manualTime.value || manualReason.value.trim().length < 5 || !manualConfirm.checked || !manualRisk.checked || !manualOverride.checked) { manualStatus.className = 'error'; manualStatus.textContent = '切り替え先・日時・理由・3項目の確認を入力してください。'; return; }
+    const when = new Date(`${manualTime.value}:00`); if (!Number.isFinite(when.getTime())) { manualStatus.className = 'error'; manualStatus.textContent = '実行日時が不正です。'; return; }
+    const target = manualTarget.value; const candidate = snapshot.candidate || {}; const backup = snapshot.backup || {};
+    const input = { targetNode: target, executeAt: when.toISOString(), expectedEpoch: Number(snapshot.epoch), expectedCandidateId: target === 'oci' ? String(candidate.id || '') : '', expectedBackupId: target === 'oci' ? String(backup.backupId || '') : '', expectedBackupSha256: target === 'oci' ? String(backup.sourceSha256 || '') : '', expectedBackupTimestamp: target === 'oci' ? String(backup.sourceTimestamp || '') : '', reason: manualReason.value.trim(), confirm: true, acceptDataRisk: true, acceptPrimaryIntentOverride: true };
+    manualSubmit.disabled = true; manualCancel.disabled = true; manualStatus.className = ''; manualStatus.textContent = '手動切り替えを受付中です。';
+    try { const action = await runAction('recovery.manual_switch', input, 'recovery-manual-result'); if (action.status !== 'succeeded') throw new Error(display(action.error || action.result || '手動切り替えを受け付けられませんでした')); manualStatus.textContent = `手動切り替えを受け付けました。操作ID: ${display(action.id)}。${display(action.result?.manualSwitch?.state || action.status)}`; await refresh(); }
+    catch (error) { manualStatus.className = 'error'; manualStatus.textContent = error.message || String(error); }
+    finally { manualSubmit.disabled = false; }
+  });
+  manualCancel.addEventListener('click', async () => {
+    const operationId = String(snapshot?.manualSwitch?.operationId || ''); if (!operationId) return;
+    manualCancel.disabled = true; manualSubmit.disabled = true; manualStatus.className = ''; manualStatus.textContent = '予約をキャンセル中です。';
+    try { const action = await runAction('recovery.manual_switch.cancel', { operationId }, 'recovery-manual-result'); if (action.status !== 'succeeded') throw new Error(display(action.error || action.result || '予約をキャンセルできませんでした')); manualStatus.textContent = `予約をキャンセルしました。操作ID: ${display(action.id)}`; await refresh(); }
+    catch (error) { manualStatus.className = 'error'; manualStatus.textContent = error.message || String(error); }
+    finally { manualSubmit.disabled = false; }
+  });
   async function refresh() {
     if (pending || app.hidden) return;
     pending = true; refreshButton.disabled = true; status.textContent = '復旧状態を取得しています。';

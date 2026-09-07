@@ -104,7 +104,7 @@ func (a *App) recoveryStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	result := Object{"configured": true, "available": true, "fetchedAt": now(), "manualApprovalAvailable": serviceActionUnavailable(a.cfg, "recovery.emergency.approve", Object{}) == ""}
-	for _, key := range []string{"phase", "updatedAt", "backup", "candidate", "gates", "lastError", "primaryEnrolled", "activeNode", "epoch", "download", "import", "nextPrepareAt", "nodeObservations", "authorityObservationFetchedAt", "primaryIntent", "ociIntent", "manualEmergencyApproval"} {
+	for _, key := range []string{"phase", "updatedAt", "backup", "candidate", "gates", "lastError", "primaryEnrolled", "activeNode", "epoch", "download", "import", "nextPrepareAt", "nodeObservations", "authorityObservationFetchedAt", "primaryIntent", "ociIntent", "manualEmergencyApproval", "manualSwitch"} {
 		if item, exists := value[key]; exists {
 			result[key] = redactRecovery(item, a.cfg.RecoveryControllerToken)
 		}

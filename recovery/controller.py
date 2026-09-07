@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Durable OCI backup preparation and guarded, one-way emergency promotion.
+"""Durable backup preparation and guarded bidirectional recovery switching.
 
 The separate authority is the only source of ownership. HTTP failures are
 diagnostic observations, never permission to replace an unenrolled primary.
@@ -26,6 +26,12 @@ import urllib.parse
 import urllib.request
 
 INTENT_ACTORS = frozenset({"933314562487386122", "796972193287503913"})
+MANUAL_SWITCH_FIELDS = frozenset({"operationId", "actorId", "targetNode", "executeAt", "expectedEpoch", "expectedCandidateId", "expectedBackupId", "expectedBackupSha256", "expectedBackupTimestamp", "reason", "confirm", "acceptDataRisk", "acceptPrimaryIntentOverride"})
+MANUAL_SWITCH_CANCEL_FIELDS = frozenset({"operationId", "actorId"})
+MANUAL_SWITCH_STATES = frozenset({"scheduled", "executing", "blocked", "completed", "cancelled", "failed"})
+MANUAL_SWITCH_ID = re.compile(r"[0-9a-f]{48}")
+MANUAL_CANDIDATE_ID = re.compile(r"[0-9a-f]{24}")
+MANUAL_SWITCH_HASH = re.compile(r"[0-9a-f]{64}")
 
 
 class IntentError(Exception):
@@ -47,6 +53,21 @@ except ImportError:
 
 def iso_now():
     return dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+
+
+def manual_switch_time(value):
+    if not isinstance(value, str) or not 1 <= len(value) <= 80:
+        raise IntentError("INVALID_SWITCH_TIME", "executeAt must be an ISO-8601 timestamp with timezone")
+    try:
+        parsed = dt.datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        raise IntentError("INVALID_SWITCH_TIME", "executeAt must be an ISO-8601 timestamp with timezone") from None
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        raise IntentError("INVALID_SWITCH_TIME", "executeAt must include a timezone")
+    timestamp = parsed.timestamp()
+    if timestamp < time.time() - 30 or timestamp > time.time() + 30 * 86400:
+        raise IntentError("SWITCH_TIME_OUT_OF_RANGE", "予約時刻は現在から30秒前から30日後まで指定できます")
+    return timestamp, parsed.astimezone(dt.timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
 
 
 def age_seconds(timestamp):
@@ -126,7 +147,7 @@ def is_seeded_oci_intent(intent, config):
             and intent.get("desiredState") == "maintenance" and intent.get("revision") == seed)
 
 
-def promotion_gates(authority, backup, candidate, config, primary_intent=None, oci_intent=None, manual_approval=None):
+def promotion_gates(authority, backup, candidate, config, primary_intent=None, oci_intent=None, manual_approval=None, manual_override=False):
     now = time.time()
     source = candidate_source(candidate)
     bound = same_backup_source(backup, source)
@@ -142,8 +163,8 @@ def promotion_gates(authority, backup, candidate, config, primary_intent=None, o
         gate("DATABASE_VALIDATED", "独立MySQLへの復元と必須テーブル検証", candidate and candidate.get("phase") in ("VALIDATED", "ACTIVE")),
         gate("SAVEDATA_CONSTRAINT", "savedataを移行しない制約の合意", config.get("allowMissingSavedata") is True),
         gate("PRIMARY_ENROLLED", "本体の起動許可・停止監視の導入証明", authority.get("primaryEnrolled")),
-        gate("AUTOMATION_ARMED", "自動切り替えの有効化", authority.get("armed")),
-        gate("PRIMARY_OPERATOR_RUNNING", "本体の運転指示、またはこの候補だけに有効な一回限りの明示承認", intent_wants_running(primary_intent) or manual_approval is not None) | ({"overrideApprovalId": manual_approval["approvalId"], "overrideScope": "one_time_primary_intent_only"} if manual_approval else {}),
+        gate("AUTOMATION_ARMED", "自動切り替えの有効化、または明示した手動切り替え", authority.get("armed") or manual_override),
+        gate("PRIMARY_OPERATOR_RUNNING", "本体の運転指示、またはこの候補だけに有効な一回限りの明示承認", intent_wants_running(primary_intent) or manual_approval is not None or manual_override) | ({"overrideApprovalId": manual_approval["approvalId"], "overrideScope": "one_time_primary_intent_only"} if manual_approval else ({"overrideScope": "explicit_manual_switch"} if manual_override else {})),
         gate("OCI_OPERATOR_PERMITS_PROMOTION", "OCIの運転指示が稼働中、または未変更の初期待機設定", intent_wants_running(oci_intent, fresh=True) or is_seeded_oci_intent(oci_intent, config)),
         gate("OLD_LEASE_EXPIRED", "本体の起動許可が失効している", not lease.get("valid") and now >= float(lease.get("expiresAt") or 0)),
         gate("LEASE_DRAIN_COMPLETE", "旧プロセス停止後の待機期間が経過", now >= max(float(authority.get("quarantineUntil") or 0), float(authority.get("drainUntil") or 0), float(lease.get("expiresAt") or 0) + 60)),
@@ -280,6 +301,144 @@ class Controller:
             self.update(**{key: intent})
             return intent
 
+    @staticmethod
+    def _manual_switch_compare(record):
+        return {key: record.get(key) for key in MANUAL_SWITCH_FIELDS}
+
+    def schedule_manual_switch(self, value):
+        """Durably queue one explicit, epoch-bound switch in either direction.
+
+        The controller remains the only process that can ask authority to move
+        ownership.  Scheduling merely records the request; the existing
+        promotion/failback state machines perform all fencing, data checks,
+        notifications and DNS verification when the time arrives.
+        """
+        if not isinstance(value, dict) or set(value) != MANUAL_SWITCH_FIELDS or len(json.dumps(value, ensure_ascii=False).encode()) > 8192:
+            raise IntentError("INVALID_MANUAL_SWITCH", "手動切り替えの入力項目が不正です")
+        if not isinstance(value.get("operationId"), str) or not MANUAL_SWITCH_ID.fullmatch(value["operationId"]):
+            raise IntentError("INVALID_MANUAL_SWITCH", "operationId は管理操作の固定IDで指定してください")
+        if value.get("actorId") not in INTENT_ACTORS:
+            raise IntentError("INVALID_MANUAL_SWITCH", "許可された管理者IDが必要です")
+        if value.get("targetNode") not in {"primary", "oci"}:
+            raise IntentError("INVALID_MANUAL_SWITCH", "targetNode は primary または oci にしてください")
+        if type(value.get("expectedEpoch")) is not int or value["expectedEpoch"] < 1:
+            raise IntentError("INVALID_MANUAL_SWITCH", "現在のepochを整数で指定してください")
+        execute_timestamp, execute_at = manual_switch_time(value.get("executeAt"))
+        if not isinstance(value.get("reason"), str) or not 5 <= len(value["reason"].strip()) <= 1000 or "\x00" in value["reason"]:
+            raise IntentError("INVALID_MANUAL_SWITCH", "理由は5から1000文字で指定してください")
+        if any(value.get(key) is not True for key in ("confirm", "acceptDataRisk", "acceptPrimaryIntentOverride")):
+            raise IntentError("CONFIRMATION_REQUIRED", "手動切り替えの影響と明示確認が必要です")
+        target = value["targetNode"]
+        if target == "oci":
+            if not MANUAL_CANDIDATE_ID.fullmatch(value.get("expectedCandidateId", "")) or not isinstance(value.get("expectedBackupId"), str) or not 1 <= len(value["expectedBackupId"]) <= 128 or not MANUAL_SWITCH_HASH.fullmatch(value.get("expectedBackupSha256", "")) or not isinstance(value.get("expectedBackupTimestamp"), str) or not value["expectedBackupTimestamp"]:
+                raise IntentError("INVALID_MANUAL_SWITCH", "OCI切り替えには検証済み候補とバックアップの識別情報が必要です")
+        elif any(value.get(key) != "" for key in ("expectedCandidateId", "expectedBackupId", "expectedBackupSha256", "expectedBackupTimestamp")):
+            raise IntentError("INVALID_MANUAL_SWITCH", "メイン切り替えではOCI候補の識別情報を空にしてください")
+
+        authority = self.authority()
+        if authority.get("epoch") != value["expectedEpoch"]:
+            raise IntentError("SWITCH_EPOCH_CHANGED", "復旧状態のepochが変わりました。現在の状態を読み直してください", 409)
+        if authority.get("activeNode") == target:
+            raise IntentError("ALREADY_ACTIVE", "指定したノードはすでに稼働中です", 409)
+        with self.lock:
+            existing = self.state.get("manualSwitch")
+            if isinstance(existing, dict) and existing.get("operationId") == value["operationId"]:
+                if self._manual_switch_compare(existing) == dict(value, executeAt=execute_at):
+                    return {"ok": True, "manualSwitch": existing, "reused": True}
+                raise IntentError("SWITCH_ID_CONFLICT", "このoperationIdには別の切り替え内容が記録されています", 409)
+            if isinstance(existing, dict) and existing.get("state") in {"scheduled", "executing", "blocked"}:
+                raise IntentError("SWITCH_ALREADY_PENDING", "別の手動切り替えが処理中または予約中です", 409)
+            if target == "oci":
+                candidate = self.state.get("candidate") or {}
+                source = candidate_source(candidate)
+                if candidate.get("phase") != "VALIDATED" or candidate.get("id") != value["expectedCandidateId"] or source.get("backupId") != value["expectedBackupId"] or source.get("sourceSha256") != value["expectedBackupSha256"] or source.get("sourceTimestamp") != value["expectedBackupTimestamp"]:
+                    raise IntentError("SWITCH_CANDIDATE_CHANGED", "検証済みOCI候補またはバックアップが変わりました", 409)
+            now = iso_now()
+            record = dict(value, executeAt=execute_at, state="scheduled", createdAt=now, updatedAt=now)
+            self.update(manualSwitch=record)
+            return {"ok": True, "manualSwitch": record, "reused": False, "executeAtUnix": execute_timestamp}
+
+    def cancel_manual_switch(self, value):
+        if not isinstance(value, dict) or set(value) != MANUAL_SWITCH_CANCEL_FIELDS:
+            raise IntentError("INVALID_MANUAL_SWITCH_CANCEL", "キャンセル対象の入力が不正です")
+        if not isinstance(value.get("operationId"), str) or not MANUAL_SWITCH_ID.fullmatch(value["operationId"]) or value.get("actorId") not in INTENT_ACTORS:
+            raise IntentError("INVALID_MANUAL_SWITCH_CANCEL", "operationIdと許可された管理者IDが必要です")
+        with self.lock:
+            existing = self.state.get("manualSwitch")
+            if not isinstance(existing, dict) or existing.get("operationId") != value["operationId"]:
+                raise IntentError("SWITCH_NOT_FOUND", "指定した手動切り替え予約が見つかりません", 404)
+            if existing.get("state") == "executing":
+                raise IntentError("SWITCH_ALREADY_EXECUTING", "実行開始後の切り替えはキャンセルできません", 409)
+            if existing.get("state") in {"completed", "cancelled", "failed"}:
+                return {"ok": True, "manualSwitch": existing, "reused": True}
+            record = dict(existing, state="cancelled", updatedAt=iso_now(), cancelledBy=value["actorId"])
+            self.update(manualSwitch=record)
+            return {"ok": True, "manualSwitch": record, "reused": False}
+
+    def _execute_manual_oci(self, authority, record):
+        if authority.get("activeNode") != "primary" or authority.get("epoch") != record.get("expectedEpoch"):
+            raise IntentError("SWITCH_EPOCH_CHANGED", "OCI切り替え前に稼働状態が変わりました", 409)
+        state = self.snapshot()
+        candidate = state.get("candidate") or {}
+        source = candidate_source(candidate)
+        if candidate.get("phase") != "VALIDATED" or candidate.get("id") != record.get("expectedCandidateId") or source.get("backupId") != record.get("expectedBackupId") or source.get("sourceSha256") != record.get("expectedBackupSha256") or source.get("sourceTimestamp") != record.get("expectedBackupTimestamp"):
+            raise IntentError("SWITCH_CANDIDATE_CHANGED", "検証済みOCI候補またはバックアップが変わりました", 409)
+        primary_intent = self.refresh_operator_intent("primary")
+        oci_intent = self.refresh_operator_intent("oci")
+        approval = self.manual_approvals.current(authority) if not intent_wants_running(primary_intent) else None
+        gates = promotion_gates(authority, state.get("backup"), candidate, self.config, primary_intent, oci_intent, approval, manual_override=True)
+        self.update(gates=gates)
+        if not all(gate["ready"] for gate in gates):
+            self.update(manualSwitch=dict(record, state="blocked", updatedAt=iso_now(), blockedBy=gates, lastError={"code": "SWITCH_GATES_UNREADY", "message": "予約時刻に切り替え条件を満たしていません。予約を取り消して状態を確認してください。"}))
+            return
+        self.activate(authority, manual_switch=record)
+
+    def manual_switch_tick(self, authority):
+        record = self.state.get("manualSwitch")
+        if not isinstance(record, dict) or record.get("state") not in {"scheduled", "executing", "blocked"}:
+            return False
+        target = record.get("targetNode")
+        if target not in {"primary", "oci"}:
+            self.update(manualSwitch=dict(record, state="failed", updatedAt=iso_now(), lastError={"code": "INVALID_MANUAL_SWITCH", "message": "保存された手動切り替え対象が不正です。"}))
+            return True
+        if authority.get("activeNode") == target:
+            if record.get("state") != "completed":
+                self.update(manualSwitch=dict(record, state="completed", updatedAt=iso_now(), completedAt=iso_now(), lastError=None))
+            return False
+        try:
+            execute_timestamp = dt.datetime.fromisoformat(str(record.get("executeAt", "")).replace("Z", "+00:00")).timestamp()
+        except (TypeError, ValueError, OverflowError):
+            self.update(manualSwitch=dict(record, state="failed", updatedAt=iso_now(), lastError={"code": "INVALID_SWITCH_TIME", "message": "保存された予約時刻を解釈できません。"}))
+            return True
+        if record.get("state") == "blocked":
+            return True
+        if time.time() < execute_timestamp:
+            return target == "oci"
+        if record.get("state") == "scheduled":
+            record = dict(record, state="executing", updatedAt=iso_now(), startedAt=iso_now())
+            self.update(manualSwitch=record)
+        if target == "oci":
+            try:
+                self._execute_manual_oci(authority, record)
+            except Exception as error:
+                try:
+                    latest = self.authority()
+                except Exception:
+                    latest = {}
+                if latest.get("activeNode") == "oci":
+                    self.update(manualSwitch=dict(record, state="executing", updatedAt=iso_now(), lastError={"code": "SWITCH_RESPONSE_UNCONFIRMED", "message": "所有権変更後の応答を再確認しています。"}))
+                else:
+                    self.update(manualSwitch=dict(record, state="failed", updatedAt=iso_now(), lastError={"code": getattr(error, "code", type(error).__name__), "message": str(error)[:240]}))
+            return True
+        # The independent failback coordinator performs the destructive side
+        # of a primary handoff.  Starting it here makes an otherwise inactive
+        # oneshot service ready for both immediate and future reservations.
+        try:
+            run(["systemctl", "start", "cbte-recovery-failback.service"], timeout=30)
+        except Exception as error:
+            self.update(manualSwitch=dict(record, updatedAt=iso_now(), lastError={"code": "FAILBACK_SERVICE_START_FAILED", "message": str(error)[:240]}))
+        return False
+
     def record_operator_intent(self, role, value):
         if not isinstance(value, dict) or set(value) != {"node", "desiredState", "revision", "actorId"}:
             raise IntentError("INVALID_INTENT", "Exactly node, desiredState, revision and actorId are required")
@@ -385,6 +544,8 @@ class Controller:
             run(["systemctl", "start", "cbte-recovery-workload.service"], timeout=30)
             status = run(["systemctl", "show", "cbte-recovery-workload.service", "--property=ActiveState", "--value"], timeout=10).strip()
         self.update(phase="VERIFYING" if status == "active" else "ACTIVATING", candidate=active, workloadUnitState=status, operatorIntentReason=None)
+        if status == "active":
+            self.verify_active(authority, active)
 
     def notify_user_failover(self, authority, starting=False):
         """Send one user-facing notice for each verified failover transition."""
@@ -437,9 +598,6 @@ class Controller:
             self.update(**{state_key: {"epoch": authority["epoch"], "status": "accepted", "messageId": receipt.get("id"), "channelId": value.get("channelId"), "sentAt": iso_now()}})
         except Exception as error:
             self.update(**{state_key: {"epoch": authority["epoch"], "status": "pending", "error": type(error).__name__, "updatedAt": iso_now()}})
-        if status == "active":
-            self.verify_active(authority, active)
-
     def download(self, export_id, manifest):
         if not re.fullmatch(r"[0-9a-f]{64}", export_id):
             raise ValueError("Invalid export ID")
@@ -545,12 +703,12 @@ class Controller:
                       "checkedAt": time.time()}
         self.update(ciphertextRetention=result)
 
-    def activate(self, authority):
+    def activate(self, authority, manual_switch=None):
         candidate = self.state["candidate"]
         primary_intent = self.refresh_operator_intent("primary")
         oci_intent = self.refresh_operator_intent("oci")
         manual = self.manual_approvals.current(authority) if not intent_wants_running(primary_intent) else None
-        gates = promotion_gates(authority, self.state.get("backup"), candidate, self.config, primary_intent, oci_intent, manual)
+        gates = promotion_gates(authority, self.state.get("backup"), candidate, self.config, primary_intent, oci_intent, manual, manual_override=manual_switch is not None)
         if not all(gate["ready"] for gate in gates):
             self.update(phase="OPERATOR_PROMOTION_BLOCKED", operatorIntentReason="管理者の運転指示が昇格直前に変更されたか、確認できなくなったため昇格を中止しました。")
             return
@@ -559,7 +717,7 @@ class Controller:
             if manual is None:
                 self.update(phase="OPERATOR_PROMOTION_BLOCKED", operatorIntentReason="手動承認の期限・対象・運転指示が変わったため昇格を中止しました。")
                 return
-        key = manual["promotionKey"] if manual else f"oci-{authority['epoch']}-{candidate['id']}"
+        key = manual_switch["operationId"] if manual_switch else (manual["promotionKey"] if manual else f"oci-{authority['epoch']}-{candidate['id']}")
         policy_plan = {"state": "pending", "seedRevision": oci_intent["revision"], "reservedAt": iso_now()} if is_seeded_oci_intent(oci_intent, self.config) else None
         self.notify_user_failover(authority, starting=True)
         self.update(phase="PROMOTION_RESERVED", promotionKey=key, ociActivationPolicy=policy_plan)
@@ -640,6 +798,8 @@ class Controller:
         authority = self.authority()
         self.remember_authority_observations(authority)
         self.update(primaryEnrolled=authority["primaryEnrolled"], activeNode=authority["activeNode"], epoch=authority["epoch"])
+        if self.manual_switch_tick(authority):
+            return
         if authority["activeNode"] == "oci":
             # Never import a daily-old primary dump over an OCI database that
             # has become authoritative. Preserve current writes across restarts.
@@ -745,6 +905,28 @@ def make_server(controller, config):
 
         def do_POST(self):
             try:
+                if self.path in {"/v1/manual-switch", "/v1/manual-switch/cancel"}:
+                    if not hmac.compare_digest(self.headers.get("Authorization", "").encode(), ("Bearer " + config["statusToken"]).encode()):
+                        raise IntentError("UNAUTHORIZED", "Controller status credential required", 401)
+                    if self.headers.get("Transfer-Encoding") or self.headers.get("Content-Type", "").split(";", 1)[0].strip() != "application/json":
+                        raise IntentError("INVALID_REQUEST", "A bounded JSON request is required")
+                    length = int(self.headers.get("Content-Length", "0"))
+                    if not 1 <= length <= 8192:
+                        raise IntentError("REQUEST_BODY_LIMIT", "Manual switch request must contain 1..8192 bytes", 413)
+                    raw = self.rfile.read(length)
+                    if len(raw) != length:
+                        raise IntentError("INCOMPLETE_REQUEST", "Request body is incomplete")
+                    def pairs(items):
+                        result = {}
+                        for key, item in items:
+                            if key in result:
+                                raise IntentError("INVALID_REQUEST", "Duplicate JSON keys are not permitted")
+                            result[key] = item
+                        return result
+                    value = json.loads(raw, object_pairs_hook=pairs)
+                    result = controller.cancel_manual_switch(value) if self.path.endswith("/cancel") else controller.schedule_manual_switch(value)
+                    self.reply(200, result)
+                    return
                 if self.path not in {"/v1/intent", "/v1/emergency-approvals"}:
                     raise IntentError("NOT_FOUND", "Unknown intent endpoint", 404)
                 tokens = {node: config.get(node + "IntentToken") for node in ("primary", "oci")}
