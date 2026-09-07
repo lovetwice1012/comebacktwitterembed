@@ -1,7 +1,6 @@
 /** Numeric values are snapshots, not independent increments. Latest is selected per subject and metric. */
 export function metricObservationQuery(whereSql: string, groupAccount: boolean, numericOnly = true, prefilterCandidates = numericOnly) {
   const keys = groupAccount ? "provider_id, account_key, facet_key" : "provider_id, facet_key";
-  const join = groupAccount ? "t.provider_id <=> o.provider_id AND t.account_key <=> o.account_key AND t.facet_key <=> o.facet_key" : "t.provider_id <=> o.provider_id AND t.facet_key <=> o.facet_key";
   // Numeric reports do not need to rank facet keys that have no numeric
   // observation in the selected window. Keep every row for a candidate key so
   // a later non-numeric observation still suppresses an older numeric value,
@@ -15,6 +14,8 @@ export function metricObservationQuery(whereSql: string, groupAccount: boolean, 
   const candidateJoin = prefilterCandidates ? " JOIN numeric_keys nk ON nk.provider_id <=> f.provider_id AND nk.facet_key <=> f.facet_key" : "";
   // Currency, rating scales and unknown units cannot be averaged merely because values are numeric.
   const comparable = "facet_key REGEXP '[.](likes|views|plays|comments|shares|retweets|reposts|replies|quotes|bookmarks|favorites|stars|forks|followers|subscribers|following|follower_count|subscriber_count|media_count|video_count|duration_seconds|duration_ms|size_bytes)$'";
+  // Keep latest-value and observation-volume aggregates on the same ranked
+  // stream. The previous shape scanned the observation CTE again for counts.
   return `WITH ${candidateKeys}observations AS (
     SELECT f.provider_id,f.account_key,f.facet_key,f.numeric_value,f.facet_id,
       c.author_user_id,c.guild_id,c.occurred_at_ms,c.content_event_id,
@@ -27,24 +28,23 @@ export function metricObservationQuery(whereSql: string, groupAccount: boolean, 
   ), ranked AS (
     SELECT observations.*,ROW_NUMBER() OVER (PARTITION BY provider_id,subject_key COLLATE utf8mb4_bin,facet_key ORDER BY observed_at_ms DESC,content_event_id DESC,facet_id DESC) AS observation_rank
     FROM observations
-  ), totals AS (
-    SELECT ${keys},COUNT(*) AS content_count,COUNT(numeric_value) AS numeric_subject_count,
-      CASE WHEN ${comparable} THEN AVG(numeric_value) ELSE NULL END AS avg_value,
-      CASE WHEN ${comparable} THEN MIN(numeric_value) ELSE NULL END AS min_value,
-      CASE WHEN ${comparable} THEN MAX(numeric_value) ELSE NULL END AS max_value,
-      CASE WHEN facet_key REGEXP '[.](likes|views|plays|comments|shares|retweets|reposts|replies|quotes|bookmarks|favorites|stars|forks)$'
-        THEN SUM(numeric_value) ELSE NULL END AS sum_value,
-      MIN(observed_at_ms) AS oldest_observation_ms,MAX(observed_at_ms) AS latest_observation_ms,
-      CASE WHEN ${comparable} THEN 'available' ELSE 'unsupported_aggregation' END AS aggregation_status,
-      CASE WHEN ${comparable} THEN NULL ELSE 'currency_scale_or_unit_not_defined; inspect individual observations' END AS aggregation_note
-    FROM ranked WHERE observation_rank=1 GROUP BY ${keys} ${numericOnly ? "HAVING COUNT(numeric_value)>0" : ""}
-  ), observation_counts AS (
-    SELECT ${keys},COUNT(*) AS events,COUNT(DISTINCT author_user_id) AS users,COUNT(DISTINCT guild_id) AS guilds
-    FROM observations GROUP BY ${keys}
-  ) SELECT t.*,o.events,o.users,o.guilds,'latest_subject_observation_v2' AS aggregation,
+  ) SELECT ${keys},
+    COUNT(CASE WHEN observation_rank=1 THEN 1 END) AS content_count,
+    COUNT(CASE WHEN observation_rank=1 THEN numeric_value END) AS numeric_subject_count,
+    CASE WHEN ${comparable} THEN AVG(CASE WHEN observation_rank=1 THEN numeric_value END) ELSE NULL END AS avg_value,
+    CASE WHEN ${comparable} THEN MIN(CASE WHEN observation_rank=1 THEN numeric_value END) ELSE NULL END AS min_value,
+    CASE WHEN ${comparable} THEN MAX(CASE WHEN observation_rank=1 THEN numeric_value END) ELSE NULL END AS max_value,
+    CASE WHEN facet_key REGEXP '[.](likes|views|plays|comments|shares|retweets|reposts|replies|quotes|bookmarks|favorites|stars|forks)$'
+      THEN SUM(CASE WHEN observation_rank=1 THEN numeric_value END) ELSE NULL END AS sum_value,
+    MIN(observed_at_ms) AS oldest_observation_ms,MAX(observed_at_ms) AS latest_observation_ms,
+    CASE WHEN ${comparable} THEN 'available' ELSE 'unsupported_aggregation' END AS aggregation_status,
+    CASE WHEN ${comparable} THEN NULL ELSE 'currency_scale_or_unit_not_defined; inspect individual observations' END AS aggregation_note,
+    COUNT(*) AS events,COUNT(DISTINCT author_user_id) AS users,COUNT(DISTINCT guild_id) AS guilds,
+    'latest_subject_observation_v2' AS aggregation,
     'latest_observation_of_requests_in_selected_window' AS observation_window,
     'external_service_not_discord' AS metric_origin
-    FROM totals t JOIN observation_counts o ON ${join} ORDER BY o.events DESC LIMIT ?`;
+    FROM ranked GROUP BY ${keys} ${numericOnly ? "HAVING COUNT(CASE WHEN observation_rank=1 THEN numeric_value END)>0" : ""}
+    ORDER BY events DESC LIMIT ?`;
 }
 
 // Provider schema coverage only needs the observed event/user/server counts.
