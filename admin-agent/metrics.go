@@ -152,7 +152,12 @@ func (a *App) metrics(w http.ResponseWriter, r *http.Request) {
 		fail(w, 503, "METRICS_COVERAGE_FAILED", e.Error())
 		return
 	}
-	jsonResponse(w, 200, Object{"definitionVersion": "root-request-v1", "snapshotAt": now(), "from": from, "to": to, "timezone": "UTC (display Asia/Tokyo)", "requestCount": total, "outcomes": counts, "outcomeLabels": outcomeNames, "fullSuccess": Object{"numerator": counts["F"], "denominator": denom, "ratio": ratio, "formula": "F / (F+D+P+E+U+X)"}, "problemRequestCount": counts["D"] + counts["P"] + counts["E"] + counts["U"] + counts["X"], "skippedRequestCount": counts["S"], "affectedGuildCount": len(affected), "affectedUnknownGuildRequests": missingGuild, "activeGuildCount": len(guilds), "humanUserCount": len(users), "sharedMessageCount": len(messages), "sharedContentCount": len(contents), "oldestUnfinishedAgeMs": oldest, "latencyByOutcome": latency, "byProvider": byProvider, "excluded": Object{"diagnosticRequests": diagnostic, "adminRequests": admin}, "coverage": coverage, "notAvailable": []string{"Discord message views", "read receipts", "URL clicks", "link button clicks"}})
+	shards, e := a.shardMetrics(ctx, time.Now())
+	if e != nil {
+		fail(w, 503, "SHARD_METRICS_QUERY_FAILED", e.Error())
+		return
+	}
+	jsonResponse(w, 200, Object{"definitionVersion": "root-request-v1", "snapshotAt": now(), "from": from, "to": to, "timezone": "UTC (display Asia/Tokyo)", "requestCount": total, "outcomes": counts, "outcomeLabels": outcomeNames, "fullSuccess": Object{"numerator": counts["F"], "denominator": denom, "ratio": ratio, "formula": "F / (F+D+P+E+U+X)"}, "problemRequestCount": counts["D"] + counts["P"] + counts["E"] + counts["U"] + counts["X"], "skippedRequestCount": counts["S"], "affectedGuildCount": len(affected), "affectedUnknownGuildRequests": missingGuild, "activeGuildCount": len(guilds), "humanUserCount": len(users), "sharedMessageCount": len(messages), "sharedContentCount": len(contents), "oldestUnfinishedAgeMs": oldest, "latencyByOutcome": latency, "byProvider": byProvider, "excluded": Object{"diagnosticRequests": diagnostic, "adminRequests": admin}, "coverage": coverage, "shards": shards, "notAvailable": []string{"Discord message views", "read receipts", "URL clicks", "link button clicks"}})
 }
 func nullable(s sql.NullString) any {
 	if s.Valid {

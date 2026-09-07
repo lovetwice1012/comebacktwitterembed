@@ -41,7 +41,7 @@ const client = new Client({
 });
 // Recording begins before MySQL initialization and Discord login, so startup
 // failures are visible to the independently supervised management service.
-adminTelemetry.start(client);
+adminTelemetry.start(client, { shardStatus: discordRuntime.discord.Status, gatewayMetrics: discordEventMetrics });
 const webhookURL = typeof config.URL === 'string' ? config.URL.trim() : '';
 const errorNotificationURL = typeof config.errorNotificationURL === 'string' && config.errorNotificationURL.trim()
     ? config.errorNotificationURL.trim()

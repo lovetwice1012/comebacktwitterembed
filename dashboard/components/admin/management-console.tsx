@@ -257,6 +257,8 @@ export function ManagementConsole({ initialTab = "search", standalone = false }:
 
 export function MetricsView({ data, onDrill }: { data: Data; onDrill: (outcome?: string) => void }) {
   const outcomes = obj(data.outcomes); const labels = obj(data.outcomeLabels); const success = obj(data.fullSuccess); const coverage = obj(data.coverage);
+  const shardSummary = obj(data.shards);
+  const shardItems = Array.isArray(shardSummary.items) ? shardSummary.items.map(obj) : [];
   const unmeasured = coverage.measurementState === "not_measured" || (!coverage.measurementState && coverage.state === "no_root_request_records");
   const cards: { label: string; value: string; note: string; outcome?: string }[] = [
     { label: "展開要求数", value: text(data.requestCount), note: "根要求IDで重複排除。引用・再試行は加算しません。" },
@@ -266,10 +268,32 @@ export function MetricsView({ data, onDrill }: { data: Data; onDrill: (outcome?:
     { label: "影響サーバー数", value: text(data.affectedGuildCount), note: `問題のある要求のサーバー集合。サーバー不明の要求: ${text(data.affectedUnknownGuildRequests)}`, outcome: "D,P,E,U,X" },
     { label: "未完了の最長経過時間", value: data.oldestUnfinishedAgeMs == null ? "対象なし" : `${(Number(data.oldestUnfinishedAgeMs) / 1000).toFixed(1)}秒`, note: "完了時間の分布には混ぜません", outcome: "I,X" },
   ];
+  const shardRows = shardItems.map((row) => ({
+    シャード: row.shardId,
+    接続: row.availability === "online" ? "オンライン" : row.availability === "offline" ? "オフライン" : "未観測",
+    状態: row.status,
+    Ping: row.pingMs == null ? "未取得" : `${row.pingMs} ms`,
+    "直近1分の完了": row.completedLastMinute == null ? "未計測" : metricCount(row.completedLastMinute),
+    "本日の完了": row.completedToday == null ? "未計測" : metricCount(row.completedToday),
+    "直近1分の受付": row.startedLastMinute == null ? "未計測" : metricCount(row.startedLastMinute),
+    "本日の受付": row.startedToday == null ? "未計測" : metricCount(row.startedToday),
+  }));
   return <div className="space-y-4"><p className="text-xs text-muted-foreground">{date(data.from)} ～ {date(data.to)} JST（終了を含まない） / 定義 {text(data.definitionVersion)} / 集計時点 {date(data.snapshotAt)}</p><div className="grid gap-3 md:grid-cols-3">{cards.map(card => <button key={card.label} className="rounded border bg-card p-4 text-left" disabled={unmeasured} onClick={() => onDrill(card.outcome)}><span className="text-sm">{card.label}</span><p className="my-2 text-2xl font-semibold">{unmeasured ? "未計測" : card.value}</p><p className="text-xs text-muted-foreground">{unmeasured ? "本番の要求を観測できたことを確認できません。" : card.note}</p></button>)}</div>
+    <div className="rounded border p-3"><div className="flex flex-wrap items-baseline justify-between gap-2"><h3 className="font-medium">シャード別の接続・処理数</h3><span className="text-xs text-muted-foreground">{text(shardSummary.state)} / heartbeat {date(shardSummary.heartbeatAt)}</span></div><p className="mt-1 text-xs text-muted-foreground">オンライン判定は最新heartbeat（45秒以内）のdiscord.js状態、処理数は保存されたrequestイベントの完了件数です。直近1分はローリング、本日はJSTの日付境界です。</p>{shardRows.length ? <MetricsTable rows={shardRows} /> : <p className="mt-3 text-sm text-muted-foreground">シャード状態はまだ観測できません。Bot heartbeatが保存されるまでオフラインとは判定しません。</p>}<div className="mt-3 grid gap-2 text-sm sm:grid-cols-2"><div className="rounded bg-muted p-2">全体（直近1分の完了）: {metricCount(shardSummary.processingLastMinute)}</div><div className="rounded bg-muted p-2">全体（本日の完了）: {metricCount(shardSummary.processingToday)}</div></div><RawEvidence value={shardSummary} label="シャード状態・処理数の原記録" /></div>
     <div className="rounded border p-3"><p className="font-medium">要求結果の内訳</p><div className="mt-2 flex flex-wrap gap-2">{unmeasured ? <p className="text-sm">未計測。本番の要求記録または収集状態を確認できていません。</p> : Object.entries(outcomes).map(([key, value]) => <Button key={key} variant="outline" onClick={() => onDrill(key)}>{text(labels[key] ?? key)}: {text(value)}</Button>)}</div></div>
     <div className="grid gap-3 lg:grid-cols-2"><div className="rounded border p-3"><h3 className="mb-2 font-medium">完了時間（結果別）</h3>{unmeasured ? <p className="text-sm">未計測</p> : Object.entries(obj(data.latencyByOutcome)).map(([key, value]) => { const row = obj(value); return <p className="mb-2 text-sm" key={key}>{text(labels[key] ?? key)} / {text(row.sampleCount)}件 / P50 {row.p50Ms == null ? "未取得" : `${(Number(row.p50Ms) / 1000).toFixed(3)}秒`} / P95 {row.p95Ms == null ? "未取得" : `${(Number(row.p95Ms) / 1000).toFixed(3)}秒`}</p>; })}<p className="text-xs text-muted-foreground">保存された完了記録のnearest-rank分位点。未計測と、観測済みで対象0件の状態を区別します。</p></div><div className="rounded border p-3"><h3 className="mb-2 font-medium">計測状態</h3><p className="text-sm">状態: {unmeasured ? "未計測" : "保存された観測結果"} / 収集: {text(coverage.collectionState)} / 最終heartbeat: {date(coverage.lastHeartbeatAt)} / 最初の要求記録: {date(coverage.firstRecordedRequestAt)} / 最新: {date(coverage.latestRecordedRequestAt)}</p><p className="mt-2 text-xs text-muted-foreground">旧記録からの要求結果の復元は行いません。記録されていない期間を成功や0件として判断しないでください。</p><RawEvidence value={{ coverage, excluded: data.excluded }} label="記録状態と診断・管理操作の除外件数" /></div></div>
     <div className="rounded border p-3"><h3 className="mb-2 font-medium">サービス別の結果</h3>{unmeasured ? <p className="text-sm">未計測</p> : Object.entries(obj(data.byProvider)).map(([provider, value]) => <p className="mb-2 text-sm" key={provider}>{provider}: {Object.entries(obj(value)).map(([outcome, count]) => `${text(labels[outcome] ?? outcome)} ${text(count)}`).join(" / ")}</p>)}</div>
     <Button variant="outline" disabled={unmeasured} onClick={() => onDrill()}>この条件の根要求と結果を開く</Button><RawEvidence value={data} label="指標辞書・分子分母・計測状態（全項目）" />
   </div>;
+}
+
+function metricCount(value: unknown) {
+  if (value === null || value === undefined || value === "") return "未取得";
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed.toLocaleString("ja-JP") : String(value);
+}
+
+function MetricsTable({ rows }: { rows: Data[] }) {
+  const columns = [...new Set(rows.flatMap((row) => Object.keys(row)))];
+  return <div className="overflow-auto rounded-md border"><table className="min-w-full border-collapse text-left text-xs"><thead className="bg-muted text-muted-foreground"><tr>{columns.map((column) => <th key={column} className="whitespace-normal break-words px-3 py-2 font-medium">{column}</th>)}</tr></thead><tbody>{rows.map((row, index) => <tr key={String(row["シャード"] || index)} className="border-t">{columns.map((column) => <td key={column} className="min-w-24 whitespace-normal break-words px-3 py-2" title={text(row[column])}>{text(row[column])}</td>)}</tr>)}</tbody></table></div>;
 }

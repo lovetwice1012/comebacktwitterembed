@@ -183,6 +183,49 @@ func TestMetricsRootAccountingAndDrillDown(t *testing.T) {
 		t.Fatalf("missing pagination %s", w.Body)
 	}
 }
+
+func TestMetricsIncludesFreshShardStateAndProcessingWindows(t *testing.T) {
+	a := testApp(t)
+	at := time.Now().UTC()
+	stamp := at.Format(time.RFC3339Nano)
+	events := []Object{
+		{"id": "shard-heartbeat", "kind": "runtime.heartbeat", "occurredAt": stamp, "details": Object{
+			"shard_summary": Object{"manager_status": "ready"},
+			"shards": []Object{
+				{"shard_id": "0", "status": "ready", "online": true, "ping_ms": 42},
+				{"shard_id": "1", "status": "reconnecting", "online": false, "ping_ms": nil},
+			},
+		}},
+		{"id": "shard-0-start", "kind": "request.started", "runId": "shard-0-run", "occurredAt": stamp, "shardId": "0"},
+		{"id": "shard-0-end", "kind": "request.completed", "runId": "shard-0-run", "occurredAt": stamp, "shardId": "0", "outcome": "F"},
+		{"id": "shard-1-start", "kind": "request.started", "runId": "shard-1-run", "occurredAt": stamp, "shardId": "1"},
+		{"id": "shard-1-end", "kind": "request.completed", "runId": "shard-1-run", "occurredAt": stamp, "shardId": "1", "outcome": "E"},
+	}
+	if _, _, e := a.store.ingest(events); e != nil {
+		t.Fatal(e)
+	}
+	v := object(t, request(t, a, "GET", "/v1/metrics", nil))
+	shards := nested(v, "shards")
+	if shards["state"] != "recent_heartbeat" || shards["online"] != float64(1) || shards["offline"] != float64(1) || shards["unknown"] != float64(0) {
+		t.Fatalf("unexpected shard summary: %v", shards)
+	}
+	items := shards["items"].([]any)
+	if len(items) != 2 {
+		t.Fatalf("unexpected shard items: %v", items)
+	}
+	byID := map[string]map[string]any{}
+	for _, raw := range items {
+		row := raw.(map[string]any)
+		byID[row["shardId"].(string)] = row
+	}
+	if byID["0"]["availability"] != "online" || byID["0"]["completedLastMinute"] != float64(1) || byID["0"]["completedToday"] != float64(1) {
+		t.Fatalf("shard 0 counts/state are wrong: %v", byID["0"])
+	}
+	if byID["1"]["availability"] != "offline" || byID["1"]["completedLastMinute"] != float64(1) || byID["1"]["completedToday"] != float64(1) {
+		t.Fatalf("shard 1 counts/state are wrong: %v", byID["1"])
+	}
+}
+
 func TestZeroDenominatorIsNull(t *testing.T) {
 	a := testApp(t)
 	v := object(t, request(t, a, "GET", "/v1/metrics", nil))

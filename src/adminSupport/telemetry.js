@@ -18,6 +18,10 @@ const queuedSizes = new Map();
 const pendingTasks = new Set();
 const root = () => path.resolve(process.env.ADMIN_TELEMETRY_DIR || path.join(__dirname, '../../logs/admin-telemetry'));
 const enabled = () => Boolean(process.env.ADMIN_AGENT_TOKEN || process.env.ADMIN_TELEMETRY_ENABLED === '1');
+const SHARD_STATUS_NAMES = {
+    0: 'ready', 1: 'connecting', 2: 'reconnecting', 3: 'idle', 4: 'nearly',
+    5: 'disconnected', 6: 'waiting_for_guilds', 7: 'identifying', 8: 'resuming',
+};
 
 
 function serializable(value) {
@@ -45,12 +49,17 @@ function errorData(error, depth = 0) {
 }
 function contextFromMessage(message) {
     const interaction = Boolean(message?.customId || message?.commandName || message?.isChatInputCommand);
+    const rawShardId = message?.guild?.shardId ?? message?.shardId ?? message?.guild?.shardID;
+    const shard_id = Number.isInteger(rawShardId) && rawShardId >= 0
+        ? rawShardId
+        : (typeof rawShardId === 'string' && /^\d+$/.test(rawShardId) ? Number(rawShardId) : null);
     return { guild_id: message?.guildId || message?.guild?.id || null,
         channel_id: message?.channelId || message?.channel?.id || null,
         user_id: message?.author?.id || message?.user?.id || null,
         message_id: interaction ? message?.message?.id || null : message?.id || null,
         interaction_id: interaction ? message?.id : null, guild_name: message?.guild?.name,
-        channel_name: message?.channel?.name, user_name: message?.author?.username || message?.user?.username };
+        channel_name: message?.channel?.name, user_name: message?.author?.username || message?.user?.username,
+        shard_id };
 }
 function current() { return storage.getStore(); }
 function run(context, fn) {
@@ -69,10 +78,12 @@ function event(stage, kind, details = {}, extra = {}) {
         trigger_type: context.trigger_type || 'user', guild_id: context.guild_id, channel_id: context.channel_id,
         user_id: context.user_id, message_id: context.message_id, provider_id: context.provider_id,
         interaction_id: context.interaction_id,
+        shard_id: context.shard_id,
         url: context.url, ...extra, actor_id: context.actor_id, initiated_via: context.initiated_via, details });
     Object.assign(row, { eventId: row.event_id, runId: row.request_id || row.trace_id, requestId: row.request_id,
         guildId: row.guild_id, channelId: row.channel_id, userId: row.user_id, provider: row.provider_id,
-        triggerType: row.trigger_type, occurredAt: row.occurred_at, actorId: row.actor_id, initiatedVia: row.initiated_via });
+        triggerType: row.trigger_type, occurredAt: row.occurred_at, actorId: row.actor_id, initiatedVia: row.initiated_via,
+        shardId: row.shard_id });
     if (context.events) context.events.push(row);
     if (context.parentEvents && context.parentEvents !== context.events) context.parentEvents.push(row);
     if (context.preview) return row;
@@ -139,16 +150,44 @@ async function stop() {
     });
     await worker.terminate(); spoolWorker = null;
 }
-function start(client) {
+function shardSnapshot(client, statusNames = SHARD_STATUS_NAMES) {
+    const manager = client?.ws;
+    const shards = manager?.shards;
+    if (!shards || typeof shards.values !== 'function') {
+        return { managerStatus: null, total: 0, online: 0, offline: 0, unknown: 0, items: [] };
+    }
+    const items = [...shards.values()].map(shard => {
+        const status = statusNames?.[shard.status] || SHARD_STATUS_NAMES[shard.status] || 'unknown';
+        const online = status === 'ready' ? true : status === 'unknown' ? null : false;
+        const ping = Number.isFinite(Number(shard.ping)) && Number(shard.ping) >= 0 ? Number(shard.ping) : null;
+        const lastPing = Number.isFinite(Number(shard.lastPingTimestamp)) && Number(shard.lastPingTimestamp) >= 0
+            ? Number(shard.lastPingTimestamp) : null;
+        return { shard_id: String(shard.id), shardId: String(shard.id), status, online, ping_ms: ping, last_ping_at_ms: lastPing };
+    }).sort((left, right) => left.shard_id.localeCompare(right.shard_id, undefined, { numeric: true }));
+    return {
+        managerStatus: statusNames?.[manager.status] || SHARD_STATUS_NAMES[manager.status] || 'unknown',
+        total: items.length,
+        online: items.filter(item => item.online === true).length,
+        offline: items.filter(item => item.online === false).length,
+        unknown: items.filter(item => item.online === null).length,
+        items,
+    };
+}
+function start(client, options = {}) {
     if (timer || !enabled()) return;
     event('runtime', 'started', { pid: process.pid, node: process.version });
     for (const name of ['shardDisconnect', 'shardReconnecting', 'shardResume', 'invalidated', 'error', 'warn']) {
         client?.on(name, (...args) => event('gateway', name, { args: args.map(item => item instanceof Error ? errorData(item) : item) }));
     }
     timer = setInterval(() => {
+        const shards = shardSnapshot(client, options.shardStatus);
+        const gatewayEvents = typeof options.gatewayMetrics?.snapshot === 'function'
+            ? options.gatewayMetrics.snapshot() : null;
         event('runtime', 'heartbeat', { pid: process.pid, uptime_seconds: process.uptime(), memory: process.memoryUsage(),
             gateway_ping_ms: client?.ws?.ping, ready: client?.isReady?.(), recording_failure: spoolFailure, recording_health: { ...spoolHealth, queuedBytes, durabilityWindowMs: 50 },
-            queue: require('../workQueue').messageWorkQueue.snapshot() });
+            queue: require('../workQueue').messageWorkQueue.snapshot(), shards: shards.items,
+            shard_summary: { manager_status: shards.managerStatus, total: shards.total, online: shards.online, offline: shards.offline, unknown: shards.unknown },
+            gateway_events: gatewayEvents ? { last_minute: gatewayEvents.lastMinute, last_24h: gatewayEvents.lastDay, by_shard: gatewayEvents.byShard } : null });
         void flush();
     }, 15000);
     timer.unref();
@@ -168,4 +207,5 @@ function planEffect(type, input, execute) {
     return execute();
 }
 module.exports = { run, current, event, start, stop, flush, settle, deferCapture, pending, enabled, markOutcome, planEffect,
-    contextFromMessage, errorData, serializable, bootId };
+    contextFromMessage, errorData, serializable, bootId,
+    _internal: { SHARD_STATUS_NAMES, shardSnapshot } };
