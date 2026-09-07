@@ -1,7 +1,12 @@
 import "server-only";
 
+import { createHash } from "node:crypto";
 import { prisma } from "@/lib/prisma";
-import { getDashboardFlag } from "@/lib/env";
+import {
+  getDashboardFlag,
+  getDelegatedAccessRolloutDurationHours,
+  getDelegatedAccessRolloutStartAt,
+} from "@/lib/env";
 
 export type DelegatedAccessLevel = "view" | "edit";
 export type DelegatedAccessTargetType = "user" | "role";
@@ -15,10 +20,31 @@ export type DelegatedAccessGrant = {
 
 const TABLE = "dashboard_delegated_access_grants";
 const SNOWFLAKE = /^\d{16,24}$/;
+const INITIAL_ROLLOUT_GUILD_ID = "1132814274734067772";
+const INITIAL_ROLLOUT_FRACTION = 1 / 14;
 let ensureTablePromise: Promise<void> | null = null;
 
 export function delegatedAccessEnabled() {
   return getDashboardFlag("delegatedAccessEnabled", "DASHBOARD_DELEGATED_ACCESS_ENABLED");
+}
+
+export function delegatedAccessRolloutBucket(guildId: string) {
+  const digest = createHash("sha256").update(guildId).digest("hex").slice(0, 12);
+  return Number.parseInt(digest, 16) / 0x1000000000000;
+}
+
+export function delegatedAccessEnabledForGuild(guildId: string, nowMs = Date.now()) {
+  if (!delegatedAccessEnabled()) return false;
+  const startAt = getDelegatedAccessRolloutStartAt();
+  if (!startAt) return true;
+  const startMs = Date.parse(startAt);
+  const durationHours = getDelegatedAccessRolloutDurationHours();
+  if (!Number.isFinite(startMs) || !durationHours) return false;
+  if (nowMs < startMs) return false;
+  if (guildId === INITIAL_ROLLOUT_GUILD_ID) return true;
+  const elapsed = Math.max(0, Math.min(1, (nowMs - startMs) / (durationHours * 60 * 60 * 1000)));
+  const progress = INITIAL_ROLLOUT_FRACTION + elapsed * (1 - INITIAL_ROLLOUT_FRACTION);
+  return delegatedAccessRolloutBucket(guildId) <= progress;
 }
 
 export function isDiscordSnowflake(value: string) {
@@ -79,7 +105,7 @@ export async function replaceDelegatedAccess(input: {
   accessLevel?: DelegatedAccessLevel;
   actorUserId: string;
 }) {
-  if (!delegatedAccessEnabled()) throw new Error("Delegated access is disabled.");
+  if (!delegatedAccessEnabledForGuild(input.guildId)) throw new Error("Delegated access is disabled for this guild.");
   if (!isDiscordSnowflake(input.guildId) || !isDiscordSnowflake(input.actorUserId)) {
     throw new Error("Invalid Discord ID.");
   }

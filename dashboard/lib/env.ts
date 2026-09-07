@@ -26,6 +26,8 @@ type RootConfig = {
     adminAnalyticsPrewarm?: boolean;
     dbConnectionLimit?: number;
     delegatedAccessEnabled?: boolean;
+    delegatedAccessRolloutStartAt?: string;
+    delegatedAccessRolloutDurationHours?: number;
   };
   mediaDelivery?: {
     publicBaseUrl?: string;
@@ -139,6 +141,19 @@ export function getDashboardFlag(key: "useBotGuildApi" | "loadGuildProviderSumma
   const envValue = process.env[envName];
   if (envValue !== undefined && envValue !== "") return /^(1|true|yes|on)$/i.test(envValue);
   return readRootConfig().dashboard?.[key] === true;
+}
+
+export function getDelegatedAccessRolloutStartAt() {
+  const value = process.env.DASHBOARD_DELEGATED_ACCESS_ROLLOUT_START_AT
+    || readRootConfig().dashboard?.delegatedAccessRolloutStartAt;
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+export function getDelegatedAccessRolloutDurationHours() {
+  const envValue = Number(process.env.DASHBOARD_DELEGATED_ACCESS_ROLLOUT_DURATION_HOURS);
+  if (Number.isFinite(envValue) && envValue > 0) return envValue;
+  const configValue = Number(readRootConfig().dashboard?.delegatedAccessRolloutDurationHours);
+  return Number.isFinite(configValue) && configValue > 0 ? configValue : 24 * 14;
 }
 
 export function getDashboardNumber(key: "discordApiTimeoutMs" | "guildCacheTtlMs", envName: string, fallback: number) {

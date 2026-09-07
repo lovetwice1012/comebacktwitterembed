@@ -68,6 +68,7 @@ function InitialAvatar({ member }: { member: Member }) {
 export function AccessManagement({ guildId }: { guildId: string }) {
   const [data, setData] = useState<AccessResponse>(emptyResponse);
   const [query, setQuery] = useState("");
+  const [lookup, setLookup] = useState("");
   const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
   const [selectedRoleIds, setSelectedRoleIds] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
@@ -95,19 +96,14 @@ export function AccessManagement({ guildId }: { guildId: string }) {
   }, [guildId]);
 
   useEffect(() => {
-    const timer = window.setTimeout(() => void load(query), 250);
-    return () => window.clearTimeout(timer);
-  }, [load, query]);
+    void load(lookup);
+  }, [load, lookup]);
 
   const grantByTarget = useMemo(
     () => new Map(data.grants.map((grant) => [`${grant.targetType}:${grant.targetId}`, grant.accessLevel])),
     [data.grants],
   );
-  const roles = useMemo(() => {
-    const normalized = query.trim().toLocaleLowerCase();
-    if (!normalized) return data.roles;
-    return data.roles.filter((role) => role.name.toLocaleLowerCase().includes(normalized) || role.id.includes(normalized));
-  }, [data.roles, query]);
+  const roles = data.roles;
 
   const save = async (targetType: TargetType, accessLevel: AccessLevel | null) => {
     const targetIds = targetType === "user" ? selectedUserIds : selectedRoleIds;
@@ -134,7 +130,7 @@ export function AccessManagement({ guildId }: { guildId: string }) {
   };
 
   if (!data.enabled && !loading) {
-    return <p className="rounded-md border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">委任アクセスは現在無効です。Members Intent の承認後に機能フラグを有効化してください。</p>;
+    return <p className="rounded-md border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">この機能はサーバーごとに順次提供しています。利用できるようになるまで、もうしばらくお待ちください。</p>;
   }
 
   return (
@@ -149,17 +145,20 @@ export function AccessManagement({ guildId }: { guildId: string }) {
 
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2"><Users size={18} />ユーザーを検索して追加</CardTitle>
-          <CardDescription>ユーザー名、ニックネーム、またはユーザーIDで検索します。検索結果はDiscordから取得します。</CardDescription>
+          <CardTitle className="flex items-center gap-2"><Users size={18} />ユーザーIDで追加</CardTitle>
+          <CardDescription>Members Intent を使わず、指定した Discord ユーザーIDをサーバーから直接取得して確認します。</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="relative">
-            <Search className="pointer-events-none absolute left-3 top-3 text-muted-foreground" size={16} />
-            <Input value={query} onChange={(event) => setQuery(event.target.value)} className="pl-9" placeholder="ユーザー名、ニックネーム、ユーザーIDで検索" aria-label="ユーザーまたはロールを検索" />
-          </div>
+          <form className="flex flex-col gap-2 sm:flex-row" onSubmit={(event) => { event.preventDefault(); setLookup(query.trim()); }}>
+            <div className="relative flex-1">
+              <Search className="pointer-events-none absolute left-3 top-3 text-muted-foreground" size={16} />
+              <Input value={query} onChange={(event) => { const value = event.target.value; setQuery(value); if (!value.trim()) setLookup(""); }} className="pl-9" placeholder="Discord ユーザーID" aria-label="Discord ユーザーID" />
+            </div>
+            <Button type="submit" disabled={!query.trim() || loading}><Search size={16} />取得</Button>
+          </form>
           <div className="rounded-md border">
             {loading ? <p className="flex items-center gap-2 p-4 text-sm text-muted-foreground"><LoaderCircle className="animate-spin" size={16} />検索中…</p> : null}
-            {!loading && query.trim() && data.members.length === 0 ? <p className="p-4 text-sm text-muted-foreground">一致するユーザーはいません。</p> : null}
+            {!loading && lookup && data.members.length === 0 ? <p className="p-4 text-sm text-muted-foreground">指定されたユーザーは表示できません。</p> : null}
             {data.members.map((member) => {
               const level = grantByTarget.get(`user:${member.id}`);
               return (
@@ -176,7 +175,7 @@ export function AccessManagement({ guildId }: { guildId: string }) {
                 </label>
               );
             })}
-            {!query.trim() && !loading ? <p className="p-4 text-sm text-muted-foreground">検索語を入力するとユーザーが表示されます。</p> : null}
+            {!lookup && !loading && data.members.length === 0 ? <p className="p-4 text-sm text-muted-foreground">登録済みのユーザーはありません。ユーザーIDを入力して取得してください。</p> : null}
           </div>
           <ActionButtons count={selectedUserIds.length} busy={saving === "user"} onSave={(level) => void save("user", level)} />
         </CardContent>

@@ -1,15 +1,51 @@
 'use strict';
 
 const { PermissionsBitField } = require('discord.js');
+const { createHash } = require('crypto');
 const { queryDatabase } = require('./db');
 
 let config = {};
 try { config = require('../config.json'); } catch {}
 
+const INITIAL_ROLLOUT_GUILD_ID = '1132814274734067772';
+const INITIAL_ROLLOUT_FRACTION = 1 / 14;
+
 function enabled() {
     const value = process.env.DASHBOARD_DELEGATED_ACCESS_ENABLED;
     if (value !== undefined && value !== '') return /^(1|true|yes|on)$/i.test(value);
     return config.dashboard?.delegatedAccessEnabled === true;
+}
+
+function rolloutStartAt() {
+    const value = process.env.DASHBOARD_DELEGATED_ACCESS_ROLLOUT_START_AT
+        || config.dashboard?.delegatedAccessRolloutStartAt;
+    return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
+function rolloutDurationHours() {
+    const envValue = Number(process.env.DASHBOARD_DELEGATED_ACCESS_ROLLOUT_DURATION_HOURS);
+    if (Number.isFinite(envValue) && envValue > 0) return envValue;
+    const configValue = Number(config.dashboard?.delegatedAccessRolloutDurationHours);
+    return Number.isFinite(configValue) && configValue > 0 ? configValue : 24 * 14;
+}
+
+function rolloutBucket(guildId) {
+    const digest = createHash('sha256').update(String(guildId)).digest('hex').slice(0, 12);
+    return Number.parseInt(digest, 16) / 0x1000000000000;
+}
+
+function enabledForGuild(guildId, nowMs = Date.now()) {
+    if (!enabled()) return false;
+    const startAt = rolloutStartAt();
+    if (!startAt) return true;
+    const startMs = Date.parse(startAt);
+    const durationHours = rolloutDurationHours();
+    if (!Number.isFinite(startMs) || !durationHours) return false;
+    if (nowMs < startMs) return false;
+    if (String(guildId) === INITIAL_ROLLOUT_GUILD_ID) return true;
+    const elapsed = Math.max(0, Math.min(1, (nowMs - startMs) / (durationHours * 60 * 60 * 1000)));
+    const progress = INITIAL_ROLLOUT_FRACTION + elapsed * (1 - INITIAL_ROLLOUT_FRACTION);
+    return rolloutBucket(guildId) <= progress;
 }
 
 function getInteractionRoleIds(interaction) {
@@ -20,6 +56,25 @@ function getInteractionRoleIds(interaction) {
             ? roles
             : [];
     return [...new Set(roleIds.map(String).filter(Boolean))];
+}
+
+async function fetchInteractionMember(interaction) {
+    const userId = interaction.user?.id;
+    const members = interaction.guild?.members;
+    if (!interaction.guildId || !userId || typeof members?.fetch !== 'function') return null;
+    try {
+        // Guild Members intent is not required for an explicitly identified
+        // member REST lookup. This also works when the interaction member was
+        // not retained in the discord.js cache.
+        return await members.fetch(userId);
+    } catch {
+        return null;
+    }
+}
+
+async function getFetchedInteractionRoleIds(interaction) {
+    const member = await fetchInteractionMember(interaction);
+    return member ? getInteractionRoleIds({ member }) : getInteractionRoleIds(interaction);
 }
 
 const DELEGATED_EDIT_PERMISSION_MASK =
@@ -84,8 +139,8 @@ function installDelegatedEditPermissions(interaction) {
 }
 
 async function getDelegatedAccess(interaction) {
-    if (!enabled() || !interaction.guildId || !interaction.user?.id) return null;
-    const roles = getInteractionRoleIds(interaction);
+    if (!enabledForGuild(interaction.guildId) || !interaction.guildId || !interaction.user?.id) return null;
+    const roles = await getFetchedInteractionRoleIds(interaction);
     const targetClauses = ["(target_type = 'user' AND target_id = ?)"];
     const values = [interaction.guildId, interaction.user.id];
     if (roles.length > 0) {
@@ -106,10 +161,14 @@ async function applyDelegatedEditPermissions(interaction, resolveAccess = getDel
 
 module.exports = {
     enabled,
+    enabledForGuild,
     getDelegatedAccess,
     applyDelegatedEditPermissions,
     _internal: {
         getInteractionRoleIds,
+        rolloutBucket,
+        fetchInteractionMember,
+        getFetchedInteractionRoleIds,
         hasDelegatedEditPermission,
         withDelegatedEditPermissions,
         installDelegatedEditPermissions,

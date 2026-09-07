@@ -5,7 +5,7 @@ import { createHash } from "node:crypto";
 import { BoundedAsyncCache } from "@/lib/bounded-cache";
 import { getBotToken, getDashboardFlag, getDashboardNumber } from "@/lib/env";
 import {
-  delegatedAccessEnabled,
+  delegatedAccessEnabledForGuild,
   delegatedAccessLevelForTargets,
   isDiscordSnowflake,
   listDelegatedAccess,
@@ -157,8 +157,18 @@ function memberAvatarUrl(guildId: string, member: DiscordGuildMember) {
   return user.avatar ? `https://cdn.discordapp.com/avatars/${user.id}/${user.avatar}.png?size=128` : null;
 }
 
+function toGuildAccessMember(guildId: string, member: DiscordGuildMember): GuildAccessMember | null {
+  if (!member.user || !isDiscordSnowflake(member.user.id)) return null;
+  return {
+    id: member.user.id,
+    username: member.user.username,
+    nickname: member.nick || null,
+    avatarUrl: memberAvatarUrl(guildId, member),
+  };
+}
+
 async function fetchGuildMemberRoleIds(guildId: string, userId: string): Promise<string[] | null> {
-  if (!delegatedAccessEnabled() || !isDiscordSnowflake(guildId) || !isDiscordSnowflake(userId)) return null;
+  if (!delegatedAccessEnabledForGuild(guildId) || !isDiscordSnowflake(guildId) || !isDiscordSnowflake(userId)) return null;
   const token = getBotToken();
   if (!token) return null;
   try {
@@ -171,7 +181,7 @@ async function fetchGuildMemberRoleIds(guildId: string, userId: string): Promise
 }
 
 async function delegatedAccessForGuild(guildId: string, userId: string): Promise<DelegatedAccessLevel | null> {
-  if (!delegatedAccessEnabled()) return null;
+  if (!delegatedAccessEnabledForGuild(guildId)) return null;
   const grants = (await listDelegatedAccess(guildId)).filter(
     (grant) => grant.targetType !== "role" || grant.targetId !== guildId,
   );
@@ -183,8 +193,39 @@ async function delegatedAccessForGuild(guildId: string, userId: string): Promise
   return delegatedAccessLevelForTargets(grants, userId, roleIds);
 }
 
-export async function fetchGuildAccessDirectory(guildId: string, query: string) {
-  if (!delegatedAccessEnabled() || !isDiscordSnowflake(guildId)) {
+async function fetchGuildAccessMembersById(
+  guildId: string,
+  memberIds: string[],
+  queryId: string | null,
+  token: string,
+) {
+  const ids = [...new Set(memberIds.filter(isDiscordSnowflake))].slice(0, 100);
+  const members = new Map<string, GuildAccessMember>();
+  let queryFailed = false;
+  let next = 0;
+
+  const worker = async () => {
+    while (true) {
+      const index = next;
+      next += 1;
+      if (index >= ids.length) return;
+      const id = ids[index];
+      try {
+        const member = await discordFetch<DiscordGuildMember>(`/guilds/${guildId}/members/${id}`, token, "Bot", "no-store");
+        const normalized = toGuildAccessMember(guildId, member);
+        if (normalized) members.set(normalized.id, normalized);
+      } catch {
+        if (id === queryId) queryFailed = true;
+      }
+    }
+  };
+
+  await Promise.all(Array.from({ length: Math.min(5, ids.length) }, worker));
+  return { members: [...members.values()], queryFailed };
+}
+
+export async function fetchGuildAccessDirectory(guildId: string, query: string, existingUserIds: string[] = []) {
+  if (!delegatedAccessEnabledForGuild(guildId) || !isDiscordSnowflake(guildId)) {
     return { members: [] as GuildAccessMember[], roles: [] as GuildAccessRole[], directoryError: null };
   }
 
@@ -194,23 +235,13 @@ export async function fetchGuildAccessDirectory(guildId: string, query: string) 
   }
 
   const trimmedQuery = query.trim().slice(0, 100);
+  const lookupId = isDiscordSnowflake(trimmedQuery) ? trimmedQuery : null;
   const [membersResult, rolesResult] = await Promise.allSettled([
-    trimmedQuery
-      ? discordFetch<DiscordGuildMember[]>(`/guilds/${guildId}/members/search?query=${encodeURIComponent(trimmedQuery)}&limit=25`, token, "Bot", "no-store")
-      : Promise.resolve([] as DiscordGuildMember[]),
+    fetchGuildAccessMembersById(guildId, [lookupId || "", ...existingUserIds], lookupId, token),
     discordFetch<DiscordRole[]>(`/guilds/${guildId}/roles`, token, "Bot", "no-store"),
   ]);
 
-  const members = membersResult.status === "fulfilled"
-    ? membersResult.value
-      .filter((member) => member.user && isDiscordSnowflake(member.user.id))
-      .map((member) => ({
-        id: member.user!.id,
-        username: member.user!.username,
-        nickname: member.nick || null,
-        avatarUrl: memberAvatarUrl(guildId, member),
-      }))
-    : [];
+  const members = membersResult.status === "fulfilled" ? membersResult.value.members : [];
   const roles = rolesResult.status === "fulfilled"
     ? rolesResult.value
       .filter((role) => isDiscordSnowflake(role.id) && role.id !== guildId)
@@ -227,9 +258,13 @@ export async function fetchGuildAccessDirectory(guildId: string, query: string) 
   return {
     members,
     roles,
-    directoryError: membersResult.status === "rejected" || rolesResult.status === "rejected"
-      ? "Discord member or role data is temporarily unavailable."
-      : null,
+    directoryError: rolesResult.status === "rejected"
+      ? "Discord role data is temporarily unavailable."
+      : trimmedQuery && !lookupId
+        ? "ユーザーは Discord のユーザーIDを指定してください。Members Intent は使用しません。"
+        : membersResult.status === "rejected" || membersResult.value.queryFailed
+          ? "指定されたユーザーをこのサーバーから取得できませんでした。"
+          : null,
   };
 }
 
@@ -238,7 +273,7 @@ export async function validateGuildAccessTargets(
   targetType: DelegatedAccessTargetType,
   targetIds: string[],
 ) {
-  if (!delegatedAccessEnabled() || !isDiscordSnowflake(guildId) || targetIds.some((id) => !isDiscordSnowflake(id))) {
+  if (!delegatedAccessEnabledForGuild(guildId) || !isDiscordSnowflake(guildId) || targetIds.some((id) => !isDiscordSnowflake(id))) {
     return false;
   }
   const token = getBotToken();

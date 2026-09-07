@@ -66,3 +66,44 @@ test('delegated role IDs are taken from the interaction payload without fetching
         ['role-2', 'role-3'],
     );
 });
+
+test('delegated access fetches a member by the interaction user ID when resolving roles', async () => {
+    let fetchedUserId = null;
+    const roleIds = await delegatedAccess._internal.getFetchedInteractionRoleIds({
+        guildId: 'guild-1',
+        user: { id: 'user-1' },
+        member: null,
+        guild: {
+            members: {
+                fetch: async userId => {
+                    fetchedUserId = userId;
+                    return { roles: { cache: new Map([['role-fetched', {}]]) } };
+                },
+            },
+        },
+    });
+
+    assert.equal(fetchedUserId, 'user-1');
+    assert.deepEqual(roleIds, ['role-fetched']);
+});
+
+test('delegated access can be rolled out by guild ID bucket over time', () => {
+    const beforeEnabled = process.env.DASHBOARD_DELEGATED_ACCESS_ENABLED;
+    const beforeStart = process.env.DASHBOARD_DELEGATED_ACCESS_ROLLOUT_START_AT;
+    const beforeDuration = process.env.DASHBOARD_DELEGATED_ACCESS_ROLLOUT_DURATION_HOURS;
+    process.env.DASHBOARD_DELEGATED_ACCESS_ENABLED = 'true';
+    process.env.DASHBOARD_DELEGATED_ACCESS_ROLLOUT_START_AT = '2026-09-01T00:00:00Z';
+    process.env.DASHBOARD_DELEGATED_ACCESS_ROLLOUT_DURATION_HOURS = '24';
+    try {
+        assert.equal(delegatedAccess.enabledForGuild('123456789012345678', Date.parse('2026-08-31T23:59:59Z')), false);
+        assert.equal(delegatedAccess.enabledForGuild('123456789012345678', Date.parse('2026-09-02T00:00:00Z')), true);
+        assert.equal(delegatedAccess.enabledForGuild('1132814274734067772', Date.parse('2026-09-01T00:00:00Z')), true);
+    } finally {
+        if (beforeEnabled === undefined) delete process.env.DASHBOARD_DELEGATED_ACCESS_ENABLED;
+        else process.env.DASHBOARD_DELEGATED_ACCESS_ENABLED = beforeEnabled;
+        if (beforeStart === undefined) delete process.env.DASHBOARD_DELEGATED_ACCESS_ROLLOUT_START_AT;
+        else process.env.DASHBOARD_DELEGATED_ACCESS_ROLLOUT_START_AT = beforeStart;
+        if (beforeDuration === undefined) delete process.env.DASHBOARD_DELEGATED_ACCESS_ROLLOUT_DURATION_HOURS;
+        else process.env.DASHBOARD_DELEGATED_ACCESS_ROLLOUT_DURATION_HOURS = beforeDuration;
+    }
+});

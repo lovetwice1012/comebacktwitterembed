@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { ApiError, errorResponse, json, requireGuildPermission } from "@/lib/api";
 import {
-  delegatedAccessEnabled,
+  delegatedAccessEnabledForGuild,
   isDiscordSnowflake,
   listDelegatedAccess,
   replaceDelegatedAccess,
@@ -54,15 +54,17 @@ export async function GET(req: NextRequest, { params }: Params) {
     // Delegated grants must only be managed by a member with Discord's native
     // Manage Server or Administrator permission; delegates can never manage grants.
     await requireGuildPermission(guildId, "manage", locale);
-    if (!delegatedAccessEnabled()) {
+    if (!delegatedAccessEnabledForGuild(guildId)) {
       return json({ enabled: false, grants: [], members: [], roles: [], directoryError: null });
     }
 
     const query = req.nextUrl.searchParams.get("query") || "";
-    const [grants, directory] = await Promise.all([
-      listDelegatedAccess(guildId),
-      fetchGuildAccessDirectory(guildId, query),
-    ]);
+    const grants = await listDelegatedAccess(guildId);
+    const directory = await fetchGuildAccessDirectory(
+      guildId,
+      query,
+      grants.filter((grant) => grant.targetType === "user").map((grant) => grant.targetId),
+    );
     return json({ enabled: true, grants, ...directory });
   } catch (error) {
     return errorResponse(error, locale);
@@ -75,7 +77,7 @@ export async function POST(req: NextRequest, { params }: Params) {
     const { guildId } = await params;
     if (!isDiscordSnowflake(guildId)) throw new ApiError(400, "Invalid guild ID.");
     const { session } = await requireGuildPermission(guildId, "manage", locale);
-    if (!delegatedAccessEnabled()) {
+    if (!delegatedAccessEnabledForGuild(guildId)) {
       throw new ApiError(409, "Delegated access is disabled.");
     }
 
