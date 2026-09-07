@@ -42,9 +42,9 @@ function hourInsertSql() {
         content_event_id, facet_id, occurred_at_ms, observed_at_ms, author_user_id, guild_id,
         content_type, numeric_value
     )
-    SELECT bucket_start_ms,provider_id,account_key,facet_key,subject_hash,subject_key,
-      content_event_id,facet_id,occurred_at_ms,observed_at_ms,author_user_id,guild_id,
-      content_type,numeric_value
+    SELECT ranked.bucket_start_ms,ranked.provider_id,ranked.account_key,ranked.facet_key,ranked.subject_hash,ranked.subject_key,
+      ranked.content_event_id,ranked.facet_id,ranked.occurred_at_ms,ranked.observed_at_ms,ranked.author_user_id,ranked.guild_id,
+      ranked.content_type,ranked.numeric_value
     FROM (
       SELECT source.*,UNHEX(SHA2(subject_key,256)) AS subject_hash,
         ROW_NUMBER() OVER (
