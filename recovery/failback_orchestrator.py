@@ -122,6 +122,19 @@ class Failback:
     def ssh(self, command, timeout=30):
         return self.runner(["ssh", "-T", "-i", self.config["primarySshKey"], "-o", "IdentitiesOnly=yes", "-o", "StrictHostKeyChecking=yes", "-o", "UserKnownHostsFile=" + self.config.get("primaryKnownHosts", "/etc/cbte-recovery/primary-known-hosts"), "-o", "ConnectTimeout=10", "-p", str(self.config.get("primarySshPort", 34222)), "root@127.0.0.1", command], timeout)
 
+    @staticmethod
+    def unit_state(unit):
+        try:
+            result = subprocess.run(["systemctl", "is-active", unit], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, timeout=5, check=False, env={"PATH": os.defpath})
+        except (OSError, subprocess.TimeoutExpired):
+            raise FailbackError("A source unit state could not be confirmed") from None
+        # systemctl uses exit status 3 for an inactive unit.  That is an
+        # expected result while fencing and must remain distinguishable from a
+        # command failure.
+        if result.returncode not in {0, 3}:
+            raise FailbackError("A source unit state could not be confirmed")
+        return result.stdout.strip()
+
     def authority(self):
         config = private_json(self.config["authorityConfig"])
         token = (config.get("tokens") or {}).get("controller")
@@ -182,16 +195,24 @@ class Failback:
             self.runner(["systemctl", "stop", "--no-block", unit], timeout=10)
             deadline = time.monotonic() + 35
             while True:
-                state = self.runner(["systemctl", "is-active", unit], timeout=5).strip()
+                state = self.unit_state(unit)
                 if state in {"inactive", "failed"}:
                     break
                 if time.monotonic() >= deadline:
                     raise FailbackError("Source workload did not stop within the fence deadline")
                 time.sleep(0.25)
         for unit in ("cbte-recovery-controller.service", "cbte-recovery-workload.service"):
-            state = subprocess.run(["systemctl", "is-active", unit], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, timeout=10, check=False).stdout.strip()
+            state = self.unit_state(unit)
             if state not in {"inactive", "failed"}:
                 raise FailbackError("Source workload is still active")
+
+    def record_error(self, phase, error):
+        # Keep diagnostics useful after a reboot without persisting command
+        # output or credentials.  Error messages in this module are bounded
+        # and intentionally generic.
+        message = str(error)[:160]
+        self.save(lastError=type(error).__name__, lastErrorPhase=phase, lastErrorMessage=message, lastErrorAt=now_iso())
+        LOG.warning("phase %s failed: %s: %s", phase, type(error).__name__, message)
 
     def release_source_lease(self):
         lease_path = Path(self.config["sourceLeaseFile"])
@@ -261,7 +282,7 @@ class Failback:
                 notify(self.config["notificationConfig"], "failback-start", authority["epoch"], self.state["operationId"])
                 self.save(phase="PRIMARY_PREPARED", primary=primary)
             except Exception as error:
-                self.save(lastError=type(error).__name__)
+                self.record_error("WAITING_PRIMARY", error)
             return self.state
         if phase == "PRIMARY_PREPARED":
             try:
@@ -270,7 +291,7 @@ class Failback:
                 authority = self.authority()
                 self.save(phase="SOURCE_FROZEN", sourceEpoch=authority["epoch"])
             except Exception as error:
-                self.save(lastError=type(error).__name__)
+                self.record_error("PRIMARY_PREPARED", error)
             return self.state
         if phase == "SOURCE_FROZEN":
             try:
@@ -280,7 +301,7 @@ class Failback:
                 self.runner(["systemctl", "restart", "cbte-recovery-authority.service"], timeout=30)
                 self.save(phase="OWNERSHIP_COMMITTING", primary=primary)
             except Exception as error:
-                self.save(lastError=type(error).__name__)
+                self.record_error("SOURCE_FROZEN", error)
             return self.state
         if phase == "OWNERSHIP_COMMITTING":
             try:
@@ -289,7 +310,7 @@ class Failback:
                 result = self.failback_authority(authority, primary)
                 self.save(phase="PRIMARY_VERIFYING", primary=primary, authority=result)
             except Exception as error:
-                self.save(lastError=type(error).__name__)
+                self.record_error("OWNERSHIP_COMMITTING", error)
             return self.state
         if phase == "PRIMARY_VERIFYING":
             try:
@@ -300,7 +321,7 @@ class Failback:
                     raise FailbackError("Primary lease is not active")
                 self.save(phase="ROUTING_PRIMARY", primary=primary, primaryInstanceId=lease.get("instanceId"), authority=authority)
             except Exception as error:
-                self.save(lastError=type(error).__name__)
+                self.record_error("PRIMARY_VERIFYING", error)
             return self.state
         if phase == "ROUTING_PRIMARY":
             try:
@@ -310,7 +331,7 @@ class Failback:
                 self.save(phase="PRIMARY_ACTIVE", lastError=None)
                 self.runner(["systemctl", "start", "cbte-recovery-controller.service"], timeout=30)
             except Exception as error:
-                self.save(lastError=type(error).__name__)
+                self.record_error("ROUTING_PRIMARY", error)
             return self.state
         return self.state
 
