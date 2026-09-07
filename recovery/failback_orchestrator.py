@@ -53,6 +53,29 @@ def private_json(path):
     return value
 
 
+def runtime_json(path):
+    """Read a root-owned, non-secret runtime status file.
+
+    Guardian runtime leases intentionally omit the bearer lease secret and are
+    often mode 0644 so the local dashboard can display their state.  Treating
+    that status file like a credential made a valid failback fail closed after
+    fencing the source.
+    """
+    file = Path(path)
+    try:
+        info = file.lstat()
+        if not stat.S_ISREG(info.st_mode) or file.is_symlink() or (os.name == "posix" and info.st_uid != 0):
+            raise FailbackError("A recovery runtime status file is invalid")
+        value = json.loads(file.read_text(encoding="utf-8"))
+    except FailbackError:
+        raise
+    except Exception:
+        raise FailbackError("A recovery runtime status file is invalid") from None
+    if not isinstance(value, dict):
+        raise FailbackError("A recovery runtime status file must be an object")
+    return value
+
+
 def atomic_json(path: Path, value: dict):
     path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     temporary = path.with_name(path.name + ".next")
@@ -218,7 +241,7 @@ class Failback:
         lease_path = Path(self.config["sourceLeaseFile"])
         if not lease_path.exists():
             return
-        lease = private_json(lease_path)
+        lease = runtime_json(lease_path)
         if lease.get("state") not in {"active", "renewal_unconfirmed"}:
             return
         # The runtime lease intentionally omits its secret leaseId.  The
