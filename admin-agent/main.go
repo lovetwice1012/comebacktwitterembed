@@ -132,7 +132,7 @@ func main() {
 	if e != nil {
 		log.Fatal(e)
 	}
-	defer s.db.Close()
+	defer s.Close()
 	a := newApp(cfg, s)
 	if !a.allowedAdmin(cfg.Owner) {
 		log.Fatal("ADMIN_OWNER_ID must be present in ADMIN_ALLOWED_USER_IDS")
@@ -143,7 +143,7 @@ func main() {
 	if e := s.recoverActions(); e != nil {
 		log.Fatal(e)
 	}
-	server := &http.Server{Addr: cfg.Listen, Handler: a.routes(), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 30 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 32 << 10}
+	server := &http.Server{Addr: cfg.Listen, Handler: a.routes(), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 45 * time.Second, WriteTimeout: 45 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 32 << 10}
 	listener, e := net.Listen("tcp", cfg.Listen)
 	if e != nil {
 		log.Fatal(e)

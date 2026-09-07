@@ -42,14 +42,14 @@ func (a *App) activeNode(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	requestCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	requestCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	request, err := http.NewRequestWithContext(requestCtx, http.MethodGet, endpoint.String(), nil)
 	if err != nil {
 		return "", err
 	}
 	request.Header.Set("Authorization", "Bearer "+a.cfg.RecoveryControllerToken)
-	client := &http.Client{Timeout: 3 * time.Second, Transport: &http.Transport{Proxy: nil}, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	client := &http.Client{Timeout: 5 * time.Second, Transport: &http.Transport{Proxy: nil}, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	response, err := client.Do(request)
 	if err != nil {
 		return "", err
@@ -151,7 +151,7 @@ func (a *App) proxyActive(w http.ResponseWriter, r *http.Request) bool {
 	if contentType := r.Header.Get("Content-Type"); contentType != "" {
 		request.Header.Set("Content-Type", contentType)
 	}
-	client := &http.Client{Timeout: 30 * time.Second, Transport: &http.Transport{Proxy: nil}, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	client := &http.Client{Timeout: 45 * time.Second, Transport: &http.Transport{Proxy: nil}, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	response, err := client.Do(request)
 	if err != nil {
 		fail(w, http.StatusServiceUnavailable, "ACTIVE_PEER_UNAVAILABLE", "現在の稼働ノードの管理コアへ接続できません")

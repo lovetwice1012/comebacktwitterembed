@@ -404,7 +404,7 @@ func (a *App) events(w http.ResponseWriter, r *http.Request) {
 	}
 	limit := pageLimit(r)
 	args = append(args, limit+1)
-	rows, e := a.store.db.Query("SELECT seq,id,run_id,kind,occurred_at,persisted_at,payload FROM events WHERE "+where+" ORDER BY seq DESC LIMIT ?", args...)
+	rows, e := a.store.queryDB().Query("SELECT seq,id,run_id,kind,occurred_at,persisted_at,payload FROM events WHERE "+where+" ORDER BY seq DESC LIMIT ?", args...)
 	if e != nil {
 		fail(w, 503, "QUERY_FAILED", e.Error())
 		return
@@ -450,7 +450,7 @@ func (a *App) runs(w http.ResponseWriter, r *http.Request) {
 	}
 	limit := pageLimit(r)
 	args = append(args, limit+1)
-	rows, e := a.store.db.Query("SELECT run_id,MAX(seq),MIN(occurred_at),MAX(occurred_at),COUNT(*),MAX(guild_id) FROM events WHERE "+where+" GROUP BY run_id"+having+" ORDER BY MAX(seq) DESC LIMIT ?", args...)
+	rows, e := a.store.queryDB().Query("SELECT run_id,MAX(seq),MIN(occurred_at),MAX(occurred_at),COUNT(*),MAX(guild_id) FROM events WHERE "+where+" GROUP BY run_id"+having+" ORDER BY MAX(seq) DESC LIMIT ?", args...)
 	if e != nil {
 		fail(w, 503, "QUERY_FAILED", e.Error())
 		return
@@ -478,7 +478,7 @@ func (a *App) runs(w http.ResponseWriter, r *http.Request) {
 	jsonResponse(w, 200, Object{"items": items, "nextCursor": next})
 }
 func (a *App) run(w http.ResponseWriter, r *http.Request) {
-	rows, e := a.store.db.Query("SELECT seq,payload FROM events WHERE run_id=? ORDER BY seq", r.PathValue("id"))
+	rows, e := a.store.queryDB().Query("SELECT seq,payload FROM events WHERE run_id=? ORDER BY seq", r.PathValue("id"))
 	if e != nil {
 		fail(w, 503, "QUERY_FAILED", e.Error())
 		return
@@ -558,7 +558,7 @@ func (a *App) actions(w http.ResponseWriter, r *http.Request) {
 	}
 	limit := pageLimit(r)
 	args = append(args, limit+1)
-	rows, e := a.store.db.Query("SELECT "+actionColumns+" FROM actions WHERE "+where+" ORDER BY created_at DESC,id DESC LIMIT ?", args...)
+	rows, e := a.store.queryDB().Query("SELECT "+actionColumns+" FROM actions WHERE "+where+" ORDER BY created_at DESC,id DESC LIMIT ?", args...)
 	if e != nil {
 		fail(w, 503, "QUERY_FAILED", e.Error())
 		return

@@ -10,17 +10,22 @@ import (
 func (a *App) measurementCoverage(ctx context.Context, from, to string, matching int) (Object, error) {
 	var firstAt, lastAt sql.NullString
 	var cursor, globalCount int64
-	e := a.store.db.QueryRowContext(ctx, `SELECT COUNT(DISTINCT run_id),MIN(occurred_at),MAX(occurred_at) FROM events WHERE kind='request.started' AND run_id<>'' AND COALESCE(json_extract(payload,'$.triggerType'),json_extract(payload,'$.trigger_type'),'') NOT IN ('diagnostic','admin_operation')`).Scan(&globalCount, &firstAt, &lastAt)
+	coverageDB := a.store.queryDB()
+	coverageQuery := `SELECT COUNT(DISTINCT run_id),MIN(occurred_at),MAX(occurred_at) FROM events WHERE kind='request.started' AND run_id<>'' AND COALESCE(json_extract(payload,'$.triggerType'),json_extract(payload,'$.trigger_type'),'') NOT IN ('diagnostic','admin_operation')`
+	if a.store.requestRootsReady(ctx) {
+		coverageQuery = `SELECT COUNT(*),MIN(occurred_at),MAX(occurred_at) FROM request_roots WHERE COALESCE(json_extract(payload,'$.triggerType'),json_extract(payload,'$.trigger_type'),'') NOT IN ('diagnostic','admin_operation')`
+	}
+	e := coverageDB.QueryRowContext(ctx, coverageQuery).Scan(&globalCount, &firstAt, &lastAt)
 	if e != nil {
 		return nil, e
 	}
-	if e = a.store.db.QueryRowContext(ctx, "SELECT COALESCE(MAX(seq),0) FROM events").Scan(&cursor); e != nil {
+	if e = coverageDB.QueryRowContext(ctx, "SELECT COALESCE(MAX(seq),0) FROM events").Scan(&cursor); e != nil {
 		return nil, e
 	}
 	var heartbeatAt, heartbeatPersistedAt string
 	var heartbeatAge any
 	collectionState := "unobserved"
-	e = a.store.db.QueryRowContext(ctx, "SELECT occurred_at,persisted_at FROM events WHERE kind IN ('heartbeat','bot.heartbeat','runtime.heartbeat') ORDER BY seq DESC LIMIT 1").Scan(&heartbeatAt, &heartbeatPersistedAt)
+	e = coverageDB.QueryRowContext(ctx, "SELECT occurred_at,persisted_at FROM events WHERE kind IN ('heartbeat','bot.heartbeat','runtime.heartbeat') ORDER BY seq DESC LIMIT 1").Scan(&heartbeatAt, &heartbeatPersistedAt)
 	if e != nil && !errors.Is(e, sql.ErrNoRows) {
 		return nil, e
 	}

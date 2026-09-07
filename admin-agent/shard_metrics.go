@@ -14,7 +14,7 @@ import (
 const shardHeartbeatGrace = 45 * time.Second
 
 func (a *App) shards(w http.ResponseWriter, r *http.Request) {
-	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
 	value, err := a.shardMetrics(ctx, time.Now())
 	if err != nil {
@@ -63,7 +63,7 @@ func (a *App) shardMetrics(ctx context.Context, at time.Time) (Object, error) {
 	}
 
 	var payload, occurred string
-	err = a.store.db.QueryRowContext(ctx, `SELECT payload,occurred_at FROM events
+	err = a.store.queryDB().QueryRowContext(ctx, `SELECT payload,occurred_at FROM events
         WHERE kind IN ('heartbeat','bot.heartbeat','runtime.heartbeat')
         ORDER BY seq DESC LIMIT 1`).Scan(&payload, &occurred)
 	if err == nil {
@@ -206,7 +206,48 @@ type shardProcessingCount struct {
 
 func (a *App) shardProcessingCounts(ctx context.Context, dayStart, end, minuteStart time.Time) (shardProcessingCount, error) {
 	result := shardProcessingCount{byShard: map[string]*shardWindowCount{}}
-	rows, err := a.store.db.QueryContext(ctx, `SELECT kind,payload,occurred_at FROM events
+	if a.store.requestRootsReady(ctx) {
+		rows, err := a.store.queryDB().QueryContext(ctx, `SELECT shard_id,occurred_at,completed_at FROM request_roots
+        WHERE (occurred_at>=? AND occurred_at<?) OR (completed_at>=? AND completed_at<?)
+        ORDER BY seq`, dayStart.Format(timestampLayout), end.Format(timestampLayout), dayStart.Format(timestampLayout), end.Format(timestampLayout))
+		if err != nil {
+			return result, err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var id, started string
+			var completed sql.NullString
+			if err := rows.Scan(&id, &started, &completed); err != nil {
+				return result, err
+			}
+			if id == "" {
+				id = "unknown"
+			}
+			count := result.byShard[id]
+			if count == nil {
+				count = &shardWindowCount{}
+				result.byShard[id] = count
+			}
+			if at, err := time.Parse(time.RFC3339Nano, started); err == nil && !at.Before(dayStart) && at.Before(end) {
+				count.startedToday++
+				if !at.Before(minuteStart) {
+					count.startedMinute++
+				}
+			}
+			if completed.Valid {
+				if at, err := time.Parse(time.RFC3339Nano, completed.String); err == nil && !at.Before(dayStart) && at.Before(end) {
+					count.completedToday++
+					result.summaryToday++
+					if !at.Before(minuteStart) {
+						count.completedMinute++
+						result.summaryMinute++
+					}
+				}
+			}
+		}
+		return result, rows.Err()
+	}
+	rows, err := a.store.queryDB().QueryContext(ctx, `SELECT kind,payload,occurred_at FROM events
         WHERE kind IN ('request.started','request.completed') AND occurred_at>=? AND occurred_at<?
         ORDER BY occurred_at,seq`, dayStart.Format(timestampLayout), end.Format(timestampLayout))
 	if err != nil {

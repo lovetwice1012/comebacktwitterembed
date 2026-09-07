@@ -30,7 +30,7 @@ async function proxy(req: NextRequest, context: { params: Promise<{ path: string
     }
     let response: Response;
     try {
-      response = await fetch(endpoint, { method: req.method, headers: { authorization: `Bearer ${token}`, "x-admin-actor": session.user.id, "content-type": "application/json" }, body, cache: "no-store", signal: AbortSignal.timeout(15000), redirect: "error" });
+      response = await fetch(endpoint, { method: req.method, headers: { authorization: `Bearer ${token}`, "x-admin-actor": session.user.id, "content-type": "application/json" }, body, cache: "no-store", signal: AbortSignal.timeout(45000), redirect: "error" });
     } catch (error) {
       return NextResponse.json({ error: "管理デーモンに接続できません。処理が受付済みの場合は履歴で結果を確認してください。", state: "unavailable", detail: error instanceof Error ? error.message : String(error), independentUrl: independentAdminUrl() }, { status: 503 });
     }

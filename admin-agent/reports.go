@@ -57,7 +57,7 @@ func reportKey(kind string, filters Object) string {
 func (a *App) reportSnapshot(key string) (Object, error) {
 	var kind, filters, status, updated string
 	var action, success, generated, payload, problem sql.NullString
-	e := a.store.db.QueryRow("SELECT kind,filters,current_action_id,status,last_successful_action_id,generated_at,result,error,updated_at FROM reports WHERE cache_key=?", key).Scan(&kind, &filters, &action, &status, &success, &generated, &payload, &problem, &updated)
+	e := a.store.queryDB().QueryRow("SELECT kind,filters,current_action_id,status,last_successful_action_id,generated_at,result,error,updated_at FROM reports WHERE cache_key=?", key).Scan(&kind, &filters, &action, &status, &success, &generated, &payload, &problem, &updated)
 	if e != nil {
 		return nil, e
 	}

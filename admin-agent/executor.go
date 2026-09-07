@@ -60,7 +60,7 @@ func serveExecutor(ctx context.Context, cfg Config) error {
 	if e != nil {
 		return e
 	}
-	defer s.db.Close()
+	defer s.Close()
 	_, e = s.db.Exec("UPDATE receipts SET status='unknown',result=? WHERE status='running'", encode(Object{"error": "Executor restarted before operation receipt. Inspect systemd before proceeding."}))
 	if e != nil {
 		return e

@@ -29,7 +29,7 @@ func quantile(values []float64, q float64) any {
 	return values[max(0, min(len(values)-1, int(math.Ceil(q*float64(len(values))))-1))]
 }
 func (a *App) metrics(w http.ResponseWriter, r *http.Request) {
-	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
 	from, to, e := dateFilter(r.URL.Query().Get("from"), r.URL.Query().Get("to"))
 	if e != nil {
@@ -42,7 +42,20 @@ func (a *App) metrics(w http.ResponseWriter, r *http.Request) {
 		where += " AND s.guild_id=?"
 		args = append(args, guild)
 	}
-	rows, e := a.store.db.QueryContext(ctx, `SELECT s.run_id,s.occurred_at,s.guild_id,s.payload,c.payload FROM events s LEFT JOIN events c ON c.seq=(SELECT MAX(t.seq) FROM events t WHERE t.run_id=s.run_id AND t.kind='request.completed') WHERE `+where+` AND s.seq=(SELECT MIN(z.seq) FROM events z WHERE z.run_id=s.run_id AND z.kind='request.started') ORDER BY s.seq`, args...)
+	queryDB := a.store.queryDB()
+	var rows *sql.Rows
+	compactRoots := a.store.requestRootsReady(ctx)
+	if compactRoots {
+		rootWhere := "occurred_at>=? AND occurred_at<?"
+		rootArgs := []any{from, to}
+		if guild := r.URL.Query().Get("guildId"); guild != "" {
+			rootWhere += " AND guild_id=?"
+			rootArgs = append(rootArgs, guild)
+		}
+		rows, e = queryDB.QueryContext(ctx, `SELECT run_id,occurred_at,guild_id,trigger_type,provider_id,user_id,message_id,content_value,completed_at,outcome,duration_ms FROM request_roots WHERE `+rootWhere+` ORDER BY seq`, rootArgs...)
+	} else {
+		rows, e = queryDB.QueryContext(ctx, `SELECT s.run_id,s.occurred_at,s.guild_id,s.payload,c.payload FROM events s LEFT JOIN events c ON c.seq=(SELECT MAX(t.seq) FROM events t WHERE t.run_id=s.run_id AND t.kind='request.completed') WHERE `+where+` AND s.seq=(SELECT MIN(z.seq) FROM events z WHERE z.run_id=s.run_id AND z.kind='request.started') ORDER BY s.seq`, args...)
+	}
 	if e != nil {
 		fail(w, 503, "METRICS_QUERY_FAILED", e.Error())
 		return
@@ -59,12 +72,37 @@ func (a *App) metrics(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var id, started, guild, payload string
 		var completed sql.NullString
-		if e := rows.Scan(&id, &started, &guild, &payload, &completed); e != nil {
-			rows.Close()
-			fail(w, 503, "METRICS_QUERY_FAILED", e.Error())
-			return
+		var s Object
+		var c Object
+		if compactRoots {
+			var trigger, provider, user, message, content, outcome sql.NullString
+			var duration sql.NullFloat64
+			if e := rows.Scan(&id, &started, &guild, &trigger, &provider, &user, &message, &content, &completed, &outcome, &duration); e != nil {
+				rows.Close()
+				fail(w, 503, "METRICS_QUERY_FAILED", e.Error())
+				return
+			}
+			s = Object{"triggerType": trigger.String, "provider": provider.String, "userId": user.String, "messageId": message.String, "contentId": content.String}
+			if completed.Valid {
+				c = Object{}
+				if outcome.Valid {
+					c["outcome"] = outcome.String
+				}
+				if duration.Valid {
+					c["durationMs"] = duration.Float64
+				}
+			}
+		} else {
+			if e := rows.Scan(&id, &started, &guild, &payload, &completed); e != nil {
+				rows.Close()
+				fail(w, 503, "METRICS_QUERY_FAILED", e.Error())
+				return
+			}
+			s, _ = decode(payload).(map[string]any)
+			if completed.Valid {
+				c, _ = decode(completed.String).(map[string]any)
+			}
 		}
-		s, _ := decode(payload).(map[string]any)
 		trigger := first(s, "triggerType", "trigger_type")
 		if trigger == "diagnostic" {
 			diagnostic++
@@ -75,9 +113,10 @@ func (a *App) metrics(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		outcome := "I"
-		var c Object
 		if completed.Valid {
-			c, _ = decode(completed.String).(map[string]any)
+			if c == nil {
+				c = Object{}
+			}
 			outcome = outcomeOf(c)
 		} else if t, e := time.Parse(time.RFC3339Nano, started); e == nil {
 			age := time.Since(t).Seconds() * 1000

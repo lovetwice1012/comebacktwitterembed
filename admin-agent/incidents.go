@@ -117,7 +117,7 @@ func (a *App) incidents(w http.ResponseWriter, r *http.Request) {
 		args = append(args, c)
 	}
 	args = append(args, pageLimit(r)+1)
-	rows, e := a.store.db.Query("SELECT "+incidentColumns+" FROM incidents WHERE "+where+" ORDER BY updated_at DESC LIMIT ?", args...)
+	rows, e := a.store.queryDB().Query("SELECT "+incidentColumns+" FROM incidents WHERE "+where+" ORDER BY updated_at DESC LIMIT ?", args...)
 	if e != nil {
 		fail(w, 503, "QUERY_FAILED", e.Error())
 		return
@@ -144,7 +144,7 @@ func (a *App) incidents(w http.ResponseWriter, r *http.Request) {
 	jsonResponse(w, 200, Object{"items": items, "nextCursor": next})
 }
 func (a *App) incident(w http.ResponseWriter, r *http.Request) {
-	item, e := scanIncident(a.store.db.QueryRow("SELECT "+incidentColumns+" FROM incidents WHERE id=?", r.PathValue("id")))
+	item, e := scanIncident(a.store.queryDB().QueryRow("SELECT "+incidentColumns+" FROM incidents WHERE id=?", r.PathValue("id")))
 	if errors.Is(e, sql.ErrNoRows) {
 		fail(w, 404, "NOT_FOUND", "Incident not found")
 		return
@@ -184,7 +184,7 @@ func (a *App) acknowledge(w http.ResponseWriter, r *http.Request) {
 	jsonResponse(w, 200, Object{"ok": true, "acknowledged": true})
 }
 func (a *App) notifications(w http.ResponseWriter, r *http.Request) {
-	rows, e := a.store.db.Query("SELECT id,incident_id,revision,channel,payload,status,attempts,next_at,response,last_error,created_at FROM outbox ORDER BY created_at DESC LIMIT ?", pageLimit(r))
+	rows, e := a.store.queryDB().Query("SELECT id,incident_id,revision,channel,payload,status,attempts,next_at,response,last_error,created_at FROM outbox ORDER BY created_at DESC LIMIT ?", pageLimit(r))
 	if e != nil {
 		fail(w, 503, "QUERY_FAILED", e.Error())
 		return

@@ -315,6 +315,15 @@ node scripts/run-admin-platform-local.cjs
 
 `install-runtime.sh`は未コミットの変更を配布しません。更新前に配備対象revision、生成済みbuild ID、設定ファイルのhash、systemdのInvocationIDを記録してください。DBの`reset`、古いqueued操作の再実行、保存lock/PIDの再利用、旧authority leaseの復活はロールバック手順に含めません。
 
+既存の管理SQLiteを新しい要求単位集計へ更新する場合は、管理コアを止めずに次のバックフィルを一度実行します。処理中もBotのイベントは従来のevents表へ保存され、完了後に`request_roots_meta.ready=1`となった照会だけが要約表を使用します。失敗時はreadyが0のままなので従来照会へ戻ります。
+
+```sh
+sudo python3 deploy/admin-platform/backfill-request-roots.py \
+  --db /var/lib/cbte-admin/state.db
+```
+
+予備のクラウドサーバーでは、同じrevisionのスクリプトを使い、`ADMIN_AGENT_STATE_DIR`配下の`state.db`へ実行します。バックフィル後に管理コアだけを計画再起動し、`/v1/metrics`、`/v1/shards`、`/v1/runs`のHTTP応答と`request_roots_meta.ready`を確認します。
+
 ## 検証コマンド
 
 ```sh

@@ -28,7 +28,7 @@ function jstIso(value: string) { if (!value) return undefined; const d = new Dat
 
 async function api<T = Data>(path: string, method = "GET", body?: unknown): Promise<T> {
   let response: Response;
-  try { response = await fetch(`/api/admin/agent/${path}`, { method, credentials: "same-origin", cache: "no-store", headers: body ? { "content-type": "application/json" } : undefined, body: body ? JSON.stringify(body) : undefined, signal: AbortSignal.timeout(30000) }); }
+  try { response = await fetch(`/api/admin/agent/${path}`, { method, credentials: "same-origin", cache: "no-store", headers: body ? { "content-type": "application/json" } : undefined, body: body ? JSON.stringify(body) : undefined, signal: AbortSignal.timeout(45000) }); }
   catch (error) { throw new Error(`管理APIへ接続できません。${error instanceof Error ? error.message : String(error)}。受付済みの操作は再送せず同じキーで確認します。`); }
   let value: Data;
   try { value = await response.json(); }

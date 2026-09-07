@@ -109,7 +109,7 @@ func runWitness(ctx context.Context, cfg Config) error {
 	if e != nil {
 		return e
 	}
-	defer s.db.Close()
+	defer s.Close()
 	a := newApp(cfg, s)
 	go a.deliverNotifications(ctx)
 	ticker := time.NewTicker(15 * time.Second)

@@ -1,19 +1,24 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
 	_ "modernc.org/sqlite"
 )
 
-type Store struct{ db *sql.DB }
+type Store struct {
+	db     *sql.DB
+	readDB *sql.DB
+}
 type Object = map[string]any
 
 func encode(v any) string { b, _ := json.Marshal(v); return string(b) }
@@ -50,12 +55,17 @@ func openStore(dir string) (*Store, error) {
 		return nil, e
 	}
 	db.SetMaxOpenConns(1)
-	s := &Store{db: db}
 	_, e = db.Exec(`PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA busy_timeout=5000;
 CREATE TABLE IF NOT EXISTS events (seq INTEGER PRIMARY KEY AUTOINCREMENT,id TEXT NOT NULL UNIQUE,run_id TEXT NOT NULL,guild_id TEXT NOT NULL,kind TEXT NOT NULL,occurred_at TEXT NOT NULL,persisted_at TEXT NOT NULL,payload TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS events_guild_time ON events(guild_id,occurred_at,seq);
 CREATE INDEX IF NOT EXISTS events_run ON events(run_id,seq);
 CREATE INDEX IF NOT EXISTS events_kind_time ON events(kind,occurred_at,seq);
+CREATE TABLE IF NOT EXISTS request_roots (run_id TEXT PRIMARY KEY,seq INTEGER NOT NULL,occurred_at TEXT NOT NULL,guild_id TEXT NOT NULL,payload TEXT NOT NULL,event_count INTEGER NOT NULL DEFAULT 1,completed_seq INTEGER,completed_at TEXT,completed_payload TEXT,shard_id TEXT NOT NULL DEFAULT '',trigger_type TEXT NOT NULL DEFAULT '',provider_id TEXT NOT NULL DEFAULT '',user_id TEXT NOT NULL DEFAULT '',message_id TEXT NOT NULL DEFAULT '',content_value TEXT NOT NULL DEFAULT '',duration_ms REAL,outcome TEXT NOT NULL DEFAULT '');
+CREATE INDEX IF NOT EXISTS request_roots_time ON request_roots(occurred_at,seq);
+CREATE INDEX IF NOT EXISTS request_roots_guild_time ON request_roots(guild_id,occurred_at,seq);
+CREATE INDEX IF NOT EXISTS request_roots_completed_time ON request_roots(completed_at,seq);
+CREATE TABLE IF NOT EXISTS request_roots_meta (id INTEGER PRIMARY KEY CHECK(id=1),ready INTEGER NOT NULL DEFAULT 0,updated_at TEXT NOT NULL DEFAULT '');
+INSERT OR IGNORE INTO request_roots_meta(id,ready,updated_at) VALUES(1,0,'');
 CREATE TABLE IF NOT EXISTS actions (id TEXT PRIMARY KEY,idem TEXT NOT NULL UNIQUE,type TEXT NOT NULL,input TEXT NOT NULL,status TEXT NOT NULL,actor TEXT NOT NULL,via TEXT NOT NULL,created_at TEXT NOT NULL,updated_at TEXT NOT NULL,result TEXT,error TEXT);
 CREATE INDEX IF NOT EXISTS actions_status_time ON actions(status,created_at);
 CREATE TABLE IF NOT EXISTS incidents (id TEXT PRIMARY KEY,fingerprint TEXT NOT NULL UNIQUE,title TEXT NOT NULL,status TEXT NOT NULL,revision INTEGER NOT NULL,created_at TEXT NOT NULL,updated_at TEXT NOT NULL,evidence TEXT NOT NULL,acknowledged INTEGER NOT NULL DEFAULT 0,recovery_count INTEGER NOT NULL DEFAULT 0,recovery_start TEXT);
@@ -71,8 +81,108 @@ CREATE TABLE IF NOT EXISTS reports (cache_key TEXT PRIMARY KEY,kind TEXT NOT NUL
 		db.Close()
 		return nil, e
 	}
+	if e = ensureRequestRootColumns(db); e != nil {
+		db.Close()
+		return nil, e
+	}
+	// Keep writes serialized on the durable connection, but let independent
+	// read handlers use WAL snapshots concurrently. The admin overview asks
+	// for metrics, shards and runs together; sharing one connection made each
+	// heavy read wait behind the previous one until its 15s deadline.
+	var readDB *sql.DB
+	if runtime.GOOS == "linux" {
+		readDB, e = sql.Open("sqlite", filepath.Join(dir, "state.db"))
+		if e != nil {
+			db.Close()
+			return nil, e
+		}
+		readDB.SetMaxOpenConns(4)
+		readDB.SetMaxIdleConns(4)
+		if _, e = readDB.Exec("PRAGMA busy_timeout=5000"); e != nil {
+			readDB.Close()
+			db.Close()
+			return nil, e
+		}
+	}
+	s := &Store{db: db, readDB: readDB}
+	var hasEvent int
+	if e = db.QueryRow("SELECT 1 FROM events LIMIT 1").Scan(&hasEvent); errors.Is(e, sql.ErrNoRows) {
+		_, e = db.Exec("UPDATE request_roots_meta SET ready=1,updated_at=? WHERE id=1", time.Now().UTC().Format(timestampLayout))
+	}
+	if e != nil && !errors.Is(e, sql.ErrNoRows) {
+		if readDB != nil {
+			readDB.Close()
+		}
+		db.Close()
+		return nil, e
+	}
 	_, e = db.Exec("INSERT OR IGNORE INTO settings(key,value) VALUES('policy',?)", encode(defaultPolicy()))
 	return s, e
+}
+
+func ensureRequestRootColumns(db *sql.DB) error {
+	rows, err := db.Query("PRAGMA table_info(request_roots)")
+	if err != nil {
+		return err
+	}
+	columns := map[string]bool{}
+	for rows.Next() {
+		var cid int
+		var name, typ string
+		var notNull, pk int
+		var defaultValue any
+		if err := rows.Scan(&cid, &name, &typ, &notNull, &defaultValue, &pk); err != nil {
+			rows.Close()
+			return err
+		}
+		columns[name] = true
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return err
+	}
+	rows.Close()
+	additions := map[string]string{
+		"trigger_type": "TEXT NOT NULL DEFAULT ''", "provider_id": "TEXT NOT NULL DEFAULT ''",
+		"user_id": "TEXT NOT NULL DEFAULT ''", "message_id": "TEXT NOT NULL DEFAULT ''",
+		"content_value": "TEXT NOT NULL DEFAULT ''", "duration_ms": "REAL", "outcome": "TEXT NOT NULL DEFAULT ''",
+	}
+	changed := false
+	for name, definition := range additions {
+		if columns[name] {
+			continue
+		}
+		if _, err := db.Exec("ALTER TABLE request_roots ADD COLUMN " + name + " " + definition); err != nil {
+			return err
+		}
+		changed = true
+	}
+	if changed {
+		_, err = db.Exec("UPDATE request_roots_meta SET ready=0,updated_at='' WHERE id=1")
+	}
+	return err
+}
+
+func (s *Store) queryDB() *sql.DB {
+	if s.readDB != nil {
+		return s.readDB
+	}
+	return s.db
+}
+
+func (s *Store) requestRootsReady(ctx context.Context) bool {
+	var ready int
+	if e := s.queryDB().QueryRowContext(ctx, "SELECT ready FROM request_roots_meta WHERE id=1").Scan(&ready); e != nil {
+		return false
+	}
+	return ready == 1
+}
+
+func (s *Store) Close() error {
+	if s.readDB != nil {
+		_ = s.readDB.Close()
+	}
+	return s.db.Close()
 }
 
 func (s *Store) getSetting(key string, dst any) error {
@@ -138,6 +248,11 @@ func (s *Store) ingest(events []Object) (int64, int, error) {
 		}
 		n, _ := res.RowsAffected()
 		accepted += int(n)
+		if n > 0 && run != "" {
+			if e = updateRequestRoot(tx, run, kind, occurred, guild, payload, item, res); e != nil {
+				return 0, 0, e
+			}
+		}
 	}
 	if e = tx.QueryRow("SELECT COALESCE(MAX(seq),0) FROM events").Scan(&cursor); e != nil {
 		return 0, 0, e
@@ -146,6 +261,61 @@ func (s *Store) ingest(events []Object) (int64, int, error) {
 		return 0, 0, e
 	}
 	return cursor, accepted, nil
+}
+
+func updateRequestRoot(tx *sql.Tx, run, kind, occurred, guild, payload string, item Object, result sql.Result) error {
+	seq, err := result.LastInsertId()
+	if err != nil {
+		return err
+	}
+	switch kind {
+	case "request.started":
+		shard := first(item, "shardId", "shard_id")
+		if shard == "" {
+			shard = first(nested(item, "context"), "shardId", "shard_id")
+		}
+		trigger := first(item, "triggerType", "trigger_type")
+		provider := first(item, "provider", "providerId", "provider_id")
+		user := first(item, "userId", "user_id")
+		message := first(item, "messageId", "message_id")
+		content := first(item, "contentId", "content_id", "canonicalUrl", "url")
+		_, err = tx.Exec(`INSERT INTO request_roots(run_id,seq,occurred_at,guild_id,payload,event_count,shard_id,trigger_type,provider_id,user_id,message_id,content_value)
+VALUES(?,?,?,?,?,1,?,?,?,?,?,?)
+ON CONFLICT(run_id) DO UPDATE SET
+  event_count=request_roots.event_count+1,
+  seq=CASE WHEN excluded.seq<request_roots.seq THEN excluded.seq ELSE request_roots.seq END,
+  occurred_at=CASE WHEN excluded.seq<request_roots.seq THEN excluded.occurred_at ELSE request_roots.occurred_at END,
+  guild_id=CASE WHEN excluded.seq<request_roots.seq THEN excluded.guild_id ELSE request_roots.guild_id END,
+  payload=CASE WHEN excluded.seq<request_roots.seq THEN excluded.payload ELSE request_roots.payload END,
+  shard_id=CASE WHEN request_roots.shard_id='' THEN excluded.shard_id ELSE request_roots.shard_id END,
+  trigger_type=CASE WHEN request_roots.trigger_type='' THEN excluded.trigger_type ELSE request_roots.trigger_type END,
+  provider_id=CASE WHEN request_roots.provider_id='' THEN excluded.provider_id ELSE request_roots.provider_id END,
+  user_id=CASE WHEN request_roots.user_id='' THEN excluded.user_id ELSE request_roots.user_id END,
+  message_id=CASE WHEN request_roots.message_id='' THEN excluded.message_id ELSE request_roots.message_id END,
+  content_value=CASE WHEN request_roots.content_value='' THEN excluded.content_value ELSE request_roots.content_value END`, run, seq, occurred, guild, payload, shard, trigger, provider, user, message, content)
+	case "request.completed":
+		completed, _ := decode(payload).(map[string]any)
+		outcome := first(completed, "outcome", "resultCode", "outcome_code")
+		if outcome == "" {
+			outcome = first(nested(completed, "details"), "outcome", "resultCode")
+		}
+		var duration any
+		if value, ok := completed["durationMs"].(float64); ok && value >= 0 {
+			duration = value
+		} else if value, ok := nested(completed, "details")["durationMs"].(float64); ok && value >= 0 {
+			duration = value
+		}
+		_, err = tx.Exec(`UPDATE request_roots SET event_count=event_count+1,
+  completed_seq=CASE WHEN completed_seq IS NULL OR ? > completed_seq THEN ? ELSE completed_seq END,
+  completed_at=CASE WHEN completed_seq IS NULL OR ? > completed_seq THEN ? ELSE completed_at END,
+  completed_payload=CASE WHEN completed_seq IS NULL OR ? > completed_seq THEN ? ELSE completed_payload END,
+  outcome=CASE WHEN completed_seq IS NULL OR ? > completed_seq THEN ? ELSE outcome END,
+  duration_ms=CASE WHEN completed_seq IS NULL OR ? > completed_seq THEN ? ELSE duration_ms END
+WHERE run_id=?`, seq, seq, seq, occurred, seq, payload, seq, outcome, seq, duration, run)
+	default:
+		_, err = tx.Exec("UPDATE request_roots SET event_count=event_count+1 WHERE run_id=?", run)
+	}
+	return err
 }
 
 type Action struct {
@@ -179,7 +349,7 @@ func scanAction(row interface{ Scan(...any) error }) (Action, error) {
 const actionColumns = "id,type,input,status,actor,via,created_at,updated_at,result,error"
 
 func (s *Store) action(id string) (Action, error) {
-	return scanAction(s.db.QueryRow("SELECT "+actionColumns+" FROM actions WHERE id=?", id))
+	return scanAction(s.queryDB().QueryRow("SELECT "+actionColumns+" FROM actions WHERE id=?", id))
 }
 func (s *Store) enqueue(typ string, input Object, idem, actor, via string) (Action, bool, error) {
 	if idem == "" || len(idem) > 200 {
