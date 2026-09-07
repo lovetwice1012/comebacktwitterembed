@@ -157,21 +157,38 @@ function shardSnapshot(client, statusNames = SHARD_STATUS_NAMES) {
         return { managerStatus: null, total: 0, online: 0, offline: 0, unknown: 0, items: [] };
     }
     const items = [...shards.values()].map(shard => {
-        const status = statusNames?.[shard.status] || SHARD_STATUS_NAMES[shard.status] || 'unknown';
+        // discord.js exposes Status as a bidirectional enum.  Passing that
+        // object here returns values such as "Ready" and "Identifying",
+        // while the default map uses snake-case values.  Normalize both
+        // forms before deriving online/offline so a valid shard is not
+        // reported as offline (or collapsed into unknown) merely because
+        // the enum's display casing changed.
+        const rawStatus = statusNames?.[shard.status] ?? SHARD_STATUS_NAMES[shard.status] ?? shard.status;
+        const status = normalizeShardStatus(rawStatus);
         const online = status === 'ready' ? true : status === 'unknown' ? null : false;
         const ping = Number.isFinite(Number(shard.ping)) && Number(shard.ping) >= 0 ? Number(shard.ping) : null;
         const lastPing = Number.isFinite(Number(shard.lastPingTimestamp)) && Number(shard.lastPingTimestamp) >= 0
             ? Number(shard.lastPingTimestamp) : null;
         return { shard_id: String(shard.id), shardId: String(shard.id), status, online, ping_ms: ping, last_ping_at_ms: lastPing };
     }).sort((left, right) => left.shard_id.localeCompare(right.shard_id, undefined, { numeric: true }));
+    const rawManagerStatus = statusNames?.[manager.status] ?? SHARD_STATUS_NAMES[manager.status] ?? manager.status;
     return {
-        managerStatus: statusNames?.[manager.status] || SHARD_STATUS_NAMES[manager.status] || 'unknown',
+        managerStatus: normalizeShardStatus(rawManagerStatus),
         total: items.length,
         online: items.filter(item => item.online === true).length,
         offline: items.filter(item => item.online === false).length,
         unknown: items.filter(item => item.online === null).length,
         items,
     };
+}
+function normalizeShardStatus(value) {
+    if (typeof value === 'number' && Number.isInteger(value)) return SHARD_STATUS_NAMES[value] || 'unknown';
+    if (typeof value !== 'string') return 'unknown';
+    const normalized = value.trim().replace(/([a-z0-9])([A-Z])/g, '$1_$2').replace(/[\s-]+/g, '_').toLowerCase();
+    const aliases = { waitingforguilds: 'waiting_for_guilds' };
+    const result = aliases[normalized] || normalized;
+    return new Set(['ready', 'connecting', 'reconnecting', 'idle', 'nearly', 'disconnected', 'waiting_for_guilds', 'identifying', 'resuming']).has(result)
+        ? result : 'unknown';
 }
 function start(client, options = {}) {
     if (timer || !enabled()) return;

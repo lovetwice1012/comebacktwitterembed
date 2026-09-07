@@ -29,6 +29,29 @@ test('admin telemetry reports shard availability and bounded ping evidence', () 
     });
 });
 
+test('admin telemetry normalizes discord.js Status enum display names', () => {
+    const discordStatus = {
+        0: 'Ready', 1: 'Connecting', 2: 'Reconnecting', 3: 'Idle', 4: 'Nearly',
+        5: 'Disconnected', 6: 'WaitingForGuilds', 7: 'Identifying', 8: 'Resuming',
+    };
+    const client = {
+        ws: {
+            status: 3,
+            shards: new Map([
+                [0, { id: 0, status: 0 }],
+                [1, { id: 1, status: 7 }],
+            ]),
+        },
+    };
+    assert.deepEqual(_internal.shardSnapshot(client, discordStatus), {
+        managerStatus: 'idle', total: 2, online: 1, offline: 1, unknown: 0,
+        items: [
+            { shard_id: '0', shardId: '0', status: 'ready', online: true, ping_ms: null, last_ping_at_ms: null },
+            { shard_id: '1', shardId: '1', status: 'identifying', online: false, ping_ms: null, last_ping_at_ms: null },
+        ],
+    });
+});
+
 test('admin telemetry carries the Discord guild shard into request evidence', () => {
     assert.equal(contextFromMessage({ guild: { id: 'guild-1', shardId: 7 }, id: 'message-1' }).shard_id, 7);
     assert.equal(contextFromMessage({ guild: { id: 'guild-1', shardId: '8' }, id: 'message-2' }).shard_id, 8);

@@ -306,20 +306,29 @@ func shardAvailability(status string, reported any, fresh bool) (any, string) {
 	if !fresh {
 		return nil, "unknown"
 	}
+	// discord.js Status is a bidirectional enum.  Older telemetry versions
+	// persisted its display values (for example "Ready") while calculating
+	// the boolean from the lowercase form, which produced contradictory
+	// `status=Ready, online=false` rows.  Prefer a recognized status so the
+	// durable row can be repaired without waiting for another Bot restart.
+	normalized := strings.ToLower(strings.TrimSpace(status))
+	normalized = strings.ReplaceAll(strings.ReplaceAll(normalized, "-", "_"), " ", "_")
+	if normalized == "waitingforguilds" {
+		normalized = "waiting_for_guilds"
+	}
+	switch normalized {
+	case "ready", "online":
+		return true, "online"
+	case "connecting", "reconnecting", "disconnected", "idle", "nearly", "waiting_for_guilds", "identifying", "resuming", "offline":
+		return false, "offline"
+	}
 	if value, ok := reported.(bool); ok {
 		if value {
 			return true, "online"
 		}
 		return false, "offline"
 	}
-	switch strings.ToLower(status) {
-	case "ready", "online":
-		return true, "online"
-	case "connecting", "reconnecting", "disconnected", "idle", "nearly", "waiting_for_guilds", "identifying", "resuming", "offline":
-		return false, "offline"
-	default:
-		return nil, "unknown"
-	}
+	return nil, "unknown"
 }
 
 func nullableText(value string) any {
