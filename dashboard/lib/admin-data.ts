@@ -3110,22 +3110,32 @@ async function getDetailedFacetBreakdown(filters: AdminDetailedAnalyticsFilters,
   return rows.map(maskRow);
 }
 
-async function getDetailedNumericFacetStats(filters: AdminDetailedAnalyticsFilters, window: { startMs: number; endMs: number }, limit: number) {
+function providerMetricKeysForFilter(providerId: unknown) {
+  const requestedProvider = cleanFilter(providerId)?.toLowerCase();
+  const providers = requestedProvider && PROVIDER_METRIC_SCHEMA_REGISTRY[requestedProvider]
+    ? [requestedProvider]
+    : Object.keys(PROVIDER_METRIC_SCHEMA_REGISTRY);
+  return [...new Set(providers.flatMap((provider) => PROVIDER_METRIC_SCHEMA_REGISTRY[provider]?.metrics.map((metric) => metric.key) || []))];
+}
+
+async function getDetailedNumericFacetStats(
+  filters: AdminDetailedAnalyticsFilters,
+  window: { startMs: number; endMs: number },
+  limit: number,
+  allowedFacetKeys?: string[],
+) {
   const content = contentWhere(filters, window, "c", { includeFacetFilter: false });
   const facetKey = cleanFilter(filters.facetKey);
-  const where = content.whereSql + (facetKey ? " AND f.facet_key = ?" : "");
-  const metricParams = [...content.params, ...(facetKey ? [facetKey] : [])];
+  const selectedFacetKeys = allowedFacetKeys?.length ? allowedFacetKeys : facetKey ? [facetKey] : [];
+  const where = content.whereSql + (selectedFacetKeys.length ? ` AND f.facet_key IN (${selectedFacetKeys.map(() => "?").join(",")})` : "");
+  const metricParams = [...content.params, ...selectedFacetKeys];
   const rows = await prisma.$queryRawUnsafe<Row[]>(metricObservationQuery(where, true), ...metricParams, ...metricParams, limit);
   return rows.map(maskRow);
 }
 
 async function getProviderMetricObservedRows(filters: AdminDetailedAnalyticsFilters, window: { startMs: number; endMs: number }) {
   const content = contentWhere(filters, window, "c", { includeFacetFilter: false });
-  const requestedProvider = cleanFilter(filters.providerId)?.toLowerCase();
-  const providers = requestedProvider && PROVIDER_METRIC_SCHEMA_REGISTRY[requestedProvider]
-    ? [requestedProvider]
-    : Object.keys(PROVIDER_METRIC_SCHEMA_REGISTRY);
-  const metricKeys = [...new Set(providers.flatMap((provider) => PROVIDER_METRIC_SCHEMA_REGISTRY[provider]?.metrics.map((metric) => metric.key) || []))];
+  const metricKeys = providerMetricKeysForFilter(filters.providerId);
   if (!metricKeys.length) return [];
   const metricWhere = `${content.whereSql} AND f.facet_key IN (${metricKeys.map(() => "?").join(",")})`;
   const rows = await prisma.$queryRawUnsafe<Row[]>(metricObservationQuery(metricWhere, false, false), ...content.params, ...metricKeys, 1000);
@@ -5541,7 +5551,7 @@ async function buildAdminGuildAnalyticsPreview(rawFilters: AdminGuildAnalyticsPr
     () => optionalQuery([], () => getDetailedUrlParameterBreakdown(filters, window, limit)),
     () => optionalQuery([], () => getDetailedProviderMarketingSegments(filters, window, limit)),
     () => optionalQuery([], () => getDetailedFacetBreakdown(filters, window, limit)),
-    () => optionalQuery([], () => getDetailedNumericFacetStats(filters, window, limit)),
+    () => optionalQuery([], () => getDetailedNumericFacetStats(filters, window, limit, providerMetricKeysForFilter(filters.providerId))),
     () => optionalQuery([], () => getDetailedHourDistribution(filters, window, limit)),
     () => optionalQuery([], () => getDetailedWeekdayDistribution(filters, window, limit)),
     () => optionalQuery([], () => getDetailedCommandBreakdown(filters, window, limit)),
@@ -5681,7 +5691,7 @@ async function buildAdminProviderMarketingPreview(rawFilters: AdminProviderMarke
     () => optionalQuery([], () => getDetailedUrlParameterBreakdown(filters, window, limit)),
     () => optionalQuery([], () => getDetailedProviderMarketingSegments(filters, window, limit)),
     () => optionalQuery([], () => getDetailedFacetBreakdown(filters, window, limit)),
-    () => optionalQuery([], () => getDetailedNumericFacetStats(filters, window, limit)),
+    () => optionalQuery([], () => getDetailedNumericFacetStats(filters, window, limit, providerMetricKeysForFilter(filters.providerId))),
     () => optionalQuery([], () => getProviderMetricObservedRows(filters, window)),
     () => optionalQuery([], () => getDetailedHourDistribution(filters, window, limit)),
     () => optionalQuery([], () => getDetailedWeekdayDistribution(filters, window, limit)),
