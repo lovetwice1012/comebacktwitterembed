@@ -7,6 +7,7 @@ import secrets
 import shlex
 import subprocess
 import sys
+from datetime import datetime, timezone
 from urllib.parse import urlsplit
 
 OWNER = "796972193287503913"
@@ -197,6 +198,17 @@ def write_configuration(source, revision, directory, account, binary=pathlib.Pat
         "ADMIN_PROVIDER_OVERRIDE_FILE": shared + "/provider-source-overrides.json",
         "DASHBOARD_PORT": "30989", "PORT": "30989", "BOT_BUILD_REVISION": revision, "APP_REVISION": revision,
     }
+    if dashboard.get("delegatedAccessEnabled") is True:
+        rollout_start = all_existing["bot"].get("DASHBOARD_DELEGATED_ACCESS_ROLLOUT_START_AT")
+        if not rollout_start:
+            configured_start = dashboard.get("delegatedAccessRolloutStartAt")
+            rollout_start = configured_start.strip() if isinstance(configured_start, str) and configured_start.strip() else None
+        bot["DASHBOARD_DELEGATED_ACCESS_ROLLOUT_START_AT"] = rollout_start or datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+        configured_duration = dashboard.get("delegatedAccessRolloutDurationHours")
+        if isinstance(configured_duration, (int, float)) and not isinstance(configured_duration, bool) and configured_duration > 0:
+            bot["DASHBOARD_DELEGATED_ACCESS_ROLLOUT_DURATION_HOURS"] = str(configured_duration)
+        else:
+            bot["DASHBOARD_DELEGATED_ACCESS_ROLLOUT_DURATION_HOURS"] = "336"
     services = {"core": core, "analysis": analysis, "reports": reports, "executor": executor, "bot": bot}
     for name, allowed in PRESERVE_RECOVERY.items():
         services[name].update({key: all_existing[name][key] for key in allowed if key in all_existing[name]})
