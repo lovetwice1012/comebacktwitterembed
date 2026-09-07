@@ -4,18 +4,27 @@
 
 ## 現在、本体の起動だけでは戻らない理由
 
-以前の復旧基盤は本体から OCI への一方向であった。`recovery/failback_orchestrator.py` と専用systemd unitを追加し、現在は予備のクラウドサーバー上で本体の準備完了を待つ自動処理を配置している。OSが起動しただけでは切り替えず、DB・管理サービス・guardian・スナップショットの検証が終わるまでBotの稼働元を維持する。
+以前の復旧基盤は本体から OCI への一方向であった。現在は `recovery/failback_orchestrator.py` による自動切り戻しに加え、管理画面から両方向を即時または日時指定で予約できる。OSが起動しただけでは切り替えず、DB・管理サービス・guardian・スナップショットの検証が終わるまでBotの稼働元を維持する。
 
 | 現行コード | 実際の制約 |
 | --- | --- |
 | `recovery/authority.py` の `failback()` | 固定した最終コピー証拠、現在epoch、primary enrollment、OCI lease失効・排水を照合し、CASで本体へ所有権を戻す。通常の `promote()` はOCI方向のまま |
+| `recovery/controller.py` の `manual-switch` | 許可管理者のoperation ID、現在epoch、候補・バックアップ識別情報、実行時刻、影響確認をroot所有stateへ保存。指定時刻にOCI昇格または切り戻しCoordinatorを起動し、完了証拠を確認する |
 | `recovery/failback_orchestrator.py` | 本体準備中はOCIを維持し、準備完了後にユーザー通知、OCI停止、epoch更新、本体検証、公開経路、完了通知を順に実行する |
-| `recovery/routing.py` の `ensure_routes()` | OCI の node・epoch・instanceId と固定 tunnel を検証する一方向処理。本体の tunnel へ戻す機能はない |
+| `recovery/routing.py` の `ensure_routes()` | 現在の稼働node・epoch・instanceId と固定 tunnel を検証する処理。切り戻し時はfailback coordinatorが本体 tunnelを指定して同じ検証を行う |
 | `recovery/start_workload.py` の `active_container_command()` | MySQL は `--skip-log-bin`。現在までの OCI 更新を既存 binlog から差分転送することはできない |
 | `recovery/active_backup.py` の `create()` | 有効な OCI lease が必要。Bot 停止・lease 返却後の最終転送に、そのまま流用できない |
 | `src/recoveryBootstrap.js` の `configuration()` | 隔離状態の利用を `CBTE_FLEET_NODE=oci` に限定する。本体への継承に対応していない |
 
-`docs/admin-disaster-recovery.md` にも「本体への自動的な切り戻しはしない」と記載されている。単に設定を一つ有効にすれば戻せる状態ではない。authority の SQLite を直接編集したり、DNS だけを本体へ戻したりして解決しない。
+authority の SQLite を直接編集したり、DNS だけを本体へ戻したりして解決しない。自動切り戻しと手動予約のどちらも、同じ最終同期・lease排水・epoch・公開identityの証拠を必要とする。
+
+## 手動切り替えと日時予約
+
+通常・緊急のどちらの管理画面にも「復旧先の手動切り替え・日時予約」を表示する。切り替え先は現在の稼働ノード以外を選び、実行日時は管理者端末のJSTからUTCへ変換して保存する。即時操作は現在時刻を指定し、予約は30日後まで受け付ける。実行開始前は予約をキャンセルできる。
+
+予約受付は管理コアの `recovery.manual_switch` actionからcontrollerの `POST /v1/manual-switch` へ送る。controllerは現在epochと稼働ノードを再取得し、OCI方向なら検証済み候補・バックアップのID、SHA-256、取得時刻が一致することを確認する。同じoperation IDの再送は同じ結果を返し、別の内容への使い回しや別予約との同時実行を拒否する。
+
+指定時刻に条件が変わっていれば所有権を変更せず `blocked` / `failed` として停止する。OCI方向は既存のバックアップ鮮度、DB検証、primary enrollment、lease排水、公開経路検証を通り、primary方向は既存の最終同期、OCI writer停止、handoff marker、primary lease、公開経路検証を通る。手動指定は、データ同期・savedata非移行・停止指示への影響を確認するだけで、leaseやDB検証を省略しない。
 
 ## 維持する条件
 
