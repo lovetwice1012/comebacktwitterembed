@@ -166,6 +166,9 @@ func (a *App) routes() http.Handler {
 		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("X-Frame-Options", "DENY")
 		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' https: data:; media-src https:; connect-src 'self'; base-uri 'self'; frame-ancestors 'none'; object-src 'none'")
+		if a.proxyActive(w, r) {
+			return
+		}
 		mux.ServeHTTP(w, r)
 	})
 }

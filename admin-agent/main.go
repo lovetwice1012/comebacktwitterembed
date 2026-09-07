@@ -35,6 +35,7 @@ type Config struct {
 	DiscordClientID, DiscordClientSecret, DiscordRedirectURI                     string
 	RecoveryControllerURL, RecoveryControllerToken                               string
 	RecoveryIntentToken, RecoveryNode                                            string
+	ActivePeerURL, ActivePeerToken                                               string
 	ServiceControlProfile                                                        string
 }
 
@@ -59,6 +60,7 @@ func config() Config {
 		DiscordClientID: os.Getenv("ADMIN_DISCORD_CLIENT_ID"), DiscordClientSecret: os.Getenv("ADMIN_DISCORD_CLIENT_SECRET"), DiscordRedirectURI: os.Getenv("ADMIN_DISCORD_REDIRECT_URI"),
 		RecoveryControllerURL: os.Getenv("RECOVERY_CONTROLLER_URL"), RecoveryControllerToken: os.Getenv("RECOVERY_CONTROLLER_TOKEN"),
 		RecoveryIntentToken: os.Getenv("RECOVERY_INTENT_TOKEN"), RecoveryNode: os.Getenv("RECOVERY_NODE"),
+		ActivePeerURL: os.Getenv("ADMIN_AGENT_ACTIVE_PEER_URL"), ActivePeerToken: os.Getenv("ADMIN_AGENT_ACTIVE_PEER_TOKEN"),
 		ServiceControlProfile: os.Getenv("ADMIN_AGENT_SERVICE_PROFILE"),
 		Node:                  env("ADMIN_AGENT_NODE", "/usr/bin/node"), Worker: os.Getenv("ADMIN_AGENT_WORKER"), WorkerDir: os.Getenv("ADMIN_AGENT_WORKER_DIR"), WorkerURL: os.Getenv("ADMIN_AGENT_WORKER_URL"), ReportWorkerURL: os.Getenv("ADMIN_AGENT_REPORT_WORKER_URL"),
 		BotUnit: env("ADMIN_AGENT_BOT_UNIT", "cbte.service"), ExecutorSocket: env("ADMIN_AGENT_EXECUTOR_SOCKET", "/run/cbte-admin-executor/executor.sock"),

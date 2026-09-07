@@ -159,6 +159,11 @@ def write_configuration(source, revision, directory, account, binary=pathlib.Pat
         "ADMIN_AGENT_REPORT_WORKER_URL": "http://127.0.0.1:30991/execute",
         "ADMIN_AGENT_LOCAL_HEALTH_URL": "http://127.0.0.1:30989/api/health",
         "ADMIN_AGENT_PUBLIC_HEALTH_URL": public + "/api/health",
+        # The primary reaches the OCI core through the recovery link's fixed
+        # loopback forward.  Keep the peer token explicit; an empty value
+        # disables federation rather than guessing another credential.
+        "ADMIN_AGENT_ACTIVE_PEER_URL": existing.get("ADMIN_AGENT_ACTIVE_PEER_URL", ""),
+        "ADMIN_AGENT_ACTIVE_PEER_TOKEN": existing.get("ADMIN_AGENT_ACTIVE_PEER_TOKEN", ""),
         "ADMIN_AGENT_EXECUTOR_SOCKET": "/run/cbte-admin-executor/executor.sock",
         "ADMIN_AGENT_BOT_UNIT": "cbte.service",
         "ADMIN_AGENT_DISCORD_WEBHOOK": config.get("errorNotificationURL") or config.get("URL", ""),

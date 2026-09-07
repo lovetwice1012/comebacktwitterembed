@@ -228,6 +228,11 @@ def configure(release_dir, node, admin_binary, config_dir):
         "ADMIN_AGENT_WORKER_URL": "http://127.0.0.1:30990/execute", "ADMIN_AGENT_REPORT_WORKER_URL": "http://127.0.0.1:30991/execute",
         "ADMIN_AGENT_WORKER_TIMEOUT_SECONDS": "120", "ADMIN_AGENT_REPORT_TIMEOUT_SECONDS": "900",
         "ADMIN_AGENT_LOCAL_HEALTH_URL": "http://127.0.0.1:30989/api/health", "ADMIN_AGENT_PUBLIC_HEALTH_URL": PUBLIC_URL + "/api/health",
+        # The primary core is exposed on the fixed reverse-forward created by
+        # cbte-recovery-link.service.  Missing primaryAdminToken keeps the
+        # federation fail-closed until both sides share an explicit token.
+        "ADMIN_AGENT_ACTIVE_PEER_URL": controller.get("primaryAdminUrl", "http://127.0.0.1:34224"),
+        "ADMIN_AGENT_ACTIVE_PEER_TOKEN": controller.get("primaryAdminToken", ""),
         "ADMIN_DISCORD_CLIENT_ID": client_id, "ADMIN_DISCORD_CLIENT_SECRET": client_secret,
         "ADMIN_DISCORD_REDIRECT_URI": MANAGEMENT_URL + "auth/discord/callback",
         "ADMIN_AGENT_EXECUTOR_SOCKET": "/run/cbte-admin-executor/executor.sock", "ADMIN_AGENT_SERVICE_PROFILE": "oci-guarded",

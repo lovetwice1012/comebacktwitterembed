@@ -35,7 +35,7 @@ class ConfigureOCITests(unittest.TestCase):
             "authorityControllerToken": self.tokens["controller"], "authorityUrl": "http://127.0.0.1:34210",
             "exporterUrl": "http://127.0.0.1:33443", "stateDir": str(self.root / "controller-state"),
             "candidateRoot": str(self.root / "candidates"), "runtimeReady": False, "routingReady": False,
-            "ociRecipient": "fixture public recipient"}
+            "ociRecipient": "fixture public recipient", "primaryAdminUrl": "http://127.0.0.1:34224", "primaryAdminToken": "primary-admin-token-" + "p" * 40}
         self.production = {"token": "fixture-production-bot-token", "dashboard": {"clientId": "123456789012345678",
             "clientSecret": "fixture-oauth-with-quote\"-slash\\-dollar$-secret", "nextAuthSecret": "fixture-next-auth-session-secret"}}
         for name, value in [("authority.json", self.authority), ("controller.json", self.controller), ("bot-config.json", self.production)]:
@@ -91,6 +91,8 @@ class ConfigureOCITests(unittest.TestCase):
         self.assertEqual(core["RECOVERY_NODE"], "oci")
         self.assertEqual(core["ADMIN_AGENT_EXECUTOR_SOCKET"], "/run/cbte-admin-executor/executor.sock")
         self.assertEqual(core["ADMIN_AGENT_SERVICE_PROFILE"], "oci-guarded")
+        self.assertEqual(core["ADMIN_AGENT_ACTIVE_PEER_URL"], self.controller["primaryAdminUrl"])
+        self.assertEqual(core["ADMIN_AGENT_ACTIVE_PEER_TOKEN"], self.controller["primaryAdminToken"])
         self.assertEqual(environments["bot"]["RECOVERY_CONTROLLER_TOKEN"], self.controller["statusToken"])
         self.assertEqual(core["ADMIN_AGENT_DISCORD_WEBHOOK"], "")
         for name in ["common", "analysis", "reports", "bot"]:
