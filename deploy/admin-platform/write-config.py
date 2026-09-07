@@ -173,7 +173,7 @@ def write_configuration(source, revision, directory, account, binary=pathlib.Pat
     reports = {
         **common, "ADMIN_ANALYSIS_LISTEN": "127.0.0.1:30991",
         "ADMIN_ANALYSIS_STATE_DIR": "/var/lib/cbte-admin-reports", "ADMIN_ANALYSIS_ACTIONS": "reports.build",
-        "ADMIN_WORKER_DEADLINE_MS": "640000", "DASHBOARD_REPORT_QUERY_TIMEOUT_MS": "120000",
+        "ADMIN_WORKER_DEADLINE_MS": "640000", "DASHBOARD_REPORT_QUERY_TIMEOUT_MS": "300000",
         "DASHBOARD_DB_CONNECTION_LIMIT": "16",
     }
     executor = {
