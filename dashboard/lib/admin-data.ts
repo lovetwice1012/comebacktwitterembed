@@ -1,5 +1,5 @@
 import "server-only";
-import { metricObservationQuery, observedRatio, aggregateNumericFacet } from "@/lib/metric-observation-query";
+import { metricObservationQuery, providerMetricObservationCountsQuery, observedRatio, aggregateNumericFacet } from "@/lib/metric-observation-query";
 import { decodeLogCursor, logConditions, type LogSearch, type LogCursor } from "@/lib/admin-log-query";
 
 import { createHash } from "crypto";
@@ -3140,7 +3140,7 @@ async function getProviderMetricObservedRows(filters: AdminDetailedAnalyticsFilt
   const metricKeys = providerMetricKeysForFilter(filters.providerId);
   if (!metricKeys.length) return [];
   const metricWhere = `${content.whereSql} AND f.facet_key IN (${metricKeys.map(() => "?").join(",")})`;
-  const rows = await prisma.$queryRawUnsafe<Row[]>(metricObservationQuery(metricWhere, false, false), ...content.params, ...metricKeys, 1000);
+  const rows = await prisma.$queryRawUnsafe<Row[]>(providerMetricObservationCountsQuery(metricWhere), ...content.params, ...metricKeys, 1000);
   return rows.map(maskRow);
 }
 
@@ -5725,8 +5725,8 @@ async function buildAdminProviderMarketingPreview(rawFilters: AdminProviderMarke
   const protectedContentLifetime = applyPreviewUrlPolicyRows(protectUserFacingPreviewRows(contentLifetime), urlVisibility);
   const protectedUrlReuse = applyPreviewUrlPolicyRows(protectUserFacingPreviewRows(urlReuse), urlVisibility);
   const metricProfile = providerMarketingMetricProfile(filters.providerId, filters.accountKey, protectedFacetBreakdown, protectedNumericFacetStats, protectedContentTypes);
-  const metricSchemaSummary = providerMetricSchemaSummary(filters.providerId, schemaObservedMetrics, schemaObservedMetrics);
-  const metricSchemaCoverage = providerMetricSchemaCoverage(filters.providerId, schemaObservedMetrics, schemaObservedMetrics);
+  const metricSchemaSummary = providerMetricSchemaSummary(filters.providerId, schemaObservedMetrics, numericFacetStats);
+  const metricSchemaCoverage = providerMetricSchemaCoverage(filters.providerId, schemaObservedMetrics, numericFacetStats);
   const providerQualityGates = await optionalQuery([], () => getProviderPreviewQualityGates(filters, window, metricSchemaSummary, limit));
   const reportReadiness = userFacingPreviewReadinessRows("provider_marketing", content, analytics, urlVisibility, metricSchemaSummary, providerQualityGates);
   const deliveryContextCards = [
