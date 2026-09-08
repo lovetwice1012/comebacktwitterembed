@@ -226,6 +226,33 @@ func TestHeartbeatIdentityUsesOccurrenceAndPersistenceFreshness(t *testing.T) {
 	}
 }
 
+func TestUnverifiedBotRepairUsesRepeatedAbsenceAndStaleHeartbeat(t *testing.T) {
+	a := testApp(t)
+	a.failures["bot.workload.unverified"] = 3
+	dbCheck, _, e := a.store.enqueue("diagnostics.db", Object{}, "fixture-db-unverified-ok", a.cfg.Owner, "test")
+	if e != nil {
+		t.Fatal(e)
+	}
+	if e = a.store.finish(dbCheck.ID, "succeeded", Object{"results": Object{"connection": Object{"status": "ok"}}}, nil); e != nil {
+		t.Fatal(e)
+	}
+	snapshot := Object{
+		"unit": Object{"MainPID": "100", "InvocationID": "guardian-invocation", "ActiveState": "active", "Job": "0"},
+		"heartbeatState": "unobserved",
+		"localHTTP": Object{"configured": true, "ok": false},
+		"workloadIdentity": Object{"available": false, "reason": "supervisor_has_no_verified_bot_pid"},
+	}
+	a.maybeRepairUnverifiedBot(context.Background(), snapshot, defaultPolicy())
+	var input string
+	if e = a.store.db.QueryRow("SELECT input FROM actions WHERE type='service.restart'").Scan(&input); e != nil {
+		t.Fatal(e)
+	}
+	request := decode(input).(map[string]any)
+	if str(request["expectedInvocationId"]) != "guardian-invocation" || str(request["observedWorkloadReason"]) != "supervisor_has_no_verified_bot_pid" {
+		t.Fatalf("restart did not bind to the active guardian identity: %v", request)
+	}
+}
+
 func TestHungRepairUsesVerifiedWorkloadPIDButControlsUnitInvocation(t *testing.T) {
 	a := testApp(t)
 	a.failures["dashboard.local.unavailable"], a.failures["bot.heartbeat.stale"] = 3, 3

@@ -31,7 +31,7 @@ type Policy struct {
 }
 
 func defaultPolicy() Policy {
-	return Policy{Revision: 1, AutoInvestigate: true, AutoPauseReports: true, AutoRestartAnalysis: true, AutoCancelOverdueQueries: true, AutoRefreshReports: true, ReportsRefreshIntervalSeconds: 900, DesiredState: "running", RestartCooldownSeconds: 900, RestartDailyLimit: 3, HeartbeatGraceSeconds: 180}
+	return Policy{Revision: 1, AutoInvestigate: true, AutoRestartHungBot: true, AutoPauseReports: true, AutoRestartAnalysis: true, AutoCancelOverdueQueries: true, AutoRefreshReports: true, ReportsRefreshIntervalSeconds: 900, DesiredState: "running", RestartCooldownSeconds: 900, RestartDailyLimit: 3, HeartbeatGraceSeconds: 180}
 }
 func (a *App) loadPolicy() (Policy, error) {
 	var p Policy
@@ -336,6 +336,7 @@ func (a *App) monitorOnce(ctx context.Context) {
 	}
 	if p.AutoRestartHungBot && !maintenance {
 		a.maybeRepairHungBot(ctx, snapshot, p)
+		a.maybeRepairUnverifiedBot(ctx, snapshot, p)
 	}
 	disk := nested(nested(snapshot, "host"), "disk")
 	if free, ok := disk["freeBytes"].(uint64); ok {
@@ -381,6 +382,57 @@ func (a *App) detect(key, title string, evidence Object, p Policy) {
 		}
 	}
 }
+func (a *App) maybeRepairUnverifiedBot(ctx context.Context, snapshot Object, p Policy) {
+	// A guardian can keep the systemd unit active while its Bot child has
+	// exited. In that state the normal hung check cannot use a verified
+	// heartbeat, so use the independent unit identity plus repeated workload
+	// absence and a stale/unobserved heartbeat as the recovery gate.
+	unit := nested(snapshot, "unit")
+	identity := nested(snapshot, "workloadIdentity")
+	if str(unit["ActiveState"]) != "active" || str(unit["InvocationID"]) == "" || str(unit["Job"]) != "" && str(unit["Job"]) != "0" || identity["available"] == true {
+		return
+	}
+	if a.failures["bot.workload.unverified"] < 3 {
+		return
+	}
+	heartbeatState := str(snapshot["heartbeatState"])
+	age, hasAge := snapshot["heartbeatAgeSeconds"].(float64)
+	staleHeartbeat := heartbeatState == "unobserved" || hasAge && age > float64(p.HeartbeatGraceSeconds)
+	if !staleHeartbeat {
+		return
+	}
+	local := nested(snapshot, "localHTTP")
+	if local["configured"] == true && local["ok"] == true {
+		return
+	}
+	var raw, status, when string
+	e := a.store.db.QueryRow("SELECT COALESCE(result,'null'),status,updated_at FROM actions WHERE type='diagnostics.db' ORDER BY created_at DESC LIMIT 1").Scan(&raw, &status, &when)
+	t, _ := time.Parse(time.RFC3339Nano, when)
+	if e != nil || status != "succeeded" || time.Since(t) > time.Minute {
+		key := "db-check-unverified:" + str(unit["InvocationID"]) + ":" + time.Now().UTC().Format("200601021504")
+		_, _, _ = a.store.enqueue("diagnostics.db", Object{}, key, a.cfg.Owner, "automation")
+		return
+	}
+	dbResult, _ := decode(raw).(map[string]any)
+	if first(nested(nested(dbResult, "results"), "connection"), "status") != "ok" {
+		return
+	}
+	var count int
+	var last sql.NullString
+	_ = a.store.db.QueryRow("SELECT COUNT(*),MAX(created_at) FROM actions WHERE type='service.restart' AND created_at>?", time.Now().UTC().Add(-24*time.Hour).Format(timestampLayout)).Scan(&count, &last)
+	lt, _ := time.Parse(time.RFC3339Nano, last.String)
+	if count >= p.RestartDailyLimit || last.Valid && time.Since(lt) < time.Duration(p.RestartCooldownSeconds)*time.Second {
+		return
+	}
+	_, _, _ = a.store.enqueue("service.restart", Object{
+		"expectedInvocationId": str(unit["InvocationID"]),
+		"reason": "Policy-authorized recovery: repeated unverified Bot workload, stale or absent heartbeat, failed local health and recent successful independent DB diagnosis",
+		"observedWorkloadPID": identity["pid"],
+		"observedWorkloadReason": identity["reason"],
+		"policyRevision": p.Revision,
+	}, "unverified-repair:"+str(unit["InvocationID"]), a.cfg.Owner, "automation")
+}
+
 func (a *App) maybeRepairHungBot(ctx context.Context, snapshot Object, p Policy) {
 	// Independent evidence is required: systemd identity, stale telemetry, failed local
 	// HTTP, and a successful fresh independent DB probe. Read-only investigation is
