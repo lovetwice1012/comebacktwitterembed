@@ -3,6 +3,7 @@ import os
 from pathlib import Path
 import tempfile
 import unittest
+from unittest import mock
 
 from recovery.failback_orchestrator import Failback, FailbackError
 
@@ -30,6 +31,14 @@ class FailbackTests(unittest.TestCase):
         self.assertEqual(len(process.state["operationId"]), 48)
         with self.assertRaises(FailbackError):
             Failback(dict(self.config, primaryHostnames=["example.test"]))
+
+    def test_primary_cutback_requires_an_explicit_console_reservation(self):
+        process = Failback(self.config)
+        with mock.patch.object(process, "manual_switch_record", return_value=None):
+            self.assertFalse(process.bind_manual_switch({"activeNode": "oci"}))
+        process = Failback(dict(self.config, manualFailbackOnly=False))
+        with mock.patch.object(process, "manual_switch_record", return_value=None):
+            self.assertTrue(process.bind_manual_switch({"activeNode": "oci"}))
 
 
 if __name__ == "__main__":
