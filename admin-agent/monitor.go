@@ -324,11 +324,11 @@ func (a *App) monitorOnce(ctx context.Context) {
 			a.good("dashboard.local.unavailable", Object{"scope": "Local HTTP health endpoint only", "supports": evidence})
 		}
 	}
-	if pub["configured"] == true && local["ok"] == true && observeWorkloadEndpoints {
+	if pub["configured"] == true && observeWorkloadEndpoints {
 		if pub["ok"] == false {
 			a.bad("dashboard.public.path")
 			if a.failures["dashboard.public.path"] >= 3 {
-				a.detect("dashboard.public.path", "公開経路だけでHTTP失敗を確認しました", Object{"claim": "Local HTTP succeeds while the configured public endpoint fails. DNS/TLS/proxy/tunnel or upstream auth may be involved.", "supports": evidence, "unconfirmed": []string{"external witness reachability", "exact public path component"}, "nextActions": []string{"diagnostics.collect"}}, p)
+				a.detect("dashboard.public.path", "公開経路でHTTP失敗を確認しました", Object{"claim": "The configured public endpoint fails. Local HTTP state, DNS/TLS/proxy/tunnel and upstream auth require separate inspection.", "supports": evidence, "unconfirmed": []string{"external witness reachability", "exact public path component"}, "nextActions": []string{"diagnostics.collect"}}, p)
 			}
 		} else {
 			a.good("dashboard.public.path", Object{"scope": "Configured public HTTP endpoint recovered", "supports": evidence})
