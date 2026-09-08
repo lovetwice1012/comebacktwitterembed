@@ -76,3 +76,12 @@
 管理daemonは、systemd unitがactiveのままguardianだけ残り、Bot Node子プロセスが不在になるケースを検知しても、`bot.workload.unverified` incidentの記録と診断起動だけで停止していた。自動再起動関数は検証済みheartbeatとの一致を必須としていたため、実Botが不在のケースでは到達できなかった。さらに新規policyの`autoRestartHungBot`既定値がfalseだった。
 
 `69132cd` で、activeなunitのInvocationIDを再確認し、3回以上のworkload未検証、heartbeatのstale/unobserved、失敗したlocal health、直近の独立DB疎通成功、再起動回数制限を満たす場合に、同じunit InvocationIDへ一度だけ`service.restart`をenqueueする経路を追加した。maintenance/停止意図、systemd job競合、restart cooldown/daily limitは従来どおり優先する。新規インストールのpolicyでは`autoRestartHungBot`をtrueにした。既存policyの明示的なfalseは上書きしない。
+
+
+## 2026-09-08 管理daemonの未検証Bot復旧調査
+
+公開URLの`/api/health`とルートはHTTP 530、本文はCloudflare error code 1033だった。SSHのCloudflare tunnelも`bad handshake`後に接続resetとなり、本番ホストへ到達できなかった。この時点ではBotの実プロセス状態と既存policyを本番で確定できない。
+
+ソース上は、guardian unitがactiveのままBot Node子プロセスだけ消えた場合、monitorは`bot.workload.unverified`を記録して診断を起動するが、再起動関数は検証済みheartbeatを必須としていたため未検証経路から到達できなかった。また、新規policyの`autoRestartHungBot`既定値がfalseで、公開経路の判定もlocal healthが成功した場合だけ実行していた。
+
+`69132cd`、`8a8e792`、`aa01430`で、active unitのInvocationID、3回以上の未検証、stale/unobserved heartbeat、独立DB疎通、再起動制限を確認して同じunitへ一度だけrestartをenqueueする経路を追加した。新規policyでは自動復旧を有効化し、公開経路の失敗はlocal healthの結果に関係なく記録する。Cloudflare tunnel復旧後にGoのコンパイル・テスト、本番policy反映、管理daemon再起動、実プロセス証拠の確認が必要。
