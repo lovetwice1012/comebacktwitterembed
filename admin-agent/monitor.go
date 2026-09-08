@@ -401,10 +401,6 @@ func (a *App) maybeRepairUnverifiedBot(ctx context.Context, snapshot Object, p P
 	if !staleHeartbeat {
 		return
 	}
-	local := nested(snapshot, "localHTTP")
-	if local["configured"] == true && local["ok"] == true {
-		return
-	}
 	var raw, status, when string
 	e := a.store.db.QueryRow("SELECT COALESCE(result,'null'),status,updated_at FROM actions WHERE type='diagnostics.db' ORDER BY created_at DESC LIMIT 1").Scan(&raw, &status, &when)
 	t, _ := time.Parse(time.RFC3339Nano, when)
@@ -426,7 +422,7 @@ func (a *App) maybeRepairUnverifiedBot(ctx context.Context, snapshot Object, p P
 	}
 	_, _, _ = a.store.enqueue("service.restart", Object{
 		"expectedInvocationId": str(unit["InvocationID"]),
-		"reason": "Policy-authorized recovery: repeated unverified Bot workload, stale or absent heartbeat, failed local health and recent successful independent DB diagnosis",
+		"reason": "Policy-authorized recovery: repeated unverified Bot workload, stale or absent heartbeat and recent successful independent DB diagnosis",
 		"observedWorkloadPID": identity["pid"],
 		"observedWorkloadReason": identity["reason"],
 		"policyRevision": p.Revision,

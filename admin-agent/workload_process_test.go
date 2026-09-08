@@ -239,7 +239,7 @@ func TestUnverifiedBotRepairUsesRepeatedAbsenceAndStaleHeartbeat(t *testing.T) {
 	snapshot := Object{
 		"unit": Object{"MainPID": "100", "InvocationID": "guardian-invocation", "ActiveState": "active", "Job": "0"},
 		"heartbeatState": "unobserved",
-		"localHTTP": Object{"configured": true, "ok": false},
+		"localHTTP": Object{"configured": true, "ok": true},
 		"workloadIdentity": Object{"available": false, "reason": "supervisor_has_no_verified_bot_pid"},
 	}
 	a.maybeRepairUnverifiedBot(context.Background(), snapshot, defaultPolicy())
