@@ -109,11 +109,11 @@
     }
     raw(content, value, false, 'コントローラー応答の全詳細');
   }
-  function localDateTime(value = Date.now()) { const d = new Date(value); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0, 16); }
+  function localDateTime(value = Date.now()) { const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Tokyo', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(new Date(value)); const fields = Object.fromEntries(parts.filter(part => part.type !== 'literal').map(part => [part.type, part.value])); return `${fields.year}-${fields.month}-${fields.day}T${fields.hour}:${fields.minute}`; }
   manualTime.value = localDateTime(); manualTime.min = localDateTime();
   manualSubmit.addEventListener('click', async () => {
     if (!snapshot || !manualTarget.value || !manualTime.value || manualReason.value.trim().length < 5 || !manualConfirm.checked || !manualRisk.checked || !manualOverride.checked) { manualStatus.className = 'error'; manualStatus.textContent = '切り替え先・日時・理由・3項目の確認を入力してください。'; return; }
-    const when = new Date(`${manualTime.value}:00`); if (!Number.isFinite(when.getTime())) { manualStatus.className = 'error'; manualStatus.textContent = '実行日時が不正です。'; return; }
+    const when = new Date(`${manualTime.value}:00+09:00`); if (!Number.isFinite(when.getTime())) { manualStatus.className = 'error'; manualStatus.textContent = '実行日時が不正です。'; return; }
     const target = manualTarget.value; const candidate = snapshot.candidate || {}; const backup = snapshot.backup || {};
     const input = { targetNode: target, executeAt: when.toISOString(), expectedEpoch: Number(snapshot.epoch), expectedCandidateId: target === 'oci' ? String(candidate.id || '') : '', expectedBackupId: target === 'oci' ? String(backup.backupId || '') : '', expectedBackupSha256: target === 'oci' ? String(backup.sourceSha256 || '') : '', expectedBackupTimestamp: target === 'oci' ? String(backup.sourceTimestamp || '') : '', reason: manualReason.value.trim(), confirm: true, acceptDataRisk: true, acceptPrimaryIntentOverride: true };
     manualSubmit.disabled = true; manualCancel.disabled = true; manualStatus.className = ''; manualStatus.textContent = '手動切り替えを受付中です。';
