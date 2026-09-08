@@ -82,3 +82,18 @@ func TestRecoveryViewsStayOnLocalControllerDuringPrimaryOutage(t *testing.T) {
 		}
 	}
 }
+
+func TestOCIStandbyPolicyRemainsLocalWhenPrimaryOwnsAuthority(t *testing.T) {
+	a := activeProxyFixture(t, "primary", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatalf("OCI policy was forwarded to the primary: %s", r.URL.Path)
+	}))
+	a.cfg.RecoveryNode = "oci"
+	r := httptest.NewRequest(http.MethodGet, "/v1/policies", nil)
+	r.Header.Set("X-Admin-Agent-Token", a.cfg.Token)
+	r.Header.Set("X-Admin-Actor", a.cfg.Owner)
+	w := httptest.NewRecorder()
+	a.routes().ServeHTTP(w, r)
+	if w.Code != http.StatusOK || w.Header().Get("X-CBTE-Active-Source") != "local-standby" {
+		t.Fatalf("OCI policy was not kept local: status=%d headers=%v body=%s", w.Code, w.Header(), w.Body.String())
+	}
+}

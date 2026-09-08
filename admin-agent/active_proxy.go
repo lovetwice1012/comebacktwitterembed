@@ -100,6 +100,14 @@ func (a *App) proxyActive(w http.ResponseWriter, r *http.Request) bool {
 	if !activeProxyPath(r) {
 		return false
 	}
+	// The OCI controller must be able to observe its own operator intent while
+	// primary is unreachable.  Policies are node-local assertions; routing an
+	// OCI GET through the unavailable primary makes the promotion gate stale
+	// forever, while a local OCI PUT remains scoped to the standby node.
+	if a.cfg.RecoveryNode == "oci" && r.URL.Path == "/v1/policies" {
+		w.Header().Set("X-CBTE-Active-Source", "local-standby")
+		return false
+	}
 	// Only a peer that knows this core's bearer token may assert that it is an
 	// already-forwarded request.  A browser-provided boolean header must not be
 	// able to bypass active-node selection.
