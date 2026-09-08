@@ -69,3 +69,10 @@
 - マーケ分析: 最新値SQL 19.3秒、正確な件数SQL 61.2秒、全体 261.9秒
 
 新規データへの追従は、直近3時間を15分間隔で再構築するsystemd timerでも維持する。timerの初回実行は成功し、レポートworkerはロールアップ参照設定を有効化した。
+
+
+## 管理daemonのBot障害判定修正
+
+管理daemonは、systemd unitがactiveのままguardianだけ残り、Bot Node子プロセスが不在になるケースを検知しても、`bot.workload.unverified` incidentの記録と診断起動だけで停止していた。自動再起動関数は検証済みheartbeatとの一致を必須としていたため、実Botが不在のケースでは到達できなかった。さらに新規policyの`autoRestartHungBot`既定値がfalseだった。
+
+`69132cd` で、activeなunitのInvocationIDを再確認し、3回以上のworkload未検証、heartbeatのstale/unobserved、失敗したlocal health、直近の独立DB疎通成功、再起動回数制限を満たす場合に、同じunit InvocationIDへ一度だけ`service.restart`をenqueueする経路を追加した。maintenance/停止意図、systemd job競合、restart cooldown/daily limitは従来どおり優先する。新規インストールのpolicyでは`autoRestartHungBot`をtrueにした。既存policyの明示的なfalseは上書きしない。
