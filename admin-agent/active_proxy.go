@@ -26,6 +26,12 @@ func activeProxyPath(r *http.Request) bool {
 	if r.URL.Path == "/v1/account/password" || (r.URL.Path == "/v1/events" && r.Method != http.MethodGet && r.Method != http.MethodHead) {
 		return false
 	}
+	// Recovery status and workload logs describe this OCI controller and its
+	// validated candidate, even while the current primary is unreachable. They
+	// must remain local so the emergency path can inspect its own gates.
+	if r.URL.Path == "/v1/recovery" || strings.HasPrefix(r.URL.Path, "/v1/recovery/") {
+		return false
+	}
 	for _, prefix := range []string{"/v1/health", "/v1/recovery", "/v1/catalog", "/v1/events", "/v1/runs", "/v1/actions", "/v1/metrics", "/v1/shards", "/v1/reports", "/v1/incidents", "/v1/policies", "/v1/notifications"} {
 		if r.URL.Path == prefix || strings.HasPrefix(r.URL.Path, prefix+"/") {
 			return true

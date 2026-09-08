@@ -72,3 +72,13 @@ func TestActiveProxyKeepsLocalOwnerAndDoesNotForwardTelemetryPosts(t *testing.T)
 		t.Fatalf("telemetry post was forwarded: status=%d called=%d body=%s", postWriter.Code, called, postWriter.Body.String())
 	}
 }
+
+
+func TestRecoveryViewsStayOnLocalControllerDuringPrimaryOutage(t *testing.T) {
+	for _, path := range []string{"/v1/recovery", "/v1/recovery/workload-logs"} {
+		r := httptest.NewRequest(http.MethodGet, path, nil)
+		if activeProxyPath(r) {
+			t.Fatalf("recovery path was routed to the active peer: %s", path)
+		}
+	}
+}
