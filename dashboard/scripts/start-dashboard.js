@@ -480,6 +480,7 @@ const env = {
     MEDIA_DELIVERY_PUBLIC_BASE_URL: mediaDelivery.publicBaseUrl || dashboard.publicBaseUrl || dashboard.baseUrl || config.publicBaseUrl || baseUrl,
 };
 
+if (typeof config.token === 'string' && config.token.trim()) env.DISCORD_BOT_TOKEN = config.token.trim();
 if (dashboard.clientId || config.clientId) env.DISCORD_CLIENT_ID = dashboard.clientId || config.clientId;
 if (dashboard.clientSecret || config.clientSecret) env.DISCORD_CLIENT_SECRET = dashboard.clientSecret || config.clientSecret;
 if (dashboard.nextAuthSecret || config.nextAuthSecret) env.NEXTAUTH_SECRET = dashboard.nextAuthSecret || config.nextAuthSecret;
@@ -488,6 +489,12 @@ if (dashboard.discordApiTimeoutMs) env.DISCORD_API_TIMEOUT_MS = String(dashboard
 if (dashboard.useBotGuildApi !== undefined) env.DASHBOARD_USE_BOT_GUILD_API = dashboard.useBotGuildApi ? 'true' : 'false';
 if (dashboard.loadGuildProviderSummary !== undefined) {
     env.DASHBOARD_LOAD_GUILD_PROVIDER_SUMMARY = dashboard.loadGuildProviderSummary ? 'true' : 'false';
+}
+if (dashboard.delegatedAccessEnabled !== undefined) {
+    env.DASHBOARD_DELEGATED_ACCESS_ENABLED = dashboard.delegatedAccessEnabled ? 'true' : 'false';
+}
+if (dashboard.adminAnalyticsPrewarm !== undefined) {
+    env.DASHBOARD_ADMIN_ANALYTICS_PREWARM = dashboard.adminAnalyticsPrewarm ? 'true' : 'false';
 }
 if (mediaDelivery.useLegacyRoutes !== undefined) {
     env.MEDIA_DELIVERY_USE_LEGACY_ROUTES = mediaDelivery.useLegacyRoutes ? 'true' : 'false';

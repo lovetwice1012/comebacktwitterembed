@@ -112,6 +112,11 @@ def write_configuration(source, revision, directory, account, binary=pathlib.Pat
     dashboard = config.get("dashboard") or {}
     all_existing = {name: read_environment(directory / (name + ".env")) for name in PRESERVE_RECOVERY}
     existing = all_existing["core"]
+    bot_existing = all_existing["bot"]
+    bot_token = config.get("token")
+    if not isinstance(bot_token, str) or len(bot_token.strip()) < 32 or any(char in bot_token for char in "\r\n\0"):
+        raise ConfigurationError("Production configuration must contain a valid Discord Bot token")
+    bot_token = bot_token.strip()
     token = existing.get("ADMIN_AGENT_TOKEN") or secrets.token_hex(32)
     public = dashboard.get("publicBaseUrl", "https://cbte.sprink.cloud").rstrip("/")
     origin = urlsplit(public)
@@ -122,8 +127,31 @@ def write_configuration(source, revision, directory, account, binary=pathlib.Pat
         raise ConfigurationError("Existing management token is too short")
     client_id = dashboard.get("clientId") or config.get("clientId") or ""
     client_secret = dashboard.get("clientSecret") or config.get("clientSecret") or ""
-    if not isinstance(client_id, str) or not re.fullmatch(r"[0-9]{17,20}", client_id) or not isinstance(client_secret, str) or len(client_secret) < 16:
-        raise ConfigurationError("Production Discord OAuth credentials are missing or invalid")
+    if client_id or client_secret:
+        if not isinstance(client_id, str) or not re.fullmatch(r"[0-9]{17,20}", client_id) or not isinstance(client_secret, str) or len(client_secret) < 16:
+            raise ConfigurationError("Production Discord OAuth credentials are incomplete or invalid")
+    db = config.get("db") or {}
+    if not isinstance(db, dict):
+        raise ConfigurationError("Production database configuration must be an object")
+
+    def database_value(config_key, environment_key):
+        configured = db.get(config_key)
+        if configured is not None and not isinstance(configured, str):
+            raise ConfigurationError("Production database configuration contains a non-string value")
+        if isinstance(configured, str) and configured != "":
+            return configured
+        preserved = bot_existing.get(environment_key, "")
+        if preserved != "":
+            return preserved
+        return None
+
+    database_environment = {
+        environment_key: value
+        for config_key, environment_key in (("host", "DB_HOST"), ("user", "DB_USER"),
+                                             ("password", "DB_PASSWORD"), ("database", "DB_DATABASE"),
+                                             ("charset", "DB_CHARSET"))
+        if (value := database_value(config_key, environment_key)) is not None
+    }
     password_hash = existing.get("ADMIN_AGENT_PASSWORD_HASH", "")
     if not password_hash:
         bootstrap = directory / "bootstrap-password"
@@ -150,6 +178,9 @@ def write_configuration(source, revision, directory, account, binary=pathlib.Pat
         "ADMIN_PROVIDER_OVERRIDE_FILE": shared + "/provider-source-overrides.json",
         "ADMIN_TELEMETRY_ENABLED": "0",
     }
+    worker_common = {
+        **common, "DISCORD_BOT_TOKEN": bot_token, **database_environment,
+    }
     core = {
         **common, "ADMIN_AGENT_LISTEN": "127.0.0.1:30988", "ADMIN_AGENT_STATE_DIR": "/var/lib/cbte-admin",
         "ADMIN_AGENT_PUBLIC_URL": public + "/ops/", "ADMIN_AGENT_BASE_PATH": "/ops",
@@ -171,15 +202,15 @@ def write_configuration(source, revision, directory, account, binary=pathlib.Pat
         "ADMIN_AGENT_PUSH_WEBHOOK": existing.get("ADMIN_AGENT_PUSH_WEBHOOK", ""),
     }
     analysis = {
-        **common, "ADMIN_ANALYSIS_LISTEN": "127.0.0.1:30990",
+        **worker_common, "ADMIN_ANALYSIS_LISTEN": "127.0.0.1:30990",
         "ADMIN_SAVE_CONTROL_GID": str(account.pw_gid),
         "ADMIN_ANALYSIS_STATE_DIR": "/var/lib/cbte-admin-analysis",
         "SAVES_DIR": "/var/lib/cbte-admin-analysis/saves", "ADMIN_WORKER_DEADLINE_MS": "110000",
     }
     reports = {
-        **common, "ADMIN_ANALYSIS_LISTEN": "127.0.0.1:30991",
+        **worker_common, "ADMIN_ANALYSIS_LISTEN": "127.0.0.1:30991",
         "ADMIN_ANALYSIS_STATE_DIR": "/var/lib/cbte-admin-reports", "ADMIN_ANALYSIS_ACTIONS": "reports.build",
-        "ADMIN_WORKER_DEADLINE_MS": "640000", "DASHBOARD_REPORT_QUERY_TIMEOUT_MS": "120000",
+        "ADMIN_WORKER_DEADLINE_MS": "640000", "DASHBOARD_REPORT_QUERY_TIMEOUT_MS": "300000",
         "DASHBOARD_DB_CONNECTION_LIMIT": "16",
     }
     executor = {
@@ -189,7 +220,7 @@ def write_configuration(source, revision, directory, account, binary=pathlib.Pat
         "ADMIN_AGENT_EXECUTOR_GROUP_GID": str(account.pw_gid), "ADMIN_AGENT_BOT_UNIT": "cbte.service",
     }
     bot = {
-        "ADMIN_AGENT_TOKEN": token, "ADMIN_OWNER_ID": owner, "ADMIN_AGENT_URL": "http://127.0.0.1:30988",
+        **worker_common, "ADMIN_AGENT_URL": "http://127.0.0.1:30988",
         "ADMIN_ALLOWED_USER_IDS": ADMINS, "DASHBOARD_ADMIN_USER_IDS": ADMINS,
         "ADMIN_SAVE_CONTROL_GID": str(account.pw_gid),
         "ADMIN_AGENT_PUBLIC_URL": public + "/ops/",
@@ -198,17 +229,21 @@ def write_configuration(source, revision, directory, account, binary=pathlib.Pat
         "ADMIN_PROVIDER_OVERRIDE_FILE": shared + "/provider-source-overrides.json",
         "DASHBOARD_PORT": "30989", "PORT": "30989", "BOT_BUILD_REVISION": revision, "APP_REVISION": revision,
     }
-    if dashboard.get("delegatedAccessEnabled") is True:
-        rollout_start = all_existing["bot"].get("DASHBOARD_DELEGATED_ACCESS_ROLLOUT_START_AT")
-        if not rollout_start:
-            configured_start = dashboard.get("delegatedAccessRolloutStartAt")
-            rollout_start = configured_start.strip() if isinstance(configured_start, str) and configured_start.strip() else None
-        bot["DASHBOARD_DELEGATED_ACCESS_ROLLOUT_START_AT"] = rollout_start or datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
-        configured_duration = dashboard.get("delegatedAccessRolloutDurationHours")
-        if isinstance(configured_duration, (int, float)) and not isinstance(configured_duration, bool) and configured_duration > 0:
-            bot["DASHBOARD_DELEGATED_ACCESS_ROLLOUT_DURATION_HOURS"] = str(configured_duration)
-        else:
-            bot["DASHBOARD_DELEGATED_ACCESS_ROLLOUT_DURATION_HOURS"] = "336"
+    if "delegatedAccessEnabled" in dashboard:
+        bot["DASHBOARD_DELEGATED_ACCESS_ENABLED"] = "true" if dashboard["delegatedAccessEnabled"] is True else "false"
+        if dashboard["delegatedAccessEnabled"] is True:
+            rollout_start = all_existing["bot"].get("DASHBOARD_DELEGATED_ACCESS_ROLLOUT_START_AT")
+            if not rollout_start:
+                configured_start = dashboard.get("delegatedAccessRolloutStartAt")
+                rollout_start = configured_start.strip() if isinstance(configured_start, str) and configured_start.strip() else None
+            bot["DASHBOARD_DELEGATED_ACCESS_ROLLOUT_START_AT"] = rollout_start or datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+            configured_duration = dashboard.get("delegatedAccessRolloutDurationHours")
+            if isinstance(configured_duration, (int, float)) and not isinstance(configured_duration, bool) and configured_duration > 0:
+                bot["DASHBOARD_DELEGATED_ACCESS_ROLLOUT_DURATION_HOURS"] = str(configured_duration)
+            else:
+                bot["DASHBOARD_DELEGATED_ACCESS_ROLLOUT_DURATION_HOURS"] = "336"
+    if "adminAnalyticsPrewarm" in dashboard:
+        bot["DASHBOARD_ADMIN_ANALYTICS_PREWARM"] = "true" if dashboard["adminAnalyticsPrewarm"] is True else "false"
     services = {"core": core, "analysis": analysis, "reports": reports, "executor": executor, "bot": bot}
     for name, allowed in PRESERVE_RECOVERY.items():
         services[name].update({key: all_existing[name][key] for key in allowed if key in all_existing[name]})

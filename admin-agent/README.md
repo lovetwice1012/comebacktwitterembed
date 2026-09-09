@@ -31,7 +31,7 @@ The browser never receives `ADMIN_AGENT_TOKEN`. The normal owner-authenticated d
 
 Session cookies are HttpOnly, SameSite=Strict and Secure by default. Mutations need the session CSRF token; trusted server calls use the shared token and validated owner principal instead. Failed login attempts are rate-limited. `ADMIN_AGENT_BASE_PATH=/ops` sets the cookie path to `/ops/`; all UI assets and API calls use relative paths. A reverse proxy must redirect `/ops` to `/ops/` then strip `/ops/` before forwarding to port 30988. `ADMIN_AGENT_COOKIE_SECURE=false` is for explicit HTTP-only local testing.
 
-Example environment files are checked in with placeholders. Production files should be readable only by the responsible service. The executor only accepts the fixed Bot, management-core, analysis-worker and MySQL unit mappings. It never accepts an arbitrary command, path or unit from the browser.
+Example environment files are checked in with placeholders. Production files should be readable only by the responsible service. The deployment writer emits the Bot's `config.json.token` as the same `DISCORD_BOT_TOKEN` in `bot.env`, `analysis.env` and `reports.env`; the management worker does not fall back to a separate token or OAuth access token. When `config.json.db` is present, its `DB_*` values are emitted to those worker environments as well. The executor only accepts the fixed Bot, management-core, analysis-worker and MySQL unit mappings. It never accepts an arbitrary command, path or unit from the browser.
 
 ## API contracts
 

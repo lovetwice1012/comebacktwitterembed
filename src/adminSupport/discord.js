@@ -8,10 +8,8 @@ function id(value, name = 'ID') {
     return value;
 }
 function token() {
-    let config = {};
-    try { config = require('../../config.json'); } catch {}
-    const value = process.env.DISCORD_BOT_TOKEN || process.env.BOT_TOKEN || config.token;
-    if (!value) throw Object.assign(new Error('Discord bot token is not configured.'), { code: 'DISCORD_TOKEN_MISSING' });
+    const value = process.env.DISCORD_BOT_TOKEN;
+    if (!value) throw Object.assign(new Error('DISCORD_BOT_TOKEN is not configured for the management worker.'), { code: 'DISCORD_TOKEN_MISSING' });
     return value;
 }
 async function rest(route, options = {}) {

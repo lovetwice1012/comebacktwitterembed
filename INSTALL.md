@@ -28,7 +28,7 @@ Bot、Next.js、MySQLに依存しない独立管理コアを先に起動しま�
 - Node.js **22.12.0以上**（本番BotはNodeで起動し、Bunは使用しない）
 - Go **1.25以上**（管理エージェントのビルド時のみ）
 - Cloudflare Tunnelのconnector、DNS/Tunnel編集権限
-- Discord Bot token、Discord OAuth client ID/secret、OAuth callback登録権限
+- Discord Bot token。Discord OAuth client ID/secretとOAuth callback登録権限は、管理画面でDiscordログインを使う場合だけ必要
 - MySQLのアプリケーションDBと接続資格情報
 - Niconicoの動画生成を使う場合は対象OSのffmpeg
 - 予備側の暗号化バックアップ復元を使う場合は、NAS exporter、age鍵、SSH経路
@@ -63,7 +63,11 @@ npm --version
     "useBotGuildApi": false,
     "loadGuildProviderSummary": false,
     "discordApiTimeoutMs": 8000,
-    "guildCacheTtlMs": 60000
+    "guildCacheTtlMs": 60000,
+    "dbConnectionLimit": 16,
+    "delegatedAccessEnabled": true,
+    "adminUserIds": ["<OWNER_DISCORD_ID>", "<ADDITIONAL_ADMIN_DISCORD_ID>"],
+    "adminAnalyticsPrewarm": false
   },
   "mediaDelivery": {
     "publicBaseUrl": "https://twidata.sprink.cloud",
@@ -81,6 +85,8 @@ npm --version
 ```
 
 `URL`は通常のログ転送用、`errorNotificationURL`は依存API障害用の専用Webhookに分けます。Webhook URLやOAuth secretを同じユーザー向け通知先へ流用しないでください。
+
+管理Worker・完全レポートWorker・管理下DashboardのDiscord API呼び出しは、ここで設定した`token`を同じ`DISCORD_BOT_TOKEN`として使用します。`db`を指定した場合は、同じ接続設定をWorkerにも明示的に渡します。OAuthの`clientId`/`clientSecret`はブラウザのDiscordログインを使う場合だけ必要で、Bot API認証の代わりにはなりません。OAuthを使わない場合も、管理コアは生成した初期パスワードまたはPasskeyで利用できます。
 
 ```sh
 sudo chown root:root /root/comebacktwitterembed/config.json

@@ -105,7 +105,7 @@ function withDashboardConnectionLimit(rawUrl: string) {
 }
 
 export function getBotToken() {
-  return process.env.DISCORD_BOT_TOKEN || process.env.BOT_TOKEN || readRootConfig().token || "";
+  return process.env.DISCORD_BOT_TOKEN || readRootConfig().token || "";
 }
 
 export function getClientId() {

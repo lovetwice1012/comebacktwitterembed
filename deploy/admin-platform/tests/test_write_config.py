@@ -26,8 +26,11 @@ class PrimaryConfigurationTests(unittest.TestCase):
         self.directory.mkdir(mode=0o700)
         self.revision = "a" * 40
         self.account = SimpleNamespace(pw_uid=123, pw_gid=456)
-        self.config = {"dashboard": {"publicBaseUrl": "https://cbte.sprink.cloud/", "clientId": "123456789012345678",
-            "clientSecret": "fixture-quote\"-slash\\-dollar$-oauth-secret"}, "errorNotificationURL": "https://notify.example.test/private?a=1&b=2"}
+        self.bot_token = "discord-bot-token-" + "b" * 48
+        self.config = {"token": self.bot_token, "dashboard": {"publicBaseUrl": "https://cbte.sprink.cloud/", "clientId": "123456789012345678",
+            "clientSecret": "fixture-quote\"-slash\\-dollar$-oauth-secret", "delegatedAccessEnabled": True,
+            "adminAnalyticsPrewarm": False}, "errorNotificationURL": "https://notify.example.test/private?a=1&b=2",
+            "db": {"host": "db.example.test", "user": "db-user", "password": "db-password", "database": "cbte", "charset": "utf8mb4"}}
         self.config_path = self.source / "config.json"
         self.config_path.write_text(json.dumps(self.config), encoding="utf-8")
         self.token = "shared-OCI-token-" + "t" * 48
@@ -62,12 +65,23 @@ class PrimaryConfigurationTests(unittest.TestCase):
         self.assertEqual(core["ADMIN_DISCORD_CLIENT_ID"], self.config["dashboard"]["clientId"])
         self.assertEqual(core["ADMIN_DISCORD_CLIENT_SECRET"], self.config["dashboard"]["clientSecret"])
         self.assertEqual(core["ADMIN_DISCORD_REDIRECT_URI"], "https://cbte.sprink.cloud/ops/auth/discord/callback")
+        self.assertNotIn("DISCORD_BOT_TOKEN", core)
         for name in ["core", "analysis", "reports", "bot"]:
             values = self.read(name)
             self.assertEqual(values["ADMIN_AGENT_TOKEN"], self.token)
             self.assertEqual(values["ADMIN_OWNER_ID"], "796972193287503913")
             self.assertEqual(values["ADMIN_ALLOWED_USER_IDS"], writer.ADMINS)
             self.assertEqual(values["DASHBOARD_ADMIN_USER_IDS"], writer.ADMINS)
+        for name in ["analysis", "reports", "bot"]:
+            values = self.read(name)
+            self.assertEqual(values["DISCORD_BOT_TOKEN"], self.bot_token)
+            self.assertEqual(values["DB_HOST"], "db.example.test")
+            self.assertEqual(values["DB_USER"], "db-user")
+            self.assertEqual(values["DB_PASSWORD"], "db-password")
+            self.assertEqual(values["DB_DATABASE"], "cbte")
+            self.assertEqual(values["DB_CHARSET"], "utf8mb4")
+        self.assertEqual(self.read("bot")["DASHBOARD_DELEGATED_ACCESS_ENABLED"], "true")
+        self.assertEqual(self.read("bot")["DASHBOARD_ADMIN_ANALYTICS_PREWARM"], "false")
         self.assertEqual(core["ADMIN_AGENT_WORKER_DIR"], "/opt/cbte-admin/worker-runtime")
         self.assertEqual(core["ADMIN_AGENT_BOT_UNIT"], "cbte.service")
         self.assertEqual(self.read("analysis")["SAVES_DIR"], "/var/lib/cbte-admin-analysis/saves")
@@ -144,6 +158,15 @@ class PrimaryConfigurationTests(unittest.TestCase):
         self.config_path.write_text(json.dumps(self.config), encoding="utf-8")
         self.generate()
         self.assertEqual(self.read("core")["ADMIN_DISCORD_CLIENT_SECRET"], self.config["clientSecret"])
+
+    def test_oauth_is_optional_when_the_shared_bot_token_is_present(self):
+        self.config["dashboard"].pop("clientId")
+        self.config["dashboard"].pop("clientSecret")
+        self.config_path.write_text(json.dumps(self.config), encoding="utf-8")
+        self.generate()
+        self.assertEqual(self.read("core")["ADMIN_DISCORD_CLIENT_ID"], "")
+        self.assertEqual(self.read("core")["ADMIN_DISCORD_CLIENT_SECRET"], "")
+        self.assertEqual(self.read("analysis")["DISCORD_BOT_TOKEN"], self.bot_token)
 
     def test_save_control_group_must_be_a_nonzero_bounded_integer(self):
         for value in [0, -1, 2147483648, "456", True]:

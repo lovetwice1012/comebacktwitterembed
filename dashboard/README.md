@@ -21,6 +21,10 @@ Dashboard and media delivery configuration is read from the root `config.json`.
     "loadGuildProviderSummary": false,
     "discordApiTimeoutMs": 8000,
     "dbConnectionLimit": 16,
+    "delegatedAccessEnabled": true,
+    "delegatedAccessRolloutStartAt": "<ROLLOUT_START_ISO8601>",
+    "delegatedAccessRolloutDurationHours": 336,
+    "adminUserIds": ["<OWNER_DISCORD_ID>", "<ADDITIONAL_ADMIN_DISCORD_ID>"],
     "adminAnalyticsPrewarm": false
   },
   "mediaDelivery": {
@@ -34,7 +38,7 @@ Dashboard and media delivery configuration is read from the root `config.json`.
 }
 ```
 
-`DISCORD_BOT_TOKEN` is not required for Dashboard login. The dashboard normally checks bot-installed guilds from the existing MySQL `guilds` table. Set `dashboard.useBotGuildApi` to `true` only if you explicitly want the dashboard to call Discord's bot guild API, which can be slow for bots installed in many guilds.
+`DISCORD_BOT_TOKEN` is not used to authenticate a human Dashboard login, but it is required for Discord REST operations such as member/role verification. The management deployment passes the Bot's configured `token` as `DISCORD_BOT_TOKEN`; the dashboard normally checks bot-installed guilds from the existing MySQL `guilds` table. Set `dashboard.useBotGuildApi` to `true` only if you explicitly want the dashboard to call Discord's bot guild API, which can be slow for bots installed in many guilds.
 
 Database connection can be provided by `DATABASE_URL`. If it is absent, the dashboard derives the MySQL URL from the root `config.json` `db` section or the legacy DB defaults used by the bot. The dashboard appends a Prisma MySQL `connection_limit` of `16` by default so normal concurrent settings and dashboard requests do not exhaust the pool; override with `DASHBOARD_DB_CONNECTION_LIMIT` or `dashboard.dbConnectionLimit` after checking the database server's connection budget.
 
@@ -71,7 +75,8 @@ To keep online rebuilds from touching DLLs loaded by the running dashboard on Wi
 Useful `config.json` switches:
 
 - `dashboard.enabled: false` disables automatic dashboard startup from the Bot process.
-- `dashboard.delegatedAccessEnabled: true` enables delegated Dashboard and settings-command access after the Discord Members Intent review is approved. It is disabled by default; `DASHBOARD_DELEGATED_ACCESS_ENABLED=true` is the equivalent emergency override.
+- `dashboard.delegatedAccessEnabled: true` enables delegated Dashboard and settings-command access. Member targets are verified with an explicitly identified Discord REST member fetch, so the Discord Members Intent is not required. It is disabled by default; `DASHBOARD_DELEGATED_ACCESS_ENABLED=true` is the equivalent emergency override.
+- `dashboard.delegatedAccessRolloutStartAt: "2026-09-15T00:00:00+09:00"` starts a staged rollout without manually editing a guild list. Guild `1132814274734067772` is the initial support pilot. At the start time, the first 1/14 (about 7.14%) of the other guilds are enabled; their stable SHA-256 buckets then advance at a constant rate to 100% 14 days later. The default duration is 336 hours (14 days); `dashboard.delegatedAccessRolloutDurationHours` can override it. `DASHBOARD_DELEGATED_ACCESS_ROLLOUT_START_AT` and `DASHBOARD_DELEGATED_ACCESS_ROLLOUT_DURATION_HOURS` are the environment overrides. If no rollout start time is configured, delegated access applies to every guild where the feature flag is enabled.
 - `dashboard.npmScript: "dev"` intentionally forces development mode. Leave it unset or set `"start"` for normal operation.
 - `mediaDelivery.serverMode: "express"` intentionally uses the standalone Express media server instead of dashboard-integrated routes.
 

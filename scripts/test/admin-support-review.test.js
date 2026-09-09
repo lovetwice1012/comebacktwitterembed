@@ -80,8 +80,8 @@ test('temporary diagnostic settings overrides can enable a disabled provider wit
     assert.equal(result.settings.enabled, true);
 });
 test('attachment download transport failure is known not sent; a Discord success body without ID is unknown', async t => {
-    const before = process.env.BOT_TOKEN; process.env.BOT_TOKEN = 'fixture-token';
-    t.after(() => { if (before === undefined) delete process.env.BOT_TOKEN; else process.env.BOT_TOKEN = before; });
+    const before = process.env.DISCORD_BOT_TOKEN; process.env.DISCORD_BOT_TOKEN = 'fixture-token';
+    t.after(() => { if (before === undefined) delete process.env.DISCORD_BOT_TOKEN; else process.env.DISCORD_BOT_TOKEN = before; });
     const guildId = '123456789012345678', channelId = '123456789012345679';
     const calls = [];
     const discord = loadWithFetch('../../src/adminSupport/discord', async (url, options) => {
@@ -103,6 +103,20 @@ test('attachment download transport failure is known not sent; a Discord success
         return jsonResponse({ message: 'Internal server error' }, 500);
     });
     assert.equal((await failingDiscord.send({ guildId, channelId }, 'server-error', [{ content: 'Fixture only' }])).outcome, 'delivery_unknown');
+});
+test('management Discord REST requires the shared Bot token and does not use the legacy token alias', async t => {
+    const originalShared = process.env.DISCORD_BOT_TOKEN;
+    const originalLegacy = process.env.BOT_TOKEN;
+    delete process.env.DISCORD_BOT_TOKEN;
+    process.env.BOT_TOKEN = 'legacy-token';
+    t.after(() => {
+        if (originalShared === undefined) delete process.env.DISCORD_BOT_TOKEN; else process.env.DISCORD_BOT_TOKEN = originalShared;
+        if (originalLegacy === undefined) delete process.env.BOT_TOKEN; else process.env.BOT_TOKEN = originalLegacy;
+    });
+    let requests = 0;
+    const discord = loadWithFetch('../../src/adminSupport/discord', async () => { requests++; return jsonResponse({}); });
+    await assert.rejects(discord.rest('/users/@me'), { code: 'DISCORD_TOKEN_MISSING' });
+    assert.equal(requests, 0);
 });
 test('saved replacement preserves previous data on quota failure and keeps a recoverable previous version', async t => {
     const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'cbte-save-review-'));
