@@ -30,6 +30,7 @@ const TABLES = {
     botErrorBuckets: 'bot_error_buckets',
     botMetricBuckets: 'bot_metric_buckets',
     botAnalyticsEvents: 'bot_analytics_events',
+    botProviderExpansionTraces: 'bot_provider_expansion_traces',
     botProviderContentEvents: 'bot_provider_content_events',
     botProviderContentFacets: 'bot_provider_content_facets',
     botProviderHourlyAggregates: 'bot_provider_hourly_aggregates',
@@ -492,6 +493,34 @@ const SCHEMA_STATEMENTS = [
         INDEX idx_analytics_user_time (author_user_id, occurred_at_ms),
         INDEX idx_analytics_command_time (command_name, occurred_at_ms),
         INDEX idx_analytics_component_time (component_id, occurred_at_ms)
+    ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
+
+    `CREATE TABLE IF NOT EXISTS ${TABLES.botProviderExpansionTraces} (
+        trace_id CHAR(36) NOT NULL PRIMARY KEY,
+        boot_id VARCHAR(64) NOT NULL,
+        state ENUM('queued', 'processing', 'sending', 'completed', 'failed', 'skipped', 'interrupted') NOT NULL,
+        outcome VARCHAR(64) NULL,
+        reason_code VARCHAR(96) NULL,
+        created_at_ms BIGINT NOT NULL,
+        updated_at_ms BIGINT NOT NULL,
+        completed_at_ms BIGINT NULL,
+        provider_id VARCHAR(64) NULL,
+        raw_url TEXT NULL,
+        normalized_url TEXT NULL,
+        url_hash CHAR(64) NULL,
+        guild_id VARCHAR(32) NULL,
+        channel_id VARCHAR(32) NULL,
+        author_user_id VARCHAR(32) NULL,
+        message_id VARCHAR(32) NULL,
+        output_json LONGTEXT NULL,
+        delivery_json LONGTEXT NULL,
+        error_json LONGTEXT NULL,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_expansion_trace_time (created_at_ms),
+        INDEX idx_expansion_trace_state_time (state, updated_at_ms),
+        INDEX idx_expansion_trace_provider_time (provider_id, created_at_ms),
+        INDEX idx_expansion_trace_guild_time (guild_id, created_at_ms),
+        INDEX idx_expansion_trace_url_hash (url_hash)
     ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
 
     `CREATE TABLE IF NOT EXISTS ${TABLES.botProviderContentEvents} (

@@ -13,6 +13,16 @@ test('database schema declares migration tracking', () => {
     assert.ok(SCHEMA_STATEMENTS.some(statement => statement.includes(TABLES.schemaMigrations)));
 });
 
+test('database schema declares durable provider expansion traces', () => {
+    assert.equal(TABLES.botProviderExpansionTraces, 'bot_provider_expansion_traces');
+    const statement = SCHEMA_STATEMENTS.find(sql => sql.includes(TABLES.botProviderExpansionTraces));
+    assert.ok(statement);
+    for (const column of ['trace_id', 'boot_id', 'state', 'output_json', 'delivery_json', 'error_json']) {
+        assert.match(statement, new RegExp(column));
+    }
+    assert.match(statement, /idx_expansion_trace_state_time/);
+});
+
 test('database schema declares settings webui notice state', () => {
     const file = path.join(MIGRATIONS_DIR, '20260702_add_settings_webui_notice_state.sql');
     const sql = fs.readFileSync(file, 'utf8');

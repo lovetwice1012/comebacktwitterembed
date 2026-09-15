@@ -15,7 +15,8 @@ const { consoleBuffer } = require('./src/state');
 const consoleCapture = require('./src/consoleCapture');
 const { initializeSettings } = require('./src/settings');
 const { ensureDatabaseSchema } = require('./src/db_schema');
-const { currentErrorContext, recordError } = require('./src/errorTracking');
+const { currentErrorContext, recordError, flushErrorTrackingQueue } = require('./src/errorTracking');
+const expansionTraceStore = require('./src/expansionTraceStore');
 const discordEventMetrics = require('./src/discordEventMetrics');
 const dashboardServer = require('./src/lifecycle/dashboardServer');
 const { createDiscordCacheOptions } = require('./src/discordCache');
@@ -123,6 +124,7 @@ client.on(Events.ShardResume, (shardId, replayedEvents) => {
 
 (async () => {
     await ensureDatabaseSchema();
+    await expansionTraceStore.reconcileInterruptedExpansionTraces(adminTelemetry.bootId);
     await initializeSettings();
     const dashboardPrepared = await dashboardServer.prepare();
     installConsoleCapture();
@@ -158,9 +160,16 @@ async function shutdown(signal, exitCode) {
     shuttingDown = true;
     adminTelemetry.event('runtime', 'stopping', { signal, pid: process.pid });
     dashboardServer.stop();
-    const deadline = setTimeout(() => process.exit(exitCode), 8000);
+    const deadline = setTimeout(() => process.exit(exitCode), 12000);
     try {
         client.destroy();
+        const drains = await Promise.allSettled([
+            expansionTraceStore.interruptActiveExpansionTraces(`shutdown_${signal}`),
+            flushErrorTrackingQueue(),
+        ]);
+        for (const result of drains) {
+            if (result.status === 'rejected') console.error('[shutdown] Failed to persist expansion evidence:', result.reason?.message || result.reason);
+        }
         await adminTelemetry.stop();
     } catch (error) {
         console.error('[shutdown] Failed to drain admin evidence:', error?.message || error);

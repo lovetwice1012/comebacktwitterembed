@@ -10,6 +10,7 @@ const loaderModulePath = require.resolve('../../src/providers/_loader');
 const providerSettingsModulePath = require.resolve('../../src/providers/_provider_settings');
 const dispatcherModulePath = require.resolve('../../src/providers/_dispatcher');
 const errorTrackingModulePath = require.resolve('../../src/errorTracking');
+const expansionTraceStoreModulePath = require.resolve('../../src/expansionTraceStore');
 const realUtils = require('../../src/utils');
 
 async function withMessageCreateMocks(mocks, callback) {
@@ -20,6 +21,7 @@ async function withMessageCreateMocks(mocks, callback) {
         providerSettingsModulePath,
         dispatcherModulePath,
         errorTrackingModulePath,
+        expansionTraceStoreModulePath,
     ];
     const originals = new Map(modulePaths.map(modulePath => [modulePath, require.cache[modulePath]]));
 
@@ -52,6 +54,15 @@ async function withMessageCreateMocks(mocks, callback) {
         filename: errorTrackingModulePath,
         loaded: true,
         exports: mocks.errorTracking,
+    };
+    require.cache[expansionTraceStoreModulePath] = {
+        id: expansionTraceStoreModulePath,
+        filename: expansionTraceStoreModulePath,
+        loaded: true,
+        exports: mocks.expansionTraceStore || {
+            beginExpansionTrace: async ({ traceId }) => ({ traceId, persisted: true }),
+            updateExpansionTrace: async () => true,
+        },
     };
     delete require.cache[messageCreateModulePath];
 
@@ -148,6 +159,70 @@ test('member evicted while constructing a reply is restored before provider role
         assert.equal(fetched, 1);
         assert.equal(extracted, 1);
     });
+});
+
+test('messageCreate writes durable expansion states before and after dispatch', async () => {
+    const traceCalls = [];
+    const provider = {
+        id: 'instagram',
+        extract: async () => [{
+            embeds: [{ title: 'Instagram', url: 'https://www.instagram.com/p/POST/' }],
+            files: [],
+            send: 'channel',
+        }],
+    };
+    await withMessageCreateMocks({
+        utils: { cleanMessageContent: value => value },
+        loader: { extractAllUrls: () => [{ provider, url: 'https://www.instagram.com/p/POST/?stkn=private' }] },
+        providerSettings: { getProviderSettings: async () => ({ enabled: true }) },
+        dispatcher: {
+            runSendSteps: async () => ({
+                outcome: 'F', plannedSteps: 1, fallback: false,
+                sent: [{ stepIndex: 0, messageId: 'result-1', channelId: 'channel-1' }],
+                attempts: [{ stepIndex: 0, outcome: 'confirmed', messageId: 'result-1', channelId: 'channel-1' }],
+                postprocess: [],
+            }),
+        },
+        errorTracking: {
+            recordAnalyticsEvent: () => {},
+            recordError: () => {},
+            recordMetric: () => {},
+            recordProviderContentEvent: () => {},
+        },
+        expansionTraceStore: {
+            beginExpansionTrace: async input => {
+                traceCalls.push({ type: 'begin', input });
+                return { traceId: input.traceId, persisted: true };
+            },
+            updateExpansionTrace: async (traceId, update) => {
+                traceCalls.push({ type: 'update', traceId, update });
+                return true;
+            },
+        },
+    }, async ({ register }) => {
+        const { client, listeners } = createClient();
+        register(client);
+        await listeners[1]({
+            id: 'message-1',
+            guild: { id: 'guild-1' },
+            guildId: 'guild-1',
+            channel: { id: 'channel-1' },
+            channelId: 'channel-1',
+            author: { id: 'user-1', bot: false },
+            member: { roles: { cache: new Map() } },
+            content: 'https://www.instagram.com/p/POST/?stkn=private',
+        });
+    });
+
+    assert.equal(traceCalls[0].type, 'begin');
+    assert.equal(traceCalls[0].input.providerId, 'instagram');
+    assert.equal(traceCalls[0].input.message.id, 'message-1');
+    assert.deepEqual(traceCalls.filter(call => call.type === 'update').map(call => call.update.state), [
+        'processing', 'sending', 'completed',
+    ]);
+    const completed = traceCalls.at(-1).update;
+    assert.equal(completed.outcome, 'F');
+    assert.deepEqual(completed.delivery.sent, [{ step_index: 0, message_id: 'result-1', channel_id: 'channel-1' }]);
 });
 
 test('messageCreate fetches uncached guild member before role disable check', async () => {
