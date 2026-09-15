@@ -151,7 +151,9 @@ client.on(Events.ShardResume, (shardId, replayedEvents) => {
 })().catch(error => {
     recordError(error, { errorType: 'startup_failed', severity: 'fatal', source: 'index.startup' });
     console.error('Failed to start application:', error);
-    process.exitCode = 1;
+    // A live dashboard child can otherwise keep this failed process alive,
+    // preventing the guardian from retrying a transient Discord Gateway error.
+    void shutdown('startup_failure', 1);
 });
 
 let shuttingDown = false;

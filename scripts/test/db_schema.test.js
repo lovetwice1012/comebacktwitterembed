@@ -21,6 +21,9 @@ test('database schema declares durable provider expansion traces', () => {
         assert.match(statement, new RegExp(column));
     }
     assert.match(statement, /idx_expansion_trace_state_time/);
+    const migration = '20260916_add_bot_provider_expansion_traces.sql';
+    assert.ok(_internal.listMigrationFiles().includes(migration));
+    assert.match(fs.readFileSync(path.join(MIGRATIONS_DIR, migration), 'utf8'), /CREATE TABLE IF NOT EXISTS bot_provider_expansion_traces/);
 });
 
 test('database schema declares settings webui notice state', () => {

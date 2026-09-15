@@ -49,6 +49,16 @@ test('dashboard stale build preparation finishes before capture and Discord logi
     assert.match(dashboardScript, /ensureFreshProductionBuild\(dashboardDir, env\)/);
 });
 
+test('startup failure drains persistent evidence and exits for guardian retry', () => {
+    const root = path.join(__dirname, '..', '..');
+    const indexSource = fs.readFileSync(path.join(root, 'index.js'), 'utf8');
+
+    assert.match(indexSource, /await expansionTraceStore\.reconcileInterruptedExpansionTraces\(adminTelemetry\.bootId\)/);
+    assert.match(indexSource, /expansionTraceStore\.interruptActiveExpansionTraces/);
+    assert.match(indexSource, /flushErrorTrackingQueue\(\)/);
+    assert.match(indexSource, /void shutdown\('startup_failure', 1\)/);
+});
+
 test('presence is part of identify and no periodic Gateway presence sender is active', () => {
     const root = path.join(__dirname, '..', '..');
     const indexSource = fs.readFileSync(path.join(root, 'index.js'), 'utf8');
