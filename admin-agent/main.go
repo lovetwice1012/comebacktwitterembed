@@ -30,7 +30,7 @@ type Config struct {
 	LocalHealthURL, PublicHealthURL, DiscordWebhook, PushWebhook                 string
 	DiscordNotificationName, DiscordNotificationAvatar                           string
 	WorkerTimeout, MonitorInterval, ReportTimeout                                time.Duration
-	JournalStateMaxBytes                                                        int64
+	JournalStateMaxBytes                                                         int64
 	CookieSecure                                                                 bool
 	AllowedUserIDs                                                               []string
 	DiscordClientID, DiscordClientSecret, DiscordRedirectURI                     string
