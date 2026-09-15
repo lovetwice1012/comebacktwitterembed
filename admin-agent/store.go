@@ -18,6 +18,7 @@ import (
 type Store struct {
 	db     *sql.DB
 	readDB *sql.DB
+	path   string
 }
 type Object = map[string]any
 
@@ -50,7 +51,8 @@ func openStore(dir string) (*Store, error) {
 	if e := os.MkdirAll(dir, 0700); e != nil {
 		return nil, e
 	}
-	db, e := sql.Open("sqlite", filepath.Join(dir, "state.db"))
+	dbPath := filepath.Join(dir, "state.db")
+	db, e := sql.Open("sqlite", dbPath)
 	if e != nil {
 		return nil, e
 	}
@@ -60,6 +62,7 @@ CREATE TABLE IF NOT EXISTS events (seq INTEGER PRIMARY KEY AUTOINCREMENT,id TEXT
 CREATE INDEX IF NOT EXISTS events_guild_time ON events(guild_id,occurred_at,seq);
 CREATE INDEX IF NOT EXISTS events_run ON events(run_id,seq);
 CREATE INDEX IF NOT EXISTS events_kind_time ON events(kind,occurred_at,seq);
+CREATE TABLE IF NOT EXISTS latest_heartbeat (id INTEGER PRIMARY KEY CHECK(id=1),seq INTEGER NOT NULL,payload TEXT NOT NULL,occurred_at TEXT NOT NULL,persisted_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS request_roots (run_id TEXT PRIMARY KEY,seq INTEGER NOT NULL,occurred_at TEXT NOT NULL,guild_id TEXT NOT NULL,payload TEXT NOT NULL,event_count INTEGER NOT NULL DEFAULT 1,completed_seq INTEGER,completed_at TEXT,completed_payload TEXT,shard_id TEXT NOT NULL DEFAULT '',trigger_type TEXT NOT NULL DEFAULT '',provider_id TEXT NOT NULL DEFAULT '',user_id TEXT NOT NULL DEFAULT '',message_id TEXT NOT NULL DEFAULT '',content_value TEXT NOT NULL DEFAULT '',duration_ms REAL,outcome TEXT NOT NULL DEFAULT '');
 CREATE INDEX IF NOT EXISTS request_roots_time ON request_roots(occurred_at,seq);
 CREATE INDEX IF NOT EXISTS request_roots_guild_time ON request_roots(guild_id,occurred_at,seq);
@@ -91,7 +94,7 @@ CREATE TABLE IF NOT EXISTS reports (cache_key TEXT PRIMARY KEY,kind TEXT NOT NUL
 	// heavy read wait behind the previous one until its 15s deadline.
 	var readDB *sql.DB
 	if runtime.GOOS == "linux" {
-		readDB, e = sql.Open("sqlite", filepath.Join(dir, "state.db"))
+		readDB, e = sql.Open("sqlite", dbPath)
 		if e != nil {
 			db.Close()
 			return nil, e
@@ -104,7 +107,7 @@ CREATE TABLE IF NOT EXISTS reports (cache_key TEXT PRIMARY KEY,kind TEXT NOT NUL
 			return nil, e
 		}
 	}
-	s := &Store{db: db, readDB: readDB}
+	s := &Store{db: db, readDB: readDB, path: dbPath}
 	var hasEvent int
 	if e = db.QueryRow("SELECT 1 FROM events LIMIT 1").Scan(&hasEvent); errors.Is(e, sql.ErrNoRows) {
 		_, e = db.Exec("UPDATE request_roots_meta SET ready=1,updated_at=? WHERE id=1", time.Now().UTC().Format(timestampLayout))
@@ -186,16 +189,39 @@ func (s *Store) Close() error {
 }
 
 func (s *Store) getSetting(key string, dst any) error {
+	return s.getSettingContext(context.Background(), key, dst)
+}
+
+func (s *Store) getSettingContext(ctx context.Context, key string, dst any) error {
 	var value string
-	e := s.db.QueryRow("SELECT value FROM settings WHERE key=?", key).Scan(&value)
+	e := s.queryDB().QueryRowContext(ctx, "SELECT value FROM settings WHERE key=?", key).Scan(&value)
 	if e != nil {
 		return e
 	}
 	return json.Unmarshal([]byte(value), dst)
 }
 func (s *Store) setSetting(key string, v any) error {
-	_, e := s.db.Exec("INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", key, encode(v))
+	return s.setSettingContext(context.Background(), key, v)
+}
+
+func (s *Store) setSettingContext(ctx context.Context, key string, v any) error {
+	_, e := s.db.ExecContext(ctx, "INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", key, encode(v))
 	return e
+}
+
+func (s *Store) latestHeartbeat(ctx context.Context) (payload, occurred, persisted string, err error) {
+	err = s.queryDB().QueryRowContext(ctx, "SELECT payload,occurred_at,persisted_at FROM latest_heartbeat WHERE id=1").Scan(&payload, &occurred, &persisted)
+	return
+}
+
+func (s *Store) stateBytes() int64 {
+	var total int64
+	for _, path := range []string{s.path, s.path + "-wal", s.path + "-shm"} {
+		if info, err := os.Stat(path); err == nil {
+			total += info.Size()
+		}
+	}
+	return total
 }
 func (s *Store) recoverActions() error {
 	_, e := s.db.Exec("UPDATE actions SET status='unknown',updated_at=?,error=? WHERE status='running'", now(), encode(Object{"code": "CORE_RESTART_DURING_EXECUTION", "message": "The previous process ended during execution. Side effects may have completed; this action will not be replayed."}))
@@ -203,10 +229,17 @@ func (s *Store) recoverActions() error {
 }
 
 func (s *Store) ingest(events []Object) (int64, int, error) {
+	return s.ingestContext(context.Background(), events)
+}
+
+func (s *Store) ingestContext(ctx context.Context, events []Object) (int64, int, error) {
 	if len(events) == 0 || len(events) > 500 {
 		return 0, 0, errors.New("events batch must contain 1..500 records")
 	}
-	tx, e := s.db.Begin()
+	if e := ctx.Err(); e != nil {
+		return 0, 0, e
+	}
+	tx, e := s.db.BeginTx(ctx, nil)
 	if e != nil {
 		return 0, 0, e
 	}
@@ -242,25 +275,50 @@ func (s *Store) ingest(events []Object) (int64, int, error) {
 		if len(payload) > 8<<20 {
 			return 0, 0, errors.New("event exceeds 8 MiB; producer must provide explicit truncation metadata")
 		}
-		res, e := tx.Exec("INSERT OR IGNORE INTO events(id,run_id,guild_id,kind,occurred_at,persisted_at,payload) VALUES(?,?,?,?,?,?,?)", id, run, guild, kind, occurred, now(), payload)
+		persisted := now()
+		res, e := tx.ExecContext(ctx, "INSERT OR IGNORE INTO events(id,run_id,guild_id,kind,occurred_at,persisted_at,payload) VALUES(?,?,?,?,?,?,?)", id, run, guild, kind, occurred, persisted, payload)
 		if e != nil {
 			return 0, 0, e
 		}
 		n, _ := res.RowsAffected()
 		accepted += int(n)
+		if n > 0 && isTrackedHeartbeat(kind, item) {
+			if e = updateLatestHeartbeat(ctx, tx, res, payload, occurred, persisted); e != nil {
+				return 0, 0, e
+			}
+		}
 		if n > 0 && run != "" {
 			if e = updateRequestRoot(tx, run, kind, occurred, guild, payload, item, res); e != nil {
 				return 0, 0, e
 			}
 		}
 	}
-	if e = tx.QueryRow("SELECT COALESCE(MAX(seq),0) FROM events").Scan(&cursor); e != nil {
+	if e = tx.QueryRowContext(ctx, "SELECT COALESCE(MAX(seq),0) FROM events").Scan(&cursor); e != nil {
 		return 0, 0, e
 	}
 	if e = tx.Commit(); e != nil {
 		return 0, 0, e
 	}
 	return cursor, accepted, nil
+}
+
+func isTrackedHeartbeat(kind string, item Object) bool {
+	if kind != "heartbeat" && kind != "bot.heartbeat" && kind != "runtime.heartbeat" {
+		return false
+	}
+	trigger := first(item, "triggerType", "trigger_type")
+	return trigger != "diagnostic" && trigger != "admin_operation"
+}
+
+func updateLatestHeartbeat(ctx context.Context, tx *sql.Tx, result sql.Result, payload, occurred, persisted string) error {
+	seq, err := result.LastInsertId()
+	if err != nil {
+		return err
+	}
+	_, err = tx.ExecContext(ctx, `INSERT INTO latest_heartbeat(id,seq,payload,occurred_at,persisted_at) VALUES(1,?,?,?,?)
+ON CONFLICT(id) DO UPDATE SET seq=excluded.seq,payload=excluded.payload,occurred_at=excluded.occurred_at,persisted_at=excluded.persisted_at
+WHERE excluded.seq>latest_heartbeat.seq`, seq, payload, occurred, persisted)
+	return err
 }
 
 func updateRequestRoot(tx *sql.Tx, run, kind, occurred, guild, payload string, item Object, result sql.Result) error {

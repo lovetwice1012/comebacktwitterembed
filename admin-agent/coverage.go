@@ -25,7 +25,7 @@ func (a *App) measurementCoverage(ctx context.Context, from, to string, matching
 	var heartbeatAt, heartbeatPersistedAt string
 	var heartbeatAge any
 	collectionState := "unobserved"
-	e = coverageDB.QueryRowContext(ctx, "SELECT occurred_at,persisted_at FROM events WHERE kind IN ('heartbeat','bot.heartbeat','runtime.heartbeat') ORDER BY seq DESC LIMIT 1").Scan(&heartbeatAt, &heartbeatPersistedAt)
+	_, heartbeatAt, heartbeatPersistedAt, e = a.store.latestHeartbeat(ctx)
 	if e != nil && !errors.Is(e, sql.ErrNoRows) {
 		return nil, e
 	}

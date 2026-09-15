@@ -30,6 +30,7 @@ type Config struct {
 	LocalHealthURL, PublicHealthURL, DiscordWebhook, PushWebhook                 string
 	DiscordNotificationName, DiscordNotificationAvatar                           string
 	WorkerTimeout, MonitorInterval, ReportTimeout                                time.Duration
+	JournalStateMaxBytes                                                        int64
 	CookieSecure                                                                 bool
 	AllowedUserIDs                                                               []string
 	DiscordClientID, DiscordClientSecret, DiscordRedirectURI                     string
@@ -71,6 +72,7 @@ func config() Config {
 		WorkerTimeout:             time.Duration(max(5, min(600, envInt("ADMIN_AGENT_WORKER_TIMEOUT_SECONDS", 120)))) * time.Second,
 		ReportTimeout:             time.Duration(max(30, min(3600, envInt("ADMIN_AGENT_REPORT_TIMEOUT_SECONDS", 660)))) * time.Second,
 		MonitorInterval:           time.Duration(max(5, envInt("ADMIN_AGENT_MONITOR_SECONDS", 15))) * time.Second,
+		JournalStateMaxBytes:      int64(max(64, envInt("ADMIN_AGENT_JOURNAL_STATE_MAX_MIB", 2048))) << 20,
 		CookieSecure:              env("ADMIN_AGENT_COOKIE_SECURE", "true") != "false",
 	}
 }

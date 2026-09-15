@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"log"
 	"net/http"
 	"os"
@@ -11,6 +12,11 @@ import (
 	"strconv"
 	"strings"
 	"time"
+)
+
+const (
+	heartbeatReadTimeout = 2 * time.Second
+	monitorCycleTimeout  = 30 * time.Second
 )
 
 type Policy struct {
@@ -34,8 +40,12 @@ func defaultPolicy() Policy {
 	return Policy{Revision: 1, AutoInvestigate: true, AutoPauseReports: true, AutoRestartAnalysis: true, AutoCancelOverdueQueries: true, AutoRefreshReports: true, ReportsRefreshIntervalSeconds: 900, DesiredState: "running", RestartCooldownSeconds: 900, RestartDailyLimit: 3, HeartbeatGraceSeconds: 180}
 }
 func (a *App) loadPolicy() (Policy, error) {
+	return a.loadPolicyContext(context.Background())
+}
+
+func (a *App) loadPolicyContext(ctx context.Context) (Policy, error) {
 	var p Policy
-	e := a.store.getSetting("policy", &p)
+	e := a.store.getSettingContext(ctx, "policy", &p)
 	return p, e
 }
 func (a *App) getPolicy(w http.ResponseWriter, r *http.Request) {
@@ -204,7 +214,9 @@ func (a *App) collect(ctx context.Context, deep bool) Object {
 	}
 	var payload, occurred, persisted string
 	heartbeat := Object{}
-	e := a.store.db.QueryRowContext(ctx, "SELECT payload,occurred_at,persisted_at FROM events WHERE kind IN ('heartbeat','bot.heartbeat','runtime.heartbeat') AND COALESCE(json_extract(payload,'$.triggerType'),json_extract(payload,'$.trigger_type'),'') NOT IN ('diagnostic','admin_operation') ORDER BY seq DESC LIMIT 1").Scan(&payload, &occurred, &persisted)
+	heartbeatCtx, cancelHeartbeatRead := context.WithTimeout(ctx, heartbeatReadTimeout)
+	e := a.store.latestHeartbeat(heartbeatCtx)
+	cancelHeartbeatRead()
 	if e == nil {
 		heartbeat, _ = decode(payload).(map[string]any)
 		v["heartbeat"] = heartbeat
@@ -223,8 +235,15 @@ func (a *App) collect(ctx context.Context, deep bool) Object {
 		if t, err := time.Parse(time.RFC3339Nano, persisted); err == nil {
 			v["heartbeatPersistedAgeSeconds"] = time.Since(t).Seconds()
 		}
-	} else {
+	} else if errors.Is(e, sql.ErrNoRows) {
 		v["heartbeatState"] = "unobserved"
+	} else {
+		v["heartbeatState"] = "unavailable"
+		if errors.Is(e, context.DeadlineExceeded) {
+			v["heartbeatError"] = "state_read_timeout"
+		} else {
+			v["heartbeatError"] = "state_read_failed"
+		}
 	}
 	a.stateMu.Lock()
 	previous := nested(a.lastSnapshot, "workloadIdentity")
@@ -248,24 +267,35 @@ func (a *App) collect(ctx context.Context, deep bool) Object {
 func (a *App) monitor(ctx context.Context) {
 	ticker := time.NewTicker(a.cfg.MonitorInterval)
 	defer ticker.Stop()
-	a.monitorOnce(ctx)
+	a.monitorOnceSafely(ctx)
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			a.monitorOnce(ctx)
+			a.monitorOnceSafely(ctx)
 		}
 	}
 }
-func (a *App) monitorOnce(ctx context.Context) {
-	a.retryRecoveryIntent(ctx)
+
+func (a *App) monitorOnceSafely(ctx context.Context) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			log.Printf("monitor cycle panicked and will be retried: %v", recovered)
+		}
+	}()
+	a.monitorOnce(ctx)
+}
+
+func (a *App) monitorOnce(parent context.Context) {
+	ctx, cancel := context.WithTimeout(parent, monitorCycleTimeout)
+	defer cancel()
 	snapshot := a.collect(ctx, false)
 	a.stateMu.Lock()
 	a.lastSnapshot = snapshot
 	a.stateMu.Unlock()
 	eventID := randomID()
-	if _, _, e := a.store.ingest([]Object{{"id": eventID, "kind": "monitor.snapshot", "occurredAt": now(), "component": "admin-agent", "details": snapshot}}); e != nil {
+	if _, _, e := a.store.ingestContext(ctx, []Object{{"id": eventID, "kind": "monitor.snapshot", "occurredAt": now(), "component": "admin-agent", "details": snapshot}}); e != nil {
 		log.Printf("monitor state could not be persisted: %v", e)
 		return
 	}
@@ -274,7 +304,10 @@ func (a *App) monitorOnce(ctx context.Context) {
 	a.hasMonitorSave = true
 	a.stateMu.Unlock()
 	notifySystemd("WATCHDOG=1\nSTATUS=State store and monitor progressing")
-	p, e := a.loadPolicy()
+	// Recovery retries can use network and must not delay the core's own
+	// persisted liveness signal.
+	a.retryRecoveryIntent(ctx)
+	p, e := a.loadPolicyContext(ctx)
 	if e != nil {
 		return
 	}
@@ -358,7 +391,7 @@ func (a *App) monitorOnce(ctx context.Context) {
 	if p.AutoRefreshReports && a.cfg.ReportWorkerURL != "" {
 		a.scheduleReportRefresh(p)
 	}
-	_, _ = a.store.db.Exec("DELETE FROM sessions WHERE expires_at<?", now())
+	_, _ = a.store.db.ExecContext(ctx, "DELETE FROM sessions WHERE expires_at<?", now())
 	a.reconcileUnknown(ctx)
 }
 func (a *App) bad(key string) { a.failures[key]++ }

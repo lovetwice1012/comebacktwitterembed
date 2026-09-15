@@ -63,9 +63,7 @@ func (a *App) shardMetrics(ctx context.Context, at time.Time) (Object, error) {
 	}
 
 	var payload, occurred string
-	err = a.store.queryDB().QueryRowContext(ctx, `SELECT payload,occurred_at FROM events
-        WHERE kind IN ('heartbeat','bot.heartbeat','runtime.heartbeat')
-        ORDER BY seq DESC LIMIT 1`).Scan(&payload, &occurred)
+	payload, occurred, _, err = a.store.latestHeartbeat(ctx)
 	if err == nil {
 		value, _ := decode(payload).(map[string]any)
 		details := nested(value, "details")

@@ -9,6 +9,19 @@ import (
 	"time"
 )
 
+const (
+	journalBatchEventLimit = 50
+	journalBatchByteLimit  = 512 << 10
+	journalStoreTimeout    = 3 * time.Second
+)
+
+func journalStateLimit(cfg Config) int64 {
+	if cfg.JournalStateMaxBytes > 0 {
+		return cfg.JournalStateMaxBytes
+	}
+	return 2 << 30
+}
+
 func (a *App) journalHealth() Object {
 	collectors := Object{}
 	for _, source := range []string{"bot", "database", "kernel", "nginx", "core", "analysis"} {
@@ -54,7 +67,9 @@ func (a *App) collectJournalBatch(ctx context.Context, source string) {
 		return
 	}
 	var cursor string
-	_ = a.store.getSetting("journal_cursor_"+source, &cursor)
+	cursorCtx, cancelCursorRead := context.WithTimeout(ctx, journalStoreTimeout)
+	_ = a.store.getSettingContext(cursorCtx, "journal_cursor_"+source, &cursor)
+	cancelCursorRead()
 	args := []string{"--no-pager", "--output=json", "--follow", "--no-tail"}
 	switch source {
 	case "bot":
@@ -88,7 +103,9 @@ func (a *App) collectJournalBatch(ctx context.Context, source string) {
 		return
 	}
 	if e = cmd.Start(); e != nil {
-		_ = a.store.setSetting("journal_health_"+source, Object{"available": false, "error": "journalctl could not start", "observedAt": now()})
+		stateCtx, cancelStateWrite := context.WithTimeout(ctx, journalStoreTimeout)
+		_ = a.store.setSettingContext(stateCtx, "journal_health_"+source, Object{"available": false, "error": "journalctl could not start", "observedAt": now()})
+		cancelStateWrite()
 		return
 	}
 	scanner := bufio.NewScanner(stdout)
@@ -114,7 +131,7 @@ func (a *App) collectJournalBatch(ctx context.Context, source string) {
 		lastCursor = c
 		lastAt = stamp
 		bytes += len(line)
-		if len(events) >= 200 || bytes >= 4<<20 {
+		if len(events) >= journalBatchEventLimit || bytes >= journalBatchByteLimit {
 			cancel()
 			break
 		}
@@ -123,15 +140,28 @@ func (a *App) collectJournalBatch(ctx context.Context, source string) {
 	endedByDeadline := child.Err() != nil
 	cancel()
 	_ = cmd.Wait()
+	stateBytes := a.store.stateBytes()
+	stateLimit := journalStateLimit(a.cfg)
+	storageLimited := stateBytes >= stateLimit
 	if len(events) > 0 {
-		if _, _, e = a.store.ingest(events); e != nil {
+		storeCtx, cancelStore := context.WithTimeout(ctx, journalStoreTimeout)
+		if !storageLimited {
+			if _, _, e = a.store.ingestContext(storeCtx, events); e != nil {
+				cancelStore()
+				return
+			}
+		}
+		if e = a.store.setSettingContext(storeCtx, "journal_cursor_"+source, lastCursor); e != nil {
+			cancelStore()
 			return
 		}
-		if e = a.store.setSetting("journal_cursor_"+source, lastCursor); e != nil {
-			return
-		}
+		cancelStore()
 	}
-	state := Object{"available": true, "observedAt": now(), "recordsInBatch": len(events), "lastEventAt": lastAt, "cursorPresent": lastCursor != "" || cursor != "", "initialLookbackMinutes": 5, "batchLimit": 200}
+	state := Object{"available": true, "observedAt": now(), "recordsInBatch": len(events), "lastEventAt": lastAt, "cursorPresent": lastCursor != "" || cursor != "", "initialLookbackMinutes": 5, "batchLimit": journalBatchEventLimit, "batchByteLimit": journalBatchByteLimit, "stateBytes": stateBytes, "stateLimitBytes": stateLimit, "rawEventsStored": !storageLimited}
+	if storageLimited {
+		state["storageLimited"] = true
+		state["rawEventsAvailableVia"] = "journalctl"
+	}
 	if len(events) == 0 && stderr.b.Len() > 0 {
 		state["available"] = false
 		state["error"] = stderr.b.String()
@@ -140,5 +170,7 @@ func (a *App) collectJournalBatch(ctx context.Context, source string) {
 		state["available"] = false
 		state["error"] = readErr.Error()
 	}
-	_ = a.store.setSetting("journal_health_"+source, state)
+	stateCtx, cancelStateWrite := context.WithTimeout(ctx, journalStoreTimeout)
+	_ = a.store.setSettingContext(stateCtx, "journal_health_"+source, state)
+	cancelStateWrite()
 }

@@ -3,7 +3,9 @@ package main
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -21,7 +23,7 @@ func testApp(t *testing.T) *App {
 	if e != nil {
 		t.Fatal(e)
 	}
-	t.Cleanup(func() { s.db.Close() })
+	t.Cleanup(func() { _ = s.Close() })
 	return newApp(Config{Token: strings.Repeat("a", 64), Owner: "123", WorkerTimeout: 120 * time.Second}, s)
 }
 func request(t *testing.T, a *App, method, path string, input any) *httptest.ResponseRecorder {
@@ -57,6 +59,75 @@ func TestDurableIngestAndEventDedup(t *testing.T) {
 	}
 	if count != 1 || stamp != "2026-09-05T01:02:03.100000000Z" {
 		t.Fatalf("unexpected normalized persistence count=%d stamp=%s", count, stamp)
+	}
+}
+
+func TestLatestHeartbeatIsMaterializedWithoutScanningEvents(t *testing.T) {
+	a := testApp(t)
+	first := "2026-09-15T09:00:00.000000000Z"
+	latest := "2026-09-15T09:00:15.000000000Z"
+	_, _, err := a.store.ingest([]Object{
+		{"id": "diagnostic-heartbeat", "kind": "heartbeat", "triggerType": "diagnostic", "occurredAt": latest},
+		{"id": "first-heartbeat", "kind": "heartbeat", "occurredAt": first, "details": Object{"pid": 1.0}},
+		{"id": "latest-heartbeat", "kind": "runtime.heartbeat", "occurredAt": latest, "details": Object{"pid": 2.0}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload, occurred, persisted, err := a.store.latestHeartbeat(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	value, _ := decode(payload).(map[string]any)
+	if value["id"] != "latest-heartbeat" || occurred != latest || persisted == "" {
+		t.Fatalf("wrong materialized heartbeat payload=%v occurred=%s persisted=%s", value, occurred, persisted)
+	}
+}
+
+func TestDiagnosticHeartbeatDoesNotCreateLivenessRecord(t *testing.T) {
+	a := testApp(t)
+	_, _, err := a.store.ingest([]Object{{"id": "diagnostic-heartbeat", "kind": "heartbeat", "triggerType": "diagnostic", "occurredAt": now()}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _, _, err = a.store.latestHeartbeat(context.Background())
+	if !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("diagnostic heartbeat became liveness data: %v", err)
+	}
+}
+
+func TestIngestContextHonorsCancellation(t *testing.T) {
+	a := testApp(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, _, err := a.store.ingestContext(ctx, []Object{{"id": "cancelled", "kind": "heartbeat", "occurredAt": now()}})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("cancelled ingest returned %v", err)
+	}
+}
+
+func TestLivezDoesNotDependOnStateStore(t *testing.T) {
+	a := testApp(t)
+	if err := a.store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	r := httptest.NewRequest("GET", "/livez", nil)
+	w := httptest.NewRecorder()
+	a.routes().ServeHTTP(w, r)
+	if w.Code != http.StatusOK {
+		t.Fatalf("livez returned %d: %s", w.Code, w.Body.String())
+	}
+	if object(t, w)["scope"] != "process_http_liveness" {
+		t.Fatalf("wrong livez response: %s", w.Body.String())
+	}
+}
+
+func TestJournalStateLimitHasSafeDefault(t *testing.T) {
+	if got := journalStateLimit(Config{}); got != 2<<30 {
+		t.Fatalf("wrong default journal cap: %d", got)
+	}
+	if got := journalStateLimit(Config{JournalStateMaxBytes: 123}); got != 123 {
+		t.Fatalf("configured journal cap was ignored: %d", got)
 	}
 }
 func TestAuthenticationActorAndCookieCSRF(t *testing.T) {

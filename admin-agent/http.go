@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/sha256"
 	"crypto/subtle"
 	"database/sql"
@@ -119,6 +120,9 @@ func (a *App) routes() http.Handler {
 	mux.HandleFunc("POST /auth/login", a.login)
 	mux.HandleFunc("GET /auth/session", a.session)
 	mux.HandleFunc("POST /auth/logout", a.protect(a.logout))
+	mux.HandleFunc("GET /livez", func(w http.ResponseWriter, r *http.Request) {
+		jsonResponse(w, 200, Object{"ok": true, "version": version, "scope": "process_http_liveness"})
+	})
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		a.stateMu.Lock()
 		age := time.Since(a.lastMonitorSave)
@@ -128,7 +132,10 @@ func (a *App) routes() http.Handler {
 			return
 		}
 		var one int
-		if a.store.db.QueryRow("SELECT 1").Scan(&one) != nil {
+		storeCtx, cancelStoreRead := context.WithTimeout(r.Context(), heartbeatReadTimeout)
+		err := a.store.queryDB().QueryRowContext(storeCtx, "SELECT 1").Scan(&one)
+		cancelStoreRead()
+		if err != nil {
 			fail(w, 503, "STORE_UNAVAILABLE", "Management state cannot be read")
 			return
 		}
