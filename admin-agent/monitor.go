@@ -212,10 +212,9 @@ func (a *App) collect(ctx context.Context, deep bool) Object {
 	if a.cfg.WorkerURL != "" {
 		v["analysisHTTP"] = a.httpProbe(ctx, strings.TrimSuffix(a.cfg.WorkerURL, "/execute")+"/health")
 	}
-	var payload, occurred, persisted string
 	heartbeat := Object{}
 	heartbeatCtx, cancelHeartbeatRead := context.WithTimeout(ctx, heartbeatReadTimeout)
-	e := a.store.latestHeartbeat(heartbeatCtx)
+	payload, occurred, persisted, e := a.store.latestHeartbeat(heartbeatCtx)
 	cancelHeartbeatRead()
 	if e == nil {
 		heartbeat, _ = decode(payload).(map[string]any)
