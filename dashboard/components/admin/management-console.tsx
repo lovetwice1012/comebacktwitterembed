@@ -10,7 +10,7 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/com
 
 type Data = Record<string, unknown>;
 type Action = { id: string; type: string; status: string; input?: Data; result?: unknown; data?: unknown; error?: unknown; createdAt?: string; updatedAt?: string };
-type CatalogAction = { type: string; label?: string; description?: string; inputExample?: Data; mutating?: boolean };
+type CatalogAction = { type: string; label?: string; description?: string; inputExample?: Data; mutating?: boolean; available?: boolean; unavailableReason?: string };
 type Tab = "recovery" | "search" | "inspect" | "send" | "settings" | "operations" | "incidents" | "metrics" | "policies";
 const tabs: [Tab, string][] = [["search", "事象・履歴"], ["inspect", "URL実行検証"], ["send", "指定先へ送信"], ["settings", "設定確認・変更"], ["operations", "管理操作"], ["incidents", "障害・診断"], ["metrics", "稼働・影響"], ["policies", "監視・自動修復"], ["recovery", "緊急復旧"]];
 const PENDING_ACTION_KEY = "cbte-admin-pending-action-v1";
@@ -141,7 +141,7 @@ export function ManagementConsole({ initialTab = "search", standalone = false }:
   const [detail, setDetail] = useState<unknown>(null);
   const [sendMode, setSendMode] = useState("manual"); const [content, setContent] = useState(""); const [payloadText, setPayloadText] = useState("{}"); const [replyTo, setReplyTo] = useState(""); const [resolved, setResolved] = useState<Data | null>(null);
   const [provider, setProvider] = useState("twitter"); const [settingResult, setSettingResult] = useState<Data | null>(null); const [settingKey, setSettingKey] = useState(""); const [settingValue, setSettingValue] = useState("true"); const [sourceGuild, setSourceGuild] = useState("");
-  const [operationType, setOperationType] = useState(""); const [operationInput, setOperationInput] = useState("{}");
+  const [operationType, setOperationType] = useState(""); const [operationInput, setOperationInput] = useState<Data>({}); const [operationConfirmed, setOperationConfirmed] = useState(false);
   const [metricData, setMetricData] = useState<Data | null>(null); const [shardData, setShardData] = useState<Data | null>(null); const [policies, setPolicies] = useState<Data | null>(null); const [policyText, setPolicyText] = useState("{}");
   const [password, setPassword] = useState(""); const [passwordAgain, setPasswordAgain] = useState(""); const [accountMessage, setAccountMessage] = useState("");
 
@@ -213,6 +213,8 @@ export function ManagementConsole({ initialTab = "search", standalone = false }:
     await submit("message.send", input);
   }
   function canSubmit() { return !busy && !pendingSubmission && !["queued", "running"].includes(action?.status || ""); }
+  const selectedOperation = catalog.find(item => item.type === operationType);
+  const operationGroups = [...new Set(catalog.map(item => operationGroup(item.type)))];
 
   return <div className={standalone ? "mx-auto min-h-screen max-w-[1600px] space-y-4 bg-background p-4 md:p-6" : "space-y-4"}>
     <div className="flex flex-wrap items-start justify-between gap-3"><div><h1 className="text-xl font-semibold">管理サポートコンソール</h1><p className="text-sm text-muted-foreground">サーバーIDと時間帯から調査・設定変更・復旧確認。管理デーモンと履歴を共有します。</p></div><div className="flex gap-2"><Link href="/admin" className="rounded border px-3 py-2 text-sm">従来の分析・設定</Link><Button variant="outline" onClick={() => void refreshConnection()}>接続確認</Button>{safeUrl(health?.independentUrl) ? <a className="rounded border px-3 py-2 text-sm" href={safeUrl(health?.independentUrl)} target="_blank" rel="noreferrer">独立管理Web</a> : null}</div></div>
@@ -224,7 +226,7 @@ export function ManagementConsole({ initialTab = "search", standalone = false }:
     {error ? <p role="alert" className="rounded border border-destructive p-3 text-sm">{error}</p> : null}
     {pendingSubmission ? <div className="rounded border p-3 text-sm"><p>操作の受付結果を確認中です。新しい操作IDでは再実行しません。キー: {pendingSubmission.idempotencyKey}</p><Button variant="outline" disabled={busy} onClick={() => void perform(async () => { const a = await api<Action>("actions", "POST", pendingSubmission); setAction(a); saveSession(LAST_ACTION_KEY, { id: a.id, type: a.type }); setPendingSubmission(null); saveSession(PENDING_ACTION_KEY, null); })}>同じ受付キーで結果を確認</Button></div> : null}
 
-    {tab === "search" || tab === "incidents" ? <Card><CardHeader><CardTitle>{tab === "incidents" ? "障害・診断・通知" : "事象・操作履歴"}</CardTitle><CardDescription>日時はJST。記録なしと未取得を区別し、各行から原文と処理経過を確認します。</CardDescription></CardHeader><CardContent className="space-y-4"><div className="grid gap-3 md:grid-cols-4"><Field label="開始（含む）" type="datetime-local" value={from} onChange={setFrom} /><Field label="終了（含まない）" type="datetime-local" value={to} onChange={setTo} /><label className="space-y-1 text-sm"><span>記録種別</span><select className={selectClass} value={source} onChange={e => { setSource(e.target.value); setHistory([]); setNextCursor(null); }}><option value="runs">処理要求</option><option value="events">段階別の証拠</option><option value="actions">管理操作</option><option value="incidents">障害・診断</option><option value="notifications">通知</option></select></label><Button className="self-end" disabled={busy} onClick={() => void perform(() => search())}>検索</Button></div>
+    {tab === "search" || tab === "incidents" ? <Card><CardHeader><CardTitle>{tab === "incidents" ? "障害・診断・通知" : "事象・操作履歴"}</CardTitle><CardDescription>日時はJST。自動展開を含む証跡は永続保存され、各行から入力・設定・HTTP・出力・送信までの経過を確認できます。</CardDescription></CardHeader><CardContent className="space-y-4"><div className="grid gap-3 md:grid-cols-4"><Field label="開始（含む）" type="datetime-local" value={from} onChange={setFrom} /><Field label="終了（含まない）" type="datetime-local" value={to} onChange={setTo} /><label className="space-y-1 text-sm"><span>記録種別</span><select className={selectClass} value={source} onChange={e => { setSource(e.target.value); setHistory([]); setNextCursor(null); }}><option value="runs">展開証跡（自動・手動）</option><option value="events">段階別の永続証拠</option><option value="actions">管理操作</option><option value="incidents">障害・診断</option><option value="notifications">通知</option></select></label><Button className="self-end" disabled={busy} onClick={() => void perform(() => search())}>検索</Button></div>
       {history.map((item, i) => { const r = obj(item); const id = text(r.id ?? r.runId ?? r.traceId ?? r.event_id); return <div key={`${id}-${i}`} className="rounded border p-3"><div className="flex flex-wrap items-center justify-between gap-2"><p className="break-all text-sm">{date(r.createdAt ?? r.occurredAt ?? r.occurred_at_ms)} / {text(r.type ?? r.kind ?? r.stage)} / {text(r.status ?? r.outcome)} / {id}</p>{["actions", "runs", "incidents"].includes(source) && id !== "未取得" ? <Button variant="outline" onClick={() => void perform(async () => { if (source === "actions") await openAction(id); else setDetail(await api(`${source}/${encodeURIComponent(id)}`)); })}>処理経過を開く</Button> : null}</div><RawEvidence value={item} /></div>; })}
       {!history.length ? <p className="text-sm text-muted-foreground">取得した記録はありません。検索結果が0件でも、当時の記録・受信が完全だったとは限りません。</p> : null}{nextCursor ? <Button disabled={busy} variant="outline" onClick={() => void perform(() => search(nextCursor))}>次の100件を追加</Button> : null}
     </CardContent></Card> : null}
@@ -243,7 +245,7 @@ export function ManagementConsole({ initialTab = "search", standalone = false }:
     {tab === "settings" ? <Card><CardHeader><CardTitle>サーバー設定</CardTitle><CardDescription>全設定の現在値と既定値を取得し、変更・復元・コピーの結果とBotが使う設定版を確認します。</CardDescription></CardHeader><CardContent className="space-y-4"><div className="flex flex-wrap items-end gap-3"><Field label="プロバイダー" value={provider} onChange={setProvider} /><Button disabled={!canSubmit()} onClick={() => void perform(() => submit("settings.get", { guildId, providerId: provider }))}>現在の設定を取得</Button><Button variant="outline" disabled={!canSubmit()} onClick={() => void perform(() => submit("settings.catalog", {}))}>全項目の説明・型を取得</Button></div>
       {settingResult ? <RawEvidence value={settingResult} label="設定値・既定値・説明・版の全項目" expanded /> : null}<SettingValueEditor snapshot={settingResult} settingKey={settingKey} value={settingValue} onKey={setSettingKey} onValue={setSettingValue} /><div className="flex flex-wrap gap-2"><Button disabled={!canSubmit() || !settingResult || !settingKey} onClick={() => void perform(() => submit("settings.change", { guildId, providerId: provider, key: settingKey, value: JSON.parse(settingValue), expectedHash: settingResult?.settingsHash ?? settingResult?.hash }))}>変更して反映を確認</Button><Button variant="outline" disabled={!canSubmit() || !settingResult || !settingKey} onClick={() => void perform(() => submit("settings.reset", { guildId, providerId: provider, key: settingKey, expectedHash: settingResult?.settingsHash ?? settingResult?.hash }))}>指定キーを既定値へ戻す</Button></div><div className="flex flex-wrap items-end gap-3"><Field label="コピー元サーバーID" value={sourceGuild} onChange={setSourceGuild} /><Button variant="outline" disabled={!canSubmit() || !settingResult || !sourceGuild} onClick={() => void perform(() => submit("settings.copy", { guildId, sourceGuildId: sourceGuild, providerId: provider, expectedHash: settingResult?.settingsHash ?? settingResult?.hash }))}>現在のサーバーへコピー</Button></div><p className="text-xs text-muted-foreground">変更履歴は「事象・履歴」の管理操作から確認できます。従来の設定フォームも /admin のサポートタブから利用できます。</p></CardContent></Card> : null}
 
-    {tab === "operations" ? <Card><CardHeader><CardTitle>管理操作カタログ</CardTitle><CardDescription>自動展開、保存データ、容量、委任アクセス、再取得、削除、診断・修復など、稼働中workerが提供する操作を実行します。</CardDescription></CardHeader><CardContent className="space-y-4"><select aria-label="管理操作" className={selectClass} value={operationType} onChange={e => { setOperationType(e.target.value); const selected = catalog.find(item => item.type === e.target.value); setOperationInput(pretty({ ...selected?.inputExample, ...context() })); }}><option value="">操作を選択</option>{catalog.map(item => <option value={item.type} key={item.type}>{item.label || item.type} {item.mutating ? "（変更操作）" : ""}</option>)}</select><p className="text-sm">{catalog.find(item => item.type === operationType)?.description}</p><label className="block text-sm">入力（選択すると必要な項目の例を表示）<Textarea rows={12} className="font-mono" value={operationInput} onChange={e => setOperationInput(e.target.value)} /></label><Button disabled={!canSubmit() || !operationType} onClick={() => void perform(() => submit(operationType, parseObject(operationInput, "操作入力")))}>選択した操作を実行</Button><RawEvidence value={catalog} label="利用可能な全操作と入出力仕様" /></CardContent></Card> : null}
+    {tab === "operations" ? <Card><CardHeader><CardTitle>管理操作</CardTitle><CardDescription>必要な値は画面の項目から入力します。JSONやコマンドを直接入力する必要はありません。実行後は受付IDと履歴を画面上で確認できます。</CardDescription></CardHeader><CardContent className="space-y-4"><label className="block space-y-1 text-sm"><span>実行する操作</span><select aria-label="管理操作" className={selectClass} value={operationType} onChange={e => { const type = e.target.value; const selected = catalog.find(item => item.type === type); setOperationType(type); setOperationInput({ ...obj(selected?.inputExample), ...context() }); setOperationConfirmed(false); }}><option value="">操作を選択</option>{operationGroups.map(group => <optgroup key={group} label={group}>{catalog.filter(item => operationGroup(item.type) === group).map(item => <option value={item.type} key={item.type} disabled={item.available === false}>{item.label || item.type} {item.mutating ? "（変更操作）" : ""}{item.available === false ? "（この環境では利用不可）" : ""}</option>)}</optgroup>)}</select></label>{selectedOperation ? <div className="space-y-4 rounded border p-4"><div><h3 className="font-medium">{selectedOperation.label || selectedOperation.type}</h3><p className="mt-1 text-sm text-muted-foreground">{selectedOperation.description || "操作の説明は管理デーモンから取得できませんでした。"}</p>{selectedOperation.available === false ? <p role="alert" className="mt-2 text-sm text-destructive">この環境では実行できません。{selectedOperation.unavailableReason || "利用条件を確認してください。"}</p> : null}</div><OperationInputForm action={selectedOperation} input={operationInput} onChange={next => { setOperationInput(next); setOperationConfirmed(false); }} disabled={busy || Boolean(pendingSubmission) || selectedOperation.available === false} />{selectedOperation.mutating ? <label className="flex gap-2 rounded border border-amber-500/50 bg-amber-500/10 p-3 text-sm"><input type="checkbox" checked={operationConfirmed} disabled={busy || Boolean(pendingSubmission) || selectedOperation.available === false} onChange={event => setOperationConfirmed(event.target.checked)} /><span>対象・入力内容・影響を確認し、この管理操作を実行することを確認しました。受付後は同じ受付IDで結果を確認し、同じ操作を重複して実行しません。</span></label> : <p className="text-xs text-muted-foreground">参照操作です。変更は行いませんが、取得結果は操作履歴に記録されます。</p>}<Button disabled={!canSubmit() || !selectedOperation || selectedOperation.available === false || (selectedOperation.mutating && !operationConfirmed)} onClick={() => void perform(() => submit(selectedOperation.type, operationInput))}>{selectedOperation.mutating ? "内容を確認して操作を実行" : "操作を実行"}</Button></div> : <p className="rounded border bg-muted/20 p-3 text-sm text-muted-foreground">カテゴリから操作を選ぶと、必要な入力欄と実行ボタンを表示します。</p>}<RawEvidence value={catalog} label="管理デーモンが提供する操作の原記録" /></CardContent></Card> : null}
 
     {tab === "metrics" ? <Card><CardHeader><CardTitle>要求単位の稼働・影響</CardTitle><CardDescription>根要求を一件として集計。閲覧・既読・リンククリックはDiscord APIから取得できず、統計へ含めません。分母・対象期間・観測状態を併記します。</CardDescription></CardHeader><CardContent className="space-y-4"><div className="flex flex-wrap items-end gap-3"><Field label="開始（JST）" type="datetime-local" value={from} onChange={setFrom} /><Field label="終了（JST）" type="datetime-local" value={to} onChange={setTo} /><Button disabled={busy} onClick={() => void perform(async () => { const [metrics, shards] = await Promise.allSettled([api(`metrics?${query()}`), api("shards")]); if (metrics.status === "rejected") throw metrics.reason; setMetricData(metrics.value); if (shards.status === "fulfilled") setShardData(shards.value); else setError(`シャード状態の取得に失敗しました: ${text(shards.reason instanceof Error ? shards.reason.message : shards.reason)}`); })}>集計する</Button><Button type="button" variant="outline" disabled={busy} onClick={() => void perform(async () => setShardData(await api("shards")))}>シャード状態を更新</Button></div>{metricData ? <MetricsView data={metricData} onDrill={outcome => { setSource("runs"); setTab("search"); void perform(() => search(undefined, "runs", outcome)); }} /> : <p className="text-sm">サーバーと期間を指定して集計してください。過去の旧イベントを要求数へ推定変換しません。</p>}<ShardMetricsView data={shardData || (metricData ? obj(metricData.shards) : null)} /></CardContent></Card> : null}
 
@@ -273,6 +275,135 @@ export function MetricsView({ data, onDrill }: { data: Data; onDrill: (outcome?:
     <div className="rounded border p-3"><h3 className="mb-2 font-medium">サービス別の結果</h3>{unmeasured ? <p className="text-sm">未計測</p> : Object.entries(obj(data.byProvider)).map(([provider, value]) => <p className="mb-2 text-sm" key={provider}>{provider}: {Object.entries(obj(value)).map(([outcome, count]) => `${text(labels[outcome] ?? outcome)} ${text(count)}`).join(" / ")}</p>)}</div>
     <Button variant="outline" disabled={unmeasured} onClick={() => onDrill()}>この条件の根要求と結果を開く</Button><RawEvidence value={data} label="指標辞書・分子分母・計測状態（全項目）" />
   </div>;
+}
+
+type InputValueKind = "string" | "number" | "boolean" | "object" | "array" | "null";
+type OperationFieldMeta = { label: string; hint?: string; placeholder?: string; multiline?: boolean; inputType?: "text" | "url"; options?: { value: string; label: string }[] };
+
+const operationFields: Record<string, OperationFieldMeta> = {
+  guildId: { label: "サーバーID", placeholder: "例: 123456789012345678" },
+  sourceGuildId: { label: "コピー元サーバーID", placeholder: "例: 123456789012345678" },
+  channelId: { label: "チャンネルID", placeholder: "例: 123456789012345678" },
+  userId: { label: "対象ユーザーID", placeholder: "例: 123456789012345678" },
+  targetId: { label: "委任先のID", placeholder: "ユーザーまたはロールのID" },
+  targetType: { label: "委任先の種類", options: [{ value: "user", label: "ユーザー" }, { value: "role", label: "ロール" }] },
+  accessLevel: { label: "委任する権限", options: [{ value: "view", label: "閲覧" }, { value: "edit", label: "変更" }] },
+  providerId: { label: "プロバイダーID", placeholder: "例: twitter" },
+  sourceId: { label: "取得元ID", placeholder: "登録済みの取得元ID" },
+  ttlSeconds: { label: "一時切り替えの有効時間（秒）", hint: "期限を過ぎると通常の取得元に戻ります。" },
+  expectedRevision: { label: "確認した設定リビジョン" },
+  expectedHash: { label: "確認した設定ハッシュ", hint: "現在値の取得結果に含まれる値を使用します。" },
+  expectedInvocationId: { label: "確認した起動ID", hint: "先に状態確認を行い、その結果の起動IDを指定します。" },
+  expectedEpoch: { label: "確認した復旧世代（epoch）" },
+  expectedCandidateId: { label: "確認した復旧候補ID" },
+  expectedBackupId: { label: "確認したバックアップID" },
+  expectedBackupSha256: { label: "確認したバックアップのSHA-256" },
+  expectedBackupTimestamp: { label: "確認したバックアップ時刻" },
+  expectedPrimaryIntentRevision: { label: "確認した本番系の指示リビジョン" },
+  expectedPrimaryIntentState: { label: "確認した本番系の指示状態", options: [{ value: "running", label: "稼働指示" }, { value: "stopped", label: "停止指示" }, { value: "maintenance", label: "保守指示" }, { value: "unknown", label: "未確認" }] },
+  expectedOciPolicyRevision: { label: "確認した予備側ポリシーリビジョン" },
+  targetNode: { label: "切り替え先", options: [{ value: "oci", label: "予備のクラウドサーバー" }, { value: "primary", label: "メインサーバー" }] },
+  executeAt: { label: "実行日時", hint: "専用の「緊急復旧」タブではJSTの日時選択と状態の自動入力を利用できます。" },
+  operationId: { label: "予約・操作ID" },
+  queryId: { label: "管理SQLのID" },
+  onlyIfOverdue: { label: "期限超過の場合だけ中止する" },
+  includeCompleted: { label: "完了済みのSQLも表示する" },
+  lines: { label: "取得する行数" },
+  minutes: { label: "遡る時間（分）" },
+  source: { label: "ログの取得元", hint: "管理デーモンが提供する取得元IDを指定します。" },
+  kind: { label: "レポート種別" },
+  text: { label: "翻訳する本文", multiline: true },
+  target: { label: "翻訳先の言語コード", placeholder: "例: ja" },
+  url: { label: "対象URL", inputType: "url", placeholder: "https://..." },
+  username: { label: "アカウント名", placeholder: "@を除いた名前" },
+  webhookUrl: { label: "送信先Webhook URL", inputType: "url", placeholder: "https://discord.com/api/webhooks/..." },
+  enabled: { label: "有効にする" },
+  id: { label: "登録ID" },
+  candidateId: { label: "確認した復旧候補ID" },
+  backupId: { label: "確認したバックアップID" },
+  backupSha256: { label: "確認したバックアップのSHA-256" },
+  sourceTimestamp: { label: "確認したバックアップ時刻" },
+  tweetId: { label: "投稿ID" },
+  messageId: { label: "Bot投稿のメッセージID" },
+  reason: { label: "操作理由", multiline: true, hint: "操作履歴に保存されます。対象と理由が分かる内容を入力してください。" },
+  confirm: { label: "切り替えを実行することを確認した" },
+  acceptDataRisk: { label: "データ同期時点によって履歴が戻る可能性を確認した" },
+  acceptPrimaryIntentOverride: { label: "既存の停止・保守指示との競合可能性を確認した" },
+  acceptBackupRollback: { label: "バックアップ以後の変更が失われる可能性を確認した" },
+  acceptMissingSavedata: { label: "savedataが移行対象外であることを確認した" },
+};
+
+const inputValueKind = (value: unknown): InputValueKind => value === null || value === undefined ? "null" : Array.isArray(value) ? "array" : typeof value === "object" ? "object" : typeof value === "boolean" ? "boolean" : typeof value === "number" ? "number" : "string";
+const blankInputValue = (kind: InputValueKind): unknown => ({ string: "", number: 0, boolean: false, object: {}, array: [], null: null } as const)[kind];
+const safeOperationKey = (value: string) => /^[A-Za-z][A-Za-z0-9_.-]*$/.test(value) && !["__proto__", "constructor", "prototype"].includes(value);
+const operationFieldLabel = (name: string) => operationFields[name]?.label || name;
+const operationFieldHint = (name: string) => operationFields[name]?.hint;
+
+function InputKindSelector({ value, onChange, disabled, label = "値の種類" }: { value: InputValueKind; onChange: (value: InputValueKind) => void; disabled?: boolean; label?: string }) {
+  return <label className="block space-y-1 text-sm"><span>{label}</span><select className={selectClass} value={value} disabled={disabled} onChange={event => onChange(event.target.value as InputValueKind)}><option value="string">文字列</option><option value="number">数値</option><option value="boolean">真偽値</option><option value="object">項目の組み合わせ</option><option value="array">一覧</option><option value="null">未指定（null）</option></select></label>;
+}
+
+function OperationArrayEditor({ name, value, onChange, disabled, depth }: { name: string; value: unknown[]; onChange: (value: unknown[]) => void; disabled?: boolean; depth: number }) {
+  const [additionKind, setAdditionKind] = useState<InputValueKind>("string");
+  const [additionText, setAdditionText] = useState("");
+  const add = () => {
+    let next = blankInputValue(additionKind);
+    if (additionKind === "string") next = additionText;
+    if (additionKind === "number") { const number = Number(additionText); if (!Number.isFinite(number)) return; next = number; }
+    onChange([...value, next]);
+    setAdditionText("");
+  };
+  return <fieldset className="space-y-3 rounded border p-3"><legend className="px-1 text-sm font-medium">{operationFieldLabel(name)}（一覧）</legend>{value.length ? value.map((item, index) => <div key={index} className="flex gap-2 rounded border bg-muted/20 p-2"><div className="min-w-0 flex-1"><OperationValueEditor name={`${operationFieldLabel(name)} ${index + 1}`} value={item} onChange={next => onChange(value.map((entry, itemIndex) => itemIndex === index ? next : entry))} disabled={disabled} depth={depth + 1} /></div><Button type="button" size="sm" variant="outline" disabled={disabled} onClick={() => onChange(value.filter((_, itemIndex) => itemIndex !== index))}>削除</Button></div>) : <p className="text-sm text-muted-foreground">項目はありません。</p>}<div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]"><InputKindSelector value={additionKind} onChange={setAdditionKind} disabled={disabled} label="追加する値の種類" />{additionKind === "string" || additionKind === "number" ? <Field label="値" type={additionKind === "number" ? "number" : "text"} value={additionText} onChange={setAdditionText} /> : <p className="self-end text-xs text-muted-foreground">追加後に画面上で項目を編集します。</p>}<Button type="button" className="self-end" variant="outline" disabled={disabled || (additionKind === "number" && additionText !== "" && !Number.isFinite(Number(additionText)))} onClick={add}>項目を追加</Button></div></fieldset>;
+}
+
+function OperationObjectEditor({ value, template, onChange, disabled, depth }: { value: Data; template?: Data; onChange: (value: Data) => void; disabled?: boolean; depth: number }) {
+  const [newKey, setNewKey] = useState("");
+  const [newKind, setNewKind] = useState<InputValueKind>("string");
+  const defaults = template || {};
+  const keys = [...new Set([...Object.keys(defaults), ...Object.keys(value)])].filter(safeOperationKey);
+  const add = () => {
+    const key = newKey.trim();
+    if (!safeOperationKey(key) || Object.prototype.hasOwnProperty.call(value, key)) return;
+    onChange({ ...value, [key]: blankInputValue(newKind) });
+    setNewKey("");
+  };
+  return <div className="space-y-3">{keys.map(key => {
+    const current = Object.prototype.hasOwnProperty.call(value, key) ? value[key] : defaults[key];
+    const fromTemplate = Object.prototype.hasOwnProperty.call(defaults, key);
+    return <div className="flex gap-2 rounded border bg-muted/20 p-2" key={key}><div className="min-w-0 flex-1"><OperationValueEditor name={key} value={current} template={defaults[key]} onChange={next => onChange({ ...value, [key]: next })} disabled={disabled} depth={depth + 1} /></div>{!fromTemplate ? <Button type="button" size="sm" variant="outline" disabled={disabled} onClick={() => { const next = { ...value }; delete next[key]; onChange(next); }}>項目を削除</Button> : null}</div>;
+  })}<div className="grid gap-2 rounded border border-dashed p-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]"><Field label="追加する項目名" value={newKey} onChange={setNewKey} placeholder="例: providerId" /><InputKindSelector value={newKind} onChange={setNewKind} disabled={disabled} label="追加する項目の種類" /><Button type="button" className="self-end" variant="outline" disabled={disabled || !safeOperationKey(newKey.trim()) || Object.prototype.hasOwnProperty.call(value, newKey.trim())} onClick={add}>項目を追加</Button></div><p className="text-xs text-muted-foreground">追加する項目名は英数字・`.`・`_`・`-`のみ使用できます。必要なときだけ追加し、APIの仕様にない項目は送信しないでください。</p></div>;
+}
+
+function OperationValueEditor({ name, value, template, onChange, disabled, depth = 0 }: { name: string; value: unknown; template?: unknown; onChange: (value: unknown) => void; disabled?: boolean; depth?: number }) {
+  const kind = inputValueKind(value);
+  const meta = operationFields[name];
+  const label = operationFieldLabel(name);
+  const hint = operationFieldHint(name);
+  if (kind === "boolean") return <label className="flex gap-2 text-sm"><input type="checkbox" checked={Boolean(value)} disabled={disabled} onChange={event => onChange(event.target.checked)} /><span>{label}</span>{hint ? <span className="text-muted-foreground">{hint}</span> : null}</label>;
+  if (kind === "number") return <label className="block space-y-1 text-sm"><span>{label}</span><Input type="number" value={String(value)} disabled={disabled} onChange={event => { const next = Number(event.target.value); onChange(event.target.value === "" ? 0 : Number.isFinite(next) ? next : value); }} />{hint ? <span className="block text-xs text-muted-foreground">{hint}</span> : null}</label>;
+  if (kind === "object") return <fieldset className="space-y-2 rounded border p-3"><legend className="px-1 text-sm font-medium">{label}</legend>{hint ? <p className="text-xs text-muted-foreground">{hint}</p> : null}<OperationObjectEditor value={obj(value)} template={obj(template)} onChange={onChange} disabled={disabled} depth={depth} /></fieldset>;
+  if (kind === "array") return <OperationArrayEditor name={name} value={list(value)} onChange={onChange} disabled={disabled} depth={depth} />;
+  if (kind === "null") return <div className="space-y-1"><InputKindSelector value="null" onChange={next => onChange(blankInputValue(next))} disabled={disabled} label={label} />{hint ? <p className="text-xs text-muted-foreground">{hint}</p> : null}</div>;
+  if (meta?.options) return <label className="block space-y-1 text-sm"><span>{label}</span><select className={selectClass} value={String(value)} disabled={disabled} onChange={event => onChange(event.target.value)}>{meta.options.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select>{hint ? <span className="block text-xs text-muted-foreground">{hint}</span> : null}</label>;
+  if (meta?.multiline) return <label className="block space-y-1 text-sm"><span>{label}</span><Textarea rows={4} value={String(value)} placeholder={meta.placeholder} disabled={disabled} onChange={event => onChange(event.target.value)} />{hint ? <span className="block text-xs text-muted-foreground">{hint}</span> : null}</label>;
+  return <label className="block space-y-1 text-sm"><span>{label}</span><Input type={meta?.inputType || "text"} value={String(value)} placeholder={meta?.placeholder} disabled={disabled} onChange={event => onChange(event.target.value)} />{hint ? <span className="block text-xs text-muted-foreground">{hint}</span> : null}</label>;
+}
+
+function OperationInputForm({ action, input, onChange, disabled }: { action: CatalogAction; input: Data; onChange: (input: Data) => void; disabled?: boolean }) {
+  const template = obj(action.inputExample);
+  const keys = [...new Set([...Object.keys(template), ...Object.keys(input)])].filter(safeOperationKey);
+  if (!keys.length) return <p className="rounded border bg-muted/20 p-3 text-sm text-muted-foreground">この操作には追加の入力はありません。</p>;
+  return <OperationObjectEditor key={action.type} value={input} template={template} onChange={onChange} disabled={disabled} depth={0} />;
+}
+
+function operationGroup(type: string) {
+  if (type.startsWith("recovery.")) return "復旧・切り替え";
+  if (type.startsWith("service.") || type.startsWith("agent.") || type.startsWith("analysis.") || type.startsWith("database.")) return "サービス管理";
+  if (type.startsWith("diagnostics.") || type.startsWith("logs.") || type === "kernel.logs") return "診断・ログ";
+  if (type.startsWith("settings.") || type.startsWith("provider.") || type.startsWith("access.")) return "設定・アクセス";
+  if (type.startsWith("autoextract.") || type.startsWith("saved.")) return "自動展開・保存データ";
+  if (type.startsWith("url.") || type.startsWith("message.") || type === "text.translate") return "URL・送信・翻訳";
+  return "その他";
 }
 
 export function ShardMetricsView({ data }: { data: Data | null }) {

@@ -217,6 +217,8 @@ function register(client) {
             message,
         })));
         for (const match of matches) telemetry.run({ trace_id: match.requestId, request_id: match.requestId, provider_id: match.provider.id, url: match.url }, () => {
+            telemetry.event('input', 'received', { content: message.content, bot: message.author?.bot, webhookId: message.webhookId });
+            telemetry.event('queue', 'enqueued', { queueSnapshot: messageWorkQueue.snapshot() });
             telemetry.event('request', 'request.started', { url: match.url, queueSnapshot: messageWorkQueue.snapshot() });
         });
         telemetry.event('queue', 'enqueued', { snapshot: messageWorkQueue.snapshot() });

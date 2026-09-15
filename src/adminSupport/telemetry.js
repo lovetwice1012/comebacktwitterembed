@@ -18,6 +18,7 @@ const queuedSizes = new Map();
 const pendingTasks = new Set();
 const root = () => path.resolve(process.env.ADMIN_TELEMETRY_DIR || path.join(__dirname, '../../logs/admin-telemetry'));
 const enabled = () => Boolean(process.env.ADMIN_AGENT_TOKEN || process.env.ADMIN_TELEMETRY_ENABLED === '1');
+const SENSITIVE_KEY = /^(authorization|cookie|set-cookie|token|password|secret|access_token|refresh_token|id_token|client_secret|api_key|x-admin-agent-token)$/i;
 const SHARD_STATUS_NAMES = {
     0: 'ready', 1: 'connecting', 2: 'reconnecting', 3: 'idle', 4: 'nearly',
     5: 'disconnected', 6: 'waiting_for_guilds', 7: 'identifying', 8: 'resuming',
@@ -28,10 +29,11 @@ function serializable(value) {
     if (value === undefined) return null;
     const ancestors = [];
     return JSON.parse(JSON.stringify(value, function (key, item) {
-        if (/^(authorization|cookie|set-cookie|token|password|secret)$/i.test(key)) return '[credential omitted]';
+        if (SENSITIVE_KEY.test(key)) return undefined;
         if (typeof item === 'bigint') return String(item);
         if (typeof item === 'function') return undefined;
         if (item instanceof Error) return errorData(item);
+        if (typeof item === 'string') return scrubText(item);
         if (item && typeof item === 'object') {
             while (ancestors.length && ancestors[ancestors.length - 1] !== this) ancestors.pop();
             if (ancestors.includes(item)) return '[circular]';
@@ -40,10 +42,30 @@ function serializable(value) {
         return item;
     }));
 }
+
+function scrubUrl(value) {
+    try {
+        const url = new URL(value);
+        url.username = '';
+        url.password = '';
+        url.hash = '';
+        for (const key of [...url.searchParams.keys()]) {
+            if (/(token|key|secret|auth|password|stkn)/i.test(key)) url.searchParams.delete(key);
+        }
+        return url.toString();
+    } catch {
+        return value;
+    }
+}
+
+function scrubText(value) {
+    return String(value).replace(/https?:\/\/[^\s<>"'`]+/g, scrubUrl);
+}
+
 function errorData(error, depth = 0) {
     if (!error) return null;
-    return { name: error.name || 'Error', message: String(error.message || error), code: error.code,
-        status: error.status || error.statusCode, stack: error.stack,
+    return { name: error.name || 'Error', message: scrubText(error.message || error), code: error.code,
+        status: error.status || error.statusCode, stack: error.stack ? scrubText(error.stack) : undefined,
         rawError: error.rawError, originalError: error.originalError, reconciliation: error.reconciliation,
         cause: depth < 4 && error.cause ? errorData(error.cause, depth + 1) : undefined };
 }

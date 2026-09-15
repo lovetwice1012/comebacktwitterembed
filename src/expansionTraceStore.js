@@ -25,7 +25,7 @@ function safeUrl(value) {
         url.password = '';
         url.hash = '';
         for (const key of [...url.searchParams.keys()]) {
-            if (SENSITIVE_KEY.test(key)) url.searchParams.set(key, '[redacted]');
+            if (SENSITIVE_KEY.test(key)) url.searchParams.delete(key);
         }
         return limit(url.toString(), 4096);
     } catch {
@@ -45,7 +45,7 @@ function errorSummary(error) {
 
 function safeValue(value, key = '', depth = 0, seen = new WeakSet()) {
     if (value === undefined || value === null) return null;
-    if (SENSITIVE_KEY.test(key)) return '[redacted]';
+    if (SENSITIVE_KEY.test(key)) return undefined;
     if (value instanceof Error) return errorSummary(value);
     if (typeof value === 'string') return URL_KEY.test(key) ? safeUrl(value) : limit(value, 4096);
     if (typeof value === 'number' || typeof value === 'boolean') return value;
@@ -56,7 +56,8 @@ function safeValue(value, key = '', depth = 0, seen = new WeakSet()) {
     if (Array.isArray(value)) return value.slice(0, 32).map(item => safeValue(item, '', depth + 1, seen));
     const result = {};
     for (const [childKey, childValue] of Object.entries(value).slice(0, 64)) {
-        result[childKey] = safeValue(childValue, childKey, depth + 1, seen);
+        const safeChild = safeValue(childValue, childKey, depth + 1, seen);
+        if (safeChild !== undefined) result[childKey] = safeChild;
     }
     return result;
 }

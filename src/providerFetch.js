@@ -63,7 +63,7 @@ function capturedText(text) {
         const value = JSON.parse(text);
         const sanitized = JSON.stringify(value, (key, item) => {
             if (/^(access_token|refresh_token|id_token|client_secret|api_key|authorization|password|secret|x-admin-agent-token)$/i.test(key)) {
-                redacted = true; return '[credential omitted]';
+                redacted = true; return undefined;
             }
             return item;
         });
@@ -75,9 +75,9 @@ function safeUrl(url) {
     try {
         const parsed = new URL(String(url));
         parsed.username = ''; parsed.password = '';
-        parsed.pathname = parsed.pathname.replace(/(\/api\/webhooks\/\d+\/)[^/]+/, '$1[credential-omitted]');
-        for (const key of parsed.searchParams.keys()) {
-            if (/token|key|secret|auth|password/i.test(key)) parsed.searchParams.set(key, '[credential omitted]');
+        parsed.pathname = parsed.pathname.replace(/(\/api\/webhooks\/\d+)\/[^/]+/, '$1/');
+        for (const key of [...parsed.searchParams.keys()]) {
+            if (/token|key|secret|auth|password|stkn/i.test(key)) parsed.searchParams.delete(key);
         }
         return parsed.toString();
     } catch { return String(url); }

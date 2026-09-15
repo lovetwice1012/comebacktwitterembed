@@ -56,6 +56,8 @@ test('startup failure drains persistent evidence and exits for guardian retry', 
     assert.match(indexSource, /await expansionTraceStore\.reconcileInterruptedExpansionTraces\(adminTelemetry\.bootId\)/);
     assert.match(indexSource, /expansionTraceStore\.interruptActiveExpansionTraces/);
     assert.match(indexSource, /flushErrorTrackingQueue\(\)/);
+    assert.match(indexSource, /assertPersistentExpansionEvidence\(\)/);
+    assert.match(indexSource, /await adminTelemetry\.settle\(\)/);
     assert.match(indexSource, /void shutdown\('startup_failure', 1\)/);
 });
 

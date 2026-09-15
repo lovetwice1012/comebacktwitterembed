@@ -1,4 +1,5 @@
 //discord.js v14
+const path = require('node:path');
 const recoveryLease = require('./src/recoveryLease');
 recoveryLease.install();
 const { assertSupportedRuntime } = require('./src/runtime');
@@ -73,6 +74,19 @@ function installConsoleCapture() {
     })(process.stderr.write));
 }
 
+function assertPersistentExpansionEvidence() {
+    if (process.env.EXPANSION_EVIDENCE_REQUIRED !== '1') return;
+    if (!adminTelemetry.enabled()) {
+        throw new Error('Expansion evidence is required but durable telemetry is not enabled.');
+    }
+    if (!process.env.ADMIN_AGENT_TOKEN) {
+        throw new Error('Expansion evidence is required but the SQLite evidence agent token is unavailable.');
+    }
+    if (!path.isAbsolute(process.env.ADMIN_TELEMETRY_DIR || '')) {
+        throw new Error('Expansion evidence is required but ADMIN_TELEMETRY_DIR is not an absolute shared path.');
+    }
+}
+
 console.log(
     `[runtime] pid=${process.pid}; ${runtimeName} ${process.versions?.bun || process.versions.node}; `
     + `discord.js=${discordRuntime.discord.version}; `
@@ -124,6 +138,7 @@ client.on(Events.ShardResume, (shardId, replayedEvents) => {
 
 (async () => {
     await ensureDatabaseSchema();
+    assertPersistentExpansionEvidence();
     await expansionTraceStore.reconcileInterruptedExpansionTraces(adminTelemetry.bootId);
     await initializeSettings();
     const dashboardPrepared = await dashboardServer.prepare();
@@ -172,6 +187,7 @@ async function shutdown(signal, exitCode) {
         for (const result of drains) {
             if (result.status === 'rejected') console.error('[shutdown] Failed to persist expansion evidence:', result.reason?.message || result.reason);
         }
+        await adminTelemetry.settle();
         await adminTelemetry.stop();
     } catch (error) {
         console.error('[shutdown] Failed to drain admin evidence:', error?.message || error);

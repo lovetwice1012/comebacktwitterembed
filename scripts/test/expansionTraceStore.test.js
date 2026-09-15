@@ -44,7 +44,7 @@ test('expansion trace start stores a redacted URL before queue processing', asyn
 
     assert.equal(calls.length, 1);
     assert.match(calls[0].sql, /INSERT INTO bot_provider_expansion_traces/);
-    assert.match(calls[0].params[5], /stkn=%5Bredacted%5D/);
+    assert.doesNotMatch(calls[0].params[5], /stkn=/);
     assert.doesNotMatch(calls[0].params[5], /private-value/);
     assert.equal(calls[0].params[8], 'guild-1');
     assert.equal(calls[0].options.timeoutMs, 5000);
@@ -72,7 +72,7 @@ test('expansion trace keeps output and delivery evidence in terminal updates', a
     const sending = calls[1].params;
     assert.equal(sending[0], 'sending');
     assert.doesNotMatch(sending[5], /hidden/);
-    assert.match(sending[5], /redacted/);
+    assert.doesNotMatch(sending[5], /token=/);
     const completed = calls[2].params;
     assert.equal(completed[0], 'completed');
     assert.equal(completed[1], 'F');
