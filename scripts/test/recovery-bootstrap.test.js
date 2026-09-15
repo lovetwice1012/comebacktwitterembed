@@ -36,6 +36,21 @@ test('ordinary primary/development startup does not activate recovery filtering'
     });
 });
 
+test('primary failback preserves the OCI notification cutoff and refuses a new bootstrap', async () => {
+    await fixture(async bootstrap => {
+        const state = await bootstrap.initialize({ query: async () => [], tables: tableNames, subscriptions: { load: () => [] } });
+        process.env.CBTE_FLEET_NODE = 'primary';
+        delete require.cache[bootstrapPath];
+        const primary = require(bootstrapPath);
+        assert.equal(primary.begin().startedAtMs, state.startedAtMs);
+        assert.equal(primary.notificationAllowed('booth_sale', { id: 'old-primary' }, state.startedAtMs - 1), false);
+        assert.equal(primary.notificationAllowed('booth_sale', { id: 'new-primary' }, state.startedAtMs + 1), true);
+        fs.unlinkSync(path.join(process.env.CBTE_RECOVERY_BOOTSTRAP_DIR, 'bootstrap.json'));
+        delete require.cache[bootstrapPath];
+        assert.throws(() => require(bootstrapPath).begin(), /existing OCI bootstrap/);
+    });
+});
+
 test('restored outgoing rows and targets are quarantined read-only and completion survives Bot restart', async () => {
     await fixture(async (bootstrap, directory) => {
         const started = bootstrap.begin().startedAtMs;

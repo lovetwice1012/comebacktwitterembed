@@ -18,9 +18,9 @@ function configuration() {
     const id = process.env.CBTE_RECOVERY_BOOTSTRAP_ID;
     const directory = process.env.CBTE_RECOVERY_BOOTSTRAP_DIR;
     if (!id && !directory) return null;
-    if (!/^[a-f0-9]{24}$/.test(id || '') || process.env.CBTE_FLEET_NODE !== 'oci'
+    if (!/^[a-f0-9]{24}$/.test(id || '') || !['oci', 'primary'].includes(process.env.CBTE_FLEET_NODE)
         || !directory || !path.isAbsolute(directory) || directory.split(/[\\/]/).includes('..')) {
-        throw failure('Recovery bootstrap requires an OCI candidate ID and an absolute private state directory.');
+        throw failure('Recovery bootstrap requires a recovery candidate ID and an absolute private state directory.');
     }
     return { id, directory: path.resolve(directory) };
 }
@@ -66,9 +66,13 @@ function begin() {
     fs.mkdirSync(config.directory, { recursive: true, mode: 0o700 });
     plain(config.directory);
     const filename = path.join(config.directory, 'bootstrap.json');
+    if (process.env.CBTE_FLEET_NODE === 'primary' && !fs.existsSync(filename)) {
+        throw failure('Primary failback requires the existing OCI bootstrap state.');
+    }
     if (fs.existsSync(filename)) {
         cached = read(filename);
         if (cached.version !== 1 || cached.candidateId !== config.id || cached.directory !== config.directory
+            || process.env.CBTE_FLEET_NODE === 'primary' && cached.complete !== true
             || !Number.isSafeInteger(cached.startedAtMs) || cached.startedAtMs < 1
             || typeof cached.complete !== 'boolean' || !cached.tables || typeof cached.tables !== 'object' || Array.isArray(cached.tables)
             || cached.complete && ['autoextract_targets', 'deregister_pending', 'error_incidents'].some(kind => cached.tables[kind]?.complete !== true)) {
