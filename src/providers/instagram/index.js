@@ -38,6 +38,11 @@ const REQUEST_HEADERS = {
 };
 const MOBILE_USER_AGENT = 'Instagram 337.0.0.35.102 Android (30/11; 420dpi; 1080x1920; Google; Pixel 5; redfin; redfin; en_US; 540986477)';
 const CRAWLER_USER_AGENT = 'Mozilla/5.0 (compatible; Discordbot/2.0; +https://discordapp.com)';
+const MEDIA_CRAWLER_USER_AGENT = 'facebookexternalhit/1.1';
+const MEDIA_REQUEST_HEADERS = {
+    ...REQUEST_HEADERS,
+    'User-Agent': MEDIA_CRAWLER_USER_AGENT,
+};
 
 const GRAPHQL_DOC_ID = '25531498899829322';
 const GRAPHQL_HEADERS = {
@@ -388,7 +393,13 @@ function readJsString(text, quoteIndex) {
 
 function collectJsonCandidates(html) {
     const candidates = [];
-    const tokens = ['shortcode_media', 'xdt_shortcode_media'];
+    // Instagram's current crawler page uses XIGPolaris media objects instead
+    // of the legacy shortcode_media wrapper. Keep the legacy markers too so
+    // older page variants and GraphQL responses remain supported.
+    const tokens = [
+        'shortcode_media', 'xdt_shortcode_media', 'carousel_media',
+        'video_versions', 'video_url', 'video_dash_manifest',
+    ];
     const seen = new Set();
 
     for (const token of tokens) {
@@ -469,35 +480,61 @@ function firstNumberFromNodes(nodes, paths) {
     return null;
 }
 
+function isVideoNode(node) {
+    return Number(node?.media_type) === 2
+        || /video/i.test(String(node?.__typename || ''))
+        || Boolean(node?.video_url)
+        || (Array.isArray(node?.video_versions) && node.video_versions.length > 0);
+}
+
+function mediaNodeScore(node) {
+    if (!node || typeof node !== 'object') return 0;
+
+    const sidecarEdges = getPath(node, 'edge_sidecar_to_children.edges');
+    const carousel = node.carousel_media;
+    const childCount = Array.isArray(sidecarEdges) ? sidecarEdges.length
+        : Array.isArray(carousel) ? carousel.length : 0;
+    const hasImage = Boolean(firstString(node, [
+        'display_url', 'display_uri', 'thumbnail_src', 'image_versions2.candidates.0.url',
+    ]));
+    const hasVideo = isVideoNode(node);
+    if (childCount === 0 && !hasImage && !hasVideo) return 0;
+
+    let score = hasImage ? 100 : 0;
+    if (hasVideo) score += 10_000;
+    // A carousel parent must win over one of its child preview records.
+    if (childCount > 0) score += 1_000_000 + Math.min(childCount, MAX_MEDIA_PER_MESSAGE) * 100;
+    if (node.owner || node.user) score += 10;
+    return score;
+}
+
 function findMediaNode(obj, depth = 0) {
-    if (!obj || typeof obj !== 'object' || depth > 10) return null;
-    if (obj.shortcode_media) return obj.shortcode_media;
-    if (obj.xdt_shortcode_media) return obj.xdt_shortcode_media;
-    if (obj.gql_data) {
-        const node = findMediaNode(obj.gql_data, depth + 1);
-        if (node) return node;
-    }
-    if (obj.data) {
-        const node = findMediaNode(obj.data, depth + 1);
-        if (node) return node;
-    }
-    if ((obj.__typename || obj.owner) && (obj.display_url || obj.video_url || obj.edge_sidecar_to_children || obj.carousel_media)) {
-        return obj;
+    let best = null;
+    let bestScore = 0;
+    let visited = 0;
+    const seen = new Set();
+
+    function visit(value, currentDepth) {
+        if (!value || typeof value !== 'object' || currentDepth > 14 || visited >= 12_000) return;
+        if (Array.isArray(value)) {
+            for (const item of value.slice(0, 50)) visit(item, currentDepth + 1);
+            return;
+        }
+        if (seen.has(value)) return;
+        seen.add(value);
+        visited++;
+
+        const score = mediaNodeScore(value);
+        if (score > bestScore) {
+            best = value;
+            bestScore = score;
+        }
+
+        for (const child of Object.values(value)) visit(child, currentDepth + 1);
     }
 
-    for (const value of Object.values(obj)) {
-        if (!value || typeof value !== 'object') continue;
-        if (Array.isArray(value)) {
-            for (const item of value.slice(0, 20)) {
-                const node = findMediaNode(item, depth + 1);
-                if (node) return node;
-            }
-        } else {
-            const node = findMediaNode(value, depth + 1);
-            if (node) return node;
-        }
-    }
-    return null;
+    visit(obj, depth);
+    return best;
 }
 
 function normalizeCdnUrl(rawUrl) {
@@ -515,14 +552,18 @@ function normalizeCdnUrl(rawUrl) {
 }
 
 function mediaUrlFromNode(node) {
-    const direct = firstString(node, [
-        'video_url',
+    if (isVideoNode(node)) {
+        const video = firstString(node, ['video_url', 'video_versions.0.url']);
+        if (video) return normalizeCdnUrl(video);
+    }
+
+    const image = firstString(node, [
         'display_url',
+        'display_uri',
         'thumbnail_src',
         'image_versions2.candidates.0.url',
-        'video_versions.0.url',
     ]);
-    if (direct) return normalizeCdnUrl(direct);
+    if (image) return normalizeCdnUrl(image);
 
     const candidates = getPath(node, 'image_versions2.candidates');
     if (Array.isArray(candidates) && candidates[0]?.url) return normalizeCdnUrl(candidates[0].url);
@@ -548,7 +589,7 @@ function normalizeMediaNode(node) {
     const inspectNodes = [node, ...mediaNodes.filter(media => media !== node)];
     const medias = mediaNodes
         .map(media => ({
-            typeName: media.__typename || (media.video_url || media.video_versions ? 'GraphVideo' : 'GraphImage'),
+            typeName: isVideoNode(media) ? 'GraphVideo' : (media.__typename || 'GraphImage'),
             url: mediaUrlFromNode(media),
         }))
         .filter(media => media.url);
@@ -597,11 +638,19 @@ function normalizeMediaNode(node) {
 }
 
 function parseInstagramHtml(html) {
+    let bestNode = null;
+    let bestScore = 0;
     for (const candidate of collectJsonCandidates(html)) {
         const node = findMediaNode(candidate);
-        const normalized = normalizeMediaNode(node);
-        if (normalized) return normalized;
+        const score = mediaNodeScore(node);
+        if (score > bestScore) {
+            bestNode = node;
+            bestScore = score;
+        }
     }
+
+    const normalized = normalizeMediaNode(bestNode);
+    if (normalized) return normalized;
 
     return scrapeFromEmbedHtml(html);
 }
@@ -914,9 +963,12 @@ async function fetchGraphqlData(shortcode) {
     return normalizeMediaNode(node);
 }
 
-function embedUrlCandidates(parsed) {
+function mediaUrlCandidates(parsed) {
     const routes = [parsed.route, 'p', 'reel', 'tv'].filter(Boolean);
-    return [...new Set(routes.map(route => `https://www.instagram.com/${route}/${parsed.shortcode}/embed/captioned/`))];
+    return [...new Set([
+        buildCanonicalUrl(parsed),
+        ...routes.map(route => `https://www.instagram.com/${route}/${parsed.shortcode}/embed/captioned/`),
+    ])];
 }
 
 async function fetchInstagramData(parsed) {
@@ -925,11 +977,11 @@ async function fetchInstagramData(parsed) {
     if (cached) dataCache.delete(parsed.shortcode);
 
     let lastError = null;
-    for (const embedUrl of embedUrlCandidates(parsed)) {
+    for (const mediaUrl of mediaUrlCandidates(parsed)) {
         try {
-            const res = await fetch(embedUrl, { headers: REQUEST_HEADERS });
+            const res = await fetch(mediaUrl, { headers: MEDIA_REQUEST_HEADERS });
             if (!res.ok) {
-                lastError = new Error(`instagram embed ${res.status}`);
+                lastError = new Error(`instagram media page ${res.status}`);
                 continue;
             }
             const html = await res.text();
@@ -972,9 +1024,27 @@ function containsBannedWord(text, bannedWords) {
 function isVideoMedia(media) {
     if (!media) return false;
     if (String(media.typeName || '').includes('Video')) return true;
-    const cleanUrl = String(media.url || '').split(/[?#]/)[0];
+    return videoExtensions.includes(mediaUrlExtension(media.url));
+}
+
+function mediaUrlExtension(rawUrl) {
+    const cleanUrl = String(rawUrl || '').split(/[?#]/)[0];
     const ext = cleanUrl.split('.').pop()?.toLowerCase();
-    return videoExtensions.includes(ext);
+    return /^[a-z0-9]{1,10}$/.test(ext || '') ? ext : '';
+}
+
+function hasDirectVideoUrl(media) {
+    return isVideoMedia(media) && videoExtensions.includes(mediaUrlExtension(media?.url));
+}
+
+function mediaFilePayload(media, index) {
+    const ext = mediaUrlExtension(media?.url) || (isVideoMedia(media) ? 'mp4' : 'jpg');
+    return {
+        attachment: media.url,
+        // Instagram's signed CDN URLs do not always give Discord a useful
+        // filename. A stable extension is required for native video rendering.
+        name: `instagram-${index + 1}.${ext}`,
+    };
 }
 
 function resolveCaptionMaxLength(value, settings = {}) {
@@ -1225,12 +1295,17 @@ function buildMediaPayload(data, canonicalUrl, lang, requesterName, s, mediaInde
     if (selected.length === 0) return null;
 
     const baseEmbed = buildBaseEmbed(data, canonicalUrl, lang, requesterName, selected.length, mediaIndex, s);
-    const hasVideo = selected.some(isVideoMedia);
-    const shouldUseAttachments = hasVideo || selected.length > 4 || s.sendMediaAsAttachmentsAsDefault === true;
+    const indexed = selected.map((media, index) => ({ media, index }));
+    const directVideos = indexed.filter(({ media }) => hasDirectVideoUrl(media));
+    const shouldUseAttachments = directVideos.length > 0
+        || selected.length > 4
+        || s.sendMediaAsAttachmentsAsDefault === true;
 
     if (shouldUseAttachments) {
-        const files = selected.map(media => media.url);
-        const canSwitchBack = !hasVideo && selected.length <= 4;
+        const files = indexed.map(({ media, index }) => mediaFilePayload(media, index));
+        // Keeping a mixed carousel in one ordered attachment sequence is the
+        // only Discord layout that preserves the source order around videos.
+        const canSwitchBack = directVideos.length === 0 && selected.length <= 4;
         const payload = {
             embeds: [baseEmbed],
             files,

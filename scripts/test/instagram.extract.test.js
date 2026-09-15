@@ -54,6 +54,18 @@ function embedHtml(node) {
     return `<html><body><script>window.__ig = ${JSON.stringify({ gql_data: { shortcode_media: node } })};</script></body></html>`;
 }
 
+function crawlerHtml(node) {
+    return `<html><body><script>window.__ig = ${JSON.stringify({ data: node })};</script></body></html>`;
+}
+
+function xigImage(index) {
+    return {
+        __typename: 'XIGPolarisImageMedia',
+        media_type: 1,
+        display_uri: `https://scontent-nrt1-1.cdninstagram.com/v/t51.2885-15/${index}.webp`,
+    };
+}
+
 function profileHtml({
     title = 'Artist Profile (&#064;artist.profile) &#x2022; Instagram profile',
     ogDescription = '3,456 Followers, 78 Following, 12 Posts - See Instagram photos and videos from Artist Profile (&#064;artist.profile)',
@@ -82,7 +94,7 @@ test('instagram extract: single image creates an embed without requiring an Inst
 
     assert.ok(Array.isArray(result));
     assert.equal(result.length, 1);
-    assert.equal(requestedUrls[0], 'https://www.instagram.com/p/CODE123/embed/captioned/');
+    assert.equal(requestedUrls[0], 'https://www.instagram.com/p/CODE123/');
     assert.equal(result[0].send, 'channel');
     assert.equal(result[0].embeds.length, 1);
     assert.equal(result[0].embeds[0].title, '@artist');
@@ -110,7 +122,87 @@ test('instagram extract: carousel with more than four media is sent as attachmen
     assert.ok(Array.isArray(result));
     assert.equal(result[0].embeds.length, 1);
     assert.equal(result[0].files.length, 6);
+    assert.deepEqual(result[0].files.map(file => file.name), [
+        'instagram-1.jpg', 'instagram-2.jpg', 'instagram-3.jpg',
+        'instagram-4.jpg', 'instagram-5.jpg', 'instagram-6.jpg',
+    ]);
     assert.equal(result[0].components[0].components[0].data.custom_id, 'translate');
+});
+
+test('instagram extract: crawler carousel data retains every image', async () => {
+    const requested = [];
+    const provider = loadInstagramProviderWithFetch(async (url, options = {}) => {
+        requested.push({ url: String(url), userAgent: options.headers?.['User-Agent'] });
+        return {
+            ok: true,
+            text: async () => crawlerHtml({
+                __typename: 'XIGPolarisCarouselMedia',
+                media_type: 8,
+                owner: { username: 'artist' },
+                caption: { text: 'carousel caption' },
+                carousel_media: Array.from({ length: 6 }, (_, index) => xigImage(index + 1)),
+            }),
+        };
+    });
+
+    const result = await provider.extract(createMessage(), 'https://www.instagram.com/p/CODE123/', {});
+
+    assert.equal(requested[0].url, 'https://www.instagram.com/p/CODE123/');
+    assert.equal(requested[0].userAgent, 'facebookexternalhit/1.1');
+    assert.equal(result[0].files.length, 6);
+    assert.deepEqual(result[0].files.map(file => file.attachment.split('?')[0].split('/').pop()), [
+        '1.webp', '2.webp', '3.webp', '4.webp', '5.webp', '6.webp',
+    ]);
+    assert.match(result[0].embeds[0].fields.find(field => field.name === 'Media').value, /1-6 \/ 6/);
+});
+
+test('instagram extract: crawler mixed carousel uses the video stream, not its thumbnail', async () => {
+    const provider = loadInstagramProviderWithFetch(async () => ({
+        ok: true,
+        text: async () => crawlerHtml({
+            __typename: 'XIGPolarisCarouselMedia',
+            media_type: 8,
+            owner: { username: 'artist' },
+            carousel_media: [
+                xigImage(1),
+                {
+                    __typename: 'XIGPolarisVideoMedia',
+                    media_type: 2,
+                    display_uri: 'https://scontent-nrt1-1.cdninstagram.com/v/t51.2885-15/video-thumbnail.jpg',
+                    video_versions: [{ url: 'https://scontent-nrt1-1.cdninstagram.com/v/t50/video.mp4' }],
+                },
+                xigImage(3),
+            ],
+        }),
+    }));
+
+    const result = await provider.extract(createMessage(), 'https://www.instagram.com/p/CODE123/', {});
+
+    assert.equal(result[0].embeds.length, 1);
+    assert.equal(result[0].files.length, 3);
+    assert.deepEqual(result[0].files.map(file => file.name), [
+        'instagram-1.webp', 'instagram-2.mp4', 'instagram-3.webp',
+    ]);
+    assert.equal(result[0].files[1].attachment.endsWith('/v/t50/video.mp4'), true);
+    assert.equal(result[0].files[1].attachment.includes('thumbnail'), false);
+});
+
+test('instagram extract: does not upload a video thumbnail as a video file when no stream is available', async () => {
+    const provider = loadInstagramProviderWithFetch(async () => ({
+        ok: true,
+        text: async () => crawlerHtml({
+            __typename: 'XIGPolarisVideoMedia',
+            media_type: 2,
+            display_uri: 'https://scontent-nrt1-1.cdninstagram.com/v/t51.2885-15/video-thumbnail.jpg',
+            video_versions: [],
+        }),
+    }));
+
+    const result = await provider.extract(createMessage(), 'https://www.instagram.com/reel/CODE123/', {});
+
+    assert.equal(result[0].files.length, 0);
+    assert.equal(result[0].embeds.length, 1);
+    assert.equal(result[0].embeds[0].image.url.endsWith('video-thumbnail.jpg'), true);
 });
 
 test('instagram extract: GUI output settings control caption length and media limit', async () => {
@@ -258,9 +350,9 @@ test('instagram extract: share URLs are resolved before scraping', async () => {
 
     assert.ok(Array.isArray(result));
     assert.equal(requestedUrls[0], 'https://www.instagram.com/share/reel/SHARECODE/');
-    assert.equal(requestedUrls[1], 'https://www.instagram.com/reel/REALCODE/embed/captioned/');
+    assert.equal(requestedUrls[1], 'https://www.instagram.com/reel/REALCODE/');
     assert.equal(result[0].embeds[0].url, 'https://www.instagram.com/reel/REALCODE/');
-    assert.equal(result[0].files[0].endsWith('/v/t50/video.mp4'), true);
+    assert.equal(result[0].files[0].attachment.endsWith('/v/t50/video.mp4'), true);
 });
 
 test('instagram extract: falls back to oEmbed thumbnail when embed HTML has no media payload', async () => {
@@ -288,7 +380,7 @@ test('instagram extract: falls back to oEmbed thumbnail when embed HTML has no m
     const result = await provider.extract(createMessage(), 'https://www.instagram.com/p/CODE123/', {});
 
     assert.ok(Array.isArray(result));
-    assert.equal(requestedUrls[0], 'https://www.instagram.com/p/CODE123/embed/captioned/');
+    assert.equal(requestedUrls[0], 'https://www.instagram.com/p/CODE123/');
     assert.ok(requestedUrls.includes('https://www.instagram.com/api/v1/oembed/?url=https%3A%2F%2Fwww.instagram.com%2Fp%2FCODE123%2F'));
     assert.equal(requestedUrls.some(url => url.includes('/graphql/query/')), false);
     assert.equal(result[0].embeds[0].title, '@artist');
