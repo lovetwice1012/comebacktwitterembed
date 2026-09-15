@@ -88,6 +88,15 @@ CREATE TABLE IF NOT EXISTS reports (cache_key TEXT PRIMARY KEY,kind TEXT NOT NUL
 		db.Close()
 		return nil, e
 	}
+	// Coverage must never parse every historical payload. Keep a compact index
+	// containing exactly the production roots and their occurrence timestamps.
+	// This runs after compatibility columns have been created for old state DBs.
+	if _, e = db.Exec(`CREATE INDEX IF NOT EXISTS request_roots_production_coverage
+ON request_roots(occurred_at)
+WHERE trigger_type NOT IN ('diagnostic','admin_operation')`); e != nil {
+		db.Close()
+		return nil, e
+	}
 	// Keep writes serialized on the durable connection, but let independent
 	// read handlers use WAL snapshots concurrently. The admin overview asks
 	// for metrics, shards and runs together; sharing one connection made each

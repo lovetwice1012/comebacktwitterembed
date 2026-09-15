@@ -321,6 +321,18 @@ func TestCoverageDoesNotTreatDiagnosticOnlyDataAsProductionMeasurement(t *testin
 		t.Fatalf("diagnostic data created false production coverage: %v", coverage)
 	}
 }
+
+func TestRequestRootsProductionCoverageIndex(t *testing.T) {
+	a := testApp(t)
+	var definition string
+	if err := a.store.db.QueryRow("SELECT sql FROM sqlite_master WHERE type='index' AND name='request_roots_production_coverage'").Scan(&definition); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(definition, "WHERE trigger_type NOT IN") {
+		t.Fatalf("wrong production coverage index: %s", definition)
+	}
+}
+
 func TestCoverageUsesOccurredHeartbeatTimeInsteadOfDelayedIngestTime(t *testing.T) {
 	a := testApp(t)
 	old := time.Now().UTC().Add(-48 * time.Hour).Format(timestampLayout)
