@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -16,9 +17,10 @@ import (
 )
 
 type Store struct {
-	db     *sql.DB
-	readDB *sql.DB
-	path   string
+	db          *sql.DB
+	readDB      *sql.DB
+	heartbeatDB *sql.DB
+	path        string
 }
 type Object = map[string]any
 
@@ -129,7 +131,26 @@ WHERE trigger_type NOT IN ('diagnostic','admin_operation')`); e != nil {
 		return nil, e
 	}
 	_, e = db.Exec("INSERT OR IGNORE INTO settings(key,value) VALUES('policy',?)", encode(defaultPolicy()))
-	return s, e
+	if e != nil {
+		_ = s.Close()
+		return nil, e
+	}
+	// Liveness must not reuse a WAL snapshot retained by an analytics reader.
+	// Closing each idle connection gives every heartbeat observation a fresh
+	// read transaction while preserving the existing query deadline and data.
+	uriPath := filepath.ToSlash(dbPath)
+	if !strings.HasPrefix(uriPath, "/") {
+		uriPath = "/" + uriPath
+	}
+	dsn := (&url.URL{Scheme: "file", Path: uriPath, RawQuery: "mode=ro"}).String()
+	s.heartbeatDB, e = sql.Open("sqlite", dsn)
+	if e != nil {
+		_ = s.Close()
+		return nil, e
+	}
+	s.heartbeatDB.SetMaxOpenConns(2)
+	s.heartbeatDB.SetMaxIdleConns(0)
+	return s, nil
 }
 
 func ensureRequestRootColumns(db *sql.DB) error {
@@ -191,6 +212,9 @@ func (s *Store) requestRootsReady(ctx context.Context) bool {
 }
 
 func (s *Store) Close() error {
+	if s.heartbeatDB != nil {
+		_ = s.heartbeatDB.Close()
+	}
 	if s.readDB != nil {
 		_ = s.readDB.Close()
 	}
@@ -219,7 +243,7 @@ func (s *Store) setSettingContext(ctx context.Context, key string, v any) error 
 }
 
 func (s *Store) latestHeartbeat(ctx context.Context) (payload, occurred, persisted string, err error) {
-	err = s.queryDB().QueryRowContext(ctx, "SELECT payload,occurred_at,persisted_at FROM latest_heartbeat WHERE id=1").Scan(&payload, &occurred, &persisted)
+	err = s.heartbeatDB.QueryRowContext(ctx, "SELECT payload,occurred_at,persisted_at FROM latest_heartbeat WHERE id=1").Scan(&payload, &occurred, &persisted)
 	return
 }
 
