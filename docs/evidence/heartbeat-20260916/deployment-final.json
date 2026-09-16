@@ -1,0 +1,62 @@
+{
+  "checkedAt": "2026-09-16T14:59:20.511063+00:00",
+  "revision": "3b9091163800e8833f3dde3e6fd7eb28383667ad",
+  "runningBinary": "/opt/cbte-admin/releases/3b9091163800e8833f3dde3e6fd7eb28383667ad/cbte-admin",
+  "sha256": "b9d52497606aa9ba508a0b07d3ed36a400fb95dd1dbece2833d2f64dd462514f",
+  "probes": {
+    "management_local": {
+      "http": 200,
+      "ok": true
+    },
+    "management_public": {
+      "http": 200,
+      "ok": true
+    },
+    "bot_public": {
+      "http": 200,
+      "ok": true,
+      "node": "primary",
+      "epoch": 9,
+      "instanceId": "primary:d93c3f91a25b5d019c7b35d1344c328193e06aff3b718730"
+    }
+  },
+  "latestHeartbeat": {
+    "occurredAt": "2026-09-16T14:58:15.172000000Z",
+    "persistedAt": "2026-09-16T14:58:30.135006485Z",
+    "pid": 3359855,
+    "bootId": "8aca5f58-652f-468f-add6-9f76807357e0",
+    "ready": true,
+    "uptimeSeconds": 83817.767304227,
+    "queue": {
+      "active": 0,
+      "completed": 26485,
+      "pending": 0,
+      "rejected": 0
+    },
+    "shards": {
+      "manager_status": "ready",
+      "offline": 0,
+      "online": 13,
+      "total": 13,
+      "unknown": 0
+    },
+    "recordingFailure": null,
+    "rejectedEvents": 0
+  },
+  "incidents": [
+    [
+      "bot.heartbeat.stale",
+      "Resolved",
+      "2026-09-16T14:14:43.547683456Z"
+    ],
+    [
+      "bot.workload.unverified",
+      "Resolved",
+      "2026-09-16T14:28:52.298868055Z"
+    ]
+  ],
+  "heartbeatGraceSeconds": 180,
+  "journalMessages": {
+    "monitor state could not be persisted: context deadline exceeded": 1
+  }
+}
