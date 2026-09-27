@@ -1,6 +1,6 @@
 {
   "scope": "production primary administration service and complete report snapshots",
-  "complete": false,
+  "complete": true,
   "persistentMemoryChange": {
     "appliedAt": "2026-09-22T16:45:02+09:00",
     "before": { "memoryHighBytes": 201326592, "memoryMaxBytes": 402653184 },
