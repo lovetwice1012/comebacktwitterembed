@@ -221,6 +221,7 @@ func (a *App) execute(parent context.Context, ac Action) {
 			out := &boundedBuffer{limit: 24 << 20}
 			errout := &boundedBuffer{limit: 256 << 10}
 			var exitErr error
+			workerTransportFailed := false
 			if workerURL != "" {
 				req, e := http.NewRequestWithContext(ctx, "POST", workerURL, strings.NewReader(encode(Object{"actionId": ac.ID, "type": ac.Type, "input": input, "actorId": ac.Actor, "initiatedVia": ac.Via})))
 				if e != nil {
@@ -232,9 +233,11 @@ func (a *App) execute(parent context.Context, ac Action) {
 					client := http.Client{Timeout: deadline, CheckRedirect: func(req *http.Request, via []*http.Request) error { return http.ErrUseLastResponse }}
 					res, e := client.Do(req)
 					if e != nil {
+						workerTransportFailed = true
 						exitErr = errors.New("Independent analysis worker transport failed; response outcome unknown")
 					} else {
 						_, exitErr = io.Copy(out, io.LimitReader(res.Body, 25<<20))
+						workerTransportFailed = exitErr != nil
 						res.Body.Close()
 						if res.StatusCode < 200 || res.StatusCode >= 300 {
 							exitErr = fmt.Errorf("analysis worker HTTP %d", res.StatusCode)
@@ -265,6 +268,9 @@ func (a *App) execute(parent context.Context, ac Action) {
 				e := json.Unmarshal(bytes.TrimSpace(out.b.Bytes()), &result)
 				if e != nil {
 					problem = Object{"code": "INVALID_WORKER_RESULT", "message": e.Error(), "exitError": errorString(exitErr), "stderr": errout.b.String(), "stderrTruncated": errout.truncated}
+					if workerTransportFailed {
+						problem = Object{"code": "WORKER_TRANSPORT_FAILED", "message": "The independent worker response was interrupted; inspect the existing action receipt before retrying.", "transportError": errorString(exitErr), "parseError": e.Error(), "receivedBytes": out.b.Len(), "actionId": ac.ID}
+					}
 					if mutating(ac.Type) {
 						status = "unknown"
 					}

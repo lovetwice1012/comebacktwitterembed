@@ -28,8 +28,10 @@ ProtectHome=true
 ReadWritePaths=/var/lib/cbte-admin
 ReadWritePaths=-/opt/cbte-admin/worker-runtime
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
-MemoryHigh=192M
-MemoryMax=384M
+# The management store and complete report snapshots share this process.
+# Match the persistent production limits; keep the report worker isolated.
+MemoryHigh=12G
+MemoryMax=16G
 CPUQuota=50%
 TasksMax=128
 

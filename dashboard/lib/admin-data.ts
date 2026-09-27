@@ -17,7 +17,7 @@ import { aggregateCalendarQuery } from "@/lib/aggregate-calendar-query";
 import { contentReachQuery } from "@/lib/content-reach-query";
 import { audienceInterestQuery } from "@/lib/audience-interest-query";
 import { providerFacetSummaryQuery } from "@/lib/provider-facet-summary-query";
-import { settingImpactSummaryQuery, settingChangeImpactQuery } from "@/lib/setting-attribution-query";
+import { settingImpactSummaryQuery, settingChangeImpactQuery, settingAttributionUniqueQuery } from "@/lib/setting-attribution-query";
 import { facetObservationCountsQuery, facetSchemaDriftQuery } from "@/lib/facet-quality-queries";
 import { loadSnapshotOnce, pruneReportEntries, refreshReportSnapshot, withReportCacheMetadata, type ReportFailureState } from "@/lib/report-cache";
 import { limitAnalyticsReads, QueryLimiter } from "@/lib/analytics-query-limit";
@@ -1676,23 +1676,7 @@ async function getSettingAttributionSummary(startMs: number) {
       windowMs,
     ),
     prisma.$queryRawUnsafe<Array<Record<string, unknown>>>(
-      `SELECT
-         a.attribution_type,
-         a.setting_direction,
-         a.provider_id,
-         a.setting_key,
-         a.action,
-         u.key_type,
-         COUNT(DISTINCT u.key_hash) AS unique_count
-       FROM (${auditScope}) a
-       JOIN bot_provider_hourly_unique_keys u
-         ON u.bucket_start_ms >= a.changed_at_ms
-        AND u.bucket_start_ms < a.changed_at_ms + ?
-        AND u.event_type = 'provider_content'
-        AND (a.guild_id IS NULL OR u.guild_id = a.guild_id)
-        AND (a.provider_id IS NULL OR u.provider_id = a.provider_id)
-        AND u.key_type IN ('author_user', 'guild', 'url')
-       GROUP BY a.attribution_type, a.setting_direction, a.provider_id, a.setting_key, a.action, u.key_type`,
+      settingAttributionUniqueQuery(auditScope),
       new Date(startMs),
       windowMs,
     ),

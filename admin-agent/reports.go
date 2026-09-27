@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -55,17 +56,23 @@ func reportKey(kind string, filters Object) string {
 	return tokenHash("complete-report-v1:" + kind + ":" + encode(filters))
 }
 func (a *App) reportSnapshot(key string) (Object, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	return a.reportSnapshotContext(ctx, key)
+}
+
+func (a *App) reportSnapshotContext(ctx context.Context, key string) (Object, error) {
 	var kind, filters, status, updated string
 	var action, success, generated, payload, problem sql.NullString
-	e := a.store.queryDB().QueryRow("SELECT kind,filters,current_action_id,status,last_successful_action_id,generated_at,result,error,updated_at FROM reports WHERE cache_key=?", key).Scan(&kind, &filters, &action, &status, &success, &generated, &payload, &problem, &updated)
+	e := a.store.queryDB().QueryRowContext(ctx, "SELECT kind,filters,current_action_id,status,last_successful_action_id,generated_at,result,error,updated_at FROM reports WHERE cache_key=?", key).Scan(&kind, &filters, &action, &status, &success, &generated, &payload, &problem, &updated)
 	if e != nil {
 		return nil, e
 	}
 	if action.Valid && (status == "queued" || status == "running") {
-		if ac, e := a.store.action(action.String); e == nil {
+		if ac, e := scanAction(a.store.queryDB().QueryRowContext(ctx, "SELECT "+actionColumns+" FROM actions WHERE id=?", action.String)); e == nil {
 			if ac.Status == "succeeded" || ac.Status == "failed" || ac.Status == "unknown" {
-				if e = a.completeReport(ac.ID, ac.Status, ac.Result, ac.Error); e == nil {
-					return a.reportSnapshot(key)
+				if e = a.completeReportContext(ctx, ac.ID, ac.Status, ac.Result, ac.Error); e == nil {
+					return a.reportSnapshotContext(ctx, key)
 				}
 			} else {
 				status = ac.Status
@@ -96,6 +103,8 @@ func (a *App) reportSnapshot(key string) (Object, error) {
 	return Object{"kind": kind, "filters": decode(filters), "key": key, "actionId": nullable(action), "status": status, "report": report, "metadata": metadata, "cache": Object{"ready": payload.Valid, "refreshing": status == "queued" || status == "running", "updatedAt": nullable(generated), "lastError": lastError, "failedAt": failedAt}, "lastSuccessfulActionId": nullable(success)}, nil
 }
 func (a *App) getReport(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
 	kind := r.PathValue("kind")
 	if !validReportKind(kind) {
 		fail(w, 400, "UNKNOWN_REPORT_KIND", "Unsupported report kind")
@@ -114,7 +123,7 @@ func (a *App) getReport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	key := reportKey(kind, filters)
-	snapshot, e := a.reportSnapshot(key)
+	snapshot, e := a.reportSnapshotContext(ctx, key)
 	if errors.Is(e, sql.ErrNoRows) {
 		jsonResponse(w, 200, Object{"kind": kind, "filters": filters, "key": key, "actionId": nil, "status": "not_generated", "report": nil, "cache": Object{"ready": false, "refreshing": false, "updatedAt": nil, "lastError": nil, "failedAt": nil}})
 		return
@@ -126,6 +135,8 @@ func (a *App) getReport(w http.ResponseWriter, r *http.Request) {
 	jsonResponse(w, 200, snapshot)
 }
 func (a *App) buildReport(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
 	kind := r.PathValue("kind")
 	if !validReportKind(kind) {
 		fail(w, 400, "UNKNOWN_REPORT_KIND", "Unsupported report kind")
@@ -144,14 +155,14 @@ func (a *App) buildReport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	key := reportKey(kind, filters)
-	tx, e := a.store.db.Begin()
+	tx, e := a.store.db.BeginTx(ctx, nil)
 	if e != nil {
 		fail(w, 503, "REPORT_STORE_ERROR", e.Error())
 		return
 	}
 	defer tx.Rollback()
 	var previous, status, generated sql.NullString
-	e = tx.QueryRow("SELECT r.current_action_id,a.status,r.generated_at FROM reports r LEFT JOIN actions a ON a.id=r.current_action_id WHERE r.cache_key=?", key).Scan(&previous, &status, &generated)
+	e = tx.QueryRowContext(ctx, "SELECT r.current_action_id,a.status,r.generated_at FROM reports r LEFT JOIN actions a ON a.id=r.current_action_id WHERE r.cache_key=?", key).Scan(&previous, &status, &generated)
 	if e != nil && !errors.Is(e, sql.ErrNoRows) {
 		fail(w, 503, "REPORT_STORE_ERROR", e.Error())
 		return
@@ -162,7 +173,7 @@ func (a *App) buildReport(w http.ResponseWriter, r *http.Request) {
 	}
 	if status.String == "queued" || status.String == "running" || !in.Force && recent {
 		tx.Rollback()
-		snapshot, e := a.reportSnapshot(key)
+		snapshot, e := a.reportSnapshotContext(ctx, key)
 		if e != nil {
 			fail(w, 503, "REPORT_STORE_ERROR", e.Error())
 			return
@@ -174,9 +185,9 @@ func (a *App) buildReport(w http.ResponseWriter, r *http.Request) {
 	id := randomID()
 	input := Object{"kind": kind, "filters": filters, "reportKey": key}
 	t := now()
-	_, e = tx.Exec("INSERT INTO actions(id,idem,type,input,status,actor,via,created_at,updated_at) VALUES(?,?,'reports.build',?,'queued',?,?,?,?)", id, "report:"+key+":"+id, encode(input), actor, via, t, t)
+	_, e = tx.ExecContext(ctx, "INSERT INTO actions(id,idem,type,input,status,actor,via,created_at,updated_at) VALUES(?,?,'reports.build',?,'queued',?,?,?,?)", id, "report:"+key+":"+id, encode(input), actor, via, t, t)
 	if e == nil {
-		_, e = tx.Exec("INSERT INTO reports(cache_key,kind,filters,current_action_id,status,updated_at) VALUES(?,?,?,?,'queued',?) ON CONFLICT(cache_key) DO UPDATE SET current_action_id=excluded.current_action_id,status='queued',error=NULL,updated_at=excluded.updated_at", key, kind, encode(filters), id, t)
+		_, e = tx.ExecContext(ctx, "INSERT INTO reports(cache_key,kind,filters,current_action_id,status,updated_at) VALUES(?,?,?,?,'queued',?) ON CONFLICT(cache_key) DO UPDATE SET current_action_id=excluded.current_action_id,status='queued',error=NULL,updated_at=excluded.updated_at", key, kind, encode(filters), id, t)
 	}
 	if e == nil {
 		e = tx.Commit()
@@ -185,7 +196,7 @@ func (a *App) buildReport(w http.ResponseWriter, r *http.Request) {
 		fail(w, 503, "REPORT_STORE_ERROR", e.Error())
 		return
 	}
-	snapshot, e := a.reportSnapshot(key)
+	snapshot, e := a.reportSnapshotContext(ctx, key)
 	if e != nil {
 		fail(w, 503, "REPORT_STORE_ERROR", e.Error())
 		return
@@ -193,18 +204,22 @@ func (a *App) buildReport(w http.ResponseWriter, r *http.Request) {
 	jsonResponse(w, 202, snapshot)
 }
 func (a *App) completeReport(actionID, status string, result, problem any) error {
+	return a.completeReportContext(context.Background(), actionID, status, result, problem)
+}
+
+func (a *App) completeReportContext(ctx context.Context, actionID, status string, result, problem any) error {
 	var errJSON any
 	if problem != nil {
 		errJSON = encode(problem)
 	}
 	if status == "succeeded" {
-		_, e := a.store.db.Exec("UPDATE reports SET status=?,last_successful_action_id=?,generated_at=?,result=?,error=NULL,updated_at=? WHERE current_action_id=?", status, actionID, now(), encode(result), now(), actionID)
+		_, e := a.store.db.ExecContext(ctx, "UPDATE reports SET status=?,last_successful_action_id=?,generated_at=?,result=?,error=NULL,updated_at=? WHERE current_action_id=?", status, actionID, now(), encode(result), now(), actionID)
 		return e
 	}
 	if status == "unknown" && problem == nil {
 		errJSON = encode(Object{"code": "REPORT_RESULT_UNKNOWN", "message": "Generation ended without a confirmed complete report"})
 	}
-	_, e := a.store.db.Exec("UPDATE reports SET status=?,error=?,updated_at=? WHERE current_action_id=?", status, errJSON, now(), actionID)
+	_, e := a.store.db.ExecContext(ctx, "UPDATE reports SET status=?,error=?,updated_at=? WHERE current_action_id=?", status, errJSON, now(), actionID)
 	return e
 }
 

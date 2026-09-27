@@ -11,6 +11,44 @@ const scopes = [
   { where: 'a.guild_id IS NULL AND a.provider_id IS NOT NULL', join: 'h.provider_id=a.provider_id', source: 'provider_hours', contentIndex: 'idx_content_provider_account_time' },
 ];
 
+export function settingAttributionUniqueQuery(auditScope: string) {
+  // Separate the three disjoint audit scopes so guild-specific lookups can use
+  // the existing (guild_id, bucket_start_ms, key_type) index. Retain a final
+  // DISTINCT across all scopes: the same member may match several audits.
+  const branches = scopes.map(scope => {
+    const hint = scope.source === 'guild_hours' ? '/*+ INDEX(u idx_provider_hourly_unique_guild) */' : '';
+    return `SELECT ${hint} DISTINCT ${groupColumns.map(column => `a.${column}`).join(',')},u.key_type,u.key_hash
+      FROM merged_audits a
+      STRAIGHT_JOIN bot_provider_hourly_unique_keys u ON ${scope.join.replaceAll('h.', 'u.')}
+        AND u.bucket_start_ms>=a.window_start_ms AND u.bucket_start_ms<a.window_end_ms
+        AND u.event_type='provider_content' AND u.key_type IN ('author_user','guild','url')
+      WHERE ${scope.where}`;
+  });
+  const dimensions = ['guild_id', ...groupColumns].join(',');
+  // Unique membership is a set over the union of matching audit windows.
+  // Merge overlapping/touching windows before reading the large membership
+  // table, without changing the separate per-audit additive impact measures.
+  return `WITH audits AS (${auditScope}), attribution_params AS (SELECT ? AS window_ms),
+    windows AS (
+      SELECT DISTINCT ${['guild_id', ...groupColumns].map(column => `a.${column}`).join(',')},
+        a.changed_at_ms AS window_start_ms,a.changed_at_ms+p.window_ms AS window_end_ms
+      FROM audits a CROSS JOIN attribution_params p
+    ), ordered_windows AS (
+      SELECT *,MAX(window_end_ms) OVER (PARTITION BY ${dimensions} ORDER BY window_start_ms
+        ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING) AS previous_end_ms FROM windows
+    ), window_groups AS (
+      SELECT *,SUM(CASE WHEN previous_end_ms IS NULL OR window_start_ms>previous_end_ms THEN 1 ELSE 0 END)
+        OVER (PARTITION BY ${dimensions} ORDER BY window_start_ms ROWS UNBOUNDED PRECEDING) AS window_group
+      FROM ordered_windows
+    ), merged_audits AS (
+      SELECT ${dimensions},MIN(window_start_ms) AS window_start_ms,MAX(window_end_ms) AS window_end_ms
+      FROM window_groups GROUP BY ${dimensions},window_group
+    ),
+    matched_members AS (${branches.join('\nUNION ALL\n')})
+    SELECT ${groupColumns.map(column => `m.${column}`).join(',')},m.key_type,COUNT(DISTINCT m.key_hash) AS unique_count
+    FROM matched_members m GROUP BY ${groupColumns.map(column => `m.${column}`).join(',')},m.key_type`;
+}
+
 export function settingImpactSummaryQuery(auditScope: string) {
   const perAudit = measures.flatMap(([column, label]) => [
     `SUM(CASE WHEN h.bucket_start_ms < a.changed_at_ms THEN h.${column} ELSE 0 END) AS ${label}_before`,

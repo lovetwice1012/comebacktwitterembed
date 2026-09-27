@@ -1,0 +1,32 @@
+{
+  "scope": "production primary administration service and complete report snapshots",
+  "complete": false,
+  "persistentMemoryChange": {
+    "appliedAt": "2026-09-22T16:45:02+09:00",
+    "before": { "memoryHighBytes": 201326592, "memoryMaxBytes": 402653184 },
+    "after": { "memoryHighBytes": 12884901888, "memoryMaxBytes": 17179869184 },
+    "pidBeforeAndAfter": 1760530,
+    "restartCountBeforeAndAfter": 1237,
+    "serviceRestartedByThisChange": false,
+    "hostAvailableMemoryGiB": 106,
+    "scopeOfPersistence": "/etc/systemd/system.control/cbte-admin.service.d",
+    "finalizedAt": "2026-09-27T07:28:28.943Z"
+  },
+  "observedPressure": {
+    "beforeMemoryFullAvg10Percent": 45.52,
+    "afterMemoryFullAvg10Percent": 0.05,
+    "beforeIoFullAvg10Percent": 50.68,
+    "afterIoFullAvg10Percent": 1.14
+  },
+  "storedOverviewReadsAfterChange": {
+    "statusCodes": [200, 200, 200],
+    "elapsedMs": [622, 152, 167],
+    "note": "Complete previously stored snapshot; this measurement preceded completion of the new report. Live operational samples, not a controlled SQL benchmark."
+  },
+  "verifiedReports": [
+    { "kind": "overview", "actionId": "f447033ff93300abb1fee1c6aeaa2fa664cad9d1196a833f", "generatedAt": "2026-09-27T07:28:08.279824123Z", "bytes": 1653328, "readElapsedMs": 415 },
+    { "kind": "analytics", "actionId": "0fef3008840d74333bb40a666aa20afc735e8b9e9bee94ce", "generatedAt": "2026-09-24T00:16:05.355105554Z", "bytes": 449910, "readElapsedMs": 195 },
+    { "kind": "guild-preview", "actionId": "c04d3f4e736e4e4af6ad57a0bacfed1ea2d8f93ed1b9d267", "generatedAt": "2026-09-24T00:33:20.656980026Z", "bytes": 417441, "readElapsedMs": 111 },
+    { "kind": "provider-preview", "actionId": "f1082095f9a5c83184b54369b1441d962a04734730051a19", "generatedAt": "2026-09-24T00:29:20.946581433Z", "bytes": 422581, "readElapsedMs": 185 }
+  ]
+}

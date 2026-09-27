@@ -5,6 +5,37 @@ const { DatabaseSync } = require('node:sqlite');
 const loadDashboard = require('./helpers/load-dashboard.cjs');
 const { settingImpactSummaryQuery } = loadDashboard('lib/setting-attribution-query.ts');
 
+test('unique attribution preserves exact membership across overlapping audits and wildcard scopes', () => {
+    const { settingAttributionUniqueQuery } = loadDashboard('lib/setting-attribution-query.ts');
+    const db = new DatabaseSync(':memory:');
+    db.exec(`CREATE TABLE audits_input(audit_log_id INTEGER,guild_id TEXT,provider_id TEXT,setting_key TEXT,action TEXT,changed_at_ms INTEGER,attribution_type TEXT,setting_direction TEXT);
+      CREATE TABLE bot_provider_hourly_unique_keys(bucket_start_ms INTEGER,guild_id TEXT,provider_id TEXT,event_type TEXT,key_type TEXT,key_hash TEXT)`);
+    const insertAudit = db.prepare('INSERT INTO audits_input VALUES (?,?,?,?,?,?,?,?)');
+    [['g1','p1'],['g1','p1'],['g1',null],[null,'p1'],['missing','missing'],['','p1']].forEach(([guild, provider], i) => insertAudit.run(i, guild, provider, 'enabled', 'setting.update', 100+i, 'enabled', 'on'));
+    // Touching intervals may merge; gaps and different attribution dimensions must not.
+    insertAudit.run(20,'g1','p1','enabled','setting.update',111,'enabled','on');
+    insertAudit.run(21,'g1','p1','enabled','setting.update',140,'enabled','on');
+    insertAudit.run(22,'g1','p1','enabled','setting.update',145,'enabled','on');
+    insertAudit.run(23,'g1','p1','enabled','setting.update',145,'enabled','off');
+    const insert = db.prepare('INSERT INTO bot_provider_hourly_unique_keys VALUES (?,?,?,?,?,?)');
+    for (const time of [99,100,101,105,109,110,111,114,115,120,121,130,139,140,149,150,154,155]) for (const guild of ['g1','g2','']) for (const provider of ['p1','p2']) for (const kind of ['author_user','guild','url','unrelated']) {
+        for (const hash of ['shared', `member-${guild}-${provider}`, null]) insert.run(time,guild,provider,'provider_content',kind,hash);
+        insert.run(time,guild,provider,'discord_send',kind,'other-event');
+    }
+    const scope = 'SELECT * FROM audits_input WHERE changed_at_ms>=?';
+    const groups = ['attribution_type','setting_direction','provider_id','setting_key','action'];
+    const original = `SELECT ${groups.map(k=>'a.'+k).join(',')},u.key_type,COUNT(DISTINCT u.key_hash) AS unique_count
+      FROM (${scope}) a JOIN bot_provider_hourly_unique_keys u ON u.bucket_start_ms>=a.changed_at_ms AND u.bucket_start_ms<a.changed_at_ms+?
+      AND u.event_type='provider_content' AND (a.guild_id IS NULL OR u.guild_id=a.guild_id) AND (a.provider_id IS NULL OR u.provider_id=a.provider_id)
+      AND u.key_type IN ('author_user','guild','url') GROUP BY ${groups.map(k=>'a.'+k).join(',')},u.key_type`;
+    const normalize = rows => rows.map(row => ({...row})).sort((a,b)=>JSON.stringify(a).localeCompare(JSON.stringify(b)));
+    try {
+        const optimized = settingAttributionUniqueQuery(scope).replaceAll('STRAIGHT_JOIN','JOIN');
+        assert.deepEqual(normalize(db.prepare(optimized).all(0,10)), normalize(db.prepare(original).all(0,10)));
+        assert.deepEqual(db.prepare(optimized).all(999,10), []);
+    } finally { db.close(); }
+});
+
 test('scoped audit aggregation preserves wildcard scopes, overlapping windows, null guilds and unmatched audits', () => {
     const db = new DatabaseSync(':memory:');
     const metrics = ['content_events','extract_events','extract_successes','send_events','send_successes','enrichment_jobs','enrichment_successes','analytics_duration_sum_ms','analytics_duration_count'];
