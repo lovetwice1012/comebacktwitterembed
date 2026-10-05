@@ -1,6 +1,7 @@
 'use strict';
 
 const { AutomationError, requireActor, scopeFor, hash } = require('./service');
+const eligibility = require('../providers/autoWatch/eligibility');
 const fail = (code, message, status = 400) => { throw new AutomationError(code, message, status); };
 const tableFor = kind => {
     if (!['auto', 'price'].includes(kind)) fail('INVALID_MONITOR', '監視の種類が不正です。');
@@ -37,9 +38,11 @@ function createMonitors(db, service, destinations, options = {}) {
         await query('INSERT IGNORE INTO automation_counters (counter_key,used_count,expires_at_ms) VALUES (?,0,0)', [hash('auto-watch-slots')]);
         await query('SELECT counter_key FROM automation_counters WHERE counter_key=? FOR UPDATE', [hash('auto-watch-slots')]);
     }
-    function providers() {
+    async function providers(actor) {
+        requireActor(actor);
         return { auto: Object.values(auto.PROVIDERS).map(p => ({ id: p.id, intervalMs: p.defaultPollMs, rate: auto.ratePolicy(p.id) })),
-            price: Object.values(price.PROVIDERS).map(p => ({ id: p.id, intervalMs: p.defaultPollMs })), twitterRegistrationEnabled: false };
+            price: Object.values(price.PROVIDERS).map(p => ({ id: p.id, intervalMs: p.defaultPollMs })), twitterRegistrationEnabled: false,
+            autoRegistration: await eligibility.registrationStatus(db.queryDatabase, actor.userId) };
     }
     function selection(kind) {
         const table = tableFor(kind);
@@ -108,6 +111,18 @@ function createMonitors(db, service, destinations, options = {}) {
             if (kind === 'price') rule = normalizeRule({ mode: input.mode ?? current?.watch_mode, maxPriceAmount: input.maxPriceAmount === undefined ? current?.max_price_amount : input.maxPriceAmount, minDiscountPercent: input.minDiscountPercent === undefined ? current?.min_discount_percent : input.minDiscountPercent });
         } catch { fail('INVALID_SOURCE_OR_RULE', '監視URL・プロバイダー・価格条件を確認してください。'); }
         const destId = input.destinationId || current?.destination_id;
+        const enabled = input.enabled === undefined ? current ? !!current.enabled : true : input.enabled === true;
+        const needsRegistration = row => kind === 'auto' && (!row || !row.enabled && enabled
+            || row.provider_id !== providerId || row.source_key !== normalized.sourceKey
+            || (destId || null) !== (row.destination_id || null));
+        const passiveUpdate = current && Object.keys(input).every(k => ['expectedRevision', 'enabled', 'name'].includes(k));
+        const assertRegistration = async (query, lock = false) => {
+            await eligibility.assertRegistrationAllowed(query, actor.userId, lock);
+            if (ownerId !== actor.userId) await eligibility.assertRegistrationAllowed(query, ownerId, lock);
+        };
+        if (kind === 'auto' && (passiveUpdate ? enabled && !current.enabled : needsRegistration(current))) {
+            await assertRegistration(db.queryDatabase);
+        }
         // Legacy targets can be paused/deleted without knowing or redisclosing
         // the old secret. Editing their source/destination requires choosing a
         // newly verified destination explicitly.
@@ -118,6 +133,7 @@ function createMonitors(db, service, destinations, options = {}) {
                 if (Number(locked.revision || 1) !== input.expectedRevision) fail('REVISION_CONFLICT', '監視が更新されています。', 409);
                 const enabled = input.enabled === undefined ? !!locked.enabled : input.enabled === true;
                 if (enabled && !locked.enabled && kind === 'auto') {
+                    await assertRegistration(query, true);
                     const slot = await slotDecision(query, ownerId);
                     await query('UPDATE auto_watch_targets SET premium_slot=? WHERE id=?', [slot.premiumSlot, id]);
                 }
@@ -131,7 +147,6 @@ function createMonitors(db, service, destinations, options = {}) {
         }
         if (!destId) fail('DESTINATION_REQUIRED', '検証済みの通知先を選んでください。');
         const dest = await destination(actor, destId, scope, ownerId);
-        const enabled = input.enabled === undefined ? current ? !!current.enabled : true : input.enabled === true;
         return db.withDatabaseTransaction(async query => {
             await lockSlots(query, kind);
             let locked;
@@ -139,6 +154,7 @@ function createMonitors(db, service, destinations, options = {}) {
                 locked = await getRow(actor, kind, id, true, query, true);
                 if (Number(locked.revision || 1) !== input.expectedRevision) fail('REVISION_CONFLICT', '監視が更新されています。', 409);
             }
+            if (needsRegistration(locked)) await assertRegistration(query, true);
             // Lock the destination against concurrent disable/delete after its
             // remote permission check and before adopting its identity.
             const freshDest = await service.getRow('destination', actor, destId, true, query, true);

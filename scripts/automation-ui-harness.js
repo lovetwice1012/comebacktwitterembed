@@ -13,6 +13,7 @@ async function main() {
     const db = await createTestDatabase(Number(process.env.AUTOMATION_TEST_DB_PORT));
     const service = require('../src/automation/service').createService(db);
     const actor = { userId: '222222222222222222', guildId: '111111111111111111', canView: true, canEdit: true, isAdmin: true };
+    await require('./lib/automation-test-db').grantTestDonor(db, actor.userId);
     const evaluator = require('../src/automation/evaluation').createEvaluator(service.dictionaryData);
     const starter = require('../src/automation/moderation'), moderation = starter.createModeration(db, service, evaluator);
     const rest = async (route, options) => {

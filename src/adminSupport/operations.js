@@ -99,7 +99,7 @@ function rowId(value) {
 }
 async function autoextractAction(type, input) {
     if (type === 'autoextract.add') {
-        throw Object.assign(new Error('Twitter/X auto-extract registration is paused. Existing registrations are unchanged.'), {
+        throw Object.assign(new Error('Twitter/X automatic expansion is currently unsupported; registration is disabled.'), {
             code: 'TWITTER_AUTOEXTRACT_REGISTRATION_PAUSED',
         });
     }

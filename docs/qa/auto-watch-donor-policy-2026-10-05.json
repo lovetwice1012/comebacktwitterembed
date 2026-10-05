@@ -1,0 +1,42 @@
+{
+  "policy": {
+    "feature": "Non-Twitter new-post automatic expansion",
+    "donorSource": "users.is_donor = 1",
+    "appliesTo": [
+      "new registration",
+      "resume",
+      "source change",
+      "destination change"
+    ],
+    "adminBypass": false,
+    "additionalSlotsGrantEligibility": false,
+    "existingPricePolicyChanged": false
+  },
+  "validation": {
+    "nodeTests": {
+      "command": "NODE_ENV=test AUTOMATION_TEST_DB_PORT=33629 EXPANSION_TEST_DB_PORT=33629 node --test --test-concurrency=1 scripts/test/**/*.test.js",
+      "pass": 1171,
+      "fail": 0,
+      "skip": 1,
+      "skipReason": "Linux root ACL test is unavailable on Windows"
+    },
+    "rootTypecheck": "passed",
+    "rootLint": "passed",
+    "dashboardTypecheck": "passed",
+    "dashboardLint": "passed",
+    "dashboardBuild": "passed",
+    "realSqlDonorAdmission": "passed",
+    "browserDonorAdmission": "passed"
+  },
+  "production": {
+    "twitter": {
+      "removed": 32,
+      "remaining": 0,
+      "newRegistration": "disabled",
+      "backup": "/var/backups/cbte/twitter-autoextract-disabled-20261005/registrations-before.json",
+      "webhooksPreserved": 29,
+      "usersPreserved": 18
+    },
+    "nonTwitter": "Donor-only policy implemented for full feature deployment; non-Twitter monitoring remains undeployed on production"
+  }
+}

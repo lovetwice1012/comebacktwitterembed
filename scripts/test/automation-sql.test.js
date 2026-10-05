@@ -54,6 +54,8 @@ test('real SQL: management, immutable revisions, durable handoff, aggregation, r
         const service = createService(db);
         const monitors = createMonitors(db, service, { verifyChannel: async () => ({ channel: { nsfw: false } }) });
         const actor = { userId: '222222222222222222', guildId: '111111111111111111', canView: true, canEdit: true };
+        // This test owns its manually-created disposable schema.
+        await query('INSERT INTO users (user_id,registered_at_ms,is_donor) VALUES (?,0,1)', [actor.userId]);
         const other = { ...actor, userId: '333333333333333333', isAdmin: true };
         const dm = await service.saveDestination(actor, { name: 'DM', kind: 'dm', scope: 'private' });
         const watch = await monitors.save(actor, 'auto', { name: 'GitHub', providerId: 'github', source: 'octocat', destinationId: dm.id, scope: 'private' });

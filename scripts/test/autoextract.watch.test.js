@@ -10,6 +10,7 @@ const storePath = require.resolve('../../src/providers/autoWatch/store');
 const webhookDestinationPath = require.resolve('../../src/components/_webhookDestination');
 
 function replaceModule(path, exports) {
+    if (path === storePath) exports = { assertRegistrationAllowed: async () => {}, ...exports };
     const original = require.cache[path];
     require.cache[path] = { id: path, filename: path, loaded: true, exports };
     return () => {
@@ -17,6 +18,24 @@ function replaceModule(path, exports) {
         else delete require.cache[path];
     };
 }
+
+test('non-donors are rejected before validating or creating any webhook', async () => {
+    const calls = [], replies = [];
+    const restoreStore = replaceModule(storePath, {
+        assertRegistrationAllowed: async () => { throw Object.assign(new Error('donor required'), { code: 'AUTO_WATCH_DONOR_REQUIRED', status: 403 }); },
+        validateWebhook: async () => { calls.push('validate'); },
+        registerTarget: async () => { calls.push('register'); },
+    });
+    const restoreWebhook = replaceModule(webhookDestinationPath, { createWebhookForChannel: async () => { calls.push('create'); } });
+    delete require.cache[watchPath];
+    try {
+        await require(watchPath)({ user: { id: '123456789012345678' }, guildId: 'guild-1', locale: 'ja',
+            options: { getBoolean: () => true, getString: key => ({ provider: 'youtube', source: 'UC_x5XG1OV2P6uZZ5FSM9Ttw', destination: 'channel' })[key] || null },
+            editReply: async payload => replies.push(payload) });
+        assert.deepEqual(calls, []);
+        assert.match(replies[0].embeds[0].description, /寄付者のみ/);
+    } finally { delete require.cache[watchPath]; restoreWebhook(); restoreStore(); }
+});
 
 test('autoextract watch validates and registers a non-Twitter source without exposing the webhook token', async () => {
     const calls = [];

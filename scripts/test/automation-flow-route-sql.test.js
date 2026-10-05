@@ -12,6 +12,7 @@ const port = Number(process.env.AUTOMATION_TEST_DB_PORT), now = Date.parse('2026
 async function fixture(work) {
     const db = await createTestDatabase(port), query = db.queryDatabase, service = createService(db), monitors = createMonitors(db, service, {});
     const actor = { userId: '222222222222222222' }, destination = await service.saveDestination(actor, { name: 'DM', kind: 'dm' });
+    await require('../lib/automation-test-db').grantTestDonor(db, actor.userId);
     const monitor = await monitors.save(actor, 'auto', { name: 'flow source', providerId: 'github', source: 'octocat', destinationId: destination.id });
     const definition = newWorkflow('flow route'); definition.nodes.splice(1, 0, { id: 'limit', type: 'limit', config: { ...NODE_TYPES.limit.defaults, count: 2, key: 'all' } });
     definition.edges = [{ id: 'a', source: 'start', target: 'limit', port: 'out' }, { id: 'b', source: 'limit', target: 'send', port: 'out' }];

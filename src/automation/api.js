@@ -12,7 +12,7 @@ async function dispatch({ method, path, search = new URLSearchParams(), body = {
     const { service, market, evaluator, schema, format, bundle, catalog, destinations, monitors, history, dictionaryService, moderation, starter } = services;
     let result;
     if (kind === "catalog" && method === "GET") result = { ...catalog.catalog(), deliverySafety: require('./safety').createSafety().status() };
-    else if (kind === "providers" && method === "GET") result = monitors.providers();
+    else if (kind === "providers" && method === "GET") result = await monitors.providers(actor);
     else if (kind === "channels" && method === "GET") result = await destinations.channels(actor);
     else if (kind === "starter" && method === "GET") result = starter.starterInfo();
     else if (kind === "starter" && method === "POST") result = await service.saveDictionary(actor, { dictionary: starter.starterDictionary(body.language || "all"), scope: body.scope || "private" });

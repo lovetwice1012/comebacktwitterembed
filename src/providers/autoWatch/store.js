@@ -5,6 +5,7 @@ const db = require('../../db');
 const { TABLES, ensureDatabaseSchema } = require('../../db_schema');
 const { effectivePollIntervalMs, normalizeSource, provider, ratePolicy } = require('./index');
 const fetchWithDeadline = require('../../providerFetch').withDeadline(require('node-fetch'));
+const eligibility = require('./eligibility');
 
 const FREE_SLOT_LIMIT = 175;
 const USER_FREE_SLOT_LIMIT = 5;
@@ -84,6 +85,7 @@ async function upsertWebhook(query, webhookUrl) {
 }
 
 async function slotDecision(query, userId) {
+    await eligibility.assertRegistrationAllowed(query, userId, true);
     const [userRows, ownRows, globalRows] = await Promise.all([
         query(`SELECT additional_auto_extract_slots FROM ${TABLES.users} WHERE user_id=?`, [userId]),
         query(`SELECT premium_slot,COUNT(*) AS total FROM ${TABLES.autoWatchTargets} WHERE user_id=? AND enabled=1 GROUP BY premium_slot`, [userId]),
@@ -115,11 +117,13 @@ async function registerTarget(input, options = {}) {
     if (!/^\d{1,32}$/.test(userId)) throw error('A valid user id is required.', 'AUTO_WATCH_INVALID_USER');
 
     await ensureDatabaseSchema();
+    await eligibility.assertRegistrationAllowed(db.queryDatabase, userId);
     await db.ensureUserExistsInDatabase(userId);
     return await db.withDatabaseTransaction(async query => {
         const slotLock = crypto.createHash('sha256').update('auto-watch-slots').digest('hex');
         await query('INSERT IGNORE INTO automation_counters (counter_key,used_count,expires_at_ms) VALUES (?,0,0)', [slotLock]);
         await query('SELECT counter_key FROM automation_counters WHERE counter_key=? FOR UPDATE', [slotLock]);
+        await eligibility.assertRegistrationAllowed(query, userId, true);
         const webhookEndpointId = destinationType === 'webhook' ? await upsertWebhook(query, webhookUrl) : null;
         const destinationKey = destinationType === 'dm' ? `dm:${userId}` : `webhook:${webhookEndpointId}`;
         const initialDue = now + Math.floor(Math.max(0, Math.min(1, Number(random()) || 0)) * jitterMs);
@@ -555,6 +559,7 @@ module.exports = {
     policyFor,
     recordProviderRateLimit,
     registerTarget,
+    assertRegistrationAllowed: userId => eligibility.assertRegistrationAllowed(db.queryDatabase, userId),
     routeAutomation: (delivery, now) => require('../../automation/runtime').route('auto', delivery, now),
     reserveProviderRequest,
     rescheduleSource,

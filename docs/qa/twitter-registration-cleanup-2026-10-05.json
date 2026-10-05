@@ -1,0 +1,111 @@
+{
+  "status": "deployed-and-cleaned",
+  "cleanup": {
+    "removed": 32,
+    "remaining": 0,
+    "backupFile": "/var/backups/cbte/twitter-autoextract-disabled-20261005/registrations-before.json",
+    "backupSha256": "4d4cfdeb465a9b86933c69555f0b58a037d59d4209dd6d2a369b2fd186895903",
+    "sharedWebhooksPreserved": 29,
+    "usersPreserved": 18,
+    "extraSlotsUnchanged": true,
+    "linkedDeregisterNotifications": 0,
+    "completedAt": "2026-10-05T10:30:56.104Z"
+  },
+  "deployment": {
+    "deployId": "twitter-autoextract-disabled-20261005",
+    "oldBotRelease": "/opt/cbte-releases/instagram-reel-video-20261005-bacd1fd",
+    "newBotRelease": "/opt/cbte-releases/twitter-autoextract-disabled-20261005",
+    "oldWorkerTarget": "/opt/cbte-admin/runtimes/instagram-reel-video-20261005-bacd1fd",
+    "newWorkerRelease": "/opt/cbte-admin/runtimes/twitter-autoextract-disabled-20261005",
+    "createdAt": 1791195180.5955584,
+    "files": [
+      {
+        "path": "/opt/cbte-releases/twitter-autoextract-disabled-20261005/src/commands/handlers/autoextract/add.js",
+        "backup": "/var/backups/cbte/twitter-autoextract-disabled-20261005/bot-autoextract-add.js",
+        "beforeSha256": "a326d20f2764c0d06ea82f01a2c680ea36f7c0f1e93d29c1bae5c24995b62f04",
+        "afterSha256": "698b7947b0f3418161de7f70c591930634bb7849bbf8572ba5cb2c1d929e490c"
+      },
+      {
+        "path": "/opt/cbte-releases/twitter-autoextract-disabled-20261005/src/adminSupport/operations.js",
+        "backup": "/var/backups/cbte/twitter-autoextract-disabled-20261005/bot-adminSupport-operations.js",
+        "beforeSha256": "52130547de65f2f64409849e2c7f10fe2ef45abdad0e49cd36a1b66a7b7df338",
+        "afterSha256": "14670a2ec6eae5e29abe35167e5b0abd3813e43654ca91c60958cf82667466b1"
+      },
+      {
+        "path": "/opt/cbte-admin/runtimes/twitter-autoextract-disabled-20261005/src/commands/handlers/autoextract/add.js",
+        "backup": "/var/backups/cbte/twitter-autoextract-disabled-20261005/worker-autoextract-add.js",
+        "beforeSha256": "a326d20f2764c0d06ea82f01a2c680ea36f7c0f1e93d29c1bae5c24995b62f04",
+        "afterSha256": "698b7947b0f3418161de7f70c591930634bb7849bbf8572ba5cb2c1d929e490c"
+      },
+      {
+        "path": "/opt/cbte-admin/runtimes/twitter-autoextract-disabled-20261005/src/adminSupport/operations.js",
+        "backup": "/var/backups/cbte/twitter-autoextract-disabled-20261005/worker-adminSupport-operations.js",
+        "beforeSha256": "52130547de65f2f64409849e2c7f10fe2ef45abdad0e49cd36a1b66a7b7df338",
+        "afterSha256": "14670a2ec6eae5e29abe35167e5b0abd3813e43654ca91c60958cf82667466b1"
+      },
+      {
+        "path": "/root/comebacktwitterembed/src/commands/handlers/autoextract/add.js",
+        "backup": "/var/backups/cbte/twitter-autoextract-disabled-20261005/checkout-autoextract-add.js",
+        "beforeSha256": "a326d20f2764c0d06ea82f01a2c680ea36f7c0f1e93d29c1bae5c24995b62f04",
+        "afterSha256": "698b7947b0f3418161de7f70c591930634bb7849bbf8572ba5cb2c1d929e490c"
+      },
+      {
+        "path": "/root/comebacktwitterembed/src/adminSupport/operations.js",
+        "backup": "/var/backups/cbte/twitter-autoextract-disabled-20261005/checkout-adminSupport-operations.js",
+        "beforeSha256": "52130547de65f2f64409849e2c7f10fe2ef45abdad0e49cd36a1b66a7b7df338",
+        "afterSha256": "14670a2ec6eae5e29abe35167e5b0abd3813e43654ca91c60958cf82667466b1"
+      }
+    ],
+    "cutoverAt": 1791195959.4842563
+  },
+  "services": {
+    "cbte.service": {
+      "MainPID": "3971397",
+      "NRestarts": "0",
+      "ActiveState": "active",
+      "SubState": "running"
+    },
+    "cbte-admin.service": {
+      "MainPID": "1760530",
+      "NRestarts": "1237",
+      "ActiveState": "active",
+      "SubState": "running"
+    },
+    "cbte-admin-analysis.service": {
+      "MainPID": "3973523",
+      "NRestarts": "1",
+      "ActiveState": "active",
+      "SubState": "running"
+    },
+    "cbte-admin-reports.service": {
+      "MainPID": "3973525",
+      "NRestarts": "1",
+      "ActiveState": "active",
+      "SubState": "running"
+    }
+  },
+  "botHealth": {
+    "ok": true,
+    "observedAt": "2026-10-05T10:31:37.139332988Z",
+    "heartbeatAgeSeconds": 4.63513135,
+    "pid": 3994928,
+    "ready": true,
+    "shards": {
+      "manager_status": "ready",
+      "offline": 0,
+      "online": 13,
+      "total": 13,
+      "unknown": 0
+    },
+    "localHTTP": {
+      "configured": true,
+      "durationMs": 4,
+      "observedAt": "2026-10-05T10:31:37.143840657Z",
+      "ok": true,
+      "status": 200
+    }
+  },
+  "registrationBlockedInDiscordAndAdmin": true,
+  "backupVerified": true,
+  "discordTestMessagesSent": 0
+}
