@@ -1,0 +1,10 @@
+...................................................................................................................................................................................Child log bot.log unavailable (ActivationError:log_write_failed); output is drained with bounded loss accounting.
+.Child log bot.log unavailable (OSError:28); output is drained with bounded loss accounting.
+......................Child log interactive.log unavailable (OSError:28); output is drained with bounded loss accounting.
+Child log reports.log unavailable (OSError:28); output is drained with bounded loss accounting.
+Child log bot.log unavailable (OSError:28); output is drained with bounded loss accounting.
+...............................
+----------------------------------------------------------------------
+Ran 233 tests in 35.160s
+
+OK

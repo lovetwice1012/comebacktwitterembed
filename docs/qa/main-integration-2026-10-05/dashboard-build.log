@@ -1,0 +1,89 @@
+
+> comebacktwitterembed-dashboard@0.1.0 build
+> node scripts/start-dashboard.js build
+
+[dashboard] building production dashboard into .next-build.
+[dashboard] Prisma schema differs from the generated client; skipping `prisma generate` so live dashboard builds remain swappable. Stop the dashboard and set DASHBOARD_FORCE_PRISMA_GENERATE=1 when regenerated Prisma types are required.
+[dashboard] using existing Prisma Client.
+   ▲ Next.js 15.5.19
+   - Experiments (use with caution):
+     · cpus: 2
+
+   Creating an optimized production build ...
+ ✓ Compiled successfully in 21.2s
+   Linting and checking validity of types ...
+
+ ⚠ The Next.js plugin was not detected in your ESLint configuration. See https://nextjs.org/docs/app/api-reference/config/eslint#migrating-existing-config
+   Collecting page data ...
+   Generating static pages (0/25) ...
+   Generating static pages (6/25) 
+   Generating static pages (12/25) 
+   Generating static pages (18/25) 
+ ✓ Generating static pages (25/25)
+   Finalizing page optimization ...
+   Collecting build traces ...
+
+Route (app)                                                   Size  First Load JS
+┌ ƒ /                                                      1.39 kB         135 kB
+├ ƒ /_not-found                                              998 B         103 kB
+├ ƒ /admin                                                 2.31 kB         105 kB
+├ ƒ /admin/send-message                                    2.31 kB         105 kB
+├ ƒ /admin/support-console                                 2.31 kB         105 kB
+├ ƒ /admin/url-inspector                                   2.31 kB         105 kB
+├ ƒ /api/admin/agent-recovery                                211 B         103 kB
+├ ƒ /api/admin/agent/[...path]                               211 B         103 kB
+├ ƒ /api/admin/analytics                                     211 B         103 kB
+├ ƒ /api/admin/catalog                                       211 B         103 kB
+├ ƒ /api/admin/database                                      211 B         103 kB
+├ ƒ /api/admin/directory                                     211 B         103 kB
+├ ƒ /api/admin/guild-analytics-preview                       211 B         103 kB
+├ ƒ /api/admin/logs                                          211 B         103 kB
+├ ƒ /api/admin/overview                                      211 B         103 kB
+├ ƒ /api/admin/provider-marketing-preview                    211 B         103 kB
+├ ƒ /api/admin/recovery                                      211 B         103 kB
+├ ƒ /api/admin/settings                                      211 B         103 kB
+├ ƒ /api/auth/[...nextauth]                                  211 B         103 kB
+├ ƒ /api/automation/[...path]                                211 B         103 kB
+├ ƒ /api/guilds                                              211 B         103 kB
+├ ƒ /api/guilds/[guildId]/access                             211 B         103 kB
+├ ƒ /api/guilds/[guildId]/audit-logs                         211 B         103 kB
+├ ƒ /api/guilds/[guildId]/catalog                            211 B         103 kB
+├ ƒ /api/guilds/[guildId]/media                              211 B         103 kB
+├ ƒ /api/guilds/[guildId]/providers                          211 B         103 kB
+├ ƒ /api/guilds/[guildId]/providers/[providerId]/reset       211 B         103 kB
+├ ƒ /api/guilds/[guildId]/providers/[providerId]/settings    211 B         103 kB
+├ ƒ /api/guilds/[guildId]/providers/bulk                     211 B         103 kB
+├ ƒ /api/guilds/[guildId]/settings                           211 B         103 kB
+├ ƒ /api/guilds/switcher                                     211 B         103 kB
+├ ƒ /api/guilds/sync                                         211 B         103 kB
+├ ƒ /api/health                                              211 B         103 kB
+├ ƒ /api/me                                                  211 B         103 kB
+├ ƒ /api/personal-links/[...path]                            211 B         103 kB
+├ ƒ /dashboard                                             2.28 kB         166 kB
+├ ƒ /dashboard/[guildId]                                     210 B         164 kB
+├ ƒ /dashboard/[guildId]/[section]                           216 B         164 kB
+├ ƒ /dashboard/[guildId]/access                            3.48 kB         167 kB
+├ ƒ /dashboard/[guildId]/audit-logs                          216 B         164 kB
+├ ƒ /dashboard/[guildId]/automation                          138 B         206 kB
+├ ƒ /dashboard/[guildId]/diagnostics                         210 B         164 kB
+├ ƒ /dashboard/[guildId]/logs                                216 B         164 kB
+├ ƒ /dashboard/[guildId]/media                               593 B         164 kB
+├ ƒ /dashboard/[guildId]/preview                             216 B         164 kB
+├ ƒ /dashboard/[guildId]/providers                         1.35 kB         165 kB
+├ ƒ /dashboard/[guildId]/providers/[providerId]              212 B         164 kB
+├ ƒ /dashboard/[guildId]/settings                            211 B         164 kB
+├ ƒ /dashboard/automation                                    138 B         206 kB
+├ ƒ /dashboard/bulk                                          211 B         164 kB
+├ ƒ /dashboard/personal-links                               8.5 kB         121 kB
+├ ƒ /media/[providerId]/[token]/[filename]                   211 B         103 kB
+├ ƒ /niconico-downloads/[token]/[filename]                   211 B         103 kB
+└ ƒ /youtube-downloads/[token]/[filename]                    211 B         103 kB
++ First Load JS shared by all                               102 kB
+  ├ chunks/1255-98d6a157a61ebbbf.js                          46 kB
+  ├ chunks/4bd1b696-3bf6164f032bed5c.js                    54.2 kB
+  └ other shared chunks (total)                            2.07 kB
+
+
+ƒ  (Dynamic)  server-rendered on demand
+
+[dashboard] activated production build 0lxRQQlmjCPIWD6yQ18WA from .next-builds/20261005042626-116776-iwq85o.
