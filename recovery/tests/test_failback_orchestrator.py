@@ -75,6 +75,13 @@ class FailbackTests(unittest.TestCase):
         process = Failback(dict(self.config, manualFailbackOnly=True))
         with mock.patch.object(process, "manual_switch_record", return_value=None):
             self.assertFalse(process.bind_manual_switch({"epoch": 6}))
+    def test_primary_cutback_requires_an_explicit_console_reservation(self):
+        process = Failback(self.config)
+        with mock.patch.object(process, "manual_switch_record", return_value=None):
+            self.assertFalse(process.bind_manual_switch({"activeNode": "oci"}))
+        process = Failback(dict(self.config, manualFailbackOnly=False))
+        with mock.patch.object(process, "manual_switch_record", return_value=None):
+            self.assertTrue(process.bind_manual_switch({"activeNode": "oci"}))
 
 
 if __name__ == "__main__":

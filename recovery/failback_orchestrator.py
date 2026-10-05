@@ -148,6 +148,10 @@ class Failback:
         """
         record = self.manual_switch_record()
         if not isinstance(record, dict) or record.get("targetNode") != "primary" or record.get("state") not in {"scheduled", "executing"}:
+            # A recovered OCI workload remains authoritative until an
+            # operator schedules the primary handoff from the console. This
+            # prevents a newly reachable but stale primary from triggering an
+            # unsolicited cutback.
             return self.config.get("manualFailbackOnly", True) is not True
         try:
             execute_at = dt.datetime.fromisoformat(str(record.get("executeAt", "")).replace("Z", "+00:00"))
