@@ -532,6 +532,8 @@ async function main() {
         uxCheck('primary controls, outline toggles and zoom controls keep 44px tap areas; nested editing has one form, a bounded outline and no horizontal page overflow');
 
         await tapButton('下書きを保存').tap(); await expect(tapButton('下書きを保存')).toBeEnabled();
+        const mobileActions = mobile.locator('summary').getByText('ルール操作', { exact: true });
+        await expect(mobileActions).toBeVisible(); await mobileActions.tap();
         await expect(tapButton('共有用エクスポート')).toBeVisible();
         await mobile.getByRole('combobox', { name: '編集するブロック', exact: true }).selectOption('filter');
         await tapButton('条件 1 を編集').tap(); await tapButton('条件 1.2 を編集').tap();
