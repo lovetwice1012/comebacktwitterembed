@@ -132,6 +132,8 @@ async function initialize(options = {}) {
         const deadline = Date.now() + 60000;
         const sources = [
             ['autoextract_targets', tables.autoExtractTargets, 'id', 'created_at_ms <= ?', [state.startedAtMs]],
+            ...(tables.autoWatchDeliveries ? [['auto_watch_pending_deliveries', tables.autoWatchDeliveries, 'id', "status = 'pending'", []]] : []),
+            ...(tables.priceWatchDeliveries ? [['price_watch_pending_deliveries', tables.priceWatchDeliveries, 'id', "status = 'pending'", []]] : []),
             ['deregister_pending', tables.deregisterNotifications, 'notification_id', 'dm_sent = 0 AND created_at_ms <= ?', [state.startedAtMs]],
             ['error_incidents', tables.botErrorAlerts, 'alert_key', 'active = 1', []],
         ];

@@ -3,7 +3,9 @@ package main
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -21,7 +23,7 @@ func testApp(t *testing.T) *App {
 	if e != nil {
 		t.Fatal(e)
 	}
-	t.Cleanup(func() { s.db.Close() })
+	t.Cleanup(func() { _ = s.Close() })
 	return newApp(Config{Token: strings.Repeat("a", 64), Owner: "123", WorkerTimeout: 120 * time.Second}, s)
 }
 func request(t *testing.T, a *App, method, path string, input any) *httptest.ResponseRecorder {
@@ -57,6 +59,75 @@ func TestDurableIngestAndEventDedup(t *testing.T) {
 	}
 	if count != 1 || stamp != "2026-09-05T01:02:03.100000000Z" {
 		t.Fatalf("unexpected normalized persistence count=%d stamp=%s", count, stamp)
+	}
+}
+
+func TestLatestHeartbeatIsMaterializedWithoutScanningEvents(t *testing.T) {
+	a := testApp(t)
+	first := "2026-09-15T09:00:00.000000000Z"
+	latest := "2026-09-15T09:00:15.000000000Z"
+	_, _, err := a.store.ingest([]Object{
+		{"id": "diagnostic-heartbeat", "kind": "heartbeat", "triggerType": "diagnostic", "occurredAt": latest},
+		{"id": "first-heartbeat", "kind": "heartbeat", "occurredAt": first, "details": Object{"pid": 1.0}},
+		{"id": "latest-heartbeat", "kind": "runtime.heartbeat", "occurredAt": latest, "details": Object{"pid": 2.0}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload, occurred, persisted, err := a.store.latestHeartbeat(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	value, _ := decode(payload).(map[string]any)
+	if value["id"] != "latest-heartbeat" || occurred != latest || persisted == "" {
+		t.Fatalf("wrong materialized heartbeat payload=%v occurred=%s persisted=%s", value, occurred, persisted)
+	}
+}
+
+func TestDiagnosticHeartbeatDoesNotCreateLivenessRecord(t *testing.T) {
+	a := testApp(t)
+	_, _, err := a.store.ingest([]Object{{"id": "diagnostic-heartbeat", "kind": "heartbeat", "triggerType": "diagnostic", "occurredAt": now()}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _, _, err = a.store.latestHeartbeat(context.Background())
+	if !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("diagnostic heartbeat became liveness data: %v", err)
+	}
+}
+
+func TestIngestContextHonorsCancellation(t *testing.T) {
+	a := testApp(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, _, err := a.store.ingestContext(ctx, []Object{{"id": "cancelled", "kind": "heartbeat", "occurredAt": now()}})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("cancelled ingest returned %v", err)
+	}
+}
+
+func TestLivezDoesNotDependOnStateStore(t *testing.T) {
+	a := testApp(t)
+	if err := a.store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	r := httptest.NewRequest("GET", "/livez", nil)
+	w := httptest.NewRecorder()
+	a.routes().ServeHTTP(w, r)
+	if w.Code != http.StatusOK {
+		t.Fatalf("livez returned %d: %s", w.Code, w.Body.String())
+	}
+	if object(t, w)["scope"] != "process_http_liveness" {
+		t.Fatalf("wrong livez response: %s", w.Body.String())
+	}
+}
+
+func TestJournalStateLimitHasSafeDefault(t *testing.T) {
+	if got := journalStateLimit(Config{}); got != 2<<30 {
+		t.Fatalf("wrong default journal cap: %d", got)
+	}
+	if got := journalStateLimit(Config{JournalStateMaxBytes: 123}); got != 123 {
+		t.Fatalf("configured journal cap was ignored: %d", got)
 	}
 }
 func TestAuthenticationActorAndCookieCSRF(t *testing.T) {
@@ -250,6 +321,18 @@ func TestCoverageDoesNotTreatDiagnosticOnlyDataAsProductionMeasurement(t *testin
 		t.Fatalf("diagnostic data created false production coverage: %v", coverage)
 	}
 }
+
+func TestRequestRootsProductionCoverageIndex(t *testing.T) {
+	a := testApp(t)
+	var definition string
+	if err := a.store.db.QueryRow("SELECT sql FROM sqlite_master WHERE type='index' AND name='request_roots_production_coverage'").Scan(&definition); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(definition, "WHERE trigger_type NOT IN") {
+		t.Fatalf("wrong production coverage index: %s", definition)
+	}
+}
+
 func TestCoverageUsesOccurredHeartbeatTimeInsteadOfDelayedIngestTime(t *testing.T) {
 	a := testApp(t)
 	old := time.Now().UTC().Add(-48 * time.Hour).Format(timestampLayout)
@@ -598,5 +681,46 @@ func TestReportPressurePauseIsBoundedAndRequiresRepeatedEvidence(t *testing.T) {
 	until, e := time.Parse(time.RFC3339Nano, loaded.ReportsPausedUntil)
 	if e != nil || time.Until(until) > 5*time.Minute || time.Until(until) < 4*time.Minute {
 		t.Fatal("report pause must have bounded automatic expiry")
+	}
+}
+
+func TestManualReportsNeverScheduleByAge(t *testing.T) {
+	a := testApp(t)
+	for _, kind := range []string{"analytics", "guild-preview", "provider-preview"} {
+		input := Object{"filters": Object{}}
+		first := object(t, request(t, a, "POST", "/v1/reports/"+kind, input))
+		id := str(first["actionId"])
+		result := Object{"report": Object{"complete": true}}
+		if e := a.store.finish(id, "succeeded", result, nil); e != nil {
+			t.Fatal(e)
+		}
+		if e := a.completeReport(id, "succeeded", result, nil); e != nil {
+			t.Fatal(e)
+		}
+		old := time.Now().UTC().Add(-48 * time.Hour).Format(timestampLayout)
+		if _, e := a.store.db.Exec("UPDATE reports SET updated_at=?,generated_at=? WHERE current_action_id=?", old, old, id); e != nil {
+			t.Fatal(e)
+		}
+		a.scheduleReportRefresh(defaultPolicy())
+		var active int
+		if e := a.store.db.QueryRow("SELECT COUNT(*) FROM actions WHERE type='reports.build' AND status IN ('queued','running')").Scan(&active); e != nil {
+			t.Fatal(e)
+		}
+		if active != 0 {
+			t.Fatal("manual report was scheduled by age")
+		}
+		read := object(t, request(t, a, "GET", "/v1/reports/"+kind, nil))
+		if nested(read, "cache")["ready"] != true {
+			t.Fatal("old completed report disappeared")
+		}
+		if _, e := a.store.db.Exec("UPDATE reports SET generated_at=? WHERE current_action_id=?", now(), id); e != nil {
+			t.Fatal(e)
+		}
+		next := object(t, request(t, a, "POST", "/v1/reports/"+kind, input))
+		if str(next["actionId"]) == id {
+			t.Fatal("explicit generation reused completed job")
+		}
+		a.store.finish(str(next["actionId"]), "failed", nil, Object{"code": "test"})
+		a.completeReport(str(next["actionId"]), "failed", nil, Object{"code": "test"})
 	}
 }

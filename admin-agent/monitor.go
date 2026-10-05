@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"log"
 	"net/http"
 	"os"
@@ -11,6 +12,11 @@ import (
 	"strconv"
 	"strings"
 	"time"
+)
+
+const (
+	heartbeatReadTimeout = 2 * time.Second
+	monitorCycleTimeout  = 30 * time.Second
 )
 
 type Policy struct {
@@ -31,11 +37,15 @@ type Policy struct {
 }
 
 func defaultPolicy() Policy {
-	return Policy{Revision: 1, AutoInvestigate: true, AutoPauseReports: true, AutoRestartAnalysis: true, AutoCancelOverdueQueries: true, AutoRefreshReports: true, ReportsRefreshIntervalSeconds: 900, DesiredState: "running", RestartCooldownSeconds: 900, RestartDailyLimit: 3, HeartbeatGraceSeconds: 180}
+	return Policy{Revision: 1, AutoInvestigate: true, AutoRestartHungBot: true, AutoPauseReports: true, AutoRestartAnalysis: true, AutoCancelOverdueQueries: true, AutoRefreshReports: true, ReportsRefreshIntervalSeconds: 900, DesiredState: "running", RestartCooldownSeconds: 900, RestartDailyLimit: 3, HeartbeatGraceSeconds: 180}
 }
 func (a *App) loadPolicy() (Policy, error) {
+	return a.loadPolicyContext(context.Background())
+}
+
+func (a *App) loadPolicyContext(ctx context.Context) (Policy, error) {
 	var p Policy
-	e := a.store.getSetting("policy", &p)
+	e := a.store.getSettingContext(ctx, "policy", &p)
 	return p, e
 }
 func (a *App) getPolicy(w http.ResponseWriter, r *http.Request) {
@@ -202,9 +212,10 @@ func (a *App) collect(ctx context.Context, deep bool) Object {
 	if a.cfg.WorkerURL != "" {
 		v["analysisHTTP"] = a.httpProbe(ctx, strings.TrimSuffix(a.cfg.WorkerURL, "/execute")+"/health")
 	}
-	var payload, occurred, persisted string
 	heartbeat := Object{}
-	e := a.store.db.QueryRowContext(ctx, "SELECT payload,occurred_at,persisted_at FROM events WHERE kind IN ('heartbeat','bot.heartbeat','runtime.heartbeat') AND COALESCE(json_extract(payload,'$.triggerType'),json_extract(payload,'$.trigger_type'),'') NOT IN ('diagnostic','admin_operation') ORDER BY seq DESC LIMIT 1").Scan(&payload, &occurred, &persisted)
+	heartbeatCtx, cancelHeartbeatRead := context.WithTimeout(ctx, heartbeatReadTimeout)
+	payload, occurred, persisted, e := a.store.latestHeartbeat(heartbeatCtx)
+	cancelHeartbeatRead()
 	if e == nil {
 		heartbeat, _ = decode(payload).(map[string]any)
 		v["heartbeat"] = heartbeat
@@ -223,8 +234,15 @@ func (a *App) collect(ctx context.Context, deep bool) Object {
 		if t, err := time.Parse(time.RFC3339Nano, persisted); err == nil {
 			v["heartbeatPersistedAgeSeconds"] = time.Since(t).Seconds()
 		}
-	} else {
+	} else if errors.Is(e, sql.ErrNoRows) {
 		v["heartbeatState"] = "unobserved"
+	} else {
+		v["heartbeatState"] = "unavailable"
+		if errors.Is(e, context.DeadlineExceeded) {
+			v["heartbeatError"] = "state_read_timeout"
+		} else {
+			v["heartbeatError"] = "state_read_failed"
+		}
 	}
 	a.stateMu.Lock()
 	previous := nested(a.lastSnapshot, "workloadIdentity")
@@ -248,24 +266,35 @@ func (a *App) collect(ctx context.Context, deep bool) Object {
 func (a *App) monitor(ctx context.Context) {
 	ticker := time.NewTicker(a.cfg.MonitorInterval)
 	defer ticker.Stop()
-	a.monitorOnce(ctx)
+	a.monitorOnceSafely(ctx)
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			a.monitorOnce(ctx)
+			a.monitorOnceSafely(ctx)
 		}
 	}
 }
-func (a *App) monitorOnce(ctx context.Context) {
-	a.retryRecoveryIntent(ctx)
+
+func (a *App) monitorOnceSafely(ctx context.Context) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			log.Printf("monitor cycle panicked and will be retried: %v", recovered)
+		}
+	}()
+	a.monitorOnce(ctx)
+}
+
+func (a *App) monitorOnce(parent context.Context) {
+	ctx, cancel := context.WithTimeout(parent, monitorCycleTimeout)
+	defer cancel()
 	snapshot := a.collect(ctx, false)
 	a.stateMu.Lock()
 	a.lastSnapshot = snapshot
 	a.stateMu.Unlock()
 	eventID := randomID()
-	if _, _, e := a.store.ingest([]Object{{"id": eventID, "kind": "monitor.snapshot", "occurredAt": now(), "component": "admin-agent", "details": snapshot}}); e != nil {
+	if _, _, e := a.store.ingestContext(ctx, []Object{{"id": eventID, "kind": "monitor.snapshot", "occurredAt": now(), "component": "admin-agent", "details": snapshot}}); e != nil {
 		log.Printf("monitor state could not be persisted: %v", e)
 		return
 	}
@@ -274,7 +303,10 @@ func (a *App) monitorOnce(ctx context.Context) {
 	a.hasMonitorSave = true
 	a.stateMu.Unlock()
 	notifySystemd("WATCHDOG=1\nSTATUS=State store and monitor progressing")
-	p, e := a.loadPolicy()
+	// Recovery retries can use network and must not delay the core's own
+	// persisted liveness signal.
+	a.retryRecoveryIntent(ctx)
+	p, e := a.loadPolicyContext(ctx)
 	if e != nil {
 		return
 	}
@@ -324,11 +356,11 @@ func (a *App) monitorOnce(ctx context.Context) {
 			a.good("dashboard.local.unavailable", Object{"scope": "Local HTTP health endpoint only", "supports": evidence})
 		}
 	}
-	if pub["configured"] == true && local["ok"] == true && observeWorkloadEndpoints {
+	if pub["configured"] == true && observeWorkloadEndpoints {
 		if pub["ok"] == false {
 			a.bad("dashboard.public.path")
 			if a.failures["dashboard.public.path"] >= 3 {
-				a.detect("dashboard.public.path", "公開経路だけでHTTP失敗を確認しました", Object{"claim": "Local HTTP succeeds while the configured public endpoint fails. DNS/TLS/proxy/tunnel or upstream auth may be involved.", "supports": evidence, "unconfirmed": []string{"external witness reachability", "exact public path component"}, "nextActions": []string{"diagnostics.collect"}}, p)
+				a.detect("dashboard.public.path", "公開経路でHTTP失敗を確認しました", Object{"claim": "The configured public endpoint fails. Local HTTP state, DNS/TLS/proxy/tunnel and upstream auth require separate inspection.", "supports": evidence, "unconfirmed": []string{"external witness reachability", "exact public path component"}, "nextActions": []string{"diagnostics.collect"}}, p)
 			}
 		} else {
 			a.good("dashboard.public.path", Object{"scope": "Configured public HTTP endpoint recovered", "supports": evidence})
@@ -336,6 +368,7 @@ func (a *App) monitorOnce(ctx context.Context) {
 	}
 	if p.AutoRestartHungBot && !maintenance {
 		a.maybeRepairHungBot(ctx, snapshot, p)
+		a.maybeRepairUnverifiedBot(ctx, snapshot, p)
 	}
 	disk := nested(nested(snapshot, "host"), "disk")
 	if free, ok := disk["freeBytes"].(uint64); ok {
@@ -358,7 +391,7 @@ func (a *App) monitorOnce(ctx context.Context) {
 	if p.AutoRefreshReports && a.cfg.ReportWorkerURL != "" {
 		a.scheduleReportRefresh(p)
 	}
-	_, _ = a.store.db.Exec("DELETE FROM sessions WHERE expires_at<?", now())
+	_, _ = a.store.db.ExecContext(ctx, "DELETE FROM sessions WHERE expires_at<?", now())
 	a.reconcileUnknown(ctx)
 }
 func (a *App) bad(key string) { a.failures[key]++ }
@@ -381,6 +414,53 @@ func (a *App) detect(key, title string, evidence Object, p Policy) {
 		}
 	}
 }
+func (a *App) maybeRepairUnverifiedBot(ctx context.Context, snapshot Object, p Policy) {
+	// A guardian can keep the systemd unit active while its Bot child has
+	// exited. In that state the normal hung check cannot use a verified
+	// heartbeat, so use the independent unit identity plus repeated workload
+	// absence and a stale/unobserved heartbeat as the recovery gate.
+	unit := nested(snapshot, "unit")
+	identity := nested(snapshot, "workloadIdentity")
+	if str(unit["ActiveState"]) != "active" || str(unit["InvocationID"]) == "" || str(unit["Job"]) != "" && str(unit["Job"]) != "0" || identity["available"] == true {
+		return
+	}
+	if a.failures["bot.workload.unverified"] < 3 {
+		return
+	}
+	heartbeatState := str(snapshot["heartbeatState"])
+	age, hasAge := snapshot["heartbeatAgeSeconds"].(float64)
+	staleHeartbeat := heartbeatState == "unobserved" || hasAge && age > float64(p.HeartbeatGraceSeconds)
+	if !staleHeartbeat {
+		return
+	}
+	var raw, status, when string
+	e := a.store.db.QueryRow("SELECT COALESCE(result,'null'),status,updated_at FROM actions WHERE type='diagnostics.db' ORDER BY created_at DESC LIMIT 1").Scan(&raw, &status, &when)
+	t, _ := time.Parse(time.RFC3339Nano, when)
+	if e != nil || status != "succeeded" || time.Since(t) > time.Minute {
+		key := "db-check-unverified:" + str(unit["InvocationID"]) + ":" + time.Now().UTC().Format("200601021504")
+		_, _, _ = a.store.enqueue("diagnostics.db", Object{}, key, a.cfg.Owner, "automation")
+		return
+	}
+	dbResult, _ := decode(raw).(map[string]any)
+	if first(nested(nested(dbResult, "results"), "connection"), "status") != "ok" {
+		return
+	}
+	var count int
+	var last sql.NullString
+	_ = a.store.db.QueryRow("SELECT COUNT(*),MAX(created_at) FROM actions WHERE type='service.restart' AND created_at>?", time.Now().UTC().Add(-24*time.Hour).Format(timestampLayout)).Scan(&count, &last)
+	lt, _ := time.Parse(time.RFC3339Nano, last.String)
+	if count >= p.RestartDailyLimit || last.Valid && time.Since(lt) < time.Duration(p.RestartCooldownSeconds)*time.Second {
+		return
+	}
+	_, _, _ = a.store.enqueue("service.restart", Object{
+		"expectedInvocationId": str(unit["InvocationID"]),
+		"reason": "Policy-authorized recovery: repeated unverified Bot workload, stale or absent heartbeat and recent successful independent DB diagnosis",
+		"observedWorkloadPID": identity["pid"],
+		"observedWorkloadReason": identity["reason"],
+		"policyRevision": p.Revision,
+	}, "unverified-repair:"+str(unit["InvocationID"]), a.cfg.Owner, "automation")
+}
+
 func (a *App) maybeRepairHungBot(ctx context.Context, snapshot Object, p Policy) {
 	// Independent evidence is required: systemd identity, stale telemetry, failed local
 	// HTTP, and a successful fresh independent DB probe. Read-only investigation is

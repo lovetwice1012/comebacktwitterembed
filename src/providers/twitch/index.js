@@ -221,6 +221,7 @@ function parseTwitchUrl(rawUrl) {
 }
 
 async function fetchTwitchAppToken() {
+    if (require('../../automation/fetch-budget').isGuestExecution()) return null;
     const clientId = process.env.TWITCH_CLIENT_ID;
     const clientSecret = process.env.TWITCH_CLIENT_SECRET;
     if (!clientId || !clientSecret) return null;
@@ -656,6 +657,7 @@ const twitchProvider = {
 
 module.exports = twitchProvider;
 module.exports._internal = {
+    fetchTwitchAppToken,
     parseTwitchChannelUrl,
     parseTwitchClipUrl,
     parseTwitchUrl,

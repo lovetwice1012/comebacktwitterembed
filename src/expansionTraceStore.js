@@ -95,10 +95,16 @@ async function persist(operation, traceId) {
 }
 
 async function beginExpansionTrace({ traceId = crypto.randomUUID(), bootId, providerId, url, message }) {
+    const persisted = await persist(() => insertExpansionTrace(queryDatabase, { traceId, bootId, providerId, url, message }), traceId);
+    if (persisted) activeTraceIds.add(traceId);
+    return { traceId, persisted };
+}
+
+async function insertExpansionTrace(query, { traceId, bootId, providerId, url, message }) {
     const now = Date.now();
     const rawUrl = safeUrl(url);
     const fields = messageFields(message);
-    const persisted = await persist(() => queryDatabase(
+    await query(
         `INSERT INTO ${TABLES.botProviderExpansionTraces} (
             trace_id, boot_id, state, created_at_ms, updated_at_ms,
             provider_id, raw_url, normalized_url, url_hash,
@@ -111,11 +117,61 @@ async function beginExpansionTrace({ traceId = crypto.randomUUID(), bootId, prov
             fields.guildId, fields.channelId, fields.authorUserId, fields.messageId,
         ],
         { timeoutMs: 5000, logErrors: false }
-    ), traceId);
-    if (persisted) activeTraceIds.add(traceId);
-    return { traceId, persisted };
+    );
 }
 
+async function readMessageTraces(query, message, locked = false) {
+    const { guildId, channelId, messageId } = messageFields(message);
+    if (!guildId || !channelId || !messageId) throw new Error('A guild message is required.');
+    return query(`SELECT trace_id, provider_id, raw_url, state, outcome, reason_code,
+        created_at_ms, updated_at_ms, (output_json IS NOT NULL) AS has_output,
+        (delivery_json IS NOT NULL) AS has_delivery, error_json
+        FROM ${TABLES.botProviderExpansionTraces}
+        WHERE guild_id=? AND channel_id=? AND message_id=?
+        ORDER BY created_at_ms DESC, trace_id DESC LIMIT 101${locked ? ' FOR UPDATE' : ''}`,
+    [guildId, channelId, messageId], { timeoutMs: 5000, logErrors: false });
+}
+
+async function getMessageExpansionTraces(message) {
+    return readMessageTraces(queryDatabase, message);
+}
+
+async function reserveExpansionRetries(message, matches, bootId) {
+    const { MAX_HISTORY, groupHistory, canRetryHistory } = require('./expansionRetryPolicy');
+    const { urlIdentity } = require('./providers/_url_identity');
+    const reserved = await require('./db').withDatabaseTransaction(async query => {
+        const { guildId, channelId, messageId } = messageFields(message);
+        if (!guildId || !channelId || !messageId) throw new Error('A guild message is required.');
+        // Serialize on an existing primary-key row before taking range locks.
+        // Competing range scans can otherwise retain gap locks that deadlock
+        // the first transaction when it inserts its new retry trace.
+        const anchor = await query(`SELECT trace_id FROM ${TABLES.botProviderExpansionTraces}
+            WHERE guild_id=? AND channel_id=? AND message_id=?
+            ORDER BY created_at_ms ASC, trace_id ASC LIMIT 1`, [guildId, channelId, messageId], { timeoutMs: 5000, logErrors: false });
+        if (!anchor.length) return [];
+        const locked = await query(`SELECT trace_id FROM ${TABLES.botProviderExpansionTraces}
+            WHERE trace_id=? FOR UPDATE`, [anchor[0].trace_id], { timeoutMs: 5000, logErrors: false });
+        if (!locked.length) return [];
+        const rows = await readMessageTraces(query, message, true);
+        if (rows.length > MAX_HISTORY) return [];
+        const history = groupHistory(rows);
+        const selected = [];
+        for (const match of matches) {
+            const key = urlIdentity(match.provider.id, safeUrl(match.url));
+            if (!canRetryHistory(history.get(key) || [])) continue;
+            const requestId = crypto.randomUUID();
+            await insertExpansionTrace(query, { traceId: requestId, bootId, providerId: match.provider.id, url: match.url, message });
+            selected.push({ ...match, requestId, receivedStart: performance.now() });
+            history.delete(key);
+            if (selected.length === 5) break;
+        }
+        return selected;
+    });
+    for (const match of reserved) activeTraceIds.add(match.requestId);
+    return reserved;
+}
+
+/** @param {string} traceId @param {{state?: string, outcome?: string|null, reasonCode?: string|null, output?: any, delivery?: any, error?: any}} update */
 async function updateExpansionTrace(traceId, { state, outcome = null, reasonCode = null, output = undefined, delivery = undefined, error = undefined } = {}) {
     if (!traceId || !state) return false;
     const terminal = TERMINAL_STATES.has(state);
@@ -177,6 +233,8 @@ async function interruptActiveExpansionTraces(reasonCode = 'process_stopping') {
 module.exports = {
     beginExpansionTrace,
     updateExpansionTrace,
+    getMessageExpansionTraces,
+    reserveExpansionRetries,
     reconcileInterruptedExpansionTraces,
     interruptActiveExpansionTraces,
     _internal: {

@@ -25,6 +25,9 @@ const HANDLER_NAMES = [
     "checkmyguildsettings",
     "autoextract",
     "provider",
+    "saved",
+    "remind",
+    "restock",
 ];
 
 function buildSlashCommands() {
@@ -33,4 +36,8 @@ function buildSlashCommands() {
     return [...core, ...provider];
 }
 
-module.exports = { buildSlashCommands, HANDLER_NAMES };
+function buildApplicationCommands() {
+    return [...buildSlashCommands(), ...require('./commands/handlers/messageExpansion').commands.map(command => command.definition)];
+}
+
+module.exports = { buildSlashCommands, buildApplicationCommands, HANDLER_NAMES };

@@ -36,6 +36,7 @@ type CrossSettingsPayload = {
 const navItems = [
   { href: "", labelKey: "shell.nav.overview", icon: Gauge },
   { href: "providers", labelKey: "shell.nav.providers", icon: Layers3 },
+  { href: "automation", labelKey: "shell.nav.automation", icon: Activity },
   { href: "settings", labelKey: "shell.nav.settings", icon: Search },
   { href: "preview", labelKey: "shell.nav.preview", icon: ClipboardList },
   { href: "diagnostics", labelKey: "shell.nav.diagnostics", icon: Activity },

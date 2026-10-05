@@ -1,8 +1,9 @@
 [Unit]
 Description=CBTE independent administration and monitoring
 After=network.target
-StartLimitIntervalSec=300
-StartLimitBurst=3
+# A transient core fault must not leave the only management API permanently
+# failed. The process still restarts with a five-second backoff below.
+StartLimitIntervalSec=0
 
 [Service]
 Type=notify
@@ -16,7 +17,7 @@ StateDirectory=cbte-admin
 StateDirectoryMode=0700
 RuntimeDirectory=cbte-admin
 RuntimeDirectoryMode=0700
-Restart=on-failure
+Restart=always
 RestartSec=5
 WatchdogSec=120
 TimeoutStopSec=15

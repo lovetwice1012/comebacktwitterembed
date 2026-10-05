@@ -23,6 +23,13 @@ except ImportError:
 GIB = 1024 ** 3
 IDENTIFIER = re.compile(r"[0-9a-f]{24}")
 STEPS = {"INTENT", "POINTER_CLEARED", "STOPPING", "REMOVING", "CONTAINER_REMOVED", "DATA_REMOVING", "RETIRED"}
+ACTIVE_STEPS = {"INTENT", "POINTER_CLEARED", "STOPPING", "REMOVING", "CONTAINER_REMOVED", "DATA_REMOVING", "RETIRED"}
+
+
+def same_backup_source(left, right):
+    return (isinstance(left, dict) and isinstance(right, dict)
+            and all(isinstance(left.get(key), str) and left[key] == right.get(key)
+                    for key in ("backupId", "sourceSha256", "sourceTimestamp")))
 
 
 class CapacityError(RuntimeError):
@@ -147,6 +154,187 @@ def _authority_primary(config, authority):
     return live
 
 
+def _stale_active_ownership(config, authority, pointer):
+    """Prove that an old activated candidate no longer owns OCI.
+
+    An activated candidate is normally immutable and cannot be retired by the
+    standby cache path.  During a completed failback, however, the authority
+    can have returned to primary while a stopped OCI pointer and its MySQL
+    container remain behind.  This narrow proof is the only automatic escape:
+    the authority must select primary, its lease and drain windows must be
+    over, and the pointer must belong to an older epoch.
+    """
+    live = authority()
+    if not isinstance(live, dict) or live.get("activeNode") != "primary" or type(live.get("epoch")) is not int:
+        raise CapacityError("PRIMARY_OWNERSHIP_UNCONFIRMED", "Live authority must still select primary before stale OCI retirement.")
+    now = time.time()
+    lease = live.get("lease") or {}
+    if lease.get("valid") or now < max(float(live.get("quarantineUntil") or 0),
+                                       float(live.get("drainUntil") or 0),
+                                       float(lease.get("expiresAt") or 0) + 60):
+        raise CapacityError("ACTIVE_CANDIDATE_PRESENT", "The OCI lease or drain window has not expired.")
+    if not isinstance(pointer, dict) or type(pointer.get("epoch")) is not int or pointer["epoch"] >= live["epoch"]:
+        raise CapacityError("ACTIVE_CANDIDATE_PRESENT", "The active OCI candidate does not belong to an older authority epoch.")
+    return live
+
+
+def _active_container_proof(config, directory, pointer, info):
+    """Validate the exact host-network container used by an activated pointer."""
+    if not isinstance(info, dict):
+        return None
+    labels = info.get("Config", {}).get("Labels") or {}
+    container_id = info.get("Id", "")
+    mounts = {value.get("Destination"): value for value in info.get("Mounts", [])}
+    if (not re.fullmatch(r"[0-9a-f]{64}", container_id)
+            or info.get("Name") != "/" + pointer.get("container", "")
+            or labels.get("cbte.recovery") != "true"
+            or labels.get("cbte.restore-id") != pointer.get("id")
+            or labels.get("cbte.activation-epoch") != str(pointer.get("epoch"))
+            or info.get("Config", {}).get("Image") != config["mysqlImage"]
+            or info.get("HostConfig", {}).get("NetworkMode") != "host"
+            or info.get("HostConfig", {}).get("RestartPolicy", {}).get("Name") != "no"):
+        raise CapacityError("UNOWNED_OR_ACTIVE_CONTAINER", "The stale OCI container is not the recorded activated candidate.")
+    for destination, name, writable in [
+        ("/var/lib/mysql", "data", True),
+        ("/run/cbte-secrets", "secrets", False),
+    ]:
+        mount = mounts.get(destination, {})
+        if (mount.get("Type") != "bind" or mount.get("Source") != str(directory / name)
+                or mount.get("RW") is not writable):
+            raise CapacityError("CANDIDATE_MOUNT_MISMATCH", "The stale OCI container mount differs from its recorded candidate namespace.")
+    return container_id
+
+
+def _active_retirement_paths(config, identifier):
+    root = Path(config["stateDir"])
+    journals = root / "active-retirements"
+    history = root / "active-candidate-history"
+    journals.mkdir(mode=0o700, exist_ok=True)
+    history.mkdir(mode=0o700, exist_ok=True)
+    regular_path(journals, directory=True, private=True)
+    regular_path(history, directory=True, private=True)
+    return journals / (identifier + ".json"), history / (identifier + ".json")
+
+
+def _retire_stale_active(config, authority, update, backend, pointer, journal_path, journal):
+    """Resume a durable retirement of a stopped, superseded OCI candidate."""
+    if journal.get("step") not in ACTIVE_STEPS or journal.get("version") != 1:
+        raise CapacityError("INVALID_ACTIVE_RETIREMENT_JOURNAL", "Unknown stale active-candidate retirement journal.")
+    live = _stale_active_ownership(config, authority, pointer)
+    identifier = journal.get("candidateId")
+    if not isinstance(identifier, str) or not IDENTIFIER.fullmatch(identifier):
+        raise CapacityError("INVALID_RETIREMENT_ID", "A fixed stale candidate identifier is required.")
+    root = regular_path(config["candidateRoot"], directory=True)
+    directory = regular_path(root / identifier, directory=True)
+    receipt = private_json(directory / "receipt.json")
+    if (receipt.get("id") != identifier or receipt.get("directory") != str(directory)
+            or receipt.get("container") != "cbte-dr-" + identifier
+            or receipt.get("mysqlImage") != config["mysqlImage"]):
+        raise CapacityError("RETIREMENT_IDENTITY_MISMATCH", "Stale candidate receipt does not match its configured namespace.")
+    if receipt.get("phase") not in {"STOPPED", "RETIRED"} or receipt.get("activationEpoch") != pointer.get("epoch"):
+        raise CapacityError("STALE_CANDIDATE_UNCONFIRMED", "Only a recorded stopped activation from an older epoch may be retired automatically.")
+    if journal.get("pointer") != pointer or journal.get("originalReceipt") != receipt:
+        raise CapacityError("ACTIVE_RETIREMENT_RECEIPT_CHANGED", "The stale candidate identity changed during retirement.")
+
+    if journal["step"] == "INTENT":
+        prepared_path = Path(config["stateDir"]) / "prepared-candidate.json"
+        if prepared_path.exists():
+            prepared = private_json(prepared_path)
+            if prepared and prepared.get("id") != identifier:
+                raise CapacityError("PREPARED_CANDIDATE_CHANGED", "A different prepared candidate must not be invalidated by stale OCI retirement.")
+            atomic_json(prepared_path, None)
+        atomic_json(journal_path, dict(journal, step="POINTER_CLEARED", updatedAt=time.time()))
+        atomic_json(Path(config["stateDir"]) / "active-candidate.json", None)
+        update(phase="NO_VALIDATED_STANDBY", candidate=None, backup=None,
+               retirement={"candidateId": identifier, "journal": str(journal_path), "state": "retiring"})
+        journal = dict(journal, step="POINTER_CLEARED")
+    if journal["step"] in {"POINTER_CLEARED", "STOPPING"}:
+        info = backend.inspect(receipt["container"])
+        if info is not None:
+            container_id = _active_container_proof(config, directory, pointer, info)
+            if journal["step"] == "POINTER_CLEARED":
+                journal = dict(journal, containerId=container_id, step="STOPPING", updatedAt=time.time())
+                atomic_json(journal_path, journal)
+            _stale_active_ownership(config, authority, pointer)
+            if info.get("State", {}).get("Running") is True:
+                backend.stop(container_id)
+            stopped = backend.inspect(receipt["container"])
+            _active_container_proof(config, directory, pointer, stopped)
+            if stopped is None or stopped.get("State", {}).get("Running") is not False:
+                raise CapacityError("CANDIDATE_STOP_UNCONFIRMED", "The stale OCI container did not confirm a stopped state.")
+            _stale_active_ownership(config, authority, pointer)
+            backend.remove(container_id)
+            if backend.inspect(receipt["container"]) is not None:
+                raise CapacityError("CANDIDATE_REMOVAL_UNCONFIRMED", "The stale OCI container could not be removed.")
+        journal = dict(journal, step="CONTAINER_REMOVED", updatedAt=time.time())
+        atomic_json(journal_path, journal)
+    if journal["step"] in {"CONTAINER_REMOVED", "DATA_REMOVING"}:
+        _stale_active_ownership(config, authority, pointer)
+        data = directory / "data"
+        if data.exists() or data.is_symlink():
+            regular_path(data, directory=True)
+            if data.parent != root / identifier or data.name != "data":
+                raise CapacityError("UNSAFE_RETIREMENT_TARGET", "Stale candidate data removal escaped its proven namespace.")
+            journal = dict(journal, step="DATA_REMOVING", updatedAt=time.time())
+            atomic_json(journal_path, journal)
+            backend.remove_data(data)
+        retired = dict(receipt, phase="RETIRED", retiredAt=time.time(),
+                       retirementJournal=str(journal_path), retirementReason="Superseded OCI activation after primary ownership returned.")
+        atomic_json(directory / "receipt.json", retired)
+        atomic_json(journal_path, dict(journal, step="RETIRED", updatedAt=time.time()))
+        update(phase="NO_VALIDATED_STANDBY", candidate=None, backup=None,
+               retirement={"candidateId": identifier, "journal": str(journal_path), "state": "retired"})
+    return {"retired": True, "candidateId": identifier, "freeBytes": backend.free_bytes(root)}
+
+
+def retire_stale_active_candidate(config, authority, update, backend=None):
+    """Retire one proven, stopped OCI activation left behind after failback."""
+    backend = backend or Backend()
+    pointer_path = Path(config["stateDir"]) / "active-candidate.json"
+    journals = Path(config["stateDir"]) / "active-retirements"
+    if journals.exists():
+        for path in sorted(journals.glob("*.json")):
+            journal = private_json(path)
+            if journal.get("step") != "RETIRED":
+                pointer = journal.get("pointer") or private_json(pointer_path)
+                return _retire_stale_active(config, authority, update, backend, pointer, path, journal)
+    if not pointer_path.exists():
+        return None
+    pointer = private_json(pointer_path)
+    if not pointer:
+        return None
+    identifier = pointer.get("id")
+    if not isinstance(identifier, str) or not IDENTIFIER.fullmatch(identifier):
+        raise CapacityError("ACTIVE_CANDIDATE_PRESENT", "The active OCI candidate identity is invalid.")
+    journal_path, history_path = _active_retirement_paths(config, identifier)
+    if journal_path.exists():
+        journal = private_json(journal_path)
+        return _retire_stale_active(config, authority, update, backend, pointer, journal_path, journal)
+    _stale_active_ownership(config, authority, pointer)
+    root = regular_path(config["candidateRoot"], directory=True)
+    directory = regular_path(root / identifier, directory=True)
+    receipt = private_json(directory / "receipt.json")
+    if receipt.get("phase") != "STOPPED" or receipt.get("activationEpoch") != pointer.get("epoch"):
+        raise CapacityError("ACTIVE_CANDIDATE_PRESENT", "The old OCI candidate is not recorded as safely stopped.")
+    export_id = (receipt.get("manifest") or {}).get("exportId")
+    cipher = Path(config["stateDir"]) / "ciphertexts" / ((export_id or "") + ".sql.zst.age")
+    if not isinstance(export_id, str) or not re.fullmatch(r"[0-9a-f]{64}", export_id):
+        raise CapacityError("OLD_CIPHERTEXT_UNAVAILABLE", "The stale candidate has no immutable encrypted rollback artifact.")
+    regular_path(cipher)
+    verify_artifact(cipher, (receipt["manifest"]["export"])["sha256"], (receipt["manifest"]["export"])["bytes"])
+    archive = {"version": 1, "candidateId": identifier, "archivedAt": time.time(), "pointer": pointer, "receipt": receipt}
+    if history_path.exists():
+        existing = private_json(history_path)
+        if existing.get("candidateId") != identifier or existing.get("pointer") != pointer or existing.get("receipt") != receipt:
+            raise CapacityError("ACTIVE_RETIREMENT_HISTORY_CONFLICT", "Stale candidate history already identifies another pointer.")
+    else:
+        atomic_json(history_path, archive)
+    journal = {"version": 1, "candidateId": identifier, "pointer": pointer, "originalReceipt": receipt,
+               "history": str(history_path), "createdAt": time.time(), "step": "INTENT"}
+    atomic_json(journal_path, journal)
+    return _retire_stale_active(config, authority, update, backend, pointer, journal_path, journal)
+
+
 def _container_proof(config, directory, receipt, info, expected_id=None):
     if not isinstance(info, dict):
         raise CapacityError("UNKNOWN_CANDIDATE_CONTAINER", "An existing owned container is required before a new retirement.")
@@ -244,6 +432,17 @@ def ensure_capacity(config, artifact, manifest, candidate, authority, update, ba
     root = Path(config["candidateRoot"])
     root.mkdir(parents=True, exist_ok=True, mode=0o700)
     regular_path(root, directory=True)
+    stale = None
+    pointer_path = Path(config["stateDir"]) / "active-candidate.json"
+    if pointer_path.exists():
+        pointer = private_json(pointer_path)
+        # Keep an activated pointer when it still identifies the same backup;
+        # a replacement import must first retire only a stopped, superseded
+        # activation whose immutable rollback artifact is verified.
+        if pointer and not same_backup_source((pointer.get("manifest") or {}).get("source"), manifest.get("source")):
+            stale = retire_stale_active_candidate(config, authority, update, backend)
+            if stale:
+                candidate = None
     # If startup could not reach the authority, quarantine can be retried
     # here once it recovers. The retained identity prevents an orphan import
     # from silently consuming all space on every subsequent attempt.
@@ -279,7 +478,8 @@ def ensure_capacity(config, artifact, manifest, candidate, authority, update, ba
         raise CapacityError("INVALID_RESTORE_CAPACITY", "Restore capacity and free-space reserve must not be negative.")
     required, free = import_bytes + reserve, backend.free_bytes(root)
     if free >= required:
-        return {"freeBytes": free, "requiredBytes": required, "retired": False}
+        return {"freeBytes": free, "requiredBytes": required, "retired": bool(stale),
+                **({"retiredCandidateId": stale["candidateId"]} if stale else {})}
     if mode != "single":
         raise CapacityError("STANDBY_REPLACEMENT_DISABLED", f"Another isolated import needs {required} free bytes (including {reserve} reserve), but only {free} are available. Existing standby data was preserved; single-standby replacement is not enabled.")
     _authority_primary(config, authority)

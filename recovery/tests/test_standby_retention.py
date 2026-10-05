@@ -137,6 +137,27 @@ class RetentionTests(unittest.TestCase):
                 atomic_json(self.state / "active-candidate.json", None)
                 self.current["candidate"] = self.candidate
 
+    def test_stopped_superseded_active_candidate_is_retired_only_after_primary_drain(self):
+        pointer = self.candidate | {"epoch": 3, "phase": "VALIDATED"}
+        stopped = self.candidate | {"phase": "STOPPED", "activationEpoch": 3,
+                                    "activationReason": "Guardian requested workload stop."}
+        atomic_json(self.state / "active-candidate.json", pointer)
+        atomic_json(self.directory / "receipt.json", stopped)
+        self.current = {"candidate": None, "phase": "STANDBY_READY", "pendingBackup": self.new_manifest["source"]}
+        self.authority.return_value = {"activeNode": "primary", "epoch": 5, "lease": None,
+                                       "drainUntil": 0, "quarantineUntil": 0}
+        self.backend.info["HostConfig"]["NetworkMode"] = "host"
+        self.backend.info["Config"]["Labels"]["cbte.activation-epoch"] = "3"
+        result = self.ensure()
+        self.assertTrue(result["retired"])
+        self.assertIsNone(read_json(self.state / "active-candidate.json"))
+        self.assertFalse((self.directory / "data").exists())
+        self.assertTrue((self.directory / "secrets/root-password").exists())
+        self.assertEqual(read_json(self.directory / "receipt.json")["phase"], "RETIRED")
+        self.assertEqual(read_json(self.state / "active-retirements" / (self.identifier + ".json"))["step"], "RETIRED")
+        self.assertTrue((self.state / "active-candidate-history" / (self.identifier + ".json")).exists())
+        self.assertEqual([call[0] for call in self.backend.calls], ["inspect", "stop", "inspect", "remove", "inspect", "remove_data"])
+
     def test_unknown_or_host_network_container_is_never_touched(self):
         original = copy.deepcopy(self.backend.info)
         for scenario in ("missing", "label", "image", "mount", "network", "activation_label"):

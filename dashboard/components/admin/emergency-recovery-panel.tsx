@@ -28,8 +28,9 @@ export function backupAge(value: unknown, now = Date.now()) {
 const phaseLabels: Record<string, string> = { idle: "待機中", monitoring: "監視中", waiting_for_backup: "バックアップ待ち", downloading: "バックアップ取得中", restoring: "復元中", validating: "復旧候補を検証中", ready: "準備済み（復旧条件を確認）", blocked: "条件不足で停止中", failed: "処理に失敗", active: "稼働中" };
 
 function localDateTime(value = Date.now()) {
-  const date = new Date(value); date.setMinutes(date.getMinutes() - date.getTimezoneOffset());
-  return date.toISOString().slice(0, 16);
+  const parts = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Tokyo", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(new Date(value));
+  const fields = Object.fromEntries(parts.filter(part => part.type !== "literal").map(part => [part.type, part.value]));
+  return `${fields.year}-${fields.month}-${fields.day}T${fields.hour}:${fields.minute}`;
 }
 
 async function recoveryAction(type: string, input: RecordValue) {
@@ -59,7 +60,7 @@ function ManualSwitchPanel({ status, onRefresh }: { status: RecoveryStatus; onRe
   const pendingState = String(pending.state || "");
   async function schedule() {
     if (!active || !status.epoch || candidate.phase !== "VALIDATED" && target === "oci") throw new Error("現在の復旧候補を確認してから実行してください");
-    const date = new Date(`${executeAt}:00`); if (!Number.isFinite(date.getTime())) throw new Error("実行日時が不正です");
+    const date = new Date(`${executeAt}:00+09:00`); if (!Number.isFinite(date.getTime())) throw new Error("実行日時が不正です");
     setBusy(true); setError(""); setMessage("");
     try {
       const action = await recoveryAction("recovery.manual_switch", { targetNode: target, executeAt: date.toISOString(), expectedEpoch: Number(status.epoch), expectedCandidateId: target === "oci" ? String(candidate.id || "") : "", expectedBackupId: target === "oci" ? String(backup.backupId || "") : "", expectedBackupSha256: target === "oci" ? String(backup.sourceSha256 || "") : "", expectedBackupTimestamp: target === "oci" ? String(backup.sourceTimestamp || "") : "", reason: reason.trim(), confirm, acceptDataRisk: risk, acceptPrimaryIntentOverride: override });

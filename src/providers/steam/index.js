@@ -12,8 +12,10 @@ const {
     resolveDensityMaxLength,
     shouldShowOutputItem,
 } = require('../_output_controls');
-const { toApiLocaleFamily } = require('../../discordLocales');
+const { DEFAULT_DISCORD_LOCALE, normalizeDiscordLocale, toApiLocaleFamily } = require('../../discordLocales');
 const { createProviderAnalytics, facet, finiteNumber, tagFacets } = require('../../analytics/providerMetrics');
+const { parseSteamPage, cleanText, cleanSteamTitle } = require('./steamSourceParser');
+const { resolveSteamLocale, steamPriceAmount, formatSteamPrice, formatSteamDiscount } = require('./pricing');
 
 const STEAM_COLOR = 0x171a21;
 const DESCRIPTION_MAX_LENGTH = 900;
@@ -46,9 +48,10 @@ const STR = {
     showImageAsAttachmentButton: { ja: 'Show image as attachment', en: 'Show image as attachment' },
     translateButton: { ja: 'Translate', en: 'Translate' },
     deleteButton: { ja: 'Delete', en: 'Delete' },
+    priceWatchButton: { ja: '価格通知', en: 'Price alert' },
     typeField: { ja: 'Type', en: 'Type' },
-    priceField: { ja: 'Price', en: 'Price' },
-    discountField: { ja: 'Discount', en: 'Discount' },
+    priceField: { ja: '価格', en: 'Price' },
+    discountField: { ja: '割引', en: 'Discount' },
     saleEndsField: { ja: 'Sale ends', en: 'Sale ends' },
     releaseDateField: { ja: 'Release date', en: 'Release date' },
     developerField: { ja: 'Developer', en: 'Developer' },
@@ -62,7 +65,7 @@ const STR = {
     idField: { ja: 'ID', en: 'ID' },
     requesterPrefix: { ja: 'Requested by ', en: 'Requested by ' },
     anonymousRequester: { ja: 'Anonymous requester', en: 'Anonymous requester' },
-    freeToPlay: { ja: 'Free To Play', en: 'Free To Play' },
+    freeToPlay: { ja: '無料プレイ', en: 'Free To Play' },
     fallbackAppTitle: { ja: 'Steam app #', en: 'Steam app #' },
     fallbackPackageTitle: { ja: 'Steam package #', en: 'Steam package #' },
     fallbackBundleTitle: { ja: 'Steam bundle #', en: 'Steam bundle #' },
@@ -90,36 +93,8 @@ function normalizeLanguage(settings) {
     return toApiLocaleFamily(settings?.defaultLanguage);
 }
 
-function decodeHtml(value) {
-    return String(value ?? '')
-        .replace(/&nbsp;/g, ' ')
-        .replace(/&amp;/g, '&')
-        .replace(/&lt;/g, '<')
-        .replace(/&gt;/g, '>')
-        .replace(/&quot;/g, '"')
-        .replace(/&#39;/g, "'")
-        .replace(/&#x([0-9a-f]+);/gi, (_m, hex) => String.fromCodePoint(parseInt(hex, 16)))
-        .replace(/&#(\d+);/g, (_m, num) => String.fromCodePoint(parseInt(num, 10)));
-}
-
-function stripHtml(value) {
-    return decodeHtml(value)
-        .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '')
-        .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, '')
-        .replace(/<br\s*\/?>/gi, '\n')
-        .replace(/<\/p>/gi, '\n')
-        .replace(/<[^>]+>/g, '')
-        .split('\n')
-        .map(line => line.trim())
-        .filter(Boolean)
-        .join('\n')
-        .trim();
-}
-
-function cleanText(value) {
-    return stripHtml(value)
-        .replace(/\s+/g, ' ')
-        .trim();
+function priceWatchLocale(settings) {
+    return normalizeDiscordLocale(settings?.defaultLanguage, DEFAULT_DISCORD_LOCALE);
 }
 
 function truncate(value, maxLength) {
@@ -135,39 +110,6 @@ function steamDescriptionMaxLength(settings) {
         detail: DESCRIPTION_MAX_LENGTH,
         hardMax: DESCRIPTION_MAX_LENGTH,
     });
-}
-
-function extractAttr(tag, attrName) {
-    if (!tag) return '';
-    const re = new RegExp(`\\b${attrName}\\s*=\\s*("([^"]*)"|'([^']*)'|([^\\s>]+))`, 'i');
-    const match = tag.match(re);
-    return match ? decodeHtml(match[2] || match[3] || match[4] || '') : '';
-}
-
-function escapeRegExp(value) {
-    return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-function readMetaContent(html, name) {
-    const attr = escapeRegExp(name);
-    const tag = html.match(new RegExp(`<meta\\b(?=[^>]*(?:property|name)=["']${attr}["'])[^>]*>`, 'i'))?.[0];
-    return tag ? cleanText(extractAttr(tag, 'content')) : '';
-}
-
-function readTitleTag(html) {
-    const match = html.match(/<title\b[^>]*>([\s\S]*?)<\/title>/i);
-    return match ? cleanText(match[1]) : '';
-}
-
-function absoluteUrl(rawUrl, baseUrl) {
-    const value = String(rawUrl || '').trim();
-    if (!value) return '';
-    if (value.startsWith('//')) return 'https:' + value;
-    try {
-        return new URL(value, baseUrl).toString();
-    } catch {
-        return value;
-    }
 }
 
 function normalizeNumericId(value) {
@@ -348,18 +290,15 @@ function parseSteamUrl(rawUrl) {
 }
 
 function steamApiLanguage(settings) {
-    return toApiLocaleFamily(settings?.defaultLanguage) === 'ja' ? 'japanese' : 'english';
+    return resolveSteamLocale(settings).language;
 }
 
-function steamApiCountry(settings) {
-    return toApiLocaleFamily(settings?.defaultLanguage) === 'ja' ? 'jp' : 'us';
-}
-
-async function fetchSteamAppDetails(appId, settings) {
+async function fetchSteamAppDetails(appId, settings, parsed) {
+    const region = resolveSteamLocale(settings, parsed);
     const apiUrl = new URL('https://store.steampowered.com/api/appdetails');
     apiUrl.searchParams.set('appids', appId);
-    apiUrl.searchParams.set('l', steamApiLanguage(settings));
-    apiUrl.searchParams.set('cc', steamApiCountry(settings));
+    apiUrl.searchParams.set('l', region.language);
+    apiUrl.searchParams.set('cc', region.country);
 
     const res = await fetch(apiUrl.toString(), {
         headers: {
@@ -417,8 +356,16 @@ async function optionalSteamValue(factory) {
     }
 }
 
-async function fetchSteamPage(rawUrl) {
-    const res = await fetch(rawUrl, { headers: REQUEST_HEADERS, redirect: 'follow' });
+async function fetchSteamPage(parsed, settings) {
+    const region = resolveSteamLocale(settings, parsed);
+    const url = new URL(isCommunityKind(parsed.kind) ? parsed.openUrl || parsed.canonicalUrl : parsed.canonicalUrl);
+    if (!isCommunityKind(parsed.kind)) {
+        url.searchParams.set('cc', region.country);
+        url.searchParams.set('l', region.language);
+    }
+    const rawUrl = url.toString();
+    const headers = { ...REQUEST_HEADERS, 'Accept-Language': `${region.locale},en;q=0.8` };
+    const res = await fetch(rawUrl, { headers, redirect: 'follow' });
     if (!res.ok) throw new Error(`steam page ${res.status} for ${rawUrl}`);
     return {
         html: await res.text(),
@@ -432,19 +379,13 @@ function formatNumber(value) {
     return n.toLocaleString('en-US');
 }
 
-function formatPrice(data, lang) {
+function formatPrice(data, lang, settings) {
     if (data?.is_free === true) return tr(STR.freeToPlay, lang);
-    const price = data?.price_overview;
-    if (!price || typeof price !== 'object') return '';
-    const finalPrice = cleanText(price.final_formatted || '');
-    if (!finalPrice) return '';
-    const discount = Number(price.discount_percent) || 0;
-    return discount > 0 ? `${finalPrice} (${discount}% off)` : finalPrice;
+    return formatSteamPrice(data?.price_overview, resolveSteamLocale(settings).locale, lang);
 }
 
-function formatDiscount(data) {
-    const discount = Number(data?.price_overview?.discount_percent) || 0;
-    return discount > 0 ? `${discount}% off` : '';
+function formatDiscount(data, lang) {
+    return formatSteamDiscount(data?.price_overview?.discount_percent, lang);
 }
 
 function formatSaleEnds(data) {
@@ -523,22 +464,14 @@ function steamAppImageUrl(data, settings) {
     return header || screenshot || thumbnail || data?.background_raw || '';
 }
 
-function cleanSteamTitle(value) {
-    return cleanText(value)
-        .replace(/^Steam Community\s*::\s*/i, '')
-        .replace(/\s+on Steam$/i, '')
-        .replace(/\s*::\s*Steam$/i, '')
-        .trim();
-}
-
 function normalizeSteamAppDetails(data, parsed, lang, settings, extras = {}) {
     return {
         title: cleanSteamTitle(data?.name) || `${tr(STR.fallbackAppTitle, lang)}${parsed.id}`,
         description: truncate(cleanText(data?.short_description || data?.about_the_game || ''), steamDescriptionMaxLength(settings)),
         imageUrl: steamAppImageUrl(data, settings),
         typeLabel: formatAppType(data?.type),
-        price: formatPrice(data, lang),
-        discount: formatDiscount(data),
+        price: formatPrice(data, lang, settings),
+        discount: formatDiscount(data, lang),
         saleEnds: formatSaleEnds(data),
         releaseDate: cleanText(data?.release_date?.date || ''),
         developers: formatList(data?.developers),
@@ -551,7 +484,8 @@ function normalizeSteamAppDetails(data, parsed, lang, settings, extras = {}) {
         reviewCount: extras.reviewSummary?.total ?? null,
         priceCurrency: data?.price_overview?.currency || null,
         nativeMetrics: {
-            price: data?.is_free === true ? 0 : finiteNumber(data?.price_overview?.final_formatted, { kind: 'money' }),
+            price: data?.is_free === true ? 0 : steamPriceAmount(data?.price_overview?.final)
+                ?? finiteNumber(data?.price_overview?.final_formatted, { kind: 'money' }),
             discount_percent: finiteNumber(data?.price_overview?.discount_percent),
             recommendations: finiteNumber(data?.recommendations?.total),
             rating: finiteNumber(data?.metacritic?.score),
@@ -561,25 +495,20 @@ function normalizeSteamAppDetails(data, parsed, lang, settings, extras = {}) {
 }
 
 function extractSteamPageInfo(html, parsed, baseUrl, lang, settings) {
-    const title = cleanSteamTitle(
-        readMetaContent(html, 'og:title')
-        || readMetaContent(html, 'twitter:title')
-        || readTitleTag(html)
-    );
-    const description = truncate(
-        cleanText(readMetaContent(html, 'og:description') || readMetaContent(html, 'description')),
-        steamDescriptionMaxLength(settings)
-    );
-    const imageUrl = absoluteUrl(
-        readMetaContent(html, 'og:image') || readMetaContent(html, 'twitter:image'),
-        baseUrl
-    );
-
+    const region = resolveSteamLocale(settings, parsed);
+    const info = parseSteamPage(html, baseUrl, { ...parsed, country: region.country });
     return {
-        title: title || fallbackTitleFor(parsed, lang),
-        description,
-        imageUrl,
+        title: info.title || fallbackTitleFor(parsed, lang),
+        description: truncate(info.description, steamDescriptionMaxLength(settings)),
+        imageUrl: info.imageUrl,
         typeLabel: KIND_LABELS[parsed.kind] || 'Steam',
+        price: formatSteamPrice(info.priceOverview, region.locale, lang),
+        discount: formatSteamDiscount(info.priceOverview?.discount_percent, lang),
+        priceCurrency: info.priceOverview?.currency || null,
+        nativeMetrics: {
+            price: steamPriceAmount(info.priceOverview?.final),
+            discount_percent: finiteNumber(info.priceOverview?.discount_percent),
+        },
     };
 }
 
@@ -642,7 +571,7 @@ function openButtonLabelFor(parsed, lang) {
     return tr(STR.openButton, lang);
 }
 
-function buildComponents(lang, parsed, hasImage, settings) {
+function buildComponents(lang, parsed, hasImage, settings, canPriceWatch = false) {
     const rows = [];
     const firstRow = [
         new ButtonBuilder()
@@ -656,6 +585,14 @@ function buildComponents(lang, parsed, hasImage, settings) {
                 .setStyle(ButtonStyle.Primary)
                 .setLabel(tr(STR.showImageAsAttachmentButton, lang))
                 .setCustomId('showMediaAsAttachments')
+        );
+    }
+    if (canPriceWatch && ['app', 'package', 'bundle'].includes(parsed.kind) && parsed.id) {
+        firstRow.push(
+            new ButtonBuilder()
+                .setStyle(ButtonStyle.Success)
+                .setLabel(tr(STR.priceWatchButton, lang))
+                .setCustomId(`priceWatch:s:${parsed.kind}:${parsed.id}:${priceWatchLocale(settings)}`)
         );
     }
     rows.push({ type: ComponentType.ActionRow, components: firstRow });
@@ -767,7 +704,7 @@ async function resolveSteamInfo(parsed, settings) {
 
     if (parsed.kind === 'app') {
         try {
-            const appDetails = await fetchSteamAppDetails(parsed.id, settings);
+            const appDetails = await fetchSteamAppDetails(parsed.id, settings, parsed);
             const [currentPlayers, reviewSummary] = await Promise.all([
                 shouldShowOutputItem(settings, 'current_players')
                     ? optionalSteamValue(() => fetchSteamCurrentPlayers(parsed.id))
@@ -785,7 +722,7 @@ async function resolveSteamInfo(parsed, settings) {
         }
     }
 
-    const page = await fetchSteamPage(parsed.openUrl || parsed.canonicalUrl);
+    const page = await fetchSteamPage(parsed, settings);
     const resolved = parseSteamUrl(page.finalUrl);
     const effectiveParsed = resolved?.id
         ? { ...resolved, openUrl: parsed.openUrl || parsed.canonicalUrl }
@@ -827,7 +764,8 @@ async function extract(message, url, s) {
     /** @type {import('../_types').SendStep} */
     const step = {
         embeds: [buildEmbed(parsed, info, message, s, lang)],
-        components: buildComponents(lang, parsed, !!info.imageUrl, s),
+        components: buildComponents(lang, parsed, !!info.imageUrl, s,
+            ['app', 'package', 'bundle'].includes(parsed.kind) && info.nativeMetrics?.price !== null && info.nativeMetrics?.price !== undefined),
         allowedMentions: { repliedUser: false },
         send: s.alwaysreplyifpostedtweetlink === true ? 'reply-source' : 'channel',
         suppressSourceEmbeds: true,

@@ -506,7 +506,9 @@ function choicesForSpec(key: string, spec: BotSettingSpec) {
 }
 
 function categoryFor(spec: BotSettingSpec) {
-  const key = spec.key || spec.settingKey || "";
+    const key = spec.key || spec.settingKey || "";
+    if (key === "show_previous_shares") return "output";
+    if (key === "gallery_display_mode") return "media";
   if (spec.kind === "providerEnabled") return "basic";
   if (spec.kind === "targets") return "targetControl";
   if (spec.kind === "buttonVisibility") return "buttons";

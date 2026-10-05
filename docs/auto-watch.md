@@ -1,0 +1,55 @@
+# 非Twitter自動監視
+
+`/autoextract watch` は、公開プロフィールを定期確認して新しい公開コンテンツを展開します。通知先はDM、既存Discord Webhook URL、または選択チャンネルにBotが作成するWebhookから選べます。取得した新着は共通配信キューと機械チェックを通り、ルールの表示形式で直接送信します。
+
+登録前に内容・権利・通知先を確認し、`responsibility: true`を指定してください。Botは機械的な違反検知を行いますが、適法性・安全性を認定するものではありません。確認項目が出ない古いコマンド定義は、デプロイ時のコマンド再登録が必要です。
+
+Twitter/X の新規 `/autoextract add` 登録は停止中です。既存の Twitter 登録は削除も無効化もせず、`list` / `delete` で管理できます。
+
+## アダプター構成
+
+共通の登録・DB lease・レート制御・Webhook 配信は `src/providers/autoWatch/` にあります。各プロバイダーは `src/providers/<provider>/autoWatch.js` の任意アダプターです。新しい対応先には `id`、`normalizeSource`、`fetch` とレート方針を持つ同名ファイルを追加します。
+
+| Provider | ゲスト取得経路 | 通常の最短確認 | 全体の最短間隔 |
+| --- | --- | ---: | ---: |
+| YouTube | 公開 Atom uploads feed | 30 分 | 5 秒 |
+| GitHub | 未認証の public account events API | 6 時間 | 2 分 |
+| Twitch | ゲスト表示の公開チャンネル状態 | 15 分 | 5 秒 |
+| Spotify | ゲスト表示の artist discography | 2 時間 | 5 秒 |
+| Pixiv | 公開プロフィールの作品一覧 | 30 分 | 2 秒 |
+| BOOTH | 公開ショップの商品一覧 | 30 分 | 2 秒 |
+
+GitHub の未認証 REST API は 60 requests/hour なので、本機能は 30 requests/hour しか予約しません。ユーザー指定の 6 時間遅延もこの最短値です。GitHub が返す残量ヘッダーを見て、残量が半分以下になった時点で reset 時刻までこの機能からの呼び出しを停止します。
+
+YouTube の Atom feed、Twitch/Spotify のゲスト表示、Pixiv/BOOTH の公開ページには、この用途に対応するアプリ単位の公開数値枠がありません。そのため API key や OAuth token を要求せず、上表の共有ペーシング、ETag/Last-Modified、初回ジッター、単一ワーカー、429 の `Retry-After`、指数バックオフを併用します。公開ページ側の仕様変更や WAF による 429 を数学的に完全排除できるものではありませんが、同一アカウントを購読者ごとに取り直す設計にはしません。
+
+## 動作上の境界
+
+- 最初の確認では現在見えている ID をカーソルに保存するだけで、過去分を投稿しません。大量の Pixiv/BOOTH 履歴では数値 ID の初回 high-water mark も保存し、カーソル窓の外にある古い ID も履歴として抑止します。
+- 同じ `provider_id + source_key` は全購読者で共有し、上流リクエストは一度だけです。
+- URL の発見、Webhook ごとの配信、配信済み判定は別テーブルで永続化します。再起動時も重複送信を避けます。
+- 送信前の429は待機後に再試行します。一部送信済み・送信結果不明の通知は、一括の再送で重複させません。
+- フェイルオーバー復旧中は復旧前の未送信配信を quarantine し、外部送信しません。
+
+`config.json` へプロバイダーの OAuth token、API key、client secret を追加する必要はありません。必要なら公開クロールを一時停止するためだけに次を設定できます。
+
+```json
+{
+  "autoWatch": {
+    "enableGuestCrawls": false,
+    "httpTimeoutMs": 20000
+  }
+}
+```
+
+`enableGuestCrawls` を `false` にすると Pixiv/BOOTH の公開クロールのみ停止します。YouTube、GitHub、Twitch、Spotify の既存登録は削除されず、再度 `true` にした後に再開します。
+
+Webhookを自動作成するチャンネル方式では、押した人とBotの双方に対象チャンネルの「Webhookの管理」権限が必要です。既存Webhook URLは、登録したサーバーに属するものだけを受け入れます。
+
+審査の保留・管理者承認はありません。機械チェックの違反は除外、検査処理の故障は失敗として履歴に記録します。静穏時間・指定時刻・レート制御による配信待ちは維持します。詳細は[機械判定方針](automation-mechanical-policy.md)。
+
+## URL投稿方式との違い
+
+従来の「URLだけをWebhookへ送り、通常のURL展開処理に拾わせる」方式から、自動通知では直接生成・送信する方式へ統一します。文面、画像非表示、時刻、機械チェック、送信結果を同じ処理で扱うためです。「URLだけ」の表示も選べますが、その通知をこのBotが再展開しません。別サービスのWebhook投稿に対する通常展開は変更しません。
+
+現在の送信/Gateway照合は同じBotプロセス内で行います。Discord送信結果が不明な間に、同じWebhook・同じ内容の別投稿が重なる場合は、二重展開を避ける保守的な扱いになります。複数の独立Gatewayプロセスへ分離する構成は追加の共有照合設計が必要です。

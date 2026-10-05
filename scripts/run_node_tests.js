@@ -4,7 +4,8 @@ const { spawnSync } = require('child_process');
 
 process.env.NODE_ENV = 'test';
 
-const result = spawnSync(process.execPath, ['--test', 'scripts/test/**/*.test.js'], {
+// Bound fixture processes so worker deadline tests remain reliable under load.
+const result = spawnSync(process.execPath, ['--test', '--test-concurrency=4', 'scripts/test/**/*.test.js'], {
     stdio: 'inherit',
     env: process.env,
 });

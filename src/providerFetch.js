@@ -62,7 +62,7 @@ function capturedText(text) {
     try {
         const value = JSON.parse(text);
         const sanitized = JSON.stringify(value, (key, item) => {
-            if (/^(access_token|refresh_token|id_token|client_secret|api_key|authorization|password|secret|x-admin-agent-token)$/i.test(key)) {
+            if (/^(token|access_token|refresh_token|id_token|client_secret|api_key|authorization|password|secret|x-admin-agent-token)$/i.test(key)) {
                 redacted = true; return undefined;
             }
             return item;
@@ -75,7 +75,7 @@ function safeUrl(url) {
     try {
         const parsed = new URL(String(url));
         parsed.username = ''; parsed.password = '';
-        parsed.pathname = parsed.pathname.replace(/(\/api\/webhooks\/\d+)\/[^/]+/, '$1/');
+        parsed.pathname = parsed.pathname.replace(/(\/api\/(?:v\d+\/)?webhooks\/\d+)\/[^/]+/, '$1/');
         for (const key of [...parsed.searchParams.keys()]) {
             if (/token|key|secret|auth|password|stkn/i.test(key)) parsed.searchParams.delete(key);
         }
@@ -202,6 +202,8 @@ async function observedFetch(fetchImpl, url, options) {
 
 function withDeadline(fetchImpl, defaultTimeoutMs = positiveInteger(process.env.BOT_PROVIDER_TIMEOUT_MS, 30000, 300000)) {
     return (url, options = {}) => {
+        try { options = require('./automation/fetch-budget').applyBudget(options, url); }
+        catch (error) { return Promise.reject(error); }
         const timeoutMs = positiveInteger(options.timeout, defaultTimeoutMs, 300000);
         const deadline = AbortSignal.timeout(timeoutMs);
         const signal = options.signal ? AbortSignal.any([options.signal, deadline]) : deadline;

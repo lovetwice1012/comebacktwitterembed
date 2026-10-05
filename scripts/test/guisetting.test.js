@@ -73,6 +73,20 @@ test('buildSlashCommands includes guisetting', () => {
     assert.equal(data.name_localizations.ko, 'guisetting');
 });
 
+test('guisetting exposes normal/gallery choices for Pixiv and Instagram', async () => {
+    const { guisetting, restore } = loadGuisettingWithFakeProviderSettings();
+    try {
+        for (const providerId of ['pixiv', 'instagram']) {
+            const payload = await guisetting._internal.buildGuiPayload(providerId, 'gallery_display_mode', 'guild-gallery', null, 'ja');
+            const json = JSON.stringify(payload);
+            assert.match(json, /画像ギャラリーの表示方式/);
+            assert.match(json, /ページ切替式ギャラリー/);
+            assert.match(json, /通常表示/);
+            assert.match(json, /gallery/);
+        }
+    } finally { restore(); }
+});
+
 test('guisetting payload renders provider and setting controls', async () => {
     const { guisetting, restore } = loadGuisettingWithFakeProviderSettings();
 

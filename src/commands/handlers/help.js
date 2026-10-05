@@ -39,6 +39,18 @@ function buildHelpPayload(interaction) {
                         value: t('helpCommandsLocales', interaction.locale)
                     },
                     webuiField(interaction),
+                    {
+                        name: isJapanese(interaction.locale) ? 'あとで見る・個人通知' : 'Saved links and personal notifications',
+                        value: isJapanese(interaction.locale)
+                            ? '展開カードの「あとで見る」「あとで通知」、BOOTHの「再入荷を待つ」から登録できます。`/saved` で保存の検索・編集・削除、`/remind` と `/restock` で通知の一覧・解除ができます。一覧は本人だけに表示され、通知はDMに届きます。'
+                            : 'Use Save for later, Remind me, or BOOTH Watch restock on expanded cards. /saved searches and edits saved links; /remind and /restock list or cancel notifications. Lists are private and alerts arrive by DM.',
+                    },
+                    {
+                        name: isJapanese(interaction.locale) ? '展開の確認・再試行' : 'Expansion status and retry',
+                        value: isJapanese(interaction.locale)
+                            ? 'URLを貼った元の投稿のメニュー →「アプリ」から「展開状況を確認」「展開を再試行」を選べます。再試行は投稿者またはメッセージ管理権限を持つ人が実行できます。'
+                            : 'Open the original link post’s menu → Apps → Expansion status or Retry expansion. Only the author or a member with Manage Messages can retry.',
+                    },
                 ]
             }
         ]

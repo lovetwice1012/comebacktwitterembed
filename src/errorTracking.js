@@ -6,6 +6,7 @@ const crypto = require('crypto');
 const { TABLES } = require('./db_schema');
 const { discordErrorCode } = require('./utils');
 const { summarizeProviderContent } = require('./analytics/providerContent');
+const { metricObservationSubjectKey, metricObservationSubjectHash } = require('./analytics/metricObservationRollup');
 
 const DEFAULT_BUCKET_SIZE_SECONDS = 60;
 const DEFAULT_EVENT_RETENTION_DAYS = 30;
@@ -49,6 +50,7 @@ let providerAnalyticsEnrichmentSequence = 0;
 let flushInProgress = false;
 let lastFlushWarningAt = 0;
 let lastPruneAt = 0;
+let lastMetricRollupFailureAt = 0;
 
 function nowMs() {
     return Date.now();
@@ -1154,6 +1156,75 @@ async function insertAnalyticsEvents(queryDatabase, rows) {
     }
 }
 
+async function upsertProviderMetricObservationHourly(queryDatabase, eventRow, facets, contentEventId) {
+    const values = [];
+    const bucketStartMs = Math.floor(Number(eventRow.occurred_at_ms) / (PROVIDER_AGGREGATE_BUCKET_SECONDS * 1000))
+        * PROVIDER_AGGREGATE_BUCKET_SECONDS * 1000;
+    for (const facet of facets || []) {
+        const facetId = Number(facet.facet_id);
+        const observedAtMs = Number(facet.collected_at_ms ?? eventRow.occurred_at_ms);
+        if (!Number.isSafeInteger(facetId) || facetId <= 0 || !Number.isFinite(observedAtMs)) continue;
+        const subjectKey = metricObservationSubjectKey({
+            accountKey: eventRow.account_key,
+            facetKey: facet.facet_key,
+            contentId: eventRow.content_id,
+            normalizedUrl: eventRow.normalized_url,
+            contentUrl: eventRow.content_url,
+            contentEventId,
+        });
+        values.push([
+            bucketStartMs,
+            eventRow.provider_id,
+            eventRow.account_key,
+            facet.facet_key,
+            metricObservationSubjectHash(subjectKey),
+            subjectKey,
+            contentEventId,
+            facetId,
+            eventRow.occurred_at_ms,
+            observedAtMs,
+            eventRow.author_user_id,
+            eventRow.guild_id,
+            eventRow.content_type,
+            facet.numeric_value,
+        ]);
+    }
+    if (!values.length) return;
+    const newer = `(VALUES(observed_at_ms) > observed_at_ms
+        OR (VALUES(observed_at_ms) = observed_at_ms AND
+          (VALUES(content_event_id) > content_event_id
+           OR (VALUES(content_event_id) = content_event_id AND VALUES(facet_id) > facet_id))))`;
+    try {
+        await queryDatabase(
+            `INSERT INTO ${TABLES.botProviderMetricObservationHourly} (
+                bucket_start_ms, provider_id, account_key, facet_key, subject_hash, subject_key,
+                content_event_id, facet_id, occurred_at_ms, observed_at_ms, author_user_id, guild_id,
+                content_type, numeric_value
+            ) VALUES ?
+            ON DUPLICATE KEY UPDATE
+                subject_key = IF(${newer}, VALUES(subject_key), subject_key),
+                content_event_id = IF(${newer}, VALUES(content_event_id), content_event_id),
+                facet_id = IF(${newer}, VALUES(facet_id), facet_id),
+                occurred_at_ms = IF(${newer}, VALUES(occurred_at_ms), occurred_at_ms),
+                author_user_id = IF(${newer}, VALUES(author_user_id), author_user_id),
+                guild_id = IF(${newer}, VALUES(guild_id), guild_id),
+                content_type = IF(${newer}, VALUES(content_type), content_type),
+                numeric_value = IF(${newer}, VALUES(numeric_value), numeric_value),
+                observed_at_ms = IF(${newer}, VALUES(observed_at_ms), observed_at_ms)`,
+            [values],
+            { logErrors: false },
+        );
+    } catch (error) {
+        // Rollup maintenance must never turn a successful raw observation into
+        // a failed provider event. The report worker falls back to raw SQL
+        // until the rollup is available, and this warning is rate-limited.
+        if (Date.now() - lastMetricRollupFailureAt >= 60000) {
+            lastMetricRollupFailureAt = Date.now();
+            telemetry.event('analytics', 'metric_rollup_failed', { error: telemetry.errorData(error) });
+        }
+    }
+}
+
 async function insertProviderContentEvent(queryDatabase, item) {
     const row = item.event;
     const result = await queryDatabase(
@@ -1189,8 +1260,9 @@ async function insertProviderContentEvent(queryDatabase, item) {
     );
     const contentEventId = result?.insertId;
     if (!contentEventId) return;
+    const insertedFacets = [];
     for (const facet of item.facets || []) {
-        await queryDatabase(
+        const facetResult = await queryDatabase(
             `INSERT INTO ${TABLES.botProviderContentFacets} (
                 content_event_id, provider_id, account_key, facet_key, facet_value,
                 numeric_value, json_value, metric_stage, metric_source, collected_at_ms,
@@ -1213,7 +1285,9 @@ async function insertProviderContentEvent(queryDatabase, item) {
                 row.occurred_at_ms,
             ],
         );
+        insertedFacets.push({ ...facet, facet_id: facetResult?.insertId });
     }
+    await upsertProviderMetricObservationHourly(queryDatabase, row, insertedFacets, contentEventId);
     await upsertProviderHourlyAggregate(queryDatabase, createContentHourlyAggregateRow(row));
     for (const uniqueRow of createProviderHourlyUniqueRows(row, 'provider_content', row.content_type)) {
         await insertProviderHourlyUniqueKey(queryDatabase, uniqueRow);

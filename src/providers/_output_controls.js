@@ -341,10 +341,7 @@ function applyMediaDisplayToStepNow(step, settings, urls, label = 'Media') {
 
 function failureMessage(providerId, err, settings) {
     const lang = toApiLocaleFamily(settings?.defaultLanguage);
-    const raw = String(err?.message || err || '').replace(/\s+/g, ' ').trim();
-    const summary = raw ? raw.slice(0, 180) : 'unknown error';
-    if (lang === 'ja') return `${providerId} metadata fetch failed: ${summary}`;
-    return `${providerId} metadata fetch failed: ${summary}`;
+    return `${providerId}: ${require('../userFacingErrors').failureReason(err, lang)}`;
 }
 
 function sourceLinkButton(url, settings) {
@@ -354,7 +351,7 @@ function sourceLinkButton(url, settings) {
         components: [
             new ButtonBuilder()
                 .setStyle(ButtonStyle.Link)
-                .setLabel(lang === 'ja' ? 'Open source link' : 'Open source link')
+                .setLabel(lang === 'ja' ? '元のリンクを開く' : 'Open source link')
                 .setURL(url),
         ],
     };
@@ -364,8 +361,14 @@ function sourceLinkButton(url, settings) {
  * @returns {import('./_types').SendStep[] | null}
  */
 function buildFailureResponse(providerId, url, settings, err = null) {
-    require('../adminSupport/telemetry').markOutcome('failed', 'provider_fetch_or_parse_failed', {
-        providerId, url, error: require('../adminSupport/telemetry').errorData(err),
+    const telemetry = require('../adminSupport/telemetry');
+    const state = telemetry.current()?.resultState;
+    if (state) state.extractionError = {
+        name: err?.name || 'Error', code: err?.code, status: err?.status || err?.statusCode,
+        message: require('../userFacingErrors').failureReason(err, 'en'),
+    };
+    telemetry.markOutcome('failed', 'provider_fetch_or_parse_failed', {
+        providerId, url, error: telemetry.errorData(err),
         failure_display_policy: resolveFailureDisplayPolicy(settings),
     });
     const policy = resolveFailureDisplayPolicy(settings);
@@ -380,7 +383,7 @@ function buildFailureResponse(providerId, url, settings, err = null) {
     };
 
     if (policy === 'source_link') {
-        step.content = toApiLocaleFamily(settings?.defaultLanguage) === 'ja' ? 'Source link' : 'Source link';
+        step.content = toApiLocaleFamily(settings?.defaultLanguage) === 'ja' ? '元のリンクをご確認ください。' : 'Please check the original link.';
     } else {
         step.content = failureMessage(providerId, err, settings);
     }

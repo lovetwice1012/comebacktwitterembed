@@ -1,7 +1,7 @@
 import { ExternalLink, FileImage } from "lucide-react";
 import type { ProviderPreview } from "@/lib/settings-preview";
 
-export function OutputPreviewCard({ preview }: { preview: ProviderPreview; locale?: unknown }) {
+export function OutputPreviewCard({ preview, locale = "ja" }: { preview: ProviderPreview; locale?: unknown }) {
   return (
     <div className="rounded-md bg-[#313338] p-3 text-[#dbdee1] shadow-soft">
       <div className="flex gap-3">
@@ -93,6 +93,9 @@ export function OutputPreviewCard({ preview }: { preview: ProviderPreview; local
             </div>
           ) : null}
 
+          {preview.gallery ? <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-white">
+            {[locale === "ja" ? "前へ" : "Previous", "1 / 4", locale === "ja" ? "次へ" : "Next", locale === "ja" ? "自分用に開く" : "Open for me"].map(label => <button key={label} disabled className="rounded bg-[#4e5058] px-3 py-2">{label}</button>)}
+          </div> : null}
           {preview.buttons.length ? (
             <div className="mt-2 flex w-full max-w-[560px] flex-wrap gap-2">
               {preview.buttons.map((button) => (

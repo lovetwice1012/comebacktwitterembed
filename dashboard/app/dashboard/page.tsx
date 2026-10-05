@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import Link from "next/link";
 import { GuildList } from "@/components/dashboard/guild-list";
 import { GuildSwitcher } from "@/components/dashboard/guild-switcher";
 import { DashboardWorkspace } from "@/components/dashboard/dashboard-workspace";
@@ -29,6 +30,7 @@ export default async function DashboardPage({ searchParams }: Props) {
         <div className="flex w-full min-w-0 flex-wrap items-center gap-2 sm:w-auto sm:justify-end">
           <GuildSwitcher selectedGuildIds={[]} guilds={guilds.map((guild) => ({ guildId: guild.guildId, name: guild.name }))} locale={locale} />
           <LanguageSwitcher locale={locale} />
+          <Link href="/dashboard/personal-links" className="rounded-md border px-3 py-2 text-sm hover:bg-muted">{locale === "ja" ? "あとで見る・通知" : "Saved links & notifications"}</Link>
           <SignOutButton locale={locale} />
         </div>
       </header>

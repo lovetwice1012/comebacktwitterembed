@@ -4,6 +4,7 @@ const { Events, InteractionType } = require('discord.js');
 const { buildButtons } = require('../components/_buttons');
 const { isAllowed } = require('../components/_permissionCheck');
 const guisetting = require('../commands/handlers/guisetting');
+const priceWatch = require('../components/priceWatch');
 const { applyDelegatedEditPermissions } = require('../delegatedAccess');
 const {
     isIgnorableInteractionAckError,
@@ -83,7 +84,9 @@ async function replyComponentError(interaction, err) {
     });
     recordMetric('component_error', { interaction });
     console.error('Failed to handle component interaction:', err);
-    const payload = { content: 'Action failed. Please check the bot logs.', ephemeral: true };
+    const payload = { content: String(interaction.locale || '').startsWith('ja')
+        ? '操作を完了できませんでした。時間をおいて再試行してください。繰り返し失敗する場合は /support をご利用ください。'
+        : 'The action could not be completed. Please try again later, or use /support if it keeps failing.', ephemeral: true };
 
     if (interaction.deferred || interaction.replied) {
         await interaction.editReply(payload).catch(async () => {
@@ -130,6 +133,10 @@ function register(client) {
             componentId: baseCustomId,
         }, async () => {
         try {
+            if ([InteractionType.ModalSubmit, InteractionType.MessageComponent].includes(interaction.type) && baseCustomId === 'personal') {
+                await require('../components/personalLinks').handle(interaction);
+                return;
+            }
             if (interaction.type === InteractionType.ModalSubmit || interaction.type === InteractionType.MessageComponent) {
                 require('../adminSupport/telemetry').event('input', 'interaction.received', { customId: interaction.customId, interactionId: interaction.id,
                     sourceMessageId: interaction.message?.id, values: interaction.values,
@@ -151,6 +158,13 @@ function register(client) {
                 return;
             }
 
+            if (interaction.type === InteractionType.ModalSubmit && priceWatch.handles(interaction.customId)) {
+                recordMetric('modal_submit_attempt', { interaction, componentId: baseCustomId });
+                if (await priceWatch.handleModal(interaction) === false) return;
+                recordMetric('modal_submit_success', { interaction, componentId: baseCustomId });
+                return;
+            }
+
             if (interaction.type !== InteractionType.MessageComponent) return;
             recordMetric('component_attempt', { interaction, componentId: baseCustomId });
             if (baseCustomId === 'guisetting') {
@@ -165,6 +179,18 @@ function register(client) {
                     success: true,
                     durationMs: Date.now() - startedAt,
                 });
+                return;
+            }
+
+            if (priceWatch.handles(interaction.customId)) {
+                if (await priceWatch.handle(interaction) === false) return;
+                recordMetric('component_success', { interaction, componentId: baseCustomId });
+                return;
+            }
+
+            if (baseCustomId === 'gallery') {
+                await require('../components/gallery').handle(interaction);
+                recordMetric('component_success', { interaction, componentId: baseCustomId });
                 return;
             }
 

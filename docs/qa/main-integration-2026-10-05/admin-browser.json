@@ -1,0 +1,20 @@
+{
+  "passed": true,
+  "checks": [
+    "overview",
+    "server/channel/user filters",
+    "selected detail reload",
+    "back navigation",
+    "cursor pagination",
+    "inspection URL carried from selected record",
+    "query failure distinguished from empty results",
+    "settings diff and confirmation",
+    "expectedHash mutation",
+    "shared analytics filters",
+    "Discord link search",
+    "390px layout"
+  ],
+  "browserErrors": [],
+  "externalRequests": [],
+  "mutationCount": 1
+}

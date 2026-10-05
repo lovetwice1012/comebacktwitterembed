@@ -5,6 +5,60 @@ const assert = require('node:assert/strict');
 
 const loader = require('../../src/providers/_loader');
 
+test('loader: expands mixed providers in text order and removes repeated links', () => {
+    const youtube = 'https://www.youtube.com/watch?v=dQw4w9WgXc';
+    const twitter = 'https://x.com/example/status/123';
+    const github = 'https://github.com/openai/codex';
+    for (let i = 0; i < 3; i++) {
+        assert.deepEqual(loader.extractAllUrls(`${youtube} ${twitter} ${github} ${youtube} ${twitter}`)
+            .map(({ provider, url }) => ({ provider: provider.id, url })), [
+            { provider: 'youtube', url: youtube }, { provider: 'twitter', url: twitter }, { provider: 'github', url: github },
+        ]);
+    }
+});
+
+test('loader: X aliases and tracking links share one identity but retain the first URL', () => {
+    const first = 'https://twitter.com/old_name/status/123?s=20&utm_source=share';
+    assert.deepEqual(loader.extractAllUrls(`${first} https://x.com/new_name/status/123/?t=tracking`)
+        .map(item => item.url), [first]);
+});
+
+test('loader: deduplication preserves media selections, time offsets and distinct content', () => {
+    for (const urls of [
+        ['https://www.instagram.com/p/CODE123/?img_index=1', 'https://www.instagram.com/p/CODE123/?img_index=2'],
+        ['https://www.youtube.com/watch?v=dQw4w9WgXc&t=10', 'https://www.youtube.com/watch?v=dQw4w9WgXc&t=20'],
+        ['https://x.com/u/status/1', 'https://x.com/u/status/2'],
+    ]) assert.deepEqual(loader.extractAllUrls(urls.join(' ')).map(item => item.url), urls);
+    assert.deepEqual(loader.extractAllUrls(loader.cleanContent('<https://x.com/u/status/1> ||https://x.com/u/status/2||')), []);
+});
+
+test('split providers keep global URL matcher state independent when reloaded', () => {
+    const samples = {
+        amazon: 'https://www.amazon.com/dp/B08N5WRWNW',
+        github: 'https://github.com/openai/codex',
+        instagram: 'https://www.instagram.com/p/CODE123/',
+        youtube: 'https://youtu.be/dQw4w9WgXcQ',
+    };
+    for (const [id, url] of Object.entries(samples)) {
+        const filename = require.resolve(`../../src/providers/${id}`);
+        const originalModule = require.cache[filename];
+        try {
+            delete require.cache[filename];
+            const first = require(filename);
+            delete require.cache[filename];
+            const second = require(filename);
+
+            assert.equal(first.urlPattern.test(url), true, id);
+            assert.equal(second.urlPattern.lastIndex, 0, `${id} must own its matcher cursor`);
+            assert.equal(second.urlPattern.test(url), true, id);
+            assert.notStrictEqual(first.urlPattern, second.urlPattern, id);
+        } finally {
+            delete require.cache[filename];
+            if (originalModule) require.cache[filename] = originalModule;
+        }
+    }
+});
+
 test('cached URL regexes preserve repeated-call results and explicit URL suppression', () => {
     const input = 'hello <https://x.com/u/status/1> ||https://github.com/a/b|| https://x.com/u/status/2';
     const expected = [{ provider: 'twitter', url: 'https://x.com/u/status/2' }];

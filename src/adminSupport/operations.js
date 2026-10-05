@@ -98,6 +98,11 @@ function rowId(value) {
     return String(value);
 }
 async function autoextractAction(type, input) {
+    if (type === 'autoextract.add') {
+        throw Object.assign(new Error('Twitter/X auto-extract registration is paused. Existing registrations are unchanged.'), {
+            code: 'TWITTER_AUTOEXTRACT_REGISTRATION_PAUSED',
+        });
+    }
     await ensureDatabaseSchema();
     const userId = input.userId ? id(input.userId, 'userId') : null;
     if (type === 'autoextract.list') {

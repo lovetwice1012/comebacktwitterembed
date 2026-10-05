@@ -1,0 +1,250 @@
+CREATE TABLE IF NOT EXISTS automation_monitors (
+        target_kind VARCHAR(16) NOT NULL,
+        target_id BIGINT UNSIGNED NOT NULL,
+        name VARCHAR(120) NOT NULL,
+        scope VARCHAR(16) NOT NULL,
+        destination_id CHAR(36) NULL,
+        revision INT UNSIGNED NOT NULL DEFAULT 1,
+        PRIMARY KEY (target_kind, target_id),
+        INDEX idx_automation_monitor_destination (destination_id)
+    ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS automation_workflows (
+        id CHAR(36) NOT NULL PRIMARY KEY,
+        owner_user_id VARCHAR(32) NOT NULL,
+        guild_id VARCHAR(32) NULL,
+        scope VARCHAR(16) NOT NULL,
+        name VARCHAR(120) NOT NULL,
+        draft_json MEDIUMTEXT NOT NULL,
+        draft_bindings_json MEDIUMTEXT NOT NULL,
+        revision INT UNSIGNED NOT NULL DEFAULT 1,
+        active_revision INT UNSIGNED NULL,
+        enabled TINYINT(1) NOT NULL DEFAULT 0,
+        deleted_at_ms BIGINT NULL,
+        created_at_ms BIGINT NOT NULL,
+        updated_at_ms BIGINT NOT NULL,
+        INDEX idx_automation_workflow_owner (owner_user_id, deleted_at_ms, updated_at_ms),
+        INDEX idx_automation_workflow_guild (guild_id, scope, deleted_at_ms, updated_at_ms)
+    ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS automation_revisions (
+        workflow_id CHAR(36) NOT NULL,
+        revision INT UNSIGNED NOT NULL,
+        definition_json MEDIUMTEXT NOT NULL,
+        bindings_json MEDIUMTEXT NOT NULL,
+        checksum CHAR(64) NOT NULL,
+        actor_user_id VARCHAR(32) NOT NULL,
+        created_at_ms BIGINT NOT NULL,
+        PRIMARY KEY (workflow_id, revision),
+        CONSTRAINT fk_automation_revision_workflow FOREIGN KEY (workflow_id) REFERENCES automation_workflows(id) ON DELETE CASCADE
+    ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS automation_assignments (
+        target_kind VARCHAR(16) NOT NULL,
+        target_id BIGINT UNSIGNED NOT NULL,
+        workflow_id CHAR(36) NOT NULL,
+        created_at_ms BIGINT NOT NULL,
+        PRIMARY KEY (target_kind, target_id),
+        INDEX idx_automation_assignment_workflow (workflow_id),
+        CONSTRAINT fk_automation_assignment_workflow FOREIGN KEY (workflow_id) REFERENCES automation_workflows(id)
+    ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS automation_destinations (
+        id CHAR(36) NOT NULL PRIMARY KEY,
+        owner_user_id VARCHAR(32) NOT NULL,
+        guild_id VARCHAR(32) NULL,
+        scope VARCHAR(16) NOT NULL,
+        name VARCHAR(120) NOT NULL,
+        kind VARCHAR(16) NOT NULL,
+        dm_user_id VARCHAR(32) NULL,
+        webhook_endpoint_id BIGINT UNSIGNED NULL,
+        channel_id VARCHAR(32) NULL,
+        enabled TINYINT(1) NOT NULL DEFAULT 1,
+        created_by_bot TINYINT(1) NOT NULL DEFAULT 0,
+        revision INT UNSIGNED NOT NULL DEFAULT 1,
+        deleted_at_ms BIGINT NULL,
+        created_at_ms BIGINT NOT NULL,
+        updated_at_ms BIGINT NOT NULL,
+        INDEX idx_automation_destination_owner (owner_user_id, deleted_at_ms),
+        INDEX idx_automation_destination_guild (guild_id, scope, deleted_at_ms),
+        CONSTRAINT fk_automation_destination_webhook FOREIGN KEY (webhook_endpoint_id) REFERENCES webhook_endpoints(id)
+    ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS automation_dictionaries (
+        id CHAR(36) NOT NULL PRIMARY KEY,
+        owner_user_id VARCHAR(32) NOT NULL,
+        guild_id VARCHAR(32) NULL,
+        scope VARCHAR(16) NOT NULL,
+        name VARCHAR(120) NOT NULL,
+        revision INT UNSIGNED NOT NULL DEFAULT 1,
+        entry_count INT UNSIGNED NOT NULL,
+        deleted_at_ms BIGINT NULL,
+        created_at_ms BIGINT NOT NULL,
+        updated_at_ms BIGINT NOT NULL,
+        INDEX idx_automation_dictionary_owner (owner_user_id, deleted_at_ms),
+        INDEX idx_automation_dictionary_guild (guild_id, scope, deleted_at_ms)
+    ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS automation_dictionary_revisions (
+        dictionary_id CHAR(36) NOT NULL,
+        revision INT UNSIGNED NOT NULL,
+        data_gzip LONGBLOB NOT NULL,
+        checksum CHAR(64) NOT NULL,
+        entry_count INT UNSIGNED NOT NULL,
+        source_text TEXT NULL,
+        license_text TEXT NULL,
+        created_at_ms BIGINT NOT NULL,
+        PRIMARY KEY (dictionary_id, revision),
+        CONSTRAINT fk_automation_dictionary_revision FOREIGN KEY (dictionary_id) REFERENCES automation_dictionaries(id)
+    ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS automation_audit (
+        id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+        actor_user_id VARCHAR(32) NOT NULL,
+        entity_id CHAR(36) NOT NULL,
+        guild_id VARCHAR(32) NULL,
+        action VARCHAR(64) NOT NULL,
+        detail_json MEDIUMTEXT NOT NULL,
+        created_at_ms BIGINT NOT NULL,
+        INDEX idx_automation_audit_entity (entity_id, created_at_ms),
+        INDEX idx_automation_audit_actor (actor_user_id, created_at_ms)
+    ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS automation_runs (
+        id CHAR(36) NOT NULL PRIMARY KEY,
+        dedupe_key CHAR(64) NOT NULL UNIQUE,
+        workflow_id CHAR(36) NULL,
+        revision INT UNSIGNED NULL,
+        owner_user_id VARCHAR(32) NOT NULL,
+        guild_id VARCHAR(32) NULL,
+        scope VARCHAR(16) NOT NULL,
+        target_kind VARCHAR(16) NOT NULL,
+        target_id BIGINT UNSIGNED NOT NULL,
+        event_json MEDIUMTEXT NOT NULL,
+        trace_json MEDIUMTEXT NOT NULL,
+        state VARCHAR(24) NOT NULL,
+        created_at_ms BIGINT NOT NULL,
+        INDEX idx_automation_run_workflow (workflow_id, created_at_ms),
+        CONSTRAINT fk_automation_run_revision FOREIGN KEY (workflow_id, revision) REFERENCES automation_revisions(workflow_id, revision)
+    ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS automation_jobs (
+        id CHAR(36) NOT NULL PRIMARY KEY,
+        run_id CHAR(36) NOT NULL,
+        destination_id CHAR(36) NULL,
+        group_key CHAR(64) NULL,
+        parent_job_id CHAR(36) NULL,
+        plan_json MEDIUMTEXT NOT NULL,
+        due_at_ms BIGINT NOT NULL,
+        deadline_ms BIGINT NULL,
+        state VARCHAR(24) NOT NULL,
+        lease_token CHAR(36) NULL,
+        lease_until_ms BIGINT NOT NULL DEFAULT 0,
+        attempts INT UNSIGNED NOT NULL DEFAULT 0,
+        sent_steps INT UNSIGNED NOT NULL DEFAULT 0,
+        discord_message_id VARCHAR(32) NULL,
+        last_error_code VARCHAR(96) NULL,
+        created_at_ms BIGINT NOT NULL,
+        updated_at_ms BIGINT NOT NULL,
+        INDEX idx_automation_job_due (state, due_at_ms, lease_until_ms),
+        INDEX idx_automation_job_run (run_id),
+        INDEX idx_automation_job_group (group_key, state, due_at_ms),
+        INDEX idx_automation_job_parent (parent_job_id),
+        CONSTRAINT fk_automation_job_run FOREIGN KEY (run_id) REFERENCES automation_runs(id)
+    ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS automation_counters (
+        counter_key CHAR(64) NOT NULL PRIMARY KEY,
+        used_count INT UNSIGNED NOT NULL,
+        expires_at_ms BIGINT NOT NULL,
+        INDEX idx_automation_counter_expiry (expires_at_ms)
+    ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS automation_packages (
+        id CHAR(36) NOT NULL PRIMARY KEY,
+        owner_user_id VARCHAR(32) NOT NULL,
+        title VARCHAR(120) NOT NULL,
+        description TEXT NOT NULL,
+        category VARCHAR(64) NOT NULL,
+        kind VARCHAR(24) NOT NULL,
+        visibility VARCHAR(16) NOT NULL,
+        status VARCHAR(24) NOT NULL,
+        share_key CHAR(64) NOT NULL,
+        latest_version INT UNSIGNED NOT NULL DEFAULT 1,
+        published_version INT UNSIGNED NULL,
+        fork_of CHAR(36) NULL,
+        created_at_ms BIGINT NOT NULL,
+        updated_at_ms BIGINT NOT NULL,
+        INDEX idx_automation_package_public (visibility, status, updated_at_ms),
+        INDEX idx_automation_package_owner (owner_user_id, updated_at_ms)
+    ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS automation_package_versions (
+        package_id CHAR(36) NOT NULL,
+        version INT UNSIGNED NOT NULL,
+        bundle_gzip LONGBLOB NOT NULL,
+        checksum CHAR(64) NOT NULL,
+        changelog TEXT NOT NULL,
+        title VARCHAR(120) NOT NULL,
+        description TEXT NOT NULL,
+        category VARCHAR(64) NOT NULL,
+        visibility VARCHAR(16) NOT NULL,
+        status VARCHAR(24) NOT NULL DEFAULT 'pending',
+        review_note TEXT NULL,
+        created_at_ms BIGINT NOT NULL,
+        PRIMARY KEY (package_id, version),
+        CONSTRAINT fk_automation_package_version FOREIGN KEY (package_id) REFERENCES automation_packages(id)
+    ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS automation_package_installs (
+        package_id CHAR(36) NOT NULL,
+        version INT UNSIGNED NOT NULL,
+        workflow_id CHAR(36) NOT NULL,
+        actor_user_id VARCHAR(32) NOT NULL,
+        created_at_ms BIGINT NOT NULL,
+        PRIMARY KEY (package_id, workflow_id),
+        CONSTRAINT fk_automation_install_workflow FOREIGN KEY (workflow_id) REFERENCES automation_workflows(id)
+    ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS automation_feedback (
+        id CHAR(36) NOT NULL PRIMARY KEY,
+        subject_id CHAR(36) NOT NULL,
+        actor_user_id VARCHAR(32) NOT NULL,
+        kind VARCHAR(24) NOT NULL,
+        value_json TEXT NOT NULL,
+        state VARCHAR(24) NOT NULL DEFAULT 'open',
+        created_at_ms BIGINT NOT NULL,
+        updated_at_ms BIGINT NOT NULL,
+        UNIQUE KEY uniq_automation_feedback_actor (subject_id, actor_user_id, kind)
+    ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS automation_package_dictionary_installs (
+        id CHAR(36) NOT NULL PRIMARY KEY,
+        package_id CHAR(36) NOT NULL,
+        version INT UNSIGNED NOT NULL,
+        dictionary_bindings_json MEDIUMTEXT NOT NULL,
+        owner_user_id VARCHAR(32) NOT NULL,
+        guild_id VARCHAR(32) NULL,
+        scope VARCHAR(16) NOT NULL,
+        created_at_ms BIGINT NOT NULL,
+        updated_at_ms BIGINT NOT NULL,
+        INDEX idx_automation_dictionary_install_owner (owner_user_id, scope),
+        INDEX idx_automation_dictionary_install_guild (guild_id, scope)
+    ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS automation_author_follows (
+        follower_user_id VARCHAR(32) NOT NULL,
+        author_user_id VARCHAR(32) NOT NULL,
+        created_at_ms BIGINT NOT NULL,
+        PRIMARY KEY (follower_user_id,author_user_id)
+    ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS automation_moderation_policy (
+        id TINYINT NOT NULL PRIMARY KEY,
+        dictionary_id CHAR(36) NULL,
+        dictionary_revision INT UNSIGNED NULL,
+        use_starter TINYINT(1) NOT NULL DEFAULT 1,
+        revision INT UNSIGNED NOT NULL DEFAULT 1,
+        updated_at_ms BIGINT NOT NULL,
+        actor_user_id VARCHAR(32) NOT NULL
+    ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;

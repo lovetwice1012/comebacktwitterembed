@@ -1,0 +1,150 @@
+{
+  "inspectedDate": "2026-10-05",
+  "repository": "lovetwice1012/comebacktwitterembed",
+  "originalPullRequestsModified": false,
+  "pullRequests": [
+    {
+      "number": 15,
+      "title": "[Snyk] Security upgrade undici from 6.24.1 to 6.27.0",
+      "url": "https://github.com/lovetwice1012/comebacktwitterembed/pull/15",
+      "base": "main",
+      "head": "snyk-fix-eda22f5f12fbaa3328abdcec6ca1f6ad",
+      "headSha": "f636ebc7390b84e1bcaf3c5375fd1b0917c6960f",
+      "mergeableAtInspection": false,
+      "draft": false,
+      "disposition": "Dependency update intent consolidated on the integration branch without downgrading current dependencies"
+    },
+    {
+      "number": 14,
+      "title": "[Snyk] Security upgrade archiver from 6.0.1 to 8.0.0",
+      "url": "https://github.com/lovetwice1012/comebacktwitterembed/pull/14",
+      "base": "main",
+      "head": "snyk-fix-82646632cee37e56579414530dad6a1d",
+      "headSha": "0f694217adee30494d1d50777236cb0daccbb545",
+      "mergeableAtInspection": false,
+      "draft": false,
+      "disposition": "Dependency update intent consolidated on the integration branch without downgrading current dependencies"
+    },
+    {
+      "number": 13,
+      "title": "[Snyk] Security upgrade express from 4.21.2 to 4.22.0",
+      "url": "https://github.com/lovetwice1012/comebacktwitterembed/pull/13",
+      "base": "main",
+      "head": "snyk-fix-ce8a62c0d10e2624aa39ad97e4bf3292",
+      "headSha": "661bb3028f307f5ef60fb91cdee5da439c22cb2b",
+      "mergeableAtInspection": false,
+      "draft": false,
+      "disposition": "Dependency update intent consolidated on the integration branch without downgrading current dependencies"
+    },
+    {
+      "number": 12,
+      "title": "[Snyk] Security upgrade express from 4.21.2 to 4.22.0",
+      "url": "https://github.com/lovetwice1012/comebacktwitterembed/pull/12",
+      "base": "main",
+      "head": "snyk-fix-dab0b7ded9d315e117b20ba7856075bb",
+      "headSha": "c744e8b0799e35d5b57bd5246ce826d446ff20a3",
+      "mergeableAtInspection": false,
+      "draft": false,
+      "disposition": "Dependency update intent consolidated on the integration branch without downgrading current dependencies"
+    },
+    {
+      "number": 11,
+      "title": "Refactor large index.js file for maintainability",
+      "url": "https://github.com/lovetwice1012/comebacktwitterembed/pull/11",
+      "base": "main",
+      "head": "claude/refactor-index-js-01CcBSMuPQNmqhnDPiaP8h9N",
+      "headSha": "5d60d3b323697d4cdf901d3a6f9be4de1c1eaae9",
+      "mergeableAtInspection": false,
+      "draft": true,
+      "disposition": "Legacy draft refactor; current main has a newer modular architecture; not replayed"
+    },
+    {
+      "number": 10,
+      "title": "Process messages directly on message creation",
+      "url": "https://github.com/lovetwice1012/comebacktwitterembed/pull/10",
+      "base": "rewrite",
+      "head": "codex/remove-queue-management-for-messagecreated",
+      "headSha": "ee944f73e672ab2792d72f5435fb71b80c9c3ca4",
+      "mergeableAtInspection": false,
+      "draft": false,
+      "disposition": "Targets a legacy branch, outside main integration"
+    },
+    {
+      "number": 9,
+      "title": "[Snyk] Fix for 2 vulnerabilities",
+      "url": "https://github.com/lovetwice1012/comebacktwitterembed/pull/9",
+      "base": "main",
+      "head": "snyk-fix-ba687d2e3809babf9c2a92dfdb66d253",
+      "headSha": "a38a5e6e5a334f2ab21c9c61c7a2b6df79941469",
+      "mergeableAtInspection": false,
+      "draft": false,
+      "disposition": "Dependency update intent consolidated on the integration branch without downgrading current dependencies"
+    },
+    {
+      "number": 8,
+      "title": "[Snyk] Security upgrade discord.js from 14.15.1 to 14.18.0",
+      "url": "https://github.com/lovetwice1012/comebacktwitterembed/pull/8",
+      "base": "main",
+      "head": "snyk-fix-f179eb3b230249999e026e2f2778c8ef",
+      "headSha": "510d68a35056bd2a5a20789380f5505b3c8727ec",
+      "mergeableAtInspection": false,
+      "draft": false,
+      "disposition": "Dependency update intent consolidated on the integration branch without downgrading current dependencies"
+    },
+    {
+      "number": 7,
+      "title": "[Snyk] Upgrade archiver from 6.0.1 to 6.0.2",
+      "url": "https://github.com/lovetwice1012/comebacktwitterembed/pull/7",
+      "base": "main",
+      "head": "snyk-upgrade-4493dc8298f42d909d613e650c16706d",
+      "headSha": "a22d9319a48a85b9f72533b52ce1b29a4e9bb050",
+      "mergeableAtInspection": false,
+      "draft": false,
+      "disposition": "Dependency update intent consolidated on the integration branch without downgrading current dependencies"
+    },
+    {
+      "number": 6,
+      "title": "[Snyk] Upgrade deepl-node from 1.13.1 to 1.15.0",
+      "url": "https://github.com/lovetwice1012/comebacktwitterembed/pull/6",
+      "base": "main",
+      "head": "snyk-upgrade-e1b2ec3c9e9aaf9a1024485faae98719",
+      "headSha": "902f93480d7636801416d37a4055fa270745956a",
+      "mergeableAtInspection": false,
+      "draft": false,
+      "disposition": "Dependency update intent consolidated on the integration branch without downgrading current dependencies"
+    },
+    {
+      "number": 5,
+      "title": "[Snyk] Upgrade discord.js from 14.15.1 to 14.17.3",
+      "url": "https://github.com/lovetwice1012/comebacktwitterembed/pull/5",
+      "base": "main",
+      "head": "snyk-upgrade-220f19606a15b7140aac7e9c36b194b2",
+      "headSha": "da9474b45759e61b0b8d383eb1e1c6ca3f156033",
+      "mergeableAtInspection": false,
+      "draft": false,
+      "disposition": "Dependency update intent consolidated on the integration branch without downgrading current dependencies"
+    },
+    {
+      "number": 2,
+      "title": "preview",
+      "url": "https://github.com/lovetwice1012/comebacktwitterembed/pull/2",
+      "base": "rewrite",
+      "head": "main",
+      "headSha": "05dd38b48f935ea319c97b4b2aa6aeeadd9d2606",
+      "mergeableAtInspection": false,
+      "draft": false,
+      "disposition": "Targets a legacy branch, outside main integration"
+    },
+    {
+      "number": 1,
+      "title": "marge main changes",
+      "url": "https://github.com/lovetwice1012/comebacktwitterembed/pull/1",
+      "base": "refresh",
+      "head": "main",
+      "headSha": "05dd38b48f935ea319c97b4b2aa6aeeadd9d2606",
+      "mergeableAtInspection": false,
+      "draft": false,
+      "disposition": "Targets a legacy branch, outside main integration"
+    }
+  ]
+}

@@ -49,6 +49,7 @@ function scrubUrl(value) {
         url.username = '';
         url.password = '';
         url.hash = '';
+        if (/^(?:canary\.|ptb\.)?discord(?:app)?\.com$/i.test(url.hostname)) url.pathname = url.pathname.replace(/(\/api\/(?:v\d+\/)?webhooks\/\d+)\/[^/]+/, '$1/');
         for (const key of [...url.searchParams.keys()]) {
             if (/(token|key|secret|auth|password|stkn)/i.test(key)) url.searchParams.delete(key);
         }

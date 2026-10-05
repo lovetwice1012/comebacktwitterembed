@@ -25,6 +25,7 @@ for (const kind of Object.keys(kinds)) {
     assert.match(rawHtml, /WORKER_UNCONFIGURED/);
     assert.match(rawHtml, /data-report-state="failed"/);
     assert.match(rawHtml, /再試行/);
+    if (kind !== 'overview') { assert.match(rawHtml, /placeholder="サービスID"/); assert.match(rawHtml, /この条件のレポートを作成/); }
     const normalized = reportForDashboard(kind, { report: null, cache: metadataOnly.cache });
     assert.equal(typeof normalized.cache.lastError, 'string');
     assert.deepEqual(normalized.cache.lastErrorDetails, structuredError);

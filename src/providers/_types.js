@@ -31,6 +31,7 @@
  * @property {string} [content]               テキスト本文 (引用ポストの prefix 等)
  * @property {string} [outputRole]            Distinguishes content from failure notices.
  * @property {object} [allowedMentions]       Discord allowedMentions
+ * @property {Array<{id: string, name: string}>} [restockOptions] Sold-out BOOTH variants eligible for personal watches.
  * @property {object} [analytics]             Provider native analytics metadata.
  *   Successful provider sends must populate this from fetched provider data, not from embed fields.
  * @property {Array<Function>} [analyticsEnrichers]

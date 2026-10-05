@@ -320,7 +320,8 @@ test('tiktok extract: failure_display_policy error_summary returns a short failu
     });
 
     const step = result[0];
-    assert.match(step.content, /tiktok metadata fetch failed: network down/);
+    assert.match(step.content, /tiktok: The content could not be retrieved or parsed/);
+    assert.doesNotMatch(step.content, /network down/);
     assert.equal(step.embeds, undefined);
     assert.equal(step.components[0].components[0].data.url, url);
     assert.equal(step.allowedMentions.repliedUser, false);

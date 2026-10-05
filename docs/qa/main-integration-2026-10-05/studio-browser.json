@@ -1,0 +1,7090 @@
+{
+  "at": "2026-10-05T04:30:16.236Z",
+  "fixtureOnly": true,
+  "realMessages": 0,
+  "checks": [
+    "12-block nested workflow imported with exact topology, group, positions and viewport",
+    "AND to OR to NOT preserves the entire nested tree; one-step undo restores each operation",
+    "GUI candidate-list and numeric-operator edits retain existing values",
+    "valid YAML comments and formatting survive view switches, file export, undo and redo",
+    "GUI to JSON to GUI to YAML preserves nested predicates, layout and every edge",
+    "invalid text stays recoverable and exportable, locks conflicting edits, and can be repaired without graph loss",
+    "injected delayed validation response cannot overwrite a newer invalid text edit",
+    "six real API simulations cover nested AND/OR/NOT yes/no/unknown, explicit all-merge, delay, overnight quiet hours, exclusion date, limit and aggregation",
+    "invalid simulator JSON cannot evaluate an old event and survives switching input modes",
+    "GUI schedule edits change the simulator due time while preserving quiet hours",
+    "GUI insertion of an asymmetric branch distinguishes all-merge from any-merge without duplicate output",
+    "URL-only display uses the original URL with no second expansion",
+    "collapsed groups can be focused by block selector and opened with persistent layout state",
+    "fragment export, duplicate and file import remap IDs and internal edges, use distinct positions and require explicit reconnection",
+    "single-block duplicate is selected and focused, and undo/redo preserves detached-draft validity",
+    "keyboard delete and one undo restore the node and all its connections together",
+    "Delete cannot remove the start block or its outgoing connections",
+    "keyboard selection and deletion of an edge is undoable without losing other topology",
+    "keyboard block movement has an undo checkpoint",
+    "pointer drag gesture is restored by one undo without intermediate position checkpoints",
+    "Shift multi-selection creates a group and ungrouping preserves every node and edge",
+    "malformed fragment import reports its external edge and preserves the current graph",
+    "DST repeated hour chooses the earliest instant and a partially missing window retains its real portion",
+    "fixed DST quiet-hour boundary defers local 03:30 to 04:00 through GUI/API",
+    "published-time delay with unavailable publication time remains unknown and cannot satisfy an all-merge",
+    "GUI permits multiple aggregates and limits before/after them; JSON/YAML roundtrip preserves every stage and connection order (runtime semantics owned by parent)",
+    "saved complex rule exports as a package and reimports as a draft with topology, settings and layout intact",
+    "complex nested-condition studio remains operable without page overflow at 390px"
+  ],
+  "uxChecks": [
+    "compact operator summary and collapsible outline retain unknown semantics and one selected editor without changing the predicate",
+    "Delete/Backspace in condition navigation and tool controls cannot delete the selected graph block",
+    "adding a child opens only that new condition; deleting it returns to its parent without affecting siblings",
+    "seven levels remain reachable in a bounded outline without rendering seven nested forms or rewriting the tree",
+    "keyboard-operated purpose groups and advanced disclosure expose layout/export and a working import button",
+    "fit-all includes every node and selection focus restores the chosen block without changing selection",
+    "390px touch canvas has no minimap overlay; actual taps fit the whole graph and return to the selected node",
+    "touch nested edit, undo/redo and text roundtrip preserve sibling conditions and the explicit NOT/unknown explanation",
+    "the inspector can return directly to a readable selected block inside the mobile viewport after text/graph switching",
+    "primary controls, outline toggles and zoom controls keep 44px tap areas; nested editing has one form, a bounded outline and no horizontal page overflow",
+    "saved-rule mobile screenshot retains the parent save/apply/history actions and the edited condition"
+  ],
+  "measurements": {
+    "desktop": {
+      "width": 1440,
+      "pageHeight": 1377,
+      "inspectorHeight": 660,
+      "minimap": {
+        "width": 112,
+        "height": 72
+      }
+    },
+    "mobile": {
+      "width": 390,
+      "pageHeight": 2067,
+      "inspectorHeight": 872.5,
+      "conditionFormCount": 1,
+      "treeHeight": 220,
+      "minimapDisplay": "none",
+      "tapTargets": [
+        {
+          "label": "ブロック",
+          "width": 65.765625,
+          "height": 44
+        },
+        {
+          "label": "テキスト",
+          "width": 67.296875,
+          "height": 44
+        },
+        {
+          "label": "元に戻す",
+          "width": 44.6875,
+          "height": 44
+        },
+        {
+          "label": "やり直す",
+          "width": 44.6875,
+          "height": 44
+        },
+        {
+          "label": "ブロックを追加",
+          "width": 118.671875,
+          "height": 44
+        },
+        {
+          "label": "配置・入出力",
+          "width": 115.828125,
+          "height": 44
+        },
+        {
+          "label": "全体を表示",
+          "width": 165,
+          "height": 44
+        },
+        {
+          "label": "選択を表示",
+          "width": 165,
+          "height": 44
+        },
+        {
+          "label": "Zoom In",
+          "width": 44,
+          "height": 44
+        },
+        {
+          "label": "Zoom Out",
+          "width": 44,
+          "height": 44
+        },
+        {
+          "label": "図で確認",
+          "width": 79.234375,
+          "height": 44
+        },
+        {
+          "label": "条件 全体 の子条件",
+          "width": 44,
+          "height": 44
+        },
+        {
+          "label": "条件 全体 を編集",
+          "width": 286,
+          "height": 44
+        },
+        {
+          "label": "条件 1 の子条件",
+          "width": 44,
+          "height": 44
+        },
+        {
+          "label": "条件 1 を編集",
+          "width": 271,
+          "height": 44
+        },
+        {
+          "label": "条件 1.1 を編集",
+          "width": 284,
+          "height": 44
+        },
+        {
+          "label": "条件 1.2 を編集",
+          "width": 284,
+          "height": 44
+        },
+        {
+          "label": "条件 2 の子条件",
+          "width": 44,
+          "height": 44
+        },
+        {
+          "label": "条件 2 を編集",
+          "width": 271,
+          "height": 44
+        },
+        {
+          "label": "条件 2.1 を編集",
+          "width": 284,
+          "height": 44
+        }
+      ]
+    },
+    "mobileSaved": {
+      "pageHeight": 2430,
+      "inspectorHeight": 872.5
+    }
+  },
+  "pageErrors": [],
+  "blockedRequests": [],
+  "simulations": [
+    {
+      "request": {
+        "definition": {
+          "schemaVersion": 1,
+          "name": "複雑なスタジオ検証",
+          "description": "AND / OR / NOT・3経路・合流・静穏時間・部品",
+          "expiresAfterMinutes": 4320,
+          "nodes": [
+            {
+              "id": "start",
+              "type": "start",
+              "config": {},
+              "position": {
+                "x": 40,
+                "y": 60
+              }
+            },
+            {
+              "id": "filter",
+              "type": "condition",
+              "config": {
+                "predicate": {
+                  "op": "all",
+                  "conditions": [
+                    {
+                      "op": "any",
+                      "conditions": [
+                        {
+                          "field": "title",
+                          "op": "contains",
+                          "value": "sale",
+                          "ignoreCase": true
+                        },
+                        {
+                          "field": "discountPercent",
+                          "op": "gte",
+                          "value": 30
+                        }
+                      ]
+                    },
+                    {
+                      "op": "not",
+                      "conditions": [
+                        {
+                          "field": "sensitive",
+                          "op": "eq",
+                          "value": true
+                        }
+                      ]
+                    }
+                  ]
+                }
+              },
+              "position": {
+                "x": 300,
+                "y": 60
+              }
+            },
+            {
+              "id": "waitA",
+              "type": "delay",
+              "config": {
+                "minutes": 30,
+                "anchor": "observed"
+              },
+              "position": {
+                "x": 570,
+                "y": 60
+              }
+            },
+            {
+              "id": "waitB",
+              "type": "delay",
+              "config": {
+                "minutes": 60,
+                "anchor": "observed"
+              },
+              "position": {
+                "x": 570,
+                "y": 260
+              }
+            },
+            {
+              "id": "reject",
+              "type": "stop",
+              "config": {
+                "reason": "条件に不一致"
+              },
+              "position": {
+                "x": 570,
+                "y": 460
+              }
+            },
+            {
+              "id": "missing",
+              "type": "stop",
+              "config": {
+                "reason": "必要なデータが不明"
+              },
+              "position": {
+                "x": 570,
+                "y": 660
+              }
+            },
+            {
+              "id": "merge",
+              "type": "merge",
+              "config": {
+                "mode": "all",
+                "displayConflict": "stop"
+              },
+              "position": {
+                "x": 840,
+                "y": 60
+              }
+            },
+            {
+              "id": "time",
+              "type": "schedule",
+              "config": {
+                "zone": "Asia/Tokyo",
+                "days": [
+                  1,
+                  2,
+                  3,
+                  4,
+                  5,
+                  6,
+                  7
+                ],
+                "windows": [
+                  {
+                    "start": "09:00",
+                    "end": "23:00"
+                  }
+                ],
+                "quiet": [
+                  {
+                    "start": "22:00",
+                    "end": "09:00"
+                  }
+                ],
+                "datesExcluded": [
+                  "2026-09-22"
+                ],
+                "maxWaitDays": 14
+              },
+              "position": {
+                "x": 1110,
+                "y": 60
+              }
+            },
+            {
+              "id": "limit",
+              "type": "limit",
+              "config": {
+                "count": 3,
+                "minutes": 60,
+                "key": "sourceKey",
+                "overflow": "defer"
+              },
+              "position": {
+                "x": 1380,
+                "y": 60
+              }
+            },
+            {
+              "id": "aggregate",
+              "type": "aggregate",
+              "config": {
+                "minutes": 15,
+                "key": "sourceKey",
+                "mode": "all",
+                "maxItems": 5
+              },
+              "position": {
+                "x": 1650,
+                "y": 60
+              }
+            },
+            {
+              "id": "display",
+              "type": "transform",
+              "config": {
+                "format": "text",
+                "template": "{title}\n{url}",
+                "maxLength": 1900,
+                "media": "inherit",
+                "mentions": "none"
+              },
+              "position": {
+                "x": 1920,
+                "y": 60
+              },
+              "group": "delivery"
+            },
+            {
+              "id": "send",
+              "type": "send",
+              "config": {
+                "destination": "default"
+              },
+              "position": {
+                "x": 2190,
+                "y": 60
+              },
+              "group": "delivery"
+            }
+          ],
+          "edges": [
+            {
+              "id": "e0",
+              "source": "start",
+              "target": "filter",
+              "port": "out"
+            },
+            {
+              "id": "e1",
+              "source": "filter",
+              "target": "waitA",
+              "port": "yes"
+            },
+            {
+              "id": "e2",
+              "source": "filter",
+              "target": "waitB",
+              "port": "yes"
+            },
+            {
+              "id": "e3",
+              "source": "filter",
+              "target": "reject",
+              "port": "no"
+            },
+            {
+              "id": "e4",
+              "source": "filter",
+              "target": "missing",
+              "port": "unknown"
+            },
+            {
+              "id": "e5",
+              "source": "waitA",
+              "target": "merge",
+              "port": "out"
+            },
+            {
+              "id": "e6",
+              "source": "waitB",
+              "target": "merge",
+              "port": "out"
+            },
+            {
+              "id": "e7",
+              "source": "merge",
+              "target": "time",
+              "port": "out"
+            },
+            {
+              "id": "e8",
+              "source": "time",
+              "target": "limit",
+              "port": "out"
+            },
+            {
+              "id": "e9",
+              "source": "limit",
+              "target": "aggregate",
+              "port": "out"
+            },
+            {
+              "id": "e10",
+              "source": "aggregate",
+              "target": "display",
+              "port": "out"
+            },
+            {
+              "id": "e11",
+              "source": "display",
+              "target": "send",
+              "port": "out"
+            }
+          ],
+          "layout": {
+            "groups": [
+              {
+                "id": "delivery",
+                "label": "表示と通知",
+                "collapsed": false
+              }
+            ],
+            "viewport": {
+              "x": 30,
+              "y": 20,
+              "zoom": 0.5
+            }
+          }
+        },
+        "bindings": {
+          "destinations": {},
+          "dictionaries": {}
+        },
+        "event": {
+          "providerId": "steam",
+          "kind": "price",
+          "url": "https://store.steampowered.com/app/730/",
+          "title": "SALE",
+          "sensitive": false
+        },
+        "now": 1789993800000
+      },
+      "time": "2026-09-21T21:30",
+      "result": {
+        "event": {
+          "providerId": "steam",
+          "kind": "price",
+          "url": "https://store.steampowered.com/app/730/",
+          "title": "SALE",
+          "sensitive": false
+        },
+        "outputs": [
+          {
+            "destination": "default",
+            "dueAtMs": 1790121600000,
+            "deadlineMs": 1790253000000,
+            "display": {
+              "format": "text",
+              "template": "{title}\n{url}",
+              "maxLength": 1900,
+              "media": "inherit",
+              "mentions": "none"
+            },
+            "text": "SALE\nhttps://store.steampowered.com/app/730/",
+            "limits": [
+              {
+                "nodeId": "limit",
+                "count": 3,
+                "minutes": 60,
+                "key": "sourceKey",
+                "overflow": "defer",
+                "group": "unknown"
+              }
+            ],
+            "aggregate": {
+              "nodeId": "aggregate",
+              "minutes": 15,
+              "key": "sourceKey",
+              "mode": "all",
+              "maxItems": 5,
+              "group": "unknown"
+            },
+            "schedules": [
+              {
+                "zone": "Asia/Tokyo",
+                "days": [
+                  1,
+                  2,
+                  3,
+                  4,
+                  5,
+                  6,
+                  7
+                ],
+                "windows": [
+                  {
+                    "start": "09:00",
+                    "end": "23:00"
+                  }
+                ],
+                "quiet": [
+                  {
+                    "start": "22:00",
+                    "end": "09:00"
+                  }
+                ],
+                "datesExcluded": [
+                  "2026-09-22"
+                ],
+                "maxWaitDays": 14
+              }
+            ],
+            "path": [
+              "start",
+              "filter",
+              "waitA",
+              "waitB",
+              "merge",
+              "time",
+              "limit",
+              "aggregate",
+              "display",
+              "send"
+            ]
+          }
+        ],
+        "trace": [
+          {
+            "nodeId": "start",
+            "outcome": "out",
+            "detail": null
+          },
+          {
+            "nodeId": "filter",
+            "outcome": "yes",
+            "detail": null
+          },
+          {
+            "nodeId": "waitA",
+            "outcome": "out",
+            "detail": null
+          },
+          {
+            "nodeId": "waitB",
+            "outcome": "out",
+            "detail": null
+          },
+          {
+            "nodeId": "merge",
+            "outcome": "merged",
+            "arrivals": 2,
+            "reason": "同じイベントを1件に合流し、一致した全経路の時間・件数制限を保持しました"
+          },
+          {
+            "nodeId": "merge",
+            "outcome": "out",
+            "detail": null
+          },
+          {
+            "nodeId": "time",
+            "outcome": "out",
+            "detail": null
+          },
+          {
+            "nodeId": "limit",
+            "outcome": "out",
+            "detail": null
+          },
+          {
+            "nodeId": "aggregate",
+            "outcome": "out",
+            "detail": null
+          },
+          {
+            "nodeId": "display",
+            "outcome": "out",
+            "detail": null
+          },
+          {
+            "nodeId": "send",
+            "outcome": "scheduled",
+            "dueAtMs": 1790121600000,
+            "destination": "default"
+          }
+        ]
+      }
+    },
+    {
+      "request": {
+        "definition": {
+          "schemaVersion": 1,
+          "name": "複雑なスタジオ検証",
+          "description": "AND / OR / NOT・3経路・合流・静穏時間・部品",
+          "expiresAfterMinutes": 4320,
+          "nodes": [
+            {
+              "id": "start",
+              "type": "start",
+              "config": {},
+              "position": {
+                "x": 40,
+                "y": 60
+              }
+            },
+            {
+              "id": "filter",
+              "type": "condition",
+              "config": {
+                "predicate": {
+                  "op": "all",
+                  "conditions": [
+                    {
+                      "op": "any",
+                      "conditions": [
+                        {
+                          "field": "title",
+                          "op": "contains",
+                          "value": "sale",
+                          "ignoreCase": true
+                        },
+                        {
+                          "field": "discountPercent",
+                          "op": "gte",
+                          "value": 30
+                        }
+                      ]
+                    },
+                    {
+                      "op": "not",
+                      "conditions": [
+                        {
+                          "field": "sensitive",
+                          "op": "eq",
+                          "value": true
+                        }
+                      ]
+                    }
+                  ]
+                }
+              },
+              "position": {
+                "x": 300,
+                "y": 60
+              }
+            },
+            {
+              "id": "waitA",
+              "type": "delay",
+              "config": {
+                "minutes": 30,
+                "anchor": "observed"
+              },
+              "position": {
+                "x": 570,
+                "y": 60
+              }
+            },
+            {
+              "id": "waitB",
+              "type": "delay",
+              "config": {
+                "minutes": 60,
+                "anchor": "observed"
+              },
+              "position": {
+                "x": 570,
+                "y": 260
+              }
+            },
+            {
+              "id": "reject",
+              "type": "stop",
+              "config": {
+                "reason": "条件に不一致"
+              },
+              "position": {
+                "x": 570,
+                "y": 460
+              }
+            },
+            {
+              "id": "missing",
+              "type": "stop",
+              "config": {
+                "reason": "必要なデータが不明"
+              },
+              "position": {
+                "x": 570,
+                "y": 660
+              }
+            },
+            {
+              "id": "merge",
+              "type": "merge",
+              "config": {
+                "mode": "all",
+                "displayConflict": "stop"
+              },
+              "position": {
+                "x": 840,
+                "y": 60
+              }
+            },
+            {
+              "id": "time",
+              "type": "schedule",
+              "config": {
+                "zone": "Asia/Tokyo",
+                "days": [
+                  1,
+                  2,
+                  3,
+                  4,
+                  5,
+                  6,
+                  7
+                ],
+                "windows": [
+                  {
+                    "start": "09:00",
+                    "end": "23:00"
+                  }
+                ],
+                "quiet": [
+                  {
+                    "start": "22:00",
+                    "end": "09:00"
+                  }
+                ],
+                "datesExcluded": [
+                  "2026-09-22"
+                ],
+                "maxWaitDays": 14
+              },
+              "position": {
+                "x": 1110,
+                "y": 60
+              }
+            },
+            {
+              "id": "limit",
+              "type": "limit",
+              "config": {
+                "count": 3,
+                "minutes": 60,
+                "key": "sourceKey",
+                "overflow": "defer"
+              },
+              "position": {
+                "x": 1380,
+                "y": 60
+              }
+            },
+            {
+              "id": "aggregate",
+              "type": "aggregate",
+              "config": {
+                "minutes": 15,
+                "key": "sourceKey",
+                "mode": "all",
+                "maxItems": 5
+              },
+              "position": {
+                "x": 1650,
+                "y": 60
+              }
+            },
+            {
+              "id": "display",
+              "type": "transform",
+              "config": {
+                "format": "text",
+                "template": "{title}\n{url}",
+                "maxLength": 1900,
+                "media": "inherit",
+                "mentions": "none"
+              },
+              "position": {
+                "x": 1920,
+                "y": 60
+              },
+              "group": "delivery"
+            },
+            {
+              "id": "send",
+              "type": "send",
+              "config": {
+                "destination": "default"
+              },
+              "position": {
+                "x": 2190,
+                "y": 60
+              },
+              "group": "delivery"
+            }
+          ],
+          "edges": [
+            {
+              "id": "e0",
+              "source": "start",
+              "target": "filter",
+              "port": "out"
+            },
+            {
+              "id": "e1",
+              "source": "filter",
+              "target": "waitA",
+              "port": "yes"
+            },
+            {
+              "id": "e2",
+              "source": "filter",
+              "target": "waitB",
+              "port": "yes"
+            },
+            {
+              "id": "e3",
+              "source": "filter",
+              "target": "reject",
+              "port": "no"
+            },
+            {
+              "id": "e4",
+              "source": "filter",
+              "target": "missing",
+              "port": "unknown"
+            },
+            {
+              "id": "e5",
+              "source": "waitA",
+              "target": "merge",
+              "port": "out"
+            },
+            {
+              "id": "e6",
+              "source": "waitB",
+              "target": "merge",
+              "port": "out"
+            },
+            {
+              "id": "e7",
+              "source": "merge",
+              "target": "time",
+              "port": "out"
+            },
+            {
+              "id": "e8",
+              "source": "time",
+              "target": "limit",
+              "port": "out"
+            },
+            {
+              "id": "e9",
+              "source": "limit",
+              "target": "aggregate",
+              "port": "out"
+            },
+            {
+              "id": "e10",
+              "source": "aggregate",
+              "target": "display",
+              "port": "out"
+            },
+            {
+              "id": "e11",
+              "source": "display",
+              "target": "send",
+              "port": "out"
+            }
+          ],
+          "layout": {
+            "groups": [
+              {
+                "id": "delivery",
+                "label": "表示と通知",
+                "collapsed": false
+              }
+            ],
+            "viewport": {
+              "x": 30,
+              "y": 20,
+              "zoom": 0.5
+            }
+          }
+        },
+        "bindings": {
+          "destinations": {},
+          "dictionaries": {}
+        },
+        "event": {
+          "providerId": "steam",
+          "kind": "price",
+          "url": "https://store.steampowered.com/app/730/",
+          "title": "news",
+          "discountPercent": 50,
+          "sensitive": false
+        },
+        "now": 1789993800000
+      },
+      "time": "2026-09-21T21:30",
+      "result": {
+        "event": {
+          "providerId": "steam",
+          "kind": "price",
+          "url": "https://store.steampowered.com/app/730/",
+          "title": "news",
+          "sensitive": false,
+          "discountPercent": 50
+        },
+        "outputs": [
+          {
+            "destination": "default",
+            "dueAtMs": 1790121600000,
+            "deadlineMs": 1790253000000,
+            "display": {
+              "format": "text",
+              "template": "{title}\n{url}",
+              "maxLength": 1900,
+              "media": "inherit",
+              "mentions": "none"
+            },
+            "text": "news\nhttps://store.steampowered.com/app/730/",
+            "limits": [
+              {
+                "nodeId": "limit",
+                "count": 3,
+                "minutes": 60,
+                "key": "sourceKey",
+                "overflow": "defer",
+                "group": "unknown"
+              }
+            ],
+            "aggregate": {
+              "nodeId": "aggregate",
+              "minutes": 15,
+              "key": "sourceKey",
+              "mode": "all",
+              "maxItems": 5,
+              "group": "unknown"
+            },
+            "schedules": [
+              {
+                "zone": "Asia/Tokyo",
+                "days": [
+                  1,
+                  2,
+                  3,
+                  4,
+                  5,
+                  6,
+                  7
+                ],
+                "windows": [
+                  {
+                    "start": "09:00",
+                    "end": "23:00"
+                  }
+                ],
+                "quiet": [
+                  {
+                    "start": "22:00",
+                    "end": "09:00"
+                  }
+                ],
+                "datesExcluded": [
+                  "2026-09-22"
+                ],
+                "maxWaitDays": 14
+              }
+            ],
+            "path": [
+              "start",
+              "filter",
+              "waitA",
+              "waitB",
+              "merge",
+              "time",
+              "limit",
+              "aggregate",
+              "display",
+              "send"
+            ]
+          }
+        ],
+        "trace": [
+          {
+            "nodeId": "start",
+            "outcome": "out",
+            "detail": null
+          },
+          {
+            "nodeId": "filter",
+            "outcome": "yes",
+            "detail": null
+          },
+          {
+            "nodeId": "waitA",
+            "outcome": "out",
+            "detail": null
+          },
+          {
+            "nodeId": "waitB",
+            "outcome": "out",
+            "detail": null
+          },
+          {
+            "nodeId": "merge",
+            "outcome": "merged",
+            "arrivals": 2,
+            "reason": "同じイベントを1件に合流し、一致した全経路の時間・件数制限を保持しました"
+          },
+          {
+            "nodeId": "merge",
+            "outcome": "out",
+            "detail": null
+          },
+          {
+            "nodeId": "time",
+            "outcome": "out",
+            "detail": null
+          },
+          {
+            "nodeId": "limit",
+            "outcome": "out",
+            "detail": null
+          },
+          {
+            "nodeId": "aggregate",
+            "outcome": "out",
+            "detail": null
+          },
+          {
+            "nodeId": "display",
+            "outcome": "out",
+            "detail": null
+          },
+          {
+            "nodeId": "send",
+            "outcome": "scheduled",
+            "dueAtMs": 1790121600000,
+            "destination": "default"
+          }
+        ]
+      }
+    },
+    {
+      "request": {
+        "definition": {
+          "schemaVersion": 1,
+          "name": "複雑なスタジオ検証",
+          "description": "AND / OR / NOT・3経路・合流・静穏時間・部品",
+          "expiresAfterMinutes": 4320,
+          "nodes": [
+            {
+              "id": "start",
+              "type": "start",
+              "config": {},
+              "position": {
+                "x": 40,
+                "y": 60
+              }
+            },
+            {
+              "id": "filter",
+              "type": "condition",
+              "config": {
+                "predicate": {
+                  "op": "all",
+                  "conditions": [
+                    {
+                      "op": "any",
+                      "conditions": [
+                        {
+                          "field": "title",
+                          "op": "contains",
+                          "value": "sale",
+                          "ignoreCase": true
+                        },
+                        {
+                          "field": "discountPercent",
+                          "op": "gte",
+                          "value": 30
+                        }
+                      ]
+                    },
+                    {
+                      "op": "not",
+                      "conditions": [
+                        {
+                          "field": "sensitive",
+                          "op": "eq",
+                          "value": true
+                        }
+                      ]
+                    }
+                  ]
+                }
+              },
+              "position": {
+                "x": 300,
+                "y": 60
+              }
+            },
+            {
+              "id": "waitA",
+              "type": "delay",
+              "config": {
+                "minutes": 30,
+                "anchor": "observed"
+              },
+              "position": {
+                "x": 570,
+                "y": 60
+              }
+            },
+            {
+              "id": "waitB",
+              "type": "delay",
+              "config": {
+                "minutes": 60,
+                "anchor": "observed"
+              },
+              "position": {
+                "x": 570,
+                "y": 260
+              }
+            },
+            {
+              "id": "reject",
+              "type": "stop",
+              "config": {
+                "reason": "条件に不一致"
+              },
+              "position": {
+                "x": 570,
+                "y": 460
+              }
+            },
+            {
+              "id": "missing",
+              "type": "stop",
+              "config": {
+                "reason": "必要なデータが不明"
+              },
+              "position": {
+                "x": 570,
+                "y": 660
+              }
+            },
+            {
+              "id": "merge",
+              "type": "merge",
+              "config": {
+                "mode": "all",
+                "displayConflict": "stop"
+              },
+              "position": {
+                "x": 840,
+                "y": 60
+              }
+            },
+            {
+              "id": "time",
+              "type": "schedule",
+              "config": {
+                "zone": "Asia/Tokyo",
+                "days": [
+                  1,
+                  2,
+                  3,
+                  4,
+                  5,
+                  6,
+                  7
+                ],
+                "windows": [
+                  {
+                    "start": "09:00",
+                    "end": "23:00"
+                  }
+                ],
+                "quiet": [
+                  {
+                    "start": "22:00",
+                    "end": "09:00"
+                  }
+                ],
+                "datesExcluded": [
+                  "2026-09-22"
+                ],
+                "maxWaitDays": 14
+              },
+              "position": {
+                "x": 1110,
+                "y": 60
+              }
+            },
+            {
+              "id": "limit",
+              "type": "limit",
+              "config": {
+                "count": 3,
+                "minutes": 60,
+                "key": "sourceKey",
+                "overflow": "defer"
+              },
+              "position": {
+                "x": 1380,
+                "y": 60
+              }
+            },
+            {
+              "id": "aggregate",
+              "type": "aggregate",
+              "config": {
+                "minutes": 15,
+                "key": "sourceKey",
+                "mode": "all",
+                "maxItems": 5
+              },
+              "position": {
+                "x": 1650,
+                "y": 60
+              }
+            },
+            {
+              "id": "display",
+              "type": "transform",
+              "config": {
+                "format": "text",
+                "template": "{title}\n{url}",
+                "maxLength": 1900,
+                "media": "inherit",
+                "mentions": "none"
+              },
+              "position": {
+                "x": 1920,
+                "y": 60
+              },
+              "group": "delivery"
+            },
+            {
+              "id": "send",
+              "type": "send",
+              "config": {
+                "destination": "default"
+              },
+              "position": {
+                "x": 2190,
+                "y": 60
+              },
+              "group": "delivery"
+            }
+          ],
+          "edges": [
+            {
+              "id": "e0",
+              "source": "start",
+              "target": "filter",
+              "port": "out"
+            },
+            {
+              "id": "e1",
+              "source": "filter",
+              "target": "waitA",
+              "port": "yes"
+            },
+            {
+              "id": "e2",
+              "source": "filter",
+              "target": "waitB",
+              "port": "yes"
+            },
+            {
+              "id": "e3",
+              "source": "filter",
+              "target": "reject",
+              "port": "no"
+            },
+            {
+              "id": "e4",
+              "source": "filter",
+              "target": "missing",
+              "port": "unknown"
+            },
+            {
+              "id": "e5",
+              "source": "waitA",
+              "target": "merge",
+              "port": "out"
+            },
+            {
+              "id": "e6",
+              "source": "waitB",
+              "target": "merge",
+              "port": "out"
+            },
+            {
+              "id": "e7",
+              "source": "merge",
+              "target": "time",
+              "port": "out"
+            },
+            {
+              "id": "e8",
+              "source": "time",
+              "target": "limit",
+              "port": "out"
+            },
+            {
+              "id": "e9",
+              "source": "limit",
+              "target": "aggregate",
+              "port": "out"
+            },
+            {
+              "id": "e10",
+              "source": "aggregate",
+              "target": "display",
+              "port": "out"
+            },
+            {
+              "id": "e11",
+              "source": "display",
+              "target": "send",
+              "port": "out"
+            }
+          ],
+          "layout": {
+            "groups": [
+              {
+                "id": "delivery",
+                "label": "表示と通知",
+                "collapsed": false
+              }
+            ],
+            "viewport": {
+              "x": 30,
+              "y": 20,
+              "zoom": 0.5
+            }
+          }
+        },
+        "bindings": {
+          "destinations": {},
+          "dictionaries": {}
+        },
+        "event": {
+          "providerId": "steam",
+          "kind": "price",
+          "url": "https://store.steampowered.com/app/730/",
+          "title": "news",
+          "discountPercent": 0,
+          "sensitive": false
+        },
+        "now": 1789993800000
+      },
+      "time": "2026-09-21T21:30",
+      "result": {
+        "event": {
+          "providerId": "steam",
+          "kind": "price",
+          "url": "https://store.steampowered.com/app/730/",
+          "title": "news",
+          "sensitive": false,
+          "discountPercent": 0
+        },
+        "outputs": [],
+        "trace": [
+          {
+            "nodeId": "start",
+            "outcome": "out",
+            "detail": null
+          },
+          {
+            "nodeId": "filter",
+            "outcome": "no",
+            "detail": null
+          },
+          {
+            "nodeId": "reject",
+            "outcome": "excluded",
+            "reason": "条件に不一致"
+          }
+        ]
+      }
+    },
+    {
+      "request": {
+        "definition": {
+          "schemaVersion": 1,
+          "name": "複雑なスタジオ検証",
+          "description": "AND / OR / NOT・3経路・合流・静穏時間・部品",
+          "expiresAfterMinutes": 4320,
+          "nodes": [
+            {
+              "id": "start",
+              "type": "start",
+              "config": {},
+              "position": {
+                "x": 40,
+                "y": 60
+              }
+            },
+            {
+              "id": "filter",
+              "type": "condition",
+              "config": {
+                "predicate": {
+                  "op": "all",
+                  "conditions": [
+                    {
+                      "op": "any",
+                      "conditions": [
+                        {
+                          "field": "title",
+                          "op": "contains",
+                          "value": "sale",
+                          "ignoreCase": true
+                        },
+                        {
+                          "field": "discountPercent",
+                          "op": "gte",
+                          "value": 30
+                        }
+                      ]
+                    },
+                    {
+                      "op": "not",
+                      "conditions": [
+                        {
+                          "field": "sensitive",
+                          "op": "eq",
+                          "value": true
+                        }
+                      ]
+                    }
+                  ]
+                }
+              },
+              "position": {
+                "x": 300,
+                "y": 60
+              }
+            },
+            {
+              "id": "waitA",
+              "type": "delay",
+              "config": {
+                "minutes": 30,
+                "anchor": "observed"
+              },
+              "position": {
+                "x": 570,
+                "y": 60
+              }
+            },
+            {
+              "id": "waitB",
+              "type": "delay",
+              "config": {
+                "minutes": 60,
+                "anchor": "observed"
+              },
+              "position": {
+                "x": 570,
+                "y": 260
+              }
+            },
+            {
+              "id": "reject",
+              "type": "stop",
+              "config": {
+                "reason": "条件に不一致"
+              },
+              "position": {
+                "x": 570,
+                "y": 460
+              }
+            },
+            {
+              "id": "missing",
+              "type": "stop",
+              "config": {
+                "reason": "必要なデータが不明"
+              },
+              "position": {
+                "x": 570,
+                "y": 660
+              }
+            },
+            {
+              "id": "merge",
+              "type": "merge",
+              "config": {
+                "mode": "all",
+                "displayConflict": "stop"
+              },
+              "position": {
+                "x": 840,
+                "y": 60
+              }
+            },
+            {
+              "id": "time",
+              "type": "schedule",
+              "config": {
+                "zone": "Asia/Tokyo",
+                "days": [
+                  1,
+                  2,
+                  3,
+                  4,
+                  5,
+                  6,
+                  7
+                ],
+                "windows": [
+                  {
+                    "start": "09:00",
+                    "end": "23:00"
+                  }
+                ],
+                "quiet": [
+                  {
+                    "start": "22:00",
+                    "end": "09:00"
+                  }
+                ],
+                "datesExcluded": [
+                  "2026-09-22"
+                ],
+                "maxWaitDays": 14
+              },
+              "position": {
+                "x": 1110,
+                "y": 60
+              }
+            },
+            {
+              "id": "limit",
+              "type": "limit",
+              "config": {
+                "count": 3,
+                "minutes": 60,
+                "key": "sourceKey",
+                "overflow": "defer"
+              },
+              "position": {
+                "x": 1380,
+                "y": 60
+              }
+            },
+            {
+              "id": "aggregate",
+              "type": "aggregate",
+              "config": {
+                "minutes": 15,
+                "key": "sourceKey",
+                "mode": "all",
+                "maxItems": 5
+              },
+              "position": {
+                "x": 1650,
+                "y": 60
+              }
+            },
+            {
+              "id": "display",
+              "type": "transform",
+              "config": {
+                "format": "text",
+                "template": "{title}\n{url}",
+                "maxLength": 1900,
+                "media": "inherit",
+                "mentions": "none"
+              },
+              "position": {
+                "x": 1920,
+                "y": 60
+              },
+              "group": "delivery"
+            },
+            {
+              "id": "send",
+              "type": "send",
+              "config": {
+                "destination": "default"
+              },
+              "position": {
+                "x": 2190,
+                "y": 60
+              },
+              "group": "delivery"
+            }
+          ],
+          "edges": [
+            {
+              "id": "e0",
+              "source": "start",
+              "target": "filter",
+              "port": "out"
+            },
+            {
+              "id": "e1",
+              "source": "filter",
+              "target": "waitA",
+              "port": "yes"
+            },
+            {
+              "id": "e2",
+              "source": "filter",
+              "target": "waitB",
+              "port": "yes"
+            },
+            {
+              "id": "e3",
+              "source": "filter",
+              "target": "reject",
+              "port": "no"
+            },
+            {
+              "id": "e4",
+              "source": "filter",
+              "target": "missing",
+              "port": "unknown"
+            },
+            {
+              "id": "e5",
+              "source": "waitA",
+              "target": "merge",
+              "port": "out"
+            },
+            {
+              "id": "e6",
+              "source": "waitB",
+              "target": "merge",
+              "port": "out"
+            },
+            {
+              "id": "e7",
+              "source": "merge",
+              "target": "time",
+              "port": "out"
+            },
+            {
+              "id": "e8",
+              "source": "time",
+              "target": "limit",
+              "port": "out"
+            },
+            {
+              "id": "e9",
+              "source": "limit",
+              "target": "aggregate",
+              "port": "out"
+            },
+            {
+              "id": "e10",
+              "source": "aggregate",
+              "target": "display",
+              "port": "out"
+            },
+            {
+              "id": "e11",
+              "source": "display",
+              "target": "send",
+              "port": "out"
+            }
+          ],
+          "layout": {
+            "groups": [
+              {
+                "id": "delivery",
+                "label": "表示と通知",
+                "collapsed": false
+              }
+            ],
+            "viewport": {
+              "x": 30,
+              "y": 20,
+              "zoom": 0.5
+            }
+          }
+        },
+        "bindings": {
+          "destinations": {},
+          "dictionaries": {}
+        },
+        "event": {
+          "providerId": "steam",
+          "kind": "price",
+          "url": "https://store.steampowered.com/app/730/",
+          "title": "sale",
+          "sensitive": true
+        },
+        "now": 1789993800000
+      },
+      "time": "2026-09-21T21:30",
+      "result": {
+        "event": {
+          "providerId": "steam",
+          "kind": "price",
+          "url": "https://store.steampowered.com/app/730/",
+          "title": "sale",
+          "sensitive": true
+        },
+        "outputs": [],
+        "trace": [
+          {
+            "nodeId": "start",
+            "outcome": "out",
+            "detail": null
+          },
+          {
+            "nodeId": "filter",
+            "outcome": "no",
+            "detail": null
+          },
+          {
+            "nodeId": "reject",
+            "outcome": "excluded",
+            "reason": "条件に不一致"
+          }
+        ]
+      }
+    },
+    {
+      "request": {
+        "definition": {
+          "schemaVersion": 1,
+          "name": "複雑なスタジオ検証",
+          "description": "AND / OR / NOT・3経路・合流・静穏時間・部品",
+          "expiresAfterMinutes": 4320,
+          "nodes": [
+            {
+              "id": "start",
+              "type": "start",
+              "config": {},
+              "position": {
+                "x": 40,
+                "y": 60
+              }
+            },
+            {
+              "id": "filter",
+              "type": "condition",
+              "config": {
+                "predicate": {
+                  "op": "all",
+                  "conditions": [
+                    {
+                      "op": "any",
+                      "conditions": [
+                        {
+                          "field": "title",
+                          "op": "contains",
+                          "value": "sale",
+                          "ignoreCase": true
+                        },
+                        {
+                          "field": "discountPercent",
+                          "op": "gte",
+                          "value": 30
+                        }
+                      ]
+                    },
+                    {
+                      "op": "not",
+                      "conditions": [
+                        {
+                          "field": "sensitive",
+                          "op": "eq",
+                          "value": true
+                        }
+                      ]
+                    }
+                  ]
+                }
+              },
+              "position": {
+                "x": 300,
+                "y": 60
+              }
+            },
+            {
+              "id": "waitA",
+              "type": "delay",
+              "config": {
+                "minutes": 30,
+                "anchor": "observed"
+              },
+              "position": {
+                "x": 570,
+                "y": 60
+              }
+            },
+            {
+              "id": "waitB",
+              "type": "delay",
+              "config": {
+                "minutes": 60,
+                "anchor": "observed"
+              },
+              "position": {
+                "x": 570,
+                "y": 260
+              }
+            },
+            {
+              "id": "reject",
+              "type": "stop",
+              "config": {
+                "reason": "条件に不一致"
+              },
+              "position": {
+                "x": 570,
+                "y": 460
+              }
+            },
+            {
+              "id": "missing",
+              "type": "stop",
+              "config": {
+                "reason": "必要なデータが不明"
+              },
+              "position": {
+                "x": 570,
+                "y": 660
+              }
+            },
+            {
+              "id": "merge",
+              "type": "merge",
+              "config": {
+                "mode": "all",
+                "displayConflict": "stop"
+              },
+              "position": {
+                "x": 840,
+                "y": 60
+              }
+            },
+            {
+              "id": "time",
+              "type": "schedule",
+              "config": {
+                "zone": "Asia/Tokyo",
+                "days": [
+                  1,
+                  2,
+                  3,
+                  4,
+                  5,
+                  6,
+                  7
+                ],
+                "windows": [
+                  {
+                    "start": "09:00",
+                    "end": "23:00"
+                  }
+                ],
+                "quiet": [
+                  {
+                    "start": "22:00",
+                    "end": "09:00"
+                  }
+                ],
+                "datesExcluded": [
+                  "2026-09-22"
+                ],
+                "maxWaitDays": 14
+              },
+              "position": {
+                "x": 1110,
+                "y": 60
+              }
+            },
+            {
+              "id": "limit",
+              "type": "limit",
+              "config": {
+                "count": 3,
+                "minutes": 60,
+                "key": "sourceKey",
+                "overflow": "defer"
+              },
+              "position": {
+                "x": 1380,
+                "y": 60
+              }
+            },
+            {
+              "id": "aggregate",
+              "type": "aggregate",
+              "config": {
+                "minutes": 15,
+                "key": "sourceKey",
+                "mode": "all",
+                "maxItems": 5
+              },
+              "position": {
+                "x": 1650,
+                "y": 60
+              }
+            },
+            {
+              "id": "display",
+              "type": "transform",
+              "config": {
+                "format": "text",
+                "template": "{title}\n{url}",
+                "maxLength": 1900,
+                "media": "inherit",
+                "mentions": "none"
+              },
+              "position": {
+                "x": 1920,
+                "y": 60
+              },
+              "group": "delivery"
+            },
+            {
+              "id": "send",
+              "type": "send",
+              "config": {
+                "destination": "default"
+              },
+              "position": {
+                "x": 2190,
+                "y": 60
+              },
+              "group": "delivery"
+            }
+          ],
+          "edges": [
+            {
+              "id": "e0",
+              "source": "start",
+              "target": "filter",
+              "port": "out"
+            },
+            {
+              "id": "e1",
+              "source": "filter",
+              "target": "waitA",
+              "port": "yes"
+            },
+            {
+              "id": "e2",
+              "source": "filter",
+              "target": "waitB",
+              "port": "yes"
+            },
+            {
+              "id": "e3",
+              "source": "filter",
+              "target": "reject",
+              "port": "no"
+            },
+            {
+              "id": "e4",
+              "source": "filter",
+              "target": "missing",
+              "port": "unknown"
+            },
+            {
+              "id": "e5",
+              "source": "waitA",
+              "target": "merge",
+              "port": "out"
+            },
+            {
+              "id": "e6",
+              "source": "waitB",
+              "target": "merge",
+              "port": "out"
+            },
+            {
+              "id": "e7",
+              "source": "merge",
+              "target": "time",
+              "port": "out"
+            },
+            {
+              "id": "e8",
+              "source": "time",
+              "target": "limit",
+              "port": "out"
+            },
+            {
+              "id": "e9",
+              "source": "limit",
+              "target": "aggregate",
+              "port": "out"
+            },
+            {
+              "id": "e10",
+              "source": "aggregate",
+              "target": "display",
+              "port": "out"
+            },
+            {
+              "id": "e11",
+              "source": "display",
+              "target": "send",
+              "port": "out"
+            }
+          ],
+          "layout": {
+            "groups": [
+              {
+                "id": "delivery",
+                "label": "表示と通知",
+                "collapsed": false
+              }
+            ],
+            "viewport": {
+              "x": 30,
+              "y": 20,
+              "zoom": 0.5
+            }
+          }
+        },
+        "bindings": {
+          "destinations": {},
+          "dictionaries": {}
+        },
+        "event": {
+          "providerId": "steam",
+          "kind": "price",
+          "url": "https://store.steampowered.com/app/730/",
+          "title": "news",
+          "sensitive": false
+        },
+        "now": 1789993800000
+      },
+      "time": "2026-09-21T21:30",
+      "result": {
+        "event": {
+          "providerId": "steam",
+          "kind": "price",
+          "url": "https://store.steampowered.com/app/730/",
+          "title": "news",
+          "sensitive": false
+        },
+        "outputs": [],
+        "trace": [
+          {
+            "nodeId": "start",
+            "outcome": "out",
+            "detail": null
+          },
+          {
+            "nodeId": "filter",
+            "outcome": "unknown",
+            "detail": null
+          },
+          {
+            "nodeId": "missing",
+            "outcome": "excluded",
+            "reason": "必要なデータが不明"
+          }
+        ]
+      }
+    },
+    {
+      "request": {
+        "definition": {
+          "schemaVersion": 1,
+          "name": "複雑なスタジオ検証",
+          "description": "AND / OR / NOT・3経路・合流・静穏時間・部品",
+          "expiresAfterMinutes": 4320,
+          "nodes": [
+            {
+              "id": "start",
+              "type": "start",
+              "config": {},
+              "position": {
+                "x": 40,
+                "y": 60
+              }
+            },
+            {
+              "id": "filter",
+              "type": "condition",
+              "config": {
+                "predicate": {
+                  "op": "all",
+                  "conditions": [
+                    {
+                      "op": "any",
+                      "conditions": [
+                        {
+                          "field": "title",
+                          "op": "contains",
+                          "value": "sale",
+                          "ignoreCase": true
+                        },
+                        {
+                          "field": "discountPercent",
+                          "op": "gte",
+                          "value": 30
+                        }
+                      ]
+                    },
+                    {
+                      "op": "not",
+                      "conditions": [
+                        {
+                          "field": "sensitive",
+                          "op": "eq",
+                          "value": true
+                        }
+                      ]
+                    }
+                  ]
+                }
+              },
+              "position": {
+                "x": 300,
+                "y": 60
+              }
+            },
+            {
+              "id": "waitA",
+              "type": "delay",
+              "config": {
+                "minutes": 30,
+                "anchor": "observed"
+              },
+              "position": {
+                "x": 570,
+                "y": 60
+              }
+            },
+            {
+              "id": "waitB",
+              "type": "delay",
+              "config": {
+                "minutes": 60,
+                "anchor": "observed"
+              },
+              "position": {
+                "x": 570,
+                "y": 260
+              }
+            },
+            {
+              "id": "reject",
+              "type": "stop",
+              "config": {
+                "reason": "条件に不一致"
+              },
+              "position": {
+                "x": 570,
+                "y": 460
+              }
+            },
+            {
+              "id": "missing",
+              "type": "stop",
+              "config": {
+                "reason": "必要なデータが不明"
+              },
+              "position": {
+                "x": 570,
+                "y": 660
+              }
+            },
+            {
+              "id": "merge",
+              "type": "merge",
+              "config": {
+                "mode": "all",
+                "displayConflict": "stop"
+              },
+              "position": {
+                "x": 840,
+                "y": 60
+              }
+            },
+            {
+              "id": "time",
+              "type": "schedule",
+              "config": {
+                "zone": "Asia/Tokyo",
+                "days": [
+                  1,
+                  2,
+                  3,
+                  4,
+                  5,
+                  6,
+                  7
+                ],
+                "windows": [
+                  {
+                    "start": "09:00",
+                    "end": "23:00"
+                  }
+                ],
+                "quiet": [
+                  {
+                    "start": "22:00",
+                    "end": "09:00"
+                  }
+                ],
+                "datesExcluded": [
+                  "2026-09-22"
+                ],
+                "maxWaitDays": 14
+              },
+              "position": {
+                "x": 1110,
+                "y": 60
+              }
+            },
+            {
+              "id": "limit",
+              "type": "limit",
+              "config": {
+                "count": 3,
+                "minutes": 60,
+                "key": "sourceKey",
+                "overflow": "defer"
+              },
+              "position": {
+                "x": 1380,
+                "y": 60
+              }
+            },
+            {
+              "id": "aggregate",
+              "type": "aggregate",
+              "config": {
+                "minutes": 15,
+                "key": "sourceKey",
+                "mode": "all",
+                "maxItems": 5
+              },
+              "position": {
+                "x": 1650,
+                "y": 60
+              }
+            },
+            {
+              "id": "display",
+              "type": "transform",
+              "config": {
+                "format": "text",
+                "template": "{title}\n{url}",
+                "maxLength": 1900,
+                "media": "inherit",
+                "mentions": "none"
+              },
+              "position": {
+                "x": 1920,
+                "y": 60
+              },
+              "group": "delivery"
+            },
+            {
+              "id": "send",
+              "type": "send",
+              "config": {
+                "destination": "default"
+              },
+              "position": {
+                "x": 2190,
+                "y": 60
+              },
+              "group": "delivery"
+            }
+          ],
+          "edges": [
+            {
+              "id": "e0",
+              "source": "start",
+              "target": "filter",
+              "port": "out"
+            },
+            {
+              "id": "e1",
+              "source": "filter",
+              "target": "waitA",
+              "port": "yes"
+            },
+            {
+              "id": "e2",
+              "source": "filter",
+              "target": "waitB",
+              "port": "yes"
+            },
+            {
+              "id": "e3",
+              "source": "filter",
+              "target": "reject",
+              "port": "no"
+            },
+            {
+              "id": "e4",
+              "source": "filter",
+              "target": "missing",
+              "port": "unknown"
+            },
+            {
+              "id": "e5",
+              "source": "waitA",
+              "target": "merge",
+              "port": "out"
+            },
+            {
+              "id": "e6",
+              "source": "waitB",
+              "target": "merge",
+              "port": "out"
+            },
+            {
+              "id": "e7",
+              "source": "merge",
+              "target": "time",
+              "port": "out"
+            },
+            {
+              "id": "e8",
+              "source": "time",
+              "target": "limit",
+              "port": "out"
+            },
+            {
+              "id": "e9",
+              "source": "limit",
+              "target": "aggregate",
+              "port": "out"
+            },
+            {
+              "id": "e10",
+              "source": "aggregate",
+              "target": "display",
+              "port": "out"
+            },
+            {
+              "id": "e11",
+              "source": "display",
+              "target": "send",
+              "port": "out"
+            }
+          ],
+          "layout": {
+            "groups": [
+              {
+                "id": "delivery",
+                "label": "表示と通知",
+                "collapsed": false
+              }
+            ],
+            "viewport": {
+              "x": 30,
+              "y": 20,
+              "zoom": 0.5
+            }
+          }
+        },
+        "bindings": {
+          "destinations": {},
+          "dictionaries": {}
+        },
+        "event": {
+          "providerId": "steam",
+          "kind": "price",
+          "url": "https://store.steampowered.com/app/730/",
+          "title": "sale"
+        },
+        "now": 1789993800000
+      },
+      "time": "2026-09-21T21:30",
+      "result": {
+        "event": {
+          "providerId": "steam",
+          "kind": "price",
+          "url": "https://store.steampowered.com/app/730/",
+          "title": "sale"
+        },
+        "outputs": [],
+        "trace": [
+          {
+            "nodeId": "start",
+            "outcome": "out",
+            "detail": null
+          },
+          {
+            "nodeId": "filter",
+            "outcome": "unknown",
+            "detail": null
+          },
+          {
+            "nodeId": "missing",
+            "outcome": "excluded",
+            "reason": "必要なデータが不明"
+          }
+        ]
+      }
+    },
+    {
+      "request": {
+        "definition": {
+          "schemaVersion": 1,
+          "name": "複雑なスタジオ検証",
+          "description": "AND / OR / NOT・3経路・合流・静穏時間・部品",
+          "expiresAfterMinutes": 4320,
+          "nodes": [
+            {
+              "id": "start",
+              "type": "start",
+              "config": {},
+              "position": {
+                "x": 40,
+                "y": 60
+              }
+            },
+            {
+              "id": "filter",
+              "type": "condition",
+              "config": {
+                "predicate": {
+                  "op": "all",
+                  "conditions": [
+                    {
+                      "op": "any",
+                      "conditions": [
+                        {
+                          "field": "title",
+                          "op": "contains",
+                          "value": "sale",
+                          "ignoreCase": true
+                        },
+                        {
+                          "field": "discountPercent",
+                          "op": "gte",
+                          "value": 30
+                        }
+                      ]
+                    },
+                    {
+                      "op": "not",
+                      "conditions": [
+                        {
+                          "field": "sensitive",
+                          "op": "eq",
+                          "value": true
+                        }
+                      ]
+                    }
+                  ]
+                }
+              },
+              "position": {
+                "x": 300,
+                "y": 60
+              }
+            },
+            {
+              "id": "waitA",
+              "type": "delay",
+              "config": {
+                "minutes": 30,
+                "anchor": "observed"
+              },
+              "position": {
+                "x": 570,
+                "y": 60
+              }
+            },
+            {
+              "id": "waitB",
+              "type": "delay",
+              "config": {
+                "minutes": 60,
+                "anchor": "observed"
+              },
+              "position": {
+                "x": 570,
+                "y": 260
+              }
+            },
+            {
+              "id": "reject",
+              "type": "stop",
+              "config": {
+                "reason": "条件に不一致"
+              },
+              "position": {
+                "x": 570,
+                "y": 460
+              }
+            },
+            {
+              "id": "missing",
+              "type": "stop",
+              "config": {
+                "reason": "必要なデータが不明"
+              },
+              "position": {
+                "x": 570,
+                "y": 660
+              }
+            },
+            {
+              "id": "merge",
+              "type": "merge",
+              "config": {
+                "mode": "all",
+                "displayConflict": "stop"
+              },
+              "position": {
+                "x": 840,
+                "y": 60
+              }
+            },
+            {
+              "id": "time",
+              "type": "schedule",
+              "config": {
+                "zone": "Asia/Tokyo",
+                "days": [
+                  1,
+                  2,
+                  3,
+                  4,
+                  5,
+                  6,
+                  7
+                ],
+                "windows": [
+                  {
+                    "start": "10:00",
+                    "end": "23:00"
+                  }
+                ],
+                "quiet": [
+                  {
+                    "start": "22:00",
+                    "end": "09:00"
+                  }
+                ],
+                "datesExcluded": [],
+                "maxWaitDays": 14
+              },
+              "position": {
+                "x": 1110,
+                "y": 60
+              }
+            },
+            {
+              "id": "limit",
+              "type": "limit",
+              "config": {
+                "count": 3,
+                "minutes": 60,
+                "key": "sourceKey",
+                "overflow": "defer"
+              },
+              "position": {
+                "x": 1380,
+                "y": 60
+              }
+            },
+            {
+              "id": "aggregate",
+              "type": "aggregate",
+              "config": {
+                "minutes": 15,
+                "key": "sourceKey",
+                "mode": "all",
+                "maxItems": 5
+              },
+              "position": {
+                "x": 1650,
+                "y": 60
+              }
+            },
+            {
+              "id": "display",
+              "type": "transform",
+              "config": {
+                "format": "text",
+                "template": "{title}\n{url}",
+                "maxLength": 1900,
+                "media": "inherit",
+                "mentions": "none"
+              },
+              "position": {
+                "x": 1920,
+                "y": 60
+              },
+              "group": "delivery"
+            },
+            {
+              "id": "send",
+              "type": "send",
+              "config": {
+                "destination": "default"
+              },
+              "position": {
+                "x": 2190,
+                "y": 60
+              },
+              "group": "delivery"
+            }
+          ],
+          "edges": [
+            {
+              "id": "e0",
+              "source": "start",
+              "target": "filter",
+              "port": "out"
+            },
+            {
+              "id": "e1",
+              "source": "filter",
+              "target": "waitA",
+              "port": "yes"
+            },
+            {
+              "id": "e2",
+              "source": "filter",
+              "target": "waitB",
+              "port": "yes"
+            },
+            {
+              "id": "e3",
+              "source": "filter",
+              "target": "reject",
+              "port": "no"
+            },
+            {
+              "id": "e4",
+              "source": "filter",
+              "target": "missing",
+              "port": "unknown"
+            },
+            {
+              "id": "e5",
+              "source": "waitA",
+              "target": "merge",
+              "port": "out"
+            },
+            {
+              "id": "e6",
+              "source": "waitB",
+              "target": "merge",
+              "port": "out"
+            },
+            {
+              "id": "e7",
+              "source": "merge",
+              "target": "time",
+              "port": "out"
+            },
+            {
+              "id": "e8",
+              "source": "time",
+              "target": "limit",
+              "port": "out"
+            },
+            {
+              "id": "e9",
+              "source": "limit",
+              "target": "aggregate",
+              "port": "out"
+            },
+            {
+              "id": "e10",
+              "source": "aggregate",
+              "target": "display",
+              "port": "out"
+            },
+            {
+              "id": "e11",
+              "source": "display",
+              "target": "send",
+              "port": "out"
+            }
+          ],
+          "layout": {
+            "groups": [
+              {
+                "id": "delivery",
+                "label": "表示と通知",
+                "collapsed": false
+              }
+            ],
+            "viewport": {
+              "x": 30,
+              "y": 20,
+              "zoom": 0.5
+            }
+          }
+        },
+        "bindings": {
+          "destinations": {},
+          "dictionaries": {}
+        },
+        "event": {
+          "title": "sale",
+          "sensitive": false
+        },
+        "now": 1789993800000
+      },
+      "time": "2026-09-21T21:30",
+      "result": {
+        "event": {
+          "title": "sale",
+          "sensitive": false
+        },
+        "outputs": [
+          {
+            "destination": "default",
+            "dueAtMs": 1790038800000,
+            "deadlineMs": 1790253000000,
+            "display": {
+              "format": "text",
+              "template": "{title}\n{url}",
+              "maxLength": 1900,
+              "media": "inherit",
+              "mentions": "none"
+            },
+            "text": "sale\n",
+            "limits": [
+              {
+                "nodeId": "limit",
+                "count": 3,
+                "minutes": 60,
+                "key": "sourceKey",
+                "overflow": "defer",
+                "group": "unknown"
+              }
+            ],
+            "aggregate": {
+              "nodeId": "aggregate",
+              "minutes": 15,
+              "key": "sourceKey",
+              "mode": "all",
+              "maxItems": 5,
+              "group": "unknown"
+            },
+            "schedules": [
+              {
+                "zone": "Asia/Tokyo",
+                "days": [
+                  1,
+                  2,
+                  3,
+                  4,
+                  5,
+                  6,
+                  7
+                ],
+                "windows": [
+                  {
+                    "start": "10:00",
+                    "end": "23:00"
+                  }
+                ],
+                "quiet": [
+                  {
+                    "start": "22:00",
+                    "end": "09:00"
+                  }
+                ],
+                "datesExcluded": [],
+                "maxWaitDays": 14
+              }
+            ],
+            "path": [
+              "start",
+              "filter",
+              "waitA",
+              "waitB",
+              "merge",
+              "time",
+              "limit",
+              "aggregate",
+              "display",
+              "send"
+            ]
+          }
+        ],
+        "trace": [
+          {
+            "nodeId": "start",
+            "outcome": "out",
+            "detail": null
+          },
+          {
+            "nodeId": "filter",
+            "outcome": "yes",
+            "detail": null
+          },
+          {
+            "nodeId": "waitA",
+            "outcome": "out",
+            "detail": null
+          },
+          {
+            "nodeId": "waitB",
+            "outcome": "out",
+            "detail": null
+          },
+          {
+            "nodeId": "merge",
+            "outcome": "merged",
+            "arrivals": 2,
+            "reason": "同じイベントを1件に合流し、一致した全経路の時間・件数制限を保持しました"
+          },
+          {
+            "nodeId": "merge",
+            "outcome": "out",
+            "detail": null
+          },
+          {
+            "nodeId": "time",
+            "outcome": "out",
+            "detail": null
+          },
+          {
+            "nodeId": "limit",
+            "outcome": "out",
+            "detail": null
+          },
+          {
+            "nodeId": "aggregate",
+            "outcome": "out",
+            "detail": null
+          },
+          {
+            "nodeId": "display",
+            "outcome": "out",
+            "detail": null
+          },
+          {
+            "nodeId": "send",
+            "outcome": "scheduled",
+            "dueAtMs": 1790038800000,
+            "destination": "default"
+          }
+        ]
+      }
+    },
+    {
+      "request": {
+        "definition": {
+          "schemaVersion": 1,
+          "name": "複雑なスタジオ検証",
+          "description": "AND / OR / NOT・3経路・合流・静穏時間・部品",
+          "expiresAfterMinutes": 4320,
+          "nodes": [
+            {
+              "id": "start",
+              "type": "start",
+              "config": {},
+              "position": {
+                "x": 40,
+                "y": 60
+              }
+            },
+            {
+              "id": "filter",
+              "type": "condition",
+              "config": {
+                "predicate": {
+                  "op": "all",
+                  "conditions": [
+                    {
+                      "op": "any",
+                      "conditions": [
+                        {
+                          "field": "title",
+                          "op": "contains",
+                          "value": "sale",
+                          "ignoreCase": true
+                        },
+                        {
+                          "field": "discountPercent",
+                          "op": "gte",
+                          "value": 30
+                        }
+                      ]
+                    },
+                    {
+                      "op": "not",
+                      "conditions": [
+                        {
+                          "field": "sensitive",
+                          "op": "eq",
+                          "value": true
+                        }
+                      ]
+                    }
+                  ]
+                }
+              },
+              "position": {
+                "x": 310,
+                "y": 60
+              }
+            },
+            {
+              "id": "waitA",
+              "type": "delay",
+              "config": {
+                "minutes": 30,
+                "anchor": "observed"
+              },
+              "position": {
+                "x": 580,
+                "y": 60
+              }
+            },
+            {
+              "id": "waitB",
+              "type": "delay",
+              "config": {
+                "minutes": 60,
+                "anchor": "observed"
+              },
+              "position": {
+                "x": 580,
+                "y": 250
+              }
+            },
+            {
+              "id": "reject",
+              "type": "stop",
+              "config": {
+                "reason": "条件に不一致"
+              },
+              "position": {
+                "x": 580,
+                "y": 440
+              }
+            },
+            {
+              "id": "missing",
+              "type": "stop",
+              "config": {
+                "reason": "必要なデータが不明"
+              },
+              "position": {
+                "x": 580,
+                "y": 630
+              }
+            },
+            {
+              "id": "merge",
+              "type": "merge",
+              "config": {
+                "mode": "all",
+                "displayConflict": "stop"
+              },
+              "position": {
+                "x": 1120,
+                "y": 60
+              }
+            },
+            {
+              "id": "time",
+              "type": "schedule",
+              "config": {
+                "zone": "Asia/Tokyo",
+                "days": [
+                  1,
+                  2,
+                  3,
+                  4,
+                  5,
+                  6,
+                  7
+                ],
+                "windows": [
+                  {
+                    "start": "10:00",
+                    "end": "23:00"
+                  }
+                ],
+                "quiet": [
+                  {
+                    "start": "22:00",
+                    "end": "09:00"
+                  }
+                ],
+                "datesExcluded": [],
+                "maxWaitDays": 14
+              },
+              "position": {
+                "x": 1390,
+                "y": 60
+              }
+            },
+            {
+              "id": "limit",
+              "type": "limit",
+              "config": {
+                "count": 3,
+                "minutes": 60,
+                "key": "sourceKey",
+                "overflow": "defer"
+              },
+              "position": {
+                "x": 1660,
+                "y": 60
+              }
+            },
+            {
+              "id": "aggregate",
+              "type": "aggregate",
+              "config": {
+                "minutes": 15,
+                "key": "sourceKey",
+                "mode": "all",
+                "maxItems": 5
+              },
+              "position": {
+                "x": 1930,
+                "y": 60
+              }
+            },
+            {
+              "id": "display",
+              "type": "transform",
+              "config": {
+                "format": "text",
+                "template": "{title}\n{url}",
+                "maxLength": 1900,
+                "media": "inherit",
+                "mentions": "none"
+              },
+              "position": {
+                "x": 2200,
+                "y": 60
+              },
+              "group": "delivery"
+            },
+            {
+              "id": "send",
+              "type": "send",
+              "config": {
+                "destination": "default"
+              },
+              "position": {
+                "x": 2470,
+                "y": 60
+              },
+              "group": "delivery"
+            },
+            {
+              "id": "nb58fa1df2a01481b83e1c7c74c21361e",
+              "type": "condition",
+              "config": {
+                "predicate": {
+                  "field": "title",
+                  "op": "contains",
+                  "value": "bonus"
+                }
+              },
+              "position": {
+                "x": 850,
+                "y": 60
+              }
+            }
+          ],
+          "edges": [
+            {
+              "id": "e0",
+              "source": "start",
+              "target": "filter",
+              "port": "out"
+            },
+            {
+              "id": "e1",
+              "source": "filter",
+              "target": "waitA",
+              "port": "yes"
+            },
+            {
+              "id": "e2",
+              "source": "filter",
+              "target": "waitB",
+              "port": "yes"
+            },
+            {
+              "id": "e3",
+              "source": "filter",
+              "target": "reject",
+              "port": "no"
+            },
+            {
+              "id": "e4",
+              "source": "filter",
+              "target": "missing",
+              "port": "unknown"
+            },
+            {
+              "id": "e5",
+              "source": "waitA",
+              "target": "merge",
+              "port": "out"
+            },
+            {
+              "id": "e6",
+              "source": "nb58fa1df2a01481b83e1c7c74c21361e",
+              "target": "merge",
+              "port": "yes"
+            },
+            {
+              "id": "e7",
+              "source": "merge",
+              "target": "time",
+              "port": "out"
+            },
+            {
+              "id": "e8",
+              "source": "time",
+              "target": "limit",
+              "port": "out"
+            },
+            {
+              "id": "e9",
+              "source": "limit",
+              "target": "aggregate",
+              "port": "out"
+            },
+            {
+              "id": "e10",
+              "source": "aggregate",
+              "target": "display",
+              "port": "out"
+            },
+            {
+              "id": "e11",
+              "source": "display",
+              "target": "send",
+              "port": "out"
+            },
+            {
+              "id": "e86946a7d806c481ca8f2680444f88f21",
+              "source": "waitB",
+              "target": "nb58fa1df2a01481b83e1c7c74c21361e",
+              "port": "out"
+            }
+          ],
+          "layout": {
+            "groups": [
+              {
+                "id": "delivery",
+                "label": "表示と通知",
+                "collapsed": false
+              }
+            ],
+            "viewport": {
+              "x": 30,
+              "y": 20,
+              "zoom": 0.5
+            }
+          }
+        },
+        "bindings": {
+          "destinations": {},
+          "dictionaries": {}
+        },
+        "event": {
+          "title": "sale",
+          "sensitive": false
+        },
+        "now": 1789993800000
+      },
+      "time": "2026-09-21T21:30",
+      "result": {
+        "event": {
+          "title": "sale",
+          "sensitive": false
+        },
+        "outputs": [],
+        "trace": [
+          {
+            "nodeId": "start",
+            "outcome": "out",
+            "detail": null
+          },
+          {
+            "nodeId": "filter",
+            "outcome": "yes",
+            "detail": null
+          },
+          {
+            "nodeId": "waitA",
+            "outcome": "out",
+            "detail": null
+          },
+          {
+            "nodeId": "waitB",
+            "outcome": "out",
+            "detail": null
+          },
+          {
+            "nodeId": "nb58fa1df2a01481b83e1c7c74c21361e",
+            "outcome": "no",
+            "detail": null,
+            "reason": "この分岐の接続がないため通知しません"
+          },
+          {
+            "nodeId": "merge",
+            "outcome": "excluded",
+            "reason": "合流に必要な経路がすべて一致していません",
+            "arrived": 1,
+            "expected": 2
+          }
+        ]
+      }
+    },
+    {
+      "request": {
+        "definition": {
+          "schemaVersion": 1,
+          "name": "複雑なスタジオ検証",
+          "description": "AND / OR / NOT・3経路・合流・静穏時間・部品",
+          "expiresAfterMinutes": 4320,
+          "nodes": [
+            {
+              "id": "start",
+              "type": "start",
+              "config": {},
+              "position": {
+                "x": 40,
+                "y": 60
+              }
+            },
+            {
+              "id": "filter",
+              "type": "condition",
+              "config": {
+                "predicate": {
+                  "op": "all",
+                  "conditions": [
+                    {
+                      "op": "any",
+                      "conditions": [
+                        {
+                          "field": "title",
+                          "op": "contains",
+                          "value": "sale",
+                          "ignoreCase": true
+                        },
+                        {
+                          "field": "discountPercent",
+                          "op": "gte",
+                          "value": 30
+                        }
+                      ]
+                    },
+                    {
+                      "op": "not",
+                      "conditions": [
+                        {
+                          "field": "sensitive",
+                          "op": "eq",
+                          "value": true
+                        }
+                      ]
+                    }
+                  ]
+                }
+              },
+              "position": {
+                "x": 310,
+                "y": 60
+              }
+            },
+            {
+              "id": "waitA",
+              "type": "delay",
+              "config": {
+                "minutes": 30,
+                "anchor": "observed"
+              },
+              "position": {
+                "x": 580,
+                "y": 60
+              }
+            },
+            {
+              "id": "waitB",
+              "type": "delay",
+              "config": {
+                "minutes": 60,
+                "anchor": "observed"
+              },
+              "position": {
+                "x": 580,
+                "y": 250
+              }
+            },
+            {
+              "id": "reject",
+              "type": "stop",
+              "config": {
+                "reason": "条件に不一致"
+              },
+              "position": {
+                "x": 580,
+                "y": 440
+              }
+            },
+            {
+              "id": "missing",
+              "type": "stop",
+              "config": {
+                "reason": "必要なデータが不明"
+              },
+              "position": {
+                "x": 580,
+                "y": 630
+              }
+            },
+            {
+              "id": "merge",
+              "type": "merge",
+              "config": {
+                "mode": "any",
+                "displayConflict": "stop"
+              },
+              "position": {
+                "x": 1120,
+                "y": 60
+              }
+            },
+            {
+              "id": "time",
+              "type": "schedule",
+              "config": {
+                "zone": "Asia/Tokyo",
+                "days": [
+                  1,
+                  2,
+                  3,
+                  4,
+                  5,
+                  6,
+                  7
+                ],
+                "windows": [
+                  {
+                    "start": "10:00",
+                    "end": "23:00"
+                  }
+                ],
+                "quiet": [
+                  {
+                    "start": "22:00",
+                    "end": "09:00"
+                  }
+                ],
+                "datesExcluded": [],
+                "maxWaitDays": 14
+              },
+              "position": {
+                "x": 1390,
+                "y": 60
+              }
+            },
+            {
+              "id": "limit",
+              "type": "limit",
+              "config": {
+                "count": 3,
+                "minutes": 60,
+                "key": "sourceKey",
+                "overflow": "defer"
+              },
+              "position": {
+                "x": 1660,
+                "y": 60
+              }
+            },
+            {
+              "id": "aggregate",
+              "type": "aggregate",
+              "config": {
+                "minutes": 15,
+                "key": "sourceKey",
+                "mode": "all",
+                "maxItems": 5
+              },
+              "position": {
+                "x": 1930,
+                "y": 60
+              }
+            },
+            {
+              "id": "display",
+              "type": "transform",
+              "config": {
+                "format": "text",
+                "template": "{title}\n{url}",
+                "maxLength": 1900,
+                "media": "inherit",
+                "mentions": "none"
+              },
+              "position": {
+                "x": 2200,
+                "y": 60
+              },
+              "group": "delivery"
+            },
+            {
+              "id": "send",
+              "type": "send",
+              "config": {
+                "destination": "default"
+              },
+              "position": {
+                "x": 2470,
+                "y": 60
+              },
+              "group": "delivery"
+            },
+            {
+              "id": "nb58fa1df2a01481b83e1c7c74c21361e",
+              "type": "condition",
+              "config": {
+                "predicate": {
+                  "field": "title",
+                  "op": "contains",
+                  "value": "bonus"
+                }
+              },
+              "position": {
+                "x": 850,
+                "y": 60
+              }
+            }
+          ],
+          "edges": [
+            {
+              "id": "e0",
+              "source": "start",
+              "target": "filter",
+              "port": "out"
+            },
+            {
+              "id": "e1",
+              "source": "filter",
+              "target": "waitA",
+              "port": "yes"
+            },
+            {
+              "id": "e2",
+              "source": "filter",
+              "target": "waitB",
+              "port": "yes"
+            },
+            {
+              "id": "e3",
+              "source": "filter",
+              "target": "reject",
+              "port": "no"
+            },
+            {
+              "id": "e4",
+              "source": "filter",
+              "target": "missing",
+              "port": "unknown"
+            },
+            {
+              "id": "e5",
+              "source": "waitA",
+              "target": "merge",
+              "port": "out"
+            },
+            {
+              "id": "e6",
+              "source": "nb58fa1df2a01481b83e1c7c74c21361e",
+              "target": "merge",
+              "port": "yes"
+            },
+            {
+              "id": "e7",
+              "source": "merge",
+              "target": "time",
+              "port": "out"
+            },
+            {
+              "id": "e8",
+              "source": "time",
+              "target": "limit",
+              "port": "out"
+            },
+            {
+              "id": "e9",
+              "source": "limit",
+              "target": "aggregate",
+              "port": "out"
+            },
+            {
+              "id": "e10",
+              "source": "aggregate",
+              "target": "display",
+              "port": "out"
+            },
+            {
+              "id": "e11",
+              "source": "display",
+              "target": "send",
+              "port": "out"
+            },
+            {
+              "id": "e86946a7d806c481ca8f2680444f88f21",
+              "source": "waitB",
+              "target": "nb58fa1df2a01481b83e1c7c74c21361e",
+              "port": "out"
+            }
+          ],
+          "layout": {
+            "groups": [
+              {
+                "id": "delivery",
+                "label": "表示と通知",
+                "collapsed": false
+              }
+            ],
+            "viewport": {
+              "x": 30,
+              "y": 20,
+              "zoom": 0.5
+            }
+          }
+        },
+        "bindings": {
+          "destinations": {},
+          "dictionaries": {}
+        },
+        "event": {
+          "title": "sale",
+          "sensitive": false
+        },
+        "now": 1789993800000
+      },
+      "time": "2026-09-21T21:30",
+      "result": {
+        "event": {
+          "title": "sale",
+          "sensitive": false
+        },
+        "outputs": [
+          {
+            "destination": "default",
+            "dueAtMs": 1790038800000,
+            "deadlineMs": 1790253000000,
+            "display": {
+              "format": "text",
+              "template": "{title}\n{url}",
+              "maxLength": 1900,
+              "media": "inherit",
+              "mentions": "none"
+            },
+            "text": "sale\n",
+            "limits": [
+              {
+                "nodeId": "limit",
+                "count": 3,
+                "minutes": 60,
+                "key": "sourceKey",
+                "overflow": "defer",
+                "group": "unknown"
+              }
+            ],
+            "aggregate": {
+              "nodeId": "aggregate",
+              "minutes": 15,
+              "key": "sourceKey",
+              "mode": "all",
+              "maxItems": 5,
+              "group": "unknown"
+            },
+            "schedules": [
+              {
+                "zone": "Asia/Tokyo",
+                "days": [
+                  1,
+                  2,
+                  3,
+                  4,
+                  5,
+                  6,
+                  7
+                ],
+                "windows": [
+                  {
+                    "start": "10:00",
+                    "end": "23:00"
+                  }
+                ],
+                "quiet": [
+                  {
+                    "start": "22:00",
+                    "end": "09:00"
+                  }
+                ],
+                "datesExcluded": [],
+                "maxWaitDays": 14
+              }
+            ],
+            "path": [
+              "start",
+              "filter",
+              "waitA",
+              "merge",
+              "time",
+              "limit",
+              "aggregate",
+              "display",
+              "send"
+            ]
+          }
+        ],
+        "trace": [
+          {
+            "nodeId": "start",
+            "outcome": "out",
+            "detail": null
+          },
+          {
+            "nodeId": "filter",
+            "outcome": "yes",
+            "detail": null
+          },
+          {
+            "nodeId": "waitA",
+            "outcome": "out",
+            "detail": null
+          },
+          {
+            "nodeId": "waitB",
+            "outcome": "out",
+            "detail": null
+          },
+          {
+            "nodeId": "nb58fa1df2a01481b83e1c7c74c21361e",
+            "outcome": "no",
+            "detail": null,
+            "reason": "この分岐の接続がないため通知しません"
+          },
+          {
+            "nodeId": "merge",
+            "outcome": "merged",
+            "arrivals": 1,
+            "reason": "同じイベントを1件に合流し、一致した全経路の時間・件数制限を保持しました"
+          },
+          {
+            "nodeId": "merge",
+            "outcome": "out",
+            "detail": null
+          },
+          {
+            "nodeId": "time",
+            "outcome": "out",
+            "detail": null
+          },
+          {
+            "nodeId": "limit",
+            "outcome": "out",
+            "detail": null
+          },
+          {
+            "nodeId": "aggregate",
+            "outcome": "out",
+            "detail": null
+          },
+          {
+            "nodeId": "display",
+            "outcome": "out",
+            "detail": null
+          },
+          {
+            "nodeId": "send",
+            "outcome": "scheduled",
+            "dueAtMs": 1790038800000,
+            "destination": "default"
+          }
+        ]
+      }
+    },
+    {
+      "request": {
+        "definition": {
+          "schemaVersion": 1,
+          "name": "複雑なスタジオ検証",
+          "description": "AND / OR / NOT・3経路・合流・静穏時間・部品",
+          "expiresAfterMinutes": 4320,
+          "nodes": [
+            {
+              "id": "start",
+              "type": "start",
+              "config": {},
+              "position": {
+                "x": 40,
+                "y": 60
+              }
+            },
+            {
+              "id": "filter",
+              "type": "condition",
+              "config": {
+                "predicate": {
+                  "op": "all",
+                  "conditions": [
+                    {
+                      "op": "any",
+                      "conditions": [
+                        {
+                          "field": "title",
+                          "op": "contains",
+                          "value": "sale",
+                          "ignoreCase": true
+                        },
+                        {
+                          "field": "discountPercent",
+                          "op": "gte",
+                          "value": 30
+                        }
+                      ]
+                    },
+                    {
+                      "op": "not",
+                      "conditions": [
+                        {
+                          "field": "sensitive",
+                          "op": "eq",
+                          "value": true
+                        }
+                      ]
+                    }
+                  ]
+                }
+              },
+              "position": {
+                "x": 310,
+                "y": 60
+              }
+            },
+            {
+              "id": "waitA",
+              "type": "delay",
+              "config": {
+                "minutes": 30,
+                "anchor": "observed"
+              },
+              "position": {
+                "x": 580,
+                "y": 60
+              }
+            },
+            {
+              "id": "waitB",
+              "type": "delay",
+              "config": {
+                "minutes": 60,
+                "anchor": "observed"
+              },
+              "position": {
+                "x": 580,
+                "y": 250
+              }
+            },
+            {
+              "id": "reject",
+              "type": "stop",
+              "config": {
+                "reason": "条件に不一致"
+              },
+              "position": {
+                "x": 580,
+                "y": 440
+              }
+            },
+            {
+              "id": "missing",
+              "type": "stop",
+              "config": {
+                "reason": "必要なデータが不明"
+              },
+              "position": {
+                "x": 580,
+                "y": 630
+              }
+            },
+            {
+              "id": "merge",
+              "type": "merge",
+              "config": {
+                "mode": "any",
+                "displayConflict": "stop"
+              },
+              "position": {
+                "x": 1120,
+                "y": 60
+              }
+            },
+            {
+              "id": "time",
+              "type": "schedule",
+              "config": {
+                "zone": "Asia/Tokyo",
+                "days": [
+                  1,
+                  2,
+                  3,
+                  4,
+                  5,
+                  6,
+                  7
+                ],
+                "windows": [
+                  {
+                    "start": "10:00",
+                    "end": "23:00"
+                  }
+                ],
+                "quiet": [
+                  {
+                    "start": "22:00",
+                    "end": "09:00"
+                  }
+                ],
+                "datesExcluded": [],
+                "maxWaitDays": 14
+              },
+              "position": {
+                "x": 1390,
+                "y": 60
+              }
+            },
+            {
+              "id": "limit",
+              "type": "limit",
+              "config": {
+                "count": 3,
+                "minutes": 60,
+                "key": "sourceKey",
+                "overflow": "defer"
+              },
+              "position": {
+                "x": 1660,
+                "y": 60
+              }
+            },
+            {
+              "id": "aggregate",
+              "type": "aggregate",
+              "config": {
+                "minutes": 15,
+                "key": "sourceKey",
+                "mode": "all",
+                "maxItems": 5
+              },
+              "position": {
+                "x": 1930,
+                "y": 60
+              }
+            },
+            {
+              "id": "display",
+              "type": "transform",
+              "config": {
+                "format": "text",
+                "template": "{title}\n{url}",
+                "maxLength": 1900,
+                "media": "inherit",
+                "mentions": "none"
+              },
+              "position": {
+                "x": 2200,
+                "y": 60
+              },
+              "group": "delivery"
+            },
+            {
+              "id": "send",
+              "type": "send",
+              "config": {
+                "destination": "default"
+              },
+              "position": {
+                "x": 2470,
+                "y": 60
+              },
+              "group": "delivery"
+            },
+            {
+              "id": "nb58fa1df2a01481b83e1c7c74c21361e",
+              "type": "condition",
+              "config": {
+                "predicate": {
+                  "field": "title",
+                  "op": "contains",
+                  "value": "bonus"
+                }
+              },
+              "position": {
+                "x": 850,
+                "y": 60
+              }
+            }
+          ],
+          "edges": [
+            {
+              "id": "e0",
+              "source": "start",
+              "target": "filter",
+              "port": "out"
+            },
+            {
+              "id": "e1",
+              "source": "filter",
+              "target": "waitA",
+              "port": "yes"
+            },
+            {
+              "id": "e2",
+              "source": "filter",
+              "target": "waitB",
+              "port": "yes"
+            },
+            {
+              "id": "e3",
+              "source": "filter",
+              "target": "reject",
+              "port": "no"
+            },
+            {
+              "id": "e4",
+              "source": "filter",
+              "target": "missing",
+              "port": "unknown"
+            },
+            {
+              "id": "e5",
+              "source": "waitA",
+              "target": "merge",
+              "port": "out"
+            },
+            {
+              "id": "e6",
+              "source": "nb58fa1df2a01481b83e1c7c74c21361e",
+              "target": "merge",
+              "port": "yes"
+            },
+            {
+              "id": "e7",
+              "source": "merge",
+              "target": "time",
+              "port": "out"
+            },
+            {
+              "id": "e8",
+              "source": "time",
+              "target": "limit",
+              "port": "out"
+            },
+            {
+              "id": "e9",
+              "source": "limit",
+              "target": "aggregate",
+              "port": "out"
+            },
+            {
+              "id": "e10",
+              "source": "aggregate",
+              "target": "display",
+              "port": "out"
+            },
+            {
+              "id": "e11",
+              "source": "display",
+              "target": "send",
+              "port": "out"
+            },
+            {
+              "id": "e86946a7d806c481ca8f2680444f88f21",
+              "source": "waitB",
+              "target": "nb58fa1df2a01481b83e1c7c74c21361e",
+              "port": "out"
+            }
+          ],
+          "layout": {
+            "groups": [
+              {
+                "id": "delivery",
+                "label": "表示と通知",
+                "collapsed": false
+              }
+            ],
+            "viewport": {
+              "x": 30,
+              "y": 20,
+              "zoom": 0.5
+            }
+          }
+        },
+        "bindings": {
+          "destinations": {},
+          "dictionaries": {}
+        },
+        "event": {
+          "title": "sale bonus",
+          "sensitive": false
+        },
+        "now": 1789993800000
+      },
+      "time": "2026-09-21T21:30",
+      "result": {
+        "event": {
+          "title": "sale bonus",
+          "sensitive": false
+        },
+        "outputs": [
+          {
+            "destination": "default",
+            "dueAtMs": 1790038800000,
+            "deadlineMs": 1790253000000,
+            "display": {
+              "format": "text",
+              "template": "{title}\n{url}",
+              "maxLength": 1900,
+              "media": "inherit",
+              "mentions": "none"
+            },
+            "text": "sale bonus\n",
+            "limits": [
+              {
+                "nodeId": "limit",
+                "count": 3,
+                "minutes": 60,
+                "key": "sourceKey",
+                "overflow": "defer",
+                "group": "unknown"
+              }
+            ],
+            "aggregate": {
+              "nodeId": "aggregate",
+              "minutes": 15,
+              "key": "sourceKey",
+              "mode": "all",
+              "maxItems": 5,
+              "group": "unknown"
+            },
+            "schedules": [
+              {
+                "zone": "Asia/Tokyo",
+                "days": [
+                  1,
+                  2,
+                  3,
+                  4,
+                  5,
+                  6,
+                  7
+                ],
+                "windows": [
+                  {
+                    "start": "10:00",
+                    "end": "23:00"
+                  }
+                ],
+                "quiet": [
+                  {
+                    "start": "22:00",
+                    "end": "09:00"
+                  }
+                ],
+                "datesExcluded": [],
+                "maxWaitDays": 14
+              }
+            ],
+            "path": [
+              "start",
+              "filter",
+              "waitA",
+              "waitB",
+              "nb58fa1df2a01481b83e1c7c74c21361e",
+              "merge",
+              "time",
+              "limit",
+              "aggregate",
+              "display",
+              "send"
+            ]
+          }
+        ],
+        "trace": [
+          {
+            "nodeId": "start",
+            "outcome": "out",
+            "detail": null
+          },
+          {
+            "nodeId": "filter",
+            "outcome": "yes",
+            "detail": null
+          },
+          {
+            "nodeId": "waitA",
+            "outcome": "out",
+            "detail": null
+          },
+          {
+            "nodeId": "waitB",
+            "outcome": "out",
+            "detail": null
+          },
+          {
+            "nodeId": "nb58fa1df2a01481b83e1c7c74c21361e",
+            "outcome": "yes",
+            "detail": null
+          },
+          {
+            "nodeId": "merge",
+            "outcome": "merged",
+            "arrivals": 2,
+            "reason": "同じイベントを1件に合流し、一致した全経路の時間・件数制限を保持しました"
+          },
+          {
+            "nodeId": "merge",
+            "outcome": "out",
+            "detail": null
+          },
+          {
+            "nodeId": "time",
+            "outcome": "out",
+            "detail": null
+          },
+          {
+            "nodeId": "limit",
+            "outcome": "out",
+            "detail": null
+          },
+          {
+            "nodeId": "aggregate",
+            "outcome": "out",
+            "detail": null
+          },
+          {
+            "nodeId": "display",
+            "outcome": "out",
+            "detail": null
+          },
+          {
+            "nodeId": "send",
+            "outcome": "scheduled",
+            "dueAtMs": 1790038800000,
+            "destination": "default"
+          }
+        ]
+      }
+    },
+    {
+      "request": {
+        "definition": {
+          "schemaVersion": 1,
+          "name": "複雑なスタジオ検証",
+          "description": "AND / OR / NOT・3経路・合流・静穏時間・部品",
+          "expiresAfterMinutes": 4320,
+          "nodes": [
+            {
+              "id": "start",
+              "type": "start",
+              "config": {},
+              "position": {
+                "x": 40,
+                "y": 60
+              }
+            },
+            {
+              "id": "filter",
+              "type": "condition",
+              "config": {
+                "predicate": {
+                  "op": "all",
+                  "conditions": [
+                    {
+                      "op": "any",
+                      "conditions": [
+                        {
+                          "field": "title",
+                          "op": "contains",
+                          "value": "sale",
+                          "ignoreCase": true
+                        },
+                        {
+                          "field": "discountPercent",
+                          "op": "gte",
+                          "value": 30
+                        }
+                      ]
+                    },
+                    {
+                      "op": "not",
+                      "conditions": [
+                        {
+                          "field": "sensitive",
+                          "op": "eq",
+                          "value": true
+                        }
+                      ]
+                    }
+                  ]
+                }
+              },
+              "position": {
+                "x": 310,
+                "y": 60
+              }
+            },
+            {
+              "id": "waitA",
+              "type": "delay",
+              "config": {
+                "minutes": 30,
+                "anchor": "observed"
+              },
+              "position": {
+                "x": 580,
+                "y": 60
+              }
+            },
+            {
+              "id": "waitB",
+              "type": "delay",
+              "config": {
+                "minutes": 60,
+                "anchor": "observed"
+              },
+              "position": {
+                "x": 580,
+                "y": 250
+              }
+            },
+            {
+              "id": "reject",
+              "type": "stop",
+              "config": {
+                "reason": "条件に不一致"
+              },
+              "position": {
+                "x": 580,
+                "y": 440
+              }
+            },
+            {
+              "id": "missing",
+              "type": "stop",
+              "config": {
+                "reason": "必要なデータが不明"
+              },
+              "position": {
+                "x": 580,
+                "y": 630
+              }
+            },
+            {
+              "id": "merge",
+              "type": "merge",
+              "config": {
+                "mode": "any",
+                "displayConflict": "stop"
+              },
+              "position": {
+                "x": 1120,
+                "y": 60
+              }
+            },
+            {
+              "id": "time",
+              "type": "schedule",
+              "config": {
+                "zone": "Asia/Tokyo",
+                "days": [
+                  1,
+                  2,
+                  3,
+                  4,
+                  5,
+                  6,
+                  7
+                ],
+                "windows": [
+                  {
+                    "start": "10:00",
+                    "end": "23:00"
+                  }
+                ],
+                "quiet": [
+                  {
+                    "start": "22:00",
+                    "end": "09:00"
+                  }
+                ],
+                "datesExcluded": [],
+                "maxWaitDays": 14
+              },
+              "position": {
+                "x": 1390,
+                "y": 60
+              }
+            },
+            {
+              "id": "limit",
+              "type": "limit",
+              "config": {
+                "count": 3,
+                "minutes": 60,
+                "key": "sourceKey",
+                "overflow": "defer"
+              },
+              "position": {
+                "x": 1660,
+                "y": 60
+              }
+            },
+            {
+              "id": "aggregate",
+              "type": "aggregate",
+              "config": {
+                "minutes": 15,
+                "key": "sourceKey",
+                "mode": "all",
+                "maxItems": 5
+              },
+              "position": {
+                "x": 1930,
+                "y": 60
+              }
+            },
+            {
+              "id": "display",
+              "type": "transform",
+              "config": {
+                "format": "url",
+                "template": "{title}\n{url}",
+                "maxLength": 1900,
+                "media": "inherit",
+                "mentions": "none"
+              },
+              "position": {
+                "x": 2200,
+                "y": 60
+              },
+              "group": "delivery"
+            },
+            {
+              "id": "send",
+              "type": "send",
+              "config": {
+                "destination": "default"
+              },
+              "position": {
+                "x": 2470,
+                "y": 60
+              },
+              "group": "delivery"
+            },
+            {
+              "id": "nb58fa1df2a01481b83e1c7c74c21361e",
+              "type": "condition",
+              "config": {
+                "predicate": {
+                  "field": "title",
+                  "op": "contains",
+                  "value": "bonus"
+                }
+              },
+              "position": {
+                "x": 850,
+                "y": 60
+              }
+            }
+          ],
+          "edges": [
+            {
+              "id": "e0",
+              "source": "start",
+              "target": "filter",
+              "port": "out"
+            },
+            {
+              "id": "e1",
+              "source": "filter",
+              "target": "waitA",
+              "port": "yes"
+            },
+            {
+              "id": "e2",
+              "source": "filter",
+              "target": "waitB",
+              "port": "yes"
+            },
+            {
+              "id": "e3",
+              "source": "filter",
+              "target": "reject",
+              "port": "no"
+            },
+            {
+              "id": "e4",
+              "source": "filter",
+              "target": "missing",
+              "port": "unknown"
+            },
+            {
+              "id": "e5",
+              "source": "waitA",
+              "target": "merge",
+              "port": "out"
+            },
+            {
+              "id": "e6",
+              "source": "nb58fa1df2a01481b83e1c7c74c21361e",
+              "target": "merge",
+              "port": "yes"
+            },
+            {
+              "id": "e7",
+              "source": "merge",
+              "target": "time",
+              "port": "out"
+            },
+            {
+              "id": "e8",
+              "source": "time",
+              "target": "limit",
+              "port": "out"
+            },
+            {
+              "id": "e9",
+              "source": "limit",
+              "target": "aggregate",
+              "port": "out"
+            },
+            {
+              "id": "e10",
+              "source": "aggregate",
+              "target": "display",
+              "port": "out"
+            },
+            {
+              "id": "e11",
+              "source": "display",
+              "target": "send",
+              "port": "out"
+            },
+            {
+              "id": "e86946a7d806c481ca8f2680444f88f21",
+              "source": "waitB",
+              "target": "nb58fa1df2a01481b83e1c7c74c21361e",
+              "port": "out"
+            }
+          ],
+          "layout": {
+            "groups": [
+              {
+                "id": "delivery",
+                "label": "表示と通知",
+                "collapsed": false
+              }
+            ],
+            "viewport": {
+              "x": 30,
+              "y": 20,
+              "zoom": 0.5
+            }
+          }
+        },
+        "bindings": {
+          "destinations": {},
+          "dictionaries": {}
+        },
+        "event": {
+          "title": "sale",
+          "sensitive": false,
+          "url": "https://example.com/item"
+        },
+        "now": 1789993800000
+      },
+      "time": "2026-09-21T21:30",
+      "result": {
+        "event": {
+          "url": "https://example.com/item",
+          "title": "sale",
+          "sensitive": false
+        },
+        "outputs": [
+          {
+            "destination": "default",
+            "dueAtMs": 1790038800000,
+            "deadlineMs": 1790253000000,
+            "display": {
+              "format": "url",
+              "template": "{title}\n{url}",
+              "maxLength": 1900,
+              "media": "inherit",
+              "mentions": "none"
+            },
+            "text": "https://example.com/item",
+            "limits": [
+              {
+                "nodeId": "limit",
+                "count": 3,
+                "minutes": 60,
+                "key": "sourceKey",
+                "overflow": "defer",
+                "group": "unknown"
+              }
+            ],
+            "aggregate": {
+              "nodeId": "aggregate",
+              "minutes": 15,
+              "key": "sourceKey",
+              "mode": "all",
+              "maxItems": 5,
+              "group": "unknown"
+            },
+            "schedules": [
+              {
+                "zone": "Asia/Tokyo",
+                "days": [
+                  1,
+                  2,
+                  3,
+                  4,
+                  5,
+                  6,
+                  7
+                ],
+                "windows": [
+                  {
+                    "start": "10:00",
+                    "end": "23:00"
+                  }
+                ],
+                "quiet": [
+                  {
+                    "start": "22:00",
+                    "end": "09:00"
+                  }
+                ],
+                "datesExcluded": [],
+                "maxWaitDays": 14
+              }
+            ],
+            "path": [
+              "start",
+              "filter",
+              "waitA",
+              "merge",
+              "time",
+              "limit",
+              "aggregate",
+              "display",
+              "send"
+            ]
+          }
+        ],
+        "trace": [
+          {
+            "nodeId": "start",
+            "outcome": "out",
+            "detail": null
+          },
+          {
+            "nodeId": "filter",
+            "outcome": "yes",
+            "detail": null
+          },
+          {
+            "nodeId": "waitA",
+            "outcome": "out",
+            "detail": null
+          },
+          {
+            "nodeId": "waitB",
+            "outcome": "out",
+            "detail": null
+          },
+          {
+            "nodeId": "nb58fa1df2a01481b83e1c7c74c21361e",
+            "outcome": "no",
+            "detail": null,
+            "reason": "この分岐の接続がないため通知しません"
+          },
+          {
+            "nodeId": "merge",
+            "outcome": "merged",
+            "arrivals": 1,
+            "reason": "同じイベントを1件に合流し、一致した全経路の時間・件数制限を保持しました"
+          },
+          {
+            "nodeId": "merge",
+            "outcome": "out",
+            "detail": null
+          },
+          {
+            "nodeId": "time",
+            "outcome": "out",
+            "detail": null
+          },
+          {
+            "nodeId": "limit",
+            "outcome": "out",
+            "detail": null
+          },
+          {
+            "nodeId": "aggregate",
+            "outcome": "out",
+            "detail": null
+          },
+          {
+            "nodeId": "display",
+            "outcome": "out",
+            "detail": null
+          },
+          {
+            "nodeId": "send",
+            "outcome": "scheduled",
+            "dueAtMs": 1790038800000,
+            "destination": "default"
+          }
+        ]
+      }
+    },
+    {
+      "request": {
+        "definition": {
+          "schemaVersion": 1,
+          "name": "複雑なスタジオ検証",
+          "description": "AND / OR / NOT・3経路・合流・静穏時間・部品",
+          "expiresAfterMinutes": 4320,
+          "nodes": [
+            {
+              "id": "start",
+              "type": "start",
+              "config": {},
+              "position": {
+                "x": 40,
+                "y": 60
+              }
+            },
+            {
+              "id": "filter",
+              "type": "condition",
+              "config": {
+                "predicate": {
+                  "op": "all",
+                  "conditions": [
+                    {
+                      "op": "any",
+                      "conditions": [
+                        {
+                          "field": "title",
+                          "op": "contains",
+                          "value": "sale",
+                          "ignoreCase": true
+                        },
+                        {
+                          "field": "discountPercent",
+                          "op": "gte",
+                          "value": 30
+                        }
+                      ]
+                    },
+                    {
+                      "op": "not",
+                      "conditions": [
+                        {
+                          "field": "sensitive",
+                          "op": "eq",
+                          "value": true
+                        }
+                      ]
+                    }
+                  ]
+                }
+              },
+              "position": {
+                "x": 310,
+                "y": 60
+              }
+            },
+            {
+              "id": "waitA",
+              "type": "delay",
+              "config": {
+                "minutes": 30,
+                "anchor": "observed"
+              },
+              "position": {
+                "x": 580,
+                "y": 60
+              }
+            },
+            {
+              "id": "waitB",
+              "type": "delay",
+              "config": {
+                "minutes": 60,
+                "anchor": "observed"
+              },
+              "position": {
+                "x": 580,
+                "y": 250
+              }
+            },
+            {
+              "id": "reject",
+              "type": "stop",
+              "config": {
+                "reason": "条件に不一致"
+              },
+              "position": {
+                "x": 580,
+                "y": 440
+              }
+            },
+            {
+              "id": "missing",
+              "type": "stop",
+              "config": {
+                "reason": "必要なデータが不明"
+              },
+              "position": {
+                "x": 580,
+                "y": 630
+              }
+            },
+            {
+              "id": "merge",
+              "type": "merge",
+              "config": {
+                "mode": "any",
+                "displayConflict": "stop"
+              },
+              "position": {
+                "x": 1120,
+                "y": 60
+              }
+            },
+            {
+              "id": "time",
+              "type": "schedule",
+              "config": {
+                "zone": "Asia/Tokyo",
+                "days": [
+                  1,
+                  2,
+                  3,
+                  4,
+                  5,
+                  6,
+                  7
+                ],
+                "windows": [
+                  {
+                    "start": "10:00",
+                    "end": "23:00"
+                  }
+                ],
+                "quiet": [
+                  {
+                    "start": "22:00",
+                    "end": "09:00"
+                  }
+                ],
+                "datesExcluded": [],
+                "maxWaitDays": 14
+              },
+              "position": {
+                "x": 1390,
+                "y": 60
+              }
+            },
+            {
+              "id": "limit",
+              "type": "limit",
+              "config": {
+                "count": 3,
+                "minutes": 60,
+                "key": "sourceKey",
+                "overflow": "defer"
+              },
+              "position": {
+                "x": 1660,
+                "y": 60
+              }
+            },
+            {
+              "id": "aggregate",
+              "type": "aggregate",
+              "config": {
+                "minutes": 15,
+                "key": "sourceKey",
+                "mode": "all",
+                "maxItems": 5
+              },
+              "position": {
+                "x": 1930,
+                "y": 60
+              }
+            },
+            {
+              "id": "display",
+              "type": "transform",
+              "config": {
+                "format": "url",
+                "template": "{title}\n{url}",
+                "maxLength": 1900,
+                "media": "inherit",
+                "mentions": "none"
+              },
+              "position": {
+                "x": 2200,
+                "y": 60
+              },
+              "group": "delivery"
+            },
+            {
+              "id": "send",
+              "type": "send",
+              "config": {
+                "destination": "default"
+              },
+              "position": {
+                "x": 2470,
+                "y": 60
+              },
+              "group": "delivery"
+            },
+            {
+              "id": "nb58fa1df2a01481b83e1c7c74c21361e",
+              "type": "condition",
+              "config": {
+                "predicate": {
+                  "field": "title",
+                  "op": "contains",
+                  "value": "bonus"
+                }
+              },
+              "position": {
+                "x": 850,
+                "y": 60
+              }
+            },
+            {
+              "id": "na8268968d8af4fbfad2dfee1c054dff2",
+              "type": "transform",
+              "config": {
+                "format": "url",
+                "template": "{title}\n{url}",
+                "maxLength": 1900,
+                "media": "inherit",
+                "mentions": "none"
+              },
+              "position": {
+                "x": 2770,
+                "y": 80
+              },
+              "group": "g8805716ab0be475baf86d5f02402a6df"
+            },
+            {
+              "id": "n846bea0049e44d90b6119897f35db895",
+              "type": "send",
+              "config": {
+                "destination": "default"
+              },
+              "position": {
+                "x": 3040,
+                "y": 80
+              },
+              "group": "g8805716ab0be475baf86d5f02402a6df"
+            },
+            {
+              "id": "n3e85ef25657341bf9558ab76b32b07cb",
+              "type": "transform",
+              "config": {
+                "format": "url",
+                "template": "{title}\n{url}",
+                "maxLength": 1900,
+                "media": "inherit",
+                "mentions": "none"
+              },
+              "position": {
+                "x": 3340,
+                "y": 80
+              },
+              "group": "g8cb7898bb6d542e4809868125ff11900"
+            },
+            {
+              "id": "nd89c62f6c9f845acb056806ca45a8dc4",
+              "type": "send",
+              "config": {
+                "destination": "default"
+              },
+              "position": {
+                "x": 3610,
+                "y": 80
+              },
+              "group": "g8cb7898bb6d542e4809868125ff11900"
+            }
+          ],
+          "edges": [
+            {
+              "id": "e0",
+              "source": "start",
+              "target": "filter",
+              "port": "out"
+            },
+            {
+              "id": "e1",
+              "source": "filter",
+              "target": "waitA",
+              "port": "yes"
+            },
+            {
+              "id": "e2",
+              "source": "filter",
+              "target": "waitB",
+              "port": "yes"
+            },
+            {
+              "id": "e3",
+              "source": "filter",
+              "target": "reject",
+              "port": "no"
+            },
+            {
+              "id": "e4",
+              "source": "filter",
+              "target": "missing",
+              "port": "unknown"
+            },
+            {
+              "id": "e5",
+              "source": "waitA",
+              "target": "merge",
+              "port": "out"
+            },
+            {
+              "id": "e6",
+              "source": "nb58fa1df2a01481b83e1c7c74c21361e",
+              "target": "merge",
+              "port": "yes"
+            },
+            {
+              "id": "e7",
+              "source": "merge",
+              "target": "time",
+              "port": "out"
+            },
+            {
+              "id": "e8",
+              "source": "time",
+              "target": "limit",
+              "port": "out"
+            },
+            {
+              "id": "e9",
+              "source": "limit",
+              "target": "aggregate",
+              "port": "out"
+            },
+            {
+              "id": "e10",
+              "source": "aggregate",
+              "target": "display",
+              "port": "out"
+            },
+            {
+              "id": "e11",
+              "source": "display",
+              "target": "send",
+              "port": "out"
+            },
+            {
+              "id": "e86946a7d806c481ca8f2680444f88f21",
+              "source": "waitB",
+              "target": "nb58fa1df2a01481b83e1c7c74c21361e",
+              "port": "out"
+            },
+            {
+              "id": "ed29c3609d278400bbf7efdae9e09972b",
+              "source": "na8268968d8af4fbfad2dfee1c054dff2",
+              "target": "n846bea0049e44d90b6119897f35db895",
+              "port": "out"
+            },
+            {
+              "id": "eb020cd0108d04c5a93a5917ac60060b0",
+              "source": "aggregate",
+              "target": "na8268968d8af4fbfad2dfee1c054dff2",
+              "port": "out"
+            },
+            {
+              "id": "ed0e8505468374b2e9c7a2ee8b63eba7b",
+              "source": "n3e85ef25657341bf9558ab76b32b07cb",
+              "target": "nd89c62f6c9f845acb056806ca45a8dc4",
+              "port": "out"
+            },
+            {
+              "id": "e0c7a3cb975b64ef1a0fd61ea8e29ac91",
+              "source": "aggregate",
+              "target": "n3e85ef25657341bf9558ab76b32b07cb",
+              "port": "out"
+            }
+          ],
+          "layout": {
+            "groups": [
+              {
+                "id": "delivery",
+                "label": "表示と通知",
+                "collapsed": false
+              },
+              {
+                "id": "g8805716ab0be475baf86d5f02402a6df",
+                "label": "表示と通知",
+                "collapsed": false
+              },
+              {
+                "id": "g8cb7898bb6d542e4809868125ff11900",
+                "label": "表示と通知",
+                "collapsed": false
+              }
+            ],
+            "viewport": {
+              "x": -1782,
+              "y": 213,
+              "zoom": 1
+            }
+          }
+        },
+        "bindings": {
+          "destinations": {},
+          "dictionaries": {}
+        },
+        "event": {
+          "title": "sale",
+          "sensitive": false,
+          "url": "https://example.com/item"
+        },
+        "now": 1789993800000
+      },
+      "time": "2026-09-21T21:30",
+      "result": {
+        "event": {
+          "url": "https://example.com/item",
+          "title": "sale",
+          "sensitive": false
+        },
+        "outputs": [
+          {
+            "destination": "default",
+            "dueAtMs": 1790038800000,
+            "deadlineMs": 1790253000000,
+            "display": {
+              "format": "url",
+              "template": "{title}\n{url}",
+              "maxLength": 1900,
+              "media": "inherit",
+              "mentions": "none"
+            },
+            "text": "https://example.com/item",
+            "limits": [
+              {
+                "nodeId": "limit",
+                "count": 3,
+                "minutes": 60,
+                "key": "sourceKey",
+                "overflow": "defer",
+                "group": "unknown"
+              }
+            ],
+            "aggregate": {
+              "nodeId": "aggregate",
+              "minutes": 15,
+              "key": "sourceKey",
+              "mode": "all",
+              "maxItems": 5,
+              "group": "unknown"
+            },
+            "schedules": [
+              {
+                "zone": "Asia/Tokyo",
+                "days": [
+                  1,
+                  2,
+                  3,
+                  4,
+                  5,
+                  6,
+                  7
+                ],
+                "windows": [
+                  {
+                    "start": "10:00",
+                    "end": "23:00"
+                  }
+                ],
+                "quiet": [
+                  {
+                    "start": "22:00",
+                    "end": "09:00"
+                  }
+                ],
+                "datesExcluded": [],
+                "maxWaitDays": 14
+              }
+            ],
+            "path": [
+              "start",
+              "filter",
+              "waitA",
+              "merge",
+              "time",
+              "limit",
+              "aggregate",
+              "display",
+              "send"
+            ]
+          },
+          {
+            "destination": "default",
+            "dueAtMs": 1790038800000,
+            "deadlineMs": 1790253000000,
+            "display": {
+              "format": "url",
+              "template": "{title}\n{url}",
+              "maxLength": 1900,
+              "media": "inherit",
+              "mentions": "none"
+            },
+            "text": "https://example.com/item",
+            "limits": [
+              {
+                "nodeId": "limit",
+                "count": 3,
+                "minutes": 60,
+                "key": "sourceKey",
+                "overflow": "defer",
+                "group": "unknown"
+              }
+            ],
+            "aggregate": {
+              "nodeId": "aggregate",
+              "minutes": 15,
+              "key": "sourceKey",
+              "mode": "all",
+              "maxItems": 5,
+              "group": "unknown"
+            },
+            "schedules": [
+              {
+                "zone": "Asia/Tokyo",
+                "days": [
+                  1,
+                  2,
+                  3,
+                  4,
+                  5,
+                  6,
+                  7
+                ],
+                "windows": [
+                  {
+                    "start": "10:00",
+                    "end": "23:00"
+                  }
+                ],
+                "quiet": [
+                  {
+                    "start": "22:00",
+                    "end": "09:00"
+                  }
+                ],
+                "datesExcluded": [],
+                "maxWaitDays": 14
+              }
+            ],
+            "path": [
+              "start",
+              "filter",
+              "waitA",
+              "merge",
+              "time",
+              "limit",
+              "aggregate",
+              "na8268968d8af4fbfad2dfee1c054dff2",
+              "n846bea0049e44d90b6119897f35db895"
+            ]
+          },
+          {
+            "destination": "default",
+            "dueAtMs": 1790038800000,
+            "deadlineMs": 1790253000000,
+            "display": {
+              "format": "url",
+              "template": "{title}\n{url}",
+              "maxLength": 1900,
+              "media": "inherit",
+              "mentions": "none"
+            },
+            "text": "https://example.com/item",
+            "limits": [
+              {
+                "nodeId": "limit",
+                "count": 3,
+                "minutes": 60,
+                "key": "sourceKey",
+                "overflow": "defer",
+                "group": "unknown"
+              }
+            ],
+            "aggregate": {
+              "nodeId": "aggregate",
+              "minutes": 15,
+              "key": "sourceKey",
+              "mode": "all",
+              "maxItems": 5,
+              "group": "unknown"
+            },
+            "schedules": [
+              {
+                "zone": "Asia/Tokyo",
+                "days": [
+                  1,
+                  2,
+                  3,
+                  4,
+                  5,
+                  6,
+                  7
+                ],
+                "windows": [
+                  {
+                    "start": "10:00",
+                    "end": "23:00"
+                  }
+                ],
+                "quiet": [
+                  {
+                    "start": "22:00",
+                    "end": "09:00"
+                  }
+                ],
+                "datesExcluded": [],
+                "maxWaitDays": 14
+              }
+            ],
+            "path": [
+              "start",
+              "filter",
+              "waitA",
+              "merge",
+              "time",
+              "limit",
+              "aggregate",
+              "n3e85ef25657341bf9558ab76b32b07cb",
+              "nd89c62f6c9f845acb056806ca45a8dc4"
+            ]
+          }
+        ],
+        "trace": [
+          {
+            "nodeId": "start",
+            "outcome": "out",
+            "detail": null
+          },
+          {
+            "nodeId": "filter",
+            "outcome": "yes",
+            "detail": null
+          },
+          {
+            "nodeId": "waitA",
+            "outcome": "out",
+            "detail": null
+          },
+          {
+            "nodeId": "waitB",
+            "outcome": "out",
+            "detail": null
+          },
+          {
+            "nodeId": "nb58fa1df2a01481b83e1c7c74c21361e",
+            "outcome": "no",
+            "detail": null,
+            "reason": "この分岐の接続がないため通知しません"
+          },
+          {
+            "nodeId": "merge",
+            "outcome": "merged",
+            "arrivals": 1,
+            "reason": "同じイベントを1件に合流し、一致した全経路の時間・件数制限を保持しました"
+          },
+          {
+            "nodeId": "merge",
+            "outcome": "out",
+            "detail": null
+          },
+          {
+            "nodeId": "time",
+            "outcome": "out",
+            "detail": null
+          },
+          {
+            "nodeId": "limit",
+            "outcome": "out",
+            "detail": null
+          },
+          {
+            "nodeId": "aggregate",
+            "outcome": "out",
+            "detail": null
+          },
+          {
+            "nodeId": "display",
+            "outcome": "out",
+            "detail": null
+          },
+          {
+            "nodeId": "na8268968d8af4fbfad2dfee1c054dff2",
+            "outcome": "out",
+            "detail": null
+          },
+          {
+            "nodeId": "n3e85ef25657341bf9558ab76b32b07cb",
+            "outcome": "out",
+            "detail": null
+          },
+          {
+            "nodeId": "send",
+            "outcome": "scheduled",
+            "dueAtMs": 1790038800000,
+            "destination": "default"
+          },
+          {
+            "nodeId": "n846bea0049e44d90b6119897f35db895",
+            "outcome": "scheduled",
+            "dueAtMs": 1790038800000,
+            "destination": "default"
+          },
+          {
+            "nodeId": "nd89c62f6c9f845acb056806ca45a8dc4",
+            "outcome": "scheduled",
+            "dueAtMs": 1790038800000,
+            "destination": "default"
+          }
+        ]
+      }
+    },
+    {
+      "request": {
+        "definition": {
+          "schemaVersion": 1,
+          "name": "DST schedule test",
+          "description": "AND / OR / NOT・3経路・合流・静穏時間・部品",
+          "expiresAfterMinutes": 4320,
+          "nodes": [
+            {
+              "id": "start",
+              "type": "start",
+              "config": {},
+              "position": {
+                "x": 40,
+                "y": 60
+              }
+            },
+            {
+              "id": "filter",
+              "type": "condition",
+              "config": {
+                "predicate": {
+                  "op": "all",
+                  "conditions": [
+                    {
+                      "op": "any",
+                      "conditions": [
+                        {
+                          "field": "title",
+                          "op": "contains",
+                          "value": "sale",
+                          "ignoreCase": true
+                        },
+                        {
+                          "field": "discountPercent",
+                          "op": "gte",
+                          "value": 30
+                        }
+                      ]
+                    },
+                    {
+                      "op": "not",
+                      "conditions": [
+                        {
+                          "field": "sensitive",
+                          "op": "eq",
+                          "value": true
+                        }
+                      ]
+                    }
+                  ]
+                }
+              },
+              "position": {
+                "x": 300,
+                "y": 60
+              }
+            },
+            {
+              "id": "waitA",
+              "type": "delay",
+              "config": {
+                "minutes": 30,
+                "anchor": "observed"
+              },
+              "position": {
+                "x": 570,
+                "y": 60
+              }
+            },
+            {
+              "id": "waitB",
+              "type": "delay",
+              "config": {
+                "minutes": 60,
+                "anchor": "observed"
+              },
+              "position": {
+                "x": 570,
+                "y": 260
+              }
+            },
+            {
+              "id": "reject",
+              "type": "stop",
+              "config": {
+                "reason": "条件に不一致"
+              },
+              "position": {
+                "x": 570,
+                "y": 460
+              }
+            },
+            {
+              "id": "missing",
+              "type": "stop",
+              "config": {
+                "reason": "必要なデータが不明"
+              },
+              "position": {
+                "x": 570,
+                "y": 660
+              }
+            },
+            {
+              "id": "merge",
+              "type": "merge",
+              "config": {
+                "mode": "all",
+                "displayConflict": "stop"
+              },
+              "position": {
+                "x": 840,
+                "y": 60
+              }
+            },
+            {
+              "id": "time",
+              "type": "schedule",
+              "config": {
+                "zone": "America/New_York",
+                "days": [
+                  1,
+                  2,
+                  3,
+                  4,
+                  5,
+                  6,
+                  7
+                ],
+                "windows": [
+                  {
+                    "start": "01:30",
+                    "end": "02:30"
+                  }
+                ],
+                "quiet": [],
+                "datesExcluded": [],
+                "maxWaitDays": 14
+              },
+              "position": {
+                "x": 1110,
+                "y": 60
+              }
+            },
+            {
+              "id": "limit",
+              "type": "limit",
+              "config": {
+                "count": 3,
+                "minutes": 60,
+                "key": "sourceKey",
+                "overflow": "defer"
+              },
+              "position": {
+                "x": 1380,
+                "y": 60
+              }
+            },
+            {
+              "id": "aggregate",
+              "type": "aggregate",
+              "config": {
+                "minutes": 15,
+                "key": "sourceKey",
+                "mode": "all",
+                "maxItems": 5
+              },
+              "position": {
+                "x": 1650,
+                "y": 60
+              }
+            },
+            {
+              "id": "display",
+              "type": "transform",
+              "config": {
+                "format": "text",
+                "template": "{title}\n{url}",
+                "maxLength": 1900,
+                "media": "inherit",
+                "mentions": "none"
+              },
+              "position": {
+                "x": 1920,
+                "y": 60
+              },
+              "group": "delivery"
+            },
+            {
+              "id": "send",
+              "type": "send",
+              "config": {
+                "destination": "default"
+              },
+              "position": {
+                "x": 2190,
+                "y": 60
+              },
+              "group": "delivery"
+            }
+          ],
+          "edges": [
+            {
+              "id": "e0",
+              "source": "start",
+              "target": "filter",
+              "port": "out"
+            },
+            {
+              "id": "e1",
+              "source": "filter",
+              "target": "waitA",
+              "port": "yes"
+            },
+            {
+              "id": "e2",
+              "source": "filter",
+              "target": "waitB",
+              "port": "yes"
+            },
+            {
+              "id": "e3",
+              "source": "filter",
+              "target": "reject",
+              "port": "no"
+            },
+            {
+              "id": "e4",
+              "source": "filter",
+              "target": "missing",
+              "port": "unknown"
+            },
+            {
+              "id": "e5",
+              "source": "waitA",
+              "target": "merge",
+              "port": "out"
+            },
+            {
+              "id": "e6",
+              "source": "waitB",
+              "target": "merge",
+              "port": "out"
+            },
+            {
+              "id": "e7",
+              "source": "merge",
+              "target": "time",
+              "port": "out"
+            },
+            {
+              "id": "e8",
+              "source": "time",
+              "target": "limit",
+              "port": "out"
+            },
+            {
+              "id": "e9",
+              "source": "limit",
+              "target": "aggregate",
+              "port": "out"
+            },
+            {
+              "id": "e10",
+              "source": "aggregate",
+              "target": "display",
+              "port": "out"
+            },
+            {
+              "id": "e11",
+              "source": "display",
+              "target": "send",
+              "port": "out"
+            }
+          ],
+          "layout": {
+            "groups": [
+              {
+                "id": "delivery",
+                "label": "表示と通知",
+                "collapsed": false
+              }
+            ],
+            "viewport": {
+              "x": 30,
+              "y": 20,
+              "zoom": 0.5
+            }
+          }
+        },
+        "bindings": {
+          "destinations": {},
+          "dictionaries": {}
+        },
+        "event": {
+          "title": "sale",
+          "sensitive": false
+        },
+        "now": 1793505600000
+      },
+      "time": "2026-11-01T13:00",
+      "result": {
+        "event": {
+          "title": "sale",
+          "sensitive": false
+        },
+        "outputs": [
+          {
+            "destination": "default",
+            "dueAtMs": 1793511000000,
+            "deadlineMs": 1793764800000,
+            "display": {
+              "format": "text",
+              "template": "{title}\n{url}",
+              "maxLength": 1900,
+              "media": "inherit",
+              "mentions": "none"
+            },
+            "text": "sale\n",
+            "limits": [
+              {
+                "nodeId": "limit",
+                "count": 3,
+                "minutes": 60,
+                "key": "sourceKey",
+                "overflow": "defer",
+                "group": "unknown"
+              }
+            ],
+            "aggregate": {
+              "nodeId": "aggregate",
+              "minutes": 15,
+              "key": "sourceKey",
+              "mode": "all",
+              "maxItems": 5,
+              "group": "unknown"
+            },
+            "schedules": [
+              {
+                "zone": "America/New_York",
+                "days": [
+                  1,
+                  2,
+                  3,
+                  4,
+                  5,
+                  6,
+                  7
+                ],
+                "windows": [
+                  {
+                    "start": "01:30",
+                    "end": "02:30"
+                  }
+                ],
+                "quiet": [],
+                "datesExcluded": [],
+                "maxWaitDays": 14
+              }
+            ],
+            "path": [
+              "start",
+              "filter",
+              "waitA",
+              "waitB",
+              "merge",
+              "time",
+              "limit",
+              "aggregate",
+              "display",
+              "send"
+            ]
+          }
+        ],
+        "trace": [
+          {
+            "nodeId": "start",
+            "outcome": "out",
+            "detail": null
+          },
+          {
+            "nodeId": "filter",
+            "outcome": "yes",
+            "detail": null
+          },
+          {
+            "nodeId": "waitA",
+            "outcome": "out",
+            "detail": null
+          },
+          {
+            "nodeId": "waitB",
+            "outcome": "out",
+            "detail": null
+          },
+          {
+            "nodeId": "merge",
+            "outcome": "merged",
+            "arrivals": 2,
+            "reason": "同じイベントを1件に合流し、一致した全経路の時間・件数制限を保持しました"
+          },
+          {
+            "nodeId": "merge",
+            "outcome": "out",
+            "detail": null
+          },
+          {
+            "nodeId": "time",
+            "outcome": "out",
+            "detail": null
+          },
+          {
+            "nodeId": "limit",
+            "outcome": "out",
+            "detail": null
+          },
+          {
+            "nodeId": "aggregate",
+            "outcome": "out",
+            "detail": null
+          },
+          {
+            "nodeId": "display",
+            "outcome": "out",
+            "detail": null
+          },
+          {
+            "nodeId": "send",
+            "outcome": "scheduled",
+            "dueAtMs": 1793511000000,
+            "destination": "default"
+          }
+        ]
+      }
+    },
+    {
+      "request": {
+        "definition": {
+          "schemaVersion": 1,
+          "name": "DST schedule test",
+          "description": "AND / OR / NOT・3経路・合流・静穏時間・部品",
+          "expiresAfterMinutes": 4320,
+          "nodes": [
+            {
+              "id": "start",
+              "type": "start",
+              "config": {},
+              "position": {
+                "x": 40,
+                "y": 60
+              }
+            },
+            {
+              "id": "filter",
+              "type": "condition",
+              "config": {
+                "predicate": {
+                  "op": "all",
+                  "conditions": [
+                    {
+                      "op": "any",
+                      "conditions": [
+                        {
+                          "field": "title",
+                          "op": "contains",
+                          "value": "sale",
+                          "ignoreCase": true
+                        },
+                        {
+                          "field": "discountPercent",
+                          "op": "gte",
+                          "value": 30
+                        }
+                      ]
+                    },
+                    {
+                      "op": "not",
+                      "conditions": [
+                        {
+                          "field": "sensitive",
+                          "op": "eq",
+                          "value": true
+                        }
+                      ]
+                    }
+                  ]
+                }
+              },
+              "position": {
+                "x": 300,
+                "y": 60
+              }
+            },
+            {
+              "id": "waitA",
+              "type": "delay",
+              "config": {
+                "minutes": 30,
+                "anchor": "observed"
+              },
+              "position": {
+                "x": 570,
+                "y": 60
+              }
+            },
+            {
+              "id": "waitB",
+              "type": "delay",
+              "config": {
+                "minutes": 60,
+                "anchor": "observed"
+              },
+              "position": {
+                "x": 570,
+                "y": 260
+              }
+            },
+            {
+              "id": "reject",
+              "type": "stop",
+              "config": {
+                "reason": "条件に不一致"
+              },
+              "position": {
+                "x": 570,
+                "y": 460
+              }
+            },
+            {
+              "id": "missing",
+              "type": "stop",
+              "config": {
+                "reason": "必要なデータが不明"
+              },
+              "position": {
+                "x": 570,
+                "y": 660
+              }
+            },
+            {
+              "id": "merge",
+              "type": "merge",
+              "config": {
+                "mode": "all",
+                "displayConflict": "stop"
+              },
+              "position": {
+                "x": 840,
+                "y": 60
+              }
+            },
+            {
+              "id": "time",
+              "type": "schedule",
+              "config": {
+                "zone": "America/New_York",
+                "days": [
+                  1,
+                  2,
+                  3,
+                  4,
+                  5,
+                  6,
+                  7
+                ],
+                "windows": [
+                  {
+                    "start": "02:30",
+                    "end": "03:30"
+                  }
+                ],
+                "quiet": [],
+                "datesExcluded": [],
+                "maxWaitDays": 14
+              },
+              "position": {
+                "x": 1110,
+                "y": 60
+              }
+            },
+            {
+              "id": "limit",
+              "type": "limit",
+              "config": {
+                "count": 3,
+                "minutes": 60,
+                "key": "sourceKey",
+                "overflow": "defer"
+              },
+              "position": {
+                "x": 1380,
+                "y": 60
+              }
+            },
+            {
+              "id": "aggregate",
+              "type": "aggregate",
+              "config": {
+                "minutes": 15,
+                "key": "sourceKey",
+                "mode": "all",
+                "maxItems": 5
+              },
+              "position": {
+                "x": 1650,
+                "y": 60
+              }
+            },
+            {
+              "id": "display",
+              "type": "transform",
+              "config": {
+                "format": "text",
+                "template": "{title}\n{url}",
+                "maxLength": 1900,
+                "media": "inherit",
+                "mentions": "none"
+              },
+              "position": {
+                "x": 1920,
+                "y": 60
+              },
+              "group": "delivery"
+            },
+            {
+              "id": "send",
+              "type": "send",
+              "config": {
+                "destination": "default"
+              },
+              "position": {
+                "x": 2190,
+                "y": 60
+              },
+              "group": "delivery"
+            }
+          ],
+          "edges": [
+            {
+              "id": "e0",
+              "source": "start",
+              "target": "filter",
+              "port": "out"
+            },
+            {
+              "id": "e1",
+              "source": "filter",
+              "target": "waitA",
+              "port": "yes"
+            },
+            {
+              "id": "e2",
+              "source": "filter",
+              "target": "waitB",
+              "port": "yes"
+            },
+            {
+              "id": "e3",
+              "source": "filter",
+              "target": "reject",
+              "port": "no"
+            },
+            {
+              "id": "e4",
+              "source": "filter",
+              "target": "missing",
+              "port": "unknown"
+            },
+            {
+              "id": "e5",
+              "source": "waitA",
+              "target": "merge",
+              "port": "out"
+            },
+            {
+              "id": "e6",
+              "source": "waitB",
+              "target": "merge",
+              "port": "out"
+            },
+            {
+              "id": "e7",
+              "source": "merge",
+              "target": "time",
+              "port": "out"
+            },
+            {
+              "id": "e8",
+              "source": "time",
+              "target": "limit",
+              "port": "out"
+            },
+            {
+              "id": "e9",
+              "source": "limit",
+              "target": "aggregate",
+              "port": "out"
+            },
+            {
+              "id": "e10",
+              "source": "aggregate",
+              "target": "display",
+              "port": "out"
+            },
+            {
+              "id": "e11",
+              "source": "display",
+              "target": "send",
+              "port": "out"
+            }
+          ],
+          "layout": {
+            "groups": [
+              {
+                "id": "delivery",
+                "label": "表示と通知",
+                "collapsed": false
+              }
+            ],
+            "viewport": {
+              "x": 30,
+              "y": 20,
+              "zoom": 0.5
+            }
+          }
+        },
+        "bindings": {
+          "destinations": {},
+          "dictionaries": {}
+        },
+        "event": {
+          "title": "sale",
+          "sensitive": false
+        },
+        "now": 1772947800000
+      },
+      "time": "2026-03-08T14:30",
+      "result": {
+        "event": {
+          "title": "sale",
+          "sensitive": false
+        },
+        "outputs": [
+          {
+            "destination": "default",
+            "dueAtMs": 1772953200000,
+            "deadlineMs": 1773207000000,
+            "display": {
+              "format": "text",
+              "template": "{title}\n{url}",
+              "maxLength": 1900,
+              "media": "inherit",
+              "mentions": "none"
+            },
+            "text": "sale\n",
+            "limits": [
+              {
+                "nodeId": "limit",
+                "count": 3,
+                "minutes": 60,
+                "key": "sourceKey",
+                "overflow": "defer",
+                "group": "unknown"
+              }
+            ],
+            "aggregate": {
+              "nodeId": "aggregate",
+              "minutes": 15,
+              "key": "sourceKey",
+              "mode": "all",
+              "maxItems": 5,
+              "group": "unknown"
+            },
+            "schedules": [
+              {
+                "zone": "America/New_York",
+                "days": [
+                  1,
+                  2,
+                  3,
+                  4,
+                  5,
+                  6,
+                  7
+                ],
+                "windows": [
+                  {
+                    "start": "02:30",
+                    "end": "03:30"
+                  }
+                ],
+                "quiet": [],
+                "datesExcluded": [],
+                "maxWaitDays": 14
+              }
+            ],
+            "path": [
+              "start",
+              "filter",
+              "waitA",
+              "waitB",
+              "merge",
+              "time",
+              "limit",
+              "aggregate",
+              "display",
+              "send"
+            ]
+          }
+        ],
+        "trace": [
+          {
+            "nodeId": "start",
+            "outcome": "out",
+            "detail": null
+          },
+          {
+            "nodeId": "filter",
+            "outcome": "yes",
+            "detail": null
+          },
+          {
+            "nodeId": "waitA",
+            "outcome": "out",
+            "detail": null
+          },
+          {
+            "nodeId": "waitB",
+            "outcome": "out",
+            "detail": null
+          },
+          {
+            "nodeId": "merge",
+            "outcome": "merged",
+            "arrivals": 2,
+            "reason": "同じイベントを1件に合流し、一致した全経路の時間・件数制限を保持しました"
+          },
+          {
+            "nodeId": "merge",
+            "outcome": "out",
+            "detail": null
+          },
+          {
+            "nodeId": "time",
+            "outcome": "out",
+            "detail": null
+          },
+          {
+            "nodeId": "limit",
+            "outcome": "out",
+            "detail": null
+          },
+          {
+            "nodeId": "aggregate",
+            "outcome": "out",
+            "detail": null
+          },
+          {
+            "nodeId": "display",
+            "outcome": "out",
+            "detail": null
+          },
+          {
+            "nodeId": "send",
+            "outcome": "scheduled",
+            "dueAtMs": 1772953200000,
+            "destination": "default"
+          }
+        ]
+      }
+    },
+    {
+      "request": {
+        "definition": {
+          "schemaVersion": 1,
+          "name": "DST schedule test",
+          "description": "AND / OR / NOT・3経路・合流・静穏時間・部品",
+          "expiresAfterMinutes": 4320,
+          "nodes": [
+            {
+              "id": "start",
+              "type": "start",
+              "config": {},
+              "position": {
+                "x": 40,
+                "y": 60
+              }
+            },
+            {
+              "id": "filter",
+              "type": "condition",
+              "config": {
+                "predicate": {
+                  "op": "all",
+                  "conditions": [
+                    {
+                      "op": "any",
+                      "conditions": [
+                        {
+                          "field": "title",
+                          "op": "contains",
+                          "value": "sale",
+                          "ignoreCase": true
+                        },
+                        {
+                          "field": "discountPercent",
+                          "op": "gte",
+                          "value": 30
+                        }
+                      ]
+                    },
+                    {
+                      "op": "not",
+                      "conditions": [
+                        {
+                          "field": "sensitive",
+                          "op": "eq",
+                          "value": true
+                        }
+                      ]
+                    }
+                  ]
+                }
+              },
+              "position": {
+                "x": 300,
+                "y": 60
+              }
+            },
+            {
+              "id": "waitA",
+              "type": "delay",
+              "config": {
+                "minutes": 30,
+                "anchor": "observed"
+              },
+              "position": {
+                "x": 570,
+                "y": 60
+              }
+            },
+            {
+              "id": "waitB",
+              "type": "delay",
+              "config": {
+                "minutes": 60,
+                "anchor": "observed"
+              },
+              "position": {
+                "x": 570,
+                "y": 260
+              }
+            },
+            {
+              "id": "reject",
+              "type": "stop",
+              "config": {
+                "reason": "条件に不一致"
+              },
+              "position": {
+                "x": 570,
+                "y": 460
+              }
+            },
+            {
+              "id": "missing",
+              "type": "stop",
+              "config": {
+                "reason": "必要なデータが不明"
+              },
+              "position": {
+                "x": 570,
+                "y": 660
+              }
+            },
+            {
+              "id": "merge",
+              "type": "merge",
+              "config": {
+                "mode": "all",
+                "displayConflict": "stop"
+              },
+              "position": {
+                "x": 840,
+                "y": 60
+              }
+            },
+            {
+              "id": "time",
+              "type": "schedule",
+              "config": {
+                "zone": "America/New_York",
+                "days": [
+                  1,
+                  2,
+                  3,
+                  4,
+                  5,
+                  6,
+                  7
+                ],
+                "windows": [
+                  {
+                    "start": "00:00",
+                    "end": "24:00"
+                  }
+                ],
+                "quiet": [
+                  {
+                    "start": "02:30",
+                    "end": "04:00"
+                  }
+                ],
+                "datesExcluded": [],
+                "maxWaitDays": 14
+              },
+              "position": {
+                "x": 1110,
+                "y": 60
+              }
+            },
+            {
+              "id": "limit",
+              "type": "limit",
+              "config": {
+                "count": 3,
+                "minutes": 60,
+                "key": "sourceKey",
+                "overflow": "defer"
+              },
+              "position": {
+                "x": 1380,
+                "y": 60
+              }
+            },
+            {
+              "id": "aggregate",
+              "type": "aggregate",
+              "config": {
+                "minutes": 15,
+                "key": "sourceKey",
+                "mode": "all",
+                "maxItems": 5
+              },
+              "position": {
+                "x": 1650,
+                "y": 60
+              }
+            },
+            {
+              "id": "display",
+              "type": "transform",
+              "config": {
+                "format": "text",
+                "template": "{title}\n{url}",
+                "maxLength": 1900,
+                "media": "inherit",
+                "mentions": "none"
+              },
+              "position": {
+                "x": 1920,
+                "y": 60
+              },
+              "group": "delivery"
+            },
+            {
+              "id": "send",
+              "type": "send",
+              "config": {
+                "destination": "default"
+              },
+              "position": {
+                "x": 2190,
+                "y": 60
+              },
+              "group": "delivery"
+            }
+          ],
+          "edges": [
+            {
+              "id": "e0",
+              "source": "start",
+              "target": "filter",
+              "port": "out"
+            },
+            {
+              "id": "e1",
+              "source": "filter",
+              "target": "waitA",
+              "port": "yes"
+            },
+            {
+              "id": "e2",
+              "source": "filter",
+              "target": "waitB",
+              "port": "yes"
+            },
+            {
+              "id": "e3",
+              "source": "filter",
+              "target": "reject",
+              "port": "no"
+            },
+            {
+              "id": "e4",
+              "source": "filter",
+              "target": "missing",
+              "port": "unknown"
+            },
+            {
+              "id": "e5",
+              "source": "waitA",
+              "target": "merge",
+              "port": "out"
+            },
+            {
+              "id": "e6",
+              "source": "waitB",
+              "target": "merge",
+              "port": "out"
+            },
+            {
+              "id": "e7",
+              "source": "merge",
+              "target": "time",
+              "port": "out"
+            },
+            {
+              "id": "e8",
+              "source": "time",
+              "target": "limit",
+              "port": "out"
+            },
+            {
+              "id": "e9",
+              "source": "limit",
+              "target": "aggregate",
+              "port": "out"
+            },
+            {
+              "id": "e10",
+              "source": "aggregate",
+              "target": "display",
+              "port": "out"
+            },
+            {
+              "id": "e11",
+              "source": "display",
+              "target": "send",
+              "port": "out"
+            }
+          ],
+          "layout": {
+            "groups": [
+              {
+                "id": "delivery",
+                "label": "表示と通知",
+                "collapsed": false
+              }
+            ],
+            "viewport": {
+              "x": 30,
+              "y": 20,
+              "zoom": 0.5
+            }
+          }
+        },
+        "bindings": {
+          "destinations": {},
+          "dictionaries": {}
+        },
+        "event": {
+          "title": "sale",
+          "sensitive": false
+        },
+        "now": 1772951400000
+      },
+      "time": "2026-03-08T15:30",
+      "result": {
+        "event": {
+          "title": "sale",
+          "sensitive": false
+        },
+        "outputs": [
+          {
+            "destination": "default",
+            "dueAtMs": 1772956800000,
+            "deadlineMs": 1773210600000,
+            "display": {
+              "format": "text",
+              "template": "{title}\n{url}",
+              "maxLength": 1900,
+              "media": "inherit",
+              "mentions": "none"
+            },
+            "text": "sale\n",
+            "limits": [
+              {
+                "nodeId": "limit",
+                "count": 3,
+                "minutes": 60,
+                "key": "sourceKey",
+                "overflow": "defer",
+                "group": "unknown"
+              }
+            ],
+            "aggregate": {
+              "nodeId": "aggregate",
+              "minutes": 15,
+              "key": "sourceKey",
+              "mode": "all",
+              "maxItems": 5,
+              "group": "unknown"
+            },
+            "schedules": [
+              {
+                "zone": "America/New_York",
+                "days": [
+                  1,
+                  2,
+                  3,
+                  4,
+                  5,
+                  6,
+                  7
+                ],
+                "windows": [
+                  {
+                    "start": "00:00",
+                    "end": "24:00"
+                  }
+                ],
+                "quiet": [
+                  {
+                    "start": "02:30",
+                    "end": "04:00"
+                  }
+                ],
+                "datesExcluded": [],
+                "maxWaitDays": 14
+              }
+            ],
+            "path": [
+              "start",
+              "filter",
+              "waitA",
+              "waitB",
+              "merge",
+              "time",
+              "limit",
+              "aggregate",
+              "display",
+              "send"
+            ]
+          }
+        ],
+        "trace": [
+          {
+            "nodeId": "start",
+            "outcome": "out",
+            "detail": null
+          },
+          {
+            "nodeId": "filter",
+            "outcome": "yes",
+            "detail": null
+          },
+          {
+            "nodeId": "waitA",
+            "outcome": "out",
+            "detail": null
+          },
+          {
+            "nodeId": "waitB",
+            "outcome": "out",
+            "detail": null
+          },
+          {
+            "nodeId": "merge",
+            "outcome": "merged",
+            "arrivals": 2,
+            "reason": "同じイベントを1件に合流し、一致した全経路の時間・件数制限を保持しました"
+          },
+          {
+            "nodeId": "merge",
+            "outcome": "out",
+            "detail": null
+          },
+          {
+            "nodeId": "time",
+            "outcome": "out",
+            "detail": null
+          },
+          {
+            "nodeId": "limit",
+            "outcome": "out",
+            "detail": null
+          },
+          {
+            "nodeId": "aggregate",
+            "outcome": "out",
+            "detail": null
+          },
+          {
+            "nodeId": "display",
+            "outcome": "out",
+            "detail": null
+          },
+          {
+            "nodeId": "send",
+            "outcome": "scheduled",
+            "dueAtMs": 1772956800000,
+            "destination": "default"
+          }
+        ]
+      }
+    },
+    {
+      "request": {
+        "definition": {
+          "schemaVersion": 1,
+          "name": "DST schedule test",
+          "description": "AND / OR / NOT・3経路・合流・静穏時間・部品",
+          "expiresAfterMinutes": 4320,
+          "nodes": [
+            {
+              "id": "start",
+              "type": "start",
+              "config": {},
+              "position": {
+                "x": 40,
+                "y": 60
+              }
+            },
+            {
+              "id": "filter",
+              "type": "condition",
+              "config": {
+                "predicate": {
+                  "op": "all",
+                  "conditions": [
+                    {
+                      "op": "any",
+                      "conditions": [
+                        {
+                          "field": "title",
+                          "op": "contains",
+                          "value": "sale",
+                          "ignoreCase": true
+                        },
+                        {
+                          "field": "discountPercent",
+                          "op": "gte",
+                          "value": 30
+                        }
+                      ]
+                    },
+                    {
+                      "op": "not",
+                      "conditions": [
+                        {
+                          "field": "sensitive",
+                          "op": "eq",
+                          "value": true
+                        }
+                      ]
+                    }
+                  ]
+                }
+              },
+              "position": {
+                "x": 300,
+                "y": 60
+              }
+            },
+            {
+              "id": "waitA",
+              "type": "delay",
+              "config": {
+                "minutes": 30,
+                "anchor": "published"
+              },
+              "position": {
+                "x": 570,
+                "y": 60
+              }
+            },
+            {
+              "id": "waitB",
+              "type": "delay",
+              "config": {
+                "minutes": 60,
+                "anchor": "observed"
+              },
+              "position": {
+                "x": 570,
+                "y": 260
+              }
+            },
+            {
+              "id": "reject",
+              "type": "stop",
+              "config": {
+                "reason": "条件に不一致"
+              },
+              "position": {
+                "x": 570,
+                "y": 460
+              }
+            },
+            {
+              "id": "missing",
+              "type": "stop",
+              "config": {
+                "reason": "必要なデータが不明"
+              },
+              "position": {
+                "x": 570,
+                "y": 660
+              }
+            },
+            {
+              "id": "merge",
+              "type": "merge",
+              "config": {
+                "mode": "all",
+                "displayConflict": "stop"
+              },
+              "position": {
+                "x": 840,
+                "y": 60
+              }
+            },
+            {
+              "id": "time",
+              "type": "schedule",
+              "config": {
+                "zone": "America/New_York",
+                "days": [
+                  1,
+                  2,
+                  3,
+                  4,
+                  5,
+                  6,
+                  7
+                ],
+                "windows": [
+                  {
+                    "start": "00:00",
+                    "end": "24:00"
+                  }
+                ],
+                "quiet": [
+                  {
+                    "start": "02:30",
+                    "end": "04:00"
+                  }
+                ],
+                "datesExcluded": [],
+                "maxWaitDays": 14
+              },
+              "position": {
+                "x": 1110,
+                "y": 60
+              }
+            },
+            {
+              "id": "limit",
+              "type": "limit",
+              "config": {
+                "count": 3,
+                "minutes": 60,
+                "key": "sourceKey",
+                "overflow": "defer"
+              },
+              "position": {
+                "x": 1380,
+                "y": 60
+              }
+            },
+            {
+              "id": "aggregate",
+              "type": "aggregate",
+              "config": {
+                "minutes": 15,
+                "key": "sourceKey",
+                "mode": "all",
+                "maxItems": 5
+              },
+              "position": {
+                "x": 1650,
+                "y": 60
+              }
+            },
+            {
+              "id": "display",
+              "type": "transform",
+              "config": {
+                "format": "text",
+                "template": "{title}\n{url}",
+                "maxLength": 1900,
+                "media": "inherit",
+                "mentions": "none"
+              },
+              "position": {
+                "x": 1920,
+                "y": 60
+              },
+              "group": "delivery"
+            },
+            {
+              "id": "send",
+              "type": "send",
+              "config": {
+                "destination": "default"
+              },
+              "position": {
+                "x": 2190,
+                "y": 60
+              },
+              "group": "delivery"
+            }
+          ],
+          "edges": [
+            {
+              "id": "e0",
+              "source": "start",
+              "target": "filter",
+              "port": "out"
+            },
+            {
+              "id": "e1",
+              "source": "filter",
+              "target": "waitA",
+              "port": "yes"
+            },
+            {
+              "id": "e2",
+              "source": "filter",
+              "target": "waitB",
+              "port": "yes"
+            },
+            {
+              "id": "e3",
+              "source": "filter",
+              "target": "reject",
+              "port": "no"
+            },
+            {
+              "id": "e4",
+              "source": "filter",
+              "target": "missing",
+              "port": "unknown"
+            },
+            {
+              "id": "e5",
+              "source": "waitA",
+              "target": "merge",
+              "port": "out"
+            },
+            {
+              "id": "e6",
+              "source": "waitB",
+              "target": "merge",
+              "port": "out"
+            },
+            {
+              "id": "e7",
+              "source": "merge",
+              "target": "time",
+              "port": "out"
+            },
+            {
+              "id": "e8",
+              "source": "time",
+              "target": "limit",
+              "port": "out"
+            },
+            {
+              "id": "e9",
+              "source": "limit",
+              "target": "aggregate",
+              "port": "out"
+            },
+            {
+              "id": "e10",
+              "source": "aggregate",
+              "target": "display",
+              "port": "out"
+            },
+            {
+              "id": "e11",
+              "source": "display",
+              "target": "send",
+              "port": "out"
+            }
+          ],
+          "layout": {
+            "groups": [
+              {
+                "id": "delivery",
+                "label": "表示と通知",
+                "collapsed": false
+              }
+            ],
+            "viewport": {
+              "x": 30,
+              "y": 20,
+              "zoom": 0.5
+            }
+          }
+        },
+        "bindings": {
+          "destinations": {},
+          "dictionaries": {}
+        },
+        "event": {
+          "title": "sale",
+          "sensitive": false
+        },
+        "now": 1789993800000
+      },
+      "time": "2026-09-21T21:30",
+      "result": {
+        "event": {
+          "title": "sale",
+          "sensitive": false
+        },
+        "outputs": [],
+        "trace": [
+          {
+            "nodeId": "start",
+            "outcome": "out",
+            "detail": null
+          },
+          {
+            "nodeId": "filter",
+            "outcome": "yes",
+            "detail": null
+          },
+          {
+            "nodeId": "waitA",
+            "outcome": "unknown",
+            "reason": "公開日時を取得できません"
+          },
+          {
+            "nodeId": "waitB",
+            "outcome": "out",
+            "detail": null
+          },
+          {
+            "nodeId": "merge",
+            "outcome": "excluded",
+            "reason": "合流に必要な経路がすべて一致していません",
+            "arrived": 1,
+            "expected": 2
+          }
+        ]
+      }
+    }
+  ],
+  "backendFindings": [],
+  "boundary": "GUI/schema roundtrip and pure simulation only. Stateful limit/aggregate execution order, grouped output format and cross-target/path grouping remain parent-owned engine/queue work.",
+  "status": "passed",
+  "backendStatus": "stateful-runtime-not-verified",
+  "sources": {
+    "dashboard/components/automation/rule-editor.tsx": "d0a69e8b24392f6e6aee7d9fc52dfe6a51d17813119a86bc587fb97fd16a88d1",
+    "dashboard/components/automation/rule-editor-canvas.tsx": "34c0d2aa9faa318d736489a39169ca5b43135b99eb9adaa7bda3a849c5a8ff3c",
+    "dashboard/components/automation/event-simulator.tsx": "8647f6d90d58394f57196611a93b38e06389dff8dae37a90aa1444f559b920b3",
+    "dashboard/components/automation/rule-labels.ts": "652283afd270553223ca4c1a10d97a0523bba8e1cbe238235e1c6195f00afcf0",
+    "dashboard/components/automation/automation.css": "6737bdfaf0abed3a66003bcdbfaf1d00633d08f461070f9d355897c12cfdb9d9",
+    "src/automation/editor-model.js": "04a30957cca84021bbc0348fec5c4ed1483e527bcc8e8fb63ab2584232d16b40",
+    "src/automation/schema.js": "171751007c1d56271108f37bafa2b214d1b0d7b1bcb5134b748fd0592a375624",
+    "src/automation/engine.js": "6084e051f6bc3a1f7d337c7651d3a671f789f5702f2ccd30c2ae8d3d7f1c65e8",
+    "scripts/verify_automation_studio.cjs": "7c27d2f697c5df461b58114d33f4e5a2c841a523bfef7befaa7145ab13aca6dc"
+  }
+}

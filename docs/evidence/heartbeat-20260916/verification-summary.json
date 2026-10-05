@@ -1,0 +1,47 @@
+{
+  "at": "2026-09-16T14:57:20.344782+00:00",
+  "stableStart": "2026-09-16T14:27:02.336081+00:00",
+  "observedSeconds": 1815.2,
+  "samples": 112,
+  "backwardReads": 0,
+  "staleSamples": 0,
+  "missingSamples": 0,
+  "httpFailures": 0,
+  "maxHeartbeatAgeSeconds": 81.7,
+  "lastHeartbeat": "2026-09-16T14:57:00.170000000Z",
+  "lastSnapshot": "2026-09-16T14:57:17.554220+00:00",
+  "walMiB": 5.2,
+  "maxWalMiB": 5.2,
+  "management": {
+    "http": 200,
+    "ok": true,
+    "node": null,
+    "epoch": null
+  },
+  "public": {
+    "http": 200,
+    "ok": true,
+    "node": "primary",
+    "epoch": 9
+  },
+  "service": {
+    "MainPID": "3067055",
+    "NRestarts": "0",
+    "ActiveState": "active",
+    "SubState": "running"
+  },
+  "botProcessPresent": true,
+  "notifications": [
+    [
+      "2026-09-16T14:26:32.248593538Z",
+      "Botの実プロセスを確認できません",
+      "Confirmed"
+    ],
+    [
+      "2026-09-16T14:28:52.334297000Z",
+      "Botの実プロセスを確認できません",
+      "Resolved"
+    ]
+  ],
+  "state": "complete"
+}

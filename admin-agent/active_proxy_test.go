@@ -72,3 +72,28 @@ func TestActiveProxyKeepsLocalOwnerAndDoesNotForwardTelemetryPosts(t *testing.T)
 		t.Fatalf("telemetry post was forwarded: status=%d called=%d body=%s", postWriter.Code, called, postWriter.Body.String())
 	}
 }
+
+
+func TestRecoveryViewsStayOnLocalControllerDuringPrimaryOutage(t *testing.T) {
+	for _, path := range []string{"/v1/recovery", "/v1/recovery/workload-logs"} {
+		r := httptest.NewRequest(http.MethodGet, path, nil)
+		if activeProxyPath(r) {
+			t.Fatalf("recovery path was routed to the active peer: %s", path)
+		}
+	}
+}
+
+func TestOCIStandbyPolicyRemainsLocalWhenPrimaryOwnsAuthority(t *testing.T) {
+	a := activeProxyFixture(t, "primary", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatalf("OCI policy was forwarded to the primary: %s", r.URL.Path)
+	}))
+	a.cfg.RecoveryNode = "oci"
+	r := httptest.NewRequest(http.MethodGet, "/v1/policies", nil)
+	r.Header.Set("X-Admin-Agent-Token", a.cfg.Token)
+	r.Header.Set("X-Admin-Actor", a.cfg.Owner)
+	w := httptest.NewRecorder()
+	a.routes().ServeHTTP(w, r)
+	if w.Code != http.StatusOK || w.Header().Get("X-CBTE-Active-Source") != "local-standby" {
+		t.Fatalf("OCI policy was not kept local: status=%d headers=%v body=%s", w.Code, w.Header(), w.Body.String())
+	}
+}

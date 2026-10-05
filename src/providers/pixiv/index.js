@@ -656,6 +656,7 @@ const pixivProvider = {
         'display_density',
         'media_display_mode',
         'pixiv_images_per_step',
+        'gallery_display_mode',
         'pixiv_caption_max_length',
         'pixiv_tag_limit',
         'pixiv_r18_display_mode',

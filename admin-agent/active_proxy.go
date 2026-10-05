@@ -26,6 +26,12 @@ func activeProxyPath(r *http.Request) bool {
 	if r.URL.Path == "/v1/account/password" || (r.URL.Path == "/v1/events" && r.Method != http.MethodGet && r.Method != http.MethodHead) {
 		return false
 	}
+	// Recovery status and workload logs describe this OCI controller and its
+	// validated candidate, even while the current primary is unreachable. They
+	// must remain local so the emergency path can inspect its own gates.
+	if r.URL.Path == "/v1/recovery" || strings.HasPrefix(r.URL.Path, "/v1/recovery/") {
+		return false
+	}
 	for _, prefix := range []string{"/v1/health", "/v1/recovery", "/v1/catalog", "/v1/events", "/v1/runs", "/v1/actions", "/v1/metrics", "/v1/shards", "/v1/reports", "/v1/incidents", "/v1/policies", "/v1/notifications"} {
 		if r.URL.Path == prefix || strings.HasPrefix(r.URL.Path, prefix+"/") {
 			return true
@@ -92,6 +98,14 @@ func activePeerEndpoint(raw string, path string, query string) (*url.URL, error)
 
 func (a *App) proxyActive(w http.ResponseWriter, r *http.Request) bool {
 	if !activeProxyPath(r) {
+		return false
+	}
+	// The OCI controller must be able to observe its own operator intent while
+	// primary is unreachable.  Policies are node-local assertions; routing an
+	// OCI GET through the unavailable primary makes the promotion gate stale
+	// forever, while a local OCI PUT remains scoped to the standby node.
+	if a.cfg.RecoveryNode == "oci" && r.URL.Path == "/v1/policies" {
+		w.Header().Set("X-CBTE-Active-Source", "local-standby")
 		return false
 	}
 	// Only a peer that knows this core's bearer token may assert that it is an

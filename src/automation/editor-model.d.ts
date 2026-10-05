@@ -1,0 +1,12 @@
+import type { Rule } from "../../dashboard/components/automation/rule-editor";
+export function predicateMode(predicate: any, op: string): any;
+export function comparisonMode(predicate: any, op: string, type: string): any;
+export function connect(rule: Rule, source: string, target: string, port: string, id?: string): Rule;
+export function removeNodes(rule: Rule, ids: string[]): Rule;
+export function insertNode(rule: Rule, type: string, selectedId: string, port?: string, loose?: boolean, makeId?: (prefix: string) => string): Rule;
+export function addGroup(rule: Rule, name: string, nodeIds?: string[], id?: string): Rule;
+export function removeGroup(rule: Rule, id: string): Rule;
+export function validateFragment(fragment: any): any;
+export function exportGroup(rule: Rule, id: string): any;
+export function importGroup(rule: Rule, fragment: any): Rule;
+export function autoLayout(rule: Rule): Rule;

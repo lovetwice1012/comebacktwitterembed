@@ -81,6 +81,12 @@ const BULK_SETTING_KEYS = new Set([
 
 const COMMON_SETTING_SPECS = [
     {
+        key: 'show_previous_shares', settingKey: 'show_previous_shares', kind: 'bool',
+        label: text('Show previous shares', '過去の共有リンクを表示'),
+        description: text('Expand the current link normally and add a link to an earlier share in the same channel.',
+            '今回のリンクも通常どおり展開し、同じチャンネルにある過去の共有へのリンクを添えます。'),
+    },
+    {
         key: 'enabled',
         label: text('Provider on/off', 'プロバイダーの有効化'),
         description: text(
@@ -172,6 +178,20 @@ const COMMON_SETTING_SPECS = [
 ];
 
 const SETTING_SPEC_CATALOG = {
+    gallery_display_mode: {
+        key: 'gallery_display_mode',
+        label: text('Gallery display', '画像ギャラリーの表示方式'),
+        description: text(
+            'Choose normal output or a paged gallery. Navigation opens a private viewer. Existing media limits and visibility settings still apply.',
+            '通常表示とページ切替式ギャラリーを選べます。ページ操作は自分専用の画面で行います。既存の枚数上限・メディア表示制限は維持します。'
+        ),
+        kind: 'choice',
+        settingKey: 'gallery_display_mode',
+        choices: [
+            { label: text('Normal (default)', '通常表示（初期値）'), value: 'normal' },
+            { label: text('Paged gallery', 'ページ切替式ギャラリー'), value: 'gallery' },
+        ],
+    },
     bannedWords: {
         key: 'bannedWords',
         label: text('Blocked words in embeds', '展開しないワード'),

@@ -279,7 +279,8 @@ test('steam extract: compact density hides metadata and attachment mode sends im
     assert.equal(embed.image, undefined);
     assert.deepEqual(embed.fields, []);
     assert.deepEqual(step.files, ['https://cdn.example/steam/header.jpg']);
-    assert.equal(step.components[0].components.length, 1);
+    assert.equal(step.components[0].components.length, 2);
+    assert.match(step.components[0].components[1].data.custom_id, /^priceWatch:s:app:730:/);
 });
 
 test('steam extract: falls back to OpenGraph metadata for Workshop links', async () => {
@@ -344,4 +345,142 @@ test('steam parse: rejects unsupported Steam and non-Steam pages', () => {
     assert.equal(provider._internal.parseSteamUrl('https://store.steampowered.com/search/?term=portal'), null);
     assert.equal(provider._internal.parseSteamUrl('https://steamcommunity.com/groups/example'), null);
     assert.equal(provider._internal.parseSteamUrl('https://example.com/app/730'), null);
+});
+
+test('steam prices: requests the configured market and Steam language without converting prices', async () => {
+    const cases = [
+        ['ja', 'jp', 'japanese', 'JPY', 120000, '¥ 1,200'],
+        ['en-GB', 'gb', 'english', 'GBP', 850, '£8.50'],
+        ['de', 'de', 'german', 'EUR', 975, '9,75€'],
+        ['pt-BR', 'br', 'brazilian', 'BRL', 1999, 'R$ 19,99'],
+        ['zh-TW', 'tw', 'tchinese', 'TWD', 18800, 'NT$ 188'],
+        ['ko', 'kr', 'koreana', 'KRW', 1100000, '₩ 11,000'],
+        ['es-419', 'mx', 'latam', 'MXN', 12399, 'Mex$ 123.99'],
+        ['hi', 'in', 'english', 'INR', 58900, '₹ 589'],
+    ];
+    for (const [locale, country, language, currency, final, formatted] of cases) {
+        let request;
+        const provider = loadSteamProviderWithFetch(async (url) => {
+            request = new URL(String(url));
+            const payload = appDetailsPayload();
+            Object.assign(payload['730'].data, {
+                is_free: false, price_overview: { currency, final, final_formatted: formatted },
+            });
+            return okJson(payload);
+        });
+        const url = 'https://store.steampowered.com/app/730';
+        const [step] = await provider.extract(createMessage(url), url, {
+            defaultLanguage: locale, hidden_output_items: ['current_players', 'review_summary'],
+        });
+        assert.equal(request.searchParams.get('cc'), country, locale);
+        assert.equal(request.searchParams.get('l'), language, locale);
+        assert.equal(fieldValue(step.embeds[0], locale === 'ja' ? '価格' : 'Price'), formatted, locale);
+        assert.equal(step.analytics.metrics.price, final / 100, locale);
+        assert.ok(step.analytics.facets.some(item => item.key === 'price_currency' && item.value === currency), locale);
+    }
+});
+
+test('steam prices: explicit valid cc overrides language market on Store and short links', async () => {
+    const requests = [];
+    const provider = loadSteamProviderWithFetch(async url => {
+        requests.push(new URL(String(url)));
+        return okJson(appDetailsPayload());
+    });
+    for (const [url, expectedCountry] of [
+        ['https://store.steampowered.com/app/730?cc=DE', 'de'],
+        ['https://s.team/a/730?cc=GB', 'gb'],
+        ['https://store.steampowered.com/app/730?cc=zz', 'jp'],
+        ['https://store.steampowered.com/app/730?cc=419', 'jp'],
+    ]) {
+        const [step] = await provider.extract(createMessage(url), url, {
+            defaultLanguage: 'ja', hidden_output_items: ['current_players', 'review_summary'],
+        });
+        assert.equal(requests.at(-1).searchParams.get('cc'), expectedCountry);
+        assert.equal(requests.at(-1).searchParams.get('l'), 'japanese');
+        assert.equal(fieldValue(step.embeds[0], '価格'), '無料プレイ');
+    }
+});
+
+test('steam prices: numeric fallbacks use Steam hundredths including zero-decimal currencies', async () => {
+    for (const [locale, currency, final, amount] of [
+        ['ja', 'JPY', 120000, 1200], ['ko', 'KRW', 1100000, 11000],
+        ['de', 'EUR', 999, 9.99], ['en-GB', 'GBP', 0, 0],
+    ]) {
+        const payload = appDetailsPayload();
+        Object.assign(payload['730'].data, {
+            is_free: false, price_overview: { currency, final, discount_percent: 20 },
+        });
+        const provider = loadSteamProviderWithFetch(async () => okJson(payload));
+        const url = 'https://store.steampowered.com/app/730';
+        const settings = { defaultLanguage: locale, hidden_output_items: ['current_players', 'review_summary'] };
+        const [step] = await provider.extract(createMessage(url), url, settings);
+        const expected = new Intl.NumberFormat(locale, { style: 'currency', currency }).format(amount).replace(/\s+/g, ' ');
+        const discount = locale === 'ja' ? '20% オフ' : '20% off';
+        assert.equal(fieldValue(step.embeds[0], locale === 'ja' ? '価格' : 'Price'), `${expected} (${discount})`);
+        assert.equal(fieldValue(step.embeds[0], locale === 'ja' ? '割引' : 'Discount'), discount);
+        assert.equal(step.analytics.metrics.price, amount);
+
+        const [hidden] = await provider.extract(createMessage(url), url, {
+            ...settings, hidden_output_items: [...settings.hidden_output_items, 'price'],
+        });
+        assert.equal(fieldValue(hidden.embeds[0], locale === 'ja' ? '価格' : 'Price'), undefined);
+        assert.equal(hidden.analytics.metrics.price, amount);
+    }
+});
+
+test('steam prices: missing or invalid price data never becomes a free price', async () => {
+    for (const price of [undefined, {}, { final: null, currency: 'USD' }, { final: '', currency: 'USD' },
+        { final: false, currency: 'USD' }, { final: -1, currency: 'USD' },
+        { final: 'unknown', currency: 'USD' }, { final: 1234 }, { final: 1234, currency: '$' }]) {
+        const payload = appDetailsPayload();
+        Object.assign(payload['730'].data, { is_free: false, price_overview: price });
+        const provider = loadSteamProviderWithFetch(async () => okJson(payload));
+        const url = 'https://store.steampowered.com/app/730';
+        const [step] = await provider.extract(createMessage(url), url, {
+            hidden_output_items: ['current_players', 'review_summary'],
+        });
+        assert.equal(fieldValue(step.embeds[0], 'Price'), undefined, JSON.stringify(price));
+    }
+});
+
+test('steam prices: package and bundle HTML requests retain localized prices and identity', async () => {
+    for (const [route, id, method] of [['sub', '7877', 'addToCart'], ['bundle', '234', 'addBundleToCart']]) {
+        let request;
+        const provider = loadSteamProviderWithFetch(async url => {
+            request = new URL(String(url));
+            return okHtml(`<title>Store product</title>
+                <div class="game_purchase_action_bg"><div class="game_purchase_price" data-price-final="100">¥ 1</div>
+                    <a href="javascript:${method}(999)">Unrelated</a></div>
+                <div class="game_purchase_action_bg"><div class="discount_block" data-price-final="180000" data-discount="25">
+                    <div class="discount_final_price">¥ 1,800</div></div>
+                    <a href="javascript:${method}(${id})">Buy</a></div>`, String(url));
+        });
+        const url = `https://store.steampowered.com/${route}/${id}?cc=JP`;
+        const [step] = await provider.extract(createMessage(url), url, { defaultLanguage: 'ja' });
+        assert.equal(request.searchParams.get('cc'), 'jp');
+        assert.equal(request.searchParams.get('l'), 'japanese');
+        assert.equal(fieldValue(step.embeds[0], '価格'), '¥ 1,800 (25% オフ)');
+        assert.equal(step.analytics.metrics.price, 1800);
+        assert.equal(step.embeds[0].url, `https://store.steampowered.com/${route}/${id}`);
+    }
+});
+
+test('steam prices: app HTML fallback localizes requests and ignores cheaper DLC purchase blocks', async () => {
+    const requests = [];
+    const provider = loadSteamProviderWithFetch(async url => {
+        requests.push(new URL(String(url)));
+        if (String(url).includes('/api/appdetails')) throw new Error('API temporarily unavailable');
+        return okHtml(`<title>Portal 2</title>
+            <div itemprop="offers" itemscope itemtype="http://schema.org/Offer">
+                <meta itemprop="priceCurrency" content="EUR"><meta itemprop="price" content="9,75"></div>
+            <div class="game_purchase_action_bg"><div class="game_purchase_price" data-price-final="99">0,99€</div></div>`, String(url));
+    });
+    const url = 'https://s.team/a/620?cc=de';
+    const [step] = await provider.extract(createMessage(url), url, { defaultLanguage: 'ja' });
+    assert.equal(requests.length, 2);
+    assert.equal(requests[1].pathname, '/app/620');
+    assert.equal(requests[1].searchParams.get('cc'), 'de');
+    assert.equal(requests[1].searchParams.get('l'), 'japanese');
+    assert.equal(fieldValue(step.embeds[0], '価格'), new Intl.NumberFormat('ja', { style: 'currency', currency: 'EUR' }).format(9.75));
+    assert.equal(step.analytics.metrics.price, 9.75);
 });

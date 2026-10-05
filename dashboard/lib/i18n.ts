@@ -36,6 +36,7 @@ const ja = {
 
   "shell.nav.overview": "概要",
   "shell.nav.providers": "プロバイダー",
+  "shell.nav.automation": "自動化",
   "shell.nav.settings": "横断検索",
   "shell.nav.preview": "プレビュー",
   "shell.nav.diagnostics": "診断",
@@ -362,6 +363,7 @@ const en: Record<keyof typeof ja, string> = {
 
   "shell.nav.overview": "Overview",
   "shell.nav.providers": "Providers",
+  "shell.nav.automation": "Automation",
   "shell.nav.settings": "Cross search",
   "shell.nav.preview": "Preview",
   "shell.nav.diagnostics": "Diagnostics",
