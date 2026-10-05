@@ -179,6 +179,12 @@ async function shutdown(signal, exitCode) {
     dashboardServer.stop();
     const deadline = setTimeout(() => process.exit(exitCode), 12000);
     try {
+        require('./src/providers/autoWatch/runner').stop();
+        require('./src/providers/priceWatch/runner').stop();
+        await Promise.allSettled([
+            require('./src/personalLinks/runner').stop(),
+            require('./src/automation/runtime').stop(),
+        ]);
         client.destroy();
         const drains = await Promise.allSettled([
             expansionTraceStore.interruptActiveExpansionTraces(`shutdown_${signal}`),

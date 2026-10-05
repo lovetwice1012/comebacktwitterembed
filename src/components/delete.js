@@ -21,7 +21,7 @@ function extractIdFromText(text) {
 }
 
 function getRequesterIdFromMessage(interaction) {
-    const embed = interaction.message.embeds[0];
+    const embed = interaction.message?.embeds?.[0];
 
     // pixiv/booth は footer.text に「展開者: USER(id:DISCORDID) · ...」を
     // 入れる一方、author.name にはプロバイダ側 (pixiv 作者 / booth ショップ)
@@ -40,7 +40,9 @@ async function handle(interaction) {
         setTimeout(() => { interaction.deleteReply().catch(() => {}); }, 3000);
     };
 
-    if (interaction.member.permissions.has(PermissionsBitField.Flags.ManageMessages)) {
+    const permissions = interaction.memberPermissions
+        || interaction.channel?.permissionsFor?.(interaction.member);
+    if (permissions?.has?.(PermissionsBitField.Flags.ManageMessages)) {
         await interaction.message.delete();
         await finishAndCleanup();
         return;

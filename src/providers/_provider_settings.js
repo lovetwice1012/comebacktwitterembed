@@ -63,6 +63,8 @@ const PROVIDER_DEFAULTS = {
     hidden_output_items:                                   [],
     display_density:                                       'standard',
     media_display_mode:                                    'embed',
+    gallery_display_mode:                                  'normal',
+    show_previous_shares:                                  true,
     failure_display_policy:                                'silent',
     tiktok_description_max_length:                         undefined,
     tiktok_image_limit:                                    undefined,
@@ -80,6 +82,11 @@ const PROVIDER_DEFAULTS = {
 };
 
 const PROVIDER_SETTING_COLUMNS = {
+    show_previous_shares: { column: 'show_previous_shares', type: 'bool' },
+    gallery_display_mode: {
+        column: 'gallery_display_mode',
+        type: 'string',
+    },
     enabled: {
         column: 'enabled',
         type: 'bool',
@@ -531,6 +538,29 @@ async function getDisableSetting(provider, guildId) {
     return targetRowsToSetting(providerRows);
 }
 
+async function getAllTargetSettings(provider, guildId) {
+    // Keep every provider/permission scope, but share one pool slot and round
+    // trip for the eight identically shaped target tables on a cold read.
+    const tables = Object.entries({
+        disable: TABLES.guildProviderDisableTargets,
+        ...TARGET_SETTING_TABLES,
+        button_disabled: TABLES.guildProviderButtonDisabledTargets,
+    });
+    const rows = await queryDatabase()(
+        tables.map(([, table]) => `SELECT ? AS setting_key, target_type, target_id
+            FROM ${table} WHERE provider_id = ? AND guild_id = ?`).join('\nUNION ALL\n'),
+        tables.flatMap(([key]) => [key, provider.id, guildId]),
+    );
+    const grouped = new Map(tables.map(([key]) => [key, []]));
+    for (const row of rows) grouped.get(row.setting_key)?.push(row);
+    return tables.map(([key]) => ({
+        key,
+        value: key === 'button_disabled'
+            ? normalizeButtonDisabled(targetRowsToSetting(grouped.get(key)))
+            : targetRowsToSetting(grouped.get(key)),
+    }));
+}
+
 async function replaceTargetRows(table, providerId, guildId, value) {
     const setting = normalizeTargetSetting(value);
     await ensureProviderAndGuild(providerId, guildId);
@@ -754,16 +784,11 @@ async function loadProviderSettings(provider, guildId) {
 
     await ensureDatabaseSchema();
     const query = queryDatabase();
-    const [scalarRows, ...specialValues] = await Promise.all([
+    const [scalarRows, targetValues, ...specialValues] = await Promise.all([
         query(`SELECT * FROM ${TABLES.guildProviderSettings} WHERE provider_id = ? AND guild_id = ? LIMIT 1`, [provider.id, guildId]),
-        getDisableSetting(provider, guildId).then(value => ({ key: 'disable', value })),
-        ...Object.entries(TARGET_SETTING_TABLES).map(async ([key, table]) => ({
-            key,
-            value: targetRowsToSetting(await getRowsByTargetTable(table, provider.id, guildId)),
-        })),
+        getAllTargetSettings(provider, guildId),
         getBannedWords(provider, guildId).then(value => ({ key: 'bannedWords', value })),
         getButtonVisibility(provider, guildId).then(value => ({ key: 'button_invisible', value })),
-        getSetting(provider, 'button_disabled', guildId).then(value => ({ key: 'button_disabled', value })),
     ]);
     const scalarRow = scalarRows[0];
     const out = {};
@@ -773,7 +798,7 @@ async function loadProviderSettings(provider, guildId) {
         const fallback = value === undefined ? settingDefault(provider, key) : value;
         if (fallback !== undefined) out[key] = fallback;
     }
-    for (const { key, value } of specialValues) out[key] = value;
+    for (const { key, value } of [...targetValues, ...specialValues]) out[key] = value;
     return out;
 }
 

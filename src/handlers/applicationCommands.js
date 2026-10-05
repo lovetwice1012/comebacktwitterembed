@@ -21,6 +21,9 @@ const CORE_HANDLERS = {
     "checkmyguildsettings": require('../commands/handlers/checkmyguildsettings').execute,
     "autoextract":          require('../commands/handlers/autoextract').execute,
     "provider":             require('../commands/handlers/provider').execute,
+    "saved":                require('../commands/handlers/saved').execute,
+    "remind":               require('../commands/handlers/remind').execute,
+    "restock":              require('../commands/handlers/restock').execute,
 };
 
 async function resolveDelegatedEditPermissions(interaction) {
@@ -45,10 +48,13 @@ function buildHandlers() {
     for (const c of loadProviderCommands()) {
         merged[c.definition.name] = c.execute;
     }
+    for (const c of require('../commands/handlers/messageExpansion').commands) merged[c.definition.name] = c.execute;
     return merged;
 }
 
 function shouldDeferEphemeral(interaction) {
+    if (['saved', 'remind', 'restock'].includes(interaction.commandName)) return true;
+    if (interaction.commandType === 3) return true;
     if (interaction.commandName === 'guisetting') return true;
     if (interaction.commandName === 'provider') return true;
     if (interaction.commandName === 'autoextract') {
@@ -71,7 +77,9 @@ async function replyCommandError(interaction, error) {
     recordMetric('command_error', { interaction, commandName: interaction.commandName });
     console.error(`Failed to execute /${interaction.commandName}:`, error);
     const payload = {
-        content: 'Command failed. Please check the bot logs.',
+        content: String(interaction.locale || '').startsWith('ja')
+            ? '操作を完了できませんでした。時間をおいて再試行してください。繰り返し失敗する場合は /support をご利用ください。'
+            : 'The action could not be completed. Please try again later, or use /support if it keeps failing.',
     };
     if (interaction.deferred || interaction.replied) {
         await interaction.editReply(payload).catch(async () => {

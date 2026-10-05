@@ -1,5 +1,5 @@
 'use strict';
-/* global api, text, raw, show, time */
+/* global api, text, raw, show, time, runAction */
 (() => {
   const app = document.getElementById('app');
   const navigation = text('button', '緊急復旧'); navigation.dataset.view = 'recovery';

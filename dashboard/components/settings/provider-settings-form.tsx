@@ -282,13 +282,17 @@ export function ProviderSettingsForm({
             {Object.entries(changes).length ? (
               Object.entries(changes).map(([key, value]) => {
                 const setting = settings.find((item) => item.key === key);
+                const displayValue = (v: SettingValue | undefined) => {
+                  const choice = setting?.spec.choices?.find(item => String(item.value) === String(v));
+                  return choice ? labelText(choice.label, locale) : valueLabel(v, locale);
+                };
                 return (
                   <div key={key} className="min-w-0 rounded-md border p-2 text-sm">
                     <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between sm:gap-2">
                       <span className="min-w-0 break-words font-medium">{setting ? labelText(setting.spec.label, locale) : key}</span>
                       <Badge tone={setting?.spec.impactLevel === "danger" ? "danger" : setting?.spec.impactLevel === "high" ? "warning" : "muted"}>{impactLabel(setting?.spec.impactLevel, locale)}</Badge>
                     </div>
-                    <div className="mt-1 break-words text-muted-foreground">{valueLabel(savedValues[key], locale)} → {valueLabel(value, locale)}</div>
+                    <div className="mt-1 break-words text-muted-foreground">{displayValue(savedValues[key])} → {displayValue(value)}</div>
                   </div>
                 );
               })

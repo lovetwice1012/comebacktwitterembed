@@ -148,7 +148,7 @@ class Failback:
         """
         record = self.manual_switch_record()
         if not isinstance(record, dict) or record.get("targetNode") != "primary" or record.get("state") not in {"scheduled", "executing"}:
-            return True
+            return self.config.get("manualFailbackOnly", True) is not True
         try:
             execute_at = dt.datetime.fromisoformat(str(record.get("executeAt", "")).replace("Z", "+00:00"))
             if execute_at.tzinfo is None:
@@ -220,42 +220,60 @@ class Failback:
         return value
 
     def primary_ready(self):
-        marker = shlex.quote(self.config["primaryReadyMarker"])
-        snapshot = shlex.quote(self.config["primarySnapshotPath"])
-        cached = self.state.get("primary") if isinstance(self.state.get("primary"), dict) else {}
-        cached_meta = cached.get("snapshotMeta", "")
-        cached_hash = cached.get("snapshotSha256", "")
-        # One SSH session performs all checks.  The snapshot is immutable while
-        # this operation is in progress, so a matching stat tuple safely reuses
-        # the verified digest on later phase checks.
-        cached_meta_literal = shlex.quote(cached_meta) if isinstance(cached_meta, str) else "''"
-        cached_hash_literal = shlex.quote(cached_hash) if isinstance(cached_hash, str) else "''"
-        command = "\n".join([
-            "set -eu",
-            f"test -s {marker}",
-            f"test -s {snapshot}",
-            "systemctl start cbte-admin.service cbte-admin-executor.service cbte-admin-analysis.service cbte-admin-reports.service",
-            "test \"$(systemctl is-active cbte.service)\" = active",
-            "printf 'CBTE_BOOT=%s\\n' \"$(cat /proc/sys/kernel/random/boot_id)\"",
-            "printf 'CBTE_TABLES=%s\\n' \"$(mysql --defaults-file=/etc/mysql/debian.cnf --batch --skip-column-names -e \"SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='ComebackTwitterEmbed';\")\"",
-            "printf 'CBTE_GUILDS=%s\\n' \"$(mysql --defaults-file=/etc/mysql/debian.cnf --batch --skip-column-names -e \"SELECT COUNT(*) FROM ComebackTwitterEmbed.guilds;\")\"",
-            f"snapshot_meta=$(stat -c '%s:%Y:%Z:%i' {snapshot})",
-            f"if [ \"$snapshot_meta\" = {cached_meta_literal} ] && printf '%s' {cached_hash_literal} | grep -Eq '^[0-9a-f]{{64}}$'; then snapshot_hash={cached_hash_literal}; else snapshot_hash=$(sha256sum {snapshot} | awk '{{print $1}}'); fi",
-            "printf 'CBTE_SNAPSHOT_META=%s\\n' \"$snapshot_meta\"",
-            "printf 'CBTE_SNAPSHOT_SHA256=%s\\n' \"$snapshot_hash\"",
-        ])
-        output = self.ssh(command, timeout=90)
-        values = {}
-        for line in output.splitlines():
-            if "=" in line:
-                key, value = line.split("=", 1)
-                values[key] = value.strip()
+        return self.verified_primary_copy()
+
+    def verified_primary_copy(self):
+        """Require a final-copy receipt bound to this operation, never a table count."""
+        receipt_path = self.config.get("finalCopyManifestPath")
+        if not receipt_path or not Path(receipt_path).is_absolute() or ".." in Path(receipt_path).parts:
+            raise FailbackError("A verified final database copy is required for this operation")
+        # This probe is read-only. Starting admin workers here could modify the
+        # restored database before the authority has transferred ownership.
+        probe = '''import hashlib,json,pathlib,stat,subprocess,sys
+receipt_path,snapshot_path=sys.argv[1:]
+p=pathlib.Path(receipt_path); info=p.lstat()
+assert stat.S_ISREG(info.st_mode) and not p.is_symlink() and info.st_uid==0 and not info.st_mode & 0o077
+assert info.st_size < 65536
+receipt=json.loads(p.read_text())
+p=pathlib.Path(snapshot_path); info=p.lstat()
+assert stat.S_ISREG(info.st_mode) and not p.is_symlink() and info.st_uid==0
+def query(sql):
+ r=subprocess.run(['mysql','--defaults-file=/etc/mysql/debian.cnf','--batch','--skip-column-names','-e',sql],capture_output=True,text=True,timeout=20,check=True)
+ return r.stdout.strip()
+tables=query("SELECT table_name FROM information_schema.tables WHERE table_schema='ComebackTwitterEmbed' ORDER BY table_name").splitlines()
+digest=hashlib.sha256()
+with p.open('rb') as stream:
+ for chunk in iter(lambda:stream.read(1048576),b''):digest.update(chunk)
+print(json.dumps({'receipt':receipt,'bootId':pathlib.Path('/proc/sys/kernel/random/boot_id').read_text().strip(),'tables':tables,'guilds':int(query('SELECT COUNT(*) FROM ComebackTwitterEmbed.guilds')),'snapshotSha256':digest.hexdigest()}))
+'''
+        command = "python3 -c " + shlex.quote(probe) + " " + shlex.quote(receipt_path) + " " + shlex.quote(self.config["primarySnapshotPath"])
+        try:
+            evidence = json.loads(self.ssh(command, timeout=90))
+        except (ValueError, TypeError):
+            raise FailbackError("Primary final-copy evidence is invalid") from None
+        return self.validate_primary_copy(evidence)
+
+    def validate_primary_copy(self, evidence):
+        receipt = evidence.get("receipt", {})
+        expected_epoch = self.state.get("sourceEpoch")
+        if expected_epoch is None:
+            expected_epoch = self.authority().get("epoch")
+        tables = receipt.get("tables")
         import re
-        if not re.fullmatch(r"[0-9a-f-]{8,128}", values.get("CBTE_BOOT", "")):
-            raise FailbackError("Primary boot identity is unavailable")
-        if values.get("CBTE_TABLES") != "39" or not values.get("CBTE_GUILDS") or not re.fullmatch(r"[0-9a-f]{64}", values.get("CBTE_SNAPSHOT_SHA256", "")):
-            raise FailbackError("Primary snapshot or database validation is incomplete")
-        return {"bootId": values["CBTE_BOOT"], "tables": int(values["CBTE_TABLES"]), "guilds": int(values["CBTE_GUILDS"]), "snapshotSha256": values["CBTE_SNAPSHOT_SHA256"], "snapshotMeta": values.get("CBTE_SNAPSHOT_META", "")}
+        if (receipt.get("version") != 1 or receipt.get("operationId") != self.state["operationId"]
+                or receipt.get("sourceNode") != "oci" or receipt.get("sourceEpoch") != expected_epoch
+                or receipt.get("sourceFenced") is not True or receipt.get("restoreVerified") is not True
+                or receipt.get("snapshotPath") != self.config["primarySnapshotPath"]
+                or receipt.get("primaryBootId") != evidence.get("bootId")
+                or not re.fullmatch(r"[0-9a-f]{64}", str(receipt.get("snapshotSha256", "")))
+                or receipt.get("snapshotSha256") != evidence.get("snapshotSha256")
+                or not isinstance(tables, list) or not tables or len(set(tables)) != len(tables)
+                or sorted(tables) != sorted(evidence.get("tables", []))
+                or not {"guilds", "users", "providers", "schema_migrations"}.issubset(tables)):
+            raise FailbackError("Primary final-copy identity or schema does not match this operation")
+        if self.state["phase"] in {"WAITING_PRIMARY", "PRIMARY_PREPARED", "SOURCE_FROZEN", "OWNERSHIP_COMMITTING"} and receipt.get("guilds") != evidence.get("guilds"):
+            raise FailbackError("Primary final-copy row validation does not match")
+        return {"bootId": evidence["bootId"], "tables": len(tables), "guilds": evidence["guilds"], "snapshotSha256": evidence["snapshotSha256"]}
 
     def fence_source(self):
         # Queue the stop and poll the unit instead of waiting on a systemd job

@@ -13,6 +13,16 @@ test('database schema declares migration tracking', () => {
     assert.ok(SCHEMA_STATEMENTS.some(statement => statement.includes(TABLES.schemaMigrations)));
 });
 
+test('users schema declares a donor flag with a migration', () => {
+    const migration = '20260916_add_users_donor_flag.sql';
+    const usersStatement = SCHEMA_STATEMENTS.find(statement => statement.includes('CREATE TABLE IF NOT EXISTS users'));
+
+    assert.ok(usersStatement);
+    assert.match(usersStatement, /is_donor TINYINT\(1\) NOT NULL DEFAULT 0/);
+    assert.ok(_internal.listMigrationFiles().includes(migration));
+    assert.match(fs.readFileSync(path.join(MIGRATIONS_DIR, migration), 'utf8'), /ADD COLUMN is_donor TINYINT\(1\) NOT NULL DEFAULT 0/);
+});
+
 test('database schema declares durable provider expansion traces', () => {
     assert.equal(TABLES.botProviderExpansionTraces, 'bot_provider_expansion_traces');
     const statement = SCHEMA_STATEMENTS.find(sql => sql.includes(TABLES.botProviderExpansionTraces));
@@ -21,9 +31,48 @@ test('database schema declares durable provider expansion traces', () => {
         assert.match(statement, new RegExp(column));
     }
     assert.match(statement, /idx_expansion_trace_state_time/);
+    assert.match(statement, /idx_expansion_trace_message \(guild_id, channel_id, message_id, created_at_ms\)/);
+    const indexSql = fs.readFileSync(path.join(MIGRATIONS_DIR, '20260922_add_expansion_trace_message_index.sql'), 'utf8');
+    assert.deepEqual(_internal.parseAddIndexStatement(indexSql.trim()), { table: TABLES.botProviderExpansionTraces, index: 'idx_expansion_trace_message' });
     const migration = '20260916_add_bot_provider_expansion_traces.sql';
     assert.ok(_internal.listMigrationFiles().includes(migration));
     assert.match(fs.readFileSync(path.join(MIGRATIONS_DIR, migration), 'utf8'), /CREATE TABLE IF NOT EXISTS bot_provider_expansion_traces/);
+});
+
+test('database schema declares durable shared auto-watch delivery state', () => {
+    const migration = '20260916_add_auto_watch.sql';
+    const migrationSql = fs.readFileSync(path.join(MIGRATIONS_DIR, migration), 'utf8');
+    const expected = [
+        'autoWatchSources',
+        'autoWatchTargets',
+        'autoWatchItems',
+        'autoWatchDeliveries',
+        'autoWatchProviderStates',
+        'autoWatchProviderUsage',
+    ];
+    assert.ok(_internal.listMigrationFiles().includes(migration));
+    for (const key of expected) {
+        assert.ok(TABLES[key], `${key} table name is missing`);
+        assert.ok(SCHEMA_STATEMENTS.some(statement => statement.includes(TABLES[key])), `${key} schema is missing`);
+        assert.ok(migrationSql.includes(TABLES[key]), `${key} migration is missing`);
+    }
+    assert.match(migrationSql, /uniq_auto_watch_source/);
+    assert.match(migrationSql, /uniq_auto_watch_delivery/);
+});
+
+test('database schema declares destination-aware auto-watch targets and price-watch state', () => {
+    const migration = '20260921_add_price_watch_destinations.sql';
+    const sql = fs.readFileSync(path.join(MIGRATIONS_DIR, migration), 'utf8');
+    for (const key of ['priceWatchSources', 'priceWatchTargets', 'priceWatchDeliveries']) {
+        assert.ok(TABLES[key], `${key} table name is missing`);
+        assert.ok(SCHEMA_STATEMENTS.some(statement => statement.includes(TABLES[key])), `${key} schema is missing`);
+        assert.ok(sql.includes(TABLES[key]), `${key} migration is missing`);
+    }
+    const targetSchema = SCHEMA_STATEMENTS.find(statement => statement.includes(TABLES.autoWatchTargets));
+    assert.match(targetSchema, /destination_type/);
+    assert.match(targetSchema, /destination_key/);
+    assert.match(sql, /MODIFY COLUMN webhook_endpoint_id BIGINT UNSIGNED NULL/);
+    assert.match(sql, /price_watch_deliveries/);
 });
 
 test('database schema declares settings webui notice state', () => {

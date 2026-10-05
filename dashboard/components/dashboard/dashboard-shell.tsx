@@ -33,6 +33,7 @@ export function DashboardShell({
             <GuildSwitcher selectedGuildIds={[guildId]} guilds={[{ guildId, name: guildName }]} locale={locale} />
             <Badge className="shrink-0" tone={canEdit ? "success" : "muted"}>{canEdit ? t("shell.badge.canEdit") : t("shell.badge.viewOnly")}</Badge>
             <LanguageSwitcher locale={locale} />
+            <Link href="/dashboard/personal-links" className="rounded-md border px-3 py-2 text-sm hover:bg-muted">{locale === "ja" ? "あとで見る・通知" : "Saved links & notifications"}</Link>
             <SignOutButton locale={locale} />
           </div>
         </div>

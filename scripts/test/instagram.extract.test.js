@@ -66,6 +66,16 @@ function xigImage(index) {
     };
 }
 
+function relatedCarousel() {
+    return {
+        __typename: 'XIGPolarisCarouselMedia',
+        code: 'OTHERPOST',
+        media_type: 8,
+        owner: { username: 'other.artist' },
+        carousel_media: [xigImage('unrelated-1'), xigImage('unrelated-2')],
+    };
+}
+
 function profileHtml({
     title = 'Artist Profile (&#064;artist.profile) &#x2022; Instagram profile',
     ogDescription = '3,456 Followers, 78 Following, 12 Posts - See Instagram photos and videos from Artist Profile (&#064;artist.profile)',
@@ -100,6 +110,131 @@ test('instagram extract: single image creates an embed without requiring an Inst
     assert.equal(result[0].embeds[0].title, '@artist');
     assert.equal(result[0].embeds[0].image.url.startsWith('https://scontent.cdninstagram.com/'), true);
     assert.equal(result[0].components[1].components[1].data.custom_id, 'delete:instagram');
+});
+
+test('instagram extract: discovers a standalone crawler image without video or carousel fields', async () => {
+    const imageUrl = 'https://scontent-nrt1-1.cdninstagram.com/v/t51.2885-15/requested.webp';
+    for (const imageFields of [
+        { display_uri: imageUrl },
+        { display_url: imageUrl },
+        { image_versions2: { candidates: [{ url: imageUrl }] } },
+    ]) {
+        const provider = loadInstagramProviderWithFetch(async () => ({
+            ok: true,
+            text: async () => crawlerHtml({ __typename: 'XIGPolarisImageMedia', code: 'CODE123', ...imageFields }),
+        }));
+
+        const result = await provider.extract(createMessage(), 'https://www.instagram.com/p/CODE123/', {});
+
+        assert.ok(Array.isArray(result));
+        assert.equal(result[0].embeds[0].image.url, 'https://scontent.cdninstagram.com/v/t51.2885-15/requested.webp');
+        assert.deepEqual(result[0].files, []);
+    }
+});
+
+test('instagram extract: selects the requested single image ahead of unrelated carousels and videos', async () => {
+    const requested = { ...xigImage('requested'), code: 'CODE123', owner: { username: 'artist' } };
+    const related = [relatedCarousel(), {
+        __typename: 'XIGPolarisVideoMedia',
+        shortcode: 'OTHERVIDEO',
+        video_url: 'https://scontent-nrt1-1.cdninstagram.com/v/t50/unrelated.mp4',
+    }];
+    const pages = [
+        crawlerHtml({ related, post: requested }),
+        crawlerHtml({ post: requested, related }),
+        crawlerHtml(related) + crawlerHtml(requested),
+        crawlerHtml(related) + embedHtml(mediaNode({
+            shortcode: 'CODE123', display_url: requested.display_uri,
+        })),
+        crawlerHtml({ related: { ...relatedCarousel(), code: undefined }, post: requested }),
+    ];
+
+    for (const html of pages) {
+        let fetchCount = 0;
+        const provider = loadInstagramProviderWithFetch(async () => {
+            fetchCount++;
+            return { ok: true, text: async () => html };
+        });
+        const result = await provider.extract(createMessage(), 'https://www.instagram.com/p/CODE123/', {});
+
+        assert.ok(Array.isArray(result));
+        assert.equal(result[0].embeds.length, 1);
+        assert.equal(result[0].embeds[0].title, '@artist');
+        assert.equal(result[0].embeds[0].image.url, 'https://scontent.cdninstagram.com/v/t51.2885-15/requested.webp');
+        assert.deepEqual(result[0].files, []);
+
+        const cached = await provider.extract(createMessage(), 'https://www.instagram.com/p/CODE123/', {});
+        assert.equal(cached[0].embeds[0].image.url, result[0].embeds[0].image.url);
+        assert.equal(fetchCount, 1);
+    }
+});
+
+test('instagram extract: unrelated carousel children cannot replace missing post data', () => {
+    const provider = loadInstagramProviderWithFetch(async () => { throw new Error('No fetch expected'); });
+    const html = crawlerHtml(relatedCarousel());
+
+    assert.equal(provider.__test.parseInstagramHtml(html, 'CODE123'), null);
+});
+
+test('instagram extract: uses page preview when only unrelated structured media is present', () => {
+    const provider = loadInstagramProviderWithFetch(async () => { throw new Error('No fetch expected'); });
+    const html = `<meta property="og:url" content="https://www.instagram.com/p/CODE123/" />
+        <meta property="og:image" content="https://scontent-nrt1-1.cdninstagram.com/v/t51.2885-15/requested.jpg" />
+        ${crawlerHtml(relatedCarousel())}`;
+
+    const data = provider.__test.parseInstagramHtml(html, 'CODE123');
+
+    assert.equal(data.medias.length, 1);
+    assert.equal(data.medias[0].url, 'https://scontent.cdninstagram.com/v/t51.2885-15/requested.jpg');
+});
+
+test('instagram extract: rejects a page preview explicitly belonging to another post', () => {
+    const provider = loadInstagramProviderWithFetch(async () => { throw new Error('No fetch expected'); });
+    const html = `<meta property="og:url" content="https://www.instagram.com/p/OTHERPOST/" />
+        <meta property="og:image" content="https://scontent-nrt1-1.cdninstagram.com/v/t51.2885-15/unrelated.jpg" />
+        ${crawlerHtml(relatedCarousel())}`;
+
+    assert.equal(provider.__test.parseInstagramHtml(html, 'CODE123'), null);
+});
+
+test('instagram extract: matching carousel retains children and requested image order', async () => {
+    const provider = loadInstagramProviderWithFetch(async () => ({
+        ok: true,
+        text: async () => crawlerHtml({
+            related: relatedCarousel(),
+            post: {
+                __typename: 'XIGPolarisCarouselMedia',
+                code: 'CODE123',
+                carousel_media: [xigImage('requested-1'), xigImage('requested-2')],
+            },
+        }),
+    }));
+    const result = await provider.extract(createMessage(), 'https://www.instagram.com/p/CODE123/', {});
+    assert.deepEqual(result[0].embeds.map(embed => embed.image.url.split('/').pop()), [
+        'requested-1.webp', 'requested-2.webp',
+    ]);
+
+    const selected = await provider.extract(createMessage(), 'https://www.instagram.com/p/CODE123/?img_index=2', {});
+    assert.equal(selected[0].embeds.length, 1);
+    assert.equal(selected[0].embeds[0].image.url.split('/').pop(), 'requested-2.webp');
+});
+
+test('instagram extract: GraphQL fallback also selects the requested shortcode', async () => {
+    const provider = loadInstagramProviderWithFetch(async url => {
+        if (String(url).includes('/graphql/query/')) {
+            return { ok: true, text: async () => JSON.stringify({ data: {
+                related: relatedCarousel(),
+                xdt_shortcode_media: mediaNode({ shortcode: 'CODE123' }),
+            } }) };
+        }
+        return { ok: true, text: async () => '<html>No media</html>' };
+    });
+
+    const result = await provider.extract(createMessage(), 'https://www.instagram.com/p/CODE123/', {});
+
+    assert.ok(Array.isArray(result));
+    assert.equal(result[0].embeds[0].image.url, 'https://scontent.cdninstagram.com/v/t51.2885-15/sample.jpg?sig=1');
+    assert.deepEqual(result[0].files, []);
 });
 
 test('instagram extract: carousel with more than four media is sent as attachments', async () => {
@@ -527,4 +662,59 @@ test('instagram extract: blocked GraphQL fallback returns null without logging a
     } finally {
         console.log = originalLog;
     }
+});
+
+test('instagram extract: reloaded providers retain independent transports and media caches', async () => {
+    const calls = { first: 0, second: 0 };
+    const load = name => loadInstagramProviderWithFetch(async () => {
+        calls[name]++;
+        return { ok: true, text: async () => embedHtml(mediaNode({ owner: { username: name } })) };
+    });
+    const first = load('first');
+    const second = load('second');
+    const url = 'https://www.instagram.com/p/CODE123/';
+    const expand = provider => provider.extract(createMessage(url), url, {});
+
+    assert.notEqual(first.urlPattern, second.urlPattern);
+    assert.notEqual(first.cleanPattern, second.cleanPattern);
+    assert.equal(first.urlPattern.test(url), true);
+    assert.equal(second.urlPattern.test(url), true);
+
+    assert.equal((await expand(first))[0].embeds[0].title, '@first');
+    assert.equal((await expand(second))[0].embeds[0].title, '@second');
+    assert.equal((await expand(first))[0].embeds[0].title, '@first');
+    assert.deepEqual(calls, { first: 1, second: 1 });
+
+    second.__test._clearCache();
+    await expand(first);
+    await expand(second);
+    assert.deepEqual(calls, { first: 1, second: 2 });
+});
+
+test('instagram client: profile API backoff stays local and resets with the cache', async () => {
+    const { createInstagramClient } = require('../../src/providers/instagram/client');
+    let rateLimitedCalls = 0;
+    const rateLimited = createInstagramClient(async url => {
+        if (String(url).includes('/api/v1/users/web_profile_info/')) {
+            rateLimitedCalls++;
+            return { ok: false, status: 429, text: async () => 'Too Many Requests' };
+        }
+        return { ok: true, status: 200, text: async () => '<html>login wall</html>' };
+    });
+    const healthy = createInstagramClient(async url => ({
+        ok: true,
+        status: 200,
+        text: async () => String(url).includes('/api/v1/users/web_profile_info/')
+            ? JSON.stringify({ data: { user: { username: 'healthy' } } })
+            : '<html>login wall</html>',
+    }));
+
+    await assert.rejects(rateLimited.fetchProfileData('artist'), { status: 429 });
+    await assert.rejects(rateLimited.fetchProfileData('other'), /html missing user/);
+    assert.equal(rateLimitedCalls, 1);
+    assert.equal((await healthy.fetchProfileData('healthy')).username, 'healthy');
+
+    rateLimited.clearCache();
+    await assert.rejects(rateLimited.fetchProfileData('artist'), { status: 429 });
+    assert.equal(rateLimitedCalls, 2);
 });

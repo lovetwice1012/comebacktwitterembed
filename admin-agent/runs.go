@@ -26,14 +26,14 @@ func (a *App) rootRuns(w http.ResponseWriter, r *http.Request) {
 	if a.store.requestRootsReady(ctx) {
 		triggerPayload = "payload"
 		rootOutcome := `COALESCE(json_extract(completed_payload,'$.outcome'),json_extract(completed_payload,'$.details.outcome'),'X')`
-		query = `SELECT * FROM (SELECT run_id,seq,occurred_at,COALESCE(completed_at,occurred_at),guild_id,payload,event_count,CASE WHEN completed_seq IS NULL THEN CASE WHEN occurred_at<? THEN 'X' ELSE 'I' END WHEN ` + rootOutcome + ` IN ('F','D','P','E','U','S','C','I','X') THEN ` + rootOutcome + ` ELSE 'X' END AS outcome FROM request_roots WHERE occurred_at>=? AND occurred_at<?`
+		query = `SELECT * FROM (SELECT run_id,seq,occurred_at,COALESCE(completed_at,occurred_at),guild_id,payload,event_count,COALESCE(completed_payload,'{}'),CASE WHEN completed_seq IS NULL THEN CASE WHEN occurred_at<? THEN 'X' ELSE 'I' END WHEN ` + rootOutcome + ` IN ('F','D','P','E','U','S','C','I','X') THEN ` + rootOutcome + ` ELSE 'X' END AS outcome FROM request_roots WHERE occurred_at>=? AND occurred_at<?`
 		args = []any{cutoff, from, to}
 		if guild := r.URL.Query().Get("guildId"); guild != "" {
 			query += " AND guild_id=?"
 			args = append(args, guild)
 		}
 	} else {
-		query = `SELECT * FROM (SELECT s.run_id,s.seq,s.occurred_at,COALESCE(c.occurred_at,s.occurred_at),s.guild_id,s.payload,(SELECT COUNT(*) FROM events z WHERE z.run_id=s.run_id) AS event_count,CASE WHEN c.seq IS NULL THEN CASE WHEN s.occurred_at<? THEN 'X' ELSE 'I' END WHEN ` + outcome + ` IN ('F','D','P','E','U','S','C','I','X') THEN ` + outcome + ` ELSE 'X' END AS outcome FROM events s LEFT JOIN events c ON c.seq=(SELECT MAX(t.seq) FROM events t WHERE t.run_id=s.run_id AND t.kind='request.completed') WHERE s.kind='request.started' AND s.run_id<>'' AND s.occurred_at>=? AND s.occurred_at<? AND s.seq=(SELECT MIN(z.seq) FROM events z WHERE z.run_id=s.run_id AND z.kind='request.started')`
+		query = `SELECT * FROM (SELECT s.run_id,s.seq,s.occurred_at,COALESCE(c.occurred_at,s.occurred_at),s.guild_id,s.payload,(SELECT COUNT(*) FROM events z WHERE z.run_id=s.run_id) AS event_count,COALESCE(c.payload,'{}'),CASE WHEN c.seq IS NULL THEN CASE WHEN s.occurred_at<? THEN 'X' ELSE 'I' END WHEN ` + outcome + ` IN ('F','D','P','E','U','S','C','I','X') THEN ` + outcome + ` ELSE 'X' END AS outcome FROM events s LEFT JOIN events c ON c.seq=(SELECT MAX(t.seq) FROM events t WHERE t.run_id=s.run_id AND t.kind='request.completed') WHERE s.kind='request.started' AND s.run_id<>'' AND s.occurred_at>=? AND s.occurred_at<? AND s.seq=(SELECT MIN(z.seq) FROM events z WHERE z.run_id=s.run_id AND z.kind='request.started')`
 		args = []any{cutoff, from, to}
 		if guild := r.URL.Query().Get("guildId"); guild != "" {
 			query += " AND s.guild_id=?"
@@ -43,6 +43,9 @@ func (a *App) rootRuns(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Query().Get("scope") != "all" {
 		query += ` AND COALESCE(json_extract(` + triggerPayload + `,'$.triggerType'),json_extract(` + triggerPayload + `,'$.trigger_type'),'') NOT IN ('diagnostic','admin_operation')`
 	}
+	contextWhere, contextArgs := investigationFilters(r.URL.Query(), triggerPayload, false)
+	query += contextWhere
+	args = append(args, contextArgs...)
 	query += ") roots WHERE 1=1"
 	filter := r.URL.Query().Get("outcome")
 	if r.URL.Query().Get("problematic") == "1" {
@@ -81,14 +84,14 @@ func (a *App) rootRuns(w http.ResponseWriter, r *http.Request) {
 	defer rows.Close()
 	items := []Object{}
 	for rows.Next() {
-		var id, firstAt, lastAt, guild, payload, result string
+		var id, firstAt, lastAt, guild, payload, completion, result string
 		var seq, count int64
-		if e := rows.Scan(&id, &seq, &firstAt, &lastAt, &guild, &payload, &count, &result); e != nil {
+		if e := rows.Scan(&id, &seq, &firstAt, &lastAt, &guild, &payload, &count, &completion, &result); e != nil {
 			fail(w, 503, "QUERY_FAILED", e.Error())
 			return
 		}
 		v, _ := decode(payload).(map[string]any)
-		items = append(items, Object{"id": id, "cursor": seq, "firstAt": firstAt, "lastAt": lastAt, "guildId": guild, "eventCount": count, "outcome": result, "provider": first(v, "provider", "providerId", "provider_id"), "channelId": first(v, "channelId", "channel_id"), "userId": first(v, "userId", "user_id"), "triggerType": first(v, "triggerType", "trigger_type"), "input": v})
+		items = append(items, Object{"id": id, "cursor": seq, "firstAt": firstAt, "lastAt": lastAt, "guildId": guild, "eventCount": count, "outcome": result, "provider": first(v, "provider", "providerId", "provider_id"), "channelId": first(v, "channelId", "channel_id"), "userId": first(v, "userId", "user_id"), "triggerType": first(v, "triggerType", "trigger_type"), "input": v, "completion": decode(completion)})
 	}
 	if e := rows.Err(); e != nil {
 		fail(w, 503, "QUERY_FAILED", e.Error())
@@ -99,5 +102,5 @@ func (a *App) rootRuns(w http.ResponseWriter, r *http.Request) {
 		items = items[:limit]
 		next = items[len(items)-1]["cursor"]
 	}
-	jsonResponse(w, 200, Object{"items": items, "nextCursor": next, "from": from, "to": to, "snapshotAt": now(), "definitionVersion": "root-request-v1"})
+	jsonResponse(w, 200, Object{"items": items, "appliedFilters": appliedInvestigationFilters(r.URL.Query()), "nextCursor": next, "from": from, "to": to, "snapshotAt": now(), "definitionVersion": "root-request-v1"})
 }

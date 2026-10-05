@@ -1,7 +1,7 @@
 'use strict';
 
 const { Events } = require('discord.js');
-const { buildSlashCommands } = require('../commands');
+const { buildApplicationCommands } = require('../commands');
 const deregisterNotifier = require('../lifecycle/deregisterNotifier');
 const statsPoster = require('../lifecycle/statsPoster');
 const consoleFlush = require('../lifecycle/consoleFlush');
@@ -11,6 +11,9 @@ const mediaDeliveryServer = require('../lifecycle/mediaDeliveryServer');
 const { recordError } = require('../errorTracking');
 const runtimeDiagnostics = require('../lifecycle/runtimeDiagnostics');
 const recoveryBootstrap = require('../recoveryBootstrap');
+const autoWatch = require('../providers/autoWatch/runner');
+const priceWatch = require('../providers/priceWatch/runner');
+const automation = require('../automation/runtime');
 
 async function initialize(readyClient, webhookClient, errorNotificationWebhookClient) {
     console.log(`${readyClient.user.tag} is ready!`);
@@ -20,7 +23,7 @@ async function initialize(readyClient, webhookClient, errorNotificationWebhookCl
     await recoveryBootstrap.initialize();
 
     try {
-        await readyClient.application.commands.set(buildSlashCommands());
+        await readyClient.application.commands.set(buildApplicationCommands());
     } catch (err) {
         recordError(err, { errorType: 'slash_command_registration_failed', source: 'ready.registerCommands' });
         console.error('Failed to register slash commands:', err);
@@ -32,6 +35,10 @@ async function initialize(readyClient, webhookClient, errorNotificationWebhookCl
     boothSaleNotifier.start(readyClient);
     errorRateNotifier.start(errorNotificationWebhookClient);
     mediaDeliveryServer.start();
+    automation.start(readyClient);
+    autoWatch.start(readyClient);
+    priceWatch.start(readyClient);
+    require('../personalLinks/runner').start(readyClient);
 }
 
 function register(client, webhookClient, errorNotificationWebhookClient = webhookClient) {

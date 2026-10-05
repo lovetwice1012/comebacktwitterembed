@@ -59,6 +59,31 @@ class RecoveryFixture(unittest.TestCase):
 
 
 class ControllerGateTests(RecoveryFixture):
+    def test_pre_handback_backup_is_blocked_even_when_recent(self):
+        config = dict(self.config, minimumPrimaryBackupTimestamp=self.iso(self.now - 60))
+        gates = self.gates(config=config)
+        self.assertTrue(gates["BACKUP_FRESH"])
+        self.assertFalse(gates["BACKUP_AFTER_FAILBACK"])
+        self.assertTrue(controller.backup_after_failback(dict(self.source, sourceTimestamp=self.iso(self.now)), config))
+        self.assertFalse(controller.backup_after_failback(self.source, dict(config, minimumPrimaryBackupTimestamp="invalid")))
+
+    def test_pre_handback_archive_is_not_downloaded_or_imported(self):
+        c = controller.Controller(dict(self.config, minimumPrimaryBackupTimestamp=self.iso(self.now - 60)))
+        with mock.patch.object(c, "exporter", return_value={"backup": self.source}) as exporter, mock.patch.object(c, "download") as download:
+            c.prepare_latest()
+        self.assertEqual(exporter.call_count, 1)
+        download.assert_not_called()
+        self.assertEqual(c.state["lastError"]["code"], "BACKUP_BEFORE_FAILBACK")
+
+    def test_tick_does_not_label_old_candidate_ready_and_retries_new_backup_soon(self):
+        c = controller.Controller(dict(self.config, autoPrepare=True, minimumPrimaryBackupTimestamp=self.iso(self.now - 60)))
+        c.update(candidate=self.candidate, backup=self.source)
+        intent = {"desiredState": "running", "revision": 1, "fetchedAt": self.iso(self.now), "observationState": "fresh"}
+        with mock.patch.object(c, "authority", return_value=self.authority_state(lease={"valid": True, "expiresAt": self.now + 90})), mock.patch.object(c, "exporter", return_value={"backup": self.source}), mock.patch.object(c, "refresh_operator_intent", return_value=intent), mock.patch.object(controller.time, "time", return_value=self.now):
+            c.tick()
+        self.assertEqual(c.state["phase"], "WAITING_POST_FAILBACK_BACKUP")
+        self.assertEqual(c.state["nextPrepareAt"], self.now + 60)
+
     def gates(self, authority=None, source=None, config=None):
         with mock.patch.object(controller.time, "time", return_value=self.now):
             intent = {"desiredState": "running", "revision": 1, "fetchedAt": self.iso(self.now), "observationState": "fresh"}

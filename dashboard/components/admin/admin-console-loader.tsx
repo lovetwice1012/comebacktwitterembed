@@ -16,8 +16,8 @@ const AdminConsole = dynamic(
               <ShieldCheck size={20} />
             </div>
             <div>
-              <h1 className="text-lg font-semibold">Admin Console</h1>
-              <p className="text-xs text-muted-foreground">Loading console...</p>
+              <h1 className="text-lg font-semibold">管理画面</h1>
+              <p className="text-xs text-muted-foreground">画面を読み込んでいます…</p>
             </div>
           </div>
         </header>

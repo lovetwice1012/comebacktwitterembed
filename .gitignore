@@ -92,6 +92,7 @@ dashboard/.next-builds/
 dashboard/.next-dev/
 dashboard/.next-performance-check/
 dashboard/.next-admin-local-preview/
+dashboard/.next-admin-ux-check/
 __pycache__/
 *.pyc
 out

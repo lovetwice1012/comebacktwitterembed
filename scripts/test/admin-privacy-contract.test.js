@@ -37,7 +37,7 @@ test('admin keeps real identifiers and small group evidence while preview privac
 test('admin analytics exposes author filters and full row evidence', () => {
     const source = fs.readFileSync(path.join(repoRoot, 'dashboard', 'components', 'admin', 'admin-console.tsx'), 'utf8');
     assert.match(source, /\["author_user_id",\s*filters\.authorUserId\]/);
-    assert.match(source, /placeholder="author_user_id"/);
+    assert.match(source, /value=\{filters\.authorUserId\}[^\n]*setFilter\("authorUserId", event\.target\.value\)[^\n]*placeholder="投稿者のユーザーID"/);
     assert.match(source, /ユーザーID/);
     assert.doesNotMatch(source, /previewSectionRows\(preview, "activeUsers"\)[\s\S]{0,500}author_user_id/);
     assert.doesNotMatch(source, /previewSectionRows\(preview, "audienceUsers"\)[\s\S]{0,500}author_user_id/);

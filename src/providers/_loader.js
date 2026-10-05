@@ -12,12 +12,16 @@
  *   - urlPattern: RegExp (g フラグ必須)
  *   - extract: (message, url, settings, opts?) => SendStep[] | null
  *   - commands?: Array<{ definition, execute }>   // 任意。プロバイダ専用 slash コマンド
+ *   - autoWatch.js (任意): 公開アカウントの新着監視アダプター。存在する場合は
+ *     `src/providers/autoWatch/` の共通ランナーが自動的に検出する。
  *
- * `_` で始まるエントリと `index.js` (トップレベル) はスキップ。
+ * `_` で始まるエントリ、`index.js` (トップレベル)、共通基盤の
+ * `autoWatch/` と `priceWatch/` は通常の URL 展開プロバイダーとしてはスキップ。
  */
 
 const fs = require('fs');
 const path = require('path');
+const { urlIdentity } = require('./_url_identity');
 
 const PROVIDERS_DIR = __dirname;
 
@@ -29,7 +33,7 @@ function loadProviders() {
     if (_providers) return _providers;
     const list = [];
     for (const entry of fs.readdirSync(PROVIDERS_DIR, { withFileTypes: true })) {
-        if (entry.name.startsWith('_')) continue;
+        if (entry.name.startsWith('_') || entry.name === 'autoWatch' || entry.name === 'priceWatch') continue;
         let modPath = null;
         if (entry.isFile()) {
             if (!entry.name.endsWith('.js')) continue;
@@ -79,11 +83,18 @@ function extractAllUrls(content) {
     const out = [];
     for (const { provider: p, url: re } of patterns()) {
         re.lastIndex = 0;
-        const matches = content.match(re);
-        if (!matches) continue;
-        for (const url of matches) out.push({ provider: p, url });
+        for (const match of String(content ?? '').matchAll(re)) {
+            if (match[0]) out.push({ provider: p, url: match[0], index: match.index });
+        }
     }
-    return out;
+    out.sort((a, b) => a.index - b.index);
+    const seen = new Set();
+    return out.filter(({ provider, url }) => {
+        const key = urlIdentity(provider.id, url);
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+    }).map(({ provider, url }) => ({ provider, url }));
 }
 
 function cleanContent(content) {

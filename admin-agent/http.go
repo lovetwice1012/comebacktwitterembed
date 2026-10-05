@@ -143,6 +143,7 @@ func (a *App) routes() http.Handler {
 	mux.HandleFunc("POST /v1/account/password", a.protect(a.changePassword))
 	mux.HandleFunc("POST /v1/events", a.protect(a.ingest))
 	mux.HandleFunc("GET /v1/events", a.protect(a.events))
+	mux.HandleFunc("GET /v1/events/{id}", a.protect(a.eventDetail))
 	mux.HandleFunc("GET /v1/runs", a.protect(a.rootRuns))
 	mux.HandleFunc("GET /v1/runs/{id}", a.protect(a.run))
 	mux.HandleFunc("POST /v1/actions", a.protect(a.createAction))
@@ -158,6 +159,7 @@ func (a *App) routes() http.Handler {
 	mux.HandleFunc("GET /v1/policies", a.protect(a.getPolicy))
 	mux.HandleFunc("PUT /v1/policies", a.protect(a.putPolicy))
 	mux.HandleFunc("GET /v1/notifications", a.protect(a.notifications))
+	mux.HandleFunc("GET /v1/notifications/{id}", a.protect(a.notificationDetail))
 	sub, _ := fs.Sub(assets, "web")
 	mux.Handle("/", http.FileServer(http.FS(sub)))
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -385,6 +387,9 @@ func eventQuery(r *http.Request) (string, []any, error) {
 		where += " AND run_id=?"
 		args = append(args, run)
 	}
+	contextWhere, contextArgs := investigationFilters(q, "payload", false)
+	where += contextWhere
+	args = append(args, contextArgs...)
 	return where, args, nil
 }
 func (a *App) events(w http.ResponseWriter, r *http.Request) {
@@ -429,7 +434,7 @@ func (a *App) events(w http.ResponseWriter, r *http.Request) {
 		items = items[:limit]
 		next = items[len(items)-1]["seq"]
 	}
-	jsonResponse(w, 200, Object{"items": items, "nextCursor": next, "snapshotAt": now()})
+	jsonResponse(w, 200, Object{"items": items, "appliedFilters": appliedInvestigationFilters(r.URL.Query()), "nextCursor": next, "snapshotAt": now()})
 }
 func (a *App) runs(w http.ResponseWriter, r *http.Request) {
 	where, args, e := eventQuery(r)
@@ -543,6 +548,19 @@ func (a *App) createAction(w http.ResponseWriter, r *http.Request) {
 func (a *App) actions(w http.ResponseWriter, r *http.Request) {
 	args := []any{}
 	where := "1=1"
+	q := r.URL.Query()
+	if q.Get("from") != "" || q.Get("to") != "" {
+		from, to, err := dateFilter(q.Get("from"), q.Get("to"))
+		if err != nil {
+			fail(w, 400, "INVALID_FILTER", err.Error())
+			return
+		}
+		where += " AND created_at>=? AND created_at<?"
+		args = append(args, from, to)
+	}
+	contextWhere, contextArgs := investigationFilters(q, "input", true)
+	where += contextWhere
+	args = append(args, contextArgs...)
 	if cursor := r.URL.Query().Get("cursor"); cursor != "" {
 		parts := strings.SplitN(cursor, "|", 2)
 		if len(parts) != 2 {
@@ -582,7 +600,7 @@ func (a *App) actions(w http.ResponseWriter, r *http.Request) {
 		items = items[:limit]
 		next = items[len(items)-1].CreatedAt + "|" + items[len(items)-1].ID
 	}
-	jsonResponse(w, 200, Object{"items": items, "nextCursor": next})
+	jsonResponse(w, 200, Object{"items": items, "appliedFilters": appliedInvestigationFilters(r.URL.Query()), "nextCursor": next})
 }
 func (a *App) action(w http.ResponseWriter, r *http.Request) {
 	ac, e := a.store.action(r.PathValue("id"))

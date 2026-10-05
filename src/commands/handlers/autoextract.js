@@ -8,6 +8,8 @@ const HANDLERS = {
     "list": require('./autoextract/list'),
     "add": require('./autoextract/add'),
     "delete": require('./autoextract/delete'),
+    "watch": require('./autoextract/watch'),
+    "unwatch": require('./autoextract/unwatch'),
     "additionalautoextractslot": require('./autoextract/additionalautoextractslot'),
     "checkfreeslot": require('./autoextract/checkfreeslot'),
 };
@@ -31,7 +33,7 @@ module.exports.definition = {
             },
             {
                 name: 'add',
-                description: 'add',
+                description: 'Twitter/X registrations are paused',
                 type: ApplicationCommandOptionType.Subcommand,
                 options: [
                     {
@@ -47,6 +49,76 @@ module.exports.definition = {
                         required: true
                     }
                 ]
+            },
+            {
+                name: 'watch',
+                description: 'watch a public non-Twitter account for new items',
+                type: ApplicationCommandOptionType.Subcommand,
+                options: [
+                    {
+                        name: 'provider',
+                        description: 'provider',
+                        type: ApplicationCommandOptionType.String,
+                        required: true,
+                        choices: [
+                            { name: 'YouTube', value: 'youtube' },
+                            { name: 'GitHub account events', value: 'github' },
+                            { name: 'Twitch live', value: 'twitch' },
+                            { name: 'Spotify releases', value: 'spotify' },
+                            { name: 'Pixiv artworks', value: 'pixiv' },
+                            { name: 'BOOTH items', value: 'booth' },
+                        ],
+                    },
+                    {
+                        name: 'source',
+                        description: 'public account URL, handle, or provider ID',
+                        type: ApplicationCommandOptionType.String,
+                        required: true,
+                    },
+                    {
+                        name: 'destination',
+                        description: 'notification destination',
+                        type: ApplicationCommandOptionType.String,
+                        required: true,
+                        choices: [
+                            { name: 'Direct message', value: 'dm' },
+                            { name: 'Existing webhook URL', value: 'webhook' },
+                            { name: 'Create webhook in channel', value: 'channel' },
+                        ],
+                    },
+                    {
+                        name: 'responsibility',
+                        description: 'I checked content, rights and destination; mechanical checks do not guarantee safety',
+                        description_localizations: { ja: '内容・権利・通知先を自己責任で確認しました（機械チェックは安全性を保証しません）' },
+                        type: ApplicationCommandOptionType.Boolean,
+                        required: true,
+                    },
+                    {
+                        name: 'webhook',
+                        description: 'required only for Existing webhook URL',
+                        type: ApplicationCommandOptionType.String,
+                        required: false,
+                    },
+                    {
+                        name: 'channel',
+                        description: 'required only for Create webhook in channel',
+                        type: ApplicationCommandOptionType.Channel,
+                        required: false,
+                    },
+                ],
+            },
+            {
+                name: 'unwatch',
+                description: 'delete a non-Twitter watch registration',
+                type: ApplicationCommandOptionType.Subcommand,
+                options: [
+                    {
+                        name: 'id',
+                        description: 'watch registration ID',
+                        type: ApplicationCommandOptionType.Integer,
+                        required: true,
+                    },
+                ],
             },
             {
                 name: 'delete',

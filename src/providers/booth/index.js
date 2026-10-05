@@ -26,7 +26,7 @@
 
 const fetch = require('../../providerFetch').withDeadline(require('node-fetch'));
 const { ButtonBuilder, ButtonStyle, ComponentType } = require('discord.js');
-const { extractSalePeriod } = require('./_sale');
+const { extractSalePeriod, stripHtml } = require('./boothSourceParser');
 const { recordProviderError } = require('../../errorTracking');
 const { createProviderAnalytics, facet, finiteNumber, tagFacets } = require('../../analytics/providerMetrics');
 const {
@@ -166,22 +166,6 @@ async function fetchBoothInfo(parsed) {
     });
     if (!res.ok) throw new Error(`booth api ${res.status} for ${api}`);
     return /** @type {any} */ (await res.json());
-}
-
-// ---- 文字列処理 -----------------------------------------------------------
-
-function stripHtml(html) {
-    if (!html) return '';
-    return html
-        .replace(/<br\s*\/?>/gi, '\n')
-        .replace(/<\/p>/gi, '\n')
-        .replace(/<[^>]+>/g, '')
-        .replace(/&nbsp;/g, ' ')
-        .replace(/&amp;/g, '&')
-        .replace(/&lt;/g, '<')
-        .replace(/&gt;/g, '>')
-        .replace(/&quot;/g, '"')
-        .replace(/&#39;/g, "'");
 }
 
 function truncate(s, max) {
@@ -555,6 +539,7 @@ async function extract(message, url, s) {
         step.suppressSourceEmbeds = true;
     }
 
+    step.restockOptions = require('./boothSourceParser/stock').restockOptions(info);
     return [step];
 }
 

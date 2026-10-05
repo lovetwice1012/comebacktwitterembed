@@ -1,0 +1,293 @@
+'use strict';
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const root = path.resolve(__dirname, '..');
+process.env.PLAYWRIGHT_BROWSERS_PATH = path.join(root, 'node_modules/.cache/ux-browser');
+const { chromium } = require('../design-previews/qa/node_modules/playwright');
+const fixture = new URL(process.env.AUTOMATION_AUDIT_UI_URL || '');
+if (fixture.hostname !== '127.0.0.1' || fixture.protocol !== 'http:' || !fixture.port) throw new Error('Explicit loopback fixture required');
+const folder = process.env.AUTOMATION_AUDIT_OUTPUT_DIR || path.join(root, 'docs/audits/remediation');
+fs.mkdirSync(folder, { recursive: true });
+
+async function main() {
+    const browser = await chromium.launch({ headless: true });
+    const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, locale: 'ja-JP' });
+    const result = { at: new Date().toISOString(), fixtureOnly: true, realMessages: 0, checks: [], pageErrors: [], blockedRequests: [] };
+    await context.route('**/*', route => {
+        if (new URL(route.request().url()).origin === fixture.origin) return route.continue();
+        result.blockedRequests.push(route.request().url()); return route.abort();
+    });
+    const page = await context.newPage();
+    page.on('pageerror', error => result.pageErrors.push(error.stack));
+    const dialogs = [];
+    page.on('dialog', async dialog => { dialogs.push(dialog.type()); await dialog.accept(); });
+    const checked = name => { assert.deepEqual(result.pageErrors, []); result.checks.push(name); };
+    const ready = async () => page.waitForFunction(() => [...document.querySelectorAll('button')].some(b => b.textContent === '下書きを保存' && !b.disabled));
+    try {
+        await page.goto(fixture.href);
+        await page.getByRole('button', { name: 'スタジオ', exact: true }).click();
+        await page.getByRole('button', { name: /セール告知 \/ 毎朝9時/ }).click();
+        await ready();
+        for (let repeat = 0; repeat < 3; repeat++) for (const id of ['filter', 'time', 'display', 'send', 'start']) {
+            await page.locator(`.react-flow__node[data-id="${id}"]`).click();
+        }
+        checked('15 successive real graph selections without update loops');
+        const nodeCount = await page.locator('.react-flow__node').count();
+        await page.locator('.react-flow__node[data-id="start"]').click();
+        await page.getByRole('button', { name: '遅延', exact: true }).click();
+        await ready();
+        assert.equal(await page.locator('.react-flow__node').count(), nodeCount + 1);
+        await page.getByRole('spinbutton', { name: '遅延（分）', exact: true }).fill('45');
+        await ready();
+        await page.getByRole('button', { name: '元に戻す', exact: true }).click();
+        await ready();
+        await page.getByRole('button', { name: '元に戻す', exact: true }).click();
+        await ready();
+        assert.equal(await page.locator('.react-flow__node').count(), nodeCount);
+        checked('one-click block insertion and value edits are executable and undo preserves the previous graph');
+        await page.locator('.react-flow__node[data-id="filter"]').click();
+        await page.getByRole('textbox', { name: '比較する値', exact: true }).fill('セール または新作');
+        await ready();
+        const editedName = `セール告知 / 毎朝9時 — 回復の回帰試験 ${Date.now()}`;
+        await page.getByRole('textbox', { name: 'ルール名', exact: true }).fill(editedName);
+        await ready();
+        await page.reload();
+        await page.getByRole('textbox', { name: 'ルール名', exact: true }).waitFor();
+        assert.equal(await page.getByRole('textbox', { name: 'ルール名', exact: true }).inputValue(), editedName);
+        assert(dialogs.includes('beforeunload'));
+        await page.locator('.react-flow__node[data-id="filter"]').click();
+        assert.equal(await page.getByRole('textbox', { name: '比較する値', exact: true }).inputValue(), 'セール または新作');
+        checked('unsaved name and condition survive reload and warn before unload');
+        await page.getByRole('button', { name: 'テキスト', exact: true }).click();
+        await page.getByRole('textbox', { name: 'ルールJSONまたはYAML', exact: true }).fill('nodes: [unfinished');
+        await page.waitForFunction(() => Object.keys(sessionStorage).some(k => k.startsWith('automation:recovery:') && JSON.parse(sessionStorage.getItem(k)).textDraft?.text === 'nodes: [unfinished'));
+        await page.getByRole('button', { name: '配信予定・履歴', exact: true }).click();
+        await page.getByRole('button', { name: 'スタジオ', exact: true }).click();
+        assert.equal(await page.getByRole('textbox', { name: 'ルールJSONまたはYAML', exact: true }).inputValue(), 'nodes: [unfinished');
+        await page.reload();
+        await page.getByRole('textbox', { name: 'ルールJSONまたはYAML', exact: true }).waitFor();
+        assert.equal(await page.getByRole('textbox', { name: 'ルールJSONまたはYAML', exact: true }).inputValue(), 'nodes: [unfinished');
+        checked('invalid text survives tab switches and reload without replacing graph');
+        await page.getByRole('button', { name: 'テキストを破棄して戻す', exact: true }).click();
+        await page.getByRole('button', { name: 'ブロック', exact: true }).click();
+        await ready();
+        await page.getByRole('button', { name: '下書きを保存', exact: true }).click();
+        await page.waitForFunction(() => !Object.keys(sessionStorage).some(k => k.startsWith('automation:recovery:')));
+        await ready();
+        checked('explicit save clears only the completed recovery draft');
+        await page.getByText('動きをテスト（実送信なし）', { exact: true }).click();
+        await page.getByRole('textbox', { name: 'タイトル', exact: true }).fill('セール または新作');
+        await page.getByRole('button', { name: '判定する', exact: true }).click();
+        await page.locator('.react-flow__node[data-id="send"]').getByText('条件に一致', { exact: true }).waitFor();
+        checked('simulation highlights actual graph outcomes without sending');
+        await page.getByRole('textbox', { name: 'タイトル', exact: true }).fill('一致しない投稿');
+        await page.waitForFunction(() => !document.querySelector('.react-flow__node[data-id="send"]')?.textContent.includes('条件に一致'));
+        checked('changed sample clears stale simulation highlights');
+        await page.getByText('動きをテスト（実送信なし）', { exact: true }).click();
+        await page.screenshot({ path: path.join(folder, 'editor-desktop.png'), fullPage: true });
+        result.layout = await page.locator('.react-flow').boundingBox();
+        await page.setViewportSize({ width: 390, height: 844 });
+        await page.screenshot({ path: path.join(folder, 'editor-mobile.png'), fullPage: true });
+        assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'no page-wide horizontal overflow at 390px');
+        checked('390px layout keeps the page within viewport width');
+        await page.setViewportSize({ width: 1440, height: 1000 });
+        await page.getByRole('button', { name: '通知一覧', exact: true }).click();
+        await page.getByRole('button', { name: '通知を追加', exact: true }).click();
+        const dialog = page.getByRole('dialog', { name: '新しい通知', exact: true });
+        await dialog.getByRole('textbox', { name: 'アカウントURL / ID', exact: true }).fill('https://github.com/octocat');
+        assert.equal(await dialog.getByRole('combobox', { name: 'サービス', exact: true }).inputValue(), 'github');
+        const monitorName = `画面回帰 ${Date.now()}`;
+        await dialog.getByRole('textbox', { name: '名前（省略可）', exact: true }).fill(monitorName);
+        await dialog.getByRole('button', { name: '確認して通知を保存', exact: true }).click();
+        await dialog.waitFor({ state: 'hidden' });
+        const card = page.locator('article').filter({ has: page.getByRole('heading', { name: monitorName, exact: true }) });
+        await card.waitFor();
+        await card.getByRole('button', { name: '停止', exact: true }).click();
+        await card.getByRole('button', { name: '再開', exact: true }).waitFor();
+        await card.getByRole('button', { name: '編集', exact: true }).click();
+        const edit = page.getByRole('dialog', { name: '通知を編集', exact: true });
+        await edit.getByRole('textbox', { name: '名前（省略可）', exact: true }).fill(monitorName + ' 編集済み');
+        await edit.getByRole('button', { name: '確認して通知を保存', exact: true }).click();
+        await edit.waitFor({ state: 'hidden' });
+        const changed = page.locator('article').filter({ has: page.getByRole('heading', { name: monitorName + ' 編集済み', exact: true }) });
+        await changed.getByRole('button', { name: '削除', exact: true }).click();
+        await changed.waitFor({ state: 'hidden' });
+        checked('notification URL detection, create, pause, edit and delete via real local UI/API/SQL');
+        await page.getByRole('button', { name: '通知を追加', exact: true }).click();
+        await dialog.getByRole('textbox', { name: 'アカウントURL / ID', exact: true }).fill('https://store.steampowered.com/app/730/?cc=jp');
+        await dialog.getByRole('textbox', { name: '商品URL', exact: true }).waitFor();
+        assert.equal(await dialog.getByRole('combobox', { name: 'サービス', exact: true }).inputValue(), 'steam');
+        const priceName = `価格の回帰 ${Date.now()}`;
+        await dialog.getByRole('textbox', { name: '名前（省略可）', exact: true }).fill(priceName);
+        await dialog.getByRole('button', { name: '新しい通知先を追加', exact: true }).click();
+        const destination = page.getByRole('dialog', { name: '通知先を追加', exact: true });
+        const destinationName = `検証DM ${Date.now()}`;
+        await destination.getByRole('textbox', { name: '通知先の名前', exact: true }).fill(destinationName);
+        await destination.getByRole('button', { name: '通知先を保存', exact: true }).click();
+        await destination.waitFor({ state: 'hidden' });
+        assert((await dialog.getByRole('combobox', { name: '通知先', exact: true }).locator('option:checked').innerText()).includes(destinationName));
+        await dialog.getByRole('combobox', { name: '検知方法', exact: true }).selectOption('threshold');
+        await dialog.getByRole('spinbutton', { name: '指定価格以下（商品表示通貨）', exact: true }).fill('1000');
+        await dialog.getByRole('spinbutton', { name: '割引率以上（%）', exact: true }).fill('50');
+        await dialog.getByRole('button', { name: '確認して通知を保存', exact: true }).click();
+        await dialog.waitFor({ state: 'hidden' });
+        const priceCard = page.locator('article').filter({ has: page.getByRole('heading', { name: priceName, exact: true }) });
+        await priceCard.getByText('価格が1000以下 または 割引率が50%以上', { exact: true }).waitFor();
+        await priceCard.getByRole('button', { name: '編集', exact: true }).click();
+        await edit.getByRole('textbox', { name: '商品URL', exact: true }).fill('https://github.com/octocat');
+        await edit.getByRole('alert').waitFor();
+        assert.equal(await edit.getByRole('combobox', { name: 'サービス', exact: true }).inputValue(), 'steam');
+        await edit.getByRole('button', { name: 'キャンセル', exact: true }).click();
+        await priceCard.getByRole('button', { name: '削除', exact: true }).click();
+        await priceCard.waitFor({ state: 'hidden' });
+        checked('price URL detection, inline DM destination creation, OR thresholds and cross-kind edit protection');
+        await page.getByRole('button', { name: '共有ルール', exact: true }).click();
+        await page.getByText('自分のルール・辞書を共有', { exact: true }).click();
+        const sourceSelect = page.getByRole('combobox', { name: '対象', exact: true });
+        const workflowOption = await sourceSelect.locator('option').filter({ hasText: 'セール告知' }).first().getAttribute('value');
+        const shareForm = page.locator('details').filter({ has: page.getByRole('combobox', { name: '公開範囲', exact: true }) });
+        const rights = page.getByRole('checkbox', { name: /内容・再配布する権利・公開先を自分の責任で確認しました/ });
+        const visibility = page.getByRole('combobox', { name: '公開範囲', exact: true });
+        const title = page.getByRole('textbox', { name: '名称', exact: true });
+        const license = page.getByRole('textbox', { name: 'ライセンス（例: CC-BY-4.0 / MIT）', exact: true });
+        const description = page.getByRole('textbox', { name: '説明', exact: true });
+        const publish = page.getByRole('button', { name: '保存して公開', exact: true });
+        const submitPackage = async (name, method = 'POST') => {
+            const responsePromise = page.waitForResponse(r => r.request().method() === method && /^\/api\/automation\/marketplace(?:\/[0-9a-f-]{36})?$/.test(new URL(r.url()).pathname));
+            await page.getByRole('button', { name, exact: true }).click();
+            const response = await responsePromise;
+            return { status: response.status(), data: await response.json(), input: response.request().postDataJSON() };
+        };
+        const localApi = async (route, input) => page.evaluate(async ({ route, input }) => {
+            const response = await fetch(`/api/automation/${route}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input) });
+            return { status: response.status, data: await response.json() };
+        }, { route, input });
+        await sourceSelect.selectOption(workflowOption);
+        await title.fill(`非公開の回帰 ${Date.now()}`);
+        assert.equal(await rights.count(), 0);
+        const privateSave = await submitPackage('非公開で保存');
+        assert.equal(privateSave.status, 200); assert.equal(privateSave.data.status, 'draft');
+        assert.equal(privateSave.input.rightsConfirmed, false);
+        await page.getByText('非公開の下書きを保存しました。', { exact: true }).waitFor();
+        assert.equal(await page.getByRole('button', { name: 'この版を導入（下書き）', exact: true }).isDisabled(), true);
+        checked('private save stays a draft without publication consent');
+
+        await page.getByRole('button', { name: '新しい版を作る', exact: true }).click();
+        await visibility.selectOption('public');
+        assert.equal(await publish.isDisabled(), true);
+        await rights.check(); assert.equal(await publish.isDisabled(), true, 'missing license blocks public save even after consent');
+        await license.fill('CC0-1.0');
+        assert.equal(await rights.isChecked(), false);
+        await rights.check();
+        await page.getByRole('combobox', { name: '共有する内容', exact: true }).selectOption('workflow');
+        assert.equal(await rights.isChecked(), false);
+        await sourceSelect.selectOption(workflowOption);
+        const publicTitle = `共有の回帰 ${Date.now()}`;
+        for (const [label, value] of [['名称', publicTitle], ['カテゴリ', 'general-ui'], ['説明', 'ローカル画面検証用'], ['変更内容', '確認文言を検証'], ['ライセンス（例: CC-BY-4.0 / MIT）', 'MIT']]) {
+            await rights.check(); assert.equal(await publish.isEnabled(), true);
+            await page.getByRole('textbox', { name: label, exact: true }).fill(value);
+            assert.equal(await rights.isChecked(), false, `consent reset after ${label} changed`);
+            assert.equal(await publish.isDisabled(), true);
+        }
+        await rights.check(); await sourceSelect.selectOption('');
+        assert.equal(await rights.isChecked(), false);
+        await sourceSelect.selectOption(workflowOption);
+        await rights.check(); await visibility.selectOption('unlisted');
+        assert.equal(await rights.isChecked(), false);
+        assert.equal(await page.getByRole('button', { name: '保存して限定共有', exact: true }).isDisabled(), true);
+        await rights.check(); await visibility.selectOption('public');
+        assert.equal(await rights.isChecked(), false);
+        checked('content, source, license and visibility changes require fresh explicit consent');
+
+        await page.setViewportSize({ width: 390, height: 844 });
+        await shareForm.screenshot({ path: path.join(folder, 'publication-mobile.png') });
+        assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'publication form fits 390px');
+        await page.setViewportSize({ width: 1440, height: 1000 });
+        await shareForm.screenshot({ path: path.join(folder, 'publication-desktop.png') });
+        await description.fill('リンク確認: https://127.0.0.1/private');
+        await rights.check();
+        const rejected = await submitPackage('保存して公開', 'PATCH');
+        assert.equal(rejected.status, 400); assert.equal(rejected.data.code, 'PUBLICATION_REJECTED');
+        await page.getByRole('alert').filter({ hasText: '内容・リンク・禁止語を修正してください。' }).waitFor();
+        await page.waitForFunction(() => {
+            const alert = document.querySelector('[role="alert"]'), bounds = alert?.getBoundingClientRect();
+            return document.activeElement === alert && bounds.top >= 0 && bounds.bottom <= innerHeight;
+        });
+        assert.equal(await title.inputValue(), publicTitle);
+        assert.equal(await description.inputValue(), 'リンク確認: https://127.0.0.1/private');
+        const afterRejected = await localApi(`marketplace/${privateSave.data.id}/open`, {});
+        assert.equal(afterRejected.data.version, 1); assert.equal(afterRejected.data.status, 'draft');
+        await page.getByRole('alert').screenshot({ path: path.join(folder, 'publication-rejected.png') });
+        checked('real mechanical rejection focuses visible corrective action, preserves input and does not create a new version');
+
+        await description.fill('ローカル画面検証用');
+        await rights.check();
+        const failPublication = route => route.request().method() === 'PATCH'
+            ? route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ code: 'PUBLICATION_CHECK_FAILED', error: '機械チェックに失敗しました。公開せず終了しました。後で再試行してください。' }) }) : route.fallback();
+        await page.route('**/api/automation/marketplace/*?*', failPublication);
+        const checkFailed = await submitPackage('保存して公開', 'PATCH');
+        assert.equal(checkFailed.status, 503);
+        await page.getByRole('alert').filter({ hasText: '後で再試行してください。' }).waitFor();
+        assert.equal(await publish.isEnabled(), true);
+        assert.equal(await title.inputValue(), publicTitle);
+        await page.unroute('**/api/automation/marketplace/*?*', failPublication);
+        checked('injected checker failure ends with actionable retry error and preserves publication input');
+
+        const publicSave = await submitPackage('保存して公開', 'PATCH');
+        assert.equal(publicSave.status, 200); assert.equal(publicSave.data.status, 'active');
+        assert.equal(publicSave.input.rightsConfirmed, true);
+        await page.getByText('機械チェックを通過し、公開しました。共有ルールの一覧から利用できます。', { exact: true }).waitFor();
+        assert.equal(await page.getByRole('button', { name: 'この版を導入（下書き）', exact: true }).isEnabled(), true);
+        await page.getByText('例外対応・共通辞書', { exact: true }).click();
+        assert.equal(await page.getByRole('button', { name: /承認|審査/ }).count(), 0);
+        assert.equal(await page.getByRole('button', { name: '通報を取得', exact: true }).isVisible(), true);
+        assert.equal(await page.getByText('問題を通報', { exact: true }).isVisible(), true);
+        assert.equal(await page.getByText('安全上の理由で配布・実行を停止', { exact: true }).isVisible(), true);
+        checked('responsibility confirmation and immediate checked publication without manual approval');
+
+        for (const visibility of ['public', 'unlisted']) {
+            const denied = await localApi('marketplace', { ...publicSave.input, visibility, rightsConfirmed: false });
+            assert.equal(denied.status, 400); assert.equal(denied.data.code, 'MARKET_LICENSE_REQUIRED');
+        }
+        checked('real local API rejects public and unlisted requests without explicit rights confirmation');
+        await page.getByRole('button', { name: '新しい版を作る', exact: true }).click();
+        assert.equal(await rights.isChecked(), false); assert.equal(await publish.isDisabled(), true);
+        await visibility.selectOption('unlisted'); await rights.check();
+        const unlistedSave = await submitPackage('保存して限定共有', 'PATCH');
+        assert.equal(unlistedSave.status, 200); assert.equal(unlistedSave.data.status, 'active');
+        await page.getByText('機械チェックを通過し、限定共有を開始しました。共有リンクを知る人が利用できます。', { exact: true }).waitFor();
+        assert((await page.getByRole('textbox', { name: '限定共有リンク（共有キーを含みます）', exact: true }).inputValue()).includes(`automation-package=${unlistedSave.data.id}&key=`));
+        await page.getByText('自分のルール・辞書を共有', { exact: true }).click();
+        assert.equal(await sourceSelect.inputValue(), '', 'successful version save resets the source instead of retaining a stale bundle');
+        checked('new version requires fresh consent and unlisted publication immediately exposes its sharing link');
+
+        const jobs = [
+            { id: 'local-rejected', state: 'excluded', errorCode: 'SAFETY_CONTENT_DENIED', title: '機械チェックで対象外' },
+            { id: 'local-failed', state: 'failed', errorCode: 'SAFETY_CHECK_TIMEOUT', title: '機械チェックの処理失敗' },
+        ].map(job => ({ ...job, providerId: 'github', dueAtMs: Date.now(), scope: 'private', sentSteps: 0, trace: [], event: {}, preview: '画面表示の検証データ' }));
+        const historyRoute = route => {
+            const job = jobs.find(job => new URL(route.request().url()).pathname === `/api/automation/jobs/${job.id}`);
+            return route.fulfill({ contentType: 'application/json', body: JSON.stringify(job || { items: jobs, nextCursor: null }) });
+        };
+        await page.route('**/api/automation/jobs**', historyRoute);
+        await page.getByRole('button', { name: '配信予定・履歴', exact: true }).click();
+        await page.getByRole('button').filter({ hasText: '機械チェックで対象外' }).click();
+        assert.equal(await page.getByRole('button', { name: '再試行する', exact: true }).count(), 0);
+        await page.getByRole('button').filter({ hasText: '機械チェックの処理失敗' }).click();
+        assert.equal(await page.getByRole('button', { name: '再試行する', exact: true }).isEnabled(), true);
+        await page.getByText('機械チェックに失敗したため送信しませんでした。時間をおいて再試行してください。', { exact: true }).last().waitFor();
+        assert.equal(await page.getByRole('button', { name: /承認|審査/ }).count(), 0);
+        await page.screenshot({ path: path.join(folder, 'delivery-errors.png'), fullPage: true });
+        await page.unroute('**/api/automation/jobs**', historyRoute);
+        checked('injected history states distinguish rejected content from checker failure without approval controls');
+        result.status = 'passed';
+    } catch (error) {
+        result.status = 'failed'; result.error = error.stack; process.exitCode = 1;
+        await page.screenshot({ path: path.join(folder, 'editor-failed.png'), fullPage: true }).catch(() => {});
+    } finally {
+        fs.writeFileSync(path.join(folder, 'browser-regression.json'), JSON.stringify(result, null, 2) + '\n');
+        console.log(JSON.stringify(result, null, 2)); await browser.close();
+    }
+}
+main().catch(error => { console.error(error.message); process.exitCode = 1; });

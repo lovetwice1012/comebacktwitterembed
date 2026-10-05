@@ -66,6 +66,8 @@ const SETTINGS_DEFAULT_FILE = {
     hidden_output_items: {},
     display_density: {},
     media_display_mode: {},
+    gallery_display_mode: {},
+    show_previous_shares: {},
     failure_display_policy: {},
     tiktok_description_max_length: {},
     tiktok_image_limit: {},
@@ -132,6 +134,8 @@ const SETTINGS_MIGRATIONS = {
     hidden_output_items: {},
     display_density: {},
     media_display_mode: {},
+    gallery_display_mode: {},
+    show_previous_shares: {},
     failure_display_policy: {},
     tiktok_description_max_length: {},
     tiktok_image_limit: {},
@@ -327,6 +331,14 @@ const PROVIDER_SETTING_COLUMNS = {
     media_display_mode: {
         column: 'media_display_mode',
         type: 'string',
+    },
+    gallery_display_mode: {
+        column: 'gallery_display_mode',
+        type: 'string',
+    },
+    show_previous_shares: {
+        column: 'show_previous_shares',
+        type: 'bool',
     },
     failure_display_policy: {
         column: 'failure_display_policy',

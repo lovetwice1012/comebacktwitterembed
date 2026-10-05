@@ -15,6 +15,7 @@ const { runSendSteps } = require('../providers/_dispatcher');
 const { retainMessageMember } = require('../discordCache');
 const { messageWorkQueue } = require('../workQueue');
 const expansionTraceStore = require('../expansionTraceStore');
+const messageHandlers = new WeakMap();
 const {
     recordAnalyticsEvent = () => {},
     recordError,
@@ -26,6 +27,7 @@ const {
 function register(client) {
     const fetchedMessageMembers = new WeakMap();
     const recentMessageIds = new Map();
+    const activeMessageIds = new Set();
 
     function truncateText(value, maxLength = 1000) {
         if (value === undefined || value === null) return null;
@@ -150,7 +152,7 @@ function register(client) {
         if (message.webhookId || disable.role.length === 0) return false;
 
         const member = await getMessageMember(message);
-        if (!member) return false;
+        if (!member) { telemetry.markOutcome('skipped', 'member_unavailable'); return true; }
         const disabled = ifUserHasRole(member, disable.role);
         if (disabled) telemetry.markOutcome('skipped', 'role_disabled', { disable, roles: [...member.roles.cache.keys()] });
         return disabled;
@@ -183,11 +185,16 @@ function register(client) {
     });
 
     let lastOverloadWarningAt = -Infinity;
-    client.on(Events.MessageCreate, message => telemetry.run({ ...telemetry.contextFromMessage(message), trigger_type: 'user' }, () => {
+    const handleMessage = (message, { retry = false } = {}) => {
         // All supported URLs contain ://. Skip ordinary chat before creating
         // promises, error contexts, or running every provider's regex.
         if (!message.guild || shouldIgnoreMessage(message) || !message.content?.includes('://')) return;
-        return (async () => {
+        if (message.id && activeMessageIds.has(message.id)) return Promise.resolve({ status: 'busy' });
+        if (message.id) activeMessageIds.add(message.id);
+        return telemetry.run({ ...telemetry.contextFromMessage(message), trigger_type: 'user', initiated_via: retry ? 'message_retry' : undefined }, async () => {
+        if (message.webhookId && await require('../automation/outbound-guard').shouldIgnore(message)) {
+            telemetry.markOutcome('skipped', 'automation_delivery_already_rendered'); return;
+        }
         telemetry.event('input', 'received', { content: message.content, bot: message.author?.bot, webhookId: message.webhookId });
         let matches;
         try {
@@ -198,7 +205,7 @@ function register(client) {
                 if (timestamp > now - 300000) break;
                 recentMessageIds.delete(id);
             }
-            if (message.id && recentMessageIds.has(message.id)) { telemetry.event('recognition', 'skipped', { reason: 'duplicate_message' }); return; }
+            if (!retry && message.id && recentMessageIds.has(message.id)) { telemetry.event('recognition', 'skipped', { reason: 'duplicate_message' }); return; }
             retainMessageMember(message);
             if (message.id) {
                 if (recentMessageIds.size >= 10000) recentMessageIds.delete(recentMessageIds.keys().next().value);
@@ -208,14 +215,19 @@ function register(client) {
             recordError(err, { fallbackType: 'message_create_failed', source: 'messageCreate.match', message });
             return;
         }
-        matches = matches.map(match => ({ ...match, requestId: crypto.randomUUID(), receivedStart: performance.now() }));
-        await Promise.all(matches.map(match => expansionTraceStore.beginExpansionTrace({
-            traceId: match.requestId,
-            bootId: telemetry.bootId,
-            providerId: match.provider.id,
-            url: match.url,
-            message,
-        })));
+        if (retry) {
+            matches = await expansionTraceStore.reserveExpansionRetries(message, matches, telemetry.bootId);
+            if (!matches.length) return { status: 'not_retryable' };
+        } else {
+            matches = matches.map(match => ({ ...match, requestId: crypto.randomUUID(), receivedStart: performance.now() }));
+            await Promise.all(matches.map(match => expansionTraceStore.beginExpansionTrace({
+                traceId: match.requestId,
+                bootId: telemetry.bootId,
+                providerId: match.provider.id,
+                url: match.url,
+                message,
+            })));
+        }
         for (const match of matches) telemetry.run({ trace_id: match.requestId, request_id: match.requestId, provider_id: match.provider.id, url: match.url }, () => {
             telemetry.event('input', 'received', { content: message.content, bot: message.author?.bot, webhookId: message.webhookId });
             telemetry.event('queue', 'enqueued', { queueSnapshot: messageWorkQueue.snapshot() });
@@ -223,17 +235,11 @@ function register(client) {
         });
         telemetry.event('queue', 'enqueued', { snapshot: messageWorkQueue.snapshot() });
         const queuedAt = performance.now();
-        return messageWorkQueue.run(() => runWithErrorContext({
+        await messageWorkQueue.run(() => runWithErrorContext({
             source: 'messageCreate',
             message,
         }, async () => {
             telemetry.event('queue', 'started', { waitMs: performance.now() - queuedAt, snapshot: messageWorkQueue.snapshot() });
-            // A referenced/forwarded message can evict the sender even while
-            // discord.js constructs this message. Restore its member once,
-            // before any provider's synchronous role-sensitive checks run.
-            if (!message.member && !message.webhookId) {
-                retainMessageMember(message, await getMessageMember(message));
-            }
             for (const { provider, url, requestId, receivedStart } of matches) {
                 const resultState = /** @type {any} */ ({});
                 const requestStarted = receivedStart;
@@ -254,7 +260,7 @@ function register(client) {
                         return;
                     }
                     if (await isMessageDisabledForProvider(message, providerSettings)) {
-                        await expansionTraceStore.updateExpansionTrace(requestId, { state: 'skipped', outcome: 'skipped', reasonCode: 'target_disabled' });
+                        await expansionTraceStore.updateExpansionTrace(requestId, { state: 'skipped', outcome: 'skipped', reasonCode: resultState.reason === 'member_unavailable' ? 'member_unavailable' : 'target_disabled' });
                         return;
                     }
                     if (message.author.bot && providerSettings.extract_bot_message !== true && !message.webhookId) {
@@ -263,6 +269,11 @@ function register(client) {
                         return;
                     }
 
+                    // Restore an evicted sender before the provider's role checks,
+                    // but avoid a Discord lookup for messages already excluded.
+                    if (!message.member && !message.webhookId) {
+                        retainMessageMember(message, await getMessageMember(message));
+                    }
                     let steps;
                     const startedAt = Date.now();
                     recordMetric('provider_extract_attempt', { providerId: provider.id, message, url });
@@ -293,7 +304,7 @@ function register(client) {
                         console.log(err);
                         return;
                     }
-                    if (Array.isArray(steps)) {
+                    if (Array.isArray(steps) && steps.length > 0) {
                         const contentFailed = resultState.outcome === 'failed' || steps.some(step => step.outputRole === 'failure_notice');
                         const output = summarizeSendSteps(steps);
                         recordMetric(contentFailed ? 'provider_extract_error' : 'provider_extract_success', { providerId: provider.id, message, url });
@@ -322,7 +333,9 @@ function register(client) {
                             output,
                         });
                         telemetry.event('output', 'generated', { steps });
-                        const sendResult = await runSendSteps(message, steps, provider.id, { url });
+                        const sendResult = await runSendSteps(message, steps, provider.id, {
+                            url, presentationSettings: providerSettings, sharedHistory: !contentFailed, personalActions: !contentFailed,
+                        });
                         resultState.delivery = sendResult;
                         if (!contentFailed && !resultState.outcome) resultState.outcome = sendResult?.outcome || 'U';
                         await expansionTraceStore.updateExpansionTrace(requestId, {
@@ -330,19 +343,27 @@ function register(client) {
                             outcome: contentFailed ? 'failure_notice' : (sendResult?.outcome || 'unknown'),
                             reasonCode: contentFailed ? 'failure_notice' : null,
                             delivery: summarizeDelivery(sendResult),
+                            error: resultState.extractionError,
                         });
                     } else {
-                        recordMetric('provider_extract_empty', { providerId: provider.id, message, url });
+                        const failed = resultState.outcome === 'failed';
+                        const skipped = ['skipped', 'target_constraint'].includes(resultState.outcome);
+                        recordMetric(failed ? 'provider_extract_error' : 'provider_extract_empty', { providerId: provider.id, message, url });
                         recordAnalyticsEvent('provider_extract', {
                             source: 'messageCreate.providerExtract',
                             providerId: provider.id,
                             message,
                             url,
-                            success: null,
+                            success: failed ? false : null,
                             durationMs: Date.now() - startedAt,
-                            details: { outcome: 'empty' },
+                            details: { outcome: failed ? 'error' : 'empty' },
                         });
-                        await expansionTraceStore.updateExpansionTrace(requestId, { state: 'completed', outcome: 'empty', reasonCode: 'no_send_steps' });
+                        await expansionTraceStore.updateExpansionTrace(requestId, {
+                            state: failed ? 'failed' : skipped ? 'skipped' : 'completed',
+                            outcome: failed ? 'extract_failed' : skipped ? resultState.outcome : 'empty',
+                            reasonCode: resultState.reason || (failed ? 'provider_extract_failed' : 'no_send_steps'),
+                            error: resultState.extractionError,
+                        });
                     }
                 }); } catch (error) {
                     await expansionTraceStore.updateExpansionTrace(requestId, {
@@ -381,8 +402,17 @@ function register(client) {
             });
             console.error('[messageCreate] Failed to process message:', err);
         });
-        })();
-    }));
+        return { status: 'processed', count: matches.length };
+        }).finally(() => activeMessageIds.delete(message.id));
+    };
+    messageHandlers.set(client, handleMessage);
+    client.on(Events.MessageCreate, message => handleMessage(message));
 }
 
-module.exports = { register };
+async function retryMessage(client, message) {
+    const handleMessage = messageHandlers.get(client);
+    if (!handleMessage) throw new Error('Message processing is not ready.');
+    return handleMessage(message, { retry: true });
+}
+
+module.exports = { register, retryMessage };

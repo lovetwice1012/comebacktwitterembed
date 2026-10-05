@@ -289,12 +289,15 @@ export function buildPreview(providerId: string, states: SettingState[], locale:
   const showThumbnail = mediaMode === "thumbnail_only";
   const showAttachment = mediaMode === "attachment";
   const showLinkOnly = mediaMode === "link_only";
+  const gallery = ["pixiv", "instagram"].includes(providerId) && stateValue(states, "gallery_display_mode") === "gallery"
+    && !showThumbnail && !showLinkOnly && Number(stateValue(states, providerId === "pixiv" ? "pixiv_images_per_step" : "instagram_media_limit")) !== 1;
 
   return {
     providerId,
     serviceName: fixture.serviceName,
     density,
     mediaMode,
+    gallery,
     accentColor: fixture.accentColor,
     botName: createTranslator(locale)("preview.botName"),
     botBadge: createTranslator(locale)("preview.botBadge"),
@@ -315,7 +318,7 @@ export function buildPreview(providerId: string, states: SettingState[], locale:
       inline: field.inline !== false,
     })),
     footer: `${text(fixture.footer, locale)} • comebacktwitterembed`,
-    image: showEmbedImage ? mediaLabel : null,
+    image: showEmbedImage ? gallery ? (locale === "ja" ? "ギャラリーの1ページ目（表示例）" : "First gallery page (example)") : mediaLabel : null,
     thumbnail: showThumbnail ? thumbnailLabel : null,
     attachments: showAttachment
       ? [

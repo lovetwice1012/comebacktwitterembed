@@ -21,10 +21,18 @@ const {
 } = require('../errorTracking');
 
 function fileToFallbackText(file) {
-    if (typeof file === 'string') return file;
-    if (file && typeof file.attachment === 'string') return file.attachment;
-    if (file && typeof file.fallbackUrl === 'string') return file.fallbackUrl;
-    if (file && typeof file.url === 'string') return file.url;
+    // Naked media URLs must not undo a spoiler attachment. Local paths are
+    // useful only to the uploader and must never become public fallback text.
+    if (file?.spoiler === true || file?.name?.startsWith('SPOILER_')) return '';
+    const candidates = typeof file === 'string' ? [file] : [file?.fallbackUrl, file?.url, file?.attachment];
+    for (const value of candidates) {
+        if (typeof value !== 'string') continue;
+        try {
+            const url = new URL(value);
+            if (url.pathname.split('/').at(-1)?.startsWith('SPOILER_')) continue;
+            if (['https:', 'http:'].includes(url.protocol) && !url.username && !url.password) return value;
+        } catch { /* Local paths and opaque file objects are not public URLs. */ }
+    }
     return '';
 }
 
@@ -71,6 +79,17 @@ async function suppressSourceEmbeds(message) {
     catch (error) { telemetry.event('postprocess', 'failed', { operation: 'suppress_embeds', error: telemetry.errorData(error) }); return false; }
 }
 
+function deliveryFailureOutcome(error) {
+    const status = Number(error?.status ?? error?.statusCode ?? error?.response?.status);
+    if (error?.name === 'SyntaxError' || error instanceof SyntaxError) return 'delivery_unknown';
+    if (Number.isInteger(status) && status >= 400 && status < 500) return 'failed';
+    if (isMissingPermissionsError(error) || isUnknownMessageError(error)
+        || FILE_RESOLUTION_ERROR_CODES.has(String(error?.code ?? ''))) return 'failed';
+    // A transport error, including a nested cause or an unfamiliar timeout,
+    // does not establish that Discord rejected the POST before accepting it.
+    return 'delivery_unknown';
+}
+
 async function deleteSourceMessage(message, providerId = null, context = {}) {
     const trackingContext = /** @type {Record<string, any>} */ ({ ...context, providerId, message });
     if (typeof message?.delete !== 'function') return;
@@ -102,7 +121,11 @@ async function deleteSourceMessage(message, providerId = null, context = {}) {
 async function runSendSteps(message, steps, providerId = null, context = {}) {
     const trackingContext = /** @type {Record<string, any>} */ ({ ...context, providerId, message });
     if (trackingContext.url === undefined && trackingContext.rawUrl !== undefined) trackingContext.url = trackingContext.rawUrl;
-    return runWithErrorContext(trackingContext, () => runSendStepsNow(message, steps, trackingContext));
+    return runWithErrorContext(trackingContext, () => {
+        if (!Array.isArray(steps) || steps.length === 0) return;
+        return require('../sharedPostHistory').run(message, steps, trackingContext,
+            prepared => runSendStepsNow(message, prepared, trackingContext));
+    });
 }
 
 async function runSendStepsNow(message, steps, trackingContext) {
@@ -111,9 +134,16 @@ async function runSendStepsNow(message, steps, trackingContext) {
 
     const result = { sent: [], attempts: [], postprocess: [], fallback: false, plannedSteps: steps.length };
     let previousSent = null;
+    let sendable = 0;
+    let completeFallback = true;
+    const cleanup = new Map();
     for (let i = 0; i < steps.length; i++) {
-        const step = steps[i];
+        const gallery = await require('../mediaGallery').prepare(steps[i], message, trackingContext);
+        const personal = i === 0 ? await require('../personalLinks/cards').prepare(gallery.step, message, trackingContext) : { step: gallery.step, cardId: null };
+        const step = personal.step;
         const sendMode = step.send ?? (i === 0 ? 'channel' : 'reply-previous');
+        if (step.suppressSourceEmbeds && !cleanup.has('suppress_embeds')) cleanup.set('suppress_embeds', i);
+        if (step.deleteSource && !cleanup.has('delete_source')) cleanup.set('delete_source', i);
 
         const messageObject = {};
         if (step.embeds && step.embeds.length > 0)         messageObject.embeds = step.embeds;
@@ -130,10 +160,9 @@ async function runSendStepsNow(message, steps, trackingContext) {
                 durationMs: 0,
                 details: { send_mode: sendMode, step_index: i, outcome: 'no_sendable_payload' },
             });
-            if (step.suppressSourceEmbeds) result.postprocess.push({ stepIndex: i, operation: 'suppress_embeds', success: await suppressSourceEmbeds(message) });
-            if (step.deleteSource) result.postprocess.push({ stepIndex: i, operation: 'delete_source', success: await deleteSourceMessage(message, providerId, trackingContext) });
             continue;
         }
+        sendable++;
 
         let sender;
         if (sendMode === 'reply-source') {
@@ -151,12 +180,15 @@ async function runSendStepsNow(message, steps, trackingContext) {
             telemetry.event('discord_send', 'started', attempt);
             try {
                 const output = await originalSender(payload);
+                if (typeof output?.id !== 'string' || !output.id) {
+                    throw Object.assign(new Error('Discord did not return a message ID.'), { code: 'DISCORD_SEND_RESULT_UNKNOWN' });
+                }
                 Object.assign(attempt, { outcome: 'confirmed', messageId: output?.id, channelId: output?.channelId });
                 result.sent.push({ stepIndex: i, messageId: output?.id, channelId: output?.channelId });
                 telemetry.event('discord_send', 'completed', attempt);
                 return output;
             } catch (error) {
-                Object.assign(attempt, { outcome: (Number(error.status) >= 500 || !error.status && /ECONN|ETIMEDOUT|Abort|SyntaxError/.test(`${error.code} ${error.name}`)) ? 'delivery_unknown' : 'failed', error: telemetry.errorData(error) });
+                Object.assign(attempt, { outcome: deliveryFailureOutcome(error), error: telemetry.errorData(error) });
                 telemetry.event('discord_send', 'failed', attempt);
                 throw error;
             } finally { result.attempts.push(attempt); }
@@ -209,7 +241,9 @@ async function runSendStepsNow(message, steps, trackingContext) {
 
             if (messageObject.files !== undefined && shouldRetryWithoutFiles(err)) {
                 result.fallback = true;
-                const fallbackText = messageObject.files.map(fileToFallbackText).filter(Boolean).join('\n');
+                const fallbackUrls = messageObject.files.map(fileToFallbackText);
+                if (fallbackUrls.some(url => !url)) completeFallback = false;
+                const fallbackText = fallbackUrls.filter(Boolean).join('\n');
                 delete messageObject.files;
                 appendContent(messageObject, fallbackText);
 
@@ -260,6 +294,14 @@ async function runSendStepsNow(message, steps, trackingContext) {
         }
         previousSent = sent ?? previousSent;
         if (sent) {
+            if (personal.cardId) {
+                try { await require('../personalLinks/store').getStore().bindCard(personal.cardId, sent.id); }
+                catch (error) { require('../personalLinks/cards').report(error); }
+            }
+            if (gallery.galleryId) {
+                try { await require('../mediaGallery').store().bind(gallery.galleryId, sent.id); }
+                catch (error) { require('../mediaGallery').report(error); }
+            }
             recordMetric('discord_send_success', trackingContext);
             recordAnalyticsEvent('discord_send', {
                 ...trackingContext,
@@ -279,14 +321,22 @@ async function runSendStepsNow(message, steps, trackingContext) {
             });
         }
 
-        if (step.suppressSourceEmbeds) result.postprocess.push({ stepIndex: i, operation: 'suppress_embeds', success: await suppressSourceEmbeds(message) });
-        if (step.deleteSource) {
-            result.postprocess.push({ stepIndex: i, operation: 'delete_source', success: await deleteSourceMessage(message, providerId, trackingContext) });
+    }
+    const deliveryUnknown = result.attempts.some(item => item.outcome === 'delivery_unknown');
+    // Finish every reply before altering its source. Policy-only steps still
+    // work, while partial or uncertain delivery leaves the original available.
+    if (result.sent.length === sendable && !deliveryUnknown && completeFallback) {
+        for (const operation of ['suppress_embeds', 'delete_source']) {
+            if (!cleanup.has(operation)) continue;
+            const success = operation === 'suppress_embeds' ? await suppressSourceEmbeds(message)
+                : await deleteSourceMessage(message, providerId, trackingContext);
+            result.postprocess.push({ stepIndex: cleanup.get(operation), operation, success });
         }
+    } else if (cleanup.size) {
+        telemetry.event('postprocess', 'skipped', { reason: 'incomplete_delivery', operations: [...cleanup.keys()] });
     }
     const failedPostprocess = result.postprocess.some(item => item.success === false);
-    const sendable = steps.filter(step => hasSendablePayload(step)).length;
-    result.outcome = result.attempts.some(item => item.outcome === 'delivery_unknown') ? 'U'
+    result.outcome = deliveryUnknown ? 'U'
         : result.sent.length === sendable && !failedPostprocess ? result.fallback ? 'D' : 'F'
             : result.sent.length ? 'P' : 'E';
     return result;

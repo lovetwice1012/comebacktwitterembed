@@ -279,7 +279,7 @@ test('spotify extract: failure_display_policy source_link returns source link bu
     });
 
     const step = result[0];
-    assert.equal(step.content, 'Source link');
+    assert.equal(step.content, 'Please check the original link.');
     assert.equal(step.embeds, undefined);
     assert.equal(step.components[0].components[0].data.url, url);
     assert.equal(step.allowedMentions.repliedUser, false);

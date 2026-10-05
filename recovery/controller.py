@@ -82,6 +82,19 @@ def candidate_source(candidate):
     return manifest.get("source") or {}
 
 
+def backup_after_failback(source, config):
+    """A standby-primary dump made before handback must never replace its new DB."""
+    boundary = config.get("minimumPrimaryBackupTimestamp")
+    if boundary is None:
+        return True
+    try:
+        stamps = [dt.datetime.fromisoformat(value.replace("Z", "+00:00"))
+                  for value in [source["sourceTimestamp"], boundary]]
+        return all(value.tzinfo is not None for value in stamps) and stamps[0] >= stamps[1]
+    except (KeyError, TypeError, ValueError, AttributeError):
+        return False
+
+
 def same_backup_source(left, right):
     """Bind freshness to the archive actually imported into this candidate."""
     if not isinstance(left, dict) or not isinstance(right, dict):
@@ -160,6 +173,7 @@ def promotion_gates(authority, backup, candidate, config, primary_intent=None, o
     return [
         gate("BACKUP_SOURCE_MATCH", "復元した候補とバックアップの世代・SHA256・時刻が一致", bound),
         gate("BACKUP_FRESH", "許容時間内の検証済みバックアップ", bound and -300 <= age <= config.get("maxBackupAgeSeconds", 129600)),
+        gate("BACKUP_AFTER_FAILBACK", "切り戻し前のメインバックアップを再利用しない", backup_after_failback(source, config)),
         gate("DATABASE_VALIDATED", "独立MySQLへの復元と必須テーブル検証", candidate and candidate.get("phase") in ("VALIDATED", "ACTIVE")),
         gate("SAVEDATA_CONSTRAINT", "savedataを移行しない制約の合意", config.get("allowMissingSavedata") is True),
         gate("PRIMARY_ENROLLED", "本体の起動許可・停止監視の導入証明", authority.get("primaryEnrolled")),
@@ -670,6 +684,9 @@ class Controller:
     def prepare_latest(self):
         newest = self.exporter("/v1/backups/latest")["backup"]
         self.update(pendingBackup=newest)
+        if not backup_after_failback(newest, self.config):
+            self.update(phase="WAITING_POST_FAILBACK_BACKUP", lastError={"code": "BACKUP_BEFORE_FAILBACK", "message": "切り戻し完了後に取得したメインのバックアップを待っています。"})
+            return
         if not -300 <= age_seconds(newest["sourceTimestamp"]) <= self.config.get("maxBackupAgeSeconds", 129600):
             self.update(phase="BACKUP_STALE", lastError={"code": "BACKUP_STALE", "message": "最新の検証済みバックアップが許容時間外です。"})
             return
@@ -835,7 +852,10 @@ class Controller:
         if self.config.get("autoPrepare", True) and time.time() >= self.state.get("nextPrepareAt", 0):
             try:
                 self.prepare_latest()
-                self.update(nextPrepareAt=time.time() + self.config.get("prepareIntervalSeconds", 3600))
+                delay = self.config.get("prepareIntervalSeconds", 3600)
+                if (self.state.get("lastError") or {}).get("code") == "BACKUP_BEFORE_FAILBACK":
+                    delay = min(delay, 60)
+                self.update(nextPrepareAt=time.time() + delay)
             except Exception as error:
                 self.update(lastError={"code": "BACKUP_REFRESH_FAILED", "message": str(error)},
                             nextPrepareAt=time.time() + self.config.get("failureBackoffSeconds", 300))
@@ -854,6 +874,8 @@ class Controller:
         else:
             candidate = self.state.get("candidate")
             phase = "STANDBY_READY" if candidate and candidate.get("phase") == "VALIDATED" else self.state["phase"]
+            if (self.state.get("lastError") or {}).get("code") == "BACKUP_BEFORE_FAILBACK":
+                phase = "WAITING_POST_FAILBACK_BACKUP"
             self.update(phase=phase, gates=gates)
 
     def loop(self):

@@ -35,7 +35,7 @@ test('autoextract checkfreeslot handles users row missing', async () => {
 
         await checkfreeslot(interaction, {});
 
-        assert.equal(reply.embeds[0].title, 'Auto extract check free slot');
+        assert.equal(reply.embeds[0].title, 'Auto watch check free slot');
         assert.match(reply.embeds[0].description, /\/0/);
     } finally {
         delete require.cache[handlerPath];

@@ -12,6 +12,15 @@ const TABLES = {
     twitterAccounts: 'twitter_accounts',
     webhookEndpoints: 'webhook_endpoints',
     autoExtractTargets: 'auto_extract_targets',
+    autoWatchSources: 'auto_watch_sources',
+    autoWatchTargets: 'auto_watch_targets',
+    autoWatchItems: 'auto_watch_items',
+    autoWatchDeliveries: 'auto_watch_deliveries',
+    autoWatchProviderStates: 'auto_watch_provider_states',
+    autoWatchProviderUsage: 'auto_watch_provider_usage',
+    priceWatchSources: 'price_watch_sources',
+    priceWatchTargets: 'price_watch_targets',
+    priceWatchDeliveries: 'price_watch_deliveries',
     guildProviderSettings: 'guild_provider_settings',
     globalDisableTargets: 'global_disable_targets',
     guildProviderDisableTargets: 'guild_provider_disable_targets',
@@ -31,6 +40,13 @@ const TABLES = {
     botMetricBuckets: 'bot_metric_buckets',
     botAnalyticsEvents: 'bot_analytics_events',
     botProviderExpansionTraces: 'bot_provider_expansion_traces',
+    botSharedPosts: 'bot_shared_posts',
+    botMediaGalleries: 'bot_media_galleries',
+    personalLinkUsers: 'bot_personal_link_users',
+    personalLinkCards: 'bot_link_cards',
+    personalSavedLinks: 'bot_saved_links',
+    personalLinkNotifications: 'bot_link_notifications',
+    restockSources: 'bot_restock_sources',
     botProviderContentEvents: 'bot_provider_content_events',
     botProviderContentFacets: 'bot_provider_content_facets',
     botProviderHourlyAggregates: 'bot_provider_hourly_aggregates',
@@ -63,6 +79,7 @@ const SCHEMA_STATEMENTS = [
         user_id VARCHAR(32) NOT NULL PRIMARY KEY,
         registered_at_ms BIGINT NOT NULL,
         additional_auto_extract_slots INT NOT NULL DEFAULT 0,
+        is_donor TINYINT(1) NOT NULL DEFAULT 0,
         save_tweet_quota_override_bytes BIGINT NULL,
         enabled TINYINT(1) NOT NULL DEFAULT 1,
         created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -131,6 +148,211 @@ const SCHEMA_STATEMENTS = [
             ON DELETE CASCADE
     ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
 
+    // Non-Twitter account monitoring is intentionally separate from the
+    // frozen legacy Twitter registration tables above. Sources are shared by
+    // every subscriber, so one upstream request fans out safely to many
+    // Discord webhooks rather than multiplying provider API traffic.
+    `CREATE TABLE IF NOT EXISTS ${TABLES.autoWatchSources} (
+        id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+        provider_id VARCHAR(64) NOT NULL,
+        source_key VARCHAR(255) NOT NULL,
+        source_url VARCHAR(1024) NOT NULL,
+        state_json MEDIUMTEXT NULL,
+        cursor_json MEDIUMTEXT NULL,
+        etag VARCHAR(512) NULL,
+        last_modified VARCHAR(512) NULL,
+        initialized_at_ms BIGINT NULL,
+        poll_interval_ms BIGINT NOT NULL,
+        next_check_at_ms BIGINT NOT NULL DEFAULT 0,
+        last_checked_at_ms BIGINT NOT NULL DEFAULT 0,
+        lease_token VARCHAR(64) NULL,
+        lease_expires_at_ms BIGINT NOT NULL DEFAULT 0,
+        failure_count INT UNSIGNED NOT NULL DEFAULT 0,
+        last_error_code VARCHAR(96) NULL,
+        last_error_at_ms BIGINT NULL,
+        created_at_ms BIGINT NOT NULL,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        UNIQUE KEY uniq_auto_watch_source (provider_id, source_key),
+        INDEX idx_auto_watch_source_due (next_check_at_ms),
+        INDEX idx_auto_watch_source_provider_due (provider_id, next_check_at_ms),
+        INDEX idx_auto_watch_source_lease (lease_expires_at_ms)
+    ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
+
+    `CREATE TABLE IF NOT EXISTS ${TABLES.autoWatchTargets} (
+        id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+        user_id VARCHAR(32) NOT NULL,
+        source_id BIGINT UNSIGNED NOT NULL,
+        guild_id VARCHAR(32) NULL,
+        origin_channel_id VARCHAR(32) NULL,
+        origin_channel_nsfw TINYINT(1) NOT NULL DEFAULT 0,
+        source_locale VARCHAR(16) NULL,
+        destination_type VARCHAR(16) NOT NULL DEFAULT 'webhook',
+        destination_key VARCHAR(191) NOT NULL,
+        webhook_endpoint_id BIGINT UNSIGNED NULL,
+        premium_slot TINYINT(1) NOT NULL DEFAULT 0,
+        baseline_at_ms BIGINT NULL,
+        enabled TINYINT(1) NOT NULL DEFAULT 1,
+        created_at_ms BIGINT NOT NULL,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        UNIQUE KEY uniq_auto_watch_target (user_id, source_id, destination_key),
+        INDEX idx_auto_watch_target_user (user_id),
+        INDEX idx_auto_watch_target_source_enabled (source_id, enabled),
+        INDEX idx_auto_watch_target_premium (premium_slot, enabled),
+        CONSTRAINT fk_auto_watch_target_user
+            FOREIGN KEY (user_id) REFERENCES ${TABLES.users}(user_id)
+            ON DELETE CASCADE,
+        CONSTRAINT fk_auto_watch_target_source
+            FOREIGN KEY (source_id) REFERENCES ${TABLES.autoWatchSources}(id)
+            ON DELETE CASCADE,
+        CONSTRAINT fk_auto_watch_target_webhook
+            FOREIGN KEY (webhook_endpoint_id) REFERENCES ${TABLES.webhookEndpoints}(id)
+            ON DELETE CASCADE
+    ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
+
+    `CREATE TABLE IF NOT EXISTS ${TABLES.autoWatchItems} (
+        id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+        source_id BIGINT UNSIGNED NOT NULL,
+        content_key VARCHAR(255) NOT NULL,
+        content_url TEXT NOT NULL,
+        published_at_ms BIGINT NULL,
+        title VARCHAR(1024) NULL,
+        payload_json MEDIUMTEXT NULL,
+        discovered_at_ms BIGINT NOT NULL,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE KEY uniq_auto_watch_item (source_id, content_key),
+        INDEX idx_auto_watch_item_source_time (source_id, discovered_at_ms),
+        CONSTRAINT fk_auto_watch_item_source
+            FOREIGN KEY (source_id) REFERENCES ${TABLES.autoWatchSources}(id)
+            ON DELETE CASCADE
+    ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
+
+    `CREATE TABLE IF NOT EXISTS ${TABLES.autoWatchDeliveries} (
+        id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+        item_id BIGINT UNSIGNED NOT NULL,
+        target_id BIGINT UNSIGNED NOT NULL,
+        status VARCHAR(16) NOT NULL DEFAULT 'pending',
+        attempt_count INT UNSIGNED NOT NULL DEFAULT 0,
+        next_attempt_at_ms BIGINT NOT NULL DEFAULT 0,
+        lease_token VARCHAR(64) NULL,
+        lease_expires_at_ms BIGINT NOT NULL DEFAULT 0,
+        last_error_code VARCHAR(96) NULL,
+        last_error_at_ms BIGINT NULL,
+        sent_at_ms BIGINT NULL,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        UNIQUE KEY uniq_auto_watch_delivery (item_id, target_id),
+        INDEX idx_auto_watch_delivery_due (status, next_attempt_at_ms),
+        INDEX idx_auto_watch_delivery_lease (lease_expires_at_ms),
+        CONSTRAINT fk_auto_watch_delivery_item
+            FOREIGN KEY (item_id) REFERENCES ${TABLES.autoWatchItems}(id)
+            ON DELETE CASCADE,
+        CONSTRAINT fk_auto_watch_delivery_target
+            FOREIGN KEY (target_id) REFERENCES ${TABLES.autoWatchTargets}(id)
+            ON DELETE CASCADE
+    ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
+
+    `CREATE TABLE IF NOT EXISTS ${TABLES.autoWatchProviderStates} (
+        provider_id VARCHAR(64) NOT NULL PRIMARY KEY,
+        next_allowed_at_ms BIGINT NOT NULL DEFAULT 0,
+        cooldown_until_ms BIGINT NOT NULL DEFAULT 0,
+        last_rate_limit_limit BIGINT NULL,
+        last_rate_limit_remaining BIGINT NULL,
+        last_rate_limit_reset_at_ms BIGINT NULL,
+        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
+
+    `CREATE TABLE IF NOT EXISTS ${TABLES.autoWatchProviderUsage} (
+        provider_id VARCHAR(64) NOT NULL,
+        window_key VARCHAR(32) NOT NULL,
+        used_units BIGINT UNSIGNED NOT NULL DEFAULT 0,
+        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        PRIMARY KEY (provider_id, window_key)
+    ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
+
+    `CREATE TABLE IF NOT EXISTS ${TABLES.priceWatchSources} (
+        id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+        provider_id VARCHAR(64) NOT NULL,
+        product_key VARCHAR(191) NOT NULL,
+        product_url VARCHAR(1024) NOT NULL,
+        source_locale VARCHAR(16) NOT NULL,
+        product_name VARCHAR(1024) NULL,
+        state_json MEDIUMTEXT NULL,
+        initialized_at_ms BIGINT NULL,
+        poll_interval_ms BIGINT NOT NULL,
+        next_check_at_ms BIGINT NOT NULL DEFAULT 0,
+        last_checked_at_ms BIGINT NOT NULL DEFAULT 0,
+        lease_token VARCHAR(64) NULL,
+        lease_expires_at_ms BIGINT NOT NULL DEFAULT 0,
+        failure_count INT UNSIGNED NOT NULL DEFAULT 0,
+        last_error_code VARCHAR(96) NULL,
+        last_error_at_ms BIGINT NULL,
+        created_at_ms BIGINT NOT NULL,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        UNIQUE KEY uniq_price_watch_source (provider_id, product_key, source_locale),
+        INDEX idx_price_watch_source_due (next_check_at_ms),
+        INDEX idx_price_watch_source_lease (lease_expires_at_ms)
+    ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
+
+    `CREATE TABLE IF NOT EXISTS ${TABLES.priceWatchTargets} (
+        id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+        source_id BIGINT UNSIGNED NOT NULL,
+        user_id VARCHAR(32) NOT NULL,
+        guild_id VARCHAR(32) NULL,
+        origin_channel_id VARCHAR(32) NULL,
+        destination_type VARCHAR(16) NOT NULL,
+        destination_key VARCHAR(191) NOT NULL,
+        webhook_endpoint_id BIGINT UNSIGNED NULL,
+        watch_mode VARCHAR(16) NOT NULL,
+        rule_key VARCHAR(191) NOT NULL,
+        max_price_amount DECIMAL(20,4) NULL,
+        min_discount_percent DECIMAL(5,2) NULL,
+        condition_active TINYINT(1) NOT NULL DEFAULT 0,
+        baseline_at_ms BIGINT NULL,
+        enabled TINYINT(1) NOT NULL DEFAULT 1,
+        created_at_ms BIGINT NOT NULL,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        UNIQUE KEY uniq_price_watch_target (source_id, user_id, destination_key, watch_mode, rule_key),
+        INDEX idx_price_watch_target_source_enabled (source_id, enabled),
+        INDEX idx_price_watch_target_user (user_id),
+        CONSTRAINT fk_price_watch_target_source
+            FOREIGN KEY (source_id) REFERENCES ${TABLES.priceWatchSources}(id)
+            ON DELETE CASCADE,
+        CONSTRAINT fk_price_watch_target_user
+            FOREIGN KEY (user_id) REFERENCES ${TABLES.users}(user_id)
+            ON DELETE CASCADE,
+        CONSTRAINT fk_price_watch_target_webhook
+            FOREIGN KEY (webhook_endpoint_id) REFERENCES ${TABLES.webhookEndpoints}(id)
+            ON DELETE CASCADE
+    ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
+
+    `CREATE TABLE IF NOT EXISTS ${TABLES.priceWatchDeliveries} (
+        id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+        target_id BIGINT UNSIGNED NOT NULL,
+        event_key CHAR(64) NOT NULL,
+        message_text TEXT NOT NULL,
+        event_json MEDIUMTEXT NULL,
+        status VARCHAR(16) NOT NULL DEFAULT 'pending',
+        attempt_count INT UNSIGNED NOT NULL DEFAULT 0,
+        next_attempt_at_ms BIGINT NOT NULL DEFAULT 0,
+        lease_token VARCHAR(64) NULL,
+        lease_expires_at_ms BIGINT NOT NULL DEFAULT 0,
+        last_error_code VARCHAR(96) NULL,
+        last_error_at_ms BIGINT NULL,
+        sent_at_ms BIGINT NULL,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        UNIQUE KEY uniq_price_watch_delivery (target_id, event_key),
+        INDEX idx_price_watch_delivery_due (status, next_attempt_at_ms),
+        INDEX idx_price_watch_delivery_lease (lease_expires_at_ms),
+        CONSTRAINT fk_price_watch_delivery_target
+            FOREIGN KEY (target_id) REFERENCES ${TABLES.priceWatchTargets}(id)
+            ON DELETE CASCADE
+    ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
+
     `CREATE TABLE IF NOT EXISTS ${TABLES.guildProviderSettings} (
         provider_id VARCHAR(64) NOT NULL,
         guild_id VARCHAR(32) NOT NULL,
@@ -173,6 +395,8 @@ const SCHEMA_STATEMENTS = [
         hidden_output_items TEXT NULL,
         display_density VARCHAR(32) NULL,
         media_display_mode VARCHAR(32) NULL,
+        gallery_display_mode VARCHAR(32) NULL,
+        show_previous_shares TINYINT(1) NULL,
         failure_display_policy VARCHAR(32) NULL,
         tiktok_description_max_length INT NULL,
         tiktok_image_limit INT NULL,
@@ -520,7 +744,8 @@ const SCHEMA_STATEMENTS = [
         INDEX idx_expansion_trace_state_time (state, updated_at_ms),
         INDEX idx_expansion_trace_provider_time (provider_id, created_at_ms),
         INDEX idx_expansion_trace_guild_time (guild_id, created_at_ms),
-        INDEX idx_expansion_trace_url_hash (url_hash)
+        INDEX idx_expansion_trace_url_hash (url_hash),
+        INDEX idx_expansion_trace_message (guild_id, channel_id, message_id, created_at_ms)
     ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
 
     `CREATE TABLE IF NOT EXISTS ${TABLES.botProviderContentEvents} (
@@ -672,6 +897,9 @@ const SCHEMA_STATEMENTS = [
             ON DELETE CASCADE
     ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
     ...TABLE_COUNT_SCHEMA,
+    ...require('./linkPresentationSchema').SCHEMA,
+    ...require('./personalLinks/schema').SCHEMA,
+    ...require('./automation/schema.sql').SCHEMA,
 ];
 
 const MIGRATIONS_DIR = path.join(__dirname, '..', 'migrations');
@@ -716,6 +944,8 @@ const GUILD_PROVIDER_SETTING_COLUMN_DEFINITIONS = {
     hidden_output_items: 'TEXT NULL',
     display_density: 'VARCHAR(32) NULL',
     media_display_mode: 'VARCHAR(32) NULL',
+    gallery_display_mode: 'VARCHAR(32) NULL',
+    show_previous_shares: 'TINYINT(1) NULL',
     failure_display_policy: 'VARCHAR(32) NULL',
     tiktok_description_max_length: 'INT NULL',
     tiktok_image_limit: 'INT NULL',

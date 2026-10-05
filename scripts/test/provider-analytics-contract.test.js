@@ -22,9 +22,34 @@ const expectedProviders = [
     'youtube',
 ];
 
+// Follow the entry point's local imports so this contract covers split providers
+// without accidentally counting unrelated files such as autoWatch adapters.
+function readProviderSource(provider) {
+    const root = path.join(providerDir, provider);
+    const pending = [path.join(root, 'index.js')];
+    const visited = new Set();
+    const sources = [];
+    while (pending.length > 0) {
+        const filename = pending.pop();
+        if (visited.has(filename)) continue;
+        visited.add(filename);
+        const source = fs.readFileSync(filename, 'utf8');
+        sources.push(source);
+        for (const match of source.matchAll(/\brequire\(\s*['"](\.[^'"]+)['"]\s*\)/g)) {
+            const target = path.resolve(path.dirname(filename), match[1]);
+            if (!target.startsWith(root + path.sep)) continue;
+            const dependency = [target + '.js', path.join(target, 'index.js'), target]
+                .find(candidate => fs.existsSync(candidate) && fs.statSync(candidate).isFile());
+            assert.ok(dependency, `${filename} must resolve ${match[1]}`);
+            pending.push(dependency);
+        }
+    }
+    return sources.join('\n');
+}
+
 test('all production providers attach native analytics metadata', () => {
     const dirs = fs.readdirSync(providerDir, { withFileTypes: true })
-        .filter(entry => entry.isDirectory() && !entry.name.startsWith('_'))
+        .filter(entry => entry.isDirectory() && !entry.name.startsWith('_') && !['autoWatch', 'priceWatch'].includes(entry.name))
         .map(entry => entry.name)
         .filter(name => fs.existsSync(path.join(providerDir, name, 'index.js')))
         .sort();
@@ -32,7 +57,7 @@ test('all production providers attach native analytics metadata', () => {
     assert.deepEqual(dirs, expectedProviders);
 
     for (const provider of dirs) {
-        const source = fs.readFileSync(path.join(providerDir, provider, 'index.js'), 'utf8');
+        const source = readProviderSource(provider);
         assert.match(source, /analytics\/providerMetrics/, `${provider} must import providerMetrics`);
         assert.match(source, /\bcreateProviderAnalytics\b/, `${provider} must build native analytics`);
         assert.match(source, /\banalytics\s*(?::|,)/, `${provider} must attach analytics to a SendStep`);
@@ -49,7 +74,7 @@ test('provider content analytics no longer exposes embed-field metric extraction
 test('provider-specific analytics include commercial dashboard axes', () => {
     const sources = Object.fromEntries(expectedProviders.map(provider => [
         provider,
-        fs.readFileSync(path.join(providerDir, provider, 'index.js'), 'utf8'),
+        readProviderSource(provider),
     ]));
 
     const expectations = {

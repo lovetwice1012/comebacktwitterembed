@@ -535,3 +535,71 @@ test('youtube parse: rejects non-youtube urls', () => {
     const provider = require('../../src/providers/youtube');
     assert.equal(provider._internal.parseYouTubeUrl('https://example.com/watch?v=dQw4w9WgXcQ'), null);
 });
+
+test('youtube extract: reaches oEmbed after instance and page failures and retains analytics', async () => {
+    const requests = [];
+    const oldInstances = process.env.YOUTUBE_INVIDIOUS_INSTANCES;
+    process.env.YOUTUBE_INVIDIOUS_INSTANCES = 'https://first.example,https://second.example';
+    try {
+        const provider = loadYouTubeProviderWithFetch(async url => {
+            requests.push(url);
+            if (url.startsWith('https://first.example')) return { ok: false, status: 503 };
+            if (url.startsWith('https://second.example')) return okJson({ error: 'rate limit' });
+            if (url.startsWith('https://www.youtube.com/watch?')) {
+                return { ok: true, text: async () => '<html>No player data</html>' };
+            }
+            if (url.startsWith('https://www.youtube.com/oembed?')) {
+                return okJson({
+                    title: 'oEmbed fallback',
+                    author_name: 'Fallback channel',
+                    author_url: 'https://www.youtube.com/@fallback',
+                    thumbnail_url: 'https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg',
+                });
+            }
+            throw new Error(`unexpected url ${url}`);
+        });
+        const url = 'https://youtu.be/dQw4w9WgXcQ';
+        const result = await provider.extract(createMessage(url), url, { hidden_output_items: ['stats'] });
+
+        assert.deepEqual(requests.map(value => new URL(value).hostname), [
+            'first.example', 'second.example', 'www.youtube.com', 'www.youtube.com',
+        ]);
+        assert.equal(new URL(requests[2]).pathname, '/watch');
+        assert.equal(new URL(requests[3]).pathname, '/oembed');
+        assert.equal(result[0].embeds[0].title, 'oEmbed fallback');
+        assert.equal(result[0].analytics.content.contentId, 'dQw4w9WgXcQ');
+        assert.equal(result[0].analytics.content.contentType, 'video');
+        assert.equal(result[0].analytics.content.authorName, 'Fallback channel');
+        assert.deepEqual(result[0].analytics.metrics, {});
+    } finally {
+        if (oldInstances === undefined) delete process.env.YOUTUBE_INVIDIOUS_INSTANCES;
+        else process.env.YOUTUBE_INVIDIOUS_INSTANCES = oldInstances;
+    }
+});
+
+test('youtube extract: hidden stats retain native analytics and reloaded clients keep their transport', async () => {
+    let firstRequests = 0;
+    let secondRequests = 0;
+    const first = loadYouTubeProviderWithFetch(async () => {
+        firstRequests++;
+        return okJson(videoInfo());
+    });
+    const second = loadYouTubeProviderWithFetch(async () => {
+        secondRequests++;
+        return okJson({ ...videoInfo(), title: 'Second client', viewCount: 42 });
+    });
+    const url = 'https://youtu.be/dQw4w9WgXcQ';
+    const settings = { hidden_output_items: ['stats'] };
+    const [firstResult, secondResult] = await Promise.all([
+        first.extract(createMessage(url), url, settings),
+        second.extract(createMessage(url), url, settings),
+    ]);
+
+    assert.equal(firstRequests, 1);
+    assert.equal(secondRequests, 1);
+    assert.equal(firstResult[0].embeds[0].title, 'Example Video');
+    assert.equal(secondResult[0].embeds[0].title, 'Second client');
+    assert.equal(firstResult[0].embeds[0].fields.some(field => field.name === 'Views'), false);
+    assert.equal(firstResult[0].analytics.metrics.views, 1234567);
+    assert.equal(secondResult[0].analytics.metrics.views, 42);
+});

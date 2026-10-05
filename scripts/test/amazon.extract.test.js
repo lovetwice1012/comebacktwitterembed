@@ -68,7 +68,7 @@ function productDomHtml() {
             <body>
                 <span id="productTitle">Kindle Paperwhite</span>
                 <a id="bylineInfo">Brand: Kindle</a>
-                <span class="a-offscreen">$139.99</span>
+                <div id="corePrice_feature_div"><span class="a-price"><span class="a-offscreen">US$139.99</span></span></div>
                 <i id="acrPopover">4.5 out of 5 stars</i>
                 <span id="acrCustomerReviewText">1,234 ratings</span>
                 <img id="landingImage" data-a-dynamic-image='{"https://images.example/small.jpg":[100,100],"https://images.example/large.jpg":[900,900]}'>
@@ -221,7 +221,7 @@ test('amazon extract: builds an embed from JSON-LD product data', async () => {
     assert.equal(embed.url, 'https://amazon.com/dp/B08N5WRWNW');
     assert.equal(embed.description, 'A compact smart speaker with Alexa.');
     assert.equal(embed.image.url, 'https://images.example/echo.jpg');
-    assert.equal(fieldValue(embed, 'Price'), 'USD 49.99');
+    assert.equal(fieldValue(embed, 'Price'), '$49.99');
     assert.equal(fieldValue(embed, 'Brand'), 'Amazon');
     assert.equal(fieldValue(embed, 'Rating'), '4.7 / 5 (12,345)');
     assert.equal(fieldValue(embed, 'Review count'), '12,345');
@@ -230,6 +230,15 @@ test('amazon extract: builds an embed from JSON-LD product data', async () => {
     assert.equal(step.components[0].components[0].data.url, url);
     assert.equal(step.components[0].components[1].data.custom_id, 'showMediaAsAttachments');
     assert.equal(step.suppressSourceEmbeds, true);
+});
+
+test('amazon extract: priced product adds a price-watch button even when the price field is hidden', async () => {
+    const provider = loadAmazonProviderWithFetch(async url => okHtml(productJsonLdHtml(), String(url)));
+    const url = 'https://www.amazon.co.jp/dp/B012345678';
+    const result = await provider.extract(createMessage(url), url, { defaultLanguage: 'ja', hidden_output_items: ['price'] });
+    const button = result[0].components[0].components.find(component => String(component.data.custom_id || '').startsWith('priceWatch:'));
+    assert.ok(button);
+    assert.match(button.data.custom_id, /^priceWatch:a:product:B012345678:ja$/);
 });
 
 test('amazon extract: GUI output setting can hide product price', async () => {
@@ -257,7 +266,7 @@ test('amazon extract: compact display density hides compact product fields', asy
     const standardEmbed = standard[0].embeds[0];
     const compactEmbed = compact[0].embeds[0];
 
-    assert.equal(fieldValue(standardEmbed, 'Price'), 'USD 49.99');
+    assert.equal(fieldValue(standardEmbed, 'Price'), '$49.99');
     assert.equal(fieldValue(standardEmbed, 'Rating'), '4.7 / 5 (12,345)');
     assert.equal(fieldValue(standardEmbed, 'Availability'), 'In Stock');
     assert.equal(fieldValue(compactEmbed, 'Price'), undefined);
@@ -602,4 +611,93 @@ test('amazon parse: rejects non-product Amazon pages', () => {
     assert.equal(provider._internal.parseAmazonUrl('https://music.amazon.com/search/example'), null);
     assert.equal(provider._internal.parseAmazonUrl('https://www.amazon.com/s?k=headphones'), null);
     assert.equal(provider._internal.parseAmazonUrl('https://example.com/dp/B08N5WRWNW'), null);
+});
+
+test('amazon extract: loaded providers keep their own fetch transport', async () => {
+    const url = 'https://www.amazon.com/dp/B08N5WRWNW';
+    const first = loadAmazonProviderWithFetch(async () => okHtml(productJsonLdHtml({ name: 'First product' }), url));
+    const second = loadAmazonProviderWithFetch(async () => okHtml(productJsonLdHtml({ name: 'Second product' }), url));
+
+    const [firstResult, secondResult] = await Promise.all([
+        first.extract(createMessage(url), url, {}),
+        second.extract(createMessage(url), url, {}),
+    ]);
+
+    assert.equal(firstResult[0].embeds[0].title, 'First product');
+    assert.equal(secondResult[0].embeds[0].title, 'Second product');
+});
+
+test('amazon extract: failed product fetch retains the canonical fallback embed', async () => {
+    const provider = loadAmazonProviderWithFetch(async () => { throw new Error('Page unavailable'); });
+    const url = 'https://www.amazon.com/dp/B08N5WRWNW?tag=example';
+
+    const result = await provider.extract(createMessage(url), url, {});
+
+    assert.equal(result[0].embeds[0].title, 'Amazon item B08N5WRWNW');
+    assert.equal(result[0].embeds[0].url, 'https://amazon.com/dp/B08N5WRWNW');
+    assert.equal(result[0].embeds[0].image, undefined);
+    assert.equal(result[0].components[0].components[0].data.url, url);
+});
+
+test('amazon extract: failed music supplements retain metadata from the initial page', async () => {
+    const requests = [];
+    const provider = loadAmazonProviderWithFetch(async (url) => {
+        requests.push(url);
+        if (requests.length === 1) return okHtml(musicJsonLdHtml(), url);
+        throw new Error('Supplement unavailable');
+    });
+    const url = 'https://music.amazon.com/tracks/B0TRACK123';
+
+    const result = await provider.extract(createMessage(url), url, {});
+
+    assert.deepEqual(requests, [
+        url,
+        url,
+        'https://music.amazon.com/embed/oembed?url=https%3A%2F%2Fmusic.amazon.com%2Ftracks%2FB0TRACK123',
+    ]);
+    assert.equal(result[0].embeds[0].title, 'Sample Song');
+    assert.equal(fieldValue(result[0].embeds[0], 'Artist'), 'Sample Artist');
+    assert.equal(result[0].embeds[0].image.url, 'https://images.example/music.jpg');
+});
+
+test('amazon extract: short links keep the resolved marketplace and localize the price label', async () => {
+    const requests = [];
+    const provider = loadAmazonProviderWithFetch(async (url, options) => {
+        requests.push({ url, language: options.headers['Accept-Language'] });
+        return okHtml(productJsonLdHtml({ offers: { price: '27980', priceCurrency: 'JPY' } }), 'https://www.amazon.co.jp/dp/B08N5WRWNW');
+    });
+    const url = 'https://amzn.to/japanese-product';
+    const result = await provider.extract(createMessage(url), url, { defaultLanguage: 'ja' });
+    assert.deepEqual(requests, [{ url, language: 'ja' }]);
+    assert.equal(result[0].embeds[0].url, 'https://amazon.co.jp/dp/B08N5WRWNW');
+    assert.equal(fieldValue(result[0].embeds[0], '価格'), '￥27,980');
+    assert.equal(result[0].analytics.metrics.price, 27980);
+    assert.equal(result[0].components[0].components[0].data.url, url);
+});
+
+test('amazon extract: locale headers preserve the region and price hiding retains numeric analytics', async () => {
+    const requests = [];
+    const html = productJsonLdHtml({ offers: { price: '1234.56', priceCurrency: 'EUR' } });
+    const provider = loadAmazonProviderWithFetch(async (url, options) => {
+        requests.push({ url, language: options.headers['Accept-Language'] });
+        return okHtml(html, url);
+    });
+    const url = 'https://www.amazon.de/dp/B08N5WRWNW';
+    const german = await provider.extract(createMessage(url), url, { defaultLanguage: 'de' });
+    const british = await provider.extract(createMessage(url), url, { defaultLanguage: 'en-GB', hidden_output_items: ['price'] });
+    assert.deepEqual(requests, [{ url, language: 'de' }, { url, language: 'en-GB,en;q=0.9' }]);
+    assert.equal(fieldValue(german[0].embeds[0], 'Price').replace(/\u00a0/g, ' '), '1.234,56 €');
+    assert.equal(german[0].analytics.metrics.price, 1234.56);
+    assert.equal(fieldValue(british[0].embeds[0], 'Price'), undefined);
+    assert.equal(british[0].analytics.metrics.price, 1234.56);
+});
+
+test('amazon extract: zero remains a price and malformed offers do not create a price field or metric', async () => {
+    for (const value of [0, 'not available']) {
+        const provider = loadAmazonProviderWithFetch(async url => okHtml(productJsonLdHtml({ offers: { price: value, priceCurrency: 'USD' } }), url));
+        const url = 'https://www.amazon.com/dp/B08N5WRWNW';
+        const result = await provider.extract(createMessage(url), url, { defaultLanguage: 'en-US' });
+        assert.equal(fieldValue(result[0].embeds[0], 'Price'), value === 0 ? '$0.00' : undefined);
+        assert.equal(result[0].analytics.metrics.price, value === 0 ? 0 : undefined);
+    }
 });
