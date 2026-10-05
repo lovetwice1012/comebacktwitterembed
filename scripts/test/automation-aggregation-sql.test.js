@@ -14,6 +14,7 @@ async function fixture(work) {
     const db = await createTestDatabase(port), query = db.queryDatabase;
     const service = createService(db), monitors = createMonitors(db, service, {});
     const actor = { userId: '222222222222222222' }, destination = await service.saveDestination(actor, { name: 'DM', kind: 'dm' });
+    await require('../lib/automation-test-db').grantTestDonor(db, actor.userId);
     const monitor = await monitors.save(actor, 'auto', { name: 'fixture', providerId: 'github', source: 'octocat', destinationId: destination.id });
     let now = Date.parse('2026-09-22T10:00:00Z');
     const queue = createQueue(db, { evaluate: async (rule, event, _bindings, at) => evaluateWorkflow(rule, event, { now: at }) }, { clock: () => now });

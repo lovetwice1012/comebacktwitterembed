@@ -6,8 +6,8 @@ function stoppedReply(locale) {
         embeds: [{
             title: 'Auto extract',
             description: japanese
-                ? 'Twitter/X の自動展開登録は停止中です。既存の登録は変更されません。非Twitterプロバイダー向けの統合監視へ移行します。'
-                : 'Twitter/X auto-extract registration is paused. Existing registrations are unchanged while monitoring moves to unified non-Twitter providers.',
+                ? 'Twitter/X の自動展開は現在対応できないため、登録を停止しています。'
+                : 'Twitter/X automatic expansion is currently unsupported; registration is disabled.',
             color: 0x1DA1F2,
         }],
     };

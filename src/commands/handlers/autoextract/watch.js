@@ -1,7 +1,7 @@
 'use strict';
 
 const { provider } = require('../../../providers/autoWatch');
-const { registerTarget, validateWebhook } = require('../../../providers/autoWatch/store');
+const { registerTarget, validateWebhook, assertRegistrationAllowed } = require('../../../providers/autoWatch/store');
 const { createWebhookForChannel } = require('../../../components/_webhookDestination');
 
 function localized(locale, japanese, english) {
@@ -34,6 +34,7 @@ module.exports = async function (interaction) {
     }
     let createdWebhook = null;
     try {
+        await assertRegistrationAllowed(interaction.user.id);
         if (!['dm', 'webhook', 'channel'].includes(destination)) {
             return await interaction.editReply(errorReply(interaction.locale, localized(interaction.locale, '通知先が不正です。', 'Invalid notification destination.')));
         }
@@ -86,6 +87,11 @@ module.exports = async function (interaction) {
         });
     } catch (error) {
         try { await createdWebhook?.delete?.(); } catch { /* keep the original registration failure */ }
+        if (error?.code === 'AUTO_WATCH_DONOR_REQUIRED') {
+            return await interaction.editReply(errorReply(interaction.locale, localized(interaction.locale,
+                '新着自動展開の登録は寄付者のみ利用できます。',
+                'New-post automatic expansion registration is available to donors only.')));
+        }
         return await interaction.editReply(errorReply(interaction.locale, error?.message || String(error)));
     }
 };

@@ -40,4 +40,8 @@ async function createTestDatabase(port) {
     } catch (error) { await db.close(); throw error; }
     return db;
 }
-module.exports = { createTestDatabase };
+async function grantTestDonor(db, userId) {
+    if (!/^cbte_automation_test_[0-9a-f]{20}$/.test(db.schema || '')) throw new Error('Donor fixtures require a disposable test schema');
+    await db.queryDatabase('INSERT INTO users (user_id,registered_at_ms,is_donor) VALUES (?,0,1) ON DUPLICATE KEY UPDATE is_donor=1', [userId]);
+}
+module.exports = { createTestDatabase, grantTestDonor };

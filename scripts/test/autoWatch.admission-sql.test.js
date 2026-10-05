@@ -21,6 +21,7 @@ test('SQL partial source admission preserves validators, observation time, faile
     try {
         const service = createService(db), monitors = createMonitors(db, service, {});
         const target = async userId => {
+            await require('../lib/automation-test-db').grantTestDonor(db, userId);
             const actor = { userId }, destination = await service.saveDestination(actor, { name: 'fixture DM', kind: 'dm' });
             return monitors.save(actor, 'auto', { name: 'fixture watch', providerId: 'github', source: 'octocat', destinationId: destination.id });
         };

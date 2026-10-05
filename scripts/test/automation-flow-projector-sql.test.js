@@ -18,6 +18,7 @@ const port = Number(process.env.AUTOMATION_TEST_DB_PORT), baseTime = Date.parse(
 async function fixture(work) {
     const db = await createTestDatabase(port), query = db.queryDatabase, service = createService(db), monitors = createMonitors(db, service, {});
     const actor = { userId: '222222222222222222' }, firstDestination = await service.saveDestination(actor, { name: 'DM first', kind: 'dm' }), secondDestination = await service.saveDestination(actor, { name: 'DM second', kind: 'dm' });
+    await require('../lib/automation-test-db').grantTestDonor(db, actor.userId);
     const first = await monitors.save(actor, 'auto', { name: 'first', providerId: 'github', source: 'octocat', destinationId: firstDestination.id });
     const second = await monitors.save(actor, 'auto', { name: 'second', providerId: 'github', source: 'github', destinationId: secondDestination.id });
     try { await work({ db, query, service, monitors, actor, first, second, firstDestination, secondDestination }); }

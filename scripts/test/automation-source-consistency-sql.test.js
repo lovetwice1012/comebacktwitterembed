@@ -17,6 +17,8 @@ test('real SQL sources: per-target baseline, source lease fencing, atomic cursor
     const autoStore = require('../../src/providers/autoWatch/store'), priceStore = require('../../src/providers/priceWatch/store');
     const service = createService(db), monitors = createMonitors(db, service, { verifyChannel: async () => ({ channel: {} }) });
     const actor = { userId: '222222222222222222' }, second = { userId: '333333333333333333' };
+    await require('../lib/automation-test-db').grantTestDonor(db, actor.userId);
+    await require('../lib/automation-test-db').grantTestDonor(db, second.userId);
     const dm = await service.saveDestination(actor, { name: 'DM', kind: 'dm' }), dm2 = await service.saveDestination(second, { name: 'DM2', kind: 'dm' });
     const auto = await monitors.save(actor, 'auto', { name: 'watch', providerId: 'github', source: 'octocat', destinationId: dm.id });
     const first = await monitors.getRow(actor, 'auto', auto.id);

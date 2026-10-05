@@ -28,7 +28,7 @@ module.exports = async function (interaction, client) {
         [interaction.user.id]
     );
     const userRows = await queryDatabase(
-        `SELECT additional_auto_extract_slots FROM ${TABLES.users} WHERE user_id = ?`,
+        `SELECT additional_auto_extract_slots, is_donor FROM ${TABLES.users} WHERE user_id = ?`,
         [interaction.user.id]
     );
     const user_have_additional_autoextraction_slot = userRows[0]?.additional_auto_extract_slots ?? 0;
@@ -41,6 +41,9 @@ module.exports = async function (interaction, client) {
         : 0;
     const all_using_slot_percent = Math.floor((all_using_slot / all_slot) * 100);
     let content = '';
+    content += String(interaction.locale || '').startsWith('ja')
+        ? `新着自動展開の登録は寄付者限定です。現在の登録資格: ${Number(userRows[0]?.is_donor) === 1 ? '登録可能' : '寄付者登録が必要'}\n`
+        : `New-post automatic expansion registration is donors only. Your eligibility: ${Number(userRows[0]?.is_donor) === 1 ? 'eligible' : 'donor registration required'}\n`;
     content += 'Free slots remaining: ' + (FREE_SLOT_LIMIT - free_slot) + '/' + FREE_SLOT_LIMIT + ' (' + free_slot_percent + '%)\n';
     content += 'Your additional slots remaining: ' + Math.max(0, user_have_additional_autoextraction_slot - user_using_premium_slot) + '/' + user_have_additional_autoextraction_slot + ' (' + premium_slot_percent + '%)\n';
     content += 'Your free slots used: ' + user_using_free_slot + '/' + free_slot + '\n';

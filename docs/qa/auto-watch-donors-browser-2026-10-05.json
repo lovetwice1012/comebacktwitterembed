@@ -1,0 +1,15 @@
+{
+  "passed": true,
+  "fixtureOnly": true,
+  "realDiscordMessages": 0,
+  "checks": [
+    "non-donor admin with additional slots cannot register",
+    "forged donor API request returns 403",
+    "donor can create an actual monitor",
+    "revoked donor cannot resume",
+    "non-donor can stop and delete an existing monitor",
+    "price registration unchanged"
+  ],
+  "pageErrors": [],
+  "externalRequests": []
+}
