@@ -1,0 +1,14 @@
+{
+  "startedAt": "2026-09-16T14:25:18.342064+00:00",
+  "completedAt": "2026-09-16T14:26:02.037780+00:00",
+  "durationSeconds": 43.696,
+  "walBytesBefore": 1743332712,
+  "walBytesAfter": 0,
+  "eventMaxSequenceBefore": 5546899,
+  "eventMaxSequenceAfter": 5546899,
+  "result": [
+    0,
+    0,
+    0
+  ]
+}

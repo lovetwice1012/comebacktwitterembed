@@ -23,6 +23,13 @@ Do not put built binaries, `.env` credentials or the SQLite state directory in s
 - `cbte-admin-executor.service`: root-owned binary and state. Unix socket `/run/cbte-admin-executor/executor.sock`; peer UID must be root or configured numeric `ADMIN_AGENT_EXECUTOR_ALLOWED_UID`. `/etc/cbte-admin/executor.env` is root-owned and must not be editable by the core user.
 - `cbte-admin-witness.service`: same binary with `witness` argument on a different host, its own SQLite/outbox and notification credentials. No owner API token is needed.
 
+The core materializes the most recent production heartbeat in a one-row table.
+Monitoring, coverage, and shard status never sort the full `events` history to
+find it. Raw journal entries are retained only while `state.db` is below
+`ADMIN_AGENT_JOURNAL_STATE_MAX_MIB` (2 GiB by default). Reaching the cap advances
+the durable journal cursor and records the limited state; it does not delete
+existing database data, and source logs remain available through `journalctl`.
+
 Unit files under `deploy/systemd` have no `Requires`, `BindsTo` or `PartOf` dependency on Bot/MySQL. `Type=notify` watchdog messages follow completed SQLite monitoring writes. External health fails when the monitoring loop has not persisted evidence for the configured period. Protect the worker runtime and its mutable data using the production release layout; do not broaden access to `/root`.
 
 ## Independent login and reverse proxy
@@ -37,7 +44,8 @@ Example environment files are checked in with placeholders. Production files sho
 
 Trusted calls authenticate with `X-Admin-Agent-Token` or `Authorization: Bearer ...`. `X-Admin-Actor`, when supplied, must equal `ADMIN_OWNER_ID`. Responses never expose the shared token, login hash or notification URL.
 
-- `GET /healthz`: unauthenticated minimal core/storage-progress probe. It does not establish Bot/content/Discord health.
+- `GET /livez`: unauthenticated process/HTTP liveness probe. It does not claim state-store, Bot, content, or Discord health.
+- `GET /healthz`: unauthenticated core/storage-progress readiness probe. It does not establish Bot/content/Discord health.
 - `GET /v1/health`, `/v1/catalog`: health/capabilities and implemented operation inputs.
 - `POST /v1/events`: one event, array, or `{events:[...]}`. SQLite transaction commits with `synchronous=FULL` before acknowledgement. Event IDs deduplicate producer retries. Maximum 500 records/24 MiB HTTP request/8 MiB encoded event; oversized data is explicitly rejected so the producer retains its spool.
 - `GET /v1/events`: `guildId`, ISO `from`/`to`, `kind`, `runId`, `cursor`, `limit`. Full authenticated raw payloads are preserved. Times normalize to fixed-width UTC nanoseconds for ordering.
@@ -69,7 +77,7 @@ Rules distinguish stopped process, stale progress, failed local HTTP, local-succ
 
 External witness probes `ADMIN_WITNESS_TARGET` every 15 seconds, confirms after four failures, and uses its own durable outbox. It does not distinguish host power loss from network/tunnel/daemon failure without more evidence. Discord webhook and an optional generic JSON webhook work without the Bot's Discord client. Notification transport timeouts record possible duplicate delivery on retry rather than falsely claiming exactly once.
 
-Journal collection advances per-entry cursors only after durable event persistence, in bounded 200-row/4 MiB batches. Bot, MySQL, nginx, management core, analysis and kernel streams retain boot IDs and continue across boots when the host retains persistent journals. Initial collection starts five minutes before installation. Cursor state and collection errors are visible in health; rotated-away journals cannot be reconstructed. The forward-follow collector uses the documented [journalctl cursor and follow flags](https://www.freedesktop.org/software/systemd/man/255/journalctl.html).
+Journal collection advances per-entry cursors only after durable event persistence, in bounded 50-row/512 KiB batches. Bot, MySQL, nginx, management core, analysis and kernel streams retain boot IDs and continue across boots when the host retains persistent journals. Initial collection starts five minutes before installation. At the configured SQLite state cap it advances the cursor without copying further raw entries, so source logs remain accessible through `journalctl` without unbounded state growth. Cursor state and collection errors are visible in health; rotated-away journals cannot be reconstructed. The forward-follow collector uses the documented [journalctl cursor and follow flags](https://www.freedesktop.org/software/systemd/man/255/journalctl.html).
 
 The owner can enroll and use origin-bound WebAuthn passkeys as well as the independent password login. Managed query cancellation accepts only registered query IDs and rechecks the current database statement, connection ownership and deadline; automatic cancellation always requires an overdue owned query. Provider-source overrides use an allowlisted source ID and expiry, with registry/revision details visible through the support catalog. Unclassified failures retain their evidence and open questions for manual investigation; an arbitrary command runner is not used as a substitute for a diagnosis.
 

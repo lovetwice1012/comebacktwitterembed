@@ -13,7 +13,7 @@ func (a *App) measurementCoverage(ctx context.Context, from, to string, matching
 	coverageDB := a.store.queryDB()
 	coverageQuery := `SELECT COUNT(DISTINCT run_id),MIN(occurred_at),MAX(occurred_at) FROM events WHERE kind='request.started' AND run_id<>'' AND COALESCE(json_extract(payload,'$.triggerType'),json_extract(payload,'$.trigger_type'),'') NOT IN ('diagnostic','admin_operation')`
 	if a.store.requestRootsReady(ctx) {
-		coverageQuery = `SELECT COUNT(*),MIN(occurred_at),MAX(occurred_at) FROM request_roots WHERE COALESCE(json_extract(payload,'$.triggerType'),json_extract(payload,'$.trigger_type'),'') NOT IN ('diagnostic','admin_operation')`
+		coverageQuery = `SELECT COUNT(*),MIN(occurred_at),MAX(occurred_at) FROM request_roots WHERE trigger_type NOT IN ('diagnostic','admin_operation')`
 	}
 	e := coverageDB.QueryRowContext(ctx, coverageQuery).Scan(&globalCount, &firstAt, &lastAt)
 	if e != nil {
@@ -25,7 +25,7 @@ func (a *App) measurementCoverage(ctx context.Context, from, to string, matching
 	var heartbeatAt, heartbeatPersistedAt string
 	var heartbeatAge any
 	collectionState := "unobserved"
-	e = coverageDB.QueryRowContext(ctx, "SELECT occurred_at,persisted_at FROM events WHERE kind IN ('heartbeat','bot.heartbeat','runtime.heartbeat') ORDER BY seq DESC LIMIT 1").Scan(&heartbeatAt, &heartbeatPersistedAt)
+	_, heartbeatAt, heartbeatPersistedAt, e = a.store.latestHeartbeat(ctx)
 	if e != nil && !errors.Is(e, sql.ErrNoRows) {
 		return nil, e
 	}
