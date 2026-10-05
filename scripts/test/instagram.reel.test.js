@@ -25,9 +25,13 @@ test('Reel fetch continues past an OG poster to the embed MP4 and caches the vid
     assert.equal(requests.length, 2);
 });
 
-test('a cached normal-post thumbnail cannot prevent a Reel video lookup for the same shortcode', async () => {
+test('a cached structured photo cannot prevent a Reel video lookup for the same shortcode', async () => {
     let requests = 0;
-    const client = createInstagramClient(async url => { requests++; return response(String(url).includes('/embed/') ? reelVideoHtml() : reelPoster()); });
+    const client = createInstagramClient(async url => {
+        requests++;
+        if (requests === 1) return response(`<script>${JSON.stringify({ __typename: 'GraphImage', shortcode: code, display_url: `https://example.com/${code}.jpg` })}</script>`);
+        return response(String(url).includes('/embed/') ? reelVideoHtml() : reelPoster());
+    });
     const poster = await client.fetchInstagramData(media('p'));
     assert.equal(poster.medias[0].typeName, 'GraphImage');
     assert.equal(requests, 1);
@@ -84,12 +88,12 @@ test('a wrong-shortcode GraphQL video cannot replace the requested Reel poster',
     assert.equal((await client.fetchInstagramData(media('reel'))).medias[0].url, `https://example.com/${code}.jpg`);
 });
 
-test('TV routes also prefer video while normal photo requests keep the one-request path', async () => {
+test('both normal-post and TV routes continue past posters to actual video', async () => {
     for (const route of ['p', 'tv']) {
         let requests = 0;
         const client = createInstagramClient(async url => { requests++; return response(String(url).includes('/embed/') ? reelVideoHtml() : reelPoster()); });
         const data = await client.fetchInstagramData(media(route));
-        assert.equal(data.medias[0].typeName, route === 'p' ? 'GraphImage' : 'GraphVideo');
-        assert.equal(requests, route === 'p' ? 1 : 2);
+        assert.equal(data.medias[0].typeName, 'GraphVideo');
+        assert.equal(requests, 2);
     }
 });

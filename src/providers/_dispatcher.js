@@ -9,6 +9,7 @@
  */
 
 const telemetry = require('../adminSupport/telemetry');
+const { MessageFlags } = require('discord.js');
 
 const { isMissingPermissionsError, isUnknownMessageError } = require('../utils');
 const { checkComponentIncludesDisabledButtonAndIfFindDeleteIt } = require('../settings');
@@ -146,6 +147,7 @@ async function runSendStepsNow(message, steps, trackingContext) {
         if (step.deleteSource && !cleanup.has('delete_source')) cleanup.set('delete_source', i);
 
         const messageObject = {};
+        if (trackingContext.presentationSettings?.silent_expansion === true) messageObject.flags = MessageFlags.SuppressNotifications;
         if (step.embeds && step.embeds.length > 0)         messageObject.embeds = step.embeds;
         if (step.files && step.files.length > 0)           messageObject.files = step.files;
         if (step.components && step.components.length > 0) messageObject.components = await checkComponentIncludesDisabledButtonAndIfFindDeleteIt(step.components, message.guildId, providerId);

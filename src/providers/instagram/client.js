@@ -3,7 +3,7 @@
 const { CACHE_TTL_MS, PROFILE_API_RATE_LIMIT_BACKOFF_MS } = require('./constants');
 const { parseInstagramUrl, buildCanonicalUrl } = require('./urls');
 const {
-    parseInstagramHtml,
+    parseInstagramHtmlSource,
     parseInstagramGraphql,
     parseInstagramOEmbed,
     normalizeProfileData,
@@ -312,7 +312,7 @@ function createInstagramClient(fetch) {
         ])];
     }
 
-    const checkedReelPreviews = new WeakSet();
+    const checkedPreviews = new WeakSet();
 
     function hasDirectInstagramVideo(data) {
         return Boolean(data?.medias?.some(media => {
@@ -327,7 +327,7 @@ function createInstagramClient(fetch) {
     async function fetchInstagramData(parsed) {
         const preferVideo = parsed.route === 'reel' || parsed.route === 'tv';
         const cached = getCachedData(parsed.shortcode);
-        if (cached && (!preferVideo || hasDirectInstagramVideo(cached) || checkedReelPreviews.has(cached))) return cached;
+        if (cached && (!preferVideo || hasDirectInstagramVideo(cached) || checkedPreviews.has(cached))) return cached;
 
         function remember(data) {
             cacheData(parsed.shortcode, data);
@@ -344,9 +344,9 @@ function createInstagramClient(fetch) {
                     continue;
                 }
                 const html = await res.text();
-                const data = parseInstagramHtml(html, parsed.shortcode);
+                const { data, previewOnly } = parseInstagramHtmlSource(html, parsed.shortcode);
                 if (data) {
-                    if (!preferVideo || hasDirectInstagramVideo(data)) return remember(data);
+                    if ((!preferVideo && !previewOnly) || hasDirectInstagramVideo(data)) return remember(data);
                     preview ||= data;
                 }
             } catch (err) {
@@ -354,37 +354,27 @@ function createInstagramClient(fetch) {
             }
         }
 
-        // A Reel's normal crawler page can expose only its poster. Continue
-        // through embed/GraphQL sources before accepting that image as output.
-        if (preferVideo) {
-            const graphqlData = await fetchGraphqlData(parsed.shortcode).catch(err => {
-                lastError = err;
-                return null;
-            });
-            if (hasDirectInstagramVideo(graphqlData)) return remember(graphqlData);
-            preview ||= graphqlData;
-        }
+        // OG and oEmbed images can be cropped previews even for /p/ photos.
+        // Exhaust actual post sources before accepting a preview as output.
+        const graphqlData = await fetchGraphqlData(parsed.shortcode).catch(err => {
+            lastError = err;
+            return null;
+        });
+        if (graphqlData && (!preferVideo || hasDirectInstagramVideo(graphqlData))) return remember(graphqlData);
+        preview ||= graphqlData;
 
         const oembedData = await fetchOEmbedData(parsed).catch(err => {
             lastError = err;
             return null;
         });
         if (oembedData) {
-            if (!preferVideo) return remember(oembedData);
             preview ||= oembedData;
         }
 
-        if (!preferVideo) {
-            const graphqlData = await fetchGraphqlData(parsed.shortcode).catch(err => {
-                lastError = err;
-                return null;
-            });
-            if (graphqlData) return remember(graphqlData);
-        }
         if (preview) {
             // Cache a checked fallback too, so an unavailable video does not
             // trigger the full set of requests on every repeated expansion.
-            checkedReelPreviews.add(preview);
+            checkedPreviews.add(preview);
             return remember(preview);
         }
 

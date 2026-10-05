@@ -14,6 +14,7 @@ let invalidationPoll = null;
 let invalidationInitialized = false;
 
 const PROVIDER_DEFAULTS = {
+    silent_expansion:                                     false,
     enabled:                                              undefined,
     defaultLanguage:                                      'ja',
     editOriginalIfTranslate:                              false,
@@ -82,6 +83,7 @@ const PROVIDER_DEFAULTS = {
 };
 
 const PROVIDER_SETTING_COLUMNS = {
+    silent_expansion: { column: 'silent_expansion', type: 'bool' },
     show_previous_shares: { column: 'show_previous_shares', type: 'bool' },
     gallery_display_mode: {
         column: 'gallery_display_mode',
