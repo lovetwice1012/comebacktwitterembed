@@ -155,7 +155,7 @@ for (const source of ['html', 'oembed', 'graphql']) {
         const original = await client.fetchInstagramData(media('CaseCode'));
         const requestsPerMiss = requests;
         assert.ok(original.medias.length > 0);
-        assert.strictEqual(await client.fetchInstagramData(media('CaseCode', 'reel', 2)), original);
+        assert.strictEqual(await client.fetchInstagramData(media('CaseCode', 'p', 2)), original);
         assert.equal(requests, requestsPerMiss);
         clock.set(START + CACHE_TTL_MS - 1);
         assert.strictEqual(await client.fetchInstagramData(media('CaseCode')), original);

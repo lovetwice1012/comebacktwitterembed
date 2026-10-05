@@ -6,6 +6,22 @@ const assert = require('node:assert/strict');
 const instagramModulePath = require.resolve('../../src/providers/instagram');
 const fetchModulePath = require.resolve('node-fetch');
 const { captionPage } = require('./helpers/instagram-caption-fixture.cjs');
+const { reelPoster, reelVideoHtml } = require('./helpers/instagram-reel-fixture.cjs');
+
+test('instagram extract: a Reel poster cannot stop embed lookup and MP4 attachment delivery', async () => {
+    const requests = [];
+    const provider = loadInstagramProviderWithFetch(async url => {
+        requests.push(String(url));
+        return { ok: true, text: async () => String(url).includes('/embed/') ? reelVideoHtml() : reelPoster() };
+    });
+    const url = 'https://www.instagram.com/reel/Ddmd-UrRH2B/';
+    const result = await provider.extract(createMessage(url), url, {});
+    assert.equal(requests.length, 2);
+    assert.equal(result[0].files[0].attachment, 'https://example.com/Ddmd-UrRH2B.mp4?sig=fixture');
+    assert.equal(result[0].files[0].name, 'instagram-1.mp4');
+    assert.equal(result[0].embeds[0].image, undefined);
+    assert.match(result[0].embeds[0].description, /Reel caption #cat/);
+});
 
 test('instagram extract: reported English photo routes never render page scripts or their CSS colors as hashtags', async () => {
     for (const url of ['https://www.instagram.com/p/DeAdSjuBvPY/', 'https://www.instagram.com/tinykittenshq/p/DeAcEspS-ry/']) {
