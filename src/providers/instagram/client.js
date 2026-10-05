@@ -312,11 +312,30 @@ function createInstagramClient(fetch) {
         ])];
     }
 
+    const checkedReelPreviews = new WeakSet();
+
+    function hasDirectInstagramVideo(data) {
+        return Boolean(data?.medias?.some(media => {
+            try {
+                return /\.(mp4|mov|webm|m4v|mkv|avi)$/i.test(new URL(media.url).pathname);
+            } catch {
+                return false;
+            }
+        }));
+    }
+
     async function fetchInstagramData(parsed) {
+        const preferVideo = parsed.route === 'reel' || parsed.route === 'tv';
         const cached = getCachedData(parsed.shortcode);
-        if (cached) return cached;
+        if (cached && (!preferVideo || hasDirectInstagramVideo(cached) || checkedReelPreviews.has(cached))) return cached;
+
+        function remember(data) {
+            cacheData(parsed.shortcode, data);
+            return data;
+        }
 
         let lastError = null;
+        let preview = cached || null;
         for (const mediaUrl of mediaUrlCandidates(parsed)) {
             try {
                 const res = await fetch(mediaUrl, { headers: MEDIA_REQUEST_HEADERS });
@@ -327,12 +346,23 @@ function createInstagramClient(fetch) {
                 const html = await res.text();
                 const data = parseInstagramHtml(html, parsed.shortcode);
                 if (data) {
-                    cacheData(parsed.shortcode, data);
-                    return data;
+                    if (!preferVideo || hasDirectInstagramVideo(data)) return remember(data);
+                    preview ||= data;
                 }
             } catch (err) {
                 lastError = err;
             }
+        }
+
+        // A Reel's normal crawler page can expose only its poster. Continue
+        // through embed/GraphQL sources before accepting that image as output.
+        if (preferVideo) {
+            const graphqlData = await fetchGraphqlData(parsed.shortcode).catch(err => {
+                lastError = err;
+                return null;
+            });
+            if (hasDirectInstagramVideo(graphqlData)) return remember(graphqlData);
+            preview ||= graphqlData;
         }
 
         const oembedData = await fetchOEmbedData(parsed).catch(err => {
@@ -340,17 +370,22 @@ function createInstagramClient(fetch) {
             return null;
         });
         if (oembedData) {
-            cacheData(parsed.shortcode, oembedData);
-            return oembedData;
+            if (!preferVideo) return remember(oembedData);
+            preview ||= oembedData;
         }
 
-        const graphqlData = await fetchGraphqlData(parsed.shortcode).catch(err => {
-            lastError = err;
-            return null;
-        });
-        if (graphqlData) {
-            cacheData(parsed.shortcode, graphqlData);
-            return graphqlData;
+        if (!preferVideo) {
+            const graphqlData = await fetchGraphqlData(parsed.shortcode).catch(err => {
+                lastError = err;
+                return null;
+            });
+            if (graphqlData) return remember(graphqlData);
+        }
+        if (preview) {
+            // Cache a checked fallback too, so an unavailable video does not
+            // trigger the full set of requests on every repeated expansion.
+            checkedReelPreviews.add(preview);
+            return remember(preview);
         }
 
         throw lastError || new Error('instagram data not found');
