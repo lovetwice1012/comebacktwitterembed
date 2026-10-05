@@ -3,6 +3,51 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const parser = require('../../src/providers/instagram/instagramSourceParser');
+const { captionPage } = require('./helpers/instagram-caption-fixture.cjs');
+
+test('Instagram caption fallback ignores Caption module names in page scripts for both reported post routes', () => {
+    for (const shortcode of ['DeAdSjuBvPY', 'DeAcEspS-ry']) {
+        const caption = 'An English photo caption #rescuecat';
+        const data = parser.parseInstagramHtml(captionPage({ shortcode, caption }), shortcode);
+        assert.equal(data.caption, caption);
+        assert.equal(data.medias[0].typeName, 'GraphImage');
+        assert.doesNotMatch(data.caption, /ScheduledServerJS|__bbox|#0866FF/);
+    }
+});
+
+test('Instagram HTML classes must match actual class tokens instead of text or attribute substrings', () => {
+    const html = captionPage({ content: `
+      <!-- <div class="Caption">comment caption #comment</div> -->
+      <script>const markup = "<div class='Caption'>script caption #code</div>";</script>
+      <style>.Caption::after { content: '#style'; }</style>
+      <div data-class="Caption">data attribute #data</div>
+      <div title="class='Caption'">title attribute #title</div>
+      <div class="CaptionUsername">partial class #partial</div>
+      <div class='extra Caption active'><span>Actual</span><div>English<br>caption #rescuecat</div></div>
+      <div class="Caption">another caption #other</div>` });
+    assert.equal(parser.parseInstagramHtml(html, 'DeAdSjuBvPY').caption, 'ActualEnglish\ncaption #rescuecat');
+});
+
+test('Instagram script literals cannot spoof media elements or Open Graph metadata', () => {
+    const html = `<script>const markup = "<meta property='og:description' content='fake #code'>
+      <img class='EmbeddedMediaImage' src='https://example.com/fake.jpg'>
+      <span class='UsernameText'>fake</span>";</script>` + captionPage();
+    const data = parser.parseInstagramHtml(html, 'DeAdSjuBvPY');
+    assert.equal(data.username, 'artist');
+    assert.equal(data.caption, 'An English photo caption #rescuecat');
+    assert.equal(data.medias[0].url, 'https://example.com/media.jpg');
+});
+
+test('Instagram photo/video HTML fallbacks preserve English, Japanese and Korean captions and their real hashtags', () => {
+    for (const caption of ['An English caption #cat', '日本語の本文 #ねこ', '한국어 본문 #고양이']) {
+        for (const video of [false, true]) {
+            const data = parser.parseInstagramHtml(captionPage({ caption, video }), 'DeAdSjuBvPY');
+            assert.equal(data.caption, caption);
+            assert.equal(data.medias[0].typeName, video ? 'GraphVideo' : 'GraphImage');
+            assert.equal(data.medias[0].url, `https://example.com/media.${video ? 'mp4' : 'jpg'}`);
+        }
+    }
+});
 
 test('instagram source parser: requested post identity wins over unrelated carousel metadata', () => {
     const requested = {

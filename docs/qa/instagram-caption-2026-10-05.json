@@ -1,0 +1,63 @@
+{
+  "checkedAt": "2026-10-05T04:42:43.308Z",
+  "sourceFetch": "Unauthenticated live Instagram HTML, facebookexternalhit/1.1",
+  "validation": "Replay downloaded source through real parser and embed builder; no Discord submission",
+  "realDiscordMessages": 0,
+  "results": [
+    {
+      "url": "https://www.instagram.com/p/DeAdSjuBvPY/",
+      "source": "page",
+      "htmlSha256": "9f82e00580e0d41c0d0a8f20d7d93ec76b8711da05bc1cc9067cf16050b1ddc7",
+      "legacyCaptionLength": 159596,
+      "correctedCaptionLength": 183,
+      "mediaPreserved": true,
+      "scriptLeak": false,
+      "renderedHashtags": "#rescuecat #fivcat #cattransformation"
+    },
+    {
+      "url": "https://www.instagram.com/p/DeAdSjuBvPY/",
+      "source": "embed",
+      "htmlSha256": "5db56037eeb0e66ec75a023c4d86afee57777086da8821a19e35440040d8e9f5",
+      "legacyCaptionLength": 140,
+      "correctedCaptionLength": 140,
+      "mediaPreserved": true,
+      "scriptLeak": false,
+      "renderedHashtags": "#rescuecat #fivcat #cattransformationView"
+    },
+    {
+      "url": "https://www.instagram.com/tinykittenshq/p/DeAcEspS-ry/",
+      "source": "page",
+      "htmlSha256": "bb0a3e5053ee167c4869ec82231f9eafaa9bf8ae239b579d0e69eff0b31aed34",
+      "legacyCaptionLength": 159045,
+      "correctedCaptionLength": 350,
+      "mediaPreserved": true,
+      "scriptLeak": false,
+      "renderedHashtags": null
+    },
+    {
+      "url": "https://www.instagram.com/tinykittenshq/p/DeAcEspS-ry/",
+      "source": "embed",
+      "htmlSha256": "02f22f2868c3f98528a7671cb5e53b33a334591a8d9ddbde47f4923a6b528eaa",
+      "legacyCaptionLength": 306,
+      "correctedCaptionLength": 306,
+      "mediaPreserved": true,
+      "scriptLeak": false,
+      "renderedHashtags": null
+    }
+  ],
+  "tests": {
+    "instagram": {
+      "passed": 44,
+      "failed": 0,
+      "skipped": 0
+    },
+    "general": {
+      "passed": 1051,
+      "failed": 0,
+      "skipped": 56,
+      "skipReason": "55 opt-in SQL tests without a test database and one Linux ACL-only test"
+    },
+    "typecheck": "passed",
+    "lint": "passed"
+  }
+}

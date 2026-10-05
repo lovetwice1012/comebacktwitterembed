@@ -5,6 +5,20 @@ const assert = require('node:assert/strict');
 
 const instagramModulePath = require.resolve('../../src/providers/instagram');
 const fetchModulePath = require.resolve('node-fetch');
+const { captionPage } = require('./helpers/instagram-caption-fixture.cjs');
+
+test('instagram extract: reported English photo routes never render page scripts or their CSS colors as hashtags', async () => {
+    for (const url of ['https://www.instagram.com/p/DeAdSjuBvPY/', 'https://www.instagram.com/tinykittenshq/p/DeAcEspS-ry/']) {
+        const shortcode = url.includes('DeAcEspS-ry') ? 'DeAcEspS-ry' : 'DeAdSjuBvPY';
+        const provider = loadInstagramProviderWithFetch(async () => ({ ok: true, text: async () => captionPage({ shortcode }) }));
+        const result = await provider.extract(createMessage(url), url, {});
+        const embed = result[0].embeds[0];
+        assert.match(embed.description, /An English photo caption #rescuecat/);
+        assert.equal(embed.fields.find(field => field.name === 'Hashtags').value, '#rescuecat');
+        assert.doesNotMatch(JSON.stringify(embed), /ScheduledServerJS|__bbox|#0866FF/);
+        assert.equal(embed.image.url, 'https://example.com/media.jpg');
+    }
+});
 
 function loadInstagramProviderWithFetch(fakeFetch) {
     const originalFetchModule = require.cache[fetchModulePath];
