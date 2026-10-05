@@ -79,7 +79,8 @@ async function main() {
     };
     const download = async (name, artifactName) => {
         if (name === 'エクスポート') await openDetails('配置・入出力');
-        const pending = page.waitForEvent('download'); await button(name).click(); const item = await pending;
+        if (name === '共有用エクスポート') await openDetails('ルール操作');
+        const [item] = await Promise.all([page.waitForEvent('download'), button(name).click()]);
         const target = path.join(folder, artifactName || item.suggestedFilename()); await item.saveAs(target); return fs.readFileSync(target, 'utf8');
     };
     const simulator = page.locator('details').filter({ has: page.locator('summary').getByText('動きをテスト（実送信なし）', { exact: true }) });

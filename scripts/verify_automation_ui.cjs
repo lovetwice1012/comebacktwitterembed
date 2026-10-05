@@ -35,6 +35,7 @@ async function main() {
         checked('15 successive real graph selections without update loops');
         const nodeCount = await page.locator('.react-flow__node').count();
         await page.locator('.react-flow__node[data-id="start"]').click();
+        await page.locator('summary').getByText('ブロックを追加', { exact: true }).click();
         await page.getByRole('button', { name: '遅延', exact: true }).click();
         await ready();
         assert.equal(await page.locator('.react-flow__node').count(), nodeCount + 1);
