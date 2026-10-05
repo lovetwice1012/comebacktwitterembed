@@ -39,7 +39,7 @@ test('real Discord managers discard history, bound users and retain active role 
             guild_id: guild.id, channel: { id: channel.id, type: 0 },
             member: { user: payload.author, roles: ['201'] },
             message: payload, data: { custom_id: 'delete', component_type: 2 },
-            locale: 'ja', guild_locale: 'ja', entitlements: [],
+            locale: 'ja', guild_locale: 'ja', entitlements: [], authorizing_integration_owners: {},
         });
         assert.equal(interaction.message.id, payload.id);
         assert.ok(interaction.member.roles.cache.has('201'));

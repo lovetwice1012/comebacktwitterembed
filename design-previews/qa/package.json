@@ -1,0 +1,8 @@
+{
+  "name": "automation-design-qa",
+  "private": true,
+  "description": "Isolated browser verification for design proposals; no production connections.",
+  "dependencies": {
+    "playwright": "^1.63.0"
+  }
+}

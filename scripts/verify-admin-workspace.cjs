@@ -72,7 +72,7 @@ async function main() {
     assert.equal(harness.stats.mutations[0].input.guildId, guild);
     assert.equal(harness.stats.mutations[0].input.value, false);
     assert.equal(harness.stats.mutations[0].input.expectedHash, 'revision-1');
-    assert.equal(await page.getByRole('checkbox', { name: '対象サーバーと変更内容を確認しました' }).isChecked(), false);
+    await waitFor(async () => !await page.getByRole('checkbox', { name: '対象サーバーと変更内容を確認しました' }).isChecked());
     await nav('分析').click();
     await page.getByRole('button', { name: 'サーバーの利用状況', exact: true }).click();
     await waitFor(() => harness.stats.requests.some(item => item.path.endsWith('/guild-analytics-preview') && item.query.guild_id === guild));

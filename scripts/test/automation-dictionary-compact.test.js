@@ -7,7 +7,7 @@ const { DictionaryMatcher, planDictionary } = require('../../src/automation/dict
 // normalization, duplicate handling and matching. Keep this reference stable.
 const Reference = (() => {
     'use strict';
-    
+
     // Compact adjacency-list Aho-Corasick automaton. Six typed arrays replace a
     // Map/object per character; a million-entry dictionary is compiled once and
     // shared by version, never duplicated for every subscription.
@@ -17,7 +17,7 @@ const Reference = (() => {
     const wordChar = value => !!value && /[\p{L}\p{M}\p{N}_]/u.test(value);
     const before = (text, index) => index > 1 && /[\uDC00-\uDFFF]/.test(text[index - 1]) && /[\uD800-\uDBFF]/.test(text[index - 2]) ? text.slice(index - 2, index) : text[index - 1];
     const after = (text, index) => index < text.length ? String.fromCodePoint(text.codePointAt(index)) : '';
-    
+
     function normalize(text, options = {}) {
         let value = String(text).normalize(options.form === 'NFC' ? 'NFC' : 'NFKC');
         if (options.caseFold !== false) value = value.toLowerCase();
@@ -48,7 +48,7 @@ const Reference = (() => {
         }
         return input;
     }
-    
+
     class DictionaryMatcher {
         constructor(input) {
             validateDictionary(input);

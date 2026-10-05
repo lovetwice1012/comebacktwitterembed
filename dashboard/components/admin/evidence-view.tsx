@@ -15,4 +15,3 @@ export function RawEvidence({ value, label = "全項目・原文", expanded = fa
     {feedback ? <p className="text-xs">{feedback}</p> : null}<pre className="max-h-[36rem] overflow-auto whitespace-pre-wrap break-all rounded bg-muted p-3 text-xs">{displayed || "一致なし"}</pre>
   </div> : null}</details>;
 }
-
