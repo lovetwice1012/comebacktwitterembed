@@ -29,6 +29,38 @@ function source(send) {
         suppressEmbeds: async () => postprocess.push('suppress'), delete: async () => postprocess.push('delete') };
 }
 
+test('silent expansion applies to channel sends, source replies, subsequent replies and file fallback when enabled', async () => {
+    const payloads = [];
+    let failedFile = false;
+    const send = async payload => {
+        payloads.push(structuredClone(payload));
+        if (payload.files && !failedFile) { failedFile = true; throw { status: 413 }; }
+        return { id: String(payloads.length), reply: send };
+    };
+    await dispatcher().runSendSteps(source(send), [
+        { content: 'first', send: 'channel' },
+        { content: 'second', send: 'reply-source' },
+        { content: 'third', send: 'reply-previous', files: [{ attachment: 'https://example.test/movie.mp4' }] },
+    ], 'instagram', { presentationSettings: { silent_expansion: true } });
+    assert.equal(payloads.length, 4);
+    for (const payload of payloads) assert.equal(payload.flags, 4096);
+});
+
+test('an explicit Web setting to disable silent expansion permits ordinary notifications', async () => {
+    const payloads = [];
+    await dispatcher().runSendSteps(source(async payload => { payloads.push(payload); return { id: 'sent' }; }),
+        [{ content: 'ordinary' }], 'instagram', { presentationSettings: { silent_expansion: false } });
+    assert.equal(payloads.length, 1);
+    assert.equal(payloads[0].flags, undefined);
+});
+
+test('ordinary notifications remain the default before any Web setting is saved', async () => {
+    let payload;
+    await dispatcher().runSendSteps(source(async value => { payload = value; return { id: 'sent' }; }), [{ content: 'ordinary' }]);
+    assert.equal(payload.flags, undefined);
+    assert.equal(require('../../src/providers/_provider_settings').PROVIDER_DEFAULTS.silent_expansion, false);
+});
+
 test('failed or uncertain deliveries preserve the original message and embeds', async () => {
     for (const error of [
         { status: 503 }, { statusCode: 502 }, { response: { status: 504 } },

@@ -398,6 +398,7 @@ const SCHEMA_STATEMENTS = [
         media_display_mode VARCHAR(32) NULL,
         gallery_display_mode VARCHAR(32) NULL,
         show_previous_shares TINYINT(1) NULL,
+        silent_expansion TINYINT(1) NULL,
         failure_display_policy VARCHAR(32) NULL,
         tiktok_description_max_length INT NULL,
         tiktok_image_limit INT NULL,
@@ -927,6 +928,7 @@ const SCHEMA_STATEMENTS = [
 const MIGRATIONS_DIR = path.join(__dirname, '..', 'migrations');
 
 const GUILD_PROVIDER_SETTING_COLUMN_DEFINITIONS = {
+    silent_expansion: 'TINYINT(1) NULL',
     enabled: 'TINYINT(1) NULL',
     default_language: 'VARCHAR(16) NULL',
     edit_original_if_translate: 'TINYINT(1) NULL',

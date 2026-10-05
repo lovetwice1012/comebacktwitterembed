@@ -70,6 +70,7 @@ function sensitiveTargetSpec(key, label, description) {
 }
 
 const BULK_SETTING_KEYS = new Set([
+    'silent_expansion',
     'enabled',
     'disable',
     'defaultLanguage',
@@ -80,6 +81,12 @@ const BULK_SETTING_KEYS = new Set([
 ]);
 
 const COMMON_SETTING_SPECS = [
+    {
+        key: 'silent_expansion', settingKey: 'silent_expansion', kind: 'bool',
+        label: text('Silent expansion messages', '展開メッセージをサイレント送信'),
+        description: text('Send expansion messages without push or desktop notifications. Disabled by default; unread indicators still appear when enabled.',
+            '展開メッセージのプッシュ通知・デスクトップ通知を抑えます。初期状態はオフです。オンにしても未読表示は残ります。'),
+    },
     {
         key: 'show_previous_shares', settingKey: 'show_previous_shares', kind: 'bool',
         label: text('Show previous shares', '過去の共有リンクを表示'),

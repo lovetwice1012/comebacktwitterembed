@@ -108,7 +108,7 @@ function scrapeFromEmbedHtml(html, shortcode = '') {
 
     const imageTag = findTagWithClass(html, 'EmbeddedMediaImage');
     const videoTag = findTagWithClass(html, 'EmbeddedMediaVideo');
-    const mediaTag = imageTag || videoTag;
+    const mediaTag = videoTag || imageTag;
     let mediaUrl = extractAttr(mediaTag, 'src');
     let typeName = videoTag ? 'GraphVideo' : 'GraphImage';
 
@@ -214,7 +214,7 @@ function collectJsonCandidates(html) {
     const tokens = [
         'shortcode_media', 'xdt_shortcode_media', 'carousel_media',
         'video_versions', 'video_url', 'video_dash_manifest',
-        'display_url', 'display_uri', 'image_versions2',
+        'display_url', 'display_uri', 'image_versions2', 'display_resources',
     ];
     const seen = new Set();
 
@@ -311,7 +311,7 @@ function mediaNodeScore(node) {
     const childCount = Array.isArray(sidecarEdges) ? sidecarEdges.length
         : Array.isArray(carousel) ? carousel.length : 0;
     const hasImage = Boolean(firstString(node, [
-        'display_url', 'display_uri', 'thumbnail_src', 'image_versions2.candidates.0.url',
+        'display_url', 'display_uri', 'thumbnail_src', 'image_versions2.candidates.0.url', 'display_resources.0.src',
     ]));
     const hasVideo = isVideoNode(node);
     if (childCount === 0 && !hasImage && !hasVideo) return 0;
@@ -391,16 +391,21 @@ function mediaUrlFromNode(node) {
         if (video) return normalizeCdnUrl(video);
     }
 
+    const versions = getPath(node, 'image_versions2.candidates');
+    const resources = node.display_resources;
+    const imageCandidates = [
+        ...(Array.isArray(versions) ? versions : []).filter(Boolean).map(candidate => ({ url: candidate.url, width: candidate.width, height: candidate.height })),
+        ...(Array.isArray(resources) ? resources : []).filter(Boolean).map(candidate => ({ url: candidate.src, width: candidate.config_width, height: candidate.config_height })),
+    ].filter(candidate => typeof candidate.url === 'string' && candidate.url);
+    imageCandidates.sort((a, b) => (Number(b.width) * Number(b.height) || 0) - (Number(a.width) * Number(a.height) || 0));
     const image = firstString(node, [
         'display_url',
         'display_uri',
-        'thumbnail_src',
-        'image_versions2.candidates.0.url',
     ]);
+    if (image && !isResizedImageUrl(image)) return normalizeCdnUrl(image);
+    if (imageCandidates.length) return normalizeCdnUrl(imageCandidates[0].url);
     if (image) return normalizeCdnUrl(image);
-
-    const candidates = getPath(node, 'image_versions2.candidates');
-    if (Array.isArray(candidates) && candidates[0]?.url) return normalizeCdnUrl(candidates[0].url);
+    if (node.thumbnail_src) return normalizeCdnUrl(node.thumbnail_src);
     const videos = getPath(node, 'video_versions');
     if (Array.isArray(videos) && videos[0]?.url) return normalizeCdnUrl(videos[0].url);
     return '';
@@ -472,11 +477,34 @@ function normalizeMediaNode(node) {
 }
 
 function parseInstagramHtml(html, shortcode = '') {
+    return parseInstagramHtmlSource(html, shortcode).data;
+}
+
+function parseInstagramHtmlSource(html, shortcode = '') {
     const node = findMediaNode(collectJsonCandidates(html), shortcode);
     const normalized = normalizeMediaNode(node);
-    if (normalized) return normalized;
+    if (normalized) return { data: normalized, previewOnly: normalized.medias.length === 1 && hasResizedImage(normalized) };
 
-    return scrapeFromEmbedHtml(html, shortcode);
+    return {
+        data: scrapeFromEmbedHtml(html, shortcode),
+        previewOnly: !findTagWithClass(html, 'EmbeddedMediaImage') && !findTagWithClass(html, 'EmbeddedMediaVideo'),
+    };
+}
+
+function hasResizedImage(data) {
+    return data.medias.some(media => {
+        if (/Video/i.test(media.typeName)) {
+            try { return !/\.(mp4|mov|webm|m4v|mkv|avi)$/i.test(new URL(media.url).pathname); }
+            catch { return true; }
+        }
+        return isResizedImageUrl(media.url);
+    });
+}
+
+function isResizedImageUrl(url) {
+    try {
+        return /(?:^|_)(?:[sp]\d+x\d+|c\d+(?:\.\d+){3}a)(?:_|$)/.test(new URL(url).searchParams.get('stp') || '');
+    } catch { return false; }
 }
 
 function usernameFromAuthorUrl(authorUrl) {
@@ -597,6 +625,7 @@ function normalizeProfileHtmlData(username, html) {
 
 module.exports = {
     parseInstagramHtml,
+    parseInstagramHtmlSource,
     normalizeMediaNode,
     normalizeOEmbedData,
     normalizeProfileData,

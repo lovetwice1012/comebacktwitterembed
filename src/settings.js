@@ -16,6 +16,7 @@ try {
 }
 
 const SETTINGS_DEFAULT_FILE = {
+    silent_expansion: {},
     disable: { user: [], channel: [], role: {} },
     bannedWords: {},
     defaultLanguage: {},
@@ -85,6 +86,7 @@ const SETTINGS_DEFAULT_FILE = {
 };
 
 const SETTINGS_MIGRATIONS = {
+    silent_expansion: {},
     'disable.role': {},
     defaultLanguage: {},
     editOriginalIfTranslate: {},
@@ -338,6 +340,10 @@ const PROVIDER_SETTING_COLUMNS = {
     },
     show_previous_shares: {
         column: 'show_previous_shares',
+        type: 'bool',
+    },
+    silent_expansion: {
+        column: 'silent_expansion',
         type: 'bool',
     },
     failure_display_policy: {

@@ -547,7 +547,7 @@ test('instagram extract: falls back to oEmbed thumbnail when embed HTML has no m
     assert.ok(Array.isArray(result));
     assert.equal(requestedUrls[0], 'https://www.instagram.com/p/CODE123/');
     assert.ok(requestedUrls.includes('https://www.instagram.com/api/v1/oembed/?url=https%3A%2F%2Fwww.instagram.com%2Fp%2FCODE123%2F'));
-    assert.equal(requestedUrls.some(url => url.includes('/graphql/query/')), false);
+    assert.equal(requestedUrls.some(url => url.includes('/graphql/query/')), true);
     assert.equal(result[0].embeds[0].title, '@artist');
     assert.equal(result[0].embeds[0].description.includes('fallback caption'), true);
     assert.equal(result[0].embeds[0].image.url, 'https://scontent.cdninstagram.com/v/t51.2885-15/fallback.jpg');

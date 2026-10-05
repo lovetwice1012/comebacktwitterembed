@@ -110,27 +110,32 @@ test('real SQL web management shares Discord records, protects other owners, det
     } finally { await f.close(); }
 });
 
-test('real dashboard settings persist gallery and previous-share choices; production Bot reader sees both', { skip: !port }, async () => {
+test('real dashboard settings persist gallery, previous-share and silent-send choices; production Bot reader sees all', { skip: !port }, async () => {
     const f = await createFixture(port);
     try {
         const provider = { id: 'pixiv', enabledByDefault: false };
         const initial = await f.botSettings.getProviderSettings(provider, guild);
         assert.equal(initial.gallery_display_mode, 'normal'); assert.equal(initial.show_previous_shares, true);
+        assert.equal(initial.silent_expansion, false);
         const states = await f.settings.getProviderSettingsState('pixiv', guild, 'ja');
         assert.deepEqual(states.find(s => s.key === 'gallery_display_mode').spec.choices.map(c => c.value), ['normal', 'gallery']);
         assert.ok(states.some(s => s.key === 'show_previous_shares' && s.kind === 'bool'));
-        await f.settings.saveProviderSettings(guild, 'pixiv', { changes: { gallery_display_mode: 'gallery', show_previous_shares: false } }, { id: user, username: 'Fixture' });
+        assert.ok(states.some(s => s.key === 'silent_expansion' && s.kind === 'bool' && s.spec.category === 'output'));
+        await f.settings.saveProviderSettings(guild, 'pixiv', { changes: { gallery_display_mode: 'gallery', show_previous_shares: false, silent_expansion: true } }, { id: user, username: 'Fixture' });
         const fresh = await f.botSettings._internal.loadProviderSettings(provider, guild);
         assert.equal(fresh.gallery_display_mode, 'gallery'); assert.equal(fresh.show_previous_shares, false);
+        assert.equal(fresh.silent_expansion, true);
         assert.equal((await f.db.queryDatabase('SELECT * FROM provider_settings_cache_invalidations')).length, 1);
         const readBack = await f.settings.getProviderSettingsState('pixiv', guild, 'ja');
         assert.equal(readBack.find(s => s.key === 'show_previous_shares').value, false);
+        assert.equal(readBack.find(s => s.key === 'silent_expansion').value, true);
         let sent = 0;
         const history = require('../../src/sharedPostHistory').createHistory({ queryDatabase: async () => assert.fail('disabled history accessed storage') });
         await history.run({ id: '1', guildId: guild }, [{ content: '今回も展開' }], { sharedHistory: true, presentationSettings: fresh }, async steps => { assert.equal(steps[0].content, '今回も展開'); sent++; });
         assert.equal(sent, 1);
-        await f.settings.saveProviderSettings(guild, 'pixiv', { changes: { gallery_display_mode: 'normal', show_previous_shares: true } }, { id: user, username: 'Fixture' });
+        await f.settings.saveProviderSettings(guild, 'pixiv', { changes: { gallery_display_mode: 'normal', show_previous_shares: true, silent_expansion: false } }, { id: user, username: 'Fixture' });
         const reverted = await f.botSettings._internal.loadProviderSettings(provider, guild);
         assert.equal(reverted.gallery_display_mode, 'normal'); assert.equal(reverted.show_previous_shares, true);
+        assert.equal(reverted.silent_expansion, false);
     } finally { await f.close(); }
 });
