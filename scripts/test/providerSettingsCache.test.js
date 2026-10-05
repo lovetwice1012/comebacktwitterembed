@@ -46,6 +46,7 @@ test('production cold load preserves all eight target categories and normalized 
     assert.deepEqual(value.button_invisible, {
         showMediaAsAttachments: false, showAttachmentsAsEmbedsImage: false,
         translate: true, delete: false, all: false, savetweet: true,
+        personal: false, personal_save: false, personal_remind: false, personal_restock: false, gallery: false,
     });
 
     const union = database.queries.find(({ sql }) => sql.includes('UNION ALL'));

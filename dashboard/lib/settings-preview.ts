@@ -241,7 +241,7 @@ function truncateDescription(value: string, maxLength: number, locale: Dashboard
   return `${value.slice(0, limit).trim()}${locale === "ja" ? "…" : "..."}`;
 }
 
-function visibleButtons(states: SettingState[], locale: DashboardLocale) {
+function visibleButtons(states: SettingState[], locale: DashboardLocale, providerId: string, gallery: boolean) {
   const t = createTranslator(locale);
   const buttonVisibility = (stateValue(states, "button_invisible") || {}) as Record<string, boolean>;
   if (buttonVisibility.all) return [];
@@ -251,8 +251,13 @@ function visibleButtons(states: SettingState[], locale: DashboardLocale) {
     showMediaAsAttachments: t("preview.button.attach"),
     showAttachmentsAsEmbedsImage: t("preview.button.embed"),
     savetweet: t("preview.button.save"),
+    personal_save: locale === "ja" ? "あとで見る" : "Save for later",
+    personal_remind: locale === "ja" ? "あとで通知" : "Remind me",
+    ...(providerId === "booth" ? { personal_restock: locale === "ja" ? "再入荷を待つ" : "Watch restock" } : {}),
+    ...(gallery ? { gallery: locale === "ja" ? "ギャラリー" : "Gallery" } : {}),
   })
-    .filter(([key]) => !buttonVisibility[key])
+    .filter(([key]) => !buttonVisibility[key] && !(key.startsWith("personal_") && buttonVisibility.personal)
+      && (key !== "savetweet" || providerId === "twitter"))
     .map(([key, label]) => ({ key, label, danger: key === "delete" }));
 }
 
@@ -290,7 +295,9 @@ export function buildPreview(providerId: string, states: SettingState[], locale:
   const showAttachment = mediaMode === "attachment";
   const showLinkOnly = mediaMode === "link_only";
   const gallery = ["pixiv", "instagram"].includes(providerId) && stateValue(states, "gallery_display_mode") === "gallery"
-    && !showThumbnail && !showLinkOnly && Number(stateValue(states, providerId === "pixiv" ? "pixiv_images_per_step" : "instagram_media_limit")) !== 1;
+    && !showThumbnail && !showLinkOnly && Number(stateValue(states, providerId === "pixiv" ? "pixiv_images_per_step" : "instagram_media_limit")) !== 1
+    && !((stateValue(states, "button_invisible") || {}) as Record<string, boolean>).all
+    && !((stateValue(states, "button_invisible") || {}) as Record<string, boolean>).gallery;
 
   return {
     providerId,
@@ -305,6 +312,9 @@ export function buildPreview(providerId: string, states: SettingState[], locale:
     timestamp: locale === "ja" ? "今日 12:34" : "Today at 12:34",
     replyContext: replyMode ? (locale === "ja" ? "元メッセージへの返信" : "Replying to source message") : null,
     messageContent: showLinkOnly ? fixture.sourceUrl : "",
+    previousShareNotice: stateValue(states, "show_previous_shares") === false ? null : locale === "ja"
+      ? "このチャンネルで以前にも共有されています · 前の投稿を見る（以前の共有がある場合）"
+      : "Previously shared in this channel · View earlier post (when an earlier share exists)",
     requester: anonymous ? (locale === "ja" ? "匿名のリクエスト" : "Anonymous request") : (locale === "ja" ? "Requested by yuyutti" : "Requested by yuyutti"),
     sourceDeletedNotice: deleteSource ? (locale === "ja" ? "元投稿は展開後に削除されます" : "Source message will be deleted after expansion") : null,
     author: text(fixture.author, locale),
@@ -329,7 +339,7 @@ export function buildPreview(providerId: string, states: SettingState[], locale:
         ]
       : [],
     linkOnlyMedia: showLinkOnly ? mediaLabel : null,
-    buttons: visibleButtons(states, locale),
+    buttons: visibleButtons(states, locale, providerId, gallery),
   };
 }
 

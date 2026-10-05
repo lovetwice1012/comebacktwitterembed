@@ -210,6 +210,11 @@ const ja = {
   "form.button.translate": "翻訳ボタン",
   "form.button.delete": "削除ボタン",
   "form.button.savetweet": "保存ボタン",
+  "form.button.personal": "個人用リンク操作ボタン（まとめて）",
+  "form.button.personal_save": "あとで見るボタン",
+  "form.button.personal_remind": "あとで通知ボタン",
+  "form.button.personal_restock": "再入荷を待つボタン",
+  "form.button.gallery": "ギャラリーボタン",
   "form.button.all": "すべてのボタン",
   "form.readOnlyKind": "この設定種別は表示専用です。",
 
@@ -537,6 +542,11 @@ const en: Record<keyof typeof ja, string> = {
   "form.button.translate": "Translate button",
   "form.button.delete": "Delete button",
   "form.button.savetweet": "Save button",
+  "form.button.personal": "All personal-link action buttons",
+  "form.button.personal_save": "Save for later button",
+  "form.button.personal_remind": "Remind me button",
+  "form.button.personal_restock": "Watch restock button",
+  "form.button.gallery": "Gallery buttons",
   "form.button.all": "All buttons",
   "form.readOnlyKind": "This setting type is read-only.",
 

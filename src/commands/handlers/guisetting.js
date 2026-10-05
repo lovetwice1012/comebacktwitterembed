@@ -164,6 +164,11 @@ const BUTTON_VISIBILITY_OPTIONS = [
     { key: 'translate', label: 'Translate' },
     { key: 'delete', label: 'Delete' },
     { key: 'savetweet', label: 'Save tweet' },
+    { key: 'personal', label: 'Personal-link actions / 個人用リンク操作（まとめて）' },
+    { key: 'personal_save', label: 'Save for later / あとで見る' },
+    { key: 'personal_remind', label: 'Remind me / あとで通知' },
+    { key: 'personal_restock', label: 'Watch restock / 再入荷を待つ' },
+    { key: 'gallery', label: 'Gallery / ギャラリー' },
 ];
 
 function getSettingSpecs(providerId) {

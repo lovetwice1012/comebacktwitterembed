@@ -25,6 +25,9 @@ export function OutputPreviewCard({ preview, locale = "ja" }: { preview: Provide
               {preview.messageContent}
             </a>
           ) : null}
+          {preview.previousShareNotice ? (
+            <div className="mt-2 text-xs text-[#949ba4]">{preview.previousShareNotice}</div>
+          ) : null}
 
           <div className="mt-2 w-full max-w-[560px] overflow-hidden rounded bg-[#2b2d31]" style={{ borderLeft: `4px solid ${preview.accentColor}` }}>
             <div className="flex gap-3 p-3">

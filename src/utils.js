@@ -21,8 +21,21 @@ const button_invisible_template = {
     showAttachmentsAsEmbedsImage: false,
     translate: false,
     delete: false,
+    personal: false,
+    personal_save: false,
+    personal_remind: false,
+    personal_restock: false,
+    gallery: false,
     all: false,
 };
+
+function isResponseButtonHidden(visibility = {}, customId) {
+    if (visibility.all === true) return true;
+    if (typeof customId !== 'string') return false;
+    const [group, action] = customId.split(':');
+    if (visibility[group] === true) return true;
+    return group === 'personal' && visibility[`personal_${action}`] === true;
+}
 
 // 既に終了予告された旧インスタンス用警告 embed (現状未参照だが保持)。
 const warning_this_bot_is_not_main_instance_and_going_to_be_closed_embed = {
@@ -131,6 +144,7 @@ module.exports = {
     videoExtensions,
     button_disabled_template,
     button_invisible_template,
+    isResponseButtonHidden,
     warning_this_bot_is_not_main_instance_and_going_to_be_closed_embed,
     antiDirectoryTraversalAttack,
     ifUserHasRole,

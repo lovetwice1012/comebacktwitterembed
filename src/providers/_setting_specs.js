@@ -71,6 +71,7 @@ function sensitiveTargetSpec(key, label, description) {
 
 const BULK_SETTING_KEYS = new Set([
     'silent_expansion',
+    'show_previous_shares',
     'enabled',
     'disable',
     'defaultLanguage',
@@ -89,9 +90,9 @@ const COMMON_SETTING_SPECS = [
     },
     {
         key: 'show_previous_shares', settingKey: 'show_previous_shares', kind: 'bool',
-        label: text('Show previous shares', '過去の共有リンクを表示'),
+        label: text('Show previous-share notice', '過去の共有案内を表示'),
         description: text('Expand the current link normally and add a link to an earlier share in the same channel.',
-            '今回のリンクも通常どおり展開し、同じチャンネルにある過去の共有へのリンクを添えます。'),
+            '「このチャンネルで以前にも共有されています」と過去の投稿へのリンクを表示します。オフでも今回のリンクは通常どおり展開します。'),
     },
     {
         key: 'enabled',
