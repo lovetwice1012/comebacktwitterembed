@@ -1729,7 +1729,8 @@ function DetailedAnalyticsPanel() {
 
   async function reset() {
     setFilters(defaultDetailedFilters);
-    await load(defaultDetailedFilters);
+    setAppliedFilters(defaultDetailedFilters);
+    await load(defaultDetailedFilters, { silent: true });
   }
 
   useEffect(() => {
@@ -1740,7 +1741,53 @@ function DetailedAnalyticsPanel() {
     return () => window.clearTimeout(timer);
   }, [analytics, appliedFilters, load]);
 
-  if (analytics?.cache?.ready === false) return <ReportStatus cache={analytics.cache} onRetry={() => void load(appliedFilters)} />;
+  const filterControls = (<Card>
+        <CardHeader>
+          <CardTitle>分析条件</CardTitle>
+          <CardDescription>生成ボタンを押すと、この条件のレポートを作成します。前回の結果は再生成するまで表示します。</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="grid gap-3 lg:grid-cols-4">
+            <Input value={filters.guildId} onChange={(event) => setFilter("guildId", event.target.value)} placeholder="サーバーID" />
+            <Input value={filters.providerId} onChange={(event) => setFilter("providerId", event.target.value)} placeholder="サービスID" />
+            <Input value={filters.accountKey} onChange={(event) => setFilter("accountKey", event.target.value)} placeholder="アカウント" />
+            <Input value={filters.authorUserId} onChange={(event) => setFilter("authorUserId", event.target.value)} placeholder="投稿者のユーザーID" />
+            <Input value={filters.contentType} onChange={(event) => setFilter("contentType", event.target.value)} placeholder="種類" />
+            <Input value={filters.facetKey} onChange={(event) => setFilter("facetKey", event.target.value)} placeholder="分析軸" />
+            <Input value={filters.commandName} onChange={(event) => setFilter("commandName", event.target.value)} placeholder="操作名" />
+            <Input value={filters.componentId} onChange={(event) => setFilter("componentId", event.target.value)} placeholder="ボタンID" />
+          </div>
+          <div className="grid gap-3 lg:grid-cols-[1fr_1fr_160px_120px_160px_auto]">
+            <Input type="datetime-local" value={filters.dateFrom} onChange={(event) => setFilter("dateFrom", event.target.value)} />
+            <Input type="datetime-local" value={filters.dateTo} onChange={(event) => setFilter("dateTo", event.target.value)} />
+            <select className={controlClass} value={filters.eventType} onChange={(event) => setFilter("eventType", event.target.value)}>
+              <option value="">全イベント</option>
+              <option value="provider_extract">外部コンテンツの取得</option>
+              <option value="discord_send">Discordへの送信</option>
+              <option value="command">コマンド</option>
+              <option value="component">ボタン操作</option>
+              <option value="modal_submit">フォーム送信</option>
+            </select>
+            <select className={controlClass} value={filters.bucket} onChange={(event) => setFilter("bucket", event.target.value)}>
+              <option value="hour">時間別</option>
+              <option value="day">日別</option>
+            </select>
+            <Input value={filters.limit} onChange={(event) => setFilter("limit", event.target.value)} inputMode="numeric" placeholder="表示件数" />
+            <div className="flex gap-2">
+              <Button type="button" onClick={() => load()} disabled={loading || analytics?.cache?.refreshing === true}>
+                {loading ? <Loader2 size={16} className="animate-spin" /> : <Search size={16} />}
+                {analytics?.cache?.ready ? "再生成" : "生成"}
+              </Button>
+              <Button type="button" variant="outline" onClick={reset} disabled={loading || analytics?.cache?.refreshing === true}>
+                <RefreshCcw size={16} />
+              </Button>
+            </div>
+          </div>
+          {error ? <div className="rounded-md border border-destructive/40 bg-card p-3 text-sm text-destructive">{error}</div> : null}
+        </CardContent>
+      </Card>);
+
+  if (analytics?.cache?.ready === false) return <div className="space-y-4">{filterControls}<ReportStatus cache={analytics.cache} onRetry={() => void load()} /></div>;
 
   const contentSummary = analytics?.summary.content || {};
   const eventSummary = analytics?.summary.analytics || {};
@@ -1986,51 +2033,7 @@ function DetailedAnalyticsPanel() {
         </Badge>
       </div>
 
-      <details className="rounded-lg border p-3"><summary className="cursor-pointer text-sm font-medium">詳細な分析条件</summary>
-      <Card>
-        <CardHeader>
-          <CardTitle>分析条件</CardTitle>
-          <CardDescription>サービス、アカウント、サーバー、期間、分析軸で同じ統計を切り替えます。</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <div className="grid gap-3 lg:grid-cols-4">
-            <Input value={filters.providerId} onChange={(event) => setFilter("providerId", event.target.value)} placeholder="サービスID" />
-            <Input value={filters.accountKey} onChange={(event) => setFilter("accountKey", event.target.value)} placeholder="アカウント" />
-            <Input value={filters.authorUserId} onChange={(event) => setFilter("authorUserId", event.target.value)} placeholder="投稿者のユーザーID" />
-            <Input value={filters.contentType} onChange={(event) => setFilter("contentType", event.target.value)} placeholder="種類" />
-            <Input value={filters.facetKey} onChange={(event) => setFilter("facetKey", event.target.value)} placeholder="分析軸" />
-            <Input value={filters.commandName} onChange={(event) => setFilter("commandName", event.target.value)} placeholder="操作名" />
-            <Input value={filters.componentId} onChange={(event) => setFilter("componentId", event.target.value)} placeholder="ボタンID" />
-          </div>
-          <div className="grid gap-3 lg:grid-cols-[1fr_1fr_160px_120px_160px_auto]">
-
-            <select className={controlClass} value={filters.eventType} onChange={(event) => setFilter("eventType", event.target.value)}>
-              <option value="">全イベント</option>
-              <option value="provider_extract">外部コンテンツの取得</option>
-              <option value="discord_send">Discordへの送信</option>
-              <option value="command">コマンド</option>
-              <option value="component">ボタン操作</option>
-              <option value="modal_submit">フォーム送信</option>
-            </select>
-            <select className={controlClass} value={filters.bucket} onChange={(event) => setFilter("bucket", event.target.value)}>
-              <option value="hour">時間別</option>
-              <option value="day">日別</option>
-            </select>
-            <Input value={filters.limit} onChange={(event) => setFilter("limit", event.target.value)} inputMode="numeric" placeholder="表示件数" />
-            <div className="flex gap-2">
-              <Button type="button" onClick={() => load()} disabled={loading}>
-                {loading ? <Loader2 size={16} className="animate-spin" /> : <Search size={16} />}
-                分析
-              </Button>
-              <Button type="button" variant="outline" onClick={reset} disabled={loading}>
-                <RefreshCcw size={16} />
-              </Button>
-            </div>
-          </div>
-          {error ? <div className="rounded-md border border-destructive/40 bg-card p-3 text-sm text-destructive">{error}</div> : null}
-        </CardContent>
-      </Card>
-      </details>
+      <details className="rounded-lg border p-3"><summary className="cursor-pointer text-sm font-medium">詳細な分析条件</summary>{filterControls}</details>
 
       <ReportHighlights
         title="レポート要約"
@@ -2364,7 +2367,8 @@ function GuildAdminPreviewPanel() {
 
   async function reset() {
     setFilters(defaultGuildPreviewFilters);
-    await load(defaultGuildPreviewFilters);
+    setAppliedFilters(defaultGuildPreviewFilters);
+    await load(defaultGuildPreviewFilters, { silent: true });
   }
 
   useEffect(() => {
@@ -2375,7 +2379,45 @@ function GuildAdminPreviewPanel() {
     return () => window.clearTimeout(timer);
   }, [preview, appliedFilters, load]);
 
-  if (preview?.cache?.ready === false) return <ReportStatus cache={preview.cache} onRetry={() => void load(appliedFilters)} />;
+  const filterControls = (<Card>
+        <CardHeader>
+          <CardTitle>プレビュー条件</CardTitle>
+          <CardDescription>生成ボタンを押すと、この条件のレポートを作成します。前回の結果は再生成するまで表示します。</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="grid gap-3 lg:grid-cols-4">
+            <Input value={filters.guildId} onChange={(event) => setFilter("guildId", event.target.value)} placeholder="サーバーID" />
+            <Input value={filters.providerId} onChange={(event) => setFilter("providerId", event.target.value)} placeholder="サービスID" />
+            <Input value={filters.accountKey} onChange={(event) => setFilter("accountKey", event.target.value)} placeholder="アカウント" />
+            <Input value={filters.contentType} onChange={(event) => setFilter("contentType", event.target.value)} placeholder="種類" />
+          </div>
+          <div className="grid gap-3 lg:grid-cols-[1fr_1fr_120px_120px_150px_auto]">
+            <Input type="datetime-local" value={filters.dateFrom} onChange={(event) => setFilter("dateFrom", event.target.value)} />
+            <Input type="datetime-local" value={filters.dateTo} onChange={(event) => setFilter("dateTo", event.target.value)} />
+            <select className={controlClass} value={filters.bucket} onChange={(event) => setFilter("bucket", event.target.value)}>
+              <option value="day">日別</option>
+              <option value="hour">時間別</option>
+            </select>
+            <Input value={filters.limit} onChange={(event) => setFilter("limit", event.target.value)} inputMode="numeric" />
+            <select className={controlClass} value={filters.urlVisibility} onChange={(event) => setFilter("urlVisibility", event.target.value)}>
+              <option value="raw">Raw URL</option>
+              <option value="normalized">Normalized URL</option>
+            </select>
+            <div className="flex gap-2">
+              <Button type="button" onClick={() => load()} disabled={loading || preview?.cache?.refreshing === true}>
+                {loading ? <Loader2 size={16} className="animate-spin" /> : <Search size={16} />}
+                {preview?.cache?.ready ? "再生成" : "生成"}
+              </Button>
+              <Button type="button" variant="outline" onClick={reset} disabled={loading || preview?.cache?.refreshing === true}>
+                <RefreshCcw size={16} />
+              </Button>
+            </div>
+          </div>
+          {error ? <div className="rounded-md border border-destructive/40 bg-card p-3 text-sm text-destructive">{error}</div> : null}
+        </CardContent>
+      </Card>);
+
+  if (preview?.cache?.ready === false) return <div className="space-y-4">{filterControls}<ReportStatus cache={preview.cache} onRetry={() => void load()} /></div>;
 
   const retention = previewSectionRow(preview, "audienceRetention");
   const guildTimeSeries = previewSectionRows(preview, "timeSeries");
@@ -2505,43 +2547,7 @@ function GuildAdminPreviewPanel() {
         <Badge tone="warning">管理者だけに表示中</Badge>
       </div>
 
-      <details className="rounded-lg border p-3"><summary className="cursor-pointer text-sm font-medium">詳細な分析条件</summary>
-      <Card>
-        <CardHeader>
-          <CardTitle>プレビュー条件</CardTitle>
-          <CardDescription>guild_id を指定すると、そのサーバーの管理者に見せる想定の統計になります。</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <div className="grid gap-3 lg:grid-cols-4">
-            <Input value={filters.providerId} onChange={(event) => setFilter("providerId", event.target.value)} placeholder="サービスID" />
-            <Input value={filters.accountKey} onChange={(event) => setFilter("accountKey", event.target.value)} placeholder="アカウント" />
-            <Input value={filters.contentType} onChange={(event) => setFilter("contentType", event.target.value)} placeholder="種類" />
-          </div>
-          <div className="grid gap-3 lg:grid-cols-[1fr_1fr_120px_120px_150px_auto]">
-
-            <select className={controlClass} value={filters.bucket} onChange={(event) => setFilter("bucket", event.target.value)}>
-              <option value="day">日別</option>
-              <option value="hour">時間別</option>
-            </select>
-            <Input value={filters.limit} onChange={(event) => setFilter("limit", event.target.value)} inputMode="numeric" />
-            <select className={controlClass} value={filters.urlVisibility} onChange={(event) => setFilter("urlVisibility", event.target.value)}>
-              <option value="raw">Raw URL</option>
-              <option value="normalized">Normalized URL</option>
-            </select>
-            <div className="flex gap-2">
-              <Button type="button" onClick={() => load()} disabled={loading}>
-                {loading ? <Loader2 size={16} className="animate-spin" /> : <Search size={16} />}
-                表示
-              </Button>
-              <Button type="button" variant="outline" onClick={reset} disabled={loading}>
-                <RefreshCcw size={16} />
-              </Button>
-            </div>
-          </div>
-          {error ? <div className="rounded-md border border-destructive/40 bg-card p-3 text-sm text-destructive">{error}</div> : null}
-        </CardContent>
-      </Card>
-      </details>
+      <details className="rounded-lg border p-3"><summary className="cursor-pointer text-sm font-medium">詳細な分析条件</summary>{filterControls}</details>
 
       <PreviewCards cards={preview?.cards || []} />
 
@@ -2701,7 +2707,8 @@ function ProviderMarketingPreviewPanel() {
 
   async function reset() {
     setFilters(defaultProviderPreviewFilters);
-    await load(defaultProviderPreviewFilters);
+    setAppliedFilters(defaultProviderPreviewFilters);
+    await load(defaultProviderPreviewFilters, { silent: true });
   }
 
   useEffect(() => {
@@ -2712,7 +2719,46 @@ function ProviderMarketingPreviewPanel() {
     return () => window.clearTimeout(timer);
   }, [preview, appliedFilters, load]);
 
-  if (preview?.cache?.ready === false) return <ReportStatus cache={preview.cache} onRetry={() => void load(appliedFilters)} />;
+  const filterControls = (<Card>
+        <CardHeader>
+          <CardTitle>プレビュー条件</CardTitle>
+          <CardDescription>生成ボタンを押すと、この条件のレポートを作成します。前回の結果は再生成するまで表示します。</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="grid gap-3 lg:grid-cols-5">
+            <Input value={filters.providerId} onChange={(event) => setFilter("providerId", event.target.value)} placeholder="サービスID" />
+            <Input value={filters.accountKey} onChange={(event) => setFilter("accountKey", event.target.value)} placeholder="アカウント" />
+            <Input value={filters.guildId} onChange={(event) => setFilter("guildId", event.target.value)} placeholder="サーバーID" />
+            <Input value={filters.contentType} onChange={(event) => setFilter("contentType", event.target.value)} placeholder="種類" />
+            <Input value={filters.facetKey} onChange={(event) => setFilter("facetKey", event.target.value)} placeholder="分析軸" />
+          </div>
+          <div className="grid gap-3 lg:grid-cols-[1fr_1fr_120px_120px_150px_auto]">
+            <Input type="datetime-local" value={filters.dateFrom} onChange={(event) => setFilter("dateFrom", event.target.value)} />
+            <Input type="datetime-local" value={filters.dateTo} onChange={(event) => setFilter("dateTo", event.target.value)} />
+            <select className={controlClass} value={filters.bucket} onChange={(event) => setFilter("bucket", event.target.value)}>
+              <option value="day">日別</option>
+              <option value="hour">時間別</option>
+            </select>
+            <Input value={filters.limit} onChange={(event) => setFilter("limit", event.target.value)} inputMode="numeric" />
+            <select className={controlClass} value={filters.urlVisibility} onChange={(event) => setFilter("urlVisibility", event.target.value)}>
+              <option value="raw">Raw URL</option>
+              <option value="normalized">Normalized URL</option>
+            </select>
+            <div className="flex gap-2">
+              <Button type="button" onClick={() => load()} disabled={loading || preview?.cache?.refreshing === true}>
+                {loading ? <Loader2 size={16} className="animate-spin" /> : <Search size={16} />}
+                {preview?.cache?.ready ? "再生成" : "生成"}
+              </Button>
+              <Button type="button" variant="outline" onClick={reset} disabled={loading || preview?.cache?.refreshing === true}>
+                <RefreshCcw size={16} />
+              </Button>
+            </div>
+          </div>
+          {error ? <div className="rounded-md border border-destructive/40 bg-card p-3 text-sm text-destructive">{error}</div> : null}
+        </CardContent>
+      </Card>);
+
+  if (preview?.cache?.ready === false) return <div className="space-y-4">{filterControls}<ReportStatus cache={preview.cache} onRetry={() => void load()} /></div>;
 
   const retention = previewSectionRow(preview, "audienceRetention");
   const providerTimeSeries = previewSectionRows(preview, "timeSeries");
@@ -2894,44 +2940,7 @@ function ProviderMarketingPreviewPanel() {
         <Badge tone="warning">管理者だけに表示中</Badge>
       </div>
 
-      <details className="rounded-lg border p-3"><summary className="cursor-pointer text-sm font-medium">詳細な分析条件</summary>
-      <Card>
-        <CardHeader>
-          <CardTitle>プレビュー条件</CardTitle>
-          <CardDescription>サービスIDとアカウントを指定すると、アカウント担当者向けの見え方に近づきます。</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <div className="grid gap-3 lg:grid-cols-5">
-            <Input value={filters.providerId} onChange={(event) => setFilter("providerId", event.target.value)} placeholder="サービスID" />
-            <Input value={filters.accountKey} onChange={(event) => setFilter("accountKey", event.target.value)} placeholder="アカウント" />
-            <Input value={filters.contentType} onChange={(event) => setFilter("contentType", event.target.value)} placeholder="種類" />
-            <Input value={filters.facetKey} onChange={(event) => setFilter("facetKey", event.target.value)} placeholder="分析軸" />
-          </div>
-          <div className="grid gap-3 lg:grid-cols-[1fr_1fr_120px_120px_150px_auto]">
-
-            <select className={controlClass} value={filters.bucket} onChange={(event) => setFilter("bucket", event.target.value)}>
-              <option value="day">日別</option>
-              <option value="hour">時間別</option>
-            </select>
-            <Input value={filters.limit} onChange={(event) => setFilter("limit", event.target.value)} inputMode="numeric" />
-            <select className={controlClass} value={filters.urlVisibility} onChange={(event) => setFilter("urlVisibility", event.target.value)}>
-              <option value="raw">Raw URL</option>
-              <option value="normalized">Normalized URL</option>
-            </select>
-            <div className="flex gap-2">
-              <Button type="button" onClick={() => load()} disabled={loading}>
-                {loading ? <Loader2 size={16} className="animate-spin" /> : <Search size={16} />}
-                表示
-              </Button>
-              <Button type="button" variant="outline" onClick={reset} disabled={loading}>
-                <RefreshCcw size={16} />
-              </Button>
-            </div>
-          </div>
-          {error ? <div className="rounded-md border border-destructive/40 bg-card p-3 text-sm text-destructive">{error}</div> : null}
-        </CardContent>
-      </Card>
-      </details>
+      <details className="rounded-lg border p-3"><summary className="cursor-pointer text-sm font-medium">詳細な分析条件</summary>{filterControls}</details>
 
       <ProviderMetricProfilePanel profile={preview?.metricProfile} />
       <ReportHighlights

@@ -513,7 +513,7 @@ test('admin advanced analytics exposes funnel, cohort, attribution, and account 
     }
 });
 
-test('admin analytics snapshots are produced by background batches instead of regular GET fallback work', () => {
+test('overview refreshes automatically while detailed analyses require an explicit request', () => {
     const dataSource = fs.readFileSync(path.join(repoRoot, 'dashboard', 'lib', 'admin-data.ts'), 'utf8');
     const adminPageSource = fs.readFileSync(path.join(repoRoot, 'dashboard', 'app', 'admin', 'page.tsx'), 'utf8');
     const instrumentationSource = fs.readFileSync(path.join(repoRoot, 'dashboard', 'instrumentation.ts'), 'utf8');
@@ -532,13 +532,13 @@ test('admin analytics snapshots are produced by background batches instead of re
     assert.match(dataSource, /ADMIN_ANALYTICS_BUILD_QUEUE_MAX = 4/);
     assert.match(dataSource, /function enqueueAdminAnalyticsBuild/);
     assert.match(dataSource, /function shouldPrewarmAdminAnalyticsCache/);
-    assert.match(dataSource, /function refreshNextActiveAnalyticsCacheEntry/);
+    assert.doesNotMatch(dataSource, /function refreshNextActiveAnalyticsCacheEntry/);
     assert.match(dataSource, /function ensureAdminOverviewBatchRefresh\(\)[\s\S]*setInterval/);
     assert.match(dataSource, /function ensureAdminOverviewBatchRefresh\(\)[\s\S]*lastAccessedAtMs/);
     assert.match(dataSource, /function ensureAdminOverviewBatchRefresh\(\)[\s\S]*shouldRefreshAnalyticsCacheEntry\(adminOverviewCacheState\)/);
-    assert.match(dataSource, /function ensureAdminDetailedAnalyticsBatchRefresh\(\)[\s\S]*setInterval/);
-    assert.match(dataSource, /function ensureAdminGuildAnalyticsPreviewBatchRefresh\(\)[\s\S]*setInterval/);
-    assert.match(dataSource, /function ensureAdminProviderMarketingPreviewBatchRefresh\(\)[\s\S]*setInterval/);
+    assert.doesNotMatch(dataSource, /function ensureAdminDetailedAnalyticsBatchRefresh/);
+    assert.doesNotMatch(dataSource, /function ensureAdminGuildAnalyticsPreviewBatchRefresh/);
+    assert.doesNotMatch(dataSource, /function ensureAdminProviderMarketingPreviewBatchRefresh/);
     assert.match(dataSource, /refreshReportSnapshot\(adminOverviewCacheState/);
     assert.match(dataSource, /enqueueAdminAnalyticsBuild\(\(\) => buildAdminOverview\(\), "overview"\)/);
     assert.match(dataSource, /function loadPersistedAdvancedAnalyticsSnapshot/);
@@ -561,6 +561,10 @@ test('admin analytics snapshots are produced by background batches instead of re
     assert.match(overviewBody, /emptyAdminOverviewSnapshot\(\)/);
     assert.match(overviewBody, /void refreshAdminOverviewCache\(\)\.catch/);
     assert.doesNotMatch(overviewBody, /await refreshAdminOverviewCache\(\)/);
+    for (const reportBody of [detailedBody, guildPreviewBody, providerPreviewBody]) {
+        assert.match(reportBody, /if \(options\.forceRefresh\)/);
+        assert.doesNotMatch(reportBody, /shouldRefreshAnalyticsCacheEntry/);
+    }
     assert.match(detailedBody, /emptyAdminDetailedAnalyticsSnapshot\(filters\)/);
     assert.match(detailedBody, /void refreshAdminDetailedAnalyticsCacheEntry\(entry\)\.catch/);
     assert.doesNotMatch(detailedBody, /buildAdminDetailedAnalytics\(filters\)/);
@@ -581,9 +585,9 @@ test('admin analytics snapshots are produced by background batches instead of re
     assert.match(adminCatalogRouteSource, /getAdminProviderCatalog/);
     assert.match(adminConsoleSource, /REPORT_CACHE_POLL_MS = 5000/);
     assert.match(instrumentationSource, /warmAdminOverviewCache\(\)/);
-    assert.match(instrumentationSource, /warmAdminDetailedAnalyticsCache\(\)/);
-    assert.match(instrumentationSource, /warmAdminGuildAnalyticsPreviewCache\(\)/);
-    assert.match(instrumentationSource, /warmAdminProviderMarketingPreviewCache\(\)/);
+    assert.doesNotMatch(instrumentationSource, /warmAdminDetailedAnalyticsCache\(\)/);
+    assert.doesNotMatch(instrumentationSource, /warmAdminGuildAnalyticsPreviewCache\(\)/);
+    assert.doesNotMatch(instrumentationSource, /warmAdminProviderMarketingPreviewCache\(\)/);
 });
 
 test('media delivery routes record non-blocking analytics events', () => {

@@ -1,0 +1,24 @@
+[Unit]
+Description=CBTE rolling metric observation rollup refresh
+After=network-online.target mysql.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=cbte-admin
+Group=cbte-admin
+EnvironmentFile=-/etc/cbte-admin/reports.env
+WorkingDirectory=/opt/cbte-admin/worker-runtime
+ExecStart=/opt/cbte-admin/worker-runtime/deploy/admin-platform/metric-rollup-refresh.sh
+TimeoutStartSec=600
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/cbte-admin-shared
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+MemoryMax=1G
+CPUQuota=50%
+
+[Install]
+WantedBy=multi-user.target
