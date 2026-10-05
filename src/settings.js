@@ -1005,6 +1005,7 @@ function detectProviderIdFromMessage(message) {
 
 async function checkComponentIncludesDisabledButtonAndIfFindDeleteIt(components, guildId, providerId = null) {
     const invisibleSettings = await getButtonInvisibleSettings(guildId, providerId);
+    if (invisibleSettings.all === true) return [];
 
     if (Object.values(invisibleSettings).every(value => value === false)) {
         return components;
@@ -1017,8 +1018,7 @@ async function checkComponentIncludesDisabledButtonAndIfFindDeleteIt(components,
             const id = (subComponent.data && subComponent.data.custom_id)
                 || subComponent.custom_id
                 || subComponent.customId;
-            const baseId = typeof id === 'string' ? id.split(':')[0] : id;
-            return baseId ? !(baseId in invisibleSettings && invisibleSettings[baseId] === true) : true;
+            return !require('./utils').isResponseButtonHidden(invisibleSettings, id);
         });
 
         if (filteredComponents.length > 0) {

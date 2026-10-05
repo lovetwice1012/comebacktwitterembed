@@ -20,6 +20,11 @@ const buttonVisibilityKeys = [
   "showAttachmentsAsEmbedsImage",
   "translate",
   "delete",
+  "personal",
+  "personal_save",
+  "personal_remind",
+  "personal_restock",
+  "gallery",
   "all",
   "savetweet",
 ] as const;

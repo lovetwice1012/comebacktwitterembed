@@ -7,6 +7,29 @@ const { createFixture } = require('../lib/personal-dashboard-fixture.cjs');
 const port = Number(process.env.AUTOMATION_TEST_DB_PORT);
 const user = '111111111111111111', other = '222222222222222222', guild = '333333333333333333';
 
+test('Web display settings persist separate previous-share notice and unified personal/gallery button visibility', { skip: !port }, async () => {
+    const f = await createFixture(port);
+    try {
+        const states = await f.settings.getProviderSettingsState('booth', guild, 'ja');
+        const visible = states.find(s => s.key === 'button_invisible');
+        for (const key of ['personal', 'personal_save', 'personal_remind', 'personal_restock', 'gallery']) assert.equal(visible.value[key], false);
+        await f.settings.saveProviderSettings(guild, 'booth', { changes: {
+            show_previous_shares: false,
+            button_invisible: { translate: true, personal_save: true, personal_remind: false, personal_restock: true, gallery: true },
+        } }, { id: user, username: 'Fixture' });
+        const settings = await f.botSettings._internal.loadProviderSettings({ id: 'booth' }, guild);
+        assert.equal(settings.show_previous_shares, false);
+        for (const key of ['translate', 'personal_save', 'personal_restock', 'gallery']) assert.equal(settings.button_invisible[key], true);
+        assert.equal(settings.button_invisible.personal_remind, false);
+        const readBack = await f.settings.getProviderSettingsState('booth', guild, 'ja');
+        assert.equal(readBack.find(s => s.key === 'button_invisible').value.personal_save, true);
+        assert.equal(readBack.find(s => s.key === 'show_previous_shares').value, false);
+        await f.settings.saveProviderSettings(guild, 'booth', { changes: { button_invisible: {}, show_previous_shares: true } }, { id: user });
+        const reset = await f.botSettings._internal.loadProviderSettings({ id: 'booth' }, guild);
+        assert.equal(reset.show_previous_shares, true); assert.equal(reset.button_invisible.personal_save, false);
+    } finally { await f.close(); }
+});
+
 test('personal dashboard HTTP boundary requires session, same-origin JSON and bounded input; errors reveal no backend details', async t => {
     const original = process.env.NEXTAUTH_URL; delete process.env.NEXTAUTH_URL;
     t.after(() => { if (original === undefined) delete process.env.NEXTAUTH_URL; else process.env.NEXTAUTH_URL = original; });

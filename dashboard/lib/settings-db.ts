@@ -40,7 +40,7 @@ const SPECIAL_TARGET_TABLES: Record<string, string> = {
   button_disabled: "guild_provider_button_disabled_targets",
 };
 
-const buttonKeys = ["showMediaAsAttachments", "showAttachmentsAsEmbedsImage", "translate", "delete", "all"] as const;
+const buttonKeys = ["showMediaAsAttachments", "showAttachmentsAsEmbedsImage", "translate", "delete", "personal", "personal_save", "personal_remind", "personal_restock", "gallery", "all"] as const;
 
 function normalizeHiddenOutputItems(value: unknown): string[] {
   if (Array.isArray(value)) return [...new Set(value.map((item) => String(item || "").trim()).filter(Boolean))];
