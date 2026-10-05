@@ -23,17 +23,17 @@
     "node": ">=22.12.0"
   },
   "dependencies": {
-    "archiver": "^6.0.1",
-    "deepl-node": "^1.13.1",
-    "discord.js": "14.26.5",
-    "express": "^4.21.2",
+    "archiver": "8.0.0",
+    "deepl-node": "1.15.0",
+    "discord.js": "14.27.0",
+    "express": "4.22.3",
     "fflate": "^0.8.3",
     "jpeg-js": "^0.4.4",
     "luxon": "^3.7.2",
     "mysql": "^2.18.1",
     "naughty-words": "1.2.0",
     "node-fetch": "^2.7.0",
-    "undici": "6.24.1",
+    "undici": "6.29.0",
     "yaml": "^2.9.1"
   },
   "devDependencies": {
