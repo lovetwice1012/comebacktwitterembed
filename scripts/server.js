@@ -1,7 +1,7 @@
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
-const archiver = require('archiver');
+const { ZipArchive } = require('archiver');
 const { antiDirectoryTraversalAttack } = require('../src/utils');
 
 const app = express();
@@ -68,7 +68,7 @@ app.get('/download/:userid/:tweetID', (req, res) => {
             return res.status(418).send('File not found');
         }
 
-        const archive = archiver('zip', { zlib: { level: 9 } });
+        const archive = new ZipArchive({ zlib: { level: 9 } });
 
         archive.on('error', (archiveError) => {
             res.status(500).send('Error creating zip file');
@@ -110,7 +110,7 @@ app.get('/download/:userid', (req, res) => {
         const zipName = `${userid}_files.zip`;
         const zipPath = path.join(tempDir, zipName);
 
-        const archive = archiver('zip', { zlib: { level: 9 } });
+        const archive = new ZipArchive({ zlib: { level: 9 } });
 
         archive.on('error', (archiveError) => {
             res.status(500).send('Error creating zip file');

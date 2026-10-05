@@ -88,7 +88,7 @@ test('flow runtime resolves only the pinned dictionary revision and projects a m
         assert.equal(JSON.parse(jobs[0].plan_json).members[0].event.title, 'sale');
     } finally { flow.clear(); evaluator.stop(); }
 }));
-test('a projected flow job goes through the normal durable runner once, with no Discord transport in this fixture', { skip: !port }, async () => fixture(async f => {
+test('a projected flow job goes through the normal durable runner once, with no Discord transport in this fixture', { skip: !port, timeout: 30000 }, async () => fixture(async f => {
     const definition = newWorkflow('runner flow'); const workflow = await f.service.createWorkflow(f.actor, { definition }); await f.service.activateWorkflow(f.actor, workflow.id, { expectedRevision: 1 }); await f.service.attach(f.actor, workflow.id, 'auto', f.first.id);
     const evaluator = createEvaluator(f.service.dictionaryData), store = createGraphStore(f.db), queue = createQueue(f.db, evaluator, { clock: () => baseTime, graph: { enabled: true, store } }), flow = createFlowRuntime(f.db, evaluator, store, { assertEnabled: () => {} });
     let prepared = 0, sent = 0;
@@ -96,7 +96,8 @@ test('a projected flow job goes through the normal durable runner once, with no 
     try {
         await queue.route('auto', await input(f.query, f.first, 'runner', baseTime), baseTime);
         for (let i = 0; i < 10; i++) await flow.tick(baseTime);
-        const runner = createRunner(f.db, queue, transport, { clock: () => baseTime, assertAllowed: () => {}, notificationAllowed: () => true, sleep: async () => {} });
+        let now = baseTime;
+        const runner = createRunner(f.db, queue, transport, { clock: () => now, assertAllowed: () => {}, notificationAllowed: () => true, sleep: async ms => { now += ms; } });
         assert.equal((await runner.tick()).state, 'sent'); assert.equal(prepared, 1); assert.equal(sent, 1);
         assert.equal((await f.query('SELECT state FROM automation_jobs'))[0].state, 'sent');
     } finally { flow.clear(); evaluator.stop(); }

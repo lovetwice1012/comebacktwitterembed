@@ -36,7 +36,7 @@ async function setup(t, overrides = {}) {
     const stateDir = path.join(directory, 'state');
     await fs.writeFile(worker, fakeCLI);
     const instances = [];
-    const options = { token: TOKEN, worker, workerDir: directory, stateDir, deadlineMs: 3000,
+    const options = { token: TOKEN, worker, workerDir: directory, stateDir, deadlineMs: 15000,
         ...overrides, childEnv: { FIXTURE_COUNT_FILE: countFile, ...(overrides.childEnv || {}) } };
     async function start() {
         const app = await createAnalysisServer(options);

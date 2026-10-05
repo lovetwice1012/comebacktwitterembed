@@ -180,8 +180,7 @@ test('cache configuration cannot silently exceed the hard default byte budget', 
 });
 
 test('real isolated SQL loads immutable revisions only on a cache miss', { skip: !process.env.AUTOMATION_TEST_DB_PORT, timeout: 30000 }, async t => {
-    assert.equal(Number(process.env.AUTOMATION_TEST_DB_PORT), 33619);
-    const db = await require('../lib/automation-test-db').createTestDatabase(33619);
+    const db = await require('../lib/automation-test-db').createTestDatabase(Number(process.env.AUTOMATION_TEST_DB_PORT));
     const service = require('../../src/automation/service').createService(db), actor = { userId: '222222222222222222' };
     let evaluator;
     try {
