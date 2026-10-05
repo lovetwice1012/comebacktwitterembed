@@ -34,28 +34,40 @@ function stripHtml(html) {
 }
 
 function extractAttr(tag, attrName) {
-    const re = new RegExp(`${attrName}\\s*=\\s*("([^"]*)"|'([^']*)'|([^\\s>]+))`, 'i');
-    const match = tag.match(re);
-    return match ? decodeHtmlEntities(match[2] || match[3] || match[4] || '') : '';
-}
-
-function findTagWithClass(html, className) {
-    const tagRe = /<[a-zA-Z][^>]*>/g;
-    let match;
-    while ((match = tagRe.exec(html)) !== null) {
-        if (match[0].includes(className)) return match[0];
+    const attributes = /([^\s=<>/"']+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+)))?/g;
+    for (const match of tag.matchAll(attributes)) {
+        if (match[1].toLowerCase() === attrName.toLowerCase()) {
+            return decodeHtmlEntities(match[2] || match[3] || match[4] || '');
+        }
     }
     return '';
 }
 
+function visibleHtml(html) {
+    // Script identifiers (e.g. ComposeCaption) and string literals are not DOM
+    // elements. Never allow them to supply captions, classes or metadata.
+    return html.replace(/<(script|style)\b[^>]*>[\s\S]*?(?:<\/\1\s*>|$)/gi, '')
+        .replace(/<!--[\s\S]*?-->/g, '');
+}
+
+function findElementWithClass(html, className) {
+    const tagRe = /<[a-zA-Z](?:"[^"]*"|'[^']*'|[^'">])*>/g;
+    for (const match of html.matchAll(tagRe)) {
+        if (extractAttr(match[0], 'class').split(/\s+/).includes(className)) return match;
+    }
+    return null;
+}
+
+function findTagWithClass(html, className) {
+    return findElementWithClass(visibleHtml(html), className)?.[0] || '';
+}
+
 function extractElementHtmlByClass(html, className) {
-    const classIndex = html.indexOf(className);
-    if (classIndex === -1) return '';
-    const start = html.lastIndexOf('<', classIndex);
-    if (start === -1) return '';
-    const openEnd = html.indexOf('>', start);
-    if (openEnd === -1) return '';
-    const openTag = html.slice(start, openEnd + 1);
+    html = visibleHtml(html);
+    const element = findElementWithClass(html, className);
+    if (!element) return '';
+    const openTag = element[0];
+    const openEnd = element.index + openTag.length - 1;
     const tagName = openTag.match(/^<([a-zA-Z0-9:-]+)/)?.[1];
     if (!tagName || /\/>$/.test(openTag)) return openTag;
 
@@ -76,6 +88,7 @@ function extractElementHtmlByClass(html, className) {
 }
 
 function getMetaContent(html, property) {
+    html = visibleHtml(html);
     const metaRe = /<meta\b[^>]*>/gi;
     let match;
     while ((match = metaRe.exec(html)) !== null) {
