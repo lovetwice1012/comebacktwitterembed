@@ -42,6 +42,11 @@ function createQueue(db, evaluator, options = {}) {
     async function finishLegacy(query, kind, delivery, state, now, code = null) {
         const result = await query(`UPDATE ${table(kind)}_deliveries SET status=?,lease_token=NULL,lease_expires_at_ms=0,next_attempt_at_ms=?,last_error_code=? WHERE id=? AND status='pending' AND lease_token=?`,
             [state, state === 'pending' ? now + 60000 : 0, code, delivery.id, delivery.lease_token]);
+        // This is the cadence window in which the event is handed to the
+        // workflow, whose own timing/quiet hours can delay actual delivery.
+        if (kind === 'auto' && state === 'routed' && Number(result.affectedRows) === 1) {
+            await query('UPDATE auto_watch_targets SET last_notification_window_at_ms=GREATEST(COALESCE(last_notification_window_at_ms,0),?) WHERE id=?', [now, delivery.target_id]);
+        }
         return Number(result.affectedRows) === 1;
     }
     async function route(kind, delivery, now = Date.now()) {

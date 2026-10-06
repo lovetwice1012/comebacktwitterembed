@@ -44,16 +44,17 @@ function configuredBudget(providerId, adapter) {
     };
 }
 
-function effectivePollIntervalMs(providerId, activeSourceCount, requestedPollMs) {
+function effectivePollIntervalMs(providerId, activeSourceCount, requestedPollMs, options = {}) {
     const adapter = provider(providerId);
     const budget = configuredBudget(adapter.id, adapter);
     const count = Math.max(1, integer(activeSourceCount, 1));
-    const requested = integer(requestedPollMs, adapter.defaultPollMs, adapter.minPollMs);
+    const minimum = options.userOverride === true ? 5 * MINUTE : adapter.minPollMs;
+    const requested = integer(requestedPollMs, adapter.defaultPollMs, minimum);
     const cost = Math.max(1, Number(adapter.requestCost || 1));
     const minuteFloor = budget.minuteRequestBudget ? Math.ceil((count * cost * MINUTE) / budget.minuteRequestBudget) : 0;
     const hourlyFloor = budget.hourlyRequestBudget ? Math.ceil((count * cost * HOUR) / budget.hourlyRequestBudget) : 0;
     const dailyFloor = budget.dailyRequestBudget ? Math.ceil((count * cost * DAY) / budget.dailyRequestBudget) : 0;
-    return Math.max(adapter.minPollMs, requested, minuteFloor, hourlyFloor, dailyFloor);
+    return Math.max(minimum, requested, minuteFloor, hourlyFloor, dailyFloor);
 }
 
 function ratePolicy(providerId) {
