@@ -24,7 +24,7 @@ export async function PATCH(req: NextRequest) {
     const session = await requireAdminSession();
     const origin = req.headers.get("origin");
     let sameOrigin = false;
-    try { sameOrigin = !!origin && new URL(origin).origin === new URL(req.url).origin; } catch { /* Invalid origins are rejected too. */ }
+    try { sameOrigin = !!origin && new URL(origin).origin === new URL(process.env.NEXTAUTH_URL || req.url).origin; } catch { /* Invalid origins are rejected too. */ }
     if (!sameOrigin) return response({ error: "管理画面から操作してください。" }, 403);
     if (!req.headers.get("content-type")?.startsWith("application/json")) return response({ error: "JSON形式で指定してください。" }, 415);
     const raw = await req.text();
