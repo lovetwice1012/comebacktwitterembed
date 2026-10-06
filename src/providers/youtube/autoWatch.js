@@ -11,7 +11,7 @@ const {
     sourceError,
     urlFromInput,
 } = require('../autoWatch/_shared');
-const { xmlValue, parseFeedEntries, channelIdFromHtml } = require('./youtubeSourceParser');
+const { xmlValue, parseFeedEntries, channelIdFromHtml, parseUploadsPlaylist } = require('./youtubeSourceParser');
 
 function normalizeSource(input) {
     const raw = String(input || '').trim();
@@ -58,12 +58,50 @@ async function resolveChannelId(source, context) {
 
 async function fetch(source, context) {
     const channelId = await resolveChannelId(source, context);
-    const response = await requestText(context, `https://www.youtube.com/feeds/videos.xml?channel_id=${encodeURIComponent(channelId)}`, {
-        headers: conditionalHeaders(source, { Accept: 'application/atom+xml,application/xml,text/xml', 'User-Agent': 'Mozilla/5.0 (compatible; ComebackTwitterEmbed/1.0)' }),
-    });
+    const excluded = new Set(Array.isArray(source.state?.fallbackExcludedIds) ? source.state.fallbackExcludedIds : []);
+    const rssSource = source.state?.fetchMode === 'uploads' ? { ...source, etag: null, last_modified: null } : source;
+    let response;
+    try {
+        response = await requestText(context, `https://www.youtube.com/feeds/videos.xml?channel_id=${encodeURIComponent(channelId)}`, {
+            headers: conditionalHeaders(rssSource, { Accept: 'application/atom+xml,application/xml,text/xml', 'User-Agent': 'Mozilla/5.0 (compatible; ComebackTwitterEmbed/1.0)' }),
+        });
+        if (!response.notModified && (!/<feed\b/i.test(response.body) || xmlValue(response.body, 'yt:channelId') && xmlValue(response.body, 'yt:channelId') !== channelId)) {
+            throw monitorError('AUTO_WATCH_INVALID_RESPONSE', 'YouTube did not return the requested channel feed.');
+        }
+    } catch (error) {
+        if (error.code === 'AUTO_WATCH_RATE_LIMITED' || !([404, 500, 502, 503, 504].includes(error.status) || error.code === 'AUTO_WATCH_INVALID_RESPONSE')) throw error;
+        return await fetchUploads(source, context, channelId, excluded);
+    }
     const state = { ...(source.state || {}), channelId };
     if (response.notModified) return { notModified: true, state, etag: response.etag, lastModified: response.lastModified, rateLimit: response.rateLimit };
-    return { items: feedItems(response.body), state, etag: response.etag, lastModified: response.lastModified, rateLimit: response.rateLimit };
+    state.fetchMode = 'rss';
+    return { items: feedItems(response.body).filter(item => !excluded.has(item.contentId)), state, etag: response.etag, lastModified: response.lastModified, rateLimit: response.rateLimit };
+}
+
+async function fetchUploads(source, context, channelId, excluded) {
+    if (!context.config.enableGuestCrawls) throw monitorError('AUTO_WATCH_GUEST_CRAWL_DISABLED', 'Public uploads fallback is disabled.');
+    const response = await requestText(context, `https://www.youtube.com/playlist?list=UU${encodeURIComponent(channelId.slice(2))}&hl=en`, {
+        headers: { Accept: 'text/html', 'User-Agent': 'Mozilla/5.0', 'Accept-Language': 'en-US,en;q=0.9' },
+    });
+    const uploads = parseUploadsPlaylist(response.body, channelId);
+    if (!uploads) throw monitorError('AUTO_WATCH_INVALID_RESPONSE', 'YouTube uploads could not be verified for this channel.');
+    let items = dedupeItems(uploads.map(item => ({ contentId: item.videoId, title: item.title,
+        url: `https://www.youtube.com/watch?v=${item.videoId}`, publishedAtMs: null })));
+    if (source.initialized_at_ms) {
+        let cursor;
+        try { cursor = typeof source.cursor_json === 'string' ? JSON.parse(source.cursor_json) : source.cursor_json; } catch { cursor = null; }
+        const known = new Set([...(cursor?.seenContentIds || []), ...excluded]);
+        const anchor = items.findIndex(item => known.has(item.contentId));
+        // Different representations expose different history windows. Only
+        // items ahead of a known upload are new. An unanchored first fallback
+        // becomes a quiet baseline, including when RSS recovers later.
+        const older = anchor < 0 ? items : items.slice(anchor + 1);
+        for (const item of older) excluded.add(item.contentId);
+        items = anchor < 0 ? [] : items.slice(0, anchor + 1);
+    }
+    return { items: items.filter(item => !excluded.has(item.contentId)),
+        state: { ...(source.state || {}), channelId, fetchMode: 'uploads', fallbackExcludedIds: [...excluded].slice(-5000) },
+        etag: null, lastModified: null, rateLimit: response.rateLimit };
 }
 
 module.exports = {
@@ -73,7 +111,7 @@ module.exports = {
     minPollMs: 15 * MINUTE,
     defaultPollMs: 30 * MINUTE,
     globalSpacingMs: 5000,
-    requestCost: 1,
+    requestCost: 3,
     normalizeSource,
     fetch,
     _internal: { feedItems, normalizeSource, resolveChannelId, xmlValue },
