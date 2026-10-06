@@ -91,13 +91,14 @@ async function fetchUploads(source, context, channelId, excluded) {
         let cursor;
         try { cursor = typeof source.cursor_json === 'string' ? JSON.parse(source.cursor_json) : source.cursor_json; } catch { cursor = null; }
         const known = new Set([...(cursor?.seenContentIds || []), ...excluded]);
+        const pending = new Set((cursor?.deferredObservations || []).map(entry => entry[0]));
         const anchor = items.findIndex(item => known.has(item.contentId));
         // Different representations expose different history windows. Only
         // items ahead of a known upload are new. An unanchored first fallback
         // becomes a quiet baseline, including when RSS recovers later.
         const older = anchor < 0 ? items : items.slice(anchor + 1);
-        for (const item of older) excluded.add(item.contentId);
-        items = anchor < 0 ? [] : items.slice(0, anchor + 1);
+        for (const item of older) if (!pending.has(item.contentId)) excluded.add(item.contentId);
+        items = items.filter((item, index) => anchor >= 0 && index <= anchor || pending.has(item.contentId));
     }
     return { items: items.filter(item => !excluded.has(item.contentId)),
         state: { ...(source.state || {}), channelId, fetchMode: 'uploads', fallbackExcludedIds: [...excluded].slice(-5000) },

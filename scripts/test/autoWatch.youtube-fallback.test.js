@@ -59,3 +59,11 @@ test('HTTP 200 HTML masquerading as RSS also uses the uploads fallback', async (
     const result = await fetchSource(source(), { fetch: async url => response(String(url).includes('/feeds/') ? '<html>Error</html>' : page([newer, old])) });
     assert.equal(result.state.fetchMode, 'uploads'); assert.equal(result.items[0].contentId, newer);
 });
+
+test('queued new uploads behind an already admitted anchor survive partial admission and never become excluded history', async () => {
+    const queued = 'queuedV1234';
+    const result = await fetchSource(source({ cursor_json: JSON.stringify({ seenContentIds: [newer, old], deferredObservations: [[queued, 1000]] }) }),
+        { fetch: fallback(page([newer, queued, old, older])) });
+    assert.deepEqual(result.items.map(item => item.contentId), [newer, queued]);
+    assert(!result.state.fallbackExcludedIds.includes(queued));
+});
