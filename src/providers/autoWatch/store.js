@@ -156,6 +156,9 @@ async function registerTarget(input, options = {}) {
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
              ON DUPLICATE KEY UPDATE
                 baseline_at_ms=IF(enabled=0, NULL, baseline_at_ms),
+                last_polled_at_ms=IF(enabled=0,NULL,last_polled_at_ms),
+                next_poll_at_ms=IF(enabled=0,NULL,next_poll_at_ms),
+                last_notification_window_at_ms=IF(enabled=0,NULL,last_notification_window_at_ms),
                 created_at_ms=IF(enabled=0, VALUES(created_at_ms), created_at_ms),
                 enabled=1, premium_slot=VALUES(premium_slot), id=LAST_INSERT_ID(id)`,
             [
@@ -172,6 +175,7 @@ async function registerTarget(input, options = {}) {
                 now,
             ]
         );
+        await require('./intervalPolicy').bringSourceForward(query, userId, source.id, now);
         const targetRows = await query(
             `SELECT id FROM ${TABLES.autoWatchTargets} WHERE user_id=? AND source_id=? AND destination_key=? LIMIT 1`,
             [userId, source.id, destinationKey]
@@ -249,7 +253,12 @@ async function activeSourceCounts() {
 async function claimDueSources(now, limit = 16) {
     const boundedLimit = integer(limit, 16, 1, 128);
     const rows = await db.queryDatabase(
-        `SELECT s.* FROM ${TABLES.autoWatchSources} s
+        `SELECT s.*,
+         (SELECT MIN(COALESCE(u.auto_watch_interval_minutes*60000,s.poll_interval_ms))
+          FROM ${TABLES.autoWatchTargets} t JOIN ${TABLES.users} u ON u.user_id=t.user_id WHERE t.source_id=s.id AND t.enabled=1) AS requested_poll_interval_ms,
+         EXISTS(SELECT 1 FROM ${TABLES.autoWatchTargets} t JOIN ${TABLES.users} u ON u.user_id=t.user_id
+          WHERE t.source_id=s.id AND t.enabled=1 AND u.auto_watch_interval_minutes IS NOT NULL) AS has_user_interval
+         FROM ${TABLES.autoWatchSources} s
          WHERE s.next_check_at_ms<=?
            AND s.lease_expires_at_ms<=?
            AND EXISTS (SELECT 1 FROM ${TABLES.autoWatchTargets} t WHERE t.source_id=s.id AND t.enabled=1)
@@ -284,6 +293,15 @@ async function completeSource(source, result) {
         source.lease_token,
     ];
     await db.withDatabaseTransaction(async query => {
+        await query(`SELECT id FROM ${TABLES.autoWatchSources} WHERE id=? AND lease_token=? FOR UPDATE`, [source.id, source.lease_token]);
+        const schedule = (await query(`SELECT s.*,
+            (SELECT MIN(COALESCE(u.auto_watch_interval_minutes*60000,s.poll_interval_ms)) FROM auto_watch_targets t
+             JOIN users u ON u.user_id=t.user_id WHERE t.source_id=s.id AND t.enabled=1) AS requested_poll_interval_ms,
+            EXISTS(SELECT 1 FROM auto_watch_targets t JOIN users u ON u.user_id=t.user_id
+             WHERE t.source_id=s.id AND t.enabled=1 AND u.auto_watch_interval_minutes IS NOT NULL) AS has_user_interval
+            FROM auto_watch_sources s WHERE s.id=?`, [source.id]))[0];
+        const counts = await activeSourceCounts();
+        if (schedule) values[5] = result.checkedAtMs + computedPollInterval(schedule, counts.get(schedule.provider_id) || 1);
         const updated = await query(
         `UPDATE ${TABLES.autoWatchSources}
          SET state_json=?, cursor_json=?, etag=?, last_modified=?, initialized_at_ms=COALESCE(initialized_at_ms, ?),
@@ -294,6 +312,16 @@ async function completeSource(source, result) {
         );
         if (Number(updated.affectedRows) !== 1) throw error('Automatic-watch source lease was lost.', 'AUTO_WATCH_LEASE_LOST');
         if (result.items?.length) await createItemsAndDeliveries(source, result.items, result.checkedAtMs);
+        const targets = await query(`SELECT t.id,t.next_poll_at_ms,
+            (SELECT COALESCE(u.auto_watch_interval_minutes*60000,(SELECT poll_interval_ms FROM auto_watch_sources WHERE id=t.source_id))
+             FROM users u WHERE u.user_id=t.user_id) AS interval_ms
+            FROM auto_watch_targets t
+            WHERE t.source_id=? AND t.enabled=1 FOR UPDATE`, [source.id]);
+        for (const target of targets) {
+            if (Number(target.next_poll_at_ms || 0) > result.checkedAtMs) continue;
+            await query('UPDATE auto_watch_targets SET last_polled_at_ms=?,next_poll_at_ms=? WHERE id=?',
+                [result.checkedAtMs, result.checkedAtMs + Number(target.interval_ms), target.id]);
+        }
         await query(`UPDATE ${TABLES.autoWatchTargets} SET baseline_at_ms=? WHERE source_id=? AND enabled=1 AND baseline_at_ms IS NULL`, [result.checkedAtMs, source.id]);
     });
 }
@@ -424,8 +452,11 @@ async function cooldownProvider(providerId, untilMs) {
 
 async function createItemsAndDeliveries(source, items, now) {
     const targets = await db.queryDatabase(
-        `SELECT id, created_at_ms, baseline_at_ms FROM ${TABLES.autoWatchTargets}
-         WHERE source_id=? AND enabled=1 AND baseline_at_ms IS NOT NULL FOR UPDATE`,
+        `SELECT t.id,t.created_at_ms,t.baseline_at_ms,t.next_poll_at_ms,t.last_notification_window_at_ms,
+            (SELECT COALESCE(u.auto_watch_interval_minutes*60000,(SELECT poll_interval_ms FROM auto_watch_sources WHERE id=t.source_id))
+             FROM users u WHERE u.user_id=t.user_id) AS interval_ms
+         FROM ${TABLES.autoWatchTargets} t
+         WHERE t.source_id=? AND t.enabled=1 AND t.baseline_at_ms IS NOT NULL FOR UPDATE`,
         [source.id]
     );
     let created = 0;
@@ -459,7 +490,8 @@ async function createItemsAndDeliveries(source, items, now) {
                 `INSERT IGNORE INTO ${TABLES.autoWatchDeliveries}
                  (item_id, target_id, status, next_attempt_at_ms)
                  VALUES (?, ?, 'pending', ?)`,
-                [itemId, target.id, now]
+                [itemId, target.id, Math.max(now, Number(target.next_poll_at_ms || 0),
+                    Number(target.last_notification_window_at_ms || 0) ? Number(target.last_notification_window_at_ms) + Number(target.interval_ms) : 0)]
             );
         }
     }
@@ -529,7 +561,8 @@ async function failDelivery(delivery, failure) {
 }
 
 function computedPollInterval(source, activeSourceCount, _config) {
-    return effectivePollIntervalMs(source.provider_id, activeSourceCount, source.poll_interval_ms);
+    return effectivePollIntervalMs(source.provider_id, activeSourceCount, source.requested_poll_interval_ms ?? source.poll_interval_ms,
+        { userOverride: Number(source.has_user_interval) > 0 });
 }
 
 function policyFor(providerId, _config) {

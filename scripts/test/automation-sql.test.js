@@ -81,6 +81,7 @@ test('real SQL: management, immutable revisions, durable handoff, aggregation, r
             const row = await delivery();
             const routed = await queue.route('auto', row, now);
             assert.equal(routed.state, 'routed');
+            assert.equal(Number((await query('SELECT last_notification_window_at_ms FROM auto_watch_targets WHERE id=?', [watch.id]))[0].last_notification_window_at_ms), now);
             assert.equal((await query('SELECT status FROM auto_watch_deliveries WHERE id=?', [row.id]))[0].status, 'routed');
             queue = createQueue(db, evaluator, { clock: () => now });
             await queue.route('auto', row, now);

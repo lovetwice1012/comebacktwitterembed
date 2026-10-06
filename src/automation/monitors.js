@@ -24,7 +24,9 @@ function publicMonitor(kind, row) {
         destinationId: row.destination_id, destinationType: row.destination_type, channelId: row.origin_channel_id,
         workflowId: row.workflow_id, mode: row.watch_mode, maxPriceAmount: row.max_price_amount == null ? null : Number(row.max_price_amount),
         minDiscountPercent: row.min_discount_percent == null ? null : Number(row.min_discount_percent),
-        lastCheckedAtMs: Number(row.last_checked_at_ms || 0), nextCheckAtMs: Number(row.next_check_at_ms || 0),
+        lastCheckedAtMs: Number(kind === 'auto' ? row.last_polled_at_ms ?? row.last_checked_at_ms ?? 0 : row.last_checked_at_ms || 0),
+        nextCheckAtMs: kind === 'auto' ? Math.max(Number(row.next_poll_at_ms || 0), Number(row.next_check_at_ms || 0)) : Number(row.next_check_at_ms || 0),
+        intervalMinutes: kind === 'auto' ? Number(row.user_interval_minutes ?? Number(row.poll_interval_ms) / 60000) : undefined,
         errorCode: row.last_error_code, premium: !!row.premium_slot };
 }
 
@@ -47,7 +49,8 @@ function createMonitors(db, service, destinations, options = {}) {
     function selection(kind) {
         const table = tableFor(kind);
         return `SELECT t.*,s.provider_id,${kind === 'auto' ? 's.source_key,s.source_url' : 's.product_key,s.product_url,s.product_name,s.source_locale'},
-            s.last_checked_at_ms,s.next_check_at_ms,s.last_error_code,m.name AS monitor_name,m.scope,m.destination_id,m.revision,a.workflow_id
+            s.last_checked_at_ms,s.next_check_at_ms,s.last_error_code,s.poll_interval_ms,
+            ${kind === 'auto' ? '(SELECT auto_watch_interval_minutes FROM users WHERE user_id=t.user_id) AS user_interval_minutes,' : ''}m.name AS monitor_name,m.scope,m.destination_id,m.revision,a.workflow_id
             FROM ${table}_targets t JOIN ${table}_sources s ON s.id=t.source_id
             LEFT JOIN automation_monitors m ON m.target_kind='${kind}' AND m.target_id=t.id
             LEFT JOIN automation_assignments a ON a.target_kind='${kind}' AND a.target_id=t.id`;
@@ -138,7 +141,10 @@ function createMonitors(db, service, destinations, options = {}) {
                     await query('UPDATE auto_watch_targets SET premium_slot=? WHERE id=?', [slot.premiumSlot, id]);
                 }
                 await query(`UPDATE ${tableFor(kind)}_targets SET enabled=? WHERE id=?`, [enabled ? 1 : 0, id]);
-                if (enabled && !locked.enabled) await query(`UPDATE ${tableFor(kind)}_targets SET baseline_at_ms=NULL,created_at_ms=?${kind === 'price' ? ',condition_active=0' : ''} WHERE id=?`, [Date.now(), id]);
+                if (enabled && !locked.enabled) {
+                    await query(`UPDATE ${tableFor(kind)}_targets SET baseline_at_ms=NULL,created_at_ms=?${kind === 'price' ? ',condition_active=0' : ',last_polled_at_ms=NULL,next_poll_at_ms=NULL,last_notification_window_at_ms=NULL'} WHERE id=?`, [Date.now(), id]);
+                    if (kind === 'auto') await require('../providers/autoWatch/intervalPolicy').bringSourceForward(query, ownerId, locked.source_id, Date.now());
+                }
                 await query('INSERT INTO automation_monitors (target_kind,target_id,name,scope,revision) VALUES (?,?,?,?,2) ON DUPLICATE KEY UPDATE name=VALUES(name),revision=revision+1', [kind, id, name, scope]);
                 if (!enabled) await cancelPending(query, kind, id);
                 await service.audit(query, actor, `${kind}:${id}`, 'monitor.update', { enabled }, locked.guild_id);
@@ -179,6 +185,7 @@ function createMonitors(db, service, destinations, options = {}) {
                     : { watch_mode: rule.mode, rule_key: rule.ruleKey, max_price_amount: rule.maxPriceAmount, min_discount_percent: rule.minDiscountPercent, condition_active: 0 }) });
             const identityChanged = !locked || String(locked.source_id) !== String(sourceId) || locked.destination_key !== dest.key || kind === 'price' && locked.rule_key !== rule.ruleKey || !locked.enabled && enabled;
             if (identityChanged) fields.baseline_at_ms = null;
+            if (kind === 'auto' && identityChanged) Object.assign(fields, { last_polled_at_ms: null, next_poll_at_ms: null, last_notification_window_at_ms: null });
             if (kind === 'price' && !identityChanged) fields.condition_active = Number(locked.condition_active || 0);
             let targetId = id;
             if (id) {
@@ -189,6 +196,7 @@ function createMonitors(db, service, destinations, options = {}) {
                 const inserted = await query(`INSERT INTO ${table}_targets (${Object.keys(values).join(',')}) VALUES (${Object.keys(values).map(() => '?').join(',')})`, Object.values(values));
                 targetId = String(inserted.insertId);
             }
+            if (kind === 'auto' && enabled) await require('../providers/autoWatch/intervalPolicy').bringSourceForward(query, ownerId, sourceId, now);
             await query('INSERT INTO automation_monitors (target_kind,target_id,name,scope,destination_id,revision) VALUES (?,?,?,?,?,?) ON DUPLICATE KEY UPDATE name=VALUES(name),destination_id=VALUES(destination_id),revision=revision+1', [kind, targetId, name, scope, destId, id ? Number(locked.revision || 1) + 1 : 1]);
             await service.audit(query, actor, `${kind}:${targetId}`, id ? 'monitor.update' : 'monitor.create', { providerId, destinationId: destId, enabled, usagePolicyVersion: require('./safety').POLICY_VERSION }, guildId);
             return { id: String(targetId), revision: id ? Number(locked.revision || 1) + 1 : 1 };
