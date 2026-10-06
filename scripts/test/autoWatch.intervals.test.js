@@ -69,7 +69,9 @@ test('shared SQL retrieval uses the fastest active user but routes notifications
     } finally { binding.queryDatabase = originalQuery; binding.withDatabaseTransaction = originalTransaction; binding.ensureUserExistsInDatabase = originalEnsureUser; await db.close(); }
 });
 
-test('admin interval API rejects ordinary members and cross-origin writes before looking up or changing policies', async () => {
+test('admin interval API rejects ordinary members and cross-origin writes before looking up or changing policies', async t => {
+    const originalOrigin = process.env.NEXTAUTH_URL; process.env.NEXTAUTH_URL = 'https://local.test';
+    t.after(() => { if (originalOrigin === undefined) delete process.env.NEXTAUTH_URL; else process.env.NEXTAUTH_URL = originalOrigin; });
     let administrator = false, reads = 0, writes = 0;
     const route = load('app/api/admin/auto-watch-intervals/route.ts', {
         '@/lib/api': { requireAdminSession: async () => { if (!administrator) throw { status: 403 }; return { user: { id: ADMIN } }; }, json: (body, status = 200) => new Response(JSON.stringify(body), { status }) },
@@ -87,4 +89,6 @@ test('admin interval API rejects ordinary members and cross-origin writes before
     assert.equal(writes, 0);
     const saved = await route.PATCH(request('PATCH', { userId: A, intervalMinutes: 5 }));
     assert.equal(saved.status, 200); assert.equal(writes, 1); assert.equal(saved.headers.get('cache-control'), 'private, no-store');
+    const proxied = new Request('http://127.0.0.1:30989/api/admin/auto-watch-intervals', { method: 'PATCH', headers: { origin: 'https://local.test', 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: A, intervalMinutes: 5 }) });
+    assert.equal((await route.PATCH(proxied)).status, 200);
 });
