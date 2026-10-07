@@ -6,18 +6,21 @@ import { Button } from "@/components/ui/button";
 import { createTranslator } from "@/lib/i18n";
 import { getDashboardLocale } from "@/lib/server-locale";
 import { getDashboardSession } from "@/lib/server-session";
+import { authenticationErrorMessage } from "@/features/auth/errors";
 
 const BOT_INVITE_URL =
   "https://discord.com/oauth2/authorize?client_id=1161267455335862282&permissions=274877958144&scope=bot%20applications.commands";
 
-export default async function HomePage() {
+export default async function HomePage({ searchParams }: { searchParams?: Promise<{ error?: string | string[] }> }) {
   const locale = await getDashboardLocale();
   const t = createTranslator(locale);
   const session = await getDashboardSession();
+  const authError = session ? null : authenticationErrorMessage((await searchParams)?.error, locale);
 
   return (
     <main className="mx-auto flex min-h-screen max-w-3xl flex-col justify-center gap-6 px-4 py-10">
       <section className="space-y-4">
+        {authError ? <p role="alert" className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm">{authError}</p> : null}
         <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center">
           <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-primary text-primary-foreground">
             <Bot size={24} />

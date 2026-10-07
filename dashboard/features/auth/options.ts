@@ -55,6 +55,9 @@ export const authOptions: NextAuthOptions = {
   },
   providers: [
     DiscordProvider({
+      // Discord identifies its authorization responses with RFC 9207 `iss`.
+      // Keep issuer validation enabled and bind it to Discord's published issuer.
+      issuer: "https://discord.com",
       clientId: getClientId(),
       clientSecret: getClientSecret(),
       authorization: {
