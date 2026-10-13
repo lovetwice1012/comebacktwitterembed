@@ -1,46 +1,37 @@
 import Link from "next/link";
-import { Server } from "lucide-react";
+import { Bot, CircleUserRound, LockKeyhole } from "lucide-react";
 import { SignOutButton } from "@/components/dashboard/auth-buttons";
 import { GuildSwitcher } from "@/components/dashboard/guild-switcher";
 import { DashboardWorkspace } from "@/components/dashboard/dashboard-workspace";
 import { LanguageSwitcher } from "@/components/dashboard/language-switcher";
-import { Badge } from "@/components/ui/badge";
-import { createTranslator, type DashboardLocale } from "@/lib/i18n";
+import type { GuildOption } from "@/components/dashboard/guild-options";
+import type { DashboardLocale } from "@/lib/i18n";
 
-export function DashboardShell({
-  guildId,
-  guildName,
-  canEdit,
-  locale,
-  children,
-}: {
-  guildId: string;
-  guildName: string;
-  canEdit: boolean;
+export function DashboardShell({ guildId, guildName, canEdit, locale, children, guilds, selectedGuildIds, isAdmin = false }: {
+  guildId?: string;
+  guildName?: string;
+  canEdit?: boolean;
   locale: DashboardLocale;
   children: React.ReactNode;
+  guilds?: GuildOption[];
+  selectedGuildIds?: string[];
+  isAdmin?: boolean;
 }) {
-  const t = createTranslator(locale);
-  return (
-    <div className="min-h-screen">
-      <header className="sticky top-0 z-30 border-b bg-card/95 backdrop-blur">
-        <div className="mx-auto flex max-w-7xl flex-col items-stretch gap-2 px-3 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-3 sm:px-4">
-          <Link href="/dashboard" className="flex min-w-0 items-center gap-2 font-semibold">
-            <Server size={18} />
-            <span className="truncate">comebacktwitterembed</span>
-          </Link>
-          <div className="flex w-full min-w-0 flex-wrap items-center gap-2 sm:w-auto sm:justify-end">
-            <GuildSwitcher selectedGuildIds={[guildId]} guilds={[{ guildId, name: guildName }]} locale={locale} />
-            <Badge className="shrink-0" tone={canEdit ? "success" : "muted"}>{canEdit ? t("shell.badge.canEdit") : t("shell.badge.viewOnly")}</Badge>
-            <LanguageSwitcher locale={locale} />
-            <Link href="/dashboard/personal-links" className="rounded-md border px-3 py-2 text-sm hover:bg-muted">{locale === "ja" ? "あとで見る・通知" : "Saved links & notifications"}</Link>
-            <SignOutButton locale={locale} />
-          </div>
+  const ja = locale === "ja";
+  const selected = selectedGuildIds ?? (guildId ? [guildId] : []);
+  const options = guilds ?? (guildId ? [{ guildId, name: guildName || guildId }] : []);
+  return <div className="dashboard-app">
+    <a href="#dashboard-content" className="dashboard-skip-link">{ja ? "本文へ移動" : "Skip to content"}</a>
+    <header data-dashboard-header className="dashboard-app-header">
+      <div className="dashboard-app-header-inner">
+        <Link href="/dashboard?mode=user" className="dashboard-brand"><span className="dashboard-brand-icon"><Bot size={21} aria-hidden /></span><span><strong>comebacktwitterembed</strong><small>{ja ? "ダッシュボード" : "Dashboard"}</small></span></Link>
+        <div className="dashboard-header-context">
+          {options.length || selected.length ? <GuildSwitcher selectedGuildIds={selected} guilds={options} locale={locale} /> : <span className="dashboard-scope-label"><CircleUserRound size={16} aria-hidden />{ja ? "自分のスペース" : "My space"}</span>}
+          {guildId && canEdit === false ? <span className="dashboard-readonly"><LockKeyhole size={14} aria-hidden />{ja ? "閲覧のみ" : "View only"}</span> : null}
         </div>
-      </header>
-      <DashboardWorkspace initialGuildIds={[guildId]} locale={locale} defaultLayout="server" defaultGuildId={guildId}>
-        {children}
-      </DashboardWorkspace>
-    </div>
-  );
+        <details className="dashboard-account"><summary aria-label={ja ? "アカウント" : "Account"}><CircleUserRound size={19} aria-hidden /><span>{ja ? "アカウント" : "Account"}</span></summary><div className="dashboard-account-panel"><LanguageSwitcher locale={locale} /><SignOutButton locale={locale} /></div></details>
+      </div>
+    </header>
+    <DashboardWorkspace initialGuildIds={selected} defaultGuildId={guildId} guildName={guildName} locale={locale} defaultLayout={guildId ? "server" : "plain"} isAdmin={isAdmin}>{children}</DashboardWorkspace>
+  </div>;
 }

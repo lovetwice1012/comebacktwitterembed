@@ -72,7 +72,7 @@ test('real React editor preserves invalid text, debounces updates, and roundtrip
         await fill(JSON.stringify(next)); await settle(520); await settle(420);
         assert.equal(latest.name, 'テキストから反映'); assert.equal(editable, true);
         await click('ブロック'); await settle(420);
-        assert(container.textContent.includes('ブロックを追加'));
+        assert(container.querySelector('button[aria-label="ブロックを追加"]'));
         assert.equal(latest.nodes.length, 2);
         await click('元に戻す'); await settle(420); assert.equal(latest.name, '初期ルール');
         await click('やり直す'); await settle(420); assert.equal(latest.name, 'テキストから反映');
@@ -100,8 +100,8 @@ test('real React editor preserves invalid text, debounces updates, and roundtrip
         await act(async () => root.render(React.createElement(ConditionsFixture)));
         assert.equal(container.querySelectorAll('[data-predicate-editor]').length, 1, 'only the selected condition has a form');
         assert.equal(container.querySelectorAll('[data-condition-path]').length, 3, 'child groups initially show concise collapsed rows');
-        for (const op of ['AND', 'OR', 'NOT']) assert(compiled.exports.predicateSummary(nested).includes(op));
-        assert(container.textContent.includes('情報不足（unknown）'));
+        for (const op of ['かつ', 'または', '否定']) assert(compiled.exports.predicateSummary(nested).includes(op));
+        assert.equal(container.querySelector('.automation-condition-outcomes'), null, 'the settings panel does not duplicate the canvas branch labels');
         await click('条件 1 を編集'); await click('条件 1.2 を編集');
         const comparison = container.querySelector('select[aria-label="比較方法"]');
         await act(async () => { comparison.value = 'lte'; comparison.dispatchEvent(new dom.window.Event('change', { bubbles: true })); });
@@ -113,7 +113,7 @@ test('real React editor preserves invalid text, debounces updates, and roundtrip
         assert.equal(container.querySelector('select[aria-label="比較方法"]').value, 'lte', 'collapsing the outline keeps the selected edit');
         await act(async () => root.render(React.createElement(ConditionsFixture, { disabled: true })));
         await click('条件 2 を編集');
-        assert(container.textContent.includes('NOTでも情報不足は情報不足のままです。'));
+        assert(container.textContent.includes('情報不足の判定は反転しません'));
         assert(container.querySelector('select[aria-label="条件の組み立て"]').matches(':disabled'));
         assert.equal(conditionConfig.predicate.conditions[0].conditions[1].op, 'lte', 'read-only navigation does not mutate the predicate');
 

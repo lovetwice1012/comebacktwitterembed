@@ -156,6 +156,7 @@ func (a *App) routes() http.Handler {
 	mux.HandleFunc("POST /v1/actions", a.protect(a.createAction))
 	mux.HandleFunc("GET /v1/actions", a.protect(a.actions))
 	mux.HandleFunc("GET /v1/actions/{id}", a.protect(a.action))
+	mux.HandleFunc("GET /v1/actions/by-key/{key}", a.protect(a.actionReceipt))
 	mux.HandleFunc("GET /v1/metrics", a.protect(a.metrics))
 	mux.HandleFunc("GET /v1/shards", a.protect(a.shards))
 	mux.HandleFunc("GET /v1/reports/{kind}", a.protect(a.getReport))
@@ -617,6 +618,30 @@ func (a *App) action(w http.ResponseWriter, r *http.Request) {
 	}
 	if e != nil {
 		fail(w, 503, "QUERY_FAILED", e.Error())
+		return
+	}
+	jsonResponse(w, 200, ac)
+}
+
+// A lost POST acknowledgement can be reconciled without submitting an action.
+func (a *App) actionReceipt(w http.ResponseWriter, r *http.Request) {
+	actor, _, ok := a.authenticate(r)
+	if !ok {
+		fail(w, 401, "UNAUTHORIZED", "An allowed administrator must authenticate")
+		return
+	}
+	key := r.PathValue("key")
+	if key == "" || len(key) > 200 {
+		fail(w, 400, "INVALID_RECEIPT_KEY", "Receipt key is required (max 200 characters)")
+		return
+	}
+	ac, e := a.store.actionByKey(key, actor)
+	if errors.Is(e, sql.ErrNoRows) {
+		fail(w, 404, "RECEIPT_NOT_OBSERVED", "The receipt has not been observed; execution is not confirmed")
+		return
+	}
+	if e != nil {
+		fail(w, 503, "QUERY_FAILED", "The existing action receipt could not be read")
 		return
 	}
 	jsonResponse(w, 200, ac)

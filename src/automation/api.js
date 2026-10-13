@@ -27,7 +27,8 @@ async function dispatch({ method, path, search = new URLSearchParams(), body = {
     }
     else if (kind === "excluded" && method === "GET") result = await history.excluded(actor, search.get("afterId") || "");
     else if (kind === "monitors" && ["auto", "price"].includes(id)) {
-      if (!action && method === "GET") result = await monitors.list(actor, id, search.get("afterId") || "0");
+      if (action === "preview" && method === "POST") result = await monitors.preview(actor, id, body);
+      else if (!action && method === "GET") result = await monitors.list(actor, id, search.get("afterId") || "0", { query: search.get("query") || "", state: search.get("state") || "all" });
       else if (!action && method === "POST") result = await monitors.save(actor, id, body);
       else if (action && method === "PATCH") result = await monitors.save(actor, id, body, action);
       else if (action && method === "DELETE") result = await monitors.remove(actor, id, action, body.expectedRevision);

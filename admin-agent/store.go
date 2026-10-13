@@ -442,6 +442,9 @@ const actionColumns = "id,type,input,status,actor,via,created_at,updated_at,resu
 func (s *Store) action(id string) (Action, error) {
 	return scanAction(s.queryDB().QueryRow("SELECT "+actionColumns+" FROM actions WHERE id=?", id))
 }
+func (s *Store) actionByKey(key, actor string) (Action, error) {
+	return scanAction(s.queryDB().QueryRow("SELECT "+actionColumns+" FROM actions WHERE idem=? AND actor=?", key, actor))
+}
 func (s *Store) enqueue(typ string, input Object, idem, actor, via string) (Action, bool, error) {
 	if idem == "" || len(idem) > 200 {
 		return Action{}, false, errors.New("idempotencyKey is required (max 200 characters)")

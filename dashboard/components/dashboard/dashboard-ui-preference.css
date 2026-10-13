@@ -1,0 +1,14 @@
+.dashboard-ui-preference { border-bottom: 1px solid hsl(var(--border)); background: hsl(var(--card)); }
+.dashboard-ui-preference-inner { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 20px; max-width: 1440px; margin-inline: auto; padding: 12px 24px; }
+.dashboard-ui-preference-description { display: grid; gap: 3px; min-width: 0; }
+.dashboard-ui-preference-description strong { font-size: 13px; font-weight: 600; }
+.dashboard-ui-preference-description > span { font-size: 12px; color: hsl(var(--muted-foreground)); }
+.dashboard-ui-preference button { display: flex; flex-shrink: 0; align-items: center; gap: 9px; min-height: 44px; padding: 7px 10px; border-radius: 8px; font-size: 12px; }
+.dashboard-ui-preference button:hover { background: hsl(var(--muted)); }
+.dashboard-ui-preference button:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }
+.dashboard-ui-preference button:disabled { opacity: .6; cursor: wait; }
+.dashboard-ui-preference-track { display: flex; align-items: center; width: 36px; height: 22px; padding: 3px; border-radius: 999px; background: hsl(var(--muted-foreground)); }
+.dashboard-ui-preference-track > span { width: 16px; height: 16px; border-radius: 999px; background: hsl(var(--card)); }
+.dashboard-ui-preference button[aria-checked="true"] .dashboard-ui-preference-track { justify-content: flex-end; background: hsl(var(--primary)); }
+.dashboard-ui-preference p[role="alert"] { flex-basis: 100%; font-size: 12px; color: hsl(var(--destructive)); }
+@media (max-width: 640px) { .dashboard-ui-preference-inner { padding: 10px 16px; gap: 5px; }.dashboard-ui-preference-description > span { max-width: 30ch; }.dashboard-ui-preference button { margin-left: auto; } }

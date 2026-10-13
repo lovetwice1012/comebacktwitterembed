@@ -1,3 +1,5 @@
+import { usesNewDashboardUI } from "@/lib/ui-rollout";
+import LegacyPage from "@/legacy/pages/guild-settings";
 import { AccessDenied } from "@/components/dashboard/access-denied";
 import { DashboardShell } from "@/components/dashboard/dashboard-shell";
 import { CrossSettingsView } from "@/components/settings/cross-settings-view";
@@ -14,18 +16,18 @@ export default async function CrossSettingsPage({ params }: Params) {
   const locale = await getDashboardLocale();
   const t = createTranslator(locale);
   const session = await requireDashboardSession();
+  if (!await usesNewDashboardUI(session)) return <LegacyPage params={params} />;
   const access = await getGuildAccess(session, guildId);
   if (!access) return <AccessDenied locale={locale} />;
   const items = await getCrossProviderSettings(guildId, locale);
 
   return (
-    <DashboardShell guildId={guildId} guildName={access.name} canEdit={access.canEdit} locale={locale}>
+    <DashboardShell guildId={guildId} guildName={access.name} canEdit={access.canEdit} locale={locale} isAdmin={session.user.isAdmin}>
       <div className="space-y-4">
         <header>
           <h1 className="text-2xl font-semibold">{t("settingsCross.title")}</h1>
-          <p className="text-sm text-muted-foreground">{t("settingsCross.description")}</p>
         </header>
-        <CrossSettingsView guildId={guildId} items={items} canManage={access.canManageGuild} locale={locale} />
+        <CrossSettingsView guildId={guildId} guildName={access.name} items={items} canManage={access.canManageGuild} locale={locale} viewerId={session.user.id} />
       </div>
     </DashboardShell>
   );

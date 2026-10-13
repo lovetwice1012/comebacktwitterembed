@@ -7,6 +7,8 @@ import { createTranslator } from "@/lib/i18n";
 import { getDashboardLocale } from "@/lib/server-locale";
 import { getDashboardSession } from "@/lib/server-session";
 import { authenticationErrorMessage } from "@/features/auth/errors";
+import { usesNewDashboardUI } from "@/lib/ui-rollout";
+import LegacyHomePage from "@/legacy/pages/home";
 
 const BOT_INVITE_URL =
   "https://discord.com/oauth2/authorize?client_id=1161267455335862282&permissions=274877958144&scope=bot%20applications.commands";
@@ -15,6 +17,7 @@ export default async function HomePage({ searchParams }: { searchParams?: Promis
   const locale = await getDashboardLocale();
   const t = createTranslator(locale);
   const session = await getDashboardSession();
+  if (!await usesNewDashboardUI(session)) return <LegacyHomePage searchParams={searchParams} />;
   const authError = session ? null : authenticationErrorMessage((await searchParams)?.error, locale);
 
   return (
@@ -27,7 +30,6 @@ export default async function HomePage({ searchParams }: { searchParams?: Promis
           </div>
           <div className="min-w-0 flex-1">
             <h1 className="break-words text-2xl font-semibold tracking-normal sm:text-3xl">comebacktwitterembed Dashboard</h1>
-            <p className="text-muted-foreground">{t("home.subtitle")}</p>
           </div>
           <LanguageSwitcher locale={locale} />
         </div>
@@ -41,7 +43,7 @@ export default async function HomePage({ searchParams }: { searchParams?: Promis
                 <Button asChild className="w-full sm:w-auto" variant="secondary">
                   <Link href="/admin">
                     <ShieldCheck size={16} />
-                    Admin
+                    {locale === "ja" ? "運営管理" : "Administration"}
                   </Link>
                 </Button>
               ) : null}

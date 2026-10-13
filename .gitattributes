@@ -1,0 +1,2 @@
+# Snapshot hashes cover the exact captured bytes on every platform.
+dashboard/legacy/** -text

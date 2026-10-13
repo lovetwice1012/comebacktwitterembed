@@ -46,6 +46,23 @@ function createMonitors(db, service, destinations, options = {}) {
             price: Object.values(price.PROVIDERS).map(p => ({ id: p.id, intervalMs: p.defaultPollMs })), twitterRegistrationEnabled: false,
             autoRegistration: await eligibility.registrationStatus(db.queryDatabase, actor.userId) };
     }
+    async function preview(actor, kind, input) {
+        requireActor(actor); tableFor(kind);
+        if (!input || typeof input !== 'object' || Array.isArray(input)) fail('INVALID_INPUT', '設定が不正です。');
+        const providerId = String(input.providerId || '').toLowerCase(), source = String(input.source || '').trim();
+        if (!source || source.length > 2000) fail('INVALID_SOURCE', '監視対象は1〜2000文字で入力してください。');
+        const library = kind === 'auto' ? auto : price, adapter = library.PROVIDERS[providerId];
+        if (!adapter) fail('UNSUPPORTED_PROVIDER', 'このサービスは選択した種類の監視に対応していません。');
+        const locale = String(input.locale || 'ja');
+        if (!/^[a-z]{2,3}(?:-[A-Za-z]{2,4})?$/.test(locale)) fail('INVALID_LOCALE', '言語・地域を選び直してください。');
+        let normalized;
+        try { normalized = kind === 'auto' ? auto.normalizeSource(providerId, source) : price.normalizeSource(providerId, { url: source, locale }); }
+        catch { fail('INVALID_SOURCE', require('./monitor-input').sourceGuidance(providerId).help); }
+        return { providerId, kind, source: normalized.sourceUrl || normalized.productUrl,
+            intervalMinutes: adapter.defaultPollMs / 60000,
+            description: kind === 'auto' ? '初回は基準を記録し、その後の新しい投稿を通知します。' : '初回の価格を基準に、以降の価格変化や指定条件を確認します。',
+            verified: 'format_only' };
+    }
     function selection(kind) {
         const table = tableFor(kind);
         return `SELECT t.*,s.provider_id,${kind === 'auto' ? 's.source_key,s.source_url' : 's.product_key,s.product_url,s.product_name,s.source_locale'},
@@ -61,13 +78,24 @@ function createMonitors(db, service, destinations, options = {}) {
         assertMonitorAccess(actor, rows[0], write);
         return rows[0];
     }
-    async function list(actor, kind, afterId = '0') {
+    async function list(actor, kind, afterId = '0', filters = {}) {
         requireActor(actor);
         if (!/^\d{1,20}$/.test(afterId)) fail('INVALID_CURSOR', 'ページ位置が不正です。');
+        const needle = String(filters.query || '').trim().normalize('NFC'), state = filters.state || 'all';
+        if (needle.length > 2000 || !['all', 'active', 'attention', 'paused'].includes(state)) fail('INVALID_FILTER', '検索条件を確認してください。');
+        const clauses = [], params = [];
+        if (needle) {
+            const pattern = '%' + needle.replace(/[=%_]/g, '=$&') + '%';
+            clauses.push(`(COALESCE(m.name,${kind === 'price' ? 's.product_name' : "''"},'') LIKE ? ESCAPE '=' OR s.provider_id LIKE ? ESCAPE '=' OR ${kind === 'auto' ? 's.source_url' : 's.product_url'} LIKE ? ESCAPE '=')`);
+            params.push(pattern, pattern, pattern);
+        }
+        if (state === 'active') clauses.push('t.enabled=1');
+        if (state === 'paused') clauses.push('t.enabled=0');
+        if (state === 'attention') clauses.push("t.enabled=1 AND s.last_error_code IS NOT NULL AND s.last_error_code<>''");
         const rows = await db.queryDatabase(`${selection(kind)} WHERE t.id>? AND
             ((t.user_id=? AND (COALESCE(m.scope,IF(t.destination_type='dm' OR t.guild_id IS NULL,'private','guild'))='private' OR t.destination_type='dm'))
-            OR (t.guild_id=? AND ?=1 AND t.destination_type<>'dm' AND COALESCE(m.scope,'guild')='guild')) ORDER BY t.id LIMIT 101`,
-        [afterId, actor.userId, actor.guildId || null, actor.canView ? 1 : 0]);
+            OR (t.guild_id=? AND ?=1 AND t.destination_type<>'dm' AND COALESCE(m.scope,'guild')='guild'))${clauses.length ? ` AND ${clauses.join(' AND ')}` : ''} ORDER BY t.id LIMIT 101`,
+        [afterId, actor.userId, actor.guildId || null, actor.canView ? 1 : 0, ...params]);
         const selected = rows.slice(0, 100);
         return { items: selected.map(row => publicMonitor(kind, row)), nextCursor: rows.length > 100 ? String(selected.at(-1).id) : null };
     }
@@ -226,6 +254,6 @@ function createMonitors(db, service, destinations, options = {}) {
             return { detached: true };
         });
     }
-    return { providers, list, getRow, save, remove, detach };
+    return { providers, preview, list, getRow, save, remove, detach };
 }
 module.exports = { createMonitors, assertMonitorAccess, scopeOf, publicMonitor };

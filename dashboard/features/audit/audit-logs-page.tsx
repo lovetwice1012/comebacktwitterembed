@@ -1,53 +1,32 @@
 import { AccessDenied } from "@/components/dashboard/access-denied";
 import { DashboardShell } from "@/components/dashboard/dashboard-shell";
-import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { listAuditLogs } from "@/lib/audit-log";
 import { getGuildAccess } from "@/lib/discord";
-import { formatDateTime } from "@/lib/format";
-import { createTranslator } from "@/lib/i18n";
+import { getCatalog } from "@/lib/settings-catalog";
 import { getDashboardLocale } from "@/lib/server-locale";
 import { requireDashboardSession } from "@/lib/server-session";
+import { AuditHistory } from "./audit-history";
+import { presentAuditEntry } from "./audit-history-model";
+import { usesNewDashboardUI } from "@/lib/ui-rollout";
+import { AuditLogsPage as LegacyAuditLogsPage } from "@/legacy/features/audit/audit-logs-page";
 
 export async function AuditLogsPage({ guildId }: { guildId: string }) {
   const locale = await getDashboardLocale();
-  const t = createTranslator(locale);
   const session = await requireDashboardSession();
+  if (!await usesNewDashboardUI(session)) return <LegacyAuditLogsPage guildId={guildId} />;
   const access = await getGuildAccess(session, guildId);
   if (!access) return <AccessDenied locale={locale} />;
-  if (!access.canManageGuild) return <div className="p-6">{t("accessDenied.logs")}</div>;
+  if (!access.canManageGuild) return <AccessDenied locale={locale} guildId={guildId} required={locale === "ja" ? "サーバーの管理 または 管理者" : "Manage Server or Administrator"} />;
   const logs = await listAuditLogs(guildId, {});
+  const catalog = getCatalog();
 
   return (
-    <DashboardShell guildId={guildId} guildName={access.name} canEdit={access.canEdit} locale={locale}>
+    <DashboardShell guildId={guildId} guildName={access.name} canEdit={access.canEdit} locale={locale} isAdmin={session.user.isAdmin}>
       <div className="space-y-4">
         <header>
-          <h1 className="text-2xl font-semibold">{t("logs.title")}</h1>
-          <p className="text-sm text-muted-foreground">{t("logs.description")}</p>
+          <h1 className="text-2xl font-semibold">{locale === "ja" ? "変更履歴" : "Change history"}</h1>
         </header>
-        <div className="space-y-3">
-          {logs.map((log) => (
-            <Card key={log.auditLogId}>
-              <CardHeader>
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                  <div className="min-w-0">
-                    <CardTitle>{String(log.action)}</CardTitle>
-                    <CardDescription>{formatDateTime(log.createdAt, locale)} · {String(log.actorUsernameSnapshot || log.actorUserId)}</CardDescription>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    {log.providerId ? <Badge>{String(log.providerId)}</Badge> : null}
-                    {log.settingKey ? <Badge tone="muted">{String(log.settingKey)}</Badge> : null}
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent className="grid gap-3 lg:grid-cols-2">
-                <pre className="max-h-64 min-w-0 overflow-auto rounded-md bg-muted p-3 text-xs">{JSON.stringify(log.before, null, 2)}</pre>
-                <pre className="max-h-64 min-w-0 overflow-auto rounded-md bg-muted p-3 text-xs">{JSON.stringify(log.after, null, 2)}</pre>
-              </CardContent>
-            </Card>
-          ))}
-          {!logs.length ? <Card><CardContent className="pt-4 text-sm text-muted-foreground">{t("logs.empty")}</CardContent></Card> : null}
-        </div>
+        <AuditHistory guildId={guildId} locale={locale} entries={logs.map(log => presentAuditEntry(log, catalog, locale))} />
       </div>
     </DashboardShell>
   );

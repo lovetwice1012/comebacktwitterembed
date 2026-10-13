@@ -1,9 +1,9 @@
 "use client";
 
-import { ArrowRightLeft } from "lucide-react";
+import { ArrowRightLeft, Info } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { createTranslator, type DashboardLocale } from "@/lib/i18n";
 
 type Guild = {
@@ -55,7 +55,6 @@ export function GuildSyncPanel({ guilds, locale }: { guilds: Guild[]; locale: Da
           <ArrowRightLeft size={18} />
           {t("sync.title")}
         </CardTitle>
-        <CardDescription>{t("sync.description")}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
         <div className="grid gap-3 md:grid-cols-[1fr_1fr_auto]">
@@ -94,7 +93,7 @@ export function GuildSyncPanel({ guilds, locale }: { guilds: Guild[]; locale: Da
             </Button>
           </div>
         </div>
-        <p className="text-xs text-muted-foreground">{t("sync.note")}</p>
+        <p className="flex items-start gap-2 text-xs text-muted-foreground"><Info size={14} className="shrink-0" aria-hidden />{t("sync.note")}</p>
         {message ? <p className="text-sm text-muted-foreground">{message}</p> : null}
       </CardContent>
     </Card>

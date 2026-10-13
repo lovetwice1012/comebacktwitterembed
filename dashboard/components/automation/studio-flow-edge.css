@@ -1,0 +1,13 @@
+.studio-editor .studio-edge-halo { stroke: hsl(var(--card)); }
+.studio-editor .studio-edge-endmarkers { pointer-events: none; }
+.studio-editor .studio-flow-edge .react-flow__edge-path { transition: stroke-width .12s; }
+.studio-editor .studio-flow-edge[data-port="no"] .react-flow__edge-path { stroke-dasharray: 8 4; }
+.studio-editor .studio-flow-edge[data-port="unknown"] .react-flow__edge-path { stroke-dasharray: 2 5; }
+.studio-editor .react-flow__edge:hover .studio-flow-edge .react-flow__edge-path { stroke-width: 3.5; }
+.studio-editor .studio-flow-edge[data-selected] .react-flow__edge-path { stroke-width: 4; }
+.studio-editor .studio-flow-edge[data-selected] .react-flow__edge-textbg,
+.studio-editor .react-flow__edge:hover .studio-flow-edge .react-flow__edge-textbg { stroke: hsl(var(--studio-accent)); }
+.studio-editor .studio-flow-edge[data-active] .react-flow__edge-textbg { stroke: hsl(var(--studio-accent) / .7); }
+.studio-editor .studio-flow-edge[data-dimmed] { opacity: .42; }
+.studio-editor .react-flow__edge:hover .studio-flow-edge[data-dimmed] { opacity: 1; }
+.studio-editor .studio-flow-edge[data-blocked] .react-flow__edge-textbg { stroke: #b7791f; }

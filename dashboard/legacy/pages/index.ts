@@ -1,0 +1,16 @@
+export { default as LegacyHomePage } from "./home";
+export { default as LegacyDashboardPage } from "./dashboard";
+export { default as LegacyBulkPage } from "./bulk";
+export { default as LegacyPersonalLinksPage } from "./personal-links";
+export { default as LegacyGuildOverviewPage } from "./guild-overview";
+export { default as LegacyGuildAccessPage } from "./guild-access";
+export { default as LegacyGuildDiagnosticsPage } from "./guild-diagnostics";
+export { default as LegacyGuildMediaPage } from "./guild-media";
+export { default as LegacyGuildPreviewPage } from "./guild-preview";
+export { default as LegacyGuildProvidersPage } from "./guild-providers";
+export { default as LegacyGuildProviderSettingsPage } from "./guild-provider-settings";
+export { default as LegacyGuildSettingsPage } from "./guild-settings";
+export { default as LegacyAdminPage } from "./admin";
+export { default as LegacyAdminSupportConsolePage } from "./admin-support-console";
+export { default as LegacyAdminSendMessagePage } from "./admin-send-message";
+export { default as LegacyAdminUrlInspectorPage } from "./admin-url-inspector";
