@@ -271,7 +271,7 @@
       "source": "dashboard/components/admin/workspace-shell.tsx",
       "output": "dashboard/legacy/components/admin/workspace-shell.tsx",
       "sourceSha256": "f5df141a49710b03cdb82b45235fe2dc8aec72a8d21695c9c1d2cb7082be49a1",
-      "outputSha256": "f9ebd7432a237080fa9dc2b3cabfdfef79e8531bbf98ae9d3e26945b87cb4b79",
+      "outputSha256": "6cadf2a1f4999cfbe2426834cb22fcac974909af6a9618c158eaa8bf0d5868a8",
       "importRewrites": 3
     },
     {
