@@ -62,3 +62,15 @@ go test ./... -count=1
 The history permission unit explicitly selects the new presentation; its
 Manage Server denial and zero stored-log reads remain asserted. The rollout
 tests independently exercise signed preference cookies, sessions and both views.
+
+## Latest main integration
+
+While remote checks were running, PR #27 advanced main to
+`2308de031b8eacb9da0b00582a4c46c676599c65`. That revision was merged into the
+isolated UI branch without conflicts. The UI diff against this new base still
+contains only the same 203 UI/integration files.
+
+Root TypeScript passed again. An additional 50 tests passed with 0 failures or
+skips, covering monitor normalization/preview/filtering, notification management
+with disposable SQL, both UI selections, signed preferences and server summaries.
+The provider normalizer contracts used by UI preview remain compatible.
