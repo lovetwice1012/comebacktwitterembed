@@ -1,0 +1,205 @@
+{
+  "health": {
+    "checkedAtUnix": 1791876498.9212642,
+    "release": "/opt/cbte-releases/youtube-watch-streaming-20261013-032a3315",
+    "baseRevision": "02f26665277c5866c2ddb4309c1c9646f28c317b",
+    "lease": {
+      "state": "active",
+      "childPid": 1177531,
+      "epoch": 13
+    },
+    "heartbeat": {
+      "occurredAt": "2026-10-13T07:28:09.530000000Z",
+      "pid": 1177531,
+      "ready": true,
+      "shards": {
+        "manager_status": "ready",
+        "offline": 0,
+        "online": 13,
+        "total": 13,
+        "unknown": 0
+      },
+      "recordingFailure": null
+    }
+  },
+  "resident": {
+    "checkedAtMs": 1791876499049,
+    "source": {
+      "id": 2,
+      "initialized_at_ms": 1791876122466,
+      "last_checked_at_ms": 1791876426328,
+      "next_check_at_ms": 1791876726328,
+      "failure_count": 0,
+      "last_error_code": null
+    },
+    "fetchMode": "uploads",
+    "seenCount": 100,
+    "itemsCreated": 0,
+    "targets": [
+      {
+        "id": 2,
+        "enabled": 1,
+        "baseline_at_ms": 1791876122466,
+        "last_polled_at_ms": 1791876426328,
+        "next_poll_at_ms": 1791876726328
+      }
+    ]
+  },
+  "manifest": {
+    "files": [
+      {
+        "path": "src/providers/autoWatch/_shared.js",
+        "sha256": "5a9e8bc05b03e07e9d85361953fb17f37208ecf12e3eb7755a60c9a4a565c920"
+      },
+      {
+        "path": "src/providers/autoWatch/index.js",
+        "sha256": "40e0da49be36af70deefbf4f065ef460d437e425e8f688664d72bac864978fd1"
+      },
+      {
+        "path": "src/providers/autoWatch/streaming.js",
+        "sha256": "46cb361dfc864479637a49a5ecd6bacb40c6eeb3b3983feae6aa2694d45ca96c"
+      },
+      {
+        "path": "src/providers/autoWatch/isolatedFetch.js",
+        "sha256": "250c9279ebcc1aee2a4eb03e5be03b3f5f1f11a3d1557efe26e54fadeecf9054"
+      },
+      {
+        "path": "src/providers/autoWatch/fetchWorker.js",
+        "sha256": "f14f97de360e7b63f4493527a2287c1463c8fc18bba8212a97dc678bf26f1008"
+      },
+      {
+        "path": "src/providers/autoWatch/isolation_linux.js",
+        "sha256": "c83f24a205052416fe1a379a37f36b18db2330cbffee2d651c8e052ac7b61f46"
+      },
+      {
+        "path": "src/providers/autoWatch/isolation_windows.py",
+        "sha256": "372e6592ab179924ea4f5c23b564ddf6a1f136664e0fe5ac237822596284cec2"
+      },
+      {
+        "path": "src/providers/autoWatch/publicDns.js",
+        "sha256": "3ae68dbba48ea295a2a0b2a80ca82793e9676ee77a7c81375fa62fb94afcb7d8"
+      },
+      {
+        "path": "src/providers/youtube/autoWatch.js",
+        "sha256": "f1771211abdbcef350e0fa3d609576e29c40154762fc805d010714d589001d9a"
+      },
+      {
+        "path": "src/providers/youtube/autoWatchXml.js",
+        "sha256": "d63a65c813677f74ab556454e7b94d2c9742d536915f77e965a4aba5939d9679"
+      },
+      {
+        "path": "src/providers/github/autoWatch.js",
+        "sha256": "2fe79c933b4f4834474a93044375be62df172e8537710bfdef82d96d5cc53a7d"
+      },
+      {
+        "path": "src/providers/twitch/autoWatch.js",
+        "sha256": "39745db85584a70a3571e4673d2f3e87c5a684f899e802cd513da57158fb492b"
+      },
+      {
+        "path": "src/providers/pixiv/autoWatch.js",
+        "sha256": "f1cf47760ea058ad810df4c40031866ab900aacadf694335814360b59b34e219"
+      },
+      {
+        "path": "src/providers/spotify/autoWatch.js",
+        "sha256": "b89b95c53bb495f8a90ac055be0e9de2a7623b6e7e54f31352c7ba0738f49c89"
+      },
+      {
+        "path": "src/providers/booth/autoWatch.js",
+        "sha256": "f226712ff7e4b53fae98b80e4a8cd6f2387827d50aef0f040c8ef9133bf15d93"
+      },
+      {
+        "path": "scripts/test/autoWatch.youtube-fallback.test.js",
+        "sha256": "dcca8bb23a26745f3365afd5b86b0350a073487d9aa866e3803dd23bc57e2aa0"
+      },
+      {
+        "path": "scripts/test/autoWatch.streaming.test.js",
+        "sha256": "dc01123d0dd9873e0bdcc56df0226f98cf284a1523da2846fbb9c13fc9ffd034"
+      },
+      {
+        "path": "scripts/test/autoWatch.streaming-providers.test.js",
+        "sha256": "6711c5f4ff9b402f448c64c9e0c68fe5fb80fc746c21d3bc224fe3317ac05dc0"
+      },
+      {
+        "path": "scripts/test/autoWatch.isolated-fetch.test.js",
+        "sha256": "782174b55c4bf081388662e76c0c5265c596c7376a2e79fa0517abd0d7f850c8"
+      },
+      {
+        "path": "scripts/test/autoWatch.providers.test.js",
+        "sha256": "c35748857c5275ac1f9dd9099b365922cdb6dc36c1358b7e26f2c0a1aa4897dc"
+      },
+      {
+        "path": "scripts/test/providerFetch.test.js",
+        "sha256": "bec1b7ac598601b09677f12ee835cda2ba63369e16d2201dae16bdc969d582fa"
+      },
+      {
+        "path": "scripts/test/provider-parsers.test.js",
+        "sha256": "466c5cc14e5343400bf4aeabbe89fa5419c9da4fc78cd116e2d07c9959dd1abb"
+      }
+    ],
+    "baseHashes": {
+      "src/providers/autoWatch/_shared.js": "d54c8342b16b39665d9319c519274d62878ecd1a1d90277dde24c52ed01247d3",
+      "src/providers/autoWatch/index.js": "6d2d2db5a2c524884b3ceb9e94f5a1b8209188633c4a7ff8bfc85b004c6181f0",
+      "src/providers/youtube/autoWatch.js": "5ccff172f856999dc8f1dee2bb05177798a6d04573a766bcb477026d6fe8d900",
+      "src/providers/github/autoWatch.js": "febd3a2d1f00a3dbabb494797d5bc695c44027afb015d67148689baa0b4fcadc",
+      "src/providers/twitch/autoWatch.js": "03e30d790f902103e867a950f2f19caf747ee1fcbf9b9288b3d9863cc50f269a",
+      "src/providers/pixiv/autoWatch.js": "9faca7d6ee9767ff0779e2b42ddd51dc3f37d297527a17e7632c91d5d0525c60",
+      "src/providers/spotify/autoWatch.js": "0d821365772f399aa419bb9316c58b7df3f85b9b961dd28df9a75820e0e79d7b",
+      "src/providers/booth/autoWatch.js": "b11a35c8f0d8d6fec8f0db1cb8e638dd151ba538b9b0bf687496b9d6245ca168"
+    },
+    "lockEntries": {
+      "node_modules/stream-json": {
+        "version": "1.9.1",
+        "resolved": "https://registry.npmjs.org/stream-json/-/stream-json-1.9.1.tgz",
+        "integrity": "sha512-uWkjJ+2Nt/LO9Z/JyKZbMusL8Dkh97uUBTv3AJQ74y07lVahLY4eEFsPsE97pxYBwr8nnjMAIch5eqI0gPShyw==",
+        "license": "BSD-3-Clause",
+        "dependencies": {
+          "stream-chain": "^2.2.5"
+        }
+      },
+      "node_modules/stream-chain": {
+        "version": "2.2.5",
+        "resolved": "https://registry.npmjs.org/stream-chain/-/stream-chain-2.2.5.tgz",
+        "integrity": "sha512-1TJmBx6aSWqZ4tx7aTpBDXK0/e2hhcNSTV8+CbFJtDjbb+I1mZ8lHit0Grw9GRT+6JbIrrDd8esncgBi8aBXGA==",
+        "license": "BSD-3-Clause"
+      }
+    }
+  },
+  "status": "deployed-and-resident-verified",
+  "channelId": "UC-KCywVYbtCJlsmdcsvwU8g",
+  "cause": {
+    "rssStatus": 404,
+    "uploadsStatus": 200,
+    "uploadsBodyBytes": 2112397,
+    "formerBodyLimitBytes": 2097152
+  },
+  "tests": {
+    "localFocusedPassed": 68,
+    "localSqlPassed": 4,
+    "localSqlSkipped": 0,
+    "stagedLinuxPassed": 51,
+    "eslint": "passed",
+    "windowsIsolatedLiveFetch": "100 verified uploads",
+    "linuxIsolatedLiveFetch": "100 verified uploads"
+  },
+  "resourceEvidence": {
+    "discardedJsonBodyBytes": 536870912,
+    "streamingMaximumRssBytes": 106622976,
+    "windowsJob64MiBRejects128MiBAllocation": true,
+    "linuxAddressSpace2GiBRejects3GiBAllocation": true
+  },
+  "boundaries": {
+    "pageBodySizeCap": null,
+    "workerResidentMemoryBytes": 536870912,
+    "linuxWorkerAddressSpaceBytes": 2147483648,
+    "metadataProcessingBudgetBytes": 16777216,
+    "metadataPressure": "transient retry with cursor and enabled target preserved",
+    "newUploadDiscordDelivery": "not exercised; source recovery verified without historical sends"
+  },
+  "backupDirectory": "/var/backups/cbte/youtube-watch-body-20261013",
+  "otherWorkingTreeTestMismatch": {
+    "test": "SQL direct registration shares sources, enforces slots, resumes with a fresh baseline and protects other owners",
+    "actualCode": "AUTOMATION_SLOT_LIMIT",
+    "expectedCode": "AUTO_WATCH_SLOT_LIMIT",
+    "context": "Existing uncommitted entitlements contract; excluded from production overlay."
+  }
+}

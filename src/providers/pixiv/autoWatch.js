@@ -10,6 +10,13 @@ const {
     sourceError,
     urlFromInput,
 } = require('../autoWatch/_shared');
+const { readJsonProjection } = require('../autoWatch/streaming');
+
+const PROFILE_PATHS = [
+    ['error'], ['message'], ['retry_after'], ['retryAfter'], ['parameters', 'retry_after'],
+    ['body', 'illusts', '*', 'title'], ['body', 'illusts', '*', 'createDate'], ['body', 'illusts', '*', 'uploadDate'],
+    ['body', 'manga', '*', 'title'], ['body', 'manga', '*', 'createDate'], ['body', 'manga', '*', 'uploadDate'],
+];
 
 function normalizeSource(input) {
     const raw = String(input || '').trim();
@@ -58,6 +65,7 @@ async function fetch(source, context) {
             Referer: `https://www.pixiv.net/users/${encodeURIComponent(source.source_key)}`,
             'User-Agent': 'Mozilla/5.0 (compatible; ComebackTwitterEmbed/1.0)',
         }),
+        readBody: response => readJsonProjection(response, PROFILE_PATHS),
     });
     if (response.notModified) return { notModified: true, state: source.state || {}, etag: response.etag, lastModified: response.lastModified, rateLimit: response.rateLimit };
     if (response.body?.error) throw monitorError('AUTO_WATCH_UPSTREAM_ERROR', 'Pixiv profile endpoint returned an error.');

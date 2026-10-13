@@ -127,7 +127,7 @@ async function processSource(source, context) {
         // response. Repair them with one full observation at the normal poll.
         const needsFullObservation = !source.initialized_at_ms || cursor.admissionVersion !== 1 || !!cursor.deferredObservations?.length;
         const result = await fetchSource(needsFullObservation
-            ? { ...source, etag: null, last_modified: null } : source, { config, fetch });
+            ? { ...source, etag: null, last_modified: null } : source, { config, fetch, isolate: context.isolateFetch });
         await store.recordProviderRateLimit(source.provider_id, result.rateLimit, now);
         const observed = normalizeItems(result.items);
         const isFirstObservation = !source.initialized_at_ms;
@@ -241,11 +241,12 @@ async function tick(options = {}) {
     if (store === storeDefault) {
         const currentTime = () => options.now === undefined ? Date.now() : now;
         const sourcesResult = [], deliveriesResult = [];
-        const context = { now, store, fetch, client: options.client || activeClient, fetchSource: options.fetchSource || fetchSourceDefault, config, sourceCounts };
+        const context = { now, store, fetch, client: options.client || activeClient, fetchSource: options.fetchSource || fetchSourceDefault, config, sourceCounts,
+            isolateFetch: !options.fetch && !options.fetchSource };
         // Claim only the work we are about to execute. Batch claiming used to
         // spend later items' entire lease while earlier sources were fetched.
         for (let index = 0; index < integer(options.sourceLimit ?? process.env.AUTO_WATCH_SOURCES_PER_TICK, 16, 1, 128); index++) {
-            const due = await store.claimDueSources(currentTime(), 1);
+            const due = await store.claimDueSources(currentTime(), 1, config);
             if (!due.length) break;
             sourcesResult.push(await processSource(due[0], { ...context, now: currentTime() }));
         }
@@ -256,8 +257,9 @@ async function tick(options = {}) {
         }
         return { now, sources: sourcesResult, deliveries: deliveriesResult };
     }
-    const sources = await store.claimDueSources(now, integer(options.sourceLimit ?? process.env.AUTO_WATCH_SOURCES_PER_TICK, 16, 1, 128));
-    const context = { now, store, fetch, client: options.client || activeClient, fetchSource: options.fetchSource || fetchSourceDefault, config, sourceCounts };
+    const sources = await store.claimDueSources(now, integer(options.sourceLimit ?? process.env.AUTO_WATCH_SOURCES_PER_TICK, 16, 1, 128), config);
+    const context = { now, store, fetch, client: options.client || activeClient, fetchSource: options.fetchSource || fetchSourceDefault, config, sourceCounts,
+        isolateFetch: !options.fetch && !options.fetchSource };
     const sourcesResult = [];
     // Sources stay sequential. The DB lease and provider-wide pacing are the
     // protection against a cold-start burst and multi-instance overlap.

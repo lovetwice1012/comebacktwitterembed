@@ -8,6 +8,13 @@ const {
     sourceError,
     urlFromInput,
 } = require('../autoWatch/_shared');
+const { readJsonProjection } = require('../autoWatch/streaming');
+
+const CHANNEL_PATHS = [
+    ['data', 'user', 'id'], ['data', 'user', 'login'],
+    ['data', 'user', 'stream', 'id'], ['data', 'user', 'stream', 'title'], ['data', 'user', 'stream', 'createdAt'],
+    ['errors', '*', 'message'], ['message'], ['error', 'message'], ['retry_after'], ['retryAfter'], ['parameters', 'retry_after'],
+];
 
 function normalizeSource(input) {
     const raw = String(input || '').trim();
@@ -41,6 +48,7 @@ async function fetch(source, context) {
             Accept: 'application/json',
         },
         body: JSON.stringify(payload),
+        readBody: response => readJsonProjection(response, CHANNEL_PATHS),
     });
     const user = response.body?.data?.user;
     if (response.body?.errors?.length || user && !Object.hasOwn(user, 'stream')) throw monitorError('AUTO_WATCH_GUEST_CONTENT_UNAVAILABLE', 'Twitch did not return a complete guest channel state.');
