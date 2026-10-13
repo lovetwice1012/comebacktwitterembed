@@ -52,6 +52,19 @@ textarea {
   align-self: start;
 }
 
+.dashboard-task-navigation { display: flex; flex-wrap: wrap; gap: .5rem; }
+.dashboard-task-navigation a { display: flex; align-items: center; gap: .45rem; padding: .55rem .75rem; border-radius: .5rem; color: hsl(var(--muted-foreground)); font-size: .8rem; }
+.dashboard-task-navigation a:hover, .dashboard-task-navigation a[aria-current="page"] { background: hsl(var(--primary)/.08); color: hsl(var(--primary)); }
+.dashboard-task-navigation strong { font-weight: 500; }
+.dashboard-task-hub { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: .85rem; }
+.dashboard-task-hub a { display: flex; align-items: center; gap: .9rem; padding: 1.25rem; border: 1px solid hsl(var(--border)); border-radius: .85rem; background: hsl(var(--card)); }
+.dashboard-task-hub a:hover { border-color: hsl(var(--primary)); }
+.dashboard-task-hub svg { flex-shrink: 0; color: hsl(var(--primary)); }
+.dashboard-task-hub span { display: grid; gap: .4rem; min-width: 0; }
+.dashboard-task-hub .dashboard-task-chevron { margin-left: auto; color: hsl(var(--muted-foreground)); }
+.dashboard-task-hub a:focus-visible, .dashboard-task-navigation a:focus-visible { outline: 2px solid hsl(var(--primary)); outline-offset: 3px; }
+@media(max-width: 640px) { .dashboard-task-hub { grid-template-columns: 1fr; }.dashboard-task-navigation { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: .25rem; }.dashboard-task-navigation a { flex-direction: column; justify-content: center; min-height: 60px; padding: .45rem .25rem; font-size: .75rem; text-align: center; } }
+
 @media (max-width: 900px) {
   .dashboard-grid {
     grid-template-columns: 1fr;
@@ -75,4 +88,109 @@ textarea {
     flex: 0 0 auto;
     white-space: nowrap;
   }
+}
+
+/* Ordinary dashboard: one navigation, one server context, one primary action. */
+html[data-dashboard-ui="preview"] .dashboard-app { min-height: 100vh; }
+html[data-dashboard-ui="preview"] .dashboard-app-header { position: sticky; top: 0; z-index: 30; border-bottom: 1px solid hsl(var(--border)); background: hsl(var(--card) / .96); backdrop-filter: blur(12px); }
+html[data-dashboard-ui="preview"] .dashboard-app-header-inner { max-width: 1440px; margin: auto; min-height: 76px; display: flex; align-items: center; gap: 24px; padding: 12px 24px; }
+html[data-dashboard-ui="preview"] .dashboard-brand { display: flex; align-items: center; gap: 12px; min-width: 0; }
+html[data-dashboard-ui="preview"] .dashboard-brand-icon { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 12px; background: hsl(var(--primary)); color: hsl(var(--primary-foreground)); flex-shrink: 0; }
+html[data-dashboard-ui="preview"] .dashboard-brand > span:last-child { display: grid; min-width: 0; }
+html[data-dashboard-ui="preview"] .dashboard-brand strong { font-size: 14px; overflow: hidden; text-overflow: ellipsis; }
+html[data-dashboard-ui="preview"] .dashboard-brand small { font-size: 11px; color: hsl(var(--muted-foreground)); }
+html[data-dashboard-ui="preview"] .dashboard-header-context { display: flex; align-items: center; gap: 10px; margin-left: auto; min-width: 0; }
+html[data-dashboard-ui="preview"] .dashboard-scope-label, html[data-dashboard-ui="preview"] .dashboard-readonly { display: inline-flex; align-items: center; gap: 6px; color: hsl(var(--muted-foreground)); font-size: 12px; white-space: nowrap; }
+html[data-dashboard-ui="preview"] .dashboard-readonly { padding: 6px 8px; border-radius: 6px; background: hsl(var(--muted)); }
+html[data-dashboard-ui="preview"] .dashboard-account { position: relative; flex-shrink: 0; }
+html[data-dashboard-ui="preview"] .dashboard-account summary { display: flex; align-items: center; gap: 7px; min-height: 44px; cursor: pointer; padding: 8px 10px; border-radius: 8px; list-style: none; font-size: 12px; }
+html[data-dashboard-ui="preview"] .dashboard-account summary::-webkit-details-marker, html[data-dashboard-ui="preview"] .guild-directory-actions summary::-webkit-details-marker, html[data-dashboard-ui="preview"] .dashboard-navigation-tools summary::-webkit-details-marker { display: none; }
+html[data-dashboard-ui="preview"] .dashboard-account summary:hover { background: hsl(var(--muted)); }
+html[data-dashboard-ui="preview"] .dashboard-account-panel { position: absolute; right: 0; top: calc(100% + 8px); display: grid; gap: 8px; min-width: 200px; border: 1px solid hsl(var(--border)); border-radius: 10px; padding: 12px; background: hsl(var(--card)); box-shadow: 0 12px 36px rgb(20 24 36 / .12); }
+html[data-dashboard-ui="preview"] .dashboard-layout { display: grid; grid-template-columns: 208px minmax(0, 1fr); gap: 32px; max-width: 1440px; margin: auto; padding: 28px 24px 48px; }
+html[data-dashboard-ui="preview"] .dashboard-primary-navigation { position: sticky; top: calc(var(--dashboard-header-height, 76px) + 20px); align-self: start; max-height: calc(100dvh - var(--dashboard-header-height, 76px) - 40px); overflow-y: auto; }
+html[data-dashboard-ui="preview"] .dashboard-navigation-panel { display: grid; gap: 18px; }
+html[data-dashboard-ui="preview"] .dashboard-navigation-group { display: grid; gap: 4px; }
+html[data-dashboard-ui="preview"] .dashboard-navigation-group p { margin: 0 10px 6px; font-size: 11px; font-weight: 600; color: hsl(var(--muted-foreground)); }
+html[data-dashboard-ui="preview"] .dashboard-navigation-server { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+html[data-dashboard-ui="preview"] .dashboard-navigation-panel a { display: flex; min-height: 44px; align-items: center; gap: 10px; padding: 10px; border-radius: 8px; font-size: 13px; color: hsl(var(--muted-foreground)); }
+html[data-dashboard-ui="preview"] .dashboard-navigation-panel a svg { flex-shrink: 0; }
+html[data-dashboard-ui="preview"] .dashboard-navigation-panel a:hover { background: hsl(var(--muted)); color: hsl(var(--foreground)); }
+html[data-dashboard-ui="preview"] .dashboard-navigation-panel a[aria-current="page"] { color: hsl(var(--primary)); background: hsl(var(--primary) / .09); font-weight: 600; }
+html[data-dashboard-ui="preview"] .dashboard-navigation-tools { border-top: 1px solid hsl(var(--border)); padding-top: 10px; }
+html[data-dashboard-ui="preview"] .dashboard-navigation-tools summary { list-style: none; display: flex; align-items: center; justify-content: space-between; min-height: 44px; padding: 10px; cursor: pointer; font-size: 12px; color: hsl(var(--muted-foreground)); }
+html[data-dashboard-ui="preview"] .dashboard-navigation-tools[open] summary svg { transform: rotate(180deg); }
+html[data-dashboard-ui="preview"] .dashboard-navigation-tools > div { display: grid; gap: 4px; }
+html[data-dashboard-ui="preview"] .dashboard-mobile-menu { display: none; }
+html[data-dashboard-ui="preview"] .dashboard-content { min-width: 0; outline: none; }
+html[data-dashboard-ui="preview"] .dashboard-content > * { min-width: 0; }
+html[data-dashboard-ui="preview"] .dashboard-content h1 { font-size: 26px; font-weight: 650; letter-spacing: -.025em; }
+html[data-dashboard-ui="preview"] .dashboard-page-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+html[data-dashboard-ui="preview"] .dashboard-page-heading > div { display: grid; gap: 4px; }
+html[data-dashboard-ui="preview"] .dashboard-eyebrow { color: hsl(var(--muted-foreground)); font-size: 12px; }
+html[data-dashboard-ui="preview"] .dashboard-count { display: grid; place-items: center; min-width: 32px; height: 32px; padding: 0 8px; border: 1px solid hsl(var(--border)); border-radius: 8px; font-size: 12px; color: hsl(var(--muted-foreground)); }
+html[data-dashboard-ui="preview"] .dashboard-skip-link { position: fixed; left: 16px; top: -100px; z-index: 100; background: hsl(var(--primary)); color: hsl(var(--primary-foreground)); padding: 12px 18px; border-radius: 8px; }
+html[data-dashboard-ui="preview"] .dashboard-skip-link:focus { top: 12px; }
+html[data-dashboard-ui="preview"] .dashboard-app :is(a,button,summary,input,select,textarea):focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 3px; }
+html[data-dashboard-ui="preview"] .guild-directory { display: grid; gap: 18px; }
+html[data-dashboard-ui="preview"] .guild-directory-toolbar { display: flex; align-items: center; gap: 12px; }
+html[data-dashboard-ui="preview"] .guild-directory-search { position: relative; flex: 1; min-width: 0; }
+html[data-dashboard-ui="preview"] .guild-directory-search > svg { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); color: hsl(var(--muted-foreground)); }
+html[data-dashboard-ui="preview"] .guild-directory-search input { min-height: 44px; padding-left: 42px; border-radius: 9px; background: hsl(var(--card)); }
+html[data-dashboard-ui="preview"] .guild-directory-list { display: grid; gap: 10px; }
+html[data-dashboard-ui="preview"] .guild-directory-row { display: flex; align-items: center; flex-wrap: wrap; gap: 14px; min-width: 0; padding: 18px; border: 1px solid hsl(var(--border)); border-radius: 12px; background: hsl(var(--card)); }
+html[data-dashboard-ui="preview"] .guild-directory-row.is-selected { border-color: hsl(var(--primary)); background: hsl(var(--primary) / .03); }
+html[data-dashboard-ui="preview"] .guild-directory-row > input { width: 18px; height: 18px; flex-shrink: 0; }
+html[data-dashboard-ui="preview"] .guild-directory-avatar { display: grid; place-items: center; width: 46px; height: 46px; flex-shrink: 0; border-radius: 12px; color: hsl(var(--muted-foreground)); background: hsl(var(--muted)); }
+html[data-dashboard-ui="preview"] .guild-directory-avatar img { width: 46px; height: 46px; object-fit: cover; border-radius: 12px; }
+html[data-dashboard-ui="preview"] .guild-directory-name { display: grid; grid-template-columns: minmax(0,1fr); gap: 5px; min-width: 100px; flex: 1; }
+html[data-dashboard-ui="preview"] .guild-directory-name a { min-width: 0; }
+html[data-dashboard-ui="preview"] .guild-directory-name strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 15px; }
+html[data-dashboard-ui="preview"] .guild-directory-name > span { font-size: 12px; color: hsl(var(--muted-foreground)); }
+html[data-dashboard-ui="preview"] .guild-directory-actions { display: flex; align-items: center; gap: 6px; }
+html[data-dashboard-ui="preview"] .guild-directory-actions details { position: relative; }
+html[data-dashboard-ui="preview"] .guild-directory-actions summary { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 8px; cursor: pointer; list-style: none; }
+html[data-dashboard-ui="preview"] .guild-directory-actions summary:hover { background: hsl(var(--muted)); }
+html[data-dashboard-ui="preview"] .guild-directory-actions details > button { position: absolute; right: 0; top: calc(100% + 6px); z-index: 10; min-width: 240px; padding: 14px; border: 1px solid hsl(var(--border)); border-radius: 10px; background: hsl(var(--card)); box-shadow: 0 8px 24px rgb(20 24 36 / .1); }
+html[data-dashboard-ui="preview"] .guild-selection-bar { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 12px; padding: 18px; border: 1px solid hsl(var(--primary) / .25); border-radius: 12px; background: hsl(var(--primary) / .04); }
+html[data-dashboard-ui="preview"] .guild-selection-bar > div:first-child { display: grid; gap: 4px; font-size: 13px; }
+html[data-dashboard-ui="preview"] .guild-selection-bar span, html[data-dashboard-ui="preview"] .guild-directory-restriction { font-size: 12px; color: hsl(var(--muted-foreground)); }
+html[data-dashboard-ui="preview"] .guild-selection-actions { display: flex; gap: 6px; align-items: center; }
+html[data-dashboard-ui="preview"] .guild-selection-bar p { display: flex; align-items: center; gap: 8px; grid-column: 1/-1; color: hsl(var(--muted-foreground)); font-size: 12px; }
+html[data-dashboard-ui="preview"] .guild-selection-bar svg { flex-shrink: 0; }
+html[data-dashboard-ui="preview"] .guild-directory-result { display: flex; align-items: center; gap: 10px; padding: 14px; border: 1px solid hsl(var(--border)); border-radius: 10px; background: hsl(var(--card)); font-size: 13px; }
+html[data-dashboard-ui="preview"] .guild-directory-result.is-error { border-color: hsl(var(--destructive) / .3); color: hsl(var(--destructive)); }
+html[data-dashboard-ui="preview"] .guild-directory-result svg { flex-shrink: 0; }
+html[data-dashboard-ui="preview"] .guild-directory-empty { display: grid; justify-items: center; gap: 18px; padding: 56px 20px; border: 1px dashed hsl(var(--border)); border-radius: 12px; }
+html[data-dashboard-ui="preview"] .guild-directory-empty > svg { color: hsl(var(--muted-foreground)); }
+html[data-dashboard-ui="preview"] .guild-directory-empty p { display: flex; align-items: center; gap: 8px; color: hsl(var(--muted-foreground)); font-size: 13px; }
+@media (max-width: 960px) {
+  html[data-dashboard-ui="preview"] .dashboard-app-header-inner { padding: 10px 16px; min-height: 68px; gap: 12px; flex-wrap: wrap; }
+  html[data-dashboard-ui="preview"] .dashboard-brand { flex: 1; }
+  html[data-dashboard-ui="preview"] .dashboard-brand strong { font-size: 12px; }
+  html[data-dashboard-ui="preview"] .dashboard-header-context { order: 3; width: 100%; margin-left: 0; }
+  html[data-dashboard-ui="preview"] .dashboard-header-context > div { flex: 1; }
+  html[data-dashboard-ui="preview"] .dashboard-header-context button { max-width: none; }
+  html[data-dashboard-ui="preview"] .dashboard-scope-label { padding-block: 4px; }
+  html[data-dashboard-ui="preview"] .dashboard-account summary span { display: none; }
+  html[data-dashboard-ui="preview"] .dashboard-layout { grid-template-columns: minmax(0,1fr); gap: 18px; padding: 16px 16px 36px; }
+  html[data-dashboard-ui="preview"] .dashboard-primary-navigation { position: static; max-height: none; overflow: visible; }
+  html[data-dashboard-ui="preview"] .dashboard-mobile-menu { display: flex; align-items: center; gap: 8px; min-height: 44px; width: 100%; padding: 8px 12px; border: 1px solid hsl(var(--border)); border-radius: 9px; background: hsl(var(--card)); font-size: 12px; }
+  html[data-dashboard-ui="preview"] .dashboard-mobile-menu strong { margin-left: auto; min-width: 0; font-weight: 500; color: hsl(var(--muted-foreground)); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  html[data-dashboard-ui="preview"] .dashboard-navigation-panel[data-open="false"] { display: none; }
+  html[data-dashboard-ui="preview"] .dashboard-navigation-panel { margin-top: 8px; padding: 16px; border: 1px solid hsl(var(--border)); border-radius: 10px; background: hsl(var(--card)); }
+  html[data-dashboard-ui="preview"] .dashboard-content h1 { font-size: 23px; }
+}
+@media (max-width: 640px) {
+  html[data-dashboard-ui="preview"] .guild-directory-toolbar { align-items: stretch; flex-direction: column; }
+  html[data-dashboard-ui="preview"] .guild-directory-row { padding: 14px; gap: 10px; }
+  html[data-dashboard-ui="preview"] .guild-directory-name { min-width: 70px; }
+  html[data-dashboard-ui="preview"] .guild-directory-name strong { white-space: normal; overflow-wrap: anywhere; }
+  html[data-dashboard-ui="preview"] .guild-directory-avatar, html[data-dashboard-ui="preview"] .guild-directory-avatar img { width: 38px; height: 38px; border-radius: 9px; }
+  html[data-dashboard-ui="preview"] .guild-directory-actions { flex-basis: 100%; }
+  html[data-dashboard-ui="preview"] .guild-directory-actions > a { flex: 1; }
+  html[data-dashboard-ui="preview"] .guild-selection-bar { grid-template-columns: minmax(0,1fr); }
+  html[data-dashboard-ui="preview"] .guild-selection-actions { flex-wrap: wrap; }
+  html[data-dashboard-ui="preview"] .guild-selection-actions > button:first-child { flex: 1; }
+  html[data-dashboard-ui="preview"] .guild-directory-empty { padding: 36px 14px; }
 }

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 type RecordValue = Record<string, unknown>;
 type RecoveryStatus = RecordValue & { configured?: boolean; available?: boolean; phase?: string; message?: string; fetchedAt?: string; updatedAt?: string; backup?: RecordValue | null; candidate?: RecordValue | null; gates?: unknown[]; lastError?: unknown; primaryEnrolled?: boolean; activeNode?: unknown; epoch?: unknown; manualSwitch?: RecordValue | null };
@@ -33,50 +33,100 @@ function localDateTime(value = Date.now()) {
   return `${fields.year}-${fields.month}-${fields.day}T${fields.hour}:${fields.minute}`;
 }
 
-async function recoveryAction(type: string, input: RecordValue) {
-  const idempotencyKey = crypto.randomUUID();
-  const create = await fetch("/api/admin/agent/actions", { method: "POST", credentials: "same-origin", headers: { "content-type": "application/json" }, body: JSON.stringify({ type, input, idempotencyKey }), cache: "no-store", signal: AbortSignal.timeout(15000) });
-  const first = await create.json() as RecordValue;
-  if (!create.ok) throw new Error(display(object(first.error).message || first.error || `HTTP ${create.status}`));
-  let action = first;
-  for (let attempt = 0; attempt < 120 && ["queued", "running"].includes(String(action.status)); attempt++) {
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    const response = await fetch(`/api/admin/agent/actions/${encodeURIComponent(String(action.id))}`, { credentials: "same-origin", cache: "no-store", signal: AbortSignal.timeout(15000) });
-    action = await response.json() as RecordValue;
-    if (!response.ok) throw new Error(display(object(action.error).message || action.error || `HTTP ${response.status}`));
+type RecoveryRequest = { type: string; input: RecordValue; idempotencyKey: string; ownerId?: string; actionId?: string };
+const RECOVERY_RECEIPT_KEY = "cbte-admin-recovery-receipt-v1";
+function storeReceipt(key: string, request: RecoveryRequest | null) {
+  try { if (request) sessionStorage.setItem(key, JSON.stringify(request)); else sessionStorage.removeItem(key); return true; } catch { return false; }
+}
+export function useRecoveryReceipt(onRefresh: () => Promise<void>, viewerId?: string) {
+  const storageKey = viewerId ? `${RECOVERY_RECEIPT_KEY}:${viewerId}` : RECOVERY_RECEIPT_KEY;
+  const [request, setRequest] = useState<RecoveryRequest | null>(null);
+  const [action, setAction] = useState<RecordValue | null>(null);
+  const [busy, setBusy] = useState(false), [error, setError] = useState("");
+  const alive = useRef(true), inFlight = useRef<number | null>(null), generation = useRef(0), refreshCallback = useRef(onRefresh);
+  refreshCallback.current = onRefresh;
+  useEffect(() => {
+    alive.current = true; generation.current++; inFlight.current = null; setBusy(false); setRequest(null); setAction(null); setError("");
+    try { const saved = JSON.parse(sessionStorage.getItem(storageKey) || "null"); if (saved && ["recovery.manual_switch", "recovery.manual_switch.cancel"].includes(saved.type) && typeof saved.idempotencyKey === "string" && (!viewerId || saved.ownerId === viewerId) && saved.input && typeof saved.input === "object" && !Array.isArray(saved.input)) setRequest(saved); } catch { /* Invalid browser state never dispatches an action. */ }
+    return () => { alive.current = false; generation.current++; };
+  }, [storageKey, viewerId]);
+  async function read(response: Response) {
+    const value = await response.json() as RecordValue;
+    if (!response.ok) throw new Error(response.status === 404 ? "受付記録はまだ確認できません。時間をおいて同じ受付の結果を確認してください。" : display(object(value.error).message || value.error || `HTTP ${response.status}`));
+    return value;
   }
-  return action;
+  async function accept(next: RecordValue, original: RecoveryRequest) {
+    if (!alive.current) return;
+    const saved = { ...original, ...(next.id ? { actionId: String(next.id) } : {}) };
+    setAction(next);
+    const terminal = ["succeeded", "failed"].includes(String(next.status));
+    setRequest(terminal ? null : saved); const persisted = storeReceipt(storageKey, terminal ? null : saved);
+    if (next.status === "failed") setError(display(next.error || "操作が拒否されました。受付記録を確認してください。"));
+    else if (next.status === "unknown") setError("実行成否は未確認です。同じ受付の結果を確認してください。");
+    else setError("");
+    if (!persisted) setError("受付は記録済みです。ブラウザの保存情報を更新できません。画面を閉じる前に受付IDを控えてください。");
+    if (terminal) { try { await refreshCallback.current(); } catch { if (alive.current) setError("受付は確認済みです。最新の復旧状態を取得できません。状態を更新してください。"); } }
+  }
+  async function check(saved = request) {
+    if (!saved || inFlight.current !== null) return;
+    const run = generation.current; inFlight.current = run; setBusy(true); setError("");
+    try {
+      const path = saved.actionId ? `actions/${encodeURIComponent(saved.actionId)}` : `actions/by-key/${encodeURIComponent(saved.idempotencyKey)}`;
+      const response = await fetch(`/api/admin/agent/${path}`, { credentials: "same-origin", cache: "no-store", signal: AbortSignal.timeout(15000) });
+      const next = await read(response); if (run !== generation.current) return;
+      await accept(next, saved);
+    } catch { if (alive.current && run === generation.current) setError("受付結果を確認できません。新しい操作を送らず、同じ受付の結果を確認してください。"); }
+    finally { if (inFlight.current === run) inFlight.current = null; if (alive.current && run === generation.current) setBusy(false); }
+  }
+  async function submit(type: string, input: RecordValue) {
+    if (request || inFlight.current !== null) return;
+    const run = generation.current;
+    const saved = { type, input, idempotencyKey: crypto.randomUUID(), ...(viewerId ? { ownerId: viewerId } : {}) };
+    if (!storeReceipt(storageKey, saved)) { setError("受付キーを保存できません。ブラウザの保存設定を確認してから再試行してください。操作は送信していません。"); return; }
+    setRequest(saved); setAction(null); setError(""); setBusy(true); inFlight.current = run;
+    try {
+      const response = await fetch("/api/admin/agent/actions", { method: "POST", credentials: "same-origin", headers: { "content-type": "application/json" }, body: JSON.stringify(saved), cache: "no-store", signal: AbortSignal.timeout(15000) });
+      const next = await read(response); if (run !== generation.current) return;
+      await accept(next, saved);
+    } catch { if (alive.current && run === generation.current) setError("受付結果は未確認です。通信が切れても、操作が失敗したとは判断できません。"); }
+    finally { if (inFlight.current === run) inFlight.current = null; if (alive.current && run === generation.current) setBusy(false); }
+  }
+  useEffect(() => {
+    if (!request || busy) return;
+    const timer = setTimeout(() => { void check(request); }, action && ["queued", "running"].includes(String(action.status)) ? 2000 : 8000);
+    return () => clearTimeout(timer);
+  }, [request, action, busy]);
+  return { request, action, busy, error, submit, check };
 }
 
-function ManualSwitchPanel({ status, onRefresh }: { status: RecoveryStatus; onRefresh: () => Promise<void> }) {
+export function ManualSwitchPanel({ status, onRefresh, stale = false, viewerId }: { status: RecoveryStatus; onRefresh: () => Promise<void>; stale?: boolean; viewerId?: string }) {
   const active = status.activeNode === "oci" ? "oci" : status.activeNode === "primary" ? "primary" : "";
   const [target, setTarget] = useState(active === "oci" ? "primary" : "oci");
   const [executeAt, setExecuteAt] = useState(localDateTime());
   const [reason, setReason] = useState("");
   const [confirm, setConfirm] = useState(false); const [risk, setRisk] = useState(false); const [override, setOverride] = useState(false);
-  const [busy, setBusy] = useState(false); const [message, setMessage] = useState(""); const [error, setError] = useState("");
+  const receipt = useRecoveryReceipt(onRefresh, viewerId);
+  const { busy, error } = receipt;
+  const locked = busy || Boolean(receipt.request) || stale;
+  const [inputError, setInputError] = useState("");
+  useEffect(() => { if (receipt.action?.status === "succeeded") { setReason(""); setConfirm(false); setRisk(false); setOverride(false); } }, [receipt.action?.id, receipt.action?.status]);
   useEffect(() => { if (active) setTarget(active === "oci" ? "primary" : "oci"); }, [active]);
   const candidate = object(status.candidate), backup = object(status.backup), pending = object(status.manualSwitch);
   const pendingState = String(pending.state || "");
   async function schedule() {
-    if (!active || !status.epoch || candidate.phase !== "VALIDATED" && target === "oci") throw new Error("現在の復旧候補を確認してから実行してください");
-    const date = new Date(`${executeAt}:00+09:00`); if (!Number.isFinite(date.getTime())) throw new Error("実行日時が不正です");
-    setBusy(true); setError(""); setMessage("");
-    try {
-      const action = await recoveryAction("recovery.manual_switch", { targetNode: target, executeAt: date.toISOString(), expectedEpoch: Number(status.epoch), expectedCandidateId: target === "oci" ? String(candidate.id || "") : "", expectedBackupId: target === "oci" ? String(backup.backupId || "") : "", expectedBackupSha256: target === "oci" ? String(backup.sourceSha256 || "") : "", expectedBackupTimestamp: target === "oci" ? String(backup.sourceTimestamp || "") : "", reason: reason.trim(), confirm, acceptDataRisk: risk, acceptPrimaryIntentOverride: override });
-      if (String(action.status) !== "succeeded") throw new Error(display(action.error || action.result || "手動切り替えを受け付けられませんでした"));
-      const result = object(action.result); setMessage(`手動切り替えを受け付けました。操作ID: ${String(action.id || "未取得")} / ${display(object(result.manualSwitch).state || action.status)}`); setReason(""); setConfirm(false); setRisk(false); setOverride(false); await onRefresh();
-    } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
-    finally { setBusy(false); }
+    if (locked) return;
+    setInputError("");
+    if (!active || !status.epoch || candidate.phase !== "VALIDATED" && target === "oci") { setInputError("現在の復旧候補を確認してから実行してください。"); return; }
+    const when = new Date(`${executeAt}:00+09:00`); if (!Number.isFinite(when.getTime())) { setInputError("実行日時を確認してください。"); return; }
+    await receipt.submit("recovery.manual_switch", { targetNode: target, executeAt: when.toISOString(), expectedEpoch: Number(status.epoch), expectedCandidateId: target === "oci" ? String(candidate.id || "") : "", expectedBackupId: target === "oci" ? String(backup.backupId || "") : "", expectedBackupSha256: target === "oci" ? String(backup.sourceSha256 || "") : "", expectedBackupTimestamp: target === "oci" ? String(backup.sourceTimestamp || "") : "", reason: reason.trim(), confirm, acceptDataRisk: risk, acceptPrimaryIntentOverride: override });
   }
   async function cancel() {
-    if (!pending.operationId || !["scheduled", "blocked"].includes(pendingState)) return;
-    setBusy(true); setError(""); setMessage("");
-    try { const action = await recoveryAction("recovery.manual_switch.cancel", { operationId: String(pending.operationId) }); if (String(action.status) !== "succeeded") throw new Error(display(action.error || action.result || "予約をキャンセルできませんでした")); setMessage(`予約をキャンセルしました。操作ID: ${String(action.id || "未取得")}`); await onRefresh(); }
-    catch (e) { setError(e instanceof Error ? e.message : String(e)); }
-    finally { setBusy(false); }
+    if (locked || !pending.operationId || !["scheduled", "blocked"].includes(pendingState)) return;
+    setInputError("");
+    await receipt.submit("recovery.manual_switch.cancel", { operationId: String(pending.operationId) });
   }
-  return <div className="space-y-3 rounded border p-4"><div className="flex flex-wrap items-baseline justify-between gap-2"><h3 className="font-semibold">復旧先の手動切り替え・日時予約</h3>{pending.operationId ? <span className="text-xs">現在の予約: {String(pending.state)} / {String(pending.targetNode)} / {date(pending.executeAt)}</span> : null}</div><p className="text-sm">指定時刻に復旧条件をもう一度検証してから切り替えます。予約しても、候補・epoch・lease・DB・公開経路の条件が満たされなければ実行せず停止します。</p>{!active ? <p className="text-sm text-muted-foreground">現在の稼働ノードを確認できないため操作できません。</p> : <><div className="grid gap-3 md:grid-cols-2"><label className="text-sm">切り替え先<select className="mt-1 h-10 w-full rounded-md border bg-card px-3" value={target} onChange={e => setTarget(e.target.value)} disabled={busy}><option value="oci">予備のクラウドサーバー</option><option value="primary">メインサーバー</option></select></label><label className="text-sm">実行日時（端末のJST）<input className="mt-1 h-10 w-full rounded-md border bg-card px-3" type="datetime-local" min={localDateTime()} value={executeAt} onChange={e => setExecuteAt(e.target.value)} disabled={busy} /></label></div><label className="block text-sm">切り替え理由<textarea className="mt-1 min-h-24 w-full rounded-md border bg-card p-2" maxLength={1000} value={reason} onChange={e => setReason(e.target.value)} disabled={busy} placeholder="調査・切り替えの理由（5文字以上）" /></label><label className="flex gap-2 text-sm"><input type="checkbox" checked={confirm} onChange={e => setConfirm(e.target.checked)} disabled={busy} />指定時刻にサービスの切り替え処理を行うことを確認しました</label><label className="flex gap-2 text-sm"><input type="checkbox" checked={risk} onChange={e => setRisk(e.target.checked)} disabled={busy} />データ同期時点によって設定・受付履歴が戻る可能性を確認しました（savedataは移行対象外）</label><label className="flex gap-2 text-sm"><input type="checkbox" checked={override} onChange={e => setOverride(e.target.checked)} disabled={busy} />既存の停止・保守指示に反して切り替える可能性がある場合も、明示操作として確認しました</label><div className="flex flex-wrap gap-2"><Button disabled={busy || !reason.trim() || reason.trim().length < 5 || !confirm || !risk || !override || !active || (target === active) || (target === "oci" && candidate.phase !== "VALIDATED")} onClick={() => void schedule()}>{executeAt && new Date(`${executeAt}:00`).getTime() > Date.now() + 60_000 ? "切り替えを予約" : "今すぐ切り替えを受付"}</Button><Button type="button" variant="outline" disabled={busy || !["scheduled", "blocked"].includes(pendingState)} onClick={() => void cancel()}>予約をキャンセル</Button></div></>}{message ? <p role="status" className="text-sm">{message}</p> : null}{error ? <p role="alert" className="whitespace-pre-wrap text-sm text-destructive">{error}</p> : null}<details className="rounded border p-2"><summary className="cursor-pointer text-sm">手動切り替えの予約・実行記録</summary><pre className="mt-2 max-h-72 overflow-auto whitespace-pre-wrap break-all text-xs">{pretty(status.manualSwitch || null)}</pre></details></div>;
+  const receiptStatus = ({ queued: "受付済み", running: "受付処理中", succeeded: "受付を確認", failed: "操作が拒否されました", unknown: "実行成否未確認" } as Record<string, string>)[String(receipt.action?.status)] || "受付結果未確認";
+  return <div className="space-y-3 rounded border p-4"><div className="flex flex-wrap items-baseline justify-between gap-2"><h3 className="font-semibold">復旧先の手動切り替え・日時予約</h3>{pending.operationId ? <span className="text-xs">現在の予約: {String(pending.state)} / {String(pending.targetNode)} / {date(pending.executeAt)}</span> : null}</div><p className="text-sm">サービスの接続先を切り替えます。復旧条件を満たさない場合は実行しません。</p>{!active ? <p className="text-sm text-muted-foreground">現在の稼働ノードを確認できないため操作できません。</p> : <><div className="grid gap-3 md:grid-cols-2"><label className="text-sm">切り替え先<select className="mt-1 h-10 w-full rounded-md border bg-card px-3" value={target} onChange={e => setTarget(e.target.value)} disabled={locked}><option value="oci">予備のクラウドサーバー</option><option value="primary">メインサーバー</option></select></label><label className="text-sm">実行日時（日本時間）<input className="mt-1 h-10 w-full rounded-md border bg-card px-3" type="datetime-local" min={localDateTime()} value={executeAt} onChange={e => setExecuteAt(e.target.value)} disabled={locked} /></label></div><label className="block text-sm">切り替え理由<textarea className="mt-1 min-h-24 w-full rounded-md border bg-card p-2" maxLength={1000} value={reason} onChange={e => setReason(e.target.value)} disabled={locked} placeholder="調査・切り替えの理由（5文字以上）" /></label><label className="flex gap-2 text-sm"><input type="checkbox" checked={confirm} onChange={e => setConfirm(e.target.checked)} disabled={locked} />指定時刻にサービスの切り替え処理を行うことを確認しました</label><label className="flex gap-2 text-sm"><input type="checkbox" checked={risk} onChange={e => setRisk(e.target.checked)} disabled={locked} />バックアップ時点より新しい設定・受付履歴が失われる可能性を確認しました</label><label className="flex gap-2 text-sm"><input type="checkbox" checked={override} onChange={e => setOverride(e.target.checked)} disabled={locked} />既存の停止・保守指示に反して切り替える可能性がある場合も、明示操作として確認しました</label><div className="flex flex-wrap gap-2"><Button disabled={locked || !reason.trim() || reason.trim().length < 5 || !confirm || !risk || !override || !active || (target === active) || (target === "oci" && candidate.phase !== "VALIDATED")} onClick={() => void schedule()}>{executeAt && new Date(`${executeAt}:00`).getTime() > Date.now() + 60_000 ? "切り替えを予約" : "今すぐ切り替えを受付"}</Button><Button type="button" variant="outline" disabled={locked || !["scheduled", "blocked"].includes(pendingState)} onClick={() => void cancel()}>予約をキャンセル</Button></div></>}{stale && <p role="status" className="text-sm">最新の復旧状態を取得してから操作してください。</p>}{(receipt.request || receipt.action) && <section aria-label="切り替え操作の受付" className="space-y-2 rounded border bg-muted/30 p-3"><p role="status" className="font-medium">{receiptStatus}</p><p className="break-all text-xs">{receipt.action?.id ? `受付ID ${String(receipt.action.id)}` : `受付キー ${receipt.request?.idempotencyKey}`}</p>{receipt.action?.status === "succeeded" && <p className="text-sm">{receipt.action.type === "recovery.manual_switch.cancel" ? "予約の取消を受け付けました" : "切り替えの受付を確認しました。実行状況は現在の予約・稼働ノードで確認してください。"}</p>}{receipt.request && <Button variant="outline" disabled={busy} onClick={() => void receipt.check()}>同じ受付の結果を確認</Button>}</section>}{error || inputError ? <p role="alert" className="whitespace-pre-wrap text-sm text-destructive">{error || inputError}</p> : null}<details className="rounded border p-2"><summary className="cursor-pointer text-sm">手動切り替えの予約・実行記録</summary><pre className="mt-2 max-h-72 overflow-auto whitespace-pre-wrap break-all text-xs">{pretty(status.manualSwitch || null)}</pre></details></div>;
 }
 
 export function RecoveryStatusView({ status, stale = false }: { status: RecoveryStatus; stale?: boolean }) {
@@ -96,7 +146,7 @@ export function RecoveryStatusView({ status, stale = false }: { status: Recovery
   </div>;
 }
 
-export function EmergencyRecoveryPanel() {
+export function EmergencyRecoveryPanel({ viewerId }: { viewerId?: string } = {}) {
   const [snapshot, setSnapshot] = useState<RecoveryStatus | null>(null);
   const [error, setError] = useState(""); const [loading, setLoading] = useState(false);
   const [connectionState, setConnectionState] = useState("loading");
@@ -115,9 +165,9 @@ export function EmergencyRecoveryPanel() {
     finally { inFlight.current = false; if (mounted.current) setLoading(false); }
   }, []);
   useEffect(() => { mounted.current = true; const initial = setTimeout(() => void refresh(), 0); const timer = setInterval(() => void refresh(), 30000); return () => { mounted.current = false; clearTimeout(initial); clearInterval(timer); controller.current?.abort(); }; }, [refresh]);
-  return <Card><CardHeader><div className="flex flex-wrap items-center justify-between gap-3"><CardTitle>緊急復旧の状態</CardTitle><Button variant="outline" disabled={loading} onClick={() => void refresh()}>{loading ? "取得中" : "状態を更新"}</Button></div><CardDescription>バックアップ、復旧候補、本番系の登録状態と復旧条件を30秒ごとに確認します。</CardDescription></CardHeader><CardContent className="space-y-4">
+  return <Card><CardHeader><div className="flex flex-wrap items-center justify-between gap-3"><CardTitle>緊急復旧の状態</CardTitle><Button variant="outline" disabled={loading} onClick={() => void refresh()}>{loading ? "取得中" : "状態を更新"}</Button></div></CardHeader><CardContent className="space-y-4">
     {error ? <div role={connectionState === "not_configured" ? "status" : "alert"} className="rounded border p-3 text-sm"><p className="font-medium">{connectionState === "not_configured" || connectionState === "invalid_configuration" ? "緊急復旧コントローラーが未設定です" : "緊急復旧コントローラーの状態は未取得です"}</p><p className="mt-1 whitespace-pre-wrap break-words">{error}</p></div> : null}
     {!snapshot && loading ? <p role="status" className="text-sm text-muted-foreground">復旧状態を取得しています。</p> : null}
-    {snapshot ? <><RecoveryStatusView status={snapshot} stale={connectionState !== "available"} /><ManualSwitchPanel status={snapshot} onRefresh={refresh} /></> : null}
+    {snapshot ? <><RecoveryStatusView status={snapshot} stale={connectionState !== "available"} /><ManualSwitchPanel status={snapshot} onRefresh={refresh} viewerId={viewerId} stale={connectionState !== "available"} /></> : null}
   </CardContent></Card>;
 }

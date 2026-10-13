@@ -14,8 +14,8 @@ export function uniqueGuildIds(ids: string[]) {
 
 export function guildSelectionTargetPath(ids: string[]) {
   const selected = uniqueGuildIds(ids);
-  if (selected.length === 0) return "/dashboard";
-  if (selected.length === 1) return `/dashboard/${selected[0]}/settings`;
+  if (selected.length === 0) return "/dashboard?mode=user";
+  if (selected.length === 1) return `/dashboard/${selected[0]}`;
   return `/dashboard/bulk?guildIds=${encodeURIComponent(selected.join(","))}`;
 }
 
@@ -29,10 +29,14 @@ export function parseGuildSelectionFromPath(pathname = window.location.pathname,
   return match ? [match[1]] : [];
 }
 
-export function pushGuildSelection(ids: string[]) {
+export function pushGuildSelection(ids: string[], navigate?: (href: string) => void) {
   const guildIds = uniqueGuildIds(ids);
-  window.history.pushState({ guildIds }, "", guildSelectionTargetPath(guildIds));
-  window.dispatchEvent(new CustomEvent("dashboard:guild-selection-change", { detail: { guildIds } }));
+  const href = guildSelectionTargetPath(guildIds);
+  if (navigate) { navigate(href); return; }
+  // The workspace uses the Next router so its server-rendered shell, permissions,
+  // and links are fetched for the selected server together.
+  const event = new window.CustomEvent("dashboard:guild-navigation", { detail: { href }, cancelable: true });
+  if (window.dispatchEvent(event)) window.location.assign(href);
 }
 
 export async function loadGuildOptions() {

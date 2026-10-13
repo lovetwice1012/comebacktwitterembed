@@ -1,0 +1,2005 @@
+{
+  "version": 2,
+  "snapshot": {
+    "sourceDirectory": "C:/Users/yussy/AppData/Local/Temp/cbte-production-ui-20261013/source",
+    "manifestPath": "C:/Users/yussy/Documents/comebacktwitterembed/dashboard/legacy/production-source-manifest.json",
+    "manifestSha256": "c131eed9268b6811050a35a10b6ce00cc88e42cdfd8c7005165644e9f0c61499",
+    "origin": "Authenticated live production source captured before the preview rollout",
+    "sourceTarPath": "C:/Users/yussy/AppData/Local/Temp/cbte-production-ui-20261013/codex-dashboard-before-preview-20261013.tar.gz",
+    "sourceTarSha256": "db08f056ebef96bb1f42be254dfc3427fe56ca3cbf8e3242cdce14bbb17ef14c",
+    "releaseRevision": "02f26665277c5866c2ddb4309c1c9646f28c317b",
+    "buildId": "bP2v88Nr8XVzXWJrmDlz2",
+    "capturedFileCount": 167
+  },
+  "boundary": "All reachable live production presentation is isolated. Auth, sessions, access checks, databases, validation, settings catalog and data contracts remain current. Automation UI is excluded.",
+  "pageExports": [
+    {
+      "source": "dashboard/app/page.tsx",
+      "module": "@/legacy/pages/home",
+      "exportName": "LegacyHomePage"
+    },
+    {
+      "source": "dashboard/app/dashboard/page.tsx",
+      "module": "@/legacy/pages/dashboard",
+      "exportName": "LegacyDashboardPage"
+    },
+    {
+      "source": "dashboard/app/dashboard/bulk/page.tsx",
+      "module": "@/legacy/pages/bulk",
+      "exportName": "LegacyBulkPage"
+    },
+    {
+      "source": "dashboard/app/dashboard/personal-links/page.tsx",
+      "module": "@/legacy/pages/personal-links",
+      "exportName": "LegacyPersonalLinksPage"
+    },
+    {
+      "source": "dashboard/app/dashboard/[guildId]/page.tsx",
+      "module": "@/legacy/pages/guild-overview",
+      "exportName": "LegacyGuildOverviewPage"
+    },
+    {
+      "source": "dashboard/app/dashboard/[guildId]/access/page.tsx",
+      "module": "@/legacy/pages/guild-access",
+      "exportName": "LegacyGuildAccessPage"
+    },
+    {
+      "source": "dashboard/app/dashboard/[guildId]/diagnostics/page.tsx",
+      "module": "@/legacy/pages/guild-diagnostics",
+      "exportName": "LegacyGuildDiagnosticsPage"
+    },
+    {
+      "source": "dashboard/app/dashboard/[guildId]/media/page.tsx",
+      "module": "@/legacy/pages/guild-media",
+      "exportName": "LegacyGuildMediaPage"
+    },
+    {
+      "source": "dashboard/app/dashboard/[guildId]/preview/page.tsx",
+      "module": "@/legacy/pages/guild-preview",
+      "exportName": "LegacyGuildPreviewPage"
+    },
+    {
+      "source": "dashboard/app/dashboard/[guildId]/providers/page.tsx",
+      "module": "@/legacy/pages/guild-providers",
+      "exportName": "LegacyGuildProvidersPage"
+    },
+    {
+      "source": "dashboard/app/dashboard/[guildId]/providers/[providerId]/page.tsx",
+      "module": "@/legacy/pages/guild-provider-settings",
+      "exportName": "LegacyGuildProviderSettingsPage"
+    },
+    {
+      "source": "dashboard/app/dashboard/[guildId]/settings/page.tsx",
+      "module": "@/legacy/pages/guild-settings",
+      "exportName": "LegacyGuildSettingsPage"
+    },
+    {
+      "source": "dashboard/app/admin/page.tsx",
+      "module": "@/legacy/pages/admin",
+      "exportName": "LegacyAdminPage"
+    },
+    {
+      "source": "dashboard/app/admin/support-console/page.tsx",
+      "module": "@/legacy/pages/admin-support-console",
+      "exportName": "LegacyAdminSupportConsolePage"
+    },
+    {
+      "source": "dashboard/app/admin/send-message/page.tsx",
+      "module": "@/legacy/pages/admin-send-message",
+      "exportName": "LegacyAdminSendMessagePage"
+    },
+    {
+      "source": "dashboard/app/admin/url-inspector/page.tsx",
+      "module": "@/legacy/pages/admin-url-inspector",
+      "exportName": "LegacyAdminUrlInspectorPage"
+    }
+  ],
+  "auditExport": {
+    "module": "@/legacy/features/audit/audit-logs-page",
+    "exportName": "AuditLogsPage"
+  },
+  "files": [
+    {
+      "source": "dashboard/app/admin/page.tsx",
+      "output": "dashboard/legacy/pages/admin.tsx",
+      "sourceSha256": "25ab9f4303def8893456990225f8105f137ce652e0c89f58cb506b327b97e0f7",
+      "outputSha256": "6d3edc29013eb3a331bfc07667e2d595718b0b53f0a13536ceba6d117e77deb1",
+      "importRewrites": 1
+    },
+    {
+      "source": "dashboard/app/admin/send-message/page.tsx",
+      "output": "dashboard/legacy/pages/admin-send-message.tsx",
+      "sourceSha256": "cf4142befddfd93dae2f6348c39abc970441ab0d0e49e5e6be3092418b27ada6",
+      "outputSha256": "778b67770871a4d9f255c36b249afe2cc92ea10ef0d208134679d1d82d3cc571",
+      "importRewrites": 1
+    },
+    {
+      "source": "dashboard/app/admin/support-console/page.tsx",
+      "output": "dashboard/legacy/pages/admin-support-console.tsx",
+      "sourceSha256": "76e099a08097aae72525e7a2bb42fa0e49fe597c3216afcc0103882867e9cdae",
+      "outputSha256": "b8dcb1498809498a3b43a45976a8870c3572099138d6961e993d359deefeaccd",
+      "importRewrites": 1
+    },
+    {
+      "source": "dashboard/app/admin/url-inspector/page.tsx",
+      "output": "dashboard/legacy/pages/admin-url-inspector.tsx",
+      "sourceSha256": "a95ba97983f9765b5aa0ac9839374b9115b60e865fd3db9c46c9009109314512",
+      "outputSha256": "a13aeae1014f1cfa134275595d7c385ab5c8713a861284338991c6242d8baadd",
+      "importRewrites": 1
+    },
+    {
+      "source": "dashboard/app/dashboard/[guildId]/access/page.tsx",
+      "output": "dashboard/legacy/pages/guild-access.tsx",
+      "sourceSha256": "d8cfccfa0bc0623f58b8b08f8eb705166535367a2c9dfb0fdbefdf9a8abb2da1",
+      "outputSha256": "2ce030a7819683bbd094ec6be9cad0ee128c421aa9db6c729b0579ae72d6450d",
+      "importRewrites": 3
+    },
+    {
+      "source": "dashboard/app/dashboard/[guildId]/diagnostics/page.tsx",
+      "output": "dashboard/legacy/pages/guild-diagnostics.tsx",
+      "sourceSha256": "5c4e47497c4abbf64212a537e1a03579c41dba57b349438bef28abbd86f3439c",
+      "outputSha256": "348c5022f65bf11879b3069727289501b2d059e1e271c8c5f698c31f00b7a044",
+      "importRewrites": 6
+    },
+    {
+      "source": "dashboard/app/dashboard/[guildId]/media/page.tsx",
+      "output": "dashboard/legacy/pages/guild-media.tsx",
+      "sourceSha256": "d9dda29d0bc209ac1c587c955af4261bce21f59d407631c20cd78ad5ca10c481",
+      "outputSha256": "fd80bfc72f02ac39546fb3336a85ca9ab3ea64ae717e84ca19a18e052fe749de",
+      "importRewrites": 7
+    },
+    {
+      "source": "dashboard/app/dashboard/[guildId]/page.tsx",
+      "output": "dashboard/legacy/pages/guild-overview.tsx",
+      "sourceSha256": "e282f46bc6dfd82502c58eda9fcff34e264fe7447ffc5de33a225dfb938eafcf",
+      "outputSha256": "6ee475942171696eb31aa49179d493723bb6f2efeccd1281775ac620f8b5da9e",
+      "importRewrites": 7
+    },
+    {
+      "source": "dashboard/app/dashboard/[guildId]/preview/page.tsx",
+      "output": "dashboard/legacy/pages/guild-preview.tsx",
+      "sourceSha256": "fd32f80dfa0de7af682aa6239742d40549fdcf7eb671a909449b107d36e68d6b",
+      "outputSha256": "bda10c1c0fd8adac0fd47f2d6962cc62ef7c7fbafbb283a5e8fb1edd64e87192",
+      "importRewrites": 6
+    },
+    {
+      "source": "dashboard/app/dashboard/[guildId]/providers/[providerId]/page.tsx",
+      "output": "dashboard/legacy/pages/guild-provider-settings.tsx",
+      "sourceSha256": "3b3be49b961ca87857495ff6cd47f780612bfceab50f78ac37a24a4ed4b20fee",
+      "outputSha256": "215ec33172d72575a51a9977a1a4c5cb77e83839f96a89228aa8c58d0204f2e2",
+      "importRewrites": 4
+    },
+    {
+      "source": "dashboard/app/dashboard/[guildId]/providers/page.tsx",
+      "output": "dashboard/legacy/pages/guild-providers.tsx",
+      "sourceSha256": "0db72f776e9199ce34ac17055d8da4472bc442fba0d3951304a1eba97391eec7",
+      "outputSha256": "d419cbe93d81e530fdc889b4d34464c717beecec4ad74c7d2b16f0cd0b1385b8",
+      "importRewrites": 4
+    },
+    {
+      "source": "dashboard/app/dashboard/[guildId]/settings/page.tsx",
+      "output": "dashboard/legacy/pages/guild-settings.tsx",
+      "sourceSha256": "2c0f1193ee334157529a5d8894889be249496c190c5ecacdcf687b62179372d7",
+      "outputSha256": "4c42d018998854d8ab17ab822919c25b83584fc6a6283720d1c1ec2a5987ba47",
+      "importRewrites": 4
+    },
+    {
+      "source": "dashboard/app/dashboard/bulk/page.tsx",
+      "output": "dashboard/legacy/pages/bulk.tsx",
+      "sourceSha256": "ecbdcfce70ad26db0de21602069fdadc9b534d1563835197f3410d8189146fa6",
+      "outputSha256": "c055ecfd7cb0324a60d4648f259b60f0e960a7c19e506dfeec6c54064377ed8f",
+      "importRewrites": 7
+    },
+    {
+      "source": "dashboard/app/dashboard/page.tsx",
+      "output": "dashboard/legacy/pages/dashboard.tsx",
+      "sourceSha256": "61cf68c5c37aba96e8d19ef2e905c7d467f6ed178b8f6dd0c15aafefddc955bc",
+      "outputSha256": "50da1610de86be123b145b965e1198b7542daab184c5beb8e65a339cb63a92e4",
+      "importRewrites": 6
+    },
+    {
+      "source": "dashboard/app/dashboard/personal-links/page.tsx",
+      "output": "dashboard/legacy/pages/personal-links.tsx",
+      "sourceSha256": "b60d55121a93d910990e8ef08bc50ed87e739827bde08a2af121f6501c2c7d6d",
+      "outputSha256": "ea1f42dcca364de5fa790a0abfa4b31046a09a01bd5f9c83cb0d591a6fedef4f",
+      "importRewrites": 1
+    },
+    {
+      "source": "dashboard/app/page.tsx",
+      "output": "dashboard/legacy/pages/home.tsx",
+      "sourceSha256": "24b674cac7d2476f63815eacf269e9c379df4328e4ef37e740121d60c4a1193f",
+      "outputSha256": "ddc9a14779109e7e53192d03ba519ad6e81c58639bb69afe51f105d173db5d0e",
+      "importRewrites": 4
+    },
+    {
+      "source": "dashboard/components/admin/admin-console-loader.tsx",
+      "output": "dashboard/legacy/components/admin/admin-console-loader.tsx",
+      "sourceSha256": "e4fc3bd5badec390d95cdf6b113c8da15fd0c1d3e7680907336106aa2c68d50a",
+      "outputSha256": "b2bc71dbfac6a0ddc829f3822e2fc76d6698de9d0d2897e4d5511d791f1dcd6f",
+      "importRewrites": 1
+    },
+    {
+      "source": "dashboard/components/admin/admin-console.tsx",
+      "output": "dashboard/legacy/components/admin/admin-console.tsx",
+      "sourceSha256": "2fcad2d7f30678fefa7472cf3a225c282cd5d89d5b67ff0935d22172d6b5978f",
+      "outputSha256": "4564d040a1a7eb173041e5a1841b4ee846a8ae22cd7a8c55f4e2f40a971ac407",
+      "importRewrites": 10
+    },
+    {
+      "source": "dashboard/components/admin/agent-recovery-panel.tsx",
+      "output": "dashboard/legacy/components/admin/agent-recovery-panel.tsx",
+      "sourceSha256": "898f8d7ab4f340ddf56d20ce6d01fe9a06ec60a5907371b18983495f5949de4c",
+      "outputSha256": "97f40bb35b96df54513bd0cc303e72e2e92f35148e70e0b3a3e1194093e36167",
+      "importRewrites": 2
+    },
+    {
+      "source": "dashboard/components/admin/emergency-recovery-panel.tsx",
+      "output": "dashboard/legacy/components/admin/emergency-recovery-panel.tsx",
+      "sourceSha256": "16ee3bd2847ada94bb3b2a802acf1d8762003c4f27dd1916e21a446de6f1e311",
+      "outputSha256": "581a87b2a896eea93e1624961be7101ba479bee8d6975693be15eb4e68dee72b",
+      "importRewrites": 2
+    },
+    {
+      "source": "dashboard/components/admin/evidence-view.tsx",
+      "output": "dashboard/legacy/components/admin/evidence-view.tsx",
+      "sourceSha256": "d185e46d7f30168821f192e364d07c7a91f57ae2c8f8188c8799ac6fb5e449c0",
+      "outputSha256": "b86e8c9fa1e935ba47ed3163034bb9d877ce8b60c36ea82a4ff4b944c17efd4b",
+      "importRewrites": 2
+    },
+    {
+      "source": "dashboard/components/admin/investigation-view.tsx",
+      "output": "dashboard/legacy/components/admin/investigation-view.tsx",
+      "sourceSha256": "6b945bf74ac4a09392147f3b14ae812de1f600679569e301e0b703d4146148c0",
+      "outputSha256": "40b61b10d9275a2f725f5bb14063d72b1b405f2df518855f67b11e9cb7ece2c5",
+      "importRewrites": 4
+    },
+    {
+      "source": "dashboard/components/admin/management-console.tsx",
+      "output": "dashboard/legacy/components/admin/management-console.tsx",
+      "sourceSha256": "64aacbb94786a9e43545e7b5e5773cd36290c7f05e5a14762eff274565d596db",
+      "outputSha256": "37d0040b5560432bff7c3bb18c8ea27310e5ff1a1812a18c338f81f7054154e2",
+      "importRewrites": 9
+    },
+    {
+      "source": "dashboard/components/admin/report-error-boundary.tsx",
+      "output": "dashboard/legacy/components/admin/report-error-boundary.tsx",
+      "sourceSha256": "4ba79ad9b419eafc18b46a32febb9ac8a89a4b86da93e26d62d025fc6aa2e3ac",
+      "outputSha256": "ffd5a1b234a5a414dbeaefa46e9ff5522c8aa64aacd032e1b9524283a3b66fcc",
+      "importRewrites": 1
+    },
+    {
+      "source": "dashboard/components/admin/workspace-shell.tsx",
+      "output": "dashboard/legacy/components/admin/workspace-shell.tsx",
+      "sourceSha256": "f5df141a49710b03cdb82b45235fe2dc8aec72a8d21695c9c1d2cb7082be49a1",
+      "outputSha256": "f9ebd7432a237080fa9dc2b3cabfdfef79e8531bbf98ae9d3e26945b87cb4b79",
+      "importRewrites": 3
+    },
+    {
+      "source": "dashboard/components/dashboard/access-denied.tsx",
+      "output": "dashboard/legacy/components/dashboard/access-denied.tsx",
+      "sourceSha256": "ff459361de80166876fc0f086bf860a15a4f272e780e18605ce6741aec112f1b",
+      "outputSha256": "b061bc4c49a7183fac889cd2cb8a08ef9e04d8dcacb2d6a2d74f0f7719c04576",
+      "importRewrites": 2
+    },
+    {
+      "source": "dashboard/components/dashboard/access-management.tsx",
+      "output": "dashboard/legacy/components/dashboard/access-management.tsx",
+      "sourceSha256": "45092aa7650b4590882e92e97afd9d6b2ee86fbcd2c2042747e3c609f7bd9e7e",
+      "outputSha256": "8bf5210ff7ea28aa3538cdf17c24f0e1e3a872d1a9b489be80880c9fc94d4317",
+      "importRewrites": 4
+    },
+    {
+      "source": "dashboard/components/dashboard/auth-buttons.tsx",
+      "output": "dashboard/legacy/components/dashboard/auth-buttons.tsx",
+      "sourceSha256": "049db575788eab8a7209c01e1ba14a5b302220f00eab9fc0607ec801cecdf729",
+      "outputSha256": "3bf0d1aea8504f9cf23ce8da8ef93f4e1587a06d26ceeee99d3d65cfed370ead",
+      "importRewrites": 2
+    },
+    {
+      "source": "dashboard/components/dashboard/dashboard-shell.tsx",
+      "output": "dashboard/legacy/components/dashboard/dashboard-shell.tsx",
+      "sourceSha256": "8c58f1b20612c1f5c6970bea91451ce9b9da6645fe675b99a41ffca90766fd12",
+      "outputSha256": "532bd519e17d6e2f63a151bee1256131298d50c37984db7bf689e5f01cc041cc",
+      "importRewrites": 6
+    },
+    {
+      "source": "dashboard/components/dashboard/dashboard-workspace.tsx",
+      "output": "dashboard/legacy/components/dashboard/dashboard-workspace.tsx",
+      "sourceSha256": "c2735da16a767b91105822dfe0af496b3db884ca591dfede74b0769d842b3334",
+      "outputSha256": "98cbe1277b1d46ca39b38aaa36eac8b6cb8de7ece36a6ef87c769df5b6281648",
+      "importRewrites": 8
+    },
+    {
+      "source": "dashboard/components/dashboard/guild-list.tsx",
+      "output": "dashboard/legacy/components/dashboard/guild-list.tsx",
+      "sourceSha256": "b55be018d0041c48c95134ea166dabc13da5ac9b8e08dbc61385b77c8246249a",
+      "outputSha256": "02244df11ae8f6bc45fe0962c60ec24725f4be9e0fb8e29819b34a1f59d4c601",
+      "importRewrites": 7
+    },
+    {
+      "source": "dashboard/components/dashboard/guild-options.ts",
+      "output": "dashboard/legacy/components/dashboard/guild-options.ts",
+      "sourceSha256": "af1957f93041f53a702bdd7bac397eabacfaf6b8597d5501277390b68bb75c75",
+      "outputSha256": "af1957f93041f53a702bdd7bac397eabacfaf6b8597d5501277390b68bb75c75",
+      "importRewrites": 0
+    },
+    {
+      "source": "dashboard/components/dashboard/guild-switcher.tsx",
+      "output": "dashboard/legacy/components/dashboard/guild-switcher.tsx",
+      "sourceSha256": "2341cac5658bc9663d5701564758c40679fb3b98019026c274b02180b33c4b16",
+      "outputSha256": "e03605216a67324daec57136fa05ada0087ddf0c0b8b64e68c56ee9c04c3f961",
+      "importRewrites": 4
+    },
+    {
+      "source": "dashboard/components/dashboard/language-switcher.tsx",
+      "output": "dashboard/legacy/components/dashboard/language-switcher.tsx",
+      "sourceSha256": "d61d5c9bd0ae207fb06722e9b6714258c61ca82bf1cdf249d7d29c7b914e3f97",
+      "outputSha256": "1c1426de8d79edd705bf3257eebb714e15edfe2193a9de3c02924583d3673a91",
+      "importRewrites": 2
+    },
+    {
+      "source": "dashboard/components/media/media-actions.tsx",
+      "output": "dashboard/legacy/components/media/media-actions.tsx",
+      "sourceSha256": "8c46380e0bf8d92806c2aa69f308d738e530ec0055cda2d862990c7fdfd8a141",
+      "outputSha256": "8ed04c38fc8d27c3941f5e8e6bb8b9183e073e059b590a0c3bd942f7e36b2763",
+      "importRewrites": 2
+    },
+    {
+      "source": "dashboard/components/personal-links/personal-links-workspace.tsx",
+      "output": "dashboard/legacy/components/personal-links/personal-links-workspace.tsx",
+      "sourceSha256": "090a0b32975d2c613d7efd5ec80f6e59873ab126356c5e02b045ed8e44b7ff69",
+      "outputSha256": "5d3d165b44a009b2e9693668fa1822a9243f26e532d92ecd7634a150b57ce5ed",
+      "importRewrites": 2
+    },
+    {
+      "source": "dashboard/components/preview/output-preview-card.tsx",
+      "output": "dashboard/legacy/components/preview/output-preview-card.tsx",
+      "sourceSha256": "d53a9c54875c3b181626b3d2ebebf58aac3d75a6b49c211780682c2db228384f",
+      "outputSha256": "9a7a8b3e669909a41c69a0578ab8bb23888767680497b8f84ef7b9a39772b658",
+      "importRewrites": 1
+    },
+    {
+      "source": "dashboard/components/providers/provider-list.tsx",
+      "output": "dashboard/legacy/components/providers/provider-list.tsx",
+      "sourceSha256": "055a20d2a67fb932597b25b0a043006b1b76f93966145ba180156a4033f7ba53",
+      "outputSha256": "5cce61bf6b91d3646fb2fb746601103c2f253d84b177c7cfb5c03e8d29687295",
+      "importRewrites": 4
+    },
+    {
+      "source": "dashboard/components/settings/cross-settings-view.tsx",
+      "output": "dashboard/legacy/components/settings/cross-settings-view.tsx",
+      "sourceSha256": "ce12f5c2d7e86e9ea41413f1cadf4c451313769f635b837b26590b914a3df441",
+      "outputSha256": "8fb794619b6b19bad31563ebf3869cb29267934bceb311026fe4cf1b376cce4b",
+      "importRewrites": 5
+    },
+    {
+      "source": "dashboard/components/settings/multi-guild-bulk-settings-view.tsx",
+      "output": "dashboard/legacy/components/settings/multi-guild-bulk-settings-view.tsx",
+      "sourceSha256": "dc18c4180e8731b67f15654482f7b863fc31b371cbd516fbfa5750310b936a1d",
+      "outputSha256": "90e54b4f3570b306583bea917b4f5830f05bf89681780015259d4fbba769c892",
+      "importRewrites": 5
+    },
+    {
+      "source": "dashboard/components/settings/provider-settings-form.tsx",
+      "output": "dashboard/legacy/components/settings/provider-settings-form.tsx",
+      "sourceSha256": "f0003a9fe6b2a6b6a52bfc19d7af895c3a2ab50f56c2e0d00108a7b141b87788",
+      "outputSha256": "d609ac9649a5fdbc5e839a3c1068d3813a80ac5dc8d2f996331dca8f0f6af978",
+      "importRewrites": 9
+    },
+    {
+      "source": "dashboard/components/ui/badge.tsx",
+      "output": "dashboard/legacy/components/ui/badge.tsx",
+      "sourceSha256": "4d2d9dc1076e17ec20743b007e713524202ef7dc747b313229a714a9f236300a",
+      "outputSha256": "d9c2564bd04584d3c3ecca5e38d80441a0afea02d1053f31b9cce3da2cefe4e9",
+      "importRewrites": 1
+    },
+    {
+      "source": "dashboard/components/ui/button.tsx",
+      "output": "dashboard/legacy/components/ui/button.tsx",
+      "sourceSha256": "9e09c02e3a9b0092b5bbcee46de4fd7a0991a5cf843ceb4ab70336a6bce43707",
+      "outputSha256": "ca069bc2ee6eb3bc5d817e80740bcd73052b85224b2b000320d8cad03318523b",
+      "importRewrites": 1
+    },
+    {
+      "source": "dashboard/components/ui/card.tsx",
+      "output": "dashboard/legacy/components/ui/card.tsx",
+      "sourceSha256": "b0d27c592792ed4c31aa483b3204745719d095bc3f5329de38e62ff6b82f80b3",
+      "outputSha256": "9bfdc20fd8cff3b2ee1e33d8b49f014bafbb6819204874eda6935d1fcf28e77d",
+      "importRewrites": 1
+    },
+    {
+      "source": "dashboard/components/ui/input.tsx",
+      "output": "dashboard/legacy/components/ui/input.tsx",
+      "sourceSha256": "f8b039cbf4827aa19f15023d2342d65ce96f92e84e5284c05c2392a9c27a3cac",
+      "outputSha256": "d6a3eb922f9d4a8a3cedbbb2520bae6a36fb850ffa73192bbeb2e0bc91a16a53",
+      "importRewrites": 1
+    },
+    {
+      "source": "dashboard/features/audit/audit-logs-page.tsx",
+      "output": "dashboard/legacy/features/audit/audit-logs-page.tsx",
+      "sourceSha256": "0405cd08828d74013beb3cda374d963071bc0cdeef55199dd930d6be454d8766",
+      "outputSha256": "9b17e7cf280f14dfab6f9662af06a749bec227f999fdbae0f7b7a42eb2c1ca9c",
+      "importRewrites": 6
+    },
+    {
+      "source": "dashboard/lib/admin-report-status.ts",
+      "output": "dashboard/legacy/lib/admin-report-status.ts",
+      "sourceSha256": "0e97b0496c1dbeef5a8292dbf54bfbf621f33db3b1088ecc2a4b57c84f82395b",
+      "outputSha256": "0e97b0496c1dbeef5a8292dbf54bfbf621f33db3b1088ecc2a4b57c84f82395b",
+      "importRewrites": 0
+    },
+    {
+      "source": "dashboard/lib/admin-workspace.ts",
+      "output": "dashboard/legacy/lib/admin-workspace.ts",
+      "sourceSha256": "e9429cd7fa4297a2f79a6361410940df38999abccc22ee393c9b05b5cfb20a44",
+      "outputSha256": "e9429cd7fa4297a2f79a6361410940df38999abccc22ee393c9b05b5cfb20a44",
+      "importRewrites": 0
+    },
+    {
+      "source": "dashboard/lib/diagnostics.ts",
+      "output": "dashboard/legacy/lib/diagnostics.ts",
+      "sourceSha256": "329248d4997381831f90913af3d4bdbcb49b1f11ee2c7cf1d7d31e684e2bbe14",
+      "outputSha256": "03bd2da24c2276b12032b9852b1401d88a6c05fa473144e7b38f2d242aa9a387",
+      "importRewrites": 1
+    },
+    {
+      "source": "dashboard/lib/discord-locales.ts",
+      "output": "dashboard/legacy/lib/discord-locales.ts",
+      "sourceSha256": "6405bb79b266f538998f22e39d8255e7bffb99f1c443b54b98b642902faf49f3",
+      "outputSha256": "6405bb79b266f538998f22e39d8255e7bffb99f1c443b54b98b642902faf49f3",
+      "importRewrites": 0
+    },
+    {
+      "source": "dashboard/lib/format.ts",
+      "output": "dashboard/legacy/lib/format.ts",
+      "sourceSha256": "77e34a206dfadb4dedb5cbc37f322ca449fe85a553e89901dcd29ae2935af984",
+      "outputSha256": "77e34a206dfadb4dedb5cbc37f322ca449fe85a553e89901dcd29ae2935af984",
+      "importRewrites": 0
+    },
+    {
+      "source": "dashboard/lib/i18n.ts",
+      "output": "dashboard/legacy/lib/i18n.ts",
+      "sourceSha256": "cd81b638ea9791ce6a4b116eac576f4c9bb458e23acb7b34ba4f19fb2a7455cc",
+      "outputSha256": "d3c70fc0ff26aff0d8865afaa0c32b0d0a438742ffc11fd7be92b63fec72e076",
+      "importRewrites": 1
+    },
+    {
+      "source": "dashboard/lib/setting-commands.ts",
+      "output": "dashboard/legacy/lib/setting-commands.ts",
+      "sourceSha256": "f9cb65afb8b34a35cea6f2faf39142491333dc1ea2b7d374d79a145b15ce7ff8",
+      "outputSha256": "f9cb65afb8b34a35cea6f2faf39142491333dc1ea2b7d374d79a145b15ce7ff8",
+      "importRewrites": 0
+    },
+    {
+      "source": "dashboard/lib/settings-diff.ts",
+      "output": "dashboard/legacy/lib/settings-diff.ts",
+      "sourceSha256": "ac6c82ad5527fa448db630f21e03f523d45339bf1b06dfc8f23193ff169b13b1",
+      "outputSha256": "263950d9efdd35b5ac042ef7192c67a8a10183a442678e54f7ea4545e638d944",
+      "importRewrites": 1
+    },
+    {
+      "source": "dashboard/lib/settings-preview.ts",
+      "output": "dashboard/legacy/lib/settings-preview.ts",
+      "sourceSha256": "49a8149dae645f5aee2c5bb7045458bb5910027d48717e89b296ebb28111b910",
+      "outputSha256": "cdd2b10d8eb4908eef5260c5be6f5e02fa4068234783a35127bbef53472fedab",
+      "importRewrites": 1
+    },
+    {
+      "source": "dashboard/lib/utils.ts",
+      "output": "dashboard/legacy/lib/utils.ts",
+      "sourceSha256": "4acbc7165a8d54738ff62b51414e772c08fe78434e524e6d8770180d3ba2925f",
+      "outputSha256": "4acbc7165a8d54738ff62b51414e772c08fe78434e524e6d8770180d3ba2925f",
+      "importRewrites": 0
+    },
+    {
+      "source": "dashboard/app/globals.css",
+      "output": "dashboard/legacy/globals-baseline.css",
+      "sourceSha256": "34d2b8c86760171eac562437d2412c6c9b89abe38572115b963a39b0f2269894",
+      "outputSha256": "34d2b8c86760171eac562437d2412c6c9b89abe38572115b963a39b0f2269894",
+      "importRewrites": 0
+    }
+  ],
+  "generatedFiles": [
+    {
+      "output": "dashboard/legacy/pages/index.ts",
+      "outputSha256": "11e1d6b73d9c8488116324755f95e315751e38fb6f87e5f681a32a867aa7d827"
+    },
+    {
+      "output": "dashboard/legacy/production-source-manifest.json",
+      "outputSha256": "c131eed9268b6811050a35a10b6ce00cc88e42cdfd8c7005165644e9f0c61499"
+    }
+  ],
+  "references": [
+    {
+      "from": "dashboard/legacy/pages/admin.tsx",
+      "originalSpecifier": "@/components/admin/admin-console-loader",
+      "target": "dashboard/legacy/components/admin/admin-console-loader.tsx",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/pages/admin.tsx",
+      "originalSpecifier": "@/lib/server-session",
+      "target": "dashboard/lib/server-session.ts",
+      "mode": "shared-current"
+    },
+    {
+      "from": "dashboard/legacy/pages/admin-send-message.tsx",
+      "originalSpecifier": "@/lib/server-session",
+      "target": "dashboard/lib/server-session.ts",
+      "mode": "shared-current"
+    },
+    {
+      "from": "dashboard/legacy/pages/admin-send-message.tsx",
+      "originalSpecifier": "@/components/admin/admin-console-loader",
+      "target": "dashboard/legacy/components/admin/admin-console-loader.tsx",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/pages/admin-support-console.tsx",
+      "originalSpecifier": "@/lib/server-session",
+      "target": "dashboard/lib/server-session.ts",
+      "mode": "shared-current"
+    },
+    {
+      "from": "dashboard/legacy/pages/admin-support-console.tsx",
+      "originalSpecifier": "@/components/admin/admin-console-loader",
+      "target": "dashboard/legacy/components/admin/admin-console-loader.tsx",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/pages/admin-url-inspector.tsx",
+      "originalSpecifier": "@/lib/server-session",
+      "target": "dashboard/lib/server-session.ts",
+      "mode": "shared-current"
+    },
+    {
+      "from": "dashboard/legacy/pages/admin-url-inspector.tsx",
+      "originalSpecifier": "@/components/admin/admin-console-loader",
+      "target": "dashboard/legacy/components/admin/admin-console-loader.tsx",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/pages/guild-access.tsx",
+      "originalSpecifier": "@/components/dashboard/access-denied",
+      "target": "dashboard/legacy/components/dashboard/access-denied.tsx",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/pages/guild-access.tsx",
+      "originalSpecifier": "@/components/dashboard/access-management",
+      "target": "dashboard/legacy/components/dashboard/access-management.tsx",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/pages/guild-access.tsx",
+      "originalSpecifier": "@/components/dashboard/dashboard-shell",
+      "target": "dashboard/legacy/components/dashboard/dashboard-shell.tsx",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/pages/guild-access.tsx",
+      "originalSpecifier": "@/lib/discord",
+      "target": "dashboard/lib/discord.ts",
+      "mode": "shared-current"
+    },
+    {
+      "from": "dashboard/legacy/pages/guild-access.tsx",
+      "originalSpecifier": "@/lib/server-locale",
+      "target": "dashboard/lib/server-locale.ts",
+      "mode": "shared-current"
+    },
+    {
+      "from": "dashboard/legacy/pages/guild-access.tsx",
+      "originalSpecifier": "@/lib/server-session",
+      "target": "dashboard/lib/server-session.ts",
+      "mode": "shared-current"
+    },
+    {
+      "from": "dashboard/legacy/pages/guild-diagnostics.tsx",
+      "originalSpecifier": "@/components/dashboard/access-denied",
+      "target": "dashboard/legacy/components/dashboard/access-denied.tsx",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/pages/guild-diagnostics.tsx",
+      "originalSpecifier": "@/components/dashboard/dashboard-shell",
+      "target": "dashboard/legacy/components/dashboard/dashboard-shell.tsx",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/pages/guild-diagnostics.tsx",
+      "originalSpecifier": "@/components/ui/badge",
+      "target": "dashboard/legacy/components/ui/badge.tsx",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/pages/guild-diagnostics.tsx",
+      "originalSpecifier": "@/components/ui/card",
+      "target": "dashboard/legacy/components/ui/card.tsx",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/pages/guild-diagnostics.tsx",
+      "originalSpecifier": "@/lib/discord",
+      "target": "dashboard/lib/discord.ts",
+      "mode": "shared-current"
+    },
+    {
+      "from": "dashboard/legacy/pages/guild-diagnostics.tsx",
+      "originalSpecifier": "@/lib/diagnostics",
+      "target": "dashboard/legacy/lib/diagnostics.ts",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/pages/guild-diagnostics.tsx",
+      "originalSpecifier": "@/lib/i18n",
+      "target": "dashboard/legacy/lib/i18n.ts",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/pages/guild-diagnostics.tsx",
+      "originalSpecifier": "@/lib/server-locale",
+      "target": "dashboard/lib/server-locale.ts",
+      "mode": "shared-current"
+    },
+    {
+      "from": "dashboard/legacy/pages/guild-diagnostics.tsx",
+      "originalSpecifier": "@/lib/settings-catalog",
+      "target": "dashboard/lib/settings-catalog.ts",
+      "mode": "shared-current"
+    },
+    {
+      "from": "dashboard/legacy/pages/guild-diagnostics.tsx",
+      "originalSpecifier": "@/lib/settings-db",
+      "target": "dashboard/lib/settings-db.ts",
+      "mode": "shared-current"
+    },
+    {
+      "from": "dashboard/legacy/pages/guild-diagnostics.tsx",
+      "originalSpecifier": "@/lib/server-session",
+      "target": "dashboard/lib/server-session.ts",
+      "mode": "shared-current"
+    },
+    {
+      "from": "dashboard/legacy/pages/guild-media.tsx",
+      "originalSpecifier": "@/components/dashboard/access-denied",
+      "target": "dashboard/legacy/components/dashboard/access-denied.tsx",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/pages/guild-media.tsx",
+      "originalSpecifier": "@/components/media/media-actions",
+      "target": "dashboard/legacy/components/media/media-actions.tsx",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/pages/guild-media.tsx",
+      "originalSpecifier": "@/components/dashboard/dashboard-shell",
+      "target": "dashboard/legacy/components/dashboard/dashboard-shell.tsx",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/pages/guild-media.tsx",
+      "originalSpecifier": "@/components/ui/badge",
+      "target": "dashboard/legacy/components/ui/badge.tsx",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/pages/guild-media.tsx",
+      "originalSpecifier": "@/components/ui/card",
+      "target": "dashboard/legacy/components/ui/card.tsx",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/pages/guild-media.tsx",
+      "originalSpecifier": "@/lib/format",
+      "target": "dashboard/legacy/lib/format.ts",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/pages/guild-media.tsx",
+      "originalSpecifier": "@/lib/discord",
+      "target": "dashboard/lib/discord.ts",
+      "mode": "shared-current"
+    },
+    {
+      "from": "dashboard/legacy/pages/guild-media.tsx",
+      "originalSpecifier": "@/lib/i18n",
+      "target": "dashboard/legacy/lib/i18n.ts",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/pages/guild-media.tsx",
+      "originalSpecifier": "@/lib/media-cache",
+      "target": "dashboard/lib/media-cache.ts",
+      "mode": "shared-current"
+    },
+    {
+      "from": "dashboard/legacy/pages/guild-media.tsx",
+      "originalSpecifier": "@/lib/server-locale",
+      "target": "dashboard/lib/server-locale.ts",
+      "mode": "shared-current"
+    },
+    {
+      "from": "dashboard/legacy/pages/guild-media.tsx",
+      "originalSpecifier": "@/lib/server-session",
+      "target": "dashboard/lib/server-session.ts",
+      "mode": "shared-current"
+    },
+    {
+      "from": "dashboard/legacy/pages/guild-overview.tsx",
+      "originalSpecifier": "@/components/dashboard/access-denied",
+      "target": "dashboard/legacy/components/dashboard/access-denied.tsx",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/pages/guild-overview.tsx",
+      "originalSpecifier": "@/components/dashboard/dashboard-shell",
+      "target": "dashboard/legacy/components/dashboard/dashboard-shell.tsx",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/pages/guild-overview.tsx",
+      "originalSpecifier": "@/components/ui/badge",
+      "target": "dashboard/legacy/components/ui/badge.tsx",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/pages/guild-overview.tsx",
+      "originalSpecifier": "@/components/ui/button",
+      "target": "dashboard/legacy/components/ui/button.tsx",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/pages/guild-overview.tsx",
+      "originalSpecifier": "@/components/ui/card",
+      "target": "dashboard/legacy/components/ui/card.tsx",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/pages/guild-overview.tsx",
+      "originalSpecifier": "@/lib/discord",
+      "target": "dashboard/lib/discord.ts",
+      "mode": "shared-current"
+    },
+    {
+      "from": "dashboard/legacy/pages/guild-overview.tsx",
+      "originalSpecifier": "@/lib/diagnostics",
+      "target": "dashboard/legacy/lib/diagnostics.ts",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/pages/guild-overview.tsx",
+      "originalSpecifier": "@/lib/i18n",
+      "target": "dashboard/legacy/lib/i18n.ts",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/pages/guild-overview.tsx",
+      "originalSpecifier": "@/lib/media-cache",
+      "target": "dashboard/lib/media-cache.ts",
+      "mode": "shared-current"
+    },
+    {
+      "from": "dashboard/legacy/pages/guild-overview.tsx",
+      "originalSpecifier": "@/lib/server-locale",
+      "target": "dashboard/lib/server-locale.ts",
+      "mode": "shared-current"
+    },
+    {
+      "from": "dashboard/legacy/pages/guild-overview.tsx",
+      "originalSpecifier": "@/lib/settings-catalog",
+      "target": "dashboard/lib/settings-catalog.ts",
+      "mode": "shared-current"
+    },
+    {
+      "from": "dashboard/legacy/pages/guild-overview.tsx",
+      "originalSpecifier": "@/lib/settings-db",
+      "target": "dashboard/lib/settings-db.ts",
+      "mode": "shared-current"
+    },
+    {
+      "from": "dashboard/legacy/pages/guild-overview.tsx",
+      "originalSpecifier": "@/lib/server-session",
+      "target": "dashboard/lib/server-session.ts",
+      "mode": "shared-current"
+    },
+    {
+      "from": "dashboard/legacy/pages/guild-preview.tsx",
+      "originalSpecifier": "@/components/dashboard/access-denied",
+      "target": "dashboard/legacy/components/dashboard/access-denied.tsx",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/pages/guild-preview.tsx",
+      "originalSpecifier": "@/components/dashboard/dashboard-shell",
+      "target": "dashboard/legacy/components/dashboard/dashboard-shell.tsx",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/pages/guild-preview.tsx",
+      "originalSpecifier": "@/components/preview/output-preview-card",
+      "target": "dashboard/legacy/components/preview/output-preview-card.tsx",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/pages/guild-preview.tsx",
+      "originalSpecifier": "@/components/ui/card",
+      "target": "dashboard/legacy/components/ui/card.tsx",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/pages/guild-preview.tsx",
+      "originalSpecifier": "@/lib/discord",
+      "target": "dashboard/lib/discord.ts",
+      "mode": "shared-current"
+    },
+    {
+      "from": "dashboard/legacy/pages/guild-preview.tsx",
+      "originalSpecifier": "@/lib/i18n",
+      "target": "dashboard/legacy/lib/i18n.ts",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/pages/guild-preview.tsx",
+      "originalSpecifier": "@/lib/server-locale",
+      "target": "dashboard/lib/server-locale.ts",
+      "mode": "shared-current"
+    },
+    {
+      "from": "dashboard/legacy/pages/guild-preview.tsx",
+      "originalSpecifier": "@/lib/settings-preview",
+      "target": "dashboard/legacy/lib/settings-preview.ts",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/pages/guild-preview.tsx",
+      "originalSpecifier": "@/lib/settings-catalog",
+      "target": "dashboard/lib/settings-catalog.ts",
+      "mode": "shared-current"
+    },
+    {
+      "from": "dashboard/legacy/pages/guild-preview.tsx",
+      "originalSpecifier": "@/lib/settings-db",
+      "target": "dashboard/lib/settings-db.ts",
+      "mode": "shared-current"
+    },
+    {
+      "from": "dashboard/legacy/pages/guild-preview.tsx",
+      "originalSpecifier": "@/lib/server-session",
+      "target": "dashboard/lib/server-session.ts",
+      "mode": "shared-current"
+    },
+    {
+      "from": "dashboard/legacy/pages/guild-provider-settings.tsx",
+      "originalSpecifier": "@/components/dashboard/access-denied",
+      "target": "dashboard/legacy/components/dashboard/access-denied.tsx",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/pages/guild-provider-settings.tsx",
+      "originalSpecifier": "@/components/dashboard/dashboard-shell",
+      "target": "dashboard/legacy/components/dashboard/dashboard-shell.tsx",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/pages/guild-provider-settings.tsx",
+      "originalSpecifier": "@/components/settings/provider-settings-form",
+      "target": "dashboard/legacy/components/settings/provider-settings-form.tsx",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/pages/guild-provider-settings.tsx",
+      "originalSpecifier": "@/lib/discord",
+      "target": "dashboard/lib/discord.ts",
+      "mode": "shared-current"
+    },
+    {
+      "from": "dashboard/legacy/pages/guild-provider-settings.tsx",
+      "originalSpecifier": "@/lib/i18n",
+      "target": "dashboard/legacy/lib/i18n.ts",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/pages/guild-provider-settings.tsx",
+      "originalSpecifier": "@/lib/server-locale",
+      "target": "dashboard/lib/server-locale.ts",
+      "mode": "shared-current"
+    },
+    {
+      "from": "dashboard/legacy/pages/guild-provider-settings.tsx",
+      "originalSpecifier": "@/lib/settings-catalog",
+      "target": "dashboard/lib/settings-catalog.ts",
+      "mode": "shared-current"
+    },
+    {
+      "from": "dashboard/legacy/pages/guild-provider-settings.tsx",
+      "originalSpecifier": "@/lib/settings-db",
+      "target": "dashboard/lib/settings-db.ts",
+      "mode": "shared-current"
+    },
+    {
+      "from": "dashboard/legacy/pages/guild-provider-settings.tsx",
+      "originalSpecifier": "@/lib/server-session",
+      "target": "dashboard/lib/server-session.ts",
+      "mode": "shared-current"
+    },
+    {
+      "from": "dashboard/legacy/pages/guild-providers.tsx",
+      "originalSpecifier": "@/components/dashboard/access-denied",
+      "target": "dashboard/legacy/components/dashboard/access-denied.tsx",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/pages/guild-providers.tsx",
+      "originalSpecifier": "@/components/dashboard/dashboard-shell",
+      "target": "dashboard/legacy/components/dashboard/dashboard-shell.tsx",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/pages/guild-providers.tsx",
+      "originalSpecifier": "@/components/providers/provider-list",
+      "target": "dashboard/legacy/components/providers/provider-list.tsx",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/pages/guild-providers.tsx",
+      "originalSpecifier": "@/lib/discord",
+      "target": "dashboard/lib/discord.ts",
+      "mode": "shared-current"
+    },
+    {
+      "from": "dashboard/legacy/pages/guild-providers.tsx",
+      "originalSpecifier": "@/lib/i18n",
+      "target": "dashboard/legacy/lib/i18n.ts",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/pages/guild-providers.tsx",
+      "originalSpecifier": "@/lib/server-locale",
+      "target": "dashboard/lib/server-locale.ts",
+      "mode": "shared-current"
+    },
+    {
+      "from": "dashboard/legacy/pages/guild-providers.tsx",
+      "originalSpecifier": "@/lib/settings-db",
+      "target": "dashboard/lib/settings-db.ts",
+      "mode": "shared-current"
+    },
+    {
+      "from": "dashboard/legacy/pages/guild-providers.tsx",
+      "originalSpecifier": "@/lib/server-session",
+      "target": "dashboard/lib/server-session.ts",
+      "mode": "shared-current"
+    },
+    {
+      "from": "dashboard/legacy/pages/guild-settings.tsx",
+      "originalSpecifier": "@/components/dashboard/access-denied",
+      "target": "dashboard/legacy/components/dashboard/access-denied.tsx",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/pages/guild-settings.tsx",
+      "originalSpecifier": "@/components/dashboard/dashboard-shell",
+      "target": "dashboard/legacy/components/dashboard/dashboard-shell.tsx",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/pages/guild-settings.tsx",
+      "originalSpecifier": "@/components/settings/cross-settings-view",
+      "target": "dashboard/legacy/components/settings/cross-settings-view.tsx",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/pages/guild-settings.tsx",
+      "originalSpecifier": "@/lib/discord",
+      "target": "dashboard/lib/discord.ts",
+      "mode": "shared-current"
+    },
+    {
+      "from": "dashboard/legacy/pages/guild-settings.tsx",
+      "originalSpecifier": "@/lib/i18n",
+      "target": "dashboard/legacy/lib/i18n.ts",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/pages/guild-settings.tsx",
+      "originalSpecifier": "@/lib/server-locale",
+      "target": "dashboard/lib/server-locale.ts",
+      "mode": "shared-current"
+    },
+    {
+      "from": "dashboard/legacy/pages/guild-settings.tsx",
+      "originalSpecifier": "@/lib/settings-db",
+      "target": "dashboard/lib/settings-db.ts",
+      "mode": "shared-current"
+    },
+    {
+      "from": "dashboard/legacy/pages/guild-settings.tsx",
+      "originalSpecifier": "@/lib/server-session",
+      "target": "dashboard/lib/server-session.ts",
+      "mode": "shared-current"
+    },
+    {
+      "from": "dashboard/legacy/pages/bulk.tsx",
+      "originalSpecifier": "@/components/dashboard/guild-switcher",
+      "target": "dashboard/legacy/components/dashboard/guild-switcher.tsx",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/pages/bulk.tsx",
+      "originalSpecifier": "@/components/dashboard/dashboard-workspace",
+      "target": "dashboard/legacy/components/dashboard/dashboard-workspace.tsx",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/pages/bulk.tsx",
+      "originalSpecifier": "@/components/dashboard/language-switcher",
+      "target": "dashboard/legacy/components/dashboard/language-switcher.tsx",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/pages/bulk.tsx",
+      "originalSpecifier": "@/components/dashboard/auth-buttons",
+      "target": "dashboard/legacy/components/dashboard/auth-buttons.tsx",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/pages/bulk.tsx",
+      "originalSpecifier": "@/components/settings/multi-guild-bulk-settings-view",
+      "target": "dashboard/legacy/components/settings/multi-guild-bulk-settings-view.tsx",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/pages/bulk.tsx",
+      "originalSpecifier": "@/components/ui/badge",
+      "target": "dashboard/legacy/components/ui/badge.tsx",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/pages/bulk.tsx",
+      "originalSpecifier": "@/lib/discord",
+      "target": "dashboard/lib/discord.ts",
+      "mode": "shared-current"
+    },
+    {
+      "from": "dashboard/legacy/pages/bulk.tsx",
+      "originalSpecifier": "@/lib/i18n",
+      "target": "dashboard/legacy/lib/i18n.ts",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/pages/bulk.tsx",
+      "originalSpecifier": "@/lib/server-locale",
+      "target": "dashboard/lib/server-locale.ts",
+      "mode": "shared-current"
+    },
+    {
+      "from": "dashboard/legacy/pages/bulk.tsx",
+      "originalSpecifier": "@/lib/server-session",
+      "target": "dashboard/lib/server-session.ts",
+      "mode": "shared-current"
+    },
+    {
+      "from": "dashboard/legacy/pages/dashboard.tsx",
+      "originalSpecifier": "@/components/dashboard/guild-list",
+      "target": "dashboard/legacy/components/dashboard/guild-list.tsx",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/pages/dashboard.tsx",
+      "originalSpecifier": "@/components/dashboard/guild-switcher",
+      "target": "dashboard/legacy/components/dashboard/guild-switcher.tsx",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/pages/dashboard.tsx",
+      "originalSpecifier": "@/components/dashboard/dashboard-workspace",
+      "target": "dashboard/legacy/components/dashboard/dashboard-workspace.tsx",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/pages/dashboard.tsx",
+      "originalSpecifier": "@/components/dashboard/auth-buttons",
+      "target": "dashboard/legacy/components/dashboard/auth-buttons.tsx",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/pages/dashboard.tsx",
+      "originalSpecifier": "@/components/dashboard/language-switcher",
+      "target": "dashboard/legacy/components/dashboard/language-switcher.tsx",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/pages/dashboard.tsx",
+      "originalSpecifier": "@/lib/discord",
+      "target": "dashboard/lib/discord.ts",
+      "mode": "shared-current"
+    },
+    {
+      "from": "dashboard/legacy/pages/dashboard.tsx",
+      "originalSpecifier": "@/lib/i18n",
+      "target": "dashboard/legacy/lib/i18n.ts",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/pages/dashboard.tsx",
+      "originalSpecifier": "@/lib/server-locale",
+      "target": "dashboard/lib/server-locale.ts",
+      "mode": "shared-current"
+    },
+    {
+      "from": "dashboard/legacy/pages/dashboard.tsx",
+      "originalSpecifier": "@/lib/server-session",
+      "target": "dashboard/lib/server-session.ts",
+      "mode": "shared-current"
+    },
+    {
+      "from": "dashboard/legacy/pages/personal-links.tsx",
+      "originalSpecifier": "@/lib/server-session",
+      "target": "dashboard/lib/server-session.ts",
+      "mode": "shared-current"
+    },
+    {
+      "from": "dashboard/legacy/pages/personal-links.tsx",
+      "originalSpecifier": "@/lib/server-locale",
+      "target": "dashboard/lib/server-locale.ts",
+      "mode": "shared-current"
+    },
+    {
+      "from": "dashboard/legacy/pages/personal-links.tsx",
+      "originalSpecifier": "@/components/personal-links/personal-links-workspace",
+      "target": "dashboard/legacy/components/personal-links/personal-links-workspace.tsx",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/pages/home.tsx",
+      "originalSpecifier": "@/components/dashboard/auth-buttons",
+      "target": "dashboard/legacy/components/dashboard/auth-buttons.tsx",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/pages/home.tsx",
+      "originalSpecifier": "@/components/dashboard/language-switcher",
+      "target": "dashboard/legacy/components/dashboard/language-switcher.tsx",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/pages/home.tsx",
+      "originalSpecifier": "@/components/ui/button",
+      "target": "dashboard/legacy/components/ui/button.tsx",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/pages/home.tsx",
+      "originalSpecifier": "@/lib/i18n",
+      "target": "dashboard/legacy/lib/i18n.ts",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/pages/home.tsx",
+      "originalSpecifier": "@/lib/server-locale",
+      "target": "dashboard/lib/server-locale.ts",
+      "mode": "shared-current"
+    },
+    {
+      "from": "dashboard/legacy/pages/home.tsx",
+      "originalSpecifier": "@/lib/server-session",
+      "target": "dashboard/lib/server-session.ts",
+      "mode": "shared-current"
+    },
+    {
+      "from": "dashboard/legacy/pages/home.tsx",
+      "originalSpecifier": "@/features/auth/errors",
+      "target": "dashboard/features/auth/errors.ts",
+      "mode": "shared-current"
+    },
+    {
+      "from": "dashboard/legacy/components/admin/admin-console-loader.tsx",
+      "originalSpecifier": "@/lib/types",
+      "target": "dashboard/lib/types.ts",
+      "mode": "shared-current"
+    },
+    {
+      "from": "dashboard/legacy/components/admin/admin-console-loader.tsx",
+      "originalSpecifier": "@/components/admin/admin-console",
+      "target": "dashboard/legacy/components/admin/admin-console.tsx",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/components/admin/admin-console.tsx",
+      "originalSpecifier": "@/components/admin/report-error-boundary",
+      "target": "dashboard/legacy/components/admin/report-error-boundary.tsx",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/components/admin/admin-console.tsx",
+      "originalSpecifier": "@/lib/admin-report-status",
+      "target": "dashboard/legacy/lib/admin-report-status.ts",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/components/admin/admin-console.tsx",
+      "originalSpecifier": "@/components/admin/workspace-shell",
+      "target": "dashboard/legacy/components/admin/workspace-shell.tsx",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/components/admin/admin-console.tsx",
+      "originalSpecifier": "@/lib/admin-workspace",
+      "target": "dashboard/legacy/lib/admin-workspace.ts",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/components/admin/admin-console.tsx",
+      "originalSpecifier": "@/components/admin/management-console",
+      "target": "dashboard/legacy/components/admin/management-console.tsx",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/components/admin/admin-console.tsx",
+      "originalSpecifier": "@/components/dashboard/auth-buttons",
+      "target": "dashboard/legacy/components/dashboard/auth-buttons.tsx",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/components/admin/admin-console.tsx",
+      "originalSpecifier": "@/components/ui/badge",
+      "target": "dashboard/legacy/components/ui/badge.tsx",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/components/admin/admin-console.tsx",
+      "originalSpecifier": "@/components/ui/button",
+      "target": "dashboard/legacy/components/ui/button.tsx",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/components/admin/admin-console.tsx",
+      "originalSpecifier": "@/components/ui/card",
+      "target": "dashboard/legacy/components/ui/card.tsx",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/components/admin/admin-console.tsx",
+      "originalSpecifier": "@/components/ui/input",
+      "target": "dashboard/legacy/components/ui/input.tsx",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/components/admin/admin-console.tsx",
+      "originalSpecifier": "@/lib/types",
+      "target": "dashboard/lib/types.ts",
+      "mode": "shared-current"
+    },
+    {
+      "from": "dashboard/legacy/components/admin/agent-recovery-panel.tsx",
+      "originalSpecifier": "@/components/ui/button",
+      "target": "dashboard/legacy/components/ui/button.tsx",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/components/admin/agent-recovery-panel.tsx",
+      "originalSpecifier": "@/components/ui/card",
+      "target": "dashboard/legacy/components/ui/card.tsx",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/components/admin/emergency-recovery-panel.tsx",
+      "originalSpecifier": "@/components/ui/button",
+      "target": "dashboard/legacy/components/ui/button.tsx",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/components/admin/emergency-recovery-panel.tsx",
+      "originalSpecifier": "@/components/ui/card",
+      "target": "dashboard/legacy/components/ui/card.tsx",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/components/admin/evidence-view.tsx",
+      "originalSpecifier": "@/components/ui/button",
+      "target": "dashboard/legacy/components/ui/button.tsx",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/components/admin/evidence-view.tsx",
+      "originalSpecifier": "@/components/ui/input",
+      "target": "dashboard/legacy/components/ui/input.tsx",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/components/admin/investigation-view.tsx",
+      "originalSpecifier": "@/components/ui/button",
+      "target": "dashboard/legacy/components/ui/button.tsx",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/components/admin/investigation-view.tsx",
+      "originalSpecifier": "@/components/ui/card",
+      "target": "dashboard/legacy/components/ui/card.tsx",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/components/admin/investigation-view.tsx",
+      "originalSpecifier": "@/lib/admin-workspace",
+      "target": "dashboard/legacy/lib/admin-workspace.ts",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/components/admin/investigation-view.tsx",
+      "originalSpecifier": "@/components/admin/evidence-view",
+      "target": "dashboard/legacy/components/admin/evidence-view.tsx",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/components/admin/management-console.tsx",
+      "originalSpecifier": "@/components/admin/evidence-view",
+      "target": "dashboard/legacy/components/admin/evidence-view.tsx",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/components/admin/management-console.tsx",
+      "originalSpecifier": "@/components/admin/evidence-view",
+      "target": "dashboard/legacy/components/admin/evidence-view.tsx",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/components/admin/management-console.tsx",
+      "originalSpecifier": "@/components/admin/emergency-recovery-panel",
+      "target": "dashboard/legacy/components/admin/emergency-recovery-panel.tsx",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/components/admin/management-console.tsx",
+      "originalSpecifier": "@/components/admin/agent-recovery-panel",
+      "target": "dashboard/legacy/components/admin/agent-recovery-panel.tsx",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/components/admin/management-console.tsx",
+      "originalSpecifier": "@/components/ui/button",
+      "target": "dashboard/legacy/components/ui/button.tsx",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/components/admin/management-console.tsx",
+      "originalSpecifier": "@/components/ui/input",
+      "target": "dashboard/legacy/components/ui/input.tsx",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/components/admin/management-console.tsx",
+      "originalSpecifier": "@/components/ui/card",
+      "target": "dashboard/legacy/components/ui/card.tsx",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/components/admin/management-console.tsx",
+      "originalSpecifier": "@/lib/admin-workspace",
+      "target": "dashboard/legacy/lib/admin-workspace.ts",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/components/admin/management-console.tsx",
+      "originalSpecifier": "@/components/admin/investigation-view",
+      "target": "dashboard/legacy/components/admin/investigation-view.tsx",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/components/admin/report-error-boundary.tsx",
+      "originalSpecifier": "@/components/ui/button",
+      "target": "dashboard/legacy/components/ui/button.tsx",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/components/admin/workspace-shell.tsx",
+      "originalSpecifier": "@/components/ui/button",
+      "target": "dashboard/legacy/components/ui/button.tsx",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/components/admin/workspace-shell.tsx",
+      "originalSpecifier": "@/components/ui/input",
+      "target": "dashboard/legacy/components/ui/input.tsx",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/components/admin/workspace-shell.tsx",
+      "originalSpecifier": "@/lib/admin-workspace",
+      "target": "dashboard/legacy/lib/admin-workspace.ts",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/components/dashboard/access-denied.tsx",
+      "originalSpecifier": "@/components/ui/card",
+      "target": "dashboard/legacy/components/ui/card.tsx",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/components/dashboard/access-denied.tsx",
+      "originalSpecifier": "@/lib/i18n",
+      "target": "dashboard/legacy/lib/i18n.ts",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/components/dashboard/access-management.tsx",
+      "originalSpecifier": "@/components/ui/badge",
+      "target": "dashboard/legacy/components/ui/badge.tsx",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/components/dashboard/access-management.tsx",
+      "originalSpecifier": "@/components/ui/button",
+      "target": "dashboard/legacy/components/ui/button.tsx",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/components/dashboard/access-management.tsx",
+      "originalSpecifier": "@/components/ui/card",
+      "target": "dashboard/legacy/components/ui/card.tsx",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/components/dashboard/access-management.tsx",
+      "originalSpecifier": "@/components/ui/input",
+      "target": "dashboard/legacy/components/ui/input.tsx",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/components/dashboard/auth-buttons.tsx",
+      "originalSpecifier": "@/components/ui/button",
+      "target": "dashboard/legacy/components/ui/button.tsx",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/components/dashboard/auth-buttons.tsx",
+      "originalSpecifier": "@/lib/i18n",
+      "target": "dashboard/legacy/lib/i18n.ts",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/components/dashboard/dashboard-shell.tsx",
+      "originalSpecifier": "@/components/dashboard/auth-buttons",
+      "target": "dashboard/legacy/components/dashboard/auth-buttons.tsx",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/components/dashboard/dashboard-shell.tsx",
+      "originalSpecifier": "@/components/dashboard/guild-switcher",
+      "target": "dashboard/legacy/components/dashboard/guild-switcher.tsx",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/components/dashboard/dashboard-shell.tsx",
+      "originalSpecifier": "@/components/dashboard/dashboard-workspace",
+      "target": "dashboard/legacy/components/dashboard/dashboard-workspace.tsx",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/components/dashboard/dashboard-shell.tsx",
+      "originalSpecifier": "@/components/dashboard/language-switcher",
+      "target": "dashboard/legacy/components/dashboard/language-switcher.tsx",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/components/dashboard/dashboard-shell.tsx",
+      "originalSpecifier": "@/components/ui/badge",
+      "target": "dashboard/legacy/components/ui/badge.tsx",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/components/dashboard/dashboard-shell.tsx",
+      "originalSpecifier": "@/lib/i18n",
+      "target": "dashboard/legacy/lib/i18n.ts",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/components/dashboard/dashboard-workspace.tsx",
+      "originalSpecifier": "@/components/dashboard/guild-options",
+      "target": "dashboard/legacy/components/dashboard/guild-options.ts",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/components/dashboard/dashboard-workspace.tsx",
+      "originalSpecifier": "@/components/settings/cross-settings-view",
+      "target": "dashboard/legacy/components/settings/cross-settings-view.tsx",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/components/dashboard/dashboard-workspace.tsx",
+      "originalSpecifier": "@/components/settings/multi-guild-bulk-settings-view",
+      "target": "dashboard/legacy/components/settings/multi-guild-bulk-settings-view.tsx",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/components/dashboard/dashboard-workspace.tsx",
+      "originalSpecifier": "@/components/ui/badge",
+      "target": "dashboard/legacy/components/ui/badge.tsx",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/components/dashboard/dashboard-workspace.tsx",
+      "originalSpecifier": "@/components/ui/card",
+      "target": "dashboard/legacy/components/ui/card.tsx",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/components/dashboard/dashboard-workspace.tsx",
+      "originalSpecifier": "@/components/ui/input",
+      "target": "dashboard/legacy/components/ui/input.tsx",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/components/dashboard/dashboard-workspace.tsx",
+      "originalSpecifier": "@/lib/i18n",
+      "target": "dashboard/legacy/lib/i18n.ts",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/components/dashboard/dashboard-workspace.tsx",
+      "originalSpecifier": "@/lib/utils",
+      "target": "dashboard/legacy/lib/utils.ts",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/components/dashboard/dashboard-workspace.tsx",
+      "originalSpecifier": "@/lib/types",
+      "target": "dashboard/lib/types.ts",
+      "mode": "shared-current"
+    },
+    {
+      "from": "dashboard/legacy/components/dashboard/guild-list.tsx",
+      "originalSpecifier": "@/components/dashboard/guild-options",
+      "target": "dashboard/legacy/components/dashboard/guild-options.ts",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/components/dashboard/guild-list.tsx",
+      "originalSpecifier": "@/components/ui/badge",
+      "target": "dashboard/legacy/components/ui/badge.tsx",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/components/dashboard/guild-list.tsx",
+      "originalSpecifier": "@/components/ui/button",
+      "target": "dashboard/legacy/components/ui/button.tsx",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/components/dashboard/guild-list.tsx",
+      "originalSpecifier": "@/components/ui/card",
+      "target": "dashboard/legacy/components/ui/card.tsx",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/components/dashboard/guild-list.tsx",
+      "originalSpecifier": "@/components/ui/input",
+      "target": "dashboard/legacy/components/ui/input.tsx",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/components/dashboard/guild-list.tsx",
+      "originalSpecifier": "@/lib/i18n",
+      "target": "dashboard/legacy/lib/i18n.ts",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/components/dashboard/guild-list.tsx",
+      "originalSpecifier": "@/lib/utils",
+      "target": "dashboard/legacy/lib/utils.ts",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/components/dashboard/guild-switcher.tsx",
+      "originalSpecifier": "@/components/ui/input",
+      "target": "dashboard/legacy/components/ui/input.tsx",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/components/dashboard/guild-switcher.tsx",
+      "originalSpecifier": "@/components/dashboard/guild-options",
+      "target": "dashboard/legacy/components/dashboard/guild-options.ts",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/components/dashboard/guild-switcher.tsx",
+      "originalSpecifier": "@/lib/i18n",
+      "target": "dashboard/legacy/lib/i18n.ts",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/components/dashboard/guild-switcher.tsx",
+      "originalSpecifier": "@/lib/utils",
+      "target": "dashboard/legacy/lib/utils.ts",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/components/dashboard/language-switcher.tsx",
+      "originalSpecifier": "@/lib/discord-locales",
+      "target": "dashboard/legacy/lib/discord-locales.ts",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/components/dashboard/language-switcher.tsx",
+      "originalSpecifier": "@/lib/i18n",
+      "target": "dashboard/legacy/lib/i18n.ts",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/components/media/media-actions.tsx",
+      "originalSpecifier": "@/components/ui/button",
+      "target": "dashboard/legacy/components/ui/button.tsx",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/components/media/media-actions.tsx",
+      "originalSpecifier": "@/lib/i18n",
+      "target": "dashboard/legacy/lib/i18n.ts",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/components/personal-links/personal-links-workspace.tsx",
+      "originalSpecifier": "@/components/ui/button",
+      "target": "dashboard/legacy/components/ui/button.tsx",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/components/personal-links/personal-links-workspace.tsx",
+      "originalSpecifier": "@/components/ui/input",
+      "target": "dashboard/legacy/components/ui/input.tsx",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/components/personal-links/personal-links-workspace.tsx",
+      "originalSpecifier": "@/lib/personal-links-types",
+      "target": "dashboard/lib/personal-links-types.ts",
+      "mode": "shared-current"
+    },
+    {
+      "from": "dashboard/legacy/components/preview/output-preview-card.tsx",
+      "originalSpecifier": "@/lib/settings-preview",
+      "target": "dashboard/legacy/lib/settings-preview.ts",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/components/providers/provider-list.tsx",
+      "originalSpecifier": "@/components/ui/badge",
+      "target": "dashboard/legacy/components/ui/badge.tsx",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/components/providers/provider-list.tsx",
+      "originalSpecifier": "@/components/ui/card",
+      "target": "dashboard/legacy/components/ui/card.tsx",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/components/providers/provider-list.tsx",
+      "originalSpecifier": "@/components/ui/input",
+      "target": "dashboard/legacy/components/ui/input.tsx",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/components/providers/provider-list.tsx",
+      "originalSpecifier": "@/lib/i18n",
+      "target": "dashboard/legacy/lib/i18n.ts",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/components/settings/cross-settings-view.tsx",
+      "originalSpecifier": "@/components/ui/badge",
+      "target": "dashboard/legacy/components/ui/badge.tsx",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/components/settings/cross-settings-view.tsx",
+      "originalSpecifier": "@/components/ui/button",
+      "target": "dashboard/legacy/components/ui/button.tsx",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/components/settings/cross-settings-view.tsx",
+      "originalSpecifier": "@/components/ui/card",
+      "target": "dashboard/legacy/components/ui/card.tsx",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/components/settings/cross-settings-view.tsx",
+      "originalSpecifier": "@/components/ui/input",
+      "target": "dashboard/legacy/components/ui/input.tsx",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/components/settings/cross-settings-view.tsx",
+      "originalSpecifier": "@/lib/i18n",
+      "target": "dashboard/legacy/lib/i18n.ts",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/components/settings/cross-settings-view.tsx",
+      "originalSpecifier": "@/lib/types",
+      "target": "dashboard/lib/types.ts",
+      "mode": "shared-current"
+    },
+    {
+      "from": "dashboard/legacy/components/settings/multi-guild-bulk-settings-view.tsx",
+      "originalSpecifier": "@/components/settings/provider-settings-form",
+      "target": "dashboard/legacy/components/settings/provider-settings-form.tsx",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/components/settings/multi-guild-bulk-settings-view.tsx",
+      "originalSpecifier": "@/components/ui/badge",
+      "target": "dashboard/legacy/components/ui/badge.tsx",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/components/settings/multi-guild-bulk-settings-view.tsx",
+      "originalSpecifier": "@/components/ui/button",
+      "target": "dashboard/legacy/components/ui/button.tsx",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/components/settings/multi-guild-bulk-settings-view.tsx",
+      "originalSpecifier": "@/components/ui/card",
+      "target": "dashboard/legacy/components/ui/card.tsx",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/components/settings/multi-guild-bulk-settings-view.tsx",
+      "originalSpecifier": "@/lib/i18n",
+      "target": "dashboard/legacy/lib/i18n.ts",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/components/settings/multi-guild-bulk-settings-view.tsx",
+      "originalSpecifier": "@/lib/types",
+      "target": "dashboard/lib/types.ts",
+      "mode": "shared-current"
+    },
+    {
+      "from": "dashboard/legacy/components/settings/provider-settings-form.tsx",
+      "originalSpecifier": "@/components/preview/output-preview-card",
+      "target": "dashboard/legacy/components/preview/output-preview-card.tsx",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/components/settings/provider-settings-form.tsx",
+      "originalSpecifier": "@/components/ui/badge",
+      "target": "dashboard/legacy/components/ui/badge.tsx",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/components/settings/provider-settings-form.tsx",
+      "originalSpecifier": "@/components/ui/button",
+      "target": "dashboard/legacy/components/ui/button.tsx",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/components/settings/provider-settings-form.tsx",
+      "originalSpecifier": "@/components/ui/card",
+      "target": "dashboard/legacy/components/ui/card.tsx",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/components/settings/provider-settings-form.tsx",
+      "originalSpecifier": "@/components/ui/input",
+      "target": "dashboard/legacy/components/ui/input.tsx",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/components/settings/provider-settings-form.tsx",
+      "originalSpecifier": "@/lib/i18n",
+      "target": "dashboard/legacy/lib/i18n.ts",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/components/settings/provider-settings-form.tsx",
+      "originalSpecifier": "@/lib/settings-preview",
+      "target": "dashboard/legacy/lib/settings-preview.ts",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/components/settings/provider-settings-form.tsx",
+      "originalSpecifier": "@/lib/settings-diff",
+      "target": "dashboard/legacy/lib/settings-diff.ts",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/components/settings/provider-settings-form.tsx",
+      "originalSpecifier": "@/lib/setting-commands",
+      "target": "dashboard/legacy/lib/setting-commands.ts",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/components/settings/provider-settings-form.tsx",
+      "originalSpecifier": "@/lib/types",
+      "target": "dashboard/lib/types.ts",
+      "mode": "shared-current"
+    },
+    {
+      "from": "dashboard/legacy/components/ui/badge.tsx",
+      "originalSpecifier": "@/lib/utils",
+      "target": "dashboard/legacy/lib/utils.ts",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/components/ui/button.tsx",
+      "originalSpecifier": "@/lib/utils",
+      "target": "dashboard/legacy/lib/utils.ts",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/components/ui/card.tsx",
+      "originalSpecifier": "@/lib/utils",
+      "target": "dashboard/legacy/lib/utils.ts",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/components/ui/input.tsx",
+      "originalSpecifier": "@/lib/utils",
+      "target": "dashboard/legacy/lib/utils.ts",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/features/audit/audit-logs-page.tsx",
+      "originalSpecifier": "@/components/dashboard/access-denied",
+      "target": "dashboard/legacy/components/dashboard/access-denied.tsx",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/features/audit/audit-logs-page.tsx",
+      "originalSpecifier": "@/components/dashboard/dashboard-shell",
+      "target": "dashboard/legacy/components/dashboard/dashboard-shell.tsx",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/features/audit/audit-logs-page.tsx",
+      "originalSpecifier": "@/components/ui/badge",
+      "target": "dashboard/legacy/components/ui/badge.tsx",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/features/audit/audit-logs-page.tsx",
+      "originalSpecifier": "@/components/ui/card",
+      "target": "dashboard/legacy/components/ui/card.tsx",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/features/audit/audit-logs-page.tsx",
+      "originalSpecifier": "@/lib/audit-log",
+      "target": "dashboard/lib/audit-log.ts",
+      "mode": "shared-current"
+    },
+    {
+      "from": "dashboard/legacy/features/audit/audit-logs-page.tsx",
+      "originalSpecifier": "@/lib/discord",
+      "target": "dashboard/lib/discord.ts",
+      "mode": "shared-current"
+    },
+    {
+      "from": "dashboard/legacy/features/audit/audit-logs-page.tsx",
+      "originalSpecifier": "@/lib/format",
+      "target": "dashboard/legacy/lib/format.ts",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/features/audit/audit-logs-page.tsx",
+      "originalSpecifier": "@/lib/i18n",
+      "target": "dashboard/legacy/lib/i18n.ts",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/features/audit/audit-logs-page.tsx",
+      "originalSpecifier": "@/lib/server-locale",
+      "target": "dashboard/lib/server-locale.ts",
+      "mode": "shared-current"
+    },
+    {
+      "from": "dashboard/legacy/features/audit/audit-logs-page.tsx",
+      "originalSpecifier": "@/lib/server-session",
+      "target": "dashboard/lib/server-session.ts",
+      "mode": "shared-current"
+    },
+    {
+      "from": "dashboard/legacy/lib/diagnostics.ts",
+      "originalSpecifier": "@/lib/types",
+      "target": "dashboard/lib/types.ts",
+      "mode": "shared-current"
+    },
+    {
+      "from": "dashboard/legacy/lib/diagnostics.ts",
+      "originalSpecifier": "@/lib/i18n",
+      "target": "dashboard/legacy/lib/i18n.ts",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/lib/i18n.ts",
+      "originalSpecifier": "@/lib/types",
+      "target": "dashboard/lib/types.ts",
+      "mode": "shared-current"
+    },
+    {
+      "from": "dashboard/legacy/lib/i18n.ts",
+      "originalSpecifier": "@/lib/discord-locales",
+      "target": "dashboard/legacy/lib/discord-locales.ts",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/lib/setting-commands.ts",
+      "originalSpecifier": "@/lib/types",
+      "target": "dashboard/lib/types.ts",
+      "mode": "shared-current"
+    },
+    {
+      "from": "dashboard/legacy/lib/settings-diff.ts",
+      "originalSpecifier": "@/lib/types",
+      "target": "dashboard/lib/types.ts",
+      "mode": "shared-current"
+    },
+    {
+      "from": "dashboard/legacy/lib/settings-diff.ts",
+      "originalSpecifier": "@/lib/i18n",
+      "target": "dashboard/legacy/lib/i18n.ts",
+      "mode": "isolated-presentation"
+    },
+    {
+      "from": "dashboard/legacy/lib/settings-preview.ts",
+      "originalSpecifier": "@/lib/types",
+      "target": "dashboard/lib/types.ts",
+      "mode": "shared-current"
+    },
+    {
+      "from": "dashboard/legacy/lib/settings-preview.ts",
+      "originalSpecifier": "@/lib/i18n",
+      "target": "dashboard/legacy/lib/i18n.ts",
+      "mode": "isolated-presentation"
+    }
+  ],
+  "preservedSharedModules": [
+    {
+      "path": "dashboard/features/auth/errors.ts",
+      "snapshotSha256": "a1c3723010e58cf4d8cafd5518d324f0cbe7e7ea6a5b4cba6bd2c7cbbcd2ad0c"
+    },
+    {
+      "path": "dashboard/lib/audit-log.ts",
+      "snapshotSha256": "56876387559a98e72b589cad010a3a3d301327c1bbb7550dc9fe74a0fcdce5c5"
+    },
+    {
+      "path": "dashboard/lib/discord.ts",
+      "snapshotSha256": "86a2bd91571211d4585f364e2afe609d17c31045e959456fc8df9ff15e89ea41"
+    },
+    {
+      "path": "dashboard/lib/media-cache.ts",
+      "snapshotSha256": "f9d65ef1e31e03e409ac1b74dabaf8b4849bb550a1405cfe683cadbed96e066c"
+    },
+    {
+      "path": "dashboard/lib/personal-links-types.ts",
+      "snapshotSha256": "7e946f19d260e803ffdd56a476c65c646d3667030222d1906216320a0592e8c7"
+    },
+    {
+      "path": "dashboard/lib/server-locale.ts",
+      "snapshotSha256": "b7d8b1606a0dd0b1bf789e2fb76ac5a54af2791a72535c63b7758a3121383319"
+    },
+    {
+      "path": "dashboard/lib/server-session.ts",
+      "snapshotSha256": "cd9fcb7371aa203c69f7d4338c981dc6db6418afc947ab65dda96ca2ba907153"
+    },
+    {
+      "path": "dashboard/lib/settings-catalog.ts",
+      "snapshotSha256": "0ff34e06efa9c8144e6e49042cb984936611ce5ea578230d9cc87ff23d7f2833"
+    },
+    {
+      "path": "dashboard/lib/settings-db.ts",
+      "snapshotSha256": "188c3bee1df3518c01620ffb0d7194750e039c4945e2a3a5dfd64b8a2a6f4437"
+    },
+    {
+      "path": "dashboard/lib/types.ts",
+      "snapshotSha256": "ea49c106cae9308eaa3c9dd7adbfe10c11bba6acba6e83d97a5beb8c7a413445"
+    }
+  ],
+  "outsideSnapshotSharedDependencies": [],
+  "missingDependencies": [],
+  "removedStaleOutputs": []
+}

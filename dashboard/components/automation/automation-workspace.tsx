@@ -6,12 +6,23 @@ import { MonitorManager } from "./monitor-manager";
 import { DeliveryHistory } from "./delivery-history";
 import { DictionaryManager } from "./dictionary-manager";
 import { MarketplaceManager } from "./marketplace-manager";
+import { AutomationDialog } from "./automation-dialog";
+import { automationResponseError } from "./automation-feedback";
 import { recoveryKey, encodeRecovery, decodeRecovery } from "../../../src/automation/draft-recovery";
+import { ArrowLeft, ArrowRight, Bell, Check, Clock3, FileUp, Filter, Link2, Search, StickyNote, TrendingDown, AlertTriangle, LockKeyhole } from "lucide-react";
 import "./automation.css";
+import "./studio-workspace.css";
 
 const field = "w-full rounded border bg-background px-3 py-2 text-sm";
 const button = "rounded border bg-background px-3 py-2 text-sm hover:bg-muted disabled:opacity-40";
 const emptyBindings: Bindings = { destinations: {}, dictionaries: {} };
+const formatNames: Record<string, string> = { expanded: "メディアを展開", card: "カード", text: "テキスト", url: "URLのみ" };
+const starters = [
+  { goal: "all", time: "now", label: "すべての新着を届ける", icon: Bell },
+  { goal: "keyword", time: "now", label: "キーワードで絞り込む", icon: Filter },
+  { goal: "down", time: "now", label: "値下げだけを知らせる", icon: TrendingDown },
+  { goal: "all", time: "day", label: "9〜22時に通知する", icon: Clock3 },
+];
 const download = (text: string, filename: string, mime = "application/json") => { const link = document.createElement("a"); const url = URL.createObjectURL(new Blob([text], { type: mime })); link.href = url; link.download = filename; link.click(); URL.revokeObjectURL(url); };
 
 export function AutomationWorkspace({ viewerId, guildId, canEdit = true }: { viewerId: string; guildId?: string; canEdit?: boolean }) {
@@ -21,11 +32,20 @@ export function AutomationWorkspace({ viewerId, guildId, canEdit = true }: { vie
   const [destinations, setDestinations] = useState<any[]>([]), [dictionaries, setDictionaries] = useState<any[]>([]);
   const [error, setError] = useState(""), [notice, setNotice] = useState(""), [busy, setBusy] = useState(false);
   const [goal, setGoal] = useState("all"), [time, setTime] = useState("now"), [display, setDisplay] = useState("expanded"), [scope, setScope] = useState("private");
-  const [history, setHistory] = useState<any[]>([]), [resourceAlias, setResourceAlias] = useState("words");
+  const [history, setHistory] = useState<any[]>([]);
+  const [visitedResources, setVisitedResources] = useState<string[]>(["monitors"]);
+  useEffect(() => { setVisitedResources(old => old.includes(tab) ? old : [...old, tab]); }, [tab]);
   const [textDraft, setTextDraft] = useState<{ text: string; format: string } | null>(null), [recoveryReady, setRecoveryReady] = useState(false), [recoveryWarning, setRecoveryWarning] = useState("");
   const [recoveryFailed, setRecoveryFailed] = useState(false);
   const [studioOpen, setStudioOpen] = useState(false);
-  const actionsMenu = useRef<HTMLDetailsElement>(null), actionsToggle = useRef<HTMLElement>(null), historyPanel = useRef<HTMLElement>(null);
+  const [notificationOpen, setNotificationOpen] = useState(false), [memoOpen, setMemoOpen] = useState(false), [memoDraft, setMemoDraft] = useState("");
+  const [ruleSearch, setRuleSearch] = useState(""), [ruleState, setRuleState] = useState("all");
+  const [notificationChoices, setNotificationChoices] = useState<any[]>([]), [notificationTarget, setNotificationTarget] = useState("");
+  const [notificationLoading, setNotificationLoading] = useState(false), [notificationError, setNotificationError] = useState("");
+  const [notificationActionError, setNotificationActionError] = useState("");
+  const [applyTargets, setApplyTargets] = useState<any[] | null>(null);
+  const [notificationNext, setNotificationNext] = useState<Record<string, string | null>>({ auto: null, price: null });
+  const actionsMenu = useRef<HTMLDetailsElement>(null), actionsToggle = useRef<HTMLElement>(null), historyPanel = useRef<HTMLElement>(null), ruleNameInput = useRef<HTMLInputElement>(null);
   const workspaceId = useId();
   const storageKey = recoveryKey(viewerId, guildId);
   const dirty = !!draft && (!!textDraft || !selected || JSON.stringify(draft) !== JSON.stringify(selected.draft) || JSON.stringify(bindings) !== JSON.stringify(selected.bindings));
@@ -33,7 +53,7 @@ export function AutomationWorkspace({ viewerId, guildId, canEdit = true }: { vie
     const url = `/api/automation/${path}${path.includes("?") ? "&" : "?"}${guildId ? `guildId=${encodeURIComponent(guildId)}` : ""}`;
     const response = await fetch(url, { method, headers: { "Content-Type": "application/json" }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
     const data = await response.json();
-    if (!response.ok) throw Object.assign(new Error(data.error || "操作に失敗しました。"), data);
+    if (!response.ok) throw automationResponseError(data, response);
     return data;
   }, [guildId]);
   useEffect(() => {
@@ -49,9 +69,9 @@ export function AutomationWorkspace({ viewerId, guildId, canEdit = true }: { vie
         const conflict = current && Number(current.revision) !== record.baseRevision;
         setSelected(conflict ? null : current); setDraft(record.definition); setBindings(record.bindings);
         setTextDraft(record.textDraft); setScope(conflict ? "private" : record.scope); setTab("rules"); setStudioOpen(true); setEditorValid(false);
-        setNotice(conflict ? "別の場所で更新されています。未保存の編集を新しい個人用の下書きとして復元しました。元のルールは変更しません。" : "未保存の編集を復元しました。まだ適用されていません。");
+        setNotice(conflict ? "別の場所で更新されたため、編集を個人用の下書きに復元しました。まだ適用されていません。" : "未保存の編集を復元しました。まだ適用されていません。");
       } catch {
-        if (active) { setRecoveryFailed(true); setRecoveryWarning("以前の編集を復元できませんでした。退避データは保持しています。期限・アクセス権を確認してください。"); }
+        if (active) { setRecoveryFailed(true); setRecoveryWarning("編集を復元できません。アクセス権を確認して再読み込みしてください。"); }
       } finally { if (active) setRecoveryReady(true); }
     }
     void recover();
@@ -65,7 +85,7 @@ export function AutomationWorkspace({ viewerId, guildId, canEdit = true }: { vie
       setRecoveryWarning(""); setRecoveryFailed(false);
     } catch {
       try { sessionStorage.removeItem(storageKey); } catch { /* storage may be disabled */ }
-      setRecoveryWarning("この編集はブラウザへ退避できません。秘密値・容量・保存設定を確認し、ページを閉じる前に保存してください。");
+      setRecoveryWarning("編集を復元用に保存できません。ページを閉じる前に下書きを保存してください。");
     }
   }, [recoveryReady, recoveryFailed, dirty, storageKey, viewerId, guildId, selected, scope, draft, bindings, textDraft]);
   useEffect(() => {
@@ -82,23 +102,34 @@ export function AutomationWorkspace({ viewerId, guildId, canEdit = true }: { vie
   useEffect(() => { api("catalog").then(setCatalog).catch(err => setError(err.message)); refresh().catch(err => setError(err.message)); }, [api, refresh]);
   useEffect(() => { if (new URLSearchParams(window.location.hash.slice(1)).has("automation-package")) setTab("marketplace"); }, []);
   useEffect(() => { if (history.length) { historyPanel.current?.focus(); historyPanel.current?.scrollIntoView({ block: "nearest" }); } }, [history]);
+  useEffect(() => { if (tab === "rules" && studioOpen && catalog) ruleNameInput.current?.focus(); }, [tab, studioOpen, catalog]);
   function canReplaceDraft() { if (dirty && !confirm("未保存の編集を破棄してルールを切り替えますか？")) return false; setTextDraft(null); return true; }
-  async function choose(item: any) { const value = await api(`workflows/${item.id}`); setSelected(value); setDraft(value.draft); setBindings(value.bindings); setTextDraft(null); setHistory([]); setStudioOpen(true); setEditorValid(false); }
+  async function choose(item: any) { const value = await api(`workflows/${item.id}`); if (item.id !== selected?.id) setNotificationTarget(""); setSelected(value); setDraft(value.draft); setBindings(value.bindings); setTextDraft(null); setHistory([]); setStudioOpen(true); setEditorValid(false); return value; }
+  function createTemplate(templateGoal = "all", templateTime = "now", templateFormat = "expanded") {
+    if (!canReplaceDraft()) return;
+    void task(async () => {
+      const definition = await api(`template?goal=${encodeURIComponent(templateGoal)}&time=${encodeURIComponent(templateTime)}&format=${encodeURIComponent(templateFormat)}`);
+      setSelected(null); setDraft(definition); setBindings(emptyBindings); setHistory([]); setNotificationTarget(""); setStudioOpen(true); setEditorValid(false);
+    });
+  }
   async function save() {
     if (!draft) return;
-    if (!editorValid) throw new Error("ルールの検証が終わっていないか、未反映のテキストがあります。エディターを確認してください。");
+    if (!editorValid) throw new Error("ルールの設定を確認してください。未反映のテキストがある場合は修正してください。");
+    let saved;
     if (!selected) {
       const created = await api("workflows", "POST", { definition: draft, bindings, scope });
       setSelected(created); setDraft(created.draft); setBindings(created.bindings);
+      saved = created;
     } else {
       await api(`workflows/${selected.id}`, "PATCH", { definition: draft, bindings, expectedRevision: selected.revision });
-      await choose(selected);
+      saved = await choose(selected);
     }
-    await refresh(); setNotice("下書きを保存しました。実行する版は「適用」で切り替わります。");
+    await refresh(); setNotice("下書きを保存しました。まだ通知には適用されていません。");
+    return saved;
   }
   async function importPackage(file: File) {
     if (!canReplaceDraft()) return;
-    if (file.size > 32 * 1024 * 1024) throw new Error("パッケージは32MiBまでです。");
+    if (file.size > 32 * 1024 * 1024) throw new Error("ファイルは32 MiB以下にしてください。");
     let body;
     if (file.name.endsWith(".zip")) {
       const bytes = new Uint8Array(await file.arrayBuffer());
@@ -109,52 +140,140 @@ export function AutomationWorkspace({ viewerId, guildId, canEdit = true }: { vie
     if (!confirm(`${preview.workflow?.name || "辞書パック"} を${scope === "private" ? "個人用" : "サーバー共有"}の下書きとして取り込みますか？`)) return;
     const result = await api("import", "POST", { ...body, scope });
     await refresh(); if (result.workflow) await choose(result.workflow);
-    setNotice("パッケージを下書きに取り込みました。通知先を割り当ててから適用してください。");
+    setNotice("下書きに取り込みました。通知先を選んで適用してください。");
   }
   const inStudio = tab === "rules" && studioOpen && !!draft;
+  const readOnly = !!(selected?.scope === "guild" && !canEdit);
+  const workflowState = (item: any) => !item.activeRevision ? "draft" : item.enabled ? "active" : "paused";
+  const visibleRules = items.filter(item => (ruleState === "all" || workflowState(item) === ruleState) && `${item.name} ${item.description || ""}`.toLocaleLowerCase().includes(ruleSearch.trim().toLocaleLowerCase()));
+  const currentScope = selected?.scope || scope;
+  const matchingNotifications = notificationChoices.filter(row => row.scope === currentScope);
+  const targetNotification = matchingNotifications.find(row => `${row.kind}:${row.id}` === notificationTarget);
+  const attachedNotifications = selected ? matchingNotifications.filter(row => row.workflowId === selected.id) : [];
+  const readNotificationChoices = useCallback(async () => {
+    const lists = await Promise.all(["auto", "price"].map(async kind => {
+      const rows: any[] = [], seen = new Set<string>(); let after: string | null = null;
+      do {
+        const page = await api(`monitors/${kind}${after ? `?afterId=${encodeURIComponent(after)}` : ""}`);
+        rows.push(...page.items.map((row: any) => ({ ...row, kind })));
+        after = page.nextCursor || null;
+        if (after && seen.has(after)) throw new Error("通知一覧が更新されています。再読み込みしてください。");
+        if (after) seen.add(after);
+      } while (after);
+      return rows;
+    }));
+    return lists.flat();
+  }, [api]);
+  const loadNotificationChoices = useCallback(async () => {
+    const rows = await readNotificationChoices(); setNotificationChoices(rows); setNotificationNext({ auto: null, price: null }); return rows;
+  }, [readNotificationChoices]);
+  useEffect(() => {
+    if (!inStudio) return;
+    let active = true; setNotificationLoading(true); setNotificationError("");
+    readNotificationChoices().then(rows => { if (active) { setNotificationChoices(rows); setNotificationNext({ auto: null, price: null }); } })
+      .catch(err => { if (active) setNotificationError(err.message); }).finally(() => { if (active) setNotificationLoading(false); });
+    return () => { active = false; };
+  }, [readNotificationChoices, inStudio]);
+  async function prepareApply() {
+    const rows = await loadNotificationChoices();
+    const affected = selected ? rows.filter(row => row.workflowId === selected.id) : [];
+    if (!affected.length) { setNotificationOpen(true); return; }
+    setApplyTargets(affected);
+  }
+  async function applyToAttached() {
+    const rows = await readNotificationChoices(), affected = rows.filter(row => row.workflowId === selected?.id);
+    if (!affected.length || JSON.stringify(affected.map(row => [row.kind, row.id]).sort()) !== JSON.stringify((applyTargets || []).map(row => [row.kind, row.id]).sort())) {
+      setNotificationChoices(rows); setApplyTargets(affected.length ? affected : null); if (!affected.length) setNotificationOpen(true);
+      throw new Error("対象の通知が変わりました。適用先を確認し直してください。");
+    }
+    const saved = dirty || !selected ? await save() : selected; if (!saved) return;
+    const activation = await api(`workflows/${saved.id}/activate`, "POST", { expectedRevision: saved.revision });
+    setSelected({ ...saved, ...activation, enabled: true, activeRevision: saved.revision }); setApplyTargets(null);
+    setNotice(`${affected.length}件の通知に適用しました。`);
+    try { await choose(saved); await refresh(); }
+    catch { setError("通知に適用済みです。画面を再読み込みしてください。"); }
+  }
+  useEffect(() => { if (!inStudio) { setNotificationOpen(false); setMemoOpen(false); } }, [inStudio]);
+  async function notificationTask(work: () => Promise<unknown>, reading = false) {
+    setBusy(true); setNotificationActionError(""); if (reading) setNotificationError(""); setError(""); setNotice("");
+    try { await work(); }
+    catch (err: any) { if (reading) setNotificationError(err.message); else setNotificationActionError(err.message); }
+    finally { setBusy(false); }
+  }
+  async function useForNotification(cloneOnly = false) {
+    if (!targetNotification || readOnly) return;
+    const rows = await readNotificationChoices();
+    const affected = selected ? rows.filter(row => row.workflowId === selected.id && (row.kind !== targetNotification.kind || row.id !== targetNotification.id)) : [];
+    if (!cloneOnly && affected.length && (dirty || !selected.enabled || selected.activeRevision !== selected.revision) && !confirm(`選んだ通知に加えて、次の${affected.length}件にも変更を適用します。\n${affected.map(row => row.name).join("\n")}\n続けますか？`)) return;
+    const saved = cloneOnly ? await api("workflows", "POST", { definition: { ...draft, name: `${draft?.name}（${targetNotification.name}用）`.slice(0, 120) }, bindings, scope: currentScope }) : dirty || !selected ? await save() : selected;
+    if (!saved) return;
+    if (cloneOnly) { setSelected(saved); setDraft(saved.draft); setBindings(saved.bindings); }
+    let applied = saved;
+    if (!saved.enabled || saved.activeRevision !== saved.revision) {
+      const activation = await api(`workflows/${saved.id}/activate`, "POST", { expectedRevision: saved.revision });
+      applied = { ...saved, ...activation, enabled: true, activeRevision: saved.revision }; setSelected(applied);
+    }
+    await api(`workflows/${applied.id}/attach`, "POST", { targetKind: targetNotification.kind, targetId: targetNotification.id });
+    try { await choose(applied); await refresh(); await loadNotificationChoices(); setNotificationError(""); setNotificationOpen(false); }
+    catch { setNotificationError("通知に適用済みです。画面を再読み込みしてください。"); }
+    setNotice(`「${targetNotification.name}」に適用しました。${!targetNotification.enabled ? "この通知は停止中です。" : "次の新着・価格変化から通知します。"}`);
+  }
   return <div className={`automation-app space-y-3 ${inStudio ? "automation-studio" : ""}`}>
-    {!inStudio && <><header className="automation-header"><h1 className="text-xl font-semibold">通知</h1><label className="flex items-center gap-2 text-sm">作成先<select className={field} value={scope} onChange={e => setScope(e.target.value)}><option value="private">自分だけ</option>{guildId && canEdit && <option value="guild">サーバー共有</option>}</select></label></header>
-    <nav className="automation-navigation" aria-label="通知メニュー">{[["monitors", "通知一覧"], ["rules", "スタジオ"], ["history", "配信予定・履歴"], ["dictionaries", "辞書"], ["marketplace", "共有ルール"]].map(([id, name]) => <button key={id} disabled={!recoveryReady || busy} aria-current={tab === id ? "page" : undefined} onClick={() => { setTab(id); void task(refresh); }}>{name}</button>)}</nav></>}
+    {!inStudio && <><header className="automation-header"><div><h1 className="text-xl font-semibold">自動通知</h1></div><label className="flex items-center gap-2 text-sm">作成先<select className={field} value={scope} onChange={e => setScope(e.target.value)}><option value="private">自分だけ</option>{guildId && canEdit && <option value="guild">サーバー共有</option>}</select></label></header>
+    <nav className="automation-navigation" aria-label="通知メニュー">{[["monitors", "通知一覧"], ["rules", "通知ルール"], ["history", "配信予定・履歴"], ["dictionaries", "辞書"], ["marketplace", "共有ルール"]].map(([id, name]) => <button key={id} disabled={!recoveryReady || busy} aria-current={tab === id ? "page" : undefined} onClick={() => { setTab(id); void task(refresh); }}>{name}</button>)}</nav></>}
     {error && <p role="alert" className="rounded border border-destructive bg-destructive/5 p-3 text-sm text-destructive">{error}</p>}{notice && <p role="status" className="text-sm text-muted-foreground">{notice}</p>}
     {recoveryWarning && <p role="alert" className="rounded border border-amber-500 p-3 text-sm">{recoveryWarning}</p>}
-    {catalog?.deliverySafety?.available === false && !inStudio && <p role="status" className="rounded border border-amber-500 p-3 text-sm">機械チェックを利用できないため、送信・公開は失敗として終了します。時間をおいて再試行してください。</p>}
-    {dirty && !inStudio && <p role="status" className="text-xs text-muted-foreground">未保存 · 秘密値を含まない編集はこのブラウザのタブに24時間退避します</p>}
-    {tab === "monitors" && <MonitorManager api={api} guildId={guildId} canEdit={canEdit} scope={scope} destinations={destinations} rules={items} refresh={refresh} />}
-    {tab === "history" && <DeliveryHistory api={api} canEdit={canEdit} />}
+    {catalog?.deliverySafety?.available === false && !inStudio && <p role="status" className="rounded border border-amber-500 p-3 text-sm">送信・公開を利用できません。時間をおいて再試行してください。</p>}
+    {dirty && !inStudio && <p role="status" className="text-xs text-muted-foreground">ルールに未保存</p>}
+    {visitedResources.includes("monitors") && <div hidden={tab !== "monitors"} key={`monitors:${viewerId}:${guildId || "personal"}`}><MonitorManager active={tab === "monitors"} api={api} guildId={guildId} canEdit={canEdit} scope={scope} destinations={destinations} rules={items} refresh={refresh} /></div>}
+    {visitedResources.includes("history") && <div hidden={tab !== "history"} key={`history:${viewerId}:${guildId || "personal"}`}><DeliveryHistory api={api} canEdit={canEdit} active={tab === "history"} /></div>}
     {tab === "rules" && <>
-      {studioOpen && draft ? <nav className="automation-workspace-navigation" aria-label="スタジオの移動"><button className={button} disabled={busy} onClick={() => setStudioOpen(false)}>ルール一覧へ</button><div><button className={button} disabled={busy} onClick={() => setTab("monitors")}>通知一覧</button><button className={button} disabled={busy} onClick={() => setTab("history")}>配信予定・履歴</button></div></nav> : <>
-      <div className="flex flex-wrap gap-2"><button className={button} disabled={busy} onClick={() => { if (canReplaceDraft()) void task(async () => { setSelected(null); setDraft(await api("template")); setBindings(emptyBindings); setStudioOpen(true); setEditorValid(false); }); }}>新しいルール</button>{draft && <button className={button} onClick={() => setStudioOpen(true)}>編集中のルールへ戻る</button>}<label className={button}>パッケージをインポート<input className="hidden" type="file" accept=".json,.zip" onChange={e => { const file = e.target.files?.[0]; if (file) void task(() => importPackage(file)); }} /></label></div>
-      <div className="grid gap-2 md:grid-cols-3">{items.map(item => <button key={item.id} className="automation-library-card text-left" onClick={() => { if (canReplaceDraft()) void task(() => choose(item)); }}><div className="font-medium">{item.name}</div><div className="text-xs text-muted-foreground">{item.scope === "private" ? "個人用" : "サーバー共有"} · 下書き {item.revision} · {item.enabled ? `実行版 ${item.activeRevision}` : "停止中"}</div></button>)}</div>
-      {catalog && <details className="rounded border p-3"><summary>目的別テンプレート（{catalog.templateCount}構成）</summary><div className="mt-3 flex flex-wrap gap-2"><select aria-label="目的" className={field + " max-w-64"} value={goal} onChange={e => setGoal(e.target.value)}>{catalog.goals.map((g: any) => <option key={g.id} value={g.id}>{g.label}</option>)}</select><select aria-label="配信時間" className={field + " max-w-48"} value={time} onChange={e => setTime(e.target.value)}>{catalog.times.map((t: any) => <option key={t.id} value={t.id}>{t.label}</option>)}</select><select aria-label="表示形式" className={field + " max-w-40"} value={display} onChange={e => setDisplay(e.target.value)}>{catalog.formats.map((f: string) => <option key={f}>{f}</option>)}</select><button className={button} onClick={() => { if (canReplaceDraft()) void task(async () => { setSelected(null); setDraft(await api(`template?goal=${goal}&time=${time}&format=${display}`)); setBindings(emptyBindings); setStudioOpen(true); setEditorValid(false); }); }}>テンプレートから作成</button></div></details>}
-      </>}
+      {studioOpen && draft ? <nav className="automation-workspace-navigation" aria-label="スタジオの移動"><button className={button + " studio-back"} disabled={busy} onClick={() => setStudioOpen(false)}><ArrowLeft size={16} aria-hidden="true" />ルール一覧へ</button><div><button className={button} disabled={busy} onClick={() => setTab("monitors")}>通知一覧</button><button className={button} disabled={busy} onClick={() => setTab("history")}>配信予定・履歴</button></div></nav> : <div className="studio-library">
+        <section className="studio-start" aria-labelledby={`${workspaceId}-start`}>
+          <div className="studio-section-heading"><div><h2 id={`${workspaceId}-start`}>通知ルールを作る</h2></div><span className="studio-scope">{scope === "private" ? "自分だけ" : "サーバー共有"}</span></div>
+          <div className="studio-start-cards">{starters.map((starter, index) => <button key={`${starter.goal}-${starter.time}`} className="studio-start-card" aria-label={index === 0 ? "新しいルール" : `${starter.label}ルールを作成`} disabled={busy || !recoveryReady || !catalog} onClick={() => createTemplate(starter.goal, starter.time)}><starter.icon size={22} aria-hidden="true" /><span><strong>{starter.label}</strong></span><ArrowRight size={16} aria-hidden="true" /></button>)}</div>
+          {catalog && <details className="studio-template-options"><summary>テンプレートを選ぶ</summary><div className="studio-template-fields"><label>通知する内容<select aria-label="目的" className={field} value={goal} onChange={e => setGoal(e.target.value)}>{catalog.goals.map((g: any) => <option key={g.id} value={g.id}>{g.label}</option>)}</select></label><label>通知する時間<select aria-label="配信時間" className={field} value={time} onChange={e => setTime(e.target.value)}>{catalog.times.map((t: any) => <option key={t.id} value={t.id}>{t.label}</option>)}</select></label><label>表示形式<select aria-label="表示形式" className={field} value={display} onChange={e => setDisplay(e.target.value)}>{catalog.formats.map((f: string) => <option key={f} value={f}>{formatNames[f] || f}</option>)}</select></label><button className={button + " automation-save-primary"} disabled={busy || !recoveryReady} onClick={() => createTemplate(goal, time, display)}>ルールを作る</button></div></details>}
+          <div className="studio-source-guide"><button className={button} disabled={busy} onClick={() => setTab("monitors")}>URLと通知先を登録<ArrowRight size={14} aria-hidden="true" /></button></div>
+        </section>
+        {draft && <div className="studio-resume"><div><strong>{draft.name || "名前のないルール"}</strong><span>{dirty ? "未保存" : "保存済み"}</span></div><button className={button} disabled={busy} onClick={() => setStudioOpen(true)}>編集を続ける<ArrowRight size={16} aria-hidden="true" /></button></div>}
+        <section className="studio-saved-rules" aria-labelledby={`${workspaceId}-rules`}>
+          <div className="studio-section-heading"><div><h2 id={`${workspaceId}-rules`}>ルール一覧 <span className="studio-count">{items.length}</span></h2></div><div className="studio-library-tools"><button className={button} disabled={busy} onClick={() => setTab("marketplace")}>共有ルールを探す</button><label className={button + " studio-import"}><FileUp size={16} aria-hidden="true" />ルールを取り込む<input className="sr-only" type="file" accept=".json,.zip" disabled={busy || !recoveryReady} onChange={e => { const file = e.target.files?.[0]; e.target.value = ""; if (file) void task(() => importPackage(file)); }} /></label></div></div>
+          {items.length > 0 && <div className="studio-library-filter"><label className="studio-search"><span>ルールを検索</span><div><Search size={16} aria-hidden="true" /><input aria-label="ルールを検索" className={field} value={ruleSearch} placeholder="ルール名や説明を検索" onChange={e => setRuleSearch(e.target.value)} /></div></label><label>状態<select aria-label="ルールの状態で絞り込む" className={field} value={ruleState} onChange={e => setRuleState(e.target.value)}><option value="all">すべて</option><option value="active">稼働中</option><option value="paused">停止中</option><option value="draft">未適用</option></select></label><span role="status">{visibleRules.length}件</span></div>}
+          <div className="studio-rule-list">{visibleRules.map(item => <button key={item.id} className="studio-rule-card" disabled={busy || !recoveryReady} onClick={() => { if (canReplaceDraft()) void task(async () => { await choose(item); }); }}><div className="studio-rule-card-heading"><strong>{item.name}</strong><span className="studio-rule-state" data-state={workflowState(item)}>{workflowState(item) === "active" ? "稼働中" : workflowState(item) === "paused" ? "停止中" : "未適用"}</span></div>{item.description && <p>{item.description}</p>}<div className="studio-rule-card-footer"><div className="studio-rule-card-meta"><span>{item.scope === "private" ? "自分だけ" : "サーバー共有"}</span><span>下書き v{item.revision}</span>{!!item.activeRevision && <span>適用版 v{item.activeRevision}</span>}</div><ArrowRight size={16} aria-hidden="true" /></div></button>)}</div>
+          {visibleRules.length === 0 && items.length > 0 && <div className="studio-library-empty"><Search size={22} aria-hidden="true" /><button className={button} onClick={() => { setRuleSearch(""); setRuleState("all"); }}>絞り込みを解除</button></div>}
+        </section>
+      </div>}
       {studioOpen && draft && catalog && <fieldset disabled={busy} className="automation-workbench space-y-3">
-        <header className="automation-workspace-heading nokey">
-          <input aria-label="ルール名" className={field + " font-semibold"} value={draft.name} onChange={e => setDraft({ ...draft, name: e.target.value })} />
+        <header className="automation-workspace-heading nokey studio-workspace-heading">
+          <div className="studio-rule-identity"><label className="studio-rule-name"><span className="sr-only">ルール名</span><input ref={ruleNameInput} aria-label="ルール名" className={field + " font-semibold"} readOnly={readOnly} maxLength={120} value={draft.name} onChange={e => setDraft({ ...draft, name: e.target.value })} /></label><button className={button + " studio-memo-toggle"} aria-label="ルールのメモ" title={draft.description || "ルールにメモを添える"} onClick={() => { setMemoDraft(draft.description || ""); setMemoOpen(true); }}><StickyNote size={15} aria-hidden="true" />メモ</button></div>
           <div role="status" aria-label="ルールの状態" className="automation-workspace-status">
-            <span data-unsaved={dirty} title={dirty ? "秘密値を含まない編集はこのブラウザのタブに24時間退避します" : undefined}>{dirty ? "未保存" : "保存済み"}</span>
+            <span data-unsaved={dirty} >{dirty ? "未保存" : "保存済み"}</span>
             {selected && <span>下書き v{selected.revision}</span>}
-            <span>{!selected?.activeRevision ? "未適用" : selected.enabled ? `実行版 v${selected.activeRevision}` : `停止中 · 適用版 v${selected.activeRevision}`}</span>
+            <span>{!selected?.activeRevision ? "未適用" : selected.enabled ? `実行版 v${selected.activeRevision}` : `停止中（適用版 v${selected.activeRevision}）`}</span>
+            <span>{(selected?.scope || scope) === "private" ? "自分だけ" : "サーバー共有"}{readOnly ? "（閲覧のみ）" : ""}</span>
           </div>
           <div className="automation-workspace-actions">
             <button className={button + " automation-save-primary"} disabled={busy || !editorValid || selected?.scope === "guild" && !canEdit} title="実行版を変えずに下書きを保存" onClick={() => void task(save)}>下書きを保存</button>
-            <button className={button + " automation-apply-secondary"} disabled={busy || !selected || !editorValid || selected.scope === "guild" && !canEdit} title={!selected ? "下書きを保存してから適用してください" : "編集内容を保存し、実行版を切り替えます"} onClick={() => { if (!selected) return; void task(async () => { await save(); const saved = await api(`workflows/${selected.id}`); await api(`workflows/${saved.id}/activate`, "POST", { expectedRevision: saved.revision }); await choose(saved); await refresh(); setNotice("ルールを適用しました。監視への割り当てがある場合、その監視の配信に使用します。"); }); }}>適用</button>
+            <button className={button + " automation-apply-secondary"} disabled={busy || !editorValid || readOnly} title={dirty ? "編集内容を保存して、この版を通知に使います" : "保存済みの下書きを通知に使います"} onClick={() => void task(prepareApply)}>通知に適用</button>
+            <button className={button + " studio-notification-toggle"} disabled={busy} onClick={() => { setNotificationActionError(""); setNotificationOpen(true); }}><Link2 size={15} aria-hidden="true" />通知を選ぶ</button>
             {selected && <details ref={actionsMenu} className="automation-workspace-menu" onKeyDown={event => { if (event.key === "Escape") { event.preventDefault(); if (actionsMenu.current) actionsMenu.current.open = false; actionsToggle.current?.focus(); } }}>
-              <summary ref={actionsToggle}>ルール操作</summary>
+              <summary ref={actionsToggle}>その他の操作</summary>
               <div className="automation-workspace-menu-content">
                 <div role="group" aria-label="実行の切り替え"><h2>実行</h2>
-                  <button className={button} disabled={busy || !selected.activeRevision || selected.scope === "guild" && !canEdit} title={!selected.activeRevision ? "まず下書きを適用してください" : undefined} onClick={() => void task(async () => { await api(`workflows/${selected.id}/state`, "POST", { expectedRevision: selected.revision, enabled: !selected.enabled }); setSelected(await api(`workflows/${selected.id}`)); await refresh(); })}>{selected.enabled ? "停止" : "再開"}</button>
+                  <button className={button} disabled={busy || !selected.activeRevision || selected.scope === "guild" && !canEdit} title={!selected.activeRevision ? "まず下書きを適用してください" : undefined} onClick={() => void task(async () => { await api(`workflows/${selected.id}/state`, "POST", { expectedRevision: selected.revision, enabled: !selected.enabled }); setSelected(await api(`workflows/${selected.id}`)); await refresh(); })}>{selected.enabled ? "ルールを停止" : "ルールを再開"}</button>
                 </div>
                 <div role="group" aria-label="ルールの再利用"><h2>再利用</h2><div>
-                  <button className={button} disabled={!editorValid} onClick={() => void task(async () => { const copy = await api("workflows", "POST", { scope, definition: { ...draft, name: `${draft.name} のコピー`.slice(0, 120) }, bindings }); await refresh(); await choose(copy); })}>複製</button>
-                  <button className={button} onClick={() => { if (dirty && !confirm("未保存の編集は含まれません。保存済みの下書きをエクスポートしますか？")) return; void task(async () => { const data = await api(`workflows/${selected.id}/export`); download(JSON.stringify(data, null, 2), "automation-package.json"); }); }}>共有用エクスポート</button>
-                </div><p>エクスポートは保存済みの下書き</p></div>
+                  <button className={button} disabled={!editorValid} onClick={() => void task(async () => { const copy = await api("workflows", "POST", { scope, definition: { ...draft, name: `${draft.name} のコピー`.slice(0, 120) }, bindings }); await refresh(); await choose(copy); })}>ルールを複製</button>
+                  <button className={button} onClick={() => { if (dirty && !confirm("未保存の編集は含まれません。保存済みの下書きをエクスポートしますか？")) return; void task(async () => { const data = await api(`workflows/${selected.id}/export`); download(JSON.stringify(data, null, 2), "automation-package.json"); }); }}>共有用に書き出す</button>
+                </div></div>
                 <div role="group" aria-label="版の確認"><h2>版の確認</h2><button className={button} onClick={() => void task(async () => { setHistory(await api(`workflows/${selected.id}/history`)); if (actionsMenu.current) actionsMenu.current.open = false; })}>変更履歴</button></div>
                 <div role="group" aria-label="ルールの削除" className="automation-workspace-danger"><h2>削除</h2>
-                  <button className={`${button} text-destructive`} disabled={selected.scope === "guild" && !canEdit} onClick={() => { if (confirm("このルールを削除し、未送信の配信を取り消しますか？")) void task(async () => { await api(`workflows/${selected.id}`, "DELETE", { expectedRevision: selected.revision }); setSelected(null); setDraft(null); await refresh(); }); }}>削除</button>
+                  <button className={`${button} text-destructive`} disabled={selected.scope === "guild" && !canEdit} onClick={() => { if (confirm("このルールを削除し、未送信の配信を取り消しますか？")) void task(async () => { await api(`workflows/${selected.id}`, "DELETE", { expectedRevision: selected.revision }); setSelected(null); setDraft(null); await refresh(); }); }}>ルールを削除</button>
                 </div>
               </div>
             </details>}
           </div>
+          {(readOnly || dirty || !selected?.activeRevision || selected.revision !== selected.activeRevision) && <p className="studio-save-guidance studio-critical-note">{readOnly ? <><LockKeyhole size={13} aria-hidden="true" />共有ルールの編集にはサーバー管理権限が必要です</> : <><Check size={13} aria-hidden="true" />下書きを保存しても、適用するまで通知は変わりません</>}</p>}
         </header>
         {history.length > 0 && <section ref={historyPanel} tabIndex={-1} className="automation-version-history nokey" aria-label="変更履歴">
           <div className="automation-version-history-heading"><h2>変更履歴</h2><button className={button} onClick={() => { setHistory([]); actionsToggle.current?.focus(); }}>履歴を閉じる</button></div>
@@ -163,12 +282,25 @@ export function AutomationWorkspace({ viewerId, guildId, canEdit = true }: { vie
             <button className={button} aria-describedby={`${workspaceId}-revision-${row.revision}`} disabled={selected?.scope === "guild" && !canEdit} onClick={() => { if (dirty && !confirm("未保存の編集を置き換えて、この版を下書きに復元しますか？実行中の版は変わりません。")) return; void task(async () => { await api(`workflows/${selected.id}/restore`, "POST", { revision: row.revision, expectedRevision: selected.revision }); await choose(selected); }); }}>この版を下書きに復元</button>
           </div>)}</div>
         </section>}
-        <RuleEditor key={selected?.id || "new"} onValidityChange={setEditorValid} value={draft} bindings={bindings} onChange={setDraft} catalog={catalog} api={api} readOnly={busy || selected?.scope === "guild" && !canEdit} initialTextDraft={textDraft} onTextDraftChange={setTextDraft} />
-        <details><summary className="text-xs text-muted-foreground">説明</summary><textarea aria-label="ルール説明" className={field} value={draft.description || ""} onChange={e => setDraft({ ...draft, description: e.target.value })} /></details>
-        <details className="rounded border p-3"><summary>辞書・通知先の割り当て</summary><p className="my-2 text-sm text-muted-foreground">default は監視に登録した通知先です。追加の名前を使うとブロックから宛先を分岐できます。</p><input aria-label="差し込み名" className={field} value={resourceAlias} onChange={e => setResourceAlias(e.target.value)} /><div className="mt-2 flex flex-wrap gap-2"><select className={field} aria-label="辞書を割り当て" value="" onChange={e => { const d = dictionaries.find(d => d.id === e.target.value); if (d) setBindings({ ...bindings, dictionaries: { ...bindings.dictionaries, [resourceAlias]: { id: d.id, revision: d.revision } } }); }}><option value="">辞書を選択</option>{dictionaries.map(d => <option key={d.id} value={d.id}>{d.name} / v{d.revision}</option>)}</select><select className={field} aria-label="通知先を割り当て" value="" onChange={e => e.target.value && setBindings({ ...bindings, destinations: { ...bindings.destinations, [resourceAlias]: e.target.value } })}><option value="">通知先を選択</option>{destinations.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}</select></div>{Object.entries(bindings.dictionaries).map(([alias, ref]) => <div key={alias} className="text-sm">辞書: {alias} / v{ref.revision} <button onClick={() => setBindings({ ...bindings, dictionaries: Object.fromEntries(Object.entries(bindings.dictionaries).filter(([k]) => k !== alias)) })}>解除</button></div>)}{Object.keys(bindings.destinations).map(alias => <div key={alias} className="text-sm">通知先: {alias} <button onClick={() => setBindings({ ...bindings, destinations: Object.fromEntries(Object.entries(bindings.destinations).filter(([k]) => k !== alias)) })}>解除</button></div>)}</details>
+        <RuleEditor key={selected?.id || "new"} onValidityChange={setEditorValid} value={draft} bindings={bindings} resources={{ destinations, dictionaries }} onBindingsChange={setBindings} onChange={setDraft} catalog={catalog} api={api} readOnly={busy || selected?.scope === "guild" && !canEdit} initialTextDraft={textDraft} onTextDraftChange={setTextDraft} />
       </fieldset>}
+      {inStudio && applyTargets && <AutomationDialog title="通知への適用を確認" busy={busy} error={error} onCancel={() => setApplyTargets(null)}><p>このルールを使う{applyTargets.length}件の通知を更新します。</p><ul>{applyTargets.map(row => <li key={`${row.kind}:${row.id}`}>{row.name}{!row.enabled ? "（停止中）" : ""}</li>)}</ul><button className={button} disabled={busy || !editorValid || readOnly} onClick={() => void task(applyToAttached)}>{applyTargets.length}件の通知に適用</button><button className={button} onClick={() => { setApplyTargets(null); setNotificationOpen(true); }}>1件だけ変更する通知を選ぶ</button></AutomationDialog>}
+      {inStudio && draft && memoOpen && <AutomationDialog title="ルールのメモ" busy={busy} onCancel={() => setMemoOpen(false)}><label className="studio-memo-field">メモ<textarea aria-label="ルール説明" className={field} readOnly={readOnly} rows={4} maxLength={8000} value={memoDraft} placeholder="目的や覚えておきたいこと" onChange={event => setMemoDraft(event.target.value)} /></label><div className="studio-dialog-actions"><button className={button + " automation-save-primary"} disabled={busy} onClick={() => { if (!readOnly) setDraft({ ...draft, description: memoDraft }); setMemoOpen(false); }}>{readOnly ? "閉じる" : "メモを反映"}</button></div></AutomationDialog>}
+      {inStudio && notificationOpen && <AutomationDialog title="ルールを使う通知" busy={busy} error={notificationError || notificationActionError} onCancel={() => setNotificationOpen(false)}><div className="studio-notification-dialog-content">
+          {attachedNotifications.length > 0 && <div className="studio-attached-notifications"><Check size={16} aria-hidden="true" /><span>{attachedNotifications.map(row => row.name).join("、")}</span></div>}
+          {readOnly && <p role="status" className="studio-critical-note"><LockKeyhole size={15} aria-hidden="true" />共有ルールの適用にはサーバー管理権限が必要です</p>}
+          {notificationLoading ? <p role="status">通知を読み込み中…</p> : <>
+            {notificationError && <button className={button} disabled={busy} onClick={() => void notificationTask(loadNotificationChoices, true)}>再読み込み</button>}
+            {!notificationError && matchingNotifications.length === 0 && <p role="status">{currentScope === "guild" ? "サーバー共有" : "自分用"}で使える通知は0件です。通知一覧から同じ範囲の通知を登録してください。</p>}
+            {!notificationError && matchingNotifications.length > 0 && <div className="studio-notification-assignment"><label>通知<select className={field} aria-label="ルールを使う通知" disabled={readOnly || busy} value={notificationTarget} onChange={e => setNotificationTarget(e.target.value)}><option value="">通知を選択</option>{["auto", "price"].map(kind => <optgroup key={kind} label={kind === "auto" ? "新着通知" : "価格通知"}>{matchingNotifications.filter(row => row.kind === kind).map(row => <option key={`${kind}:${row.id}`} value={`${kind}:${row.id}`}>{row.name}{row.workflowId === selected?.id ? "（設定済み）" : ""}{!row.enabled ? "（停止中）" : ""}</option>)}</optgroup>)}</select></label><button className={button + " automation-save-primary"} disabled={!targetNotification || !editorValid || readOnly || busy} onClick={() => void notificationTask(() => useForNotification())}>保存して通知に適用</button>{selected && attachedNotifications.some(row => row.kind !== targetNotification?.kind || row.id !== targetNotification?.id) && <button className={button} disabled={!targetNotification || !editorValid || readOnly || busy} onClick={() => void notificationTask(() => useForNotification(true))}>ルールを複製して、この通知だけに適用</button>}</div>}
+            {attachedNotifications.length > 0 && <details><summary>このルールを使う通知 {attachedNotifications.length}件</summary><ul>{attachedNotifications.map(row => <li key={`${row.kind}:${row.id}`}>{row.name}</li>)}</ul></details>}
+            {targetNotification && <div className="studio-assignment-guidance"><p className="studio-critical-note"><Bell size={14} aria-hidden="true" />{destinations.find(d => d.id === targetNotification.destinationId)?.name || (targetNotification.destinationType === "dm" ? "自分のDM" : "登録済みチャンネル")}</p>{targetNotification.workflowId && targetNotification.workflowId !== selected?.id && <p className="studio-critical-note"><AlertTriangle size={14} aria-hidden="true" />この通知で使用中のルールを置き換えます</p>}</div>}
+            {(notificationNext.auto || notificationNext.price) && <button className={button} disabled={busy} onClick={() => void notificationTask(async () => { const pages = await Promise.all(["auto", "price"].filter(kind => notificationNext[kind]).map(async kind => ({ kind, page: await api(`monitors/${kind}?afterId=${encodeURIComponent(notificationNext[kind]!)}`) }))); setNotificationChoices(old => [...old, ...pages.flatMap(({ page }) => page.items)]); setNotificationNext(old => ({ ...old, ...Object.fromEntries(pages.map(({ kind, page }) => [kind, page.nextCursor])) })); }, true)}>通知をさらに表示</button>}
+          </>}
+          <button className={button + " studio-notification-list-link"} disabled={busy} onClick={() => { setNotificationOpen(false); setScope(currentScope); setTab("monitors"); }}>通知一覧を開く<ArrowRight size={14} aria-hidden="true" /></button>
+        </div></AutomationDialog>}
     </>}
-    {tab === "dictionaries" && <DictionaryManager api={api} dictionaries={dictionaries} scope={scope} canEdit={canEdit} refresh={refresh} />}
-    {tab === "marketplace" && <MarketplaceManager api={api} scope={scope} canEdit={canEdit} rules={items} dictionaries={dictionaries} currentRuleId={selected?.id} refresh={refresh} openRule={async id => { if (canReplaceDraft()) { await choose({ id }); setTab("rules"); } }} />}
+    {visitedResources.includes("dictionaries") && <div hidden={tab !== "dictionaries"} key={`dictionaries:${viewerId}:${guildId || "personal"}`}><DictionaryManager api={api} dictionaries={dictionaries} scope={scope} canEdit={canEdit} refresh={refresh} /></div>}
+    {visitedResources.includes("marketplace") && <div hidden={tab !== "marketplace"} key={`marketplace:${viewerId}:${guildId || "personal"}`}><MarketplaceManager active={tab === "marketplace"} api={api} scope={scope} canEdit={canEdit} rules={items} dictionaries={dictionaries} currentRuleId={selected?.id} refresh={refresh} openRule={async id => { if (canReplaceDraft()) { await choose({ id }); setTab("rules"); } }} /></div>}
   </div>;
 }

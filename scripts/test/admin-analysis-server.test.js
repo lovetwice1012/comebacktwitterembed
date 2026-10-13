@@ -18,6 +18,7 @@ const fs = require('node:fs');
   const request=JSON.parse(raw);
   fs.appendFileSync(process.env.FIXTURE_COUNT_FILE, request.actionId + '\\n');
   if (request.type === 'delay') await new Promise(resolve=>setTimeout(resolve, request.input.ms || 500));
+  if (request.type === 'gate') while (!fs.existsSync(request.input.releaseFile)) await new Promise(resolve=>setTimeout(resolve, 15));
   if (request.type === 'invalid') { process.stdout.write('not-json'); process.exit(0); }
   if (request.type === 'large') { process.stdout.write('x'.repeat(33*1024*1024)); return; }
   if (request.type === 'stderr') process.stderr.write('x'.repeat(100000));
@@ -204,11 +205,17 @@ test('orphaned running receipt is reconciled to unknown on startup without spawn
 
 test('client disconnection does not cancel a receipt-owned action and stderr remains bounded', async t => {
     const fixture = await setup(t);
+    const releaseFile = path.join(fixture.directory, 'disconnect-release.flag');
     const req = http.request(`${fixture.url}/execute`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Admin-Agent-Token': TOKEN } });
     req.on('error', () => {});
-    req.end(JSON.stringify({ actionId: 'disconnect', type: 'delay', input: { ms: 200 } }));
-    await until(async () => (await receipt(fixture.url, 'disconnect')).data.state === 'running');
-    req.destroy();
+    req.end(JSON.stringify({ actionId: 'disconnect', type: 'gate', input: { releaseFile } }));
+    // A short timed worker can finish before a busy parent observes "running".
+    // Hold it explicitly until the socket has disconnected; the production
+    // worker deadlines remain covered by the separate deadline tests.
+    try {
+        await until(async () => (await receipt(fixture.url, 'disconnect')).data.state === 'running');
+        req.destroy();
+    } finally { await fs.writeFile(releaseFile, 'release'); }
     await until(async () => (await receipt(fixture.url, 'disconnect')).data.state === 'completed');
     assert.deepEqual(await fixture.count(), ['disconnect']);
     await post(fixture.url, { actionId: 'stderr', type: 'stderr', input: {} });

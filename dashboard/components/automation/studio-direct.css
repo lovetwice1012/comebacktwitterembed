@@ -1,0 +1,49 @@
+.studio-direct { outline: none; }
+.studio-direct-toolbar { display: flex; align-items: center; gap: 14px; padding: 4px 0 12px; }
+.studio-direct-status { margin-left: auto; display: flex; align-items: center; gap: 6px; color: hsl(var(--muted-foreground)); font-size: 11px; }
+.studio-direct-status[data-valid="true"] { color: hsl(var(--studio-accent)); }
+.studio-direct-actions { display: flex; align-items: center; gap: 6px; }
+.studio-direct-actions > button { display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-width: 38px; }
+.studio-direct .studio-test-trigger { margin-left: 0; }
+.studio-direct .studio-canvas-surface { height: clamp(520px, calc(100dvh - 260px), 1000px); min-height: 520px; }
+.studio-direct .studio-flow-block-editing { z-index: 100; box-shadow: 0 10px 35px hsl(var(--foreground) / .14); }
+.studio-canvas-dock { position: absolute; top: 14px; left: 14px; z-index: 8; display: flex; align-items: center; gap: 3px; padding: 5px; border: 1px solid hsl(var(--border)); background: hsl(var(--card) / .96); border-radius: 11px; box-shadow: 0 3px 12px hsl(var(--foreground) / .05); }
+.studio-canvas-dock > button, .studio-selection-bar > button { display: grid; place-items: center; min-height: 36px; width: 36px; border-radius: 7px; color: hsl(var(--muted-foreground)); }
+.studio-canvas-dock > button:first-child { background: hsl(var(--studio-accent)); color: white; }
+.studio-canvas-dock > button:hover, .studio-selection-bar > button:hover { background: hsl(var(--muted)); color: hsl(var(--foreground)); }
+.studio-canvas-dock > button[aria-pressed="true"] { background: hsl(var(--studio-accent) / .1); color: hsl(var(--studio-accent)); }
+.studio-canvas-dock > button:disabled, .studio-selection-bar > button:disabled { opacity: .4; cursor: default; }
+.studio-dock-divider { width: 1px; height: 22px; margin: 0 5px; background: hsl(var(--border)); }
+.studio-selection-bar { position: absolute; z-index: 8; top: 14px; right: 14px; display: flex; align-items: center; gap: 4px; border: 1px solid hsl(var(--studio-accent) / .25); background: hsl(var(--card)); border-radius: 10px; padding: 5px 7px; box-shadow: 0 3px 12px hsl(var(--foreground) / .05); }
+.studio-selection-bar > span { font-size: 12px; padding: 0 8px; font-weight: 600; color: hsl(var(--studio-accent)); }
+.studio-direct .react-flow__selection { background: hsl(var(--studio-accent) / .08); border: 1px solid hsl(var(--studio-accent) / .7); }
+.studio-canvas-surface[data-right-panning="true"] :is(.react-flow, .react-flow *) { cursor: grabbing !important; }
+.studio-direct .react-flow__nodesselection-rect { background: hsl(var(--studio-accent) / .03); border: 1px dashed hsl(var(--studio-accent) / .65); border-radius: 8px; }
+.studio-canvas-shortcuts { position: absolute; z-index: 3; bottom: 14px; left: 66px; max-width: calc(100% - 210px); padding: 6px 10px; border-radius: 6px; font-size: 11px; line-height: 1.5; color: hsl(var(--muted-foreground)); background: hsl(var(--card) / .9); pointer-events: none; }
+.studio-canvas-message { position: absolute; top: 74px; left: 14px; right: 14px; z-index: 11; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 9px 12px; font-size: 12px; color: hsl(var(--studio-accent)); border: 1px solid hsl(var(--studio-accent) / .2); background: hsl(var(--card)); border-radius: 8px; box-shadow: 0 3px 10px hsl(var(--foreground) / .04); }
+.studio-canvas-message > button { min-height: 26px; width: 26px; flex-shrink: 0; }
+.studio-canvas-message-error { color: hsl(var(--destructive)); border-color: hsl(var(--destructive) / .35); }
+.studio-context-menu { position: absolute; z-index: 250; width: 252px; max-width: calc(100% - 16px); overflow-y: auto; padding: 6px; border: 1px solid hsl(var(--border)); border-radius: 10px; background: hsl(var(--card)); box-shadow: 0 12px 50px hsl(var(--foreground) / .19); }
+.studio-context-menu > button { display: flex; align-items: center; justify-content: space-between; text-align: left; gap: 12px; padding: 8px 10px; width: 100%; min-height: 36px; border-radius: 5px; font-size: 12px; background: transparent; }
+.studio-context-menu > button:hover:not(:disabled), .studio-context-menu > button:focus-visible { background: hsl(var(--studio-accent) / .08); color: hsl(var(--studio-accent)); outline: none; }
+.studio-context-menu > button[data-danger] { color: hsl(var(--destructive)); }
+.studio-context-menu > button:disabled { opacity: .35; cursor: default; }
+.studio-context-menu > button[data-divider] { margin-top: 5px; border-top: 1px solid hsl(var(--border)); padding-top: 10px; border-radius: 0; }
+.studio-context-menu kbd { font-family: inherit; font-size: 10px; color: hsl(var(--muted-foreground)); white-space: nowrap; }
+.studio-source-recovery { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 10px; border: 1px solid hsl(40 65% 55% / .5); font-size: 12px; border-radius: 8px; margin-bottom: 10px; }
+.studio-rule-issues { padding: 8px 12px; margin-bottom: 10px; background: hsl(40 80% 50% / .08); border-radius: 8px; }
+.studio-rule-issues > button { display: block; text-align: left; font-size: 12px; line-height: 1.6; }
+.studio-direct .studio-a11y-jump:focus-within { position: relative; padding: 8px; margin-bottom: 8px; width: auto; height: auto; clip: auto; overflow: visible; }
+.studio-direct .studio-inline-done { font-size: 11px; }
+@media (max-width: 700px) {
+  .studio-direct-toolbar { flex-wrap: wrap; gap: 8px; padding-bottom: 8px; }
+  .studio-direct-status { order: 3; flex: 1; justify-content: flex-end; }
+  .studio-direct-actions { margin-left: auto; }
+  .studio-direct .studio-canvas-surface { height: 70dvh; min-height: 480px; max-height: none; scroll-margin-top: 240px; }
+  .studio-direct .studio-flow-inline .studio-node-settings :is(input, select, textarea) { font-size: 16px; }
+  .studio-canvas-dock { top: 10px; left: 10px; }
+  .studio-canvas-dock > button { min-height: 40px; width: 40px; }
+  .studio-selection-bar { top: 68px; left: 10px; right: auto; }
+  .studio-canvas-shortcuts { left: 60px; right: 14px; bottom: 10px; max-width: none; font-size: 10px; }
+  .studio-context-menu > button { min-height: 44px; }
+}

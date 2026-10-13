@@ -45,6 +45,11 @@ async function startHarness() {
     if (endpoint.startsWith('incidents/')) return incidents[0];
     if (endpoint === 'events' || endpoint === 'notifications') return { appliedFilters: Object.fromEntries(q), items: [] };
     if (endpoint === 'actions' && req.method === 'GET') return { appliedFilters: Object.fromEntries(q), items: [...actions.values()].filter(row => (!q.get('status') || row.status === q.get('status')) && (!q.get('guildId') || row.input?.guildId === q.get('guildId'))) };
+    if (endpoint.startsWith('actions/by-key/')) {
+      const receipt = receipts.get(decodeURIComponent(endpoint.slice('actions/by-key/'.length)));
+      if (!receipt) throw new Error('Receipt not found');
+      return receipt;
+    }
     if (endpoint.startsWith('actions/')) return actions.get(endpoint.slice(8));
     if (endpoint === 'actions' && req.method === 'POST') {
       const chunks = []; for await (const chunk of req) chunks.push(chunk);
@@ -56,7 +61,8 @@ async function startHarness() {
         if (request.input.expectedHash !== `revision-${revision}`) throw new Error('SETTINGS_CONFLICT');
         stats.mutations.push(request); settings = { ...settings, [request.input.key]: request.type === 'settings.reset' ? true : request.input.value }; revision++;
         result = { settings, hash: `revision-${revision}`, reflectionStatus: 'saved' };
-      } else result = { outcome: 'preview_generated', steps: [], reason: 'fixture' };
+      } else if (request.type === 'url.inspect' || request.type === 'url.reanalyze' || request.type === 'url.compare') result = { outcome: 'preview_generated', steps: [{ content: '架空の検証用出力' }], settings: {}, context: { guildId: request.input.guildId }, reason: 'fixture' };
+      else result = { outcome: 'preview_generated', steps: [], reason: 'fixture' };
       const action = { id: `action-${actions.size + 1}`, type: request.type, input: request.input, status: 'succeeded', result, createdAt: stamp, updatedAt: stamp };
       actions.set(action.id, action); receipts.set(request.idempotencyKey, action); return action;
     }

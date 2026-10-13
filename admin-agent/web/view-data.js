@@ -5,6 +5,18 @@
   else root.CBTEView = model;
 })(globalThis, function () {
   const outcomes = { F:'完全成功', D:'代替成功', P:'部分成功', E:'処理失敗', U:'取得対象の制約', S:'設定による見送り', C:'明示的取消', I:'実行中', X:'結果不明' };
+  const deliveryOutcomes = { F:'完全成功', D:'代替成功', P:'部分成功', E:'処理失敗', U:'送信結果不明', S:'設定による見送り', C:'取得対象の制約', I:'処理中', X:'完了不明' };
+  function result(value, context = {}) {
+    const payload = context.payload || context;
+    const version = payload.outcomeDefinitionVersion || payload.outcome_definition_version || context.outcomeDefinitionVersion;
+    const kind = String(payload.kind || payload.stage || context.recordKind || '');
+    const legacy = version === 'legacy-delivery-v1' || version === 'delivery-v1' || !version && (Number(payload.instrumentation_version ?? payload.instrumentationVersion) === 1 || /^(send|delivery)[.]/.test(kind));
+    const root = version === 'root-request-v1' || !version && !legacy && (context.definitionVersion === 'root-request-v1' || context.recordKind === 'runs');
+    const contract = legacy ? '送信判定（旧定義）' : root ? '要求結果' : '';
+    const dictionary = legacy ? deliveryOutcomes : root ? outcomes : null;
+    const code = String(value || '');
+    return { label: dictionary?.[code] || (outcomes[code] ? /^(U|C)$/.test(code) ? `${code}（定義未確認）` : outcomes[code] : code || '未確定'), contract, code };
+  }
   function measurement(metrics) {
     const coverage = metrics?.coverage || {};
     const unavailable = coverage.measurementState === 'not_measured' || (!coverage.measurementState && coverage.state === 'no_root_request_records');
@@ -23,7 +35,8 @@
     const kind = payload.kind || payload.type || '種別未記録';
     const stage = payload.stage || '';
     const error = details.error || payload.error;
-    return { payload, details, kind: stage && !kind.includes('.') ? `${stage}.${kind}` : kind, occurredAt: payload.occurredAt || payload.occurred_at || item.occurredAt, timestampInferred:payload.timestampInferred===true, url: details.url || payload.url || details.input || '', outcome: outcomes[payload.outcome || details.outcome] || payload.outcome || details.outcome || '', errorMessage: typeof error === 'string' ? error : error?.message || '', isHTTP: stage === 'http' || kind.startsWith('http.'), id: payload.eventId || payload.event_id || payload.id || item.id || '', search: [stage,kind,details.url,payload.url,details.input,error?.message,payload.outcome,details.outcome].filter(Boolean).join(' ') };
+    const classified = result(payload.outcome || details.outcome, { ...item, payload });
+    return { payload, details, kind: stage && !kind.includes('.') ? `${stage}.${kind}` : kind, occurredAt: payload.occurredAt || payload.occurred_at || item.occurredAt, timestampInferred:payload.timestampInferred===true, url: details.url || payload.url || details.input || '', outcome: classified.label, outcomeContract: classified.contract, errorMessage: typeof error === 'string' ? error : error?.message || '', isHTTP: stage === 'http' || kind.startsWith('http.'), id: payload.eventId || payload.event_id || payload.id || item.id || '', search: [stage,kind,details.url,payload.url,details.input,error?.message,payload.outcome,details.outcome].filter(Boolean).join(' ') };
   }
-  return { measurement, http, event, outcomes };
+  return { measurement, http, event, outcomes, deliveryOutcomes, result };
 });

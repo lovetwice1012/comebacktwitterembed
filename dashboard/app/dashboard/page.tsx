@@ -1,42 +1,23 @@
-import { redirect } from "next/navigation";
-import Link from "next/link";
+import { usesNewDashboardUI } from "@/lib/ui-rollout";
+import LegacyPage from "@/legacy/pages/dashboard";
 import { GuildList } from "@/components/dashboard/guild-list";
-import { GuildSwitcher } from "@/components/dashboard/guild-switcher";
-import { DashboardWorkspace } from "@/components/dashboard/dashboard-workspace";
-import { SignOutButton } from "@/components/dashboard/auth-buttons";
-import { LanguageSwitcher } from "@/components/dashboard/language-switcher";
+import { DashboardShell } from "@/components/dashboard/dashboard-shell";
 import { listVisibleGuilds } from "@/lib/discord";
-import { createTranslator } from "@/lib/i18n";
 import { getDashboardLocale } from "@/lib/server-locale";
 import { requireDashboardSession } from "@/lib/server-session";
+import { getVisibleGuildProviderSummaries } from "@/lib/guild-provider-summary";
 
-type Props = { searchParams: Promise<{ mode?: string }> };
-
-export default async function DashboardPage({ searchParams }: Props) {
+export default async function DashboardPage({ searchParams }: { searchParams: Promise<{ mode?: string }> }) {
   const locale = await getDashboardLocale();
-  const t = createTranslator(locale);
   const session = await requireDashboardSession();
-  const mode = (await searchParams).mode;
-  if (session.user.isAdmin && mode !== "user") redirect("/admin");
-  const guilds = await listVisibleGuilds(session);
-
-  return (
-    <main className="mx-auto min-h-screen max-w-7xl space-y-5 px-3 py-4 sm:space-y-6 sm:px-4 sm:py-6">
-      <header className="flex flex-col items-stretch gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="min-w-0">
-          <h1 className="text-2xl font-semibold">{t("dashboard.guilds.title")}</h1>
-          <p className="text-sm text-muted-foreground">{t("dashboard.guilds.selectHelp")}</p>
-        </div>
-        <div className="flex w-full min-w-0 flex-wrap items-center gap-2 sm:w-auto sm:justify-end">
-          <GuildSwitcher selectedGuildIds={[]} guilds={guilds.map((guild) => ({ guildId: guild.guildId, name: guild.name }))} locale={locale} />
-          <LanguageSwitcher locale={locale} />
-          <Link href="/dashboard/personal-links" className="rounded-md border px-3 py-2 text-sm hover:bg-muted">{locale === "ja" ? "あとで見る・通知" : "Saved links & notifications"}</Link>
-          <SignOutButton locale={locale} />
-        </div>
-      </header>
-      <DashboardWorkspace initialGuildIds={[]} locale={locale} defaultLayout="plain">
-        <GuildList guilds={guilds} locale={locale} />
-      </DashboardWorkspace>
-    </main>
-  );
+  if (!await usesNewDashboardUI(session)) return <LegacyPage searchParams={searchParams} />;
+  const visibleGuilds = await listVisibleGuilds(session, { loadProviderSummary: false });
+  const summaries = await getVisibleGuildProviderSummaries(visibleGuilds.map(guild => guild.guildId)).catch(() => null);
+  const guilds = visibleGuilds.map(guild => ({ ...guild, providerSummary: summaries?.get(guild.guildId) ?? null }));
+  return <DashboardShell locale={locale} isAdmin={session.user.isAdmin} guilds={guilds.map(guild => ({ guildId: guild.guildId, name: guild.name, canEdit: guild.canEdit, canManageGuild: guild.canManageGuild }))}>
+    <section id="servers" className="space-y-5">
+      <header className="dashboard-page-heading"><div><span className="dashboard-eyebrow">{locale === "ja" ? "リンク展開の設定" : "Link expansion settings"}</span><h1>{locale === "ja" ? "サーバー一覧" : "Servers"}</h1></div><span className="dashboard-count">{guilds.length}</span></header>
+      <GuildList guilds={guilds} locale={locale} />
+    </section>
+  </DashboardShell>;
 }

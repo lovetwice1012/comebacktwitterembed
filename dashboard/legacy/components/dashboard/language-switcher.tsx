@@ -1,0 +1,37 @@
+"use client";
+
+import { Globe2 } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { DASHBOARD_LOCALE_OPTIONS } from "@/legacy/lib/discord-locales";
+import { createTranslator, type DashboardLocale } from "@/legacy/lib/i18n";
+
+const COOKIE_MAX_AGE = 60 * 60 * 24 * 365;
+
+export function LanguageSwitcher({ locale }: { locale: DashboardLocale }) {
+  const router = useRouter();
+  const t = createTranslator(locale);
+
+  function setLocale(next: DashboardLocale) {
+    document.cookie = `dashboard_locale=${encodeURIComponent(next)};path=/;max-age=${COOKIE_MAX_AGE};SameSite=Lax`;
+    router.refresh();
+  }
+
+  return (
+    <label className="flex h-9 min-w-0 max-w-full items-center gap-2 rounded-md border bg-card px-2 text-sm text-muted-foreground">
+      <Globe2 size={15} />
+      <span className="sr-only">{t("language.label")}</span>
+      <select
+        className="h-9 min-w-0 max-w-[10rem] bg-transparent text-sm outline-none sm:max-w-none"
+        value={locale}
+        aria-label={t("language.label")}
+        onChange={(event) => setLocale(event.target.value as DashboardLocale)}
+      >
+        {DASHBOARD_LOCALE_OPTIONS.map((item) => (
+          <option key={item.value} value={item.value}>
+            {item.flag} {item.nativeName}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}

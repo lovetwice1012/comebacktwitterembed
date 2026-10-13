@@ -1,7 +1,8 @@
+import { usesNewDashboardUI } from "@/lib/ui-rollout";
+import LegacyPage from "@/legacy/pages/guild-preview";
 import { AccessDenied } from "@/components/dashboard/access-denied";
 import { DashboardShell } from "@/components/dashboard/dashboard-shell";
-import { OutputPreviewCard } from "@/components/preview/output-preview-card";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { ProviderPreviewBrowser } from "@/components/settings/provider-preview-browser";
 import { getGuildAccess } from "@/lib/discord";
 import { createTranslator } from "@/lib/i18n";
 import { getDashboardLocale } from "@/lib/server-locale";
@@ -17,33 +18,21 @@ export default async function PreviewPage({ params }: Params) {
   const locale = await getDashboardLocale();
   const t = createTranslator(locale);
   const session = await requireDashboardSession();
+  if (!await usesNewDashboardUI(session)) return <LegacyPage params={params} />;
   const access = await getGuildAccess(session, guildId);
   if (!access) return <AccessDenied locale={locale} />;
-  const previews = await Promise.all(getBotProviders().map(async (provider) => ({
-    provider,
-    preview: buildPreview(provider.id, await getProviderSettingsState(provider.id, guildId, locale), locale),
-  })));
+  const previews = await Promise.all(getBotProviders().map(async provider => {
+    const states = await getProviderSettingsState(provider.id, guildId, locale);
+    return { providerId: provider.id, label: providerLabel(provider), enabled: states.find(state => state.key === "enabled")?.value === true, preview: buildPreview(provider.id, states, locale) };
+  }));
 
   return (
-    <DashboardShell guildId={guildId} guildName={access.name} canEdit={access.canEdit} locale={locale}>
+    <DashboardShell guildId={guildId} guildName={access.name} canEdit={access.canEdit} locale={locale} isAdmin={session.user.isAdmin}>
       <div className="space-y-4">
         <header>
           <h1 className="text-2xl font-semibold">{t("preview.title")}</h1>
-          <p className="text-sm text-muted-foreground">{t("preview.description")}</p>
         </header>
-        <div className="grid gap-4 xl:grid-cols-2">
-          {previews.map(({ provider, preview }) => (
-            <Card key={provider.id}>
-              <CardHeader>
-                <CardTitle>{providerLabel(provider)}</CardTitle>
-                <CardDescription>{preview.sourceUrl}</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <OutputPreviewCard preview={preview} locale={locale} />
-              </CardContent>
-            </Card>
-          ))}
-        </div>
+        <ProviderPreviewBrowser guildId={guildId} items={previews} locale={locale} />
       </div>
     </DashboardShell>
   );
