@@ -82,6 +82,9 @@ function normalizeSource(providerId, input) {
 }
 
 async function fetchSource(source, options = {}) {
+    if (options.isolate !== false && (options.isolate === true || !options.fetch)) {
+        return require('./isolatedFetch').fetchIsolated(source, monitorConfig(options.config));
+    }
     const adapter = provider(source.provider_id);
     const context = {
         config: monitorConfig(options.config),

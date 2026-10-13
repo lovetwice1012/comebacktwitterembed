@@ -3,6 +3,7 @@
 // Shared guest-only auto-watch helpers for optional provider adapters.
 
 const fetchDefault = require('../../providerFetch').withDeadline(require('node-fetch'));
+const publicAgent = new (require('node:https').Agent)({ lookup: require('./publicDns').lookup });
 
 const MINUTE = 60 * 1000;
 const HOUR = 60 * MINUTE;
@@ -89,20 +90,47 @@ function isRateLimited(response, payload) {
 }
 
 async function request(context, url, options = {}, parser = 'json') {
-    const response = await (context.fetch || fetchDefault)(url, {
-        method: options.method || 'GET',
-        headers: options.headers,
-        body: options.body,
-        timeout: options.timeout ?? context.config.timeoutMs,
-        size: 2 * 1024 * 1024,
-    });
+    const timeout = options.timeout ?? context.config.timeoutMs;
+    const signal = AbortSignal.timeout(timeout);
+    const initial = allowedGuestUrl(url);
+    let target = initial, response;
+    let method = options.method || 'GET', bodyOption = options.body;
+    for (let hop = 0; hop <= 5; hop++) {
+        response = await (context.fetch || fetchDefault)(target.toString(), {
+            method, headers: options.headers, body: bodyOption, timeout, signal, redirect: 'manual',
+            ...(!context.fetch ? { agent: publicAgent } : {}),
+        });
+        if (![301, 302, 303, 307, 308].includes(response.status)) break;
+        response.body?.destroy?.();
+        const location = headerValue(response.headers, 'location');
+        if (!location || hop === 5) throw monitorError('AUTO_WATCH_INVALID_REDIRECT', 'The provider redirect could not be followed safely.');
+        const next = allowedGuestUrl(new URL(location, target));
+        if (guestService(next.hostname) !== guestService(initial.hostname)) throw monitorError('AUTO_WATCH_INVALID_REDIRECT', 'The provider redirected outside its service.');
+        target = next;
+        if (response.status === 303 || [301, 302].includes(response.status) && method === 'POST') { method = 'GET'; bodyOption = undefined; }
+    }
     const etag = headerValue(response.headers, 'etag');
     const lastModified = headerValue(response.headers, 'last-modified');
     if (response.status === 304) return { notModified: true, etag, lastModified, rateLimit: responseRateLimit(response), body: parser === 'text' ? '' : null };
-    const text = await response.text();
-    let body = text;
-    if (parser === 'json') {
-        try { body = text ? JSON.parse(text) : null; } catch {
+    // Keep rate/quota hints without retaining unrelated error-page content.
+    if (!response.ok) {
+        let errorBody = null;
+        if (parser === 'json' && [403, 429].includes(response.status)) {
+            try { errorBody = await require('./streaming').readJsonProjection(response,
+                [['message'], ['error', 'message'], ['retry_after'], ['retryAfter'], ['parameters', 'retry_after']]); }
+            catch { /* A malformed error page still retains its HTTP status. */ }
+        }
+        response.body?.destroy?.();
+        if (isRateLimited(response, errorBody)) {
+            const rate = responseRateLimit(response);
+            throw monitorError('AUTO_WATCH_RATE_LIMITED', 'Upstream rate limit reached.', { status: response.status,
+                retryAfterMs: rate?.resetAtMs ? Math.max(0, rate.resetAtMs - Date.now()) : retryAfterMs(response, errorBody) });
+        }
+        throw monitorError('AUTO_WATCH_UPSTREAM_ERROR', `Upstream returned HTTP ${response.status}.`, { status: response.status });
+    }
+    let body = typeof options.readBody === 'function' ? await options.readBody(response) : await response.text();
+    if (parser === 'json' && typeof body === 'string') {
+        try { body = body ? JSON.parse(body) : null; } catch {
             if (response.status === 429) throw monitorError('AUTO_WATCH_RATE_LIMITED', 'Upstream rate limit reached.', { status: 429, retryAfterMs: retryAfterMs(response) });
             if (!response.ok) throw monitorError('AUTO_WATCH_UPSTREAM_ERROR', `Upstream returned HTTP ${response.status}.`, { status: response.status });
             throw monitorError('AUTO_WATCH_INVALID_RESPONSE', 'Upstream did not return JSON.', { status: response.status });
@@ -117,6 +145,20 @@ async function request(context, url, options = {}, parser = 'json') {
     }
     if (!response.ok) throw monitorError('AUTO_WATCH_UPSTREAM_ERROR', `Upstream returned HTTP ${response.status}.`, { status: response.status });
     return { body, etag, lastModified, notModified: false, rateLimit: responseRateLimit(response) };
+}
+
+function guestService(host) {
+    return ['youtube.com', 'github.com', 'twitch.tv', 'spotify.com', 'pixiv.net', 'booth.pm']
+        .find(domain => host === domain || host.endsWith(`.${domain}`));
+}
+
+function allowedGuestUrl(value) {
+    let parsed;
+    try { parsed = new URL(value); } catch { throw monitorError('AUTO_WATCH_INVALID_REDIRECT', 'The provider returned an invalid URL.'); }
+    if (parsed.protocol !== 'https:' || parsed.username || parsed.password || parsed.port || !guestService(parsed.hostname)) {
+        throw monitorError('AUTO_WATCH_INVALID_REDIRECT', 'The provider URL is outside the allowed public service.');
+    }
+    return parsed;
 }
 
 function requestJson(context, url, options) {

@@ -11,7 +11,17 @@ const {
     sourceError,
     urlFromInput,
 } = require('../autoWatch/_shared');
-const { xmlValue, parseFeedEntries, channelIdFromHtml, parseUploadsPlaylist } = require('./youtubeSourceParser');
+const { xmlValue, parseFeedEntries, channelIdFromHtml, parseUploadsPlaylist, parseInitialData } = require('./youtubeSourceParser');
+const { readHtmlProjection } = require('../autoWatch/streaming');
+const { readFeedProjection } = require('./autoWatchXml');
+
+const UPLOAD_CONTENT = ['contents', 'twoColumnBrowseResultsRenderer', 'tabs', '*', 'tabRenderer', 'content', '**'];
+const UPLOAD_PATHS = [
+    ['**', 'playlistHeaderRenderer', 'ownerText', 'runs', '*', 'navigationEndpoint', 'browseEndpoint', 'browseId'],
+    ['contents', 'twoColumnBrowseResultsRenderer', 'tabs', '*', 'tabRenderer', 'selected'],
+    ...[['videoId'], ['title', 'simpleText'], ['title', 'runs', '*', 'text']].map(path => [...UPLOAD_CONTENT, 'playlistVideoRenderer', ...path]),
+    ...[['contentId'], ['contentType'], ['metadata', 'lockupMetadataViewModel', 'title', 'content']].map(path => [...UPLOAD_CONTENT, 'lockupViewModel', ...path]),
+];
 
 function normalizeSource(input) {
     const raw = String(input || '').trim();
@@ -50,8 +60,11 @@ async function resolveChannelId(source, context) {
     if (kind !== 'handle') throw sourceError('Invalid saved YouTube source key.');
     const response = await requestText(context, `https://www.youtube.com/@${encodeURIComponent(value)}`, {
         headers: { Accept: 'text/html,application/xhtml+xml', 'User-Agent': 'Mozilla/5.0 (compatible; ComebackTwitterEmbed/1.0)' },
+        readBody: response => readHtmlProjection(response, { markers: ['ytInitialData'], paths: [['metadata', 'channelMetadataRenderer', 'externalId'], ['**', 'channelId']] }),
     });
-    const channelId = channelIdFromHtml(response.body);
+    let metadataId;
+    try { metadataId = parseInitialData(response.body)?.metadata?.channelMetadataRenderer?.externalId; } catch { /* Invalid guest page remains unresolved. */ }
+    const channelId = /^UC[A-Za-z0-9_-]{20,}$/.test(metadataId || '') ? metadataId : channelIdFromHtml(response.body);
     if (!channelId) throw monitorError('AUTO_WATCH_SOURCE_NOT_FOUND', 'YouTube handle could not be resolved to a public channel.', { retryAfterMs: 6 * HOUR });
     return channelId;
 }
@@ -64,6 +77,7 @@ async function fetch(source, context) {
     try {
         response = await requestText(context, `https://www.youtube.com/feeds/videos.xml?channel_id=${encodeURIComponent(channelId)}`, {
             headers: conditionalHeaders(rssSource, { Accept: 'application/atom+xml,application/xml,text/xml', 'User-Agent': 'Mozilla/5.0 (compatible; ComebackTwitterEmbed/1.0)' }),
+            readBody: readFeedProjection,
         });
         if (!response.notModified && (!/<feed\b/i.test(response.body) || xmlValue(response.body, 'yt:channelId') && xmlValue(response.body, 'yt:channelId') !== channelId)) {
             throw monitorError('AUTO_WATCH_INVALID_RESPONSE', 'YouTube did not return the requested channel feed.');
@@ -82,6 +96,7 @@ async function fetchUploads(source, context, channelId, excluded) {
     if (!context.config.enableGuestCrawls) throw monitorError('AUTO_WATCH_GUEST_CRAWL_DISABLED', 'Public uploads fallback is disabled.');
     const response = await requestText(context, `https://www.youtube.com/playlist?list=UU${encodeURIComponent(channelId.slice(2))}&hl=en`, {
         headers: { Accept: 'text/html', 'User-Agent': 'Mozilla/5.0', 'Accept-Language': 'en-US,en;q=0.9' },
+        readBody: response => readHtmlProjection(response, { markers: ['ytInitialData'], paths: UPLOAD_PATHS }),
     });
     const uploads = parseUploadsPlaylist(response.body, channelId);
     if (!uploads) throw monitorError('AUTO_WATCH_INVALID_RESPONSE', 'YouTube uploads could not be verified for this channel.');
