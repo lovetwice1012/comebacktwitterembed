@@ -6,6 +6,10 @@ const { createRunner } = require('../../src/automation/runtime');
 const { createTransport, publicAddress, splitText, filterMedia } = require('../../src/automation/transport');
 const { runBoundedFetches, applyBudget } = require('../../src/automation/fetch-budget');
 const G = '111111111111111111', U = '222222222222222222', C = '333333333333333333', M = '444444444444444444';
+// Existing format/lifecycle unit fixtures have no SQL. Durable delivery
+// enforcement is covered against MariaDB in automation-rate-limits-sql.test.js.
+const rateLimiter = { reserveNotifications: async (_principal, count) => ({ count, expiresAtMs: Number.MAX_SAFE_INTEGER }), beginNotification: async () => {}, commitNotification: async () => {}, releaseNotifications: async () => {}, retainUnknownNotification: async () => {} };
+const entitlementResolver = async (_db, input) => ({ slotId: `${input.ownerUserId}:1`, slotIndex: 1, minuteLimit: 5, dayLimit: 24 });
 
 function fixture(transport, overrides = {}) {
     const states = [], acks = [];
@@ -56,7 +60,7 @@ test('transport disables mentions, uses nonce for DM and only confirmed same-cha
     const requests = [];
     const rest = { post: async (route, body) => { requests.push({ route, body }); return route === '/users/@me/channels' ? { id: C } : { id: M, channel_id: C }; } };
     const client = { options: { jsonTransformer: value => value, allowedMentions: { parse: ['everyone'] } } };
-    const transport = createTransport({}, {}, client, { rest, safety: { assertNotification: async () => {} } });
+    const transport = createTransport({}, {}, client, { rest, rateLimiter, entitlementResolver, safety: { assertNotification: async () => {} } });
     const job = { id: 'job', owner_user_id: U, plan: { context: {}, event: {}, display: { format: 'text', media: 'inherit' }, text: '@everyone sale' } };
     const prepared = await transport.prepare(job, { kind: 'dm', dm_user_id: U });
     assert.deepEqual(prepared.payloads[0].body.allowed_mentions.parse, []);
@@ -69,7 +73,7 @@ test('transport disables mentions, uses nonce for DM and only confirmed same-cha
 test('expanded scheduled price alerts use the stored price and delta rather than refetching another market', async () => {
     let calls = 0;
     const rest = { post: async route => { calls++; assert.equal(route, '/users/@me/channels'); return { id: C }; } };
-    const client = { options: { jsonTransformer: value => value } }, transport = createTransport({}, {}, client, { rest });
+    const client = { options: { jsonTransformer: value => value } }, transport = createTransport({}, {}, client, { rest, entitlementResolver });
     const job = { id: 'price', owner_user_id: U, target_kind: 'price', guild_id: G, plan: { context: { locale: 'ja' }, event: { title: '観測した商品', priceAmount: 950, priceDelta: -150, currency: 'JPY', discountPercent: 20, observedAtMs: 1000, url: 'https://store.steampowered.com/app/730' }, display: { format: 'expanded', media: 'inherit' }, text: '予定された価格通知' } };
     const prepared = await transport.prepare(job, { kind: 'dm', dm_user_id: U });
     assert.equal(calls, 1); assert(prepared.payloads[0].body.embeds[0].fields.some(f => f.name === '増減' && f.value === '-150 JPY'));
@@ -82,7 +86,7 @@ test('legacy webhook resolves real destination channel but rejects cross-guild m
     const db = { queryDatabase: async () => [{ webhook_url: `https://discord.com/api/webhooks/${M}/${'a'.repeat(60)}` }] };
     const destinations = { verifyChannel: async (_actor, _guild, channelId) => { verifiedChannel = channelId; return { channel: { id: channelId }, member: { roles: [] } }; } };
     const client = { options: { jsonTransformer: v => v } };
-    const transport = createTransport(db, destinations, client, { rest });
+    const transport = createTransport(db, destinations, client, { rest, entitlementResolver });
     const job = { id: 'job', owner_user_id: U, plan: { context: {}, event: {}, display: { format: 'text', media: 'inherit' }, text: 'test' } };
     await transport.prepare(job, { kind: 'webhook', guild_id: G, channel_id: 'legacy-origin', webhook_endpoint_id: '1' });
     assert.equal(verifiedChannel, C);

@@ -6,10 +6,15 @@ const { createMarketplace } = require('../../src/automation/marketplace');
 const { createSafety, POLICY_VERSION } = require('../../src/automation/safety');
 const { newWorkflow } = require('../../src/automation/schema');
 const { gzipSync } = require('node:zlib');
-const { hash } = require('../../src/automation/service');
+const { hash, createService } = require('../../src/automation/service');
 const port = Number(process.env.AUTOMATION_TEST_DB_PORT);
+// Publication/version corruption fixtures repeat many writes in one minute.
+// Use real admission with explicit test-only ceilings, retaining production
+// defaults in the dedicated service-policy/rate-limit suites.
+const fixturePolicy = { rateOptions: { policy: { operations: { write: { minute: 1000, hour: 1000 }, publication: { minute: 1000, hour: 1000 } } } } };
 test('real SQL publication is immediate and old pending records terminate without human review', { skip: !port }, async () => {
     const db = await createTestDatabase(port);
+    const service = createService(db, fixturePolicy);
     const owner = { userId: '222222222222222222' };
     const input = title => ({ title, visibility: 'public', rightsConfirmed: true, bundle: { schemaVersion: 1, kind: 'workflow', workflow: newWorkflow(title), dictionaries: {}, license: 'CC0-1.0' } });
     async function legacy(id) {
@@ -17,14 +22,14 @@ test('real SQL publication is immediate and old pending records terminate withou
         await db.queryDatabase("UPDATE automation_package_versions SET status='pending' WHERE package_id=?", [id]);
     }
     try {
-        const automatic = createMarketplace(db);
+        const automatic = createMarketplace(db, { service });
         const live = await automatic.save(owner, input('機械チェックの試験'));
         assert.equal(live.status, 'active');
         const reader = { userId: '444444444444444444' };
         assert.equal((await automatic.get(reader, live.id)).status, 'active');
         const receipt = (await db.queryDatabase("SELECT detail_json FROM automation_audit WHERE entity_id=? AND action='package.save'", [live.id]))[0];
         assert.equal(JSON.parse(receipt.detail_json).responsibility.acknowledged, true);
-        const failed = createMarketplace(db, { safety: createSafety({ verifier: null }) });
+        const failed = createMarketplace(db, { service, safety: createSafety({ verifier: null }) });
         await assert.rejects(failed.save(owner, input('検査が故障した操作')), { code: 'PUBLICATION_CHECK_FAILED' });
         assert.equal((await automatic.list(owner)).items.length, 1, 'failed checks create no pending submission');
         await legacy(live.id);
@@ -36,7 +41,7 @@ test('real SQL publication is immediate and old pending records terminate withou
         assert.equal((await automatic.get(owner, older.id)).status, 'active');
         assert.equal(Number((await db.queryDatabase("SELECT COUNT(*) AS n FROM automation_package_versions WHERE status='pending'"))[0].n), 0);
         const changed = await automatic.save(owner, input('更新競合の試験'));
-        const racing = createMarketplace(db, { safety: createSafety({ verifier: { inspect: async ({ fingerprint }) => {
+        const racing = createMarketplace(db, { service, safety: createSafety({ verifier: { inspect: async ({ fingerprint }) => {
             await automatic.save(owner, { ...input('先に保存された版'), expectedVersion: 1 }, changed.id);
             return { fingerprint, policyVersion: POLICY_VERSION, detectorVersion: 'fixture-only', decision: 'allow', expiresAtMs: Date.now() + 10000 };
         } } }) });
@@ -46,7 +51,7 @@ test('real SQL publication is immediate and old pending records terminate withou
 });
 
 test('legacy publication corruption and incomplete records terminate while preserving earlier publications', { skip: !port }, async t => {
-    const db = await createTestDatabase(port), market = createMarketplace(db);
+    const db = await createTestDatabase(port), service = createService(db, fixturePolicy), market = createMarketplace(db, { service });
     const owner = { userId: '222222222222222222' }, reader = { userId: '444444444444444444' };
     const input = title => ({ title, visibility: 'public', rightsConfirmed: true, bundle: { schemaVersion: 1, kind: 'workflow', workflow: newWorkflow(title), dictionaries: {}, license: 'CC0-1.0' } });
     try {
@@ -85,13 +90,13 @@ test('legacy publication corruption and incomplete records terminate while prese
             const pack = await market.save(owner, input('競合する旧版'));
             await db.queryDatabase("UPDATE automation_packages SET status='pending',published_version=NULL WHERE id=?", [pack.id]);
             await db.queryDatabase("UPDATE automation_package_versions SET status='pending' WHERE package_id=?", [pack.id]);
-            const racing = createMarketplace(db, { safety: { assertPublication: async () => {
+            const racing = createMarketplace(db, { service, safety: { assertPublication: async () => {
                 await market.save(owner, { ...input('利用者の新しい版'), expectedVersion: 1 }, pack.id);
                 throw new Error('private checker diagnostic');
             } } });
             assert.equal((await racing.reviewPending()).state, 'changed');
             assert.equal((await market.get(reader, pack.id)).version, 2);
-            const broken = createMarketplace(db, { safety: { assertPublication: async () => { throw new Error('private checker diagnostic'); } } });
+            const broken = createMarketplace(db, { service, safety: { assertPublication: async () => { throw new Error('private checker diagnostic'); } } });
             await assert.rejects(broken.save(owner, { ...input('失敗する変更'), expectedVersion: 2 }, pack.id), { code: 'PUBLICATION_CHECK_FAILED' });
             assert.equal((await market.get(reader, pack.id)).version, 2);
         });

@@ -4,6 +4,8 @@ const crypto = require('crypto');
 const db = require('../../db');
 const { TABLES, ensureDatabaseSchema } = require('../../db_schema');
 const { nextIntervalMs, normalizeSource } = require('./index');
+const entitlements = require('../../automation/entitlements');
+const { withRateOperation } = require('../../automation/rate-operation');
 
 const SOURCE_LEASE_MS = 2 * 60 * 1000;
 const DELIVERY_LEASE_MS = 45 * 1000;
@@ -82,6 +84,11 @@ async function upsertWebhook(query, url) {
 }
 
 async function registerTarget(input, options = {}) {
+    await ensureDatabaseSchema();
+    return withRateOperation(db, { userId: String(input.userId || '') }, 'monitor', () => registerTargetAdmitted(input, options), { rateLimiter: options.operationRateLimiter });
+}
+
+async function registerTargetAdmitted(input, options = {}) {
     const providerId = String(input.providerId || '').toLowerCase();
     const normalized = normalizeSource(providerId, { url: input.productUrl, locale: input.locale });
     const destinationType = normalizeDestination(input.destinationType);
@@ -97,6 +104,7 @@ async function registerTarget(input, options = {}) {
     await ensureDatabaseSchema();
     await db.ensureUserExistsInDatabase(userId);
     return await db.withDatabaseTransaction(async query => {
+        await entitlements.lockOwner(query, userId);
         const webhookEndpointId = destinationType === 'webhook' ? await upsertWebhook(query, webhookUrl) : null;
         const destinationKey = destinationType === 'dm' ? `dm:${userId}` : `webhook:${webhookEndpointId}`;
         const initialDue = now + Math.floor(Math.max(0, Math.min(1, Number(random()) || 0)) * jitter);
@@ -113,6 +121,9 @@ async function registerTarget(input, options = {}) {
         );
         const source = sourceRows[0];
         if (!source?.id) throw error('Price-watch source could not be saved.', 'PRICE_WATCH_SOURCE_STORE_FAILED');
+        const existing = await query(`SELECT id FROM ${TABLES.priceWatchTargets}
+            WHERE source_id=? AND user_id=? AND destination_key=? AND watch_mode=? AND rule_key=? LIMIT 1`, [source.id, userId, destinationKey, rule.mode, rule.ruleKey]);
+        await entitlements.assertSlotAvailable(query, userId, 'price', existing[0]?.id);
         await query(
             `INSERT INTO ${TABLES.priceWatchTargets}
              (source_id, user_id, guild_id, origin_channel_id, destination_type, destination_key, webhook_endpoint_id,
@@ -139,6 +150,7 @@ async function registerTarget(input, options = {}) {
              WHERE source_id=? AND user_id=? AND destination_key=? AND watch_mode=? AND rule_key=? LIMIT 1`,
             [source.id, userId, destinationKey, rule.mode, rule.ruleKey]
         );
+        await entitlements.assignSlot(query, userId, 'price', String(targetRows[0]?.id || ''));
         return {
             id: String(targetRows[0]?.id || ''),
             providerId,
@@ -154,10 +166,12 @@ async function deleteTarget(userId, targetId) {
     if (!/^\d{1,20}$/.test(String(targetId))) throw error('A valid price-watch ID is required.', 'PRICE_WATCH_INVALID_ID');
     await ensureDatabaseSchema();
     return await db.withDatabaseTransaction(async query => {
+        await entitlements.lockOwner(query, String(userId));
         const rows = await query(`SELECT source_id FROM ${TABLES.priceWatchTargets} WHERE id=? AND user_id=? LIMIT 1`, [String(targetId), String(userId)]);
         if (!rows.length) throw error('Price-watch registration does not exist.', 'PRICE_WATCH_NOT_FOUND');
         const sourceId = rows[0].source_id;
         await query(`DELETE FROM ${TABLES.priceWatchTargets} WHERE id=? AND user_id=?`, [String(targetId), String(userId)]);
+        await entitlements.releaseSlot(query, String(userId), 'price', String(targetId));
         await query(`DELETE FROM ${TABLES.priceWatchSources} WHERE id=? AND NOT EXISTS (SELECT 1 FROM ${TABLES.priceWatchTargets} WHERE source_id=?)`, [sourceId, sourceId]);
         return { id: String(targetId), deleted: true };
     });

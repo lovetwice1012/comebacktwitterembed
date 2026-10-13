@@ -23,7 +23,10 @@ test('screening detects benign Unicode evasion markers without rewriting origina
 });
 test('publication checks replacements, concatenation, group labels, categories and dictionary metadata before DB writes', async () => {
     const query = async () => { assert.fail('Rejected publication must not write'); };
-    const market = createMarketplace({ queryDatabase: query, withDatabaseTransaction: work => work(query) }, { moderationMatcher: moderation() });
+    // These content-only fixtures explicitly trust operation admission. Real
+    // durable publication admission is covered by SQL service-policy tests.
+    const service = { withOperation: async (_actor, _group, work) => work() };
+    const market = createMarketplace({ queryDatabase: query, withDatabaseTransaction: work => work(query) }, { service, moderationMatcher: moderation() });
     const cases = [
         data => { data.bundle.workflow.nodes[1].config.replacements = [{ from: 'neutral', to: marker }]; },
         data => { Object.assign(data.bundle.workflow.nodes[1].config, { template: 'AUDIT_', suffix: 'SENTINEL' }); },
@@ -32,7 +35,7 @@ test('publication checks replacements, concatenation, group labels, categories a
         data => { data.bundle.dictionaries.words = { schemaVersion: 1, name: marker, source: 'fixture', license: 'CC0-1.0', entries: [] }; },
     ];
     for (const alter of cases) { const data = fixture(); alter(data); await assert.rejects(market.save({ userId: '123' }, data), { code: 'PUBLICATION_REJECTED' }); }
-    const unavailable = createMarketplace({ queryDatabase: query, withDatabaseTransaction: work => work(query) }, { safety: require('../../src/automation/safety').createSafety({ verifier: null }) });
+    const unavailable = createMarketplace({ queryDatabase: query, withDatabaseTransaction: work => work(query) }, { service, safety: require('../../src/automation/safety').createSafety({ verifier: null }) });
     await assert.rejects(unavailable.save({ userId: '123' }, fixture()), { code: 'PUBLICATION_CHECK_FAILED' });
 });
 test('filter terms are not publication copy, and long text is screened through the end and across chunk boundaries', async () => {

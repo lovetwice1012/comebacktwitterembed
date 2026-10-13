@@ -48,7 +48,7 @@ test('compile preserves all DAG nodes, stages, ports, layout and nested predicat
     assert.deepEqual(rule, before);
 });
 
-test('compile retains exponentially many implicit paths without imposing evaluator path/output caps', () => {
+test('compile retains a large detailed DAG whose explicit merge prevents notification amplification', () => {
     const rule = newWorkflow('Diamonds'); let previous = 'start'; rule.edges = [];
     for (let i = 0; i < 30; i++) {
         for (const suffix of ['L', 'R', 'C']) rule.nodes.push(node('transform', {}, `${suffix}${i}`));
@@ -57,9 +57,10 @@ test('compile retains exponentially many implicit paths without imposing evaluat
         }
         previous = `C${i}`;
     }
-    rule.edges.push({ id: 'last', source: previous, target: 'send', port: 'out' });
+    rule.nodes.push(node('merge'));
+    rule.edges.push({ id: 'last', source: previous, target: 'merge', port: 'out' }, { id: 'sendAfterMerge', source: 'merge', target: 'send', port: 'out' });
     const plan = compileWorkflow(freeze(rule));
-    assert.equal(plan.nodes.length, 92); assert.equal(plan.edges.length, 121); assert.equal(plan.ranks.get('send'), 61);
+    assert.equal(plan.nodes.length, 93); assert.equal(plan.edges.length, 122); assert.equal(plan.ranks.get('send'), 62);
 });
 
 test('compile delegates schema, unreachable-node and cycle rejection to assertWorkflow', () => {

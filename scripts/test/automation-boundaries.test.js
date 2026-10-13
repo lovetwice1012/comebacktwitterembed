@@ -32,7 +32,7 @@ test('draft edits use optimistic revisions and do not activate or overwrite acti
         writes.push({ sql, params });
         return { affectedRows: 1 };
     };
-    const service = createService({ queryDatabase, withDatabaseTransaction: work => work(queryDatabase) });
+    const service = createService({ queryDatabase, withDatabaseTransaction: work => work(queryDatabase) }, { rateLimiter: { consumeOperation: async () => {}, getPolicy: require('../../src/automation/rate-limits').getPolicy } });
     await assert.rejects(service.updateWorkflow({ userId: '123' }, id, { definition: newWorkflow(), expectedRevision: 3 }), error => error.status === 409);
     assert.equal(writes.length, 0);
     const saved = await service.updateWorkflow({ userId: '123' }, id, { definition: newWorkflow('編集'), expectedRevision: 4 });

@@ -234,6 +234,8 @@ function createMarketplace(db, options = {}) {
         await service.audit(db.queryDatabase, actor, id, 'report.resolve', { note: textField(input.note || '', 1000, false) }, null); return { resolved: true };
     }
     const installs = require('./marketplace-installs').createInstalls(db, service, get, options.evaluator);
-    return { list, save, get, exportWorkflow, setStatus, reviewPending, feedback, reviewQueue, resolveReport, versions, fork, ...installs };
+    return { list, save: (actor, input, id) => service.withOperation(actor, 'publication', () => save(actor, input, id)), get, exportWorkflow,
+        setStatus: (actor, id, input) => input.status === 'withdrawn' ? setStatus(actor, id, input) : service.withOperation(actor, 'publication', () => setStatus(actor, id, input)),
+        reviewPending, feedback, reviewQueue, resolveReport, versions, fork, ...installs };
 }
 module.exports = { createMarketplace, equalKey, visiblePackage };

@@ -6,6 +6,8 @@ const { TABLES, ensureDatabaseSchema } = require('../../db_schema');
 const { effectivePollIntervalMs, monitorConfig, normalizeSource, provider, ratePolicy } = require('./index');
 const fetchWithDeadline = require('../../providerFetch').withDeadline(require('node-fetch'));
 const eligibility = require('./eligibility');
+const entitlements = require('../../automation/entitlements');
+const { withRateOperation } = require('../../automation/rate-operation');
 
 const FREE_SLOT_LIMIT = 175;
 const USER_FREE_SLOT_LIMIT = 5;
@@ -85,24 +87,18 @@ async function upsertWebhook(query, webhookUrl) {
 }
 
 async function slotDecision(query, userId) {
-    await eligibility.assertRegistrationAllowed(query, userId, true);
-    const [userRows, ownRows, globalRows] = await Promise.all([
-        query(`SELECT additional_auto_extract_slots FROM ${TABLES.users} WHERE user_id=?`, [userId]),
-        query(`SELECT premium_slot,COUNT(*) AS total FROM ${TABLES.autoWatchTargets} WHERE user_id=? AND enabled=1 GROUP BY premium_slot`, [userId]),
-        query(`SELECT COUNT(*) AS total FROM ${TABLES.autoWatchTargets} WHERE premium_slot=0 AND enabled=1`),
-    ]);
-    const userFree = Number(ownRows.find(row => Number(row.premium_slot) === 0)?.total || 0);
-    const userPremium = Number(ownRows.find(row => Number(row.premium_slot) === 1)?.total || 0);
-    const globalFree = Number(globalRows[0]?.total || 0);
-    const additional = Number(userRows[0]?.additional_auto_extract_slots || 0);
-    const usePremium = userFree >= USER_FREE_SLOT_LIMIT || globalFree >= FREE_SLOT_LIMIT;
-    if (usePremium && userPremium >= additional) {
-        throw error('No free or additional automatic-watch slots remain.', 'AUTO_WATCH_SLOT_LIMIT');
-    }
-    return { premiumSlot: usePremium ? 1 : 0, userFree, userPremium, globalFree, additional };
+    await entitlements.assertSlotAvailable(query, userId, 'auto');
+    const usage = await entitlements.listOwnerSlots(query, userId);
+    return { premiumSlot: usage.usedSlots >= USER_FREE_SLOT_LIMIT ? 1 : 0, userFree: Math.min(usage.usedSlots, USER_FREE_SLOT_LIMIT),
+        userPremium: Math.max(0, usage.usedSlots - USER_FREE_SLOT_LIMIT), globalFree: 0, additional: Math.max(0, usage.slotLimit - USER_FREE_SLOT_LIMIT) };
 }
 
 async function registerTarget(input, options = {}) {
+    await ensureDatabaseSchema();
+    return withRateOperation(db, { userId: String(input.userId || '') }, 'monitor', () => registerTargetAdmitted(input, options), { rateLimiter: options.operationRateLimiter });
+}
+
+async function registerTargetAdmitted(input, options = {}) {
     const providerId = String(input.providerId || '').toLowerCase();
     const normalized = normalizeSource(providerId, input.source);
     const rule = provider(providerId);
@@ -120,6 +116,7 @@ async function registerTarget(input, options = {}) {
     await eligibility.assertRegistrationAllowed(db.queryDatabase, userId);
     await db.ensureUserExistsInDatabase(userId);
     return await db.withDatabaseTransaction(async query => {
+        await entitlements.lockOwner(query, userId);
         const slotLock = crypto.createHash('sha256').update('auto-watch-slots').digest('hex');
         await query('INSERT IGNORE INTO automation_counters (counter_key,used_count,expires_at_ms) VALUES (?,0,0)', [slotLock]);
         await query('SELECT counter_key FROM automation_counters WHERE counter_key=? FOR UPDATE', [slotLock]);
@@ -146,9 +143,8 @@ async function registerTarget(input, options = {}) {
             [userId, source.id, destinationKey]
         );
         const existing = existingRows[0];
-        const slot = existing?.enabled
-            ? { premiumSlot: Number(existing.premium_slot) ? 1 : 0 }
-            : await slotDecision(query, userId);
+        await entitlements.assertSlotAvailable(query, userId, 'auto', existing?.id);
+        const slot = { premiumSlot: existing ? Number(existing.premium_slot) ? 1 : 0 : 0 };
         await query(
             `INSERT INTO ${TABLES.autoWatchTargets}
              (user_id, source_id, guild_id, origin_channel_id, origin_channel_nsfw, source_locale,
@@ -180,6 +176,9 @@ async function registerTarget(input, options = {}) {
             `SELECT id FROM ${TABLES.autoWatchTargets} WHERE user_id=? AND source_id=? AND destination_key=? LIMIT 1`,
             [userId, source.id, destinationKey]
         );
+        const allocated = await entitlements.assignSlot(query, userId, 'auto', String(targetRows[0]?.id || ''));
+        slot.premiumSlot = allocated.slotIndex > USER_FREE_SLOT_LIMIT ? 1 : 0;
+        await query(`UPDATE ${TABLES.autoWatchTargets} SET premium_slot=? WHERE id=? AND user_id=?`, [slot.premiumSlot, targetRows[0].id, userId]);
         return {
             id: String(targetRows[0]?.id || ''),
             providerId,
@@ -224,6 +223,7 @@ async function listTargets(userId) {
 async function deleteTarget(userId, targetId) {
     await ensureDatabaseSchema();
     return await db.withDatabaseTransaction(async query => {
+        await entitlements.lockOwner(query, String(userId));
         const rows = await query(
             `SELECT source_id FROM ${TABLES.autoWatchTargets} WHERE id=? AND user_id=? LIMIT 1`,
             [rowId(targetId, 'watch id'), String(userId)]
@@ -231,6 +231,7 @@ async function deleteTarget(userId, targetId) {
         if (!rows.length) throw error('Automatic-watch registration does not exist.', 'AUTO_WATCH_NOT_FOUND');
         const sourceId = rows[0].source_id;
         await query(`DELETE FROM ${TABLES.autoWatchTargets} WHERE id=? AND user_id=?`, [rowId(targetId, 'watch id'), String(userId)]);
+        await entitlements.releaseSlot(query, String(userId), 'auto', String(targetId));
         await query(
             `DELETE FROM ${TABLES.autoWatchSources}
              WHERE id=? AND NOT EXISTS (SELECT 1 FROM ${TABLES.autoWatchTargets} WHERE source_id=?)`,

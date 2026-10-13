@@ -7,6 +7,7 @@ const net = require('node:net');
 const { hash } = require('./service');
 const { webhookParts } = require('./destinations');
 const { createSafety, SafetyError } = require('./safety');
+const { createRateLimiter, AutomationRateError } = require('./rate-limits');
 const FILE_LIMIT = 25 * 1024 * 1024;
 const failure = (code, status) => Object.assign(new Error(code), { code, status });
 const toJSON = value => typeof value?.toJSON === 'function' ? value.toJSON() : structuredClone(value);
@@ -84,28 +85,73 @@ function snapshotSteps(plan, kind, expandedSnapshot = false) {
     }
     return null;
 }
-function packSnapshotSteps(steps) {
+function packSnapshotSteps(steps, onPacked = null) {
     const packed = [];
     const embedSize = embed => [embed.title, embed.description, embed.author?.name, embed.footer?.text, ...(embed.fields || []).flatMap(field => [field.name, field.value])].reduce((n, value) => n + String(value || '').length, 0);
-    for (const step of steps) {
+    for (const [sourceIndex, step] of steps.entries()) {
         const last = packed.at(-1);
         if (last && !last.embeds?.length && !step.embeds?.length && last.flags === step.flags && String(last.content || '').length + String(step.content || '').length + 2 <= 1900) last.content += `\n\n${step.content}`;
         else if (last?.embeds?.length && step.embeds?.length && !last.content && !step.content && last.flags === step.flags && last.embeds.length + step.embeds.length <= 10 && [...last.embeds, ...step.embeds].reduce((n, embed) => n + embedSize(embed), 0) <= 6000) last.embeds.push(...step.embeds);
         else packed.push(structuredClone(step));
+        onPacked?.(sourceIndex, packed.length - 1);
     }
     return packed;
 }
 
 function createTransport(db, destinations, client, options = {}) {
     const safety = options.safety || createSafety();
+    const clock = options.clock || Date.now;
+    // Only trusted server construction can inject a limiter. No job, rule or
+    // destination setting can disable the mandatory delivery allowance.
+    const rateLimiter = options.rateLimiter || createRateLimiter(db, { clock, policy: options.ratePolicy });
+    const entitlementResolver = options.entitlementResolver || require('./entitlements').resolveNotificationEntitlement;
     const preparedJobs = new WeakMap();
     // Separate REST manager: do not change the main Bot's retry behavior.
     // Rejected rate-limit requests never entered the wire; HTTP 5xx/network
     // failures after submission remain unknown and are never retried here.
     const token = process.env.DISCORD_BOT_TOKEN;
     const rest = options.rest || new REST({ retries: 0, timeout: 20000, rejectOnRateLimit: () => true }).setToken(token || 'unconfigured');
+    async function contributingTargets(job) {
+        if (options.membershipResolver) return options.membershipResolver(db, job);
+        if (!job.plan?.members?.length) return [{ targetKind: job.target_kind, targetId: String(job.target_id), memberIndices: null }];
+        const origins = new Map(), targets = new Map();
+        for (const [memberIndex, member] of job.plan.members.entries()) {
+            const key = member?.runId ? `run:${member.runId}` : member?.jobId ? `job:${member.jobId}` : null;
+            if (!key) throw new AutomationRateError('AUTOMATION_AGGREGATE_MEMBERSHIP_INVALID', 'まとめ通知の登録元を確認できませんでした。', 400);
+            if (!origins.has(key)) {
+                const rows = member.runId
+                    ? await db.queryDatabase('SELECT target_kind,target_id,owner_user_id FROM automation_runs WHERE id=?', [member.runId])
+                    : await db.queryDatabase('SELECT r.target_kind,r.target_id,r.owner_user_id FROM automation_jobs j JOIN automation_runs r ON r.id=j.run_id WHERE j.id=?', [member.jobId]);
+                origins.set(key, rows[0]);
+            }
+            const origin = origins.get(key);
+            if (!origin || origin.owner_user_id !== job.owner_user_id || member.targetKind && member.targetKind !== origin.target_kind || member.targetId != null && String(member.targetId) !== String(origin.target_id)) throw new AutomationRateError('AUTOMATION_AGGREGATE_MEMBERSHIP_INVALID', 'まとめ通知の登録元を確認できませんでした。', 400);
+            const targetKey = `${origin.target_kind}:${origin.target_id}`;
+            if (!targets.has(targetKey)) targets.set(targetKey, { targetKind: origin.target_kind, targetId: String(origin.target_id), memberIndices: [] });
+            targets.get(targetKey).memberIndices.push(memberIndex);
+        }
+        return [...targets.values()].sort((a, b) => `${a.targetKind}:${a.targetId}`.localeCompare(`${b.targetKind}:${b.targetId}`));
+    }
+    async function currentEntitlements(job) {
+        try {
+            const resolve = async () => {
+                const targets = await contributingTargets(job), slots = [];
+                for (const target of targets) slots.push({ ...await entitlementResolver(db, { ownerUserId: job.owner_user_id, ...target }), ownerUserId: job.owner_user_id,
+                    memberIndices: target.memberIndices ?? (options.membershipResolver && job.plan?.members ? job.plan.members.map((_member, index) => index) : null) });
+                return [...new Map(slots.map(slot => [slot.slotId, slot])).values()].sort((a, b) => a.slotId.localeCompare(b.slotId));
+            };
+            // All contributing registrations see one current plan under the
+            // owner's entitlement lock, including deletion of an earlier peer.
+            return typeof db.withDatabaseTransaction === 'function' ? await db.withDatabaseTransaction(resolve) : await resolve();
+        }
+        catch (error) {
+            if (error?.name === 'AutomationError') throw new AutomationRateError(error.code, error.message, error.status || 400, { issues: error.issues });
+            throw new AutomationRateError('AUTOMATION_RATE_LIMIT_UNAVAILABLE', '利用制限を確認できませんでした。少し待ってから再度お試しください。', 503, { retryAfterMs: 60000 });
+        }
+    }
     async function prepare(job, destination) {
         if (!options.rest && !token) throw failure('DISCORD_BOT_TOKEN_REQUIRED');
+        const principals = await currentEntitlements(job);
         let channelId, webhook = null, channelNsfw = false, member = null, recipient = null;
         if (destination.kind === 'dm') {
             if (destination.dm_user_id !== job.owner_user_id) throw failure('DM_OWNER_MISMATCH', 403);
@@ -122,11 +168,22 @@ function createTransport(db, destinations, client, options = {}) {
             member = verified.member; channelNsfw = verified.channel.nsfw === true;
         }
         const plan = job.plan, event = plan.event;
-        let steps;
-        if (plan.members) steps = packSnapshotSteps(plan.members.flatMap(entry => {
-            const memberPlan = { ...plan, ...entry, display: entry.display || plan.display };
-            return snapshotSteps(memberPlan, entry.targetKind || job.target_kind, true).map(step => filterMedia(step, memberPlan.display.media));
-        }));
+        let steps, attributedSlots = null;
+        if (plan.members) {
+            const rawSteps = [], rawSlots = [];
+            for (const [memberIndex, entry] of plan.members.entries()) {
+                const memberPlan = { ...plan, ...entry, display: entry.display || plan.display };
+                const slotIds = principals.filter(principal => principal.memberIndices?.includes(memberIndex)).map(principal => principal.slotId);
+                if (!slotIds.length) throw new AutomationRateError('AUTOMATION_AGGREGATE_MEMBERSHIP_INVALID', 'まとめ通知の登録元を確認できませんでした。', 400);
+                for (const step of snapshotSteps(memberPlan, entry.targetKind || job.target_kind, true)) { rawSteps.push(filterMedia(step, memberPlan.display.media)); rawSlots.push(slotIds); }
+            }
+            attributedSlots = [];
+            // Attribution travels beside the packed payload, never in the
+            // Discord body or in writable prepared metadata.
+            steps = packSnapshotSteps(rawSteps, (sourceIndex, packedIndex) => {
+                attributedSlots[packedIndex] = [...new Set([...(attributedSlots[packedIndex] || []), ...rawSlots[sourceIndex]])];
+            });
+        }
         else steps = snapshotSteps(plan, job.target_kind);
         if (!steps && plan.display.format === 'expanded') {
             const { loadProviders } = require('../providers/_loader');
@@ -164,8 +221,8 @@ function createTransport(db, destinations, client, options = {}) {
             if (steps[0]) steps[0].content = [plan.text, steps[0].content].filter(Boolean).join('\n').slice(0, 1900);
         }
         if (!steps?.length || steps.length > 128) throw failure('MESSAGE_STEPS_LIMIT');
-        const payloads = [];
-        for (const rawStep of steps) {
+        const payloads = [], payloadSlots = [];
+        for (const [stepIndex, rawStep] of steps.entries()) {
             const step = plan.members ? rawStep : filterMedia(rawStep, plan.display.media);
             const files = [];
             let total = 0;
@@ -183,39 +240,111 @@ function createTransport(db, destinations, client, options = {}) {
             const body = /** @type {any} */ (payload.body);
             if (!body.content && !body.embeds?.length && !payload.files?.length) continue;
             payloads.push({ body, files: payload.files });
+            payloadSlots.push(attributedSlots?.[stepIndex] || principals.map(principal => principal.slotId));
         }
         if (!payloads.length) throw failure('EMPTY_NOTIFICATION');
         const prepared = { channelId, webhook, payloads, channelNsfw };
-        preparedJobs.set(prepared, job.id);
+        preparedJobs.set(prepared, {
+            jobId: job.id, ownerUserId: job.owner_user_id, channelId, webhookId: webhook?.id || null,
+            targetKind: job.target_kind, targetId: String(job.target_id),
+            payloads, count: payloads.length, used: new Set(), active: new Set(), reservation: null, reserving: null, abandoned: false,
+            // A verified native registration owns a persistent numbered slot.
+            // Deleting/recreating it cannot produce a fresh daily allowance.
+            principals,
+            payloadSlots,
+        });
         return prepared;
     }
+    function checkedPreparation(prepared, job) {
+        const state = preparedJobs.get(prepared);
+        if (!state || state.abandoned || state.jobId !== job.id || state.ownerUserId !== job.owner_user_id || state.targetKind !== job.target_kind || state.targetId !== String(job.target_id) || state.channelId !== prepared.channelId || state.webhookId !== (prepared.webhook?.id || null) || state.payloads !== prepared.payloads || state.count !== prepared.payloads.length) throw new SafetyError('SAFETY_UNPREPARED_MESSAGE');
+        return state;
+    }
+    async function reserve(prepared, job) {
+        const state = checkedPreparation(prepared, job);
+        if (state.reservation) return state.reservation;
+        if (!state.reserving) state.reserving = (async () => {
+            const principals = await currentEntitlements(job);
+            checkedPreparation(prepared, job);
+            if (principals.length !== state.principals.length || principals.some((principal, index) => principal.slotId !== state.principals[index].slotId)) throw new AutomationRateError('AUTOMATION_SLOT_CHANGED', '通知の登録枠が変わりました。登録内容を確認してください。', 403);
+            state.principals = principals;
+            return principals.length === 1 ? rateLimiter.reserveNotifications(principals[0], state.count) : rateLimiter.reserveNotificationBatch(principals, state.count, state.payloadSlots);
+        })().then(reservation => {
+            if (!Number.isSafeInteger(reservation?.expiresAtMs) || reservation.expiresAtMs <= clock() || reservation.count !== state.count) throw new AutomationRateError('AUTOMATION_RATE_LIMIT_UNAVAILABLE', '利用制限を確認できませんでした。少し待ってから再度お試しください。', 503, { retryAfterMs: 60000 });
+            state.reservation = Object.freeze({ ...reservation, ...(reservation.reservations ? { reservations: Object.freeze(reservation.reservations.map(part => Object.freeze({ ...part }))) } : {}) }); return state.reservation;
+        }).finally(() => { state.reserving = null; });
+        return state.reserving;
+    }
     async function sendStep(prepared, job, index) {
-        if (preparedJobs.get(prepared) !== job.id || !Number.isInteger(index) || !prepared.payloads[index]) throw new SafetyError('SAFETY_UNPREPARED_MESSAGE');
-        await require('./package-safety').assertPackageSafety(db.queryDatabase, job);
-        // All formats and destinations converge here. Recheck each part so a
-        // cached/prepared job is not permission to bypass a changed policy.
-        await safety.assertNotification(prepared, job);
-        await options.beforeSubmit?.(job);
-        require('./delivery-gate').assertWindowOpen(job, (options.clock || Date.now)());
-        const payload = prepared.payloads[index];
-        if (!prepared.webhook) {
-            payload.body.nonce = hash(`${job.id}:${index}`).slice(0, 24);
-            payload.body.enforce_nonce = true;
-        }
-        const ticket = prepared.webhook ? require('./outbound-guard').begin(prepared.webhook.id, prepared.channelId, payload.body) : null;
+        const state = checkedPreparation(prepared, job);
+        if (!Number.isInteger(index) || index < 0 || !prepared.payloads[index] || state.used.has(index) || state.active.has(index)) throw new SafetyError('SAFETY_UNPREPARED_MESSAGE');
+        // Claim before the first await. A duplicate caller must not enter the
+        // cleanup path and refund/abandon the genuine in-flight submission.
+        state.active.add(index);
+        let submitted = false, acknowledged = false, claimed = false, ticket = null;
         try {
+            await require('./package-safety').assertPackageSafety(db.queryDatabase, job);
+            // All formats and destinations converge here. Recheck each part so a
+            // cached/prepared job is not permission to bypass a changed policy.
+            await safety.assertNotification(prepared, job);
+            // Direct callers get the same all-parts reservation as the runner.
+            // This also rejects a split batch that cannot fit before any send.
+            const reservation = await reserve(prepared, job);
+            const partExpiresAtMs = Math.min(...(reservation.reservations || []).filter(part => state.payloadSlots[index].includes(part.slotId)).map(part => part.expiresAtMs), reservation.reservations ? Infinity : reservation.expiresAtMs);
+            await options.beforeSubmit?.(job);
+            require('./delivery-gate').assertWindowOpen(job, clock());
+            checkedPreparation(prepared, job);
+            if (partExpiresAtMs <= clock()) throw new AutomationRateError('AUTOMATION_RATE_RESERVATION_EXPIRED', '通知の利用枠の有効期限が切れました。', 429, { retryAfterMs: 1000 });
+            // Consume once immediately before the wire. Unknown delivery and
+            // concurrent callers can never reuse a prepared part's allowance.
+            if (state.used.has(index)) throw new SafetyError('SAFETY_UNPREPARED_MESSAGE');
+            state.used.add(index); claimed = true;
+            await rateLimiter.beginNotification(state.reservation, index);
+            const principals = await currentEntitlements(job);
+            checkedPreparation(prepared, job);
+            if (principals.length !== state.principals.length || principals.some((principal, index) => principal.slotId !== state.principals[index].slotId)) throw new AutomationRateError('AUTOMATION_SLOT_CHANGED', '通知の登録枠が変わりました。登録内容を確認してください。', 403);
+            if (principals.some((principal, index) => principal.minuteLimit !== state.principals[index].minuteLimit || principal.dayLimit !== state.principals[index].dayLimit)) throw new AutomationRateError('AUTOMATION_PLAN_CHANGED', 'プランの利用上限が変わりました。現在の利用枠を確認して通知を再調整します。', 429, { retryAfterMs: 1000 });
+            require('./delivery-gate').assertWindowOpen(job, clock());
+            if (partExpiresAtMs <= clock()) throw new AutomationRateError('AUTOMATION_RATE_RESERVATION_EXPIRED', '通知の利用枠の有効期限が切れました。', 429, { retryAfterMs: 1000 });
+            const payload = prepared.payloads[index];
+            if (!prepared.webhook) {
+                payload.body.nonce = hash(`${job.id}:${index}`).slice(0, 24);
+                payload.body.enforce_nonce = true;
+            }
+            ticket = prepared.webhook ? require('./outbound-guard').begin(prepared.webhook.id, prepared.channelId, payload.body) : null;
+            submitted = true;
             const message = prepared.webhook
                 ? await rest.post(Routes.webhook(prepared.webhook.id, prepared.webhook.token), { ...payload, auth: false, query: new URLSearchParams({ wait: 'true' }) })
                 : await rest.post(Routes.channelMessages(prepared.channelId), payload);
             if (!/^\d{16,22}$/.test(message?.id || '') || message.channel_id !== prepared.channelId) throw failure('DELIVERY_UNKNOWN');
+            acknowledged = true;
             ticket?.sent(message.id);
+            // The count is one actual confirmed Discord message. A DB failure
+            // after its ACK is unknown, never a safe retry of the same part.
+            try { await rateLimiter.commitNotification(state.reservation, index); }
+            catch { throw failure('DELIVERY_UNKNOWN'); }
             return message.id;
         } catch (error) {
             const status = Number(error.status);
-            ticket?.failed(!(status >= 400 && status < 500) && error.name !== 'RateLimitError');
+            const unknown = submitted && (acknowledged || !(status >= 400 && status < 500) && error.name !== 'RateLimitError');
+            ticket?.failed(unknown);
+            if (state.reservation) {
+                try {
+                    if (unknown) await rateLimiter.retainUnknownNotification(state.reservation, index);
+                    else if (claimed) await rateLimiter.releaseNotifications(state.reservation, index);
+                    await rateLimiter.releaseNotifications(state.reservation);
+                } catch { /* The durable hold is retained when SQL is unavailable. */ }
+                state.abandoned = true;
+            }
             throw error;
-        }
+        } finally { state.active.delete(index); }
     }
-    return { prepare, sendStep, readiness: () => safety.status ? safety.status().available : true };
+    async function release(prepared, job) {
+        const state = preparedJobs.get(prepared);
+        if (!state || state.jobId !== job.id) throw new SafetyError('SAFETY_UNPREPARED_MESSAGE');
+        if (state.reservation) await rateLimiter.releaseNotifications(state.reservation);
+        state.abandoned = true;
+    }
+    return { prepare, reserve, release, sendStep, readiness: () => safety.status ? safety.status().available : true };
 }
 module.exports = { createTransport, publicAddress, splitText, filterMedia, snapshotSteps, packSnapshotSteps };

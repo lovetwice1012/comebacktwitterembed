@@ -3,6 +3,34 @@
 // Additive tables only. Existing auto_watch_* / price_watch_* subscriptions
 // remain the source of truth for monitoring. Rules bind to their target IDs.
 const SCHEMA = [
+    `CREATE TABLE IF NOT EXISTS automation_notification_plans (
+        plan_id VARCHAR(64) NOT NULL PRIMARY KEY,
+        label VARCHAR(120) NOT NULL,
+        slot_limit INT UNSIGNED NOT NULL,
+        minute_limit INT UNSIGNED NOT NULL,
+        day_limit INT UNSIGNED NOT NULL,
+        priority INT UNSIGNED NOT NULL DEFAULT 0,
+        enabled TINYINT(1) NOT NULL DEFAULT 1,
+        actor_user_id VARCHAR(32) NOT NULL,
+        updated_at_ms BIGINT NOT NULL
+    ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
+    `CREATE TABLE IF NOT EXISTS automation_notification_entitlements (
+        owner_user_id VARCHAR(32) NOT NULL PRIMARY KEY,
+        plan_id VARCHAR(64) NOT NULL,
+        expires_at_ms BIGINT NULL,
+        actor_user_id VARCHAR(32) NOT NULL,
+        updated_at_ms BIGINT NOT NULL,
+        INDEX idx_notification_entitlement_plan (plan_id)
+    ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
+    `CREATE TABLE IF NOT EXISTS automation_notification_slots (
+        owner_user_id VARCHAR(32) NOT NULL,
+        slot_index INT UNSIGNED NOT NULL,
+        target_kind VARCHAR(16) NULL,
+        target_id BIGINT UNSIGNED NULL,
+        created_at_ms BIGINT NOT NULL,
+        PRIMARY KEY (owner_user_id,slot_index),
+        UNIQUE KEY uniq_notification_slot_target (target_kind,target_id)
+    ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
     `CREATE TABLE IF NOT EXISTS automation_monitors (
         target_kind VARCHAR(16) NOT NULL,
         target_id BIGINT UNSIGNED NOT NULL,
@@ -149,6 +177,17 @@ const SCHEMA = [
         INDEX idx_automation_job_parent (parent_job_id),
         CONSTRAINT fk_automation_job_run FOREIGN KEY (run_id) REFERENCES automation_runs(id)
     ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
+    `CREATE TABLE IF NOT EXISTS automation_rate_reservations (
+        id CHAR(36) NOT NULL PRIMARY KEY,
+        owner_user_id VARCHAR(32) NOT NULL,
+        slot_id VARCHAR(64) NOT NULL,
+        counters_json LONGTEXT NOT NULL,
+        parts_json LONGTEXT NOT NULL,
+        created_at_ms BIGINT NOT NULL,
+        expires_at_ms BIGINT NOT NULL,
+        INDEX idx_automation_reservation_slot (slot_id,expires_at_ms),
+        INDEX idx_automation_reservation_expiry (expires_at_ms)
+    ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
     `CREATE TABLE IF NOT EXISTS automation_counters (
         counter_key CHAR(64) NOT NULL PRIMARY KEY,
         used_count INT UNSIGNED NOT NULL,
@@ -239,4 +278,6 @@ const SCHEMA = [
     ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
 ];
 SCHEMA.push(...require('./graph-schema.sql').SCHEMA);
+SCHEMA.push(...require('./square-billing-schema.sql').SCHEMA);
+SCHEMA.push(...require('./square-donation-schema.sql').SCHEMA);
 module.exports = { SCHEMA };

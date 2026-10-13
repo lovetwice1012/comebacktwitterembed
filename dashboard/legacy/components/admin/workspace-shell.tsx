@@ -13,7 +13,7 @@ const sections = [
 ] as const;
 export function AdminSidebar() {
   const state = useAdminLocation();
-  return <nav aria-label="管理画面" className="flex gap-1 overflow-x-auto lg:sticky lg:top-24 lg:flex-col">{sections.map(([key, label, Icon]) => <button key={key} type="button" aria-current={state.section === key ? "page" : undefined} onClick={() => navigateAdmin(key as AdminSection)} className={`flex shrink-0 items-center gap-3 rounded-lg px-4 py-3 text-left text-sm font-medium transition ${state.section === key ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted hover:text-foreground"}`}><Icon size={18} />{label}</button>)}<Link href="/dashboard/personal-links" className="shrink-0 rounded-lg px-4 py-3 text-sm text-muted-foreground hover:bg-muted">あとで見る・通知</Link></nav>;
+  return <nav aria-label="管理画面" className="flex gap-1 overflow-x-auto lg:sticky lg:top-24 lg:flex-col">{sections.map(([key, label, Icon]) => <button key={key} type="button" aria-current={state.section === key ? "page" : undefined} onClick={() => navigateAdmin(key as AdminSection)} className={`flex shrink-0 items-center gap-3 rounded-lg px-4 py-3 text-left text-sm font-medium transition ${state.section === key ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted hover:text-foreground"}`}><Icon size={18} />{label}</button>)}<Link href="/admin/notification-plans" className="shrink-0 rounded-lg px-4 py-3 text-sm text-muted-foreground hover:bg-muted">通知プラン・送信上限</Link><Link href="/dashboard/personal-links" className="shrink-0 rounded-lg px-4 py-3 text-sm text-muted-foreground hover:bg-muted">あとで見る・通知</Link></nav>;
 }
 type Entry = { id: string; name: string; type?: number };
 export function AdminContextBar() {

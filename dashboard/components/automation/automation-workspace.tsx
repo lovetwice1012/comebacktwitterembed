@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useId, useRef, useState } from "react";
+import Link from "next/link";
 import { RuleEditor, type Rule, type Bindings } from "./rule-editor";
 import { MonitorManager } from "./monitor-manager";
 import { DeliveryHistory } from "./delivery-history";
@@ -219,7 +220,7 @@ export function AutomationWorkspace({ viewerId, guildId, canEdit = true }: { vie
     setNotice(`「${targetNotification.name}」に適用しました。${!targetNotification.enabled ? "この通知は停止中です。" : "次の新着・価格変化から通知します。"}`);
   }
   return <div className={`automation-app space-y-3 ${inStudio ? "automation-studio" : ""}`}>
-    {!inStudio && <><header className="automation-header"><div><h1 className="text-xl font-semibold">自動通知</h1></div><label className="flex items-center gap-2 text-sm">作成先<select className={field} value={scope} onChange={e => setScope(e.target.value)}><option value="private">自分だけ</option>{guildId && canEdit && <option value="guild">サーバー共有</option>}</select></label></header>
+    {!inStudio && <><header className="automation-header"><div><h1 className="text-xl font-semibold">自動通知</h1><div className="mt-1 flex flex-wrap gap-3"><Link href="/dashboard/automation/plans" className="inline-block text-sm text-primary underline">プラン・お支払い</Link><Link href="/dashboard/automation/support" className="inline-block text-sm text-primary underline">支援・寄付</Link></div></div><label className="flex items-center gap-2 text-sm">作成先<select className={field} value={scope} onChange={e => setScope(e.target.value)}><option value="private">自分だけ</option>{guildId && canEdit && <option value="guild">サーバー共有</option>}</select></label></header>
     <nav className="automation-navigation" aria-label="通知メニュー">{[["monitors", "通知一覧"], ["rules", "通知ルール"], ["history", "配信予定・履歴"], ["dictionaries", "辞書"], ["marketplace", "共有ルール"]].map(([id, name]) => <button key={id} disabled={!recoveryReady || busy} aria-current={tab === id ? "page" : undefined} onClick={() => { setTab(id); void task(refresh); }}>{name}</button>)}</nav></>}
     {error && <p role="alert" className="rounded border border-destructive bg-destructive/5 p-3 text-sm text-destructive">{error}</p>}{notice && <p role="status" className="text-sm text-muted-foreground">{notice}</p>}
     {recoveryWarning && <p role="alert" className="rounded border border-amber-500 p-3 text-sm">{recoveryWarning}</p>}

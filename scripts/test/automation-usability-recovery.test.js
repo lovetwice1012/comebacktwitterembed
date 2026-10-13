@@ -150,6 +150,7 @@ async function workspace({ attached = true, cloneActivationFails = false, postAc
         let result;
         if (route === 'catalog') result = catalog();
         else if (route === 'providers') result = { auto: [{ id: 'github' }], price: [], autoRegistration: { eligible: true } };
+        else if (route === 'entitlements') result = { plan: { name: '無料プラン', priority: 0, slotLimit: 5, dayLimit: 24, minuteLimit: 5 }, slots: { used: 2, max: 5, available: 3 }, usage: { entries: [] } };
         else if (route === 'destinations' || route === 'dictionaries') result = { items: [] };
         else if (route === 'starter') result = null;
         else if (route.startsWith('marketplace')) result = { items: [], nextCursor: null };

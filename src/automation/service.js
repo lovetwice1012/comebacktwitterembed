@@ -2,6 +2,8 @@
 
 const { randomUUID, createHash } = require('node:crypto');
 const { promisify } = require('node:util');
+const { createRateLimiter } = require('./rate-limits');
+const { withRateOperation } = require('./rate-operation');
 const { gzip, gunzip } = require('node:zlib');
 const { assertWorkflow, newWorkflow } = require('./schema');
 const { validateDictionary } = require('./dictionary');
@@ -45,7 +47,13 @@ function safeName(value) {
     return value.trim();
 }
 
-function createService(db) {
+/** @param {any} db @param {{rateLimiter?:any,rateOptions?:any}} [options] */
+function createService(db, options = {}) {
+    const rateLimiter = options.rateLimiter || createRateLimiter(db, options.rateOptions);
+    async function withOperation(actor, group, work) {
+        requireActor(actor);
+        return withRateOperation(db, actor, group, work, { rateLimiter });
+    }
     async function audit(query, actor, id, action, detail, guildId) {
         // Only bounded IDs/revisions/hashes enter this log; no endpoint URLs or
         // dictionary text. Definitions are in explicitly authorized resources.
@@ -155,10 +163,17 @@ function createService(db) {
         });
     }
     async function setWorkflowState(actor, id, input) {
+        if (typeof input?.enabled !== 'boolean') fail('INVALID_STATE', '有効・停止の状態を確認してください。');
         return db.withDatabaseTransaction(async query => {
             const row = await getRow('workflow', actor, id, true, query, true);
             if (Number(row.revision) !== input.expectedRevision) fail('REVISION_CONFLICT', '編集内容が変更されています。', 409);
             if (input.enabled && !row.active_revision) fail('NOT_ACTIVE', 'ルールを適用してから有効にしてください。');
+            if (input.enabled) {
+                const snapshots = await query('SELECT definition_json,bindings_json FROM automation_revisions WHERE workflow_id=? AND revision=?', [id, row.active_revision]);
+                if (!snapshots.length) fail('NOT_ACTIVE', '適用済みのルールを確認できません。再度適用してください。');
+                const definition = assertWorkflow(parse(snapshots[0].definition_json));
+                await validateBindings(actor, definition, parse(snapshots[0].bindings_json), query, true);
+            }
             await query('UPDATE automation_workflows SET enabled=?,revision=revision+1,updated_at_ms=? WHERE id=?', [input.enabled ? 1 : 0, Date.now(), id]);
             await audit(query, actor, id, 'workflow.state', { enabled: !!input.enabled }, row.guild_id);
             return { enabled: !!input.enabled, revision: Number(row.revision) + 1 };
@@ -270,7 +285,14 @@ function createService(db) {
             return { attached: true };
         });
     }
-    return { list, getRow, getWorkflow, createWorkflow, updateWorkflow, activateWorkflow, setWorkflowState, remove, history,
-        restoreRevision, validateBindings, saveDictionary, getDictionary, dictionaryData, saveDestination, attach, audit };
+    const service = { list, getRow, getWorkflow, createWorkflow, updateWorkflow, activateWorkflow, setWorkflowState, remove, history,
+        restoreRevision, validateBindings, saveDictionary, getDictionary, dictionaryData, saveDestination, attach, audit,
+        withOperation, rateLimiter };
+    for (const name of ['createWorkflow', 'updateWorkflow', 'activateWorkflow', 'restoreRevision', 'saveDictionary', 'saveDestination', 'attach']) {
+        const operation = /** @type {Function} */ (service[name]);
+        service[name] = (actor, ...args) => withOperation(actor, 'write', () => operation(actor, ...args));
+    }
+    service.setWorkflowState = async (actor, id, input) => input?.enabled ? withOperation(actor, 'write', () => setWorkflowState(actor, id, input)) : setWorkflowState(actor, id, input);
+    return service;
 }
 module.exports = { createService, AutomationError, assertAccess, scopeFor, requireActor, hash, publicWorkflow, publicDestination };

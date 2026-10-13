@@ -16,13 +16,17 @@ async function fixture(work) {
     const db = await createTestDatabase(port), query = db.queryDatabase;
     const actor = { userId: '222222222222222222' }, service = createService(db);
     const workflow = await service.createWorkflow(actor, { definition: newWorkflow('flow fixture') });
+    // Distinguish runtime gate counters from the editing admission counters
+    // created during setup; both continue using the actual SQL limiter.
+    const setupCounterKeys = new Set((await query('SELECT counter_key FROM automation_counters')).map(row => row.counter_key));
+    const counters = async () => (await query('SELECT counter_key,used_count FROM automation_counters ORDER BY expires_at_ms')).filter(row => !setupCounterKeys.has(row.counter_key));
     const context = { ownerUserId: actor.userId, guildId: null, scope: 'private', workflowId: workflow.id, revision: 1 };
     async function origin(title = 'event', patch = {}) {
         const runId = randomUUID(), ctx = { ...context, ...patch };
         await query("INSERT INTO automation_runs (id,dedupe_key,workflow_id,revision,owner_user_id,guild_id,scope,target_kind,target_id,event_json,trace_json,state,created_at_ms) VALUES (?,?,?,?,?,?,?,'auto',1,?,'[]','queued',?)", [runId, hash(runId), ctx.workflowId, ctx.revision, ctx.ownerUserId, ctx.guildId, ctx.scope, JSON.stringify({ title }), baseTime]);
         return { runId, context: ctx, nodeId: 'gate', now: baseTime, unit: { kind: 'event', ancestry: [], members: [{ id: runId, runId, event: { title }, display: NODE_TYPES.transform.defaults, schedules: [], dueAtMs: baseTime, deadlineMs: null }] } };
     }
-    try { await work({ db, query, context, origin, store: createGraphStore(db) }); }
+    try { await work({ db, query, counters, context, origin, store: createGraphStore(db) }); }
     finally { await db.close(); }
 }
 const gate = { count: 1, minutes: 10, overflow: 'defer', key: ['all'] };
@@ -41,7 +45,7 @@ test('flow activation consumes once before fanout and committed recovery emits n
     assert.equal(settled.state, 'complete'); assert.equal(settled.emitted[0].stepIds.length, 2);
     const restarted = createGraphStore(f.db);
     assert.equal((await restarted.settle(step, output(step), baseTime)).state, 'already_settled');
-    assert.equal(Number((await f.query('SELECT SUM(used_count) AS n FROM automation_counters'))[0].n), 1);
+    assert.equal((await f.counters()).reduce((sum, row) => sum + Number(row.used_count), 0), 1);
     assert.equal(Number((await f.query('SELECT COUNT(*) AS n FROM automation_flow_steps'))[0].n), 3);
     assert.equal(Number((await f.query('SELECT COUNT(*) AS n FROM automation_flow_edges'))[0].n), 2);
 }));
@@ -53,7 +57,7 @@ test('failure after quota increment rolls back quota, output units, edge receipt
         return value;
     })) });
     await assert.rejects(broken.settle(step, output(step), baseTime), /injected rollback/);
-    assert.equal(Number((await f.query('SELECT COUNT(*) AS n FROM automation_counters'))[0].n), 0);
+    assert.equal((await f.counters()).length, 0);
     assert.equal(Number((await f.query('SELECT COUNT(*) AS n FROM automation_flow_units'))[0].n), 1);
     assert.equal((await f.query('SELECT state FROM automation_flow_steps'))[0].state, 'leased');
     assert.equal((await f.store.settle(step, output(step), baseTime)).state, 'complete');
@@ -75,14 +79,14 @@ test('defer preserves the pending activation without successors or consumption u
     const next = await createGraphStore(f.db).claim(baseTime + 600000);
     assert.equal(next.evaluation_at_ms, baseTime + 600000);
     assert.equal((await f.store.settle(next, output(next), baseTime + 600000)).state, 'complete');
-    assert.deepEqual((await f.query('SELECT used_count FROM automation_counters ORDER BY expires_at_ms')).map(row => Number(row.used_count)), [1, 1]);
+    assert.deepEqual((await f.counters()).map(row => Number(row.used_count)), [1, 1]);
 }));
 test('drop closes an absent path durably and does not spend another quota unit', { skip: !port }, async () => fixture(async f => {
     await f.store.initialize(await f.origin()); let step = await f.store.claim(baseTime); await f.store.settle(step, { gate }, baseTime);
     const other = await f.origin(); await f.store.initialize(other); step = await f.store.claim(baseTime);
     const dropped = await f.store.settle(step, { ...output(step), gate: { ...gate, overflow: 'drop' }, closedEdges: [{ runId: other.runId, edgeId: 'a' }, { runId: other.runId, edgeId: 'b' }] }, baseTime);
     assert.equal(dropped.state, 'excluded');
-    assert.equal(Number((await f.query('SELECT SUM(used_count) AS n FROM automation_counters'))[0].n), 1);
+    assert.equal((await f.counters()).reduce((sum, row) => sum + Number(row.used_count), 0), 1);
     const receipts = await f.query('SELECT receipt_kind,unit_id FROM automation_flow_edges');
     assert.equal(receipts.length, 2); assert(receipts.every(row => row.receipt_kind === 'closed' && row.unit_id === null));
 }));
@@ -94,7 +98,7 @@ test('revoked members cannot pass a stale activation or silently change an immut
     assert.equal((await f.store.settle(step, output(step), baseTime + 2)).state, 'excluded');
     assert.equal((await f.store.readUnit(initialized.unitId)).members.length, 1);
     assert.equal((await f.store.readUnit(initialized.unitId, true)).members.length, 0);
-    assert.equal(Number((await f.query('SELECT COUNT(*) AS n FROM automation_counters'))[0].n), 0);
+    assert.equal((await f.counters()).length, 0);
 }));
 test('flow migration is additive, idempotent and identical to new-schema declarations', { skip: !port }, async () => fixture(async f => {
     const source = fs.readFileSync(path.join(__dirname, '../../migrations/20260922_add_automation_flow_execution.sql'), 'utf8');
@@ -137,7 +141,7 @@ test('multiple aggregate stages retain their input units and intervening quota c
     let step = await createGraphStore(f.db).claim(baseTime + 600000);
     assert.equal(step.unit.members.length, 2);
     await f.store.settle(step, { gate, outputs: [{ unit: step.unit, edges: [{ id: 'toBatchB', target: 'batchB' }] }] }, baseTime + 600000);
-    assert.equal(Number((await f.query('SELECT SUM(used_count) AS n FROM automation_counters'))[0].n), 1);
+    assert.equal((await f.counters()).reduce((sum, row) => sum + Number(row.used_count), 0), 1);
     step = await f.store.claim(baseTime + 600000);
     await f.store.admitBatch(step, { ...batchConfig, minutes: 20 }, [{ key: ['all'], unit: step.unit }], baseTime + 600000);
     const second = await f.store.dueBatch(baseTime + 1200000);

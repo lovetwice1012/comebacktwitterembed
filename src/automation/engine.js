@@ -78,7 +78,7 @@ function evaluateWorkflow(workflow, input, options = {}) {
     const deadline = workflow.expiresAfterMinutes ? baseTime + workflow.expiresAfterMinutes * MINUTE : Infinity;
     let visited = 0;
     while (queue.length) {
-        if (++visited > LIMITS.paths || outputs.length >= LIMITS.outputs) throw new Error('AUTOMATION_EVALUATION_LIMIT');
+        if (++visited > LIMITS.paths) throw new Error('AUTOMATION_EVALUATION_LIMIT');
         // Topological processing guarantees all matched incoming paths have
         // arrived before an explicit merge is evaluated, even at unequal depth.
         if (ranks) queue.sort((a, b) => ranks.get(a.nodeId) - ranks.get(b.nodeId));
@@ -140,6 +140,7 @@ function evaluateWorkflow(workflow, input, options = {}) {
             const due = scheduleDelivery(branch.dueAtMs, branch.schedules, deliveryDeadline);
             if (due === null) { trace.push({ nodeId: node.id, outcome: 'expired', reason: '期限内に通知可能な時刻がありません' }); continue; }
             const text = outputText(branch.display, event);
+            if (outputs.length >= LIMITS.outputs) throw new Error('AUTOMATION_EVALUATION_LIMIT');
             outputs.push({ destination: c.destination, dueAtMs: due, deadlineMs: Number.isFinite(deliveryDeadline) ? deliveryDeadline : null,
                 display: branch.display, text, limits: branch.limits, aggregate: branch.aggregate, schedules: branch.schedules, path: branch.path });
             trace.push({ nodeId: node.id, outcome: 'scheduled', dueAtMs: due, destination: c.destination }); continue;

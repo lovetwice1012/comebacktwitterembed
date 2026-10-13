@@ -124,6 +124,6 @@ function createDestinations(db, service, options = {}) {
             return service.saveDestination(actor, input, { webhookEndpointId: String(rows[0].id), guildId: actor.guildId, channelId: ctx.channel.id, createdByBot }, id);
         });
     }
-    return { channels, save, verifyChannel };
+    return { channels, save: (actor, input, id) => service.withOperation(actor, 'write', () => save(actor, input, id)), verifyChannel };
 }
 module.exports = { createDestinations, permissions, webhookParts, has, VIEW, SEND, MANAGE_WEBHOOKS };

@@ -27,6 +27,7 @@ const NODE_TYPES = Object.freeze({
 const OPS = ['eq', 'ne', 'contains', 'notContains', 'startsWith', 'endsWith', 'in', 'gt', 'gte', 'lt', 'lte', 'exists'];
 const BRANCH_TYPES = new Set(['condition', 'dictionary']);
 const NAME = /^[a-zA-Z][a-zA-Z0-9_-]{0,63}$/;
+const { analyzeFanout } = require('./fanout');
 
 class RuleError extends Error {
     constructor(issues) {
@@ -182,6 +183,18 @@ function validateWorkflow(input) {
         }
     }
     for (const node of input.nodes) if (node?.group && (!Array.isArray(input.layout?.groups) || !input.layout.groups.some(g => g?.id === node.group))) issues.push({ path: '$.nodes', nodeId: node.id, message: '所属グループが見つかりません。' });
+    // Analyze only a valid DAG: malformed/cyclic graphs already have actionable
+    // structural errors and must never enter the amplification calculation.
+    if (!issues.length) {
+        const fanout = analyzeFanout(input, LIMITS.outputs);
+        if (fanout.maximumOutputs > LIMITS.outputs) {
+            const send = input.nodes.filter(node => node.type === 'send')
+                .sort((a, b) => fanout.sendCounts.get(b.id) - fanout.sendCounts.get(a.id))[0];
+            issues.push({ path: `$.nodes[${input.nodes.indexOf(send)}]`, nodeId: send.id, code: fanout.conservative ? 'AUTOMATION_FANOUT_ANALYSIS_LIMIT' : 'AUTOMATION_FANOUT_LIMIT',
+                message: fanout.conservative ? '並列の条件が複雑なため、通知数の上限を確認できません。並列経路を減らすか、条件分岐の前後に「経路を合流」を置いてから保存してください。'
+                    : `1件のイベントから作られる通知は最大${LIMITS.outputs}件です。接続の重複や並列経路を減らすか、通知の前に「経路を合流」を置いて1件にまとめてください。` });
+        }
+    }
     return { valid: !issues.length, issues };
 }
 function assertWorkflow(input) {
