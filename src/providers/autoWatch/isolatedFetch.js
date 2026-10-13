@@ -25,7 +25,7 @@ function commandFor(platform, timeoutMs) {
     }
     if (platform === 'win32') return { command: process.env.AUTO_WATCH_PYTHON || 'python', args: [
         path.join(__dirname, 'isolation_windows.py'), String(MEMORY_BYTES),
-        String(Math.ceil(timeoutMs / 1000) + 5), process.execPath, '--max-old-space-size=256', worker,
+        String(Math.ceil(timeoutMs / 1000) + 5), process.execPath,
     ] };
     throw monitorError('AUTO_WATCH_ISOLATION_UNAVAILABLE', 'This platform needs an OS sandbox for automatic-watch acquisition.', { retryAfterMs: 300000 });
 }

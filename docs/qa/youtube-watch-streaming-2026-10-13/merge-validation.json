@@ -22,8 +22,12 @@
       "failed": 0,
       "skipped": 0,
       "disposableMariaDbPort": 33621
+    },
+    "windowsIsolatedLiveProbe": {
+      "fetchMode": "uploads",
+      "itemCount": 100
     }
   },
   "productionRecord": "deployment.json",
-  "additionalCoverage": "Default resident tick must pass isolate:true and the HTTP timeout to source claims; type declarations clarified for complete TypeScript verification."
+  "additionalCoverage": "Default resident tick must pass isolate:true and the HTTP timeout to source claims; type declarations clarified for complete TypeScript verification. Windows subprocess executes only the fixed worker with a trusted parent runtime, fixed flags and shell=False; remote data remains on stdin."
 }

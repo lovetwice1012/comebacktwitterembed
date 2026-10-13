@@ -1,4 +1,5 @@
-"""Run the guest acquisition worker inside a Windows Job Object.
+"""
+Run the guest acquisition worker inside a Windows Job Object.
 
 The worker waits for stdin; assign its memory/CPU/process limits before sending
 the source. Closing the job terminates every process belonging to it.
@@ -6,7 +7,9 @@ the source. Closing the job terminates every process belonging to it.
 import ctypes
 from ctypes import wintypes
 import os
-import subprocess
+from pathlib import Path
+# Needed for the fixed worker and trusted parent-provided runtime, without a shell.
+import subprocess  # nosec B404
 import sys
 
 
@@ -36,6 +39,19 @@ class CpuLimits(ctypes.Structure):
 def main():
     if os.name != "nt":
         return 2
+    if len(sys.argv) != 4:
+        return 2
+    memory = int(sys.argv[1])
+    timeout = int(sys.argv[2])
+    executable = Path(sys.argv[3])
+    worker = Path(__file__).resolve().with_name("fetchWorker.js")
+    if (not executable.is_absolute() or not executable.is_file()
+            or executable.name.lower() not in {"node.exe", "node", "bun.exe", "bun"}
+            or not worker.is_file()
+            or not 16 * 1024 * 1024 <= memory <= 512 * 1024 * 1024
+            or not 1 <= timeout <= 400):
+        return 2
+    executable = executable.resolve(strict=True)
     kernel = ctypes.WinDLL("kernel32", use_last_error=True)
     kernel.CreateJobObjectW.argtypes = [ctypes.c_void_p, wintypes.LPCWSTR]
     kernel.CreateJobObjectW.restype = wintypes.HANDLE
@@ -50,15 +66,19 @@ def main():
         limits = ExtendedLimits()
         limits.basic.flags = 0x2000 | 0x100 | 0x200 | 0x8
         limits.basic.active_processes = 1
-        limits.process_memory = limits.job_memory = int(sys.argv[1])
+        limits.process_memory = limits.job_memory = memory
         cpu = CpuLimits(0x1 | 0x4, 5000)
         if not kernel.SetInformationJobObject(job, 9, ctypes.byref(limits), ctypes.sizeof(limits)):
             return 2
         if not kernel.SetInformationJobObject(job, 15, ctypes.byref(cpu), ctypes.sizeof(cpu)):
             return 2
-        child = subprocess.Popen(sys.argv[3:], stdin=subprocess.PIPE,
-                                 stdout=sys.stdout.buffer, stderr=sys.stderr.buffer,
-                                 creationflags=subprocess.CREATE_NO_WINDOW)
+        # The caller supplies only its trusted runtime path. The script and
+        # flags are fixed here; watched URLs and metadata arrive over stdin.
+        child = subprocess.Popen(  # nosec B603
+            [str(executable), "--max-old-space-size=256", str(worker)],
+            stdin=subprocess.PIPE, stdout=sys.stdout.buffer,
+            stderr=sys.stderr.buffer, shell=False,
+            creationflags=subprocess.CREATE_NO_WINDOW)
         if not kernel.AssignProcessToJobObject(job, wintypes.HANDLE(int(child._handle))):
             child.kill()
             return 2
@@ -66,7 +86,7 @@ def main():
         if len(data) > 2 * 1024 * 1024:
             child.kill()
             return 2
-        child.communicate(data, timeout=int(sys.argv[2]))
+        child.communicate(data, timeout=timeout)
         return child.returncode
     except (OSError, subprocess.TimeoutExpired):
         if child is not None:
