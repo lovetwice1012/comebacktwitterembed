@@ -12,8 +12,9 @@ async function dispatch(request, actor, services) {
     let group;
     if (method !== 'GET' && method !== 'DELETE') {
         group = path[0] === 'validate' || path[0] === 'dictionary-preview' ? 'validate' : path[0] === 'simulate' || path.at(-1) === 'test' ? 'simulate' : path[0] === 'monitors' ? 'monitor' : path[0] === 'marketplace' && (!path[2] || path[2] === 'status') ? 'publication' : 'write';
-        if (path[0] === 'billing' && (path[1] === 'subscribe' || path[1] === 'donations' && path[2] === 'donate')) group = 'publication';
+        if (path[0] === 'billing' && (path[1] === 'subscribe' || path[1] === 'donations' && path[2] === 'donate' || path[1] === 'catalog' && path[2] === 'create')) group = 'publication';
         if (path[0] === 'billing' && path[1] === 'cancel') group = undefined;
+        if (path[0] === 'monitors' && body.action === 'cadence' && body.slotCost === 1) group = undefined;
         if (path[0] === 'workflows' && path[2] === 'state' && body.enabled === false || path[0] === 'monitors' && (body.action === 'detach' || body.enabled === false && Object.keys(body).every(key => ['enabled', 'expectedRevision'].includes(key))) || path[0] === 'marketplace' && path[2] === 'status' && body.status === 'withdrawn') group = undefined;
     }
     if (!group) return dispatchCore(request, actor, services);
@@ -31,8 +32,8 @@ async function dispatchCore({ method, path, search = new URLSearchParams(), body
     if (kind === "catalog" && method === "GET") result = { ...catalog.catalog(), rateLimits: service.rateLimiter?.getPolicy(), deliverySafety: require('./safety').createSafety().status() };
     else if (kind === "entitlements" && !id && method === "GET") {
       const info = await require('./entitlements').getEntitlementSummary(services.db, actor.userId);
-      const plan = { id: info.planId, tier: info.tier, name: info.label, priority: info.priority, slotLimit: info.slotLimit, minuteLimit: info.minuteLimit, dayLimit: info.dayLimit };
-      const entries = await Promise.all(info.slots.map(async slot => ({ slotId: slot.slotId, targetKind: slot.targetKind, targetId: slot.targetId, dayLimit: slot.dayLimit, minuteLimit: slot.minuteLimit, allowed: slot.allowed, ...await service.rateLimiter.getSlotUsage(slot.slotId, slot) })));
+      const plan = { id: info.planId, tier: info.tier, name: info.label, priority: info.priority, slotLimit: info.slotLimit, minuteLimit: info.minuteLimit, dayLimit: info.dayLimit, baseSlotLimit: info.baseSlotLimit, manualExtraSlots: info.manualExtraSlots, addonGrantUnits: info.addonGrantUnits, addonExtraSlots: info.addonExtraSlots, donationPaymentCount: info.donationPaymentCount, addonValidUntilAtMs: info.addonValidUntilAtMs };
+      const entries = await Promise.all(info.slots.map(async slot => ({ slotId: slot.slotId, slotCost: slot.slotCost, targetKind: slot.targetKind, targetId: slot.targetId, dayLimit: slot.dayLimit, minuteLimit: slot.minuteLimit, allowed: slot.allowed, ...await service.rateLimiter.getSlotUsage(slot.slotId, slot) })));
       result = { plan, slots: { used: info.usedSlots, max: info.slotLimit, available: info.remainingSlots }, usage: { entries } };
     }
     else if (kind === "plans") {
@@ -41,6 +42,15 @@ async function dispatchCore({ method, path, search = new URLSearchParams(), body
       else if (method === "POST" || method === "PATCH") result = await services.db.withDatabaseTransaction(query => plans.savePlanPolicy(query, actor, { planId: id || body.planId, label: body.label, slotLimit: body.slotLimit, minuteLimit: body.minuteLimit, dayLimit: body.dayLimit, priority: body.priority, enabled: body.enabled, expectedUpdatedAtMs: body.expectedUpdatedAtMs }));
     }
     else if (kind === "entitlements" && id && method === "POST") result = await services.db.withDatabaseTransaction(query => require('./entitlements').setUserPlan(query, actor, id, body.planId, { expiresAtMs: body.expiresAtMs }));
+    else if (kind === "billing" && ["commerce", "catalog", "coupons"].includes(id)) {
+      const commerce = services.commerce;
+      if (!commerce) throw new AutomationError('SQUARE_NOT_CONFIGURED', '決済機能は準備中です。', 503);
+      if (id === "commerce" && action === "admin" && method === "GET") result = await commerce.getAdmin(actor);
+      else if (id === "catalog" && action === "quote" && method === "POST") result = await commerce.createCatalogQuote(actor, body);
+      else if (id === "catalog" && action === "create" && method === "POST") result = await commerce.confirmCatalogCreation(actor, body);
+      else if (id === "catalog" && action && method === "GET") result = await commerce.getCatalogCreation(actor, action);
+      else if (id === "coupons" && (method === "POST" && !action || method === "PATCH" && action)) result = await commerce.saveCoupon(actor, { ...body, code: action || body.code });
+    }
     else if (kind === "billing" && id === "donations") {
       const donations = services.donations;
       if (!donations) throw new AutomationError('SQUARE_NOT_CONFIGURED', '決済機能は準備中です。', 503);
@@ -83,6 +93,7 @@ async function dispatchCore({ method, path, search = new URLSearchParams(), body
       else if (action && method === "PATCH") result = await monitors.save(actor, id, body, action);
       else if (action && method === "DELETE") result = await monitors.remove(actor, id, action, body.expectedRevision);
       else if (action && method === "POST" && body.action === "detach") result = await monitors.detach(actor, id, action, body.expectedRevision);
+      else if (action && method === "POST" && body.action === "cadence") result = await monitors.setCadence(actor, id, action, body);
     }
     else if (kind === "template" && method === "GET") result = catalog.template(search.get("goal") || "all", search.get("time") || "now", search.get("format") || "expanded");
     else if (kind === "validate" && method === "POST") {

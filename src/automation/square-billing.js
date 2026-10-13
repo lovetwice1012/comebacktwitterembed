@@ -124,6 +124,7 @@ function createSquareClient(options = {}) {
 /** Single-merchant integration. The injected fetch/env/clock options are trusted server or fixture inputs. */
 function createSquareBilling(db, options = {}) {
     const { config: c, now, scope, requireConfigured, request, location } = createSquareClient(options);
+    const commerce = require('./square-commerce').createSquareCommerce(db, options);
     async function variation(variationId) { return validateVariation((await request('GET', `/v2/catalog/object/${encodeURIComponent(id(variationId))}`)).object, c.locationId); }
     async function getBindings() { return db.queryDatabase('SELECT * FROM automation_square_bindings WHERE environment=? AND merchant_id=? ORDER BY plan_id', scope); }
     async function getAdmin(actor) {
@@ -182,6 +183,11 @@ function createSquareBilling(db, options = {}) {
         if (!available) throw fail('SQUARE_PLAN_UNAVAILABLE', 'この有償プランは現在申し込めません。', 422);
         await location(); const catalog = await variation(available.variationId);
         const checkoutId = randomUUID(), expiresAtMs = now() + QUOTE_MS, plan = { ...available, ...catalog };
+        if (input.couponCode) {
+            plan.coupon = await commerce.resolveCoupon(input.couponCode, plan);
+            plan.firstAmount = plan.coupon.firstAmount; plan.regularAmount = catalog.amount;
+            plan.baseVariationId = catalog.variationId; plan.baseCatalogVersion = catalog.catalogVersion;
+        }
         await db.withDatabaseTransaction(async query => {
             await lockOwner(query, owner);
             const current = await query('SELECT * FROM automation_square_accounts WHERE owner_user_id=? AND environment=? AND merchant_id=? FOR UPDATE', [owner, ...scope]);
@@ -190,6 +196,7 @@ function createSquareBilling(db, options = {}) {
             if (subscriptions[0] && (!TERMINAL.has(subscriptions[0].state) || Number(subscriptions[0].valid_until_at_ms) > now())) throw fail('SQUARE_ALREADY_SUBSCRIBED', '契約済みのプランがあります。契約状況をご確認ください。', 409);
             const receiptEmail = current[0]?.customer_email || email;
             const receiptName = current[0]?.customer_name || name;
+            if (plan.coupon) await commerce.reserveCoupon(query, owner, checkoutId, plan.coupon, plan, expiresAtMs);
             await query(`INSERT INTO automation_square_checkouts (id,owner_user_id,environment,merchant_id,plan_id,variation_id,catalog_version,amount,currency,cadence,plan_json,email,name,expires_at_ms,created_at_ms,updated_at_ms)
                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, [checkoutId, owner, ...scope, planId, catalog.variationId, catalog.catalogVersion, catalog.amount, catalog.currency, catalog.cadence, JSON.stringify(plan), receiptEmail, receiptName, expiresAtMs, now(), now()]);
             plan.email = receiptEmail; plan.name = receiptName;
@@ -206,12 +213,16 @@ function createSquareBilling(db, options = {}) {
         const rows = await db.queryDatabase(`SELECT p.*,b.variation_id,b.enabled AS binding_enabled FROM automation_notification_plans p
             JOIN automation_square_bindings b ON b.plan_id=p.plan_id WHERE p.plan_id=? AND b.environment=? AND b.merchant_id=?`, [quote.plan_id, ...scope]);
         const row = rows[0], snapshot = JSON.parse(quote.plan_json);
-        if (!row || Number(row.enabled) !== 1 || Number(row.binding_enabled) !== 1 || row.variation_id !== quote.variation_id
+        if (!row || Number(row.enabled) !== 1 || Number(row.binding_enabled) !== 1 || row.variation_id !== (snapshot.baseVariationId || quote.variation_id)
             || ['slotLimit', 'minuteLimit', 'dayLimit', 'priority'].some((name, index) => Number(row[['slot_limit', 'minute_limit', 'day_limit', 'priority'][index]]) !== snapshot[name]) || row.label !== snapshot.label)
             throw fail('SQUARE_QUOTE_CHANGED', 'プランの設定が変更されました。申し込み内容を再確認してください。', 409);
-        const current = await variation(quote.variation_id);
-        if (current.catalogVersion !== quote.catalog_version || current.amount !== Number(quote.amount) || current.currency !== quote.currency || current.cadence !== quote.cadence)
+        const current = await variation(snapshot.baseVariationId || quote.variation_id);
+        if (current.catalogVersion !== (snapshot.baseCatalogVersion || quote.catalog_version) || current.amount !== Number(quote.amount) || current.currency !== quote.currency || current.cadence !== quote.cadence)
             throw fail('SQUARE_QUOTE_CHANGED', 'Squareの料金が変更されました。申し込み内容を再確認してください。', 409);
+        if (snapshot.coupon) {
+            await commerce.assertCouponCurrent(quote, snapshot);
+            if (quote.variation_id !== snapshot.baseVariationId) require('./square-commerce').validateCouponVariation((await request('GET', '/v2/catalog/object/' + encodeURIComponent(quote.variation_id))).object, c.locationId, snapshot.coupon);
+        }
     }
     async function leaseCheckout(quote, sourceId) {
         const token = randomUUID(), sourceDigest = digest(sourceId);
@@ -220,7 +231,7 @@ function createSquareBilling(db, options = {}) {
             const rows = await query('SELECT * FROM automation_square_checkouts WHERE id=? FOR UPDATE', [quote.id]);
             const current = rows[0];
             if (current.state === 'COMPLETE') return;
-            if (current.state === 'FAILED') throw fail('SQUARE_CHECKOUT_FAILED', '前回の申し込みは完了していません。新しく申し込みをやり直してください。', 409);
+            if (['FAILED','KNOWN_REJECTED'].includes(current.state)) throw fail('SQUARE_CHECKOUT_FAILED', '前回の申し込みは完了していません。新しく申し込みをやり直してください。', 409);
             if (current.lease_token && Number(current.lease_until_at_ms) > now()) throw Object.assign(fail('SQUARE_CHECKOUT_BUSY', '申し込みを処理しています。契約状況を再確認してください。', 409), { retryAfterMs: 30000 });
             if (current.source_digest && current.source_digest !== sourceDigest && !current.card_id) throw fail('SQUARE_CHECKOUT_PENDING', '前回の決済結果を先に確認してください。重複して申し込むことはできません。', 409);
             if (current.state === 'QUOTED' && Number(current.expires_at_ms) <= now()) throw fail('SQUARE_QUOTE_EXPIRED', '申し込み内容の有効期限が切れました。内容を再確認してください。', 409);
@@ -232,6 +243,7 @@ function createSquareBilling(db, options = {}) {
             if (subscriptions[0] && subscriptions[0].checkout_id !== quote.id && (!TERMINAL.has(subscriptions[0].state) || Number(subscriptions[0].valid_until_at_ms) > now())) throw fail('SQUARE_ALREADY_SUBSCRIBED', '契約済みのプランがあります。', 409);
             await query('UPDATE automation_square_accounts SET current_checkout_id=?,updated_at_ms=? WHERE owner_user_id=? AND environment=? AND merchant_id=?', [quote.id, now(), quote.owner_user_id, ...scope]);
             await query('UPDATE automation_square_checkouts SET source_digest=?,lease_token=?,lease_until_at_ms=?,updated_at_ms=? WHERE id=?', [sourceDigest, token, now() + LEASE_MS, now(), quote.id]);
+            await commerce.couponStage(query, quote, 'SUBMITTING');
         });
         return token;
     }
@@ -241,6 +253,19 @@ function createSquareBilling(db, options = {}) {
         const result = await db.queryDatabase(`UPDATE automation_square_checkouts SET state=?,updated_at_ms=?${entries.map(([name]) => `,${name}=?`).join('')} WHERE id=? AND lease_token=? AND state<>'COMPLETE'`, [state, now(), ...entries.map(([, value]) => value), quote.id, token]);
         if (result.affectedRows !== 1) throw fail('SQUARE_CHECKOUT_BUSY', '申し込み結果を再確認してください。', 409);
         Object.assign(quote, fields, { state });
+    }
+    async function finishKnownRejected(query, quote, token) {
+        await lockOwner(query, quote.owner_user_id);
+        const snapshot = JSON.parse(quote.plan_json);
+        if (snapshot.coupon) await query('SELECT code FROM automation_square_coupons WHERE code=? AND environment=? AND merchant_id=? FOR UPDATE', [snapshot.coupon.code, ...scope]);
+        const current = (await query('SELECT * FROM automation_square_checkouts WHERE id=? AND owner_user_id=? AND environment=? AND merchant_id=? FOR UPDATE', [quote.id, quote.owner_user_id, ...scope]))[0];
+        if (!current || !['FAILED','KNOWN_REJECTED'].includes(current.state) || current.subscription_id
+            || (token ? current.lease_token !== token : current.lease_token && Number(current.lease_until_at_ms) > now())) return false;
+        if ((await query('SELECT subscription_id FROM automation_square_subscriptions WHERE checkout_id=? LIMIT 1', [current.id])).length) return false;
+        await query("UPDATE automation_square_checkouts SET state='FAILED',updated_at_ms=? WHERE id=? AND state IN ('FAILED','KNOWN_REJECTED')", [now(), current.id]);
+        await commerce.couponStage(query, current, 'RELEASED');
+        await query('UPDATE automation_square_accounts SET current_checkout_id=NULL,updated_at_ms=? WHERE owner_user_id=? AND environment=? AND merchant_id=? AND current_checkout_id=?', [now(), current.owner_user_id, ...scope, current.id]);
+        return true;
     }
     async function validateCustomer(customerId, owner) {
         const { customer } = await request('GET', `/v2/customers/${encodeURIComponent(id(customerId))}`);
@@ -266,9 +291,10 @@ function createSquareBilling(db, options = {}) {
         return found[0] || null;
     }
     function matchesSubscription(subscription, quote) {
+        const coupon = JSON.parse(quote.plan_json).coupon;
         return subscription && subscription.customer_id === quote.customer_id && subscription.location_id === c.locationId && subscription.plan_variation_id === quote.variation_id
             && subscription.source?.name === `cbte:${quote.id}` && (!quote.card_id || subscription.card_id === quote.card_id)
-            && (!subscription.price_override_money || (Number(subscription.price_override_money.amount) === Number(quote.amount) && subscription.price_override_money.currency === quote.currency));
+            && (coupon ? !subscription.price_override_money : !subscription.price_override_money || (Number(subscription.price_override_money.amount) === Number(quote.amount) && subscription.price_override_money.currency === quote.currency));
     }
     async function recoverSubscription(quote) {
         if (!quote.customer_id) return null;
@@ -290,7 +316,7 @@ function createSquareBilling(db, options = {}) {
         if (existing?.subscription_id === subscription.id && existing.checkout_id === quote.id && checkouts[0]?.state === 'COMPLETE') return true;
         // A delayed recovery cannot replace a contract installed by a newer
         // checkout after the previous status read started.
-        if (accounts[0]?.current_checkout_id !== quote.id || !checkouts[0] || ['FAILED', 'COMPLETE'].includes(checkouts[0].state)) return false;
+        if (accounts[0]?.current_checkout_id !== quote.id || !checkouts[0] || ['FAILED', 'KNOWN_REJECTED', 'COMPLETE'].includes(checkouts[0].state)) return false;
         if (leaseToken ? checkouts[0].lease_token !== leaseToken : checkouts[0].lease_token && Number(checkouts[0].lease_until_at_ms) > now()) return false;
         if (existing && existing.checkout_id !== quote.id && (!TERMINAL.has(existing.state) || Number(existing.valid_until_at_ms) > now())) return false;
         await query(`INSERT INTO automation_square_subscriptions (owner_user_id,environment,merchant_id,plan_id,variation_id,customer_id,subscription_id,checkout_id,state,updated_at_ms)
@@ -326,11 +352,13 @@ function createSquareBilling(db, options = {}) {
             if (!invoice || invoice.id !== period.invoice_id || invoice.subscription_id !== row.subscription_id || invoice.location_id !== c.locationId || invoice.primary_recipient?.customer_id !== row.customer_id)
                 throw fail('SQUARE_ACCOUNT_MISMATCH', 'Squareの請求と契約が一致していません。', 503);
             const requests = invoice.payment_requests;
+            const expectedInvoice = await commerce.confirmInvoice(query, quote, subscription, invoice);
             const paid = invoice.status === 'PAID' && Array.isArray(requests) && requests.length > 0 && requests.every(item => {
                 const expected = Number(item.computed_amount_money?.amount), completed = Number(item.total_completed_amount_money?.amount);
                 return Number.isSafeInteger(expected) && expected > 0 && Number.isSafeInteger(completed) && completed >= expected && item.computed_amount_money.currency === quote.currency && item.total_completed_amount_money.currency === quote.currency;
             });
-            if (paid && ['ACTIVE', 'CANCELED'].includes(subscription.status)) {
+            const exactPrice = !JSON.parse(quote.plan_json).coupon || requests?.reduce((sum, item) => sum + Number(item.computed_amount_money?.amount), 0) === expectedInvoice;
+            if (paid && exactPrice && ['ACTIVE', 'CANCELED'].includes(subscription.status)) {
                 paidThrough = Number(period.period_end_at_ms); invoiceId = invoice.id;
                 validUntil = paidThrough;
                 for (const endDate of [subscription.canceled_date, subscription.completed_date]) if (endDate) {
@@ -360,6 +388,7 @@ function createSquareBilling(db, options = {}) {
             // Refresh only retrieves existing resources; it never enrolls or
             // charges a customer in response to a GET.
             if (!quote.lease_token || Number(quote.lease_until_at_ms) <= now()) {
+                if (['FAILED','KNOWN_REJECTED'].includes(quote.state)) await db.withDatabaseTransaction(query => finishKnownRejected(query, quote));
                 if (quote.state === 'CUSTOMER_SUBMITTING' && !quote.customer_id) {
                     const customer = await recoverCustomer(quote);
                     if (customer) await db.withDatabaseTransaction(async query => {
@@ -404,7 +433,28 @@ function createSquareBilling(db, options = {}) {
         let quote = await loadCheckout(input.checkoutId, owner);
         if (quote.state === 'COMPLETE') return getStatus(actor);
         await location();
-        if (quote.state === 'QUOTED') await quoteCurrent(quote);
+        if (quote.state === 'QUOTED') {
+            try {
+                if (Number(quote.expires_at_ms) <= now()) throw fail('SQUARE_QUOTE_EXPIRED', '申し込み内容の有効期限が切れました。内容を再確認してください。', 409);
+                await quoteCurrent(quote);
+                const snapshot = JSON.parse(quote.plan_json);
+                if (snapshot.coupon && quote.variation_id === snapshot.baseVariationId) {
+                    const catalog = await commerce.couponVariation(snapshot.coupon, snapshot);
+                    await db.withDatabaseTransaction(async query => {
+                        await lockOwner(query, owner); const current = await loadCheckout(quote.id, owner);
+                        if (current.state !== 'QUOTED') throw fail('SQUARE_CHECKOUT_BUSY', '申し込み状況を再確認してください。', 409);
+                        await query('UPDATE automation_square_checkouts SET variation_id=?,catalog_version=?,plan_json=? WHERE id=? AND state=\'QUOTED\'', [catalog.variationId, catalog.catalogVersion, JSON.stringify({ ...snapshot, ...catalog }), quote.id]);
+                    });
+                    quote = await loadCheckout(quote.id, owner);
+                }
+            } catch (error) {
+                if (['SQUARE_COUPON_CHANGED','SQUARE_COUPON_UNAVAILABLE','SQUARE_COUPON_LIMIT','SQUARE_QUOTE_CHANGED','SQUARE_QUOTE_EXPIRED'].includes(error.code)) await db.withDatabaseTransaction(async query => {
+                    await lockOwner(query, owner); const current = await loadCheckout(quote.id, owner);
+                    if (current.state === 'QUOTED') { await query("UPDATE automation_square_checkouts SET state='FAILED' WHERE id=? AND state='QUOTED'", [quote.id]); await commerce.couponStage(query, quote, 'RELEASED'); }
+                });
+                throw error;
+            }
+        }
         const token = await leaseCheckout(quote, input.sourceId);
         quote = await loadCheckout(quote.id, owner);
         const recoveringUnknownSubscription = quote.state === 'SUBSCRIPTION_SUBMITTING';
@@ -435,16 +485,20 @@ function createSquareBilling(db, options = {}) {
                 await quoteCurrent(quote);
                 await stage(quote, token, 'SUBSCRIPTION_SUBMITTING'); wireStage = 'SUBSCRIPTION_SUBMITTING';
                 ({ subscription } = await request('POST', '/v2/subscriptions', { idempotency_key: key(`subscription:${quote.id}`), location_id: c.locationId, plan_variation_id: quote.variation_id,
-                    customer_id: quote.customer_id, card_id: quote.card_id, source: { name: `cbte:${quote.id}` }, price_override_money: { amount: Number(quote.amount), currency: quote.currency } }));
+                    customer_id: quote.customer_id, card_id: quote.card_id, source: { name: `cbte:${quote.id}` }, ...(JSON.parse(quote.plan_json).coupon ? {} : { price_override_money: { amount: Number(quote.amount), currency: quote.currency } }) }));
             }
             if (!matchesSubscription(subscription, quote)) throw Object.assign(fail('SQUARE_RESULT_UNKNOWN', '契約の作成結果を再確認してください。', 503), { uncertain: true });
             await db.withDatabaseTransaction(async query => { await lockOwner(query, owner); if (!await rememberSubscription(quote, subscription, query, token)) throw fail('SQUARE_CHECKOUT_PENDING', '申し込み結果を再確認してください。', 409); });
         } catch (error) {
             // A known rejection cannot have created a subscription. An unknown
             // result keeps its durable stage and account claim across restarts.
-            if (!recoveringUnknownSubscription && !error.uncertain && ['SQUARE_REQUEST_FAILED', 'SQUARE_QUOTE_CHANGED'].includes(error.code)) {
-                await stage(quote, token, 'FAILED');
-                await db.queryDatabase('UPDATE automation_square_accounts SET current_checkout_id=NULL WHERE owner_user_id=? AND environment=? AND merchant_id=? AND current_checkout_id=?', [owner, ...scope, quote.id]);
+            if (!recoveringUnknownSubscription && !error.uncertain && ['SQUARE_REQUEST_FAILED', 'SQUARE_QUOTE_CHANGED','SQUARE_COUPON_CHANGED','SQUARE_COUPON_UNAVAILABLE'].includes(error.code)) {
+                // Preserve the definite remote rejection before finalizing the
+                // local cleanup. SQL failure cannot turn this into an orphan
+                // FAILED checkout with a permanently held coupon reservation.
+                await stage(quote, token, 'KNOWN_REJECTED');
+                await db.withDatabaseTransaction(query => finishKnownRejected(query, quote, token));
+                quote.state = 'FAILED';
             } else if (wireStage) await stage(quote, token, wireStage);
             if (error.name !== 'AutomationError') throw Object.assign(fail('SQUARE_RESULT_UNKNOWN', '申し込み結果を保存できませんでした。契約状況を再確認してください。', 503), { uncertain: true, retryAfterMs: 30000 });
             throw error;
@@ -512,4 +566,4 @@ function createSquareBilling(db, options = {}) {
     return { getOptions, getStatus, getAdmin, saveBinding, createQuote, subscribe, cancel, handleWebhook };
 }
 
-module.exports = { API_VERSION, getSquareScope, createSquareClient, createSquareBilling, verifyWebhookSignature, dateEnd, isValidReceiptEmail };
+module.exports = { API_VERSION, getSquareScope, createSquareClient, createSquareBilling, verifyWebhookSignature, dateEnd, isValidReceiptEmail, validateVariation };

@@ -24,8 +24,8 @@ function admin(actor) {
     return ownerId(actor.userId);
 }
 function slotError(plan) {
-    return Object.assign(error('AUTOMATION_SLOT_LIMIT', `通知の登録は新着・価格を合わせて${plan.slotLimit}件までです。一時停止中の登録も含みます。不要な登録を削除してから追加してください。`, 422,
-        [{ path: '$.monitor', code: 'AUTOMATION_SLOT_LIMIT', message: `${plan.label}の通知枠は${plan.slotLimit}件までです。` }]), { maxSlots: plan.slotLimit, availableSlots: 0, planName: plan.label });
+    return Object.assign(error('AUTOMATION_SLOT_LIMIT', `${plan.label}の通知枠は${plan.slotLimit}枠です。停止中の通知と、確認間隔の短縮に使う枠も含みます。使用枠を減らすか、不要な通知を削除してください。`, 422,
+        [{ path: '$.monitor', code: 'AUTOMATION_SLOT_LIMIT', message: `${plan.label}の通知枠は${plan.slotLimit}枠までです。` }]), { maxSlots: plan.slotLimit, availableSlots: 0, planName: plan.label });
 }
 function validPolicy(row) {
     return Number.isSafeInteger(Number(row.slot_limit)) && Number(row.slot_limit) >= 1 && Number(row.slot_limit) <= 10000
@@ -46,35 +46,39 @@ function planConflict() { return error('AUTOMATION_PLAN_CONFLICT', 'プランが
 async function inspectPlan(query, userId, now = Date.now()) {
     const id = ownerId(userId);
     const users = await query('SELECT is_donor,additional_auto_extract_slots FROM users WHERE user_id=?', [id]);
+    const square = require('./square-billing').getSquareScope();
+    const donation = await require('./square-donations').getSquareDonationGrant(query, id, now, square);
+    const additional = Number(users[0]?.additional_auto_extract_slots || 0);
+    const manualExtraSlots = Number.isSafeInteger(additional) && additional > 0 ? Math.min(additional, 10000) : 0;
+    const withAdditional = plan => ({ ...plan, baseSlotLimit: plan.slotLimit, manualExtraSlots,
+        addonGrantUnits: donation.purchaseUnits, addonExtraSlots: donation.extraSlots, donationPaymentCount: donation.paymentCount,
+        addonValidUntilAtMs: donation.unitsValidUntilAtMs, slotLimit: plan.slotLimit + manualExtraSlots + donation.extraSlots });
     const rows = await query(`SELECT p.* FROM automation_notification_entitlements e
         JOIN automation_notification_plans p ON p.plan_id=e.plan_id
         WHERE e.owner_user_id=? AND p.enabled=1 AND (e.expires_at_ms IS NULL OR e.expires_at_ms>?) LIMIT 1`, [id, now]);
     if (rows[0]) {
         const row = rows[0];
         // Invalid manually-written policy fails closed to the free allowance.
-        if (!builtinPlan(row.plan_id) && validPolicy(row)) return { tier: 'paid', planId: row.plan_id, label: row.label, slotLimit: Number(row.slot_limit), minuteLimit: Number(row.minute_limit), dayLimit: Number(row.day_limit), priority: Number(row.priority) };
+        if (!builtinPlan(row.plan_id) && validPolicy(row)) return withAdditional({ tier: 'paid', planId: row.plan_id, label: row.label, slotLimit: Number(row.slot_limit), minuteLimit: Number(row.minute_limit), dayLimit: Number(row.day_limit), priority: Number(row.priority) });
     }
     // A Square contract grants allowance only after the billing service has
     // verified its paid invoice, current merchant and current environment.
     // Administrative assignments keep precedence and are never overwritten by
     // billing events; deleting or canceling a contract leaves slot counters.
-    const square = require('./square-billing').getSquareScope();
     if (square.configured) {
         const subscriptions = await query(`SELECT p.* FROM automation_square_subscriptions s
             JOIN automation_notification_plans p ON p.plan_id=s.plan_id AND p.enabled=1
             WHERE s.owner_user_id=? AND s.environment=? AND s.merchant_id=? AND s.verified=1
                 AND s.state IN ('ACTIVE','CANCELED') AND s.valid_until_at_ms>? LIMIT 1`, [id, square.environment, square.merchantId, now]);
         const row = subscriptions[0];
-        if (row && !builtinPlan(row.plan_id) && validPolicy(row)) return { tier: 'paid', planId: row.plan_id, label: row.label, slotLimit: Number(row.slot_limit), minuteLimit: Number(row.minute_limit), dayLimit: Number(row.day_limit), priority: Number(row.priority) };
+        if (row && !builtinPlan(row.plan_id) && validPolicy(row)) return withAdditional({ tier: 'paid', planId: row.plan_id, label: row.label, slotLimit: Number(row.slot_limit), minuteLimit: Number(row.minute_limit), dayLimit: Number(row.day_limit), priority: Number(row.priority) });
     }
-    const additional = Number(users[0]?.additional_auto_extract_slots || 0);
-    const supporter = Number(users[0]?.is_donor) === 1 || await require('./square-donations').isSquareDonationSupporter(query, id, now, square);
+    const supporter = Number(users[0]?.is_donor) === 1 || donation.active;
     const base = supporter ? SUPPORTER_PLAN : FREE_PLAN;
     const policies = await query('SELECT * FROM automation_notification_plans WHERE plan_id=? LIMIT 1', [base.planId]);
     const configured = policies[0] && validPolicy(policies[0]) ? policyDto(policies[0]) : base;
-    return { tier: base.tier, planId: base.planId, label: configured.label, minuteLimit: configured.minuteLimit,
-        dayLimit: configured.dayLimit, priority: configured.priority,
-        slotLimit: configured.slotLimit + (Number.isSafeInteger(additional) && additional > 0 ? Math.min(additional, 10000) : 0) };
+    return withAdditional({ tier: base.tier, planId: base.planId, label: configured.label, minuteLimit: configured.minuteLimit,
+        dayLimit: configured.dayLimit, priority: configured.priority, slotLimit: configured.slotLimit });
 }
 
 async function lockOwner(query, userId) {
@@ -88,10 +92,13 @@ async function lockOwner(query, userId) {
 const describeSlot = (owner, row, plan) => ({ ...plan, slotId: `${owner}:${Number(row.slot_index)}`, slotIndex: Number(row.slot_index), targetKind: row.target_kind, targetId: String(row.target_id) });
 async function adoptExisting(query, userId) {
     const slots = await query('SELECT * FROM automation_notification_slots WHERE owner_user_id=? ORDER BY slot_index FOR UPDATE', [userId]);
+    const boosts = await require('./monitor-cadence').boostRows(query, userId);
     const targets = await query(`SELECT 'auto' AS target_kind,id AS target_id,created_at_ms FROM auto_watch_targets WHERE user_id=?
         UNION ALL SELECT 'price' AS target_kind,id AS target_id,created_at_ms FROM price_watch_targets WHERE user_id=?
         ORDER BY created_at_ms,target_kind,target_id`, [userId, userId]);
     const registered = new Set(targets.map(row => `${row.target_kind}:${row.target_id}`));
+    for (const row of boosts) if (!registered.has(`${row.target_kind}:${row.target_id}`)) await require('./monitor-cadence').release(query, userId, row.target_kind, String(row.target_id));
+    const reserved = new Set(boosts.filter(row => registered.has(`${row.target_kind}:${row.target_id}`)).map(row => Number(row.slot_index)));
     for (const row of slots) if (row.target_kind && !registered.has(`${row.target_kind}:${row.target_id}`)) {
         await query('UPDATE automation_notification_slots SET target_kind=NULL,target_id=NULL WHERE owner_user_id=? AND slot_index=?', [userId, row.slot_index]);
         row.target_kind = null; row.target_id = null;
@@ -99,7 +106,7 @@ async function adoptExisting(query, userId) {
     const assigned = new Set(slots.filter(row => row.target_kind).map(row => `${row.target_kind}:${row.target_id}`));
     for (const item of targets) {
         if (assigned.has(`${item.target_kind}:${item.target_id}`)) continue;
-        let row = slots.find(slot => !slot.target_kind);
+        let row = slots.find(slot => !slot.target_kind && !reserved.has(Number(slot.slot_index)));
         if (!row) {
             const index = Math.max(0, ...slots.map(slot => Number(slot.slot_index))) + 1;
             await query('INSERT INTO automation_notification_slots (owner_user_id,slot_index,target_kind,target_id,created_at_ms) VALUES (?,?,NULL,NULL,?)', [userId, index, Date.now()]);
@@ -119,12 +126,14 @@ async function assertSlotAvailable(query, userId, kind, targetId) {
         return describeSlot(id, slot, plan);
     }
     if (!Object.hasOwn(TARGET_TABLES, kind)) throw error('AUTOMATION_INVALID_TARGET', '通知の種類を確認してください。');
-    if (slots.filter(row => row.target_kind).length >= plan.slotLimit) throw slotError(plan);
+    const boosts = await require('./monitor-cadence').boostRows(query, id);
+    if (slots.filter(row => row.target_kind).length + boosts.length >= plan.slotLimit) throw slotError(plan);
     return plan;
 }
 async function assignSlot(query, userId, kind, targetId) { return assertSlotAvailable(query, userId, kind, target(kind, targetId)); }
 async function releaseSlot(query, userId, kind, targetId) {
     const id = await lockOwner(query, userId), nativeId = target(kind, targetId);
+    await require('./monitor-cadence').release(query, id, kind, nativeId);
     await query('UPDATE automation_notification_slots SET target_kind=NULL,target_id=NULL WHERE owner_user_id=? AND target_kind=? AND target_id=?', [id, kind, nativeId]);
 }
 async function findSlot(query, userId, kind, targetId) {
@@ -141,8 +150,10 @@ async function resolveNotificationEntitlement(db, input) {
 }
 async function listOwnerSlots(query, userId) {
     const id = await lockOwner(query, userId), plan = await inspectPlan(query, id), rows = await adoptExisting(query, id);
-    const slots = rows.filter(row => row.target_kind).map(row => ({ ...describeSlot(id, row, plan), allowed: Number(row.slot_index) <= plan.slotLimit }));
-    return { ...plan, usedSlots: slots.length, remainingSlots: Math.max(0, plan.slotLimit - slots.length), slots };
+    const boosts = await require('./monitor-cadence').boostRows(query, id);
+    const slots = rows.filter(row => row.target_kind).map(row => ({ ...describeSlot(id, row, plan), slotCost: 1 + boosts.filter(extra => extra.target_kind === row.target_kind && String(extra.target_id) === String(row.target_id)).length, allowed: Number(row.slot_index) <= plan.slotLimit }));
+    const usedSlots = slots.length + boosts.length;
+    return { ...plan, usedSlots, remainingSlots: Math.max(0, plan.slotLimit - usedSlots), slots };
 }
 async function getEntitlementSummary(db, userId) { return db.withDatabaseTransaction(query => listOwnerSlots(query, userId)); }
 async function savePlanPolicy(query, actor, input) {

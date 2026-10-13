@@ -280,4 +280,6 @@ const SCHEMA = [
 SCHEMA.push(...require('./graph-schema.sql').SCHEMA);
 SCHEMA.push(...require('./square-billing-schema.sql').SCHEMA);
 SCHEMA.push(...require('./square-donation-schema.sql').SCHEMA);
+SCHEMA.push(...require('./square-commerce-schema.sql').SCHEMA);
+SCHEMA.push(...require('./monitor-cadence-schema.sql').SCHEMA);
 module.exports = { SCHEMA };

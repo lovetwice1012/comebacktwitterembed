@@ -250,3 +250,43 @@ test('donation receipt emails reject overlength or malformed input before reques
         await f.fill(f.field('領収先メールアドレス'), '利用者@payments.例え.テスト'); await f.submit(); assert.equal(writes(f)[0].body.email, '利用者@payments.例え.テスト');
     } finally { await f.close(); }
 });
+test('donation purchase-unit policy keeps both business values blank until entered and validates them as a pair before review', async () => {
+    const f = await policyFixture({ initial: policy({ unitAmount: null, slotsPerUnit: null }) });
+    try {
+        assert.equal(f.field('支援1口の金額').value, ''); assert.equal(f.field('1口あたりの追加枠数').value, ''); await f.fill(f.field('支援1口の金額'), '1000'); await f.submit(); assert.equal(f.container.querySelector('[aria-label="追加枠の変更確認"]'), null); assert.equal(writes(f).length, 0);
+        await f.fill(f.field('1口あたりの追加枠数'), '5'); await f.submit(); assert.match(f.container.querySelector('[aria-label="追加枠の変更確認"]').textContent, /未設定 → ￥1,000/); assert.match(f.container.querySelector('[aria-label="追加枠の変更確認"]').textContent, /未設定 → 5/); assert.equal(writes(f).length, 0); await f.click('この寄付設定で保存'); assert.equal(writes(f)[0].body.unitAmount, 1000); assert.equal(writes(f)[0].body.slotsPerUnit, 5);
+    } finally { await f.close(); }
+});
+test('USD unit-money input is saved as exact minor units alongside unchanged legacy threshold/range/period and CAS version', async () => {
+    const current = policy({ currency: 'USD', enabled: true, minimumAmount: 100, maximumAmount: 10000, supporterThreshold: 5000, validityDays: 30, unitAmount: null, slotsPerUnit: null, updatedAtMs: 100 });
+    const f = await policyFixture({ initial: current });
+    try {
+        await f.fill(f.field('支援1口の金額'), '19.99'); await f.fill(f.field('1口あたりの追加枠数'), '2'); await f.submit(); await f.click('この寄付設定で保存');
+        assert.deepEqual(writes(f)[0].body, { enabled: true, currency: 'USD', minimumAmount: 100, maximumAmount: 10000, supporterThreshold: 5000, validityDays: 30, unitAmount: 1999, slotsPerUnit: 2, expectedUpdatedAtMs: 100 });
+    } finally { await f.close(); }
+});
+test('purchase-unit pair rejects fractional/zero or excessive slot count and can be explicitly cleared together', async () => {
+    const f = await policyFixture({ initial: policy({ unitAmount: 1000, slotsPerUnit: 3 }) });
+    try {
+        for (const value of ['0', '1.5', '10001', '']) { await f.fill(f.field('1口あたりの追加枠数'), value); await f.submit(); assert.equal(f.container.querySelector('[aria-label="追加枠の変更確認"]'), null); assert.equal(writes(f).length, 0); }
+        await f.fill(f.field('支援1口の金額'), ''); await f.submit(); await f.click('この寄付設定で保存'); assert.equal(writes(f)[0].body.unitAmount, null); assert.equal(writes(f)[0].body.slotsPerUnit, null);
+    } finally { await f.close(); }
+});
+test('unit-policy conflict retains both edits and forces review against the latest server baseline', async () => {
+    let loads = 0, failed = false;
+    const f = await policyFixture({ initial: policy({ unitAmount: 1000, slotsPerUnit: 1 }), respond: (route, method) => { if (method === 'GET' && ++loads > 1) return policy({ unitAmount: 5000, slotsPerUnit: 10, updatedAtMs: 12 }); if (method === 'PATCH' && !failed) { failed = true; throw Object.assign(new Error('PRIVATE_UNIT_CONFLICT'), { status: 409 }); } } });
+    try {
+        await f.fill(f.field('支援1口の金額'), '2500'); await f.fill(f.field('1口あたりの追加枠数'), '3'); await f.submit(); await f.click('この寄付設定で保存'); assert(!f.container.textContent.includes('PRIVATE_UNIT_CONFLICT')); await f.click('最新の寄付設定を再取得'); assert.equal(f.field('支援1口の金額').value, '2500'); assert.equal(f.field('1口あたりの追加枠数').value, '3'); await f.submit(); assert.match(f.container.querySelector('[aria-label="追加枠の変更確認"]').textContent, /￥5,000 → ￥2,500/); await f.click('この寄付設定で保存'); assert.equal(writes(f).at(-1).body.expectedUpdatedAtMs, 12);
+    } finally { await f.close(); }
+});
+test('support history displays server payment count, purchased units, extra slots and next unit expiry as separate quantities', async () => {
+    const deadline = Date.parse('2030-02-05T18:30:00+09:00');
+    const f = await donationFixture({ config: options({ unitAmount: 1000, slotsPerUnit: 2 }), initial: status({ supporter: { active: true, manualActive: false, threshold: 1500, validityDays: 30, netAmount: 4000, validUntilAtMs: deadline, unitAmount: 1000, slotsPerUnit: 2, paymentCount: 2, purchaseUnits: 4, extraSlots: 8, unitsValidUntilAtMs: deadline }, history: [entry({ amount: 2000, netAmount: 2000 }), entry({ attemptId: 'another', amount: 2000, netAmount: 2000 })] }) });
+    try { assert.match(f.container.textContent, /対象期間内の支援回数 2回 · 有効な購入口数 4口 · 追加の通知枠 8枠/); assert.match(f.container.textContent, /次に口数が変わる期限/); assert.match(f.container.textContent, /支援1口 ￥1,000につき 2枠追加/); assert.match(f.container.textContent, /追加枠の配分と確認間隔は通知一覧で選べます/); assert.equal(writes(f).length, 0); }
+    finally { await f.close(); }
+});
+test('refunded support uses server-adjusted net units and slots without deriving extra frames from gross receipt amounts', async () => {
+    const f = await donationFixture({ config: options({ unitAmount: 1000, slotsPerUnit: 2 }), initial: status({ supporter: { active: false, manualActive: false, threshold: 1500, validityDays: 30, netAmount: 500, validUntilAtMs: null, unitAmount: 1000, slotsPerUnit: 2, paymentCount: 1, purchaseUnits: 0, extraSlots: 0, unitsValidUntilAtMs: null }, history: [entry({ amount: 2000, refundedAmount: 1500, netAmount: 500 })] }) });
+    try { assert.match(f.container.textContent, /有効な購入口数 0口 · 追加の通知枠 0枠/); assert.match(f.container.textContent, /一部返金/); assert.match(f.container.textContent, /￥2,000￥1,500￥500/); assert(!f.container.textContent.includes('有効な購入口数 2口')); }
+    finally { await f.close(); }
+});

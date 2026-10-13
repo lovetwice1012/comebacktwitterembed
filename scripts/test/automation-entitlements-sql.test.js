@@ -61,7 +61,7 @@ test('real SQL: shared notification slots, concurrent admission, trusted plans a
             await price.registerTarget(priceInput(1234)); await auto.registerTarget(autoInput('nodejs'));
             await assert.rejects(price.registerTarget(priceInput(5678)), { code: 'AUTOMATION_SLOT_LIMIT' });
         });
-        await t.test('paid policy configuration has no invented defaults, cannot be self-granted, and overrides legacy extras explicitly', async () => {
+        await t.test('paid policy configuration has no invented defaults, cannot be self-granted, and retains additive trusted legacy extras', async () => {
             assert.deepEqual((await entitlements.listPlanPolicies(db.queryDatabase, ADMIN)).map(plan => plan.planId), ['free', 'supporter']);
             const fixturePlan = { planId: 'testPlan', label: 'テスト用プラン', slotLimit: 8, minuteLimit: 9, dayLimit: 100, priority: 3 };
             await assert.rejects(entitlements.savePlanPolicy(db.queryDatabase, { userId: U, isAdmin: false }, fixturePlan), { status: 403 });
@@ -70,21 +70,22 @@ test('real SQL: shared notification slots, concurrent admission, trusted plans a
             await db.withDatabaseTransaction(query => entitlements.savePlanPolicy(query, ADMIN, fixturePlan));
             await db.withDatabaseTransaction(query => entitlements.setUserPlan(query, ADMIN, U, 'testPlan'));
             const plan = await entitlements.inspectPlan(db.queryDatabase, U);
-            assert.equal(plan.tier, 'paid'); assert.equal(plan.slotLimit, 8); assert.equal(plan.minuteLimit, 9); assert.equal(plan.dayLimit, 100); assert.equal(plan.priority, 3);
+            assert.equal(plan.tier, 'paid'); assert.equal(plan.slotLimit, 10); assert.equal(plan.minuteLimit, 9); assert.equal(plan.dayLimit, 100); assert.equal(plan.priority, 3);
             await price.registerTarget(priceInput(5678));
-            await assert.rejects(price.registerTarget(priceInput(6789)), { code: 'AUTOMATION_SLOT_LIMIT' });
+            await price.registerTarget(priceInput(6789)); await price.registerTarget(priceInput(6790));
+            await assert.rejects(price.registerTarget(priceInput(6791)), { code: 'AUTOMATION_SLOT_LIMIT' });
         });
         await t.test('downgrades retain registrations and identities; extra slots can be viewed/deleted but cannot send or resume', async () => {
             const previous = await entitlements.getEntitlementSummary(db, U);
             await db.queryDatabase('UPDATE users SET is_donor=0,additional_auto_extract_slots=0 WHERE user_id=?', [U]);
             await db.withDatabaseTransaction(query => entitlements.setUserPlan(query, ADMIN, U, null));
             const summary = await entitlements.getEntitlementSummary(db, U);
-            assert.equal(summary.usedSlots, 8); assert.equal(summary.slots.filter(slot => slot.allowed).length, 5);
+            assert.equal(summary.usedSlots, 10); assert.equal(summary.slots.filter(slot => slot.allowed).length, 5);
             assert.deepEqual(summary.slots.map(slot => slot.slotId), previous.slots.map(slot => slot.slotId));
             const extra = summary.slots.find(slot => !slot.allowed);
             await assert.rejects(entitlements.resolveNotificationEntitlement(db, { ownerUserId: U, targetKind: extra.targetKind, targetId: extra.targetId }), { code: 'AUTOMATION_SLOT_LIMIT' });
             const store = extra.targetKind === 'auto' ? auto : price; await store.deleteTarget(U, extra.targetId);
-            assert.equal((await entitlements.getEntitlementSummary(db, U)).usedSlots, 7);
+            assert.equal((await entitlements.getEntitlementSummary(db, U)).usedSlots, 9);
         });
         await t.test('expiration or disabled configured plan falls back to current trusted free/supporter allowance', async () => {
             await db.withDatabaseTransaction(query => entitlements.setUserPlan(query, ADMIN, V, 'testPlan', { expiresAtMs: Date.now() + 60000 }));

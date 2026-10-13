@@ -15,6 +15,15 @@ function intervalMinutes(value) {
     return value;
 }
 async function bringSourceForward(query, id, sourceId, now) {
+    const boosted = await query("SELECT b.slot_index FROM automation_notification_boost_slots b JOIN auto_watch_targets t ON t.id=b.target_id WHERE b.target_kind='auto' AND b.owner_user_id=? AND t.source_id=? LIMIT 1", [id, sourceId]);
+    if (boosted.length) {
+        const source = (await query('SELECT id,poll_interval_ms FROM auto_watch_sources WHERE id=?', [sourceId]))[0];
+        if (source) {
+            const schedule = await require('../../automation/monitor-cadence').sourceSchedule(query, source, now);
+            await query('UPDATE auto_watch_sources SET next_check_at_ms=LEAST(next_check_at_ms,IF(last_checked_at_ms>0,last_checked_at_ms,?)+?) WHERE id=?', [now, schedule.requested_poll_interval_ms, sourceId]);
+            return;
+        }
+    }
     await query(`UPDATE auto_watch_sources s SET next_check_at_ms=LEAST(next_check_at_ms,
         IF(last_checked_at_ms>0,last_checked_at_ms,?)+(SELECT COALESCE(auto_watch_interval_minutes*60000,s.poll_interval_ms) FROM users WHERE user_id=?)) WHERE s.id=?`,
     [now, id, sourceId]);
@@ -44,6 +53,16 @@ function createPolicy(db = require('../../db')) {
                 SET d.next_attempt_at_ms=GREATEST(i.discovered_at_ms,COALESCE(t.next_poll_at_ms,?),
                     COALESCE(t.last_notification_window_at_ms,0)+COALESCE(?*60000,s.poll_interval_ms))
                 WHERE t.user_id=? AND t.enabled=1 AND d.status='pending' AND d.attempt_count=0 AND d.lease_expires_at_ms<=?`, [now, minutes, id, now]);
+            const boosted = await query(`SELECT t.id,t.last_polled_at_ms,t.last_notification_window_at_ms,s.last_checked_at_ms,
+                COALESCE(?*60000,s.poll_interval_ms) AS base_interval_ms FROM auto_watch_targets t JOIN auto_watch_sources s ON s.id=t.source_id
+                JOIN automation_monitor_cadence c ON c.target_kind='auto' AND c.target_id=t.id AND c.owner_user_id=t.user_id AND c.slot_cost>1 WHERE t.user_id=? AND t.enabled=1`, [minutes, id]);
+            for (const target of boosted) {
+                const cadence = await require('../../automation/monitor-cadence').runtimeCadence(query, id, 'auto', String(target.id), Number(target.base_interval_ms), now);
+                const next = Number(target.last_polled_at_ms ?? target.last_checked_at_ms ?? now) + cadence.intervalMs;
+                await query('UPDATE auto_watch_targets SET next_poll_at_ms=? WHERE id=?', [next, target.id]);
+                await query(`UPDATE auto_watch_deliveries d JOIN auto_watch_items i ON i.id=d.item_id
+                    SET d.next_attempt_at_ms=GREATEST(i.discovered_at_ms,?,?+?) WHERE d.target_id=? AND d.status='pending' AND d.attempt_count=0 AND d.lease_expires_at_ms<=?`, [next, Number(target.last_notification_window_at_ms || 0), cadence.intervalMs, target.id, now]);
+            }
             // Lowering a user's interval brings its sources forward. Raising it
             // is picked up by the next shared check without postponing peers.
             await query(`UPDATE auto_watch_sources s JOIN auto_watch_targets t ON t.source_id=s.id

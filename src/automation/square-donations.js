@@ -21,42 +21,68 @@ function minorDigits(currency) { return new Intl.NumberFormat('en', { style: 'cu
 function policyDto(row) {
     return { enabled: Number(row?.enabled) === 1, currency: row?.currency || null, minimumAmount: row?.minimum_amount == null ? null : Number(row.minimum_amount),
         maximumAmount: row?.maximum_amount == null ? null : Number(row.maximum_amount), supporterThreshold: row?.supporter_threshold == null ? null : Number(row.supporter_threshold),
-        validityDays: row?.validity_days == null ? null : Number(row.validity_days), updatedAtMs: row ? Number(row.updated_at_ms) : null };
+        validityDays: row?.validity_days == null ? null : Number(row.validity_days), unitAmount: row?.unit_amount == null ? null : Number(row.unit_amount),
+        slotsPerUnit: row?.slots_per_unit == null ? null : Number(row.slots_per_unit), updatedAtMs: row ? Number(row.updated_at_ms) : null };
 }
 function quoteDto(row) { return { attemptId: row.id, expiresAtMs: Number(row.expires_at_ms), amount: Number(row.amount), currency: row.currency, minorUnitDigits: minorDigits(row.currency), email: row.email, name: row.name }; }
 function historyDto(row) { return { attemptId: row.id, state: row.state, amount: Number(row.amount), currency: row.currency, refundedAmount: Number(row.refunded_amount),
     netAmount: row.state === 'COMPLETED' && Number(row.verified) === 1 ? Number(row.amount) - Number(row.refunded_amount) : 0,
     verified: Number(row.verified) === 1, createdAtMs: Number(row.created_at_ms), completedAtMs: row.completed_at_ms == null ? null : Number(row.completed_at_ms) }; }
 
-// A grant is scoped to the dedicated merchant/environment, the current policy,
-// and its computed threshold expiry. Administrative donor flags stay separate.
+async function donationPolicy(query, scope, locked = false) {
+    return (await query(`SELECT p.*,u.unit_amount,u.slots_per_unit FROM automation_square_donation_policy p
+        LEFT JOIN automation_square_donation_units_policy u ON u.environment=p.environment AND u.merchant_id=p.merchant_id AND u.policy_updated_at_ms=p.updated_at_ms
+        WHERE p.environment=? AND p.merchant_id=?${locked ? ' FOR UPDATE' : ''}`, scope))[0];
+}
+async function donationGrant(query, owner, current, scope, now) {
+    const p = policyDto(current);
+    const rows = current && p.currency ? await query(`SELECT amount,refunded_amount,completed_at_ms FROM automation_square_donation_attempts
+        WHERE owner_user_id=? AND environment=? AND merchant_id=? AND currency=? AND state='COMPLETED' AND verified=1 AND completed_at_ms IS NOT NULL
+            AND (? IS NULL OR completed_at_ms>?) ORDER BY completed_at_ms`, [owner, ...scope, p.currency, p.validityDays, now - (p.validityDays || 0) * DAY_MS]) : [];
+    const contributions = rows.map(row => ({ net: Math.max(0, Number(row.amount) - Number(row.refunded_amount)), expiry: p.validityDays == null ? null : Number(row.completed_at_ms) + p.validityDays * DAY_MS }))
+        .filter(row => Number.isSafeInteger(row.net) && row.net > 0);
+    const total = contributions.reduce((sum, row) => sum + BigInt(row.net), 0n);
+    const netAmount = Number(total);
+    if (!Number.isSafeInteger(netAmount)) throw fail('SQUARE_DONATION_GRANT_INVALID', '寄付の累積金額を確認できません。管理者にお問い合わせください。', 503);
+    const unitsEnabled = Number.isSafeInteger(p.unitAmount) && p.unitAmount > 0 && Number.isSafeInteger(p.slotsPerUnit) && p.slotsPerUnit > 0 && p.slotsPerUnit <= 10000;
+    const unitsFor = amount => unitsEnabled ? Number(amount / BigInt(p.unitAmount) > 10000n ? 10000n : amount / BigInt(p.unitAmount)) : 0;
+    const purchaseUnits = unitsFor(total), extraSlots = Math.min(10000, purchaseUnits * (p.slotsPerUnit || 0));
+    const required = [p.supporterThreshold, unitsEnabled ? p.unitAmount : null].filter(value => Number.isSafeInteger(value) && value > 0);
+    const cutoff = required.length ? BigInt(Math.min(...required)) : null, active = cutoff !== null && total >= cutoff;
+    let validUntilAtMs = null, unitsValidUntilAtMs = null, remaining = total;
+    if (p.validityDays != null) for (const row of contributions) {
+        remaining -= BigInt(row.net);
+        if (unitsValidUntilAtMs === null && purchaseUnits > 0 && unitsFor(remaining) < purchaseUnits) unitsValidUntilAtMs = row.expiry;
+        if (active && validUntilAtMs === null && remaining < cutoff) validUntilAtMs = row.expiry;
+    }
+    return { active, netAmount, threshold: p.supporterThreshold, validityDays: p.validityDays, validUntilAtMs,
+        unitAmount: p.unitAmount, slotsPerUnit: p.slotsPerUnit, purchaseUnits, extraSlots, paymentCount: contributions.length, unitsValidUntilAtMs };
+}
+// Read only the verified local ledger. Recalculate after every expiry so a
+// falling unit count retains all remaining units without requiring a status GET.
+async function getSquareDonationGrant(query, owner, now = Date.now(), scope = getSquareScope()) {
+    if (!scope.configured) return donationGrant(query, owner, null, [], now);
+    const scoped = [scope.environment, scope.merchantId];
+    return donationGrant(query, owner, await donationPolicy(query, scoped), scoped, now);
+}
 async function isSquareDonationSupporter(query, owner, now = Date.now(), scope = getSquareScope()) {
-    if (!scope.configured) return false;
-    const rows = await query(`SELECT s.active FROM automation_square_donation_supporters s
-        JOIN automation_square_donation_policy p ON p.environment=s.environment AND p.merchant_id=s.merchant_id
-            AND p.updated_at_ms=s.policy_updated_at_ms AND p.supporter_threshold>0 AND p.currency IS NOT NULL
-        WHERE s.owner_user_id=? AND s.environment=? AND s.merchant_id=? AND s.active=1
-            AND (s.valid_until_at_ms IS NULL OR s.valid_until_at_ms>?) LIMIT 1`, [owner, scope.environment, scope.merchantId, now]);
-    return rows.length > 0;
+    return (await getSquareDonationGrant(query, owner, now, scope)).active;
 }
 
 /** Trusted server options only; raw card data, client principals and prices are never accepted. */
 function createSquareDonations(db, options = {}) {
     const { config: c, now, scope, requireConfigured, request, location } = createSquareClient(options);
-    async function readPolicy(query = db.queryDatabase, locked = false) { return (await query(`SELECT * FROM automation_square_donation_policy WHERE environment=? AND merchant_id=?${locked ? ' FOR UPDATE' : ''}`, scope))[0]; }
+    async function readPolicy(query = db.queryDatabase, locked = false) { return donationPolicy(query, scope, locked); }
     async function recomputeSupporter(query, owner, policy) {
         const current = policy || await readPolicy(query, true), p = policyDto(current);
-        const rows = current && p.currency ? await query(`SELECT amount,refunded_amount,completed_at_ms FROM automation_square_donation_attempts
-            WHERE owner_user_id=? AND environment=? AND merchant_id=? AND currency=? AND state='COMPLETED' AND verified=1
-                AND (? IS NULL OR completed_at_ms>?) ORDER BY completed_at_ms`, [owner, ...scope, p.currency, p.validityDays, now() - (p.validityDays || 0) * DAY_MS]) : [];
-        const contributions = rows.map(row => ({ net: Math.max(0, Number(row.amount) - Number(row.refunded_amount)), expiry: p.validityDays == null ? null : Number(row.completed_at_ms) + p.validityDays * DAY_MS }));
-        const total = contributions.reduce((sum, row) => sum + row.net, 0), active = p.supporterThreshold != null && total >= p.supporterThreshold;
-        let validUntilAtMs = null, remaining = total;
-        if (active && p.validityDays != null) for (const row of contributions) { remaining -= row.net; if (remaining < p.supporterThreshold) { validUntilAtMs = row.expiry; break; } }
+        const grant = await donationGrant(query, owner, current, scope, now());
         if (current) await query(`INSERT INTO automation_square_donation_supporters (owner_user_id,environment,merchant_id,active,net_amount,valid_until_at_ms,policy_updated_at_ms,updated_at_ms)
             VALUES (?,?,?,?,?,?,?,?) ON DUPLICATE KEY UPDATE active=VALUES(active),net_amount=VALUES(net_amount),valid_until_at_ms=VALUES(valid_until_at_ms),policy_updated_at_ms=VALUES(policy_updated_at_ms),updated_at_ms=VALUES(updated_at_ms)`,
-        [owner, ...scope, active ? 1 : 0, total, validUntilAtMs, p.updatedAtMs, now()]);
-        return { active, netAmount: total, threshold: p.supporterThreshold, validityDays: p.validityDays, validUntilAtMs };
+        [owner, ...scope, grant.active ? 1 : 0, grant.netAmount, grant.validUntilAtMs, p.updatedAtMs, now()]);
+        if (current) await query(`INSERT INTO automation_square_donation_unit_grants (owner_user_id,environment,merchant_id,purchase_units,extra_slots,payment_count,units_valid_until_at_ms,policy_updated_at_ms,updated_at_ms)
+            VALUES (?,?,?,?,?,?,?,?,?) ON DUPLICATE KEY UPDATE purchase_units=VALUES(purchase_units),extra_slots=VALUES(extra_slots),payment_count=VALUES(payment_count),units_valid_until_at_ms=VALUES(units_valid_until_at_ms),policy_updated_at_ms=VALUES(policy_updated_at_ms),updated_at_ms=VALUES(updated_at_ms)`,
+        [owner, ...scope, grant.purchaseUnits, grant.extraSlots, grant.paymentCount, grant.unitsValidUntilAtMs, p.updatedAtMs, now()]);
+        return grant;
     }
     async function getAdmin(actor) {
         admin(actor);
@@ -77,9 +103,15 @@ function createSquareDonations(db, options = {}) {
             await query(`INSERT INTO automation_square_donation_policy (environment,merchant_id,updated_at_ms,actor_user_id) VALUES (?,?,0,?) ON DUPLICATE KEY UPDATE merchant_id=VALUES(merchant_id)`, [...scope, actorId]);
             const current = await readPolicy(query, true), previous = Number(current.updated_at_ms);
             if ((input.expectedUpdatedAtMs ?? null) !== (previous || null)) throw fail('SQUARE_DONATION_POLICY_CONFLICT', '設定が別の操作で更新されています。最新の設定を読み直してください。', 409);
+            const unitAmount = input.unitAmount === undefined ? current.unit_amount == null ? null : Number(current.unit_amount) : amount(input.unitAmount, true);
+            const slotsPerUnit = input.slotsPerUnit === undefined ? current.slots_per_unit == null ? null : Number(current.slots_per_unit) : input.slotsPerUnit;
+            if ((unitAmount === null) !== (slotsPerUnit === null) || slotsPerUnit !== null && (!Number.isSafeInteger(slotsPerUnit) || slotsPerUnit < 1 || slotsPerUnit > 10000)
+                || unitAmount !== null && !input.currency) throw fail('SQUARE_DONATION_POLICY_INVALID', '1口の金額と1口あたりの追加枠を合わせて設定してください。追加枠は1〜10,000の整数です。');
             const updated = Math.max(now(), previous + 1);
             await query(`UPDATE automation_square_donation_policy SET enabled=?,currency=?,minimum_amount=?,maximum_amount=?,supporter_threshold=?,validity_days=?,updated_at_ms=?,actor_user_id=? WHERE environment=? AND merchant_id=?`,
             [input.enabled ? 1 : 0, input.currency, minimum, maximum, threshold, days, updated, actorId, ...scope]);
+            await query(`INSERT INTO automation_square_donation_units_policy (environment,merchant_id,unit_amount,slots_per_unit,policy_updated_at_ms)
+                VALUES (?,?,?,?,?) ON DUPLICATE KEY UPDATE unit_amount=VALUES(unit_amount),slots_per_unit=VALUES(slots_per_unit),policy_updated_at_ms=VALUES(policy_updated_at_ms)`, [...scope, unitAmount, slotsPerUnit, updated]);
             const policy = await readPolicy(query), owners = await query('SELECT DISTINCT owner_user_id FROM automation_square_donation_attempts WHERE environment=? AND merchant_id=? ORDER BY owner_user_id', scope);
             for (const { owner_user_id: owner } of owners) await recomputeSupporter(query, owner, policy);
             return policyDto(policy);
@@ -221,7 +253,8 @@ function createSquareDonations(db, options = {}) {
     }
     async function getStatus(actor) {
         const owner = user(actor);
-        if (!c.configured) return { configured: false, environment: c.environment, history: [], pending: null, supporter: { active: false, threshold: null, validityDays: null, netAmount: 0, validUntilAtMs: null, manualActive: false } };
+        if (!c.configured) return { configured: false, environment: c.environment, history: [], pending: null,
+            supporter: { ...await donationGrant(db.queryDatabase, owner, null, [], now()), manualActive: false } };
         const refresh = await reconcileOwner(owner);
         const supporter = await db.withDatabaseTransaction(async query => { await lockOwner(query, owner); return recomputeSupporter(query, owner); });
         const rows = await db.queryDatabase('SELECT * FROM automation_square_donation_attempts WHERE owner_user_id=? AND environment=? AND merchant_id=? ORDER BY created_at_ms DESC,id DESC LIMIT 100', [owner, ...scope]);
@@ -303,4 +336,4 @@ function createSquareDonations(db, options = {}) {
     return { getOptions, getStatus, getAdmin, savePolicy, createQuote, donate, getAttempt, handleVerifiedWebhook };
 }
 
-module.exports = { createSquareDonations, isSquareDonationSupporter };
+module.exports = { createSquareDonations, isSquareDonationSupporter, getSquareDonationGrant };

@@ -7,6 +7,7 @@ import { AutomationDialog } from "./automation-dialog";
 import { MonitorRegistration } from "./monitor-registration";
 import { sourceProvider, monitorState } from "../../../src/automation/monitor-input";
 import { automationPlanName } from "./automation-feedback";
+import { MonitorCadenceEditor } from "./monitor-cadence-editor";
 
 const field = "w-full rounded border bg-background px-3 py-2 text-sm";
 const button = "rounded border bg-background px-3 py-2 text-sm hover:bg-muted disabled:opacity-40";
@@ -30,6 +31,8 @@ export function MonitorManager({ api, guildId, canEdit, scope, destinations, rul
   const filtered = !!query.trim() || state !== "all";
   const requestEpoch = useRef(0);
   const profileEpoch = useRef(0);
+  const cadenceDrafts = useRef(new Map<string, string>());
+  const kindRef = useRef(kind); kindRef.current = kind;
   const activeRef = useRef(active); activeRef.current = active;
   const editable = (row: any) => row?.scope !== "guild" || canEdit;
   const autoRegistrationAllowed = catalog?.autoRegistration?.eligible === true;
@@ -107,12 +110,20 @@ export function MonitorManager({ api, guildId, canEdit, scope, destinations, rul
     } catch { throw new Error("通知は保存済みです。詳細ルールを割り当てるには、もう一度保存してください。"); }
     await load(); setMonitor(null); setMonitorOpen(false); setNotice(kind === "auto" ? "新着通知を保存しました。" : "価格通知を保存しました。");
   }
+  async function reloadCadence(id: string) {
+    if (!activeRef.current || kindRef.current !== "auto") return null;
+    const epoch = ++requestEpoch.current;
+    const result = await api(`monitors/auto?${new URLSearchParams({ query, state })}`);
+    if (!activeRef.current || epoch !== requestEpoch.current || kindRef.current !== "auto") return null;
+    setItems(result.items); setCursor(result.nextCursor); await loadProfile();
+    return result.items.find((row: any) => row.id === id) ?? null;
+  }
   return <div className="monitor-workspace space-y-5">
     {error && !monitorOpen && !destOpen && <p role="alert" className="rounded border border-destructive p-3 text-sm text-destructive">{error}</p>}{notice && <p role="status" className="rounded border p-3 text-sm">{notice}</p>}
     <section className="space-y-4">
       {monitor && !monitorOpen && <div role="status" className="automation-draft-banner"><span>通知の入力を保持しています</span><button className={button} onClick={() => { setKind(monitor.kind || kind); setMonitorOpen(true); }}>通知の入力を再開</button><button className={button} onClick={() => { if (confirm("通知の入力を破棄しますか？")) setMonitor(null); }}>通知の入力を破棄</button></div>}
       <div className="monitor-overview"><h2>通知一覧</h2></div>
-      {profileError ? <p role="status" className="text-xs text-muted-foreground">{profileError}</p> : profile?.plan && profile.slots && <p role="status" className="text-sm text-muted-foreground">{automationPlanName(profile.plan.name) || "現在のプラン"} · 通知枠 {profile.slots.used} / {profile.slots.max}（残り{profile.slots.available}枠）<br />1枠あたり1日{profile.plan.dayLimit}通・1分{profile.plan.minuteLimit}通まで{profile.plan.priority > 0 ? " · 優先処理" : ""}<span className="block text-xs">新着・価格の合計枠です。停止中の登録も枠に含みます。実際に送信したメッセージ1件＝1通。日ごとの上限は日本時間の0時にリセットします。</span></p>}
+      {profileError ? <p role="status" className="text-xs text-muted-foreground">{profileError}</p> : profile?.plan && profile.slots && <p role="status" className="text-sm text-muted-foreground">{automationPlanName(profile.plan.name) || "現在のプラン"} · 通知枠 {profile.slots.used} / {profile.slots.max}（残り{profile.slots.available}枠）<br />1枠あたり1日{profile.plan.dayLimit}通・1分{profile.plan.minuteLimit}通まで{profile.plan.priority > 0 ? " · 優先処理" : ""}<span className="block text-xs">新着・価格の合計枠です。確認間隔に配分した追加枠も含みます。停止中の登録も枠に含みます。実際に送信したメッセージ1件＝1通。日ごとの上限は日本時間の0時にリセットします。</span></p>}
       <div className="flex flex-wrap items-center justify-between gap-2"><div className="flex gap-1" aria-label="通知の種類">{[["auto", "新着"], ["price", "価格"]].map(([id, label]) => <button key={id} className={button} aria-pressed={kind === id} disabled={busy || monitorOpen} onClick={() => setKind(id)}>{label}</button>)}</div><div className="flex gap-2"><button className="rounded border bg-primary px-4 py-2 text-sm text-primary-foreground hover:bg-primary/90 disabled:opacity-40" disabled={busy || monitorOpen || scope === "guild" && !canEdit || kind === "auto" && !autoRegistrationAllowed} onClick={begin}>通知を追加</button><button className={button} disabled={busy} onClick={() => void task(() => load())}>更新</button></div></div>
       {scope === "guild" && !canEdit && <p className="automation-critical-note"><LockKeyhole size={16} aria-hidden="true" />通知の変更にはサーバーの編集権限が必要です。</p>}
       {kind === "auto" && catalog && !autoRegistrationAllowed && <p role="status" className="automation-critical-note"><LockKeyhole size={16} aria-hidden="true" />現在は新着通知を追加・再開できません。利用枠と通知の状態を確認してください。</p>}
@@ -122,6 +133,7 @@ export function MonitorManager({ api, guildId, canEdit, scope, destinations, rul
       <div className="monitor-list">{!loading && visible.map(row => <article key={row.id} className="monitor-card space-y-3"><div className="monitor-card-heading"><h3 className="font-medium break-all">{row.name}</h3><span className="monitor-state" data-state={monitorState(row).id}>{monitorState(row).label}</span></div>
         <p className="text-sm">{receiveSummary({ ...row, kind })}</p><div className="monitor-source"><div><span>{valueLabels[row.providerId] || row.providerId}</span><span>{row.scope === "guild" ? "サーバー共有" : "自分用"}</span></div><a href={row.source} target="_blank" rel="noreferrer">{row.source}</a></div>
         {!profileError && profile?.usage?.entries?.filter(entry => entry.targetKind === kind && entry.targetId === row.id).map(entry => <div key={`${entry.targetKind}:${entry.targetId}`}><p className="text-xs text-muted-foreground">今日の送信 {entry.todayUsed} / {entry.dayLimit}通{entry.todayReserved > 0 ? ` · 予約・確認待ち ${entry.todayReserved}通` : ""} · 1分{entry.minuteLimit}通まで</p>{entry.allowed === false && <p className="automation-critical-note text-xs">この通知は現在のプランの登録枠を超えています。不要な通知を削除して利用枠を確認してください。</p>}</div>)}
+        {kind === "auto" && row.canAllocateCadence === true ? <MonitorCadenceEditor row={row} pool={profileError ? null : profile?.slots ?? null} api={api} disabled={busy || !active || !editable(row)} draftValue={cadenceDrafts.current.get(row.id)} onDraft={value => cadenceDrafts.current.set(row.id, value)} onReload={() => reloadCadence(row.id)} /> : null}
         <dl className="monitor-facts"><div><dt>通知先</dt><dd>{destinations.find(d => d.id === row.destinationId)?.name || (row.destinationType === "dm" ? "本人のDM" : "登録済みチャンネル")}</dd></div><div><dt>次回確認</dt><dd>{!row.enabled ? "停止中" : row.nextCheckAtMs ? new Date(row.nextCheckAtMs).toLocaleString("ja-JP", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "調整中"}</dd></div></dl>
         <details className="text-xs text-muted-foreground"><summary>確認履歴・詳細ルール</summary><dl className="monitor-facts mt-2"><div><dt>前回確認</dt><dd>{row.lastCheckedAtMs ? new Date(row.lastCheckedAtMs).toLocaleString() : "未確認"}</dd></div>{row.intervalMinutes != null && <div><dt>確認間隔</dt><dd>{row.intervalMinutes}分</dd></div>}<div><dt>詳細ルール</dt><dd>{rules.find(r => r.id === row.workflowId)?.name || (row.workflowId ? "割り当てあり" : "通常の通知")}</dd></div></dl></details>
         {monitorState(row).id === "error" && <p className="automation-critical-note"><Info size={16} aria-hidden="true" />{/INVALID_CURSOR/.test(row.errorCode) ? "監視履歴の復旧が必要です。" : /NOT_FOUND/.test(row.errorCode) ? "URLと公開状態を確認してください。" : "取得に失敗しました。次回の確認で再試行します。"}</p>}

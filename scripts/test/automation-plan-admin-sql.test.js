@@ -55,11 +55,12 @@ test('SQL: editable built-in plans, optimistic admin saves, stable counters and 
     await t.test('supporter override adds trusted individual extras; paid override takes precedence and falls back after disable/expiry', async () => {
         const supporter = await dispatch(request('PATCH', 'plans/supporter', input('supporter', { slotLimit: 8, minuteLimit: 9, dayLimit: 100, priority: 2, expectedUpdatedAtMs: 0 })), ADMIN, services);
         assert.equal(supporter.tier, 'supporter');
-        assert.deepEqual(await plans.inspectPlan(db.queryDatabase, SUPPORTER), { tier: 'supporter', planId: 'supporter', label: 'supporter', slotLimit: 10, minuteLimit: 9, dayLimit: 100, priority: 2 });
+        assert.deepEqual(await plans.inspectPlan(db.queryDatabase, SUPPORTER), { tier: 'supporter', planId: 'supporter', label: 'supporter', slotLimit: 10, minuteLimit: 9, dayLimit: 100, priority: 2,
+            baseSlotLimit: 8, manualExtraSlots: 2, addonGrantUnits: 0, addonExtraSlots: 0, donationPaymentCount: 0, addonValidUntilAtMs: null });
         const paid = await dispatch(request('POST', 'plans', input('fixture-paid', { slotLimit: 12, minuteLimit: 20, dayLimit: 200, priority: 9, expectedUpdatedAtMs: 0 })), ADMIN, services);
         assert.equal(paid.tier, 'paid'); assert.equal(paid.isBuiltin, false);
         await db.withDatabaseTransaction(query => plans.setUserPlan(query, ADMIN, SUPPORTER, paid.planId, { expiresAtMs: Date.now() + 60000 }));
-        assert.equal((await plans.inspectPlan(db.queryDatabase, SUPPORTER)).slotLimit, 12);
+        assert.equal((await plans.inspectPlan(db.queryDatabase, SUPPORTER)).slotLimit, 14);
         assert.equal((await plans.inspectPlan(db.queryDatabase, SUPPORTER, Date.now() + 120000)).slotLimit, 10);
         await dispatch(request('PATCH', 'plans/fixture-paid', input('fixture-paid', { enabled: false, expectedUpdatedAtMs: paid.updatedAtMs })), ADMIN, services);
         assert.equal((await plans.inspectPlan(db.queryDatabase, SUPPORTER)).priority, 2);

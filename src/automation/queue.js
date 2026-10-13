@@ -176,7 +176,7 @@ function createQueue(db, evaluator, options = {}) {
                 LEFT JOIN automation_notification_plans p ON p.plan_id=e.plan_id AND p.enabled=1 AND p.plan_id NOT IN ('free','supporter') AND ${validPolicy('p')}
                 ${square.configured ? `LEFT JOIN automation_square_subscriptions ss ON ss.owner_user_id=r.owner_user_id AND ss.environment=? AND ss.merchant_id=? AND ss.verified=1 AND ss.state IN ('ACTIVE','CANCELED') AND ss.valid_until_at_ms>?
                 LEFT JOIN automation_notification_plans sp ON sp.plan_id=ss.plan_id AND sp.enabled=1 AND sp.plan_id NOT IN ('free','supporter') AND ${validPolicy('sp')}
-                LEFT JOIN automation_square_donation_policy dp ON dp.environment=? AND dp.merchant_id=? AND dp.supporter_threshold>0
+                LEFT JOIN automation_square_donation_policy dp ON dp.environment=? AND dp.merchant_id=? AND dp.currency IS NOT NULL
                 LEFT JOIN automation_square_donation_supporters ds ON ds.owner_user_id=r.owner_user_id AND ds.environment=dp.environment AND ds.merchant_id=dp.merchant_id AND ds.policy_updated_at_ms=dp.updated_at_ms AND ds.active=1 AND (ds.valid_until_at_ms IS NULL OR ds.valid_until_at_ms>?)` : ''}
                 LEFT JOIN automation_notification_plans b ON b.plan_id=IF(${supporter},'supporter','free') AND ${validPolicy('b')} WHERE
                 (j.state='pending' AND j.due_at_ms<=? OR j.state='leased' AND j.lease_until_ms<=?)

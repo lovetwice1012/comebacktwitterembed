@@ -1,6 +1,7 @@
-export type NotificationPlan = { tier: 'free' | 'supporter' | 'paid'; planId: string; label: string; slotLimit: number; minuteLimit: number; dayLimit: number; priority: number };
+export type NotificationPlan = { tier: 'free' | 'supporter' | 'paid'; planId: string; label: string; slotLimit: number; minuteLimit: number; dayLimit: number; priority: number;
+    baseSlotLimit?: number; manualExtraSlots?: number; addonGrantUnits?: number; addonExtraSlots?: number; donationPaymentCount?: number; addonValidUntilAtMs?: number | null };
 export type NotificationPlanPolicy = NotificationPlan & { enabled: boolean; isBuiltin: boolean; updatedAtMs: number };
-export type NotificationSlot = NotificationPlan & { slotId: string; slotIndex: number; targetKind: 'auto' | 'price'; targetId: string };
+export type NotificationSlot = NotificationPlan & { slotId: string; slotIndex: number; slotCost?: number; targetKind: 'auto' | 'price'; targetId: string };
 type Query = (sql: string, params?: unknown[]) => Promise<any>;
 type AdminActor = { userId: string; isAdmin?: boolean };
 export const FREE_PLAN: NotificationPlan;
