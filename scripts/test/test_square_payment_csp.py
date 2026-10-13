@@ -37,6 +37,19 @@ class PaymentCspTest(unittest.TestCase):
         for path, data in self.originals.items():
             self.assertEqual(path.read_bytes(), data)
 
+    def test_runner_uses_fixed_absolute_executables_and_rejects_other_commands(self):
+        with patch.object(CSP.subprocess, 'run') as run:
+            run.return_value.returncode = 7
+            self.assertEqual(CSP.run_command(['nginx', '-t']), 7)
+            self.assertEqual(CSP.run_command(['systemctl', 'reload', 'nginx']), 7)
+            self.assertEqual(run.call_args_list[0].args[0], ['/usr/sbin/nginx', '-t'])
+            self.assertEqual(run.call_args_list[1].args[0], ['/bin/systemctl', 'reload', 'nginx'])
+            for command in ([], ['sh', '-c', 'nginx -t'], ['/usr/sbin/nginx', '-t']):
+                with self.subTest(command=command):
+                    with self.assertRaisesRegex(CSP.ConfigError, 'Unsupported config command'):
+                        CSP.run_command(command)
+            self.assertEqual(run.call_count, 2)
+
     def test_scope_and_exact_header_token_preservation(self):
         calls = []
         result = self.apply(lambda command: calls.append(command) or 0)

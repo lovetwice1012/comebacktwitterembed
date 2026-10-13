@@ -165,7 +165,11 @@ def write_atomic(path, data, original, expected):
 
 
 def run_command(command):
-    return subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False).returncode
+    binaries = {'nginx': '/usr/sbin/nginx', 'systemctl': '/bin/systemctl'}
+    if not command or command[0] not in binaries:
+        raise ConfigError('Unsupported config command')
+    executable = [binaries[command[0]], *command[1:]]
+    return subprocess.run(executable, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False).returncode
 
 
 def apply(expected, configs=CONFIGS, map_path=MAP, backup_root=Path('/var/backups'), runner=run_command):
