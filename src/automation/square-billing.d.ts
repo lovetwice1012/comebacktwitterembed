@@ -9,8 +9,14 @@ export interface SquareStatus {
     environment: 'sandbox' | 'production' | null;
     subscription: null | { planId: string; label: string; state: string; paidThroughAtMs: number | null; validUntilAtMs: number | null; canceledDate: string | null; active: boolean; cancelScheduled: boolean };
     pending: null | { checkoutId: string; state: string; retryable: boolean; resumeAllowed: boolean; abortAllowed: boolean; quote: SquareQuote };
-    refresh: { state: 'checked' | 'busy' | 'cooldown' | 'failed'; retryAtMs: number };
-    verificationWarning?: { code: 'SQUARE_PRORATION_UNVERIFIED'; message: string };
+  refresh: {
+    state: "checked" | "busy" | "cooldown" | "failed";
+    retryAtMs: number;
+  };
+  verificationWarning?: {
+    code: "SQUARE_PRORATION_UNVERIFIED";
+    message: string;
+  };
 }
 export function getSquareScope(env?: Record<string, string | undefined>): { configured: boolean; environment: 'sandbox' | 'production' | null; merchantId: string | null };
 export function createSquareClient(options?: { env?: Record<string, string | undefined>; fetch?: typeof fetch; clock?: () => number }): {
@@ -19,16 +25,33 @@ export function createSquareClient(options?: { env?: Record<string, string | und
     now: () => number;
     requireConfigured: () => void;
     request: (method: string, path: string, body?: Record<string, any>) => Promise<any>;
-    location: (read?: (method: string, path: string, body?: Record<string, any>) => Promise<any>) => Promise<any>;
+  location: (
+    _read?: (
+      method: string,
+      path: string,
+      body?: Record<string, any>,
+    ) => Promise<any>,
+  ) => Promise<any>;
 };
 export function createSquareBilling(db: { queryDatabase: Function; withDatabaseTransaction: Function }, options?: { env?: Record<string, string | undefined>; fetch?: typeof fetch; clock?: () => number }): {
     getOptions(actor: SquareActor): Promise<SquareOptions>;
     getStatus(actor: SquareActor): Promise<SquareStatus>;
     getAdmin(actor: SquareActor): Promise<{ configured: boolean; environment: 'sandbox' | 'production' | null; missing: string[]; bindings: SquareBinding[]; availableVariations: SquareVariation[] }>;
-    saveBinding(actor: SquareActor, planId: string, input: { variationId: string; enabled: boolean; expectedVerifiedAtMs: number | null }): Promise<SquareBinding>;
+  saveBinding(
+    _actor: SquareActor,
+    planId: string,
+    input: {
+      variationId: string;
+      enabled: boolean;
+      expectedVerifiedAtMs: number | null;
+    },
+  ): Promise<SquareBinding>;
     createQuote(actor: SquareActor, input: { planId: string; email: string; name: string; couponCode?: string }): Promise<SquareQuote>;
     subscribe(actor: SquareActor, input: { checkoutId: string; sourceId: string; consent: boolean }): Promise<SquareStatus>;
-    resume(actor: SquareActor, input: { checkoutId: string; consent: boolean }): Promise<SquareStatus>;
+  resume(
+    actor: SquareActor,
+    input: { checkoutId: string; consent: boolean },
+  ): Promise<SquareStatus>;
     abort(actor: SquareActor, input: { checkoutId: string }): Promise<SquareStatus>;
     cancel(actor: SquareActor): Promise<SquareStatus>;
     handleWebhook(rawBody: string | Buffer, signature: string): Promise<{ accepted: boolean; duplicate: boolean }>;

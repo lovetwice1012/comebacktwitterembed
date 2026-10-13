@@ -4,8 +4,11 @@ import { useEffect, useId, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { isPaymentEmail } from "@/lib/payment-input";
-import { automationResponseError, automationRetryDelay } from "./automation-feedback";
-import type { SquareStatus as BillingStatus } from "../../../src/automation/square-billing";
+import {
+  automationResponseError,
+  automationRetryDelay,
+} from "@/components/automation/automation-feedback";
+import type { SquareStatus as BillingStatus } from "@bot/automation/square-billing";
 
 type Plan = { planId: string; label: string; slotLimit: number; minuteLimit: number; dayLimit: number; priority: number; variationId: string; catalogName: string; cadence: string; amount: number; currency: string; billingAnchorDay?: number | null; canProrate?: boolean; regularAmount?: number; firstAmount?: number; coupon?: null | { code: string; label: string; type: "fixed" | "percent"; value: number; discountAmount: number } };
 type BillingOptions = { configured: boolean; environment: "sandbox" | "production"; applicationId?: string; locationId?: string; plans: Plan[] };
