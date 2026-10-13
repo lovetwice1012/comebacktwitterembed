@@ -188,7 +188,7 @@ test('Square association shows minor-unit price and cadence, validates before sa
         await f.fill(input, 'NEW_VARIATION'); await f.inClick(article, '紐付け内容を確認'); assert.equal(writes(f).length, 0); assert.match(article.textContent, /NEW_VARIATION.*現在の設定/);
         await f.inClick(article, 'Squareで検証して紐付け'); assert.equal(input.value, 'NEW_VARIATION'); assert.match(article.textContent, /検証できません/);
         await f.inClick(article, '紐付け内容を確認'); await f.inClick(article, 'Squareで検証して紐付け');
-        assert.deepEqual(writes(f).at(-1).body, { variationId: 'NEW_VARIATION', enabled: true }); assert.match(article.textContent, /\$1.99 · 月ごと/); assert.match(article.textContent, /プランを紐付けました/);
+        assert.deepEqual(writes(f).at(-1).body, { variationId: 'NEW_VARIATION', enabled: true, expectedVerifiedAtMs: oldBinding.verifiedAtMs }); assert.match(article.textContent, /\$1.99 · 月ごと/); assert.match(article.textContent, /プランを紐付けました/);
         assert(writes(f).every(call => call.route === 'billing/bindings/paid_one'));
     } finally { await f.close(); }
 });
@@ -211,4 +211,63 @@ test('Square catalog choices fill the variation ID without requiring manual entr
         await f.fill(select, 'CATALOG_VARIATION'); assert.equal(f.inField(article, 'SquareプランバリエーションID').value, 'CATALOG_VARIATION'); assert.equal(writes(f).length, 0);
         await f.inClick(article, '紐付け内容を確認'); await f.inClick(article, 'Squareで検証して紐付け'); assert.equal(writes(f)[0].body.variationId, 'CATALOG_VARIATION');
     } finally { await f.close(); }
+});
+
+test('Square binding conflict preserves a stale edit and requires review against the newly disabled binding before CAS save', async () => {
+    const initial = { planId: 'paid_one', variationId: 'ORIGINAL', enabled: true, catalogName: 'Original', cadence: 'MONTHLY', amount: 1500, currency: 'JPY', verifiedAtMs: 100 };
+    let adminReads = 0, attempts = 0;
+    const f = await fixture({ plans: [policy('paid_one')], respond: async (route, method, body, current) => {
+        if (route === 'billing/admin') return billing({ configured: true, bindings: [{ ...initial, enabled: ++adminReads === 1, verifiedAtMs: adminReads === 1 ? 100 : 101 }] });
+        if (route === 'billing/bindings/paid_one') {
+            if (++attempts === 1) throw current.exports.automationResponseError({ error: 'changed', code: 'SQUARE_BINDING_CONFLICT' }, new Response('', { status: 409 }));
+            return { ...initial, ...body, verifiedAtMs: 102 };
+        }
+    } });
+    try {
+        const article = f.article('有償設定'), input = f.inField(article, 'SquareプランバリエーションID');
+        await f.fill(input, 'REPLACEMENT'); await f.inClick(article, '紐付け内容を確認');
+        assert.match(article.querySelector('[aria-label="Square紐付けの確認"]').textContent, /SquareプランORIGINALREPLACEMENT/);
+        await f.inClick(article, 'Squareで検証して紐付け'); assert.equal(writes(f)[0].body.expectedVerifiedAtMs, 100);
+        assert.match(article.textContent, /ほかの管理者がSquareの紐付けを変更/); assert.equal(input.value, 'REPLACEMENT');
+        await f.inClick(article, '紐付け内容を確認'); assert.equal(writes(f).length, 1);
+        await f.inClick(article, '最新のSquare紐付けを再取得'); assert.equal(input.value, 'REPLACEMENT'); assert.equal(article.querySelector('[aria-label="Square紐付けの確認"]'), null);
+        await f.inClick(article, '紐付け内容を確認'); assert.match(article.querySelector('[aria-label="Square紐付けの確認"]').textContent, /購入受付停止有効/);
+        await f.inClick(article, 'Squareで検証して紐付け'); assert.equal(writes(f).at(-1).body.expectedVerifiedAtMs, 101);
+    } finally { await f.close(); }
+});
+
+test('a refreshed Square binding invalidates the previous confirmation and rapid clicks issue only one current CAS write', async () => {
+    const initial = { planId: 'paid_one', variationId: 'ORIGINAL', enabled: true, catalogName: 'Original', cadence: 'MONTHLY', amount: 1500, currency: 'JPY', verifiedAtMs: 100 };
+    let adminReads = 0, release;
+    const f = await fixture({ plans: [policy('paid_one')], respond: async (route, method, body) => {
+        if (route === 'billing/admin') return billing({ configured: true, bindings: [{ ...initial, verifiedAtMs: 99 + ++adminReads }] });
+        if (route === 'billing/bindings/paid_one') { await new Promise(resolve => { release = resolve; }); return { ...initial, ...body, verifiedAtMs: 102 }; }
+    } });
+    try {
+        const article = f.article('有償設定'); await f.fill(f.inField(article, 'SquareプランバリエーションID'), 'REPLACEMENT'); await f.inClick(article, '紐付け内容を確認');
+        await f.click('Square連携を再確認'); assert.match(article.textContent, /現在のSquare設定が更新/);
+        const staleButton = [...article.querySelectorAll('button')].find(node => node.textContent === 'Squareで検証して紐付け'); assert.equal(staleButton.disabled, true);
+        await f.inClick(article, '紐付けの編集に戻る'); await f.inClick(article, '紐付け内容を確認');
+        const button = [...article.querySelectorAll('button')].find(node => node.textContent === 'Squareで検証して紐付け');
+        await f.act(async () => { button.dispatchEvent(new f.dom.window.MouseEvent('click', { bubbles: true })); button.dispatchEvent(new f.dom.window.MouseEvent('click', { bubbles: true })); });
+        assert.equal(writes(f).length, 1); assert.equal(writes(f)[0].body.expectedVerifiedAtMs, 101);
+        await f.act(async () => release()); assert.match(article.textContent, /プランを紐付けました/);
+    } finally { if (release) release(); await f.close(); }
+});
+
+test('a late binding refresh cannot replace the newer saved binding or its CAS baseline', async () => {
+    const initial = { planId: 'paid_one', variationId: 'ORIGINAL', enabled: true, catalogName: 'Original', cadence: 'MONTHLY', amount: 1500, currency: 'JPY', verifiedAtMs: 100 };
+    let reads = 0, releaseSave, releaseRefresh;
+    const f = await fixture({ plans: [policy('paid_one')], respond: async (route, method, body) => {
+        if (route === 'billing/admin') { if (++reads > 1) await new Promise(resolve => { releaseRefresh = resolve; }); return billing({ configured: true, bindings: [initial] }); }
+        if (route === 'billing/bindings/paid_one') { if (!releaseSave) await new Promise(resolve => { releaseSave = resolve; }); return { ...initial, ...body, verifiedAtMs: 102 }; }
+    } });
+    try {
+        const article = f.article('有償設定'), input = f.inField(article, 'SquareプランバリエーションID');
+        await f.fill(input, 'SAVED'); await f.inClick(article, '紐付け内容を確認'); await f.inClick(article, 'Squareで検証して紐付け');
+        await f.click('Square連携を再確認'); await f.act(async () => releaseSave()); await f.act(async () => releaseRefresh());
+        assert.equal(input.value, 'SAVED'); assert.match(article.textContent, /プランを紐付けました/);
+        await f.fill(input, 'ANOTHER'); await f.inClick(article, '紐付け内容を確認'); await f.inClick(article, 'Squareで検証して紐付け');
+        assert.equal(writes(f).at(-1).body.expectedVerifiedAtMs, 102);
+    } finally { if (releaseSave) releaseSave(); if (releaseRefresh) releaseRefresh(); await f.close(); }
 });

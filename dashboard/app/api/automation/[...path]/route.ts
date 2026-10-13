@@ -46,7 +46,7 @@ async function handle(req: NextRequest, { params }: Params) {
     if (path.length > 3) throw new ApiError(404, "ページが見つかりません。");
     // Reconciliation can recover pending payments and update entitlements.
     // It is a write even though the client only requests status.
-    if (req.method === "GET" && path[0] === "billing" && (path[1] === "status" && !path[2] || path[1] === "donations" && path[2] === "status")) assertDashboardFleetWriteAuthority();
+    if (mutation || path[0] === "billing" && (path[1] === "status" && !path[2] || path[1] === "donations" && path[2] === "status")) assertDashboardFleetWriteAuthority();
     const maxBody = mutation ? bodyLimit(`/${path.join("/")}`) : 0;
     const claimedLength = req.headers.get("content-length");
     if (claimedLength !== null && (!/^\d+$/.test(claimedLength) || Number(claimedLength) > maxBody)) throw new ApiError(413, "入力が大きすぎます。");

@@ -1,5 +1,6 @@
 'use strict';
 const test = require('node:test'), assert = require('node:assert/strict');
+const { createHash } = require('node:crypto');
 const { createTestDatabase } = require('../lib/automation-test-db');
 const { createSquareCommerce } = require('../../src/automation/square-commerce');
 const { createSquareBilling } = require('../../src/automation/square-billing');
@@ -9,8 +10,8 @@ const ENV = { SQUARE_ENVIRONMENT: 'sandbox', SQUARE_ACCESS_TOKEN: 'fixture-token
     SQUARE_MERCHANT_ID: 'MERCHANT', SQUARE_WEBHOOK_SIGNATURE_KEY: 'fixture-secret', SQUARE_WEBHOOK_NOTIFICATION_URL: 'https://service.example/api/automation/square/webhook' };
 const ADMIN = { userId: '444444444444444444', isAdmin: true }, actor = i => ({ userId: String(222222222222222000n + BigInt(i)) });
 function mockSquare(clock) {
-    const catalog = new Map(), keys = new Map(), customers = new Map(), cards = new Map(), subscriptions = new Map(), invoices = new Map(), requests = [];
-    const state = { lost: null, reject: null, gate: null, mutate: null };
+    const catalog = new Map(), parents = new Map(), catalogRequests = new Map(), keys = new Map(), customers = new Map(), cards = new Map(), subscriptions = new Map(), invoices = new Map(), requests = [];
+    const state = { lost: null, lostRepair: 0, reject: null, gate: null, mutate: null, mutateParent: null };
     const json = (data, status = 200) => ({ ok: status < 400, status, json: async () => structuredClone(data) });
     async function fetch(url, options) {
         assert.ok(url.startsWith('https://connect.squareupsandbox.com/v2/')); const path = new URL(url).pathname, body = options.body ? JSON.parse(options.body) : null; requests.push({ path, method: options.method, body });
@@ -18,25 +19,50 @@ function mockSquare(clock) {
         let result;
         if (path === '/v2/locations/LOCATION') result = { location: { id: 'LOCATION', merchant_id: 'MERCHANT', status: 'ACTIVE', timezone: 'Asia/Tokyo', currency: 'JPY' } };
         else if (path === '/v2/catalog/object' && options.method === 'POST') {
+            if (catalogRequests.has(body.idempotency_key) && catalogRequests.get(body.idempotency_key) !== JSON.stringify(body)) return json({ errors: [{ code: 'IDEMPOTENCY_KEY_REUSED' }] }, 409);
             result = keys.get(body.idempotency_key);
             if (!result) {
-                const parent = 'PLAN-' + (catalog.size + 1), variationId = 'VAR-' + (catalog.size + 1), source = body.object.subscription_plan_data.subscription_plan_variations[0];
-                const variation = structuredClone(source); variation.id = variationId; variation.version = clock(); variation.subscription_plan_variation_data.subscription_plan_id = parent;
-                if (state.mutate) state.mutate(variation);
-                catalog.set(variationId, variation); result = { catalog_object: { id: parent }, id_mappings: [{ client_object_id: source.id, object_id: variationId }] }; keys.set(body.idempotency_key, result);
+                const incoming = body.object;
+                if (incoming.id.startsWith('#')) {
+                    const parentId = 'PLAN-' + (catalog.size + 1), variationId = 'VAR-' + (catalog.size + 1), source = incoming.subscription_plan_data.subscription_plan_variations[0];
+                    const variation = structuredClone(source); variation.id = variationId; variation.version = clock(); variation.subscription_plan_variation_data.subscription_plan_id = parentId;
+                    if (state.mutate) state.mutate(variation);
+                    const parent = structuredClone(incoming); parent.id = parentId; parent.version = clock(); parent.subscription_plan_data.subscription_plan_variations = [structuredClone(variation)];
+                    if (state.mutateParent) state.mutateParent(parent, variation);
+                    catalog.set(variationId, variation); parents.set(parentId, parent);
+                    result = { catalog_object: parent, id_mappings: [{ client_object_id: source.id, object_id: variationId }, { client_object_id: incoming.id, object_id: parentId }] };
+                } else {
+                    const parent = parents.get(incoming.id), variations = incoming.subscription_plan_data?.subscription_plan_variations;
+                    if (!parent || String(incoming.version) !== String(parent.version) || !Array.isArray(variations)
+                        || variations.some(item => !catalog.has(item.id) || String(item.version) !== String(catalog.get(item.id).version) || item.subscription_plan_variation_data.subscription_plan_id !== incoming.id))
+                        return json({ errors: [{ code: 'VERSION_MISMATCH' }] }, 409);
+                    const restored = structuredClone(incoming), version = Math.max(clock(), Number(parent.version) + 1, ...variations.map(item => Number(item.version) + 1));
+                    restored.version = version;
+                    restored.subscription_plan_data.subscription_plan_variations = variations.map(item => { const copy = structuredClone(item); copy.version = version; catalog.set(copy.id, copy); return structuredClone(copy); });
+                    parents.set(restored.id, restored); result = { catalog_object: restored, id_mappings: [] };
+                }
+                catalogRequests.set(body.idempotency_key, JSON.stringify(body)); keys.set(body.idempotency_key, structuredClone(result));
             }
-        } else if (path.startsWith('/v2/catalog/object/')) result = { object: catalog.get(path.slice('/v2/catalog/object/'.length)) };
+            if (!body.object.id.startsWith('#') && state.lostRepair > 0) { state.lostRepair--; throw new Error('fixture repair ACK lost'); }
+        } else if (path.startsWith('/v2/catalog/object/')) {
+            const objectId = decodeURIComponent(path.slice('/v2/catalog/object/'.length)), parent = parents.get(objectId);
+            if (parent) { const copy = structuredClone(parent); copy.subscription_plan_data.subscription_plan_variations = copy.subscription_plan_data.subscription_plan_variations.map(item => structuredClone(catalog.get(item.id) || item)); result = { object: copy }; }
+            else result = { object: catalog.get(objectId) };
+        }
         else if (path === '/v2/catalog/list') result = { objects: [...catalog.values()] };
         else if (path === '/v2/customers' && options.method === 'POST') {
             let customer = keys.get(body.idempotency_key); if (!customer) { customer = { id: 'CUSTOMER-' + (customers.size + 1), reference_id: body.reference_id, email_address: body.email_address }; customers.set(customer.id, customer); keys.set(body.idempotency_key, customer); } result = { customer };
         } else if (path === '/v2/customers/search') result = { customers: [...customers.values()].filter(customer => customer.reference_id === body.query.filter.reference_id.exact) };
         else if (path.startsWith('/v2/customers/')) result = { customer: customers.get(path.slice('/v2/customers/'.length)) };
         else if (path === '/v2/cards' && options.method === 'POST') { let card = keys.get(body.idempotency_key); if (!card) { card = { id: 'ccof:card-' + (cards.size + 1), ...body.card, enabled: true }; cards.set(card.id, card); keys.set(body.idempotency_key, card); } result = { card }; }
+        else if (path.startsWith('/v2/cards/')) result = { card: cards.get(decodeURIComponent(path.slice('/v2/cards/'.length))) };
         else if (path === '/v2/cards') result = { cards: [...cards.values()].filter(card => card.customer_id === new URL(url).searchParams.get('customer_id')) };
         else if (path === '/v2/subscriptions/search') result = { subscriptions: [...subscriptions.values()].filter(sub => body.query.filter.customer_ids.includes(sub.customer_id)) };
         else if (path === '/v2/subscriptions' && options.method === 'POST') {
             let subscription = keys.get(body.idempotency_key);
             if (!subscription) {
+                const selected = catalog.get(body.plan_variation_id), parent = parents.get(selected?.subscription_plan_variation_data?.subscription_plan_id);
+                if (!selected || selected.present_at_all_locations === false || !parent || parent.present_at_all_locations === false) return json({ errors: [{ code: 'INVALID_VALUE', detail: 'Subscription catalog is disabled' }] }, 422);
                 const id = 'SUB-' + (subscriptions.size + 1), invoiceId = 'INV-' + (invoices.size + 1), variation = catalog.get(body.plan_variation_id), first = variation.subscription_plan_variation_data.phases[0].pricing.price_money;
                 subscription = { id, location_id: body.location_id, customer_id: body.customer_id, plan_variation_id: body.plan_variation_id, card_id: body.card_id, source: body.source, price_override_money: body.price_override_money,
                     status: 'ACTIVE', version: 1, charged_through_date: '2026-10-31', timezone: 'Asia/Tokyo', invoice_ids: [invoiceId] };
@@ -51,7 +77,7 @@ function mockSquare(clock) {
         if (state.lost === path && options.method === 'POST') { state.lost = null; throw new Error('fixture wire ACK lost'); }
         return json(result);
     }
-    return { fetch, requests, state, catalog, keys, subscriptions, invoices };
+    return { fetch, requests, state, catalog, parents, keys, subscriptions, invoices };
 }
 test('Square commerce fixtures default to unconfigured without secret access and require administrators', async () => {
     const service = createSquareCommerce({}, { env: {} }); assert.equal((await service.getAdmin(ADMIN)).configured, false);
@@ -113,8 +139,8 @@ test('real SQL Square catalog creation and first-invoice coupons with mocked rem
             assert.equal(phases[0].periods, 1); assert.equal(phases[0].pricing.price_money.amount, 900); assert.equal(phases[1].periods, undefined); assert.equal(phases[1].pricing.price_money.amount, 1000);
             const sub = [...square.subscriptions.values()].find(item => item.source.name === 'cbte:' + q.checkoutId), firstId = sub.invoice_ids[0], secondId = 'regular-' + sub.id;
             sub.invoice_ids.unshift(secondId); sub.charged_through_date = '2026-11-30'; sub.version++; square.invoices.set(secondId, { id: secondId, subscription_id: sub.id, location_id: 'LOCATION', primary_recipient: { customer_id: sub.customer_id }, status: 'PAID', payment_requests: [{ computed_amount_money: { amount: 900, currency: 'JPY' }, total_completed_amount_money: { amount: 900, currency: 'JPY' } }] });
-            square.invoices.get(firstId).status = 'REFUNDED'; assert.equal((await billing().getStatus(own)).subscription.active, false, 'second invoice at first price must not grant');
-            square.invoices.get(secondId).payment_requests[0].computed_amount_money.amount = 1000; square.invoices.get(secondId).payment_requests[0].total_completed_amount_money.amount = 1000; assert.equal((await billing().getStatus(own)).subscription.active, true);
+            square.invoices.get(firstId).status = 'REFUNDED'; clock += 31000; assert.equal((await billing().getStatus(own)).subscription.active, false, 'second invoice at first price must not grant');
+            square.invoices.get(secondId).payment_requests[0].computed_amount_money.amount = 1000; square.invoices.get(secondId).payment_requests[0].total_completed_amount_money.amount = 1000; clock += 31000; assert.equal((await billing().getStatus(own)).subscription.active, true);
             assert.equal((await row(q.checkoutId)).first_invoice_id, firstId); assert.equal((await row(q.checkoutId)).state, 'COMMITTED');
         });
         await t.test('disabled or expired coupon before consent releases unused reservation and never creates a card or contract', async () => {
@@ -130,7 +156,7 @@ test('real SQL Square catalog creation and first-invoice coupons with mocked rem
             await assert.rejects(submit(own, q), { code: 'SQUARE_RESULT_UNKNOWN' }); assert.equal((await row(q.checkoutId)).state, 'SUBMITTING');
             await assert.rejects(quote(actor(6), 'UNKNOWN'), { code: 'SQUARE_COUPON_LIMIT' });
             const count = square.subscriptions.size, restored = await billing().getStatus(own); assert.equal(restored.subscription.active, true); assert.equal(square.subscriptions.size, count); assert.equal((await row(q.checkoutId)).state, 'COMMITTED');
-            const sub = [...square.subscriptions.values()].find(item => item.source.name === 'cbte:' + q.checkoutId); square.invoices.get(sub.invoice_ids[0]).status = 'REFUNDED'; assert.equal((await billing().getStatus(own)).subscription.active, false);
+            const sub = [...square.subscriptions.values()].find(item => item.source.name === 'cbte:' + q.checkoutId); square.invoices.get(sub.invoice_ids[0]).status = 'REFUNDED'; clock += 31000; assert.equal((await billing().getStatus(own)).subscription.active, false);
             await assert.rejects(quote(actor(6), 'UNKNOWN'), { code: 'SQUARE_COUPON_LIMIT' });
         });
         await t.test('known pre-contract failures release usage; unsubmitted expired reservations are reclaimed', async () => {
@@ -207,6 +233,166 @@ test('real SQL Square catalog creation and first-invoice coupons with mocked rem
             await db.queryDatabase("UPDATE automation_square_checkouts SET state='SUBSCRIPTION_SUBMITTING' WHERE id=?", [unknown.checkoutId]);
             await db.queryDatabase("UPDATE automation_square_coupon_uses SET state='SUBMITTING',expires_at_ms=0 WHERE checkout_id=?", [unknown.checkoutId]);
             await assert.rejects(quote(actor(85), 'DO_NOT_RELEASE'), { code: 'SQUARE_COUPON_LIMIT' }); assert.equal((await row(unknown.checkoutId)).state, 'SUBMITTING');
+        });
+        const legacyRequest = body => {
+            body.object.present_at_all_locations = false; body.object.present_at_location_ids = ['LOCATION'];
+            for (const child of body.object.subscription_plan_data.subscription_plan_variations) { child.present_at_all_locations = false; child.present_at_location_ids = ['LOCATION']; }
+            return body;
+        };
+        async function legacyQuote(id) {
+            await plan(id); const q = await commerce().createCatalogQuote(ADMIN, { planId: id, name: id, amount: 1400, currency: 'JPY', cadence: 'MONTHLY' });
+            const record = (await db.queryDatabase('SELECT request_json FROM automation_square_catalog_creations WHERE id=?', [q.creationId]))[0], original = legacyRequest(JSON.parse(record.request_json));
+            await db.queryDatabase('UPDATE automation_square_catalog_creations SET request_json=? WHERE id=?', [JSON.stringify(original), q.creationId]);
+            return { q, original };
+        }
+        async function legacyCouponCache(q) {
+            const terms = q.plan.coupon, identity = createHash('sha256').update(JSON.stringify([['sandbox','MERCHANT'], q.plan.variationId, q.plan.catalogVersion, terms])).digest('hex'), name = q.plan.catalogName + ' [' + terms.code + ']';
+            const phase = (ordinal, amount, periods) => ({ ordinal, cadence: terms.cadence, ...(periods ? { periods } : {}), pricing: { type: 'STATIC', price_money: { amount, currency: terms.currency } } });
+            const original = legacyRequest({ idempotency_key: identity, object: { type: 'SUBSCRIPTION_PLAN', id: '#plan-' + identity, subscription_plan_data: { name,
+                subscription_plan_variations: [{ type: 'SUBSCRIPTION_PLAN_VARIATION', id: '#variation-' + identity, subscription_plan_variation_data: { name, subscription_plan_id: '#plan-' + identity, can_prorate: false, phases: [phase(0, terms.firstAmount, 1), phase(1, terms.regularAmount)] } }] } } });
+            const response = await (await square.fetch('https://connect.squareupsandbox.com/v2/catalog/object', { method: 'POST', body: JSON.stringify(original) })).json(), variationId = response.id_mappings.find(item => item.client_object_id === '#variation-' + identity).object_id;
+            await db.queryDatabase("INSERT INTO automation_square_coupon_variations (identity_key,environment,merchant_id,request_json,variation_id,catalog_version,state) VALUES (?,'sandbox','MERCHANT',?,?,?,'READY')", [identity, JSON.stringify(original), variationId, String(clock)]);
+            return { identity, original, variationId };
+        }
+        const repairWires = () => square.requests.filter(item => item.path === '/v2/catalog/object' && item.method === 'POST' && !item.body.object.id.startsWith('#'));
+        await t.test('normal and coupon creations are globally active with pinned own parents and no per-location workaround', async () => {
+            const base = (await db.queryDatabase("SELECT variation_id FROM automation_square_bindings WHERE plan_id='pro'"))[0], discounted = [...square.catalog.values()].find(item => item.subscription_plan_variation_data.name === 'Pro [SAVE]');
+            for (const variation of [square.catalog.get(base.variation_id), discounted]) {
+                assert.equal(variation.present_at_all_locations, true); assert.ok(!Object.hasOwn(variation, 'present_at_location_ids'));
+                const parent = square.parents.get(variation.subscription_plan_variation_data.subscription_plan_id);
+                assert.equal(parent.present_at_all_locations, true); assert.ok(!Object.hasOwn(parent, 'present_at_location_ids'));
+                const owned = (await db.queryDatabase('SELECT * FROM automation_square_catalog_ownership WHERE variation_id=?', [variation.id]))[0];
+                assert.equal(owned.parent_id, parent.id); assert.equal(owned.state, 'VERIFIED'); assert.equal(owned.repair_request_json, null);
+            }
+        });
+        await t.test('new active requests refuse disabled parent or child even when per-location IDs include the merchant location', async () => {
+            for (const parentDisabled of [false, true]) {
+                const id = parentDisabled ? 'disabledparent' : 'disabledchild'; await plan(id);
+                const q = await commerce().createCatalogQuote(ADMIN, { planId: id, name: id, amount: 1400, currency: 'JPY', cadence: 'MONTHLY' }), before = repairWires().length;
+                if (parentDisabled) square.state.mutateParent = parent => { parent.present_at_all_locations = false; parent.present_at_location_ids = ['LOCATION']; };
+                else square.state.mutate = child => { child.present_at_all_locations = false; child.present_at_location_ids = ['LOCATION']; };
+                try { await assert.rejects(commerce().confirmCatalogCreation(ADMIN, { creationId: q.creationId, consent: true }), { code: 'SQUARE_CATALOG_DISABLED' }); }
+                finally { square.state.mutate = null; square.state.mutateParent = null; }
+                assert.equal(repairWires().length, before); assert.equal((await db.queryDatabase('SELECT * FROM automation_square_bindings WHERE plan_id=?', [id])).length, 0);
+            }
+            const base = (await db.queryDatabase("SELECT variation_id FROM automation_square_bindings WHERE plan_id='pro'"))[0], child = square.catalog.get(base.variation_id);
+            child.present_at_all_locations = false; child.present_at_location_ids = ['LOCATION'];
+            try { await assert.rejects(quote(actor(90)), { code: 'SQUARE_PLAN_UNSUPPORTED' }); }
+            finally { child.present_at_all_locations = true; delete child.present_at_location_ids; }
+        });
+        await t.test('legacy admin repair freezes one CAS payload before the wire and survives two lost ACKs without duplicate objects or bindings', async () => {
+            const { q, original } = await legacyQuote('legacyactivation'), before = square.catalog.size, firstRepair = repairWires().length;
+            square.state.lostRepair = 2;
+            for (let attempt = 0; attempt < 2; attempt++) {
+                await assert.rejects(commerce().confirmCatalogCreation(ADMIN, { creationId: q.creationId, consent: true }), { code: 'SQUARE_RESULT_UNKNOWN' });
+                const owned = (await db.queryDatabase('SELECT * FROM automation_square_catalog_ownership WHERE request_ref=?', [q.creationId]))[0];
+                assert.equal(owned.state, 'REPAIRING'); assert.ok(owned.repair_request_json); assert.equal(square.catalog.size, before + 1);
+                assert.equal((await db.queryDatabase('SELECT * FROM automation_square_bindings WHERE plan_id=?', ['legacyactivation'])).length, 0);
+            }
+            const done = await commerce().confirmCatalogCreation(ADMIN, { creationId: q.creationId, consent: true }); assert.equal(done.state, 'COMPLETE');
+            const owned = (await db.queryDatabase('SELECT * FROM automation_square_catalog_ownership WHERE request_ref=?', [q.creationId]))[0], wires = repairWires().slice(firstRepair);
+            assert.equal(owned.state, 'VERIFIED'); assert.equal(wires.length, 3); wires.forEach(wire => assert.deepEqual(wire.body, JSON.parse(owned.repair_request_json)));
+            assert.equal((await db.queryDatabase('SELECT request_json FROM automation_square_catalog_creations WHERE id=?', [q.creationId]))[0].request_json, JSON.stringify(original));
+            await commerce().confirmCatalogCreation(ADMIN, { creationId: q.creationId, consent: true });
+            assert.equal(square.catalog.size, before + 1); assert.equal((await db.queryDatabase('SELECT * FROM automation_square_bindings WHERE plan_id=?', ['legacyactivation'])).length, 1);
+        });
+        await t.test('legacy repairs reject wrong child, parent, name, frozen price and active siblings before activation', async () => {
+            const changes = [
+                ['wrongchild', child => { child.id = 'UNRELATED-VARIATION'; }],
+                ['wrongparent', child => { child.subscription_plan_variation_data.subscription_plan_id = 'UNRELATED-PLAN'; }],
+                ['wrongname', child => { child.subscription_plan_variation_data.name = 'Different'; }],
+                ['wrongprice', child => { child.subscription_plan_variation_data.phases[0].pricing.price_money.amount = 1; }],
+                ['wrongcurrency', child => { child.subscription_plan_variation_data.phases[0].pricing.price_money.currency = 'USD'; }],
+                ['wrongcadence', child => { child.subscription_plan_variation_data.phases[0].cadence = 'WEEKLY'; }],
+                ['wrongphase', child => { child.subscription_plan_variation_data.phases[0].ordinal = 1; }],
+            ];
+            for (const [id, mutate] of changes) {
+                const { q } = await legacyQuote(id), before = repairWires().length; square.state.mutate = mutate;
+                try { await assert.rejects(commerce().confirmCatalogCreation(ADMIN, { creationId: q.creationId, consent: true }), { code: 'SQUARE_CATALOG_MISMATCH' }); }
+                finally { square.state.mutate = null; }
+                assert.equal(repairWires().length, before); assert.equal((await db.queryDatabase('SELECT * FROM automation_square_bindings WHERE plan_id=?', [id])).length, 0);
+            }
+            const { q } = await legacyQuote('activesibling'), before = repairWires().length;
+            square.state.mutateParent = (parent, child) => { const sibling = structuredClone(child); sibling.id = 'ACTIVE-SIBLING'; sibling.present_at_all_locations = true; square.catalog.set(sibling.id, sibling); parent.subscription_plan_data.subscription_plan_variations.push(sibling); };
+            try { await assert.rejects(commerce().confirmCatalogCreation(ADMIN, { creationId: q.creationId, consent: true }), { code: 'SQUARE_CATALOG_REPAIR_COLLATERAL' }); }
+            finally { square.state.mutateParent = null; }
+            assert.equal(repairWires().length, before); assert.equal(square.parents.get(square.catalog.get('ACTIVE-SIBLING').subscription_plan_variation_data.subscription_plan_id).present_at_all_locations, false);
+        });
+        await t.test('old READY coupon ownership is recovered by the original key, repairs once after consent, then respects operator stops and existing contracts', async () => {
+            await coupon('OLD_CACHE'); const own = actor(91), q = await quote(own, 'OLD_CACHE'), { identity, original, variationId } = await legacyCouponCache(q);
+            const count = square.catalog.size, before = repairWires().length; square.state.lostRepair = 2;
+            for (let attempt = 0; attempt < 2; attempt++) { await assert.rejects(submit(own, q), { code: 'SQUARE_RESULT_UNKNOWN' }); assert.equal(square.catalog.size, count); }
+            assert.equal((await submit(own, q)).subscription.active, true); assert.equal(square.catalog.size, count);
+            const owned = (await db.queryDatabase('SELECT * FROM automation_square_catalog_ownership WHERE request_ref=?', [identity]))[0], wires = repairWires().slice(before);
+            assert.equal(owned.state, 'VERIFIED'); assert.equal(wires.length, 3); wires.forEach(wire => assert.deepEqual(wire.body, JSON.parse(owned.repair_request_json)));
+            const replayed = square.requests.filter(item => item.path === '/v2/catalog/object' && item.body.idempotency_key === identity); replayed.forEach(wire => assert.deepEqual(wire.body, original));
+            const parent = square.parents.get(owned.parent_id), child = square.catalog.get(variationId); parent.present_at_all_locations = false; parent.version++; child.present_at_all_locations = false; child.version++;
+            const stoppedPostCount = repairWires().length, subscriptions = square.subscriptions.size;
+            const later = await quote(actor(92), 'OLD_CACHE'); await assert.rejects(submit(actor(92), later), { code: 'SQUARE_CATALOG_DISABLED' });
+            assert.equal(repairWires().length, stoppedPostCount); assert.equal(square.subscriptions.size, subscriptions); assert.equal(parent.present_at_all_locations, false); assert.equal(child.present_at_all_locations, false);
+            clock += 31000; assert.equal((await billing().getStatus(own)).subscription.active, true, 'disabling future catalog enrollment does not revoke an existing verified paid invoice');
+        });
+        await t.test('concurrent consented legacy coupon enrollments reuse one frozen repair and one shared variation', async () => {
+            await coupon('CONCURRENT_CACHE'); const first = actor(93), second = actor(94), q1 = await quote(first, 'CONCURRENT_CACHE'), q2 = await quote(second, 'CONCURRENT_CACHE');
+            const { identity } = await legacyCouponCache(q1), count = square.catalog.size, before = repairWires().length;
+            let release, arrived = 0; const gate = new Promise(resolve => { release = resolve; });
+            square.state.gate = async path => { if (path === '/v2/catalog/object' && !square.requests.at(-1).body.object.id.startsWith('#')) { if (++arrived === 2) release(); await gate; } };
+            let results;
+            try { results = await Promise.all([submit(first, q1), submit(second, q2)]); }
+            finally { square.state.gate = null; release(); }
+            assert.ok(results.every(result => result.subscription.active)); assert.equal(square.catalog.size, count);
+            const wires = repairWires().slice(before), owned = (await db.queryDatabase('SELECT * FROM automation_square_catalog_ownership WHERE request_ref=?', [identity]))[0];
+            assert.equal(wires.length, 2); assert.deepEqual(wires[0].body, wires[1].body); assert.equal(owned.state, 'VERIFIED');
+            const subscriptions = [q1, q2].map(q => [...square.subscriptions.values()].find(sub => sub.source.name === 'cbte:' + q.checkoutId));
+            assert.equal(subscriptions[0].plan_variation_id, subscriptions[1].plan_variation_id);
+        });
+        await t.test('operator stops after an unknown repair ACK remain stopped when its frozen key is replayed', async () => {
+            const { q } = await legacyQuote('stoppedunknown'); square.state.lostRepair = 1;
+            await assert.rejects(commerce().confirmCatalogCreation(ADMIN, { creationId: q.creationId, consent: true }), { code: 'SQUARE_RESULT_UNKNOWN' });
+            const owned = (await db.queryDatabase('SELECT * FROM automation_square_catalog_ownership WHERE request_ref=?', [q.creationId]))[0], parent = square.parents.get(owned.parent_id), child = square.catalog.get(owned.variation_id);
+            parent.present_at_all_locations = false; parent.version++; child.present_at_all_locations = false; child.version++;
+            const count = square.catalog.size, before = repairWires().length;
+            await assert.rejects(commerce().confirmCatalogCreation(ADMIN, { creationId: q.creationId, consent: true }), { code: 'SQUARE_CATALOG_DISABLED' });
+            assert.equal(square.catalog.size, count); assert.equal(parent.present_at_all_locations, false); assert.equal(child.present_at_all_locations, false);
+            assert.deepEqual(repairWires()[before].body, JSON.parse(owned.repair_request_json));
+            assert.equal((await db.queryDatabase('SELECT * FROM automation_square_bindings WHERE plan_id=?', ['stoppedunknown'])).length, 0);
+        });
+        await t.test('legacy repair preserves inactive siblings and their monetary terms without creating replacements', async () => {
+            const { q } = await legacyQuote('inactivesibling'); let frozenSibling;
+            square.state.mutateParent = (parent, child) => {
+                const sibling = structuredClone(child); sibling.id = 'INACTIVE-SIBLING'; sibling.present_at_all_locations = false;
+                sibling.subscription_plan_variation_data.name = 'Existing inactive sibling'; sibling.subscription_plan_variation_data.phases[0].pricing.price_money.amount = 8765;
+                frozenSibling = structuredClone(sibling); square.catalog.set(sibling.id, sibling); parent.subscription_plan_data.subscription_plan_variations.push(sibling);
+            };
+            const count = square.catalog.size;
+            try { assert.equal((await commerce().confirmCatalogCreation(ADMIN, { creationId: q.creationId, consent: true })).state, 'COMPLETE'); }
+            finally { square.state.mutateParent = null; }
+            const sibling = structuredClone(square.catalog.get('INACTIVE-SIBLING')); delete sibling.version; delete frozenSibling.version;
+            assert.deepEqual(sibling, frozenSibling); assert.equal(square.catalog.size, count + 2);
+        });
+        await t.test('version conflicts preserve the original frozen repair instead of refreshing a key that could overwrite operator changes', async () => {
+            const { q } = await legacyQuote('repairconflict'); let changeVersion = true;
+            const concurrent = createSquareCommerce({ ...db, withDatabaseTransaction: work => db.withDatabaseTransaction(query => work(async (sql, params) => {
+                const result = await query(sql, params);
+                if (changeVersion && sql.startsWith("UPDATE automation_square_catalog_ownership SET state='REPAIRING'")) {
+                    changeVersion = false; const owned = (await query('SELECT * FROM automation_square_catalog_ownership WHERE request_ref=?', [q.creationId]))[0]; square.parents.get(owned.parent_id).version++;
+                }
+                return result;
+            })) }, { env: ENV, fetch: square.fetch, clock: () => clock });
+            const before = repairWires().length;
+            await assert.rejects(concurrent.confirmCatalogCreation(ADMIN, { creationId: q.creationId, consent: true }), { code: 'SQUARE_REQUEST_FAILED' });
+            await assert.rejects(commerce().confirmCatalogCreation(ADMIN, { creationId: q.creationId, consent: true }), { code: 'SQUARE_REQUEST_FAILED' });
+            const owned = (await db.queryDatabase('SELECT * FROM automation_square_catalog_ownership WHERE request_ref=?', [q.creationId]))[0], wires = repairWires().slice(before);
+            assert.equal(owned.state, 'REPAIRING'); assert.equal(wires.length, 2); wires.forEach(wire => assert.deepEqual(wire.body, JSON.parse(owned.repair_request_json)));
+            assert.equal(square.parents.get(owned.parent_id).present_at_all_locations, false); assert.equal((await db.queryDatabase('SELECT * FROM automation_square_bindings WHERE plan_id=?', ['repairconflict'])).length, 0);
+        });
+        await t.test('coupon first-invoice identity survives a truncated remote invoice list and an older usage row without its first ID', async () => {
+            const checkout = (await db.queryDatabase("SELECT * FROM automation_square_checkouts WHERE owner_user_id=? AND state='COMPLETE'", [actor(91).userId]))[0], sub = square.subscriptions.get(checkout.subscription_id);
+            const remembered = (await db.queryDatabase("SELECT first_invoice_id FROM automation_square_subscription_invoices WHERE environment='sandbox' AND merchant_id='MERCHANT' AND subscription_id=?", [sub.id]))[0].first_invoice_id;
+            await db.queryDatabase('UPDATE automation_square_coupon_uses SET first_invoice_id=NULL WHERE checkout_id=?', [checkout.id]);
+            const truncated = { ...sub, invoice_ids: ['ONLY-LATEST'] };
+            const expected = await db.withDatabaseTransaction(query => commerce().confirmInvoice(query, checkout, truncated, square.invoices.get(remembered)));
+            assert.equal(expected, 900); assert.equal((await row(checkout.id)).first_invoice_id, remembered);
         });
     } finally { await db.close(); }
 });

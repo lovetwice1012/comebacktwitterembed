@@ -44,7 +44,23 @@ test('Next HTTP boundary enforces origin, session, current guild access and safe
         assert.equal((await request('catalog/extra/path/segments')).status, 404);
         result = await request('validate', 'POST', { definition: schema.newWorkflow() });
         assert.equal(result.status, 200); assert.equal(result.headers.get('Cache-Control'), 'private, no-store'); assert.equal((await result.json()).valid, true);
-        services.billing = { getStatus: async actor => { statusCalls++; return { owner: actor.userId }; } };
+        const recoveryCalls = [];
+        services.billing = {
+            getStatus: async actor => { statusCalls++; return { owner: actor.userId }; },
+            resume: async actor => { recoveryCalls.push(['resume', actor.userId]); return { pending: true }; },
+            abort: async actor => { recoveryCalls.push(['abort', actor.userId]); return { aborted: true }; },
+        };
+        for (const action of ['resume', 'abort']) {
+            assert.equal((await request(`billing/${action}`, 'POST', {}, 'https://other.example.test')).status, 403);
+            session = null;
+            assert.equal((await request(`billing/${action}`, 'POST', {})).status, 401);
+            session = { user: { id: '222222222222222222', isAdmin: true } };
+            fleetAvailable = false;
+            assert.equal((await request(`billing/${action}`, 'POST', {})).status, 503);
+            fleetAvailable = true;
+            assert.equal((await request(`billing/${action}`, 'POST', { actor: { userId: '333333333333333333' }, userId: '333333333333333333' })).status, 200);
+        }
+        assert.deepEqual(recoveryCalls, [['resume', session.user.id], ['abort', session.user.id]]);
         fleetAvailable = false;
         result = await request('billing/status'); assert.equal(result.status, 503); assert.equal(result.headers.get('Retry-After'), '5'); assert.equal(statusCalls, 0);
         fleetAvailable = true;

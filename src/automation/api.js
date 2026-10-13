@@ -12,8 +12,8 @@ async function dispatch(request, actor, services) {
     let group;
     if (method !== 'GET' && method !== 'DELETE') {
         group = path[0] === 'validate' || path[0] === 'dictionary-preview' ? 'validate' : path[0] === 'simulate' || path.at(-1) === 'test' ? 'simulate' : path[0] === 'monitors' ? 'monitor' : path[0] === 'marketplace' && (!path[2] || path[2] === 'status') ? 'publication' : 'write';
-        if (path[0] === 'billing' && (path[1] === 'subscribe' || path[1] === 'donations' && path[2] === 'donate' || path[1] === 'catalog' && path[2] === 'create')) group = 'publication';
-        if (path[0] === 'billing' && path[1] === 'cancel') group = undefined;
+        if (path[0] === 'billing' && (['subscribe', 'resume'].includes(path[1]) || path[1] === 'donations' && path[2] === 'donate' || path[1] === 'catalog' && path[2] === 'create')) group = 'publication';
+        if (path[0] === 'billing' && ['cancel', 'abort'].includes(path[1])) group = undefined;
         if (path[0] === 'monitors' && body.action === 'cadence' && body.slotCost === 1) group = undefined;
         if (path[0] === 'workflows' && path[2] === 'state' && body.enabled === false || path[0] === 'monitors' && (body.action === 'detach' || body.enabled === false && Object.keys(body).every(key => ['enabled', 'expectedRevision'].includes(key))) || path[0] === 'marketplace' && path[2] === 'status' && body.status === 'withdrawn') group = undefined;
     }
@@ -70,6 +70,8 @@ async function dispatchCore({ method, path, search = new URLSearchParams(), body
       else if (id === "bindings" && action && method === "PATCH") result = await billing.saveBinding(actor, action, body);
       else if (id === "quote" && method === "POST" && !action) result = await billing.createQuote(actor, body);
       else if (id === "subscribe" && method === "POST" && !action) result = await billing.subscribe(actor, body);
+      else if (id === "resume" && method === "POST" && !action) result = await billing.resume(actor, body);
+      else if (id === "abort" && method === "POST" && !action) result = await billing.abort(actor, body);
       else if (id === "cancel" && method === "POST" && !action) result = await billing.cancel(actor);
     }
     else if (kind === "providers" && method === "GET") result = await monitors.providers(actor);

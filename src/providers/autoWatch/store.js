@@ -230,6 +230,7 @@ async function deleteTarget(userId, targetId) {
         );
         if (!rows.length) throw error('Automatic-watch registration does not exist.', 'AUTO_WATCH_NOT_FOUND');
         const sourceId = rows[0].source_id;
+        await query(`SELECT id FROM ${TABLES.autoWatchSources} WHERE id=? FOR UPDATE`, [sourceId]);
         await query(`DELETE FROM ${TABLES.autoWatchTargets} WHERE id=? AND user_id=?`, [rowId(targetId, 'watch id'), String(userId)]);
         await entitlements.releaseSlot(query, String(userId), 'auto', String(targetId));
         await query(
@@ -534,9 +535,13 @@ async function claimDueDeliveries(now, limit = 32) {
     );
     const claimed = [];
     for (const delivery of rows) {
-        if (Number(delivery.slot_cost) > 1) {
+        let cadenceClaim = null;
+        if (delivery.slot_cost != null) {
             const cadence = await require('../../automation/monitor-cadence').runtimeCadence(db.queryDatabase, delivery.destination_user_id, 'auto', String(delivery.target_id), Number(delivery.base_interval_ms), now);
             const anchor = Number(delivery.last_notification_window_at_ms || delivery.baseline_at_ms || 0);
+            // Internal, lease-scoped evidence of the bounded native claim
+            // window. A batch can contain several discoveries from one poll.
+            cadenceClaim = { updatedAtMs: cadence.updatedAtMs, effectiveSlotCost: cadence.effectiveSlotCost, intervalMs: cadence.intervalMs, baseIntervalMs: cadence.baseIntervalMs, anchorAtMs: anchor };
             const due = Math.max(Number(delivery.next_attempt_at_ms), anchor ? anchor + cadence.intervalMs : 0);
             if (due > now) {
                 await db.queryDatabase("UPDATE auto_watch_deliveries SET next_attempt_at_ms=? WHERE id=? AND status='pending' AND lease_expires_at_ms<=?", [due, delivery.id, now]);
@@ -550,7 +555,7 @@ async function claimDueDeliveries(now, limit = 32) {
              WHERE id=? AND status='pending' AND next_attempt_at_ms<=? AND lease_expires_at_ms<=?`,
             [leaseToken, now + DELIVERY_LEASE_MS, delivery.id, now, now]
         );
-        if (Number(result.affectedRows || 0) === 1) claimed.push({ ...delivery, lease_token: leaseToken });
+        if (Number(result.affectedRows || 0) === 1) claimed.push({ ...delivery, lease_token: leaseToken, cadence_claim: cadenceClaim });
     }
     return claimed;
 }

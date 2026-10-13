@@ -112,10 +112,11 @@ function createMonitors(db, service, destinations, options = {}) {
         const current = await getRow(actor, kind, id, true);
         if (String(current.user_id) !== actor.userId) fail('FORBIDDEN', '通知枠の配分は登録した本人が変更してください。', 403);
         return db.withDatabaseTransaction(async query => {
+            const cadence = require('./monitor-cadence');
             await entitlements.lockOwner(query, actor.userId);
+            if (kind === 'auto') await cadence.lockTargetSource(query, actor.userId, String(id));
             const row = await getRow(actor, kind, id, true, query, true);
             if (Number(row.revision || 1) !== input.expectedRevision) fail('REVISION_CONFLICT', '通知が変更されています。読み直してください。', 409);
-            const cadence = require('./monitor-cadence');
             await cadence.reserve(query, actor.userId, kind, String(id), input);
             const now = Date.now(), base = Number(row.user_interval_minutes ?? Number(row.poll_interval_ms) / 60000) * 60000;
             const selected = await cadence.runtimeCadence(query, actor.userId, kind, String(id), base, now);
@@ -190,6 +191,7 @@ function createMonitors(db, service, destinations, options = {}) {
             return db.withDatabaseTransaction(async query => {
                 await entitlements.lockOwner(query, ownerId);
                 await lockSlots(query, kind);
+                if (kind === 'auto') await require('./monitor-cadence').lockTargetSource(query, ownerId, String(id));
                 const locked = await getRow(actor, kind, id, true, query, true);
                 if (Number(locked.revision || 1) !== input.expectedRevision) fail('REVISION_CONFLICT', '監視が更新されています。', 409);
                 const enabled = input.enabled === undefined ? !!locked.enabled : input.enabled === true;
@@ -218,6 +220,7 @@ function createMonitors(db, service, destinations, options = {}) {
             await lockSlots(query, kind);
             let locked;
             if (id) {
+                if (kind === 'auto') await require('./monitor-cadence').lockTargetSource(query, ownerId, String(id));
                 locked = await getRow(actor, kind, id, true, query, true);
                 if (Number(locked.revision || 1) !== input.expectedRevision) fail('REVISION_CONFLICT', '監視が更新されています。', 409);
             }
@@ -267,6 +270,7 @@ function createMonitors(db, service, destinations, options = {}) {
         const current = await getRow(actor, kind, id, true);
         return db.withDatabaseTransaction(async query => {
             await entitlements.lockOwner(query, current.user_id);
+            if (kind === 'auto') await require('./monitor-cadence').lockTargetSource(query, current.user_id, String(id));
             const row = await getRow(actor, kind, id, true, query, true);
             if (Number(row.revision || 1) !== expectedRevision) fail('REVISION_CONFLICT', '監視が更新されています。', 409);
             await cancelPending(query, kind, id);
@@ -281,7 +285,10 @@ function createMonitors(db, service, destinations, options = {}) {
         });
     }
     async function detach(actor, kind, id, expectedRevision) {
+        const current = await getRow(actor, kind, id, true);
         return db.withDatabaseTransaction(async query => {
+            await entitlements.lockOwner(query, current.user_id);
+            if (kind === 'auto') await require('./monitor-cadence').lockTargetSource(query, current.user_id, String(id));
             const row = await getRow(actor, kind, id, true, query, true);
             if (Number(row.revision || 1) !== expectedRevision) fail('REVISION_CONFLICT', '監視が更新されています。', 409);
             await query('DELETE FROM automation_assignments WHERE target_kind=? AND target_id=?', [kind, id]);

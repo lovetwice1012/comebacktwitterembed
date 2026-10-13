@@ -1,5 +1,18 @@
 'use strict';
 const SCHEMA = [
+    `CREATE TABLE IF NOT EXISTS automation_square_catalog_ownership (
+        environment VARCHAR(16) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+        merchant_id VARCHAR(255) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+        request_ref VARCHAR(255) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+        variation_id VARCHAR(255) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+        parent_id VARCHAR(255) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+        request_digest CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+        state VARCHAR(16) NOT NULL DEFAULT 'OWNED',
+        repair_request_json LONGTEXT NULL,
+        updated_at_ms BIGINT NOT NULL,
+        PRIMARY KEY (environment,merchant_id,request_ref),
+        UNIQUE KEY unique_catalog_owned_variation (environment,merchant_id,variation_id)
+    ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
     `CREATE TABLE IF NOT EXISTS automation_square_catalog_creations (
         id CHAR(36) NOT NULL PRIMARY KEY, environment VARCHAR(16) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
         merchant_id VARCHAR(255) CHARACTER SET ascii COLLATE ascii_bin NOT NULL, plan_id VARCHAR(64) NOT NULL,

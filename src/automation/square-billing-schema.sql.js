@@ -1,6 +1,36 @@
 'use strict';
 
 const SCHEMA = [
+    `CREATE TABLE IF NOT EXISTS automation_square_billing_cancellations (
+        owner_user_id VARCHAR(32) NOT NULL,
+        environment VARCHAR(16) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+        merchant_id VARCHAR(255) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+        subscription_id VARCHAR(255) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+        lease_token CHAR(36) NULL,
+        lease_until_at_ms BIGINT NULL,
+        next_allowed_at_ms BIGINT NOT NULL DEFAULT 0,
+        PRIMARY KEY (owner_user_id,environment,merchant_id)
+    ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
+    `CREATE TABLE IF NOT EXISTS automation_square_subscription_invoices (
+        environment VARCHAR(16) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+        merchant_id VARCHAR(255) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+        subscription_id VARCHAR(255) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+        first_invoice_id VARCHAR(255) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+        PRIMARY KEY (environment,merchant_id,subscription_id)
+    ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
+    `CREATE TABLE IF NOT EXISTS automation_square_billing_reconciliation (
+        owner_user_id VARCHAR(32) NOT NULL,
+        environment VARCHAR(16) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+        merchant_id VARCHAR(255) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+        lease_token CHAR(36) NULL,
+        lease_until_at_ms BIGINT NULL,
+        next_allowed_at_ms BIGINT NOT NULL DEFAULT 0,
+        warning_subscription_id VARCHAR(255) CHARACTER SET ascii COLLATE ascii_bin NULL,
+        warning_checkout_id CHAR(36) NULL,
+        warning_code VARCHAR(64) NULL,
+        warning_message VARCHAR(255) NULL,
+        PRIMARY KEY (owner_user_id,environment,merchant_id)
+    ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
     `CREATE TABLE IF NOT EXISTS automation_square_bindings (
         plan_id VARCHAR(64) NOT NULL,
         environment VARCHAR(16) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,

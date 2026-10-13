@@ -19,14 +19,14 @@ function creationDto(row, clock) { return { ...JSON.parse(row.terms_json), creat
 function catalogBody(identity, name, cadence, amount, currency, firstAmount) {
     const parent = '#plan-' + identity, variation = '#variation-' + identity;
     const phase = (ordinal, price, periods) => ({ ordinal, cadence, ...(periods ? { periods } : {}), pricing: { type: 'STATIC', price_money: { amount: price, currency } } });
-    return { idempotency_key: identity, object: { type: 'SUBSCRIPTION_PLAN', id: parent, present_at_all_locations: false,
-        subscription_plan_data: { name, subscription_plan_variations: [{ type: 'SUBSCRIPTION_PLAN_VARIATION', id: variation,
+    return { idempotency_key: identity, object: { type: 'SUBSCRIPTION_PLAN', id: parent, present_at_all_locations: true,
+        subscription_plan_data: { name, subscription_plan_variations: [{ type: 'SUBSCRIPTION_PLAN_VARIATION', id: variation, present_at_all_locations: true,
             subscription_plan_variation_data: { name, subscription_plan_id: parent, can_prorate: false, phases: firstAmount == null ? [phase(0, amount)] : [phase(0, firstAmount, 1), phase(1, amount)] } }] } } };
 }
 function validateCouponVariation(object, locationId, terms) {
     const data = object?.subscription_plan_variation_data, phases = data?.phases;
     if (!object || object.type !== 'SUBSCRIPTION_PLAN_VARIATION' || object.is_deleted || !ID.test(object.id || '') || !/^\d+$/.test(String(object.version || ''))
-        || object.present_at_all_locations === false && !object.present_at_location_ids?.includes(locationId)
+        || object.present_at_all_locations === false
         || !Array.isArray(phases) || phases.length !== 2 || data.can_prorate === true || data.monthly_billing_anchor_date != null) throw fail('SQUARE_COUPON_VARIATION_MISMATCH', '初回割引のSquare料金を確認できません。', 503);
     for (let i = 0; i < 2; i++) {
         const p = phases[i], price = p.pricing?.price_money;
@@ -37,6 +37,88 @@ function validateCouponVariation(object, locationId, terms) {
 }
 function createSquareCommerce(db, options = {}) {
     const { config: c, scope, now, request, location, requireConfigured } = createSquareClient(options);
+    const catalogMismatch = () => fail('SQUARE_CATALOG_MISMATCH', '作成元のSquare料金と確認内容が一致しません。管理画面で確認してください。', 503);
+    const catalogDisabled = () => fail('SQUARE_CATALOG_DISABLED', 'Squareの料金が無効です。管理画面で確認してください。', 409);
+    async function ownership(originalRequest, variationId, response) {
+        const reference = originalRequest.idempotency_key, digest = hash(originalRequest);
+        let row = (await db.queryDatabase('SELECT * FROM automation_square_catalog_ownership WHERE environment=? AND merchant_id=? AND request_ref=?', [...scope, reference]))[0];
+        if (!row || response) {
+            // Old READY coupon caches lack ownership metadata. After explicit
+            // enrollment consent, replay only the immutable original creation
+            // request and require the very same variation before adopting it.
+            response ||= await request('POST', '/v2/catalog/object', originalRequest);
+            const children = originalRequest.object?.subscription_plan_data?.subscription_plan_variations;
+            const mappings = response.id_mappings || [];
+            const childIds = mappings.filter(item => item.client_object_id === children?.[0]?.id).map(item => item.object_id);
+            const parentIds = mappings.filter(item => item.client_object_id === originalRequest.object?.id).map(item => item.object_id);
+            const parentId = parentIds[0] || response.catalog_object?.id;
+            if (childIds.length !== 1 || childIds[0] !== variationId || parentIds.length > 1 || !ID.test(parentId || '')
+                || response.catalog_object?.id && response.catalog_object.id !== parentId) throw catalogMismatch();
+            row = await db.withDatabaseTransaction(async query => {
+                await query(`INSERT INTO automation_square_catalog_ownership (environment,merchant_id,request_ref,variation_id,parent_id,request_digest,updated_at_ms)
+                    VALUES (?,?,?,?,?,?,?) ON DUPLICATE KEY UPDATE variation_id=variation_id`, [...scope, reference, variationId, parentId, digest, now()]);
+                const saved = (await query('SELECT * FROM automation_square_catalog_ownership WHERE environment=? AND merchant_id=? AND request_ref=? FOR UPDATE', [...scope, reference]))[0];
+                if (!saved || saved.variation_id !== variationId || saved.parent_id !== parentId || saved.request_digest !== digest) throw catalogMismatch();
+                return saved;
+            });
+        }
+        if (row.variation_id !== variationId || row.request_digest !== digest) throw catalogMismatch();
+        return row;
+    }
+    async function readOwnedPair(owned, originalRequest, validate) {
+        const object = (await request('GET', '/v2/catalog/object/' + encodeURIComponent(owned.variation_id))).object;
+        const parent = (await request('GET', '/v2/catalog/object/' + encodeURIComponent(owned.parent_id))).object;
+        const frozenParent = originalRequest.object?.subscription_plan_data, frozen = frozenParent?.subscription_plan_variations?.[0]?.subscription_plan_variation_data;
+        const data = object?.subscription_plan_variation_data, phases = data?.phases;
+        const variations = parent?.subscription_plan_data?.subscription_plan_variations;
+        if (!object || object.id !== owned.variation_id || data?.subscription_plan_id !== owned.parent_id
+            || !parent || parent.id !== owned.parent_id || parent.type !== 'SUBSCRIPTION_PLAN' || parent.is_deleted || !/^\d+$/.test(String(parent.version || ''))
+            || parent.subscription_plan_data?.name !== frozenParent?.name || data?.name !== frozen?.name
+            || !Array.isArray(variations) || variations.filter(item => item.id === owned.variation_id).length !== 1
+            || data.can_prorate === true || data.monthly_billing_anchor_date != null
+            || !Array.isArray(phases) || phases.length !== frozen?.phases?.length || !phases.every((phase, index) => {
+                const expected = frozen.phases[index], price = phase.pricing?.price_money;
+                return Number(phase.ordinal) === Number(expected.ordinal) && phase.cadence === expected.cadence
+                    && (phase.periods == null ? expected.periods == null : expected.periods != null && Number(phase.periods) === Number(expected.periods))
+                    && phase.pricing?.type === 'STATIC' && Number(price?.amount) === Number(expected.pricing.price_money.amount) && price?.currency === expected.pricing.price_money.currency;
+            })) throw catalogMismatch();
+        return { object, parent, checked: validate({ ...object, present_at_all_locations: true }) };
+    }
+    async function readCreatedCatalog(variationId, originalRequest, validate, response = null) {
+        const owned = await ownership(originalRequest, variationId, response);
+        let pair = await readOwnedPair(owned, originalRequest, validate);
+        const repair = await db.withDatabaseTransaction(async query => {
+            const current = (await query('SELECT * FROM automation_square_catalog_ownership WHERE environment=? AND merchant_id=? AND request_ref=? FOR UPDATE', [...scope, owned.request_ref]))[0];
+            const active = pair.object.present_at_all_locations === true && pair.parent.present_at_all_locations === true;
+            if (current.state === 'VERIFIED') { if (!active) throw catalogDisabled(); return null; }
+            if (current.state === 'REPAIRING') { if (!current.repair_request_json) throw catalogMismatch(); return JSON.parse(current.repair_request_json); }
+            if (current.state !== 'OWNED') throw catalogMismatch();
+            if (active) {
+                await query("UPDATE automation_square_catalog_ownership SET state='VERIFIED',updated_at_ms=? WHERE environment=? AND merchant_id=? AND request_ref=?", [now(), ...scope, owned.request_ref]);
+                return null;
+            }
+            if (originalRequest.object?.present_at_all_locations !== false) throw catalogDisabled();
+            const restored = structuredClone(pair.parent), variations = restored.subscription_plan_data.subscription_plan_variations;
+            if (restored.present_at_all_locations !== true && variations.some(item => item.id !== variationId && !item.is_deleted && item.present_at_all_locations !== false))
+                throw fail('SQUARE_CATALOG_REPAIR_COLLATERAL', '同じSquareプランの別料金も有効になるため、自動修復できません。管理画面で確認してください。', 409);
+            restored.present_at_all_locations = true; delete restored.present_at_location_ids; delete restored.absent_at_location_ids;
+            const index = variations.findIndex(item => item.id === variationId);
+            variations[index] = { ...pair.object, present_at_all_locations: true };
+            delete variations[index].present_at_location_ids; delete variations[index].absent_at_location_ids;
+            const frozenRepair = { idempotency_key: hash(['activate-known-creation', scope, owned.request_ref, pair.parent.version, pair.object.version]), object: restored };
+            // Commit the full payload and one repair key before the wire. ACK
+            // loss always replays this request; it never invents another repair
+            // capable of re-enabling a later operator-disabled catalog object.
+            await query("UPDATE automation_square_catalog_ownership SET state='REPAIRING',repair_request_json=?,updated_at_ms=? WHERE environment=? AND merchant_id=? AND request_ref=?", [JSON.stringify(frozenRepair), now(), ...scope, owned.request_ref]);
+            return frozenRepair;
+        });
+        if (!repair) return pair.checked;
+        await request('POST', '/v2/catalog/object', repair);
+        pair = await readOwnedPair(owned, originalRequest, validate);
+        if (pair.object.present_at_all_locations !== true || pair.parent.present_at_all_locations !== true) throw catalogDisabled();
+        await db.queryDatabase("UPDATE automation_square_catalog_ownership SET state='VERIFIED',updated_at_ms=? WHERE environment=? AND merchant_id=? AND request_ref=? AND state='REPAIRING' AND repair_request_json=?", [now(), ...scope, owned.request_ref, JSON.stringify(repair)]);
+        return pair.checked;
+    }
     async function getAdmin(actor) {
         admin(actor);
         if (!c.configured) return { configured: false, environment: c.environment, coupons: [], creations: [], locationCurrency: null, minorUnitDigits: null };
@@ -60,9 +142,6 @@ function createSquareCommerce(db, options = {}) {
             const existing = (await query('SELECT * FROM automation_square_catalog_creations WHERE plan_id=? AND environment=? AND merchant_id=? FOR UPDATE', [terms.planId, ...scope]))[0];
             if (existing && !['QUOTED','FAILED'].includes(existing.state)) throw fail('SQUARE_CATALOG_PENDING', '既存の料金作成の結果を確認してください。', 409);
             const id = randomUUID(), body = catalogBody(id, terms.name, terms.cadence, amount, terms.currency);
-            body.object.present_at_location_ids = [c.locationId];
-            body.object.subscription_plan_data.subscription_plan_variations[0].present_at_all_locations = false;
-            body.object.subscription_plan_data.subscription_plan_variations[0].present_at_location_ids = [c.locationId];
             if (existing) await query('DELETE FROM automation_square_catalog_creations WHERE id=?', [existing.id]);
             await query('INSERT INTO automation_square_catalog_creations (id,environment,merchant_id,plan_id,terms_json,request_json,expires_at_ms,created_at_ms,updated_at_ms) VALUES (?,?,?,?,?,?,?,?,?)', [id, ...scope, terms.planId, JSON.stringify(terms), JSON.stringify(body), now() + TTL, now(), now()]);
             return creationDto((await query('SELECT * FROM automation_square_catalog_creations WHERE id=?', [id]))[0], now());
@@ -89,8 +168,12 @@ function createSquareCommerce(db, options = {}) {
             await location(); const response = await request('POST', '/v2/catalog/object', JSON.parse(row.request_json)); wireAccepted = true;
             const variationId = response.id_mappings?.find(item => item.client_object_id === '#variation-' + row.id)?.object_id;
             if (!ID.test(variationId || '')) throw Object.assign(fail('SQUARE_CATALOG_RESULT_UNKNOWN', '料金の作成結果を確認できません。', 503), { uncertain: true });
-            const catalog = validateVariation((await request('GET', '/v2/catalog/object/' + encodeURIComponent(variationId))).object, c.locationId), terms = JSON.parse(row.terms_json);
-            if (catalog.amount !== terms.amount || catalog.currency !== terms.currency || catalog.cadence !== terms.cadence || catalog.catalogName !== terms.name) throw fail('SQUARE_CATALOG_MISMATCH', '作成されたSquare料金と確認内容が一致しません。', 503);
+            const terms = JSON.parse(row.terms_json);
+            const catalog = await readCreatedCatalog(variationId, JSON.parse(row.request_json), object => {
+                const found = validateVariation(object, c.locationId);
+                if (found.amount !== terms.amount || found.currency !== terms.currency || found.cadence !== terms.cadence || found.catalogName !== terms.name) throw fail('SQUARE_CATALOG_MISMATCH', '作成されたSquare料金と確認内容が一致しません。', 503);
+                return found;
+            }, response);
             await db.withDatabaseTransaction(async query => {
                 await query('SELECT plan_id FROM automation_notification_plans ORDER BY plan_id FOR UPDATE');
                 const active = (await query('SELECT * FROM automation_square_catalog_creations WHERE id=? FOR UPDATE', [row.id]))[0]; if (active.lease_token !== token) throw fail('SQUARE_CATALOG_BUSY', '料金作成の結果を確認してください。', 409);
@@ -137,7 +220,6 @@ function createSquareCommerce(db, options = {}) {
     }
     async function couponVariation(terms, base) {
         const identity = hash([scope, base.variationId, base.catalogVersion, terms]), body = catalogBody(identity, base.catalogName + ' [' + terms.code + ']', terms.cadence, terms.regularAmount, terms.currency, terms.firstAmount);
-        body.object.present_at_location_ids = [c.locationId]; body.object.subscription_plan_data.subscription_plan_variations[0].present_at_all_locations = false; body.object.subscription_plan_data.subscription_plan_variations[0].present_at_location_ids = [c.locationId];
         const token = randomUUID();
         /** @type {any} */
         let record = null;
@@ -148,13 +230,13 @@ function createSquareCommerce(db, options = {}) {
             if (record.lease_token && Number(record.lease_until_at_ms) > now()) throw fail('SQUARE_COUPON_PREPARING', '初回料金を準備しています。少し待って確認し直してください。', 409);
             await query('UPDATE automation_square_coupon_variations SET lease_token=?,lease_until_at_ms=? WHERE identity_key=?', [token, now() + LEASE, identity]);
         });
-        let variationId = record.variation_id;
+        let variationId = record.variation_id, response = null;
         try {
             if (!variationId) {
-                const response = await request('POST', '/v2/catalog/object', JSON.parse(record.request_json)); variationId = response.id_mappings?.find(item => item.client_object_id === '#variation-' + identity)?.object_id;
+                response = await request('POST', '/v2/catalog/object', JSON.parse(record.request_json)); variationId = response.id_mappings?.find(item => item.client_object_id === '#variation-' + identity)?.object_id;
             }
             if (!ID.test(variationId || '')) throw fail('SQUARE_COUPON_PREPARING', '初回料金の作成結果を確認できません。', 503);
-            const catalog = validateCouponVariation((await request('GET', '/v2/catalog/object/' + encodeURIComponent(variationId))).object, c.locationId, terms);
+            const catalog = await readCreatedCatalog(variationId, JSON.parse(record.request_json), object => validateCouponVariation(object, c.locationId, terms), response);
             if (!record.variation_id) await db.queryDatabase("UPDATE automation_square_coupon_variations SET state='READY',variation_id=?,catalog_version=? WHERE identity_key=? AND lease_token=?", [variationId, catalog.catalogVersion, identity, token]);
             return catalog;
         } finally { await db.queryDatabase('UPDATE automation_square_coupon_variations SET lease_token=NULL,lease_until_at_ms=NULL WHERE identity_key=? AND lease_token=?', [identity, token]); }
@@ -184,7 +266,8 @@ function createSquareCommerce(db, options = {}) {
         const plan = JSON.parse(quote.plan_json); if (!plan.coupon) return Number(quote.amount);
         const uses = (await query('SELECT * FROM automation_square_coupon_uses WHERE checkout_id=? FOR UPDATE', [quote.id]))[0];
         if (!uses || uses.state === 'RELEASED') throw fail('SQUARE_COUPON_ACCOUNT_MISMATCH', '初回割引の利用記録を確認できません。', 503);
-        const firstId = uses.first_invoice_id || subscription.invoice_ids?.[subscription.invoice_ids.length - 1];
+        const remembered = (await query('SELECT first_invoice_id FROM automation_square_subscription_invoices WHERE environment=? AND merchant_id=? AND subscription_id=?', [...scope, subscription.id]))[0];
+        const firstId = uses.first_invoice_id || remembered?.first_invoice_id || subscription.invoice_ids?.[subscription.invoice_ids.length - 1];
         if (!ID.test(firstId || '')) throw fail('SQUARE_COUPON_INVOICE_PENDING', '初回の請求を確認しています。', 503);
         const expected = invoice.id === firstId ? plan.firstAmount : plan.regularAmount;
         const requests = invoice.payment_requests;
