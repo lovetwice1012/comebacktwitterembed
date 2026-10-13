@@ -1,6 +1,26 @@
 'use strict';
 
 const SCHEMA = [
+    `CREATE TABLE IF NOT EXISTS automation_square_donation_units_policy (
+        environment VARCHAR(16) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+        merchant_id VARCHAR(255) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+        unit_amount BIGINT UNSIGNED NULL,
+        slots_per_unit INT UNSIGNED NULL,
+        policy_updated_at_ms BIGINT NOT NULL,
+        PRIMARY KEY (environment,merchant_id)
+    ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
+    `CREATE TABLE IF NOT EXISTS automation_square_donation_unit_grants (
+        owner_user_id VARCHAR(32) NOT NULL,
+        environment VARCHAR(16) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+        merchant_id VARCHAR(255) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+        purchase_units INT UNSIGNED NOT NULL,
+        extra_slots INT UNSIGNED NOT NULL,
+        payment_count BIGINT UNSIGNED NOT NULL,
+        units_valid_until_at_ms BIGINT NULL,
+        policy_updated_at_ms BIGINT NOT NULL,
+        updated_at_ms BIGINT NOT NULL,
+        PRIMARY KEY (owner_user_id,environment,merchant_id)
+    ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
     `CREATE TABLE IF NOT EXISTS automation_square_donation_reconciliation (
         owner_user_id VARCHAR(32) NOT NULL,
         environment VARCHAR(16) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,

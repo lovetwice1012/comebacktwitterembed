@@ -32,6 +32,7 @@ async function main() {
     const services = {
         db, service, evaluator, destinations, billing: require('../src/automation/square-billing').createSquareBilling(db, { env: {} }), monitors: require('../src/automation/monitors').createMonitors(db, service, destinations),
         donations: require('../src/automation/square-donations').createSquareDonations(db, { env: {} }),
+        commerce: require('../src/automation/square-commerce').createSquareCommerce(db, { env: {} }),
         dictionaryService: require('../src/automation/dictionary-service').createDictionaryService(db, service, evaluator),
         market: require('../src/automation/marketplace').createMarketplace(db, { service, evaluator, moderationMatcher: moderation }), history: require('../src/automation/history').createHistory(db, service), moderation, starter,
         schema: require('../src/automation/schema'), format: require('../src/automation/format'), bundle: require('../src/automation/bundle'), catalog: require('../src/automation/catalog'),

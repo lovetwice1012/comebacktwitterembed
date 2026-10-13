@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 const { createHmac, createHash, randomUUID } = require('node:crypto');
 const { AsyncLocalStorage } = require('node:async_hooks');
 const { createTestDatabase } = require('../lib/automation-test-db');
-const { createSquareDonations, isSquareDonationSupporter } = require('../../src/automation/square-donations');
+const { createSquareDonations, isSquareDonationSupporter, getSquareDonationGrant } = require('../../src/automation/square-donations');
 const { createSquareBilling } = require('../../src/automation/square-billing');
 const entitlements = require('../../src/automation/entitlements');
 const port = Number(process.env.AUTOMATION_TEST_DB_PORT);
@@ -310,6 +310,97 @@ test('Square donations real SQL with mocked REST: trusted payment, durable owner
             await save({ supporterThreshold: 100, validityDays: 1 }); const own = actor(65); await seed(own, 1, 'COMPLETED', clock - 86400000 + 10);
             const first = await make().getStatus(own); assert.equal(first.supporter.active, true); const start = square.requests.length; clock += 11;
             const expired = await make().getStatus(own); assert.equal(expired.refresh.state, 'cooldown'); assert.equal(expired.supporter.active, false); assert.equal(expired.supporter.netAmount, 0); assert.equal(square.requests.length, start);
+        });
+        await t.test('configured supporter units and successful payment count are distinct, cumulative, and never change the manual donor flag', async () => {
+            await save({ supporterThreshold: null, validityDays: 30, unitAmount: 500, slotsPerUnit: 3 });
+            const own = actor(90); await submit(own, await quote(own, 1200));
+            let status = await donations.getStatus(own);
+            assert.equal(status.supporter.purchaseUnits, 2); assert.equal(status.supporter.extraSlots, 6); assert.equal(status.supporter.paymentCount, 1);
+            await submit(own, await quote(own, 300)); status = await donations.getStatus(own);
+            assert.equal(status.supporter.purchaseUnits, 3); assert.equal(status.supporter.extraSlots, 9); assert.equal(status.supporter.paymentCount, 2);
+            const start = square.requests.length, plan = await entitlements.inspectPlan(db.queryDatabase, own.userId, clock);
+            assert.equal(square.requests.length, start, 'entitlement reads use only the verified local ledger');
+            assert.equal(plan.tier, 'supporter'); assert.equal(plan.addonGrantUnits, 3); assert.equal(plan.addonExtraSlots, 9); assert.equal(plan.donationPaymentCount, 2);
+            assert.equal(plan.slotLimit, plan.baseSlotLimit + 9); assert.equal(plan.minuteLimit, 10); assert.equal(plan.dayLimit, 90);
+            assert.equal(Number((await db.queryDatabase('SELECT is_donor FROM users WHERE user_id=?', [own.userId]))[0].is_donor), 0);
+        });
+        await t.test('partial and full financial refunds reduce units immediately while successful net-positive payment count stays separate', async () => {
+            const own = actor(91), first = await quote(own, 600), second = await quote(own, 600); await submit(own, first); await submit(own, second);
+            const payment = await paymentFor(first.attemptId), refund = { id: 'unit-partial-refund', payment_id: payment.id, location_id: 'LOCATION', amount_money: { amount: 300, currency: 'JPY' }, status: 'COMPLETED' };
+            square.refunds.set(refund.id, refund); payment.refund_ids = [refund.id]; payment.refunded_money = { amount: 300, currency: 'JPY' }; payment.updated_at = new Date(clock).toISOString();
+            await fire(payment, 'unit-refund-partial', 'refund.updated', refund.id);
+            let grant = await getSquareDonationGrant(db.queryDatabase, own.userId, clock, scope);
+            assert.equal(grant.netAmount, 900); assert.equal(grant.purchaseUnits, 1); assert.equal(grant.paymentCount, 2);
+            const rest = { ...refund, id: 'unit-rest-refund', amount_money: { amount: 300, currency: 'JPY' } }; square.refunds.set(rest.id, rest); payment.refund_ids.push(rest.id); payment.refunded_money.amount = 600;
+            await fire(payment, 'unit-refund-full', 'refund.updated', rest.id); grant = await getSquareDonationGrant(db.queryDatabase, own.userId, clock, scope);
+            assert.equal(grant.netAmount, 600); assert.equal(grant.purchaseUnits, 1); assert.equal(grant.paymentCount, 1);
+            const other = await paymentFor(second.attemptId), full = { ...refund, id: 'unit-last-refund', payment_id: other.id, amount_money: { amount: 600, currency: 'JPY' } }; square.refunds.set(full.id, full); other.refund_ids = [full.id]; other.refunded_money = { amount: 600, currency: 'JPY' };
+            await fire(other, 'unit-last-payment-refunded', 'refund.updated', full.id); grant = await getSquareDonationGrant(db.queryDatabase, own.userId, clock, scope);
+            assert.equal(grant.purchaseUnits, 0); assert.equal(grant.extraSlots, 0); assert.equal(grant.paymentCount, 0); assert.equal(grant.active, false);
+        });
+        await t.test('unit expiry retains remaining eligible units automatically without status refresh or provider I/O', async () => {
+            const own = actor(92), started = clock; await save({ supporterThreshold: 2000, validityDays: 30 });
+            await submit(own, await quote(own, 1600)); clock += 10 * 86400000; await submit(own, await quote(own, 900));
+            const initialGrant = await getSquareDonationGrant(db.queryDatabase, own.userId, clock, scope);
+            assert.equal(initialGrant.purchaseUnits, 5); assert.equal(initialGrant.unitsValidUntilAtMs, started + 30 * 86400000);
+            assert.equal(initialGrant.validUntilAtMs, started + 40 * 86400000, 'remaining units retain supporter priority after threshold eligibility ends');
+            const start = square.requests.length; clock = started + 30 * 86400000;
+            const reduced = await entitlements.inspectPlan(db.queryDatabase, own.userId, clock);
+            assert.equal(reduced.addonGrantUnits, 1); assert.equal(reduced.addonExtraSlots, 3); assert.equal(reduced.donationPaymentCount, 1); assert.equal(reduced.tier, 'supporter');
+            assert.equal(reduced.addonValidUntilAtMs, started + 40 * 86400000);
+            assert.equal(await isSquareDonationSupporter(db.queryDatabase, own.userId, clock, scope), true);
+            clock = started + 40 * 86400000;
+            const expired = await entitlements.inspectPlan(db.queryDatabase, own.userId, clock);
+            assert.equal(expired.addonGrantUnits, 0); assert.equal(expired.addonExtraSlots, 0); assert.equal(expired.donationPaymentCount, 0); assert.equal(expired.tier, 'free');
+            assert.equal(square.requests.length, start);
+        });
+        await t.test('manual and Square paid tiers add manual and purchased units while retaining their own send limits', async () => {
+            await save({ supporterThreshold: null, validityDays: null });
+            await db.withDatabaseTransaction(query => entitlements.savePlanPolicy(query, ADMIN, { planId: 'unit-paid-proof', label: 'Unit proof', slotLimit: 4, minuteLimit: 77, dayLimit: 500, priority: 7 }));
+            for (const [i, manual] of [true, false].entries()) {
+                const own = actor(93 + i); await submit(own, await quote(own, 1500));
+                await db.queryDatabase('UPDATE users SET is_donor=1,additional_auto_extract_slots=2 WHERE user_id=?', [own.userId]);
+                if (manual) await db.withDatabaseTransaction(query => entitlements.setUserPlan(query, ADMIN, own.userId, 'unit-paid-proof'));
+                else await db.queryDatabase(`INSERT INTO automation_square_subscriptions (owner_user_id,environment,merchant_id,plan_id,variation_id,customer_id,subscription_id,checkout_id,state,valid_until_at_ms,verified,updated_at_ms)
+                    VALUES (?,'sandbox','MERCHANT','unit-paid-proof','UNITVAR','UNITCUSTOMER',?,?,'ACTIVE',?,1,?)`, [own.userId, `UNIT-SUB-${i}`, randomUUID(), clock + 86400000, clock]);
+                const plan = await entitlements.inspectPlan(db.queryDatabase, own.userId, clock);
+                assert.equal(plan.tier, 'paid'); assert.equal(plan.baseSlotLimit, 4); assert.equal(plan.manualExtraSlots, 2); assert.equal(plan.addonGrantUnits, 3); assert.equal(plan.addonExtraSlots, 9); assert.equal(plan.slotLimit, 15);
+                assert.equal(plan.minuteLimit, 77); assert.equal(plan.dayLimit, 500); assert.equal(plan.priority, 7);
+            }
+        });
+        await t.test('unit policy supports partial updates, explicit disable, safe caps and revision conflicts without erasing trusted manual privileges', async () => {
+            const previous = (await donations.getAdmin(ADMIN)).policy, { slotsPerUnit: _omitted, ...partial } = previous;
+            let policy = await donations.savePolicy(ADMIN, { ...partial, unitAmount: 600, expectedUpdatedAtMs: previous.updatedAtMs }); assert.equal(policy.unitAmount, 600); assert.equal(policy.slotsPerUnit, 3);
+            const { unitAmount: _oldAmount, slotsPerUnit: _oldSlots, ...oldClient } = policy;
+            policy = await donations.savePolicy(ADMIN, { ...oldClient, expectedUpdatedAtMs: policy.updatedAtMs }); assert.equal(policy.unitAmount, 600); assert.equal(policy.slotsPerUnit, 3);
+            const own = actor(95); await submit(own, await quote(own, 10000));
+            await db.queryDatabase('UPDATE users SET is_donor=1,additional_auto_extract_slots=10000 WHERE user_id=?', [own.userId]);
+            policy = await save({ unitAmount: 1, slotsPerUnit: 10000 });
+            const grant = await getSquareDonationGrant(db.queryDatabase, own.userId, clock, scope); assert.equal(grant.purchaseUnits, 10000); assert.equal(grant.extraSlots, 10000); assert.equal(grant.paymentCount, 1);
+            await db.withDatabaseTransaction(query => entitlements.savePlanPolicy(query, ADMIN, { planId: 'unit-cap-proof', label: 'Cap proof', slotLimit: 10000, minuteLimit: 5, dayLimit: 24, priority: 0 }));
+            await db.withDatabaseTransaction(query => entitlements.setUserPlan(query, ADMIN, own.userId, 'unit-cap-proof'));
+            assert.equal((await entitlements.inspectPlan(db.queryDatabase, own.userId, clock)).slotLimit, 30000, 'base and legacy manual caps remain additive');
+            await assert.rejects(save({ slotsPerUnit: 10001 }), { code: 'SQUARE_DONATION_POLICY_INVALID' });
+            await assert.rejects(donations.savePolicy(ADMIN, { ...policy, expectedUpdatedAtMs: policy.updatedAtMs - 1 }), { code: 'SQUARE_DONATION_POLICY_CONFLICT' });
+            await save({ unitAmount: null, slotsPerUnit: null });
+            const after = await entitlements.inspectPlan(db.queryDatabase, own.userId, clock); assert.equal(after.addonExtraSlots, 0); assert.equal(after.slotLimit, 20000);
+            assert.equal(Number((await db.queryDatabase('SELECT is_donor FROM users WHERE user_id=?', [own.userId]))[0].is_donor), 1);
+        });
+        await t.test('unit-only supporter grants use durable queue priority and retain the fourth oldest-first turn', async () => {
+            await save({ supporterThreshold: null, validityDays: null, unitAmount: 500, slotsPerUnit: 3 });
+            const donor = actor(90), free = actor(97); await db.queryDatabase('INSERT IGNORE INTO users (user_id,registered_at_ms) VALUES (?,0)', [free.userId]);
+            assert.equal(await isSquareDonationSupporter(db.queryDatabase, donor.userId, clock, scope), true);
+            assert.equal(Number((await db.queryDatabase('SELECT is_donor FROM users WHERE user_id=?', [donor.userId]))[0].is_donor), 0);
+            await db.queryDatabase("UPDATE automation_jobs SET state='sent' WHERE state='pending'");
+            await db.queryDatabase('UPDATE automation_counters SET used_count=0 WHERE counter_key=?', [require('../../src/automation/service').hash('automation:discord:priority-turn')]);
+            for (const owner of [free.userId, donor.userId]) for (let i = 0; i < 4; i++) {
+                const runId = randomUUID(), jobId = randomUUID();
+                await db.queryDatabase('INSERT INTO automation_runs (id,dedupe_key,owner_user_id,scope,target_kind,target_id,event_json,trace_json,state,created_at_ms) VALUES (?,?,?,?,?,?,?,?,?,?)', [runId, createHash('sha256').update(jobId).digest('hex'), owner, 'private', 'price', 1, '{}', '[]', 'queued', clock]);
+                await db.queryDatabase('INSERT INTO automation_jobs (id,run_id,plan_json,due_at_ms,state,created_at_ms,updated_at_ms) VALUES (?,?,?,?,?,?,?)', [jobId, runId, JSON.stringify({ context: {}, schedules: [] }), clock, 'pending', clock + (owner === free.userId ? 0 : 1), clock]);
+            }
+            const queue = require('../../src/automation/queue').createQueue(db, {}), owners = [];
+            for (let i = 0; i < 4; i++) { const job = await queue.claim(clock); owners.push(job.owner_user_id); await queue.transition(job, 'sent'); }
+            assert.deepEqual(owners, [donor.userId, donor.userId, donor.userId, free.userId]);
         });
     } finally { for (const [key, value] of Object.entries(previousEnv)) { if (value === undefined) delete process.env[key]; else process.env[key] = value; } await db.close(); }
 });

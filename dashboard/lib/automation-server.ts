@@ -19,8 +19,9 @@ export function automationServices() {
   const dictionaryService = requireBotModule<any>("src/automation/dictionary-service.js").createDictionaryService(db, service, evaluator);
   const billing = requireBotModule<any>("src/automation/square-billing.js").createSquareBilling(db);
   const donations = requireBotModule<any>("src/automation/square-donations.js").createSquareDonations(db);
+  const commerce = requireBotModule<any>("src/automation/square-commerce.js").createSquareCommerce(db);
   globals.automationServices = {
-    db, service, market, evaluator, destinations, monitors, history, dictionaryService, moderation, starter, billing, donations,
+    db, service, market, evaluator, destinations, monitors, history, dictionaryService, moderation, starter, billing, donations, commerce,
     api: requireBotModule<any>("src/automation/api.js"),
     schema: requireBotModule<any>("src/automation/schema.js"),
     format: requireBotModule<any>("src/automation/format.js"),

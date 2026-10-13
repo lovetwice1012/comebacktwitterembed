@@ -263,7 +263,9 @@ async function claimDueSources(now, limit = 16, config = monitorConfig()) {
          (SELECT MIN(COALESCE(u.auto_watch_interval_minutes*60000,s.poll_interval_ms))
           FROM ${TABLES.autoWatchTargets} t JOIN ${TABLES.users} u ON u.user_id=t.user_id WHERE t.source_id=s.id AND t.enabled=1) AS requested_poll_interval_ms,
          EXISTS(SELECT 1 FROM ${TABLES.autoWatchTargets} t JOIN ${TABLES.users} u ON u.user_id=t.user_id
-          WHERE t.source_id=s.id AND t.enabled=1 AND u.auto_watch_interval_minutes IS NOT NULL) AS has_user_interval
+          WHERE t.source_id=s.id AND t.enabled=1 AND u.auto_watch_interval_minutes IS NOT NULL) AS has_user_interval,
+         EXISTS(SELECT 1 FROM automation_notification_boost_slots b JOIN auto_watch_targets bt ON bt.id=b.target_id
+          WHERE b.target_kind='auto' AND bt.source_id=s.id AND bt.enabled=1) AS has_slot_boost
          FROM ${TABLES.autoWatchSources} s
          WHERE s.next_check_at_ms<=?
            AND s.lease_expires_at_ms<=?
@@ -273,6 +275,7 @@ async function claimDueSources(now, limit = 16, config = monitorConfig()) {
     );
     const claimed = [];
     for (const source of rows) {
+        if (Number(source.has_slot_boost)) Object.assign(source, await require('../../automation/monitor-cadence').sourceSchedule(db.queryDatabase, source, now));
         const leaseToken = crypto.randomUUID();
         const result = await db.queryDatabase(
             `UPDATE ${TABLES.autoWatchSources}
@@ -304,10 +307,15 @@ async function completeSource(source, result) {
             (SELECT MIN(COALESCE(u.auto_watch_interval_minutes*60000,s.poll_interval_ms)) FROM auto_watch_targets t
              JOIN users u ON u.user_id=t.user_id WHERE t.source_id=s.id AND t.enabled=1) AS requested_poll_interval_ms,
             EXISTS(SELECT 1 FROM auto_watch_targets t JOIN users u ON u.user_id=t.user_id
-             WHERE t.source_id=s.id AND t.enabled=1 AND u.auto_watch_interval_minutes IS NOT NULL) AS has_user_interval
+             WHERE t.source_id=s.id AND t.enabled=1 AND u.auto_watch_interval_minutes IS NOT NULL) AS has_user_interval,
+            EXISTS(SELECT 1 FROM automation_notification_boost_slots b JOIN auto_watch_targets bt ON bt.id=b.target_id
+             WHERE b.target_kind='auto' AND bt.source_id=s.id AND bt.enabled=1) AS has_slot_boost
             FROM auto_watch_sources s WHERE s.id=?`, [source.id]))[0];
         const counts = await activeSourceCounts();
-        if (schedule) values[5] = result.checkedAtMs + computedPollInterval(schedule, counts.get(schedule.provider_id) || 1);
+        if (schedule) {
+            if (Number(schedule.has_slot_boost)) Object.assign(schedule, await require('../../automation/monitor-cadence').sourceSchedule(query, schedule, result.checkedAtMs));
+            values[5] = result.checkedAtMs + computedPollInterval(schedule, counts.get(schedule.provider_id) || 1);
+        }
         const updated = await query(
         `UPDATE ${TABLES.autoWatchSources}
          SET state_json=?, cursor_json=?, etag=?, last_modified=?, initialized_at_ms=COALESCE(initialized_at_ms, ?),
@@ -318,12 +326,14 @@ async function completeSource(source, result) {
         );
         if (Number(updated.affectedRows) !== 1) throw error('Automatic-watch source lease was lost.', 'AUTO_WATCH_LEASE_LOST');
         if (result.items?.length) await createItemsAndDeliveries(source, result.items, result.checkedAtMs);
-        const targets = await query(`SELECT t.id,t.next_poll_at_ms,
+        const targets = await query(`SELECT t.id,t.next_poll_at_ms,t.user_id,
+            (SELECT slot_cost FROM automation_monitor_cadence c WHERE c.target_kind='auto' AND c.target_id=t.id AND c.owner_user_id=t.user_id) AS slot_cost,
             (SELECT COALESCE(u.auto_watch_interval_minutes*60000,(SELECT poll_interval_ms FROM auto_watch_sources WHERE id=t.source_id))
              FROM users u WHERE u.user_id=t.user_id) AS interval_ms
             FROM auto_watch_targets t
             WHERE t.source_id=? AND t.enabled=1 FOR UPDATE`, [source.id]);
         for (const target of targets) {
+            if (Number(target.slot_cost) > 1) target.interval_ms = (await require('../../automation/monitor-cadence').runtimeCadence(query, target.user_id, 'auto', String(target.id), Number(target.interval_ms), result.checkedAtMs)).intervalMs;
             if (Number(target.next_poll_at_ms || 0) > result.checkedAtMs) continue;
             await query('UPDATE auto_watch_targets SET last_polled_at_ms=?,next_poll_at_ms=? WHERE id=?',
                 [result.checkedAtMs, result.checkedAtMs + Number(target.interval_ms), target.id]);
@@ -458,13 +468,15 @@ async function cooldownProvider(providerId, untilMs) {
 
 async function createItemsAndDeliveries(source, items, now) {
     const targets = await db.queryDatabase(
-        `SELECT t.id,t.created_at_ms,t.baseline_at_ms,t.next_poll_at_ms,t.last_notification_window_at_ms,
+        `SELECT t.id,t.created_at_ms,t.baseline_at_ms,t.next_poll_at_ms,t.last_notification_window_at_ms,t.user_id,
+            (SELECT slot_cost FROM automation_monitor_cadence c WHERE c.target_kind='auto' AND c.target_id=t.id AND c.owner_user_id=t.user_id) AS slot_cost,
             (SELECT COALESCE(u.auto_watch_interval_minutes*60000,(SELECT poll_interval_ms FROM auto_watch_sources WHERE id=t.source_id))
              FROM users u WHERE u.user_id=t.user_id) AS interval_ms
          FROM ${TABLES.autoWatchTargets} t
          WHERE t.source_id=? AND t.enabled=1 AND t.baseline_at_ms IS NOT NULL FOR UPDATE`,
         [source.id]
     );
+    for (const target of targets) if (Number(target.slot_cost) > 1) target.interval_ms = (await require('../../automation/monitor-cadence').runtimeCadence(db.queryDatabase, target.user_id, 'auto', String(target.id), Number(target.interval_ms), now)).intervalMs;
     let created = 0;
     for (const item of items) {
         const result = await db.queryDatabase(
@@ -508,7 +520,9 @@ async function claimDueDeliveries(now, limit = 32) {
     const rows = await db.queryDatabase(
         `SELECT d.*, i.content_url, i.discovered_at_ms, i.payload_json, i.content_key, i.title, i.published_at_ms, s.provider_id, s.source_key,
                 t.destination_type, t.guild_id, t.origin_channel_id, t.origin_channel_nsfw, t.source_locale,
-                t.user_id AS destination_user_id, t.webhook_endpoint_id, w.webhook_url
+                t.user_id AS destination_user_id, t.webhook_endpoint_id, w.webhook_url,t.last_notification_window_at_ms,t.baseline_at_ms,
+                COALESCE((SELECT auto_watch_interval_minutes*60000 FROM users WHERE user_id=t.user_id),s.poll_interval_ms) AS base_interval_ms,
+                (SELECT slot_cost FROM automation_monitor_cadence c WHERE c.target_kind='auto' AND c.target_id=t.id AND c.owner_user_id=t.user_id) AS slot_cost
          FROM ${TABLES.autoWatchDeliveries} d
          JOIN ${TABLES.autoWatchItems} i ON i.id=d.item_id
          JOIN ${TABLES.autoWatchTargets} t ON t.id=d.target_id
@@ -520,6 +534,15 @@ async function claimDueDeliveries(now, limit = 32) {
     );
     const claimed = [];
     for (const delivery of rows) {
+        if (Number(delivery.slot_cost) > 1) {
+            const cadence = await require('../../automation/monitor-cadence').runtimeCadence(db.queryDatabase, delivery.destination_user_id, 'auto', String(delivery.target_id), Number(delivery.base_interval_ms), now);
+            const anchor = Number(delivery.last_notification_window_at_ms || delivery.baseline_at_ms || 0);
+            const due = Math.max(Number(delivery.next_attempt_at_ms), anchor ? anchor + cadence.intervalMs : 0);
+            if (due > now) {
+                await db.queryDatabase("UPDATE auto_watch_deliveries SET next_attempt_at_ms=? WHERE id=? AND status='pending' AND lease_expires_at_ms<=?", [due, delivery.id, now]);
+                continue;
+            }
+        }
         const leaseToken = crypto.randomUUID();
         const result = await db.queryDatabase(
             `UPDATE ${TABLES.autoWatchDeliveries}

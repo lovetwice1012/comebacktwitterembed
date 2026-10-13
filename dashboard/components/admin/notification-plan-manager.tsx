@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { automationResponseError } from "@/components/automation/automation-feedback";
+import { SquareCatalogCreator, SquareCouponManager } from "./square-commerce-manager";
 
 export type NotificationPlanPolicy = {
   tier: "free" | "supporter" | "paid"; planId: string; label: string;
@@ -139,10 +140,11 @@ function SquarePlanBinding({ plan, api, billing }: { plan: NotificationPlanPolic
   }
   return <section aria-label={`${plan.label}のSquare連携`} className="space-y-3 border-t pt-4">
     <h3 className="text-sm font-medium">Squareサブスクリプション</h3>
-    <p className="text-sm text-muted-foreground">料金と請求周期はSquareで設定したサブスクリプションプランを使います。保存時にSquareで現在の内容を検証します。</p>
+    <p className="text-sm text-muted-foreground">この管理画面から料金プランを作成するか、Squareに登録済みのプランを選べます。料金・請求周期をSquareで検証して紐付けます。</p>
     {billing.loading ? <p role="status" className="text-sm">Square連携を確認中…</p> : null}
     {binding ? <dl className="grid gap-2 rounded-lg bg-muted/30 p-3 text-sm sm:grid-cols-2"><div><dt className="text-muted-foreground">Squareプラン</dt><dd className="break-words font-medium">{binding.catalogName || "名称未取得"}</dd></div><div><dt className="text-muted-foreground">料金・請求周期</dt><dd>{squarePrice(binding)} · {({ MONTHLY: "月ごと", ANNUAL: "年ごと", WEEKLY: "週ごと", DAILY: "日ごと" } as Record<string, string>)[binding.cadence ?? ""] ?? binding.cadence ?? "周期未取得"}</dd></div><div><dt className="text-muted-foreground">購入受付</dt><dd>{binding.enabled ? "有効" : "停止中"}</dd></div><div><dt className="text-muted-foreground">最終確認</dt><dd>{binding.verifiedAtMs ? new Intl.DateTimeFormat("ja-JP", { dateStyle: "short", timeStyle: "short", timeZone: "Asia/Tokyo" }).format(binding.verifiedAtMs) + " JST" : "未確認"}</dd></div></dl> : <p className="text-sm">Squareプランの紐付けは未設定です。</p>}
     {!configured && !billing.loading && !billing.error ? <p className="text-sm text-muted-foreground">サーバー側のSquare設定が未完了です。接続設定を完了すると紐付けできます。</p> : null}
+    <SquareCatalogCreator plan={plan} configured={configured} api={api} onCreated={billing.refresh} />
     <form noValidate className="space-y-3" onSubmit={event => { event.preventDefault(); if (configured && valid && changed && !busy) { setConfirming(true); setError(""); setStatus(""); } }}>
       <fieldset disabled={!configured || busy} className="space-y-3">
         {available.length ? <label className="block max-w-xl space-y-1 text-sm"><span className="block">Squareのプランから選ぶ</span><select className="h-10 w-full rounded-md border bg-card px-3 text-sm" value={available.some(item => item.variationId === value.variationId) ? value.variationId : ""} onChange={event => { if (event.target.value) { setDraft({ ...value, variationId: event.target.value }); setConfirming(false); setStatus(""); } }}><option value="">プランを選択</option>{available.map(item => <option key={item.variationId} value={item.variationId}>{item.catalogName} · {squarePrice(item)} · {({ MONTHLY: "月ごと", ANNUAL: "年ごと", WEEKLY: "週ごと", DAILY: "日ごと" } as Record<string, string>)[item.cadence] ?? item.cadence}</option>)}</select></label> : null}
@@ -183,5 +185,6 @@ export function NotificationPlanManager({ api = notificationPlanAPI }: { api?: N
     <section aria-label="Square連携の状態" className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-4 text-sm"><div><p className="font-medium">Square連携: {billingLoading ? "確認中" : billingData?.configured ? billingData.environment === "production" ? "本番環境" : "サンドボックス" : "未設定"}</p>{billingError ? <p role="alert" className="mt-1 text-destructive">{billingError}</p> : null}<p className="mt-1 text-muted-foreground">有償プランのサブスクリプション料金・請求周期はSquare側で管理します。</p>{billingData && !billingData.configured && billingData.missing.length ? <details className="mt-2 text-muted-foreground"><summary className="cursor-pointer">接続に必要な設定</summary><ul className="mt-2 list-inside list-disc">{billingData.missing.map(key => <li key={key}>{({ SQUARE_ENVIRONMENT: "Squareの接続環境が未設定、または不正です。", SQUARE_ACCESS_TOKEN: "Squareの接続トークンが未設定です。", SQUARE_APPLICATION_ID: "SquareのアプリケーションIDが未設定、または不正です。", SQUARE_LOCATION_ID: "Squareの店舗IDが未設定、または不正です。", SQUARE_MERCHANT_ID: "Squareの加盟店IDが未設定、または不正です。", SQUARE_WEBHOOK_SIGNATURE_KEY: "Webhookの署名キーが未設定です。", SQUARE_WEBHOOK_NOTIFICATION_URL: "Webhookの通知先URLが未設定、または不正です。" } as Record<string, string>)[key] ?? "Squareのサーバー設定に不足があります。"}</li>)}</ul></details> : null}</div><Button type="button" variant="outline" disabled={billingLoading} onClick={() => void loadBilling()}>Square連携を再確認</Button></section>
     {items.map(plan => <PlanEditor key={plan.planId} plan={plan} api={api} billing={billing} onSaved={saved} />)}
     {creating ? <PlanEditor key="new-plan" api={api} billing={billing} onSaved={plan => { saved(plan); setCreating(false); }} onCancel={() => setCreating(false)} /> : null}
+    <SquareCouponManager plans={items} configured={billingData?.configured === true} api={api} />
   </div>;
 }

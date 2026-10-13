@@ -1,7 +1,7 @@
 export interface SquareActor { userId: string; isAdmin?: boolean }
 export interface SquareVariation { variationId: string; catalogName: string; cadence: string; amount: number; currency: string; billingAnchorDay?: number | null; canProrate?: boolean }
 export interface SquareBinding extends SquareVariation { planId: string; enabled: boolean; verifiedAtMs: number }
-export interface SquarePlan extends SquareBinding { label: string; slotLimit: number; minuteLimit: number; dayLimit: number; priority: number }
+export interface SquarePlan extends SquareBinding { label: string; slotLimit: number; minuteLimit: number; dayLimit: number; priority: number; firstAmount?: number; regularAmount?: number; coupon?: import('./square-commerce').CouponTerms }
 export interface SquareOptions { configured: boolean; environment: 'sandbox' | 'production' | null; applicationId?: string; locationId?: string; plans: SquarePlan[] }
 export interface SquareQuote { checkoutId: string; expiresAtMs: number; plan: SquarePlan; email: string; name: string }
 export interface SquareStatus {
@@ -24,7 +24,7 @@ export function createSquareBilling(db: { queryDatabase: Function; withDatabaseT
     getStatus(actor: SquareActor): Promise<SquareStatus>;
     getAdmin(actor: SquareActor): Promise<{ configured: boolean; environment: 'sandbox' | 'production' | null; missing: string[]; bindings: SquareBinding[]; availableVariations: SquareVariation[] }>;
     saveBinding(actor: SquareActor, planId: string, input: { variationId: string; enabled: boolean }): Promise<SquareBinding>;
-    createQuote(actor: SquareActor, input: { planId: string; email: string; name: string }): Promise<SquareQuote>;
+    createQuote(actor: SquareActor, input: { planId: string; email: string; name: string; couponCode?: string }): Promise<SquareQuote>;
     subscribe(actor: SquareActor, input: { checkoutId: string; sourceId: string; consent: boolean }): Promise<SquareStatus>;
     cancel(actor: SquareActor): Promise<SquareStatus>;
     handleWebhook(rawBody: string | Buffer, signature: string): Promise<{ accepted: boolean; duplicate: boolean }>;
@@ -33,3 +33,4 @@ export function verifyWebhookSignature(rawBody: string | Buffer, signature: stri
 export function dateEnd(date: string, timezone: string): number | null;
 export const API_VERSION: string;
 export function isValidReceiptEmail(email: string): boolean;
+export function validateVariation(object: any, locationId?: string): SquareVariation & { catalogVersion: string };

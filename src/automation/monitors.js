@@ -27,7 +27,10 @@ function publicMonitor(kind, row) {
         minDiscountPercent: row.min_discount_percent == null ? null : Number(row.min_discount_percent),
         lastCheckedAtMs: Number(kind === 'auto' ? row.last_polled_at_ms ?? row.last_checked_at_ms ?? 0 : row.last_checked_at_ms || 0),
         nextCheckAtMs: kind === 'auto' ? Math.max(Number(row.next_poll_at_ms || 0), Number(row.next_check_at_ms || 0)) : Number(row.next_check_at_ms || 0),
-        intervalMinutes: kind === 'auto' ? Number(row.user_interval_minutes ?? Number(row.poll_interval_ms) / 60000) : undefined,
+        intervalMinutes: kind === 'auto' ? row.cadence_info?.intervalMs / 60000 || Number(row.user_interval_minutes ?? Number(row.poll_interval_ms) / 60000) : undefined,
+        baseIntervalMinutes: kind === 'auto' ? Number(row.user_interval_minutes ?? Number(row.poll_interval_ms) / 60000) : undefined,
+        slotCost: Number(row.slot_cost || 1), effectiveSlotCost: row.cadence_info?.effectiveSlotCost || 1,
+        cadenceUpdatedAtMs: row.cadence_updated_at_ms == null ? null : Number(row.cadence_updated_at_ms), cadenceLimited: row.cadence_info?.limited === true,
         errorCode: row.last_error_code, premium: !!row.premium_slot };
 }
 
@@ -67,9 +70,10 @@ function createMonitors(db, service, destinations, options = {}) {
         const table = tableFor(kind);
         return `SELECT t.*,s.provider_id,${kind === 'auto' ? 's.source_key,s.source_url' : 's.product_key,s.product_url,s.product_name,s.source_locale'},
             s.last_checked_at_ms,s.next_check_at_ms,s.last_error_code,s.poll_interval_ms,
-            ${kind === 'auto' ? '(SELECT auto_watch_interval_minutes FROM users WHERE user_id=t.user_id) AS user_interval_minutes,' : ''}m.name AS monitor_name,m.scope,m.destination_id,m.revision,a.workflow_id
+            ${kind === 'auto' ? '(SELECT auto_watch_interval_minutes FROM users WHERE user_id=t.user_id) AS user_interval_minutes,' : ''}m.name AS monitor_name,m.scope,m.destination_id,m.revision,a.workflow_id,c.slot_cost,c.updated_at_ms AS cadence_updated_at_ms
             FROM ${table}_targets t JOIN ${table}_sources s ON s.id=t.source_id
             LEFT JOIN automation_monitors m ON m.target_kind='${kind}' AND m.target_id=t.id
+            LEFT JOIN automation_monitor_cadence c ON c.target_kind='${kind}' AND c.target_id=t.id AND c.owner_user_id=t.user_id
             LEFT JOIN automation_assignments a ON a.target_kind='${kind}' AND a.target_id=t.id`;
     }
     async function getRow(actor, kind, id, write = false, query = db.queryDatabase, lock = false) {
@@ -97,7 +101,32 @@ function createMonitors(db, service, destinations, options = {}) {
             OR (t.guild_id=? AND ?=1 AND t.destination_type<>'dm' AND COALESCE(m.scope,'guild')='guild'))${clauses.length ? ` AND ${clauses.join(' AND ')}` : ''} ORDER BY t.id LIMIT 101`,
         [afterId, actor.userId, actor.guildId || null, actor.canView ? 1 : 0, ...params]);
         const selected = rows.slice(0, 100);
-        return { items: selected.map(row => publicMonitor(kind, row)), nextCursor: rows.length > 100 ? String(selected.at(-1).id) : null };
+        const items = await Promise.all(selected.map(async row => {
+            if (kind === 'auto' && Number(row.slot_cost) > 1) row.cadence_info = await require('./monitor-cadence').runtimeCadence(db.queryDatabase, row.user_id, kind, String(row.id), Number(row.user_interval_minutes ?? Number(row.poll_interval_ms) / 60000) * 60000);
+            return { ...publicMonitor(kind, row), canAllocateCadence: kind === 'auto' && String(row.user_id) === actor.userId && (scopeOf(row) === 'private' || actor.canEdit === true) };
+        }));
+        return { items, nextCursor: rows.length > 100 ? String(selected.at(-1).id) : null };
+    }
+    async function setCadence(actor, kind, id, input) {
+        requireActor(actor); tableFor(kind);
+        const current = await getRow(actor, kind, id, true);
+        if (String(current.user_id) !== actor.userId) fail('FORBIDDEN', '通知枠の配分は登録した本人が変更してください。', 403);
+        return db.withDatabaseTransaction(async query => {
+            await entitlements.lockOwner(query, actor.userId);
+            const row = await getRow(actor, kind, id, true, query, true);
+            if (Number(row.revision || 1) !== input.expectedRevision) fail('REVISION_CONFLICT', '通知が変更されています。読み直してください。', 409);
+            const cadence = require('./monitor-cadence');
+            await cadence.reserve(query, actor.userId, kind, String(id), input);
+            const now = Date.now(), base = Number(row.user_interval_minutes ?? Number(row.poll_interval_ms) / 60000) * 60000;
+            const selected = await cadence.runtimeCadence(query, actor.userId, kind, String(id), base, now);
+            const next = Number(row.last_polled_at_ms ?? row.last_checked_at_ms ?? now) + selected.intervalMs;
+            await query('UPDATE auto_watch_targets SET next_poll_at_ms=? WHERE id=? AND user_id=?', [next, id, actor.userId]);
+            await query(`UPDATE auto_watch_deliveries d JOIN auto_watch_items i ON i.id=d.item_id
+                SET d.next_attempt_at_ms=GREATEST(i.discovered_at_ms,?,?+?) WHERE d.target_id=? AND d.status='pending' AND d.attempt_count=0 AND d.lease_expires_at_ms<=?`, [next, Number(row.last_notification_window_at_ms || 0), selected.intervalMs, id, now]);
+            await require('../providers/autoWatch/intervalPolicy').bringSourceForward(query, actor.userId, row.source_id, now);
+            await service.audit(query, actor, `${kind}:${id}`, 'monitor.cadence', { slotCost: selected.slotCost, intervalMs: selected.intervalMs }, row.guild_id);
+            return { id: String(id), ...selected };
+        });
     }
     async function destination(actor, id, scope, ownerId, query = db.queryDatabase) {
         const row = await service.getRow('destination', actor, id, true, query);
@@ -263,6 +292,7 @@ function createMonitors(db, service, destinations, options = {}) {
     }
     const operate = (actor, work) => service.withOperation(actor, 'monitor', work);
     return { providers, preview: (actor, kind, input) => operate(actor, () => preview(actor, kind, input)), list, getRow,
-        save: (actor, kind, input, id) => id && input.enabled === false && Object.keys(input).every(key => ['expectedRevision', 'enabled'].includes(key)) ? save(actor, kind, input, id) : operate(actor, () => save(actor, kind, input, id)), remove, detach };
+        save: (actor, kind, input, id) => id && input.enabled === false && Object.keys(input).every(key => ['expectedRevision', 'enabled'].includes(key)) ? save(actor, kind, input, id) : operate(actor, () => save(actor, kind, input, id)), remove, detach,
+        setCadence: (actor, kind, id, input) => input.slotCost === 1 ? setCadence(actor, kind, id, input) : operate(actor, () => setCadence(actor, kind, id, input)) };
 }
 module.exports = { createMonitors, assertMonitorAccess, scopeOf, publicMonitor };

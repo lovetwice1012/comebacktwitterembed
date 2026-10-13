@@ -17,7 +17,9 @@ async function run({ tier = 'free', used = 0, limit = 5, locale = 'ja', manualDo
         if (sql.startsWith('SELECT is_donor,additional_auto_extract_slots')) return ownRow ? [{ is_donor: manualDonor ? 1 : 0, additional_auto_extract_slots: 0 }] : [];
         if (sql.includes('FROM automation_notification_entitlements e')) return tier === 'paid' ? [policy] : [];
         if (sql.includes('FROM automation_square_subscriptions s')) return [];
-        if (sql.includes('FROM automation_square_donation_supporters s')) return tier === 'supporter' && !manualDonor ? [{ active: 1 }] : [];
+        if (sql.includes('FROM automation_square_donation_policy p')) return [{ currency: 'JPY', supporter_threshold: 1000, validity_days: null, unit_amount: null, slots_per_unit: null, updated_at_ms: 1 }];
+        if (sql.includes('FROM automation_square_donation_attempts')) return tier === 'supporter' && !manualDonor ? [{ amount: 1000, refunded_amount: 0, completed_at_ms: 1 }] : [];
+        if (sql.includes('FROM automation_notification_boost_slots')) return [];
         if (sql.startsWith('SELECT * FROM automation_notification_plans')) return tier === 'paid' ? [] : [policy];
         if (sql.startsWith('SELECT * FROM automation_notification_slots')) return slots.map(slot => ({ ...slot }));
         if (sql.startsWith("SELECT 'auto' AS target_kind")) {
@@ -45,18 +47,19 @@ async function run({ tier = 'free', used = 0, limit = 5, locale = 'ja', manualDo
 test('checkfreeslot admits a missing users record as free and reports personal default capacity and physical-message limits', async () => {
     const { reply, calls } = await run({ ownRow: false });
     assert.equal(reply.embeds[0].title, '通知枠の利用状況');
-    assert.match(reply.embeds[0].description, /利用プラン: 無料/); assert.match(reply.embeds[0].description, /0\/5件（空き 5件）/);
+    assert.match(reply.embeds[0].description, /利用プラン: 無料/); assert.match(reply.embeds[0].description, /0\/5枠（空き 5枠）/);
     assert.match(reply.embeds[0].description, /1日24通・1分5通/); assert.match(reply.embeds[0].description, /1メッセージ/); assert.match(reply.embeds[0].description, /日本時間0時/);
     assert.doesNotMatch(reply.embeds[0].description, /寄付者限定|登録が必要|175/); assert.ok(calls.some(call => call.transaction));
 });
 test('checkfreeslot counts both auto and price paused registrations in one free allowance', async () => {
     const { reply } = await run({ used: 5 });
-    assert.match(reply.embeds[0].description, /5\/5件（空き 0件）/); assert.match(reply.embeds[0].description, /新着 3件・価格 2件/); assert.match(reply.embeds[0].description, /一時停止中の登録も/);
+    assert.match(reply.embeds[0].description, /5\/5枠（空き 0枠）/); assert.match(reply.embeds[0].description, /新着 3件・価格 2件/); assert.match(reply.embeds[0].description, /一時停止中の登録も/);
 });
 test('checkfreeslot recognizes a verified Square donation supporter without changing the manual donor flag', async () => {
     const { reply, calls } = await run({ tier: 'supporter', used: 6, limit: 8, manualDonor: false });
-    assert.match(reply.embeds[0].description, /利用プラン: 支援者/); assert.match(reply.embeds[0].description, /6\/8件（空き 2件）/); assert.match(reply.embeds[0].description, /1日100通・1分12通/); assert.match(reply.embeds[0].description, /優先度: 3/);
-    assert.ok(calls.some(call => call.sql?.includes('FROM automation_square_donation_supporters s'))); assert.ok(!calls.some(call => call.sql?.startsWith('UPDATE users')));
+    assert.match(reply.embeds[0].description, /利用プラン: 支援者/); assert.match(reply.embeds[0].description, /6\/8枠（空き 2枠）/); assert.match(reply.embeds[0].description, /1日100通・1分12通/); assert.match(reply.embeds[0].description, /優先度: 3/);
+    assert.match(reply.embeds[0].description, /決済1回・0口・追加0枠/);
+    assert.ok(calls.some(call => call.sql?.includes('FROM automation_square_donation_attempts'))); assert.ok(!calls.some(call => call.sql?.startsWith('UPDATE users')));
 });
 test('checkfreeslot uses the effective paid policy and gives safe downgrade guidance in English', async () => {
     const { reply } = await run({ tier: 'paid', used: 4, limit: 3, locale: 'en' });
