@@ -11,6 +11,13 @@ const {
 } = require('../autoWatch/_shared');
 const { extractArtistReleases } = require('./spotifySourceParser');
 const { extractArtistReleaseMetadata } = require('./spotifySourceParser/watch');
+const { readHtmlProjection } = require('../autoWatch/streaming');
+
+const RELEASE_METADATA_PATHS = [
+    ['@type'], ['@id'], ['url'], ['name'], ['datePublished'],
+    ['*', '@type'], ['*', '@id'], ['*', 'url'], ['*', 'name'], ['*', 'datePublished'],
+    ['@graph', '*', '@type'], ['@graph', '*', '@id'], ['@graph', '*', 'url'], ['@graph', '*', 'name'], ['@graph', '*', 'datePublished'],
+];
 
 function normalizeSource(input) {
     const raw = String(input || '').trim();
@@ -42,6 +49,12 @@ async function fetch(source, context) {
             Accept: 'text/html,application/xhtml+xml',
             'Accept-Language': 'en-US,en;q=0.9',
             'User-Agent': 'Mozilla/5.0 (compatible; ComebackTwitterEmbed/1.0)',
+        }),
+        readBody: response => readHtmlProjection(response, {
+            preserveHtml: true,
+            ignoreInvalidScripts: true,
+            markers: ['application/ld+json'],
+            paths: RELEASE_METADATA_PATHS,
         }),
     });
     if (response.notModified) return { notModified: true, state: source.state || {}, etag: response.etag, lastModified: response.lastModified, rateLimit: response.rateLimit };

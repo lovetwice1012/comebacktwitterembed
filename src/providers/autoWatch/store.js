@@ -3,7 +3,7 @@
 const crypto = require('crypto');
 const db = require('../../db');
 const { TABLES, ensureDatabaseSchema } = require('../../db_schema');
-const { effectivePollIntervalMs, normalizeSource, provider, ratePolicy } = require('./index');
+const { effectivePollIntervalMs, monitorConfig, normalizeSource, provider, ratePolicy } = require('./index');
 const fetchWithDeadline = require('../../providerFetch').withDeadline(require('node-fetch'));
 const eligibility = require('./eligibility');
 
@@ -250,7 +250,12 @@ async function activeSourceCounts() {
     return new Map(rows.map(row => [row.provider_id, Number(row.total || 0)]));
 }
 
-async function claimDueSources(now, limit = 16) {
+function sourceLeaseMs(config = monitorConfig()) {
+    return Math.max(SOURCE_LEASE_MS, config.timeoutMs * 3 + 30000);
+}
+
+async function claimDueSources(now, limit = 16, config = monitorConfig()) {
+    const leaseMs = sourceLeaseMs(config);
     const boundedLimit = integer(limit, 16, 1, 128);
     const rows = await db.queryDatabase(
         `SELECT s.*,
@@ -272,10 +277,10 @@ async function claimDueSources(now, limit = 16) {
             `UPDATE ${TABLES.autoWatchSources}
              SET lease_token=?, lease_expires_at_ms=?
              WHERE id=? AND next_check_at_ms<=? AND lease_expires_at_ms<=?`,
-            [leaseToken, now + SOURCE_LEASE_MS, source.id, now, now]
+            [leaseToken, now + leaseMs, source.id, now, now]
         );
         if (Number(result.affectedRows || 0) !== 1) continue;
-        claimed.push({ ...source, lease_token: leaseToken, lease_expires_at_ms: now + SOURCE_LEASE_MS });
+        claimed.push({ ...source, lease_token: leaseToken, lease_expires_at_ms: now + leaseMs });
     }
     return claimed;
 }
@@ -606,6 +611,7 @@ module.exports = {
         slotDecision,
         sourceCursorJson,
         sourceStateJson,
+        sourceLeaseMs,
         webhookUrlValid,
         windowKey,
     },

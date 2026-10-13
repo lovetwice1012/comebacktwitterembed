@@ -1,0 +1,29 @@
+{
+  "baseRevision": "02f26665277c5866c2ddb4309c1c9646f28c317b",
+  "branch": "codex/youtube-watch-streaming-20261013",
+  "scope": "Only the deployed streaming/isolation fix, targeted runner/store wiring, dependency, tests and docs; unrelated pending changes excluded.",
+  "validation": {
+    "focusedTests": {
+      "passed": 77,
+      "failed": 0,
+      "skipped": 0
+    },
+    "sqlTests": {
+      "passed": 4,
+      "failed": 0,
+      "skipped": 0,
+      "fixturePort": 33621
+    },
+    "typecheck": "passed using ignored empty config.json fixture",
+    "eslint": "passed",
+    "diffCheck": "passed",
+    "autoWatchSuite": {
+      "passed": 75,
+      "failed": 0,
+      "skipped": 0,
+      "disposableMariaDbPort": 33621
+    }
+  },
+  "productionRecord": "deployment.json",
+  "additionalCoverage": "Default resident tick must pass isolate:true and the HTTP timeout to source claims; type declarations clarified for complete TypeScript verification."
+}
