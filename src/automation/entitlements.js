@@ -43,10 +43,10 @@ function planConflict() { return error('AUTOMATION_PLAN_CONFLICT', 'プランが
 
 // Entitlements are exclusively server-managed. Request bodies never select a
 // plan, supporter status, quota, or priority for the sending user.
-async function inspectPlan(query, userId, now = Date.now()) {
+async function inspectPlan(query, userId, now = Date.now(), squareScope) {
     const id = ownerId(userId);
     const users = await query('SELECT is_donor,additional_auto_extract_slots FROM users WHERE user_id=?', [id]);
-    const square = require('./square-billing').getSquareScope();
+    const square = squareScope || require('./square-billing').getSquareScope();
     const donation = await require('./square-donations').getSquareDonationGrant(query, id, now, square);
     const additional = Number(users[0]?.additional_auto_extract_slots || 0);
     const manualExtraSlots = Number.isSafeInteger(additional) && additional > 0 ? Math.min(additional, 10000) : 0;

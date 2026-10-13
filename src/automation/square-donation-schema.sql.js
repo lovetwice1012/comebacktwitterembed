@@ -72,7 +72,8 @@ const SCHEMA = [
         updated_at_ms BIGINT NOT NULL,
         UNIQUE KEY unique_square_donation_payment (environment,merchant_id,payment_id),
         INDEX idx_square_donation_owner (owner_user_id,environment,merchant_id,created_at_ms),
-        INDEX idx_square_donation_pending (environment,merchant_id,state)
+        INDEX idx_square_donation_pending (environment,merchant_id,state),
+        INDEX idx_square_donation_donors (environment,merchant_id,state,verified,owner_user_id)
     ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
     `CREATE TABLE IF NOT EXISTS automation_square_donation_refunds (
         environment VARCHAR(16) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
