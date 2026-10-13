@@ -1,6 +1,7 @@
 'use strict';
 
 const { AutomationError, requireActor, scopeFor, hash } = require('./service');
+const entitlements = require('./entitlements');
 const eligibility = require('../providers/autoWatch/eligibility');
 const fail = (code, message, status = 400) => { throw new AutomationError(code, message, status); };
 const tableFor = kind => {
@@ -33,7 +34,6 @@ function publicMonitor(kind, row) {
 function createMonitors(db, service, destinations, options = {}) {
     const auto = options.auto || require('../providers/autoWatch');
     const price = options.price || require('../providers/priceWatch');
-    const slotDecision = options.slotDecision || require('../providers/autoWatch/store')._internal.slotDecision;
     const normalizeRule = options.normalizeRule || require('../providers/priceWatch/store').normalizeRule;
     async function lockSlots(query, kind) {
         if (kind !== 'auto') return;
@@ -159,14 +159,17 @@ function createMonitors(db, service, destinations, options = {}) {
         // newly verified destination explicitly.
         if (current && Object.keys(input).every(k => ['expectedRevision', 'enabled', 'name'].includes(k))) {
             return db.withDatabaseTransaction(async query => {
+                await entitlements.lockOwner(query, ownerId);
                 await lockSlots(query, kind);
                 const locked = await getRow(actor, kind, id, true, query, true);
                 if (Number(locked.revision || 1) !== input.expectedRevision) fail('REVISION_CONFLICT', '監視が更新されています。', 409);
                 const enabled = input.enabled === undefined ? !!locked.enabled : input.enabled === true;
-                if (enabled && !locked.enabled && kind === 'auto') {
-                    await assertRegistration(query, true);
-                    const slot = await slotDecision(query, ownerId);
-                    await query('UPDATE auto_watch_targets SET premium_slot=? WHERE id=?', [slot.premiumSlot, id]);
+                if (enabled) {
+                    const slot = await entitlements.assertSlotAvailable(query, ownerId, kind, id);
+                    if (kind === 'auto') {
+                        if (!locked.enabled) await assertRegistration(query, true);
+                        await query('UPDATE auto_watch_targets SET premium_slot=? WHERE id=?', [slot.priority > 0 ? 1 : 0, id]);
+                    }
                 }
                 await query(`UPDATE ${tableFor(kind)}_targets SET enabled=? WHERE id=?`, [enabled ? 1 : 0, id]);
                 if (enabled && !locked.enabled) {
@@ -182,6 +185,7 @@ function createMonitors(db, service, destinations, options = {}) {
         if (!destId) fail('DESTINATION_REQUIRED', '検証済みの通知先を選んでください。');
         const dest = await destination(actor, destId, scope, ownerId);
         return db.withDatabaseTransaction(async query => {
+            await entitlements.lockOwner(query, ownerId);
             await lockSlots(query, kind);
             let locked;
             if (id) {
@@ -189,15 +193,14 @@ function createMonitors(db, service, destinations, options = {}) {
                 if (Number(locked.revision || 1) !== input.expectedRevision) fail('REVISION_CONFLICT', '監視が更新されています。', 409);
             }
             if (needsRegistration(locked)) await assertRegistration(query, true);
+            if (!id || enabled) await entitlements.assertSlotAvailable(query, ownerId, kind, id || undefined);
             // Lock the destination against concurrent disable/delete after its
             // remote permission check and before adopting its identity.
             const freshDest = await service.getRow('destination', actor, destId, true, query, true);
             if (!freshDest.enabled || freshDest.revision !== dest.row.revision) fail('DESTINATION_CHANGED', '通知先が変更されました。再試行してください。', 409);
             await query('INSERT IGNORE INTO users (user_id,registered_at_ms) VALUES (?,?)', [ownerId, Date.now()]);
             let premium = Number(locked?.premium_slot || 0);
-            if (kind === 'auto' && enabled && !locked?.enabled) {
-                premium = (await slotDecision(query, ownerId)).premiumSlot;
-            }
+            if (kind === 'auto' && enabled) premium = (await entitlements.inspectPlan(query, ownerId)).priority > 0 ? 1 : 0;
             const now = Date.now(), initialDue = now + Math.floor(Math.random() * 300000);
             const table = tableFor(kind);
             if (kind === 'auto') await query(`INSERT INTO ${table}_sources (provider_id,source_key,source_url,poll_interval_ms,next_check_at_ms,created_at_ms) VALUES (?,?,?,?,?,?) ON DUPLICATE KEY UPDATE id=LAST_INSERT_ID(id)`, [providerId, normalized.sourceKey, normalized.sourceUrl, auto.provider(providerId).defaultPollMs, initialDue, now]);
@@ -224,6 +227,7 @@ function createMonitors(db, service, destinations, options = {}) {
                 const inserted = await query(`INSERT INTO ${table}_targets (${Object.keys(values).join(',')}) VALUES (${Object.keys(values).map(() => '?').join(',')})`, Object.values(values));
                 targetId = String(inserted.insertId);
             }
+            if (!id || enabled) await entitlements.assignSlot(query, ownerId, kind, String(targetId));
             if (kind === 'auto' && enabled) await require('../providers/autoWatch/intervalPolicy').bringSourceForward(query, ownerId, sourceId, now);
             await query('INSERT INTO automation_monitors (target_kind,target_id,name,scope,destination_id,revision) VALUES (?,?,?,?,?,?) ON DUPLICATE KEY UPDATE name=VALUES(name),destination_id=VALUES(destination_id),revision=revision+1', [kind, targetId, name, scope, destId, id ? Number(locked.revision || 1) + 1 : 1]);
             await service.audit(query, actor, `${kind}:${targetId}`, id ? 'monitor.update' : 'monitor.create', { providerId, destinationId: destId, enabled, usagePolicyVersion: require('./safety').POLICY_VERSION }, guildId);
@@ -231,13 +235,16 @@ function createMonitors(db, service, destinations, options = {}) {
         });
     }
     async function remove(actor, kind, id, expectedRevision) {
+        const current = await getRow(actor, kind, id, true);
         return db.withDatabaseTransaction(async query => {
+            await entitlements.lockOwner(query, current.user_id);
             const row = await getRow(actor, kind, id, true, query, true);
             if (Number(row.revision || 1) !== expectedRevision) fail('REVISION_CONFLICT', '監視が更新されています。', 409);
             await cancelPending(query, kind, id);
             await query('DELETE FROM automation_assignments WHERE target_kind=? AND target_id=?', [kind, id]);
             await query('DELETE FROM automation_monitors WHERE target_kind=? AND target_id=?', [kind, id]);
             await query(`DELETE FROM ${tableFor(kind)}_targets WHERE id=?`, [id]);
+            await entitlements.releaseSlot(query, current.user_id, kind, id);
             // Keep source observations shared with other targets and forensic
             // run history. Orphan-source GC is a separate retention operation.
             await service.audit(query, actor, `${kind}:${id}`, 'monitor.delete', {}, row.guild_id);
@@ -254,6 +261,8 @@ function createMonitors(db, service, destinations, options = {}) {
             return { detached: true };
         });
     }
-    return { providers, preview, list, getRow, save, remove, detach };
+    const operate = (actor, work) => service.withOperation(actor, 'monitor', work);
+    return { providers, preview: (actor, kind, input) => operate(actor, () => preview(actor, kind, input)), list, getRow,
+        save: (actor, kind, input, id) => id && input.enabled === false && Object.keys(input).every(key => ['expectedRevision', 'enabled'].includes(key)) ? save(actor, kind, input, id) : operate(actor, () => save(actor, kind, input, id)), remove, detach };
 }
 module.exports = { createMonitors, assertMonitorAccess, scopeOf, publicMonitor };

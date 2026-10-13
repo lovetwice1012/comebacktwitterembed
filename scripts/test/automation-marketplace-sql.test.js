@@ -12,7 +12,11 @@ const { createDictionaryService } = require('../../src/automation/dictionary-ser
 const port = Number(process.env.AUTOMATION_TEST_DB_PORT);
 
 test('real SQL marketplace: version review, pinned installs, safe updates, dictionaries, forks and moderation', { skip: !port, timeout: 90000 }, async t => {
-    const db = await createTestDatabase(port), service = createService(db), evaluator = createEvaluator(service.dictionaryData);
+    // This fixture exercises publication/access/version semantics repeatedly.
+    // Keep real durable admission with explicit high test-only ceilings;
+    // production defaults are verified by the separate service-policy suite.
+    const fixturePolicy = { rateOptions: { policy: { operations: { write: { minute: 1000, hour: 1000 }, publication: { minute: 1000, hour: 1000 } } } } };
+    const db = await createTestDatabase(port), service = createService(db, fixturePolicy), evaluator = createEvaluator(service.dictionaryData);
     const moderation = createModeration(db, service, evaluator), market = createMarketplace(db, { service, evaluator, moderationMatcher: moderation });
     const owner = { userId: '222222222222222222', guildId: '111111111111111111', canView: true, canEdit: true };
     const member = { ...owner, userId: '333333333333333333' }, admin = { ...owner, userId: '444444444444444444', isAdmin: true };
@@ -220,7 +224,7 @@ test('real SQL marketplace: version review, pinned installs, safe updates, dicti
                     if (sql.includes('FOR UPDATE')) attemptedLock();
                     return query(sql, params);
                 })) };
-                const revoker = createMarketplace(revokingDb), order = [];
+                const revoker = createMarketplace(revokingDb, { service: createService(revokingDb, fixturePolicy) }), order = [];
                 // Start outside the installation transaction's async context.
                 const revocation = (async () => {
                     await reading;

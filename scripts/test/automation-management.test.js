@@ -7,6 +7,9 @@ const { assertMonitorAccess, publicMonitor, createMonitors } = require('../../sr
 const { createService } = require('../../src/automation/service');
 const G = '111111111111111111', U = '222222222222222222', B = '333333333333333333', C = '444444444444444444', W = '555555555555555555';
 const actor = { userId: U, guildId: G, canView: true, canEdit: true };
+// Permission-only fixtures explicitly replace operation admission; SQL quota
+// enforcement is exercised by the service-policy and rate-limit SQL suites.
+const operationFixture = { withOperation: async (_actor, _group, work) => work() };
 const guild = { id: G, owner_id: '666666666666666666' };
 const member = { user: { id: U }, roles: ['r1', 'r2'] };
 const channel = { id: C, guild_id: G, type: 0, name: 'test', permission_overwrites: [] };
@@ -62,24 +65,24 @@ test('channel creation requires fresh caller AND bot permissions; owned hook reu
     const mock = discordMock();
     const saved = [];
     const db = { queryDatabase: async () => [{ id: '7' }], withDatabaseTransaction: async fn => fn(async sql => sql.startsWith('SELECT id') ? [{ id: '7' }] : {}) };
-    const api = createDestinations(db, { saveDestination: async (...args) => { saved.push(args); return { id: 'resource' }; } }, mock);
+    const api = createDestinations(db, { ...operationFixture, saveDestination: async (...args) => { saved.push(args); return { id: 'resource' }; } }, mock);
     assert((await api.channels(actor)).items[0].canCreateWebhook);
     await api.save(actor, { name: 'notify', kind: 'channel', channelId: C, scope: 'guild' });
     assert.equal(saved[0][2].createdByBot, true);
     assert(!mock.calls.some(call => call.init?.method === 'POST'));
     const denied = discordMock(channel, [{ id: G, permissions: String(VIEW | SEND) }]);
-    await assert.rejects(createDestinations(db, {}, denied).save(actor, { name: 'notify', kind: 'channel', channelId: C, scope: 'guild' }), { code: 'CHANNEL_PERMISSION' });
+    await assert.rejects(createDestinations(db, operationFixture, denied).save(actor, { name: 'notify', kind: 'channel', channelId: C, scope: 'guild' }), { code: 'CHANNEL_PERMISSION' });
     assert(!denied.calls.some(call => call.init?.method === 'POST'));
     const botDenied = discordMock({ ...channel, permission_overwrites: [{ id: B, type: 1, deny: String(MANAGE_WEBHOOKS), allow: '0' }] });
-    await assert.rejects(createDestinations(db, {}, botDenied).save(actor, { name: 'notify', kind: 'channel', channelId: C }), { code: 'BOT_CHANNEL_PERMISSION' });
+    await assert.rejects(createDestinations(db, operationFixture, botDenied).save(actor, { name: 'notify', kind: 'channel', channelId: C }), { code: 'BOT_CHANNEL_PERMISSION' });
 });
 
 test('unauthorized destination edits fail before Discord access and error responses cannot include secrets', async () => {
     let calls = 0;
-    const service = { getRow: async () => { throw Object.assign(new Error('not found'), { status: 404 }); } };
+    const service = { ...operationFixture, getRow: async () => { throw Object.assign(new Error('not found'), { status: 404 }); } };
     await assert.rejects(createDestinations({}, service, { rest: async () => { calls++; } }).save(actor, { kind: 'channel', name: 'x', channelId: C }, 'bad'), { status: 404 });
     assert.equal(calls, 0);
-    const api = createDestinations({}, {}, { rest: async () => { throw Object.assign(new Error(secret), { status: 500, token: secret }); } });
+    const api = createDestinations({}, operationFixture, { rest: async () => { throw Object.assign(new Error(secret), { status: 500, token: secret }); } });
     await assert.rejects(api.save(actor, { name: 'x', kind: 'webhook', webhookUrl: `https://discord.com/api/webhooks/${W}/${secret}` }), error => !JSON.stringify(error).includes(secret) && !error.message.includes(secret));
 });
 

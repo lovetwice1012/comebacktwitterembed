@@ -4,11 +4,17 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Circle, Info, LockKeyhole } from "lucide-react";
 import type { AutomationApi } from "./rule-editor";
 import { valueLabels } from "./rule-labels";
+import { automationErrorMessage } from "./automation-feedback";
 const button = "rounded border bg-background px-3 py-2 text-sm hover:bg-muted disabled:opacity-40";
 const field = "rounded border bg-background px-3 py-2 text-sm";
 const states: Record<string, string> = { pending: "送信待ち", held: "確認待ち", leased: "準備中", sending: "送信中", aggregated: "まとめ通知", sent: "送信済み", unknown: "送信結果不明", partial: "一部送信済み", failed: "失敗", expired: "期限切れ", cancelled: "取り消し済み", excluded: "送信対象外" };
 const reasons: Record<string, string> = { SEND_LEASE_EXPIRED: "Discordで送信結果を確認してください。", QUEUE_PLAN_INVALID: "配信内容を確認してください。", FLOW_MEMBERS_CANCELLED: "対象の通知が取り消されました。", FLOW_MEMBERSHIP_CHANGED: "通知内容を確認し直しています。", WORKFLOW_PAUSED: "詳細ルールが停止中です。", DEADLINE_EXCEEDED: "配信期限を過ぎました。", NO_DELIVERY_WINDOW: "期限内の通知可能時間がありません。", WAIT_FOR_WINDOW: "通知可能時間を待っています。", MONITOR_CHANGED: "通知設定が変更されました。", DESTINATION_DELETED: "通知先が削除されました。", DESTINATION_DISABLED: "通知先が停止中です。", DESTINATION_SCOPE_CHANGED: "通知先の公開範囲が変わりました。", RATE_GATE_LIMIT: "通知件数の上限に達しました。", RATE_GATE_DEADLINE: "通知件数の上限により期限を過ぎました。", RATE_GATE_DEFERRED: "通知件数の上限により待機中です。", PARENT_CANCELLED: "まとめ通知が取り消されました。" };
 function reason(code?: string) {
+  if (code === "AUTOMATION_SLOT_LIMIT") return "現在のプランではこの通知枠を利用できません。不要な通知を削除して利用枠を確認してください。";
+  if (code === "AUTOMATION_RATE_LIMITED") return "この通知枠の送信上限に達したため、次に送信できる時刻まで待機しています。1通は実際に送信したメッセージ1件として数えます。";
+  if (code === "AUTOMATION_RATE_LIMIT_UNAVAILABLE") return "通知件数の上限を確認できないため待機しています。時間をおいて自動で再確認します。";
+  if (code === "AUTOMATION_NOTIFICATION_BATCH_LIMIT") return "1回の通知のメッセージ数が上限を超えています。通知内容を短くするか、まとめる件数を減らしてください。";
+  if (["AUTOMATION_DELIVERY_RATE_LIMIT", "AUTOMATION_DELIVERY_SIZE_LIMIT"].includes(code || "")) return automationErrorMessage({ code });
   if (code === "AGGREGATE_SUPERSEDED") return "最新の内容に置き換えました。";
   if (code === "LEGACY_REVIEW_ENDED") return "旧版の配信内容と通知先を確認してください。";
   if (["SAFETY_VERIFIER_UNAVAILABLE", "SAFETY_CHECK_TIMEOUT", "SAFETY_CHECK_FAILED", "SAFETY_INVALID_ASSESSMENT", "SAFETY_DEPENDENCIES_UNAVAILABLE"].includes(code || "")) return "チェックに失敗しました。時間をおいて再試行してください。";

@@ -159,10 +159,28 @@ function createQueue(db, evaluator, options = {}) {
             await query("UPDATE automation_jobs SET state=IF(sent_steps>0 OR discord_message_id IS NOT NULL,'partial','failed'),last_error_code='LEGACY_REVIEW_ENDED',lease_token=NULL,lease_until_ms=0,updated_at_ms=? WHERE state='held'", [now]);
             await query("UPDATE automation_jobs SET state='unknown',last_error_code='SEND_LEASE_EXPIRED',lease_token=NULL,lease_until_ms=0,updated_at_ms=? WHERE state='sending' AND lease_until_ms<=?", [now, now]);
             await query("UPDATE automation_jobs child JOIN automation_jobs parent ON child.parent_job_id=parent.id SET child.state=parent.state,child.last_error_code=parent.last_error_code,child.updated_at_ms=? WHERE child.state='aggregated' AND parent.state IN ('unknown','partial','cancelled','sent','failed','expired','excluded')", [now]);
+            const priorityKey = hash('automation:discord:priority-turn');
+            await query('INSERT INTO automation_counters (counter_key,used_count,expires_at_ms) VALUES (?,0,?) ON DUPLICATE KEY UPDATE counter_key=VALUES(counter_key)', [priorityKey, Number.MAX_SAFE_INTEGER]);
+            const turn = Number((await query('SELECT used_count FROM automation_counters WHERE counter_key=? FOR UPDATE', [priorityKey]))[0]?.used_count || 0) % 4;
+            const square = require('./square-billing').getSquareScope();
+            const supporter = `u.is_donor=1${square.configured ? ' OR ds.active=1' : ''}`;
+            const priority = `COALESCE(p.priority,${square.configured ? 'sp.priority,' : ''}b.priority,IF(${supporter},1,0))`;
+            const validPolicy = alias => `${alias}.slot_limit BETWEEN 1 AND 10000 AND ${alias}.minute_limit BETWEEN 1 AND 10000 AND ${alias}.day_limit BETWEEN 1 AND 1000000 AND ${alias}.priority BETWEEN 0 AND 100`;
+            // Three priority turns, then an oldest-first turn. This durable
+            // shared fair turn also serves lower nonzero priorities when an
+            // administrator changes the free/supporter defaults.
             const rows = await query(`SELECT j.*,r.workflow_id,r.revision,r.target_kind,r.target_id,r.owner_user_id,r.guild_id,r.scope
-                FROM automation_jobs j JOIN automation_runs r ON r.id=j.run_id WHERE
+                FROM automation_jobs j JOIN automation_runs r ON r.id=j.run_id
+                LEFT JOIN users u ON u.user_id=r.owner_user_id
+                LEFT JOIN automation_notification_entitlements e ON e.owner_user_id=r.owner_user_id AND (e.expires_at_ms IS NULL OR e.expires_at_ms>?)
+                LEFT JOIN automation_notification_plans p ON p.plan_id=e.plan_id AND p.enabled=1 AND p.plan_id NOT IN ('free','supporter') AND ${validPolicy('p')}
+                ${square.configured ? `LEFT JOIN automation_square_subscriptions ss ON ss.owner_user_id=r.owner_user_id AND ss.environment=? AND ss.merchant_id=? AND ss.verified=1 AND ss.state IN ('ACTIVE','CANCELED') AND ss.valid_until_at_ms>?
+                LEFT JOIN automation_notification_plans sp ON sp.plan_id=ss.plan_id AND sp.enabled=1 AND sp.plan_id NOT IN ('free','supporter') AND ${validPolicy('sp')}
+                LEFT JOIN automation_square_donation_policy dp ON dp.environment=? AND dp.merchant_id=? AND dp.supporter_threshold>0
+                LEFT JOIN automation_square_donation_supporters ds ON ds.owner_user_id=r.owner_user_id AND ds.environment=dp.environment AND ds.merchant_id=dp.merchant_id AND ds.policy_updated_at_ms=dp.updated_at_ms AND ds.active=1 AND (ds.valid_until_at_ms IS NULL OR ds.valid_until_at_ms>?)` : ''}
+                LEFT JOIN automation_notification_plans b ON b.plan_id=IF(${supporter},'supporter','free') AND ${validPolicy('b')} WHERE
                 (j.state='pending' AND j.due_at_ms<=? OR j.state='leased' AND j.lease_until_ms<=?)
-                ORDER BY j.due_at_ms,j.id LIMIT 1 FOR UPDATE`, [now, now]);
+                ORDER BY ${turn === 3 ? '' : `${priority} DESC,`}j.due_at_ms,j.created_at_ms,j.id LIMIT 1 FOR UPDATE`, [now, ...(square.configured ? [square.environment, square.merchantId, now, square.environment, square.merchantId, now] : []), now, now]);
             if (!rows.length) return null;
             const job = rows[0], token = randomUUID();
             let plan;
@@ -178,23 +196,37 @@ function createQueue(db, evaluator, options = {}) {
                 return null;
             }
             await query("UPDATE automation_jobs SET state='leased',lease_token=?,lease_until_ms=?,updated_at_ms=? WHERE id=?", [token, now + 120000, now, job.id]);
+            await query('UPDATE automation_counters SET used_count=? WHERE counter_key=?', [(turn + 1) % 4, priorityKey]);
             return { ...job, state: 'leased', lease_token: token, lease_until_ms: now + 120000, plan };
         });
     }
     async function validFlowMembers(query, job, plan, lock = false) {
         const members = Array.isArray(plan.members) ? plan.members : [];
         const accepted = [], missing = [];
-        let paused = false;
+        const eligibility = new Map();
+        let paused = false, eligibilityCode = null;
         for (const member of members) {
             if (!member || !['auto', 'price'].includes(member.targetKind) || !/^\d{1,20}$/.test(String(member.targetId))) { missing.push(member); continue; }
+            const key = `${member.targetKind}:${member.targetId}`;
+            if (!eligibility.has(key)) {
+                try {
+                    await require('./entitlements').resolveNotificationEntitlement(db, { ownerUserId: job.owner_user_id, targetKind: member.targetKind, targetId: String(member.targetId) });
+                    eligibility.set(key, true);
+                } catch (error) {
+                    if (!['AUTOMATION_SLOT_LIMIT', 'AUTOMATION_NOT_FOUND'].includes(error.code)) throw error;
+                    if (error.code === 'AUTOMATION_SLOT_LIMIT') eligibilityCode = error.code;
+                    eligibility.set(key, false);
+                }
+            }
+            if (!eligibility.get(key)) { missing.push(member); continue; }
             const target = await snapshot(query, member.targetKind, member.targetId, lock);
             const valid = target?.enabled && !target.deleted_at_ms && Number(target.monitor_revision || 1) === Number(member.monitorRevision)
-                && targetIdentity(target) === member.targetIdentity && (job.workflow_id || null) === (target.workflow_id || null);
+                && target.user_id === job.owner_user_id && targetIdentity(target) === member.targetIdentity && (job.workflow_id || null) === (target.workflow_id || null);
             if (!valid) { missing.push(member); continue; }
             if (job.workflow_id && !target.workflow_enabled) paused = true;
             accepted.push(member);
         }
-        return { accepted, changed: missing.length > 0, paused };
+        return { accepted, changed: missing.length > 0, paused, eligibilityCode };
     }
     async function refreshFlowJob(job, now = Date.now()) {
         if (!job.plan?.flowV2) return { state: 'ready', job };
@@ -206,16 +238,17 @@ function createQueue(db, evaluator, options = {}) {
             try { plan = parse(row.plan_json); } catch { return { state: 'failed', code: 'QUEUE_PLAN_INVALID' }; }
             if (!plan?.flowV2 || !Array.isArray(plan.members)) return { state: 'failed', code: 'QUEUE_PLAN_INVALID' };
             const status = await validFlowMembers(query, job, plan, true);
-            if (!status.accepted.length) return { state: 'cancelled', code: 'FLOW_MEMBERS_CANCELLED' };
+            if (!status.accepted.length) return status.eligibilityCode ? { state: 'excluded', code: status.eligibilityCode } : { state: 'cancelled', code: 'FLOW_MEMBERS_CANCELLED' };
             if (status.changed) {
                 const memberIds = new Set(status.accepted.map(member => member.id));
                 plan.members = status.accepted;
                 plan.flowV2.members = (plan.flowV2.members || []).filter(member => memberIds.has(member.memberId));
                 plan.event = plan.members[0].event; plan.display = plan.members[0].display; plan.text = plan.members[0].text;
-                plan.deadlineMs = earliest(plan.members.map(member => member.deadlineMs));
+                plan.deadlineMs = plan.members.reduce((deadline, member) => earliest(deadline, member.deadlineMs), null);
+                plan.schedules = require('./flow-projector').uniqueSchedules(plan.members);
                 await query('UPDATE automation_jobs SET plan_json=?,deadline_ms=?,updated_at_ms=? WHERE id=? AND lease_token=?', [JSON.stringify(plan), plan.deadlineMs, now, job.id, job.lease_token]);
             }
-            return { state: status.paused ? 'pending' : 'ready', code: status.paused ? 'WORKFLOW_PAUSED' : null, dueAtMs: status.paused ? now + 60000 : null, job: { ...job, plan } };
+            return { state: status.paused ? 'pending' : 'ready', code: status.paused ? 'WORKFLOW_PAUSED' : null, dueAtMs: status.paused ? now + 60000 : null, job: { ...job, deadline_ms: plan.deadlineMs, plan } };
         });
     }
     async function check(job, now = Date.now(), query = queryDB, lock = false) {
@@ -223,7 +256,7 @@ function createQueue(db, evaluator, options = {}) {
         catch (error) { if (error instanceof require('./safety').SafetyError) return { state: error.decision === 'deny' ? 'excluded' : 'failed', code: error.code }; throw error; }
         if (job.plan?.flowV2) {
             const flow = await validFlowMembers(query, job, job.plan, lock);
-            if (!flow.accepted.length) return { state: 'cancelled', code: 'FLOW_MEMBERS_CANCELLED' };
+            if (!flow.accepted.length) return flow.eligibilityCode ? { state: 'excluded', code: flow.eligibilityCode } : { state: 'cancelled', code: 'FLOW_MEMBERS_CANCELLED' };
             if (flow.changed) return { state: 'pending', code: 'FLOW_MEMBERSHIP_CHANGED', dueAtMs: now };
             if (flow.paused) return { state: 'pending', code: 'WORKFLOW_PAUSED', dueAtMs: now + 60000 };
             const target = await snapshot(query, flow.accepted[0].targetKind, flow.accepted[0].targetId, lock);

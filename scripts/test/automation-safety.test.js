@@ -7,11 +7,14 @@ const { createRunner } = require('../../src/automation/runtime');
 const U = '222222222222222222', C = '333333333333333333', M = '444444444444444444';
 const job = () => ({ id: 'fixture', owner_user_id: U, target_kind: 'auto', plan: { context: {}, event: {}, display: { format: 'text', media: 'inherit' }, text: 'harmless fixture' } });
 const client = { options: { jsonTransformer: x => x } };
+const rateLimiter = { reserveNotifications: async (_principal, count) => ({ count, expiresAtMs: Number.MAX_SAFE_INTEGER }), beginNotification: async () => {}, commitNotification: async () => {}, releaseNotifications: async () => {}, retainUnknownNotification: async () => {} };
+const entitlementResolver = async (_db, input) => ({ slotId: `${input.ownerUserId}:1`, slotIndex: 1, minuteLimit: 5, dayLimit: 24 });
+const membershipResolver = async (_db, job) => [{ targetKind: job.target_kind, targetId: String(job.target_id) }];
 const approval = fingerprint => ({ fingerprint, policyVersion: POLICY_VERSION, detectorVersion: 'fixture-only-not-a-classifier', decision: 'allow', expiresAtMs: Date.now() + 10000 });
 test('built-in mechanical checks work without external verifier or human approval for every format', async () => {
     let messages = 0;
     const rest = { post: async route => { if (route === '/users/@me/channels') return { id: C }; messages++; return { id: M, channel_id: C }; } };
-    const transport = createTransport({}, {}, client, { rest });
+    const transport = createTransport({}, {}, client, { rest, rateLimiter, entitlementResolver, membershipResolver });
     for (const variant of [{ display: { format: 'text', media: 'inherit' } }, { display: { format: 'url', media: 'inherit' } }, { display: { format: 'card', media: 'inherit' } }, { defaultPriceText: 'price observation' }, { members: [{ text: 'aggregate' }] }]) {
         const record = job(); Object.assign(record.plan, variant);
         const prepared = await transport.prepare(record, { kind: 'dm', dm_user_id: U });
@@ -31,7 +34,7 @@ test('a valid fixture verdict permits only prepared messages and is rechecked on
     let checked = 0, messages = 0;
     const safety = createSafety({ verifier: { inspect: async ({ fingerprint }) => { checked++; return approval(fingerprint); } } });
     const rest = { post: async route => { if (route === '/users/@me/channels') return { id: C }; messages++; return { id: M, channel_id: C }; } };
-    const transport = createTransport({}, {}, client, { rest, safety });
+    const transport = createTransport({}, {}, client, { rest, safety, rateLimiter, entitlementResolver, membershipResolver });
     const record = job(), prepared = await transport.prepare(record, { kind: 'dm', dm_user_id: U });
     await assert.rejects(transport.sendStep({ ...prepared }, record, 0), { code: 'SAFETY_UNPREPARED_MESSAGE' });
     assert.equal(await transport.sendStep(prepared, record, 0), M);

@@ -542,7 +542,7 @@ async function workspaceFixture({ existing = null, canEdit = true, activationFai
             result = { ...validation, text: stringifyDraft(definition, body.format), ...(validation.valid ? { definition } : {}) };
         } else if (route === 'workflows' && options.method === 'GET') result = { items: stored ? [stored] : [] };
         else if (route === 'workflows' && options.method === 'POST') {
-            if (saveRateLimited) { saveRateLimited = false; return new Response(JSON.stringify({ status: 429, error: 'internal quota implementation' }), { status: 429, headers: { 'Retry-After': '2' } }); }
+            if (saveRateLimited) { saveRateLimited = false; return new Response(JSON.stringify({ code: 'AUTOMATION_RATE_LIMITED', error: 'internal quota implementation' }), { status: 429, headers: { 'Retry-After': '2' } }); }
             stored = { id: 'saved-rule', name: body.definition.name, draft: structuredClone(body.definition), bindings: structuredClone(body.bindings), scope: body.scope, revision: 1, enabled: false, activeRevision: null };
             result = structuredClone(stored);
         } else if (route === `workflows/${stored?.id}` && options.method === 'GET') result = structuredClone(stored);
@@ -1019,16 +1019,21 @@ test('rate-limit responses retain issues and parse bounded body delays or Retry-
     try {
         const { automationResponseError: responseError, automationRetryDelay: delay } = f.exports;
         const issue = { nodeId: 'send', message: '分岐を減らしてください。' };
-        const fromHeader = responseError({ status: 429, error: 'PRIVATE_INTERNAL_ERROR', issues: [issue] }, new Response('', { status: 429, headers: { 'Retry-After': '3' } }));
+        const fromHeader = responseError({ code: 'AUTOMATION_RATE_LIMITED', error: 'PRIVATE_INTERNAL_ERROR', issues: [issue] }, new Response('', { status: 429, headers: { 'Retry-After': '3' } }));
         assert.equal(fromHeader.retryAfterMs, 3000); assert.deepEqual(fromHeader.issues, [issue]);
         assert.match(fromHeader.message, /約3秒/); assert(!fromHeader.message.includes('PRIVATE_INTERNAL_ERROR'));
-        assert.equal(responseError({ status: 429, retryAfterMs: 1400 }, new Response('', { status: 429, headers: { 'Retry-After': '9' } })).retryAfterMs, 1400);
-        assert.equal(responseError({ status: 429, retryAfterMs: -1 }, new Response('', { status: 429, headers: { 'Retry-After': '2' } })).retryAfterMs, 2000);
-        assert.equal(responseError({ status: 429, retryAfterMs: Number.MAX_VALUE }, new Response('', { status: 429 })).retryAfterMs, 86400000);
+        assert.equal(responseError({ code: 'AUTOMATION_RATE_LIMITED', retryAfterMs: 1400 }, new Response('', { status: 429, headers: { 'Retry-After': '9' } })).retryAfterMs, 1400);
+        assert.equal(responseError({ code: 'AUTOMATION_RATE_LIMITED', retryAfterMs: -1 }, new Response('', { status: 429, headers: { 'Retry-After': '2' } })).retryAfterMs, 2000);
+        assert.equal(responseError({ code: 'AUTOMATION_RATE_LIMITED', retryAfterMs: Number.MAX_VALUE }, new Response('', { status: 429 })).retryAfterMs, 86400000);
         assert.equal(responseError({}, new Response('', { status: 429, headers: { 'Retry-After': 'invalid' } })).retryAfterMs, 1000);
-        assert.equal(delay({ status: 429, retryAfterMs: 0 }), 1000);
-        assert.equal(delay({ status: 400, retryAfterMs: 2000 }), null);
-
+        assert.equal(delay({ code: 'AUTOMATION_RATE_LIMITED', retryAfterMs: 0 }), 1000);
+        assert.equal(delay({ code: 'AUTOMATION_FANOUT_LIMIT', retryAfterMs: 2000 }), null);
+        const unavailable = responseError({ code: 'AUTOMATION_RATE_LIMIT_UNAVAILABLE', retryAfterMs: 60000, error: 'PRIVATE_DB_ERROR' }, new Response('', { status: 503 }));
+        assert.equal(unavailable.retryAfterMs, 60000); assert.match(unavailable.message, /利用制限を確認できません/); assert(!unavailable.message.includes('PRIVATE_DB_ERROR'));
+        const slots = responseError({ code: 'AUTOMATION_SLOT_LIMIT', maxSlots: 5, availableSlots: 0, planName: '無料プラン', error: 'PRIVATE_SLOT_IMPLEMENTATION', issues: [issue] }, new Response('', { status: 400 }));
+        assert.match(slots.message, /無料プラン.*残り0枠／最大5枠/); assert(!slots.message.includes('PRIVATE_SLOT_IMPLEMENTATION')); assert.deepEqual(slots.issues, [issue]);
+        const slotRate = responseError({ code: 'AUTOMATION_RATE_LIMITED', scope: 'slot', retryAfterMs: 86400000 }, new Response('', { status: 429 }));
+        assert.match(slotRate.message, /この通知枠.*実際に送信したメッセージ1件/); assert.equal(slotRate.retryAfterMs, 86400000);
     } finally { await f.close(); }
 });
 
@@ -1036,7 +1041,7 @@ test('unchanged blocks automatically validate after a service cooldown without r
     const original = branchedRule(), calls = [];
     const api = async (_route, _method, body) => {
         calls.push(structuredClone(body));
-        if (calls.length === 1) throw Object.assign(new Error('INTERNAL_QUOTA_STATE'), { status: 429, retryAfterMs: 350 });
+        if (calls.length === 1) throw Object.assign(new Error('INTERNAL_QUOTA_STATE'), { code: 'AUTOMATION_RATE_LIMITED', retryAfterMs: 350 });
         return validationReply(body);
     };
     const f = await editorFixture(original, { controlledFlow: true, api });
@@ -1058,7 +1063,7 @@ test('unchanged blocks automatically validate after a service cooldown without r
 test('throttled source validation preserves text while read-only and resumes the exact draft once editing is unlocked', async () => {
     const original = arbitraryRule(); let textRequests = 0;
     const api = async (_route, _method, body) => {
-        if (body.text !== undefined && ++textRequests === 1) throw Object.assign(new Error('limited'), { status: 429, retryAfterMs: 250 });
+        if (body.text !== undefined && ++textRequests === 1) throw Object.assign(new Error('limited'), { code: 'AUTOMATION_RATE_LIMITED', retryAfterMs: 250 });
         return validationReply(body);
     };
     const f = await editorFixture(original, { controlledFlow: true, api });
@@ -1084,14 +1089,29 @@ test('a stale 429 cannot suppress validation of another rule and an unmounted ed
     const f = await editorFixture(original, { controlledFlow: true, api });
     try {
         await f.replace(replacement);
-        await f.act(async () => rejectFirst(Object.assign(new Error('STALE_PRIVATE_ERROR'), { status: 429, retryAfterMs: 60000 })));
+        await f.act(async () => rejectFirst(Object.assign(new Error('STALE_PRIVATE_ERROR'), { code: 'AUTOMATION_RATE_LIMITED', retryAfterMs: 60000 })));
         await settle(f); assert.equal(calls, 2); assert.equal(f.valid(), true);
         assert.deepEqual(f.latest(), replacement); assert(!f.container.textContent.includes('STALE_PRIVATE_ERROR')); assert(!f.container.textContent.includes('自動で再確認'));
     } finally { await f.close(); }
     let retryCalls = 0;
-    const pending = await editorFixture(original, { controlledFlow: true, api: async () => { retryCalls++; throw Object.assign(new Error('limited'), { status: 429, retryAfterMs: 300 }); } });
+    const pending = await editorFixture(original, { controlledFlow: true, api: async () => { retryCalls++; throw Object.assign(new Error('limited'), { code: 'AUTOMATION_RATE_LIMITED', retryAfterMs: 300 }); } });
     assert.equal(retryCalls, 1); await pending.close(); await new Promise(resolve => setTimeout(resolve, 360));
     assert.equal(retryCalls, 1);
+});
+
+test('service fanout issues open the exact block without hiding its canvas or leaking backend diagnostics', async () => {
+    const original = branchedRule(), message = 'この分岐からの通知が上限を超えています。';
+    const api = async () => { throw Object.assign(new Error('PRIVATE_PLAN_DEBUG'), { code: 'AUTOMATION_NOTIFICATION_BATCH_LIMIT', issues: [{ nodeId: 'gate_c91', message }] }); };
+    const f = await editorFixture(original, { controlledFlow: true, api });
+    try {
+        assert.equal(f.valid(), false); assert(!f.container.textContent.includes('PRIVATE_PLAN_DEBUG'));
+        assert.match(f.container.textContent, /分岐・通知ブロックを減らして/);
+        const canvas = f.container.querySelector('.studio-canvas-surface');
+        await press(f, message);
+        assert.equal(f.container.querySelector('.studio-canvas-surface'), canvas);
+        assert.equal(f.flowControl.props.nodes.find(node => node.id === 'gate_c91').data.editing, true);
+        assert.deepEqual(f.latest(), original);
+    } finally { await f.close(); }
 });
 
 test('a throttled save shows Retry-After feedback, retains an editable draft and succeeds on a manual retry', async () => {
@@ -1107,5 +1127,18 @@ test('a throttled save shows Retry-After feedback, retains an editable draft and
         assert.equal(button(f, '下書きを保存').disabled, false);
         await press(f, '下書きを保存'); await settle(f);
         assert.equal(f.stored().name, '消してはいけないルール'); assert.match(f.container.textContent, /下書きを保存しました/);
+    } finally { await f.close(); }
+});
+
+test('service notification limits appear in delivery history as waiting or content corrections rather than raw error codes', async () => {
+    const f = await reactFixture('export { DeliveryHistory } from "./components/automation/delivery-history";');
+    const api = async () => ({ items: [
+        { id: 'waiting', state: 'pending', providerId: 'youtube', title: '待機している通知', dueAtMs: 2000, errorCode: 'AUTOMATION_RATE_LIMITED' },
+        { id: 'too-long', state: 'failed', providerId: 'youtube', title: '長すぎる通知', dueAtMs: 1000, errorCode: 'AUTOMATION_NOTIFICATION_BATCH_LIMIT' },
+    ], nextCursor: null });
+    try {
+        await f.render(f.React.createElement(f.exports.DeliveryHistory, { api, canEdit: true })); await f.settle();
+        assert.match(f.container.textContent, /次に送信できる時刻まで待機/); assert.match(f.container.textContent, /通知内容を短くするか、まとめる件数を減らして/);
+        assert(!f.container.textContent.includes('AUTOMATION_'));
     } finally { await f.close(); }
 });

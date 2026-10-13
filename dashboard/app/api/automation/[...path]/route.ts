@@ -3,6 +3,7 @@ import { ApiError, json, requireSession } from "@/lib/api";
 import { getGuildAccess } from "@/lib/discord";
 import { automationServices } from "@/lib/automation-server";
 import { AdmissionError, bodyLimit, reserveAdmission } from "@/lib/automation-admission";
+import { assertDashboardFleetWriteAuthority, DashboardFleetAuthorityError } from "@/lib/fleet-authority";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -43,6 +44,9 @@ async function handle(req: NextRequest, { params }: Params) {
     const actor = { userId: session.user.id, guildId, canView: access?.canView === true, canEdit: access?.canEdit === true, isAdmin: session.user.isAdmin === true };
     const { path } = await params;
     if (path.length > 3) throw new ApiError(404, "ページが見つかりません。");
+    // Reconciliation can recover pending payments and update entitlements.
+    // It is a write even though the client only requests status.
+    if (req.method === "GET" && path[0] === "billing" && (path[1] === "status" && !path[2] || path[1] === "donations" && path[2] === "status")) assertDashboardFleetWriteAuthority();
     const maxBody = mutation ? bodyLimit(`/${path.join("/")}`) : 0;
     const claimedLength = req.headers.get("content-length");
     if (claimedLength !== null && (!/^\d+$/.test(claimedLength) || Number(claimedLength) > maxBody)) throw new ApiError(413, "入力が大きすぎます。");
@@ -55,9 +59,18 @@ async function handle(req: NextRequest, { params }: Params) {
     return response;
   } catch (error: any) {
     const dictionaryError = /^DICTIONARY_[A-Z_]+$/.test(String(error.code || error.message || ""));
-    const known = error instanceof ApiError || error instanceof AdmissionError || error.name === "AutomationError" || ["AUTOMATION_RULE_INVALID", "AUTOMATION_TEXT_LIMIT"].includes(error.code) || dictionaryError;
-    const response = json({ error: known ? error.message : "操作に失敗しました。設定とサービスの状態を確認してください。", code: known ? error.code || null : "AUTOMATION_REQUEST_FAILED", issues: known ? error.issues : undefined }, known ? error.status || 400 : 500);
+    const known = error instanceof ApiError || error instanceof AdmissionError || error instanceof DashboardFleetAuthorityError || error.name === "AutomationError" || ["AUTOMATION_RULE_INVALID", "AUTOMATION_TEXT_LIMIT"].includes(error.code) || dictionaryError;
+    const retryAfterMs = known && Number.isFinite(error.retryAfterMs) && error.retryAfterMs > 0 ? Math.min(86400000, Math.ceil(error.retryAfterMs)) : undefined;
+    const response = json({ error: known ? error.message : "操作に失敗しました。設定とサービスの状態を確認してください。", code: known ? error.code || null : "AUTOMATION_REQUEST_FAILED", issues: known ? error.issues : undefined, retryAfterMs,
+      limit: known && Number.isSafeInteger(error.limit) ? error.limit : undefined,
+      windowMs: known && Number.isSafeInteger(error.windowMs) ? error.windowMs : undefined,
+      scope: known && typeof error.scope === "string" ? error.scope : undefined,
+      maxSlots: known && Number.isSafeInteger(error.maxSlots) ? error.maxSlots : undefined,
+      availableSlots: known && Number.isSafeInteger(error.availableSlots) ? error.availableSlots : undefined,
+      planName: known && typeof error.planName === "string" && error.planName.length <= 120 ? error.planName : undefined }, known ? error.status || 400 : 500);
     if (error instanceof AdmissionError) response.headers.set("Retry-After", "60");
+    else if (error instanceof DashboardFleetAuthorityError) response.headers.set("Retry-After", "5");
+    else if (retryAfterMs) response.headers.set("Retry-After", String(Math.max(1, Math.ceil(retryAfterMs / 1000))));
     return response;
   } finally { release?.(); }
 }

@@ -58,6 +58,8 @@ function createDictionaryService(db, service, evaluator) {
         const text = await evaluator.dictionaryTask({ operation: 'export', dictionary: data, format });
         return { text, format, revision: Number(revision || row.revision) };
     }
-    return { preview, save, page, patch, versions, diff, restore, exportData };
+    return { preview, save: (actor, input, id) => service.withOperation(actor, 'write', () => save(actor, input, id)), page,
+        patch: (actor, id, input) => service.withOperation(actor, 'write', () => patch(actor, id, input)), versions, diff,
+        restore: (actor, id, input) => service.withOperation(actor, 'write', () => restore(actor, id, input)), exportData };
 }
 module.exports = { createDictionaryService };

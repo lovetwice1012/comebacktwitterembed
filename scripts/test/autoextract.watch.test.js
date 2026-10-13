@@ -10,19 +10,29 @@ const storePath = require.resolve('../../src/providers/autoWatch/store');
 const webhookDestinationPath = require.resolve('../../src/components/_webhookDestination');
 
 function replaceModule(path, exports) {
-    if (path === storePath) exports = { assertRegistrationAllowed: async () => {}, ...exports };
+    const restores = [];
+    if (path === storePath) {
+        const schemaPath = require.resolve('../../src/db_schema'), operationPath = require.resolve('../../src/automation/rate-operation'), trackingPath = require.resolve('../../src/errorTracking');
+        for (const [target, replacement] of [[schemaPath, { ensureDatabaseSchema: async () => {} }],
+            [operationPath, { withRateOperation: exports.operationAdmission || (async (_db, _actor, _group, work) => work()) }], [trackingPath, { recordError: () => {} }]]) {
+            const saved = require.cache[target]; require.cache[target] = { id: target, filename: target, loaded: true, exports: replacement };
+            restores.push(() => { if (saved) require.cache[target] = saved; else delete require.cache[target]; });
+        }
+        exports = { assertRegistrationAllowed: async () => {}, ...exports };
+    }
     const original = require.cache[path];
     require.cache[path] = { id: path, filename: path, loaded: true, exports };
     return () => {
+        restores.forEach(restore => restore());
         if (original) require.cache[path] = original;
         else delete require.cache[path];
     };
 }
 
-test('non-donors are rejected before validating or creating any webhook', async () => {
+test('operation rate rejection happens before validating or creating any webhook and includes retry feedback', async () => {
     const calls = [], replies = [];
     const restoreStore = replaceModule(storePath, {
-        assertRegistrationAllowed: async () => { throw Object.assign(new Error('donor required'), { code: 'AUTO_WATCH_DONOR_REQUIRED', status: 403 }); },
+        operationAdmission: async () => { throw Object.assign(new Error('private details must not be shown'), { code: 'AUTOMATION_RATE_LIMITED', status: 429, limit: 10, retryAfterMs: 59000, windowMs: 60000 }); },
         validateWebhook: async () => { calls.push('validate'); },
         registerTarget: async () => { calls.push('register'); },
     });
@@ -33,7 +43,8 @@ test('non-donors are rejected before validating or creating any webhook', async 
             options: { getBoolean: () => true, getString: key => ({ provider: 'youtube', source: 'UC_x5XG1OV2P6uZZ5FSM9Ttw', destination: 'channel' })[key] || null },
             editReply: async payload => replies.push(payload) });
         assert.deepEqual(calls, []);
-        assert.match(replies[0].embeds[0].description, /寄付者のみ/);
+        assert.match(replies[0].embeds[0].description, /1分に10件/); assert.match(replies[0].embeds[0].description, /59秒/);
+        assert.doesNotMatch(JSON.stringify(replies), /private details/);
     } finally { delete require.cache[watchPath]; restoreWebhook(); restoreStore(); }
 });
 
@@ -168,6 +179,26 @@ test('autoextract watch creates a webhook in a selected channel when requested',
     }
 });
 
+test('a created webhook is cleaned up after slot admission failure and feedback never exposes raw errors', async () => {
+    let removed = 0;
+    const restoreStore = replaceModule(storePath, {
+        validateWebhook: async () => ({ guildId: 'guild-1' }),
+        registerTarget: async () => { throw Object.assign(new Error('private https://discord.com/api/webhooks/123/signed-secret'), { code: 'AUTOMATION_SLOT_LIMIT', status: 422 }); },
+    });
+    const restoreWebhook = replaceModule(webhookDestinationPath, { createWebhookForChannel: async () => ({
+        webhook: { delete: async () => { removed++; } }, webhookUrl: 'https://discord.com/api/webhooks/123456789012345678/created-token', channel: { id: 'channel-2', name: 'alerts' },
+    }) });
+    delete require.cache[watchPath];
+    try {
+        const replies = [];
+        await require(watchPath)({ user: { id: '123456789012345678' }, guildId: 'guild-1', locale: 'ja',
+            options: { getBoolean: () => true, getString: key => ({ provider: 'youtube', source: 'source', destination: 'channel' })[key] || null, getChannel: () => ({ id: 'channel-2' }) },
+            editReply: async payload => replies.push(payload) });
+        assert.equal(removed, 1); assert.match(replies[0].embeds[0].description, /通知枠の上限/); assert.match(replies[0].embeds[0].description, /削除/);
+        assert.doesNotMatch(JSON.stringify(replies), /signed-secret|created-token|private/);
+    } finally { delete require.cache[watchPath]; restoreWebhook(); restoreStore(); }
+});
+
 test('autoextract unwatch deletes only the caller target', async () => {
     const calls = [];
     const restoreStore = replaceModule(storePath, { deleteTarget: async (...input) => calls.push(input) });
@@ -204,4 +235,23 @@ test('unconfirmed responsibility is rejected before any webhook or subscription 
     const replies = [];
     await require(watchPath)({ guildId: 'fixture', locale: 'ja', options: { getString: key => ({ provider: 'youtube', source: 'sample', destination: 'channel' })[key], getBoolean: () => false, getChannel: () => assert.fail('No channel side effect before confirmation') }, editReply: async payload => replies.push(payload) });
     assert.match(replies[0].embeds[0].description, /responsibility/);
+});
+
+test('registration failures show safe guidance instead of transport messages or signed destination URLs', async () => {
+    for (const code of ['AUTO_WATCH_INVALID_SOURCE', 'AUTO_WATCH_SLOT_LIMIT', 'UNEXPECTED']) {
+        const restore = replaceModule(storePath, { assertRegistrationAllowed: async () => {
+            throw Object.assign(new Error('private signed webhook https://discord.com/api/webhooks/123/private-token'), { code });
+        } });
+        delete require.cache[watchPath];
+        try {
+            const replies = [];
+            await require(watchPath)({ user: { id: '123456789012345678' }, guildId: 'guild-1', locale: 'ja',
+                options: { getBoolean: () => true, getString: key => ({ provider: 'youtube', source: 'invalid', destination: 'dm' })[key] },
+                editReply: async payload => replies.push(payload) });
+            assert.doesNotMatch(JSON.stringify(replies), /private-token|signed webhook/);
+            assert.equal(replies[0].embeds[0].title, '新着通知の登録');
+            if (code === 'AUTO_WATCH_INVALID_SOURCE') assert.match(replies[0].embeds[0].description, /チャンネル/);
+            if (code === 'AUTO_WATCH_SLOT_LIMIT') assert.match(replies[0].embeds[0].description, /監視枠/);
+        } finally { delete require.cache[watchPath]; restore(); }
+    }
 });

@@ -69,7 +69,9 @@ test('worker handles import/diff/export then reloads an earlier compiled diction
 test('dictionary manager rejects stale edits before expensive work and prevents save of conflicting imports', async t => {
     const evaluator = createEvaluator(async () => dictionary); t.after(() => evaluator.stop());
     let saved = 0;
-    const service = { getRow: async () => ({ id: 'id', revision: 3 }), dictionaryData: async () => dictionary, saveDictionary: async () => { saved++; } };
+    // This isolated dictionary-conflict fixture trusts admission explicitly;
+    // real durable rate enforcement is covered by service-policy SQL tests.
+    const service = { withOperation: async (_actor, _group, work) => work(), getRow: async () => ({ id: 'id', revision: 3 }), dictionaryData: async () => dictionary, saveDictionary: async () => { saved++; } };
     const manager = createDictionaryService({}, service, evaluator);
     await assert.rejects(manager.patch({ userId: '1' }, 'id', { expectedRevision: 2, patch: { operations: [] } }), { code: 'REVISION_CONFLICT' });
     await assert.rejects(manager.save({ userId: '1' }, { dictionary: { ...dictionary, entries: ['x', { term: 'X', kind: 'allow' }] } }), { code: 'DICTIONARY_CONFLICT' });

@@ -3,10 +3,12 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { createTransport } = require('../../src/automation/transport');
 const owner = '222222222222222222', channel = '333333333333333333';
+const entitlementResolver = async (_db, input) => ({ slotId: `${input.ownerUserId}:1`, slotIndex: 1, minuteLimit: 5, dayLimit: 24 });
+const membershipResolver = async (_db, job) => [{ targetKind: job.target_kind, targetId: String(job.target_id) }];
 async function prepare(format, members, kind = 'auto') {
     let calls = 0;
     const rest = { post: async route => { assert.equal(route, '/users/@me/channels'); calls++; return { id: channel }; } };
-    const transport = createTransport({}, {}, { options: { jsonTransformer: value => value } }, { rest });
+    const transport = createTransport({}, {}, { options: { jsonTransformer: value => value } }, { rest, entitlementResolver, membershipResolver });
     const job = { id: 'aggregate-rendering', owner_user_id: owner, target_kind: kind, plan: {
         context: {}, event: { title: 'obsolete parent' }, text: 'obsolete text', display: { format, media: 'inherit' }, members,
     } };

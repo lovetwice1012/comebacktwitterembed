@@ -30,7 +30,8 @@ async function main() {
     };
     const destinations = require('../src/automation/destinations').createDestinations(db, service, { rest });
     const services = {
-        db, service, evaluator, destinations, monitors: require('../src/automation/monitors').createMonitors(db, service, destinations),
+        db, service, evaluator, destinations, billing: require('../src/automation/square-billing').createSquareBilling(db, { env: {} }), monitors: require('../src/automation/monitors').createMonitors(db, service, destinations),
+        donations: require('../src/automation/square-donations').createSquareDonations(db, { env: {} }),
         dictionaryService: require('../src/automation/dictionary-service').createDictionaryService(db, service, evaluator),
         market: require('../src/automation/marketplace').createMarketplace(db, { service, evaluator, moderationMatcher: moderation }), history: require('../src/automation/history').createHistory(db, service), moderation, starter,
         schema: require('../src/automation/schema'), format: require('../src/automation/format'), bundle: require('../src/automation/bundle'), catalog: require('../src/automation/catalog'),
@@ -106,7 +107,7 @@ async function main() {
                 else { res.writeHead(405); res.end(); return; }
                 res.setHeader('Content-Type', 'application/json'); res.end('{}'); return;
             }
-            if (url.pathname === '/' || /^\/dashboard(?:\/|$)/.test(url.pathname)) {
+            if (url.pathname === '/' || /^\/dashboard(?:\/|$)/.test(url.pathname) || url.pathname === '/admin/notification-plans') {
                 await build();
                 res.setHeader('Content-Type', 'text/html;charset=utf-8');
                 res.end('<!doctype html><html lang="ja"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>自動化ローカル検証</title><link rel="stylesheet" href="/app.css"><div id="root"></div><script src="/app.js"></script></html>'); return;

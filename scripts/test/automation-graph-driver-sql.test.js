@@ -17,6 +17,10 @@ async function fixture(definition, work) {
     const db = await createTestDatabase(port), query = db.queryDatabase;
     const service = createService(db), actor = { userId: '222222222222222222' };
     const workflow = await service.createWorkflow(actor, { definition });
+    // The editing service has its own durable counters. Runtime assertions
+    // inspect only new graph-gate counters, retaining real editing admission.
+    const setupCounterKeys = new Set((await query('SELECT counter_key FROM automation_counters')).map(row => row.counter_key));
+    const counters = async () => (await query('SELECT counter_key,used_count FROM automation_counters ORDER BY used_count')).filter(row => !setupCounterKeys.has(row.counter_key));
     const context = { ownerUserId: actor.userId, scope: 'private', workflowId: workflow.id, revision: 1 };
     const plan = compileWorkflow(definition), store = () => createGraphStore(db);
     const dictionaries = { words: new DictionaryMatcher({ schemaVersion: 1, name: 'fixture', entries: ['sale'] }) };
@@ -36,7 +40,7 @@ async function fixture(definition, work) {
         const rows = await query('SELECT * FROM automation_flow_sends ORDER BY id');
         return Promise.all(rows.map(async row => ({ ...row, unit: await store().readUnit(row.unit_id, true) })));
     }
-    try { await work({ db, query, store, driver, add, drain, sends }); }
+    try { await work({ db, query, counters, store, driver, add, drain, sends }); }
     finally { await db.close(); }
 }
 test('disconnected driver requires an explicit enable boundary and valid clock before any storage work', async () => {
@@ -53,13 +57,13 @@ test('ordered limits count 4 events, 2 intermediate batches, 1 final batch and f
     await fixture(definition, async f => {
         for (let i = 0; i < 4; i++) await f.add({ title: `event${i}`, providerId: 'github' });
         await f.drain(time);
-        assert.deepEqual((await f.query('SELECT used_count FROM automation_counters ORDER BY used_count')).map(row => Number(row.used_count)), [4]);
+        assert.deepEqual((await f.counters()).map(row => Number(row.used_count)), [4]);
         assert.equal((await f.sends()).length, 0);
         await f.drain(time + 600000);
-        assert.deepEqual((await f.query('SELECT used_count FROM automation_counters ORDER BY used_count')).map(row => Number(row.used_count)), [2, 4]);
+        assert.deepEqual((await f.counters()).map(row => Number(row.used_count)), [2, 4]);
         assert.equal((await f.sends()).length, 0);
         await f.drain(time + 1200000);
-        assert.deepEqual((await f.query('SELECT used_count FROM automation_counters ORDER BY used_count')).map(row => Number(row.used_count)), [1, 2, 4]);
+        assert.deepEqual((await f.counters()).map(row => Number(row.used_count)), [1, 2, 4]);
         const sends = await f.sends(); assert.equal(sends.length, 2); assert(sends.every(row => row.state === 'unprojected' && row.unit.members.length === 4));
         const batches = await f.query('SELECT node_id,received_count FROM automation_flow_batches ORDER BY node_id,segment');
         assert.deepEqual(batches.map(row => [row.node_id, Number(row.received_count)]), [['A10', 2], ['A10', 2], ['A20', 2]]);
@@ -104,7 +108,7 @@ test('heterogeneous post-batch limits split into typed-key admissions rather tha
         await f.drain(time); await f.drain(time + 600000);
         const first = await f.sends(); assert.equal(first.length, 4);
         assert.deepEqual(first.map(row => row.unit.members.length).sort(), [1, 1, 1, 2]);
-        assert.deepEqual((await f.query('SELECT used_count FROM automation_counters')).map(row => Number(row.used_count)), [1, 1, 1, 1]);
+        assert.deepEqual((await f.counters()).map(row => Number(row.used_count)), [1, 1, 1, 1]);
         await f.add({ title: 'later', providerId: 'github' });
         await f.drain(time + 600001); await f.drain(time + 1200000);
         assert.equal((await f.sends()).length, 4);

@@ -4,14 +4,64 @@
 // is also used by loopback-only fixture tests; it contains no auth bypass.
 const { requireActor, AutomationError } = require('./service');
 /** @param {{method:string,path:string[],search?:URLSearchParams,body?:Record<string,any>}} request */
-async function dispatch({ method, path, search = new URLSearchParams(), body = {} }, actor, services) {
+async function dispatch(request, actor, services) {
+    requireActor(actor);
+    const { method, path, body = {} } = request;
+    if (!Array.isArray(path) || path.length < 1 || path.length > 3 || !['GET','POST','PATCH','DELETE'].includes(method)) throw new AutomationError('NOT_FOUND', '操作が見つかりません。', 404);
+    if (!body || typeof body !== 'object' || Array.isArray(body)) throw new AutomationError('INVALID_BODY', 'オブジェクト形式の入力が必要です。');
+    let group;
+    if (method !== 'GET' && method !== 'DELETE') {
+        group = path[0] === 'validate' || path[0] === 'dictionary-preview' ? 'validate' : path[0] === 'simulate' || path.at(-1) === 'test' ? 'simulate' : path[0] === 'monitors' ? 'monitor' : path[0] === 'marketplace' && (!path[2] || path[2] === 'status') ? 'publication' : 'write';
+        if (path[0] === 'billing' && (path[1] === 'subscribe' || path[1] === 'donations' && path[2] === 'donate')) group = 'publication';
+        if (path[0] === 'billing' && path[1] === 'cancel') group = undefined;
+        if (path[0] === 'workflows' && path[2] === 'state' && body.enabled === false || path[0] === 'monitors' && (body.action === 'detach' || body.enabled === false && Object.keys(body).every(key => ['enabled', 'expectedRevision'].includes(key))) || path[0] === 'marketplace' && path[2] === 'status' && body.status === 'withdrawn') group = undefined;
+    }
+    if (!group) return dispatchCore(request, actor, services);
+    if (typeof services.service?.withOperation !== 'function') throw new AutomationError('AUTOMATION_RATE_LIMIT_UNAVAILABLE', '利用制限を確認できませんでした。少し待ってから再度お試しください。', 503);
+    return services.service.withOperation(actor, group, () => dispatchCore(request, actor, services));
+}
+/** @param {{method:string,path:string[],search?:URLSearchParams,body?:Record<string,any>}} request */
+async function dispatchCore({ method, path, search = new URLSearchParams(), body = {} }, actor, services) {
     requireActor(actor);
     if (!Array.isArray(path) || path.length < 1 || path.length > 3 || !['GET','POST','PATCH','DELETE'].includes(method)) throw new AutomationError('NOT_FOUND', '操作が見つかりません。', 404);
     if (!body || typeof body !== 'object' || Array.isArray(body)) throw new AutomationError('INVALID_BODY', 'オブジェクト形式の入力が必要です。');
     const [kind, id, action] = path;
     const { service, market, evaluator, schema, format, bundle, catalog, destinations, monitors, history, dictionaryService, moderation, starter } = services;
     let result;
-    if (kind === "catalog" && method === "GET") result = { ...catalog.catalog(), deliverySafety: require('./safety').createSafety().status() };
+    if (kind === "catalog" && method === "GET") result = { ...catalog.catalog(), rateLimits: service.rateLimiter?.getPolicy(), deliverySafety: require('./safety').createSafety().status() };
+    else if (kind === "entitlements" && !id && method === "GET") {
+      const info = await require('./entitlements').getEntitlementSummary(services.db, actor.userId);
+      const plan = { id: info.planId, tier: info.tier, name: info.label, priority: info.priority, slotLimit: info.slotLimit, minuteLimit: info.minuteLimit, dayLimit: info.dayLimit };
+      const entries = await Promise.all(info.slots.map(async slot => ({ slotId: slot.slotId, targetKind: slot.targetKind, targetId: slot.targetId, dayLimit: slot.dayLimit, minuteLimit: slot.minuteLimit, allowed: slot.allowed, ...await service.rateLimiter.getSlotUsage(slot.slotId, slot) })));
+      result = { plan, slots: { used: info.usedSlots, max: info.slotLimit, available: info.remainingSlots }, usage: { entries } };
+    }
+    else if (kind === "plans") {
+      const plans = require('./entitlements');
+      if (!id && method === "GET") result = { items: await plans.listPlanPolicies(services.db.queryDatabase, actor) };
+      else if (method === "POST" || method === "PATCH") result = await services.db.withDatabaseTransaction(query => plans.savePlanPolicy(query, actor, { planId: id || body.planId, label: body.label, slotLimit: body.slotLimit, minuteLimit: body.minuteLimit, dayLimit: body.dayLimit, priority: body.priority, enabled: body.enabled, expectedUpdatedAtMs: body.expectedUpdatedAtMs }));
+    }
+    else if (kind === "entitlements" && id && method === "POST") result = await services.db.withDatabaseTransaction(query => require('./entitlements').setUserPlan(query, actor, id, body.planId, { expiresAtMs: body.expiresAtMs }));
+    else if (kind === "billing" && id === "donations") {
+      const donations = services.donations;
+      if (!donations) throw new AutomationError('SQUARE_NOT_CONFIGURED', '決済機能は準備中です。', 503);
+      if (action === "options" && method === "GET") result = await donations.getOptions(actor);
+      else if (action === "status" && method === "GET") result = await donations.getStatus(actor);
+      else if (action === "policy" && method === "GET") result = await donations.getAdmin(actor);
+      else if (action === "policy" && method === "PATCH") result = await donations.savePolicy(actor, body);
+      else if (action === "quote" && method === "POST") result = await donations.createQuote(actor, body);
+      else if (action === "donate" && method === "POST") result = await donations.donate(actor, body);
+    }
+    else if (kind === "billing") {
+      const billing = services.billing;
+      if (!billing) throw new AutomationError('SQUARE_NOT_CONFIGURED', '決済機能は準備中です。', 503);
+      if (id === "options" && method === "GET" && !action) result = await billing.getOptions(actor);
+      else if (id === "status" && method === "GET" && !action) result = await billing.getStatus(actor);
+      else if (id === "admin" && method === "GET" && !action) result = await billing.getAdmin(actor);
+      else if (id === "bindings" && action && method === "PATCH") result = await billing.saveBinding(actor, action, body);
+      else if (id === "quote" && method === "POST" && !action) result = await billing.createQuote(actor, body);
+      else if (id === "subscribe" && method === "POST" && !action) result = await billing.subscribe(actor, body);
+      else if (id === "cancel" && method === "POST" && !action) result = await billing.cancel(actor);
+    }
     else if (kind === "providers" && method === "GET") result = await monitors.providers(actor);
     else if (kind === "channels" && method === "GET") result = await destinations.channels(actor);
     else if (kind === "starter" && method === "GET") result = starter.starterInfo();
@@ -28,7 +78,7 @@ async function dispatch({ method, path, search = new URLSearchParams(), body = {
     else if (kind === "excluded" && method === "GET") result = await history.excluded(actor, search.get("afterId") || "");
     else if (kind === "monitors" && ["auto", "price"].includes(id)) {
       if (action === "preview" && method === "POST") result = await monitors.preview(actor, id, body);
-      else if (!action && method === "GET") result = await monitors.list(actor, id, search.get("afterId") || "0", { query: search.get("query") || "", state: search.get("state") || "all" });
+      else if (!action && method === "GET") result = await monitors.list(actor, id, search.get("afterId") || "0", { query: search.get("query") || '', state: search.get("state") || 'all' });
       else if (!action && method === "POST") result = await monitors.save(actor, id, body);
       else if (action && method === "PATCH") result = await monitors.save(actor, id, body, action);
       else if (action && method === "DELETE") result = await monitors.remove(actor, id, action, body.expectedRevision);

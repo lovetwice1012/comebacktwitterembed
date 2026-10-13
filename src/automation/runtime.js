@@ -4,6 +4,7 @@ const { hash } = require('./service');
 const { scheduleDelivery } = require('./schedule');
 const { SafetyError } = require('./safety');
 const { DeliveryGateError } = require('./delivery-gate');
+const { AutomationRateError } = require('./rate-limits');
 let singleton = null, timer = null, reviewTimer = null;
 
 function createRunner(db, queue, transport, options = {}) {
@@ -58,7 +59,7 @@ function createRunner(db, queue, transport, options = {}) {
         assertAllowed();
         let job = await queue.claim(clock());
         if (!job) return { state: 'idle' };
-        let sending = false, confirmed = 0;
+        let sending = false, confirmed = 0, prepared = null;
         try {
             if (queue.refreshFlowJob) {
                 const refreshed = await queue.refreshFlowJob(job, clock());
@@ -80,7 +81,10 @@ function createRunner(db, queue, transport, options = {}) {
             if (next > clock()) {
                 await queue.transition(job, 'pending', 'DISCORD_HEADROOM', next); return { state: 'paced' };
             }
-            const prepared = await transport.prepare(job, checked.destination);
+            prepared = await transport.prepare(job, checked.destination);
+            // All physical parts fit the durable owner/recipient/guild budget
+            // before changing the job to sending. Quota waits free the worker.
+            if (transport.reserve) await transport.reserve(prepared, job);
             if (isStopping()) { await queue.transition(job, 'pending', 'PROCESS_STOPPING', clock() + 30000); return { state: 'stopped' }; }
             assertAllowed();
             const begin = await queue.beginSend(job, clock());
@@ -106,6 +110,12 @@ function createRunner(db, queue, transport, options = {}) {
             await queue.transition(job, 'sent');
             return { state: 'sent', steps: confirmed };
         } catch (error) {
+            if (error instanceof AutomationRateError) {
+                const retryable = error.status === 429 || error.status === 503;
+                const state = confirmed ? 'partial' : retryable ? 'pending' : 'failed';
+                await queue.transition(job, state, error.code, state === 'pending' ? clock() + Math.max(1000, error.retryAfterMs || 60000) : null);
+                return { state, code: error.code };
+            }
             if (error instanceof DeliveryGateError) {
                 if (error.state === 'lease_lost') return { state: 'lease_lost' };
                 const state = confirmed ? 'partial' : error.state === 'stopped' ? 'pending' : error.state;
@@ -133,6 +143,10 @@ function createRunner(db, queue, transport, options = {}) {
             await db.queryDatabase('UPDATE automation_jobs SET attempts=attempts+1 WHERE id=? AND lease_token=?', [job.id, job.lease_token]);
             await queue.transition(job, terminal, code, terminal === 'pending' ? clock() + retryMs : null);
             return { state: terminal, code };
+        } finally {
+            // Return held capacity for parts that never entered the wire.
+            // Confirmed/unknown parts remain charged; SQL failure retains holds.
+            if (prepared && transport.release) try { await transport.release(prepared, job); } catch { /* fail closed */ }
         }
     }
     return { tick };
