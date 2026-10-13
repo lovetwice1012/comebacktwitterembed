@@ -11,6 +11,16 @@ const {
     sourceError,
     urlFromInput,
 } = require('../autoWatch/_shared');
+const { readJsonProjection } = require('../autoWatch/streaming');
+
+// Keep every field used by the event mapping and notification rules while
+// discarding commit lists and unrelated repository/profile payloads as they arrive.
+const EVENT_PATHS = [
+    ['*', 'id'], ['*', 'type'], ['*', 'created_at'], ['*', 'repo', 'name'], ['*', 'actor', 'login'],
+    ['*', 'payload', 'head'], ['*', 'payload', 'release', 'html_url'], ['*', 'payload', 'release', 'body'],
+    ['*', 'payload', 'issue', 'number'], ['*', 'payload', 'pull_request', 'number'], ['*', 'payload', 'forkee', 'html_url'],
+    ['message'], ['error', 'message'], ['retry_after'], ['retryAfter'], ['parameters', 'retry_after'],
+];
 
 function normalizeSource(input) {
     const raw = String(input || '').trim();
@@ -49,6 +59,7 @@ async function fetch(source, context) {
             'X-GitHub-Api-Version': '2026-03-10',
             'User-Agent': 'ComebackTwitterEmbed-auto-watch',
         }),
+        readBody: response => readJsonProjection(response, EVENT_PATHS),
     });
     if (response.notModified) return { notModified: true, state: source.state || {}, etag: response.etag, lastModified: response.lastModified, rateLimit: response.rateLimit };
     if (!Array.isArray(response.body)) throw monitorError('AUTO_WATCH_GUEST_CONTENT_UNAVAILABLE', 'GitHub did not return an event list.');

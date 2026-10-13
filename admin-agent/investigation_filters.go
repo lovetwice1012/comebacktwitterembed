@@ -29,7 +29,7 @@ func investigationFilters(q url.Values, payload string, includeGuild bool) (stri
 // The UI checks this receipt before presenting a narrowed result from an older agent.
 func appliedInvestigationFilters(q url.Values) Object {
 	filters := Object{}
-	for _, key := range []string{"guildId", "channelId", "userId", "messageId", "from", "to"} {
+	for _, key := range []string{"guildId", "channelId", "userId", "messageId", "from", "to", "status"} {
 		if value := q.Get(key); value != "" {
 			filters[key] = value
 		}
