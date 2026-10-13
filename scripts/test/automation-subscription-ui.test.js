@@ -9,6 +9,14 @@ const plan = (changes = {}) => ({ planId: 'configured', label: '管理者設定�
 const options = (changes = {}) => ({ configured: true, environment: 'sandbox', applicationId: 'sandbox-app', locationId: 'location', plans: [plan()], ...changes });
 const status = (changes = {}) => ({ configured: true, environment: 'sandbox', subscription: null, pending: null, ...changes });
 const contract = (changes = {}) => ({ planId: 'configured', label: '管理者設定プラン', state: 'ACTIVE', paidThroughAtMs: 1794423600000, validUntilAtMs: 1794423600000, canceledDate: null, active: true, cancelScheduled: false, ...changes });
+// The production Square SDK rejects these fields for STORE before it reads the card form.
+// https://developer.squareup.com/reference/sdks/web/payments/objects/StoreCardVerificationDetails
+function squareStoreToken(data, token = 'cnon:private-nonce') {
+    const errors = ['amount', 'currencyCode', 'total'].filter(field => field in data).map(field => ({
+        field: `verificationDetails.${field}`, message: `The STORE intent does not support the ${field} field.`, type: 'VALIDATION_ERROR',
+    }));
+    return errors.length ? { status: 'Invalid', errors } : { status: 'OK', token };
+}
 async function fixture({ initialOptions = options(), initialStatus = status(), respond, squareLoader, tokenize } = {}) {
     const f = await reactFixture('export { SubscriptionManager, subscriptionPrice, loadSquareSubscriptionSDK } from "./components/automation/subscription-manager";');
     const calls = [], sdk = { loads: [], payments: [], attached: [], destroyed: [], tokens: [] };
@@ -27,7 +35,7 @@ async function fixture({ initialOptions = options(), initialStatus = status(), r
     const loader = async environment => {
         sdk.loads.push(environment);
         if (squareLoader) return squareLoader(environment, f);
-        return { payments: (app, location) => { sdk.payments.push({ app, location }); return { card: async () => ({ attach: async selector => sdk.attached.push(selector), destroy: async () => sdk.destroyed.push('card'), tokenize: async data => { sdk.tokens.push(data); return tokenize ? tokenize(data) : { status: 'OK', token: 'cnon:private-nonce' }; } }) }; } };
+        return { payments: (app, location) => { sdk.payments.push({ app, location }); return { card: async () => ({ attach: async selector => sdk.attached.push(selector), destroy: async () => sdk.destroyed.push('card'), tokenize: async data => { sdk.tokens.push(data); return tokenize ? tokenize(data) : squareStoreToken(data); } }) }; } };
     };
     f.calls = calls; f.sdk = sdk;
     await f.render(f.React.createElement(f.exports.SubscriptionManager, { api: f.api, loadSquare: loader })); await f.settle();
@@ -99,7 +107,7 @@ test('double clicking submits one token and one checkout, stores no nonce and aw
     try {
         await f.review(); await f.consent(); const button = [...f.container.querySelectorAll('button')].find(item => item.textContent === '同意してサブスクリプションを契約');
         await f.act(async () => { button.dispatchEvent(new f.dom.window.MouseEvent('click', { bubbles: true })); button.dispatchEvent(new f.dom.window.MouseEvent('click', { bubbles: true })); });
-        assert.equal(f.sdk.tokens.length, 1); assert.deepEqual(f.sdk.tokens[0], { intent: 'STORE', customerInitiated: true, sellerKeyedIn: false, billingContact: { email: 'receipt@example.test', givenName: '山田 太郎', countryCode: 'JP' }, currencyCode: 'JPY' });
+        assert.equal(f.sdk.tokens.length, 1); assert.deepEqual(f.sdk.tokens[0], { intent: 'STORE', customerInitiated: true, sellerKeyedIn: false, billingContact: { email: 'receipt@example.test', givenName: '山田 太郎', countryCode: 'JP' } });
         assert.equal(writes(f).filter(call => call.route === 'subscribe').length, 1); assert.deepEqual(writes(f).at(-1).body, { checkoutId: 'checkout-1', sourceId: 'cnon:private-nonce', consent: true });
         assert.equal(f.dom.window.localStorage.length, 0); assert.equal(f.dom.window.sessionStorage.length, 0); assert(!f.container.textContent.includes('cnon:private-nonce'));
         await f.act(async () => complete(status({ subscription: contract({ active: false, paidThroughAtMs: null, validUntilAtMs: null }) })));
@@ -163,11 +171,57 @@ test('an ACTIVE but unpaid subscription cannot be replaced just because active i
     finally { await f.close(); }
 });
 
-test('card validation failures hide raw Square details and never create a subscription or lose the quoted plan', async () => {
-    const f = await fixture({ tokenize: async () => ({ status: 'ERROR', errors: [{ detail: 'PRIVATE_CARD_NUMBER' }] }) });
+test('Square STORE protocol rejects the previous currency field and the reviewed contract submits with valid card-storage details', async () => {
+    const original = { intent: 'STORE', customerInitiated: true, sellerKeyedIn: false, billingContact: { email: 'receipt@example.test', givenName: '山田 太郎', countryCode: 'JP' }, currencyCode: 'JPY' };
+    assert.deepEqual(squareStoreToken(original), { status: 'Invalid', errors: [{ field: 'verificationDetails.currencyCode', message: 'The STORE intent does not support the currencyCode field.', type: 'VALIDATION_ERROR' }] });
+    const valid = { intent: original.intent, customerInitiated: original.customerInitiated, sellerKeyedIn: original.sellerKeyedIn, billingContact: original.billingContact };
+    for (const field of ['amount', 'currencyCode', 'total']) {
+        const rejected = squareStoreToken({ ...valid, [field]: undefined });
+        assert.equal(rejected.status, 'Invalid'); assert.equal(rejected.errors[0].field, `verificationDetails.${field}`);
+    }
+    const f = await fixture();
     try {
-        await f.review(); await f.consent(); await f.click('同意してサブスクリプションを契約'); assert.match(f.container.textContent, /カード情報を確認/); assert(!f.container.textContent.includes('PRIVATE_CARD_NUMBER'));
-        assert.equal(writes(f).filter(call => call.route === 'subscribe').length, 0); assert(f.container.querySelector('[aria-label="契約内容の確認"]'));
+        await f.review(); await f.consent(); await f.click('同意してサブスクリプションを契約');
+        assert.equal(f.sdk.tokens.length, 1); assert.equal(squareStoreToken(f.sdk.tokens[0]).status, 'OK');
+        for (const field of ['amount', 'currencyCode', 'total']) assert.equal(field in f.sdk.tokens[0], false);
+        assert.deepEqual(writes(f).filter(call => call.route === 'subscribe'), [{ route: 'subscribe', method: 'POST', body: { checkoutId: 'checkout-1', sourceId: 'cnon:private-nonce', consent: true } }]);
+        assert.match(f.container.textContent, /支払い・契約状態を確認中/);
+    } finally { await f.close(); }
+});
+
+test('tokenization failures distinguish service configuration, card validation, interruption and unavailable verification without exposing Square details', async () => {
+    const cases = [
+        { result: { status: 'Invalid', errors: [{ field: 'verificationDetails.currencyCode', type: 'VALIDATION_ERROR', message: 'PRIVATE_CARD_NUMBER' }] }, expected: /サービスのカード受付設定に問題.*運営側での修正/ },
+        { result: { status: 'Invalid', errors: [{ field: 'cardNumber', type: 'VALIDATION_ERROR', message: 'PRIVATE_CARD_NUMBER' }] }, expected: /カード情報の入力内容を確認/ },
+        { result: { status: 'Invalid' }, expected: /カード情報の入力内容を確認/ },
+        { result: { status: 'Error', errors: [{ type: 'PRIVATE_CARD_NUMBER', message: 'PRIVATE_CARD_NUMBER' }] }, expected: /Squareでカード情報を確認できません.*時間をおいて/ },
+        { result: { status: 'Unknown' }, expected: /Squareでカード情報を確認できません/ },
+        { result: { status: 'Cancel' }, expected: /カードの本人認証が中止.*本人認証を完了/ },
+        { result: { status: 'Abort' }, expected: /カードの本人認証が中止.*本人認証を完了/ },
+        { result: { status: 'OK' }, expected: /Squareでカード情報を確認できません/ },
+    ];
+    for (const { result, expected } of cases) {
+        const f = await fixture({ tokenize: async () => result });
+        try {
+            await f.review(); await f.consent(); await f.click('同意してサブスクリプションを契約');
+            assert.match(f.container.textContent, expected); assert.match(f.container.textContent, /支払いは実行されていません/);
+            assert(!f.container.textContent.includes('PRIVATE_CARD_NUMBER')); assert(!f.container.textContent.includes('VALIDATION_ERROR')); assert(!f.container.textContent.includes('verificationDetails.currencyCode'));
+            assert.equal(writes(f).filter(call => call.route === 'subscribe').length, 0); assert(f.container.querySelector('[aria-label="契約内容の確認"]'));
+            assert.equal(f.dom.window.localStorage.length, 0); assert.equal(f.dom.window.sessionStorage.length, 0);
+        } finally { await f.close(); }
+    }
+});
+
+test('retrying a failed card verification requests a new token and never sends an unsuccessful result token to subscription creation', async () => {
+    let attempts = 0;
+    const f = await fixture({ tokenize: async data => ++attempts === 1 ? { status: 'Invalid', token: 'cnon:failed-private-token', errors: [{ field: 'cvv', message: 'PRIVATE_CVV' }] } : squareStoreToken(data, 'cnon:fresh-private-token') });
+    try {
+        await f.review(); await f.consent(); await f.click('同意してサブスクリプションを契約');
+        assert.equal(writes(f).filter(call => call.route === 'subscribe').length, 0); assert.match(f.container.textContent, /カード情報の入力内容を確認/);
+        await f.click('同意してサブスクリプションを契約');
+        assert.equal(f.sdk.tokens.length, 2); assert.deepEqual(writes(f).filter(call => call.route === 'subscribe'), [{ route: 'subscribe', method: 'POST', body: { checkoutId: 'checkout-1', sourceId: 'cnon:fresh-private-token', consent: true } }]);
+        for (const secret of ['cnon:failed-private-token', 'cnon:fresh-private-token', 'PRIVATE_CVV']) assert(!f.container.textContent.includes(secret));
+        assert.equal(f.dom.window.localStorage.length, 0); assert.equal(f.dom.window.sessionStorage.length, 0);
     } finally { await f.close(); }
 });
 

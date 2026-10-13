@@ -37,7 +37,11 @@ type Plan = {
 type BillingOptions = { configured: boolean; environment: "sandbox" | "production"; applicationId?: string; locationId?: string; plans: Plan[] };
 type Quote = { checkoutId: string; expiresAtMs: number; plan: Plan; email: string; name: string };
 type BillingAPI = (path: string, method?: string, body?: unknown) => Promise<any>;
-type Card = { attach: (selector: string) => Promise<void>; destroy: () => Promise<void> | void; tokenize: (options: unknown) => Promise<{ status: string; token?: string }> };
+type CardBillingContact = { email?: string; givenName?: string; familyName?: string; countryCode?: string; phone?: string; addressLines?: string[]; city?: string; state?: string; postalCode?: string };
+type StoreCardVerificationDetails = { intent: "STORE"; customerInitiated: boolean; sellerKeyedIn: boolean; billingContact: CardBillingContact; amount?: never; currencyCode?: never; total?: never };
+type ChargeCardVerificationDetails = { intent: "CHARGE" | "CHARGE_AND_STORE"; customerInitiated: boolean; sellerKeyedIn: boolean; billingContact: CardBillingContact; amount: string; currencyCode: string };
+type CardTokenResult = { status: string; token?: string; errors?: unknown };
+type Card = { attach: (selector: string) => Promise<void>; destroy: () => Promise<void> | void; tokenize: (options: StoreCardVerificationDetails | ChargeCardVerificationDetails) => Promise<CardTokenResult> };
 type SquareSDK = { payments: (applicationId: string, locationId: string) => { card: () => Promise<Card> } };
 type SquareLoader = (environment: "sandbox" | "production") => Promise<SquareSDK>;
 const sdkLoads = new Map<string, Promise<SquareSDK>>();
@@ -81,6 +85,16 @@ function validQuote(quote: Quote | undefined, checkoutId: string): quote is Quot
 }
 function verificationError(cause: any): string | null {
   return cause?.code === "SQUARE_PRORATION_UNVERIFIED" && cause instanceof Error ? cause.message : null;
+}
+function cardTokenizationError(result: CardTokenResult): string {
+  const state = result.status.toLowerCase();
+  if (state === "cancel" || state === "abort") return "カードの本人認証が中止されました。再度契約するときは、本人認証を完了してください。支払いは実行されていません。";
+  if (state === "invalid") {
+    const issues = Array.isArray(result.errors) ? result.errors : [];
+    if (issues.some(issue => issue && typeof issue === "object" && typeof issue.field === "string" && issue.field.startsWith("verificationDetails."))) return "サービスのカード受付設定に問題があります。運営側での修正が必要です。支払いは実行されていません。";
+    return "カード情報の入力内容を確認してください。支払いは実行されていません。";
+  }
+  return "Squareでカード情報を確認できませんでした。時間をおいて再試行してください。支払いは実行されていません。";
 }
 
 export function SubscriptionManager({ api = subscriptionAPI, loadSquare = loadSquareSubscriptionSDK }: { api?: BillingAPI; loadSquare?: SquareLoader }) {
@@ -179,9 +193,9 @@ export function SubscriptionManager({ api = subscriptionAPI, loadSquare = loadSq
     actionLock.current = true; setBusy(true); setActionError(""); setMessage("");
     try {
       if (!retry) {
-        const tokenized = await card.current!.tokenize({ intent: "STORE", customerInitiated: true, sellerKeyedIn: false, billingContact: { email: quote.email, givenName: quote.name, countryCode: "JP" }, currencyCode: quote.plan.currency });
+        const tokenized = await card.current!.tokenize({ intent: "STORE", customerInitiated: true, sellerKeyedIn: false, billingContact: { email: quote.email, givenName: quote.name, countryCode: "JP" } });
         if (!mounted.current) return;
-        if (tokenized.status !== "OK" || !tokenized.token) { setActionError("カード情報を確認してください。支払いは実行されていません。"); return; }
+        if (tokenized.status !== "OK" || !tokenized.token) { setActionError(cardTokenizationError(tokenized)); return; }
         source.current = { checkoutId: quote.checkoutId, sourceId: tokenized.token };
       }
       if (!mounted.current || source.current?.checkoutId !== quote.checkoutId) return;
