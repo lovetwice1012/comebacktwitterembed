@@ -1,0 +1,37 @@
+{
+  "name": "@comebacktwitterembed/angelic-angel",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "TypeScript compatibility port of the pinned Angelic Angel Rust CLI",
+  "license": "MIT",
+  "bin": {
+    "angelic-angel": "dist/index.js"
+  },
+  "engines": {
+    "node": ">=24.15.0 <25"
+  },
+  "packageManager": "npm@11.12.1",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "lint": "eslint --config eslint.config.mjs src tests scripts",
+    "test": "npm run build && node --test --test-concurrency=1 tests/*.test.mjs",
+    "test:compat": "npm run build && node --test --test-concurrency=1 tests/compatibility*.test.mjs",
+    "verify:baseline": "node scripts/verify-baseline.mjs"
+  },
+  "dependencies": {
+    "smol-toml": "1.9.1",
+    "ws": "8.22.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@types/node": "24.19.2",
+    "@types/ws": "8.18.2",
+    "eslint": "10.12.0",
+    "globals": "15.15.0",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.71.2"
+  }
+}

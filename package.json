@@ -6,6 +6,10 @@
   "scripts": {
     "start": "node index.js",
     "start:node": "node index.js",
+    "build:angelic": "npm --prefix packages/angelic-angel run build",
+    "test:angelic": "npm --prefix packages/angelic-angel test",
+    "lint:angelic": "npm --prefix packages/angelic-angel run lint",
+    "typecheck:angelic": "npm --prefix packages/angelic-angel run typecheck",
     "init:db": "node scripts/init_database.js",
     "reset:db": "node scripts/reset_database.js",
     "seed:settings": "node scripts/migrate_settings_to_mysql.js",

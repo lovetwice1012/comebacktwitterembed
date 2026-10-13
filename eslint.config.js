@@ -35,6 +35,7 @@ module.exports = [
     {
         ignores: [
             'node_modules/**',
+            'packages/angelic-angel/**',
             'dashboard/**',
             'saves/**',
             'scripts/**',

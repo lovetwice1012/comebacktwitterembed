@@ -1,0 +1,20 @@
+{
+  "repository": "https://github.com/sh1ma/Angelic-Angel",
+  "commit": "169a098e2025cc6e41a50fc8d521c483e21d9b6d",
+  "files": {
+    ".gitignore": "149f56a883b00b19f1643a3702a7fa6040c6e9ec0237f33bcf1a3d973cefdeda",
+    "Cargo.lock": "a1d54a2fcc5a25460693816ef2651c67a3fbafe4e292f9a58b28b148175896a9",
+    "Cargo.toml": "f9791afc1ff8c400fdb2fb0959dee79ce032f61f1f3e5786bee854a78e829ae0",
+    "LICENSE": "c05fec08552f6abd56a7533f13623c281154ba2deae206c0960fb788c25a32e2",
+    "README.ja.md": "06c9a9b5cceb6f50315ab470744623a7b0632226df5ff2592d02581fe7195130",
+    "README.md": "d67d56bea22efcf19889a43519ab0510a013b7cf31e821e163847eccf15468e8",
+    "src/autopush.rs": "2ed785f513d67a1dd91804f77b52ca485ac38e06b7616f3acccbe34f06c337d7",
+    "src/cli.rs": "3d35a61e41db94c5c6870a2f09328842275aa9a633768c230c369d203dc561ce",
+    "src/config.rs": "b95f597c93b7d00eb7512b67678b010a4c0c56a25a6f8a9a2b5efa25038a75c3",
+    "src/error.rs": "0ed3b90368ea7b9d04aa7cb5143e9066f81afd653b177de600b71e758b54b208",
+    "src/listener.rs": "8ea8bbd6847bfa7ba46f14d91795d41a8fa16e93d747f5eb0122114a9ef91310",
+    "src/main.rs": "6b1fd839669cd6ae984ba88837833b4835665fb7828f33222757caff56d89447",
+    "src/push.rs": "4aef001c2d95a1cbb2b967ee954669f8d6c9a807054e7f903bec8e65c1343293",
+    "src/twitter.rs": "c4e57d4ccef13bc07155c0b52e3933288ba15d6e032207a7b543a585af41b806"
+  }
+}

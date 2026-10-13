@@ -1,0 +1,6 @@
+node_modules/
+dist/
+compat-rust/target/
+*.toml.bak-*
+angelic-angel.toml
+!package-lock.json

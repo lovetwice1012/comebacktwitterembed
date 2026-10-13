@@ -1,0 +1,1567 @@
+{
+  "schema_version": 1,
+  "provenance": [
+    "Synthetic TEST-ONLY keys and deterministic ciphertext.",
+    "Published independent vectors from the pinned ece 2.3.1 crate: https://docs.rs/crate/ece/2.3.1/source/src/lib.rs and /src/legacy.rs."
+  ],
+  "keys": {
+    "private_key": [
+      171,
+      87,
+      87,
+      167,
+      13,
+      212,
+      165,
+      62,
+      85,
+      58,
+      107,
+      191,
+      113,
+      255,
+      239,
+      234,
+      40,
+      116,
+      236,
+      7,
+      166,
+      179,
+      121,
+      227,
+      196,
+      143,
+      137,
+      90,
+      2,
+      220,
+      51,
+      222
+    ],
+    "public_key": [
+      4,
+      37,
+      113,
+      178,
+      190,
+      205,
+      253,
+      227,
+      96,
+      85,
+      26,
+      175,
+      30,
+      208,
+      244,
+      205,
+      54,
+      108,
+      17,
+      206,
+      190,
+      85,
+      95,
+      137,
+      188,
+      183,
+      177,
+      134,
+      165,
+      51,
+      57,
+      23,
+      49,
+      104,
+      236,
+      226,
+      235,
+      224,
+      24,
+      89,
+      123,
+      211,
+      4,
+      121,
+      184,
+      110,
+      60,
+      143,
+      142,
+      206,
+      213,
+      119,
+      202,
+      89,
+      24,
+      126,
+      146,
+      70,
+      153,
+      13,
+      182,
+      130,
+      0,
+      139,
+      14
+    ],
+    "auth_secret": [
+      5,
+      48,
+      89,
+      50,
+      161,
+      199,
+      234,
+      190,
+      19,
+      182,
+      206,
+      201,
+      253,
+      164,
+      136,
+      130
+    ]
+  },
+  "cases": [
+    {
+      "id": "aes128gcm-published-rfc-vector",
+      "data": "DGv6ra1nlYgDCS1FRnbzlwAAEABBBP4z9KsN6nGRTbVYI_c7VJSPQTBtkgcy27mlmlMoZIIgDll6e3vCYLocInmYWAmS6TlzAC8wEqKK6PBru3jl7A_yl95bQpu6cVPTpK4Mqgkf1CXztLVBSt2Ks3oZwbuwXPXLWyouBWLVWGNWQexSgSxsj_Qulcy4a-fN",
+      "headers": {
+        "encoding": "aes128gcm"
+      },
+      "expected_plaintext_hex": "5768656e20492067726f772075702c20492077616e7420746f20626520612077617465726d656c6f6e",
+      "expected_payload": {
+        "raw": "When I grow up, I want to be a watermelon"
+      }
+    },
+    {
+      "id": "aes128gcm-missing-headers",
+      "data": "DGv6ra1nlYgDCS1FRnbzlwAAEABBBP4z9KsN6nGRTbVYI_c7VJSPQTBtkgcy27mlmlMoZIIgDll6e3vCYLocInmYWAmS6TlzAC8wEqKK6PBru3jl7A_yl95bQpu6cVPTpK4Mqgkf1CXztLVBSt2Ks3oZwbuwXPXLWyouBWLVWGNWQexSgSxsj_Qulcy4a-fN",
+      "headers": null,
+      "expected_plaintext_hex": "5768656e20492067726f772075702c20492077616e7420746f20626520612077617465726d656c6f6e",
+      "expected_payload": {
+        "raw": "When I grow up, I want to be a watermelon"
+      }
+    },
+    {
+      "id": "aes128gcm-empty-headers",
+      "data": "DGv6ra1nlYgDCS1FRnbzlwAAEABBBP4z9KsN6nGRTbVYI_c7VJSPQTBtkgcy27mlmlMoZIIgDll6e3vCYLocInmYWAmS6TlzAC8wEqKK6PBru3jl7A_yl95bQpu6cVPTpK4Mqgkf1CXztLVBSt2Ks3oZwbuwXPXLWyouBWLVWGNWQexSgSxsj_Qulcy4a-fN",
+      "headers": {},
+      "expected_plaintext_hex": "5768656e20492067726f772075702c20492077616e7420746f20626520612077617465726d656c6f6e",
+      "expected_payload": {
+        "raw": "When I grow up, I want to be a watermelon"
+      }
+    },
+    {
+      "id": "aes128gcm-case-sensitive-encoding-header",
+      "data": "DGv6ra1nlYgDCS1FRnbzlwAAEABBBP4z9KsN6nGRTbVYI_c7VJSPQTBtkgcy27mlmlMoZIIgDll6e3vCYLocInmYWAmS6TlzAC8wEqKK6PBru3jl7A_yl95bQpu6cVPTpK4Mqgkf1CXztLVBSt2Ks3oZwbuwXPXLWyouBWLVWGNWQexSgSxsj_Qulcy4a-fN",
+      "headers": {
+        "Encoding": "unsupported"
+      },
+      "expected_plaintext_hex": "5768656e20492067726f772075702c20492077616e7420746f20626520612077617465726d656c6f6e",
+      "expected_payload": {
+        "raw": "When I grow up, I want to be a watermelon"
+      }
+    },
+    {
+      "id": "aes128gcm-json-unicode",
+      "data": "DGv6ra1nlYgDCS1FRnbzlwAAEABBBP4z9KsN6nGRTbVYI_c7VJSPQTBtkgcy27mlmlMoZIIgDll6e3vCYLocInmYWAmS6TlzAC8wEqKK6PBru3jl7A_e3c9cFr7_NBueOg7jPbqavymmt7RRE4vfsejjS2eyB7bRWys3BWqYDDrm3ArKzFUMA-lUsFeOl8lNRHV8_oeO_t1jnSrlN7Bg",
+      "headers": {
+        "encoding": "aes128gcm"
+      },
+      "expected_plaintext_hex": "7b227469746c65223a22e9809ae79fa5222c22626f6479223a22f09faabd222c226e6573746564223a5b747275652c6e756c6c2c31325d7d",
+      "expected_payload": {
+        "title": "通知",
+        "body": "🪽",
+        "nested": [
+          true,
+          null,
+          12
+        ]
+      }
+    },
+    {
+      "id": "aes128gcm-raw-text",
+      "data": "DGv6ra1nlYgDCS1FRnbzlwAAEABBBP4z9KsN6nGRTbVYI_c7VJSPQTBtkgcy27mlmlMoZIIgDll6e3vCYLocInmYWAmS6TlzAC8wEqKK6PBru3jl7A_Vk9pcDPLuc1nI8-AWrkxZ9GblobJaBKs2m3suNoQYPiJPUuxsFvgA",
+      "headers": {
+        "encoding": "aes128gcm"
+      },
+      "expected_plaintext_hex": "706c61696e2074657874206e6f74696669636174696f6e",
+      "expected_payload": {
+        "raw": "plain text notification"
+      }
+    },
+    {
+      "id": "aes128gcm-json-null",
+      "data": "DGv6ra1nlYgDCS1FRnbzlwAAEABBBP4z9KsN6nGRTbVYI_c7VJSPQTBtkgcy27mlmlMoZIIgDll6e3vCYLocInmYWAmS6TlzAC8wEqKK6PBru3jl7A_LitdZYNyJ_2sd-NiGDS8OZKsqIi0",
+      "headers": {
+        "encoding": "aes128gcm"
+      },
+      "expected_plaintext_hex": "6e756c6c",
+      "expected_payload": null
+    },
+    {
+      "id": "aes128gcm-json-number",
+      "data": "DGv6ra1nlYgDCS1FRnbzlwAAEABBBP4z9KsN6nGRTbVYI_c7VJSPQTBtkgcy27mlmlMoZIIgDll6e3vCYLocInmYWAmS6TlzAC8wEqKK6PBru3jl7A-UzYg3DdB5ydphjIoQ2xSQmotdgw",
+      "headers": {
+        "encoding": "aes128gcm"
+      },
+      "expected_plaintext_hex": "313233",
+      "expected_payload": 123
+    },
+    {
+      "id": "json-u64",
+      "data": "DGv6ra1nlYgDCS1FRnbzlwAAEABBBP4z9KsN6nGRTbVYI_c7VJSPQTBtkgcy27mlmlMoZIIgDll6e3vCYLocInmYWAmS6TlzAC8wEqKK6PBru3jl7A_e3dJRQOirLhWI5blN7hUIrjK07O4AW5_UpmV-unaunmG_MsScumShI6f1ZQ",
+      "headers": {
+        "encoding": "aes128gcm"
+      },
+      "expected_plaintext_hex": "7b226964223a31383434363734343037333730393535313631357d",
+      "expected_payload_json": "{\"id\":18446744073709551615}"
+    },
+    {
+      "id": "json-i64",
+      "data": "DGv6ra1nlYgDCS1FRnbzlwAAEABBBP4z9KsN6nGRTbVYI_c7VJSPQTBtkgcy27mlmlMoZIIgDll6e3vCYLocInmYWAmS6TlzAC8wEqKK6PBru3jl7A_e3dZcDPCgOxiO4b1K7RcPrjO84O8CXZzdoyBQw7fxU7aFB2pxUz2NBFGhmEea1AxOWr1IthjR6fUm2KMZ2ISsGGzNJ58YUg",
+      "headers": {
+        "encoding": "aes128gcm"
+      },
+      "expected_plaintext_hex": "7b226d696e223a2d393232333337323033363835343737353830382c226d6178223a393232333337323033363835343737353830377d",
+      "expected_payload_json": "{\"min\":-9223372036854775808,\"max\":9223372036854775807}"
+    },
+    {
+      "id": "json-negative-zero",
+      "data": "DGv6ra1nlYgDCS1FRnbzlwAAEABBBP4z9KsN6nGRTbVYI_c7VJSPQTBtkgcy27mlmlMoZIIgDll6e3vCYLocInmYWAmS6TlzAC8wEqKK6PBru3jl7A-Iz7lB8Qj0LytArB39Og4wv4lk",
+      "headers": {
+        "encoding": "aes128gcm"
+      },
+      "expected_plaintext_hex": "2d30",
+      "expected_payload_json": "-0.0"
+    },
+    {
+      "id": "json-out-of-range-float",
+      "data": "DGv6ra1nlYgDCS1FRnbzlwAAEABBBP4z9KsN6nGRTbVYI_c7VJSPQTBtkgcy27mlmlMoZIIgDll6e3vCYLocInmYWAmS6TlzAC8wEqKK6PBru3jl7A_e3c1UDqf_NBuNtrpJ6lg9woAfil-8D82Zb3HNU-t8rQ",
+      "headers": {
+        "encoding": "aes128gcm"
+      },
+      "expected_plaintext_hex": "7b2276616c7565223a31653430307d",
+      "expected_payload": {
+        "raw": "{\"value\":1e400}"
+      }
+    },
+    {
+      "id": "json-unpaired-surrogate-value",
+      "data": "DGv6ra1nlYgDCS1FRnbzlwAAEABBBP4z9KsN6nGRTbVYI_c7VJSPQTBtkgcy27mlmlMoZIIgDll6e3vCYLocInmYWAmS6TlzAC8wEqKK6PBru3jl7A_e3c1UDqf_NBuej_sd4hUPv3iG-6LK8upZoxP_6H5gTnIedw",
+      "headers": {
+        "encoding": "aes128gcm"
+      },
+      "expected_plaintext_hex": "7b2276616c7565223a225c7564383030227d",
+      "expected_payload": {
+        "raw": "{\"value\":\"\\ud800\"}"
+      }
+    },
+    {
+      "id": "json-unpaired-surrogate-key",
+      "data": "DGv6ra1nlYgDCS1FRnbzlwAAEABBBP4z9KsN6nGRTbVYI_c7VJSPQTBtkgcy27mlmlMoZIIgDll6e3vCYLocInmYWAmS6TlzAC8wEqKK6PBru3jl7A_e3edABrT8cAOG4vN7IPrD66mCz1lCE5lqyEtfbA",
+      "headers": {
+        "encoding": "aes128gcm"
+      },
+      "expected_plaintext_hex": "7b225c7564666666223a317d",
+      "expected_payload": {
+        "raw": "{\"\\udfff\":1}"
+      }
+    },
+    {
+      "id": "json-rust-recursion-limit",
+      "data": "DGv6ra1nlYgDCS1FRnbzlwAAEABBBP4z9KsN6nGRTbVYI_c7VJSPQTBtkgcy27mlmlMoZIIgDll6e3vCYLocInmYWAmS6TlzAC8wEqKK6PBru3jl7A_-pOBuOYnBTXrniNUigX5kxl7fjoBuMfK-yEMnuoHLcM_kZQMYO1XhbTrJ9ST0u2AiNN4j2j6IsZBOzvCjQRLXg1yC5P15aJPnVJEYbQdzxdcO_UQhiYEswOknRTJBbO5an3X6OUEcy0YwGvAAqjPKUhMf86YkcOvn4VhkAqQTX5mPUap80MSUci_XOepMXr_s9Fd93WlyjHdDJUm5GbuAPB6yetujyw923CKe2DhaoUPzQxqLMIioAMfG8b5hdLrsfR2qpYozktQ1ErP4KST9cMesAOH_YGY_Nqb8vLIrypAKLha7Q4eIVcN8xGMSMDm16nOTJKh-lcwRSGWlU_cZZUXARs6QHJLDZaW2TL8I4gmP",
+      "headers": {
+        "encoding": "aes128gcm"
+      },
+      "expected_plaintext_hex": "5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b305d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d",
+      "expected_payload": {
+        "raw": "[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[0]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]"
+      }
+    },
+    {
+      "id": "json-rust-maximum-depth",
+      "data": "DGv6ra1nlYgDCS1FRnbzlwAAEABBBP4z9KsN6nGRTbVYI_c7VJSPQTBtkgcy27mlmlMoZIIgDll6e3vCYLocInmYWAmS6TlzAC8wEqKK6PBru3jl7A_-pOBuOYnBTXrniNUigX5kxl7fjoBuMfK-yEMnuoHLcM_kZQMYO1XhbTrJ9ST0u2AiNN4j2j6IsZBOzvCjQRLXg1yC5P15aJPnVJEYbQdzxdcO_UQhiYEswOknRTJBbO5an3X6OUEcy0YwGvAAqjPKUhMf86YkcOvn4VhkAqQTNPSPUap80MSUci_XOepMXr_s9Fd93WlyjHdDJUm5GbuAPB6yetujyw923CKe2DhaoUPzQxqLMIioAMfG8b5hdLrsfR2qpYozktQ1ErP4KST9cMesAOH_YGY_Nqb8vLIrypAKLha7Q4eIVcN8xGMSMDm16nOTJKh-lcwRSGWlU_dGe8Ok0i-SK30NIvRpKu5kbg",
+      "headers": {
+        "encoding": "aes128gcm"
+      },
+      "expected_plaintext_hex": "5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b305d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d",
+      "expected_payload": [
+        [
+          [
+            [
+              [
+                [
+                  [
+                    [
+                      [
+                        [
+                          [
+                            [
+                              [
+                                [
+                                  [
+                                    [
+                                      [
+                                        [
+                                          [
+                                            [
+                                              [
+                                                [
+                                                  [
+                                                    [
+                                                      [
+                                                        [
+                                                          [
+                                                            [
+                                                              [
+                                                                [
+                                                                  [
+                                                                    [
+                                                                      [
+                                                                        [
+                                                                          [
+                                                                            [
+                                                                              [
+                                                                                [
+                                                                                  [
+                                                                                    [
+                                                                                      [
+                                                                                        [
+                                                                                          [
+                                                                                            [
+                                                                                              [
+                                                                                                [
+                                                                                                  [
+                                                                                                    [
+                                                                                                      [
+                                                                                                        [
+                                                                                                          [
+                                                                                                            [
+                                                                                                              [
+                                                                                                                [
+                                                                                                                  [
+                                                                                                                    [
+                                                                                                                      [
+                                                                                                                        [
+                                                                                                                          [
+                                                                                                                            [
+                                                                                                                              [
+                                                                                                                                [
+                                                                                                                                  [
+                                                                                                                                    [
+                                                                                                                                      [
+                                                                                                                                        [
+                                                                                                                                          [
+                                                                                                                                            [
+                                                                                                                                              [
+                                                                                                                                                [
+                                                                                                                                                  [
+                                                                                                                                                    [
+                                                                                                                                                      [
+                                                                                                                                                        [
+                                                                                                                                                          [
+                                                                                                                                                            [
+                                                                                                                                                              [
+                                                                                                                                                                [
+                                                                                                                                                                  [
+                                                                                                                                                                    [
+                                                                                                                                                                      [
+                                                                                                                                                                        [
+                                                                                                                                                                          [
+                                                                                                                                                                            [
+                                                                                                                                                                              [
+                                                                                                                                                                                [
+                                                                                                                                                                                  [
+                                                                                                                                                                                    [
+                                                                                                                                                                                      [
+                                                                                                                                                                                        [
+                                                                                                                                                                                          [
+                                                                                                                                                                                            [
+                                                                                                                                                                                              [
+                                                                                                                                                                                                [
+                                                                                                                                                                                                  [
+                                                                                                                                                                                                    [
+                                                                                                                                                                                                      [
+                                                                                                                                                                                                        [
+                                                                                                                                                                                                          [
+                                                                                                                                                                                                            [
+                                                                                                                                                                                                              [
+                                                                                                                                                                                                                [
+                                                                                                                                                                                                                  [
+                                                                                                                                                                                                                    [
+                                                                                                                                                                                                                      [
+                                                                                                                                                                                                                        [
+                                                                                                                                                                                                                          [
+                                                                                                                                                                                                                            [
+                                                                                                                                                                                                                              [
+                                                                                                                                                                                                                                [
+                                                                                                                                                                                                                                  [
+                                                                                                                                                                                                                                    [
+                                                                                                                                                                                                                                      [
+                                                                                                                                                                                                                                        [
+                                                                                                                                                                                                                                          [
+                                                                                                                                                                                                                                            [
+                                                                                                                                                                                                                                              [
+                                                                                                                                                                                                                                                [
+                                                                                                                                                                                                                                                  [
+                                                                                                                                                                                                                                                    [
+                                                                                                                                                                                                                                                      [
+                                                                                                                                                                                                                                                        [
+                                                                                                                                                                                                                                                          [
+                                                                                                                                                                                                                                                            [
+                                                                                                                                                                                                                                                              [
+                                                                                                                                                                                                                                                                [
+                                                                                                                                                                                                                                                                  [
+                                                                                                                                                                                                                                                                    0
+                                                                                                                                                                                                                                                                  ]
+                                                                                                                                                                                                                                                                ]
+                                                                                                                                                                                                                                                              ]
+                                                                                                                                                                                                                                                            ]
+                                                                                                                                                                                                                                                          ]
+                                                                                                                                                                                                                                                        ]
+                                                                                                                                                                                                                                                      ]
+                                                                                                                                                                                                                                                    ]
+                                                                                                                                                                                                                                                  ]
+                                                                                                                                                                                                                                                ]
+                                                                                                                                                                                                                                              ]
+                                                                                                                                                                                                                                            ]
+                                                                                                                                                                                                                                          ]
+                                                                                                                                                                                                                                        ]
+                                                                                                                                                                                                                                      ]
+                                                                                                                                                                                                                                    ]
+                                                                                                                                                                                                                                  ]
+                                                                                                                                                                                                                                ]
+                                                                                                                                                                                                                              ]
+                                                                                                                                                                                                                            ]
+                                                                                                                                                                                                                          ]
+                                                                                                                                                                                                                        ]
+                                                                                                                                                                                                                      ]
+                                                                                                                                                                                                                    ]
+                                                                                                                                                                                                                  ]
+                                                                                                                                                                                                                ]
+                                                                                                                                                                                                              ]
+                                                                                                                                                                                                            ]
+                                                                                                                                                                                                          ]
+                                                                                                                                                                                                        ]
+                                                                                                                                                                                                      ]
+                                                                                                                                                                                                    ]
+                                                                                                                                                                                                  ]
+                                                                                                                                                                                                ]
+                                                                                                                                                                                              ]
+                                                                                                                                                                                            ]
+                                                                                                                                                                                          ]
+                                                                                                                                                                                        ]
+                                                                                                                                                                                      ]
+                                                                                                                                                                                    ]
+                                                                                                                                                                                  ]
+                                                                                                                                                                                ]
+                                                                                                                                                                              ]
+                                                                                                                                                                            ]
+                                                                                                                                                                          ]
+                                                                                                                                                                        ]
+                                                                                                                                                                      ]
+                                                                                                                                                                    ]
+                                                                                                                                                                  ]
+                                                                                                                                                                ]
+                                                                                                                                                              ]
+                                                                                                                                                            ]
+                                                                                                                                                          ]
+                                                                                                                                                        ]
+                                                                                                                                                      ]
+                                                                                                                                                    ]
+                                                                                                                                                  ]
+                                                                                                                                                ]
+                                                                                                                                              ]
+                                                                                                                                            ]
+                                                                                                                                          ]
+                                                                                                                                        ]
+                                                                                                                                      ]
+                                                                                                                                    ]
+                                                                                                                                  ]
+                                                                                                                                ]
+                                                                                                                              ]
+                                                                                                                            ]
+                                                                                                                          ]
+                                                                                                                        ]
+                                                                                                                      ]
+                                                                                                                    ]
+                                                                                                                  ]
+                                                                                                                ]
+                                                                                                              ]
+                                                                                                            ]
+                                                                                                          ]
+                                                                                                        ]
+                                                                                                      ]
+                                                                                                    ]
+                                                                                                  ]
+                                                                                                ]
+                                                                                              ]
+                                                                                            ]
+                                                                                          ]
+                                                                                        ]
+                                                                                      ]
+                                                                                    ]
+                                                                                  ]
+                                                                                ]
+                                                                              ]
+                                                                            ]
+                                                                          ]
+                                                                        ]
+                                                                      ]
+                                                                    ]
+                                                                  ]
+                                                                ]
+                                                              ]
+                                                            ]
+                                                          ]
+                                                        ]
+                                                      ]
+                                                    ]
+                                                  ]
+                                                ]
+                                              ]
+                                            ]
+                                          ]
+                                        ]
+                                      ]
+                                    ]
+                                  ]
+                                ]
+                              ]
+                            ]
+                          ]
+                        ]
+                      ]
+                    ]
+                  ]
+                ]
+              ]
+            ]
+          ]
+        ]
+      ]
+    },
+    {
+      "id": "json-surrogate-pair",
+      "data": "DGv6ra1nlYgDCS1FRnbzlwAAEABBBP4z9KsN6nGRTbVYI_c7VJSPQTBtkgcy27mlmlMoZIIgDll6e3vCYLocInmYWAmS6TlzAC8wEqKK6PBru3jl7A_e3c1UDqf_NBuej_sd4hZbwXDgsOsCSNTnZuynNCF2BD7TvJs2zIoJMg",
+      "headers": {
+        "encoding": "aes128gcm"
+      },
+      "expected_plaintext_hex": "7b2276616c7565223a225c75643833645c7564653037227d",
+      "expected_payload": {
+        "value": "😇"
+      }
+    },
+    {
+      "id": "aes128gcm-leading-bom-raw",
+      "data": "DGv6ra1nlYgDCS1FRnbzlwAAEABBBP4z9KsN6nGRTbVYI_c7VJSPQTBtkgcy27mlmlMoZIIgDll6e3vCYLocInmYWAmS6TlzAC8wEqKK6PBru3jl7A9KRAROQLv-NBuNrozlbv6AvwHs9Ly6T4YAe7MU",
+      "headers": {
+        "encoding": "aes128gcm"
+      },
+      "expected_plaintext_hex": "efbbbf7b226964223a317d",
+      "expected_payload": {
+        "raw": "﻿{\"id\":1}"
+      }
+    },
+    {
+      "id": "aes128gcm-padding",
+      "data": "DGv6ra1nlYgDCS1FRnbzlwAAEABBBP4z9KsN6nGRTbVYI_c7VJSPQTBtkgcy27mlmlMoZIIgDll6e3vCYLocInmYWAmS6TlzAC8wEqKK6PBru3jl7A_Vnt9RB7a6ZkDFv-EYvic_nQWE1ds1aqnlkxh84dqQK5S_PlhDYA66NmGSrn-v4Evj2nF6aIpjeEBBFLJQnUM",
+      "headers": {
+        "encoding": "aes128gcm"
+      },
+      "expected_plaintext_hex": "706164646564207061796c6f6164",
+      "expected_payload": {
+        "raw": "padded payload"
+      }
+    },
+    {
+      "id": "aes128gcm-empty-final-record",
+      "data": "DGv6ra1nlYgDCS1FRnbzlwAAEABBBP4z9KsN6nGRTbVYI_c7VJSPQTBtkgcy27mlmlMoZIIgDll6e3vCYLocInmYWAmS6TlzAC8wEqKK6PBru3jl7A-nWA9JFLVeQ32ERULH8YEUcA",
+      "headers": {
+        "encoding": "aes128gcm"
+      },
+      "expected_plaintext_hex": "",
+      "expected_payload": {
+        "raw": ""
+      }
+    },
+    {
+      "id": "aes128gcm-multiple-records",
+      "data": "DGv6ra1nlYgDCS1FRnbzlwAAABhBBP4z9KsN6nGRTbVYI_c7VJSPQTBtkgcy27mlmlMoZIIgDll6e3vCYLocInmYWAmS6TlzAC8wEqKK6PBru3jl7A_IitdBC6L2F9sw2FOis4ipn1mhdXSLlmRuu_dWSNE3We6iseWs-arF6HKV1qBRBacqvrjoGPQIW68HdPiUsFin0oqkEj4TAGxV1Tb9FdDmEBO0DjYQbYR7evrEnkTbFTzE79Ef2PjWngws5wdVRgyClimByIlq_YYHb6EIEP7Oop1COrwCgo9n1qBMj68Wcso-dmCmvLRPJRL_d8czYLGPbrqxSAfJA91sSC8c4gspeXYg6TG9iLdLZDM18-TJCCYCjxsY1hGNuQl3XPMSL0T8-iY",
+      "headers": {
+        "encoding": "aes128gcm"
+      },
+      "expected_plaintext_hex": "6d756c7469706c65207265636f726420706c61696e746578743b2065616368207265636f7264207573657320697473206f776e206e6f6e6365",
+      "expected_payload": {
+        "raw": "multiple record plaintext; each record uses its own nonce"
+      }
+    },
+    {
+      "id": "aes128gcm-counter-more-than-255",
+      "data": "DGv6ra1nlYgDCS1FRnbzlwAAABJBBP4z9KsN6nGRTbVYI_c7VJSPQTBtkgcy27mlmlMoZIIgDll6e3vCYLocInmYWAmS6TlzAC8wEqKK6PBru3jl7A_k_jhlDicN-FEiiIA9_URkz51KmmUNlgydtG0Gza5nJi8Fu20Pn6KtYc75sJzMshQ1_GNjL0VgsTUlCeYoyENulaWDOjQZWwfkjclQKC-2exIB54UdHqGhXnApHHGhtIdNvcPTHrvZa9f09NkMV_KO_JVrBrPdIbd-Lxq3IdtaJ94c1kpX0WJlnpsrzZUQFMwmjBhNvTuqN6PS4Ppa7CbnSAyP3kSHWcfguN0db9GI6euSsDcxm9xeEnRKjZouyk8GNTHJGcS-N2NrsmnjpkXsIwLBQhk8Bb4CfVlbA9f9LlODZzXCgT60fNk6FVbGsKxh_qaD_Shud91txSKM_a0PvLfCkkIDy41pvng469NfUAeObMHvTQj4qilUt_LS8J7EFamTc58dNY9kuKg4ogNoBfWLvQDqPasZ90XEUpCUj4MIbPNFCIQ3q47uuIjgRntn-wLF92bKDUFPwilyobDesd5Z_PKKnxvHtQ8F-m9QR7GukF5vJR21iT3CfCOsr_WfePapJmIvl9FKDbBLy1xj4ffQJmUhE806iHPqwUlKc47VWOpJoj-G4POoZCvoriSAwuyusLMXT8HVwTxZvR9O08N4gIEt5vAI_zZTyfl-rQoNNjRhyLRDn_7-5nTWJ2M5BSZ4V6PQevc0omksICE0TInXZpQzNPtetFC_1x-S4-p_raBv-0Vwvn_04kFUVwJcWo_UPpRQLlMG7VYx-2WbziYNg6wun8_M-XVJkyjBQIJ4UthC05lIJUpxBjavEo94yoxIiDJPBBhijBVN_n_uO5WqShq_VMXN866RpNGHDoZ-kPymLCSYmaOIzLEuLGQg5JeTHB1cpg7CAMGFGVQipciv_MbpCck-UeHIFzqCkZe_wtTUX-MjmiSqUd7RnHeqL2a27dl3hY1Z6Unpb6n-Bg1nXuNNFMlD9j16tB4nqfuTy_SNSNgsdE1nebn9tbYnsfKjS7hdVMu2zhmykOrR2wMfgI4fA8sjDsDrg1hXTZgwVTMTJXcAeY2OGGOCxMD1ztv3HMrGL4eab_HacTDAr01JzxFe1ki_EJJQncFxsUNhjzvS72Ck_8bqoFeLiu9KuMlRbFEU8FIHOrEcbey8XP7dO43a2NHDMvZ--f13ZVj4eqr4u0jYxBRok1bNX-OOLExwR0dYwO1Cfwzan3xyhxTb1Q_wHXo1CuRIdQ3HcC1jQDtRCzfN4mosYTFUUdZMxBPpKF9Zsdhb0E70c-ApozKjIuKKtO5e42Td97bGS_ez2H7NUrKA2_dRkM1xCL9JAQn9niGxTTAKFWm2-ovA36fXxI5oFidLM6UuZ8nuFC1uj_oXQ18EAhq_c9HSSu1HaqTVm2bIGEyGxCdRWWAKkjqh-zwFne10zh-7VD-C9EYlrdB06A-1NWxZXr2Wj4FzeSXcQP3sIfxMZFPwfVvPtejJ3gp_gLgKA8Wr0X8gfmMOU-cefBAPHpzBYzC_te164ARHrc247gZAo8wPlum15PyYOtz8hvnsfLmRtyGxVPg4o0CNhkSW935PAofpht7yINBQzkF1I1lwgFvuWLVBGk8oJGZLOzjUG184pJyZP_kyxN5Q26kvEcF1Un9xjroDWhalEACOV611kXf1ImQeRo_kqTyBpUzkdNL43rTB3VIO1vvdsSGyrLqaEsgnm-jlXdTx9vmTb3JL0sCtRdD_UT70f9t7HcPcYSMFM8w8d0abT8wXW2hdK7vn0JjtU_b_YEhRVl0p6RP98RJ5uo-vVkTkrn9ZPcmBYms9e2o9J-ybU16LzE37njaUWay-HnG0clDM2Y39TIFO7zxvvqTWxgpE8HVU8odTnB6kQ4t9RQz7z6ZJ6whv_l9ZbIN5YSUvDdhEtHSX3pzu5Tm6Zlw4rR5fdc96LCmkXXNqUNuzkqTYQD8WLyRfpmrDcyuDltxAUyrF1IjSAmXM6LnLXvgJ9bNzoBMotz5LHoEsy8lfLGR-zp-IkYIaHlC06IXbt3EZlpHiy1wGYCtYgTyRHGkx5EbKKxCwcOLA_Kzc5_CtlP_CIDtQ8LmuhiE8nNCdqY2JzDyyf6achdIjenWw-X_AFi8Vj_sh0-lu7mG1g40ju_Sgw1IZmAvTizffjzbj7_bagSclqolP_cjJvj9kkiu_IeCNfy8YVWwGtyBuqK5pevY86Erpi-u6V_5rOpa2WiBQylG0Kr23jTQoA3izrzgC-FYoSKcTjKxdo6yOFGyA2hu2vOAuOYz8tRzVTK3BwkUgC3PJoV3rE-cXaavr8zsfm090uhdTHk8uBPQQ6CNXZhbx5HkSxb7HW4CLLZeVywvlVyWEdkwO8tsvzCmHG44oSyhQbYq_EISkTm5e1ncUUrOJaT2fZPvrs-fukH64_M9L-L28PUWLIKbFjmjkLw8uteA9Ro4RbDIFfh36IWykD9McQOEVwPCIVJQo9oJYBcK48s7Si2Nf9Po1VT7yD5x0vjUfdYgS5J0rKBkIX9E9CH22u8ZIOE8AGU2lFe7V1L_PLUv6blQ9tVHbSvYwNS7ZcoC6tZAeJW-pJ-tTHefm7ulUbtKDCtM8eoeVzwOqEmJ4eNUPm8ZkZWwdA4MQhZaCbGB6MX22Nifqq39SZbhQcUt-u8pLES02aBjRFqpXEDZOKdvrRUAYS83RrBaIX3PwBPM-cZGvsf-fXXS720_paGDyx_yHCLPVeBLV_Fr8rxyU6_qwHmdxlGW9vVLtWQ3RvkS8Th_3zMbZ_vGO2tSFhLEps9qlCSKimlayjmXRmt1UqgT5QVjawkbNGWUgOnx3ZZZjBzW4PcmvWScbNAqz_GPZkuCOL9xoZZRlZreQelmtCJ7DCrOWGKg5tQ6m971NCDr9xwCvVfCNilBuCXyHLqEZ8mOFjmYRoavzH0bCSSEZl9nNWji37RfzX_FargJWHsHAU9WwWAqy4rn1XZpK6zwnQ9lZ8MjRinCJpU3JeskKB8iqFauW5w85lRGtPTGxL_rQ15zKMwFLfHTCrI-dXwVOx8_OT2qOQ3ETngYesORgkzC12hOct0LRdFJTX6RFvzRbk532nDKiUewqMZqAEYzJa29FLrlRIj2iJRhDkP4cnnazh1KsqCqU-Obug3x2ZSHNF8G2_3g7vhszcKXCRJESft8LGtU0t9CVW4yCyDt2LrPQCHoNYvosh9D4WTFpp_yyC6IYmDH8wExFMqH4P7jYr3AYiT00dTk3DaIIP7XsAhydFP40grCT3S0jKewqPj5w6mSKk1L0Lneef4k7dUgPC7ZhWleLgH4rAyeEI9iGxJInYlJLiGCUP1xje6wDdCi3Y0MDevyjytAEOENjEBTqS7EFCb_qowhHiFHxzZWikw_2d20p8Uu008-D5uDvpSoRlEHKWwPSMgkRb06JFNPOz58DETWMhf46P1Ax_2lIGEaMrfkKqh-OsROovlMseyTCf4vkHWKosMiBXtlvZbDNNdiSSsCIREdfyFCfDYHPmIZP3x4MLNCAhwpW_7TGw6VgJz36WKdvRTgtIRZ5wF5WGUpdTAq20dAiu6RSrUe7tnmgYUa3LXmcU3EJ5dZNsjkp0YRlza9dt5ACOsgyhkRgb0m4V8ovtCMGsWWjzPUtlhsLM7Qro95Ibhrbma8WPyQamZ5MqPnaBg2i8tIBnpLmaBeAK_VuyT4JiI2temPNzM_wSTpk6eHl0YCBx484Edy5O7E2972D9PucpKFCbnhloDb-CiPRApgFnJuxCWumAJVBz2stT1LwpmaRxM34Q_Z44lqY3-73oFwUIMPg9hiFodMS7RENpBI9clkaSxcFysnZRWkgHg_NEBs3zqmOQR9ZFHswM9YLY3kWmHT3zZeFlQnN0K77COrtjZ00g7RxLia2UEnhXx9lg9WZSS4wODiFqUGdi5UVQBijLi7Uu4Eo-Q0ZFMIa5KOiM8jojVXjGw8uKxoYOOmsPhMUwccx2Wdo0jgxGyCjog8VzWX6g_MGnR7JYQReFePp8noS9BdVlGZHD4v4KTVvKDiGJxvoeTS3uybyufQQaEntyhCIdCuWdgUdxtbiJQZruIsn3gjjAGOY3fO5hFit9DFrr-L6oqtm0dPsRipcwJWO52t20haHWAABeVre429itLCGppgVvlFt4LZu3p0DkeT-Hbrw028e_u4iV5kpQpL9aKD3X1OnDXEacGmL7GaSV4VKDdP5k0BVEL-d7-jqkXfoUUpQyQR2CqXnV10w4I_oaVpN9aCNooAKgojc3yN4nf2grdIBqjvmTMpSOWu1WALDg6qNMG2-gLhZ7--6j684zvYDmcML60Ms0eLYzTBxnyjmuetB5p432cIX0K1Kp77LIKbcgqU2C33wjO07Z1dR9yMeCuh-Op3rCJkcvux1dsLxU9FSujs0LOjFvnvSsBFc-pDjJ9MuJtlO_mmRGlBerq409desqUMLIW5j3XvhhBKAuMxdsguJTp_2B2i6xGYcDoDUA6bACdyMOo7zjWbr5hnOSMdGEBbr_FifL77K7-gYIEyP5CdCzWOE4niNAdwQU6VIXnDO8oYbItEYcE4TtVexyZK0RaKrh3odkOTDrm7fRnRgCQ5D8-IQR8_vajXXpFwmTS71sgWZ_IOLFBbQl6WW-QKhFXRWfQwnEiPm_U97c1R0SPAiwG3hM1oP4IwSkCbTyHXPqoHYbm8XwNePnSGnCCoIG_ybb-2i5NiVl_hsr6B71zXHOq1lUkuwijQwRErrx2B9mNcht1KdzM3G9ZRdsCJlEFtdES_nP3bp6vaV6Foy7ktcwTytWukba9DtYZsGtT0H7_V_K7ID5B5kTMKuPzhd0Y8kXgZ-F81xPqW_UaawmKbMR4_L6XWecS354c910LK6d_o2eCsfmmtzq-_MltTy3LmyB1ttC9JseQaPW12xx57Fr1GqcBeDhmu7zhfgRY2seRr1YR_BjM_KjAj7raY4IrQtlyP2a0wqpx0xBx4dNRln3sB56QemK9BFjkNlCpRZF0yafMW9MXCyC0enRKn1zdOyYsk50WisBCRwELFaYhOLdfkJP6FVZNm0UPy_TdpYcTIbPN1t6S9-cPlqqB5uXrY2-CDn_c1IH_Ywfhaip_OCJ7UDT_0cjcuT7672FyhfLdBOLHrQGZeEafEatqlI5ZOxR_871phvfMLOV03nsgvWDEoBgDasBxcJ5btKmdi0MQ3d-tga4alV6oxf6WMYrP8Z0ONIbVOo8Luhsr7Mkl3PadqNH6H6Zvo7bULQUFYPxHydWjrzKeTMfPTO49BqyjA_QPZ4yQeRIiqzOkgJyomYM2wKgG0MVHNxD9TVZXlEG3TnqzI070mES7ShOJIB28T_Wh4ejHotIRx4B40L8ReuRafgKgHsgLJnQb8LA5qwQchCNZ6uHfR4Umq5WjPBhuedH-1utFWXh4q3b7137EEZQeDPnq7puwYbX6YnpR9wcxP1Heja538uMKagLShSdKvadMDfmLD5sKRT4IGRrSw5BK8JVj5_wfyex-Zl82NMkMVLsmkAa1ZVcg0YvKGlRXfTqRjIXUtsT5SJvBNNpR-lSKWufiPOnoowpmRGwOzmSj309hzFNAy4TViIbRKOrPXeknJ2cdcyQU12rXLD5wj7r1XkStgV1apNKv26AztcQeqJBqp1s8W9BU3faI3wlqx4kN5ce59hQacg7jiEvMRklhPtgxoS3eZwVXM33u7ExPwHspbmMIfDbzTX8bGhhZ2kZnhWDKtQWoYHryUTnuSVaKiMQ5bJ4e1nSfFHol4fNo3Lz7z9pz1HQOVDA_xj6el8LkyuBo4La8kUqAPNrCxUP7ZVFpivCddHywQI9vU9KXGn2Uxon4IiI3Qt8GEnWunso3qZBTbV3YXQwZOdxDcE1ohs4A0QKUx5JW9hHYBFK1SKwhMQAHTSpkPlCvCtNSf4WQFxJtIwvxJ5dXCYEVPYLlyU640PmCbzY-sBDhkYdO5S9ilT_2vR1N9vl0tkew-KQD7Ze1Cb_j-NeZnoZ1vO9yZbT2c6I7CB4AUBk7Iw8e8S_MttH6lpUmCGZZJDyfkY6YGhvF1Ch5UATEqWeXnIu3b9gcWEVNUt6tkRAP6mF6RSmD57tBGYndhqaCE_6H-_NRwbYgDov9jsMRYGBcoUtEc6pYycwDng6ESbVO4DhvZMSkomcIW1auA6j0QdBQySeyL-wbTA7jPXyYtPSHSuhslHXdTmGtekWPQX6XY6z0vjmO6ze8q_JK2JBAgIUMu2y_qDp_1SI57cJAI6_pGAzSPFRNSb6dWvH-956sfO1ftVaRf_TTFZllLdGkonX6wXeQlMSL5w9ymaRX-gVSrfAZmFo5dcK7mG9aqvwrBCGuDBuSON898xg2f7I05p0eydYKXvrzdmVlHW5pjp5ucFZ6Pox8l-aiyyFfGhl-nomrMC74RsrDV6fLjV8Lk1vAn8-lkvMsGE38zmpr6JPZBlQxq27973_9WtgwnIm17WIs-umYkqxTfze6eYgohbx2KrgjeH-WUsokc4Fu8bPi0QexcF6vy6P6jVArSiPm91E4blE6NtyKbVtO3gO6SUkUs2tWizxFCvq2VxkUYbmFvnbL72dafqTNqezViAAh2ZJfWmK-fxSw5zC_O37qAlRquMTQvoy47CeDMLsPylSlomIq07AdV_a02x4AAXUasZ3FC_w6yoxM9f9UrfPzMoeHHAXNI9yxCNMXxubXoybceYL63VipgUTIONWrxwt9slkpjz8RW7Aqc7gLotjv3GPo79-SvPBv7X7Id191m-0RqqLVxTdXCdj3Nd21Y4TW0L075xbR5zfgFSGYkNTuskmDG2EmY16S3XuWu7bajLbl7tqlCOqi9bOQmfNVnsXiJrO3BhcRLrXpIwisfT45cFVr8HWLzcxnlGndwi_V2K-u6NrO5Nx7jKJdXftLuyH3suYEohKAAPMAl5aP0bJVsnsfyFC9V_jg_j79678Hwhu5rTNWnwyAGKr8hlTRMYDX3uIuIxy4J-L-GZEk3Q2Bz7N9qcM2fp9V3bzvc8xC2uQ2JxfGkR53WlM9QlbZWucnc7k8e1T2ojm122Y1Ps-DAJzrboGHypP1lTnlxrwJp3qelCB462PYjMs6KZhBKVMVXMsT61rQNwYcSvFKlkWigtB4eLvKnF_tneuWrJl9GjYy99x1NI5QPUg-ZInDFXHQvi78UQbEf1hiwwHV1A53q-zzznWUlQY3SiM3YDyKkITbYdpXZQ9JrDTSvEvJH3wK6uT1zyBf4",
+      "headers": {
+        "encoding": "aes128gcm"
+      },
+      "expected_plaintext_hex": "414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141",
+      "expected_payload": {
+        "raw": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+      }
+    },
+    {
+      "id": "aes128gcm-huge-advertised-rs",
+      "data": "DGv6ra1nlYgDCS1FRnbzl_____9BBP4z9KsN6nGRTbVYI_c7VJSPQTBtkgcy27mlmlMoZIIgDll6e3vCYLocInmYWAmS6TlzAC8wEqKK6PBru3jl7A_HkM5bBrf-NkPF8-8arlBe8SXgtK9UaHNj4f_v0xKHutftxSWdqX4",
+      "headers": {
+        "encoding": "aes128gcm"
+      },
+      "expected_plaintext_hex": "626f756e6465642062792061637475616c2064617461",
+      "expected_payload": {
+        "raw": "bounded by actual data"
+      }
+    },
+    {
+      "id": "unsupported-encoding",
+      "data": "DGv6ra1nlYgDCS1FRnbzlwAAEABBBP4z9KsN6nGRTbVYI_c7VJSPQTBtkgcy27mlmlMoZIIgDll6e3vCYLocInmYWAmS6TlzAC8wEqKK6PBru3jl7A_yl95bQpu6cVPTpK4Mqgkf1CXztLVBSt2Ks3oZwbuwXPXLWyouBWLVWGNWQexSgSxsj_Qulcy4a-fN",
+      "headers": {
+        "encoding": "br"
+      },
+      "expected_error": "Decryption",
+      "expected_message": "unsupported encoding"
+    },
+    {
+      "id": "empty-encoding",
+      "data": "DGv6ra1nlYgDCS1FRnbzlwAAEABBBP4z9KsN6nGRTbVYI_c7VJSPQTBtkgcy27mlmlMoZIIgDll6e3vCYLocInmYWAmS6TlzAC8wEqKK6PBru3jl7A_yl95bQpu6cVPTpK4Mqgkf1CXztLVBSt2Ks3oZwbuwXPXLWyouBWLVWGNWQexSgSxsj_Qulcy4a-fN",
+      "headers": {
+        "encoding": ""
+      },
+      "expected_error": "Decryption",
+      "expected_message": "unsupported encoding"
+    },
+    {
+      "id": "case-sensitive-encoding-value",
+      "data": "DGv6ra1nlYgDCS1FRnbzlwAAEABBBP4z9KsN6nGRTbVYI_c7VJSPQTBtkgcy27mlmlMoZIIgDll6e3vCYLocInmYWAmS6TlzAC8wEqKK6PBru3jl7A_yl95bQpu6cVPTpK4Mqgkf1CXztLVBSt2Ks3oZwbuwXPXLWyouBWLVWGNWQexSgSxsj_Qulcy4a-fN",
+      "headers": {
+        "encoding": "AES128GCM"
+      },
+      "expected_error": "Decryption",
+      "expected_message": "unsupported encoding"
+    },
+    {
+      "id": "base64-padding-rejected",
+      "data": "DGv6ra1nlYgDCS1FRnbzlwAAEABBBP4z9KsN6nGRTbVYI_c7VJSPQTBtkgcy27mlmlMoZIIgDll6e3vCYLocInmYWAmS6TlzAC8wEqKK6PBru3jl7A_yl95bQpu6cVPTpK4Mqgkf1CXztLVBSt2Ks3oZwbuwXPXLWyouBWLVWGNWQexSgSxsj_Qulcy4a-fN=",
+      "headers": {
+        "encoding": "aes128gcm"
+      },
+      "expected_error": "Decryption"
+    },
+    {
+      "id": "base64-standard-alphabet-rejected",
+      "data": "a+b/",
+      "headers": {
+        "encoding": "aes128gcm"
+      },
+      "expected_error": "Decryption"
+    },
+    {
+      "id": "base64-whitespace-rejected",
+      "data": "DGv6ra1nlYgDCS1FRnbzlwAAEABBBP4z9KsN6nGRTbVYI_c7VJSPQTBtkgcy27mlmlMoZIIgDll6e3vCYLocInmYWAmS6TlzAC8wEqKK6PBru3jl7A_yl95bQpu6cVPTpK4Mqgkf1CXztLVBSt2Ks3oZwbuwXPXLWyouBWLVWGNWQexSgSxsj_Qulcy4a-fN\n",
+      "headers": {
+        "encoding": "aes128gcm"
+      },
+      "expected_error": "Decryption"
+    },
+    {
+      "id": "base64-invalid-length",
+      "data": "A",
+      "headers": {
+        "encoding": "aes128gcm"
+      },
+      "expected_error": "Decryption"
+    },
+    {
+      "id": "base64-noncanonical-trailing-bits",
+      "data": "AB",
+      "headers": {
+        "encoding": "aes128gcm"
+      },
+      "expected_error": "Decryption"
+    },
+    {
+      "id": "empty-ciphertext",
+      "data": "",
+      "headers": null,
+      "expected_error": "Decryption",
+      "expected_message": "aes128gcm decryption failed: Zero-length ciphertext"
+    },
+    {
+      "id": "short-header",
+      "data": "AAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "headers": null,
+      "expected_error": "Decryption",
+      "expected_message": "aes128gcm decryption failed: Invalid header size (too short)"
+    },
+    {
+      "id": "truncated-key-header",
+      "data": "DGv6ra1nlYgDCS1FRnbzlwAAEAD_BP4z9KsN6nGRTbVYI_c7VJSPQTBtkgcy27mlmlMoZIIgDll6e3vCYLocInmYWAmS6TlzAC8wEqKK6PBru3jl7A_yl95bQpu6cVPTpK4Mqgkf1CXztLVBSt2Ks3oZwbuwXPXLWyouBWLVWGNWQexSgSxsj_Qulcy4a-fN",
+      "headers": null,
+      "expected_error": "Decryption",
+      "expected_message": "aes128gcm decryption failed: Invalid header size (too short)"
+    },
+    {
+      "id": "invalid-record-size",
+      "data": "DGv6ra1nlYgDCS1FRnbzlwAAABFBBP4z9KsN6nGRTbVYI_c7VJSPQTBtkgcy27mlmlMoZIIgDll6e3vCYLocInmYWAmS6TlzAC8wEqKK6PBru3jl7A_yl95bQpu6cVPTpK4Mqgkf1CXztLVBSt2Ks3oZwbuwXPXLWyouBWLVWGNWQexSgSxsj_Qulcy4a-fN",
+      "headers": null,
+      "expected_error": "Decryption",
+      "expected_message": "aes128gcm decryption failed: Invalid record size"
+    },
+    {
+      "id": "header-only",
+      "data": "DGv6ra1nlYgDCS1FRnbzlwAAEABBBP4z9KsN6nGRTbVYI_c7VJSPQTBtkgcy27mlmlMoZIIgDll6e3vCYLocInmYWAmS6TlzAC8wEqKK6PBru3jl7A8",
+      "headers": null,
+      "expected_error": "Decryption",
+      "expected_message": "aes128gcm decryption failed: Zero-length ciphertext"
+    },
+    {
+      "id": "short-key-id",
+      "data": "DGv6ra1nlYgDCS1FRnbzlwAAEABABP4z9KsN6nGRTbVYI_c7VJSPQTBtkgcy27mlmlMoZIIgDll6e3vCYLocInmYWAmS6TlzAC8wEqKK6PBru3jl7A_yl95bQpu6cVPTpK4Mqgkf1CXztLVBSt2Ks3oZwbuwXPXLWyouBWLVWGNWQexSgSxsj_Qulcy4a-fN",
+      "headers": null,
+      "expected_error": "Decryption",
+      "expected_message": "aes128gcm decryption failed: Invalid key length"
+    },
+    {
+      "id": "short-record",
+      "data": "DGv6ra1nlYgDCS1FRnbzlwAAEABBBP4z9KsN6nGRTbVYI_c7VJSPQTBtkgcy27mlmlMoZIIgDll6e3vCYLocInmYWAmS6TlzAC8wEqKK6PBru3jl7A_yl95bQpu6cVPTpK4Mqgkf",
+      "headers": null,
+      "expected_error": "Decryption",
+      "expected_message": "aes128gcm decryption failed: Block too short"
+    },
+    {
+      "id": "truncated-authentication-tag",
+      "data": "DGv6ra1nlYgDCS1FRnbzlwAAEABBBP4z9KsN6nGRTbVYI_c7VJSPQTBtkgcy27mlmlMoZIIgDll6e3vCYLocInmYWAmS6TlzAC8wEqKK6PBru3jl7A_yl95bQpu6cVPTpK4Mqgkf1CXztLVBSt2Ks3oZwbuwXPXLWyouBWLVWGNWQexSgSxsj_Qulcy4a-c",
+      "headers": {
+        "encoding": "aes128gcm"
+      },
+      "expected_error": "Decryption"
+    },
+    {
+      "id": "tampered-ciphertext",
+      "data": "DGv6ra1nlYgDCS1FRnbzlwAAEABBBP4z9KsN6nGRTbVYI_c7VJSPQTBtkgcy27mlmlMoZIIgDll6e3vCYLocInmYWAmS6TlzAC8wEqKK6PBru3jl7A_yl95bQ5u6cVPTpK4Mqgkf1CXztLVBSt2Ks3oZwbuwXPXLWyouBWLVWGNWQexSgSxsj_Qulcy4a-fN",
+      "headers": {
+        "encoding": "aes128gcm"
+      },
+      "expected_error": "Decryption"
+    },
+    {
+      "id": "wrong-auth",
+      "data": "DGv6ra1nlYgDCS1FRnbzlwAAEABBBP4z9KsN6nGRTbVYI_c7VJSPQTBtkgcy27mlmlMoZIIgDll6e3vCYLocInmYWAmS6TlzAC8wEqKK6PBru3jl7A_yl95bQpu6cVPTpK4Mqgkf1CXztLVBSt2Ks3oZwbuwXPXLWyouBWLVWGNWQexSgSxsj_Qulcy4a-fN",
+      "headers": null,
+      "keys": {
+        "private_key": [
+          171,
+          87,
+          87,
+          167,
+          13,
+          212,
+          165,
+          62,
+          85,
+          58,
+          107,
+          191,
+          113,
+          255,
+          239,
+          234,
+          40,
+          116,
+          236,
+          7,
+          166,
+          179,
+          121,
+          227,
+          196,
+          143,
+          137,
+          90,
+          2,
+          220,
+          51,
+          222
+        ],
+        "public_key": [
+          4,
+          37,
+          113,
+          178,
+          190,
+          205,
+          253,
+          227,
+          96,
+          85,
+          26,
+          175,
+          30,
+          208,
+          244,
+          205,
+          54,
+          108,
+          17,
+          206,
+          190,
+          85,
+          95,
+          137,
+          188,
+          183,
+          177,
+          134,
+          165,
+          51,
+          57,
+          23,
+          49,
+          104,
+          236,
+          226,
+          235,
+          224,
+          24,
+          89,
+          123,
+          211,
+          4,
+          121,
+          184,
+          110,
+          60,
+          143,
+          142,
+          206,
+          213,
+          119,
+          202,
+          89,
+          24,
+          126,
+          146,
+          70,
+          153,
+          13,
+          182,
+          130,
+          0,
+          139,
+          14
+        ],
+        "auth_secret": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "expected_error": "Decryption"
+    },
+    {
+      "id": "wrong-keypair",
+      "data": "DGv6ra1nlYgDCS1FRnbzlwAAEABBBP4z9KsN6nGRTbVYI_c7VJSPQTBtkgcy27mlmlMoZIIgDll6e3vCYLocInmYWAmS6TlzAC8wEqKK6PBru3jl7A_yl95bQpu6cVPTpK4Mqgkf1CXztLVBSt2Ks3oZwbuwXPXLWyouBWLVWGNWQexSgSxsj_Qulcy4a-fN",
+      "headers": null,
+      "keys": {
+        "private_key": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ],
+        "public_key": [
+          4,
+          111,
+          240,
+          59,
+          148,
+          146,
+          65,
+          206,
+          29,
+          173,
+          212,
+          53,
+          25,
+          230,
+          150,
+          14,
+          10,
+          133,
+          180,
+          26,
+          105,
+          160,
+          92,
+          50,
+          129,
+          3,
+          170,
+          43,
+          206,
+          21,
+          148,
+          202,
+          22,
+          60,
+          79,
+          117,
+          58,
+          85,
+          191,
+          1,
+          220,
+          83,
+          246,
+          192,
+          176,
+          199,
+          238,
+          231,
+          139,
+          64,
+          198,
+          255,
+          125,
+          37,
+          169,
+          110,
+          34,
+          130,
+          185,
+          137,
+          206,
+          247,
+          28,
+          20,
+          74
+        ],
+        "auth_secret": [
+          5,
+          48,
+          89,
+          50,
+          161,
+          199,
+          234,
+          190,
+          19,
+          182,
+          206,
+          201,
+          253,
+          164,
+          136,
+          130
+        ]
+      },
+      "expected_error": "Decryption"
+    },
+    {
+      "id": "short-auth",
+      "data": "DGv6ra1nlYgDCS1FRnbzlwAAEABBBP4z9KsN6nGRTbVYI_c7VJSPQTBtkgcy27mlmlMoZIIgDll6e3vCYLocInmYWAmS6TlzAC8wEqKK6PBru3jl7A_yl95bQpu6cVPTpK4Mqgkf1CXztLVBSt2Ks3oZwbuwXPXLWyouBWLVWGNWQexSgSxsj_Qulcy4a-fN",
+      "headers": null,
+      "keys": {
+        "private_key": [
+          171,
+          87,
+          87,
+          167,
+          13,
+          212,
+          165,
+          62,
+          85,
+          58,
+          107,
+          191,
+          113,
+          255,
+          239,
+          234,
+          40,
+          116,
+          236,
+          7,
+          166,
+          179,
+          121,
+          227,
+          196,
+          143,
+          137,
+          90,
+          2,
+          220,
+          51,
+          222
+        ],
+        "public_key": [
+          4,
+          37,
+          113,
+          178,
+          190,
+          205,
+          253,
+          227,
+          96,
+          85,
+          26,
+          175,
+          30,
+          208,
+          244,
+          205,
+          54,
+          108,
+          17,
+          206,
+          190,
+          85,
+          95,
+          137,
+          188,
+          183,
+          177,
+          134,
+          165,
+          51,
+          57,
+          23,
+          49,
+          104,
+          236,
+          226,
+          235,
+          224,
+          24,
+          89,
+          123,
+          211,
+          4,
+          121,
+          184,
+          110,
+          60,
+          143,
+          142,
+          206,
+          213,
+          119,
+          202,
+          89,
+          24,
+          126,
+          146,
+          70,
+          153,
+          13,
+          182,
+          130,
+          0,
+          139,
+          14
+        ],
+        "auth_secret": [
+          48,
+          89,
+          50,
+          161,
+          199,
+          234,
+          190,
+          19,
+          182,
+          206,
+          201,
+          253,
+          164,
+          136,
+          130
+        ]
+      },
+      "expected_error": "Decryption",
+      "expected_message": "aes128gcm decryption failed: Invalid auth secret"
+    },
+    {
+      "id": "invalid-sender-point",
+      "data": "DGv6ra1nlYgDCS1FRnbzlwAAEABBAP4z9KsN6nGRTbVYI_c7VJSPQTBtkgcy27mlmlMoZIIgDll6e3vCYLocInmYWAmS6TlzAC8wEqKK6PBru3jl7A_yl95bQpu6cVPTpK4Mqgkf1CXztLVBSt2Ks3oZwbuwXPXLWyouBWLVWGNWQexSgSxsj_Qulcy4a-fN",
+      "headers": {
+        "encoding": "aes128gcm"
+      },
+      "expected_error": "Decryption"
+    },
+    {
+      "id": "invalid-padding-delimiter",
+      "data": "DGv6ra1nlYgDCS1FRnbzlwAAEABBBP4z9KsN6nGRTbVYI_c7VJSPQTBtkgcy27mlmlMoZIIgDll6e3vCYLocInmYWAmS6TlzAC8wEqKK6PBru3jl7A_k_CQLDvoXOz4BwPpwth2BBmo",
+      "headers": null,
+      "expected_error": "Decryption",
+      "expected_message": "aes128gcm decryption failed: Invalid decryption padding"
+    },
+    {
+      "id": "all-zero-padding",
+      "data": "DGv6ra1nlYgDCS1FRnbzlwAAEABBBP4z9KsN6nGRTbVYI_c7VJSPQTBtkgcy27mlmlMoZIIgDll6e3vCYLocInmYWAmS6TlzAC8wEqKK6PBru3jl7A-l_7s73ByyVDtmf36eVUrYWwSL",
+      "headers": null,
+      "expected_error": "Decryption",
+      "expected_message": "aes128gcm decryption failed: Invalid decryption padding"
+    },
+    {
+      "id": "missing-final-marker",
+      "data": "DGv6ra1nlYgDCS1FRnbzlwAAEABBBP4z9KsN6nGRTbVYI_c7VJSPQTBtkgcy27mlmlMoZIIgDll6e3vCYLocInmYWAmS6TlzAC8wEqKK6PBru3jl7A_k_jhlDicN-FEiiIA9_URkz50",
+      "headers": null,
+      "expected_error": "Decryption",
+      "expected_message": "aes128gcm decryption failed: Truncated ciphertext"
+    },
+    {
+      "id": "early-final-record",
+      "data": "DGv6ra1nlYgDCS1FRnbzlwAAABJBBP4z9KsN6nGRTbVYI_c7VJSPQTBtkgcy27mlmlMoZIIgDll6e3vCYLocInmYWAmS6TlzAC8wEqKK6PBru3jl7A_k_cs8DpSaWomQZMdWE7Fz4pFJmf9UJSiozgdYZoLiPc0_mvk",
+      "headers": null,
+      "expected_error": "Decryption",
+      "expected_message": "aes128gcm decryption failed: Invalid decryption padding"
+    },
+    {
+      "id": "invalid-utf8-after-decrypt",
+      "data": "DGv6ra1nlYgDCS1FRnbzlwAAEABBBP4z9KsN6nGRTbVYI_c7VJSPQTBtkgcy27mlmlMoZIIgDll6e3vCYLocInmYWAmS6TlzAC8wEqKK6PBru3jl7A9aAbnckfYm7e_j5Yecj5D4CN4B",
+      "headers": {
+        "encoding": "aes128gcm"
+      },
+      "expected_plaintext_hex": "fffe",
+      "expected_error": "Decryption"
+    },
+    {
+      "id": "aesgcm-json",
+      "data": "4qwiZlC03_T3o60V8q_BjvG2sE2nXBy3QUvMGOJ9QJTX",
+      "headers": {
+        "encoding": "aesgcm",
+        "crypto_key": "dh=BP4z9KsN6nGRTbVYI_c7VJSPQTBtkgcy27mlmlMoZIIgDll6e3vCYLocInmYWAmS6TlzAC8wEqKK6PBru3jl7A8",
+        "encryption": "salt=DGv6ra1nlYgDCS1FRnbzlw;rs=4096"
+      },
+      "expected_plaintext_hex": "7b226c6567616379223a747275657d",
+      "expected_payload": {
+        "legacy": true
+      }
+    },
+    {
+      "id": "aesgcm-padded",
+      "data": "4shZRDzRuJWU2o8vht2064xZGR0Oqhjh32Id9-gH5Sl8SlNcAdOezvTYG1g9yWDrGTsf-mY2EnjhBP6euAIkFG5uCfI6f0BTmL_b0qMc7INnFu_r0rjE8ShNp3DO_5VxHWpdtfi_s-SFltBawoxkPoWnaZchheX56X7WMmTKMVSBXLT_hFPVTA",
+      "headers": {
+        "encoding": "aesgcm",
+        "crypto_key": "dh=BP4z9KsN6nGRTbVYI_c7VJSPQTBtkgcy27mlmlMoZIIgDll6e3vCYLocInmYWAmS6TlzAC8wEqKK6PBru3jl7A8",
+        "encryption": "salt=DGv6ra1nlYgDCS1FRnbzlw;rs=4096"
+      },
+      "expected_plaintext_hex": "6c6567616379207061646465642074657874",
+      "expected_payload": {
+        "raw": "legacy padded text"
+      }
+    },
+    {
+      "id": "aesgcm-semicolon-params",
+      "data": "4qwiZlC03_T3o60V8q_BjvG2sE2nXBy3QUvMGOJ9QJTX",
+      "headers": {
+        "encoding": "aesgcm",
+        "crypto_key": "p256ecdsa=irrelevant;  dh=BP4z9KsN6nGRTbVYI_c7VJSPQTBtkgcy27mlmlMoZIIgDll6e3vCYLocInmYWAmS6TlzAC8wEqKK6PBru3jl7A8  ",
+        "encryption": "other=1; salt=DGv6ra1nlYgDCS1FRnbzlw;rs=4096"
+      },
+      "expected_plaintext_hex": "7b226c6567616379223a747275657d",
+      "expected_payload": {
+        "legacy": true
+      }
+    },
+    {
+      "id": "aesgcm-first-matching-param",
+      "data": "4qwiZlC03_T3o60V8q_BjvG2sE2nXBy3QUvMGOJ9QJTX",
+      "headers": {
+        "encoding": "aesgcm",
+        "crypto_key": "dh=BP4z9KsN6nGRTbVYI_c7VJSPQTBtkgcy27mlmlMoZIIgDll6e3vCYLocInmYWAmS6TlzAC8wEqKK6PBru3jl7A8;dh=wrong",
+        "encryption": "salt=DGv6ra1nlYgDCS1FRnbzlw;rs=4096"
+      },
+      "expected_plaintext_hex": "7b226c6567616379223a747275657d",
+      "expected_payload": {
+        "legacy": true
+      }
+    },
+    {
+      "id": "aesgcm-ignores-rs-header",
+      "data": "4qwiZlC03_T3o60V8q_BjvG2sE2nXBy3QUvMGOJ9QJTX",
+      "headers": {
+        "encoding": "aesgcm",
+        "crypto_key": "dh=BP4z9KsN6nGRTbVYI_c7VJSPQTBtkgcy27mlmlMoZIIgDll6e3vCYLocInmYWAmS6TlzAC8wEqKK6PBru3jl7A8",
+        "encryption": "salt=DGv6ra1nlYgDCS1FRnbzlw;rs=18"
+      },
+      "expected_plaintext_hex": "7b226c6567616379223a747275657d",
+      "expected_payload": {
+        "legacy": true
+      }
+    },
+    {
+      "id": "aesgcm-max-compatible-record",
+      "data": "4qwYBX2Q-dTVm85ux5z1qs0YWFxP61mgniNctqlGpGg9CxIdQJLfj7WZWhl8iCGqWHpeuyd3UzmgRb_f-UNlVS8vSLN7PgES2f6ak-JdrcImV66qk_mFsGkM5jGPvtQwXCsc9Ln-nsCjtvJio71EG6CDTPYUodzMWn1_kggTKUWWoxeZcJIJb5g2GUqYXzZ8rSPWNsTy-S6Ct5b0AG25l0YseD-R8gnFyHuGpYprDK1shwJpqvP3cPFnh8CsoHad-Dgn1tV0ku39ISjfag-tuw3JyemClyY2uxQh3pwlk7B_IJXcwQbbFrkEjH3SIpy61Rd8i961a_OAj55b6OBIAeUtiBSd9SCNobH0xMxNQUbrb_oHeoJ5G7Q7U4C8GgOzsn8VV6xTXxdTQDrjuMdm2lWINsFJR8-c-ukb2Q_GPD5n8sIO4t2s_jSciYHC5Oz91TM5jJB4gHhklhsr3y-iw-3CtH4HeN03ja7OyzxXw6hfm-roNJSCalQXmLfiSea8IM33RB5h9rU2HK1Kjgth146TGkn3iSTybjw7lZELxrhiMOtcVwoWzNa_SBTtfAjETnkKNBcHMCt8CXeRtHxX20TDXLle9JXew7s9-pmbfwT640vP2VZDfRJPTnMtam1xFh8s6niivRGPypsSAAmNRRMxHB3_99N-Z7o5HleO7bjVVMchNhLTXWyyuBS_03pihu1j26iTiaq19w_SyXbirzf0W8Fe6v93IIzxt63fsLYW7XzN039zZr28hcPf3qrSWowhvhsxKMEvay2unARFg79oUcKE1aNJK3SbuuMAt4_G2sr_Jg6yvBSJ1r7c5UQw31jmwMpWVvnrt9wi0Ug_uWvoYfHz_RQbl3bcsgf2edRbUrmXzcuFUnMxUr-ZRvR0NRcdwH56loqqulChWwZ-XCRqkdniEbk3zwISapRm-3a5j635LFMAujzQvqeu99NpMsfOHEN8XDhSQAiRCZ6jw5AZayVzaBp1gGzjJzk42Wk2H-RGmdpCFvJz2dKlvWVsrEm5ERqrR25HCA_RUK8h-jS74qXkBt-i4zelsQsWXGN1Th41ujWTh4Z7mPumbXwglkunXC6XjV6kxxpp49XGEpZsaANH4nUVxQ0W7Bz8AL2tCaHyCjttr2YdpYhqOB8URo8Mwim6m4PQiPf29lE-EKcgIOPsIrjme5wK1PzpcZueJRb9-ZZZoWly6a8dcNIelza9IPjap9WIAf4ApXExRihRhyNqE5zdcXGNnVYf-Cew5SvrXLhc9xJne0U2Jt2RFVyEmTvQxPlEmfQYSb6MsCgzbCpXahsAdEjoi6OyxeD4-zNNw1i1sn1PVE5Ota_PK3ad_b4sUNqo0kJIpO7O7bhcp2Zhsgibuo2XrjCTZLacfy5vytkk3g2L1AJya3wz1AdimfE_1EZf9OZPVNYOtPCifZIePAn_WmnhBQOKCiN5mJoCNKHCMr9NIhh3pmnUPjsWqtE_S-NZ7jgKh2Ab3liTFXk7O0JvyPCat83V5riEVzT5pEVNLHSPSSky21NH7wxast8MHW94BFtsLz2-blptZZW80EL6VDA7-dbPSS_5FVnSWJAjFA5FOhKKnHxhDbC5ae41wDs3L6X3EkamiD1AhJ5vOClFNDlR2bL_IPRN6_ttVTEMRrBRBEw9F0SaaJoWjOHbSgbsqYmLLEQW9U8qa9cb1n7S4iayiZkaPk-NxWtamsMT4FpNEAMhMr1UIxJ_drStkx3UbQ7_N0kMFpDH40g4oiEwiqIWpzbOO2NWDoIYEzbc4t_HpmGZWqRYMa-z0tswUvnXKG2Vkc7XPRVOfMQNu79GshThVRg9GUKCaHAyE1BArJBdhLmm8i-ixHz0JV693StC9xUu4YLwuP0cCcHk90tMXIZhJ5vyjZ_eeXGxTwqEM-cx4DH8bDnHG4kQsUlnHSpvQ_6tXDt8OTqrXJgLEXzUPz2vSSyhATtLYLNpTQcZzkagMz8s7dbneP96PuDuDl_E6dffbx-ttc89eCu1HiCIU84BaTM9CRsNh_MdP-RkHWjAeysDGSHh98yzAqSn0ZtY1gv2xketNs8ZoLKg_NYlzWfTCGn6YEhS4uUvdmXAS0J140NKdWcUhR8GgDWx1nyjdcksE9m0dj5jtDhAsGphF20FPOZH7r2GOJ9o59cCIuCjJAjRKAoJBwrIp8KAJDCIAqrCsdRaXmsZ2lJmXJ95xeKtBmS4cXjzQj1OD9JO3SSx8PGR1WxtKZ2YJd7XpeITFIDSM6wg9-FFvNZLDsRhWZc5pFsK2KzFFMTeg2NEtJH7q6zK_MkN-MmDYNclsg6yIPaeDhFc581Ksrb8xoLAc1oWN193dzyU76sMAl_Vph_8-7oO90METsv81bv2rMy_xJcSubPrYcMsMfUePR8ot0NZeAt2H5Li_MIng3dDHJimA-Xmr-Tg2yzcnKMTjTMXXr7uO45y2wovKN9ZolS4KcbBhZGg87ImrYVMkqEc0gBTHP3wy5CLSJSnnndVb8sObd5eeH0U1SwEmpis-t0TgIRhavbfABDEKHHLmNkTC1rjdPOJJnE6wAHTMKhrXKx3uO7Gl5DVxuoZ1etlH49JrOxDbpJyklDcIU5Yor4V96K4UstupiiER2lbjH0KVpUamJAWSL5037uLKhKHE0Wr4YoSJFgP5gYG4Z1vmJohvC_2ft9LEm487LOCkuIGgjND_K52RJnyguYmJnYCBBCEiWqS0BzS_k1__eGW_FAAam1UK-uw-4wQxKka-NQenL0ueRiwARkQyu7P2WYaSicLvAZM8IqW5g5UJCRVRBg68Fi-ZD6CLDi_UJWiHlNGKAqHSzGxb7VGoRCjxtACHM7KeRp1WxaVez52dnP4lbMGi5_4Dhyd5Vm7MZsNtjkixJMgdWi5x-Rmw22T-qMVMHmK9InDmuXMi8tK3CW91jIrWYLT3e1YAzTIV3_GjvWXarp5oHk8JTTVUXclUVNWZbju8mW_rHmfFvEyvlneBwTOUe9z8THYRxuMhaBo6x1fCq5TvIdjehBs3TctQDWYJakt1sAtGJ4thm8W802M2airWDiGtT65e0kdGuoLJ0fprCOLqV4Br5K-a-sIzuEoFcsjzaO7NKbq8PqpIS25TVGh9EKrNcbgxnomQ8WK44P8yYzfDVpRAc2rq48mlPKsx1guf95P6vCgEi_qzDG7kzZCWBGmsoylxH8CWudFigVhGouj4zNOxZ_SFGI_2VoGqfP7evsfteqr2Jb2uJ9Wkjyek9-3Tuaio2He4xlRg_tAtrofczHkMN0nDOAZQooVmwgASYs9qQioRpaEOsKp6zvtTOCnvGEpUKztXDpH8dxqVDkDuBxFwJi_Y4xZHxjFto54SuCmu-Y0sb-l3tv2-d_ML9CyM534qR4ycupMn647T9SHx8pf_dI-JeavVpqGRpkZWzRQcD0loylXJaqUhVlmuxHZEOP2fr5phK38cmiDKHRH74Nm8eBTjvICuMwZmc1VMMK3O-Bzh74jnsTQzkf3cmWuuG4WriyYujDsTFxvhElKtOg2NBNFBOn2EpGao-REZdOnXGTxgBJdVAyzTrsvD2uDQg1gx3WGj2PtFJBTrF250Gs-O862LPq4njPfiJUjEHdUuJIjvd_y5KciUdHu0yuS7UTtHqWEYkc6v_hwzLxMwBj-zsRpPB72EuaL4tilCQGLF_nsrJ7PoWQ95z3ClJxtlHIB0Z5gD-O34Ef-HJiX3-PV5nFb83kgivRqH2m0XZp8PBzk-RwEAXTlGm_x7t0N1VtXVb2w02fpo9Fjy_7qQYQSpYqiwdRCkvvoUhuY_QJTvRGTops-DjA-CH6yE57SIeICgCwaVxGRlJUuyM5IBkHEy4s-Z3q1oEXvzbGbG7vp-xIw7eSDOez5igv3ayWZhmecGKNF1WUrlz8MpiV4fXC0-D89XS37DUFDPOZESYkKhKI6wepgj7KoKlz04XFB9URMSzedOUb3YcPYPLcYfByXatbZvxWmLOOFDEUkucixKN09D2wnIyO8ZK9EUbRn5NqajllH0aBSpMOgGnmiyODLLQ-qbzP6W0sKtiNz7t_MVRA4B3mQ4dsbYpVjdS2QSWYKjpxG_wohgK7JJ-yL92xgCGbC4rCKMH3QQfDip6yGjFiL5QjHC5QN6o7xIydVtxbtjakPEtyzydfmDx9Fe7a3z5X4sUTxvSDUuFvYOmKYN7HsZWH3SkKz4T5Hjv8WINYqlcNyFVLIo4hhxYA9jSA-lDNJvS51zTl183uId5HAQjm2s9ixrWxEWb2zZ-jFRsvHGgzFfUffi1fIYbpQxOJmlmLgkbnc56gHT7gobWMsuYLq7RqjsPcPph0Fm0C_UOxb6PwhyL2AEihFFQrdN6kdAT5wmp7aQpdgcXF5MiJPyRW0K5ZgVghCqpqEzzddD653QGJZsg-EwjIuoilDMz6CDaSNw0JEGpW7W-cIW45Qkr8IfUP-yz6H2LJLrdW1qgVS5iB6z7MLuVL4fEzC6HjwuMn7X2GihkINVs12sRD5QSzlBFWTvypOxSzx01XxvGiKYBlNgvMdlxGFcn1zy6lqBw5ebNcdB7sya7yduyRR676QTigx8mFEEHPCv3LKjx8-tzgHXZLDY9TpjdUeVEQbRPjK3pNdvc126Zh9WJKwDCmR4B0gqCHa5x4LmThcmTHgUEgRMIOwQICPnpVPAM4kZEej6aGbC9B1HnxOqwS-lLYeDmoJpaI-OM_BGeL2DPlSK27yPJ7EL_tZNdlR_ErrteXAX9QVncYVtiZK6xticp10jxIQi8V1buH6dZOV1IlNDBM7s79jDJ0YmalmxUZYz9JSY4Q9PEDpbaC120-1hSC53OQb02cIs_uz0Q6vV5oYxXfhNyUpMeVkyj0WgVHoHDOD2dAZWUK-RyEiGGNQtXdKSiUT7Vcr-htOHUh3fzR-I9ItDXrjGMtSnKLN0t_dtHdOQT7TavYqh8eTmSQctGemnBJsHTOCcoUWeDoTxfRWgV0nKE530Co7DJQurdKrnactXhOd62KT1VUbHyDRBeGFNdGKQ43--jiXBNS4RKRJ0RZfoH4KROsFUTlYbmn8c7GTD0Wm4ynKNaGonfBJLkxtHG8Bq0r-WmWe5ESbBnyGDLRuBP3NB3_b_WZaSC6LQ_kkURciqPUf5YFszX68Ro_TTAHitRXGopPl6dl404n9NNwXgqIpYgZPHBDMaZp2BXwsYUohBj78o4QEOFjuFM7Gy9M0XtC-CcRu4yp46A_JIXMlZ059UDbYKtwqJTUJfbvt-ot8X6kbDv69uW6tFwWVtyjhBaeBYQmd_JPHL9RsUgIrnRgP_kgFxYjx6lTbVZXs10CSkcxMosdOtdNxHWX1CybKlK1nXqVT5IxkpWQaRnJbjQ_LChZAMmCbz6ZIoSbiUEkBXci5jP8B3UkyZYlJcO_B2eqNB6apn8mKTr7IQkXZ-QcLnW82AYlmZP-XPexJeUPXMl-IvQEaF9wwmhoWZYeLyDfR9k3NFG0VT7g6zbc",
+      "headers": {
+        "encoding": "aesgcm",
+        "crypto_key": "dh=BP4z9KsN6nGRTbVYI_c7VJSPQTBtkgcy27mlmlMoZIIgDll6e3vCYLocInmYWAmS6TlzAC8wEqKK6PBru3jl7A8",
+        "encryption": "salt=DGv6ra1nlYgDCS1FRnbzlw;rs=4096"
+      },
+      "expected_plaintext_hex": "4141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141",
+      "expected_payload": {
+        "raw": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+      }
+    },
+    {
+      "id": "aesgcm-missing-crypto-key",
+      "data": "4qwiZlC03_T3o60V8q_BjvG2sE2nXBy3QUvMGOJ9QJTX",
+      "headers": {
+        "encoding": "aesgcm",
+        "encryption": "salt=DGv6ra1nlYgDCS1FRnbzlw;rs=4096"
+      },
+      "expected_error": "Decryption",
+      "expected_message": "missing required header for param 'dh'"
+    },
+    {
+      "id": "aesgcm-missing-dh",
+      "data": "4qwiZlC03_T3o60V8q_BjvG2sE2nXBy3QUvMGOJ9QJTX",
+      "headers": {
+        "encoding": "aesgcm",
+        "crypto_key": "p256ecdsa=abc",
+        "encryption": "salt=DGv6ra1nlYgDCS1FRnbzlw;rs=4096"
+      },
+      "expected_error": "Decryption",
+      "expected_message": "param 'dh' not found in header"
+    },
+    {
+      "id": "aesgcm-missing-encryption",
+      "data": "4qwiZlC03_T3o60V8q_BjvG2sE2nXBy3QUvMGOJ9QJTX",
+      "headers": {
+        "encoding": "aesgcm",
+        "crypto_key": "dh=BP4z9KsN6nGRTbVYI_c7VJSPQTBtkgcy27mlmlMoZIIgDll6e3vCYLocInmYWAmS6TlzAC8wEqKK6PBru3jl7A8"
+      },
+      "expected_error": "Decryption",
+      "expected_message": "missing required header for param 'salt'"
+    },
+    {
+      "id": "aesgcm-missing-salt",
+      "data": "4qwiZlC03_T3o60V8q_BjvG2sE2nXBy3QUvMGOJ9QJTX",
+      "headers": {
+        "encoding": "aesgcm",
+        "crypto_key": "dh=BP4z9KsN6nGRTbVYI_c7VJSPQTBtkgcy27mlmlMoZIIgDll6e3vCYLocInmYWAmS6TlzAC8wEqKK6PBru3jl7A8",
+        "encryption": "rs=4096"
+      },
+      "expected_error": "Decryption",
+      "expected_message": "param 'salt' not found in header"
+    },
+    {
+      "id": "aesgcm-hyphen-header-rejected",
+      "data": "4qwiZlC03_T3o60V8q_BjvG2sE2nXBy3QUvMGOJ9QJTX",
+      "headers": {
+        "encoding": "aesgcm",
+        "crypto-key": "dh=BP4z9KsN6nGRTbVYI_c7VJSPQTBtkgcy27mlmlMoZIIgDll6e3vCYLocInmYWAmS6TlzAC8wEqKK6PBru3jl7A8",
+        "encryption": "salt=DGv6ra1nlYgDCS1FRnbzlw;rs=4096"
+      },
+      "expected_error": "Decryption"
+    },
+    {
+      "id": "aesgcm-quoted-dh-rejected",
+      "data": "4qwiZlC03_T3o60V8q_BjvG2sE2nXBy3QUvMGOJ9QJTX",
+      "headers": {
+        "encoding": "aesgcm",
+        "crypto_key": "dh=\"BP4z9KsN6nGRTbVYI_c7VJSPQTBtkgcy27mlmlMoZIIgDll6e3vCYLocInmYWAmS6TlzAC8wEqKK6PBru3jl7A8\"",
+        "encryption": "salt=DGv6ra1nlYgDCS1FRnbzlw;rs=4096"
+      },
+      "expected_error": "Decryption"
+    },
+    {
+      "id": "aesgcm-padded-base64-dh-rejected",
+      "data": "4qwiZlC03_T3o60V8q_BjvG2sE2nXBy3QUvMGOJ9QJTX",
+      "headers": {
+        "encoding": "aesgcm",
+        "crypto_key": "dh=BP4z9KsN6nGRTbVYI_c7VJSPQTBtkgcy27mlmlMoZIIgDll6e3vCYLocInmYWAmS6TlzAC8wEqKK6PBru3jl7A8=",
+        "encryption": "salt=DGv6ra1nlYgDCS1FRnbzlw;rs=4096"
+      },
+      "expected_error": "Decryption"
+    },
+    {
+      "id": "aesgcm-invalid-salt-base64",
+      "data": "4qwiZlC03_T3o60V8q_BjvG2sE2nXBy3QUvMGOJ9QJTX",
+      "headers": {
+        "encoding": "aesgcm",
+        "crypto_key": "dh=BP4z9KsN6nGRTbVYI_c7VJSPQTBtkgcy27mlmlMoZIIgDll6e3vCYLocInmYWAmS6TlzAC8wEqKK6PBru3jl7A8",
+        "encryption": "salt=*"
+      },
+      "expected_error": "Decryption"
+    },
+    {
+      "id": "aesgcm-invalid-salt-length",
+      "data": "4qwiZlC03_T3o60V8q_BjvG2sE2nXBy3QUvMGOJ9QJTX",
+      "headers": {
+        "encoding": "aesgcm",
+        "crypto_key": "dh=BP4z9KsN6nGRTbVYI_c7VJSPQTBtkgcy27mlmlMoZIIgDll6e3vCYLocInmYWAmS6TlzAC8wEqKK6PBru3jl7A8",
+        "encryption": "salt=AA"
+      },
+      "expected_error": "Decryption",
+      "expected_message": "aesgcm decryption failed: Invalid salt"
+    },
+    {
+      "id": "aesgcm-empty-body",
+      "data": "",
+      "headers": {
+        "encoding": "aesgcm",
+        "crypto_key": "dh=BP4z9KsN6nGRTbVYI_c7VJSPQTBtkgcy27mlmlMoZIIgDll6e3vCYLocInmYWAmS6TlzAC8wEqKK6PBru3jl7A8",
+        "encryption": "salt=DGv6ra1nlYgDCS1FRnbzlw;rs=4096"
+      },
+      "expected_error": "Decryption",
+      "expected_message": "aesgcm decryption failed: Block too short"
+    },
+    {
+      "id": "aesgcm-tag-only",
+      "data": "AAAAAAAAAAAAAAAAAAAAAA",
+      "headers": {
+        "encoding": "aesgcm",
+        "crypto_key": "dh=BP4z9KsN6nGRTbVYI_c7VJSPQTBtkgcy27mlmlMoZIIgDll6e3vCYLocInmYWAmS6TlzAC8wEqKK6PBru3jl7A8",
+        "encryption": "salt=DGv6ra1nlYgDCS1FRnbzlw;rs=4096"
+      },
+      "expected_error": "Decryption",
+      "expected_message": "aesgcm decryption failed: Block too short"
+    },
+    {
+      "id": "aesgcm-short-block",
+      "data": "AAAAAAAAAAAAAAAAAAAAAAAA",
+      "headers": {
+        "encoding": "aesgcm",
+        "crypto_key": "dh=BP4z9KsN6nGRTbVYI_c7VJSPQTBtkgcy27mlmlMoZIIgDll6e3vCYLocInmYWAmS6TlzAC8wEqKK6PBru3jl7A8",
+        "encryption": "salt=DGv6ra1nlYgDCS1FRnbzlw;rs=4096"
+      },
+      "expected_error": "Decryption",
+      "expected_message": "aesgcm decryption failed: Block too short"
+    },
+    {
+      "id": "aesgcm-multiple-record-limit",
+      "data": "4qwYBX2Q-dTVm85ux5z1qs0YWFxP61mgniNctqlGpGg9CxIdQJLfj7WZWhl8iCGqWHpeuyd3UzmgRb_f-UNlVS8vSLN7PgES2f6ak-JdrcImV66qk_mFsGkM5jGPvtQwXCsc9Ln-nsCjtvJio71EG6CDTPYUodzMWn1_kggTKUWWoxeZcJIJb5g2GUqYXzZ8rSPWNsTy-S6Ct5b0AG25l0YseD-R8gnFyHuGpYprDK1shwJpqvP3cPFnh8CsoHad-Dgn1tV0ku39ISjfag-tuw3JyemClyY2uxQh3pwlk7B_IJXcwQbbFrkEjH3SIpy61Rd8i961a_OAj55b6OBIAeUtiBSd9SCNobH0xMxNQUbrb_oHeoJ5G7Q7U4C8GgOzsn8VV6xTXxdTQDrjuMdm2lWINsFJR8-c-ukb2Q_GPD5n8sIO4t2s_jSciYHC5Oz91TM5jJB4gHhklhsr3y-iw-3CtH4HeN03ja7OyzxXw6hfm-roNJSCalQXmLfiSea8IM33RB5h9rU2HK1Kjgth146TGkn3iSTybjw7lZELxrhiMOtcVwoWzNa_SBTtfAjETnkKNBcHMCt8CXeRtHxX20TDXLle9JXew7s9-pmbfwT640vP2VZDfRJPTnMtam1xFh8s6niivRGPypsSAAmNRRMxHB3_99N-Z7o5HleO7bjVVMchNhLTXWyyuBS_03pihu1j26iTiaq19w_SyXbirzf0W8Fe6v93IIzxt63fsLYW7XzN039zZr28hcPf3qrSWowhvhsxKMEvay2unARFg79oUcKE1aNJK3SbuuMAt4_G2sr_Jg6yvBSJ1r7c5UQw31jmwMpWVvnrt9wi0Ug_uWvoYfHz_RQbl3bcsgf2edRbUrmXzcuFUnMxUr-ZRvR0NRcdwH56loqqulChWwZ-XCRqkdniEbk3zwISapRm-3a5j635LFMAujzQvqeu99NpMsfOHEN8XDhSQAiRCZ6jw5AZayVzaBp1gGzjJzk42Wk2H-RGmdpCFvJz2dKlvWVsrEm5ERqrR25HCA_RUK8h-jS74qXkBt-i4zelsQsWXGN1Th41ujWTh4Z7mPumbXwglkunXC6XjV6kxxpp49XGEpZsaANH4nUVxQ0W7Bz8AL2tCaHyCjttr2YdpYhqOB8URo8Mwim6m4PQiPf29lE-EKcgIOPsIrjme5wK1PzpcZueJRb9-ZZZoWly6a8dcNIelza9IPjap9WIAf4ApXExRihRhyNqE5zdcXGNnVYf-Cew5SvrXLhc9xJne0U2Jt2RFVyEmTvQxPlEmfQYSb6MsCgzbCpXahsAdEjoi6OyxeD4-zNNw1i1sn1PVE5Ota_PK3ad_b4sUNqo0kJIpO7O7bhcp2Zhsgibuo2XrjCTZLacfy5vytkk3g2L1AJya3wz1AdimfE_1EZf9OZPVNYOtPCifZIePAn_WmnhBQOKCiN5mJoCNKHCMr9NIhh3pmnUPjsWqtE_S-NZ7jgKh2Ab3liTFXk7O0JvyPCat83V5riEVzT5pEVNLHSPSSky21NH7wxast8MHW94BFtsLz2-blptZZW80EL6VDA7-dbPSS_5FVnSWJAjFA5FOhKKnHxhDbC5ae41wDs3L6X3EkamiD1AhJ5vOClFNDlR2bL_IPRN6_ttVTEMRrBRBEw9F0SaaJoWjOHbSgbsqYmLLEQW9U8qa9cb1n7S4iayiZkaPk-NxWtamsMT4FpNEAMhMr1UIxJ_drStkx3UbQ7_N0kMFpDH40g4oiEwiqIWpzbOO2NWDoIYEzbc4t_HpmGZWqRYMa-z0tswUvnXKG2Vkc7XPRVOfMQNu79GshThVRg9GUKCaHAyE1BArJBdhLmm8i-ixHz0JV693StC9xUu4YLwuP0cCcHk90tMXIZhJ5vyjZ_eeXGxTwqEM-cx4DH8bDnHG4kQsUlnHSpvQ_6tXDt8OTqrXJgLEXzUPz2vSSyhATtLYLNpTQcZzkagMz8s7dbneP96PuDuDl_E6dffbx-ttc89eCu1HiCIU84BaTM9CRsNh_MdP-RkHWjAeysDGSHh98yzAqSn0ZtY1gv2xketNs8ZoLKg_NYlzWfTCGn6YEhS4uUvdmXAS0J140NKdWcUhR8GgDWx1nyjdcksE9m0dj5jtDhAsGphF20FPOZH7r2GOJ9o59cCIuCjJAjRKAoJBwrIp8KAJDCIAqrCsdRaXmsZ2lJmXJ95xeKtBmS4cXjzQj1OD9JO3SSx8PGR1WxtKZ2YJd7XpeITFIDSM6wg9-FFvNZLDsRhWZc5pFsK2KzFFMTeg2NEtJH7q6zK_MkN-MmDYNclsg6yIPaeDhFc581Ksrb8xoLAc1oWN193dzyU76sMAl_Vph_8-7oO90METsv81bv2rMy_xJcSubPrYcMsMfUePR8ot0NZeAt2H5Li_MIng3dDHJimA-Xmr-Tg2yzcnKMTjTMXXr7uO45y2wovKN9ZolS4KcbBhZGg87ImrYVMkqEc0gBTHP3wy5CLSJSnnndVb8sObd5eeH0U1SwEmpis-t0TgIRhavbfABDEKHHLmNkTC1rjdPOJJnE6wAHTMKhrXKx3uO7Gl5DVxuoZ1etlH49JrOxDbpJyklDcIU5Yor4V96K4UstupiiER2lbjH0KVpUamJAWSL5037uLKhKHE0Wr4YoSJFgP5gYG4Z1vmJohvC_2ft9LEm487LOCkuIGgjND_K52RJnyguYmJnYCBBCEiWqS0BzS_k1__eGW_FAAam1UK-uw-4wQxKka-NQenL0ueRiwARkQyu7P2WYaSicLvAZM8IqW5g5UJCRVRBg68Fi-ZD6CLDi_UJWiHlNGKAqHSzGxb7VGoRCjxtACHM7KeRp1WxaVez52dnP4lbMGi5_4Dhyd5Vm7MZsNtjkixJMgdWi5x-Rmw22T-qMVMHmK9InDmuXMi8tK3CW91jIrWYLT3e1YAzTIV3_GjvWXarp5oHk8JTTVUXclUVNWZbju8mW_rHmfFvEyvlneBwTOUe9z8THYRxuMhaBo6x1fCq5TvIdjehBs3TctQDWYJakt1sAtGJ4thm8W802M2airWDiGtT65e0kdGuoLJ0fprCOLqV4Br5K-a-sIzuEoFcsjzaO7NKbq8PqpIS25TVGh9EKrNcbgxnomQ8WK44P8yYzfDVpRAc2rq48mlPKsx1guf95P6vCgEi_qzDG7kzZCWBGmsoylxH8CWudFigVhGouj4zNOxZ_SFGI_2VoGqfP7evsfteqr2Jb2uJ9Wkjyek9-3Tuaio2He4xlRg_tAtrofczHkMN0nDOAZQooVmwgASYs9qQioRpaEOsKp6zvtTOCnvGEpUKztXDpH8dxqVDkDuBxFwJi_Y4xZHxjFto54SuCmu-Y0sb-l3tv2-d_ML9CyM534qR4ycupMn647T9SHx8pf_dI-JeavVpqGRpkZWzRQcD0loylXJaqUhVlmuxHZEOP2fr5phK38cmiDKHRH74Nm8eBTjvICuMwZmc1VMMK3O-Bzh74jnsTQzkf3cmWuuG4WriyYujDsTFxvhElKtOg2NBNFBOn2EpGao-REZdOnXGTxgBJdVAyzTrsvD2uDQg1gx3WGj2PtFJBTrF250Gs-O862LPq4njPfiJUjEHdUuJIjvd_y5KciUdHu0yuS7UTtHqWEYkc6v_hwzLxMwBj-zsRpPB72EuaL4tilCQGLF_nsrJ7PoWQ95z3ClJxtlHIB0Z5gD-O34Ef-HJiX3-PV5nFb83kgivRqH2m0XZp8PBzk-RwEAXTlGm_x7t0N1VtXVb2w02fpo9Fjy_7qQYQSpYqiwdRCkvvoUhuY_QJTvRGTops-DjA-CH6yE57SIeICgCwaVxGRlJUuyM5IBkHEy4s-Z3q1oEXvzbGbG7vp-xIw7eSDOez5igv3ayWZhmecGKNF1WUrlz8MpiV4fXC0-D89XS37DUFDPOZESYkKhKI6wepgj7KoKlz04XFB9URMSzedOUb3YcPYPLcYfByXatbZvxWmLOOFDEUkucixKN09D2wnIyO8ZK9EUbRn5NqajllH0aBSpMOgGnmiyODLLQ-qbzP6W0sKtiNz7t_MVRA4B3mQ4dsbYpVjdS2QSWYKjpxG_wohgK7JJ-yL92xgCGbC4rCKMH3QQfDip6yGjFiL5QjHC5QN6o7xIydVtxbtjakPEtyzydfmDx9Fe7a3z5X4sUTxvSDUuFvYOmKYN7HsZWH3SkKz4T5Hjv8WINYqlcNyFVLIo4hhxYA9jSA-lDNJvS51zTl183uId5HAQjm2s9ixrWxEWb2zZ-jFRsvHGgzFfUffi1fIYbpQxOJmlmLgkbnc56gHT7gobWMsuYLq7RqjsPcPph0Fm0C_UOxb6PwhyL2AEihFFQrdN6kdAT5wmp7aQpdgcXF5MiJPyRW0K5ZgVghCqpqEzzddD653QGJZsg-EwjIuoilDMz6CDaSNw0JEGpW7W-cIW45Qkr8IfUP-yz6H2LJLrdW1qgVS5iB6z7MLuVL4fEzC6HjwuMn7X2GihkINVs12sRD5QSzlBFWTvypOxSzx01XxvGiKYBlNgvMdlxGFcn1zy6lqBw5ebNcdB7sya7yduyRR676QTigx8mFEEHPCv3LKjx8-tzgHXZLDY9TpjdUeVEQbRPjK3pNdvc126Zh9WJKwDCmR4B0gqCHa5x4LmThcmTHgUEgRMIOwQICPnpVPAM4kZEej6aGbC9B1HnxOqwS-lLYeDmoJpaI-OM_BGeL2DPlSK27yPJ7EL_tZNdlR_ErrteXAX9QVncYVtiZK6xticp10jxIQi8V1buH6dZOV1IlNDBM7s79jDJ0YmalmxUZYz9JSY4Q9PEDpbaC120-1hSC53OQb02cIs_uz0Q6vV5oYxXfhNyUpMeVkyj0WgVHoHDOD2dAZWUK-RyEiGGNQtXdKSiUT7Vcr-htOHUh3fzR-I9ItDXrjGMtSnKLN0t_dtHdOQT7TavYqh8eTmSQctGemnBJsHTOCcoUWeDoTxfRWgV0nKE530Co7DJQurdKrnactXhOd62KT1VUbHyDRBeGFNdGKQ43--jiXBNS4RKRJ0RZfoH4KROsFUTlYbmn8c7GTD0Wm4ynKNaGonfBJLkxtHG8Bq0r-WmWe5ESbBnyGDLRuBP3NB3_b_WZaSC6LQ_kkURciqPUf5YFszX68Ro_TTAHitRXGopPl6dl404n9NNwXgqIpYgZPHBDMaZp2BXwsYUohBj78o4QEOFjuFM7Gy9M0XtC-CcRu4yp46A_JIXMlZ059UDbYKtwqJTUJfbvt-ot8X6kbDv69uW6tFwWVtyjhBaeBYQmd_JPHL9RsUgIrnRgP_kgFxYjx6lTbVZXs10CSkcxMosdOtdNxHWX1CybKlK1nXqVT5IxkpWQaRnJbjQ_LChZAMmCbz6ZIoSbiUEkBXci5jP8B3UkyZYlJcO_B2eqNB6apn8mKTr7IQkXZ-QcLnW82AYlmZP-XPexJeUPXMl-IvQEaF9wwmhoWZT9-9t3l1_qAJbT4HnAJYI_f",
+      "headers": {
+        "encoding": "aesgcm",
+        "crypto_key": "dh=BP4z9KsN6nGRTbVYI_c7VJSPQTBtkgcy27mlmlMoZIIgDll6e3vCYLocInmYWAmS6TlzAC8wEqKK6PBru3jl7A8",
+        "encryption": "salt=DGv6ra1nlYgDCS1FRnbzlw;rs=4096"
+      },
+      "expected_error": "Decryption",
+      "expected_message": "aesgcm decryption failed: Decryption across multiple records is not supported"
+    },
+    {
+      "id": "aesgcm-empty-plaintext",
+      "data": "4q1ZR8FqAEdc7ks45jMwNCAQ_Q",
+      "headers": {
+        "encoding": "aesgcm",
+        "crypto_key": "dh=BP4z9KsN6nGRTbVYI_c7VJSPQTBtkgcy27mlmlMoZIIgDll6e3vCYLocInmYWAmS6TlzAC8wEqKK6PBru3jl7A8",
+        "encryption": "salt=DGv6ra1nlYgDCS1FRnbzlw;rs=4096"
+      },
+      "expected_error": "Decryption",
+      "expected_message": "aesgcm decryption failed: Invalid decryption padding"
+    },
+    {
+      "id": "aesgcm-nonzero-padding",
+      "data": "4q1YBY9TmCzJ8sX25aK4SuR6c6s",
+      "headers": {
+        "encoding": "aesgcm",
+        "crypto_key": "dh=BP4z9KsN6nGRTbVYI_c7VJSPQTBtkgcy27mlmlMoZIIgDll6e3vCYLocInmYWAmS6TlzAC8wEqKK6PBru3jl7A8",
+        "encryption": "salt=DGv6ra1nlYgDCS1FRnbzlw;rs=4096"
+      },
+      "expected_error": "Decryption",
+      "expected_message": "aesgcm decryption failed: Invalid decryption padding"
+    },
+    {
+      "id": "aesgcm-excess-padding-length",
+      "data": "4qRZBWREnvGPQswptVy2R3bf0d0",
+      "headers": {
+        "encoding": "aesgcm",
+        "crypto_key": "dh=BP4z9KsN6nGRTbVYI_c7VJSPQTBtkgcy27mlmlMoZIIgDll6e3vCYLocInmYWAmS6TlzAC8wEqKK6PBru3jl7A8",
+        "encryption": "salt=DGv6ra1nlYgDCS1FRnbzlw;rs=4096"
+      },
+      "expected_error": "Decryption",
+      "expected_message": "aesgcm decryption failed: Invalid decryption padding"
+    },
+    {
+      "id": "aesgcm-published-ietf-vector",
+      "data": "6nqAQUME8hNqw5J3kl8cpVVJylXKYqZOeseZG8UueKpA",
+      "headers": {
+        "encoding": "aesgcm",
+        "crypto_key": "dh=BNoRDbb84JGm8g5Z5CFxurSqsXWJ11ItfXEWYVLE85Y7CYkDjXsIEc4aqxYaQ1G8BqkXCJ6DPpDrWtdWj_mugHU",
+        "encryption": "salt=lngarbyKfMoi9Z75xYXmkg"
+      },
+      "expected_plaintext_hex": "4920616d207468652077616c727573",
+      "expected_payload": {
+        "raw": "I am the walrus"
+      },
+      "keys": {
+        "private_key": [
+          244,
+          85,
+          165,
+          215,
+          159,
+          208,
+          81,
+          0,
+          22,
+          13,
+          160,
+          247,
+          147,
+          121,
+          121,
+          209,
+          144,
+          89,
+          64,
+          158,
+          26,
+          187,
+          110,
+          197,
+          213,
+          94,
+          5,
+          210,
+          226,
+          210,
+          15,
+          243
+        ],
+        "public_key": [
+          4,
+          33,
+          36,
+          6,
+          60,
+          203,
+          241,
+          157,
+          194,
+          250,
+          136,
+          182,
+          67,
+          186,
+          4,
+          230,
+          221,
+          141,
+          167,
+          234,
+          123,
+          162,
+          200,
+          198,
+          46,
+          15,
+          119,
+          169,
+          67,
+          244,
+          194,
+          250,
+          145,
+          79,
+          109,
+          68,
+          17,
+          108,
+          159,
+          209,
+          196,
+          3,
+          65,
+          198,
+          164,
+          64,
+          202,
+          179,
+          226,
+          20,
+          10,
+          96,
+          228,
+          55,
+          138,
+          93,
+          167,
+          53,
+          151,
+          45,
+          224,
+          120,
+          0,
+          81,
+          5
+        ],
+        "auth_secret": [
+          71,
+          111,
+          111,
+          32,
+          103,
+          111,
+          111,
+          32,
+          103,
+          39,
+          32,
+          106,
+          111,
+          111,
+          98,
+          33
+        ]
+      }
+    }
+  ]
+}
