@@ -137,7 +137,7 @@ function createSquareBilling(db, options = {}) {
         }
         return catalog;
     }
-    async function getBindings() { return db.queryDatabase('SELECT * FROM automation_square_bindings WHERE environment=? AND merchant_id=? ORDER BY plan_id', scope); }
+    async function getBindings() { return db.queryDatabase('SELECT * FROM automation_square_bindings WHERE environment=? AND merchant_id=? ORDER BY plan_id,cadence', scope); }
     async function getAdmin(actor) {
         administrator(actor);
         if (!c.configured) return { configured: false, environment: c.environment, missing: c.missing, bindings: [], availableVariations: [] };
@@ -159,20 +159,21 @@ function createSquareBilling(db, options = {}) {
         const plans = await db.queryDatabase('SELECT * FROM automation_notification_plans WHERE plan_id=?', [planId]);
         if (!plans[0]) throw fail('AUTOMATION_PLAN_NOT_FOUND', '通知プランを先に登録してください。', 404);
         await location(); const catalog = await variation(input.variationId);
+        if (input.cadence !== undefined && input.cadence !== catalog.cadence) throw fail('SQUARE_PAYMENT_INTERVAL_MISMATCH', '選択したSquare料金と支払い間隔が一致しません。', 422);
         let verifiedAtMs;
         try { await db.withDatabaseTransaction(async query => {
             // Lock policies in one order before checking the merchant-wide
             // unique variation mapping. Different plans/admins cannot race the
             // empty mapping or update another plan through a duplicate key.
             await query('SELECT plan_id FROM automation_notification_plans ORDER BY plan_id FOR UPDATE');
-            const used = await query('SELECT plan_id FROM automation_square_bindings WHERE environment=? AND merchant_id=? AND variation_id=? AND plan_id<>? LIMIT 1', [...scope, catalog.variationId, planId]);
+            const used = await query('SELECT plan_id FROM automation_square_bindings WHERE environment=? AND merchant_id=? AND variation_id=? AND (plan_id<>? OR cadence<>?) LIMIT 1', [...scope, catalog.variationId, planId, catalog.cadence]);
             if (used.length) throw fail('SQUARE_VARIATION_IN_USE', 'このSquareプランは別の通知プランに紐付いています。', 409);
-            const existing = await query('SELECT * FROM automation_square_bindings WHERE plan_id=? AND environment=? AND merchant_id=? FOR UPDATE', [planId, ...scope]);
+            const existing = await query('SELECT * FROM automation_square_bindings WHERE plan_id=? AND environment=? AND merchant_id=? AND cadence=? FOR UPDATE', [planId, ...scope, catalog.cadence]);
             const previous = existing[0] ? Number(existing[0].verified_at_ms) : null;
             if ((input.expectedVerifiedAtMs ?? null) !== previous) throw fail('SQUARE_BINDING_CONFLICT', 'Squareの連携設定が変更されています。最新の設定を読み直してください。', 409);
             verifiedAtMs = Math.max(now(), previous === null ? 0 : previous + 1);
             const fields = [catalog.variationId, input.enabled ? 1 : 0, catalog.catalogName, catalog.cadence, catalog.amount, catalog.currency, catalog.catalogVersion, verifiedAtMs, actorId];
-            if (existing.length) await query(`UPDATE automation_square_bindings SET variation_id=?,enabled=?,catalog_name=?,cadence=?,amount=?,currency=?,catalog_version=?,verified_at_ms=?,actor_user_id=? WHERE plan_id=? AND environment=? AND merchant_id=?`, [...fields, planId, ...scope]);
+            if (existing.length) await query(`UPDATE automation_square_bindings SET variation_id=?,enabled=?,catalog_name=?,cadence=?,amount=?,currency=?,catalog_version=?,verified_at_ms=?,actor_user_id=? WHERE plan_id=? AND environment=? AND merchant_id=? AND cadence=?`, [...fields, planId, ...scope, catalog.cadence]);
             else await query(`INSERT INTO automation_square_bindings (plan_id,environment,merchant_id,variation_id,enabled,catalog_name,cadence,amount,currency,catalog_version,verified_at_ms,actor_user_id)
                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`, [planId, ...scope, ...fields]);
         }); } catch (error) {
@@ -186,7 +187,7 @@ function createSquareBilling(db, options = {}) {
         if (!c.configured) return { configured: false, environment: c.environment, plans: [] };
         const rows = await db.queryDatabase(`SELECT p.*,b.variation_id,b.catalog_name,b.cadence,b.amount,b.currency,b.verified_at_ms,b.enabled AS binding_enabled
             FROM automation_notification_plans p JOIN automation_square_bindings b ON b.plan_id=p.plan_id
-            WHERE p.enabled=1 AND p.plan_id NOT IN ('free','supporter') AND b.enabled=1 AND b.environment=? AND b.merchant_id=? ORDER BY p.plan_id`, scope);
+            WHERE p.enabled=1 AND p.plan_id NOT IN ('free','supporter') AND b.enabled=1 AND b.environment=? AND b.merchant_id=? ORDER BY p.plan_id,b.cadence`, scope);
         return { configured: true, environment: c.environment, applicationId: c.applicationId, locationId: c.locationId, plans: rows.map(row => planDto(row, { ...row, enabled: row.binding_enabled })) };
     }
     async function createQuote(actor, input) {
@@ -194,9 +195,13 @@ function createSquareBilling(db, options = {}) {
         const planId = String(input?.planId || ''), email = String(input?.email || '').trim(), name = String(input?.name || '').trim();
         if (!isValidReceiptEmail(email)) throw fail('SQUARE_EMAIL_REQUIRED', '領収書を受け取るメールアドレスを入力してください。', 422);
         if (!name || name.length > 120 || [...name].some(character => character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127)) throw fail('SQUARE_NAME_REQUIRED', '請求名を1〜120文字で入力してください。', 422);
-        const available = (await getOptions(actor)).plans.find(plan => plan.planId === planId);
+        const intervals = (await getOptions(actor)).plans.filter(plan => plan.planId === planId);
+        if (input.variationId !== undefined) id(input.variationId);
+        if (input.variationId === undefined && intervals.length > 1) throw fail('SQUARE_PAYMENT_INTERVAL_REQUIRED', '支払い間隔を選択してください。', 422);
+        const available = intervals.find(plan => input.variationId === undefined || plan.variationId === input.variationId);
         if (!available) throw fail('SQUARE_PLAN_UNAVAILABLE', 'この有償プランは現在申し込めません。', 422);
         await location(); const catalog = await variation(available.variationId);
+        if (catalog.cadence !== available.cadence) throw fail('SQUARE_QUOTE_CHANGED', '支払い間隔の設定が変更されました。申し込み内容を再確認してください。', 409);
         const checkoutId = randomUUID(), expiresAtMs = now() + QUOTE_MS, plan = { ...available, ...catalog };
         if (input.couponCode) {
             plan.coupon = await commerce.resolveCoupon(input.couponCode, plan);
@@ -225,9 +230,10 @@ function createSquareBilling(db, options = {}) {
         return rows[0];
     }
     async function quoteCurrent(quote) {
+        const snapshot = JSON.parse(quote.plan_json), baseVariationId = snapshot.baseVariationId || quote.variation_id;
         const rows = await db.queryDatabase(`SELECT p.*,b.variation_id,b.enabled AS binding_enabled FROM automation_notification_plans p
-            JOIN automation_square_bindings b ON b.plan_id=p.plan_id WHERE p.plan_id=? AND b.environment=? AND b.merchant_id=?`, [quote.plan_id, ...scope]);
-        const row = rows[0], snapshot = JSON.parse(quote.plan_json);
+            JOIN automation_square_bindings b ON b.plan_id=p.plan_id WHERE p.plan_id=? AND b.environment=? AND b.merchant_id=? AND b.cadence=? AND b.variation_id=?`, [quote.plan_id, ...scope, quote.cadence, baseVariationId]);
+        const row = rows[0];
         if (!row || Number(row.enabled) !== 1 || Number(row.binding_enabled) !== 1 || row.variation_id !== (snapshot.baseVariationId || quote.variation_id)
             || ['slotLimit', 'minuteLimit', 'dayLimit', 'priority'].some((name, index) => Number(row[['slot_limit', 'minute_limit', 'day_limit', 'priority'][index]]) !== snapshot[name]) || row.label !== snapshot.label)
             throw fail('SQUARE_QUOTE_CHANGED', 'プランの設定が変更されました。申し込み内容を再確認してください。', 409);
@@ -555,11 +561,14 @@ function createSquareBilling(db, options = {}) {
         const account = (await db.queryDatabase('SELECT current_checkout_id FROM automation_square_accounts WHERE owner_user_id=? AND environment=? AND merchant_id=?', [owner, ...scope]))[0];
         const pending = account?.current_checkout_id ? await loadCheckout(account.current_checkout_id, owner) : null;
         const labels = row ? await db.queryDatabase('SELECT label FROM automation_notification_plans WHERE plan_id=?', [row.plan_id]) : [];
+        const recurring = row ? (await db.queryDatabase('SELECT cadence,amount,currency FROM automation_square_checkouts WHERE id=? AND owner_user_id=? AND environment=? AND merchant_id=? AND plan_id=? AND variation_id=?', [row.checkout_id, owner, ...scope, row.plan_id, row.variation_id]))[0] : null;
+        const recurringTerms = recurring && CADENCES.has(recurring.cadence) && Number.isSafeInteger(Number(recurring.amount)) && Number(recurring.amount) > 0 && /^[A-Z]{3}$/.test(recurring.currency)
+            ? { cadence: recurring.cadence, amount: Number(recurring.amount), currency: recurring.currency } : {};
         const observation = row ? (await db.queryDatabase('SELECT warning_subscription_id,warning_checkout_id,warning_code,warning_message FROM automation_square_billing_reconciliation WHERE owner_user_id=? AND environment=? AND merchant_id=?', [owner, ...scope]))[0] : null;
         const verificationWarning = observation?.warning_subscription_id === row?.subscription_id && observation?.warning_checkout_id === row?.checkout_id && observation?.warning_code === 'SQUARE_PRORATION_UNVERIFIED'
             ? { code: observation.warning_code, message: observation.warning_message } : null;
         const idle = pending && (!pending.lease_token || Number(pending.lease_until_at_ms) <= now());
-        return { configured: true, environment: c.environment, refresh, ...(verificationWarning ? { verificationWarning } : {}), subscription: row ? { planId: row.plan_id, label: labels[0]?.label || row.plan_id, state: row.state,
+        return { configured: true, environment: c.environment, refresh, ...(verificationWarning ? { verificationWarning } : {}), subscription: row ? { planId: row.plan_id, label: labels[0]?.label || row.plan_id, state: row.state, ...recurringTerms,
             paidThroughAtMs: row.paid_through_at_ms === null ? null : Number(row.paid_through_at_ms), validUntilAtMs: row.valid_until_at_ms === null ? null : Number(row.valid_until_at_ms), canceledDate: row.canceled_date,
             active: Number(row.verified) === 1 && ['ACTIVE', 'CANCELED'].includes(row.state) && Number(row.valid_until_at_ms) > now(), cancelScheduled: !!row.canceled_date } : null,
         pending: pending ? { checkoutId: pending.id, state: pending.state, retryable: Boolean(idle && RETRYABLE.has(pending.state)),

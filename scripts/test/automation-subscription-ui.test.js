@@ -18,7 +18,7 @@ function squareStoreToken(data, token = 'cnon:private-nonce') {
     return errors.length ? { status: 'Invalid', errors } : { status: 'OK', token };
 }
 async function fixture({ initialOptions = options(), initialStatus = status(), respond, squareLoader, tokenize } = {}) {
-    const f = await reactFixture('export { SubscriptionManager, subscriptionPrice, loadSquareSubscriptionSDK } from "./components/automation/subscription-manager";');
+    const f = await reactFixture('export { SubscriptionManager, subscriptionPrice, loadSquareSubscriptionSDK } from "./components/automation/subscription-manager"; export * from "./lib/subscription-pricing";');
     const calls = [], sdk = { loads: [], payments: [], attached: [], destroyed: [], tokens: [] };
     let quoteIndex = 0;
     f.api = async (route, method = 'GET', body) => {
@@ -27,7 +27,7 @@ async function fixture({ initialOptions = options(), initialStatus = status(), r
         if (result !== undefined) return result;
         if (route === 'options') return initialOptions;
         if (route === 'status') return initialStatus;
-        if (route === 'quote') return { checkoutId: `checkout-${++quoteIndex}`, expiresAtMs: Date.now() + 60000, plan: plan(), email: body.email, name: body.name };
+        if (route === 'quote') return { checkoutId: `checkout-${++quoteIndex}`, expiresAtMs: Date.now() + 60000, plan: initialOptions.plans.find(item => item.planId === body.planId && item.variationId === body.variationId) ?? plan(), email: body.email, name: body.name };
         if (route === 'subscribe') return status({ subscription: contract({ active: false, paidThroughAtMs: null, validUntilAtMs: null }) });
         if (route === 'cancel') return status({ subscription: contract({ cancelScheduled: true, canceledDate: '2026-11-13' }) });
         throw new Error('Unexpected API request');
@@ -76,7 +76,7 @@ test('plan selection shows server prices and quota, then loads Square only after
     const f = await fixture();
     try {
         assert.match(f.container.textContent, /￥1,500毎月/); assert.match(f.container.textContent, /通知12枠.*1日96通・1分9通/); assert.equal(f.sdk.loads.length, 0);
-        await f.review(); assert.deepEqual(writes(f), [{ route: 'quote', method: 'POST', body: { planId: 'configured', email: 'receipt@example.test', name: '山田 太郎' } }]);
+        await f.review(); assert.deepEqual(writes(f), [{ route: 'quote', method: 'POST', body: { planId: 'configured', variationId: 'VARIATION', email: 'receipt@example.test', name: '山田 太郎' } }]);
         assert.deepEqual(f.sdk.loads, ['sandbox']); assert.deepEqual(f.sdk.payments, [{ app: 'sandbox-app', location: 'location' }]); assert.equal(f.sdk.attached.length, 1);
         const button = [...f.container.querySelectorAll('button')].find(item => item.textContent === '同意してサブスクリプションを契約'); assert.equal(button.disabled, true);
         assert.match(f.container.textContent, /カードをSquareに保存.*￥1,500が毎月継続課金/); assert.equal(f.sdk.tokens.length, 0);
@@ -99,6 +99,111 @@ test('physical money amounts use correct JPY, USD and three-decimal currency sca
     const f = await fixture();
     try { assert.equal(f.exports.subscriptionPrice(plan()), '￥1,500'); assert.equal(f.exports.subscriptionPrice(plan({ amount: 199, currency: 'USD' })), '$1.99'); assert.match(f.exports.subscriptionPrice(plan({ amount: 1234, currency: 'KWD' })), /1\.234/); assert.equal(f.exports.subscriptionPrice(plan({ amount: -1 })), '料金を確認できません'); }
     finally { await f.close(); }
+});
+
+test('monthly equivalents cover every supported cadence, keep minor-unit currency scales and sort before display rounding', async () => {
+    const f = await fixture();
+    try {
+        const expected = { DAILY: 3600, WEEKLY: 3600 / 7, EVERY_TWO_WEEKS: 3600 / 14, THIRTY_DAYS: 120, SIXTY_DAYS: 60, NINETY_DAYS: 40, MONTHLY: 120, EVERY_TWO_MONTHS: 60, QUARTERLY: 40, EVERY_FOUR_MONTHS: 30, EVERY_SIX_MONTHS: 20, ANNUAL: 10, EVERY_TWO_YEARS: 5 };
+        for (const [cadence, value] of Object.entries(expected)) {
+            assert.equal(f.exports.subscriptionMonthlyAmount(plan({ cadence, amount: 120 })), value, cadence);
+            assert.equal(typeof f.exports.subscriptionIntervalLabels[cadence], 'string');
+        }
+        assert.equal(f.exports.subscriptionMonthlyPrice(plan({ cadence: 'ANNUAL', amount: 12000 })), '￥1,000');
+        assert.equal(f.exports.subscriptionMonthlyPrice(plan({ cadence: 'ANNUAL', amount: 1200, currency: 'USD' })), '$1.00');
+        assert.match(f.exports.subscriptionMonthlyPrice(plan({ cadence: 'ANNUAL', amount: 14808, currency: 'KWD' })), /1\.234/);
+        assert.equal(f.exports.subscriptionMonthlyAmount(plan({ cadence: 'UNKNOWN' })), null);
+        assert.equal(f.exports.subscriptionMonthlyAmount(plan({ cadence: 'toString' })), null);
+        assert.equal(f.exports.compareSubscriptionMonthlyPrices(plan({ cadence: 'toString' }), plan()), 1);
+        assert.equal(f.exports.subscriptionMonthlyPrice(plan({ amount: -1 })), '料金を確認できません');
+        const roundedTie = [plan({ planId: 'more', variationId: 'MORE', amount: 1000, currency: 'USD' }), plan({ planId: 'less', variationId: 'LESS', amount: 23999, currency: 'USD', cadence: 'EVERY_TWO_YEARS' })];
+        assert.equal(f.exports.subscriptionMonthlyPrice(roundedTie[0]), f.exports.subscriptionMonthlyPrice(roundedTie[1]));
+        assert.deepEqual(f.exports.sortSubscriptionMonthlyPrices(roundedTie).map(item => item.planId), ['less', 'more']);
+        assert.deepEqual(roundedTie.map(item => item.planId), ['more', 'less']);
+    } finally { await f.close(); }
+});
+
+test('one card groups monthly and annual choices, defaults monthly and reorders by the selected monthly equivalent without losing selector focus', async () => {
+    const annual = plan({ variationId: 'YEAR', cadence: 'ANNUAL', amount: 9600 });
+    const monthly = plan({ variationId: 'MONTH', amount: 1000 });
+    const other = plan({ planId: 'other', label: '別のプラン', variationId: 'OTHER', amount: 900 });
+    const f = await fixture({ initialOptions: options({ plans: [annual, monthly, other] }) });
+    try {
+        const cards = () => [...f.container.querySelectorAll('[aria-label="有償プランの選択"] section')];
+        assert.equal(f.container.querySelectorAll('input[type=radio]').length, 2);
+        assert.deepEqual(cards().map(card => card.querySelector('input[type=radio]').value), ['OTHER', 'MONTH']);
+        const selector = f.container.querySelector('select[aria-label="管理者設定プランの支払い間隔を選択"]');
+        assert.equal(selector.value, 'MONTH');
+        assert.match(selector.textContent, /月額.*￥1,000.*年額.*￥9,600.*月あたり￥800/);
+        selector.focus(); await f.fill(selector, 'YEAR');
+        assert.equal(f.dom.window.document.activeElement, selector);
+        assert.deepEqual(cards().map(card => card.querySelector('input[type=radio]').value), ['YEAR', 'OTHER']);
+        assert.equal(cards()[0].querySelector('input[type=radio]').checked, true);
+        assert.match(cards()[0].textContent, /￥800\/ 月（換算）.*請求額: ￥9,600毎年/);
+        await f.fill(f.field('請求名'), '年額 名義'); await f.fill(f.field('請求先メールアドレス'), 'annual@example.test'); await f.click('契約内容を確認');
+        assert.deepEqual(writes(f)[0].body, { planId: 'configured', variationId: 'YEAR', email: 'annual@example.test', name: '年額 名義' });
+        const confirmation = f.container.querySelector('[aria-label="契約内容の確認"]');
+        assert.match(confirmation.textContent, /￥9,600毎年.*月あたり: ￥800/);
+        assert.match(confirmation.textContent, /カードをSquareに保存し、￥9,600が毎年継続課金/);
+        assert(!confirmation.textContent.includes('￥800が毎月継続課金'));
+        assert.equal(confirmation.querySelector('input[type=checkbox]').checked, false);
+        assert.equal(f.sdk.tokens.length, 0); assert.equal(writes(f).filter(call => call.route === 'subscribe').length, 0);
+    } finally { await f.close(); }
+});
+
+test('equivalent monthly prices retain configured card order and different currencies are separately labeled without exchange-rate assumptions', async () => {
+    const f = await fixture({ initialOptions: options({ plans: [
+        plan({ planId: 'annual', label: '年額のみ', variationId: 'YEAR', cadence: 'ANNUAL', amount: 12000 }),
+        plan({ planId: 'monthly', label: '月額のみ', variationId: 'MONTH', amount: 1000 }),
+        plan({ planId: 'usd', label: 'ドルプラン', variationId: 'DOLLAR', currency: 'USD', amount: 1 }),
+    ] }) });
+    try {
+        assert.deepEqual([...f.container.querySelectorAll('input[type=radio]')].map(input => input.value), ['YEAR', 'MONTH', 'DOLLAR']);
+        assert.match(f.container.textContent, /JPYのプラン（月額換算順）/); assert.match(f.container.textContent, /USDのプラン（月額換算順）/);
+        assert.equal(f.container.querySelectorAll('select').length, 0);
+    } finally { await f.close(); }
+});
+
+test('day and week prices explain the approximate 30-day month and shortest interval is selected when no monthly option exists', async () => {
+    const f = await fixture({ initialOptions: options({ plans: [plan({ variationId: 'WEEK', cadence: 'WEEKLY', amount: 700 }), plan({ variationId: 'DAY', cadence: 'DAILY', amount: 100 })] }) });
+    try {
+        assert.equal(f.container.querySelector('input[type=radio]').value, 'DAY');
+        assert.equal(f.container.querySelector('select').value, 'DAY');
+        assert.match(f.container.textContent, /￥3,000\/ 月（換算）.*1か月＝30日.*概算/);
+        await f.fill(f.container.querySelector('select'), 'WEEK');
+        assert.match(f.container.textContent, /請求額: ￥700毎週/);
+    } finally { await f.close(); }
+});
+
+test('restored annual checkout keeps frozen annual terms and abort restores its exact interval while refreshing current pricing', async () => {
+    let aborted = false;
+    const frozenAnnual = plan({ variationId: 'YEAR', cadence: 'ANNUAL', amount: 9600 });
+    const pending = pendingCheckout({ quote: { ...pendingCheckout().quote, plan: frozenAnnual } });
+    const f = await fixture({ initialOptions: options({ plans: [plan({ variationId: 'MONTH' }), plan({ variationId: 'YEAR', cadence: 'ANNUAL', amount: 12000 })] }), initialStatus: status({ pending }), respond: async route => {
+        if (route === 'abort') { aborted = true; return status(); }
+        if (route === 'status' && aborted) return status();
+    } });
+    try {
+        const resume = f.container.querySelector('[aria-label="受付済み契約の再開確認"]');
+        assert.match(resume.textContent, /￥9,600毎年.*月あたり: ￥800/);
+        assert.match(resume.textContent, /￥9,600が毎年継続課金/);
+        assert.equal(resume.querySelector('input[type=checkbox]').checked, false);
+        await f.click('申し込みを中止してやり直す'); await f.click('確認して申し込みを中止');
+        assert.equal(f.container.querySelector('select').value, 'YEAR');
+        assert.equal(f.container.querySelector('input[type=radio]').value, 'YEAR'); assert.equal(f.container.querySelector('input[type=radio]').checked, true);
+        assert.match(f.container.textContent, /請求額: ￥12,000毎年/); assert(!f.container.textContent.includes('￥9,600'));
+        await f.click('契約内容を確認');
+        assert.equal(writes(f).at(-1).body.variationId, 'YEAR'); assert.equal(f.sdk.tokens.length, 0);
+    } finally { await f.close(); }
+});
+
+test('current contract shows its immutable recurring charge and cadence, while older status without price still offers cancellation', async () => {
+    const f = await fixture({ initialStatus: status({ subscription: contract({ cadence: 'ANNUAL', amount: 12000, currency: 'JPY' }) }), initialOptions: options({ plans: [plan({ amount: 2000 })] }) });
+    try {
+        const current = f.container.querySelector('[aria-label="現在の契約"]');
+        assert.match(current.textContent, /通常料金: ￥12,000 · 毎年（月あたり￥1,000）/);
+        assert(!current.textContent.includes('￥2,000')); await f.click('サブスクリプションを解約'); assert.equal(writes(f).length, 0);
+    } finally { await f.close(); }
 });
 
 test('double clicking submits one token and one checkout, stores no nonce and awaits payment confirmation before granting a success claim', async () => {

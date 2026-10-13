@@ -108,7 +108,7 @@ test('new paid plans require explicitly entered name and all limits, without cop
         for (const [label, value] of [['プランID', 'paid_config'], ['表示名', '管理者が設定したプラン'], ['通知枠数', '12'], ['枠あたりの日次上限', '100'], ['枠あたりの分次上限', '10'], ['処理の優先度', '4']]) await f.fill(f.inField(article, label), value);
         await f.inSubmit(article); await f.inClick(article, 'この内容で保存');
         assert.equal(writes(f)[0].method, 'POST'); assert.equal(writes(f)[0].body.expectedUpdatedAtMs, 0); assert.equal(writes(f)[0].body.dayLimit, 100);
-        assert.match(f.container.textContent, /管理者が設定したプラン/); assert(!f.container.textContent.includes('月額')); assert(!f.container.textContent.includes('1,000円'));
+        assert.match(f.container.textContent, /管理者が設定したプラン/); assert(!/￥[0-9]/.test(f.container.textContent)); assert(!f.container.textContent.includes('1,000円'));
     } finally { await f.close(); }
 });
 
@@ -188,7 +188,7 @@ test('Square association shows minor-unit price and cadence, validates before sa
         await f.fill(input, 'NEW_VARIATION'); await f.inClick(article, '紐付け内容を確認'); assert.equal(writes(f).length, 0); assert.match(article.textContent, /NEW_VARIATION.*現在の設定/);
         await f.inClick(article, 'Squareで検証して紐付け'); assert.equal(input.value, 'NEW_VARIATION'); assert.match(article.textContent, /検証できません/);
         await f.inClick(article, '紐付け内容を確認'); await f.inClick(article, 'Squareで検証して紐付け');
-        assert.deepEqual(writes(f).at(-1).body, { variationId: 'NEW_VARIATION', enabled: true, expectedVerifiedAtMs: oldBinding.verifiedAtMs }); assert.match(article.textContent, /\$1.99 · 月ごと/); assert.match(article.textContent, /プランを紐付けました/);
+        assert.deepEqual(writes(f).at(-1).body, { cadence: 'MONTHLY', variationId: 'NEW_VARIATION', enabled: true, expectedVerifiedAtMs: oldBinding.verifiedAtMs }); assert.match(article.textContent, /\$1.99 · 月ごと/); assert.match(article.textContent, /プランを紐付けました/);
         assert(writes(f).every(call => call.route === 'billing/bindings/paid_one'));
     } finally { await f.close(); }
 });
@@ -207,7 +207,7 @@ test('Square status errors have their own retry control and never erase a limits
 test('Square catalog choices fill the variation ID without requiring manual entry and still need confirmation before saving', async () => {
     const f = await fixture({ plans: [policy('paid_one')], square: billing({ configured: true, availableVariations: [{ variationId: 'CATALOG_VARIATION', catalogName: 'Squareで登録した月額', cadence: 'MONTHLY', amount: 980, currency: 'JPY' }] }), respond: async (route, method, body) => route === 'billing/bindings/paid_one' ? { planId: 'paid_one', ...body, catalogName: 'Squareで登録した月額', cadence: 'MONTHLY', amount: 980, currency: 'JPY', verifiedAtMs: 1791831600000 } : undefined });
     try {
-        const article = f.article('有償設定'), select = article.querySelector('select'); assert(select); assert.match(select.textContent, /Squareで登録した月額.*￥980.*月ごと/);
+        const article = f.article('有償設定'), select = [...article.querySelectorAll('label')].find(node => node.textContent.startsWith('Squareのプランから選ぶ')).querySelector('select'); assert(select); assert.match(select.textContent, /Squareで登録した月額.*￥980.*月ごと/);
         await f.fill(select, 'CATALOG_VARIATION'); assert.equal(f.inField(article, 'SquareプランバリエーションID').value, 'CATALOG_VARIATION'); assert.equal(writes(f).length, 0);
         await f.inClick(article, '紐付け内容を確認'); await f.inClick(article, 'Squareで検証して紐付け'); assert.equal(writes(f)[0].body.variationId, 'CATALOG_VARIATION');
     } finally { await f.close(); }
@@ -270,4 +270,80 @@ test('a late binding refresh cannot replace the newer saved binding or its CAS b
         await f.fill(input, 'ANOTHER'); await f.inClick(article, '紐付け内容を確認'); await f.inClick(article, 'Squareで検証して紐付け');
         assert.equal(writes(f).at(-1).body.expectedVerifiedAtMs, 102);
     } finally { if (releaseSave) releaseSave(); if (releaseRefresh) releaseRefresh(); await f.close(); }
+});
+
+const paidBinding = (cadence, changes = {}) => ({ planId: 'paid_one', variationId: cadence + '_VARIATION', enabled: true,
+    catalogName: cadence === 'MONTHLY' ? 'Square月額' : 'Square年額', cadence, amount: cadence === 'MONTHLY' ? 1000 : 10000,
+    currency: 'JPY', verifiedAtMs: cadence === 'MONTHLY' ? 100 : 200, ...changes });
+const intervalSection = (article, cadence) => article.querySelector(`[aria-label="${cadence === 'MONTHLY' ? '月ごと' : '年ごと'}の支払い設定"]`);
+const intervalSelect = (node, label) => [...node.querySelectorAll('label')].find(item => item.textContent.trim().startsWith(label))?.querySelector('select');
+
+test('adding an annual interval preserves the monthly binding and targets a new annual CAS row', async () => {
+    const monthly = paidBinding('MONTHLY'), annual = paidBinding('ANNUAL');
+    const f = await fixture({ plans: [policy('paid_one')], square: billing({ configured: true, bindings: [monthly], availableVariations: [monthly, annual] }),
+        respond: (route, method, body) => route === 'billing/bindings/paid_one' ? { ...annual, ...body } : undefined });
+    try {
+        const article = f.article('有償設定'); await f.inClick(article, '支払い間隔を追加');
+        const add = article.querySelector('[aria-label="支払い間隔の追加"]'), cadence = intervalSelect(add, '追加する支払い間隔');
+        assert(![...cadence.options].some(option => option.value === 'MONTHLY')); await f.fill(cadence, 'ANNUAL');
+        const variations = intervalSelect(add, 'Squareのプランから選ぶ'); assert.deepEqual([...variations.options].map(option => option.value), ['', 'ANNUAL_VARIATION']);
+        await f.fill(variations, 'ANNUAL_VARIATION'); await f.inClick(add, '紐付け内容を確認');
+        assert.match(add.querySelector('[aria-label="Square紐付けの確認"]').textContent, /対象の支払い間隔: 年ごと/); assert.equal(writes(f).length, 0);
+        await f.inClick(add, 'Squareで検証して紐付け');
+        assert.deepEqual(writes(f)[0].body, { cadence: 'ANNUAL', variationId: 'ANNUAL_VARIATION', enabled: true, expectedVerifiedAtMs: null });
+        assert.equal(f.inField(intervalSection(article, 'MONTHLY'), 'SquareプランバリエーションID').value, 'MONTHLY_VARIATION');
+        assert.equal(f.inField(intervalSection(article, 'ANNUAL'), 'SquareプランバリエーションID').value, 'ANNUAL_VARIATION');
+        assert.match(intervalSection(article, 'ANNUAL').textContent, /￥10,000 · 年ごと/); assert.match(intervalSection(article, 'ANNUAL').textContent, /￥833.33／月相当/);
+        assert.equal(article.querySelector('[aria-label="支払い間隔の追加"]'), null);
+    } finally { await f.close(); }
+});
+
+test('monthly and annual acceptance save independently with exact row versions and preserve the sibling draft', async () => {
+    const monthly = paidBinding('MONTHLY'), annual = paidBinding('ANNUAL');
+    const f = await fixture({ plans: [policy('paid_one')], square: billing({ configured: true, bindings: [monthly, annual] }),
+        respond: (route, method, body) => route === 'billing/bindings/paid_one' ? { ...(body.cadence === 'MONTHLY' ? monthly : annual), ...body, verifiedAtMs: body.expectedVerifiedAtMs + 1 } : undefined });
+    try {
+        const article = f.article('有償設定'), month = intervalSection(article, 'MONTHLY'), year = intervalSection(article, 'ANNUAL');
+        await f.fill(f.inField(year, 'SquareプランバリエーションID'), 'YEAR_REPLACEMENT');
+        await f.act(async () => year.querySelector('input[type=checkbox]').click());
+        await f.act(async () => month.querySelector('input[type=checkbox]').click());
+        await f.inClick(month, '紐付け内容を確認'); await f.inClick(month, 'Squareで検証して紐付け');
+        assert.equal(f.inField(year, 'SquareプランバリエーションID').value, 'YEAR_REPLACEMENT'); assert.equal(year.querySelector('input[type=checkbox]').checked, false);
+        assert.equal(month.querySelector('input[type=checkbox]').checked, false); assert.match(month.textContent, /購入受付停止中/);
+        await f.inClick(year, '紐付け内容を確認'); await f.inClick(year, 'Squareで検証して紐付け');
+        assert.deepEqual(writes(f).map(call => call.body), [
+            { cadence: 'MONTHLY', variationId: 'MONTHLY_VARIATION', enabled: false, expectedVerifiedAtMs: 100 },
+            { cadence: 'ANNUAL', variationId: 'YEAR_REPLACEMENT', enabled: false, expectedVerifiedAtMs: 200 },
+        ]);
+        assert.equal(month.querySelector('input[type=checkbox]').checked, false); assert.equal(year.querySelector('input[type=checkbox]').checked, false);
+        assert.equal(f.inField(month, 'SquareプランバリエーションID').value, 'MONTHLY_VARIATION');
+        await f.fill(f.inField(month, 'SquareプランバリエーションID'), 'MONTH_REPLACEMENT'); await f.inClick(month, '紐付け内容を確認'); await f.inClick(month, 'Squareで検証して紐付け');
+        assert.equal(writes(f).at(-1).body.expectedVerifiedAtMs, 101);
+    } finally { await f.close(); }
+});
+
+test('editing an interval cannot replace its cadence with another known Square variation', async () => {
+    const monthly = paidBinding('MONTHLY'), annual = paidBinding('ANNUAL');
+    const f = await fixture({ plans: [policy('paid_one')], square: billing({ configured: true, bindings: [monthly], availableVariations: [monthly, annual] }) });
+    try {
+        const article = f.article('有償設定'), month = intervalSection(article, 'MONTHLY');
+        assert.equal(intervalSelect(month, '追加する支払い間隔'), undefined);
+        assert.deepEqual([...intervalSelect(month, 'Squareのプランから選ぶ').options].map(option => option.value), ['', 'MONTHLY_VARIATION']);
+        await f.fill(f.inField(month, 'SquareプランバリエーションID'), 'ANNUAL_VARIATION'); await f.inClick(month, '紐付け内容を確認');
+        assert.equal(month.querySelector('[aria-label="Square紐付けの確認"]'), null); assert.equal(writes(f).length, 0); assert.equal(f.inField(month, 'SquareプランバリエーションID').value, 'ANNUAL_VARIATION');
+    } finally { await f.close(); }
+});
+
+test('a failed annual association retains the added interval, amount selection and monthly row', async () => {
+    const monthly = paidBinding('MONTHLY'), annual = paidBinding('ANNUAL');
+    const f = await fixture({ plans: [policy('paid_one')], square: billing({ configured: true, bindings: [monthly], availableVariations: [annual] }),
+        respond: route => { if (route === 'billing/bindings/paid_one') throw new Error('Squareプランを検証できませんでした。'); } });
+    try {
+        const article = f.article('有償設定'); await f.inClick(article, '支払い間隔を追加'); const add = article.querySelector('[aria-label="支払い間隔の追加"]');
+        await f.fill(intervalSelect(add, '追加する支払い間隔'), 'ANNUAL'); await f.fill(intervalSelect(add, 'Squareのプランから選ぶ'), 'ANNUAL_VARIATION');
+        await f.inClick(add, '紐付け内容を確認'); await f.inClick(add, 'Squareで検証して紐付け');
+        assert.equal(intervalSelect(add, '追加する支払い間隔').value, 'ANNUAL'); assert.equal(f.inField(add, 'SquareプランバリエーションID').value, 'ANNUAL_VARIATION');
+        assert.match(add.textContent, /検証できません/); assert.equal(f.inField(intervalSection(article, 'MONTHLY'), 'SquareプランバリエーションID').value, 'MONTHLY_VARIATION');
+        assert.equal(intervalSection(article, 'ANNUAL'), null);
+    } finally { await f.close(); }
 });

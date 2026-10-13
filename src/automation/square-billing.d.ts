@@ -7,7 +7,7 @@ export interface SquareQuote { checkoutId: string; expiresAtMs: number; plan: Sq
 export interface SquareStatus {
     configured: boolean;
     environment: 'sandbox' | 'production' | null;
-    subscription: null | { planId: string; label: string; state: string; paidThroughAtMs: number | null; validUntilAtMs: number | null; canceledDate: string | null; active: boolean; cancelScheduled: boolean };
+    subscription: null | { planId: string; label: string; state: string; cadence?: string; amount?: number; currency?: string; paidThroughAtMs: number | null; validUntilAtMs: number | null; canceledDate: string | null; active: boolean; cancelScheduled: boolean };
     pending: null | { checkoutId: string; state: string; retryable: boolean; resumeAllowed: boolean; abortAllowed: boolean; quote: SquareQuote };
   refresh: {
     state: "checked" | "busy" | "cooldown" | "failed";
@@ -42,11 +42,12 @@ export function createSquareBilling(db: { queryDatabase: Function; withDatabaseT
     planId: string,
     input: {
       variationId: string;
+      cadence?: string;
       enabled: boolean;
       expectedVerifiedAtMs: number | null;
     },
   ): Promise<SquareBinding>;
-    createQuote(actor: SquareActor, input: { planId: string; email: string; name: string; couponCode?: string }): Promise<SquareQuote>;
+    createQuote(actor: SquareActor, input: { planId: string; variationId?: string; email: string; name: string; couponCode?: string }): Promise<SquareQuote>;
     subscribe(actor: SquareActor, input: { checkoutId: string; sourceId: string; consent: boolean }): Promise<SquareStatus>;
   resume(
     actor: SquareActor,

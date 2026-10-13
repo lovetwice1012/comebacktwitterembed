@@ -16,10 +16,11 @@ const SCHEMA = [
     `CREATE TABLE IF NOT EXISTS automation_square_catalog_creations (
         id CHAR(36) NOT NULL PRIMARY KEY, environment VARCHAR(16) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
         merchant_id VARCHAR(255) CHARACTER SET ascii COLLATE ascii_bin NOT NULL, plan_id VARCHAR(64) NOT NULL,
+        cadence VARCHAR(32) NOT NULL,
         terms_json LONGTEXT NOT NULL, request_json LONGTEXT NOT NULL, state VARCHAR(32) NOT NULL DEFAULT 'QUOTED',
         variation_id VARCHAR(255) CHARACTER SET ascii COLLATE ascii_bin NULL, lease_token CHAR(36) NULL,lease_until_at_ms BIGINT NULL,
         expires_at_ms BIGINT NOT NULL,created_at_ms BIGINT NOT NULL,updated_at_ms BIGINT NOT NULL,
-        UNIQUE KEY unique_square_catalog_plan (environment,merchant_id,plan_id)
+        UNIQUE KEY unique_square_catalog_plan (environment,merchant_id,plan_id,cadence)
     ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
     `CREATE TABLE IF NOT EXISTS automation_square_coupons (
         code VARCHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL, environment VARCHAR(16) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
