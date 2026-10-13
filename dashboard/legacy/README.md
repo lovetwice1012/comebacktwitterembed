@@ -39,9 +39,47 @@ filename. The generator verifies its hash before writing, walks static, relative
 export and dynamic imports, and fails if a required captured dependency is
 missing. It only writes within this directory and removes obsolete generated
 files after validating that their resolved paths remain inside this directory.
-To verify copied source hashes, output hashes and import isolation without
-regenerating anything, run:
+To verify frozen output hashes, the captured source manifest, recorded source
+hashes and import isolation on any checkout without the original capture, run:
 
 ```powershell
 node dashboard/legacy/verify.cjs
 ```
+
+This default command requires no Windows temporary directory or original source
+archive. It reports `originalSourcesVerified: false`: the checked-in frozen files
+and provenance records were verified, while the external original source bytes
+were not read. The historical absolute paths in `legacy-manifest.json` remain
+capture metadata and are not used as local verification inputs.
+
+To additionally verify all 167 original files byte for byte, provide the source
+tree containing `dashboard/`:
+
+```powershell
+node dashboard/legacy/verify.cjs --source-root "C:/path/to/production-snapshot/source" --require-original-sources
+```
+
+An explicit missing, incomplete or changed source tree fails verification. The
+strict flag also fails when `--source-root` is omitted. A successful full check
+reports `originalSourcesVerified: true` and `originalSourceFilesVerified: 167`.
+Neither mode rewrites source files, presentation modules, or manifest hashes.
+
+The three manual browser scripts (`scripts/verify-dashboard-redesign.cjs`,
+`scripts/verify-dashboard-ui-rollout.cjs`, and
+`scripts/verify-dashboard-ui-preference.cjs`) use `scripts/playwright-qa.cjs` to
+resolve an already installed `playwright` or `playwright-core` package, with the
+existing `design-previews/qa/node_modules/playwright` installation as a fallback.
+They reuse an existing local QA browser cache when present. These checks require
+Playwright and Chromium to have been installed separately; they do not download
+dependencies or browsers. An installation outside the repository can be selected
+explicitly:
+
+```powershell
+$env:PLAYWRIGHT_MODULE_PATH = "C:/tools/browser-qa/node_modules/playwright"
+$env:PLAYWRIGHT_BROWSERS_PATH = "C:/tools/browser-qa/browsers"
+node scripts/verify-dashboard-ui-preference.cjs
+```
+
+On other platforms, set the same environment variables with the shell's normal
+syntax. `PLAYWRIGHT_BROWSERS_PATH` is preserved when already set; without an
+explicit or local QA cache, Playwright uses its normal browser installation.

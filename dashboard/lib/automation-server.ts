@@ -1,12 +1,13 @@
 import "server-only";
 import { requireBotModule } from "@/lib/bot-require";
+import { guardedDashboardDatabase } from "@/lib/fleet-database";
 
 // Runtime modules are shared with the Bot; no independent Web evaluator or
 // translated policy implementation can drift from the background worker.
 const globals = globalThis as unknown as { automationServices?: any };
 export function automationServices() {
   if (globals.automationServices) return globals.automationServices;
-  const db = requireBotModule<any>("src/db.js");
+  const db = guardedDashboardDatabase(requireBotModule<any>("src/db.js"));
   const service = requireBotModule<any>("src/automation/service.js").createService(db);
   const destinations = requireBotModule<any>("src/automation/destinations.js").createDestinations(db, service);
   const monitors = requireBotModule<any>("src/automation/monitors.js").createMonitors(db, service, destinations);

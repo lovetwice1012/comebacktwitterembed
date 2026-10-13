@@ -9,6 +9,7 @@ import { getGuildAccess } from "@/lib/discord";
 import { createTranslator, type DashboardLocale } from "@/lib/i18n";
 import { permissionRequirementText } from "@/lib/permissions";
 import type { DashboardSession } from "@/lib/types";
+import { DashboardFleetAuthorityError } from "@/lib/fleet-authority";
 
 export class ApiError extends Error {
   constructor(
@@ -29,6 +30,7 @@ export function errorResponse(error: unknown, locale: DashboardLocale = "ja") {
   if (error instanceof ApiError) {
     return json({ error: error.message, details: error.details || null }, error.status);
   }
+  if (error instanceof DashboardFleetAuthorityError) return json({ error: error.message, code: error.code }, error.status);
   const message = error instanceof Error ? error.message : t("api.internalServerError");
   return json({ error: message }, 500);
 }

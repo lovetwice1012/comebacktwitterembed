@@ -1,0 +1,70 @@
+{
+  "checks": [
+    {
+      "check": "HTTP-health-survives-stopped-lease",
+      "status": 200,
+      "authorityAvailable": false
+    },
+    {
+      "check": "view-or-auth-reachable",
+      "path": "/",
+      "status": 200
+    },
+    {
+      "check": "view-or-auth-reachable",
+      "path": "/api/auth/providers",
+      "status": 200
+    },
+    {
+      "check": "view-or-auth-reachable",
+      "path": "/api/auth/session",
+      "status": 200
+    },
+    {
+      "check": "view-or-auth-reachable",
+      "path": "/api/auth/csrf",
+      "status": 200
+    },
+    {
+      "check": "mutation-rejected-before-handler",
+      "method": "POST",
+      "path": "/api/__dashboard_authority_probe__",
+      "status": 503
+    },
+    {
+      "check": "mutation-rejected-before-handler",
+      "method": "PATCH",
+      "path": "/api/guilds/000000000000000000/settings",
+      "status": 503
+    },
+    {
+      "check": "mutation-rejected-before-handler",
+      "method": "DELETE",
+      "path": "/api/me/personal-links/saved/fixture-never-created",
+      "status": 503
+    },
+    {
+      "check": "forged-middleware-subrequest-cannot-bypass-guard",
+      "status": 503
+    },
+    {
+      "check": "renewed-epoch-without-Next-restart",
+      "status": 200,
+      "epoch": 99
+    },
+    {
+      "check": "active-authority-admits-nonexistent-handler-only",
+      "status": 404
+    },
+    {
+      "check": "wrong-node-still-fails-closed",
+      "status": 503
+    }
+  ],
+  "isolatedRuntime": true,
+  "disposableLeaseOnly": true,
+  "productionLeaseModified": false,
+  "databaseMutations": 0,
+  "productionPointerChanged": false,
+  "nextProcessStopped": true
+}

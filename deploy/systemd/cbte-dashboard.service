@@ -1,0 +1,26 @@
+[Unit]
+Description=ComebackTwitterEmbed Dashboard
+Wants=network-online.target
+After=network-online.target
+# Deliberately independent from cbte.service. A Bot restart must not stop HTTP.
+StartLimitIntervalSec=0
+
+[Service]
+Type=exec
+User=root
+Group=root
+WorkingDirectory=/opt/cbte-dashboard/current/dashboard
+Environment=DASHBOARD_RUNTIME_ENV_FILE=/etc/cbte-dashboard/environment.json
+Environment=DASHBOARD_MANAGED_EXTERNALLY=true
+Environment=DASHBOARD_FLEET_LEASE_MODE=shared-current
+Environment=DASHBOARD_HOSTNAME=127.0.0.1
+Environment=NEXT_TELEMETRY_DISABLED=1
+ExecStart=/usr/local/bin/node /opt/cbte-dashboard/current/dashboard/scripts/start-dashboard.js serve
+# Also recover an unexpected successful exit from the Next child/wrapper.
+Restart=always
+RestartSec=2s
+KillMode=control-group
+TimeoutStopSec=15s
+
+[Install]
+WantedBy=multi-user.target

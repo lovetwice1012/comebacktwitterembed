@@ -3,7 +3,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { reactFixture } = require('./helpers/react-dom-fixture.cjs');
 const load = require('./helpers/load-dashboard.cjs');
-const nativePresentation = require('../../admin-agent/web/view-data');
+const nativePresentation = require('../../dashboard/lib/admin-view-data');
 const { describeResult, readAdminLocation, buildInvestigationQuery } = load('lib/admin-workspace.ts');
 const { investigationSummary } = load('components/admin/investigation-view.tsx');
 const json = (value, status = 200) => new Response(JSON.stringify(value), { status, headers: { 'content-type': 'application/json' } });
@@ -11,7 +11,7 @@ const settle = async (f, ms = 0) => f.act(async () => { await new Promise(resolv
 const click = async (f, element) => { assert(element); await f.act(async () => element.dispatchEvent(new f.dom.window.MouseEvent('click', { bubbles: true }))); };
 const button = (f, label) => [...f.container.querySelectorAll('button')].find(node => node.textContent.trim() === label);
 
-test('root result definitions and legacy delivery evidence give identical U/C labels across both admin UIs', () => {
+test('dashboard result definitions preserve U/C labels and legacy delivery evidence', () => {
     for (const code of ['U', 'C']) {
         const root = { definitionVersion: 'root-request-v1', recordKind: 'runs' };
         const legacy = { ...root, payload: { kind: 'request.completed', instrumentation_version: 1 } };

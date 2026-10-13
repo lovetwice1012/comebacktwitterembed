@@ -4,6 +4,7 @@ import { decodeLogCursor, logConditions, type LogSearch, type LogCursor } from "
 
 import { createHash } from "crypto";
 import { prisma as sharedPrisma } from "@/lib/prisma";
+import { assertDashboardFleetWriteAuthority } from "@/lib/fleet-authority";
 import { getBotToken, getClientId, getDashboardAdminAnalyticsPrewarm, getDatabaseUrl } from "@/lib/env";
 import { ensureAuditLogTable } from "@/lib/audit-log";
 import { fetchBotGuildIds } from "@/lib/discord";
@@ -3823,6 +3824,7 @@ async function loadPersistedDetailedAnalyticsSnapshot(entry: AdminDetailedAnalyt
 }
 
 async function persistDetailedAnalyticsSnapshot(entry: AdminDetailedAnalyticsCacheEntry, snapshot: AdminDetailedAnalyticsSnapshot) {
+  assertDashboardFleetWriteAuthority();
   const snapshotKey = persistedReportSnapshotKey("detailed", detailedAnalyticsCacheKey(entry.filters));
   await optionalQuery(undefined, () => prisma.$executeRawUnsafe(
     `INSERT INTO bot_admin_report_snapshots (report_type, snapshot_key, generated_at_ms, payload_json)
@@ -6041,6 +6043,7 @@ async function loadPersistedPreviewSnapshot<Filters, Snapshot>(kind: string, ent
 }
 
 async function persistPreviewSnapshot<Filters, Snapshot>(kind: string, entry: AdminPreviewCacheEntry<Filters, Snapshot>, snapshot: Snapshot) {
+  assertDashboardFleetWriteAuthority();
   await sharedPrisma.$executeRawUnsafe(
     `INSERT INTO bot_admin_report_snapshots (report_type,snapshot_key,generated_at_ms,payload_json) VALUES (?,?,?,?)
      ON DUPLICATE KEY UPDATE generated_at_ms=VALUES(generated_at_ms),payload_json=VALUES(payload_json)`,
@@ -6428,6 +6431,7 @@ async function loadPersistedAdvancedAnalyticsSnapshot() {
 }
 
 async function persistAdvancedAnalyticsSnapshot(snapshot: AdminAdvancedAnalyticsSnapshot) {
+  assertDashboardFleetWriteAuthority();
   const snapshotKey = persistedReportSnapshotKey("advanced", "default");
   await optionalQuery(undefined, () => prisma.$executeRawUnsafe(
     `INSERT INTO bot_admin_report_snapshots (report_type, snapshot_key, generated_at_ms, payload_json)
@@ -6451,6 +6455,7 @@ function refreshAdminOverviewCache() {
 }
 
 async function persistOverviewSnapshot(snapshot: AdminOverviewSnapshot) {
+  assertDashboardFleetWriteAuthority();
   await sharedPrisma.$executeRawUnsafe(
     `INSERT INTO bot_admin_report_snapshots (report_type, snapshot_key, generated_at_ms, payload_json)
      VALUES (?, ?, ?, ?) ON DUPLICATE KEY UPDATE generated_at_ms=VALUES(generated_at_ms), payload_json=VALUES(payload_json)`,

@@ -1,0 +1,90 @@
+{
+  "date": "2026-10-13",
+  "fixtureOnly": true,
+  "productionIO": false,
+  "legacyPresentationSource": {
+    "releaseRevision": "02f26665277c5866c2ddb4309c1c9646f28c317b",
+    "buildId": "bP2v88Nr8XVzXWJrmDlz2",
+    "manifestSha256": "c131eed9268b6811050a35a10b6ce00cc88e42cdfd8c7005165644e9f0c61499"
+  },
+  "checks": [
+    {
+      "check": "owner-server-policy-ignores-url-cookie-and-browser-storage",
+      "version": "preview",
+      "fakeViewerId": "796972193287503913"
+    },
+    {
+      "check": "owner-all-settings-reveals-every-fixture-setting",
+      "total": 12
+    },
+    {
+      "check": "owner-settings-version-and-defaults",
+      "version": "preview"
+    },
+    {
+      "check": "owner-desktop-personal-form-default",
+      "initialFormVisible": false
+    },
+    {
+      "check": "owner-preview-history-access-snapshots-and-view-only-denial"
+    },
+    {
+      "check": "owner-mobile-version-navigation"
+    },
+    {
+      "check": "other-admin-server-policy-ignores-url-cookie-and-browser-storage",
+      "version": "legacy",
+      "fakeViewerId": "933314562487386122"
+    },
+    {
+      "check": "other-admin-settings-version-and-defaults",
+      "version": "legacy"
+    },
+    {
+      "check": "other-admin-desktop-personal-form-default",
+      "initialFormVisible": true
+    },
+    {
+      "check": "other-admin-preview-history-access-snapshots-and-view-only-denial"
+    },
+    {
+      "check": "other-admin-mobile-version-navigation"
+    },
+    {
+      "check": "ordinary-server-policy-ignores-url-cookie-and-browser-storage",
+      "version": "legacy",
+      "fakeViewerId": "123456789012345678"
+    },
+    {
+      "check": "guest-server-policy-ignores-url-cookie-and-browser-storage",
+      "version": "legacy",
+      "fakeViewerId": null
+    },
+    {
+      "check": "invalid-server-policy-ignores-url-cookie-and-browser-storage",
+      "version": "legacy",
+      "fakeViewerId": "invalid"
+    },
+    {
+      "check": "owner-preview-retained-after-other-accounts"
+    }
+  ],
+  "browserErrors": [],
+  "externalRequests": [],
+  "screenshots": [
+    "other-admin-access.jpg",
+    "other-admin-history.jpg",
+    "other-admin-home.jpg",
+    "other-admin-mobile-settings.jpg",
+    "other-admin-personal.jpg",
+    "other-admin-preview.jpg",
+    "other-admin-settings.jpg",
+    "owner-access.jpg",
+    "owner-history.jpg",
+    "owner-home.jpg",
+    "owner-mobile-settings.jpg",
+    "owner-personal.jpg",
+    "owner-preview.jpg",
+    "owner-settings.jpg"
+  ]
+}

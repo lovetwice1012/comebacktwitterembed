@@ -1,0 +1,37 @@
+{
+  "uiContinuityPassed": true,
+  "publicHealthHomeAndAuthSamples": 327,
+  "publicHttpFailures": 0,
+  "dashboardAndNextIdentityUnchanged": true,
+  "dashboardRestarts": 0,
+  "botRestored": {
+    "occurredAt": "2026-10-13T08:21:04.113000000Z",
+    "pid": 1727905,
+    "ready": true,
+    "shards": {
+      "manager_status": "ready",
+      "offline": 0,
+      "online": 13,
+      "total": 13,
+      "unknown": 0
+    },
+    "recordingFailure": null,
+    "buildRevision": "02f26665277c5866c2ddb4309c1c9646f28c317b"
+  },
+  "authorityGapProtectedSamples": 64,
+  "authorityReacquiredWithoutDashboardRestart": true,
+  "crossRequestLeaseTransition": [
+    {
+      "elapsedSeconds": 152.066,
+      "healthBeforePost": false,
+      "postStatus": 404,
+      "nextHealth": true,
+      "reason": "The fresh guardian lease was reacquired between the separate health and POST requests; the unknown handler returns 404 only after middleware admits the new valid lease."
+    }
+  ],
+  "rawObserverAssertionPassed": false,
+  "observerFixedForFutureRuns": true,
+  "isolatedMiddlewareRuntimeChecksPassed": 12,
+  "additionalBotRestartAvoided": true,
+  "verifiedAt": "2026-10-13T08:22:59.931768+00:00"
+}

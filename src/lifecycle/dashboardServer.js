@@ -36,6 +36,29 @@ function isDisabled() {
         || truthy(process.env.DISABLE_DASHBOARD);
 }
 
+function isExternallyManaged() {
+    if (process.env.DASHBOARD_MANAGED_EXTERNALLY !== undefined) {
+        return truthy(process.env.DASHBOARD_MANAGED_EXTERNALLY);
+    }
+    return readConfig().dashboard?.managedExternally === true;
+}
+
+function configureIntegratedMediaEnvironment() {
+    const config = readConfig();
+    const mediaDelivery = config.mediaDelivery || {};
+    const baseUrl = dashboardBaseUrl();
+    process.env.NEXTAUTH_URL = process.env.NEXTAUTH_URL || baseUrl;
+    process.env.DASHBOARD_BASE_URL = process.env.DASHBOARD_BASE_URL || baseUrl;
+    process.env.DASHBOARD_INTEGRATED_MEDIA_SERVER = 'true';
+    process.env.MEDIA_DELIVERY_PUBLIC_BASE_URL = process.env.MEDIA_DELIVERY_PUBLIC_BASE_URL
+        || mediaDelivery.publicBaseUrl || config.dashboard?.publicBaseUrl
+        || config.dashboard?.baseUrl || config.publicBaseUrl || baseUrl;
+    if (mediaDelivery.useLegacyRoutes !== undefined) {
+        process.env.MEDIA_DELIVERY_USE_LEGACY_ROUTES = mediaDelivery.useLegacyRoutes ? 'true' : 'false';
+    }
+    if (mediaDelivery.serverMode) process.env.MEDIA_DELIVERY_SERVER_MODE = mediaDelivery.serverMode;
+}
+
 function npmCommand() {
     return process.platform === 'win32' ? 'npm.cmd' : 'npm';
 }
@@ -116,6 +139,10 @@ function scriptName() {
 
 function prepare() {
     if (child || isDisabled()) return Promise.resolve(true);
+    if (isExternallyManaged()) {
+        configureIntegratedMediaEnvironment();
+        return Promise.resolve(true);
+    }
     if (!fs.existsSync(path.join(dashboardDir(), 'package.json'))) return Promise.resolve(true);
     if (preparation) return preparation;
 
@@ -168,6 +195,11 @@ function start() {
         console.log('[dashboardServer] disabled by environment.');
         return null;
     }
+    if (isExternallyManaged()) {
+        configureIntegratedMediaEnvironment();
+        console.log('[dashboardServer] dashboard is supervised independently.');
+        return null;
+    }
     if (!fs.existsSync(path.join(dashboardDir(), 'package.json'))) {
         console.warn('[dashboardServer] dashboard/package.json was not found. Dashboard startup skipped.');
         return null;
@@ -211,12 +243,7 @@ function start() {
 
     // Keep the parent in dashboard-integrated mode too, so ready-time media lifecycle
     // only starts cache cleanup timers and never opens a second listener on 30987.
-    process.env.NEXTAUTH_URL = process.env.NEXTAUTH_URL || baseUrl;
-    process.env.DASHBOARD_BASE_URL = process.env.DASHBOARD_BASE_URL || baseUrl;
-    process.env.DASHBOARD_INTEGRATED_MEDIA_SERVER = 'true';
-    process.env.MEDIA_DELIVERY_PUBLIC_BASE_URL = process.env.MEDIA_DELIVERY_PUBLIC_BASE_URL || env.MEDIA_DELIVERY_PUBLIC_BASE_URL;
-    if (env.MEDIA_DELIVERY_USE_LEGACY_ROUTES) process.env.MEDIA_DELIVERY_USE_LEGACY_ROUTES = env.MEDIA_DELIVERY_USE_LEGACY_ROUTES;
-    if (env.MEDIA_DELIVERY_SERVER_MODE) process.env.MEDIA_DELIVERY_SERVER_MODE = env.MEDIA_DELIVERY_SERVER_MODE;
+    configureIntegratedMediaEnvironment();
 
     const script = scriptName();
     const launch = launchCommand(script);
@@ -246,6 +273,7 @@ function start() {
 }
 
 function stop(signal = 'SIGTERM') {
+    if (isExternallyManaged()) return;
     if (!child) return;
     const current = child;
     child = null;
@@ -260,7 +288,9 @@ module.exports = {
     _internal: {
         dashboardBaseUrl,
         dashboardPort,
+        configureIntegratedMediaEnvironment,
         hasProductionBuild,
+        isExternallyManaged,
         readConfig,
         scriptName,
     },

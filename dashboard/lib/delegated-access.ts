@@ -2,6 +2,7 @@ import "server-only";
 
 import { createHash } from "node:crypto";
 import { prisma } from "@/lib/prisma";
+import { createDashboardFleetWriteFence, readDashboardFleetAuthority } from "@/lib/fleet-authority";
 import {
   getDashboardFlag,
   getDelegatedAccessRolloutDurationHours,
@@ -52,6 +53,7 @@ export function isDiscordSnowflake(value: string) {
 }
 
 export async function ensureDelegatedAccessTable() {
+  if (!readDashboardFleetAuthority().available) return;
   ensureTablePromise ??= prisma
     .$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS ${TABLE} (grant_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY, guild_id VARCHAR(32) NOT NULL, target_type ENUM('user','role') NOT NULL, target_id VARCHAR(32) NOT NULL, access_level ENUM('view','edit') NOT NULL, granted_by_user_id VARCHAR(32) NOT NULL, created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, UNIQUE KEY uniq_dashboard_delegated_access_target (guild_id,target_type,target_id), INDEX idx_dashboard_delegated_access_guild (guild_id)) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`)
     .then(() => undefined)
@@ -105,6 +107,7 @@ export async function replaceDelegatedAccess(input: {
   accessLevel?: DelegatedAccessLevel;
   actorUserId: string;
 }) {
+  const fence = createDashboardFleetWriteFence();
   if (!delegatedAccessEnabledForGuild(input.guildId)) throw new Error("Delegated access is disabled for this guild.");
   if (!isDiscordSnowflake(input.guildId) || !isDiscordSnowflake(input.actorUserId)) {
     throw new Error("Invalid Discord ID.");
@@ -118,9 +121,11 @@ export async function replaceDelegatedAccess(input: {
   await ensureDelegatedAccessTable();
   const ids = [...new Set(input.targetIds)].filter(isDiscordSnowflake);
   await prisma.$transaction(async (tx) => {
+    fence();
     for (const targetId of ids) {
       if (input.accessLevel) await tx.$executeRawUnsafe(`INSERT INTO ${TABLE} (guild_id,target_type,target_id,access_level,granted_by_user_id) VALUES (?,?,?,?,?) ON DUPLICATE KEY UPDATE access_level=VALUES(access_level), granted_by_user_id=VALUES(granted_by_user_id)`, input.guildId, input.targetType, targetId, input.accessLevel, input.actorUserId);
       else await tx.$executeRawUnsafe(`DELETE FROM ${TABLE} WHERE guild_id=? AND target_type=? AND target_id=?`, input.guildId, input.targetType, targetId);
     }
+    fence();
   });
 }

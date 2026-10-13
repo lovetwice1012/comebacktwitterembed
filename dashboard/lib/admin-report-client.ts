@@ -1,6 +1,7 @@
 import "server-only";
 import { adminAgentEndpoint } from "@/lib/admin-agent";
 import { reportErrorMessage, type AdminReportCache } from "@/lib/admin-report-status";
+import { DashboardFleetAuthorityError, assertDashboardFleetWriteAuthority, readDashboardFleetAuthority } from "@/lib/fleet-authority";
 
 export type ReportKind = "overview" | "analytics" | "guild-preview" | "provider-preview";
 type Row = Record<string, unknown>;
@@ -16,6 +17,7 @@ export function reportForDashboard(kind: ReportKind, value: RemoteReport) {
 
 /** Read or queue a complete snapshot. Never fall back to heavy computation in Next. */
 export async function getIndependentAdminReport(kind: ReportKind, filters: Row, actorId: string, forceRefresh = false) {
+  if (forceRefresh) assertDashboardFleetWriteAuthority();
   const endpoint = adminAgentEndpoint(`reports/${kind}`);
   const headers = { authorization: `Bearer ${process.env.ADMIN_AGENT_TOKEN}`, "x-admin-actor": actorId, "content-type": "application/json" };
   const read = async (method: "GET" | "POST") => {
@@ -27,6 +29,7 @@ export async function getIndependentAdminReport(kind: ReportKind, filters: Row, 
     return value as RemoteReport;
   };
   const previous = await read("GET");
+  if (!readDashboardFleetAuthority().available) return reportForDashboard(kind, { ...previous, cache: { ...previous.cache, refreshing: false, lastError: new DashboardFleetAuthorityError().message } });
   // GET never starts work in the core; queue only through its durable dedicated report lane.
   const age = previous.cache?.updatedAt ? Date.now() - Date.parse(previous.cache.updatedAt) : Infinity;
   if (!previous.cache?.refreshing && (forceRefresh || (kind === "overview" && !previous.cache?.lastError && (!previous.report || age >= 300000)))) {

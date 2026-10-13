@@ -1,0 +1,68 @@
+{
+  "sessionModel": "Short-lived signed synthetic sessions; not a real OAuth login",
+  "privateDataRequests": 0,
+  "mutations": 0,
+  "checks": [
+    {
+      "path": "/api/health",
+      "status": 200,
+      "ok": true,
+      "node": "primary",
+      "epoch": 13,
+      "instanceId": "primary:ebe6bde7c951b07b91b90f67b8492c79595e316fa9bb9b76"
+    },
+    {
+      "path": "/api/auth/providers",
+      "status": 200
+    },
+    {
+      "path": "/api/auth/session",
+      "status": 200
+    },
+    {
+      "identity": "796972193287503913",
+      "path": "/admin",
+      "status": 200,
+      "version": "preview",
+      "accessDenied": false,
+      "streamedRedirect": false,
+      "cacheControl": "private, no-cache, no-store, max-age=0, must-revalidate"
+    },
+    {
+      "identity": "933314562487386122",
+      "path": "/admin?ui=preview&viewerId=796972193287503913",
+      "status": 200,
+      "version": "legacy",
+      "accessDenied": false,
+      "streamedRedirect": false,
+      "cacheControl": "private, no-cache, no-store, max-age=0, must-revalidate"
+    },
+    {
+      "identity": "123456789012345678",
+      "path": "/admin?ui=preview&viewerId=796972193287503913",
+      "status": 404,
+      "version": "not-rendered",
+      "accessDenied": true,
+      "streamedRedirect": false,
+      "cacheControl": "private, no-cache, no-store, max-age=0, must-revalidate"
+    },
+    {
+      "identity": "anonymous",
+      "path": "/?ui=preview&viewerId=796972193287503913",
+      "status": 200,
+      "version": "legacy",
+      "accessDenied": false,
+      "streamedRedirect": false,
+      "cacheControl": "private, no-cache, no-store, max-age=0, must-revalidate"
+    },
+    {
+      "identity": "anonymous",
+      "path": "/dashboard",
+      "status": 200,
+      "loginRedirectVerified": true
+    }
+  ],
+  "probePort": 31089,
+  "productionPointerChanged": false,
+  "actualOAuthLoginVerified": false
+}

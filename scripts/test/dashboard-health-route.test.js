@@ -16,6 +16,7 @@ function healthRoute(env = {}, file = {}) {
   vm.runInNewContext(compiled, { exports, Buffer, process: { env }, require(id) {
     dependencies.push(id);
     if (id === 'next/server') return { NextResponse: { json: (body, options) => ({ body, options, status: options?.status || 200 }) } };
+    if (id === '@/lib/fleet-authority') return { readDashboardFleetAuthority: () => { throw new Error('Strict health must use its bounded lease reader'); } };
     assert.equal(id, 'node:fs/promises', 'health must not load expensive application dependencies');
     return { open: async (filename, mode) => {
       opened++;
@@ -50,7 +51,7 @@ test('unenrolled public health remains generic HTTP-only and does not read a lea
   assert.match(result.options.headers['cache-control'], /no-store/);
   assert.equal(route.dynamic, 'force-dynamic');
   assert.equal(stats().opened, 0);
-  assert.deepEqual(dependencies.sort(), ['next/server', 'node:fs/promises']);
+  assert.deepEqual(dependencies.sort(), ['@/lib/fleet-authority', 'next/server', 'node:fs/promises']);
 });
 
 test('fresh active and renewal-unconfirmed leases return only public node, epoch and current guardian instance', async () => {

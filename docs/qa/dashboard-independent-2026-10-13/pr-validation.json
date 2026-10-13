@@ -1,0 +1,77 @@
+{
+  "date": "2026-10-13",
+  "branch": "codex/dashboard-ui-service-opt-in-20261013",
+  "baseCommit": "8a40e97a09cf26800da417026ff3b733c419c335",
+  "deployedSourceFilesReconstructed": 138,
+  "unrelatedSourceChangesExcluded": [
+    "admin-agent",
+    "src/automation",
+    "src/providers",
+    "dashboard/components/automation",
+    "dashboard/app/dashboard/automation",
+    "package.json",
+    "package-lock.json"
+  ],
+  "fullNode": {
+    "passed": 1353,
+    "failed": 0,
+    "tests": 1414,
+    "skipped": 61
+  },
+  "focusedDashboard": {
+    "failed": 0,
+    "skipped": 0,
+    "passed": 146
+  },
+  "focusedSQL": {
+    "failed": 0,
+    "database": "Disposable local MariaDB fixture",
+    "skipped": 0,
+    "passed": 7
+  },
+  "pythonInstaller": {
+    "failed": 0,
+    "passed": 14
+  },
+  "browser": {
+    "fixtureOnly": true,
+    "checks": 20,
+    "errors": 0
+  },
+  "typecheck": "passed",
+  "dashboardESLint": "passed",
+  "productionBuild": "passed",
+  "legacyRepositoryVerification": {
+    "frozenFiles": 59,
+    "originalSourcesVerified": false,
+    "imports": 328
+  },
+  "legacyOriginalVerification": {
+    "verified": true,
+    "originalFiles": 167
+  },
+  "reviewCleanup": [
+    "Explicit service env and private runtime JSON take precedence over config defaults",
+    "Default independent dashboard port31089",
+    "Portable legacy verifier and browser QA resolution",
+    "Preserve raw frozen presentation bytes on Windows"
+  ],
+  "ci": "Repository has no GitHub Actions workflows; validation ran locally in the isolated worktree",
+  "deployment": "Existing production v3 deployment remains unchanged by PR assembly",
+  "initialBaseCommit": "02f26665277c5866c2ddb4309c1c9646f28c317b",
+  "initialFullNode": {
+    "failed": 0,
+    "skipped": 59,
+    "passed": 1216,
+    "tests": 1275
+  },
+  "integration": {
+    "lint": "passed",
+    "base": "main",
+    "serviceCodeChanged": false,
+    "conflictsResolved": 4,
+    "mergedMainCommit": "8a40e97a09cf26800da417026ff3b733c419c335",
+    "typecheck": "passed",
+    "build": "passed"
+  }
+}

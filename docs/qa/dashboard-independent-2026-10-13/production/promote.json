@@ -1,0 +1,27 @@
+{
+  "status": "promoted",
+  "configs": [
+    {
+      "path": "/etc/nginx/conf.d/cbte-admin-gateway.conf",
+      "backup": "/var/backups/cbte/dashboard-independent-20261013-v3/nginx/cbte-admin-gateway.conf",
+      "beforeSha256": "665a00d726ba25c05baeff4bee125ebd9e1f41338b080bdf257c9504bc18674d",
+      "afterSha256": "dd4fb0df099ba278d3703ab3ad15b073cc4402726d42d2f1506e95713d840ac0"
+    },
+    {
+      "path": "/etc/nginx/conf.d/cbte-dashboard-origin.conf",
+      "backup": "/var/backups/cbte/dashboard-independent-20261013-v3/nginx/cbte-dashboard-origin.conf",
+      "beforeSha256": "42943bb6c8b8d0b366ff81a42f4d5473bc2334f78dfd718adec6481b90fe50f2",
+      "afterSha256": "98690906b094c28693aa73dea685af1b91edd140fc5b147d0d03db8c94a09b7d"
+    }
+  ],
+  "oldWrapperPid": 1177975,
+  "botRestartRequested": false,
+  "publicHealth": {
+    "status": 200,
+    "ok": true
+  },
+  "botDropinSha256": "adac1cfec45f24eaff4493958bc1da86afc8307008b81a53bd63327c988516a9",
+  "dashboardServiceEnabled": true,
+  "publicRoutingChanged": true,
+  "oldWrapperStopRequested": true
+}

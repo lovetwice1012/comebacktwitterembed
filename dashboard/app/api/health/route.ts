@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { open } from "node:fs/promises";
+import { readDashboardFleetAuthority } from "@/lib/fleet-authority";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -27,6 +28,10 @@ async function readLease(filename: string): Promise<Record<string, unknown>> {
 
 /** Public HTTP reachability only. Bot readiness is verified independently from fresh telemetry. */
 export async function GET() {
+  if (process.env.DASHBOARD_FLEET_LEASE_MODE === "shared-current") {
+    const { available, managed, ...identity } = readDashboardFleetAuthority();
+    return NextResponse.json({ ok: true, scope: "dashboard_http_only", time: new Date().toISOString(), authorityAvailable: available, authorityManaged: managed, ...identity }, { headers });
+  }
   const filename = process.env.CBTE_FLEET_LEASE_FILE;
   if (!filename) return NextResponse.json({ ok: true, scope: "dashboard_http_only", time: new Date().toISOString() }, { headers });
   try {

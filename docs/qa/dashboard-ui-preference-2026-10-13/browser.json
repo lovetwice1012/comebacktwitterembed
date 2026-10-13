@@ -1,0 +1,13 @@
+{
+  "checks": [
+    "ordinary-default-legacy-toggle-visible",
+    "failed-save-preserves-legacy-and-allows-retry",
+    "ordinary-switch-and-reload-retains-signed-http-only-preference",
+    "mobile-switch-back-without-horizontal-overflow",
+    "guest-toggle-hidden-and-api-denied"
+  ],
+  "errors": [],
+  "fixtureOnly": true,
+  "productionIO": false,
+  "actualOAuthLoginVerified": false
+}

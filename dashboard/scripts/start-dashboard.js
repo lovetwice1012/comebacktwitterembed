@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 'use strict';
+/* global module */
 
 const { spawn, spawnSync } = require('child_process');
 const fs = require('fs');
@@ -26,6 +27,36 @@ function readConfig() {
     }
 }
 
+function loadRuntimeEnvironment() {
+    const filename = process.env.DASHBOARD_RUNTIME_ENV_FILE;
+    if (!filename) return;
+    const descriptor = fs.openSync(filename, 'r');
+    let environment;
+    try {
+        const stat = fs.fstatSync(descriptor);
+        if (!stat.isFile() || stat.size > 262144
+            || (process.platform !== 'win32' && (stat.uid !== 0 || (stat.mode & 0o077) !== 0))) {
+            throw new Error('Dashboard runtime environment must be a bounded, root-owned private file.');
+        }
+        try {
+            environment = JSON.parse(fs.readFileSync(descriptor, 'utf8'));
+        } catch {
+            throw new Error('Dashboard runtime environment is not valid JSON.');
+        }
+    } finally {
+        fs.closeSync(descriptor);
+    }
+    if (!environment || typeof environment !== 'object' || Array.isArray(environment)
+        || Object.entries(environment).some(([key, value]) => !/^[A-Za-z_][A-Za-z0-9_]*$/.test(key) || typeof value !== 'string')) {
+        throw new Error('Dashboard runtime environment has an invalid shape.');
+    }
+    // The private snapshot carries credentials without exposing them in argv or
+    // systemd show. Explicit service settings can override its operational flags.
+    for (const [key, value] of Object.entries(environment)) {
+        if (process.env[key] === undefined) process.env[key] = value;
+    }
+}
+
 function dashboardBaseUrl(config, port) {
     const dashboard = config.dashboard || {};
     const mediaDelivery = config.mediaDelivery || {};
@@ -38,6 +69,29 @@ function dashboardBaseUrl(config, port) {
         || config.publicBaseUrl
         || `http://localhost:${port}`
     ).replace(/\/+$/, '');
+}
+
+function applyConfigurationDefaults(env, config) {
+    const dashboard = config.dashboard || {};
+    const mediaDelivery = config.mediaDelivery || {};
+    const booleanValue = value => value === undefined ? undefined : value ? 'true' : 'false';
+    const defaults = {
+        DISCORD_BOT_TOKEN: typeof config.token === 'string' && config.token.trim() ? config.token.trim() : undefined,
+        DISCORD_CLIENT_ID: dashboard.clientId || config.clientId,
+        DISCORD_CLIENT_SECRET: dashboard.clientSecret || config.clientSecret,
+        NEXTAUTH_SECRET: dashboard.nextAuthSecret || config.nextAuthSecret,
+        DASHBOARD_AUDIT_HASH_SECRET: dashboard.auditHashSecret,
+        DISCORD_API_TIMEOUT_MS: dashboard.discordApiTimeoutMs ? String(dashboard.discordApiTimeoutMs) : undefined,
+        DASHBOARD_USE_BOT_GUILD_API: booleanValue(dashboard.useBotGuildApi),
+        DASHBOARD_LOAD_GUILD_PROVIDER_SUMMARY: booleanValue(dashboard.loadGuildProviderSummary),
+        DASHBOARD_DELEGATED_ACCESS_ENABLED: booleanValue(dashboard.delegatedAccessEnabled),
+        DASHBOARD_ADMIN_ANALYTICS_PREWARM: booleanValue(dashboard.adminAnalyticsPrewarm),
+        MEDIA_DELIVERY_USE_LEGACY_ROUTES: booleanValue(mediaDelivery.useLegacyRoutes),
+        MEDIA_DELIVERY_SERVER_MODE: mediaDelivery.serverMode,
+    };
+    for (const [name, value] of Object.entries(defaults)) {
+        if (env[name] === undefined && value !== undefined) env[name] = value;
+    }
 }
 
 function truthy(value) {
@@ -383,7 +437,9 @@ function startManagedProductionServer(dashboardDir, env, port, baseUrl) {
             DASHBOARD_NEXT_DIST_DIR: build.distDir,
         };
         console.log(`[dashboard] starting Next.js on ${baseUrl} from ${build.distDir} (${build.buildId}).`);
-        child = spawn(process.execPath, [nextCli(dashboardDir), 'start', '--port', String(port)], {
+        const arguments_ = [nextCli(dashboardDir), 'start', '--port', String(port)];
+        if (env.DASHBOARD_HOSTNAME) arguments_.push('--hostname', env.DASHBOARD_HOSTNAME);
+        child = spawn(process.execPath, arguments_, {
             cwd: dashboardDir,
             env: startEnv,
             stdio: 'inherit',
@@ -462,78 +518,87 @@ function startManagedProductionServer(dashboardDir, env, port, baseUrl) {
     launch();
 }
 
-const modeArg = process.argv[2] || 'dev';
-const mode = ['start', 'build', 'prepare'].includes(modeArg) ? modeArg : 'dev';
-const config = readConfig();
-const dashboard = config.dashboard || {};
-const mediaDelivery = config.mediaDelivery || {};
-const port = Number(process.env.DASHBOARD_PORT || process.env.PORT || dashboard.port || DEFAULT_PORT);
-const baseUrl = dashboardBaseUrl(config, port);
+function main() {
+    loadRuntimeEnvironment();
+    const modeArg = process.argv[2] || 'dev';
+    const mode = ['start', 'serve', 'build', 'prepare'].includes(modeArg) ? modeArg : 'dev';
+    const config = readConfig();
+    const dashboard = config.dashboard || {};
+    const mediaDelivery = config.mediaDelivery || {};
+    const port = Number(process.env.DASHBOARD_PORT || process.env.PORT || dashboard.port || DEFAULT_PORT);
+    const baseUrl = dashboardBaseUrl(config, port);
 
-const env = {
-    ...process.env,
-    PORT: String(port),
-    NEXT_TELEMETRY_DISABLED: '1',
-    NEXTAUTH_URL: baseUrl,
-    DASHBOARD_BASE_URL: baseUrl,
-    DASHBOARD_INTEGRATED_MEDIA_SERVER: 'true',
-    MEDIA_DELIVERY_PUBLIC_BASE_URL: mediaDelivery.publicBaseUrl || dashboard.publicBaseUrl || dashboard.baseUrl || config.publicBaseUrl || baseUrl,
+    const env = {
+        ...process.env,
+        PORT: String(port),
+        NEXT_TELEMETRY_DISABLED: '1',
+        NEXTAUTH_URL: baseUrl,
+        DASHBOARD_BASE_URL: baseUrl,
+        DASHBOARD_INTEGRATED_MEDIA_SERVER: 'true',
+        MEDIA_DELIVERY_PUBLIC_BASE_URL: process.env.MEDIA_DELIVERY_PUBLIC_BASE_URL
+            ?? (mediaDelivery.publicBaseUrl || dashboard.publicBaseUrl || dashboard.baseUrl || config.publicBaseUrl || baseUrl),
+    };
+
+    applyConfigurationDefaults(env, config);
+
+    const dashboardDir = path.resolve(__dirname, '..');
+
+    delete env.DASHBOARD_NEXT_DIST_DIR;
+
+    if (mode === 'build') {
+        process.exit(runProductionBuild(dashboardDir, env));
+    }
+
+    if (mode === 'prepare') {
+        ensureFreshProductionBuild(dashboardDir, env);
+        process.exit(0);
+    }
+
+    if (mode === 'start') {
+        ensureFreshProductionBuild(dashboardDir, env);
+        startManagedProductionServer(dashboardDir, env, port, baseUrl);
+        return;
+    }
+
+    if (mode === 'serve') {
+        // An independent service must never rebuild or prune a working dashboard
+        // just because the Bot or its source checkout changed.
+        if (!findProductionBuild(dashboardDir)) {
+            console.error('[dashboard] selected production build is unavailable; create and verify a build before starting this service.');
+            process.exit(1);
+        }
+        startManagedProductionServer(dashboardDir, env, port, baseUrl);
+        return;
+    }
+
+    const devEnv = {
+        ...env,
+        DASHBOARD_NEXT_DIST_DIR: process.env.DASHBOARD_NEXT_DEV_DIST_DIR || DEV_DIST_DIR,
+    };
+    const result = spawnSync(process.execPath, [nextCli(dashboardDir), 'dev', '--port', String(port)], {
+        cwd: dashboardDir,
+        env: devEnv,
+        stdio: 'inherit',
+        windowsHide: true,
+    });
+
+    if (result.error) {
+        console.error(result.error);
+        process.exitCode = 1;
+    } else {
+        process.exitCode = result.status ?? 1;
+    }
+}
+
+if (require.main === module) main();
+
+module.exports = {
+    _internal: {
+        applyConfigurationDefaults,
+        findProductionBuild,
+        loadRuntimeEnvironment,
+        main,
+        readCurrentBuild,
+        startManagedProductionServer,
+    },
 };
-
-if (typeof config.token === 'string' && config.token.trim()) env.DISCORD_BOT_TOKEN = config.token.trim();
-if (dashboard.clientId || config.clientId) env.DISCORD_CLIENT_ID = dashboard.clientId || config.clientId;
-if (dashboard.clientSecret || config.clientSecret) env.DISCORD_CLIENT_SECRET = dashboard.clientSecret || config.clientSecret;
-if (dashboard.nextAuthSecret || config.nextAuthSecret) env.NEXTAUTH_SECRET = dashboard.nextAuthSecret || config.nextAuthSecret;
-if (dashboard.auditHashSecret) env.DASHBOARD_AUDIT_HASH_SECRET = dashboard.auditHashSecret;
-if (dashboard.discordApiTimeoutMs) env.DISCORD_API_TIMEOUT_MS = String(dashboard.discordApiTimeoutMs);
-if (dashboard.useBotGuildApi !== undefined) env.DASHBOARD_USE_BOT_GUILD_API = dashboard.useBotGuildApi ? 'true' : 'false';
-if (dashboard.loadGuildProviderSummary !== undefined) {
-    env.DASHBOARD_LOAD_GUILD_PROVIDER_SUMMARY = dashboard.loadGuildProviderSummary ? 'true' : 'false';
-}
-if (dashboard.delegatedAccessEnabled !== undefined) {
-    env.DASHBOARD_DELEGATED_ACCESS_ENABLED = dashboard.delegatedAccessEnabled ? 'true' : 'false';
-}
-if (dashboard.adminAnalyticsPrewarm !== undefined) {
-    env.DASHBOARD_ADMIN_ANALYTICS_PREWARM = dashboard.adminAnalyticsPrewarm ? 'true' : 'false';
-}
-if (mediaDelivery.useLegacyRoutes !== undefined) {
-    env.MEDIA_DELIVERY_USE_LEGACY_ROUTES = mediaDelivery.useLegacyRoutes ? 'true' : 'false';
-}
-if (mediaDelivery.serverMode) env.MEDIA_DELIVERY_SERVER_MODE = mediaDelivery.serverMode;
-
-const dashboardDir = path.resolve(__dirname, '..');
-
-delete env.DASHBOARD_NEXT_DIST_DIR;
-
-if (mode === 'build') {
-    process.exit(runProductionBuild(dashboardDir, env));
-}
-
-if (mode === 'prepare') {
-    ensureFreshProductionBuild(dashboardDir, env);
-    process.exit(0);
-}
-
-if (mode === 'start') {
-    ensureFreshProductionBuild(dashboardDir, env);
-    startManagedProductionServer(dashboardDir, env, port, baseUrl);
-    return;
-}
-
-const devEnv = {
-    ...env,
-    DASHBOARD_NEXT_DIST_DIR: process.env.DASHBOARD_NEXT_DEV_DIST_DIR || DEV_DIST_DIR,
-};
-const result = spawnSync(process.execPath, [nextCli(dashboardDir), 'dev', '--port', String(port)], {
-    cwd: dashboardDir,
-    env: devEnv,
-    stdio: 'inherit',
-    windowsHide: true,
-});
-
-if (result.error) {
-    console.error(result.error);
-    process.exitCode = 1;
-} else {
-    process.exitCode = result.status ?? 1;
-}

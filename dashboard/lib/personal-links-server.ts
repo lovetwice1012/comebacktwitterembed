@@ -1,6 +1,8 @@
 import "server-only";
 import { z } from "zod";
 import { requireBotModule } from "@/lib/bot-require";
+import { guardedDashboardDatabase } from "@/lib/fleet-database";
+import { createDashboardFleetWriteFence } from "@/lib/fleet-authority";
 import type { PersonalItem, PersonalKind } from "@/lib/personal-links-types";
 
 const fields = {
@@ -19,7 +21,7 @@ const kinds = new Set(["saved", "reminder", "restock"]);
 function failure(code: string, status = 400): never { throw Object.assign(new Error(code), { code, status }); }
 
 export function personalLinkServices() {
-  const db = requireBotModule<any>("src/db.js");
+  const db = guardedDashboardDatabase(requireBotModule<any>("src/db.js"));
   const store = requireBotModule<any>("src/personalLinks/store.js").createStore(db);
   const model = requireBotModule<any>("src/personalLinks/model.js");
   return { store, model, stockOptions: async (url: string) => {
@@ -53,11 +55,13 @@ export function presentPersonalItem(row: any, kind: PersonalKind): PersonalItem 
 export async function dispatchPersonalLinks(request: { method: string; path: string[]; search: URLSearchParams; body?: unknown }, userId: string, locale: string, services: ReturnType<typeof personalLinkServices>) {
   if (!/^\d{16,22}$/.test(userId)) failure("LOGIN_REQUIRED", 401);
   const { method, path, search } = request, { store, model } = services;
+  const fence = method === "GET" ? null : createDashboardFleetWriteFence(locale);
   if (path.length < 1 || path.length > 2 || !kinds.has(path[0])) failure("NOT_FOUND", 404);
   const kind = path[0] as PersonalKind, id = path[1];
   if (kind === "restock" && id === "options" && method === "POST") {
     const body = z.object({ url: fields.url }).strict().parse(request.body);
     const stock = await services.stockOptions(body.url);
+    fence?.();
     return { options: stock.options.map((option: any) => ({ ...option, name: option.id === "*" ? locale === "ja" ? "商品全体" : "Any variation" : option.name })) };
   }
   if (id && !/^[a-f0-9]{32}$/.test(id)) failure("NOT_FOUND", 404);
@@ -98,6 +102,7 @@ export async function dispatchPersonalLinks(request: { method: string; path: str
       const targetChanged = !current || current.url !== entry.url || current.variation_id !== body.variationId;
       if (targetChanged) {
         const stock = await services.stockOptions(entry.url);
+      fence?.();
         if (!stock.options.some((option: any) => option.id === body.variationId)) failure("INVALID_VARIATION");
         changes.variationName = stock.options.find((option: any) => option.id === body.variationId)?.name || "";
       }

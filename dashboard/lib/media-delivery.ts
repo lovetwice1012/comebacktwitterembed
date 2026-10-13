@@ -4,6 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { Readable } from "node:stream";
 import { requireBotModule } from "@/lib/bot-require";
+import { readDashboardFleetAuthority } from "@/lib/fleet-authority";
 
 type CacheRecord = {
   token: string;
@@ -45,6 +46,7 @@ function recordMediaDeliveryEvent(
   details: Record<string, unknown> = {},
 ) {
   if (!record) return;
+  if (!readDashboardFleetAuthority().available) return;
   try {
     const { recordAnalyticsEvent } = requireBotModule<ErrorTrackingModule>("src/errorTracking.js");
     recordAnalyticsEvent?.("media_delivery", {
@@ -73,12 +75,12 @@ export async function serveCachedMedia(providerId: string, token: string) {
     return new Response("Not found", { status: 404 });
   }
 
-  await store.cleanupExpiredDownloads();
+  if (process.env.DASHBOARD_FLEET_LEASE_MODE !== "shared-current" && readDashboardFleetAuthority().available) await store.cleanupExpiredDownloads();
   const index = await store._internal.readIndex();
   const record = index[token];
   if (!record) return new Response("Not found", { status: 404 });
   if (Number(record.expiresAtMs || 0) <= Date.now()) {
-    await store.cleanupExpiredDownloads();
+    if (process.env.DASHBOARD_FLEET_LEASE_MODE !== "shared-current" && readDashboardFleetAuthority().available) await store.cleanupExpiredDownloads();
     recordMediaDeliveryEvent(providerId, record, false, 410, startedAt, { outcome: "expired" });
     return new Response("Expired", { status: 410 });
   }
