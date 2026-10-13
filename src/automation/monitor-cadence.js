@@ -2,6 +2,13 @@
 const MIN_INTERVAL_MS = 5 * 60000;
 function fail(code, message, status = 422) { return Object.assign(new Error(message), { name: 'AutomationError', code, status }); }
 async function boostRows(query, owner) { return query('SELECT * FROM automation_notification_boost_slots WHERE owner_user_id=? ORDER BY slot_index', [owner]); }
+// Hold the owner lock first. Source completion locks its source before targets,
+// so cadence edits and native handoff must acquire the same source-first order.
+async function lockTargetSource(query, owner, targetId) {
+    const target = (await query('SELECT source_id FROM auto_watch_targets WHERE id=? AND user_id=?', [targetId, owner]))[0];
+    if (!target) return null;
+    return (await query('SELECT id,poll_interval_ms FROM auto_watch_sources WHERE id=? FOR UPDATE', [target.source_id]))[0] || null;
+}
 async function runtimeCadence(query, owner, kind, targetId, baseMs, now = Date.now()) {
     const selected = (await query('SELECT slot_cost,updated_at_ms FROM automation_monitor_cadence WHERE owner_user_id=? AND target_kind=? AND target_id=?', [owner, kind, targetId]))[0];
     const cost = Number(selected?.slot_cost || 1), base = Number(baseMs);
@@ -56,4 +63,4 @@ async function sourceSchedule(query, source, now = Date.now()) {
     }
     return { requested_poll_interval_ms: Number.isFinite(requested) ? requested : source.poll_interval_ms, has_user_interval: override ? 1 : 0 };
 }
-module.exports = { MIN_INTERVAL_MS, boostRows, runtimeCadence, reserve, release, sourceSchedule };
+module.exports = { MIN_INTERVAL_MS, boostRows, lockTargetSource, runtimeCadence, reserve, release, sourceSchedule };

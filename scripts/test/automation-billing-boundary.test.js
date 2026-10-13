@@ -12,13 +12,15 @@ const { dispatch } = require('../../src/automation/api');
 const { verifyWebhookSignature } = require('../../src/automation/square-billing');
 const port = Number(process.env.AUTOMATION_TEST_DB_PORT);
 
-test('actual billing dispatch uses the trusted actor, durable subscription admission and unrestricted cancellation', { skip: !port }, async t => {
+test('billing dispatch trusts session actors, shares enrollment/resume admission and always permits recovery', { skip: !port }, async t => {
     const db = await createTestDatabase(port); t.after(() => db.close());
     const owner = { userId: '222222222222222222', isAdmin: false }, admin = { userId: '333333333333333333', isAdmin: true };
     const calls = [];
     const services = { db, service: createService(db), billing: {
         getOptions: async actor => ({ owner: actor.userId }),
         subscribe: async actor => { calls.push(['subscribe', actor.userId]); return { pending: true }; },
+        resume: async actor => { calls.push(['resume', actor.userId]); return { pending: true }; },
+        abort: async actor => { calls.push(['abort', actor.userId]); return { aborted: true }; },
         cancel: async actor => { calls.push(['cancel', actor.userId]); return { canceled: true }; },
         getAdmin: async actor => { if (!actor.isAdmin) throw Object.assign(new Error('管理者権限が必要です。'), { status: 403 }); return { configured: false }; },
         saveBinding: async actor => { if (!actor.isAdmin) throw Object.assign(new Error('管理者権限が必要です。'), { status: 403 }); return { saved: true }; },
@@ -29,10 +31,14 @@ test('actual billing dispatch uses the trusted actor, durable subscription admis
     await assert.rejects(dispatch(request('GET', 'billing/admin'), owner, services), { status: 403 });
     await assert.rejects(dispatch(request('PATCH', 'billing/bindings/premium', { actor: admin }), owner, services), { status: 403 });
     assert.deepEqual(await dispatch(request('GET', 'billing/admin'), admin, services), { configured: false });
-    for (let i = 0; i < 2; i++) await dispatch(request('POST', 'billing/subscribe', { userId: admin.userId, actor: admin }), owner, services);
+    for (const action of ['resume', 'abort']) await assert.rejects(dispatch(request('POST', `billing/${action}`, { actor: admin }), null, services), { status: 401 });
+    await dispatch(request('POST', 'billing/subscribe', { userId: admin.userId, actor: admin }), owner, services);
+    await dispatch(request('POST', 'billing/resume', { userId: admin.userId, actor: admin }), owner, services);
     await assert.rejects(dispatch(request('POST', 'billing/subscribe'), owner, services), { code: 'AUTOMATION_RATE_LIMITED', status: 429 });
+    await assert.rejects(dispatch(request('POST', 'billing/resume'), owner, services), { code: 'AUTOMATION_RATE_LIMITED', status: 429 });
+    assert.deepEqual(await dispatch(request('POST', 'billing/abort', { userId: admin.userId, actor: admin }), owner, services), { aborted: true });
     assert.deepEqual(await dispatch(request('POST', 'billing/cancel', { userId: admin.userId }), owner, services), { canceled: true });
-    assert.deepEqual(calls, [['subscribe', owner.userId], ['subscribe', owner.userId], ['cancel', owner.userId]]);
+    assert.deepEqual(calls, [['subscribe', owner.userId], ['resume', owner.userId], ['abort', owner.userId], ['cancel', owner.userId]]);
     await assert.rejects(dispatch(request('GET', 'billing/options'), owner, { service: services.service }), { code: 'SQUARE_NOT_CONFIGURED', status: 503 });
 });
 

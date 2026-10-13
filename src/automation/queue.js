@@ -39,9 +39,9 @@ function createQueue(db, evaluator, options = {}) {
             LEFT JOIN automation_revisions r ON r.workflow_id=w.id AND r.revision=w.active_revision WHERE t.id=?${lock ? ' FOR UPDATE' : ''}`, [kind, kind, id]);
         return rows[0];
     }
-    async function finishLegacy(query, kind, delivery, state, now, code = null) {
+    async function finishLegacy(query, kind, delivery, state, now, code = null, nextAttemptAtMs = null) {
         const result = await query(`UPDATE ${table(kind)}_deliveries SET status=?,lease_token=NULL,lease_expires_at_ms=0,next_attempt_at_ms=?,last_error_code=? WHERE id=? AND status='pending' AND lease_token=?`,
-            [state, state === 'pending' ? now + 60000 : 0, code, delivery.id, delivery.lease_token]);
+            [state, state === 'pending' ? nextAttemptAtMs ?? now + 60000 : 0, code, delivery.id, delivery.lease_token]);
         // This is the cadence window in which the event is handed to the
         // workflow, whose own timing/quiet hours can delay actual delivery.
         if (kind === 'auto' && state === 'routed' && Number(result.affectedRows) === 1) {
@@ -61,8 +61,13 @@ function createQueue(db, evaluator, options = {}) {
                 : evaluateWorkflow(newWorkflow(), event, { now });
         }
         return db.withDatabaseTransaction(async query => {
+            let source = null;
+            if (kind === 'auto' && before?.user_id) {
+                await require('./entitlements').lockOwner(query, before.user_id);
+                source = await require('./monitor-cadence').lockTargetSource(query, before.user_id, String(delivery.target_id));
+            }
             const target = await snapshot(query, kind, delivery.target_id, true);
-            const records = await query(`SELECT status,lease_token,lease_expires_at_ms FROM ${table(kind)}_deliveries WHERE id=? FOR UPDATE`, [delivery.id]);
+            const records = await query(`SELECT status,lease_token,lease_expires_at_ms,next_attempt_at_ms FROM ${table(kind)}_deliveries WHERE id=? FOR UPDATE`, [delivery.id]);
             const record = records[0];
             if (!record || record.status !== 'pending' || record.lease_token !== delivery.lease_token || Number(record.lease_expires_at_ms) <= clock()) return { state: 'lease_lost' };
             if (!target?.enabled || target.deleted_at_ms) {
@@ -79,6 +84,30 @@ function createQueue(db, evaluator, options = {}) {
                 await finishLegacy(query, kind, delivery, 'routed', now);
                 return { state: 'routed', runId: existing[0].id };
             }
+            const handoffAtMs = Math.max(now, clock());
+            if (source && String(source.id) === String(target.source_id)) {
+                const user = (await query('SELECT auto_watch_interval_minutes FROM users WHERE user_id=?', [target.user_id]))[0];
+                const base = user?.auto_watch_interval_minutes == null ? Number(source.poll_interval_ms) : Number(user.auto_watch_interval_minutes) * MINUTE;
+                const cadence = await require('./monitor-cadence').runtimeCadence(query, target.user_id, 'auto', String(target.id), base, handoffAtMs);
+                // A lease is not permission to retain a shorter interval after
+                // returning frames, refund, expiry or downgrade. Native handoff
+                // is the cadence boundary; already routed workflow events keep
+                // their own schedules and live per-slot send quota checks.
+                if (cadence.updatedAtMs !== null || Number(delivery.slot_cost) > 1) {
+                    const claim = delivery.cadence_claim;
+                    // Queue inputs come from the internal native claimant. The
+                    // actual record lease was checked above. Stable policy lets
+                    // all discoveries leased in that one admission window pass;
+                    // a new claim/restart captures the newer live anchor.
+                    const samePolicy = claim && ['updatedAtMs', 'effectiveSlotCost', 'intervalMs', 'baseIntervalMs'].every(field => claim[field] === cadence[field]);
+                    const anchor = samePolicy ? claim.anchorAtMs : Number(target.last_notification_window_at_ms || target.baseline_at_ms || 0);
+                    const due = Math.max(Number(record.next_attempt_at_ms || 0), anchor ? anchor + cadence.intervalMs : 0);
+                    if (due > handoffAtMs) {
+                        await finishLegacy(query, kind, delivery, 'pending', handoffAtMs, 'MONITOR_CADENCE_WAIT', due);
+                        return { state: 'pending', code: 'MONITOR_CADENCE_WAIT', dueAtMs: due };
+                    }
+                }
+            }
             const runId = randomUUID(), scope = scopeOf(target);
             if (graphEnabled) {
                 if (typeof graph.store?.initializeInTransaction !== 'function') fail('FLOW_STORE_UNAVAILABLE', '新しいルール実行基盤を開始できません。');
@@ -92,7 +121,7 @@ function createQueue(db, evaluator, options = {}) {
                     [runId, dedupe, target.workflow_id, target.active_revision, target.user_id, target.guild_id, scope, kind, target.id, JSON.stringify(event), '[]', 'flow_pending', now]);
                 await graph.store.initializeInTransaction(query, { runId, context: flowContext, now, unit: { kind: 'event', ancestry: [], members: [{ id: runId, runId, event, display: structuredClone(NODE_TYPES.transform.defaults), schedules: [], dueAtMs: now, deadlineMs,
                     defaultPriceText: kind === 'price' ? delivery.message_text : null, context: flowContext.sourceContext, targetKind: kind }] } });
-                await finishLegacy(query, kind, delivery, 'routed', now);
+                await finishLegacy(query, kind, delivery, 'routed', handoffAtMs);
                 return { state: 'routed', runId, execution: 'flow_v2' };
             }
             let plannedJobs = 0;
@@ -148,7 +177,7 @@ function createQueue(db, evaluator, options = {}) {
                 plannedJobs++;
             }
             if (!plannedJobs || routingTrace.length !== evaluation.trace.length) await query('UPDATE automation_runs SET state=?,trace_json=? WHERE id=?', [plannedJobs ? 'queued' : 'excluded', JSON.stringify(routingTrace), runId]);
-            await finishLegacy(query, kind, delivery, 'routed', now);
+            await finishLegacy(query, kind, delivery, 'routed', handoffAtMs);
             return { state: 'routed', runId };
         });
     }

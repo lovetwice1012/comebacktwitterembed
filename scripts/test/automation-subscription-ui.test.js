@@ -37,6 +37,8 @@ async function fixture({ initialOptions = options(), initialStatus = status(), r
     return f;
 }
 const writes = f => f.calls.filter(call => call.method !== 'GET');
+const pendingCheckout = (changes = {}) => ({ checkoutId: 'old-checkout', state: 'CARD_STORED', retryable: false, resumeAllowed: true, abortAllowed: true,
+    quote: { checkoutId: 'old-checkout', expiresAtMs: Date.now() - 60000, plan: plan(), email: 'saved@example.test', name: '保存された請求名' }, ...changes });
 
 test('subscription submit handler rejects overlength and ambiguous email separators while preserving Unicode subdomains', async () => {
     const f = await fixture();
@@ -195,4 +197,153 @@ test('a status read failure during refresh keeps the quoted form but disables su
         assert.equal([...f.container.querySelectorAll('button')].find(node => node.textContent === '同意してサブスクリプションを契約').disabled, true); assert.equal(f.sdk.tokens.length, 0);
         await f.click('再読み込み'); assert.equal([...f.container.querySelectorAll('button')].find(node => node.textContent === '同意してサブスクリプションを契約').disabled, false);
     } finally { await f.close(); }
+});
+
+test('reload restores frozen stored-card terms including charge-day flags and renewed consent resumes the original checkout without a nonce or SDK', async () => {
+    let release;
+    const pending = pendingCheckout({ quote: { ...pendingCheckout().quote, plan: plan({ billingAnchorDay: 12, canProrate: true }) } });
+    const f = await fixture({ initialStatus: status({ pending }), respond: async route => {
+        if (route === 'resume') { await new Promise(resolve => { release = resolve; }); return status({ subscription: contract({ active: false, paidThroughAtMs: null, validUntilAtMs: null }) }); }
+    } });
+    try {
+        assert.match(f.container.textContent, /保存された請求名.*saved@example.test/); assert.match(f.container.textContent, /毎月12日が課金日/); assert.match(f.container.textContent, /初回は日割り/);
+        assert.equal(f.sdk.loads.length, 0); assert.equal(writes(f).length, 0);
+        const button = [...f.container.querySelectorAll('button')].find(node => node.textContent === '保存済みカードで契約を再開'); assert.equal(button.disabled, true);
+        await f.consent(); await f.act(async () => { button.dispatchEvent(new f.dom.window.MouseEvent('click', { bubbles: true })); button.dispatchEvent(new f.dom.window.MouseEvent('click', { bubbles: true })); });
+        assert.deepEqual(writes(f), [{ route: 'resume', method: 'POST', body: { checkoutId: 'old-checkout', consent: true } }]);
+        assert.equal(f.sdk.tokens.length, 0); assert.equal(f.dom.window.localStorage.length, 0); assert.equal(f.dom.window.sessionStorage.length, 0);
+        await f.act(async () => release()); assert.match(f.container.textContent, /支払い・契約状態を確認中/); assert(!f.container.textContent.includes('利用中'));
+    } finally { if (release) release(); await f.close(); }
+});
+
+test('retryable stage alone never exposes nonce-free resume, and malformed initial-discount money cannot resume or collect a card', async () => {
+    const unsafe = await fixture({ initialStatus: status({ pending: pendingCheckout({ resumeAllowed: false, abortAllowed: false, retryable: true }) }) });
+    try { assert.equal(unsafe.container.querySelector('[aria-label="受付済み契約の再開確認"]'), null); assert.equal(unsafe.container.querySelector('input[type=checkbox]'), null); assert.equal(unsafe.sdk.loads.length, 0); assert.equal(writes(unsafe).length, 0); }
+    finally { await unsafe.close(); }
+    const coupon = { code: 'FIRST', label: '初回だけ', type: 'fixed', value: 1500, discountAmount: 1500 };
+    const f = await fixture({ initialStatus: status({ pending: pendingCheckout({ quote: { ...pendingCheckout().quote, plan: plan({ coupon, firstAmount: 0, regularAmount: 1500 }) } }) }) });
+    try {
+        assert.match(f.container.textContent, /初回請求額を確認できません/);
+        assert.equal(f.container.querySelector('input[type=checkbox]').disabled, true);
+        const button = [...f.container.querySelectorAll('button')].find(node => node.textContent === '保存済みカードで契約を再開'); assert.equal(button.disabled, true);
+        await f.click('保存済みカードで契約を再開'); assert.equal(writes(f).length, 0); assert.equal(f.sdk.loads.length, 0);
+    } finally { await f.close(); }
+});
+
+test('stale resume refreshes capabilities and changed frozen terms require fresh consent before another original-checkout attempt', async () => {
+    let attempts = 0;
+    const coupon = { code: 'FIRST', label: '初回だけ', type: 'percent', value: 20, discountAmount: 300 };
+    const pending = pendingCheckout({ quote: { ...pendingCheckout().quote, plan: plan({ coupon, firstAmount: 1200, regularAmount: 1500 }) } });
+    const changed = pendingCheckout({ quote: { ...pending.quote, plan: plan({ amount: 2500 }) } });
+    const f = await fixture({ initialStatus: status({ pending }), respond: async route => {
+        if (route === 'resume') { if (++attempts === 1) throw Object.assign(new Error('stale'), { status: 409, code: 'SQUARE_CHECKOUT_PENDING' }); return status({ subscription: contract({ active: false }) }); }
+        if (route === 'status' && attempts) return status({ pending: changed });
+    } });
+    try {
+        assert.match(f.container.textContent, /初回請求: ￥1,200/); await f.consent(); await f.click('保存済みカードで契約を再開');
+        assert.equal(f.calls.filter(call => call.route === 'status').length, 2); assert.match(f.container.textContent, /￥2,500/);
+        assert.equal(f.container.querySelector('input[type=checkbox]').checked, false);
+        await f.click('保存済みカードで契約を再開'); assert.equal(writes(f).length, 1);
+        await f.consent(); await f.click('保存済みカードで契約を再開'); assert.equal(writes(f).length, 2); assert(writes(f).every(call => call.body.checkoutId === 'old-checkout' && !Object.hasOwn(call.body, 'sourceId')));
+    } finally { await f.close(); }
+});
+
+test('only server-permitted pre-enrollment abort needs a second confirmation and returns to the retained contact, plan and coupon draft', async () => {
+    const coupon = { code: 'FIRST', label: '初回だけ', type: 'percent', value: 20, discountAmount: 300 };
+    const pending = pendingCheckout({ state: 'CUSTOMER_READY', resumeAllowed: false, quote: { ...pendingCheckout().quote, plan: plan({ coupon, firstAmount: 1200, regularAmount: 1500 }) } });
+    const f = await fixture({ initialStatus: status({ pending }), respond: async route => route === 'abort' ? status() : undefined });
+    try {
+        await f.click('申し込みを中止してやり直す'); assert.equal(writes(f).length, 0); assert(f.container.querySelector('[aria-label="申し込み中止の確認"]'));
+        await f.click('確認して申し込みを中止'); assert.deepEqual(writes(f), [{ route: 'abort', method: 'POST', body: { checkoutId: 'old-checkout' } }]);
+        assert.equal(f.field('請求名').value, pending.quote.name); assert.equal(f.field('請求先メールアドレス').value, pending.quote.email); assert.equal(f.field('クーポンコード').value, 'FIRST'); assert.equal(f.container.querySelector('input[type=radio]').checked, true);
+        assert.match(f.container.textContent, /申し込みを中止しました/); assert.equal(f.sdk.loads.length, 0);
+    } finally { await f.close(); }
+});
+
+test('stale abort rechecks the original checkout and removes a withdrawn abort capability without allowing a new enrollment', async () => {
+    let aborted = false;
+    const f = await fixture({ initialStatus: status({ pending: pendingCheckout({ state: 'CUSTOMER_READY', resumeAllowed: false }) }), respond: async route => {
+        if (route === 'abort') { aborted = true; throw Object.assign(new Error('stale'), { status: 409 }); }
+        if (route === 'status' && aborted) return status({ pending: pendingCheckout({ state: 'SUBSCRIPTION_SUBMITTING', resumeAllowed: false, abortAllowed: false }) });
+    } });
+    try {
+        await f.click('申し込みを中止してやり直す'); await f.click('確認して申し込みを中止');
+        assert.equal(f.calls.filter(call => call.route === 'status').length, 2); assert.equal(f.container.querySelector('[aria-label="申し込み中止の確認"]'), null);
+        assert(!f.container.textContent.includes('申し込みを中止してやり直す')); assert.equal(f.container.querySelector('input[type=radio]'), null); assert.equal(writes(f).length, 1);
+    } finally { await f.close(); }
+});
+
+test('cached failed/busy/cooldown contract refresh discloses retained evidence and blocks repeated reads until the server retry time', async () => {
+    for (const state of ['failed', 'busy', 'cooldown']) {
+        const f = await fixture({ initialStatus: status({ pending: pendingCheckout({ resumeAllowed: false, abortAllowed: false }), refresh: { state, retryAtMs: Date.now() + 60000 } }) });
+        try {
+            assert.match(f.container.textContent, /保存された確認結果を表示/); assert.match(f.container.textContent, /秒後に再確認/);
+            await f.click('受付状態を再確認'); await f.click('再読み込み'); assert.equal(f.calls.filter(call => call.route === 'status').length, 1); assert.equal(writes(f).length, 0);
+        } finally { await f.close(); }
+    }
+});
+
+test('a cached recheck never claims a fresh remote verification, and a resume response after unmount cannot trigger another status request', async () => {
+    const cached = await fixture({ initialStatus: status({ pending: pendingCheckout({ resumeAllowed: false, abortAllowed: false }) }), respond: async route => route === 'status' ? status({ pending: pendingCheckout({ resumeAllowed: false, abortAllowed: false }), refresh: { state: 'failed', retryAtMs: Date.now() - 1 } }) : undefined });
+    try { await cached.click('受付状態を再確認'); assert.match(cached.container.textContent, /保存された契約状態を取得/); assert(!cached.container.textContent.includes('契約状態を再確認しました')); }
+    finally { await cached.close(); }
+    let reject;
+    const f = await fixture({ initialStatus: status({ pending: pendingCheckout() }), respond: async route => route === 'resume' ? new Promise((_resolve, rejectPromise) => { reject = rejectPromise; }) : undefined });
+    await f.consent(); await f.click('保存済みカードで契約を再開'); const before = f.calls.length; await f.close(); reject(new Error('late network result'));
+    await new Promise(resolve => setImmediate(resolve)); assert.equal(f.calls.length, before); assert.equal(writes(f).length, 1);
+});
+
+test('a stale recovery action whose status recheck fails cannot be confirmed again until status succeeds', async () => {
+    for (const action of ['resume', 'abort']) {
+        let stale = false, retries = 0;
+        const f = await fixture({ initialStatus: status({ pending: pendingCheckout() }), respond: async route => {
+            if (route === action) { stale = true; throw Object.assign(new Error('changed'), { status: 409 }); }
+            if (route === 'status' && stale && ++retries === 1) throw new Error('temporary status failure');
+        } });
+        try {
+            if (action === 'resume') { await f.consent(); await f.click('保存済みカードで契約を再開'); }
+            else { await f.click('申し込みを中止してやり直す'); await f.click('確認して申し込みを中止'); }
+            assert.match(f.container.textContent, /受付状態を再確認してから/);
+            assert.equal(f.container.querySelector('input[type=checkbox]').disabled, true);
+            const actionButton = [...f.container.querySelectorAll('button')].find(node => node.textContent === (action === 'resume' ? '保存済みカードで契約を再開' : '申し込みを中止してやり直す'));
+            assert.equal(actionButton.disabled, true); await f.click(actionButton.textContent); assert.equal(writes(f).length, 1);
+            await f.click('受付状態を再確認'); assert.equal(f.container.querySelector('input[type=checkbox]').checked, false); assert.equal(f.container.querySelector('input[type=checkbox]').disabled, false);
+            assert.equal(f.container.querySelector('[aria-label="申し込み中止の確認"]'), null);
+        } finally { await f.close(); }
+    }
+});
+
+test('busy or cooled cancellation responses retain the active contract and explain deferred processing without claiming acceptance', async () => {
+    for (const state of ['busy', 'cooldown']) {
+        const f = await fixture({ initialStatus: status({ subscription: contract() }), respond: async route => route === 'cancel' ? status({ subscription: contract(), refresh: { state, retryAtMs: Date.now() + 30000 } }) : undefined });
+        try {
+            await f.click('サブスクリプションを解約'); await f.click('解約を申し込む');
+            assert.match(f.container.textContent, state === 'busy' ? /解約の処理が進行中/ : /新しい解約操作を待機/); assert(!f.container.textContent.includes('解約の受付結果を反映しました')); assert(!f.container.textContent.includes('解約予定'));
+            assert.equal(writes(f).length, 1); assert.equal(f.sdk.loads.length, 0);
+        } finally { await f.close(); }
+    }
+});
+
+test('proration verification warning survives a fresh reload while the owned unverified contract can still be canceled explicitly', async () => {
+    const warning = { code: 'SQUARE_PRORATION_UNVERIFIED', message: '初回の日割り請求の期間を確認できません。管理者にお問い合わせください。' };
+    const initial = status({ subscription: contract({ active: false, validUntilAtMs: null, paidThroughAtMs: null }), verificationWarning: warning, refresh: { state: 'failed', retryAtMs: Date.now() + 30000 } });
+    const f = await fixture({ initialStatus: initial, respond: async route => route === 'cancel' ? status({ ...initial, subscription: contract({ active: false, validUntilAtMs: null, paidThroughAtMs: null, cancelScheduled: true, canceledDate: '2026-11-13' }) }) : undefined });
+    try {
+        assert.match(f.container.textContent, /初回の日割り請求の期間を確認できません.*管理者にお問い合わせ/); assert.match(f.container.textContent, /解約操作は引き続き利用/);
+        assert.equal(f.container.querySelector('input[type=radio]'), null); assert.equal(f.sdk.loads.length, 0);
+        await f.click('サブスクリプションを解約'); await f.click('解約を申し込む'); assert.match(f.container.textContent, /解約予定/); assert(!f.container.textContent.includes('利用中'));
+        assert.deepEqual(writes(f), [{ route: 'cancel', method: 'POST', body: {} }]);
+    } finally { await f.close(); }
+});
+
+test('restored annual and quarterly contracts disclose the charge month anchor and proration before renewed consent', async () => {
+    for (const [cadence, label] of [['ANNUAL', '毎年'], ['QUARTERLY', '3か月ごと']]) {
+        const pending = pendingCheckout({ quote: { ...pendingCheckout().quote, plan: plan({ cadence, billingAnchorDay: 20, canProrate: true }) } });
+        const f = await fixture({ initialStatus: status({ pending }) });
+        try {
+            assert.match(f.container.textContent, /課金月の20日が課金日/); assert(f.container.textContent.includes(label)); assert.match(f.container.textContent, /初回は日割り/);
+            assert.equal(f.container.querySelector('input[type=checkbox]').checked, false); assert.equal(f.sdk.loads.length, 0); assert.equal(writes(f).length, 0);
+            assert(f.container.querySelector('input[type=checkbox]').parentElement.textContent.includes(label));
+        } finally { await f.close(); }
+    }
 });

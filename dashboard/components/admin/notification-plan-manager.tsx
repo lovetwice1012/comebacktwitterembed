@@ -15,7 +15,7 @@ export type NotificationPlanAPI = (path: string, method?: string, body?: unknown
 type SquareBinding = { planId: string; variationId: string; enabled: boolean; catalogName: string | null; cadence: string | null; amount: number | null; currency: string | null; verifiedAtMs: number | null };
 type SquareVariation = { variationId: string; catalogName: string; cadence: string; amount: number; currency: string };
 type SquareAdmin = { configured: boolean; environment: string | null; missing: string[]; bindings: SquareBinding[]; availableVariations?: SquareVariation[] };
-type BillingState = { data: SquareAdmin | null; loading: boolean; error: string; refresh: () => Promise<void>; saved: (binding: SquareBinding) => void };
+type BillingState = { data: SquareAdmin | null; loading: boolean; error: string; refresh: () => Promise<void>; saved: (binding: SquareBinding) => void; reloaded: (data: SquareAdmin) => void };
 
 export async function notificationPlanAPI(path: string, method = "GET", body?: unknown) {
   const response = await fetch(`/api/automation/${path}`, {
@@ -124,19 +124,30 @@ function SquarePlanBinding({ plan, api, billing }: { plan: NotificationPlanPolic
   const binding = billing.data?.bindings.find(item => item.planId === plan.planId);
   const [draft, setDraft] = useState<{ variationId: string; enabled: boolean } | null>(null);
   const value = draft ?? { variationId: binding?.variationId ?? "", enabled: binding?.enabled ?? true };
-  const [confirming, setConfirming] = useState(false), [busy, setBusy] = useState(false), [error, setError] = useState(""), [status, setStatus] = useState("");
+  const [confirmation, setConfirmation] = useState<{ version: number | null } | null>(null), [busy, setBusy] = useState(false), [error, setError] = useState(""), [status, setStatus] = useState("");
+  const [conflict, setConflict] = useState(false);
+  const actionLock = useRef(false);
   const valid = /^[A-Za-z0-9:_-]{1,255}$/.test(value.variationId.trim());
   const configured = billing.data?.configured === true;
+  const version = binding?.verifiedAtMs ?? null;
+  const knownVersion = !binding || Number.isSafeInteger(version) && Number(version) >= 0;
+  const reviewed = confirmation !== null && confirmation.version === version;
   const available = billing.data?.availableVariations ?? [];
   const changed = value.variationId.trim() !== (binding?.variationId ?? "") || value.enabled !== (binding?.enabled ?? true);
   async function save() {
-    if (!configured || !valid || !confirming || busy) return;
-    setBusy(true); setError(""); setStatus("");
+    if (actionLock.current || !configured || !valid || !knownVersion || !reviewed || conflict || billing.loading || billing.error) return;
+    actionLock.current = true; setBusy(true); setError(""); setStatus("");
     try {
-      const saved: SquareBinding = await api(`billing/bindings/${encodeURIComponent(plan.planId)}`, "PATCH", { variationId: value.variationId.trim(), enabled: value.enabled });
-      billing.saved(saved); setDraft(null); setConfirming(false); setStatus("Squareの料金・請求周期を確認し、プランを紐付けました。");
-    } catch (cause) { setConfirming(false); setError(cause instanceof Error ? cause.message : "Squareプランを紐付けできませんでした。入力内容は保持されています。"); }
-    finally { setBusy(false); }
+      const saved: SquareBinding = await api(`billing/bindings/${encodeURIComponent(plan.planId)}`, "PATCH", { variationId: value.variationId.trim(), enabled: value.enabled, expectedVerifiedAtMs: confirmation!.version });
+      billing.saved(saved); setDraft(null); setConfirmation(null); setConflict(false); setStatus("Squareの料金・請求周期を確認し、プランを紐付けました。");
+    } catch (cause: any) { const stale = cause?.status === 409 && cause?.code === "SQUARE_BINDING_CONFLICT"; setConflict(stale); setConfirmation(null); setError(stale ? "ほかの管理者がSquareの紐付けを変更しました。最新の設定を取得し、保持した入力内容と比較してください。" : cause instanceof Error ? cause.message : "Squareプランを紐付けできませんでした。入力内容は保持されています。"); }
+    finally { actionLock.current = false; setBusy(false); }
+  }
+  async function reload() {
+    if (actionLock.current) return; actionLock.current = true; setBusy(true); setError("");
+    try { const next: SquareAdmin = await api("billing/admin"); billing.reloaded(next); setConflict(false); setConfirmation(null); setStatus("最新のSquare設定を取得しました。入力内容を保持しています。紐付け内容をもう一度確認してください。"); }
+    catch { setError("Squareの紐付けを再取得できませんでした。入力内容を保持して再試行できます。"); }
+    finally { actionLock.current = false; setBusy(false); }
   }
   return <section aria-label={`${plan.label}のSquare連携`} className="space-y-3 border-t pt-4">
     <h3 className="text-sm font-medium">Squareサブスクリプション</h3>
@@ -145,14 +156,14 @@ function SquarePlanBinding({ plan, api, billing }: { plan: NotificationPlanPolic
     {binding ? <dl className="grid gap-2 rounded-lg bg-muted/30 p-3 text-sm sm:grid-cols-2"><div><dt className="text-muted-foreground">Squareプラン</dt><dd className="break-words font-medium">{binding.catalogName || "名称未取得"}</dd></div><div><dt className="text-muted-foreground">料金・請求周期</dt><dd>{squarePrice(binding)} · {({ MONTHLY: "月ごと", ANNUAL: "年ごと", WEEKLY: "週ごと", DAILY: "日ごと" } as Record<string, string>)[binding.cadence ?? ""] ?? binding.cadence ?? "周期未取得"}</dd></div><div><dt className="text-muted-foreground">購入受付</dt><dd>{binding.enabled ? "有効" : "停止中"}</dd></div><div><dt className="text-muted-foreground">最終確認</dt><dd>{binding.verifiedAtMs ? new Intl.DateTimeFormat("ja-JP", { dateStyle: "short", timeStyle: "short", timeZone: "Asia/Tokyo" }).format(binding.verifiedAtMs) + " JST" : "未確認"}</dd></div></dl> : <p className="text-sm">Squareプランの紐付けは未設定です。</p>}
     {!configured && !billing.loading && !billing.error ? <p className="text-sm text-muted-foreground">サーバー側のSquare設定が未完了です。接続設定を完了すると紐付けできます。</p> : null}
     <SquareCatalogCreator plan={plan} configured={configured} api={api} onCreated={billing.refresh} />
-    <form noValidate className="space-y-3" onSubmit={event => { event.preventDefault(); if (configured && valid && changed && !busy) { setConfirming(true); setError(""); setStatus(""); } }}>
-      <fieldset disabled={!configured || busy} className="space-y-3">
-        {available.length ? <label className="block max-w-xl space-y-1 text-sm"><span className="block">Squareのプランから選ぶ</span><select className="h-10 w-full rounded-md border bg-card px-3 text-sm" value={available.some(item => item.variationId === value.variationId) ? value.variationId : ""} onChange={event => { if (event.target.value) { setDraft({ ...value, variationId: event.target.value }); setConfirming(false); setStatus(""); } }}><option value="">プランを選択</option>{available.map(item => <option key={item.variationId} value={item.variationId}>{item.catalogName} · {squarePrice(item)} · {({ MONTHLY: "月ごと", ANNUAL: "年ごと", WEEKLY: "週ごと", DAILY: "日ごと" } as Record<string, string>)[item.cadence] ?? item.cadence}</option>)}</select></label> : null}
-        <label className="block max-w-xl space-y-1 text-sm"><span className="block">SquareプランバリエーションID</span><Input value={value.variationId} maxLength={255} onChange={event => { setDraft({ ...value, variationId: event.target.value }); setConfirming(false); setStatus(""); }} aria-invalid={Boolean(value.variationId) && !valid} placeholder="Squareで作成したプランのID" /></label><label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={value.enabled} onChange={event => { setDraft({ ...value, enabled: event.target.checked }); setConfirming(false); setStatus(""); }} />このSquareプランの購入を受け付ける</label>
+    <form noValidate className="space-y-3" onSubmit={event => { event.preventDefault(); if (configured && valid && knownVersion && changed && !busy && !conflict && !billing.loading && !billing.error) { setConfirmation({ version }); setError(""); setStatus(""); } }}>
+      <fieldset disabled={!configured || busy || billing.loading} className="space-y-3">
+        {available.length ? <label className="block max-w-xl space-y-1 text-sm"><span className="block">Squareのプランから選ぶ</span><select className="h-10 w-full rounded-md border bg-card px-3 text-sm" value={available.some(item => item.variationId === value.variationId) ? value.variationId : ""} onChange={event => { if (event.target.value) { setDraft({ ...value, variationId: event.target.value }); setConfirmation(null); setStatus(""); } }}><option value="">プランを選択</option>{available.map(item => <option key={item.variationId} value={item.variationId}>{item.catalogName} · {squarePrice(item)} · {({ MONTHLY: "月ごと", ANNUAL: "年ごと", WEEKLY: "週ごと", DAILY: "日ごと" } as Record<string, string>)[item.cadence] ?? item.cadence}</option>)}</select></label> : null}
+        <label className="block max-w-xl space-y-1 text-sm"><span className="block">SquareプランバリエーションID</span><Input value={value.variationId} maxLength={255} onChange={event => { setDraft({ ...value, variationId: event.target.value }); setConfirmation(null); setStatus(""); }} aria-invalid={Boolean(value.variationId) && !valid} placeholder="Squareで作成したプランのID" /></label><label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={value.enabled} onChange={event => { setDraft({ ...value, enabled: event.target.checked }); setConfirmation(null); setStatus(""); }} />このSquareプランの購入を受け付ける</label>
       </fieldset>
-      {confirming ? <div aria-label="Square紐付けの確認" className="space-y-3 rounded-lg border bg-muted/30 p-3"><p className="break-words text-sm">{plan.label}に {value.variationId.trim()} を紐付け、購入受付を{value.enabled ? "有効" : "停止"}にします。料金・請求周期はSquare側の現在の設定を使います。</p><div className="flex flex-wrap gap-2"><Button type="button" disabled={busy} onClick={() => void save()}>{busy ? "確認・保存中…" : "Squareで検証して紐付け"}</Button><Button type="button" variant="outline" disabled={busy} onClick={() => setConfirming(false)}>紐付けの編集に戻る</Button></div></div> : <Button type="submit" variant="outline" disabled={!configured || busy || !valid || !changed}>紐付け内容を確認</Button>}
+      {confirmation ? <div aria-label="Square紐付けの確認" className="space-y-3 rounded-lg border bg-muted/30 p-3"><p className="break-words text-sm">{plan.label}に {value.variationId.trim()} を紐付けます。料金・請求周期はSquare側の現在の設定を使います。</p><table className="w-full text-left text-sm"><thead><tr><th>項目</th><th>現在</th><th>保存後</th></tr></thead><tbody><tr><th className="py-1 font-normal">Squareプラン</th><td className="break-all">{binding?.variationId ?? "未設定"}</td><td className="break-all">{value.variationId.trim()}</td></tr><tr><th className="py-1 font-normal">購入受付</th><td>{binding ? binding.enabled ? "有効" : "停止" : "未設定"}</td><td>{value.enabled ? "有効" : "停止"}</td></tr></tbody></table>{!reviewed ? <p role="alert" className="text-sm text-destructive">現在のSquare設定が更新されました。編集に戻り、最新の値ともう一度比較してください。</p> : null}<div className="flex flex-wrap gap-2"><Button type="button" disabled={busy || billing.loading || Boolean(billing.error) || !reviewed || conflict} onClick={() => void save()}>{busy ? "確認・保存中…" : "Squareで検証して紐付け"}</Button><Button type="button" variant="outline" disabled={busy} onClick={() => setConfirmation(null)}>紐付けの編集に戻る</Button></div></div> : <Button type="submit" variant="outline" disabled={!configured || busy || billing.loading || Boolean(billing.error) || !valid || !knownVersion || !changed || conflict}>紐付け内容を確認</Button>}
     </form>
-    {error ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}{status ? <p role="status" className="text-sm">{status}</p> : null}
+    {error ? <div role="alert" className="space-y-2 text-sm text-destructive"><p>{error}</p>{conflict ? <Button type="button" variant="outline" disabled={busy} onClick={() => void reload()}>最新のSquare紐付けを再取得</Button> : null}</div> : null}{status ? <p role="status" className="text-sm">{status}</p> : null}
   </section>;
 }
 
@@ -176,7 +187,7 @@ export function NotificationPlanManager({ api = notificationPlanAPI }: { api?: N
   }
   useEffect(() => { alive.current = true; void load(); void loadBilling(); return () => { alive.current = false; request.current++; billingRequest.current++; }; }, [api]);
   function saved(plan: NotificationPlanPolicy) { setItems(previous => [...previous.filter(item => item.planId !== plan.planId), plan].sort((a, b) => (a.isBuiltin ? a.planId === "free" ? 0 : 1 : 2) - (b.isBuiltin ? b.planId === "free" ? 0 : 1 : 2) || a.planId.localeCompare(b.planId))); }
-  const billing: BillingState = { data: billingData, loading: billingLoading, error: billingError, refresh: loadBilling, saved: binding => setBillingData(previous => previous ? { ...previous, bindings: [...previous.bindings.filter(item => item.planId !== binding.planId), binding] } : previous) };
+  const billing: BillingState = { data: billingData, loading: billingLoading, error: billingError, refresh: loadBilling, saved: binding => { billingRequest.current++; setBillingLoading(false); setBillingError(""); setBillingData(previous => previous ? { ...previous, bindings: [...previous.bindings.filter(item => item.planId !== binding.planId), binding] } : previous); }, reloaded: data => { billingRequest.current++; setBillingLoading(false); setBillingError(""); setBillingData(data); } };
   return <div className="space-y-5">
     <section className="space-y-2 rounded-xl bg-muted/40 p-4 text-sm"><p>ユーザーごとの通知枠と、1枠あたりの送信件数を設定します。新着・価格通知で枠を共有し、停止中の登録も1枠を使います。</p><p className="text-muted-foreground">実際に送信したメッセージ1件＝1通。分割送信は通数を加算し、日次件数は日本時間の0時にリセットします。優先度は0が通常で、値が大きいプランほど先に処理します。</p></section>
     <div className="flex flex-wrap items-center justify-between gap-3"><p className="text-sm text-muted-foreground">無料枠・支援者枠は無効にできません。</p><div className="flex flex-wrap gap-2"><Button type="button" variant="outline" disabled={loading} onClick={() => void load()}>設定を更新</Button><Button type="button" disabled={creating || loading || Boolean(error)} onClick={() => setCreating(true)}>有償プランを追加</Button></div></div>
