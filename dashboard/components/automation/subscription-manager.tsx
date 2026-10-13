@@ -10,7 +10,30 @@ import {
 } from "@/components/automation/automation-feedback";
 import type { SquareStatus as BillingStatus } from "@bot/automation/square-billing";
 
-type Plan = { planId: string; label: string; slotLimit: number; minuteLimit: number; dayLimit: number; priority: number; variationId: string; catalogName: string; cadence: string; amount: number; currency: string; billingAnchorDay?: number | null; canProrate?: boolean; regularAmount?: number; firstAmount?: number; coupon?: null | { code: string; label: string; type: "fixed" | "percent"; value: number; discountAmount: number } };
+type Plan = {
+  planId: string;
+  label: string;
+  slotLimit: number;
+  minuteLimit: number;
+  dayLimit: number;
+  priority: number;
+  variationId: string;
+  catalogName: string;
+  cadence: string;
+  amount: number;
+  currency: string;
+  billingAnchorDay?: number | null;
+  canProrate?: boolean;
+  regularAmount?: number;
+  firstAmount?: number;
+  coupon?: null | {
+    code: string;
+    label: string;
+    type: "fixed" | "percent";
+    value: number;
+    discountAmount: number;
+  };
+};
 type BillingOptions = { configured: boolean; environment: "sandbox" | "production"; applicationId?: string; locationId?: string; plans: Plan[] };
 type Quote = { checkoutId: string; expiresAtMs: number; plan: Plan; email: string; name: string };
 type BillingAPI = (path: string, method?: string, body?: unknown) => Promise<any>;
