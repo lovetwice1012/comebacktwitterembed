@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useSyncExternalStore, type SetStateAction } from "react";
+import presentation from "./admin-view-data";
 
 export type AdminSection = "home" | "investigation" | "servers" | "analytics" | "operations" | "administration";
 export type ManagementTab = "home" | "recovery" | "search" | "inspect" | "send" | "settings" | "operations" | "incidents" | "metrics" | "policies";
@@ -8,7 +9,7 @@ export type RecordSource = "runs" | "events" | "actions" | "incidents" | "notifi
 export type AdminLocation = {
   section: AdminSection; tab: ManagementTab; report: string;
   guildId: string; channelId: string; userId: string; messageId: string;
-  from: string; to: string; outcome: string; source: RecordSource;
+  from: string; to: string; outcome: string; actionStatus: string; source: RecordSource;
   selected: string; selectedSource: RecordSource; provider: string; inspectUrl: string;
 };
 const sections: AdminSection[] = ["home", "investigation", "servers", "analytics", "operations", "administration"];
@@ -19,6 +20,10 @@ export const sectionTabs: Record<AdminSection, ManagementTab[]> = {
   home: ["home"], investigation: ["search", "inspect", "send", "incidents"], servers: ["settings"],
   analytics: ["metrics"], operations: ["operations", "recovery"], administration: ["policies"],
 };
+export const adminSectionLabels: Record<AdminSection, string> = {
+  home: "サービスの状態", investigation: "投稿を調べる", servers: "サーバー設定",
+  analytics: "利用状況", operations: "Bot操作・復旧", administration: "管理設定",
+};
 export function readAdminLocation(value: string): AdminLocation {
   const url = new URL(value || "/admin", "http://admin.local");
   const q = url.searchParams;
@@ -27,7 +32,7 @@ export function readAdminLocation(value: string): AdminLocation {
   const tab = managementTabs.includes(q.get("tab") as ManagementTab) && sectionTabs[section].includes(q.get("tab") as ManagementTab) ? q.get("tab") as ManagementTab : sectionTabs[section].includes(routeTab) ? routeTab : sectionTabs[section][0];
   const source = sources.includes(q.get("source") as RecordSource) ? q.get("source") as RecordSource : "runs";
   const selectedSource = sources.includes(q.get("selectedSource") as RecordSource) ? q.get("selectedSource") as RecordSource : source;
-  return { section, tab, report: q.get("report") || "metrics", guildId: q.get("guildId") || "", channelId: q.get("channelId") || "", userId: q.get("userId") || "", messageId: q.get("messageId") || "", from: q.get("from") || "", to: q.get("to") || "", outcome: q.get("outcome") || "", source, selected: q.get("selected") || "", selectedSource, provider: q.get("provider") || "twitter", inspectUrl: q.get("inspectUrl") || "" };
+  return { section, tab, report: q.get("report") || "metrics", guildId: q.get("guildId") || "", channelId: q.get("channelId") || "", userId: q.get("userId") || "", messageId: q.get("messageId") || "", from: q.get("from") || "", to: q.get("to") || "", outcome: q.get("outcome") || "", actionStatus: ["queued", "running", "succeeded", "failed", "unknown"].includes(q.get("actionStatus") || "") ? q.get("actionStatus")! : "", source, selected: q.get("selected") || "", selectedSource, provider: q.get("provider") || "twitter", inspectUrl: q.get("inspectUrl") || "" };
 }
 export function adminLocationUrl(value: string, patch: Partial<AdminLocation>) {
   const url = new URL(value, "http://admin.local");
@@ -78,14 +83,19 @@ export function buildInvestigationQuery(state: AdminLocation, source: RecordSour
   }
   if (q.get("from") && q.get("to") && q.get("from")! >= q.get("to")!) throw new Error("終了日時は開始日時より後にしてください");
   if (source === "runs" && state.outcome) q.set("outcome", state.outcome);
+  if (source === "actions" && state.actionStatus) q.set("status", state.actionStatus);
   return q;
 }
 export function verifyInvestigationFilters(source: RecordSource, query: URLSearchParams, data: Record<string, unknown>) {
-  const keys = source === "actions" ? ["guildId", "channelId", "userId", "messageId", "from", "to"] : source === "runs" || source === "events" ? ["channelId", "userId", "messageId"] : [];
+  const keys = source === "actions" ? ["guildId", "channelId", "userId", "messageId", "from", "to", "status"] : source === "runs" || source === "events" ? ["channelId", "userId", "messageId"] : [];
   const applied = data.appliedFilters as Record<string, unknown> | undefined;
   if (keys.some(key => query.get(key) && applied?.[key] !== query.get(key))) throw new Error("管理APIが指定した検索条件に対応していません。管理デーモンを更新してから再検索してください。");
 }
-export const resultLabels: Record<string, string> = { F: "完全成功", D: "代替成功", P: "部分成功", E: "失敗", U: "送信結果不明", S: "設定で見送り", C: "取得対象の制約", I: "処理中", X: "完了不明", queued: "受付済み", running: "実行中", succeeded: "完了", failed: "失敗", unknown: "成否未確認", Detected: "検知", Diagnosing: "診断中", Remediating: "修復中", Verifying: "復旧確認中", Resolved: "解決済み", Suppressed: "抑制中" };
+export const resultLabels: Record<string, string> = { ...presentation.outcomes, queued: "受付済み", running: "実行中", succeeded: "完了", failed: "失敗", unknown: "成否未確認", Detected: "検知", Diagnosing: "診断中", Remediating: "修復中", Verifying: "復旧確認中", Resolved: "解決済み", Suppressed: "抑制中" };
+export function describeResult(value: unknown, context: Record<string, unknown> = {}) {
+  const code = String(value || "");
+  return /^[FDPEUSCIX]$/.test(code) ? presentation.result(code, context) : { label: resultLabels[code] || code || "未確定", contract: "", code };
+}
 
 export function useReportFilters<T extends Record<string, string>>(prefix: string, defaults: T): [T, (next: SetStateAction<T>) => void] {
   const snapshot = useSyncExternalStore(subscribe, () => window.location.search, () => "");

@@ -23,6 +23,7 @@ type RootConfig = {
     guildCacheTtlMs?: number;
     auditHashSecret?: string;
     adminUserIds?: string[] | string;
+    uiPreviewUserIds?: string[] | string;
     adminAnalyticsPrewarm?: boolean;
     dbConnectionLimit?: number;
     delegatedAccessEnabled?: boolean;

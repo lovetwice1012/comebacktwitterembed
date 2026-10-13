@@ -1,4 +1,7 @@
+import { usesNewDashboardUI } from "@/lib/ui-rollout";
+import LegacyPage from "@/legacy/pages/guild-media";
 import { AccessDenied } from "@/components/dashboard/access-denied";
+import { Globe2 } from "lucide-react";
 import { CleanupExpiredButton } from "@/components/media/media-actions";
 import { DashboardShell } from "@/components/dashboard/dashboard-shell";
 import { Badge } from "@/components/ui/badge";
@@ -17,19 +20,20 @@ export default async function MediaPage({ params }: Params) {
   const locale = await getDashboardLocale();
   const t = createTranslator(locale);
   const session = await requireDashboardSession();
+  if (!await usesNewDashboardUI(session)) return <LegacyPage params={params} />;
   const access = await getGuildAccess(session, guildId);
   if (!access) return <AccessDenied locale={locale} />;
   const status = await getMediaDashboardStatus();
 
   return (
-    <DashboardShell guildId={guildId} guildName={access.name} canEdit={access.canEdit} locale={locale}>
+    <DashboardShell guildId={guildId} guildName={access.name} canEdit={access.canEdit} locale={locale} isAdmin={session.user.isAdmin}>
       <div className="space-y-4">
         <header className="flex flex-col items-stretch gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="min-w-0">
-            <h1 className="text-2xl font-semibold">{t("media.title")}</h1>
-            <p className="text-sm text-muted-foreground">{t("media.description")}</p>
+            <h1 className="text-2xl font-semibold">{locale === "ja" ? "メディア容量" : "Media storage"}</h1>
+            <p className="mt-2 flex items-center gap-2 text-xs text-muted-foreground"><Globe2 size={15} aria-hidden />{locale === "ja" ? "全サーバー共通" : "Shared across all servers"}</p>
           </div>
-          <CleanupExpiredButton guildId={guildId} locale={locale} />
+          <CleanupExpiredButton guildId={guildId} locale={locale} canClean={access.permissions.administrator} />
         </header>
 
         <div className="grid gap-3 md:grid-cols-3">

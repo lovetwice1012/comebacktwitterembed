@@ -14,7 +14,8 @@ import {
 } from "@/lib/settings-catalog";
 import { deepEqual } from "@/lib/settings-diff";
 import { settingWarnings, validateProviderChanges } from "@/lib/settings-validation";
-import { recordAuditLog } from "@/lib/audit-log";
+import { ensureAuditLogTable, recordAuditLog } from "@/lib/audit-log";
+import { createDashboardFleetWriteFence } from "@/lib/fleet-authority";
 import { createTranslator, type DashboardLocale } from "@/lib/i18n";
 import type {
   AuditActor,
@@ -467,6 +468,7 @@ export async function saveProviderSettings(
   meta: { requestId?: string | null; ip?: string | null; userAgent?: string | null } = {},
   locale: DashboardLocale = "ja",
 ) {
+  const fence = createDashboardFleetWriteFence(locale);
   const t = createTranslator(locale);
   const provider = getProvider(providerId);
   if (!provider) throw new Error(t("validation.unknownProvider", { providerId }));
@@ -474,8 +476,10 @@ export async function saveProviderSettings(
   const specs = new Map(editableSpecs(providerId).map((spec) => [spec.key, spec]));
   const before = await getProviderSettingsState(providerId, guildId, locale);
   const beforeByKey = new Map(before.map((state) => [state.key, state]));
+  await ensureAuditLogTable();
 
   await prisma.$transaction(async (tx) => {
+    fence();
     for (const [key, value] of Object.entries(validated.changes)) {
       const spec = specs.get(key);
       if (!spec) continue;
@@ -497,6 +501,7 @@ export async function saveProviderSettings(
       providerId,
       guildId,
     );
+    fence();
   });
 
   return {
@@ -513,13 +518,16 @@ export async function resetProviderSettings(
   meta: { requestId?: string | null; ip?: string | null; userAgent?: string | null } = {},
   locale: DashboardLocale = "ja",
 ) {
+  const fence = createDashboardFleetWriteFence(locale);
   const t = createTranslator(locale);
   const provider = getProvider(providerId);
   if (!provider) throw new Error(t("validation.unknownProvider", { providerId }));
   const before = await getProviderSettingsState(providerId, guildId, locale);
   const specs = editableSpecs(providerId);
+  await ensureAuditLogTable();
 
   await prisma.$transaction(async (tx) => {
+    fence();
     await ensureProviderAndGuild(tx, providerId, guildId);
     const scalarColumns = specs
       .map((spec) => getProviderSettingColumns()[spec.key]?.column)
@@ -552,6 +560,7 @@ export async function resetProviderSettings(
       providerId,
       guildId,
     );
+    fence();
   });
 
   return {
@@ -567,6 +576,7 @@ export async function saveBulkProviderSettings(
   meta: { requestId?: string | null; ip?: string | null; userAgent?: string | null } = {},
   locale: DashboardLocale = "ja",
 ) {
+  const fence = createDashboardFleetWriteFence(locale);
   const input = body as {
     providerIds?: string[];
     changes?: Record<string, unknown>;
@@ -574,6 +584,7 @@ export async function saveBulkProviderSettings(
   const providerIds = input.providerIds?.length ? input.providerIds : getBotProviders().map((provider) => provider.id);
   const results = [];
   for (const providerId of providerIds) {
+    fence();
     const result = await saveProviderSettings(guildId, providerId, { changes: input.changes || {} }, actor, meta, locale);
     results.push({ providerId, warnings: result.warnings });
   }
@@ -604,6 +615,7 @@ export async function syncGuildSettings(
   meta: { requestId?: string | null; ip?: string | null; userAgent?: string | null } = {},
   locale: DashboardLocale = "ja",
 ) {
+  const fence = createDashboardFleetWriteFence(locale);
   if (!sourceGuildId || !targetGuildId || sourceGuildId === targetGuildId) {
     throw new Error(createTranslator(locale)("sync.sameGuild"));
   }
@@ -611,8 +623,10 @@ export async function syncGuildSettings(
   let copied = 0;
   let skippedTargets = 0;
   const providerCount = getBotProviders().length;
+  await ensureAuditLogTable();
 
   await prisma.$transaction(async (tx) => {
+    fence();
     for (const provider of getBotProviders()) {
       const specs = new Map(editableSpecs(provider.id).map((spec) => [spec.key, spec]));
       const sourceStates = await getProviderSettingsState(provider.id, sourceGuildId, locale);
@@ -634,6 +648,7 @@ export async function syncGuildSettings(
       after: { sourceGuildId, targetGuildId, providerCount, copied, skippedTargets },
       ...meta,
     });
+    fence();
   });
 
   return { sourceGuildId, targetGuildId, providerCount, copied, skippedTargets };

@@ -1,0 +1,22 @@
+[
+  {
+    "path": "/api/health",
+    "checkedAt": "2026-10-13T17:25:10.2390336+09:00",
+    "status": 200
+  },
+  {
+    "path": "/",
+    "checkedAt": "2026-10-13T17:25:10.3223285+09:00",
+    "status": 200
+  },
+  {
+    "path": "/dashboard?mode=user",
+    "checkedAt": "2026-10-13T17:25:10.3949946+09:00",
+    "status": 200
+  },
+  {
+    "path": "/api/auth/providers",
+    "checkedAt": "2026-10-13T17:25:10.4742164+09:00",
+    "status": 200
+  }
+]

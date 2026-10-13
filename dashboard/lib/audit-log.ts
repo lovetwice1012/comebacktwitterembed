@@ -5,6 +5,7 @@ import type { Prisma, PrismaClient } from "@prisma/client";
 import { getAuditHashSecret } from "@/lib/env";
 import { prisma } from "@/lib/prisma";
 import type { AuditActor } from "@/lib/types";
+import { assertDashboardFleetWriteAuthority, readDashboardFleetAuthority } from "@/lib/fleet-authority";
 
 const AUDIT_SQL = `CREATE TABLE IF NOT EXISTS dashboard_audit_logs (
   audit_log_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
@@ -29,6 +30,7 @@ const AUDIT_SQL = `CREATE TABLE IF NOT EXISTS dashboard_audit_logs (
 type Tx = Prisma.TransactionClient | PrismaClient;
 
 export async function ensureAuditLogTable(db: Tx = prisma) {
+  if (!readDashboardFleetAuthority().available) return;
   await db.$executeRawUnsafe(AUDIT_SQL);
 }
 
@@ -57,7 +59,9 @@ export async function recordAuditLog(
     userAgent?: string | null;
   },
 ) {
-  await ensureAuditLogTable(db);
+  assertDashboardFleetWriteAuthority();
+  // Callers prepare the table before entering their mutation transaction.
+  // MySQL CREATE TABLE would implicitly commit if executed on this client.
   await db.$executeRaw`
     INSERT INTO dashboard_audit_logs
       (guild_id, provider_id, setting_key, actor_user_id, actor_username_snapshot, action, before_json, after_json, request_id, ip_hash, user_agent_hash)

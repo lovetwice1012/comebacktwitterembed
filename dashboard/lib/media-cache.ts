@@ -4,6 +4,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { requireBotModule } from "@/lib/bot-require";
 import { getProvider, providerDomain, providerLabel } from "@/lib/settings-catalog";
+import { createDashboardFleetWriteFence, readDashboardFleetAuthority } from "@/lib/fleet-authority";
 
 type StoreModule = {
   ROUTE_PREFIX: string;
@@ -50,9 +51,10 @@ async function dirSize(dir: string): Promise<number> {
 
 export async function getMediaCacheStatus() {
   const now = Date.now();
+  const canWrite = process.env.DASHBOARD_FLEET_LEASE_MODE !== "shared-current" && readDashboardFleetAuthority().available;
   const providers = await Promise.all(
     Object.entries(stores()).map(async ([providerId, store]) => {
-      const records = store.listCachedDownloads
+      const records = canWrite && store.listCachedDownloads
         ? await store.listCachedDownloads().catch(() => [])
         : Object.values(await store._internal.readIndex().catch(() => ({})));
       const expired = records.filter((record) => Number(record.expiresAtMs || 0) <= now).length;
@@ -118,20 +120,28 @@ export async function getMediaDashboardStatus() {
 }
 
 export async function cleanupExpiredMedia() {
+  const fence = createDashboardFleetWriteFence();
   const result: Record<string, number> = {};
   for (const [providerId, store] of Object.entries(stores())) {
+    fence();
     result[providerId] = await store.cleanupExpiredDownloads();
+    fence();
   }
   return result;
 }
 
 export async function deleteMediaCacheItem(providerId: string, token: string) {
+  const fence = createDashboardFleetWriteFence();
   const store = stores()[providerId];
   if (!store || !store.deleteCachedDownload) return false;
-  return store.deleteCachedDownload(token);
+  fence();
+  const deleted = await store.deleteCachedDownload(token);
+  fence();
+  return deleted;
 }
 
 export async function deleteProviderMediaCache(providerId: string) {
+  const fence = createDashboardFleetWriteFence();
   const store = stores()[providerId];
   if (!store || !store.deleteCachedDownload) return 0;
   const records = store.listCachedDownloads
@@ -139,7 +149,9 @@ export async function deleteProviderMediaCache(providerId: string) {
     : Object.values(await store._internal.readIndex().catch(() => ({})));
   let deleted = 0;
   for (const record of records) {
+    fence();
     if (await store.deleteCachedDownload(record.token)) deleted += 1;
   }
+  fence();
   return deleted;
 }

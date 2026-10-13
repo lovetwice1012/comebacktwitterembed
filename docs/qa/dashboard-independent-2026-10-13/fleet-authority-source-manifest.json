@@ -1,0 +1,72 @@
+[
+  {
+    "path": "dashboard/lib/fleet-authority.ts",
+    "sha256": "76040765ac6aef8952b74c4808df2d45078f3c14c58942d70cf119767d8eb61b",
+    "deployment": "Copy exact file"
+  },
+  {
+    "path": "dashboard/lib/fleet-database.ts",
+    "sha256": "b53cf7d4e1d806b9363e924f33b9ec73cc7174ca2efcb377aa9b4a80b17c72e2",
+    "deployment": "Copy exact file"
+  },
+  {
+    "path": "dashboard/middleware.ts",
+    "sha256": "1ec4283b88ff9d0c4b63b2dbb3db6ecfe33e6abb5fb88061ff1c5c99d677c61d",
+    "deployment": "Copy exact file"
+  },
+  {
+    "path": "dashboard/app/api/health/route.ts",
+    "sha256": "1a0d75f364d79a845c6bfa7ba1e2fc4078943ed4478ac96a17e564c4293bbcf3",
+    "deployment": "Copy exact file"
+  },
+  {
+    "path": "dashboard/lib/api.ts",
+    "sha256": "94253143aa88d96a937a09863ff29f9ab0619f7497912820d18b7a89becee558",
+    "deployment": "Copy exact file"
+  },
+  {
+    "path": "dashboard/lib/media-cache.ts",
+    "sha256": "74d18dffdb8c070631b12d3ee8330425ab1a149c45332e7fdd450f82c38670f1",
+    "deployment": "Copy exact file"
+  },
+  {
+    "path": "dashboard/lib/media-delivery.ts",
+    "sha256": "5a29a56fae6875be3a6d3fc9f65ae803f223d447137b009ca201ff76e4dbc138",
+    "deployment": "Copy exact file"
+  },
+  {
+    "path": "dashboard/lib/admin-report-client.ts",
+    "sha256": "820f10aba1888f1912b310bea2b7e65016ea91889cdd48bc0951f6a9266b3aae",
+    "deployment": "Copy exact file"
+  },
+  {
+    "path": "dashboard/lib/audit-log.ts",
+    "sha256": "346c1184b9af7cced563ad6bc7f3bb7838b0b27cbbd50585f4cc680205985462",
+    "deployment": "Copy exact file"
+  },
+  {
+    "path": "dashboard/lib/delegated-access.ts",
+    "sha256": "4eb72c28ced1d24c482f3306f5c14fb2f36dca70fce103517fe9d3615b1aacbe",
+    "deployment": "Copy exact file"
+  },
+  {
+    "path": "dashboard/lib/settings-db.ts",
+    "sha256": "fb5a7634c21b52a3b121a626c04b04d7f94b2b2b48598e487e5427a306741332",
+    "deployment": "Copy exact file"
+  },
+  {
+    "path": "dashboard/lib/personal-links-server.ts",
+    "sha256": "e9e19040d495a496aa862dcc8b17da42e41cb47a962b4d86c459d5c49bf59ea1",
+    "deployment": "Copy exact file"
+  },
+  {
+    "path": "dashboard/lib/automation-server.ts",
+    "sha256": "d16dc1d87f8ff561744b893fef35adfb5f84cd0ad94e4d59a875024c6aa64435",
+    "deployment": "Apply only fleet import and guarded db creation against verified v2 snapshot; this is the workspace hash, not the resulting stage hash"
+  },
+  {
+    "path": "dashboard/lib/admin-data.ts",
+    "sha256": "1d9bc2087557b0f3ea872819614740a9714fcf2dbc1cf1e936de5d25a4d87b8c",
+    "deployment": "Copy exact file"
+  }
+]

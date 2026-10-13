@@ -1,0 +1,55 @@
+{
+  "version": 1,
+  "status": "prepared",
+  "stageRoot": "/opt/cbte-ui-previews/20261013-self-service-ui-v3",
+  "buildId": "ovdgFtsqdSjPNBafaPNVn",
+  "port": 31089,
+  "canonicalOrigin": "https://cbte.sprink.cloud",
+  "observed": {
+    "main": {
+      "pid": 1155000,
+      "parentPid": 1,
+      "startTicks": "291277558",
+      "cwd": "/root/comebacktwitterembed"
+    },
+    "bot": {
+      "pid": 1177531,
+      "parentPid": 1155000,
+      "startTicks": "291292787",
+      "cwd": "/opt/cbte-releases/youtube-watch-streaming-20261013-032a3315"
+    },
+    "wrapper": {
+      "pid": 1177975,
+      "parentPid": 1177531,
+      "startTicks": "291292925",
+      "cwd": "/opt/cbte-releases/youtube-watch-streaming-20261013-032a3315/dashboard"
+    },
+    "next": {
+      "pid": 1177982,
+      "parentPid": 1177975,
+      "startTicks": "291292930",
+      "cwd": "/opt/cbte-releases/youtube-watch-streaming-20261013-032a3315/dashboard"
+    }
+  },
+  "artifactReportSha256": "c19daf84592771ff5b4f66ba8c17d8ad8f1efe9b618bafc767a7ee6c5e25f1eb",
+  "unitSha256": "fc4e5c3a3245f8f64576578cfe241a040928e2359583767a29fec28cf49d0f8d",
+  "paths": {
+    "current": "/opt/cbte-dashboard/current",
+    "unit": "/etc/systemd/system/cbte-dashboard.service",
+    "runtimeEnvironment": "/etc/cbte-dashboard/environment.json",
+    "stagePointer": "/opt/cbte-ui-previews/20261013-self-service-ui-v3/dashboard/.next-builds/current.json",
+    "botDropin": "/etc/systemd/system/cbte.service.d/98-independent-dashboard.conf"
+  },
+  "publicRoutingChanged": false,
+  "botRestartRequested": false,
+  "health": {
+    "status": 200,
+    "ok": true,
+    "authorityAvailable": true
+  },
+  "dashboardMainPID": "1624533",
+  "runtimeEnvironmentSha256": "023779f304abfeb19e564b0f2d30d049cd3dba91334d4440fe7837052782a61d",
+  "stagePointerSha256": "7910b9b96a33323c57811b54a0cfd8964e74af4f85744ce2eee0a8973ed2d39c",
+  "previousArtifactReportSha256": "0b3e1043256ab8bb6f681702d0ee1fa71cc18eaa97b4f286799eaf1576cacbbd",
+  "retainedOldStaticAssets": 63
+}

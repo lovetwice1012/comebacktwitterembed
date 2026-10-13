@@ -1,0 +1,81 @@
+{
+  "checks": [
+    {
+      "check": "ordinary-default-legacy",
+      "status": 200,
+      "version": "legacy",
+      "toggle": true
+    },
+    {
+      "check": "authenticated-preview",
+      "status": 200,
+      "cookieAccountBound": true,
+      "httpOnly": true,
+      "secure": true,
+      "sameSite": "lax"
+    },
+    {
+      "check": "ordinary-opt-in",
+      "status": 200,
+      "version": "preview",
+      "toggle": true
+    },
+    {
+      "check": "ordinary-preference-survives-next-request",
+      "status": 200,
+      "version": "preview",
+      "toggle": true
+    },
+    {
+      "check": "other-account-unaffected",
+      "status": 200,
+      "version": "legacy",
+      "toggle": true
+    },
+    {
+      "check": "ordinary-admin-still-denied",
+      "status": 404
+    },
+    {
+      "check": "authenticated-legacy",
+      "status": 200,
+      "cookieAccountBound": true,
+      "httpOnly": true,
+      "secure": true,
+      "sameSite": "lax"
+    },
+    {
+      "check": "ordinary-return-to-legacy",
+      "status": 200,
+      "version": "legacy",
+      "toggle": true
+    },
+    {
+      "check": "guest-legacy-no-toggle",
+      "status": 200,
+      "version": "legacy",
+      "toggle": false
+    },
+    {
+      "check": "guest-preference-denied",
+      "status": 401
+    },
+    {
+      "check": "copied-account-cookie-rejected",
+      "status": 200,
+      "version": "legacy",
+      "toggle": true
+    },
+    {
+      "check": "cross-origin-denied",
+      "status": 403
+    }
+  ],
+  "sessionModel": "Short-lived signed synthetic sessions; not actual OAuth",
+  "cookieOnlyChanges": true,
+  "privateDataRequests": 0,
+  "databaseMutations": 0,
+  "discordRequests": 0,
+  "port": 30987,
+  "actualOAuthLoginVerified": false
+}

@@ -1,0 +1,162 @@
+{
+  "version": 3,
+  "date": "2026-10-13",
+  "scope": "Self-service ordinary dashboard UI preference over the verified v2 staged source",
+  "deployableFiles": [
+    {
+      "path": "dashboard/lib/ui-preference.ts",
+      "sha256": "87adc34373d4936ac6730cc54f96b10127f254117a574790a31b77991bb47054"
+    },
+    {
+      "path": "dashboard/lib/ui-rollout.ts",
+      "sha256": "9a6010be58ed13be3465944d1acedfeff68602094588216937c265fce2b2f1f7"
+    },
+    {
+      "path": "dashboard/app/api/me/dashboard-ui/route.ts",
+      "sha256": "70d454c07ab1d65e20ed3c9bf7b1b324028a819a581d1b3dffc886ae56f75772"
+    },
+    {
+      "path": "dashboard/app/layout.tsx",
+      "sha256": "fb2a52ca249793088cf458757cd4741365505c2056e5324fa4875ec1a7a12b95"
+    },
+    {
+      "path": "dashboard/app/page.tsx",
+      "sha256": "9b692b8b15de990e0c2baf756bb661071750648b8d6e7c92f07c0fb12ac1c925"
+    },
+    {
+      "path": "dashboard/components/dashboard/dashboard-ui-provider.tsx",
+      "sha256": "84e88dad360934765b0ce861080abe3065cabcfe5f085679fcb464fadc202d77"
+    },
+    {
+      "path": "dashboard/components/dashboard/dashboard-ui-preference.tsx",
+      "sha256": "b29fe2d7c13478a8ebf29ad6c35d46797def46eaf0444c47fdc2d810c3b22ce3"
+    },
+    {
+      "path": "dashboard/components/dashboard/dashboard-ui-preference.css",
+      "sha256": "7aac2f4edea1d737163baf4cb56ae175442b277039a2dde10a5d2459ed90040c"
+    },
+    {
+      "path": "dashboard/features/audit/audit-logs-page.tsx",
+      "sha256": "55aaaaa6a5c8f52495206fbcb175e7fd5dbe9a0867e19bf3fa2f4f2f3b13c5e2"
+    },
+    {
+      "path": "dashboard/app/dashboard/page.tsx",
+      "sha256": "49270f5b6e4fef9ab245310d45bd4efd831979e0017b925232567cf41f5f20d0"
+    },
+    {
+      "path": "dashboard/app/dashboard/bulk/page.tsx",
+      "sha256": "b85ed9275e4f32790e16795fe69aeca869510117577474f68bbb9f472c353b8a"
+    },
+    {
+      "path": "dashboard/app/dashboard/personal-links/page.tsx",
+      "sha256": "88446f8301d9989aba57b7d4a24d4866f42b59fa628dd2a2745a64ca43873179"
+    },
+    {
+      "path": "dashboard/app/dashboard/loading.tsx",
+      "sha256": "d7a44057ad3c244b95ba1652d0d2f3b5f041e1ffbd4db83cb6c0149d8d3fd4fa"
+    },
+    {
+      "path": "dashboard/app/dashboard/[guildId]/page.tsx",
+      "sha256": "2c72103f94c91cf9e0ba84d4ab9b8890ff4a9760babce47ee1efe29e7510f20c"
+    },
+    {
+      "path": "dashboard/app/dashboard/[guildId]/access/page.tsx",
+      "sha256": "bfe5249b24c1daa60973ae8bc64fdda23d460836d464c32274578129ece63e0c"
+    },
+    {
+      "path": "dashboard/app/dashboard/[guildId]/diagnostics/page.tsx",
+      "sha256": "a11e8224e16c3bbea76276bfd118ff7070518d2508e6b24d440aade4b6d459cb"
+    },
+    {
+      "path": "dashboard/app/dashboard/[guildId]/media/page.tsx",
+      "sha256": "f7c7f577e5a714716cce62cb8ffe4a1fbaac570d07c599cc346f0663fb16f1f8"
+    },
+    {
+      "path": "dashboard/app/dashboard/[guildId]/preview/page.tsx",
+      "sha256": "5927969b0667828ee0ad7381bdb465c26f4d0b88c0332e74a3f1cec0bd11fe9a"
+    },
+    {
+      "path": "dashboard/app/dashboard/[guildId]/providers/page.tsx",
+      "sha256": "212255e2e08651a0513422a48be6f2976cf538d5b0c452d9ecfeca1a79d0f263"
+    },
+    {
+      "path": "dashboard/app/dashboard/[guildId]/providers/[providerId]/page.tsx",
+      "sha256": "81439b2edb08947fbdf861e6b81275469eed6f6376dee59002b2d707966e6298"
+    },
+    {
+      "path": "dashboard/app/dashboard/[guildId]/settings/page.tsx",
+      "sha256": "0889c772789a557bedccf70e90557c249c3a51457d62bb5927daa96bf84c5912"
+    },
+    {
+      "path": "dashboard/app/admin/page.tsx",
+      "sha256": "ece6de7f19b8688c390fad9c7ed49722325293dee4add040333865092f83b85d"
+    },
+    {
+      "path": "dashboard/app/admin/send-message/page.tsx",
+      "sha256": "e7346714988c3f9f3f0307280ef0e5c33314f7a1b70fbd815b6d203a0c4f36b5"
+    },
+    {
+      "path": "dashboard/app/admin/support-console/page.tsx",
+      "sha256": "09f60b5449def96123dbb9d592dce0746c6c0b95fcb0a4ab8703dc239fc56bb5"
+    },
+    {
+      "path": "dashboard/app/admin/url-inspector/page.tsx",
+      "sha256": "76ea4b2d2ab2fa8fd3b697b099209de9e532f511353a4290156b133d4dcd63cd"
+    }
+  ],
+  "testFiles": [
+    {
+      "path": "scripts/test/dashboard-ui-rollout.test.js",
+      "sha256": "419a7b0d63a3c1d5fcc96e21e1cfb0ff46349aeb7e05c8d9ae83a09ea91c67e4"
+    },
+    {
+      "path": "scripts/test/dashboard-ui-preference.test.js",
+      "sha256": "279808c984020e19fc34c799dbca9d27611ed5ef9e1cb4fe8ac46ad458fc0522"
+    }
+  ],
+  "preference": {
+    "endpoint": "POST /api/me/dashboard-ui",
+    "payload": {
+      "version": "preview or legacy"
+    },
+    "persistedBy": "Signed HttpOnly host-only cookie for each verified account in this browser",
+    "defaultPilotUserId": "796972193287503913",
+    "precedence": "Explicit signed account preference, then configured/default pilot list; guests always legacy",
+    "protections": [
+      "Verified server session account, not request-supplied user ID",
+      "HMAC SHA-256 account/version/expiry binding",
+      "Canonical same-origin JSON POST",
+      "HttpOnly, SameSite Lax, HTTPS Secure, one-year expiry",
+      "No guild or administrator permission changes"
+    ],
+    "placement": "Canonical root/provider injection on home and ordinary dashboard routes; guests, admin and automation show no toggle"
+  },
+  "untouchedByThisDelta": [
+    "dashboard/legacy/**",
+    "dashboard/components/automation/**",
+    "dashboard/app/dashboard/automation/**",
+    "dashboard/app/dashboard/[guildId]/automation/**",
+    "dashboard/lib/server-session.ts",
+    "dashboard/lib/api.ts",
+    "dashboard/lib/discord.ts",
+    "dashboard/lib/settings-db.ts",
+    "scripts/dashboard-ui-harness.cjs",
+    "scripts/fixtures/dashboard-ui.tsx"
+  ],
+  "validation": {
+    "nodeTests": {
+      "passed": 22,
+      "failed": 0,
+      "files": [
+        "scripts/test/dashboard-ui-rollout.test.js",
+        "scripts/test/dashboard-ui-preference.test.js"
+      ]
+    },
+    "dashboardTypecheck": "passed",
+    "changedDashboardESLint": "passed",
+    "productionBuild": "Root-owned isolated v3 build pending",
+    "browser": "Root-owned local browser fixture validation pending",
+    "legacyVerifier": "Only pre-existing workspace-shell.tsx hash drift; root retains the verified v2 staged legacy file",
+    "deployedByThisAgent": false
+  }
+}

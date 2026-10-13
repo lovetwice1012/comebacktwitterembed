@@ -4,7 +4,7 @@ import Link from "next/link";
 import { ReportErrorBoundary } from "@/components/admin/report-error-boundary";
 import { reportDisplayStatus, type AdminReportCache } from "@/lib/admin-report-status";
 import { AdminSidebar, AdminContextBar } from "@/components/admin/workspace-shell";
-import { useAdminLocation, updateAdminLocation, useReportFilters, dateRange } from "@/lib/admin-workspace";
+import { useAdminLocation, updateAdminLocation, useReportFilters, adminSectionLabels } from "@/lib/admin-workspace";
 import { ManagementConsole, RawEvidence } from "@/components/admin/management-console";
 import {
   Activity,
@@ -488,12 +488,9 @@ function StatCard({ label, value, tone = "default" }: { label: string; value: un
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-2xl">{formatCount(value)}</CardTitle>
         <CardDescription>{label}</CardDescription>
+        <CardTitle className={`text-2xl ${tone === "warning" ? "text-amber-700 dark:text-amber-300" : tone === "success" ? "text-emerald-700 dark:text-emerald-300" : ""}`}>{formatCount(value)}</CardTitle>
       </CardHeader>
-      <CardContent>
-        <Badge tone={tone}>{label}</Badge>
-      </CardContent>
     </Card>
   );
 }
@@ -502,12 +499,9 @@ function MetricCard({ label, value, tone = "default" }: { label: string; value: 
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-2xl">{formatCell(value)}</CardTitle>
         <CardDescription>{label}</CardDescription>
+        <CardTitle className={`text-2xl ${tone === "warning" ? "text-amber-700 dark:text-amber-300" : tone === "success" ? "text-emerald-700 dark:text-emerald-300" : ""}`}>{formatCell(value)}</CardTitle>
       </CardHeader>
-      <CardContent>
-        <Badge tone={tone}>{label}</Badge>
-      </CardContent>
     </Card>
   );
 }
@@ -3328,12 +3322,11 @@ export function AdminConsole({
 
   return <div className="min-h-screen bg-background">
     <header className="sticky top-0 z-30 border-b bg-card/95 backdrop-blur"><div className="mx-auto flex max-w-[1680px] flex-wrap items-center justify-between gap-3 px-4 py-3"><div className="flex items-center gap-3"><div className="rounded-lg bg-primary p-2 text-primary-foreground"><ShieldCheck size={22} /></div><div><h1 className="font-semibold">ComebackTwitterEmbed 管理</h1><p className="text-xs text-muted-foreground">{user.globalName || user.username || user.id}</p></div></div><div className="flex gap-2"><Button asChild variant="outline" size="sm"><Link href="/dashboard?mode=user">ユーザー画面</Link></Button><SignOutButton locale="ja" /></div></div></header>
-    <div className="mx-auto grid max-w-[1680px] gap-5 px-4 py-5 lg:grid-cols-[190px_minmax(0,1fr)]"><aside className="min-w-0"><AdminSidebar /></aside><main className="min-w-0 space-y-4">
+    <div className="mx-auto grid max-w-[1680px] gap-5 px-4 py-5 lg:grid-cols-[210px_minmax(0,1fr)]"><aside className="min-w-0"><AdminSidebar /></aside><main className="min-w-0 space-y-4"><h2 className="text-2xl font-semibold tracking-tight">{adminSectionLabels[location.section]}</h2>
       <AdminContextBar />
-      {location.section === "analytics" ? <div className="flex flex-wrap gap-2"><span className="self-center text-xs text-muted-foreground">よく使う表示</span><Button size="sm" variant="outline" onClick={() => updateAdminLocation({ section: "investigation", tab: "search", source: "runs", outcome: "D,P,E,U,X", ...dateRange(24), selected: "", channelId: "", userId: "", messageId: "" })}>直近の失敗を調べる</Button><Button size="sm" variant="outline" onClick={() => updateAdminLocation({ report: "metrics", ...dateRange(24) })}>サービス別の処理結果</Button><Button size="sm" variant="outline" onClick={() => updateAdminLocation({ report: "guildPreview", ...dateRange(168) })}>サーバーの利用状況</Button></div> : null}
       {location.section === "analytics" ? <nav aria-label="分析の種類" className="flex flex-wrap gap-2">{[["metrics", "処理結果・稼働"], ["guildPreview", "サーバー別の利用"], ["providerPreview", "コンテンツ傾向"], ["analytics", "詳細分析"], ["overview", "保存規模・集計"]].map(([key,label]) => <Button key={key} variant={location.report === key ? "default" : "outline"} aria-pressed={location.report === key} onClick={() => updateAdminLocation({ report: key })}>{label}</Button>)}</nav> : null}
       {location.section === "administration" ? <nav aria-label="管理設定の種類" className="flex flex-wrap gap-2">{[["policies", "監視・認証"], ["logs", "エラー・変更履歴"], ["database", "DBの詳細参照"]].map(([key,label]) => <Button key={key} variant={(tab === "management" ? "policies" : tab) === key ? "default" : "outline"} onClick={() => updateAdminLocation({ report: key })}>{label}</Button>)}</nav> : null}
-      <ManagementConsole active={tab === "management"} />
+      <ManagementConsole viewerId={user.id} active={tab === "management"} />
       {visited.includes("overview") ? <div hidden={tab !== "overview"}><ReportErrorBoundary>{overview ? <OverviewPanel overview={overview} onRefresh={() => void loadOverview(true)} refreshing={refreshingOverview} error={overviewError} /> : <AsyncPanelState title="保存規模・集計を取得中" message="最新の集計結果を確認しています。" loading={overviewLoading} error={overviewError} onRetry={() => void loadOverview(false)} />}</ReportErrorBoundary></div> : null}
       {visited.includes("analytics") ? <div hidden={tab !== "analytics"}><ReportErrorBoundary><DetailedAnalyticsPanel /></ReportErrorBoundary></div> : null}
       {visited.includes("guildPreview") ? <div hidden={tab !== "guildPreview"}><ReportErrorBoundary><GuildAdminPreviewPanel /></ReportErrorBoundary></div> : null}

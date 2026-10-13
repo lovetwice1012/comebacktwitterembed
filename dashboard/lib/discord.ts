@@ -309,7 +309,7 @@ export async function validateGuildAccessTargets(
   return valid;
 }
 
-export async function listVisibleGuilds(session: DashboardSession) {
+export async function listVisibleGuilds(session: DashboardSession, options: { loadProviderSummary?: boolean } = {}) {
   const [userGuilds, installed] = await Promise.all([
     fetchUserGuilds(session.accessToken),
     fetchBotGuildIds(),
@@ -324,7 +324,7 @@ export async function listVisibleGuilds(session: DashboardSession) {
       const canView = botInstalled && (nativeCanView || delegatedAccess !== null);
       const canEdit = botInstalled && (canEditSettings(permissions) || delegatedAccess === "edit");
       const canManageGuild = botInstalled && canManageGuildSettings(permissions);
-      const providerSummary = canView ? await providerSummaryForGuild(guild.id) : { enabled: 0, disabled: 0, total: 0 };
+      const providerSummary = canView && options.loadProviderSummary !== false ? await providerSummaryForGuild(guild.id) : { enabled: 0, disabled: 0, total: 0 };
       return {
         guildId: guild.id,
         name: guild.name,
