@@ -22,6 +22,13 @@ function administrator(actor) { const id = user(actor); if (actor.isAdmin !== tr
 function id(value) { if (!SQUARE_ID.test(String(value || ''))) throw fail('SQUARE_INVALID_INPUT', 'SquareのIDを確認してください。', 422); return String(value); }
 function digest(value) { return createHash('sha256').update(value).digest('hex'); }
 function key(value) { return digest(value).slice(0, 40); }
+function isValidReceiptEmail(email) {
+    if (typeof email !== 'string' || email.length > 254 || email.length === 0) return false;
+    const at = email.indexOf('@');
+    if (at <= 0 || at !== email.lastIndexOf('@') || /\s/.test(email)) return false;
+    const domain = email.slice(at + 1), dot = domain.lastIndexOf('.');
+    return dot > 0 && dot < domain.length - 1;
+}
 function readServerEnvironment() {
     let local;
     try { local = process.env.NODE_ENV === 'test' || process.env.NODE_TEST_CONTEXT ? {} : JSON.parse(readFileSync(resolve(__dirname, '../../config.json'), 'utf8')).square || {}; } catch { local = {}; }
@@ -169,7 +176,7 @@ function createSquareBilling(db, options = {}) {
     async function createQuote(actor, input) {
         const owner = user(actor); requireConfigured();
         const planId = String(input?.planId || ''), email = String(input?.email || '').trim(), name = String(input?.name || '').trim();
-        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254) throw fail('SQUARE_EMAIL_REQUIRED', '領収書を受け取るメールアドレスを入力してください。', 422);
+        if (!isValidReceiptEmail(email)) throw fail('SQUARE_EMAIL_REQUIRED', '領収書を受け取るメールアドレスを入力してください。', 422);
         if (!name || name.length > 120 || [...name].some(character => character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127)) throw fail('SQUARE_NAME_REQUIRED', '請求名を1〜120文字で入力してください。', 422);
         const available = (await getOptions(actor)).plans.find(plan => plan.planId === planId);
         if (!available) throw fail('SQUARE_PLAN_UNAVAILABLE', 'この有償プランは現在申し込めません。', 422);
@@ -505,4 +512,4 @@ function createSquareBilling(db, options = {}) {
     return { getOptions, getStatus, getAdmin, saveBinding, createQuote, subscribe, cancel, handleWebhook };
 }
 
-module.exports = { API_VERSION, getSquareScope, createSquareClient, createSquareBilling, verifyWebhookSignature, dateEnd };
+module.exports = { API_VERSION, getSquareScope, createSquareClient, createSquareBilling, verifyWebhookSignature, dateEnd, isValidReceiptEmail };

@@ -32,3 +32,4 @@ export function createSquareBilling(db: { queryDatabase: Function; withDatabaseT
 export function verifyWebhookSignature(rawBody: string | Buffer, signature: string, signatureKey: string, notificationUrl: string): boolean;
 export function dateEnd(date: string, timezone: string): number | null;
 export const API_VERSION: string;
+export function isValidReceiptEmail(email: string): boolean;

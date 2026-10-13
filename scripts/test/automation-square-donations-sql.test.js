@@ -81,6 +81,18 @@ test('Square donations real SQL with mocked REST: trusted payment, durable owner
             await assert.rejects(quote(actor(1), 99), { code: 'SQUARE_DONATION_AMOUNT_INVALID' });
             square.state.wrongMerchant = true; await assert.rejects(quote(actor(1)), { code: 'SQUARE_ACCOUNT_MISMATCH' }); square.state.wrongMerchant = false;
         });
+        await t.test('receipt email validation rejects oversized malformed input before Square I/O and accepts bounded subdomains', async () => {
+            const invalid = ['', 'buyer@@example.com', 'buyer@.com', 'buyer@example', 'buyer@example.com.', 'buyer@exa mple.com', `buyer@${'a.'.repeat(10000)} bad`];
+            for (const email of invalid) {
+                const before = square.requests.length;
+                await assert.rejects(donations.createQuote(actor(84), { amount: 600, email, name: 'Fixture Buyer' }), { code: 'SQUARE_EMAIL_REQUIRED' });
+                assert.equal(square.requests.length, before);
+            }
+            for (const email of ['buyer+tag@deep.mail.example.co.jp', 'a'.repeat(240) + '@example.co.uk']) {
+                const result = await donations.createQuote(actor(85), { amount: 600, email, name: 'Fixture Buyer' });
+                assert.equal(result.email, email); assert.ok(result.attemptId);
+            }
+        });
         await t.test('one-off payment uses exact server amount, app/location/reference/order ownership and no stored card; no threshold grants no supporter', async () => {
             const own = actor(1), q = await quote(own); assert.equal(q.currency, 'JPY'); assert.equal(q.email, 'buyer@example.com');
             await assert.rejects(submit(actor(2), q), { code: 'SQUARE_DONATION_NOT_FOUND' });

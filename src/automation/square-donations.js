@@ -2,7 +2,7 @@
 
 const { createHash, randomUUID } = require('node:crypto');
 const { lockOwner } = require('./entitlements');
-const { createSquareClient, getSquareScope } = require('./square-billing');
+const { createSquareClient, getSquareScope, isValidReceiptEmail } = require('./square-billing');
 const ID = /^[A-Za-z0-9:_-]{1,255}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const NONCE = /^cnon:[A-Za-z0-9:_-]{1,490}$/;
@@ -99,7 +99,7 @@ function createSquareDonations(db, options = {}) {
     async function createQuote(actor, input) {
         const owner = user(actor); requireConfigured();
         const chosen = amount(input?.amount), email = String(input?.email || '').trim(), name = String(input?.name || '').trim();
-        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254) throw fail('SQUARE_EMAIL_REQUIRED', '領収書を受け取るメールアドレスを入力してください。');
+        if (!isValidReceiptEmail(email)) throw fail('SQUARE_EMAIL_REQUIRED', '領収書を受け取るメールアドレスを入力してください。');
         if (!name || name.length > 120 || [...name].some(character => character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127)) throw fail('SQUARE_NAME_REQUIRED', '領収書の宛名を1〜120文字で入力してください。');
         const found = await location();
         return db.withDatabaseTransaction(async query => {

@@ -3,6 +3,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { isPaymentEmail } from "@/lib/payment-input";
 import { automationResponseError, automationRetryDelay } from "./automation-feedback";
 import { loadSquareSubscriptionSDK } from "./subscription-manager";
 import type { DonationOptions as Options, DonationStatus as Status, DonationQuote as Quote, DonationHistory } from "../../../src/automation/square-donations";
@@ -19,8 +20,9 @@ export async function donationAPI(path: string, method = "GET", body?: unknown) 
 }
 
 export function donationAmount(value: string, digits: number): number | null {
-  if (!Number.isInteger(digits) || digits < 0 || digits > 3 || !new RegExp(`^\\d+(?:\\.\\d{1,${digits || 1}})?$`).test(value) || digits === 0 && value.includes(".")) return null;
+  if (!Number.isInteger(digits) || digits < 0 || digits > 3 || value.length > 32 || value.trim() !== value || !/^\d+(?:\.\d+)?$/.test(value)) return null;
   const [whole, fraction = ""] = value.split(".");
+  if (fraction.length > digits) return null;
   const amount = Number(whole) * 10 ** digits + Number(fraction.padEnd(digits, "0"));
   return Number.isSafeInteger(amount) && amount > 0 ? amount : null;
 }
@@ -67,7 +69,7 @@ export function SquareDonationManager({ api = donationAPI, loadSquare = loadSqua
   const retryAt = Number(refresh?.retryAtMs), retryDelay = Number.isFinite(retryAt) && retryAt > currentTime ? Math.min(24 * 60 * 60 * 1000, retryAt - currentTime) : 0;
   const refreshWaiting = retryDelay > 0;
   const parsed = options?.minorUnitDigits !== null && options?.minorUnitDigits !== undefined ? donationAmount(amount, options.minorUnitDigits) : null;
-  const valid = Boolean(options && parsed !== null && options.minimumAmount !== null && options.maximumAmount !== null && parsed >= options.minimumAmount && parsed <= options.maximumAmount && name.trim() && name.trim().length <= 120 && email.trim().length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()));
+  const valid = Boolean(options && parsed !== null && options.minimumAmount !== null && options.maximumAmount !== null && parsed >= options.minimumAmount && parsed <= options.maximumAmount && name.trim() && name.trim().length <= 120 && isPaymentEmail(email.trim()));
   async function load() {
     const version = ++loadVersion.current; setLoading(true); setLoadError("");
     const results = await Promise.allSettled([api("options"), api("status")]);

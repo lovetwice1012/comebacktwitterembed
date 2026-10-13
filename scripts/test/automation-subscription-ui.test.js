@@ -38,6 +38,15 @@ async function fixture({ initialOptions = options(), initialStatus = status(), r
 }
 const writes = f => f.calls.filter(call => call.method !== 'GET');
 
+test('subscription submit handler rejects overlength and ambiguous email separators while preserving Unicode subdomains', async () => {
+    const f = await fixture();
+    try {
+        await f.select(); await f.fill(f.field('請求名'), '山田');
+        for (const value of ['a'.repeat(243) + '@example.com', 'user@@example.test', 'user@domain', 'user name@example.test']) { await f.fill(f.field('請求先メールアドレス'), value); await f.submit(); assert.equal(writes(f).length, 0); }
+        await f.fill(f.field('請求先メールアドレス'), '利用者@payments.例え.テスト'); await f.submit(); assert.equal(writes(f)[0].body.email, '利用者@payments.例え.テスト');
+    } finally { await f.close(); }
+});
+
 test('subscription page requires a user session and the workspace exposes a real payment route', () => {
     const root = path.resolve(__dirname, '../..');
     const page = fs.readFileSync(path.join(root, 'dashboard/app/dashboard/automation/plans/page.tsx'), 'utf8');

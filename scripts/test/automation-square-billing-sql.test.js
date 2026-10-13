@@ -109,6 +109,18 @@ test('Square real SQL with mocked REST: paid subscription lifecycle, exact user 
             delete square.state.variation.subscription_plan_variation_data.phases[0].periods;
             square.state.locationMerchant = 'OTHER'; await assert.rejects(quote(actor(1)), { code: 'SQUARE_ACCOUNT_MISMATCH' }); square.state.locationMerchant = 'MERCHANT';
         });
+        await t.test('receipt email validation rejects oversized malformed input before Square I/O and accepts bounded subdomains', async () => {
+            const invalid = ['', 'buyer@@example.com', 'buyer@.com', 'buyer@example', 'buyer@example.com.', 'buyer@exa mple.com', `buyer@${'a.'.repeat(10000)} bad`];
+            for (const email of invalid) {
+                const before = square.requests.length;
+                await assert.rejects(billing.createQuote(actor(84), { planId: 'pro', email, name: 'Fixture Buyer' }), { code: 'SQUARE_EMAIL_REQUIRED' });
+                assert.equal(square.requests.length, before);
+            }
+            for (const email of ['buyer+tag@deep.mail.example.co.jp', 'a'.repeat(240) + '@example.co.uk']) {
+                const result = await billing.createQuote(actor(85), { planId: 'pro', email, name: 'Fixture Buyer' });
+                assert.equal(result.email, email); assert.ok(result.checkoutId);
+            }
+        });
         await t.test('quote is owned by session; client user/tier/price ignored; consent and unexpired confirmed price required before card wire', async () => {
             const own = actor(1), checkout = await quote(own);
             await assert.rejects(submit(actor(2), checkout), { code: 'SQUARE_CHECKOUT_NOT_FOUND' });

@@ -9,7 +9,7 @@ const status = changes => ({ history: [], pending: null, supporter: { active: fa
 const entry = changes => ({ attemptId: 'attempt-1', state: 'COMPLETED', verified: true, amount: 500, currency: 'JPY', refundedAmount: 0, netAmount: 500, createdAtMs: 1791831600000, completedAtMs: 1791831600100, ...changes });
 const policy = changes => ({ enabled: false, currency: 'JPY', minimumAmount: null, maximumAmount: null, supporterThreshold: null, validityDays: null, updatedAtMs: 10, ...changes });
 async function donationFixture({ config = options(), initial = status(), respond, tokenize, loader } = {}) {
-    const f = await reactFixture('export { SquareDonationManager, donationAmount, donationMoney, donationAPI } from "./components/automation/square-donation-manager";');
+    const f = await reactFixture('export { SquareDonationManager, donationAmount, donationMoney, donationAPI } from "./components/automation/square-donation-manager"; export { isPaymentEmail } from "./lib/payment-input";');
     const calls = [], sdk = { loads: [], payments: [], tokens: [], destroyed: 0 };
     const api = async (route, method = 'GET', body) => {
         calls.push({ route, method, body }); const override = respond && await respond(route, method, body, f); if (override !== undefined) return override;
@@ -53,7 +53,8 @@ test('amount conversion rejects rounding, exponents and overflow with exact zero
     const f = await donationFixture();
     try {
         assert.equal(f.exports.donationAmount('199', 0), 199); assert.equal(f.exports.donationAmount('1.99', 2), 199); assert.equal(f.exports.donationAmount('1.234', 3), 1234);
-        for (const [value, digits] of [['1.5', 0], ['1.234', 2], ['1e2', 0], ['0', 0], ['', 2], ['999999999999999999', 0], ['-1', 0]]) assert.equal(f.exports.donationAmount(value, digits), null);
+        for (const [value, digits] of [['1.5', 0], ['1.234', 2], ['1e2', 0], ['0', 0], ['', 2], ['999999999999999999', 0], ['-1', 0], ['1\n', 0], ['1.2\n', 2], ['1.'.padEnd(100000, '0'), 2], ['0'.repeat(100000) + '1', 0]]) assert.equal(f.exports.donationAmount(value, digits), null);
+        assert.equal(f.exports.donationAmount('9007199254740.991', 3), Number.MAX_SAFE_INTEGER); assert.equal(f.exports.donationAmount('9007199254740.992', 3), null);
         assert.equal(f.exports.donationMoney(199, 'USD'), '$1.99'); assert.equal(f.exports.donationMoney(500, 'JPY'), '￥500');
         await f.fill(f.field('寄付金額'), '99'); await f.fill(f.field('領収名'), '山田'); await f.fill(f.field('領収先メールアドレス'), 'receipt@example.test'); await f.submit(); assert.equal(writes(f).length, 0);
     } finally { await f.close(); }
@@ -233,4 +234,19 @@ test('a freshly checked status explains the next allowed check without hiding th
     const f = await donationFixture({ initial: status({ refresh: { state: 'checked', retryAtMs: Date.now() + 9000 } }) });
     try { assert.match(f.container.textContent, /Squareで支払い・返金状態を確認しました/); assert.match(f.container.textContent, /秒後に再確認/); assert(f.container.querySelector('form')); assert.equal([...f.container.querySelectorAll('button')].find(item => item.textContent === '再読み込み').disabled, true); assert.equal(writes(f).length, 0); }
     finally { await f.close(); }
+});
+test('receipt email validation keeps Unicode/subdomain semantics with a bounded linear scan and rejects repeated separators', async () => {
+    const f = await donationFixture();
+    try {
+        for (const value of ['user+support@payments.example.test', '利用者@例え.テスト', 'a'.repeat(242) + '@example.com']) assert.equal(f.exports.isPaymentEmail(value), true, value);
+        for (const value of ['', 'x@domain', '@example.test', 'user@.x', 'user@x.', 'user@@example.test', 'user name@example.test', '利用者\u3000@例え.テスト', 'x@example.test\n', 'a'.repeat(243) + '@example.com', 'a'.repeat(100000) + '@example.test', 'x@' + '.'.repeat(100000)]) assert.equal(f.exports.isPaymentEmail(value), false);
+    } finally { await f.close(); }
+});
+test('donation receipt emails reject overlength or malformed input before requesting a quote and accept Unicode after correction', async () => {
+    const f = await donationFixture();
+    try {
+        await f.fill(f.field('寄付金額'), '500'); await f.fill(f.field('領収名'), '山田');
+        for (const value of ['a'.repeat(243) + '@example.com', 'user@@example.test', 'user@domain']) { await f.fill(f.field('領収先メールアドレス'), value); await f.submit(); assert.equal(writes(f).length, 0); }
+        await f.fill(f.field('領収先メールアドレス'), '利用者@payments.例え.テスト'); await f.submit(); assert.equal(writes(f)[0].body.email, '利用者@payments.例え.テスト');
+    } finally { await f.close(); }
 });
