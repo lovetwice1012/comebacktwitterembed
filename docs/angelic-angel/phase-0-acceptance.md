@@ -18,7 +18,7 @@ the SHA-256 manifest verifier. Node execution uses no Rust binary or addon.
 | Reproducible dependency install | `npm ci --ignore-scripts` pass; committed nested package lock |
 | CLI/package lint | ESLint 10.12.0, all CLI source/tests/scripts pass |
 | Existing service lint/typecheck | root `npm run lint` and `npm run typecheck` pass |
-| Full Phase 0 tests | 198 Node test results, including parent tests; 189 leaf cases and 9 groups; 0 failure, 0 skipped, 0 TODO |
+| Full Phase 0 tests | 199 Node test results, including parent tests; 190 leaf cases and 9 groups; 0 failure, 0 skipped, 0 TODO |
 | True Rust comparisons | 13 differential groups: TOML, serde protocol, timers, ECE both directions, 72 golden fixtures, Webhook, old X request, CLI, real loopback WS, failures, duplicate cache, UAID recovery, malformed-key panic containment |
 | Mock lifecycle | init → register → old X mock → persisted restart state → decrypt → Webhook → ACK → unregister passes |
 | Recovery/errors | failed X / read-only save preserve old state; second invalidation stops; idle/backoff/Webhook SIGINT cleans up and exits 0 |
@@ -60,7 +60,11 @@ represented as successful checks or as Node failures.
 Independent review identified and repaired duplicate/grouped CLI options, strict
 serde JSON token/depth/number handling, UTF-8/BOM behavior, Webhook URL Basic auth,
 signal interruption, WebSocket backpressure and frame/fragment bounds. Those
-fixes are protected by comparisons and failure tests.
+fixes are protected by comparisons and failure tests. A subsequent cause-chain
+review removed raw parser/HTTP snippets from retained error causes while retaining
+their safe category and known system error code; deep exception-inspection leak
+tests pass. Phase 0's original commit is `130858c`; the cause containment is a
+separate migration correction before the new system is activated.
 
 Proceed to Phase 1 design, then isolated Phase 2 PoC using the Node base. G1
 requires actual existing Firefox subscription transfer and actual X notification

@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Writable } from 'node:stream';
 import { spawnSync } from 'node:child_process';
+import { inspect } from 'node:util';
 import { parseConfig, stringifyConfig, saveConfig, loadConfig, getWebhookEndpoint } from '../dist/config.js';
 import { runCli, parseCli } from '../dist/cli.js';
 import { main } from '../dist/index.js';
@@ -44,6 +45,16 @@ test('file read and write failures have separate typed errors', async t => {
 test('WEBHOOK_ENDPOINT absence and empty string preserve Rust environment semantics', () => {
   assert.throws(() => getWebhookEndpoint({}), { code: 'Config' });
   assert.equal(getWebhookEndpoint({ WEBHOOK_ENDPOINT: '' }), '');
+});
+test('error causes preserve diagnostic categories without retaining secret snippets or URLs in inspected stack chains', () => {
+  const secret='DUMMY_SECRET_CAUSE_NEVER_LOG';
+  const cause=Object.assign(new Error(`https://test.invalid/${secret} auth_token=${secret}`),{code:'ECONNRESET'});
+  const error=new AngelicAngelError('Http','request failed',{cause});
+  assert.equal(error.cause.code,'ECONNRESET');
+  assert.ok(!inspect(error,{depth:10}).includes(secret));
+  assert.ok(!JSON.stringify(error).includes(secret));
+  try {parseConfig(`[twitter]\nauth_token="${secret}"\nct0="${secret}"\nbroken=@`);assert.fail('must reject');}
+  catch(parsed){assert.ok(!inspect(parsed,{depth:10}).includes(secret));assert.equal(parsed.code,'Toml');}
 });
 test('CLI complete subcommands and option parsing, per-command help', () => {
   for (const command of ['init','register','listen','status','unregister']) assert.equal(parseCli(['-v','-c','dummy.toml',command]).command, command);

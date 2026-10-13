@@ -127,7 +127,7 @@ test('subscribe retains the Rust AutoPush error category without exposing cause 
     assert.ok(error instanceof AngelicAngelError);
     assert.equal(error.code, 'AutoPush');
     assert.equal(error.message, 'AutoPush error: AutoPush registration failed');
-    assert.equal(error.cause, cause);
+    assert.ok(error.cause instanceof Error);
     assert.ok(!JSON.stringify(error).includes('secret-should-never-appear'));
     return true;
   });
