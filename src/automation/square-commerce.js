@@ -138,12 +138,12 @@ function createSquareCommerce(db, options = {}) {
         const terms = { planId: input.planId, name: input.name.trim(), cadence: input.cadence, amount, currency: input.currency };
         return db.withDatabaseTransaction(async query => {
             const plans = await query('SELECT * FROM automation_notification_plans WHERE plan_id=? FOR UPDATE', [terms.planId]); if (!plans[0]) throw fail('AUTOMATION_PLAN_NOT_FOUND', '通知プランを先に登録してください。', 404);
-            if ((await query('SELECT plan_id FROM automation_square_bindings WHERE plan_id=? AND environment=? AND merchant_id=?', [terms.planId, ...scope])).length) throw fail('SQUARE_CATALOG_ALREADY_BOUND', 'この通知プランはSquareと連携済みです。', 409);
-            const existing = (await query('SELECT * FROM automation_square_catalog_creations WHERE plan_id=? AND environment=? AND merchant_id=? FOR UPDATE', [terms.planId, ...scope]))[0];
+            if ((await query('SELECT plan_id FROM automation_square_bindings WHERE plan_id=? AND environment=? AND merchant_id=? AND cadence=?', [terms.planId, ...scope, terms.cadence])).length) throw fail('SQUARE_CATALOG_ALREADY_BOUND', 'このプランの支払い間隔はSquareと連携済みです。', 409);
+            const existing = (await query('SELECT * FROM automation_square_catalog_creations WHERE plan_id=? AND environment=? AND merchant_id=? AND cadence=? FOR UPDATE', [terms.planId, ...scope, terms.cadence]))[0];
             if (existing && !['QUOTED','FAILED'].includes(existing.state)) throw fail('SQUARE_CATALOG_PENDING', '既存の料金作成の結果を確認してください。', 409);
             const id = randomUUID(), body = catalogBody(id, terms.name, terms.cadence, amount, terms.currency);
             if (existing) await query('DELETE FROM automation_square_catalog_creations WHERE id=?', [existing.id]);
-            await query('INSERT INTO automation_square_catalog_creations (id,environment,merchant_id,plan_id,terms_json,request_json,expires_at_ms,created_at_ms,updated_at_ms) VALUES (?,?,?,?,?,?,?,?,?)', [id, ...scope, terms.planId, JSON.stringify(terms), JSON.stringify(body), now() + TTL, now(), now()]);
+            await query('INSERT INTO automation_square_catalog_creations (id,environment,merchant_id,plan_id,cadence,terms_json,request_json,expires_at_ms,created_at_ms,updated_at_ms) VALUES (?,?,?,?,?,?,?,?,?,?)', [id, ...scope, terms.planId, terms.cadence, JSON.stringify(terms), JSON.stringify(body), now() + TTL, now(), now()]);
             return creationDto((await query('SELECT * FROM automation_square_catalog_creations WHERE id=?', [id]))[0], now());
         });
     }
@@ -177,7 +177,7 @@ function createSquareCommerce(db, options = {}) {
             await db.withDatabaseTransaction(async query => {
                 await query('SELECT plan_id FROM automation_notification_plans ORDER BY plan_id FOR UPDATE');
                 const active = (await query('SELECT * FROM automation_square_catalog_creations WHERE id=? FOR UPDATE', [row.id]))[0]; if (active.lease_token !== token) throw fail('SQUARE_CATALOG_BUSY', '料金作成の結果を確認してください。', 409);
-                const bound = await query('SELECT * FROM automation_square_bindings WHERE plan_id=? AND environment=? AND merchant_id=? FOR UPDATE', [row.plan_id, ...scope]);
+                const bound = await query('SELECT * FROM automation_square_bindings WHERE plan_id=? AND environment=? AND merchant_id=? AND cadence=? FOR UPDATE', [row.plan_id, ...scope, terms.cadence]);
                 if (bound.length && bound[0].variation_id !== variationId) throw fail('SQUARE_CATALOG_ALREADY_BOUND', '別の料金へ連携が変更されています。', 409);
                 if (!bound.length) await query('INSERT INTO automation_square_bindings (plan_id,environment,merchant_id,variation_id,enabled,catalog_name,cadence,amount,currency,catalog_version,verified_at_ms,actor_user_id) VALUES (?,?,?,?,1,?,?,?,?,?,?,?)', [row.plan_id, ...scope, variationId, catalog.catalogName, catalog.cadence, catalog.amount, catalog.currency, catalog.catalogVersion, now(), actor.userId]);
                 await query("UPDATE automation_square_catalog_creations SET state='COMPLETE',variation_id=?,updated_at_ms=? WHERE id=?", [variationId, now(), row.id]);

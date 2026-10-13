@@ -9,7 +9,7 @@ const admin = (changes = {}) => ({ configured: true, environment: 'sandbox', loc
 const subscriptionPlan = (changes = {}) => ({ ...policy(), variationId: 'BASE_VARIATION', catalogName: 'Square月額', cadence: 'MONTHLY', amount: 1500, currency: 'JPY', ...changes });
 const status = (changes = {}) => ({ configured: true, environment: 'sandbox', subscription: null, pending: null, ...changes });
 
-async function fixture({ kind = 'catalog', initialAdmin = admin(), plans = [policy()], respond, quotedPlan, configured = true } = {}) {
+async function fixture({ kind = 'catalog', initialAdmin = admin(), plans = [policy()], respond, quotedPlan, configured = true, occupiedCadences = [] } = {}) {
     const f = await reactFixture('export { SquareCatalogCreator, SquareCouponManager, couponExpiry } from "./components/admin/square-commerce-manager"; export { SubscriptionManager } from "./components/automation/subscription-manager"; export { NotificationPlanManager } from "./components/admin/notification-plan-manager";');
     const calls = [], sdk = { loads: 0, tokens: [] }; let savedCreation = creation(), refreshed = 0;
     f.api = async (route, method = 'GET', body) => {
@@ -30,7 +30,7 @@ async function fixture({ kind = 'catalog', initialAdmin = admin(), plans = [poli
     f.calls = calls; f.sdk = sdk; f.refreshed = () => refreshed;
     const loader = async () => { sdk.loads++; return { payments: () => ({ card: async () => ({ attach: async () => {}, destroy: async () => {}, tokenize: async payload => { sdk.tokens.push(payload); return { status: 'OK', token: 'cnon:test-token' }; } }) }) }; };
     let Component, props;
-    if (kind === 'catalog') { Component = f.exports.SquareCatalogCreator; props = { plan: policy(), configured, api: f.api, onCreated: async () => { refreshed++; } }; }
+    if (kind === 'catalog') { Component = f.exports.SquareCatalogCreator; props = { plan: policy(), configured, api: f.api, occupiedCadences, onCreated: async () => { refreshed++; } }; }
     else if (kind === 'coupons') { Component = f.exports.SquareCouponManager; props = { plans, configured, api: f.api }; }
     else if (kind === 'subscription') { Component = f.exports.SubscriptionManager; props = { api: f.api, loadSquare: loader }; }
     else { Component = f.exports.NotificationPlanManager; props = { api: f.api }; }
@@ -131,7 +131,7 @@ test('coupon expiry explicitly uses JST and rejects invalid calendar rollovers',
 test('coupon checkout sends only the optional code and displays frozen first-invoice and subsequent regular amounts before consent', async () => {
     const f = await fixture({ kind: 'subscription', quotedPlan: subscriptionPlan({ firstAmount: 1200, regularAmount: 1500, coupon: { code: 'WELCOME', label: '初回の割引', type: 'percent', value: 20, discountAmount: 300 } }) });
     try {
-        await f.subscriptionReview('WELCOME'); assert.deepEqual(writes(f)[0].body, { planId: 'paid_saved', email: 'receipt@example.test', name: '山田', couponCode: 'WELCOME' }); assert.match(f.container.textContent, /初回請求: ￥1,200/); assert.match(f.container.textContent, /次回以降の通常料金: ￥1,500 · 毎月/); assert.match(f.container.textContent, /初回請求の1回だけ/); assert.match(f.container.textContent, /初回は￥1,200、次回以降は通常料金の￥1,500が毎月継続課金/); assert.equal(f.sdk.tokens.length, 0); await f.consent(); await f.click('同意してサブスクリプションを契約'); assert.equal(f.sdk.tokens.length, 1); assert.deepEqual(writes(f).at(-1).body, { checkoutId: 'checkout-1', sourceId: 'cnon:test-token', consent: true });
+        await f.subscriptionReview('WELCOME'); assert.deepEqual(writes(f)[0].body, { planId: 'paid_saved', variationId: 'BASE_VARIATION', email: 'receipt@example.test', name: '山田', couponCode: 'WELCOME' }); assert.match(f.container.textContent, /初回請求: ￥1,200/); assert.match(f.container.textContent, /次回以降の通常料金: ￥1,500 · 毎月/); assert.match(f.container.textContent, /初回請求の1回だけ/); assert.match(f.container.textContent, /初回は￥1,200、次回以降は通常料金の￥1,500が毎月継続課金/); assert.equal(f.sdk.tokens.length, 0); await f.consent(); await f.click('同意してサブスクリプションを契約'); assert.equal(f.sdk.tokens.length, 1); assert.deepEqual(writes(f).at(-1).body, { checkoutId: 'checkout-1', sourceId: 'cnon:test-token', consent: true });
     } finally { await f.close(); }
 });
 test('coupon quote failures preserve code and personal details without silently falling back to full-price subscription', async () => {
@@ -159,4 +159,18 @@ test('an anchored/prorated plan explains coupon unavailability and preserves the
     const f = await fixture({ kind: 'subscription', respond: route => route === 'options' ? { configured: true, environment: 'sandbox', applicationId: 'sandbox-app', locationId: 'location', plans: [subscriptionPlan({ billingAnchorDay: 15, canProrate: true })] } : undefined });
     try { await f.subscriptionReview('WELCOME'); assert.match(f.container.textContent, /日割り・固定課金日のあるプランはクーポンに未対応/); assert.equal(f.field('クーポンコード').value, 'WELCOME'); assert.equal(writes(f).length, 0); await f.fill(f.field('クーポンコード'), ''); await f.submit(); assert.equal(writes(f).length, 1); assert.equal(writes(f)[0].body.couponCode, undefined); }
     finally { await f.close(); }
+});
+
+
+test('an existing monthly binding still permits a separate annual Square price but blocks duplicate monthly creation', async () => {
+    const f = await fixture({ occupiedCadences: ['MONTHLY'] });
+    try {
+        await f.click('Square料金プランを作成'); await f.fill(f.field('継続課金の料金'), '10000');
+        const cadence = f.field('請求周期'); assert.equal([...cadence.options].find(option => option.value === 'MONTHLY').disabled, true);
+        await f.fill(cadence, 'MONTHLY'); await f.submit(); assert.equal(writes(f).length, 0);
+        await f.fill(cadence, 'ANNUAL'); await f.submit();
+        assert.deepEqual(writes(f)[0].body, { planId: 'paid_saved', name: '保存済み有償プラン', amount: 10000, currency: 'JPY', cadence: 'ANNUAL' });
+        assert.match(f.container.querySelector('[aria-label="Square料金の作成確認"]').textContent, /￥10,000 · 毎年/);
+        await f.consent(); await f.click('確認してSquareに作成'); assert.equal(f.refreshed(), 1);
+    } finally { await f.close(); }
 });

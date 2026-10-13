@@ -83,6 +83,94 @@ test('Square commerce fixtures default to unconfigured without secret access and
     const service = createSquareCommerce({}, { env: {} }); assert.equal((await service.getAdmin(ADMIN)).configured, false);
     await assert.rejects(service.createCatalogQuote(actor(1), {}), { code: 'AUTOMATION_FORBIDDEN' }); await assert.rejects(service.saveCoupon(actor(1), {}), { code: 'AUTOMATION_FORBIDDEN' });
 });
+test('Square multiple payment intervals share one notification policy with independent quotes, bindings, leases and coupon terms', { skip: !port, timeout: 90000 }, async t => {
+    const db = await createTestDatabase(port); let clock = Date.parse('2026-10-13T00:00:00Z');
+    const square = mockSquare(() => clock), commerce = () => createSquareCommerce(db, { env: ENV, fetch: square.fetch, clock: () => clock }), billing = () => createSquareBilling(db, { env: ENV, fetch: square.fetch, clock: () => clock });
+    const bind = async (cadence, amount) => {
+        const q = await commerce().createCatalogQuote(ADMIN, { planId: 'multi', name: 'Multiple ' + cadence, cadence, amount, currency: 'JPY' });
+        return commerce().confirmCatalogCreation(ADMIN, { creationId: q.creationId, consent: true });
+    };
+    const quote = (i, variationId, couponCode) => billing().createQuote(actor(i), { planId: 'multi', variationId, email: 'buyer@example.com', name: 'Fixture Buyer', couponCode });
+    const submit = (i, q) => billing().subscribe(actor(i), { checkoutId: q.checkoutId, sourceId: 'cnon:fixture-' + i, consent: true });
+    let monthly, annual;
+    try {
+        await savePlanPolicy(db.queryDatabase, ADMIN, { planId: 'multi', label: 'Multiple', slotLimit: 10, minuteLimit: 10, dayLimit: 100, priority: 2 });
+        await t.test('concurrent interval creation keeps distinct durable requests and retries the unknown annual response unchanged', async () => {
+            const [monthQuote, yearQuote] = await Promise.all(['MONTHLY', 'ANNUAL'].map(cadence => commerce().createCatalogQuote(ADMIN, { planId: 'multi', name: 'Multiple ' + cadence, cadence, amount: cadence === 'MONTHLY' ? 1200 : 12000, currency: 'JPY' })));
+            monthly = await commerce().confirmCatalogCreation(ADMIN, { creationId: monthQuote.creationId, consent: true });
+            square.state.lost = '/v2/catalog/object';
+            await assert.rejects(commerce().confirmCatalogCreation(ADMIN, { creationId: yearQuote.creationId, consent: true }), { code: 'SQUARE_RESULT_UNKNOWN' });
+            await assert.rejects(commerce().createCatalogQuote(ADMIN, { planId: 'multi', name: 'Duplicate annual', cadence: 'ANNUAL', amount: 1, currency: 'JPY' }), { code: 'SQUARE_CATALOG_PENDING' });
+            assert.equal((await commerce().getCreation(ADMIN, monthQuote.creationId)).state, 'COMPLETE');
+            const count = square.catalog.size;
+            annual = await commerce().confirmCatalogCreation(ADMIN, { creationId: yearQuote.creationId, consent: true });
+            assert.equal(annual.state, 'COMPLETE'); assert.equal(square.catalog.size, count);
+            const wires = square.requests.filter(item => item.path === '/v2/catalog/object' && item.body?.idempotency_key === yearQuote.creationId);
+            assert.equal(wires.length, 2); assert.deepEqual(wires[0].body, wires[1].body);
+            assert.equal((await billing().getOptions(actor(200))).plans.filter(item => item.planId === 'multi').length, 2);
+            await assert.rejects(commerce().createCatalogQuote(ADMIN, { planId: 'multi', name: 'Duplicate monthly', cadence: 'MONTHLY', amount: 1, currency: 'JPY' }), { code: 'SQUARE_CATALOG_ALREADY_BOUND' });
+        });
+        await t.test('explicit variation selects its exact interval and ambiguous old clients fail before financial writes', async () => {
+            const before = square.requests.filter(item => item.method === 'POST').length;
+            await assert.rejects(quote(201), { code: 'SQUARE_PAYMENT_INTERVAL_REQUIRED' });
+            await assert.rejects(quote(201, 'OTHER-PLAN-VARIATION'), { code: 'SQUARE_PLAN_UNAVAILABLE' });
+            assert.equal(square.requests.filter(item => item.method === 'POST').length, before);
+            const month = await quote(202, monthly.variationId), year = await quote(203, annual.variationId);
+            assert.equal(month.plan.cadence, 'MONTHLY'); assert.equal(month.plan.amount, 1200);
+            assert.equal(year.plan.cadence, 'ANNUAL'); assert.equal(year.plan.amount, 12000);
+            assert.equal(month.plan.slotLimit, year.plan.slotLimit);
+            for (const [i, q] of [[202, month], [203, year]]) {
+                const result = await submit(i, q); assert.equal(result.subscription.active, true);
+                assert.equal(result.subscription.cadence, q.plan.cadence); assert.equal(result.subscription.amount, q.plan.amount); assert.equal(result.subscription.currency, 'JPY');
+                const wire = square.requests.find(item => item.path === '/v2/subscriptions' && item.body.source.name === 'cbte:' + q.checkoutId);
+                assert.equal(wire.body.plan_variation_id, q.plan.variationId); assert.equal(wire.body.price_override_money.amount, q.plan.amount);
+            }
+        });
+        await t.test('monthly CAS edits and disablement affect only monthly quotes; annual checkout retains its accepted price', async () => {
+            const year = await quote(204, annual.variationId), month = await quote(205, monthly.variationId);
+            const binding = (await billing().getAdmin(ADMIN)).bindings.find(item => item.cadence === 'MONTHLY');
+            await assert.rejects(billing().saveBinding(ADMIN, 'multi', { cadence: 'ANNUAL', variationId: monthly.variationId, enabled: false, expectedVerifiedAtMs: binding.verifiedAtMs }), { code: 'SQUARE_PAYMENT_INTERVAL_MISMATCH' });
+            const edit = { cadence: 'MONTHLY', variationId: monthly.variationId, enabled: false, expectedVerifiedAtMs: binding.verifiedAtMs };
+            const outcomes = await Promise.allSettled([billing().saveBinding(ADMIN, 'multi', edit), billing().saveBinding(ADMIN, 'multi', edit)]);
+            assert.equal(outcomes.filter(item => item.status === 'fulfilled').length, 1);
+            assert.equal(outcomes.find(item => item.status === 'rejected').reason.code, 'SQUARE_BINDING_CONFLICT');
+            const before = square.requests.filter(item => item.path === '/v2/cards' && item.method === 'POST').length;
+            await assert.rejects(submit(205, month), { code: 'SQUARE_QUOTE_CHANGED' });
+            assert.equal(square.requests.filter(item => item.path === '/v2/cards' && item.method === 'POST').length, before);
+            assert.equal((await submit(204, year)).subscription.active, true);
+            assert.equal((await billing().getOptions(actor(206))).plans[0].cadence, 'ANNUAL');
+            const original = square.catalog.get(annual.variationId); original.version++; original.subscription_plan_variation_data.phases[0].pricing.price_money.amount = 14000;
+            const annualBinding = (await billing().getAdmin(ADMIN)).bindings.find(item => item.cadence === 'ANNUAL');
+            await billing().saveBinding(ADMIN, 'multi', { cadence: 'ANNUAL', variationId: annual.variationId, enabled: true, expectedVerifiedAtMs: annualBinding.verifiedAtMs });
+            clock += 31000;
+            assert.equal((await billing().getStatus(actor(204))).subscription.amount, 12000, 'historical subscription uses immutable agreed price');
+            const disabled = outcomes.find(item => item.status === 'fulfilled').value;
+            await billing().saveBinding(ADMIN, 'multi', { cadence: 'MONTHLY', variationId: monthly.variationId, enabled: true, expectedVerifiedAtMs: disabled.verifiedAtMs });
+        });
+        await t.test('yearly coupon phases discount one full yearly invoice and keep subsequent yearly price and status exact', async () => {
+            await commerce().saveCoupon(ADMIN, { code: 'YEAR20', label: 'Year 20%', type: 'percent', value: 20, currency: null, planIds: ['multi'], enabled: true, expiresAtMs: null, totalLimit: 1, userLimit: 1, expectedUpdatedAtMs: null });
+            const q = await quote(207, annual.variationId, 'YEAR20'); assert.equal(q.plan.firstAmount, 11200); assert.equal(q.plan.regularAmount, 14000);
+            const result = await submit(207, q); assert.equal(result.subscription.active, true); assert.equal(result.subscription.amount, 14000); assert.equal(result.subscription.cadence, 'ANNUAL');
+            const wire = square.requests.find(item => item.path === '/v2/subscriptions' && item.body.source.name === 'cbte:' + q.checkoutId);
+            assert.ok(!Object.hasOwn(wire.body, 'price_override_money'));
+            const phases = square.catalog.get(wire.body.plan_variation_id).subscription_plan_variation_data.phases;
+            assert.deepEqual(phases.map(item => [item.cadence, item.periods ?? null, item.pricing.price_money.amount]), [['ANNUAL', 1, 11200], ['ANNUAL', null, 14000]]);
+            const usage = (await db.queryDatabase('SELECT * FROM automation_square_coupon_uses WHERE checkout_id=?', [q.checkoutId]))[0]; assert.equal(usage.state, 'COMMITTED');
+            const sub = [...square.subscriptions.values()].find(item => item.source.name === 'cbte:' + q.checkoutId), regularId = 'YEAR-REGULAR-' + sub.id;
+            sub.invoice_ids.push(regularId); sub.charged_through_date = '2027-10-31'; sub.version++;
+            square.invoices.set(regularId, { id: regularId, subscription_id: sub.id, location_id: 'LOCATION', primary_recipient: { customer_id: sub.customer_id }, status: 'PAID', payment_requests: [{ computed_amount_money: { amount: 14000, currency: 'JPY' }, total_completed_amount_money: { amount: 14000, currency: 'JPY' } }] });
+            const checkout = (await db.queryDatabase('SELECT * FROM automation_square_checkouts WHERE id=?', [q.checkoutId]))[0];
+            assert.equal(await db.withDatabaseTransaction(query => commerce().confirmInvoice(query, checkout, sub, square.invoices.get(regularId))), 14000);
+        });
+        await t.test('concurrent additional interval confirmations each acquire their own lease and append rather than overwrite', async () => {
+            const results = await Promise.all([bind('QUARTERLY', 3000), bind('EVERY_SIX_MONTHS', 5500)]);
+            assert.ok(results.every(item => item.state === 'COMPLETE'));
+            const rows = await db.queryDatabase("SELECT cadence FROM automation_square_bindings WHERE plan_id='multi' ORDER BY cadence");
+            assert.deepEqual(rows.map(item => item.cadence), ['ANNUAL', 'EVERY_SIX_MONTHS', 'MONTHLY', 'QUARTERLY']);
+        });
+    } finally { await db.close(); }
+});
+
 test('real SQL Square catalog creation and first-invoice coupons with mocked remote writes', { skip: !port, timeout: 120000 }, async t => {
     const db = await createTestDatabase(port); let clock = Date.parse('2026-10-13T00:00:00Z');
     const square = mockSquare(() => clock), commerce = () => createSquareCommerce(db, { env: ENV, fetch: square.fetch, clock: () => clock }), billing = () => createSquareBilling(db, { env: ENV, fetch: square.fetch, clock: () => clock });

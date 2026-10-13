@@ -44,7 +44,7 @@ const SCHEMA = [
         catalog_version VARCHAR(32) NOT NULL,
         verified_at_ms BIGINT NOT NULL,
         actor_user_id VARCHAR(32) NOT NULL,
-        PRIMARY KEY (plan_id,environment,merchant_id),
+        PRIMARY KEY (plan_id,environment,merchant_id,cadence),
         UNIQUE KEY unique_square_variation (environment,merchant_id,variation_id)
     ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
     `CREATE TABLE IF NOT EXISTS automation_square_accounts (
