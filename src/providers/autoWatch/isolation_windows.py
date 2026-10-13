@@ -1,9 +1,7 @@
-"""
-Run the guest acquisition worker inside a Windows Job Object.
+"""Run the guest acquisition worker inside a Windows Job Object."""
 
-The worker waits for stdin; assign its memory/CPU/process limits before sending
-the source. Closing the job terminates every process belonging to it.
-"""
+# The worker waits for stdin; assign its memory/CPU/process limits before sending
+# the source. Closing the job terminates every process belonging to it.
 import ctypes
 from ctypes import wintypes
 import os
