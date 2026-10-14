@@ -15,15 +15,20 @@ const { createXProcessingSettings } = require('../../src/automation/x-processing
 const { createRateLimiter } = require('../../src/automation/rate-limits');
 const port = Number(process.env.AUTOMATION_TEST_DB_PORT), ADMIN = { userId: '666666666666666666', isAdmin: true };
 const post = id => ({ notificationType: 'tweet', author: { id: '12345', handle: 'example' }, url: `https://x.com/example/status/${1234567890123456700n + BigInt(id)}`, title: `公開投稿 ${id}`, text: '公開本文' });
+// Structure observed in an owned production receipt; values are synthetic.
+const webPost = (id, handle = 'example') => ({ title: '合成の投稿通知', body: '合成の公開本文', icon: 'opaque display metadata',
+    timestamp: '2026-10-14T12:00:00Z', tag: `tweet-${id}`, data: { type: 'tweet', scribe_target: 'tweet',
+        uri: `/${handle}/status/${id}`, bundle_text: 'synthetic', impression_id: 'synthetic', lang: 'ja', extra: { ignored: true } }, metadata: true });
 
 async function fixture(work, runtimeOptions = {}) {
     const db = await createTestDatabase(port), query = db.queryDatabase;
-    let now = Date.now(), sequence = 0, lease, runtime, auditFailure = false, markFailure = false, ownerLockAttempt = null;
+    let now = Date.now(), sequence = 0, lease, runtime, auditFailure = false, auditHook = null, markFailure = false, ownerLockAttempt = null;
     const clock = () => now, subscription = await insertSubscription(db);
     await db.withDatabaseTransaction(query => entitlements.savePlanPolicy(query, ADMIN, { planId: 'free', label: '無料', slotLimit: 5, minuteLimit: 5, dayLimit: 24, priority: 0, intervalMinutes: 5 }));
     const storeDb = { ...db, withDatabaseTransaction: work => db.withDatabaseTransaction(query => work(async (sql, args) => {
         if (ownerLockAttempt && sql.startsWith('INSERT INTO users ')) ownerLockAttempt();
         const result = await query(sql, args);
+        if (auditHook && sql.startsWith('INSERT INTO automation_audit')) auditHook();
         if (auditFailure && sql.startsWith('INSERT INTO automation_audit')) throw Object.assign(new Error('SQL_PRIVATE_SENTINEL'), { code: 'ER_FIXTURE_AUDIT' });
         return result;
     })) };
@@ -62,8 +67,8 @@ async function fixture(work, runtimeOptions = {}) {
     }
     const receiver = async () => (await query('SELECT * FROM automation_x_push_receivers WHERE subscription_id=?', [subscription.subscriptionId]))[0];
     const count = async table => Number((await query(`SELECT COUNT(*) n FROM ${table}`))[0].n);
-    try { await work({ db, query, store, queue, subscription, clock, makeRuntime, runtime: () => runtime, lease: () => lease, refreshLease, record, receiver, count,
-        advance: amount => { now += amount; }, setRoute: value => { routeOverride = value; }, setAuditFailure: value => { auditFailure = value; }, setMarkFailure: value => { markFailure = value; },
+    try { await work({ db, query, store, gateway, queue, subscription, clock, makeRuntime, runtime: () => runtime, lease: () => lease, refreshLease, record, receiver, count,
+        advance: amount => { now += amount; }, setRoute: value => { routeOverride = value; }, setAuditFailure: value => { auditFailure = value; }, setAuditHook: value => { auditHook = value; }, setMarkFailure: value => { markFailure = value; },
         setOwnerLockAttempt: value => { ownerLockAttempt = value; } }); }
     finally { await runtime.stop(); await db.close(); }
 }
@@ -79,6 +84,118 @@ async function realtime(f, intervalMinutes = 15) {
 }
 
 test('real SQL: encrypted Push receipts are processed under explicit durable windows', { skip: !port, timeout: 120000 }, async t => {
+    await t.test('actual-shaped encrypted quarantine recovers once through the same queue, ownership and batch policy', () => fixture(async f => {
+        const receipt = await f.record({ payload: webPost('1190000000000000001') });
+        await f.store.markUnsupported(f.lease(), receipt.id);
+        assert.equal((await f.runtime().drain(f.lease())).processed, 1);
+        assert.equal((await f.store.getInbox({ ...f.subscription, id: receipt.id })).status, 'routed');
+        assert.equal(await f.count('automation_jobs'), 1);
+        assert.equal(Number((await f.query("SELECT COUNT(*) n FROM automation_audit WHERE action='x.push.adapter.recovered'"))[0].n), 1);
+        assert.equal((await f.runtime().drain(f.lease())).state, 'pending');
+        await f.runtime().stop(); const restarted = f.makeRuntime();
+        assert.equal((await restarted.drain(f.lease())).state, 'pending');
+        assert.equal(await f.count('automation_jobs'), 1);
+        assert.equal(await f.count('automation_notification_slots'), 1);
+    }));
+
+    await t.test('recognized post from another account becomes unmatched without any delivery job', () => fixture(async f => {
+        const receipt = await f.record({ payload: webPost('1190000000000000002', 'other_author') });
+        await f.store.markUnsupported(f.lease(), receipt.id);
+        assert.equal((await f.runtime().drain(f.lease())).processed, 1);
+        assert.equal((await f.store.getInbox({ ...f.subscription, id: receipt.id })).status, 'unmatched');
+        assert.equal(await f.count('automation_runs'), 0); assert.equal(await f.count('automation_jobs'), 0);
+        assert.equal(Number((await f.query("SELECT COUNT(*) n FROM automation_audit WHERE action='x.push.target.unmatched'"))[0].n), 1);
+        assert.equal(await f.store.markUnmatched(f.lease(), receipt.id), false);
+    }));
+
+    await t.test('restoring quarantine and its audit are one transaction, idempotent and owner fenced', () => fixture(async f => {
+        const receipt = await f.record({ payload: webPost('1190000000000000003') });
+        await f.store.markUnsupported(f.lease(), receipt.id);
+        const retained = await f.store.getInbox({ ...f.subscription, id: receipt.id });
+        await assert.rejects(f.gateway.decryptInbox(f.lease(), retained), { code: 'X_PUSH_INBOX_INVALID' });
+        await assert.rejects(f.gateway.decryptQuarantinedInbox(f.lease(), { ...retained, ownerUserId: '999999999999999999' }), { code: 'X_PUSH_INBOX_INVALID' });
+        await assert.rejects(f.store.listQuarantinedInbox({ ...f.lease(), ownerUserId: '999999999999999999' }), { code: 'X_PUSH_SUBSCRIPTION_NOT_FOUND' });
+        f.setAuditFailure(true);
+        await assert.rejects(f.store.restoreQuarantinedInbox(f.lease(), receipt.id), { code: 'X_PUSH_STORE_UNAVAILABLE' });
+        f.setAuditFailure(false);
+        assert.equal((await f.store.getInbox({ ...f.subscription, id: receipt.id })).status, 'unsupported');
+        assert.equal(await f.store.restoreQuarantinedInbox(f.lease(), receipt.id), true);
+        assert.equal(await f.store.restoreQuarantinedInbox(f.lease(), receipt.id), false);
+        assert.equal(Number((await f.query("SELECT COUNT(*) n FROM automation_audit WHERE action='x.push.adapter.recovered'"))[0].n), 1);
+    }));
+
+    await t.test('failed decryption and revoked owner cannot be restored into received state', () => fixture(async f => {
+        const receipt = await f.record({ payload: webPost('1190000000000000004') });
+        await f.store.markUnsupported(f.lease(), receipt.id);
+        await assert.rejects(f.store.restoreQuarantinedInbox(f.lease(), receipt.id, { authorize: async () => { throw Error('revoked'); } }), { code: 'X_PUSH_STORE_UNAVAILABLE' });
+        await f.query('UPDATE automation_x_push_inbox SET ack_code=101 WHERE id=?', [receipt.id]);
+        assert.deepEqual(await f.store.listQuarantinedInbox(f.lease()), []);
+        assert.equal(await f.store.restoreQuarantinedInbox(f.lease(), receipt.id), false);
+        assert.equal((await f.store.getInbox({ ...f.subscription, id: receipt.id })).status, 'unsupported');
+        assert.equal(await f.count('automation_jobs'), 0);
+    }));
+
+    await t.test('lease expiry after audit work rolls quarantine recovery back; stale tokens and revisions stay fenced', () => fixture(async f => {
+        const receipt = await f.record({ payload: webPost('1190000000000000006') });
+        await f.store.markUnsupported(f.lease(), receipt.id);
+        const old = f.lease();
+        f.setAuditHook(() => f.advance(300001));
+        await assert.rejects(f.store.restoreQuarantinedInbox(old, receipt.id), { code: 'X_PUSH_LEASE_LOST' });
+        f.setAuditHook(null);
+        assert.equal((await f.store.getInbox({ ...f.subscription, id: receipt.id })).status, 'unsupported');
+        assert.equal(Number((await f.query("SELECT COUNT(*) n FROM automation_audit WHERE action='x.push.adapter.recovered'"))[0].n), 0);
+        await f.refreshLease();
+        await assert.rejects(f.store.listQuarantinedInbox(old), { code: 'X_PUSH_LEASE_LOST' });
+        await assert.rejects(f.store.restoreQuarantinedInbox({ ...f.lease(), revision: 2 }, receipt.id), { code: 'X_PUSH_LEASE_LOST' });
+        assert.equal(await f.store.restoreQuarantinedInbox(f.lease(), receipt.id), true);
+    }));
+
+    await t.test('stop while quarantine decryption is pending does not restore data or open a processing window', () => fixture(async f => {
+        const receipt = await f.record({ payload: webPost('1190000000000000007') });
+        await f.store.markUnsupported(f.lease(), receipt.id);
+        let finishDecrypt, entered;
+        const waiting = new Promise(resolve => { entered = resolve; });
+        const runtime = f.makeRuntime({ gateway: { ...f.gateway, decryptQuarantinedInbox: async () => {
+            entered(); return new Promise(resolve => { finishDecrypt = resolve; });
+        } } });
+        const work = runtime.drain(f.lease()); await waiting;
+        const stop = runtime.stop(); finishDecrypt(webPost('1190000000000000007'));
+        assert.equal((await work).state, 'stopped'); await stop;
+        assert.equal((await f.store.getInbox({ ...f.subscription, id: receipt.id })).status, 'unsupported');
+        assert.equal((await f.receiver()).process_window_at_ms, null);
+        assert.equal(await f.count('automation_jobs'), 0);
+    }));
+
+    await t.test('still-unsupported private data is retained and not repeatedly decrypted every tick', () => fixture(async f => {
+        const receipt = await f.record({ payload: { title: 'private synthetic', body: 'private sentinel', data: { type: 'dm_av' } } });
+        await f.store.markUnsupported(f.lease(), receipt.id);
+        await f.runtime().drain(f.lease());
+        const before = Number((await f.query("SELECT COUNT(*) n FROM automation_audit WHERE action='x.push.vault.open'"))[0].n);
+        await f.runtime().drain(f.lease());
+        assert.equal(Number((await f.query("SELECT COUNT(*) n FROM automation_audit WHERE action='x.push.vault.open'"))[0].n), before);
+        assert.equal((await f.store.getInbox({ ...f.subscription, id: receipt.id })).status, 'unsupported');
+        assert.equal(await f.count('automation_jobs'), 0);
+        const audits = await f.query('SELECT detail_json FROM automation_audit');
+        assert.ok(audits.every(row => !row.detail_json.includes('private sentinel')));
+    }));
+
+    await t.test('bounded recovery advances past unknown formats and honors the existing five-minute window', () => fixture(async f => {
+        for (let i = 0; i < 2; i++) {
+            const receipt = await f.record({ payload: { title: 'synthetic', data: { type: 'unknown' } } });
+            await f.store.markUnsupported(f.lease(), receipt.id);
+        }
+        const valid = await f.record({ payload: webPost('1190000000000000005') });
+        await f.store.markUnsupported(f.lease(), valid.id);
+        await f.runtime().drain(f.lease());
+        assert.equal((await f.store.getInbox({ ...f.subscription, id: valid.id })).status, 'unsupported');
+        assert.equal((await f.runtime().drain(f.lease())).state, 'pending');
+        assert.equal((await f.store.getInbox({ ...f.subscription, id: valid.id })).status, 'received');
+        assert.equal(await f.count('automation_jobs'), 0);
+        f.advance(300000); await f.refreshLease();
+        assert.equal((await f.runtime().drain(f.lease())).processed, 1);
+        assert.equal(await f.count('automation_jobs'), 1);
+    }));
+
     await t.test('eligible realtime drains encrypted backlog and subsequent receipts immediately with the same contract quotas and priority', () => fixture(async f => {
         await realtime(f, null);
         for (let i = 0; i < 5; i++) await f.record();

@@ -133,6 +133,49 @@ test('an owner CAS conflict retains the draft and refresh uses the latest revisi
     } finally { await f.close(); }
 });
 
+test('an existing owner corrects only the handle with an explicit review while numeric ID and allocations stay fixed', async () => {
+    const original = row({ notificationSettings: { ...row().notificationSettings, subscriptionId: SUBSCRIPTION_ID }, subscriptionState: 'bound' });
+    const f = await fixture({ items: [original] });
+    try {
+        await f.inClick(f.target(), 'X監視を編集');
+        assert.equal(f.field('XアカウントID').disabled, true); assert.equal(f.field('Xアカウント名').disabled, false);
+        assert.match(f.form().textContent, /Xから届く投稿通知は.*@ユーザー名で監視対象と照合.*登録後も、この欄から変更/);
+        await f.fill(f.field('Xアカウント名'), '@correct_handle'); await f.submitX();
+        const review = f.container.querySelector('[aria-label="X監視の変更確認"]');
+        assert.match(review.textContent, /変更後のXアカウント名：@correct_handle/);
+        assert.match(review.textContent, /現在の利用枠と、変更していない通知設定・受信情報を引き継ぎ/);
+        assert.equal(writes(f).length, 0); await f.click('このX監視設定で保存');
+        assert.deepEqual(writes(f)[0], { route: 'x-monitors/xm-1', method: 'PATCH', body: { expectedRevision: 1, name: original.name, accountHandle: 'correct_handle' } });
+        for (const key of ['accountId', 'poolKind', 'notificationSettings', 'subscriptionState', 'quality', 'enabled']) assert.deepEqual(f.items[0][key], original[key]);
+        await f.inClick(f.target(), 'X監視を編集'); await f.fill(f.field('Xアカウント名'), ''); await f.submitX();
+        assert.match(f.container.querySelector('[aria-label="X監視の変更確認"]').textContent, /変更後のXアカウント名：未設定/);
+        await f.click('このX監視設定で保存'); assert.equal(writes(f).at(-1).body.accountHandle, null);
+        assert.equal(f.items[0].accountHandle, null); assert.equal(f.items[0].accountId, original.accountId);
+    } finally { await f.close(); }
+});
+
+test('invalid handle edits do not write and a revision conflict preserves the corrected handle for explicit retry', async () => {
+    let conflict = true;
+    const f = await fixture({ respond: (route, method, _body, current) => {
+        if (route === 'x-monitors/xm-1' && method === 'PATCH' && conflict) {
+            conflict = false; current.items = [row({ revision: 3 })]; throw Object.assign(new Error('PRIVATE_HANDLE_CONFLICT'), { status: 409 });
+        }
+    } });
+    try {
+        await f.inClick(f.target(), 'X監視を編集');
+        for (const handle of ['invalid-user', 'a b', 'a'.repeat(16)]) {
+            await f.fill(f.field('Xアカウント名'), handle); await f.submitX();
+            assert.equal(f.container.querySelector('[aria-label="X監視の変更確認"]'), null); assert.equal(writes(f).length, 0);
+        }
+        await f.fill(f.field('Xアカウント名'), 'correct_handle'); await f.submitX(); await f.click('このX監視設定で保存');
+        assert.match(f.container.textContent, /入力内容を保持/); assert.equal(f.field('Xアカウント名').value, 'correct_handle');
+        assert(!f.container.textContent.includes('PRIVATE_HANDLE_CONFLICT'));
+        await f.click('X一覧・利用枠を更新'); assert.equal(f.field('Xアカウント名').value, 'correct_handle');
+        await f.submitX(); await f.click('このX監視設定で保存');
+        assert.deepEqual(writes(f).at(-1).body, { expectedRevision: 3, name: row().name, accountHandle: 'correct_handle' });
+    } finally { await f.close(); }
+});
+
 test('default-off and missing quota keep stop/delete available and deletion requires confirmation and correct revision', async () => {
     const f = await fixture({ currentQuota: null });
     try {

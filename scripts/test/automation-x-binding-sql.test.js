@@ -161,6 +161,60 @@ test('real SQL one owned profile binds multiple authors, profiles do not consume
     assert.equal((await quota.summary(A)).personal.used, 2);
 }));
 
+test('real SQL handle correction preserves owner, numeric ID, reservation, subscription and service quality', { timeout: 30000 }, async () => fixture(async db => {
+    const setup = setupFor(db), quota = quotaFor(db), profile = await importProfile(setup);
+    const config = { ...await settingsFor(db), subscriptionId: profile.id };
+    const original = await quota.register(A, { ...target(20), notificationSettings: config });
+    const before = await queryRow(db, 'automation_x_monitors', original.id);
+    const slots = await db.queryDatabase('SELECT * FROM automation_notification_slots WHERE owner_user_id=? ORDER BY slot_index', [A.userId]);
+    const subscription = await queryRow(db, 'automation_x_subscriptions', profile.id);
+    const corrected = await quota.update(A, original.id, { expectedRevision: original.revision, accountHandle: 'correct_handle' });
+    assert.equal(corrected.accountHandle, 'correct_handle'); assert.equal(corrected.revision, original.revision + 1);
+    for (const key of ['accountId', 'name', 'enabled', 'state', 'poolKind', 'subscriptionState', 'notificationSettings', 'quality'])
+        assert.deepEqual(corrected[key], original[key]);
+    const stored = await queryRow(db, 'automation_x_monitors', original.id);
+    for (const key of ['owner_user_id', 'account_id', 'name', 'enabled', 'state', 'pool_kind', 'notification_settings_json', 'subscription_state', 'created_at_ms'])
+        assert.deepEqual(stored[key], before[key]);
+    assert.deepEqual(await db.queryDatabase('SELECT * FROM automation_notification_slots WHERE owner_user_id=? ORDER BY slot_index', [A.userId]), slots);
+    assert.deepEqual(await queryRow(db, 'automation_x_subscriptions', profile.id), subscription);
+    let audit = (await db.queryDatabase("SELECT detail_json FROM automation_audit WHERE entity_id=? AND action='x.monitor.update' ORDER BY id DESC LIMIT 1", [`x:${original.id}`]))[0];
+    assert.deepEqual(JSON.parse(audit.detail_json), { enabled: true, handleChanged: true });
+    assert(!audit.detail_json.includes('correct_handle')); assert(!audit.detail_json.includes(original.accountHandle));
+    const legacy = await quota.update(A, original.id, { expectedRevision: corrected.revision, name: '名前のみ変更' });
+    assert.equal(legacy.accountHandle, 'correct_handle');
+    audit = (await db.queryDatabase("SELECT detail_json FROM automation_audit WHERE entity_id=? AND action='x.monitor.update' ORDER BY id DESC LIMIT 1", [`x:${original.id}`]))[0];
+    assert.equal(JSON.parse(audit.detail_json).handleChanged, false);
+    const cleared = await quota.update(A, original.id, { expectedRevision: legacy.revision, accountHandle: null });
+    assert.equal(cleared.accountHandle, null); assert.equal(cleared.accountId, original.accountId);
+    assert.deepEqual(cleared.notificationSettings, config); assert.equal(cleared.poolKind, original.poolKind);
+    const unchanged = await queryRow(db, 'automation_x_monitors', original.id);
+    for (const handle of ['', '@invalid', 'invalid-user', 'a b', 'a'.repeat(16), 1, false, {}, ['handle']])
+        await assert.rejects(quota.update(A, original.id, { expectedRevision: cleared.revision, accountHandle: handle }), errorCode('X_MONITOR_INVALID_INPUT'));
+    await assert.rejects(quota.update(B, original.id, { expectedRevision: cleared.revision, accountHandle: 'foreign' }), errorCode('NOT_FOUND'));
+    await assert.rejects(quota.update(ADMIN, original.id, { expectedRevision: cleared.revision, accountHandle: 'foreign' }), errorCode('NOT_FOUND'));
+    await assert.rejects(quota.update(A, original.id, { expectedRevision: original.revision, accountHandle: 'stale' }), errorCode('X_MONITOR_REVISION_CONFLICT'));
+    for (const injection of [{ accountId: '999999' }, { ownerUserId: B.userId }, { poolKind: 'special' }])
+        await assert.rejects(quota.update(A, original.id, { expectedRevision: cleared.revision, accountHandle: 'new_handle', ...injection }), errorCode('X_MONITOR_INVALID_INPUT'));
+    assert.deepEqual(await queryRow(db, 'automation_x_monitors', original.id), unchanged);
+    assert.deepEqual(await db.queryDatabase('SELECT * FROM automation_notification_slots WHERE owner_user_id=? ORDER BY slot_index', [A.userId]), slots);
+}));
+
+test('real SQL concurrent handle corrections use revision fencing and audit failures roll back the whole edit', { timeout: 30000 }, async () => fixture(async db => {
+    const quota = quotaFor(db), original = await quota.register(A, target(21));
+    const attempts = await Promise.allSettled(['first_handle', 'second_handle'].map(accountHandle =>
+        quota.update(A, original.id, { expectedRevision: original.revision, accountHandle })));
+    assert.equal(attempts.filter(result => result.status === 'fulfilled').length, 1);
+    assert.equal(attempts.find(result => result.status === 'rejected').reason.code, 'X_MONITOR_REVISION_CONFLICT');
+    const before = await queryRow(db, 'automation_x_monitors', original.id);
+    const broken = quotaFor({ ...db, withDatabaseTransaction: work => db.withDatabaseTransaction(query => work(async (sql, params) => {
+        if (sql.startsWith('INSERT INTO automation_audit')) throw Object.assign(new Error('fixture handle audit failure'), { code: 'ER_FIXTURE_AUDIT' });
+        return query(sql, params);
+    })) });
+    await assert.rejects(broken.update(A, original.id, { expectedRevision: Number(before.revision), accountHandle: 'rolled_back' }), errorCode('ER_FIXTURE_AUDIT'));
+    assert.deepEqual(await queryRow(db, 'automation_x_monitors', original.id), before);
+    assert.equal(Number((await db.queryDatabase("SELECT COUNT(*) AS n FROM automation_audit WHERE entity_id=? AND action='x.monitor.update'", [`x:${original.id}`]))[0].n), 1);
+}));
+
 test('real SQL deleting receive material unbinds atomically, preserves normal notifications and reservations, and invalidates stale CAS', { timeout: 30000 }, async () => fixture(async db => {
     const setup = setupFor(db), quota = quotaFor(db), native = await normalNotification(db), profile = await importProfile(setup);
     const settings = await settingsFor(db), config = { ...settings, subscriptionId: profile.id };

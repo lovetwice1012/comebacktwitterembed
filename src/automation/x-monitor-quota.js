@@ -155,11 +155,12 @@ function createXMonitorQuota(db, options = {}) {
         });
     }
     async function update(actor, target, input) {
-        requireActor(actor); strict(input, ['expectedRevision','enabled','name','notificationSettings']);
+        requireActor(actor); strict(input, ['expectedRevision','enabled','name','accountHandle','notificationSettings']);
         if (!Number.isSafeInteger(input.expectedRevision) || input.expectedRevision < 1) fail('X_MONITOR_REVISION_CONFLICT', '最新の監視設定を読み直してください。', 409);
         if (input.enabled !== undefined && typeof input.enabled !== 'boolean') fail('X_MONITOR_INVALID_INPUT', '監視の状態を確認してください。');
         if (input.enabled === true && !enabled) fail('X_MONITOR_UNAVAILABLE', '新しいX自動展開は提供準備中です。', 503);
         if (input.name !== undefined && (typeof input.name !== 'string' || !input.name.trim() || input.name.length > 120)) fail('X_MONITOR_INVALID_INPUT', '監視の名前を確認してください。');
+        if (input.accountHandle !== undefined && input.accountHandle !== null && (typeof input.accountHandle !== 'string' || !/^[A-Za-z0-9_]{1,15}$/.test(input.accountHandle))) fail('X_MONITOR_INVALID_INPUT', 'Xアカウント名を確認してください。');
         if (input.notificationSettings !== undefined) settings(input.notificationSettings);
         return db.withDatabaseTransaction(async query => {
             await lockGlobal(query, actor); await entitlements.lockOwner(query, actor.userId);
@@ -172,8 +173,12 @@ function createXMonitorQuota(db, options = {}) {
                 const current = await getRow(query, actor, target);
                 if (current.state !== 'ready') fail('X_MONITOR_POOL_FULL', '現在の資格と空き枠では監視を再開できません。');
             }
-            await query('UPDATE automation_x_monitors SET name=?,enabled=?,notification_settings_json=?,subscription_state=?,revision=revision+1,updated_at_ms=? WHERE id=?', [input.name?.trim() ?? row.name, input.enabled === undefined ? row.enabled : input.enabled ? 1 : 0, input.notificationSettings === undefined ? row.notification_settings_json : JSON.stringify(input.notificationSettings), input.notificationSettings === undefined ? row.subscription_state : input.notificationSettings.subscriptionId ? 'bound' : 'pending', now(), row.id]);
-            await audit(query, actor, target, 'x.monitor.update', { enabled: input.enabled ?? Number(row.enabled) === 1 });
+            // The owner may correct a handle without releasing/reallocating
+            // this registration or changing its immutable numeric account ID.
+            // Omitted legacy fields preserve the old value; explicit null clears.
+            const accountHandle = input.accountHandle === undefined ? row.account_handle : input.accountHandle;
+            await query('UPDATE automation_x_monitors SET name=?,account_handle=?,enabled=?,notification_settings_json=?,subscription_state=?,revision=revision+1,updated_at_ms=? WHERE id=?', [input.name?.trim() ?? row.name, accountHandle, input.enabled === undefined ? row.enabled : input.enabled ? 1 : 0, input.notificationSettings === undefined ? row.notification_settings_json : JSON.stringify(input.notificationSettings), input.notificationSettings === undefined ? row.subscription_state : input.notificationSettings.subscriptionId ? 'bound' : 'pending', now(), row.id]);
+            await audit(query, actor, target, 'x.monitor.update', { enabled: input.enabled ?? Number(row.enabled) === 1, handleChanged: accountHandle !== row.account_handle });
             return item(await getRow(query, actor, target), await planFor(query, actor.userId));
         });
     }

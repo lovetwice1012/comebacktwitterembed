@@ -3,7 +3,8 @@ import { xObject } from "./x-monitor-view";
 export const X_SETUP_MAX_FILE_BYTES = 32 * 1024;
 export const X_SETUP_DOWNLOAD_URL = "/api/automation/x-setup/download";
 export type XReceiverState = "awaiting" | "connecting" | "listening" | "requires_reenrollment" | "stopped" | "error";
-export type XSetupSubscription = { id: string; state: "stored"; revision: number; createdAtMs: number; updatedAtMs: number; browserVersion: string; receiverState: XReceiverState; boundMonitorCount: number; lastReceivedAtMs: number | null };
+export type XReceiptCounts = { received: number; routed: number; unsupported: number; decryptionFailed: number; unmatched?: number };
+export type XSetupSubscription = { id: string; state: "stored"; revision: number; createdAtMs: number; updatedAtMs: number; browserVersion: string; receiverState: XReceiverState; boundMonitorCount: number; lastReceivedAtMs: number | null; receiptCounts?: XReceiptCounts };
 export type XSetupStatus = { available: boolean; receiverEnabled: boolean; rollout: { mode: "disabled" | "supporters" | "public"; eligible: boolean; reasonCode: string | null; reason: string | null }; download: { url: string; version: string; sha256: string }; subscriptions: XSetupSubscription[]; maxFileBytes: number; nextCursor: string | null };
 export type XSetupSession = { sessionId: string; expiresAtMs: number };
 export type XSetupPreview = { browserVersion: string; scope: string; formatVersion: 1 };
@@ -19,7 +20,13 @@ export function parseXSetupSubscription(value: unknown): XSetupSubscription {
   if (typeof item.id !== "string" || !/^[A-Za-z0-9_-]{1,128}$/u.test(item.id) || item.state !== "stored") throw invalid();
   const receiverState = item.receiverState ?? "awaiting";
   if (!["awaiting", "connecting", "listening", "requires_reenrollment", "stopped", "error"].includes(String(receiverState))) throw invalid();
-  return { id: item.id, state: "stored", revision: count(item.revision, 1), createdAtMs: timestamp(item.createdAtMs), updatedAtMs: timestamp(item.updatedAtMs), browserVersion: browserVersion(item.browserVersion), receiverState: receiverState as XReceiverState, boundMonitorCount: item.boundMonitorCount == null ? 0 : count(item.boundMonitorCount), lastReceivedAtMs: item.lastReceivedAtMs == null ? null : timestamp(item.lastReceivedAtMs) };
+  // Older servers omit the breakdown. Keep that absence distinct from a
+  // verified zero count, and reject incomplete/invalid new status data.
+  const receipts = item.receiptCounts === undefined ? undefined : xObject(item.receiptCounts);
+  const receiptCounts = receipts === undefined ? undefined : { received: count(receipts.received), routed: count(receipts.routed),
+    unsupported: count(receipts.unsupported), decryptionFailed: count(receipts.decryptionFailed),
+    ...(receipts.unmatched === undefined ? {} : { unmatched: count(receipts.unmatched) }) };
+  return { id: item.id, state: "stored", revision: count(item.revision, 1), createdAtMs: timestamp(item.createdAtMs), updatedAtMs: timestamp(item.updatedAtMs), browserVersion: browserVersion(item.browserVersion), receiverState: receiverState as XReceiverState, boundMonitorCount: item.boundMonitorCount == null ? 0 : count(item.boundMonitorCount), lastReceivedAtMs: item.lastReceivedAtMs == null ? null : timestamp(item.lastReceivedAtMs), ...(receiptCounts === undefined ? {} : { receiptCounts }) };
 }
 export function parseXSetupStatus(value: unknown): XSetupStatus {
   const item = xObject(value), download = xObject(item.download);

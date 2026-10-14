@@ -172,6 +172,15 @@ function createXPushGateway(db, options = {}) {
         await store.assertLease(lease);
         return decrypt(crypto, file, row);
     }
+    // Recovery reads existing ciphertext with the current worker's own lease.
+    async function decryptQuarantinedInbox(lease, row) {
+        configured();
+        if (!row || row.subscriptionId !== lease.subscriptionId || row.ownerUserId !== lease.ownerUserId || row.revision !== lease.revision
+            || row.status !== 'unsupported' || row.ackCode !== 100) throw fault('X_PUSH_INBOX_INVALID');
+        const file = await openSubscription(lease), [, crypto] = await loadProtocol();
+        await store.assertLease(lease);
+        return decrypt(crypto, file, row);
+    }
     async function notify(callback, value, signal) {
         // A slow application router must not prevent shutdown or grow the frame
         // queue indefinitely. The durable received row remains retryable.
@@ -331,7 +340,7 @@ function createXPushGateway(db, options = {}) {
             try { await deadline(store.release(lease, { state: finalState, reasonCode }), timeoutMs, 'X_PUSH_STORE_TIMEOUT'); } catch { /* Expiry/deletion fences this worker; never overwrite its successor. */ }
         }
     }
-    return { run, decryptInbox, store };
+    return { run, decryptInbox, decryptQuarantinedInbox, store };
 }
 
 module.exports = { createXPushGateway, AUTOPUSH_URL };
