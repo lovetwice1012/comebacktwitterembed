@@ -29,7 +29,7 @@ The additive migration creates two management tables and three query indexes.
 
 ## Verification
 
-- Final serial related acceptance: **391 passed, 0 failed, 0 skipped**, using a
+- Serial related acceptance: **391 passed, 0 failed, 0 skipped**, using a
   disposable MariaDB schema, fixture Square responses and DOM tests.
 - Root and dashboard TypeScript checks passed.
 - Changed backend/dashboard ESLint checks passed without relaxing rules.
@@ -39,6 +39,10 @@ The additive migration creates two management tables and three query indexes.
   scoped donation summaries, safe money precision, audit rollback and migration.
 - Real-component browser fixture confirmed editing extra slots after reasoned
   review and displaying the saved change reason in lazy audit history.
+- Final additional UI recovery check passed in the **17-test donor UI suite**:
+  a committed save with a lost response retains the draft, requires reload,
+  shows the committed state and prevents a second write/audit. The final feature
+  has **392 unique passing acceptance cases** including this added case.
 
 No real donor settings, payments, refunds or subscriptions were changed during
 testing. The primary dirty checkout was left untouched. Production rollout

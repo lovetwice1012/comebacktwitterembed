@@ -163,7 +163,7 @@ test('a failed detail load retries safely and a failed save retains the review i
     let failedRead = false, failedWrite = false;
     const f = await fixture({ respond: (route, method) => {
         if (route === 'donors/' + FIRST && method === 'GET' && !failedRead) { failedRead = true; throw new Error('PRIVATE_DETAIL'); }
-        if (method === 'PATCH' && !failedWrite) { failedWrite = true; throw new Error('PRIVATE_SAVE'); }
+        if (method === 'PATCH' && !failedWrite) { failedWrite = true; throw Object.assign(new Error('PRIVATE_SAVE'), { status: 422 }); }
     } });
     try {
         await f.choose(FIRST); assert(!f.container.textContent.includes('PRIVATE_DETAIL')); await f.click('設定を再取得'); await f.review(); await f.click('この支援者設定で保存');
@@ -250,5 +250,31 @@ test('a failed manual audit page retains earlier records and retries the failed 
         await f.choose(FIRST); await f.click('変更履歴を表示'); await f.click('変更履歴の次へ');
         assert.match(f.editor().textContent, /表示中の変更理由/); assert(!f.container.textContent.includes('PRIVATE_AUDIT_QUERY')); const failedRoute = auditReads(f).at(-1).route;
         await f.click('変更履歴を再取得'); assert.equal(auditReads(f).at(-1).route, failedRoute); assert.match(f.editor().textContent, /古い変更理由/); assert.match(f.editor().textContent, /変更履歴 2ページ/); assert.equal(writes(f).length, 0);
+    } finally { await f.close(); }
+});
+
+
+test('a lost post-commit save response requires a read-only reload and does not duplicate the saved setting or audit', async () => {
+    let committed = donor(), audit = [];
+    const f = await fixture({ respond: (route, method, body) => {
+        if (route.includes('/audit?')) return { items: audit, nextCursor: null, pageSize: 20 };
+        if (route === 'donors/' + FIRST && method === 'GET') return committed;
+        if (method === 'PATCH') {
+            committed = donor(FIRST, { manual: { ...donor().manual, isDonor: body.isDonor, extraSlots: body.extraSlots, paymentCount: body.paymentCount, purchaseUnits: body.purchaseUnits, displayName: body.displayName.trim(), note: body.note.trim(), updatedAtMs: 101 }, version: { updatedAtMs: 101, legacyIsDonor: Number(body.isDonor), legacyExtraSlots: body.extraSlots } });
+            audit.push(auditEntry(FIRST, { reason: body.reason })); throw new Error('POST_COMMIT_RESPONSE_LOST');
+        }
+    } });
+    try {
+        await f.choose(FIRST); await f.click('変更履歴を表示'); await f.fill(f.field('管理用表示名'), '  確認した支援者  '); await f.fill(f.field('管理メモ'), '  保存したメモ  '); await f.review(); await f.click('この支援者設定で保存');
+        assert.match(f.editor().textContent, /保存結果を確認できませんでした/); assert(!f.container.textContent.includes('手動設定を保存できませんでした')); assert(!f.container.textContent.includes('POST_COMMIT_RESPONSE_LOST'));
+        assert.equal(f.field('手動の追加通知枠').value, '5'); assert.equal(f.field('変更理由（必須）').value, '旧決済の購入履歴を確認');
+        await f.editSubmit(); assert.equal(f.editor().querySelector('[aria-label="支援者設定の変更確認"]'), null); assert.equal(writes(f).length, 1);
+        await f.click('最新の支援者設定を再取得'); await f.settle();
+        assert.equal(f.field('手動の追加通知枠').value, '5'); assert.equal(f.field('変更理由（必須）').value, '旧決済の購入履歴を確認');
+        assert.equal(f.field('管理用表示名').value, '  確認した支援者  '); assert.equal(f.field('管理メモ').value, '  保存したメモ  ');
+        const review = [...f.editor().querySelectorAll('button')].find(button => button.textContent === '支援者設定の変更を確認'); assert.equal(review.disabled, true, 'draft matches the committed current state');
+        assert.match(f.editor().querySelector('[aria-label="この画面からの変更履歴"]').textContent, /変更理由: 旧決済の購入履歴を確認/);
+        await f.editSubmit(); assert.equal(writes(f).length, 1); assert.equal(audit.length, 1);
+        await f.fill(f.field('手動の追加通知枠'), '6'); await f.editSubmit(); assert(f.editor().querySelector('[aria-label="支援者設定の変更確認"]'), 'a new edit can be reviewed after the reload');
     } finally { await f.close(); }
 });
