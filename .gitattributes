@@ -3,3 +3,7 @@
 dashboard/legacy/** -text
 # Keep distribution scripts byte-identical across Windows and Linux releases.
 client/angelic-setup/** -text
+client/angelic-setup/** whitespace=cr-at-eol,-blank-at-eof
+packages/angelic-angel/legacy-rust/** whitespace=cr-at-eol
+# Machine-generated test receipts retain their captured formatting and hashes.
+docs/angelic-angel/*.xml -text -whitespace

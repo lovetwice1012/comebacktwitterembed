@@ -660,4 +660,3 @@ test('X quota real MariaDB acceptance: independent pools, shared personal allowa
         assert.equal(Number((await db.queryDatabase('SELECT COUNT(*) n FROM automation_x_monitors'))[0].n), 0);
     });
 });
-
