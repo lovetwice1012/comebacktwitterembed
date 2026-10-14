@@ -2,7 +2,8 @@
 
 // Gateway delivery can precede the webhook HTTP response. Hold only a matching
 // in-flight webhook event until its receipt is known, never all webhook traffic.
-// This is transport correlation, not a content-review queue or a user override.
+// Direct output is suppressed; normal notifications are released to the usual
+// Bot expansion handler. The decision belongs to the prepared transport step.
 const { createHash } = require('node:crypto');
 const textValue = value => String(value || '').replace(/\r\n?/g, '\n');
 function fingerprint(webhookId, channelId, value) {
@@ -19,10 +20,10 @@ function createOutboundGuard(options = {}) {
     const now = options.now || Date.now, timeoutMs = options.timeoutMs || 25000;
     const pending = new Map(), known = new Map(), uncertainMessages = new Map();
     function prune() {
-        for (const [id, expires] of known) if (expires <= now()) known.delete(id);
+        for (const [id, receipt] of known) if (receipt.expires <= now()) known.delete(id);
         for (const [key, expires] of uncertainMessages) if (expires <= now()) uncertainMessages.delete(key);
     }
-    function begin(webhookId, channelId, body) {
+    function begin(webhookId, channelId, body, { normalExpansion = false } = {}) {
         prune();
         if ([...pending.values()].reduce((n, entries) => n + entries.size, 0) >= 256) throw new Error('AUTOMATION_OUTBOUND_CAPACITY');
         const key = fingerprint(webhookId, channelId, body);
@@ -35,26 +36,29 @@ function createOutboundGuard(options = {}) {
             entries.delete(ticket); if (!entries.size) pending.delete(key);
             if (id) {
                 if (known.size >= 10000) known.delete(known.keys().next().value);
-                known.set(id, now() + 300000);
+                known.set(id, { expires: now() + 300000, ignore: !normalExpansion });
             }
-            if (uncertain) {
+            if (uncertain && !normalExpansion) {
                 if (uncertainMessages.size >= 10000) uncertainMessages.delete(uncertainMessages.keys().next().value);
                 uncertainMessages.set(key, now() + 300000);
             }
-            resolve({ id, uncertain });
+            resolve({ id, uncertain, ignore: !normalExpansion });
         };
         timer = setTimeout(() => finish(null, true), timeoutMs); timer.unref?.();
         return { sent: id => finish(id), failed: uncertain => finish(null, uncertain) };
     }
     async function shouldIgnore(message) {
         if (!message.webhookId) return false;
-        prune(); if (known.has(message.id)) return true;
+        prune(); if (known.has(message.id)) return known.get(message.id).ignore;
         const key = fingerprint(message.webhookId, message.channelId || message.channel?.id, message);
-        if (uncertainMessages.has(key)) return true;
         const entries = pending.get(key);
-        if (!entries?.size) return false;
+        if (!entries?.size) return uncertainMessages.has(key);
         const receipts = await Promise.all([...entries].map(ticket => ticket.promise));
-        return receipts.some(receipt => receipt.id === message.id || receipt.uncertain);
+        const matched = receipts.find(receipt => receipt.id === message.id);
+        if (matched) return matched.ignore;
+        // An uncertain normal submission has no direct media output to duplicate.
+        // If Discord delivered it, let the ordinary handler process that message.
+        return uncertainMessages.has(key) || receipts.some(receipt => receipt.uncertain && receipt.ignore);
     }
     return { begin, shouldIgnore };
 }

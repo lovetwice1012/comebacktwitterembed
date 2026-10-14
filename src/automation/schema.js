@@ -18,7 +18,7 @@ const NODE_TYPES = Object.freeze({
     merge: { label: '経路を合流', ports: ['out'], defaults: { mode: 'any', displayConflict: 'stop' } },
     delay: { label: '遅延', ports: ['out'], defaults: { minutes: 30, anchor: 'observed' } },
     schedule: { label: '通知時間', ports: ['out'], defaults: { zone: 'Asia/Tokyo', days: [1, 2, 3, 4, 5, 6, 7], windows: [{ start: '09:00', end: '22:00' }], quiet: [], datesExcluded: [], maxWaitDays: 14 } },
-    transform: { label: '表示を変更', ports: ['out'], defaults: { format: 'expanded', template: '{title}\n{url}', maxLength: 1900, media: 'inherit', mentions: 'none' } },
+    transform: { label: '表示を変更', ports: ['out'], defaults: { format: 'normal', template: '{title}\n{url}', maxLength: 1900, media: 'inherit', mentions: 'none' } },
     limit: { label: '件数制限', ports: ['out'], defaults: { count: 10, minutes: 60, key: 'sourceKey', overflow: 'defer' } },
     aggregate: { label: 'まとめ通知', ports: ['out'], defaults: { minutes: 60, key: 'sourceKey', mode: 'all', maxItems: 20 } },
     send: { label: '通知', ports: [], defaults: { destination: 'default' } },
@@ -108,7 +108,7 @@ function checkConfig(node, path, issues) {
         if (!integer(c.maxWaitDays, 1, 366)) issue('最大待機は1〜366日です。');
     }
     if (node.type === 'transform') {
-        if (!['expanded', 'card', 'text', 'url'].includes(c.format) || !['inherit', 'hide', 'links'].includes(c.media) || c.mentions !== 'none') issue('表示形式が不正です。');
+        if (!['normal', 'expanded', 'card', 'text', 'url'].includes(c.format) || !['inherit', 'hide', 'links'].includes(c.media) || c.mentions !== 'none') issue('表示形式が不正です。');
         if (typeof c.template !== 'string' || c.template.length > 4000 || !integer(c.maxLength, 1, 1900)) issue('定型文または文字数上限が不正です。');
         for (const placeholder of String(c.template || '').matchAll(/\{([^{}]+)\}/g)) if (!Object.hasOwn(FIELDS, placeholder[1])) issue(`未対応の差し込み項目: ${placeholder[1]}`);
         for (const k of ['prefix', 'suffix']) if (c[k] !== undefined && (typeof c[k] !== 'string' || c[k].length > 500)) issue('前後の追加文は500文字以内です。');

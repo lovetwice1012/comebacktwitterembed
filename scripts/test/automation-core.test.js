@@ -7,6 +7,7 @@ const { parseWorkflow, stringifyWorkflow, semanticWorkflow } = require('../../sr
 const { evaluateWorkflow, evaluatePredicate, UNKNOWN } = require('../../src/automation/engine');
 const { nextWindow, scheduleDelivery } = require('../../src/automation/schedule');
 const { DictionaryMatcher } = require('../../src/automation/dictionary');
+const { catalog, template } = require('../../src/automation/catalog');
 
 function branchRule() {
     const rule = newWorkflow('昼にセール通知');
@@ -15,6 +16,44 @@ function branchRule() {
     return rule;
 }
 function hours(changes = {}) { return { zone: 'Asia/Tokyo', days: [1, 2, 3, 4, 5, 6, 7], windows: [{ start: '09:00', end: '22:00' }], quiet: [], datesExcluded: [], maxWaitDays: 14, ...changes }; }
+
+test('new rules and templates hand title plus URL to normal Bot expansion by default', () => {
+    const event = { kind: 'new', title: '新しい投稿', url: 'https://www.youtube.com/watch?v=example1234' };
+    for (const rule of [newWorkflow(), template()]) {
+        const [output] = evaluateWorkflow(rule, event, { now: 1000 }).outputs;
+        assert.equal(output.display.format, 'normal');
+        assert.equal(output.text, `${event.title}\n${event.url}`);
+    }
+    assert.ok(catalog().formats.includes('normal'));
+    assert.ok(catalog().formats.includes('expanded'));
+});
+
+test('custom expansion selection survives JSON and YAML import without changing older direct rules', () => {
+    const event = { title: '新しい投稿', url: 'https://www.youtube.com/watch?v=example1234' };
+    for (const selected of ['normal', 'expanded']) {
+        const rule = template('all', 'now', selected);
+        for (const format of ['json', 'yaml']) {
+            const restored = parseWorkflow(stringifyWorkflow(rule, format), format);
+            const [output] = evaluateWorkflow(restored, event, { now: 1000 }).outputs;
+            assert.equal(output.display.format, selected);
+            assert.equal(output.text, `${event.title}\n${event.url}`);
+        }
+    }
+    const invalid = template(); invalid.nodes.find(node => node.type === 'transform').config.format = 'automatic';
+    assert.equal(validateWorkflow(invalid).valid, false);
+});
+
+test('template API defaults to normal expansion while honoring explicit direct expansion', async () => {
+    const { dispatch } = require('../../src/automation/api');
+    const services = { catalog: require('../../src/automation/catalog') };
+    const actor = { userId: '222222222222222222' };
+    for (const selected of [null, 'normal', 'expanded']) {
+        const search = new URLSearchParams(); if (selected) search.set('format', selected);
+        const rule = await dispatch({ method: 'GET', path: ['template'], search }, actor, services);
+        const [output] = evaluateWorkflow(rule, { title: '投稿', url: 'https://youtu.be/example1234' }, { now: 1000 }).outputs;
+        assert.equal(output.display.format, selected || 'normal');
+    }
+});
 
 test('GUI canonical graph round trips JSON/YAML preserving layout and semantics', () => {
     const rule = branchRule();

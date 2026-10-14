@@ -32,6 +32,14 @@ test('aggregate text and URL-only output suppress secondary Discord expansion', 
         assert.equal(bodies.length, 1); assert.equal(bodies[0].content, members.map(member => member.text).join('\n\n'));
     }
 });
+
+test('normal aggregates post all source URLs without preparing direct media', async () => {
+    const bodies = await prepare('normal', members);
+    assert.equal(bodies.length, 1);
+    assert.equal(bodies[0].content, members.map(member => member.text).join('\n\n'));
+    assert.equal(bodies[0].flags, 4);
+    assert.equal(bodies[0].embeds, undefined);
+});
 test('expanded aggregate snapshots preserve historical prices and deltas without refetching', async () => {
     const bodies = await prepare('expanded', [{ event: { title: 'observed', priceAmount: 950, priceDelta: -150, currency: 'JPY', observedAtMs: 1000 }, text: 'recorded' }], 'price');
     assert.equal(bodies[0].embeds[0].timestamp, '1970-01-01T00:00:01.000Z');
