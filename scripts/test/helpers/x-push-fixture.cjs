@@ -7,14 +7,19 @@ const { publicKey, privateKey } = generateKeyPairSync('rsa', { modulusLength: 30
 const sealer = createTransferPublicSealer({ activeKeyId: 'synthetic1', publicKeys: { synthetic1: publicKey } });
 const vault = createTransferPrivateWorkerVault({ activeKeyId: 'synthetic1', privateKeys: { synthetic1: privateKey } });
 const ownerUserId = '222222222222222222';
-function fixture() {
-    const ecdh = createECDH('prime256v1'); ecdh.generateKeys();
+function fixture(options = {}) {
+    const ecdh = createECDH('prime256v1');
+    if (options.privateKey) ecdh.setPrivateKey(options.privateKey);
+    else ecdh.generateKeys();
     const point = ecdh.getPublicKey(undefined, 'uncompressed');
+    // Node returns the minimal unsigned scalar. JWK uses a fixed-width P-256
+    // field, so retain leading zero octets instead of producing flaky files.
+    const privateScalar = Buffer.from(ecdh.getPrivateKey().toString('hex').padStart(64, '0'), 'hex');
     return { format: 'x-notification-subscription', version: 1,
         provenance: { kind: 'firefox-pushdb', adapterVersion: '1.0.0', browserVersion: '160.0a1', readMethod: 'gecko-indexeddb-readonly' },
         push: { uaid: randomUUID(), channelID: randomUUID(), pushEndpoint: 'https://updates.push.services.mozilla.com/wpush/v2/SYNTHETIC-ONLY', scope: 'https://x.com/', originAttributes: '',
             p256dhPublicKey: point.toString('base64url'), authenticationSecret: randomBytes(16).toString('base64url'),
-            p256dhPrivateKey: { kty: 'EC', crv: 'P-256', x: point.subarray(1, 33).toString('base64url'), y: point.subarray(33).toString('base64url'), d: ecdh.getPrivateKey().toString('base64url'), ext: true, key_ops: ['deriveBits'] } } };
+            p256dhPrivateKey: { kty: 'EC', crv: 'P-256', x: point.subarray(1, 33).toString('base64url'), y: point.subarray(33).toString('base64url'), d: privateScalar.toString('base64url'), ext: true, key_ops: ['deriveBits'] } } };
 }
 async function insertSubscription(db, file = fixture(), owner = ownerUserId) {
     const subscriptionId = randomUUID(), revision = 1;

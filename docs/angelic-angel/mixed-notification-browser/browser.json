@@ -1,0 +1,174 @@
+{
+  "startedAt": "2026-10-14T02:15:40.130Z",
+  "finishedAt": "2026-10-14T02:15:55.390Z",
+  "checks": [
+    "ephemeral-loopback-server-with-local-fake-session-and-real-dispatch",
+    "mixed-site-reception-capability-discard-and-separate-permission-disclosed-before-upload",
+    "actual-authenticated-download-route-pinned-release-bytes",
+    "desktop1440-and-mobile390-no-horizontal-overflow",
+    "manual-file-choice-does-no-network-write-invalid-json-refused-by-real-api",
+    "real-api-preview-shows-only-safe-metadata-and-does-not-save",
+    "explicit-final-save-stores-hybrid-envelope-without-plaintext-and-clears-selection",
+    "service-restart-and-browser-reload-retain-safe-metadata-with-receiver-disabled",
+    "delete-requires-confirmation-cancel-preserves-data-confirm-removes-and-reload-stays-empty",
+    "no-notification-slots-no-monitors-no-worker-or-external-delivery",
+    "no-secret-values-in-dom-or-web-storage-zero-external-requests-zero-page-errors"
+  ],
+  "screenshots": [
+    {
+      "filename": "desktop-instructions.png",
+      "bytes": 336429,
+      "sha256": "cb3a172a0e4aae66031c264f0a7c0dc226d0b4d9c4706a7060c66b68c6035014",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      }
+    },
+    {
+      "filename": "mobile-instructions.png",
+      "bytes": 329472,
+      "sha256": "3608ec5f685c723c3daf75f69b9c07ba43fcf4d0e9e4f22f3be48ba121af89b4",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      }
+    },
+    {
+      "filename": "mobile-review.png",
+      "bytes": 356556,
+      "sha256": "1ef09aab3196628f61ccd00f5e9c8e0a19c199a361ab7da324092c472da980e3",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      }
+    },
+    {
+      "filename": "desktop-saved.png",
+      "bytes": 382465,
+      "sha256": "c8079b9f2498af959307285441a79234b2bfee7a1812530cfcf6f8be36766333",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      }
+    },
+    {
+      "filename": "mobile-delete-confirm.png",
+      "bytes": 399884,
+      "sha256": "d02422f07fa0c39e88630f3dd443b16992628fcd34854abd918d0e3d50ded391",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      }
+    }
+  ],
+  "requests": [
+    {
+      "method": "GET",
+      "path": "/dashboard/automation/x-setup",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/app.css",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/app.js",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/automation/x-setup",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/automation/x-setup/download",
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "path": "/api/automation/x-setup/sessions",
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "path": "/api/automation/x-setup/validate",
+      "status": 422
+    },
+    {
+      "method": "POST",
+      "path": "/api/automation/x-setup/sessions",
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "path": "/api/automation/x-setup/validate",
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "path": "/api/automation/x-setup/import",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/dashboard/automation/x-setup",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/app.css",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/app.js",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/automation/x-setup",
+      "status": 200
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/automation/x-setup/subscriptions/:id",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/dashboard/automation/x-setup",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/app.css",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/app.js",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/automation/x-setup",
+      "status": 200
+    }
+  ],
+  "fixtureOnly": true,
+  "productionIO": false,
+  "actualOAuthLoginVerified": false,
+  "actualFirefoxVerified": false,
+  "actualPushDeliveryVerified": false,
+  "database": {
+    "host": "127.0.0.1",
+    "port": 33621,
+    "disposableSchemaRemoved": true
+  },
+  "intakeEncryption": "public-key-hybrid",
+  "pageErrors": [],
+  "externalRequests": 0
+}

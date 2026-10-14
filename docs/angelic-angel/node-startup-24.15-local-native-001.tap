@@ -1,0 +1,24 @@
+TAP version 13
+# Subtest: C:\\Users\\yussy\\AppData\\Local\\Temp\\cbte-node-startup-debug-f876c10f7f024b159d7751f8a371b41f\\http-repro.mjs
+not ok 1 - C:\\Users\\yussy\\AppData\\Local\\Temp\\cbte-node-startup-debug-f876c10f7f024b159d7751f8a371b41f\\http-repro.mjs
+  ---
+  duration_ms: 427.9642
+  type: 'test'
+  location: 'C:\\Users\\yussy\\AppData\\Local\\Temp\\cbte-node-startup-debug-f876c10f7f024b159d7751f8a371b41f\\http-repro.mjs:1:1'
+  failureType: 'testCodeFailure'
+  exitCode: 3221226505
+  signal: ~
+  error: 'test failed'
+  code: 'ERR_TEST_FAILURE'
+  ...
+1..1
+# tests 1
+# suites 0
+# pass 0
+# fail 1
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 439.647
+
+STDERR

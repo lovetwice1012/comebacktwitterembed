@@ -1,0 +1,42 @@
+{
+  "startedAt": "2026-10-14T02:15:51.982Z",
+  "finishedAt": "2026-10-14T02:17:36.875Z",
+  "runtime": "v24.15.0",
+  "v8": "13.6.233.17-node.48",
+  "libuv": "1.51.0",
+  "executable": "C:\\Program Files\\nodejs\\node.exe",
+  "platform": "win32",
+  "arch": "x64",
+  "osRelease": "10.0.26200",
+  "count": 1000,
+  "completed": 1000,
+  "concurrency": 2,
+  "connectionsPerIteration": 1,
+  "debugged": false,
+  "useKeepAlive": false,
+  "timeoutMs": 20000,
+  "testTimeoutMs": 10000,
+  "fixtureSha256": "5d4fd80319ff14f4985456a5ec3c6d91c23ebde806eee24ee1f071a37eb4214b",
+  "harnessSha256": "bb15116670e7f506cbdfb15fd560018d79bbc2e515c57880815f5e0f800fc66a",
+  "passed": 998,
+  "failures": [
+    {
+      "index": 804,
+      "code": 1,
+      "signal": null,
+      "timedOut": false,
+      "durationMs": 376,
+      "nativeSignature": true,
+      "eaddrinuse": false
+    },
+    {
+      "index": 865,
+      "code": 1,
+      "signal": null,
+      "timedOut": false,
+      "durationMs": 364,
+      "nativeSignature": true,
+      "eaddrinuse": false
+    }
+  ]
+}

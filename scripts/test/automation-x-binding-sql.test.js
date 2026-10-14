@@ -33,7 +33,7 @@ function file() {
         provenance: { kind: 'firefox-pushdb', adapterVersion: '1.0.0', browserVersion: '160.0a1', readMethod: 'gecko-indexeddb-readonly' },
         push: { uaid: randomUUID(), channelID: randomUUID(), pushEndpoint: 'https://updates.push.services.mozilla.com/wpush/v2/SYNTHETIC-BINDING-ONLY', scope: 'https://x.com/', originAttributes: '',
             p256dhPublicKey: point.toString('base64url'), authenticationSecret: randomBytes(16).toString('base64url'),
-            p256dhPrivateKey: { kty: 'EC', crv: 'P-256', x: point.subarray(1, 33).toString('base64url'), y: point.subarray(33).toString('base64url'), d: ec.getPrivateKey().toString('base64url'), ext: true, key_ops: ['deriveBits'] } } };
+            p256dhPrivateKey: { kty: 'EC', crv: 'P-256', x: point.subarray(1, 33).toString('base64url'), y: point.subarray(33).toString('base64url'), d: Buffer.from(ec.getPrivateKey().toString('hex').padStart(64, '0'), 'hex').toString('base64url'), ext: true, key_ops: ['deriveBits'] } } };
 }
 async function fixture(work) {
     const db = await createTestDatabase(port);

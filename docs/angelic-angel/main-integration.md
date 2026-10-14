@@ -27,6 +27,8 @@ X の標準出力には通常の Bot 展開を使う。既存の通常通知の 
 
 最初の統合試験 `main-integration-tests-initial.xml` は 704 件中 13 件失敗した。原因は通常展開・X の既定 DM・画面への入口の接続不足と、旧管理情報および恒久支援枠との整合性だった。修正後の該当試験は `main-integration-corrections-tests.xml` の 82 件が成功した。最終一式の結果と対象ソースは `main-integration-validation.json` に記録する。
 
+次の一式 `main-integration-tests-jwk-fixture-failure.xml` は 729 件中 1 件失敗した。試験データの秘密値生成が Node の可変長バイト列をそのまま JWK にしていたことが原因で、先頭がゼロの P-256 秘密値で再現した。2 箇所の試験データ生成を固定長 32 バイトに修正し、小さな秘密値による決定的な回帰試験を追加した。入力の検証条件を維持したまま、関連 26 件が成功した（`main-jwk-fixture-tests.xml`）。
+
 DB 試験は明示した loopback ポート 33621 の一時 MariaDB で直列に実行する。実 X 通知・本番 OAuth・実決済・本番 Discord 配送の証拠とは区別する。
 
 配布 ZIP は 68,653 bytes、SHA-256 `c41a47ecb694cc8afe19ccfab3420d492a5a327b8264cb84b46da9ab1d7325db`。Git 上の改行変換を止め、配布元スクリプトの正確なバイトを維持する。

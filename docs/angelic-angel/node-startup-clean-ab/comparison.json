@@ -1,0 +1,99 @@
+{
+  "verifiedAt": "2026-10-14T02:18:22.563Z",
+  "description": "Dependency-free Windows Node test-child reliability comparison; no database, external service, browser profile or production data access.",
+  "fixture": {
+    "httpConnectionsPerIteration": 1,
+    "moduleChainLength": 54,
+    "connectionCloseHeaderBothDirections": true,
+    "perRuntimeConcurrency": 2,
+    "totalConcurrency": 4,
+    "debugged": false,
+    "noMaglevWorkaround": false
+  },
+  "tcpBefore": {
+    "snapshotAt": "2026-10-14T11:15:43.5650430+09:00",
+    "timeWaitCount": 89
+  },
+  "tcpAfter": {
+    "snapshotAt": "2026-10-14T11:18:18.3242103+09:00",
+    "timeWaitCount": 1597
+  },
+  "runtimes": [
+    {
+      "startedAt": "2026-10-14T02:15:51.982Z",
+      "finishedAt": "2026-10-14T02:17:36.875Z",
+      "runtime": "v24.15.0",
+      "v8": "13.6.233.17-node.48",
+      "libuv": "1.51.0",
+      "executable": "C:\\Program Files\\nodejs\\node.exe",
+      "platform": "win32",
+      "arch": "x64",
+      "osRelease": "10.0.26200",
+      "count": 1000,
+      "completed": 1000,
+      "concurrency": 2,
+      "connectionsPerIteration": 1,
+      "debugged": false,
+      "useKeepAlive": false,
+      "timeoutMs": 20000,
+      "testTimeoutMs": 10000,
+      "fixtureSha256": "5d4fd80319ff14f4985456a5ec3c6d91c23ebde806eee24ee1f071a37eb4214b",
+      "harnessSha256": "bb15116670e7f506cbdfb15fd560018d79bbc2e515c57880815f5e0f800fc66a",
+      "passed": 998,
+      "failures": [
+        {
+          "index": 804,
+          "code": 1,
+          "signal": null,
+          "timedOut": false,
+          "durationMs": 376,
+          "nativeSignature": true,
+          "eaddrinuse": false
+        },
+        {
+          "index": 865,
+          "code": 1,
+          "signal": null,
+          "timedOut": false,
+          "durationMs": 364,
+          "nativeSignature": true,
+          "eaddrinuse": false
+        }
+      ]
+    },
+    {
+      "startedAt": "2026-10-14T02:15:51.927Z",
+      "finishedAt": "2026-10-14T02:17:42.925Z",
+      "runtime": "v24.21.0",
+      "v8": "13.6.233.17-node.53",
+      "libuv": "1.52.1",
+      "executable": "C:\\Users\\yussy\\AppData\\Local\\cbte-runtimes\\node-v24.21.0-win-x64\\node-v24.21.0-win-x64\\node.exe",
+      "platform": "win32",
+      "arch": "x64",
+      "osRelease": "10.0.26200",
+      "count": 1000,
+      "completed": 1000,
+      "concurrency": 2,
+      "connectionsPerIteration": 1,
+      "debugged": false,
+      "useKeepAlive": false,
+      "timeoutMs": 20000,
+      "testTimeoutMs": 10000,
+      "fixtureSha256": "5d4fd80319ff14f4985456a5ec3c6d91c23ebde806eee24ee1f071a37eb4214b",
+      "harnessSha256": "bb15116670e7f506cbdfb15fd560018d79bbc2e515c57880815f5e0f800fc66a",
+      "passed": 1000,
+      "failures": []
+    }
+  ],
+  "artifactSha256": {
+    "v24.15.0-summary.json": "453bef5b1f080e72a85eafca0ae44f5d64c5e5b6cdcac1200fce1a1a48e40753",
+    "v24.15.0-iterations.ndjson": "89d54c0b7d47894a5e2d88cd55ea19c251291a984e01503720195afde67448e4",
+    "v24.15.0-failure-804.tap": "f9fa5eb2a4fd4012d747b31c0d332f4ef266b1dc50c18e9fb61208126bf03571",
+    "v24.15.0-failure-865.tap": "09aca7733b4cf19196960de6a0e1acf368f938cde387b96b1ff6fb97f08d667b",
+    "v24.21.0-summary.json": "6c1945eb011feb54200a5de18bed9f1bc5be600fbb9190c26a9f602115b5ed10",
+    "v24.21.0-iterations.ndjson": "2213bf2370d11786bb8106636dd7aa4c9ea6a8aae1dfb12e0c80ec8412ae9f5f",
+    "loopback-single.test.mjs": "5d4fd80319ff14f4985456a5ec3c6d91c23ebde806eee24ee1f071a37eb4214b",
+    "run-single-stress.cjs": "bb15116670e7f506cbdfb15fd560018d79bbc2e515c57880815f5e0f800fc66a",
+    "make-mods.mjs": "1adaef62f8e1eec1e93309debb078eaddd116b63737b8ab03b295a8cd2c66cd3"
+  }
+}
