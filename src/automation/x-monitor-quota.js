@@ -1,4 +1,5 @@
 'use strict';
+const { randomBytes } = require('node:crypto');
 const { AutomationError, requireActor } = require('./service');
 const entitlements = require('./entitlements');
 const capacity = require('./push-capacity');
@@ -18,11 +19,21 @@ function settings(value = {}) {
 }
 function inputOf(input) {
     strict(input, ['accountId', 'accountHandle', 'name', 'notificationSettings']);
-    if (typeof input.accountId !== 'string' || !/^[1-9]\d{0,19}$/.test(input.accountId)) fail('X_MONITOR_INVALID_INPUT', 'XアカウントIDを確認してください。');
-    if (input.accountHandle != null && (typeof input.accountHandle !== 'string' || !/^[A-Za-z0-9_]{1,15}$/.test(input.accountHandle))) fail('X_MONITOR_INVALID_INPUT', 'Xアカウント名を確認してください。');
-    const name = input.name ?? input.accountHandle ?? input.accountId;
+    if (input.accountId !== undefined && (typeof input.accountId !== 'string' || !/^[1-9]\d{0,19}$/.test(input.accountId))) fail('X_MONITOR_INVALID_INPUT', 'XアカウントIDを確認してください。');
+    const accountHandle = handleOf(input.accountHandle);
+    if (input.accountId === undefined && accountHandle === null) fail('X_MONITOR_INVALID_INPUT', '通知を受け取りたい相手の@ユーザー名を入力してください。');
+    const name = input.name ?? accountHandle ?? input.accountId;
     if (typeof name !== 'string' || !name.trim() || name.length > 120) fail('X_MONITOR_INVALID_INPUT', '監視の名前は1〜120文字で指定してください。');
-    return { accountId: input.accountId, accountHandle: input.accountHandle ?? null, name: name.trim(), notificationSettings: settings(input.notificationSettings) };
+    // Handle-based registration has no verified numeric X ID. Keep an opaque
+    // server-only key in the existing column; reservations use the monitor ID.
+    return { accountId: input.accountId ?? `h:${randomBytes(9).toString('hex')}`, accountHandle, name: name.trim(), notificationSettings: settings(input.notificationSettings) };
+}
+function handleOf(value) {
+    if (value == null) return null;
+    if (typeof value !== 'string') fail('X_MONITOR_INVALID_INPUT', '通知を受け取りたい相手の@ユーザー名を確認してください。');
+    const handle = value.replace(/^@/, '');
+    if (!/^[A-Za-z0-9_]{1,15}$/.test(handle) || /^(?:i|intent)$/i.test(handle)) fail('X_MONITOR_INVALID_INPUT', '通知を受け取りたい相手の@ユーザー名を確認してください。');
+    return handle;
 }
 const count = rows => Number(rows[0]?.n || 0);
 function createXMonitorQuota(db, options = {}) {
@@ -78,7 +89,7 @@ function createXMonitorQuota(db, options = {}) {
             if (!rows.length) fail('NOT_FOUND', '自分の登録済み受信情報を指定してください。', 404);
         }
     }
-    function item(row, plan) { return { id: String(row.id), accountId: row.account_id, accountHandle: row.account_handle, name: row.name,
+    function item(row, plan) { return { id: String(row.id), accountId: /^[1-9]\d{0,19}$/.test(row.account_id) ? row.account_id : null, accountHandle: row.account_handle, name: row.name,
         enabled: Number(row.enabled) === 1, state: row.state, poolKind: row.pool_kind, notificationSettings: settings(JSON.parse(row.notification_settings_json)),
         subscriptionState: row.subscription_state, revision: Number(row.revision), quality: quality(plan) }; }
     async function getRow(query, actor, target, includeDeleted = false) {
@@ -136,6 +147,13 @@ function createXMonitorQuota(db, options = {}) {
             await verifySettings(query, actor, parsed.notificationSettings);
             const existing = (await query('SELECT * FROM automation_x_monitors WHERE owner_user_id=? AND account_id=?', [actor.userId, parsed.accountId]))[0];
             if (existing && existing.state !== 'deleted') return item(existing, await planFor(query, actor.userId));
+            // All registrations/edits hold global->owner locks, so matching a
+            // current handle here is atomic even across legacy numeric rows.
+            const sameHandle = parsed.accountHandle && (await query("SELECT * FROM automation_x_monitors WHERE owner_user_id=? AND LOWER(account_handle)=? AND state<>'deleted' ORDER BY id LIMIT 1", [actor.userId, parsed.accountHandle.toLowerCase()]))[0];
+            if (sameHandle) {
+                if (input.accountId !== undefined && /^[1-9]\d{0,19}$/.test(sameHandle.account_id) && sameHandle.account_id !== input.accountId) fail('X_MONITOR_HANDLE_CONFLICT', '同じ@ユーザー名の監視が登録されています。一覧から編集してください。', 409);
+                return item(sameHandle, await planFor(query, actor.userId));
+            }
             const before = await quota(query, actor);
             if (!before.personal.available) fail('X_MONITOR_PERSONAL_LIMIT', '個人の総登録上限に達しています。通常通知とX監視で枠を共有しています。');
             // Free vacancies take precedence even for supporters/paid owners.
@@ -160,7 +178,7 @@ function createXMonitorQuota(db, options = {}) {
         if (input.enabled !== undefined && typeof input.enabled !== 'boolean') fail('X_MONITOR_INVALID_INPUT', '監視の状態を確認してください。');
         if (input.enabled === true && !enabled) fail('X_MONITOR_UNAVAILABLE', '新しいX自動展開は提供準備中です。', 503);
         if (input.name !== undefined && (typeof input.name !== 'string' || !input.name.trim() || input.name.length > 120)) fail('X_MONITOR_INVALID_INPUT', '監視の名前を確認してください。');
-        if (input.accountHandle !== undefined && input.accountHandle !== null && (typeof input.accountHandle !== 'string' || !/^[A-Za-z0-9_]{1,15}$/.test(input.accountHandle))) fail('X_MONITOR_INVALID_INPUT', 'Xアカウント名を確認してください。');
+        const parsedHandle = input.accountHandle === undefined ? undefined : handleOf(input.accountHandle);
         if (input.notificationSettings !== undefined) settings(input.notificationSettings);
         return db.withDatabaseTransaction(async query => {
             await lockGlobal(query, actor); await entitlements.lockOwner(query, actor.userId);
@@ -173,10 +191,14 @@ function createXMonitorQuota(db, options = {}) {
                 const current = await getRow(query, actor, target);
                 if (current.state !== 'ready') fail('X_MONITOR_POOL_FULL', '現在の資格と空き枠では監視を再開できません。');
             }
-            // The owner may correct a handle without releasing/reallocating
-            // this registration or changing its immutable numeric account ID.
-            // Omitted legacy fields preserve the old value; explicit null clears.
-            const accountHandle = input.accountHandle === undefined ? row.account_handle : input.accountHandle;
+            // Correcting a current handle preserves the registration identity,
+            // reservations, settings and subscription. Legacy numeric IDs stay.
+            const accountHandle = parsedHandle === undefined ? row.account_handle : parsedHandle;
+            if (accountHandle === null && row.account_id.startsWith('h:')) fail('X_MONITOR_INVALID_INPUT', '通知を受け取りたい相手の@ユーザー名を入力してください。');
+            if (parsedHandle !== undefined && accountHandle !== null) {
+                const duplicate = (await query("SELECT id FROM automation_x_monitors WHERE owner_user_id=? AND LOWER(account_handle)=? AND id<>? AND state<>'deleted' LIMIT 1", [actor.userId, accountHandle.toLowerCase(), row.id]))[0];
+                if (duplicate) fail('X_MONITOR_HANDLE_CONFLICT', '同じ@ユーザー名の監視が登録されています。一覧から編集してください。', 409);
+            }
             await query('UPDATE automation_x_monitors SET name=?,account_handle=?,enabled=?,notification_settings_json=?,subscription_state=?,revision=revision+1,updated_at_ms=? WHERE id=?', [input.name?.trim() ?? row.name, accountHandle, input.enabled === undefined ? row.enabled : input.enabled ? 1 : 0, input.notificationSettings === undefined ? row.notification_settings_json : JSON.stringify(input.notificationSettings), input.notificationSettings === undefined ? row.subscription_state : input.notificationSettings.subscriptionId ? 'bound' : 'pending', now(), row.id]);
             await audit(query, actor, target, 'x.monitor.update', { enabled: input.enabled ?? Number(row.enabled) === 1, handleChanged: accountHandle !== row.account_handle });
             return item(await getRow(query, actor, target), await planFor(query, actor.userId));

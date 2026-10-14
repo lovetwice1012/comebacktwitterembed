@@ -188,7 +188,7 @@ test('real SQL handle correction preserves owner, numeric ID, reservation, subsc
     assert.equal(cleared.accountHandle, null); assert.equal(cleared.accountId, original.accountId);
     assert.deepEqual(cleared.notificationSettings, config); assert.equal(cleared.poolKind, original.poolKind);
     const unchanged = await queryRow(db, 'automation_x_monitors', original.id);
-    for (const handle of ['', '@invalid', 'invalid-user', 'a b', 'a'.repeat(16), 1, false, {}, ['handle']])
+    for (const handle of ['', '@@invalid', 'invalid-user', 'a b', 'a'.repeat(16), 1, false, {}, ['handle']])
         await assert.rejects(quota.update(A, original.id, { expectedRevision: cleared.revision, accountHandle: handle }), errorCode('X_MONITOR_INVALID_INPUT'));
     await assert.rejects(quota.update(B, original.id, { expectedRevision: cleared.revision, accountHandle: 'foreign' }), errorCode('NOT_FOUND'));
     await assert.rejects(quota.update(ADMIN, original.id, { expectedRevision: cleared.revision, accountHandle: 'foreign' }), errorCode('NOT_FOUND'));
@@ -197,6 +197,61 @@ test('real SQL handle correction preserves owner, numeric ID, reservation, subsc
         await assert.rejects(quota.update(A, original.id, { expectedRevision: cleared.revision, accountHandle: 'new_handle', ...injection }), errorCode('X_MONITOR_INVALID_INPUT'));
     assert.deepEqual(await queryRow(db, 'automation_x_monitors', original.id), unchanged);
     assert.deepEqual(await db.queryDatabase('SELECT * FROM automation_notification_slots WHERE owner_user_id=? ORDER BY slot_index', [A.userId]), slots);
+}));
+
+test('real SQL handle-only registration needs no numeric ID and keeps internal identity private', { timeout: 30000 }, async () => fixture(async db => {
+    const quota = quotaFor(db), profile = await importProfile(setupFor(db));
+    const config = { ...await settingsFor(db), subscriptionId: profile.id };
+    const first = await quota.register(A, { accountHandle: '@Target_user', notificationSettings: config });
+    assert.equal(first.accountId, null); assert.equal(first.accountHandle, 'Target_user');
+    assert.equal(first.name, 'Target_user'); assert.equal(first.subscriptionState, 'bound');
+    const stored = await queryRow(db, 'automation_x_monitors', first.id);
+    assert.match(stored.account_id, /^h:[0-9a-f]{18}$/); assert.equal(stored.account_id.length, 20);
+    assert(!JSON.stringify(first).includes(stored.account_id));
+    assert.equal(require('../../src/automation/x-event-router').matchesXMonitor(stored, { authorAccountId: null, authorHandle: 'target_USER' }), true);
+    assert.equal(require('../../src/automation/x-event-router').matchesXMonitor(stored, { authorAccountId: '999', authorHandle: 'target_USER' }), false);
+    const copies = await Promise.all(['target_user', '@TARGET_USER'].map(accountHandle => quota.register(A, { accountHandle })));
+    assert(copies.every(row => row.id === first.id));
+    assert.equal((await quota.summary(A)).personal.used, 1); assert.equal((await quota.list(A)).items.length, 1);
+    assert.deepEqual(copies[0].notificationSettings, config);
+    const independent = await quota.register(B, { accountHandle: 'Target_user' });
+    assert.notEqual(independent.id, first.id); assert.equal((await quota.summary(B)).personal.used, 1);
+    assert.equal((await quota.summary(A)).pools.free.used, 2);
+}));
+
+test('real SQL handle-only creation reuses a legacy numeric registration without changing its settings', { timeout: 30000 }, async () => fixture(async db => {
+    const quota = quotaFor(db), legacy = await quota.register(A, target(40));
+    const duplicate = await quota.register(A, { accountHandle: '@FIXTURE40', name: 'ignored duplicate name' });
+    assert.deepEqual(duplicate, legacy); assert.equal((await quota.summary(A)).personal.used, 1);
+    await assert.rejects(quota.register(A, { accountId: '98765', accountHandle: 'fixture40' }), errorCode('X_MONITOR_HANDLE_CONFLICT'));
+    assert.equal((await quota.list(A)).items.length, 1);
+}));
+
+test('real SQL simultaneous handle-only registration consumes one slot and rejects forged identities', { timeout: 30000 }, async () => fixture(async db => {
+    const quota = quotaFor(db);
+    const [first, second] = await Promise.all(['New_target', '@NEW_TARGET'].map(accountHandle => quota.register(A, { accountHandle })));
+    assert.equal(first.id, second.id); assert.equal((await quota.summary(A)).personal.used, 1);
+    const before = await queryRow(db, 'automation_x_monitors', first.id);
+    for (const input of [{}, { accountHandle: '' }, { accountHandle: null }, { accountHandle: 'i' }, { accountHandle: '@intent' }, { accountHandle: 'bad-name' }, { accountHandle: 'a'.repeat(16) }, { accountHandle: 'valid', accountId: before.account_id }, { accountHandle: 'valid', accountId: null }])
+        await assert.rejects(quota.register(A, input), errorCode('X_MONITOR_INVALID_INPUT'));
+    assert.deepEqual(await queryRow(db, 'automation_x_monitors', first.id), before);
+}));
+
+test('real SQL handle-only editing preserves opaque identity and old handles can register independently', { timeout: 30000 }, async () => fixture(async db => {
+    const quota = quotaFor(db), first = await quota.register(A, { accountHandle: 'old_target' });
+    const before = await queryRow(db, 'automation_x_monitors', first.id);
+    const slots = await db.queryDatabase('SELECT * FROM automation_notification_slots WHERE owner_user_id=?', [A.userId]);
+    const edited = await quota.update(A, first.id, { expectedRevision: first.revision, accountHandle: '@New_target' });
+    assert.equal(edited.accountHandle, 'New_target'); assert.equal(edited.accountId, null);
+    assert.equal((await queryRow(db, 'automation_x_monitors', first.id)).account_id, before.account_id);
+    assert.deepEqual(await db.queryDatabase('SELECT * FROM automation_notification_slots WHERE owner_user_id=?', [A.userId]), slots);
+    await assert.rejects(quota.update(A, first.id, { expectedRevision: edited.revision, accountHandle: null }), errorCode('X_MONITOR_INVALID_INPUT'));
+    const old = await quota.register(A, { accountHandle: 'old_target' }); assert.notEqual(old.id, first.id);
+    await assert.rejects(quota.update(A, old.id, { expectedRevision: old.revision, accountHandle: '@NEW_TARGET' }), errorCode('X_MONITOR_HANDLE_CONFLICT'));
+    await assert.rejects(quota.update(B, first.id, { expectedRevision: edited.revision, accountHandle: 'foreign' }), errorCode('NOT_FOUND'));
+    await quota.release(A, old.id, { expectedRevision: old.revision });
+    const restored = await quota.register(A, { accountHandle: 'old_target' }); assert.notEqual(restored.id, first.id);
+    assert.equal((await quota.summary(A)).personal.used, 2);
 }));
 
 test('real SQL concurrent handle corrections use revision fencing and audit failures roll back the whole edit', { timeout: 30000 }, async () => fixture(async db => {

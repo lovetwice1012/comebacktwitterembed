@@ -282,7 +282,7 @@ test('rapid register clicks write once and use only the returned canonical monit
 test('existing private monitor workspace exposes lazy X controls while guild-shared scope has no personal owner panel', async () => {
     for (const scope of ['private', 'guild']) {
         const f = await fixture({ parent: true, scope, opened: false });
-        try { assert.equal(Boolean(f.container.querySelector('[aria-label="自分のXアカウント監視"]')), scope === 'private');
+        try { assert.equal(Boolean(f.container.querySelector('[aria-label="Xアカウントの監視"]')), scope === 'private');
             assert.equal(f.calls.filter(item => item.route.startsWith('x-')).length, 0); assert.match(f.container.textContent, /通知一覧/); }
         finally { await f.close(); }
     }

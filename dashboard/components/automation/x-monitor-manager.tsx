@@ -158,7 +158,7 @@ function XMonitorEditor({ api, active, allowSetup, subscriptionsVersion, destina
 
 export function XMonitorManager({ api, active = true, allowSetup = true, destinations = [], rules = [] }: { api: XMonitorAPI; active?: boolean; allowSetup?: boolean; destinations?: Choice[]; rules?: Choice[] }) {
   const [opened, setOpened] = useState(false), [subscriptionsVersion, setSubscriptionsVersion] = useState(0);
-  return <section aria-label="自分のXアカウント監視" className="space-y-3 rounded border bg-card p-4"><h2 className="font-semibold">自分のXアカウント監視</h2>
+  return <section aria-label="Xアカウントの監視" className="space-y-3 rounded border bg-card p-4"><h2 className="font-semibold">Xアカウントの監視</h2>
     <p className="text-sm text-muted-foreground">通知を受け取りたいXアカウントと、利用できる枠を管理します。Xアカウントを1件登録するごとに1枠を使います。</p>
     {!opened ? <button className={button} disabled={!active} onClick={() => setOpened(true)}>Xアカウントの監視を管理</button> : <>{allowSetup ? <><XNotificationSetup api={api} active={active} onSubscriptionsChanged={() => setSubscriptionsVersion(value => value + 1)} /><XProcessingSettings api={api} active={active} /></> : <a href="/dashboard/automation/x" className="inline-block text-sm text-primary underline">自分のX通知セットアップを開く</a>}<XMonitorEditor api={api} active={active} allowSetup={allowSetup} subscriptionsVersion={subscriptionsVersion} destinations={destinations} rules={rules} /></>}
   </section>;
