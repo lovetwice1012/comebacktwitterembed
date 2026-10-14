@@ -449,7 +449,8 @@ function createXMonitorQuota(db, options = {}) {
             // One UPDATE changes the reservation atomically under the global
             // mutex. Notification/subscription data and personal slot stay put.
             await query("UPDATE automation_x_monitors SET pool_kind=?,state='ready',revision=revision+1,updated_at_ms=? WHERE id=?",[selected,now(),row.id]);
-            await audit(query,actor,row.id,'x.quota.move',{before:row.pool_kind,after:selected,manual:true,ownerUserId:row.owner_user_id,releasedExtraSlots:releasedExtras});
+            await audit(query,actor,row.id,'x.quota.move',{before:row.pool_kind,after:selected,manual:true,ownerUserId:row.owner_user_id,
+                beforeRevision:Number(row.revision),afterRevision:Number(row.revision)+1,releasedExtraSlots:releasedExtras});
             return item(await getRow(query,{userId:row.owner_user_id},row.id),plan,query);
         });
     }

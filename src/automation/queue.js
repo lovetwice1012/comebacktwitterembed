@@ -110,6 +110,35 @@ function createQueue(db, evaluator, options = {}) {
         }
         return { state: 'excluded', code: 'X_MONITOR_NOT_AVAILABLE' };
     }
+    async function monitorRevisionMatches(query, kind, target, expectedRevision, ownerUserId) {
+        const current = Number(target?.monitor_revision || 1), expected = Number(expectedRevision);
+        if (kind !== 'x') return current === expectedRevision;
+        if (current === expected) return true;
+        if (target?.user_id !== ownerUserId || target.owner_user_id !== ownerUserId
+            || !Number.isSafeInteger(current) || !Number.isSafeInteger(expected) || expected < 1 || current <= expected) return false;
+        // A pool move preserves the notification identity, yet deliberately
+        // advances the editor's CAS revision. Only its complete server-written
+        // audit chain can bridge the queued revision; edits and missing history
+        // retain the existing cancellation behavior. JSON filtering also bounds
+        // this read to the exact revision span of this persisted notification.
+        const rows = await query(`SELECT detail_json FROM automation_audit WHERE entity_id=? AND action='x.quota.move'
+            AND CASE WHEN JSON_VALID(detail_json) THEN JSON_EXTRACT(detail_json,'$.beforeRevision') ELSE NULL END>=?
+            AND CASE WHEN JSON_VALID(detail_json) THEN JSON_EXTRACT(detail_json,'$.beforeRevision') ELSE NULL END<? ORDER BY id`,
+        [`x:${target.id}`, expected, current]);
+        if (rows.length !== current - expected) return false;
+        const steps = new Set();
+        for (const row of rows) {
+            let detail;
+            try { detail = parse(row.detail_json); } catch { return false; }
+            if (!detail || detail.manual !== true || detail.ownerUserId !== ownerUserId
+                || !['free','supporter','special'].includes(detail.before) || !['free','supporter','special'].includes(detail.after)
+                || !Number.isSafeInteger(detail.beforeRevision) || !Number.isSafeInteger(detail.afterRevision)
+                || detail.afterRevision !== detail.beforeRevision + 1 || detail.beforeRevision < expected || detail.afterRevision > current
+                || steps.has(detail.beforeRevision)) return false;
+            steps.add(detail.beforeRevision);
+        }
+        return steps.size === current - expected;
+    }
     async function finishLegacy(query, kind, delivery, state, now, code = null, nextAttemptAtMs = null) {
         if (kind === 'x') return true;
         const result = await query(`UPDATE ${table(kind)}_deliveries SET status=?,lease_token=NULL,lease_expires_at_ms=0,next_attempt_at_ms=?,last_error_code=? WHERE id=? AND status='pending' AND lease_token=?`,
@@ -160,7 +189,9 @@ function createQueue(db, evaluator, options = {}) {
                 await finishLegacy(query, kind, delivery, 'cancelled', now, 'MONITOR_DISABLED');
                 return { state: 'cancelled' };
             }
-            if ((!graphEnabled && !evaluation) || target.workflow_id !== before?.workflow_id || target.active_revision !== before?.active_revision || target.monitor_revision !== before?.monitor_revision || target.workflow_id && !target.workflow_enabled) {
+            if ((!graphEnabled && !evaluation) || target.workflow_id !== before?.workflow_id || target.active_revision !== before?.active_revision
+                || (kind === 'x' ? !await monitorRevisionMatches(query, kind, target, Number(before?.monitor_revision || 1), before?.user_id)
+                    : target.monitor_revision !== before?.monitor_revision) || target.workflow_id && !target.workflow_enabled) {
                 await finishLegacy(query, kind, delivery, 'pending', now, 'RULE_PAUSED_OR_CHANGED');
                 return { state: 'pending' };
             }
@@ -361,8 +392,9 @@ function createQueue(db, evaluator, options = {}) {
                 if (status.state === 'pending') { paused = true; pauseCode = status.code; pauseDueAtMs = Math.max(pauseDueAtMs || 0, status.dueAtMs || clock() + MINUTE); }
                 else if (status.state !== 'ready') { eligibilityCode = status.code; missing.push(member); continue; }
             }
-            const valid = target?.enabled && !target.deleted_at_ms && Number(target.monitor_revision || 1) === Number(member.monitorRevision)
-                && target.user_id === job.owner_user_id && targetIdentity(target) === member.targetIdentity && (job.workflow_id || null) === (target.workflow_id || null);
+            const valid = target?.enabled && !target.deleted_at_ms && target.user_id === job.owner_user_id
+                && targetIdentity(target) === member.targetIdentity && (job.workflow_id || null) === (target.workflow_id || null)
+                && await monitorRevisionMatches(query, member.targetKind, target, Number(member.monitorRevision), job.owner_user_id);
             if (!valid) { missing.push(member); continue; }
             if (job.workflow_id && !target.workflow_enabled) paused = true;
             accepted.push(member);
@@ -408,7 +440,8 @@ function createQueue(db, evaluator, options = {}) {
             return checkDestination(query, job, target, now);
         }
         const target = await snapshot(query, job.target_kind, job.target_id, lock, job.owner_user_id);
-        if (!target?.enabled || Number(target.monitor_revision || 1) !== job.plan.monitorRevision || targetIdentity(target) !== job.plan.targetIdentity || target.deleted_at_ms || (job.workflow_id || null) !== (target.workflow_id || null)) return { state: 'cancelled', code: 'MONITOR_CHANGED' };
+        if (!target?.enabled || targetIdentity(target) !== job.plan.targetIdentity || target.deleted_at_ms || (job.workflow_id || null) !== (target.workflow_id || null)
+            || !await monitorRevisionMatches(query, job.target_kind, target, job.plan.monitorRevision, job.owner_user_id)) return { state: 'cancelled', code: 'MONITOR_CHANGED' };
         if (job.target_kind === 'x') {
             if (target.user_id !== job.owner_user_id) return { state: 'cancelled', code: 'X_MONITOR_CHANGED' };
             const anchors = [job.plan.context?.xRealtimeAdmittedAtMs, ...(job.plan.members || []).map(member => member.context?.xRealtimeAdmittedAtMs)].filter(value => Number.isSafeInteger(value) && value >= 0);
