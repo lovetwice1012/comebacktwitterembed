@@ -32,6 +32,7 @@ function createQueue(db, evaluator, options = {}) {
     const queryDB = db.queryDatabase;
     const graph = options.graph || null;
     const admittedXInputs = new WeakSet();
+    const containsX = (job, plan = job.plan) => job.target_kind === 'x' || Array.isArray(plan?.members) && plan.members.some(member => member?.targetKind === 'x');
     async function snapshot(query, kind, id, lock = false, ownerUserId = null) {
         if (kind === 'x') return snapshotX(query, id, lock, ownerUserId);
         const rows = await query(`SELECT t.*,m.scope,m.revision AS monitor_revision,m.destination_id,a.workflow_id,
@@ -371,13 +372,17 @@ function createQueue(db, evaluator, options = {}) {
         const members = Array.isArray(plan.members) ? plan.members : [];
         const accepted = [], missing = [];
         const eligibility = new Map();
+        // Locked X/mixed flows share this connection's owner mutex and current
+        // snapshot. Do not depend on a DB adapter implicitly merging nested
+        // transactions (or opening another connection waiting on our mutex).
+        const entitlementDb = lock && containsX(job, plan) ? { withDatabaseTransaction: work => work(query) } : db;
         let paused = false, eligibilityCode = null, pauseCode = null, pauseDueAtMs = null;
         for (const member of members) {
             if (!member || !['auto', 'price', 'x'].includes(member.targetKind) || !/^\d{1,20}$/.test(String(member.targetId))) { missing.push(member); continue; }
             const key = `${member.targetKind}:${member.targetId}`;
             if (!eligibility.has(key)) {
                 try {
-                    await require('./entitlements').resolveNotificationEntitlement(db, { ownerUserId: job.owner_user_id, targetKind: member.targetKind, targetId: String(member.targetId) });
+                    await require('./entitlements').resolveNotificationEntitlement(entitlementDb, { ownerUserId: job.owner_user_id, targetKind: member.targetKind, targetId: String(member.targetId) });
                     eligibility.set(key, true);
                 } catch (error) {
                     if (!['AUTOMATION_SLOT_LIMIT', 'AUTOMATION_NOT_FOUND'].includes(error.code)) throw error;
@@ -425,6 +430,10 @@ function createQueue(db, evaluator, options = {}) {
         });
     }
     async function check(job, now = Date.now(), query = queryDB, lock = false) {
+        // Package safety performs ordinary reads. Acquire the X owner mutex
+        // before those reads establish a REPEATABLE READ snapshot, otherwise a
+        // concurrent committed move can mix a new monitor with old ranks/audit.
+        if (lock && containsX(job)) await require('./entitlements').lockOwner(query, job.owner_user_id);
         try { await require('./package-safety').assertPackageSafety(query, job); }
         catch (error) { if (error instanceof require('./safety').SafetyError) return { state: error.decision === 'deny' ? 'excluded' : 'failed', code: error.code }; throw error; }
         if (job.plan?.flowV2) {
