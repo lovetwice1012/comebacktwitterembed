@@ -1,0 +1,323 @@
+{
+  "at": "2026-10-14T15:21:30.566908+00:00",
+  "compatibleRollbackCoreRevision": "2f9148f32dc78230be2aaa3ec3bf5a1715fae863",
+  "runtime": "Node.js 24.21.0",
+  "automationTestFileCount": 69,
+  "automation": {
+    "report": "docs/angelic-angel/notification-experience-acceptance-tests.xml",
+    "sha256": "e1fcccf8154b268f0e0b7da509e52d0c553b4d0ca9510bff464b10f11c5f9edd",
+    "leafCases": 976,
+    "parentResults": 23,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "totalResults": 999
+  },
+  "phase0": {
+    "report": "docs/angelic-angel/notification-experience-phase0-tests.xml",
+    "sha256": "b18b296fe015d5fe5c5fcf33b3ad6bb681afd2526327f1e83ce28699effe325e",
+    "leafCases": 190,
+    "parentResults": 9,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "totalResults": 199
+  },
+  "immutableRustReferenceFilesVerified": 14,
+  "browser": {
+    "kind": "loopback synthetic fixture",
+    "desktop": "1440x1000",
+    "mobile": "390x844",
+    "realXDelivery": false,
+    "realDiscordSend": false,
+    "realPayment": false,
+    "artifacts": "docs/angelic-angel/notification-experience-browser"
+  },
+  "review": {
+    "independentReview": true,
+    "fixedFindings": [
+      "inactive reload epoch",
+      "partial connection pagination",
+      "mobile payment history overflow",
+      "manual move queued revision compatibility",
+      "repeatable-read owner fence"
+    ],
+    "independentDeliverySQLResults": 20,
+    "billingAndNavigationUIResults": 102
+  },
+  "operations": {
+    "pairedHelperSha256": "70a354882fb14c63cb22fe7795f677963cd20c0a8be982f06cd70766e4cf2c34",
+    "offlineGuardTests": 24,
+    "stageStopGuardTests": 14,
+    "additionalDDL": false,
+    "rollout": "supporters",
+    "productionProof": "Recorded separately after deployment",
+    "buildAndStageSha256": "864f8998ae274ea9f3c9189803ab0de6d02be4c9b2d0dfc37545a905277a2294",
+    "readonlyVerifierSha256": "5cc011bbda79c0ea8e20475cbb9ab4462ac0e1437b213226f169f0ef259b1a5a"
+  },
+  "sourceFingerprints": {
+    "dashboard/app/dashboard/automation/page.tsx": {
+      "gitBlobSha256": "ed8f862513faa79bf329e17208fb9445eb60d1a491d9590a25517fc8249757b1",
+      "testedWindowsFileSha256": "960568e371178c1729545fbc5e9963b52dc66139eeade7506e95be7845b2433e"
+    },
+    "dashboard/app/dashboard/automation/plans/page.tsx": {
+      "gitBlobSha256": "162b2f12013bd2fd3426c54de0a668a59754b63f5c5fbadc4d77777388fa70ff",
+      "testedWindowsFileSha256": "2599757e9b52c17a415457f637c2bc5a4e1b15cdf0bb9f3c75ed468cdaf59193"
+    },
+    "dashboard/app/dashboard/automation/support/page.tsx": {
+      "gitBlobSha256": "9280630f1e58bbe7b243cd6e25701d728627fe28a8dde91ce268e1ecd8f400eb",
+      "testedWindowsFileSha256": "87f876398f300254936a8804f6c11fff8185c2d8c70327f34582329ecce54e15"
+    },
+    "dashboard/app/dashboard/automation/x/page.tsx": {
+      "gitBlobSha256": "6cd9fd8632e318f4aca96d2c3fcd7a85675103fe416f44294cc1d510480e47ab",
+      "testedWindowsFileSha256": "83b7c8442b3aa55cfc8f535fc47dba4bb579908d4f57d102ca7bcdecce8e7c84"
+    },
+    "dashboard/components/admin/push-capacity-diagnostics.tsx": {
+      "gitBlobSha256": "789d7e2a2a7bfaf49cdb80002e6526e0481a88ffdcf506139520d50a186a32b8",
+      "testedWindowsFileSha256": "1770dc513cd17019086dfacccfe55e32db48d7eb51c1b9d86863e67e7173eab4"
+    },
+    "dashboard/components/automation/automation-page-frame.tsx": {
+      "gitBlobSha256": "34157c9c77fb1aa1957c3f65d495347100e1b00cf3ff69923594dc916168c6d9",
+      "testedWindowsFileSha256": "34157c9c77fb1aa1957c3f65d495347100e1b00cf3ff69923594dc916168c6d9"
+    },
+    "dashboard/components/automation/automation-workspace.tsx": {
+      "gitBlobSha256": "9216092bed38d7187f8bd2dd74de855227cacd20e88c6e70df1c8a9f2c1f06d9",
+      "testedWindowsFileSha256": "911d7df73f4a6723d8b5e1a7b0d1568908f0ec5564c6fe497e35ba6545045ba2"
+    },
+    "dashboard/components/automation/monitor-manager.tsx": {
+      "gitBlobSha256": "0ca6a391823672c5e1b34419423ba5f4426bbc90bca79e5d8ee4e6187d7157ce",
+      "testedWindowsFileSha256": "bf607270ee59a77e6f989c751d10ddac7ebccfc31b8431daa4a743c2c6b862c7"
+    },
+    "dashboard/components/automation/monitor-registration.tsx": {
+      "gitBlobSha256": "32abe3ddedfcba7894fb2ddf3aa6c7e8a9a0fd46462b92b7054df816b576a19d",
+      "testedWindowsFileSha256": "9c5b1c1425dfafa8841366bf4559eadbade5b90a11bc35330d1cc663a3526770"
+    },
+    "dashboard/components/automation/notification-billing.css": {
+      "gitBlobSha256": "0195405c7a9a4bc224734190911ac076bc08845497cd01d62d53e305b3ebd833",
+      "testedWindowsFileSha256": "0195405c7a9a4bc224734190911ac076bc08845497cd01d62d53e305b3ebd833"
+    },
+    "dashboard/components/automation/notification-registration-source.ts": {
+      "gitBlobSha256": "c1871ae94e98292f9eff140553710c34cb29440b36d463e0e4ad1d7081e46dca",
+      "testedWindowsFileSha256": "c1871ae94e98292f9eff140553710c34cb29440b36d463e0e4ad1d7081e46dca"
+    },
+    "dashboard/components/automation/notification-usage-overview.tsx": {
+      "gitBlobSha256": "8c43b2cbfe4d4e77d75e88bdb54f298674c63f55300328879967026301e63136",
+      "testedWindowsFileSha256": "8c43b2cbfe4d4e77d75e88bdb54f298674c63f55300328879967026301e63136"
+    },
+    "dashboard/components/automation/notification-workspace.css": {
+      "gitBlobSha256": "ebac58d874ffee5d3636ee8ce0a36175ca1adb9662019c0a17d43d6d3a0a495d",
+      "testedWindowsFileSha256": "ebac58d874ffee5d3636ee8ce0a36175ca1adb9662019c0a17d43d6d3a0a495d"
+    },
+    "dashboard/components/automation/notification-x.css": {
+      "gitBlobSha256": "6ce8941d7938ea2a75041ba7d1f1122a04446f6776a1a24a8300ad1b20f2c598",
+      "testedWindowsFileSha256": "6ce8941d7938ea2a75041ba7d1f1122a04446f6776a1a24a8300ad1b20f2c598"
+    },
+    "dashboard/components/automation/square-donation-manager.tsx": {
+      "gitBlobSha256": "0a8ed782030327aa33fe2127b5e15c55b76ed55d16121d36ef8dd20e082ccd90",
+      "testedWindowsFileSha256": "0a8ed782030327aa33fe2127b5e15c55b76ed55d16121d36ef8dd20e082ccd90"
+    },
+    "dashboard/components/automation/subscription-manager.tsx": {
+      "gitBlobSha256": "a4a6b9ae2fc8c4988b7590fdbdb270ab1a30f1b94a0b44051aa60cd491ef9c97",
+      "testedWindowsFileSha256": "efe4f424cb1d543b7b70151c5a2672bc3ca8ad0e5b9e95e82838010b1181b716"
+    },
+    "dashboard/components/automation/x-monitor-manager.tsx": {
+      "gitBlobSha256": "c70ca8837788fce8f60dfe640d859df4eec4274592b4eb2702ef52654cbb7ffd",
+      "testedWindowsFileSha256": "1722b58a18529942fc83e9e86d1f8e5d29148659819caa8d051ff2e508a9261b"
+    },
+    "dashboard/components/automation/x-monitor-move-editor.tsx": {
+      "gitBlobSha256": "ebc87b8d90bce0b2a9f41f85856cfb4768809358955139396ccbc2fe8536a0a3",
+      "testedWindowsFileSha256": "5a4ac03d08da735495bb959cfa2f5be51c05c7aeee478c00ead3a42eedfbad95"
+    },
+    "dashboard/components/automation/x-monitor-timing-editor.tsx": {
+      "gitBlobSha256": "3f691e7045d45438ad4fd183af13819e71123d83aa7d06a736183cca4c9eea89",
+      "testedWindowsFileSha256": "3f691e7045d45438ad4fd183af13819e71123d83aa7d06a736183cca4c9eea89"
+    },
+    "dashboard/components/automation/x-monitor-view.ts": {
+      "gitBlobSha256": "58920ca5e20f6228ed25597dddd8fc91bd6716e5851206e9937689581577d4b6",
+      "testedWindowsFileSha256": "05127e56b03e528f5aeada8aa7b6f240b7eaf78707021d3960a1d1a66dee1a30"
+    },
+    "dashboard/components/automation/x-notification-setup-screen.tsx": {
+      "gitBlobSha256": "292bcb23afdb8eb49b3901b6768a04814d0d8dfe7faa82cabad857e70701616a",
+      "testedWindowsFileSha256": "b37a7ecf1fa01f100f4ae45415df68853417369fb06677f55c0730c95baa038e"
+    },
+    "dashboard/components/automation/x-notification-setup.tsx": {
+      "gitBlobSha256": "d36f481917a8b521c8770e76e85b58c6b4352cfae25cfe1366f99840ae57a1c7",
+      "testedWindowsFileSha256": "c10c6130ac7e83d9034cef0558019da44976534971b7eb08dea1dfa7bcd9f2a0"
+    },
+    "dashboard/components/automation/x-processing-settings.tsx": {
+      "gitBlobSha256": "375e60923f4911e015fdaa3ba40c82ae2df56833f8ad73853f2d9a8b9c731136",
+      "testedWindowsFileSha256": "e6f382d0c10399ad9bcb7b9b44077d4a9765ed7d9b14a0adb38d03cfd0094b41"
+    },
+    "dashboard/components/dashboard/dashboard-shell.tsx": {
+      "gitBlobSha256": "7bd3ce71ee7ebed25a267b8491864d9a217935ce631a3331b5c682b5aa146066",
+      "testedWindowsFileSha256": "f96027489375486716e151aa77c18edfd0395cbbfd73c2d9e29f8545afb6ff5b"
+    },
+    "dashboard/components/dashboard/dashboard-workspace.tsx": {
+      "gitBlobSha256": "b3ef1a273d1ab629bde3be5379171cce1cb77afe4d351de3eabb06c1a1fa056d",
+      "testedWindowsFileSha256": "e9457c8c8cea6f0346de9b54b3364f8df39e27b1958a5b40c50eefccb96c39a1"
+    },
+    "dashboard/components/dashboard/navigation-model.ts": {
+      "gitBlobSha256": "6ba0fae82c2829401db7a139e64c9b931b411aeac3f16ec82a6b635db9b54b26",
+      "testedWindowsFileSha256": "c755fdd89213380bc7687cbc84152f9e3554f4bdc2d4fd05d7aeaf5ae0e36f37"
+    },
+    "dashboard/components/dashboard/task-navigation.tsx": {
+      "gitBlobSha256": "3acb42281933d208eb553b1c007acf6e49effce6b91406c691e3e377933cd859",
+      "testedWindowsFileSha256": "389b2568482a67e96c80d360881d820a99b16cc44bb06ea54c498cd30c1419a2"
+    },
+    "scripts/fixtures/notification-experience-server.ts": {
+      "gitBlobSha256": "1bc4e6154bc09bb2fc675446f437e18e210b2efd1e35548865d3d5917c9e35b6",
+      "testedWindowsFileSha256": "1bc4e6154bc09bb2fc675446f437e18e210b2efd1e35548865d3d5917c9e35b6"
+    },
+    "scripts/fixtures/notification-experience.tsx": {
+      "gitBlobSha256": "e6ff8efd62502262c742ba1412c78e1286e969d3319c3ffee2728814c8ddf932",
+      "testedWindowsFileSha256": "e6ff8efd62502262c742ba1412c78e1286e969d3319c3ffee2728814c8ddf932"
+    },
+    "scripts/lib/notification-experience-fixture.cjs": {
+      "gitBlobSha256": "bf0f051d4b34b13fa6da40376e4c37fc37fae1005721c9fe38f6cd2452e4606a",
+      "testedWindowsFileSha256": "bf0f051d4b34b13fa6da40376e4c37fc37fae1005721c9fe38f6cd2452e4606a"
+    },
+    "scripts/notification-experience-ui-harness.cjs": {
+      "gitBlobSha256": "8d78a1ec19a4d07c35b6ec1b99b6f559a6bf4d43354c88dc0362a15446de423f",
+      "testedWindowsFileSha256": "7a5b3f1ff7c4067502b2a011e4465ae5530c8115246336fa958997b59ac6d9a2"
+    },
+    "scripts/run-x-notification-acceptance.cjs": {
+      "gitBlobSha256": "10229d236fdc0a1b7401be0a861c5a7ac7b33d8219988c8eddd25da463a3cf22",
+      "testedWindowsFileSha256": "4f3127e4d7f2b903346e976447da189fb25807e5bacd2843827fb3aadb3f4c0f"
+    },
+    "scripts/test/automation-destination-ui.test.js": {
+      "gitBlobSha256": "7b2294871e9fec587bdae08c60ce8bd34a5edc705bb5a96f8c8d73c580bc692d",
+      "testedWindowsFileSha256": "7b2294871e9fec587bdae08c60ce8bd34a5edc705bb5a96f8c8d73c580bc692d"
+    },
+    "scripts/test/automation-destination-workspace.test.js": {
+      "gitBlobSha256": "3af91ea3036d2cd649f02552e8aa692bd8a8f75c76be240a8a01055b71e9a2ed",
+      "testedWindowsFileSha256": "3af91ea3036d2cd649f02552e8aa692bd8a8f75c76be240a8a01055b71e9a2ed"
+    },
+    "scripts/test/automation-donation-ui.test.js": {
+      "gitBlobSha256": "feb75b485b723be9fd68ee6a34b3abe41aec888a8a46bb8380c4bd99f5b4b72a",
+      "testedWindowsFileSha256": "957858b8e12280a8d09488e8d684a4761ebedd0f2b43aa01ee1453f127110a05"
+    },
+    "scripts/test/automation-monitor-cadence-ui.test.js": {
+      "gitBlobSha256": "caf9fe45d1fd716ed1ebdc350a0d700918db274b8c83909653e7349401e5e684",
+      "testedWindowsFileSha256": "c19a3bb110ee6ee9096f6497e967285689493c805db29e13e2f08cf4847d8edb"
+    },
+    "scripts/test/automation-notification-quota-ui.test.js": {
+      "gitBlobSha256": "d3931dee26638d472da6ccfada8ed73808d9ded5d970391c85d0e8cf0a7b1789",
+      "testedWindowsFileSha256": "e0812db616d1df44b2a952f64aa7f9f58120750001caeebab222e760408100b5"
+    },
+    "scripts/test/automation-payment-navigation.test.js": {
+      "gitBlobSha256": "7707d157e6c6a0f5ab6eaecd6ae4b2f667ae367b2b31be8ebd64b1fce97dfdc3",
+      "testedWindowsFileSha256": "2a34b96c47f896d60faa198a320c30911fe97893ccd705c616b2ae3d7774d838"
+    },
+    "scripts/test/automation-push-capacity-ui.test.js": {
+      "gitBlobSha256": "e3878237275d43401d31907dce95624302398762f5b9247c7bff90d3a9a167c9",
+      "testedWindowsFileSha256": "067b8a4d28deea8af4b90c6e6d847f7d2e0fce3af65b9014520dfb89e299b5ed"
+    },
+    "scripts/test/automation-subscription-ui.test.js": {
+      "gitBlobSha256": "75cdcd2226be62aae00ad4154cb3c0b8ae09ccb201f2989eede1f5fab9e98cc7",
+      "testedWindowsFileSha256": "663abb2f5f75a5a6d509af470473b07eaf5e122d07a078d8897db6263e962a52"
+    },
+    "scripts/test/automation-x-binding-sql.test.js": {
+      "gitBlobSha256": "85c049865a34cf8d9d36c61ef3cccdfc80f580acf1befc87181251282d6d94d9",
+      "testedWindowsFileSha256": "38cb76fb1d4be0c1530bd2ea5af161314dd7f13cd285d89b95200e0b1724eab7"
+    },
+    "scripts/test/automation-x-delivery-sql.test.js": {
+      "gitBlobSha256": "6a6664e6f03c859f0dbe95af547e159d384f458b58de58240bd37f455e35d8d8",
+      "testedWindowsFileSha256": "6a6664e6f03c859f0dbe95af547e159d384f458b58de58240bd37f455e35d8d8"
+    },
+    "scripts/test/automation-x-delivery.test.js": {
+      "gitBlobSha256": "7afdbeabab13e6fe1cf0aca01d0880855358a7853b1f65de28a9916d8cccbe55",
+      "testedWindowsFileSha256": "2e5ea63f464f654b21c271c9ff2d5f66afa955fca27f9f65aa4a44c6ede80e25"
+    },
+    "scripts/test/automation-x-monitor-processing-sql.test.js": {
+      "gitBlobSha256": "91c65d8228d9ea6285ba74528672d03f835ad9565c8f14f77b6cfbf4a505aceb",
+      "testedWindowsFileSha256": "91c65d8228d9ea6285ba74528672d03f835ad9565c8f14f77b6cfbf4a505aceb"
+    },
+    "scripts/test/automation-x-monitor-timing-ui.test.js": {
+      "gitBlobSha256": "98ff92a7fb32105f93730c73b93137654884db812eea8e9b11b2ae6324bea3f9",
+      "testedWindowsFileSha256": "98ff92a7fb32105f93730c73b93137654884db812eea8e9b11b2ae6324bea3f9"
+    },
+    "scripts/test/automation-x-monitor-ui.test.js": {
+      "gitBlobSha256": "7395e0f582a9f6afcc3c7f6fd55f08aa0f735e6a3dd6730a6264d3b342ff2dd0",
+      "testedWindowsFileSha256": "4c64fa8f2c2784df2ffbd4ccd139a0cba172bac4ffce66da27178f2f026e635d"
+    },
+    "scripts/test/automation-x-processing-settings-ui.test.js": {
+      "gitBlobSha256": "068923443d6a49ba327a1a8f6f5852b569dad75370f7b9a8f719379b68374b07",
+      "testedWindowsFileSha256": "068923443d6a49ba327a1a8f6f5852b569dad75370f7b9a8f719379b68374b07"
+    },
+    "scripts/test/automation-x-push-processing-sql.test.js": {
+      "gitBlobSha256": "a49ada304948a36e857dbe86660ef743d83369133189d54a5a60ab612e2785aa",
+      "testedWindowsFileSha256": "a49ada304948a36e857dbe86660ef743d83369133189d54a5a60ab612e2785aa"
+    },
+    "scripts/test/automation-x-push-runtime.test.js": {
+      "gitBlobSha256": "cb57f7a8b36e708fa47db13ed8029c1e5f734f6288340b32383caafa71648909",
+      "testedWindowsFileSha256": "cb57f7a8b36e708fa47db13ed8029c1e5f734f6288340b32383caafa71648909"
+    },
+    "scripts/test/automation-x-setup-ui.test.js": {
+      "gitBlobSha256": "259d646e5e72dc51246c552525f6afc285d940218b1e6ee1bc58dd23a9aeef55",
+      "testedWindowsFileSha256": "3b8d0e2cfba64fc36b4f330efc47b35a0917e8dadaed1eb01dc934d234d89b11"
+    },
+    "scripts/test/automation-x-webpush-adapter.test.js": {
+      "gitBlobSha256": "6488adc094337d0ffb869a7fc57a157d4ce0e49e71c204cc9f6437f789aefdc1",
+      "testedWindowsFileSha256": "6488adc094337d0ffb869a7fc57a157d4ce0e49e71c204cc9f6437f789aefdc1"
+    },
+    "scripts/test/notification-usage-overview.test.js": {
+      "gitBlobSha256": "61f02e86f0052ddc82036a26dc1260b8860d8266f7b64b5477cc9906e2e8b39c",
+      "testedWindowsFileSha256": "61f02e86f0052ddc82036a26dc1260b8860d8266f7b64b5477cc9906e2e8b39c"
+    },
+    "scripts/test/notification-workspace-navigation.test.js": {
+      "gitBlobSha256": "687bb4e787c8c1a2e790ecf8420bd40f43864250a50a8770d21d1509ff894c72",
+      "testedWindowsFileSha256": "687bb4e787c8c1a2e790ecf8420bd40f43864250a50a8770d21d1509ff894c72"
+    },
+    "src/automation/donor-admin.js": {
+      "gitBlobSha256": "59e5b89e3a6fe1fc0ae3db5abadc69bcd125a6b716f533743701fc26d5748b53",
+      "testedWindowsFileSha256": "37d48970f74707acddde9b0eb33a59f6236e483f7ef51c942103931d17475f8c"
+    },
+    "src/automation/monitor-cadence.js": {
+      "gitBlobSha256": "d789ddb1514b8e32f495b264d97c0cfaed98486789dc31004820e0cab3ecae52",
+      "testedWindowsFileSha256": "5ab3fd3d06485ba262a2707cccc02bb736b683377f5aeff2a759c8fd2c5deae3"
+    },
+    "src/automation/queue.js": {
+      "gitBlobSha256": "7cafcd80cc8fa203a094bb8922c626f691ee9e293b867ac58cb023a8e2089493",
+      "testedWindowsFileSha256": "73e7d6f0d13d151e34c2202c0a3a1b64ec51a2101a55d60837271640f14ecc99"
+    },
+    "src/automation/x-event-router.js": {
+      "gitBlobSha256": "6f1079a18217611bc682ffde31c93608798a0716551e99898fd0959f2e2a9bb7",
+      "testedWindowsFileSha256": "fbbe02c31070fa343b7724bea19c413e329b7a6e87a79154fc8dd6ec22a30d2c"
+    },
+    "src/automation/x-monitor-quota.js": {
+      "gitBlobSha256": "4bd3776aec58fc86f224a4aa22aeffc2adc9f08482b2c1faab70409221a85e9d",
+      "testedWindowsFileSha256": "36166a412b0d4e6945a54b4794df25b53b2ddf9fb9ccbee66a9e5351c93bc5f6"
+    },
+    "src/automation/x-processing-settings.d.ts": {
+      "gitBlobSha256": "c4b03b834ac5deb729bc219a4de2d2c9fcbec24bee101e826eead9b585a934d3",
+      "testedWindowsFileSha256": "c4b03b834ac5deb729bc219a4de2d2c9fcbec24bee101e826eead9b585a934d3"
+    },
+    "src/automation/x-processing-settings.js": {
+      "gitBlobSha256": "90d4f2ea80ce9f1e07cdfb5767a11903bdd1e657b099994ab70463bad99842c4",
+      "testedWindowsFileSha256": "90d4f2ea80ce9f1e07cdfb5767a11903bdd1e657b099994ab70463bad99842c4"
+    },
+    "src/automation/x-push-runtime.js": {
+      "gitBlobSha256": "7477a47d3205bf5457ab038e9163bc4a33e87d0318bcc1bc92a720cd997f7203",
+      "testedWindowsFileSha256": "7477a47d3205bf5457ab038e9163bc4a33e87d0318bcc1bc92a720cd997f7203"
+    }
+  },
+  "acceptanceBoundaries": [
+    "Browser uses mocked providers and payments",
+    "Real OAuth and matching X to Discord delivery remain user-run checks",
+    "Production reflection is proved separately by exact resident revision/lease/heartbeat/shards and read-only HTTP/DB checks"
+  ],
+  "automationTestCodeRevision": "e2890a7b07b8dabff7eeab6920ca0c7e34f1b58a",
+  "finalSourceRevision": "0b4cd5fd6274ddb9cac601cf9887028f6a230bb7",
+  "cosmeticFollowup": {
+    "report": "docs/angelic-angel/notification-experience-css-validation.json",
+    "relatedUIResults": 197,
+    "failures": 0,
+    "javascriptTypeScriptChanged": false,
+    "cssSemanticComparison": "Normalized PostCSS AST identical",
+    "sourceFingerprints": {
+      "dashboard/components/automation/notification-billing.css": "a84146e4ebb51024713dd47938f59ca1f2993cf48cfd729659d147145f6e0d65",
+      "dashboard/components/automation/notification-x.css": "3104d90cca766f02bf963de5f35c15e9098a7aa4f58f0622ac9278c0c18bd328",
+      "dashboard/components/automation/notification-workspace.css": "c2cf0738614a7e0c80bba6810057afb46dd78927d7adb557d8921b71345f53ef"
+    }
+  }
+}

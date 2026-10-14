@@ -1,0 +1,60 @@
+{
+  "at": "2026-10-14T15:24:55.851487+00:00",
+  "files": [
+    {
+      "name": "notification-billing.css",
+      "rules": 76,
+      "declarations": 263,
+      "media": 2,
+      "postcssVersion": "8.5.16",
+      "semanticComparison": "identical after exact alpha, attribute-quote and media-range normalization",
+      "beforeSha256": "0195405c7a9a4bc224734190911ac076bc08845497cd01d62d53e305b3ebd833",
+      "afterSha256": "a84146e4ebb51024713dd47938f59ca1f2993cf48cfd729659d147145f6e0d65",
+      "baselineMatchesHead": true
+    },
+    {
+      "name": "notification-x.css",
+      "rules": 129,
+      "declarations": 412,
+      "media": 1,
+      "postcssVersion": "8.5.16",
+      "semanticComparison": "identical after exact alpha, attribute-quote and media-range normalization",
+      "beforeSha256": "6ce8941d7938ea2a75041ba7d1f1122a04446f6776a1a24a8300ad1b20f2c598",
+      "afterSha256": "3104d90cca766f02bf963de5f35c15e9098a7aa4f58f0622ac9278c0c18bd328",
+      "baselineMatchesHead": true
+    },
+    {
+      "name": "notification-workspace.css",
+      "rules": 43,
+      "declarations": 122,
+      "media": 2,
+      "postcssVersion": "8.5.16",
+      "semanticComparison": "identical after exact alpha, attribute-quote and media-range normalization",
+      "beforeSha256": "ebac58d874ffee5d3636ee8ce0a36175ca1adb9662019c0a17d43d6d3a0a495d",
+      "afterSha256": "c2cf0738614a7e0c80bba6810057afb46dd78927d7adb557d8921b71345f53ef",
+      "baselineMatchesHead": true
+    }
+  ],
+  "totals": {
+    "rules": 248,
+    "declarations": 797,
+    "media": 5
+  },
+  "styleConditionsResolved": [
+    "multideclaration blocks are multiline",
+    "color alpha values are percentages",
+    "attribute values are quoted",
+    "max-width features use equivalent inclusive ranges",
+    "blank lines precede media rules"
+  ],
+  "javascriptAndTypeScriptUnchanged": true,
+  "targetedUiRegression": {
+    "tests": 197,
+    "pass": 197,
+    "fail": 0,
+    "cancelled": 0,
+    "skipped": 0,
+    "todo": 0
+  },
+  "codacyReanalysis": "pending remote analysis; local condition assertions are not represented as remote Codacy success"
+}
