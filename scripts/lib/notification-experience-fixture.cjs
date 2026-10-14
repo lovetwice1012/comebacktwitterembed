@@ -1,7 +1,7 @@
 'use strict';
 // Sealed synthetic read models for local visual QA only. No key, ciphertext,
 // production account ID, payment client or network implementation is present.
-const quality = { planId: 'basic', priority: 2, minuteLimit: 7, dayLimit: 48, intervalMinutes: 5 };
+const quality = { planId: 'basic', priority: 2, minuteLimit: 7, dayLimit: 96, intervalMinutes: 5 };
 const rollout = { mode: 'supporters', eligible: true, reasonCode: null, reason: null };
 const timing = (cost = 5, source = 'slots', mode = 'batch') => ({ requestedMode: mode, explicitMode: mode, modeSource: 'monitor', effectiveMode: mode,
     realtimeSource: mode === 'realtime' ? source : null, realtimeEligibilitySource: source, slotCost: mode === 'realtime' ? cost : 1,
@@ -18,7 +18,7 @@ const subscription = () => ({ id: 'cc2cb493-a60d-41d6-936f-2ed33d7ea2c7', state:
 module.exports = function createPreview(options = {}) {
     const states = new Map();
     function state(scenario) {
-        if (!states.has(scenario)) states.set(scenario, { subscriptions: scenario === 'fresh' ? [] : [subscription()], monitors: scenario === 'fresh' || scenario === 'unbound' ? [] : [{
+        if (!states.has(scenario)) states.set(scenario, { subscriptions: scenario === 'fresh' ? [] : [subscription()], monitors: ['fresh', 'unbound', 'supporter-direct'].includes(scenario) ? [] : [{
             id: 'fixture-monitor-1', accountId: null, accountHandle: 'sample_artist', name: 'イラストのお知らせ', enabled: true, state: 'ready', poolKind: 'free',
             notificationSettings: { subscriptionId: 'cc2cb493-a60d-41d6-936f-2ed33d7ea2c7', ...(options.destinationId ? { destinationId: options.destinationId } : {}) }, subscriptionState: 'bound', revision: 1, quality,
             processing: scenario === 'rt-plan' ? timing(1, 'plan') : timing(),
@@ -33,16 +33,23 @@ module.exports = function createPreview(options = {}) {
         return current;
     }
     return { dispatch: async ({ route, method, body, scenario }) => {
-        const s = state(scenario), full = scenario === 'full', used = full ? 19 : 3 + s.monitors.reduce((sum, row) => sum + row.processing.slotCost, 0), available = Math.max(0, 19 - used);
+        const s = state(scenario), full = scenario === 'full', directSupporter = scenario === 'supporter-direct', used = full ? 19 : (directSupporter ? 18 : 3) + s.monitors.reduce((sum, row) => sum + row.processing.slotCost, 0), available = Math.max(0, 19 - used);
         if (route === 'x-monitor-quota') return { featureEnabled: true, currentPlan: { ...quality, label: 'ベーシック', tier: 'paid', baseSlotLimit: 16 }, personal: { totalLimit: 19, registeredCount: full ? 19 : 1 + s.monitors.length, used, available, supporterExtraSlots: 3 },
             x: { used: s.monitors.length, available, specialLimit: 4, specialUsed: 0, reasonCode: full ? 'X_MONITOR_PERSONAL_LIMIT' : null }, pools: { free: { limit: 50, used: 34, available: 16 }, supporter: { limit: 100, used: 23, available: 77 } },
-            registrationProcessing: { ...timing(scenario === 'rt-plan' ? 1 : 5, scenario === 'rt-plan' ? 'plan' : 'slots', 'realtime'), canEnableRealtime: available >= (scenario === 'rt-plan' ? 1 : 5), isPreview: true } };
+            registrationProcessing: { ...timing(scenario === 'rt-plan' ? 1 : 5, scenario === 'rt-plan' ? 'plan' : 'slots', 'realtime'), canEnableRealtime: available >= (scenario === 'rt-plan' ? 1 : 5), isPreview: true },
+            ...(directSupporter ? { supporterRealtimeRegistration: { ...timing(1, 'supporter', 'realtime'), isPreview: true, poolKind: 'supporter', eligible: true, available: available > 0,
+                canEnableRealtime: available > 0, reasonCode: available > 0 ? null : 'X_MONITOR_PERSONAL_LIMIT', reason: available > 0 ? null : '個人の登録枠をすべて使用しています。' } } : {}) };
         if (route === 'entitlements') return { plan: { id: 'basic', name: 'ベーシック', baseSlotLimit: 16, slotLimit: 19, minuteLimit: 7, dayLimit: 96, priority: 2 }, slots: { used, max: 19, available }, usage: { entries: [{ targetKind: 'auto', targetId: '1', todayUsed: 2, todayReserved: 0, dayLimit: 96, minuteLimit: 7 }] } };
         if (route === 'x-setup') return { available: true, receiverEnabled: true, rollout, subscriptions: s.subscriptions, maxFileBytes: 32768, nextCursor: null,
             download: { url: '/api/automation/x-setup/download', version: '0.1.0-preview.4', sha256: 'a'.repeat(64) } };
         if (route === 'x-processing-settings') { if (method === 'PUT') s.processing = body.mode; return { requestedMode: s.processing, effectiveMode: s.processing, realtimeAllowed: scenario === 'rt-plan', planId: 'basic', planLabel: 'ベーシック', intervalMinutes: 5, configured: true, reasonCode: null, rollout }; }
-        if (route === 'x-monitors') { if (method === 'POST') s.monitors.push({ id: `fixture-monitor-${s.monitors.length + 1}`, accountId: null, accountHandle: body.accountHandle, name: body.name || body.accountHandle, enabled: true, state: 'ready', poolKind: 'free', notificationSettings: body.notificationSettings || {}, subscriptionState: body.notificationSettings?.subscriptionId ? 'bound' : 'pending', revision: 1, quality,
-            processing: timing(scenario === 'rt-plan' ? 1 : 5, scenario === 'rt-plan' ? 'plan' : 'slots', body.processingMode || 'batch') }); return method === 'POST' ? s.monitors.at(-1) : { items: s.monitors }; }
+        if (route === 'x-monitors') { if (method === 'POST') {
+            const direct = body.poolPreference === 'supporter';
+            if (direct && (!directSupporter || body.processingMode !== 'realtime' || body.expectedRealtimeSlotCost !== 1 || available < 1)) throw Object.assign(new Error('支援者優先枠と使用枠数を確認してください。'), { status: 409 });
+            if (directSupporter && body.processingMode === 'realtime' && !direct && available < 5) throw Object.assign(new Error('個人の登録枠が不足しています。'), { status: 409 });
+            s.monitors.push({ id: `fixture-monitor-${s.monitors.length + 1}`, accountId: null, accountHandle: body.accountHandle, name: body.name || body.accountHandle, enabled: true, state: 'ready', poolKind: direct ? 'supporter' : 'free', notificationSettings: body.notificationSettings || {}, subscriptionState: body.notificationSettings?.subscriptionId ? 'bound' : 'pending', revision: 1, quality,
+                processing: timing(direct || scenario === 'rt-plan' ? 1 : 5, direct ? 'supporter' : scenario === 'rt-plan' ? 'plan' : 'slots', body.processingMode || 'batch') });
+        } return method === 'POST' ? s.monitors.at(-1) : { items: s.monitors }; }
         if (route.startsWith('x-monitors/')) { const id = route.split('/')[1], row = s.monitors.find(item => item.id === id); if (!row) throw Object.assign(new Error('検証用の監視が見つかりません。'), { status: 404 }); if (method === 'DELETE') { s.monitors = s.monitors.filter(item => item.id !== id); return { released: true, id }; }
             for (const key of ['name','enabled','accountHandle','notificationSettings','poolKind']) if (body[key] !== undefined) row[key] = body[key];
             if (body.processingMode) row.processing = timing(row.processing.realtimeSlotCost, row.processing.realtimeEligibilitySource, body.processingMode);

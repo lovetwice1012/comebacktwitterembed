@@ -79,13 +79,14 @@ export function NotificationUsageOverview({ api = notificationUsageAPI }: { api?
         <p className="notification-card-note">通常通知とX監視の共通枠です。停止中の登録、確認間隔の短縮、Xの5枠リアルタイム利用も含みます。</p>
         {extras !== undefined ? <p className="notification-card-note">{normal?.plan.baseSlotLimit ?? quota?.currentPlan.baseSlotLimit}枠の基本枠に、保有する支援追加{extras}枠を加えています。支援追加枠は月額プランの解約後も引き継ぎます。</p> : null}
       </article>
-      <article className="notification-usage-card"><div className="notification-card-heading"><Bell size={19} aria-hidden /><h3>通常通知のプラン</h3></div>
+      <article className="notification-usage-card"><div className="notification-card-heading"><Bell size={19} aria-hidden /><h3>通知プラン</h3></div>
         <p className="notification-plan-name">{normal?.plan.name ?? unavailable}</p>
+        <p className="notification-card-note">通常通知とX通知に同じプランを適用します。</p>
         {normal ? <p className="notification-card-note">1枠あたり1日{normal.plan.dayLimit}通・1分{normal.plan.minuteLimit}通まで。</p> : null}
         <a className="notification-inline-link" href="/dashboard/automation">通知を管理する<ArrowRight size={15} aria-hidden /></a>
       </article>
       <article className="notification-usage-card"><div className="notification-card-heading"><Clock3 size={19} aria-hidden /><h3>Xの共通設定</h3></div>
-        <p className="notification-plan-name">{xTiming}</p><dl className="notification-usage-facts"><div><dt>Xの処理プラン</dt><dd>{processing?.planLabel ?? quota?.currentPlan.label ?? unavailable}</dd></div></dl>
+        <p className="notification-plan-name">{xTiming}</p>
         <p className="notification-card-note">通知方法を個別指定していない既存監視の設定です。リアルタイムの資格と必要枠数は、監視ごとに確認できます。</p>
         {processing?.requestedMode === "realtime" && processing.effectiveMode === "batch" ? <p className="notification-card-note">共通設定のリアルタイム希望は保存済みです。個別の優待・5枠利用は各監視に表示します。</p> : null}
         <a className="notification-inline-link" href="/dashboard/automation#x-notifications">監視ごとの通知方法を選ぶ<ArrowRight size={15} aria-hidden /></a>

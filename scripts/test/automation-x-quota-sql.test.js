@@ -200,14 +200,14 @@ test('X quota real MariaDB acceptance: independent pools, shared personal allowa
         assert.equal(new Set(registered.map(item => item.quality.intervalMinutes)).size, 1);
         await db.withDatabaseTransaction(query => entitlements.setUserPlan(query, ADMIN, owner.userId, null));
         await quota.reconcile(owner);
-        const downgraded = (await entitlements.listPlanPolicies(db.queryDatabase, ADMIN)).find(plan => plan.planId === 'free');
+        const downgraded = (await entitlements.listPlanPolicies(db.queryDatabase, ADMIN)).find(plan => plan.planId === 'supporter');
         const afterCancellation = (await quota.summary(owner)).personal;
         assert.equal(afterCancellation.totalLimit, 9); assert.equal(afterCancellation.supporterExtraSlots, 2);
         const current = (await quota.list(owner)).items;
         for (const item of registered.slice(0, 3)) {
             const policy = current.find(row => row.id === item.id).quality;
             for (const field of ['planId', 'priority', 'minuteLimit', 'dayLimit']) assert.equal(policy[field], downgraded[field]);
-            assert.equal(policy.intervalMinutes, 60);
+            assert.equal(policy.intervalMinutes, 5);
         }
     });
     await scenario(t, 'Q09: ten owners monitoring one X account consume ten distinct registrations and personal slots', async (db, quota) => {
@@ -264,13 +264,13 @@ test('X quota real MariaDB acceptance: independent pools, shared personal allowa
         const expired = createXMonitorQuota(db, { registrationEnabled: true, now: () => expiresAtMs + 1 });
         await assert.rejects(expired.validateDelivery(owner, item.id), { code: 'X_MONITOR_NOT_AVAILABLE' });
         let current = (await expired.list(owner)).items[0];
-        assert.equal(current.poolKind, 'special'); assert.equal(current.state, 'suspended'); assert.equal(current.quality.planId, 'free');
+        assert.equal(current.poolKind, 'special'); assert.equal(current.state, 'suspended'); assert.equal(current.quality.planId, 'supporter');
         assert.equal((await expired.summary(owner)).personal.supporterExtraSlots, 1);
         await setPools(db, 0, 1); await expired.reconcile(owner);
         const beforeMove = (await expired.list(owner)).items[0]; assert.equal(beforeMove.poolKind, 'special'); assert.equal(beforeMove.state, 'suspended');
         await expired.move(owner, item.id, { poolKind: 'supporter', expectedRevision: beforeMove.revision });
         current = await expired.validateDelivery(owner, item.id);
-        assert.equal(current.poolKind, 'supporter'); assert.equal(current.quality.planId, 'free');
+        assert.equal(current.poolKind, 'supporter'); assert.equal(current.quality.planId, 'supporter');
         assert.equal((await expired.summary(owner)).personal.totalLimit, 6);
     });
     await scenario(t, 'Q15 override/Q16: free vacancy does not move another registration; an explicit move preserves metadata and survives a new process', async (db, quota) => {
@@ -319,7 +319,7 @@ test('X quota real MariaDB acceptance: independent pools, shared personal allowa
             assert.equal((await entitlements.getEntitlementSummary(db, paid.userId)).usedSlots, 2);
         });
     });
-    await scenario(t, 'Q17 legacy compatibility: X opt-in preserves an existing twenty-slot supporter base while quality uses the free contract', async (db, quota) => {
+    await scenario(t, 'Q17 legacy compatibility: X uses the same twenty-slot supporter plan and preserves its notification quality', async (db, quota) => {
         await setPools(db);
         await db.withDatabaseTransaction(async query => {
             await entitlements.savePlanPolicy(query, ADMIN, { planId: 'free', label: '無料', slotLimit: 5, minuteLimit: 7, dayLimit: 29, priority: 2, intervalMinutes: 60 });
@@ -331,7 +331,7 @@ test('X quota real MariaDB acceptance: independent pools, shared personal allowa
             const before = await entitlements.getEntitlementSummary(db, owner.userId);
             assert.equal(before.baseSlotLimit, 20); assert.equal(before.slotLimit, 22); assert.equal(before.usedSlots, 6);
             const x = await quota.register(owner, account(155));
-            assert.equal(x.quality.planId, 'free'); assert.equal(x.quality.priority, 2); assert.equal(x.quality.intervalMinutes, 60);
+            assert.equal(x.quality.planId, 'supporter'); assert.equal(x.quality.priority, 99); assert.equal(x.quality.intervalMinutes, 5);
             const current = await entitlements.getEntitlementSummary(db, owner.userId), summary = await quota.summary(owner);
             assert.equal(current.slotLimit, before.slotLimit); assert.equal(current.baseSlotLimit, before.baseSlotLimit); assert.equal(current.priority, before.priority);
             assert.equal(summary.personal.totalLimit, 22); assert.equal(summary.personal.supporterExtraSlots, 2); assert.equal(summary.personal.used, 7);
@@ -434,14 +434,14 @@ test('X quota real MariaDB acceptance: independent pools, shared personal allowa
         await dispatch(request('DELETE', `x-monitors/${blocker.id}`), actor(361), services);
         await dispatch(request('POST', `entitlements/${owner.userId}`, { planId: null }), ADMIN, services);
         const listed = await dispatch(request('GET', 'x-monitors'), owner, services);
-        assert.equal(listed.items[0].poolKind, 'supporter'); assert.equal(listed.items[0].quality.planId, 'free');
+        assert.equal(listed.items[0].poolKind, 'supporter'); assert.equal(listed.items[0].quality.planId, 'supporter');
         assert.equal((await quota.validateDelivery(owner, item.id)).poolKind, 'supporter');
         assert.equal((await dispatch(request('GET', 'x-monitor-quota'), owner, services)).pools.free.available, 1);
         await assert.rejects(dispatch(request('POST', 'push-capacity/rebalance'), ADMIN, services), { code: 'NOT_FOUND', status: 404 });
         const beforeMove = (await quota.list(owner)).items[0];
         await assert.rejects(dispatch(request('POST', `x-monitors/${item.id}/move`, { poolKind: 'free', expectedRevision: beforeMove.revision }), actor(362), services), { code: 'NOT_FOUND', status: 404 });
         const moved = await dispatch(request('POST', `x-monitors/${item.id}/move`, { poolKind: 'free', expectedRevision: beforeMove.revision }), owner, services);
-        assert.equal(moved.poolKind, 'free'); assert.equal(moved.quality.planId, 'free');
+        assert.equal(moved.poolKind, 'free'); assert.equal(moved.quality.planId, 'supporter');
     });
     await scenario(t, 'two explicit moves into one remaining supporter capacity cannot double-allocate; the rejected source reservation survives', async (db, quota) => {
         await setPools(db, 0, 100);

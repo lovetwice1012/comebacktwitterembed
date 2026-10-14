@@ -14,7 +14,7 @@ export function assertSlotAvailable(query: Query, userId: string, kind: 'auto' |
 export function assignSlot(query: Query, userId: string, kind: 'auto' | 'price' | 'x', targetId: string): Promise<NotificationSlot>;
 export function releaseSlot(query: Query, userId: string, kind: 'auto' | 'price' | 'x', targetId: string): Promise<void>;
 export function findSlot(query: Query, userId: string, kind: 'auto' | 'price' | 'x', targetId: string): Promise<NotificationSlot | null>;
-export function resolveNotificationEntitlement(db: { withDatabaseTransaction: (work: (query: Query) => Promise<NotificationSlot>) => Promise<NotificationSlot> }, input: { ownerUserId: string; targetKind: 'auto' | 'price'; targetId: string }): Promise<NotificationSlot>;
+export function resolveNotificationEntitlement(db: { withDatabaseTransaction: (work: (query: Query) => Promise<NotificationSlot>) => Promise<NotificationSlot> }, input: { ownerUserId: string; targetKind: 'auto' | 'price' | 'x'; targetId: string }): Promise<NotificationSlot>;
 export function listOwnerSlots(query: Query, userId: string): Promise<NotificationPlan & { usedSlots: number; remainingSlots: number; slots: (NotificationSlot & { allowed: boolean })[] }>;
 export function getEntitlementSummary(db: { withDatabaseTransaction: (work: (query: Query) => Promise<any>) => Promise<any> }, userId: string): ReturnType<typeof listOwnerSlots>;
 export function savePlanPolicy(query: Query, actor: AdminActor, input: Omit<NotificationPlan, 'tier'> & { enabled?: boolean; expectedUpdatedAtMs?: number }): Promise<NotificationPlanPolicy>;

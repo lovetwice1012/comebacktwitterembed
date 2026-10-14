@@ -90,17 +90,11 @@ async function inspectPlan(query, userId, now = Date.now(), squareScope) {
         dayLimit: configured.dayLimit, priority: configured.priority, slotLimit: configured.slotLimit });
 }
 
-// New X quality follows the contract, never the pool or legacy donor badge.
-// Ordinary notification quality stays on its existing path. For owners who
-// opt into X, both native and X admissions share this contract-based total.
+// X uses the same current plan as ordinary notifications, including the
+// server-managed supporter plan. Allocation pools never select send quality.
 async function inspectXPlan(query, userId, now = Date.now(), options = {}) {
     const normal = await inspectPlan(query, userId, now);
-    let base = normal;
-    if (normal.tier !== 'paid') {
-        const rows = await query('SELECT * FROM automation_notification_plans WHERE plan_id=? LIMIT 1', ['free']);
-        base = rows[0] && validPolicy(rows[0]) ? { ...policyDto(rows[0]), tier: 'free' } : FREE_PLAN;
-    }
-    const rows = await query('SELECT confirmation_interval_minutes FROM automation_notification_plans WHERE plan_id=? LIMIT 1', [base.planId]);
+    const rows = await query('SELECT confirmation_interval_minutes FROM automation_notification_plans WHERE plan_id=? LIMIT 1', [normal.planId]);
     let intervalMinutes = rows[0]?.confirmation_interval_minutes == null ? null : Number(rows[0].confirmation_interval_minutes);
     if (intervalMinutes !== null && (!Number.isSafeInteger(intervalMinutes) || intervalMinutes < 5 || intervalMinutes > 10080)) intervalMinutes = null;
     if (options.useLegacyUserInterval === true) {
@@ -108,12 +102,7 @@ async function inspectXPlan(query, userId, now = Date.now(), options = {}) {
         const legacy = Number(overrides[0]?.auto_watch_interval_minutes);
         if (Number.isSafeInteger(legacy) && legacy >= 5 && legacy <= 10080) intervalMinutes = legacy;
     }
-    const extra = normal.slotLimit - normal.baseSlotLimit;
-    // Preserve the existing server-managed base allowance, including legacy
-    // supporter policies. Selecting free contract QUALITY must not reduce
-    // an already entitled user's ordinary registration capacity.
-    const baseLimit = normal.baseSlotLimit;
-    return { ...normal, ...base, tier: base.tier, baseSlotLimit: baseLimit, slotLimit: baseLimit + extra, intervalMinutes };
+    return { ...normal, intervalMinutes };
 }
 async function inspectPersonalPlan(query, userId, now = Date.now()) {
     return inspectPlan(query, userId, now);
@@ -189,8 +178,8 @@ async function resolveNotificationEntitlement(db, input) {
     return db.withDatabaseTransaction(async query => {
         const slot = await assignSlot(query, input.ownerUserId, input.targetKind, input.targetId);
         if (input.targetKind !== 'x') return slot;
-        // X uses current contract quality even when its reservation came from
-        // the supporter pool; pool selection never grants a faster send rate.
+        // X and native notifications use the same current plan even when its
+        // reservation came from another pool; a pool never selects send rates.
         const plan = await inspectXPlan(query, input.ownerUserId, Date.now(), { useLegacyUserInterval: process.env.ANGELIC_X_USE_LEGACY_USER_INTERVAL === '1' });
         if (slot.slotIndex > plan.slotLimit) throw slotError(plan);
         return { ...slot, ...plan };

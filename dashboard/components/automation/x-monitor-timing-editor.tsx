@@ -59,6 +59,7 @@ export function XMonitorTimingEditor({ row, api, active = true, disabled = false
     finally { lock.current = false; if (alive.current) setBusy(false); onBusy?.(false); }
   }
   return <section aria-label="X監視の通知方法" className="nx-monitor-timing">
+    <h4 className="text-sm font-medium">通知方法</h4>
     {processing ? <><div className="nx-monitor-timing-status"><span className="nx-timing-chip">{processing.effectiveMode === "realtime" ? <Zap size={14} aria-hidden="true" /> : <Clock3 size={14} aria-hidden="true" />}{xTimingLabel(processing)}</span><span className="nx-timing-chip"><Layers3 size={14} aria-hidden="true" />使用{processing.slotCost}枠</span>{processing.effectiveMode === "realtime" && xRealtimeBenefit(processing) ? <span className="nx-field-note">{xRealtimeBenefit(processing)}</span> : null}</div>
       {processing.requestedMode === "realtime" && processing.effectiveMode !== "realtime" ? <p className="nx-field-note">{processing.modeSource === "owner" ? "共通設定の希望" : "保存した希望"}はリアルタイムです。現在は{xTimingLabel(processing)}で通知します。</p> : null}
       {!opened ? <button className={button} disabled={!active || disabled || busy} onClick={() => { setOpened(true); setMode(processing.requestedMode); setReview(null); setError(""); setNotice(""); }}>通知方法を変更</button> : <form aria-label="X監視の通知方法を選択" noValidate onSubmit={event => { event.preventDefault(); if (allowed && changed && processing) { setReview({ revision: row.revision, mode, realtimeSlotCost: processing.realtimeSlotCost }); setError(""); } }}>
