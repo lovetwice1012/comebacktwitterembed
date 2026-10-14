@@ -15,7 +15,7 @@ function isVersionAtLeast(version, minimum) {
     return true;
 }
 
-function assertSupportedRuntime(versions = process.versions) {
+function assertSupportedRuntime(versions = process.versions, platform = process.platform) {
     if (versions?.bun) {
         throw new Error(BUN_RUNTIME_DISABLED_MESSAGE);
     }
@@ -24,6 +24,16 @@ function assertSupportedRuntime(versions = process.versions) {
             'Unsupported Node.js version: ' + (versions?.node || 'unknown') + '. '
             + 'Node.js ' + MINIMUM_NODE_VERSION + ' or newer is required.'
         );
+    }
+    // The Windows 24.0–24.15 libuv TCP path contains an uninitialized
+    // OSVERSIONINFOW size and can terminate the process natively. A JS retry or
+    // exception handler cannot repair it. Keep the existing Linux contract;
+    // Windows maintainers use the verified project runtime instead.
+    const [major, minor] = versions.node.split('.').map(Number);
+    if (platform === 'win32' && major === 24 && minor < 16) {
+        throw new Error('This Windows Node.js version has a native TCP startup crash: ' + versions.node
+            + '. Run scripts/setup-project-node.ps1, then use node scripts/run-project-node.cjs <script>. '
+            + 'The project pins Node.js 24.21.0; do not retry on the affected runtime.');
     }
     return 'node';
 }

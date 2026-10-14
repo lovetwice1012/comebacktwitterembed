@@ -1,0 +1,40 @@
+{
+  "recordedAtUtc": "2026-10-14T02:25:25.9559269Z",
+  "runtime": "verified official Node.js 24.21.0 win-x64",
+  "tests": 18,
+  "passed": 18,
+  "failed": 0,
+  "skipped": 0,
+  "todo": 0,
+  "durationMs": 408.8816,
+  "rootTypecheck": "tsc --noEmit passed",
+  "lint": "eslint --no-ignore index.js scripts/windows-node-bootstrap.cjs scripts/test/windows-node-bootstrap.test.js passed",
+  "originalMainBody": "git diff confirms only boot wrapper lines added; existing body not modified or reindented",
+  "verified": [
+    "actual index source executes with fake Windows/Linux/macOS process and mocked application module boundary",
+    "Windows handoff precedes recovery/config/Discord/DB imports",
+    "pinned verified child continues without handoff loop",
+    "Linux/macOS load no Windows helper and preserve synchronous startup throws",
+    "Bun retains original rejection",
+    "missing and tampered runtime prevent application loads",
+    "Node/script arguments cwd env preserved",
+    "child exit and self-signal propagation",
+    "safe fixed Japanese error with no exception leakage or retry",
+    "unavailable working directory is handled before application import",
+    "active parent inspector closed after verification and before handoff spawn",
+    "Linux Bun pinned same-process and verification failure do not access inspector",
+    "inspector URL/close failure prevents child and emits fixed safe error",
+    "actual loopback inspector port reused by child with original execArgv --inspect preserved",
+    "actual loopback inspector port reused by child with NODE_OPTIONS --inspect preserved"
+  ],
+  "notVerified": [
+    "actual Discord login/production database/application networking from index.js"
+  ],
+  "sha256": {
+    "index.js": "4c1d2ff6cee15e8bfcf65725f0fcd1142784ac2fd2071801cd97158fba5ee46a",
+    "scripts/windows-node-bootstrap.cjs": "0979319bf1245665bf9d3e0e793be6ed1b8237283e91118cbf5b7dfc9538be0c",
+    "scripts/test/windows-node-bootstrap.test.js": "db9d9e97d5cd3a67e883e50580c1a348a9654bcee3693a14f6e72f10a70dc581",
+    "docs/angelic-angel/windows-node-bootstrap-tests.xml": "2868ab81bbfa708dc9bcd2d32475cb0efb78ef735c52fb752d86a75d758e7c64"
+  },
+  "inspectorSource": "https://github.com/nodejs/node/blob/v24.21.0/doc/api/inspector.md#inspectorclose"
+}

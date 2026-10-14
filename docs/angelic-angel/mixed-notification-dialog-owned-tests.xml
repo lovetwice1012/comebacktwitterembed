@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<testsuites>
+	<testcase name="Windows PowerShell 5.1: the real mixed-notification dialog defaults to No and accepts only an explicit Yes" time="0.701929" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\angelic-setup-package.test.js"/>
+	<testcase name="PowerShell 7: the real mixed-notification dialog defaults to No and accepts only an explicit Yes" time="1.498284" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\angelic-setup-package.test.js"/>
+	<!-- tests 2 -->
+	<!-- suites 0 -->
+	<!-- pass 2 -->
+	<!-- fail 0 -->
+	<!-- cancelled 0 -->
+	<!-- skipped 0 -->
+	<!-- todo 0 -->
+	<!-- duration_ms 2279.7519 -->
+</testsuites>

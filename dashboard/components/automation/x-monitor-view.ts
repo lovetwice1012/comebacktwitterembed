@@ -1,0 +1,79 @@
+export type XMonitorAPI = (path: string, method?: string, body?: unknown) => Promise<unknown>;
+export type XMonitorQuality = { planId: string; priority: number; minuteLimit: number; dayLimit: number; intervalMinutes: number | null };
+export type XMonitorQuota = {
+  featureEnabled: boolean;
+  currentPlan: XMonitorQuality & { label: string; tier: string; baseSlotLimit: number };
+  personal: { totalLimit: number; registeredCount: number | null; used: number; available: number; supporterExtraSlots: number };
+  x: { used: number; available: number; reasonCode: string | null; reason: string | null; specialLimit: number; specialUsed: number };
+  pools: { free: XPool; supporter: XPool };
+};
+export type XPool = { limit: number; used: number; available: number };
+export type XMonitor = {
+  id: string; accountId: string; accountHandle: string | null; name: string; enabled: boolean; state: string;
+  poolKind: "free" | "supporter" | "special" | null; subscriptionState: string; revision: number;
+  notificationSettings: { workflowId?: string; destinationId?: string; subscriptionId?: string }; quality: XMonitorQuality;
+};
+export const xCount = (value: unknown): value is number => Number.isSafeInteger(value) && Number(value) >= 0;
+export function xObject(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Invalid X response");
+  return value as Record<string, unknown>;
+}
+function text(value: unknown, maximum = 120): string {
+  if (typeof value !== "string" || value.length > maximum) throw new Error("Invalid X response");
+  return value;
+}
+function count(value: unknown): number { if (!xCount(value)) throw new Error("Invalid X response"); return value; }
+export function parseXPool(value: unknown): XPool {
+  const item = xObject(value);
+  return { limit: count(item.limit), used: count(item.used), available: count(item.available) };
+}
+function quality(value: unknown): XMonitorQuality {
+  const item = xObject(value);
+  if (item.intervalMinutes !== null && !xCount(item.intervalMinutes)) throw new Error("Invalid X response");
+  return { planId: text(item.planId, 64), priority: count(item.priority), minuteLimit: count(item.minuteLimit),
+    dayLimit: count(item.dayLimit), intervalMinutes: item.intervalMinutes as number | null };
+}
+export function parseXQuota(value: unknown): XMonitorQuota {
+  const item = xObject(value), plan = xObject(item.currentPlan), personal = xObject(item.personal), x = xObject(item.x), pools = xObject(item.pools);
+  if (typeof item.featureEnabled !== "boolean") throw new Error("Invalid X response");
+  return { featureEnabled: item.featureEnabled, currentPlan: { ...quality(plan), label: text(plan.label), tier: text(plan.tier, 32), baseSlotLimit: count(plan.baseSlotLimit) },
+    personal: { totalLimit: count(personal.totalLimit), registeredCount: personal.registeredCount == null ? null : count(personal.registeredCount), used: count(personal.used), available: count(personal.available), supporterExtraSlots: count(personal.supporterExtraSlots) },
+    x: { used: count(x.used), available: count(x.available), specialLimit: count(x.specialLimit), specialUsed: count(x.specialUsed),
+      reasonCode: x.reasonCode == null ? null : text(x.reasonCode, 80), reason: x.reason == null ? null : text(x.reason, 500) },
+    pools: { free: parseXPool(pools.free), supporter: parseXPool(pools.supporter) } };
+}
+export function parseXMonitor(value: unknown): XMonitor {
+  const item = xObject(value), settings = xObject(item.notificationSettings);
+  if (typeof item.enabled !== "boolean" || !xCount(item.revision) || item.revision < 1
+    || typeof item.accountId !== "string" || !/^[1-9]\d{0,19}$/u.test(item.accountId) || ![null, "free", "supporter", "special"].includes(item.poolKind as string | null)) throw new Error("Invalid X response");
+  const handle = item.accountHandle == null ? null : text(item.accountHandle, 15);
+  if (handle !== null && !/^[A-Za-z0-9_]{1,15}$/u.test(handle)) throw new Error("Invalid X response");
+  if (settings.subscriptionId != null && (typeof settings.subscriptionId !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu.test(settings.subscriptionId))) throw new Error("Invalid X response");
+  return { id: text(item.id, 128), accountId: String(item.accountId), accountHandle: handle, name: text(item.name), enabled: item.enabled,
+    state: text(item.state, 32), poolKind: item.poolKind as XMonitor["poolKind"], subscriptionState: text(item.subscriptionState, 40), revision: item.revision,
+    notificationSettings: { ...(typeof settings.workflowId === "string" ? { workflowId: text(settings.workflowId, 128) } : {}),
+      ...(typeof settings.destinationId === "string" ? { destinationId: text(settings.destinationId, 128) } : {}),
+      ...(typeof settings.subscriptionId === "string" ? { subscriptionId: settings.subscriptionId } : {}) }, quality: quality(item.quality) };
+}
+export function xReason(code: string | null | undefined): string {
+  return ({ X_ROLLOUT_DISABLED: "X通知は公開準備中です。登録済みの監視を確認できます。新しい監視の受付は公開後に始まります。",
+    X_ROLLOUT_SUPPORTERS_ONLY: "ベータ版は、受付対象となっている既存の寄付者の方にご案内しています。寄付は活動への支援として受け付け、参加資格と利用枠は別に確認します。",
+    X_MONITOR_PERSONAL_LIMIT: "登録数が個人の上限に達しています。通常通知とX監視の登録を確認し、使い終えた登録を削除すると、新しく追加できます。",
+    X_MONITOR_POOL_FULL: "X監視の全体枠は現在すべて利用中です。全体に空きができると追加できます。個人の利用数と全体の空きは、この画面で確認できます。",
+    X_MONITOR_UNAVAILABLE: "X通知は公開に向けて準備を進めています。こちらでは登録済みの監視の確認・停止・削除ができます。新しい監視の受付は、受信テストの完了後にご案内します。",
+    X_MONITOR_NOT_CONFIGURED: "受信を始めるために、管理者へ現在のプランの確認間隔の設定をご依頼ください。" } as Record<string, string>)[code ?? ""] ?? "X監視の利用枠を確認してください。";
+}
+export function xFeedback(cause: unknown): string {
+  const error = cause && typeof cause === "object" ? cause as { code?: string; status?: number } : {};
+  if (["X_MONITOR_PERSONAL_LIMIT", "X_MONITOR_POOL_FULL", "X_MONITOR_UNAVAILABLE", "X_MONITOR_NOT_CONFIGURED", "X_ROLLOUT_DISABLED", "X_ROLLOUT_SUPPORTERS_ONLY"].includes(error.code ?? "")) return xReason(error.code);
+  if (error.code === "X_SETUP_SUBSCRIPTION_NOT_FOUND" || error.code === "X_MONITOR_SUBSCRIPTION_INVALID") return "自分の受信情報の一覧を更新し、登録済みの情報を選び直してください。入力内容はそのまま残っています。";
+  if (error.code === "AUTOMATION_SLOT_LIMIT") return xReason("X_MONITOR_PERSONAL_LIMIT");
+  if (error.code === "X_MONITOR_DESTINATION_INELIGIBLE") return "現在の契約プランと支援者追加枠に合う移動先を選んでください。現在の登録と選択内容はそのまま残っています。";
+  if (error.code === "X_MONITOR_DESTINATION_FULL") return "移動先の枠はすべて利用中です。別の移動先を選ぶか、空き状況を確認してください。現在の登録と選択内容はそのまま残っています。";
+  if (error.status === 409) return "監視の設定が更新されています。入力内容を保持しています。一覧・利用枠を更新して、変更内容をもう一度確認してください。";
+  if (error.code === "NOT_FOUND" || error.status === 403 || error.status === 404) return "一覧を更新して、この監視のアクセス権と登録済みの受信情報を確認してください。入力内容はそのまま残っています。";
+  if (error.status === 422) return "XアカウントIDと通知設定を確認してください。入力内容はそのまま残っています。";
+  return "入力内容はそのまま残っています。X監視の操作をもう一度お試しください。";
+}
+export const xPoolName = (kind: XMonitor["poolKind"]) => ({ free: "共用無料枠", supporter: "支援者優先枠", special: "特別枠" } as Record<string, string>)[kind ?? ""] ?? "未割当";
+export const xInterval = (value: number | null) => value === null ? "未設定" : `${value}分`;

@@ -49,6 +49,19 @@ test('disabled or unconfigured donations preserve history and never load Square 
         finally { await f.close(); }
     }
 });
+test('gratitude grants are distinct from X beta admission and shared capacity before any payment', async () => {
+    const f = await donationFixture();
+    try {
+        const terms = f.container.querySelector('[aria-label="寄付とX通知の利用条件"]');
+        assert.match(terms.textContent, /寄付は寄付.*お礼として申込資格と個人の追加上限/);
+        assert.match(terms.textContent, /ベータ版は既存の寄付者が対象.*新しく寄付しても.*参加やX監視の容量確保を保証するものではありません/);
+        assert.match(terms.textContent, /個人の追加上限と.*共有枠の空きは別.*現在の受付対象・利用枠・共有枠の空き.*通知一覧で確認/);
+        assert(terms.compareDocumentPosition(f.container.querySelector('form')) & f.dom.window.Node.DOCUMENT_POSITION_FOLLOWING);
+        assert(!f.container.textContent.includes('買い切り')); assert.equal(writes(f).length, 0); assert.equal(f.sdk.tokens.length, 0);
+        await f.review(); assert.equal(terms.isConnected, true); assert.equal(writes(f).filter(item => item.route === 'donate').length, 0);
+        assert.equal([...f.container.querySelectorAll('button')].find(item => item.textContent === '同意して寄付を支払う').disabled, true);
+    } finally { await f.close(); }
+});
 test('amount conversion rejects rounding, exponents and overflow with exact zero/two/three decimal minor units', async () => {
     const f = await donationFixture();
     try {
@@ -289,4 +302,73 @@ test('refunded support uses server-adjusted net units and slots without deriving
     const f = await donationFixture({ config: options({ unitAmount: 1000, slotsPerUnit: 2 }), initial: status({ supporter: { active: false, manualActive: false, threshold: 1500, validityDays: 30, netAmount: 500, validUntilAtMs: null, unitAmount: 1000, slotsPerUnit: 2, paymentCount: 1, purchaseUnits: 0, extraSlots: 0, unitsValidUntilAtMs: null }, history: [entry({ amount: 2000, refundedAmount: 1500, netAmount: 500 })] }) });
     try { assert.match(f.container.textContent, /有効な購入口数 0口 · 追加の通知枠 0枠/); assert.match(f.container.textContent, /一部返金/); assert.match(f.container.textContent, /￥2,000￥1,500￥500/); assert(!f.container.textContent.includes('有効な購入口数 2口')); }
     finally { await f.close(); }
+});
+
+const permanentPolicy = { currency: 'JPY', unitAmount: 500, slotsPerUnit: 1, permanent: true };
+
+test('canonical permanent holdings and500JPY per-payment policy stay separate from old600yen/3slot rolling statistics', async () => {
+    const deadline = Date.parse('2030-02-05T18:30:00+09:00');
+    const f = await donationFixture({ config: options({ unitAmount: 600, slotsPerUnit: 3, slotGrantPolicy: permanentPolicy }), initial: status({
+        permanentSupport: { totalSupporterSlots: 9, legacySlots: 6, newPaidSlots: 3, isSupporter: true },
+        supporter: { active: true, manualActive: false, threshold: 1500, validityDays: 30, netAmount: 1200, validUntilAtMs: deadline, unitAmount: 600, slotsPerUnit: 3, paymentCount: 2, purchaseUnits: 2, extraSlots: 6, unitsValidUntilAtMs: deadline },
+    }) });
+    try {
+        const holding = f.container.querySelector('[aria-label="恒久支援枠の保有記録"]'), policy = f.container.querySelector('[aria-label="恒久追加枠の付与条件"]'), legacy = f.container.querySelector('[aria-label="旧制度の支援集計"]');
+        assert.match(holding.textContent, /保有合計 9枠.*旧制度・管理者記録 6枠.*新制度の支援決済 3枠/);
+        assert.match(holding.textContent, /有効期限はなく.*月額プランを解約しても保有枠は残ります/);
+        assert.match(policy.textContent, /JPY支援1決済.*500円ごとに1枠/); assert.match(policy.textContent, /端数を別決済と合算しません/);
+        assert.match(holding.textContent, /寄付へのお礼として個人の総登録上限に加算/); assert.match(policy.textContent, /お礼の追加上限に有効期限はありません/); assert(!f.container.textContent.includes('買い切り'));
+        assert(!policy.textContent.includes('600')); assert(!policy.textContent.includes('3枠'));
+        assert.match(legacy.textContent, /旧制度.*現在の恒久保有枠とは別/); assert.match(legacy.textContent, /旧集計の設定.*￥600につき 3枠追加の計算値/);
+        assert(!holding.textContent.includes('次に口数が変わる期限')); assert.equal(writes(f).length, 0);
+    } finally { await f.close(); }
+});
+
+test('absent permanent metadata never promotes the old unit multiplier or expired counts to current personal allowance', async () => {
+    const f = await donationFixture({ config: options({ unitAmount: 1000, slotsPerUnit: 2 }), initial: status({ supporter: {
+        active: false, manualActive: false, threshold: 1500, validityDays: 30, netAmount: 4000, validUntilAtMs: null,
+        unitAmount: 1000, slotsPerUnit: 2, paymentCount: 2, purchaseUnits: 4, extraSlots: 8, unitsValidUntilAtMs: null,
+    } }) });
+    try {
+        const holding = f.container.querySelector('[aria-label="恒久支援枠の保有記録"]'), policy = f.container.querySelector('[aria-label="恒久追加枠の付与条件"]');
+        assert.match(holding.textContent, /取得できません.*旧集計の倍率・口数・期限から個人の利用枠は計算しません/);
+        assert(!holding.textContent.includes('保有合計 8')); assert.match(policy.textContent, /付与条件を取得できません/);
+        assert.match(f.container.querySelector('[aria-label="旧制度の支援集計"]').textContent, /追加の通知枠 8枠/);
+    } finally { await f.close(); }
+});
+
+test('non-JPY donation controls still use exact server quote/payment consent while the500JPY grant policy explicitly excludes the currency', async () => {
+    const f = await donationFixture({ config: options({ currency: 'USD', minorUnitDigits: 2, minimumAmount: 100, maximumAmount: 20000, slotGrantPolicy: permanentPolicy }), initial: status({ permanentSupport: { totalSupporterSlots: 2, legacySlots: 2, newPaidSlots: 0, isSupporter: true } }) });
+    try {
+        assert.match(f.container.textContent, /受付通貨はUSD.*JPY以外の支払いは.*対象になりません/);
+        await f.review('1.99'); assert.equal(writes(f)[0].body.amount, 199); await f.consent(); await f.click('同意して寄付を支払う');
+        assert.equal(f.sdk.tokens[0].amount, '1.99'); assert.equal(f.sdk.tokens[0].currencyCode, 'USD');
+        assert.deepEqual(Object.keys(writes(f)[1].body).sort(), ['attemptId', 'consent', 'sourceId']);
+        assert.equal(f.sdk.tokens.length, 1); assert.equal(writes(f).filter(item => item.route === 'donate').length, 1);
+    } finally { await f.close(); }
+});
+
+test('permanent holdings survive old rolling expiry and update from the trusted status response without being derived from gross receipts', async () => {
+    let reads = 0;
+    const f = await donationFixture({ config: options({ slotGrantPolicy: permanentPolicy }), initial: status(), respond: route => route === 'status' ? status({
+        supporter: { active: false, manualActive: false, netAmount: 0, threshold: 1500, validityDays: 30, validUntilAtMs: null, purchaseUnits: 0, extraSlots: 0, paymentCount: 0 },
+        permanentSupport: { totalSupporterSlots: ++reads > 1 ? 7 : 5, legacySlots: 4, newPaidSlots: reads > 1 ? 3 : 1, isSupporter: true },
+        history: [entry({ amount: 20000, netAmount: 20000 })],
+    }) : undefined });
+    try {
+        assert.match(f.container.querySelector('[aria-label="恒久支援枠の保有記録"]').textContent, /保有合計 5枠/);
+        await f.click('再読み込み'); const holding = f.container.querySelector('[aria-label="恒久支援枠の保有記録"]');
+        assert.match(holding.textContent, /保有合計 7枠/); assert(!holding.textContent.includes('40枠')); assert.equal(writes(f).length, 0);
+    } finally { await f.close(); }
+});
+
+test('admin unit/period controls are visibly legacy-only and changing them cannot claim to alter permanent500JPY/1slot grants or enable payments', async () => {
+    const f = await policyFixture({ initial: policy({ currency: 'JPY', enabled: false, unitAmount: 600, slotsPerUnit: 3 }) });
+    try {
+        assert.match(f.container.textContent, /新制度の恒久追加枠.*500円ごとに1枠/);
+        assert.match(f.container.textContent, /支援1口の金額.*旧制度集計用/); assert.match(f.container.textContent, /1口あたりの追加枠数（旧制度集計用）/);
+        await f.fill(f.field('支援1口の金額'), '1000'); await f.fill(f.field('1口あたりの追加枠数'), '2'); await f.submit(); await f.click('この寄付設定で保存');
+        assert.equal(writes(f)[0].body.unitAmount, 1000); assert.equal(writes(f)[0].body.slotsPerUnit, 2); assert.equal(writes(f)[0].body.enabled, false);
+        assert.equal(Object.hasOwn(writes(f)[0].body, 'slotGrantPolicy'), false); assert.match(f.container.textContent, /恒久支援枠の500円・1枠の条件は変わりません/);
+    } finally { await f.close(); }
 });

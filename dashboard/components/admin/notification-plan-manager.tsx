@@ -6,11 +6,13 @@ import { Input } from "@/components/ui/input";
 import { automationResponseError } from "@/components/automation/automation-feedback";
 import { SquareCatalogCreator, SquareCouponManager } from "./square-commerce-manager";
 import { subscriptionCadenceLabels as cadenceLabels, subscriptionMonthlyApproximate, subscriptionMonthlyPrice } from "@/lib/subscription-pricing";
+import { PushCapacityManager } from "./push-capacity-manager";
 
 export type NotificationPlanPolicy = {
   tier: "free" | "supporter" | "paid"; planId: string; label: string;
   slotLimit: number; minuteLimit: number; dayLimit: number; priority: number;
   enabled: boolean; isBuiltin: boolean; updatedAtMs: number;
+  intervalMinutes?: number | null;
 };
 export type NotificationPlanAPI = (path: string, method?: string, body?: unknown) => Promise<any>;
 type SquareBinding = { planId: string; variationId: string; enabled: boolean; catalogName: string | null; cadence: string | null; amount: number | null; currency: string | null; verifiedAtMs: number | null };
@@ -34,11 +36,11 @@ const numericFields = [
   { key: "minuteLimit", label: "枠あたりの分次上限", minimum: 1, maximum: 10000, unit: "通／分" },
   { key: "priority", label: "処理の優先度", minimum: 0, maximum: 100, unit: "" },
 ] as const;
-type Draft = { planId: string; label: string; slotLimit: string; dayLimit: string; minuteLimit: string; priority: string; enabled: boolean };
+type Draft = { planId: string; label: string; slotLimit: string; dayLimit: string; minuteLimit: string; priority: string; intervalMinutes: string; enabled: boolean };
 const draftOf = (plan?: NotificationPlanPolicy): Draft => ({
   planId: plan?.planId ?? "", label: plan?.label ?? "", slotLimit: plan ? String(plan.slotLimit) : "",
   dayLimit: plan ? String(plan.dayLimit) : "", minuteLimit: plan ? String(plan.minuteLimit) : "",
-  priority: plan ? String(plan.priority) : "", enabled: plan?.enabled ?? true,
+  priority: plan ? String(plan.priority) : "", intervalMinutes: plan?.intervalMinutes == null ? "" : String(plan.intervalMinutes), enabled: plan?.enabled ?? true,
 });
 const validNumber = (value: string, minimum: number, maximum: number) => /^\d+$/.test(value) && Number.isSafeInteger(Number(value)) && Number(value) >= minimum && Number(value) <= maximum;
 const tierName = { free: "無料枠", supporter: "支援者枠", paid: "有償プラン" };
@@ -51,7 +53,8 @@ function PlanEditor({ plan, api, billing, onSaved, onCancel }: { plan?: Notifica
   const [error, setError] = useState(""), [conflict, setConflict] = useState(false), [status, setStatus] = useState("");
   const validId = /^[a-zA-Z][a-zA-Z0-9_-]{0,63}$/.test(draft.planId) && (baseline || !["free", "supporter"].includes(draft.planId.toLowerCase()));
   const validLabel = draft.label.trim().length > 0 && draft.label.trim().length <= 120;
-  const valid = validId && validLabel && numericFields.every(field => validNumber(draft[field.key], field.minimum, field.maximum));
+  const validInterval = draft.intervalMinutes === "" || validNumber(draft.intervalMinutes, 5, 10080);
+  const valid = validId && validLabel && validInterval && numericFields.every(field => validNumber(draft[field.key], field.minimum, field.maximum));
   const changed = !baseline || JSON.stringify(draft) !== JSON.stringify(draftOf(baseline));
   function update<K extends keyof Draft>(key: K, value: Draft[K]) {
     setDraft(previous => ({ ...previous, [key]: value })); setConfirming(false); setStatus("");
@@ -64,6 +67,8 @@ function PlanEditor({ plan, api, billing, onSaved, onCancel }: { plan?: Notifica
         planId: draft.planId, label: draft.label.trim(), slotLimit: Number(draft.slotLimit), dayLimit: Number(draft.dayLimit),
         minuteLimit: Number(draft.minuteLimit), priority: Number(draft.priority), enabled: baseline?.isBuiltin ? true : draft.enabled,
         expectedUpdatedAtMs: baseline?.updatedAtMs ?? 0,
+        ...(draft.intervalMinutes !== draftOf(baseline).intervalMinutes || baseline?.intervalMinutes != null
+          ? { intervalMinutes: draft.intervalMinutes === "" ? null : Number(draft.intervalMinutes) } : {}),
       };
       const saved = await api(baseline ? `plans/${encodeURIComponent(baseline.planId)}` : "plans", baseline ? "PATCH" : "POST", body);
       const next: NotificationPlanPolicy = saved.item ?? saved;
@@ -94,6 +99,7 @@ function PlanEditor({ plan, api, billing, onSaved, onCancel }: { plan?: Notifica
           <label className="space-y-1 text-sm"><span className="block">表示名</span><Input value={draft.label} maxLength={120} onChange={event => update("label", event.target.value)} aria-invalid={!validLabel} placeholder="利用者に表示する名前" /></label>
         </div>
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">{numericFields.map(field => <label key={field.key} className="space-y-1 text-sm"><span className="block">{field.label}</span><div className="flex items-center gap-2"><Input type="number" inputMode="numeric" step={1} min={field.minimum} max={field.maximum} value={draft[field.key]} onChange={event => update(field.key, event.target.value)} aria-invalid={!validNumber(draft[field.key], field.minimum, field.maximum)} /><span className="shrink-0 text-xs text-muted-foreground">{field.unit}</span></div><span className="block text-xs text-muted-foreground">{field.minimum.toLocaleString("ja-JP")}〜{field.maximum.toLocaleString("ja-JP")}の整数</span></label>)}</div>
+        <label className="block max-w-sm space-y-1 text-sm"><span className="block">確認間隔（分）</span><Input type="number" inputMode="numeric" min={5} max={10080} step={1} value={draft.intervalMinutes} onChange={event => update("intervalMinutes", event.target.value)} aria-invalid={!validInterval} /><span className="block text-xs text-muted-foreground">任意。5〜10,080分の整数。空欄は未設定です。新しいX監視は現在のプランの間隔を使います。既存通知の確認間隔・枠配分は保持されます。</span></label>
         {!baseline?.isBuiltin ? <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={draft.enabled} onChange={event => update("enabled", event.target.checked)} />プランを有効にする</label> : null}
       </fieldset>
       {confirming ? <section aria-label="変更内容の確認" className="space-y-3 rounded-lg border border-primary/30 bg-muted/30 p-4">
@@ -101,6 +107,7 @@ function PlanEditor({ plan, api, billing, onSaved, onCancel }: { plan?: Notifica
         <div className="overflow-x-auto"><table className="w-full min-w-80 text-left text-sm"><thead><tr><th className="py-2">項目</th><th className="py-2">現在</th><th className="py-2">保存後</th></tr></thead><tbody>
           <tr><th className="py-1 font-normal">表示名</th><td>{baseline?.label ?? "未作成"}</td><td className="font-medium">{draft.label.trim()}</td></tr>
           {numericFields.map(field => <tr key={field.key}><th className="py-1 font-normal">{field.label}</th><td>{baseline?.[field.key] ?? "未設定"}</td><td className="font-medium">{Number(draft[field.key])}{field.unit}</td></tr>)}
+          <tr><th className="py-1 font-normal">確認間隔（分）</th><td>{baseline?.intervalMinutes ?? "未設定"}</td><td>{draft.intervalMinutes === "" ? "未設定" : `${Number(draft.intervalMinutes)}分`}</td></tr>
           {!baseline?.isBuiltin ? <tr><th className="py-1 font-normal">状態</th><td>{baseline ? baseline.enabled ? "有効" : "無効" : "未作成"}</td><td>{draft.enabled ? "有効" : "無効"}</td></tr> : null}
         </tbody></table></div>
         <p className="text-xs text-muted-foreground">上限を下げても登録済み通知と送信件数は保持されます。枠を超えた通知は送信・再開が制限され、停止・削除できます。</p>
@@ -221,5 +228,6 @@ export function NotificationPlanManager({ api = notificationPlanAPI }: { api?: N
     {items.map(plan => <PlanEditor key={plan.planId} plan={plan} api={api} billing={billing} onSaved={saved} />)}
     {creating ? <PlanEditor key="new-plan" api={api} billing={billing} onSaved={plan => { saved(plan); setCreating(false); }} onCancel={() => setCreating(false)} /> : null}
     <SquareCouponManager plans={items} configured={billingData?.configured === true} api={api} />
+    <PushCapacityManager api={api} plans={items} />
   </div>;
 }

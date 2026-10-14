@@ -1,0 +1,513 @@
+{
+  "recordedAtUtc": "2026-10-14T02:28:32.683Z",
+  "runtime": {
+    "version": "v24.21.0",
+    "executable": "C:\\Users\\yussy\\AppData\\Local\\cbte-runtimes\\node-v24.21.0-win-x64\\node-v24.21.0-win-x64\\node.exe",
+    "sha256": "ba4e6d110e8c1592a1ecd390f6b05f3da124b13871a5be62b341a07a853c6c32",
+    "libuv": "1.52.1"
+  },
+  "outcome": "Local implementation and verification passed; real X and production gates remain separate.",
+  "diagnosis": {
+    "code": "0xc0000409",
+    "fastFailParameter": 2,
+    "symbol": "__report_gsfailure",
+    "path": "uv__tcp_connect / TCPWrap::Connect<sockaddr_in>",
+    "reason": "Windows libuv OSVERSIONINFOW size was uninitialized in Node 24.15.0; upstream fix is included in pinned 24.21.0.",
+    "sources": [
+      "https://github.com/nodejs/node/pull/62561",
+      "https://github.com/nodejs/node/issues/63620"
+    ],
+    "comparison": [
+      {
+        "runtime": "v24.15.0",
+        "completed": 1000,
+        "passed": 998,
+        "failures": [
+          {
+            "index": 804,
+            "code": 1,
+            "signal": null,
+            "timedOut": false,
+            "durationMs": 376,
+            "nativeSignature": true,
+            "eaddrinuse": false
+          },
+          {
+            "index": 865,
+            "code": 1,
+            "signal": null,
+            "timedOut": false,
+            "durationMs": 364,
+            "nativeSignature": true,
+            "eaddrinuse": false
+          }
+        ],
+        "fixtureSha256": "5d4fd80319ff14f4985456a5ec3c6d91c23ebde806eee24ee1f071a37eb4214b"
+      },
+      {
+        "runtime": "v24.21.0",
+        "completed": 1000,
+        "passed": 1000,
+        "failures": [],
+        "fixtureSha256": "5d4fd80319ff14f4985456a5ec3c6d91c23ebde806eee24ee1f071a37eb4214b"
+      }
+    ]
+  },
+  "release": {
+    "artifact": "artifacts/angelic-setup/x-notification-setup-0.1.0-preview.3.zip",
+    "version": "0.1.0-preview.3",
+    "bytes": 68258,
+    "sha256": "c54c762adc0e8d5a425b1f823a77bdb0568a9a1b18d83179c53aa46dbd77966b",
+    "rebuiltMatchesArtifact": true
+  },
+  "reports": [
+    {
+      "filename": "docs/angelic-angel/mixed-notification-acceptance-tests.xml",
+      "sha256": "b3f36acf89db2a1e9f4b47cde020e96a0328f9072b552f92b08aa3b304b4f90a",
+      "stats": {
+        "tests": 623,
+        "pass": 623,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0,
+        "duration_ms": 284250.7258
+      },
+      "files": [
+        "scripts/test/angelic-setup-export-consent.test.js",
+        "scripts/test/angelic-setup-package.test.js",
+        "scripts/test/autoextract.additionalautoextractslot.test.js",
+        "scripts/test/automation-core.test.js",
+        "scripts/test/automation-delivery-gate.test.js",
+        "scripts/test/automation-donation-ui.test.js",
+        "scripts/test/automation-entitlements-sql.test.js",
+        "scripts/test/automation-graph-driver-sql.test.js",
+        "scripts/test/automation-http-boundary.test.js",
+        "scripts/test/automation-monitor-cadence-lifecycle-sql.test.js",
+        "scripts/test/automation-monitor-cadence-sql.test.js",
+        "scripts/test/automation-monitor-cadence-ui.test.js",
+        "scripts/test/automation-notification-quota-ui.test.js",
+        "scripts/test/automation-payment-navigation.test.js",
+        "scripts/test/automation-plan-admin-sql.test.js",
+        "scripts/test/automation-plan-admin-ui.test.js",
+        "scripts/test/automation-push-capacity-sql.test.js",
+        "scripts/test/automation-push-capacity-ui.test.js",
+        "scripts/test/automation-push-support-grants-sql.test.js",
+        "scripts/test/automation-runtime.test.js",
+        "scripts/test/automation-square-billing-sql.test.js",
+        "scripts/test/automation-square-commerce-ui.test.js",
+        "scripts/test/automation-square-donations-sql.test.js",
+        "scripts/test/automation-x-binding-sql.test.js",
+        "scripts/test/automation-x-delivery-sql.test.js",
+        "scripts/test/automation-x-delivery.test.js",
+        "scripts/test/automation-x-monitor-ui.test.js",
+        "scripts/test/automation-x-push-gateway.test.js",
+        "scripts/test/automation-x-push-processing-sql.test.js",
+        "scripts/test/automation-x-push-runtime-retry.test.js",
+        "scripts/test/automation-x-push-runtime.test.js",
+        "scripts/test/automation-x-push-store.test.js",
+        "scripts/test/automation-x-quota-migration.test.js",
+        "scripts/test/automation-x-quota-sql.test.js",
+        "scripts/test/automation-x-rollout-policy.test.js",
+        "scripts/test/automation-x-setup-download.test.js",
+        "scripts/test/automation-x-setup-sql.test.js",
+        "scripts/test/automation-x-setup-transfer.test.js",
+        "scripts/test/automation-x-setup-ui.test.js",
+        "scripts/test/automation-x-worker-config.test.js",
+        "scripts/test/project-node-runtime.test.js",
+        "scripts/test/runtime.test.js",
+        "scripts/test/x-notification-reader.test.js"
+      ]
+    },
+    {
+      "filename": "docs/angelic-angel/mixed-notification-startup-final-tests.xml",
+      "sha256": "58b3de57c2e8fe483952633dcc88f32e7b208e8899d6db936df399b449f362ad",
+      "stats": {
+        "tests": 54,
+        "pass": 54,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0,
+        "duration_ms": 44649.9038
+      },
+      "files": [
+        "scripts/test/angelic-setup-package.test.js",
+        "scripts/test/project-node-runtime.test.js",
+        "scripts/test/runtime.test.js",
+        "scripts/test/windows-node-bootstrap.test.js"
+      ]
+    },
+    {
+      "filename": "docs/angelic-angel/mixed-notification-native-tests.xml",
+      "sha256": "36ec3d76385b3b15b6d88303dbca464b59680395efe26cbdb48e7349dc5ad1be",
+      "stats": {
+        "tests": 6,
+        "pass": 6,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0,
+        "duration_ms": 44374.4302
+      },
+      "files": [
+        "scripts/native-test/x-notification-export.test.cjs"
+      ]
+    },
+    {
+      "filename": "docs/angelic-angel/mixed-notification-client-tests.xml",
+      "sha256": "f367aa89b879ce45cfd0df78e6cddf43d8c73dce318da2412f5829e34ccf7217",
+      "stats": {
+        "tests": 78,
+        "pass": 78,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0,
+        "duration_ms": 56374.379
+      },
+      "files": [
+        "scripts/test/angelic-setup-export-consent.test.js",
+        "scripts/test/angelic-setup-package.test.js",
+        "scripts/test/project-node-runtime.test.js",
+        "scripts/test/runtime.test.js",
+        "scripts/test/x-notification-reader.test.js"
+      ]
+    },
+    {
+      "filename": "docs/angelic-angel/mixed-notification-download-tests.xml",
+      "sha256": "2b924de097b64bd41e6d52c3de1fb16f58db8ba421a714567a0e5878ca97d230",
+      "stats": {
+        "tests": 31,
+        "pass": 31,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0,
+        "duration_ms": 3080.2132
+      },
+      "files": [
+        "scripts/test/automation-x-setup-download.test.js",
+        "scripts/test/automation-x-setup-ui.test.js"
+      ]
+    },
+    {
+      "filename": "docs/angelic-angel/node-24-21-phase0-final-tests.xml",
+      "sha256": "d0452f19b857ed0ca55fd018e2a8c4f55f9780c93336bcccf1af403130286978",
+      "stats": {
+        "tests": 199,
+        "pass": 199,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0,
+        "duration_ms": 19911.6871
+      },
+      "files": [
+        "packages/angelic-angel/tests/autopush.test.mjs",
+        "packages/angelic-angel/tests/compatibility.test.mjs",
+        "packages/angelic-angel/tests/core.test.mjs",
+        "packages/angelic-angel/tests/crypto.test.mjs",
+        "packages/angelic-angel/tests/delivery.test.mjs",
+        "packages/angelic-angel/tests/lifecycle.test.mjs",
+        "packages/angelic-angel/tests/recovery.test.mjs"
+      ]
+    },
+    {
+      "filename": "docs/angelic-angel/foreign-push-discard-tests.xml",
+      "sha256": "cb651d16beeacee5f954c592d101d80d513b62a122183b5424c7be38e7b3cd67",
+      "stats": {
+        "tests": 16,
+        "pass": 16,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0,
+        "duration_ms": 26185.6394
+      },
+      "files": [
+        "scripts/test/automation-x-push-gateway.test.js"
+      ]
+    },
+    {
+      "filename": "docs/angelic-angel/windows-node-bootstrap-tests.xml",
+      "sha256": "2868ab81bbfa708dc9bcd2d32475cb0efb78ef735c52fb752d86a75d758e7c64",
+      "stats": {
+        "tests": 18,
+        "pass": 18,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0,
+        "duration_ms": 408.8816
+      },
+      "files": [
+        "scripts/test/runtime.test.js",
+        "scripts/test/windows-node-bootstrap.test.js"
+      ]
+    }
+  ],
+  "overlappingTestSetsMustNotBeSummed": true,
+  "additionalVerification": {
+    "browser": {
+      "startedAt": "2026-10-14T02:15:40.130Z",
+      "finishedAt": "2026-10-14T02:15:55.390Z",
+      "checks": [
+        "ephemeral-loopback-server-with-local-fake-session-and-real-dispatch",
+        "mixed-site-reception-capability-discard-and-separate-permission-disclosed-before-upload",
+        "actual-authenticated-download-route-pinned-release-bytes",
+        "desktop1440-and-mobile390-no-horizontal-overflow",
+        "manual-file-choice-does-no-network-write-invalid-json-refused-by-real-api",
+        "real-api-preview-shows-only-safe-metadata-and-does-not-save",
+        "explicit-final-save-stores-hybrid-envelope-without-plaintext-and-clears-selection",
+        "service-restart-and-browser-reload-retain-safe-metadata-with-receiver-disabled",
+        "delete-requires-confirmation-cancel-preserves-data-confirm-removes-and-reload-stays-empty",
+        "no-notification-slots-no-monitors-no-worker-or-external-delivery",
+        "no-secret-values-in-dom-or-web-storage-zero-external-requests-zero-page-errors"
+      ],
+      "screenshots": [
+        {
+          "filename": "desktop-instructions.png",
+          "bytes": 336429,
+          "sha256": "cb3a172a0e4aae66031c264f0a7c0dc226d0b4d9c4706a7060c66b68c6035014",
+          "viewport": {
+            "width": 1440,
+            "height": 1000
+          }
+        },
+        {
+          "filename": "mobile-instructions.png",
+          "bytes": 329472,
+          "sha256": "3608ec5f685c723c3daf75f69b9c07ba43fcf4d0e9e4f22f3be48ba121af89b4",
+          "viewport": {
+            "width": 390,
+            "height": 844
+          }
+        },
+        {
+          "filename": "mobile-review.png",
+          "bytes": 356556,
+          "sha256": "1ef09aab3196628f61ccd00f5e9c8e0a19c199a361ab7da324092c472da980e3",
+          "viewport": {
+            "width": 390,
+            "height": 844
+          }
+        },
+        {
+          "filename": "desktop-saved.png",
+          "bytes": 382465,
+          "sha256": "c8079b9f2498af959307285441a79234b2bfee7a1812530cfcf6f8be36766333",
+          "viewport": {
+            "width": 1440,
+            "height": 1000
+          }
+        },
+        {
+          "filename": "mobile-delete-confirm.png",
+          "bytes": 399884,
+          "sha256": "d02422f07fa0c39e88630f3dd443b16992628fcd34854abd918d0e3d50ded391",
+          "viewport": {
+            "width": 390,
+            "height": 844
+          }
+        }
+      ],
+      "requests": [
+        {
+          "method": "GET",
+          "path": "/dashboard/automation/x-setup",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/app.css",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/app.js",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/automation/x-setup",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/automation/x-setup/download",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/automation/x-setup/sessions",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/automation/x-setup/validate",
+          "status": 422
+        },
+        {
+          "method": "POST",
+          "path": "/api/automation/x-setup/sessions",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/automation/x-setup/validate",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/automation/x-setup/import",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/dashboard/automation/x-setup",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/app.css",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/app.js",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/automation/x-setup",
+          "status": 200
+        },
+        {
+          "method": "DELETE",
+          "path": "/api/automation/x-setup/subscriptions/:id",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/dashboard/automation/x-setup",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/app.css",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/app.js",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/automation/x-setup",
+          "status": 200
+        }
+      ],
+      "fixtureOnly": true,
+      "productionIO": false,
+      "actualOAuthLoginVerified": false,
+      "actualFirefoxVerified": false,
+      "actualPushDeliveryVerified": false,
+      "database": {
+        "host": "127.0.0.1",
+        "port": 33621,
+        "disposableSchemaRemoved": true
+      },
+      "intakeEncryption": "public-key-hybrid",
+      "pageErrors": [],
+      "externalRequests": 0
+    },
+    "rustBaseline": {
+      "commit": "169a098e2025cc6e41a50fc8d521c483e21d9b6d",
+      "immutableFilesVerified": 14
+    },
+    "rootTypecheck": "passed",
+    "dashboardTypecheck": "passed",
+    "rootTargetedLintIncludingNormallyIgnoredScripts": "passed",
+    "dashboardTargetedLint": "passed",
+    "testOnlyDialogOwnershipFixAndWindowsEntryHandoffVerifiedSeparatelyAfterFullMatrix": true
+  },
+  "evidenceHashes": {
+    "docs/angelic-angel/node-startup-clean-ab/comparison.json": "e4c5920d95ad1b5cbbd3422d4e64457fdba68c5e97adb5258f61a98f6d4e3e3c",
+    "docs/angelic-angel/mixed-notification-browser/browser.json": "2b497d0057e343664eac4cf27dcf5f5f98a3bb669ee1f89fd257ede37fbf808d",
+    "docs/angelic-angel/node-startup-native-analysis.txt": "f58aeb57a29d095716bf3653b9988eda59ce58c68c7169c387e75d0f172c17da",
+    "docs/angelic-angel/project-node-runtime-validation.json": "c86f4fb7c27d15faaa3ef9727ae4ae693bf5e8f5fdcd5cb421788c7864d8a325",
+    "docs/angelic-angel/project-node-fresh-install-validation.json": "0088a7b00811a2505250f0708b79b04f8b7f6523846e1cb7fc95ea9d2982ac09",
+    "docs/angelic-angel/windows-node-bootstrap-validation.json": "c525ddf3ea3391139c1c9479422ce9d8f3eb3fd2da2d6e511aa17e973ff092e5",
+    "docs/angelic-angel/node-24-21-npm-test.log": "a6c01543bb7ef353cdce306d39acb5b62c9c59886ed576406f0a5d7427f6b5d0"
+  },
+  "sourceSha256": {
+    "index.js": "4c1d2ff6cee15e8bfcf65725f0fcd1142784ac2fd2071801cd97158fba5ee46a",
+    "src/runtime.js": "bf782233ca57265d48717b69f440399fc5815e54f4c666e15b5d167655a92400",
+    "package.json": "0f17c6d530ed515c69529e0276bdc7c40db9450394f4f1293da776926d162bed",
+    ".node-version": "73fb1b615e2043a933be1c0895cde4358036acc28d785692509b822aa53c761f",
+    "packages/angelic-angel/.node-version": "73fb1b615e2043a933be1c0895cde4358036acc28d785692509b822aa53c761f",
+    "packages/angelic-angel/package.json": "f9c3f01c133593bd93b26dd36cd72836fe9a7431210fc3417a0570f139e23b77",
+    "packages/angelic-angel/package-lock.json": "ae67befb1f7ef759d97adb17bc48d2044ec0a65ca8ce0d8012328076c1fb99cc",
+    "packages/angelic-angel/tests/core.test.mjs": "a595892dd18e92b44782111b125d39b045df3d1b2d962111b543c7f6c56e9479",
+    "packages/angelic-angel/tests/compatibility.test.mjs": "2a1682593113a26e52bc677c556d88c0337f731d828941d01ef67cb8119cf5ec",
+    "src/automation/x-push-gateway.js": "e010132d5b59ee63bc61027e644e0d32d8571b008353531c1a32f3673be1e560",
+    "src/automation/x-setup.js": "116f4a0f11105d26a10572123b0db068262736bd491d287754389b38c60b9395",
+    "dashboard/components/automation/x-notification-setup.tsx": "699d989337825b1733d0f5a5d0f119e737580de18c1f03cf9b63a852fe25e358",
+    "dashboard/lib/x-setup-download.ts": "512f1a6baa6483260da4b615e91e91b92721d668a034e519053590c323438e66",
+    "scripts/run-project-node.cjs": "a0d3b78fc8aa98357c2bd115469083c44cbcd944d7b965b52ec1b205914077ad",
+    "scripts/setup-project-node.ps1": "0724170c157fe7d5e22c92361f4e7ea3ae73a2091c3268b812fc190565884aa2",
+    "scripts/windows-node-bootstrap.cjs": "0979319bf1245665bf9d3e0e793be6ed1b8237283e91118cbf5b7dfc9538be0c",
+    "scripts/run_node_tests.js": "d68549ba4aa58a66370e319a70e1dbb877a4997ccb11da629a672fca59dc6b4a",
+    "scripts/run-x-notification-acceptance.cjs": "c415712bdf5523016983f4eb34b7c4cf2f9fad04fad6cf3fb6aa578e4e7928c5",
+    "scripts/build-angelic-setup-package.cjs": "2e175a98823433d06a2706296d51b774e741fcbc58e95b483155ffd6f572bce6",
+    "scripts/verify-x-notification-setup.cjs": "5d02a618fd2c6906b0e8c252be65b2e4bce2e10a555b24be63b669a8c2a80a2f",
+    "scripts/native-test/x-notification-export.test.cjs": "f7ae7859f31fbd25605692f6fb66b2084c18ea8228d5fa249f37761b9b220815",
+    "scripts/test/angelic-setup-package.test.js": "295ec8766084f5290458719865a6b7c56486d1d7bf6cd1c3d60f39bc14eae425",
+    "scripts/test/angelic-setup-export-consent.test.js": "2c661dbb590967a4ae8dd955a394518fa3dc9dafb3426cfcc5dd4b882e15e962",
+    "scripts/test/x-notification-reader.test.js": "67eeca91f7e09d2f50aa2d4923c4d7f9ac5b53bcfe4a63cf9437c79007bef9eb",
+    "scripts/test/project-node-runtime.test.js": "bf6237fbd7272343d8b495bc2b194ae87684958874a5adf4e54d4955c737ac32",
+    "scripts/test/windows-node-bootstrap.test.js": "db9d9e97d5cd3a67e883e50580c1a348a9654bcee3693a14f6e72f10a70dc581",
+    "scripts/test/runtime.test.js": "6e61e9da4b7781557a42d1d2421ee20c2beb5b1667b0849704ef2e77d1ff19e7",
+    "scripts/test/automation-x-push-gateway.test.js": "9c9819ef32ca45ce26a3554c8971a0005797c47cb87ecdf80e71699e3e8f8ddf",
+    "scripts/test/automation-x-setup-ui.test.js": "65cb47c0b006dcec2a81197e00601c08f026569893f044dab5d49d4caf1e4572",
+    "scripts/test/automation-x-setup-download.test.js": "9f4af90b4fffa27d351684d1f70538eab764f868ee151ff9780e7fc7ece88dcc",
+    "client/angelic-setup/LICENSE": "230184f60bae2feaf244f10a8bac053c8ff33a183bcc365b4d8b876d2b7f4809",
+    "client/angelic-setup/README-ja.md": "7406843b57ddff7e7d6debb2ac4d56639c76dd0879d6e6a7494e1afa85b86693",
+    "client/angelic-setup/Setup-XNotifications.ps1": "65e6530121f6f1664c276d1fd00af595a19fcddc4d65866f9328682769b2266b",
+    "client/angelic-setup/Start-Setup.ps1": "8f72aa4d95e23e23742f6d9ea43f9632e7b0ad1fc06a07d7f827cf1c0351090c",
+    "client/angelic-setup/FirefoxReader.ps1": "f278660528b65b63fcdaf04f7dbe7b3f1def58aef40c9eeab055c2e20b233a6c",
+    "client/angelic-setup/Export-XNotificationData.ps1": "ea6cd48e063e3e5cda2cacae6d31b5050b9449e32d239b1074176cf5e0d26231",
+    "client/angelic-setup/Read-PushSubscription.js": "046d48f83d4681172f82d15e28f2f99fd2f7bb19ccb06c905944d0ca3eee7b03",
+    "client/angelic-setup/はじめに読んでください.txt": "231f73a3e4ef7e3a3782a433e9b10d6e761a78f77542d0a31b72785ca66bd83b",
+    "client/angelic-setup/ダブルクリックで開始.cmd": "0b604303929c5f8c5b4f5e9227f3ab157ce379be21cd6945491b0e0855202e9b",
+    "Angelic_Angel_Codex_Implementation_Spec.md": "132aa2a616d7f74245c815c727d19d2fbf3e53ae5ad5e15a9c1cb4be185b3fdb",
+    "docs/angelic-angel/node-startup-diagnosis.md": "e7c095efbf52bb58176c0f2ce09ff201ae5022e09def38efb3b0dbb2a4728930",
+    "docs/angelic-angel/implementation-status.md": "5c086ddfbb88860774666b8382bbe487db64cb617af01894922b557ba2f99d82",
+    "docs/angelic-angel/powershell-file-client.md": "6011aa4eee1d1ae2635413f04dd95852256ec3530e2a1a9360b3ad21d1bc3c38",
+    "docs/angelic-angel/x-notification-onboarding.md": "4da87ae6b6715e4cf98426a6c8d2b200b1b97381b42db81809e143459ce2630c",
+    "docs/angelic-angel/x-setup-download.md": "de0c98829c085fc98f9890f5b793639a629e0703c3f6731b9ffd97fb235f67b6",
+    "docs/angelic-angel/server-receiver.md": "d5a87a94680c78f59a29cec8a1b999c7e1331cc251121aaedbe7b395027dc0bb",
+    "docs/angelic-angel/firefox-source-investigation.md": "6f00925acc2490fad0aa175935a7539b7db6f4e852a781c043d4fd0c49dd4c06",
+    "docs/angelic-angel/adr-0001-phase-0-isolated-port.md": "a6ee7447dbf0d34f101b5d1b341ad5afcfadd0c2772c092da169d2d58d492e15",
+    "docs/angelic-angel/phase-0-acceptance.md": "abb475c0928474417c5ec799a1f1d46380fbaaef6e59967f99399fd6d3ca18e3",
+    "docs/angelic-angel/powershell-distribution.md": "a3044ffa1dfe9ca543edc9f492ea28490b9f530f2bab877139f2117a96552ed3"
+  },
+  "preservedInitialFailures": [
+    "quota-allocation-tests-startup-failure.xml",
+    "cadence-batch-tests-initial.xml",
+    "node-24-21-phase0-tests.xml",
+    "mixed-notification-download-tests-initial.xml"
+  ],
+  "productionDataChanged": false,
+  "productionDeploymentPerformed": false,
+  "paymentsEnabled": false,
+  "realXSubscriptionOrDeliveryTested": false,
+  "limitations": [
+    "G1 real X/Mozilla transfer and production acceptance remain unverified; flags stay default-off.",
+    "System-wide Node remains unchanged; Windows project entry selects the verified local runtime.",
+    "Automatic approval review blocked deletion of the fresh-installer test fixture (reason: blocked by policy)."
+  ],
+  "retainedInstallerTestFixture": "C:/Users/yussy/AppData/Local/Temp/cbte-node-install-6181423ce77944998b2e3a3926414052"
+}

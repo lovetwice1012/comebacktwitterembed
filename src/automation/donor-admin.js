@@ -114,9 +114,15 @@ function createDonorAdmin(db, options = {}) {
         return { items: rows.map(historyDto), pageSize: size, nextCursor: more ? encodeCursor({ at: Number(rows.at(-1).created_at_ms), id: rows.at(-1).id, filter }) : null };
     }
     async function usage(query, owner) {
-        // Native registrations include paused and not-yet-adopted targets. Only
-        // boost reservations still attached to those owners consume capacity.
-        const targets = await query(`SELECT COUNT(*) AS used FROM (SELECT id FROM auto_watch_targets WHERE user_id=? UNION ALL SELECT id FROM price_watch_targets WHERE user_id=?) t`, [owner, owner]);
+        // All personal registrations share the same allowance. Paused native
+        // targets and suspended X targets retain their reservations; deleted X
+        // targets have released theirs. Count registrations even before slot
+        // adoption, and only boosts still attached to this owner's targets.
+        const targets = await query(`SELECT COUNT(*) AS used FROM (
+            SELECT id FROM auto_watch_targets WHERE user_id=?
+            UNION ALL SELECT id FROM price_watch_targets WHERE user_id=?
+            UNION ALL SELECT id FROM automation_x_monitors WHERE owner_user_id=? AND state<>'deleted'
+        ) t`, [owner, owner, owner]);
         const boosts = await query(`SELECT COUNT(*) AS used FROM automation_notification_boost_slots b WHERE b.owner_user_id=? AND
             ((b.target_kind='auto' AND EXISTS (SELECT 1 FROM auto_watch_targets t WHERE t.id=b.target_id AND t.user_id=b.owner_user_id))
              OR (b.target_kind='price' AND EXISTS (SELECT 1 FROM price_watch_targets t WHERE t.id=b.target_id AND t.user_id=b.owner_user_id)))`, [owner]);

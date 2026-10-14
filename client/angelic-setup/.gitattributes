@@ -1,0 +1,11 @@
+# Immutable release hashes cover raw bytes, including existing BOMs and CRLF.
+# Do not normalize on checkout: preview.2 must match on Windows and Linux.
+LICENSE -text
+README-ja.md -text
+Setup-XNotifications.ps1 -text
+Start-Setup.ps1 -text
+FirefoxReader.ps1 -text
+Export-XNotificationData.ps1 -text
+Read-PushSubscription.js -text
+はじめに読んでください.txt -text
+ダブルクリックで開始.cmd -text

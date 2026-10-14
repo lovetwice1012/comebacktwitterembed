@@ -1,3 +1,9 @@
+function boot() {
+    // Windows switches to the verified project runtime before loading recovery,
+    // configuration, Discord or database code. Linux keeps this entry and PID.
+    if (process.platform === 'win32' && !process.versions.bun
+        && require('./scripts/windows-node-bootstrap.cjs').handoffWindowsNode(__filename)) return;
+
 //discord.js v14
 const path = require('node:path');
 const recoveryLease = require('./src/recoveryLease');
@@ -205,3 +211,6 @@ async function shutdown(signal, exitCode) {
 
 process.once('SIGINT', () => { void shutdown('SIGINT', 130); });
 process.once('SIGTERM', () => { void shutdown('SIGTERM', 143); });
+}
+
+boot();

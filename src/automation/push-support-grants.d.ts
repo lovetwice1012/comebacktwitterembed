@@ -1,0 +1,12 @@
+type Query = (sql: string, params?: unknown[]) => Promise<any>;
+export type SupportGrantScope = { configured?: boolean; environment: 'sandbox' | 'production' | null; merchantId: string | null };
+type Actor = { userId: string; isAdmin?: boolean };
+export type SupportGrantHistory = { grantId: string; kind: 'square_payment' | 'historical_admin' | 'manual_adjustment'; slots: number; purchasedSlots: number; reason: string | null; amountYen: number | null; confirmedRefundedAmount: number; financialReviewRequired: boolean; actorUserId: string | null; purchasedAtMs: number; createdAtMs: number };
+export type SupporterHolding = { manualLegacySlots: number; legacySquareSlots: number; historicalSlots: number; legacySlots: number; newPaidSlots: number; paidSlots: number; canonicalSquareSlots: number; totalSupporterSlots: number; isSupporter: boolean; migrationRequired: boolean; history: SupportGrantHistory[]; historyCursor: string | null };
+export type GrantOptions = { now?: number; scope?: SupportGrantScope; excludeAttemptId?: string };
+export function getSupporterHolding(query: Query, userId: string, now?: number, scope?: SupportGrantScope): Promise<SupporterHolding>;
+export function migrateLegacyGrants(query: Query, userId: string, options?: GrantOptions): Promise<SupporterHolding & { migrated: true; createdScopeSnapshot: boolean }>;
+export function applyVerifiedDonationGrant(query: Query, attemptId: string, options?: GrantOptions): Promise<{ inserted: boolean; legacy: boolean; grant: SupportGrantHistory | null }>;
+export function recordHistoricalSupportGrant(query: Query, actor: Actor, input: unknown, options?: GrantOptions): Promise<{ inserted: boolean; grant: SupportGrantHistory }>;
+export function explicitAdminAdjustment(query: Query, actor: Actor, input: unknown, options?: GrantOptions): Promise<{ inserted: boolean; grant: SupportGrantHistory }>;
+export function getSupporterGrantHistory(query: Query, userId: string, options?: { scope?: SupportGrantScope; limit?: number; cursor?: string | null }): Promise<{ items: SupportGrantHistory[]; nextCursor: string | null }>;

@@ -1,0 +1,34 @@
+Exception: code=0xc0000409 address=0x7ff658312189 thread=60600 parameters=['0x2']
+Module node.exe base=0x7ff656120000 size=0x5a33000 loaded=0x7ff656120000 error=487
+Module ntdll.dll base=0x7ff9f8a60000 size=0x267000 loaded=0x7ff9f8a60000 error=0
+Module KERNELBASE.dll base=0x7ff9f5c60000 size=0x402000 loaded=0x7ff9f5c60000 error=0
+Module ucrtbase.dll base=0x7ff9f63e0000 size=0x14c000 loaded=0x7ff9f63e0000 error=0
+Exception symbol: node.exe!__report_gsfailure+0x1d
+Thread RIP=0x7ff658312189 RSP=0x494dfe270 stack_start=0x494dfe270 size=0x1d90
+Raw stack symbol candidates (not an unwound call stack):
+  [rsp+0x018] 0x7ff65ba0de48 node.exe!default_loop_struct+0x0
+  [rsp+0x028] 0x7ff65ba0de48 node.exe!default_loop_struct+0x0
+  [rsp+0x038] 0x7ff6570bf67f node.exe!uv__tcp_connect+0x3af
+  [rsp+0x178] 0x7ff656528b00 node.exe!node::AsyncWrap::AsyncReset+0x210
+  [rsp+0x188] 0x7ff6565308d3 node.exe!node::async_context_frame::current+0x13
+  [rsp+0x1b8] 0x7ff65652de1f node.exe!node::AsyncWrap::AsyncWrap+0xdf
+  [rsp+0x208] 0x7ff65652dd0d node.exe!node::AsyncWrap::AsyncWrap+0x2d
+  [rsp+0x258] 0x7ff6570d8e4b node.exe!uv_tcp_connect+0x3b
+  [rsp+0x280] 0x7ff65624a0d0 node.exe!node::MakeLibuvRequestCallback<uv_connect_s,void (*)(uv_connect_s *, int)>::Wrapper+0x0
+  [rsp+0x288] 0x7ff6562490f8 node.exe!node::TCPWrap::Connect<sockaddr_in>+0x248
+  [rsp+0x2c8] 0x7ff656bae070 node.exe!v8::internal::Map::GetOrCreatePrototypeChainValidityCell+0x130
+  [rsp+0x378] 0x7ff656bb5658 node.exe!v8::internal::LookupIterator::WriteDataValue+0xd8
+  [rsp+0x3d8] 0x7ff656b994da node.exe!v8::internal::Object::TransitionAndWriteDataProperty+0xda
+  [rsp+0x448] 0x7ff656b98cf9 node.exe!v8::internal::Object::AddDataProperty+0x3d9
+  [rsp+0x508] 0x7ff656b976ec node.exe!v8::internal::Object::SetProperty+0x9c
+  [rsp+0x588] 0x7ff656dbe2fa node.exe!v8::internal::StoreIC::Store+0x54a
+  [rsp+0x5c8] 0x7ff65704eb69 node.exe!v8::internal::FunctionCallbackArguments::CallOrConstruct+0x1a9
+  [rsp+0x6d8] 0x7ff656dc20fb node.exe!v8::internal::Runtime_StoreIC_Miss+0x19b
+  [rsp+0x728] 0x7ff658cb81a8 node.exe!v8::internal::IC::`vftable'+0x0
+  [rsp+0x7b8] 0x7ff6562479af node.exe!node::TCPWrap::Connect+0x7f
+  [rsp+0x7e8] 0x7ff658c394c0 node.exe!error_and_abort_args+0x20
+  [rsp+0xd48] 0x7ff656f243cb node.exe!v8::internal::`anonymous namespace'::Invoke+0x83b
+  [rsp+0xda0] 0x7ff6591f1590 node.exe!node::internal_main_run_main_module_cache_data+0x0
+  [rsp+0xe78] 0x7ff656f24eec node.exe!v8::internal::`anonymous namespace'::InvokeWithTryCatch+0x7c
+  [rsp+0xf38] 0x7ff656f23b4c node.exe!v8::internal::Execution::Call+0xbc
+  [rsp+0xfd8] 0x7ff657089a3e node.exe!v8::Function::Call+0x25e

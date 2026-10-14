@@ -4,7 +4,7 @@ const FREE_PLAN = Object.freeze({ tier: 'free', planId: 'free', label: '無料',
 const SUPPORTER_PLAN = Object.freeze({ ...FREE_PLAN, tier: 'supporter', planId: 'supporter', label: '支援者', priority: 1 });
 const BUILTIN_PLANS = Object.freeze({ free: FREE_PLAN, supporter: SUPPORTER_PLAN });
 const builtinPlan = id => typeof id === 'string' && Object.hasOwn(BUILTIN_PLANS, id.toLowerCase()) ? BUILTIN_PLANS[id.toLowerCase()] : undefined;
-const TARGET_TABLES = Object.freeze({ auto: 'auto_watch_targets', price: 'price_watch_targets' });
+const TARGET_TABLES = Object.freeze({ auto: 'auto_watch_targets', price: 'price_watch_targets', x: 'automation_x_monitors' });
 const PLAN_ID = /^[a-zA-Z][a-zA-Z0-9_-]{0,63}$/;
 function error(code, message, status = 400, issues) { return Object.assign(new Error(message), { name: 'AutomationError', code, status, ...(issues ? { issues } : {}) }); }
 function ownerId(value) {
@@ -37,7 +37,8 @@ function policyDto(row) {
     const builtin = builtinPlan(row.plan_id);
     return { tier: builtin?.tier || 'paid', planId: builtin?.planId || row.plan_id, label: row.label,
         slotLimit: Number(row.slot_limit), minuteLimit: Number(row.minute_limit), dayLimit: Number(row.day_limit), priority: Number(row.priority),
-        enabled: builtin ? true : Number(row.enabled) === 1, isBuiltin: !!builtin, updatedAtMs: Number(row.updated_at_ms) };
+        enabled: builtin ? true : Number(row.enabled) === 1, isBuiltin: !!builtin, updatedAtMs: Number(row.updated_at_ms),
+        ...(row.confirmation_interval_minutes == null ? {} : { intervalMinutes: Number(row.confirmation_interval_minutes) }) };
 }
 function planConflict() { return error('AUTOMATION_PLAN_CONFLICT', 'プランが別の操作で更新されています。最新の設定を読み直してから保存してください。', 409); }
 
@@ -49,10 +50,18 @@ async function inspectPlan(query, userId, now = Date.now(), squareScope) {
     const square = squareScope || require('./square-billing').getSquareScope();
     const donation = await require('./square-donations').getSquareDonationGrant(query, id, now, square);
     const additional = Number(users[0]?.additional_auto_extract_slots || 0);
-    const manualExtraSlots = Number.isSafeInteger(additional) && additional > 0 ? Math.min(additional, 10000) : 0;
-    const withAdditional = plan => ({ ...plan, baseSlotLimit: plan.slotLimit, manualExtraSlots,
-        addonGrantUnits: donation.purchaseUnits, addonExtraSlots: donation.extraSlots, donationPaymentCount: donation.paymentCount,
-        addonValidUntilAtMs: donation.unitsValidUntilAtMs, slotLimit: plan.slotLimit + manualExtraSlots + donation.extraSlots });
+    const manualExtraSlots = Number.isSafeInteger(additional) && additional > 0 ? additional : 0;
+    const holding = await require('./push-support-grants').getSupporterHolding(query, id, now, square);
+    // The permanent ledger is the personal additional allowance. Legacy
+    // recorded grants are frozen there; new rolling financial multipliers do
+    // not mint a second registration allowance for the same new payment.
+    const totalExtras = holding.totalSupporterSlots;
+    const withAdditional = plan => {
+        if (!Number.isSafeInteger(plan.slotLimit + totalExtras)) throw error('AUTOMATION_SLOT_ALLOWANCE_INVALID','個人の登録上限を安全に計算できません。管理者による確認が必要です。',503);
+        return ({ ...plan, baseSlotLimit: plan.slotLimit, manualExtraSlots,
+        addonGrantUnits: donation.purchaseUnits, addonExtraSlots: totalExtras - manualExtraSlots, donationPaymentCount: donation.paymentCount,
+        addonValidUntilAtMs: donation.unitsValidUntilAtMs, slotLimit: plan.slotLimit + totalExtras });
+    };
     const rows = await query(`SELECT p.* FROM automation_notification_entitlements e
         JOIN automation_notification_plans p ON p.plan_id=e.plan_id
         WHERE e.owner_user_id=? AND p.enabled=1 AND (e.expires_at_ms IS NULL OR e.expires_at_ms>?) LIMIT 1`, [id, now]);
@@ -81,6 +90,35 @@ async function inspectPlan(query, userId, now = Date.now(), squareScope) {
         dayLimit: configured.dayLimit, priority: configured.priority, slotLimit: configured.slotLimit });
 }
 
+// New X quality follows the contract, never the pool or legacy donor badge.
+// Ordinary notification quality stays on its existing path. For owners who
+// opt into X, both native and X admissions share this contract-based total.
+async function inspectXPlan(query, userId, now = Date.now(), options = {}) {
+    const normal = await inspectPlan(query, userId, now);
+    let base = normal;
+    if (normal.tier !== 'paid') {
+        const rows = await query('SELECT * FROM automation_notification_plans WHERE plan_id=? LIMIT 1', ['free']);
+        base = rows[0] && validPolicy(rows[0]) ? { ...policyDto(rows[0]), tier: 'free' } : FREE_PLAN;
+    }
+    const rows = await query('SELECT confirmation_interval_minutes FROM automation_notification_plans WHERE plan_id=? LIMIT 1', [base.planId]);
+    let intervalMinutes = rows[0]?.confirmation_interval_minutes == null ? null : Number(rows[0].confirmation_interval_minutes);
+    if (intervalMinutes !== null && (!Number.isSafeInteger(intervalMinutes) || intervalMinutes < 5 || intervalMinutes > 10080)) intervalMinutes = null;
+    if (options.useLegacyUserInterval === true) {
+        const overrides = await query('SELECT auto_watch_interval_minutes FROM users WHERE user_id=?', [String(userId)]);
+        const legacy = Number(overrides[0]?.auto_watch_interval_minutes);
+        if (Number.isSafeInteger(legacy) && legacy >= 5 && legacy <= 10080) intervalMinutes = legacy;
+    }
+    const extra = normal.slotLimit - normal.baseSlotLimit;
+    // Preserve the existing server-managed base allowance, including legacy
+    // supporter policies. Selecting free contract QUALITY must not reduce
+    // an already entitled user's ordinary registration capacity.
+    const baseLimit = normal.baseSlotLimit;
+    return { ...normal, ...base, tier: base.tier, baseSlotLimit: baseLimit, slotLimit: baseLimit + extra, intervalMinutes };
+}
+async function inspectPersonalPlan(query, userId, now = Date.now()) {
+    return inspectPlan(query, userId, now);
+}
+
 async function lockOwner(query, userId) {
     const id = ownerId(userId);
     // Persistent owner row serializes allocation, release, downgrade and lazy
@@ -96,6 +134,8 @@ async function adoptExisting(query, userId) {
     const targets = await query(`SELECT 'auto' AS target_kind,id AS target_id,created_at_ms FROM auto_watch_targets WHERE user_id=?
         UNION ALL SELECT 'price' AS target_kind,id AS target_id,created_at_ms FROM price_watch_targets WHERE user_id=?
         ORDER BY created_at_ms,target_kind,target_id`, [userId, userId]);
+    const xTargets = await query("SELECT 'x' AS target_kind,id AS target_id,created_at_ms FROM automation_x_monitors WHERE owner_user_id=? AND state<>'deleted' ORDER BY id", [userId]);
+    targets.push(...xTargets);
     const registered = new Set(targets.map(row => `${row.target_kind}:${row.target_id}`));
     for (const row of boosts) if (!registered.has(`${row.target_kind}:${row.target_id}`)) await require('./monitor-cadence').release(query, userId, row.target_kind, String(row.target_id));
     const reserved = new Set(boosts.filter(row => registered.has(`${row.target_kind}:${row.target_id}`)).map(row => Number(row.slot_index)));
@@ -108,7 +148,7 @@ async function adoptExisting(query, userId) {
         if (assigned.has(`${item.target_kind}:${item.target_id}`)) continue;
         let row = slots.find(slot => !slot.target_kind && !reserved.has(Number(slot.slot_index)));
         if (!row) {
-            const index = Math.max(0, ...slots.map(slot => Number(slot.slot_index))) + 1;
+            const index = slots.reduce((largest,slot)=>Math.max(largest,Number(slot.slot_index)),0) + 1;
             await query('INSERT INTO automation_notification_slots (owner_user_id,slot_index,target_kind,target_id,created_at_ms) VALUES (?,?,NULL,NULL,?)', [userId, index, Date.now()]);
             row = { slot_index: index, target_kind: null, target_id: null }; slots.push(row);
         }
@@ -118,7 +158,7 @@ async function adoptExisting(query, userId) {
     return slots;
 }
 async function assertSlotAvailable(query, userId, kind, targetId) {
-    const id = await lockOwner(query, userId), plan = await inspectPlan(query, id), slots = await adoptExisting(query, id);
+    const id = await lockOwner(query, userId), plan = await inspectPersonalPlan(query, id), slots = await adoptExisting(query, id);
     if (targetId !== undefined && targetId !== null) {
         const nativeId = target(kind, targetId), slot = slots.find(row => row.target_kind === kind && String(row.target_id) === nativeId);
         if (!slot) throw error('AUTOMATION_NOT_FOUND', '通知の登録が見つかりません。', 404);
@@ -138,18 +178,26 @@ async function releaseSlot(query, userId, kind, targetId) {
 }
 async function findSlot(query, userId, kind, targetId) {
     const id = ownerId(userId), nativeId = target(kind, targetId);
-    const native = await query(`SELECT id FROM ${TARGET_TABLES[kind]} WHERE id=? AND user_id=? LIMIT 1`, [nativeId, id]);
+    const native = await query(`SELECT id FROM ${TARGET_TABLES[kind]} WHERE id=? AND ${kind === 'x' ? "owner_user_id=? AND state<>'deleted'" : 'user_id=?'} LIMIT 1`, [nativeId, id]);
     if (!native.length) throw error('AUTOMATION_NOT_FOUND', '通知の登録が見つかりません。', 404);
-    const plan = await inspectPlan(query, id), slots = await query('SELECT * FROM automation_notification_slots WHERE owner_user_id=? AND target_kind=? AND target_id=? LIMIT 1', [id, kind, nativeId]);
+    const plan = await inspectPersonalPlan(query, id), slots = await query('SELECT * FROM automation_notification_slots WHERE owner_user_id=? AND target_kind=? AND target_id=? LIMIT 1', [id, kind, nativeId]);
     if (!slots[0]) return null;
     if (Number(slots[0].slot_index) > plan.slotLimit) throw slotError(plan);
     return describeSlot(id, slots[0], plan);
 }
 async function resolveNotificationEntitlement(db, input) {
-    return db.withDatabaseTransaction(query => assignSlot(query, input.ownerUserId, input.targetKind, input.targetId));
+    return db.withDatabaseTransaction(async query => {
+        const slot = await assignSlot(query, input.ownerUserId, input.targetKind, input.targetId);
+        if (input.targetKind !== 'x') return slot;
+        // X uses current contract quality even when its reservation came from
+        // the supporter pool; pool selection never grants a faster send rate.
+        const plan = await inspectXPlan(query, input.ownerUserId, Date.now(), { useLegacyUserInterval: process.env.ANGELIC_X_USE_LEGACY_USER_INTERVAL === '1' });
+        if (slot.slotIndex > plan.slotLimit) throw slotError(plan);
+        return { ...slot, ...plan };
+    });
 }
 async function listOwnerSlots(query, userId) {
-    const id = await lockOwner(query, userId), plan = await inspectPlan(query, id), rows = await adoptExisting(query, id);
+    const id = await lockOwner(query, userId), plan = await inspectPersonalPlan(query, id), rows = await adoptExisting(query, id);
     const boosts = await require('./monitor-cadence').boostRows(query, id);
     const slots = rows.filter(row => row.target_kind).map(row => ({ ...describeSlot(id, row, plan), slotCost: 1 + boosts.filter(extra => extra.target_kind === row.target_kind && String(extra.target_id) === String(row.target_id)).length, allowed: Number(row.slot_index) <= plan.slotLimit }));
     const usedSlots = slots.length + boosts.length;
@@ -161,6 +209,7 @@ async function savePlanPolicy(query, actor, input) {
     if (!PLAN_ID.test(planId)) throw error('AUTOMATION_PLAN_INVALID', 'プランのIDは英字で始まる1〜64文字の英数字・ハイフン・アンダースコアで指定してください。', 422);
     if (typeof input.label !== 'string' || !input.label.trim() || input.label.length > 120) throw error('AUTOMATION_PLAN_INVALID', 'プラン名は1〜120文字で指定してください。', 422);
     const slotLimit = number(input.slotLimit, 1, 10000, '$.slotLimit'), minuteLimit = number(input.minuteLimit, 1, 10000, '$.minuteLimit'), dayLimit = number(input.dayLimit, 1, 1000000, '$.dayLimit'), priority = number(input.priority, 0, 100, '$.priority');
+    if (input.intervalMinutes !== undefined && input.intervalMinutes !== null) number(input.intervalMinutes, 5, 10080, '$.intervalMinutes');
     if (input.enabled !== undefined && typeof input.enabled !== 'boolean') throw error('AUTOMATION_PLAN_INVALID', '有効状態を確認してください。', 422);
     if (builtinPlan(planId) && input.enabled === false) throw error('AUTOMATION_PLAN_INVALID', '無料枠・支援者枠は無効化できません。', 422, [{ path: '$.enabled', message: '無料枠・支援者枠は有効のまま設定してください。' }]);
     const expected = input.expectedUpdatedAtMs === undefined ? undefined : number(input.expectedUpdatedAtMs, 0, Number.MAX_SAFE_INTEGER - 1, '$.expectedUpdatedAtMs');
@@ -177,6 +226,10 @@ async function savePlanPolicy(query, actor, input) {
         // CAS. The SQL timestamp remains monotonic even within one millisecond.
         await query(`INSERT INTO automation_notification_plans (plan_id,label,slot_limit,minute_limit,day_limit,priority,enabled,actor_user_id,updated_at_ms)
             VALUES (?,?,?,?,?,?,?,?,?) ON DUPLICATE KEY UPDATE plan_id=IF(LOWER(plan_id) IN ('free','supporter'),LOWER(plan_id),plan_id),label=VALUES(label),slot_limit=VALUES(slot_limit),minute_limit=VALUES(minute_limit),day_limit=VALUES(day_limit),priority=VALUES(priority),enabled=VALUES(enabled),actor_user_id=VALUES(actor_user_id),updated_at_ms=GREATEST(VALUES(updated_at_ms),updated_at_ms+1)`, values);
+    }
+    if (input.intervalMinutes !== undefined) {
+        if (input.intervalMinutes !== null) number(input.intervalMinutes, 5, 10080, '$.intervalMinutes');
+        await query('UPDATE automation_notification_plans SET confirmation_interval_minutes=? WHERE plan_id=?', [input.intervalMinutes, planId]);
     }
     return policyDto((await query('SELECT * FROM automation_notification_plans WHERE plan_id=? LIMIT 1', [planId]))[0]);
 }
@@ -204,4 +257,4 @@ async function listPlanPolicies(query, actor) {
     }), ...rows.filter(row => !builtinPlan(row.plan_id)).map(policyDto)];
 }
 
-module.exports = { FREE_PLAN, SUPPORTER_PLAN, inspectPlan, lockOwner, assertSlotAvailable, assignSlot, releaseSlot, findSlot, resolveNotificationEntitlement, listOwnerSlots, getEntitlementSummary, savePlanPolicy, setUserPlan, listPlanPolicies };
+module.exports = { FREE_PLAN, SUPPORTER_PLAN, inspectPlan, inspectXPlan, inspectPersonalPlan, lockOwner, assertSlotAvailable, assignSlot, releaseSlot, findSlot, resolveNotificationEntitlement, listOwnerSlots, getEntitlementSummary, savePlanPolicy, setUserPlan, listPlanPolicies };

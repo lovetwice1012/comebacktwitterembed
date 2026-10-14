@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="utf-8"?>
+<testsuites>
+	<testcase name="powershell.exe: the reviewed snapshot is saved only after cleanup and explicit mixed-notification consent" time="0.809563" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\angelic-setup-export-consent.test.js"/>
+	<testcase name="pwsh.exe: the reviewed snapshot is saved only after cleanup and explicit mixed-notification consent" time="1.346737" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\angelic-setup-export-consent.test.js"/>
+	<testcase name="release ZIP is deterministic and contains only allowlisted auditable source, license and exact hashes" time="0.087433" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\angelic-setup-package.test.js"/>
+	<testcase name="packager preserves existing release and checksum files and refuses incomplete or oversized sources" time="0.056521" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\angelic-setup-package.test.js"/>
+	<testcase name="packager rejects source and destination directory junctions without reading or replacing their targets" time="0.013003" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\angelic-setup-package.test.js"/>
+	<testcase name="double-click entry handles Japanese/symbol paths, starts STA PowerShell and forwards no arbitrary arguments" time="0.483357" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\angelic-setup-package.test.js"/>
+	<testcase name="Windows PowerShell 5.1: the real mixed-notification dialog defaults to No and accepts only an explicit Yes" time="0.695844" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\angelic-setup-package.test.js"/>
+	<testcase name="Windows PowerShell 5.1: mixed-notification consent is explicit, local, bounded and never authorizes foreign use" time="0.367921" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\angelic-setup-package.test.js"/>
+	<testcase name="Windows PowerShell 5.1: distributed script status, preview, ownership and failure boundaries" time="4.951243" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\angelic-setup-package.test.js"/>
+	<testcase name="Windows PowerShell 5.1: altered, missing or extra package files block mutations before profile creation" time="1.107457" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\angelic-setup-package.test.js"/>
+	<testcase name="Windows PowerShell 5.1: double-click window explains manual upload, distinguishes readiness from file success, and prevents overlapping work" time="0.631231" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\angelic-setup-package.test.js"/>
+	<testcase name="Windows PowerShell 5.1: literal launch arguments, process identity, WhatIf and stale/active profile locks" time="5.452965" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\angelic-setup-package.test.js"/>
+	<testcase name="PowerShell 7: the real mixed-notification dialog defaults to No and accepts only an explicit Yes" time="1.339182" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\angelic-setup-package.test.js"/>
+	<testcase name="PowerShell 7: mixed-notification consent is explicit, local, bounded and never authorizes foreign use" time="0.666343" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\angelic-setup-package.test.js"/>
+	<testcase name="PowerShell 7: distributed script status, preview, ownership and failure boundaries" time="7.844674" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\angelic-setup-package.test.js"/>
+	<testcase name="PowerShell 7: altered, missing or extra package files block mutations before profile creation" time="1.707715" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\angelic-setup-package.test.js"/>
+	<testcase name="PowerShell 7: double-click window explains manual upload, distinguishes readiness from file success, and prevents overlapping work" time="0.945418" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\angelic-setup-package.test.js"/>
+	<testcase name="PowerShell 7: literal launch arguments, process identity, WhatIf and stale/active profile locks" time="7.068035" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\angelic-setup-package.test.js"/>
+	<testcase name="valid synthetic subscription reads exactly one value and exports only known fields" time="0.008792" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\x-notification-reader.test.js"/>
+	<testcase name="other origin without X rejects before any secret value read" time="0.001397" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\x-notification-reader.test.js"/>
+	<testcase name="mixed X and other-origin subscriptions export only X and return a separate local warning count" time="0.003099" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\x-notification-reader.test.js"/>
+	<testcase name="63 foreign subscriptions plus one X are counted without reading foreign values" time="0.002868" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\x-notification-reader.test.js"/>
+	<testcase name="foreign query/fragment metadata is counted without reading its value or exporting its origin" time="0.001284" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\x-notification-reader.test.js"/>
+	<testcase name="foreign localhost HTTP metadata is counted without reading its value or exporting its origin" time="0.001535" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\x-notification-reader.test.js"/>
+	<testcase name="foreign foreign container metadata is counted without reading its value or exporting its origin" time="0.001402" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\x-notification-reader.test.js"/>
+	<testcase name="unknown system scope rejects rather than being counted as a recognized foreign website" time="0.000859" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\x-notification-reader.test.js"/>
+	<testcase name="a profile over the bounded metadata count rejects before any value read" time="0.001109" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\x-notification-reader.test.js"/>
+	<testcase name="invalid foreign scope metadata rejects before any value read" time="0.000776" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\x-notification-reader.test.js"/>
+	<testcase name="container origin attributes reject before any secret value read" time="0.001522" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\x-notification-reader.test.js"/>
+	<testcase name="an unindexed hidden record rejects before any secret value read" time="0.000792" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\x-notification-reader.test.js"/>
+	<testcase name="multiple X subscriptions reject before any secret value read" time="0.000693" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\x-notification-reader.test.js"/>
+	<testcase name="empty subscription store rejects without a value read" time="0.000594" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\x-notification-reader.test.js"/>
+	<testcase name="invalid channel ID rejects during metadata selection" time="0.000609" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\x-notification-reader.test.js"/>
+	<testcase name="system record rejects" time="0.000702" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\x-notification-reader.test.js"/>
+	<testcase name="missing explicit system flag rejects" time="0.000658" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\x-notification-reader.test.js"/>
+	<testcase name="endpoint other host rejects" time="0.000622" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\x-notification-reader.test.js"/>
+	<testcase name="endpoint host suffix trick rejects" time="0.000594" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\x-notification-reader.test.js"/>
+	<testcase name="endpoint insecure protocol rejects" time="0.000567" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\x-notification-reader.test.js"/>
+	<testcase name="endpoint root endpoint rejects" time="0.000651" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\x-notification-reader.test.js"/>
+	<testcase name="endpoint query rejects" time="0.000686" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\x-notification-reader.test.js"/>
+	<testcase name="endpoint fragment rejects" time="0.001166" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\x-notification-reader.test.js"/>
+	<testcase name="endpoint URL credentials rejects" time="0.000638" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\x-notification-reader.test.js"/>
+	<testcase name="private scalar zero rejects" time="0.000774" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\x-notification-reader.test.js"/>
+	<testcase name="private scalar equal to the P-256 curve order rejects" time="0.000689" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\x-notification-reader.test.js"/>
+	<testcase name="a different private scalar with the original public point rejects" time="0.001025" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\x-notification-reader.test.js"/>
+	<testcase name="negating the public point without changing its private scalar rejects" time="0.001161" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\x-notification-reader.test.js"/>
+	<testcase name="wrong authentication secret length rejects" time="0.000740" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\x-notification-reader.test.js"/>
+	<testcase name="unknown private JWK field rejects" time="0.000700" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\x-notification-reader.test.js"/>
+	<testcase name="unexpected private JWK key operation rejects" time="0.000738" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\x-notification-reader.test.js"/>
+	<testcase name="public raw key and JWK coordinates mismatch rejects" time="0.000831" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\x-notification-reader.test.js"/>
+	<testcase name="online context rejects before opening a database" time="0.000735" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\x-notification-reader.test.js"/>
+	<testcase name="enabled Push service rejects before opening a database" time="0.000529" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\x-notification-reader.test.js"/>
+	<testcase name="wrong reader profile rejects before opening a database" time="0.000451" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\x-notification-reader.test.js"/>
+	<testcase name="extra input field rejects before opening a database" time="0.000494" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\x-notification-reader.test.js"/>
+	<!-- tests 54 -->
+	<!-- suites 0 -->
+	<!-- pass 54 -->
+	<!-- fail 0 -->
+	<!-- cancelled 0 -->
+	<!-- skipped 0 -->
+	<!-- todo 0 -->
+	<!-- duration_ms 35856.5582 -->
+</testsuites>

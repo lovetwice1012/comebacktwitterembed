@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<testsuites>
+	<testcase name="download builder reconstructs the exact pinned release from nine source files without a prebuilt artifact" time="0.250414" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\automation-x-setup-download.test.js"/>
+	<testcase name="source edits, missing input, oversized input and changed ZIP/version cannot replace the pinned release" time="0.288881" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\automation-x-setup-download.test.js"/>
+	<testcase name="simultaneous downloads share bounded work, later downloads revalidate and failures recover" time="0.028459" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\automation-x-setup-download.test.js"/>
+	<testcase name="linked source directories and linked allowlisted files are refused without packaging private targets" time="0.026998" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\automation-x-setup-download.test.js"/>
+	<testcase name="unauthenticated and failed sessions cannot access archive inputs or disclose session errors" time="0.013397" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\automation-x-setup-download.test.js"/>
+	<testcase name="authenticated ZIP response has exact bytes, safe filename and private attachment headers" time="0.029436" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\automation-x-setup-download.test.js"/>
+	<testcase name="unavailable or mismatched release returns an understandable private 503 without raw errors" time="0.005811" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\automation-x-setup-download.test.js"/>
+	<testcase name="Next file tracing and Git attributes retain exact release inputs without tracing private folders" time="0.004999" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\automation-x-setup-download.test.js"/>
+	<testcase name="copied standalone trace layout resolves the fixed builder and reproduces the release without artifact files" time="0.286594" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\automation-x-setup-download.test.js"/>
+	<testcase name="beginner setup is lazy and explains manual local-file upload, consent, sensitive data, revocation and unverified receiver" time="0.129370" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\automation-x-setup-ui.test.js"/>
+	<testcase name="unavailable intake preserves instructions/download and own deletion but cannot select or submit a file" time="0.040596" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\automation-x-setup-ui.test.js"/>
+	<testcase name="explicit consent gates read/validation; review exposes safe metadata only and final save does not enable monitoring" time="0.035726" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\automation-x-setup-ui.test.js"/>
+	<testcase name="file limits, extension and strict UTF-8 failures never send data" time="0.025868" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\automation-x-setup-ui.test.js"/>
+	<testcase name="FileReader fallback supports browser files without arrayBuffer and exposes no contents" time="0.027176" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\automation-x-setup-ui.test.js"/>
+	<testcase name="cancel and withdrawal of consent erase selection and require selecting the file again" time="0.035488" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\automation-x-setup-ui.test.js"/>
+	<testcase name="server validation and import errors use safe fixed messages and erase the selected secret" time="0.060076" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\automation-x-setup-ui.test.js"/>
+	<testcase name="used/expired/replaced sessions provide a recovery path through fresh selection and session" time="0.120982" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\automation-x-setup-ui.test.js"/>
+	<testcase name="client expiry stops the import before sending the secret a second time" time="0.025399" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\automation-x-setup-ui.test.js"/>
+	<testcase name="duplicate import is described as already stored while identity conflicts never silently replace it" time="0.054278" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\automation-x-setup-ui.test.js"/>
+	<testcase name="deletion asks for confirmation, uses the current revision, clears upload and explains separate X revocation" time="0.035003" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\automation-x-setup-ui.test.js"/>
+	<testcase name="stale deletion preserves safe metadata until owner refresh and list pagination keeps existing rows" time="0.029308" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\automation-x-setup-ui.test.js"/>
+	<testcase name="rapid validation/import clicks start each operation once" time="0.029278" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\automation-x-setup-ui.test.js"/>
+	<testcase name="inactive views do no work and leaving during read or validation cannot restore a secret selection" time="0.058511" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\automation-x-setup-ui.test.js"/>
+	<testcase name="a deletion response from a previous active view cannot replace a refreshed list or announce success" time="0.019617" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\automation-x-setup-ui.test.js"/>
+	<testcase name="malformed metadata and unsafe download/scope responses are rejected without displaying server strings" time="0.016519" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\automation-x-setup-ui.test.js"/>
+	<testcase name="dedicated setup route authenticates before rendering, keys its state to the session and links back to targets" time="0.072152" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\automation-x-setup-ui.test.js"/>
+	<testcase name="dedicated client starts with open instructions and sends only same-origin personal API requests" time="0.024001" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\automation-x-setup-ui.test.js"/>
+	<testcase name="automation workspace advertises the dedicated setup entry only on the personal route" time="0.113681" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\automation-x-setup-ui.test.js"/>
+	<testcase name="supporter beta and disabled rollout block uploads while keeping owned receiver metadata and deletion available" time="0.042040" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\automation-x-setup-ui.test.js"/>
+	<testcase name="stored receiver metadata distinguishes waiting, connecting, listening, reenrollment, stop and error without delivery claims" time="0.017051" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\automation-x-setup-ui.test.js"/>
+	<testcase name="absent rollout and receiver state fail closed and malformed new metadata is rejected" time="0.014066" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\automation-x-setup-ui.test.js"/>
+	<!-- tests 31 -->
+	<!-- suites 0 -->
+	<!-- pass 31 -->
+	<!-- fail 0 -->
+	<!-- cancelled 0 -->
+	<!-- skipped 0 -->
+	<!-- todo 0 -->
+	<!-- duration_ms 3080.2132 -->
+</testsuites>

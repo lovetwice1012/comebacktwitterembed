@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<testsuites>
+	<testcase name="disabled worker never reads key configuration or queries/connects" time="0.001018" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\automation-x-worker-config.test.js"/>
+	<testcase name="opt-in with an invalid key path fails with a fixed safe error" time="0.000258" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\automation-x-worker-config.test.js"/>
+	<testcase name="worker key file is bounded, private-role only, and does not start sockets when processing is undefined" time="0.045611" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\automation-x-worker-config.test.js"/>
+	<!-- tests 3 -->
+	<!-- suites 0 -->
+	<!-- pass 3 -->
+	<!-- fail 0 -->
+	<!-- cancelled 0 -->
+	<!-- skipped 0 -->
+	<!-- todo 0 -->
+	<!-- duration_ms 123.9147 -->
+</testsuites>

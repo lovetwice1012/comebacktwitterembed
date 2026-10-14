@@ -1,0 +1,264 @@
+{
+  "recordedAt": "2026-10-14T03:22:19.365Z",
+  "runtime": "v24.21.0",
+  "scope": "Positive plain Japanese copy for export tool, onboarding, monitors, manual moves and bundled guides; consent and behavior preserved.",
+  "release": {
+    "version": "0.1.0-preview.4",
+    "artifact": "artifacts/angelic-setup/x-notification-setup-0.1.0-preview.4.zip",
+    "bytes": 68653,
+    "sha256": "c41a47ecb694cc8afe19ccfab3420d492a5a327b8264cb84b46da9ab1d7325db"
+  },
+  "tests": [
+    {
+      "file": "docs/angelic-angel/positive-copy-client-tests.xml",
+      "sha256": "74acd85335d6465cf6fea633bf6d78417ef975c2fa0670eb8f3ccd3c97391f14",
+      "stats": {
+        "tests": 54,
+        "pass": 54,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "docs/angelic-angel/positive-copy-ui-tests.xml",
+      "sha256": "a4272f430bb6ba3f7381f864371fc74ac9202de8d0f5e4b662506df809e32d65",
+      "stats": {
+        "tests": 54,
+        "pass": 54,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      }
+    },
+    {
+      "file": "docs/angelic-angel/positive-copy-native-tests.xml",
+      "sha256": "c19f5068a75aee83530c5354d661fa3a197b107bf7162b95de00ea80767e8768",
+      "stats": {
+        "tests": 6,
+        "pass": 6,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      }
+    }
+  ],
+  "browser": {
+    "file": "docs/angelic-angel/positive-copy-browser/browser.json",
+    "sha256": "f6c483abaa744385c40c92af599c4f9cef8118e440619c9e5340b17cad01dd1a",
+    "result": {
+      "startedAt": "2026-10-14T03:20:42.644Z",
+      "finishedAt": "2026-10-14T03:20:46.580Z",
+      "checks": [
+        "ephemeral-loopback-server-with-local-fake-session-and-real-dispatch",
+        "mixed-site-reception-capability-discard-and-separate-permission-disclosed-before-upload",
+        "actual-authenticated-download-route-pinned-release-bytes",
+        "desktop1440-and-mobile390-no-horizontal-overflow",
+        "manual-file-choice-does-no-network-write-invalid-json-refused-by-real-api",
+        "real-api-preview-shows-only-safe-metadata-and-does-not-save",
+        "explicit-final-save-stores-hybrid-envelope-without-plaintext-and-clears-selection",
+        "service-restart-and-browser-reload-retain-safe-metadata-with-receiver-disabled",
+        "delete-requires-confirmation-cancel-preserves-data-confirm-removes-and-reload-stays-empty",
+        "no-notification-slots-no-monitors-no-worker-or-external-delivery",
+        "no-secret-values-in-dom-or-web-storage-zero-external-requests-zero-page-errors"
+      ],
+      "screenshots": [
+        {
+          "filename": "desktop-instructions.png",
+          "bytes": 332982,
+          "sha256": "27a26ffbf00fbb497d3bde8ccd17848e1877ef796cb87c144dd3b40528dc398c",
+          "viewport": {
+            "width": 1440,
+            "height": 1000
+          }
+        },
+        {
+          "filename": "mobile-instructions.png",
+          "bytes": 322686,
+          "sha256": "b6e721b2fc864d3c77d48ea2f4040f86b70f3f09075f9b64944ad14bfb2bd73e",
+          "viewport": {
+            "width": 390,
+            "height": 844
+          }
+        },
+        {
+          "filename": "mobile-review.png",
+          "bytes": 358291,
+          "sha256": "ee22e0cb0afd4d5d1d85ed097a2fce1550494652837c1dad64131e1da76d454d",
+          "viewport": {
+            "width": 390,
+            "height": 844
+          }
+        },
+        {
+          "filename": "desktop-saved.png",
+          "bytes": 381732,
+          "sha256": "73c40292d267ea23967fdf2c36af75b1275c64bf3b4f4b97156df5afd8224b92",
+          "viewport": {
+            "width": 1440,
+            "height": 1000
+          }
+        },
+        {
+          "filename": "mobile-delete-confirm.png",
+          "bytes": 405969,
+          "sha256": "e117bc68528a9586e896ba7b9b1943feb15682ef78c08a4bdc2f175948bd8502",
+          "viewport": {
+            "width": 390,
+            "height": 844
+          }
+        }
+      ],
+      "requests": [
+        {
+          "method": "GET",
+          "path": "/dashboard/automation/x-setup",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/app.css",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/app.js",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/automation/x-setup",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/automation/x-setup/download",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/automation/x-setup/sessions",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/automation/x-setup/validate",
+          "status": 422
+        },
+        {
+          "method": "POST",
+          "path": "/api/automation/x-setup/sessions",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/automation/x-setup/validate",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/automation/x-setup/import",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/dashboard/automation/x-setup",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/app.css",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/app.js",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/automation/x-setup",
+          "status": 200
+        },
+        {
+          "method": "DELETE",
+          "path": "/api/automation/x-setup/subscriptions/:id",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/dashboard/automation/x-setup",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/app.css",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/app.js",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/automation/x-setup",
+          "status": 200
+        }
+      ],
+      "fixtureOnly": true,
+      "productionIO": false,
+      "actualOAuthLoginVerified": false,
+      "actualFirefoxVerified": false,
+      "actualPushDeliveryVerified": false,
+      "database": {
+        "host": "127.0.0.1",
+        "port": 33621,
+        "disposableSchemaRemoved": true
+      },
+      "intakeEncryption": "public-key-hybrid",
+      "pageErrors": [],
+      "externalRequests": 0
+    }
+  },
+  "typecheck": "dashboard passed",
+  "lint": "dashboard copy modules and explicit normally ignored test scripts passed",
+  "sources": {
+    "client/angelic-setup/LICENSE": "230184f60bae2feaf244f10a8bac053c8ff33a183bcc365b4d8b876d2b7f4809",
+    "client/angelic-setup/README-ja.md": "18eea256b9b260d061771b992317f3dac62dd22337f04ab62a27874678de7f62",
+    "client/angelic-setup/Setup-XNotifications.ps1": "0b6334cdf82d8a5688e107a53dbe15fbf9fa1144307c2080f5a9a018a573e6b9",
+    "client/angelic-setup/Start-Setup.ps1": "e20e6d2f0f391158556a0783b3482dd8eb0304c4ffd42b4674929ffeeaccad9f",
+    "client/angelic-setup/FirefoxReader.ps1": "6e64819f7d8ead339e410677c3a76d50e9798dbf2431c57e3cc1aee4762151ac",
+    "client/angelic-setup/Export-XNotificationData.ps1": "82e47902cd39e0d8b53d42924da099fa9e5c301946968335591e219b3b7768fd",
+    "client/angelic-setup/Read-PushSubscription.js": "046d48f83d4681172f82d15e28f2f99fd2f7bb19ccb06c905944d0ca3eee7b03",
+    "client/angelic-setup/はじめに読んでください.txt": "2196f6619a35cbb62df76c35fb6fa15448523ab1f0581a52150350639e4d4368",
+    "client/angelic-setup/ダブルクリックで開始.cmd": "0b604303929c5f8c5b4f5e9227f3ab157ce379be21cd6945491b0e0855202e9b",
+    "dashboard/components/automation/x-notification-setup.tsx": "d26a253f7a4e5e18f1378b54ee42a38f21767e24733a30c77c02a65abbcb4ff2",
+    "dashboard/components/automation/x-setup-view.ts": "2cc70fc99de5f08cc0e8778120deea287235ad338a27ca4be485e6ca18ae8783",
+    "dashboard/components/automation/x-monitor-manager.tsx": "31af2e23b0c7b94f3bab62ef9ed835661bb6cc12fc02f44bf7b32c8a019a091f",
+    "dashboard/components/automation/x-monitor-view.ts": "87f0d26b15bcf4ee9a7c8b6a9ce8bb5943d06ace45bd4ba8b42b3efd39b10396",
+    "dashboard/components/automation/x-monitor-move-editor.tsx": "a123fe9428ee03b2d1c9776befd20e40015a8bd91f302215b14ffcffa485d004",
+    "dashboard/app/dashboard/automation/x/page.tsx": "8d491af87bfef5597663178477ff0556552cb510abe505b234bab79dda43fb0d",
+    "dashboard/lib/x-setup-download.ts": "a2e176a31a89b027b03a92f67680edf604de77cd2557f992b766d2563d291947",
+    "src/automation/x-setup.js": "26377e3a2bd83c28b8dd68517fe796c80a29461e40e9ad196b5abe1c0600886b",
+    "scripts/build-angelic-setup-package.cjs": "22650207018f68d94e8696ce469063f94f9f6370a7784097742e3198b2b7abc7",
+    "scripts/verify-x-notification-setup.cjs": "ca34d8f7358cb75340853f4987f515e57b231e181fa167094b47a8c458888291",
+    "scripts/test/angelic-setup-package.test.js": "51df9f751ba75b5ced53de426d72094f4daf583af2298489cb2538e62fbadf64",
+    "scripts/test/angelic-setup-export-consent.test.js": "2c661dbb590967a4ae8dd955a394518fa3dc9dafb3426cfcc5dd4b882e15e962",
+    "scripts/test/automation-x-setup-ui.test.js": "c37f47bffbe45dea762bdc14043a54a14c50ced76a1711f84369acda63fe9ad9",
+    "scripts/test/automation-x-monitor-ui.test.js": "6cb145281b17ab2ad169e6e7ac925e71bb691db349177e384a81487a72c66efd",
+    "scripts/test/automation-x-setup-download.test.js": "22a20b6aab91ae1ae4c9270485fa8a85c35be5d714fe8d4ec2bdd25d4faa0fe0",
+    "Angelic_Angel_Codex_Implementation_Spec.md": "e28a88ea88011ae4b68276ee2c53f5d53d90451cfacd74cb66b537be34fc87bc",
+    "docs/angelic-angel/positive-copy-review.md": "5d479be3a84d26c270fc17b71074b605c6006e29a003e0b9ceb32f98c580b1bc",
+    "docs/angelic-angel/x-setup-download.md": "09c82d251b300884c47de8defa1828b70eae508fd7473e38b45e057fca88a5ff",
+    "docs/angelic-angel/powershell-file-client.md": "eff87381e4517d8ac363d17f151b3ff1fe5b073567217bc75659887a1a1d79b0",
+    "docs/angelic-angel/implementation-status.md": "93c9e241f11b94b4f1f27f00847f68ac39b7856d9b1af0cbbf9e27749af36831"
+  },
+  "productionDeploymentPerformed": false,
+  "paymentOrProductionDataChanged": false,
+  "realXVerification": "remains a separate gate",
+  "previousRelease": "preview.3 artifact and reports retained"
+}

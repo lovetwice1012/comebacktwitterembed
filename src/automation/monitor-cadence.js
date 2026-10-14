@@ -14,7 +14,7 @@ async function runtimeCadence(query, owner, kind, targetId, baseMs, now = Date.n
     const cost = Number(selected?.slot_cost || 1), base = Number(baseMs);
     let effectiveCost = 1;
     if (cost > 1) {
-        const plan = await require('./entitlements').inspectPlan(query, owner, now);
+        const plan = await require('./entitlements').inspectPersonalPlan(query, owner, now);
         const main = (await query('SELECT slot_index FROM automation_notification_slots WHERE owner_user_id=? AND target_kind=? AND target_id=?', [owner, kind, targetId]))[0];
         const extra = await query('SELECT slot_index FROM automation_notification_boost_slots WHERE owner_user_id=? AND target_kind=? AND target_id=?', [owner, kind, targetId]);
         if (main && Number(main.slot_index) <= plan.slotLimit && extra.length === cost - 1 && extra.every(row => Number(row.slot_index) <= plan.slotLimit)) effectiveCost = cost;

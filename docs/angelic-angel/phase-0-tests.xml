@@ -1,0 +1,220 @@
+<?xml version="1.0" encoding="utf-8"?>
+<testsuites>
+	<testcase name="AP-001 outgoing messages retain Rust tags, names, optional-field omission and ACK codes" time="0.001004" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\autopush.test.mjs"/>
+	<testcase name="AP-002 serde response shapes, defaults, unknown fields and pong detection" time="0.000823" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\autopush.test.mjs"/>
+	<testcase name="AP-003 malformed messages fail safely with Json errors" time="0.000699" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\autopush.test.mjs"/>
+	<testcase name="AP-004 new registration sends exact HELLO, VAPID, UUID and closes" time="0.027623" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\autopush.test.mjs"/>
+	<testcase name="AP-005 reconnect preserves matching UAID/channel and starts a fresh duplicate cache" time="0.004714" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\autopush.test.mjs"/>
+	<testcase name="AP-006 UAID mismatch performs full legacy fresh-key registration only when authorized" time="0.005676" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\autopush.test.mjs"/>
+	<testcase name="AP-007 unauthorized UAID recovery stops without creating a registration" time="0.002889" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\autopush.test.mjs"/>
+	<testcase name="AP-008 unregister sends code 200, permits response UAID change like Rust, needs no unregister reply" time="0.002787" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\autopush.test.mjs"/>
+	<testcase name="AP-009 all ACK outcomes use channelID/version/code and aliases retain behavior" time="0.006220" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\autopush.test.mjs"/>
+	<testsuite name="AP-010 HELLO status, wrong response, binary, close and timeout branches" time="0.054433" disabled="0" errors="0" tests="8" failures="0" skipped="0" hostname="DESKTOP-V9MILB1">
+		<testcase name="failure" time="0.004270" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\autopush.test.mjs"/>
+		<testcase name="wrong tag" time="0.002918" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\autopush.test.mjs"/>
+		<testcase name="malformed" time="0.002955" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\autopush.test.mjs"/>
+		<testcase name="binary" time="0.002683" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\autopush.test.mjs"/>
+		<testcase name="ping" time="0.002406" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\autopush.test.mjs"/>
+		<testcase name="normal close" time="0.002380" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\autopush.test.mjs"/>
+		<testcase name="abnormal close" time="0.002099" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\autopush.test.mjs"/>
+		<testcase name="timeout" time="0.033979" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\autopush.test.mjs"/>
+	</testsuite>
+	<testsuite name="AP-011 REGISTER status, wrong response, parse, binary, close and timeout branches" time="0.054228" disabled="0" errors="0" tests="7" failures="0" skipped="0" hostname="DESKTOP-V9MILB1">
+		<testcase name="failure" time="0.003523" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\autopush.test.mjs"/>
+		<testcase name="wrong tag" time="0.002775" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\autopush.test.mjs"/>
+		<testcase name="malformed" time="0.002357" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\autopush.test.mjs"/>
+		<testcase name="binary" time="0.002865" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\autopush.test.mjs"/>
+		<testcase name="normal close" time="0.003103" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\autopush.test.mjs"/>
+		<testcase name="abnormal close" time="0.002683" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\autopush.test.mjs"/>
+		<testcase name="timeout" time="0.036193" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\autopush.test.mjs"/>
+	</testsuite>
+	<testsuite name="AP-012 contextual HELLO errors preserve reconnect and unregister diagnostics" time="0.006068" disabled="0" errors="0" tests="2" failures="0" skipped="0" hostname="DESKTOP-V9MILB1">
+		<testcase name="reconnect" time="0.003223" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\autopush.test.mjs"/>
+		<testcase name="unregister" time="0.002570" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\autopush.test.mjs"/>
+	</testsuite>
+	<testcase name="AP-013 notification loop skips pongs, binary, known non-notifications and replies to RFC ping" time="0.006497" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\autopush.test.mjs"/>
+	<testcase name="AP-014 duplicate version is globally suppressed and ACKed, including across different channels" time="0.007026" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\autopush.test.mjs"/>
+	<testcase name="AP-015 recent-message cache evicts oldest after exactly 100 IDs" time="0.009913" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\autopush.test.mjs"/>
+	<testsuite name="AP-016 unknown tags and invalid JSON in notification loop are errors rather than ignored" time="0.007914" disabled="0" errors="0" tests="2" failures="0" skipped="0" hostname="DESKTOP-V9MILB1">
+		<testcase name="{&amp;quot;messageType&amp;quot;:&amp;quot;unregister&amp;quot;,&amp;quot;status&amp;quot;:200}" time="0.004359" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\autopush.test.mjs"/>
+		<testcase name="dummy-malformed" time="0.003238" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\autopush.test.mjs"/>
+	</testsuite>
+	<testsuite name="AP-017 normal close, empty close, stream end, backoff and transport failure" time="0.011974" disabled="0" errors="0" tests="4" failures="0" skipped="0" hostname="DESKTOP-V9MILB1">
+		<testcase name="1000" time="0.003865" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\autopush.test.mjs"/>
+		<testcase name="undefined" time="0.002745" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\autopush.test.mjs"/>
+		<testcase name="4774" time="0.002562" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\autopush.test.mjs"/>
+		<testcase name="1006" time="0.002408" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\autopush.test.mjs"/>
+	</testsuite>
+	<testcase name="AP-018 WebSocket idle ping is independent from application ping" time="0.036605" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\autopush.test.mjs"/>
+	<testcase name="AP-019 any received message resets both ping timers, including an RFC pong" time="0.057583" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\autopush.test.mjs"/>
+	<testsuite name="AP-020 application pong handles both empty and untagged objects then resumes listening" time="0.050712" disabled="0" errors="0" tests="2" failures="0" skipped="0" hostname="DESKTOP-V9MILB1">
+		<testcase name="{}" time="0.024885" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\autopush.test.mjs"/>
+		<testcase name="{&amp;quot;broadcasts&amp;quot;:{&amp;quot;id&amp;quot;:&amp;quot;version&amp;quot;}}" time="0.025507" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\autopush.test.mjs"/>
+	</testsuite>
+	<testcase name="AP-021 notifications while awaiting app pong preserve the Rust cache bypass" time="0.014064" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\autopush.test.mjs"/>
+	<testcase name="AP-022 pong wait handles RFC ping/pong, binary and known non-notifications before app pong" time="0.023962" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\autopush.test.mjs"/>
+	<testsuite name="AP-023 pong wait branches: timeout, unknown response, malformed JSON, closes and stream error" time="0.111037" disabled="0" errors="0" tests="6" failures="0" skipped="0" hostname="DESKTOP-V9MILB1">
+		<testcase name="timeout" time="0.040062" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\autopush.test.mjs"/>
+		<testcase name="unknown" time="0.015273" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\autopush.test.mjs"/>
+		<testcase name="malformed" time="0.014351" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\autopush.test.mjs"/>
+		<testcase name="close" time="0.013883" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\autopush.test.mjs"/>
+		<testcase name="backoff" time="0.013621" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\autopush.test.mjs"/>
+		<testcase name="transport" time="0.013215" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\autopush.test.mjs"/>
+	</testsuite>
+	<testcase name="AP-024 pong wait deadline is absolute, even with repeated irrelevant frames" time="0.038850" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\autopush.test.mjs"/>
+	<testcase name="AP-025 receive cancellation and timeout do not consume a later message" time="0.008548" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\autopush.test.mjs"/>
+	<testsuite name="AP-026 AbortSignal interrupts notification receive and request wait cleanly" time="0.006803" disabled="0" errors="0" tests="2" failures="0" skipped="0" hostname="DESKTOP-V9MILB1">
+		<testcase name="nextNotification" time="0.003901" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\autopush.test.mjs"/>
+		<testcase name="hello" time="0.002583" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\autopush.test.mjs"/>
+	</testsuite>
+	<testcase name="AP-027 AbortSignal rejects before connection and during a stalled HTTP upgrade" time="0.012575" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\autopush.test.mjs"/>
+	<testcase name="AP-028 invalid URLs, timer configuration and operations without a connection" time="0.000418" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\autopush.test.mjs"/>
+	<testcase name="AP-029 TCP refusal, duplicate connect and sends after close use preserved error categories" time="0.004200" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\autopush.test.mjs"/>
+	<testcase name="AP-030 WSS rejects an untrusted certificate and accepts an explicitly trusted localhost CA" time="0.011187" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\autopush.test.mjs"/>
+	<testcase name="AP-031 malformed HTTP upgrade is an AutoPush connection failure" time="0.003271" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\autopush.test.mjs"/>
+	<testsuite name="AP-032 Rust 16 MiB frame cap rejects one oversized frame while accepting larger fragmented messages" time="0.033579" disabled="0" errors="0" tests="2" failures="0" skipped="0" hostname="DESKTOP-V9MILB1">
+		<testcase name="oversized frame" time="0.006209" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\autopush.test.mjs"/>
+		<testcase name="17 MiB fragmented message" time="0.027120" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\autopush.test.mjs"/>
+	</testsuite>
+	<testcase name="AP-033 serde lexical integers, known-field duplicates and Unicode/number validation" time="0.000634" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\autopush.test.mjs"/>
+	<testcase name="AP-034 TCP keepalive 60 seconds and nodelay are configured before the websocket opens" time="0.003407" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\autopush.test.mjs"/>
+	<testcase name="AP-035 fragmented messages retain Rust byte limits without a ws-specific fragment-count limit" time="0.224957" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\autopush.test.mjs"/>
+	<testcase name="AP-036 closing a peer that never responds is bounded and remains idempotent" time="0.020340" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\autopush.test.mjs"/>
+	<testcase name="COMP-CONFIG: Rust-written TOML, Node-written TOML, exact types, unknown fields, real file IO" time="0.633479" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\compatibility.test.mjs"/>
+	<testcase name="COMP-PROTOCOL: serde wire serialization and parsing, omission/defaults, rejected values" time="0.948634" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\compatibility.test.mjs"/>
+	<testcase name="COMP-KEEPALIVE: pong object classification, 4774 close, saturating retry backoff, header extraction" time="0.954732" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\compatibility.test.mjs"/>
+	<testcase name="COMP-CRYPTO: P-256 key generation and bidirectional aes128gcm + legacy aesgcm ECE" time="1.142011" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\compatibility.test.mjs"/>
+	<testcase name="COMP-CRYPTO-GOLDEN: both implementations consume all identical success and corruption fixtures" time="2.541414" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\compatibility.test.mjs"/>
+	<!-- 72 shared fixtures; 1 controlled Node rejections of retained Rust ECE debug underflow -->
+	<testcase name="COMP-KEY-EXCEPTIONS: compressed receiver keys work and malformed local keys become controlled Node errors" time="0.135459" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\compatibility.test.mjs"/>
+	<testcase name="COMP-WEBHOOK: same payload body for JSON/raw, missing env, network failure and documented HTTP-status delta" time="2.678767" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\compatibility.test.mjs"/>
+	<testcase name="COMP-X-REGISTRATION: isolated legacy request body/headers and response errors match real Rust against loopback" time="0.117896" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\compatibility.test.mjs"/>
+	<testcase name="COMP-CLI: original help/status/input failure golden with documented safe secret redaction" time="4.418938" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\compatibility.test.mjs"/>
+	<testcase name="COMP-WS: real Rust and Node REGISTER/UNREGISTER/HELLO/notification/ACK transcript equivalence" time="0.143685" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\compatibility.test.mjs"/>
+	<testcase name="COMP-WS-ERRORS: original Rust and Node both reject handshake/protocol/4774/pong timeouts" time="0.980384" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\compatibility.test.mjs"/>
+	<testcase name="COMP-WS-DEDUPE: FIFO100 eviction and notification-during-pong legacy bypass match Rust exactly" time="0.199189" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\compatibility.test.mjs"/>
+	<testcase name="COMP-UAID: same changed-UAID fixture creates new keys/channel and full legacy recovery information" time="0.044442" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\compatibility.test.mjs"/>
+	<testcase name="TOML schema preserves mandatory strings, optional registration, arbitrary byte arrays and ignores unknown fields as serde" time="0.002010" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\core.test.mjs"/>
+	<testcase name="invalid TOML rejects without reflecting source secrets" time="0.000271" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\core.test.mjs"/>
+	<testcase name="invalid TOML rejects without reflecting source secrets" time="0.000070" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\core.test.mjs"/>
+	<testcase name="invalid TOML rejects without reflecting source secrets" time="0.000064" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\core.test.mjs"/>
+	<testcase name="invalid TOML rejects without reflecting source secrets" time="0.000088" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\core.test.mjs"/>
+	<testcase name="invalid TOML rejects without reflecting source secrets" time="0.000084" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\core.test.mjs"/>
+	<testcase name="atomic config save retains recoverable original and restart state" time="0.012899" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\core.test.mjs"/>
+	<testcase name="file read and write failures have separate typed errors" time="0.002346" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\core.test.mjs"/>
+	<testcase name="WEBHOOK_ENDPOINT absence and empty string preserve Rust environment semantics" time="0.000154" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\core.test.mjs"/>
+	<testcase name="error causes preserve diagnostic categories without retaining secret snippets or URLs in inspected stack chains" time="0.000672" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\core.test.mjs"/>
+	<testcase name="CLI complete subcommands and option parsing, per-command help" time="0.000475" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\core.test.mjs"/>
+	<testcase name="CLI init and status redact every credential and registration secret even verbose" time="0.004372" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\core.test.mjs"/>
+	<testcase name="CLI argument/error exits, missing status is successful and legacy registration remains opt-in" time="0.005964" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\core.test.mjs"/>
+	<testcase name="interactive init prompts only missing arguments and abort propagates cleanly" time="0.003421" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\core.test.mjs"/>
+	<testcase name="built JavaScript CLI launches without Rust or TypeScript runtime" time="0.168556" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\core.test.mjs"/>
+	<testcase name="checked-in ciphertext matches reproducible independent fixture builder" time="0.009111" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\crypto.test.mjs"/>
+	<testcase name="ECE compatibility: aes128gcm-published-rfc-vector" time="0.000870" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\crypto.test.mjs"/>
+	<testcase name="ECE compatibility: aes128gcm-missing-headers" time="0.000375" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\crypto.test.mjs"/>
+	<testcase name="ECE compatibility: aes128gcm-empty-headers" time="0.000339" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\crypto.test.mjs"/>
+	<testcase name="ECE compatibility: aes128gcm-case-sensitive-encoding-header" time="0.000301" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\crypto.test.mjs"/>
+	<testcase name="ECE compatibility: aes128gcm-json-unicode" time="0.000491" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\crypto.test.mjs"/>
+	<testcase name="ECE compatibility: aes128gcm-raw-text" time="0.000323" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\crypto.test.mjs"/>
+	<testcase name="ECE compatibility: aes128gcm-json-null" time="0.000286" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\crypto.test.mjs"/>
+	<testcase name="ECE compatibility: aes128gcm-json-number" time="0.000316" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\crypto.test.mjs"/>
+	<testcase name="ECE compatibility: json-u64" time="0.000368" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\crypto.test.mjs"/>
+	<testcase name="ECE compatibility: json-i64" time="0.000349" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\crypto.test.mjs"/>
+	<testcase name="ECE compatibility: json-negative-zero" time="0.000285" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\crypto.test.mjs"/>
+	<testcase name="ECE compatibility: json-out-of-range-float" time="0.000251" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\crypto.test.mjs"/>
+	<testcase name="ECE compatibility: json-unpaired-surrogate-value" time="0.000231" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\crypto.test.mjs"/>
+	<testcase name="ECE compatibility: json-unpaired-surrogate-key" time="0.000227" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\crypto.test.mjs"/>
+	<testcase name="ECE compatibility: json-rust-recursion-limit" time="0.000372" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\crypto.test.mjs"/>
+	<testcase name="ECE compatibility: json-rust-maximum-depth" time="0.000389" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\crypto.test.mjs"/>
+	<testcase name="ECE compatibility: json-surrogate-pair" time="0.000250" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\crypto.test.mjs"/>
+	<testcase name="ECE compatibility: aes128gcm-leading-bom-raw" time="0.000277" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\crypto.test.mjs"/>
+	<testcase name="ECE compatibility: aes128gcm-padding" time="0.000239" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\crypto.test.mjs"/>
+	<testcase name="ECE compatibility: aes128gcm-empty-final-record" time="0.000286" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\crypto.test.mjs"/>
+	<testcase name="ECE compatibility: aes128gcm-multiple-records" time="0.000364" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\crypto.test.mjs"/>
+	<testcase name="ECE compatibility: aes128gcm-counter-more-than-255" time="0.003235" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\crypto.test.mjs"/>
+	<testcase name="ECE compatibility: aes128gcm-huge-advertised-rs" time="0.000373" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\crypto.test.mjs"/>
+	<testcase name="ECE compatibility: unsupported-encoding" time="0.000377" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\crypto.test.mjs"/>
+	<testcase name="ECE compatibility: empty-encoding" time="0.000048" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\crypto.test.mjs"/>
+	<testcase name="ECE compatibility: case-sensitive-encoding-value" time="0.000052" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\crypto.test.mjs"/>
+	<testcase name="ECE compatibility: base64-padding-rejected" time="0.000149" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\crypto.test.mjs"/>
+	<testcase name="ECE compatibility: base64-standard-alphabet-rejected" time="0.000072" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\crypto.test.mjs"/>
+	<testcase name="ECE compatibility: base64-whitespace-rejected" time="0.000043" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\crypto.test.mjs"/>
+	<testcase name="ECE compatibility: base64-invalid-length" time="0.000041" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\crypto.test.mjs"/>
+	<testcase name="ECE compatibility: base64-noncanonical-trailing-bits" time="0.000049" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\crypto.test.mjs"/>
+	<testcase name="ECE compatibility: empty-ciphertext" time="0.000133" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\crypto.test.mjs"/>
+	<testcase name="ECE compatibility: short-header" time="0.000092" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\crypto.test.mjs"/>
+	<testcase name="ECE compatibility: truncated-key-header" time="0.000057" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\crypto.test.mjs"/>
+	<testcase name="ECE compatibility: invalid-record-size" time="0.000054" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\crypto.test.mjs"/>
+	<testcase name="ECE compatibility: header-only" time="0.000077" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\crypto.test.mjs"/>
+	<testcase name="ECE compatibility: short-key-id" time="0.000082" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\crypto.test.mjs"/>
+	<testcase name="ECE compatibility: short-record" time="0.000302" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\crypto.test.mjs"/>
+	<testcase name="ECE compatibility: truncated-authentication-tag" time="0.000186" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\crypto.test.mjs"/>
+	<testcase name="ECE compatibility: tampered-ciphertext" time="0.000157" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\crypto.test.mjs"/>
+	<testcase name="ECE compatibility: wrong-auth" time="0.000161" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\crypto.test.mjs"/>
+	<testcase name="ECE compatibility: wrong-keypair" time="0.000152" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\crypto.test.mjs"/>
+	<testcase name="ECE compatibility: short-auth" time="0.000052" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\crypto.test.mjs"/>
+	<testcase name="ECE compatibility: invalid-sender-point" time="0.000097" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\crypto.test.mjs"/>
+	<testcase name="ECE compatibility: invalid-padding-delimiter" time="0.000158" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\crypto.test.mjs"/>
+	<testcase name="ECE compatibility: all-zero-padding" time="0.000145" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\crypto.test.mjs"/>
+	<testcase name="ECE compatibility: missing-final-marker" time="0.000175" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\crypto.test.mjs"/>
+	<testcase name="ECE compatibility: early-final-record" time="0.000139" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\crypto.test.mjs"/>
+	<testcase name="ECE compatibility: invalid-utf8-after-decrypt" time="0.000262" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\crypto.test.mjs"/>
+	<testcase name="ECE compatibility: aesgcm-json" time="0.000557" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\crypto.test.mjs"/>
+	<testcase name="ECE compatibility: aesgcm-padded" time="0.000302" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\crypto.test.mjs"/>
+	<testcase name="ECE compatibility: aesgcm-semicolon-params" time="0.000257" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\crypto.test.mjs"/>
+	<testcase name="ECE compatibility: aesgcm-first-matching-param" time="0.000239" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\crypto.test.mjs"/>
+	<testcase name="ECE compatibility: aesgcm-ignores-rs-header" time="0.000245" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\crypto.test.mjs"/>
+	<testcase name="ECE compatibility: aesgcm-max-compatible-record" time="0.000536" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\crypto.test.mjs"/>
+	<testcase name="ECE compatibility: aesgcm-missing-crypto-key" time="0.000049" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\crypto.test.mjs"/>
+	<testcase name="ECE compatibility: aesgcm-missing-dh" time="0.000030" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\crypto.test.mjs"/>
+	<testcase name="ECE compatibility: aesgcm-missing-encryption" time="0.000047" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\crypto.test.mjs"/>
+	<testcase name="ECE compatibility: aesgcm-missing-salt" time="0.000027" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\crypto.test.mjs"/>
+	<testcase name="ECE compatibility: aesgcm-hyphen-header-rejected" time="0.000941" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\crypto.test.mjs"/>
+	<testcase name="ECE compatibility: aesgcm-quoted-dh-rejected" time="0.000103" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\crypto.test.mjs"/>
+	<testcase name="ECE compatibility: aesgcm-padded-base64-dh-rejected" time="0.000063" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\crypto.test.mjs"/>
+	<testcase name="ECE compatibility: aesgcm-invalid-salt-base64" time="0.000065" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\crypto.test.mjs"/>
+	<testcase name="ECE compatibility: aesgcm-invalid-salt-length" time="0.000046" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\crypto.test.mjs"/>
+	<testcase name="ECE compatibility: aesgcm-empty-body" time="0.000254" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\crypto.test.mjs"/>
+	<testcase name="ECE compatibility: aesgcm-tag-only" time="0.000212" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\crypto.test.mjs"/>
+	<testcase name="ECE compatibility: aesgcm-short-block" time="0.000147" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\crypto.test.mjs"/>
+	<testcase name="ECE compatibility: aesgcm-multiple-record-limit" time="0.000179" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\crypto.test.mjs"/>
+	<testcase name="ECE compatibility: aesgcm-empty-plaintext" time="0.000233" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\crypto.test.mjs"/>
+	<testcase name="ECE compatibility: aesgcm-nonzero-padding" time="0.000166" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\crypto.test.mjs"/>
+	<testcase name="ECE compatibility: aesgcm-excess-padding-length" time="0.000152" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\crypto.test.mjs"/>
+	<testcase name="ECE compatibility: aesgcm-published-ietf-vector" time="0.000276" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\crypto.test.mjs"/>
+	<testcase name="fresh key generation has Rust-compatible fixed lengths and valid public/private relationship" time="0.047004" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\crypto.test.mjs"/>
+	<testcase name="configured compressed receiver public keys are normalized like the Rust OpenSSL importer" time="0.000309" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\crypto.test.mjs"/>
+	<testcase name="malformed receiver key components become Decryption errors" time="0.000358" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\crypto.test.mjs"/>
+	<testcase name="semicolon parameter parsing preserves names, whitespace, equals and first-match behavior" time="0.000260" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\crypto.test.mjs"/>
+	<testcase name="strict no-pad base64url rejects alternate spellings accepted by Buffer" time="0.000136" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\crypto.test.mjs"/>
+	<testcase name="notification diagnostics never reflect arbitrary header or encoding contents" time="0.000146" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\crypto.test.mjs"/>
+	<testcase name="shared Rust JSON parser validates all tokens including overwritten object fields" time="0.000873" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\crypto.test.mjs"/>
+	<testcase name="subscribe registers the fresh generated key set and returns the Rust subscription shape" time="0.000202" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\crypto.test.mjs"/>
+	<testcase name="subscribe retains the Rust AutoPush error category without exposing cause secrets" time="0.000240" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\crypto.test.mjs"/>
+	<testcase name="legacy X exact request shape, headers, base64url values and successful JSON response" time="0.029150" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\delivery.test.mjs"/>
+	<testcase name="legacy default disabled before any request; response failures do not leak response body" time="0.006131" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\delivery.test.mjs"/>
+	<testcase name="legacy rejects non-JSON success and never follows redirects with credentials" time="0.007602" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\delivery.test.mjs"/>
+	<testcase name="webhook success posts JSON once; errors and timeout are typed" time="0.043510" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\delivery.test.mjs"/>
+	<testcase name="webhook URL Basic auth and redirects preserve same-origin credentials and remove cross-origin credentials" time="0.011286" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\delivery.test.mjs"/>
+	<testcase name="ACK101 for decrypt failure, ACK102 for webhook/config failure, ACK100 for no-data" time="0.000454" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\delivery.test.mjs"/>
+	<testcase name="Web Push decrypt→JSON webhook→ACK and non-2xx ACK102 correction" time="0.009886" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\delivery.test.mjs"/>
+	<testcase name="Firefox backoff upper cap and successful session reset, 4774 delay" time="0.000668" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\delivery.test.mjs"/>
+	<testcase name="normal close resets failure counter; fatal UAID exits without retry" time="0.000247" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\delivery.test.mjs"/>
+	<testcase name="MOCK-E2E full init→AutoPush register→legacy X mock→restart config→listen/decrypt/webhook/ACK→unregister" time="0.065835" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\lifecycle.test.mjs"/>
+	<testcase name="full authorized UAID recovery calls legacy mock then saves fresh keys and reconnects with restart-readable configuration" time="0.042999" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\recovery.test.mjs"/>
+	<testcase name="failed legacy re-registration preserves both original persisted and in-memory registration" time="0.011271" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\recovery.test.mjs"/>
+	<testcase name="second UAID invalidation returns fatal diagnostics and retains successfully registered state" time="0.011811" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\recovery.test.mjs"/>
+	<testcase name="unauthorized UAID recovery never calls legacy HTTP or changes original config" time="0.005924" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\recovery.test.mjs"/>
+	<testcase name="read-only registration config rejects recovery save while preserving old disk and in-memory state" time="0.012067" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\recovery.test.mjs"/>
+	<testcase name="main SIGINT during idle cleans resources and matches Rust successful interruption exit" time="0.013974" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\recovery.test.mjs"/>
+	<testcase name="main SIGINT during backoff cleans resources and matches Rust successful interruption exit" time="0.029175" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\recovery.test.mjs"/>
+	<testcase name="main SIGINT during webhook cleans resources and matches Rust successful interruption exit" time="0.015351" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\packages\angelic-angel\tests\recovery.test.mjs"/>
+	<!-- tests 199 -->
+	<!-- suites 0 -->
+	<!-- pass 199 -->
+	<!-- fail 0 -->
+	<!-- cancelled 0 -->
+	<!-- skipped 0 -->
+	<!-- todo 0 -->
+	<!-- duration_ms 17116.4262 -->
+</testsuites>

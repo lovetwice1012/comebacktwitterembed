@@ -8,6 +8,7 @@ import { MonitorRegistration } from "./monitor-registration";
 import { sourceProvider, monitorState } from "../../../src/automation/monitor-input";
 import { automationPlanName } from "./automation-feedback";
 import { MonitorCadenceEditor } from "./monitor-cadence-editor";
+import { XMonitorManager } from "./x-monitor-manager";
 
 const field = "w-full rounded border bg-background px-3 py-2 text-sm";
 const button = "rounded border bg-background px-3 py-2 text-sm hover:bg-muted disabled:opacity-40";
@@ -160,5 +161,6 @@ export function MonitorManager({ api, guildId, canEdit, scope, destinations, rul
         <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={dest.enabled} onChange={e => setDest({ ...dest, enabled: e.target.checked })} />通知先を有効にする</label>
         <div className="flex gap-2"><button className={button} type="submit" disabled={busy}>通知先を保存</button></div>
       </form></fieldset></AutomationDialog>}
+    {scope === "private" ? <XMonitorManager api={api} active={active} allowSetup={!guildId} destinations={destinations} rules={rules} /> : null}
   </div>;
 }

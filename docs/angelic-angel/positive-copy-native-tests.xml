@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<testsuites>
+	<testsuite name="native signed Firefox storage → local file, both engines, isolated environment and unchanged originals" time="39.795988" disabled="0" errors="0" tests="5" failures="0" skipped="0" timestamp="2026-10-14T03:18:50.893Z" hostname="DESKTOP-V9MILB1">
+		<testcase name="PowerShell 5.1: creates only a new, private local export and performs no upload" time="4.721251" classname="native signed Firefox storage → local file, both engines, isolated environment and unchanged originals" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\native-test\x-notification-export.test.cjs"/>
+		<testcase name="PowerShell 7: creates only a new, private local export and performs no upload" time="6.672184" classname="native signed Firefox storage → local file, both engines, isolated environment and unchanged originals" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\native-test\x-notification-export.test.cjs"/>
+		<testcase name="real Gecko mixed metadata permits only explicit consent and exports no foreign subscription values" time="17.111498" classname="native signed Firefox storage → local file, both engines, isolated environment and unchanged originals" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\native-test\x-notification-export.test.cjs"/>
+		<testcase name="both GUI process bridges create a Japanese-named file and return only a safe UTF-8 summary" time="9.858324" classname="native signed Firefox storage → local file, both engines, isolated environment and unchanged originals" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\native-test\x-notification-export.test.cjs"/>
+		<testcase name="cooperative cancellation creates no output and removes the isolated reader and scratch" time="1.336601" classname="native signed Firefox storage → local file, both engines, isolated environment and unchanged originals" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\native-test\x-notification-export.test.cjs"/>
+	</testsuite>
+	<!-- tests 6 -->
+	<!-- suites 0 -->
+	<!-- pass 6 -->
+	<!-- fail 0 -->
+	<!-- cancelled 0 -->
+	<!-- skipped 0 -->
+	<!-- todo 0 -->
+	<!-- duration_ms 39903.2518 -->
+</testsuites>

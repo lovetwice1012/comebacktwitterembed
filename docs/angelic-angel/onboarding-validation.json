@@ -1,0 +1,432 @@
+{
+  "dateJst": "2026-10-14",
+  "capturedUtc": "2026-10-14T00:40:30.501Z",
+  "scope": "Local onboarding and file-intake acceptance only",
+  "branch": "codex/angelic-angel-node-port",
+  "node": "v24.15.0",
+  "gates": {
+    "phase0": "Previously accepted; immutable 14-file Rust baseline reverified this run",
+    "localOnboarding": "accepted",
+    "actualXReception": "unverified",
+    "G1": "not accepted",
+    "receiverWorker": "not integrated",
+    "realOAuth": "not exercised",
+    "productionChanged": false,
+    "productionDeployed": false,
+    "intakeDefault": "disabled"
+  },
+  "checks": {
+    "rootTypecheck": "pass",
+    "rootLint": "pass",
+    "dashboardTypecheck": "pass",
+    "dashboardLint": "pass",
+    "baselineHash": "pass"
+  },
+  "tests": [
+    {
+      "path": "docs/angelic-angel/onboarding-tests.xml",
+      "sha256": "14384a982692ba2521c07b74de4790c9ba11940dd8dc1e3a1a97358b70a78d56",
+      "tests": 156,
+      "pass": 156,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "todo": 0,
+      "duration_ms": 96858.5304
+    },
+    {
+      "path": "docs/angelic-angel/onboarding-native-tests.xml",
+      "sha256": "3261a8fa482f68fe28586d8ae726d86ce3f29b9a700b29af7ce1e9d075c9b00c",
+      "tests": 5,
+      "pass": 5,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "todo": 0,
+      "duration_ms": 22027.1424
+    }
+  ],
+  "browser": {
+    "path": "docs/angelic-angel/onboarding-browser/browser.json",
+    "sha256": "65877386d9e6e20aab900948067045bbb3121fe4c29f8b27e4c3c10194d2500d",
+    "checks": 10,
+    "externalRequests": 0,
+    "pageErrors": 0,
+    "fixtureSession": true,
+    "actualSharedApiAndSql": true
+  },
+  "sqlFixture": {
+    "host": "127.0.0.1",
+    "port": 33621,
+    "engine": "MariaDB 11.4.10",
+    "schemaPattern": "cbte_automation_test_<20hex>",
+    "serial": true,
+    "production": false
+  },
+  "encryption": {
+    "webKeys": "RSA public only",
+    "workerKeys": "RSA private only",
+    "envelopeVersion": 2,
+    "algorithm": "RSA-OAEP-256+A256GCM",
+    "testData": "synthetic"
+  },
+  "download": {
+    "version": "0.1.0-preview.2",
+    "bytes": 64456,
+    "sha256": "77dd61d8d42cb9438e38cc91b11bd6e5a0511381592c8ad07c0010483ed17fbe",
+    "matchesPriorArchive": true
+  },
+  "reviewed": {
+    "registryAndHybrid": "Independent read-only review; no unresolved findings",
+    "uiAndRegistry": "Independent contract/lifecycle review; no unresolved findings",
+    "screenshots": "Desktop instructions and mobile review inspected"
+  },
+  "sourceFiles": [
+    {
+      "path": "client/angelic-setup/.gitattributes",
+      "sha256": "8665300680b052f017e6b6258dae7f2c83048d4086f752f2685194401d909b15"
+    },
+    {
+      "path": "client/angelic-setup/Export-XNotificationData.ps1",
+      "sha256": "3542bb834c886b6d262574951d9f6a8900a2d4847225a599f4c494317cc0c52e"
+    },
+    {
+      "path": "client/angelic-setup/FirefoxReader.ps1",
+      "sha256": "f278660528b65b63fcdaf04f7dbe7b3f1def58aef40c9eeab055c2e20b233a6c"
+    },
+    {
+      "path": "client/angelic-setup/LICENSE",
+      "sha256": "230184f60bae2feaf244f10a8bac053c8ff33a183bcc365b4d8b876d2b7f4809"
+    },
+    {
+      "path": "client/angelic-setup/README-ja.md",
+      "sha256": "8d7372e73252c6578c309b64c7ef97beb9a2cd6f34f49ecf9ae42efa8c0e871f"
+    },
+    {
+      "path": "client/angelic-setup/Read-PushSubscription.js",
+      "sha256": "f368f25b2b8c830b22f2ed0680fea08cc52a2e0af9e6c799d07e0de4594675b8"
+    },
+    {
+      "path": "client/angelic-setup/Setup-XNotifications.ps1",
+      "sha256": "c7f92deff892936fa1851364b605eb881e6919543f37049d47c7f277faa12546"
+    },
+    {
+      "path": "client/angelic-setup/Start-Setup.ps1",
+      "sha256": "6a212327a4258a134a940f7a2d0fe89b05fbcea5377414fd68690979c8527d48"
+    },
+    {
+      "path": "client/angelic-setup/はじめに読んでください.txt",
+      "sha256": "6e256a6268a74078e5fe870c2b884ce92a3680fdc219abb19baf7d86b6ac103d"
+    },
+    {
+      "path": "client/angelic-setup/ダブルクリックで開始.cmd",
+      "sha256": "0b604303929c5f8c5b4f5e9227f3ab157ce379be21cd6945491b0e0855202e9b"
+    },
+    {
+      "path": "dashboard/app/api/automation/[...path]/route.ts",
+      "sha256": "88c51f84e18710c3ffc703d9c36dd7481800a0e336fd70f8ad9446ec6661b96d"
+    },
+    {
+      "path": "dashboard/app/api/automation/x-setup/download/route.ts",
+      "sha256": "e5316b91c96d5bd5be2d42ff5ec0d43d14db317aafb4ff46172a9036c33a10ef"
+    },
+    {
+      "path": "dashboard/app/dashboard/automation/x/page.tsx",
+      "sha256": "478a531181b1b64711b79619ea309e5237997ba64a4396687f13014c1916bebc"
+    },
+    {
+      "path": "dashboard/components/admin/donation-policy-manager.tsx",
+      "sha256": "0230589e302fbda61348eed70397effee8a27c12040c51e18962daea94861505"
+    },
+    {
+      "path": "dashboard/components/admin/notification-plan-manager.tsx",
+      "sha256": "9dfee090f1fd0260c9a0e3a199e3e05ade82e3992e62f6be795432517def68e6"
+    },
+    {
+      "path": "dashboard/components/admin/push-capacity-diagnostics.tsx",
+      "sha256": "608fc17b6fc5a95b252d013c840a9bba1383990e1b1b0c08a4a4a5bd5fc9fa88"
+    },
+    {
+      "path": "dashboard/components/admin/push-capacity-manager.tsx",
+      "sha256": "5601a85be131d30326772241d1498ccff6368d3d04428cafed1388c2cc699403"
+    },
+    {
+      "path": "dashboard/components/automation/monitor-manager.tsx",
+      "sha256": "5ea66d11024cc220a6d1e5d115e96d5294664bf16ebdbe525c9318cdd152604e"
+    },
+    {
+      "path": "dashboard/components/automation/square-donation-manager.tsx",
+      "sha256": "fcc3f113acb8db597ec7ed87ce514cdd8be417470397f684e4131c7a90c9fbbb"
+    },
+    {
+      "path": "dashboard/components/automation/x-monitor-manager.tsx",
+      "sha256": "52e1e10968a1a443a7c67662114cc71a665b23664035e3912df76249533d1012"
+    },
+    {
+      "path": "dashboard/components/automation/x-monitor-move-editor.tsx",
+      "sha256": "69dcbbf7817d876f484eb09e7a5966d837045e0431441d5237b3722285088ae5"
+    },
+    {
+      "path": "dashboard/components/automation/x-monitor-view.ts",
+      "sha256": "29e3a2291f2745cab174df833421c5620f79f979ef8f6e5bf48cde62edd5559e"
+    },
+    {
+      "path": "dashboard/components/automation/x-notification-setup-screen.tsx",
+      "sha256": "deaf897a9c427946b32924e21f74746aeec129c083aa5abaceeded37cb953e84"
+    },
+    {
+      "path": "dashboard/components/automation/x-notification-setup.tsx",
+      "sha256": "cd2eceecd51d95481a1d56df535ba36bd2c4f4d09aac8e15ebe837dcac72a91c"
+    },
+    {
+      "path": "dashboard/components/automation/x-setup-view.ts",
+      "sha256": "ebde48ac1cfce96ca873a1b1d4293c396f33fcc22fc271a276348df5ae8b1001"
+    },
+    {
+      "path": "dashboard/lib/automation-admission.ts",
+      "sha256": "5d3447e488c8689354266caa673f5019d5b143f7b7a29e71d42a7252736b68c6"
+    },
+    {
+      "path": "dashboard/lib/x-setup-download.ts",
+      "sha256": "2cb9097f70f5c32d5076d0a87ff7308fc1cdf7e4ea7cc69f83842b82a2e599a0"
+    },
+    {
+      "path": "dashboard/next.config.ts",
+      "sha256": "6e71130e6ef055771d54aa6e872ce5b0f92854f25a87602a5597ac49e4703375"
+    },
+    {
+      "path": "migrations/20261014_add_plan_confirmation_interval.sql",
+      "sha256": "6669bfb224e3fdf692601d5691168b02169067422cd2cdf2681fc08d3038cb54"
+    },
+    {
+      "path": "migrations/20261014_add_x_notification_intake.sql",
+      "sha256": "a4dfd91386a0e07c5b21889f92a1af5b2f7a70edba5a77d564436d63e0fa72d5"
+    },
+    {
+      "path": "package.json",
+      "sha256": "f494e764026f52cfab04c2cf77b3bf2b97f9a63a575ccdf8fa92ea3d341539ec"
+    },
+    {
+      "path": "scripts/build-angelic-setup-package.cjs",
+      "sha256": "d8fc41cbaff78db6f37e433cd9ee7373f65e511cdfd4281fb7a1cc63daaac9cf"
+    },
+    {
+      "path": "scripts/native-test/x-notification-export.test.cjs",
+      "sha256": "62c3a4f2822f3d0d1d655dda24cdf52a4c25a124bcc0406db293d4fdcbb0901b"
+    },
+    {
+      "path": "scripts/test/angelic-setup-package.test.js",
+      "sha256": "79a315a9bf80ef6686d40cc972329ebf9b7ba459ef4b38a44527ed0851e163a0"
+    },
+    {
+      "path": "scripts/test/autoextract.additionalautoextractslot.test.js",
+      "sha256": "7f3d00a366cb21880c909c6364ceb7d843fa39db47d1768908591bd1a364dc87"
+    },
+    {
+      "path": "scripts/test/automation-donation-ui.test.js",
+      "sha256": "55172a4634d58eed1116118c073eab4f4bcd6258ca05f3f924e9a1f45c8b52a3"
+    },
+    {
+      "path": "scripts/test/automation-entitlements-sql.test.js",
+      "sha256": "20ba3a123472b4a34da4e15f93dffaaff6d16f9bfd0ec7a7834d53dec65bfa86"
+    },
+    {
+      "path": "scripts/test/automation-http-boundary.test.js",
+      "sha256": "4f58546ef53344e5966c4cee488c16a1db7a912f8e02a58cdede5ef53ce9fec7"
+    },
+    {
+      "path": "scripts/test/automation-monitor-cadence-lifecycle-sql.test.js",
+      "sha256": "f1bf18c1097fd66be272311f07680efd2480110d182a0662cb3da20b5b6ed421"
+    },
+    {
+      "path": "scripts/test/automation-monitor-cadence-sql.test.js",
+      "sha256": "3b8b599962d82aafcabc7f416da6706fd8974f0ea379859f271ea3b7b81661bb"
+    },
+    {
+      "path": "scripts/test/automation-monitor-cadence-ui.test.js",
+      "sha256": "37d79c8f21f1cc96181fb8a07ae279d81f0cd2df4e20d2d4c67d2ec19d8c85ef"
+    },
+    {
+      "path": "scripts/test/automation-notification-quota-ui.test.js",
+      "sha256": "c5727b23b9cd957e750c9b6bd023b6071999b8e9fbb184735ee9c1692d6fa9cb"
+    },
+    {
+      "path": "scripts/test/automation-payment-navigation.test.js",
+      "sha256": "c5ee1b889c161c4fc0534e7afd7d9ba661e4ab9642e553f8daf06198b6e7806c"
+    },
+    {
+      "path": "scripts/test/automation-plan-admin-sql.test.js",
+      "sha256": "3ac6e8aa01ce95e06bb13d36842ab7de9b19ec155842fd50566031c48286d1e8"
+    },
+    {
+      "path": "scripts/test/automation-plan-admin-ui.test.js",
+      "sha256": "2d65d15c8729a80c87d3dcab07c018d9ed40f01ddcb91d0ac6f55091cf405394"
+    },
+    {
+      "path": "scripts/test/automation-push-capacity-sql.test.js",
+      "sha256": "fa8612feb2b3465777af26b6fa93bf2c36b5ae49fcc49d2e88a1ae6fdbb5618b"
+    },
+    {
+      "path": "scripts/test/automation-push-capacity-ui.test.js",
+      "sha256": "22929e8a2f0465a16ee15630b2954ea8acee4d93abfcbe772addaa451944e9e4"
+    },
+    {
+      "path": "scripts/test/automation-push-support-grants-sql.test.js",
+      "sha256": "d4187c8c8fc1876dbdc272f5b254610a005f9040f5201aaf989152e5b99f40d7"
+    },
+    {
+      "path": "scripts/test/automation-square-billing-sql.test.js",
+      "sha256": "1cf475a5674490c22924cfe559953944cef509e0675398c176ff8131fb81b8c3"
+    },
+    {
+      "path": "scripts/test/automation-square-commerce-ui.test.js",
+      "sha256": "facb518641302aa90292390ab5f0b0943217ff3f41fa355a7622977ab614b4ba"
+    },
+    {
+      "path": "scripts/test/automation-square-donations-sql.test.js",
+      "sha256": "ecf67ffc2db1f9717a779eeaef27cfc99b2f4f0845d87c92a9218df6e753e5c6"
+    },
+    {
+      "path": "scripts/test/automation-x-monitor-ui.test.js",
+      "sha256": "01255ffd91180ab5d1b9029130f97d3d7802c4c4d29c3bbdaf70d2ab90249033"
+    },
+    {
+      "path": "scripts/test/automation-x-quota-migration.test.js",
+      "sha256": "1689116e236a967f2e8cea1b6486d5fa9715f06d3c1ef3c8da7a4b90e0e07ae2"
+    },
+    {
+      "path": "scripts/test/automation-x-quota-sql.test.js",
+      "sha256": "30cc9bc4ee588225df321cd97c853825d2434c1449c1459d205fcee947694733"
+    },
+    {
+      "path": "scripts/test/automation-x-setup-download.test.js",
+      "sha256": "b6a2dadfb0efbec3097948553218e1e01f9e6a157e8f28d7e5d561fcb85d5712"
+    },
+    {
+      "path": "scripts/test/automation-x-setup-sql.test.js",
+      "sha256": "b9858ac0be9f9c771fca0eb79e8c03f09dd53c21b0c50a04515eb2cedec6307d"
+    },
+    {
+      "path": "scripts/test/automation-x-setup-transfer.test.js",
+      "sha256": "19857005b0202b1581811c2234051f091ed673f280502e82ce18e40b0ac8c313"
+    },
+    {
+      "path": "scripts/test/automation-x-setup-ui.test.js",
+      "sha256": "405ab745fcd2769989ca5b033470e0b90cabc588cfbe2358495a5faa3e6db379"
+    },
+    {
+      "path": "scripts/test/x-notification-reader.test.js",
+      "sha256": "b4ad99ea199e7d4e6c16615abb378a160e8efd2ad7a2abb41803735225de31b2"
+    },
+    {
+      "path": "scripts/verify-x-notification-setup.cjs",
+      "sha256": "307cad26971df4c31fc568967422559261b321175114d8f0fa57eea08e17cf9e"
+    },
+    {
+      "path": "src/automation/api.js",
+      "sha256": "9cfd9affe94ab00d106c499460418fee8012e408e9833790150f726250f93210"
+    },
+    {
+      "path": "src/automation/entitlements.d.ts",
+      "sha256": "052833ea6dbb26cd8031dd0e338a628f2ccb7e50f97d2571abd20eb2a697bcda"
+    },
+    {
+      "path": "src/automation/entitlements.js",
+      "sha256": "b3aba86782fdbff12314f735b5690bb492b6d560b0262ba05b0629f5f6280eac"
+    },
+    {
+      "path": "src/automation/monitor-cadence.js",
+      "sha256": "0bb0752a7694c9d7dbd136345b765176bde70fbd0b375633da2711525c8fd4fb"
+    },
+    {
+      "path": "src/automation/push-capacity-schema.sql.js",
+      "sha256": "59c86c4b12986c537c0bfc306e6549505fd7bc6bf31f0bd82af9c7efb8173f88"
+    },
+    {
+      "path": "src/automation/push-capacity.d.ts",
+      "sha256": "2059254d5aacba8ecf37eb7749e08035fe0eead257a7dc8575b4786375d0bc32"
+    },
+    {
+      "path": "src/automation/push-capacity.js",
+      "sha256": "757ab412b5d426212282d1fc3a49c6213b000d720e98a750f1785ce34b4761c6"
+    },
+    {
+      "path": "src/automation/push-support-grants-schema.sql.js",
+      "sha256": "8bd830fa25f7a8db9e4ef958bde3ddfd4f4f0c6f0b648f85cf8c56427e3bc93a"
+    },
+    {
+      "path": "src/automation/push-support-grants.d.ts",
+      "sha256": "004c09c67cb4dac927bb125f4fa9f49dff4889ea5e282fb13d25d6aa1e409a65"
+    },
+    {
+      "path": "src/automation/push-support-grants.js",
+      "sha256": "8d6af7c7c5fe2f34188241b48e69ffcfabc475acf2cd43bd141ccc4e01a07e54"
+    },
+    {
+      "path": "src/automation/quota-migration.js",
+      "sha256": "1b3d0d86f4638b7863093acd5b75241f9638760a83e7597ee30c3004c3f07fa1"
+    },
+    {
+      "path": "src/automation/schema.sql.js",
+      "sha256": "79e8156536b795dbc897552022a326cac0a328263ff27a1c5898ca10ad33fd2b"
+    },
+    {
+      "path": "src/automation/square-donations.d.ts",
+      "sha256": "ce4802886566a64a139d0e2db8aaa821ac38472066147016d81ec104e6e329f9"
+    },
+    {
+      "path": "src/automation/square-donations.js",
+      "sha256": "01da4fdcf27e562a49927cd9d1f6cde57f47845841e1071564ec4e94121936ea"
+    },
+    {
+      "path": "src/automation/x-monitor-quota.js",
+      "sha256": "4e4a78710ae7b3e1e9ddcf62c9bcbed81a6f1c852d9c13ae7e06a3cdcc594f31"
+    },
+    {
+      "path": "src/automation/x-monitor-schema.sql.js",
+      "sha256": "776c3858b909a4f3d27debcefc6b997bd4f6cd360aef3e3d8d6a915d2cc7ed7a"
+    },
+    {
+      "path": "src/automation/x-setup-schema.sql.js",
+      "sha256": "b2192b5484d65156adbe92e7e0ebb8c1a885f13b75776f1d835a8678776518ff"
+    },
+    {
+      "path": "src/automation/x-setup-transfer.d.ts",
+      "sha256": "f6df6dc4800253f90ab52ff68addaee4ea62150118df9265c54605243d5a555e"
+    },
+    {
+      "path": "src/automation/x-setup-transfer.js",
+      "sha256": "11969f36c39f987edb64b4cd45cf548db7ec8f88e301f2a6c03958094966c131"
+    },
+    {
+      "path": "src/automation/x-setup.js",
+      "sha256": "9989eaaebae9ead7890fb5c8d8c0d3124d9b317d46eb65cb0d2ab9e97ab65934"
+    },
+    {
+      "path": "src/commands/handlers/autoextract/additionalautoextractslot.js",
+      "sha256": "2954458a2fbe18c57fc80831377ffe0e7e3b9048c78bf00471fdcda840c0ca03"
+    }
+  ],
+  "documents": [
+    {
+      "path": "Angelic_Angel_Codex_Implementation_Spec.md",
+      "sha256": "e6ec49530289650e77040df1583f56443d2905f2150fedd41cc53103fdd30e71"
+    },
+    {
+      "path": "docs/angelic-angel/implementation-status.md",
+      "sha256": "153bbc913e651ce9442c3d0bba0550cc6c88d86ee6ce6b9f078cd92a53c798ae"
+    },
+    {
+      "path": "docs/angelic-angel/x-notification-onboarding.md",
+      "sha256": "1f87ac59663e2b46ce03850f6ed702c3fce7a26e81f4f4d04266423168f09ab2"
+    },
+    {
+      "path": "docs/angelic-angel/x-setup-download.md",
+      "sha256": "2e91b7554413ac3dc2f77a8db7446dce3b657868fe4573493d83b93c435fc400"
+    },
+    {
+      "path": "docs/angelic-angel/powershell-file-client.md",
+      "sha256": "f23df5264aca8e1d1d0c3d1757c0046a25ace3e977253e79f3961668cb0cda6a"
+    }
+  ]
+}

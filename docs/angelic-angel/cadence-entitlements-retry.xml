@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<testsuites>
+	<testsuite name="real SQL: shared notification slots, concurrent admission, trusted plans and persistent slot identity" time="2.358228" disabled="0" errors="0" tests="8" failures="0" skipped="0" hostname="DESKTOP-V9MILB1">
+		<testcase name="free baseline is 5 total registrations across native auto and price, including paused slots" time="0.170069" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\automation-entitlements-sql.test.js"/>
+		<testcase name="delete and recreate reuse the lowest empty persistent owner slot and cannot steal another owner target" time="0.031055" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\automation-entitlements-sql.test.js"/>
+		<testcase name="concurrent workers admit exactly 5 combined slots for one free owner" time="0.045519" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\automation-entitlements-sql.test.js"/>
+		<testcase name="supporter priority and explicit administrator slot override come only from verified user records" time="0.022261" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\automation-entitlements-sql.test.js"/>
+		<testcase name="paid policy configuration has no invented defaults, cannot be self-granted, and retains additive trusted legacy extras" time="0.033139" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\automation-entitlements-sql.test.js"/>
+		<testcase name="downgrades retain registrations and identities; extra slots can be viewed/deleted but cannot send or resume" time="0.021005" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\automation-entitlements-sql.test.js"/>
+		<testcase name="expiration or disabled configured plan falls back to current trusted free/supporter allowance" time="0.008155" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\automation-entitlements-sql.test.js"/>
+		<testcase name="legacy subscriptions adopt stable slots without deleting overflow or ignoring paused registrations" time="0.014724" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\automation-entitlements-sql.test.js"/>
+	</testsuite>
+	<!-- tests 9 -->
+	<!-- suites 0 -->
+	<!-- pass 9 -->
+	<!-- fail 0 -->
+	<!-- cancelled 0 -->
+	<!-- skipped 0 -->
+	<!-- todo 0 -->
+	<!-- duration_ms 2429.9944 -->
+</testsuites>

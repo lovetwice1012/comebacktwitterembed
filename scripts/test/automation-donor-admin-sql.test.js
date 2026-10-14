@@ -58,7 +58,7 @@ test('real SQL donor manual management preserves automatic donations and legacy 
             await assert.rejects(service.save(ADMIN, owner(1), edit(beforeLegacy, { note: 'Stale legacy snapshot' })), { code: 'DONOR_EDIT_CONFLICT' });
             const fresh = await service.get(ADMIN, owner(1)); assert.equal(fresh.manual.isDonor, false); assert.equal(fresh.manual.extraSlots, 7);
             const rewritten = await service.save(ADMIN, owner(1), edit(fresh, { isDonor: true })); assert.ok(rewritten.version.updatedAtMs > fresh.version.updatedAtMs, 'same clock produces monotonic metadata revisions');
-            await seed(owner(2), 2, -9); const odd = await service.get(ADMIN, owner(2)); assert.equal(odd.version.legacyIsDonor, 2); assert.equal(odd.version.legacyExtraSlots, -9);
+            await seed(owner(2), 2, -9); const odd = await service.get(ADMIN, owner(2)); assert.equal(odd.version.legacyIsDonor, 2); assert.equal(odd.version.legacyExtraSlots, -9); assert.equal(odd.entitlement.slotLimit, 5);
             await db.queryDatabase('UPDATE users SET is_donor=0 WHERE user_id=?', [owner(2)]);
             await assert.rejects(service.save(ADMIN, owner(2), edit(odd, { extraSlots: 0 })), { code: 'DONOR_EDIT_CONFLICT' });
         });
@@ -86,6 +86,12 @@ test('real SQL donor manual management preserves automatic donations and legacy 
             const forbidden = JSON.stringify(noPolicy); for (const secret of ['private@example.com', 'Private buyer', 'source_digest', 'payment_id', 'a'.repeat(64)]) assert.ok(!forbidden.includes(secret));
             await db.queryDatabase('INSERT INTO automation_square_donation_policy(environment,merchant_id,enabled,currency,supporter_threshold,validity_days,updated_at_ms,actor_user_id) VALUES (?,?,1,?,700,30,?,?)', ['sandbox', 'MERCHANT', 'JPY', clock, ADMIN.userId]);
             await db.queryDatabase('INSERT INTO automation_square_donation_units_policy(environment,merchant_id,unit_amount,slots_per_unit,policy_updated_at_ms) VALUES (?,?,300,2,?)', ['sandbox', 'MERCHANT', clock]);
+            // Existing grants are authoritative counts. The permanent scheme
+            // preserves this old recorded allocation without deriving it from
+            // payment amounts or the current rolling policy.
+            await db.queryDatabase(`INSERT INTO automation_square_donation_unit_grants
+                (owner_user_id,environment,merchant_id,purchase_units,extra_slots,payment_count,units_valid_until_at_ms,policy_updated_at_ms,updated_at_ms)
+                VALUES (?,?,?,3,6,1,?,?,?)`, [owner(10), 'sandbox', 'MERCHANT', clock + 30 * 86400000, clock, clock]);
             const grants = await read().get(ADMIN, owner(10)); assert.equal(grants.square.active, true); assert.equal(grants.square.grant.paymentCount, 1); assert.equal(grants.square.grant.purchaseUnits, 3); assert.equal(grants.square.grant.extraSlots, 6);
             const before = packetJson(await db.queryDatabase('SELECT * FROM automation_square_donation_attempts WHERE owner_user_id=? ORDER BY id', [owner(10)]));
             const saved = await service.save(ADMIN, owner(10), edit(grants, { isDonor: false, extraSlots: 3, paymentCount: 7, purchaseUnits: 99, displayName: 'Square and manual' }));
@@ -93,7 +99,7 @@ test('real SQL donor manual management preserves automatic donations and legacy 
             assert.deepEqual(packetJson(await db.queryDatabase('SELECT * FROM automation_square_donation_attempts WHERE owner_user_id=? ORDER BY id', [owner(10)])), before);
             const list = await read().list(ADMIN); assert.equal(list.items.find(item => item.userId === owner(10)).square.active, true);
             clock += 31 * 86400000;
-            const expired = await read().get(ADMIN, owner(10)); assert.equal(expired.square.active, false); assert.equal(expired.square.paymentCount, 3); assert.equal(expired.totals.paymentCount, 10); assert.equal(expired.entitlement.tier, 'free'); assert.equal(expired.entitlement.slotLimit, 8);
+            const expired = await read().get(ADMIN, owner(10)); assert.equal(expired.square.active, false); assert.equal(expired.square.paymentCount, 3); assert.equal(expired.totals.paymentCount, 10); assert.equal(expired.entitlement.tier, 'free'); assert.equal(expired.entitlement.slotLimit, 14);
             assert.equal((await read().list(ADMIN)).items.find(item => item.userId === owner(10)).square.active, false);
             const anotherScope = make({ env: { ...ENV, SQUARE_ENVIRONMENT: 'production' } }); assert.equal((await anotherScope.get(ADMIN, owner(10))).square.paymentCount, 1);
         });
@@ -146,6 +152,43 @@ test('real SQL donor manual management preserves automatic donations and legacy 
             assert.ok((await dispatch(request('GET', 'donors', {}, 'pageSize=2'), ADMIN, services)).items.length <= 2);
             await assert.rejects(dispatch(request('DELETE', 'donors/' + owner(35)), ADMIN, services), { code: 'NOT_FOUND' });
         });
+    } finally { await db.close(); }
+});
+
+test('donor allowance inspection combines native and X registrations with attached cadence boosts across an allowance reduction', { skip: !port, timeout: 30000 }, async () => {
+    const db = await createTestDatabase(port), user = owner(200), other = owner(201), instant = Date.parse('2026-10-14T00:00:00Z');
+    const readDb = { ...db, queryDatabase: async (sql, params) => {
+        assert.match(sql.trim(), /^SELECT\b/, 'admin inspection keeps its read-only contract');
+        return db.queryDatabase(sql, params);
+    }, withDatabaseTransaction: async () => { throw new Error('Inspection must not create a write transaction'); } };
+    const read = createDonorAdmin(readDb, { env: {}, clock: () => instant });
+    try {
+        for (const id of [user, other]) await db.queryDatabase('INSERT INTO users(user_id,registered_at_ms,is_donor,additional_auto_extract_slots) VALUES (?,0,1,2)', [id]);
+        const source = await db.queryDatabase("INSERT INTO auto_watch_sources(provider_id,source_key,source_url,poll_interval_ms,created_at_ms) VALUES ('github','donor-shared-usage','https://github.com/fixture',3600000,?)", [instant]);
+        const target = await db.queryDatabase("INSERT INTO auto_watch_targets(user_id,source_id,destination_type,destination_key,premium_slot,enabled,created_at_ms) VALUES (?,?,'dm',?,0,0,?)", [user, source.insertId, user, instant]);
+        const priceSource = await db.queryDatabase("INSERT INTO price_watch_sources(provider_id,product_key,product_url,source_locale,poll_interval_ms,created_at_ms) VALUES ('steam','donor-shared-usage','https://store.steampowered.com/app/1','ja',3600000,?)", [instant]);
+        await db.queryDatabase("INSERT INTO price_watch_targets(source_id,user_id,destination_type,destination_key,watch_mode,rule_key,enabled,created_at_ms) VALUES (?,?,'dm',?,'price','fixture',1,?)", [priceSource.insertId, user, user, instant]);
+        for (const index of [2, 3]) await db.queryDatabase("INSERT INTO automation_notification_boost_slots(owner_user_id,slot_index,target_kind,target_id) VALUES (?,?,'auto',?)", [user, index, target.insertId]);
+        await db.queryDatabase("INSERT INTO automation_notification_boost_slots(owner_user_id,slot_index,target_kind,target_id) VALUES (?,99,'auto',999999)", [user]);
+        await db.queryDatabase("INSERT INTO automation_notification_boost_slots(owner_user_id,slot_index,target_kind,target_id) VALUES (?,2,'auto',?)", [other, target.insertId]);
+        for (const [id, account, state, enabled] of [[user, '100', 'ready', 1], [user, '101', 'suspended', 0], [user, '102', 'deleted', 0], [other, '103', 'ready', 1]]) {
+            await db.queryDatabase('INSERT INTO automation_x_monitors(owner_user_id,account_id,name,enabled,state,pool_kind,notification_settings_json,created_at_ms,updated_at_ms) VALUES (?,?,?,?,?,?,?,?,?)', [id, account, 'Preserved monitor ' + account, enabled, state, state === 'deleted' ? null : 'free', JSON.stringify({}), instant, instant]);
+        }
+        const registrations = packetJson(await db.queryDatabase('SELECT * FROM automation_x_monitors ORDER BY id'));
+        const before = await read.get(ADMIN, user);
+        assert.equal(before.entitlement.slotLimit, 7);
+        assert.equal(before.entitlement.usedSlots, 6, 'auto + price + two attached boosts + ready X + suspended X');
+        assert.equal(before.entitlement.remainingSlots, 1);
+        assert.equal(before.entitlement.overLimit, false);
+        const saved = await createDonorAdmin(db, { env: {}, clock: () => instant }).save(ADMIN, user, edit(before, { extraSlots: 0 }));
+        assert.equal(saved.entitlement.slotLimit, 5);
+        assert.equal(saved.entitlement.usedSlots, 6);
+        assert.equal(saved.entitlement.remainingSlots, 0);
+        assert.equal(saved.entitlement.overLimit, true);
+        assert.deepEqual(packetJson(await db.queryDatabase('SELECT * FROM automation_x_monitors ORDER BY id')), registrations, 'inspection and manual allowance edits preserve X state, pool and settings');
+        assert.equal(Number((await db.queryDatabase('SELECT COUNT(*) AS n FROM auto_watch_targets WHERE user_id=?', [user]))[0].n), 1);
+        assert.equal(Number((await db.queryDatabase('SELECT COUNT(*) AS n FROM price_watch_targets WHERE user_id=?', [user]))[0].n), 1);
+        assert.equal(Number((await db.queryDatabase('SELECT COUNT(*) AS n FROM automation_notification_boost_slots WHERE owner_user_id=?', [user]))[0].n), 3, 'an orphan boost is excluded without deletion');
     } finally { await db.close(); }
 });
 

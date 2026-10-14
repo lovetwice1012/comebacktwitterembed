@@ -44,9 +44,11 @@ async function handle(req: NextRequest, { params }: Params) {
     const actor = { userId: session.user.id, guildId, canView: access?.canView === true, canEdit: access?.canEdit === true, isAdmin: session.user.isAdmin === true };
     const { path } = await params;
     if (path.length > 3) throw new ApiError(404, "ページが見つかりません。");
+    if (path[0] === "x-setup" && mutation && new URL(process.env.NEXTAUTH_URL || req.url).protocol !== "https:")
+      throw new ApiError(403, "受信設定の登録・削除にはHTTPS接続が必要です。");
     // Reconciliation can recover pending payments and update entitlements.
     // It is a write even though the client only requests status.
-    if (mutation || path[0] === "billing" && (path[1] === "status" && !path[2] || path[1] === "donations" && path[2] === "status")) assertDashboardFleetWriteAuthority();
+    if (mutation || ["x-monitors", "x-monitor-quota"].includes(path[0]) || path[0] === "billing" && (path[1] === "status" && !path[2] || path[1] === "donations" && path[2] === "status")) assertDashboardFleetWriteAuthority();
     const maxBody = mutation ? bodyLimit(`/${path.join("/")}`) : 0;
     const claimedLength = req.headers.get("content-length");
     if (claimedLength !== null && (!/^\d+$/.test(claimedLength) || Number(claimedLength) > maxBody)) throw new ApiError(413, "入力が大きすぎます。");
@@ -68,6 +70,7 @@ async function handle(req: NextRequest, { params }: Params) {
       maxSlots: known && Number.isSafeInteger(error.maxSlots) ? error.maxSlots : undefined,
       availableSlots: known && Number.isSafeInteger(error.availableSlots) ? error.availableSlots : undefined,
       planName: known && typeof error.planName === "string" && error.planName.length <= 120 ? error.planName : undefined }, known ? error.status || 400 : 500);
+    response.headers.set("Cache-Control", "private, no-store");
     if (error instanceof AdmissionError) response.headers.set("Retry-After", "60");
     else if (error instanceof DashboardFleetAuthorityError) response.headers.set("Retry-After", "5");
     else if (retryAfterMs) response.headers.set("Retry-After", String(Math.max(1, Math.ceil(retryAfterMs / 1000))));
