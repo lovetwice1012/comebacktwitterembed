@@ -32,6 +32,8 @@ Discord の既存管理コマンドでも負数の旧記録を正しく修正で
 
 最終の 54 ファイル・730 件は全件成功した（`main-integration-tests.xml`）。独立レビューで見つかった旧負数の Discord 修正経路を追加で修正し、支援台帳・管理画面・管理コマンドの関連 38 件を改めて実行して全件成功した（`main-legacy-admin-tests.xml`）。集合には重複があるため合算しない。
 
+その後、並行公開された main の PR #38 を統合し、通常展開・ルール編集・既存通知の回帰も含む 58 ファイル・790 件を実行して全件成功した（`main38-integration-tests.xml`）。この最新 main を含む確認結果とコミット済みソースのハッシュは `main38-integration-validation.json` に記録する。
+
 DB 試験は明示した loopback ポート 33621 の一時 MariaDB で直列に実行する。実 X 通知・本番 OAuth・実決済・本番 Discord 配送の証拠とは区別する。
 
 配布 ZIP は 68,653 bytes、SHA-256 `c41a47ecb694cc8afe19ccfab3420d492a5a327b8264cb84b46da9ab1d7325db`。Git 上の改行変換を止め、配布元スクリプトの正確なバイトを維持する。
