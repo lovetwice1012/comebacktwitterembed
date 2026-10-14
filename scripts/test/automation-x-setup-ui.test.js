@@ -10,7 +10,7 @@ const status = changes => ({ available: true, reasonCode: null, receiverEnabled:
     rollout: { mode: 'public', eligible: true, reasonCode: null, reason: null },
     download: { url: '/api/automation/x-setup/download', version: '0.1.0-preview.4', sha256: 'a'.repeat(64) }, subscriptions: [], maxFileBytes: 32768, nextCursor: null, ...changes });
 const writes = f => f.calls.filter(call => call.method !== 'GET');
-async function fixture({ current = status(), respond, opened = true, active = true } = {}) {
+async function fixture({ current = status(), respond, opened = true, active = true, upload = true } = {}) {
     const f = await reactFixture('export { XNotificationSetup } from "./components/automation/x-notification-setup"; export { XNotificationSetupScreen } from "./components/automation/x-notification-setup-screen"; export { parseXSetupStatus,parseXSetupPreview,parseXSetupSubscription,xSetupFeedback } from "./components/automation/x-setup-view";');
     f.calls = []; f.current = current; f.sessions = 0;
     f.api = async (route, method = 'GET', body) => {
@@ -24,7 +24,13 @@ async function fixture({ current = status(), respond, opened = true, active = tr
     };
     f.renderSetup = nextActive => f.render(f.React.createElement(f.exports.XNotificationSetup, { api: f.api, active: nextActive }));
     await f.renderSetup(active); await f.settle();
-    if (opened && active) { await f.click('X通知の受信設定を始める'); await f.settle(); }
+    f.showUpload = async () => {
+        if (f.container.querySelector('input[type="file"]')) return;
+        const adding = [...f.container.querySelectorAll('button')].find(item => item.textContent === '受信情報を追加・登録し直す');
+        if (adding) await f.click('受信情報を追加・登録し直す');
+        await f.click('ファイルを登録する');
+    };
+    if (opened && active) { await f.click('X通知の受信設定を始める'); await f.settle(); if (upload) await f.showUpload(); }
     f.consent = () => f.field('サーバーでX通知を受信・復号');
     f.agree = () => f.act(async () => f.consent().click());
     f.fileInput = () => f.container.querySelector('input[type="file"]');
@@ -47,15 +53,17 @@ test('beginner setup leads with concrete steps and clearly explains manual uploa
         assert.equal(f.calls.length, 0); await f.click('X通知の受信設定を始める');
         assert.deepEqual(f.calls.map(call => call.route), ['x-setup']);
         const text = f.container.textContent;
-        for (const pattern of [/WindowsのPC/, /すべて展開/, /ダブルクリックで開始\.cmd/, /専用Firefox/, /ベルを押し/, /ウィンドウをすべて閉じ/, /ここまでの作業は、ご自身のPC内で完了/, /Cookie、閲覧履歴、保存パスワード/, /ファイル自体は暗号化せずに保存/, /それぞれの設定で通知を解除/, /実際のX通知を使った受信・配信は、次の確認段階/, /受信機能は標準で停止/, /通知を届けるには、サーバー接続と、監視するアカウント・通知先の設定が必要/]) assert.match(text, pattern);
-        assert.match(text, /X通知をサーバーで受け取る準備/);
+        for (const pattern of [/WindowsのPC/, /すべて展開/, /ダブルクリックで開始\.cmd/, /専用Firefox/, /ベルを押し/, /ウィンドウをすべて閉じ/, /ここまでの作業は、ご自身のPC内で完了/]) assert.match(text, pattern);
+        assert.match(text, /PCでファイルを作成/); assert.match(text, /サーバーの受信開始待ち/); assert.doesNotMatch(text, /X CONNECTION|STEP 1/);
         assert.match(text, /ツール専用のFirefox環境を作ります。普段使いのFirefoxと分けて使えます/);
         assert.match(text, /作成したファイルは、次の手順でこの画面からアップロード/);
         assert.doesNotMatch(text, /普段使いのFirefoxのデータは選ばないで|破棄することと.*別です|ファイルの登録だけでは通知は届きません/);
-        assert(!text.includes('Angelic')); assert.equal(writes(f).length, 0); assert.equal(f.fileInput().disabled, true);
+        assert(!text.includes('Angelic')); assert.equal(writes(f).length, 0); assert.equal(f.fileInput(), null);
         const download = f.container.querySelector('a[download]'); assert.equal(download.getAttribute('href'), '/api/automation/x-setup/download');
         assert.match(text, /0\.1\.0-preview\.4/); assert.match(text, /SHA-256/); f.assertPrivate();
-        for (const pattern of [/他サイトの秘密鍵は含みません/, /暗号化された通知や識別情報もサーバーへ届く/, /受信後に破棄/, /運営側でそのデータを取得することは可能/, /別途明確な許可.*復号・利用・保存を行いません/, /他サイトの通知を利用する際は、あらためて許可を確認/, /Firefoxでも受け取れなくなる/]) assert.match(text, pattern);
+        await f.showUpload(); const uploadText = f.container.textContent;
+        for (const pattern of [/Cookie、閲覧履歴、保存パスワード/, /ファイル自体は暗号化せずに保存/, /それぞれの設定で通知を解除/, /他サイトの秘密鍵は含みません/, /暗号化された通知や識別情報もサーバーへ届く/, /受信後に破棄/, /運営側でそのデータを取得することは可能/, /別途明確な許可.*復号・利用・保存を行いません/, /他サイトの通知を利用する際は、あらためて許可を確認/, /Firefoxでも受け取れなくなる/]) assert.match(uploadText, pattern);
+        assert.equal(f.fileInput().disabled, true);
         assert.match(f.consent().closest('label').textContent, /サーバーでX通知を受信・復号することに同意.*他サイトの通知も届く可能性.*別途許可するまでの破棄方針/);
         assert.doesNotMatch(text, /他サイトの通知は取得・登録しません/);
     } finally { await f.close(); }
@@ -64,7 +72,7 @@ test('beginner setup leads with concrete steps and clearly explains manual uploa
 test('unavailable intake preserves instructions/download and own deletion but cannot select or submit a file', async () => {
     const f = await fixture({ current: status({ available: false, reasonCode: 'X_SETUP_NOT_CONFIGURED', subscriptions: [subscription()] }) });
     try {
-        assert.match(f.container.textContent, /ファイルの受付は準備中/); assert(f.container.querySelector('a[download]'));
+        assert.match(f.container.textContent, /ファイルの受付は準備中/); await f.click('PCでの準備手順を確認'); assert(f.container.querySelector('a[download]')); await f.showUpload();
         assert.equal(f.consent().disabled, true); assert.equal(f.fileInput().disabled, true);
         await f.choose(); await f.validate(); assert.equal(writes(f).length, 0);
         await f.click('受信情報を削除'); assert.equal(writes(f).length, 0); await f.click('この受信情報を削除');
@@ -84,7 +92,7 @@ test('explicit consent gates read/validation; review exposes safe metadata only 
         assert.match(f.review().textContent, /その後、監視するアカウントと通知先を設定し、サーバーの接続状態を確認/);
         assert.match(f.review().textContent, /利用枠は監視するアカウントの登録時に確保/); f.assertPrivate();
         await f.save(); assert.deepEqual(writes(f)[2], { route: 'x-setup/import', method: 'POST', body: { sessionId: '1'.padStart(64, '0'), fileText: FILE, consent: true } });
-        assert.equal(f.review(), null); assert.equal(f.consent().checked, false); assert.match(f.container.textContent, /受信情報を登録しました/);
+        assert.equal(f.review(), null); assert.equal(f.consent(), undefined); assert.match(f.container.textContent, /受信情報を登録しました/);
         assert.match(f.container.textContent, /次に、下の一覧で接続状態を確認/); assert.match(f.container.textContent, /保存済み/);
         assert.match(f.dom.window.document.activeElement.textContent, /受信情報を登録しました/);
         assert.equal(f.container.querySelector('[aria-label="受信情報1"]').textContent.includes('sub-1'), false); f.assertPrivate();
@@ -230,7 +238,7 @@ test('a deletion response from a previous active view cannot replace a refreshed
 test('malformed metadata and unsafe download/scope responses are rejected without displaying server strings', async () => {
     const f = await fixture({ current: status({ download: { url: 'https://attacker.test/' + SECRET, version: '0.1.0-preview.4', sha256: 'a'.repeat(64) } }) });
     try {
-        assert.match(f.container.textContent, /受付状態と登録一覧を取得できません/); assert.equal(f.container.querySelector('a[download]').getAttribute('href'), '/api/automation/x-setup/download'); assert(!f.container.innerHTML.includes('attacker.test')); f.assertPrivate();
+        assert.match(f.container.textContent, /受付状態と登録一覧を取得できません/); await f.click('PCでの準備手順を確認'); assert.equal(f.container.querySelector('a[download]').getAttribute('href'), '/api/automation/x-setup/download'); assert(!f.container.innerHTML.includes('attacker.test')); f.assertPrivate();
         for (const scope of ['http://x.com/', 'https://x.com.attacker.test/', 'https://name:password@x.com/', 'https://x.com/?key=' + SECRET, 'https://x.com', 'https://X.COM/']) assert.throws(() => f.exports.parseXSetupPreview({ valid: true, scope, browserVersion: '160.0a1', formatVersion: 1 }));
         assert.throws(() => f.exports.parseXSetupSubscription(subscription({ browserVersion: '<invalid version>' })));
         assert.throws(() => f.exports.parseXSetupSubscription(subscription({ createdAtMs: Number.MAX_SAFE_INTEGER })));
@@ -247,14 +255,17 @@ test('dedicated setup route authenticates before rendering, keys its state to th
         const Page = loadDashboard('app/dashboard/automation/x/page.tsx', {
             '@/lib/server-session': { requireDashboardSession: async () => { checks++; return { user: { id: 'owner-session-id' } }; } },
             '@/components/automation/x-notification-setup-screen': { XNotificationSetupScreen: () => f.React.createElement('p', null, '受信情報の登録画面') },
-            'next/link': { __esModule: true, default: props => f.React.createElement('a', props, props.children) },
+            '@/lib/server-locale': { getDashboardLocale: async () => 'ja' },
+            '@/components/automation/automation-page-frame': { AutomationPageFrame: props => f.React.createElement('main', null, f.React.createElement('h1', null, props.title), props.children) },
         }).default;
-        const content = await Page(); assert.equal(checks, 1); const screen = content.props.children.at(-1); assert.equal(screen.key, 'owner-session-id'); assert.deepEqual(screen.props, {});
-        await f.render(content); assert.match(f.container.textContent, /X通知のセットアップ/); assert.equal(f.container.querySelector('a').getAttribute('href'), '/dashboard/automation');
+        const content = await Page(); assert.equal(checks, 1); const screen = content.props.children; assert.equal(screen.key, 'owner-session-id'); assert.deepEqual(screen.props, {}); assert.equal(content.props.section, 'x');
+        await f.render(content); assert.match(f.container.textContent, /Xの接続/);
         const denied = new Error('LOGIN_REQUIRED');
         const BlockedPage = loadDashboard('app/dashboard/automation/x/page.tsx', {
             '@/lib/server-session': { requireDashboardSession: async () => { throw denied; } },
             '@/components/automation/x-notification-setup-screen': { XNotificationSetupScreen: () => { throw new Error('Must not render'); } },
+            '@/lib/server-locale': { getDashboardLocale: async () => 'ja' },
+            '@/components/automation/automation-page-frame': { AutomationPageFrame: props => f.React.createElement('main', null, props.children) },
         }).default;
         await assert.rejects(BlockedPage(), error => error === denied);
     } finally { await f.close(); }
@@ -268,14 +279,16 @@ test('dedicated client starts with open instructions and sends only same-origin 
             if (address.endsWith('/sessions')) result = { sessionId: 'b'.repeat(64), expiresAtMs: Date.now() + 600000 };
             if (address.endsWith('/validate')) result = { valid: true, browserVersion: '160.0a1', scope: 'https://x.com/', formatVersion: 1 };
             if (address.endsWith('/import')) result = { subscription: subscription(), duplicate: false };
+            if (address.endsWith('/x-processing-settings')) result = { requestedMode: 'batch', effectiveMode: 'batch', realtimeAllowed: false, planId: 'free', planLabel: '無料', intervalMinutes: 5, configured: true, reasonCode: null, rollout: { eligible: true } };
             return new Response(JSON.stringify(result), { status: 200 });
         });
         await f.render(f.React.createElement(f.exports.XNotificationSetupScreen)); await f.settle();
         assert.match(f.container.textContent, /すべて展開/); assert.equal(f.container.textContent.includes('X通知の受信設定を始める'), false);
-        await f.agree(); await f.choose(); await f.validate(); await f.save();
-        assert.deepEqual(requests.map(item => item.address), ['/api/automation/x-setup', '/api/automation/x-setup/sessions', '/api/automation/x-setup/validate', '/api/automation/x-setup/import']);
+        await f.showUpload(); await f.agree(); await f.choose(); await f.validate(); await f.save();
+        assert.deepEqual(requests.filter(item => item.options.method === 'GET').map(item => item.address).sort(), ['/api/automation/x-processing-settings', '/api/automation/x-setup']);
+        assert.deepEqual(requests.filter(item => item.options.method !== 'GET').map(item => item.address), ['/api/automation/x-setup/sessions', '/api/automation/x-setup/validate', '/api/automation/x-setup/import']);
         for (const { address, options } of requests) { assert(!address.includes('guildId')); assert.equal(options.credentials, 'same-origin'); assert.equal(options.cache, 'no-store'); const body = options.body ? JSON.parse(options.body) : {}; assert.equal(Object.hasOwn(body, 'ownerUserId'), false); assert.equal(Object.hasOwn(body, 'guildId'), false); }
-        assert.deepEqual(JSON.parse(requests[1].options.body), { consent: true }); f.assertPrivate();
+        assert.deepEqual(JSON.parse(requests.find(item => item.address.endsWith('/sessions')).options.body), { consent: true }); f.assertPrivate();
     } finally { await f.close(); }
 });
 
@@ -394,5 +407,49 @@ test('an unmatched post is distinct from a format error and old four-count respo
         assert.match(receipt.textContent, /形式の確認が必要0件/);
         assert.doesNotMatch(receipt.textContent, /管理者による対応が必要|確認間隔を待つだけ|送信成功2件/);
         assert.equal(writes(f).length, 0); f.assertPrivate();
+    } finally { await f.close(); }
+});
+
+test('returning X users see current connection and their next action before optional PC setup instructions', async () => {
+    const f = await fixture({ upload: false, current: status({ receiverEnabled: true, subscriptions: [subscription({ receiverState: 'listening', boundMonitorCount: 2 })] }) });
+    try {
+        const summary = f.container.querySelector('[aria-label="現在のX接続"]'); assert(summary); assert.match(summary.textContent, /接続を確認済み/);
+        assert(summary.querySelector('a[href="/dashboard/automation#x-notifications"]')); assert.equal(f.container.querySelector('[aria-label="X通知の接続手順"]'), null); assert.equal(f.fileInput(), null);
+        assert.equal(f.container.querySelector('a[download]'), null); assert.equal(writes(f).length, 0);
+        await f.click('受信情報を追加・登録し直す'); assert.match(f.container.querySelector('[aria-label="X通知の接続手順"]').textContent, /ダブルクリックで開始\.cmd/);
+        await f.showUpload(); assert(f.container.querySelector('[aria-label="登録するデータと通知の取り扱い"]')); assert.equal(f.fileInput().disabled, true); assert.equal(writes(f).length, 0);
+    } finally { await f.close(); }
+});
+
+test('an unbound saved receiver leads to monitor assignment and never presents connection or delivery as complete', async () => {
+    const f = await fixture({ upload: false, current: status({ receiverEnabled: true, subscriptions: [subscription({ receiverState: 'awaiting', boundMonitorCount: 0 })] }) });
+    try {
+        const summary = f.container.querySelector('[aria-label="現在のX接続"]'); assert.match(summary.textContent, /監視への割り当て待ち/);
+        assert.match(f.container.querySelector('[aria-label="受信情報1"]').textContent, /使用する自分の受信情報.*サーバーとの接続を進められます/);
+        assert.doesNotMatch(summary.textContent, /接続を確認済み|配信済み|送信成功/); assert.equal(writes(f).length, 0);
+    } finally { await f.close(); }
+});
+
+test('leaving the upload step clears the private file and consent before its guide or a new upload is opened', async () => {
+    const f = await fixture();
+    try {
+        await f.agree(); await f.choose(); await f.validate(); const before = writes(f).length;
+        await f.click('PCでの準備手順を確認'); assert.equal(f.review(), null); assert.equal(f.fileInput(), null); f.assertPrivate();
+        await f.showUpload(); assert.equal(f.consent().checked, false); assert.equal(f.fileInput().disabled, true); await f.validate(); assert.equal(writes(f).length, before);
+        await f.agree(); await f.validate(); assert.equal(writes(f).length, before); f.assertPrivate();
+    } finally { await f.close(); }
+});
+
+test('a paginated receiver overview labels visible counts and does not assume all registrations are unbound', async () => {
+    const f = await fixture({ upload: false, current: status({ subscriptions: [subscription({ boundMonitorCount: 0 })], nextCursor: 'sub-1' }) });
+    try { const summary = f.container.querySelector('[aria-label="現在のX接続"]'); assert.match(summary.textContent, /表示中の受信情報1件/); assert.match(summary.textContent, /表示中の接続確認済み0件/); assert.match(summary.textContent, /続きの受信情報を確認/); assert.doesNotMatch(summary.textContent, /監視への割り当て待ち|接続の準備・確認中/); assert.equal(writes(f).length, 0); }
+    finally { await f.close(); }
+});
+
+test('setup step navigation moves keyboard focus to the new step and preserves an empty consent boundary', async () => {
+    const f = await fixture({ upload: false });
+    try {
+        await f.showUpload(); assert.match(f.dom.window.document.activeElement.textContent, /JSONファイルを登録/); assert.equal(f.consent().checked, false);
+        await f.click('PCでの準備手順を確認'); assert.match(f.dom.window.document.activeElement.textContent, /PCでファイルを作成/); assert.equal(f.fileInput(), null); assert.equal(writes(f).length, 0);
     } finally { await f.close(); }
 });

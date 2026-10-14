@@ -61,3 +61,26 @@ test('paused rules leave a received inbox retryable and unsupported payloads per
 });
 
 module.exports = { payload };
+
+test('per-monitor router separates realtime fanout, retains matching batch/paused targets and passes trusted mode for locked admission', async t => {
+    const policy = require('../../src/automation/x-processing-settings');
+    t.mock.method(policy, 'inspectXMonitorProcessing', async (_query, row) => ({ effectiveMode: row.id === '1' ? 'realtime' : 'batch' }));
+    const ownerUserId = '222222222222222222', subscriptionId = randomUUID(), calls = [];
+    const monitor = (id, changes = {}) => ({ id, owner_user_id: ownerUserId, account_id: '12345', enabled: 1, state: 'ready',
+        notification_settings_json: JSON.stringify({ subscriptionId }), ...changes });
+    let rows = [monitor('1'), monitor('2'), monitor('3', { enabled: 0 }), monitor('4', { state: 'suspended' })];
+    const router = createXEventRouter({ queryDatabase: async () => rows }, { routeX: async input => { calls.push(input); return { state: 'routed' }; } });
+    const lease = { ownerUserId, subscriptionId }, inbox = { id: '1', ownerUserId, subscriptionId, status: 'received', receivedAtMs: 1000 };
+    assert.equal(await router.hasRealtimeTargets(lease), true); assert.equal(await router.hasBatchTargets(lease), true);
+    assert.equal((await router.routeReceived({ lease, inbox, payload: payload(), processingMode: 'realtime' })).state, 'pending');
+    assert.deepEqual(calls.map(row => [row.monitorId, row.processingMode]), [['1', 'realtime']]);
+    calls.length = 0;
+    assert.equal((await router.routeReceived({ lease, inbox, payload: payload(), processingMode: 'batch' })).state, 'pending');
+    assert.deepEqual(calls.map(row => [row.monitorId, row.processingMode]), [['1', 'batch'], ['2', 'batch']]);
+    rows = [monitor('2')]; calls.length = 0;
+    assert.equal((await router.routeReceived({ lease, inbox, payload: payload(), processingMode: 'realtime' })).state, 'pending');
+    assert.equal(calls.length, 0);
+    rows = [monitor('2', { account_id: '999' })];
+    assert.equal((await router.routeReceived({ lease, inbox, payload: payload(), processingMode: 'realtime' })).state, 'unmatched');
+    await assert.rejects(router.routeReceived({ lease, inbox, payload: payload(), processingMode: 'guessed' }), { code: 'X_NOTIFICATION_INBOX_INVALID' });
+});

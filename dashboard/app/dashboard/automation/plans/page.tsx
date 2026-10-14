@@ -1,12 +1,16 @@
 import { requireDashboardSession } from "@/lib/server-session";
 import { SubscriptionManager } from "@/components/automation/subscription-manager";
+import { AutomationPageFrame } from "@/components/automation/automation-page-frame";
+import { NotificationUsageOverview } from "@/components/automation/notification-usage-overview";
+import { getDashboardLocale } from "@/lib/server-locale";
+import { usesNewDashboardUI } from "@/lib/ui-rollout";
 
 export default async function NotificationSubscriptionsPage() {
   const session = await requireDashboardSession();
-  return <main className="mx-auto max-w-4xl space-y-5 p-6">
-    <a href="/dashboard/automation" className="text-sm text-primary underline">自動通知へ戻る</a>
-    <div><h1 className="text-2xl font-semibold">プラン・お支払い</h1><p className="mt-2 text-sm text-muted-foreground">通知プランの契約と継続課金の状態を確認します。</p></div>
-    <a href="/dashboard/automation/support" className="inline-block text-sm text-primary underline">支援・寄付（今回1回のみ）</a>
+  const locale = await getDashboardLocale();
+  return <AutomationPageFrame locale={locale} isAdmin={session.user.isAdmin} newUI={await usesNewDashboardUI(session)} section="plans" title="利用状況とプラン">
+    <nav className="notification-billing-navigation" aria-label="プランと支援"><a href="/dashboard/automation/plans" aria-current="page">月額プラン・お支払い</a><a href="/dashboard/automation/support">運営への支援・履歴</a></nav>
+    <NotificationUsageOverview key={`usage:${session.user.id}`} />
     <SubscriptionManager key={session.user.id} />
-  </main>;
+  </AutomationPageFrame>;
 }

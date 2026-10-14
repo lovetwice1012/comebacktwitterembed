@@ -61,7 +61,7 @@ test('subscription page requires a user session and the workspace exposes a real
     const root = path.resolve(__dirname, '../..');
     const page = fs.readFileSync(path.join(root, 'dashboard/app/dashboard/automation/plans/page.tsx'), 'utf8');
     assert.match(page, /await requireDashboardSession\(\)/); assert.match(page, /key=\{session\.user\.id\}/);
-    assert.match(fs.readFileSync(path.join(root, 'dashboard/components/automation/automation-workspace.tsx'), 'utf8'), /href="\/dashboard\/automation\/plans"/);
+    assert.match(fs.readFileSync(path.join(root, 'dashboard/components/automation/automation-page-frame.tsx'), 'utf8'), /href: "\/dashboard\/automation\/plans"/);
 });
 
 test('unconfigured Square leaves free notifications available, never loads the card SDK and supports reloading', async () => {
@@ -69,6 +69,29 @@ test('unconfigured Square leaves free notifications available, never loads the c
     try {
         assert.match(f.container.textContent, /無料枠の通知を引き続き利用/); assert.equal(f.container.querySelector('input[type=radio]'), null);
         assert.equal(f.sdk.loads.length, 0); assert.equal(writes(f).length, 0); await f.click('再読み込み'); assert.equal(f.calls.filter(call => call.route === 'status').length, 2);
+    } finally { await f.close(); }
+});
+
+test('no Square contract is described as a payment state without reclassifying the effective plan as free', async () => {
+    const f = await fixture();
+    try {
+        const context = f.container.querySelector('[aria-label="継続課金の契約状況"]'); assert(context);
+        assert.match(context.textContent, /Squareの継続課金契約はありません/);
+        assert.match(context.textContent, /管理者が設定したプランや支援特典を含む現在の利用権.*利用状況.*表示します/);
+        assert(!context.textContent.includes('無料プラン'));
+        assert.equal(context.querySelector('a').getAttribute('href'), '/dashboard/automation/support');
+        assert(context.compareDocumentPosition(f.container.querySelector('[aria-label="有償プランの選択"]')) & f.dom.window.Node.DOCUMENT_POSITION_FOLLOWING);
+        assert.equal(f.sdk.loads.length, 0); assert.equal(writes(f).length, 0);
+    } finally { await f.close(); }
+});
+
+test('catalog cards show only offered server terms and do not invent X eligibility from a plus plan name', async () => {
+    const f = await fixture({ initialOptions: options({ plans: [plan({ label: 'ベーシック＋', specialSlotLimit: 777, realtimeAllowed: true, intervalMinutes: 1 })] }) });
+    try {
+        const choice = f.container.querySelector('[aria-label="有償プランの選択"]');
+        assert.match(choice.textContent, /ベーシック＋.*通知12枠/);
+        assert(!choice.textContent.includes('777')); assert(!choice.textContent.includes('リアルタイム')); assert(!choice.textContent.includes('1分ごと'));
+        assert.equal(f.sdk.loads.length, 0); assert.equal(writes(f).length, 0);
     } finally { await f.close(); }
 });
 

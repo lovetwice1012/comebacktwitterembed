@@ -1,0 +1,77 @@
+.notification-usage, .notification-billing { min-width: 0; color: hsl(var(--foreground)); }
+.notification-billing-navigation { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 20px; margin-bottom: 24px; border-bottom: 1px solid hsl(var(--border)); }
+.notification-billing-navigation a { min-height: 42px; padding: 9px 0; font-size: 13px; color: hsl(var(--muted-foreground)); border-bottom: 2px solid transparent; }
+.notification-billing-navigation a[aria-current="page"] { color: hsl(var(--foreground)); font-weight: 600; border-color: hsl(var(--primary)); }
+.notification-support-conditions { padding: 0 0 4px; font-size: 13px; line-height: 1.85; }
+.notification-support-conditions > p { font-size: 12px; margin-bottom: 10px; color: hsl(var(--muted-foreground)); }
+.notification-support-eligibility { display: grid; gap: 7px; padding: 15px 18px; border-left: 2px solid hsl(var(--border)); background: hsl(var(--muted) / .2); font-size: 12px; line-height: 1.85; color: hsl(var(--muted-foreground)); }
+.notification-support-eligibility h3 { color: hsl(var(--foreground)); font-weight: 600; }
+.notification-usage { display: grid; gap: 20px; }
+.notification-section-heading, .notification-billing-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; }
+.notification-section-heading h2, .notification-billing-heading h2 { margin-top: 3px; font-size: 20px; line-height: 1.4; font-weight: 650; letter-spacing: -.02em; }
+.notification-section-heading p, .notification-billing-heading p { margin-top: 6px; color: hsl(var(--muted-foreground)); font-size: 14px; line-height: 1.7; max-width: 64ch; }
+.notification-eyebrow { color: hsl(var(--muted-foreground)); font-size: 10px; font-weight: 650; letter-spacing: .13em; }
+.notification-text-action { display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 40px; padding: 6px 0; font-size: 12px; white-space: nowrap; color: hsl(var(--muted-foreground)); }
+.notification-text-action:hover, .notification-inline-link:hover { color: hsl(var(--primary)); }
+.notification-text-action:disabled { opacity: .5; }
+.notification-usage-grid { display: grid; grid-template-columns: 1.3fr 1fr 1fr; gap: 14px; }
+.notification-usage-primary, .notification-usage-card { min-width: 0; border: 1px solid hsl(var(--border)); border-radius: 14px; padding: 21px; background: hsl(var(--card)); }
+.notification-usage-primary { background: hsl(var(--muted) / .35); }
+.notification-card-heading { display: flex; align-items: center; gap: 9px; }
+.notification-card-heading svg { color: hsl(var(--muted-foreground)); }
+.notification-card-heading h3 { font-size: 13px; font-weight: 600; }
+.notification-usage-value { margin-top: 19px; font-size: 32px; font-weight: 650; line-height: 1.2; letter-spacing: -.035em; }
+.notification-usage-value span { font-size: 13px; color: hsl(var(--muted-foreground)); font-weight: 400; letter-spacing: 0; }
+.notification-usage-track { height: 5px; margin-top: 14px; border-radius: 9px; overflow: hidden; background: hsl(var(--border)); }
+.notification-usage-track > span { display: block; height: 100%; border-radius: inherit; background: hsl(var(--primary)); }
+.notification-usage-facts { margin-top: 17px; display: grid; grid-template-columns: 1fr 1fr; gap: 14px 10px; }
+.notification-usage-facts dt { font-size: 11px; color: hsl(var(--muted-foreground)); }
+.notification-usage-facts dd { margin-top: 3px; font-size: 14px; font-weight: 550; }
+.notification-card-note { margin-top: 12px; font-size: 12px; line-height: 1.8; color: hsl(var(--muted-foreground)); overflow-wrap: anywhere; }
+.notification-plan-name { margin-top: 21px; font-size: 19px; font-weight: 600; line-height: 1.55; overflow-wrap: anywhere; }
+.notification-inline-link { display: inline-flex; align-items: center; gap: 8px; margin-top: 17px; color: hsl(var(--primary)); font-size: 12px; font-weight: 550; }
+.notification-x-availability { display: grid; grid-template-columns: 1fr 2fr; gap: 24px; padding: 18px 0 4px; }
+.notification-x-availability h3 { font-size: 13px; font-weight: 600; }
+.notification-x-availability p { margin-top: 5px; max-width: 35ch; font-size: 12px; line-height: 1.7; color: hsl(var(--muted-foreground)); }
+.notification-x-availability dl { display: grid; grid-template-columns: 1fr 1fr; gap: 16px 24px; }
+.notification-x-availability dt { color: hsl(var(--muted-foreground)); font-size: 11px; }
+.notification-x-availability dd { margin-top: 5px; font-size: 14px; font-weight: 550; }
+.notification-next-step { display: flex; align-items: center; justify-content: space-between; gap: 18px; border: 1px solid hsl(var(--primary) / .25); border-radius: 12px; padding: 15px 18px; background: hsl(var(--primary) / .035); font-size: 13px; line-height: 1.75; }
+.notification-next-step a { display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0; color: hsl(var(--primary)); font-weight: 550; }
+.notification-inline-status { border-left: 2px solid hsl(var(--border)); padding: 2px 0 2px 12px; color: hsl(var(--muted-foreground)); font-size: 12px; line-height: 1.8; }
+.notification-billing { border-top: 1px solid hsl(var(--border)); margin-top: 34px; padding-top: 30px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 22px; }
+.notification-billing > * { min-width: 0; }
+.notification-billing-intro { display: flex; justify-content: space-between; align-items: flex-start; gap: 24px; }
+.notification-billing-intro > div:first-child { max-width: 66ch; }
+.notification-billing-intro h2 { font-size: 20px; font-weight: 650; letter-spacing: -.02em; }
+.notification-billing-intro p { margin-top: 8px; font-size: 13px; line-height: 1.85; color: hsl(var(--muted-foreground)); }
+.notification-billing-kind { flex-shrink: 0; padding: 7px 11px; border-radius: 8px; background: hsl(var(--muted)); font-size: 11px; font-weight: 550; }
+.notification-billing-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 12px; color: hsl(var(--muted-foreground)); font-size: 12px; }
+.notification-checkout-progress { display: grid; grid-template-columns: repeat(3, 1fr); border-bottom: 1px solid hsl(var(--border)); padding-bottom: 15px; gap: 12px; }
+.notification-checkout-progress li { display: flex; align-items: center; gap: 8px; color: hsl(var(--muted-foreground)); font-size: 12px; line-height: 1.5; }
+.notification-checkout-progress li > span { display: inline-flex; justify-content: center; align-items: center; width: 23px; height: 23px; border-radius: 50%; border: 1px solid hsl(var(--border)); flex-shrink: 0; font-size: 11px; }
+.notification-checkout-progress li[aria-current="step"] { color: hsl(var(--foreground)); font-weight: 600; }
+.notification-checkout-progress li[aria-current="step"] > span { background: hsl(var(--primary)); color: hsl(var(--primary-foreground)); border-color: hsl(var(--primary)); }
+.notification-billing-context { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+.notification-billing-context > :is(section, div) { padding: 19px; border: 1px solid hsl(var(--border)); border-radius: 12px; }
+.notification-billing-context h3 { font-size: 13px; font-weight: 600; }
+.notification-billing-context p { margin-top: 8px; font-size: 12px; line-height: 1.8; color: hsl(var(--muted-foreground)); }
+.notification-billing :is(input, select, button, a):focus-visible, .notification-usage :is(button, a):focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 3px; }
+.notification-billing > [aria-label="有償プランの選択"] > div { gap: 16px; }
+.notification-billing [aria-label="有償プランの選択"] section { border-radius: 14px; padding: 23px; }
+.notification-billing [aria-label="有償プランの選択"] form { padding: 21px; border: 1px solid hsl(var(--border)); border-radius: 14px; }
+.notification-payment-history { margin-top: 12px; border-top: 1px solid hsl(var(--border)); padding-top: 23px; }
+.notification-payment-history h2 { font-size: 16px; font-weight: 600; }
+.notification-billing-legacy { font-size: 12px; line-height: 1.8; }
+.notification-billing-legacy summary { cursor: pointer; font-size: 12px; font-weight: 500; color: hsl(var(--muted-foreground)); }
+@media (max-width: 1050px) { .notification-usage-grid { grid-template-columns: 1fr 1fr; } .notification-usage-primary { grid-row: span 2; } }
+@media (max-width: 720px) {
+  .notification-section-heading, .notification-billing-intro { flex-direction: column; gap: 10px; }
+  .notification-usage-grid, .notification-billing-context, .notification-x-availability { grid-template-columns: 1fr; }
+  .notification-usage-primary { grid-row: auto; }
+  .notification-usage-primary, .notification-usage-card { padding: 18px; }
+  .notification-x-availability { gap: 17px; }
+  .notification-next-step { align-items: flex-start; flex-direction: column; gap: 8px; }
+  .notification-next-step a { flex-shrink: 1; }
+  .notification-billing { margin-top: 26px; padding-top: 24px; }
+}

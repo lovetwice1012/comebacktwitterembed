@@ -12,7 +12,9 @@ const row = changes => ({ id: 'xm-1', accountId: '18446744073709551615', account
 const SUBSCRIPTION_ID = 'cc2cb493-a60d-41d6-936f-2ed33d7ea2c7';
 const subscription = changes => ({ id: SUBSCRIPTION_ID, state: 'stored', revision: 1, createdAtMs: 1791921600000, updatedAtMs: 1791921600000, browserVersion: '160.0a1', receiverState: 'awaiting', boundMonitorCount: 0, ...changes });
 const setup = changes => ({ available: true, receiverEnabled: false, rollout: { mode: 'public', eligible: true, reasonCode: null, reason: null }, download: { url: '/api/automation/x-setup/download', version: '0.1.0-preview.2', sha256: 'a'.repeat(64) }, subscriptions: [], maxFileBytes: 32768, nextCursor: null, ...changes });
-async function fixture({ currentQuota = quota(), items = [row()], respond, opened = true, active = true, parent = false, scope = 'private', guildId } = {}) {
+const processingQuote = changes => ({ requestedMode: 'realtime', explicitMode: 'realtime', modeSource: 'monitor', effectiveMode: 'realtime', realtimeSource: 'slots', realtimeEligibilitySource: 'slots',
+    slotCost: 5, effectiveSlotCost: 5, realtimeSlotCost: 5, canEnableRealtime: true, additionalSlotsNeeded: 4, configured: true, intervalMinutes: 60, reasonCode: null, isPreview: true, ...changes });
+async function fixture({ currentQuota = quota(), items = [row()], respond, opened = true, active = true, parent = false, scope = 'private', guildId, compact = false, registrationRequest, hideAddAction = false } = {}) {
     const f = await reactFixture('export { XMonitorManager } from "./components/automation/x-monitor-manager"; export { MonitorManager } from "./components/automation/monitor-manager"; export { parseXQuota,parseXMonitor,xFeedback } from "./components/automation/x-monitor-view";');
     f.calls = []; f.items = items; f.quota = currentQuota; f.setup = setup();
     const destinations = [{ id: 'dm-own', name: '本人のDM', scope: 'private', enabled: true }, { id: 'guild-dest', name: 'サーバー専用通知先', scope: 'guild', enabled: true }];
@@ -35,10 +37,12 @@ async function fixture({ currentQuota = quota(), items = [row()], respond, opene
         if (route.startsWith('monitors/')) return { items: [], nextCursor: null };
         throw new Error('PRIVATE_UNEXPECTED_REQUEST');
     };
+    f.registrationRequest = registrationRequest;
     f.renderManager = async (nextActive = active) => f.render(f.React.createElement(parent ? f.exports.MonitorManager : f.exports.XMonitorManager,
-        { api: f.api, active: nextActive, destinations, rules, ...(parent ? { scope, guildId, canEdit: true, refresh: async () => {} } : {}) }));
+        { api: f.api, active: nextActive, destinations, rules, ...(parent ? { scope, guildId, canEdit: true, refresh: async () => {} } : { registrationRequest: f.registrationRequest, hideAddAction, ...(compact ? { initiallyOpen: true, setupPlacement: 'compact' } : {}) }) }));
     await f.renderManager(); await f.settle();
-    if (opened && scope === 'private') { await f.click('Xアカウントの監視を管理'); await f.settle(); }
+    if (parent && opened && scope === 'private') { await f.click('X通知'); await f.settle(); }
+    if (opened && scope === 'private' && [...f.container.querySelectorAll('button')].some(item => item.textContent === 'Xアカウントの監視を管理')) { await f.click('Xアカウントの監視を管理'); await f.settle(); }
     f.inClick = async (node, text) => { const button = [...node.querySelectorAll('button')].find(item => item.textContent.trim() === text); assert(button, text); await f.act(async () => button.click()); };
     f.form = () => f.container.querySelector('form[aria-label="X監視の登録設定"]');
     f.submitX = async () => f.act(async () => f.form().dispatchEvent(new f.dom.window.Event('submit', { bubbles: true, cancelable: true })));
@@ -96,7 +100,7 @@ test('a required username keeps invalid and reserved names in the form without c
             assert.equal(writes(f).length, 0); assert.equal(f.container.querySelector('[aria-label="X監視の変更確認"]'), null);
             assert.equal(f.field('Xアカウント名').value, value);
         }
-        assert.match(f.form().textContent, /Xのプロフィールに表示される@ユーザー名を入力すると登録/);
+        assert.match(f.form().textContent, /相手の現在の@ユーザー名を入力/);
     } finally { await f.close(); }
 });
 
@@ -189,7 +193,7 @@ test('an existing owner corrects only the handle with an explicit review while n
         await f.inClick(f.target(), 'X監視を編集');
         assert.equal(f.form().textContent.includes('XアカウントID'), false); assert.equal(f.field('Xアカウント名').disabled, false);
         assert.match(f.target().querySelector('details').textContent, /XアカウントID：18446744073709551615/);
-        assert.match(f.form().textContent, /Xから届く投稿通知は.*@ユーザー名で監視対象と照合.*登録後も、この欄から変更/);
+        assert.match(f.form().textContent, /相手の現在の@ユーザー名を入力/); assert.equal(f.field('Xアカウント名').disabled, false);
         await f.fill(f.field('Xアカウント名'), '@correct_handle'); await f.submitX();
         const review = f.container.querySelector('[aria-label="X監視の変更確認"]');
         assert.match(review.textContent, /変更後のXアカウント名：@correct_handle/);
@@ -283,7 +287,7 @@ test('existing private monitor workspace exposes lazy X controls while guild-sha
     for (const scope of ['private', 'guild']) {
         const f = await fixture({ parent: true, scope, opened: false });
         try { assert.equal(Boolean(f.container.querySelector('[aria-label="Xアカウントの監視"]')), scope === 'private');
-            assert.equal(f.calls.filter(item => item.route.startsWith('x-')).length, 0); assert.match(f.container.textContent, /通知一覧/); }
+            assert.equal(f.calls.filter(item => item.route.startsWith('x-')).length, 0); assert.match(f.container.textContent, /新着通知/); }
         finally { await f.close(); }
     }
 });
@@ -349,7 +353,7 @@ test('private workspace on a guild page links to personal setup without using th
     const f = await fixture({ parent: true, scope: 'private', guildId: '333333333333333333' });
     try {
         assert.equal(f.container.querySelector('[aria-label="X通知の受信設定"]'), null);
-        const link = f.container.querySelector('a[href="/dashboard/automation/x"]'); assert(link); assert.match(link.textContent, /自分のX通知セットアップ/);
+        const link = f.container.querySelector('a[href="/dashboard/automation/x"]'); assert(link); assert.match(link.textContent, /接続を確認/);
         assert.equal(f.calls.some(call => call.route.startsWith('x-setup')), false);
     } finally { await f.close(); }
 });
@@ -359,7 +363,7 @@ test('an owner selects a stored receiver explicitly for a target and multiple au
     const f = await fixture({ currentQuota: current, items: [], respond: route => route === 'x-setup' ? setup({ subscriptions: [subscription()] }) : undefined });
     try {
         await f.click('X監視を追加'); await f.fill(f.field('Xアカウント名'), 'example');
-        assert.match(f.form().textContent, /通知を受け取る準備として.*受信情報を登録/);
+        assert.match(f.form().textContent, /受信情報を確認/);
         await f.fill(f.field('使用する自分の受信情報'), SUBSCRIPTION_ID); await f.fill(f.field('通知先'), 'dm-own');
         await f.submitX(); await f.click('このX監視設定で保存');
         assert.deepEqual(writes(f)[0].body.notificationSettings, { destinationId: 'dm-own', subscriptionId: SUBSCRIPTION_ID });
@@ -403,7 +407,7 @@ test('rollout denial blocks create and resume even against stale enabled quota a
         try {
             assert.equal([...f.container.querySelectorAll('button')].find(node => node.textContent === 'X監視を追加').disabled, true);
             assert.equal([...f.target().querySelectorAll('button')].find(node => node.textContent === 'X監視を再開').disabled, true);
-            assert.match(f.container.textContent, mode === 'disabled' ? /公開準備中/ : /既存の寄付者.*ベータ版/);
+            assert.match(f.container.textContent, mode === 'disabled' ? /公開準備中/ : /支援者向けベータ版.*受付対象の拡大待ち/);
             await f.inClick(f.target(), 'X監視を編集'); assert.equal(f.field('使用する自分の受信情報').disabled, true); await f.click('X監視の入力を取り消す');
             assert.equal(writes(f).length, 0); await f.inClick(f.target(), 'X監視を削除'); await f.inClick(f.target(), 'このX監視を削除'); assert.equal(writes(f)[0].method, 'DELETE');
         } finally { await f.close(); }
@@ -421,4 +425,165 @@ test('failed setup metadata blocks new receiver selection and registration witho
         assert.deepEqual(writes(f)[0].body, { expectedRevision: 1, name: '受信設定を維持' });
         assert.equal(f.items[0].notificationSettings.subscriptionId, SUBSCRIPTION_ID);
     } finally { await f.close(); }
+});
+
+test('the compact X tab opens monitoring directly with actual quota and timing summaries and a dedicated connection link', async () => {
+    const current = quota({ featureEnabled: true }); current.x.reasonCode = null;
+    const f = await fixture({ compact: true, currentQuota: current });
+    try {
+        assert.equal(f.container.querySelector('[aria-label="X通知の受信設定"]'), null); assert.equal(f.container.querySelector('input[type="file"]'), null);
+        const panel = f.container.querySelector('[aria-label="X監視の個人利用枠"]');
+        assert.match(panel.textContent, /X監視の登録数2件/); assert.match(panel.textContent, /1枠利用で追加可能2件/); assert.doesNotMatch(panel.textContent, /個人の総登録上限|無料共有枠|支援者追加枠の保有数/);
+        assert(panel.querySelector('a[href="/dashboard/automation/plans"]')); assert(f.container.querySelector('a[href="/dashboard/automation/x"]'));
+        assert.match(f.container.querySelector('[aria-label="X通知のタイミング"]').textContent, /通知方法の確認待ち/);
+        assert.equal(f.container.querySelector('[aria-label="X通知のタイミング"] form'), null);
+        assert.deepEqual(f.calls.map(call => call.route).sort(), ['x-monitor-quota', 'x-monitors', 'x-setup']);
+        await f.click('X監視を追加'); await f.fill(f.field('Xアカウント名'), 'compact_user'); await f.fill(f.field('通知先'), 'dm-own'); await f.submitX(); await f.click('このX監視設定で保存');
+        assert.equal(writes(f).length, 1); assert.equal(writes(f)[0].body.accountHandle, 'compact_user'); assert.equal(writes(f)[0].body.notificationSettings.destinationId, 'dm-own');
+    } finally { await f.close(); }
+});
+
+test('compact monitoring preserves a draft across tab inactivity and performs no IO while inactive', async () => {
+    const current = quota({ featureEnabled: true }); current.x.reasonCode = null;
+    const f = await fixture({ compact: true, currentQuota: current });
+    try {
+        await f.click('X監視を追加'); await f.fill(f.field('Xアカウント名'), 'retained_tab'); await f.fill(f.field('監視の表示名'), 'タブ切替前');
+        await f.renderManager(false); const before = f.calls.length; await f.click('X一覧・利用枠を更新'); assert.equal(f.calls.length, before);
+        await f.renderManager(true); await f.settle(); assert.equal(f.field('Xアカウント名').value, 'retained_tab'); assert.equal(f.field('監視の表示名').value, 'タブ切替前'); assert.equal(writes(f).length, 0);
+    } finally { await f.close(); }
+});
+
+test('the shared registration request waits for the active X panel, prefills a username and focuses its form once', async () => {
+    const current = quota({ featureEnabled: true }); current.x.reasonCode = null;
+    const f = await fixture({ compact: true, active: false, currentQuota: current, registrationRequest: { id: 1, accountHandle: '@shared_entry' } });
+    try {
+        assert.equal(f.calls.length, 0); assert.equal(f.form(), null); await f.renderManager(true); await f.settle();
+        assert.equal(f.field('Xアカウント名').value, 'shared_entry'); assert.equal(f.dom.window.document.activeElement, f.field('Xアカウント名'));
+        await f.click('X監視の入力を取り消す'); await f.renderManager(false); await f.renderManager(true); assert.equal(f.form(), null);
+        f.registrationRequest = { id: 2, accountHandle: 'next_entry' }; await f.renderManager(true); assert.equal(f.field('Xアカウント名').value, 'next_entry'); assert.equal(writes(f).length, 0);
+    } finally { await f.close(); }
+});
+
+test('a repeated shared-entry request resumes an existing X draft without replacing its fields or review', async () => {
+    const current = quota({ featureEnabled: true }); current.x.reasonCode = null;
+    const f = await fixture({ compact: true, currentQuota: current, registrationRequest: { id: 1, accountHandle: 'original_entry' } });
+    try {
+        await f.fill(f.field('監視の表示名'), '保持する入力'); await f.fill(f.field('通知先'), 'dm-own'); await f.submitX();
+        f.registrationRequest = { id: 2, accountHandle: 'not_applied' }; await f.renderManager(true);
+        assert.equal(f.field('Xアカウント名').value, 'original_entry'); assert.equal(f.field('監視の表示名').value, '保持する入力'); assert.equal(f.field('通知先').value, 'dm-own'); assert(f.container.querySelector('[aria-label="X監視の変更確認"]'));
+        assert.equal(f.dom.window.document.activeElement, f.field('Xアカウント名')); assert.equal(writes(f).length, 0);
+    } finally { await f.close(); }
+});
+
+test('shared-entry requests keep capacity checks and permit the existing unbound pending registration only when eligible', async () => {
+    for (const permitted of [true, false]) {
+        const current = quota({ featureEnabled: true }); current.x.reasonCode = permitted ? null : 'X_MONITOR_PERSONAL_LIMIT'; if (!permitted) current.personal.available = 0;
+        const f = await fixture({ compact: true, currentQuota: current, registrationRequest: { id: 1, accountHandle: 'pending_entry' } });
+        try {
+            assert.equal(f.field('Xアカウント名').value, 'pending_entry'); const review = [...f.form().querySelectorAll('button')].find(item => item.textContent === 'X監視の変更を確認'); assert.equal(review.disabled, !permitted);
+            if (permitted) { await f.submitX(); await f.click('このX監視設定で保存'); assert.equal(writes(f)[0].body.accountHandle, 'pending_entry'); assert.equal(Object.hasOwn(writes(f)[0].body, 'notificationSettings'), false); }
+            else { await f.submitX(); assert.match(f.container.textContent, /個人の上限に達しています/); assert.equal(writes(f).length, 0); }
+        } finally { await f.close(); }
+    }
+});
+
+test('new registrations default explicitly to batch when monitor-level quotes are available and never inherit realtime accidentally', async () => {
+    const current = quota({ featureEnabled: true, registrationProcessing: processingQuote() }); current.x.reasonCode = null;
+    const f = await fixture({ compact: true, currentQuota: current, items: [] });
+    try {
+        await f.click('X監視を追加'); await f.fill(f.field('Xアカウント名'), 'batch_default'); assert(f.form().querySelector('input[name="x-registration-timing"][value="batch"]').checked);
+        await f.submitX(); await f.click('このX監視設定で保存'); assert.equal(writes(f)[0].body.processingMode, 'batch'); assert.equal(Object.hasOwn(writes(f)[0].body, 'expectedRealtimeSlotCost'), false);
+    } finally { await f.close(); }
+});
+
+test('new realtime registration displays and confirms its exact five-slot cost before a top-level mode and cost are sent', async () => {
+    const current = quota({ featureEnabled: true, registrationProcessing: processingQuote() }); current.x.reasonCode = null;
+    const f = await fixture({ compact: true, currentQuota: current, items: [] });
+    try {
+        await f.click('X監視を追加'); await f.fill(f.field('Xアカウント名'), 'five_slots'); await f.act(async () => f.form().querySelector('input[name="x-registration-timing"][value="realtime"]').click());
+        assert.match(f.form().textContent, /個人の登録枠を合計5枠.*加えて4枠/); assert.equal(writes(f).length, 0); await f.submitX(); assert.match(f.form().querySelector('[aria-label="X監視の変更確認"]').textContent, /使用する個人枠は合計5枠/); assert.equal(writes(f).length, 0);
+        await f.click('このX監視設定で保存'); assert.equal(writes(f)[0].body.processingMode, 'realtime'); assert.equal(writes(f)[0].body.expectedRealtimeSlotCost, 5); assert.equal(writes(f)[0].body.notificationSettings, undefined);
+    } finally { await f.close(); }
+});
+
+test('a one-slot supporter or plan quote is used as returned, while denied or missing metadata never fabricates realtime permission', async () => {
+    for (const source of ['supporter', 'plan']) {
+        const current = quota({ featureEnabled: true, registrationProcessing: processingQuote({ realtimeSource: source, realtimeEligibilitySource: source, realtimeSlotCost: 1, effectiveSlotCost: 1, slotCost: 1, additionalSlotsNeeded: 0 }) }); current.x.reasonCode = null;
+        const f = await fixture({ compact: true, currentQuota: current, items: [] });
+        try { await f.click('X監視を追加'); await f.fill(f.field('Xアカウント名'), 'benefit_entry'); await f.act(async () => f.form().querySelector('input[name="x-registration-timing"][value="realtime"]').click()); assert.match(f.form().textContent, /合計1枠/); await f.submitX(); await f.click('このX監視設定で保存'); assert.equal(writes(f)[0].body.expectedRealtimeSlotCost, 1); }
+        finally { await f.close(); }
+    }
+    for (const quote of [undefined, processingQuote({ realtimeSlotCost: '1' }), processingQuote({ canEnableRealtime: false })]) {
+        const current = quota({ featureEnabled: true, ...(quote ? { registrationProcessing: quote } : {}) }); current.x.reasonCode = null;
+        const f = await fixture({ compact: true, currentQuota: current, items: [] });
+        try { await f.click('X監視を追加'); const radio = f.form().querySelector('input[name="x-registration-timing"][value="realtime"]'); if (quote?.canEnableRealtime === false) assert(radio.disabled); else assert.equal(radio, null); assert.equal(writes(f).length, 0); }
+        finally { await f.close(); }
+    }
+});
+
+test('a realtime registration cost conflict blocks another attempt until the server quote is explicitly refreshed', async () => {
+    let conflict = true;
+    const current = quota({ featureEnabled: true, registrationProcessing: processingQuote({ realtimeSlotCost: 1, slotCost: 1, effectiveSlotCost: 1, realtimeSource: 'plan', realtimeEligibilitySource: 'plan', additionalSlotsNeeded: 0 }) }); current.x.reasonCode = null;
+    const f = await fixture({ compact: true, currentQuota: current, items: [], respond: (route, method, _body, state) => {
+        if (route === 'x-monitors' && method === 'POST' && conflict) { conflict = false; state.quota = { ...current, registrationProcessing: processingQuote() }; throw { status: 409, code: 'X_REALTIME_COST_CONFLICT' }; }
+    } });
+    try {
+        await f.click('X監視を追加'); await f.fill(f.field('Xアカウント名'), 'changed_cost'); await f.act(async () => f.form().querySelector('input[name="x-registration-timing"][value="realtime"]').click()); await f.submitX(); await f.click('このX監視設定で保存'); assert.equal(writes(f)[0].body.expectedRealtimeSlotCost, 1);
+        assert.match(f.container.textContent, /必要な枠数が変わりました/); assert([...f.form().querySelectorAll('button')].find(item => item.textContent === 'X監視の変更を確認').disabled);
+        await f.click('枠数を再確認'); assert.match(f.form().textContent, /合計5枠/); await f.submitX(); await f.click('このX監視設定で保存'); assert.equal(writes(f)[1].body.expectedRealtimeSlotCost, 5);
+    } finally { await f.close(); }
+});
+
+test('editing a name or destination preserves per-monitor realtime allocation without including a mode mutation', async () => {
+    const current = quota({ featureEnabled: true, registrationProcessing: processingQuote() }); current.x.reasonCode = null;
+    const { isPreview: _preview, ...processing } = processingQuote({ requestedMode: 'realtime', explicitMode: 'realtime' });
+    const f = await fixture({ compact: true, currentQuota: current, items: [row({ processing })] });
+    try { await f.inClick(f.target(), 'X監視を編集'); await f.fill(f.field('監視の表示名'), '改名のみ'); assert.equal(f.form().querySelector('input[name="x-registration-timing"]'), null); await f.submitX(); await f.click('このX監視設定で保存'); assert.equal(Object.hasOwn(writes(f)[0].body, 'processingMode'), false); assert.equal(Object.hasOwn(writes(f)[0].body, 'expectedRealtimeSlotCost'), false); assert.equal(f.items[0].processing.slotCost, 5); }
+    finally { await f.close(); }
+});
+
+test('a shared registration can hide the duplicate X action and inherit only a fresh draft name and destination', async () => {
+    const current = quota({ featureEnabled: true }); current.x.reasonCode = null;
+    const f = await fixture({ compact: true, hideAddAction: true, currentQuota: current, registrationRequest: { id: 1, accountHandle: '@shared_target', name: '共通入口の名前', destinationId: 'dm-own' } });
+    try {
+        assert.equal([...f.container.querySelectorAll('button')].some(item => item.textContent === 'X監視を追加'), false);
+        assert.equal(f.field('Xアカウント名').value, 'shared_target'); assert.equal(f.field('監視の表示名').value, '共通入口の名前'); assert.equal(f.field('通知先').value, 'dm-own');
+        f.registrationRequest = { id: 2, accountHandle: 'other_target', name: '上書きしない', destinationId: 'different-dm' }; await f.renderManager(true);
+        assert.equal(f.field('Xアカウント名').value, 'shared_target'); assert.equal(f.field('監視の表示名').value, '共通入口の名前'); assert.equal(f.field('通知先').value, 'dm-own'); assert.equal(writes(f).length, 0);
+    } finally { await f.close(); }
+});
+
+test('compact connection status does not assume no connected receivers when only the first page is loaded', async () => {
+    for (const receiverState of ['stopped', 'listening']) {
+        const f = await fixture({ compact: true, respond: route => route === 'x-setup' ? setup({ subscriptions: [subscription({ receiverState })], nextCursor: 'next-receiver' }) : undefined });
+        try { const summary = f.container.querySelector('[aria-label="Xの接続状況"]'); assert.match(summary.textContent, receiverState === 'listening' ? /サーバー接続を確認済み/ : /続きの受信情報を確認/); assert.doesNotMatch(summary.textContent, /接続の準備・確認中|受信情報を登録しましょう/); assert.equal(writes(f).length, 0); }
+        finally { await f.close(); }
+    }
+});
+
+test('a monitor with no destination or rule accurately shows the existing own-DM default', async () => {
+    const f = await fixture({ compact: true, items: [row({ notificationSettings: {} })] });
+    try { const facts = f.target().querySelector('.monitor-facts'); assert.match(facts.textContent, /通知先本人のDM/); assert.doesNotMatch(facts.textContent, /通知先設定待ち/); assert.equal(writes(f).length, 0); }
+    finally { await f.close(); }
+});
+
+test('a manual pool change discloses realtime requalification and renders the actual returned timing without reserving extra slots', async () => {
+    const { isPreview: _preview, ...original } = processingQuote({ realtimeSource: 'supporter', realtimeEligibilitySource: 'supporter', slotCost: 1, effectiveSlotCost: 1, realtimeSlotCost: 1 });
+    for (const result of [
+        { ...original, effectiveMode: 'batch', realtimeSource: null, effectiveSlotCost: 1, realtimeSlotCost: 5, configured: true },
+        { ...original, effectiveMode: 'batch', realtimeSource: null, effectiveSlotCost: 1, realtimeSlotCost: 5, configured: false, intervalMinutes: null },
+        { ...original, realtimeSource: 'plan', realtimeEligibilitySource: 'plan' },
+    ]) {
+        const f = await fixture({ compact: true, items: [row({ poolKind: 'supporter', processing: original })], respond: (route, method, body, current) => {
+            if (route.endsWith('/move') && method === 'POST') { const moved = { ...current.items[0], poolKind: body.poolKind, processing: result, revision: 2 }; current.items = [moved]; return moved; }
+        } });
+        try {
+            await f.inClick(f.target(), '利用枠の種類を変更'); await f.fill(f.target().querySelector('select'), 'free'); await f.inClick(f.target(), '利用枠の変更を確認');
+            const review = f.target().querySelector('[aria-label="X監視の手動移動確認"]'); assert.match(review.textContent, /移動先でリアルタイムの利用条件を確認/); assert.match(review.textContent, /追加4枠は自動で確保しません/); assert.match(review.textContent, /未設定なら設定待ち/); assert.equal(writes(f).length, 0);
+            await f.inClick(f.target(), '指定した利用枠へ移動');
+            assert.deepEqual(writes(f)[0].body, { poolKind: 'free', expectedRevision: 1 });
+            const feedback = f.target().querySelector('[aria-label="X監視の手動枠変更"] [role="status"]');
+            assert.match(feedback.textContent, result.effectiveMode === 'realtime' ? /リアルタイム通知・個人1枠/ : result.configured ? /プランの間隔（60分）で通知/ : /通知方法は設定待ち/);
+        } finally { await f.close(); }
+    }
 });

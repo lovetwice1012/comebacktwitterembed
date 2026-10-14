@@ -4,17 +4,18 @@ import { useEffect, useId, useRef, useState } from "react";
 import { Info, Mail, Users } from "lucide-react";
 import { sourceGuidance, sourceProvider } from "../../../src/automation/monitor-input";
 import { valueLabels } from "./rule-labels";
+import { xRegistrationHandle } from "./notification-registration-source";
 
 const field = "w-full rounded border bg-background px-3 py-2 text-sm";
 const button = "rounded border bg-background px-3 py-2 text-sm hover:bg-muted disabled:opacity-40";
 type Props = { api: (path: string, method?: string, body?: any) => Promise<any>; monitor: any; kind: string; scope: string;
   guildId?: string; destinations: any[]; rules: any[]; catalog: any; busy: boolean;
   onChange: (value: any) => void; onSourceChange: (source: string) => void; onSave: (value: any) => Promise<void>;
-  run: (work: () => Promise<void>) => Promise<void>; refresh: () => Promise<void> };
+  run: (work: () => Promise<void>) => Promise<void>; refresh: () => Promise<void>; onXRegistration?: (accountHandle: string) => void };
 const languages = [["ja", "日本語 / 日本"], ["en-US", "English / US"], ["en-GB", "English / UK"], ["de", "Deutsch"], ["fr", "Français"], ["ko", "한국어"], ["zh-CN", "简体中文"], ["zh-TW", "繁體中文"]];
 const sourceHints: Record<string, string> = { youtube: "チャンネルURL・@ハンドル・UCから始まるID", github: "プロフィールURL・ユーザー名", twitch: "配信チャンネルURL・チャンネル名", spotify: "アーティストURL・ID", pixiv: "作者のプロフィールURL・ユーザーID", booth: "ショップURL・ショップ名", amazon: "短縮URLは商品ページを開いてコピー", steam: "ゲーム・パッケージ・バンドルのURL" };
 
-export function MonitorRegistration({ api, monitor, kind, scope, guildId, destinations, rules, catalog, busy, onChange, onSourceChange, onSave, run, refresh }: Props) {
+export function MonitorRegistration({ api, monitor, kind, scope, guildId, destinations, rules, catalog, busy, onChange, onSourceChange, onSave, run, refresh, onXRegistration }: Props) {
   const [step, setStep] = useState(0), [preview, setPreview] = useState<any>(null);
   const currentScope = monitor.scope || scope;
   const available = destinations.filter(d => d.enabled && (currentScope !== "guild" || d.scope === "guild"));
@@ -38,6 +39,9 @@ export function MonitorRegistration({ api, monitor, kind, scope, guildId, destin
   async function advance() {
     if (step === 0) {
       const detected = sourceProvider(monitor.source);
+      if (onXRegistration && !monitor.id && (monitor.providerId === "twitter" || detected === "twitter")) {
+        onXRegistration(xRegistrationHandle(monitor.source)); return;
+      }
       if (detected && !catalog?.[kind]?.some((p: any) => p.id === detected)) throw new Error(`${valueLabels[detected] || detected}は対象外です。対応サービスのURLを入力してください。`);
       if (kind === "auto" && !monitor.id && catalog?.autoRegistration?.eligible !== true) throw new Error("現在は新着通知を追加できません。利用枠と通知の状態を確認してください。");
       const result = await api(`monitors/${kind}/preview`, "POST", { providerId: monitor.providerId, source: monitor.source, locale: monitor.locale });
@@ -66,11 +70,11 @@ export function MonitorRegistration({ api, monitor, kind, scope, guildId, destin
   return <fieldset disabled={busy}><form ref={formRef} className="monitor-registration space-y-5" onSubmit={event => { event.preventDefault(); void run(advance); }}>
     <ol className="monitor-steps" aria-label="登録の手順">{["対象", "通知先", "確認"].map((label, index) => <li key={label} aria-current={step === index ? "step" : undefined}><span>{index + 1}</span>{label}</li>)}</ol>
     {step === 0 && <>
-      <label className="block text-sm">{kind === "auto" ? "対象のURL・ID" : "商品URL"}<input autoFocus required maxLength={2000} aria-describedby={hintId} placeholder={hint.placeholder} className={field} value={monitor.source} onChange={e => { setPreview(null); onSourceChange(e.target.value); }} /></label>
-      <p id={hintId} className="text-sm text-muted-foreground">{sourceHints[monitor.providerId]}</p>
-      <label className="block text-sm">サービス<select className={field} value={monitor.providerId} onChange={e => { setPreview(null); onChange({ ...monitor, providerId: e.target.value }); }}>{catalog?.[kind]?.map((p: any) => <option key={p.id} value={p.id}>{valueLabels[p.id] || p.id}</option>)}</select></label>
+      <label className="block text-sm">{monitor.providerId === "twitter" ? "Xアカウント名・プロフィールURL" : kind === "auto" ? "対象のURL・ID" : "商品URL"}<input autoFocus required maxLength={2000} aria-describedby={hintId} placeholder={monitor.providerId === "twitter" ? "@ユーザー名 または https://x.com/ユーザー名" : hint.placeholder} className={field} value={monitor.source} onChange={e => { setPreview(null); onSourceChange(e.target.value); }} /></label>
+      <p id={hintId} className="text-sm text-muted-foreground">{monitor.providerId === "twitter" ? "@ユーザー名 または プロフィールのURL" : sourceHints[monitor.providerId]}</p>
+      <label className="block text-sm">サービス<select className={field} value={monitor.providerId} onChange={e => { setPreview(null); onChange({ ...monitor, providerId: e.target.value }); }}>{catalog?.[kind]?.map((p: any) => <option key={p.id} value={p.id}>{valueLabels[p.id] || p.id}</option>)}{onXRegistration && !monitor.id ? <option value="twitter">X</option> : null}</select></label>
       <label className="block text-sm">名前（省略可）<input maxLength={120} className={field} value={monitor.name} onChange={e => onChange({ ...monitor, name: e.target.value })} /></label>
-      {kind === "price" && <label className="block text-sm">価格の地域<select className={field} value={monitor.locale} onChange={e => onChange({ ...monitor, locale: e.target.value })}>{languages.map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select></label>}
+      {kind === "price" && monitor.providerId !== "twitter" && <label className="block text-sm">価格の地域<select className={field} value={monitor.locale} onChange={e => onChange({ ...monitor, locale: e.target.value })}>{languages.map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select></label>}
     </>}
     {step === 1 && <>
       <div className="monitor-confirm"><strong>{valueLabels[preview.providerId] || preview.providerId}</strong><p className="break-all">{preview.source}</p><small>URL形式を確認済み</small></div>

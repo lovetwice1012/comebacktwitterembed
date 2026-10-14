@@ -66,7 +66,7 @@ test('personal notification destinations show DM, Bot-created channel webhook, a
 test('personal channel selection creates a private destination only on explicit save and refreshes open X draft choices', async () => {
     const f = await fixture();
     try {
-        await f.click('Xアカウントの監視を管理'); await f.settle(); await f.click('X監視を追加'); await f.fill(f.field('Xアカウント名'), '@retained_x'); await f.fill(f.field('監視の表示名'), '保持する下書き');
+        await f.click('X通知'); await f.settle(); await f.click('通知を追加'); await f.fill(f.field('Xアカウント名'), '@retained_x'); await f.fill(f.field('監視の表示名'), '保持する下書き');
         await f.click('X監視の通知先を追加'); await f.fill(f.field('通知先の名前'), 'X投稿の通知先'); await f.fill(f.field('通知先の種類'), 'channel'); await f.settle();
         assert.equal(f.fetches[0].url, '/api/guilds?purpose=notification-destinations'); assert.equal(f.fetches[0].options.cache, 'no-store');
         await f.fill(f.field('通知先のサーバー'), G1); await f.settle();
@@ -183,10 +183,10 @@ const normalDestinations = f => f.container.querySelector('form.monitor-registra
 test('adding from an X draft selects its new destination while a retained ordinary draft keeps its original destination', async () => {
     const f = await fixture({ destinations: [originalDestination], respond: async route => route === 'providers' ? { auto: [{ id: 'github' }], price: [], autoRegistration: { eligible: true } } : undefined });
     try {
-        await retainNormalDraft(f); await f.click('Xアカウントの監視を管理'); await f.settle(); await f.click('X監視を追加'); await f.fill(f.field('Xアカウント名'), 'preserved_x');
+        await retainNormalDraft(f); await f.click('X通知'); await f.settle(); await f.click('通知を追加'); await f.fill(f.field('Xアカウント名'), 'preserved_x');
         await f.click('X監視の通知先を追加'); await f.fill(f.field('通知先の名前'), 'X専用DM'); await submitDestination(f);
         assert.equal(f.container.querySelector('form[aria-label="X監視の登録設定"] select').value, 'new-destination'); assert.equal(f.field('Xアカウント名').value, 'preserved_x');
-        await f.click('通知の入力を再開'); assert.equal(normalDestinations(f)[0].value, 'existing'); assert.equal(normalDestinations(f)[1].value, 'original-destination'); assert.match(f.container.querySelector('form.monitor-registration').textContent, /github.com\/octocat/);
+        await f.click('新着通知'); await f.click('通知の入力を再開'); assert.equal(normalDestinations(f)[0].value, 'existing'); assert.equal(normalDestinations(f)[1].value, 'original-destination'); assert.match(f.container.querySelector('form.monitor-registration').textContent, /github.com\/octocat/);
     } finally { await f.close(); }
 });
 
@@ -201,7 +201,7 @@ test('ordinary destination creation still selects its destination in the request
 test('cancelling destination creation detaches the old X draft callback when its form is resumed separately', async () => {
     const f = await fixture();
     try {
-        await f.click('Xアカウントの監視を管理'); await f.settle(); await f.click('X監視を追加'); await f.fill(f.field('Xアカウント名'), 'old_request');
+        await f.click('X通知'); await f.settle(); await f.click('通知を追加'); await f.fill(f.field('Xアカウント名'), 'old_request');
         await f.click('X監視の通知先を追加'); await f.fill(f.field('通知先の名前'), 'キャンセルした宛先'); await f.click('キャンセル');
         await f.fill(f.field('Xアカウント名'), 'new_request'); await f.click('通知先の入力を再開'); await submitDestination(f);
         assert.equal(f.field('Xアカウント名').value, 'new_request'); assert.equal(f.container.querySelector('form[aria-label="X監視の登録設定"] select').value, ''); assert.equal(f.writes().length, 1);
@@ -223,7 +223,7 @@ test('a created destination beyond the first hundred candidates is individually 
     const destinations = Array.from({ length: 100 }, (_, index) => ({ ...originalDestination, id: `older-${index}`, name: `既存${index}` }));
     const f = await fixture({ destinations, targetedRefresh: true });
     try {
-        await f.click('Xアカウントの監視を管理'); await f.settle(); await f.click('X監視を追加'); await f.fill(f.field('Xアカウント名'), 'many_choices');
+        await f.click('X通知'); await f.settle(); await f.click('通知を追加'); await f.fill(f.field('Xアカウント名'), 'many_choices');
         await f.click('X監視の通知先を追加'); await f.fill(f.field('通知先の名前'), '101件目の通知先'); await submitDestination(f);
         assert(f.calls.some(item => item.route === 'destinations/new-destination' && item.method === 'GET')); const choices = f.container.querySelector('form[aria-label="X監視の登録設定"] select');
         assert.equal(choices.options.length, 102); assert.equal(choices.value, 'new-destination'); assert.equal(f.field('Xアカウント名').value, 'many_choices');

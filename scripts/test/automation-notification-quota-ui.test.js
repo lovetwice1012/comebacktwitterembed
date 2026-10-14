@@ -29,12 +29,12 @@ async function fixture(entitlements, { createError } = {}) {
 test('free notification slots show actual sent messages separately from pending reservations and pair usage by notification kind', async () => {
     const f = await fixture(async () => profile());
     try {
-        assert.match(f.container.textContent, /無料プラン.*通知枠 4 \/ 5（残り1枠）/);
+        assert.match(f.container.textContent, /無料プラン.*使用枠 4 \/ 5.*空き 1枠/);
         assert.match(f.container.textContent, /1枠あたり1日24通・1分5通/);
         assert.match(f.container.textContent, /メッセージ1件＝1通/); assert.match(f.container.textContent, /日本時間の0時/);
         assert.match(f.container.textContent, /今日の送信 3 \/ 24通.*予約・確認待ち 2通/);
         assert(!f.container.textContent.includes('今日の送信 8 /'));
-        await f.click('価格'); await f.act(async () => { await new Promise(resolve => setTimeout(resolve, 20)); });
+        await f.click('価格通知'); await f.act(async () => { await new Promise(resolve => setTimeout(resolve, 20)); });
         assert.match(f.container.textContent, /今日の送信 8 \/ 24通/);
         assert(!f.container.textContent.includes('今日の送信 3 /')); assert(!f.container.textContent.includes('予約・確認待ち'));
     } finally { await f.close(); }
@@ -44,11 +44,11 @@ test('supporter priority and paid plan limits display server-provided values wit
     let current = profile({ id: 'supporter', tier: 'supporter', name: 'サポータープラン', priority: 1 });
     const f = await fixture(async () => current);
     try {
-        assert.match(f.container.textContent, /サポータープラン.*通知枠 4 \/ 5/);
-        assert.match(f.container.textContent, /1日24通・1分5通まで · 優先処理/);
+        assert.match(f.container.textContent, /サポータープラン.*使用枠 4 \/ 5/);
+        assert.match(f.container.textContent, /1日24通・1分5通まで。優先処理/);
         current = profile({ id: 'configured-paid', tier: 'paid', name: '設定済みプラン', slotLimit: 9, dayLimit: 72, minuteLimit: 7, priority: 2 });
         await f.click('更新'); await f.settle();
-        assert.match(f.container.textContent, /設定済みプラン.*通知枠 4 \/ 9（残り5枠）/);
+        assert.match(f.container.textContent, /設定済みプラン.*使用枠 4 \/ 9.*空き 5枠/);
         assert.match(f.container.textContent, /1日72通・1分7通/); assert.match(f.container.textContent, /今日の送信 3 \/ 72通/);
         assert(!f.container.textContent.includes('円')); assert(!f.container.textContent.includes('60通'));
     } finally { await f.close(); }
@@ -65,7 +65,7 @@ test('unavailable entitlement metadata keeps notifications and stop/delete contr
             assert(button); assert.equal(button.disabled, false, label);
         }
         failed = false; await f.click('更新'); await f.settle();
-        assert.match(f.container.textContent, /通知枠 4 \/ 5/); assert(!f.container.textContent.includes('利用枠を確認できません'));
+        assert.match(f.container.textContent, /使用枠 4 \/ 5/); assert(!f.container.textContent.includes('利用枠を確認できません'));
     } finally { await f.close(); }
 });
 
@@ -76,9 +76,9 @@ test('an old entitlement response cannot overwrite newer plan and slot usage loa
         return profile({ id: 'newer', name: '最新のプラン', slotLimit: 8 });
     });
     try {
-        await f.click('更新'); await f.settle(); assert.match(f.container.textContent, /最新のプラン.*通知枠 4 \/ 8/);
+        await f.click('更新'); await f.settle(); assert.match(f.container.textContent, /最新のプラン.*使用枠 4 \/ 8/);
         await f.act(async () => finishOld(profile()));
-        assert.match(f.container.textContent, /最新のプラン.*通知枠 4 \/ 8/); assert(!f.container.textContent.includes('無料プラン'));
+        assert.match(f.container.textContent, /最新のプラン.*使用枠 4 \/ 8/); assert(!f.container.textContent.includes('無料プラン'));
     } finally { await f.close(); }
 });
 
@@ -100,7 +100,7 @@ test('existing notifications outside a downgraded plan show their capacity probl
     const limits = profile(); limits.slots = { used: 7, max: 5, available: 0 }; limits.usage.entries[0].allowed = false;
     const f = await fixture(async () => limits);
     try {
-        assert.match(f.container.textContent, /通知枠 7 \/ 5（残り0枠）/); assert.match(f.container.textContent, /現在のプランの登録枠を超えています/);
+        assert.match(f.container.textContent, /使用枠 7 \/ 5.*空き 0枠/); assert.match(f.container.textContent, /現在のプランの登録枠を超えています/);
         for (const label of ['停止', '削除']) assert.equal([...f.container.querySelectorAll('button')].find(node => node.textContent.trim() === label).disabled, false);
     } finally { await f.close(); }
 });
@@ -109,13 +109,13 @@ test('a slot rejection refreshes stale capacity metadata without closing the mod
     let latest = profile(); latest.slots = { used: 0, max: 5, available: 5 };
     const f = await fixture(async () => latest, { createError: { code: 'AUTOMATION_SLOT_LIMIT', maxSlots: 5, availableSlots: 0, planName: '無料', error: 'PRIVATE_SLOT_REJECTION' } });
     try {
-        assert.match(f.container.textContent, /通知枠 0 \/ 5（残り5枠）/);
+        assert.match(f.container.textContent, /使用枠 0 \/ 5.*空き 5枠/);
         await f.click('通知を追加'); await f.fill(f.field('対象のURL・ID'), 'https://github.com/keep-after-rejection'); await f.fill(f.field('名前（省略可）'), '6枠目の入力');
         await f.submit(); await f.submit();
         const form = f.container.querySelector('form'), dialog = form.closest('dialog');
         latest = profile(); latest.slots = { used: 5, max: 5, available: 0 };
         await f.submit(); await f.settle();
-        assert.match(f.container.textContent, /通知枠 5 \/ 5（残り0枠）/);
+        assert.match(f.container.textContent, /使用枠 5 \/ 5.*空き 0枠/);
         assert.match(dialog.textContent, /通知の登録枠が上限に達しています.*残り0枠／最大5枠/);
         assert.equal(f.container.querySelector('form'), form); assert.equal(dialog.open, true);
         assert(!f.container.textContent.includes('PRIVATE_SLOT_REJECTION'));

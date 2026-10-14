@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 const { reactFixture } = require('./helpers/react-dom-fixture.cjs');
 const state = changes => ({ requestedMode: 'batch', effectiveMode: 'batch', realtimeAllowed: false, planId: 'basic', planLabel: 'ベーシック',
     intervalMinutes: 60, configured: true, reasonCode: null, rollout: { mode: 'supporters', eligible: true }, ...changes });
-async function fixture({ value = state(), respond, active = true } = {}) {
+async function fixture({ value = state(), respond, active = true, compact = false } = {}) {
     const f = await reactFixture('export { XProcessingSettings } from "./components/automation/x-processing-settings";');
     f.value = value; f.calls = [];
     f.api = async (route, method = 'GET', body) => {
@@ -17,7 +17,7 @@ async function fixture({ value = state(), respond, active = true } = {}) {
         f.value = { ...f.value, requestedMode: body.mode, effectiveMode: body.mode, configured: true };
         return f.value;
     };
-    f.renderSettings = async (nextActive = active) => f.render(f.React.createElement(f.exports.XProcessingSettings, { api: f.api, active: nextActive }));
+    f.renderSettings = async (nextActive = active) => f.render(f.React.createElement(f.exports.XProcessingSettings, { api: f.api, active: nextActive, compact }));
     await f.renderSettings(); await f.settle();
     f.select = async mode => f.act(async () => f.container.querySelector(`input[value="${mode}"]`).click());
     f.radio = mode => f.container.querySelector(`input[value="${mode}"]`);
@@ -118,5 +118,33 @@ test('returning during an in-flight save refreshes its committed CAS state and n
         await f.act(async () => finish()); await f.settle();
         assert.equal(writes(f).length, 1); assert.equal(f.calls.filter(call => call.method === 'GET').length, 2);
         assert.match(f.container.textContent, /現在の通知方法：リアルタイム/); assert.equal(f.saveButton().disabled, true);
+    } finally { await f.close(); }
+});
+
+test('compact timing shows the effective mode and directs changes to connection settings without another editing form', async () => {
+    for (const [value, expected] of [[state(), /60分ごとにまとめて通知/], [state({ configured: false, intervalMinutes: null }), /間隔の設定待ち/], [state({ requestedMode: 'realtime', effectiveMode: 'realtime', realtimeAllowed: true }), /リアルタイム/]]) {
+        const f = await fixture({ compact: true, value });
+        try { assert.match(f.container.textContent, expected); assert.equal(f.container.querySelector('form'), null); assert.equal(f.container.querySelector('input'), null); assert(f.container.querySelector('a[href="/dashboard/automation/x#x-processing"]')); assert.equal(writes(f).length, 0); }
+        finally { await f.close(); }
+    }
+});
+
+test('compact timing keeps a revoked realtime preference separate from its current plan interval', async () => {
+    const f = await fixture({ compact: true, value: state({ requestedMode: 'realtime', effectiveMode: 'batch', realtimeAllowed: false, reasonCode: 'X_REALTIME_PLAN_REQUIRED' }) });
+    try { assert.match(f.container.textContent, /60分ごとにまとめて通知/); assert.match(f.container.textContent, /リアルタイムの希望は保存済み.*現在は契約プランの間隔を適用/); assert.equal(writes(f).length, 0); }
+    finally { await f.close(); }
+});
+
+test('compact timing labels a retained value while refreshing and after a failed read instead of presenting it as current', async () => {
+    let reads = 0, finish;
+    const f = await fixture({ compact: true, respond: async (_route, method) => {
+        if (method === 'GET' && ++reads === 2) return new Promise(resolve => { finish = resolve; });
+        if (method === 'GET' && reads === 3) throw new Error('PRIVATE_NEW_INTERVAL');
+    } });
+    try {
+        await f.renderSettings(false); await f.renderSettings(true); assert.match(f.container.textContent, /最新の設定を確認中.*前回確認/); assert.match(f.container.textContent, /前回確認時：60分ごと/);
+        await f.act(async () => finish(state({ intervalMinutes: 5 }))); assert.match(f.container.textContent, /5分ごとにまとめて通知/); assert.doesNotMatch(f.container.textContent, /前回確認時/);
+        await f.renderSettings(false); await f.renderSettings(true); assert.match(f.container.querySelector('[role="alert"]').textContent, /最新の設定を確認できません.*前回確認した内容/);
+        assert.match(f.container.textContent, /前回確認時：5分ごと/); assert(!f.container.textContent.includes('PRIVATE_NEW_INTERVAL')); assert.equal(writes(f).length, 0);
     } finally { await f.close(); }
 });

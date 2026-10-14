@@ -38,6 +38,8 @@ const files=[
   "scripts/test/automation-x-delivery-sql.test.js",
   "scripts/test/automation-x-delivery.test.js",
   "scripts/test/automation-x-monitor-ui.test.js",
+  "scripts/test/automation-x-monitor-processing-sql.test.js",
+  "scripts/test/automation-x-monitor-timing-ui.test.js",
   "scripts/test/automation-x-processing-settings.test.js",
   "scripts/test/automation-x-processing-settings-sql.test.js",
   "scripts/test/automation-x-processing-settings-ui.test.js",
@@ -68,6 +70,8 @@ const files=[
   "scripts/test/automation-graph-join.test.js",
   "scripts/test/automation-normal-handoff.test.js",
   "scripts/test/automation-studio-ui.test.js",
+  "scripts/test/notification-usage-overview.test.js",
+  "scripts/test/notification-workspace-navigation.test.js",
   "scripts/test/x-notification-reader.test.js"
 ];
 const port=Number(process.env.AUTOMATION_TEST_DB_PORT);

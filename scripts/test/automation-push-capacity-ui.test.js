@@ -236,6 +236,9 @@ test('capacity editor is embedded in the existing admin screen and leaves normal
 
 const monitored = changes => ({ id: '7', ownerUserId: '111111111111111111', accountId: '12345', accountHandle: 'fixture_user', name: '管理対象のX監視', enabled: true, state: 'ready', poolKind: 'supporter', subscriptionState: 'pending', revision: 1,
     notificationSettings: { destinationId: 'dm-own' }, quality: { planId: 'basic', priority: 2, minuteLimit: 7, dayLimit: 48, intervalMinutes: 60 }, ...changes });
+const monitorProcessing = changes => ({ requestedMode: 'realtime', explicitMode: 'realtime', modeSource: 'monitor', effectiveMode: 'realtime',
+    realtimeSource: 'slots', realtimeEligibilitySource: 'slots', slotCost: 5, effectiveSlotCost: 5, realtimeSlotCost: 5, canEnableRealtime: true,
+    additionalSlotsNeeded: 0, configured: true, intervalMinutes: 15, reasonCode: null, ...changes });
 const adminSummary = changes => ({ pools: { free: { limit: 50, used: 49, available: 1 }, supporter: { limit: 100, used: 3, available: 97 } },
     owners: [{ userId: '111111111111111111', totalSupporterSlots: 5, legacySlots: 2, paidSlots: 3 }], nextCursor: null,
     registrations: [monitored()], registrationNextCursor: null,
@@ -262,6 +265,40 @@ test('admin diagnostics load on request and show pool usage, permanent holdings,
         assert.match(f.container.textContent, /停止・資格失効中も割当済みの全体枠と個人枠を保持/);
         assert.match(f.container.textContent, /空きが戻っても自動移動は行いません/); assert(!f.container.textContent.includes('PRIVATE_AUDIT_SECRET'));
         assert.equal(f.calls.some(item => item.route.includes('rebalance')), false);
+    } finally { await f.close(); }
+});
+
+test('admin monitor diagnostics show effective timing and actual reserved slots rather than requested mode or a cheaper entitlement quote', async () => {
+    const registrations = [monitored({ processing: monitorProcessing() }),
+        monitored({ id: '8', processing: monitorProcessing({ realtimeSource: 'plan', realtimeEligibilitySource: 'plan', effectiveSlotCost: 1, realtimeSlotCost: 1 }) }),
+        monitored({ id: '9', processing: monitorProcessing({ effectiveMode: 'batch', realtimeSource: null, realtimeEligibilitySource: null, slotCost: 1, effectiveSlotCost: 1, canEnableRealtime: false, additionalSlotsNeeded: 4, reasonCode: 'X_REALTIME_SLOT_LIMIT' }) }),
+        monitored({ id: '10', processing: monitorProcessing({ requestedMode: 'batch', explicitMode: 'batch', effectiveMode: 'batch', realtimeSource: null, slotCost: 1, effectiveSlotCost: 1, configured: false, intervalMinutes: null, reasonCode: 'X_MONITOR_NOT_CONFIGURED' }) })];
+    const f = await fixture({ respond: route => route === 'push-capacity/admin' ? adminSummary({ registrations }) : undefined });
+    try {
+        await openDiagnostics(f);
+        const facts = id => f.container.querySelector(`[aria-label="監視 ${id} の通知方法と使用枠"]`);
+        const values = id => [...facts(id).querySelectorAll('dd')].map(item => item.textContent);
+        assert.deepEqual(values('7'), ['リアルタイム', '5枠']);
+        assert.deepEqual(values('8'), ['リアルタイム', '5枠'], 'new one-slot privilege never rewrites the five slots still held');
+        assert.deepEqual(values('9'), ['15分ごと', '1枠'], 'requested realtime is not reported as the current effective mode');
+        assert.deepEqual(values('10'), ['間隔の設定待ち', '1枠']);
+        assert.equal(facts('7').querySelector('input,button,select'), null);
+        assert.equal(writes(f).length, 0);
+    } finally { await f.close(); }
+});
+
+test('missing or incompatible optional processing stays unknown while admin allocation diagnostics and explicit move remain available', async () => {
+    const f = await fixture({ respond: route => route === 'push-capacity/admin' ? adminSummary({ registrations: [monitored(), monitored({ id: '8', processing: monitorProcessing({ slotCost: '5' }) })] }) : undefined });
+    try {
+        await openDiagnostics(f);
+        for (const id of ['7', '8']) {
+            const target = f.container.querySelector(`[aria-label="管理者のX監視 ${id}"]`), facts = target.querySelector('dl');
+            assert.deepEqual([...facts.querySelectorAll('dd')].map(item => item.textContent), ['確認待ち', '確認待ち']);
+            assert(!facts.textContent.includes('1枠')); assert(!facts.textContent.includes('5枠'));
+            assert([...target.querySelectorAll('button')].some(button => button.textContent === '利用枠の種類を変更'));
+        }
+        assert.match(f.container.querySelector('[aria-label="全体枠の使用状況"]').textContent, /共用無料枠50491/);
+        assert.equal(writes(f).length, 0);
     } finally { await f.close(); }
 });
 
@@ -311,29 +348,34 @@ test('an uncertain grant locks edits and retries the same idempotent body rather
 test('admin diagnostics clear private owner/history records on a server permission denial and retain the operator draft', async () => {
     let denied = false;
     const f = await fixture({ respond: route => {
-        if (route === 'push-capacity/admin') { if (denied) throw Object.assign(new Error('PRIVATE_ADMIN_DETAIL'), { status: 403 }); return adminSummary(); }
+        if (route === 'push-capacity/admin') { if (denied) throw Object.assign(new Error('PRIVATE_ADMIN_DETAIL'), { status: 403 }); return adminSummary({ registrations: [monitored({ processing: monitorProcessing() })] }); }
         if (route.startsWith('push-capacity/history')) return grantHistory();
     } });
     try {
-        await openDiagnostics(f); await f.fill(f.field('付与対象の利用者ID'), '111111111111111111'); denied = true; await f.click('使用状況・整合性を更新');
+        await openDiagnostics(f); assert.match(f.container.querySelector('[aria-label="監視 7 の通知方法と使用枠"]').textContent, /リアルタイム.*5枠/);
+        await f.fill(f.field('付与対象の利用者ID'), '111111111111111111'); denied = true; await f.click('使用状況・整合性を更新');
         assert.equal(f.container.querySelector('[aria-label="利用者の保有支援枠"]'), null); assert.match(f.container.textContent, /管理者権限を確認できません/);
+        assert.equal(f.container.querySelector('[aria-label="監視 7 の通知方法と使用枠"]'), null);
         assert(!f.container.textContent.includes('PRIVATE_ADMIN_DETAIL')); assert.equal(f.field('付与対象の利用者ID').value, '111111111111111111');
         assert.equal(f.field('付与対象の利用者ID').matches(':disabled'), true);
     } finally { await f.close(); }
 });
 
 test('admin can explicitly move another owner to a later eligible pool while free is available, preserving all monitor metadata', async () => {
-    let registration = monitored();
+    let registration = monitored({ processing: monitorProcessing() });
     const f = await fixture({ respond: (route, method, body) => {
         if (route === 'push-capacity/admin') return adminSummary({ registrations: [registration] });
-        if (route === 'x-monitors/7/move' && method === 'POST') { registration = { ...registration, poolKind: body.poolKind, revision: 2 }; return registration; }
+        if (route === 'x-monitors/7/move' && method === 'POST') { registration = { ...registration, poolKind: body.poolKind, revision: 2,
+            processing: monitorProcessing({ realtimeSource: 'plan', realtimeEligibilitySource: 'plan', slotCost: 1, effectiveSlotCost: 1, realtimeSlotCost: 1 }) }; return registration; }
     } });
     try {
         await openDiagnostics(f); const target = f.container.querySelector('[aria-label="管理者のX監視 7"]');
+        assert.match(target.querySelector('[aria-label="監視 7 の通知方法と使用枠"]').textContent, /リアルタイム.*5枠/);
         await f.clickIn(target, '利用枠の種類を変更'); await f.fill(f.fieldIn(target, '変更先の利用枠') || target.querySelector('select'), 'special');
         await f.clickIn(target, '利用枠の変更を確認'); assert.equal(writes(f).length, 0); await f.clickIn(target, '指定した利用枠へ移動');
         assert.deepEqual(writes(f)[0], { route: 'x-monitors/7/move', method: 'POST', body: { poolKind: 'special', expectedRevision: 1 } });
         assert.deepEqual(registration.quality, monitored().quality); assert.deepEqual(registration.notificationSettings, monitored().notificationSettings); assert.equal(registration.subscriptionState, 'pending');
+        assert.match(target.querySelector('[aria-label="監視 7 の通知方法と使用枠"]').textContent, /リアルタイム.*1枠/);
         assert.equal(f.calls.some(item => item.route.includes('rebalance')), false);
     } finally { await f.close(); }
 });

@@ -39,7 +39,7 @@ test('donation route requires a session and existing payment/workspace routes ex
     const root = path.resolve(__dirname, '../..');
     const page = fs.readFileSync(path.join(root, 'dashboard/app/dashboard/automation/support/page.tsx'), 'utf8');
     assert.match(page, /await requireDashboardSession\(\)/); assert.match(page, /key=\{session\.user\.id\}/);
-    for (const file of ['dashboard/components/automation/automation-workspace.tsx', 'dashboard/app/dashboard/automation/plans/page.tsx']) assert.match(fs.readFileSync(path.join(root, file), 'utf8'), /href="\/dashboard\/automation\/support"/);
+    assert.match(fs.readFileSync(path.join(root, 'dashboard/app/dashboard/automation/plans/page.tsx'), 'utf8'), /href="\/dashboard\/automation\/support"/);
     assert.match(fs.readFileSync(path.join(root, 'dashboard/app/admin/notification-plans/page.tsx'), 'utf8'), /<DonationPolicyManager/);
 });
 test('disabled or unconfigured donations preserve history and never load Square or invent a contribution amount', async () => {
@@ -53,13 +53,34 @@ test('gratitude grants are distinct from X beta admission and shared capacity be
     const f = await donationFixture();
     try {
         const terms = f.container.querySelector('[aria-label="寄付とX通知の利用条件"]');
-        assert.match(terms.textContent, /寄付は寄付.*お礼として申込資格と個人の追加上限/);
-        assert.match(terms.textContent, /ベータ版は既存の寄付者が対象.*新しく寄付しても.*参加やX監視の容量確保を保証するものではありません/);
-        assert.match(terms.textContent, /個人の追加上限と.*共有枠の空きは別.*現在の受付対象・利用枠・共有枠の空き.*通知一覧で確認/);
+        assert.match(f.container.textContent, /今回1回の支援/); assert.match(f.container.textContent, /継続課金なし/);
+        assert.match(terms.textContent, /ベータ版は既存の寄付者が対象.*新しい寄付による参加やX監視の容量確保は保証しません/);
+        assert.equal(terms.querySelector('a').getAttribute('href'), '/dashboard/automation#x-notifications');
         assert(terms.compareDocumentPosition(f.container.querySelector('form')) & f.dom.window.Node.DOCUMENT_POSITION_FOLLOWING);
         assert(!f.container.textContent.includes('買い切り')); assert.equal(writes(f).length, 0); assert.equal(f.sdk.tokens.length, 0);
         await f.review(); assert.equal(terms.isConnected, true); assert.equal(writes(f).filter(item => item.route === 'donate').length, 0);
         assert.equal([...f.container.querySelectorAll('button')].find(item => item.textContent === '同意して寄付を支払う').disabled, true);
+    } finally { await f.close(); }
+});
+
+test('support actions precede payment history and old aggregate records while permanent ownership remains current', async () => {
+    const f = await donationFixture({ config: options({ slotGrantPolicy: { currency: 'JPY', unitAmount: 500, slotsPerUnit: 1, permanent: true } }), initial: status({ permanentSupport: { totalSupporterSlots: 7, legacySlots: 5, newPaidSlots: 2, isSupporter: true }, history: [entry()] }) });
+    try {
+        const holding = f.container.querySelector('[aria-label="恒久支援枠の保有記録"]'), form = f.container.querySelector('form'), history = f.container.querySelector('[aria-label="寄付履歴"]'), old = f.container.querySelector('[aria-label="旧制度の支援集計"]');
+        assert(holding.compareDocumentPosition(form) & f.dom.window.Node.DOCUMENT_POSITION_FOLLOWING);
+        assert(form.compareDocumentPosition(history) & f.dom.window.Node.DOCUMENT_POSITION_FOLLOWING);
+        assert(history.compareDocumentPosition(old) & f.dom.window.Node.DOCUMENT_POSITION_FOLLOWING);
+        assert.equal(old.open, false); assert.match(holding.textContent, /保有合計 7枠/);
+        assert.equal(f.sdk.loads.length, 0); assert.equal(writes(f).length, 0);
+    } finally { await f.close(); }
+});
+
+test('pending donation recovery appears before benefits and a new checkout remains blocked', async () => {
+    const f = await donationFixture({ initial: status({ pending: { attemptId: 'saved-pending', state: 'PAYMENT_SUBMITTING', retryable: false } }) });
+    try {
+        const pending = f.container.querySelector('[aria-label="寄付の受付結果"]'), holding = f.container.querySelector('[aria-label="恒久支援枠の保有記録"]');
+        assert(pending.compareDocumentPosition(holding) & f.dom.window.Node.DOCUMENT_POSITION_FOLLOWING);
+        assert.equal(f.container.querySelector('form'), null); assert.equal(f.sdk.loads.length, 0); assert.equal(writes(f).length, 0);
     } finally { await f.close(); }
 });
 test('amount conversion rejects rounding, exponents and overflow with exact zero/two/three decimal minor units', async () => {
@@ -295,7 +316,7 @@ test('unit-policy conflict retains both edits and forces review against the late
 test('support history displays server payment count, purchased units, extra slots and next unit expiry as separate quantities', async () => {
     const deadline = Date.parse('2030-02-05T18:30:00+09:00');
     const f = await donationFixture({ config: options({ unitAmount: 1000, slotsPerUnit: 2 }), initial: status({ supporter: { active: true, manualActive: false, threshold: 1500, validityDays: 30, netAmount: 4000, validUntilAtMs: deadline, unitAmount: 1000, slotsPerUnit: 2, paymentCount: 2, purchaseUnits: 4, extraSlots: 8, unitsValidUntilAtMs: deadline }, history: [entry({ amount: 2000, netAmount: 2000 }), entry({ attemptId: 'another', amount: 2000, netAmount: 2000 })] }) });
-    try { assert.match(f.container.textContent, /対象期間内の支援回数 2回 · 有効な購入口数 4口 · 追加の通知枠 8枠/); assert.match(f.container.textContent, /次に口数が変わる期限/); assert.match(f.container.textContent, /支援1口 ￥1,000につき 2枠追加/); assert.match(f.container.textContent, /追加枠の配分と確認間隔は通知一覧で選べます/); assert.equal(writes(f).length, 0); }
+    try { assert.match(f.container.textContent, /対象期間内の支援回数 2回 · 有効な購入口数 4口 · 追加の通知枠 8枠/); assert.match(f.container.textContent, /次に口数が変わる期限/); assert.match(f.container.textContent, /支援1口 ￥1,000につき 2枠追加/); assert.match(f.container.textContent, /現在の恒久保有枠は.*再計算せず/); assert.equal(writes(f).length, 0); }
     finally { await f.close(); }
 });
 test('refunded support uses server-adjusted net units and slots without deriving extra frames from gross receipt amounts', async () => {
@@ -315,9 +336,9 @@ test('canonical permanent holdings and500JPY per-payment policy stay separate fr
     try {
         const holding = f.container.querySelector('[aria-label="恒久支援枠の保有記録"]'), policy = f.container.querySelector('[aria-label="恒久追加枠の付与条件"]'), legacy = f.container.querySelector('[aria-label="旧制度の支援集計"]');
         assert.match(holding.textContent, /保有合計 9枠.*旧制度・管理者記録 6枠.*新制度の支援決済 3枠/);
-        assert.match(holding.textContent, /有効期限はなく.*月額プランを解約しても保有枠は残ります/);
-        assert.match(policy.textContent, /JPY支援1決済.*500円ごとに1枠/); assert.match(policy.textContent, /端数を別決済と合算しません/);
-        assert.match(holding.textContent, /寄付へのお礼として個人の総登録上限に加算/); assert.match(policy.textContent, /お礼の追加上限に有効期限はありません/); assert(!f.container.textContent.includes('買い切り'));
+        assert.match(holding.textContent, /有効期限はなく.*月額プランの解約後も保持します/);
+        assert.match(policy.textContent, /日本円の支払い500円ごとに.*個人の登録上限を1枠追加/); assert.match(policy.textContent, /支払い1回ごとに計算.*端数を別の支払いと合算しません/);
+        assert.match(holding.textContent, /個人の総登録上限に加算/); assert.match(policy.textContent, /追加枠は有効期限なく利用/); assert(!f.container.textContent.includes('買い切り'));
         assert(!policy.textContent.includes('600')); assert(!policy.textContent.includes('3枠'));
         assert.match(legacy.textContent, /旧制度.*現在の恒久保有枠とは別/); assert.match(legacy.textContent, /旧集計の設定.*￥600につき 3枠追加の計算値/);
         assert(!holding.textContent.includes('次に口数が変わる期限')); assert.equal(writes(f).length, 0);
@@ -331,8 +352,8 @@ test('absent permanent metadata never promotes the old unit multiplier or expire
     } }) });
     try {
         const holding = f.container.querySelector('[aria-label="恒久支援枠の保有記録"]'), policy = f.container.querySelector('[aria-label="恒久追加枠の付与条件"]');
-        assert.match(holding.textContent, /取得できません.*旧集計の倍率・口数・期限から個人の利用枠は計算しません/);
-        assert(!holding.textContent.includes('保有合計 8')); assert.match(policy.textContent, /付与条件を取得できません/);
+        assert.match(holding.textContent, /支援者追加枠は確認待ち/);
+        assert(!holding.textContent.includes('保有合計 8')); assert.match(policy.textContent, /付与条件は確認待ち/);
         assert.match(f.container.querySelector('[aria-label="旧制度の支援集計"]').textContent, /追加の通知枠 8枠/);
     } finally { await f.close(); }
 });
@@ -340,7 +361,7 @@ test('absent permanent metadata never promotes the old unit multiplier or expire
 test('non-JPY donation controls still use exact server quote/payment consent while the500JPY grant policy explicitly excludes the currency', async () => {
     const f = await donationFixture({ config: options({ currency: 'USD', minorUnitDigits: 2, minimumAmount: 100, maximumAmount: 20000, slotGrantPolicy: permanentPolicy }), initial: status({ permanentSupport: { totalSupporterSlots: 2, legacySlots: 2, newPaidSlots: 0, isSupporter: true } }) });
     try {
-        assert.match(f.container.textContent, /受付通貨はUSD.*JPY以外の支払いは.*対象になりません/);
+        assert.match(f.container.textContent, /受付通貨はUSD.*恒久追加枠の付与は日本円の支払いが対象/);
         await f.review('1.99'); assert.equal(writes(f)[0].body.amount, 199); await f.consent(); await f.click('同意して寄付を支払う');
         assert.equal(f.sdk.tokens[0].amount, '1.99'); assert.equal(f.sdk.tokens[0].currencyCode, 'USD');
         assert.deepEqual(Object.keys(writes(f)[1].body).sort(), ['attemptId', 'consent', 'sourceId']);

@@ -1,17 +1,26 @@
 export type XMonitorAPI = (path: string, method?: string, body?: unknown) => Promise<unknown>;
 export type XMonitorQuality = { planId: string; priority: number; minuteLimit: number; dayLimit: number; intervalMinutes: number | null };
+export type XProcessingMode = "batch" | "realtime";
+export type XMonitorProcessing = {
+  requestedMode: XProcessingMode; explicitMode: XProcessingMode | null; modeSource: "monitor" | "owner"; effectiveMode: XProcessingMode;
+  realtimeSource: "supporter" | "plan" | "slots" | null; realtimeEligibilitySource?: "supporter" | "plan" | "slots" | null;
+  slotCost: 1 | 5; effectiveSlotCost: 1 | 5; realtimeSlotCost: 1 | 5; canEnableRealtime: boolean;
+  additionalSlotsNeeded: number; configured: boolean; intervalMinutes: number | null; reasonCode: string | null; isPreview?: true;
+};
 export type XMonitorQuota = {
   featureEnabled: boolean;
   currentPlan: XMonitorQuality & { label: string; tier: string; baseSlotLimit: number };
   personal: { totalLimit: number; registeredCount: number | null; used: number; available: number; supporterExtraSlots: number };
   x: { used: number; available: number; reasonCode: string | null; reason: string | null; specialLimit: number; specialUsed: number };
   pools: { free: XPool; supporter: XPool };
+  registrationProcessing?: XMonitorProcessing & { isPreview: true };
 };
 export type XPool = { limit: number; used: number; available: number };
 export type XMonitor = {
   id: string; accountId: string | null; accountHandle: string | null; name: string; enabled: boolean; state: string;
   poolKind: "free" | "supporter" | "special" | null; subscriptionState: string; revision: number;
   notificationSettings: { workflowId?: string; destinationId?: string; subscriptionId?: string }; quality: XMonitorQuality;
+  processing?: XMonitorProcessing;
 };
 export const xCount = (value: unknown): value is number => Number.isSafeInteger(value) && Number(value) >= 0;
 export function xObject(value: unknown): Record<string, unknown> {
@@ -33,6 +42,34 @@ function quality(value: unknown): XMonitorQuality {
   return { planId: text(item.planId, 64), priority: count(item.priority), minuteLimit: count(item.minuteLimit),
     dayLimit: count(item.dayLimit), intervalMinutes: item.intervalMinutes as number | null };
 }
+export function parseXMonitorProcessing(value: unknown, preview = false): XMonitorProcessing {
+  const item = xObject(value), modes = ["batch", "realtime"], sources = [null, "supporter", "plan", "slots"];
+  if (!modes.includes(String(item.requestedMode)) || !modes.includes(String(item.effectiveMode))
+    || item.explicitMode !== null && !modes.includes(String(item.explicitMode)) || !["owner", "monitor"].includes(String(item.modeSource))
+    || (item.explicitMode === null) !== (item.modeSource === "owner") || !sources.includes(item.realtimeSource as string | null)
+    || item.realtimeEligibilitySource !== undefined && !sources.includes(item.realtimeEligibilitySource as string | null)
+    || ![1, 5].includes(Number(item.slotCost)) || typeof item.slotCost !== "number" || ![1, 5].includes(Number(item.effectiveSlotCost)) || typeof item.effectiveSlotCost !== "number"
+    || ![1, 5].includes(Number(item.realtimeSlotCost)) || typeof item.realtimeSlotCost !== "number" || typeof item.canEnableRealtime !== "boolean" || typeof item.configured !== "boolean"
+    || !xCount(item.additionalSlotsNeeded) || Number(item.additionalSlotsNeeded) > 4
+    || item.intervalMinutes !== null && (!Number.isSafeInteger(item.intervalMinutes) || Number(item.intervalMinutes) < 5 || Number(item.intervalMinutes) > 10080)
+    || item.reasonCode !== null && (typeof item.reasonCode !== "string" || !/^[A-Z_]{1,80}$/u.test(item.reasonCode))
+    || preview && item.isPreview !== true || !preview && item.isPreview !== undefined
+    || item.effectiveMode === "realtime" && (item.realtimeSource === null || !item.configured)
+    || item.effectiveMode === "batch" && item.effectiveSlotCost !== 1 || item.effectiveMode === "batch" && item.realtimeSource !== null
+    || item.configured && item.effectiveMode === "batch" && item.intervalMinutes === null) throw new Error("Invalid X processing response");
+  return { requestedMode: item.requestedMode as XProcessingMode, explicitMode: item.explicitMode as XProcessingMode | null, modeSource: item.modeSource as XMonitorProcessing["modeSource"],
+    effectiveMode: item.effectiveMode as XProcessingMode, realtimeSource: item.realtimeSource as XMonitorProcessing["realtimeSource"],
+    ...(item.realtimeEligibilitySource === undefined ? {} : { realtimeEligibilitySource: item.realtimeEligibilitySource as XMonitorProcessing["realtimeEligibilitySource"] }),
+    slotCost: item.slotCost as 1 | 5, effectiveSlotCost: item.effectiveSlotCost as 1 | 5, realtimeSlotCost: item.realtimeSlotCost as 1 | 5,
+    canEnableRealtime: item.canEnableRealtime, additionalSlotsNeeded: Number(item.additionalSlotsNeeded), configured: item.configured,
+    intervalMinutes: item.intervalMinutes as number | null, reasonCode: item.reasonCode as string | null, ...(preview ? { isPreview: true } : {}) };
+}
+function optionalProcessing(value: unknown, preview = false): XMonitorProcessing | undefined {
+  // An older or incompatible optional read model must not invent a price or
+  // hide the existing owner controls for stopping and deleting the monitor.
+  if (value === undefined) return undefined;
+  try { return parseXMonitorProcessing(value, preview); } catch { return undefined; }
+}
 export function parseXQuota(value: unknown): XMonitorQuota {
   const item = xObject(value), plan = xObject(item.currentPlan), personal = xObject(item.personal), x = xObject(item.x), pools = xObject(item.pools);
   if (typeof item.featureEnabled !== "boolean") throw new Error("Invalid X response");
@@ -40,7 +77,8 @@ export function parseXQuota(value: unknown): XMonitorQuota {
     personal: { totalLimit: count(personal.totalLimit), registeredCount: personal.registeredCount == null ? null : count(personal.registeredCount), used: count(personal.used), available: count(personal.available), supporterExtraSlots: count(personal.supporterExtraSlots) },
     x: { used: count(x.used), available: count(x.available), specialLimit: count(x.specialLimit), specialUsed: count(x.specialUsed),
       reasonCode: x.reasonCode == null ? null : text(x.reasonCode, 80), reason: x.reason == null ? null : text(x.reason, 500) },
-    pools: { free: parseXPool(pools.free), supporter: parseXPool(pools.supporter) } };
+    pools: { free: parseXPool(pools.free), supporter: parseXPool(pools.supporter) },
+    ...(optionalProcessing(item.registrationProcessing, true) ? { registrationProcessing: optionalProcessing(item.registrationProcessing, true) as XMonitorProcessing & { isPreview: true } } : {}) };
 }
 export function parseXMonitor(value: unknown): XMonitor {
   const item = xObject(value), settings = xObject(item.notificationSettings);
@@ -52,6 +90,7 @@ export function parseXMonitor(value: unknown): XMonitor {
   if (settings.subscriptionId != null && (typeof settings.subscriptionId !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu.test(settings.subscriptionId))) throw new Error("Invalid X response");
   return { id: text(item.id, 128), accountId: item.accountId === null ? null : String(item.accountId), accountHandle: handle, name: text(item.name), enabled: item.enabled,
     state: text(item.state, 32), poolKind: item.poolKind as XMonitor["poolKind"], subscriptionState: text(item.subscriptionState, 40), revision: item.revision,
+    ...(optionalProcessing(item.processing) ? { processing: optionalProcessing(item.processing) } : {}),
     notificationSettings: { ...(typeof settings.workflowId === "string" ? { workflowId: text(settings.workflowId, 128) } : {}),
       ...(typeof settings.destinationId === "string" ? { destinationId: text(settings.destinationId, 128) } : {}),
       ...(typeof settings.subscriptionId === "string" ? { subscriptionId: settings.subscriptionId } : {}) }, quality: quality(item.quality) };
@@ -66,6 +105,9 @@ export function xReason(code: string | null | undefined): string {
 }
 export function xFeedback(cause: unknown): string {
   const error = cause && typeof cause === "object" ? cause as { code?: string; status?: number } : {};
+  if (error.code === "X_REALTIME_COST_CONFLICT") return "必要な枠数が変わりました。一覧を更新し、使用する枠数を確認し直してください。";
+  if (error.code === "X_REALTIME_SLOT_LIMIT") return "リアルタイム通知に必要な個人枠が不足しています。利用状況を確認してください。";
+  if (error.code === "X_MONITOR_NOT_AVAILABLE") return "この監視の利用資格と割り当てを確認してください。";
   if (["X_MONITOR_PERSONAL_LIMIT", "X_MONITOR_POOL_FULL", "X_MONITOR_UNAVAILABLE", "X_MONITOR_NOT_CONFIGURED", "X_ROLLOUT_DISABLED", "X_ROLLOUT_SUPPORTERS_ONLY"].includes(error.code ?? "")) return xReason(error.code);
   if (error.code === "X_SETUP_SUBSCRIPTION_NOT_FOUND" || error.code === "X_MONITOR_SUBSCRIPTION_INVALID") return "自分の受信情報の一覧を更新し、登録済みの情報を選び直してください。入力内容はそのまま残っています。";
   if (error.code === "AUTOMATION_SLOT_LIMIT") return xReason("X_MONITOR_PERSONAL_LIMIT");

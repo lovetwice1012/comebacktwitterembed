@@ -30,5 +30,6 @@ export function isDashboardDestinationActive(pathname: string | null, href: stri
   if (!pathname) return false;
   const target = href.split("?")[0];
   if (pathname === target) return true;
+  if (target === "/dashboard/automation" && pathname.startsWith(`${target}/`)) return true;
   return target.endsWith("/providers") && pathname.startsWith(`${target}/`);
 }
