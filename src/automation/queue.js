@@ -331,8 +331,7 @@ function createQueue(db, evaluator, options = {}) {
             const turn = Number((await query('SELECT used_count FROM automation_counters WHERE counter_key=? FOR UPDATE', [priorityKey]))[0]?.used_count || 0) % 4;
             const square = require('./square-billing').getSquareScope();
             const supporter = `u.is_donor=1${square.configured ? ' OR ds.active=1' : ''}`;
-            const xJob = "(r.target_kind='x' OR CASE WHEN JSON_VALID(j.plan_json) THEN JSON_SEARCH(j.plan_json,'one','x',NULL,'$.members[*].targetKind') ELSE NULL END IS NOT NULL)";
-            const priority = `COALESCE(p.priority,${square.configured ? 'sp.priority,' : ''}b.priority,IF(NOT ${xJob} AND (${supporter}),1,0))`;
+            const priority = `COALESCE(p.priority,${square.configured ? 'sp.priority,' : ''}b.priority,IF(${supporter},1,0))`;
             const validPolicy = alias => `${alias}.slot_limit BETWEEN 1 AND 10000 AND ${alias}.minute_limit BETWEEN 1 AND 10000 AND ${alias}.day_limit BETWEEN 1 AND 1000000 AND ${alias}.priority BETWEEN 0 AND 100`;
             // Three priority turns, then an oldest-first turn. This durable
             // shared fair turn also serves lower nonzero priorities when an
@@ -346,7 +345,7 @@ function createQueue(db, evaluator, options = {}) {
                 LEFT JOIN automation_notification_plans sp ON sp.plan_id=ss.plan_id AND sp.enabled=1 AND sp.plan_id NOT IN ('free','supporter') AND ${validPolicy('sp')}
                 LEFT JOIN automation_square_donation_policy dp ON dp.environment=? AND dp.merchant_id=? AND dp.currency IS NOT NULL
                 LEFT JOIN automation_square_donation_supporters ds ON ds.owner_user_id=r.owner_user_id AND ds.environment=dp.environment AND ds.merchant_id=dp.merchant_id AND ds.policy_updated_at_ms=dp.updated_at_ms AND ds.active=1 AND (ds.valid_until_at_ms IS NULL OR ds.valid_until_at_ms>?)` : ''}
-                LEFT JOIN automation_notification_plans b ON b.plan_id=IF(NOT ${xJob} AND (${supporter}),'supporter','free') AND ${validPolicy('b')} WHERE
+                LEFT JOIN automation_notification_plans b ON b.plan_id=IF(${supporter},'supporter','free') AND ${validPolicy('b')} WHERE
                 (j.state='pending' AND j.due_at_ms<=? OR j.state='leased' AND j.lease_until_ms<=?)
                 ORDER BY ${turn === 3 ? '' : `${priority} DESC,`}j.due_at_ms,j.created_at_ms,j.id LIMIT 1 FOR UPDATE`, [now, ...(square.configured ? [square.environment, square.merchantId, now, square.environment, square.merchantId, now] : []), now, now]);
             if (!rows.length) return null;
