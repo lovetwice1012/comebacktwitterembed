@@ -42,7 +42,7 @@ test('per-event display conflicts stop or explicitly reset without losing time c
     const arrivals = [{ edgeId: 'left', unit: left }, { edgeId: 'right', unit: right }];
     assert.equal(merge('a', arrivals).code, 'MERGE_DISPLAY_CONFLICT');
     const result = merge('a', arrivals, { node: { ...node, config: { mode: 'any', displayConflict: 'reset' } } });
-    assert.equal(result.member.display.format, 'expanded'); assert.equal(result.member.dueAtMs, 8000);
+    assert.equal(result.member.display.format, 'normal'); assert.equal(result.member.dueAtMs, 8000);
 });
 test('contradictory immutable event data cannot silently select one arrival', () => {
     const left = unit('one', ['a']), right = unit('two', ['a']); right.members[0].event.title = 'contradiction';

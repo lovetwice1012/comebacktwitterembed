@@ -48,13 +48,13 @@ test('portable packages preserve graph and dictionary and reject live endpoints 
     assert.throws(() => validateBundle(unsafe), /CREDENTIALS/);
     assert.throws(() => decodeBundle(new Uint8Array([0, 1, 2])), /INCOMPLETE|invalid|Invalid/);
 });
-test('all 1024 built-in template combinations validate and serialize', () => {
+test('all 1280 built-in template combinations validate and serialize', () => {
     const data = catalog();
     let count = 0;
     for (const goal of data.goals) for (const time of data.times) for (const format of data.formats) {
         assert.equal(template(goal.id, time.id, format).nodes.at(-1).type, 'send'); count++;
     }
-    assert.equal(count, 1024);
+    assert.equal(count, 1280);
 });
 test('isolated evaluator supports two dictionaries and returns their exact branch decisions', async () => {
     const evaluator = createEvaluator(async id => ({ schemaVersion: 1, name: id, entries: id === 'ads' ? ['広告'] : ['新作'] }));

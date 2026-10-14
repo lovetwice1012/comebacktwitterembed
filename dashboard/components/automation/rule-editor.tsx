@@ -183,12 +183,13 @@ function NodeSettingsContent({ node, update, catalog, bindings, resources, disab
     </>;
   }
   if (node.type === "transform") return <>
-    <ChoiceButtons label="表示形式" value={c.format} choices={["expanded", "card", "text", "url"].map(value => ({ value, label: valueLabels[value] }))} onChange={(v: string) => set("format", v)} />
+    <ChoiceButtons label="表示形式" value={c.format} choices={["normal", "expanded", "card", "text", "url"].map(value => ({ value, label: valueLabels[value] }))} onChange={(v: string) => set("format", v)} />
+    {c.format === "normal" && <p className="studio-inline-note">通知元URLを投稿し、通常のBot機能とサーバーの設定で展開します。DMは通知文とURLのみです。DMでメディアも送る場合は「通知側で直接展開」を選んでください。</p>}
     <label className="studio-message-editor">通知文<textarea aria-label="通知文" className={inputClass} value={c.template} onChange={e => set("template", e.target.value)} rows={4} /></label>
     <div className="studio-template-fields" role="group" aria-label="通知文に項目を追加">{["title", "url", "author", "priceAmount"].map(key => <button type="button" key={key} onClick={() => set("template", `${c.template}{${key}}`)}><Plus size={12} aria-hidden="true" />{fieldLabels[key]}</button>)}</div>
-    {advanced("メディア・文字数・文章の加工", <>
+    {advanced(c.format === "normal" ? "文字数・文章の加工" : "メディア・文字数・文章の加工", <>
       <Select label="差し込み項目を追加" value="" options={[{ value: "", label: "項目を選ぶ" }, ...Object.keys(catalog.fields)]} onChange={v => v && set("template", `${c.template}{${v}}`)} />
-      <Select label="メディア表示" value={c.media} options={[{ value: "inherit", label: "現在の設定" }, { value: "hide", label: "非表示" }, { value: "links", label: "リンク" }]} onChange={v => set("media", v)} />
+      {c.format !== "normal" && <Select label="メディア表示" value={c.media} options={[{ value: "inherit", label: "現在の設定" }, { value: "hide", label: "非表示" }, { value: "links", label: "リンク" }]} onChange={v => set("media", v)} />}
       <NumberInput label="文字数上限" min={1} max={1900} value={c.maxLength} onChange={(v: number) => set("maxLength", v)} />
       {textInput("prefix", "前に付ける文章")}{textInput("suffix", "後に付ける文章")}
       <p className="studio-inline-caption">文字置換</p>{(c.replacements || []).map((r: any, i: number) => <div key={i} className="flex gap-1">{["from", "to"].map(k => <input aria-label={k === "from" ? "置換前" : "置換後"} key={k} className={inputClass} value={r[k]} onChange={e => set("replacements", c.replacements.map((v: any, j: number) => i === j ? { ...v, [k]: e.target.value } : v))} />)}<button type="button" aria-label={`文字置換 ${i + 1} を削除`} onClick={() => set("replacements", c.replacements.filter((_: any, j: number) => i !== j))}>×</button></div>)}<button type="button" className={buttonClass} disabled={c.replacements?.length >= 32} onClick={() => set("replacements", [...c.replacements || [], { from: "対象語", to: "＊＊＊" }])}><Plus size={14} aria-hidden="true" />置換を追加</button>

@@ -109,7 +109,7 @@ async function dispatchCore({ method, path, search = new URLSearchParams(), body
       else if (action && method === "POST" && body.action === "detach") result = await monitors.detach(actor, id, action, body.expectedRevision);
       else if (action && method === "POST" && body.action === "cadence") result = await monitors.setCadence(actor, id, action, body);
     }
-    else if (kind === "template" && method === "GET") result = catalog.template(search.get("goal") || "all", search.get("time") || "now", search.get("format") || "expanded");
+    else if (kind === "template" && method === "GET") result = catalog.template(search.get("goal") || "all", search.get("time") || "now", search.get("format") || "normal");
     else if (kind === "validate" && method === "POST") {
       const definition = body.text !== undefined ? format.parseWorkflow(body.text, body.format) : body.definition;
       const validation = schema.validateWorkflow(definition);

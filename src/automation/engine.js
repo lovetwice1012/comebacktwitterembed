@@ -1,6 +1,6 @@
 'use strict';
 
-const { assertWorkflow, LIMITS, FIELDS } = require('./schema');
+const { assertWorkflow, LIMITS, FIELDS, NODE_TYPES } = require('./schema');
 const { MINUTE, DAY, scheduleDelivery } = require('./schedule');
 const UNKNOWN = 'unknown';
 
@@ -71,7 +71,7 @@ function evaluateWorkflow(workflow, input, options = {}) {
     const nodes = new Map(workflow.nodes.map(n => [n.id, n]));
     const start = workflow.nodes.find(n => n.type === 'start');
     const queue = [{ nodeId: start.id, dueAtMs: now, schedules: [], limits: [], aggregate: null,
-        display: { format: 'expanded', template: '{title}\n{url}', maxLength: 1900, media: 'inherit', mentions: 'none' }, path: [] }];
+        display: structuredClone(NODE_TYPES.transform.defaults), path: [] }];
     const outputs = [], trace = [];
     const ranks = workflow.nodes.some(n => n.type === 'merge') ? graphRanks(workflow) : null;
     const baseTime = event.observedAtMs ?? now;
@@ -101,7 +101,7 @@ function evaluateWorkflow(workflow, input, options = {}) {
             branch = { ...branch, dueAtMs: Math.max(...arrivals.map(item => item.dueAtMs)),
                 schedules: unique(arrivals.flatMap(item => item.schedules)), limits: unique(arrivals.flatMap(item => item.limits)),
                 path: [...new Set(arrivals.flatMap(item => item.path))],
-                display: displayConflict ? { format: 'expanded', template: '{title}\n{url}', maxLength: 1900, media: 'inherit', mentions: 'none' } : branch.display };
+                display: displayConflict ? structuredClone(NODE_TYPES.transform.defaults) : branch.display };
             trace.push({ nodeId: node.id, outcome: 'merged', arrivals: arrivals.length, reason: '同じイベントを1件に合流し、一致した全経路の時間・件数制限を保持しました' });
         }
         branch.path.push(node.id);
