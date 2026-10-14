@@ -1,0 +1,195 @@
+{
+  "dateJst": "2026-10-14",
+  "capturedUtc": "2026-10-14T01:50:27.435Z",
+  "branch": "codex/angelic-angel-node-port",
+  "node": "v24.15.0",
+  "decision": {
+    "standard": "batch",
+    "default": "batch",
+    "supportedModes": [
+      "batch"
+    ],
+    "receive": "continuous",
+    "process": "all retained notifications in the current plan window, with paging and preserved pending receipts",
+    "intervalSource": "current plan resolved inside the owner-locked window-opening transaction",
+    "missingInterval": "keep pending; no invented fixed interval",
+    "legacyUserInterval": "explicit compatibility/test option preserved"
+  },
+  "futureRealtime": {
+    "status": "tentative design candidate; not implemented or enabled",
+    "intendedEligibility": "Basic-or-higher plus plans only if adopted",
+    "explicitPlanIdsAndCommercialTerms": "not defined",
+    "planNameMatchingAdded": false,
+    "newPaymentProductsCreated": false
+  },
+  "results": [
+    {
+      "path": "docs/angelic-angel/cadence-batch-tests.xml",
+      "sha256": "ee208d8d458b669acda6f912cfdccadd872950a11028de24d23f7addfd29502e",
+      "tests": 160,
+      "pass": 160,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "todo": 0,
+      "duration_ms": 138234.3101
+    },
+    {
+      "path": "docs/angelic-angel/cadence-entitlements-retry.xml",
+      "sha256": "5c466550aa951c4094a6f25d17187e1c481a07c39f86a2aa52002934c9eda86e",
+      "tests": 9,
+      "pass": 9,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "todo": 0,
+      "duration_ms": 2429.9944
+    }
+  ],
+  "preservedFailure": {
+    "path": "docs/angelic-angel/cadence-batch-tests-initial.xml",
+    "sha256": "8f745b9a2d24a593ee65d37322ab45987acd5d779814742c6d6981f013aba008",
+    "tests": 152,
+    "pass": 151,
+    "fail": 1,
+    "cancelled": 0,
+    "skipped": 0,
+    "todo": 0,
+    "duration_ms": 127348.6749,
+    "code": 3221226505,
+    "location": "existing entitlements SQL Node child startup",
+    "cause": "unknown",
+    "action": "preserved; same-code standalone and unchanged full rerun passed"
+  },
+  "checks": {
+    "rootTypecheck": "pass",
+    "rootLint": "pass",
+    "dashboardTypecheck": "pass",
+    "dashboardLint": "pass",
+    "diffWhitespace": "pass"
+  },
+  "sqlFixture": {
+    "host": "127.0.0.1",
+    "port": 33621,
+    "schemaPattern": "cbte_automation_test_<20hex>",
+    "serial": true,
+    "production": false
+  },
+  "gates": {
+    "rolloutDefault": "disabled",
+    "intakeDefault": "disabled",
+    "registrationDefault": "disabled",
+    "receiverDefault": "disabled",
+    "productionModified": false,
+    "paymentEnabled": false,
+    "actualXSubscriptionAndPayload": "unverified",
+    "G1": "not accepted"
+  },
+  "supersedes": {
+    "path": "docs/angelic-angel/history-reimplementation-validation.json",
+    "sha256": "986a75e1b9b4a76062ca11f41e8060eadbbff23f912e0a87512131babeeaf829",
+    "field": "gates.processingPolicy",
+    "previous": "awaiting user clarification; unset never starts",
+    "current": "approved standard batch; unset policy resolves batch while receiver opt-in remains required"
+  },
+  "sourceFiles": [
+    {
+      "path": "src/automation/x-processing-policy.js",
+      "sha256": "2e447f066b877770f1b281b1587feb2fcec0612b6abedeca66f4e1b86aea3653"
+    },
+    {
+      "path": "src/automation/x-push-runtime.js",
+      "sha256": "1f189c71f420c0acb42fbbd8036b1b6e0c4c94202171343ab61e18777d5535be"
+    },
+    {
+      "path": "src/automation/x-push-store.js",
+      "sha256": "3a869f357947f6cdf9bcbe90b523456d5324d76965a045cae4327d553e197651"
+    },
+    {
+      "path": "src/automation/x-setup.js",
+      "sha256": "452d5ff3cf8950be330f8691b34cca84ecea5a6644b73c159092a8e92ebd34e9"
+    },
+    {
+      "path": "src/automation/x-event-router.js",
+      "sha256": "331d60744f5fd52c125d584d464a1a3487c4e4af3a20882c2ca8080baedc0410"
+    },
+    {
+      "path": "src/automation/queue.js",
+      "sha256": "2b28221f56eb2e6683f7ed1ca9956fdec8dadec20aa587d199ce59fefa1ef9b1"
+    },
+    {
+      "path": "src/automation/entitlements.js",
+      "sha256": "8f6b6bb96cd4f328e1c9bf7ee60008247b9d7fc0c102b5ba4fcbe1fc35e1156b"
+    },
+    {
+      "path": "dashboard/components/automation/x-monitor-manager.tsx",
+      "sha256": "8a70e3dea66df9c309c7cfd692cbb88451e1f8cc57cb756f5248da0d393cc072"
+    },
+    {
+      "path": "scripts/test/automation-x-push-runtime.test.js",
+      "sha256": "f1cdca2ea712cbda5f3a6fccc9218674134261cfa9dc349187fb65c030a62bbd"
+    },
+    {
+      "path": "scripts/test/automation-x-push-runtime-retry.test.js",
+      "sha256": "8d9dabd69600cf946c91194993e05f63ee0f7c2a6abe2a3188a84125695fc978"
+    },
+    {
+      "path": "scripts/test/automation-x-worker-config.test.js",
+      "sha256": "28780001bfc0b31b71064974a46ec5265c5c82fd7c9a9df22afdfeea40fb0ed9"
+    },
+    {
+      "path": "scripts/test/automation-x-push-store.test.js",
+      "sha256": "023f965618fcc705e574f9f55d1149d735d7cd98e82562ff38ffc043df33367b"
+    },
+    {
+      "path": "scripts/test/automation-x-push-gateway.test.js",
+      "sha256": "ce9dee76eca1354e852144a6074026822bfea059959db94f8ebc97410ae25ed9"
+    },
+    {
+      "path": "scripts/test/automation-x-push-processing-sql.test.js",
+      "sha256": "c339922e9062541b08820144941d4df5b176d64292572763204b53c13778c18a"
+    },
+    {
+      "path": "scripts/test/automation-x-setup-sql.test.js",
+      "sha256": "59e411ce43b5c9110cb7f8afd79dad7b41b00c6c07fef34c13711bf21cf9b77b"
+    },
+    {
+      "path": "scripts/test/automation-x-monitor-ui.test.js",
+      "sha256": "6d6b726dfd6f9e2e8bfd39809bd4cd1ba381cedb6caaa09df799f4fddef68835"
+    },
+    {
+      "path": "scripts/test/automation-x-setup-ui.test.js",
+      "sha256": "47af5027f9c44d269432b371ef5aa3fdfabf9d49e418e8b3c6e735af13afd6b1"
+    },
+    {
+      "path": "scripts/test/automation-x-delivery-sql.test.js",
+      "sha256": "ea9dc5283b5db7238516a40c5b6d7041332d86b0ec5ba36cf06276aac4c6b692"
+    },
+    {
+      "path": "scripts/test/automation-entitlements-sql.test.js",
+      "sha256": "20ba3a123472b4a34da4e15f93dffaaff6d16f9bfd0ec7a7834d53dec65bfa86"
+    },
+    {
+      "path": "scripts/test/automation-rate-limits-sql.test.js",
+      "sha256": "f9f30c0ce1dee85eafeaafd98e22a80322ff8e16c46e69400dc9e2c581941d76"
+    }
+  ],
+  "documents": [
+    {
+      "path": "Angelic_Angel_Codex_Implementation_Spec.md",
+      "sha256": "341aa36301246ad953964bea028ef4a68f6b4bbebc776a02b05ee03717f3c05f"
+    },
+    {
+      "path": "docs/angelic-angel/history-reconciliation.md",
+      "sha256": "dad22e4c5e84c56bb8d944ad5a3be355f6e53987d1f3fa57a6535902a12598da"
+    },
+    {
+      "path": "docs/angelic-angel/server-receiver.md",
+      "sha256": "9625eb6e61a7968787b98610db9633de7cb04711fac9113d7a8073b4072d915e"
+    },
+    {
+      "path": "docs/angelic-angel/implementation-status.md",
+      "sha256": "19f360a763a4df5833dd67d5e5056acb842ceb3bcd17a21bb54309ebac5e9f7e"
+    }
+  ]
+}

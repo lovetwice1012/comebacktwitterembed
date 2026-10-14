@@ -65,12 +65,13 @@ function filterMedia(payload, mode) {
     return { ...payload, embeds, files: [], content: [payload.content, ...links].filter(Boolean).join('\n').slice(0, 1900) };
 }
 
-// Aggregates describe the observations already admitted to the queue. They
-// must not fan out into one fresh provider fetch per member at delivery time.
+// Direct aggregate summaries use admitted observations without refetching each
+// member. Normal aggregates post their URLs for the usual Bot handler instead.
 // Rich summaries are built from snapshots; missing media is never invented.
 function snapshotSteps(plan, kind, expandedSnapshot = false) {
     const event = plan.event || {}, display = plan.display;
     if (plan.defaultPriceText) return splitText(plan.defaultPriceText).map(content => ({ content, flags: 4 }));
+    if (display.format === 'normal') return splitText(plan.text).map(content => ({ content, flags: 4, normalExpansion: true }));
     if (display.format === 'text' || display.format === 'url') return splitText(plan.text).map(content => ({ content, flags: 4 }));
     if (display.format === 'card' || display.format === 'expanded' && (kind === 'price' || expandedSnapshot)) {
         const fields = [];
@@ -90,7 +91,7 @@ function packSnapshotSteps(steps, onPacked = null) {
     const embedSize = embed => [embed.title, embed.description, embed.author?.name, embed.footer?.text, ...(embed.fields || []).flatMap(field => [field.name, field.value])].reduce((n, value) => n + String(value || '').length, 0);
     for (const [sourceIndex, step] of steps.entries()) {
         const last = packed.at(-1);
-        if (last && !last.embeds?.length && !step.embeds?.length && last.flags === step.flags && String(last.content || '').length + String(step.content || '').length + 2 <= 1900) last.content += `\n\n${step.content}`;
+        if (last && !last.embeds?.length && !step.embeds?.length && last.flags === step.flags && last.normalExpansion === step.normalExpansion && String(last.content || '').length + String(step.content || '').length + 2 <= 1900) last.content += `\n\n${step.content}`;
         else if (last?.embeds?.length && step.embeds?.length && !last.content && !step.content && last.flags === step.flags && last.embeds.length + step.embeds.length <= 10 && [...last.embeds, ...step.embeds].reduce((n, embed) => n + embedSize(embed), 0) <= 6000) last.embeds.push(...step.embeds);
         else packed.push(structuredClone(step));
         onPacked?.(sourceIndex, packed.length - 1);
@@ -221,7 +222,7 @@ function createTransport(db, destinations, client, options = {}) {
             if (steps[0]) steps[0].content = [plan.text, steps[0].content].filter(Boolean).join('\n').slice(0, 1900);
         }
         if (!steps?.length || steps.length > 128) throw failure('MESSAGE_STEPS_LIMIT');
-        const payloads = [], payloadSlots = [];
+        const payloads = [], payloadSlots = [], normalExpansions = [];
         for (const [stepIndex, rawStep] of steps.entries()) {
             const step = plan.members ? rawStep : filterMedia(rawStep, plan.display.media);
             const files = [];
@@ -235,12 +236,14 @@ function createTransport(db, destinations, client, options = {}) {
                 files.push({ attachment: buffer, name: typeof file === 'object' && file.name ? String(file.name).replace(/[\\/\r\n]/g, '_').slice(0, 120) : `attachment-${files.length}.bin` });
             }
             const target = /** @type {any} */ ({ client });
-            const payload = MessagePayload.create(target, { ...step, files, allowedMentions: { parse: [], repliedUser: false }, enforceNonce: false });
+            const { normalExpansion, ...discordStep } = step;
+            const payload = MessagePayload.create(target, { ...discordStep, files, allowedMentions: { parse: [], repliedUser: false }, enforceNonce: false });
             payload.resolveBody(); await payload.resolveFiles();
             const body = /** @type {any} */ (payload.body);
             if (!body.content && !body.embeds?.length && !payload.files?.length) continue;
             payloads.push({ body, files: payload.files });
             payloadSlots.push(attributedSlots?.[stepIndex] || principals.map(principal => principal.slotId));
+            normalExpansions.push(normalExpansion === true);
         }
         if (!payloads.length) throw failure('EMPTY_NOTIFICATION');
         const prepared = { channelId, webhook, payloads, channelNsfw };
@@ -252,6 +255,7 @@ function createTransport(db, destinations, client, options = {}) {
             // Deleting/recreating it cannot produce a fresh daily allowance.
             principals,
             payloadSlots,
+            normalExpansions,
         });
         return prepared;
     }
@@ -311,7 +315,7 @@ function createTransport(db, destinations, client, options = {}) {
                 payload.body.nonce = hash(`${job.id}:${index}`).slice(0, 24);
                 payload.body.enforce_nonce = true;
             }
-            ticket = prepared.webhook ? require('./outbound-guard').begin(prepared.webhook.id, prepared.channelId, payload.body) : null;
+            ticket = prepared.webhook ? require('./outbound-guard').begin(prepared.webhook.id, prepared.channelId, payload.body, { normalExpansion: state.normalExpansions[index] }) : null;
             submitted = true;
             const message = prepared.webhook
                 ? await rest.post(Routes.webhook(prepared.webhook.id, prepared.webhook.token), { ...payload, auth: false, query: new URLSearchParams({ wait: 'true' }) })

@@ -1,0 +1,28 @@
+{
+  "recordedAtUtc": "2026-10-14T02:02:27.2624436Z",
+  "suite": "foreign-push-discard",
+  "node": "v24.15.0",
+  "database": "disposable MariaDB schemas on 127.0.0.1:33621",
+  "tests": 16,
+  "passed": 16,
+  "failed": 0,
+  "skipped": 0,
+  "todo": 0,
+  "durationMs": 26185.6394,
+  "delivery": "synthetic FakeSocket and loopback WebSocket only",
+  "policy": "foreign CHID receives ACK 102 after envelope validation and current lease/rollout validation; no foreign decryption, durable receipt, routing, or payload audit",
+  "protocolSourceCommit": "a79b7351a8dd6496e6bd4ef01a07856ce01457f5",
+  "protocolSources": [
+    "https://github.com/mozilla-services/autopush-rs/blob/a79b7351a8dd6496e6bd4ef01a07856ce01457f5/autoconnect/autoconnect-common/src/protocol.rs",
+    "https://github.com/mozilla-services/autopush-rs/blob/a79b7351a8dd6496e6bd4ef01a07856ce01457f5/autoconnect/autoconnect-ws/autoconnect-ws-sm/src/identified/on_client_msg.rs"
+  ],
+  "notVerified": [
+    "real X/Firefox/vendor delivery",
+    "production database or production deployment"
+  ],
+  "sha256": {
+    "src/automation/x-push-gateway.js": "e010132d5b59ee63bc61027e644e0d32d8571b008353531c1a32f3673be1e560",
+    "scripts/test/automation-x-push-gateway.test.js": "9c9819ef32ca45ce26a3554c8971a0005797c47cb87ecdf80e71699e3e8f8ddf",
+    "docs/angelic-angel/foreign-push-discard-tests.xml": "cb651d16beeacee5f954c592d101d80d513b62a122183b5424c7be38e7b3cd67"
+  }
+}

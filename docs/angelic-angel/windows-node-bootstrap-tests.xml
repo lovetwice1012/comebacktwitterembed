@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<testsuites>
+	<testcase name="runtime guard accepts supported Node versions" time="0.000512" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\runtime.test.js"/>
+	<testcase name="Windows affected native TCP builds stop before network I/O with an actionable runtime switch" time="0.000338" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\runtime.test.js"/>
+	<testcase name="runtime guard rejects old Node and all Bun runtimes with actionable errors" time="0.000180" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\runtime.test.js"/>
+	<testcase name="production startup remains pinned to Node rather than Bun" time="0.000528" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\runtime.test.js"/>
+	<testcase name="actual npm-start entry hands off affected Windows Node before recovery/config/Discord/DB loads" time="0.003678" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\windows-node-bootstrap.test.js"/>
+	<testcase name="verified pinned Windows child proceeds in the same entry without recursively spawning another child" time="0.000897" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\windows-node-bootstrap.test.js"/>
+	<testcase name="Linux and macOS preserve synchronous application startup without loading Windows helper or resolver" time="0.000797" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\windows-node-bootstrap.test.js"/>
+	<testcase name="Windows Bun retains the original explicit rejection and cannot bypass it by handing off to Node" time="0.000582" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\windows-node-bootstrap.test.js"/>
+	<testcase name="missing or tampered pinned runtime fails safely before application resources or child creation" time="0.001999" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\windows-node-bootstrap.test.js"/>
+	<testcase name="handoff preserves nonzero child exit and never retries a rejected child launch" time="0.001131" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\windows-node-bootstrap.test.js"/>
+	<testcase name="unavailable working directory is a safe bootstrap failure before application imports" time="0.000499" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\windows-node-bootstrap.test.js"/>
+	<testcase name="handoff propagates child termination signal to its own parent PID and handles unsupported signals safely" time="0.001159" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\windows-node-bootstrap.test.js"/>
+	<testcase name="active parent inspector closes after verification and before spawning with unchanged inspector flags/environment" time="0.000669" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\windows-node-bootstrap.test.js"/>
+	<testcase name="inactive parent inspector is checked without closing it and the handoff proceeds" time="0.000757" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\windows-node-bootstrap.test.js"/>
+	<testcase name="inspector failure stops before spawning or loading application resources" time="0.000935" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\windows-node-bootstrap.test.js"/>
+	<testcase name="Linux, Bun, failed verification and pinned same-process startup never access the inspector" time="0.000189" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\windows-node-bootstrap.test.js"/>
+	<testcase name="real loopback inspector port is released for the child with execArgv retained" time="0.134106" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\windows-node-bootstrap.test.js"/>
+	<testcase name="real loopback inspector port is released for the child with NODE_OPTIONS retained" time="0.130543" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\windows-node-bootstrap.test.js"/>
+	<!-- tests 18 -->
+	<!-- suites 0 -->
+	<!-- pass 18 -->
+	<!-- fail 0 -->
+	<!-- cancelled 0 -->
+	<!-- skipped 0 -->
+	<!-- todo 0 -->
+	<!-- duration_ms 408.8816 -->
+</testsuites>

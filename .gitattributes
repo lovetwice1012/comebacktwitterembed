@@ -1,3 +1,5 @@
 # Frozen production presentation is verified by exact SHA-256 byte hashes.
 # Preserve its LF bytes on Windows as well as Linux checkouts.
 dashboard/legacy/** -text
+# Keep distribution scripts byte-identical across Windows and Linux releases.
+client/angelic-setup/** -text

@@ -1,0 +1,259 @@
+'use strict';
+
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const { createTestDatabase } = require('../lib/automation-test-db');
+const { insertSubscription, encrypted, vault, ownerUserId: U } = require('./helpers/x-push-fixture.cjs');
+const { createXPushStore } = require('../../src/automation/x-push-store');
+const { createXPushGateway } = require('../../src/automation/x-push-gateway');
+const { createXPushRuntime } = require('../../src/automation/x-push-runtime');
+const { createQueue } = require('../../src/automation/queue');
+const { createXEventRouter } = require('../../src/automation/x-event-router');
+const entitlements = require('../../src/automation/entitlements');
+const port = Number(process.env.AUTOMATION_TEST_DB_PORT), ADMIN = { userId: '666666666666666666', isAdmin: true };
+const post = id => ({ notificationType: 'tweet', author: { id: '12345', handle: 'example' }, url: `https://x.com/example/status/${1234567890123456700n + BigInt(id)}`, title: `公開投稿 ${id}`, text: '公開本文' });
+
+async function fixture(work, runtimeOptions = {}) {
+    const db = await createTestDatabase(port), query = db.queryDatabase;
+    let now = Date.now(), sequence = 0, lease, runtime, auditFailure = false, markFailure = false, ownerLockAttempt = null;
+    const clock = () => now, subscription = await insertSubscription(db);
+    await db.withDatabaseTransaction(query => entitlements.savePlanPolicy(query, ADMIN, { planId: 'free', label: '無料', slotLimit: 5, minuteLimit: 5, dayLimit: 24, priority: 0, intervalMinutes: 5 }));
+    const storeDb = { ...db, withDatabaseTransaction: work => db.withDatabaseTransaction(query => work(async (sql, args) => {
+        if (ownerLockAttempt && sql.startsWith('INSERT INTO users ')) ownerLockAttempt();
+        const result = await query(sql, args);
+        if (auditFailure && sql.startsWith('INSERT INTO automation_audit')) throw Object.assign(new Error('SQL_PRIVATE_SENTINEL'), { code: 'ER_FIXTURE_AUDIT' });
+        return result;
+    })) };
+    const store = createXPushStore(storeDb, { now: clock, leaseMs: 300000 });
+    lease = await store.claim({ ...subscription, workerId: 'processing-fixture' });
+    await store.markState(lease, 'listening');
+    const monitor = await query("INSERT INTO automation_x_monitors (owner_user_id,account_id,account_handle,name,enabled,state,pool_kind,notification_settings_json,subscription_state,revision,created_at_ms,updated_at_ms) VALUES (?,'12345','example','Processing fixture',1,'ready','free',?,'bound',1,?,?)", [U, JSON.stringify({ subscriptionId: subscription.subscriptionId }), now, now]);
+    await db.withDatabaseTransaction(query => entitlements.assignSlot(query, U, 'x', String(monitor.insertId)));
+    const queue = createQueue(db, {}, { clock, rolloutMode: 'public', useLegacyUserInterval: runtimeOptions.useLegacyUserInterval === true });
+    const realRouter = createXEventRouter(db, queue, { clock });
+    let routeOverride = null;
+    const gateway = createXPushGateway(db, { enabled: true, store, privateWorkerVault: vault, now: clock,
+        createSocket: () => assert.fail('processing fixture must never create a vendor socket') });
+    const runtimeGateway = { ...gateway, store: { ...store, markRouted: async (...args) => {
+        if (markFailure) throw Object.assign(new Error('private DB sentinel'), { code: 'X_PUSH_STORE_UNAVAILABLE' });
+        return store.markRouted(...args);
+    } }, run: input => {
+        input.onSession({ lease });
+        return new Promise(resolve => input.signal.addEventListener('abort', resolve, { once: true }));
+    } };
+    function makeRuntime(options = {}) {
+        runtime = createXPushRuntime(db, queue, { enabled: true, gateway: runtimeGateway, clock,
+            router: { routeReceived: input => routeOverride ? routeOverride(input, realRouter) : realRouter.routeReceived(input) },
+            rolloutMode: 'public', assertAllowed: () => {}, pageSize: 2,
+            listCandidates: async () => [{ id: subscription.subscriptionId, owner_user_id: U }], ...runtimeOptions, ...options });
+        return runtime;
+    }
+    makeRuntime();
+    async function record({ legacy = false, payload } = {}) {
+        sequence++; const wire = await encrypted(subscription.file, payload || post(sequence), legacy);
+        return store.recordFrame(lease, { version: `v${sequence}`, data: wire.data, headers: wire.headers, status: 'received', ackCode: 100 });
+    }
+    async function refreshLease() {
+        if (lease.expiresAtMs <= now) lease = await store.claim({ ...subscription, workerId: 'processing-successor' });
+        return lease;
+    }
+    const receiver = async () => (await query('SELECT * FROM automation_x_push_receivers WHERE subscription_id=?', [subscription.subscriptionId]))[0];
+    const count = async table => Number((await query(`SELECT COUNT(*) n FROM ${table}`))[0].n);
+    try { await work({ db, query, store, queue, subscription, clock, makeRuntime, runtime: () => runtime, lease: () => lease, refreshLease, record, receiver, count,
+        advance: amount => { now += amount; }, setRoute: value => { routeOverride = value; }, setAuditFailure: value => { auditFailure = value; }, setMarkFailure: value => { markFailure = value; },
+        setOwnerLockAttempt: value => { ownerLockAttempt = value; } }); }
+    finally { await runtime.stop(); await db.close(); }
+}
+
+test('real SQL: encrypted Push receipts are processed under explicit durable windows', { skip: !port, timeout: 120000 }, async t => {
+    await t.test('AES128 and legacy stored receipts survive a callback crash and recover through session/tick into the real queue', () => fixture(async f => {
+        const modern = await f.record(), legacy = await f.record({ legacy: true });
+        const ciphertext = await f.query('SELECT data_ciphertext FROM automation_x_push_inbox');
+        assert(ciphertext.every(row => !row.data_ciphertext.includes('公開')));
+        await f.runtime().tick(); await f.runtime().tick();
+        assert.equal(await f.count('automation_runs'), 2); assert.equal(await f.count('automation_jobs'), 2);
+        assert.equal((await f.store.getInbox({ ...f.subscription, id: modern.id })).status, 'routed');
+        assert.equal((await f.store.getInbox({ ...f.subscription, id: legacy.id })).status, 'routed');
+        assert.equal(Number((await f.query("SELECT COUNT(*) n FROM automation_audit WHERE action='x.push.vault.open'"))[0].n), 2);
+        const event = JSON.parse((await f.query('SELECT event_json FROM automation_runs ORDER BY created_at_ms,id LIMIT 1'))[0].event_json);
+        assert.equal(event.providerId, 'twitter'); assert.match(event.url, /^https:\/\/x\.com\/example\/status\/\d{19}$/);
+    }));
+
+    await t.test('page size two preserves one cutoff, drains all older pages, then waits before taking a later frame', () => fixture(async f => {
+        const firstWindow = f.clock(); for (let i = 0; i < 5; i++) await f.record();
+        assert.equal((await f.runtime().drain(f.lease())).processed, 2);
+        let receiver = await f.receiver(); assert.equal(Number(receiver.process_window_at_ms), firstWindow); assert.equal(String(receiver.process_cursor_id), '2');
+        f.advance(500); const newer = await f.record();
+        assert.equal((await f.runtime().drain(f.lease())).processed, 2);
+        assert.equal((await f.runtime().drain(f.lease())).processed, 1);
+        receiver = await f.receiver(); assert.equal(receiver.process_window_at_ms, null); assert.equal(String(receiver.process_cursor_id), '0'); assert.equal(Number(receiver.last_process_at_ms), firstWindow);
+        assert.equal(await f.count('automation_runs'), 5); assert.equal((await f.store.getInbox({ ...f.subscription, id: newer.id })).status, 'received');
+        assert.equal((await f.runtime().drain(f.lease())).dueAtMs, firstWindow + 300000);
+        f.advance(300000); await f.refreshLease(); await f.runtime().drain(f.lease()); assert.equal(await f.count('automation_runs'), 6);
+    }));
+
+    await t.test('pending early receipt is retried after a later row routed and the window cursor reset', () => fixture(async f => {
+        const first = await f.record(); await f.record(); let wait = true;
+        f.setRoute((input, real) => wait && input.inbox.id === first.id ? { state: 'pending' } : real.routeReceived(input));
+        await f.runtime().drain(f.lease()); await f.runtime().drain(f.lease());
+        assert.equal((await f.store.getInbox({ ...f.subscription, id: first.id })).status, 'received'); assert.equal(await f.count('automation_runs'), 1);
+        assert.equal(String((await f.receiver()).process_cursor_id), '0'); wait = false;
+        f.advance(300000); await f.refreshLease(); await f.runtime().drain(f.lease());
+        assert.equal((await f.store.getInbox({ ...f.subscription, id: first.id })).status, 'routed'); assert.equal(await f.count('automation_runs'), 2);
+    }));
+
+    await t.test('an active page cursor survives worker reconstruction without resetting the original window', () => fixture(async f => {
+        const at = f.clock(); for (let i = 0; i < 3; i++) await f.record();
+        await f.runtime().drain(f.lease()); assert.equal(String((await f.receiver()).process_cursor_id), '2');
+        await f.runtime().stop(); f.advance(1000); const restarted = f.makeRuntime();
+        await restarted.drain(f.lease()); const row = await f.receiver();
+        assert.equal(Number(row.last_process_at_ms), at); assert.equal(row.process_window_at_ms, null); assert.equal(await f.count('automation_runs'), 3);
+    }));
+
+    await t.test('new windows observe the current free contract interval even for donors and support configuration changes', () => fixture(async f => {
+        const at = f.clock(); await f.record(); await f.runtime().drain(f.lease()); await f.record();
+        await f.query('UPDATE users SET is_donor=1 WHERE user_id=?', [U]);
+        await f.db.withDatabaseTransaction(query => entitlements.savePlanPolicy(query, ADMIN, { planId: 'supporter', label: '支援者', slotLimit: 5, minuteLimit: 9, dayLimit: 99, priority: 9, intervalMinutes: 5 }));
+        await f.query("UPDATE automation_notification_plans SET confirmation_interval_minutes=30 WHERE plan_id='free'");
+        f.advance(300000); await f.refreshLease();
+        assert.equal((await f.runtime().drain(f.lease())).dueAtMs, at + 30 * 60000); assert.equal(await f.count('automation_runs'), 1);
+        await f.query("UPDATE automation_notification_plans SET confirmation_interval_minutes=NULL WHERE plan_id='free'");
+        assert.equal((await f.runtime().drain(f.lease())).code, 'X_MONITOR_NOT_CONFIGURED'); assert.equal((await f.store.listInbox(f.subscription)).length, 1);
+        await f.query("UPDATE automation_notification_plans SET confirmation_interval_minutes=5 WHERE plan_id='free'");
+        await f.runtime().drain(f.lease()); assert.equal(await f.count('automation_runs'), 2);
+    }));
+
+    await t.test('unsupported realtime or per-event policies preserve encrypted receipts without queue admission', () => fixture(async f => {
+        await f.record(); await f.record(); await f.record();
+        for (const processingPolicy of ['per-event', 'realtime']) {
+            await f.runtime().stop(); const runtime = f.makeRuntime({ processingPolicy });
+            assert.equal((await runtime.drain(f.lease())).state, 'not_configured');
+            assert.equal((await runtime.tick()).state, 'not_configured');
+            assert.equal(await f.count('automation_runs'), 0);
+            assert.equal((await f.store.listInbox(f.subscription)).length, 3);
+        }
+    }));
+
+    await t.test('an expired-lease successor resumes the original batch cutoff and cursor while fencing the previous token', () => fixture(async f => {
+        const at = f.clock(), previousLease = f.lease();
+        for (let i = 0; i < 5; i++) await f.record();
+        assert.equal((await f.runtime().drain(previousLease)).processed, 2);
+        await f.runtime().stop(); f.advance(300000);
+        const successorLease = await f.refreshLease();
+        assert(successorLease); assert.notEqual(successorLease.token, previousLease.token);
+        let receiver = await f.receiver();
+        assert.equal(Number(receiver.process_window_at_ms), at); assert.equal(String(receiver.process_cursor_id), '2');
+        await assert.rejects(f.store.advanceProcessing(previousLease, { windowAtMs: at, cursorId: '3' }), { code: 'X_PUSH_LEASE_LOST' });
+        await assert.rejects(f.store.completeProcessing(previousLease, { windowAtMs: at }), { code: 'X_PUSH_LEASE_LOST' });
+        const newer = await f.record(), restarted = f.makeRuntime();
+        assert.equal((await restarted.drain(successorLease)).processed, 2);
+        assert.equal((await restarted.drain(successorLease)).processed, 1);
+        receiver = await f.receiver();
+        assert.equal(Number(receiver.last_process_at_ms), at); assert.equal(receiver.process_window_at_ms, null); assert.equal(String(receiver.process_cursor_id), '0');
+        assert.equal(await f.count('automation_runs'), 5); assert.equal(await f.count('automation_jobs'), 5);
+        assert.equal((await f.store.getInbox({ ...f.subscription, id: newer.id })).status, 'received');
+        assert.equal((await restarted.drain(successorLease)).processed, 1);
+        assert.equal(await f.count('automation_runs'), 6); assert.equal(await f.count('automation_jobs'), 6);
+        assert.equal((await f.store.getInbox({ ...f.subscription, id: newer.id })).status, 'routed');
+    }));
+
+    await t.test('an open batch pauses for a missing interval and finishes its original cutoff before the changed next interval', () => fixture(async f => {
+        const at = f.clock(); for (let i = 0; i < 3; i++) await f.record();
+        assert.equal((await f.runtime().drain(f.lease())).processed, 2);
+        await f.query("UPDATE automation_notification_plans SET confirmation_interval_minutes=NULL WHERE plan_id='free'");
+        const paused = await f.runtime().drain(f.lease());
+        assert.equal(paused.state, 'pending'); assert.equal(paused.code, 'X_MONITOR_NOT_CONFIGURED');
+        let receiver = await f.receiver();
+        assert.equal(Number(receiver.process_window_at_ms), at); assert.equal(String(receiver.process_cursor_id), '2'); assert.equal(receiver.last_process_at_ms, null);
+        assert.equal(await f.count('automation_runs'), 2);
+        await f.query("UPDATE automation_notification_plans SET confirmation_interval_minutes=30 WHERE plan_id='free'");
+        f.advance(1000); const newer = await f.record();
+        assert.equal((await f.runtime().drain(f.lease())).processed, 1);
+        receiver = await f.receiver();
+        assert.equal(Number(receiver.last_process_at_ms), at); assert.equal(receiver.process_window_at_ms, null); assert.equal(String(receiver.process_cursor_id), '0');
+        assert.equal(await f.count('automation_runs'), 3); assert.equal((await f.store.getInbox({ ...f.subscription, id: newer.id })).status, 'received');
+        assert.equal((await f.runtime().drain(f.lease())).dueAtMs, at + 30 * 60000);
+        f.advance(299000); await f.refreshLease();
+        assert.equal((await f.runtime().drain(f.lease())).dueAtMs, at + 30 * 60000); assert.equal(await f.count('automation_runs'), 3);
+        f.advance(25 * 60000); await f.refreshLease();
+        assert.equal((await f.runtime().drain(f.lease())).processed, 1);
+        assert.equal(await f.count('automation_runs'), 4); assert.equal(await f.count('automation_jobs'), 4);
+        assert.equal((await f.store.getInbox({ ...f.subscription, id: newer.id })).status, 'routed');
+    }));
+
+    await t.test('a plan change committed ahead of the owner lock controls the next window opening', () => fixture(async f => {
+        const at = f.clock(); await f.record(); await f.runtime().drain(f.lease());
+        const receipt = await f.record(); f.advance(300000); await f.refreshLease();
+        let held, proceed, attempted, draining;
+        const ownerHeld = new Promise(resolve => { held = resolve; }), continueChange = new Promise(resolve => { proceed = resolve; }), ownerAttempted = new Promise(resolve => { attempted = resolve; });
+        const updating = f.db.withDatabaseTransaction(async query => {
+            await entitlements.lockOwner(query, U); held(); await continueChange;
+            await query("UPDATE automation_notification_plans SET confirmation_interval_minutes=30 WHERE plan_id='free'");
+        });
+        try {
+            await ownerHeld; f.setOwnerLockAttempt(() => attempted());
+            draining = f.runtime().drain(f.lease());
+            const attemptedBeforeFinishing = await Promise.race([ownerAttempted.then(() => true), draining.then(() => false, () => false)]);
+            assert.equal(attemptedBeforeFinishing, true);
+            proceed(); await updating;
+            const waiting = await draining;
+            assert.equal(waiting.state, 'pending'); assert.equal(waiting.dueAtMs, at + 30 * 60000);
+            const receiver = await f.receiver();
+            assert.equal(Number(receiver.last_process_at_ms), at); assert.equal(receiver.process_window_at_ms, null); assert.equal(String(receiver.process_cursor_id), '0');
+            assert.equal((await f.store.getInbox({ ...f.subscription, id: receipt.id })).status, 'received');
+            assert.equal(await f.count('automation_runs'), 1); assert.equal(await f.count('automation_jobs'), 1);
+        } finally { proceed(); f.setOwnerLockAttempt(null); await Promise.allSettled([updating, ...(draining ? [draining] : [])]); }
+    }));
+
+    await t.test('a delayed durable admission after lease takeover is marked by the successor without duplicating the queued job', () => fixture(async f => {
+        const at = f.clock(), previousLease = f.lease(), previousRuntime = f.runtime(), receipt = await f.record();
+        let entered, resume;
+        const enteredRoute = new Promise(resolve => { entered = resolve; }), continueRoute = new Promise(resolve => { resume = resolve; });
+        f.setRoute(async (input, real) => { entered(); await continueRoute; return real.routeReceived(input); });
+        const draining = previousRuntime.drain(previousLease);
+        const rejected = assert.rejects(draining, { code: 'X_PUSH_LEASE_LOST' });
+        try {
+            await enteredRoute; f.advance(300000);
+            const successorLease = await f.refreshLease();
+            assert(successorLease); assert.notEqual(successorLease.token, previousLease.token);
+            resume(); await rejected;
+            assert.equal(await f.count('automation_runs'), 1); assert.equal(await f.count('automation_jobs'), 1);
+            assert.equal((await f.store.getInbox({ ...f.subscription, id: receipt.id })).status, 'received');
+            let receiver = await f.receiver();
+            assert.equal(Number(receiver.process_window_at_ms), at); assert.equal(String(receiver.process_cursor_id), '0');
+            await previousRuntime.stop(); f.setRoute(null);
+            const restarted = f.makeRuntime();
+            assert.equal((await restarted.drain(successorLease)).processed, 1);
+            assert.equal(await f.count('automation_runs'), 1); assert.equal(await f.count('automation_jobs'), 1);
+            assert.equal((await f.store.getInbox({ ...f.subscription, id: receipt.id })).status, 'routed');
+            receiver = await f.receiver();
+            assert.equal(Number(receiver.last_process_at_ms), at); assert.equal(receiver.process_window_at_ms, null); assert.equal(String(receiver.process_cursor_id), '0');
+        } finally { resume(); await Promise.allSettled([draining, rejected]); await previousRuntime.stop(); }
+    }));
+
+    await t.test('concurrent runtime drains admit one queue run per encrypted receipt', () => fixture(async f => {
+        await f.record(); await f.record();
+        const results = await Promise.all(Array.from({ length: 8 }, () => f.runtime().drain(f.lease())));
+        assert(results.every(row => row.processed === 2)); assert.equal(await f.count('automation_runs'), 2); assert.equal(await f.count('automation_jobs'), 2);
+    }));
+
+    await t.test('audit failure and routed-marker DB failure retain ciphertext and retry without duplicate queue admission', () => fixture(async f => {
+        const receipt = await f.record(); f.setAuditFailure(true);
+        await assert.rejects(f.runtime().drain(f.lease()), error => error.code === 'X_PUSH_STORE_UNAVAILABLE' && !error.message.includes('SQL_PRIVATE_SENTINEL'));
+        assert.equal(await f.count('automation_runs'), 0); assert.equal((await f.store.getInbox({ ...f.subscription, id: receipt.id })).status, 'received');
+        f.setAuditFailure(false); f.setMarkFailure(true);
+        await assert.rejects(f.runtime().drain(f.lease()), { code: 'X_PUSH_STORE_UNAVAILABLE' });
+        assert.equal(await f.count('automation_runs'), 1); assert.equal((await f.store.getInbox({ ...f.subscription, id: receipt.id })).status, 'received');
+        assert.equal(String((await f.receiver()).process_cursor_id), '0'); f.setMarkFailure(false);
+        await f.runtime().drain(f.lease()); assert.equal(await f.count('automation_runs'), 1); assert.equal(await f.count('automation_jobs'), 1);
+        assert.equal((await f.store.getInbox({ ...f.subscription, id: receipt.id })).status, 'routed');
+    }));
+
+    await t.test('unknown encrypted private notifications are quarantined without creating automation runs or plaintext audits', () => fixture(async f => {
+        const secret = 'private_payload_sentinel'; const receipt = await f.record({ payload: { notificationType: 'dm', text: secret } });
+        await f.runtime().drain(f.lease());
+        assert.equal((await f.store.getInbox({ ...f.subscription, id: receipt.id })).status, 'unsupported'); assert.equal(await f.count('automation_runs'), 0);
+        assert(!JSON.stringify(await f.query('SELECT * FROM automation_audit')).includes(secret));
+        assert(!JSON.stringify(await f.query('SELECT * FROM automation_x_push_inbox')).includes(secret));
+    }));
+});

@@ -4,6 +4,13 @@ Date: 2026-10-13 JST. Scope: pinned Rust CLI → strict TypeScript / Node.js CLI
 G0: **PASS for the specification's offline/controlled-network migration gate**.
 The full new auto-expansion system is not complete or production-accepted.
 
+2026-10-14 update: the Windows native TCP defect in the original 24.15.0 runtime
+was reproduced and identified. The project now pins **24.21.0**; all **199**
+Phase 0 results pass again, including stricter actual-delivery checks in the
+Rust comparison fixture. See `node-startup-diagnosis.md` and
+`node-24-21-phase0-final-tests.xml`. The table below records the original gate;
+the Rust baseline and prior evidence are retained unchanged.
+
 All eight original Rust modules have mapped Node implementations; no original
 CLI command, config schema, protocol branch, ECE encoding, legacy registration
 path or recovery feature was intentionally omitted. The original fourteen files

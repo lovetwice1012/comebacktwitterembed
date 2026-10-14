@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<testsuites>
+	<testcase name="release ZIP is deterministic and contains only allowlisted auditable source, license and exact hashes" time="0.033480" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\angelic-setup-package.test.js"/>
+	<testcase name="packager preserves existing release and checksum files and refuses incomplete or oversized sources" time="0.032476" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\angelic-setup-package.test.js"/>
+	<testcase name="packager rejects source and destination directory junctions without reading or replacing their targets" time="0.005600" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\angelic-setup-package.test.js"/>
+	<testcase name="Windows PowerShell 5.1: distributed script status, preview, ownership and failure boundaries" time="4.520004" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\angelic-setup-package.test.js"/>
+	<testcase name="Windows PowerShell 5.1: altered, missing or extra package files block mutations before profile creation" time="1.021410" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\angelic-setup-package.test.js"/>
+	<testcase name="Windows PowerShell 5.1: literal launch arguments, process identity, WhatIf and stale/active profile locks" time="4.929222" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\angelic-setup-package.test.js"/>
+	<testcase name="PowerShell 7: distributed script status, preview, ownership and failure boundaries" time="5.969391" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\angelic-setup-package.test.js"/>
+	<testcase name="PowerShell 7: altered, missing or extra package files block mutations before profile creation" time="1.473827" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\angelic-setup-package.test.js"/>
+	<testcase name="PowerShell 7: literal launch arguments, process identity, WhatIf and stale/active profile locks" time="5.955150" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\angelic-setup-package.test.js"/>
+	<!-- tests 9 -->
+	<!-- suites 0 -->
+	<!-- pass 9 -->
+	<!-- fail 0 -->
+	<!-- cancelled 0 -->
+	<!-- skipped 0 -->
+	<!-- todo 0 -->
+	<!-- duration_ms 24018.4874 -->
+</testsuites>

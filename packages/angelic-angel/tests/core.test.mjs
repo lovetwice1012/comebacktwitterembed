@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { Writable } from 'node:stream';
 import { spawnSync } from 'node:child_process';
 import { inspect } from 'node:util';
+import { fileURLToPath } from 'node:url';
 import { parseConfig, stringifyConfig, saveConfig, loadConfig, getWebhookEndpoint } from '../dist/config.js';
 import { runCli, parseCli } from '../dist/cli.js';
 import { main } from '../dist/index.js';
@@ -90,8 +91,9 @@ test('interactive init prompts only missing arguments and abort propagates clean
   assert.equal(await pending,0); assert.match(err.text(),/Interrupted/);
 });
 test('built JavaScript CLI launches without Rust or TypeScript runtime', () => {
-  const result = spawnSync(process.execPath,['dist/index.js','--help'],{ encoding:'utf8' });
+  const cli = fileURLToPath(new URL('../dist/index.js', import.meta.url));
+  const result = spawnSync(process.execPath,[cli,'--help'],{ encoding:'utf8' });
   assert.equal(result.status,0); assert.match(result.stdout,/Twitter|receiving tweet/); assert.equal(result.stderr,'');
-  const invalid = spawnSync(process.execPath,['dist/index.js','--does-not-exist'],{ encoding:'utf8' });
+  const invalid = spawnSync(process.execPath,[cli,'--does-not-exist'],{ encoding:'utf8' });
   assert.equal(invalid.status,2);
 });

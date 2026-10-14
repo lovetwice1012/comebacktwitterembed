@@ -1,0 +1,138 @@
+{
+  "version": "0.1.0-preview.2",
+  "capturedUtc": "2026-10-14T00:25:22.3805329+00:00",
+  "displayName": "X通知データの保存ツール",
+  "entrypoint": "ダブルクリックで開始.cmd",
+  "purpose": "Extract dedicated Firefox X notification configuration into a new private local file. User uploads the file manually.",
+  "automatedUpload": false,
+  "fileEncrypted": false,
+  "privateOutputAcl": "Current user and SYSTEM, atomic CreateNew and verified before writing",
+  "controlPortUsed": false,
+  "productReaderMethod": "private application copy + fixed offline AutoConfig + readonly IndexedDB",
+  "status": {
+    "localFileClient": "implemented and locally accepted",
+    "realXSubscription": "unverified",
+    "productionChanged": false,
+    "publicReleased": false,
+    "actualXReception": "unverified",
+    "webUploadAcceptance": "unverified",
+    "G1": "not accepted"
+  },
+  "archive": {
+    "nativeZipExtraction": "pass",
+    "bytes": 64456,
+    "sha256": "77dd61d8d42cb9438e38cc91b11bd6e5a0511381592c8ad07c0010483ed17fbe",
+    "checksumPath": "artifacts/angelic-setup/x-notification-setup-0.1.0-preview.2.zip.sha256",
+    "path": "artifacts/angelic-setup/x-notification-setup-0.1.0-preview.2.zip"
+  },
+  "runtime": {
+    "testData": "Synthetic records in real Gecko storage; no existing/user profiles",
+    "pinnedChecksumsUrl": "https://archive.mozilla.org/pub/firefox/nightly/2026/10/2026-10-13-21-09-59-mozilla-central/firefox-160.0a1.en-US.win64.checksums",
+    "browserVersion": "160.0a1",
+    "browserBuild": "20261013210959",
+    "engines": [
+      "Windows PowerShell 5.1.26100.9444",
+      "PowerShell 7.6.5"
+    ],
+    "runtimeZipSha256": "3d044f94388d467716c97300fe1a23631fcc42fc196f202bdb0ae71b3776c693",
+    "pinnedSha256Sha512Matched": true
+  },
+  "checks": {
+    "scopedBuilderTestsEslint": "pass",
+    "bothPowerShellParsers": "pass",
+    "existingQuotaSourceHashesUnchanged": true,
+    "rootEslint": "pass"
+  },
+  "results": [
+    {
+      "sha256": "cff4a7eee4bd37474b31b0fce28f427a476c42006fc97479b2131ed33222c99b",
+      "statistics": {
+        "tests": 41.0,
+        "pass": 41.0,
+        "fail": 0.0,
+        "skipped": 0.0,
+        "todo": 0.0,
+        "cancelled": 0.0,
+        "duration_ms": 28083.3579
+      },
+      "kind": "package, cmd, both Forms/CLI, JS and WebCrypto",
+      "path": "docs/angelic-angel/powershell-file-client-tests.xml"
+    },
+    {
+      "sha256": "1f317d78bffa564e34cb2781c7c6df84d3f23395d568475a1c80168a3a59bc6b",
+      "statistics": {
+        "tests": 5.0,
+        "pass": 5.0,
+        "fail": 0.0,
+        "skipped": 0.0,
+        "todo": 0.0,
+        "cancelled": 0.0,
+        "duration_ms": 22789.4764
+      },
+      "kind": "real Firefox native storage with synthetic records, both CLI and GUI process bridges, original hashes, ACL and cancellation cleanup",
+      "path": "docs/angelic-angel/powershell-file-client-native-tests.xml"
+    }
+  ],
+  "sourceFiles": [
+    {
+      "sha256": "0b604303929c5f8c5b4f5e9227f3ab157ce379be21cd6945491b0e0855202e9b",
+      "path": "client/angelic-setup/ダブルクリックで開始.cmd"
+    },
+    {
+      "sha256": "6a212327a4258a134a940f7a2d0fe89b05fbcea5377414fd68690979c8527d48",
+      "path": "client/angelic-setup/Start-Setup.ps1"
+    },
+    {
+      "sha256": "c7f92deff892936fa1851364b605eb881e6919543f37049d47c7f277faa12546",
+      "path": "client/angelic-setup/Setup-XNotifications.ps1"
+    },
+    {
+      "sha256": "f278660528b65b63fcdaf04f7dbe7b3f1def58aef40c9eeab055c2e20b233a6c",
+      "path": "client/angelic-setup/FirefoxReader.ps1"
+    },
+    {
+      "sha256": "3542bb834c886b6d262574951d9f6a8900a2d4847225a599f4c494317cc0c52e",
+      "path": "client/angelic-setup/Export-XNotificationData.ps1"
+    },
+    {
+      "sha256": "f368f25b2b8c830b22f2ed0680fea08cc52a2e0af9e6c799d07e0de4594675b8",
+      "path": "client/angelic-setup/Read-PushSubscription.js"
+    },
+    {
+      "sha256": "6e256a6268a74078e5fe870c2b884ce92a3680fdc219abb19baf7d86b6ac103d",
+      "path": "client/angelic-setup/はじめに読んでください.txt"
+    },
+    {
+      "sha256": "8d7372e73252c6578c309b64c7ef97beb9a2cd6f34f49ecf9ae42efa8c0e871f",
+      "path": "client/angelic-setup/README-ja.md"
+    },
+    {
+      "sha256": "230184f60bae2feaf244f10a8bac053c8ff33a183bcc365b4d8b876d2b7f4809",
+      "path": "client/angelic-setup/LICENSE"
+    },
+    {
+      "sha256": "04f7207952e4e36a974bb7aaf552d3e85bc84b14770dcab3198c0a2dc0aa64d4",
+      "path": "scripts/build-angelic-setup-package.cjs"
+    },
+    {
+      "sha256": "79a315a9bf80ef6686d40cc972329ebf9b7ba459ef4b38a44527ed0851e163a0",
+      "path": "scripts/test/angelic-setup-package.test.js"
+    },
+    {
+      "sha256": "b4ad99ea199e7d4e6c16615abb378a160e8efd2ad7a2abb41803735225de31b2",
+      "path": "scripts/test/x-notification-reader.test.js"
+    },
+    {
+      "sha256": "7dbe1376791b5696f352653ceea9966ea1b4ef58202def29ace0ca78151fa115",
+      "path": "scripts/native-test/x-notification-export.test.cjs"
+    },
+    {
+      "sha256": "fe0cd3b443bb5a679138bf38d308baba06c1dad857f7d52638ca0a4ef1d8c183",
+      "path": "docs/angelic-angel/powershell-file-client.md"
+    },
+    {
+      "sha256": "475c14dcd36c2761ce3d2cdb80fae58efd749f7aae496105ec5af259e4b991b1",
+      "path": "Angelic_Angel_Codex_Implementation_Spec.md"
+    }
+  ]
+}

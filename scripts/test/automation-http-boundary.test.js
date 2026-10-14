@@ -71,6 +71,26 @@ test('Next HTTP boundary enforces origin, session, current guild access and safe
         fleetAvailable = true;
         result = await request('billing/donations/status'); assert.equal(result.status, 200); assert.equal((await result.json()).owner, session.user.id); assert.equal(statusCalls, 2);
         const id = '00000000-0000-0000-0000-000000000001', guildId = '111111111111111111';
+        const intakeCalls = [];
+        services.xSetup = {
+            startSession: async (actor, body) => { intakeCalls.push(['session', actor.userId, body]); return { sessionId: 'a'.repeat(64), expiresAtMs: Date.now() + 600000 }; },
+            validate: async () => { throw new Error('secret-file-contents-must-not-appear'); },
+        };
+        assert.equal((await request('x-setup/sessions', 'POST', { consent: true }, 'https://other.example.test')).status, 403);
+        fleetAvailable = false;
+        assert.equal((await request('x-setup/sessions', 'POST', { consent: true })).status, 503);
+        fleetAvailable = true;
+        assert.equal((await request(`x-setup/sessions?guildId=${guildId}`, 'POST', { consent: true })).status, 403);
+        process.env.NEXTAUTH_URL = 'http://automation.example.test';
+        assert.equal((await request('x-setup/sessions', 'POST', { consent: true })).status, 403);
+        process.env.NEXTAUTH_URL = 'https://automation.example.test';
+        result = await request('x-setup/sessions', 'POST', { consent: true });
+        assert.equal(result.status, 200); assert.equal(intakeCalls.length, 1); assert.equal(intakeCalls[0][1], session.user.id);
+        result = await request('x-setup/validate', 'POST', { sessionId: 'a'.repeat(64), fileText: 'private' });
+        assert.equal(result.status, 500); assert(!(await result.text()).includes('secret-file'));
+        assert.equal(result.headers.get('Cache-Control'), 'private, no-store');
+        result = await request('x-setup/import', 'POST', { fileText: 'x'.repeat(205000) });
+        assert.equal(result.status, 413);
         row = { id, owner_user_id: '333333333333333333', guild_id: guildId, scope: 'guild', revision: 1, draft_bindings_json: '{}' };
         result = await request(`workflows/${id}?guildId=${guildId}`, 'PATCH', { expectedRevision: 1, definition: schema.newWorkflow(), actor: { canEdit: true }, canEdit: true });
         assert.equal(result.status, 403); assert.equal(writes, 0);

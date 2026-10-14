@@ -29,7 +29,8 @@ function createFlowProjector(db) {
                 const context = contexts.get(source.runId);
                 if (!context || context.revokedAtMs != null) continue;
                 const destinationId = send.destination_alias === 'default' ? context.destinationId : context.bindings?.destinations?.[send.destination_alias];
-                if (!/^[0-9a-f-]{36}$/i.test(destinationId || '')) throw invalid('FLOW_DESTINATION_MISSING');
+                const ownerDm = context.targetKind === 'x' && send.destination_alias === 'default' && destinationId == null;
+                if (!ownerDm && !/^[0-9a-f-]{36}$/i.test(destinationId || '')) throw invalid('FLOW_DESTINATION_MISSING');
                 if (!partitions.has(destinationId)) partitions.set(destinationId, []);
                 const member = { ...source, targetKind: context.targetKind, targetId: String(context.targetId), monitorRevision: context.monitorRevision, targetIdentity: context.targetIdentity,
                     context: { userId: context.ownerUserId, guildId: context.guildId, locale: context.locale || 'ja', ...context.sourceContext },

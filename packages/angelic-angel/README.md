@@ -7,7 +7,9 @@ reference CLI, rather than rebuilding the Discord bot or dashboard.
 
 ## Build and use
 
-Use the pinned runtime in `.node-version` (24.15.0) and npm 11.12.1.
+Use the pinned runtime in `.node-version` (24.21.0) and npm 11.19.0.
+The Windows 24.15.0 native crash investigation and the project-local verified
+runtime launcher are described in `../../docs/angelic-angel/node-startup-diagnosis.md`.
 
 ```powershell
 cd packages/angelic-angel

@@ -10,6 +10,7 @@ const SCHEMA = [
         minute_limit INT UNSIGNED NOT NULL,
         day_limit INT UNSIGNED NOT NULL,
         priority INT UNSIGNED NOT NULL DEFAULT 0,
+        confirmation_interval_minutes INT UNSIGNED NULL,
         enabled TINYINT(1) NOT NULL DEFAULT 1,
         actor_user_id VARCHAR(32) NOT NULL,
         updated_at_ms BIGINT NOT NULL
@@ -283,4 +284,9 @@ SCHEMA.push(...require('./square-donation-schema.sql').SCHEMA);
 SCHEMA.push(...require('./square-commerce-schema.sql').SCHEMA);
 SCHEMA.push(...require('./monitor-cadence-schema.sql').SCHEMA);
 SCHEMA.push(...require('./donor-admin-schema.sql').SCHEMA);
+SCHEMA.push(...require('./push-capacity-schema.sql').SCHEMA);
+SCHEMA.push(...require('./push-support-grants-schema.sql').SCHEMA);
+SCHEMA.push(...require('./x-monitor-schema.sql').SCHEMA);
+SCHEMA.push(...require('./x-setup-schema.sql').SCHEMA);
+SCHEMA.push(...require('./x-push-schema.sql').SCHEMA);
 module.exports = { SCHEMA };

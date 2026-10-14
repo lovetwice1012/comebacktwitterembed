@@ -1,0 +1,68 @@
+{
+  "version": "0.1.0-preview.1",
+  "capturedUtc": "2026-10-13T23:16:52.6678243+00:00",
+  "status": "Development preview: prepare profile and manual Firefox launch only",
+  "capabilities": {
+    "openFirefox": true,
+    "serverTransfer": false,
+    "realPushExport": false,
+    "prepareProfile": true
+  },
+  "archive": {
+    "path": "artifacts/angelic-setup/angelic-setup-powershell-0.1.0-preview.1.zip",
+    "bytes": 22867,
+    "checksumPath": "artifacts/angelic-setup/angelic-setup-powershell-0.1.0-preview.1.zip.sha256",
+    "sha256": "45acafe19bea7bae3451801a9daae47d6efbc53d1e26b395bbd9fec0c173040c"
+  },
+  "tests": {
+    "fail": 0,
+    "skipped": 0,
+    "pass": 9,
+    "nativePowerShell7WhatIf": "pass",
+    "sha256": "baeb816de50a6ec29b3004616fa1fe492421e17aed297fe535d244397767f84b",
+    "nativeZipExtraction": "pass",
+    "todo": 0,
+    "path": "docs/angelic-angel/powershell-distribution-tests.xml",
+    "nativePowerShell51Status": "pass",
+    "scopedEslint": "pass",
+    "engines": [
+      "Windows PowerShell 5.1",
+      "PowerShell 7"
+    ]
+  },
+  "sourceFiles": [
+    {
+      "path": "client/angelic-setup/Start-AngelicSetup.ps1",
+      "sha256": "869f42f232ad190bf83887d047065ba193508df625d80e00e9c021295499b5fb"
+    },
+    {
+      "path": "client/angelic-setup/README-ja.md",
+      "sha256": "2154697549d8c99794640ad7405b005a0d5664087b67152d134aefe47c830b6a"
+    },
+    {
+      "path": "client/angelic-setup/LICENSE",
+      "sha256": "230184f60bae2feaf244f10a8bac053c8ff33a183bcc365b4d8b876d2b7f4809"
+    },
+    {
+      "path": "scripts/build-angelic-setup-package.cjs",
+      "sha256": "8d32e031d077c6ce214827c4010469d21cde4e2929d909ee1b2122cb6d765b51"
+    },
+    {
+      "path": "scripts/test/angelic-setup-package.test.js",
+      "sha256": "92080fdc9f20af582ce8ba102800e641629b95dd6c5c5182215547533b6c7167"
+    },
+    {
+      "path": "docs/angelic-angel/powershell-distribution.md",
+      "sha256": "e6e70e64b3cba5698fc2152f896d0d27d6b9d2fa2c0c0a2a36f3492fd0d13a0a"
+    }
+  ],
+  "exclusions": [
+    "no real Firefox profile read",
+    "no actual Firefox launch",
+    "no X/Mozilla connection",
+    "no real export or server transfer",
+    "no production mutation",
+    "no deployment",
+    "no public release"
+  ]
+}

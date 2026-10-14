@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<testsuites>
+	<testcase name="additionalautoextractslot marks only its approved target as a donor and lists donors" time="0.510978" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\autoextract.additionalautoextractslot.test.js"/>
+	<testcase name="additionalautoextractslot requires a real interaction ID before an audited mutation" time="0.000437" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\autoextract.additionalautoextractslot.test.js"/>
+	<testcase name="additionalautoextractslot does not change donor flags outside the approved guild, channel, and operator context" time="0.000441" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\autoextract.additionalautoextractslot.test.js"/>
+	<!-- tests 3 -->
+	<!-- suites 0 -->
+	<!-- pass 3 -->
+	<!-- fail 0 -->
+	<!-- cancelled 0 -->
+	<!-- skipped 0 -->
+	<!-- todo 0 -->
+	<!-- duration_ms 602.2131 -->
+</testsuites>

@@ -16,7 +16,7 @@ import "./studio-workspace.css";
 const field = "w-full rounded border bg-background px-3 py-2 text-sm";
 const button = "rounded border bg-background px-3 py-2 text-sm hover:bg-muted disabled:opacity-40";
 const emptyBindings: Bindings = { destinations: {}, dictionaries: {} };
-const formatNames: Record<string, string> = { expanded: "メディアを展開", card: "カード", text: "テキスト", url: "URLのみ" };
+const formatNames: Record<string, string> = { normal: "通常のBot展開", expanded: "メディアを展開", card: "カード", text: "テキスト", url: "URLのみ" };
 const starters = [
   { goal: "all", time: "now", label: "すべての新着を届ける", icon: Bell },
   { goal: "keyword", time: "now", label: "キーワードで絞り込む", icon: Filter },
@@ -219,7 +219,7 @@ export function AutomationWorkspace({ viewerId, guildId, canEdit = true }: { vie
     setNotice(`「${targetNotification.name}」に適用しました。${!targetNotification.enabled ? "この通知は停止中です。" : "次の新着・価格変化から通知します。"}`);
   }
   return <div className={`automation-app space-y-3 ${inStudio ? "automation-studio" : ""}`}>
-    {!inStudio && <><header className="automation-header"><div><h1 className="text-xl font-semibold">自動通知</h1><div className="mt-1 flex flex-wrap gap-3"><a href="/dashboard/automation/plans" className="inline-block text-sm text-primary underline">プラン・お支払い</a><a href="/dashboard/automation/support" className="inline-block text-sm text-primary underline">支援・寄付</a></div></div><label className="flex items-center gap-2 text-sm">作成先<select className={field} value={scope} onChange={e => setScope(e.target.value)}><option value="private">自分だけ</option>{guildId && canEdit && <option value="guild">サーバー共有</option>}</select></label></header>
+    {!inStudio && <><header className="automation-header"><div><h1 className="text-xl font-semibold">自動通知</h1><div className="mt-1 flex flex-wrap gap-3"><a href="/dashboard/automation/plans" className="inline-block text-sm text-primary underline">プラン・お支払い</a><a href="/dashboard/automation/support" className="inline-block text-sm text-primary underline">支援・寄付</a>{!guildId ? <a href="/dashboard/automation/x" className="inline-block text-sm text-primary underline">自分のX通知セットアップ</a> : null}</div></div><label className="flex items-center gap-2 text-sm">作成先<select className={field} value={scope} onChange={e => setScope(e.target.value)}><option value="private">自分だけ</option>{guildId && canEdit && <option value="guild">サーバー共有</option>}</select></label></header>
     <nav className="automation-navigation" aria-label="通知メニュー">{[["monitors", "通知一覧"], ["rules", "通知ルール"], ["history", "配信予定・履歴"], ["dictionaries", "辞書"], ["marketplace", "共有ルール"]].map(([id, name]) => <button key={id} disabled={!recoveryReady || busy} aria-current={tab === id ? "page" : undefined} onClick={() => { setTab(id); void task(refresh); }}>{name}</button>)}</nav></>}
     {error && <p role="alert" className="rounded border border-destructive bg-destructive/5 p-3 text-sm text-destructive">{error}</p>}{notice && <p role="status" className="text-sm text-muted-foreground">{notice}</p>}
     {recoveryWarning && <p role="alert" className="rounded border border-amber-500 p-3 text-sm">{recoveryWarning}</p>}

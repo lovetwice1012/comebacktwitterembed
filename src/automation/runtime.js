@@ -179,7 +179,13 @@ function services(client) {
         if (control.stopped) throw new DeliveryGateError('stopped', 'PROCESS_STOPPING', Date.now() + 30000);
         require('../recoveryLease').assertAllowed();
     } });
-    singleton = { queue, evaluator, flow, control, market, activeTick: null, activeFlowTick: null, activeReview: null, runner: createRunner(db, queue, transport, { isStopping: () => control.stopped }) };
+    let xPush;
+    try { xPush = require('./x-push-runtime').createXPushRuntimeFromEnvironment(db, queue, { assertAllowed: () => {
+        if (control.stopped) throw new Error('X_PUSH_STOPPED');
+        require('../recoveryLease').assertAllowed();
+    } }); }
+    catch { console.error('[automation] X notification receiver configuration unavailable; receiver remains stopped'); }
+    singleton = { queue, evaluator, flow, control, market, xPush, activeTick: null, activeFlowTick: null, activeReview: null, runner: createRunner(db, queue, transport, { isStopping: () => control.stopped }) };
     return singleton;
 }
 async function route(kind, delivery, now) {
@@ -189,6 +195,7 @@ async function route(kind, delivery, now) {
 function start(client) {
     if (timer) return;
     const runtime = services(client);
+    runtime.xPush?.start();
     const schedule = () => {
         if (runtime.control.stopped) return;
         timer = setTimeout(async () => {
@@ -221,12 +228,13 @@ async function stop() {
     runtime.control.stopped = true;
     clearTimeout(timer); timer = null;
     clearTimeout(reviewTimer); reviewTimer = null;
+    const receiverStop = runtime.xPush?.stop();
     singleton = null;
     // Keep a bounded opportunity to persist the current step ACK. If the
     // process deadline wins, the durable sending lease becomes unknown later.
     let deadline;
     try {
-        if (runtime.activeTick || runtime.activeFlowTick || runtime.activeReview) await Promise.race([Promise.allSettled([runtime.activeTick, runtime.activeFlowTick, runtime.activeReview].filter(Boolean)), new Promise(resolve => { deadline = setTimeout(resolve, 8000); })]);
+        if (runtime.activeTick || runtime.activeFlowTick || runtime.activeReview || receiverStop) await Promise.race([Promise.allSettled([runtime.activeTick, runtime.activeFlowTick, runtime.activeReview, receiverStop].filter(Boolean)), new Promise(resolve => { deadline = setTimeout(resolve, 8000); })]);
     } finally { clearTimeout(deadline); runtime.flow.clear(); runtime.evaluator.stop(); }
 }
 module.exports = { createRunner, start, stop, route };

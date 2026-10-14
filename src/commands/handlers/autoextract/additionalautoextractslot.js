@@ -2,7 +2,9 @@
 
 const { PermissionsBitField } = require('discord.js');
 const { t } = require('../../../locales');
-const { queryDatabase } = require('../../../db');
+const { queryDatabase, withDatabaseTransaction } = require('../../../db');
+const { lockOwner } = require('../../../automation/entitlements');
+const { explicitAdminAdjustment } = require('../../../automation/push-support-grants');
 const { TABLES } = require('../../../db_schema');
 const { sendEmbedPages } = require('../../../interactionResponse');
 
@@ -35,16 +37,20 @@ module.exports = async function (interaction, client) {
     const user = interaction.options.getUser('user');
 
     if (slot === null || user === null) return await interaction.editReply(t('userMustSpecifyAnyWordLocales', interaction.locale));
-    if (slot < 1) return await interaction.editReply('Slot must be 1 or greater.');
+    if (!Number.isSafeInteger(slot) || slot < 1 || slot > 2147483647) return await interaction.editReply('Slot must be an integer between 1 and 2,147,483,647.');
+    if (typeof interaction.id !== 'string' || !/^\d{16,22}$/.test(interaction.id)) return await interaction.editReply('Interaction ID could not be verified. Please run this command again.');
 
-    await queryDatabase(
-        `INSERT INTO ${TABLES.users} (user_id, registered_at_ms, additional_auto_extract_slots, is_donor)
-         VALUES (?, ?, ?, 1)
-         ON DUPLICATE KEY UPDATE
-            additional_auto_extract_slots = VALUES(additional_auto_extract_slots),
-            is_donor = 1`,
-        [user.id, Date.now(), slot]
-    );
+    await withDatabaseTransaction(async query => {
+        await lockOwner(query, user.id);
+        const current = (await query(`SELECT additional_auto_extract_slots FROM ${TABLES.users} WHERE user_id=? FOR UPDATE`, [user.id]))[0];
+        // isAdmin here is derived solely from the unchanged staff/guild/channel
+        // gate above. No client field can turn this operation into an admin grant.
+        await explicitAdminAdjustment(query, { userId: interaction.user.id, isAdmin: true }, {
+            userId: user.id, idempotencyKey: `discord:${interaction.id}`, expectedManualSlots: Number(current?.additional_auto_extract_slots ?? 0),
+            manualSlots: slot, reason: 'Approved Discord additionalautoextractslot command',
+        });
+        await query(`UPDATE ${TABLES.users} SET is_donor=1 WHERE user_id=?`, [user.id]);
+    });
 
     const donors = await queryDatabase(
         `SELECT user_id FROM ${TABLES.users} WHERE is_donor = 1 ORDER BY user_id`,

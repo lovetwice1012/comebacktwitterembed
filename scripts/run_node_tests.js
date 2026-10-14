@@ -1,11 +1,12 @@
 'use strict';
 
 const { spawnSync } = require('child_process');
+const { resolveProjectNode } = require('./run-project-node.cjs');
 
 process.env.NODE_ENV = 'test';
 
 // Bound fixture processes so worker deadline tests remain reliable under load.
-const result = spawnSync(process.execPath, ['--test', '--test-concurrency=4', 'scripts/test/**/*.test.js'], {
+const result = spawnSync(resolveProjectNode(), ['--test', '--test-concurrency=4', 'scripts/test/**/*.test.js'], {
     stdio: 'inherit',
     env: process.env,
 });

@@ -1,0 +1,23 @@
+{
+  "recordedAtUtc": "2026-10-14T02:15:14.6997098Z",
+  "engine": "Windows PowerShell 5.1",
+  "exitCode": 0,
+  "fixtureRoot": "C:\\Users\\yussy\\AppData\\Local\\Temp\\cbte-node-install-6181423ce77944998b2e3a3926414052",
+  "runtime": {
+    "version": "24.21.0",
+    "executable": "C:\\Users\\yussy\\AppData\\Local\\Temp\\cbte-node-install-6181423ce77944998b2e3a3926414052\\cbte-runtimes\\node-v24.21.0-win-x64\\node-v24.21.0-win-x64\\node.exe",
+    "sha256": "ba4e6d110e8c1592a1ecd390f6b05f3da124b13871a5be62b341a07a853c6c32",
+    "zipSha256": "158f7685b44de51f6c0df1d153526cbcd3e1bc739a8dfc607721cef75de9e541",
+    "globalNodeChanged": false
+  },
+  "stderr": null,
+  "globalEnvironmentChanged": false,
+  "fixtureRemoved": false,
+  "verifiedExecutableSha256": "ba4e6d110e8c1592a1ecd390f6b05f3da124b13871a5be62b341a07a853c6c32",
+  "runtimeVersion": "v24.21.0",
+  "cleanupStatus": "blocked_by_automatic_approval_review",
+  "cleanupReason": "blocked by policy",
+  "inspectedEntries": 2463,
+  "inspectedReparsePoints": 0,
+  "remainingInstallerStageCount": 0
+}

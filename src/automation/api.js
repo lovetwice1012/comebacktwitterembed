@@ -10,6 +10,7 @@ async function dispatch(request, actor, services) {
     if (!Array.isArray(path) || path.length < 1 || path.length > 3 || !['GET','POST','PATCH','DELETE'].includes(method)) throw new AutomationError('NOT_FOUND', '操作が見つかりません。', 404);
     if (!body || typeof body !== 'object' || Array.isArray(body)) throw new AutomationError('INVALID_BODY', 'オブジェクト形式の入力が必要です。');
     if (path[0] === 'donors' && actor.isAdmin !== true) throw new AutomationError('AUTOMATION_FORBIDDEN', '支援者の管理には管理者権限が必要です。', 403);
+    if (path[0] === 'push-capacity') require('./push-capacity').requireAdmin(actor);
     let group;
     if (method !== 'GET' && method !== 'DELETE') {
         group = path[0] === 'validate' || path[0] === 'dictionary-preview' ? 'validate' : path[0] === 'simulate' || path.at(-1) === 'test' ? 'simulate' : path[0] === 'monitors' ? 'monitor' : path[0] === 'marketplace' && (!path[2] || path[2] === 'status') ? 'publication' : 'write';
@@ -30,6 +31,10 @@ async function dispatchCore({ method, path, search = new URLSearchParams(), body
     const [kind, id, action] = path;
     const { service, market, evaluator, schema, format, bundle, catalog, destinations, monitors, history, dictionaryService, moderation, starter } = services;
     let result;
+    const xQuota = () => services.xQuota || require('./x-monitor-quota').createXMonitorQuota(services.db, {
+      registrationEnabled: process.env.ANGELIC_X_REGISTRATION_ENABLED === '1',
+      useLegacyUserInterval: process.env.ANGELIC_X_USE_LEGACY_USER_INTERVAL === '1',
+    });
     if (kind === "catalog" && method === "GET") result = { ...catalog.catalog(), rateLimits: service.rateLimiter?.getPolicy(), deliverySafety: require('./safety').createSafety().status() };
     else if (kind === "entitlements" && !id && method === "GET") {
       const info = await require('./entitlements').getEntitlementSummary(services.db, actor.userId);
@@ -48,12 +53,61 @@ async function dispatchCore({ method, path, search = new URLSearchParams(), body
       else if (id && action === "history" && method === "GET") result = await donors.history(actor, id, page);
       else if (id && action === "audit" && method === "GET") result = await donors.audit(actor, id, page);
     }
+    else if (kind === 'push-capacity') {
+      const capacity = require('./push-capacity');
+      capacity.requireAdmin(actor);
+      if (!id && !action && method === 'GET') result = await capacity.getPoolPolicy(services.db.queryDatabase, actor);
+      else if (!id && !action && method === 'PATCH') {
+        result = await services.db.withDatabaseTransaction(query => capacity.savePoolPolicy(query, actor, body));
+        await xQuota().recheckAll(actor);
+      }
+      else if (id === 'admin' && !action && method === 'GET') result = await xQuota().adminSummary(actor,{afterUserId:search.get('afterUserId'),afterMonitorId:search.get('afterMonitorId'),afterAuditId:search.get('afterAuditId')});
+      else if (id === 'history' && !action && method === 'GET') {
+        const owner = search.get('userId');
+        const grants = require('./push-support-grants');
+        if (!/^\d{1,32}$/.test(owner || '')) throw new AutomationError('INVALID_INPUT','利用者を指定してください。');
+        const history = await grants.getSupporterGrantHistory(services.db.queryDatabase, owner, { cursor: search.get('cursor') || undefined });
+        const afterPaymentId=search.get('afterPaymentId');
+        const match=afterPaymentId?.match(/^(\d{1,16}):([0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12})$/);
+        if(afterPaymentId&&(!match||!Number.isSafeInteger(Number(match[1])))) throw new AutomationError('INVALID_CURSOR','決済履歴の位置を確認してください。');
+        const payments = await services.db.queryDatabase(`SELECT id,state,amount,currency,refunded_amount,verified,completed_at_ms,created_at_ms FROM automation_square_donation_attempts WHERE owner_user_id=?${match?' AND (created_at_ms<? OR (created_at_ms=? AND id<?))':''} ORDER BY created_at_ms DESC,id DESC LIMIT 101`, match?[owner,match[1],match[1],match[2]]:[owner]);
+        result = { grants: history.items, nextCursor: history.nextCursor || null, paymentNextCursor:payments.length>100?`${payments[99].created_at_ms}:${payments[99].id}`:null,
+          payments: payments.slice(0,100).map(row=>({attemptId:row.id,state:row.state,amount:Number(row.amount),currency:row.currency,refundedAmount:Number(row.refunded_amount),verified:Number(row.verified)===1,createdAtMs:Number(row.created_at_ms),completedAtMs:row.completed_at_ms==null?null:Number(row.completed_at_ms)})) };
+      }
+      else if (id === 'grants' && !action && method === 'POST') {
+        if (Object.keys(body).some(key=>!['userId','slots','idempotencyKey','reason','purchasedAtMs','alreadyIncludedInLegacy'].includes(key)) || typeof body.reason!=='string' || !body.reason.trim() || body.reason.length>240) throw new AutomationError('AUTOMATION_SUPPORT_GRANT_INVALID','確認した購入回数と付与の根拠を指定してください。',422);
+        result = await services.db.withDatabaseTransaction(async query=>{
+          const value=await require('./push-support-grants').recordHistoricalSupportGrant(query,actor,{userId:body.userId,slots:body.slots,idempotencyKey:body.idempotencyKey,purchasedAtMs:body.purchasedAtMs,alreadyIncludedInLegacy:body.alreadyIncludedInLegacy,reason:body.reason});
+          await require('./entitlements').inspectPlan(query,body.userId);return value;
+        });
+        await xQuota().recheckAll(actor);
+      }
+      else if (id === 'plans' && action && method === 'GET') result = await capacity.getPlanCapacity(services.db.queryDatabase, actor, action);
+      else if (id === 'plans' && action && method === 'PATCH') result = await xQuota().mutatePolicy(actor,query => capacity.savePlanCapacity(query, actor, action, body));
+    }
+    else if (kind === 'x-setup') {
+      if (actor.guildId) throw new AutomationError('X_SETUP_PRIVATE_ONLY', '受信設定は自分専用の画面で操作してください。', 403);
+      const setup = services.xSetup || require('./x-setup').createXSetup(services.db);
+      if (!id && !action && method === 'GET') result = await setup.status(actor, { afterId: search.get('afterId') || undefined });
+      else if (id === 'sessions' && !action && method === 'POST') result = await setup.startSession(actor, body);
+      else if (id === 'validate' && !action && method === 'POST') result = await setup.validate(actor, body);
+      else if (id === 'import' && !action && method === 'POST') result = await setup.importFile(actor, body);
+      else if (id === 'subscriptions' && action && method === 'DELETE') result = await setup.remove(actor, action, body);
+    }
+    else if (kind === 'x-monitor-quota' && !id && method === 'GET') { await xQuota().reconcile(actor); result=await xQuota().summary(actor); }
+    else if (kind === 'x-monitors') {
+      if (!id && method === 'GET') { await xQuota().reconcile(actor); result=await xQuota().list(actor); }
+      else if (!id && method === 'POST') result=await xQuota().register(actor,body);
+      else if (id && !action && method === 'PATCH') result=await xQuota().update(actor,id,body);
+      else if (id && !action && method === 'DELETE') result=await xQuota().release(actor,id,body);
+      else if (id && action==='move' && method==='POST') result=await xQuota().move(actor,id,body);
+    }
     else if (kind === "plans") {
       const plans = require('./entitlements');
       if (!id && method === "GET") result = { items: await plans.listPlanPolicies(services.db.queryDatabase, actor) };
-      else if (method === "POST" || method === "PATCH") result = await services.db.withDatabaseTransaction(query => plans.savePlanPolicy(query, actor, { planId: id || body.planId, label: body.label, slotLimit: body.slotLimit, minuteLimit: body.minuteLimit, dayLimit: body.dayLimit, priority: body.priority, enabled: body.enabled, expectedUpdatedAtMs: body.expectedUpdatedAtMs }));
+      else if (method === "POST" || method === "PATCH") result = await xQuota().mutatePolicy(actor,query => plans.savePlanPolicy(query, actor, { planId: id || body.planId, label: body.label, slotLimit: body.slotLimit, minuteLimit: body.minuteLimit, dayLimit: body.dayLimit, priority: body.priority, enabled: body.enabled, expectedUpdatedAtMs: body.expectedUpdatedAtMs, intervalMinutes: body.intervalMinutes }));
     }
-    else if (kind === "entitlements" && id && method === "POST") result = await services.db.withDatabaseTransaction(query => require('./entitlements').setUserPlan(query, actor, id, body.planId, { expiresAtMs: body.expiresAtMs }));
+    else if (kind === "entitlements" && id && method === "POST") result = await xQuota().mutatePolicy(actor,query => require('./entitlements').setUserPlan(query, actor, id, body.planId, { expiresAtMs: body.expiresAtMs }));
     else if (kind === "billing" && ["commerce", "catalog", "coupons"].includes(id)) {
       const commerce = services.commerce;
       if (!commerce) throw new AutomationError('SQUARE_NOT_CONFIGURED', '決済機能は準備中です。', 503);

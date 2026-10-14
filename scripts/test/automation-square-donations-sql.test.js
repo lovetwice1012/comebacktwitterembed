@@ -110,7 +110,7 @@ test('Square donations real SQL with mocked REST: trusted payment, durable owner
             await submit(own, await quote(own)); const result = await donations.getStatus(own); assert.equal(result.supporter.active, true); assert.equal(result.supporter.netAmount, 1200); assert.equal(result.supporter.validUntilAtMs, clock + 30 * 86400000);
             assert.equal(Number((await db.queryDatabase('SELECT is_donor FROM users WHERE user_id=?', [own.userId]))[0].is_donor), 0);
             await entitlements.savePlanPolicy(db.queryDatabase, ADMIN, { planId: 'supporter', label: 'Supporter', slotLimit: 8, minuteLimit: 10, dayLimit: 90, priority: 2, expectedUpdatedAtMs: 0 });
-            const plan = await entitlements.inspectPlan(db.queryDatabase, own.userId, clock); assert.equal(plan.tier, 'supporter'); assert.equal(plan.slotLimit, 8); assert.equal(plan.priority, 2);
+            const plan = await entitlements.inspectPlan(db.queryDatabase, own.userId, clock); assert.equal(plan.tier, 'supporter'); assert.equal(plan.baseSlotLimit, 8); assert.equal(plan.slotLimit, 10, 'two verified 600-yen purchases retain one permanent slot each'); assert.equal(plan.priority, 2);
         });
         await t.test('lost payment ACK is recovered after service restart without another wire charge; durable unresolved attempt blocks new quote and retry', async () => {
             const own = actor(4), q = await quote(own); square.state.lost = true;
@@ -320,8 +320,8 @@ test('Square donations real SQL with mocked REST: trusted payment, durable owner
             assert.equal(status.supporter.purchaseUnits, 3); assert.equal(status.supporter.extraSlots, 9); assert.equal(status.supporter.paymentCount, 2);
             const start = square.requests.length, plan = await entitlements.inspectPlan(db.queryDatabase, own.userId, clock);
             assert.equal(square.requests.length, start, 'entitlement reads use only the verified local ledger');
-            assert.equal(plan.tier, 'supporter'); assert.equal(plan.addonGrantUnits, 3); assert.equal(plan.addonExtraSlots, 9); assert.equal(plan.donationPaymentCount, 2);
-            assert.equal(plan.slotLimit, plan.baseSlotLimit + 9); assert.equal(plan.minuteLimit, 10); assert.equal(plan.dayLimit, 90);
+            assert.equal(plan.tier, 'supporter'); assert.equal(plan.addonGrantUnits, 3); assert.equal(plan.addonExtraSlots, 2, 'new grants are per-payment 500-yen units; 300-yen payments are not combined'); assert.equal(plan.donationPaymentCount, 2);
+            assert.equal(plan.slotLimit, plan.baseSlotLimit + 2); assert.equal(plan.minuteLimit, 10); assert.equal(plan.dayLimit, 90);
             assert.equal(Number((await db.queryDatabase('SELECT is_donor FROM users WHERE user_id=?', [own.userId]))[0].is_donor), 0);
         });
         await t.test('partial and full financial refunds reduce units immediately while successful net-positive payment count stays separate', async () => {
@@ -346,12 +346,12 @@ test('Square donations real SQL with mocked REST: trusted payment, durable owner
             assert.equal(initialGrant.validUntilAtMs, started + 40 * 86400000, 'remaining units retain supporter priority after threshold eligibility ends');
             const start = square.requests.length; clock = started + 30 * 86400000;
             const reduced = await entitlements.inspectPlan(db.queryDatabase, own.userId, clock);
-            assert.equal(reduced.addonGrantUnits, 1); assert.equal(reduced.addonExtraSlots, 3); assert.equal(reduced.donationPaymentCount, 1); assert.equal(reduced.tier, 'supporter');
+            assert.equal(reduced.addonGrantUnits, 1); assert.equal(reduced.addonExtraSlots, 4, '1600-yen and 900-yen purchases retain 3+1 permanent slots'); assert.equal(reduced.donationPaymentCount, 1); assert.equal(reduced.tier, 'supporter');
             assert.equal(reduced.addonValidUntilAtMs, started + 40 * 86400000);
             assert.equal(await isSquareDonationSupporter(db.queryDatabase, own.userId, clock, scope), true);
             clock = started + 40 * 86400000;
             const expired = await entitlements.inspectPlan(db.queryDatabase, own.userId, clock);
-            assert.equal(expired.addonGrantUnits, 0); assert.equal(expired.addonExtraSlots, 0); assert.equal(expired.donationPaymentCount, 0); assert.equal(expired.tier, 'free');
+            assert.equal(expired.addonGrantUnits, 0); assert.equal(expired.addonExtraSlots, 4, 'legacy financial expiry does not erase purchased permanent slots'); assert.equal(expired.donationPaymentCount, 0); assert.equal(expired.tier, 'free');
             assert.equal(square.requests.length, start);
         });
         await t.test('manual and Square paid tiers add manual and purchased units while retaining their own send limits', async () => {
@@ -364,7 +364,7 @@ test('Square donations real SQL with mocked REST: trusted payment, durable owner
                 else await db.queryDatabase(`INSERT INTO automation_square_subscriptions (owner_user_id,environment,merchant_id,plan_id,variation_id,customer_id,subscription_id,checkout_id,state,valid_until_at_ms,verified,updated_at_ms)
                     VALUES (?,'sandbox','MERCHANT','unit-paid-proof','UNITVAR','UNITCUSTOMER',?,?,'ACTIVE',?,1,?)`, [own.userId, `UNIT-SUB-${i}`, randomUUID(), clock + 86400000, clock]);
                 const plan = await entitlements.inspectPlan(db.queryDatabase, own.userId, clock);
-                assert.equal(plan.tier, 'paid'); assert.equal(plan.baseSlotLimit, 4); assert.equal(plan.manualExtraSlots, 2); assert.equal(plan.addonGrantUnits, 3); assert.equal(plan.addonExtraSlots, 9); assert.equal(plan.slotLimit, 15);
+                assert.equal(plan.tier, 'paid'); assert.equal(plan.baseSlotLimit, 4); assert.equal(plan.manualExtraSlots, 2); assert.equal(plan.addonGrantUnits, 3); assert.equal(plan.addonExtraSlots, 3); assert.equal(plan.slotLimit, 9);
                 assert.equal(plan.minuteLimit, 77); assert.equal(plan.dayLimit, 500); assert.equal(plan.priority, 7);
             }
         });
@@ -379,11 +379,11 @@ test('Square donations real SQL with mocked REST: trusted payment, durable owner
             const grant = await getSquareDonationGrant(db.queryDatabase, own.userId, clock, scope); assert.equal(grant.purchaseUnits, 10000); assert.equal(grant.extraSlots, 10000); assert.equal(grant.paymentCount, 1);
             await db.withDatabaseTransaction(query => entitlements.savePlanPolicy(query, ADMIN, { planId: 'unit-cap-proof', label: 'Cap proof', slotLimit: 10000, minuteLimit: 5, dayLimit: 24, priority: 0 }));
             await db.withDatabaseTransaction(query => entitlements.setUserPlan(query, ADMIN, own.userId, 'unit-cap-proof'));
-            assert.equal((await entitlements.inspectPlan(db.queryDatabase, own.userId, clock)).slotLimit, 30000, 'base and legacy manual caps remain additive');
+            assert.equal((await entitlements.inspectPlan(db.queryDatabase, own.userId, clock)).slotLimit, 20020, 'base and legacy manual grants remain; new payment credits exactly 10000/500 slots regardless of rolling multiplier');
             await assert.rejects(save({ slotsPerUnit: 10001 }), { code: 'SQUARE_DONATION_POLICY_INVALID' });
             await assert.rejects(donations.savePolicy(ADMIN, { ...policy, expectedUpdatedAtMs: policy.updatedAtMs - 1 }), { code: 'SQUARE_DONATION_POLICY_CONFLICT' });
             await save({ unitAmount: null, slotsPerUnit: null });
-            const after = await entitlements.inspectPlan(db.queryDatabase, own.userId, clock); assert.equal(after.addonExtraSlots, 0); assert.equal(after.slotLimit, 20000);
+            const after = await entitlements.inspectPlan(db.queryDatabase, own.userId, clock); assert.equal(after.addonExtraSlots, 20, 'disabling legacy rolling units retains the 10000/500 permanent purchase'); assert.equal(after.slotLimit, 20020);
             assert.equal(Number((await db.queryDatabase('SELECT is_donor FROM users WHERE user_id=?', [own.userId]))[0].is_donor), 1);
         });
         await t.test('unit-only supporter grants use durable queue priority and retain the fourth oldest-first turn', async () => {

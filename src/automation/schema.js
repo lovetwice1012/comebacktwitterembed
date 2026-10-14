@@ -108,7 +108,7 @@ function checkConfig(node, path, issues) {
         if (!integer(c.maxWaitDays, 1, 366)) issue('最大待機は1〜366日です。');
     }
     if (node.type === 'transform') {
-        if (!['expanded', 'card', 'text', 'url'].includes(c.format) || !['inherit', 'hide', 'links'].includes(c.media) || c.mentions !== 'none') issue('表示形式が不正です。');
+        if (!['normal', 'expanded', 'card', 'text', 'url'].includes(c.format) || !['inherit', 'hide', 'links'].includes(c.media) || c.mentions !== 'none') issue('表示形式が不正です。');
         if (typeof c.template !== 'string' || c.template.length > 4000 || !integer(c.maxLength, 1, 1900)) issue('定型文または文字数上限が不正です。');
         for (const placeholder of String(c.template || '').matchAll(/\{([^{}]+)\}/g)) if (!Object.hasOwn(FIELDS, placeholder[1])) issue(`未対応の差し込み項目: ${placeholder[1]}`);
         for (const k of ['prefix', 'suffix']) if (c[k] !== undefined && (typeof c[k] !== 'string' || c[k].length > 500)) issue('前後の追加文は500文字以内です。');

@@ -15,8 +15,15 @@ const path = require('node:path');
 const repoRoot = path.resolve(__dirname, '..', '..');
 
 test('runtime guard accepts supported Node versions', () => {
-    assert.equal(assertSupportedRuntime({ node: '24.0.0' }), 'node');
+    assert.equal(assertSupportedRuntime({ node: '24.0.0' }, 'linux'), 'node');
     assert.equal(assertSupportedRuntime({ node: MINIMUM_NODE_VERSION }), 'node');
+});
+
+test('Windows affected native TCP builds stop before network I/O with an actionable runtime switch', () => {
+    for (const node of ['24.0.0', '24.14.1', '24.15.0']) assert.throws(
+        () => assertSupportedRuntime({ node }, 'win32'), /native TCP startup crash.*setup-project-node/);
+    for (const node of ['22.12.0', '24.16.0', '24.21.0']) assert.equal(assertSupportedRuntime({ node }, 'win32'), 'node');
+    assert.equal(assertSupportedRuntime({ node: '24.15.0' }, 'darwin'), 'node');
 });
 
 test('runtime guard rejects old Node and all Bun runtimes with actionable errors', () => {

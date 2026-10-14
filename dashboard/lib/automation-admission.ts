@@ -10,6 +10,9 @@ export class AdmissionError extends Error {
   constructor(public status: number, public code: string, message: string) { super(message); }
 }
 export function bodyLimit(path: string) {
+  // JSON escaping can expand the 32KiB local file up to sixfold. The transfer
+  // parser independently checks the decoded UTF-8 file size before key work.
+  if (/^\/x-setup(?:\/|$)/.test(path)) return 200 * 1024;
   if (/^\/(dictionaries|dictionary-preview)(?:\/|$)/.test(path)) return 160 * MiB;
   if (/^\/(packages|import)(?:\/|$)/.test(path)) return 48 * MiB;
   if (/^\/(workflows|validate|simulate)(?:\/|$)/.test(path)) return 2 * MiB;

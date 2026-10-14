@@ -1,11 +1,13 @@
 import type { SquareActor } from './square-billing';
 export interface DonationPolicy { enabled: boolean; currency: string | null; minimumAmount: number | null; maximumAmount: number | null; supporterThreshold: number | null; validityDays: number | null; unitAmount: number | null; slotsPerUnit: number | null; updatedAtMs: number | null }
-export interface DonationOptions extends DonationPolicy { configured: boolean; environment: 'sandbox' | 'production' | null; applicationId?: string; locationId?: string; minorUnitDigits: number | null }
+export interface DonationOptions extends DonationPolicy { configured: boolean; environment: 'sandbox' | 'production' | null; applicationId?: string; locationId?: string; minorUnitDigits: number | null; slotGrantPolicy?: {currency:'JPY';unitAmount:500;slotsPerUnit:1;permanent:true} }
 export interface DonationQuote { attemptId: string; expiresAtMs: number; amount: number; currency: string; minorUnitDigits: number; email: string; name: string }
 export interface DonationHistory { attemptId: string; state: string; amount: number; currency: string; refundedAmount: number; netAmount: number; verified: boolean; createdAtMs: number; completedAtMs: number | null }
 export interface DonationGrant { active: boolean; threshold: number | null; validityDays: number | null; netAmount: number; validUntilAtMs: number | null; unitAmount: number | null; slotsPerUnit: number | null; purchaseUnits: number; extraSlots: number; paymentCount: number; unitsValidUntilAtMs: number | null }
 export interface DonationSupporter extends DonationGrant { manualActive: boolean }
-export interface DonationStatus { configured: boolean; environment: 'sandbox' | 'production' | null; history: DonationHistory[]; pending: null | (DonationQuote & { state: string; retryable: boolean }); supporter: DonationSupporter; refresh?: { state: 'checked' | 'cooldown' | 'busy' | 'failed'; retryAtMs: number | null } }
+export interface DonationStatus { configured: boolean; environment: 'sandbox' | 'production' | null; history: DonationHistory[]; pending: null | (DonationQuote & { state: string; retryable: boolean }); supporter: DonationSupporter; permanentSupport?: {totalSupporterSlots:number;legacySlots:number;newPaidSlots:number;isSupporter:boolean}; refresh?: { state: 'checked' | 'cooldown' | 'busy' | 'failed'; retryAtMs: number | null } }
+/** Verified observations also update the permanent support-slot ledger. These
+ * original policy/status fields retain their rolling financial semantics. */
 export function createSquareDonations(db: { queryDatabase: Function; withDatabaseTransaction: Function }, options?: { env?: Record<string, string | undefined>; fetch?: typeof fetch; clock?: () => number }): {
     getOptions(actor: SquareActor): Promise<DonationOptions>;
     getStatus(actor: SquareActor): Promise<DonationStatus>;

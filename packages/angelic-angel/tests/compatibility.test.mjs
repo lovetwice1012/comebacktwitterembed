@@ -243,19 +243,27 @@ test('COMP-WEBHOOK: same payload body for JSON/raw, missing env, network failure
   }, async url => {
     for (const plaintext of ['{"dummy":"日本語"}', 'dummy raw text', 'false', '42', 'null', '[1,2]']) {
       const encrypted = encryptFixture(keys,plaintext);
-      await rustValue({operation:'notification',keys,data:encrypted.data,headers:encrypted.headers},{ WEBHOOK_ENDPOINT:url + '/success' });
+      const requestIndex = recorded.length;
+      const rustAck = await rustValue({operation:'notification',keys,data:encrypted.data,headers:encrypted.headers},{ WEBHOOK_ENDPOINT:url + '/success' });
+      assert.equal(rustAck.ack,100,`Rust webhook must actually deliver the fixture ${plaintext}`);
+      assert.equal(recorded.length,requestIndex + 1,'Rust webhook must produce exactly one new request before comparison');
       await handleNotificationData(encrypted.data,encrypted.headers,keys,{env:{ WEBHOOK_ENDPOINT:url + '/success' }});
-      const { rawBody:nodeRaw, ...nodeRecord } = recorded.at(-1);
-      const { rawBody:rustRaw, ...rustRecord } = recorded.at(-2);
+      assert.equal(recorded.length,requestIndex + 2,'Node webhook must produce exactly one new request before comparison');
+      const { rawBody:nodeRaw, ...nodeRecord } = recorded[requestIndex + 1];
+      const { rawBody:rustRaw, ...rustRecord } = recorded[requestIndex];
       assert.deepEqual(nodeRecord,rustRecord);
       assert.deepEqual(JSON.parse(nodeRaw),JSON.parse(rustRaw));
       assert.equal(recorded.at(-1).method,'POST'); assert.match(recorded.at(-1).type,/application\/json/u);
     }
     for (const plaintext of ['{"id":18446744073709551615}','{"id":9223372036854775807}','{"id":-9223372036854775808}','-0','1e400','{"id":"\\ud800"}']) {
       const encrypted = encryptFixture(keys,plaintext);
-      await rustValue({operation:'notification',keys,data:encrypted.data,headers:encrypted.headers},{ WEBHOOK_ENDPOINT:url + '/success' });
+      const requestIndex = recorded.length;
+      const rustAck = await rustValue({operation:'notification',keys,data:encrypted.data,headers:encrypted.headers},{ WEBHOOK_ENDPOINT:url + '/success' });
+      assert.equal(rustAck.ack,100,`Rust webhook must actually deliver the fixture ${plaintext}`);
+      assert.equal(recorded.length,requestIndex + 1,'Rust webhook must produce exactly one new request before comparison');
       await handleNotificationData(encrypted.data,encrypted.headers,keys,{env:{WEBHOOK_ENDPOINT:url + '/success'}});
-      assert.equal(recorded.at(-1).rawBody,recorded.at(-2).rawBody,'Rust numeric and invalid JSON forwarding semantics');
+      assert.equal(recorded.length,requestIndex + 2,'Node webhook must produce exactly one new request before comparison');
+      assert.equal(recorded[requestIndex + 1].rawBody,recorded[requestIndex].rawBody,'Rust numeric and invalid JSON forwarding semantics');
     }
     const failedPayload = encryptFixture(keys,'{}');
     assert.equal((await rustValue({operation:'notification',keys,data:failedPayload.data,headers:failedPayload.headers},{ WEBHOOK_ENDPOINT:url + '/fail' })).ack,100,'Rust incorrectly acknowledges non-2xx delivery');

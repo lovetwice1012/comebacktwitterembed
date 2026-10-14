@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8"?>
+<testsuites>
+	<testcase name="accepts exactly the reader schema and preserves either original UAID representation" time="0.002637" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\automation-x-setup-transfer.test.js"/>
+	<testcase name="identity uses canonical field order and normalized UAID collision identity" time="0.000805" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\automation-x-setup-transfer.test.js"/>
+	<testcase name="rejects non-string input, malformed JSON, trailing input and excess nesting safely" time="0.002009" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\automation-x-setup-transfer.test.js"/>
+	<testcase name="rejects duplicate keys at every nesting level, including escaped aliases" time="0.000531" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\automation-x-setup-transfer.test.js"/>
+	<testcase name="rejects prototype pollution fields, omitted fields and unknown data at every schema level" time="0.004406" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\automation-x-setup-transfer.test.js"/>
+	<testcase name="enforces UTF-8 byte limit before parsing and accepts exactly the limit" time="0.001812" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\automation-x-setup-transfer.test.js"/>
+	<testcase name="enforces provenance types, constants and bounded browser version" time="0.001693" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\automation-x-setup-transfer.test.js"/>
+	<testcase name="enforces lowercase ids and empty origin attributes" time="0.001736" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\automation-x-setup-transfer.test.js"/>
+	<testcase name="rejects endpoint URL bypasses and noncanonical URLs" time="0.001921" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\automation-x-setup-transfer.test.js"/>
+	<testcase name="restricts scope to canonical X HTTPS URLs without attributes" time="0.001197" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\automation-x-setup-transfer.test.js"/>
+	<testcase name="rejects noncanonical base64url, wrong lengths, wrong JWK metadata and malformed points" time="0.003721" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\automation-x-setup-transfer.test.js"/>
+	<testcase name="validates scalar range and exact public/private point agreement, including Q versus -Q" time="0.001115" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\automation-x-setup-transfer.test.js"/>
+	<testcase name="object APIs reject accessors and extra array properties without serializing secret data" time="0.000282" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\automation-x-setup-transfer.test.js"/>
+	<testcase name="web sealer exposes seal only and authenticated worker round-trips with fresh random nonces" time="0.001616" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\automation-x-setup-transfer.test.js"/>
+	<testcase name="ciphertext, tag, nonce, key metadata, owner, subscription and revision are authenticated" time="0.001859" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\automation-x-setup-transfer.test.js"/>
+	<testcase name="supports decrypt-only old keys during key rotation and fails closed after removal" time="0.000669" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\automation-x-setup-transfer.test.js"/>
+	<testcase name="requires real 256-bit keys, clones caller keys and validates all binding fields" time="0.002071" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\automation-x-setup-transfer.test.js"/>
+	<testcase name="hybrid web role owns public material only and worker role owns private material only" time="0.002913" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\automation-x-setup-transfer.test.js"/>
+	<testcase name="hybrid accepts one public/private PEM block, never a private PEM in the public role" time="0.009913" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\automation-x-setup-transfer.test.js"/>
+	<testcase name="hybrid wrapping uses OAEP-SHA256, bound labels and a fresh 256-bit data key per envelope" time="0.005286" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\automation-x-setup-transfer.test.js"/>
+	<testcase name="hybrid tampering, swapped wrapped data keys and context swaps fail safely" time="0.024033" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\automation-x-setup-transfer.test.js"/>
+	<testcase name="hybrid rotation decrypts old envelopes only while the matching private key is retained" time="0.004752" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\automation-x-setup-transfer.test.js"/>
+	<testcase name="hybrid requires RSA-3072 through RSA-4096 and rejects secret, EC, malformed and absent keys" time="0.145607" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\automation-x-setup-transfer.test.js"/>
+	<testcase name="beginner setup is lazy and explains manual local-file upload, consent, sensitive data, revocation and unverified receiver" time="0.127528" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\automation-x-setup-ui.test.js"/>
+	<testcase name="unavailable intake preserves instructions/download and own deletion but cannot select or submit a file" time="0.050031" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\automation-x-setup-ui.test.js"/>
+	<testcase name="explicit consent gates read/validation; review exposes safe metadata only and final save does not enable monitoring" time="0.039583" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\automation-x-setup-ui.test.js"/>
+	<testcase name="file limits, extension and strict UTF-8 failures never send data" time="0.027446" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\automation-x-setup-ui.test.js"/>
+	<testcase name="FileReader fallback supports browser files without arrayBuffer and exposes no contents" time="0.024530" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\automation-x-setup-ui.test.js"/>
+	<testcase name="cancel and withdrawal of consent erase selection and require selecting the file again" time="0.033583" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\automation-x-setup-ui.test.js"/>
+	<testcase name="server validation and import errors use safe fixed messages and erase the selected secret" time="0.056437" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\automation-x-setup-ui.test.js"/>
+	<testcase name="used/expired/replaced sessions provide a recovery path through fresh selection and session" time="0.114801" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\automation-x-setup-ui.test.js"/>
+	<testcase name="client expiry stops the import before sending the secret a second time" time="0.025249" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\automation-x-setup-ui.test.js"/>
+	<testcase name="duplicate import is described as already stored while identity conflicts never silently replace it" time="0.055635" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\automation-x-setup-ui.test.js"/>
+	<testcase name="deletion asks for confirmation, uses the current revision, clears upload and explains separate X revocation" time="0.036829" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\automation-x-setup-ui.test.js"/>
+	<testcase name="stale deletion preserves safe metadata until owner refresh and list pagination keeps existing rows" time="0.028142" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\automation-x-setup-ui.test.js"/>
+	<testcase name="rapid validation/import clicks start each operation once" time="0.028696" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\automation-x-setup-ui.test.js"/>
+	<testcase name="inactive views do no work and leaving during read or validation cannot restore a secret selection" time="0.057420" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\automation-x-setup-ui.test.js"/>
+	<testcase name="a deletion response from a previous active view cannot replace a refreshed list or announce success" time="0.019815" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\automation-x-setup-ui.test.js"/>
+	<testcase name="malformed metadata and unsafe download/scope responses are rejected without displaying server strings" time="0.014333" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\automation-x-setup-ui.test.js"/>
+	<testcase name="dedicated setup route authenticates before rendering, keys its state to the session and links back to targets" time="0.069755" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\automation-x-setup-ui.test.js"/>
+	<testcase name="dedicated client starts with open instructions and sends only same-origin personal API requests" time="0.022423" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\automation-x-setup-ui.test.js"/>
+	<testcase name="automation workspace advertises the dedicated setup entry only on the personal route" time="0.109178" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\automation-x-setup-ui.test.js"/>
+	<testcase name="supporter beta and disabled rollout block uploads while keeping owned receiver metadata and deletion available" time="0.041329" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\automation-x-setup-ui.test.js"/>
+	<testcase name="stored receiver metadata distinguishes waiting, connecting, listening, reenrollment, stop and error without delivery claims" time="0.016288" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\automation-x-setup-ui.test.js"/>
+	<testcase name="absent rollout and receiver state fail closed and malformed new metadata is rejected" time="0.013778" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\automation-x-setup-ui.test.js"/>
+	<!-- tests 45 -->
+	<!-- suites 0 -->
+	<!-- pass 45 -->
+	<!-- fail 0 -->
+	<!-- cancelled 0 -->
+	<!-- skipped 0 -->
+	<!-- todo 0 -->
+	<!-- duration_ms 2539.1414 -->
+</testsuites>

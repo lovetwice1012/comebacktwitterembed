@@ -121,7 +121,8 @@ function createSquareDonations(db, options = {}) {
         user(actor);
         const policy = c.configured ? policyDto(await readPolicy()) : policyDto(null);
         return { configured: c.configured, environment: c.environment, ...(c.configured ? { applicationId: c.applicationId, locationId: c.locationId } : {}),
-            ...policy, minorUnitDigits: policy.currency ? minorDigits(policy.currency) : null };
+            ...policy, minorUnitDigits: policy.currency ? minorDigits(policy.currency) : null,
+            slotGrantPolicy: { currency: 'JPY', unitAmount: 500, slotsPerUnit: 1, permanent: true } };
     }
     async function loadAttempt(attemptId, owner, query = db.queryDatabase) {
         if (!UUID.test(attemptId || '')) throw fail('SQUARE_DONATION_NOT_FOUND', '寄付の申し込み内容が見つかりません。', 404);
@@ -184,12 +185,22 @@ function createSquareDonations(db, options = {}) {
         // under the owner lock and preserve confirmed refunds at equal versions.
         if (row.payment_id && row.payment_id !== payment.id || row.order_id && row.order_id !== payment.order_id) throw mismatch();
         if (row.square_updated_at_ms != null && updated < Number(row.square_updated_at_ms)) return;
+        // Admin policy edits lock policy before updating the rolling unit ledger.
+        // Match that order before the support ledger's current-read unit locks.
+        await readPolicy(query, true);
+        // Freeze old granted COUNTS before this observation changes the rolling
+        // aggregate. The current unverified attempt belongs to the new scheme;
+        // verified historical attempts remain classified legacy on webhook replay.
+        const support = require('./push-support-grants');
+        const grantOptions = { now: now(), scope: { configured: c.configured, environment: c.environment, merchantId: c.merchantId } };
+        await support.migrateLegacyGrants(query, row.owner_user_id, { ...grantOptions, ...(Number(row.verified) === 1 ? {} : { excludeAttemptId: row.id }) });
         const confirmedRefund = Math.max(Number(row.refunded_amount), refunded);
         for (const refund of refunds) await query(`INSERT INTO automation_square_donation_refunds (environment,merchant_id,refund_id,attempt_id,payment_id,amount,currency,state,observed_at_ms)
             VALUES (?,?,?,?,?,?,?,?,?) ON DUPLICATE KEY UPDATE state=IF(state='COMPLETED','COMPLETED',VALUES(state)),observed_at_ms=VALUES(observed_at_ms)`,
         [...scope, refund.id, row.id, payment.id, Number(refund.amount_money.amount), row.currency, refund.status, now()]);
         await query(`UPDATE automation_square_donation_attempts SET state=?,payment_id=?,order_id=?,refunded_amount=?,verified=1,completed_at_ms=?,square_updated_at_ms=?,updated_at_ms=? WHERE id=?`,
         [payment.status, payment.id, payment.order_id || null, confirmedRefund, payment.status === 'COMPLETED' ? row.completed_at_ms == null ? completed : Number(row.completed_at_ms) : null, updated, now(), row.id]);
+        if (payment.status === 'COMPLETED') await support.applyVerifiedDonationGrant(query, row.id, grantOptions);
         await recomputeSupporter(query, row.owner_user_id);
     }
     async function paymentFor(row, read = request) {
@@ -253,15 +264,22 @@ function createSquareDonations(db, options = {}) {
     }
     async function getStatus(actor) {
         const owner = user(actor);
+        const permanent = async () => {
+            // Preserve the standalone unconfigured financial API contract.
+            // Without a database, omit unknown holdings rather than invent 0.
+            if(typeof db.queryDatabase!=='function') return undefined;
+            const held=await require('./push-support-grants').getSupporterHolding(db.queryDatabase,owner,now(),{configured:c.configured,environment:c.environment,merchantId:c.merchantId});
+            return { totalSupporterSlots:held.totalSupporterSlots,legacySlots:held.legacySlots,newPaidSlots:held.newPaidSlots,isSupporter:held.isSupporter };
+        };
         if (!c.configured) return { configured: false, environment: c.environment, history: [], pending: null,
-            supporter: { ...await donationGrant(db.queryDatabase, owner, null, [], now()), manualActive: false } };
+            supporter: { ...await donationGrant(db.queryDatabase, owner, null, [], now()), manualActive: false }, permanentSupport:await permanent() };
         const refresh = await reconcileOwner(owner);
         const supporter = await db.withDatabaseTransaction(async query => { await lockOwner(query, owner); return recomputeSupporter(query, owner); });
         const rows = await db.queryDatabase('SELECT * FROM automation_square_donation_attempts WHERE owner_user_id=? AND environment=? AND merchant_id=? ORDER BY created_at_ms DESC,id DESC LIMIT 100', [owner, ...scope]);
         const pending = (await db.queryDatabase(`SELECT * FROM automation_square_donation_attempts WHERE owner_user_id=? AND environment=? AND merchant_id=? AND state IN ('SUBMITTING','UNKNOWN','APPROVED','PENDING') ORDER BY created_at_ms,id LIMIT 1`, [owner, ...scope]))[0];
         const manual = (await db.queryDatabase('SELECT is_donor FROM users WHERE user_id=?', [owner]))[0];
         return { configured: true, environment: c.environment, history: rows.map(historyDto), pending: pending ? { ...quoteDto(pending), state: pending.state, retryable: false } : null,
-            supporter: { ...supporter, manualActive: Number(manual?.is_donor) === 1 }, refresh };
+            supporter: { ...supporter, manualActive: Number(manual?.is_donor) === 1 }, permanentSupport:await permanent(), refresh };
     }
     async function getAttempt(actor, attemptId) {
         const owner = user(actor); requireConfigured(); await loadAttempt(attemptId, owner); await reconcileOwner(owner);

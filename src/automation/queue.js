@@ -14,6 +14,7 @@ const table = kind => {
 const fail = (code, message) => { throw new AutomationError(code, message, 409); };
 
 function deliveryEvent(kind, delivery, now) {
+    if (kind === 'x') return delivery.x_notification.event;
     if (kind === 'price') return normalizeEvent({ ...(parse(delivery.event_json) || {}), kind: 'price', observedAtMs: parse(delivery.event_json)?.observedAtMs ?? now });
     const payload = parse(delivery.payload_json) || {};
     return normalizeEvent({ ...payload, providerId: delivery.provider_id, kind: payload.kind || 'new',
@@ -30,7 +31,9 @@ function createQueue(db, evaluator, options = {}) {
     const clock = options.clock || Date.now;
     const queryDB = db.queryDatabase;
     const graph = options.graph || null;
-    async function snapshot(query, kind, id, lock = false) {
+    const admittedXInputs = new WeakSet();
+    async function snapshot(query, kind, id, lock = false, ownerUserId = null) {
+        if (kind === 'x') return snapshotX(query, id, lock, ownerUserId);
         const rows = await query(`SELECT t.*,m.scope,m.revision AS monitor_revision,m.destination_id,a.workflow_id,
             w.enabled AS workflow_enabled,w.deleted_at_ms,w.active_revision,r.definition_json,r.bindings_json
             FROM ${table(kind)}_targets t LEFT JOIN automation_monitors m ON m.target_kind=? AND m.target_id=t.id
@@ -39,7 +42,59 @@ function createQueue(db, evaluator, options = {}) {
             LEFT JOIN automation_revisions r ON r.workflow_id=w.id AND r.revision=w.active_revision WHERE t.id=?${lock ? ' FOR UPDATE' : ''}`, [kind, kind, id]);
         return rows[0];
     }
+    async function snapshotX(query, id, lock = false, ownerUserId = null) {
+        // Every mutable X path takes the owner mutex before subscription,
+        // receiver or monitor rows, matching intake, renewal and deletion.
+        if (lock) {
+            if (!ownerUserId) fail('X_NOTIFICATION_INBOX_INVALID', 'X通知の所有者を確認できません。');
+            await require('./entitlements').lockOwner(query, ownerUserId);
+        }
+        const row = (await query(`SELECT * FROM automation_x_monitors WHERE id=?${ownerUserId ? ' AND owner_user_id=?' : ''}${lock ? ' FOR UPDATE' : ''}`, ownerUserId ? [id, ownerUserId] : [id]))[0];
+        if (!row) return null;
+        let config;
+        try { config = parse(row.notification_settings_json); } catch { return null; }
+        if (!config || typeof config !== 'object' || Array.isArray(config) || Object.keys(config).some(key => !['workflowId', 'destinationId', 'subscriptionId'].includes(key))) return null;
+        const subscription = config.subscriptionId && (await query(`SELECT s.id,s.revision,p.state AS receiver_state,p.subscription_revision AS receiver_revision FROM automation_x_subscriptions s
+            LEFT JOIN automation_x_push_receivers p ON p.subscription_id=s.id WHERE s.id=? AND s.owner_user_id=?${lock ? ' FOR UPDATE' : ''}`, [config.subscriptionId, row.owner_user_id]))[0];
+        const workflow = config.workflowId && (await query(`SELECT w.id AS workflow_id,w.enabled AS workflow_enabled,w.deleted_at_ms,w.active_revision,r.definition_json,r.bindings_json
+            FROM automation_workflows w LEFT JOIN automation_revisions r ON r.workflow_id=w.id AND r.revision=w.active_revision
+            WHERE w.id=? AND w.owner_user_id=? AND w.scope='private'${lock ? ' FOR UPDATE' : ''}`, [config.workflowId, row.owner_user_id]))[0];
+        const destination = config.destinationId && (await query(`SELECT id FROM automation_destinations WHERE id=? AND owner_user_id=? AND scope='private' AND deleted_at_ms IS NULL${lock ? ' FOR UPDATE' : ''}`, [config.destinationId, row.owner_user_id]))[0];
+        return { ...row, ...workflow, user_id: row.owner_user_id, guild_id: null, scope: 'private', source_locale: 'ja',
+            source_id: `${row.account_id}:${subscription?.id || ''}:${subscription?.revision || 0}`, destination_key: config.destinationId || `dm:${row.owner_user_id}`,
+            destination_type: 'dm', destination_id: config.destinationId || null, monitor_revision: Number(row.revision),
+            workflow_id: config.workflowId || null, x_subscription_id: config.subscriptionId || null,
+            x_subscription_revision: Number(subscription?.revision || 0),
+            x_binding_ready: !!subscription && Number(subscription.receiver_revision) === Number(subscription.revision) && !!subscription.receiver_state && subscription.receiver_state !== 'requires_reenrollment',
+            enabled: Number(row.enabled) === 1 && row.state === 'ready' && (!config.workflowId || !!workflow && !workflow.deleted_at_ms) && (!config.destinationId || !!destination),
+            deleted_at_ms: row.state === 'deleted' ? Number(row.updated_at_ms) || 1 : workflow?.deleted_at_ms || null };
+    }
+    async function xEligibility(query, target, now, lock = false) {
+        if (!target?.enabled || !target.x_binding_ready) return { state: 'cancelled', code: 'X_MONITOR_NOT_AVAILABLE' };
+        const owner = target.user_id;
+        if (lock) await require('./entitlements').lockOwner(query, owner);
+        const rollout = await require('./x-rollout-policy').evaluateXRollout(query, { userId: owner }, options.rolloutMode === undefined ? {} : { mode: options.rolloutMode });
+        if (!rollout.eligible) return { state: 'excluded', code: rollout.reasonCode };
+        const plan = await require('./entitlements').inspectXPlan(query, owner, now, { useLegacyUserInterval: options.useLegacyUserInterval === true || process.env.ANGELIC_X_USE_LEGACY_USER_INTERVAL === '1' });
+        if (!Number.isSafeInteger(plan.intervalMinutes) || plan.intervalMinutes < 5 || plan.intervalMinutes > 10080) return { state: 'pending', code: 'X_MONITOR_NOT_CONFIGURED', dueAtMs: now + MINUTE };
+        const slot = (await query("SELECT slot_index FROM automation_notification_slots WHERE owner_user_id=? AND target_kind='x' AND target_id=?", [owner, String(target.id)]))[0];
+        if (!slot || Number(slot.slot_index) > plan.slotLimit) return { state: 'excluded', code: 'AUTOMATION_SLOT_LIMIT' };
+        if (target.pool_kind === 'free') return { state: 'ready' };
+        const rows = await query("SELECT id FROM automation_x_monitors WHERE owner_user_id=? AND state<>'deleted' AND pool_kind=? ORDER BY id", [owner, target.pool_kind]);
+        const rank = rows.findIndex(row => String(row.id) === String(target.id)) + 1;
+        if (!rank) return { state: 'excluded', code: 'X_MONITOR_NOT_AVAILABLE' };
+        if (target.pool_kind === 'supporter') {
+            const support = await require('./push-support-grants').getSupporterHolding(query, owner, now);
+            if (support.isSupporter && rank <= support.totalSupporterSlots) return { state: 'ready' };
+        } else if (target.pool_kind === 'special' && plan.tier === 'paid') {
+            const row = (await query(`SELECT c.special_slot_limit,c.eligible,p.enabled FROM automation_push_plan_policy c
+                JOIN automation_notification_plans p ON p.plan_id=c.plan_id WHERE c.plan_id=?`, [plan.planId]))[0];
+            if (Number(row?.eligible) === 1 && Number(row.enabled) === 1 && Number.isSafeInteger(Number(row.special_slot_limit)) && rank <= Number(row.special_slot_limit)) return { state: 'ready' };
+        }
+        return { state: 'excluded', code: 'X_MONITOR_NOT_AVAILABLE' };
+    }
     async function finishLegacy(query, kind, delivery, state, now, code = null, nextAttemptAtMs = null) {
+        if (kind === 'x') return true;
         const result = await query(`UPDATE ${table(kind)}_deliveries SET status=?,lease_token=NULL,lease_expires_at_ms=0,next_attempt_at_ms=?,last_error_code=? WHERE id=? AND status='pending' AND lease_token=?`,
             [state, state === 'pending' ? nextAttemptAtMs ?? now + 60000 : 0, code, delivery.id, delivery.lease_token]);
         // This is the cadence window in which the event is handed to the
@@ -50,7 +105,9 @@ function createQueue(db, evaluator, options = {}) {
         return Number(result.affectedRows) === 1;
     }
     async function route(kind, delivery, now = Date.now()) {
-        const before = await snapshot(queryDB, kind, delivery.target_id);
+        if (kind === 'x' && !admittedXInputs.has(delivery)) fail('X_NOTIFICATION_INBOX_INVALID', 'X通知は受信記録から処理してください。');
+        const before = await snapshot(queryDB, kind, delivery.target_id, false, kind === 'x' ? delivery.owner_user_id : null);
+        if (kind === 'x' && (!before || before.user_id !== delivery.owner_user_id || before.x_subscription_id !== delivery.subscription_id || !require('./x-event-router').matchesXMonitor(before, delivery.x_notification))) return { state: 'cancelled', code: 'X_MONITOR_CHANGED' };
         let evaluation, bindings = {};
         const graphEnabled = graph?.enabled === true && !!before?.workflow_id && !!before?.workflow_enabled && !!before?.definition_json;
         if (graphEnabled) bindings = parse(before.bindings_json) || {};
@@ -62,14 +119,22 @@ function createQueue(db, evaluator, options = {}) {
         }
         return db.withDatabaseTransaction(async query => {
             let source = null;
+            if (kind === 'x') await require('./entitlements').lockOwner(query, delivery.owner_user_id);
             if (kind === 'auto' && before?.user_id) {
                 await require('./entitlements').lockOwner(query, before.user_id);
                 source = await require('./monitor-cadence').lockTargetSource(query, before.user_id, String(delivery.target_id));
             }
-            const target = await snapshot(query, kind, delivery.target_id, true);
-            const records = await query(`SELECT status,lease_token,lease_expires_at_ms,next_attempt_at_ms FROM ${table(kind)}_deliveries WHERE id=? FOR UPDATE`, [delivery.id]);
+            const target = await snapshot(query, kind, delivery.target_id, true, kind === 'x' ? delivery.owner_user_id : null);
+            const records = kind === 'x' ? [] : await query(`SELECT status,lease_token,lease_expires_at_ms,next_attempt_at_ms FROM ${table(kind)}_deliveries WHERE id=? FOR UPDATE`, [delivery.id]);
             const record = records[0];
-            if (!record || record.status !== 'pending' || record.lease_token !== delivery.lease_token || Number(record.lease_expires_at_ms) <= clock()) return { state: 'lease_lost' };
+            if (kind !== 'x' && (!record || record.status !== 'pending' || record.lease_token !== delivery.lease_token || Number(record.lease_expires_at_ms) <= clock())) return { state: 'lease_lost' };
+            if (kind === 'x') {
+                if (target?.user_id !== delivery.owner_user_id || target.x_subscription_id !== delivery.subscription_id || target.x_subscription_revision !== delivery.subscription_revision || !require('./x-event-router').matchesXMonitor(target, delivery.x_notification)) return { state: 'cancelled', code: 'X_MONITOR_CHANGED' };
+                const received = await query("SELECT i.id FROM automation_x_push_inbox i JOIN automation_x_subscriptions s ON s.id=i.subscription_id WHERE i.id=? AND i.subscription_id=? AND s.owner_user_id=? AND i.subscription_revision=s.revision AND i.status IN ('received','routed') FOR UPDATE", [delivery.id, delivery.subscription_id, delivery.owner_user_id]);
+                if (!received.length) return { state: 'cancelled', code: 'X_NOTIFICATION_INBOX_CHANGED' };
+                const eligibility = await xEligibility(query, target, now);
+                if (eligibility.state !== 'ready') return eligibility;
+            }
             if (!target?.enabled || target.deleted_at_ms) {
                 await finishLegacy(query, kind, delivery, 'cancelled', now, 'MONITOR_DISABLED');
                 return { state: 'cancelled' };
@@ -78,7 +143,7 @@ function createQueue(db, evaluator, options = {}) {
                 await finishLegacy(query, kind, delivery, 'pending', now, 'RULE_PAUSED_OR_CHANGED');
                 return { state: 'pending' };
             }
-            const dedupe = hash(`delivery:${kind}:${delivery.id}`);
+            const dedupe = kind === 'x' ? hash(JSON.stringify(['x-post', target.user_id, String(target.id), delivery.x_notification.event.contentId])) : hash(`delivery:${kind}:${delivery.id}`);
             const existing = await query('SELECT id FROM automation_runs WHERE dedupe_key=?', [dedupe]);
             if (existing.length) {
                 await finishLegacy(query, kind, delivery, 'routed', now);
@@ -119,7 +184,7 @@ function createQueue(db, evaluator, options = {}) {
                     sourceContext: { channelId: target.origin_channel_id || null, nsfw: !!target.origin_channel_nsfw, destinationType: target.destination_type, webhookEndpointId: target.webhook_endpoint_id ? String(target.webhook_endpoint_id) : null } };
                 await query('INSERT INTO automation_runs (id,dedupe_key,workflow_id,revision,owner_user_id,guild_id,scope,target_kind,target_id,event_json,trace_json,state,created_at_ms) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)',
                     [runId, dedupe, target.workflow_id, target.active_revision, target.user_id, target.guild_id, scope, kind, target.id, JSON.stringify(event), '[]', 'flow_pending', now]);
-                await graph.store.initializeInTransaction(query, { runId, context: flowContext, now, unit: { kind: 'event', ancestry: [], members: [{ id: runId, runId, event, display: structuredClone(NODE_TYPES.transform.defaults), schedules: [], dueAtMs: now, deadlineMs,
+                await graph.store.initializeInTransaction(query, { runId, context: flowContext, now, unit: { kind: 'event', ancestry: [], members: [{ id: runId, runId, event, display: { ...structuredClone(NODE_TYPES.transform.defaults), ...(kind === 'x' ? { format: 'normal' } : {}) }, schedules: [], dueAtMs: now, deadlineMs,
                     defaultPriceText: kind === 'price' ? delivery.message_text : null, context: flowContext.sourceContext, targetKind: kind }] } });
                 await finishLegacy(query, kind, delivery, 'routed', handoffAtMs);
                 return { state: 'routed', runId, execution: 'flow_v2' };
@@ -138,6 +203,12 @@ function createQueue(db, evaluator, options = {}) {
                     // Preserve the observed price, never refetch current prices
                     // to compose an older scheduled notification.
                     defaultPriceText: kind === 'price' && !transformed ? delivery.message_text : null };
+                // X defaults to the ordinary Bot expansion path. Existing
+                // auto/price workflows keep their current default display.
+                if (kind === 'x' && !transformed) {
+                    plan.display = { ...plan.display, format: 'normal' };
+                    plan.text = require('./text-transform').outputText(plan.display, plan.event);
+                }
                 const destinationKey = destinationId || `${kind}:${target.id}:${target.destination_key}`;
                 let due = plan.dueAtMs;
                 if (plan.aggregate) due = scheduleDelivery((Math.floor(due / (plan.aggregate.minutes * MINUTE)) + 1) * plan.aggregate.minutes * MINUTE, plan.schedules, plan.deadlineMs ?? Infinity);
@@ -181,6 +252,17 @@ function createQueue(db, evaluator, options = {}) {
             return { state: 'routed', runId };
         });
     }
+    async function routeX(input, now = clock()) {
+        if (!input || !/^\d{1,32}$/.test(String(input.ownerUserId || '')) || !/^[1-9]\d{0,19}$/.test(String(input.monitorId || ''))
+            || !/^[1-9]\d{0,19}$/.test(String(input.inboxEventId || '')) || !/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(String(input.subscriptionId || ''))) fail('X_NOTIFICATION_INBOX_INVALID', 'X通知の受信元を確認できません。');
+        const inbox = (await queryDB("SELECT i.subscription_revision,i.received_at_ms FROM automation_x_push_inbox i JOIN automation_x_subscriptions s ON s.id=i.subscription_id WHERE i.id=? AND i.subscription_id=? AND s.owner_user_id=? AND i.subscription_revision=s.revision AND i.status IN ('received','routed')", [String(input.inboxEventId), input.subscriptionId, String(input.ownerUserId)]))[0];
+        if (!inbox) return { state: 'cancelled', code: 'X_NOTIFICATION_INBOX_CHANGED' };
+        const notification = require('./x-event-router').normalizeXNotification(input.payload, { receivedAtMs: Number(inbox.received_at_ms) });
+        const delivery = { id: String(input.inboxEventId), target_id: String(input.monitorId), owner_user_id: String(input.ownerUserId),
+            subscription_id: input.subscriptionId, subscription_revision: Number(inbox.subscription_revision), x_notification: notification };
+        admittedXInputs.add(delivery);
+        return route('x', delivery, now);
+    }
     async function claim(now = Date.now()) {
         return db.withDatabaseTransaction(async query => {
             // A crashed process may have submitted a message before its DB ACK.
@@ -193,7 +275,8 @@ function createQueue(db, evaluator, options = {}) {
             const turn = Number((await query('SELECT used_count FROM automation_counters WHERE counter_key=? FOR UPDATE', [priorityKey]))[0]?.used_count || 0) % 4;
             const square = require('./square-billing').getSquareScope();
             const supporter = `u.is_donor=1${square.configured ? ' OR ds.active=1' : ''}`;
-            const priority = `COALESCE(p.priority,${square.configured ? 'sp.priority,' : ''}b.priority,IF(${supporter},1,0))`;
+            const xJob = "(r.target_kind='x' OR CASE WHEN JSON_VALID(j.plan_json) THEN JSON_SEARCH(j.plan_json,'one','x',NULL,'$.members[*].targetKind') ELSE NULL END IS NOT NULL)";
+            const priority = `COALESCE(p.priority,${square.configured ? 'sp.priority,' : ''}b.priority,IF(NOT ${xJob} AND (${supporter}),1,0))`;
             const validPolicy = alias => `${alias}.slot_limit BETWEEN 1 AND 10000 AND ${alias}.minute_limit BETWEEN 1 AND 10000 AND ${alias}.day_limit BETWEEN 1 AND 1000000 AND ${alias}.priority BETWEEN 0 AND 100`;
             // Three priority turns, then an oldest-first turn. This durable
             // shared fair turn also serves lower nonzero priorities when an
@@ -207,7 +290,7 @@ function createQueue(db, evaluator, options = {}) {
                 LEFT JOIN automation_notification_plans sp ON sp.plan_id=ss.plan_id AND sp.enabled=1 AND sp.plan_id NOT IN ('free','supporter') AND ${validPolicy('sp')}
                 LEFT JOIN automation_square_donation_policy dp ON dp.environment=? AND dp.merchant_id=? AND dp.currency IS NOT NULL
                 LEFT JOIN automation_square_donation_supporters ds ON ds.owner_user_id=r.owner_user_id AND ds.environment=dp.environment AND ds.merchant_id=dp.merchant_id AND ds.policy_updated_at_ms=dp.updated_at_ms AND ds.active=1 AND (ds.valid_until_at_ms IS NULL OR ds.valid_until_at_ms>?)` : ''}
-                LEFT JOIN automation_notification_plans b ON b.plan_id=IF(${supporter},'supporter','free') AND ${validPolicy('b')} WHERE
+                LEFT JOIN automation_notification_plans b ON b.plan_id=IF(NOT ${xJob} AND (${supporter}),'supporter','free') AND ${validPolicy('b')} WHERE
                 (j.state='pending' AND j.due_at_ms<=? OR j.state='leased' AND j.lease_until_ms<=?)
                 ORDER BY ${turn === 3 ? '' : `${priority} DESC,`}j.due_at_ms,j.created_at_ms,j.id LIMIT 1 FOR UPDATE`, [now, ...(square.configured ? [square.environment, square.merchantId, now, square.environment, square.merchantId, now] : []), now, now]);
             if (!rows.length) return null;
@@ -233,9 +316,9 @@ function createQueue(db, evaluator, options = {}) {
         const members = Array.isArray(plan.members) ? plan.members : [];
         const accepted = [], missing = [];
         const eligibility = new Map();
-        let paused = false, eligibilityCode = null;
+        let paused = false, eligibilityCode = null, pauseCode = null, pauseDueAtMs = null;
         for (const member of members) {
-            if (!member || !['auto', 'price'].includes(member.targetKind) || !/^\d{1,20}$/.test(String(member.targetId))) { missing.push(member); continue; }
+            if (!member || !['auto', 'price', 'x'].includes(member.targetKind) || !/^\d{1,20}$/.test(String(member.targetId))) { missing.push(member); continue; }
             const key = `${member.targetKind}:${member.targetId}`;
             if (!eligibility.has(key)) {
                 try {
@@ -248,14 +331,19 @@ function createQueue(db, evaluator, options = {}) {
                 }
             }
             if (!eligibility.get(key)) { missing.push(member); continue; }
-            const target = await snapshot(query, member.targetKind, member.targetId, lock);
+            const target = await snapshot(query, member.targetKind, member.targetId, lock, job.owner_user_id);
+            if (member.targetKind === 'x') {
+                const status = await xEligibility(query, target, clock(), lock);
+                if (status.state === 'pending') { paused = true; pauseCode = status.code; pauseDueAtMs = Math.max(pauseDueAtMs || 0, status.dueAtMs || clock() + MINUTE); }
+                else if (status.state !== 'ready') { eligibilityCode = status.code; missing.push(member); continue; }
+            }
             const valid = target?.enabled && !target.deleted_at_ms && Number(target.monitor_revision || 1) === Number(member.monitorRevision)
                 && target.user_id === job.owner_user_id && targetIdentity(target) === member.targetIdentity && (job.workflow_id || null) === (target.workflow_id || null);
             if (!valid) { missing.push(member); continue; }
             if (job.workflow_id && !target.workflow_enabled) paused = true;
             accepted.push(member);
         }
-        return { accepted, changed: missing.length > 0, paused, eligibilityCode };
+        return { accepted, changed: missing.length > 0, paused, eligibilityCode, pauseCode, pauseDueAtMs };
     }
     async function refreshFlowJob(job, now = Date.now()) {
         if (!job.plan?.flowV2) return { state: 'ready', job };
@@ -277,7 +365,7 @@ function createQueue(db, evaluator, options = {}) {
                 plan.schedules = require('./flow-projector').uniqueSchedules(plan.members);
                 await query('UPDATE automation_jobs SET plan_json=?,deadline_ms=?,updated_at_ms=? WHERE id=? AND lease_token=?', [JSON.stringify(plan), plan.deadlineMs, now, job.id, job.lease_token]);
             }
-            return { state: status.paused ? 'pending' : 'ready', code: status.paused ? 'WORKFLOW_PAUSED' : null, dueAtMs: status.paused ? now + 60000 : null, job: { ...job, deadline_ms: plan.deadlineMs, plan } };
+            return { state: status.paused ? 'pending' : 'ready', code: status.paused ? status.pauseCode || 'WORKFLOW_PAUSED' : null, dueAtMs: status.paused ? status.pauseDueAtMs || now + 60000 : null, job: { ...job, deadline_ms: plan.deadlineMs, plan } };
         });
     }
     async function check(job, now = Date.now(), query = queryDB, lock = false) {
@@ -287,16 +375,21 @@ function createQueue(db, evaluator, options = {}) {
             const flow = await validFlowMembers(query, job, job.plan, lock);
             if (!flow.accepted.length) return flow.eligibilityCode ? { state: 'excluded', code: flow.eligibilityCode } : { state: 'cancelled', code: 'FLOW_MEMBERS_CANCELLED' };
             if (flow.changed) return { state: 'pending', code: 'FLOW_MEMBERSHIP_CHANGED', dueAtMs: now };
-            if (flow.paused) return { state: 'pending', code: 'WORKFLOW_PAUSED', dueAtMs: now + 60000 };
-            const target = await snapshot(query, flow.accepted[0].targetKind, flow.accepted[0].targetId, lock);
+            if (flow.paused) return { state: 'pending', code: flow.pauseCode || 'WORKFLOW_PAUSED', dueAtMs: flow.pauseDueAtMs || now + 60000 };
+            const target = await snapshot(query, flow.accepted[0].targetKind, flow.accepted[0].targetId, lock, job.owner_user_id);
             if (job.deadline_ms != null && now > Number(job.deadline_ms)) return { state: 'expired', code: 'DEADLINE_EXCEEDED' };
             const next = scheduleDelivery(Math.max(Number(job.due_at_ms), now), job.plan.schedules, job.deadline_ms == null ? Infinity : Number(job.deadline_ms));
             if (next === null) return { state: 'expired', code: 'NO_DELIVERY_WINDOW' };
             if (next > now) return { state: 'pending', code: 'WAIT_FOR_WINDOW', dueAtMs: next };
             return checkDestination(query, job, target, now);
         }
-        const target = await snapshot(query, job.target_kind, job.target_id, lock);
+        const target = await snapshot(query, job.target_kind, job.target_id, lock, job.owner_user_id);
         if (!target?.enabled || Number(target.monitor_revision || 1) !== job.plan.monitorRevision || targetIdentity(target) !== job.plan.targetIdentity || target.deleted_at_ms || (job.workflow_id || null) !== (target.workflow_id || null)) return { state: 'cancelled', code: 'MONITOR_CHANGED' };
+        if (job.target_kind === 'x') {
+            if (target.user_id !== job.owner_user_id) return { state: 'cancelled', code: 'X_MONITOR_CHANGED' };
+            const status = await xEligibility(query, target, now, lock);
+            if (status.state !== 'ready') return status;
+        }
         if (job.deadline_ms != null && now > Number(job.deadline_ms)) return { state: 'expired', code: 'DEADLINE_EXCEEDED' };
         if (job.workflow_id && !target.workflow_enabled) return { state: 'pending', code: 'WORKFLOW_PAUSED', dueAtMs: now + 60000 };
         const next = scheduleDelivery(Math.max(Number(job.due_at_ms), now), job.plan.schedules, job.deadline_ms == null ? Infinity : Number(job.deadline_ms));
@@ -310,6 +403,7 @@ function createQueue(db, evaluator, options = {}) {
             const dest = rows[0];
             if (!dest || dest.deleted_at_ms) return { state: 'cancelled', code: 'DESTINATION_DELETED' };
             if (!dest.enabled) return { state: 'pending', code: 'DESTINATION_DISABLED', dueAtMs: now + 60000 };
+            if ((job.target_kind === 'x' || job.plan?.members?.some(member => member.targetKind === 'x')) && (dest.scope !== 'private' || dest.owner_user_id !== job.owner_user_id)) return { state: 'cancelled', code: 'DESTINATION_SCOPE_CHANGED' };
             if (dest.scope === 'private' && dest.owner_user_id !== job.owner_user_id || job.scope === 'guild' && (dest.scope !== 'guild' || dest.guild_id !== job.guild_id) || dest.kind === 'dm' && dest.dm_user_id !== job.owner_user_id) return { state: 'cancelled', code: 'DESTINATION_SCOPE_CHANGED' };
             return { state: 'ready', destination: dest, target };
         }
@@ -354,7 +448,7 @@ function createQueue(db, evaluator, options = {}) {
         const result = await queryDB("UPDATE automation_jobs SET lease_until_ms=?,updated_at_ms=? WHERE id=? AND lease_token=? AND state IN ('leased','sending') AND lease_until_ms>?", [now + 120000, now, job.id, job.lease_token, now]);
         return Number(result.affectedRows) === 1;
     }
-    return { route, claim, check, refreshFlowJob, beginSend, transition, acknowledgeStep, renewLease };
+    return { route, routeX, claim, check, refreshFlowJob, beginSend, transition, acknowledgeStep, renewLease };
 }
 function earliest(a, b) { return a == null ? b ?? null : b == null ? Number(a) : Math.min(Number(a), Number(b)); }
 function targetIdentity(target) { return hash(JSON.stringify([String(target.source_id), target.destination_key, target.rule_key || null, target.user_id, target.guild_id])); }

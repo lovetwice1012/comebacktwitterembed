@@ -17,7 +17,9 @@ is placed in the repository. Byte hashes are recorded independently and checked
 before acceptance.
 
 Decision: build the CLI in `packages/angelic-angel`, strict TypeScript ESM,
-Node.js 24.15.0 (the inspected Active LTS major), npm with committed package lock.
+Node.js 24.21.0, npm with committed package lock. The original 24.15.0 pin is
+superseded by the 2026-10-14 Windows native TCP crash diagnosis; see
+`node-startup-diagnosis.md`. The Rust baseline and protocol remain unchanged.
 Use Node crypto for ECDH, HKDF and AES-GCM, `ws` for WebSocket frame/TLS support,
 and `smol-toml` for TOML. Both production dependencies are pinned. TOML integer
 parsing uses BigInt internally to preserve Rust's integer/float distinction for

@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<testsuites>
+	<testsuite name="native signed Firefox storage → local file, both engines, isolated environment and unchanged originals" time="22.694685" disabled="0" errors="0" tests="4" failures="0" skipped="0" hostname="DESKTOP-V9MILB1">
+		<testcase name="PowerShell 5.1: creates only a new, private local export and performs no upload" time="5.434215" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\native-test\x-notification-export.test.cjs"/>
+		<testcase name="PowerShell 7: creates only a new, private local export and performs no upload" time="6.274524" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\native-test\x-notification-export.test.cjs"/>
+		<testcase name="both GUI process bridges create a Japanese-named file and return only a safe UTF-8 summary" time="9.787799" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\native-test\x-notification-export.test.cjs"/>
+		<testcase name="cooperative cancellation creates no output and removes the isolated reader and scratch" time="1.132212" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\native-test\x-notification-export.test.cjs"/>
+	</testsuite>
+	<!-- tests 5 -->
+	<!-- suites 0 -->
+	<!-- pass 5 -->
+	<!-- fail 0 -->
+	<!-- cancelled 0 -->
+	<!-- skipped 0 -->
+	<!-- todo 0 -->
+	<!-- duration_ms 22789.4764 -->
+</testsuites>

@@ -40,7 +40,7 @@ const TIMES = [
     ['evening', '毎日18時', ['18:00', '18:01']], ['day', '9〜22時', ['09:00', '22:00']],
     ['weekday', '平日9〜18時', ['09:00', '18:00']], ['weekend', '週末10〜18時', ['10:00', '18:00']], ['delay', '30分後', null],
 ];
-const FORMATS = ['expanded', 'card', 'text', 'url'];
+const FORMATS = ['normal', 'expanded', 'card', 'text', 'url'];
 function template(goalId = 'all', timeId = 'now', format = 'expanded') {
     const goal = GOALS.find(g => g[0] === goalId), time = TIMES.find(t => t[0] === timeId);
     if (!goal || !time || !FORMATS.includes(format)) throw new Error('TEMPLATE_UNKNOWN');

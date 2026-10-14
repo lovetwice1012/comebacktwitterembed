@@ -1,0 +1,45 @@
+{
+  "recordedAtUtc": "2026-10-14T02:12:56.8640921Z",
+  "nodeVersion": "24.21.0",
+  "tests": 20,
+  "passed": 20,
+  "failed": 0,
+  "skipped": 0,
+  "todo": 0,
+  "durationMs": 14209.7345,
+  "installerHosts": [
+    "Windows PowerShell 5.1",
+    "PowerShell 7"
+  ],
+  "zipUrl": "https://nodejs.org/dist/v24.21.0/node-v24.21.0-win-x64.zip",
+  "checksumsUrl": "https://nodejs.org/dist/v24.21.0/SHASUMS256.txt",
+  "zipSha256": "158f7685b44de51f6c0df1d153526cbcd3e1bc739a8dfc607721cef75de9e541",
+  "executableSha256": "ba4e6d110e8c1592a1ecd390f6b05f3da124b13871a5be62b341a07a853c6c32",
+  "signer": "CN=OpenJS Foundation",
+  "verified": [
+    "missing and tampered cache rejected",
+    "fixed cache path and no path fallback",
+    "running matching version still verified",
+    "junction rejected",
+    "arguments cwd environment inherited",
+    "nonzero exit and signals preserved",
+    "no added JIT switches or automatic retry",
+    "installer refuses invalid downloaded zip before expansion",
+    "installer valid cached executable signature verified on both PowerShell hosts",
+    "installer invalid signature rejected with valid executable hash",
+    "owned staging cleanup",
+    "UTF-8 BOM and both PowerShell parsers",
+    "Fresh official online ZIP installation passed on Windows PowerShell 5.1 with real SHA/signature/atomic publish/version checks"
+  ],
+  "limitations": [
+    "CJS launcher requires an initial runnable Node process; it opens no network sockets, and application networking runs only in the verified pinned child. Direct PowerShell entry point can avoid an older bootstrap Node altogether.",
+    "Fresh installer own staging cleaned; outer disposable runtime fixture cleanup was blocked by automatic approval review"
+  ],
+  "sha256": {
+    "scripts/run-project-node.cjs": "a0d3b78fc8aa98357c2bd115469083c44cbcd944d7b965b52ec1b205914077ad",
+    "scripts/setup-project-node.ps1": "0724170c157fe7d5e22c92361f4e7ea3ae73a2091c3268b812fc190565884aa2",
+    "scripts/test/project-node-runtime.test.js": "bf6237fbd7272343d8b495bc2b194ae87684958874a5adf4e54d4955c737ac32",
+    "docs/angelic-angel/project-node-runtime-tests.xml": "b1bdab96d2e015227fff0662a7ff2fd49e535db2be13a610d42f39b080456335"
+  },
+  "freshInstallationEvidence": "docs/angelic-angel/project-node-fresh-install-validation.json"
+}

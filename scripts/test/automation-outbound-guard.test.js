@@ -36,3 +36,31 @@ test('late unknown Gateway events are suppressed for a bounded window and line e
     clock = 300001;
     assert.equal(await guard.shouldIgnore(late), false);
 });
+
+test('normal notification receipts release early and late Gateway events to ordinary expansion', async () => {
+    const guard = createOutboundGuard(), ticket = guard.begin('webhook', 'channel', body, { normalExpansion: true });
+    const incoming = guard.shouldIgnore(event('normal-message'));
+    ticket.sent('normal-message');
+    assert.equal(await incoming, false);
+    assert.equal(await guard.shouldIgnore(event('normal-message')), false);
+    assert.equal(await guard.shouldIgnore(event('other-message')), false);
+});
+
+test('a visible normal notification can expand when its HTTP outcome is unknown', async () => {
+    const guard = createOutboundGuard(), ticket = guard.begin('webhook', 'channel', body, { normalExpansion: true });
+    const incoming = guard.shouldIgnore(event('visible-normal'));
+    ticket.failed(true);
+    assert.equal(await incoming, false);
+    assert.equal(await guard.shouldIgnore(event('visible-normal')), false);
+});
+
+test('a correlated normal receipt overrides uncertain direct output with identical content', async () => {
+    const guard = createOutboundGuard();
+    guard.begin('webhook', 'channel', body).failed(true);
+    const normal = guard.begin('webhook', 'channel', body, { normalExpansion: true });
+    const incoming = guard.shouldIgnore(event('normal-after-unknown'));
+    normal.sent('normal-after-unknown');
+    assert.equal(await incoming, false);
+    assert.equal(await guard.shouldIgnore(event('normal-after-unknown')), false);
+    assert.equal(await guard.shouldIgnore(event('unknown-direct')), true);
+});

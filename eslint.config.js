@@ -33,9 +33,19 @@ module.exports = [
         },
     },
     {
+        files: ['client/angelic-setup/Read-PushSubscription.js'],
+        languageOptions: {
+            sourceType: 'script',
+            globals: { ...globals.browser, ChromeUtils: 'readonly', Services: 'readonly', Ci: 'readonly' },
+        },
+        // Rejecting control bytes is intentional in this input validator.
+        rules: { 'no-control-regex': 'off' },
+    },
+    {
         ignores: [
             'node_modules/**',
             'packages/angelic-angel/**',
+            'experiments/angelic-push/**',
             'dashboard/**',
             'saves/**',
             'scripts/**',

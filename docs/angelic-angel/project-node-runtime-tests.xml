@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<testsuites>
+	<testcase name="non-Windows uses the running Node without probing or changing a Windows cache" time="0.000649" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\project-node-runtime.test.js"/>
+	<testcase name="Windows rejects a missing cache and gives setup instructions without downloading or searching PATH" time="0.000574" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\project-node-runtime.test.js"/>
+	<testcase name="Windows resolves only the fixed version/cache path and refuses mismatched executable bytes" time="0.001603" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\project-node-runtime.test.js"/>
+	<testcase name="matching version does not bypass hash verification or fall back from an unverified running executable" time="0.000183" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\project-node-runtime.test.js"/>
+	<testcase name="Windows rejects relative/network/traversal paths, junctions and executable directories before reading bytes" time="0.000311" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\project-node-runtime.test.js"/>
+	<testcase name="launcher preserves arguments, cwd, environment and nonzero child exit without adding runtime flags" time="0.237351" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\project-node-runtime.test.js"/>
+	<testcase name="launcher forwards signals, removes listeners and makes only one spawn attempt on failure" time="0.000876" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\project-node-runtime.test.js"/>
+	<testcase name="Windows verifies the installed official runtime before using it" time="0.149925" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\project-node-runtime.test.js"/>
+	<testcase name="powershell.exe: installer parses and shares exact official pins with launcher" time="0.268722" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\project-node-runtime.test.js"/>
+	<testcase name="powershell.exe: installer refuses existing unverified files without overwrite or download" time="0.608561" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\project-node-runtime.test.js"/>
+	<testcase name="powershell.exe: invalid downloaded ZIP is never expanded and only owned temporary data is removed" time="0.661175" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\project-node-runtime.test.js"/>
+	<testcase name="powershell.exe: cache junction cannot redirect installation into another directory" time="0.527387" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\project-node-runtime.test.js"/>
+	<testcase name="powershell.exe: valid cached runtime is checked without download or global environment mutation" time="2.030959" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\project-node-runtime.test.js"/>
+	<testcase name="powershell.exe: valid hash cannot bypass missing OpenJS signature verification" time="1.608848" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\project-node-runtime.test.js"/>
+	<testcase name="pwsh.exe: installer parses and shares exact official pins with launcher" time="0.708656" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\project-node-runtime.test.js"/>
+	<testcase name="pwsh.exe: installer refuses existing unverified files without overwrite or download" time="1.039867" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\project-node-runtime.test.js"/>
+	<testcase name="pwsh.exe: invalid downloaded ZIP is never expanded and only owned temporary data is removed" time="0.962535" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\project-node-runtime.test.js"/>
+	<testcase name="pwsh.exe: cache junction cannot redirect installation into another directory" time="0.982417" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\project-node-runtime.test.js"/>
+	<testcase name="pwsh.exe: valid cached runtime is checked without download or global environment mutation" time="2.406210" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\project-node-runtime.test.js"/>
+	<testcase name="pwsh.exe: valid hash cannot bypass missing OpenJS signature verification" time="1.911300" classname="test" file="C:\Users\yussy\Documents\comebacktwitterembed\scripts\test\project-node-runtime.test.js"/>
+	<!-- tests 20 -->
+	<!-- suites 0 -->
+	<!-- pass 20 -->
+	<!-- fail 0 -->
+	<!-- cancelled 0 -->
+	<!-- skipped 0 -->
+	<!-- todo 0 -->
+	<!-- duration_ms 14209.7345 -->
+</testsuites>

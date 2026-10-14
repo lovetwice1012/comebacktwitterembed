@@ -1,0 +1,545 @@
+{
+  "dateJst": "2026-10-14",
+  "capturedUtc": "2026-10-14T01:16:45.626Z",
+  "branch": "codex/angelic-angel-node-port",
+  "node": "v24.15.0",
+  "scope": "History reconciliation and local reimplementation; no production or real X acceptance",
+  "history": {
+    "title": "枝分かれ · GitHub実装レビュー",
+    "url": "https://chatgpt.com/c/6ac37cdc-cec0-83e9-af8b-9288ee23abd4",
+    "coverage": "First GitHub URL on October 5 through latest cancellation discussion; ancestor conversation also read",
+    "method": "Read-only browser transcript with older history loaded; thread API alone exposed only five recent turns",
+    "decisions": "docs/angelic-angel/history-reconciliation.md"
+  },
+  "gates": {
+    "phase0": "previously accepted; immutable 14-file Rust baseline reverified",
+    "localReimplementation": "tested",
+    "fullServiceComplete": false,
+    "G1": "not accepted",
+    "actualFirefoxXSubscription": "unverified",
+    "actualXPayloadSchema": "unverified",
+    "actualDelivery": "unverified",
+    "realOAuth": "not exercised",
+    "processingPolicy": "awaiting user clarification; unset never starts",
+    "chromium": "not implemented or advertised as supported",
+    "productionChanged": false,
+    "productionDeployed": false,
+    "realPaymentsActivated": false
+  },
+  "tests": [
+    {
+      "path": "docs/angelic-angel/history-reimplementation-tests.xml",
+      "sha256": "8fcdef5ef34591d0fde201c83b470e6cb3744479783dd6e9f1f3cc3c5ee6bfac",
+      "tests": 574,
+      "pass": 574,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "todo": 0,
+      "duration_ms": 228498.7103
+    },
+    {
+      "path": "docs/angelic-angel/history-worker-config-tests.xml",
+      "sha256": "20f20431a6a7fba0589f69836a2bd3f121eef4fd97cd4e8493096434c2a0ee27",
+      "tests": 3,
+      "pass": 3,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "todo": 0,
+      "duration_ms": 123.9147
+    }
+  ],
+  "browser": {
+    "path": "docs/angelic-angel/onboarding-browser/browser.json",
+    "sha256": "2789fd580c2d07b2944b1b0393e600ab78421a501419f48d07276c4263a84ea7",
+    "checks": 10,
+    "pageErrors": 0,
+    "externalRequests": 0,
+    "fakeAuthenticatedActor": true,
+    "actualSharedApiAndSql": true
+  },
+  "sqlFixture": {
+    "host": "127.0.0.1",
+    "port": 33621,
+    "schemaPattern": "cbte_automation_test_<20hex>",
+    "serial": true,
+    "production": false
+  },
+  "checks": {
+    "rootTypecheck": "pass",
+    "rootLint": "pass",
+    "dashboardTypecheck": "pass",
+    "dashboardLint": "pass",
+    "baseline14Hash": "pass",
+    "diffWhitespace": "pass"
+  },
+  "resolvedReviewFindings": [
+    "shared supporter beta admission",
+    "explicit owned subscription binding",
+    "owner-first integrity and physical-send locks",
+    "manual-move CAS after owner locking",
+    "lease expiry revalidation before and after renewal",
+    "COMMIT-before-ACK and durable replay",
+    "periodic restart inbox recovery",
+    "generation-bound delayed callbacks",
+    "durable provider close4774 cooldown",
+    "shutdown after delayed decryption",
+    "pending receipt reconsideration after cursor reset",
+    "donation opportunity versus capacity wording"
+  ],
+  "preservedFailure": {
+    "path": "docs/angelic-angel/history-worker-config-tests-initial.xml",
+    "sha256": "a175b937d18be597f9446e1d4ded1fbba8d46b85ed0f16e84484c88536dadbbd",
+    "reason": "First fixture omitted required DB adapter methods; fixture fixed with no production-code relaxation"
+  },
+  "remaining": [
+    "User choice of batch versus per-event cadence",
+    "G1 real dedicated Firefox and X subscription/payload/delivery",
+    "Long-running vendor and operational acceptance",
+    "Deployment OS permissions, retention/withdrawal and operational alerts/metrics acceptance"
+  ],
+  "sourceFiles": [
+    {
+      "path": "client/angelic-setup/.gitattributes",
+      "sha256": "8665300680b052f017e6b6258dae7f2c83048d4086f752f2685194401d909b15"
+    },
+    {
+      "path": "client/angelic-setup/Export-XNotificationData.ps1",
+      "sha256": "3542bb834c886b6d262574951d9f6a8900a2d4847225a599f4c494317cc0c52e"
+    },
+    {
+      "path": "client/angelic-setup/FirefoxReader.ps1",
+      "sha256": "f278660528b65b63fcdaf04f7dbe7b3f1def58aef40c9eeab055c2e20b233a6c"
+    },
+    {
+      "path": "client/angelic-setup/LICENSE",
+      "sha256": "230184f60bae2feaf244f10a8bac053c8ff33a183bcc365b4d8b876d2b7f4809"
+    },
+    {
+      "path": "client/angelic-setup/README-ja.md",
+      "sha256": "8d7372e73252c6578c309b64c7ef97beb9a2cd6f34f49ecf9ae42efa8c0e871f"
+    },
+    {
+      "path": "client/angelic-setup/Read-PushSubscription.js",
+      "sha256": "f368f25b2b8c830b22f2ed0680fea08cc52a2e0af9e6c799d07e0de4594675b8"
+    },
+    {
+      "path": "client/angelic-setup/Setup-XNotifications.ps1",
+      "sha256": "c7f92deff892936fa1851364b605eb881e6919543f37049d47c7f277faa12546"
+    },
+    {
+      "path": "client/angelic-setup/Start-Setup.ps1",
+      "sha256": "6a212327a4258a134a940f7a2d0fe89b05fbcea5377414fd68690979c8527d48"
+    },
+    {
+      "path": "client/angelic-setup/はじめに読んでください.txt",
+      "sha256": "6e256a6268a74078e5fe870c2b884ce92a3680fdc219abb19baf7d86b6ac103d"
+    },
+    {
+      "path": "client/angelic-setup/ダブルクリックで開始.cmd",
+      "sha256": "0b604303929c5f8c5b4f5e9227f3ab157ce379be21cd6945491b0e0855202e9b"
+    },
+    {
+      "path": "dashboard/app/api/automation/[...path]/route.ts",
+      "sha256": "88c51f84e18710c3ffc703d9c36dd7481800a0e336fd70f8ad9446ec6661b96d"
+    },
+    {
+      "path": "dashboard/app/api/automation/x-setup/download/route.ts",
+      "sha256": "e5316b91c96d5bd5be2d42ff5ec0d43d14db317aafb4ff46172a9036c33a10ef"
+    },
+    {
+      "path": "dashboard/app/dashboard/automation/x/page.tsx",
+      "sha256": "478a531181b1b64711b79619ea309e5237997ba64a4396687f13014c1916bebc"
+    },
+    {
+      "path": "dashboard/components/admin/donation-policy-manager.tsx",
+      "sha256": "0230589e302fbda61348eed70397effee8a27c12040c51e18962daea94861505"
+    },
+    {
+      "path": "dashboard/components/admin/notification-plan-manager.tsx",
+      "sha256": "9dfee090f1fd0260c9a0e3a199e3e05ade82e3992e62f6be795432517def68e6"
+    },
+    {
+      "path": "dashboard/components/admin/push-capacity-diagnostics.tsx",
+      "sha256": "608fc17b6fc5a95b252d013c840a9bba1383990e1b1b0c08a4a4a5bd5fc9fa88"
+    },
+    {
+      "path": "dashboard/components/admin/push-capacity-manager.tsx",
+      "sha256": "5601a85be131d30326772241d1498ccff6368d3d04428cafed1388c2cc699403"
+    },
+    {
+      "path": "dashboard/components/automation/monitor-manager.tsx",
+      "sha256": "5ea66d11024cc220a6d1e5d115e96d5294664bf16ebdbe525c9318cdd152604e"
+    },
+    {
+      "path": "dashboard/components/automation/square-donation-manager.tsx",
+      "sha256": "39e849e447891fcd720e6d5137d5f6ec9d1f43d0f6dc3522137dc5f3807602a8"
+    },
+    {
+      "path": "dashboard/components/automation/x-monitor-manager.tsx",
+      "sha256": "cfb4cea872c0ba76eba34d78011f57545f20baa177d2a24589f2bdea70c77201"
+    },
+    {
+      "path": "dashboard/components/automation/x-monitor-move-editor.tsx",
+      "sha256": "69dcbbf7817d876f484eb09e7a5966d837045e0431441d5237b3722285088ae5"
+    },
+    {
+      "path": "dashboard/components/automation/x-monitor-view.ts",
+      "sha256": "823e7ba7cda19f932235b201c99f18191e844117fa2336e5666f5299ca2e4f7e"
+    },
+    {
+      "path": "dashboard/components/automation/x-notification-setup-screen.tsx",
+      "sha256": "deaf897a9c427946b32924e21f74746aeec129c083aa5abaceeded37cb953e84"
+    },
+    {
+      "path": "dashboard/components/automation/x-notification-setup.tsx",
+      "sha256": "2bd6958956c10ea888b2ac0f85f92c4af9611f5ab4bdf2787c1dc24294cfcc17"
+    },
+    {
+      "path": "dashboard/components/automation/x-setup-view.ts",
+      "sha256": "bbf2d06c403618547d0ae1006ff6ad4b4ece7521175c13f68fd701f394a50409"
+    },
+    {
+      "path": "dashboard/lib/automation-admission.ts",
+      "sha256": "5d3447e488c8689354266caa673f5019d5b143f7b7a29e71d42a7252736b68c6"
+    },
+    {
+      "path": "dashboard/lib/x-setup-download.ts",
+      "sha256": "2cb9097f70f5c32d5076d0a87ff7308fc1cdf7e4ea7cc69f83842b82a2e599a0"
+    },
+    {
+      "path": "dashboard/next.config.ts",
+      "sha256": "6e71130e6ef055771d54aa6e872ce5b0f92854f25a87602a5597ac49e4703375"
+    },
+    {
+      "path": "migrations/20261014_add_plan_confirmation_interval.sql",
+      "sha256": "6669bfb224e3fdf692601d5691168b02169067422cd2cdf2681fc08d3038cb54"
+    },
+    {
+      "path": "migrations/20261014_add_x_notification_intake.sql",
+      "sha256": "a4dfd91386a0e07c5b21889f92a1af5b2f7a70edba5a77d564436d63e0fa72d5"
+    },
+    {
+      "path": "migrations/20261014_add_x_push_receiver.sql",
+      "sha256": "af3b0a0d629b142a37ac34ba4550fb924d202c0610242bd5f60bbc773f1aa834"
+    },
+    {
+      "path": "package.json",
+      "sha256": "128cdbed7406b9f9fc271042d2f2364459f08811bbe044099835c1fa4b1ef370"
+    },
+    {
+      "path": "scripts/build-angelic-setup-package.cjs",
+      "sha256": "d8fc41cbaff78db6f37e433cd9ee7373f65e511cdfd4281fb7a1cc63daaac9cf"
+    },
+    {
+      "path": "scripts/native-test/x-notification-export.test.cjs",
+      "sha256": "62c3a4f2822f3d0d1d655dda24cdf52a4c25a124bcc0406db293d4fdcbb0901b"
+    },
+    {
+      "path": "scripts/run-x-notification-acceptance.cjs",
+      "sha256": "304257879278da82806f7083b3dc2e30be0101f0fafd1edafe9430a8c45b7f4d"
+    },
+    {
+      "path": "scripts/test/angelic-setup-package.test.js",
+      "sha256": "79a315a9bf80ef6686d40cc972329ebf9b7ba459ef4b38a44527ed0851e163a0"
+    },
+    {
+      "path": "scripts/test/autoextract.additionalautoextractslot.test.js",
+      "sha256": "7f3d00a366cb21880c909c6364ceb7d843fa39db47d1768908591bd1a364dc87"
+    },
+    {
+      "path": "scripts/test/automation-donation-ui.test.js",
+      "sha256": "4629515704463ad92f62271935fb830adecf9039a6b6acc101f7b0414a2c293b"
+    },
+    {
+      "path": "scripts/test/automation-entitlements-sql.test.js",
+      "sha256": "20ba3a123472b4a34da4e15f93dffaaff6d16f9bfd0ec7a7834d53dec65bfa86"
+    },
+    {
+      "path": "scripts/test/automation-http-boundary.test.js",
+      "sha256": "4f58546ef53344e5966c4cee488c16a1db7a912f8e02a58cdede5ef53ce9fec7"
+    },
+    {
+      "path": "scripts/test/automation-monitor-cadence-lifecycle-sql.test.js",
+      "sha256": "f1bf18c1097fd66be272311f07680efd2480110d182a0662cb3da20b5b6ed421"
+    },
+    {
+      "path": "scripts/test/automation-monitor-cadence-sql.test.js",
+      "sha256": "3b8b599962d82aafcabc7f416da6706fd8974f0ea379859f271ea3b7b81661bb"
+    },
+    {
+      "path": "scripts/test/automation-monitor-cadence-ui.test.js",
+      "sha256": "37d79c8f21f1cc96181fb8a07ae279d81f0cd2df4e20d2d4c67d2ec19d8c85ef"
+    },
+    {
+      "path": "scripts/test/automation-notification-quota-ui.test.js",
+      "sha256": "c5727b23b9cd957e750c9b6bd023b6071999b8e9fbb184735ee9c1692d6fa9cb"
+    },
+    {
+      "path": "scripts/test/automation-payment-navigation.test.js",
+      "sha256": "c5ee1b889c161c4fc0534e7afd7d9ba661e4ab9642e553f8daf06198b6e7806c"
+    },
+    {
+      "path": "scripts/test/automation-plan-admin-sql.test.js",
+      "sha256": "3ac6e8aa01ce95e06bb13d36842ab7de9b19ec155842fd50566031c48286d1e8"
+    },
+    {
+      "path": "scripts/test/automation-plan-admin-ui.test.js",
+      "sha256": "2d65d15c8729a80c87d3dcab07c018d9ed40f01ddcb91d0ac6f55091cf405394"
+    },
+    {
+      "path": "scripts/test/automation-push-capacity-sql.test.js",
+      "sha256": "fa8612feb2b3465777af26b6fa93bf2c36b5ae49fcc49d2e88a1ae6fdbb5618b"
+    },
+    {
+      "path": "scripts/test/automation-push-capacity-ui.test.js",
+      "sha256": "22929e8a2f0465a16ee15630b2954ea8acee4d93abfcbe772addaa451944e9e4"
+    },
+    {
+      "path": "scripts/test/automation-push-support-grants-sql.test.js",
+      "sha256": "d4187c8c8fc1876dbdc272f5b254610a005f9040f5201aaf989152e5b99f40d7"
+    },
+    {
+      "path": "scripts/test/automation-square-billing-sql.test.js",
+      "sha256": "1cf475a5674490c22924cfe559953944cef509e0675398c176ff8131fb81b8c3"
+    },
+    {
+      "path": "scripts/test/automation-square-commerce-ui.test.js",
+      "sha256": "facb518641302aa90292390ab5f0b0943217ff3f41fa355a7622977ab614b4ba"
+    },
+    {
+      "path": "scripts/test/automation-square-donations-sql.test.js",
+      "sha256": "ecf67ffc2db1f9717a779eeaef27cfc99b2f4f0845d87c92a9218df6e753e5c6"
+    },
+    {
+      "path": "scripts/test/automation-x-binding-sql.test.js",
+      "sha256": "06a328b6d343a4e5db33e49ea40b7cc1579be39befd935583761d549c51de244"
+    },
+    {
+      "path": "scripts/test/automation-x-delivery-sql.test.js",
+      "sha256": "ea9dc5283b5db7238516a40c5b6d7041332d86b0ec5ba36cf06276aac4c6b692"
+    },
+    {
+      "path": "scripts/test/automation-x-delivery.test.js",
+      "sha256": "49c721ce3acef68a18b3fd2f27aae5d4ba6661a65b72bd6537800a698e664d9d"
+    },
+    {
+      "path": "scripts/test/automation-x-monitor-ui.test.js",
+      "sha256": "c7a45d3223713c32bcb08a1c08e188d6db05aaea577daacc97b2cec8de54fb93"
+    },
+    {
+      "path": "scripts/test/automation-x-push-gateway.test.js",
+      "sha256": "ce9dee76eca1354e852144a6074026822bfea059959db94f8ebc97410ae25ed9"
+    },
+    {
+      "path": "scripts/test/automation-x-push-processing-sql.test.js",
+      "sha256": "c0a393d6f02c69fad8112b418898f5cd073e9ab562660c1ad7b12a59c5226e67"
+    },
+    {
+      "path": "scripts/test/automation-x-push-runtime-retry.test.js",
+      "sha256": "8d9dabd69600cf946c91194993e05f63ee0f7c2a6abe2a3188a84125695fc978"
+    },
+    {
+      "path": "scripts/test/automation-x-push-runtime.test.js",
+      "sha256": "a79884d225672d369a1c4ce427776c1077e08c93ae5af1bd2534700f234753f4"
+    },
+    {
+      "path": "scripts/test/automation-x-push-store.test.js",
+      "sha256": "023f965618fcc705e574f9f55d1149d735d7cd98e82562ff38ffc043df33367b"
+    },
+    {
+      "path": "scripts/test/automation-x-quota-migration.test.js",
+      "sha256": "26a8814234c341ac4a34238f3568df346c3b5cc129784547ce9f32c9d8620fc7"
+    },
+    {
+      "path": "scripts/test/automation-x-quota-sql.test.js",
+      "sha256": "cdf572bdf2625f9f6f57a077911337e711a35b9160ea6d75fe63fac8930e3cfc"
+    },
+    {
+      "path": "scripts/test/automation-x-rollout-policy.test.js",
+      "sha256": "8cf0a718d073d9952342bb7d7b058f1ef50cb5d458aa0f641a334eb9cb65cf3b"
+    },
+    {
+      "path": "scripts/test/automation-x-setup-download.test.js",
+      "sha256": "b6a2dadfb0efbec3097948553218e1e01f9e6a157e8f28d7e5d561fcb85d5712"
+    },
+    {
+      "path": "scripts/test/automation-x-setup-sql.test.js",
+      "sha256": "8ea85387fc1945e18d974f2357c9f83e2060e4d12c10d2eec8f2958692a54182"
+    },
+    {
+      "path": "scripts/test/automation-x-setup-transfer.test.js",
+      "sha256": "19857005b0202b1581811c2234051f091ed673f280502e82ce18e40b0ac8c313"
+    },
+    {
+      "path": "scripts/test/automation-x-setup-ui.test.js",
+      "sha256": "47af5027f9c44d269432b371ef5aa3fdfabf9d49e418e8b3c6e735af13afd6b1"
+    },
+    {
+      "path": "scripts/test/automation-x-worker-config.test.js",
+      "sha256": "6d49a0fbb932cfa22d9415cb37fec54aa198e21ab9b90bc3f9ae6077a60bb934"
+    },
+    {
+      "path": "scripts/test/helpers/x-push-fixture.cjs",
+      "sha256": "141c7768574bca1212a2578b103086408afc381ac4ac7308f42e53adeedd7895"
+    },
+    {
+      "path": "scripts/test/x-notification-reader.test.js",
+      "sha256": "b4ad99ea199e7d4e6c16615abb378a160e8efd2ad7a2abb41803735225de31b2"
+    },
+    {
+      "path": "scripts/verify-x-notification-setup.cjs",
+      "sha256": "45ff465e38233cc461531feaf137601a65119a882e29d3d4ebec7b639bb2303e"
+    },
+    {
+      "path": "src/automation/api.js",
+      "sha256": "9cfd9affe94ab00d106c499460418fee8012e408e9833790150f726250f93210"
+    },
+    {
+      "path": "src/automation/entitlements.d.ts",
+      "sha256": "052833ea6dbb26cd8031dd0e338a628f2ccb7e50f97d2571abd20eb2a697bcda"
+    },
+    {
+      "path": "src/automation/entitlements.js",
+      "sha256": "8f6b6bb96cd4f328e1c9bf7ee60008247b9d7fc0c102b5ba4fcbe1fc35e1156b"
+    },
+    {
+      "path": "src/automation/flow-projector.js",
+      "sha256": "2ab6c9b3ff9a958a7bb05dc02e99f08799dee830f90b8fa5ffb32bada32646be"
+    },
+    {
+      "path": "src/automation/monitor-cadence.js",
+      "sha256": "0bb0752a7694c9d7dbd136345b765176bde70fbd0b375633da2711525c8fd4fb"
+    },
+    {
+      "path": "src/automation/push-capacity-schema.sql.js",
+      "sha256": "59c86c4b12986c537c0bfc306e6549505fd7bc6bf31f0bd82af9c7efb8173f88"
+    },
+    {
+      "path": "src/automation/push-capacity.d.ts",
+      "sha256": "2059254d5aacba8ecf37eb7749e08035fe0eead257a7dc8575b4786375d0bc32"
+    },
+    {
+      "path": "src/automation/push-capacity.js",
+      "sha256": "757ab412b5d426212282d1fc3a49c6213b000d720e98a750f1785ce34b4761c6"
+    },
+    {
+      "path": "src/automation/push-support-grants-schema.sql.js",
+      "sha256": "8bd830fa25f7a8db9e4ef958bde3ddfd4f4f0c6f0b648f85cf8c56427e3bc93a"
+    },
+    {
+      "path": "src/automation/push-support-grants.d.ts",
+      "sha256": "004c09c67cb4dac927bb125f4fa9f49dff4889ea5e282fb13d25d6aa1e409a65"
+    },
+    {
+      "path": "src/automation/push-support-grants.js",
+      "sha256": "8d6af7c7c5fe2f34188241b48e69ffcfabc475acf2cd43bd141ccc4e01a07e54"
+    },
+    {
+      "path": "src/automation/queue.js",
+      "sha256": "2b28221f56eb2e6683f7ed1ca9956fdec8dadec20aa587d199ce59fefa1ef9b1"
+    },
+    {
+      "path": "src/automation/quota-migration.js",
+      "sha256": "1b3d0d86f4638b7863093acd5b75241f9638760a83e7597ee30c3004c3f07fa1"
+    },
+    {
+      "path": "src/automation/runtime.js",
+      "sha256": "2fa48c5ede5948ffbd26bbd02926164e82e638c494d9c6bce192ce2becc773be"
+    },
+    {
+      "path": "src/automation/schema.sql.js",
+      "sha256": "cd1536b99b20b1a2fcef3414545a0db97e8c3b2be0eb71acfd8f91e4ffe0d6e2"
+    },
+    {
+      "path": "src/automation/square-donations.d.ts",
+      "sha256": "ce4802886566a64a139d0e2db8aaa821ac38472066147016d81ec104e6e329f9"
+    },
+    {
+      "path": "src/automation/square-donations.js",
+      "sha256": "01da4fdcf27e562a49927cd9d1f6cde57f47845841e1071564ec4e94121936ea"
+    },
+    {
+      "path": "src/automation/x-event-router.js",
+      "sha256": "331d60744f5fd52c125d584d464a1a3487c4e4af3a20882c2ca8080baedc0410"
+    },
+    {
+      "path": "src/automation/x-monitor-quota.js",
+      "sha256": "af763c9365a38b88c88e25afec0bac7c6aaa7217c8f0f025dc030568e02d23f8"
+    },
+    {
+      "path": "src/automation/x-monitor-schema.sql.js",
+      "sha256": "776c3858b909a4f3d27debcefc6b997bd4f6cd360aef3e3d8d6a915d2cc7ed7a"
+    },
+    {
+      "path": "src/automation/x-push-gateway.js",
+      "sha256": "69a3f3e7b5955e958b1eff58df307be10204b43f379feaf11aecec826ec7b17c"
+    },
+    {
+      "path": "src/automation/x-push-runtime.js",
+      "sha256": "478a2b477bd61d325d20db34c8acf5a59a95d85e8433758e13787f5df1007841"
+    },
+    {
+      "path": "src/automation/x-push-schema.sql.js",
+      "sha256": "4bf328bb8e89867bf53fc3823a9af33a01415f64d9a3f1e434912a18e827a1de"
+    },
+    {
+      "path": "src/automation/x-push-store.js",
+      "sha256": "785dea1ea9e66d7696c4396d94f2ec1a61e314d6ee34dfc7fd606e4c58c86e96"
+    },
+    {
+      "path": "src/automation/x-rollout-policy.d.ts",
+      "sha256": "1b4e5bbf2d92e4d0cfabf3f4918b510bd13df7665c5245cf9e04c1afa691811c"
+    },
+    {
+      "path": "src/automation/x-rollout-policy.js",
+      "sha256": "f4cc4a16de67989495fb0d3be6d63baabb50e29e1dd081b444c83ff4f7242477"
+    },
+    {
+      "path": "src/automation/x-setup-schema.sql.js",
+      "sha256": "b2192b5484d65156adbe92e7e0ebb8c1a885f13b75776f1d835a8678776518ff"
+    },
+    {
+      "path": "src/automation/x-setup-transfer.d.ts",
+      "sha256": "f6df6dc4800253f90ab52ff68addaee4ea62150118df9265c54605243d5a555e"
+    },
+    {
+      "path": "src/automation/x-setup-transfer.js",
+      "sha256": "11969f36c39f987edb64b4cd45cf548db7ec8f88e301f2a6c03958094966c131"
+    },
+    {
+      "path": "src/automation/x-setup.js",
+      "sha256": "f5e1e79abfd559f1440a045f00cc5a22a731ac90d84ae9c43df9837dccf3f84e"
+    },
+    {
+      "path": "src/commands/handlers/autoextract/additionalautoextractslot.js",
+      "sha256": "2954458a2fbe18c57fc80831377ffe0e7e3b9048c78bf00471fdcda840c0ca03"
+    }
+  ],
+  "documents": [
+    {
+      "path": "Angelic_Angel_Codex_Implementation_Spec.md",
+      "sha256": "6d3da4bf56907c55a1cdcadf299cd74366521ba38804084e262b4c9b1b3733de"
+    },
+    {
+      "path": "docs/angelic-angel/history-reconciliation.md",
+      "sha256": "dd31cea8cec50769f946957e01e0357e22a4dc6416d93d835de9c42140148ccd"
+    },
+    {
+      "path": "docs/angelic-angel/server-receiver.md",
+      "sha256": "52bbfed57f1252846fc8873d73adcdbf1817c8846aa41ebbc039d73e61eb2a5e"
+    },
+    {
+      "path": "docs/angelic-angel/implementation-status.md",
+      "sha256": "3b755a454804212680bb11afa58503db91d1b1aa3f0867cf163adb8a2975f51c"
+    }
+  ],
+  "previousClient": {
+    "unchanged": true,
+    "archivePath": "artifacts/angelic-setup/x-notification-setup-0.1.0-preview.2.zip",
+    "sha256": "77dd61d8d42cb9438e38cc91b11bd6e5a0511381592c8ad07c0010483ed17fbe",
+    "nativeEvidence": "docs/angelic-angel/onboarding-native-tests.xml",
+    "rerunThisTurn": false
+  }
+}

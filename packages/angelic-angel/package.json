@@ -9,9 +9,9 @@
     "angelic-angel": "dist/index.js"
   },
   "engines": {
-    "node": ">=24.15.0 <25"
+    "node": ">=24.21.0 <25"
   },
-  "packageManager": "npm@11.12.1",
+  "packageManager": "npm@11.19.0",
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "start": "node dist/index.js",
