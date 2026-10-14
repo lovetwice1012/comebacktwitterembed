@@ -9,7 +9,7 @@ export type XMonitorQuota = {
 };
 export type XPool = { limit: number; used: number; available: number };
 export type XMonitor = {
-  id: string; accountId: string; accountHandle: string | null; name: string; enabled: boolean; state: string;
+  id: string; accountId: string | null; accountHandle: string | null; name: string; enabled: boolean; state: string;
   poolKind: "free" | "supporter" | "special" | null; subscriptionState: string; revision: number;
   notificationSettings: { workflowId?: string; destinationId?: string; subscriptionId?: string }; quality: XMonitorQuality;
 };
@@ -45,11 +45,12 @@ export function parseXQuota(value: unknown): XMonitorQuota {
 export function parseXMonitor(value: unknown): XMonitor {
   const item = xObject(value), settings = xObject(item.notificationSettings);
   if (typeof item.enabled !== "boolean" || !xCount(item.revision) || item.revision < 1
-    || typeof item.accountId !== "string" || !/^[1-9]\d{0,19}$/u.test(item.accountId) || ![null, "free", "supporter", "special"].includes(item.poolKind as string | null)) throw new Error("Invalid X response");
+    || item.accountId !== null && (typeof item.accountId !== "string" || !/^[1-9]\d{0,19}$/u.test(item.accountId)) || ![null, "free", "supporter", "special"].includes(item.poolKind as string | null)) throw new Error("Invalid X response");
   const handle = item.accountHandle == null ? null : text(item.accountHandle, 15);
   if (handle !== null && !/^[A-Za-z0-9_]{1,15}$/u.test(handle)) throw new Error("Invalid X response");
+  if (item.accountId === null && handle === null) throw new Error("Invalid X response");
   if (settings.subscriptionId != null && (typeof settings.subscriptionId !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu.test(settings.subscriptionId))) throw new Error("Invalid X response");
-  return { id: text(item.id, 128), accountId: String(item.accountId), accountHandle: handle, name: text(item.name), enabled: item.enabled,
+  return { id: text(item.id, 128), accountId: item.accountId === null ? null : String(item.accountId), accountHandle: handle, name: text(item.name), enabled: item.enabled,
     state: text(item.state, 32), poolKind: item.poolKind as XMonitor["poolKind"], subscriptionState: text(item.subscriptionState, 40), revision: item.revision,
     notificationSettings: { ...(typeof settings.workflowId === "string" ? { workflowId: text(settings.workflowId, 128) } : {}),
       ...(typeof settings.destinationId === "string" ? { destinationId: text(settings.destinationId, 128) } : {}),
@@ -70,9 +71,10 @@ export function xFeedback(cause: unknown): string {
   if (error.code === "AUTOMATION_SLOT_LIMIT") return xReason("X_MONITOR_PERSONAL_LIMIT");
   if (error.code === "X_MONITOR_DESTINATION_INELIGIBLE") return "現在の契約プランと支援者追加枠に合う移動先を選んでください。現在の登録と選択内容はそのまま残っています。";
   if (error.code === "X_MONITOR_DESTINATION_FULL") return "移動先の枠はすべて利用中です。別の移動先を選ぶか、空き状況を確認してください。現在の登録と選択内容はそのまま残っています。";
+  if (error.code === "X_MONITOR_HANDLE_CONFLICT") return "このXアカウントはすでに登録されています。一覧を更新して、登録済みの監視を確認してください。入力内容はそのまま残っています。";
   if (error.status === 409) return "監視の設定が更新されています。入力内容を保持しています。一覧・利用枠を更新して、変更内容をもう一度確認してください。";
   if (error.code === "NOT_FOUND" || error.status === 403 || error.status === 404) return "一覧を更新して、この監視のアクセス権と登録済みの受信情報を確認してください。入力内容はそのまま残っています。";
-  if (error.status === 422) return "XアカウントIDと通知設定を確認してください。入力内容はそのまま残っています。";
+  if (error.status === 422) return "Xアカウント名と通知設定を確認してください。入力内容はそのまま残っています。";
   return "入力内容はそのまま残っています。X監視の操作をもう一度お試しください。";
 }
 export const xPoolName = (kind: XMonitor["poolKind"]) => ({ free: "共用無料枠", supporter: "支援者優先枠", special: "特別枠" } as Record<string, string>)[kind ?? ""] ?? "未割当";

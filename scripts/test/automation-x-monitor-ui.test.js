@@ -24,7 +24,7 @@ async function fixture({ currentQuota = quota(), items = [row()], respond, opene
         if (route === 'x-processing-settings') return { requestedMode: 'batch', effectiveMode: 'batch', realtimeAllowed: false,
             planId: 'basic', planLabel: 'ベーシック', intervalMinutes: 60, configured: true, reasonCode: null, rollout: f.setup.rollout };
         if (route === 'x-monitors' && method === 'GET') return { items: f.items, ...(f.quota ? { quota: f.quota } : {}) };
-        if (route === 'x-monitors' && method === 'POST') { const saved = row({ ...body, id: `xm-new-${f.items.length + 1}`, notificationSettings: body.notificationSettings || {}, revision: 1 }); f.items = [...f.items, saved]; return saved; }
+        if (route === 'x-monitors' && method === 'POST') { const saved = row({ ...body, accountId: null, id: `xm-new-${f.items.length + 1}`, notificationSettings: body.notificationSettings || {}, revision: 1 }); f.items = [...f.items, saved]; return saved; }
         if (route.startsWith('x-monitors/') && method === 'PATCH') {
             const old = f.items.find(item => route.endsWith('/' + item.id)); const saved = { ...old, ...body, revision: old.revision + 1 };
             f.items = f.items.map(item => item.id === saved.id ? saved : item); return saved;
@@ -72,27 +72,76 @@ test('personal-limit and full-global-pool reasons remain distinct even while rec
     }
 });
 
-test('legitimate enabled fixture creates an owner-bound X target with strings and existing destinations/rules only', async () => {
+test('a username alone creates an owner-bound X target with existing destinations/rules and no numeric ID input', async () => {
     const current = quota({ featureEnabled: true }); current.x.reasonCode = null;
     const f = await fixture({ currentQuota: current, items: [] });
     try {
-        await f.click('X監視を追加'); await f.fill(f.field('XアカウントID'), '18446744073709551615'); await f.fill(f.field('Xアカウント名'), '@target');
+        await f.click('X監視を追加'); assert.equal(f.form().textContent.includes('XアカウントID'), false); await f.fill(f.field('Xアカウント名'), '@target');
         await f.fill(f.field('監視の表示名'), '自分用の登録'); await f.fill(f.field('通知先'), 'dm-own'); await f.fill(f.field('詳細ルール'), 'rule-own');
         assert(!f.form().textContent.includes('サーバー専用')); await f.submitX(); assert.equal(writes(f).length, 0); await f.click('このX監視設定で保存');
-        assert.deepEqual(writes(f)[0], { route: 'x-monitors', method: 'POST', body: { accountId: '18446744073709551615', accountHandle: 'target', name: '自分用の登録', notificationSettings: { destinationId: 'dm-own', workflowId: 'rule-own' } } });
-        for (const field of ['ownerUserId', 'poolKind', 'planId', 'amountYen', 'priority']) assert.equal(Object.hasOwn(writes(f)[0].body, field), false);
+        assert.deepEqual(writes(f)[0], { route: 'x-monitors', method: 'POST', body: { accountHandle: 'target', name: '自分用の登録', notificationSettings: { destinationId: 'dm-own', workflowId: 'rule-own' } } });
+        for (const field of ['accountId', 'ownerUserId', 'poolKind', 'planId', 'amountYen', 'priority']) assert.equal(Object.hasOwn(writes(f)[0].body, field), false);
         assert.match(f.container.textContent, /X監視の設定を保存しました/); assert.equal(f.form(), null);
     } finally { await f.close(); }
 });
 
-test('invalid account IDs and handles stay in the form and never create a registration', async () => {
+test('a required username keeps invalid and reserved names in the form without creating a registration', async () => {
     const current = quota({ featureEnabled: true }); current.x.reasonCode = null;
     const f = await fixture({ currentQuota: current });
     try {
         await f.click('X監視を追加');
-        for (const value of ['', 'abc', '-1', '1e9', '1.5', '1'.repeat(33)]) { await f.fill(f.field('XアカウントID'), value); await f.submitX(); assert.equal(writes(f).length, 0); }
-        await f.fill(f.field('XアカウントID'), '12345'); await f.fill(f.field('Xアカウント名'), 'invalid-user'); await f.submitX(); assert.equal(writes(f).length, 0);
-        assert.equal(f.field('Xアカウント名').value, 'invalid-user');
+        assert.equal(f.field('Xアカウント名').required, true);
+        for (const value of ['', 'invalid-user', 'a b', 'a'.repeat(16), 'i', 'INTENT']) {
+            await f.fill(f.field('Xアカウント名'), value); await f.submitX();
+            assert.equal(writes(f).length, 0); assert.equal(f.container.querySelector('[aria-label="X監視の変更確認"]'), null);
+            assert.equal(f.field('Xアカウント名').value, value);
+        }
+        assert.match(f.form().textContent, /Xのプロフィールに表示される@ユーザー名を入力すると登録/);
+    } finally { await f.close(); }
+});
+
+test('a fifteen-character username accepts a leading @ and the saved handle-only monitor exposes no internal identifier', async () => {
+    const current = quota({ featureEnabled: true }); current.x.reasonCode = null;
+    const f = await fixture({ currentQuota: current, items: [] });
+    try {
+        await f.click('X監視を追加'); await f.fill(f.field('Xアカウント名'), '@abcdefghijklmno'); await f.submitX();
+        assert.match(f.container.querySelector('[aria-label="X監視の変更確認"]').textContent, /Xアカウント @abcdefghijklmno/);
+        await f.click('このX監視設定で保存');
+        assert.deepEqual(writes(f)[0].body, { accountHandle: 'abcdefghijklmno' });
+        assert.equal(f.items[0].accountId, null); assert.match(f.container.textContent, /@abcdefghijklmno/);
+        assert.doesNotMatch(f.container.textContent, /XアカウントID|ID null|handle:|h:/);
+    } finally { await f.close(); }
+});
+
+test('monitor parsing accepts public handle-only identity and legacy numeric identity while rejecting opaque server identifiers', async () => {
+    const f = await fixture();
+    try {
+        const parse = f.exports.parseXMonitor;
+        assert.equal(parse(row({ accountId: null })).accountId, null);
+        assert.equal(parse(row({ accountHandle: null })).accountId, row().accountId);
+        for (const accountId of [undefined, 12345, '', 'h:0123456789abcdef01', 'handle:fixture_user', '0', '-1']) {
+            assert.throws(() => parse(row({ accountId })));
+        }
+        assert.throws(() => parse(row({ accountId: null, accountHandle: null })));
+        assert.throws(() => parse(row({ accountId: null, accountHandle: '' })));
+        assert.equal(writes(f).length, 0);
+    } finally { await f.close(); }
+});
+
+test('a handle-only monitor preserves its required username and explains conflicts without exposing server details', async () => {
+    const original = row({ accountId: null });
+    const f = await fixture({ items: [original], respond: (_route, method) => {
+        if (method === 'PATCH') throw { code: 'X_MONITOR_HANDLE_CONFLICT', status: 409, message: 'PRIVATE_HANDLE_DETAIL' };
+    } });
+    try {
+        await f.inClick(f.target(), 'X監視を編集'); assert.equal(f.field('Xアカウント名').required, true);
+        await f.fill(f.field('Xアカウント名'), ''); await f.submitX();
+        assert.equal(writes(f).length, 0); assert.equal(f.container.querySelector('[aria-label="X監視の変更確認"]'), null);
+        await f.fill(f.field('Xアカウント名'), 'other_handle'); await f.submitX(); await f.click('このX監視設定で保存');
+        assert.match(f.container.textContent, /このXアカウントはすでに登録されています.*登録済みの監視を確認/);
+        assert.equal(f.field('Xアカウント名').value, 'other_handle'); assert(!f.container.textContent.includes('PRIVATE_HANDLE_DETAIL'));
+        assert.equal(f.items[0].accountHandle, original.accountHandle); assert.equal(f.items[0].accountId, null);
+        assert.deepEqual(writes(f)[0].body, { expectedRevision: 1, name: original.name, accountHandle: 'other_handle' });
     } finally { await f.close(); }
 });
 
@@ -104,10 +153,10 @@ test('registration capacity rejection retains input and a failed refresh never e
         if (rejected && route === 'x-monitor-quota') throw new Error('PRIVATE_READ_DETAIL');
     } });
     try {
-        await f.click('X監視を追加'); await f.fill(f.field('XアカウントID'), '12345'); await f.fill(f.field('監視の表示名'), '保持する入力');
+        await f.click('X監視を追加'); await f.fill(f.field('Xアカウント名'), 'example'); await f.fill(f.field('監視の表示名'), '保持する入力');
         await f.submitX(); await f.click('このX監視設定で保存'); assert.match(f.container.textContent, /全体枠は現在すべて利用中/);
         assert.equal(f.field('監視の表示名').value, '保持する入力'); await f.click('X一覧・利用枠を更新');
-        assert.equal(f.field('XアカウントID').value, '12345'); assert(!f.container.textContent.includes('PRIVATE_'));
+        assert.equal(f.field('Xアカウント名').value, 'example'); assert(!f.container.textContent.includes('PRIVATE_'));
     } finally { await f.close(); }
 });
 
@@ -138,7 +187,8 @@ test('an existing owner corrects only the handle with an explicit review while n
     const f = await fixture({ items: [original] });
     try {
         await f.inClick(f.target(), 'X監視を編集');
-        assert.equal(f.field('XアカウントID').disabled, true); assert.equal(f.field('Xアカウント名').disabled, false);
+        assert.equal(f.form().textContent.includes('XアカウントID'), false); assert.equal(f.field('Xアカウント名').disabled, false);
+        assert.match(f.target().querySelector('details').textContent, /XアカウントID：18446744073709551615/);
         assert.match(f.form().textContent, /Xから届く投稿通知は.*@ユーザー名で監視対象と照合.*登録後も、この欄から変更/);
         await f.fill(f.field('Xアカウント名'), '@correct_handle'); await f.submitX();
         const review = f.container.querySelector('[aria-label="X監視の変更確認"]');
@@ -220,10 +270,10 @@ test('rapid register clicks write once and use only the returned canonical monit
     let release;
     const current = quota({ featureEnabled: true }); current.x.reasonCode = null;
     const f = await fixture({ currentQuota: current, respond: async (route, method, body, active) => {
-        if (route === 'x-monitors' && method === 'POST') { await new Promise(resolve => { release = resolve; }); const saved = row({ ...body, id: 'canonical-row', name: 'サーバーが保存した名称', notificationSettings: {} }); active.items = [saved]; return { item: saved }; }
+        if (route === 'x-monitors' && method === 'POST') { await new Promise(resolve => { release = resolve; }); const saved = row({ ...body, accountId: null, id: 'canonical-row', name: 'サーバーが保存した名称', notificationSettings: {} }); active.items = [saved]; return { item: saved }; }
     } });
     try {
-        await f.click('X監視を追加'); await f.fill(f.field('XアカウントID'), '12345'); await f.submitX();
+        await f.click('X監視を追加'); await f.fill(f.field('Xアカウント名'), 'example'); await f.submitX();
         const save = [...f.container.querySelectorAll('button')].find(item => item.textContent === 'このX監視設定で保存'); await f.act(async () => { save.click(); save.click(); });
         assert.equal(writes(f).length, 1); await f.act(async () => release()); assert.match(f.container.textContent, /サーバーが保存した名称/);
     } finally { if (release) release(); await f.close(); }
@@ -308,13 +358,13 @@ test('an owner selects a stored receiver explicitly for a target and multiple au
     const current = quota({ featureEnabled: true }); current.x.reasonCode = null;
     const f = await fixture({ currentQuota: current, items: [], respond: route => route === 'x-setup' ? setup({ subscriptions: [subscription()] }) : undefined });
     try {
-        await f.click('X監視を追加'); await f.fill(f.field('XアカウントID'), '12345');
+        await f.click('X監視を追加'); await f.fill(f.field('Xアカウント名'), 'example');
         assert.match(f.form().textContent, /通知を受け取る準備として.*受信情報を登録/);
         await f.fill(f.field('使用する自分の受信情報'), SUBSCRIPTION_ID); await f.fill(f.field('通知先'), 'dm-own');
         await f.submitX(); await f.click('このX監視設定で保存');
         assert.deepEqual(writes(f)[0].body.notificationSettings, { destinationId: 'dm-own', subscriptionId: SUBSCRIPTION_ID });
         assert.match(f.container.textContent, /サーバー接続待ち.*サーバーとの接続を待っています/);
-        await f.click('X監視を追加'); await f.fill(f.field('XアカウントID'), '67890'); await f.fill(f.field('使用する自分の受信情報'), SUBSCRIPTION_ID);
+        await f.click('X監視を追加'); await f.fill(f.field('Xアカウント名'), 'second_author'); await f.fill(f.field('使用する自分の受信情報'), SUBSCRIPTION_ID);
         await f.submitX(); await f.click('このX監視設定で保存'); assert.equal(writes(f)[1].body.notificationSettings.subscriptionId, SUBSCRIPTION_ID);
         assert.equal(f.calls.some(call => call.route.includes('subscribe')), false);
     } finally { await f.close(); }
@@ -339,7 +389,7 @@ test('a target without a receiver remains visibly pending and a listening receiv
     const current = quota({ featureEnabled: true }); current.x.reasonCode = null;
     const f = await fixture({ currentQuota: current, items: [], respond: route => route === 'x-setup' ? setup({ subscriptions: [subscription({ receiverState: 'listening' })] }) : undefined });
     try {
-        await f.click('X監視を追加'); await f.fill(f.field('XアカウントID'), '12345'); await f.submitX(); await f.click('このX監視設定で保存');
+        await f.click('X監視を追加'); await f.fill(f.field('Xアカウント名'), 'example'); await f.submitX(); await f.click('このX監視設定で保存');
         assert.match(f.container.textContent, /次に、通知を受け取るための受信情報を登録/);
         f.items = [row({ notificationSettings: { ...row().notificationSettings, subscriptionId: SUBSCRIPTION_ID } })]; await f.click('X一覧・利用枠を更新');
         assert.match(f.target().textContent, /割り当て済み.*サーバー接続を確認済み.*投稿通知が届いたら.*配信結果を確認/);
