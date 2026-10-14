@@ -344,6 +344,20 @@ export async function listVisibleGuilds(session: DashboardSession, options: { lo
     .sort((a, b) => Number(b.canEdit) - Number(a.canEdit) || a.name.localeCompare(b.name));
 }
 
+// Personal notification destinations use channel permissions, independently of
+// access to server-wide Dashboard settings. Saving rechecks current membership
+// and the user/Bot permissions through the existing destination service.
+export async function listNotificationDestinationGuilds(session: DashboardSession) {
+  const [guilds, installed] = await Promise.all([
+    fetchUserGuilds(session.accessToken),
+    fetchBotGuildIds(),
+  ]);
+  return guilds
+    .filter(guild => isDiscordSnowflake(guild.id) && installed.has(guild.id))
+    .map(guild => ({ guildId: guild.id, name: guild.name }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
 export async function listSwitcherGuilds(session: DashboardSession) {
   const [userGuilds, installed] = await Promise.all([
     fetchUserGuilds(session.accessToken),

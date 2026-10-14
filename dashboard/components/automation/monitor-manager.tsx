@@ -9,10 +9,12 @@ import { sourceProvider, monitorState } from "../../../src/automation/monitor-in
 import { automationPlanName } from "./automation-feedback";
 import { MonitorCadenceEditor } from "./monitor-cadence-editor";
 import { XMonitorManager } from "./x-monitor-manager";
+import { DestinationEditor } from "./destination-editor";
 
 const field = "w-full rounded border bg-background px-3 py-2 text-sm";
 const button = "rounded border bg-background px-3 py-2 text-sm hover:bg-muted disabled:opacity-40";
-type Props = { api: (path: string, method?: string, body?: any) => Promise<any>; guildId?: string; canEdit: boolean; scope: string; destinations: any[]; rules: any[]; refresh: () => Promise<void>; active?: boolean };
+type Props = { api: (path: string, method?: string, body?: any) => Promise<any>; guildId?: string; canEdit: boolean; scope: string; destinations: any[]; rules: any[]; refresh: () => Promise<void>; refreshDestination?: (id: string) => Promise<void>; active?: boolean };
+type DestinationOrigin = { kind: "normal"; monitor: any } | { kind: "x"; onCreated?: (id: string) => void };
 const newMonitor = (kind: string) => ({ kind, name: "", providerId: kind === "auto" ? "youtube" : "amazon", source: "", locale: "ja", destinationId: "", enabled: true, mode: "change", maxPriceAmount: "", minDiscountPercent: "", workflowId: "" });
 type NotificationProfile = { plan: { id: string; tier: string; name: string; priority: number; slotLimit: number; minuteLimit: number; dayLimit: number }; slots: { used: number; max: number; available: number }; usage: { entries: { targetKind: string; targetId: string; todayUsed: number; todayReserved: number; dayLimit: number; minuteLimit: number; resetAtMs: number; allowed?: boolean }[] } };
 function receiveSummary(row: any) {
@@ -21,9 +23,9 @@ function receiveSummary(row: any) {
   return [row.maxPriceAmount != null && `価格が${row.maxPriceAmount}以下`, row.minDiscountPercent != null && `割引率が${row.minDiscountPercent}%以上`].filter(Boolean).join(" または ");
 }
 
-export function MonitorManager({ api, guildId, canEdit, scope, destinations, rules, refresh, active = true }: Props) {
+export function MonitorManager({ api, guildId, canEdit, scope, destinations, rules, refresh, refreshDestination, active = true }: Props) {
   const [kind, setKind] = useState("auto"), [items, setItems] = useState<any[]>([]), [cursor, setCursor] = useState<string | null>(null);
-  const [catalog, setCatalog] = useState<any>(null), [monitor, setMonitor] = useState<any>(null), [dest, setDest] = useState<any>(null), [channels, setChannels] = useState<any[]>([]);
+  const [catalog, setCatalog] = useState<any>(null), [monitor, setMonitor] = useState<any>(null), [dest, setDest] = useState<any>(null);
   const [busy, setBusy] = useState(false), [error, setError] = useState(""), [notice, setNotice] = useState("");
   const [monitorOpen, setMonitorOpen] = useState(false), [destOpen, setDestOpen] = useState(false);
   const [query, setQuery] = useState(""), [state, setState] = useState("all"), [loading, setLoading] = useState(true);
@@ -33,6 +35,9 @@ export function MonitorManager({ api, guildId, canEdit, scope, destinations, rul
   const requestEpoch = useRef(0);
   const profileEpoch = useRef(0);
   const cadenceDrafts = useRef(new Map<string, string>());
+  const destinationSaving = useRef(false);
+  const destinationOrigin = useRef<DestinationOrigin | null>(null), mounted = useRef(false);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; destinationOrigin.current = null; }; }, []);
   const kindRef = useRef(kind); kindRef.current = kind;
   const activeRef = useRef(active); activeRef.current = active;
   const editable = (row: any) => row?.scope !== "guild" || canEdit;
@@ -53,6 +58,39 @@ export function MonitorManager({ api, guildId, canEdit, scope, destinations, rul
     const destination = destinations.find(d => d.enabled && (scope !== "guild" || d.scope === "guild"));
     setMonitor({ ...newMonitor(kind), scope, destinationId: destination?.id || "" });
     setMonitorOpen(true);
+  }
+  function beginDestination(onCreated?: (id: string) => void) {
+    destinationOrigin.current = onCreated ? { kind: "x", onCreated } : { kind: "normal", monitor };
+    setError(""); setDestOpen(true);
+    if (!dest) setDest({ name: "", kind: "dm", scope: "private", guildId: guildId || "", webhookUrl: "", channelId: "", enabled: true });
+  }
+  function cancelDestination() {
+    // Retain the form, but detach the old requesting draft. Resuming from X
+    // explicitly binds a fresh callback to that X draft.
+    destinationOrigin.current = null; setDestOpen(false); setError("");
+  }
+  async function saveDestination() {
+    if (destinationSaving.current || !dest) return;
+    destinationSaving.current = true;
+    const origin = destinationOrigin.current;
+    try {
+      await task(async () => {
+        const destinationGuild = dest.kind === "dm" ? "" : dest.guildId || guildId || "";
+        const path = `destinations${dest.id ? `/${dest.id}` : ""}${destinationGuild && destinationGuild !== guildId ? `?guildId=${encodeURIComponent(destinationGuild)}` : ""}`;
+        const saved = await api(path, dest.id ? "PATCH" : "POST", { ...dest, expectedRevision: dest.revision });
+        if (!dest.id && mounted.current && activeRef.current && origin && destinationOrigin.current === origin) {
+          if (origin.kind === "x") origin.onCreated?.(saved.id);
+          else setMonitor((current: any) => current && current === origin.monitor ? { ...current, destinationId: saved.id } : current);
+        }
+        // Clear only after a successful write. A subsequent refresh failure
+        // must not make retry create another destination or webhook.
+        setDest(null); setDestOpen(false);
+        destinationOrigin.current = null;
+        try { if (refreshDestination) await refreshDestination(saved.id); else await refresh(); }
+        catch { throw new Error("通知先は保存済みです。通知一覧を再読み込みすると、追加した通知先を選択できます。"); }
+        setNotice("通知先を保存しました。X監視や通常の通知で選択できます。");
+      });
+    } finally { destinationSaving.current = false; }
   }
   useEffect(() => {
     if (!monitor?.source && !dest?.name && !dest?.webhookUrl) return;
@@ -148,19 +186,10 @@ export function MonitorManager({ api, guildId, canEdit, scope, destinations, rul
     </section>
     <details className="space-y-3 rounded border bg-card p-4"><summary className="font-semibold">通知先</summary>
       {dest && !destOpen && <div role="status" className="automation-draft-banner"><span>通知先の入力を保持しています</span><button className={button} onClick={() => setDestOpen(true)}>通知先の入力を再開</button><button className={button} onClick={() => { if (confirm("通知先の入力を破棄しますか？")) setDest(null); }}>通知先の入力を破棄</button></div>}
-      <button className={button} disabled={busy} onClick={() => { setDestOpen(true); if (!dest) setDest({ name: "", kind: "dm", scope: "private", webhookUrl: "", channelId: "", enabled: true }); }}>通知先を追加</button>
+      <button className={button} disabled={busy} onClick={() => beginDestination()}>通知先を追加</button>
       <div className="grid gap-2 md:grid-cols-2">{destinations.map(d => <div key={d.id} className="rounded border p-3"><h3 className="text-sm font-medium">{d.name}</h3><div className="automation-meta"><span>{d.kind === "dm" ? "DM" : d.createdByBot ? "チャンネル" : "Webhook"}</span><span>{d.enabled ? "有効" : "停止中"}</span></div><div className="mt-2 flex gap-2"><button className={button} disabled={busy || !editable(d)} onClick={() => { if (dest && !confirm("保持中の通知先の入力を破棄しますか？")) return; setDestOpen(true); setDest({ ...d, webhookUrl: "" }); }}>名前・状態を編集</button><button className={button} disabled={busy || !editable(d)} onClick={() => { if (confirm("この通知先を削除しますか？割り当て済みの通知は送信できなくなります。")) void task(async () => { await api(`destinations/${d.id}`, "DELETE", { expectedRevision: d.revision }); await refresh(); }); }}>削除</button></div></div>)}</div>
     </details>
-      {dest && <AutomationDialog title={dest.id ? "通知先を編集" : "通知先を追加"} busy={busy} error={error} open={destOpen} onCancel={() => { setDestOpen(false); setError(""); }}><fieldset disabled={busy}><form className="space-y-3" onSubmit={e => { e.preventDefault(); void task(async () => { const saved = await api(`destinations${dest.id ? `/${dest.id}` : ""}`, dest.id ? "PATCH" : "POST", { ...dest, expectedRevision: dest.revision }); if (monitor && !dest.id) setMonitor({ ...monitor, destinationId: saved.id }); setDest(null); setDestOpen(false); await refresh(); setNotice("通知先を保存しました。"); }); }}>
-        <label className="block text-sm">通知先の名前<input required maxLength={120} className={field} value={dest.name} onChange={e => setDest({ ...dest, name: e.target.value })} /></label>
-        <label className="block text-sm">通知先の種類<select disabled={!!dest.id} className={field} value={dest.kind} onChange={e => setDest({ ...dest, kind: e.target.value, scope: e.target.value === "dm" ? "private" : scope })}><option value="dm">自分のDM</option>{guildId && <><option value="webhook">Webhook URL</option><option value="channel">サーバーのチャンネル</option></>}</select></label>
-        {dest.kind !== "dm" && <label className="block text-sm">編集できる人<select disabled={!!dest.id} className={field} value={dest.scope} onChange={e => setDest({ ...dest, scope: e.target.value })}><option value="private">自分のみ</option>{canEdit && <option value="guild">サーバーの編集権限を持つ人</option>}</select></label>}
-        {dest.kind === "webhook" && !dest.id && <label className="block text-sm">DiscordのWebhook URL<input type="password" required autoComplete="off" className={field} value={dest.webhookUrl} onChange={e => setDest({ ...dest, webhookUrl: e.target.value })} /></label>}
-        {dest.kind === "channel" && <><button type="button" className={button} disabled={busy} onClick={() => void task(async () => setChannels((await api("channels")).items))}>チャンネルを読み込む</button><select required aria-label="Webhookを作成するチャンネル" className={field} value={dest.channelId} onChange={e => setDest({ ...dest, channelId: e.target.value })}><option value="">チャンネルを選択</option>{channels.map(c => <option disabled={!c.canCreateWebhook} key={c.id} value={c.id}>#{c.name}{c.canCreateWebhook ? "" : "（Webhook管理権限なし）"}</option>)}</select></>}
-        {dest.kind !== "dm" && <p className="automation-critical-note"><Info size={16} aria-hidden="true" />通知はチャンネルを見られる人に届きます。</p>}
-        <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={dest.enabled} onChange={e => setDest({ ...dest, enabled: e.target.checked })} />通知先を有効にする</label>
-        <div className="flex gap-2"><button className={button} type="submit" disabled={busy}>通知先を保存</button></div>
-      </form></fieldset></AutomationDialog>}
-    {scope === "private" ? <XMonitorManager api={api} active={active} allowSetup={!guildId} destinations={destinations} rules={rules} /> : null}
+      {dest && <AutomationDialog title={dest.id ? "通知先を編集" : "通知先を追加"} busy={busy} error={error} open={destOpen} onCancel={cancelDestination}><DestinationEditor api={api} draft={dest} onChange={setDest} guildId={guildId} scope={scope} canEdit={canEdit} busy={busy} open={destOpen} onSave={() => void saveDestination()} /></AutomationDialog>}
+    {scope === "private" ? <XMonitorManager api={api} active={active} allowSetup={!guildId} destinations={destinations} rules={rules} onAddDestination={beginDestination} /> : null}
   </div>;
 }

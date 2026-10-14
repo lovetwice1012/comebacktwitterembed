@@ -14,12 +14,14 @@ type Draft = { accountHandle: string; name: string; enabled: boolean; destinatio
 const draftOf = (item?: XMonitor): Draft => ({ accountHandle: item?.accountHandle ?? "", name: item?.name ?? "", enabled: item?.enabled ?? true,
   destinationId: item?.notificationSettings.destinationId ?? "", workflowId: item?.notificationSettings.workflowId ?? "", subscriptionId: item?.notificationSettings.subscriptionId ?? "" });
 
-function XMonitorEditor({ api, active, allowSetup, subscriptionsVersion, destinations, rules }: { api: XMonitorAPI; active: boolean; allowSetup: boolean; subscriptionsVersion: number; destinations: Choice[]; rules: Choice[] }) {
+type AddDestination = (onCreated: (id: string) => void) => void;
+function XMonitorEditor({ api, active, allowSetup, subscriptionsVersion, destinations, rules, onAddDestination }: { api: XMonitorAPI; active: boolean; allowSetup: boolean; subscriptionsVersion: number; destinations: Choice[]; rules: Choice[]; onAddDestination?: AddDestination }) {
   const [items, setItems] = useState<XMonitor[]>([]), [quota, setQuota] = useState<XMonitorQuota | null>(null);
   const [setup, setSetup] = useState<XSetupStatus | null>(null), [setupError, setSetupError] = useState("");
   const [loading, setLoading] = useState(true), [busy, setBusy] = useState(false), [readError, setReadError] = useState(""), [error, setError] = useState(""), [notice, setNotice] = useState("");
   const [draft, setDraft] = useState<Draft | null>(null), [editingId, setEditingId] = useState<string | null>(null), [review, setReview] = useState<number | null>(null), [deleting, setDeleting] = useState<string | null>(null);
   const mounted = useRef(false), activeRef = useRef(active), epoch = useRef(0), action = useRef(false);
+  const draftRef = useRef(draft); draftRef.current = draft;
   activeRef.current = active;
   const current = items.find(item => item.id === editingId);
   const rolloutPermits = !allowSetup || Boolean(setup?.rollout.eligible && setup.rollout.mode !== "disabled");
@@ -120,6 +122,13 @@ function XMonitorEditor({ api, active, allowSetup, subscriptionsVersion, destina
       <fieldset disabled={busy || !active} className="grid gap-3 sm:grid-cols-2"><label className="text-sm">Xアカウント名（@ユーザー名）{requiresHandle ? "・必須" : ""}<input className={field} required={requiresHandle} maxLength={16} autoCapitalize="none" autoCorrect="off" spellCheck={false} placeholder="@example" value={draft.accountHandle} onChange={event => update("accountHandle", event.target.value.replace(/^@/u, ""))} /></label>
         <label className="text-sm">監視の表示名（任意）<input className={field} maxLength={120} value={draft.name} onChange={event => update("name", event.target.value)} /></label>
         <label className="text-sm">通知先（任意）<select className={field} value={draft.destinationId} onChange={event => update("destinationId", event.target.value)}><option value="">未指定</option>{draft.destinationId && !destinations.some(item => item.id === draft.destinationId && item.enabled !== false && item.scope !== "guild") ? <option value={draft.destinationId} disabled>現在の通知先（候補を確認）</option> : null}{destinations.filter(item => item.enabled !== false && item.scope !== "guild").map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+        {onAddDestination ? <div className="flex items-end"><button type="button" className={button} disabled={busy || loading || !active} onClick={() => {
+          const requestingDraft = draft;
+          onAddDestination(id => {
+            if (!mounted.current || !activeRef.current || draftRef.current !== requestingDraft) return;
+            setDraft(currentDraft => currentDraft === requestingDraft ? { ...currentDraft, destinationId: id } : currentDraft); setReview(null);
+          });
+        }}>X監視の通知先を追加</button></div> : null}
         <label className="text-sm">詳細ルール（任意）<select className={field} value={draft.workflowId} onChange={event => update("workflowId", event.target.value)}><option value="">未指定</option>{draft.workflowId && !rules.some(item => item.id === draft.workflowId && item.scope !== "guild") ? <option value={draft.workflowId} disabled>現在の詳細ルール（候補を確認）</option> : null}{rules.filter(item => item.scope !== "guild").map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
         {allowSetup ? <label className="text-sm">使用する自分の受信情報<select className={field} disabled={!setup?.available || loading} value={draft.subscriptionId} onChange={event => update("subscriptionId", event.target.value)}><option value="">受信情報を選択（受信の開始には設定が必要）</option>{draft.subscriptionId && !setup?.subscriptions.some(item => item.id === draft.subscriptionId) ? <option value={draft.subscriptionId} disabled>現在の受信情報（一覧を確認）</option> : null}{setup?.subscriptions.map((item, index) => <option key={item.id} value={item.id}>受信情報 {index + 1} · Firefox {item.browserVersion} · {xReceiverLabel(item.receiverState)}</option>)}</select></label> : null}
         {current ? <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={draft.enabled} onChange={event => update("enabled", event.target.checked)} />X監視を有効にする</label> : null}
@@ -156,10 +165,10 @@ function XMonitorEditor({ api, active, allowSetup, subscriptionsVersion, destina
   </div>;
 }
 
-export function XMonitorManager({ api, active = true, allowSetup = true, destinations = [], rules = [] }: { api: XMonitorAPI; active?: boolean; allowSetup?: boolean; destinations?: Choice[]; rules?: Choice[] }) {
+export function XMonitorManager({ api, active = true, allowSetup = true, destinations = [], rules = [], onAddDestination }: { api: XMonitorAPI; active?: boolean; allowSetup?: boolean; destinations?: Choice[]; rules?: Choice[]; onAddDestination?: AddDestination }) {
   const [opened, setOpened] = useState(false), [subscriptionsVersion, setSubscriptionsVersion] = useState(0);
   return <section aria-label="Xアカウントの監視" className="space-y-3 rounded border bg-card p-4"><h2 className="font-semibold">Xアカウントの監視</h2>
     <p className="text-sm text-muted-foreground">通知を受け取りたいXアカウントと、利用できる枠を管理します。Xアカウントを1件登録するごとに1枠を使います。</p>
-    {!opened ? <button className={button} disabled={!active} onClick={() => setOpened(true)}>Xアカウントの監視を管理</button> : <>{allowSetup ? <><XNotificationSetup api={api} active={active} onSubscriptionsChanged={() => setSubscriptionsVersion(value => value + 1)} /><XProcessingSettings api={api} active={active} /></> : <a href="/dashboard/automation/x" className="inline-block text-sm text-primary underline">自分のX通知セットアップを開く</a>}<XMonitorEditor api={api} active={active} allowSetup={allowSetup} subscriptionsVersion={subscriptionsVersion} destinations={destinations} rules={rules} /></>}
+    {!opened ? <button className={button} disabled={!active} onClick={() => setOpened(true)}>Xアカウントの監視を管理</button> : <>{allowSetup ? <><XNotificationSetup api={api} active={active} onSubscriptionsChanged={() => setSubscriptionsVersion(value => value + 1)} /><XProcessingSettings api={api} active={active} /></> : <a href="/dashboard/automation/x" className="inline-block text-sm text-primary underline">自分のX通知セットアップを開く</a>}<XMonitorEditor api={api} active={active} allowSetup={allowSetup} subscriptionsVersion={subscriptionsVersion} destinations={destinations} rules={rules} onAddDestination={onAddDestination} /></>}
   </section>;
 }
