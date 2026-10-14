@@ -430,6 +430,9 @@ function createQueue(db, evaluator, options = {}) {
         });
     }
     async function check(job, now = Date.now(), query = queryDB, lock = false) {
+        // Public preflight can cancel a job before beginSend is reached. Its X
+        // monitor, pool rank and audit reads need the same atomic owner fence.
+        if (!lock && containsX(job)) return db.withDatabaseTransaction(transactionQuery => check(job, now, transactionQuery, true));
         // Package safety performs ordinary reads. Acquire the X owner mutex
         // before those reads establish a REPEATABLE READ snapshot, otherwise a
         // concurrent committed move can mix a new monitor with old ranks/audit.
