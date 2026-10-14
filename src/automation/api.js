@@ -9,6 +9,7 @@ async function dispatch(request, actor, services) {
     const { method, path, body = {} } = request;
     if (!Array.isArray(path) || path.length < 1 || path.length > 3 || !['GET','POST','PATCH','DELETE'].includes(method)) throw new AutomationError('NOT_FOUND', '操作が見つかりません。', 404);
     if (!body || typeof body !== 'object' || Array.isArray(body)) throw new AutomationError('INVALID_BODY', 'オブジェクト形式の入力が必要です。');
+    if (path[0] === 'donors' && actor.isAdmin !== true) throw new AutomationError('AUTOMATION_FORBIDDEN', '支援者の管理には管理者権限が必要です。', 403);
     let group;
     if (method !== 'GET' && method !== 'DELETE') {
         group = path[0] === 'validate' || path[0] === 'dictionary-preview' ? 'validate' : path[0] === 'simulate' || path.at(-1) === 'test' ? 'simulate' : path[0] === 'monitors' ? 'monitor' : path[0] === 'marketplace' && (!path[2] || path[2] === 'status') ? 'publication' : 'write';
@@ -35,6 +36,17 @@ async function dispatchCore({ method, path, search = new URLSearchParams(), body
       const plan = { id: info.planId, tier: info.tier, name: info.label, priority: info.priority, slotLimit: info.slotLimit, minuteLimit: info.minuteLimit, dayLimit: info.dayLimit, baseSlotLimit: info.baseSlotLimit, manualExtraSlots: info.manualExtraSlots, addonGrantUnits: info.addonGrantUnits, addonExtraSlots: info.addonExtraSlots, donationPaymentCount: info.donationPaymentCount, addonValidUntilAtMs: info.addonValidUntilAtMs };
       const entries = await Promise.all(info.slots.map(async slot => ({ slotId: slot.slotId, slotCost: slot.slotCost, targetKind: slot.targetKind, targetId: slot.targetId, dayLimit: slot.dayLimit, minuteLimit: slot.minuteLimit, allowed: slot.allowed, ...await service.rateLimiter.getSlotUsage(slot.slotId, slot) })));
       result = { plan, slots: { used: info.usedSlots, max: info.slotLimit, available: info.remainingSlots }, usage: { entries } };
+    }
+    else if (kind === "donors") {
+      if (actor.isAdmin !== true) throw new AutomationError('AUTOMATION_FORBIDDEN', '支援者の管理には管理者権限が必要です。', 403);
+      const donors = services.donors;
+      if (!donors) throw new AutomationError('DONOR_ADMIN_UNAVAILABLE', '支援者の管理機能は準備中です。', 503);
+      const page = { cursor: search.get('cursor'), pageSize: search.get('pageSize') };
+      if (!id && !action && method === "GET") result = await donors.list(actor, { ...page, search: search.get('search') });
+      else if (id && !action && method === "GET") result = await donors.get(actor, id);
+      else if (id && !action && method === "PATCH") result = await donors.save(actor, id, body);
+      else if (id && action === "history" && method === "GET") result = await donors.history(actor, id, page);
+      else if (id && action === "audit" && method === "GET") result = await donors.audit(actor, id, page);
     }
     else if (kind === "plans") {
       const plans = require('./entitlements');

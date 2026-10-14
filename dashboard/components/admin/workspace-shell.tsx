@@ -18,7 +18,7 @@ export function AdminSidebar() {
     <div className="grid grid-cols-2 gap-1 sm:grid-cols-4 lg:grid-cols-1">{sections.slice(0, 4).map(renderSection)}</div>
     <details open={["operations", "administration"].includes(state.section)} className="border-t pt-3">
       <summary className="cursor-pointer px-3 py-2 text-xs font-medium text-muted-foreground">詳細な管理</summary>
-      <div className="mt-2 grid gap-1 sm:grid-cols-3 lg:grid-cols-1">{sections.slice(4).map(renderSection)}<Link href="/admin/notification-plans" className="rounded-lg px-3 py-3 text-sm text-muted-foreground hover:bg-muted">通知プラン・送信上限</Link><Link href="/admin/auto-watch-intervals" className="rounded-lg px-3 py-3 text-sm text-muted-foreground hover:bg-muted">利用者の自動展開間隔</Link></div>
+      <div className="mt-2 grid gap-1 sm:grid-cols-3 lg:grid-cols-1">{sections.slice(4).map(renderSection)}<Link href="/admin/donors" className="rounded-lg px-3 py-3 text-sm text-muted-foreground hover:bg-muted">支援者管理</Link><Link href="/admin/notification-plans" className="rounded-lg px-3 py-3 text-sm text-muted-foreground hover:bg-muted">通知プラン・送信上限</Link><Link href="/admin/auto-watch-intervals" className="rounded-lg px-3 py-3 text-sm text-muted-foreground hover:bg-muted">利用者の自動展開間隔</Link></div>
     </details>
     <Link href="/dashboard/personal-links" className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-muted-foreground hover:bg-muted">あとで見る・通知<ArrowUpRight size={14} aria-hidden="true" /></Link>
   </nav>;

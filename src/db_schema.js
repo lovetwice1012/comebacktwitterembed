@@ -85,7 +85,9 @@ const SCHEMA_STATEMENTS = [
         save_tweet_quota_override_bytes BIGINT NULL,
         enabled TINYINT(1) NOT NULL DEFAULT 1,
         created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        INDEX idx_users_donor (is_donor,user_id),
+        INDEX idx_users_extra_slots (additional_auto_extract_slots,user_id)
     ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
 
     `CREATE TABLE IF NOT EXISTS ${TABLES.providers} (

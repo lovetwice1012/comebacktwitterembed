@@ -6,7 +6,7 @@ type Query = (sql: string, params?: unknown[]) => Promise<any>;
 type AdminActor = { userId: string; isAdmin?: boolean };
 export const FREE_PLAN: NotificationPlan;
 export const SUPPORTER_PLAN: NotificationPlan;
-export function inspectPlan(query: Query, userId: string, now?: number): Promise<NotificationPlan>;
+export function inspectPlan(query: Query, userId: string, now?: number, squareScope?: { configured: boolean; environment: 'sandbox' | 'production' | null; merchantId: string | null }): Promise<NotificationPlan>;
 export function lockOwner(query: Query, userId: string): Promise<string>;
 export function assertSlotAvailable(query: Query, userId: string, kind: 'auto' | 'price', targetId?: string | null): Promise<NotificationPlan | NotificationSlot>;
 export function assignSlot(query: Query, userId: string, kind: 'auto' | 'price', targetId: string): Promise<NotificationSlot>;
