@@ -1,0 +1,26 @@
+{
+  "pid": 43336,
+  "schema": "cbte_automation_test_4685c9e6ede05028f0d8",
+  "requests": [
+    {
+      "method": "PATCH",
+      "route": "x-monitors/fixture-monitor-1",
+      "processingMode": "realtime",
+      "expectedRealtimeSlotCost": 5,
+      "expectedRevision": 1
+    },
+    {
+      "method": "POST",
+      "route": "x-monitors",
+      "processingMode": "realtime",
+      "expectedRealtimeSlotCost": 5
+    },
+    {
+      "method": "PATCH",
+      "route": "x-monitors/fixture-monitor-1",
+      "processingMode": "realtime",
+      "expectedRealtimeSlotCost": 1,
+      "expectedRevision": 1
+    }
+  ]
+}

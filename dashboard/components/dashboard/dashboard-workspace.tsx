@@ -9,7 +9,7 @@ import { dashboardDestinations, isDashboardDestinationActive, type DashboardDest
 
 const icons = { servers: Server, notifications: Bell, saved: Bookmark, overview: Gauge, providers: Layers3, settings: Settings2, preview: ClipboardList, diagnostics: Activity, media: Video, logs: FileClock, access: UsersRound, bulk: Layers3, admin: ShieldCheck };
 
-export function DashboardWorkspace({ locale, defaultGuildId, guildName, children, isAdmin = false, initialGuildIds }: {
+export function DashboardWorkspace({ locale, defaultGuildId, guildName, children, isAdmin = false, initialGuildIds, documentNavigation = false }: {
   initialGuildIds: string[];
   locale: DashboardLocale;
   defaultLayout: "plain" | "server";
@@ -17,6 +17,7 @@ export function DashboardWorkspace({ locale, defaultGuildId, guildName, children
   guildName?: string;
   isAdmin?: boolean;
   children: ReactNode;
+  documentNavigation?: boolean;
 }) {
   const router = useRouter(), pathname = usePathname(), ja = locale === "ja";
   const [menuOpen, setMenuOpen] = useState(false);
@@ -31,11 +32,12 @@ export function DashboardWorkspace({ locale, defaultGuildId, guildName, children
       const href = (event as CustomEvent<{ href?: string }>).detail?.href;
       if (!href?.startsWith("/dashboard")) return;
       event.preventDefault();
-      router.push(href);
+      if (documentNavigation) window.location.assign(href);
+      else router.push(href);
     };
     window.addEventListener("dashboard:guild-navigation", navigate);
     return () => window.removeEventListener("dashboard:guild-navigation", navigate);
-  }, [router]);
+  }, [router, documentNavigation]);
   useEffect(() => {
     const header = document.querySelector<HTMLElement>("[data-dashboard-header]");
     if (!header) return;
@@ -49,7 +51,8 @@ export function DashboardWorkspace({ locale, defaultGuildId, guildName, children
 
   function destinationLink(item: DashboardDestination) {
     const Icon = icons[item.icon];
-    return <Link key={item.href} href={item.href} aria-current={isDashboardDestinationActive(pathname, item.href) ? "page" : undefined} onClick={() => setMenuOpen(false)}><Icon size={18} aria-hidden /><span>{item.label}</span></Link>;
+    const NavigationLink = documentNavigation ? "a" : Link;
+    return <NavigationLink key={item.href} href={item.href} aria-current={isDashboardDestinationActive(pathname, item.href) ? "page" : undefined} onClick={() => setMenuOpen(false)}><Icon size={18} aria-hidden /><span>{item.label}</span></NavigationLink>;
   }
   return <div className="dashboard-layout">
     <nav className="dashboard-primary-navigation" aria-label={ja ? "ダッシュボード" : "Dashboard"} onKeyDown={event => { if (event.key === "Escape" && menuOpen) { setMenuOpen(false); menuButton.current?.focus(); } }}>

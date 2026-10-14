@@ -56,6 +56,7 @@ function fixture(t, options = {}) {
                 if (now < dueAtMs) return { ready: false, dueAtMs };
                 window = now; windowMode = processing.effectiveMode; cursor = '0'; return { ready: true, windowAtMs: window, cursorId: cursor, processingMode: processing.effectiveMode };
             },
+            getInbox: async ({ id }) => rows.find(row => row.id === id) || null,
             listInbox: async ({ afterId, limit }) => rows.filter(row => row.status === 'received' && BigInt(row.id) > BigInt(afterId)).slice(0, limit),
             assertLease: async () => { counters.assert++; },
             markRouted: async (_lease, id) => { counters.mark++; if (markFailure) throw markFailure; rows.find(row => row.id === id).status = 'routed'; },
@@ -64,8 +65,8 @@ function fixture(t, options = {}) {
             completeProcessing: async (_lease, input) => { counters.complete++; assert.equal(input.windowAtMs, window); lastProcess = window; window = null; windowMode = null; cursor = '0'; },
         },
     };
-    const router = { routeReceived: async input => {
-        routed.push({ id: input.inbox.id, windowAtMs: window, atMs: now });
+    const router = { hasRealtimeTargets: async () => requestedMode === 'realtime' && realtimeEnabled, hasBatchTargets: async () => requestedMode !== 'realtime' || !realtimeEnabled, routeReceived: async input => {
+        routed.push({ id: input.inbox.id, windowAtMs: window, atMs: now, processingMode: input.processingMode });
         if (routeFailure) throw routeFailure;
         return { state: options.pendingIds?.has(input.inbox.id) ? 'pending' : 'routed' };
     } };
@@ -74,7 +75,7 @@ function fixture(t, options = {}) {
         assertAllowed: () => {}, rolloutMode: 'public', pageSize: 2,
         listCandidates: async () => { counters.candidates++; return [{ id: subscriptionId, owner_user_id: U }]; }, ...options.runtime });
     t.after(() => runtime.stop());
-    return { runtime, gateway, lease, rows, routed, counters,
+    return { runtime, gateway, router, lease, rows, routed, counters, realtimeAllowed: () => realtimeEnabled,
         add: (receivedAtMs = now) => { const row = { id: String(rows.length + 1), ownerUserId: U, subscriptionId, status: 'received', receivedAtMs, payload: { synthetic: true } }; rows.push(row); return row; },
         advance: value => { now += value; }, interval: value => { intervalMinutes = value; },
         requestedMode: value => { requestedMode = value; }, realtimeEnabled: value => { realtimeEnabled = value; },
@@ -148,10 +149,10 @@ test('an explicitly eligible owner processes each received notification immediat
     assert.deepEqual(f.routed.map(row => row.atMs), [1000, 1000, 1000, 1000, 1000]);
     await f.runtime.tick();
     f.advance(1); f.add();
-    await f.callbacks().onReceived({ lease: f.lease });
+    await f.callbacks().onReceived({ lease: f.lease, inbox: f.rows.at(-1) });
     assert.equal(f.rows[5].status, 'routed'); assert.equal(f.routed.at(-1).atMs, 1001);
     f.interval(null); f.advance(1); f.add();
-    await f.callbacks().onReceived({ lease: f.lease });
+    await f.callbacks().onReceived({ lease: f.lease, inbox: f.rows.at(-1) });
     assert.equal(f.rows[6].status, 'routed'); assert.equal(f.routed.at(-1).atMs, 1002);
 });
 
@@ -162,7 +163,7 @@ test('a received callback overlapping an active realtime window drains the later
     f.gateway.decryptInbox = async (_lease, row) => { if (once) { once = false; entered.resolve(); await gate.promise; } return row.payload; };
     const active = f.runtime.drain(f.lease); await entered.promise;
     f.advance(1); f.add();
-    const received = f.callbacks().onReceived({ lease: f.lease });
+    const received = f.callbacks().onReceived({ lease: f.lease, inbox: f.rows.at(-1) });
     gate.resolve(); await Promise.all([active, received]);
     assert.deepEqual(f.rows.map(row => row.status), ['routed', 'routed']);
     assert.deepEqual(f.routed.map(row => row.id), ['1', '2']); assert.equal(f.routed[1].atMs, 1001);
@@ -176,27 +177,35 @@ test('a receipt arriving during a batch-to-realtime change revisits the new mode
     f.gateway.decryptInbox = async (_lease, row) => { if (once) { once = false; entered.resolve(); await gate.promise; } return row.payload; };
     const active = f.runtime.drain(f.lease); await entered.promise;
     f.requestedMode('realtime'); f.advance(1); f.add();
-    const received = f.callbacks().onReceived({ lease: f.lease }); gate.resolve();
+    const received = f.callbacks().onReceived({ lease: f.lease, inbox: f.rows.at(-1) }); gate.resolve();
     await Promise.all([active, received]);
     assert.deepEqual(f.rows.map(row => row.status), ['routed', 'routed']);
     assert.equal(f.routed[1].atMs, 1001); assert.equal(f.counters.candidates, 1);
 });
 
-test('realtime revocation within a loaded page pauses the next receipt and preserves the requested mode and cursor', async t => {
-    const f = fixture(t, { requestedMode: 'realtime', realtimeEnabled: true, runtime: { pageSize: 10 } });
-    f.add(); f.add(); f.add();
-    const advance = f.gateway.store.advanceProcessing;
-    f.gateway.store.advanceProcessing = async (...args) => { await advance(...args); if (f.counters.advance === 1) f.realtimeEnabled(false); };
+test('realtime revocation within a loaded page preserves receipts and the existing batch deadline without changing its clock', async t => {
+    const f = fixture(t, { realtimeEnabled: true, runtime: { pageSize: 10 } });
+    await f.runtime.drain(f.lease); // establish a normal batch anchor
+    f.requestedMode('realtime'); f.add(); f.add(); f.add();
+    const original = f.gateway.store.markRouted;
+    f.gateway.store.markRouted = async (...args) => { await original(...args); if (f.counters.mark === 1) f.realtimeEnabled(false); };
+    // Model the same live qualification check performed by the real router/queue.
+    const route = f.router.routeReceived;
+    f.router.routeReceived = input => input.processingMode === 'realtime' && !f.realtimeAllowed()
+        ? { state: 'pending' } : route(input);
     const result = await f.runtime.drain(f.lease);
-    assert.equal(result.state, 'pending'); assert.equal(result.processed, 1); assert.equal(result.dueAtMs, 301000);
-    assert.equal(f.state().cursor, '1'); assert.deepEqual(f.rows.map(row => row.status), ['routed', 'received', 'received']);
-    f.advance(300000); assert.equal((await f.runtime.drain(f.lease)).processed, 2);
+    assert.equal(result.state, 'pending'); assert.equal(result.dueAtMs, 301000);
+    assert.equal(f.state().cursor, '0'); assert.equal(f.counters.advance, 0);
+    assert.deepEqual(f.rows.map(row => row.status), ['routed', 'received', 'received']);
+    f.advance(300000); await f.runtime.drain(f.lease);
     assert(f.rows.every(row => row.status === 'routed'));
 });
 
-test('selecting batch after an immediate window uses the current interval, and explicitly restoring realtime removes that wait', async t => {
-    const f = fixture(t, { requestedMode: 'realtime', realtimeEnabled: true });
-    f.add(); await f.runtime.drain(f.lease);
+test('realtime leaves the batch anchor unchanged and selecting batch uses that current interval', async t => {
+    const f = fixture(t, { realtimeEnabled: true });
+    await f.runtime.drain(f.lease);
+    f.requestedMode('realtime'); f.add(); await f.runtime.drain(f.lease);
+    assert.equal(f.state().lastProcess, 1000); assert.equal(f.counters.advance, 0);
     f.advance(1); f.add(); f.requestedMode('batch');
     const waiting = await f.runtime.drain(f.lease); assert.equal(waiting.state, 'pending'); assert.equal(waiting.dueAtMs, 301000);
     f.requestedMode('realtime'); assert.equal((await f.runtime.drain(f.lease)).processed, 1);
@@ -214,8 +223,8 @@ test('concurrent drains share one in-flight subscription window', async t => {
 test('shutdown and late gateway callbacks cannot open sessions or restart draining', async t => {
     const f = fixture(t); await f.runtime.tick(); const callbacks = f.callbacks(); assert(callbacks);
     await f.runtime.stop(); f.add();
-    callbacks.onSession({ lease: f.lease }); callbacks.onLease({ lease: { ...f.lease, revision: 2 } });
-    await callbacks.onReceived({ lease: f.lease }); f.runtime.start();
+    callbacks.onSession({ lease: f.lease, inbox: f.rows.at(-1) }); callbacks.onLease({ lease: { ...f.lease, revision: 2 } });
+    await callbacks.onReceived({ lease: f.lease, inbox: f.rows.at(-1) }); f.runtime.start();
     assert.equal((await f.runtime.tick()).state, 'disabled'); assert.equal(f.counters.run, 1); assert.equal(f.routed.length, 0);
     assert.equal(f.runtime.status().sessions, 0); assert.equal(f.runtime.status().stopped, true);
 });
@@ -260,11 +269,11 @@ test('busy or reenrollment gateway outcomes do not overwrite a persisted retry p
 });
 
 test('discarded session callbacks cannot replace a current session lease or regain ownership', async t => {
-    const f = fixture(t, { runtime: { jitter: () => 0 } }), callbacks = [];
+    const f = fixture(t, { requestedMode: 'realtime', realtimeEnabled: true, runtime: { jitter: () => 0 } }), callbacks = [];
     f.gateway.run = input => {
         f.counters.run++; callbacks.push(input);
         if (f.counters.run === 1) return Promise.reject(Object.assign(new Error('secret socket sentinel'), { code: 'X_PUSH_SOCKET_FAILED' }));
-        input.onSession({ lease: f.lease }); return new Promise(resolve => input.signal.addEventListener('abort', resolve, { once: true }));
+        input.onSession({ lease: f.lease, inbox: f.rows.at(-1) }); return new Promise(resolve => input.signal.addEventListener('abort', resolve, { once: true }));
     };
     f.gateway.store.status = async () => ({ revision: 1, retryAttempt: 0 });
     f.gateway.store.recordRetry = async () => ({ recorded: true });
@@ -272,6 +281,53 @@ test('discarded session callbacks cannot replace a current session lease or rega
     f.advance(5000); await f.runtime.tick(); assert.equal(f.counters.run, 2);
     f.add(); const before = f.counters.begin;
     callbacks[0].onSession({ lease: { ...f.lease, revision: 99 } }); callbacks[0].onLease({ lease: { ...f.lease, revision: 99 } });
-    await callbacks[0].onReceived({ lease: f.lease }); assert.equal(f.counters.begin, before); assert.equal(f.routed.length, 0);
-    await callbacks[1].onReceived({ lease: f.lease }); assert.equal(f.routed.length, 1);
+    await callbacks[0].onReceived({ lease: f.lease, inbox: f.rows.at(-1) }); assert.equal(f.counters.begin, before); assert.equal(f.routed.length, 0);
+    await callbacks[1].onReceived({ lease: f.lease, inbox: f.rows.at(-1) }); assert.equal(f.routed.length, 1);
+});
+
+test('a receipt callback reads its authoritative owned ciphertext and bypasses a larger pending batch backlog without touching its clock', async t => {
+    const pendingIds = new Set(), f = fixture(t, { requestedMode: 'realtime', realtimeEnabled: true, pendingIds });
+    for (let index = 0; index < 60; index++) pendingIds.add(f.add().id);
+    await f.runtime.tick(); f.routed.length = 0;
+    const incoming = f.add(), reads = [];
+    const getInbox = f.gateway.store.getInbox;
+    f.gateway.store.getInbox = async input => { reads.push(input); return getInbox(input); };
+    await f.callbacks().onReceived({ lease: f.lease, inbox: { id: incoming.id }, payload: { forged: 'not trusted' } });
+    assert.equal(f.routed[0].id, incoming.id); assert.equal(incoming.status, 'routed');
+    assert.equal(reads[0].ownerUserId, U); assert.equal(reads[0].subscriptionId, f.lease.subscriptionId);
+    assert.equal(f.counters.begin, 0); assert.equal(f.counters.advance, 0); assert.equal(f.counters.complete, 0);
+    assert.equal(f.state().lastProcess, null); assert(f.rows.slice(0, 60).every(row => row.status === 'received'));
+    const later = f.add();
+    let once = true;
+    f.gateway.store.getInbox = async input => {
+        reads.push(input);
+        if (once) { once = false; throw Object.assign(new Error('private DB failure'), { code: 'ER_FIXTURE_READ' }); }
+        return getInbox(input);
+    };
+    await assert.rejects(f.callbacks().onReceived({ lease: f.lease, inbox: { id: later.id } }), { code: 'ER_FIXTURE_READ' });
+    assert.equal(later.status, 'received');
+    const beforeRetry = f.routed.length;
+    await f.runtime.tick();
+    assert.equal(f.routed[beforeRetry].id, later.id, 'failed exact-ID hints survive and bypass the backlog again on the next tick');
+    assert.equal(later.status, 'routed'); assert.equal(f.counters.begin, 0);
+    const before = f.routed.length;
+    await f.callbacks().onReceived({ lease: f.lease, inbox: { id: '99999', payload: incoming.payload } });
+    assert(!f.routed.slice(before).some(row => row.id === '99999'));
+});
+
+test('bounded realtime recovery scans rotate past pending head rows and later retry them without a batch cursor', async t => {
+    const pendingIds = new Set(), f = fixture(t, { requestedMode: 'realtime', realtimeEnabled: true, pendingIds });
+    for (let index = 0; index < 22; index++) pendingIds.add(f.add().id);
+    const newest = f.add();
+    await f.runtime.drain(f.lease); assert.equal(newest.status, 'received');
+    await f.runtime.drain(f.lease); assert.equal(newest.status, 'routed');
+    pendingIds.clear(); await f.runtime.drain(f.lease); await f.runtime.drain(f.lease);
+    assert(f.rows.every(row => row.status === 'routed')); assert.equal(f.counters.begin, 0); assert.equal(f.counters.advance, 0);
+});
+
+test('batch receipt callbacks remain encrypted until the periodic batch window and do not open a window themselves', async t => {
+    const f = fixture(t); await f.runtime.tick(); f.add();
+    await f.callbacks().onReceived({ lease: f.lease, inbox: f.rows[0] });
+    assert.equal(f.rows[0].status, 'received'); assert.equal(f.counters.begin, 0);
+    await f.runtime.tick(); assert.equal(f.rows[0].status, 'routed'); assert.equal(f.counters.begin, 1);
 });

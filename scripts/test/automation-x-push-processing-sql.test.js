@@ -11,6 +11,7 @@ const { createQueue } = require('../../src/automation/queue');
 const { createXEventRouter } = require('../../src/automation/x-event-router');
 const entitlements = require('../../src/automation/entitlements');
 const capacity = require('../../src/automation/push-capacity');
+const { createXMonitorQuota } = require('../../src/automation/x-monitor-quota');
 const { createXProcessingSettings } = require('../../src/automation/x-processing-settings');
 const { createRateLimiter } = require('../../src/automation/rate-limits');
 const port = Number(process.env.AUTOMATION_TEST_DB_PORT), ADMIN = { userId: '666666666666666666', isAdmin: true };
@@ -22,7 +23,7 @@ const webPost = (id, handle = 'example') => ({ title: '合成の投稿通知', b
 
 async function fixture(work, runtimeOptions = {}) {
     const db = await createTestDatabase(port), query = db.queryDatabase;
-    let now = Date.now(), sequence = 0, lease, runtime, auditFailure = false, auditHook = null, markFailure = false, ownerLockAttempt = null;
+    let now = Date.now(), sequence = 0, lease, runtime, callbacks, auditFailure = false, auditHook = null, markFailure = false, ownerLockAttempt = null;
     const clock = () => now, subscription = await insertSubscription(db);
     await db.withDatabaseTransaction(query => entitlements.savePlanPolicy(query, ADMIN, { planId: 'free', label: '無料', slotLimit: 5, minuteLimit: 5, dayLimit: 24, priority: 0, intervalMinutes: 5 }));
     const storeDb = { ...db, withDatabaseTransaction: work => db.withDatabaseTransaction(query => work(async (sql, args) => {
@@ -46,12 +47,12 @@ async function fixture(work, runtimeOptions = {}) {
         if (markFailure) throw Object.assign(new Error('private DB sentinel'), { code: 'X_PUSH_STORE_UNAVAILABLE' });
         return store.markRouted(...args);
     } }, run: input => {
-        input.onSession({ lease });
+        callbacks = input; input.onSession({ lease });
         return new Promise(resolve => input.signal.addEventListener('abort', resolve, { once: true }));
     } };
     function makeRuntime(options = {}) {
         runtime = createXPushRuntime(db, queue, { enabled: true, gateway: runtimeGateway, clock,
-            router: { routeReceived: input => routeOverride ? routeOverride(input, realRouter) : realRouter.routeReceived(input) },
+            router: { hasRealtimeTargets: realRouter.hasRealtimeTargets, hasBatchTargets: realRouter.hasBatchTargets, routeReceived: input => routeOverride ? routeOverride(input, realRouter) : realRouter.routeReceived(input) },
             rolloutMode: 'public', assertAllowed: () => {}, pageSize: 2,
             listCandidates: async () => [{ id: subscription.subscriptionId, owner_user_id: U }], ...runtimeOptions, ...options });
         return runtime;
@@ -67,7 +68,7 @@ async function fixture(work, runtimeOptions = {}) {
     }
     const receiver = async () => (await query('SELECT * FROM automation_x_push_receivers WHERE subscription_id=?', [subscription.subscriptionId]))[0];
     const count = async table => Number((await query(`SELECT COUNT(*) n FROM ${table}`))[0].n);
-    try { await work({ db, query, store, gateway, queue, subscription, clock, makeRuntime, runtime: () => runtime, lease: () => lease, refreshLease, record, receiver, count,
+    try { await work({ db, query, store, gateway, queue, subscription, clock, callbacks: () => callbacks, makeRuntime, runtime: () => runtime, lease: () => lease, refreshLease, record, receiver, count,
         advance: amount => { now += amount; }, setRoute: value => { routeOverride = value; }, setAuditFailure: value => { auditFailure = value; }, setAuditHook: value => { auditHook = value; }, setMarkFailure: value => { markFailure = value; },
         setOwnerLockAttempt: value => { ownerLockAttempt = value; } }); }
     finally { await runtime.stop(); await db.close(); }
@@ -199,10 +200,10 @@ test('real SQL: encrypted Push receipts are processed under explicit durable win
     await t.test('eligible realtime drains encrypted backlog and subsequent receipts immediately with the same contract quotas and priority', () => fixture(async f => {
         await realtime(f, null);
         for (let i = 0; i < 5; i++) await f.record();
-        const at = f.clock();
         assert.equal((await f.runtime().drain(f.lease())).processed, 5);
         assert.equal(await f.count('automation_jobs'), 5);
-        assert.equal(Number((await f.receiver()).last_process_at_ms), at);
+        assert.equal((await f.receiver()).last_process_at_ms, null);
+        assert.equal((await f.receiver()).process_window_at_ms, null);
         f.advance(1); const next = await f.record();
         assert.equal((await f.runtime().drain(f.lease())).processed, 1);
         assert.equal((await f.store.getInbox({ ...f.subscription, id: next.id })).status, 'routed');
@@ -218,7 +219,8 @@ test('real SQL: encrypted Push receipts are processed under explicit durable win
     }));
 
     await t.test('revocation within one realtime page pauses retained rows, and a restarted worker respects the same batch deadline', () => fixture(async f => {
-        await realtime(f); const at = f.clock();
+        const at = f.clock(); await f.runtime().drain(f.lease());
+        await realtime(f);
         for (let i = 0; i < 3; i++) await f.record();
         let routed = 0;
         f.setRoute(async (input, real) => {
@@ -227,9 +229,9 @@ test('real SQL: encrypted Push receipts are processed under explicit durable win
             return result;
         });
         const paused = await f.runtime().drain(f.lease());
-        assert.equal(paused.state, 'pending'); assert.equal(paused.processed, 1); assert.equal(paused.dueAtMs, at + 15 * 60000);
+        assert.equal(paused.state, 'pending'); assert.equal(paused.processed, 3); assert.equal(paused.dueAtMs, at + 15 * 60000);
         assert.equal(await f.count('automation_jobs'), 1);
-        let receiver = await f.receiver(); assert.equal(receiver.process_window_mode, 'realtime'); assert.equal(String(receiver.process_cursor_id), '1');
+        let receiver = await f.receiver(); assert.equal(receiver.process_window_mode, null); assert.equal(String(receiver.process_cursor_id), '0'); assert.equal(Number(receiver.last_process_at_ms), at);
         assert.equal((await f.store.listInbox(f.subscription)).length, 2);
         const queued = await f.queue.claim(f.clock());
         const sendCheck = await f.queue.check(queued, f.clock());
@@ -246,18 +248,18 @@ test('real SQL: encrypted Push receipts are processed under explicit durable win
         assert.equal(await f.count('automation_notification_slots'), 1);
     }));
 
-    await t.test('a crash after one realtime receipt preserves the cursor and resumes every remaining page without an interval wait', () => fixture(async f => {
-        await realtime(f); const at = f.clock();
+    await t.test('a crash after one realtime receipt leaves the batch cursor unchanged and resumes every remaining page without an interval wait', () => fixture(async f => {
+        await realtime(f);
         for (let i = 0; i < 5; i++) await f.record();
         let count = 0;
         f.setRoute((input, real) => { if (++count === 2) throw Object.assign(new Error('safe crash fixture'), { code: 'ER_FIXTURE_RESTART' }); return real.routeReceived(input); });
         await assert.rejects(f.runtime().drain(f.lease()), { code: 'ER_FIXTURE_RESTART' });
-        assert.equal(String((await f.receiver()).process_cursor_id), '1');
+        assert.equal(String((await f.receiver()).process_cursor_id), '0');
         await f.runtime().stop(); f.advance(1); f.setRoute(null);
         const restarted = f.makeRuntime();
         assert.equal((await restarted.drain(f.lease())).processed, 4);
         assert.equal(await f.count('automation_runs'), 5); assert.equal(await f.count('automation_jobs'), 5);
-        assert.equal(Number((await f.receiver()).last_process_at_ms), at);
+        assert.equal((await f.receiver()).last_process_at_ms, null);
         const later = await f.record(); assert.equal((await restarted.drain(f.lease())).processed, 1);
         assert.equal((await f.store.getInbox({ ...f.subscription, id: later.id })).status, 'routed');
     }));
@@ -451,4 +453,80 @@ test('real SQL: encrypted Push receipts are processed under explicit durable win
         assert(!JSON.stringify(await f.query('SELECT * FROM automation_audit')).includes(secret));
         assert(!JSON.stringify(await f.query('SELECT * FROM automation_x_push_inbox')).includes(secret));
     }));
+
+    await t.test('mixed duplicate-author monitors preserve explicit batch while owner default is realtime and deduplicate the later batch fanout', () => fixture(async f => {
+        await realtime(f, null);
+        const first = (await f.query('SELECT * FROM automation_x_monitors WHERE owner_user_id=?', [U]))[0];
+        await f.query('UPDATE automation_x_monitors SET notification_settings_json=? WHERE id=?', [JSON.stringify({ subscriptionId: f.subscription.subscriptionId, processingMode: 'batch' }), first.id]);
+        const second = await f.query("INSERT INTO automation_x_monitors (owner_user_id,account_id,account_handle,name,enabled,state,pool_kind,notification_settings_json,subscription_state,revision,created_at_ms,updated_at_ms) VALUES (?,'54321','EXAMPLE','Legacy duplicate author',1,'ready','free',?,'bound',1,?,?)", [U, JSON.stringify({ subscriptionId: f.subscription.subscriptionId, processingMode: 'realtime' }), f.clock(), f.clock()]);
+        await f.db.withDatabaseTransaction(query => entitlements.assignSlot(query, U, 'x', String(second.insertId)));
+        const receipt = await f.record({ payload: webPost('1190000000000000011') });
+        const pending = await f.runtime().drain(f.lease());
+        assert.equal(pending.code, 'X_MONITOR_NOT_CONFIGURED'); assert.equal(await f.count('automation_jobs'), 1);
+        assert.equal((await f.store.getInbox({ ...f.subscription, id: receipt.id })).status, 'received');
+        let receiver = await f.receiver(); assert.equal(receiver.last_process_at_ms, null); assert.equal(receiver.process_window_at_ms, null); assert.equal(String(receiver.process_cursor_id), '0');
+        await f.query("UPDATE automation_notification_plans SET confirmation_interval_minutes=5 WHERE plan_id='ExplicitRealtimePlan'");
+        await f.runtime().drain(f.lease());
+        assert.equal(await f.count('automation_jobs'), 2); assert.equal(await f.count('automation_runs'), 2);
+        assert.equal((await f.store.getInbox({ ...f.subscription, id: receipt.id })).status, 'routed');
+        const targets = await f.query('SELECT target_id FROM automation_runs ORDER BY target_id');
+        assert.deepEqual(targets.map(row => String(row.target_id)), [String(first.id), String(second.insertId)]);
+        receiver = await f.receiver(); assert.equal(Number(receiver.last_process_at_ms), f.clock());
+        await f.runtime().drain(f.lease()); assert.equal(await f.count('automation_jobs'), 2);
+    }));
+
+    await t.test('a free owner with five explicitly reserved slots delivers realtime through encrypted runtime with no batch interval', () => fixture(async f => {
+        const api = createXMonitorQuota(f.db, { registrationEnabled: true, rolloutMode: 'public', now: f.clock });
+        const monitor = (await api.list({ userId: U })).items[0];
+        const saved = await api.update({ userId: U }, monitor.id, { expectedRevision: monitor.revision, processingMode: 'realtime', expectedRealtimeSlotCost: 5 });
+        assert.equal(saved.processing.realtimeSource, 'slots'); assert.equal(saved.processing.slotCost, 5);
+        await f.query("UPDATE automation_notification_plans SET confirmation_interval_minutes=NULL WHERE plan_id='free'");
+        const receipt = await f.record(); await f.runtime().drain(f.lease());
+        assert.equal(await f.count('automation_jobs'), 1); assert.equal(await f.count('automation_notification_boost_slots'), 4);
+        assert.equal((await f.store.getInbox({ ...f.subscription, id: receipt.id })).status, 'routed');
+        const receiver = await f.receiver(); assert.equal(receiver.last_process_at_ms, null); assert.equal(receiver.process_window_at_ms, null); assert.equal(String(receiver.process_cursor_id), '0');
+    }));
+
+    await t.test('existing donor in supporter pool delivers realtime at one personal slot with no paid contract or batch interval', () => fixture(async f => {
+        await f.query('UPDATE users SET is_donor=1,additional_auto_extract_slots=1 WHERE user_id=?', [U]);
+        await f.query('UPDATE automation_x_monitors SET pool_kind=\'supporter\',notification_settings_json=? WHERE owner_user_id=?', [JSON.stringify({ subscriptionId: f.subscription.subscriptionId, processingMode: 'realtime' }), U]);
+        await f.query("UPDATE automation_notification_plans SET confirmation_interval_minutes=NULL WHERE plan_id='free'");
+        const receipt = await f.record(); await f.runtime().drain(f.lease());
+        assert.equal(await f.count('automation_jobs'), 1); assert.equal(await f.count('automation_notification_slots'), 1); assert.equal(await f.count('automation_notification_boost_slots'), 0);
+        assert.equal((await f.store.getInbox({ ...f.subscription, id: receipt.id })).status, 'routed'); assert.equal((await f.receiver()).last_process_at_ms, null);
+    }));
+
+    await t.test('qualification lost after router inspection is rejected by locked queue admission and later batch processes the retained ciphertext', () => fixture(async f => {
+        await f.runtime().drain(f.lease()); const at = f.clock(); await realtime(f);
+        const receipt = await f.record(), original = f.queue.routeX;
+        let once = true;
+        f.queue.routeX = async (...args) => { if (once) { once = false; await f.query("UPDATE automation_push_plan_policy SET realtime_enabled=0 WHERE plan_id='ExplicitRealtimePlan'"); } return original(...args); };
+        const pending = await f.runtime().drain(f.lease());
+        assert.equal(pending.state, 'pending'); assert.equal(pending.dueAtMs, at + 15 * 60000);
+        assert.equal(await f.count('automation_jobs'), 0); assert.equal(await f.count('automation_runs'), 0);
+        assert.equal((await f.store.getInbox({ ...f.subscription, id: receipt.id })).status, 'received');
+        f.advance(15 * 60000); await f.refreshLease(); await f.runtime().drain(f.lease());
+        assert.equal(await f.count('automation_jobs'), 1); assert.equal((await f.store.getInbox({ ...f.subscription, id: receipt.id })).status, 'routed');
+    }));
+
+    await t.test('fresh callback ID bypasses retained batch backlog and keeps its clock, while restart recovers unmarked realtime without duplicate jobs', () => fixture(async f => {
+        await realtime(f, null); await f.runtime().tick();
+        for (let index = 0; index < 24; index++) await f.record({ payload: webPost(String(1190000000000000100n + BigInt(index)), 'batch_author') });
+        // A second author remains explicit batch, so the older encrypted rows
+        // are legitimate pending work rather than terminal unmatched notices.
+        const second = await f.query("INSERT INTO automation_x_monitors (owner_user_id,account_id,account_handle,name,enabled,state,pool_kind,notification_settings_json,subscription_state,revision,created_at_ms,updated_at_ms) VALUES (?,'54321','batch_author','Batch backlog',1,'ready','free',?,'bound',1,?,?)", [U, JSON.stringify({ subscriptionId: f.subscription.subscriptionId, processingMode: 'batch' }), f.clock(), f.clock()]);
+        await f.db.withDatabaseTransaction(query => entitlements.assignSlot(query, U, 'x', String(second.insertId)));
+        const latest = await f.record();
+        await f.callbacks().onReceived({ lease: f.lease(), inbox: { id: latest.id }, payload: { forged: true } });
+        assert.equal(await f.count('automation_jobs'), 1); assert.equal((await f.store.getInbox({ ...f.subscription, id: latest.id })).status, 'routed');
+        assert.equal((await f.store.listInbox(f.subscription)).length, 24); assert.equal((await f.receiver()).last_process_at_ms, null);
+        const replay = await f.record(); f.setMarkFailure(true);
+        await assert.rejects(f.callbacks().onReceived({ lease: f.lease(), inbox: { id: replay.id } }), { code: 'X_PUSH_STORE_UNAVAILABLE' });
+        assert.equal(await f.count('automation_jobs'), 2); assert.equal((await f.store.getInbox({ ...f.subscription, id: replay.id })).status, 'received');
+        await f.runtime().stop(); f.setMarkFailure(false); const restarted = f.makeRuntime();
+        await restarted.drain(f.lease()); await restarted.drain(f.lease());
+        assert.equal(await f.count('automation_jobs'), 2); assert.equal((await f.store.getInbox({ ...f.subscription, id: replay.id })).status, 'routed');
+        assert.equal((await f.store.listInbox(f.subscription)).length, 24); assert.equal((await f.receiver()).last_process_at_ms, null);
+    }));
+
 });

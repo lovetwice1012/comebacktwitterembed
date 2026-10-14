@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Clock3, Layers3, Zap } from "lucide-react";
 import { XMonitorMoveEditor } from "../automation/x-monitor-move-editor";
 import { parseXMonitor, parseXPool, xCount, xObject, xPoolName, type XMonitor, type XMonitorAPI, type XPool } from "../automation/x-monitor-view";
 
@@ -132,6 +133,10 @@ function Diagnostics({ api, refreshVersion }: { api: XMonitorAPI; refreshVersion
         {summary.invalidOwners.map(id => <p key={id} role="alert" className="text-sm text-destructive">利用者 {id} の保有支援枠を確認できません。保存記録の検査が必要です。0枠としては扱いません。</p>)}
         {summary.nextCursor ? <Button variant="outline" disabled={loading || busy} onClick={() => void load(summary.nextCursor!)}>利用者の続きを取得</Button> : null}</section>
       <section aria-label="監視登録の割当診断" className="space-y-2"><h3 className="font-medium">監視登録の消費種別（取得済み{summary.registrations.length}件）</h3>{summary.registrations.map(item => <article key={item.id} aria-label={`管理者のX監視 ${item.id}`} className="space-y-2 rounded border p-3 text-sm"><p>{item.ownerUserId} · {item.name} · X {item.accountId}</p><p>割当: {xPoolName(item.poolKind)} · {item.state === "suspended" ? "停止・枠保持中" : item.enabled ? "登録済み" : "停止中"} · 品質参照: {item.quality.planId}</p>
+        <dl aria-label={`監視 ${item.id} の通知方法と使用枠`} className="grid gap-2 sm:grid-cols-2">
+          <div><dt className="flex items-center gap-1 text-muted-foreground">{item.processing?.effectiveMode === "realtime" ? <Zap size={14} aria-hidden="true" /> : <Clock3 size={14} aria-hidden="true" />}通知方法</dt><dd>{!item.processing ? "確認待ち" : item.processing.effectiveMode === "realtime" ? "リアルタイム" : item.processing.intervalMinutes === null ? "間隔の設定待ち" : `${item.processing.intervalMinutes}分ごと`}</dd></div>
+          <div><dt className="flex items-center gap-1 text-muted-foreground"><Layers3 size={14} aria-hidden="true" />使用する個人枠</dt><dd>{item.processing ? `${item.processing.slotCost}枠` : "確認待ち"}</dd></div>
+        </dl>
         <XMonitorMoveEditor row={item} api={api} disabled={busy || loading} onBusy={value => { lock.current = value; setBusy(value); }} onReload={load} onSaved={async saved => { setSummary(previous => previous ? { ...previous, registrations: previous.registrations.map(row => row.id === saved.id ? { ...saved, ownerUserId: item.ownerUserId } : row) } : previous); await load(); }} /></article>)}
         {summary.invalidRegistrations.map(item => <article key={item.id} aria-label={`保存情報が不正なX監視 ${item.id}`} className="rounded border border-destructive/40 p-3 text-sm"><p>利用者 {item.ownerUserId} · 監視 {item.id}</p><p role="alert">監視の保存情報を確認できません。通知設定と保存記録の検査が必要です。未確認の情報で枠を移動しません。</p></article>)}
         {summary.registrationNextCursor ? <Button variant="outline" disabled={loading || busy} onClick={() => void load(undefined, summary.registrationNextCursor!)}>監視登録の続きを取得</Button> : summary.registrations.length >= 200 ? <p className="text-xs text-muted-foreground">監視登録は取得範囲を表示しています。全登録の確認には対象利用者の一覧も確認してください。</p> : null}</section>

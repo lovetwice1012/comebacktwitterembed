@@ -25,9 +25,12 @@ async function runtimeCadence(query, owner, kind, targetId, baseMs, now = Date.n
 // Caller holds the persistent owner lock; real numbered slots are reserved so
 // pause, delete, concurrent registration and downgrades use one capacity pool.
 async function reserve(query, owner, kind, targetId, input) {
-    if (kind !== 'auto') throw fail('AUTOMATION_CADENCE_UNSUPPORTED', '間隔の短縮は新着通知で選択できます。');
+    if (!['auto', 'x'].includes(kind)) throw fail('AUTOMATION_CADENCE_UNSUPPORTED', '間隔の短縮は新着通知で選択できます。');
     const cost = input.slotCost;
     if (!Number.isSafeInteger(cost) || cost < 1 || cost > 10000) throw fail('AUTOMATION_CADENCE_INVALID', '使用する通知枠数を1〜10,000の整数で指定してください。');
+    // The X caller explicitly confirms either its base reservation or the
+    // fixed five-slot realtime option. Native cadence semantics stay intact.
+    if (kind === 'x' && ![1, 5].includes(cost)) throw fail('X_MONITOR_INVALID_INPUT', 'X通知の使用枠数を確認してください。');
     const current = (await query('SELECT * FROM automation_monitor_cadence WHERE owner_user_id=? AND target_kind=? AND target_id=? FOR UPDATE', [owner, kind, targetId]))[0];
     if ((input.expectedUpdatedAtMs ?? null) !== (current ? Number(current.updated_at_ms) : null)) throw fail('AUTOMATION_CADENCE_CONFLICT', '確認間隔が別の操作で変更されました。最新の通知を読み直してください。', 409);
     const entitlement = await require('./entitlements').listOwnerSlots(query, owner);
@@ -38,7 +41,7 @@ async function reserve(query, owner, kind, targetId, input) {
     const occupied = new Set([...slots.filter(row => row.target_kind).map(row => Number(row.slot_index)), ...extra.filter(row => !own.includes(row)).map(row => Number(row.slot_index))]);
     const indices = own.filter(row => Number(row.slot_index) <= entitlement.slotLimit).map(row => Number(row.slot_index));
     for (let index = 1; indices.length < cost - 1 && index <= entitlement.slotLimit; index++) if (!occupied.has(index) && !indices.includes(index)) indices.push(index);
-    if (cost > 1 && (Number(main.slot_index) > entitlement.slotLimit || indices.length < cost - 1)) throw Object.assign(fail('AUTOMATION_SLOT_LIMIT', '間隔を短くするための空き枠が足りません。通知の枠配分を確認してください。'), { maxSlots: entitlement.slotLimit, availableSlots: entitlement.remainingSlots + own.length, planName: entitlement.label });
+    if (cost > 1 && (Number(main.slot_index) > entitlement.slotLimit || indices.length < cost - 1)) throw Object.assign(fail('AUTOMATION_SLOT_LIMIT', kind === 'x' ? 'リアルタイム通知に必要な5枠を確保できません。個人の空き枠を確認してください。' : '間隔を短くするための空き枠が足りません。通知の枠配分を確認してください。'), { maxSlots: entitlement.slotLimit, availableSlots: entitlement.remainingSlots + own.length, planName: entitlement.label });
     await query('DELETE FROM automation_notification_boost_slots WHERE owner_user_id=? AND target_kind=? AND target_id=?', [owner, kind, targetId]);
     const retained = indices.slice(0, cost - 1);
     if (retained.length) {

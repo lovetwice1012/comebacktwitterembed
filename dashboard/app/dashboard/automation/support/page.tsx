@@ -1,12 +1,16 @@
 import { requireDashboardSession } from "@/lib/server-session";
 import { SquareDonationManager } from "@/components/automation/square-donation-manager";
+import { AutomationPageFrame } from "@/components/automation/automation-page-frame";
+import { NotificationUsageOverview } from "@/components/automation/notification-usage-overview";
+import { getDashboardLocale } from "@/lib/server-locale";
+import { usesNewDashboardUI } from "@/lib/ui-rollout";
 
 export default async function AutomationSupportPage() {
   const session = await requireDashboardSession();
-  return <main className="mx-auto max-w-4xl space-y-5 p-6">
-    <a href="/dashboard/automation" className="text-sm text-primary underline">自動通知へ戻る</a>
-    <div><h1 className="text-2xl font-semibold">支援・寄付</h1><p className="mt-2 text-sm text-muted-foreground">サービスへの1回ごとの寄付と、支払い履歴・支援者枠の適用状態を確認します。</p></div>
-    <a href="/dashboard/automation/plans" className="inline-block text-sm text-primary underline">有償プラン・サブスクリプション</a>
+  const locale = await getDashboardLocale();
+  return <AutomationPageFrame locale={locale} isAdmin={session.user.isAdmin} newUI={await usesNewDashboardUI(session)} section="support" title="運営を支援する">
+    <nav className="notification-billing-navigation" aria-label="プランと支援"><a href="/dashboard/automation/plans">月額プラン・お支払い</a><a href="/dashboard/automation/support" aria-current="page">運営への支援・履歴</a></nav>
+    <NotificationUsageOverview key={`usage:${session.user.id}`} />
     <SquareDonationManager key={session.user.id} />
-  </main>;
+  </AutomationPageFrame>;
 }

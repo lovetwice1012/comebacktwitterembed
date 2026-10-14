@@ -77,7 +77,7 @@ test('closing or refreshing the parent notification list preserves a draft witho
 });
 test('cadence save through the parent refreshes both notification rows and the shared weighted allocation profile', async () => {
     const f = await fixture({ parent: true });
-    try { const before = f.calls.filter(item => item.route === 'entitlements').length; await f.open(); await f.review('3'); await f.click('この枠配分で保存'); assert(f.calls.filter(item => item.route === 'entitlements').length > before); assert.match(f.container.textContent, /使用枠 3枠/); assert.match(f.container.textContent, /確認間隔に配分した追加枠も含みます/); }
+    try { const before = f.calls.filter(item => item.route === 'entitlements').length; await f.open(); await f.review('3'); await f.click('この枠配分で保存'); assert(f.calls.filter(item => item.route === 'entitlements').length > before); assert.match(f.container.textContent, /使用枠 3枠/); assert.match(f.container.textContent, /確認間隔に配分した追加枠と停止中の登録も含みます/); }
     finally { await f.close(); }
 });
 test('foreign-owner or legacy rows expose no allocation entry point and unknown stored count is never silently treated as one', async () => {

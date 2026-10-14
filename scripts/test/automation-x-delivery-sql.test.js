@@ -7,6 +7,7 @@ const { createTestDatabase } = require('../lib/automation-test-db');
 const { hash, createService } = require('../../src/automation/service');
 const { newWorkflow, NODE_TYPES } = require('../../src/automation/schema');
 const entitlements = require('../../src/automation/entitlements');
+const { createXMonitorQuota } = require('../../src/automation/x-monitor-quota');
 const { createQueue } = require('../../src/automation/queue');
 const { createXEventRouter } = require('../../src/automation/x-event-router');
 const { createGraphStore } = require('../../src/automation/graph-store');
@@ -79,6 +80,29 @@ async function fixture(work) {
         setSendError: value => { sendError = value; }, setBeforeSend: value => { beforeSend = value; } }); }
     finally { flow.clear(); await db.close(); }
 }
+
+// Deliberately no AsyncLocalStorage: every nested transaction opens a
+// separate fixture connection. This exercises the production contract without
+// relying on a particular adapter's ambient transaction propagation.
+function independentTransactionAdapter(db, hooks = {}) {
+    if (port !== 33621 || !/^cbte_automation_test_[0-9a-f]{20}$/.test(db.schema)) throw new Error('Independent transaction fixture requires disposable loopback schema');
+    const pool = require('mysql').createPool({ host: '127.0.0.1', port, user: 'root', password: process.env.AUTOMATION_TEST_DB_PASSWORD || '',
+        database: db.schema, connectionLimit: 2, supportBigNumbers: true, bigNumberStrings: true });
+    const acquire = () => new Promise((resolve, reject) => pool.getConnection((error, connection) => error ? reject(error) : resolve(connection)));
+    const queryOn = connection => (sql, args = []) => new Promise((resolve, reject) => connection.query(sql, args, (error, rows) => error ? reject(error) : resolve(rows)));
+    return { ...db, queryDatabase: async (sql, args) => { const connection = await acquire(); try { return await queryOn(connection)(sql, args); } finally { connection.release(); } },
+        withDatabaseTransaction: async work => {
+            const connection = await acquire(), query = queryOn(connection);
+            try {
+                await query('SET innodb_lock_wait_timeout=3'); await query('START TRANSACTION');
+                const result = await work(async (sql, args) => { await hooks.before?.(sql, args); const rows = await query(sql, args); await hooks.after?.(sql, args); return rows; });
+                await query('COMMIT'); return result;
+            } catch (error) { await query('ROLLBACK'); throw error; } finally { connection.release(); }
+        },
+        closeIndependentPool: () => new Promise((resolve, reject) => pool.end(error => error ? reject(error) : resolve())),
+    };
+}
+const deferredMove = () => { let resolve; const promise = new Promise(done => { resolve = done; }); return { promise, resolve }; };
 
 test('real SQL: X uses the shared queue, graph, entitlements and mocked physical Discord path', { skip: !port, timeout: 120000 }, async t => {
     await t.test('committed owner notification reaches default DM once and replay/new-push-version deduplicates by public post', () => fixture(async f => {
@@ -253,4 +277,232 @@ test('real SQL: X uses the shared queue, graph, entitlements and mocked physical
             });
         }
     });
+
+    await t.test('persisted realtime admission anchor survives legacy and graph projection, and send-time privilege loss honors the current interval', async () => {
+        for (const graph of [false, true]) await fixture(async f => {
+            const subscriptionId = await f.subscription(), planId = 'MarkerRealtimePlan';
+            await f.db.withDatabaseTransaction(async query => {
+                await entitlements.savePlanPolicy(query, ADMIN, { planId, label: 'RT marker fixture', slotLimit: 9, minuteLimit: 5, dayLimit: 24, priority: 7, intervalMinutes: 15 });
+                const capacity = require('../../src/automation/push-capacity'), old = await capacity.getPlanCapacity(query, ADMIN, planId);
+                await capacity.savePlanCapacity(query, ADMIN, planId, { eligible: false, specialSlotLimit: 0, realtimeEnabled: true, expectedUpdatedAtMs: old.updatedAtMs });
+                await entitlements.setUserPlan(query, ADMIN, U, planId);
+            });
+            let workflow;
+            if (graph) {
+                workflow = await f.service.createWorkflow({ userId: U }, { definition: newWorkflow('RT anchor graph') });
+                await f.service.activateWorkflow({ userId: U }, workflow.id, { expectedRevision: workflow.revision });
+            }
+            await f.monitor(subscriptionId, { settings: { processingMode: 'realtime', ...(workflow ? { workflowId: workflow.id } : {}) } });
+            const row = await f.inbox(subscriptionId), at = f.clock();
+            const result = await f.router.routeReceived({ lease: { ownerUserId: U, subscriptionId, revision: 1 }, inbox: row, payload: publicPost(), processingMode: 'realtime' });
+            assert.equal(result.state, 'routed'); if (graph) await f.project();
+            const stored = (await f.query('SELECT * FROM automation_jobs'))[0], plan = JSON.parse(stored.plan_json);
+            assert.equal(plan.context.xRealtimeAdmittedAtMs, at);
+            if (graph) assert.equal(plan.members[0].context.xRealtimeAdmittedAtMs, at);
+            const receiver = (await f.query('SELECT * FROM automation_x_push_receivers'))[0];
+            assert.equal(receiver.last_process_at_ms, null); assert.equal(receiver.process_window_at_ms, null);
+            await f.query('UPDATE automation_push_plan_policy SET realtime_enabled=0 WHERE plan_id=?', [planId]);
+            const restarted = createQueue(f.db, {}, { clock: f.clock, rolloutMode: 'public' }), job = await restarted.claim(f.clock());
+            const check = await restarted.check(job, f.clock());
+            assert.equal(check.state, 'pending'); assert.equal(check.code, 'X_NOTIFICATION_BATCH_WAIT'); assert.equal(check.dueAtMs, at + 15 * 60000);
+            await f.query('UPDATE automation_notification_plans SET confirmation_interval_minutes=5 WHERE plan_id=?', [planId]);
+            assert.equal((await restarted.check(job, f.clock())).dueAtMs, at + 5 * 60000);
+            f.advance(5 * 60000); assert.equal((await restarted.check(job, f.clock())).state, 'ready'); assert.equal(f.requests.length, 0);
+        });
+    });
+
+
+    await t.test('pure manual pool moves keep legacy and graph notification jobs valid through a complete owned audit chain', async () => {
+        for (const graph of [false, true]) await fixture(async f => {
+            const subscriptionId = await f.subscription();
+            await f.query('UPDATE users SET is_donor=1,additional_auto_extract_slots=2 WHERE user_id=?', [U]);
+            let workflow;
+            if (graph) {
+                workflow = await f.service.createWorkflow({ userId: U }, { definition: newWorkflow('Manual move retention') });
+                await f.service.activateWorkflow({ userId: U }, workflow.id, { expectedRevision: workflow.revision });
+            }
+            const id = await f.monitor(subscriptionId, { settings: workflow ? { workflowId: workflow.id } : {} });
+            await f.receive(subscriptionId); if (graph) await f.project();
+            const job = await f.queue.claim(f.clock()), storedJob = (await f.query('SELECT * FROM automation_jobs WHERE id=?', [job.id]))[0];
+            const api = createXMonitorQuota(f.db, { registrationEnabled: true, rolloutMode: 'public', now: f.clock });
+            const moved = await api.move({ userId: U }, id, { poolKind: 'supporter', expectedRevision: 1 });
+            assert.equal(moved.revision, 2); assert.equal((await f.queue.check(job, f.clock())).state, 'ready');
+            const movedAgain = await api.move(ADMIN, id, { poolKind: 'free', expectedRevision: moved.revision });
+            assert.equal(movedAgain.revision, 3); assert.equal((await f.queue.check(job, f.clock())).state, 'ready');
+            assert.deepEqual((await f.query('SELECT * FROM automation_jobs WHERE id=?', [job.id]))[0], storedJob, 'pool moves never rewrite queued plans or graph checksums');
+            const auditRows = await f.query("SELECT * FROM automation_audit WHERE entity_id=? AND action='x.quota.move' ORDER BY id", [`x:${id}`]);
+            assert.deepEqual(auditRows.map(row => { const detail = JSON.parse(row.detail_json); return [detail.ownerUserId, detail.beforeRevision, detail.afterRevision]; }), [[U, 1, 2], [U, 2, 3]]);
+            for (const replacement of [
+                { ...JSON.parse(auditRows[0].detail_json), ownerUserId: V },
+                { ...JSON.parse(auditRows[0].detail_json), manual: false },
+                { ...JSON.parse(auditRows[0].detail_json), afterRevision: 3 },
+                { ...JSON.parse(auditRows[0].detail_json), beforeRevision: 0 },
+                { ...JSON.parse(auditRows[0].detail_json), before: 'invented' },
+            ]) {
+                await f.query('UPDATE automation_audit SET detail_json=? WHERE id=?', [JSON.stringify(replacement), auditRows[0].id]);
+                assert.equal((await f.queue.check(job, f.clock())).state, 'cancelled');
+            }
+            await f.query('UPDATE automation_audit SET detail_json=? WHERE id=?', [auditRows[0].detail_json, auditRows[0].id]);
+            await f.query("UPDATE automation_audit SET action='fixture.missing' WHERE id=?", [auditRows[1].id]);
+            assert.equal((await f.queue.check(job, f.clock())).state, 'cancelled');
+            await f.query("UPDATE automation_audit SET action='x.quota.move' WHERE id=?", [auditRows[1].id]);
+            assert.equal((await f.queue.check(job, f.clock())).state, 'ready');
+            const duplicate = await f.query('INSERT INTO automation_audit (actor_user_id,entity_id,action,detail_json,created_at_ms) VALUES (?,?,?,?,?)',
+                [U, `x:${id}`, 'x.quota.move', auditRows[0].detail_json, f.clock()]);
+            assert.equal((await f.queue.check(job, f.clock())).state, 'cancelled');
+            await f.query('DELETE FROM automation_audit WHERE id=?', [duplicate.insertId]);
+            const identityChanged = structuredClone(job);
+            if (graph) identityChanged.plan.members[0].targetIdentity = 'different-target-identity';
+            else identityChanged.plan.targetIdentity = 'different-target-identity';
+            assert.equal((await f.queue.check(identityChanged, f.clock())).state, 'cancelled');
+            const faultReader = { ...f.db, queryDatabase: async (sql, args) => {
+                if (sql.startsWith('SELECT detail_json FROM automation_audit')) throw Object.assign(new Error('Synthetic audit read failure'), { code: 'ER_FIXTURE_MOVE_AUDIT_READ' });
+                return f.query(sql, args);
+            } };
+            const restarted = createQueue(faultReader, {}, { clock: f.clock, rolloutMode: 'public' });
+            await assert.rejects(restarted.check(job, f.clock()), { code: 'ER_FIXTURE_MOVE_AUDIT_READ' });
+            assert.equal((await f.query('SELECT state FROM automation_jobs WHERE id=?', [job.id]))[0].state, 'leased', 'audit read failure cannot consume or cancel the durable notification');
+            if (graph) assert.equal((await f.queue.refreshFlowJob(job, f.clock())).state, 'ready');
+            assert.equal((await f.queue.beginSend(job, f.clock())).state, 'sending', 'final locked fence accepts only the complete pure move chain');
+            await api.update({ userId: U }, id, { expectedRevision: movedAgain.revision, name: 'Ordinary metadata edit' });
+            assert.equal((await f.queue.check(job, f.clock())).state, 'cancelled', 'ordinary monitor edits cannot use the move exception');
+            assert.equal(f.requests.length, 0);
+        });
+    });
+
+    await t.test('manual pool move that loses supporter realtime retains legacy and graph jobs under the current batch deadline', async () => {
+        for (const graph of [false, true]) await fixture(async f => {
+            const subscriptionId = await f.subscription();
+            await f.query('UPDATE users SET is_donor=1,additional_auto_extract_slots=1 WHERE user_id=?', [U]);
+            let workflow;
+            if (graph) {
+                workflow = await f.service.createWorkflow({ userId: U }, { definition: newWorkflow('Supporter realtime move') });
+                await f.service.activateWorkflow({ userId: U }, workflow.id, { expectedRevision: workflow.revision });
+            }
+            const id = await f.monitor(subscriptionId, { pool: 'supporter', settings: { processingMode: 'realtime', ...(workflow ? { workflowId: workflow.id } : {}) } });
+            const row = await f.inbox(subscriptionId), at = f.clock();
+            await f.router.routeReceived({ lease: { ownerUserId: U, subscriptionId, revision: 1 }, inbox: row, payload: publicPost(), processingMode: 'realtime' });
+            if (graph) await f.project();
+            const api = createXMonitorQuota(f.db, { registrationEnabled: true, rolloutMode: 'public', now: f.clock });
+            const moved = await api.move({ userId: U }, id, { poolKind: 'free', expectedRevision: 1 });
+            assert.equal(moved.processing.requestedMode, 'realtime'); assert.equal(moved.processing.effectiveMode, 'batch');
+            assert.equal(moved.processing.slotCost, 1); assert.equal(Number((await f.query('SELECT COUNT(*) n FROM automation_notification_boost_slots'))[0].n), 0);
+            let job = await f.queue.claim(f.clock());
+            const waiting = await f.queue.check(job, f.clock());
+            assert.equal(waiting.state, 'pending'); assert.equal(waiting.code, 'X_NOTIFICATION_BATCH_WAIT'); assert.equal(waiting.dueAtMs, at + 5 * 60000);
+            if (graph) assert.equal((await f.queue.refreshFlowJob(job, f.clock())).state, 'pending');
+            f.advance(5 * 60000); job = await f.queue.claim(f.clock());
+            assert.equal((await f.queue.check(job, f.clock())).state, 'ready');
+            assert.equal((await f.queue.beginSend(job, f.clock())).state, 'sending'); assert.equal(f.requests.length, 0);
+        });
+    });
+
+    await t.test('manual pool move audit failure rolls back the pool, editor revision and retained notification compatibility atomically', () => fixture(async f => {
+        const subscriptionId = await f.subscription();
+        await f.query('UPDATE users SET is_donor=1,additional_auto_extract_slots=1 WHERE user_id=?', [U]);
+        const id = await f.monitor(subscriptionId); await f.receive(subscriptionId);
+        const job = await f.queue.claim(f.clock()), original = (await f.query('SELECT * FROM automation_x_monitors WHERE id=?', [id]))[0];
+        const faulty = { ...f.db, withDatabaseTransaction: work => f.db.withDatabaseTransaction(query => work(async (sql, args) => {
+            const result = await query(sql, args);
+            if (sql.startsWith('INSERT INTO automation_audit') && args[2] === 'x.quota.move') throw new Error('Synthetic move audit failure');
+            return result;
+        })) };
+        const api = createXMonitorQuota(faulty, { registrationEnabled: true, rolloutMode: 'public', now: f.clock });
+        await assert.rejects(api.move({ userId: U }, id, { poolKind: 'supporter', expectedRevision: 1 }), /Synthetic move audit failure/);
+        assert.deepEqual((await f.query('SELECT * FROM automation_x_monitors WHERE id=?', [id]))[0], original);
+        assert.equal(Number((await f.query("SELECT COUNT(*) n FROM automation_audit WHERE entity_id=? AND action='x.quota.move'", [`x:${id}`]))[0].n), 0);
+        assert.equal((await f.queue.check(job, f.clock())).state, 'ready');
+    }));
+
+
+    await t.test('a move committed ahead of final send locking is visible to package safety, pool ranks and the revision audit in one current snapshot', async () => {
+        for (const graph of [false, true]) await fixture(async f => {
+            const subscriptionId = await f.subscription();
+            await f.query('UPDATE users SET is_donor=1,additional_auto_extract_slots=2 WHERE user_id=?', [U]);
+            const workflow = await f.service.createWorkflow({ userId: U }, { definition: newWorkflow('RR move before send') });
+            await f.service.activateWorkflow({ userId: U }, workflow.id, { expectedRevision: workflow.revision });
+            const id = await f.monitor(subscriptionId, { settings: { workflowId: workflow.id } });
+            if (graph) { await f.receive(subscriptionId); await f.project(); }
+            else {
+                const queue = createQueue(f.db, { evaluate: async (definition, event, _bindings, at) => require('../../src/automation/engine').evaluateWorkflow(definition, event, { now: at }) }, { clock: f.clock, rolloutMode: 'public' });
+                await createXEventRouter(f.db, queue, { clock: f.clock }).routeReceived({ lease: { ownerUserId: U, subscriptionId, revision: 1 }, inbox: await f.inbox(subscriptionId), payload: publicPost() });
+            }
+            const job = await f.queue.claim(f.clock()), ownerHeld = deferredMove(), releaseMove = deferredMove(), senderAttempt = deferredMove();
+            let held = false, safetyReads = 0, sending;
+            const movingDb = { ...f.db, withDatabaseTransaction: work => f.db.withDatabaseTransaction(query => work(async (sql, args) => {
+                const result = await query(sql, args);
+                if (!held && sql === 'SELECT user_id FROM users WHERE user_id=? FOR UPDATE') { held = true; ownerHeld.resolve(); await releaseMove.promise; }
+                return result;
+            })) };
+            const sendDb = independentTransactionAdapter(f.db, { before: sql => {
+                if (sql.startsWith('SELECT 1 FROM automation_package_installs')) safetyReads++;
+                if (sql.startsWith('INSERT INTO users ')) senderAttempt.resolve();
+            } });
+            const moving = createXMonitorQuota(movingDb, { registrationEnabled: true, rolloutMode: 'public', now: f.clock }).move({ userId: U }, id, { poolKind: 'supporter', expectedRevision: 1 });
+            try {
+                await ownerHeld.promise;
+                sending = createQueue(sendDb, {}, { clock: f.clock, rolloutMode: 'public' }).beginSend(job, f.clock());
+                await senderAttempt.promise;
+                assert.equal(safetyReads, 0, 'owner mutex precedes the first ordinary safety read');
+                releaseMove.resolve(); assert.equal((await moving).revision, 2);
+                assert.equal((await sending).state, 'sending', 'new pool rank and complete move audit come from the same current snapshot');
+                assert.equal(safetyReads, 1); assert.equal(f.requests.length, 0);
+            } finally { releaseMove.resolve(); await Promise.allSettled([moving, ...(sending ? [sending] : [])]); await sendDb.closeIndependentPool(); }
+        });
+    });
+
+    await t.test('final send holding the X owner mutex prevents a manual move from committing across the package safety snapshot', async () => {
+        for (const graph of [false, true]) await fixture(async f => {
+            const subscriptionId = await f.subscription();
+            await f.query('UPDATE users SET is_donor=1,additional_auto_extract_slots=2 WHERE user_id=?', [U]);
+            const workflow = await f.service.createWorkflow({ userId: U }, { definition: newWorkflow('RR send before move') });
+            await f.service.activateWorkflow({ userId: U }, workflow.id, { expectedRevision: workflow.revision });
+            const id = await f.monitor(subscriptionId, { settings: { workflowId: workflow.id } });
+            if (graph) { await f.receive(subscriptionId); await f.project(); }
+            else {
+                const queue = createQueue(f.db, { evaluate: async (definition, event, _bindings, at) => require('../../src/automation/engine').evaluateWorkflow(definition, event, { now: at }) }, { clock: f.clock, rolloutMode: 'public' });
+                await createXEventRouter(f.db, queue, { clock: f.clock }).routeReceived({ lease: { ownerUserId: U, subscriptionId, revision: 1 }, inbox: await f.inbox(subscriptionId), payload: publicPost() });
+            }
+            const job = await f.queue.claim(f.clock()), safetyRead = deferredMove(), resumeSend = deferredMove(), moveAttempt = deferredMove();
+            let gated = false, moveFinished = false, moving;
+            const sendDb = independentTransactionAdapter(f.db, { after: async sql => {
+                if (!gated && sql.startsWith('SELECT 1 FROM automation_package_installs')) { gated = true; safetyRead.resolve(); await resumeSend.promise; }
+            } });
+            const movingDb = { ...f.db, withDatabaseTransaction: work => f.db.withDatabaseTransaction(query => work(async (sql, args) => {
+                if (sql.startsWith('INSERT INTO users ')) moveAttempt.resolve();
+                return query(sql, args);
+            })) };
+            const candidate = createQueue(sendDb, {}, { clock: f.clock, rolloutMode: 'public' }), sending = candidate.beginSend(job, f.clock());
+            try {
+                await safetyRead.promise;
+                moving = createXMonitorQuota(movingDb, { registrationEnabled: true, rolloutMode: 'public', now: f.clock }).move({ userId: U }, id, { poolKind: 'supporter', expectedRevision: 1 }).then(result => { moveFinished = true; return result; });
+                await moveAttempt.promise; assert.equal(moveFinished, false);
+                resumeSend.resolve(); assert.equal((await sending).state, 'sending');
+                assert.equal((await moving).revision, 2); assert.equal((await candidate.check(job, f.clock())).state, 'ready');
+                assert.equal(f.requests.length, 0);
+            } finally { resumeSend.resolve(); await Promise.allSettled([sending, ...(moving ? [moving] : [])]); await sendDb.closeIndependentPool(); }
+        });
+    });
+
+
+    await t.test('a native-kind graph envelope still locks its owner first when the projected members include an owned X notification', () => fixture(async f => {
+        const subscriptionId = await f.subscription(), workflow = await f.service.createWorkflow({ userId: U }, { definition: newWorkflow('Mixed-kind owner fence') });
+        await f.service.activateWorkflow({ userId: U }, workflow.id, { expectedRevision: workflow.revision });
+        await f.monitor(subscriptionId, { settings: { workflowId: workflow.id } });
+        await f.receive(subscriptionId); await f.project();
+        const job = await f.queue.claim(f.clock());
+        // A cross-source flow can inherit a native parent run. Keep the actual
+        // projected/owned X member and exercise that trusted envelope shape.
+        const mixedEnvelope = { ...job, target_kind: 'auto' };
+        let ownerLocked = false, safetyReads = 0;
+        const adapter = independentTransactionAdapter(f.db, { after: sql => {
+            if (sql === 'SELECT user_id FROM users WHERE user_id=? FOR UPDATE') ownerLocked = true;
+            if (sql.startsWith('SELECT 1 FROM automation_package_installs')) { safetyReads++; assert.equal(ownerLocked, true); }
+        } });
+        try {
+            assert.equal((await createQueue(adapter, {}, { clock: f.clock, rolloutMode: 'public' }).beginSend(mixedEnvelope, f.clock())).state, 'sending');
+            assert.equal(safetyReads, 1); assert.equal(f.requests.length, 0);
+        } finally { await adapter.closeIndependentPool(); }
+    }));
+
 });

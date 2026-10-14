@@ -27,6 +27,74 @@ async function inspectXProcessingSettings(query, userId, now = Date.now(), optio
             : requestedMode === 'realtime' && !realtimeAllowed ? 'X_REALTIME_PLAN_REQUIRED' : null };
 }
 
+/**
+ * Inspect one server-owned monitor using current database facts. This is read
+ * only: runtime callers hold their owner fence and never allocate extra slots.
+ * An absent per-monitor preference inherits the existing owner preference.
+ */
+async function inspectXMonitorProcessing(query, monitor, now = Date.now(), options = {}) {
+    const owner = String(monitor?.owner_user_id || '');
+    requireActor({ userId: owner });
+    const preview = options.registrationPreview === true;
+    const plan = options.plan || await entitlements.inspectXPlan(query, owner, now, options);
+    const common = options.ownerSettings || await inspectXProcessingSettings(query, owner, now, { ...options, plan });
+    let config;
+    try { config = JSON.parse(monitor.notification_settings_json || '{}'); } catch { fail('X_MONITOR_INVALID_INPUT', '監視の通知設定を確認してください。', 503); }
+    if (!config || typeof config !== 'object' || Array.isArray(config)
+        || config.processingMode !== undefined && !isMode(config.processingMode)) fail('X_MONITOR_INVALID_INPUT', '監視の通知方法を確認してください。', 503);
+    const explicitMode = config.processingMode ?? null;
+    const requestedMode = explicitMode || common.requestedMode;
+    const slots = await query('SELECT slot_index,target_kind,target_id FROM automation_notification_slots WHERE owner_user_id=? ORDER BY slot_index', [owner]);
+    const boosts = await require('./monitor-cadence').boostRows(query, owner);
+    const target = String(monitor.id || '');
+    const own = preview ? [] : boosts.filter(row => row.target_kind === 'x' && String(row.target_id) === target);
+    const primary = slots.find(row => row.target_kind === 'x' && String(row.target_id) === target);
+    const occupied = new Set([...slots.filter(row => row.target_kind).map(row => Number(row.slot_index)), ...boosts.map(row => Number(row.slot_index))]);
+    let vacant = 0;
+    for (let index = 1; index <= plan.slotLimit; index++) if (!occupied.has(index)) vacant++;
+    const validOwn = own.filter(row => Number(row.slot_index) >= 1 && Number(row.slot_index) <= plan.slotLimit
+        && slots.some(slot => Number(slot.slot_index) === Number(row.slot_index) && !slot.target_kind));
+    const validReserved = own.length === 4 && validOwn.length === 4 && new Set(own.map(row => Number(row.slot_index))).size === 4;
+    const baseUsable = preview ? vacant > 0 : !!primary && Number(primary.slot_index) >= 1 && Number(primary.slot_index) <= plan.slotLimit && monitor.state !== 'deleted' && monitor.state !== 'suspended';
+    const donor = (await query('SELECT is_donor FROM users WHERE user_id=?', [owner]))[0];
+    const existingDonor = donor?.is_donor === 1 || donor?.is_donor === '1';
+    let poolUsable = monitor.pool_kind === 'free';
+    if (monitor.pool_kind === 'supporter') {
+        const holding = await require('./push-support-grants').getSupporterHolding(query, owner, now);
+        const rows = await query("SELECT id FROM automation_x_monitors WHERE owner_user_id=? AND state<>'deleted' AND pool_kind='supporter' ORDER BY id", [owner]);
+        const rank = preview ? rows.length + 1 : rows.findIndex(row => String(row.id) === target) + 1 || (options.prospectivePool === true ? rows.length + 1 : 0);
+        poolUsable = holding.isSupporter && rank > 0 && rank <= holding.totalSupporterSlots;
+    } else if (monitor.pool_kind === 'special') {
+        const policy = (await query(`SELECT c.special_slot_limit,c.eligible,p.enabled FROM automation_push_plan_policy c
+            JOIN automation_notification_plans p ON p.plan_id=c.plan_id WHERE c.plan_id=?`, [plan.planId]))[0];
+        const rows = await query("SELECT id FROM automation_x_monitors WHERE owner_user_id=? AND state<>'deleted' AND pool_kind='special' ORDER BY id", [owner]);
+        const rank = preview ? rows.length + 1 : rows.findIndex(row => String(row.id) === target) + 1 || (options.prospectivePool === true ? rows.length + 1 : 0);
+        poolUsable = plan.tier === 'paid' && Number(policy?.eligible) === 1 && Number(policy.enabled) === 1
+            && Number.isSafeInteger(Number(policy.special_slot_limit)) && rank > 0 && rank <= Number(policy.special_slot_limit);
+    }
+    const noExtraSource = existingDonor && monitor.pool_kind === 'supporter' && poolUsable ? 'supporter' : common.realtimeAllowed ? 'plan' : null;
+    const realtimeSlotCost = noExtraSource ? 1 : 5;
+    const slotCost = preview ? requestedMode === 'realtime' ? realtimeSlotCost : 1 : 1 + own.length;
+    const canEnableRealtime = baseUsable && poolUsable && (realtimeSlotCost === 1 || vacant + validOwn.length >= (preview ? 5 : 4));
+    const source = (noExtraSource || (preview ? canEnableRealtime : validReserved)) ? noExtraSource || 'slots' : null;
+    const effectiveMode = requestedMode === 'realtime' && baseUsable && poolUsable && source ? 'realtime' : 'batch';
+    const configured = effectiveMode === 'realtime' || Number.isSafeInteger(plan.intervalMinutes) && plan.intervalMinutes >= 5 && plan.intervalMinutes <= 10080;
+    return { requestedMode, explicitMode, modeSource: explicitMode === null ? 'owner' : 'monitor', effectiveMode,
+        realtimeSource: effectiveMode === 'realtime' ? source : null, realtimeEligibilitySource: noExtraSource || (canEnableRealtime ? 'slots' : null),
+        slotCost, effectiveSlotCost: effectiveMode === 'realtime' ? realtimeSlotCost : 1, realtimeSlotCost, canEnableRealtime,
+        additionalSlotsNeeded: realtimeSlotCost === 1 ? 0 : Math.max(0, 4 - validOwn.length),
+        planId: plan.planId, planLabel: plan.label, intervalMinutes: plan.intervalMinutes ?? null, configured,
+        reasonCode: !configured ? 'X_MONITOR_NOT_CONFIGURED' : requestedMode === 'realtime' && effectiveMode !== 'realtime'
+            ? !baseUsable || !poolUsable ? 'X_MONITOR_NOT_AVAILABLE' : canEnableRealtime ? 'X_REALTIME_ALLOCATION_REQUIRED' : 'X_REALTIME_SLOT_LIMIT' : null,
+        ...(preview ? { isPreview: true } : {}) };
+}
+
+async function inspectXRegistrationProcessing(query, owner, poolKind, processingMode, now = Date.now(), options = {}) {
+    if (processingMode !== undefined && !isMode(processingMode)) fail('X_MONITOR_INVALID_INPUT', '通知方法を選んでください。');
+    return inspectXMonitorProcessing(query, { owner_user_id: owner, pool_kind: poolKind, state: 'ready',
+        notification_settings_json: JSON.stringify(processingMode === undefined ? {} : { processingMode }) }, now, { ...options, registrationPreview: true });
+}
+
 function createXProcessingSettings(db, options = {}) {
     const clock = options.now || Date.now;
     const rolloutOptions = options.rolloutMode === undefined ? {} : { mode: options.rolloutMode };
@@ -69,4 +137,4 @@ function createXProcessingSettings(db, options = {}) {
     return { get, save };
 }
 
-module.exports = { inspectXProcessingSettings, createXProcessingSettings };
+module.exports = { inspectXProcessingSettings, inspectXMonitorProcessing, inspectXRegistrationProcessing, createXProcessingSettings };

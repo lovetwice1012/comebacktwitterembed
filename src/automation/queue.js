@@ -32,6 +32,7 @@ function createQueue(db, evaluator, options = {}) {
     const queryDB = db.queryDatabase;
     const graph = options.graph || null;
     const admittedXInputs = new WeakSet();
+    const containsX = (job, plan = job.plan) => job.target_kind === 'x' || Array.isArray(plan?.members) && plan.members.some(member => member?.targetKind === 'x');
     async function snapshot(query, kind, id, lock = false, ownerUserId = null) {
         if (kind === 'x') return snapshotX(query, id, lock, ownerUserId);
         const rows = await query(`SELECT t.*,m.scope,m.revision AS monitor_revision,m.destination_id,a.workflow_id,
@@ -53,7 +54,8 @@ function createQueue(db, evaluator, options = {}) {
         if (!row) return null;
         let config;
         try { config = parse(row.notification_settings_json); } catch { return null; }
-        if (!config || typeof config !== 'object' || Array.isArray(config) || Object.keys(config).some(key => !['workflowId', 'destinationId', 'subscriptionId'].includes(key))) return null;
+        if (!config || typeof config !== 'object' || Array.isArray(config) || Object.keys(config).some(key => !['workflowId', 'destinationId', 'subscriptionId', 'processingMode'].includes(key))
+            || config.processingMode !== undefined && !['batch','realtime'].includes(config.processingMode)) return null;
         const subscription = config.subscriptionId && (await query(`SELECT s.id,s.revision,p.state AS receiver_state,p.subscription_revision AS receiver_revision,
             p.last_process_at_ms,p.process_window_at_ms,p.process_window_mode FROM automation_x_subscriptions s
             LEFT JOIN automation_x_push_receivers p ON p.subscription_id=s.id WHERE s.id=? AND s.owner_user_id=?${lock ? ' FOR UPDATE' : ''}`, [config.subscriptionId, row.owner_user_id]))[0];
@@ -73,17 +75,24 @@ function createQueue(db, evaluator, options = {}) {
             enabled: Number(row.enabled) === 1 && row.state === 'ready' && (!config.workflowId || !!workflow && !workflow.deleted_at_ms) && (!config.destinationId || !!destination),
             deleted_at_ms: row.state === 'deleted' ? Number(row.updated_at_ms) || 1 : workflow?.deleted_at_ms || null };
     }
-    async function xEligibility(query, target, now, lock = false) {
+    async function xEligibility(query, target, now, lock = false, realtimeAdmittedAtMs = null) {
         if (!target?.enabled || !target.x_binding_ready) return { state: 'cancelled', code: 'X_MONITOR_NOT_AVAILABLE' };
         const owner = target.user_id;
         if (lock) await require('./entitlements').lockOwner(query, owner);
         const rollout = await require('./x-rollout-policy').evaluateXRollout(query, { userId: owner }, options.rolloutMode === undefined ? {} : { mode: options.rolloutMode });
         if (!rollout.eligible) return { state: 'excluded', code: rollout.reasonCode };
         const plan = await require('./entitlements').inspectXPlan(query, owner, now, { useLegacyUserInterval: options.useLegacyUserInterval === true || process.env.ANGELIC_X_USE_LEGACY_USER_INTERVAL === '1' });
-        const processing = await require('./x-processing-settings').inspectXProcessingSettings(query, owner, now, { plan });
+        const processing = await require('./x-processing-settings').inspectXMonitorProcessing(query, target, now, { plan });
         if (!processing.configured) return { state: 'pending', code: 'X_MONITOR_NOT_CONFIGURED', dueAtMs: now + MINUTE };
         if (processing.effectiveMode === 'batch' && target.x_processing_window_mode === 'realtime' && target.x_processing_window_at_ms !== null) {
             const dueAtMs = (target.x_last_process_at_ms ?? target.x_processing_window_at_ms) + processing.intervalMinutes * MINUTE;
+            if (dueAtMs > now) return { state: 'pending', code: 'X_NOTIFICATION_BATCH_WAIT', dueAtMs };
+        }
+        // A queued realtime admission keeps its own trusted anchor when the
+        // monitor subsequently loses that privilege. It must honor the current
+        // batch interval without advancing the subscription's batch clock.
+        if (processing.effectiveMode === 'batch' && Number.isSafeInteger(realtimeAdmittedAtMs) && realtimeAdmittedAtMs >= 0) {
+            const dueAtMs = realtimeAdmittedAtMs + processing.intervalMinutes * MINUTE;
             if (dueAtMs > now) return { state: 'pending', code: 'X_NOTIFICATION_BATCH_WAIT', dueAtMs };
         }
         const slot = (await query("SELECT slot_index FROM automation_notification_slots WHERE owner_user_id=? AND target_kind='x' AND target_id=?", [owner, String(target.id)]))[0];
@@ -101,6 +110,35 @@ function createQueue(db, evaluator, options = {}) {
             if (Number(row?.eligible) === 1 && Number(row.enabled) === 1 && Number.isSafeInteger(Number(row.special_slot_limit)) && rank <= Number(row.special_slot_limit)) return { state: 'ready' };
         }
         return { state: 'excluded', code: 'X_MONITOR_NOT_AVAILABLE' };
+    }
+    async function monitorRevisionMatches(query, kind, target, expectedRevision, ownerUserId) {
+        const current = Number(target?.monitor_revision || 1), expected = Number(expectedRevision);
+        if (kind !== 'x') return current === expectedRevision;
+        if (current === expected) return true;
+        if (target?.user_id !== ownerUserId || target.owner_user_id !== ownerUserId
+            || !Number.isSafeInteger(current) || !Number.isSafeInteger(expected) || expected < 1 || current <= expected) return false;
+        // A pool move preserves the notification identity, yet deliberately
+        // advances the editor's CAS revision. Only its complete server-written
+        // audit chain can bridge the queued revision; edits and missing history
+        // retain the existing cancellation behavior. JSON filtering also bounds
+        // this read to the exact revision span of this persisted notification.
+        const rows = await query(`SELECT detail_json FROM automation_audit WHERE entity_id=? AND action='x.quota.move'
+            AND CASE WHEN JSON_VALID(detail_json) THEN JSON_EXTRACT(detail_json,'$.beforeRevision') ELSE NULL END>=?
+            AND CASE WHEN JSON_VALID(detail_json) THEN JSON_EXTRACT(detail_json,'$.beforeRevision') ELSE NULL END<? ORDER BY id`,
+        [`x:${target.id}`, expected, current]);
+        if (rows.length !== current - expected) return false;
+        const steps = new Set();
+        for (const row of rows) {
+            let detail;
+            try { detail = parse(row.detail_json); } catch { return false; }
+            if (!detail || detail.manual !== true || detail.ownerUserId !== ownerUserId
+                || !['free','supporter','special'].includes(detail.before) || !['free','supporter','special'].includes(detail.after)
+                || !Number.isSafeInteger(detail.beforeRevision) || !Number.isSafeInteger(detail.afterRevision)
+                || detail.afterRevision !== detail.beforeRevision + 1 || detail.beforeRevision < expected || detail.afterRevision > current
+                || steps.has(detail.beforeRevision)) return false;
+            steps.add(detail.beforeRevision);
+        }
+        return steps.size === current - expected;
     }
     async function finishLegacy(query, kind, delivery, state, now, code = null, nextAttemptAtMs = null) {
         if (kind === 'x') return true;
@@ -141,6 +179,10 @@ function createQueue(db, evaluator, options = {}) {
                 if (target?.user_id !== delivery.owner_user_id || target.x_subscription_id !== delivery.subscription_id || target.x_subscription_revision !== delivery.subscription_revision || !require('./x-event-router').matchesXMonitor(target, delivery.x_notification)) return { state: 'cancelled', code: 'X_MONITOR_CHANGED' };
                 const received = await query("SELECT i.id FROM automation_x_push_inbox i JOIN automation_x_subscriptions s ON s.id=i.subscription_id WHERE i.id=? AND i.subscription_id=? AND s.owner_user_id=? AND i.subscription_revision=s.revision AND i.status IN ('received','routed') FOR UPDATE", [delivery.id, delivery.subscription_id, delivery.owner_user_id]);
                 if (!received.length) return { state: 'cancelled', code: 'X_NOTIFICATION_INBOX_CHANGED' };
+                if (delivery.x_processing_mode === 'realtime') {
+                    const current = await require('./x-processing-settings').inspectXMonitorProcessing(query, target, now);
+                    if (current.effectiveMode !== 'realtime') return { state: 'pending', code: 'X_REALTIME_NOT_ELIGIBLE' };
+                }
                 const eligibility = await xEligibility(query, target, now);
                 if (eligibility.state !== 'ready') return eligibility;
             }
@@ -148,7 +190,9 @@ function createQueue(db, evaluator, options = {}) {
                 await finishLegacy(query, kind, delivery, 'cancelled', now, 'MONITOR_DISABLED');
                 return { state: 'cancelled' };
             }
-            if ((!graphEnabled && !evaluation) || target.workflow_id !== before?.workflow_id || target.active_revision !== before?.active_revision || target.monitor_revision !== before?.monitor_revision || target.workflow_id && !target.workflow_enabled) {
+            if ((!graphEnabled && !evaluation) || target.workflow_id !== before?.workflow_id || target.active_revision !== before?.active_revision
+                || (kind === 'x' ? !await monitorRevisionMatches(query, kind, target, Number(before?.monitor_revision || 1), before?.user_id)
+                    : target.monitor_revision !== before?.monitor_revision) || target.workflow_id && !target.workflow_enabled) {
                 await finishLegacy(query, kind, delivery, 'pending', now, 'RULE_PAUSED_OR_CHANGED');
                 return { state: 'pending' };
             }
@@ -190,7 +234,8 @@ function createQueue(db, evaluator, options = {}) {
                 const flowContext = { ownerUserId: target.user_id, guildId: scope === 'guild' ? target.guild_id : null, scope, workflowId: target.workflow_id, revision: Number(target.active_revision),
                     targetKind: kind, targetId: String(target.id), monitorRevision: Number(target.monitor_revision || 1), targetIdentity: targetIdentity(target),
                     destinationId: target.destination_id || null, bindings, locale: target.source_locale || 'ja',
-                    sourceContext: { channelId: target.origin_channel_id || null, nsfw: !!target.origin_channel_nsfw, destinationType: target.destination_type, webhookEndpointId: target.webhook_endpoint_id ? String(target.webhook_endpoint_id) : null } };
+                    sourceContext: { channelId: target.origin_channel_id || null, nsfw: !!target.origin_channel_nsfw, destinationType: target.destination_type, webhookEndpointId: target.webhook_endpoint_id ? String(target.webhook_endpoint_id) : null,
+                        ...(kind === 'x' && delivery.x_processing_mode === 'realtime' ? { xRealtimeAdmittedAtMs: handoffAtMs } : {}) } };
                 await query('INSERT INTO automation_runs (id,dedupe_key,workflow_id,revision,owner_user_id,guild_id,scope,target_kind,target_id,event_json,trace_json,state,created_at_ms) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)',
                     [runId, dedupe, target.workflow_id, target.active_revision, target.user_id, target.guild_id, scope, kind, target.id, JSON.stringify(event), '[]', 'flow_pending', now]);
                 await graph.store.initializeInTransaction(query, { runId, context: flowContext, now, unit: { kind: 'event', ancestry: [], members: [{ id: runId, runId, event, display: { ...structuredClone(NODE_TYPES.transform.defaults), ...(kind === 'x' ? { format: 'normal' } : {}) }, schedules: [], dueAtMs: now, deadlineMs,
@@ -208,7 +253,8 @@ function createQueue(db, evaluator, options = {}) {
                 if (output.destination !== 'default' && !destinationId) fail('DESTINATION_MISSING', '通知先の割り当てがありません。');
                 const plan = { ...output, event: evaluation.event, dictionaryRefs: bindings.dictionaries || {}, monitorRevision: Number(target.monitor_revision || 1), targetIdentity: targetIdentity(target),
                     context: { userId: target.user_id, guildId: target.guild_id, channelId: target.origin_channel_id, nsfw: !!target.origin_channel_nsfw, locale: target.source_locale || 'ja',
-                        destinationType: target.destination_type, webhookEndpointId: target.webhook_endpoint_id ? String(target.webhook_endpoint_id) : null },
+                        destinationType: target.destination_type, webhookEndpointId: target.webhook_endpoint_id ? String(target.webhook_endpoint_id) : null,
+                        ...(kind === 'x' && delivery.x_processing_mode === 'realtime' ? { xRealtimeAdmittedAtMs: handoffAtMs } : {}) },
                     // Preserve the observed price, never refetch current prices
                     // to compose an older scheduled notification.
                     defaultPriceText: kind === 'price' && !transformed ? delivery.message_text : null };
@@ -237,7 +283,7 @@ function createQueue(db, evaluator, options = {}) {
                         const parent = parents[0], parentPlan = parse(parent.plan_json), members = parentPlan.members || [];
                         const receivedCount = Number(parentPlan.aggregateCount || members.length);
                         if (receivedCount < plan.aggregate.maxItems) {
-                            const entry = { jobId, text: plan.text, event: plan.event, display: plan.display, targetKind: kind, defaultPriceText: plan.defaultPriceText };
+                            const entry = { jobId, text: plan.text, event: plan.event, display: plan.display, targetKind: kind, defaultPriceText: plan.defaultPriceText, ...(kind === 'x' ? { context: plan.context } : {}) };
                             parentPlan.members = plan.aggregate.mode === 'latest' ? [entry] : [...members, entry];
                             parentPlan.aggregateCount = receivedCount + 1;
                             parentPlan.deadlineMs = plan.aggregate.mode === 'latest' ? plan.deadlineMs : earliest(parent.deadline_ms, plan.deadlineMs);
@@ -250,7 +296,7 @@ function createQueue(db, evaluator, options = {}) {
                             }
                         }
                     }
-                    if (!parentId) { plan.members = [{ jobId, text: plan.text, event: plan.event, display: plan.display, targetKind: kind, defaultPriceText: plan.defaultPriceText }]; plan.aggregateCount = 1; }
+                    if (!parentId) { plan.members = [{ jobId, text: plan.text, event: plan.event, display: plan.display, targetKind: kind, defaultPriceText: plan.defaultPriceText, ...(kind === 'x' ? { context: plan.context } : {}) }]; plan.aggregateCount = 1; }
                 }
                 await query('INSERT INTO automation_jobs (id,run_id,destination_id,group_key,parent_job_id,plan_json,due_at_ms,deadline_ms,state,created_at_ms,updated_at_ms) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
                     [jobId, runId, destinationId, key, parentId, JSON.stringify(plan), due, plan.deadlineMs, parentId ? 'aggregated' : 'pending', now, now]);
@@ -263,12 +309,13 @@ function createQueue(db, evaluator, options = {}) {
     }
     async function routeX(input, now = clock()) {
         if (!input || !/^\d{1,32}$/.test(String(input.ownerUserId || '')) || !/^[1-9]\d{0,19}$/.test(String(input.monitorId || ''))
-            || !/^[1-9]\d{0,19}$/.test(String(input.inboxEventId || '')) || !/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(String(input.subscriptionId || ''))) fail('X_NOTIFICATION_INBOX_INVALID', 'X通知の受信元を確認できません。');
+            || !/^[1-9]\d{0,19}$/.test(String(input.inboxEventId || '')) || !/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(String(input.subscriptionId || ''))
+            || input.processingMode !== undefined && !['batch','realtime'].includes(input.processingMode)) fail('X_NOTIFICATION_INBOX_INVALID', 'X通知の受信元を確認できません。');
         const inbox = (await queryDB("SELECT i.subscription_revision,i.received_at_ms FROM automation_x_push_inbox i JOIN automation_x_subscriptions s ON s.id=i.subscription_id WHERE i.id=? AND i.subscription_id=? AND s.owner_user_id=? AND i.subscription_revision=s.revision AND i.status IN ('received','routed')", [String(input.inboxEventId), input.subscriptionId, String(input.ownerUserId)]))[0];
         if (!inbox) return { state: 'cancelled', code: 'X_NOTIFICATION_INBOX_CHANGED' };
         const notification = require('./x-event-router').normalizeXNotification(input.payload, { receivedAtMs: Number(inbox.received_at_ms) });
         const delivery = { id: String(input.inboxEventId), target_id: String(input.monitorId), owner_user_id: String(input.ownerUserId),
-            subscription_id: input.subscriptionId, subscription_revision: Number(inbox.subscription_revision), x_notification: notification };
+            subscription_id: input.subscriptionId, subscription_revision: Number(inbox.subscription_revision), x_notification: notification, x_processing_mode: input.processingMode };
         admittedXInputs.add(delivery);
         return route('x', delivery, now);
     }
@@ -325,13 +372,17 @@ function createQueue(db, evaluator, options = {}) {
         const members = Array.isArray(plan.members) ? plan.members : [];
         const accepted = [], missing = [];
         const eligibility = new Map();
+        // Locked X/mixed flows share this connection's owner mutex and current
+        // snapshot. Do not depend on a DB adapter implicitly merging nested
+        // transactions (or opening another connection waiting on our mutex).
+        const entitlementDb = lock && containsX(job, plan) ? { withDatabaseTransaction: work => work(query) } : db;
         let paused = false, eligibilityCode = null, pauseCode = null, pauseDueAtMs = null;
         for (const member of members) {
             if (!member || !['auto', 'price', 'x'].includes(member.targetKind) || !/^\d{1,20}$/.test(String(member.targetId))) { missing.push(member); continue; }
             const key = `${member.targetKind}:${member.targetId}`;
             if (!eligibility.has(key)) {
                 try {
-                    await require('./entitlements').resolveNotificationEntitlement(db, { ownerUserId: job.owner_user_id, targetKind: member.targetKind, targetId: String(member.targetId) });
+                    await require('./entitlements').resolveNotificationEntitlement(entitlementDb, { ownerUserId: job.owner_user_id, targetKind: member.targetKind, targetId: String(member.targetId) });
                     eligibility.set(key, true);
                 } catch (error) {
                     if (!['AUTOMATION_SLOT_LIMIT', 'AUTOMATION_NOT_FOUND'].includes(error.code)) throw error;
@@ -342,12 +393,13 @@ function createQueue(db, evaluator, options = {}) {
             if (!eligibility.get(key)) { missing.push(member); continue; }
             const target = await snapshot(query, member.targetKind, member.targetId, lock, job.owner_user_id);
             if (member.targetKind === 'x') {
-                const status = await xEligibility(query, target, clock(), lock);
+                const status = await xEligibility(query, target, clock(), lock, member.context?.xRealtimeAdmittedAtMs);
                 if (status.state === 'pending') { paused = true; pauseCode = status.code; pauseDueAtMs = Math.max(pauseDueAtMs || 0, status.dueAtMs || clock() + MINUTE); }
                 else if (status.state !== 'ready') { eligibilityCode = status.code; missing.push(member); continue; }
             }
-            const valid = target?.enabled && !target.deleted_at_ms && Number(target.monitor_revision || 1) === Number(member.monitorRevision)
-                && target.user_id === job.owner_user_id && targetIdentity(target) === member.targetIdentity && (job.workflow_id || null) === (target.workflow_id || null);
+            const valid = target?.enabled && !target.deleted_at_ms && target.user_id === job.owner_user_id
+                && targetIdentity(target) === member.targetIdentity && (job.workflow_id || null) === (target.workflow_id || null)
+                && await monitorRevisionMatches(query, member.targetKind, target, Number(member.monitorRevision), job.owner_user_id);
             if (!valid) { missing.push(member); continue; }
             if (job.workflow_id && !target.workflow_enabled) paused = true;
             accepted.push(member);
@@ -378,6 +430,10 @@ function createQueue(db, evaluator, options = {}) {
         });
     }
     async function check(job, now = Date.now(), query = queryDB, lock = false) {
+        // Package safety performs ordinary reads. Acquire the X owner mutex
+        // before those reads establish a REPEATABLE READ snapshot, otherwise a
+        // concurrent committed move can mix a new monitor with old ranks/audit.
+        if (lock && containsX(job)) await require('./entitlements').lockOwner(query, job.owner_user_id);
         try { await require('./package-safety').assertPackageSafety(query, job); }
         catch (error) { if (error instanceof require('./safety').SafetyError) return { state: error.decision === 'deny' ? 'excluded' : 'failed', code: error.code }; throw error; }
         if (job.plan?.flowV2) {
@@ -393,10 +449,12 @@ function createQueue(db, evaluator, options = {}) {
             return checkDestination(query, job, target, now);
         }
         const target = await snapshot(query, job.target_kind, job.target_id, lock, job.owner_user_id);
-        if (!target?.enabled || Number(target.monitor_revision || 1) !== job.plan.monitorRevision || targetIdentity(target) !== job.plan.targetIdentity || target.deleted_at_ms || (job.workflow_id || null) !== (target.workflow_id || null)) return { state: 'cancelled', code: 'MONITOR_CHANGED' };
+        if (!target?.enabled || targetIdentity(target) !== job.plan.targetIdentity || target.deleted_at_ms || (job.workflow_id || null) !== (target.workflow_id || null)
+            || !await monitorRevisionMatches(query, job.target_kind, target, job.plan.monitorRevision, job.owner_user_id)) return { state: 'cancelled', code: 'MONITOR_CHANGED' };
         if (job.target_kind === 'x') {
             if (target.user_id !== job.owner_user_id) return { state: 'cancelled', code: 'X_MONITOR_CHANGED' };
-            const status = await xEligibility(query, target, now, lock);
+            const anchors = [job.plan.context?.xRealtimeAdmittedAtMs, ...(job.plan.members || []).map(member => member.context?.xRealtimeAdmittedAtMs)].filter(value => Number.isSafeInteger(value) && value >= 0);
+            const status = await xEligibility(query, target, now, lock, anchors.length ? Math.max(...anchors) : null);
             if (status.state !== 'ready') return status;
         }
         if (job.deadline_ms != null && now > Number(job.deadline_ms)) return { state: 'expired', code: 'DEADLINE_EXCEEDED' };

@@ -125,7 +125,8 @@ function createDonorAdmin(db, options = {}) {
         ) t`, [owner, owner, owner]);
         const boosts = await query(`SELECT COUNT(*) AS used FROM automation_notification_boost_slots b WHERE b.owner_user_id=? AND
             ((b.target_kind='auto' AND EXISTS (SELECT 1 FROM auto_watch_targets t WHERE t.id=b.target_id AND t.user_id=b.owner_user_id))
-             OR (b.target_kind='price' AND EXISTS (SELECT 1 FROM price_watch_targets t WHERE t.id=b.target_id AND t.user_id=b.owner_user_id)))`, [owner]);
+             OR (b.target_kind='price' AND EXISTS (SELECT 1 FROM price_watch_targets t WHERE t.id=b.target_id AND t.user_id=b.owner_user_id))
+             OR (b.target_kind='x' AND EXISTS (SELECT 1 FROM automation_x_monitors t WHERE t.id=b.target_id AND t.owner_user_id=b.owner_user_id AND t.state<>'deleted')))`, [owner]);
         return safeNumber(Number(targets[0].used) + Number(boosts[0].used));
     }
     async function get(actor, owner) {

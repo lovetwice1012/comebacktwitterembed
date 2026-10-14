@@ -218,13 +218,13 @@ test('a real-envelope post routes only matching active monitors of the inbox own
     let rows = [monitor('1'), monitor('2', { owner_user_id: other }), monitor('3', { notification_settings_json: JSON.stringify({ subscriptionId: randomUUID() }) }),
         monitor('4', { account_handle: 'someone_else' }), monitor('5', { account_handle: null }), monitor('6', { enabled: 0 }), monitor('7', { state: 'suspended' })];
     const router = createXEventRouter({ queryDatabase: async (sql, values) => {
-        assert.match(sql, /owner_user_id=\?.*state='ready'.*enabled=1/); assert.deepEqual(values, [ownerUserId]); return rows;
+        assert.match(sql, /owner_user_id=\?.*state<>'deleted'/); assert.deepEqual(values, [ownerUserId]); return rows;
     } }, { routeX: async input => { calls.push(input); return { state: 'routed' }; } });
     const input = { lease: { ownerUserId, subscriptionId }, inbox: { id: '1', ownerUserId, subscriptionId, status: 'received', receivedAtMs: 1000 }, payload: observedEnvelope() };
-    assert.equal((await router.routeReceived(input)).state, 'routed');
+    assert.equal((await router.routeReceived(input)).state, 'pending');
     assert.equal(calls.length, 1); assert.equal(calls[0].monitorId, '1');
     rows = rows.slice(1);
-    assert.deepEqual(await router.routeReceived(input), { state: 'unmatched', results: [] });
+    assert.deepEqual(await router.routeReceived(input), { state: 'pending', results: [] });
     assert.equal(calls.length, 1);
     rows = []; assert.deepEqual(await router.routeReceived(input), { state: 'unmatched', results: [] });
 });

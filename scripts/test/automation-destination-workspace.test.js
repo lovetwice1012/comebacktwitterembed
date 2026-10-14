@@ -40,7 +40,7 @@ async function fixture({ list = () => ({ items: [], nextCursor: null }), failInd
     return f;
 }
 async function openXDraft(f) {
-    await f.click('Xアカウントの監視を管理'); await f.settle(); await f.click('X監視を追加'); await f.fill(f.field('Xアカウント名'), 'workspace_x');
+    await f.click('X通知'); await f.settle(); await f.click('通知を追加'); await f.fill(f.field('Xアカウント名'), 'workspace_x');
 }
 const choices = f => f.container.querySelector('form[aria-label="X監視の登録設定"] select');
 async function saveXDestination(f) {
