@@ -33,6 +33,10 @@ module.exports = [
         },
     },
     {
+        files: ['docs/angelic-angel/node-startup-clean-ab/*.mjs'],
+        languageOptions: { sourceType: 'module' },
+    },
+    {
         files: ['client/angelic-setup/Read-PushSubscription.js'],
         languageOptions: {
             sourceType: 'script',

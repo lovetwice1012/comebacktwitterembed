@@ -224,7 +224,7 @@ async function recordHistoricalSupportGrant(query, actor, input, options = {}) {
 }
 async function explicitAdminAdjustment(query, actor, input, options = {}) {
     const actorId = administrator(actor); strict(input, ['userId', 'idempotencyKey', 'expectedManualSlots', 'manualSlots', 'reason']);
-    const id = owner(input.userId), expected = integer(input.expectedManualSlots, 0, 2147483647), next = integer(input.manualSlots, 0, 2147483647), now = clock(options.now);
+    const id = owner(input.userId), expected = integer(input.expectedManualSlots, -2147483648, 2147483647), next = integer(input.manualSlots, 0, 2147483647), now = clock(options.now);
     if (typeof input.idempotencyKey !== 'string' || !ID.test(input.idempotencyKey) || typeof input.reason !== 'string' || !input.reason.trim() || input.reason.length > 240) throw failure('AUTOMATION_SUPPORT_GRANT_INVALID', '変更の参照と理由を確認してください。');
     await migrateLegacyGrants(query, id, options);
     const grantId = digest('manual_adjustment', input.idempotencyKey), details = JSON.stringify({ expectedManualSlots: expected, manualSlots: next, reason: input.reason.trim() });
@@ -238,9 +238,10 @@ async function explicitAdminAdjustment(query, actor, input, options = {}) {
         if (existing.owner_user_id !== id || prior.manualSlots !== next || prior.reason !== input.reason.trim()) throw grantConflict();
         return { inserted: false, grant: historyDto(existing) };
     }
-    if (stored((await userRow(query, id))?.additional_auto_extract_slots ?? 0) !== expected) throw grantConflict();
+    const current = integer(Number((await userRow(query, id))?.additional_auto_extract_slots ?? 0), -2147483648, 2147483647);
+    if (current !== expected) throw grantConflict();
     await query('UPDATE users SET additional_auto_extract_slots=? WHERE user_id=? AND additional_auto_extract_slots=?', [next, id, expected]);
     return insertGrant(query, { grantId, owner: id, kind: 'manual_adjustment', sourceId: input.idempotencyKey, environment: 'manual', merchantId: '',
-        slots: next - expected, purchasedSlots: 0, actor: actorId, purchasedAt: now, now, details });
+        slots: next - Math.max(0, expected), purchasedSlots: 0, actor: actorId, purchasedAt: now, now, details });
 }
 module.exports = { getSupporterHolding, migrateLegacyGrants, applyVerifiedDonationGrant, recordHistoricalSupportGrant, explicitAdminAdjustment, getSupporterGrantHistory };

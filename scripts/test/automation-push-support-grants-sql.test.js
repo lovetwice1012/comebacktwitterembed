@@ -126,6 +126,25 @@ test('SQL supporter holdings: authoritative legacy counts and new permanent per-
         assert.equal(Number((await db.queryDatabase('SELECT manual_slots FROM automation_push_support_owner_snapshots WHERE owner_user_id=?', [OWNER]))[0].manual_slots), 3);
         await assert.rejects(db.withDatabaseTransaction(query => grants.explicitAdminAdjustment(query, ADMIN, { ...input, idempotencyKey: 'stale-counter-change' }, OPTIONS)), { code: 'AUTOMATION_SUPPORT_GRANT_CONFLICT' });
     });
+    await t.test('legacy signed counters can be corrected with raw CAS and normalized audit differences', async () => {
+        const userId = '777777777777777777';
+        await db.queryDatabase('INSERT INTO users (user_id,registered_at_ms,additional_auto_extract_slots) VALUES (?,0,-9)', [userId]);
+        const input = { userId, idempotencyKey: 'signed-counter-correction', expectedManualSlots: -9, manualSlots: 3, reason: 'Repair historical signed counter' };
+        const adjust = value => db.withDatabaseTransaction(query => grants.explicitAdminAdjustment(query, ADMIN, value, OPTIONS));
+        const result = await adjust(input);
+        assert.equal(result.grant.slots, 3);
+        assert.equal((await grants.getSupporterHolding(db.queryDatabase, userId, NOW, SCOPE)).totalSupporterSlots, 3);
+        assert.equal(Number((await db.queryDatabase('SELECT manual_slots FROM automation_push_support_owner_snapshots WHERE owner_user_id=?', [userId]))[0].manual_slots), 0);
+        const audit = JSON.parse((await db.queryDatabase('SELECT details_json FROM automation_push_support_grants WHERE grant_id=?', [result.grant.grantId]))[0].details_json);
+        assert.equal(audit.expectedManualSlots, -9);
+        assert.equal((await adjust({ ...input, expectedManualSlots: 3 })).inserted, false);
+        await assert.rejects(adjust({ ...input, idempotencyKey: 'stale-signed-counter' }), { code: 'AUTOMATION_SUPPORT_GRANT_CONFLICT' });
+        await assert.rejects(adjust({ ...input, expectedManualSlots: -2147483649 }), { code: 'AUTOMATION_SUPPORT_GRANT_INVALID' });
+        await db.queryDatabase('UPDATE users SET additional_auto_extract_slots=-2147483648 WHERE user_id=?', [userId]);
+        const minimum = await adjust({ ...input, idempotencyKey: 'minimum-signed-counter', expectedManualSlots: -2147483648, manualSlots: 1 });
+        assert.equal(minimum.grant.slots, 1);
+        assert.equal(Number((await db.queryDatabase('SELECT additional_auto_extract_slots FROM users WHERE user_id=?', [userId]))[0].additional_auto_extract_slots), 1);
+    });
     await t.test('grant plus payment transaction and legacy migration roll back cleanly on failure', async () => {
         const row = await attempt(db, OWNER, 3000), before = await holding(db);
         await assert.rejects(db.withDatabaseTransaction(async query => { await grants.applyVerifiedDonationGrant(query, row.id, OPTIONS); throw new Error('synthetic grant DB failure'); }), /synthetic grant DB failure/);
