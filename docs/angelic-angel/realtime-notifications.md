@@ -44,9 +44,18 @@ Push受信後の暗号化記録とCOMMIT後のACKは両方式で共通。リア�
 
 ## APIと移行
 
-`GET /api/automation/x-monitors` の各項目は、希望方式・実効方式・資格の根拠・実予約枠数・リアルタイムに必要な枠数・設定待ちの理由を `processing` に返す。`GET /api/automation/x-monitor-quota` の `registrationProcessing` は、新規の割当順で選ばれるプールについての見積もりを返す。
+`GET /api/automation/x-monitors` の各項目は、希望方式・実効方式・資格の根拠・
+実予約枠数・リアルタイムに必要な枠数・設定待ちの理由を `processing` に返す。
+`GET /api/automation/x-monitor-quota` の `registrationProcessing` は、
+新規の割当順で選ばれるプールについての見積もりを返す。
 
-新規 `POST /api/automation/x-monitors` と既存監視の `PATCH` は、トップレベルの `processingMode` を受け付ける。リアルタイムを明示する場合は `expectedRealtimeSlotCost`（1または5）が必要で、保存時の再計算と違えば409とし、勝手に追加4枠を消費しない。既存編集は `expectedRevision` も照合する。個別希望は `notification_settings_json.processingMode` に保存し、通常の通知先・ルール置換でもこの値を保持する。
+新規 `POST /api/automation/x-monitors` と既存監視の `PATCH` は、
+トップレベルの `processingMode` を受け付ける。
+リアルタイムを明示する場合は `expectedRealtimeSlotCost`（1または5）が必要で、
+保存時の再計算と違えば409とし、勝手に追加4枠を消費しない。
+既存編集は `expectedRevision` も照合する。
+個別希望は `notification_settings_json.processingMode` に保存し、
+通常の通知先・ルール置換でもこの値を保持する。
 
 `GET /api/automation/x-processing-settings` は旧登録の共通希望方式、プランによる実効方式、利用資格、確認間隔、設定待ちの理由を返す。これは個々の監視の実効方式一覧ではない。
 `PUT` は `{mode, expectedMode}` を受け付ける。
