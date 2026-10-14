@@ -338,3 +338,61 @@ test('absent rollout and receiver state fail closed and malformed new metadata i
         assert.equal(writes(f).length, 0); f.assertPrivate();
     } finally { await f.close(); }
 });
+
+test('receipt status explains quarantined and unreadable data separately from connection and delivery success', async () => {
+    const f = await fixture({ current: status({ receiverEnabled: true, subscriptions: [subscription({ receiverState: 'listening',
+        lastReceivedAtMs: 1791921600000, receiptCounts: { received: 2, routed: 3, unsupported: 1, decryptionFailed: 4, unmatched: 5 } })] }) });
+    try {
+        const card = f.container.querySelector('[aria-label="受信情報1"]');
+        const receipt = card.querySelector('[aria-label="受信データの処理状況"]');
+        assert(receipt); assert.match(card.textContent, /サーバー接続を確認済み/);
+        for (const pattern of [/処理待ち2件/, /振り分け処理済み3件/, /形式の確認が必要1件/, /内容の読み取りに失敗4件/]) assert.match(receipt.textContent, pattern);
+        assert.match(receipt.textContent, /Xからの通知データは届いています.*形式の確認が必要な通知が1件.*送信処理に進んでいません.*保管されています.*管理者による対応が必要.*確認間隔を待つだけでは送信されません/);
+        assert.match(receipt.textContent, /内容を読み取れなかった通知が4件.*送信処理に進んでいません.*管理者に受信情報の確認を依頼/);
+        assert.match(receipt.textContent, /監視対象との一致を確認できない受信データ5件/);
+        assert.match(receipt.textContent, /監視対象との一致を確認できず、送信していない受信データ：5件.*監視するアカウントと、この受信情報の割り当てを確認/);
+        assert.match(receipt.textContent, /振り分け処理済みの件数は、通知先への送信成功数とは別.*配信結果は通知履歴/);
+        assert.doesNotMatch(receipt.textContent, /送信成功3件|配信済み3件|データを作り直/);
+        assert.equal(writes(f).length, 0); f.assertPrivate();
+        f.current = status({ subscriptions: [subscription({ receiptCounts: { received: 0, routed: 0, unsupported: 0, decryptionFailed: 0, unmatched: 0 } })] });
+        await f.click('受付状態・登録一覧を更新');
+        const refreshed = f.container.querySelector('[aria-label="受信データの処理状況"]');
+        assert.match(refreshed.textContent, /処理待ち0件/);
+        assert.doesNotMatch(refreshed.textContent, /管理者による対応が必要|内容を読み取れなかった通知が|一致を確認できず、送信していない/);
+    } finally { await f.close(); }
+});
+
+test('legacy setup responses omit the unknown breakdown and invalid receipt counts are rejected', async () => {
+    const f = await fixture({ current: status({ subscriptions: [subscription()] }) });
+    try {
+        const parse = f.exports.parseXSetupSubscription;
+        assert.equal(Object.hasOwn(parse(subscription()), 'receiptCounts'), false);
+        assert.equal(f.container.querySelector('[aria-label="受信データの処理状況"]'), null);
+        const valid = { received: 1, routed: 2, unsupported: 3, decryptionFailed: 4 };
+        assert.deepEqual({ ...parse(subscription({ receiptCounts: valid })).receiptCounts }, valid);
+        assert.deepEqual({ ...parse(subscription({ receiptCounts: { ...valid, unmatched: 5 } })).receiptCounts }, { ...valid, unmatched: 5 });
+        for (const value of [null, [], {}, { ...valid, received: -1 }, { ...valid, routed: 1.5 }, { ...valid, unsupported: '3' },
+            { ...valid, decryptionFailed: Number.MAX_SAFE_INTEGER + 1 }, { ...valid, decryptionFailed: undefined },
+            { ...valid, unmatched: null }, { ...valid, unmatched: '5' }, { ...valid, unmatched: -1 }, { ...valid, unmatched: 0.5 }]) {
+            assert.throws(() => parse(subscription({ receiptCounts: value })));
+        }
+        assert.equal(writes(f).length, 0); f.assertPrivate();
+    } finally { await f.close(); }
+});
+
+test('an unmatched post is distinct from a format error and old four-count responses stay compatible', async () => {
+    const four = { received: 0, routed: 0, unsupported: 0, decryptionFailed: 0 };
+    const f = await fixture({ current: status({ subscriptions: [subscription({ receiptCounts: four })] }) });
+    try {
+        let receipt = f.container.querySelector('[aria-label="受信データの処理状況"]');
+        assert(receipt); assert.doesNotMatch(receipt.textContent, /一致を確認/);
+        assert.equal(Object.hasOwn(f.exports.parseXSetupSubscription(subscription({ receiptCounts: four })).receiptCounts, 'unmatched'), false);
+        f.current = status({ subscriptions: [subscription({ receiptCounts: { ...four, unmatched: 2 } })] });
+        await f.click('受付状態・登録一覧を更新');
+        receipt = f.container.querySelector('[aria-label="受信データの処理状況"]');
+        assert.match(receipt.textContent, /監視対象との一致を確認できず、送信していない受信データ：2件/);
+        assert.match(receipt.textContent, /形式の確認が必要0件/);
+        assert.doesNotMatch(receipt.textContent, /管理者による対応が必要|確認間隔を待つだけ|送信成功2件/);
+        assert.equal(writes(f).length, 0); f.assertPrivate();
+    } finally { await f.close(); }
+});

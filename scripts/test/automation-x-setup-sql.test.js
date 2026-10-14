@@ -105,6 +105,56 @@ test('concurrent same-session, same-owner and cross-owner imports cannot duplica
     assert.equal((await db.queryDatabase('SELECT * FROM automation_x_subscriptions')).length, 2);
 }));
 
+test('receipt status counts stay scoped to each owned subscription and expose no encrypted material', async t => setup(t, async db => {
+    const service = createXSetup(db, { sealer });
+    const first = (await service.importFile(A, await payload(service, A))).subscription;
+    const second = (await service.importFile(A, await payload(service, A))).subscription;
+    const foreign = (await service.importFile(B, await payload(service, B))).subscription;
+    const empty = { received: 0, routed: 0, unsupported: 0, decryptionFailed: 0, unmatched: 0 };
+    assert.deepEqual(first.receiptCounts, empty);
+    const ciphertext = 'SYNTHETIC_PRIVATE_RECEIPT_CIPHERTEXT', header = 'SYNTHETIC_PRIVATE_RECEIPT_HEADER';
+    async function record(subscription, state, receivedAtMs) {
+        await db.queryDatabase(`INSERT INTO automation_x_push_inbox
+            (subscription_id,subscription_revision,version,data_ciphertext,headers_json,ack_code,status,received_at_ms)
+            VALUES (?,1,?,?,?,?,?,?)`, [subscription.id, randomUUID(), ciphertext, JSON.stringify({ encryption: header }),
+            state === 'decryption_failed' ? 101 : 100, state, receivedAtMs]);
+    }
+    await record(first, 'received', 1000); await record(first, 'received', 2000);
+    await record(first, 'routed', 3000); await record(first, 'unsupported', 4000); await record(first, 'decryption_failed', 5000);
+    await record(first, 'unmatched', 5000); await record(first, 'unmatched', 5000);
+    await record(second, 'routed', 6000);
+    for (let index = 0; index < 7; index++) await record(foreign, 'unsupported', 7000 + index);
+    for (let index = 0; index < 3; index++) await record(foreign, 'unmatched', 7100 + index);
+    const before = await db.queryDatabase('SELECT id,status,received_at_ms,routed_at_ms FROM automation_x_push_inbox ORDER BY id');
+    const own = await service.status(A), other = await service.status(B);
+    assert.equal(own.subscriptions.length, 2);
+    const one = own.subscriptions.find(item => item.id === first.id), two = own.subscriptions.find(item => item.id === second.id);
+    assert.deepEqual(one.receiptCounts, { received: 2, routed: 1, unsupported: 1, decryptionFailed: 1, unmatched: 2 });
+    assert.deepEqual(two.receiptCounts, { ...empty, routed: 1 });
+    assert.equal(one.lastReceivedAtMs, 5000); assert.equal(two.lastReceivedAtMs, 6000);
+    assert.deepEqual(other.subscriptions.map(item => item.id), [foreign.id]);
+    assert.deepEqual(other.subscriptions[0].receiptCounts, { ...empty, unsupported: 7, unmatched: 3 });
+    assert.equal(own.subscriptions.some(item => item.id === foreign.id), false);
+    for (const secret of [ciphertext, header, foreign.id, B.userId]) assert(!JSON.stringify(own).includes(secret));
+    assert.deepEqual(await db.queryDatabase('SELECT id,status,received_at_ms,routed_at_ms FROM automation_x_push_inbox ORDER BY id'), before,
+        'status reads do not alter receipt state or delivery admission');
+    await db.queryDatabase("UPDATE automation_x_push_inbox SET status='routed',routed_at_ms=8000 WHERE subscription_id=? AND status='received'", [first.id]);
+    const updated = (await service.status(A)).subscriptions.find(item => item.id === first.id);
+    assert.deepEqual(updated.receiptCounts, { received: 0, routed: 3, unsupported: 1, decryptionFailed: 1, unmatched: 2 });
+    assert.equal(Number((await db.queryDatabase('SELECT COUNT(*) AS n FROM automation_jobs'))[0].n), 0);
+}));
+
+test('receipt status query failure propagates instead of reporting misleading zero counts', async t => setup(t, async db => {
+    const service = createXSetup(db, { sealer });
+    await service.importFile(A, await payload(service, A));
+    const broken = createXSetup({ ...db, queryDatabase: async (sql, params) => {
+        if (sql.includes('AS unsupported_count')) throw Object.assign(new Error('fixture receipt query failure'), { code: 'ER_FIXTURE_READ' });
+        return db.queryDatabase(sql, params);
+    } }, { sealer });
+    await assert.rejects(broken.status(A), { code: 'ER_FIXTURE_READ' });
+    assert.deepEqual((await service.status(A)).subscriptions[0].receiptCounts, { received: 0, routed: 0, unsupported: 0, decryptionFailed: 0, unmatched: 0 });
+}));
+
 test('DB/audit failure rolls back encrypted material, token consumption and deletion atomically', async t => setup(t, async db => {
     let broken = true;
     const faulty = { ...db, withDatabaseTransaction: work => db.withDatabaseTransaction(query => work(async (sql, params) => {

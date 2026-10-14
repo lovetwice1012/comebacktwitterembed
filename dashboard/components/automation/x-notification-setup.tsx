@@ -147,6 +147,20 @@ export function XNotificationSetup({ api, active = true, initiallyOpen = false, 
         {status?.subscriptions.map((item, index) => <article key={item.id} aria-label={`受信情報${index + 1}`} className="space-y-2 rounded border p-3 text-sm"><h5 className="font-medium">受信情報 {index + 1}：保存済み</h5><dl className="grid gap-2 sm:grid-cols-2"><div><dt>Firefox</dt><dd>{item.browserVersion}</dd></div><div><dt>登録日時（日本時間）</dt><dd>{date(item.createdAtMs)}</dd></div><div><dt>更新日時（日本時間）</dt><dd>{date(item.updatedAtMs)}</dd></div></dl>
           <p className="font-medium">{xReceiverLabel(item.receiverState)}</p><p>{xReceiverDescription(item.receiverState)}</p><p>この受信情報を使う監視：{item.boundMonitorCount}件</p>
           <p>サーバーが最後に通知データを受け取った日時（日本時間）：{item.lastReceivedAtMs === null ? "最初の受信を待っています" : date(item.lastReceivedAtMs)}。この日時はデータの受信記録です。通知内容の読み取りや通知先への配信結果は、別に確認します。</p>
+          {item.receiptCounts ? <section aria-label="受信データの処理状況" className="space-y-2 rounded border p-3">
+            <h6 className="font-medium">受信データの処理状況</h6>
+            <dl className="grid gap-2 sm:grid-cols-2">
+              <div><dt>処理待ち</dt><dd>{item.receiptCounts.received}件</dd></div>
+              <div><dt>振り分け処理済み</dt><dd>{item.receiptCounts.routed}件</dd></div>
+              <div><dt>形式の確認が必要</dt><dd>{item.receiptCounts.unsupported}件</dd></div>
+              <div><dt>内容の読み取りに失敗</dt><dd>{item.receiptCounts.decryptionFailed}件</dd></div>
+              {item.receiptCounts.unmatched !== undefined ? <div><dt>監視対象との一致を確認できない受信データ</dt><dd>{item.receiptCounts.unmatched}件</dd></div> : null}
+            </dl>
+            {item.receiptCounts.unsupported > 0 ? <p role="status">Xからの通知データは届いています。形式の確認が必要な通知が{item.receiptCounts.unsupported}件あり、これらは送信処理に進んでいません。通知データは保管されています。管理者による対応が必要なため、確認間隔を待つだけでは送信されません。</p> : null}
+            {item.receiptCounts.decryptionFailed > 0 ? <p role="status">内容を読み取れなかった通知が{item.receiptCounts.decryptionFailed}件あり、これらは送信処理に進んでいません。管理者に受信情報の確認を依頼してください。</p> : null}
+            {(item.receiptCounts.unmatched ?? 0) > 0 ? <p role="status">監視対象との一致を確認できず、送信していない受信データ：{item.receiptCounts.unmatched}件。通知データは保管されています。監視するアカウントと、この受信情報の割り当てを確認してください。</p> : null}
+            <p className="text-xs text-muted-foreground">振り分け処理済みの件数は、通知先への送信成功数とは別です。配信結果は通知履歴で確認できます。</p>
+          </section> : null}
           <button className={`${button} text-destructive`} disabled={!active || busy || loading} onClick={() => { clearFile(); setDeleting(item.id); }}>受信情報を削除</button>
           {deleting === item.id ? <section aria-label="受信情報の削除確認" className="space-y-2"><p>この受信情報を削除すると、これを使う{item.boundMonitorCount}件の監視は受信情報の再登録・設定まで停止します。監視するアカウントと利用枠は保持します。X・Firefox側の通知を止める場合は、それぞれの設定で解除してください。</p><button className={`${button} text-destructive`} disabled={!active || busy || loading} onClick={() => void remove(item)}>この受信情報を削除</button><button className={button} disabled={busy} onClick={() => setDeleting(null)}>削除を取り消す</button></section> : null}
         </article>)}

@@ -187,6 +187,42 @@ function createXPushStore(db, options = {}) {
         const rows = await db.queryDatabase("SELECT i.* FROM automation_x_push_inbox i JOIN automation_x_subscriptions s ON s.id=i.subscription_id WHERE i.subscription_id=? AND s.owner_user_id=? AND i.id>? AND i.status='received' ORDER BY i.id LIMIT ?", [input.subscriptionId, input.ownerUserId, String(afterId), limit]);
         return rows.map(row => inboxDto(row, input.ownerUserId));
     }
+    async function listQuarantinedInbox(lease, input = {}) {
+        const afterId = input.afterId || '0', limit = input.limit ?? 20;
+        if (!/^[0-9]{1,20}$/.test(String(afterId)) || !Number.isInteger(limit) || limit < 1 || limit > 20) fail('X_PUSH_INBOX_INVALID');
+        return locked(lease, async (query, subscription, receiver) => {
+            fence(lease, subscription, receiver);
+            const rows = await query("SELECT * FROM automation_x_push_inbox WHERE subscription_id=? AND subscription_revision=? AND id>? AND status='unsupported' AND ack_code=100 ORDER BY id LIMIT ?",
+                [lease.subscriptionId, lease.revision, String(afterId), limit]);
+            fence(lease, subscription, receiver);
+            return rows.map(row => inboxDto(row, lease.ownerUserId));
+        });
+    }
+    async function restoreQuarantinedInbox(lease, inboxId, { authorize } = { authorize: undefined }) {
+        if (!/^[1-9]\d{0,19}$/.test(String(inboxId))) fail('X_PUSH_INBOX_INVALID');
+        return locked(lease, async (query, subscription, receiver) => {
+            fence(lease, subscription, receiver);
+            if (authorize) await authorize(query);
+            const result = await query("UPDATE automation_x_push_inbox SET status='received' WHERE id=? AND subscription_id=? AND subscription_revision=? AND status='unsupported' AND ack_code=100",
+                [String(inboxId), lease.subscriptionId, lease.revision]);
+            if (Number(result.affectedRows) === 1) await query('INSERT INTO automation_audit (actor_user_id,entity_id,action,detail_json,created_at_ms) VALUES (?,?,?,?,?)',
+                [lease.ownerUserId, lease.subscriptionId, 'x.push.adapter.recovered', JSON.stringify({ inboxId: String(inboxId), adapterVersion: 1 }), now()]);
+            fence(lease, subscription, receiver);
+            return Number(result.affectedRows) === 1;
+        });
+    }
+    async function markUnmatched(lease, inboxId) {
+        if (!/^[1-9]\d{0,19}$/.test(String(inboxId))) fail('X_PUSH_INBOX_INVALID');
+        return locked(lease, async (query, subscription, receiver) => {
+            fence(lease, subscription, receiver);
+            const result = await query("UPDATE automation_x_push_inbox SET status='unmatched' WHERE id=? AND subscription_id=? AND subscription_revision=? AND status='received'",
+                [String(inboxId), lease.subscriptionId, lease.revision]);
+            if (Number(result.affectedRows) === 1) await query('INSERT INTO automation_audit (actor_user_id,entity_id,action,detail_json,created_at_ms) VALUES (?,?,?,?,?)',
+                [lease.ownerUserId, lease.subscriptionId, 'x.push.target.unmatched', JSON.stringify({ inboxId: String(inboxId) }), now()]);
+            fence(lease, subscription, receiver);
+            return Number(result.affectedRows) === 1;
+        });
+    }
     async function status(input) {
         identity(input);
         const rows = await db.queryDatabase('SELECT s.id,s.revision,s.updated_at_ms,r.state,r.reason_code,r.last_connected_at_ms,r.lease_expires_at_ms,r.retry_at_ms,r.retry_attempt FROM automation_x_subscriptions s LEFT JOIN automation_x_push_receivers r ON r.subscription_id=s.id WHERE s.id=? AND s.owner_user_id=?', [input.subscriptionId, input.ownerUserId]);
@@ -291,7 +327,8 @@ function createXPushStore(db, options = {}) {
         });
     }
     return { claim, renew, assertLease, markState, release, recordFrame, markRouted, auditUse, getInbox, listInbox, status, list, leaseMs,
-        beginProcessing, advanceProcessing, completeProcessing, markUnsupported, recordRetry, resetRetry };
+        beginProcessing, advanceProcessing, completeProcessing, markUnsupported, recordRetry, resetRetry,
+        listQuarantinedInbox, restoreQuarantinedInbox, markUnmatched };
 }
 
 module.exports = { createXPushStore, MAX_FRAME_BYTES, safeHeaders, validateFrame };

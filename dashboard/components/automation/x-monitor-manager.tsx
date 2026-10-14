@@ -10,8 +10,8 @@ import { parseXSetupStatus, xReceiverLabel, xReceiverDescription, type XSetupSta
 const field = "w-full rounded border bg-background px-3 py-2 text-sm";
 const button = "rounded border bg-background px-3 py-2 text-sm hover:bg-muted disabled:opacity-40";
 type Choice = { id: string; name: string; enabled?: boolean; scope?: string };
-type Draft = { accountId: string; accountHandle: string; name: string; enabled: boolean; destinationId: string; workflowId: string; subscriptionId: string };
-const draftOf = (item?: XMonitor): Draft => ({ accountId: item?.accountId ?? "", accountHandle: item?.accountHandle ?? "", name: item?.name ?? "", enabled: item?.enabled ?? true,
+type Draft = { accountHandle: string; name: string; enabled: boolean; destinationId: string; workflowId: string; subscriptionId: string };
+const draftOf = (item?: XMonitor): Draft => ({ accountHandle: item?.accountHandle ?? "", name: item?.name ?? "", enabled: item?.enabled ?? true,
   destinationId: item?.notificationSettings.destinationId ?? "", workflowId: item?.notificationSettings.workflowId ?? "", subscriptionId: item?.notificationSettings.subscriptionId ?? "" });
 
 function XMonitorEditor({ api, active, allowSetup, subscriptionsVersion, destinations, rules }: { api: XMonitorAPI; active: boolean; allowSetup: boolean; subscriptionsVersion: number; destinations: Choice[]; rules: Choice[] }) {
@@ -66,16 +66,19 @@ function XMonitorEditor({ api, active, allowSetup, subscriptionsVersion, destina
     finally { action.current = false; if (mounted.current) setBusy(false); }
   }
   const validSubscription = !draft?.subscriptionId || draft.subscriptionId === current?.notificationSettings.subscriptionId || Boolean(setup?.available && setup.subscriptions.some(item => item.id === draft.subscriptionId));
-  const valid = Boolean(draft && validSubscription && /^[1-9]\d{0,19}$/u.test(draft.accountId) && (!draft.accountHandle || /^[A-Za-z0-9_]{1,15}$/u.test(draft.accountHandle)) && draft.name.length <= 120 && (!current || draft.name.trim().length > 0));
+  const requiresHandle = !current || current.accountId === null;
+  const validHandle = Boolean(draft && /^[A-Za-z0-9_]{1,15}$/u.test(draft.accountHandle) && !["i", "intent"].includes(draft.accountHandle.toLowerCase()));
+  const valid = Boolean(draft && validSubscription && (validHandle || !requiresHandle && !draft.accountHandle) && draft.name.length <= 120 && (!current || draft.name.trim().length > 0));
   const resumes = Boolean(current && draft?.enabled && !current.enabled);
   const canReview = valid && !busy && !loading && active && (editingId ? Boolean(current) && (!resumes || Boolean(current && canResume(current))) : canRegister);
   async function save() {
     if (!draft || !canReview || review === null || review !== (current?.revision ?? 0)) return;
     const settings = { ...(draft.destinationId ? { destinationId: draft.destinationId } : {}), ...(draft.workflowId ? { workflowId: draft.workflowId } : {}), ...(draft.subscriptionId ? { subscriptionId: draft.subscriptionId } : {}) };
     const body = current ? { expectedRevision: current.revision, name: draft.name.trim(),
+      ...(draft.accountHandle !== (current.accountHandle ?? "") ? { accountHandle: draft.accountHandle || null } : {}),
       ...(draft.enabled !== current.enabled ? { enabled: draft.enabled } : {}),
       ...(settings.workflowId !== current.notificationSettings.workflowId || settings.destinationId !== current.notificationSettings.destinationId || settings.subscriptionId !== current.notificationSettings.subscriptionId ? { notificationSettings: settings } : {}) }
-      : { accountId: draft.accountId, ...(draft.accountHandle ? { accountHandle: draft.accountHandle } : {}), ...(draft.name.trim() ? { name: draft.name.trim() } : {}), ...(Object.keys(settings).length ? { notificationSettings: settings } : {}) };
+      : { accountHandle: draft.accountHandle, ...(draft.name.trim() ? { name: draft.name.trim() } : {}), ...(Object.keys(settings).length ? { notificationSettings: settings } : {}) };
     await mutate(async () => {
       const response = xObject(await api(current ? `x-monitors/${encodeURIComponent(current.id)}` : "x-monitors", current ? "PATCH" : "POST", body));
       const saved = parseXMonitor(response.item ?? response);
@@ -114,24 +117,26 @@ function XMonitorEditor({ api, active, allowSetup, subscriptionsVersion, destina
       <button className={button} disabled={!active || busy || loading} onClick={() => { setReview(null); void load(); }}>X一覧・利用枠を更新</button></div>
     {loading ? <p role="status" className="text-sm">X監視を読み込み中…</p> : null}
     {draft ? <form aria-label="X監視の登録設定" className="space-y-3 rounded border p-4" noValidate onSubmit={event => { event.preventDefault(); if (canReview) { setReview(current?.revision ?? 0); setError(""); } }}>
-      <fieldset disabled={busy || !active} className="grid gap-3 sm:grid-cols-2"><label className="text-sm">XアカウントID（数字）<input className={field} inputMode="numeric" maxLength={20} disabled={Boolean(current)} value={draft.accountId} onChange={event => update("accountId", event.target.value)} /></label>
-        <label className="text-sm">Xアカウント名（任意）<input className={field} maxLength={15} disabled={Boolean(current)} value={draft.accountHandle} onChange={event => update("accountHandle", event.target.value.replace(/^@/u, ""))} /></label>
+      <fieldset disabled={busy || !active} className="grid gap-3 sm:grid-cols-2"><label className="text-sm">Xアカウント名（@ユーザー名）{requiresHandle ? "・必須" : ""}<input className={field} required={requiresHandle} maxLength={16} autoCapitalize="none" autoCorrect="off" spellCheck={false} placeholder="@example" value={draft.accountHandle} onChange={event => update("accountHandle", event.target.value.replace(/^@/u, ""))} /></label>
         <label className="text-sm">監視の表示名（任意）<input className={field} maxLength={120} value={draft.name} onChange={event => update("name", event.target.value)} /></label>
         <label className="text-sm">通知先（任意）<select className={field} value={draft.destinationId} onChange={event => update("destinationId", event.target.value)}><option value="">未指定</option>{draft.destinationId && !destinations.some(item => item.id === draft.destinationId && item.enabled !== false && item.scope !== "guild") ? <option value={draft.destinationId} disabled>現在の通知先（候補を確認）</option> : null}{destinations.filter(item => item.enabled !== false && item.scope !== "guild").map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
         <label className="text-sm">詳細ルール（任意）<select className={field} value={draft.workflowId} onChange={event => update("workflowId", event.target.value)}><option value="">未指定</option>{draft.workflowId && !rules.some(item => item.id === draft.workflowId && item.scope !== "guild") ? <option value={draft.workflowId} disabled>現在の詳細ルール（候補を確認）</option> : null}{rules.filter(item => item.scope !== "guild").map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
         {allowSetup ? <label className="text-sm">使用する自分の受信情報<select className={field} disabled={!setup?.available || loading} value={draft.subscriptionId} onChange={event => update("subscriptionId", event.target.value)}><option value="">受信情報を選択（受信の開始には設定が必要）</option>{draft.subscriptionId && !setup?.subscriptions.some(item => item.id === draft.subscriptionId) ? <option value={draft.subscriptionId} disabled>現在の受信情報（一覧を確認）</option> : null}{setup?.subscriptions.map((item, index) => <option key={item.id} value={item.id}>受信情報 {index + 1} · Firefox {item.browserVersion} · {xReceiverLabel(item.receiverState)}</option>)}</select></label> : null}
         {current ? <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={draft.enabled} onChange={event => update("enabled", event.target.checked)} />X監視を有効にする</label> : null}
       </fieldset>
-      <p className="text-xs text-muted-foreground">XアカウントIDの欄には、数字で表されるアカウント固有のIDを入力します。@ユーザー名は「Xアカウント名」の欄に入力してください。現在は、数字のIDが分かる方向けの登録方法です。</p>
+      <p className="text-xs text-muted-foreground">Xのプロフィールに表示される@ユーザー名を入力すると登録できます。先頭の@は、付けても付けなくても入力できます。</p>
+      <p className="text-xs text-muted-foreground">Xから届く投稿通知は、「Xアカウント名」の@ユーザー名で監視対象と照合します。通知を受け取りたいアカウントの現在のユーザー名を入力してください。登録後も、この欄から変更できます。</p>
       {allowSetup ? <div className="space-y-2 text-sm"><p>1つの受信情報を複数の監視対象に割り当てられます。専用FirefoxのXで各対象のベルを有効にしてください。監視するアカウントごとの利用枠は別です。</p>{!draft.subscriptionId ? <p role="status">通知を受け取る準備として、下のリンクから受信情報を登録し、この監視で使う情報を選んでください。</p> : null}{setup && setup.subscriptions.length === 0 ? <p>先に受信情報を登録し、この一覧を更新して割り当ててください。</p> : null}<a href="/dashboard/automation/x" className="inline-block text-primary underline">X通知の受信情報を登録・確認する</a>{setup?.nextCursor ? <button type="button" className={button} disabled={busy || loading || !active} onClick={() => void mutate(async () => { const next = parseXSetupStatus(await api(`x-setup?afterId=${encodeURIComponent(setup.nextCursor ?? "")}`)); if (mounted.current && activeRef.current) setSetup(previous => previous ? { ...next, subscriptions: [...previous.subscriptions, ...next.subscriptions.filter(item => !previous.subscriptions.some(row => row.id === item.id))] } : next); })}>受信情報の候補をさらに表示</button> : null}</div> : <p className="text-sm">受信情報の登録・割り当ては個人ページで確認してください。<a href="/dashboard/automation" className="text-primary underline">個人の通知一覧を開く</a></p>}
-      {review !== null ? <section aria-label="X監視の変更確認" className="space-y-2 rounded border bg-muted/30 p-3"><p className="text-sm">Xアカウント {draft.accountId}{draft.accountHandle ? `（@${draft.accountHandle}）` : ""} の登録設定を保存します。利用枠の割当はサーバーで確認します。</p>
+      {review !== null ? <section aria-label="X監視の変更確認" className="space-y-2 rounded border bg-muted/30 p-3"><p className="text-sm">{draft.accountHandle ? `Xアカウント @${draft.accountHandle}` : "このX監視"} の登録設定を保存します。{current ? "現在の利用枠と、変更していない通知設定・受信情報を引き継ぎます。" : "利用枠の割当はサーバーで確認します。"}</p>
+        {current && draft.accountHandle !== (current.accountHandle ?? "") ? <p className="text-sm">変更後のXアカウント名：{draft.accountHandle ? `@${draft.accountHandle}` : "未設定"}</p> : null}
         {review !== (current?.revision ?? 0) ? <p role="alert" className="text-sm text-destructive">監視の設定が更新されています。変更内容を確認し直してください。</p> : null}
         <button type="button" className={button} disabled={!canReview || review !== (current?.revision ?? 0)} onClick={() => void save()}>このX監視設定で保存</button><button type="button" className={button} disabled={busy} onClick={() => setReview(null)}>X監視の編集に戻る</button>
       </section> : <button type="submit" className={button} disabled={!canReview}>X監視の変更を確認</button>}
       <button type="button" className={button} disabled={busy} onClick={() => { setDraft(null); setEditingId(null); setReview(null); }}>X監視の入力を取り消す</button>
     </form> : null}
     <div className="monitor-list">{items.map(item => <article key={item.id} aria-label={`${item.name || item.accountHandle || item.accountId}のX監視`} className="monitor-card space-y-3">
-      <h3 className="font-medium">{item.name || item.accountHandle || item.accountId}</h3><p className="text-sm">{item.accountHandle ? `@${item.accountHandle}` : "Xアカウント"} · ID {item.accountId} · {!item.enabled ? "停止中" : item.state === "suspended" ? "利用資格の確認が必要" : item.state === "deleted" ? "削除済み" : "登録済み"}</p>
+      <h3 className="font-medium">{item.name || item.accountHandle || item.accountId}</h3><p className="text-sm">{item.accountHandle ? `@${item.accountHandle}` : "Xアカウント"} · {!item.enabled ? "停止中" : item.state === "suspended" ? "利用資格の確認が必要" : item.state === "deleted" ? "削除済み" : "登録済み"}</p>
+      {item.accountId !== null ? <details className="text-xs text-muted-foreground"><summary>登録情報の詳細</summary><p>XアカウントID：{item.accountId}</p></details> : null}
       {item.state === "suspended" ? <p className="text-sm text-muted-foreground">停止中も現在の全体枠と個人枠を保持します。監視対象と通知設定もそのまま残ります。枠を変更する場合は「利用枠の種類を変更」から選んでください。</p> : null}
       <dl className="monitor-facts"><div><dt>確認間隔</dt><dd>{xInterval(item.quality.intervalMinutes)}</dd></div><div><dt>送信上限</dt><dd>1分{item.quality.minuteLimit}通／1日{item.quality.dayLimit}通</dd></div><div><dt>受信情報の割り当て</dt><dd>{item.notificationSettings.subscriptionId ? "割り当て済み" : "受信情報の設定待ち"}</dd></div></dl>
       {allowSetup && item.notificationSettings.subscriptionId ? (() => { const subscription = setup?.subscriptions.find(row => row.id === item.notificationSettings.subscriptionId); return subscription ? <div className="space-y-1 text-sm"><p className="font-medium">{xReceiverLabel(subscription.receiverState)}</p><p>{xReceiverDescription(subscription.receiverState)}</p></div> : <p className="text-sm">受信情報の一覧を開き、この監視で使う情報の接続状態を確認してください。</p>; })() : null}
@@ -153,7 +158,7 @@ function XMonitorEditor({ api, active, allowSetup, subscriptionsVersion, destina
 
 export function XMonitorManager({ api, active = true, allowSetup = true, destinations = [], rules = [] }: { api: XMonitorAPI; active?: boolean; allowSetup?: boolean; destinations?: Choice[]; rules?: Choice[] }) {
   const [opened, setOpened] = useState(false), [subscriptionsVersion, setSubscriptionsVersion] = useState(0);
-  return <section aria-label="自分のXアカウント監視" className="space-y-3 rounded border bg-card p-4"><h2 className="font-semibold">自分のXアカウント監視</h2>
+  return <section aria-label="Xアカウントの監視" className="space-y-3 rounded border bg-card p-4"><h2 className="font-semibold">Xアカウントの監視</h2>
     <p className="text-sm text-muted-foreground">通知を受け取りたいXアカウントと、利用できる枠を管理します。Xアカウントを1件登録するごとに1枠を使います。</p>
     {!opened ? <button className={button} disabled={!active} onClick={() => setOpened(true)}>Xアカウントの監視を管理</button> : <>{allowSetup ? <><XNotificationSetup api={api} active={active} onSubscriptionsChanged={() => setSubscriptionsVersion(value => value + 1)} /><XProcessingSettings api={api} active={active} /></> : <a href="/dashboard/automation/x" className="inline-block text-sm text-primary underline">自分のX通知セットアップを開く</a>}<XMonitorEditor api={api} active={active} allowSetup={allowSetup} subscriptionsVersion={subscriptionsVersion} destinations={destinations} rules={rules} /></>}
   </section>;

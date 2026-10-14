@@ -1,7 +1,7 @@
 'use strict';
 
 const { randomUUID, randomInt } = require('node:crypto');
-const { evaluateXRollout } = require('./x-rollout-policy');
+const { evaluateXRollout, requireXEnrollment } = require('./x-rollout-policy');
 const { inspectXProcessingSettings } = require('./x-processing-settings');
 const { createXEventRouter } = require('./x-event-router');
 const { resolveXProcessingPolicy } = require('./x-processing-policy');
@@ -27,6 +27,9 @@ function createXPushRuntime(db, queue, options = {}) {
         || !Number.isInteger(pageSize) || pageSize < 1 || pageSize > 100
         || !Number.isInteger(intervalMs) || intervalMs < 100 || intervalMs > 60000) throw new Error('X_PUSH_RUNTIME_CONFIG_INVALID');
     const sessions = new Map(), leases = new Map(), draining = new Map(), cooldowns = new Map(), drainAgain = new Set();
+    // Recovered/processed states are durable; this bounded cache merely avoids
+    // retrying still-unknown formats on every tick during the same process.
+    const quarantineCursors = new Map();
     const controller = new AbortController(), workerId = `node-${randomUUID()}`;
     const rolloutOptions = options.rolloutMode === undefined ? {} : { mode: options.rolloutMode };
     let timer, ticking = null, stopped = false, cursor = '';
@@ -37,6 +40,31 @@ function createXPushRuntime(db, queue, options = {}) {
           AND CASE WHEN JSON_VALID(m.notification_settings_json) THEN JSON_UNQUOTE(JSON_EXTRACT(m.notification_settings_json,'$.subscriptionId')) ELSE NULL END=s.id)
         ORDER BY s.id LIMIT ?`, [afterId, clock(), pageSize]));
 
+    async function recoverQuarantined(lease) {
+        if (typeof gateway.store.listQuarantinedInbox !== 'function' || typeof gateway.decryptQuarantinedInbox !== 'function'
+            || typeof gateway.store.restoreQuarantinedInbox !== 'function') return;
+        const key = `${lease.subscriptionId}:${lease.revision}`;
+        const rows = await gateway.store.listQuarantinedInbox(lease, { afterId: quarantineCursors.get(key) || '0', limit: Math.min(pageSize, 20) });
+        for (const row of rows) {
+            if (stopped || controller.signal.aborted) return;
+            assertAllowed();
+            try {
+                const payload = await gateway.decryptQuarantinedInbox(lease, row);
+                if (stopped || controller.signal.aborted) return;
+                require('./x-event-router').normalizeXNotification(payload, { receivedAtMs: row.receivedAtMs });
+                assertAllowed();
+                await gateway.store.restoreQuarantinedInbox(lease, row.id, { authorize: async query => {
+                    assertAllowed();
+                    await requireXEnrollment(query, { userId: lease.ownerUserId }, rolloutOptions);
+                } });
+            } catch (error) {
+                if (!/^X_NOTIFICATION_(?:INVALID|UNSUPPORTED)/.test(String(error?.code || ''))) throw error;
+            }
+            quarantineCursors.delete(key);
+            quarantineCursors.set(key, row.id);
+            while (quarantineCursors.size > maxConnections * 2) quarantineCursors.delete(quarantineCursors.keys().next().value);
+        }
+    }
     async function drain(lease, trigger = {}) {
         if (!enabled || stopped || controller.signal.aborted || !cadenceConfigured) return { state: 'not_configured' };
         if (draining.has(lease.subscriptionId)) {
@@ -47,11 +75,14 @@ function createXPushRuntime(db, queue, options = {}) {
             assertAllowed();
             const policy = await evaluateXRollout(db.queryDatabase, { userId: lease.ownerUserId }, rolloutOptions);
             if (!policy.eligible) return { state: 'pending', code: policy.reasonCode };
+            await recoverQuarantined(lease);
+            if (stopped || controller.signal.aborted) return { state: 'stopped' };
             let processed = 0;
             const resolveProcessing = query => inspectXProcessingSettings(query, lease.ownerUserId, clock(), {
                 useLegacyUserInterval: options.useLegacyUserInterval === true,
             });
             for (;;) {
+                if (stopped || controller.signal.aborted) return { state: 'stopped' };
                 const window = await gateway.store.beginProcessing(lease, undefined, {
                     resolveProcessing,
                 });
@@ -77,6 +108,7 @@ function createXPushRuntime(db, queue, options = {}) {
                         const result = await router.routeReceived({ lease, inbox, payload });
                         if (stopped || controller.signal.aborted) return { state: 'stopped' };
                         if (result.state === 'routed') await gateway.store.markRouted(lease, inbox.id);
+                        else if (result.state === 'unmatched') await gateway.store.markUnmatched(lease, inbox.id);
                     } catch (error) {
                         if (stopped || controller.signal.aborted) return { state: 'stopped' };
                         assertAllowed();

@@ -27,7 +27,12 @@ function publicSubscription(row, currentTime = Date.now()) {
     if (['connecting', 'listening'].includes(receiverState) && Number(row.lease_expires_at_ms || 0) <= currentTime) receiverState = 'stopped';
     return { id: row.id, state: 'stored', revision: Number(row.revision), browserVersion: row.browser_version,
         createdAtMs: Number(row.created_at_ms), updatedAtMs: Number(row.updated_at_ms), receiverState,
-        boundMonitorCount: Number(row.bound_monitor_count || 0), lastReceivedAtMs: row.last_received_at_ms == null ? null : Number(row.last_received_at_ms) };
+        boundMonitorCount: Number(row.bound_monitor_count || 0), lastReceivedAtMs: row.last_received_at_ms == null ? null : Number(row.last_received_at_ms),
+        // These are inbox states, not Discord delivery counts. Return only
+        // owner-scoped aggregates; ciphertext, headers and payload stay private.
+        receiptCounts: { received: Number(row.received_count || 0), routed: Number(row.routed_count || 0),
+            unsupported: Number(row.unsupported_count || 0), decryptionFailed: Number(row.decryption_failed_count || 0),
+            unmatched: Number(row.unmatched_count || 0) } };
 }
 
 // The web process receives only a sealer. Decryption is an explicitly separate
@@ -56,7 +61,12 @@ function createXSetup(db, options = {}) {
         return query(`SELECT s.id,s.revision,s.browser_version,s.created_at_ms,s.updated_at_ms,r.state AS receiver_state,r.lease_expires_at_ms,
             (SELECT COUNT(*) FROM automation_x_monitors m WHERE m.owner_user_id=s.owner_user_id AND m.state<>'deleted'
                 AND CASE WHEN JSON_VALID(m.notification_settings_json) THEN JSON_UNQUOTE(JSON_EXTRACT(m.notification_settings_json,'$.subscriptionId')) ELSE NULL END=s.id) AS bound_monitor_count,
-            (SELECT MAX(i.received_at_ms) FROM automation_x_push_inbox i WHERE i.subscription_id=s.id) AS last_received_at_ms
+            (SELECT MAX(i.received_at_ms) FROM automation_x_push_inbox i WHERE i.subscription_id=s.id) AS last_received_at_ms,
+            (SELECT COUNT(*) FROM automation_x_push_inbox i WHERE i.subscription_id=s.id AND i.status='received') AS received_count,
+            (SELECT COUNT(*) FROM automation_x_push_inbox i WHERE i.subscription_id=s.id AND i.status='routed') AS routed_count,
+            (SELECT COUNT(*) FROM automation_x_push_inbox i WHERE i.subscription_id=s.id AND i.status='unsupported') AS unsupported_count,
+            (SELECT COUNT(*) FROM automation_x_push_inbox i WHERE i.subscription_id=s.id AND i.status='decryption_failed') AS decryption_failed_count,
+            (SELECT COUNT(*) FROM automation_x_push_inbox i WHERE i.subscription_id=s.id AND i.status='unmatched') AS unmatched_count
             FROM automation_x_subscriptions s LEFT JOIN automation_x_push_receivers r ON r.subscription_id=s.id
             WHERE s.owner_user_id=?${filter.id ? ' AND s.id=?' : filter.afterId ? ' AND s.id>?' : ''} ORDER BY s.id LIMIT 101`,
         filter.id ? [owner, filter.id] : filter.afterId ? [owner, filter.afterId] : [owner]);
