@@ -197,25 +197,40 @@ function createXPushStore(db, options = {}) {
         const rows = await db.queryDatabase('SELECT s.id,s.revision,s.updated_at_ms,r.state,r.reason_code,r.last_connected_at_ms,r.lease_expires_at_ms,r.retry_at_ms,r.retry_attempt FROM automation_x_subscriptions s LEFT JOIN automation_x_push_receivers r ON r.subscription_id=s.id WHERE s.owner_user_id=? ORDER BY s.id LIMIT 100', [ownerUserId]);
         return rows.map(row => stateDto(row, now()));
     }
-    /** @param {any} lease @param {number|undefined} intervalMinutes @param {{resolveInterval?:(query:any)=>Promise<number|null|undefined>}} [options] */
+    /** @param {any} lease @param {number|undefined} intervalMinutes @param {{resolveInterval?:(query:any)=>Promise<number|null|undefined>,resolveProcessing?:(query:any)=>Promise<{effectiveMode:string,intervalMinutes:number|null}>}} [options] */
     async function beginProcessing(lease, intervalMinutes, options = {}) {
         if (options.resolveInterval !== undefined && typeof options.resolveInterval !== 'function') fail('X_PUSH_PROCESSING_INVALID');
-        if (!options.resolveInterval && (!Number.isSafeInteger(intervalMinutes) || intervalMinutes < 1 || intervalMinutes > 10080)) fail('X_PUSH_PROCESSING_INVALID');
+        if (options.resolveProcessing !== undefined && typeof options.resolveProcessing !== 'function'
+            || options.resolveProcessing && options.resolveInterval) fail('X_PUSH_PROCESSING_INVALID');
+        if (!options.resolveInterval && !options.resolveProcessing && (!Number.isSafeInteger(intervalMinutes) || intervalMinutes < 1 || intervalMinutes > 10080)) fail('X_PUSH_PROCESSING_INVALID');
         return locked(lease, async (query, subscription, receiver) => {
             fence(lease, subscription, receiver);
-            // The runtime resolves the current contract while holding the same
-            // owner lock as plan changes and the atomic window-opening write.
-            const selectedInterval = options.resolveInterval ? await options.resolveInterval(query) : intervalMinutes;
+            // Recheck the owner's persisted choice and the current contract's
+            // explicit permission under the same owner lock as plan changes.
+            // A zero delay is available only through this trusted resolver.
+            const processing = options.resolveProcessing ? await options.resolveProcessing(query) : null;
+            const processingMode = processing ? processing.effectiveMode : 'batch';
+            const selectedInterval = processingMode === 'realtime' ? 0
+                : processing ? processing.intervalMinutes : options.resolveInterval ? await options.resolveInterval(query) : intervalMinutes;
             fence(lease, subscription, receiver);
-            if (!Number.isSafeInteger(selectedInterval) || selectedInterval < 1 || selectedInterval > 10080)
+            if (!['batch', 'realtime'].includes(processingMode) || !Number.isSafeInteger(selectedInterval)
+                || selectedInterval < (processingMode === 'realtime' ? 0 : 1) || selectedInterval > 10080)
                 return { ready: false, code: 'X_MONITOR_NOT_CONFIGURED' };
-            if (receiver.process_window_at_ms != null) return { ready: true, windowAtMs: Number(receiver.process_window_at_ms), cursorId: String(receiver.process_cursor_id) };
+            if (receiver.process_window_at_ms != null) {
+                // An interrupted realtime window must honor batch cadence after
+                // revocation or an explicit switch to batch, keeping its cursor.
+                if (processingMode === 'batch' && receiver.process_window_mode === 'realtime') {
+                    const dueAtMs = Number(receiver.last_process_at_ms ?? receiver.process_window_at_ms) + selectedInterval * 60000;
+                    if (dueAtMs > now()) return { ready: false, dueAtMs };
+                }
+                return { ready: true, windowAtMs: Number(receiver.process_window_at_ms), cursorId: String(receiver.process_cursor_id), processingMode };
+            }
             const dueAtMs = receiver.last_process_at_ms == null ? now() : Number(receiver.last_process_at_ms) + selectedInterval * 60000;
             if (dueAtMs > now()) return { ready: false, dueAtMs };
             const windowAtMs = now();
-            await query('UPDATE automation_x_push_receivers SET process_window_at_ms=?,process_cursor_id=0 WHERE subscription_id=?', [windowAtMs, lease.subscriptionId]);
+            await query('UPDATE automation_x_push_receivers SET process_window_at_ms=?,process_window_mode=?,process_cursor_id=0 WHERE subscription_id=?', [windowAtMs, processingMode, lease.subscriptionId]);
             fence(lease, subscription, receiver);
-            return { ready: true, windowAtMs, cursorId: '0' };
+            return { ready: true, windowAtMs, cursorId: '0', processingMode };
         });
     }
     async function advanceProcessing(lease, input) {
@@ -235,7 +250,7 @@ function createXPushStore(db, options = {}) {
             if (receiver.process_window_at_ms == null || Number(receiver.process_window_at_ms) !== input.windowAtMs) fail('X_PUSH_PROCESSING_INVALID');
             // Reset on every completed window: records which remained pending
             // are reconsidered next time, even when later records were routed.
-            await query('UPDATE automation_x_push_receivers SET last_process_at_ms=?,process_window_at_ms=NULL,process_cursor_id=0 WHERE subscription_id=?', [input.windowAtMs, lease.subscriptionId]);
+            await query('UPDATE automation_x_push_receivers SET last_process_at_ms=?,process_window_at_ms=NULL,process_window_mode=NULL,process_cursor_id=0 WHERE subscription_id=?', [input.windowAtMs, lease.subscriptionId]);
             fence(lease, subscription, receiver);
         });
     }

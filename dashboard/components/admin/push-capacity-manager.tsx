@@ -8,9 +8,9 @@ import { PushCapacityDiagnostics } from "./push-capacity-diagnostics";
 
 type CapacityAPI = (path: string, method?: string, body?: unknown) => Promise<unknown>;
 type GlobalPolicy = { kind: "global"; freePoolLimit: number; supporterPoolLimit: number; updatedAtMs: number };
-type PaidPolicy = { kind: "paid"; planId: string; label: string; planEnabled: boolean; eligible: boolean; specialSlotLimit: number; updatedAtMs: number };
+type PaidPolicy = { kind: "paid"; planId: string; label: string; planEnabled: boolean; eligible: boolean; specialSlotLimit: number; realtimeEnabled: boolean | null; updatedAtMs: number };
 type Policy = GlobalPolicy | PaidPolicy;
-type Draft = { freePoolLimit: string; supporterPoolLimit: string; specialSlotLimit: string; eligible: boolean };
+type Draft = { freePoolLimit: string; supporterPoolLimit: string; specialSlotLimit: string; eligible: boolean; realtimeEnabled: boolean };
 const isCapacity = (value: unknown): value is number => Number.isSafeInteger(value) && Number(value) >= 0 && Number(value) <= 100000;
 const validNumber = (value: string) => /^\d+$/u.test(value) && isCapacity(Number(value));
 const isReserved = (id: string) => ["free", "supporter"].includes(id.toLowerCase());
@@ -24,16 +24,17 @@ function parsePolicy(value: unknown, kind: Policy["kind"], planId?: string): Pol
   }
   if (kind === "paid" && item.planId === planId && typeof planId === "string" && !isReserved(planId)
     && item.isPaid === true && item.consumesUserSlots === true && typeof item.label === "string"
-    && typeof item.planEnabled === "boolean" && typeof item.eligible === "boolean" && isCapacity(item.specialSlotLimit)) {
+    && typeof item.planEnabled === "boolean" && typeof item.eligible === "boolean" && isCapacity(item.specialSlotLimit)
+    && (item.realtimeEnabled === undefined || typeof item.realtimeEnabled === "boolean")) {
     return { kind, planId, label: item.label, planEnabled: item.planEnabled, eligible: item.eligible,
-      specialSlotLimit: item.specialSlotLimit, updatedAtMs: Number(item.updatedAtMs) };
+      specialSlotLimit: item.specialSlotLimit, realtimeEnabled: typeof item.realtimeEnabled === "boolean" ? item.realtimeEnabled : null, updatedAtMs: Number(item.updatedAtMs) };
   }
   throw new Error("Invalid capacity response");
 }
 function draftOf(policy: Policy): Draft {
   return policy.kind === "global"
-    ? { freePoolLimit: String(policy.freePoolLimit), supporterPoolLimit: String(policy.supporterPoolLimit), specialSlotLimit: "", eligible: false }
-    : { freePoolLimit: "", supporterPoolLimit: "", specialSlotLimit: String(policy.specialSlotLimit), eligible: policy.eligible };
+    ? { freePoolLimit: String(policy.freePoolLimit), supporterPoolLimit: String(policy.supporterPoolLimit), specialSlotLimit: "", eligible: false, realtimeEnabled: false }
+    : { freePoolLimit: "", supporterPoolLimit: "", specialSlotLimit: String(policy.specialSlotLimit), eligible: policy.eligible, realtimeEnabled: policy.realtimeEnabled === true };
 }
 function feedback(cause: unknown, loading = false): string {
   const error = cause && typeof cause === "object" ? cause as { status?: number; code?: string; retryAfterMs?: number } : {};
@@ -77,7 +78,8 @@ function CapacityEditor({ api, plan, onSaved }: { api: CapacityAPI; plan?: Notif
 
   const valid = Boolean(baseline && draft && (baseline.kind === "global"
     ? validNumber(draft.freePoolLimit) && validNumber(draft.supporterPoolLimit)
-    : validNumber(draft.specialSlotLimit) && (!draft.eligible || baseline.planEnabled)));
+    : validNumber(draft.specialSlotLimit) && (!draft.eligible || baseline.planEnabled)
+      && (!draft.realtimeEnabled || baseline.planEnabled || baseline.realtimeEnabled === true)));
   const changed = Boolean(baseline && draft && JSON.stringify(draft) !== JSON.stringify(draftOf(baseline)));
   const canReview = valid && changed && !loading && !busy && !conflict && !loadFailed;
   function update<K extends keyof Draft>(key: K, value: Draft[K]) {
@@ -89,14 +91,15 @@ function CapacityEditor({ api, plan, onSaved }: { api: CapacityAPI; plan?: Notif
     action.current = true; request.current++; setBusy(true); setError(""); setStatus("");
     const body = baseline.kind === "global"
       ? { freePoolLimit: Number(draft.freePoolLimit), supporterPoolLimit: Number(draft.supporterPoolLimit), expectedUpdatedAtMs: reviewedVersion }
-      : { eligible: draft.eligible, specialSlotLimit: Number(draft.specialSlotLimit), expectedUpdatedAtMs: reviewedVersion };
+      : { eligible: draft.eligible, specialSlotLimit: Number(draft.specialSlotLimit), expectedUpdatedAtMs: reviewedVersion,
+        ...(baseline.realtimeEnabled !== null && draft.realtimeEnabled !== baseline.realtimeEnabled ? { realtimeEnabled: draft.realtimeEnabled } : {}) };
     try {
       const saved = parsePolicy(await api(path, "PATCH", body), kind, plan?.planId);
       if (!alive.current) return;
       if (saved.updatedAtMs <= baseline.updatedAtMs) throw new Error("Invalid saved capacity revision");
       request.current++; setLoading(false); setLoadFailed(false);
       setBaseline(saved); setDraft(draftOf(saved)); setConflict(false); setReviewedVersion(null);
-      setStatus("容量の設定を保存しました。新しい自動展開は引き続き未提供です。");
+      setStatus("容量の設定を保存しました。新しい枠数とプランの選択肢を適用しました。");
       onSaved?.();
     } catch (cause) {
       if (!alive.current) return;
@@ -130,6 +133,13 @@ function CapacityEditor({ api, plan, onSaved }: { api: CapacityAPI; plan?: Notif
             <Input type="number" inputMode="numeric" min={0} max={100000} step={1} value={draft.specialSlotLimit} onChange={event => update("specialSlotLimit", event.target.value)} aria-invalid={!validNumber(draft.specialSlotLimit)} />
             <span className="block text-xs text-muted-foreground">0〜100,000の整数。0は特殊枠を割り当てません。</span>
           </label>
+          <section aria-label="プランのリアルタイム通知" className="space-y-2 rounded-lg border p-3">
+            <label className="flex items-start gap-2 text-sm"><input type="checkbox" checked={draft.realtimeEnabled}
+              disabled={baseline.realtimeEnabled === null || !baseline.planEnabled && !draft.realtimeEnabled}
+              onChange={event => update("realtimeEnabled", event.target.checked)} /><span>このプランでX通知のリアルタイムを選べるようにする</span></label>
+            <p className="text-xs text-muted-foreground">利用者がリアルタイムを選ぶと、Xから通知が届き次第、プランの間隔を待たずに処理します。通常の送信上限・優先度と利用枠を適用します。設定は、下の確認画面から保存すると反映されます。</p>
+            {baseline.realtimeEnabled === null ? <p className="text-xs text-muted-foreground">リアルタイムの設定は、対応するサーバーで利用できます。特殊枠の設定は引き続き保存できます。</p> : null}
+          </section>
         </>}
       </fieldset>
       {reviewedVersion !== null ? <section aria-label="自動展開容量の変更確認" className="space-y-3 rounded-lg border bg-muted/30 p-3">
@@ -141,9 +151,10 @@ function CapacityEditor({ api, plan, onSaved }: { api: CapacityAPI; plan?: Notif
           </> : <>
             <tr><th className="py-1 font-normal">特殊枠の対象</th><td>{baseline.eligible ? "対象" : "対象外"}</td><td>{draft.eligible ? "対象" : "対象外"}</td></tr>
             <tr><th className="py-1 font-normal">特殊枠数（ユーザーあたり）</th><td>{baseline.specialSlotLimit}</td><td>{Number(draft.specialSlotLimit)}枠</td></tr>
+            {baseline.realtimeEnabled !== null ? <tr><th className="py-1 font-normal">X通知のリアルタイム選択</th><td>{baseline.realtimeEnabled ? "利用可" : "利用対象外"}</td><td>{draft.realtimeEnabled ? "利用可" : "利用対象外"}</td></tr> : null}
           </>}
         </tbody></table>
-        <p className="text-xs text-muted-foreground">保存しても、新しい自動展開の提供は開始しません。</p>
+        <p className="text-xs text-muted-foreground">保存すると、枠数とプランの選択肢が更新されます。通知を利用できる対象者は、サービスの提供設定に従います。</p>
         <div className="flex flex-wrap gap-2"><Button type="button" disabled={!canReview || reviewedVersion !== baseline.updatedAtMs} onClick={() => void save()}>{busy ? "保存中…" : "この容量で保存"}</Button><Button type="button" variant="outline" disabled={busy} onClick={() => setReviewedVersion(null)}>容量の編集に戻る</Button></div>
       </section> : <Button type="submit" disabled={!canReview}>{plan ? "特殊枠の変更を確認" : "共有枠の変更を確認"}</Button>}
     </form> : null}
@@ -159,7 +170,7 @@ export function PushCapacityManager({ api, plans }: { api: CapacityAPI; plans: N
   const paidPlans = plans.filter(plan => plan.tier === "paid" && !plan.isBuiltin && !isReserved(plan.planId));
   return <section aria-label="新しい自動展開の容量設定" className="space-y-4 border-t pt-6">
     <div className="space-y-2"><h2 className="text-lg font-semibold">新しいX自動展開の容量設定</h2>
-      <p className="text-sm">現在は未提供です。実通知の受信・復号の検証待ちです。容量の設定を保存しても、新規受付や通知受信は開始しません。</p>
+      <p className="text-sm">共用枠・特殊枠と、プランごとのリアルタイム通知の選択肢を管理します。通知を利用できる対象者は、サービスの提供設定に従います。</p>
       <p className="text-sm text-muted-foreground">1枠＝通知を監視するXアカウント1件です。Firefoxの購読数や受信接続数を表すものではありません。</p>
     </div>
     {!opened ? <Button type="button" variant="outline" onClick={() => setOpened(true)}>容量の設定を開く</Button> : <>

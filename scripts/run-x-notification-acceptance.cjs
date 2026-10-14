@@ -34,6 +34,9 @@ const files=[
   "scripts/test/automation-x-delivery-sql.test.js",
   "scripts/test/automation-x-delivery.test.js",
   "scripts/test/automation-x-monitor-ui.test.js",
+  "scripts/test/automation-x-processing-settings.test.js",
+  "scripts/test/automation-x-processing-settings-sql.test.js",
+  "scripts/test/automation-x-processing-settings-ui.test.js",
   "scripts/test/automation-x-push-gateway.test.js",
   "scripts/test/automation-x-push-processing-sql.test.js",
   "scripts/test/automation-x-push-runtime-retry.test.js",
@@ -66,6 +69,7 @@ const files=[
 const port=Number(process.env.AUTOMATION_TEST_DB_PORT);
 if(!Number.isInteger(port)||port<1024||port>65535||port===3306)throw new Error('Set an explicit disposable AUTOMATION_TEST_DB_PORT');
 const root=path.resolve(__dirname,'..');
-const result=spawnSync(resolveProjectNode(),['--test','--test-concurrency=1','--test-reporter=junit','--test-reporter-destination=docs/angelic-angel/mixed-notification-acceptance-tests.xml',...files],{cwd:root,env:process.env,stdio:'inherit',windowsHide:true});
+const report=process.env.X_NOTIFICATION_TEST_REPORT || 'docs/angelic-angel/mixed-notification-acceptance-tests.xml';
+const result=spawnSync(resolveProjectNode(),['--test','--test-concurrency=1','--test-reporter=junit',`--test-reporter-destination=${report}`,...files],{cwd:root,env:process.env,stdio:'inherit',windowsHide:true});
 if(result.error)throw result.error;
 process.exitCode=result.status===null?1:result.status;

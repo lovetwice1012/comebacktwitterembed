@@ -45,14 +45,14 @@ test('dormant capacity settings stay visible but make no extra requests until op
     try {
         assert.deepEqual(f.calls.map(item => item.route).sort(), ['billing/admin', 'plans']);
         assert.match(f.container.textContent, /新しいX自動展開の容量設定/);
-        assert.match(f.container.textContent, /現在は未提供/); assert.equal(f.global(), null);
+        assert.match(f.container.textContent, /プランごとのリアルタイム通知の選択肢/); assert.equal(f.global(), null);
         await f.click('容量の設定を開く'); await f.settle();
         assert.equal(f.fieldIn(f.global(), '無料の全体枠数').value, '50');
         assert.equal(f.fieldIn(f.paid(), 'このプランの特殊枠数').value, '0');
     } finally { await f.close(); }
 });
 
-test('shared free50/supporter100 values come from the server, use X-account units, and keep the feature unprovided', async () => {
+test('shared free50/supporter100 values come from the server, use X-account units, and keep rollout separate from plan settings', async () => {
     const f = await fixture();
     try {
         assert.equal(f.fieldIn(f.global(), '無料の全体枠数').value, '50');
@@ -60,8 +60,8 @@ test('shared free50/supporter100 values come from the server, use X-account unit
         assert.match(f.container.textContent, /1枠＝通知を監視するXアカウント1件/);
         assert.match(f.container.textContent, /支援者優先枠は無料共有枠と競合しません/);
         assert.match(f.container.textContent, /ユーザーごとの通常の通知枠数とは別/);
-        assert.match(f.container.textContent, /現在は未提供.*実通知の受信・復号の検証待ち/);
-        assert.match(f.container.textContent, /保存しても、新規受付や通知受信は開始しません/);
+        assert.match(f.container.textContent, /共用枠・特殊枠と、プランごとのリアルタイム通知/);
+        assert.match(f.container.textContent, /通知を利用できる対象者は、サービスの提供設定に従います/);
         assert.equal(f.fieldIn(f.paid(), 'このプランの特殊枠数').value, '0');
         assert.equal(f.paid().querySelector('input[type=checkbox]').checked, false);
         assert.match(f.paid().textContent, /ユーザー1人あたり/);
@@ -86,7 +86,7 @@ test('global limits reject empty, negative, fractional, exponent and overflow in
         assert.match(article.querySelector('[aria-label="自動展開容量の変更確認"]').textContent, /無料の全体枠数500枠/);
         await f.clickIn(article, 'この容量で保存');
         assert.deepEqual(writes(f), [{ route: 'push-capacity', method: 'PATCH', body: { freePoolLimit: 0, supporterPoolLimit: 100000, expectedUpdatedAtMs: 10 } }]);
-        assert.equal(field.value, '0'); assert.match(article.textContent, /新しい自動展開は引き続き未提供/);
+        assert.equal(field.value, '0'); assert.match(article.textContent, /新しい枠数とプランの選択肢を適用/);
         assert.equal(f.container.querySelector('input[name="featureEnabled"]'), null);
     } finally { await f.close(); }
 });
@@ -379,4 +379,52 @@ test('safe invalid registration/holding markers do not hide pool usage or integr
         assert.match(f.container.textContent, /保有支援枠を確認できません.*0枠としては扱いません/); assert.match(f.container.querySelector('[aria-label="枠管理の整合性"]').textContent, /通知設定が不正/);
         assert.equal(writes(f).length, 0);
     } finally { await f.close(); }
+});
+
+test('admin explicitly enables realtime independently from special slots only after reviewing the saved plan setting', async () => {
+    const f = await fixture({ paid: paidPolicy({ realtimeEnabled: false }) });
+    try {
+        const article = f.paid(), input = f.fieldIn(article, 'このプランでX通知のリアルタイム');
+        assert.equal(input.checked, false); assert.equal(input.disabled, false);
+        await f.act(async () => input.click()); assert.equal(writes(f).length, 0);
+        await f.submitIn(article);
+        assert.match(article.querySelector('[aria-label="自動展開容量の変更確認"]').textContent, /X通知のリアルタイム選択利用対象外利用可/);
+        await f.clickIn(article, 'この容量で保存');
+        assert.deepEqual(writes(f)[0], { route: 'push-capacity/plans/basic', method: 'PATCH',
+            body: { eligible: false, specialSlotLimit: 0, expectedUpdatedAtMs: 10, realtimeEnabled: true } });
+        assert.equal(input.checked, true);
+    } finally { await f.close(); }
+});
+
+test('admin keeps realtime choice on conflict, reloads CAS, and supports explicit revocation', async () => {
+    let conflict = true;
+    const f = await fixture({ paid: paidPolicy({ realtimeEnabled: true }), respond: (route, method) => {
+        if (route === 'push-capacity/plans/basic' && method === 'PATCH' && conflict) { conflict = false; throw { status: 409, code: 'AUTOMATION_PUSH_CAPACITY_CONFLICT' }; }
+    } });
+    try {
+        const article = f.paid(), input = f.fieldIn(article, 'このプランでX通知のリアルタイム');
+        await f.act(async () => input.click()); await f.submitIn(article); await f.clickIn(article, 'この容量で保存');
+        assert.equal(input.checked, false); assert.match(article.textContent, /ほかの管理者による変更/);
+        await f.clickIn(article, '最新の特殊枠を再取得'); assert.equal(input.checked, false);
+        await f.submitIn(article); await f.clickIn(article, 'この容量で保存');
+        assert.equal(writes(f).at(-1).body.realtimeEnabled, false);
+    } finally { await f.close(); }
+});
+
+test('older capacity API omits the new realtime field on save, and a disabled plan can revoke but cannot enable it', async () => {
+    const old = await fixture();
+    try {
+        const article = old.paid(), input = old.fieldIn(article, 'このプランでX通知のリアルタイム');
+        assert.equal(input.disabled, true); await old.fill(old.fieldIn(article, 'このプランの特殊枠数'), '2');
+        await old.submitIn(article); await old.clickIn(article, 'この容量で保存');
+        assert.equal(Object.hasOwn(writes(old)[0].body, 'realtimeEnabled'), false);
+    } finally { await old.close(); }
+    for (const enabled of [false, true]) {
+        const f = await fixture({ paid: paidPolicy({ planEnabled: false, realtimeEnabled: enabled }) });
+        try {
+            const input = f.fieldIn(f.paid(), 'このプランでX通知のリアルタイム');
+            assert.equal(input.disabled, !enabled);
+            if (enabled) { await f.act(async () => input.click()); await f.submitIn(f.paid()); await f.clickIn(f.paid(), 'この容量で保存'); assert.equal(writes(f)[0].body.realtimeEnabled, false); }
+        } finally { await f.close(); }
+    }
 });

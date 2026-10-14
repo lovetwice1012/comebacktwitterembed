@@ -82,6 +82,7 @@ const SCHEMA_STATEMENTS = [
         additional_auto_extract_slots INT NOT NULL DEFAULT 0,
         is_donor TINYINT(1) NOT NULL DEFAULT 0,
         auto_watch_interval_minutes INT NULL,
+        x_notification_processing_mode VARCHAR(16) CHARACTER SET ascii COLLATE ascii_bin NOT NULL DEFAULT 'batch',
         save_tweet_quota_override_bytes BIGINT NULL,
         enabled TINYINT(1) NOT NULL DEFAULT 1,
         created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,

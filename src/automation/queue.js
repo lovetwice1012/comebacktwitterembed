@@ -54,7 +54,8 @@ function createQueue(db, evaluator, options = {}) {
         let config;
         try { config = parse(row.notification_settings_json); } catch { return null; }
         if (!config || typeof config !== 'object' || Array.isArray(config) || Object.keys(config).some(key => !['workflowId', 'destinationId', 'subscriptionId'].includes(key))) return null;
-        const subscription = config.subscriptionId && (await query(`SELECT s.id,s.revision,p.state AS receiver_state,p.subscription_revision AS receiver_revision FROM automation_x_subscriptions s
+        const subscription = config.subscriptionId && (await query(`SELECT s.id,s.revision,p.state AS receiver_state,p.subscription_revision AS receiver_revision,
+            p.last_process_at_ms,p.process_window_at_ms,p.process_window_mode FROM automation_x_subscriptions s
             LEFT JOIN automation_x_push_receivers p ON p.subscription_id=s.id WHERE s.id=? AND s.owner_user_id=?${lock ? ' FOR UPDATE' : ''}`, [config.subscriptionId, row.owner_user_id]))[0];
         const workflow = config.workflowId && (await query(`SELECT w.id AS workflow_id,w.enabled AS workflow_enabled,w.deleted_at_ms,w.active_revision,r.definition_json,r.bindings_json
             FROM automation_workflows w LEFT JOIN automation_revisions r ON r.workflow_id=w.id AND r.revision=w.active_revision
@@ -65,6 +66,9 @@ function createQueue(db, evaluator, options = {}) {
             destination_type: 'dm', destination_id: config.destinationId || null, monitor_revision: Number(row.revision),
             workflow_id: config.workflowId || null, x_subscription_id: config.subscriptionId || null,
             x_subscription_revision: Number(subscription?.revision || 0),
+            x_processing_window_mode: subscription?.process_window_mode || null,
+            x_processing_window_at_ms: subscription?.process_window_at_ms == null ? null : Number(subscription.process_window_at_ms),
+            x_last_process_at_ms: subscription?.last_process_at_ms == null ? null : Number(subscription.last_process_at_ms),
             x_binding_ready: !!subscription && Number(subscription.receiver_revision) === Number(subscription.revision) && !!subscription.receiver_state && subscription.receiver_state !== 'requires_reenrollment',
             enabled: Number(row.enabled) === 1 && row.state === 'ready' && (!config.workflowId || !!workflow && !workflow.deleted_at_ms) && (!config.destinationId || !!destination),
             deleted_at_ms: row.state === 'deleted' ? Number(row.updated_at_ms) || 1 : workflow?.deleted_at_ms || null };
@@ -76,7 +80,12 @@ function createQueue(db, evaluator, options = {}) {
         const rollout = await require('./x-rollout-policy').evaluateXRollout(query, { userId: owner }, options.rolloutMode === undefined ? {} : { mode: options.rolloutMode });
         if (!rollout.eligible) return { state: 'excluded', code: rollout.reasonCode };
         const plan = await require('./entitlements').inspectXPlan(query, owner, now, { useLegacyUserInterval: options.useLegacyUserInterval === true || process.env.ANGELIC_X_USE_LEGACY_USER_INTERVAL === '1' });
-        if (!Number.isSafeInteger(plan.intervalMinutes) || plan.intervalMinutes < 5 || plan.intervalMinutes > 10080) return { state: 'pending', code: 'X_MONITOR_NOT_CONFIGURED', dueAtMs: now + MINUTE };
+        const processing = await require('./x-processing-settings').inspectXProcessingSettings(query, owner, now, { plan });
+        if (!processing.configured) return { state: 'pending', code: 'X_MONITOR_NOT_CONFIGURED', dueAtMs: now + MINUTE };
+        if (processing.effectiveMode === 'batch' && target.x_processing_window_mode === 'realtime' && target.x_processing_window_at_ms !== null) {
+            const dueAtMs = (target.x_last_process_at_ms ?? target.x_processing_window_at_ms) + processing.intervalMinutes * MINUTE;
+            if (dueAtMs > now) return { state: 'pending', code: 'X_NOTIFICATION_BATCH_WAIT', dueAtMs };
+        }
         const slot = (await query("SELECT slot_index FROM automation_notification_slots WHERE owner_user_id=? AND target_kind='x' AND target_id=?", [owner, String(target.id)]))[0];
         if (!slot || Number(slot.slot_index) > plan.slotLimit) return { state: 'excluded', code: 'AUTOMATION_SLOT_LIMIT' };
         if (target.pool_kind === 'free') return { state: 'ready' };

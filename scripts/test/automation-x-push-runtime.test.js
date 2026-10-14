@@ -6,7 +6,7 @@ const { randomUUID } = require('node:crypto');
 const U = '222222222222222222';
 const deferred = () => { let resolve; const promise = new Promise(done => { resolve = done; }); return { promise, resolve }; };
 
-test('standard batch policy is shared and tentative realtime cannot be enabled by a name or arbitrary value', () => {
+test('global startup policy stays batch-only while owner realtime cannot be granted by an environment value or plan name', () => {
     const { resolveXProcessingPolicy } = require('../../src/automation/x-processing-policy');
     assert.equal(resolveXProcessingPolicy(undefined), 'batch');
     assert.equal(resolveXProcessingPolicy('batch'), 'batch');
@@ -24,31 +24,44 @@ function runtimeModule(t, plan) {
 }
 
 function fixture(t, options = {}) {
-    let now = 1000, intervalMinutes = options.intervalMinutes ?? 5, lastProcess = null, window = null, cursor = '0', callbacks;
+    let now = 1000, intervalMinutes = options.intervalMinutes ?? 5, lastProcess = null, window = null, windowMode = null, cursor = '0', callbacks;
+    let requestedMode = options.requestedMode || 'batch', realtimeEnabled = options.realtimeEnabled === true;
     let decryptGate = null, routeFailure = null, markFailure = null, stopped = false;
     const subscriptionId = randomUUID(), lease = { subscriptionId, ownerUserId: U, revision: 1, token: 'a'.repeat(64), expiresAtMs: Number.MAX_SAFE_INTEGER };
     const rows = [], routed = [], counters = { query: 0, candidates: 0, run: 0, begin: 0, complete: 0, advance: 0, decrypt: 0, assert: 0, mark: 0 };
-    const db = { queryDatabase: async sql => { counters.query++; if (sql.startsWith('SELECT is_donor')) return [{ is_donor: options.donor ? 1 : 0 }]; throw new Error('unexpected unit SQL'); } };
+    const db = { queryDatabase: async sql => {
+        counters.query++;
+        if (sql.startsWith('SELECT is_donor')) return [{ is_donor: options.donor ? 1 : 0 }];
+        if (sql.startsWith('SELECT x_notification_processing_mode')) return [{ x_notification_processing_mode: requestedMode }];
+        if (sql.startsWith('SELECT c.realtime_enabled')) return [{ realtime_enabled: realtimeEnabled ? 1 : 0, enabled: 1 }];
+        throw new Error('unexpected unit SQL');
+    } };
     const gateway = {
         run: input => { counters.run++; callbacks = input; input.onSession({ lease }); return new Promise(resolve => { input.signal.addEventListener('abort', () => { stopped = true; resolve(); }, { once: true }); }); },
         decryptInbox: async (_lease, row) => { counters.decrypt++; if (decryptGate) await decryptGate.promise; if (options.decryptFailure) throw options.decryptFailure; return row.payload; },
         store: {
             beginProcessing: async (_lease, minutes, options = {}) => {
                 counters.begin++;
-                assert.equal(typeof options.resolveInterval, 'function', 'plan is read inside the locked store callback');
-                minutes = await options.resolveInterval(db.queryDatabase); assert.equal(minutes, intervalMinutes);
-                if (!Number.isSafeInteger(minutes) || minutes < 1) return { ready: false, code: 'X_MONITOR_NOT_CONFIGURED' };
-                if (window !== null) return { ready: true, windowAtMs: window, cursorId: cursor };
+                assert.equal(typeof options.resolveProcessing, 'function', 'owner mode and plan are read inside the locked store callback');
+                const processing = await options.resolveProcessing(db.queryDatabase);
+                minutes = processing.effectiveMode === 'realtime' ? 0 : processing.intervalMinutes;
+                assert.equal(processing.intervalMinutes, intervalMinutes);
+                if (!Number.isSafeInteger(minutes) || minutes < (processing.effectiveMode === 'realtime' ? 0 : 1)) return { ready: false, code: 'X_MONITOR_NOT_CONFIGURED' };
+                if (window !== null) {
+                    if (processing.effectiveMode === 'batch' && windowMode === 'realtime' && now < (lastProcess ?? window) + minutes * 60000)
+                        return { ready: false, dueAtMs: (lastProcess ?? window) + minutes * 60000 };
+                    return { ready: true, windowAtMs: window, cursorId: cursor, processingMode: processing.effectiveMode };
+                }
                 const dueAtMs = lastProcess === null ? now : lastProcess + minutes * 60000;
                 if (now < dueAtMs) return { ready: false, dueAtMs };
-                window = now; cursor = '0'; return { ready: true, windowAtMs: window, cursorId: cursor };
+                window = now; windowMode = processing.effectiveMode; cursor = '0'; return { ready: true, windowAtMs: window, cursorId: cursor, processingMode: processing.effectiveMode };
             },
             listInbox: async ({ afterId, limit }) => rows.filter(row => row.status === 'received' && BigInt(row.id) > BigInt(afterId)).slice(0, limit),
             assertLease: async () => { counters.assert++; },
             markRouted: async (_lease, id) => { counters.mark++; if (markFailure) throw markFailure; rows.find(row => row.id === id).status = 'routed'; },
             markUnsupported: async (_lease, id) => { rows.find(row => row.id === id).status = 'unsupported'; },
             advanceProcessing: async (_lease, input) => { counters.advance++; assert.equal(input.windowAtMs, window); cursor = input.cursorId; },
-            completeProcessing: async (_lease, input) => { counters.complete++; assert.equal(input.windowAtMs, window); lastProcess = window; window = null; cursor = '0'; },
+            completeProcessing: async (_lease, input) => { counters.complete++; assert.equal(input.windowAtMs, window); lastProcess = window; window = null; windowMode = null; cursor = '0'; },
         },
     };
     const router = { routeReceived: async input => {
@@ -56,7 +69,7 @@ function fixture(t, options = {}) {
         if (routeFailure) throw routeFailure;
         return { state: options.pendingIds?.has(input.inbox.id) ? 'pending' : 'routed' };
     } };
-    const { createXPushRuntime } = runtimeModule(t, () => ({ intervalMinutes }));
+    const { createXPushRuntime } = runtimeModule(t, () => ({ intervalMinutes, tier: 'paid', planId: 'ExplicitPlan', label: '任意のプラン名' }));
     const runtime = createXPushRuntime(db, {}, { enabled: true, gateway, router, clock: () => now,
         assertAllowed: () => {}, rolloutMode: 'public', pageSize: 2,
         listCandidates: async () => { counters.candidates++; return [{ id: subscriptionId, owner_user_id: U }]; }, ...options.runtime });
@@ -64,6 +77,7 @@ function fixture(t, options = {}) {
     return { runtime, gateway, lease, rows, routed, counters,
         add: (receivedAtMs = now) => { const row = { id: String(rows.length + 1), ownerUserId: U, subscriptionId, status: 'received', receivedAtMs, payload: { synthetic: true } }; rows.push(row); return row; },
         advance: value => { now += value; }, interval: value => { intervalMinutes = value; },
+        requestedMode: value => { requestedMode = value; }, realtimeEnabled: value => { realtimeEnabled = value; },
         state: () => ({ now, lastProcess, window, cursor, stopped }), callbacks: () => callbacks,
         setDecryptGate: value => { decryptGate = value; }, setRouteFailure: value => { routeFailure = value; }, setMarkFailure: value => { markFailure = value; } };
 }
@@ -125,6 +139,68 @@ test('current contract interval changes are read for every new window and missin
     const waiting = await f.runtime.drain(f.lease); assert.equal(waiting.state, 'pending'); assert.equal(waiting.dueAtMs, 1801000);
     f.interval(null); assert.equal((await f.runtime.drain(f.lease)).code, 'X_MONITOR_NOT_CONFIGURED'); assert.equal(f.rows[1].status, 'received');
     f.interval(5); assert.equal((await f.runtime.drain(f.lease)).processed, 1);
+});
+
+test('an explicitly eligible owner processes each received notification immediately and drains all retained pages', async t => {
+    const f = fixture(t, { requestedMode: 'realtime', realtimeEnabled: true });
+    for (let i = 0; i < 5; i++) f.add();
+    assert.equal((await f.runtime.drain(f.lease)).processed, 5);
+    assert.deepEqual(f.routed.map(row => row.atMs), [1000, 1000, 1000, 1000, 1000]);
+    await f.runtime.tick();
+    f.advance(1); f.add();
+    await f.callbacks().onReceived({ lease: f.lease });
+    assert.equal(f.rows[5].status, 'routed'); assert.equal(f.routed.at(-1).atMs, 1001);
+    f.interval(null); f.advance(1); f.add();
+    await f.callbacks().onReceived({ lease: f.lease });
+    assert.equal(f.rows[6].status, 'routed'); assert.equal(f.routed.at(-1).atMs, 1002);
+});
+
+test('a received callback overlapping an active realtime window drains the later event before any periodic tick', async t => {
+    const f = fixture(t, { requestedMode: 'realtime', realtimeEnabled: true }), gate = deferred(), entered = deferred();
+    await f.runtime.tick(); f.add();
+    let once = true;
+    f.gateway.decryptInbox = async (_lease, row) => { if (once) { once = false; entered.resolve(); await gate.promise; } return row.payload; };
+    const active = f.runtime.drain(f.lease); await entered.promise;
+    f.advance(1); f.add();
+    const received = f.callbacks().onReceived({ lease: f.lease });
+    gate.resolve(); await Promise.all([active, received]);
+    assert.deepEqual(f.rows.map(row => row.status), ['routed', 'routed']);
+    assert.deepEqual(f.routed.map(row => row.id), ['1', '2']); assert.equal(f.routed[1].atMs, 1001);
+    assert.equal(f.counters.candidates, 1, 'there was no follow-up tick');
+});
+
+test('a receipt arriving during a batch-to-realtime change revisits the new mode before the next tick', async t => {
+    const f = fixture(t, { realtimeEnabled: true }), gate = deferred(), entered = deferred();
+    await f.runtime.tick(); f.add();
+    let once = true;
+    f.gateway.decryptInbox = async (_lease, row) => { if (once) { once = false; entered.resolve(); await gate.promise; } return row.payload; };
+    const active = f.runtime.drain(f.lease); await entered.promise;
+    f.requestedMode('realtime'); f.advance(1); f.add();
+    const received = f.callbacks().onReceived({ lease: f.lease }); gate.resolve();
+    await Promise.all([active, received]);
+    assert.deepEqual(f.rows.map(row => row.status), ['routed', 'routed']);
+    assert.equal(f.routed[1].atMs, 1001); assert.equal(f.counters.candidates, 1);
+});
+
+test('realtime revocation within a loaded page pauses the next receipt and preserves the requested mode and cursor', async t => {
+    const f = fixture(t, { requestedMode: 'realtime', realtimeEnabled: true, runtime: { pageSize: 10 } });
+    f.add(); f.add(); f.add();
+    const advance = f.gateway.store.advanceProcessing;
+    f.gateway.store.advanceProcessing = async (...args) => { await advance(...args); if (f.counters.advance === 1) f.realtimeEnabled(false); };
+    const result = await f.runtime.drain(f.lease);
+    assert.equal(result.state, 'pending'); assert.equal(result.processed, 1); assert.equal(result.dueAtMs, 301000);
+    assert.equal(f.state().cursor, '1'); assert.deepEqual(f.rows.map(row => row.status), ['routed', 'received', 'received']);
+    f.advance(300000); assert.equal((await f.runtime.drain(f.lease)).processed, 2);
+    assert(f.rows.every(row => row.status === 'routed'));
+});
+
+test('selecting batch after an immediate window uses the current interval, and explicitly restoring realtime removes that wait', async t => {
+    const f = fixture(t, { requestedMode: 'realtime', realtimeEnabled: true });
+    f.add(); await f.runtime.drain(f.lease);
+    f.advance(1); f.add(); f.requestedMode('batch');
+    const waiting = await f.runtime.drain(f.lease); assert.equal(waiting.state, 'pending'); assert.equal(waiting.dueAtMs, 301000);
+    f.requestedMode('realtime'); assert.equal((await f.runtime.drain(f.lease)).processed, 1);
+    assert.equal(f.routed.at(-1).atMs, 1001);
 });
 
 test('concurrent drains share one in-flight subscription window', async t => {

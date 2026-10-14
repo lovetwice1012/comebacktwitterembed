@@ -49,7 +49,7 @@ function planDto(plan, row) {
     return {
         planId: plan.plan_id, label: plan.label, planEnabled: Number(plan.enabled) === 1, isPaid: true,
         eligible: !!row && Number(row.eligible) === 1 && Number(row.special_slot_limit) === specialSlotLimit,
-        specialSlotLimit, consumesUserSlots: true, featureEnabled: false,
+        specialSlotLimit, realtimeEnabled: Number(row?.realtime_enabled) === 1, consumesUserSlots: true, featureEnabled: false,
         updatedAtMs: row ? storedRevision(row.updated_at_ms) : 0,
     };
 }
@@ -101,8 +101,9 @@ async function getPlanCapacity(query, actor, planId) {
 }
 async function savePlanCapacity(query, actor, planId, input) {
     const actorId = requireAdmin(actor);
-    strictInput(input, ['eligible', 'specialSlotLimit', 'expectedUpdatedAtMs']);
+    strictInput(input, ['eligible', 'specialSlotLimit', 'expectedUpdatedAtMs', 'realtimeEnabled']);
     if (typeof input.eligible !== 'boolean') throw invalid('$.eligible', '有償プランの対象状態を確認してください。');
+    if (input.realtimeEnabled !== undefined && typeof input.realtimeEnabled !== 'boolean') throw invalid('$.realtimeEnabled', 'リアルタイム通知の対象状態を確認してください。');
     const special = bounded(input.specialSlotLimit, CAPACITY_LIMIT_MAX, '$.specialSlotLimit');
     const expected = bounded(input.expectedUpdatedAtMs, Number.MAX_SAFE_INTEGER - 2, '$.expectedUpdatedAtMs');
     // Serializes this configuration with ordinary plan edits/disable operations,
@@ -110,16 +111,18 @@ async function savePlanCapacity(query, actor, planId, input) {
     const plan = await existingPaidPlan(query, planId, true);
     const previous = (await query('SELECT * FROM automation_push_plan_policy WHERE plan_id=? FOR UPDATE', [plan.plan_id]))[0] || null;
     if (input.eligible && Number(plan.enabled) !== 1) throw invalid('$.eligible', '無効な有償プランはPush特殊枠の対象に設定できません。');
+    const realtimeEnabled = input.realtimeEnabled === undefined ? Number(previous?.realtime_enabled) === 1 : input.realtimeEnabled;
+    if (input.realtimeEnabled === true && Number(plan.enabled) !== 1) throw invalid('$.realtimeEnabled', '有効なプランでリアルタイム通知を設定してください。');
     const now = Math.max(Date.now(), expected + 1);
     if (expected === 0) {
         try {
-            await query('INSERT INTO automation_push_plan_policy (plan_id,eligible,special_slot_limit,actor_user_id,updated_at_ms) VALUES (?,?,?,?,?)', [plan.plan_id, input.eligible ? 1 : 0, special, actorId, now]);
+            await query('INSERT INTO automation_push_plan_policy (plan_id,eligible,special_slot_limit,realtime_enabled,actor_user_id,updated_at_ms) VALUES (?,?,?,?,?,?)', [plan.plan_id, input.eligible ? 1 : 0, special, realtimeEnabled ? 1 : 0, actorId, now]);
         } catch (cause) { if (cause?.code === 'ER_DUP_ENTRY') throw conflict(); throw cause; }
     } else {
-        const updated = await query('UPDATE automation_push_plan_policy SET eligible=?,special_slot_limit=?,actor_user_id=?,updated_at_ms=? WHERE plan_id=? AND updated_at_ms=?', [input.eligible ? 1 : 0, special, actorId, now, plan.plan_id, expected]);
+        const updated = await query('UPDATE automation_push_plan_policy SET eligible=?,special_slot_limit=?,realtime_enabled=?,actor_user_id=?,updated_at_ms=? WHERE plan_id=? AND updated_at_ms=?', [input.eligible ? 1 : 0, special, realtimeEnabled ? 1 : 0, actorId, now, plan.plan_id, expected]);
         if (!updated.affectedRows) throw conflict();
     }
-    await query('INSERT INTO automation_audit (actor_user_id,entity_id,guild_id,action,detail_json,created_at_ms) VALUES (?,\'x:plan-policy\',NULL,\'x.capacity.plan\',?,?)', [actorId,JSON.stringify({planId:plan.plan_id,before:previous?{eligible:Number(previous.eligible)===1,specialSlotLimit:Number(previous.special_slot_limit)}:null,after:{eligible:input.eligible,specialSlotLimit:special}}),now]);
+    await query('INSERT INTO automation_audit (actor_user_id,entity_id,guild_id,action,detail_json,created_at_ms) VALUES (?,\'x:plan-policy\',NULL,\'x.capacity.plan\',?,?)', [actorId,JSON.stringify({planId:plan.plan_id,before:previous?{eligible:Number(previous.eligible)===1,specialSlotLimit:Number(previous.special_slot_limit),realtimeEnabled:Number(previous.realtime_enabled)===1}:null,after:{eligible:input.eligible,specialSlotLimit:special,realtimeEnabled}}),now]);
     return planDto(plan, (await query('SELECT * FROM automation_push_plan_policy WHERE plan_id=?', [plan.plan_id]))[0]);
 }
 module.exports = { CAPACITY_LIMIT_MAX, DEFAULT_POOL_POLICY, requireAdmin, getPoolPolicy, savePoolPolicy, getPlanCapacity, savePlanCapacity };
