@@ -79,7 +79,7 @@ Pushの取得は常時接続で行い、Xを定期ポーリングしない。
 | `ANGELIC_X_USE_LEGACY_USER_INTERVAL` | 明示した `1` のみ既存利用者別間隔を互換・テスト用途で使用。標準は現在の契約プランの `confirmation_interval_minutes` |
 
 秘密鍵JSONの形は `{"activeKeyId":"版ID","privateKeys":{"版ID":"RSA private PEM"}}`。公開鍵と対応するRSA 3072〜4096bit鍵を使う。
-Webプロセスにはこのファイル・環境変数・読み取り権限を渡さず、公開鍵だけを配備する。非Windowsでは他ユーザーに読めるファイルモードを拒否する。WindowsのWorker運用では同等の専用アカウントDACLを本番受入で確認する必要がある。
+Webの設定には公開鍵だけを配備し、秘密鍵の内容やWorker用のファイルパスを渡さない。非Windowsでは他ユーザーに読める秘密鍵ファイルモードを拒否する。WebとWorkerが同じOS利用者で動作する環境では、この設定の分離だけでOS上の読み取り権限を分離したとは扱わない。専用アカウント・アクセス権による分離は別途運用受入で確認する。WindowsのWorker運用では専用アカウントDACLも確認する。
 旧鍵IDの暗号文が残っている間はWorker専用鍵管理に旧秘密鍵を保持する。鍵の廃棄や実配備はこの変更で実行しない。
 
 Botの既存 `automation/runtime` に停止・起動を接続した。無効時は鍵ファイルを読まず、SocketやDB候補検索も開始しない。

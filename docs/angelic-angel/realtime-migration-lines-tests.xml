@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<testsuites>
+	<testcase name="file intake requires explicit config, consent, ownership and bounded one-time sessions" time="1.772787" classname="test" file="C:\Users\yussy\.codex\worktrees\x-realtime-choice-20261014\comebacktwitterembed\scripts\test\automation-x-setup-sql.test.js"/>
+	<testcase name="encrypted import survives service restart, never returns or audits secrets, and shares no quota" time="1.681574" classname="test" file="C:\Users\yussy\.codex\worktrees\x-realtime-choice-20261014\comebacktwitterembed\scripts\test\automation-x-setup-sql.test.js"/>
+	<testcase name="concurrent same-session, same-owner and cross-owner imports cannot duplicate or steal registration" time="1.777263" classname="test" file="C:\Users\yussy\.codex\worktrees\x-realtime-choice-20261014\comebacktwitterembed\scripts\test\automation-x-setup-sql.test.js"/>
+	<testcase name="DB/audit failure rolls back encrypted material, token consumption and deletion atomically" time="1.635326" classname="test" file="C:\Users\yussy\.codex\worktrees\x-realtime-choice-20261014\comebacktwitterembed\scripts\test\automation-x-setup-sql.test.js"/>
+	<testcase name="dispatcher keeps setup private, server-owned and rate-limited with safe invalid input recovery" time="1.669802" classname="test" file="C:\Users\yussy\.codex\worktrees\x-realtime-choice-20261014\comebacktwitterembed\scripts\test\automation-x-setup-sql.test.js"/>
+	<testcase name="owner list cursor is bounded and never exposes vault fields" time="1.795973" classname="test" file="C:\Users\yussy\.codex\worktrees\x-realtime-choice-20261014\comebacktwitterembed\scripts\test\automation-x-setup-sql.test.js"/>
+	<testcase name="intake status shares the default batch policy and never enables the receiver flag implicitly" time="1.750509" classname="test" file="C:\Users\yussy\.codex\worktrees\x-realtime-choice-20261014\comebacktwitterembed\scripts\test\automation-x-setup-sql.test.js"/>
+	<testcase name="additive SQL migration is repeatable and disabling intake preserves existing subscriptions and ordinary data" time="1.745111" classname="test" file="C:\Users\yussy\.codex\worktrees\x-realtime-choice-20261014\comebacktwitterembed\scripts\test\automation-x-setup-sql.test.js"/>
+	<!-- tests 8 -->
+	<!-- suites 0 -->
+	<!-- pass 8 -->
+	<!-- fail 0 -->
+	<!-- cancelled 0 -->
+	<!-- skipped 0 -->
+	<!-- todo 0 -->
+	<!-- duration_ms 14005.042 -->
+</testsuites>
