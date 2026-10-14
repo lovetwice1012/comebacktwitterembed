@@ -1,17 +1,17 @@
 {
-  "at": "2026-10-14T15:21:30.566908+00:00",
-  "compatibleRollbackCoreRevision": "2f9148f32dc78230be2aaa3ec3bf5a1715fae863",
+  "at": "2026-10-14T15:49:55.828432+00:00",
+  "compatibleRollbackCoreRevision": "6c997de872b15ae12a8dd5a7e17818124044dc9f",
   "runtime": "Node.js 24.21.0",
   "automationTestFileCount": 69,
   "automation": {
-    "report": "docs/angelic-angel/notification-experience-acceptance-tests.xml",
-    "sha256": "e1fcccf8154b268f0e0b7da509e52d0c553b4d0ca9510bff464b10f11c5f9edd",
-    "leafCases": 976,
+    "report": "docs/angelic-angel/notification-preflight-acceptance-tests.xml",
+    "sha256": "8bf0bcc77d9256d345f866b7db6aea091cb846e3f6a56181672f8a4b2196d0d1",
+    "leafCases": 977,
     "parentResults": 23,
     "failures": 0,
     "errors": 0,
     "skipped": 0,
-    "totalResults": 999
+    "totalResults": 1000
   },
   "phase0": {
     "report": "docs/angelic-angel/notification-experience-phase0-tests.xml",
@@ -93,8 +93,8 @@
       "testedWindowsFileSha256": "9c5b1c1425dfafa8841366bf4559eadbade5b90a11bc35330d1cc663a3526770"
     },
     "dashboard/components/automation/notification-billing.css": {
-      "gitBlobSha256": "0195405c7a9a4bc224734190911ac076bc08845497cd01d62d53e305b3ebd833",
-      "testedWindowsFileSha256": "0195405c7a9a4bc224734190911ac076bc08845497cd01d62d53e305b3ebd833"
+      "gitBlobSha256": "a84146e4ebb51024713dd47938f59ca1f2993cf48cfd729659d147145f6e0d65",
+      "testedWindowsFileSha256": "a84146e4ebb51024713dd47938f59ca1f2993cf48cfd729659d147145f6e0d65"
     },
     "dashboard/components/automation/notification-registration-source.ts": {
       "gitBlobSha256": "c1871ae94e98292f9eff140553710c34cb29440b36d463e0e4ad1d7081e46dca",
@@ -105,12 +105,12 @@
       "testedWindowsFileSha256": "8c43b2cbfe4d4e77d75e88bdb54f298674c63f55300328879967026301e63136"
     },
     "dashboard/components/automation/notification-workspace.css": {
-      "gitBlobSha256": "ebac58d874ffee5d3636ee8ce0a36175ca1adb9662019c0a17d43d6d3a0a495d",
-      "testedWindowsFileSha256": "ebac58d874ffee5d3636ee8ce0a36175ca1adb9662019c0a17d43d6d3a0a495d"
+      "gitBlobSha256": "c2cf0738614a7e0c80bba6810057afb46dd78927d7adb557d8921b71345f53ef",
+      "testedWindowsFileSha256": "c2cf0738614a7e0c80bba6810057afb46dd78927d7adb557d8921b71345f53ef"
     },
     "dashboard/components/automation/notification-x.css": {
-      "gitBlobSha256": "6ce8941d7938ea2a75041ba7d1f1122a04446f6776a1a24a8300ad1b20f2c598",
-      "testedWindowsFileSha256": "6ce8941d7938ea2a75041ba7d1f1122a04446f6776a1a24a8300ad1b20f2c598"
+      "gitBlobSha256": "3104d90cca766f02bf963de5f35c15e9098a7aa4f58f0622ac9278c0c18bd328",
+      "testedWindowsFileSha256": "3104d90cca766f02bf963de5f35c15e9098a7aa4f58f0622ac9278c0c18bd328"
     },
     "dashboard/components/automation/square-donation-manager.tsx": {
       "gitBlobSha256": "0a8ed782030327aa33fe2127b5e15c55b76ed55d16121d36ef8dd20e082ccd90",
@@ -221,8 +221,8 @@
       "testedWindowsFileSha256": "38cb76fb1d4be0c1530bd2ea5af161314dd7f13cd285d89b95200e0b1724eab7"
     },
     "scripts/test/automation-x-delivery-sql.test.js": {
-      "gitBlobSha256": "6a6664e6f03c859f0dbe95af547e159d384f458b58de58240bd37f455e35d8d8",
-      "testedWindowsFileSha256": "6a6664e6f03c859f0dbe95af547e159d384f458b58de58240bd37f455e35d8d8"
+      "gitBlobSha256": "ab090e8f17d3edebb0248b29b9146caf6c87c673c307d4e8ef3c1826067468e6",
+      "testedWindowsFileSha256": "ab090e8f17d3edebb0248b29b9146caf6c87c673c307d4e8ef3c1826067468e6"
     },
     "scripts/test/automation-x-delivery.test.js": {
       "gitBlobSha256": "7afdbeabab13e6fe1cf0aca01d0880855358a7853b1f65de28a9916d8cccbe55",
@@ -277,8 +277,8 @@
       "testedWindowsFileSha256": "5ab3fd3d06485ba262a2707cccc02bb736b683377f5aeff2a759c8fd2c5deae3"
     },
     "src/automation/queue.js": {
-      "gitBlobSha256": "7cafcd80cc8fa203a094bb8922c626f691ee9e293b867ac58cb023a8e2089493",
-      "testedWindowsFileSha256": "73e7d6f0d13d151e34c2202c0a3a1b64ec51a2101a55d60837271640f14ecc99"
+      "gitBlobSha256": "d4c4df3b240eabf7bc7a5bdf57711106639f9311474f890d4e8cfe6e5f5d9e48",
+      "testedWindowsFileSha256": "8d049d67a6cb5f5c8c6eb3200b8e547601b468c57fd643f77947eab1c821d3a1"
     },
     "src/automation/x-event-router.js": {
       "gitBlobSha256": "6f1079a18217611bc682ffde31c93608798a0716551e99898fd0959f2e2a9bb7",
@@ -306,8 +306,8 @@
     "Real OAuth and matching X to Discord delivery remain user-run checks",
     "Production reflection is proved separately by exact resident revision/lease/heartbeat/shards and read-only HTTP/DB checks"
   ],
-  "automationTestCodeRevision": "e2890a7b07b8dabff7eeab6920ca0c7e34f1b58a",
-  "finalSourceRevision": "0b4cd5fd6274ddb9cac601cf9887028f6a230bb7",
+  "automationTestCodeRevision": "741f7b475755353e096dea8104861f4dae3a98e9",
+  "finalSourceRevision": "741f7b475755353e096dea8104861f4dae3a98e9",
   "cosmeticFollowup": {
     "report": "docs/angelic-angel/notification-experience-css-validation.json",
     "relatedUIResults": 197,
@@ -319,5 +319,21 @@
       "dashboard/components/automation/notification-x.css": "3104d90cca766f02bf963de5f35c15e9098a7aa4f58f0622ac9278c0c18bd328",
       "dashboard/components/automation/notification-workspace.css": "c2cf0738614a7e0c80bba6810057afb46dd78927d7adb557d8921b71345f53ef"
     }
+  },
+  "previousAutomationReport": {
+    "report": "docs/angelic-angel/notification-experience-acceptance-tests.xml",
+    "sha256": "e1fcccf8154b268f0e0b7da509e52d0c553b4d0ca9510bff464b10f11c5f9edd",
+    "leafCases": 976,
+    "parentResults": 23,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "totalResults": 999
+  },
+  "sendPreflightCorrection": {
+    "reproducedBeforeFix": true,
+    "independentDeliverySqlResults": 21,
+    "nativeRegressionSqlResults": 25,
+    "publicCheckOwnerFenced": true
   }
 }
