@@ -1,0 +1,107 @@
+{
+  "recordedAtUtc": "2026-10-14T11:04:45.050034+00:00",
+  "sourceCommit": "93adc7c8e8dd777469bb1a36272585bc91529f58",
+  "runtimeSourceCommit": "67d1b218ea0b49e5b18dcfee5fa199d87455470e",
+  "baseMain": "eaa739c32c436e4a972a9a0fcf61a8ff0c38c61a",
+  "scope": "Owner-selected realtime X processing; fixtures and disposable database only",
+  "runtime": "Node.js 24.21.0",
+  "database": {
+    "host": "127.0.0.1",
+    "port": 33621,
+    "schemaPattern": "cbte_automation_test_<20hex>",
+    "serial": true
+  },
+  "acceptance": {
+    "path": "docs/angelic-angel/realtime-acceptance-tests.xml",
+    "sha256": "93b6533b4308512c2f123f19dc7ebdd8211004ad5056686b9bde116dfc6feed4",
+    "tests": 824,
+    "pass": 824,
+    "fail": 0,
+    "cancelled": 0,
+    "skipped": 0,
+    "todo": 0
+  },
+  "initialFailure": {
+    "path": "docs/angelic-angel/realtime-acceptance-initial-tests.xml",
+    "sha256": "e1b8c8292aa2990fc6a2847eda57cf9e1b80565cc9827fc7c74eaadfff4540a2",
+    "tests": 824,
+    "pass": 823,
+    "fail": 1,
+    "cancelled": 0,
+    "skipped": 0,
+    "todo": 0
+  },
+  "failureCause": "A migration equivalence assertion compared CRLF JS template literals with LF SQL source; SQL tokens and production behavior were identical",
+  "correction": "Normalize only CRLF to LF for exact SQL comparison and verify actual migration text using both LF and CRLF representations; no runtime or SQL changes",
+  "focusedCorrection": {
+    "path": "docs/angelic-angel/realtime-migration-lines-tests.xml",
+    "sha256": "6b9b5f3cc4e38836bd25f08401cafef9c3dd7ba4ae2a20de3b021bee650cf05b",
+    "tests": 8,
+    "pass": 8,
+    "fail": 0,
+    "cancelled": 0,
+    "skipped": 0,
+    "todo": 0
+  },
+  "overlappingTestSetsMustNotBeSummed": true,
+  "checks": {
+    "rootTypecheck": "passed",
+    "dashboardTypecheck": "passed",
+    "backendLint": "passed",
+    "dashboardTargetLint": "passed",
+    "gitDiffCheck": "passed"
+  },
+  "independentReview": {
+    "mode": "read-only",
+    "remainingBlockers": [],
+    "resolved": [
+      "Recheck realtime permission within each loaded page and at queue boundaries",
+      "Immediately redrain receipts overlapping an existing realtime or batch-to-realtime window",
+      "Keep batch cleanup available after donor rollout revocation",
+      "Preserve owner CAS, plan priority, shared quotas, slots and registrations"
+    ]
+  },
+  "defaults": {
+    "ownerMode": "batch",
+    "planRealtimeEnabled": false,
+    "globalWorkerMode": "batch",
+    "planNamesDoNotGrantEligibility": true,
+    "undefinedPlanIntervalsAndSpecialCapacityPreserved": true
+  },
+  "sourceHashFormat": "SHA-256 of committed Git blob bytes",
+  "sourceSha256": {
+    "dashboard/app/api/automation/[...path]/route.ts": "812bff83e791abc9dcb29f143f0ac32e0cc81785b441cca6dae2806ccfd472c1",
+    "dashboard/components/admin/push-capacity-manager.tsx": "fe1470595889f25f0e3a3415a3acae68c935f8c22c991d985c48768e6f7e8a7b",
+    "dashboard/components/automation/x-monitor-manager.tsx": "a1c59dbfde52a06bbcb77a49ae59c029d0312d1672016130913dffd0902659b0",
+    "dashboard/components/automation/x-processing-settings.tsx": "573f00c70bf42fc43d6011729093ab38f94d0754a7987e66244c0c56cf5b95c7",
+    "migrations/20261014_add_x_realtime_processing.sql": "cc2000330ab6eb080669ebfce0dc9f1e930298d27c3124a3dafcccac399ecdc5",
+    "scripts/run-x-notification-acceptance.cjs": "b66a59ac8814d8f28a1e343800e3fd1398506af45d50d9b2e3367049b4c5dd93",
+    "scripts/test/automation-push-capacity-sql.test.js": "a3500df0cfdaa6d0cf4a6c4aaf5afbd0fb1b41215673520d693c64f374a623f4",
+    "scripts/test/automation-push-capacity-ui.test.js": "5d43499ac0982e6d5d3ee3d64e994cff42b907473a10f6c8a2f7eaea046c2ef9",
+    "scripts/test/automation-x-monitor-ui.test.js": "ec897c07984a513aeb3b5b1c7d4d12ed470386051494d02b2c0a6ca88d4a6cd1",
+    "scripts/test/automation-x-processing-settings-sql.test.js": "11d0312ee0231fba1c44786324b84f7e3142861af74ddd62e12f20de3062a8b8",
+    "scripts/test/automation-x-processing-settings-ui.test.js": "15b6aa9bc6330e400114f9f1c7ab4af6506675f8fa9836fc364b43fc9142db1b",
+    "scripts/test/automation-x-processing-settings.test.js": "e03f113c904a2658b248206ca67a92b3a71460bff2fce55cfcbcb0fb217802bf",
+    "scripts/test/automation-x-push-processing-sql.test.js": "2772fc46243e6f47148f88ba25193867b74b82e709787f9d74027311cd35e346",
+    "scripts/test/automation-x-push-runtime.test.js": "05b7c9e34443626f427e8268829b1ee5452d6f09353e0588487138378da00465",
+    "scripts/test/automation-x-setup-sql.test.js": "fc62441aac1386292e279d1132daf6f605d782cf62a94810fbfea2fcb0c5b023",
+    "src/automation/api.js": "1451a2e1ccdb970044cca40c9f04b601948712a3f5c45bfe9cef37c23860abdf",
+    "src/automation/push-capacity-schema.sql.js": "367c7043c3c133cd95e9a6e23f0a465689f9f5c666a534b431599f94f6f2c9ee",
+    "src/automation/push-capacity.d.ts": "e2de37fad68da53355046436a80198d7666ec277f2260067bf9ef804ecae7508",
+    "src/automation/push-capacity.js": "7b0e76ca51347d659058071b248d90eca474d4d016d7fe00283c4a33b7188c57",
+    "src/automation/queue.js": "5ca10b2d958a02506378251cf149555cfe3613263789ef933514cb726a2469e7",
+    "src/automation/x-processing-policy.js": "8f2cf68fa083433ee360be9d2824936635b64e419a5661f2b778ba6d6eb80a1b",
+    "src/automation/x-processing-settings.d.ts": "e13ca9e9ded85665c4f8405005dc7364260efbf7b79d30b68f9abeaccf0a80fc",
+    "src/automation/x-processing-settings.js": "f372f19117c562eb90caf434fe8860d6f3e52cf28c8f007ed691b72bf02cb08f",
+    "src/automation/x-push-runtime.js": "4a23fc26271622b8d8c14f457233d5fe7103db4028c70e511a4ae4815bcec1c9",
+    "src/automation/x-push-schema.sql.js": "6633d3cd6bf3b163802062d8edc78aa8c92ba2b5540adc8f51afd861f43f84d5",
+    "src/automation/x-push-store.js": "0ba1875fa0bb23eae25ad827e8a7e645fa0cde914111361a386eda52d361bc86",
+    "src/db_schema.js": "11ea1669ac5026bed6cfec4a0f3f0760598f2bbdef3ea720c4d44b2ab684dd5a"
+  },
+  "productionDataChangedByTests": false,
+  "productionRegistrationsCreated": false,
+  "realNotificationsOrDMsSent": false,
+  "paymentsEnabled": false,
+  "realXAcceptance": "User-operated registration and real notification validation remain separate",
+  "osBoundary": "Web receives public-key configuration only; same-UID deployment is not strict OS key-read isolation"
+}
