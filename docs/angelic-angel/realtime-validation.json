@@ -103,5 +103,16 @@
   "realNotificationsOrDMsSent": false,
   "paymentsEnabled": false,
   "realXAcceptance": "User-operated registration and real notification validation remain separate",
-  "osBoundary": "Web receives public-key configuration only; same-UID deployment is not strict OS key-read isolation"
+  "osBoundary": "Web receives public-key configuration only; same-UID deployment is not strict OS key-read isolation",
+  "qualityCheckResolution": {
+    "initialCodacyHead": "5f132bd0119b391126e2980934499536388f9374",
+    "initialNewIssues": 13,
+    "markdown": "Wrap new paragraphs at sentence boundaries and specify this document exact required-heading sequence; no rule disabled",
+    "localMarkdownlintVersion": "0.41.1",
+    "localAddedMarkdownIssues": 0,
+    "sqlAnalysis": "Scope only SQL Server TSQLLint and PostgreSQL SQLint away from the MariaDB-only migrations directory; other tools and paths stay enabled",
+    "configuration": ".codacy.yml",
+    "migrationSha256Unchanged": "cc2000330ab6eb080669ebfce0dc9f1e930298d27c3124a3dafcccac399ecdc5",
+    "runtimeAndUiChanged": false
+  }
 }
