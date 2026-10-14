@@ -90,7 +90,7 @@ function independentTransactionAdapter(db, hooks = {}) {
         database: db.schema, connectionLimit: 2, supportBigNumbers: true, bigNumberStrings: true });
     const acquire = () => new Promise((resolve, reject) => pool.getConnection((error, connection) => error ? reject(error) : resolve(connection)));
     const queryOn = connection => (sql, args = []) => new Promise((resolve, reject) => connection.query(sql, args, (error, rows) => error ? reject(error) : resolve(rows)));
-    return { ...db, queryDatabase: async (sql, args) => { const connection = await acquire(); try { return await queryOn(connection)(sql, args); } finally { connection.release(); } },
+    return { ...db, queryDatabase: async (sql, args) => { const connection = await acquire(); try { await hooks.before?.(sql, args); const rows = await queryOn(connection)(sql, args); await hooks.after?.(sql, args); return rows; } finally { connection.release(); } },
         withDatabaseTransaction: async work => {
             const connection = await acquire(), query = queryOn(connection);
             try {
@@ -355,10 +355,10 @@ test('real SQL: X uses the shared queue, graph, entitlements and mocked physical
             if (graph) identityChanged.plan.members[0].targetIdentity = 'different-target-identity';
             else identityChanged.plan.targetIdentity = 'different-target-identity';
             assert.equal((await f.queue.check(identityChanged, f.clock())).state, 'cancelled');
-            const faultReader = { ...f.db, queryDatabase: async (sql, args) => {
+            const faultReader = { ...f.db, withDatabaseTransaction: work => f.db.withDatabaseTransaction(query => work(async (sql, args) => {
                 if (sql.startsWith('SELECT detail_json FROM automation_audit')) throw Object.assign(new Error('Synthetic audit read failure'), { code: 'ER_FIXTURE_MOVE_AUDIT_READ' });
-                return f.query(sql, args);
-            } };
+                return query(sql, args);
+            })) };
             const restarted = createQueue(faultReader, {}, { clock: f.clock, rolloutMode: 'public' });
             await assert.rejects(restarted.check(job, f.clock()), { code: 'ER_FIXTURE_MOVE_AUDIT_READ' });
             assert.equal((await f.query('SELECT state FROM automation_jobs WHERE id=?', [job.id]))[0].state, 'leased', 'audit read failure cannot consume or cancel the durable notification');
@@ -500,9 +500,62 @@ test('real SQL: X uses the shared queue, graph, entitlements and mocked physical
             if (sql.startsWith('SELECT 1 FROM automation_package_installs')) { safetyReads++; assert.equal(ownerLocked, true); }
         } });
         try {
-            assert.equal((await createQueue(adapter, {}, { clock: f.clock, rolloutMode: 'public' }).beginSend(mixedEnvelope, f.clock())).state, 'sending');
-            assert.equal(safetyReads, 1); assert.equal(f.requests.length, 0);
+            const candidate = createQueue(adapter, {}, { clock: f.clock, rolloutMode: 'public' });
+            assert.equal((await candidate.check(mixedEnvelope, f.clock())).state, 'ready'); assert.equal(safetyReads, 1);
+            ownerLocked = false;
+            assert.equal((await candidate.beginSend(mixedEnvelope, f.clock())).state, 'sending');
+            assert.equal(safetyReads, 2); assert.equal(f.requests.length, 0);
         } finally { await adapter.closeIndependentPool(); }
     }));
+
+
+    await t.test('public X preflight stays atomic with supporter-to-free manual moves in both transaction orders and both workflow engines', async () => {
+        for (const graph of [false, true]) for (const moveFirst of [false, true]) await fixture(async f => {
+            const subscriptionId = await f.subscription();
+            await f.query('UPDATE users SET is_donor=1,additional_auto_extract_slots=2 WHERE user_id=?', [U]);
+            const workflow = await f.service.createWorkflow({ userId: U }, { definition: newWorkflow('Atomic public preflight') });
+            await f.service.activateWorkflow({ userId: U }, workflow.id, { expectedRevision: workflow.revision });
+            const id = await f.monitor(subscriptionId, { pool: 'supporter', settings: { workflowId: workflow.id } });
+            if (graph) { await f.receive(subscriptionId); await f.project(); }
+            else {
+                const queue = createQueue(f.db, { evaluate: async (definition, event, _bindings, at) => require('../../src/automation/engine').evaluateWorkflow(definition, event, { now: at }) }, { clock: f.clock, rolloutMode: 'public' });
+                await createXEventRouter(f.db, queue, { clock: f.clock }).routeReceived({ lease: { ownerUserId: U, subscriptionId, revision: 1 }, inbox: await f.inbox(subscriptionId), payload: publicPost() });
+            }
+            const job = await f.queue.claim(f.clock()), barrier = deferredMove(), resume = deferredMove(), ownerAttempt = deferredMove();
+            let ownerLocked = false, gated = false, safetyReads = 0, checkWork, moveWork;
+            const checkDb = independentTransactionAdapter(f.db, {
+                before: sql => {
+                    if (moveFirst && sql.startsWith('INSERT INTO users ')) ownerAttempt.resolve();
+                    if (sql.startsWith('SELECT 1 FROM automation_package_installs')) { safetyReads++; assert.equal(ownerLocked, true, 'public preflight fences the owner before any package/snapshot reads'); }
+                },
+                after: async sql => {
+                    if (sql === 'SELECT user_id FROM users WHERE user_id=? FOR UPDATE') ownerLocked = true;
+                    if (!moveFirst && !gated && sql.startsWith('SELECT * FROM automation_x_monitors WHERE id=')) { gated = true; barrier.resolve(); await resume.promise; }
+                },
+            });
+            const movingDb = { ...f.db, withDatabaseTransaction: work => f.db.withDatabaseTransaction(query => work(async (sql, args) => {
+                if (!moveFirst && sql.startsWith('INSERT INTO users ')) ownerAttempt.resolve();
+                const result = await query(sql, args);
+                if (moveFirst && !gated && sql === 'SELECT user_id FROM users WHERE user_id=? FOR UPDATE') { gated = true; barrier.resolve(); await resume.promise; }
+                return result;
+            })) };
+            const api = createXMonitorQuota(movingDb, { registrationEnabled: true, rolloutMode: 'public', now: f.clock }), candidate = createQueue(checkDb, {}, { clock: f.clock, rolloutMode: 'public' });
+            try {
+                if (moveFirst) moveWork = api.move({ userId: U }, id, { poolKind: 'free', expectedRevision: 1 });
+                else checkWork = candidate.check(job, f.clock());
+                await barrier.promise;
+                if (moveFirst) checkWork = candidate.check(job, f.clock());
+                else moveWork = api.move({ userId: U }, id, { poolKind: 'free', expectedRevision: 1 });
+                await ownerAttempt.promise;
+                if (moveFirst) assert.equal(safetyReads, 0, 'a waiting public check has not opened an older consistent snapshot');
+                resume.resolve();
+                assert.equal((await checkWork).state, 'ready');
+                assert.equal((await moveWork).poolKind, 'free');
+                assert.equal((await candidate.check(job, f.clock())).state, 'ready');
+                assert.equal((await f.query('SELECT state FROM automation_jobs WHERE id=?', [job.id]))[0].state, 'leased', 'public check never loses a queued notification during the pure move');
+                assert.equal(f.requests.length, 0);
+            } finally { resume.resolve(); await Promise.allSettled([...(checkWork ? [checkWork] : []), ...(moveWork ? [moveWork] : [])]); await checkDb.closeIndependentPool(); }
+        });
+    });
 
 });
