@@ -56,6 +56,8 @@ export function AutomationWorkspace({ viewerId, guildId, canEdit = true }: { vie
     if (!response.ok) throw automationResponseError(data, response);
     return data;
   }, [guildId]);
+  const destinationLoadEpoch = useRef(0), destinationAPI = useRef(api);
+  destinationAPI.current = api;
   useEffect(() => {
     let active = true;
     async function recover() {
@@ -96,8 +98,29 @@ export function AutomationWorkspace({ viewerId, guildId, canEdit = true }: { vie
   }, [dirty]);
   const task = async (work: () => Promise<void>) => { setBusy(true); setError(""); setNotice(""); try { await work(); } catch (err: any) { setError(err.message); } finally { setBusy(false); } };
   const refresh = useCallback(async () => {
-    const [rules, dest, dict] = await Promise.all([api("workflows"), api("destinations"), api("dictionaries")]);
-    setItems(rules.items); setDestinations(dest.items); setDictionaries(dict.items);
+    const epoch = ++destinationLoadEpoch.current;
+    const destinationPages = async () => {
+      const result: any[] = [], cursors = new Set<string>();
+      let cursor = "";
+      do {
+        const page = await api(cursor ? `destinations?afterId=${encodeURIComponent(cursor)}` : "destinations");
+        if (!Array.isArray(page.items)) throw new Error("通知先一覧を再読み込みしてください。");
+        result.push(...page.items);
+        cursor = page.nextCursor || "";
+        if (cursor && (typeof cursor !== "string" || cursors.has(cursor))) throw new Error("通知先一覧を再読み込みしてください。");
+        if (cursor) cursors.add(cursor);
+      } while (cursor);
+      return result;
+    };
+    const [rules, dest, dict] = await Promise.all([api("workflows"), destinationPages(), api("dictionaries")]);
+    setItems(rules.items); setDictionaries(dict.items);
+    if (destinationAPI.current === api && epoch === destinationLoadEpoch.current) setDestinations(dest);
+  }, [api]);
+  const refreshDestination = useCallback(async (id: string) => {
+    const saved = await api(`destinations/${encodeURIComponent(id)}`);
+    if (destinationAPI.current !== api) return;
+    destinationLoadEpoch.current++;
+    setDestinations(previous => [...previous.filter(row => row.id !== saved.id), saved]);
   }, [api]);
   useEffect(() => { api("catalog").then(setCatalog).catch(err => setError(err.message)); refresh().catch(err => setError(err.message)); }, [api, refresh]);
   useEffect(() => { if (new URLSearchParams(window.location.hash.slice(1)).has("automation-package")) setTab("marketplace"); }, []);
@@ -225,7 +248,7 @@ export function AutomationWorkspace({ viewerId, guildId, canEdit = true }: { vie
     {recoveryWarning && <p role="alert" className="rounded border border-amber-500 p-3 text-sm">{recoveryWarning}</p>}
     {catalog?.deliverySafety?.available === false && !inStudio && <p role="status" className="rounded border border-amber-500 p-3 text-sm">送信・公開を利用できません。時間をおいて再試行してください。</p>}
     {dirty && !inStudio && <p role="status" className="text-xs text-muted-foreground">ルールに未保存</p>}
-    {visitedResources.includes("monitors") && <div hidden={tab !== "monitors"} key={`monitors:${viewerId}:${guildId || "personal"}`}><MonitorManager active={tab === "monitors"} api={api} guildId={guildId} canEdit={canEdit} scope={scope} destinations={destinations} rules={items} refresh={refresh} /></div>}
+    {visitedResources.includes("monitors") && <div hidden={tab !== "monitors"} key={`monitors:${viewerId}:${guildId || "personal"}`}><MonitorManager active={tab === "monitors"} api={api} guildId={guildId} canEdit={canEdit} scope={scope} destinations={destinations} rules={items} refresh={refresh} refreshDestination={refreshDestination} /></div>}
     {visitedResources.includes("history") && <div hidden={tab !== "history"} key={`history:${viewerId}:${guildId || "personal"}`}><DeliveryHistory api={api} canEdit={canEdit} active={tab === "history"} /></div>}
     {tab === "rules" && <>
       {studioOpen && draft ? <nav className="automation-workspace-navigation" aria-label="スタジオの移動"><button className={button + " studio-back"} disabled={busy} onClick={() => setStudioOpen(false)}><ArrowLeft size={16} aria-hidden="true" />ルール一覧へ</button><div><button className={button} disabled={busy} onClick={() => setTab("monitors")}>通知一覧</button><button className={button} disabled={busy} onClick={() => setTab("history")}>配信予定・履歴</button></div></nav> : <div className="studio-library">

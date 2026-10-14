@@ -2,7 +2,7 @@
 
 // The web boundary derives actor from the authenticated session. This dispatcher
 // is also used by loopback-only fixture tests; it contains no auth bypass.
-const { requireActor, AutomationError } = require('./service');
+const { requireActor, AutomationError, publicDestination } = require('./service');
 /** @param {{method:string,path:string[],search?:URLSearchParams,body?:Record<string,any>}} request */
 async function dispatch(request, actor, services) {
     requireActor(actor);
@@ -209,7 +209,8 @@ async function dispatchCore({ method, path, search = new URLSearchParams(), body
         const row = await service.getRow("dictionary", actor, id);
         result = await evaluator.match({ id, revision: Number(body.revision || row.revision) }, body.text);
       }
-    } else if (kind === "destinations" && method === "GET" && !id) result = await service.list("destination", actor);
+    } else if (kind === "destinations" && method === "GET" && !id) result = await service.list("destination", actor, search.get("afterId") || '');
+    else if (kind === "destinations" && method === "GET" && id && !action) result = publicDestination(await service.getRow("destination", actor, id));
     else if (kind === "destinations" && method === "POST" && !id) result = await destinations.save(actor, body);
     else if (kind === "destinations" && method === "PATCH" && id) result = await destinations.save(actor, body, id);
     else if (kind === "destinations" && method === "DELETE" && id) result = await service.remove("destination", actor, id, body.expectedRevision);

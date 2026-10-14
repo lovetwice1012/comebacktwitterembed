@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<testsuites>
+	<testcase name="the real workspace loads all paginated destinations and offers second-page choices in an X draft" time="0.348414" classname="test" file="C:\Users\yussy\.codex\worktrees\x-realtime-choice-20261014\comebacktwitterembed\scripts\test\automation-destination-workspace.test.js"/>
+	<testcase name="an individually refreshed saved destination survives a late initial workspace list response" time="0.091100" classname="test" file="C:\Users\yussy\.codex\worktrees\x-realtime-choice-20261014\comebacktwitterembed\scripts\test\automation-destination-workspace.test.js"/>
+	<testcase name="an individual workspace refresh failure keeps the destination saved and offers no repeated POST retry" time="0.088861" classname="test" file="C:\Users\yussy\.codex\worktrees\x-realtime-choice-20261014\comebacktwitterembed\scripts\test\automation-destination-workspace.test.js"/>
+	<testcase name="a repeated destination page cursor stops with a visible retry message instead of looping or offering a partial list" time="0.054006" classname="test" file="C:\Users\yussy\.codex\worktrees\x-realtime-choice-20261014\comebacktwitterembed\scripts\test\automation-destination-workspace.test.js"/>
+	<!-- tests 4 -->
+	<!-- suites 0 -->
+	<!-- pass 4 -->
+	<!-- fail 0 -->
+	<!-- cancelled 0 -->
+	<!-- skipped 0 -->
+	<!-- todo 0 -->
+	<!-- duration_ms 1496.3211 -->
+</testsuites>
