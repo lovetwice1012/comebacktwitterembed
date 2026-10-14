@@ -1,0 +1,13 @@
+---
+# src/db_schema.js executes this directory through the MySQL/MariaDB driver.
+# TSQLLint parses SQL Server syntax; SQLint parses PostgreSQL syntax. Scope
+# those dialect-specific tools away from these migrations, keeping every other
+# tool and all analysis outside this directory available.
+# https://docs.codacy.com/repositories-configure/codacy-configuration-file/
+engines:
+  tsqllint:
+    exclude_paths:
+      - "migrations/**"
+  SQLint:
+    exclude_paths:
+      - "migrations/**"

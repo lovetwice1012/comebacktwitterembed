@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { parseXMonitor, parseXQuota, xFeedback, xInterval, xObject, xPoolName, xReason, type XMonitor, type XMonitorAPI, type XMonitorQuota } from "./x-monitor-view";
 import { XMonitorMoveEditor } from "./x-monitor-move-editor";
 import { XNotificationSetup } from "./x-notification-setup";
+import { XProcessingSettings } from "./x-processing-settings";
 import { parseXSetupStatus, xReceiverLabel, xReceiverDescription, type XSetupStatus } from "./x-setup-view";
 
 const field = "w-full rounded border bg-background px-3 py-2 text-sm";
@@ -103,7 +104,7 @@ function XMonitorEditor({ api, active, allowSetup, subscriptionsVersion, destina
         <div><dt>現在プランの確認間隔</dt><dd>{xInterval(quota.currentPlan.intervalMinutes)}</dd></div></dl>
       <p className="text-xs text-muted-foreground">監視するXアカウント1件につき1枠を使います。通常通知とX監視は、同じ個人の登録上限で数えます。寄付へのお礼で付与された追加枠は、月額プランの解約後も引き継ぎます。申込資格と全体枠の空きは、それぞれ確認します。</p>
       <p className="text-xs text-muted-foreground">確認間隔の短縮に配分した追加枠も使用枠数に含みます。登録件数とは別に数えます。</p>
-      <p className="text-xs text-muted-foreground">受信を開始すると通知を随時受け取り、現在のプランの間隔ごとに、届いた分をまとめて処理します。通知先への送信には、ルールの条件と送信上限を適用します。</p>
+      <p className="text-xs text-muted-foreground">標準の設定では、受信を開始すると通知を随時受け取り、現在のプランの間隔ごとに、届いた分をまとめて処理します。リアルタイムを選択して保存すると、受け取り次第処理します。通知先への送信には、ルールの条件と送信上限を適用します。</p>
       <p className="text-xs text-muted-foreground">確認間隔と送信上限には、現在の契約プランを適用します。どの種類の枠でも、1分{quota.currentPlan.minuteLimit}通・1日{quota.currentPlan.dayLimit}通までです。</p>
       {!quota.featureEnabled && !quota.x.reasonCode?.startsWith("X_ROLLOUT_") ? <p role="status">{xReason("X_MONITOR_UNAVAILABLE")}</p> : null}
       {quota.x.reasonCode && (quota.featureEnabled || quota.x.reasonCode !== "X_MONITOR_UNAVAILABLE") ? <p role="status">{xReason(quota.x.reasonCode)}</p> : null}
@@ -154,6 +155,6 @@ export function XMonitorManager({ api, active = true, allowSetup = true, destina
   const [opened, setOpened] = useState(false), [subscriptionsVersion, setSubscriptionsVersion] = useState(0);
   return <section aria-label="自分のXアカウント監視" className="space-y-3 rounded border bg-card p-4"><h2 className="font-semibold">自分のXアカウント監視</h2>
     <p className="text-sm text-muted-foreground">通知を受け取りたいXアカウントと、利用できる枠を管理します。Xアカウントを1件登録するごとに1枠を使います。</p>
-    {!opened ? <button className={button} disabled={!active} onClick={() => setOpened(true)}>Xアカウントの監視を管理</button> : <>{allowSetup ? <XNotificationSetup api={api} active={active} onSubscriptionsChanged={() => setSubscriptionsVersion(value => value + 1)} /> : <a href="/dashboard/automation/x" className="inline-block text-sm text-primary underline">自分のX通知セットアップを開く</a>}<XMonitorEditor api={api} active={active} allowSetup={allowSetup} subscriptionsVersion={subscriptionsVersion} destinations={destinations} rules={rules} /></>}
+    {!opened ? <button className={button} disabled={!active} onClick={() => setOpened(true)}>Xアカウントの監視を管理</button> : <>{allowSetup ? <><XNotificationSetup api={api} active={active} onSubscriptionsChanged={() => setSubscriptionsVersion(value => value + 1)} /><XProcessingSettings api={api} active={active} /></> : <a href="/dashboard/automation/x" className="inline-block text-sm text-primary underline">自分のX通知セットアップを開く</a>}<XMonitorEditor api={api} active={active} allowSetup={allowSetup} subscriptionsVersion={subscriptionsVersion} destinations={destinations} rules={rules} /></>}
   </section>;
 }

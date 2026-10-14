@@ -16,6 +16,7 @@ const SCHEMA = [
         last_connected_at_ms BIGINT NULL,
         last_process_at_ms BIGINT NULL,
         process_window_at_ms BIGINT NULL,
+        process_window_mode VARCHAR(16) CHARACTER SET ascii COLLATE ascii_bin NULL,
         process_cursor_id BIGINT UNSIGNED NOT NULL DEFAULT 0,
         updated_at_ms BIGINT NOT NULL,
         CONSTRAINT x_push_receiver_subscription FOREIGN KEY (subscription_id) REFERENCES automation_x_subscriptions(id) ON DELETE CASCADE,

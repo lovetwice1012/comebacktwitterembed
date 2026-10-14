@@ -2,7 +2,7 @@
 
 const { randomUUID, randomInt } = require('node:crypto');
 const { evaluateXRollout } = require('./x-rollout-policy');
-const { inspectXPlan } = require('./entitlements');
+const { inspectXProcessingSettings } = require('./x-processing-settings');
 const { createXEventRouter } = require('./x-event-router');
 const { resolveXProcessingPolicy } = require('./x-processing-policy');
 
@@ -26,7 +26,7 @@ function createXPushRuntime(db, queue, options = {}) {
     if (!Number.isInteger(maxConnections) || maxConnections < 1 || maxConnections > 10000
         || !Number.isInteger(pageSize) || pageSize < 1 || pageSize > 100
         || !Number.isInteger(intervalMs) || intervalMs < 100 || intervalMs > 60000) throw new Error('X_PUSH_RUNTIME_CONFIG_INVALID');
-    const sessions = new Map(), leases = new Map(), draining = new Map(), cooldowns = new Map();
+    const sessions = new Map(), leases = new Map(), draining = new Map(), cooldowns = new Map(), drainAgain = new Set();
     const controller = new AbortController(), workerId = `node-${randomUUID()}`;
     const rolloutOptions = options.rolloutMode === undefined ? {} : { mode: options.rolloutMode };
     let timer, ticking = null, stopped = false, cursor = '';
@@ -37,53 +37,77 @@ function createXPushRuntime(db, queue, options = {}) {
           AND CASE WHEN JSON_VALID(m.notification_settings_json) THEN JSON_UNQUOTE(JSON_EXTRACT(m.notification_settings_json,'$.subscriptionId')) ELSE NULL END=s.id)
         ORDER BY s.id LIMIT ?`, [afterId, clock(), pageSize]));
 
-    async function drain(lease) {
+    async function drain(lease, trigger = {}) {
         if (!enabled || stopped || controller.signal.aborted || !cadenceConfigured) return { state: 'not_configured' };
-        if (draining.has(lease.subscriptionId)) return draining.get(lease.subscriptionId);
+        if (draining.has(lease.subscriptionId)) {
+            if (trigger.received === true) drainAgain.add(lease.subscriptionId);
+            return draining.get(lease.subscriptionId);
+        }
         const work = (async () => {
             assertAllowed();
             const policy = await evaluateXRollout(db.queryDatabase, { userId: lease.ownerUserId }, rolloutOptions);
             if (!policy.eligible) return { state: 'pending', code: policy.reasonCode };
-            const window = await gateway.store.beginProcessing(lease, undefined, {
-                resolveInterval: async query => (await inspectXPlan(query, lease.ownerUserId, clock(), {
-                    useLegacyUserInterval: options.useLegacyUserInterval === true,
-                })).intervalMinutes,
+            let processed = 0;
+            const resolveProcessing = query => inspectXProcessingSettings(query, lease.ownerUserId, clock(), {
+                useLegacyUserInterval: options.useLegacyUserInterval === true,
             });
-            if (!window.ready) return { state: 'pending', ...(window.code ? { code: window.code } : {}), ...(window.dueAtMs === undefined ? {} : { dueAtMs: window.dueAtMs }) };
-            const rows = await gateway.store.listInbox({ ...lease, afterId: window.cursorId, limit: pageSize });
-            let processed = 0, reachedCutoff = false;
-            for (const inbox of rows) {
-                if (stopped || controller.signal.aborted) return { state: 'stopped' };
-                if (inbox.receivedAtMs > window.windowAtMs) { reachedCutoff = true; break; }
-                assertAllowed();
-                await gateway.store.assertLease(lease);
-                try {
-                    const payload = await gateway.decryptInbox(lease, inbox);
+            for (;;) {
+                const window = await gateway.store.beginProcessing(lease, undefined, {
+                    resolveProcessing,
+                });
+                if (!window.ready) return { state: 'pending', ...(processed ? { processed } : {}), ...(window.code ? { code: window.code } : {}), ...(window.dueAtMs === undefined ? {} : { dueAtMs: window.dueAtMs }) };
+                const rows = await gateway.store.listInbox({ ...lease, afterId: window.cursorId, limit: pageSize });
+                let reachedCutoff = false;
+                for (const inbox of rows) {
                     if (stopped || controller.signal.aborted) return { state: 'stopped' };
+                    if (inbox.receivedAtMs > window.windowAtMs) { reachedCutoff = true; break; }
                     assertAllowed();
-                    const result = await router.routeReceived({ lease, inbox, payload });
+                    if (window.processingMode === 'realtime') {
+                        // A mode/contract change between two receipts applies to
+                        // the next admission, including within one loaded page.
+                        const current = await gateway.store.beginProcessing(lease, undefined, { resolveProcessing });
+                        if (!current.ready) return { state: 'pending', processed,
+                            ...(current.code ? { code: current.code } : {}), ...(current.dueAtMs === undefined ? {} : { dueAtMs: current.dueAtMs }) };
+                    }
+                    await gateway.store.assertLease(lease);
+                    try {
+                        const payload = await gateway.decryptInbox(lease, inbox);
+                        if (stopped || controller.signal.aborted) return { state: 'stopped' };
+                        assertAllowed();
+                        const result = await router.routeReceived({ lease, inbox, payload });
+                        if (stopped || controller.signal.aborted) return { state: 'stopped' };
+                        if (result.state === 'routed') await gateway.store.markRouted(lease, inbox.id);
+                    } catch (error) {
+                        if (stopped || controller.signal.aborted) return { state: 'stopped' };
+                        assertAllowed();
+                        // Unknown/DM/unsupported application payload is quarantined,
+                        // never guessed to be a post and never reflected to Discord.
+                        if (/^X_NOTIFICATION_(?:INVALID|UNSUPPORTED)/.test(String(error?.code || '')))
+                            await gateway.store.markUnsupported(lease, inbox.id);
+                        else throw error;
+                    }
                     if (stopped || controller.signal.aborted) return { state: 'stopped' };
-                    if (result.state === 'routed') await gateway.store.markRouted(lease, inbox.id);
-                } catch (error) {
-                    if (stopped || controller.signal.aborted) return { state: 'stopped' };
-                    assertAllowed();
-                    // Unknown/DM/unsupported application payload is quarantined,
-                    // never guessed to be a post and never reflected to Discord.
-                    if (/^X_NOTIFICATION_(?:INVALID|UNSUPPORTED)/.test(String(error?.code || '')))
-                        await gateway.store.markUnsupported(lease, inbox.id);
-                    else throw error;
+                    await gateway.store.advanceProcessing(lease, { windowAtMs: window.windowAtMs, cursorId: inbox.id });
+                    processed++;
                 }
                 if (stopped || controller.signal.aborted) return { state: 'stopped' };
-                await gateway.store.advanceProcessing(lease, { windowAtMs: window.windowAtMs, cursorId: inbox.id });
-                processed++;
+                if (reachedCutoff || rows.length < pageSize)
+                    await gateway.store.completeProcessing(lease, { windowAtMs: window.windowAtMs });
+                // Realtime recovers every retained page in this window immediately.
+                // Each page rechecks current permission and owner mode under lock.
+                // Batching keeps its existing finite page/cutoff behavior.
+                // A new receipt can arrive while a batch window is already active
+                // and its owner switches to realtime. Always revisit the trusted
+                // resolver after that callback, irrespective of the old mode.
+                if (drainAgain.delete(lease.subscriptionId)) continue;
+                if (window.processingMode === 'realtime' && reachedCutoff
+                    && rows.find(row => row.receivedAtMs > window.windowAtMs).receivedAtMs <= clock()) continue;
+                if (window.processingMode !== 'realtime' || reachedCutoff || rows.length < pageSize)
+                    return { state: 'processed', processed };
             }
-            if (stopped || controller.signal.aborted) return { state: 'stopped' };
-            if (reachedCutoff || rows.length < pageSize)
-                await gateway.store.completeProcessing(lease, { windowAtMs: window.windowAtMs });
-            return { state: 'processed', processed };
         })();
         draining.set(lease.subscriptionId, work);
-        try { return await work; } finally { if (draining.get(lease.subscriptionId) === work) draining.delete(lease.subscriptionId); }
+        try { return await work; } finally { if (draining.get(lease.subscriptionId) === work) { draining.delete(lease.subscriptionId); drainAgain.delete(lease.subscriptionId); } }
     }
     function remember({ lease }) { if (!stopped) { leases.set(lease.subscriptionId, lease); cooldowns.delete(lease.subscriptionId); } }
     async function tick() {
@@ -107,7 +131,7 @@ function createXPushRuntime(db, queue, options = {}) {
                 const rememberSession = value => { if (active && sessions.get(candidate.id) === pending) remember(value); };
                 const pending = Promise.resolve().then(() => gateway.run({ subscriptionId: candidate.id, ownerUserId: candidate.owner_user_id,
                     workerId, signal: controller.signal, onSession: rememberSession, onLease: rememberSession,
-                    onReceived: async ({ lease }) => { if (!active || sessions.get(candidate.id) !== pending || stopped) return; rememberSession({ lease }); await drain(lease); } }))
+                    onReceived: async ({ lease }) => { if (!active || sessions.get(candidate.id) !== pending || stopped) return; rememberSession({ lease }); await drain(lease, { received: true }); } }))
                     .catch(error => ({ state: 'error', reasonCode: /^X_PUSH_[A-Z_]+$/.test(String(error?.code || '')) ? error.code : 'X_PUSH_CONNECTION_FAILED' }))
                     .then(async result => {
                         if (stopped || controller.signal.aborted || ['busy', 'requires_reenrollment'].includes(result?.state)) return;

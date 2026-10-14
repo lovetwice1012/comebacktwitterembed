@@ -1,9 +1,9 @@
 type Query = (sql: string, params?: unknown[]) => Promise<any>;
 type AdminActor = { userId: string; isAdmin?: boolean };
 export type PushPoolPolicy = { featureEnabled: false; freePoolLimit: number; supporterPoolLimit: number; updatedAtMs: number };
-export type PushPlanCapacity = { planId: string; label: string; planEnabled: boolean; isPaid: true; eligible: boolean; specialSlotLimit: number; consumesUserSlots: true; featureEnabled: false; updatedAtMs: number };
+export type PushPlanCapacity = { planId: string; label: string; planEnabled: boolean; isPaid: true; eligible: boolean; specialSlotLimit: number; realtimeEnabled: boolean; consumesUserSlots: true; featureEnabled: false; updatedAtMs: number };
 export type PushPoolPolicyInput = { freePoolLimit: number; supporterPoolLimit: number; expectedUpdatedAtMs: number };
-export type PushPlanCapacityInput = { eligible: boolean; specialSlotLimit: number; expectedUpdatedAtMs: number };
+export type PushPlanCapacityInput = { eligible: boolean; specialSlotLimit: number; expectedUpdatedAtMs: number; realtimeEnabled?: boolean };
 export const CAPACITY_LIMIT_MAX: number;
 export const DEFAULT_POOL_POLICY: Readonly<{ freePoolLimit: number; supporterPoolLimit: number }>;
 export function requireAdmin(actor: AdminActor): string;

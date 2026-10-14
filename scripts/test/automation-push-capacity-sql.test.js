@@ -73,7 +73,7 @@ test('SQL: dormant Push capacity admin settings are independent, authorized and 
         plus = await db.withDatabaseTransaction(query => plans.savePlanPolicy(query, ADMIN, ordinaryPlan('PlusExisting', { slotLimit: 24 })));
         const before = await db.queryDatabase('SELECT * FROM automation_notification_plans ORDER BY plan_id');
         const value = await dispatch(request('GET', 'push-capacity/plans/basicexisting'), ADMIN, services);
-        assert.deepEqual(value, { planId: basic.planId, label: basic.label, planEnabled: true, isPaid: true, eligible: false, specialSlotLimit: 0, consumesUserSlots: true, featureEnabled: false, updatedAtMs: 0 });
+        assert.deepEqual(value, { planId: basic.planId, label: basic.label, planEnabled: true, isPaid: true, eligible: false, specialSlotLimit: 0, realtimeEnabled: false, consumesUserSlots: true, featureEnabled: false, updatedAtMs: 0 });
         assert.equal(Number((await db.queryDatabase('SELECT COUNT(*) n FROM automation_push_plan_policy'))[0].n), 0);
         for (const planId of ['free', 'FREE', 'supporter', 'Supporter', 'invalid;DROP']) await assert.rejects(dispatch(request('GET', `push-capacity/plans/${planId}`), ADMIN, services), { code: 'AUTOMATION_PUSH_CAPACITY_INVALID', status: 422 });
         await assert.rejects(dispatch(request('PATCH', 'push-capacity/plans/UnknownPaid', planInput({ eligible: true, specialSlotLimit: 5 })), ADMIN, services), { code: 'AUTOMATION_PUSH_CAPACITY_NOT_FOUND', status: 404 });
@@ -81,7 +81,7 @@ test('SQL: dormant Push capacity admin settings are independent, authorized and 
     });
     await t.test('paid configuration rejects invalid bounds, missing CAS and tier/feature override inputs', async () => {
         for (const changes of [
-            { eligible: 'true' }, { eligible: 1 }, { specialSlotLimit: -1 }, { specialSlotLimit: 100001 },
+            { eligible: 'true' }, { eligible: 1 }, { realtimeEnabled: 'true' }, { realtimeEnabled: 1 }, { specialSlotLimit: -1 }, { specialSlotLimit: 100001 },
             { specialSlotLimit: 3.5 }, { specialSlotLimit: '3' }, { expectedUpdatedAtMs: undefined },
             { expectedUpdatedAtMs: Number.MAX_SAFE_INTEGER }, { featureEnabled: true },
             { consumesUserSlots: false }, { tier: 'paid' }, { planId: 'PlusExisting' },

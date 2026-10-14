@@ -21,6 +21,8 @@ async function fixture({ currentQuota = quota(), items = [row()], respond, opene
         f.calls.push({ route, method, body }); const overridden = respond && await respond(route, method, body, f); if (overridden !== undefined) return overridden;
         if (route === 'x-monitor-quota') { if (!f.quota) throw new Error('PRIVATE_QUOTA'); return f.quota; }
         if (route === 'x-setup') return f.setup;
+        if (route === 'x-processing-settings') return { requestedMode: 'batch', effectiveMode: 'batch', realtimeAllowed: false,
+            planId: 'basic', planLabel: 'ベーシック', intervalMinutes: 60, configured: true, reasonCode: null, rollout: f.setup.rollout };
         if (route === 'x-monitors' && method === 'GET') return { items: f.items, ...(f.quota ? { quota: f.quota } : {}) };
         if (route === 'x-monitors' && method === 'POST') { const saved = row({ ...body, id: `xm-new-${f.items.length + 1}`, notificationSettings: body.notificationSettings || {}, revision: 1 }); f.items = [...f.items, saved]; return saved; }
         if (route.startsWith('x-monitors/') && method === 'PATCH') {
@@ -49,7 +51,7 @@ test('X owner controls load lazily, show actual plan/personal/supporter/free cap
     const f = await fixture({ opened: false });
     try {
         assert.equal(f.calls.length, 0); await f.click('Xアカウントの監視を管理');
-        assert.deepEqual(f.calls.map(item => item.route).sort(), ['x-monitor-quota', 'x-monitors', 'x-setup']);
+        assert.deepEqual(f.calls.map(item => item.route).sort(), ['x-monitor-quota', 'x-monitors', 'x-processing-settings', 'x-setup']);
         assert.match(f.container.textContent, /現在のプラン: ベーシック/); assert.match(f.container.textContent, /8枠（基本5＋支援追加3）/);
         assert.match(f.container.textContent, /現在の登録数6件/); assert.match(f.container.textContent, /現在の使用枠6／8枠（空き2枠）/); assert.match(f.container.textContent, /支援者追加枠の保有数3枠/);
         assert.match(f.container.textContent, /X監視の利用数・空き枠2件／空き2件/); assert.match(f.container.textContent, /無料共有枠の全体空き1／50枠/);

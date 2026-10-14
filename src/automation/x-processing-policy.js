@@ -1,7 +1,8 @@
 'use strict';
 
-// Approved standard: receive continuously, then process every retained event
-// in the current plan's window. Unsupported modes cannot bypass that interval.
+// Global worker configuration stays batch-only: owner preference plus explicit
+// current-plan permission controls realtime. An environment value cannot grant
+// realtime access to every owner or bypass the normal startup feature gate.
 function resolveXProcessingPolicy(value) {
     return value === undefined || value === 'batch' ? 'batch' : null;
 }

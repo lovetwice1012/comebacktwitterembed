@@ -7,7 +7,7 @@ const { requireActor, AutomationError } = require('./service');
 async function dispatch(request, actor, services) {
     requireActor(actor);
     const { method, path, body = {} } = request;
-    if (!Array.isArray(path) || path.length < 1 || path.length > 3 || !['GET','POST','PATCH','DELETE'].includes(method)) throw new AutomationError('NOT_FOUND', '操作が見つかりません。', 404);
+    if (!Array.isArray(path) || path.length < 1 || path.length > 3 || !['GET','POST','PUT','PATCH','DELETE'].includes(method)) throw new AutomationError('NOT_FOUND', '操作が見つかりません。', 404);
     if (!body || typeof body !== 'object' || Array.isArray(body)) throw new AutomationError('INVALID_BODY', 'オブジェクト形式の入力が必要です。');
     if (path[0] === 'donors' && actor.isAdmin !== true) throw new AutomationError('AUTOMATION_FORBIDDEN', '支援者の管理には管理者権限が必要です。', 403);
     if (path[0] === 'push-capacity') require('./push-capacity').requireAdmin(actor);
@@ -26,7 +26,7 @@ async function dispatch(request, actor, services) {
 /** @param {{method:string,path:string[],search?:URLSearchParams,body?:Record<string,any>}} request */
 async function dispatchCore({ method, path, search = new URLSearchParams(), body = {} }, actor, services) {
     requireActor(actor);
-    if (!Array.isArray(path) || path.length < 1 || path.length > 3 || !['GET','POST','PATCH','DELETE'].includes(method)) throw new AutomationError('NOT_FOUND', '操作が見つかりません。', 404);
+    if (!Array.isArray(path) || path.length < 1 || path.length > 3 || !['GET','POST','PUT','PATCH','DELETE'].includes(method)) throw new AutomationError('NOT_FOUND', '操作が見つかりません。', 404);
     if (!body || typeof body !== 'object' || Array.isArray(body)) throw new AutomationError('INVALID_BODY', 'オブジェクト形式の入力が必要です。');
     const [kind, id, action] = path;
     const { service, market, evaluator, schema, format, bundle, catalog, destinations, monitors, history, dictionaryService, moderation, starter } = services;
@@ -35,7 +35,13 @@ async function dispatchCore({ method, path, search = new URLSearchParams(), body
       registrationEnabled: process.env.ANGELIC_X_REGISTRATION_ENABLED === '1',
       useLegacyUserInterval: process.env.ANGELIC_X_USE_LEGACY_USER_INTERVAL === '1',
     });
-    if (kind === "catalog" && method === "GET") result = { ...catalog.catalog(), rateLimits: service.rateLimiter?.getPolicy(), deliverySafety: require('./safety').createSafety().status() };
+    if (kind === 'x-processing-settings' && !id && !action) {
+      const processing = services.xProcessingSettings || require('./x-processing-settings').createXProcessingSettings(services.db, { useLegacyUserInterval: process.env.ANGELIC_X_USE_LEGACY_USER_INTERVAL === '1' });
+      if (method === 'GET') result = await processing.get(actor);
+      else if (method === 'PUT') result = await processing.save(actor, body);
+      else throw new AutomationError('NOT_FOUND', '操作が見つかりません。', 404);
+    }
+    else if (kind === "catalog" && method === "GET") result = { ...catalog.catalog(), rateLimits: service.rateLimiter?.getPolicy(), deliverySafety: require('./safety').createSafety().status() };
     else if (kind === "entitlements" && !id && method === "GET") {
       const info = await require('./entitlements').getEntitlementSummary(services.db, actor.userId);
       const plan = { id: info.planId, tier: info.tier, name: info.label, priority: info.priority, slotLimit: info.slotLimit, minuteLimit: info.minuteLimit, dayLimit: info.dayLimit, baseSlotLimit: info.baseSlotLimit, manualExtraSlots: info.manualExtraSlots, addonGrantUnits: info.addonGrantUnits, addonExtraSlots: info.addonExtraSlots, donationPaymentCount: info.donationPaymentCount, addonValidUntilAtMs: info.addonValidUntilAtMs };

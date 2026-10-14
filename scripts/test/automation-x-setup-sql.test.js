@@ -186,7 +186,16 @@ test('additive SQL migration is repeatable and disabling intake preserves existi
     const before = await db.queryDatabase('SELECT user_id,additional_auto_extract_slots,is_donor FROM users');
     const migration = readFileSync(path.resolve(__dirname, '../../migrations/20261014_add_x_notification_intake.sql'), 'utf8');
     const statements = migration.replace(/^--.*$/gm, '').split(';').map(value => value.trim()).filter(Boolean);
-    assert.deepEqual(statements, require('../../src/automation/x-setup-schema.sql').SCHEMA.map(value => value.trim()));
+    // Git may check JS templates and SQL files out with different line endings.
+    // Preserve the exact SQL text check while treating CRLF and LF alike.
+    const canonicalSql = value => value.replace(/\r\n/g, '\n').trim();
+    const expected = require('../../src/automation/x-setup-schema.sql').SCHEMA.map(canonicalSql);
+    assert.deepEqual(statements.map(canonicalSql), expected);
+    for (const ending of ['\n', '\r\n']) {
+        const variant = migration.replace(/\r\n/g, '\n').replace(/\n/g, ending);
+        const parsed = variant.replace(/^--.*$/gm, '').split(';').map(canonicalSql).filter(Boolean);
+        assert.deepEqual(parsed, expected, `migration SQL stays identical with ${JSON.stringify(ending)} lines`);
+    }
     for (let repeat = 0; repeat < 2; repeat++) for (const statement of statements) await db.queryDatabase(statement);
     assert.deepEqual(await db.queryDatabase('SELECT user_id,additional_auto_extract_slots,is_donor FROM users'), before);
     const rolledBack = createXSetup(db, { sealer: null });
