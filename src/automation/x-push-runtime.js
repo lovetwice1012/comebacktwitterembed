@@ -18,7 +18,7 @@ function reconnectDelay(attempt, reasonCode, jitter = randomInt) {
 function createXPushRuntime(db, queue, options = {}) {
     const enabled = options.enabled === true, clock = options.clock || Date.now;
     const gateway = options.gateway || null;
-    const router = options.router || (enabled ? createXEventRouter(db, queue, { clock }) : null);
+    const router = options.router || (enabled ? createXEventRouter(db, queue, { clock, useLegacyUserInterval: options.useLegacyUserInterval === true }) : null);
     const mode = resolveXProcessingPolicy(options.processingPolicy);
     const cadenceConfigured = mode !== null;
     const maxConnections = options.maxConnections ?? 1000, pageSize = options.pageSize ?? 100;
@@ -26,10 +26,10 @@ function createXPushRuntime(db, queue, options = {}) {
     if (!Number.isInteger(maxConnections) || maxConnections < 1 || maxConnections > 10000
         || !Number.isInteger(pageSize) || pageSize < 1 || pageSize > 100
         || !Number.isInteger(intervalMs) || intervalMs < 100 || intervalMs > 60000) throw new Error('X_PUSH_RUNTIME_CONFIG_INVALID');
-    const sessions = new Map(), leases = new Map(), draining = new Map(), cooldowns = new Map(), drainAgain = new Set();
+    const sessions = new Map(), leases = new Map(), draining = new Map(), cooldowns = new Map(), drainAgain = new Set(), receiptIds = new Map();
     // Recovered/processed states are durable; this bounded cache merely avoids
     // retrying still-unknown formats on every tick during the same process.
-    const quarantineCursors = new Map();
+    const quarantineCursors = new Map(), realtimeCursors = new Map();
     const controller = new AbortController(), workerId = `node-${randomUUID()}`;
     const rolloutOptions = options.rolloutMode === undefined ? {} : { mode: options.rolloutMode };
     let timer, ticking = null, stopped = false, cursor = '';
@@ -65,81 +65,131 @@ function createXPushRuntime(db, queue, options = {}) {
             while (quarantineCursors.size > maxConnections * 2) quarantineCursors.delete(quarantineCursors.keys().next().value);
         }
     }
+    function rememberCursor(cache, key, value) {
+        cache.delete(key); cache.set(key, value);
+        while (cache.size > maxConnections * 2) cache.delete(cache.keys().next().value);
+    }
+    function enqueueReceipt(lease, trigger) {
+        if (trigger.received !== true) return;
+        drainAgain.add(lease.subscriptionId);
+        const id = trigger.inbox?.id;
+        if (!/^[1-9]\d{0,19}$/.test(String(id || ''))) return;
+        let pending = receiptIds.get(lease.subscriptionId);
+        if (!pending) receiptIds.set(lease.subscriptionId, pending = new Set());
+        while (receiptIds.size > maxConnections * 2) receiptIds.delete(receiptIds.keys().next().value);
+        // These IDs accelerate delivery only. Overflow is still encrypted in
+        // the inbox and is recovered by the independent rotating RT scan.
+        if (pending.size < 100) pending.add(String(id));
+    }
     async function drain(lease, trigger = {}) {
         if (!enabled || stopped || controller.signal.aborted || !cadenceConfigured) return { state: 'not_configured' };
-        if (draining.has(lease.subscriptionId)) {
-            if (trigger.received === true) drainAgain.add(lease.subscriptionId);
-            return draining.get(lease.subscriptionId);
-        }
+        enqueueReceipt(lease, trigger);
+        if (draining.has(lease.subscriptionId)) return draining.get(lease.subscriptionId);
         const work = (async () => {
-            assertAllowed();
-            const policy = await evaluateXRollout(db.queryDatabase, { userId: lease.ownerUserId }, rolloutOptions);
-            if (!policy.eligible) return { state: 'pending', code: policy.reasonCode };
-            await recoverQuarantined(lease);
-            if (stopped || controller.signal.aborted) return { state: 'stopped' };
-            let processed = 0;
-            const resolveProcessing = query => inspectXProcessingSettings(query, lease.ownerUserId, clock(), {
-                useLegacyUserInterval: options.useLegacyUserInterval === true,
-            });
-            for (;;) {
-                if (stopped || controller.signal.aborted) return { state: 'stopped' };
-                const window = await gateway.store.beginProcessing(lease, undefined, {
-                    resolveProcessing,
-                });
-                if (!window.ready) return { state: 'pending', ...(processed ? { processed } : {}), ...(window.code ? { code: window.code } : {}), ...(window.dueAtMs === undefined ? {} : { dueAtMs: window.dueAtMs }) };
-                const rows = await gateway.store.listInbox({ ...lease, afterId: window.cursorId, limit: pageSize });
-                let reachedCutoff = false;
-                for (const inbox of rows) {
-                    if (stopped || controller.signal.aborted) return { state: 'stopped' };
-                    if (inbox.receivedAtMs > window.windowAtMs) { reachedCutoff = true; break; }
-                    assertAllowed();
-                    if (window.processingMode === 'realtime') {
-                        // A mode/contract change between two receipts applies to
-                        // the next admission, including within one loaded page.
-                        const current = await gateway.store.beginProcessing(lease, undefined, { resolveProcessing });
-                        if (!current.ready) return { state: 'pending', processed,
-                            ...(current.code ? { code: current.code } : {}), ...(current.dueAtMs === undefined ? {} : { dueAtMs: current.dueAtMs }) };
-                    }
-                    await gateway.store.assertLease(lease);
-                    try {
-                        const payload = await gateway.decryptInbox(lease, inbox);
-                        if (stopped || controller.signal.aborted) return { state: 'stopped' };
-                        assertAllowed();
-                        const result = await router.routeReceived({ lease, inbox, payload });
-                        if (stopped || controller.signal.aborted) return { state: 'stopped' };
-                        if (result.state === 'routed') await gateway.store.markRouted(lease, inbox.id);
-                        else if (result.state === 'unmatched') await gateway.store.markUnmatched(lease, inbox.id);
-                    } catch (error) {
-                        if (stopped || controller.signal.aborted) return { state: 'stopped' };
-                        assertAllowed();
-                        // Unknown/DM/unsupported application payload is quarantined,
-                        // never guessed to be a post and never reflected to Discord.
-                        if (/^X_NOTIFICATION_(?:INVALID|UNSUPPORTED)/.test(String(error?.code || '')))
-                            await gateway.store.markUnsupported(lease, inbox.id);
-                        else throw error;
-                    }
-                    if (stopped || controller.signal.aborted) return { state: 'stopped' };
-                    await gateway.store.advanceProcessing(lease, { windowAtMs: window.windowAtMs, cursorId: inbox.id });
-                    processed++;
-                }
-                if (stopped || controller.signal.aborted) return { state: 'stopped' };
-                if (reachedCutoff || rows.length < pageSize)
-                    await gateway.store.completeProcessing(lease, { windowAtMs: window.windowAtMs });
-                // Realtime recovers every retained page in this window immediately.
-                // Each page rechecks current permission and owner mode under lock.
-                // Batching keeps its existing finite page/cutoff behavior.
-                // A new receipt can arrive while a batch window is already active
-                // and its owner switches to realtime. Always revisit the trusted
-                // resolver after that callback, irrespective of the old mode.
-                if (drainAgain.delete(lease.subscriptionId)) continue;
-                if (window.processingMode === 'realtime' && reachedCutoff
-                    && rows.find(row => row.receivedAtMs > window.windowAtMs).receivedAtMs <= clock()) continue;
-                if (window.processingMode !== 'realtime' || reachedCutoff || rows.length < pageSize)
-                    return { state: 'processed', processed };
+            const processed = new Set();
+            const halted = () => stopped || controller.signal.aborted;
+            async function permitted() {
+                if (halted()) return false;
+                assertAllowed();
+                const policy = await evaluateXRollout(db.queryDatabase, { userId: lease.ownerUserId }, rolloutOptions);
+                return policy.eligible;
             }
+            if (!await permitted()) return { state: halted() ? 'stopped' : 'pending' };
+            await gateway.store.assertLease(lease);
+            await recoverQuarantined(lease);
+            if (halted()) return { state: 'stopped' };
+            async function route(inbox, processingMode) {
+                if (halted() || inbox.status !== 'received') return;
+                assertAllowed(); await gateway.store.assertLease(lease);
+                try {
+                    const payload = await gateway.decryptInbox(lease, inbox);
+                    if (halted()) return;
+                    assertAllowed();
+                    const result = await router.routeReceived({ lease, inbox, payload, processingMode });
+                    if (halted()) return;
+                    if (result.state === 'routed') await gateway.store.markRouted(lease, inbox.id);
+                    else if (result.state === 'unmatched') await gateway.store.markUnmatched(lease, inbox.id);
+                } catch (error) {
+                    if (halted()) return;
+                    assertAllowed();
+                    if (/^X_NOTIFICATION_(?:INVALID|UNSUPPORTED)/.test(String(error?.code || '')))
+                        await gateway.store.markUnsupported(lease, inbox.id);
+                    else throw error;
+                }
+                if (!halted()) processed.add(inbox.id);
+            }
+            async function realtimePass() {
+                drainAgain.delete(lease.subscriptionId);
+                const pending = receiptIds.get(lease.subscriptionId);
+                receiptIds.delete(lease.subscriptionId);
+                try {
+                    if (!await router.hasRealtimeTargets(lease)) return;
+                    // The callback is only a wake-up/identity hint. Read owned,
+                    // persisted ciphertext again; never route its supplied payload.
+                    for (const id of pending || []) {
+                        if (halted() || !await permitted()) return;
+                        const inbox = await gateway.store.getInbox({ ...lease, id });
+                        if (inbox) await route(inbox, 'realtime');
+                    }
+                    const key = `${lease.subscriptionId}:${lease.revision}`;
+                    // A bounded rotating cursor is separate from the durable batch
+                    // cursor. Batch backlog cannot indefinitely hide a later RT
+                    // receipt, and pending rules are revisited after scan wrap.
+                    for (let page = 0; page < 10 && !halted(); page++) {
+                        if (!await permitted()) return;
+                        const rows = await gateway.store.listInbox({ ...lease, afterId: realtimeCursors.get(key) || '0', limit: pageSize });
+                        for (const inbox of rows) {
+                            if (halted()) return;
+                            await route(inbox, 'realtime');
+                            rememberCursor(realtimeCursors, key, inbox.id);
+                        }
+                        if (rows.length < pageSize) { rememberCursor(realtimeCursors, key, '0'); break; }
+                    }
+                } catch (error) {
+                    // Preserve the direct receipt wake-ups as well as durable
+                    // ciphertext when a read/admission/marker write fails.
+                    for (const id of pending || []) enqueueReceipt(lease, { received: true, inbox: { id } });
+                    throw error;
+                }
+            }
+            await realtimePass();
+            let result = { state: 'processed' };
+            if (!halted() && trigger.received !== true && await router.hasBatchTargets(lease)) {
+                // Owner realtime is merely a legacy per-monitor default. Every
+                // batch target uses the current plan interval, even when another
+                // monitor on this subscription is being delivered immediately.
+                const resolveProcessing = async query => ({ ...await inspectXProcessingSettings(query, lease.ownerUserId, clock(), {
+                    useLegacyUserInterval: options.useLegacyUserInterval === true,
+                }), effectiveMode: 'batch' });
+                const window = await gateway.store.beginProcessing(lease, undefined, { resolveProcessing });
+                if (!window.ready) result = { state: 'pending', ...(window.code ? { code: window.code } : {}),
+                    ...(window.dueAtMs === undefined ? {} : { dueAtMs: window.dueAtMs }) };
+                else {
+                    const rows = await gateway.store.listInbox({ ...lease, afterId: window.cursorId, limit: pageSize });
+                    let reachedCutoff = false;
+                    for (const inbox of rows) {
+                        if (halted()) break;
+                        if (inbox.receivedAtMs > window.windowAtMs) { reachedCutoff = true; break; }
+                        await route(inbox, 'batch');
+                        if (halted()) break;
+                        await gateway.store.advanceProcessing(lease, { windowAtMs: window.windowAtMs, cursorId: inbox.id });
+                    }
+                    if (!halted() && (reachedCutoff || rows.length < pageSize))
+                        await gateway.store.completeProcessing(lease, { windowAtMs: window.windowAtMs });
+                }
+            }
+            // New callbacks can arrive during any awaited DB/decryption/queue
+            // operation. Drain their exact IDs before releasing this mutex.
+            while (!halted() && drainAgain.has(lease.subscriptionId)) await realtimePass();
+            return halted() ? { state: 'stopped' } : { ...result, ...(result.state === 'processed' || processed.size ? { processed: processed.size } : {}) };
         })();
         draining.set(lease.subscriptionId, work);
-        try { return await work; } finally { if (draining.get(lease.subscriptionId) === work) { draining.delete(lease.subscriptionId); drainAgain.delete(lease.subscriptionId); } }
+        try { return await work; }
+        finally {
+            if (draining.get(lease.subscriptionId) === work) draining.delete(lease.subscriptionId);
+            // Failure leaves receipt hints and all ciphertext intact. A periodic
+            // drain retries; shutdown intentionally performs no later work.
+        }
     }
     function remember({ lease }) { if (!stopped) { leases.set(lease.subscriptionId, lease); cooldowns.delete(lease.subscriptionId); } }
     async function tick() {
@@ -163,7 +213,7 @@ function createXPushRuntime(db, queue, options = {}) {
                 const rememberSession = value => { if (active && sessions.get(candidate.id) === pending) remember(value); };
                 const pending = Promise.resolve().then(() => gateway.run({ subscriptionId: candidate.id, ownerUserId: candidate.owner_user_id,
                     workerId, signal: controller.signal, onSession: rememberSession, onLease: rememberSession,
-                    onReceived: async ({ lease }) => { if (!active || sessions.get(candidate.id) !== pending || stopped) return; rememberSession({ lease }); await drain(lease, { received: true }); } }))
+                    onReceived: async ({ lease, inbox }) => { if (!active || sessions.get(candidate.id) !== pending || stopped) return; rememberSession({ lease }); await drain(lease, { received: true, inbox }); } }))
                     .catch(error => ({ state: 'error', reasonCode: /^X_PUSH_[A-Z_]+$/.test(String(error?.code || '')) ? error.code : 'X_PUSH_CONNECTION_FAILED' }))
                     .then(async result => {
                         if (stopped || controller.signal.aborted || ['busy', 'requires_reenrollment'].includes(result?.state)) return;

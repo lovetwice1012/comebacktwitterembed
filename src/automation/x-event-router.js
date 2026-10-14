@@ -155,27 +155,49 @@ function matchesXMonitor(row, notification) {
 
 function createXEventRouter(db, queue, options = {}) {
     const clock = options.clock || Date.now;
-    async function routeReceived({ lease, inbox, payload }) {
+    const inspect = (row) => require('./x-processing-settings').inspectXMonitorProcessing(db.queryDatabase, row, clock(), {
+        useLegacyUserInterval: options.useLegacyUserInterval === true,
+    });
+    async function boundTargets(lease) {
+        if (!lease || !UUID.test(String(lease.subscriptionId || '')) || !/^\d{1,32}$/.test(String(lease.ownerUserId || '')))
+            fail('X_NOTIFICATION_INBOX_INVALID');
+        const rows = await db.queryDatabase("SELECT * FROM automation_x_monitors WHERE owner_user_id=? AND state<>'deleted' ORDER BY id", [lease.ownerUserId]);
+        return rows.filter(row => {
+            let settings;
+            try { settings = JSON.parse(row.notification_settings_json); } catch { return false; }
+            return row.owner_user_id === lease.ownerUserId && settings?.subscriptionId === lease.subscriptionId && row.state !== 'deleted';
+        });
+    }
+    const active = row => (row.enabled === undefined || Number(row.enabled) === 1) && (row.state === undefined || row.state === 'ready');
+    async function hasTargets(lease, mode) {
+        for (const row of await boundTargets(lease)) if (active(row) && (await inspect(row)).effectiveMode === mode) return true;
+        return false;
+    }
+    async function routeReceived({ lease, inbox, payload, processingMode }) {
         if (!lease || !inbox || !/^[1-9]\d{0,19}$/.test(String(inbox.id || '')) || !UUID.test(String(lease.subscriptionId || ''))
             || !/^\d{1,32}$/.test(String(lease.ownerUserId || '')) || inbox.ownerUserId !== lease.ownerUserId || inbox.subscriptionId !== lease.subscriptionId
-            || !['received', 'routed'].includes(inbox.status)) fail('X_NOTIFICATION_INBOX_INVALID');
+            || !['received', 'routed'].includes(inbox.status)
+            || processingMode !== undefined && !['batch', 'realtime'].includes(processingMode)) fail('X_NOTIFICATION_INBOX_INVALID');
         const notification = normalizeXNotification(payload, { receivedAtMs: inbox.receivedAtMs });
         // Subscription ownership comes from the authenticated encrypted inbox,
         // never from a notification's author or a client-selected owner.
-        const rows = await db.queryDatabase("SELECT * FROM automation_x_monitors WHERE owner_user_id=? AND state='ready' AND enabled=1 ORDER BY id", [lease.ownerUserId]);
-        const results = [];
+        const rows = await boundTargets(lease), results = [];
+        let matched = 0, pending = false;
         for (const row of rows) {
-            let settings;
-            try { settings = JSON.parse(row.notification_settings_json); } catch { continue; }
-            if (row.owner_user_id !== lease.ownerUserId || settings?.subscriptionId !== lease.subscriptionId
-                || row.enabled !== undefined && Number(row.enabled) !== 1 || row.state !== undefined && row.state !== 'ready'
-                || !matchesXMonitor(row, notification)) continue;
+            if (!matchesXMonitor(row, notification)) continue;
+            matched++;
+            // Pausing a matching monitor or deferring its batch delivery must
+            // never turn a partially delivered receipt into terminal unmatched.
+            if (!active(row) || processingMode === 'realtime' && (await inspect(row)).effectiveMode !== 'realtime') {
+                pending = true; continue;
+            }
             results.push(await queue.routeX({ ownerUserId: lease.ownerUserId, monitorId: String(row.id), subscriptionId: lease.subscriptionId,
-                inboxEventId: inbox.id, payload, receivedAtMs: inbox.receivedAtMs }, clock()));
+                inboxEventId: inbox.id, payload, receivedAtMs: inbox.receivedAtMs,
+                ...(processingMode === undefined ? {} : { processingMode }) }, clock()));
         }
-        return { state: !results.length ? 'unmatched' : results.some(result => result.state === 'pending') ? 'pending' : 'routed', results };
+        return { state: !matched ? 'unmatched' : pending || results.some(result => result.state === 'pending') ? 'pending' : 'routed', results };
     }
-    return { routeReceived };
+    return { routeReceived, hasRealtimeTargets: lease => hasTargets(lease, 'realtime'), hasBatchTargets: lease => hasTargets(lease, 'batch') };
 }
 
 module.exports = { createXEventRouter, normalizeXNotification, matchesXMonitor, inspectXWebPushPostCandidate };

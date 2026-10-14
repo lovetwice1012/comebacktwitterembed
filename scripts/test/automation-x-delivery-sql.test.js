@@ -253,4 +253,38 @@ test('real SQL: X uses the shared queue, graph, entitlements and mocked physical
             });
         }
     });
+
+    await t.test('persisted realtime admission anchor survives legacy and graph projection, and send-time privilege loss honors the current interval', async () => {
+        for (const graph of [false, true]) await fixture(async f => {
+            const subscriptionId = await f.subscription(), planId = 'MarkerRealtimePlan';
+            await f.db.withDatabaseTransaction(async query => {
+                await entitlements.savePlanPolicy(query, ADMIN, { planId, label: 'RT marker fixture', slotLimit: 9, minuteLimit: 5, dayLimit: 24, priority: 7, intervalMinutes: 15 });
+                const capacity = require('../../src/automation/push-capacity'), old = await capacity.getPlanCapacity(query, ADMIN, planId);
+                await capacity.savePlanCapacity(query, ADMIN, planId, { eligible: false, specialSlotLimit: 0, realtimeEnabled: true, expectedUpdatedAtMs: old.updatedAtMs });
+                await entitlements.setUserPlan(query, ADMIN, U, planId);
+            });
+            let workflow;
+            if (graph) {
+                workflow = await f.service.createWorkflow({ userId: U }, { definition: newWorkflow('RT anchor graph') });
+                await f.service.activateWorkflow({ userId: U }, workflow.id, { expectedRevision: workflow.revision });
+            }
+            await f.monitor(subscriptionId, { settings: { processingMode: 'realtime', ...(workflow ? { workflowId: workflow.id } : {}) } });
+            const row = await f.inbox(subscriptionId), at = f.clock();
+            const result = await f.router.routeReceived({ lease: { ownerUserId: U, subscriptionId, revision: 1 }, inbox: row, payload: publicPost(), processingMode: 'realtime' });
+            assert.equal(result.state, 'routed'); if (graph) await f.project();
+            const stored = (await f.query('SELECT * FROM automation_jobs'))[0], plan = JSON.parse(stored.plan_json);
+            assert.equal(plan.context.xRealtimeAdmittedAtMs, at);
+            if (graph) assert.equal(plan.members[0].context.xRealtimeAdmittedAtMs, at);
+            const receiver = (await f.query('SELECT * FROM automation_x_push_receivers'))[0];
+            assert.equal(receiver.last_process_at_ms, null); assert.equal(receiver.process_window_at_ms, null);
+            await f.query('UPDATE automation_push_plan_policy SET realtime_enabled=0 WHERE plan_id=?', [planId]);
+            const restarted = createQueue(f.db, {}, { clock: f.clock, rolloutMode: 'public' }), job = await restarted.claim(f.clock());
+            const check = await restarted.check(job, f.clock());
+            assert.equal(check.state, 'pending'); assert.equal(check.code, 'X_NOTIFICATION_BATCH_WAIT'); assert.equal(check.dueAtMs, at + 15 * 60000);
+            await f.query('UPDATE automation_notification_plans SET confirmation_interval_minutes=5 WHERE plan_id=?', [planId]);
+            assert.equal((await restarted.check(job, f.clock())).dueAtMs, at + 5 * 60000);
+            f.advance(5 * 60000); assert.equal((await restarted.check(job, f.clock())).state, 'ready'); assert.equal(f.requests.length, 0);
+        });
+    });
+
 });

@@ -71,11 +71,13 @@ async function normalNotification(db, actor = A) {
 function gateAfter(db, pattern) {
     let entered, release, used = false;
     const reached = new Promise(resolve => { entered = resolve; }), gate = new Promise(resolve => { release = resolve; });
-    return { reached, release, db: { ...db, withDatabaseTransaction: work => db.withDatabaseTransaction(query => work(async (sql, params) => {
+    const inspect = async (query, sql, params) => {
         const result = await query(sql, params);
         if (!used && pattern.test(sql)) { used = true; entered(); await gate; }
         return result;
-    })) } };
+    };
+    return { reached, release, db: { ...db, queryDatabase: (sql, params) => inspect(db.queryDatabase, sql, params),
+        withDatabaseTransaction: work => db.withDatabaseTransaction(query => work((sql, params) => inspect(query, sql, params))) } };
 }
 async function bounded(promise, label) {
     let timer;
@@ -300,7 +302,7 @@ test('real SQL manual move waiting for owner observes subscription deletion revi
     try {
         await bounded(removal.reached, 'deletion never acquired owner lock');
         move = assert.rejects(quotaFor(moving.db).move(A, row.id, { poolKind: 'free', expectedRevision: row.revision }), errorCode('X_MONITOR_REVISION_CONFLICT'));
-        await bounded(moving.reached, 'manual move never read pre-lock snapshot');
+        await bounded(moving.reached, 'manual move never discovered the owner before its lock');
         moving.release(); removal.release();
         await bounded(Promise.all([deleting, move]), 'owner deletion/manual move did not finish');
         const saved = (await quotaFor(db).list(A)).items[0];
