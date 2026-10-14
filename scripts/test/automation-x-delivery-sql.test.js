@@ -91,7 +91,7 @@ test('real SQL: X uses the shared queue, graph, entitlements and mocked physical
         assert.equal(Number((await f.query('SELECT COUNT(*) n FROM automation_jobs'))[0].n), 1);
         const job = (await f.query('SELECT plan_json FROM automation_jobs'))[0];
         assert.equal(JSON.parse(job.plan_json).display.format, 'normal');
-        assert.equal(NODE_TYPES.transform.defaults.format, 'expanded', 'existing non-X defaults remain unchanged');
+        assert.equal(NODE_TYPES.transform.defaults.format, 'normal', 'current main defaults remain unchanged');
         const run = (await f.query('SELECT * FROM automation_runs'))[0];
         assert.equal(run.target_kind, 'x'); assert.equal(String(run.target_id), monitorId); assert.equal(run.owner_user_id, U);
         assert.equal((await f.runner.tick()).state, 'sent');

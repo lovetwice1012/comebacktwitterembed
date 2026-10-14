@@ -11,10 +11,11 @@ function truncateText(text, maxLength) {
 }
 function hasExpansionUrl(text, url) {
     for (let from = 0, at; (at = text.indexOf(url, from)) !== -1; from = at + url.length) {
-        // Ordinary Bot expansion deliberately ignores these wrappers.
-        const angle = text[at - 1] === '<' && text[at + url.length] === '>';
-        const spoiler = text.slice(Math.max(0, at - 2), at) === '||' && text.slice(at + url.length, at + url.length + 2) === '||';
-        if (!angle && !spoiler) return true;
+        // A substring can belong to a hidden or changed URL, such as an
+        // angle-wrapped URL with query parameters or a longer numeric ID.
+        // Keep only an exact plain token; otherwise add the canonical URL.
+        const before = text[at - 1], after = text[at + url.length];
+        if ((!before || /\s/.test(before)) && (!after || /\s/.test(after))) return true;
     }
     return false;
 }

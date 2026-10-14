@@ -41,7 +41,7 @@ const TIMES = [
     ['weekday', '平日9〜18時', ['09:00', '18:00']], ['weekend', '週末10〜18時', ['10:00', '18:00']], ['delay', '30分後', null],
 ];
 const FORMATS = ['normal', 'expanded', 'card', 'text', 'url'];
-function template(goalId = 'all', timeId = 'now', format = 'expanded') {
+function template(goalId = 'all', timeId = 'now', format = 'normal') {
     const goal = GOALS.find(g => g[0] === goalId), time = TIMES.find(t => t[0] === timeId);
     if (!goal || !time || !FORMATS.includes(format)) throw new Error('TEMPLATE_UNKNOWN');
     const rule = newWorkflow(`${goal[1]} / ${time[1]}`);

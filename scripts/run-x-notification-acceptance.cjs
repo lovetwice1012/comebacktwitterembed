@@ -57,6 +57,10 @@ const files=[
   "scripts/test/automation-aggregate-rendering.test.js",
   "scripts/test/automation-outbound-guard.test.js",
   "scripts/test/automation-text-transform.test.js",
+  "scripts/test/automation-boundaries.test.js",
+  "scripts/test/automation-graph-join.test.js",
+  "scripts/test/automation-normal-handoff.test.js",
+  "scripts/test/automation-studio-ui.test.js",
   "scripts/test/x-notification-reader.test.js"
 ];
 const port=Number(process.env.AUTOMATION_TEST_DB_PORT);

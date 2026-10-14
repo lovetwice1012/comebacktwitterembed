@@ -324,6 +324,33 @@ test('the price-drop template gets a price sample that actually reaches one noti
     } finally { await f.close(); }
 });
 
+test('display rules choose normal Bot expansion or direct delivery without applying media controls to normal expansion', async () => {
+    const f = await reactFixture('export { NodeSettings } from "./components/automation/rule-editor";');
+    let current;
+    function Settings() {
+        const [config, setConfig] = f.React.useState({ ...structuredClone(NODE_TYPES.transform.defaults), format: 'normal', media: 'links' });
+        current = config;
+        return f.React.createElement(f.exports.NodeSettings, { node: { id: 'display', type: 'transform', config }, catalog: catalogs, bindings, update: setConfig });
+    }
+    try {
+        await f.render(f.React.createElement(Settings));
+        assert.equal(button(f, '通常のBot展開').getAttribute('aria-pressed'), 'true');
+        assert(f.container.textContent.includes('通常のBot機能とサーバーの設定で展開します'));
+        assert(f.container.textContent.includes('DMは通知文とURLのみです'));
+        assert.equal(field(f, 'メディア表示'), null, 'normal Bot expansion uses the Bot settings instead of notification media controls');
+        assert.equal(field(f, '通知文').value, '{title}\n{url}');
+        await press(f, '通知側で直接展開');
+        assert.equal(current.format, 'expanded');
+        assert.equal(field(f, 'メディア表示').value, 'links', 'direct delivery restores its saved media choice');
+        await f.fill(field(f, 'メディア表示'), 'hide');
+        await press(f, '通常のBot展開');
+        assert.equal(current.format, 'normal');
+        assert.equal(current.media, 'hide', 'switching expansion modes preserves the direct-delivery choice for later use');
+        assert.equal(field(f, 'メディア表示'), null);
+        assert.equal(field(f, '通知文').value, '{title}\n{url}');
+    } finally { await f.close(); }
+});
+
 test('block canvas uses the actual start ID; inline branch additions preserve other routes and undo restores topology', { timeout: 15000 }, async () => {
     const original = arbitraryRule(), f = await editorFixture(original);
     try {
@@ -565,6 +592,22 @@ async function workspaceFixture({ existing = null, canEdit = true, activationFai
     await press(f, '通知ルール'); await f.settle();
     return Object.assign(f, { requests, stored: () => stored });
 }
+
+test('new rule starters and template choices default to normal Bot expansion and allow direct delivery', { timeout: 10000 }, async () => {
+    const f = await workspaceFixture();
+    try {
+        const display = field(f, '表示形式');
+        assert.equal(display.value, 'normal');
+        assert.deepEqual([...display.options].slice(0, 2).map(option => [option.value, option.textContent]), [['normal', '通常のBot展開'], ['expanded', '通知側で直接展開']]);
+        await press(f, '新しいルール'); await settle(f);
+        await f.fill(field(f, '編集するブロック'), 'display'); await f.settle();
+        assert.equal(button(f, '通常のBot展開').getAttribute('aria-pressed'), 'true');
+        await press(f, '通知側で直接展開'); await settle(f);
+        await press(f, '下書きを保存'); await settle(f);
+        assert.equal(f.stored().draft.nodes.find(node => node.type === 'transform').config.format, 'expanded');
+        assert.equal(f.stored().draft.nodes.find(node => node.type === 'transform').config.template, '{title}\n{url}');
+    } finally { await f.close(); }
+});
 
 test('a new rule is saved and activated before assignment; failed activation cannot attach and a retry uses the saved draft', { timeout: 10000 }, async () => {
     const f = await workspaceFixture({ activationFails: true });

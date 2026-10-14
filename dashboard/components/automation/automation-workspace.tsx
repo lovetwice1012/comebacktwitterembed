@@ -16,7 +16,7 @@ import "./studio-workspace.css";
 const field = "w-full rounded border bg-background px-3 py-2 text-sm";
 const button = "rounded border bg-background px-3 py-2 text-sm hover:bg-muted disabled:opacity-40";
 const emptyBindings: Bindings = { destinations: {}, dictionaries: {} };
-const formatNames: Record<string, string> = { normal: "通常のBot展開", expanded: "メディアを展開", card: "カード", text: "テキスト", url: "URLのみ" };
+const formatNames: Record<string, string> = { normal: "通常のBot展開", expanded: "通知側で直接展開", card: "カード", text: "テキスト", url: "URLのみ" };
 const starters = [
   { goal: "all", time: "now", label: "すべての新着を届ける", icon: Bell },
   { goal: "keyword", time: "now", label: "キーワードで絞り込む", icon: Filter },
@@ -31,7 +31,7 @@ export function AutomationWorkspace({ viewerId, guildId, canEdit = true }: { vie
   const [editorValid, setEditorValid] = useState(false);
   const [destinations, setDestinations] = useState<any[]>([]), [dictionaries, setDictionaries] = useState<any[]>([]);
   const [error, setError] = useState(""), [notice, setNotice] = useState(""), [busy, setBusy] = useState(false);
-  const [goal, setGoal] = useState("all"), [time, setTime] = useState("now"), [display, setDisplay] = useState("expanded"), [scope, setScope] = useState("private");
+  const [goal, setGoal] = useState("all"), [time, setTime] = useState("now"), [display, setDisplay] = useState("normal"), [scope, setScope] = useState("private");
   const [history, setHistory] = useState<any[]>([]);
   const [visitedResources, setVisitedResources] = useState<string[]>(["monitors"]);
   useEffect(() => { setVisitedResources(old => old.includes(tab) ? old : [...old, tab]); }, [tab]);
@@ -105,7 +105,7 @@ export function AutomationWorkspace({ viewerId, guildId, canEdit = true }: { vie
   useEffect(() => { if (tab === "rules" && studioOpen && catalog) ruleNameInput.current?.focus(); }, [tab, studioOpen, catalog]);
   function canReplaceDraft() { if (dirty && !confirm("未保存の編集を破棄してルールを切り替えますか？")) return false; setTextDraft(null); return true; }
   async function choose(item: any) { const value = await api(`workflows/${item.id}`); if (item.id !== selected?.id) setNotificationTarget(""); setSelected(value); setDraft(value.draft); setBindings(value.bindings); setTextDraft(null); setHistory([]); setStudioOpen(true); setEditorValid(false); return value; }
-  function createTemplate(templateGoal = "all", templateTime = "now", templateFormat = "expanded") {
+  function createTemplate(templateGoal = "all", templateTime = "now", templateFormat = "normal") {
     if (!canReplaceDraft()) return;
     void task(async () => {
       const definition = await api(`template?goal=${encodeURIComponent(templateGoal)}&time=${encodeURIComponent(templateTime)}&format=${encodeURIComponent(templateFormat)}`);

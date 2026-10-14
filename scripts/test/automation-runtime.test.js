@@ -70,6 +70,27 @@ test('transport disables mentions, uses nonce for DM and only confirmed same-cha
     assert.equal(requests.at(-1).body.body.nonce.length, 24);
     await assert.rejects(transport.prepare(job, { kind: 'dm', dm_user_id: M }), { code: 'DM_OWNER_MISMATCH' });
 });
+
+test('normal DM notifications send title and URL without direct extraction or media', async t => {
+    t.mock.method(require('../../src/providers/_loader'), 'loadProviders', () => assert.fail('normal notification must use no direct provider extraction'));
+    const requests = [];
+    const rest = { post: async (route, payload) => {
+        requests.push({ route, payload });
+        return route === '/users/@me/channels' ? { id: C } : { id: M, channel_id: C };
+    } };
+    const transport = createTransport({}, {}, { options: { jsonTransformer: value => value } }, { rest, rateLimiter, entitlementResolver });
+    const job = { id: 'normal-dm', target_kind: 'auto', target_id: '1', owner_user_id: U, plan: {
+        context: {}, event: { providerId: 'youtube', url: 'https://youtu.be/example1234' },
+        display: { format: 'normal', media: 'hide' }, text: '新しい投稿\nhttps://youtu.be/example1234',
+    } };
+    const prepared = await transport.prepare(job, { kind: 'dm', dm_user_id: U });
+    assert.equal(prepared.payloads.length, 1);
+    assert.equal(prepared.payloads[0].body.content, job.plan.text);
+    assert.equal(prepared.payloads[0].body.embeds?.length || 0, 0);
+    assert.equal(await transport.sendStep(prepared, job, 0), M);
+    assert.equal(requests.length, 2);
+    assert.equal(requests[1].payload.body.enforce_nonce, true);
+});
 test('expanded scheduled price alerts use the stored price and delta rather than refetching another market', async () => {
     let calls = 0;
     const rest = { post: async route => { calls++; assert.equal(route, '/users/@me/channels'); return { id: C }; } };

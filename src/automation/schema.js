@@ -18,7 +18,7 @@ const NODE_TYPES = Object.freeze({
     merge: { label: '経路を合流', ports: ['out'], defaults: { mode: 'any', displayConflict: 'stop' } },
     delay: { label: '遅延', ports: ['out'], defaults: { minutes: 30, anchor: 'observed' } },
     schedule: { label: '通知時間', ports: ['out'], defaults: { zone: 'Asia/Tokyo', days: [1, 2, 3, 4, 5, 6, 7], windows: [{ start: '09:00', end: '22:00' }], quiet: [], datesExcluded: [], maxWaitDays: 14 } },
-    transform: { label: '表示を変更', ports: ['out'], defaults: { format: 'expanded', template: '{title}\n{url}', maxLength: 1900, media: 'inherit', mentions: 'none' } },
+    transform: { label: '表示を変更', ports: ['out'], defaults: { format: 'normal', template: '{title}\n{url}', maxLength: 1900, media: 'inherit', mentions: 'none' } },
     limit: { label: '件数制限', ports: ['out'], defaults: { count: 10, minutes: 60, key: 'sourceKey', overflow: 'defer' } },
     aggregate: { label: 'まとめ通知', ports: ['out'], defaults: { minutes: 60, key: 'sourceKey', mode: 'all', maxItems: 20 } },
     send: { label: '通知', ports: [], defaults: { destination: 'default' } },
