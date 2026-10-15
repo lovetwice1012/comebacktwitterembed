@@ -184,8 +184,15 @@ test('real SQL handle correction preserves owner, numeric ID, reservation, subsc
     assert(!audit.detail_json.includes('correct_handle')); assert(!audit.detail_json.includes(original.accountHandle));
     const legacy = await quota.update(A, original.id, { expectedRevision: corrected.revision, name: '名前のみ変更' });
     assert.equal(legacy.accountHandle, 'correct_handle');
-    audit = (await db.queryDatabase("SELECT detail_json FROM automation_audit WHERE entity_id=? AND action='x.monitor.update' ORDER BY id DESC LIMIT 1", [`x:${original.id}`]))[0];
-    assert.equal(JSON.parse(audit.detail_json).handleChanged, false);
+    audit = (await db.queryDatabase("SELECT action,detail_json FROM automation_audit WHERE entity_id=? AND action IN ('x.monitor.update','x.monitor.rename') ORDER BY id DESC LIMIT 1", [`x:${original.id}`]))[0];
+    // Display-name edits have their own harmless revision bridge. The earlier
+    // handle-correction audit must remain an actual identity change.
+    assert.equal(audit.action, 'x.monitor.rename');
+    assert.deepEqual(JSON.parse(audit.detail_json), { manual: true, metadataOnly: true, ownerUserId: A.userId,
+        beforeRevision: corrected.revision, afterRevision: legacy.revision });
+    assert(!audit.detail_json.includes('名前のみ変更')); assert(!audit.detail_json.includes('correct_handle'));
+    const handleAudit = (await db.queryDatabase("SELECT detail_json FROM automation_audit WHERE entity_id=? AND action='x.monitor.update' ORDER BY id DESC LIMIT 1", [`x:${original.id}`]))[0];
+    assert.deepEqual(JSON.parse(handleAudit.detail_json), { enabled: true, handleChanged: true });
     const cleared = await quota.update(A, original.id, { expectedRevision: legacy.revision, accountHandle: null });
     assert.equal(cleared.accountHandle, null); assert.equal(cleared.accountId, original.accountId);
     assert.deepEqual(cleared.notificationSettings, config); assert.equal(cleared.poolKind, original.poolKind);

@@ -225,7 +225,9 @@ async function completeSource(source, snapshot, events, targetStates, now, nextC
         for (const state of targetStates) {
             const rows = await query(`SELECT t.*,COALESCE(m.revision,1) AS configuration_revision FROM ${TABLES.priceWatchTargets} t LEFT JOIN automation_monitors m ON m.target_kind='price' AND m.target_id=t.id WHERE t.id=? AND t.source_id=? AND t.enabled=1 FOR UPDATE`, [state.targetId, source.id]);
             const target = rows[0];
-            if (!target || state.ruleKey !== target.rule_key || state.destinationKey !== target.destination_key || Number(state.configurationRevision) !== Number(target.configuration_revision)) continue;
+            if (!target || state.ruleKey !== target.rule_key || state.destinationKey !== target.destination_key) continue;
+            if (!await require('../../automation/monitor-revision-compat').monitorRevisionCompatible(query, { kind: 'price', targetId: String(target.id),
+                ownerUserId: String(target.user_id), expectedRevision: Number(state.configurationRevision), currentRevision: Number(target.configuration_revision) })) continue;
             eligibleTargets.add(String(state.targetId));
             await query(`UPDATE ${TABLES.priceWatchTargets} SET condition_active=?,baseline_at_ms=COALESCE(baseline_at_ms,?) WHERE id=?`, [state.conditionActive ? 1 : 0, now, state.targetId]);
         }

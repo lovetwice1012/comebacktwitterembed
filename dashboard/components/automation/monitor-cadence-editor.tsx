@@ -11,12 +11,13 @@ type API = (path: string, method?: string, body?: unknown) => Promise<any>;
 const validCost = (value: number) => Number.isSafeInteger(value) && value >= 1 && value <= 10000;
 const minutes = (value: number | undefined) => typeof value === "number" && Number.isFinite(value) && value > 0 ? `${Number(value.toFixed(2))}分` : "確認中";
 
-export function MonitorCadenceEditor({ row, pool, api, disabled = false, draftValue, onDraft, onReload }: { row: CadenceRow; pool: Pool | null; api: API; disabled?: boolean; draftValue?: string; onDraft: (value: string) => void; onReload: () => Promise<CadenceRow | null> }) {
+export function MonitorCadenceEditor({ row, pool, api, disabled = false, draftValue, onDraft, onReload, onBusyChange }: { row: CadenceRow; pool: Pool | null; api: API; disabled?: boolean; draftValue?: string; onDraft: (value: string) => void; onReload: () => Promise<CadenceRow | null>; onBusyChange?: (busy: boolean) => void }) {
   const current = Number(row.slotCost ?? 1), knownCurrent = validCost(current);
   const [opened, setOpened] = useState(false), [draft, setDraft] = useState(draftValue ?? String(row.slotCost ?? 1)), [busy, setBusy] = useState(false), [error, setError] = useState(""), [message, setMessage] = useState("");
   const [conflict, setConflict] = useState(false), [confirmation, setConfirmation] = useState<{ revision: number; updatedAtMs: number | null } | null>(null);
   const mounted = useRef(true), actionLock = useRef(false);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
+  useEffect(() => { onBusyChange?.(busy); }, [busy, onBusyChange]);
   const selected = draft.length <= 5 && /^\d+$/.test(draft) ? Number(draft) : NaN;
   const poolKnown = Boolean(pool && Number.isSafeInteger(pool.used) && Number.isSafeInteger(pool.max) && Number.isSafeInteger(pool.available));
   const projectedUsed = pool && knownCurrent ? pool.used - current + selected : NaN;

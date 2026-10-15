@@ -359,7 +359,7 @@ test('real SQL: X uses the shared queue, graph, entitlements and mocked physical
             else identityChanged.plan.targetIdentity = 'different-target-identity';
             assert.equal((await f.queue.check(identityChanged, f.clock())).state, 'cancelled');
             const faultReader = { ...f.db, withDatabaseTransaction: work => f.db.withDatabaseTransaction(query => work(async (sql, args) => {
-                if (sql.startsWith('SELECT detail_json FROM automation_audit')) throw Object.assign(new Error('Synthetic audit read failure'), { code: 'ER_FIXTURE_MOVE_AUDIT_READ' });
+                if (sql.startsWith('SELECT detail_json,action FROM automation_audit')) throw Object.assign(new Error('Synthetic audit read failure'), { code: 'ER_FIXTURE_MOVE_AUDIT_READ' });
                 return query(sql, args);
             })) };
             const restarted = createQueue(faultReader, {}, { clock: f.clock, rolloutMode: 'public' });
@@ -368,7 +368,10 @@ test('real SQL: X uses the shared queue, graph, entitlements and mocked physical
             if (graph) assert.equal((await f.queue.refreshFlowJob(job, f.clock())).state, 'ready');
             assert.equal((await f.queue.beginSend(job, f.clock())).state, 'sending', 'final locked fence accepts only the complete pure move chain');
             await api.update({ userId: U }, id, { expectedRevision: movedAgain.revision, name: 'Ordinary metadata edit' });
-            assert.equal((await f.queue.check(job, f.clock())).state, 'cancelled', 'ordinary monitor edits cannot use the move exception');
+            assert.equal((await f.queue.check(job, f.clock())).state, 'ready', 'a server-audited label-only edit preserves the same delivery identity');
+            const renamed = (await api.list({ userId: U })).items[0];
+            await api.update({ userId: U }, id, { expectedRevision: renamed.revision, accountHandle: 'edited_handle' });
+            assert.equal((await f.queue.check(job, f.clock())).state, 'cancelled', 'configuration changes cannot use the metadata exception');
             assert.equal(f.requests.length, 0);
         });
     });

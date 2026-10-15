@@ -10,7 +10,7 @@ const status = changes => ({ available: true, reasonCode: null, receiverEnabled:
     rollout: { mode: 'public', eligible: true, reasonCode: null, reason: null },
     download: { url: '/api/automation/x-setup/download', version: '0.1.0-preview.4', sha256: 'a'.repeat(64) }, subscriptions: [], maxFileBytes: 32768, nextCursor: null, ...changes });
 const writes = f => f.calls.filter(call => call.method !== 'GET');
-async function fixture({ current = status(), respond, opened = true, active = true, upload = true } = {}) {
+async function fixture({ current = status(), respond, opened = true, active = true, upload = true, setupProps = {} } = {}) {
     const f = await reactFixture('export { XNotificationSetup } from "./components/automation/x-notification-setup"; export { XNotificationSetupScreen } from "./components/automation/x-notification-setup-screen"; export { parseXSetupStatus,parseXSetupPreview,parseXSetupSubscription,xSetupFeedback } from "./components/automation/x-setup-view";');
     f.calls = []; f.current = current; f.sessions = 0;
     f.api = async (route, method = 'GET', body) => {
@@ -22,7 +22,7 @@ async function fixture({ current = status(), respond, opened = true, active = tr
         if (route.startsWith('x-setup/subscriptions/') && method === 'DELETE') { f.current = { ...f.current, subscriptions: [] }; return { deleted: true }; }
         throw new Error('PRIVATE_UNEXPECTED_API_RESPONSE');
     };
-    f.renderSetup = nextActive => f.render(f.React.createElement(f.exports.XNotificationSetup, { api: f.api, active: nextActive }));
+    f.renderSetup = nextActive => f.render(f.React.createElement(f.exports.XNotificationSetup, { api: f.api, active: nextActive, ...setupProps }));
     await f.renderSetup(active); await f.settle();
     f.showUpload = async () => {
         if (f.container.querySelector('input[type="file"]')) return;
@@ -30,7 +30,7 @@ async function fixture({ current = status(), respond, opened = true, active = tr
         if (adding) await f.click('受信情報を追加・登録し直す');
         await f.click('ファイルを登録する');
     };
-    if (opened && active) { await f.click('X通知の受信設定を始める'); await f.settle(); if (upload) await f.showUpload(); }
+    if (opened && active) { if (!setupProps.initiallyOpen) await f.click('X通知の受信設定を始める'); await f.settle(); if (upload) await f.showUpload(); }
     f.consent = () => f.field('サーバーでX通知を受信・復号');
     f.agree = () => f.act(async () => f.consent().click());
     f.fileInput = () => f.container.querySelector('input[type="file"]');
@@ -417,6 +417,7 @@ test('returning X users see current connection and their next action before opti
         assert(summary.querySelector('a[href="/dashboard/automation#x-notifications"]')); assert.equal(f.container.querySelector('[aria-label="X通知の接続手順"]'), null); assert.equal(f.fileInput(), null);
         assert.equal(f.container.querySelector('a[download]'), null); assert.equal(writes(f).length, 0);
         await f.click('受信情報を追加・登録し直す'); assert.match(f.container.querySelector('[aria-label="X通知の接続手順"]').textContent, /ダブルクリックで開始\.cmd/);
+        assert.match(f.container.querySelector('[aria-label="X通知の接続手順"]').textContent, /追加の設定後は専用Firefoxを閉じる.*すべて閉じて.*同時接続.*受信が競合/);
         await f.showUpload(); assert(f.container.querySelector('[aria-label="登録するデータと通知の取り扱い"]')); assert.equal(f.fileInput().disabled, true); assert.equal(writes(f).length, 0);
     } finally { await f.close(); }
 });
@@ -451,5 +452,103 @@ test('setup step navigation moves keyboard focus to the new step and preserves a
     try {
         await f.showUpload(); assert.match(f.dom.window.document.activeElement.textContent, /JSONファイルを登録/); assert.equal(f.consent().checked, false);
         await f.click('PCでの準備手順を確認'); assert.match(f.dom.window.document.activeElement.textContent, /PCでファイルを作成/); assert.equal(f.fileInput(), null); assert.equal(writes(f).length, 0);
+    } finally { await f.close(); }
+});
+
+test('embedded setup explicitly selects the exact owned connection without saving or leaving the registration draft', async () => {
+    const chosen = [];
+    const f = await fixture({ upload: false, current: status({ subscriptions: [subscription({ id: 'owned-first' }), subscription({ id: 'owned-second', revision: 4 })] }),
+        setupProps: { embedded: true, initiallyOpen: true, onChooseSubscription: item => chosen.push(item) } });
+    try {
+        assert.match(f.container.textContent, /Xの接続を選ぶ/);
+        assert.match(f.dom.window.document.activeElement.textContent, /Xの接続を選ぶ/);
+        assert.equal(f.container.querySelector('a[href*="/dashboard/automation"]'), null);
+        assert.equal(chosen.length, 0); assert.equal(writes(f).length, 0);
+        const choose = f.container.querySelector('[aria-label="受信情報2"] footer button');
+        await f.act(async () => { choose.click(); choose.click(); });
+        assert.equal(chosen.length, 1); assert.equal(chosen[0].id, 'owned-second'); assert.equal(chosen[0].revision, 4);
+        assert(f.container.querySelector('[aria-label="受信情報1"] footer button').disabled);
+        assert.equal(writes(f).length, 0); f.assertPrivate();
+    } finally { await f.close(); }
+});
+
+test('embedded new and replayed imports return the exact saved connection once after explicit consent and review', async () => {
+    for (const duplicate of [false, true]) {
+        const chosen = []; let changed = 0;
+        const saved = subscription({ id: duplicate ? 'existing-saved' : 'new-saved', revision: 3 });
+        const f = await fixture({ current: status({ subscriptions: [subscription({ id: 'unrelated-first' })] }),
+            respond: route => route === 'x-setup/import' ? { subscription: saved, duplicate } : undefined,
+            setupProps: { embedded: true, initiallyOpen: true, onChooseSubscription: item => chosen.push(item), onSubscriptionsChanged: () => changed++ } });
+        try {
+            assert.equal(chosen.length, 0); await f.choose(); await f.validate(); assert.equal(writes(f).length, 0);
+            await f.agree(); await f.choose(); await f.validate();
+            assert.match(f.review().textContent, /入力中の通知設定に戻ります.*通知先と利用枠を確認してから監視を開始/);
+            assert.equal(chosen.length, 0); await f.save();
+            assert.equal(chosen.length, 1); assert.equal(chosen[0].id, saved.id); assert.equal(chosen[0].revision, 3); assert.equal(changed, 1);
+            assert.deepEqual(writes(f).map(call => call.route), ['x-setup/sessions', 'x-setup/validate', 'x-setup/import']);
+            assert.equal(f.review(), null); assert.equal(f.fileInput(), null); f.assertPrivate();
+            const select = f.container.querySelector('[aria-label="受信情報1"] footer button');
+            await f.act(async () => select.click()); assert.equal(chosen.length, 1);
+        } finally { await f.close(); }
+    }
+});
+
+test('embedded cancellation invalidates pending import callbacks and clears private selection', async () => {
+    let release; const chosen = []; let cancelled = 0;
+    const f = await fixture({ respond: route => route === 'x-setup/import' ? new Promise(resolve => { release = () => resolve({ subscription: subscription(), duplicate: false }); }) : undefined,
+        setupProps: { embedded: true, initiallyOpen: true, onChooseSubscription: item => chosen.push(item), onCancel: () => cancelled++ } });
+    try {
+        await f.agree(); await f.choose(); await f.validate(); await f.save();
+        assert.equal(writes(f).filter(call => call.route.endsWith('/import')).length, 1);
+        await f.click('通知の設定に戻る'); assert.equal(cancelled, 1); assert.equal(f.review(), null);
+        await f.act(async () => release()); assert.equal(chosen.length, 0); assert.equal(f.consent().checked, false);
+        assert.equal(f.fileInput().disabled, true); assert.doesNotMatch(f.container.textContent, /受信情報を登録しました/); f.assertPrivate();
+    } finally { if (release) release(); await f.close(); }
+});
+
+test('embedded owned pagination preserves earlier connections and an unusable receiver cannot be selected', async () => {
+    const chosen = [];
+    const f = await fixture({ upload: false, current: status({ subscriptions: [subscription({ id: 'needs-new-file', receiverState: 'requires_reenrollment' })], nextCursor: 'needs-new-file' }),
+        respond: route => route === 'x-setup?afterId=needs-new-file' ? status({ subscriptions: [subscription({ id: 'owned-next-page', receiverState: 'listening' })] }) : undefined,
+        setupProps: { embedded: true, initiallyOpen: true, onChooseSubscription: item => chosen.push(item) } });
+    try {
+        let select = f.container.querySelector('[aria-label="受信情報1"] footer button'); assert(select.disabled);
+        await f.act(async () => select.click()); assert.equal(chosen.length, 0);
+        await f.click('受信情報をさらに表示'); assert(f.container.querySelector('[aria-label="受信情報1"]'));
+        select = f.container.querySelector('[aria-label="受信情報2"] footer button'); await f.act(async () => select.click());
+        assert.equal(chosen[0].id, 'owned-next-page'); assert.equal(writes(f).length, 0);
+        assert.deepEqual(f.calls.map(call => call.route), ['x-setup', 'x-setup?afterId=needs-new-file']); f.assertPrivate();
+    } finally { await f.close(); }
+});
+
+test('registration parent keeps target destination rule and realtime draft when embedded setup returns or is cancelled', async () => {
+    const f = await fixture({ opened: false, current: status({ subscriptions: [subscription({ id: 'exact-connection' })] }) });
+    function Registration() {
+        const [draft, setDraft] = f.React.useState({ handle: 'test_user', name: '登録途中の表示名', destinationId: 'owned-destination', ruleId: 'selected-rule', processingMode: 'realtime', subscriptionId: '' });
+        const [connecting, setConnecting] = f.React.useState(false);
+        return f.React.createElement('section', null,
+            f.React.createElement('output', { 'aria-label': '入力中の通知設定' }, JSON.stringify(draft)),
+            connecting ? f.React.createElement(f.exports.XNotificationSetup, { api: f.api, initiallyOpen: true, embedded: true,
+                onCancel: () => setConnecting(false), onChooseSubscription: item => { setDraft(previous => ({ ...previous, subscriptionId: item.id })); setConnecting(false); } })
+                : f.React.createElement('button', { onClick: () => setConnecting(true) }, '接続を選ぶ'));
+    }
+    try {
+        await f.render(f.React.createElement(Registration)); const initial = JSON.parse(f.container.querySelector('output').textContent);
+        await f.click('接続を選ぶ'); await f.settle(); await f.click('通知の設定に戻る');
+        assert.deepEqual(JSON.parse(f.container.querySelector('output').textContent), initial);
+        await f.click('接続を選ぶ'); await f.settle(); await f.click('この接続を使う');
+        assert.deepEqual(JSON.parse(f.container.querySelector('output').textContent), { ...initial, subscriptionId: 'exact-connection' });
+        assert.equal(f.container.querySelector('[aria-label="X通知の受信設定"]'), null); assert.equal(writes(f).length, 0); f.assertPrivate();
+    } finally { await f.close(); }
+});
+
+test('standalone receiver links identify the exact owned connection and keep processing details collapsed', async () => {
+    const f = await fixture({ upload: false, current: status({ subscriptions: [subscription({ id: 'owned-with-receipts', receiverState: 'listening', receiptCounts: { received: 1, routed: 2, unsupported: 0, decryptionFailed: 0 } })] }) });
+    try {
+        const card = f.container.querySelector('[aria-label="受信情報1"]');
+        assert.equal(card.querySelector('footer a').getAttribute('href'), '/dashboard/automation?xSubscriptionId=owned-with-receipts#x-notifications');
+        const detail = card.querySelector('details'); assert.equal(detail.open, false);
+        assert(detail.querySelector('[aria-label="受信データの処理状況"]'));
+        assert.doesNotMatch(card.querySelector('header').textContent, /送信成功|配信済み/); assert.equal(writes(f).length, 0);
     } finally { await f.close(); }
 });

@@ -55,11 +55,29 @@ function createHistory(db, service) {
         }
         const conditions = ["((r.scope='private' AND r.owner_user_id=?) OR (r.scope='guild' AND r.guild_id=? AND ?=1))"];
         const params = [actor.userId, actor.guildId || null, actor.canView ? 1 : 0];
+        const targeted = input.targetKind != null || input.targetId != null;
+        if (targeted) {
+            const validId = /^[1-9][0-9]{0,19}$/.test(input.targetId || '');
+            if (!['auto', 'price', 'x'].includes(input.targetKind) || !validId) fail('INVALID_TARGET', '通知の指定を確認してください。');
+            // Graph jobs can contain several targets. The final plan retains only the
+            // accepted members, so original flow-unit membership is not delivery proof.
+            conditions.push(`((j.execution_version<>2 AND r.target_kind=? AND r.target_id=?) OR
+                (j.execution_version=2 AND JSON_CONTAINS(IF(JSON_VALID(j.plan_json),j.plan_json,'{}'),JSON_OBJECT('targetKind',?,'targetId',?),'$.members')=1))`);
+            params.push(input.targetKind, String(input.targetId), input.targetKind, String(input.targetId));
+        }
+        let activity;
+        if (targeted) {
+            const rows = await db.queryDatabase(`SELECT
+                MAX(CASE WHEN j.state='sent' AND j.sent_steps>0 AND j.discord_message_id IS NOT NULL THEN j.updated_at_ms END) AS last_sent_at_ms,
+                MIN(CASE WHEN j.state='pending' THEN j.due_at_ms END) AS next_due_at_ms
+                FROM automation_jobs j JOIN automation_runs r ON r.id=j.run_id WHERE ${conditions.join(' AND ')}`, params);
+            activity = { lastSentAtMs: rows[0]?.last_sent_at_ms == null ? null : Number(rows[0].last_sent_at_ms), nextDueAtMs: rows[0]?.next_due_at_ms == null ? null : Number(rows[0].next_due_at_ms) };
+        }
         if (input.state) { conditions.push('j.state=?'); params.push(input.state); }
         if (cursor) { conditions.push('(j.created_at_ms<? OR (j.created_at_ms=? AND j.id<?))'); params.push(cursor.at, cursor.at, cursor.id); }
         const rows = await db.queryDatabase(`${selection} WHERE ${conditions.join(' AND ')} ORDER BY j.created_at_ms DESC,j.id DESC LIMIT 51`, params);
         const selected = rows.slice(0, 50), last = selected.at(-1);
-        return { items: selected.map(formatJob), nextCursor: rows.length > 50 ? Buffer.from(JSON.stringify({ at: Number(last.created_at_ms), id: last.id })).toString('base64url') : null };
+        return { items: selected.map(formatJob), ...(targeted ? { activity } : {}), nextCursor: rows.length > 50 ? Buffer.from(JSON.stringify({ at: Number(last.created_at_ms), id: last.id })).toString('base64url') : null };
     }
     async function detail(actor, id) {
         const row = await getRow(actor, id);

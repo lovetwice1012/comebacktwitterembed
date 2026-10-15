@@ -85,21 +85,22 @@ export function NotificationUsageOverview({ api = notificationUsageAPI }: { api?
         {normal ? <p className="notification-card-note">1枠あたり1日{normal.plan.dayLimit}通・1分{normal.plan.minuteLimit}通まで。</p> : null}
         <a className="notification-inline-link" href="/dashboard/automation">通知を管理する<ArrowRight size={15} aria-hidden /></a>
       </article>
-      <article className="notification-usage-card"><div className="notification-card-heading"><Clock3 size={19} aria-hidden /><h3>Xの共通設定</h3></div>
-        <p className="notification-plan-name">{xTiming}</p>
-        <p className="notification-card-note">通知方法を個別指定していない既存監視の設定です。リアルタイムの資格と必要枠数は、監視ごとに確認できます。</p>
-        {processing?.requestedMode === "realtime" && processing.effectiveMode === "batch" ? <p className="notification-card-note">共通設定のリアルタイム希望は保存済みです。個別の優待・5枠利用は各監視に表示します。</p> : null}
-        <a className="notification-inline-link" href="/dashboard/automation#x-notifications">監視ごとの通知方法を選ぶ<ArrowRight size={15} aria-hidden /></a>
+      <article className="notification-usage-card"><div className="notification-card-heading"><Clock3 size={19} aria-hidden /><h3>X通知</h3></div>
+        <p className="notification-plan-name">{metric(quota?.x.used, "件登録")}</p>
+        <a className="notification-inline-link" href="/dashboard/automation#x-notifications">X通知の設定を開く<ArrowRight size={15} aria-hidden /></a>
+        <details className="notification-card-note"><summary>個別設定のない既存監視の初期設定</summary><p>{xTiming}</p>
+          {processing?.requestedMode === "realtime" && processing.effectiveMode === "batch" ? <p>リアルタイムの希望は保存済みです。利用できる特典と使用枠は各監視の通知設定で確認できます。</p> : null}
+        </details>
       </article>
     </div>
-    <div className="notification-x-availability"><h3>X監視の利用状況</h3>
+    <div id="x-capacity" className="notification-x-availability"><h3>X監視の利用状況</h3>
       <dl><div><dt>追加できる監視（1枠利用）</dt><dd>{metric(quota?.x.available, "件")}</dd></div><div><dt>共用無料枠の空き</dt><dd>{quota ? `${quota.pools.free.available} / ${quota.pools.free.limit}枠` : unavailable}</dd></div>
         <div><dt>支援者優先枠の全体空き</dt><dd>{quota ? `${quota.pools.supporter.available} / ${quota.pools.supporter.limit}枠` : unavailable}</dd></div><div><dt>プランの特殊枠の残り</dt><dd>{quota ? `${specialAvailable} / ${quota.x.specialLimit}枠` : unavailable}</dd></div></dl>
     </div>
     {quota?.x.reasonCode === "X_MONITOR_PERSONAL_LIMIT" ? <div className="notification-next-step" role="status"><p>個人の登録枠をすべて使用しています。登録や確認間隔の配分を見直すと、空き枠を確保できます。</p><a href="/dashboard/automation">使用中の通知を確認する<ArrowRight size={16} aria-hidden /></a></div>
-      : quota?.x.reasonCode === "X_MONITOR_POOL_FULL" ? <div className="notification-next-step" role="status"><p>X監視に使える全体枠は現在利用中です。個人の登録枠はそのまま利用できます。</p><a href="/dashboard/automation/x">Xの受付状況を確認する<ArrowRight size={16} aria-hidden /></a></div>
+      : quota?.x.reasonCode === "X_MONITOR_POOL_FULL" ? <div className="notification-next-step" role="status"><p>X監視に使える全体枠は現在すべて利用中です。</p><a href="#x-capacity">利用できる枠の空きを確認する<ArrowRight size={16} aria-hidden /></a></div>
         : quota?.x.reasonCode === "X_MONITOR_UNAVAILABLE" || quota?.x.reasonCode === "X_ROLLOUT_DISABLED" ? <div className="notification-next-step" role="status"><p>X通知の新規受付は準備中です。登録済みの監視と受信情報は、Xの接続画面で確認できます。</p><a href="/dashboard/automation/x">Xの受付状況を確認する<ArrowRight size={16} aria-hidden /></a></div>
           : quota?.x.reasonCode?.startsWith("X_ROLLOUT_") || processing && !processing.eligible ? <div className="notification-next-step" role="status"><p>X通知は現在の受付対象となっている方へご案内しています。参加資格と利用枠は別に確認します。</p><a href="/dashboard/automation/x">このアカウントの受付資格を確認する<ArrowRight size={16} aria-hidden /></a></div>
-          : processing && !processing.configured ? <div className="notification-next-step" role="status"><p>間隔通知は管理者の間隔設定待ちです。受信データは保持します。リアルタイムは監視ごとの利用資格と必要枠数で判定します。</p><a href="/dashboard/automation#x-notifications">監視ごとの通知方法を選ぶ<ArrowRight size={16} aria-hidden /></a></div> : null}
+          : null}
   </section>;
 }

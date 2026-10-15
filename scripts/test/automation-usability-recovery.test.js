@@ -80,8 +80,7 @@ test('notification and webhook dialog drafts resume after closing; webhook secre
         await f.click('通知の入力を再開'); assert(f.container.querySelector('dialog[open]').textContent.includes('通知先の種類'));
         await f.click('キャンセル'); await f.click('通知先を追加');
         const dialog = f.container.querySelector('dialog[open]');
-        const labels = [...dialog.querySelectorAll('label')];
-        await f.fill(labels.find(node => node.textContent.startsWith('通知先の種類')).querySelector('select'), 'webhook');
+        await f.click('既存のWebhook URLで追加');
         const secret = 'https://discord.com/api/webhooks/123/fixture-private-secret';
         await f.fill(dialog.querySelector('input[type="password"]'), secret);
         await click(f, [...dialog.querySelectorAll('button')].find(node => node.textContent === 'キャンセル'));
@@ -255,9 +254,10 @@ test('returning to the retained notification list reloads applied and cloned wor
         await f.click('通知一覧'); await tick(f); await f.click('続きを読み込む'); await f.settle();
         const cards = [...f.container.querySelectorAll('.monitor-card')];
         assert.equal(cards.length, 2);
-        assert(cards[0].querySelector('details').textContent.includes(f.stored.get('original').name));
-        assert(cards[1].querySelector('details').textContent.includes(f.stored.get('clone').name));
-        assert(!cards.some(card => card.querySelector('details').textContent.includes('通常の通知')));
+        const ruleDetails = card => [...card.querySelectorAll('details')].find(item => item.querySelector('summary')?.textContent === '確認履歴・詳細ルール');
+        assert(ruleDetails(cards[0]).textContent.includes(f.stored.get('original').name));
+        assert(ruleDetails(cards[1]).textContent.includes(f.stored.get('clone').name));
+        assert(!cards.some(card => ruleDetails(card).textContent.includes('通常の通知')));
     } finally { await f.close(); }
 });
 

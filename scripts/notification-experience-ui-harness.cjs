@@ -100,10 +100,10 @@ async function main() {
                 const body = size ? JSON.parse(Buffer.concat(chunks)) : {};
                 const route = url.pathname.slice('/api/automation/'.length);
                 if ((route === 'x-monitors' || route.startsWith('x-monitors/')) && req.method !== 'GET') {
-                    previewRequests.push({ method: req.method, route, processingMode: body.processingMode, poolPreference: body.poolPreference, expectedRealtimeSlotCost: body.expectedRealtimeSlotCost, expectedRevision: body.expectedRevision });
+                    previewRequests.push({ method: req.method, route, processingMode: body.processingMode, poolPreference: body.poolPreference, poolKind: body.poolKind, expectedRealtimeSlotCost: body.expectedRealtimeSlotCost, expectedRevision: body.expectedRevision });
                 }
-                const scenario = /(?:^|;\s*)notification_preview=(fresh|connected|unbound|pending|full|rt-plan|supporter-direct)(?:;|$)/.exec(req.headers.cookie || '')?.[1] || 'connected';
-                const synthetic = await preview.dispatch({ route, method: req.method, body, scenario });
+                const scenario = /(?:^|;\s*)notification_preview=(fresh|connected|unbound|pending|full|rt-plan|supporter-direct|supporter-upgrade)(?:;|$)/.exec(req.headers.cookie || '')?.[1] || 'connected';
+                const synthetic = await preview.dispatch({ route, method: req.method, body, scenario, search: url.searchParams });
                 const result = synthetic === undefined ? await dispatch({ method: req.method, path: route.split('/'), search: url.searchParams, body }, actor, services) : synthetic;
                 res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify(result)); return;
             }

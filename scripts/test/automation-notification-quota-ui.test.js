@@ -32,11 +32,11 @@ test('free notification slots show actual sent messages separately from pending 
         assert.match(f.container.textContent, /無料プラン.*使用枠 4 \/ 5.*空き 1枠/);
         assert.match(f.container.textContent, /1枠あたり1日24通・1分5通/);
         assert.match(f.container.textContent, /メッセージ1件＝1通/); assert.match(f.container.textContent, /日本時間の0時/);
-        assert.match(f.container.textContent, /今日の送信 3 \/ 24通.*予約・確認待ち 2通/);
-        assert(!f.container.textContent.includes('今日の送信 8 /'));
+        assert.match(f.container.querySelector('.monitor-card').textContent, /今日の送信 3通.*1日24通・1分5通.*予約・確認待ち 2通/);
+        assert(!f.container.textContent.includes('今日の送信 8通'));
         await f.click('価格通知'); await f.act(async () => { await new Promise(resolve => setTimeout(resolve, 20)); });
-        assert.match(f.container.textContent, /今日の送信 8 \/ 24通/);
-        assert(!f.container.textContent.includes('今日の送信 3 /')); assert(!f.container.textContent.includes('予約・確認待ち'));
+        assert.match(f.container.querySelector('.monitor-card').textContent, /今日の送信 8通.*1日24通・1分5通/);
+        assert(!f.container.textContent.includes('今日の送信 3通')); assert(!f.container.textContent.includes('予約・確認待ち'));
     } finally { await f.close(); }
 });
 
@@ -49,7 +49,7 @@ test('supporter priority and paid plan limits display server-provided values wit
         current = profile({ id: 'configured-paid', tier: 'paid', name: '設定済みプラン', slotLimit: 9, dayLimit: 72, minuteLimit: 7, priority: 2 });
         await f.click('更新'); await f.settle();
         assert.match(f.container.textContent, /設定済みプラン.*使用枠 4 \/ 9.*空き 5枠/);
-        assert.match(f.container.textContent, /1日72通・1分7通/); assert.match(f.container.textContent, /今日の送信 3 \/ 72通/);
+        assert.match(f.container.textContent, /1日72通・1分7通/); assert.match(f.container.querySelector('.monitor-card').textContent, /今日の送信 3通.*1日72通・1分7通/);
         assert(!f.container.textContent.includes('円')); assert(!f.container.textContent.includes('60通'));
     } finally { await f.close(); }
 });
@@ -60,7 +60,7 @@ test('unavailable entitlement metadata keeps notifications and stop/delete contr
     try {
         assert.match(f.container.textContent, /利用枠を確認できません/); assert(!f.container.textContent.includes('PRIVATE_ENTITLEMENT_DATABASE_ERROR'));
         assert.match(f.container.textContent, /新着の通知/);
-        for (const label of ['編集', '停止', '削除']) {
+        for (const label of ['設定を変更', '停止', '削除']) {
             const button = [...f.container.querySelectorAll('button')].find(node => node.textContent.trim() === label);
             assert(button); assert.equal(button.disabled, false, label);
         }
@@ -100,7 +100,7 @@ test('existing notifications outside a downgraded plan show their capacity probl
     const limits = profile(); limits.slots = { used: 7, max: 5, available: 0 }; limits.usage.entries[0].allowed = false;
     const f = await fixture(async () => limits);
     try {
-        assert.match(f.container.textContent, /使用枠 7 \/ 5.*空き 0枠/); assert.match(f.container.textContent, /現在のプランの登録枠を超えています/);
+        assert.match(f.container.textContent, /使用枠 7 \/ 5.*空き 0枠/); assert.match(f.container.textContent, /現在の登録上限を超えています.*利用状況とプランを確認/);
         for (const label of ['停止', '削除']) assert.equal([...f.container.querySelectorAll('button')].find(node => node.textContent.trim() === label).disabled, false);
     } finally { await f.close(); }
 });
