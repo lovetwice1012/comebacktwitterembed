@@ -172,5 +172,14 @@
     "remainingOwnedSchemas": [],
     "browserPidsAfterClose": []
   },
-  "completeSourceReportSha256": "9cfcbcd7a79e04085170156b160a3cb66ea8de4314c731bfcc59f2c6a12d523f"
+  "completeSourceReportSha256": "9cfcbcd7a79e04085170156b160a3cb66ea8de4314c731bfcc59f2c6a12d523f",
+  "postCaptureFormattingChanges": [
+    {
+      "path": "dashboard/components/automation/notification-workspace.css",
+      "beforeSha256": "3f3613be8cc195742ab499aea1b81d9a683d371986bb4e3522c0e17d4f1ae0c7",
+      "afterSha256": "74c80d45c445f255fbf1d8995d9c3d29e0f37bfe6e3a2c5e926a95f3e60a661d",
+      "change": "One empty line before a CSS comment; no declarations or behavior changed.",
+      "verifiedGitDiffIgnoringBlankLines": true
+    }
+  ]
 }

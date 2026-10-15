@@ -256,6 +256,7 @@
     max-width: 100%;
     height: 100dvh;
     max-height: 100dvh;
+
     /* Reset the containing form's space-y margins in the native top layer. */
     margin: 0 !important;
     border-radius: 0;
