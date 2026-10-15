@@ -112,33 +112,9 @@ function createQueue(db, evaluator, options = {}) {
         return { state: 'excluded', code: 'X_MONITOR_NOT_AVAILABLE' };
     }
     async function monitorRevisionMatches(query, kind, target, expectedRevision, ownerUserId) {
-        const current = Number(target?.monitor_revision || 1), expected = Number(expectedRevision);
-        if (kind !== 'x') return current === expectedRevision;
-        if (current === expected) return true;
-        if (target?.user_id !== ownerUserId || target.owner_user_id !== ownerUserId
-            || !Number.isSafeInteger(current) || !Number.isSafeInteger(expected) || expected < 1 || current <= expected) return false;
-        // A pool move preserves the notification identity, yet deliberately
-        // advances the editor's CAS revision. Only its complete server-written
-        // audit chain can bridge the queued revision; edits and missing history
-        // retain the existing cancellation behavior. JSON filtering also bounds
-        // this read to the exact revision span of this persisted notification.
-        const rows = await query(`SELECT detail_json FROM automation_audit WHERE entity_id=? AND action='x.quota.move'
-            AND CASE WHEN JSON_VALID(detail_json) THEN JSON_EXTRACT(detail_json,'$.beforeRevision') ELSE NULL END>=?
-            AND CASE WHEN JSON_VALID(detail_json) THEN JSON_EXTRACT(detail_json,'$.beforeRevision') ELSE NULL END<? ORDER BY id`,
-        [`x:${target.id}`, expected, current]);
-        if (rows.length !== current - expected) return false;
-        const steps = new Set();
-        for (const row of rows) {
-            let detail;
-            try { detail = parse(row.detail_json); } catch { return false; }
-            if (!detail || detail.manual !== true || detail.ownerUserId !== ownerUserId
-                || !['free','supporter','special'].includes(detail.before) || !['free','supporter','special'].includes(detail.after)
-                || !Number.isSafeInteger(detail.beforeRevision) || !Number.isSafeInteger(detail.afterRevision)
-                || detail.afterRevision !== detail.beforeRevision + 1 || detail.beforeRevision < expected || detail.afterRevision > current
-                || steps.has(detail.beforeRevision)) return false;
-            steps.add(detail.beforeRevision);
-        }
-        return steps.size === current - expected;
+        if (target?.user_id !== ownerUserId || kind === 'x' && target.owner_user_id !== ownerUserId) return false;
+        return require('./monitor-revision-compat').monitorRevisionCompatible(query, { kind, targetId: String(target.id), ownerUserId,
+            expectedRevision: Number(expectedRevision), currentRevision: Number(target.monitor_revision || 1) });
     }
     async function finishLegacy(query, kind, delivery, state, now, code = null, nextAttemptAtMs = null) {
         if (kind === 'x') return true;
@@ -191,8 +167,7 @@ function createQueue(db, evaluator, options = {}) {
                 return { state: 'cancelled' };
             }
             if ((!graphEnabled && !evaluation) || target.workflow_id !== before?.workflow_id || target.active_revision !== before?.active_revision
-                || (kind === 'x' ? !await monitorRevisionMatches(query, kind, target, Number(before?.monitor_revision || 1), before?.user_id)
-                    : target.monitor_revision !== before?.monitor_revision) || target.workflow_id && !target.workflow_enabled) {
+                || !await monitorRevisionMatches(query, kind, target, Number(before?.monitor_revision || 1), before?.user_id) || target.workflow_id && !target.workflow_enabled) {
                 await finishLegacy(query, kind, delivery, 'pending', now, 'RULE_PAUSED_OR_CHANGED');
                 return { state: 'pending' };
             }

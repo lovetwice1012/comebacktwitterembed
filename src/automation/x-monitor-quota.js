@@ -105,7 +105,8 @@ function createXMonitorQuota(db, options = {}) {
     }
     async function item(row, plan, query = db.queryDatabase) { return { id: String(row.id), accountId: /^[1-9]\d{0,19}$/.test(row.account_id) ? row.account_id : null, accountHandle: row.account_handle, name: row.name,
         enabled: Number(row.enabled) === 1, state: row.state, poolKind: row.pool_kind, notificationSettings: settings(JSON.parse(row.notification_settings_json)),
-        subscriptionState: row.subscription_state, revision: Number(row.revision), quality: quality(plan), processing: await processing.inspectXMonitorProcessing(query, row, now(), { plan }) }; }
+        subscriptionState: row.subscription_state, revision: Number(row.revision), quality: quality(plan), processing: await processing.inspectXMonitorProcessing(query, row, now(), { plan }),
+        supporterRealtimeProcessing: await supporterMonitorProcessing(query, row, plan) }; }
     async function getRow(query, actor, target, includeDeleted = false) {
         const row = (await query(`SELECT * FROM automation_x_monitors WHERE id=? AND owner_user_id=?${includeDeleted ? '' : " AND state<>'deleted'"}`, [id(target), actor.userId]))[0];
         if (!row) fail('NOT_FOUND', '監視登録が見つかりません。', 404); return row;
@@ -117,6 +118,59 @@ function createXMonitorQuota(db, options = {}) {
     function confirmRealtimeCost(input, decision) {
         if (input.expectedRealtimeSlotCost !== decision.realtimeSlotCost) fail('X_REALTIME_COST_CONFLICT','リアルタイム通知に必要な枠数が変わりました。現在の見積もりを確認してから保存してください。',409);
         if (!decision.canEnableRealtime) fail(decision.reasonCode === 'X_MONITOR_NOT_AVAILABLE' ? 'X_MONITOR_NOT_AVAILABLE' : 'X_REALTIME_SLOT_LIMIT','リアルタイム通知に必要な利用資格と個人の空き枠を確認してください。');
+    }
+    async function supporterMonitorProcessing(query, row, plan) {
+        const actor = { userId: row.owner_user_id }, support = await supportFor(query, actor.userId);
+        const targets = await rowsFor(query, actor.userId);
+        // Item serialization is also used by read-only administration. Inspect
+        // raw reservations here instead of the adoption/reconciliation API.
+        const slots = await query('SELECT slot_index,target_kind,target_id FROM automation_notification_slots WHERE owner_user_id=? ORDER BY slot_index', [actor.userId]);
+        const boosts = await require('./monitor-cadence').boostRows(query, actor.userId);
+        const supportUsed = targets.filter(value => value.pool_kind === 'supporter' && String(value.id) !== String(row.id)).length;
+        const supportRank = targets.filter(value => value.pool_kind === 'supporter').findIndex(value => String(value.id) === String(row.id)) + 1;
+        const supportExhausted = row.pool_kind === 'supporter' ? supportRank < 1 || supportRank > support.totalSupporterSlots : supportUsed >= support.totalSupporterSlots;
+        const shared = await pools(query), rollout = await evaluateXRollout(query, actor, rolloutOptions);
+        const decision = await processing.inspectXMonitorProcessing(query, { ...row, pool_kind: 'supporter', state: 'ready',
+            notification_settings_json: JSON.stringify({ ...settings(JSON.parse(row.notification_settings_json)), processingMode: 'realtime' }) }, now(), { plan, prospectivePool: true });
+        // This is an edit quote, so the existing primary reservation counts as
+        // held. A full personal allowance must not require a second base slot.
+        const slot = slots.find(value => value.target_kind === 'x' && String(value.target_id) === String(row.id));
+        const eligible = await isLegacyDonor(query, actor.userId) && support.isSupporter && support.totalSupporterSlots > 0;
+        const releasedExtras = Math.max(0, decision.slotCost - 1);
+        const reasonCode = !enabled ? 'X_MONITOR_UNAVAILABLE' : !rollout.eligible ? rollout.reasonCode
+            : !eligible ? 'X_MONITOR_SUPPORTER_REALTIME_INELIGIBLE'
+                : !slot || Number(slot.slot_index) > plan.slotLimit || slots.filter(value => value.target_kind).length + boosts.length - releasedExtras > plan.slotLimit ? 'X_MONITOR_PERSONAL_LIMIT'
+                    : supportExhausted ? 'X_MONITOR_SUPPORTER_LIMIT'
+                        : row.pool_kind !== 'supporter' && shared.supporter.available === 0 ? 'X_MONITOR_SUPPORTER_POOL_FULL'
+                            : !decision.canEnableRealtime ? 'X_MONITOR_NOT_AVAILABLE' : null;
+        const available = !reasonCode;
+        const reason = reasonCode === 'X_MONITOR_SUPPORTER_REALTIME_INELIGIBLE' ? '対象の既存支援者は、支援者特典を利用できます。'
+            : reasonCode === 'X_MONITOR_PERSONAL_LIMIT' ? '個人の総登録上限を確認してください。'
+                : reasonCode === 'X_MONITOR_SUPPORTER_LIMIT' ? '保有する支援者追加枠をすべて使用しています。'
+                    : reasonCode === 'X_MONITOR_SUPPORTER_POOL_FULL' ? '支援者優先枠は現在満杯です。空きができると利用できます。'
+                        : reasonCode === 'X_MONITOR_UNAVAILABLE' ? 'X通知の設定受付を準備しています。'
+                            : !rollout.eligible ? rollout.reason : null;
+        return { ...decision, isPreview: true, poolKind: 'supporter', eligible, available, canEnableRealtime: available, reasonCode, reason };
+    }
+    async function validatePoolChange(query, row, selected, plan, desiredCost) {
+        const personal = await entitlements.listOwnerSlots(query, row.owner_user_id);
+        const slot = personal.slots.find(value => value.targetKind === 'x' && value.targetId === String(row.id));
+        const extras = count(await query("SELECT COUNT(*) n FROM automation_notification_boost_slots WHERE owner_user_id=? AND target_kind='x' AND target_id=?", [row.owner_user_id, String(row.id)]));
+        if (!slot || slot.slotIndex > plan.slotLimit || personal.usedSlots - extras + desiredCost - 1 > plan.slotLimit)
+            fail('X_MONITOR_PERSONAL_LIMIT', '個人の総登録上限を確認してください。');
+        const targets = await rowsFor(query, row.owner_user_id);
+        const owned = targets.filter(value => value.pool_kind === selected && String(value.id) !== String(row.id)).length;
+        const rank = targets.filter(value => value.pool_kind === selected).findIndex(value => String(value.id) === String(row.id)) + 1;
+        if (selected === 'supporter') {
+            const support = await supportFor(query, row.owner_user_id);
+            if (!support.isSupporter || (selected === row.pool_kind ? rank < 1 || rank > support.totalSupporterSlots : owned >= support.totalSupporterSlots)) fail('X_MONITOR_DESTINATION_INELIGIBLE', '保有する支援者追加枠を確認してください。');
+        } else if (selected === 'special') {
+            const limit = await paidLimit(query, plan);
+            if (selected === row.pool_kind ? rank < 1 || rank > limit : owned >= limit) fail('X_MONITOR_DESTINATION_INELIGIBLE', '現在の契約プランで利用できる特殊枠を確認してください。');
+        }
+        const shared = await pools(query, true);
+        if (selected !== row.pool_kind && selected !== 'special' && shared[selected].available <= 0)
+            fail('X_MONITOR_DESTINATION_FULL', '移動先の枠が満杯です。現在の登録は保持されています。', 409);
     }
     async function supporterRegistration(query, actor, plan, shared, support, supportUsed, personalAvailable, rollout) {
         const decision = await processing.inspectXRegistrationProcessing(query, actor.userId, 'supporter', 'realtime', now(), { plan });
@@ -245,8 +299,9 @@ function createXMonitorQuota(db, options = {}) {
         });
     }
     async function update(actor, target, input) {
-        requireActor(actor); strict(input, ['expectedRevision','enabled','name','accountHandle','notificationSettings','processingMode','expectedRealtimeSlotCost']);
+        requireActor(actor); strict(input, ['expectedRevision','enabled','name','accountHandle','notificationSettings','processingMode','expectedRealtimeSlotCost','poolKind']);
         modeInput(input);
+        if (input.poolKind !== undefined && !['free', 'supporter', 'special'].includes(input.poolKind)) fail('X_MONITOR_INVALID_INPUT', '利用する枠の種類を選んでください。');
         if (!Number.isSafeInteger(input.expectedRevision) || input.expectedRevision < 1) fail('X_MONITOR_REVISION_CONFLICT', '最新の監視設定を読み直してください。', 409);
         if (input.enabled !== undefined && typeof input.enabled !== 'boolean') fail('X_MONITOR_INVALID_INPUT', '監視の状態を確認してください。');
         if (input.enabled === true && !enabled) fail('X_MONITOR_UNAVAILABLE', '新しいX自動展開は提供準備中です。', 503);
@@ -257,27 +312,41 @@ function createXMonitorQuota(db, options = {}) {
             await lockGlobal(query, actor); await entitlements.lockOwner(query, actor.userId);
             let row = await getRow(query, actor, target);
             if (Number(row.revision) !== input.expectedRevision) fail('X_MONITOR_REVISION_CONFLICT', '監視が変更されています。再取得してください。', 409);
+            const poolChanged = input.poolKind !== undefined && input.poolKind !== row.pool_kind;
+            if (poolChanged && input.processingMode === undefined) fail('X_MONITOR_INVALID_INPUT', '枠の変更と一緒に通知タイミングを選んでください。');
             if (input.notificationSettings) await verifySettings(query, actor, input.notificationSettings);
             if (input.enabled === true) {
                 await requireXEnrollment(query, actor, rolloutOptions);
-                await reconcileRows(query, actor, [actor.userId]);
-                const current = await getRow(query, actor, target);
-                if (current.state !== 'ready') fail('X_MONITOR_POOL_FULL', '現在の資格と空き枠では監視を再開できません。');
-                row = current;
+                if (!poolChanged) {
+                    await reconcileRows(query, actor, [actor.userId]);
+                    const current = await getRow(query, actor, target);
+                    if (current.state !== 'ready') fail('X_MONITOR_POOL_FULL', '現在の資格と空き枠では監視を再開できません。');
+                    row = current;
+                }
             }
+            const plan = await planFor(query, actor.userId), selectedPool = input.poolKind ?? row.pool_kind;
             const oldSettings = settings(JSON.parse(row.notification_settings_json));
             const nextSettings = input.notificationSettings === undefined ? { ...oldSettings } : { ...inputSettings(input.notificationSettings),
                 ...(oldSettings.processingMode === undefined ? {} : { processingMode: oldSettings.processingMode }) };
-            let beforeProcessing;
+            let beforeProcessing, afterSlotCost;
             if (input.processingMode !== undefined) {
-                beforeProcessing = await processing.inspectXMonitorProcessing(query, row, now());
+                beforeProcessing = await processing.inspectXMonitorProcessing(query, row, now(), { plan });
+                const future = poolChanged ? await processing.inspectXMonitorProcessing(query, { ...row, pool_kind: selectedPool, state: 'ready' }, now(), { plan, prospectivePool: true }) : beforeProcessing;
+                afterSlotCost = input.processingMode === 'batch' ? 1 : future.realtimeSlotCost;
+                if (input.poolKind !== undefined) await validatePoolChange(query, row, selectedPool, plan, afterSlotCost);
                 if (input.processingMode === 'realtime') {
                     if (!enabled) fail('X_MONITOR_UNAVAILABLE','X通知の設定は提供準備中です。',503);
                     await requireXEnrollment(query, actor, rolloutOptions);
-                    confirmRealtimeCost(input, beforeProcessing);
+                    confirmRealtimeCost(input, future);
                 }
-                await reserveProcessingSlots(query, actor.userId, target, input.processingMode === 'batch' ? 1 : beforeProcessing.realtimeSlotCost);
+                await reserveProcessingSlots(query, actor.userId, target, afterSlotCost);
                 nextSettings.processingMode = input.processingMode;
+            } else if (input.poolKind !== undefined) {
+                // Reconfirming the same pool still validates its current
+                // qualification; a metadata-only edit without a pool choice
+                // retains the existing cleanup behavior after a downgrade.
+                const current = await processing.inspectXMonitorProcessing(query, row, now(), { plan });
+                await validatePoolChange(query, row, selectedPool, plan, current.slotCost);
             }
             // Correcting a current handle preserves the registration identity,
             // reservations, settings and subscription. Legacy numeric IDs stay.
@@ -287,11 +356,22 @@ function createXMonitorQuota(db, options = {}) {
                 const duplicate = (await query("SELECT id FROM automation_x_monitors WHERE owner_user_id=? AND LOWER(account_handle)=? AND id<>? AND state<>'deleted' LIMIT 1", [actor.userId, accountHandle.toLowerCase(), row.id]))[0];
                 if (duplicate) fail('X_MONITOR_HANDLE_CONFLICT', '同じ@ユーザー名の監視が登録されています。一覧から編集してください。', 409);
             }
-            await query('UPDATE automation_x_monitors SET name=?,account_handle=?,enabled=?,notification_settings_json=?,subscription_state=?,revision=revision+1,updated_at_ms=? WHERE id=?', [input.name?.trim() ?? row.name, accountHandle, input.enabled === undefined ? row.enabled : input.enabled ? 1 : 0, JSON.stringify(nextSettings), input.notificationSettings === undefined ? row.subscription_state : nextSettings.subscriptionId ? 'bound' : 'pending', now(), row.id]);
-            await audit(query, actor, target, 'x.monitor.update', { enabled: input.enabled ?? Number(row.enabled) === 1, handleChanged: accountHandle !== row.account_handle });
+            const nextName = input.name?.trim() ?? row.name, nextEnabled = input.enabled === undefined ? Number(row.enabled) : input.enabled ? 1 : 0;
+            const sameSettings = Object.keys(oldSettings).length === Object.keys(nextSettings).length && Object.keys(oldSettings).every(key => oldSettings[key] === nextSettings[key]);
+            const purePoolMove = poolChanged && nextName === row.name && accountHandle === row.account_handle && nextEnabled === Number(row.enabled) && sameSettings;
+            const metadataOnly = Object.keys(input).every(key => ['expectedRevision', 'name'].includes(key))
+                && !poolChanged && accountHandle === row.account_handle && nextEnabled === Number(row.enabled) && sameSettings;
+            if (metadataOnly && nextName === row.name && Object.keys(input).every(key => ['expectedRevision', 'name'].includes(key))) return item(row, plan, query);
+            await query('UPDATE automation_x_monitors SET name=?,account_handle=?,enabled=?,notification_settings_json=?,subscription_state=?,pool_kind=?,state=?,revision=revision+1,updated_at_ms=? WHERE id=?', [nextName, accountHandle, nextEnabled, JSON.stringify(nextSettings), input.notificationSettings === undefined ? row.subscription_state : nextSettings.subscriptionId ? 'bound' : 'pending', selectedPool, poolChanged ? 'ready' : row.state, now(), row.id]);
+            await audit(query, actor, target, metadataOnly && nextName !== row.name ? 'x.monitor.rename' : 'x.monitor.update', metadataOnly && nextName !== row.name
+                ? { manual: true, metadataOnly: true, ownerUserId: actor.userId, beforeRevision: Number(row.revision), afterRevision: Number(row.revision) + 1 }
+                : { enabled: input.enabled ?? Number(row.enabled) === 1, handleChanged: accountHandle !== row.account_handle });
             if (beforeProcessing) await audit(query, actor, target, 'x.processing.monitor', { beforeMode: beforeProcessing.requestedMode, afterMode: input.processingMode,
-                beforeSlotCost: beforeProcessing.slotCost, afterSlotCost: input.processingMode === 'batch' ? 1 : beforeProcessing.realtimeSlotCost });
-            return item(await getRow(query, actor, target), await planFor(query, actor.userId), query);
+                beforeSlotCost: beforeProcessing.slotCost, afterSlotCost });
+            if (poolChanged) await audit(query, actor, target, 'x.quota.move', { before: row.pool_kind, after: selectedPool, manual: true, ownerUserId: actor.userId,
+                preservesDelivery: purePoolMove, ...(purePoolMove ? { beforeRevision: Number(row.revision), afterRevision: Number(row.revision) + 1 } : {}),
+                releasedExtraSlots: beforeProcessing ? Math.max(0, beforeProcessing.slotCost - afterSlotCost) : 0 });
+            return item(await getRow(query, actor, target), plan, query);
         });
     }
     async function release(actor, target, input = {}) {

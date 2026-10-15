@@ -22,6 +22,7 @@ export type XMonitor = {
   poolKind: "free" | "supporter" | "special" | null; subscriptionState: string; revision: number;
   notificationSettings: { workflowId?: string; destinationId?: string; subscriptionId?: string }; quality: XMonitorQuality;
   processing?: XMonitorProcessing;
+  supporterRealtimeProcessing?: XMonitorProcessing & { isPreview: true; poolKind: "supporter"; eligible: boolean; available: boolean; reason: string | null };
 };
 export const xCount = (value: unknown): value is number => Number.isSafeInteger(value) && Number(value) >= 0;
 export function xObject(value: unknown): Record<string, unknown> {
@@ -103,6 +104,7 @@ export function parseXMonitor(value: unknown): XMonitor {
   return { id: text(item.id, 128), accountId: item.accountId === null ? null : String(item.accountId), accountHandle: handle, name: text(item.name), enabled: item.enabled,
     state: text(item.state, 32), poolKind: item.poolKind as XMonitor["poolKind"], subscriptionState: text(item.subscriptionState, 40), revision: item.revision,
     ...(optionalProcessing(item.processing) ? { processing: optionalProcessing(item.processing) } : {}),
+    ...(optionalSupporterRegistration(item.supporterRealtimeProcessing) ? { supporterRealtimeProcessing: optionalSupporterRegistration(item.supporterRealtimeProcessing) } : {}),
     notificationSettings: { ...(typeof settings.workflowId === "string" ? { workflowId: text(settings.workflowId, 128) } : {}),
       ...(typeof settings.destinationId === "string" ? { destinationId: text(settings.destinationId, 128) } : {}),
       ...(typeof settings.subscriptionId === "string" ? { subscriptionId: settings.subscriptionId } : {}) }, quality: quality(item.quality) };

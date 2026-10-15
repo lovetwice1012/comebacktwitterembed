@@ -46,6 +46,14 @@ function safeName(value) {
     if (typeof value !== 'string' || !value.trim() || value.length > 120) fail('NAME_REQUIRED', '名前は1〜120文字です。');
     return value.trim();
 }
+function validateAssignmentGuards(guards) {
+    if (!guards || typeof guards !== 'object' || Array.isArray(guards)
+        || Object.keys(guards).some(key => !['expectedRevision', 'expectedWorkflowId'].includes(key))
+        || !Object.hasOwn(guards, 'expectedWorkflowId') || !Number.isSafeInteger(guards.expectedRevision) || guards.expectedRevision < 1
+        || guards.expectedWorkflowId !== null && (typeof guards.expectedWorkflowId !== 'string' || !/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/.test(guards.expectedWorkflowId)))
+        fail('INVALID_ASSIGNMENT_GUARD', '現在の監視設定と通知ルールを確認してください。');
+    return { expectedRevision: guards.expectedRevision, expectedWorkflowId: guards.expectedWorkflowId };
+}
 
 /** @param {any} db @param {{rateLimiter?:any,rateOptions?:any}} [options] */
 function createService(db, options = {}) {
@@ -269,20 +277,39 @@ function createService(db, options = {}) {
             return { id: resourceId };
         });
     }
-    async function attach(actor, workflowId, targetKind, targetId) {
+    async function attach(actor, workflowId, targetKind, targetId, guards = undefined) {
+        requireActor(actor);
         if (!['auto', 'price'].includes(targetKind) || !/^\d{1,20}$/.test(String(targetId))) fail('INVALID_TARGET', '監視IDが不正です。');
+        const guarded = guards === undefined ? null : validateAssignmentGuards(guards);
+        const { assertMonitorAccess, scopeOf, lockMonitorSource, advanceMonitorRevision, cancelPending } = require('./monitors');
+        const table = targetKind === 'auto' ? 'auto_watch_targets' : 'price_watch_targets';
+        // Discover the immutable owner before the transaction. Acquire its
+        // fence before any consistent snapshot, then use current locking reads
+        // for the target revision, old assignment and new workflow.
+        const candidate = (await db.queryDatabase(`SELECT t.*,m.scope FROM ${table} t LEFT JOIN automation_monitors m ON m.target_kind=? AND m.target_id=t.id WHERE t.id=?`, [targetKind, String(targetId)]))[0];
+        assertMonitorAccess(actor, candidate, true);
         return db.withDatabaseTransaction(async query => {
-            const rule = await getRow('workflow', actor, workflowId, true, query, true);
-            const rows = await query(`SELECT t.*,m.scope FROM ${targetKind === 'auto' ? 'auto_watch_targets' : 'price_watch_targets'} t LEFT JOIN automation_monitors m ON m.target_kind=? AND m.target_id=t.id WHERE t.id=? FOR UPDATE`, [targetKind, String(targetId)]);
+            await require('./entitlements').lockOwner(query, candidate.user_id);
+            await lockMonitorSource(query, candidate.user_id, targetKind, targetId);
+            const rows = await query(`SELECT t.*,m.scope,m.revision AS monitor_revision FROM ${table} t LEFT JOIN automation_monitors m ON m.target_kind=? AND m.target_id=t.id WHERE t.id=? FOR UPDATE`, [targetKind, String(targetId)]);
             const target = rows[0];
-            const { assertMonitorAccess, scopeOf } = require('./monitors');
             assertMonitorAccess(actor, target, true);
+            if (target.user_id !== candidate.user_id) fail('NOT_FOUND', '監視が見つかりません。', 404);
+            const beforeRevision = Number(target.monitor_revision || 1);
+            const assignment = (await query('SELECT workflow_id FROM automation_assignments WHERE target_kind=? AND target_id=? FOR UPDATE', [targetKind, String(targetId)]))[0];
+            const beforeWorkflowId = assignment?.workflow_id ?? null;
+            if (guarded && (beforeRevision !== guarded.expectedRevision || beforeWorkflowId !== guarded.expectedWorkflowId)) fail('REVISION_CONFLICT', '監視設定または通知ルールが別の操作で変更されています。最新の通知を読み直してください。', 409);
+            const rule = await getRow('workflow', actor, workflowId, true, query, true);
             if (rule.scope !== scopeOf(target)) fail('TARGET_SCOPE', '監視とルールの公開範囲を一致させてください。');
             if (rule.scope === 'guild' && (target.guild_id !== rule.guild_id || target.destination_type === 'dm')) fail('TARGET_SCOPE', '共有ルールは同じサーバーの共有通知に割り当ててください。');
             if (rule.scope === 'private' && target.user_id !== actor.userId) fail('TARGET_SCOPE', '個人ルールは自分の監視に割り当ててください。');
+            if (guarded && beforeWorkflowId === workflowId) return { attached: true, unchanged: true, revision: beforeRevision };
             await query('INSERT INTO automation_assignments (target_kind,target_id,workflow_id,created_at_ms) VALUES (?,?,?,?) ON DUPLICATE KEY UPDATE workflow_id=VALUES(workflow_id)', [targetKind, String(targetId), workflowId, Date.now()]);
-            await audit(query, actor, workflowId, 'workflow.attach', { targetKind, targetId: String(targetId) }, target.guild_id);
-            return { attached: true };
+            const revision = guarded ? await advanceMonitorRevision(query, targetKind, targetId, scopeOf(target), beforeRevision) : undefined;
+            if (guarded) await cancelPending(query, targetKind, targetId);
+            await audit(query, actor, workflowId, 'workflow.attach', { targetKind, targetId: String(targetId), ...(guarded ? { guarded: true,
+                beforeWorkflowId, afterWorkflowId: workflowId, beforeRevision, afterRevision: revision } : {}) }, target.guild_id);
+            return { attached: true, ...(guarded ? { revision } : {}) };
         });
     }
     const service = { list, getRow, getWorkflow, createWorkflow, updateWorkflow, activateWorkflow, setWorkflowState, remove, history,
@@ -295,4 +322,4 @@ function createService(db, options = {}) {
     service.setWorkflowState = async (actor, id, input) => input?.enabled ? withOperation(actor, 'write', () => setWorkflowState(actor, id, input)) : setWorkflowState(actor, id, input);
     return service;
 }
-module.exports = { createService, AutomationError, assertAccess, scopeFor, requireActor, hash, publicWorkflow, publicDestination };
+module.exports = { createService, AutomationError, assertAccess, scopeFor, requireActor, hash, publicWorkflow, publicDestination, validateAssignmentGuards };

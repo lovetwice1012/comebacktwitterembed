@@ -2,7 +2,7 @@
 
 // The web boundary derives actor from the authenticated session. This dispatcher
 // is also used by loopback-only fixture tests; it contains no auth bypass.
-const { requireActor, AutomationError, publicDestination } = require('./service');
+const { requireActor, AutomationError, publicDestination, validateAssignmentGuards } = require('./service');
 /** @param {{method:string,path:string[],search?:URLSearchParams,body?:Record<string,any>}} request */
 async function dispatch(request, actor, services) {
     requireActor(actor);
@@ -155,7 +155,7 @@ async function dispatchCore({ method, path, search = new URLSearchParams(), body
     else if (kind === "installations" && method === "GET") result = await market.installations(actor, { kind: search.get("kind"), afterId: search.get("afterId") });
     else if (kind === "reports" && id && method === "POST") result = await market.resolveReport(actor, id, body);
     else if (kind === "jobs") {
-      if (!id && method === "GET") result = await history.list(actor, { state: search.get("state"), cursor: search.get("cursor") });
+      if (!id && method === "GET") result = await history.list(actor, { state: search.get("state"), cursor: search.get("cursor"), targetKind: search.get("targetKind") ?? undefined, targetId: search.get("targetId") ?? undefined });
       else if (id && method === "GET") result = await history.detail(actor, id);
       else if (id && method === "PATCH") result = await history.change(actor, id, body);
     }
@@ -166,7 +166,8 @@ async function dispatchCore({ method, path, search = new URLSearchParams(), body
       else if (!action && method === "POST") result = await monitors.save(actor, id, body);
       else if (action && method === "PATCH") result = await monitors.save(actor, id, body, action);
       else if (action && method === "DELETE") result = await monitors.remove(actor, id, action, body.expectedRevision);
-      else if (action && method === "POST" && body.action === "detach") result = await monitors.detach(actor, id, action, body.expectedRevision);
+      else if (action && method === "POST" && body.action === "detach") result = await monitors.detach(actor, id, action, body.expectedRevision,
+        Object.hasOwn(body, 'expectedWorkflowId') ? { expectedWorkflowId: validateAssignmentGuards({ expectedRevision: body.expectedRevision, expectedWorkflowId: body.expectedWorkflowId }).expectedWorkflowId } : undefined);
       else if (action && method === "POST" && body.action === "cadence") result = await monitors.setCadence(actor, id, action, body);
     }
     else if (kind === "template" && method === "GET") result = catalog.template(search.get("goal") || "all", search.get("time") || "now", search.get("format") || "normal");
@@ -188,7 +189,8 @@ async function dispatchCore({ method, path, search = new URLSearchParams(), body
       else if (action === "state" && method === "POST") result = await service.setWorkflowState(actor, id, body);
       else if (action === "history" && method === "GET") result = await service.history(actor, id);
       else if (action === "restore" && method === "POST") result = await service.restoreRevision(actor, id, body.revision, body.expectedRevision);
-      else if (action === "attach" && method === "POST") result = await service.attach(actor, id, body.targetKind, body.targetId);
+      else if (action === "attach" && method === "POST") result = await service.attach(actor, id, body.targetKind, body.targetId,
+        Object.hasOwn(body, 'expectedRevision') || Object.hasOwn(body, 'expectedWorkflowId') ? validateAssignmentGuards({ expectedRevision: body.expectedRevision, expectedWorkflowId: body.expectedWorkflowId }) : undefined);
       else if (action === "export" && method === "GET") {
         const data = await market.exportWorkflow(actor, id);
         result = search.get("format") === "zip" ? { base64: Buffer.from(bundle.encodeBundle(data)).toString("base64") } : data;

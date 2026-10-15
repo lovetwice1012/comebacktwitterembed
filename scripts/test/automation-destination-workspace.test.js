@@ -44,7 +44,7 @@ async function openXDraft(f) {
 }
 const choices = f => f.container.querySelector('form[aria-label="X監視の登録設定"] select');
 async function saveXDestination(f) {
-    await f.click('X監視の通知先を追加'); await f.fill(f.field('通知先の名前'), '今回追加する通知先');
+    await f.click('チャンネル・Webhookを追加'); await f.fill(f.field('通知先の名前'), '今回追加する通知先');
     await f.act(async () => f.container.querySelector('form[aria-label="通知先の登録設定"]').dispatchEvent(new f.dom.window.Event('submit', { bubbles: true, cancelable: true })));
 }
 

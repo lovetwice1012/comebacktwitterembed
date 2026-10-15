@@ -15,6 +15,10 @@ const { createXMonitorQuota } = require('../../src/automation/x-monitor-quota');
 const { createXProcessingSettings } = require('../../src/automation/x-processing-settings');
 const { createRateLimiter } = require('../../src/automation/rate-limits');
 const port = Number(process.env.AUTOMATION_TEST_DB_PORT), ADMIN = { userId: '666666666666666666', isAdmin: true };
+// Keep the simulated two-minute quota checks inside one Japanese calendar day.
+// A wall-clock start at 23:58 used to cross midnight and legitimately reset the
+// daily allowance before its rejection assertion. Rollover is tested below.
+const FIXTURE_START = Date.parse('2026-10-14T03:00:00Z');
 const post = id => ({ notificationType: 'tweet', author: { id: '12345', handle: 'example' }, url: `https://x.com/example/status/${1234567890123456700n + BigInt(id)}`, title: `公開投稿 ${id}`, text: '公開本文' });
 // Structure observed in an owned production receipt; values are synthetic.
 const webPost = (id, handle = 'example') => ({ title: '合成の投稿通知', body: '合成の公開本文', icon: 'opaque display metadata',
@@ -23,7 +27,7 @@ const webPost = (id, handle = 'example') => ({ title: '合成の投稿通知', b
 
 async function fixture(work, runtimeOptions = {}) {
     const db = await createTestDatabase(port), query = db.queryDatabase;
-    let now = Date.now(), sequence = 0, lease, runtime, callbacks, auditFailure = false, auditHook = null, markFailure = false, ownerLockAttempt = null;
+    let now = FIXTURE_START, sequence = 0, lease, runtime, callbacks, auditFailure = false, auditHook = null, markFailure = false, ownerLockAttempt = null;
     const clock = () => now, subscription = await insertSubscription(db);
     await db.withDatabaseTransaction(query => entitlements.savePlanPolicy(query, ADMIN, { planId: 'free', label: '無料', slotLimit: 5, minuteLimit: 5, dayLimit: 24, priority: 0, intervalMinutes: 5 }));
     const storeDb = { ...db, withDatabaseTransaction: work => db.withDatabaseTransaction(query => work(async (sql, args) => {
@@ -215,7 +219,12 @@ test('real SQL: encrypted Push receipts are processed under explicit durable win
         let reservation = await limiter.reserveNotifications({ ...principal, ownerUserId: U }, 1); await limiter.commitNotification(reservation, 0);
         await assert.rejects(limiter.reserveNotifications({ ...principal, ownerUserId: U }, 1), error => error.code === 'AUTOMATION_RATE_LIMITED' && error.limit === 1);
         f.advance(60000); reservation = await limiter.reserveNotifications({ ...principal, ownerUserId: U }, 1); await limiter.commitNotification(reservation, 0);
-        f.advance(60000); await assert.rejects(limiter.reserveNotifications({ ...principal, ownerUserId: U }, 1), error => error.code === 'AUTOMATION_RATE_LIMITED' && error.limit === 2);
+        f.advance(60000); await assert.rejects(limiter.reserveNotifications({ ...principal, ownerUserId: U }, 1), error => error.code === 'AUTOMATION_RATE_LIMITED' && error.limit === 2 && error.windowMs === 86400000);
+        assert.equal((await limiter.getSlotUsage(principal.slotId, principal)).todayUsed, 2);
+        const midnight = (Math.floor((f.clock() + 9 * 3600000) / 86400000) + 1) * 86400000 - 9 * 3600000;
+        f.advance(midnight - f.clock());
+        reservation = await limiter.reserveNotifications({ ...principal, ownerUserId: U }, 1); await limiter.commitNotification(reservation, 0);
+        assert.equal((await limiter.getSlotUsage(principal.slotId, principal)).todayUsed, 1, 'the Japanese midnight rollover restores the current contract allowance');
     }));
 
     await t.test('revocation within one realtime page pauses retained rows, and a restarted worker respects the same batch deadline', () => fixture(async f => {

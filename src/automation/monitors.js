@@ -34,6 +34,33 @@ function publicMonitor(kind, row) {
         errorCode: row.last_error_code, premium: !!row.premium_slot };
 }
 
+// Source completion locks its source before targets. Assignment changes use
+// the same order after the owner fence, including price watches.
+async function lockMonitorSource(query, ownerId, kind, targetId) {
+    tableFor(kind);
+    if (kind === 'auto') return require('./monitor-cadence').lockTargetSource(query, ownerId, String(targetId));
+    const target = (await query('SELECT source_id FROM price_watch_targets WHERE id=? AND user_id=?', [targetId, ownerId]))[0];
+    if (!target) return null;
+    return (await query('SELECT id FROM price_watch_sources WHERE id=? FOR UPDATE', [target.source_id]))[0] || null;
+}
+
+async function advanceMonitorRevision(query, kind, id, scope, previousRevision) {
+    tableFor(kind);
+    const revision = previousRevision + 1;
+    // A legacy target may have no metadata row. An empty saved label keeps
+    // publicMonitor's existing source/product-name fallback unchanged.
+    await query("INSERT INTO automation_monitors (target_kind,target_id,name,scope,revision) VALUES (?,?,'',?,?) ON DUPLICATE KEY UPDATE revision=revision+1", [kind, id, scope, revision]);
+    return revision;
+}
+
+async function cancelPending(query, kind, id) {
+    await query(`UPDATE ${tableFor(kind)}_deliveries SET status='cancelled',lease_token=NULL,lease_expires_at_ms=0 WHERE target_id=? AND status='pending'`, [id]);
+    await query("UPDATE automation_jobs j JOIN automation_runs r ON r.id=j.run_id SET j.state='cancelled',j.updated_at_ms=? WHERE r.target_kind=? AND r.target_id=? AND j.state IN ('pending','held','leased','aggregated') AND j.execution_version=1", [Date.now(), kind, id]);
+    // Preserve healthy peers in shared execution-v2 batches. The coordinator
+    // removes only this target's revoked membership before physical delivery.
+    await query("UPDATE automation_flow_runs f JOIN automation_runs r ON r.id=f.run_id SET f.revoked_at_ms=COALESCE(f.revoked_at_ms,?),f.revocation_code=COALESCE(f.revocation_code,'MONITOR_CHANGED'),f.needs_sync=1 WHERE r.target_kind=? AND r.target_id=?", [Date.now(), kind, id]);
+}
+
 function createMonitors(db, service, destinations, options = {}) {
     const auto = options.auto || require('../providers/autoWatch');
     const price = options.price || require('../providers/priceWatch');
@@ -142,19 +169,36 @@ function createMonitors(db, service, destinations, options = {}) {
         }
         return { row, nsfw, key: row.kind === 'dm' ? `dm:${ownerId}` : `webhook:${row.webhook_endpoint_id}` };
     }
-    async function cancelPending(query, kind, id) {
-        await query(`UPDATE ${tableFor(kind)}_deliveries SET status='cancelled',lease_token=NULL,lease_expires_at_ms=0 WHERE target_id=? AND status='pending'`, [id]);
-        await query("UPDATE automation_jobs j JOIN automation_runs r ON r.id=j.run_id SET j.state='cancelled',j.updated_at_ms=? WHERE r.target_kind=? AND r.target_id=? AND j.state IN ('pending','held','leased','aggregated') AND j.execution_version=1", [Date.now(), kind, id]);
-        // Execution-v2 may have grouped this monitor with other healthy
-        // monitors. Revoke only this run's membership; the flow coordinator
-        // will preserve eligible peers instead of cancelling a shared batch.
-        await query("UPDATE automation_flow_runs f JOIN automation_runs r ON r.id=f.run_id SET f.revoked_at_ms=COALESCE(f.revoked_at_ms,?),f.revocation_code=COALESCE(f.revocation_code,'MONITOR_CHANGED'),f.needs_sync=1 WHERE r.target_kind=? AND r.target_id=?", [Date.now(), kind, id]);
-    }
     async function save(actor, kind, input, id = null) {
         requireActor(actor); tableFor(kind);
         if (!input || typeof input !== 'object' || Array.isArray(input)) fail('INVALID_INPUT', '設定が不正です。');
         const current = id ? await getRow(actor, kind, id, true) : null;
         if (current && Number(current.revision || 1) !== input.expectedRevision) fail('REVISION_CONFLICT', '監視が更新されています。再読み込みしてください。', 409);
+        // A display label does not change the notification identity. Keep the
+        // editor CAS revision while recording the exact harmless revision step
+        // that existing queued notifications may follow.
+        if (current && typeof input.name === 'string' && Object.keys(input).every(key => ['expectedRevision', 'name'].includes(key))) {
+            const label = input.name.trim();
+            if (!label || label.length > 120) fail('NAME_REQUIRED', '名前は1〜120文字です。');
+            return db.withDatabaseTransaction(async query => {
+                await entitlements.lockOwner(query, current.user_id);
+                if (kind === 'auto') await require('./monitor-cadence').lockTargetSource(query, current.user_id, String(id));
+                else {
+                    // Price completion locks source before target. Match that order
+                    // before the joined getRow locks both records for a label edit.
+                    const target = (await query('SELECT source_id FROM price_watch_targets WHERE id=? AND user_id=?', [id, current.user_id]))[0];
+                    if (target) await query('SELECT id FROM price_watch_sources WHERE id=? FOR UPDATE', [target.source_id]);
+                }
+                const locked = await getRow(actor, kind, id, true, query, true);
+                const beforeRevision = Number(locked.revision || 1);
+                if (beforeRevision !== input.expectedRevision) fail('REVISION_CONFLICT', '監視が更新されています。再読み込みしてください。', 409);
+                if (publicMonitor(kind, locked).name === label) return { id: String(id), revision: beforeRevision };
+                await query('INSERT INTO automation_monitors (target_kind,target_id,name,scope,revision) VALUES (?,?,?,?,?) ON DUPLICATE KEY UPDATE name=VALUES(name),revision=revision+1', [kind, id, label, scopeOf(locked), beforeRevision + 1]);
+                await service.audit(query, actor, `${kind}:${id}`, 'monitor.rename', { manual: true, metadataOnly: true,
+                    ownerUserId: String(locked.user_id), beforeRevision, afterRevision: beforeRevision + 1 }, locked.guild_id);
+                return { id: String(id), revision: beforeRevision + 1 };
+            });
+        }
         const ownerId = current?.user_id || actor.userId;
         const scope = current ? scopeOf(current) : scopeFor(actor, input.scope || 'private').scope;
         if (current && input.scope && input.scope !== scope) fail('SCOPE_IMMUTABLE', '公開範囲は変更できません。');
@@ -284,17 +328,29 @@ function createMonitors(db, service, destinations, options = {}) {
             return { deleted: true };
         });
     }
-    async function detach(actor, kind, id, expectedRevision) {
+    async function detach(actor, kind, id, expectedRevision, guards = undefined) {
+        let guarded;
+        if (guards !== undefined) {
+            if (!guards || typeof guards !== 'object' || Array.isArray(guards) || Object.keys(guards).some(key => key !== 'expectedWorkflowId')) fail('INVALID_ASSIGNMENT_GUARD', '現在の通知ルールを確認してください。');
+            guarded = require('./service').validateAssignmentGuards({ expectedRevision, ...guards });
+        }
         const current = await getRow(actor, kind, id, true);
         return db.withDatabaseTransaction(async query => {
             await entitlements.lockOwner(query, current.user_id);
-            if (kind === 'auto') await require('./monitor-cadence').lockTargetSource(query, current.user_id, String(id));
+            if (guarded) await lockMonitorSource(query, current.user_id, kind, id);
+            else if (kind === 'auto') await require('./monitor-cadence').lockTargetSource(query, current.user_id, String(id));
             const row = await getRow(actor, kind, id, true, query, true);
             if (Number(row.revision || 1) !== expectedRevision) fail('REVISION_CONFLICT', '監視が更新されています。', 409);
+            const assignment = guarded ? (await query('SELECT workflow_id FROM automation_assignments WHERE target_kind=? AND target_id=? FOR UPDATE', [kind, id]))[0] : null;
+            const beforeWorkflowId = assignment?.workflow_id ?? null;
+            if (guarded && beforeWorkflowId !== guarded.expectedWorkflowId) fail('REVISION_CONFLICT', '通知ルールが別の操作で変更されています。最新の通知を読み直してください。', 409);
+            if (guarded && beforeWorkflowId === null) return { detached: true, unchanged: true, revision: Number(row.revision || 1) };
             await query('DELETE FROM automation_assignments WHERE target_kind=? AND target_id=?', [kind, id]);
+            const revision = guarded ? await advanceMonitorRevision(query, kind, id, scopeOf(row), Number(row.revision || 1)) : undefined;
             await cancelPending(query, kind, id);
-            await service.audit(query, actor, `${kind}:${id}`, 'monitor.detach', {}, row.guild_id);
-            return { detached: true };
+            await service.audit(query, actor, `${kind}:${id}`, 'monitor.detach', guarded ? { guarded: true, beforeWorkflowId,
+                afterWorkflowId: null, beforeRevision: Number(row.revision || 1), afterRevision: revision } : {}, row.guild_id);
+            return { detached: true, ...(guarded ? { revision } : {}) };
         });
     }
     const operate = (actor, work) => service.withOperation(actor, 'monitor', work);
@@ -302,4 +358,4 @@ function createMonitors(db, service, destinations, options = {}) {
         save: (actor, kind, input, id) => id && input.enabled === false && Object.keys(input).every(key => ['expectedRevision', 'enabled'].includes(key)) ? save(actor, kind, input, id) : operate(actor, () => save(actor, kind, input, id)), remove, detach,
         setCadence: (actor, kind, id, input) => input.slotCost === 1 ? setCadence(actor, kind, id, input) : operate(actor, () => setCadence(actor, kind, id, input)) };
 }
-module.exports = { createMonitors, assertMonitorAccess, scopeOf, publicMonitor };
+module.exports = { createMonitors, assertMonitorAccess, scopeOf, publicMonitor, lockMonitorSource, advanceMonitorRevision, cancelPending };

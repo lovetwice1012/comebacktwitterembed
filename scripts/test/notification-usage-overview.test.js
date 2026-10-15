@@ -25,11 +25,13 @@ async function fixture(responses = defaults()) {
 test('usage displays one notification plan for native and X and counts registrations, boosts and permanent additions', async () => {
     const f = await fixture();
     try {
-        const slots = article(f, '通知の登録枠'), native = article(f, '通知プラン'), x = article(f, 'Xの共通設定');
+        const slots = article(f, '通知の登録枠'), native = article(f, '通知プラン'), x = article(f, 'X通知の設定を開く');
         assert.equal(fact(slots, '新しく使える枠'), '3枠'); assert.equal(fact(slots, '登録している通知'), '3件');
         assert.equal(fact(slots, '通知方法に使う追加枠'), '2枠'); assert.equal(fact(slots, '支援による恒久追加'), '3枠');
         assert.match(native.textContent, /支援者.*1日48通・1分7通/);
         assert.match(x.textContent, /5分ごとにまとめて通知/); assert.match(native.textContent, /通常通知とX通知に同じプランを適用/); assert.doesNotMatch(f.container.textContent, /Xの処理プラン/);
+        assert.equal(x.querySelector('.notification-plan-name').textContent, '1件登録');
+        assert.equal(x.querySelector('details').open, false);
         assert.match(slots.textContent, /月額プランの解約後も引き継ぎ/);
         assert.equal(fact(f.container, '共用無料枠の空き'), '1 / 50枠');
         assert.equal(fact(f.container, '支援者優先枠の全体空き'), '98 / 100枠');
@@ -44,38 +46,40 @@ test('paid plan names do not imply realtime or replace server-provided special c
     data['x-processing-settings'] = processing({ planLabel: 'ベーシック＋', realtimeAllowed: false, requestedMode: 'realtime' });
     const f = await fixture(data);
     try {
-        const x = article(f, 'Xの共通設定');
-        assert.match(x.textContent, /5分ごとにまとめて通知/); assert.match(x.textContent, /共通設定のリアルタイム希望は保存済み.*個別の優待・5枠利用/);
+        const x = article(f, 'X通知の設定を開く');
+        assert.match(x.textContent, /5分ごとにまとめて通知/); assert.match(x.querySelector('details').textContent, /リアルタイムの希望は保存済み/);
         assert(!x.textContent.includes('リアルタイムも選べます'));
         assert.equal(fact(f.container, 'プランの特殊枠の残り'), '12 / 17枠');
     } finally { await f.close(); }
 });
 
-test('a configured realtime mode is displayed independently of the batching interval', async () => {
+test('a legacy realtime default is kept in details without asserting every monitor uses it', async () => {
     const data = defaults(); data['x-processing-settings'] = processing({ effectiveMode: 'realtime', requestedMode: 'realtime', realtimeAllowed: true, intervalMinutes: null });
     const f = await fixture(data);
-    try { const x = article(f, 'Xの共通設定'); assert.match(x.textContent, /リアルタイム.*通知方法を個別指定していない既存監視/); assert(!x.textContent.includes('null分')); }
+    try { const x = article(f, 'X通知の設定を開く'); assert.match(x.querySelector('details').textContent, /個別設定のない既存監視の初期設定リアルタイム/); assert.equal(x.querySelector('.notification-plan-name').textContent, '1件登録'); assert(!x.textContent.includes('null分')); }
     finally { await f.close(); }
 });
 
-test('missing plan interval shows administrator configuration as the next step without a purchase action', async () => {
+test('a missing default interval is disclosed without showing an account-wide configuration block', async () => {
     const data = defaults(); data['x-processing-settings'] = processing({ configured: false, intervalMinutes: null });
     const f = await fixture(data);
     try {
-        assert.match(article(f, 'Xの共通設定').textContent, /管理者の間隔設定待ち/);
-        const next = f.container.querySelector('.notification-next-step'); assert.match(next.textContent, /間隔通知は管理者の間隔設定待ち.*受信データは保持/);
-        assert.equal(next.querySelector('a').getAttribute('href'), '/dashboard/automation#x-notifications');
-        assert(!next.textContent.includes('購入'));
+        const x = article(f, 'X通知の設定を開く');
+        assert.match(x.querySelector('details').textContent, /管理者の間隔設定待ち/);
+        assert.equal(x.querySelector('.notification-plan-name').textContent, '1件登録');
+        assert.equal(f.container.querySelector('.notification-next-step'), null);
+        assert(!x.textContent.includes('購入'));
     } finally { await f.close(); }
 });
 
-test('missing batch interval still offers realtime when the current server policy grants that option', async () => {
+test('missing batch defaults retain the route to actual per-monitor settings without inferring realtime eligibility', async () => {
     const data = defaults(); data['x-processing-settings'] = processing({ configured: false, intervalMinutes: null, realtimeAllowed: true });
     const f = await fixture(data);
     try {
-        const next = f.container.querySelector('.notification-next-step'); assert.match(next.textContent, /リアルタイムは監視ごとの利用資格と必要枠数で判定/);
-        assert.equal(next.querySelector('a').getAttribute('href'), '/dashboard/automation#x-notifications');
-        assert(!next.textContent.includes('購入'));
+        const x = article(f, 'X通知の設定を開く');
+        assert.equal(x.querySelector('a').getAttribute('href'), '/dashboard/automation#x-notifications');
+        assert.equal(f.container.querySelector('.notification-next-step'), null);
+        assert(!x.textContent.includes('購入'));
     } finally { await f.close(); }
 });
 

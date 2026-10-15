@@ -23,8 +23,14 @@ async function fixture({ current = row(), slots = pool(), respond, parent = fals
     if (parent) await f.render(f.React.createElement(f.exports.MonitorManager, { api: f.api, scope: 'private', canEdit: true, destinations: [], rules: [], refresh: async () => {} }));
     else await f.render(f.React.createElement(Wrapper));
     await f.act(async () => new Promise(resolve => setTimeout(resolve, parent ? 20 : 1)));
-    f.open = () => f.click('確認間隔・使用枠');
-    f.review = async value => { await f.fill(f.field('この通知で使う枠数'), value); await f.submit(); };
+    f.open = async () => {
+        if (parent && !f.container.querySelector('dialog[open]')) {
+            const retained = [...f.container.querySelectorAll('button')].some(item => item.textContent === '通知の入力を再開');
+            await f.click(retained ? '通知の入力を再開' : '設定を変更');
+        }
+        if ([...f.container.querySelectorAll('button')].some(item => item.textContent === '確認間隔・使用枠')) await f.click('確認間隔・使用枠');
+    };
+    f.review = async value => { const input = f.field('この通知で使う枠数'); await f.fill(input, value); await f.act(async () => input.closest('form').dispatchEvent(new f.dom.window.Event('submit', { bubbles: true, cancelable: true }))); };
     return f;
 }
 const writes = f => f.calls.filter(item => item.method !== 'GET');
@@ -72,7 +78,7 @@ test('a refreshed baseline makes a stale reviewed allocation unsavable until rev
 });
 test('closing or refreshing the parent notification list preserves a draft without automatically reallocating frames', async () => {
     const f = await fixture({ parent: true });
-    try { await f.open(); await f.fill(f.field('この通知で使う枠数'), '3'); await f.click('枠配分を閉じる'); assert.match(f.container.textContent, /枠配分の入力を保持/); await f.open(); assert.equal(f.field('この通知で使う枠数').value, '3'); await f.click('更新'); await f.settle(); await f.open(); assert.equal(f.field('この通知で使う枠数').value, '3'); assert.equal(writes(f).length, 0); }
+    try { await f.open(); await f.fill(f.field('この通知で使う枠数'), '3'); await f.click('枠配分を閉じる'); assert.match(f.container.textContent, /枠配分の入力を保持/); await f.open(); assert.equal(f.field('この通知で使う枠数').value, '3'); await f.click('キャンセル'); await f.click('更新'); await f.settle(); await f.open(); assert.equal(f.field('この通知で使う枠数').value, '3'); assert.equal(writes(f).length, 0); }
     finally { await f.close(); }
 });
 test('cadence save through the parent refreshes both notification rows and the shared weighted allocation profile', async () => {
@@ -81,7 +87,7 @@ test('cadence save through the parent refreshes both notification rows and the s
     finally { await f.close(); }
 });
 test('foreign-owner or legacy rows expose no allocation entry point and unknown stored count is never silently treated as one', async () => {
-    for (const flag of [false, undefined]) { const f = await fixture({ current: row({ canAllocateCadence: flag }), parent: true }); try { assert(![...f.container.querySelectorAll('button')].some(item => item.textContent === '確認間隔・使用枠')); assert.equal(writes(f).length, 0); } finally { await f.close(); } }
+    for (const flag of [false, undefined]) { const f = await fixture({ current: row({ canAllocateCadence: flag }), parent: true }); try { await f.click('設定を変更'); assert(![...f.container.querySelectorAll('button')].some(item => item.textContent === '確認間隔・使用枠')); assert.equal(writes(f).length, 0); } finally { await f.close(); } }
     const f = await fixture({ current: row({ slotCost: 'unrecognized' }) });
     try { await f.open(); assert.match(f.container.textContent, /使用枠 確認中/); await f.click('1枠に戻す'); await f.submit(); assert.equal(writes(f).length, 0); }
     finally { await f.close(); }
