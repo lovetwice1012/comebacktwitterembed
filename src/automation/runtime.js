@@ -57,6 +57,7 @@ function createRunner(db, queue, transport, options = {}) {
     async function tick() {
         if (isStopping()) return { state: 'stopped' };
         assertAllowed();
+        if (transport.recover) await transport.recover();
         let job = await queue.claim(clock());
         if (!job) return { state: 'idle' };
         let sending = false, confirmed = 0, prepared = null, attemptStarted = false;
@@ -207,7 +208,9 @@ function start(client) {
         if (runtime.control.stopped) return;
         timer = setTimeout(async () => {
             try {
-                runtime.activeFlowTick = runtime.flow.tick(Date.now()); await runtime.activeFlowTick;
+                try { runtime.activeFlowTick = runtime.flow.tick(Date.now()); await runtime.activeFlowTick; }
+                catch { console.error('[automation] flow tick failed; its durable input remains available for diagnosis'); }
+                // Independent ready jobs still advance after a flow-only fault.
                 runtime.activeTick = runtime.runner.tick(); await runtime.activeTick;
             }
             catch { console.error('[automation] durable queue tick failed; no message was retried implicitly'); }

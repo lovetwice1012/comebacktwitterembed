@@ -146,9 +146,10 @@ test('real SQL: management, immutable revisions, durable handoff, aggregation, r
             assert.equal(JSON.parse(parent.plan_json).members.length, 2);
             now = Number(parent.due_at_ms) + 1;
             // The first limit-deferred job may come earlier; inspect explicitly.
-            const candidate = { ...parent, target_kind: 'auto', target_id: watch.id, workflow_id: workflow.id, owner_user_id: actor.userId, plan: JSON.parse(parent.plan_json) };
+            const persisted = (await query('SELECT j.*,r.target_kind,r.target_id,r.workflow_id,r.revision,r.owner_user_id,r.scope,r.guild_id FROM automation_jobs j JOIN automation_runs r ON r.id=j.run_id WHERE j.id=?', [parent.id]))[0];
+            const candidate = { ...persisted, plan: JSON.parse(persisted.plan_json) };
             assert.equal((await queue.check(candidate, now)).state, 'ready');
-            await monitors.save(actor, 'auto', { expectedRevision: 1, enabled: false }, watch.id);
+            await monitors.save(actor, 'auto', { expectedRevision: Number((await query("SELECT revision FROM automation_monitors WHERE target_kind='auto' AND target_id=?", [watch.id]))[0].revision), enabled: false }, watch.id);
             assert.equal((await queue.check(candidate, now)).state, 'cancelled');
             assert.equal((await query('SELECT state FROM automation_jobs WHERE id=?', [parent.id]))[0].state, 'cancelled');
         });

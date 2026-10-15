@@ -4,6 +4,7 @@ const { ChannelType, PermissionsBitField } = require('discord.js');
 
 const WEBHOOK_NAME = 'ComebackTwitterEmbed notifications';
 const WEBHOOK_CHANNEL_TYPES = new Set([ChannelType.GuildText, ChannelType.GuildAnnouncement]);
+const pendingCreations = new Map();
 
 function isWebhookChannel(channel) {
     return Boolean(channel && WEBHOOK_CHANNEL_TYPES.has(channel.type) && typeof channel.createWebhook === 'function');
@@ -25,18 +26,38 @@ async function resolveGuildChannel(interaction, channelId) {
     return channel;
 }
 
-async function createWebhookForChannel(interaction, channelId, name = WEBHOOK_NAME) {
+async function verifyChannelForNotification(interaction, channelId, manageWebhooks = false) {
     const channel = await resolveGuildChannel(interaction, channelId);
-    if (!hasManageWebhooks(channel, interaction.member)) {
-        throw Object.assign(new Error('You need Manage Webhooks in the selected channel.'), { code: 'WEBHOOK_DESTINATION_USER_PERMISSION' });
+    const required = PermissionsBitField.Flags.ViewChannel | PermissionsBitField.Flags.SendMessages
+        | (manageWebhooks ? PermissionsBitField.Flags.ManageWebhooks : 0n);
+    const has = subject => { try { return Boolean(subject && channel.permissionsFor(subject)?.has(required)); } catch { return false; } };
+    if (!has(interaction.member)) {
+        throw Object.assign(new Error('You need View Channel, Send Messages and the required webhook permissions in the selected channel.'), { code: 'WEBHOOK_DESTINATION_USER_PERMISSION' });
     }
     const botMember = interaction.guild?.members?.me || interaction.client?.user;
-    if (!hasManageWebhooks(channel, botMember)) {
-        throw Object.assign(new Error('The bot needs Manage Webhooks in the selected channel.'), { code: 'WEBHOOK_DESTINATION_BOT_PERMISSION' });
+    if (!has(botMember)) {
+        throw Object.assign(new Error('The bot needs View Channel, Send Messages and the required webhook permissions in the selected channel.'), { code: 'WEBHOOK_DESTINATION_BOT_PERMISSION' });
     }
-    const webhook = await channel.createWebhook({ name: String(name).slice(0, 80) });
-    if (!webhook?.url) throw Object.assign(new Error('Discord did not return a usable webhook URL.'), { code: 'WEBHOOK_DESTINATION_CREATE_FAILED' });
-    return { webhookUrl: webhook.url, channel, webhook };
+    return channel;
+}
+
+async function createWebhookForChannel(interaction, channelId, name = WEBHOOK_NAME) {
+    const channel = await verifyChannelForNotification(interaction, channelId, true);
+    const botId = interaction.client?.user?.id || interaction.guild?.members?.me?.id;
+    const webhookName = String(name).slice(0, 80), key = `${interaction.guildId || interaction.guild.id}:${channelId}:${botId}:${webhookName}`;
+    // Serialize the remote lookup/create for concurrent local retries. Native
+    // stores also use a stable selected-channel identity under their owner lock.
+    const previous = pendingCreations.get(key) || Promise.resolve();
+    const operation = previous.catch(() => {}).then(async () => {
+        const hooks = await channel.fetchWebhooks();
+        const existing = [...hooks.values()].find(hook => hook.type === 1 && hook.owner?.id === botId && hook.name === webhookName && hook.url && hook.token);
+        const webhook = existing || await channel.createWebhook({ name: webhookName });
+        if (!webhook?.url) throw Object.assign(new Error('Discord did not return a usable webhook URL.'), { code: 'WEBHOOK_DESTINATION_CREATE_FAILED' });
+        return { webhookUrl: webhook.url, channel, webhook, created: !existing };
+    });
+    pendingCreations.set(key, operation);
+    try { return await operation; }
+    finally { if (pendingCreations.get(key) === operation) pendingCreations.delete(key); }
 }
 
 module.exports = {
@@ -45,4 +66,5 @@ module.exports = {
     hasManageWebhooks,
     isWebhookChannel,
     resolveGuildChannel,
+    verifyChannelForNotification,
 };

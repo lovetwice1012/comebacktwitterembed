@@ -71,7 +71,7 @@ test('a queued flow job drops only a monitor changed after projection and rechec
     const projected = await createFlowProjector(f.db).projectOne(baseTime + 60000), claimed = await queue.claim(baseTime + 60000);
     assert(projected, JSON.stringify({ sends: await f.query('SELECT * FROM automation_flow_sends'), steps: await f.query('SELECT node_id,state FROM automation_flow_steps') }));
     assert.equal(projected.jobs.length, 1); assert.equal(claimed.plan.members.length, 2);
-    await f.monitors.save(f.actor, 'auto', { expectedRevision: 1, enabled: false }, f.first.id);
+    await f.monitors.save(f.actor, 'auto', { expectedRevision: Number((await f.query("SELECT revision FROM automation_monitors WHERE target_kind='auto' AND target_id=?", [f.first.id]))[0].revision), enabled: false }, f.first.id);
     const refreshed = await queue.refreshFlowJob(claimed, baseTime + 60001);
     assert.equal(refreshed.state, 'ready'); assert.deepEqual(refreshed.job.plan.members.map(member => member.event.title), ['third']);
     assert.equal((await queue.check(refreshed.job, baseTime + 60001)).state, 'ready');

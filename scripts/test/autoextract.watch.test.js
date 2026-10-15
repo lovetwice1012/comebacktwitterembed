@@ -68,6 +68,8 @@ test('autoextract watch validates and registers a non-Twitter source without exp
         const webhook = 'https://discord.com/api/webhooks/123456789012345678/token-is-not-disclosed';
         await watch({
             user: { id: '123456789012345678' }, guildId: 'guild-1', locale: 'en',
+            member: { id: '123456789012345678' }, client: { user: { id: 'bot-1' } },
+            guild: { channels: { cache: new Map([['channel-1', { id: 'channel-1', type: 0, createWebhook: async () => {}, permissionsFor: () => ({ has: () => true }) }]]) } },
             options: { getBoolean: () => true, getString: key => ({ provider: 'youtube', source: 'UC_x5XG1OV2P6uZZ5FSM9Ttw', destination: 'webhook', webhook })[key] || null },
             editReply: async payload => replies.push(payload),
         });

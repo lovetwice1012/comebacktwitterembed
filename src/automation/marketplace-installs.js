@@ -6,12 +6,24 @@ const { AutomationError, requireActor, assertAccess, scopeFor, hash } = require(
 const parse = value => typeof value === 'string' ? JSON.parse(value) : value;
 const fail = (code, message, status = 400) => { throw new AutomationError(code, message, status); };
 function createInstalls(db, service, getPackage, evaluator) {
+    async function rememberOrigin(query, ref, origin) {
+        if (!origin) return;
+        // Only callers holding the verified package lock supply this argument.
+        // It never comes from an import request's editable bundle or metadata.
+        const row = (await query('SELECT source_package_id FROM automation_dictionary_revisions WHERE dictionary_id=? AND revision=? FOR UPDATE', [ref.id, ref.revision]))[0];
+        if (!row || row.source_package_id && row.source_package_id !== origin.id) fail('DICTIONARY_ORIGIN_CONFLICT', '辞書の配布元を確認できません。更新を中止しました。', 409);
+        await query('UPDATE automation_dictionary_revisions SET source_package_id=?,source_package_version=?,origin_reviewed=1 WHERE dictionary_id=? AND revision=?', [origin.id, origin.version, ref.id, ref.revision]);
+    }
     async function importBundle(actor, bundle, input = {}, origin = null) {
         validateBundle(bundle); const owner = scopeFor(actor, input.scope || 'private');
         if (input.workflowId) fail('INSTALL_REQUIRES_UPDATE_PREVIEW', '既存ルールの更新は更新プレビューから実行してください。');
         return db.withDatabaseTransaction(async query => {
             const refs = Object.create(null);
-            for (const [alias, dictionary] of Object.entries(bundle.dictionaries)) { const created = await service.saveDictionary(actor, { scope: owner.scope, dictionary }); refs[alias] = { id: created.id, revision: created.revision }; }
+            for (const [alias, dictionary] of Object.entries(bundle.dictionaries)) {
+                const created = await service.saveDictionary(actor, { scope: owner.scope, dictionary });
+                refs[alias] = { id: created.id, revision: created.revision };
+                await rememberOrigin(query, refs[alias], origin);
+            }
             if (bundle.kind === 'dictionary') {
                 const installId = origin ? randomUUID() : null;
                 if (origin) await query('INSERT INTO automation_package_dictionary_installs (id,package_id,version,dictionary_bindings_json,owner_user_id,guild_id,scope,created_at_ms,updated_at_ms) VALUES (?,?,?,?,?,?,?,?,?)', [installId, origin.id, origin.version, JSON.stringify(refs), actor.userId, owner.guild_id, owner.scope, Date.now(), Date.now()]);
@@ -86,11 +98,20 @@ function createInstalls(db, service, getPackage, evaluator) {
             const plan = await updatePlan(actor, id, input);
             if (plan.token !== input.expectedToken) fail('REVISION_CONFLICT', '導入済み設定または更新する版が変わりました。差分を再確認してください。', 409);
             if (plan.localChanges && input.replaceLocalChanges !== true) fail('LOCAL_CHANGES', 'ローカル編集を置き換えることの確認が必要です。');
+            if (!input.workflowId) {
+                // The current installation map is authoritative for old editions.
+                // Preserve its exact references before replacing/renaming aliases.
+                for (const ref of Object.values(plan._refs)) {
+                    const prior = (await query('SELECT source_package_id FROM automation_dictionary_revisions WHERE dictionary_id=? AND revision=? FOR UPDATE', [ref.id, ref.revision]))[0];
+                    if (prior && !prior.source_package_id) await rememberOrigin(query, ref, { id, version: plan.fromVersion });
+                }
+            }
             const refs = Object.create(null);
             for (const [alias, dictionary] of Object.entries(plan._pack.bundle.dictionaries)) {
                 const prior = !input.workflowId && plan._refs[alias];
                 const saved = await service.saveDictionary(actor, { scope: plan.scope, dictionary, ...(prior ? { expectedRevision: plan.currentDictionaryRevisions[alias] } : {}) }, prior ? prior.id : null);
                 refs[alias] = { id: saved.id, revision: saved.revision };
+                await rememberOrigin(query, refs[alias], { id, version: plan.toVersion });
             }
             if (input.workflowId) {
                 await service.updateWorkflow(actor, input.workflowId, { expectedRevision: plan.currentRevision, definition: plan._pack.bundle.workflow, bindings: { dictionaries: refs, destinations: plan.preservedDestinations } });

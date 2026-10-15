@@ -73,6 +73,7 @@ function fixture(t, options = {}) {
     const { createXPushRuntime } = runtimeModule(t, () => ({ intervalMinutes, tier: 'paid', planId: 'ExplicitPlan', label: '任意のプラン名' }));
     const runtime = createXPushRuntime(db, {}, { enabled: true, gateway, router, clock: () => now,
         assertAllowed: () => {}, rolloutMode: 'public', pageSize: 2,
+        listActiveSessions: async () => [{ id: subscriptionId, owner_user_id: U }],
         listCandidates: async () => { counters.candidates++; return [{ id: subscriptionId, owner_user_id: U }]; }, ...options.runtime });
     t.after(() => runtime.stop());
     return { runtime, gateway, router, lease, rows, routed, counters, realtimeAllowed: () => realtimeEnabled,

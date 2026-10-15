@@ -93,10 +93,11 @@ function createXMonitorQuota(db, options = {}) {
         if (specialUsed < await paidLimit(query, plan)) return 'special';
         return null;
     }
-    async function verifySettings(query, actor, config) {
+    async function verifySettings(query, actor, config, requireDestinationEnabled = false) {
         for (const [key, table] of [['workflowId','automation_workflows'],['destinationId','automation_destinations']]) if (config[key]) {
-            const rows = await query(`SELECT id FROM ${table} WHERE id=? AND owner_user_id=? AND scope='private' AND deleted_at_ms IS NULL`, [config[key], actor.userId]);
+            const rows = await query(`SELECT id,enabled FROM ${table} WHERE id=? AND owner_user_id=? AND scope='private' AND deleted_at_ms IS NULL FOR UPDATE`, [config[key], actor.userId]);
             if (!rows.length) fail('NOT_FOUND', '自分のルール・通知先を指定してください。', 404);
+            if (key === 'destinationId' && requireDestinationEnabled && !rows[0].enabled) fail('DESTINATION_DISABLED', '通知先を有効にしてから通知を再開してください。', 409);
         }
         if (config.subscriptionId) {
             const rows = await query('SELECT id FROM automation_x_subscriptions WHERE id=? AND owner_user_id=?', [config.subscriptionId, actor.userId]);
@@ -215,6 +216,15 @@ function createXMonitorQuota(db, options = {}) {
     }
     async function duplicateRegistration(query, actor, input, row) {
         const result = await item(row, await planFor(query, actor.userId), query);
+        const currentSettings = settings(JSON.parse(row.notification_settings_json));
+        const suppliedSettings = input.notificationSettings === undefined ? undefined : inputSettings(input.notificationSettings);
+        const currentDestinations = Object.fromEntries(Object.entries(currentSettings).filter(([key]) => key !== 'processingMode'));
+        const changed = input.name !== undefined && input.name.trim() !== row.name
+            || input.accountHandle !== undefined && handleOf(input.accountHandle) !== row.account_handle
+            || input.processingMode !== undefined && input.processingMode !== currentSettings.processingMode
+            || suppliedSettings && (Object.keys(suppliedSettings).length !== Object.keys(currentDestinations).length
+                || Object.keys(suppliedSettings).some(key => suppliedSettings[key] !== currentDestinations[key]));
+        if (changed) fail('X_MONITOR_REGISTRATION_CONFLICT', 'このXアカウントは登録済みです。一覧の「編集」から通知先や通知方法を変更してください。', 409);
         if (input.poolPreference === 'supporter') {
             // A retried create is idempotent only for the same explicit choice.
             // Never turn a duplicate request into an implicit pool move or edit.
@@ -345,6 +355,7 @@ function createXMonitorQuota(db, options = {}) {
             const oldSettings = settings(JSON.parse(row.notification_settings_json));
             const nextSettings = input.notificationSettings === undefined ? { ...oldSettings } : { ...inputSettings(input.notificationSettings),
                 ...(oldSettings.processingMode === undefined ? {} : { processingMode: oldSettings.processingMode }) };
+            if (input.enabled === true && !Number(row.enabled)) await verifySettings(query, actor, nextSettings, true);
             let beforeProcessing, afterSlotCost;
             if (input.processingMode !== undefined) {
                 beforeProcessing = await processing.inspectXMonitorProcessing(query, row, now(), { plan });

@@ -9,7 +9,8 @@ function channel(permissions = true) {
     return {
         id: 'channel-1',
         type: ChannelType.GuildText,
-        permissionsFor: () => ({ has: permission => permissions && permission === PermissionsBitField.Flags.ManageWebhooks }),
+        permissionsFor: () => new PermissionsBitField(permissions ? [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ManageWebhooks] : []),
+        fetchWebhooks: async () => new Map(),
         createWebhook: async ({ name }) => ({ name, url: 'https://discord.com/api/webhooks/123456789012345678/created-token' }),
     };
 }

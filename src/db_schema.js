@@ -1061,6 +1061,8 @@ async function shouldSkipMigrationStatement(queryDatabase, statement) {
 
 async function applyMigrationFile(queryDatabase, file) {
     const migrationId = path.basename(file, '.sql');
+    if (migrationId === '20261016_add_dictionary_package_provenance')
+        await require('./automation/dictionary-package-provenance').assertLegacyDictionaryOrigins(queryDatabase);
     const sql = fs.readFileSync(path.join(MIGRATIONS_DIR, file), 'utf8');
     const statements = splitSqlStatements(sql);
 
@@ -1132,6 +1134,7 @@ module.exports = {
         parseAddIndexStatement,
         shouldSkipMigrationStatement,
         splitSqlStatements,
+        applyMigrationFile,
         ensureGuildProviderSettingsColumns,
     },
 };

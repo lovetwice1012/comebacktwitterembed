@@ -122,7 +122,8 @@ async function registerTargetAdmitted(input, options = {}) {
         await query('SELECT counter_key FROM automation_counters WHERE counter_key=? FOR UPDATE', [slotLock]);
         await eligibility.assertRegistrationAllowed(query, userId, true);
         const webhookEndpointId = destinationType === 'webhook' ? await upsertWebhook(query, webhookUrl) : null;
-        const destinationKey = destinationType === 'dm' ? `dm:${userId}` : `webhook:${webhookEndpointId}`;
+        let destinationKey = destinationType === 'dm' ? `dm:${userId}`
+            : input.destinationChannelId ? `channel:${input.guildId}:${input.destinationChannelId}` : `webhook:${webhookEndpointId}`;
         const initialDue = now + Math.floor(Math.max(0, Math.min(1, Number(random()) || 0)) * jitterMs);
         await query(
             `INSERT INTO ${TABLES.autoWatchSources}
@@ -137,12 +138,20 @@ async function registerTargetAdmitted(input, options = {}) {
         );
         const source = sourceRows[0];
         if (!source?.id) throw error('Automatic-watch source could not be saved.', 'AUTO_WATCH_SOURCE_STORE_FAILED');
-        const existingRows = await query(
+        const existingRows = input.destinationChannelId ? await query(
+            `SELECT id, enabled, premium_slot, destination_key FROM ${TABLES.autoWatchTargets}
+             WHERE user_id=? AND source_id=? AND destination_key IN (?,?)
+             ORDER BY (destination_key=?) DESC LIMIT 1`,
+            [userId, source.id, destinationKey, `webhook:${webhookEndpointId}`, destinationKey]
+        ) : await query(
             `SELECT id, enabled, premium_slot FROM ${TABLES.autoWatchTargets}
              WHERE user_id=? AND source_id=? AND destination_key=? LIMIT 1`,
             [userId, source.id, destinationKey]
         );
         const existing = existingRows[0];
+        // Reusing an older purpose-named webhook must return its existing
+        // registration without changing its key or invalidating pending jobs.
+        if (existing?.destination_key) destinationKey = existing.destination_key;
         await entitlements.assertSlotAvailable(query, userId, 'auto', existing?.id);
         const slot = { premiumSlot: existing ? Number(existing.premium_slot) ? 1 : 0 : 0 };
         await query(

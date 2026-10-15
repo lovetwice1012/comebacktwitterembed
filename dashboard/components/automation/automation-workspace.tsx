@@ -17,6 +17,13 @@ const field = "w-full rounded border bg-background px-3 py-2 text-sm";
 const button = "rounded border bg-background px-3 py-2 text-sm hover:bg-muted disabled:opacity-40";
 const emptyBindings: Bindings = { destinations: {}, dictionaries: {} };
 const formatNames: Record<string, string> = { normal: "通常のBot展開", expanded: "通知側で直接展開", card: "カード", text: "テキスト", url: "URLのみ" };
+function activationPreview(value: any) {
+  if (!value || !Number.isSafeInteger(value.expectedRevision) || value.expectedRevision < 1 || typeof value.expectedTargetsToken !== "string" || !value.expectedTargetsToken
+    || !Array.isArray(value.affectedTargets) || value.affectedTargets.some((row: any) => !row || !["auto", "price", "x"].includes(row.kind) || typeof row.id !== "string" || typeof row.name !== "string")) {
+    throw new Error("適用先を確認できません。もう一度［通知に適用］から確認してください。");
+  }
+  return value;
+}
 const starters = [
   { goal: "all", time: "now", label: "すべての新着を届ける", icon: Bell },
   { goal: "keyword", time: "now", label: "キーワードで絞り込む", icon: Filter },
@@ -29,6 +36,7 @@ export function AutomationWorkspace({ viewerId, guildId, canEdit = true, present
   const [tab, setTab] = useState("monitors"), [catalog, setCatalog] = useState<any>(null), [items, setItems] = useState<any[]>([]);
   const [selected, setSelected] = useState<any>(null), [draft, setDraft] = useState<Rule | null>(null), [bindings, setBindings] = useState<Bindings>(emptyBindings);
   const [editorValid, setEditorValid] = useState(false);
+  const [editorVersion, setEditorVersion] = useState(0);
   const [destinations, setDestinations] = useState<any[]>([]), [dictionaries, setDictionaries] = useState<any[]>([]);
   const [error, setError] = useState(""), [notice, setNotice] = useState(""), [busy, setBusy] = useState(false);
   const [goal, setGoal] = useState("all"), [time, setTime] = useState("now"), [display, setDisplay] = useState("normal"), [scope, setScope] = useState("private");
@@ -96,22 +104,21 @@ export function AutomationWorkspace({ viewerId, guildId, canEdit = true, present
   const task = async (work: () => Promise<void>) => { setBusy(true); setError(""); setNotice(""); try { await work(); } catch (err: any) { setError(err.message); } finally { setBusy(false); } };
   const refresh = useCallback(async () => {
     const epoch = ++destinationLoadEpoch.current;
-    const destinationPages = async () => {
+    const resourcePages = async (resource: string) => {
       const result: any[] = [], cursors = new Set<string>();
       let cursor = "";
       do {
-        const page = await api(cursor ? `destinations?afterId=${encodeURIComponent(cursor)}` : "destinations");
-        if (!Array.isArray(page.items)) throw new Error("通知先一覧を再読み込みしてください。");
+        const page = await api(cursor ? `${resource}?afterId=${encodeURIComponent(cursor)}` : resource);
+        if (!Array.isArray(page.items)) throw new Error("一覧を再読み込みしてください。");
         result.push(...page.items);
         cursor = page.nextCursor || "";
-        if (cursor && (typeof cursor !== "string" || cursors.has(cursor))) throw new Error("通知先一覧を再読み込みしてください。");
+        if (cursor && (typeof cursor !== "string" || cursors.has(cursor))) throw new Error("一覧を再読み込みしてください。");
         if (cursor) cursors.add(cursor);
       } while (cursor);
       return result;
     };
-    const [rules, dest, dict] = await Promise.all([api("workflows"), destinationPages(), api("dictionaries")]);
-    setItems(rules.items); setDictionaries(dict.items);
-    if (destinationAPI.current === api && epoch === destinationLoadEpoch.current) setDestinations(dest);
+    const [rules, dest, dict] = await Promise.all([resourcePages("workflows"), resourcePages("destinations"), resourcePages("dictionaries")]);
+    if (destinationAPI.current === api && epoch === destinationLoadEpoch.current) { setItems(rules); setDictionaries(dict); setDestinations(dest); }
   }, [api]);
   const refreshDestination = useCallback(async (id: string) => {
     const saved = await api(`destinations/${encodeURIComponent(id)}`);
@@ -128,7 +135,7 @@ export function AutomationWorkspace({ viewerId, guildId, canEdit = true, present
     if (!canReplaceDraft()) return;
     void task(async () => { await choose({ id }); setTab("rules"); });
   }
-  async function choose(item: any) { const value = await api(`workflows/${item.id}`); if (item.id !== selected?.id) setNotificationTarget(""); setSelected(value); setDraft(value.draft); setBindings(value.bindings); setTextDraft(null); setHistory([]); setStudioOpen(true); setEditorValid(false); return value; }
+  async function choose(item: any) { const value = await api(`workflows/${item.id}`); if (item.id !== selected?.id) setNotificationTarget(""); setSelected(value); setDraft(value.draft); setBindings(value.bindings); setTextDraft(null); setEditorVersion(previous => previous + 1); setHistory([]); setStudioOpen(true); setEditorValid(false); return value; }
   function createTemplate(templateGoal = "all", templateTime = "now", templateFormat = "normal") {
     if (!canReplaceDraft()) return;
     void task(async () => {
@@ -145,10 +152,12 @@ export function AutomationWorkspace({ viewerId, guildId, canEdit = true, present
       setSelected(created); setDraft(created.draft); setBindings(created.bindings);
       saved = created;
     } else {
-      await api(`workflows/${selected.id}`, "PATCH", { definition: draft, bindings, expectedRevision: selected.revision });
-      saved = await choose(selected);
+      const result = await api(`workflows/${selected.id}`, "PATCH", { definition: draft, bindings, expectedRevision: selected.revision });
+      saved = { ...selected, ...result, name: draft.name, description: draft.description, draft, bindings };
+      setSelected(saved); setDraft(saved.draft); setBindings(saved.bindings); setTextDraft(null);
     }
-    await refresh(); setNotice("下書きを保存しました。まだ通知には適用されていません。");
+    setNotice("下書きを保存しました。まだ通知には適用されていません。");
+    try { await refresh(); } catch { setError("下書きは保存済みです。［一覧を再読み込み］で再確認してください。"); }
     return saved;
   }
   async function importPackage(file: File) {
@@ -186,8 +195,13 @@ export function AutomationWorkspace({ viewerId, guildId, canEdit = true, present
       } while (after);
       return rows;
     }));
-    return lists.flat();
-  }, [api]);
+    let xRows: any[] = [];
+    if (currentScope === "private") {
+      try { const page = await api("x-monitors"); if (!Array.isArray(page.items)) throw new Error("X通知一覧を再読み込みしてください。"); xRows = page.items.filter((row: any) => row.state !== "deleted").map((row: any) => ({ ...row, kind: "x", scope: "private", workflowId: row.notificationSettings?.workflowId || null, destinationId: row.notificationSettings?.destinationId || null })); }
+      catch (cause: any) { if (!["X_MONITOR_UNAVAILABLE", "X_ROLLOUT_DISABLED", "X_ROLLOUT_SUPPORTERS_ONLY"].includes(cause?.code)) throw cause; }
+    }
+    return [...lists.flat(), ...xRows];
+  }, [api, currentScope]);
   const loadNotificationChoices = useCallback(async () => {
     const rows = await readNotificationChoices(); setNotificationChoices(rows); setNotificationNext({ auto: null, price: null }); return rows;
   }, [readNotificationChoices]);
@@ -199,19 +213,23 @@ export function AutomationWorkspace({ viewerId, guildId, canEdit = true, present
     return () => { active = false; };
   }, [readNotificationChoices, inStudio]);
   async function prepareApply() {
-    const rows = await loadNotificationChoices();
-    const affected = selected ? rows.filter(row => row.workflowId === selected.id) : [];
+    await loadNotificationChoices();
+    const affected = selected ? activationPreview(await api(`workflows/${selected.id}/activation-preview`)).affectedTargets : [];
     if (!affected.length) { setNotificationOpen(true); return; }
     setApplyTargets(affected);
   }
   async function applyToAttached() {
-    const rows = await readNotificationChoices(), affected = rows.filter(row => row.workflowId === selected?.id);
-    if (!affected.length || JSON.stringify(affected.map(row => [row.kind, row.id]).sort()) !== JSON.stringify((applyTargets || []).map(row => [row.kind, row.id]).sort())) {
-      setNotificationChoices(rows); setApplyTargets(affected.length ? affected : null); if (!affected.length) setNotificationOpen(true);
+    let preview = activationPreview(await api(`workflows/${selected.id}/activation-preview`));
+    const affected = preview.affectedTargets;
+    const signature = (rows: any[]) => JSON.stringify(rows.map(row => [row.kind, row.id, row.revision]).sort());
+    if (!affected.length || signature(affected) !== signature(applyTargets || [])) {
+      setApplyTargets(affected.length ? affected : null); if (!affected.length) setNotificationOpen(true);
       throw new Error("対象の通知が変わりました。適用先を確認し直してください。");
     }
     const saved = dirty || !selected ? await save() : selected; if (!saved) return;
-    const activation = await api(`workflows/${saved.id}/activate`, "POST", { expectedRevision: saved.revision });
+    preview = activationPreview(await api(`workflows/${saved.id}/activation-preview`));
+    if (signature(preview.affectedTargets) !== signature(affected)) { setApplyTargets(preview.affectedTargets); throw new Error("対象の通知が変わりました。適用先を確認し直してください。"); }
+    const activation = await api(`workflows/${saved.id}/activate`, "POST", { expectedRevision: saved.revision, expectedTargetsToken: preview.expectedTargetsToken });
     setSelected({ ...saved, ...activation, enabled: true, activeRevision: saved.revision }); setApplyTargets(null);
     setNotice(`${affected.length}件の通知に適用しました。`);
     try { await choose(saved); await refresh(); }
@@ -227,17 +245,24 @@ export function AutomationWorkspace({ viewerId, guildId, canEdit = true, present
   async function useForNotification(cloneOnly = false) {
     if (!targetNotification || readOnly) return;
     const rows = await readNotificationChoices();
-    const affected = selected ? rows.filter(row => row.workflowId === selected.id && (row.kind !== targetNotification.kind || row.id !== targetNotification.id)) : [];
-    if (!cloneOnly && affected.length && (dirty || !selected.enabled || selected.activeRevision !== selected.revision) && !confirm(`選んだ通知に加えて、次の${affected.length}件にも変更を適用します。\n${affected.map(row => row.name).join("\n")}\n続けますか？`)) return;
+    const target = rows.find(row => row.kind === targetNotification.kind && row.id === targetNotification.id);
+    if (!target || target.revision !== targetNotification.revision || target.workflowId !== targetNotification.workflowId) { setNotificationChoices(rows); throw new Error("選んだ通知が変更されました。最新の設定を確認して、もう一度選んでください。"); }
+    const initialPreview = selected && !cloneOnly ? activationPreview(await api(`workflows/${selected.id}/activation-preview`)) : null;
+    const affected = (initialPreview?.affectedTargets || []).filter((row: any) => row.kind !== target.kind || row.id !== target.id);
+    if (!cloneOnly && affected.length && (dirty || !selected.enabled || selected.activeRevision !== selected.revision) && !confirm(`選んだ通知に加えて、次の${affected.length}件にも変更を適用します。\n${affected.map((row: any) => row.name).join("\n")}\n続けますか？`)) return;
     const saved = cloneOnly ? await api("workflows", "POST", { definition: { ...draft, name: `${draft?.name}（${targetNotification.name}用）`.slice(0, 120) }, bindings, scope: currentScope }) : dirty || !selected ? await save() : selected;
     if (!saved) return;
     if (cloneOnly) { setSelected(saved); setDraft(saved.draft); setBindings(saved.bindings); }
     let applied = saved;
     if (!saved.enabled || saved.activeRevision !== saved.revision) {
-      const activation = await api(`workflows/${saved.id}/activate`, "POST", { expectedRevision: saved.revision });
+      const preview = activationPreview(await api(`workflows/${saved.id}/activation-preview`));
+      const signature = (entries: any[]) => JSON.stringify(entries.map(row => [row.kind, row.id, row.revision]).sort());
+      if (initialPreview && signature(initialPreview.affectedTargets) !== signature(preview.affectedTargets)) { setNotificationChoices(await readNotificationChoices()); throw new Error("対象の通知が変わりました。適用先を確認し直してください。"); }
+      const activation = await api(`workflows/${saved.id}/activate`, "POST", { expectedRevision: saved.revision, expectedTargetsToken: preview.expectedTargetsToken });
       applied = { ...saved, ...activation, enabled: true, activeRevision: saved.revision }; setSelected(applied);
     }
-    await api(`workflows/${applied.id}/attach`, "POST", { targetKind: targetNotification.kind, targetId: targetNotification.id });
+    if (target.kind === "x") await api(`x-monitors/${target.id}`, "PATCH", { expectedRevision: target.revision, notificationSettings: { ...target.notificationSettings, workflowId: applied.id } });
+    else await api(`workflows/${applied.id}/attach`, "POST", { targetKind: target.kind, targetId: target.id, expectedRevision: target.revision, expectedWorkflowId: target.workflowId || null });
     try { await choose(applied); await refresh(); await loadNotificationChoices(); setNotificationError(""); setNotificationOpen(false); }
     catch { setNotificationError("通知に適用済みです。画面を再読み込みしてください。"); }
     setNotice(`「${targetNotification.name}」に適用しました。${!targetNotification.enabled ? "この通知は停止中です。" : "次の新着・価格変化から通知します。"}`);
@@ -284,15 +309,15 @@ export function AutomationWorkspace({ viewerId, guildId, canEdit = true, present
               <summary ref={actionsToggle}>その他の操作</summary>
               <div className="automation-workspace-menu-content">
                 <div role="group" aria-label="実行の切り替え"><h2>実行</h2>
-                  <button className={button} disabled={busy || !selected.activeRevision || selected.scope === "guild" && !canEdit} title={!selected.activeRevision ? "まず下書きを適用してください" : undefined} onClick={() => void task(async () => { await api(`workflows/${selected.id}/state`, "POST", { expectedRevision: selected.revision, enabled: !selected.enabled }); setSelected(await api(`workflows/${selected.id}`)); await refresh(); })}>{selected.enabled ? "ルールを停止" : "ルールを再開"}</button>
+                  <button className={button} disabled={busy || !selected.activeRevision || selected.scope === "guild" && !canEdit} title={!selected.activeRevision ? "まず下書きを適用してください" : undefined} onClick={() => void task(async () => { const result = await api(`workflows/${selected.id}/state`, "POST", { expectedRevision: selected.revision, enabled: !selected.enabled }); const saved = { ...selected, ...result }; setSelected(saved); setItems(previous => previous.map(item => item.id === saved.id ? { ...item, ...result } : item)); setNotice(saved.enabled ? "ルールを再開しました。" : "ルールを停止しました。"); try { await refresh(); } catch { setError("ルールの変更は保存済みです。［一覧を再読み込み］で再確認してください。"); } })}>{selected.enabled ? "ルールを停止" : "ルールを再開"}</button>
                 </div>
                 <div role="group" aria-label="ルールの再利用"><h2>再利用</h2><div>
-                  <button className={button} disabled={!editorValid} onClick={() => void task(async () => { const copy = await api("workflows", "POST", { scope, definition: { ...draft, name: `${draft.name} のコピー`.slice(0, 120) }, bindings }); await refresh(); await choose(copy); })}>ルールを複製</button>
+                  <button className={button} disabled={!editorValid || readOnly} onClick={() => void task(async () => { const copy = await api("workflows", "POST", { scope: currentScope, definition: { ...draft, name: `${draft.name} のコピー`.slice(0, 120) }, bindings }); setSelected(copy); setDraft(copy.draft); setBindings(copy.bindings); setTextDraft(null); setEditorVersion(previous => previous + 1); setNotice("ルールを複製しました。"); try { await refresh(); } catch { setError("複製したルールは保存済みです。［一覧を再読み込み］で再確認してください。"); } })}>ルールを複製</button>
                   <button className={button} onClick={() => { if (dirty && !confirm("未保存の編集は含まれません。保存済みの下書きをエクスポートしますか？")) return; void task(async () => { const data = await api(`workflows/${selected.id}/export`); download(JSON.stringify(data, null, 2), "automation-package.json"); }); }}>共有用に書き出す</button>
                 </div></div>
                 <div role="group" aria-label="版の確認"><h2>版の確認</h2><button className={button} onClick={() => void task(async () => { setHistory(await api(`workflows/${selected.id}/history`)); if (actionsMenu.current) actionsMenu.current.open = false; })}>変更履歴</button></div>
                 <div role="group" aria-label="ルールの削除" className="automation-workspace-danger"><h2>削除</h2>
-                  <button className={`${button} text-destructive`} disabled={selected.scope === "guild" && !canEdit} onClick={() => { if (confirm("このルールを削除し、未送信の配信を取り消しますか？")) void task(async () => { await api(`workflows/${selected.id}`, "DELETE", { expectedRevision: selected.revision }); setSelected(null); setDraft(null); await refresh(); }); }}>ルールを削除</button>
+                  <button className={`${button} text-destructive`} disabled={selected.scope === "guild" && !canEdit} onClick={() => { if (confirm("このルールを削除し、使用中の通知を停止します。ルールの割り当ても外れます。通知を再開すると通常通知になります。削除しますか？")) void task(async () => { await api(`workflows/${selected.id}`, "DELETE", { expectedRevision: selected.revision }); setSelected(null); setDraft(null); await refresh(); }); }}>ルールを削除</button>
                 </div>
               </div>
             </details>}
@@ -306,7 +331,7 @@ export function AutomationWorkspace({ viewerId, guildId, canEdit = true, present
             <button className={button} aria-describedby={`${workspaceId}-revision-${row.revision}`} disabled={selected?.scope === "guild" && !canEdit} onClick={() => { if (dirty && !confirm("未保存の編集を置き換えて、この版を下書きに復元しますか？実行中の版は変わりません。")) return; void task(async () => { await api(`workflows/${selected.id}/restore`, "POST", { revision: row.revision, expectedRevision: selected.revision }); await choose(selected); }); }}>この版を下書きに復元</button>
           </div>)}</div>
         </section>}
-        <RuleEditor key={selected?.id || "new"} onValidityChange={setEditorValid} value={draft} bindings={bindings} resources={{ destinations, dictionaries }} onBindingsChange={setBindings} onChange={setDraft} catalog={catalog} api={api} readOnly={busy || selected?.scope === "guild" && !canEdit} initialTextDraft={textDraft} onTextDraftChange={setTextDraft} />
+        <RuleEditor key={`${selected?.id || "new"}:${editorVersion}`} onValidityChange={setEditorValid} value={draft} bindings={bindings} resources={{ destinations, dictionaries }} onBindingsChange={setBindings} onChange={setDraft} catalog={catalog} api={api} readOnly={busy || selected?.scope === "guild" && !canEdit} initialTextDraft={textDraft} onTextDraftChange={setTextDraft} />
       </fieldset>}
       {inStudio && applyTargets && <AutomationDialog title="通知への適用を確認" busy={busy} error={error} onCancel={() => setApplyTargets(null)}><p>このルールを使う{applyTargets.length}件の通知を更新します。</p><ul>{applyTargets.map(row => <li key={`${row.kind}:${row.id}`}>{row.name}{!row.enabled ? "（停止中）" : ""}</li>)}</ul><button className={button} disabled={busy || !editorValid || readOnly} onClick={() => void task(applyToAttached)}>{applyTargets.length}件の通知に適用</button><button className={button} onClick={() => { setApplyTargets(null); setNotificationOpen(true); }}>1件だけ変更する通知を選ぶ</button></AutomationDialog>}
       {inStudio && draft && memoOpen && <AutomationDialog title="ルールのメモ" busy={busy} onCancel={() => setMemoOpen(false)}><label className="studio-memo-field">メモ<textarea aria-label="ルール説明" className={field} readOnly={readOnly} rows={4} maxLength={8000} value={memoDraft} placeholder="目的や覚えておきたいこと" onChange={event => setMemoDraft(event.target.value)} /></label><div className="studio-dialog-actions"><button className={button + " automation-save-primary"} disabled={busy} onClick={() => { if (!readOnly) setDraft({ ...draft, description: memoDraft }); setMemoOpen(false); }}>{readOnly ? "閉じる" : "メモを反映"}</button></div></AutomationDialog>}
@@ -316,7 +341,7 @@ export function AutomationWorkspace({ viewerId, guildId, canEdit = true, present
           {notificationLoading ? <p role="status">通知を読み込み中…</p> : <>
             {notificationError && <button className={button} disabled={busy} onClick={() => void notificationTask(loadNotificationChoices, true)}>再読み込み</button>}
             {!notificationError && matchingNotifications.length === 0 && <p role="status">{currentScope === "guild" ? "サーバー共有" : "自分用"}で使える通知は0件です。通知一覧から同じ範囲の通知を登録してください。</p>}
-            {!notificationError && matchingNotifications.length > 0 && <div className="studio-notification-assignment"><label>通知<select className={field} aria-label="ルールを使う通知" disabled={readOnly || busy} value={notificationTarget} onChange={e => setNotificationTarget(e.target.value)}><option value="">通知を選択</option>{["auto", "price"].map(kind => <optgroup key={kind} label={kind === "auto" ? "新着通知" : "価格通知"}>{matchingNotifications.filter(row => row.kind === kind).map(row => <option key={`${kind}:${row.id}`} value={`${kind}:${row.id}`}>{row.name}{row.workflowId === selected?.id ? "（設定済み）" : ""}{!row.enabled ? "（停止中）" : ""}</option>)}</optgroup>)}</select></label><button className={button + " automation-save-primary"} disabled={!targetNotification || !editorValid || readOnly || busy} onClick={() => void notificationTask(() => useForNotification())}>保存して通知に適用</button>{selected && attachedNotifications.some(row => row.kind !== targetNotification?.kind || row.id !== targetNotification?.id) && <button className={button} disabled={!targetNotification || !editorValid || readOnly || busy} onClick={() => void notificationTask(() => useForNotification(true))}>ルールを複製して、この通知だけに適用</button>}</div>}
+            {!notificationError && matchingNotifications.length > 0 && <div className="studio-notification-assignment"><label>通知<select className={field} aria-label="ルールを使う通知" disabled={readOnly || busy} value={notificationTarget} onChange={e => setNotificationTarget(e.target.value)}><option value="">通知を選択</option>{["auto", "price", "x"].map(kind => <optgroup key={kind} label={kind === "auto" ? "新着通知" : kind === "price" ? "価格通知" : "X通知"}>{matchingNotifications.filter(row => row.kind === kind).map(row => <option key={`${kind}:${row.id}`} value={`${kind}:${row.id}`}>{row.name}{row.workflowId === selected?.id ? "（設定済み）" : ""}{!row.enabled ? "（停止中）" : ""}</option>)}</optgroup>)}</select></label><button className={button + " automation-save-primary"} disabled={!targetNotification || !editorValid || readOnly || busy} onClick={() => void notificationTask(() => useForNotification())}>保存して通知に適用</button>{selected && attachedNotifications.some(row => row.kind !== targetNotification?.kind || row.id !== targetNotification?.id) && <button className={button} disabled={!targetNotification || !editorValid || readOnly || busy} onClick={() => void notificationTask(() => useForNotification(true))}>ルールを複製して、この通知だけに適用</button>}</div>}
             {attachedNotifications.length > 0 && <details><summary>このルールを使う通知 {attachedNotifications.length}件</summary><ul>{attachedNotifications.map(row => <li key={`${row.kind}:${row.id}`}>{row.name}</li>)}</ul></details>}
             {targetNotification && <div className="studio-assignment-guidance"><p className="studio-critical-note"><Bell size={14} aria-hidden="true" />{destinations.find(d => d.id === targetNotification.destinationId)?.name || (targetNotification.destinationType === "dm" ? "自分のDM" : "登録済みチャンネル")}</p>{targetNotification.workflowId && targetNotification.workflowId !== selected?.id && <p className="studio-critical-note"><AlertTriangle size={14} aria-hidden="true" />この通知で使用中のルールを置き換えます</p>}</div>}
             {(notificationNext.auto || notificationNext.price) && <button className={button} disabled={busy} onClick={() => void notificationTask(async () => { const pages = await Promise.all(["auto", "price"].filter(kind => notificationNext[kind]).map(async kind => ({ kind, page: await api(`monitors/${kind}?afterId=${encodeURIComponent(notificationNext[kind]!)}`) }))); setNotificationChoices(old => [...old, ...pages.flatMap(({ page }) => page.items)]); setNotificationNext(old => ({ ...old, ...Object.fromEntries(pages.map(({ kind, page }) => [kind, page.nextCursor])) })); }, true)}>通知をさらに表示</button>}

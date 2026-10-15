@@ -187,8 +187,8 @@ test('a successful guarded assignment retains its returned revision if subsequen
     } });
     try {
         await f.open(); await f.fill(field(f, '詳細ルール'), 'rule-b'); await f.click('変更内容を確認'); await f.click('この内容で変更');
-        assert.equal(f.current.revision, 2); assert(f.container.querySelector('dialog[open]'));
-        await f.click('戻る'); await f.fill(field(f, '名前（省略可）'), '保存後の名前変更'); await f.click('変更を保存');
+        assert.equal(f.current.revision, 2); assert.equal(f.container.querySelector('dialog[open]'), null); assert(f.container.textContent.includes('通知は保存済みです'));
+        await f.open(); await f.fill(field(f, '名前（省略可）'), '保存後の名前変更'); await f.click('変更を保存');
         assert.deepEqual(f.writes().at(-1).body, { name: '保存後の名前変更', expectedRevision: 2 });
         assert.equal(f.writes().filter(call => call.route.endsWith('/attach')).length, 1); assert.equal(f.current.workflowId, 'rule-b');
     } finally { await f.close(); }
@@ -263,5 +263,38 @@ test('dialogs trap focus in the topmost dialog and prevent lower dialog cancella
         await f.render(render(false)); dialogs = [...f.container.querySelectorAll('dialog[open]')];
         assert.equal(f.dom.window.document.body.style.overflow, 'hidden');
         await f.act(async () => dialogs[0].dispatchEvent(new f.dom.window.Event('cancel', { cancelable: true }))); assert.equal(outer, 1);
+    } finally { await f.close(); }
+});
+
+
+test('S24-2 a committed resume updates the displayed state and retry revision before a failed list refresh', async () => {
+    let failRefresh = true;
+    const f = await fixture({ initial: row('auto', { enabled: false }), respond: (route, method, _body, state) => {
+        if (route.startsWith('monitors/') && method === 'GET' && state.current.enabled && failRefresh) { failRefresh = false; throw new Error('temporary list failure'); }
+    } });
+    try {
+        await f.click('再開'); assert.equal(f.current.enabled, true); assert(f.container.textContent.includes('通知の変更は保存済みです')); assert([...f.container.querySelectorAll('button')].some(node => node.textContent === '停止'));
+        await f.click('停止'); assert.equal(f.current.enabled, false); assert.deepEqual(f.writes().map(call => call.body.expectedRevision), [1, 2]);
+    } finally { await f.close(); }
+});
+
+
+for (const mode of ['dm', 'channel']) test(`N2 a retained ${mode} confirmation cannot leak into another monitor and same-monitor resume keeps it`, async () => {
+    const rows = [row('auto', { id: 'A', name: 'Monitor A', destinationId: 'dm-one' }), row('auto', { id: 'B', name: 'Monitor B', destinationId: 'channel-two', source: 'https://github.com/torvalds' })];
+    const f = await fixture({ respond: (route, method, _body, state) => {
+        if (route.startsWith('monitors/auto?') && method === 'GET') return { items: rows, nextCursor: null };
+        if (route === 'destinations' && method === 'POST') assert.fail('No destination should be implicitly created for monitor B');
+        if (route === 'monitors/auto/B' && method === 'PATCH') { state.current = { ...rows[1], revision: 2 }; return { id: 'B', revision: 2 }; }
+    } });
+    try {
+        const openCard = async index => f.act(async () => [...f.container.querySelectorAll('.monitor-card')][index].querySelector('.monitor-card-actions button').click());
+        await openCard(0); await f.fill(field(f, '通知先の種類'), mode);
+        if (mode === 'channel') { await tick(f); await f.fill(field(f, 'チャンネル'), 'owned-channel'); }
+        await f.click('変更内容を確認'); assert(f.container.querySelector('[aria-label="保存する通知の確認"]').textContent.includes('Monitor A'));
+        await f.click('キャンセル'); await f.click('通知の入力を再開'); assert(f.container.querySelector('[aria-label="保存する通知の確認"]'));
+        await f.click('キャンセル'); await openCard(1); assert.equal(f.container.querySelector('[aria-label="保存する通知の確認"]'), null);
+        assert.equal(field(f, '対象のURL・ID').value, rows[1].source); assert.equal(field(f, '通知先の種類').value, 'existing'); assert.equal(field(f, '通知先').value, 'channel-two');
+        await f.fill(field(f, '名前（省略可）'), 'B rename'); await f.click('変更を保存');
+        assert.deepEqual(f.writes().at(-1).body, { name: 'B rename', expectedRevision: 1 });
     } finally { await f.close(); }
 });

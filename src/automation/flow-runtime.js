@@ -38,7 +38,7 @@ function createFlowRuntime(db, evaluator, store, options = {}) {
             for (const field of node.config.fields) if (event[field] != null) texts.add(Array.isArray(event[field]) ? event[field].join('\n') : String(event[field]));
         }
         const matches = new Map();
-        for (const text of texts) matches.set(text, await evaluator.match(ref, text));
+        for (const text of texts) matches.set(text, await evaluator.match(ref, text, 8));
         return stepNode(node, unit, { now, dictionaries: { [node.config.dictionary]: { match: text => matches.get(text) || [] } } });
     }
     const driver = createGraphDriver(store, {

@@ -50,7 +50,9 @@ function createDictionaryService(db, service, evaluator) {
     }
     async function restore(actor, id, input) {
         await current(actor, id, input.expectedRevision);
-        return save(actor, { expectedRevision: input.expectedRevision, dictionary: await service.dictionaryData(id, Number(input.revision)) }, id);
+        const revision = Number(input.revision);
+        const dictionary = await service.dictionaryData(id, revision);
+        return service.saveDictionary(actor, { expectedRevision: input.expectedRevision, dictionary }, id, revision);
     }
     async function exportData(actor, id, revision, format) {
         const row = await current(actor, id, undefined, false);

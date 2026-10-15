@@ -52,7 +52,9 @@ test('SQL partial source admission preserves validators, observation time, faile
         const third = await target('444444444444444444');
         await db.queryDatabase('UPDATE auto_watch_targets SET created_at_ms=? WHERE id=?', [observationAt + 1, third.id]);
         now += 60000;
-        items = [...items, { contentId: '26', title: 'new after baseline', url: 'https://github.com/octocat/repo/releases/tag/26' }];
+        // The upstream rolling page has already evicted every earlier item.
+        // Admission must use the complete persisted first observation instead.
+        items = [{ contentId: '26', title: 'new after baseline', url: 'https://github.com/octocat/repo/releases/tag/26' }];
         injectFailure = true;
         assert.equal((await run()).status, 'failed');
         injectFailure = false;

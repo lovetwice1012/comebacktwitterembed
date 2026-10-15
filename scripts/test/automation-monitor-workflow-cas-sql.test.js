@@ -56,7 +56,7 @@ test('workflow-only native edits use atomic target/assignment CAS and preserve u
     }
     async function job(entry, state = 'pending', workflowId = null, execution = 1) {
         const runId = await run(entry, workflowId), id = randomUUID(), now = Date.now(), lease = randomUUID();
-        const plan = { monitorRevision: 1, context: { userId: entry.owner }, schedules: [], dictionaryRefs: {}, event: {}, text: 'Synthetic old queued job' };
+        const plan = { monitorRevision: Number((await metadata(entry))?.revision || 1), context: { userId: entry.owner }, schedules: [], dictionaryRefs: {}, event: {}, text: 'Synthetic old queued job' };
         await query('INSERT INTO automation_jobs (id,run_id,execution_version,plan_json,due_at_ms,state,lease_token,lease_until_ms,sent_steps,discord_message_id,created_at_ms,updated_at_ms) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)', [id, runId, execution, JSON.stringify(plan), now, state, lease, now + 120000, ['sent', 'partial'].includes(state) ? 1 : 0, state === 'sent' ? '555555555555555555' : null, now, now]);
         return { id, runId, lease, now, plan };
     }
@@ -99,21 +99,23 @@ test('workflow-only native edits use atomic target/assignment CAS and preserve u
         await t.test(`${kind}: a simultaneous guarded detach cannot erase a newer workflow choice`, async () => {
             const entry = await target(kind), old = await rule(), next = await rule();
             await service.attach(actor, old.id, kind, entry.id);
-            const results = await Promise.allSettled([service.attach(actor, next.id, kind, entry.id, guards(1, old.id)), monitors.detach(actor, kind, entry.id, 1, { expectedWorkflowId: old.id })]);
+            const revision = Number((await metadata(entry)).revision);
+            const results = await Promise.allSettled([service.attach(actor, next.id, kind, entry.id, guards(revision, old.id)), monitors.detach(actor, kind, entry.id, revision, { expectedWorkflowId: old.id })]);
             assert.equal(results.filter(result => result.status === 'fulfilled').length, 1);
             assert.equal(results.find(result => result.status === 'rejected').reason.code, 'REVISION_CONFLICT');
-            assert.equal(Number((await metadata(entry)).revision), 2);
+            assert.equal(Number((await metadata(entry)).revision), revision + 1);
             assert.equal(await assignment(entry), results[0].status === 'fulfilled' ? next.id : null);
         });
 
-        await t.test(`${kind}: legacy unguarded calls retain their response and metadata revision behavior`, async () => {
+        await t.test(`${kind}: legacy unguarded calls retain their flags while fencing newer choices and cancelling obsolete jobs`, async () => {
             const entry = await target(kind), one = await rule(), two = await rule(), queued = await job(entry);
-            assert.deepEqual(await service.attach(actor, one.id, kind, entry.id), { attached: true });
-            assert.deepEqual(await service.attach(actor, two.id, kind, entry.id), { attached: true });
-            assert.equal(await assignment(entry), two.id); assert.equal(Number((await metadata(entry)).revision), 1);
-            assert.equal((await query('SELECT state FROM automation_jobs WHERE id=?', [queued.id]))[0].state, 'pending');
-            assert.deepEqual(await monitors.detach(actor, kind, entry.id, 1), { detached: true });
-            assert.equal(await assignment(entry), null); assert.equal(Number((await metadata(entry)).revision), 1);
+            assert.deepEqual(await service.attach(actor, one.id, kind, entry.id), { attached: true, revision: 2 });
+            assert.deepEqual(await service.attach(actor, two.id, kind, entry.id), { attached: true, revision: 3 });
+            assert.equal(await assignment(entry), two.id); assert.equal(Number((await metadata(entry)).revision), 3);
+            assert.equal((await query('SELECT state FROM automation_jobs WHERE id=?', [queued.id]))[0].state, 'cancelled');
+            await assert.rejects(monitors.detach(actor, kind, entry.id, 1), { code: 'REVISION_CONFLICT' });
+            assert.deepEqual(await monitors.detach(actor, kind, entry.id, 3), { detached: true, revision: 4 });
+            assert.equal(await assignment(entry), null); assert.equal(Number((await metadata(entry)).revision), 4);
         });
 
         await t.test(`${kind}: private ownership remains required for guarded changes even for an administrator`, async () => {
@@ -138,9 +140,12 @@ test('workflow-only native edits use atomic target/assignment CAS and preserve u
             assert.equal((await query('SELECT state FROM automation_jobs WHERE id=?', [queued.id]))[0].state, 'pending');
             assert.equal((await query(`SELECT status FROM ${tableFor(kind)}_deliveries WHERE id=?`, [pending]))[0].status, 'pending');
             await service.attach(actor, workflow.id, kind, entry.id);
-            await assert.rejects(brokenMonitors.detach(actor, kind, entry.id, 1, { expectedWorkflowId: workflow.id }));
-            assert.equal(await assignment(entry), workflow.id); assert.equal(Number((await metadata(entry)).revision), 1);
-            assert.equal((await query('SELECT state FROM automation_jobs WHERE id=?', [queued.id]))[0].state, 'pending');
+            const afterAttach = await job(entry), freshPending = await nativeDelivery(entry);
+            await assert.rejects(brokenMonitors.detach(actor, kind, entry.id, 2, { expectedWorkflowId: workflow.id }));
+            assert.equal(await assignment(entry), workflow.id); assert.equal(Number((await metadata(entry)).revision), 2);
+            assert.equal((await query('SELECT state FROM automation_jobs WHERE id=?', [queued.id]))[0].state, 'cancelled');
+            assert.equal((await query('SELECT state FROM automation_jobs WHERE id=?', [afterAttach.id]))[0].state, 'pending');
+            assert.equal((await query(`SELECT status FROM ${tableFor(kind)}_deliveries WHERE id=?`, [freshPending]))[0].status, 'pending');
         });
 
         await t.test(`${kind}: cancellation affects only the edited target; unknown/sent records and v2 peers remain intact`, async () => {
@@ -156,11 +161,11 @@ test('workflow-only native edits use atomic target/assignment CAS and preserve u
             for (const [selected, runId] of [[entry, primaryRun], [peer, peerRun]]) {
                 await db.withDatabaseTransaction(transactionQuery => entitlements.assignSlot(transactionQuery, U, kind, selected.id));
                 const raw = (await query(`SELECT * FROM ${tableFor(kind)}_targets WHERE id=?`, [selected.id]))[0];
-                members.push({ id: randomUUID(), runId, targetKind: kind, targetId: selected.id, monitorRevision: 1, targetIdentity: targetIdentity(raw), context: { userId: U }, event: {}, schedules: [], text: 'Synthetic peer member' });
+                members.push({ id: randomUUID(), runId, targetKind: kind, targetId: selected.id, monitorRevision: Number((await metadata(selected)).revision), targetIdentity: targetIdentity(raw), context: { userId: U }, event: {}, schedules: [], text: 'Synthetic peer member' });
             }
             const plan = { members, flowV2: { members: members.map(member => ({ memberId: member.id, runId: member.runId })) }, context: { userId: U }, dictionaryRefs: {}, schedules: [], text: 'Synthetic shared batch', event: {} };
             await query("INSERT INTO automation_jobs (id,run_id,execution_version,plan_json,due_at_ms,state,lease_token,lease_until_ms,created_at_ms,updated_at_ms) VALUES (?,?,2,?,?,'leased',?,?,?,?)", [graphId, primaryRun, JSON.stringify(plan), now, lease, now + 120000, now, now]);
-            await service.attach(actor, next.id, kind, entry.id, guards(1, old.id));
+            await service.attach(actor, next.id, kind, entry.id, guards(2, old.id));
             for (let index = 0; index < states.length; index++) assert.equal((await query('SELECT state FROM automation_jobs WHERE id=?', [jobs[index].id]))[0].state, index < 4 ? 'cancelled' : states[index]);
             assert.equal((await query('SELECT state FROM automation_jobs WHERE id=?', [peerJob.id]))[0].state, 'pending');
             assert.equal((await query(`SELECT status FROM ${tableFor(kind)}_deliveries WHERE id=?`, [pending]))[0].status, 'cancelled');
@@ -197,6 +202,7 @@ test('workflow-only native edits use atomic target/assignment CAS and preserve u
         const entry = await target('auto'), old = await rule(), next = await rule();
         await service.activateWorkflow(actor, old.id, { expectedRevision: old.revision });
         await service.attach(actor, old.id, 'auto', entry.id);
+        const initialRevision = Number((await metadata(entry)).revision);
         const queued = await job(entry, 'leased', old.id), raw = (await query('SELECT * FROM auto_watch_targets WHERE id=?', [entry.id]))[0];
         queued.plan.targetIdentity = targetIdentity(raw);
         await query('UPDATE automation_jobs SET plan_json=? WHERE id=?', [JSON.stringify(queued.plan), queued.id]);
@@ -233,17 +239,17 @@ test('workflow-only native edits use atomic target/assignment CAS and preserve u
             sendStep: async () => { sends++; return '555555555555555555'; },
         }, { clock: () => time, sleep: async ms => { time += ms; }, assertAllowed: () => {}, notificationAllowed: () => true });
         const sending = runner.tick(); await jobLocked;
-        const attaching = serviceFor(guardedDb).attach(actor, next.id, 'auto', entry.id, guards(1, old.id));
+        const attaching = serviceFor(guardedDb).attach(actor, next.id, 'auto', entry.id, guards(initialRevision, old.id));
         const results = await Promise.allSettled([sending, attaching]);
         assert.ok(deadlocks.length > 0, 'the fixture must exercise a real InnoDB transaction-abort conflict');
         assert.equal(results[0].status, 'fulfilled');
         const stored = (await query('SELECT * FROM automation_jobs WHERE id=?', [queued.id]))[0];
         if (results[1].status === 'fulfilled') {
-            assert.equal(await assignment(entry), next.id); assert.equal(Number((await metadata(entry)).revision), 2);
+            assert.equal(await assignment(entry), next.id); assert.equal(Number((await metadata(entry)).revision), initialRevision + 1);
             assert.equal(stored.state, 'cancelled'); assert.equal(sends, 0);
         } else {
             assert.equal(results[1].reason.code, 'ER_LOCK_DEADLOCK');
-            assert.equal(await assignment(entry), old.id); assert.equal(Number((await metadata(entry)).revision), 1);
+            assert.equal(await assignment(entry), old.id); assert.equal(Number((await metadata(entry)).revision), initialRevision);
             assert.equal(stored.state, 'sent'); assert.equal(sends, 1);
         }
         assert.equal(releases, 1); assert.notEqual(stored.state, 'unknown'); assert.notEqual(stored.state, 'partial');

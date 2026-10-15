@@ -26,6 +26,38 @@ function createMarketplace(db, options = {}) {
         if (!/^[0-9a-f-]{36}$/i.test(id || '')) fail('NOT_FOUND', '共有ルールが見つかりません。', 404);
         return (await query(`${selection} WHERE p.id=?${lock ? ' FOR UPDATE' : ''}`, [id]))[0];
     }
+    async function storedEdition(id, version, query = db.queryDatabase) {
+        const record = (await query('SELECT * FROM automation_package_versions WHERE package_id=? AND version=?', [id, version]))[0];
+        if (!record) fail('BUNDLE_CHECK_FAILED', '配布元の保存済みデータを確認できません。', 503);
+        try {
+            const bytes = await decompress(record.bundle_gzip, { maxOutputLength: MAX_EXPANDED });
+            if (hash(bytes) !== record.checksum) throw new Error('BUNDLE_CHECKSUM');
+            return { record, bundle: validateBundle(JSON.parse(bytes.toString('utf8'))) };
+        } catch { fail('BUNDLE_CHECK_FAILED', 'パッケージの整合性を確認できません。', 503); }
+    }
+    function retainDescription(current, inherited) {
+        const source = String(inherited || '').trim(), text = String(current || '').trim();
+        if (!source || text.includes(source)) return text;
+        const result = [text, source].filter(Boolean).join('\n\n');
+        if (result.length > 8000) fail('FORK_ATTRIBUTION_LIMIT', '配布元の説明・出典を含めて8000文字以内にしてください。');
+        return result;
+    }
+    async function installedOrigin(actor, workflowId, query = db.queryDatabase, lock = false) {
+        // Authority comes from a readable local workflow and its server-created
+        // install row, never from a bundle's text/name or client-supplied origin.
+        await service.getRow('workflow', actor, workflowId, false, query, lock);
+        const rows = await query(`SELECT package_id,version FROM automation_package_installs WHERE workflow_id=?${lock ? ' FOR UPDATE' : ''}`, [workflowId]);
+        if (rows.length > 1) fail('BUNDLE_CHECK_FAILED', 'ルールの配布元を確認できません。', 503);
+        if (!rows.length) return null;
+        const origin = rows[0], edition = await storedEdition(origin.package_id, Number(origin.version), query);
+        // Source ownership is immutable. Do not lock its package after the
+        // workflow: install/update takes those locks in the opposite order.
+        const parent = (await query('SELECT owner_user_id FROM automation_packages WHERE id=?', [origin.package_id]))[0];
+        if (!parent?.owner_user_id) fail('BUNDLE_CHECK_FAILED', '配布元の保存済みデータを確認できません。', 503);
+        const description = retainDescription(retainDescription(edition.bundle.description, edition.record.description),
+            `Source: ${edition.record.title} (${origin.package_id}) v${origin.version}; author ${parent.owner_user_id}`);
+        return { packageId: origin.package_id, version: Number(origin.version), ...edition, bundle: { ...edition.bundle, description } };
+    }
     const privileged = (actor, row) => row.owner_user_id === actor.userId || actor.isAdmin && row.visibility !== 'private';
     async function getRow(actor, id, shareKey, write = false, query = db.queryDatabase, lock = false) {
         requireActor(actor); const row = await rawRow(id, query, lock);
@@ -48,7 +80,33 @@ function createMarketplace(db, options = {}) {
         const previous = id ? await getRow(actor, id, null, true) : null;
         if (previous?.status === 'revoked') fail('MARKET_REVOKED', '安全上停止されたパッケージは編集・再公開できません。');
         if (previous && Number(previous.latest_version) !== input.expectedVersion) fail('REVISION_CONFLICT', '共有ルールが更新されています。', 409);
-        const bundle = validateBundle(input.bundle), title = textField(input.title, 120), description = textField(input.description || '', 8000, false), category = textField(input.category || 'general', 64), changelog = textField(input.changelog || '', 4000, false);
+        let bundle = structuredClone(validateBundle(input.bundle)), description = textField(input.description || '', 8000, false);
+        const title = textField(input.title, 120), category = textField(input.category || 'general', 64), changelog = textField(input.changelog || '', 4000, false);
+        if (previous && Object.hasOwn(input, 'forkOf') && input.forkOf !== previous.fork_of) fail('FORK_SOURCE_IMMUTABLE', 'コピー元は変更できません。別の共有内容として保存してください。');
+        const workflowOrigin = input.sourceWorkflowId ? await installedOrigin(actor, input.sourceWorkflowId) : null;
+        const forkOf = previous?.fork_of || input.forkOf || workflowOrigin?.packageId || null;
+        let sourceBundle = null;
+        if (workflowOrigin && (previous && previous.fork_of !== workflowOrigin.packageId || input.forkOf && input.forkOf !== workflowOrigin.packageId)) fail('FORK_SOURCE_IMMUTABLE', 'コピー元は変更できません。別の共有内容として保存してください。');
+        if (previous?.fork_of) {
+            // The first fork edition is immutable and remains available to its
+            // owner even after the upstream package is withdrawn or private.
+            sourceBundle = (await storedEdition(previous.id, 1)).bundle;
+        } else if (workflowOrigin) {
+            sourceBundle = workflowOrigin.bundle;
+            description = retainDescription(description, workflowOrigin.record.description);
+        } else if (input.forkOf) {
+            const parent = await get(actor, input.forkOf, input.forkVersion, input.shareKey);
+            sourceBundle = { ...parent.bundle, description: retainDescription(retainDescription(parent.bundle.description, parent.description),
+                `Fork of ${parent.title} (${parent.id}) v${parent.version}; author ${parent.owner_user_id}`) };
+        }
+        if (sourceBundle) {
+            if (!sourceBundle.license || bundle.license !== sourceBundle.license) fail('FORK_LICENSE', 'コピー元のライセンスを保持してください。');
+            bundle.description = retainDescription(bundle.description, sourceBundle.description);
+            description = retainDescription(description, sourceBundle.description);
+        }
+        // Inherited package descriptions may have been private metadata. The
+        // final portable bundle must still satisfy its credential/text bounds.
+        bundle = validateBundle(bundle);
         if (!['private', 'unlisted', 'public'].includes(input.visibility)) fail('MARKET_VISIBILITY', '共有範囲が不正です。');
         const publish = input.visibility !== 'private', packageId = id || randomUUID(), version = previous ? Number(previous.latest_version) + 1 : 1;
         let assessment = null;
@@ -58,17 +116,21 @@ function createMarketplace(db, options = {}) {
             assessment = await inspectPublication({ id: packageId, version, owner_user_id: actor.userId, title, description, category, changelog, bundle });
             options.assertPublicationAllowed?.();
         }
-        if (input.forkOf) { const parent = await get(actor, input.forkOf, input.forkVersion, input.shareKey); if (!parent.bundle.license || bundle.license !== parent.bundle.license) fail('FORK_LICENSE', 'フォーク元のライセンスを保持してください。'); }
         const bytes = Buffer.from(JSON.stringify(bundle)), compressed = await compress(bytes), checksum = hash(bytes), status = publish ? 'active' : 'draft';
         return db.withDatabaseTransaction(async query => {
+            if (input.sourceWorkflowId) {
+                const currentOrigin = await installedOrigin(actor, input.sourceWorkflowId, query, true);
+                if ((currentOrigin?.packageId || null) !== (workflowOrigin?.packageId || null) || (currentOrigin?.version || null) !== (workflowOrigin?.version || null)) fail('REVISION_CONFLICT', 'ルールの配布元が更新されています。共有内容を再確認してください。', 409);
+            }
             if (id) {
                 const row = await getRow(actor, id, null, true, query, true);
                 if (row.status === 'revoked') fail('MARKET_REVOKED', '安全上停止されたパッケージは編集・再公開できません。');
                 if (Number(row.latest_version) !== input.expectedVersion) fail('REVISION_CONFLICT', '共有ルールが更新されています。', 409);
+                if (row.fork_of !== previous.fork_of) fail('REVISION_CONFLICT', 'コピー元が更新されています。共有内容を再確認してください。', 409);
                 if (row.kind !== bundle.kind) fail('PACKAGE_KIND_IMMUTABLE', 'パッケージの種類は変更できません。新規作成してください。');
                 await query('UPDATE automation_packages SET title=?,description=?,category=?,visibility=?,status=?,latest_version=?,updated_at_ms=? WHERE id=?', [title, description, category, input.visibility, status, version, Date.now(), id]);
                 await query("UPDATE automation_package_versions SET status='superseded' WHERE package_id=? AND status='pending'", [id]);
-            } else await query('INSERT INTO automation_packages (id,owner_user_id,title,description,category,kind,visibility,status,share_key,latest_version,fork_of,created_at_ms,updated_at_ms) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)', [packageId, actor.userId, title, description, category, bundle.kind, input.visibility, status, randomBytes(32).toString('hex'), version, input.forkOf || null, Date.now(), Date.now()]);
+            } else await query('INSERT INTO automation_packages (id,owner_user_id,title,description,category,kind,visibility,status,share_key,latest_version,fork_of,created_at_ms,updated_at_ms) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)', [packageId, actor.userId, title, description, category, bundle.kind, input.visibility, status, randomBytes(32).toString('hex'), version, forkOf, Date.now(), Date.now()]);
             if (publish) options.assertPublicationAllowed?.();
             await query('INSERT INTO automation_package_versions (package_id,version,bundle_gzip,checksum,changelog,title,description,category,visibility,status,created_at_ms) VALUES (?,?,?,?,?,?,?,?,?,?,?)', [packageId, version, compressed, checksum, changelog, title, description, category, input.visibility, status, Date.now()]);
             if (publish) await query('UPDATE automation_packages SET published_version=? WHERE id=?', [version, packageId]);
@@ -114,9 +176,14 @@ function createMarketplace(db, options = {}) {
         return { items: rows.slice(0, 50).map(r => ({ ...r, version: Number(r.version) })), nextVersion: rows.length > 50 ? Number(rows[49].version) : null };
     }
     async function exportWorkflow(actor, id) {
-        const rule = await service.getWorkflow(actor, id), dictionaries = Object.create(null);
-        for (const [alias, ref] of Object.entries(rule.bindings.dictionaries || {})) { await service.getRow('dictionary', actor, ref.id); dictionaries[alias] = await service.dictionaryData(ref.id, ref.revision); }
-        return validateBundle({ schemaVersion: 1, kind: 'workflow', workflow: rule.draft, dictionaries });
+        return db.withDatabaseTransaction(async query => {
+            const origin = await installedOrigin(actor, id, query, true);
+            const rule = await service.getWorkflow(actor, id), dictionaries = Object.create(null);
+            for (const [alias, ref] of Object.entries(rule.bindings.dictionaries || {})) { await service.getRow('dictionary', actor, ref.id); dictionaries[alias] = await service.dictionaryData(ref.id, ref.revision); }
+            const description = origin ? retainDescription(origin.bundle.description, origin.record.description) : undefined;
+            return validateBundle({ schemaVersion: 1, kind: 'workflow', workflow: rule.draft, dictionaries,
+                ...(origin ? { license: origin.bundle.license || '', description } : {}) });
+        });
     }
     async function setStatus(actor, id, input) {
         let assessment = null;
@@ -204,7 +271,7 @@ function createMarketplace(db, options = {}) {
     }
     async function fork(actor, id, input) {
         const parent = await get(actor, id, input.version, input.shareKey); if (!parent.bundle.license) fail('FORK_LICENSE', 'フォーク元のライセンスが未指定です。');
-        const bundle = structuredClone(parent.bundle); bundle.description = `${bundle.description || ''}\nFork of ${parent.title} (${id}) v${parent.version}; author ${parent.owner_user_id}`.trim();
+        const bundle = structuredClone(parent.bundle); bundle.description = retainDescription(retainDescription(bundle.description, parent.description), `Fork of ${parent.title} (${id}) v${parent.version}; author ${parent.owner_user_id}`);
         return save(actor, { bundle, title: `${parent.title} のフォーク`.slice(0, 120), description: bundle.description.slice(0, 8000), category: parent.category, visibility: 'private', forkOf: id, forkVersion: parent.version, shareKey: input.shareKey });
     }
     async function feedback(actor, id, input) {

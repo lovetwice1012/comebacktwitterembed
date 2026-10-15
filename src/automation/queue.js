@@ -229,7 +229,7 @@ function createQueue(db, evaluator, options = {}) {
                         ...(kind === 'x' && delivery.x_processing_mode === 'realtime' ? { xRealtimeAdmittedAtMs: handoffAtMs } : {}) } };
                 await query('INSERT INTO automation_runs (id,dedupe_key,workflow_id,revision,owner_user_id,guild_id,scope,target_kind,target_id,event_json,trace_json,state,created_at_ms) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)',
                     [runId, dedupe, target.workflow_id, target.active_revision, target.user_id, target.guild_id, scope, kind, target.id, JSON.stringify(event), '[]', 'flow_pending', now]);
-                await graph.store.initializeInTransaction(query, { runId, context: flowContext, now, unit: { kind: 'event', ancestry: [], members: [{ id: runId, runId, event, display: { ...structuredClone(NODE_TYPES.transform.defaults), ...(kind === 'x' ? { format: 'normal' } : {}) }, schedules: [], dueAtMs: now, deadlineMs,
+                await graph.store.initializeInTransaction(query, { runId, context: flowContext, nodeId: require('./graph-plan').compileWorkflow(parse(target.definition_json)).startId, now, unit: { kind: 'event', ancestry: [], members: [{ id: runId, runId, event, display: { ...structuredClone(NODE_TYPES.transform.defaults), ...(kind === 'x' ? { format: 'normal' } : {}) }, schedules: [], dueAtMs: now, deadlineMs,
                     defaultPriceText: kind === 'price' ? delivery.message_text : null, context: flowContext.sourceContext, targetKind: kind }] } });
                 await finishLegacy(query, kind, delivery, 'routed', handoffAtMs, null, null, nativeWindow);
                 return { state: 'routed', runId, execution: 'flow_v2' };
@@ -257,7 +257,7 @@ function createQueue(db, evaluator, options = {}) {
                 }
                 const destinationKey = destinationId || `${kind}:${target.id}:${target.destination_key}`;
                 let due = plan.dueAtMs;
-                if (plan.aggregate) due = scheduleDelivery((Math.floor(due / (plan.aggregate.minutes * MINUTE)) + 1) * plan.aggregate.minutes * MINUTE, plan.schedules, plan.deadlineMs ?? Infinity);
+                if (plan.aggregate && !plan.aggregateClosed) due = scheduleDelivery((Math.floor(due / (plan.aggregate.minutes * MINUTE)) + 1) * plan.aggregate.minutes * MINUTE, plan.schedules, plan.deadlineMs ?? Infinity);
                 if (due === null) {
                     routingTrace.push({ nodeId: plan.aggregate?.nodeId || plan.path.at(-1), outcome: 'expired', reason: 'まとめ通知の時刻が通知期限・通知可能時間を超えるため送りません' });
                     continue;
@@ -358,7 +358,7 @@ function createQueue(db, evaluator, options = {}) {
             return { ...job, state: 'leased', lease_token: token, lease_until_ms: now + 120000, plan };
         });
     }
-    async function validFlowMembers(query, job, plan, lock = false) {
+    async function validFlowMembers(query, job, plan, lock = false, now = clock()) {
         const members = Array.isArray(plan.members) ? plan.members : [];
         const accepted = [], missing = [];
         const eligibility = new Map();
@@ -368,6 +368,7 @@ function createQueue(db, evaluator, options = {}) {
         const entitlementDb = lock && containsX(job, plan) ? { withDatabaseTransaction: work => work(query) } : db;
         let paused = false, eligibilityCode = null, pauseCode = null, pauseDueAtMs = null;
         for (const member of members) {
+            if (member && now > require('./flow-projector').memberDeadline(member)) { missing.push(member); continue; }
             if (!member || !['auto', 'price', 'x'].includes(member.targetKind) || !/^\d{1,20}$/.test(String(member.targetId))) { missing.push(member); continue; }
             const key = `${member.targetKind}:${member.targetId}`;
             if (!eligibility.has(key)) {
@@ -405,16 +406,38 @@ function createQueue(db, evaluator, options = {}) {
             let plan;
             try { plan = parse(row.plan_json); } catch { return { state: 'failed', code: 'QUEUE_PLAN_INVALID' }; }
             if (!plan?.flowV2 || !Array.isArray(plan.members)) return { state: 'failed', code: 'QUEUE_PLAN_INVALID' };
-            const status = await validFlowMembers(query, job, plan, true);
+            const status = await validFlowMembers(query, job, plan, true, now);
+            if (!status.accepted.length && plan.members.length && plan.members.every(member => now > require('./flow-projector').memberDeadline(member))) return { state: 'expired', code: 'DEADLINE_EXCEEDED' };
             if (!status.accepted.length) return status.eligibilityCode ? { state: 'excluded', code: status.eligibilityCode } : { state: 'cancelled', code: 'FLOW_MEMBERS_CANCELLED' };
-            if (status.changed) {
+            let snapshotChanged = false;
+            if (!Number.isSafeInteger(plan.flowV2.originalDueAtMs)) {
+                // Preserve the current reservation of pre-fix queued jobs. A
+                // temporary expiry wake must not replace a user's lower bound.
+                plan.flowV2.originalDueAtMs = Number(row.due_at_ms); snapshotChanged = true;
+            }
+            if (typeof plan.aggregateSnapshot !== 'boolean' && plan.flowV2.sendId) {
+                // Old queued flow-v2 snapshots did not distinguish singleton
+                // events from genuine one-item aggregates. Recover the exact
+                // immutable send unit rather than guessing from member count.
+                const source = (await query('SELECT u.* FROM automation_flow_sends s JOIN automation_flow_units u ON u.id=s.unit_id WHERE s.id=?', [plan.flowV2.sendId]))[0];
+                if (!source) return { state: 'failed', code: 'FLOW_UNIT_INVALID' };
+                try { const unit = require('./flow-projector').safeUnit(source); plan.aggregateSnapshot = unit.kind !== 'event' || !!unit.ancestry?.some(stage => stage.batchId); }
+                catch { return { state: 'failed', code: 'FLOW_UNIT_INVALID' }; }
+                snapshotChanged = true;
+            }
+            const currentDeadline = require('./flow-projector').jobDeadline(status.accepted);
+            if (status.changed || snapshotChanged || plan.deadlineMs !== currentDeadline || (row.deadline_ms == null ? null : Number(row.deadline_ms)) !== currentDeadline) {
                 const memberIds = new Set(status.accepted.map(member => member.id));
+                const removed = plan.members.filter(member => !memberIds.has(member.id)).map(member => ({ memberId: member.id, runId: member.runId,
+                    code: now > require('./flow-projector').memberDeadline(member) ? 'DEADLINE_EXCEEDED' : status.eligibilityCode || 'MONITOR_CHANGED' }));
+                plan.flowV2.excludedMembers = [...new Map([...(plan.flowV2.excludedMembers || []), ...removed].map(member => [member.memberId, member])).values()];
                 plan.members = status.accepted;
                 plan.flowV2.members = (plan.flowV2.members || []).filter(member => memberIds.has(member.memberId));
-                plan.event = plan.members[0].event; plan.display = plan.members[0].display; plan.text = plan.members[0].text;
-                plan.deadlineMs = plan.members.reduce((deadline, member) => earliest(deadline, member.deadlineMs), null);
+                plan.event = plan.members[0].event; plan.display = plan.members[0].display; plan.text = plan.members[0].text; plan.defaultPriceText = plan.members[0].defaultPriceText || null;
+                plan.deadlineMs = require('./flow-projector').jobDeadline(plan.members);
                 plan.schedules = require('./flow-projector').uniqueSchedules(plan.members);
                 await query('UPDATE automation_jobs SET plan_json=?,deadline_ms=?,updated_at_ms=? WHERE id=? AND lease_token=?', [JSON.stringify(plan), plan.deadlineMs, now, job.id, job.lease_token]);
+                await require('./flow-history').refreshFlowHistory(query, [...plan.flowV2.members, ...plan.flowV2.excludedMembers].map(member => member.runId));
             }
             return { state: status.paused ? 'pending' : 'ready', code: status.paused ? status.pauseCode || 'WORKFLOW_PAUSED' : null, dueAtMs: status.paused ? status.pauseDueAtMs || now + 60000 : null, job: { ...job, deadline_ms: plan.deadlineMs, plan } };
         });
@@ -430,15 +453,16 @@ function createQueue(db, evaluator, options = {}) {
         try { await require('./package-safety').assertPackageSafety(query, job); }
         catch (error) { if (error instanceof require('./safety').SafetyError) return { state: error.decision === 'deny' ? 'excluded' : 'failed', code: error.code }; throw error; }
         if (job.plan?.flowV2) {
-            const flow = await validFlowMembers(query, job, job.plan, lock);
+            const flow = await validFlowMembers(query, job, job.plan, lock, now);
+            if (!flow.accepted.length && job.plan.members.length && job.plan.members.every(member => now > require('./flow-projector').memberDeadline(member))) return { state: 'expired', code: 'DEADLINE_EXCEEDED' };
             if (!flow.accepted.length) return flow.eligibilityCode ? { state: 'excluded', code: flow.eligibilityCode } : { state: 'cancelled', code: 'FLOW_MEMBERS_CANCELLED' };
             if (flow.changed) return { state: 'pending', code: 'FLOW_MEMBERSHIP_CHANGED', dueAtMs: now };
             if (flow.paused) return { state: 'pending', code: flow.pauseCode || 'WORKFLOW_PAUSED', dueAtMs: flow.pauseDueAtMs || now + 60000 };
             const target = await snapshot(query, flow.accepted[0].targetKind, flow.accepted[0].targetId, lock, job.owner_user_id);
             if (job.deadline_ms != null && now > Number(job.deadline_ms)) return { state: 'expired', code: 'DEADLINE_EXCEEDED' };
-            const next = scheduleDelivery(Math.max(Number(job.due_at_ms), now), job.plan.schedules, job.deadline_ms == null ? Infinity : Number(job.deadline_ms));
-            if (next === null) return { state: 'expired', code: 'NO_DELIVERY_WINDOW' };
-            if (next > now) return { state: 'pending', code: 'WAIT_FOR_WINDOW', dueAtMs: next };
+            const window = require('./flow-projector').flowDeliveryWindow(flow.accepted, Math.max(Number(job.due_at_ms), job.plan.flowV2.originalDueAtMs ?? 0, now));
+            if (!window) return { state: 'expired', code: 'NO_DELIVERY_WINDOW' };
+            if (window.dueAtMs > now) return { state: 'pending', code: 'WAIT_FOR_WINDOW', dueAtMs: window.dueAtMs };
             return checkDestination(query, job, target, now);
         }
         const target = await snapshot(query, job.target_kind, job.target_id, lock, job.owner_user_id);
@@ -473,6 +497,7 @@ function createQueue(db, evaluator, options = {}) {
         return db.withDatabaseTransaction(async query => {
             const result = await query("UPDATE automation_jobs SET state=?,last_error_code=?,due_at_ms=COALESCE(?,due_at_ms),lease_token=NULL,lease_until_ms=0,updated_at_ms=? WHERE id=? AND lease_token=? AND state IN ('leased','sending')", [state, code, dueAtMs, Date.now(), job.id, job.lease_token]);
             if (Number(result.affectedRows) === 1 && !['pending', 'leased', 'sending', 'held'].includes(state)) await query('UPDATE automation_jobs SET state=?,last_error_code=?,updated_at_ms=? WHERE parent_job_id=? AND state=\'aggregated\'', [state, code, Date.now(), job.id]);
+            if (Number(result.affectedRows) === 1 && job.plan?.flowV2) await require('./flow-history').refreshFlowHistory(query, job.plan.flowV2.members.map(member => member.runId));
             return Number(result.affectedRows) === 1;
         });
     }

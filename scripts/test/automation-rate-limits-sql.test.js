@@ -11,7 +11,7 @@ const { resolveNotificationEntitlement, savePlanPolicy, setUserPlan } = require(
 const U = '222222222222222222', C = '333333333333333333', G = '111111111111111111', M = '444444444444444444';
 const client = { options: { jsonTransformer: value => value } }, port = Number(process.env.AUTOMATION_TEST_DB_PORT);
 const principal = (slotIndex = 1, ownerUserId = U, extra = {}) => ({ ownerUserId, slotId: `${ownerUserId}:${slotIndex}`, slotIndex, minuteLimit: 5, dayLimit: 24, ...extra });
-const record = (id, targetId, owner = U, text = '通知') => ({ id, owner_user_id: owner, target_kind: 'price', target_id: targetId, destination_id: `rotated-${id}`, workflow_id: `workflow-${id}`, revision: 1, plan: { context: {}, event: {}, text, dictionaryRefs: {}, display: { format: 'text', media: 'inherit' }, schedules: [] } });
+const record = (id, targetId, owner = U, text = '通知') => ({ id, owner_user_id: owner, target_kind: 'price', target_id: targetId, destination_id: `rotated-${id}`, workflow_id: null, revision: 1, plan: { context: {}, event: {}, text, dictionaryRefs: {}, display: { format: 'text', media: 'inherit' }, schedules: [] } });
 
 test('durable per-slot physical-message quotas and tier priority', { skip: !port }, async t => {
     const db = await createTestDatabase(port); t.after(() => db.close());
@@ -105,6 +105,11 @@ test('durable per-slot physical-message quotas and tier priority', { skip: !port
         await empty(); const messages = [];
         for (let index = 0; index < 6; index++) {
             const transport = createTransport(db, {}, client, { rest: dmRest(messages), clock: () => now }), job = record(`rotation-${index}`, target); job.revision = index + 1;
+            // Rotation uses real immutable revisions; malformed/nonexistent
+            // workflows now fail the send-time dependency safety boundary.
+            const workflow = await require('../../src/automation/service').createService(db).createWorkflow({ userId: U }, { definition: require('../../src/automation/schema').newWorkflow(`rotation ${index}`) });
+            job.workflow_id = workflow.id;
+            if (index) await db.queryDatabase('INSERT INTO automation_revisions (workflow_id,revision,definition_json,bindings_json,checksum,actor_user_id,created_at_ms) SELECT workflow_id,?,definition_json,bindings_json,checksum,actor_user_id,created_at_ms FROM automation_revisions WHERE workflow_id=? AND revision=1', [index + 1, workflow.id]);
             const prepared = await transport.prepare(job, { kind: 'dm', dm_user_id: U });
             if (index < 5) await transport.sendStep(prepared, job, 0); else await assert.rejects(transport.sendStep(prepared, job, 0), { code: 'AUTOMATION_RATE_LIMITED' });
         }
@@ -242,7 +247,7 @@ test('durable per-slot physical-message quotas and tier priority', { skip: !port
             const prepared = await transport.prepare(job, { kind: 'webhook', guild_id: G, channel_id: C, webhook_endpoint_id: String(index) });
             if (index < 5) await transport.sendStep(prepared, job, 0); else await assert.rejects(transport.sendStep(prepared, job, 0), { code: 'AUTOMATION_RATE_LIMITED' });
         }
-        assert.equal(messages, 5); assert.equal(verified, 6); assert.equal((await limiter().getSlotUsage(`${U}:1`)).todayUsed, 5);
+        assert.equal(messages, 5); assert.equal(verified, 12); assert.equal((await limiter().getSlotUsage(`${U}:1`)).todayUsed, 5);
     });
     await t.test('all split parts fit before first send and each confirmed message counts exactly once', async () => {
         await empty(); const messages = [], transport = createTransport(db, {}, client, { rest: dmRest(messages), clock: () => now });

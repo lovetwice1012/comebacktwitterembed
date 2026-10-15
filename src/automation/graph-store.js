@@ -253,13 +253,21 @@ function createGraphStore(db) {
             }
             const selected = row.mode === 'latest' ? eligible.slice(-1) : eligible;
             const members = selected.flatMap(input => input.unit.members.map(member => ({ ...member, id: hash(JSON.stringify([row.id, input.ordinal, member.id])), lineageId: member.lineageId || member.id })));
-            let unitId = null;
+            let unitId = null, materializationCode = null;
             const steps = [];
             if (members.length) {
                 const unit = { id: uuid(`sealed:${row.id}`), kind: 'batch', members, ancestry: [...new Map(selected.flatMap(input => input.unit.ancestry || []).map(item => [encode(item), item])).values(), { batchId: row.id, nodeId: row.node_id }],
                     batchInputs: selected.map(input => ({ unitId: input.input_unit_id, ordinal: Number(input.ordinal) })), receivedCount: Number(row.received_count) };
-                unitId = await putUnit(query, row.namespace_key, unit, now);
-                for (const edge of edges) {
+                try { unitId = await putUnit(query, row.namespace_key, unit, now); }
+                catch (error) {
+                    if (!['GRAPH_INPUT_LIMIT', 'FLOW_SNAPSHOT_LIMIT'].includes(error.code)) throw error;
+                    // The accepted inputs remain immutable and inspectable. A
+                    // permanently oversized batch is terminal, never truncated
+                    // or repeatedly selected ahead of healthy work.
+                    materializationCode = error.code;
+                    excluded.push(...members.map(member => ({ memberId: member.id, runId: member.runId, code: error.code })));
+                }
+                for (const edge of unitId ? edges : []) {
                     steps.push(await putStep(query, row.namespace_key, `batch-output:${row.id}:${edge.id}`, edge.target, unitId, edge.id, now, now));
                     for (const runId of [...new Set(members.map(member => member.runId))]) {
                         const input = selected.find(item => item.unit.members.some(member => member.runId === runId));
@@ -267,9 +275,9 @@ function createGraphStore(db) {
                     }
                 }
             }
-            const outcome = { receivedCount: Number(row.received_count), retainedInputs: selected.length, retainedMembers: members.length, excluded, runIds: [...affectedRuns],
+            const outcome = { ...(materializationCode ? { code: materializationCode, selectedInputs: selected.length, selectedMembers: members.length } : {}), receivedCount: Number(row.received_count), retainedInputs: materializationCode ? 0 : selected.length, retainedMembers: materializationCode ? 0 : members.length, excluded, runIds: [...affectedRuns],
                 supersededInputs: row.mode === 'latest' ? eligible.slice(0, -1).map(input => input.input_unit_id) : [] };
-            await query('UPDATE automation_flow_batches SET state=?,output_unit_id=?,outcome_json=?,updated_at_ms=? WHERE id=?', [unitId ? 'sealed' : 'empty', unitId, encode(outcome), now, row.id]);
+            await query('UPDATE automation_flow_batches SET state=?,output_unit_id=?,outcome_json=?,updated_at_ms=? WHERE id=?', [materializationCode ? 'failed' : unitId ? 'sealed' : 'empty', unitId, encode(outcome), now, row.id]);
             for (const id of [...new Set(inputs.map(input => input.activation_id))]) {
                 const open = await query("SELECT b.id FROM automation_flow_batch_inputs i JOIN automation_flow_batches b ON b.id=i.batch_id WHERE i.activation_id=? AND b.state='open' LIMIT 1", [id]);
                 if (!open.length) {
@@ -286,7 +294,7 @@ function createGraphStore(db) {
                 }
             }
             if (affectedRuns.size) await query('UPDATE automation_flow_runs SET needs_sync=1 WHERE run_id IN (?)', [[...affectedRuns]]);
-            return { state: unitId ? 'sealed' : 'empty', unitId, stepIds: steps, outcome };
+            return { state: materializationCode ? 'failed' : unitId ? 'sealed' : 'empty', unitId, stepIds: steps, outcome };
         });
     }
     async function recordSend(step, unit, destination, now) {

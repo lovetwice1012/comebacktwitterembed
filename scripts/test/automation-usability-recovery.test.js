@@ -154,6 +154,7 @@ async function workspace({ attached = true, cloneActivationFails = false, postAc
         else if (route === 'starter') result = null;
         else if (route.startsWith('marketplace')) result = { items: [], nextCursor: null };
         else if (route === 'monitors/auto') result = { items: [rows[url.searchParams.has('afterId') ? 1 : 0]], nextCursor: url.searchParams.has('afterId') ? null : 'second-page' };
+        else if (route === 'x-monitors') result = { items: [], nextCursor: null };
         else if (route === 'monitors/price') result = { items: [], nextCursor: null };
         else if (route === 'validate') { const rule = body.text === undefined ? body.definition : parseWorkflow(body.text, body.format); result = { ...validateWorkflow(rule), definition: rule, text: stringifyDraft(rule, body.format) }; }
         else if (route === 'workflows' && options.method === 'GET') result = { items: [...stored.values()] };
@@ -161,7 +162,9 @@ async function workspace({ attached = true, cloneActivationFails = false, postAc
         else if (route.startsWith('workflows/')) {
             const [, id, action] = route.split('/'); result = stored.get(id);
             if (!action && id === 'original' && postActivationReadFails && result.activeRevision === result.revision) { postActivationReadFails = false; return new Response(JSON.stringify({ error: 'fixture reload failure' }), { status: 503 }); }
+            if (action === 'activation-preview') result = { expectedRevision: stored.get(id).revision, expectedTargetsToken: 'fixture-target-token', affectedTargets: rows.filter(row => row.workflowId === id) };
             if (action === 'activate') {
+                assert.equal(body.expectedTargetsToken, 'fixture-target-token');
                 writes.push({ route, body });
                 if (id === 'clone' && cloneActivationFails) { cloneActivationFails = false; return new Response(JSON.stringify({ error: 'fixture clone activation failure' }), { status: 409 }); }
                 result = { ...result, enabled: true, activeRevision: result.revision }; stored.set(id, result);

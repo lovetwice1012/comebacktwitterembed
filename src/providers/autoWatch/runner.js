@@ -18,6 +18,9 @@ const DEFAULT_START_DELAY_MS = 15 * 1000;
 // enough IDs to seed ordinary large accounts without replaying their history.
 const MAX_CURSOR_IDS = 5000;
 const MAX_DEFERRED_IDS = 5000;
+// cursor_json is MEDIUMTEXT. Leave room for the bounded seen-ID window and
+// cursor metadata; reject an observation atomically rather than lose its tail.
+const MAX_DEFERRED_BYTES = 12 * 1024 * 1024;
 const MAX_NEW_ITEMS_PER_SOURCE = 20;
 
 let timer = null;
@@ -40,14 +43,23 @@ function parseCursor(raw) {
         if (deferredObservations.length > MAX_DEFERRED_IDS || deferredObservations.some(entry => !Array.isArray(entry)
             || entry.length !== 2 || typeof entry[0] !== 'string' || !entry[0] || entry[0].length > 255
             || !Number.isSafeInteger(entry[1]) || entry[1] < 0)) throw new Error('Invalid deferred observations');
-        /** @type {{ seenContentIds: string[], admissionVersion?: number, deferredObservations?: Array<[string, number]>, baselineMaxNumericContentId?: string }} */
+        const deferredItems = Array.isArray(value?.deferredItems) ? value.deferredItems : [];
+        if (deferredItems.length > MAX_DEFERRED_IDS || deferredItems.some(item => !item || typeof item.contentId !== 'string'
+            || !item.contentId || typeof item.url !== 'string' || !item.url
+            || !Number.isSafeInteger(item.discoveredAtMs) || item.discoveredAtMs < 0)
+            || Buffer.byteLength(JSON.stringify(deferredItems)) > MAX_DEFERRED_BYTES) throw new Error('Invalid deferred items');
+        /** @type {{ seenContentIds: string[], admissionVersion?: number, deferredObservations?: Array<[string, number]>, deferredItems?: any[], baselineMaxNumericContentId?: string }} */
         const cursor = { seenContentIds, ...(deferredObservations.length ? { deferredObservations } : {}) };
+        if (deferredItems.length) cursor.deferredItems = deferredItems;
         if (value?.admissionVersion === 1) cursor.admissionVersion = 1;
         if (/^\d{1,20}$/.test(String(value?.baselineMaxNumericContentId || ''))) {
             cursor.baselineMaxNumericContentId = String(value.baselineMaxNumericContentId);
         }
         return cursor;
-    } catch {
+    } catch (error) {
+        if (typeof raw === 'string' && raw.includes('"deferredItems"') || raw && typeof raw === 'object' && Object.hasOwn(raw, 'deferredItems')) {
+            throw Object.assign(new Error('The durable discovery backlog could not be read.', { cause: error }), { code: 'AUTO_WATCH_INVALID_BACKLOG' });
+        }
         return { seenContentIds: [] };
     }
 }
@@ -125,7 +137,7 @@ async function processSource(source, context) {
         // again unconditionally until every observed item has been admitted.
         // Old cursors may already carry a validator for a partially admitted
         // response. Repair them with one full observation at the normal poll.
-        const needsFullObservation = !source.initialized_at_ms || cursor.admissionVersion !== 1 || !!cursor.deferredObservations?.length;
+        const needsFullObservation = !source.initialized_at_ms || cursor.admissionVersion !== 1 || !!cursor.deferredObservations?.length || !!cursor.deferredItems?.length;
         const result = await fetchSource(needsFullObservation
             ? { ...source, etag: null, last_modified: null } : source, { config, fetch, isolate: context.isolateFetch });
         await store.recordProviderRateLimit(source.provider_id, result.rateLimit, now);
@@ -164,18 +176,27 @@ async function processSource(source, context) {
             return { status: 'not_modified', providerId: source.provider_id, sourceId: source.id };
         }
         const known = new Set(cursor.seenContentIds);
-        const pending = observed.filter(item => !known.has(String(item.contentId))
+        // A rolling upstream index is not a durable queue. Keep complete first
+        // observations locally until admission, even after they leave that index.
+        // Old ID-only checkpoints retain their original observation timestamp.
+        const previousObservations = new Map(cursor.deferredObservations || []);
+        for (const item of cursor.deferredItems || []) previousObservations.set(String(item.contentId), item.discoveredAtMs);
+        const pending = normalizeItems([...(cursor.deferredItems || []), ...observed]).filter(item => !known.has(String(item.contentId))
             && !isHistoricalAtBaseline(source.provider_id, cursor, item));
         const accepted = pending.slice(0, integer(process.env.AUTO_WATCH_MAX_NEW_ITEMS_PER_SOURCE, MAX_NEW_ITEMS_PER_SOURCE, 1, 100));
-        const previousObservations = new Map(cursor.deferredObservations || []);
         const firstObserved = item => previousObservations.get(String(item.contentId)) ?? now;
-        const deferredObservations = pending.slice(accepted.length).map(item => [String(item.contentId), firstObserved(item)]);
+        const deferredItems = pending.slice(accepted.length).map(item => ({ ...item, contentId: String(item.contentId), discoveredAtMs: firstObserved(item) }));
+        const deferredObservations = deferredItems.map(item => [String(item.contentId), item.discoveredAtMs]);
         if (deferredObservations.length > MAX_DEFERRED_IDS) throw Object.assign(new Error('Too many unadmitted discoveries in one observation.'), { code: 'AUTO_WATCH_BACKLOG_LIMIT' });
+        if (Buffer.byteLength(JSON.stringify(deferredItems)) > MAX_DEFERRED_BYTES) throw Object.assign(new Error('Unadmitted discoveries exceed their durable metadata budget.'), { code: 'AUTO_WATCH_BACKLOG_LIMIT' });
         const admitted = accepted.map(item => ({ ...item, discoveredAtMs: firstObserved(item) }));
-        const nextCursor = advanceCursor(cursor, observed, accepted);
+        const nextCursor = advanceCursor(cursor, [...observed, ...accepted], accepted);
         nextCursor.admissionVersion = 1;
         delete nextCursor.deferredObservations;
+        delete nextCursor.deferredItems;
         if (deferredObservations.length) nextCursor.deferredObservations = deferredObservations;
+        if (deferredItems.length) nextCursor.deferredItems = deferredItems;
+        if (Buffer.byteLength(JSON.stringify(nextCursor)) > 15 * 1024 * 1024) throw Object.assign(new Error('Discovery cursor exceeds its durable metadata budget.'), { code: 'AUTO_WATCH_BACKLOG_LIMIT' });
         if (admitted.length && !store.atomicSourceCompletion) await store.createItemsAndDeliveries(source, admitted, now);
         await store.completeSource(source, {
             items: admitted,

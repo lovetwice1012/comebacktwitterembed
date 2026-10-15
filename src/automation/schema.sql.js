@@ -121,6 +121,9 @@ const SCHEMA = [
         entry_count INT UNSIGNED NOT NULL,
         source_text TEXT NULL,
         license_text TEXT NULL,
+        source_package_id CHAR(36) NULL,
+        source_package_version INT UNSIGNED NULL,
+        origin_reviewed TINYINT(1) NULL,
         created_at_ms BIGINT NOT NULL,
         PRIMARY KEY (dictionary_id, revision),
         CONSTRAINT fk_automation_dictionary_revision FOREIGN KEY (dictionary_id) REFERENCES automation_dictionaries(id)
@@ -182,6 +185,8 @@ const SCHEMA = [
         id CHAR(36) NOT NULL PRIMARY KEY,
         owner_user_id VARCHAR(32) NOT NULL,
         slot_id VARCHAR(64) NOT NULL,
+        job_id CHAR(36) NULL,
+        lease_token CHAR(36) NULL,
         counters_json LONGTEXT NOT NULL,
         parts_json LONGTEXT NOT NULL,
         created_at_ms BIGINT NOT NULL,

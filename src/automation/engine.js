@@ -71,7 +71,7 @@ function evaluateWorkflow(workflow, input, options = {}) {
     const nodes = new Map(workflow.nodes.map(n => [n.id, n]));
     const start = workflow.nodes.find(n => n.type === 'start');
     const queue = [{ nodeId: start.id, dueAtMs: now, schedules: [], limits: [], aggregate: null,
-        display: structuredClone(NODE_TYPES.transform.defaults), path: [] }];
+        display: structuredClone(NODE_TYPES.transform.defaults), scheduleDeadlineMs: Infinity, path: [] }];
     const outputs = [], trace = [];
     const ranks = workflow.nodes.some(n => n.type === 'merge') ? graphRanks(workflow) : null;
     const baseTime = event.observedAtMs ?? now;
@@ -93,23 +93,26 @@ function evaluateWorkflow(workflow, input, options = {}) {
                 trace.push({ nodeId: node.id, outcome: 'excluded', reason: '合流に必要な経路がすべて一致していません', arrived: arrivedEdges.size, expected: expected.length }); continue;
             }
             const displayConflict = arrivals.some(item => JSON.stringify(item.display) !== JSON.stringify(branch.display));
-            const aggregateConflict = arrivals.some(item => JSON.stringify(item.aggregate) !== JSON.stringify(branch.aggregate));
-            if (aggregateConflict || displayConflict && c.displayConflict === 'stop') {
-                trace.push({ nodeId: node.id, outcome: 'unknown', reason: aggregateConflict ? 'まとめ通知は合流の後に配置してください' : '合流前の表示設定が異なります。合流の後で表示を指定してください' }); continue;
+            if (displayConflict && c.displayConflict === 'stop') {
+                trace.push({ nodeId: node.id, outcome: 'unknown', reason: '合流前の表示設定が異なります。合流の後で表示を指定してください' }); continue;
             }
             const unique = values => [...new Map(values.map(value => [JSON.stringify(value), value])).values()];
             branch = { ...branch, dueAtMs: Math.max(...arrivals.map(item => item.dueAtMs)),
+                scheduleDeadlineMs: Math.min(...arrivals.map(item => item.scheduleDeadlineMs)),
                 schedules: unique(arrivals.flatMap(item => item.schedules)), limits: unique(arrivals.flatMap(item => item.limits)),
                 path: [...new Set(arrivals.flatMap(item => item.path))],
                 display: displayConflict ? structuredClone(NODE_TYPES.transform.defaults) : branch.display };
             trace.push({ nodeId: node.id, outcome: 'merged', arrivals: arrivals.length, reason: '同じイベントを1件に合流し、一致した全経路の時間・件数制限を保持しました' });
         }
         branch.path.push(node.id);
+        if (branch.dueAtMs > Math.min(deadline, branch.scheduleDeadlineMs)) { trace.push({ nodeId: node.id, outcome: 'expired', reason: 'DEADLINE_EXCEEDED' }); continue; }
+        const currentEvent = /** @type {Record<string, any>} */ ({ ...event });
+        if (currentEvent.publishedAtMs !== undefined) currentEvent.ageMinutes = Math.max(0, (branch.dueAtMs - currentEvent.publishedAtMs) / MINUTE);
         let port = 'out', detail = null;
         if (node.type === 'start' && ((c.providers?.length && !c.providers.includes(event.providerId)) || (c.kinds?.length && !c.kinds.includes(event.kind)))) {
             trace.push({ nodeId: node.id, outcome: 'excluded', reason: '対象外のイベント' }); continue;
         }
-        if (node.type === 'condition') { const result = evaluatePredicate(c.predicate, event); port = result === UNKNOWN ? UNKNOWN : result ? 'yes' : 'no'; }
+        if (node.type === 'condition') { const result = evaluatePredicate(c.predicate, currentEvent); port = result === UNKNOWN ? UNKNOWN : result ? 'yes' : 'no'; }
         if (node.type === 'dictionary') {
             const values = c.fields.map(f => event[f]);
             const matcher = options.dictionaries?.[c.dictionary];
@@ -128,21 +131,34 @@ function evaluateWorkflow(workflow, input, options = {}) {
             const anchor = c.anchor === 'published' ? event.publishedAtMs : baseTime;
             branch.dueAtMs = Math.max(branch.dueAtMs, anchor + c.minutes * MINUTE);
         }
-        if (node.type === 'schedule') branch.schedules.push(c);
+        if (node.type === 'schedule') {
+            branch.schedules.push(c);
+            branch.scheduleDeadlineMs = Math.min(branch.scheduleDeadlineMs, branch.dueAtMs + c.maxWaitDays * DAY);
+        }
+        if (node.type === 'delay' || node.type === 'schedule') {
+            const due = scheduleDelivery(branch.dueAtMs, branch.schedules, Math.min(deadline, branch.scheduleDeadlineMs));
+            if (due === null) { trace.push({ nodeId: node.id, outcome: 'expired', reason: 'DELAY_EXCEEDS_DEADLINE' }); continue; }
+            branch.dueAtMs = due;
+        }
         if (node.type === 'transform') branch.display = structuredClone(c);
         if (node.type === 'limit') branch.limits.push({ nodeId: node.id, ...c, group: c.key === 'all' ? 'all' : String(event[c.key] ?? 'unknown') });
-        if (node.type === 'aggregate') branch.aggregate = { nodeId: node.id, ...c, group: c.key === 'all' ? 'all' : String(event[c.key] ?? 'unknown') };
+        if (node.type === 'aggregate') {
+            branch.aggregate = { nodeId: node.id, ...c, group: c.key === 'all' ? 'all' : String(event[c.key] ?? 'unknown') };
+            branch.dueAtMs = (Math.floor(branch.dueAtMs / (c.minutes * MINUTE)) + 1) * c.minutes * MINUTE;
+            branch.aggregateClosed = true;
+            if (branch.dueAtMs > Math.min(deadline, branch.scheduleDeadlineMs)) { trace.push({ nodeId: node.id, outcome: 'expired', reason: 'DEADLINE_EXCEEDED' }); continue; }
+        }
         if (node.type === 'stop') { trace.push({ nodeId: node.id, outcome: 'excluded', reason: c.reason }); continue; }
         if (node.type === 'send') {
             // Freeze the schedule search horizon in the delivery plan. Retries
             // must not turn a 14-day maximum wait into a rolling deadline.
-            const deliveryDeadline = Math.min(deadline, ...branch.schedules.map(schedule => branch.dueAtMs + schedule.maxWaitDays * DAY));
+            const deliveryDeadline = Math.min(deadline, branch.scheduleDeadlineMs);
             const due = scheduleDelivery(branch.dueAtMs, branch.schedules, deliveryDeadline);
             if (due === null) { trace.push({ nodeId: node.id, outcome: 'expired', reason: '期限内に通知可能な時刻がありません' }); continue; }
             const text = outputText(branch.display, event);
             if (outputs.length >= LIMITS.outputs) throw new Error('AUTOMATION_EVALUATION_LIMIT');
             outputs.push({ destination: c.destination, dueAtMs: due, deadlineMs: Number.isFinite(deliveryDeadline) ? deliveryDeadline : null,
-                display: branch.display, text, limits: branch.limits, aggregate: branch.aggregate, schedules: branch.schedules, path: branch.path });
+                display: branch.display, text, limits: branch.limits, aggregate: branch.aggregate, aggregateClosed: branch.aggregateClosed === true, schedules: branch.schedules, path: branch.path });
             trace.push({ nodeId: node.id, outcome: 'scheduled', dueAtMs: due, destination: c.destination }); continue;
         }
         const edges = workflow.edges.filter(e => e.source === node.id && e.port === port);

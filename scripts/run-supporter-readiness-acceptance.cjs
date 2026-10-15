@@ -10,8 +10,10 @@ const { files: xAcceptanceFiles } = require('./run-x-notification-acceptance.cjs
 const root = path.resolve(__dirname, '..');
 const files = [...new Set([
     ...xAcceptanceFiles,
+    'scripts/test/steam.parser.test.js',
+    'scripts/test/webhook-destination.test.js',
     ...readdirSync(path.join(root, 'scripts/test'))
-        .filter(name => /^(?:automation-|autoWatch\.|autoextract\.|priceWatch\.|notification-).*\.test\.js$/.test(name))
+        .filter(name => /^(?:automation-|autoWatch\.|autoextract\.|priceWatch\.|notification-|provider-saturation-).*\.test\.js$/.test(name))
         .map(name => `scripts/test/${name}`),
 ])].sort();
 

@@ -185,7 +185,8 @@ async function dispatchCore({ method, path, search = new URLSearchParams(), body
       else if (id && !action && method === "GET") result = await service.getWorkflow(actor, id);
       else if (id && !action && method === "PATCH") result = await service.updateWorkflow(actor, id, body);
       else if (id && !action && method === "DELETE") result = await service.remove("workflow", actor, id, body.expectedRevision);
-      else if (action === "activate" && method === "POST") result = await service.activateWorkflow(actor, id, body);
+      else if (action === "activation-preview" && method === "GET") result = await service.activationPreview(actor, id);
+      else if (action === "activate" && method === "POST") result = await service.activateWorkflow(actor, id, body, { requireTargetsToken: true });
       else if (action === "state" && method === "POST") result = await service.setWorkflowState(actor, id, body);
       else if (action === "history" && method === "GET") result = await service.history(actor, id);
       else if (action === "restore" && method === "POST") result = await service.restoreRevision(actor, id, body.revision, body.expectedRevision);

@@ -45,6 +45,7 @@ function localeIsJapanese(locale) {
 
 function formatDiscount(value) {
     const amount = number(value);
+    if (amount === null) return '—';
     return amount && amount > 0 ? `${amount.toFixed(amount % 1 ? 2 : 0)}%` : '0%';
 }
 
@@ -76,12 +77,15 @@ function messageFor(target, adapter, before, after, locale) {
 
 function thresholdActive(target, snapshot) {
     const price = number(snapshot.priceAmount);
-    const discount = number(snapshot.discountPercent) || 0;
+    const discount = number(snapshot.discountPercent);
     const priceMatch = target.max_price_amount !== null && target.max_price_amount !== undefined
         && price !== null && price <= Number(target.max_price_amount);
     const discountMatch = target.min_discount_percent !== null && target.min_discount_percent !== undefined
-        && discount >= Number(target.min_discount_percent);
-    return priceMatch || discountMatch;
+        && discount !== null && discount >= Number(target.min_discount_percent);
+    if (priceMatch || discountMatch) return true;
+    if (target.min_discount_percent !== null && target.min_discount_percent !== undefined && discount === null
+        || target.max_price_amount !== null && target.max_price_amount !== undefined && price === null) return null;
+    return false;
 }
 
 function eventKey(target, before, after, active) {
@@ -127,11 +131,14 @@ async function processSource(source, context) {
         const events = [];
         const targetStates = [];
         for (const target of targets) {
-            const active = target.watch_mode === 'threshold' ? thresholdActive(target, after) : false;
+            const observedActive = target.watch_mode === 'threshold' ? thresholdActive(target, after) : false;
+            // Missing discount metadata is not proof that a sale ended. Retain
+            // each target's last condition state until the condition is known.
+            const active = observedActive === null ? Boolean(target.condition_active) : observedActive;
             targetStates.push({ targetId: target.id, conditionActive: active, ruleKey: target.rule_key, destinationKey: target.destination_key, configurationRevision: Number(target.configuration_revision || 1) });
             if (initial || target.baseline_at_ms === null) continue;
             const sendChange = target.watch_mode === 'change' && priceChanged(before, after);
-            const sendThreshold = target.watch_mode === 'threshold' && active && !target.condition_active;
+            const sendThreshold = target.watch_mode === 'threshold' && observedActive === true && !target.condition_active;
             if (!sendChange && !sendThreshold) continue;
             events.push({
                 targetId: target.id,

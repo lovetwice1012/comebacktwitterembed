@@ -116,6 +116,7 @@ function createJoinStore({ db, locked, putUnit, putStep, receipt, readUnit, uuid
                 }
             }
             if (!changes) await query('UPDATE automation_flow_runs SET needs_sync=0 WHERE namespace_key=? AND run_id IN (?)', [namespace, requested]);
+            await require('./flow-history').refreshFlowHistory(query, requested);
             return { changes };
         });
     }

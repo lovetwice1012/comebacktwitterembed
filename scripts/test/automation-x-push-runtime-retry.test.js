@@ -22,6 +22,7 @@ function fixture(t, options = {}) {
         enabled: true, processingPolicy: 'batch', rolloutMode: 'public', gateway,
         assertAllowed: () => {}, clock: () => now, jitter: () => 0,
         listCandidates: async () => [{ id, owner_user_id: U, revision: 7 }],
+        listActiveSessions: async () => [{ id, owner_user_id: U, revision: 7 }],
     });
     t.after(() => runtime.stop());
     return { runtime, gateway, retries, id, calls: () => calls, advance: value => { now += value; } };

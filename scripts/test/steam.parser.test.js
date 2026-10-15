@@ -37,7 +37,7 @@ test('Steam source prices select the requested package cart action instead of an
             <div class="discount_original_price">$19.99</div><div class="discount_final_price">$9.99</div></div>
             <a href="javascript:addToCart( 123, 1 )">Buy</a></div>`;
     assert.deepEqual(parseSteamPrice(html, 'https://store.steampowered.com/sub/123'), {
-        final: 999, final_formatted: '$9.99', discount_percent: 50,
+        final: 999, initial: 1999, final_formatted: '$9.99', discount_percent: 50,
     });
     assert.equal(parseSteamPrice(html, 'https://store.steampowered.com/sub/12'), null);
 });

@@ -69,6 +69,7 @@ function absoluteUrl(rawUrl, baseUrl) {
 function cleanSteamTitle(value) {
     return cleanText(value)
         .replace(/^Steam Community\s*::\s*/i, '')
+        .replace(/^Steam[：:]\s*/i, '')
         .replace(/\s+on Steam$/i, '')
         .replace(/\s*::\s*Steam$/i, '')
         .trim();
@@ -128,7 +129,7 @@ function readRegionalAmount(raw, country) {
     }
 }
 
-function priceFromPurchaseAction(action) {
+function priceFromPurchaseAction(action, country = 'us') {
     const priceElement = elementsByClass(action, 'discount_final_price')[0]
         || elementsByClass(action, 'game_purchase_price')[0];
     if (!priceElement) return null;
@@ -136,12 +137,17 @@ function priceFromPurchaseAction(action) {
     const final = readHundredths(extractAttr(pricedTag, 'data-price-final'));
     const finalFormatted = cleanText(priceElement);
     if (final === null || !finalFormatted) return null;
-    const discount = Number(extractAttr(pricedTag, 'data-discount'))
-        || Number(extractAttr(pricedTag, 'data-bundlediscount')) || 0;
-    return { final, final_formatted: finalFormatted, discount_percent: discount };
+    const discounts = ['data-discount', 'data-bundlediscount'].map(name => extractAttr(pricedTag, name))
+        .filter(value => /^\d+(?:\.\d+)?$/.test(value)).map(Number).filter(value => value >= 0 && value <= 100);
+    const original = elementsByClass(action, 'discount_original_price')[0];
+    const initial = original ? readRegionalAmount(cleanText(original).replace(/^[^\d]+|[^\d]+$/g, ''), country) : null;
+    const regularPrice = elementsByClass(action, 'game_purchase_price').length > 0 && !elementsByClass(action, 'discount_block').length;
+    return { final, final_formatted: finalFormatted,
+        ...(discounts.length ? { discount_percent: Math.max(...discounts) } : regularPrice ? { discount_percent: 0 } : {}),
+        ...(initial !== null && initial >= final ? { initial } : regularPrice ? { initial: final } : {}) };
 }
 
-/** @returns {{ final: number, currency?: string, final_formatted?: string, discount_percent?: number } | null} */
+/** @returns {{ final: number, initial?: number, currency?: string, final_formatted?: string, discount_percent?: number } | null} */
 function parseSteamPrice(html, baseUrl, target = {}) {
     let url;
     try { url = new URL(baseUrl); } catch { return null; }
@@ -157,16 +163,41 @@ function parseSteamPrice(html, baseUrl, target = {}) {
     if (kind === 'app') {
         // The main Product offer is authoritative. Never pick a DLC or bundle's
         // purchase block just because it happens to be the first visible price.
-        const offer = source.match(/<div\b[^>]*\bitemprop\s*=["']offers["'][^>]*>[\s\S]*?<\/div>/i)?.[0];
+        const offerTag = /<div\b[^>]*\bitemprop\s*=["']offers["'][^>]*>/i.exec(source);
+        const offer = offerTag ? readElement(source, offerTag.index) : '';
         const amount = readRegionalAmount(readItemprop(offer || '', 'price'), target.country || url.searchParams.get('cc') || 'us');
         const offerCurrency = readItemprop(offer || '', 'priceCurrency').toUpperCase();
         if (amount === null || !/^[A-Z]{3}$/.test(offerCurrency)) return null;
-        return { final: amount, currency: offerCurrency };
+        // Discount markup is trustworthy only in this Product's own offer or
+        // purchase block. An unrelated DLC/bundle at the same price is not a
+        // source for the app's discount. The adjacent-action form is used by
+        // older store pages without a purchase-block wrapper.
+        const purchase = elementsByClass(source, 'game_area_purchase_game').find(block => block.includes(offer));
+        let action = elementsByClass(offer || '', 'game_purchase_action_bg')[0]
+            || elementsByClass(purchase || '', 'game_purchase_action_bg')[0];
+        if (!action) {
+            const title = cleanSteamTitle(readMetaContent(source, 'og:title') || readTitleTag(source));
+            const exactHeadings = new Set([title, `Buy ${title}`, `${title}を購入する`].map(text => text.toLowerCase()));
+            const matchingBlocks = title ? elementsByClass(source, 'game_area_purchase_game').filter(block => {
+                const heading = cleanText(block.match(/<h[12]\b[^>]*>([\s\S]*?)<\/h[12]>/i)?.[1] || '').toLowerCase();
+                return exactHeadings.has(heading);
+            }) : [];
+            if (matchingBlocks.length === 1) action = elementsByClass(matchingBlocks[0], 'game_purchase_action_bg')[0];
+        }
+        if (!action && offerTag) {
+            const tail = source.slice(offerTag.index + offer.length);
+            const adjacent = /^\s*(<div\b[^>]*\bclass\s*=["'][^"']*\bgame_purchase_action_bg\b[^"']*["'][^>]*>)/i.exec(tail);
+            if (adjacent) action = readElement(tail, adjacent.index + adjacent[0].indexOf('<'));
+        }
+        const price = action ? priceFromPurchaseAction(action, target.country || url.searchParams.get('cc') || 'us') : null;
+        return { final: amount, currency: offerCurrency,
+            ...(price?.final === amount && price.discount_percent !== undefined ? { discount_percent: price.discount_percent } : {}),
+            ...(price?.final === amount && price.initial !== undefined ? { initial: price.initial } : {}) };
     }
     const purchaseFunction = kind === 'bundle' ? 'addBundleToCart' : 'addToCart';
     const purchasePattern = new RegExp(`\\b${purchaseFunction}\\(\\s*${escapeRegExp(id)}(?=\\s*[,\\)])`, 'i');
     const action = actions.find(item => purchasePattern.test(item));
-    const price = action ? priceFromPurchaseAction(action) : null;
+    const price = action ? priceFromPurchaseAction(action, target.country || url.searchParams.get('cc') || 'us') : null;
     return price ? { ...price, ...(/^[A-Z]{3}$/.test(currency) ? { currency } : {}) } : null;
 }
 

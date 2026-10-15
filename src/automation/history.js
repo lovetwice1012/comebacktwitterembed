@@ -92,7 +92,7 @@ function createHistory(db, service) {
             if (row.parent_job_id) fail('AGGREGATED_MEMBER', 'まとめ通知の親の配信を操作してください。');
             if (['unknown', 'partial', 'sending', 'sent'].includes(row.state) || Number(row.sent_steps) > 0 || row.discord_message_id) fail('DELIVERY_NOT_REPLAYABLE', '送信済み・送信中・結果不明の通知は二重送信を避けるため、この操作を実行できません。');
             if (input.action !== 'cancel' && snapshot(row).invalid) fail('HISTORY_SNAPSHOT_INVALID', '保存された配信データを読み取れないため、再送・再予約はできません。');
-            let state = row.state, due = Number(row.due_at_ms);
+            let state = row.state, due = Number(row.due_at_ms), changedPlan = null;
             const now = Date.now();
             if (input.action === 'cancel') state = 'cancelled';
             else {
@@ -101,12 +101,15 @@ function createHistory(db, service) {
                 const requested = input.action === 'retry' ? now : Number(input.dueAtMs);
                 if (!Number.isSafeInteger(requested) || requested < now || requested > now + 366 * 86400000) fail('INVALID_DUE_TIME', '配信時刻は現在から1年以内で指定してください。');
                 const plan = parse(row.plan_json);
-                due = scheduleDelivery(requested, plan.schedules, row.deadline_ms == null ? Infinity : Number(row.deadline_ms));
+                if (plan.flowV2 && Array.isArray(plan.members)) {
+                    due = require('./flow-projector').flowDeliveryWindow(plan.members, requested)?.dueAtMs ?? null;
+                    plan.flowV2.originalDueAtMs = requested; changedPlan = JSON.stringify(plan);
+                } else due = scheduleDelivery(requested, plan.schedules, row.deadline_ms == null ? Infinity : Number(row.deadline_ms));
                 if (due === null) fail('DEADLINE_EXCEEDED', 'ルールの期限・通知可能時間内に予約できません。');
                 state = 'pending';
             }
-            await query('UPDATE automation_jobs SET state=?,due_at_ms=?,lease_token=NULL,lease_until_ms=0,attempts=IF(?=\'retry\',0,attempts),last_error_code=?,updated_at_ms=? WHERE id=?',
-                [state, due, input.action, `USER_${input.action.toUpperCase()}`, now, id]);
+            await query('UPDATE automation_jobs SET state=?,due_at_ms=?,plan_json=COALESCE(?,plan_json),lease_token=NULL,lease_until_ms=0,attempts=IF(?=\'retry\',0,attempts),last_error_code=?,updated_at_ms=? WHERE id=?',
+                [state, due, changedPlan, input.action, `USER_${input.action.toUpperCase()}`, now, id]);
             if (state === 'cancelled') await query("UPDATE automation_jobs SET state='cancelled',last_error_code='PARENT_CANCELLED',updated_at_ms=? WHERE parent_job_id=? AND state='aggregated'", [now, id]);
             await service.audit(query, actor, id, `job.${input.action}`, { previousState: row.state, dueAtMs: due }, row.guild_id);
             return { state, dueAtMs: due };
@@ -114,8 +117,12 @@ function createHistory(db, service) {
     }
     async function excluded(actor, after = '') {
         requireActor(actor);
-        const rows = await db.queryDatabase(`SELECT id,workflow_id,revision,target_kind,target_id,event_json,trace_json,state,created_at_ms FROM automation_runs
-            WHERE state='excluded' AND id>? AND ((scope='private' AND owner_user_id=?) OR (scope='guild' AND guild_id=? AND ?=1)) ORDER BY id LIMIT 51`, [after, actor.userId, actor.guildId || null, actor.canView ? 1 : 0]);
+        const rows = await db.queryDatabase(`SELECT r.id,r.workflow_id,r.revision,r.target_kind,r.target_id,r.event_json,r.trace_json,r.state,r.created_at_ms FROM automation_runs r
+            WHERE r.state IN ('excluded','waiting','flow_pending','expired','failed','cancelled') AND r.id>?
+            AND ((r.scope='private' AND r.owner_user_id=?) OR (r.scope='guild' AND r.guild_id=? AND ?=1))
+            AND NOT EXISTS (SELECT 1 FROM automation_jobs j WHERE j.run_id=r.id OR (j.execution_version=2
+                AND JSON_CONTAINS(IF(JSON_VALID(j.plan_json),j.plan_json,'{}'),JSON_OBJECT('runId',r.id),'$.flowV2.members')=1))
+            ORDER BY r.id LIMIT 51`, [after, actor.userId, actor.guildId || null, actor.canView ? 1 : 0]);
         return { items: rows.slice(0, 50).map(r => ({ ...r, event: parse(r.event_json), trace: parse(r.trace_json), event_json: undefined, trace_json: undefined })), nextCursor: rows.length > 50 ? rows[49].id : null };
     }
     return { list, detail, change, excluded };
