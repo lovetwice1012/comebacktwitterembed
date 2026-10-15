@@ -4,7 +4,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { isPaymentEmail } from "@/lib/payment-input";
-import { automationResponseError, automationRetryDelay } from "./automation-feedback";
+import { automationFetch, automationRetryDelay } from "./automation-feedback";
 import { loadSquareSubscriptionSDK } from "./subscription-manager";
 import type { DonationOptions as Options, DonationStatus as Status, DonationQuote as Quote, DonationHistory } from "../../../src/automation/square-donations";
 import "./notification-billing.css";
@@ -14,10 +14,7 @@ type SquareLoader = typeof loadSquareSubscriptionSDK;
 type Card = Awaited<ReturnType<ReturnType<Awaited<ReturnType<SquareLoader>>["payments"]>["card"]>>;
 
 export async function donationAPI(path: string, method = "GET", body?: unknown) {
-  const response = await fetch(`/api/automation/billing/donations/${path}`, { method, cache: "no-store", headers: body === undefined ? undefined : { "Content-Type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) });
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw automationResponseError(data, response);
-  return data;
+  return automationFetch(`/api/automation/billing/donations/${path}`, { method, cache: "no-store", headers: body === undefined ? undefined : { "Content-Type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) });
 }
 
 export function donationAmount(value: string, digits: number): number | null {
@@ -157,7 +154,7 @@ export function SquareDonationManager({ api = donationAPI, loadSquare = loadSqua
     {loadError ? <p role="alert" className="rounded-lg border p-4 text-sm text-destructive">{loadError}</p> : null}
     {blocked ? <section aria-label="寄付の受付結果" className="space-y-3 rounded-xl border p-5"><h2 className="text-lg font-semibold">支払い結果を確認</h2><p className="text-sm">{resolved ? current.verified && current.refundedAmount > 0 ? "返金が履歴に反映されました。返金後の累計額と支援者枠の状態を確認できます。" : current.state === "COMPLETED" ? "寄付の支払いが確定しました。履歴と支援者枠の状態を確認できます。" : "今回の支払いは完了していません。新しく寄付内容を確認できます。" : "支払い結果を確認しています。重複を避けるため、新しい支払いは開始できません。"}</p><div className="flex flex-wrap gap-2"><Button type="button" variant="outline" disabled={busy || refreshWaiting} onClick={() => void check()}>支払い状態を再確認</Button>{canRetry ? <Button type="button" disabled={busy} onClick={() => void submit(true)}>同じ受付内容で再試行</Button> : null}{resolved ? <Button type="button" variant="outline" disabled={busy} onClick={() => { source.current = null; setAttempt(null); setQuote(null); setConsent(false); setError(""); }}>新しい寄付内容を入力</Button> : null}</div></section> : null}
     {!loading ? <section aria-label="恒久支援枠の保有記録" className="space-y-2 rounded-xl border p-4 text-sm"><h2 className="font-medium">現在の支援者追加枠</h2>
-      {validHolding && holding ? <><p>保有合計 {holding.totalSupporterSlots}枠（旧制度・管理者記録 {holding.legacySlots}枠＋新制度の支援決済 {holding.newPaidSlots}枠）</p><p className="text-muted-foreground">個人の総登録上限に加算します。有効期限はなく、月額プランの解約後も保持します。</p></> : <p>支援者追加枠は確認待ちです。</p>}
+      {validHolding && holding ? <><p className="text-2xl font-semibold">保有合計 {holding.totalSupporterSlots}枠</p><p className="text-muted-foreground">個人の総登録上限に加算します。有効期限はなく、月額プランの解約後も保持します。</p><details><summary>追加枠の内訳</summary><dl className="mt-2"><div><dt>旧制度・管理者による追加</dt><dd>{holding.legacySlots}枠</dd></div><div><dt>新制度の支援による追加</dt><dd>{holding.newPaidSlots}枠</dd></div></dl></details></> : <p>支援者追加枠は確認待ちです。</p>}
     </section> : null}
     {!loading && options ? <section aria-label="寄付の受付条件" className="notification-support-conditions">
       <p>{options.configured && options.enabled ? `受付金額: ${donationMoney(options.minimumAmount!, options.currency)}〜${donationMoney(options.maximumAmount!, options.currency)}` : "寄付の受付は準備中、または停止中です。無料枠の通知は引き続き利用できます。"}</p>
@@ -170,7 +167,7 @@ export function SquareDonationManager({ api = donationAPI, loadSquare = loadSqua
     {quote && !blocked ? <section aria-label="寄付内容の確認" className="space-y-4 rounded-xl border p-5"><h2 className="text-lg font-semibold">寄付内容の確認</h2><p className="text-2xl font-semibold">{donationMoney(quote.amount, quote.currency)}<span className="ml-2 text-sm font-normal text-muted-foreground">今回1回のみ</span></p><p className="text-sm">領収名: {quote.name}<br />領収先: {quote.email}</p><div id={cardId} aria-label="Squareカード入力欄" />{cardError ? <p role="alert" className="text-sm text-destructive">{cardError}<Button type="button" variant="outline" className="ml-2" disabled={busy} onClick={() => setCardVersion(value => value + 1)}>カード入力欄を再読み込み</Button></p> : !cardReady ? <p role="status" className="text-sm">カード入力欄を読み込み中…</p> : null}<label className="flex items-start gap-2 text-sm"><input type="checkbox" checked={consent} disabled={busy} onChange={event => setConsent(event.target.checked)} /><span>{donationMoney(quote.amount, quote.currency)}を今回1回だけ支払うことに同意します。継続課金は発生しません。</span></label><div className="flex flex-wrap gap-2"><Button type="button" disabled={busy || !consent || !cardReady || Boolean(loadError)} onClick={() => void submit()}>同意して寄付を支払う</Button><Button type="button" variant="outline" disabled={busy} onClick={() => { source.current = null; setQuote(null); setConsent(false); setError(""); }}>金額の入力へ戻る</Button></div></section> : null}
     {error ? <p role="alert" className="rounded-lg border p-4 text-sm text-destructive">{error}</p> : null}{message ? <p role="status" className="text-sm">{message}</p> : null}
     {status ? <section aria-label="寄付履歴" className="notification-payment-history space-y-3"><h2 className="text-lg font-semibold">寄付履歴</h2>{status.history.length ? <div className="overflow-x-auto"><table className="w-full min-w-[32rem] text-left text-sm"><thead><tr><th className="py-2">受付日時</th><th>金額</th><th>返金済み</th><th>支援額</th><th>状態</th></tr></thead><tbody>{status.history.map(item => <tr key={item.attemptId} className="border-t"><td className="py-3">{jst(item.createdAtMs)}</td><td>{donationMoney(item.amount, item.currency)}</td><td>{donationMoney(item.refundedAmount, item.currency)}</td><td>{donationMoney(item.netAmount, item.currency)}</td><td>{paymentLabel(item)}</td></tr>)}</tbody></table></div> : <p className="text-sm text-muted-foreground">寄付履歴はまだありません。</p>}</section> : null}
-    {!loading && options ? <details aria-label="旧制度の支援集計" className="notification-billing-legacy space-y-2"><summary>以前の支援記録を確認（旧制度の集計・現在の恒久保有枠とは別の記録）</summary>
+    {!loading && options ? <details aria-label="旧制度の支援集計" className="notification-billing-legacy space-y-2"><summary>以前の支援記録を確認</summary>
       <p>{options.supporterThreshold === null ? "旧集計: 支援者枠の自動適用は未設定です。寄付は支払い履歴として記録されます。" : `旧集計: ${options.validityDays === null ? "全期間" : `過去${options.validityDays}日間`}の返金を除いた累計支援額が${donationMoney(options.supporterThreshold, options.currency)}以上かどうかで、旧制度の支援者状態を判定します。${options.validityDays === null ? "集計期間の有効期限はありません。" : "対象期間を過ぎた寄付は累計から外れ、旧制度の適用状態が変わります。"}`}</p>
       {status?.supporter ? <p>旧制度での状態: {status.supporter.active ? `Square寄付の支援者枠を利用中 · ${jst(status.supporter.validUntilAtMs)}` : status.supporter.manualActive ? "手動で付与された支援者枠を利用中" : "Square寄付による支援者枠の適用なし"} · 対象期間内の正味支援額 {donationMoney(status.supporter.netAmount, options.currency)}</p> : null}
       {status?.supporter && status.supporter.paymentCount !== undefined ? <p>対象期間内の支援回数 {status.supporter.paymentCount}回 · 有効な購入口数 {status.supporter.purchaseUnits}口 · 追加の通知枠 {status.supporter.extraSlots}枠{status.supporter.unitsValidUntilAtMs ? ` · 次に口数が変わる期限 ${jst(status.supporter.unitsValidUntilAtMs)}` : ""}</p> : null}

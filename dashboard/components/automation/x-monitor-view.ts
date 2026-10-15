@@ -22,6 +22,8 @@ export type XMonitor = {
   poolKind: "free" | "supporter" | "special" | null; subscriptionState: string; revision: number;
   notificationSettings: { workflowId?: string; destinationId?: string; subscriptionId?: string }; quality: XMonitorQuality;
   processing?: XMonitorProcessing;
+  workflowStatus?: "active" | "paused" | "unapplied" | "missing" | "unknown" | null;
+  destinationStatus?: "active" | "paused" | "missing" | "unknown" | null;
   supporterRealtimeProcessing?: XMonitorProcessing & { isPreview: true; poolKind: "supporter"; eligible: boolean; available: boolean; reason: string | null };
 };
 export const xCount = (value: unknown): value is number => Number.isSafeInteger(value) && Number(value) >= 0;
@@ -103,6 +105,8 @@ export function parseXMonitor(value: unknown): XMonitor {
   if (settings.subscriptionId != null && (typeof settings.subscriptionId !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu.test(settings.subscriptionId))) throw new Error("Invalid X response");
   return { id: text(item.id, 128), accountId: item.accountId === null ? null : String(item.accountId), accountHandle: handle, name: text(item.name), enabled: item.enabled,
     state: text(item.state, 32), poolKind: item.poolKind as XMonitor["poolKind"], subscriptionState: text(item.subscriptionState, 40), revision: item.revision,
+    ...(item.workflowStatus === undefined ? {} : { workflowStatus: [null, "active", "paused", "unapplied", "missing", "unknown"].includes(item.workflowStatus as string | null) ? item.workflowStatus as XMonitor["workflowStatus"] : "unknown" }),
+    ...(item.destinationStatus === undefined ? {} : { destinationStatus: [null, "active", "paused", "missing", "unknown"].includes(item.destinationStatus as string | null) ? item.destinationStatus as XMonitor["destinationStatus"] : "unknown" }),
     ...(optionalProcessing(item.processing) ? { processing: optionalProcessing(item.processing) } : {}),
     ...(optionalSupporterRegistration(item.supporterRealtimeProcessing) ? { supporterRealtimeProcessing: optionalSupporterRegistration(item.supporterRealtimeProcessing) } : {}),
     notificationSettings: { ...(typeof settings.workflowId === "string" ? { workflowId: text(settings.workflowId, 128) } : {}),

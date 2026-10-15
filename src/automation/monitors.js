@@ -23,10 +23,13 @@ function publicMonitor(kind, row) {
         name: row.monitor_name || row.product_name || row.source_url || row.product_url, revision: Number(row.revision || 1),
         providerId: row.provider_id, source: row.source_url || row.product_url, locale: row.source_locale || 'ja', enabled: !!row.enabled,
         destinationId: row.destination_id, destinationType: row.destination_type, channelId: row.origin_channel_id,
-        workflowId: row.workflow_id, mode: row.watch_mode, maxPriceAmount: row.max_price_amount == null ? null : Number(row.max_price_amount),
+        workflowId: row.workflow_id, workflowStatus: row.workflow_status ?? (row.workflow_id ? 'unknown' : null),
+        destinationStatus: row.destination_status ?? (row.destination_id ? 'unknown' : null),
+        mode: row.watch_mode, maxPriceAmount: row.max_price_amount == null ? null : Number(row.max_price_amount),
         minDiscountPercent: row.min_discount_percent == null ? null : Number(row.min_discount_percent),
-        lastCheckedAtMs: Number(kind === 'auto' ? row.last_polled_at_ms ?? row.last_checked_at_ms ?? 0 : row.last_checked_at_ms || 0),
-        nextCheckAtMs: kind === 'auto' ? Math.max(Number(row.next_poll_at_ms || 0), Number(row.next_check_at_ms || 0)) : Number(row.next_check_at_ms || 0),
+        ...(kind === 'auto' ? require('../providers/autoWatch/target-timing').targetTiming(row) : {
+            lastCheckedAtMs: Number(row.last_checked_at_ms || 0), nextCheckAtMs: Number(row.next_check_at_ms || 0),
+        }),
         intervalMinutes: kind === 'auto' ? row.cadence_info?.intervalMs / 60000 || Number(row.user_interval_minutes ?? Number(row.poll_interval_ms) / 60000) : undefined,
         baseIntervalMinutes: kind === 'auto' ? Number(row.user_interval_minutes ?? Number(row.poll_interval_ms) / 60000) : undefined,
         slotCost: Number(row.slot_cost || 1), effectiveSlotCost: row.cadence_info?.effectiveSlotCost || 1,
@@ -93,15 +96,37 @@ function createMonitors(db, service, destinations, options = {}) {
             description: kind === 'auto' ? '初回は基準を記録し、その後の新しい投稿を通知します。' : '初回の価格を基準に、以降の価格変化や指定条件を確認します。',
             verified: 'format_only' };
     }
-    function selection(kind) {
+    function deliveryStateSQL() {
+        const scope = "COALESCE(m.scope,IF(t.destination_type='dm' OR t.guild_id IS NULL,'private','guild'))";
+        return {
+            workflow: `CASE WHEN a.workflow_id IS NULL THEN NULL
+                WHEN sw.id IS NULL OR sw.deleted_at_ms IS NOT NULL OR sw.scope<>${scope}
+                    OR (sw.scope='private' AND sw.owner_user_id<>t.user_id)
+                    OR (sw.scope='guild' AND (sw.guild_id IS NULL OR sw.guild_id<>t.guild_id OR t.destination_type='dm')) THEN 'missing'
+                WHEN sw.active_revision IS NULL THEN 'unapplied'
+                WHEN sr.workflow_id IS NULL THEN 'missing'
+                WHEN sw.enabled<>1 THEN 'paused' ELSE 'active' END`,
+            destination: `CASE WHEN m.destination_id IS NULL THEN NULL
+                WHEN sd.id IS NULL OR sd.deleted_at_ms IS NOT NULL OR sd.scope<>${scope}
+                    OR (sd.scope='private' AND sd.owner_user_id<>t.user_id)
+                    OR (sd.scope='guild' AND (sd.guild_id IS NULL OR sd.guild_id<>t.guild_id OR sd.kind='dm'))
+                    OR (sd.kind='dm' AND sd.dm_user_id<>t.user_id) THEN 'missing'
+                WHEN sd.enabled<>1 THEN 'paused' ELSE 'active' END`,
+        };
+    }
+    function selection(kind, includeDeliveryState = false) {
         const table = tableFor(kind);
+        const state = includeDeliveryState ? deliveryStateSQL() : null;
         return `SELECT t.*,s.provider_id,${kind === 'auto' ? 's.source_key,s.source_url' : 's.product_key,s.product_url,s.product_name,s.source_locale'},
             s.last_checked_at_ms,s.next_check_at_ms,s.last_error_code,s.poll_interval_ms,
-            ${kind === 'auto' ? '(SELECT auto_watch_interval_minutes FROM users WHERE user_id=t.user_id) AS user_interval_minutes,' : ''}m.name AS monitor_name,m.scope,m.destination_id,m.revision,a.workflow_id,c.slot_cost,c.updated_at_ms AS cadence_updated_at_ms
+            ${kind === 'auto' ? '(SELECT auto_watch_interval_minutes FROM users WHERE user_id=t.user_id) AS user_interval_minutes,' : ''}m.name AS monitor_name,m.scope,m.destination_id,m.revision,a.workflow_id,c.slot_cost,c.updated_at_ms AS cadence_updated_at_ms${state ? `,${state.workflow} AS workflow_status,${state.destination} AS destination_status` : ''}
             FROM ${table}_targets t JOIN ${table}_sources s ON s.id=t.source_id
             LEFT JOIN automation_monitors m ON m.target_kind='${kind}' AND m.target_id=t.id
             LEFT JOIN automation_monitor_cadence c ON c.target_kind='${kind}' AND c.target_id=t.id AND c.owner_user_id=t.user_id
-            LEFT JOIN automation_assignments a ON a.target_kind='${kind}' AND a.target_id=t.id`;
+            LEFT JOIN automation_assignments a ON a.target_kind='${kind}' AND a.target_id=t.id${state ? `
+            LEFT JOIN automation_workflows sw ON sw.id=a.workflow_id
+            LEFT JOIN automation_revisions sr ON sr.workflow_id=sw.id AND sr.revision=sw.active_revision
+            LEFT JOIN automation_destinations sd ON sd.id=m.destination_id` : ''}`;
     }
     async function getRow(actor, kind, id, write = false, query = db.queryDatabase, lock = false) {
         if (!/^\d{1,20}$/.test(String(id))) fail('NOT_FOUND', '監視が見つかりません。', 404);
@@ -120,10 +145,12 @@ function createMonitors(db, service, destinations, options = {}) {
             clauses.push(`(COALESCE(m.name,${kind === 'price' ? 's.product_name' : "''"},'') LIKE ? ESCAPE '=' OR s.provider_id LIKE ? ESCAPE '=' OR ${kind === 'auto' ? 's.source_url' : 's.product_url'} LIKE ? ESCAPE '=')`);
             params.push(pattern, pattern, pattern);
         }
-        if (state === 'active') clauses.push('t.enabled=1');
+        const status = deliveryStateSQL();
+        const blocked = `(COALESCE((${status.workflow}),'active')<>'active' OR COALESCE((${status.destination}),'active')<>'active')`;
+        if (state === 'active') clauses.push(`t.enabled=1 AND NOT ${blocked}`);
         if (state === 'paused') clauses.push('t.enabled=0');
-        if (state === 'attention') clauses.push("t.enabled=1 AND s.last_error_code IS NOT NULL AND s.last_error_code<>''");
-        const rows = await db.queryDatabase(`${selection(kind)} WHERE t.id>? AND
+        if (state === 'attention') clauses.push(`t.enabled=1 AND ((s.last_error_code IS NOT NULL AND s.last_error_code<>'') OR ${blocked})`);
+        const rows = await db.queryDatabase(`${selection(kind, true)} WHERE t.id>? AND
             ((t.user_id=? AND (COALESCE(m.scope,IF(t.destination_type='dm' OR t.guild_id IS NULL,'private','guild'))='private' OR t.destination_type='dm'))
             OR (t.guild_id=? AND ?=1 AND t.destination_type<>'dm' AND COALESCE(m.scope,'guild')='guild'))${clauses.length ? ` AND ${clauses.join(' AND ')}` : ''} ORDER BY t.id LIMIT 101`,
         [afterId, actor.userId, actor.guildId || null, actor.canView ? 1 : 0, ...params]);

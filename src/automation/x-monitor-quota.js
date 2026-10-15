@@ -103,8 +103,25 @@ function createXMonitorQuota(db, options = {}) {
             if (!rows.length) fail('NOT_FOUND', '自分の登録済み受信情報を指定してください。', 404);
         }
     }
-    async function item(row, plan, query = db.queryDatabase) { return { id: String(row.id), accountId: /^[1-9]\d{0,19}$/.test(row.account_id) ? row.account_id : null, accountHandle: row.account_handle, name: row.name,
-        enabled: Number(row.enabled) === 1, state: row.state, poolKind: row.pool_kind, notificationSettings: settings(JSON.parse(row.notification_settings_json)),
+    async function item(row, plan, query = db.queryDatabase) {
+        const config = settings(JSON.parse(row.notification_settings_json));
+        // Read-only owner-scoped status; do not take resource locks while
+        // serializing allocation/update results or expose foreign metadata.
+        const readiness = config.workflowId || config.destinationId ? (await query(`SELECT
+            CASE WHEN ? IS NULL THEN NULL WHEN w.id IS NULL OR w.deleted_at_ms IS NOT NULL THEN 'missing'
+                WHEN w.active_revision IS NULL THEN 'unapplied' WHEN r.workflow_id IS NULL THEN 'missing'
+                WHEN w.enabled<>1 THEN 'paused' ELSE 'active' END AS workflow_status,
+            CASE WHEN ? IS NULL THEN NULL WHEN d.id IS NULL OR d.deleted_at_ms IS NOT NULL
+                OR (d.kind='dm' AND d.dm_user_id<>?) THEN 'missing'
+                WHEN d.enabled<>1 THEN 'paused' ELSE 'active' END AS destination_status
+            FROM (SELECT 1) seed
+            LEFT JOIN automation_workflows w ON w.id=? AND w.owner_user_id=? AND w.scope='private'
+            LEFT JOIN automation_revisions r ON r.workflow_id=w.id AND r.revision=w.active_revision
+            LEFT JOIN automation_destinations d ON d.id=? AND d.owner_user_id=? AND d.scope='private'`,
+        [config.workflowId || null, config.destinationId || null, row.owner_user_id, config.workflowId || null, row.owner_user_id, config.destinationId || null, row.owner_user_id]))[0] : null;
+        return { id: String(row.id), accountId: /^[1-9]\d{0,19}$/.test(row.account_id) ? row.account_id : null, accountHandle: row.account_handle, name: row.name,
+        enabled: Number(row.enabled) === 1, state: row.state, poolKind: row.pool_kind, notificationSettings: config,
+        workflowStatus: readiness?.workflow_status ?? (config.workflowId ? 'unknown' : null), destinationStatus: readiness?.destination_status ?? (config.destinationId ? 'unknown' : null),
         subscriptionState: row.subscription_state, revision: Number(row.revision), quality: quality(plan), processing: await processing.inspectXMonitorProcessing(query, row, now(), { plan }),
         supporterRealtimeProcessing: await supporterMonitorProcessing(query, row, plan) }; }
     async function getRow(query, actor, target, includeDeleted = false) {

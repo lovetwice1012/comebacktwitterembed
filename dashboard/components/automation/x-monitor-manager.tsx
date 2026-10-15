@@ -8,6 +8,8 @@ import { XProcessingSettings } from "./x-processing-settings";
 import { xTimingLabel, xRealtimeBenefit } from "./x-monitor-timing-editor";
 import { AutomationDialog } from "./automation-dialog";
 import { MonitorDeliveryActivity } from "./monitor-delivery-activity";
+import { readinessOf, workflowStatus, workflowStatusLabel } from "./monitor-readiness";
+import { monitorState } from "../../../src/automation/monitor-input";
 import { parseXSetupStatus, xReceiverLabel, type XSetupStatus, type XSetupSubscription } from "./x-setup-view";
 import { ArrowRight, Clock3, Radio, ShieldCheck, Users, Zap } from "lucide-react";
 import "./notification-x.css";
@@ -33,7 +35,7 @@ function rebaseDraft(before: XMonitor, draft: Draft, latest: XMonitor): Draft {
 
 type AddDestination = (onCreated: (id: string) => void) => void;
 type RegistrationRequest = { id: number; accountHandle?: string; name?: string; destinationId?: string };
-function XMonitorEditor({ api, active, allowSetup, subscriptionsVersion, destinations, rules, onAddDestination, compact, registrationRequest, hideAddAction }: { api: XMonitorAPI; active: boolean; allowSetup: boolean; subscriptionsVersion: number; destinations: Choice[]; rules: Choice[]; onAddDestination?: AddDestination; compact: boolean; registrationRequest?: RegistrationRequest; hideAddAction: boolean }) {
+function XMonitorEditor({ api, active, allowSetup, subscriptionsVersion, destinations, rules, onAddDestination, onOpenWorkflow, compact, registrationRequest, hideAddAction }: { api: XMonitorAPI; active: boolean; allowSetup: boolean; subscriptionsVersion: number; destinations: Choice[]; rules: Choice[]; onAddDestination?: AddDestination; onOpenWorkflow?: (id: string) => void; compact: boolean; registrationRequest?: RegistrationRequest; hideAddAction: boolean }) {
   const [items, setItems] = useState<XMonitor[]>([]), [quota, setQuota] = useState<XMonitorQuota | null>(null);
   const [setup, setSetup] = useState<XSetupStatus | null>(null), [setupError, setSetupError] = useState("");
   const [loading, setLoading] = useState(true), [busy, setBusy] = useState(false), [readError, setReadError] = useState(""), [error, setError] = useState(""), [notice, setNotice] = useState("");
@@ -41,6 +43,7 @@ function XMonitorEditor({ api, active, allowSetup, subscriptionsVersion, destina
   const [editingBaseline, setEditingBaseline] = useState<XMonitor | null>(null), [revisionConflict, setRevisionConflict] = useState(false), [rebasedReview, setRebasedReview] = useState(false);
   const [editorOpen, setEditorOpen] = useState(false), [setupOpen, setSetupOpen] = useState(false);
   const [profileCopyMessage, setProfileCopyMessage] = useState("");
+  const [reviewedRule, setReviewedRule] = useState<any>(null);
   const mounted = useRef(false), activeRef = useRef(active), epoch = useRef(0), action = useRef(false);
   const draftRef = useRef(draft); draftRef.current = draft;
   const consumedRequest = useRef(0), draftForm = useRef<HTMLFormElement>(null), draftFocusPending = useRef(false);
@@ -222,7 +225,13 @@ function XMonitorEditor({ api, active, allowSetup, subscriptionsVersion, destina
       <form ref={draftForm} aria-label="X監視の登録設定" className="nx-unified-form" noValidate onSubmit={event => {
         event.preventDefault(); if (!canReview) return;
         reviewProcessingCost.current = newRealtime ? registrationQuote?.realtimeSlotCost ?? null : null;
-        if (needsConfirmation) { setReview(current?.revision ?? 0); setError(""); } else void save(current?.revision ?? 0);
+        if (needsConfirmation) void mutate(async () => {
+          const request = epoch.current, requested = draft;
+          let selectedRule: any = null;
+          if (draft.workflowId) { try { const found = await api(`workflows/${encodeURIComponent(draft.workflowId)}`); selectedRule = found && typeof found === "object" && "id" in found && found.id === draft.workflowId ? found : { id: draft.workflowId }; } catch { selectedRule = { id: draft.workflowId }; } }
+          if (!mounted.current || !activeRef.current || request !== epoch.current || draftRef.current !== requested) return;
+          setReviewedRule(selectedRule); setReview(current?.revision ?? 0);
+        }); else void save(current?.revision ?? 0);
       }}>
       {editConflict ? <section aria-label="X通知設定の再確認" className="nx-feedback"><p>別の操作で設定が変更されました。変更した入力を保持して、最新の設定と確認できます。</p><button type="button" className={button} disabled={busy || loading || !active} onClick={() => void reloadDraft()}>最新設定を取得して入力を引き継ぐ</button></section> : null}
       {notice ? <p role="status" className="nx-field-note">{notice}</p> : null}
@@ -277,6 +286,7 @@ function XMonitorEditor({ api, active, allowSetup, subscriptionsVersion, destina
         {review !== null ? <section aria-label="X監視の変更確認" className="nx-change-review"><p className="text-sm">{draft.accountHandle ? `Xアカウント @${draft.accountHandle}` : "このX監視"}</p>
           <dl className="monitor-facts"><div><dt>通知先</dt><dd>{destinations.find(item => item.id === draft.destinationId)?.name ?? (draft.destinationId ? "選択した通知先" : draft.workflowId ? "詳細ルールで指定" : "本人のDM")}</dd></div>{registrationQuote ? <div><dt>通知タイミング</dt><dd>{draft.processingMode === "realtime" ? "リアルタイム" : "プランの間隔"}・合計{draft.processingMode === "realtime" ? registrationQuote.realtimeSlotCost : 1}枠</dd></div> : null}</dl>
           {draft.poolPreference === "supporter" ? <p className="nx-slot-consent">支援者優先枠を使用・個人1枠</p> : null}
+          {draft.workflowId ? <div className="nx-field-note"><p>詳細ルール {rules.find(rule => rule.id === draft.workflowId)?.name || "選択したルール"}・{workflowStatusLabel(workflowStatus(draft.workflowId, reviewedRule?.id === draft.workflowId ? [reviewedRule] : rules))}</p>{onOpenWorkflow ? <button type="button" className={button} onClick={() => { setEditorOpen(false); onOpenWorkflow(draft.workflowId); }}>選択したルールを開く</button> : null}</div> : null}
           {!realtimePriceConfirmed ? <p role="alert">必要な枠数が変わりました。確認し直してください。</p> : null}
           {current && draft.accountHandle !== (current.accountHandle ?? "") ? <p className="text-sm">変更後のXアカウント名：{draft.accountHandle ? `@${draft.accountHandle}` : "未設定"}</p> : null}
           {deliveryChanged ? <p className="nx-slot-consent">設定を変更すると、変更前の未送信通知を取り消します。送信開始後は取り消せない場合があります。</p> : null}
@@ -298,12 +308,14 @@ function XMonitorEditor({ api, active, allowSetup, subscriptionsVersion, destina
     </AutomationDialog> : null}
     <div className="monitor-list">{items.map(item => {
       const subscription = setup?.subscriptions.find(row => row.id === item.notificationSettings.subscriptionId);
-      const state = !item.enabled || item.state === "suspended" || item.state === "deleted" ? "停止中" : !item.notificationSettings.subscriptionId || subscription?.receiverState === "requires_reenrollment" ? "接続設定待ち" : item.processing?.effectiveMode !== "realtime" && (item.processing ? !item.processing.configured : item.quality.intervalMinutes === null) ? "間隔設定待ち" : subscription?.receiverState === "listening" ? "受信待ち" : subscription?.receiverState === "error" ? "接続の確認待ち" : "接続待ち";
+      const readiness = monitorState(readinessOf({ ...item, ...item.notificationSettings }, rules, destinations));
+      const state = !item.enabled || item.state === "suspended" || item.state === "deleted" ? "停止中" : readiness.action ? readiness.label : !item.notificationSettings.subscriptionId || subscription?.receiverState === "requires_reenrollment" ? "接続設定待ち" : item.processing?.effectiveMode !== "realtime" && (item.processing ? !item.processing.configured : item.quality.intervalMinutes === null) ? "間隔設定待ち" : subscription?.receiverState === "listening" ? "受信待ち" : subscription?.receiverState === "error" ? "接続の確認待ち" : "接続待ち";
       return <article key={item.id} aria-label={`${item.name || item.accountHandle || item.accountId}のX監視`} className="monitor-card nx-monitor-card">
       <header className="nx-monitor-card-heading"><div><h3 className="font-medium">{item.name || item.accountHandle || item.accountId}</h3><p className="nx-field-note">{item.accountHandle ? `@${item.accountHandle}` : "Xアカウント"}</p></div><strong className={`nx-monitor-state${state === "停止中" ? " nx-monitor-state-muted" : ""}`}>{state}</strong></header>
       <dl className="monitor-facts"><div><dt>通知先</dt><dd>{destinations.find(destination => destination.id === item.notificationSettings.destinationId)?.name || (item.notificationSettings.destinationId ? "登録済みの通知先" : item.notificationSettings.workflowId ? "詳細ルールで指定" : "本人のDM")}</dd></div><div><dt>通知タイミング</dt><dd>{item.processing ? xTimingLabel(item.processing) : "確認待ち"}</dd></div><div><dt>使用枠</dt><dd>{item.processing ? `${item.processing.slotCost}枠` : "確認待ち"}</dd></div></dl>
       {subscription?.lastReceivedAtMs ? <p className="nx-field-note">最終受信 {new Intl.DateTimeFormat("ja-JP", { timeZone: "Asia/Tokyo", month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(subscription.lastReceivedAtMs)}（接続単位）</p> : null}
       <MonitorDeliveryActivity api={api} kind="x" targetId={item.id} active={active} />
+      {item.enabled && item.state === "ready" && readiness.action ? <p className="nx-field-note">{readiness.description}{readiness.action === "workflow" && onOpenWorkflow && item.notificationSettings.workflowId ? <button type="button" className={button} disabled={!active || busy} onClick={() => { setEditorOpen(false); onOpenWorkflow(item.notificationSettings.workflowId!); }}>割り当てたルールを開く</button> : null}</p> : null}
       {item.state === "suspended" ? <p className="nx-field-note">利用資格を確認してください。監視対象と通知設定は保持されています。</p> : null}
       {item.state !== "deleted" ? <div className="nx-actions"><button className={button} disabled={!active || busy || Boolean(draft && editingId !== item.id)} onClick={() => { if (!draft) { setDraft(draftOf(item)); setEditingId(item.id); setEditingBaseline(item); setRevisionConflict(false); setRebasedReview(false); setReview(null); setError(""); } setEditorOpen(true); }}>通知設定</button>
         {state === "接続設定待ち" || state === "接続待ち" || state === "接続の確認待ち" ? <button className="nx-text-link" disabled={!active || busy || Boolean(draft && editingId !== item.id)} onClick={() => { if (!draft) { setDraft(draftOf(item)); setEditingId(item.id); setEditingBaseline(item); setRevisionConflict(false); setRebasedReview(false); setReview(null); setError(""); } setEditorOpen(true); setSetupOpen(true); }}>接続を確認</button> : null}
@@ -320,11 +332,11 @@ function XMonitorEditor({ api, active, allowSetup, subscriptionsVersion, destina
   </div>;
 }
 
-export function XMonitorManager({ api, active = true, allowSetup = true, destinations = [], rules = [], onAddDestination, initiallyOpen = false, setupPlacement = "full", registrationRequest, hideAddAction = false }: { api: XMonitorAPI; active?: boolean; allowSetup?: boolean; destinations?: Choice[]; rules?: Choice[]; onAddDestination?: AddDestination; initiallyOpen?: boolean; setupPlacement?: "full" | "compact"; registrationRequest?: RegistrationRequest; hideAddAction?: boolean }) {
+export function XMonitorManager({ api, active = true, allowSetup = true, destinations = [], rules = [], onAddDestination, onOpenWorkflow, initiallyOpen = false, setupPlacement = "full", registrationRequest, hideAddAction = false }: { api: XMonitorAPI; active?: boolean; allowSetup?: boolean; destinations?: Choice[]; rules?: Choice[]; onAddDestination?: AddDestination; onOpenWorkflow?: (id: string) => void; initiallyOpen?: boolean; setupPlacement?: "full" | "compact"; registrationRequest?: RegistrationRequest; hideAddAction?: boolean }) {
   const [opened, setOpened] = useState(initiallyOpen), [subscriptionsVersion, setSubscriptionsVersion] = useState(0);
   useEffect(() => { if (active && registrationRequest) setOpened(true); }, [active, registrationRequest]);
   const compact = setupPlacement === "compact";
   return <section aria-label="Xアカウントの監視" className="notification-x nx-monitor-panel"><header className="nx-section-heading"><h2>監視するアカウント</h2></header>
-    {!opened ? <button className={button} disabled={!active} onClick={() => setOpened(true)}>Xアカウントの監視を管理</button> : <>{!compact ? allowSetup ? <><XNotificationSetup api={api} active={active} onSubscriptionsChanged={() => setSubscriptionsVersion(value => value + 1)} /><details className="nx-editor-advanced"><summary>共通の初期設定</summary><XProcessingSettings api={api} active={active} /></details></> : <a href="/dashboard/automation/x" className="inline-block text-sm text-primary underline">自分のX通知セットアップを開く</a> : null}<XMonitorEditor api={api} active={active} allowSetup={allowSetup} subscriptionsVersion={subscriptionsVersion} destinations={destinations} rules={rules} onAddDestination={onAddDestination} compact={compact} registrationRequest={registrationRequest} hideAddAction={hideAddAction} /></>}
+    {!opened ? <button className={button} disabled={!active} onClick={() => setOpened(true)}>Xアカウントの監視を管理</button> : <>{!compact ? allowSetup ? <><XNotificationSetup api={api} active={active} onSubscriptionsChanged={() => setSubscriptionsVersion(value => value + 1)} /><details className="nx-editor-advanced"><summary>共通の初期設定</summary><XProcessingSettings api={api} active={active} /></details></> : <a href="/dashboard/automation/x" className="inline-block text-sm text-primary underline">自分のX通知セットアップを開く</a> : null}<XMonitorEditor api={api} active={active} allowSetup={allowSetup} subscriptionsVersion={subscriptionsVersion} destinations={destinations} rules={rules} onAddDestination={onAddDestination} onOpenWorkflow={onOpenWorkflow} compact={compact} registrationRequest={registrationRequest} hideAddAction={hideAddAction} /></>}
   </section>;
 }

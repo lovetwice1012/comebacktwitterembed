@@ -1,5 +1,28 @@
 const MAX_RETRY_DELAY = 24 * 60 * 60 * 1000;
 
+/** A transport failure never includes an upstream body or browser exception. */
+export async function automationFetch(url: string, init?: RequestInit): Promise<any> {
+  let response: Response;
+  try { response = await fetch(url, init); }
+  catch { throw Object.assign(new Error("通信できませんでした。接続を確認して、一覧を再読み込みしてください。入力内容は保持されています。"), { code: "AUTOMATION_NETWORK_ERROR", status: 0 }); }
+  const authRequired = response.status === 401 || response.redirected && /\/(?:api\/auth\/signin|login)(?:[/?#]|$)/u.test(response.url);
+  if (authRequired) throw Object.assign(new Error("ログインの有効期限が切れました。別のタブでログインし直し、この画面で再読み込みしてください。入力内容は保持されています。"), { code: "AUTH_REQUIRED", status: 401 });
+  let data: any;
+  try { data = await response.json(); }
+  catch { throw Object.assign(new Error("サービスの応答を確認できませんでした。時間をおいて、一覧を再読み込みしてください。入力内容は保持されています。"), { code: "AUTOMATION_INVALID_RESPONSE", status: response.status }); }
+  if (!response.ok) throw automationResponseError(data, response);
+  const collection = /\/api\/automation\/(?:workflows|destinations|dictionaries)(?:[?#]|$)/u.test(url)
+    && (!init?.method || init.method.toUpperCase() === "GET");
+  // History is a legitimate array; collection GETs have a paged-list contract.
+  // A malformed successful response must never become React state or raw JS errors.
+  if (data === null || typeof data !== "object" || collection && (Array.isArray(data) || !Array.isArray(data.items)
+    || data.items.some((item: any) => item === null || typeof item !== "object" || Array.isArray(item) || typeof item.id !== "string")
+    || data.nextCursor != null && typeof data.nextCursor !== "string")) {
+    throw Object.assign(new Error("サービスの応答を確認できませんでした。時間をおいて、一覧を再読み込みしてください。入力内容は保持されています。"), { code: "AUTOMATION_INVALID_RESPONSE", status: response.status });
+  }
+  return data;
+}
+
 export function automationPlanName(value: unknown): string {
   return typeof value === "string" && value.length <= 80 && ![...value].some(character => character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127) ? value.trim() : "";
 }
@@ -12,6 +35,7 @@ export function automationRetryDelay(error: any): number | null {
 
 export function automationErrorMessage(error: any): string {
   const delay = automationRetryDelay(error);
+  if (error?.status === 401 || error?.code === "AUTH_REQUIRED") return "ログインの有効期限が切れました。別のタブでログインし直し、この画面で再読み込みしてください。入力内容は保持されています。";
   if (error?.code === "AUTOMATION_SLOT_LIMIT") {
     const maximum = Number(error.maxSlots ?? error.limit), available = Number(error.availableSlots);
     const plan = automationPlanName(error.planName);
@@ -24,6 +48,7 @@ export function automationErrorMessage(error: any): string {
   if (["AUTOMATION_FANOUT_LIMIT", "AUTOMATION_NOTIFICATION_BATCH_LIMIT"].includes(error?.code)) return "1件のイベントから作れる通知が上限を超えています。分岐・通知ブロックを減らしてください。";
   if (error?.code === "AUTOMATION_DELIVERY_RATE_LIMIT") return "サービス側の通知件数の上限に達したため、次に送信できる時刻まで待機しています。";
   if (error?.code === "AUTOMATION_DELIVERY_SIZE_LIMIT") return "通知内容がサービス側の上限を超えています。通知の長さやまとめる件数を減らしてください。";
+  if (Number(error?.status) >= 500) return "サービス側で処理を確認できませんでした。現在の状態を再読み込みしてください。入力内容は保持されています。";
   return typeof error?.message === "string" && error.message ? error.message : "操作に失敗しました。時間をおいて再試行してください。";
 }
 

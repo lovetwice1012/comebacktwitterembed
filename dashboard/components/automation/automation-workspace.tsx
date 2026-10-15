@@ -7,7 +7,7 @@ import { DeliveryHistory } from "./delivery-history";
 import { DictionaryManager } from "./dictionary-manager";
 import { MarketplaceManager } from "./marketplace-manager";
 import { AutomationDialog } from "./automation-dialog";
-import { automationResponseError } from "./automation-feedback";
+import { automationFetch } from "./automation-feedback";
 import { recoveryKey, encodeRecovery, decodeRecovery } from "../../../src/automation/draft-recovery";
 import { ArrowLeft, ArrowRight, Bell, Check, Clock3, FileUp, Filter, Link2, Search, StickyNote, TrendingDown, AlertTriangle, LockKeyhole } from "lucide-react";
 import "./automation.css";
@@ -51,10 +51,7 @@ export function AutomationWorkspace({ viewerId, guildId, canEdit = true, present
   const dirty = !!draft && (!!textDraft || !selected || JSON.stringify(draft) !== JSON.stringify(selected.draft) || JSON.stringify(bindings) !== JSON.stringify(selected.bindings));
   const api = useCallback(async (path: string, method = "GET", body?: any) => {
     const url = `/api/automation/${path}${path.includes("?") ? "&" : "?"}${guildId ? `guildId=${encodeURIComponent(guildId)}` : ""}`;
-    const response = await fetch(url, { method, headers: { "Content-Type": "application/json" }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
-    const data = await response.json();
-    if (!response.ok) throw automationResponseError(data, response);
-    return data;
+    return automationFetch(url, { method, credentials: "same-origin", cache: "no-store", headers: { "Content-Type": "application/json" }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
   }, [guildId]);
   const destinationLoadEpoch = useRef(0), destinationAPI = useRef(api);
   destinationAPI.current = api;
@@ -127,6 +124,10 @@ export function AutomationWorkspace({ viewerId, guildId, canEdit = true, present
   useEffect(() => { if (history.length) { historyPanel.current?.focus(); historyPanel.current?.scrollIntoView({ block: "nearest" }); } }, [history]);
   useEffect(() => { if (tab === "rules" && studioOpen && catalog) ruleNameInput.current?.focus(); }, [tab, studioOpen, catalog]);
   function canReplaceDraft() { if (dirty && !confirm("未保存の編集を破棄してルールを切り替えますか？")) return false; setTextDraft(null); return true; }
+  function openAssignedWorkflow(id: string) {
+    if (!canReplaceDraft()) return;
+    void task(async () => { await choose({ id }); setTab("rules"); });
+  }
   async function choose(item: any) { const value = await api(`workflows/${item.id}`); if (item.id !== selected?.id) setNotificationTarget(""); setSelected(value); setDraft(value.draft); setBindings(value.bindings); setTextDraft(null); setHistory([]); setStudioOpen(true); setEditorValid(false); return value; }
   function createTemplate(templateGoal = "all", templateTime = "now", templateFormat = "normal") {
     if (!canReplaceDraft()) return;
@@ -244,11 +245,11 @@ export function AutomationWorkspace({ viewerId, guildId, canEdit = true, present
   return <div className={`automation-app space-y-3 ${inStudio ? "automation-studio" : ""}`}>
     {!inStudio && <>{presentation === "standalone" || guildId ? <header className="automation-header"><div><h1 className="text-xl font-semibold">自動通知</h1><div className="mt-1 flex flex-wrap gap-3"><a href="/dashboard/automation/plans" className="inline-block text-sm text-primary underline">プラン・お支払い</a><a href="/dashboard/automation/support" className="inline-block text-sm text-primary underline">支援・寄付</a>{!guildId ? <a href="/dashboard/automation/x" className="inline-block text-sm text-primary underline">自分のX通知セットアップ</a> : null}</div></div><label className="flex items-center gap-2 text-sm">作成先<select className={field} value={scope} onChange={e => setScope(e.target.value)}><option value="private">自分だけ</option>{guildId && canEdit && <option value="guild">サーバー共有</option>}</select></label></header> : null}
     <nav className="automation-navigation" aria-label="通知メニュー">{[["monitors", "通知一覧"], ["rules", "通知ルール"], ["history", "配信予定・履歴"], ["dictionaries", "辞書"], ["marketplace", "共有ルール"]].map(([id, name]) => <button key={id} disabled={!recoveryReady || busy} aria-current={tab === id ? "page" : undefined} onClick={() => { setTab(id); void task(refresh); }}>{name}</button>)}</nav></>}
-    {error && <p role="alert" className="rounded border border-destructive bg-destructive/5 p-3 text-sm text-destructive">{error}</p>}{notice && <p role="status" className="text-sm text-muted-foreground">{notice}</p>}
+    {error && !applyTargets && !notificationOpen && <div role="alert" className="space-y-2 rounded border border-destructive bg-destructive/5 p-3 text-sm text-destructive"><p>{error}</p><button type="button" className={button} disabled={busy} onClick={() => void task(async () => { const [value] = await Promise.all([api("catalog"), refresh()]); setCatalog(value); })}>一覧を再読み込み</button>{error.startsWith("ログインの有効期限") ? <a href="/api/auth/signin/discord?callbackUrl=/dashboard/automation" target="_blank" rel="noreferrer" className={button}>別のタブでログイン</a> : null}</div>}{notice && <p role="status" className="text-sm text-muted-foreground">{notice}</p>}
     {recoveryWarning && <p role="alert" className="rounded border border-amber-500 p-3 text-sm">{recoveryWarning}</p>}
     {catalog?.deliverySafety?.available === false && !inStudio && <p role="status" className="rounded border border-amber-500 p-3 text-sm">送信・公開を利用できません。時間をおいて再試行してください。</p>}
     {dirty && !inStudio && <p role="status" className="text-xs text-muted-foreground">ルールに未保存</p>}
-    {visitedResources.includes("monitors") && <div hidden={tab !== "monitors"} key={`monitors:${viewerId}:${guildId || "personal"}`}><MonitorManager active={tab === "monitors"} api={api} guildId={guildId} canEdit={canEdit} scope={scope} destinations={destinations} rules={items} refresh={refresh} refreshDestination={refreshDestination} /></div>}
+    {visitedResources.includes("monitors") && <div hidden={tab !== "monitors"} key={`monitors:${viewerId}:${guildId || "personal"}`}><MonitorManager active={tab === "monitors"} api={api} guildId={guildId} canEdit={canEdit} scope={scope} destinations={destinations} rules={items} refresh={refresh} refreshDestination={refreshDestination} onOpenWorkflow={openAssignedWorkflow} externalError={error} /></div>}
     {visitedResources.includes("history") && <div hidden={tab !== "history"} key={`history:${viewerId}:${guildId || "personal"}`}><DeliveryHistory api={api} canEdit={canEdit} active={tab === "history"} /></div>}
     {tab === "rules" && <>
       {studioOpen && draft ? <nav className="automation-workspace-navigation" aria-label="スタジオの移動"><button className={button + " studio-back"} disabled={busy} onClick={() => setStudioOpen(false)}><ArrowLeft size={16} aria-hidden="true" />ルール一覧へ</button><div><button className={button} disabled={busy} onClick={() => setTab("monitors")}>通知一覧</button><button className={button} disabled={busy} onClick={() => setTab("history")}>配信予定・履歴</button></div></nav> : <div className="studio-library">

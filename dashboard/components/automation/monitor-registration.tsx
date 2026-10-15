@@ -6,6 +6,7 @@ import { sourceGuidance, sourceProvider } from "../../../src/automation/monitor-
 import { valueLabels } from "./rule-labels";
 import { xRegistrationHandle } from "./notification-registration-source";
 import { monitorBehaviorChanged, monitorWorkflowChanged } from "./monitor-edit-view";
+import { workflowStatus, workflowStatusLabel } from "./monitor-readiness";
 
 const field = "w-full rounded border bg-background px-3 py-2 text-sm";
 const button = "rounded border bg-background px-3 py-2 text-sm hover:bg-muted disabled:opacity-40";
@@ -13,12 +14,13 @@ type Props = { api: (path: string, method?: string, body?: any) => Promise<any>;
   guildId?: string; destinations: any[]; rules: any[]; catalog: any; busy: boolean;
   onChange: (value: any) => void; onSourceChange: (source: string) => void; onSave: (value: any) => Promise<void>;
   run: (work: () => Promise<void>) => Promise<void>; refresh: () => Promise<void>; onXRegistration?: (accountHandle: string) => void;
-  onAddDestination?: (onCreated: (id: string) => void) => void; timingEditor?: ReactNode };
+  onAddDestination?: (onCreated: (id: string) => void) => void; onOpenWorkflow?: (id: string) => void; timingEditor?: ReactNode };
 const languages = [["ja", "日本語 / 日本"], ["en-US", "English / US"], ["en-GB", "English / UK"], ["de", "Deutsch"], ["fr", "Français"], ["ko", "한국어"], ["zh-CN", "简体中文"], ["zh-TW", "繁體中文"]];
 const sourceHints: Record<string, string> = { youtube: "チャンネルURL・@ハンドル・UCから始まるID", github: "プロフィールURL・ユーザー名", twitch: "配信チャンネルURL・チャンネル名", spotify: "アーティストURL・ID", pixiv: "作者のプロフィールURL・ユーザーID", booth: "ショップURL・ショップ名", amazon: "短縮URLは商品ページを開いてコピー", steam: "ゲーム・パッケージ・バンドルのURL" };
 
-export function MonitorRegistration({ api, monitor, original, saveBlocked = false, kind, scope, guildId, destinations, rules, catalog, busy, onChange, onSourceChange, onSave, run, refresh, onXRegistration, onAddDestination, timingEditor }: Props) {
+export function MonitorRegistration({ api, monitor, original, saveBlocked = false, kind, scope, guildId, destinations, rules, catalog, busy, onChange, onSourceChange, onSave, run, refresh, onXRegistration, onAddDestination, onOpenWorkflow, timingEditor }: Props) {
   const [step, setStep] = useState(0), [preview, setPreview] = useState<any>(null);
+  const [reviewedRule, setReviewedRule] = useState<any>(null);
   const initial = useRef(monitor.id ? { ...monitor } : null), saving = useRef(false);
   const mounted = useRef(false), currentDraft = useRef(monitor); currentDraft.current = monitor;
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
@@ -44,6 +46,12 @@ export function MonitorRegistration({ api, monitor, original, saveBlocked = fals
   const channelDelivery = destinationMode === "channel" || destinationMode === "existing" && available.find(d => d.id === monitor.destinationId)?.kind !== "dm";
   const needsReview = !editing || destinationMode !== "existing" || monitorBehaviorChanged(baseline, monitor, kind) || monitorWorkflowChanged(baseline, monitor);
   const reviewed = preview || { source: monitor.source, providerId: monitor.providerId, intervalMinutes: monitor.intervalMinutes };
+  const ruleState = workflowStatus(monitor.workflowId, reviewedRule?.id === monitor.workflowId ? [reviewedRule] : rules);
+  async function checkRule() {
+    if (!monitor.workflowId) { setReviewedRule(null); return; }
+    try { const rule = await api(`workflows/${encodeURIComponent(monitor.workflowId)}`); setReviewedRule(rule?.id === monitor.workflowId ? rule : { id: monitor.workflowId }); }
+    catch { setReviewedRule({ id: monitor.workflowId }); }
+  }
   function validateDestination() {
     if (destinationMode === "existing" && !available.some(d => d.id === monitor.destinationId)) throw new Error("有効な通知先を選んでください。");
     if (destinationMode === "channel" && !channels.some(c => c.id === channelId && c.canCreateWebhook)) throw new Error("通知できるチャンネルを選んでください。");
@@ -58,7 +66,7 @@ export function MonitorRegistration({ api, monitor, original, saveBlocked = fals
         const result = await api(`monitors/${kind}/preview`, "POST", { providerId: monitor.providerId, source: monitor.source, locale: monitor.locale });
         setPreview(result); onChange({ ...monitor, source: result.source });
       }
-      setStep(2); return;
+      await checkRule(); setStep(2); return;
     }
     if (step === 0) {
       const detected = sourceProvider(monitor.source);
@@ -72,7 +80,7 @@ export function MonitorRegistration({ api, monitor, original, saveBlocked = fals
     }
     if (step === 1) {
       validateDestination();
-      setStep(2); return;
+      await checkRule(); setStep(2); return;
     }
     let current = monitor;
     if (destinationMode !== "existing") {
@@ -108,9 +116,9 @@ export function MonitorRegistration({ api, monitor, original, saveBlocked = fals
       {destinationMode === "dm" && <p className="automation-critical-note"><Mail size={16} aria-hidden="true" />BotからのDMを受信できる設定が必要です。</p>}
       {destinationMode === "channel" && <><label className="block text-sm">チャンネル<select required disabled={channelsLoading} className={field} value={channelId} onChange={e => setChannelId(e.target.value)}><option value="">{channelsLoading ? "チャンネルを読み込み中…" : "チャンネルを選択"}</option>{channels.map(c => <option key={c.id} disabled={!c.canCreateWebhook} value={c.id}>#{c.name}{c.canCreateWebhook ? "" : "（Webhook管理権限なし）"}</option>)}</select></label>{channelError && <p role="alert">{channelError}</p>}{!channelsLoading && !channelError && channels.length === 0 && <p role="status">選択できるチャンネルがありません。サーバーの権限を確認してください。</p>}<button type="button" className={button} disabled={busy || channelsLoading} onClick={() => setChannelRetry(value => value + 1)}>チャンネルを再読み込み</button></>}
       {kind === "price" && <><label className="block text-sm">通知する条件<select className={field} value={monitor.mode} onChange={e => onChange({ ...monitor, mode: e.target.value })}><option value="change">価格が変わるたび</option><option value="threshold">価格または割引率を指定</option></select></label>{monitor.mode === "threshold" && <div className="grid gap-3 sm:grid-cols-2"><label className="text-sm">指定価格以下（商品表示通貨）<input type="number" min="0" step="0.0001" className={field} value={monitor.maxPriceAmount} onChange={e => onChange({ ...monitor, maxPriceAmount: e.target.value })} /></label><label className="text-sm">割引率以上（%）<input type="number" min="0.01" max="100" step="0.01" className={field} value={monitor.minDiscountPercent} onChange={e => onChange({ ...monitor, minDiscountPercent: e.target.value })} /></label><p className="automation-critical-note sm:col-span-2"><Info size={16} aria-hidden="true" />どちらかの条件を満たすと通知します。</p></div>}</>}
-      <details className="rounded border p-3"><summary>詳細ルール{kind === "auto" ? "と言語" : ""}</summary><div className="mt-3 space-y-3"><label className="block text-sm">詳細ルール<select className={field} value={monitor.workflowId} onChange={e => onChange({ ...monitor, workflowId: e.target.value })}><option value="">なし（通常の通知）</option>{rules.filter(r => r.scope === currentScope).map(r => <option key={r.id} value={r.id}>{r.name}{r.enabled ? "" : "（未適用・停止中）"}</option>)}</select></label>{kind === "auto" && <label className="block text-sm">通知の言語<select className={field} value={monitor.locale} onChange={e => onChange({ ...monitor, locale: e.target.value })}>{languages.map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select></label>}</div></details>
+      <details className="rounded border p-3"><summary>詳細ルール{kind === "auto" ? "と言語" : ""}</summary><div className="mt-3 space-y-3"><label className="block text-sm">詳細ルール<select className={field} value={monitor.workflowId} onChange={e => onChange({ ...monitor, workflowId: e.target.value })}><option value="">なし（通常の通知）</option>{monitor.workflowId && !rules.some(rule => rule.id === monitor.workflowId && rule.scope === currentScope) ? <option value={monitor.workflowId} disabled>現在のルール（状態を確認）</option> : null}{rules.filter(r => r.scope === currentScope).map(r => <option key={r.id} value={r.id}>{r.name}{workflowStatus(r.id, [r]) === "active" ? "" : `（${workflowStatusLabel(workflowStatus(r.id, [r]))}）`}</option>)}</select></label>{kind === "auto" && <label className="block text-sm">通知の言語<select className={field} value={monitor.locale} onChange={e => onChange({ ...monitor, locale: e.target.value })}>{languages.map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select></label>}</div></details>
     </>}
-    {step === 2 && <section tabIndex={-1} className="monitor-review" aria-label="保存する通知の確認"><h3>{monitor.name || "通知を追加"}</h3><dl><dt>対象</dt><dd className="break-all">{reviewed.source}</dd><dt>通知先</dt><dd>{destinationLabel}</dd><dt>通知する内容</dt><dd>{kind === "auto" ? "新しい投稿" : priceCondition}</dd><dt>通知タイミング</dt><dd>{reviewed.intervalMinutes ? `約${reviewed.intervalMinutes}分ごとに確認` : "現在の確認間隔を維持"}</dd><dt>編集できる人</dt><dd>{currentScope === "guild" ? "サーバーの編集権限を持つ人" : "自分のみ"}</dd></dl>{channelDelivery && <p className="automation-critical-note automation-critical-note-warning"><Users size={16} aria-hidden="true" />通知はチャンネルを見られる人に届きます。</p>}{destinationMode === "channel" && <p className="automation-critical-note"><Info size={16} aria-hidden="true" />登録時に、Botが選択したチャンネルへ通知用Webhookを作成または再利用します。</p>}{!monitor.id && <p className="automation-critical-note"><Info size={16} aria-hidden="true" />{kind === "auto" ? "初回確認より前の投稿は通知しません。" : "初回の価格を基準に通知します。"}</p>}{monitor.id && needsReview && <p className="automation-critical-note automation-critical-note-warning"><Info size={16} aria-hidden="true" />変更前の未送信通知を取り消します。送信開始後は取り消せない場合があります。</p>}</section>}
+    {step === 2 && <section tabIndex={-1} className="monitor-review" aria-label="保存する通知の確認"><h3>{monitor.name || "通知を追加"}</h3><dl><dt>対象</dt><dd className="break-all">{reviewed.source}</dd><dt>通知先</dt><dd>{destinationLabel}</dd><dt>通知する内容</dt><dd>{kind === "auto" ? "新しい投稿" : priceCondition}</dd><dt>通知タイミング</dt><dd>{reviewed.intervalMinutes ? `約${reviewed.intervalMinutes}分ごとに確認` : "現在の確認間隔を維持"}</dd><dt>詳細ルール</dt><dd>{(reviewedRule?.id === monitor.workflowId ? reviewedRule.name : null) || rules.find(rule => rule.id === monitor.workflowId)?.name || (monitor.workflowId ? "割り当てたルール" : "通常の通知")}<span className="block">{workflowStatusLabel(ruleState)}</span>{monitor.workflowId && onOpenWorkflow ? <button type="button" className={button} onClick={() => onOpenWorkflow(monitor.workflowId)}>選択したルールを開く</button> : null}</dd><dt>編集できる人</dt><dd>{currentScope === "guild" ? "サーバーの編集権限を持つ人" : "自分のみ"}</dd></dl>{ruleState && ruleState !== "active" ? <p role="status" className="automation-critical-note"><Info size={16} aria-hidden="true" />{ruleState === "unapplied" ? "ルールを適用すると通知を開始できます。" : ruleState === "paused" ? "ルールを再開すると通知を開始できます。" : "配信を始める前に、選択したルールを確認してください。"}</p> : null}{!channelDelivery && kind === "auto" && !monitor.workflowId ? <p className="automation-critical-note"><Mail size={16} aria-hidden="true" />DMは投稿タイトルとURLで通知します。</p> : null}{channelDelivery && <p className="automation-critical-note automation-critical-note-warning"><Users size={16} aria-hidden="true" />通知はチャンネルを見られる人に届きます。</p>}{destinationMode === "channel" && <p className="automation-critical-note"><Info size={16} aria-hidden="true" />登録時に、Botが選択したチャンネルへ通知用Webhookを作成または再利用します。</p>}{!monitor.id && <p className="automation-critical-note"><Info size={16} aria-hidden="true" />{kind === "auto" ? "初回確認より前の投稿は通知しません。" : "初回の価格を基準に通知します。"}</p>}{monitor.id && needsReview && <p className="automation-critical-note automation-critical-note-warning"><Info size={16} aria-hidden="true" />変更前の未送信通知を取り消します。送信開始後は取り消せない場合があります。</p>}</section>}
   </form>{editing && step === 0 ? timingEditor : null}
     <div className="monitor-form-actions notification-editor-actions">{step > 0 && <button type="button" className={button} onClick={() => setStep(editing ? 0 : step - 1)}>戻る</button>}<button type="submit" form={formId} className={button + " bg-primary text-primary-foreground hover:bg-primary/90"} disabled={busy || saveBlocked || (step === 1 || editing && step === 0) && destinationMode === "channel" && (channelsLoading || !!channelError)}>{busy ? "処理中…" : editing && step === 0 ? needsReview ? "変更内容を確認" : "変更を保存" : step === 0 ? "対象を確認" : step === 1 ? "通知内容を確認" : editing ? "この内容で変更" : "通知を登録"}</button></div>
   </fieldset>;

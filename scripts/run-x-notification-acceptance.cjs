@@ -96,6 +96,7 @@ const files=[
   "scripts/test/notification-workspace-navigation.test.js",
   "scripts/test/x-notification-reader.test.js"
 ];
+function main() {
 const port=Number(process.env.AUTOMATION_TEST_DB_PORT);
 if(!Number.isInteger(port)||port<1024||port>65535||port===3306)throw new Error('Set an explicit disposable AUTOMATION_TEST_DB_PORT');
 const root=path.resolve(__dirname,'..');
@@ -103,3 +104,6 @@ const report=process.env.X_NOTIFICATION_TEST_REPORT || 'docs/angelic-angel/mixed
 const result=spawnSync(resolveProjectNode(),['--test','--test-concurrency=1','--test-reporter=junit',`--test-reporter-destination=${report}`,...files],{cwd:root,env:process.env,stdio:'inherit',windowsHide:true});
 if(result.error)throw result.error;
 process.exitCode=result.status===null?1:result.status;
+}
+module.exports={files:Object.freeze(files)};
+if(require.main===module)main();

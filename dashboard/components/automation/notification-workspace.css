@@ -251,11 +251,13 @@
 
 @media (width <= 640px) {
   .automation-dialog {
+    inset: 0;
     width: 100%;
     max-width: 100%;
     height: 100dvh;
     max-height: 100dvh;
-    margin: 0;
+    /* Reset the containing form's space-y margins in the native top layer. */
+    margin: 0 !important;
     border-radius: 0;
     border: 0;
   }

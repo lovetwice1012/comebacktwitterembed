@@ -10,7 +10,7 @@ import {
 } from "@/lib/subscription-pricing";
 export { subscriptionPrice } from "@/lib/subscription-pricing";
 import {
-  automationResponseError,
+  automationFetch,
   automationRetryDelay,
 } from "@/components/automation/automation-feedback";
 import type { SquareStatus as BillingStatus } from "@bot/automation/square-billing";
@@ -53,10 +53,7 @@ type SquareLoader = (environment: "sandbox" | "production") => Promise<SquareSDK
 const sdkLoads = new Map<string, Promise<SquareSDK>>();
 
 export async function subscriptionAPI(path: string, method = "GET", body?: unknown) {
-  const response = await fetch(`/api/automation/billing/${path}`, { method, cache: "no-store", headers: body === undefined ? undefined : { "Content-Type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) });
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw automationResponseError(data, response);
-  return data;
+  return automationFetch(`/api/automation/billing/${path}`, { method, cache: "no-store", headers: body === undefined ? undefined : { "Content-Type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) });
 }
 
 export function loadSquareSubscriptionSDK(environment: "sandbox" | "production"): Promise<SquareSDK> {

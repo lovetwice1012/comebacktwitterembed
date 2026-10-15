@@ -28,6 +28,13 @@ function sourceProvider(value) {
 function sourceGuidance(providerId) { return GUIDANCE[providerId] || { placeholder: '監視するURLを入力', help: '対応サービスと監視対象を確認してください。' }; }
 function monitorState(row) {
     if (!row.enabled) return { id: 'paused', label: '停止中', description: '監視を停止しています。再開するまで新しい通知は送りません。' };
+    if (row.workflowId && row.workflowStatus !== 'active') {
+        const status = row.workflowStatus;
+        return { id: 'waiting', label: status === 'unapplied' ? 'ルール未適用' : status === 'paused' ? 'ルール停止中' : 'ルールの確認待ち',
+            description: status === 'unapplied' ? 'ルールを通知に適用すると配信を開始できます。' : status === 'paused' ? 'ルールを再開すると配信を再開できます。' : '割り当てたルールを確認するか、通知設定から別のルールを選んでください。', action: 'workflow' };
+    }
+    if (row.destinationId && row.destinationStatus !== 'active') return { id: 'waiting', label: row.destinationStatus === 'paused' ? '通知先停止中' : '通知先の確認待ち',
+        description: row.destinationStatus === 'paused' ? '通知先を有効にすると配信を再開できます。' : '通知設定から有効な通知先を選んでください。', action: 'destination' };
     if (row.errorCode) return /RATE_LIMIT|PACING/.test(row.errorCode)
         ? { id: 'waiting', label: '取得制限で待機', description: 'サービスの取得制限に合わせて待機しています。次回予定に再確認します。' }
         : { id: 'error', label: '確認が必要', description: /INVALID_CURSOR/.test(row.errorCode)
@@ -41,6 +48,6 @@ function filterMonitors(rows, query, state) {
     const needle = String(query || '').trim().toLocaleLowerCase();
     return rows.filter(row => (!needle || [row.name, row.source, row.providerId].some(value => String(value || '').toLocaleLowerCase().includes(needle)))
         && (state === 'all' || state === 'attention' && ['error', 'waiting'].includes(monitorState(row).id)
-            || state === 'active' && row.enabled || state === 'paused' && !row.enabled));
+            || state === 'active' && row.enabled && !['workflow', 'destination'].includes(monitorState(row).action) || state === 'paused' && !row.enabled));
 }
 module.exports = { sourceProvider, sourceGuidance, monitorState, filterMonitors };

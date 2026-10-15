@@ -4,7 +4,7 @@ let modalDepth = 0;
 let previousOverflow = "";
 const dialogStack: HTMLDialogElement[] = [];
 
-export function AutomationDialog({ title, children, onCancel, busy = false, error, open = true }: { title: string; children: ReactNode; onCancel: () => void; busy?: boolean; error?: string; open?: boolean }) {
+export function AutomationDialog({ title, children, onCancel, busy = false, error, errorAction, open = true }: { title: string; children: ReactNode; onCancel: () => void; busy?: boolean; error?: string; errorAction?: ReactNode; open?: boolean }) {
   const ref = useRef<HTMLDialogElement>(null), label = useId();
   useEffect(() => {
     const dialog = ref.current;
@@ -32,6 +32,6 @@ export function AutomationDialog({ title, children, onCancel, busy = false, erro
     else if (!event.shiftKey && (document.activeElement === last || !dialog.contains(document.activeElement))) { event.preventDefault(); first.focus(); }
   }}>
     <header className="flex items-center justify-between gap-4 border-b p-4"><h2 id={label} className="font-semibold">{title}</h2><button type="button" disabled={busy} className="rounded border px-3 py-1.5 text-sm" onClick={() => { if (dialogStack.at(-1) === ref.current) onCancel(); }}>キャンセル</button></header>
-    <div className="automation-dialog-body space-y-3 p-5">{error && <p role="alert" className="rounded border border-destructive p-3 text-sm text-destructive">{error}</p>}{children}</div>
+    <div className="automation-dialog-body space-y-3 p-5">{error && <div role="alert" className="space-y-2 rounded border border-destructive p-3 text-sm text-destructive"><p>{error}</p>{errorAction}{error.startsWith("ログインの有効期限") ? <a href="/api/auth/signin/discord?callbackUrl=/dashboard/automation" target="_blank" rel="noreferrer" className="inline-block rounded border px-3 py-2">別のタブでログイン</a> : null}</div>}{children}</div>
   </dialog>;
 }

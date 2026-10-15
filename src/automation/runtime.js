@@ -59,7 +59,7 @@ function createRunner(db, queue, transport, options = {}) {
         assertAllowed();
         let job = await queue.claim(clock());
         if (!job) return { state: 'idle' };
-        let sending = false, confirmed = 0, prepared = null;
+        let sending = false, confirmed = 0, prepared = null, attemptStarted = false;
         try {
             if (queue.refreshFlowJob) {
                 const refreshed = await queue.refreshFlowJob(job, clock());
@@ -92,6 +92,10 @@ function createRunner(db, queue, transport, options = {}) {
                 if (begin.state !== 'lease_lost') await queue.transition(job, begin.state, begin.code, begin.dueAtMs);
                 return begin;
             }
+            // beginSend durably counts this attempt. A known Discord rejection
+            // must not count it a second time in the failure handler below.
+            attemptStarted = true;
+            job = { ...job, attempts: begin.attempts ?? Number(job.attempts) + 1 };
             for (let index = 0; index < prepared.payloads.length; index++) {
                 const paced = await paceStep(job);
                 if (paced.state !== 'ready') {
@@ -135,12 +139,15 @@ function createRunner(db, queue, transport, options = {}) {
             const throttled = status === 429 || error.name === 'RateLimitError';
             const unknown = sending && !throttled && !(status >= 400 && status < 500);
             const permanent = status >= 400 && status < 500 && !throttled;
-            const terminal = unknown ? 'unknown' : confirmed ? 'partial' : permanent || Number(job.attempts) >= 9 ? 'failed' : 'pending';
+            const attempts = Number(job.attempts) + (attemptStarted ? 0 : 1);
+            const terminal = unknown ? 'unknown' : confirmed ? 'partial' : permanent || attempts >= 10 ? 'failed' : 'pending';
             // Deliberately do not log error.message/stack/rawError. Discord
             // errors may include a signed webhook URL or message payload.
             const code = unknown ? 'DELIVERY_UNKNOWN' : confirmed ? 'PARTIAL_DELIVERY' : throttled ? 'DISCORD_RATE_LIMITED' : permanent ? 'DESTINATION_OR_POLICY_DENIED' : 'AUTOMATION_TRANSPORT_FAILED';
-            const retryMs = throttled ? Math.max(60000, Number(error.retryAfter) || Number(error.retryAfterMs) || 0) : Math.min(3600000, 30000 * 2 ** Math.min(Number(job.attempts), 7));
-            await db.queryDatabase('UPDATE automation_jobs SET attempts=attempts+1 WHERE id=? AND lease_token=?', [job.id, job.lease_token]);
+            const retryMs = throttled ? Math.max(60000, Number(error.retryAfter) || Number(error.retryAfterMs) || 0) : Math.min(3600000, 30000 * 2 ** Math.min(attempts - 1, 7));
+            // Preparation can fail before beginSend. Count that one failure
+            // under the live lease, while preserving bounded retries.
+            if (!attemptStarted) await db.queryDatabase("UPDATE automation_jobs SET attempts=attempts+1 WHERE id=? AND lease_token=? AND state='leased'", [job.id, job.lease_token]);
             await queue.transition(job, terminal, code, terminal === 'pending' ? clock() + retryMs : null);
             return { state: terminal, code };
         } finally {

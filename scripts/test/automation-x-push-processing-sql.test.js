@@ -26,56 +26,62 @@ const webPost = (id, handle = 'example') => ({ title: '合成の投稿通知', b
         uri: `/${handle}/status/${id}`, bundle_text: 'synthetic', impression_id: 'synthetic', lang: 'ja', extra: { ignored: true } }, metadata: true });
 
 async function fixture(work, runtimeOptions = {}) {
-    const db = await createTestDatabase(port), query = db.queryDatabase;
-    let now = FIXTURE_START, sequence = 0, lease, runtime, callbacks, auditFailure = false, auditHook = null, markFailure = false, ownerLockAttempt = null;
-    const clock = () => now, subscription = await insertSubscription(db);
-    await db.withDatabaseTransaction(query => entitlements.savePlanPolicy(query, ADMIN, { planId: 'free', label: '無料', slotLimit: 5, minuteLimit: 5, dayLimit: 24, priority: 0, intervalMinutes: 5 }));
-    const storeDb = { ...db, withDatabaseTransaction: work => db.withDatabaseTransaction(query => work(async (sql, args) => {
-        if (ownerLockAttempt && sql.startsWith('INSERT INTO users ')) ownerLockAttempt();
-        const result = await query(sql, args);
-        if (auditHook && sql.startsWith('INSERT INTO automation_audit')) auditHook();
-        if (auditFailure && sql.startsWith('INSERT INTO automation_audit')) throw Object.assign(new Error('SQL_PRIVATE_SENTINEL'), { code: 'ER_FIXTURE_AUDIT' });
-        return result;
-    })) };
-    const store = createXPushStore(storeDb, { now: clock, leaseMs: 300000 });
-    lease = await store.claim({ ...subscription, workerId: 'processing-fixture' });
-    await store.markState(lease, 'listening');
-    const monitor = await query("INSERT INTO automation_x_monitors (owner_user_id,account_id,account_handle,name,enabled,state,pool_kind,notification_settings_json,subscription_state,revision,created_at_ms,updated_at_ms) VALUES (?,'12345','example','Processing fixture',1,'ready','free',?,'bound',1,?,?)", [U, JSON.stringify({ subscriptionId: subscription.subscriptionId }), now, now]);
-    await db.withDatabaseTransaction(query => entitlements.assignSlot(query, U, 'x', String(monitor.insertId)));
-    const queue = createQueue(db, {}, { clock, rolloutMode: 'public', useLegacyUserInterval: runtimeOptions.useLegacyUserInterval === true });
-    const realRouter = createXEventRouter(db, queue, { clock });
-    let routeOverride = null;
-    const gateway = createXPushGateway(db, { enabled: true, store, privateWorkerVault: vault, now: clock,
-        createSocket: () => assert.fail('processing fixture must never create a vendor socket') });
-    const runtimeGateway = { ...gateway, store: { ...store, markRouted: async (...args) => {
-        if (markFailure) throw Object.assign(new Error('private DB sentinel'), { code: 'X_PUSH_STORE_UNAVAILABLE' });
-        return store.markRouted(...args);
-    } }, run: input => {
-        callbacks = input; input.onSession({ lease });
-        return new Promise(resolve => input.signal.addEventListener('abort', resolve, { once: true }));
-    } };
-    function makeRuntime(options = {}) {
-        runtime = createXPushRuntime(db, queue, { enabled: true, gateway: runtimeGateway, clock,
-            router: { hasRealtimeTargets: realRouter.hasRealtimeTargets, hasBatchTargets: realRouter.hasBatchTargets, routeReceived: input => routeOverride ? routeOverride(input, realRouter) : realRouter.routeReceived(input) },
-            rolloutMode: 'public', assertAllowed: () => {}, pageSize: 2,
-            listCandidates: async () => [{ id: subscription.subscriptionId, owner_user_id: U }], ...runtimeOptions, ...options });
-        return runtime;
+    const db = await createTestDatabase(port);
+    let runtime;
+    try {
+        const query = db.queryDatabase;
+        let now = FIXTURE_START, sequence = 0, lease, callbacks, auditFailure = false, auditHook = null, markFailure = false, ownerLockAttempt = null;
+        const clock = () => now, subscription = await insertSubscription(db);
+        await db.withDatabaseTransaction(query => entitlements.savePlanPolicy(query, ADMIN, { planId: 'free', label: '無料', slotLimit: 5, minuteLimit: 5, dayLimit: 24, priority: 0, intervalMinutes: 5 }));
+        const storeDb = { ...db, withDatabaseTransaction: work => db.withDatabaseTransaction(query => work(async (sql, args) => {
+            if (ownerLockAttempt && sql.startsWith('INSERT INTO users ')) ownerLockAttempt();
+            const result = await query(sql, args);
+            if (auditHook && sql.startsWith('INSERT INTO automation_audit')) auditHook();
+            if (auditFailure && sql.startsWith('INSERT INTO automation_audit')) throw Object.assign(new Error('SQL_PRIVATE_SENTINEL'), { code: 'ER_FIXTURE_AUDIT' });
+            return result;
+        })) };
+        const store = createXPushStore(storeDb, { now: clock, leaseMs: 300000 });
+        lease = await store.claim({ ...subscription, workerId: 'processing-fixture' });
+        await store.markState(lease, 'listening');
+        const monitor = await query("INSERT INTO automation_x_monitors (owner_user_id,account_id,account_handle,name,enabled,state,pool_kind,notification_settings_json,subscription_state,revision,created_at_ms,updated_at_ms) VALUES (?,'12345','example','Processing fixture',1,'ready','free',?,'bound',1,?,?)", [U, JSON.stringify({ subscriptionId: subscription.subscriptionId }), now, now]);
+        await db.withDatabaseTransaction(query => entitlements.assignSlot(query, U, 'x', String(monitor.insertId)));
+        const queue = createQueue(db, {}, { clock, rolloutMode: 'public', useLegacyUserInterval: runtimeOptions.useLegacyUserInterval === true });
+        const realRouter = createXEventRouter(db, queue, { clock });
+        let routeOverride = null;
+        const gateway = createXPushGateway(db, { enabled: true, store, privateWorkerVault: vault, now: clock,
+            createSocket: () => assert.fail('processing fixture must never create a vendor socket') });
+        const runtimeGateway = { ...gateway, store: { ...store, markRouted: async (...args) => {
+            if (markFailure) throw Object.assign(new Error('private DB sentinel'), { code: 'X_PUSH_STORE_UNAVAILABLE' });
+            return store.markRouted(...args);
+        } }, run: input => {
+            callbacks = input; input.onSession({ lease });
+            return new Promise(resolve => input.signal.addEventListener('abort', resolve, { once: true }));
+        } };
+        function makeRuntime(options = {}) {
+            runtime = createXPushRuntime(db, queue, { enabled: true, gateway: runtimeGateway, clock,
+                router: { hasRealtimeTargets: realRouter.hasRealtimeTargets, hasBatchTargets: realRouter.hasBatchTargets, routeReceived: input => routeOverride ? routeOverride(input, realRouter) : realRouter.routeReceived(input) },
+                rolloutMode: 'public', assertAllowed: () => {}, pageSize: 2,
+                listCandidates: async () => [{ id: subscription.subscriptionId, owner_user_id: U }], ...runtimeOptions, ...options });
+            return runtime;
+        }
+        makeRuntime();
+        async function record({ legacy = false, payload } = {}) {
+            sequence++; const wire = await encrypted(subscription.file, payload || post(sequence), legacy);
+            return store.recordFrame(lease, { version: `v${sequence}`, data: wire.data, headers: wire.headers, status: 'received', ackCode: 100 });
+        }
+        async function refreshLease() {
+            if (lease.expiresAtMs <= now) lease = await store.claim({ ...subscription, workerId: 'processing-successor' });
+            return lease;
+        }
+        const receiver = async () => (await query('SELECT * FROM automation_x_push_receivers WHERE subscription_id=?', [subscription.subscriptionId]))[0];
+        const count = async table => Number((await query(`SELECT COUNT(*) n FROM ${table}`))[0].n);
+        await work({ db, query, store, gateway, queue, subscription, clock, callbacks: () => callbacks, makeRuntime, runtime: () => runtime, lease: () => lease, refreshLease, record, receiver, count,
+            advance: amount => { now += amount; }, setRoute: value => { routeOverride = value; }, setAuditFailure: value => { auditFailure = value; }, setAuditHook: value => { auditHook = value; }, setMarkFailure: value => { markFailure = value; },
+            setOwnerLockAttempt: value => { ownerLockAttempt = value; } });
+    } finally {
+        try { await runtime?.stop(); }
+        finally { await db.close(); }
     }
-    makeRuntime();
-    async function record({ legacy = false, payload } = {}) {
-        sequence++; const wire = await encrypted(subscription.file, payload || post(sequence), legacy);
-        return store.recordFrame(lease, { version: `v${sequence}`, data: wire.data, headers: wire.headers, status: 'received', ackCode: 100 });
-    }
-    async function refreshLease() {
-        if (lease.expiresAtMs <= now) lease = await store.claim({ ...subscription, workerId: 'processing-successor' });
-        return lease;
-    }
-    const receiver = async () => (await query('SELECT * FROM automation_x_push_receivers WHERE subscription_id=?', [subscription.subscriptionId]))[0];
-    const count = async table => Number((await query(`SELECT COUNT(*) n FROM ${table}`))[0].n);
-    try { await work({ db, query, store, gateway, queue, subscription, clock, callbacks: () => callbacks, makeRuntime, runtime: () => runtime, lease: () => lease, refreshLease, record, receiver, count,
-        advance: amount => { now += amount; }, setRoute: value => { routeOverride = value; }, setAuditFailure: value => { auditFailure = value; }, setAuditHook: value => { auditHook = value; }, setMarkFailure: value => { markFailure = value; },
-        setOwnerLockAttempt: value => { ownerLockAttempt = value; } }); }
-    finally { await runtime.stop(); await db.close(); }
 }
 
 async function realtime(f, intervalMinutes = 15) {
