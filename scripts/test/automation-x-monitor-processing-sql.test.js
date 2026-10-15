@@ -135,7 +135,7 @@ test('per-monitor realtime uses existing physical slots, current privileges and 
         await pools(db, usedFree, 100);
         const old = owner(6); await manual(db, old, 2, true);
         const row = await api.register(old, { ...account(6), processingMode: 'realtime', expectedRealtimeSlotCost: 1 });
-        assert.equal(row.poolKind, 'supporter'); assert.equal(row.processing.realtimeSource, 'supporter'); assert.equal(row.processing.slotCost, 1); assert.equal(row.quality.planId, 'free');
+        assert.equal(row.poolKind, 'supporter'); assert.equal(row.processing.realtimeSource, 'supporter'); assert.equal(row.processing.slotCost, 1); assert.equal(row.quality.planId, 'supporter');
         const newer = owner(7); await manual(db, newer, 2, false);
         assert.equal((await api.summary(newer)).registrationProcessing.realtimeSlotCost, 5);
         await assert.rejects(api.register(newer, { ...account(7), processingMode: 'realtime', expectedRealtimeSlotCost: 1 }), { code: 'X_REALTIME_COST_CONFLICT' });

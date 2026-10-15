@@ -28,8 +28,10 @@ function modeInput(input) {
         || input.expectedRealtimeSlotCost !== undefined && ![1,5].includes(input.expectedRealtimeSlotCost)) fail('X_MONITOR_INVALID_INPUT','リアルタイム通知に使用する枠数を確認してください。');
 }
 function inputOf(input) {
-    strict(input, ['accountId', 'accountHandle', 'name', 'notificationSettings', 'processingMode', 'expectedRealtimeSlotCost']);
+    strict(input, ['accountId', 'accountHandle', 'name', 'notificationSettings', 'processingMode', 'expectedRealtimeSlotCost', 'poolPreference']);
     modeInput(input);
+    if (input.poolPreference !== undefined && !['auto', 'supporter'].includes(input.poolPreference)
+        || input.poolPreference === 'supporter' && input.processingMode !== 'realtime') fail('X_MONITOR_INVALID_INPUT', '支援者優先枠は、リアルタイム通知を選んで登録してください。');
     if (input.accountId !== undefined && (typeof input.accountId !== 'string' || !/^[1-9]\d{0,19}$/.test(input.accountId))) fail('X_MONITOR_INVALID_INPUT', 'XアカウントIDを確認してください。');
     const accountHandle = handleOf(input.accountHandle);
     if (input.accountId === undefined && accountHandle === null) fail('X_MONITOR_INVALID_INPUT', '通知を受け取りたい相手の@ユーザー名を入力してください。');
@@ -80,6 +82,7 @@ function createXMonitorQuota(db, options = {}) {
     }
     async function planFor(query, owner) { return entitlements.inspectXPlan(query, owner, now(), { useLegacyUserInterval: options.useLegacyUserInterval === true }); }
     async function supportFor(query, owner) { return grants.getSupporterHolding(query, owner, now()); }
+    async function isLegacyDonor(query, owner) { return Number((await query('SELECT is_donor FROM users WHERE user_id=?', [owner]))[0]?.is_donor) === 1; }
     async function choosePool(query, owner, plan, locked = true) {
         const shared = await pools(query, locked);
         if (shared.free.available > 0) return 'free';
@@ -115,6 +118,41 @@ function createXMonitorQuota(db, options = {}) {
         if (input.expectedRealtimeSlotCost !== decision.realtimeSlotCost) fail('X_REALTIME_COST_CONFLICT','リアルタイム通知に必要な枠数が変わりました。現在の見積もりを確認してから保存してください。',409);
         if (!decision.canEnableRealtime) fail(decision.reasonCode === 'X_MONITOR_NOT_AVAILABLE' ? 'X_MONITOR_NOT_AVAILABLE' : 'X_REALTIME_SLOT_LIMIT','リアルタイム通知に必要な利用資格と個人の空き枠を確認してください。');
     }
+    async function supporterRegistration(query, actor, plan, shared, support, supportUsed, personalAvailable, rollout) {
+        const decision = await processing.inspectXRegistrationProcessing(query, actor.userId, 'supporter', 'realtime', now(), { plan });
+        const eligible = await isLegacyDonor(query, actor.userId) && support.isSupporter && support.totalSupporterSlots > 0;
+        const reasonCode = !enabled ? 'X_MONITOR_UNAVAILABLE' : !rollout.eligible ? rollout.reasonCode
+            : !eligible ? 'X_MONITOR_SUPPORTER_REALTIME_INELIGIBLE' : personalAvailable === 0 ? 'X_MONITOR_PERSONAL_LIMIT'
+                : supportUsed >= support.totalSupporterSlots ? 'X_MONITOR_SUPPORTER_LIMIT'
+                    : shared.supporter.available === 0 ? 'X_MONITOR_SUPPORTER_POOL_FULL' : decision.reasonCode;
+        const available = !reasonCode && decision.canEnableRealtime;
+        const reason = reasonCode === 'X_MONITOR_SUPPORTER_REALTIME_INELIGIBLE' ? '支援者優先枠でのリアルタイム通知は、対象の既存支援者が利用できます。'
+            : reasonCode === 'X_MONITOR_PERSONAL_LIMIT' ? '個人の総登録上限に達しています。登録中の通知を確認してください。'
+                : reasonCode === 'X_MONITOR_SUPPORTER_LIMIT' ? '保有する支援者追加枠をすべて使用しています。'
+                    : reasonCode === 'X_MONITOR_SUPPORTER_POOL_FULL' ? '支援者優先枠は現在満杯です。空きができると登録できます。'
+                        : reasonCode === 'X_MONITOR_UNAVAILABLE' ? 'X通知の登録受付を準備しています。'
+                            : !rollout.eligible ? rollout.reason : null;
+        return { ...decision, poolKind: 'supporter', eligible, available, canEnableRealtime: available, reasonCode, reason };
+    }
+    async function chooseSupporterRegistration(query, actor) {
+        if (!await isLegacyDonor(query, actor.userId)) fail('X_MONITOR_SUPPORTER_REALTIME_INELIGIBLE', '支援者優先枠でのリアルタイム通知は、対象の既存支援者が利用できます。', 403);
+        const support = await supportFor(query, actor.userId);
+        const supportUsed = count(await query("SELECT COUNT(*) n FROM automation_x_monitors WHERE owner_user_id=? AND state<>'deleted' AND pool_kind='supporter'", [actor.userId]));
+        if (!support.isSupporter || supportUsed >= support.totalSupporterSlots) fail('X_MONITOR_SUPPORTER_LIMIT', '保有する支援者追加枠をすべて使用しています。');
+        if ((await pools(query, true)).supporter.available === 0) fail('X_MONITOR_SUPPORTER_POOL_FULL', '支援者優先枠は現在満杯です。空きができると登録できます。', 409);
+        return 'supporter';
+    }
+    async function duplicateRegistration(query, actor, input, row) {
+        const result = await item(row, await planFor(query, actor.userId), query);
+        if (input.poolPreference === 'supporter') {
+            // A retried create is idempotent only for the same explicit choice.
+            // Never turn a duplicate request into an implicit pool move or edit.
+            if (row.pool_kind !== 'supporter' || result.processing.explicitMode !== 'realtime') fail('X_MONITOR_REGISTRATION_CONFLICT', 'このXアカウントは登録済みです。一覧から枠と通知方法を変更してください。', 409);
+            if (!await isLegacyDonor(query, actor.userId) || result.processing.realtimeEligibilitySource !== 'supporter') fail('X_MONITOR_SUPPORTER_REALTIME_INELIGIBLE', '支援者優先枠でのリアルタイム通知を利用する資格を確認してください。', 403);
+            confirmRealtimeCost(input, result.processing);
+        }
+        return result;
+    }
     async function quota(query, actor) {
         const plan = await planFor(query, actor.userId), shared = await pools(query), support = await supportFor(query, actor.userId);
         const personal = await entitlements.listOwnerSlots(query, actor.userId);
@@ -130,11 +168,12 @@ function createXMonitorQuota(db, options = {}) {
                 : reasonCode === 'X_MONITOR_POOL_FULL' ? '利用できる自動展開枠が満杯です。既存の通知は保持されています。' : null;
         const registrationPool = await choosePool(query, actor.userId, plan, false);
         const registrationProcessing = await processing.inspectXRegistrationProcessing(query, actor.userId, registrationPool, 'realtime', now(), { plan });
+        const supporterRealtimeRegistration = await supporterRegistration(query, actor, plan, shared, support, supportUsed, available, rollout);
         return { featureEnabled: enabled && rollout.eligible, rollout, currentPlan: { planId: plan.planId, label: plan.label, tier: plan.tier, baseSlotLimit: plan.baseSlotLimit, ...quality(plan) },
             personal: { totalLimit, used: personal.usedSlots, registeredCount: personal.slots.length, available, supporterExtraSlots: totalLimit - plan.baseSlotLimit },
             x: { used: targets.length, available: enabled && rollout.eligible ? Math.min(available, poolAvailable) : 0, reasonCode, reason: rollout.eligible || !enabled ? reason : rollout.reason, specialLimit, specialUsed }, pools: shared,
             registrationProcessing: { ...registrationProcessing, poolKind: registrationPool, canEnableRealtime: enabled && rollout.eligible && registrationProcessing.canEnableRealtime,
-                reasonCode: reasonCode || registrationProcessing.reasonCode } };
+                reasonCode: reasonCode || registrationProcessing.reasonCode }, supporterRealtimeRegistration };
     }
     async function reconcileRows(query, actor, owners) {
         for (const owner of [...new Set(owners)].sort()) {
@@ -169,18 +208,21 @@ function createXMonitorQuota(db, options = {}) {
             await grants.migrateLegacyGrants(query, actor.userId, { now: now() });
             await verifySettings(query, actor, parsed.notificationSettings);
             const existing = (await query('SELECT * FROM automation_x_monitors WHERE owner_user_id=? AND account_id=?', [actor.userId, parsed.accountId]))[0];
-            if (existing && existing.state !== 'deleted') return item(existing, await planFor(query, actor.userId), query);
+            if (existing && existing.state !== 'deleted') return duplicateRegistration(query, actor, input, existing);
             // All registrations/edits hold global->owner locks, so matching a
             // current handle here is atomic even across legacy numeric rows.
             const sameHandle = parsed.accountHandle && (await query("SELECT * FROM automation_x_monitors WHERE owner_user_id=? AND LOWER(account_handle)=? AND state<>'deleted' ORDER BY id LIMIT 1", [actor.userId, parsed.accountHandle.toLowerCase()]))[0];
             if (sameHandle) {
                 if (input.accountId !== undefined && /^[1-9]\d{0,19}$/.test(sameHandle.account_id) && sameHandle.account_id !== input.accountId) fail('X_MONITOR_HANDLE_CONFLICT', '同じ@ユーザー名の監視が登録されています。一覧から編集してください。', 409);
-                return item(sameHandle, await planFor(query, actor.userId), query);
+                return duplicateRegistration(query, actor, input, sameHandle);
             }
             const before = await quota(query, actor);
             if (!before.personal.available) fail('X_MONITOR_PERSONAL_LIMIT', '個人の総登録上限に達しています。通常通知とX監視で枠を共有しています。');
-            // Free vacancies take precedence even for supporters/paid owners.
-            const plan = await planFor(query, actor.userId), selected = await choosePool(query, actor.userId, plan);
+            // Automatic allocation stays free-first. The verified legacy donor
+            // can explicitly request their one-slot realtime supporter benefit.
+            // That request never falls back to a different pool or five slots.
+            const plan = await planFor(query, actor.userId), selected = input.poolPreference === 'supporter'
+                ? await chooseSupporterRegistration(query, actor) : await choosePool(query, actor.userId, plan);
             if (!selected) fail('X_MONITOR_POOL_FULL', '利用できる自動展開枠が満杯です。個人の残り枠はあります。');
             let desiredCost = 1;
             if (input.processingMode === 'realtime') {
@@ -198,7 +240,7 @@ function createXMonitorQuota(db, options = {}) {
             }
             await entitlements.assignSlot(query, actor.userId, 'x', String(target));
             if (input.processingMode !== undefined) await reserveProcessingSlots(query, actor.userId, target, desiredCost);
-            await audit(query, actor, target, 'x.quota.allocate', { poolKind: selected, slotCost: desiredCost, ...(input.processingMode === undefined ? {} : { processingMode: input.processingMode }) });
+            await audit(query, actor, target, 'x.quota.allocate', { poolKind: selected, slotCost: desiredCost, allocationPreference: input.poolPreference || 'auto', ...(input.processingMode === undefined ? {} : { processingMode: input.processingMode }) });
             return item(await getRow(query, actor, target), plan, query);
         });
     }

@@ -307,16 +307,16 @@ test('real SQL: encrypted Push receipts are processed under explicit durable win
         assert.equal(Number(row.last_process_at_ms), at); assert.equal(row.process_window_at_ms, null); assert.equal(await f.count('automation_runs'), 3);
     }));
 
-    await t.test('new windows observe the current free contract interval even for donors and support configuration changes', () => fixture(async f => {
+    await t.test('new windows observe the same current supporter notification plan and preserve receipts until its interval is configured', () => fixture(async f => {
         const at = f.clock(); await f.record(); await f.runtime().drain(f.lease()); await f.record();
         await f.query('UPDATE users SET is_donor=1 WHERE user_id=?', [U]);
-        await f.db.withDatabaseTransaction(query => entitlements.savePlanPolicy(query, ADMIN, { planId: 'supporter', label: '支援者', slotLimit: 5, minuteLimit: 9, dayLimit: 99, priority: 9, intervalMinutes: 5 }));
-        await f.query("UPDATE automation_notification_plans SET confirmation_interval_minutes=30 WHERE plan_id='free'");
+        await f.db.withDatabaseTransaction(query => entitlements.savePlanPolicy(query, ADMIN, { planId: 'supporter', label: '支援者', slotLimit: 5, minuteLimit: 9, dayLimit: 99, priority: 9, intervalMinutes: 30 }));
+        await f.query("UPDATE automation_notification_plans SET confirmation_interval_minutes=5 WHERE plan_id='free'");
         f.advance(300000); await f.refreshLease();
         assert.equal((await f.runtime().drain(f.lease())).dueAtMs, at + 30 * 60000); assert.equal(await f.count('automation_runs'), 1);
-        await f.query("UPDATE automation_notification_plans SET confirmation_interval_minutes=NULL WHERE plan_id='free'");
+        await f.query("UPDATE automation_notification_plans SET confirmation_interval_minutes=NULL WHERE plan_id='supporter'");
         assert.equal((await f.runtime().drain(f.lease())).code, 'X_MONITOR_NOT_CONFIGURED'); assert.equal((await f.store.listInbox(f.subscription)).length, 1);
-        await f.query("UPDATE automation_notification_plans SET confirmation_interval_minutes=5 WHERE plan_id='free'");
+        await f.query("UPDATE automation_notification_plans SET confirmation_interval_minutes=5 WHERE plan_id='supporter'");
         await f.runtime().drain(f.lease()); assert.equal(await f.count('automation_runs'), 2);
     }));
 

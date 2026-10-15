@@ -23,6 +23,7 @@ const publicPost = (id = '1234567890123456789') => ({ notificationType: 'tweet',
 async function fixture(work) {
     const db = await createTestDatabase(port), query = db.queryDatabase, service = createService(db);
     await db.withDatabaseTransaction(query => entitlements.savePlanPolicy(query, ADMIN, { planId: 'free', label: '無料', slotLimit: 5, minuteLimit: 5, dayLimit: 24, priority: 0, intervalMinutes: 5 }));
+    await db.withDatabaseTransaction(query => entitlements.savePlanPolicy(query, ADMIN, { planId: 'supporter', label: '支援者', slotLimit: 5, minuteLimit: 5, dayLimit: 24, priority: 1, intervalMinutes: 5 }));
     let now = Date.now();
     const clock = () => now, advance = value => { now += value; };
     const graphStore = createGraphStore(db);
@@ -174,13 +175,15 @@ test('real SQL: X uses the shared queue, graph, entitlements and mocked physical
         assert(otherSubscription);
     }));
 
-    await t.test('X free contract quality ignores a donor badge and daily message quota remains durable across retries', () => fixture(async f => {
+    await t.test('X shares the current supporter notification plan and its daily message quota remains durable across retries', () => fixture(async f => {
         const subscriptionId = await f.subscription(); await f.query('UPDATE users SET is_donor=1 WHERE user_id=?', [U]);
         const monitorId = await f.monitor(subscriptionId);
-        await f.query("UPDATE automation_notification_plans SET minute_limit=1,day_limit=1 WHERE plan_id='free'");
-        await f.db.withDatabaseTransaction(query => entitlements.savePlanPolicy(query, ADMIN, { planId: 'supporter', label: '支援者', slotLimit: 5, minuteLimit: 99, dayLimit: 999, priority: 99 }));
+        await f.query("UPDATE automation_notification_plans SET minute_limit=99,day_limit=999 WHERE plan_id='free'");
+        await f.db.withDatabaseTransaction(query => entitlements.savePlanPolicy(query, ADMIN, { planId: 'supporter', label: '支援者', slotLimit: 5, minuteLimit: 1, dayLimit: 1, priority: 99, intervalMinutes: 5 }));
         const quality = await entitlements.resolveNotificationEntitlement(f.db, { ownerUserId: U, targetKind: 'x', targetId: monitorId });
-        assert.equal(quality.tier, 'free'); assert.equal(quality.minuteLimit, 1); assert.equal(quality.dayLimit, 1); assert.equal(quality.priority, 0);
+        const ordinary = await entitlements.inspectPlan(f.query, U, f.clock());
+        assert.equal(quality.tier, 'supporter'); assert.equal(quality.minuteLimit, ordinary.minuteLimit); assert.equal(quality.dayLimit, ordinary.dayLimit); assert.equal(quality.priority, ordinary.priority);
+        assert.equal(quality.minuteLimit, 1); assert.equal(quality.dayLimit, 1); assert.equal(quality.priority, 99);
         await f.receive(subscriptionId); assert.equal((await f.runner.tick()).state, 'sent');
         await f.receive(subscriptionId, { postId: '2234567890123456789' }); f.advance(60001);
         const limited = await f.runner.tick(); assert.equal(limited.state, 'pending'); assert.equal(limited.code, 'AUTOMATION_RATE_LIMITED'); assert.equal(f.sent.length, 1);

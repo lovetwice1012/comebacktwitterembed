@@ -5,11 +5,11 @@ const { reactFixture } = require('./helpers/react-dom-fixture.cjs');
 
 const normal = changes => ({ plan: { id: 'supporter', name: '支援者', baseSlotLimit: 5, slotLimit: 8, dayLimit: 48, minuteLimit: 7 },
     slots: { used: 5, max: 8, available: 3 }, usage: { entries: [{ targetKind: 'auto' }, { targetKind: 'x' }, { targetKind: 'price' }] }, ...changes });
-const quota = changes => ({ featureEnabled: true, currentPlan: { planId: 'free', label: '無料', tier: 'free', priority: 0, baseSlotLimit: 5, minuteLimit: 5, dayLimit: 24, intervalMinutes: 5 },
+const quota = changes => ({ featureEnabled: true, currentPlan: { planId: 'supporter', label: '支援者', tier: 'supporter', priority: 0, baseSlotLimit: 5, minuteLimit: 7, dayLimit: 48, intervalMinutes: 5 },
     personal: { totalLimit: 8, registeredCount: 3, used: 5, available: 3, supporterExtraSlots: 3 },
     x: { used: 1, available: 3, reasonCode: null, reason: null, specialLimit: 4, specialUsed: 2 },
     pools: { free: { limit: 50, used: 49, available: 1 }, supporter: { limit: 100, used: 2, available: 98 } }, ...changes });
-const processing = changes => ({ planLabel: '無料', effectiveMode: 'batch', requestedMode: 'batch', configured: true, realtimeAllowed: false,
+const processing = changes => ({ planLabel: '支援者', effectiveMode: 'batch', requestedMode: 'batch', configured: true, realtimeAllowed: false,
     intervalMinutes: 5, rollout: { eligible: true }, ...changes });
 const defaults = () => ({ entitlements: normal(), 'x-monitor-quota': quota(), 'x-processing-settings': processing() });
 const article = (f, text) => [...f.container.querySelectorAll('article')].find(node => node.textContent.includes(text));
@@ -22,14 +22,14 @@ async function fixture(responses = defaults()) {
     return f;
 }
 
-test('usage separates a legacy supporter notification plan from free X quality and counts registrations, boosts and permanent additions', async () => {
+test('usage displays one notification plan for native and X and counts registrations, boosts and permanent additions', async () => {
     const f = await fixture();
     try {
-        const slots = article(f, '通知の登録枠'), native = article(f, '通常通知のプラン'), x = article(f, 'Xの共通設定');
+        const slots = article(f, '通知の登録枠'), native = article(f, '通知プラン'), x = article(f, 'Xの共通設定');
         assert.equal(fact(slots, '新しく使える枠'), '3枠'); assert.equal(fact(slots, '登録している通知'), '3件');
         assert.equal(fact(slots, '通知方法に使う追加枠'), '2枠'); assert.equal(fact(slots, '支援による恒久追加'), '3枠');
         assert.match(native.textContent, /支援者.*1日48通・1分7通/);
-        assert.match(x.textContent, /5分ごとにまとめて通知.*Xの処理プラン無料/);
+        assert.match(x.textContent, /5分ごとにまとめて通知/); assert.match(native.textContent, /通常通知とX通知に同じプランを適用/); assert.doesNotMatch(f.container.textContent, /Xの処理プラン/);
         assert.match(slots.textContent, /月額プランの解約後も引き継ぎ/);
         assert.equal(fact(f.container, '共用無料枠の空き'), '1 / 50枠');
         assert.equal(fact(f.container, '支援者優先枠の全体空き'), '98 / 100枠');
@@ -105,7 +105,7 @@ test('all failed or malformed reads remain recoverable and never present a made-
     const f = await fixture(data);
     try {
         assert.equal(fact(f.container, '新しく使える枠'), '確認待ち'); assert.equal(fact(f.container, '登録している通知'), '確認待ち');
-        assert.match(article(f, '通常通知のプラン').textContent, /確認待ち/); assert(!f.container.textContent.includes('must-not-render'));
+        assert.match(article(f, '通知プラン').textContent, /確認待ち/); assert(!f.container.textContent.includes('must-not-render'));
         Object.assign(data, defaults()); await f.click('利用状況を更新'); await f.settle();
         assert.equal(fact(f.container, '新しく使える枠'), '3枠'); assert.equal(f.calls.length, 6);
     } finally { await f.close(); }
@@ -117,9 +117,9 @@ test('status updates refresh the overview and a late original read cannot overwr
     const f = await fixture(data);
     try {
         await f.act(async () => f.dom.window.dispatchEvent(new f.dom.window.Event('notification:usage-changed'))); await f.settle();
-        assert.match(article(f, '通常通知のプラン').textContent, /更新されたプラン/); assert.equal(fact(f.container, '新しく使える枠'), '6枠');
+        assert.match(article(f, '通知プラン').textContent, /更新されたプラン/); assert.equal(fact(f.container, '新しく使える枠'), '6枠');
         await f.act(async () => finishOld(normal())); await f.settle();
-        assert.match(article(f, '通常通知のプラン').textContent, /更新されたプラン/); assert.equal(fact(f.container, '新しく使える枠'), '6枠');
+        assert.match(article(f, '通知プラン').textContent, /更新されたプラン/); assert.equal(fact(f.container, '新しく使える枠'), '6枠');
     } finally { await f.close(); }
 });
 

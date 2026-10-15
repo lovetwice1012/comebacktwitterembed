@@ -22,6 +22,7 @@ test('real SQL owner processing preferences, explicit plan permission, atomic ch
     for (const owner of [U, V]) await query('INSERT INTO users (user_id,registered_at_ms,is_donor,additional_auto_extract_slots) VALUES (?,0,1,2)', [owner.userId]);
     await db.withDatabaseTransaction(async q => {
         await entitlements.savePlanPolicy(q, ADMIN, { planId: 'free', label: '無料', slotLimit: 5, minuteLimit: 5, dayLimit: 24, priority: 0, intervalMinutes: 30 });
+        await entitlements.savePlanPolicy(q, ADMIN, { planId: 'supporter', label: '支援者', slotLimit: 5, minuteLimit: 7, dayLimit: 48, priority: 1, intervalMinutes: 45 });
         await entitlements.savePlanPolicy(q, ADMIN, { planId: 'ConfiguredPlan', label: '名前に依存しないプラン', slotLimit: 9, minuteLimit: 3, dayLimit: 12, priority: 17, intervalMinutes: 15 });
         await entitlements.savePlanPolicy(q, ADMIN, { planId: 'BasicPlus', label: 'Basic+', slotLimit: 9, minuteLimit: 3, dayLimit: 12, priority: 17, intervalMinutes: 15 });
         await entitlements.setUserPlan(q, ADMIN, U.userId, 'ConfiguredPlan');
@@ -75,7 +76,7 @@ test('real SQL owner processing preferences, explicit plan permission, atomic ch
     await t.test('downgrade and expiry remove current eligibility while retaining the requested choice', async () => {
         await flag('ConfiguredPlan', true); await settings.save(U, { mode: 'realtime', expectedMode: 'batch' });
         await db.withDatabaseTransaction(q => entitlements.setUserPlan(q, ADMIN, U.userId, null));
-        let status = await settings.get(U); assert.equal(status.effectiveMode, 'batch'); assert.equal(status.requestedMode, 'realtime'); assert.equal(status.planId, 'free');
+        let status = await settings.get(U); assert.equal(status.effectiveMode, 'batch'); assert.equal(status.requestedMode, 'realtime'); assert.equal(status.planId, 'supporter'); assert.equal(status.intervalMinutes, 45);
         await db.withDatabaseTransaction(q => entitlements.setUserPlan(q, ADMIN, U.userId, 'ConfiguredPlan', { expiresAtMs: Date.now() + 60000 }));
         await query('UPDATE automation_notification_entitlements SET expires_at_ms=? WHERE owner_user_id=?', [Date.now() - 1, U.userId]);
         status = await settings.get(U); assert.equal(status.realtimeAllowed, false); assert.equal(status.requestedMode, 'realtime');

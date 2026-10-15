@@ -7,7 +7,7 @@ import SupportPage from "../../dashboard/app/dashboard/automation/support/page";
 import "../../dashboard/app/globals.css";
 
 const params = new URLSearchParams(window.location.search);
-const scenarios = new Set(["fresh", "connected", "unbound", "pending", "full", "rt-plan"]);
+const scenarios = new Set(["fresh", "connected", "unbound", "pending", "full", "rt-plan", "supporter-direct"]);
 const selected = params.get("scenario");
 const scenario = selected && scenarios.has(selected) ? selected : "connected";
 // The real root layout sets this from the same rollout preference mocked below.

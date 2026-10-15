@@ -13,9 +13,9 @@ import "./notification-x.css";
 const field = "w-full rounded border bg-background px-3 py-2 text-sm";
 const button = "rounded border bg-background px-3 py-2 text-sm hover:bg-muted disabled:opacity-40";
 type Choice = { id: string; name: string; enabled?: boolean; scope?: string };
-type Draft = { accountHandle: string; name: string; enabled: boolean; destinationId: string; workflowId: string; subscriptionId: string; processingMode: XProcessingMode };
+type Draft = { accountHandle: string; name: string; enabled: boolean; destinationId: string; workflowId: string; subscriptionId: string; processingMode: XProcessingMode; poolPreference: "auto" | "supporter" };
 const draftOf = (item?: XMonitor): Draft => ({ accountHandle: item?.accountHandle ?? "", name: item?.name ?? "", enabled: item?.enabled ?? true,
-  destinationId: item?.notificationSettings.destinationId ?? "", workflowId: item?.notificationSettings.workflowId ?? "", subscriptionId: item?.notificationSettings.subscriptionId ?? "", processingMode: item?.processing?.requestedMode ?? "batch" });
+  destinationId: item?.notificationSettings.destinationId ?? "", workflowId: item?.notificationSettings.workflowId ?? "", subscriptionId: item?.notificationSettings.subscriptionId ?? "", processingMode: item?.processing?.requestedMode ?? "batch", poolPreference: "auto" });
 
 type AddDestination = (onCreated: (id: string) => void) => void;
 type RegistrationRequest = { id: number; accountHandle?: string; name?: string; destinationId?: string };
@@ -89,10 +89,23 @@ function XMonitorEditor({ api, active, allowSetup, subscriptionsVersion, destina
   const validHandle = Boolean(draft && /^[A-Za-z0-9_]{1,15}$/u.test(draft.accountHandle) && !["i", "intent"].includes(draft.accountHandle.toLowerCase()));
   const valid = Boolean(draft && validSubscription && (validHandle || !requiresHandle && !draft.accountHandle) && draft.name.length <= 120 && (!current || draft.name.trim().length > 0));
   const resumes = Boolean(current && draft?.enabled && !current.enabled);
-  const registrationQuote = quota?.registrationProcessing;
+  const supporterQuote = quota?.supporterRealtimeRegistration;
+  // Keep an explicitly selected pool when capacity or eligibility changes. A
+  // refresh must never silently replace the one-slot choice with five slots.
+  const supporterOffer = Boolean(supporterQuote?.eligible && supporterQuote.available && supporterQuote.canEnableRealtime && supporterQuote.realtimeSlotCost === 1);
+  const registrationQuote = draft?.processingMode === "realtime"
+    ? draft.poolPreference === "supporter" ? supporterQuote : quota?.registrationProcessing
+    : supporterOffer ? supporterQuote : quota?.registrationProcessing;
+  const selectedSupporterAvailable = draft?.poolPreference !== "supporter" || Boolean(supporterQuote?.eligible && supporterQuote.available);
+  const realtimeQuoteReady = Boolean(registrationQuote && selectedSupporterAvailable);
+  function chooseTiming(mode: XProcessingMode) {
+    if (action.current) return;
+    setDraft(previous => previous ? { ...previous, processingMode: mode, poolPreference: mode === "realtime" && supporterOffer ? "supporter" : "auto" } : previous);
+    setReview(null); setNotice("");
+  }
   const newRealtime = Boolean(!current && draft?.processingMode === "realtime");
-  const realtimePriceConfirmed = !newRealtime || Boolean(registrationQuote && reviewProcessingCost.current === registrationQuote.realtimeSlotCost);
-  const canReview = valid && !busy && !loading && active && (!newRealtime || Boolean(registrationQuote?.canEnableRealtime && !processingQuoteStale)) && (editingId ? Boolean(current) && (!resumes || Boolean(current && canResume(current))) : canRegister);
+  const realtimePriceConfirmed = !newRealtime || Boolean(realtimeQuoteReady && registrationQuote && reviewProcessingCost.current === registrationQuote.realtimeSlotCost);
+  const canReview = valid && !busy && !loading && active && (!newRealtime || Boolean(registrationQuote?.canEnableRealtime && selectedSupporterAvailable && !processingQuoteStale)) && (editingId ? Boolean(current) && (!resumes || Boolean(current && canResume(current))) : canRegister);
   async function save() {
     if (!draft || !canReview || review === null || review !== (current?.revision ?? 0) || !realtimePriceConfirmed) return;
     const settings = { ...(draft.destinationId ? { destinationId: draft.destinationId } : {}), ...(draft.workflowId ? { workflowId: draft.workflowId } : {}), ...(draft.subscriptionId ? { subscriptionId: draft.subscriptionId } : {}) };
@@ -101,11 +114,12 @@ function XMonitorEditor({ api, active, allowSetup, subscriptionsVersion, destina
       ...(draft.enabled !== current.enabled ? { enabled: draft.enabled } : {}),
       ...(settings.workflowId !== current.notificationSettings.workflowId || settings.destinationId !== current.notificationSettings.destinationId || settings.subscriptionId !== current.notificationSettings.subscriptionId ? { notificationSettings: settings } : {}) }
       : { accountHandle: draft.accountHandle, ...(draft.name.trim() ? { name: draft.name.trim() } : {}), ...(Object.keys(settings).length ? { notificationSettings: settings } : {}),
-        ...(registrationQuote ? { processingMode: draft.processingMode, ...(draft.processingMode === "realtime" ? { expectedRealtimeSlotCost: registrationQuote.realtimeSlotCost } : {}) } : {}) };
+        ...(registrationQuote ? { processingMode: draft.processingMode, ...(draft.processingMode === "realtime" ? { expectedRealtimeSlotCost: registrationQuote.realtimeSlotCost,
+          ...(draft.poolPreference === "supporter" ? { poolPreference: "supporter" } : {}) } : {}) } : {}) };
     await mutate(async () => {
       let rawResponse;
       try { rawResponse = await api(current ? `x-monitors/${encodeURIComponent(current.id)}` : "x-monitors", current ? "PATCH" : "POST", body); }
-      catch (cause) { if (cause && typeof cause === "object" && (cause as { code?: string }).code === "X_REALTIME_COST_CONFLICT") setProcessingQuoteStale(true); throw cause; }
+      catch (cause) { if (newRealtime || cause && typeof cause === "object" && (cause as { code?: string }).code === "X_REALTIME_COST_CONFLICT") setProcessingQuoteStale(true); throw cause; }
       const response = xObject(rawResponse);
       const saved = parseXMonitor(response.item ?? response);
       if (!mounted.current) return;
@@ -162,16 +176,18 @@ function XMonitorEditor({ api, active, allowSetup, subscriptionsVersion, destina
         {current ? <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={draft.enabled} onChange={event => update("enabled", event.target.checked)} />X監視を有効にする</label> : null}
       </fieldset>
       {!current && registrationQuote ? <fieldset className="nx-timing-options" disabled={busy || !active}><legend>このアカウントの通知方法</legend>
-        <label className="nx-timing-option"><input type="radio" name="x-registration-timing" value="batch" checked={draft.processingMode === "batch"} onChange={() => update("processingMode", "batch")} /><span><strong>プランの間隔で通知</strong><small>{xInterval(quota?.currentPlan.intervalMinutes ?? null)}・1枠</small></span></label>
-        <label className="nx-timing-option"><input type="radio" name="x-registration-timing" value="realtime" checked={draft.processingMode === "realtime"} disabled={!registrationQuote.canEnableRealtime || processingQuoteStale} onChange={() => update("processingMode", "realtime")} /><span><strong>リアルタイム</strong><small>受信後すぐに通知・合計{registrationQuote.realtimeSlotCost}枠{xRealtimeBenefit(registrationQuote) ? `（${xRealtimeBenefit(registrationQuote)}）` : ""}</small></span></label>
+        <label className="nx-timing-option"><input type="radio" name="x-registration-timing" value="batch" checked={draft.processingMode === "batch"} onChange={() => chooseTiming("batch")} /><span><strong>プランの間隔で通知</strong><small>{xInterval(quota?.currentPlan.intervalMinutes ?? null)}・1枠</small></span></label>
+        <label className="nx-timing-option"><input type="radio" name="x-registration-timing" value="realtime" checked={draft.processingMode === "realtime"} disabled={!registrationQuote.canEnableRealtime || !selectedSupporterAvailable || processingQuoteStale} onChange={() => chooseTiming("realtime")} /><span><strong>リアルタイム</strong><small>{realtimeQuoteReady ? <>受信後すぐに通知・合計{registrationQuote.realtimeSlotCost}枠{xRealtimeBenefit(registrationQuote) ? `（${xRealtimeBenefit(registrationQuote)}）` : ""}</> : "利用資格と枠数を再確認してください"}</small></span></label>
       </fieldset> : null}
-      {!current && newRealtime && registrationQuote?.realtimeSlotCost === 5 ? <p className="nx-slot-consent">この監視に個人の登録枠を合計5枠使用します。通常の1枠に加えて4枠を確保します。</p> : null}
+      {!current && newRealtime && draft.poolPreference === "supporter" && realtimeQuoteReady ? <p className="nx-slot-consent">支援者優先枠で登録します。個人の登録枠は1枠使用します。</p> : null}
+      {!current && (supporterQuote?.eligible && !supporterQuote.available || newRealtime && !selectedSupporterAvailable) ? <p role="status" className="nx-field-note">{supporterQuote?.reason ?? "支援者優先枠の利用資格と空き状況を確認してください。"}</p> : null}
+      {!current && newRealtime && realtimeQuoteReady && registrationQuote?.realtimeSlotCost === 5 ? <p className="nx-slot-consent">この監視に個人の登録枠を合計5枠使用します。通常の1枠に加えて4枠を確保します。</p> : null}
       {!current && registrationQuote && !registrationQuote.canEnableRealtime ? <p className="nx-field-note">リアルタイムに使える資格と個人の空き枠を確認してください。</p> : null}
       {processingQuoteStale && !current ? <p role="alert" className="nx-feedback">枠数の見積もりを更新してください。<button type="button" className={button} disabled={busy || loading || !active} onClick={() => { setReview(null); void load(); }}>枠数を再確認</button></p> : null}
       <p className="nx-field-note">通知を受け取りたい相手の現在の@ユーザー名を入力してください。先頭の@は省略できます。</p>
       {allowSetup ? <div className="nx-actions"><a href="/dashboard/automation/x" className="nx-text-link">{setup?.subscriptions.length ? "受信情報を確認" : "受信情報を登録"}</a>{setup?.nextCursor ? <button type="button" className={button} disabled={busy || loading || !active} onClick={() => void mutate(async () => { const next = parseXSetupStatus(await api(`x-setup?afterId=${encodeURIComponent(setup.nextCursor ?? "")}`)); if (mounted.current && activeRef.current) setSetup(previous => previous ? { ...next, subscriptions: [...previous.subscriptions, ...next.subscriptions.filter(item => !previous.subscriptions.some(row => row.id === item.id))] } : next); })}>受信情報の候補をさらに表示</button> : null}</div> : <a href="/dashboard/automation#x-notifications" className="nx-text-link">自分のX通知を開く</a>}
       {review !== null ? <section aria-label="X監視の変更確認" className="space-y-2 rounded border bg-muted/30 p-3"><p className="text-sm">{draft.accountHandle ? `Xアカウント @${draft.accountHandle}` : "このX監視"} の登録設定を保存します。{current ? "現在の利用枠と、変更していない通知設定・受信情報を引き継ぎます。" : "利用枠の割当はサーバーで確認します。"}</p>
-        {!current && registrationQuote ? <p className="nx-slot-consent">{draft.processingMode === "realtime" ? "リアルタイム" : "プランの間隔で通知"}・使用する個人枠は合計{draft.processingMode === "realtime" ? registrationQuote.realtimeSlotCost : 1}枠です。</p> : null}
+        {!current && registrationQuote ? <p className="nx-slot-consent">{newRealtime && !realtimeQuoteReady ? "リアルタイムの利用資格と枠数を再確認してください。" : <>{draft.processingMode === "realtime" ? "リアルタイム" : "プランの間隔で通知"}・使用する個人枠は合計{draft.processingMode === "realtime" ? registrationQuote.realtimeSlotCost : 1}枠です。</>}</p> : null}
         {!realtimePriceConfirmed ? <p role="alert">必要な枠数が変わりました。確認し直してください。</p> : null}
         {current && draft.accountHandle !== (current.accountHandle ?? "") ? <p className="text-sm">変更後のXアカウント名：{draft.accountHandle ? `@${draft.accountHandle}` : "未設定"}</p> : null}
         {review !== (current?.revision ?? 0) ? <p role="alert" className="text-sm text-destructive">監視の設定が更新されています。変更内容を確認し直してください。</p> : null}

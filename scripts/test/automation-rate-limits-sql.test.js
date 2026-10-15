@@ -289,18 +289,24 @@ test('durable per-slot physical-message quotas and tier priority', { skip: !port
         releaseInspection(); assert.equal(await sending, M);
         assert.equal(messages.length, 1); assert.equal((await limiter().getSlotUsage(`${U}:1`)).todayUsed, 1);
     });
-    await t.test('priority prefers verified supporter status while leaving every fourth turn for older free jobs', async () => {
-        await empty(); await db.queryDatabase('DELETE FROM automation_jobs'); await db.queryDatabase('DELETE FROM automation_runs');
+    await t.test('native, X and mixed jobs share supporter plan priority while every fourth turn serves older free jobs', async () => {
         await db.queryDatabase('UPDATE users SET is_donor=1 WHERE user_id=?', [M]);
         await db.queryDatabase('INSERT IGNORE INTO users (user_id,registered_at_ms,is_donor) VALUES (?,0,1)', [M]);
-        for (const owner of [U, M]) for (let index = 0; index < 5; index++) {
-            const runId = randomUUID(), id = randomUUID();
-            await db.queryDatabase('INSERT INTO automation_runs (id,dedupe_key,owner_user_id,scope,target_kind,target_id,event_json,trace_json,state,created_at_ms) VALUES (?,?,?,?,?,?,?,?,?,?)', [runId, createHash('sha256').update(id).digest('hex'), owner, 'private', 'price', target, '{}', '[]', 'queued', now]);
-            await db.queryDatabase('INSERT INTO automation_jobs (id,run_id,plan_json,due_at_ms,state,created_at_ms,updated_at_ms) VALUES (?,?,?,?,?,?,?)', [id, runId, JSON.stringify({ context: {}, schedules: [] }), now, 'pending', now + (owner === U ? 0 : 1), now]);
+        await db.withDatabaseTransaction(async query => {
+            await savePlanPolicy(query, { userId: U, isAdmin: true }, { planId: 'free', label: '無料', slotLimit: 5, minuteLimit: 5, dayLimit: 24, priority: 13 });
+            await savePlanPolicy(query, { userId: U, isAdmin: true }, { planId: 'supporter', label: '支援者', slotLimit: 5, minuteLimit: 7, dayLimit: 48, priority: 21 });
+        });
+        for (const variant of [{ name: 'native', kind: 'price' }, { name: 'X', kind: 'x' }, { name: 'mixed', kind: 'price', members: [{ targetKind: 'price' }, { targetKind: 'x' }] }]) {
+            await empty(); await db.queryDatabase('DELETE FROM automation_jobs'); await db.queryDatabase('DELETE FROM automation_runs');
+            for (const owner of [U, M]) for (let index = 0; index < 5; index++) {
+                const runId = randomUUID(), id = randomUUID();
+                await db.queryDatabase('INSERT INTO automation_runs (id,dedupe_key,owner_user_id,scope,target_kind,target_id,event_json,trace_json,state,created_at_ms) VALUES (?,?,?,?,?,?,?,?,?,?)', [runId, createHash('sha256').update(id).digest('hex'), owner, 'private', variant.kind, target, '{}', '[]', 'queued', now]);
+                await db.queryDatabase('INSERT INTO automation_jobs (id,run_id,plan_json,due_at_ms,state,created_at_ms,updated_at_ms) VALUES (?,?,?,?,?,?,?)', [id, runId, JSON.stringify({ context: {}, schedules: [], ...(variant.members ? { members: variant.members } : {}) }), now, 'pending', now + (owner === U ? 0 : 1), now]);
+            }
+            const queue = createQueue(db, {}), owners = [];
+            for (let turn = 0; turn < 4; turn++) { const job = await queue.claim(now); owners.push(job.owner_user_id); await queue.transition(job, 'sent'); }
+            assert.deepEqual(owners, [M, M, M, U], variant.name);
         }
-        const queue = createQueue(db, {}), owners = [];
-        for (let turn = 0; turn < 4; turn++) { const job = await queue.claim(now); owners.push(job.owner_user_id); await queue.transition(job, 'sent'); }
-        assert.deepEqual(owners, [M, M, M, U]);
     });
     await t.test('runner releases preflight reservations on cancellation and frees workers for quota waits', async () => {
         const states = [], job = { ...record('queued', target), created_at_ms: now, attempts: 0 }; let begun = 0, released = 0;

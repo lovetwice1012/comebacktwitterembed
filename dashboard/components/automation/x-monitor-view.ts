@@ -14,6 +14,7 @@ export type XMonitorQuota = {
   x: { used: number; available: number; reasonCode: string | null; reason: string | null; specialLimit: number; specialUsed: number };
   pools: { free: XPool; supporter: XPool };
   registrationProcessing?: XMonitorProcessing & { isPreview: true };
+  supporterRealtimeRegistration?: XMonitorProcessing & { isPreview: true; poolKind: "supporter"; eligible: boolean; available: boolean; reason: string | null };
 };
 export type XPool = { limit: number; used: number; available: number };
 export type XMonitor = {
@@ -70,6 +71,16 @@ function optionalProcessing(value: unknown, preview = false): XMonitorProcessing
   if (value === undefined) return undefined;
   try { return parseXMonitorProcessing(value, preview); } catch { return undefined; }
 }
+function optionalSupporterRegistration(value: unknown): XMonitorQuota["supporterRealtimeRegistration"] {
+  if (value === undefined) return undefined;
+  try {
+    const item = xObject(value), processing = parseXMonitorProcessing(value, true);
+    if (item.poolKind !== "supporter" || typeof item.eligible !== "boolean" || typeof item.available !== "boolean"
+      || item.reason !== null && typeof item.reason !== "string"
+      || item.available && (!item.eligible || !processing.canEnableRealtime || processing.realtimeSlotCost !== 1 || processing.realtimeEligibilitySource !== "supporter")) return undefined;
+    return { ...processing, isPreview: true, poolKind: "supporter", eligible: item.eligible, available: item.available, reason: item.reason === null ? null : text(item.reason, 500) };
+  } catch { return undefined; }
+}
 export function parseXQuota(value: unknown): XMonitorQuota {
   const item = xObject(value), plan = xObject(item.currentPlan), personal = xObject(item.personal), x = xObject(item.x), pools = xObject(item.pools);
   if (typeof item.featureEnabled !== "boolean") throw new Error("Invalid X response");
@@ -78,7 +89,8 @@ export function parseXQuota(value: unknown): XMonitorQuota {
     x: { used: count(x.used), available: count(x.available), specialLimit: count(x.specialLimit), specialUsed: count(x.specialUsed),
       reasonCode: x.reasonCode == null ? null : text(x.reasonCode, 80), reason: x.reason == null ? null : text(x.reason, 500) },
     pools: { free: parseXPool(pools.free), supporter: parseXPool(pools.supporter) },
-    ...(optionalProcessing(item.registrationProcessing, true) ? { registrationProcessing: optionalProcessing(item.registrationProcessing, true) as XMonitorProcessing & { isPreview: true } } : {}) };
+    ...(optionalProcessing(item.registrationProcessing, true) ? { registrationProcessing: optionalProcessing(item.registrationProcessing, true) as XMonitorProcessing & { isPreview: true } } : {}),
+    ...(optionalSupporterRegistration(item.supporterRealtimeRegistration) ? { supporterRealtimeRegistration: optionalSupporterRegistration(item.supporterRealtimeRegistration) } : {}) };
 }
 export function parseXMonitor(value: unknown): XMonitor {
   const item = xObject(value), settings = xObject(item.notificationSettings);
@@ -107,6 +119,10 @@ export function xFeedback(cause: unknown): string {
   const error = cause && typeof cause === "object" ? cause as { code?: string; status?: number } : {};
   if (error.code === "X_REALTIME_COST_CONFLICT") return "必要な枠数が変わりました。一覧を更新し、使用する枠数を確認し直してください。";
   if (error.code === "X_REALTIME_SLOT_LIMIT") return "リアルタイム通知に必要な個人枠が不足しています。利用状況を確認してください。";
+  if (error.code === "X_MONITOR_SUPPORTER_POOL_FULL") return "支援者優先枠は現在すべて利用中です。空き状況を再確認してください。選択した通知方法と入力内容は保持しています。";
+  if (error.code === "X_MONITOR_SUPPORTER_REALTIME_INELIGIBLE") return "この特典の対象となる既存支援者の資格を確認してください。選択した通知方法と入力内容は保持しています。";
+  if (error.code === "X_MONITOR_SUPPORTER_LIMIT") return "保有する支援者追加枠をすべて使用しています。利用状況を確認してください。選択した通知方法と入力内容は保持しています。";
+  if (error.code === "X_MONITOR_REGISTRATION_CONFLICT") return "このXアカウントは登録済みです。一覧から利用枠と通知方法を変更してください。入力内容は保持しています。";
   if (error.code === "X_MONITOR_NOT_AVAILABLE") return "この監視の利用資格と割り当てを確認してください。";
   if (["X_MONITOR_PERSONAL_LIMIT", "X_MONITOR_POOL_FULL", "X_MONITOR_UNAVAILABLE", "X_MONITOR_NOT_CONFIGURED", "X_ROLLOUT_DISABLED", "X_ROLLOUT_SUPPORTERS_ONLY"].includes(error.code ?? "")) return xReason(error.code);
   if (error.code === "X_SETUP_SUBSCRIPTION_NOT_FOUND" || error.code === "X_MONITOR_SUBSCRIPTION_INVALID") return "自分の受信情報の一覧を更新し、登録済みの情報を選び直してください。入力内容はそのまま残っています。";

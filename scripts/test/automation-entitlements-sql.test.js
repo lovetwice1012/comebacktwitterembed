@@ -115,3 +115,63 @@ test('real SQL: shared notification slots, concurrent admission, trusted plans a
         await db.close();
     }
 });
+
+test('real SQL: X and ordinary notifications share one current plan, while interval overrides remain explicit', { skip: !port, timeout: 90000 }, async t => {
+    const db = await createTestDatabase(port); t.after(() => db.close());
+    const ADMIN = { userId: '444444444444444444', isAdmin: true }, now = Date.now();
+    const owners = { free: '777777777777777771', supporter: '777777777777777772', paid: '777777777777777773' };
+    const policies = [
+        { planId: 'free', label: '無料', slotLimit: 5, minuteLimit: 3, dayLimit: 27, priority: 2, intervalMinutes: 60 },
+        { planId: 'supporter', label: '支援者', slotLimit: 20, minuteLimit: 7, dayLimit: 48, priority: 9, intervalMinutes: 15 },
+        { planId: 'same-plan-paid', label: '設定済み有料', slotLimit: 12, minuteLimit: 13, dayLimit: 123, priority: 17, intervalMinutes: 5 },
+    ];
+    await db.withDatabaseTransaction(async query => {
+        for (const policy of policies) await entitlements.savePlanPolicy(query, ADMIN, policy);
+        for (const [tier, userId] of Object.entries(owners)) await query('INSERT INTO users (user_id,registered_at_ms,is_donor,additional_auto_extract_slots,auto_watch_interval_minutes) VALUES (?,0,?,2,7)', [userId, tier === 'free' ? 0 : 1]);
+        await entitlements.setUserPlan(query, ADMIN, owners.paid, 'same-plan-paid');
+    });
+    for (const [tier, userId] of Object.entries(owners)) await t.test(`${tier}: X inherits plan identity, limits, priority and only that plan's interval`, async () => {
+        const ordinary = await entitlements.inspectPlan(db.queryDatabase, userId, now);
+        const x = await entitlements.inspectXPlan(db.queryDatabase, userId, now);
+        const { intervalMinutes, ...same } = x;
+        assert.deepEqual(same, ordinary);
+        assert.equal(x.tier, tier);
+        assert.equal(intervalMinutes, policies.find(policy => policy.planId === ordinary.planId).intervalMinutes);
+        assert.equal(x.slotLimit, x.baseSlotLimit + 2, 'permanent additions count once for both services');
+        assert.equal((await entitlements.inspectXPlan(db.queryDatabase, userId, now, { useLegacyUserInterval: true })).intervalMinutes, 7);
+        assert.equal((await entitlements.inspectXPlan(db.queryDatabase, userId, now)).intervalMinutes, intervalMinutes, 'ordinary reads never enable the testing override');
+    });
+    await t.test('pool allocation never changes current plan limits or priority', async () => {
+        const userId = owners.paid, plan = await entitlements.inspectPlan(db.queryDatabase, userId, now);
+        const result = await db.queryDatabase("INSERT INTO automation_x_monitors (owner_user_id,account_id,name,pool_kind,notification_settings_json,created_at_ms,updated_at_ms) VALUES (?,'12345','Same-plan fixture','free','{}',?,?)", [userId, now, now]);
+        const targetId = String(result.insertId);
+        for (const pool of ['free', 'supporter', 'special']) {
+            await db.queryDatabase('UPDATE automation_x_monitors SET pool_kind=? WHERE id=?', [pool, targetId]);
+            const quality = await entitlements.resolveNotificationEntitlement(db, { ownerUserId: userId, targetKind: 'x', targetId });
+            for (const key of ['tier', 'planId', 'label', 'slotLimit', 'baseSlotLimit', 'minuteLimit', 'dayLimit', 'priority']) assert.equal(quality[key], plan[key], `${pool}:${key}`);
+            assert.equal(quality.intervalMinutes, 5);
+        }
+    });
+    await t.test('missing or invalid supporter intervals stay unconfigured without borrowing the free interval', async () => {
+        for (const interval of [null, 1, 10081]) {
+            await db.queryDatabase("UPDATE automation_notification_plans SET confirmation_interval_minutes=? WHERE plan_id='supporter'", [interval]);
+            const ordinary = await entitlements.inspectPlan(db.queryDatabase, owners.supporter, now);
+            const x = await entitlements.inspectXPlan(db.queryDatabase, owners.supporter, now);
+            assert.equal(x.planId, ordinary.planId); assert.equal(x.planId, 'supporter'); assert.equal(x.intervalMinutes, null);
+            assert.equal(x.minuteLimit, 7); assert.equal(x.dayLimit, 48); assert.equal(x.priority, 9);
+            const settings = await require('../../src/automation/x-processing-settings').inspectXProcessingSettings(db.queryDatabase, owners.supporter, now);
+            assert.equal(settings.configured, false); assert.equal(settings.reasonCode, 'X_MONITOR_NOT_CONFIGURED'); assert.equal(settings.planId, 'supporter');
+        }
+        assert.equal((await entitlements.inspectXPlan(db.queryDatabase, owners.free, now)).intervalMinutes, 60);
+    });
+    await t.test('paid downgrade resolves identically for native and X notifications', async () => {
+        await db.withDatabaseTransaction(query => entitlements.setUserPlan(query, ADMIN, owners.paid, null));
+        let ordinary = await entitlements.inspectPlan(db.queryDatabase, owners.paid, now);
+        let x = await entitlements.inspectXPlan(db.queryDatabase, owners.paid, now);
+        assert.equal(ordinary.planId, 'supporter'); assert.deepEqual(x, { ...ordinary, intervalMinutes: null });
+        await db.queryDatabase('UPDATE users SET is_donor=0 WHERE user_id=?', [owners.paid]);
+        ordinary = await entitlements.inspectPlan(db.queryDatabase, owners.paid, now);
+        x = await entitlements.inspectXPlan(db.queryDatabase, owners.paid, now);
+        assert.equal(ordinary.planId, 'free'); assert.deepEqual(x, { ...ordinary, intervalMinutes: 60 });
+    });
+});

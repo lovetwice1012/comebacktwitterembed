@@ -84,7 +84,7 @@ async function main() {
                 const chunks = []; let bytes = 0;
                 for await (const chunk of req) { bytes += chunk.length; if (bytes > 4 * 1024 * 1024) throw new Error('Screenshot limit'); chunks.push(chunk); }
                 const input = JSON.parse(Buffer.concat(chunks));
-                if (!/^(desktop|mobile)-(notifications|x-connected|x-first|x-upload|plans|pending|support|destination|x-draft)$/.test(input.name) || typeof input.image !== 'string' || !/^[A-Za-z0-9+/=]+$/.test(input.image)) throw new Error('Invalid screenshot');
+                if (!/^(desktop|mobile)-(notifications|x-connected|x-first|x-upload|plans|pending|support|destination|x-draft|supporter-direct|timing-change)$/.test(input.name) || typeof input.image !== 'string' || !/^[A-Za-z0-9+/=]+$/.test(input.image)) throw new Error('Invalid screenshot');
                 const image = Buffer.from(input.image, 'base64');
                 if (image[0] !== 0xff || image[1] !== 0xd8) throw new Error('JPEG screenshot required');
                 const folder = path.join(require('node:os').tmpdir(), 'cbte-notification-experience-qa-20261014');
@@ -100,9 +100,9 @@ async function main() {
                 const body = size ? JSON.parse(Buffer.concat(chunks)) : {};
                 const route = url.pathname.slice('/api/automation/'.length);
                 if ((route === 'x-monitors' || route.startsWith('x-monitors/')) && req.method !== 'GET') {
-                    previewRequests.push({ method: req.method, route, processingMode: body.processingMode, expectedRealtimeSlotCost: body.expectedRealtimeSlotCost, expectedRevision: body.expectedRevision });
+                    previewRequests.push({ method: req.method, route, processingMode: body.processingMode, poolPreference: body.poolPreference, expectedRealtimeSlotCost: body.expectedRealtimeSlotCost, expectedRevision: body.expectedRevision });
                 }
-                const scenario = /(?:^|;\s*)notification_preview=(fresh|connected|unbound|pending|full|rt-plan)(?:;|$)/.exec(req.headers.cookie || '')?.[1] || 'connected';
+                const scenario = /(?:^|;\s*)notification_preview=(fresh|connected|unbound|pending|full|rt-plan|supporter-direct)(?:;|$)/.exec(req.headers.cookie || '')?.[1] || 'connected';
                 const synthetic = await preview.dispatch({ route, method: req.method, body, scenario });
                 const result = synthetic === undefined ? await dispatch({ method: req.method, path: route.split('/'), search: url.searchParams, body }, actor, services) : synthetic;
                 res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify(result)); return;
