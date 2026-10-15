@@ -909,7 +909,7 @@
   flex: 1 1 100%;
 }
 
-@media (max-width: 640px) {
+@media (width <= 640px) {
   .nx-unified-form .notification-editor-actions > button,
   .nx-change-review .nx-actions > button {
     flex: 1 1 100%;

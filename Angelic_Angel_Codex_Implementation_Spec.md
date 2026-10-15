@@ -598,7 +598,7 @@ POC-01〜09: 実証済み／未実証／不成立・証拠／次の試験
 ## 20. 通知の登録・編集の統合（2026-10-15最新指示）
 
 承認済みのUX改善と追加用Firefoxの案内は、
-`docs/angelic-angel/notification-ux-unified.md` を参照する。
+`docs/angelic-angel/notification-experience.md` を参照する。
 通常通知・価格通知・X監視の入口、編集、配信履歴、利用枠表示、
 スマートフォンでの操作を一体で整える。
 
