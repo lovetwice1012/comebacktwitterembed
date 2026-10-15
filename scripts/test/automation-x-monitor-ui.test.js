@@ -8,7 +8,7 @@ const quota = changes => ({ featureEnabled: false, currentPlan: { ...quality(), 
     x: { used: 2, available: 2, specialLimit: 3, specialUsed: 0, reasonCode: 'X_MONITOR_UNAVAILABLE', reason: null },
     pools: { free: { limit: 50, used: 49, available: 1 }, supporter: { limit: 100, used: 1, available: 99 } }, ...changes });
 const row = changes => ({ id: 'xm-1', accountId: '18446744073709551615', accountHandle: 'fixture_user', name: '本人のX監視', enabled: true,
-    state: 'ready', poolKind: 'free', notificationSettings: { workflowId: 'rule-own', destinationId: 'dm-own' }, subscriptionState: 'unconfigured', revision: 1, quality: quality(), ...changes });
+    state: 'ready', poolKind: 'free', notificationSettings: { workflowId: 'rule-own', destinationId: 'dm-own' }, workflowStatus: 'active', destinationStatus: 'active', subscriptionState: 'unconfigured', revision: 1, quality: quality(), ...changes });
 const SUBSCRIPTION_ID = 'cc2cb493-a60d-41d6-936f-2ed33d7ea2c7';
 const subscription = changes => ({ id: SUBSCRIPTION_ID, state: 'stored', revision: 1, createdAtMs: 1791921600000, updatedAtMs: 1791921600000, browserVersion: '160.0a1', receiverState: 'awaiting', boundMonitorCount: 0, ...changes });
 const setup = changes => ({ available: true, receiverEnabled: false, rollout: { mode: 'public', eligible: true, reasonCode: null, reason: null }, download: { url: '/api/automation/x-setup/download', version: '0.1.0-preview.2', sha256: 'a'.repeat(64) }, subscriptions: [], maxFileBytes: 32768, nextCursor: null, ...changes });
@@ -134,6 +134,14 @@ test('monitor parsing accepts public handle-only identity and legacy numeric ide
         assert.throws(() => parse(row({ accountId: null, accountHandle: '' })));
         assert.equal(writes(f).length, 0);
     } finally { await f.close(); }
+});
+
+test('a listening X receiver never masks a stopped rule or disabled destination and invalid readiness is unknown', async () => {
+    for (const [changes, label] of [[{ workflowStatus: 'unapplied' }, 'ルール未適用'], [{ workflowStatus: 'paused' }, 'ルール停止中'], [{ destinationStatus: 'paused' }, '通知先停止中'], [{ workflowStatus: { active: true } }, 'ルールの確認待ち']]) {
+        const f = await fixture({ compact: true, items: [row({ ...changes, notificationSettings: { ...row().notificationSettings, subscriptionId: SUBSCRIPTION_ID } })], respond: route => route === 'x-setup' ? setup({ subscriptions: [subscription({ receiverState: 'listening' })] }) : undefined });
+        try { assert.equal(f.target().querySelector('.nx-monitor-state').textContent, label); assert.equal(writes(f).length, 0); }
+        finally { await f.close(); }
+    }
 });
 
 test('a handle-only monitor preserves its required username and explains conflicts without exposing server details', async () => {

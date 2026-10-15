@@ -1,0 +1,185 @@
+{
+  "kind": "local-only-readiness-fault-recovery-browser-qa",
+  "passed": true,
+  "checksPassed": 15,
+  "sourceStable": true,
+  "sourceHashes": {
+    "scripts/automation-ui-harness.js": "fb6b3f7c15c96b04dc4a978f14359b01047d1b6395eb5fa4e843b3ef7556ae71",
+    "scripts/fixtures/automation-ui.tsx": "d40238b3577b5c3cd53af1c2805f4737030c9b7484cfa4a8f6c4f4d0862321ae",
+    "dashboard/components/automation/automation.css": "3c6cb4db71ae4921ff2f7b710e27562e1d98038384f1008585910acbc2e1dc1f",
+    "dashboard/components/automation/notification-workspace.css": "3f3613be8cc195742ab499aea1b81d9a683d371986bb4e3522c0e17d4f1ae0c7",
+    "dashboard/components/automation/notification-x.css": "3ef465e3b67c4ce04e4aacbf9132a1f4d493c08d5854568c4ad1122ba39d5475",
+    "dashboard/components/automation/automation-feedback.ts": "3275baec4e678c1f2eb586cf5a45c84b80ad2312da840c9cbaad7aabe8cd9500",
+    "dashboard/components/automation/automation-workspace.tsx": "3768ddc11d8341af277c68be24921faaa37f3e1479c911f10560bc821a4499f5",
+    "dashboard/components/automation/monitor-manager.tsx": "7c83a2ee28485badb898c1236ec4a88ad6eb2b8d8a7449e3e382c646a49cd016",
+    "dashboard/components/automation/monitor-registration.tsx": "2f18bba8622222f46bd5929bb019e5e3fd8ba894fb457e2cf44669e0f35f90ce",
+    "dashboard/components/automation/x-monitor-manager.tsx": "b08c07f0636c9ae4fbacab14e592475efdf6ddc09f3ed608df25740864efb2a6",
+    "dashboard/components/automation/monitor-readiness.ts": "b0397234ecd83cbdc8b8a236d3a5a4fa05c8e471fa9233d00172485cf5c34080",
+    "dashboard/components/automation/automation-dialog.tsx": "89b2c7383639ee07212beaff3da9358f8c94ce00fb5dee511937329871cd0a20",
+    "src/automation/monitors.js": "50446d8a1f6db58af75cec262dca24e97130f2dad45e0409d26e0d20fba92ed4",
+    "src/automation/x-monitor-quota.js": "97ba4e18d8413a806fa5436f66043384e6a34fb74b2387eb6eb612fef6af86b6"
+  },
+  "pageErrors": [],
+  "cuaVerified": false,
+  "cuaFailure": "request-header policy unavailable before tab creation",
+  "isolatedHeadlessEdge": true,
+  "userBrowserAttached": false,
+  "viewport": {
+    "width": 390,
+    "height": 844
+  },
+  "realOAuthTested": false,
+  "realXDiscordDeliveryTested": false,
+  "receiverListeningIsSynthetic": true,
+  "networkFault": "HTTP response headers and partial body followed by socket disconnect; not a real internet outage",
+  "timestampUtc": "2026-10-15T16:29:14.0975656Z",
+  "checks": [
+    {
+      "name": "real frame: 390px native reasons and current labels",
+      "passed": true
+    },
+    {
+      "name": "native assigned workflow opens ルール未適用",
+      "passed": true
+    },
+    {
+      "name": "native assigned workflow opens ルール停止中",
+      "passed": true
+    },
+    {
+      "name": "native paused destination reaches its exact disabled editor",
+      "passed": true
+    },
+    {
+      "name": "X reasons take precedence over synthetic listening connection",
+      "passed": true
+    },
+    {
+      "name": "X assigned workflow opens ルール未適用",
+      "passed": true
+    },
+    {
+      "name": "X assigned workflow opens ルール停止中",
+      "passed": true
+    },
+    {
+      "name": "X paused destination remains editable without false delivery success",
+      "passed": true
+    },
+    {
+      "name": "HTML502 list refresh failure recovers without full page navigation",
+      "passed": true
+    },
+    {
+      "name": "native draft retained after html502 and modal resume",
+      "passed": true
+    },
+    {
+      "name": "native draft retained after network and modal resume",
+      "passed": true
+    },
+    {
+      "name": "native draft retained after auth and modal resume",
+      "passed": true
+    },
+    {
+      "name": "recovered native registration completes with the original draft",
+      "passed": true
+    },
+    {
+      "name": "malformed successful list response reload preserves a separate unsaved native draft",
+      "passed": true
+    },
+    {
+      "name": "existing X editor retains every draft field after failed save and reopen",
+      "passed": true
+    }
+  ],
+  "screenshots": [
+    {
+      "file": "mobile-native-unapplied-card.png",
+      "sha256": "dc0670e1ed539dd29941ec57ae5925a45fdfece98f765a8c4144f3fe899d1838",
+      "bounds": {
+        "width": 390,
+        "height": 844,
+        "bodyWidth": 390,
+        "docWidth": 390,
+        "dialogs": []
+      }
+    },
+    {
+      "file": "mobile-x-paused-card.png",
+      "sha256": "111c82466798eaf51925d9bc9ed62723423a56dbac04b2e556ab5f9379ea7d92",
+      "bounds": {
+        "width": 390,
+        "height": 844,
+        "bodyWidth": 390,
+        "docWidth": 390,
+        "dialogs": []
+      }
+    },
+    {
+      "file": "mobile-draft-html502.png",
+      "sha256": "d01b4dddc3134122c8303df1ffb99f86b6ec97e19ae282e3b5e56e0bd169f453",
+      "bounds": {
+        "width": 390,
+        "height": 844,
+        "bodyWidth": 390,
+        "docWidth": 390,
+        "dialogs": [
+          {
+            "x": 0,
+            "y": 0,
+            "width": 390,
+            "height": 844,
+            "scrollWidth": 390,
+            "clientWidth": 390
+          }
+        ]
+      }
+    },
+    {
+      "file": "mobile-x-existing-draft-reopened.png",
+      "sha256": "915c5f36146080f3d79cf249b724e7bd18868addcfe7426472f16651ff58eb89",
+      "bounds": {
+        "width": 390,
+        "height": 844,
+        "bodyWidth": 390,
+        "docWidth": 390,
+        "dialogs": [
+          {
+            "x": 0,
+            "y": 0,
+            "width": 390,
+            "height": 844,
+            "scrollWidth": 390,
+            "clientWidth": 390
+          }
+        ]
+      }
+    }
+  ],
+  "environment": {
+    "database": "disposable MariaDB on 127.0.0.1:33621",
+    "discord": "mock",
+    "xReceiver": "synthetic",
+    "allowedBrowserNetwork": "owned loopback fixture only"
+  },
+  "cleanup": {
+    "ownedPortListening": false,
+    "ownedServerAlive": false,
+    "profileRemoved": true,
+    "remainingOwnedSchemas": [],
+    "browserPidsAfterClose": []
+  },
+  "completeSourceReportSha256": "9cfcbcd7a79e04085170156b160a3cb66ea8de4314c731bfcc59f2c6a12d523f",
+  "postCaptureFormattingChanges": [
+    {
+      "path": "dashboard/components/automation/notification-workspace.css",
+      "beforeSha256": "3f3613be8cc195742ab499aea1b81d9a683d371986bb4e3522c0e17d4f1ae0c7",
+      "afterSha256": "74c80d45c445f255fbf1d8995d9c3d29e0f37bfe6e3a2c5e926a95f3e60a661d",
+      "change": "One empty line before a CSS comment; no declarations or behavior changed.",
+      "verifiedGitDiffIgnoringBlankLines": true
+    }
+  ]
+}

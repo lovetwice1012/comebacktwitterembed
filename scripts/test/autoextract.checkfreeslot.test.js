@@ -8,7 +8,7 @@ const squarePath = require.resolve('../../src/automation/square-billing');
 const donationsPath = require.resolve('../../src/automation/square-donations');
 const U = '222222222222222222';
 
-async function run({ tier = 'free', used = 0, limit = 5, locale = 'ja', manualDonor = false, ownRow = true } = {}) {
+async function run({ tier = 'free', used = 0, limit = 5, locale = 'ja', manualDonor = false, ownRow = true, permanentSlots = 0 } = {}) {
     const paths = [dbPath, squarePath, handlerPath, donationsPath], originals = paths.map(path => require.cache[path]), calls = [];
     const policy = { plan_id: tier === 'paid' ? 'pro' : tier, label: { free: '無料', supporter: '支援者', paid: 'Pro' }[tier], slot_limit: limit, minute_limit: tier === 'free' ? 5 : 12, day_limit: tier === 'free' ? 24 : 100, priority: tier === 'free' ? 0 : 3, enabled: 1, updated_at_ms: 1 };
     const slots = Array.from({ length: used }, (_, i) => ({ slot_index: i + 1, target_kind: i % 2 ? 'price' : 'auto', target_id: String(i + 1) }));
@@ -19,6 +19,12 @@ async function run({ tier = 'free', used = 0, limit = 5, locale = 'ja', manualDo
         if (sql.includes('FROM automation_square_subscriptions s')) return [];
         if (sql.includes('FROM automation_square_donation_policy p')) return [{ currency: 'JPY', supporter_threshold: 1000, validity_days: null, unit_amount: null, slots_per_unit: null, updated_at_ms: 1 }];
         if (sql.includes('FROM automation_square_donation_attempts')) return tier === 'supporter' && !manualDonor ? [{ amount: 1000, refunded_amount: 0, completed_at_ms: 1 }] : [];
+        if (sql.includes('FROM automation_push_support_scope_snapshots') || sql.includes('FROM automation_square_donation_unit_grants')
+            || sql.includes('FROM automation_push_support_owner_snapshots')) return [];
+        if (sql.includes('FROM automation_push_support_grants')) {
+            assert.equal(params[0], U);
+            return sql.startsWith('SELECT COALESCE(SUM(') ? [{ new_paid_slots: permanentSlots, historical_slots: 0 }] : [];
+        }
         if (sql.includes('FROM automation_notification_boost_slots')) return [];
         if (sql.startsWith('SELECT * FROM automation_notification_plans')) return tier === 'paid' ? [] : [policy];
         if (sql.startsWith('SELECT * FROM automation_notification_slots')) return slots.map(slot => ({ ...slot }));
@@ -26,6 +32,7 @@ async function run({ tier = 'free', used = 0, limit = 5, locale = 'ja', manualDo
             assert.doesNotMatch(sql, /enabled\s*=\s*1/);
             return slots.map(slot => ({ target_kind: slot.target_kind, target_id: slot.target_id, created_at_ms: 0, enabled: 0 }));
         }
+        if (sql.startsWith("SELECT 'x' AS target_kind")) return [];
         if (sql.startsWith('INSERT INTO users')) return { affectedRows: 1 };
         if (sql.startsWith('SELECT user_id')) return [{ user_id: U }];
         throw new Error(`Unexpected command SQL: ${sql}`);
@@ -66,4 +73,11 @@ test('checkfreeslot uses the effective paid policy and gives safe downgrade guid
     assert.equal(reply.embeds[0].title, 'Notification slot usage'); assert.match(reply.embeds[0].description, /Your plan: Pro/);
     assert.match(reply.embeds[0].description, /4\/3 \(0 available\)/); assert.match(reply.embeds[0].description, /100 messages\/day; 12 messages\/minute/);
     assert.match(reply.embeds[0].description, /1 registration above your allowance cannot send or resume/); assert.match(reply.embeds[0].description, /pause or delete/); assert.doesNotMatch(reply.embeds[0].description, /donors only|175/);
+});
+
+test('checkfreeslot includes permanent supporter grants in the shared personal allowance', async () => {
+    const { reply, calls } = await run({ used: 5, permanentSlots: 3 });
+    assert.match(reply.embeds[0].description, /5\/8枠（空き 3枠）/);
+    assert.ok(calls.some(call => call.sql?.includes('FROM automation_push_support_grants')));
+    assert.ok(!calls.some(call => /^(?:UPDATE|DELETE|INSERT INTO automation_push_support)/.test(call.sql || '')));
 });

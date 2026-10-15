@@ -1,0 +1,98 @@
+{
+  "phase": "local remediation acceptance before production rollout",
+  "observedAtUtc": "2026-10-15T16:46:16.021120+00:00",
+  "auditInput": {
+    "path": "docs/audits/supporter-readiness-2026-10-16/report.md in the original checkout",
+    "sha256": "3a3af46a83c56c205a054a80716e6507e477198d30481d5b56edb0bd40ead026",
+    "head": "762c2a4453ee305477142054736920b812119c93",
+    "includedUncommittedChanges": true
+  },
+  "implementationBase": "a3637a19832c1636521146477135deddfd94bb20",
+  "testedImplementationRevision": "01d823b99d7cf0a0503fb12c7f3efcb9c7c333b0",
+  "pullRequest": "https://github.com/lovetwice1012/comebacktwitterembed/pull/47",
+  "findings": {
+    "R1": "fixed; reproduction and regression checks passed",
+    "R2": "fixed; reproduction and regression checks passed",
+    "R3": "fixed; reproduction and regression checks passed",
+    "R4": "fixed; reproduction and regression checks passed",
+    "R5": "fixed; reproduction and regression checks passed",
+    "R6": "fixed; reproduction and regression checks passed"
+  },
+  "additionalConfirmedFixes": [
+    "R1 DB rollback and retry stays in its original cohort, including an earliest-due higher ID",
+    "R4 malformed successful JSON lists no longer render raw JavaScript errors or crash",
+    "R6 first target check never inherits a shared source history timestamp",
+    "Mobile native dialogs reset parent spacing margins and occupy the viewport"
+  ],
+  "regression": {
+    "cases": 1634,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "file": "supporter-readiness-remediation-2026-10-16-tests.xml",
+    "sha256": "5085fd1e61541aad3adabec24b8eb0a04b230d30a3ac6be350eb026e0d34d9e8",
+    "command": "AUTOMATION_TEST_DB_PORT=33621 NODE_ENV=test node scripts/run-project-node.cjs scripts/run-supporter-readiness-acceptance.cjs",
+    "database": "real disposable MariaDB; upstream services and Discord mocked"
+  },
+  "typechecks": {
+    "bot": true,
+    "dashboard": true
+  },
+  "changedSourceLint": true,
+  "independentReviews": {
+    "remainingP1P2": 0,
+    "r1ActualStandardRunnerRetry": true,
+    "r4Malformed200ActualReactRecovery": true,
+    "r5PublicReplyBoundaryAndCompatibility": true,
+    "r6ActualSharedSourceRegistration": true
+  },
+  "browser": {
+    "checksPassed": 15,
+    "proof": "../qa/supporter-readiness-20261016/validation.json",
+    "viewport": [
+      390,
+      844
+    ],
+    "kind": "isolated headless Edge; real UI and disposable SQL; synthetic X receiver",
+    "realOAuthVerified": false,
+    "realXToDiscordDeliveryVerified": false
+  },
+  "migration": {
+    "file": "migrations/20261016_add_auto_watch_notification_window.sql",
+    "sha256": "33e64b90aee48340984702e371ea1de8b0081cd0a9731e327cd0cd4e6cd578a5",
+    "additiveNullableColumns": [
+      "auto_watch_targets.notification_window_json TEXT",
+      "auto_watch_deliveries.cadence_due_at_ms BIGINT"
+    ],
+    "existingRowsAndTimestampsPreserved": true,
+    "partialApplyAndReapplyVerified": true,
+    "rollback": "Keep both columns and data; select the compatible code floor without restoring the database."
+  },
+  "operationsValidation": {
+    "offlineTests": 66,
+    "independentReadOnlyReview": true,
+    "stageDdlForbidden": true,
+    "actualDynamicShardReadinessRequired": true
+  },
+  "alreadyResolvedInImplementationBase": [
+    "Fixed-width synthetic P-256 JWK scalar and deterministic small-scalar coverage",
+    "X handle/profile entry and observed web-push envelope adapter"
+  ],
+  "boundaries": {
+    "realOAuthVerified": false,
+    "realXToDiscordDeliveryVerified": false,
+    "userRunsActualRegistrationAndDeliveryTest": true,
+    "newPaidPaymentsEnabled": false,
+    "newPlanOrPriceDefaultsIntroduced": false,
+    "automaticPoolReallocationIntroduced": false
+  },
+  "postCaptureFormattingChanges": [
+    {
+      "path": "dashboard/components/automation/notification-workspace.css",
+      "beforeSha256": "3f3613be8cc195742ab499aea1b81d9a683d371986bb4e3522c0e17d4f1ae0c7",
+      "afterSha256": "74c80d45c445f255fbf1d8995d9c3d29e0f37bfe6e3a2c5e926a95f3e60a661d",
+      "change": "One empty line before a CSS comment; no declarations or behavior changed.",
+      "verifiedGitDiffIgnoringBlankLines": true
+    }
+  ]
+}

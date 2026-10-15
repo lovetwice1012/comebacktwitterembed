@@ -245,12 +245,12 @@ test('SQL cadence handoff retains leased events after grant changes and shares s
             at += 30 * MINUTE; const remaining = await claim(f, at); assert.ok(remaining);
             assert.equal((await createQueue(db, {}, { clock: () => at }).route('auto', remaining, at)).state, 'routed'); assert.equal((await counts(f)).runs, 2);
         });
-        await t.test('a restart after one batch item conservatively reclaims the remainder in the next current window', async () => {
+        await t.test('a restart after one batch item reclaims the remainder in the persisted current window', async () => {
             const f = await fixture(17); await select(f, 3); let at = f.anchor + 11 * MINUTE;
             await store.createItemsAndDeliveries(f.source, ['first','second'].map(key => ({ contentId: 'restart-' + key, url: 'https://github.com/' + f.source.source_key + '/' + key, discoveredAtMs: f.anchor + 1000 })), at);
             const deliveries = (await store.claimDueDeliveries(at, 256)).filter(row => String(row.target_id) === f.target.id); assert.equal(deliveries.length, 2);
             const queue = createQueue(db, {}, { clock: () => at }); assert.equal((await queue.route('auto', deliveries[0], at)).state, 'routed');
-            assert.equal(await claim(f, at + 3 * MINUTE), undefined); at += 10 * MINUTE;
+            at += 3 * MINUTE;
             const reclaimed = await claim(f, at); assert.ok(reclaimed); assert.notEqual(reclaimed.lease_token, deliveries[1].lease_token);
             assert.equal((await queue.route('auto', deliveries[1], at)).state, 'lease_lost');
             assert.equal((await createQueue(db, {}, { clock: () => at }).route('auto', reclaimed, at)).state, 'routed'); assert.equal((await counts(f)).runs, 2);

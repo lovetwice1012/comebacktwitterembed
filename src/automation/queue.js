@@ -116,13 +116,17 @@ function createQueue(db, evaluator, options = {}) {
         return require('./monitor-revision-compat').monitorRevisionCompatible(query, { kind, targetId: String(target.id), ownerUserId,
             expectedRevision: Number(expectedRevision), currentRevision: Number(target.monitor_revision || 1) });
     }
-    async function finishLegacy(query, kind, delivery, state, now, code = null, nextAttemptAtMs = null) {
+    async function finishLegacy(query, kind, delivery, state, now, code = null, nextAttemptAtMs = null, nativeWindow = null) {
         if (kind === 'x') return true;
         const result = await query(`UPDATE ${table(kind)}_deliveries SET status=?,lease_token=NULL,lease_expires_at_ms=0,next_attempt_at_ms=?,last_error_code=? WHERE id=? AND status='pending' AND lease_token=?`,
             [state, state === 'pending' ? nextAttemptAtMs ?? now + 60000 : 0, code, delivery.id, delivery.lease_token]);
         // This is the cadence window in which the event is handed to the
         // workflow, whose own timing/quiet hours can delay actual delivery.
-        if (kind === 'auto' && state === 'routed' && Number(result.affectedRows) === 1) {
+        if (kind === 'auto' && state === 'routed' && Number(result.affectedRows) === 1 && nativeWindow) {
+            await query('UPDATE auto_watch_targets SET last_notification_window_at_ms=?,notification_window_json=? WHERE id=?', [nativeWindow.openedAtMs, JSON.stringify(nativeWindow), delivery.target_id]);
+        } else if (kind === 'auto' && state === 'routed' && Number(result.affectedRows) === 1) {
+            // Unmodified legacy one-slot targets already schedule deliveries
+            // at creation and retain their existing handoff behavior.
             await query('UPDATE auto_watch_targets SET last_notification_window_at_ms=GREATEST(COALESCE(last_notification_window_at_ms,0),?) WHERE id=?', [now, delivery.target_id]);
         }
         return Number(result.affectedRows) === 1;
@@ -148,9 +152,16 @@ function createQueue(db, evaluator, options = {}) {
                 source = await require('./monitor-cadence').lockTargetSource(query, before.user_id, String(delivery.target_id));
             }
             const target = await snapshot(query, kind, delivery.target_id, true, kind === 'x' ? delivery.owner_user_id : null);
-            const records = kind === 'x' ? [] : await query(`SELECT status,lease_token,lease_expires_at_ms,next_attempt_at_ms FROM ${table(kind)}_deliveries WHERE id=? FOR UPDATE`, [delivery.id]);
+            const records = kind === 'x' ? [] : await query(`SELECT status,lease_token,lease_expires_at_ms,next_attempt_at_ms${kind === 'auto' ? ',cadence_due_at_ms' : ''} FROM ${table(kind)}_deliveries WHERE id=? FOR UPDATE`, [delivery.id]);
             const record = records[0];
             if (kind !== 'x' && (!record || record.status !== 'pending' || record.lease_token !== delivery.lease_token || Number(record.lease_expires_at_ms) <= clock())) return { state: 'lease_lost' };
+            if (kind === 'auto' && record.cadence_due_at_ms === null) {
+                // Old claimants may already hold a native delivery lease.
+                // Freeze its current scheduled time under that same locked
+                // lease without reconstructing historical settings or times.
+                await query('UPDATE auto_watch_deliveries SET cadence_due_at_ms=next_attempt_at_ms WHERE id=? AND lease_token=? AND status=\'pending\' AND cadence_due_at_ms IS NULL', [delivery.id, delivery.lease_token]);
+                record.cadence_due_at_ms = record.next_attempt_at_ms;
+            }
             if (kind === 'x') {
                 if (target?.user_id !== delivery.owner_user_id || target.x_subscription_id !== delivery.subscription_id || target.x_subscription_revision !== delivery.subscription_revision || !require('./x-event-router').matchesXMonitor(target, delivery.x_notification)) return { state: 'cancelled', code: 'X_MONITOR_CHANGED' };
                 const received = await query("SELECT i.id FROM automation_x_push_inbox i JOIN automation_x_subscriptions s ON s.id=i.subscription_id WHERE i.id=? AND i.subscription_id=? AND s.owner_user_id=? AND i.subscription_revision=s.revision AND i.status IN ('received','routed') FOR UPDATE", [delivery.id, delivery.subscription_id, delivery.owner_user_id]);
@@ -178,6 +189,7 @@ function createQueue(db, evaluator, options = {}) {
                 return { state: 'routed', runId: existing[0].id };
             }
             const handoffAtMs = Math.max(now, clock());
+            let nativeWindow = null;
             if (source && String(source.id) === String(target.source_id)) {
                 const user = (await query('SELECT auto_watch_interval_minutes FROM users WHERE user_id=?', [target.user_id]))[0];
                 const base = user?.auto_watch_interval_minutes == null ? Number(source.poll_interval_ms) : Number(user.auto_watch_interval_minutes) * MINUTE;
@@ -187,17 +199,21 @@ function createQueue(db, evaluator, options = {}) {
                 // is the cadence boundary; already routed workflow events keep
                 // their own schedules and live per-slot send quota checks.
                 if (cadence.updatedAtMs !== null || Number(delivery.slot_cost) > 1) {
-                    const claim = delivery.cadence_claim;
-                    // Queue inputs come from the internal native claimant. The
-                    // actual record lease was checked above. Stable policy lets
-                    // all discoveries leased in that one admission window pass;
-                    // a new claim/restart captures the newer live anchor.
-                    const samePolicy = claim && ['updatedAtMs', 'effectiveSlotCost', 'intervalMs', 'baseIntervalMs'].every(field => claim[field] === cadence[field]);
-                    const anchor = samePolicy ? claim.anchorAtMs : Number(target.last_notification_window_at_ms || target.baseline_at_ms || 0);
-                    const due = Math.max(Number(record.next_attempt_at_ms || 0), anchor ? anchor + cadence.intervalMs : 0);
+                    const windows = require('./native-notification-window');
+                    nativeWindow = windows.readWindow(target, cadence, handoffAtMs);
+                    const inWindow = windows.contains(nativeWindow, { id: delivery.id, cadence_due_at_ms: record.cadence_due_at_ms, next_attempt_at_ms: record.next_attempt_at_ms });
+                    const anchor = Number(target.last_notification_window_at_ms || target.baseline_at_ms || 0);
+                    const due = Math.max(Number(record.next_attempt_at_ms || 0), !inWindow && anchor ? anchor + cadence.intervalMs : 0);
                     if (due > handoffAtMs) {
                         await finishLegacy(query, kind, delivery, 'pending', handoffAtMs, 'MONITOR_CADENCE_WAIT', due);
                         return { state: 'pending', code: 'MONITOR_CADENCE_WAIT', dueAtMs: due };
+                    }
+                    if (!inWindow) {
+                        // The source and target locks also fence source
+                        // completion, so no later observation can join this
+                        // cohort. IDs stay strings to preserve BIGINT values.
+                        const upper = (await query("SELECT MAX(id) AS id FROM auto_watch_deliveries WHERE target_id=? AND status='pending' AND COALESCE(cadence_due_at_ms,next_attempt_at_ms)<=?", [target.id, handoffAtMs]))[0]?.id;
+                        nativeWindow = windows.createWindow(cadence, upper || delivery.id, handoffAtMs);
                     }
                 }
             }
@@ -215,7 +231,7 @@ function createQueue(db, evaluator, options = {}) {
                     [runId, dedupe, target.workflow_id, target.active_revision, target.user_id, target.guild_id, scope, kind, target.id, JSON.stringify(event), '[]', 'flow_pending', now]);
                 await graph.store.initializeInTransaction(query, { runId, context: flowContext, now, unit: { kind: 'event', ancestry: [], members: [{ id: runId, runId, event, display: { ...structuredClone(NODE_TYPES.transform.defaults), ...(kind === 'x' ? { format: 'normal' } : {}) }, schedules: [], dueAtMs: now, deadlineMs,
                     defaultPriceText: kind === 'price' ? delivery.message_text : null, context: flowContext.sourceContext, targetKind: kind }] } });
-                await finishLegacy(query, kind, delivery, 'routed', handoffAtMs);
+                await finishLegacy(query, kind, delivery, 'routed', handoffAtMs, null, null, nativeWindow);
                 return { state: 'routed', runId, execution: 'flow_v2' };
             }
             let plannedJobs = 0;
@@ -278,7 +294,7 @@ function createQueue(db, evaluator, options = {}) {
                 plannedJobs++;
             }
             if (!plannedJobs || routingTrace.length !== evaluation.trace.length) await query('UPDATE automation_runs SET state=?,trace_json=? WHERE id=?', [plannedJobs ? 'queued' : 'excluded', JSON.stringify(routingTrace), runId]);
-            await finishLegacy(query, kind, delivery, 'routed', handoffAtMs);
+            await finishLegacy(query, kind, delivery, 'routed', handoffAtMs, null, null, nativeWindow);
             return { state: 'routed', runId };
         });
     }
@@ -480,7 +496,7 @@ function createQueue(db, evaluator, options = {}) {
             for (const gate of keys) await query('UPDATE automation_counters SET used_count=used_count+1 WHERE counter_key=?', [gate.counterKey]);
             plan.limitsCharged = true;
             await query("UPDATE automation_jobs SET state='sending',plan_json=?,attempts=attempts+1,lease_until_ms=?,updated_at_ms=? WHERE id=? AND lease_token=?", [JSON.stringify(plan), now + 120000, now, job.id, job.lease_token]);
-            return { state: 'sending' };
+            return { state: 'sending', attempts: Number(rows[0].attempts) + 1 };
         });
     }
     async function acknowledgeStep(job, messageId) {

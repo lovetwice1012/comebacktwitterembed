@@ -195,6 +195,7 @@ async function listTargets(userId) {
     await ensureDatabaseSchema();
     const rows = await db.queryDatabase(
         `SELECT t.id, t.enabled, t.premium_slot, t.created_at_ms, t.destination_type,
+                t.last_polled_at_ms,t.next_poll_at_ms,
                 s.provider_id, s.source_key, s.source_url, s.last_checked_at_ms, s.next_check_at_ms,
                 s.failure_count, s.last_error_code,
                 w.id AS webhook_endpoint_id
@@ -213,8 +214,7 @@ async function listTargets(userId) {
         premium: Boolean(row.premium_slot),
         destinationType: row.destination_type,
         webhookEndpointId: row.webhook_endpoint_id ? String(row.webhook_endpoint_id) : null,
-        lastCheckedAtMs: Number(row.last_checked_at_ms || 0),
-        nextCheckAtMs: Number(row.next_check_at_ms || 0),
+        ...require('./target-timing').targetTiming(row),
         failureCount: Number(row.failure_count || 0),
         lastErrorCode: row.last_error_code || null,
     }));
@@ -505,12 +505,13 @@ async function createItemsAndDeliveries(source, items, now) {
             // A newly registered watcher must not receive older discoveries
             // merely because a prior delivery was repaired after a restart.
             if (Number(target.created_at_ms || 0) > discoveredAtMs || Number(target.baseline_at_ms) >= discoveredAtMs) continue;
+            const cadenceDueAtMs = Math.max(now, Number(target.next_poll_at_ms || 0),
+                Number(target.last_notification_window_at_ms || 0) ? Number(target.last_notification_window_at_ms) + Number(target.interval_ms) : 0);
             await db.queryDatabase(
                 `INSERT IGNORE INTO ${TABLES.autoWatchDeliveries}
-                 (item_id, target_id, status, next_attempt_at_ms)
-                 VALUES (?, ?, 'pending', ?)`,
-                [itemId, target.id, Math.max(now, Number(target.next_poll_at_ms || 0),
-                    Number(target.last_notification_window_at_ms || 0) ? Number(target.last_notification_window_at_ms) + Number(target.interval_ms) : 0)]
+                 (item_id, target_id, status, next_attempt_at_ms,cadence_due_at_ms)
+                 VALUES (?, ?, 'pending', ?,?)`,
+                [itemId, target.id, cadenceDueAtMs, cadenceDueAtMs]
             );
         }
     }
@@ -521,7 +522,7 @@ async function claimDueDeliveries(now, limit = 32) {
     const rows = await db.queryDatabase(
         `SELECT d.*, i.content_url, i.discovered_at_ms, i.payload_json, i.content_key, i.title, i.published_at_ms, s.provider_id, s.source_key,
                 t.destination_type, t.guild_id, t.origin_channel_id, t.origin_channel_nsfw, t.source_locale,
-                t.user_id AS destination_user_id, t.webhook_endpoint_id, w.webhook_url,t.last_notification_window_at_ms,t.baseline_at_ms,
+                t.user_id AS destination_user_id, t.webhook_endpoint_id, w.webhook_url,t.last_notification_window_at_ms,t.baseline_at_ms,t.notification_window_json,
                 COALESCE((SELECT auto_watch_interval_minutes*60000 FROM users WHERE user_id=t.user_id),s.poll_interval_ms) AS base_interval_ms,
                 (SELECT slot_cost FROM automation_monitor_cadence c WHERE c.target_kind='auto' AND c.target_id=t.id AND c.owner_user_id=t.user_id) AS slot_cost
          FROM ${TABLES.autoWatchDeliveries} d
@@ -539,10 +540,12 @@ async function claimDueDeliveries(now, limit = 32) {
         if (delivery.slot_cost != null) {
             const cadence = await require('../../automation/monitor-cadence').runtimeCadence(db.queryDatabase, delivery.destination_user_id, 'auto', String(delivery.target_id), Number(delivery.base_interval_ms), now);
             const anchor = Number(delivery.last_notification_window_at_ms || delivery.baseline_at_ms || 0);
-            // Internal, lease-scoped evidence of the bounded native claim
-            // window. A batch can contain several discoveries from one poll.
+            const windows = require('../../automation/native-notification-window');
+            const inWindow = windows.contains(windows.readWindow(delivery, cadence, now), delivery);
+            // Keep the legacy claim shape for internal consumers; authority is
+            // the durable target receipt, rechecked under its lock at handoff.
             cadenceClaim = { updatedAtMs: cadence.updatedAtMs, effectiveSlotCost: cadence.effectiveSlotCost, intervalMs: cadence.intervalMs, baseIntervalMs: cadence.baseIntervalMs, anchorAtMs: anchor };
-            const due = Math.max(Number(delivery.next_attempt_at_ms), anchor ? anchor + cadence.intervalMs : 0);
+            const due = Math.max(Number(delivery.next_attempt_at_ms), !inWindow && anchor ? anchor + cadence.intervalMs : 0);
             if (due > now) {
                 await db.queryDatabase("UPDATE auto_watch_deliveries SET next_attempt_at_ms=? WHERE id=? AND status='pending' AND lease_expires_at_ms<=?", [due, delivery.id, now]);
                 continue;
@@ -551,11 +554,12 @@ async function claimDueDeliveries(now, limit = 32) {
         const leaseToken = crypto.randomUUID();
         const result = await db.queryDatabase(
             `UPDATE ${TABLES.autoWatchDeliveries}
-             SET lease_token=?, lease_expires_at_ms=?
+             SET lease_token=?, lease_expires_at_ms=?,cadence_due_at_ms=COALESCE(cadence_due_at_ms,next_attempt_at_ms)
              WHERE id=? AND status='pending' AND next_attempt_at_ms<=? AND lease_expires_at_ms<=?`,
             [leaseToken, now + DELIVERY_LEASE_MS, delivery.id, now, now]
         );
-        if (Number(result.affectedRows || 0) === 1) claimed.push({ ...delivery, lease_token: leaseToken, cadence_claim: cadenceClaim });
+        if (Number(result.affectedRows || 0) === 1) claimed.push({ ...delivery, lease_token: leaseToken,
+            cadence_due_at_ms: delivery.cadence_due_at_ms ?? delivery.next_attempt_at_ms, cadence_claim: cadenceClaim });
     }
     return claimed;
 }

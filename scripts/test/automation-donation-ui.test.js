@@ -335,12 +335,12 @@ test('canonical permanent holdings and500JPY per-payment policy stay separate fr
     }) });
     try {
         const holding = f.container.querySelector('[aria-label="恒久支援枠の保有記録"]'), policy = f.container.querySelector('[aria-label="恒久追加枠の付与条件"]'), legacy = f.container.querySelector('[aria-label="旧制度の支援集計"]');
-        assert.match(holding.textContent, /保有合計 9枠.*旧制度・管理者記録 6枠.*新制度の支援決済 3枠/);
+        assert.match(holding.textContent, /保有合計 9枠.*追加枠の内訳.*旧制度・管理者による追加6枠.*新制度の支援による追加3枠/);
         assert.match(holding.textContent, /有効期限はなく.*月額プランの解約後も保持します/);
         assert.match(policy.textContent, /日本円の支払い500円ごとに.*個人の登録上限を1枠追加/); assert.match(policy.textContent, /支払い1回ごとに計算.*端数を別の支払いと合算しません/);
         assert.match(holding.textContent, /個人の総登録上限に加算/); assert.match(policy.textContent, /追加枠は有効期限なく利用/); assert(!f.container.textContent.includes('買い切り'));
         assert(!policy.textContent.includes('600')); assert(!policy.textContent.includes('3枠'));
-        assert.match(legacy.textContent, /旧制度.*現在の恒久保有枠とは別/); assert.match(legacy.textContent, /旧集計の設定.*￥600につき 3枠追加の計算値/);
+        assert.equal(holding.querySelector("details").open, false); assert.equal(legacy.open, false); assert.match(legacy.textContent, /旧集計の設定.*￥600につき 3枠追加の計算値/);
         assert(!holding.textContent.includes('次に口数が変わる期限')); assert.equal(writes(f).length, 0);
     } finally { await f.close(); }
 });
