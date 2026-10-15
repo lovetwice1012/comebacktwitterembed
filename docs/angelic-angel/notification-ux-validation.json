@@ -1,0 +1,70 @@
+{
+  "status": "local-verified",
+  "startedOnJst": "2026-10-15",
+  "verifiedOnJst": "2026-10-16",
+  "reviewedCodeRevision": "c43badf93d0229f1d75c5c850bf23e7c6f4a06fa",
+  "backendTree": "e481adb332ca080fedf59f257e093aaf052d4eb4",
+  "runtime": "Node.js v24.21.0",
+  "acceptance": {
+    "runner": "scripts/run-x-notification-acceptance.cjs",
+    "report": "docs/angelic-angel/notification-ux-unified-tests.xml",
+    "reportSha256": "69d54b89325411aaf43556b6382fb327b1142b6d4cd1989beaa06d6294c4fd3d",
+    "junitCases": 1218,
+    "failed": 0,
+    "skipped": 0,
+    "durationMs": 591380.8708,
+    "database": "Disposable MariaDB on loopback port 33621; fixture schemas are dropped after each test"
+  },
+  "checks": {
+    "rootTypecheck": "passed",
+    "dashboardTypecheck": "passed",
+    "changedBackendEslint": "passed",
+    "changedDashboardEslint": "passed",
+    "diffWhitespace": "passed",
+    "independentReviewOutstandingP1P2": 0,
+    "offlineReleaseHelperTests": 61
+  },
+  "coveredBehavior": [
+    "Unified native, price and X editors; metadata-only names preserve queued deliveries",
+    "Explicit atomic supporter-pool plus realtime-one-slot change while personal availability is zero",
+    "No automatic pool redistribution or silent fallback to a five-slot choice",
+    "Target, destination, connection and timing changes require confirmation",
+    "Fixed edit baselines, assignment CAS, explicit rebase and saved-ID recovery",
+    "Source-first price locking, audit rollback and safe pre-send deadlock handling",
+    "Owner and guild-scoped monitor delivery history using final graph members",
+    "Unknown and partial deliveries remain distinct from confirmed complete sends",
+    "Dedicated Firefox browser-push and target-bell instructions for every new target",
+    "Firefox acknowledgement resets with the target and is absent from API and file data",
+    "Manual file upload with existing key and mixed-origin consent retained",
+    "Desktop and mobile dialogs, nested focus, draft preservation and sticky save controls",
+    "Unchanged notification plans, configured intervals, payments and supporter grants"
+  ],
+  "browserFixture": {
+    "externalProviders": "Synthetic X, Discord and payment data; no external send or payment",
+    "verified": [
+      "Connected receiver still shows Firefox setup for an added X target",
+      "Changing the handle clears the target acknowledgement",
+      "An existing monitor with zero personal availability saves supporter realtime at one slot",
+      "Desktop editor and 390x844 CSS viewport with fixed mobile save controls"
+    ],
+    "atomicSaveObserved": {
+      "method": "PATCH",
+      "poolKind": "supporter",
+      "processingMode": "realtime",
+      "expectedRealtimeSlotCost": 1,
+      "expectedRevision": 1
+    },
+    "representativeImage": "docs/qa/notification-ux-20261015/mobile-x-first.jpg",
+    "imageCapture": "Extended capture includes context outside the 390x844 CSS viewport"
+  },
+  "boundaries": {
+    "productionDataUsedForTests": false,
+    "realOAuthTestedByThisFixture": false,
+    "realXToDiscordDeliveryTestedByThisFixture": false,
+    "productionRegistrationCreatedForTesting": false,
+    "productionDeploymentEvidence": "Recorded separately after the reviewed main release is activated",
+    "supporterPlanInterval": "Administrator configured; never filled from the free plan",
+    "newPricesOrPaymentsEnabled": false,
+    "newSchemaMigrationRequired": false
+  }
+}
