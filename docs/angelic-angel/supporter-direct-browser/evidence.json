@@ -1,0 +1,181 @@
+{
+  "kind": "local-browser-fixture",
+  "origin": "http://127.0.0.1:51622",
+  "productionDataChanged": false,
+  "realXOrDiscordOrPaymentIO": false,
+  "disposableSchema": "cbte_automation_test_30d2895c4490f467fa11",
+  "fixturePid": 69628,
+  "observations": {
+    "initialPersonalAvailable": 1,
+    "initialSharedFreeAvailable": 16,
+    "initialSupporterAvailable": 77,
+    "directRealtimeCost": 1,
+    "poolPreference": "supporter",
+    "desktopWidth": 1440,
+    "mobileWidth": 390,
+    "mobileHorizontalOverflow": false,
+    "laterBatchThenRealtimeSaved": true,
+    "metadataEditPreservesPoolAndRealtime": true,
+    "browserWarnOrErrorLogs": 0
+  },
+  "requests": [
+    {
+      "method": "POST",
+      "route": "x-monitors",
+      "processingMode": "realtime",
+      "poolPreference": "supporter",
+      "expectedRealtimeSlotCost": 1
+    },
+    {
+      "method": "PATCH",
+      "route": "x-monitors/fixture-monitor-1",
+      "processingMode": "batch",
+      "expectedRevision": 1
+    },
+    {
+      "method": "PATCH",
+      "route": "x-monitors/fixture-monitor-1",
+      "processingMode": "realtime",
+      "expectedRealtimeSlotCost": 1,
+      "expectedRevision": 2
+    },
+    {
+      "method": "PATCH",
+      "route": "x-monitors/fixture-monitor-1",
+      "expectedRevision": 3
+    },
+    {
+      "method": "DELETE",
+      "route": "x-monitors/fixture-monitor-1",
+      "expectedRevision": 4
+    },
+    {
+      "method": "POST",
+      "route": "x-monitors",
+      "processingMode": "realtime",
+      "poolPreference": "supporter",
+      "expectedRealtimeSlotCost": 1
+    },
+    {
+      "method": "PATCH",
+      "route": "x-monitors/fixture-monitor-1",
+      "processingMode": "batch",
+      "expectedRevision": 1
+    },
+    {
+      "method": "PATCH",
+      "route": "x-monitors/fixture-monitor-1",
+      "processingMode": "realtime",
+      "expectedRealtimeSlotCost": 1,
+      "expectedRevision": 2
+    },
+    {
+      "method": "DELETE",
+      "route": "x-monitors/fixture-monitor-1",
+      "expectedRevision": 3
+    },
+    {
+      "method": "POST",
+      "route": "x-monitors",
+      "processingMode": "realtime",
+      "poolPreference": "supporter",
+      "expectedRealtimeSlotCost": 1
+    },
+    {
+      "method": "PATCH",
+      "route": "x-monitors/fixture-monitor-1",
+      "processingMode": "batch",
+      "expectedRevision": 1
+    },
+    {
+      "method": "PATCH",
+      "route": "x-monitors/fixture-monitor-1",
+      "processingMode": "realtime",
+      "expectedRealtimeSlotCost": 1,
+      "expectedRevision": 2
+    }
+  ],
+  "finalMonitor": {
+    "id": "fixture-monitor-1",
+    "accountId": null,
+    "accountHandle": "demo_supporter",
+    "name": "支援者のリアルタイム通知",
+    "enabled": true,
+    "state": "ready",
+    "poolKind": "supporter",
+    "notificationSettings": {
+      "destinationId": "995da8a6-9655-426e-9cc1-04bb1fa2aaf3"
+    },
+    "subscriptionState": "pending",
+    "revision": 3,
+    "quality": {
+      "planId": "basic",
+      "priority": 2,
+      "minuteLimit": 7,
+      "dayLimit": 96,
+      "intervalMinutes": 5
+    },
+    "processing": {
+      "requestedMode": "realtime",
+      "explicitMode": "realtime",
+      "modeSource": "monitor",
+      "effectiveMode": "realtime",
+      "realtimeSource": "supporter",
+      "realtimeEligibilitySource": "supporter",
+      "slotCost": 1,
+      "effectiveSlotCost": 1,
+      "realtimeSlotCost": 1,
+      "canEnableRealtime": true,
+      "additionalSlotsNeeded": 0,
+      "configured": true,
+      "intervalMinutes": 5,
+      "reasonCode": null
+    }
+  },
+  "finalPersonalAvailable": 0,
+  "screenshots": [
+    {
+      "path": "docs/angelic-angel/supporter-direct-browser/desktop-supporter-direct.jpg",
+      "bytes": 105841,
+      "sha256": "9065794855b312f36f91e5e3596f7de8cf750d5d7938de4aad466193d4596d79"
+    },
+    {
+      "path": "docs/angelic-angel/supporter-direct-browser/mobile-supporter-direct.jpg",
+      "bytes": 52346,
+      "sha256": "2f9b54040cf7c2691c124db861eecdafcb64619494854cca1ec6c64827b804d5"
+    },
+    {
+      "path": "docs/angelic-angel/supporter-direct-browser/desktop-timing-change.jpg",
+      "bytes": 83218,
+      "sha256": "b4418a0306002ef662b11508331ee15cd0fa14665657ddd2f7fac458fd3bec6e"
+    },
+    {
+      "path": "docs/angelic-angel/supporter-direct-browser/mobile-timing-change.jpg",
+      "bytes": 39890,
+      "sha256": "2ad7c0b9aedb853d662be26be3d74f32c91e4e0fe2a8275570702731b4ae60a9"
+    }
+  ],
+  "sourceSha256": {
+    "dashboard/components/automation/x-monitor-manager.tsx": "9cde7a4387bca5dc22f877d7e4618a5c998078e93b8259d7dc4d9b1fa17e7e1d",
+    "dashboard/components/automation/x-monitor-view.ts": "a1fdde610083790af988608af1c9a64f8093e31c73657eb77afe70541fb9e3fc",
+    "dashboard/components/automation/x-monitor-timing-editor.tsx": "fc3e4fe58185414bf4de2df02b5a5584dbfd6dd4804503083a4f00f536f34e3a",
+    "dashboard/components/automation/notification-usage-overview.tsx": "8f510f54e1f5f16b20280881597e883425823724567b7e14c2813af8036e1689",
+    "scripts/lib/notification-experience-fixture.cjs": "4bbf792219ce5a5bd709c5c9a0f1c8d04b10800561d992c23594e11d3a4dab8a",
+    "scripts/fixtures/notification-experience.tsx": "d12bab9fea4555c1c9c5d48cbea7059cdf6721f1c92ff3c7e7b1d66033ad3364"
+  },
+  "validation": {
+    "uiSuites": 3,
+    "passed": 71,
+    "failed": 0,
+    "dashboardTypecheck": true,
+    "targetedDashboardEslint": true,
+    "notes": "Final error-only rendering changes after positive screenshots are covered by unavailable/revoked quote tests; positive screen output is unchanged."
+  },
+  "cleanup": {
+    "browserTabClosed": true,
+    "viewportReset": true,
+    "fixtureCookieRemoved": true,
+    "fixtureStopped": true,
+    "disposableSchemaDropped": true
+  }
+}

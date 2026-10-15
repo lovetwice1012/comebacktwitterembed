@@ -1,0 +1,65 @@
+{
+  "date": "2026-10-15 JST",
+  "sourceRevision": "c08482ba7a3a0a4ac06ba9ac247cc3e39b6b0f3c",
+  "compatibleRollbackCoreRevision": "c5972a66cafdc8399ec1df88007d77031b8fadab",
+  "runtime": "Node.js 24.21.0",
+  "regression": {
+    "files": 71,
+    "report": "docs/angelic-angel/supporter-direct-acceptance-tests.xml",
+    "sha256": "4d255173cd47e5ba89590ea425978261e262cd6076282ffcfe2281a66a0661b6",
+    "leafCases": 1032,
+    "parentResults": 26,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "finalUI": {
+    "report": "docs/angelic-angel/supporter-direct-ui-tests.xml",
+    "sha256": "d15ea5ed7db53380c4a176712c5adcb16b5621bce5a2506beb70f1ed6fe87ba1",
+    "leafCases": 71,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "finalFeedbackChangesIndependentlyRetested": true
+  },
+  "staticChecks": {
+    "rootTypecheck": true,
+    "dashboardTypecheck": true,
+    "rootEslint": true,
+    "dashboardEslint": true,
+    "diffCheck": true
+  },
+  "review": {
+    "independentSQLPassed": 60,
+    "independentFinalUIPassed": 71,
+    "remainingFindings": 0,
+    "fixedFindings": [
+      "Specific supporter capacity and eligibility errors instead of generic edit conflicts",
+      "Unavailable selected supporter quote hides conflicting one-slot and five-slot prices"
+    ]
+  },
+  "browser": {
+    "evidence": "docs/angelic-angel/supporter-direct-browser/evidence.json",
+    "sha256": "7e855ca74f33ee1a853b3a88bbb9daf4163a746e62f99273e35a4966429c1d74",
+    "kind": "loopback synthetic fixture",
+    "initialPersonalAvailable": 1,
+    "sharedFreeAvailable": 16,
+    "desktop": "1440x1000",
+    "mobile": "390x844",
+    "directSupporterRealtimeCost": 1,
+    "laterModeChangesPreserveMonitor": true,
+    "realXDelivery": false,
+    "realDiscordSend": false,
+    "realPayment": false
+  },
+  "operations": {
+    "pairedHelperSha256": "5f33e3f24b9c33497cf6ac0453b333e4baf158ef58ee81076bb238073e6db532",
+    "offlineGuardTests": 24,
+    "stageStopGuardTests": 14,
+    "schemaChanged": false,
+    "paymentPolicyChanged": false,
+    "intervalConfigurationChanged": false,
+    "rollout": "supporters",
+    "productionProof": "Recorded separately after deployment"
+  }
+}
