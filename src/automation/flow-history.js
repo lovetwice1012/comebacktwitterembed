@@ -1,9 +1,17 @@
 'use strict';
 
 const parse = value => typeof value === 'string' ? JSON.parse(value) : value;
-const digest = value => require('node:crypto').createHash('sha256').update(value).digest('hex');
-const activeJobs = new Set(['pending', 'held', 'leased', 'sending', 'aggregated']);
-const jobPrefix = id => digest(JSON.stringify(['flow-job-members', id])).slice(0, 32);
+const digest = (value) =>
+  require("node:crypto").createHash("sha256").update(value).digest("hex");
+const activeJobs = new Set([
+  "pending",
+  "held",
+  "leased",
+  "sending",
+  "aggregated",
+]);
+const jobPrefix = (id) =>
+  digest(JSON.stringify(["flow-job-members", id])).slice(0, 32);
 function readJobFlowPlan(value) {
     try {
         const plan = parse(value), flow = plan?.flowV2, member = value => value && typeof value.memberId === 'string' && /^[0-9a-f-]{36}$/i.test(value.runId || '');
