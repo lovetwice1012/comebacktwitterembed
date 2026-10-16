@@ -18,7 +18,7 @@ const createInput = { name: '個人のチャンネル通知', kind: 'channel', s
 
 function fixture(options = {}) {
     const state = { destinations: new Map(), endpoints: new Map(), counters: new Map(), audits: [] };
-    const statements = [], calls = [], admissions = [];
+    const statements = [], calls = [], admissions = [], savepoints = new Map();
     const discord = {
         channel: { id: CHANNEL, guild_id: GUILD, type: 0, name: '通知', permission_overwrites: [] },
         user: { user: { id: USER }, roles: ['notifications'] },
@@ -29,6 +29,8 @@ function fixture(options = {}) {
     };
     const query = async (sql, params = []) => {
         statements.push({ sql, params });
+        if (sql.startsWith('SAVEPOINT ')) { savepoints.set(sql.slice(10), structuredClone(state)); return {}; }
+        if (sql.startsWith('ROLLBACK TO SAVEPOINT ')) { Object.assign(state, structuredClone(savepoints.get(sql.slice(22)))); return {}; }
         if (sql.startsWith('INSERT IGNORE INTO automation_counters')) { state.counters.set(params[0], { counter_key: params[0] }); return { affectedRows: 1 }; }
         if (sql.startsWith('SELECT counter_key FROM automation_counters')) return [state.counters.get(params[0])].filter(Boolean);
         if (sql.startsWith('INSERT INTO webhook_endpoints')) {
@@ -96,6 +98,7 @@ function fixture(options = {}) {
 
 const remoteWrites = f => f.calls.filter(call => call.method !== 'GET');
 const databaseWrites = f => f.statements.filter(statement => !statement.sql.startsWith('SELECT'));
+const registrationWrites = f => databaseWrites(f).filter(({ sql }) => !/^(?:INSERT IGNORE INTO automation_counters|SAVEPOINT |ROLLBACK TO SAVEPOINT )/.test(sql));
 const editInput = revision => ({ name: '変更した通知先', kind: 'webhook', scope: 'private', enabled: false, expectedRevision: revision });
 const destinationId = index => `00000000-0000-0000-0000-${String(index).padStart(12, '0')}`;
 const storedDestination = (id, overrides = {}) => ({ id, owner_user_id: USER, guild_id: GUILD, scope: 'private', name: '保存済み通知先', kind: 'webhook',
@@ -266,7 +269,7 @@ test('unknown or rejected remote creation results preserve safe errors and never
             return true;
         });
         assert.equal(remoteWrites(f).length, 1, 'The explicit submission attempted creation only once');
-        assert.equal(databaseWrites(f).length, 0); assert.equal(f.state.destinations.size, 0);
+        assert.equal(registrationWrites(f).length, 0); assert.equal(f.state.destinations.size, 0);
         assert.equal(f.state.endpoints.size, 0); assert.equal(f.state.audits.length, 0);
     });
     for (const missing of ['identity', 'token']) await t.test(`remote success without usable ${missing}`, async () => {
@@ -278,7 +281,7 @@ test('unknown or rejected remote creation results preserve safe errors and never
             assert(!`${error.message}${JSON.stringify(error)}`.includes(TOKEN));
             return true;
         });
-        assert.equal(remoteWrites(f).length, 1); assert.equal(databaseWrites(f).length, 0);
+        assert.equal(remoteWrites(f).length, 1); assert.equal(registrationWrites(f).length, 0);
         assert.equal(f.state.destinations.size, 0); assert.equal(f.state.endpoints.size, 0);
     });
 });

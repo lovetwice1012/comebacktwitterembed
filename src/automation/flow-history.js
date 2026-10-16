@@ -15,6 +15,11 @@ async function refreshFlowHistory(query, runIds) {
         JOIN automation_flow_members m ON m.unit_id=s.input_unit_id WHERE m.run_id IN (?) ORDER BY s.created_at_ms,s.id`, [ids]);
     const allBatches = await query(`SELECT DISTINCT m.run_id,b.node_id,b.outcome_json FROM automation_flow_batches b JOIN automation_flow_batch_inputs i ON i.batch_id=b.id
         JOIN automation_flow_members m ON m.unit_id=i.input_unit_id WHERE m.run_id IN (?) AND b.state<>'open'`, [ids]);
+    const batchExclusions = await query(`SELECT DISTINCT m.run_id,b.node_id,e.receipt_kind,b.outcome_json FROM automation_flow_batch_inputs i
+        JOIN automation_flow_batches b ON b.id=i.batch_id JOIN automation_flow_members m ON m.unit_id=i.input_unit_id
+        JOIN automation_flow_edges e ON e.activation_id=i.activation_id AND e.unit_id=i.input_unit_id AND e.run_id=m.run_id
+            AND e.edge_id=SHA2(CONCAT(b.id,':',m.member_id),256)
+        WHERE m.run_id IN (?) AND b.state<>'open' AND e.receipt_kind IN ('batch_changed','batch_expired','batch_failed')`, [ids]);
     const allSends = await query(`SELECT DISTINCT m.run_id,s.id,s.state,s.activation_id,s.unit_id FROM automation_flow_sends s JOIN automation_flow_members m ON m.unit_id=s.unit_id WHERE m.run_id IN (?)`, [ids]);
     const unitIds = [...new Set(allSends.map(row => row.unit_id))];
     const anchors = unitIds.length ? await query('SELECT DISTINCT run_id FROM automation_flow_members WHERE unit_id IN (?)', [unitIds]) : [];
@@ -36,6 +41,9 @@ async function refreshFlowHistory(query, runIds) {
         }
         const batches = allBatches.filter(row => row.run_id === runId);
         for (const batch of batches) for (const excluded of parse(batch.outcome_json)?.excluded || []) if (excluded.runId === runId) trace.push({ nodeId: batch.node_id, outcome: excluded.code === 'DEADLINE_EXCEEDED' ? 'expired' : 'excluded', reason: excluded.code });
+        for (const batch of batchExclusions.filter(row => row.run_id === runId)) trace.push({ nodeId: batch.node_id,
+            outcome: batch.receipt_kind === 'batch_expired' ? 'expired' : 'excluded', reason: batch.receipt_kind === 'batch_expired' ? 'DEADLINE_EXCEEDED'
+                : batch.receipt_kind === 'batch_changed' ? 'MONITOR_CHANGED' : parse(batch.outcome_json)?.code || 'FLOW_UNIT_INVALID' });
         const sends = allSends.filter(row => row.run_id === runId), lineageJobs = allJobs.filter(row => [...(row.plan.flowV2.members || []), ...(row.plan.flowV2.excludedMembers || [])].some(member => member.runId === runId));
         for (const job of lineageJobs) for (const excluded of job.plan.flowV2?.excludedMembers || []) if (excluded.runId === runId) trace.push({ nodeId: 'send', outcome: excluded.code === 'DEADLINE_EXCEEDED' ? 'expired' : 'excluded', reason: excluded.code });
         const jobs = lineageJobs.filter(job => job.plan.flowV2?.members?.some(member => member.runId === runId));
@@ -45,7 +53,7 @@ async function refreshFlowHistory(query, runIds) {
         else if (jobs.length) state = jobs.every(job => job.state === 'sent') ? 'sent' : jobs.some(job => ['pending','leased','sending'].includes(job.state)) ? 'queued' : jobs[0].state;
         else if (sends.some(send => send.state === 'unprojected')) state = 'flow_pending';
         else if (sends.some(send => send.state === 'failed')) state = 'failed';
-        else state = trace.some(entry => ['GRAPH_INPUT_LIMIT','FLOW_SNAPSHOT_LIMIT'].includes(entry.reason)) ? 'failed' : trace.some(entry => entry.outcome === 'expired') ? 'expired' : 'excluded';
+        else state = trace.some(entry => ['GRAPH_INPUT_LIMIT','FLOW_SNAPSHOT_LIMIT','FLOW_UNIT_INVALID'].includes(entry.reason)) ? 'failed' : trace.some(entry => entry.outcome === 'expired') ? 'expired' : 'excluded';
         for (const send of sends.filter(item => ['failed','cancelled','expired'].includes(item.state))) trace.push({ nodeId: steps.find(step => step.id === send.activation_id)?.node_id || 'send', outcome: send.state === 'expired' ? 'expired' : 'excluded', reason: send.state === 'failed' ? 'FLOW_DESTINATION_MISSING' : send.state === 'expired' ? 'DEADLINE_EXCEEDED' : 'ALL_MEMBERS_REVOKED' });
         await query('UPDATE automation_runs SET state=?,trace_json=? WHERE id=?', [state, JSON.stringify(trace), runId]);
     }

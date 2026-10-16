@@ -27,7 +27,7 @@ function createGraphDriver(store, options) {
         if (batch) {
             const plan = await options.loadPlan(batch.namespace_key);
             const result = await store.closeBatch(batch, plan.outgoing.get(batch.node_id), now);
-            await sync(batch.namespace_key, plan, result.outcome?.runIds || [], now);
+            await sync(batch.namespace_key, plan, result.syncRunIds || result.outcome?.runIds || [], now);
             return { kind: 'batch', ...result };
         }
         let step = await store.claim(now);

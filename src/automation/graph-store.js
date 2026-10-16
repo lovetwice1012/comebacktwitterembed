@@ -270,40 +270,64 @@ function createGraphStore(db) {
             if (row.state !== 'open') return { state: 'already_sealed', unitId: row.output_unit_id, outcome: parse(row.outcome_json) };
             if (Number(row.closes_at_ms) > now) return { state: 'waiting', wakeAtMs: Number(row.closes_at_ms) };
             const inputs = await query('SELECT * FROM automation_flow_batch_inputs WHERE batch_id=? ORDER BY ordinal', [row.id]);
-            const eligible = [], excluded = [], affectedRuns = new Set();
+            const eligible = [], syncRuns = new Set(); let excludedCount = 0;
+            // Failure evidence belongs to the existing relational membership,
+            // not an ever-growing JSON copy. One row identifies the exact
+            // original member; joins can recover its batch, run and reason.
+            async function exclusions(input, members, kind) {
+                for (let at = 0; at < members.length; at += 1000) {
+                    const values = members.slice(at, at + 1000).map(member => {
+                        const edge = hash(`${row.id}:${member.id}`);
+                        return [hash(JSON.stringify([row.namespace_key, member.runId, edge, kind, input.input_unit_id])), row.namespace_key, member.runId, edge, input.activation_id, kind, input.input_unit_id, now];
+                    });
+                    await query('INSERT IGNORE INTO automation_flow_edges (receipt_key,namespace_key,run_id,edge_id,activation_id,receipt_kind,unit_id,created_at_ms) VALUES ?', [values]);
+                }
+                excludedCount += members.length;
+            }
             for (const input of inputs) {
                 const snapshot = await readUnit(query, input.input_unit_id), unit = await readUnit(query, input.input_unit_id, true);
-                for (const member of snapshot.members) affectedRuns.add(member.runId);
+                for (const member of snapshot.members) if (syncRuns.size < 1000) syncRuns.add(member.runId);
+                // Each immutable input is capped at 10000 members. This
+                // bounded join marks every origin without a giant IN list.
+                await query('UPDATE automation_flow_runs r JOIN automation_flow_members m ON m.run_id=r.run_id SET r.needs_sync=1 WHERE m.unit_id=?', [input.input_unit_id]);
                 const retained = unit.members.filter(member => now <= Math.min(member.deadlineMs ?? Infinity, member.scheduleDeadlineMs ?? Infinity));
-                const ids = new Set(retained.map(member => member.id));
-                excluded.push(...snapshot.members.filter(member => !ids.has(member.id)).map(member => ({ memberId: member.id, runId: member.runId, inputUnitId: unit.id, code: unit.members.some(item => item.id === member.id) ? 'DEADLINE_EXCEEDED' : 'MONITOR_CHANGED' })));
+                const ids = new Set(retained.map(member => member.id)), liveIds = new Set(unit.members.map(member => member.id));
+                await exclusions(input, snapshot.members.filter(member => !liveIds.has(member.id)), 'batch_changed');
+                await exclusions(input, unit.members.filter(member => !ids.has(member.id)), 'batch_expired');
                 if (retained.length) eligible.push({ ...input, unit: { ...unit, members: retained } });
             }
             const selected = row.mode === 'latest' ? eligible.slice(-1) : eligible;
-            const members = selected.flatMap(input => input.unit.members.map(member => ({ ...member, id: hash(JSON.stringify([row.id, input.ordinal, member.id])), lineageId: member.lineageId || member.id })));
+            const selectedMembers = selected.reduce((count, input) => count + input.unit.members.length, 0);
             let unitId = null, materializationCode = null;
             const steps = [];
-            if (members.length) {
-                const unit = { id: uuid(`sealed:${row.id}`), kind: 'batch', members, ancestry: [...new Map(selected.flatMap(input => input.unit.ancestry || []).map(item => [encode(item), item])).values(), { batchId: row.id, nodeId: row.node_id }],
-                    batchInputs: selected.map(input => ({ unitId: input.input_unit_id, ordinal: Number(input.ordinal) })), receivedCount: Number(row.received_count) };
-                try { unitId = await putUnit(query, row.namespace_key, unit, now); }
+            if (selectedMembers) {
+                try {
+                    // Check the existing unit contract before flattening a
+                    // potentially million-member accepted aggregate chain.
+                    if (selectedMembers > 10000) throw fault('FLOW_UNIT_INVALID');
+                    const members = selected.flatMap(input => input.unit.members.map(member => ({ ...member, id: hash(JSON.stringify([row.id, input.ordinal, member.id])), lineageId: member.lineageId || member.id })));
+                    const unit = { id: uuid(`sealed:${row.id}`), kind: 'batch', members, ancestry: [...new Map(selected.flatMap(input => input.unit.ancestry || []).map(item => [encode(item), item])).values(), { batchId: row.id, nodeId: row.node_id }],
+                        batchInputs: selected.map(input => ({ unitId: input.input_unit_id, ordinal: Number(input.ordinal) })), receivedCount: Number(row.received_count) };
+                    unitId = await putUnit(query, row.namespace_key, unit, now);
+                }
                 catch (error) {
                     if (!['GRAPH_INPUT_LIMIT', 'FLOW_SNAPSHOT_LIMIT', 'FLOW_UNIT_INVALID'].includes(error.code)) throw error;
                     // The accepted inputs remain immutable and inspectable. A
                     // permanently oversized batch is terminal, never truncated
                     // or repeatedly selected ahead of healthy work.
                     materializationCode = error.code;
-                    excluded.push(...members.map(member => ({ memberId: member.id, runId: member.runId, code: error.code })));
+                    for (const input of selected) await exclusions(input, input.unit.members, 'batch_failed');
                 }
                 for (const edge of unitId ? edges : []) {
                     steps.push(await putStep(query, row.namespace_key, `batch-output:${row.id}:${edge.id}`, edge.target, unitId, edge.id, now, now));
-                    for (const runId of [...new Set(members.map(member => member.runId))]) {
-                        const input = selected.find(item => item.unit.members.some(member => member.runId === runId));
-                        await receipt(query, { ...row, id: input.activation_id }, { runId, edgeId: edge.id, kind: 'data', unitId }, now);
+                    const emittedRuns = new Set();
+                    for (const input of selected) for (const member of input.unit.members) if (!emittedRuns.has(member.runId)) {
+                        emittedRuns.add(member.runId); await receipt(query, { ...row, id: input.activation_id }, { runId: member.runId, edgeId: edge.id, kind: 'data', unitId }, now);
                     }
                 }
             }
-            const outcome = { ...(materializationCode ? { code: materializationCode, selectedInputs: selected.length, selectedMembers: members.length } : {}), receivedCount: Number(row.received_count), retainedInputs: materializationCode ? 0 : selected.length, retainedMembers: materializationCode ? 0 : members.length, excluded, runIds: [...affectedRuns],
+            const outcome = { version: 2, ...(materializationCode ? { code: materializationCode } : {}), selectedInputs: selected.length, selectedMembers,
+                receivedCount: Number(row.received_count), retainedInputs: materializationCode ? 0 : selected.length, retainedMembers: materializationCode ? 0 : selectedMembers, excludedCount,
                 supersededInputs: row.mode === 'latest' ? eligible.slice(0, -1).map(input => input.input_unit_id) : [] };
             await query('UPDATE automation_flow_batches SET state=?,output_unit_id=?,outcome_json=?,updated_at_ms=? WHERE id=?', [materializationCode ? 'failed' : unitId ? 'sealed' : 'empty', unitId, encode(outcome), now, row.id]);
             for (const id of [...new Set(inputs.map(input => input.activation_id))]) {
@@ -321,8 +345,7 @@ function createGraphStore(db) {
                     }
                 }
             }
-            if (affectedRuns.size) await query('UPDATE automation_flow_runs SET needs_sync=1 WHERE run_id IN (?)', [[...affectedRuns]]);
-            return { state: materializationCode ? 'failed' : unitId ? 'sealed' : 'empty', unitId, stepIds: steps, outcome };
+            return { state: materializationCode ? 'failed' : unitId ? 'sealed' : 'empty', unitId, stepIds: steps, outcome, syncRunIds: [...syncRuns] };
         });
     }
     async function recordSend(step, unit, destination, now) {

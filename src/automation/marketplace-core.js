@@ -58,6 +58,24 @@ function createMarketplace(db, options = {}) {
             `Source: ${edition.record.title} (${origin.id}) v${origin.version}; author ${parent.owner_user_id}`);
         return { packageId: origin.id, version: origin.version, ...edition, bundle: { ...edition.bundle, description } };
     }
+    async function dictionaryProof(actor, dictionaryId, revision, query = db.queryDatabase, lock = false) {
+        const dictionary = await service.getRow('dictionary', actor, dictionaryId, false, query, lock);
+        if (!Number.isSafeInteger(revision) || revision < 1 || revision > Number(dictionary.revision)) fail('REVISION_CONFLICT', '共有する辞書の版を確認してください。', 409);
+        const proof = (await query(`SELECT checksum,source_package_id,source_package_version,origin_reviewed FROM automation_dictionary_revisions WHERE dictionary_id=? AND revision=?${lock ? ' FOR UPDATE' : ''}`, [dictionaryId, revision]))[0];
+        if (!proof) fail('DICTIONARY_VERSION_MISSING', '辞書の版が見つかりません。', 404);
+        if (Number(proof.origin_reviewed) !== 1 || (proof.source_package_id != null || proof.source_package_version != null) && (!proof.source_package_id || !Number.isSafeInteger(Number(proof.source_package_version)) || Number(proof.source_package_version) < 1))
+            fail('DICTIONARY_ORIGIN_REVIEW_REQUIRED', 'この辞書の保存版の配布元を確認できません。内容は保持されています。運営に確認を依頼してください。', 409);
+        let origin = null;
+        if (proof.source_package_id) {
+            const edition = await storedEdition(proof.source_package_id, Number(proof.source_package_version), query);
+            const parent = (await query('SELECT owner_user_id FROM automation_packages WHERE id=?', [proof.source_package_id]))[0];
+            if (!parent?.owner_user_id) fail('BUNDLE_CHECK_FAILED', '配布元の保存済みデータを確認できません。', 503);
+            const description = retainDescription(retainDescription(edition.bundle.description, edition.record.description),
+                `Source: ${edition.record.title} (${proof.source_package_id}) v${proof.source_package_version}; author ${parent.owner_user_id}`);
+            origin = { packageId: proof.source_package_id, version: Number(proof.source_package_version), ...edition, bundle: { ...edition.bundle, description } };
+        }
+        return { checksum: proof.checksum, origin };
+    }
     const privileged = (actor, row) => row.owner_user_id === actor.userId || actor.isAdmin && row.visibility !== 'private';
     async function getRow(actor, id, shareKey, write = false, query = db.queryDatabase, lock = false) {
         requireActor(actor); const row = await rawRow(id, query, lock);
@@ -83,18 +101,25 @@ function createMarketplace(db, options = {}) {
         let bundle = structuredClone(validateBundle(input.bundle)), description = textField(input.description || '', 8000, false);
         const title = textField(input.title, 120), category = textField(input.category || 'general', 64), changelog = textField(input.changelog || '', 4000, false);
         if (previous && Object.hasOwn(input, 'forkOf') && input.forkOf !== previous.fork_of) fail('FORK_SOURCE_IMMUTABLE', 'コピー元は変更できません。別の共有内容として保存してください。');
-        const workflowOrigin = input.sourceWorkflowId ? await installedOrigin(actor, input.sourceWorkflowId) : null;
-        const ownEdition = previous && workflowOrigin?.packageId === previous.id;
-        const forkOf = previous ? previous.fork_of : input.forkOf || workflowOrigin?.packageId || null;
+        if (input.sourceWorkflowId && input.sourceDictionaryId) fail('FORK_SOURCE_IMMUTABLE', '共有元はルールか辞書のどちらかを選んでください。');
+        const dictionarySource = input.sourceDictionaryId ? await dictionaryProof(actor, input.sourceDictionaryId, input.sourceDictionaryRevision) : null;
+        if (dictionarySource) {
+            if (bundle.kind !== 'dictionary' || Object.keys(bundle.dictionaries).length !== 1 || !bundle.dictionaries.words) fail('FORK_SOURCE_IMMUTABLE', '選択した辞書の保存版から共有内容を作り直してください。');
+            const data = await service.dictionaryData(input.sourceDictionaryId, input.sourceDictionaryRevision);
+            if (JSON.stringify(require('./dictionary').validateDictionary(bundle.dictionaries.words)) !== JSON.stringify(data)) fail('REVISION_CONFLICT', '共有する辞書の内容と保存版が一致しません。内容を確認し直してください。', 409);
+        }
+        const sourceOrigin = input.sourceWorkflowId ? await installedOrigin(actor, input.sourceWorkflowId) : dictionarySource?.origin || null;
+        const ownEdition = previous && sourceOrigin?.packageId === previous.id;
+        const forkOf = previous ? previous.fork_of : input.forkOf || sourceOrigin?.packageId || null;
         let sourceBundle = null;
-        if (workflowOrigin && (previous && !ownEdition && previous.fork_of !== workflowOrigin.packageId || !previous && input.forkOf && input.forkOf !== workflowOrigin.packageId)) fail('FORK_SOURCE_IMMUTABLE', 'コピー元は変更できません。別の共有内容として保存してください。');
+        if (sourceOrigin && (previous && !ownEdition && previous.fork_of !== sourceOrigin.packageId || !previous && input.forkOf && input.forkOf !== sourceOrigin.packageId)) fail('FORK_SOURCE_IMMUTABLE', 'コピー元は変更できません。別の共有内容として保存してください。');
         if (previous?.fork_of) {
             // The first fork edition is immutable and remains available to its
             // owner even after the upstream package is withdrawn or private.
             sourceBundle = (await storedEdition(previous.id, 1)).bundle;
-        } else if (workflowOrigin && !ownEdition) {
-            sourceBundle = workflowOrigin.bundle;
-            description = retainDescription(description, workflowOrigin.record.description);
+        } else if (sourceOrigin && !ownEdition) {
+            sourceBundle = sourceOrigin.bundle;
+            description = retainDescription(description, sourceOrigin.record.description);
         } else if (input.forkOf) {
             const parent = await get(actor, input.forkOf, input.forkVersion, input.shareKey);
             sourceBundle = { ...parent.bundle, description: retainDescription(retainDescription(parent.bundle.description, parent.description),
@@ -121,7 +146,12 @@ function createMarketplace(db, options = {}) {
         return db.withDatabaseTransaction(async query => {
             if (input.sourceWorkflowId) {
                 const currentOrigin = await installedOrigin(actor, input.sourceWorkflowId, query, true);
-                if ((currentOrigin?.packageId || null) !== (workflowOrigin?.packageId || null) || (currentOrigin?.version || null) !== (workflowOrigin?.version || null)) fail('REVISION_CONFLICT', 'ルールの配布元が更新されています。共有内容を再確認してください。', 409);
+                if ((currentOrigin?.packageId || null) !== (sourceOrigin?.packageId || null) || (currentOrigin?.version || null) !== (sourceOrigin?.version || null)) fail('REVISION_CONFLICT', 'ルールの配布元が更新されています。共有内容を再確認してください。', 409);
+            }
+            if (dictionarySource) {
+                const current = await dictionaryProof(actor, input.sourceDictionaryId, input.sourceDictionaryRevision, query, true);
+                if (current.checksum !== dictionarySource.checksum || (current.origin?.packageId || null) !== (sourceOrigin?.packageId || null) || (current.origin?.version || null) !== (sourceOrigin?.version || null))
+                    fail('REVISION_CONFLICT', '辞書の配布元が更新されています。共有内容を再確認してください。', 409);
             }
             if (id) {
                 const row = await getRow(actor, id, null, true, query, true);
@@ -185,6 +215,14 @@ function createMarketplace(db, options = {}) {
             const description = origin ? retainDescription(origin.bundle.description, origin.record.description) : undefined;
             return validateBundle({ schemaVersion: 1, kind: 'workflow', workflow: rule.draft, dictionaries,
                 ...(origin ? { license: origin.bundle.license || '', description } : {}) });
+        });
+    }
+    async function exportDictionaryPackage(actor, id, revision) {
+        return db.withDatabaseTransaction(async query => {
+            const proof = await dictionaryProof(actor, id, revision, query, true), data = await service.dictionaryData(id, revision);
+            const bundle = validateBundle({ schemaVersion: 1, kind: 'dictionary', dictionaries: { words: data },
+                license: proof.origin?.bundle.license || '', ...(proof.origin ? { description: proof.origin.bundle.description } : {}) });
+            return { bundle, sourceDictionaryId: id, sourceDictionaryRevision: revision, sourcePackageId: proof.origin?.packageId || null };
         });
     }
     async function setStatus(actor, id, input) {
@@ -303,7 +341,7 @@ function createMarketplace(db, options = {}) {
         await service.audit(db.queryDatabase, actor, id, 'report.resolve', { note: textField(input.note || '', 1000, false) }, null); return { resolved: true };
     }
     const installs = require('./marketplace-installs').createInstalls(db, service, get, options.evaluator);
-    return { list, save: (actor, input, id) => service.withOperation(actor, 'publication', () => save(actor, input, id)), get, exportWorkflow,
+    return { list, save: (actor, input, id) => service.withOperation(actor, 'publication', () => save(actor, input, id)), get, exportWorkflow, exportDictionaryPackage,
         setStatus: (actor, id, input) => input.status === 'withdrawn' ? setStatus(actor, id, input) : service.withOperation(actor, 'publication', () => setStatus(actor, id, input)),
         reviewPending, feedback, reviewQueue, resolveReport, versions, fork, ...installs };
 }

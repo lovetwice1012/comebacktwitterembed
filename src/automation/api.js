@@ -210,6 +210,7 @@ async function dispatchCore({ method, path, search = new URLSearchParams(), body
       else if (action === "diff" && method === "POST") result = await dictionaryService.diff(actor, id, body.from, body.to);
       else if (action === "restore" && method === "POST") result = await dictionaryService.restore(actor, id, body);
       else if (action === "export" && method === "GET") result = await dictionaryService.exportData(actor, id, Number(search.get("revision")) || undefined, search.get("format") || "json");
+      else if (action === "package-export" && method === "GET") result = await market.exportDictionaryPackage(actor, id, Number(search.get("revision")));
       else if (action === "test" && method === "POST") {
         const row = await service.getRow("dictionary", actor, id);
         result = await evaluator.match({ id, revision: Number(body.revision || row.revision) }, body.text);

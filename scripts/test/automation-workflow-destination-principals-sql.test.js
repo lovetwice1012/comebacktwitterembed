@@ -131,8 +131,52 @@ test('S24-1 X enrollment, settings and resume share the actual-owner custom dest
     const paused = await quota.update({ userId: A }, registered.id, { expectedRevision: registered.revision, enabled: false });
     f.denied.set(A, VIEW);
     await assert.rejects(quota.update({ userId: A }, registered.id, { expectedRevision: paused.revision, enabled: true }), { code: 'CHANNEL_PERMISSION' });
-    await assert.rejects(quota.update({ userId: A }, registered.id, { expectedRevision: paused.revision, notificationSettings: { workflowId: rule.id } }), { code: 'CHANNEL_PERMISSION' });
-    f.denied.clear(); assert.equal((await quota.update({ userId: A }, registered.id, { expectedRevision: paused.revision, enabled: true })).enabled, true);
+    const edited = await quota.update({ userId: A }, registered.id, { expectedRevision: paused.revision, notificationSettings: { workflowId: rule.id } }); assert.equal(edited.enabled, false);
+    f.denied.clear(); assert.equal((await quota.update({ userId: A }, registered.id, { expectedRevision: edited.revision, enabled: true })).enabled, true);
+}));
+
+test('S18/S24 X default channels validate actual owner, enabled state and transient failures atomically', { skip: !port }, async () => fixture(async f => {
+    const who = { userId: A }, destinationId = await f.destination(A, 'private');
+    const quota = require('../../src/automation/x-monitor-quota').createXMonitorQuota(f.db, { service: f.service, registrationEnabled: true, rolloutMode: 'public' });
+    const snapshot = async () => ({ rows: await f.query('SELECT * FROM automation_x_monitors ORDER BY id'), slots: await f.query('SELECT * FROM automation_notification_slots ORDER BY owner_user_id,slot_index'), audit: await f.query('SELECT * FROM automation_audit ORDER BY id') });
+    const before = await snapshot();
+    for (const flag of [VIEW, SEND]) {
+        f.denied.set(A, flag); f.calls.length = 0;
+        await assert.rejects(quota.register(who, { accountHandle: 'defaulttest', notificationSettings: { destinationId } }), { code: 'CHANNEL_PERMISSION' });
+        assert(f.calls.includes(`/guilds/${G}/members/${A}`)); assert.deepEqual(await snapshot(), before);
+    }
+    f.denied.clear(); f.setUnavailable(true);
+    await assert.rejects(quota.register(who, { accountHandle: 'defaulttest', notificationSettings: { destinationId } }), { code: 'DISCORD_UNAVAILABLE', status: 503 }); assert.deepEqual(await snapshot(), before); f.setUnavailable(false);
+    const foreign = await f.destination(B, 'private'); f.calls.length = 0;
+    await assert.rejects(quota.register({ ...who, isAdmin: true }, { accountHandle: 'foreign', notificationSettings: { destinationId: foreign } }), { code: 'NOT_FOUND' }); assert.equal(f.calls.length, 0);
+    const registered = await quota.register(who, { accountHandle: 'defaulttest', notificationSettings: { destinationId } });
+    f.denied.set(A, SEND); f.calls.length = 0;
+    await assert.rejects(quota.register(who, { accountHandle: 'defaulttest' }), { code: 'CHANNEL_PERMISSION' });
+    f.calls.length = 0;
+    const paused = await quota.update(who, registered.id, { expectedRevision: registered.revision, enabled: false, notificationSettings: { destinationId } }); assert.equal(f.calls.length, 0);
+    const pausedState = await snapshot();
+    await assert.rejects(quota.update(who, registered.id, { expectedRevision: paused.revision, enabled: true }), { code: 'CHANNEL_PERMISSION' }); assert.deepEqual(await snapshot(), pausedState);
+    f.denied.clear(); f.setUnavailable(true);
+    await assert.rejects(quota.update(who, registered.id, { expectedRevision: paused.revision, enabled: true }), { code: 'DISCORD_UNAVAILABLE', status: 503 }); assert.deepEqual(await snapshot(), pausedState); f.setUnavailable(false);
+    await f.query('UPDATE automation_destinations SET enabled=0 WHERE id=?', [destinationId]); f.calls.length = 0;
+    await assert.rejects(quota.update(who, registered.id, { expectedRevision: paused.revision, enabled: true }), { code: 'DESTINATION_DISABLED' }); assert.equal(f.calls.length, 0);
+    await assert.rejects(quota.register(who, { accountHandle: 'disabled', notificationSettings: { destinationId } }), { code: 'DESTINATION_DISABLED' });
+    const edited = await quota.update(who, registered.id, { expectedRevision: paused.revision, name: 'Paused editing', notificationSettings: { destinationId } }); assert.equal(edited.enabled, false); assert.equal(f.calls.length, 0);
+    await f.query('UPDATE automation_destinations SET enabled=1 WHERE id=?', [destinationId]);
+    const resumed = await quota.update(who, registered.id, { expectedRevision: edited.revision, enabled: true }); assert.equal(resumed.enabled, true);
+    const secondDestination = await f.destination(A, 'private'); f.denied.set(A, VIEW); const active = await snapshot();
+    await assert.rejects(quota.update(who, registered.id, { expectedRevision: resumed.revision, notificationSettings: { destinationId: secondDestination } }), { code: 'CHANNEL_PERMISSION' }); assert.deepEqual(await snapshot(), active);
+    f.calls.length = 0; const stopped = await quota.update(who, registered.id, { expectedRevision: resumed.revision, enabled: false }); assert.equal(f.calls.length, 0);
+    await f.query('UPDATE automation_destinations SET deleted_at_ms=? WHERE id=?', [Date.now(), destinationId]);
+    const brokenEdited = await quota.update(who, registered.id, { expectedRevision: stopped.revision, name: 'Removed destination retained for repair', notificationSettings: { destinationId } }); assert.equal(brokenEdited.enabled, false); assert.equal(f.calls.length, 0);
+    await assert.rejects(quota.update(who, registered.id, { expectedRevision: brokenEdited.revision, notificationSettings: { destinationId: foreign } }), { code: 'NOT_FOUND' });
+    await quota.release(who, registered.id, { expectedRevision: brokenEdited.revision }); assert.equal(f.calls.length, 0);
+    // An unfinished setup and an owned DM remain valid without Discord I/O.
+    await quota.register(who, { accountHandle: 'pending_setup' });
+    const dm = await f.service.saveDestination(who, { name: 'Default DM', kind: 'dm' }); f.calls.length = 0;
+    const direct = await quota.register(who, { accountHandle: 'dm_default', notificationSettings: { destinationId: dm.id } });
+    const dmPaused = await quota.update(who, direct.id, { expectedRevision: direct.revision, enabled: false });
+    await quota.update(who, direct.id, { expectedRevision: dmPaused.revision, enabled: true }); assert.equal(f.calls.length, 0);
 }));
 
 test('S24-1 default sends and private custom DM keep zero Discord reads through attach, activate and resume', { skip: !port }, async () => fixture(async f => {

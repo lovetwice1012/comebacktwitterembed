@@ -1,8 +1,7 @@
 'use strict';
 
 const { ChannelType, PermissionsBitField } = require('discord.js');
-const { createHash } = require('node:crypto');
-const { withChannelWebhookOperation } = require('../automation/webhook-registration');
+const { withChannelWebhookOperation, webhookIsReferenced } = require('../automation/webhook-registration');
 
 const WEBHOOK_NAME = 'ComebackTwitterEmbed notifications';
 const WEBHOOK_CHANNEL_TYPES = new Set([ChannelType.GuildText, ChannelType.GuildAnnouncement]);
@@ -60,17 +59,6 @@ async function createWebhookForChannel(interaction, channelId, name = WEBHOOK_NA
     pendingCreations.set(key, operation);
     try { return await operation; }
     finally { if (pendingCreations.get(key) === operation) pendingCreations.delete(key); }
-}
-
-async function webhookIsReferenced(query, url) {
-    const rows = await query('SELECT id FROM webhook_endpoints WHERE webhook_url_hash=? FOR UPDATE', [createHash('sha256').update(url).digest('hex')]);
-    if (!rows.length) return false;
-    // Locking reads see committed users of the endpoint, including a direct-URL
-    // registration which did not use this channel-creation operation.
-    for (const table of ['auto_watch_targets', 'price_watch_targets', 'automation_destinations', 'auto_extract_targets']) {
-        if ((await query(`SELECT id FROM ${table} WHERE webhook_endpoint_id=? LIMIT 1 FOR UPDATE`, [rows[0].id])).length) return true;
-    }
-    return false;
 }
 
 async function withWebhookForChannel(interaction, channelId, name, register, options = {}) {

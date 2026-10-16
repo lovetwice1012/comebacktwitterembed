@@ -1,5 +1,5 @@
 'use strict';
-const { withChannelWebhookOperation } = require('./webhook-registration');
+const { withChannelWebhookOperation, webhookIsReferenced } = require('./webhook-registration');
 
 const { AutomationError, requireActor, hash } = require('./service');
 const ID = /^\d{16,22}$/;
@@ -95,13 +95,10 @@ function createDestinations(db, service, options = {}) {
         if (!ID.test(actor.guildId || '')) fail('GUILD_REQUIRED', 'Webhook通知先はサーバーの自動化画面で追加してください。');
         if (previous && (previous.guild_id !== actor.guildId || previous.scope !== (input.scope || 'private'))) fail('SCOPE_IMMUTABLE', 'サーバー・公開範囲は変更できません。');
         let webhook, createdByBot = false;
+        let channelId;
         if (input.kind === 'channel') {
-            const ctx = await verifyChannel(actor, actor.guildId, input.channelId, true);
-            // Reuse only this Bot's purpose-named webhook; never adopt arbitrary
-            // hooks owned by another application or delete a caller's hook.
-            const existing = await call(`/channels/${input.channelId}/webhooks`);
-            webhook = existing.find(w => w.type === 1 && w.user?.id === ctx.bot.id && w.name === 'ComebackTwitterEmbed Auto' && w.token);
-            if (!webhook) webhook = await call(`/channels/${input.channelId}/webhooks`, { method: 'POST', body: { name: 'ComebackTwitterEmbed Auto' } });
+            await verifyChannel(actor, actor.guildId, input.channelId, true);
+            channelId = input.channelId;
             createdByBot = true;
         } else if (!input.webhookUrl && previous?.webhook_endpoint_id) {
             const endpoints = await db.queryDatabase('SELECT webhook_url FROM webhook_endpoints WHERE id=?', [previous.webhook_endpoint_id]);
@@ -116,20 +113,45 @@ function createDestinations(db, service, options = {}) {
             if (webhook.id !== parts.id) fail('INVALID_WEBHOOK', 'Webhookの情報が一致しません。');
             webhook.token = parts.token;
         }
-        if (webhook.type !== 1 || webhook.guild_id !== actor.guildId || !ID.test(webhook.channel_id || '')) fail('WEBHOOK_GUILD_MISMATCH', 'このサーバーの受信Webhookを使ってください。');
-        await verifyChannel(actor, actor.guildId, webhook.channel_id);
-        const parts = webhookParts(`https://discord.com/api/webhooks/${webhook.id}/${webhook.token}`);
-        const channelId = webhook.channel_id;
+        if (input.kind !== 'channel') {
+            if (webhook.type !== 1 || webhook.guild_id !== actor.guildId || !ID.test(webhook.channel_id || '')) fail('WEBHOOK_GUILD_MISMATCH', 'このサーバーの受信Webhookを使ってください。');
+            await verifyChannel(actor, actor.guildId, webhook.channel_id);
+            channelId = webhook.channel_id;
+        }
         return withChannelWebhookOperation(db, actor.guildId, channelId, async query => {
-            // A channel-creation request may have failed and removed this hook
-            // while the existing-URL request waited for its SQL lock. Check the
-            // live endpoint again before committing a destination using it.
-            const current = await call(`/webhooks/${parts.id}/${parts.token}`);
-            if (current.id !== parts.id || current.type !== 1 || current.guild_id !== actor.guildId || current.channel_id !== channelId) fail('WEBHOOK_DESTINATION_CHANGED', '通知先が変更されています。Webhookを確認して再登録してください。', 409);
-            const ctx = await verifyChannel(actor, actor.guildId, channelId);
-            await query('INSERT INTO webhook_endpoints (webhook_url_hash,webhook_url) VALUES (?,?) ON DUPLICATE KEY UPDATE id=LAST_INSERT_ID(id)', [hash(parts.url), parts.url]);
-            const rows = await query('SELECT id FROM webhook_endpoints WHERE webhook_url_hash=?', [hash(parts.url)]);
-            return service.saveDestination(actor, input, { webhookEndpointId: String(rows[0].id), guildId: actor.guildId, channelId: ctx.channel.id, createdByBot }, id);
+            let createdParts = null;
+            await query('SAVEPOINT dashboard_webhook_registration');
+            try {
+                if (input.kind === 'channel') {
+                    const ctx = await verifyChannel(actor, actor.guildId, channelId, true);
+                    // Lookup and creation must share the registration lock:
+                    // separate resource IDs may reuse the same purpose hook.
+                    const existing = await call(`/channels/${channelId}/webhooks`);
+                    if (!Array.isArray(existing)) fail('DISCORD_UNAVAILABLE', 'DiscordのWebhook情報を確認できません。時間をおいて再試行してください。', 503);
+                    webhook = existing.find(w => w.type === 1 && w.user?.id === ctx.bot.id && w.name === 'ComebackTwitterEmbed Auto' && w.token);
+                    if (!webhook) {
+                        webhook = await call(`/channels/${channelId}/webhooks`, { method: 'POST', body: { name: 'ComebackTwitterEmbed Auto' } });
+                        if (webhook?.type === 1 && webhook.guild_id === actor.guildId && webhook.channel_id === channelId && webhook.user?.id === ctx.bot.id
+                            && ID.test(webhook.id || '') && /^[A-Za-z0-9_-]{20,200}$/.test(webhook.token || '')) createdParts = webhookParts(`https://discord.com/api/webhooks/${webhook.id}/${webhook.token}`);
+                    }
+                }
+                if (webhook?.type !== 1 || webhook.guild_id !== actor.guildId || webhook.channel_id !== channelId) fail('WEBHOOK_GUILD_MISMATCH', 'このサーバーの受信Webhookを使ってください。');
+                const parts = webhookParts(`https://discord.com/api/webhooks/${webhook.id}/${webhook.token}`);
+                // Existing-URL requests identify their channel before the lock,
+                // then verify again after any creator's rollback/cleanup.
+                const current = await call(`/webhooks/${parts.id}/${parts.token}`);
+                if (current?.id !== parts.id || current.type !== 1 || current.guild_id !== actor.guildId || current.channel_id !== channelId) fail('WEBHOOK_DESTINATION_CHANGED', '通知先が変更されています。Webhookを確認して再登録してください。', 409);
+                const ctx = await verifyChannel(actor, actor.guildId, channelId);
+                await query('INSERT INTO webhook_endpoints (webhook_url_hash,webhook_url) VALUES (?,?) ON DUPLICATE KEY UPDATE id=LAST_INSERT_ID(id)', [hash(parts.url), parts.url]);
+                const rows = await query('SELECT id FROM webhook_endpoints WHERE webhook_url_hash=?', [hash(parts.url)]);
+                return await service.saveDestination(actor, input, { webhookEndpointId: String(rows[0].id), guildId: actor.guildId, channelId: ctx.channel.id, createdByBot }, id);
+            } catch (error) {
+                try {
+                    await query('ROLLBACK TO SAVEPOINT dashboard_webhook_registration');
+                    if (createdParts && !await webhookIsReferenced(query, createdParts.url)) await call(`/webhooks/${createdParts.id}/${createdParts.token}`, { method: 'DELETE' });
+                } catch { /* Retain hooks on uncertain SQL/remote outcomes. */ }
+                throw error;
+            }
         });
     }
     return { channels, save: (actor, input, id) => service.withOperation(actor, 'write', () => save(actor, input, id)), verifyChannel };

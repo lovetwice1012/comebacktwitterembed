@@ -97,8 +97,11 @@ function createXMonitorQuota(db, options = {}) {
         for (const [key, table] of [['workflowId','automation_workflows'],['destinationId','automation_destinations']]) if (config[key]) {
             const rows = await query(`SELECT * FROM ${table} WHERE id=? AND owner_user_id=? AND scope='private' AND deleted_at_ms IS NULL FOR UPDATE`, [config[key], actor.userId]);
             if (!rows.length) fail('NOT_FOUND', '自分のルール・通知先を指定してください。', 404);
-            if (key === 'workflowId') await (options.service || require('./service').createService(db)).validateWorkflowDestinations(query, rows[0], [actor.userId]);
-            if (key === 'destinationId' && requireDestinationEnabled && !rows[0].enabled) fail('DESTINATION_DISABLED', '通知先を有効にしてから通知を再開してください。', 409);
+            if (requireDestinationEnabled) {
+                const service = options.service || require('./service').createService(db);
+                if (key === 'workflowId') await service.validateWorkflowDestinations(query, rows[0], [actor.userId]);
+                else await service.validateDestinationOwners(rows[0], [actor.userId]);
+            }
         }
         if (config.subscriptionId) {
             const rows = await query('SELECT id FROM automation_x_subscriptions WHERE id=? AND owner_user_id=?', [config.subscriptionId, actor.userId]);
@@ -226,6 +229,9 @@ function createXMonitorQuota(db, options = {}) {
             || suppliedSettings && (Object.keys(suppliedSettings).length !== Object.keys(currentDestinations).length
                 || Object.keys(suppliedSettings).some(key => suppliedSettings[key] !== currentDestinations[key]));
         if (changed) fail('X_MONITOR_REGISTRATION_CONFLICT', 'このXアカウントは登録済みです。一覧の「編集」から通知先や通知方法を変更してください。', 409);
+        // A retried enabled registration may omit settings. Its authoritative
+        // stored destination still needs the same fresh acceptance check.
+        if (Number(row.enabled)) await verifySettings(query, actor, currentSettings, true);
         if (input.poolPreference === 'supporter') {
             // A retried create is idempotent only for the same explicit choice.
             // Never turn a duplicate request into an implicit pool move or edit.
@@ -288,7 +294,7 @@ function createXMonitorQuota(db, options = {}) {
             await lockGlobal(query, actor); await entitlements.lockOwner(query, actor.userId);
             await requireXEnrollment(query, actor, rolloutOptions);
             await grants.migrateLegacyGrants(query, actor.userId, { now: now() });
-            await verifySettings(query, actor, parsed.notificationSettings);
+            await verifySettings(query, actor, parsed.notificationSettings, true);
             const existing = (await query('SELECT * FROM automation_x_monitors WHERE owner_user_id=? AND account_id=?', [actor.userId, parsed.accountId]))[0];
             if (existing && existing.state !== 'deleted') return duplicateRegistration(query, actor, input, existing);
             // All registrations/edits hold global->owner locks, so matching a
@@ -342,7 +348,15 @@ function createXMonitorQuota(db, options = {}) {
             if (Number(row.revision) !== input.expectedRevision) fail('X_MONITOR_REVISION_CONFLICT', '監視が変更されています。再取得してください。', 409);
             const poolChanged = input.poolKind !== undefined && input.poolKind !== row.pool_kind;
             if (poolChanged && input.processingMode === undefined) fail('X_MONITOR_INVALID_INPUT', '枠の変更と一緒に通知タイミングを選んでください。');
-            if (input.notificationSettings) await verifySettings(query, actor, input.notificationSettings);
+            const oldSettings = settings(JSON.parse(row.notification_settings_json));
+            const activeAfter = input.enabled === undefined ? Number(row.enabled) === 1 : input.enabled === true;
+            if (input.notificationSettings && !activeAfter) {
+                const supplied = inputSettings(input.notificationSettings), stored = Object.fromEntries(Object.entries(oldSettings).filter(([key]) => key !== 'processingMode'));
+                // Stopping or editing an unchanged, already stored binding
+                // remains possible after the destination was removed. New
+                // bindings still require owner-scoped resource validation.
+                if (Object.keys(supplied).length !== Object.keys(stored).length || Object.keys(supplied).some(key => supplied[key] !== stored[key])) await verifySettings(query, actor, supplied);
+            }
             if (input.enabled === true) {
                 await requireXEnrollment(query, actor, rolloutOptions);
                 if (!poolChanged) {
@@ -353,10 +367,9 @@ function createXMonitorQuota(db, options = {}) {
                 }
             }
             const plan = await planFor(query, actor.userId), selectedPool = input.poolKind ?? row.pool_kind;
-            const oldSettings = settings(JSON.parse(row.notification_settings_json));
             const nextSettings = input.notificationSettings === undefined ? { ...oldSettings } : { ...inputSettings(input.notificationSettings),
                 ...(oldSettings.processingMode === undefined ? {} : { processingMode: oldSettings.processingMode }) };
-            if (input.enabled === true && !Number(row.enabled)) await verifySettings(query, actor, nextSettings, true);
+            if ((input.enabled === true || input.notificationSettings !== undefined) && activeAfter) await verifySettings(query, actor, nextSettings, true);
             let beforeProcessing, afterSlotCost;
             if (input.processingMode !== undefined) {
                 beforeProcessing = await processing.inspectXMonitorProcessing(query, row, now(), { plan });

@@ -139,16 +139,21 @@ function createService(db, options = {}) {
             if (workflow.scope === 'guild' && (destination.scope !== 'guild' || destination.guild_id !== workflow.guild_id || destination.kind === 'dm')
                 || workflow.scope === 'private' && destination.scope === 'private' && destination.owner_user_id !== workflow.owner_user_id)
                 fail('PRIVATE_BINDING', 'ルールと同じ公開範囲の通知先を指定してください。');
-            for (const ownerId of [...new Set(ownerIds)]) {
-                if (destination.kind === 'dm') {
-                    if (destination.dm_user_id !== ownerId) fail('DM_OWNER_MISMATCH', '登録した本人のDMを指定してください。', 403);
-                } else {
-                    // Editing a shared resource does not give its consumers
-                    // access to a channel. Delivery runs as the registration
-                    // owner, so check that exact principal before committing.
-                    const verify = options.verifyChannel || require('./destinations').createDestinations(db, service).verifyChannel;
-                    await verify({ userId: ownerId }, destination.guild_id, destination.channel_id);
-                }
+            await validateDestinationOwners(destination, ownerIds);
+        }
+    }
+    async function validateDestinationOwners(destination, ownerIds) {
+        if (!destination || destination.deleted_at_ms) fail('NOT_FOUND', '通知先が見つかりません。', 404);
+        if (!destination.enabled) fail('DESTINATION_DISABLED', '通知先を有効にしてから通知を再開してください。', 409);
+        for (const ownerId of [...new Set(ownerIds)]) {
+            if (destination.scope === 'private' && destination.owner_user_id !== ownerId) fail('NOT_FOUND', '通知先が見つかりません。', 404);
+            if (destination.kind === 'dm') {
+                if (destination.dm_user_id !== ownerId) fail('DM_OWNER_MISMATCH', '登録した本人のDMを指定してください。', 403);
+            } else {
+                // Both custom workflow aliases and a monitor's default
+                // destination execute as the actual registration owner.
+                const verify = options.verifyChannel || require('./destinations').createDestinations(db, service).verifyChannel;
+                await verify({ userId: ownerId }, destination.guild_id, destination.channel_id);
             }
         }
     }
@@ -180,7 +185,7 @@ function createService(db, options = {}) {
         const definition = assertWorkflow(input.definition || newWorkflow());
         const bindings = await validateBindings(actor, definition, input.bindings || {});
         const id = randomUUID(), now = Date.now();
-        await db.withDatabaseTransaction(async query => {
+        return db.withDatabaseTransaction(async query => {
             let origin = null;
             if (input.sourceWorkflowId !== undefined) {
                 // Ordinary UI copies retain the source's server-verified
@@ -200,8 +205,10 @@ function createService(db, options = {}) {
                 await query('INSERT INTO automation_package_installs (package_id,version,workflow_id,actor_user_id,created_at_ms) VALUES (?,?,?,?,?)', [origin.id, origin.version, id, actor.userId, now]);
             }
             await audit(query, actor, id, 'workflow.create', { revision: 1 }, owner.guild_id);
+            // A response-read failure must abort creation rather than leave a
+            // committed resource behind an API error that invites another POST.
+            return publicWorkflow(await getRow('workflow', actor, id, false, query));
         });
-        return getWorkflow(actor, id);
     }
     async function getWorkflow(actor, id) { return publicWorkflow(await getRow('workflow', actor, id)); }
     async function updateWorkflow(actor, id, input, restoredRevision = undefined) {
@@ -424,7 +431,7 @@ function createService(db, options = {}) {
         });
     }
     const service = { list, getRow, getWorkflow, createWorkflow, updateWorkflow, activationPreview, activateWorkflow, setWorkflowState, remove, history,
-        restoreRevision, validateBindings, validateWorkflowDestinations, validateRegistrationWorkflow, saveDictionary, getDictionary, dictionaryData, saveDestination, attach, audit,
+        restoreRevision, validateBindings, validateWorkflowDestinations, validateDestinationOwners, validateRegistrationWorkflow, saveDictionary, getDictionary, dictionaryData, saveDestination, attach, audit,
         withOperation, rateLimiter };
     for (const name of ['createWorkflow', 'updateWorkflow', 'activateWorkflow', 'restoreRevision', 'saveDictionary', 'saveDestination', 'attach']) {
         const operation = /** @type {Function} */ (service[name]);

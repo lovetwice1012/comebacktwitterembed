@@ -24,7 +24,7 @@ function createJoinStore({ db, locked, putUnit, putStep, receipt, readUnit, uuid
                 if (!steps.has(row.id)) steps.set(row.id, { id: row.id, nodeId: row.node_id, state: row.state, unitId: row.continuation_unit_id || row.input_unit_id, runIds: [] });
                 steps.get(row.id).runIds.push(row.run_id);
             }
-            const edges = await query('SELECT run_id AS runId,edge_id AS edgeId,receipt_kind AS kind,unit_id AS unitId FROM automation_flow_edges WHERE namespace_key=? AND run_id IN (?)', [namespace, requested]);
+            const edges = await query("SELECT run_id AS runId,edge_id AS edgeId,receipt_kind AS kind,unit_id AS unitId FROM automation_flow_edges WHERE namespace_key=? AND run_id IN (?) AND receipt_kind IN ('data','closed')", [namespace, requested]);
             const decisions = await query('SELECT node_id,run_id,state FROM automation_flow_merge_decisions WHERE namespace_key=? AND run_id IN (?)', [namespace, requested]);
             let changes = 0;
             for (const runId of requested) {

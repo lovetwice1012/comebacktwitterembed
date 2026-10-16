@@ -16,4 +16,13 @@ function withChannelWebhookOperation(db, guildId, channelId, work) {
     });
 }
 
-module.exports = { withChannelWebhookOperation };
+async function webhookIsReferenced(query, url) {
+    const rows = await query('SELECT id FROM webhook_endpoints WHERE webhook_url_hash=? FOR UPDATE', [createHash('sha256').update(url).digest('hex')]);
+    if (!rows.length) return false;
+    for (const table of ['auto_watch_targets', 'price_watch_targets', 'automation_destinations', 'auto_extract_targets']) {
+        if ((await query(`SELECT id FROM ${table} WHERE webhook_endpoint_id=? LIMIT 1 FOR UPDATE`, [rows[0].id])).length) return true;
+    }
+    return false;
+}
+
+module.exports = { withChannelWebhookOperation, webhookIsReferenced };
