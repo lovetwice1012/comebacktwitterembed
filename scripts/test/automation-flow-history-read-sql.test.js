@@ -37,7 +37,7 @@ test('history read pages preserve every original field, match and position, with
     assert.equal((await createHistory(f.readOnly, f.service).trace(f.actor, f.runId)).sourceRevision, revision);
     const viaApi = await dispatch({ method: 'GET', path: ['runs', f.runId, 'trace'] }, f.actor, { history: f.history }); assert.equal(viaApi.sourceRevision, revision);
     await assert.rejects(f.history.trace({ userId: '333333333333333333', isAdmin: true }, f.runId), { code: 'NOT_FOUND', status: 404 });
-    for (const cursor of ['?', 'x'.repeat(4097), Buffer.from('{}').toString('base64url')]) await assert.rejects(f.history.trace(f.actor, f.runId, { cursor }), { code: 'INVALID_CURSOR', status: 400 });
+    for (const cursor of ['?', 'x'.repeat(4097), ...['{}', 'null', '[]', '1', 'true', '"cursor"'].map(value => Buffer.from(value).toString('base64url'))]) await assert.rejects(f.history.trace(f.actor, f.runId, { cursor }), { code: 'INVALID_CURSOR', status: 400 });
     const other = randomUUID(); await assert.rejects(f.history.trace(f.actor, other), { status: 404 });
 }));
 

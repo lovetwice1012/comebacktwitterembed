@@ -103,7 +103,7 @@ async function readTracePage(query, run, input = {}) {
         let cursor;
         try { if (typeof input.cursor !== 'string' || input.cursor.length > 4096 || !/^[A-Za-z0-9_-]+$/.test(input.cursor)) throw new Error('cursor'); cursor = JSON.parse(Buffer.from(input.cursor,'base64url').toString()); }
         catch { throw new AutomationError('INVALID_CURSOR', 'ページ位置を確認してください。'); }
-        if (cursor.runId !== run.id || !/^[a-f0-9]{64}$/.test(cursor.revision || '') || !Number.isSafeInteger(cursor.source) || cursor.source < 0) throw new AutomationError('INVALID_CURSOR', 'ページ位置を確認してください。');
+        if (!cursor || typeof cursor !== 'object' || Array.isArray(cursor) || cursor.runId !== run.id || !/^[a-f0-9]{64}$/.test(cursor.revision || '') || !Number.isSafeInteger(cursor.source) || cursor.source < 0) throw new AutomationError('INVALID_CURSOR', 'ページ位置を確認してください。');
         if (cursor.revision !== sourceRevision) throw new AutomationError('HISTORY_TRACE_CHANGED', '処理履歴が更新されました。先頭から読み直してください。', 409);
         if (cursor.source >= sources.length) throw new AutomationError('INVALID_CURSOR', 'ページ位置を確認してください。');
         sourceIndex = cursor.source; position = cursor.position;
