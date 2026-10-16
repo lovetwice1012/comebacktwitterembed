@@ -13,7 +13,7 @@ async function main() {
     const root = path.resolve(__dirname, '..'), dashboard = path.join(root, 'dashboard'), localRequire = createRequire(path.join(dashboard, 'package.json'));
     const db = await createTestDatabase(Number(process.env.AUTOMATION_TEST_DB_PORT));
     cleanup = () => db.close();
-    const service = require('../src/automation/service').createService(db);
+    const service = require('../src/automation/service').createService(db, { verifyChannel: (actor, guildId, channelId) => destinations.verifyChannel(actor, guildId, channelId) });
     const actor = { userId: '222222222222222222', guildId: '111111111111111111', canView: true, canEdit: true, isAdmin: true };
     await require('./lib/automation-test-db').grantTestDonor(db, actor.userId);
     const evaluator = require('../src/automation/evaluation').createEvaluator(service.dictionaryData);

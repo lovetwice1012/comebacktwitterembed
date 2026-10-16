@@ -155,6 +155,16 @@ function createQueue(db, evaluator, options = {}) {
             const records = kind === 'x' ? [] : await query(`SELECT status,lease_token,lease_expires_at_ms,next_attempt_at_ms${kind === 'auto' ? ',cadence_due_at_ms' : ''} FROM ${table(kind)}_deliveries WHERE id=? FOR UPDATE`, [delivery.id]);
             const record = records[0];
             if (kind !== 'x' && (!record || record.status !== 'pending' || record.lease_token !== delivery.lease_token || Number(record.lease_expires_at_ms) <= clock())) return { state: 'lease_lost' };
+            if (kind !== 'x' && require('../recoveryBootstrap').begin()) {
+                const original = kind === 'auto'
+                    ? (await query('SELECT i.discovered_at_ms FROM auto_watch_items i JOIN auto_watch_deliveries d ON d.item_id=i.id WHERE d.id=?', [delivery.id]))[0]
+                    : (await query('SELECT event_json,created_at FROM price_watch_deliveries WHERE id=?', [delivery.id]))[0];
+                const createdAtMs = kind === 'auto' ? Number(original?.discovered_at_ms) : require('./recovery-origin').priceObservedAt(original || {});
+                if (!require('../recoveryBootstrap').notificationAllowed(`${kind}_watch_delivery`, { id: String(delivery.id), target_id: String(delivery.target_id) }, createdAtMs)) {
+                    await finishLegacy(query, kind, delivery, 'suppressed', now, 'RECOVERY_QUARANTINED');
+                    return { state: 'suppressed', code: 'RECOVERY_QUARANTINED' };
+                }
+            }
             if (kind === 'auto' && record.cadence_due_at_ms === null) {
                 // Old claimants may already hold a native delivery lease.
                 // Freeze its current scheduled time under that same locked
@@ -164,8 +174,9 @@ function createQueue(db, evaluator, options = {}) {
             }
             if (kind === 'x') {
                 if (target?.user_id !== delivery.owner_user_id || target.x_subscription_id !== delivery.subscription_id || target.x_subscription_revision !== delivery.subscription_revision || !require('./x-event-router').matchesXMonitor(target, delivery.x_notification)) return { state: 'cancelled', code: 'X_MONITOR_CHANGED' };
-                const received = await query("SELECT i.id FROM automation_x_push_inbox i JOIN automation_x_subscriptions s ON s.id=i.subscription_id WHERE i.id=? AND i.subscription_id=? AND s.owner_user_id=? AND i.subscription_revision=s.revision AND i.status IN ('received','routed') FOR UPDATE", [delivery.id, delivery.subscription_id, delivery.owner_user_id]);
+                const received = await query("SELECT i.id,i.received_at_ms FROM automation_x_push_inbox i JOIN automation_x_subscriptions s ON s.id=i.subscription_id WHERE i.id=? AND i.subscription_id=? AND s.owner_user_id=? AND i.subscription_revision=s.revision AND i.status IN ('received','routed') FOR UPDATE", [delivery.id, delivery.subscription_id, delivery.owner_user_id]);
                 if (!received.length) return { state: 'cancelled', code: 'X_NOTIFICATION_INBOX_CHANGED' };
+                if (!require('./recovery-origin').inboxAllowed({ id: delivery.id, subscriptionId: delivery.subscription_id, revision: delivery.subscription_revision, receivedAtMs: Number(received[0].received_at_ms) })) return { state: 'cancelled', code: 'RECOVERY_QUARANTINED' };
                 if (delivery.x_processing_mode === 'realtime') {
                     const current = await require('./x-processing-settings').inspectXMonitorProcessing(query, target, now);
                     if (current.effectiveMode !== 'realtime') return { state: 'pending', code: 'X_REALTIME_NOT_ELIGIBLE' };
@@ -229,7 +240,7 @@ function createQueue(db, evaluator, options = {}) {
                         ...(kind === 'x' && delivery.x_processing_mode === 'realtime' ? { xRealtimeAdmittedAtMs: handoffAtMs } : {}) } };
                 await query('INSERT INTO automation_runs (id,dedupe_key,workflow_id,revision,owner_user_id,guild_id,scope,target_kind,target_id,event_json,trace_json,state,created_at_ms) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)',
                     [runId, dedupe, target.workflow_id, target.active_revision, target.user_id, target.guild_id, scope, kind, target.id, JSON.stringify(event), '[]', 'flow_pending', now]);
-                await graph.store.initializeInTransaction(query, { runId, context: flowContext, now, unit: { kind: 'event', ancestry: [], members: [{ id: runId, runId, event, display: { ...structuredClone(NODE_TYPES.transform.defaults), ...(kind === 'x' ? { format: 'normal' } : {}) }, schedules: [], dueAtMs: now, deadlineMs,
+                await graph.store.initializeInTransaction(query, { runId, context: flowContext, nodeId: require('./graph-plan').compileWorkflow(parse(target.definition_json)).startId, now, unit: { kind: 'event', ancestry: [], members: [{ id: runId, runId, event, display: { ...structuredClone(NODE_TYPES.transform.defaults), ...(kind === 'x' ? { format: 'normal' } : {}) }, schedules: [], dueAtMs: now, deadlineMs,
                     defaultPriceText: kind === 'price' ? delivery.message_text : null, context: flowContext.sourceContext, targetKind: kind }] } });
                 await finishLegacy(query, kind, delivery, 'routed', handoffAtMs, null, null, nativeWindow);
                 return { state: 'routed', runId, execution: 'flow_v2' };
@@ -257,7 +268,7 @@ function createQueue(db, evaluator, options = {}) {
                 }
                 const destinationKey = destinationId || `${kind}:${target.id}:${target.destination_key}`;
                 let due = plan.dueAtMs;
-                if (plan.aggregate) due = scheduleDelivery((Math.floor(due / (plan.aggregate.minutes * MINUTE)) + 1) * plan.aggregate.minutes * MINUTE, plan.schedules, plan.deadlineMs ?? Infinity);
+                if (plan.aggregate && !plan.aggregateClosed) due = scheduleDelivery((Math.floor(due / (plan.aggregate.minutes * MINUTE)) + 1) * plan.aggregate.minutes * MINUTE, plan.schedules, plan.deadlineMs ?? Infinity);
                 if (due === null) {
                     routingTrace.push({ nodeId: plan.aggregate?.nodeId || plan.path.at(-1), outcome: 'expired', reason: 'まとめ通知の時刻が通知期限・通知可能時間を超えるため送りません' });
                     continue;
@@ -304,6 +315,7 @@ function createQueue(db, evaluator, options = {}) {
             || input.processingMode !== undefined && !['batch','realtime'].includes(input.processingMode)) fail('X_NOTIFICATION_INBOX_INVALID', 'X通知の受信元を確認できません。');
         const inbox = (await queryDB("SELECT i.subscription_revision,i.received_at_ms FROM automation_x_push_inbox i JOIN automation_x_subscriptions s ON s.id=i.subscription_id WHERE i.id=? AND i.subscription_id=? AND s.owner_user_id=? AND i.subscription_revision=s.revision AND i.status IN ('received','routed')", [String(input.inboxEventId), input.subscriptionId, String(input.ownerUserId)]))[0];
         if (!inbox) return { state: 'cancelled', code: 'X_NOTIFICATION_INBOX_CHANGED' };
+        if (!require('./recovery-origin').inboxAllowed({ id: input.inboxEventId, subscriptionId: input.subscriptionId, revision: Number(inbox.subscription_revision), receivedAtMs: Number(inbox.received_at_ms) })) return { state: 'cancelled', code: 'RECOVERY_QUARANTINED' };
         const notification = require('./x-event-router').normalizeXNotification(input.payload, { receivedAtMs: Number(inbox.received_at_ms) });
         const delivery = { id: String(input.inboxEventId), target_id: String(input.monitorId), owner_user_id: String(input.ownerUserId),
             subscription_id: input.subscriptionId, subscription_revision: Number(inbox.subscription_revision), x_notification: notification, x_processing_mode: input.processingMode };
@@ -358,9 +370,10 @@ function createQueue(db, evaluator, options = {}) {
             return { ...job, state: 'leased', lease_token: token, lease_until_ms: now + 120000, plan };
         });
     }
-    async function validFlowMembers(query, job, plan, lock = false) {
+    async function validFlowMembers(query, job, plan, lock = false, now = clock()) {
         const members = Array.isArray(plan.members) ? plan.members : [];
         const accepted = [], missing = [];
+        const currentOrigins = await require('./recovery-origin').currentRunIds(query, members.map(member => member?.runId));
         const eligibility = new Map();
         // Locked X/mixed flows share this connection's owner mutex and current
         // snapshot. Do not depend on a DB adapter implicitly merging nested
@@ -368,6 +381,8 @@ function createQueue(db, evaluator, options = {}) {
         const entitlementDb = lock && containsX(job, plan) ? { withDatabaseTransaction: work => work(query) } : db;
         let paused = false, eligibilityCode = null, pauseCode = null, pauseDueAtMs = null;
         for (const member of members) {
+            if (member && !currentOrigins.has(member.runId)) { eligibilityCode = 'RECOVERY_QUARANTINED'; missing.push(member); continue; }
+            if (member && now > require('./flow-projector').memberDeadline(member)) { missing.push(member); continue; }
             if (!member || !['auto', 'price', 'x'].includes(member.targetKind) || !/^\d{1,20}$/.test(String(member.targetId))) { missing.push(member); continue; }
             const key = `${member.targetKind}:${member.targetId}`;
             if (!eligibility.has(key)) {
@@ -405,16 +420,38 @@ function createQueue(db, evaluator, options = {}) {
             let plan;
             try { plan = parse(row.plan_json); } catch { return { state: 'failed', code: 'QUEUE_PLAN_INVALID' }; }
             if (!plan?.flowV2 || !Array.isArray(plan.members)) return { state: 'failed', code: 'QUEUE_PLAN_INVALID' };
-            const status = await validFlowMembers(query, job, plan, true);
+            const status = await validFlowMembers(query, job, plan, true, now);
+            if (!status.accepted.length && plan.members.length && plan.members.every(member => now > require('./flow-projector').memberDeadline(member))) return { state: 'expired', code: 'DEADLINE_EXCEEDED' };
             if (!status.accepted.length) return status.eligibilityCode ? { state: 'excluded', code: status.eligibilityCode } : { state: 'cancelled', code: 'FLOW_MEMBERS_CANCELLED' };
-            if (status.changed) {
+            let snapshotChanged = false;
+            if (!Number.isSafeInteger(plan.flowV2.originalDueAtMs)) {
+                // Preserve the current reservation of pre-fix queued jobs. A
+                // temporary expiry wake must not replace a user's lower bound.
+                plan.flowV2.originalDueAtMs = Number(row.due_at_ms); snapshotChanged = true;
+            }
+            if (typeof plan.aggregateSnapshot !== 'boolean' && plan.flowV2.sendId) {
+                // Old queued flow-v2 snapshots did not distinguish singleton
+                // events from genuine one-item aggregates. Recover the exact
+                // immutable send unit rather than guessing from member count.
+                const source = (await query('SELECT u.* FROM automation_flow_sends s JOIN automation_flow_units u ON u.id=s.unit_id WHERE s.id=?', [plan.flowV2.sendId]))[0];
+                if (!source) return { state: 'failed', code: 'FLOW_UNIT_INVALID' };
+                try { const unit = require('./flow-projector').safeUnit(source); plan.aggregateSnapshot = unit.kind !== 'event' || !!unit.ancestry?.some(stage => stage.batchId); }
+                catch { return { state: 'failed', code: 'FLOW_UNIT_INVALID' }; }
+                snapshotChanged = true;
+            }
+            const currentDeadline = require('./flow-projector').jobDeadline(status.accepted);
+            if (status.changed || snapshotChanged || plan.deadlineMs !== currentDeadline || (row.deadline_ms == null ? null : Number(row.deadline_ms)) !== currentDeadline) {
                 const memberIds = new Set(status.accepted.map(member => member.id));
+                const removed = plan.members.filter(member => !memberIds.has(member.id)).map(member => ({ memberId: member.id, runId: member.runId,
+                    code: now > require('./flow-projector').memberDeadline(member) ? 'DEADLINE_EXCEEDED' : status.eligibilityCode || 'MONITOR_CHANGED' }));
+                plan.flowV2.excludedMembers = [...new Map([...(plan.flowV2.excludedMembers || []), ...removed].map(member => [member.memberId, member])).values()];
                 plan.members = status.accepted;
                 plan.flowV2.members = (plan.flowV2.members || []).filter(member => memberIds.has(member.memberId));
-                plan.event = plan.members[0].event; plan.display = plan.members[0].display; plan.text = plan.members[0].text;
-                plan.deadlineMs = plan.members.reduce((deadline, member) => earliest(deadline, member.deadlineMs), null);
+                plan.event = plan.members[0].event; plan.display = plan.members[0].display; plan.text = plan.members[0].text; plan.defaultPriceText = plan.members[0].defaultPriceText || null;
+                plan.deadlineMs = require('./flow-projector').jobDeadline(plan.members);
                 plan.schedules = require('./flow-projector').uniqueSchedules(plan.members);
                 await query('UPDATE automation_jobs SET plan_json=?,deadline_ms=?,updated_at_ms=? WHERE id=? AND lease_token=?', [JSON.stringify(plan), plan.deadlineMs, now, job.id, job.lease_token]);
+                await require('./flow-history').refreshFlowHistory(query, [...plan.flowV2.members, ...plan.flowV2.excludedMembers].map(member => member.runId));
             }
             return { state: status.paused ? 'pending' : 'ready', code: status.paused ? status.pauseCode || 'WORKFLOW_PAUSED' : null, dueAtMs: status.paused ? status.pauseDueAtMs || now + 60000 : null, job: { ...job, deadline_ms: plan.deadlineMs, plan } };
         });
@@ -427,18 +464,20 @@ function createQueue(db, evaluator, options = {}) {
         // before those reads establish a REPEATABLE READ snapshot, otherwise a
         // concurrent committed move can mix a new monitor with old ranks/audit.
         if (lock && containsX(job)) await require('./entitlements').lockOwner(query, job.owner_user_id);
+        if (!job.plan?.flowV2 && !(await require('./recovery-origin').currentRunIds(query, [job.run_id])).has(job.run_id)) return { state: 'cancelled', code: 'RECOVERY_QUARANTINED' };
         try { await require('./package-safety').assertPackageSafety(query, job); }
         catch (error) { if (error instanceof require('./safety').SafetyError) return { state: error.decision === 'deny' ? 'excluded' : 'failed', code: error.code }; throw error; }
         if (job.plan?.flowV2) {
-            const flow = await validFlowMembers(query, job, job.plan, lock);
+            const flow = await validFlowMembers(query, job, job.plan, lock, now);
+            if (!flow.accepted.length && job.plan.members.length && job.plan.members.every(member => now > require('./flow-projector').memberDeadline(member))) return { state: 'expired', code: 'DEADLINE_EXCEEDED' };
             if (!flow.accepted.length) return flow.eligibilityCode ? { state: 'excluded', code: flow.eligibilityCode } : { state: 'cancelled', code: 'FLOW_MEMBERS_CANCELLED' };
             if (flow.changed) return { state: 'pending', code: 'FLOW_MEMBERSHIP_CHANGED', dueAtMs: now };
             if (flow.paused) return { state: 'pending', code: flow.pauseCode || 'WORKFLOW_PAUSED', dueAtMs: flow.pauseDueAtMs || now + 60000 };
             const target = await snapshot(query, flow.accepted[0].targetKind, flow.accepted[0].targetId, lock, job.owner_user_id);
             if (job.deadline_ms != null && now > Number(job.deadline_ms)) return { state: 'expired', code: 'DEADLINE_EXCEEDED' };
-            const next = scheduleDelivery(Math.max(Number(job.due_at_ms), now), job.plan.schedules, job.deadline_ms == null ? Infinity : Number(job.deadline_ms));
-            if (next === null) return { state: 'expired', code: 'NO_DELIVERY_WINDOW' };
-            if (next > now) return { state: 'pending', code: 'WAIT_FOR_WINDOW', dueAtMs: next };
+            const window = require('./flow-projector').flowDeliveryWindow(flow.accepted, Math.max(Number(job.due_at_ms), job.plan.flowV2.originalDueAtMs ?? 0, now));
+            if (!window) return { state: 'expired', code: 'NO_DELIVERY_WINDOW' };
+            if (window.dueAtMs > now) return { state: 'pending', code: 'WAIT_FOR_WINDOW', dueAtMs: window.dueAtMs };
             return checkDestination(query, job, target, now);
         }
         const target = await snapshot(query, job.target_kind, job.target_id, lock, job.owner_user_id);
@@ -473,6 +512,7 @@ function createQueue(db, evaluator, options = {}) {
         return db.withDatabaseTransaction(async query => {
             const result = await query("UPDATE automation_jobs SET state=?,last_error_code=?,due_at_ms=COALESCE(?,due_at_ms),lease_token=NULL,lease_until_ms=0,updated_at_ms=? WHERE id=? AND lease_token=? AND state IN ('leased','sending')", [state, code, dueAtMs, Date.now(), job.id, job.lease_token]);
             if (Number(result.affectedRows) === 1 && !['pending', 'leased', 'sending', 'held'].includes(state)) await query('UPDATE automation_jobs SET state=?,last_error_code=?,updated_at_ms=? WHERE parent_job_id=? AND state=\'aggregated\'', [state, code, Date.now(), job.id]);
+            if (Number(result.affectedRows) === 1 && job.plan?.flowV2) await require('./flow-history').refreshFlowHistory(query, job.plan.flowV2.members.map(member => member.runId));
             return Number(result.affectedRows) === 1;
         });
     }

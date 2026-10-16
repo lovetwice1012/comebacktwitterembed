@@ -3,6 +3,7 @@
 const { AutomationError, requireActor, scopeFor, hash } = require('./service');
 const entitlements = require('./entitlements');
 const eligibility = require('../providers/autoWatch/eligibility');
+const { verifyWebhookEndpoint, lockWebhookEndpoint } = require('./destinations');
 const fail = (code, message, status = 400) => { throw new AutomationError(code, message, status); };
 const tableFor = kind => {
     if (!['auto', 'price'].includes(kind)) fail('INVALID_MONITOR', '監視の種類が不正です。');
@@ -107,7 +108,8 @@ function createMonitors(db, service, destinations, options = {}) {
                 WHEN sr.workflow_id IS NULL THEN 'missing'
                 WHEN sw.enabled<>1 THEN 'paused' ELSE 'active' END`,
             destination: `CASE WHEN m.destination_id IS NULL THEN NULL
-                WHEN sd.id IS NULL OR sd.deleted_at_ms IS NOT NULL OR sd.scope<>${scope}
+                WHEN sd.id IS NULL OR sd.deleted_at_ms IS NOT NULL OR sd.scope NOT IN ('private','guild')
+                    OR (${scope}='guild' AND sd.scope<>'guild')
                     OR (sd.scope='private' AND sd.owner_user_id<>t.user_id)
                     OR (sd.scope='guild' AND (sd.guild_id IS NULL OR sd.guild_id<>t.guild_id OR sd.kind='dm'))
                     OR (sd.kind='dm' AND sd.dm_user_id<>t.user_id) THEN 'missing'
@@ -183,18 +185,76 @@ function createMonitors(db, service, destinations, options = {}) {
             return { id: String(id), ...selected };
         });
     }
-    async function destination(actor, id, scope, ownerId, query = db.queryDatabase) {
-        const row = await service.getRow('destination', actor, id, true, query);
+    async function verifyDestinationChannel(actor, guildId, channelId, ownerId, privateOwner = false) {
+        // Private ownership authorizes using the stored guild from the personal
+        // page; current Discord membership and channel permissions still apply.
+        if (guildId !== actor.guildId && !(privateOwner && ownerId === actor.userId)) fail('DESTINATION_SCOPE', '通知先のサーバーで操作してください。');
+        const verified = await destinations.verifyChannel(actor, guildId, channelId);
+        // Delivery runs as the original registration owner, not its editor.
+        // Re-read that principal's actual Discord roles even for a guild editor.
+        if (ownerId !== actor.userId) await destinations.verifyChannel({ ...actor, userId: ownerId }, guildId, channelId);
+        return verified.channel.nsfw === true;
+    }
+    async function destinationForMonitor(actor, id, ownerId, current, query = db.queryDatabase, lock = false) {
+        try { return { row: await service.getRow('destination', actor, id, true, query, lock), existingShared: false }; }
+        catch (error) {
+            // Reusing this owned registration is distinct from editing a shared
+            // destination. Its existing ID and guild come only from the target.
+            const ownsExisting = current && scopeOf(current) === 'private' && String(current.user_id) === actor.userId && ownerId === actor.userId
+                && current.destination_id === id && current.guild_id;
+            if (error.code !== 'FORBIDDEN' || !ownsExisting) throw error;
+            const row = (await query(`SELECT * FROM automation_destinations WHERE id=? AND scope='guild' AND guild_id=? AND deleted_at_ms IS NULL${lock ? ' FOR UPDATE' : ''}`, [id, current.guild_id]))[0];
+            if (!row) throw error;
+            return { row, existingShared: true };
+        }
+    }
+    async function destination(actor, id, scope, ownerId, query = db.queryDatabase, current = null) {
+        const selected = await destinationForMonitor(actor, id, ownerId, current, query), row = selected.row;
         if (!row.enabled) fail('DESTINATION_DISABLED', '通知先が停止中です。');
         if (scope === 'guild' && (row.scope !== 'guild' || row.guild_id !== actor.guildId || row.kind === 'dm')) fail('DESTINATION_SCOPE', '共有監視には同じサーバーの共有通知先を使ってください。');
         if (row.kind === 'dm' && row.dm_user_id !== ownerId) fail('DM_OWNER', '他の人の監視を自分のDMへ変更できません。');
-        let nsfw = false;
+        let nsfw = false, endpointSnapshot = null;
         if (row.kind !== 'dm') {
-            if (row.guild_id !== actor.guildId) fail('DESTINATION_SCOPE', '通知先のサーバーで操作してください。');
-            const verified = await destinations.verifyChannel(actor, row.guild_id, row.channel_id);
-            nsfw = verified.channel.nsfw === true;
+            endpointSnapshot = await verifyWebhookEndpoint(query, row, destinations.verifyWebhook);
+            nsfw = await verifyDestinationChannel(actor, row.guild_id, row.channel_id, ownerId,
+                selected.existingShared || row.scope === 'private' && String(row.owner_user_id) === ownerId);
         }
-        return { row, nsfw, key: row.kind === 'dm' ? `dm:${ownerId}` : `webhook:${row.webhook_endpoint_id}` };
+        return { row, nsfw, endpointSnapshot, key: row.kind === 'dm' ? `dm:${ownerId}` : `webhook:${row.webhook_endpoint_id}` };
+    }
+    const resumeIdentity = row => JSON.stringify([row.user_id, row.destination_id || null, row.destination_type, row.destination_key, row.guild_id, row.origin_channel_id, row.webhook_endpoint_id]);
+    const destinationIdentity = row => JSON.stringify([row.id, Number(row.revision), row.scope, row.owner_user_id, row.guild_id, row.kind, row.channel_id, row.dm_user_id, row.webhook_endpoint_id]);
+    async function resumeDestination(actor, row, scope, ownerId) {
+        const managed = row.destination_id ? await destination(actor, row.destination_id, scope, ownerId, db.queryDatabase, row) : null;
+        const kind = managed?.row.kind || row.destination_type;
+        if (kind === 'dm' && !managed && row.destination_key !== `dm:${ownerId}`) fail('DM_OWNER', '通知先のDMを確認してください。');
+        const endpointId = kind === 'dm' ? null : managed?.row.webhook_endpoint_id || row.webhook_endpoint_id;
+        let endpointSnapshot = managed?.endpointSnapshot || null;
+        if (kind !== 'dm') {
+            if (kind !== 'webhook' || !endpointId || !(await db.queryDatabase('SELECT id FROM webhook_endpoints WHERE id=?', [endpointId])).length) fail('DESTINATION_DELETED', '通知先を選び直してから再開してください。');
+            if (!managed) {
+                endpointSnapshot = (await db.queryDatabase('SELECT id,webhook_url,webhook_url_hash FROM webhook_endpoints WHERE id=?', [endpointId]))[0];
+                if (!endpointSnapshot) fail('DESTINATION_DELETED', '通知先を選び直してから再開してください。');
+                const verified = await destinations.verifyWebhook(row.guild_id, endpointSnapshot.webhook_url);
+                const selectedChannel = /^channel:(\d{16,22}):(\d{16,22})$/.exec(row.destination_key);
+                if (selectedChannel ? selectedChannel[1] !== verified.guildId || selectedChannel[2] !== verified.channelId : row.destination_key !== `webhook:${endpointId}`) {
+                    fail('DESTINATION_CHANGED', '通知先が変更されています。通知先を選び直してから再開してください。', 409);
+                }
+                await verifyDestinationChannel(actor, verified.guildId, verified.channelId, ownerId, scope === 'private');
+            }
+        }
+        return { target: resumeIdentity(row), managed: managed?.row, endpointId, endpointSnapshot };
+    }
+    async function lockResumeDestination(query, actor, row, checked) {
+        if (resumeIdentity(row) !== checked.target) fail('REVISION_CONFLICT', '通知先が変更されています。設定を確認し直してください。', 409);
+        if (checked.managed) {
+            const fresh = (await destinationForMonitor(actor, checked.managed.id, String(row.user_id), row, query, true)).row;
+            if (!fresh.enabled || destinationIdentity(fresh) !== destinationIdentity(checked.managed)) fail('DESTINATION_CHANGED', '通知先が変更されました。再試行してください。', 409);
+        }
+        if (checked.endpointSnapshot) await lockWebhookEndpoint(query, checked.endpointSnapshot);
+        else if (checked.endpointId) {
+            const fresh = (await query(`SELECT ${checked.endpointSnapshot ? 'id,webhook_url,webhook_url_hash' : 'id'} FROM webhook_endpoints WHERE id=? FOR UPDATE`, [checked.endpointId]))[0];
+            if (!fresh) fail('DESTINATION_DELETED', '通知先を選び直してから再開してください。');
+        }
     }
     async function save(actor, kind, input, id = null) {
         requireActor(actor); tableFor(kind);
@@ -259,6 +319,7 @@ function createMonitors(db, service, destinations, options = {}) {
         // the old secret. Editing their source/destination requires choosing a
         // newly verified destination explicitly.
         if (current && Object.keys(input).every(k => ['expectedRevision', 'enabled', 'name'].includes(k))) {
+            const checked = enabled ? await resumeDestination(actor, current, scope, ownerId) : null;
             return db.withDatabaseTransaction(async query => {
                 await entitlements.lockOwner(query, ownerId);
                 await lockSlots(query, kind);
@@ -266,6 +327,11 @@ function createMonitors(db, service, destinations, options = {}) {
                 const locked = await getRow(actor, kind, id, true, query, true);
                 if (Number(locked.revision || 1) !== input.expectedRevision) fail('REVISION_CONFLICT', '監視が更新されています。', 409);
                 const enabled = input.enabled === undefined ? !!locked.enabled : input.enabled === true;
+                if (enabled && !locked.enabled && locked.workflow_id) {
+                    const workflow = await service.getRow('workflow', actor, locked.workflow_id, true, query, true);
+                    await service.validateWorkflowDestinations(query, workflow, [ownerId, actor.userId]);
+                }
+                if (checked) await lockResumeDestination(query, actor, locked, checked);
                 if (enabled) {
                     const slot = await entitlements.assertSlotAvailable(query, ownerId, kind, id);
                     if (kind === 'auto') {
@@ -285,7 +351,7 @@ function createMonitors(db, service, destinations, options = {}) {
             });
         }
         if (!destId) fail('DESTINATION_REQUIRED', '検証済みの通知先を選んでください。');
-        const dest = await destination(actor, destId, scope, ownerId);
+        const dest = await destination(actor, destId, scope, ownerId, db.queryDatabase, current);
         return db.withDatabaseTransaction(async query => {
             await entitlements.lockOwner(query, ownerId);
             await lockSlots(query, kind);
@@ -295,12 +361,17 @@ function createMonitors(db, service, destinations, options = {}) {
                 locked = await getRow(actor, kind, id, true, query, true);
                 if (Number(locked.revision || 1) !== input.expectedRevision) fail('REVISION_CONFLICT', '監視が更新されています。', 409);
             }
+            if (enabled && locked && !locked.enabled && locked.workflow_id) {
+                const workflow = await service.getRow('workflow', actor, locked.workflow_id, true, query, true);
+                await service.validateWorkflowDestinations(query, workflow, [ownerId, actor.userId]);
+            }
             if (needsRegistration(locked)) await assertRegistration(query, true);
             if (!id || enabled) await entitlements.assertSlotAvailable(query, ownerId, kind, id || undefined);
             // Lock the destination against concurrent disable/delete after its
             // remote permission check and before adopting its identity.
-            const freshDest = await service.getRow('destination', actor, destId, true, query, true);
-            if (!freshDest.enabled || freshDest.revision !== dest.row.revision) fail('DESTINATION_CHANGED', '通知先が変更されました。再試行してください。', 409);
+            const freshDest = (await destinationForMonitor(actor, destId, ownerId, locked, query, true)).row;
+            if (!freshDest.enabled || destinationIdentity(freshDest) !== destinationIdentity(dest.row)) fail('DESTINATION_CHANGED', '通知先が変更されました。再試行してください。', 409);
+            if (dest.endpointSnapshot) await lockWebhookEndpoint(query, dest.endpointSnapshot);
             await query('INSERT IGNORE INTO users (user_id,registered_at_ms) VALUES (?,?)', [ownerId, Date.now()]);
             let premium = Number(locked?.premium_slot || 0);
             if (kind === 'auto' && enabled) premium = (await entitlements.inspectPlan(query, ownerId)).priority > 0 ? 1 : 0;
@@ -364,20 +435,19 @@ function createMonitors(db, service, destinations, options = {}) {
         const current = await getRow(actor, kind, id, true);
         return db.withDatabaseTransaction(async query => {
             await entitlements.lockOwner(query, current.user_id);
-            if (guarded) await lockMonitorSource(query, current.user_id, kind, id);
-            else if (kind === 'auto') await require('./monitor-cadence').lockTargetSource(query, current.user_id, String(id));
+            await lockMonitorSource(query, current.user_id, kind, id);
             const row = await getRow(actor, kind, id, true, query, true);
             if (Number(row.revision || 1) !== expectedRevision) fail('REVISION_CONFLICT', '監視が更新されています。', 409);
-            const assignment = guarded ? (await query('SELECT workflow_id FROM automation_assignments WHERE target_kind=? AND target_id=? FOR UPDATE', [kind, id]))[0] : null;
+            const assignment = (await query('SELECT workflow_id FROM automation_assignments WHERE target_kind=? AND target_id=? FOR UPDATE', [kind, id]))[0];
             const beforeWorkflowId = assignment?.workflow_id ?? null;
             if (guarded && beforeWorkflowId !== guarded.expectedWorkflowId) fail('REVISION_CONFLICT', '通知ルールが別の操作で変更されています。最新の通知を読み直してください。', 409);
-            if (guarded && beforeWorkflowId === null) return { detached: true, unchanged: true, revision: Number(row.revision || 1) };
+            if (beforeWorkflowId === null) return { detached: true, unchanged: true, revision: Number(row.revision || 1) };
             await query('DELETE FROM automation_assignments WHERE target_kind=? AND target_id=?', [kind, id]);
-            const revision = guarded ? await advanceMonitorRevision(query, kind, id, scopeOf(row), Number(row.revision || 1)) : undefined;
+            const revision = await advanceMonitorRevision(query, kind, id, scopeOf(row), Number(row.revision || 1));
             await cancelPending(query, kind, id);
             await service.audit(query, actor, `${kind}:${id}`, 'monitor.detach', guarded ? { guarded: true, beforeWorkflowId,
                 afterWorkflowId: null, beforeRevision: Number(row.revision || 1), afterRevision: revision } : {}, row.guild_id);
-            return { detached: true, ...(guarded ? { revision } : {}) };
+            return { detached: true, revision };
         });
     }
     const operate = (actor, work) => service.withOperation(actor, 'monitor', work);

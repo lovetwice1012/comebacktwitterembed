@@ -26,7 +26,9 @@ function receiveSummary(row: any) {
   return [row.maxPriceAmount != null && `価格が${row.maxPriceAmount}以下`, row.minDiscountPercent != null && `割引率が${row.minDiscountPercent}%以上`].filter(Boolean).join(" または ");
 }
 
-export function MonitorManager({ api, guildId, canEdit, scope, destinations, rules, refresh, refreshDestination, onOpenWorkflow, externalError, active = true }: Props) {
+export function MonitorManager({ api, guildId, canEdit, scope, destinations: suppliedDestinations, rules, refresh, refreshDestination, onOpenWorkflow, externalError, active = true }: Props) {
+  const [deletedDestinations, setDeletedDestinations] = useState<string[]>([]);
+  const destinations = suppliedDestinations.filter(row => !deletedDestinations.includes(row.id));
   const [notificationView, setNotificationView] = useState<"normal" | "x">("normal");
   const [xRegistrationRequest, setXRegistrationRequest] = useState<{ id: number; accountHandle?: string; name?: string; destinationId?: string }>();
   const registrationSerial = useRef(0);
@@ -192,7 +194,10 @@ export function MonitorManager({ api, guildId, canEdit, scope, destinations, rul
       throw new Error("通知は保存済みです。詳細ルールを割り当てるには、もう一度保存してください。");
     }
     monitorOriginal.current = { ...saved };
-    await load(selectedKind); setMonitor(null); setMonitorOpen(false); monitorOriginal.current = null; setNotice(selectedKind === "auto" ? "新着通知を保存しました。" : "価格通知を保存しました。");
+    setItems(previous => [...previous.filter(row => row.id !== saved.id), { ...saved, kind: selectedKind }]);
+    setMonitor(null); setMonitorOpen(false); monitorOriginal.current = null;
+    setNotice(selectedKind === "auto" ? "新着通知を保存しました。" : "価格通知を保存しました。");
+    try { await load(selectedKind); } catch { setError("通知は保存済みです。［更新］で一覧を再確認してください。"); }
     } catch (cause: any) {
       if ((current?.id || monitorOriginal.current?.id) && (cause?.code === "REVISION_CONFLICT" || cause?.status === 409)) setMonitorConflict(true);
       throw cause;
@@ -216,6 +221,20 @@ export function MonitorManager({ api, guildId, canEdit, scope, destinations, rul
       if (after) seen.add(after);
     } while (after);
     throw new Error("この通知が見つかりません。入力を保持しています。削除や権限の変更をご確認ください。");
+  }
+  async function removeMonitor(row: any) {
+    await api(`monitors/${kind}/${row.id}`, "DELETE", { expectedRevision: row.revision });
+    setItems(previous => previous.filter(item => item.id !== row.id));
+    if (monitor?.id === row.id) { setMonitor(null); setMonitorOpen(false); monitorOriginal.current = null; }
+    setNotice("通知を削除しました。");
+    try { await load(); } catch { setError("通知は削除済みです。［一覧を再読み込み］で一覧を確認してください。"); }
+  }
+  async function removeDestination(row: any) {
+    await api(`destinations/${row.id}`, "DELETE", { expectedRevision: row.revision });
+    setDeletedDestinations(previous => [...previous, row.id]);
+    if (dest?.id === row.id) { setDest(null); setDestOpen(false); destinationOrigin.current = null; }
+    setNotice("通知先を削除しました。");
+    try { await refresh(); } catch { setError("通知先は削除済みです。［一覧を再読み込み］で一覧を確認してください。"); }
   }
   async function reloadCadence(id: string) {
     if (!activeRef.current || kindRef.current !== "auto") return null;
@@ -243,7 +262,7 @@ export function MonitorManager({ api, guildId, canEdit, scope, destinations, rul
     event.preventDefault(); tabs[next].focus(); tabs[next].click();
   }
   return <div className="monitor-workspace notification-center">
-    {error && error !== externalError && !monitorOpen && !destOpen && <p role="alert" className="rounded border border-destructive p-3 text-sm text-destructive">{error}</p>}{notice && !monitorOpen && !destOpen && <p role="status" className="rounded border p-3 text-sm">{notice}</p>}
+    {error && error !== externalError && !monitorOpen && !destOpen && <div role="alert" className="space-y-2 rounded border border-destructive p-3 text-sm text-destructive"><p>{error}</p><button className={button} disabled={busy} onClick={() => void task(async () => { await load(); await refresh(); })}>一覧を再読み込み</button></div>}{notice && !monitorOpen && !destOpen && <p role="status" className="rounded border p-3 text-sm">{notice}</p>}
     <div className="notification-center-toolbar"><div role="tablist" className="notification-type-navigation" aria-label="通知の種類" onKeyDown={navigateNotificationTabs}>{[["auto", "新着通知"], ["price", "価格通知"], ...(scope === "private" ? [["x", "X通知"]] : [])].map(([id, label]) => {
       const selected = id === "x" ? notificationView === "x" : notificationView === "normal" && kind === id;
       return <button key={id} id={`${notificationTabsId}-${id}`} role="tab" type="button" tabIndex={selected ? 0 : -1} aria-selected={selected} aria-controls={`${notificationTabsId}-${id === "x" ? "x-panel" : "normal-panel"}`} disabled={busy || monitorOpen || destOpen} onClick={() => { if (id === "x") setNotificationView("x"); else { setNotificationView("normal"); setKind(id); } }}>{label}</button>;
@@ -267,12 +286,12 @@ export function MonitorManager({ api, guildId, canEdit, scope, destinations, rul
         {monitorState(row).id === "error" && <p className="automation-critical-note"><Info size={16} aria-hidden="true" />{/INVALID_CURSOR/.test(row.errorCode) ? "監視履歴の復旧が必要です。" : /NOT_FOUND/.test(row.errorCode) ? "URLと公開状態を確認してください。" : "取得に失敗しました。次回の確認で再試行します。"}</p>}
         <div className="monitor-card-actions"><button className={button} disabled={busy || !editable(row)} onClick={() => { if (monitor && !confirm("保持中の通知の入力を破棄して、別の通知を編集しますか？")) return; monitorOriginal.current = { ...row, kind }; setMonitorConflict(false); setMonitorOpen(true); setMonitor({ ...row, kind, maxPriceAmount: row.maxPriceAmount ?? "", minDiscountPercent: row.minDiscountPercent ?? "", destinationId: row.destinationId || "", workflowId: row.workflowId || "" }); }}>設定を変更</button>
           <details className="monitor-action-menu"><summary>その他の操作</summary><div>
-          <button className={button} disabled={busy || !editable(row) || kind === "auto" && !row.enabled && !autoRegistrationAllowed} onClick={() => void task(async () => { await api(`monitors/${kind}/${row.id}`, "PATCH", { expectedRevision: row.revision, enabled: !row.enabled }); await load(); })}>{row.enabled ? "停止" : "再開"}</button>
-          <button className={`${button} text-destructive`} disabled={busy || !editable(row)} onClick={() => { if (confirm(`「${row.name}」を削除しますか？未送信の通知も取り消します。`)) void task(async () => { await api(`monitors/${kind}/${row.id}`, "DELETE", { expectedRevision: row.revision }); if (monitor?.id === row.id) { setMonitor(null); monitorOriginal.current = null; } await load(); }); }}>削除</button></div></details></div>
+          <button className={button} disabled={busy || !editable(row) || kind === "auto" && !row.enabled && !autoRegistrationAllowed} onClick={() => void task(async () => { const result = await api(`monitors/${kind}/${row.id}`, "PATCH", { expectedRevision: row.revision, enabled: !row.enabled }); setItems(previous => previous.map(item => item.id === row.id ? { ...item, enabled: !row.enabled, revision: result.revision } : item)); setNotice(row.enabled ? "通知を停止しました。" : "通知を再開しました。"); try { await load(); } catch { setError("通知の変更は保存済みです。［更新］で一覧を再確認してください。"); } })}>{row.enabled ? "停止" : "再開"}</button>
+          <button className={`${button} text-destructive`} disabled={busy || !editable(row)} onClick={() => { if (confirm(`「${row.name}」を削除しますか？未送信の通知も取り消します。`)) void task(() => removeMonitor(row)); }}>削除</button></div></details></div>
       </article>)}</div>{!loading && !error && visible.length === 0 && <div className="monitor-empty"><p role="status">{filtered ? "検索結果は0件です" : "登録した通知は0件です"}</p>{filtered && <button className={button} onClick={() => { setQuery(""); setState("all"); }}>検索条件をクリア</button>}</div>}{cursor && <button className={button} disabled={busy} onClick={() => void task(() => load(kind, cursor))}>続きを読み込む</button>}
       {monitor && <AutomationDialog title={monitor.id ? "通知設定" : "通知を追加"} busy={busy || cadenceBusy} error={error} errorAction={<button type="button" className={button} disabled={busy || cadenceBusy} onClick={() => void task(async () => { await load(); await refresh(); })}>一覧を再読み込み</button>} open={monitorOpen} onCancel={() => { setMonitorOpen(false); setError(""); }}>
         {notice && <p role="status" className="rounded border p-3 text-sm">{notice}</p>}
-        <MonitorRegistration key={`${monitor.id ? `saved-${monitor.id}` : "new-monitor"}-${monitorEditVersion}`} api={api} monitor={monitor} original={monitorOriginal.current} saveBlocked={monitorConflict} kind={monitor.kind || kind} scope={scope} guildId={guildId} destinations={destinations} rules={rules} catalog={catalog} busy={busy || cadenceBusy} onChange={setMonitor} onSourceChange={changeSource} onSave={saveMonitor} run={task} refresh={refresh} onAddDestination={beginDestination} onOpenWorkflow={onOpenWorkflow ? openWorkflow : undefined}
+        <MonitorRegistration key={`${monitor.id ? `saved-${monitor.kind || kind}-${monitor.id}` : "new-monitor"}-${monitorEditVersion}`} api={api} monitor={monitor} original={monitorOriginal.current} saveBlocked={monitorConflict} kind={monitor.kind || kind} scope={scope} guildId={guildId} destinations={destinations} rules={rules} catalog={catalog} busy={busy || cadenceBusy} onChange={setMonitor} onSourceChange={changeSource} onSave={saveMonitor} run={task} refresh={refresh} onAddDestination={beginDestination} onOpenWorkflow={onOpenWorkflow ? openWorkflow : undefined}
           timingEditor={monitor.id && (monitor.kind || kind) === "auto" && monitorOriginal.current?.canAllocateCadence === true ? <section className="space-y-2" aria-label="通知タイミングの設定"><h3 className="text-sm font-medium">通知タイミング</h3><MonitorCadenceEditor row={monitorOriginal.current} pool={profileError ? null : profile?.slots ?? null} api={api} disabled={busy || !active || monitorConflict || !editable(monitor)} draftValue={cadenceDrafts.current.get(monitor.id)} onDraft={value => cadenceDrafts.current.set(monitor.id, value)} onReload={() => reloadEditedCadence(monitor.id)} onBusyChange={setCadenceBusy} /></section> : monitor.id ? <p className="text-sm text-muted-foreground">通知タイミング {monitor.intervalMinutes ? `約${monitor.intervalMinutes}分ごとに確認` : "現在のサービス設定を使用"}</p> : null}
           onXRegistration={scope === "private" ? accountHandle => {
             setXRegistrationRequest({ id: ++registrationSerial.current, accountHandle, name: monitor.name, destinationId: monitor.destinationId });
@@ -285,7 +304,7 @@ export function MonitorManager({ api, guildId, canEdit, scope, destinations, rul
     <details id="notification-destinations" className="notification-destinations"><summary className="font-semibold">通知先を管理</summary>
       {dest && !destOpen && <div role="status" className="automation-draft-banner"><span>通知先の入力を保持しています</span><button className={button} onClick={() => setDestOpen(true)}>通知先の入力を再開</button><button className={button} onClick={() => { if (confirm("通知先の入力を破棄しますか？")) setDest(null); }}>通知先の入力を破棄</button></div>}
       <button className={button} disabled={busy} onClick={() => beginDestination()}>通知先を追加</button>
-      <div className="grid gap-2 md:grid-cols-2">{destinations.map(d => <div key={d.id} className="rounded border p-3"><h3 className="text-sm font-medium">{d.name}</h3><div className="automation-meta"><span>{d.kind === "dm" ? "DM" : d.createdByBot ? "チャンネル" : "Webhook"}</span><span>{d.enabled ? "有効" : "停止中"}</span></div><div className="mt-2 flex gap-2"><button className={button} disabled={busy || !editable(d)} onClick={() => { if (dest && !confirm("保持中の通知先の入力を破棄しますか？")) return; setDestOpen(true); setDest({ ...d, webhookUrl: "" }); }}>名前・状態を編集</button><button className={button} disabled={busy || !editable(d)} onClick={() => { if (confirm("この通知先を削除しますか？割り当て済みの通知は送信できなくなります。")) void task(async () => { await api(`destinations/${d.id}`, "DELETE", { expectedRevision: d.revision }); await refresh(); }); }}>削除</button></div></div>)}</div>
+      <div className="grid gap-2 md:grid-cols-2">{destinations.map(d => <div key={d.id} className="rounded border p-3"><h3 className="text-sm font-medium">{d.name}</h3><div className="automation-meta"><span>{d.kind === "dm" ? "DM" : d.createdByBot ? "チャンネル" : "Webhook"}</span><span>{d.enabled ? "有効" : "停止中"}</span></div><div className="mt-2 flex gap-2"><button className={button} disabled={busy || !editable(d)} onClick={() => { if (dest && !confirm("保持中の通知先の入力を破棄しますか？")) return; setDestOpen(true); setDest({ ...d, webhookUrl: "" }); }}>名前・状態を編集</button><button className={button} disabled={busy || !editable(d)} onClick={() => { if (confirm("この通知先を削除しますか？割り当て済みの通知は送信できなくなります。")) void task(() => removeDestination(d)); }}>削除</button></div></div>)}</div>
     </details>
       {dest && <AutomationDialog title={dest.id ? "通知先を編集" : "通知先を追加"} busy={busy} error={error} open={destOpen} onCancel={cancelDestination}><DestinationEditor api={api} draft={dest} onChange={setDest} guildId={guildId} scope={scope} canEdit={canEdit} busy={busy} open={destOpen} onSave={() => void saveDestination()} /></AutomationDialog>}
   </div>;

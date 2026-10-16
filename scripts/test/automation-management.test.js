@@ -64,7 +64,8 @@ function discordMock(ch = channel, guildRoles = roles) {
 test('channel creation requires fresh caller AND bot permissions; owned hook reuse causes no remote write', async () => {
     const mock = discordMock();
     const saved = [];
-    const db = { queryDatabase: async () => [{ id: '7' }], withDatabaseTransaction: async fn => fn(async sql => sql.startsWith('SELECT id') ? [{ id: '7' }] : {}) };
+    const db = { queryDatabase: async () => [{ id: '7' }], withDatabaseTransaction: async fn => fn(async (sql, params) => sql.startsWith('SELECT counter_key FROM automation_counters')
+        ? [{ counter_key: params[0] }] : sql.startsWith('SELECT id') ? [{ id: '7' }] : {}) };
     const api = createDestinations(db, { ...operationFixture, saveDestination: async (...args) => { saved.push(args); return { id: 'resource' }; } }, mock);
     assert((await api.channels(actor)).items[0].canCreateWebhook);
     await api.save(actor, { name: 'notify', kind: 'channel', channelId: C, scope: 'guild' });

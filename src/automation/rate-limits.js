@@ -40,7 +40,7 @@ function createRateLimiter(db, options = {}) {
             scope, window, windowMs: WINDOWS[window], limit,
         }));
     }
-    async function consume(budgets, count, path, principal = null) {
+    async function consume(budgets, count, path, principal = null, job = null) {
         if (!Number.isInteger(count) || count < 1 || count > 128) throw new AutomationRateError('AUTOMATION_DELIVERY_SIZE_LIMIT', '通知に含まれるメッセージ数が不正です。', 400, { issues: [{ path, code: 'notification_batch_limit', message: '通知のメッセージ数を減らしてください。' }] });
         const tooLarge = budgets.find(budget => (budget.cost ?? count) > budget.limit);
         if (tooLarge) {
@@ -92,6 +92,14 @@ function createRateLimiter(db, options = {}) {
                     counters.push({ key: budget.key, expiresAtMs: until, slotId: budget.slotId });
                 }
                 if (!principal) return { count, createdAtMs: now, expiresAtMs };
+                if (job) {
+                    if (!/^[a-f0-9-]{36}$/.test(job.id || '') || !/^[a-f0-9-]{36}$/.test(job.lease_token || '')) throw unavailable();
+                    // All reservation/recovery paths lock counters before the
+                    // attempt's job and reservation rows. Old workers cannot
+                    // reserve against a replacement lease after restart.
+                    const current = (await query('SELECT state,lease_token,lease_until_ms FROM automation_jobs WHERE id=? FOR UPDATE', [job.id]))[0];
+                    if (!current || current.lease_token !== job.lease_token || !['leased', 'sending'].includes(current.state) || Number(current.lease_until_ms) <= now) throw unavailable();
+                }
                 const principals = Array.isArray(principal) ? principal : [principal];
                 const reservations = [];
                 // Counter increments hold capacity, not successful-send usage.
@@ -99,8 +107,8 @@ function createRateLimiter(db, options = {}) {
                 for (const member of principals) {
                     const id = randomUUID(), memberCounters = counters.filter(counter => counter.slotId === member.slotId);
                     const parts = Array.from({ length: count }, (_part, index) => member.partIndices.includes(index) ? 'reserved' : 'unused');
-                    await query('INSERT INTO automation_rate_reservations (id,owner_user_id,slot_id,counters_json,parts_json,created_at_ms,expires_at_ms) VALUES (?,?,?,?,?,?,?)',
-                        [id, member.ownerUserId, member.slotId, JSON.stringify(memberCounters), JSON.stringify(parts), now, Math.max(...memberCounters.map(counter => counter.expiresAtMs)) + WINDOWS.day]);
+                    await query('INSERT INTO automation_rate_reservations (id,owner_user_id,slot_id,job_id,lease_token,counters_json,parts_json,created_at_ms,expires_at_ms) VALUES (?,?,?,?,?,?,?,?,?)',
+                        [id, member.ownerUserId, member.slotId, job?.id || null, job?.lease_token || null, JSON.stringify(memberCounters), JSON.stringify(parts), now, Math.max(...memberCounters.map(counter => counter.expiresAtMs)) + WINDOWS.day]);
                     reservations.push({ id, slotId: member.slotId, count, expiresAtMs: Math.min(...memberCounters.map(counter => counter.expiresAtMs)) });
                 }
                 return { id: reservations[0].id, reservations, count, createdAtMs: now, expiresAtMs };
@@ -158,7 +166,7 @@ function createRateLimiter(db, options = {}) {
         if (!validId(principal?.ownerUserId) || principal.slotId !== `${principal.ownerUserId}:${principal.slotIndex}` || !Number.isInteger(principal.slotIndex) || principal.slotIndex < 1 || !Number.isInteger(principal.minuteLimit) || principal.minuteLimit < 1 || !Number.isInteger(principal.dayLimit) || principal.dayLimit < 1) throw unavailable();
         return principal;
     }
-    function reserveNotificationBatch(principals, count, payloadSlots = null) {
+    function reserveNotificationBatch(principals, count, payloadSlots = null, job = null) {
         if (!Number.isInteger(count) || count < 1 || count > 128) return consume([], count, 'notification.messages');
         if (!Array.isArray(principals) || !principals.length || principals.length > 10000) throw unavailable();
         const supplied = [...new Map(principals.map(principal => { notificationPrincipal(principal); return [principal.slotId, principal]; })).values()];
@@ -170,17 +178,43 @@ function createRateLimiter(db, options = {}) {
             key: createHash('sha256').update(`automation:rate:v2:slot:${principal.slotId}:${window}`).digest('hex'),
             slotId: principal.slotId, scope: 'slot', window, windowMs: WINDOWS[window], limit, cost: principal.partIndices.length,
         })));
-        return consume(budgets, count, 'notification.messages', unique);
+        return consume(budgets, count, 'notification.messages', unique, job);
+    }
+    async function recoverOrphanedReservations() {
+        try {
+            const now = clock();
+            const candidates = await db.queryDatabase(`SELECT r.id,r.job_id,r.counters_json FROM automation_rate_reservations r
+                LEFT JOIN automation_jobs j ON j.id=r.job_id WHERE r.job_id IS NOT NULL AND r.lease_token IS NOT NULL
+                AND r.expires_at_ms>? AND r.parts_json LIKE '%reserved%'
+                AND (j.id IS NULL OR j.lease_token IS NULL OR j.lease_token<>r.lease_token OR j.state NOT IN ('leased','sending') OR j.lease_until_ms<=?)
+                ORDER BY r.created_at_ms,r.id LIMIT 100`, [now, now]);
+            for (const candidate of candidates) await db.withDatabaseTransaction(async query => {
+                const counters = JSON.parse(candidate.counters_json).sort((a, b) => a.key.localeCompare(b.key));
+                const locked = new Map();
+                for (const counter of counters) locked.set(counter.key, (await query('SELECT used_count,expires_at_ms FROM automation_counters WHERE counter_key=? FOR UPDATE', [counter.key]))[0]);
+                const job = (await query('SELECT state,lease_token,lease_until_ms FROM automation_jobs WHERE id=? FOR UPDATE', [candidate.job_id]))[0];
+                const row = (await query('SELECT lease_token,parts_json FROM automation_rate_reservations WHERE id=? FOR UPDATE', [candidate.id]))[0];
+                if (!row || job && job.lease_token === row.lease_token && ['leased', 'sending'].includes(job.state) && Number(job.lease_until_ms) > clock()) return;
+                const parts = JSON.parse(row.parts_json), refund = parts.filter(part => part === 'reserved').length;
+                // submitting may have reached Discord. It and committed/unknown
+                // parts remain charged, even if no local ACK survived.
+                if (!refund) return;
+                for (const counter of counters) if (Number(locked.get(counter.key)?.expires_at_ms) === counter.expiresAtMs) await query('UPDATE automation_counters SET used_count=GREATEST(0,used_count-?) WHERE counter_key=?', [refund, counter.key]);
+                await query('UPDATE automation_rate_reservations SET parts_json=? WHERE id=?', [JSON.stringify(parts.map(part => part === 'reserved' ? 'released' : part)), candidate.id]);
+            });
+            return candidates.length;
+        } catch (error) { if (error instanceof AutomationRateError) throw error; throw unavailable(); }
     }
     return {
+        recoverOrphanedReservations,
         getPolicy: () => structuredClone(policy),
         consumeOperation(actor, group = 'write') {
             if (!validId(actor?.userId)) throw new AutomationRateError('AUTH_REQUIRED', 'ログインが必要です。', 401);
             if (!Object.hasOwn(policy.operations, group)) throw new TypeError('Unknown server automation operation group');
             return consume(specs('operations', group, actor.userId), 1, 'request');
         },
-        reserveNotifications(principal, count) {
-            return reserveNotificationBatch([principal], count);
+        reserveNotifications(principal, count, job = null) {
+            return reserveNotificationBatch([principal], count, null, job);
         },
         reserveNotificationBatch,
         commitNotification: (reservation, index) => settle(reservation, index, 'committed'),

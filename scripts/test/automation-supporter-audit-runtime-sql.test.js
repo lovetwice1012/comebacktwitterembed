@@ -99,11 +99,14 @@ test('audit R1: real standard-store sequential claims retain a durable bounded h
         await t.test('cosmetic rename preserves the remaining cohort; returning cadence slots reapplies the live interval', async () => {
             const f = await fixture(), { runner } = f.connect();
             await runner.tick({ now: f.now, deliveryLimit: 1 });
-            await monitors.save(f.actor, 'auto', { name: 'Renamed without changing delivery', expectedRevision: 1 }, f.monitor.id);
+            // Attaching the rule advances the monitor CAS. The editor reads
+            // the current version before each distinct configuration action.
+            const currentRevision = async () => Number((await db.queryDatabase("SELECT revision FROM automation_monitors WHERE target_kind='auto' AND target_id=?", [f.monitor.id]))[0].revision);
+            await monitors.save(f.actor, 'auto', { name: 'Renamed without changing delivery', expectedRevision: await currentRevision() }, f.monitor.id);
             f.setTime(f.now + 1);
             assert.equal((await runner.tick({ now: f.now + 1, deliveryLimit: 1 })).deliveries[0].status, 'routed');
             const selection = (await db.queryDatabase("SELECT updated_at_ms FROM automation_monitor_cadence WHERE target_kind='auto' AND target_id=?", [f.monitor.id]))[0];
-            await monitors.setCadence(f.actor, 'auto', f.monitor.id, { slotCost: 1, expectedRevision: 2, expectedUpdatedAtMs: Number(selection.updated_at_ms) });
+            await monitors.setCadence(f.actor, 'auto', f.monitor.id, { slotCost: 1, expectedRevision: await currentRevision(), expectedUpdatedAtMs: Number(selection.updated_at_ms) });
             assert.equal((await runner.tick({ now: f.now + MINUTE })).deliveries.length, 0);
             const pending = (await db.queryDatabase("SELECT next_attempt_at_ms FROM auto_watch_deliveries WHERE target_id=? AND status='pending'", [f.monitor.id]))[0];
             assert.equal(Number(pending.next_attempt_at_ms), f.now + 30 * MINUTE);

@@ -83,7 +83,7 @@ test('an individual workspace refresh failure keeps the destination saved and of
 test('a repeated destination page cursor stops with a visible retry message instead of looping or offering a partial list', async () => {
     const f = await fixture({ list: () => ({ items: [destination('page')], nextCursor: 'same-cursor' }) });
     try {
-        assert.equal(f.calls.filter(call => call.route === 'destinations' && call.method === 'GET').length, 2); assert.match(f.container.textContent, /通知先一覧を再読み込みしてください/);
+        assert.equal(f.calls.filter(call => call.route === 'destinations' && call.method === 'GET').length, 2); assert.match(f.container.textContent, /一覧を再読み込みしてください/);
         await openXDraft(f); assert.equal(choices(f).options.length, 1); assert.equal(f.destinationWrites().length, 0);
     } finally { await f.close(); }
 });

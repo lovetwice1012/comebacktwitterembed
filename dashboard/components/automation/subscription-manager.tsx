@@ -95,6 +95,9 @@ function validQuote(quote: Quote | undefined, checkoutId: string): quote is Quot
 function verificationError(cause: any): string | null {
   return cause?.code === "SQUARE_PRORATION_UNVERIFIED" && cause instanceof Error ? cause.message : null;
 }
+function cancellationIdentity(contract: BillingStatus["subscription"]) {
+  return contract?.subscriptionId && contract.checkoutId ? JSON.stringify([contract.subscriptionId, contract.checkoutId, contract.planId, contract.state, contract.cancelScheduled]) : null;
+}
 function cardTokenizationError(result: CardTokenResult): string {
   const state = result.status.toLowerCase();
   if (state === "cancel" || state === "abort") return "カードの本人認証が中止されました。再度契約するときは、本人認証を完了してください。支払いは実行されていません。";
@@ -113,7 +116,7 @@ export function SubscriptionManager({ api = subscriptionAPI, loadSquare = loadSq
   const [intervals, setIntervals] = useState<Record<string, string>>({});
   const [couponCode, setCouponCode] = useState("");
   const [busy, setBusy] = useState(false), [attempt, setAttempt] = useState<{ checkoutId: string } | null>(null), [checkedAttempt, setCheckedAttempt] = useState(false);
-  const [cardReady, setCardReady] = useState(false), [cardError, setCardError] = useState(""), [cardVersion, setCardVersion] = useState(0), [cancelConfirm, setCancelConfirm] = useState(false);
+  const [cardReady, setCardReady] = useState(false), [cardError, setCardError] = useState(""), [cardVersion, setCardVersion] = useState(0), [cancelConfirm, setCancelConfirm] = useState<string | null>(null);
   const [currentTime, setCurrentTime] = useState(() => Date.now());
   const [abortConfirmation, setAbortConfirmation] = useState<{ checkoutId: string } | null>(null);
   const [needsStatusRefresh, setNeedsStatusRefresh] = useState(false);
@@ -134,6 +137,9 @@ export function SubscriptionManager({ api = subscriptionAPI, loadSquare = loadSq
   const retryAt = Number(refresh?.retryAtMs), retryDelay = Number.isFinite(retryAt) && retryAt > currentTime ? Math.min(24 * 60 * 60 * 1000, retryAt - currentTime) : 0;
   const refreshWaiting = retryDelay > 0;
   function applyStatus(next: BillingStatus) {
+    // Every canonical refresh asks the user to confirm the displayed contract
+    // again. A confirmation opened for an older contract never carries over.
+    setCancelConfirm(null);
     setStatus(next); setCurrentTime(Date.now()); setNeedsStatusRefresh(false); if (needsStatusRefresh) setConsent(false);
     setAbortConfirmation(previous => next.pending?.abortAllowed === true && next.pending.checkoutId === previous?.checkoutId ? previous : null);
     if (next.pending) {
@@ -267,17 +273,17 @@ export function SubscriptionManager({ api = subscriptionAPI, loadSquare = loadSq
     } finally { actionLock.current = false; if (mounted.current) setBusy(false); }
   }
   async function cancel() {
-    if (actionLock.current || !cancelConfirm || !status?.subscription) return;
+    if (actionLock.current || !cancelConfirm || !status?.subscription || cancelConfirm !== cancellationIdentity(status.subscription)) return;
     actionLock.current = true; setBusy(true); setActionError("");
     try {
-      const next: BillingStatus = await api("cancel", "POST", {});
+      const next: BillingStatus = await api("cancel", "POST", { subscriptionId: status.subscription.subscriptionId, checkoutId: status.subscription.checkoutId });
       if (mounted.current) {
-        applyStatus(next); setCancelConfirm(false);
+        applyStatus(next); setCancelConfirm(null);
         const deferred = next.subscription && !next.subscription.cancelScheduled && !["CANCELED", "DEACTIVATED", "COMPLETED"].includes(next.subscription.state);
         setMessage(deferred && next.refresh?.state === "busy" ? "解約の処理が進行中です。表示は保存された確認結果です。待機時間の後に契約状態を再確認してください。" : deferred && next.refresh?.state === "cooldown" ? "前回の解約の受付結果を確認するまで、新しい解約操作を待機しています。待機時間の後に契約状態を再確認してください。" : "解約の受付結果を反映しました。利用期限と契約状態を確認してください。");
       }
     }
-    catch (cause) { if (mounted.current) setActionError(verificationError(cause) ?? "解約の受付結果を確認できませんでした。契約状態を再確認してください。"); }
+    catch (cause) { if (mounted.current) { setCancelConfirm(null); setActionError(verificationError(cause) ?? "解約の受付結果を確認できませんでした。契約状態を再確認してください。"); } }
     finally { actionLock.current = false; if (mounted.current) setBusy(false); }
   }
   const pending = status?.pending;
@@ -296,7 +302,7 @@ export function SubscriptionManager({ api = subscriptionAPI, loadSquare = loadSq
     {status?.verificationWarning?.code === "SQUARE_PRORATION_UNVERIFIED" ? <p role="alert" className="rounded-lg border border-destructive/30 p-4 text-sm text-destructive">{status.verificationWarning.message} 支払いが検証されるまで有償の通知枠は適用されません。解約操作は引き続き利用できます。</p> : null}
     {!loading && options && !options.configured ? <p role="status" className="rounded-lg border p-4 text-sm">有償プランの受付はまだ準備中です。無料枠の通知を引き続き利用できます。</p> : null}
     {!loading && !loadError && status && !status.subscription && !pending && !attempt ? <section aria-label="継続課金の契約状況" className="notification-billing-context"><div><h3 className="text-sm font-semibold">Squareの継続課金契約はありません</h3><p className="notification-card-note">管理者が設定したプランや支援特典を含む現在の利用権は、「利用状況」に表示します。</p></div><a href="/dashboard/automation/support" className="text-primary underline">1回の支援を選ぶ</a></section> : null}
-    {status?.subscription ? <section aria-label={terminalExpired ? "前回の契約" : "現在の契約"} className="space-y-3 rounded-xl border bg-card p-5"><h2 className="text-lg font-semibold">{terminalExpired ? "前回の契約" : "現在の契約"}: {status.subscription.label}</h2>{currentContractPrice ? <p className="text-sm">通常料金: {subscriptionPrice(currentContractPrice)} · {cadences[currentContractPrice.cadence]}（月あたり{subscriptionMonthlyPrice(currentContractPrice)}{subscriptionMonthlyApproximate(currentContractPrice.cadence) ? "・概算" : ""}）</p> : null}<p role="status" className="text-sm">{terminalExpired ? "利用期限終了 · 新しいプランを契約できます" : status.subscription.cancelScheduled ? "解約予定" : status.subscription.active ? "利用中" : "支払い・契約状態を確認中"}</p><dl className="grid gap-3 text-sm sm:grid-cols-2"><div><dt className="text-muted-foreground">支払い確認済みの期間</dt><dd>{jstDate(status.subscription.paidThroughAtMs)}</dd></div><div><dt className="text-muted-foreground">通知枠の利用期限</dt><dd>{jstDate(status.subscription.validUntilAtMs)}</dd></div></dl><div className="flex flex-wrap gap-2"><Button type="button" variant="outline" disabled={busy || loading || refreshWaiting} onClick={() => void check()}>契約状態を再確認</Button>{!terminalExpired && !status.subscription.cancelScheduled ? <Button type="button" variant="outline" disabled={busy} onClick={() => setCancelConfirm(true)}>サブスクリプションを解約</Button> : null}</div>{cancelConfirm ? <div className="space-y-3 rounded-lg border p-4 text-sm"><p>今後の継続課金を停止するため、解約を申し込みます。解約後の利用期限はSquareの契約状態に従って表示します。</p><div className="flex flex-wrap gap-2"><Button type="button" variant="destructive" disabled={busy} onClick={() => void cancel()}>解約を申し込む</Button><Button type="button" variant="outline" disabled={busy} onClick={() => setCancelConfirm(false)}>契約を続ける</Button></div></div> : null}</section> : null}
+    {status?.subscription ? <section aria-label={terminalExpired ? "前回の契約" : "現在の契約"} className="space-y-3 rounded-xl border bg-card p-5"><h2 className="text-lg font-semibold">{terminalExpired ? "前回の契約" : "現在の契約"}: {status.subscription.label}</h2>{currentContractPrice ? <p className="text-sm">通常料金: {subscriptionPrice(currentContractPrice)} · {cadences[currentContractPrice.cadence]}（月あたり{subscriptionMonthlyPrice(currentContractPrice)}{subscriptionMonthlyApproximate(currentContractPrice.cadence) ? "・概算" : ""}）</p> : null}<p role="status" className="text-sm">{terminalExpired ? "利用期限終了 · 新しいプランを契約できます" : status.subscription.cancelScheduled ? "解約予定" : status.subscription.active ? "利用中" : "支払い・契約状態を確認中"}</p><dl className="grid gap-3 text-sm sm:grid-cols-2"><div><dt className="text-muted-foreground">支払い確認済みの期間</dt><dd>{jstDate(status.subscription.paidThroughAtMs)}</dd></div><div><dt className="text-muted-foreground">通知枠の利用期限</dt><dd>{jstDate(status.subscription.validUntilAtMs)}</dd></div></dl><div className="flex flex-wrap gap-2"><Button type="button" variant="outline" disabled={busy || loading || refreshWaiting} onClick={() => void check()}>契約状態を再確認</Button>{!terminalExpired && !status.subscription.cancelScheduled ? <Button type="button" variant="outline" disabled={busy} onClick={() => setCancelConfirm(cancellationIdentity(status.subscription))}>サブスクリプションを解約</Button> : null}</div>{cancelConfirm ? <div className="space-y-3 rounded-lg border p-4 text-sm"><p>今後の継続課金を停止するため、解約を申し込みます。解約後の利用期限はSquareの契約状態に従って表示します。</p><div className="flex flex-wrap gap-2"><Button type="button" variant="destructive" disabled={busy} onClick={() => void cancel()}>解約を申し込む</Button><Button type="button" variant="outline" disabled={busy} onClick={() => setCancelConfirm(null)}>契約を続ける</Button></div></div> : null}</section> : null}
     {(pending || attempt && (!status?.subscription || terminalExpired)) ? <section aria-label="未完了の契約" className="space-y-3 rounded-xl border bg-card p-5"><h2 className="text-lg font-semibold">契約の受付結果を確認</h2><p className="text-sm">{resolvedWithoutContract ? "状態を確認しました。現在、新しく作成された契約はありません。" : "受付済みの処理があります。重複を避けるため、新しい契約は開始できません。支払い確認後に通知枠へ適用されます。"}</p>
       {needsStatusRefresh ? <p role="status" className="text-sm">受付状態を再確認してから、再開・中止の内容をもう一度確認してください。</p> : null}
       {canResume && quote ? <section aria-label="受付済み契約の再開確認" className="space-y-3 rounded-lg border p-4"><h3 className="font-medium">受付済みの契約内容を確認して再開</h3><p className="text-sm">{quote.plan.label} · 請求名: {quote.name} · 請求先: {quote.email}</p><PlanDetails plan={quote.plan} />{quote.plan.coupon ? validCouponQuote ? <div aria-label="再開する契約の初回割引" className="text-sm"><p>クーポン: {quote.plan.coupon.label} · {quote.plan.coupon.code}</p><p>初回請求: {subscriptionPrice({ amount: quote.plan.firstAmount!, currency: quote.plan.currency })}</p><p>次回以降: {subscriptionPrice({ amount: quote.plan.regularAmount!, currency: quote.plan.currency })} · {cadences[quote.plan.cadence]}。割引は初回の1回だけです。</p></div> : <p role="alert" className="text-sm text-destructive">初回請求額を確認できませんでした。受付状態を再確認してください。</p> : null}<label className="flex items-start gap-2 text-sm"><input type="checkbox" checked={consent} disabled={busy || loading || needsStatusRefresh || !validCouponQuote} onChange={event => setConsent(event.target.checked)} /><span>Squareに保存済みのカードを使って、この受付済みの契約を再開することに同意します。{quote.plan.coupon && validCouponQuote ? `初回${subscriptionPrice({ amount: quote.plan.firstAmount!, currency: quote.plan.currency })}、次回以降` : ""}{subscriptionPrice(quote.plan)}が{cadences[quote.plan.cadence]}継続課金されます。</span></label><Button type="button" disabled={busy || loading || Boolean(loadError) || needsStatusRefresh || !options?.configured || !consent || !validCouponQuote} onClick={() => void resume()}>保存済みカードで契約を再開</Button></section> : null}

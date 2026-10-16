@@ -54,12 +54,13 @@ export function RuleEditor({ value, bindings, onChange, catalog, api, readOnly =
   const draggingNodes = useRef(false);
   const testPanel = useRef<HTMLDetailsElement>(null), editorElement = useRef<HTMLDivElement>(null);
   const alive = useRef(true), mutationLocked = useRef(false);
+  const fileSequence = useRef(0);
   const clipboard = useRef<AutomationSelection | null>(null), pasteCount = useRef(0), bindingsRef = useRef(bindings), clipboardSequence = useRef(0);
   const paletteAt = useRef<{ x: number; y: number } | null>(null), paletteEdge = useRef<string | null>(null), linkStart = useRef<{ source: string; port: string; x: number; y: number } | null>(null);
   const history = useRef<Snapshot[]>([]), future = useRef<Snapshot[]>([]), sequence = useRef(0), valueRef = useRef(value), textRef = useRef({ text, dirty: !!initialTextDraft }), accepted = useRef(""), acceptedText = useRef("");
   valueRef.current = value; bindingsRef.current = bindings;
   const locked = readOnly || textDirty; mutationLocked.current = locked;
-  useEffect(() => { alive.current = true; return () => { alive.current = false; clipboardSequence.current++; clipboard.current = null; }; }, []);
+  useEffect(() => { alive.current = true; return () => { alive.current = false; clipboardSequence.current++; fileSequence.current++; clipboard.current = null; }; }, []);
   const savedViewport = value.layout?.viewport;
   const savedViewportUsable = savedViewport && Number.isFinite(savedViewport.x) && Number.isFinite(savedViewport.y) && savedViewport.zoom >= 0.01 && savedViewport.zoom <= 2;
   const selectedNode = value.nodes.find(n => n.id === selected), groups = value.layout?.groups || emptyGroups;
@@ -333,7 +334,13 @@ export function RuleEditor({ value, bindings, onChange, catalog, api, readOnly =
         nextBindings = { ...nextBindings, [category]: refs }; config = { ...config, [field]: name };
       }
     }
-    update({ ...valueRef.current, nodes: valueRef.current.nodes.map(node => node.id === id ? { ...node, config } : node) }, nextBindings);
+    const nodes = valueRef.current.nodes.map(node => node.id === id ? { ...node, config } : node);
+    if (field === "destination" && node?.config.destination !== config.destination && node?.config.destination !== "default"
+      && !nodes.some(other => other.type === "send" && other.config.destination === node?.config.destination)) {
+      const current = nextBindings || bindingsRef.current, destinations = { ...current.destinations };
+      delete destinations[node!.config.destination]; nextBindings = { ...current, destinations };
+    }
+    update({ ...valueRef.current, nodes }, nextBindings);
   }
   function storedPoint(x: number, y: number) {
     const point = flow.current?.screenToFlowPosition({ x, y });
@@ -478,8 +485,8 @@ export function RuleEditor({ value, bindings, onChange, catalog, api, readOnly =
         <button type="button" className={button} aria-label="ファイル・有効期限" title="ファイル・有効期限" onClick={() => setFileOpen(true)}><MoreHorizontal size={17} aria-hidden="true" /></button>
       </div>
     </div>
-    <input ref={ruleFile} aria-label="ルールをインポート" type="file" className="hidden" accept=".json,.yaml,.yml" disabled={locked} onChange={async e => { const input = e.currentTarget, file = input.files?.[0]; if (!file) return; input.value = ""; if (file.size > 1048576) { setError("ルールファイルは1 MiB以下にしてください。"); return; } try { const next = await file.text(); setFormat(file.name.toLowerCase().endsWith(".json") ? "json" : "yaml"); setMode("text"); setTestOpen(false); setFileOpen(false); editText(next); } catch { setError("ルールファイルを読み込めませんでした。"); } }} />
-    <input ref={fragmentFile} aria-label="部品を読み込む" type="file" className="hidden" accept=".json" disabled={locked} onChange={async e => { const input = e.currentTarget, file = input.files?.[0]; input.value = ""; if (!file) return; if (file.size > 1048576) { setError("部品ファイルは1 MiB以下のJSONにしてください。"); return; } try { importFragment(JSON.parse(await file.text())); setFileOpen(false); setMode("graph"); setError(""); } catch { setError("部品の形式を確認してください。"); } }} />
+    <input ref={ruleFile} aria-label="ルールをインポート" type="file" className="hidden" accept=".json,.yaml,.yml" disabled={locked} onChange={async e => { const input = e.currentTarget, file = input.files?.[0]; if (!file) return; input.value = ""; if (file.size > 1048576) { setError("ルールファイルは1 MiB以下にしてください。"); return; } const request = ++fileSequence.current, before = valueRef.current; const current = () => alive.current && request === fileSequence.current && !mutationLocked.current && valueRef.current === before; try { const next = await file.text(); if (!current()) return; setFormat(file.name.toLowerCase().endsWith(".json") ? "json" : "yaml"); setMode("text"); setTestOpen(false); setFileOpen(false); editText(next); } catch { if (current()) setError("ルールファイルを読み込めませんでした。"); } }} />
+    <input ref={fragmentFile} aria-label="部品を読み込む" type="file" className="hidden" accept=".json" disabled={locked} onChange={async e => { const input = e.currentTarget, file = input.files?.[0]; input.value = ""; if (!file) return; if (file.size > 1048576) { setError("部品ファイルは1 MiB以下のJSONにしてください。"); return; } const request = ++fileSequence.current, before = valueRef.current; const current = () => alive.current && request === fileSequence.current && !mutationLocked.current && valueRef.current === before; try { const text = await file.text(); if (!current()) return; importFragment(JSON.parse(text)); setFileOpen(false); setMode("graph"); setError(""); } catch { if (current()) setError("部品の形式を確認してください。"); } }} />
     {textDirty && <div className="studio-source-recovery"><span className="studio-critical-note"><AlertTriangle size={14} aria-hidden="true" />テキストを修正するまで、ブロックの編集・保存はできません</span><button className={button} onClick={() => { setMode("text"); setTestOpen(false); }}>テキストを修正</button><button className={button} onClick={discardText}>テキストの編集を破棄</button></div>}
     {issues.length > 0 && <div role="status" className="studio-rule-issues">{issues.map((issue, i) => <button type="button" key={i} onClick={() => { const nodeId = issue.nodeId || value.nodes[Number(issue.path?.match(/^\$\.nodes\[(\d+)\]/)?.[1])]?.id; if (nodeId) { focusNode(nodeId); setMode("graph"); setTestOpen(false); } }}>{issue.message}</button>)}</div>}
     {error && mode !== "graph" && <p role="alert" className="studio-source-recovery">{error}</p>}

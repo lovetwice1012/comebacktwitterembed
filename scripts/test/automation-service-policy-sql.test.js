@@ -51,9 +51,9 @@ test('real SQL: server service policies survive instances and guard actual API/m
         await assert.rejects(dispatch(request('POST', `workflows/${rule.id}/state`, { enabled: true, expectedRevision: 1 }), owner, { db, service }), { status: 429 });
         const paused = await dispatch(request('POST', `workflows/${rule.id}/state`, { enabled: false, expectedRevision: 1 }), owner, { db, service });
         assert.equal(paused.enabled, false); assert.equal(paused.revision, 2);
-        assert.equal((await dispatch(request('GET', `workflows/${rule.id}/history`), owner, { db, service })).length, 1);
+        assert.equal((await dispatch(request('GET', `workflows/${rule.id}/history`), owner, { db, service })).length, 2);
         assert.deepEqual(await counterValues(), [2, 2]);
-        assert.deepEqual(await dispatch(request('DELETE', `workflows/${rule.id}`, { expectedRevision: 2 }), owner, { db, service }), { deleted: true });
+        assert.deepEqual(await dispatch(request('DELETE', `workflows/${rule.id}`, { expectedRevision: 2 }), owner, { db, service }), { deleted: true, pausedTargets: 0 });
     });
     await t.test('legacy amplified applied snapshots cannot resume or restore, but can always pause', async () => {
         await clearCounters(); const owner = actor(5), service = createService(db), rule = await service.createWorkflow(owner, { definition: schema.newWorkflow('old') });

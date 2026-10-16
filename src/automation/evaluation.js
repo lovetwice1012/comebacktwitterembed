@@ -148,8 +148,9 @@ function createEvaluator(loadDictionary, options = {}) {
             return request('evaluate', { workflow, event, matches, now }, context);
         });
     }
-    function match(ref, text) {
-        return serialize(async context => { const key = ruleKey(ref); await load(key, ref, context); return request('match', { key, text }, context); });
+    function match(ref, text, limit = 20) {
+        if (!Number.isInteger(limit) || limit < 1 || limit > 20) throw new TypeError('Invalid dictionary diagnostic limit');
+        return serialize(async context => { const key = ruleKey(ref); await load(key, ref, context); return request('match', { key, text, limit }, context); });
     }
     function dictionaryTask(payload) { return serialize(context => request('dictionary', payload, context, 60000), isHeavy(payload)); }
     function matchModeration(policy, text) {

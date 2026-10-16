@@ -67,6 +67,8 @@ const SCHEMA = [
         checksum CHAR(64) NOT NULL,
         actor_user_id VARCHAR(32) NOT NULL,
         created_at_ms BIGINT NOT NULL,
+        source_package_id CHAR(36) NULL,
+        source_package_version INT UNSIGNED NULL,
         PRIMARY KEY (workflow_id, revision),
         CONSTRAINT fk_automation_revision_workflow FOREIGN KEY (workflow_id) REFERENCES automation_workflows(id) ON DELETE CASCADE
     ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
@@ -121,6 +123,10 @@ const SCHEMA = [
         entry_count INT UNSIGNED NOT NULL,
         source_text TEXT NULL,
         license_text TEXT NULL,
+        source_package_id CHAR(36) NULL,
+        source_package_version INT UNSIGNED NULL,
+        origin_reviewed TINYINT(1) NULL,
+        package_dependencies_json TEXT NULL,
         created_at_ms BIGINT NOT NULL,
         PRIMARY KEY (dictionary_id, revision),
         CONSTRAINT fk_automation_dictionary_revision FOREIGN KEY (dictionary_id) REFERENCES automation_dictionaries(id)
@@ -182,6 +188,8 @@ const SCHEMA = [
         id CHAR(36) NOT NULL PRIMARY KEY,
         owner_user_id VARCHAR(32) NOT NULL,
         slot_id VARCHAR(64) NOT NULL,
+        job_id CHAR(36) NULL,
+        lease_token CHAR(36) NULL,
         counters_json LONGTEXT NOT NULL,
         parts_json LONGTEXT NOT NULL,
         created_at_ms BIGINT NOT NULL,
@@ -225,6 +233,7 @@ const SCHEMA = [
         visibility VARCHAR(16) NOT NULL,
         status VARCHAR(24) NOT NULL DEFAULT 'pending',
         review_note TEXT NULL,
+        package_dependencies_json MEDIUMTEXT NULL,
         created_at_ms BIGINT NOT NULL,
         PRIMARY KEY (package_id, version),
         CONSTRAINT fk_automation_package_version FOREIGN KEY (package_id) REFERENCES automation_packages(id)

@@ -70,7 +70,7 @@ function filterMedia(payload, mode) {
 // Rich summaries are built from snapshots; missing media is never invented.
 function snapshotSteps(plan, kind, expandedSnapshot = false) {
     const event = plan.event || {}, display = plan.display;
-    if (plan.defaultPriceText) return splitText(plan.defaultPriceText).map(content => ({ content, flags: 4 }));
+    if (plan.defaultPriceText) return splitText(plan.defaultPriceText).map(content => ({ content, flags: 4, ...(display.format === 'normal' ? { normalExpansion: true } : {}) }));
     if (display.format === 'normal') return splitText(plan.text).map(content => ({ content, flags: 4, normalExpansion: true }));
     if (display.format === 'text' || display.format === 'url') return splitText(plan.text).map(content => ({ content, flags: 4 }));
     if (display.format === 'card' || display.format === 'expanded' && (kind === 'price' || expandedSnapshot)) {
@@ -169,8 +169,9 @@ function createTransport(db, destinations, client, options = {}) {
             member = verified.member; channelNsfw = verified.channel.nsfw === true;
         }
         const plan = job.plan, event = plan.event;
+        const snapshotAggregate = !!plan.members && !(plan.flowV2 && plan.aggregateSnapshot === false && plan.members.length === 1);
         let steps, attributedSlots = null;
-        if (plan.members) {
+        if (snapshotAggregate) {
             const rawSteps = [], rawSlots = [];
             for (const [memberIndex, entry] of plan.members.entries()) {
                 const memberPlan = { ...plan, ...entry, display: entry.display || plan.display };
@@ -224,7 +225,7 @@ function createTransport(db, destinations, client, options = {}) {
         if (!steps?.length || steps.length > 128) throw failure('MESSAGE_STEPS_LIMIT');
         const payloads = [], payloadSlots = [], normalExpansions = [];
         for (const [stepIndex, rawStep] of steps.entries()) {
-            const step = plan.members ? rawStep : filterMedia(rawStep, plan.display.media);
+            const step = snapshotAggregate ? rawStep : filterMedia(rawStep, plan.display.media);
             const files = [];
             let total = 0;
             for (const file of step.files || []) {
@@ -256,6 +257,7 @@ function createTransport(db, destinations, client, options = {}) {
             principals,
             payloadSlots,
             normalExpansions,
+            destination: { kind: destination.kind, guildId: destination.guild_id, endpointId: destination.webhook_endpoint_id },
         });
         return prepared;
     }
@@ -272,7 +274,7 @@ function createTransport(db, destinations, client, options = {}) {
             checkedPreparation(prepared, job);
             if (principals.length !== state.principals.length || principals.some((principal, index) => principal.slotId !== state.principals[index].slotId)) throw new AutomationRateError('AUTOMATION_SLOT_CHANGED', '通知の登録枠が変わりました。登録内容を確認してください。', 403);
             state.principals = principals;
-            return principals.length === 1 ? rateLimiter.reserveNotifications(principals[0], state.count) : rateLimiter.reserveNotificationBatch(principals, state.count, state.payloadSlots);
+            return principals.length === 1 ? rateLimiter.reserveNotifications(principals[0], state.count, job.lease_token ? job : null) : rateLimiter.reserveNotificationBatch(principals, state.count, state.payloadSlots, job.lease_token ? job : null);
         })().then(reservation => {
             if (!Number.isSafeInteger(reservation?.expiresAtMs) || reservation.expiresAtMs <= clock() || reservation.count !== state.count) throw new AutomationRateError('AUTOMATION_RATE_LIMIT_UNAVAILABLE', '利用制限を確認できませんでした。少し待ってから再度お試しください。', 503, { retryAfterMs: 60000 });
             state.reservation = Object.freeze({ ...reservation, ...(reservation.reservations ? { reservations: Object.freeze(reservation.reservations.map(part => Object.freeze({ ...part }))) } : {}) }); return state.reservation;
@@ -288,6 +290,26 @@ function createTransport(db, destinations, client, options = {}) {
         let submitted = false, acknowledged = false, claimed = false, ticket = null;
         try {
             await require('./package-safety').assertPackageSafety(db.queryDatabase, job);
+            if (state.destination.kind !== 'dm') {
+                try {
+                    // A prepared split message is not authority to keep sending
+                    // after membership, channel access or NSFW policy changes.
+                    const endpoint = (await db.queryDatabase('SELECT webhook_url FROM webhook_endpoints WHERE id=?', [state.destination.endpointId]))[0];
+                    if (!endpoint) throw failure('WEBHOOK_DELETED', 404);
+                    const currentEndpoint = webhookParts(endpoint.webhook_url);
+                    if (currentEndpoint.id !== prepared.webhook?.id || currentEndpoint.token !== prepared.webhook?.token) throw failure('WEBHOOK_MOVED', 403);
+                    const current = await rest.get(Routes.webhook(currentEndpoint.id, currentEndpoint.token), { auth: false });
+                    if (current.channel_id !== state.channelId || current.guild_id !== state.destination.guildId || current.type !== 1) throw failure('WEBHOOK_MOVED', 403);
+                    const verified = await destinations.verifyChannel({ userId: state.ownerUserId }, state.destination.guildId, state.channelId);
+                    prepared.channelNsfw = verified.channel.nsfw === true;
+                } catch (error) {
+                    const status = Number(error.status);
+                    if (status === 403 || status === 404) throw new SafetyError('SAFETY_DESTINATION_PERMISSION_DENIED');
+                    // No payload entered the wire. A transient authorization
+                    // read is retryable before the first confirmed part.
+                    throw new AutomationRateError('AUTOMATION_PERMISSION_CHECK_UNAVAILABLE', '通知先を確認しています。少し待ってから再試行します。', 503, { retryAfterMs: 60000 });
+                }
+            }
             // All formats and destinations converge here. Recheck each part so a
             // cached/prepared job is not permission to bypass a changed policy.
             await safety.assertNotification(prepared, job);
@@ -349,6 +371,6 @@ function createTransport(db, destinations, client, options = {}) {
         if (state.reservation) await rateLimiter.releaseNotifications(state.reservation);
         state.abandoned = true;
     }
-    return { prepare, reserve, release, sendStep, readiness: () => safety.status ? safety.status().available : true };
+    return { prepare, reserve, release, sendStep, recover: () => rateLimiter.recoverOrphanedReservations?.(), readiness: () => safety.status ? safety.status().available : true };
 }
 module.exports = { createTransport, publicAddress, splitText, filterMedia, snapshotSteps, packSnapshotSteps };

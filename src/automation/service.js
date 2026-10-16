@@ -55,7 +55,7 @@ function validateAssignmentGuards(guards) {
     return { expectedRevision: guards.expectedRevision, expectedWorkflowId: guards.expectedWorkflowId };
 }
 
-/** @param {any} db @param {{rateLimiter?:any,rateOptions?:any}} [options] */
+/** @param {any} db @param {{rateLimiter?:any,rateOptions?:any,verifyChannel?:any,verifyWebhook?:any}} [options] */
 function createService(db, options = {}) {
     const rateLimiter = options.rateLimiter || createRateLimiter(db, options.rateOptions);
     async function withOperation(actor, group, work) {
@@ -89,16 +89,30 @@ function createService(db, options = {}) {
     async function validateBindings(actor, workflow, bindings, query = db.queryDatabase, strict = false) {
         if (!bindings || typeof bindings !== 'object' || Array.isArray(bindings) || Object.keys(bindings).some(k => !['destinations', 'dictionaries'].includes(k))) fail('INVALID_BINDINGS', '通知先・辞書の割り当てが不正です。');
         const safe = { destinations: Object.create(null), dictionaries: Object.create(null) };
+        const usedDestinations = new Set(workflow.nodes.filter(node => node.type === 'send' && node.config.destination !== 'default').map(node => node.config.destination));
+        const usedDictionaries = new Set(workflow.nodes.filter(node => node.type === 'dictionary').map(node => node.config.dictionary));
         for (const [alias, id] of Object.entries(bindings.destinations || {})) {
             if (!/^[a-zA-Z][a-zA-Z0-9_-]{0,63}$/.test(alias) || ['constructor', 'prototype'].includes(alias)) fail('INVALID_BINDINGS', '通知先の名前が不正です。');
+            if (!usedDestinations.has(alias)) continue;
             const row = await getRow('destination', actor, id, true, query);
             safe.destinations[alias] = row.id;
         }
         for (const [alias, ref] of Object.entries(bindings.dictionaries || {})) {
             if (!/^[a-zA-Z][a-zA-Z0-9_-]{0,63}$/.test(alias) || ['constructor', 'prototype'].includes(alias) || !ref || !Number.isSafeInteger(ref.revision) || ref.revision < 1) fail('INVALID_BINDINGS', '辞書の名前・版が不正です。');
-            const dictionary = await getRow('dictionary', actor, ref.id, false, query);
+            let dictionary;
+            try { dictionary = await getRow('dictionary', actor, ref.id, false, query); }
+            catch (error) {
+                // Optional package dictionaries remain portable while readable.
+                // A removed unused reference cannot block an unrelated edit or
+                // restore; referenced dictionaries still require full access.
+                if (!usedDictionaries.has(alias) && [403, 404].includes(error.status)) continue;
+                throw error;
+            }
             const exists = await query('SELECT revision FROM automation_dictionary_revisions WHERE dictionary_id=? AND revision=?', [dictionary.id, ref.revision]);
-            if (!exists.length) fail('DICTIONARY_VERSION_MISSING', '辞書の版が見つかりません。');
+            if (!exists.length) {
+                if (!usedDictionaries.has(alias)) continue;
+                fail('DICTIONARY_VERSION_MISSING', '辞書の版が見つかりません。');
+            }
             safe.dictionaries[alias] = { id: dictionary.id, revision: ref.revision };
         }
         if (strict) for (const node of workflow.nodes) {
@@ -107,8 +121,82 @@ function createService(db, options = {}) {
         }
         return safe;
     }
-    async function saveWorkflowRevision(query, actor, id, revision, definition, bindings, now) {
-        const body = JSON.stringify(definition), refs = JSON.stringify(bindings), checksum = hash(body + refs);
+    async function validateWorkflowDestinations(query, workflow, ownerIds, snapshot = null) {
+        if (!ownerIds.length) return;
+        if (!snapshot) {
+            if (!workflow.active_revision) return;
+            snapshot = (await query('SELECT definition_json,bindings_json FROM automation_revisions WHERE workflow_id=? AND revision=?', [workflow.id, workflow.active_revision]))[0];
+            if (!snapshot) fail('NOT_ACTIVE', '適用済みのルールを確認できません。再度適用してください。');
+        }
+        const definition = assertWorkflow(parse(snapshot.definition_json)), bindings = parse(snapshot.bindings_json);
+        const aliases = [...new Set(definition.nodes.filter(node => node.type === 'send' && node.config.destination !== 'default').map(node => node.config.destination))];
+        for (const alias of aliases) {
+            const id = bindings?.destinations?.[alias];
+            if (!id) fail('DESTINATION_REQUIRED', `通知先 ${alias} の割り当てが必要です。`);
+            const destination = (await query('SELECT * FROM automation_destinations WHERE id=? FOR UPDATE', [id]))[0];
+            if (!destination || destination.deleted_at_ms) fail('NOT_FOUND', '通知先が見つかりません。', 404);
+            if (!destination.enabled) fail('DESTINATION_DISABLED', '通知先を有効にしてから通知を再開してください。', 409);
+            if (workflow.scope === 'guild' && (destination.scope !== 'guild' || destination.guild_id !== workflow.guild_id || destination.kind === 'dm')
+                || workflow.scope === 'private' && destination.scope === 'private' && destination.owner_user_id !== workflow.owner_user_id)
+                fail('PRIVATE_BINDING', 'ルールと同じ公開範囲の通知先を指定してください。');
+            await validateDestinationOwners(destination, ownerIds, query);
+        }
+    }
+    const destinationIdentity = row => JSON.stringify([row.id, Number(row.revision), row.scope, row.owner_user_id, row.guild_id, row.kind, row.channel_id, row.dm_user_id, row.webhook_endpoint_id, Number(row.enabled), row.deleted_at_ms]);
+    async function validateDestinationOwners(destination, ownerIds, query = undefined) {
+        if (!query) return db.withDatabaseTransaction(q => validateDestinationOwners(destination, ownerIds, q));
+        if (!destination || destination.deleted_at_ms) fail('NOT_FOUND', '通知先が見つかりません。', 404);
+        if (!destination.enabled) fail('DESTINATION_DISABLED', '通知先を有効にしてから通知を再開してください。', 409);
+        const fresh = (await query('SELECT * FROM automation_destinations WHERE id=? FOR UPDATE', [destination.id]))[0];
+        if (!fresh || fresh.deleted_at_ms) fail('NOT_FOUND', '通知先が見つかりません。', 404);
+        if (destinationIdentity(fresh) !== destinationIdentity(destination)) fail('DESTINATION_CHANGED', '通知先が変更されています。設定を確認し直してください。', 409);
+        const principals = [...new Set(ownerIds)];
+        for (const ownerId of principals) {
+            if (fresh.scope === 'private' && fresh.owner_user_id !== ownerId) fail('NOT_FOUND', '通知先が見つかりません。', 404);
+            if (fresh.kind === 'dm' && fresh.dm_user_id !== ownerId) fail('DM_OWNER_MISMATCH', '登録した本人のDMを指定してください。', 403);
+        }
+        if (fresh.kind === 'dm') return;
+        if (fresh.kind !== 'webhook') fail('INVALID_DESTINATION', '通知先を選び直してください。');
+        const helpers = require('./destinations'), defaults = helpers.createDestinations(db, service);
+        const verify = options.verifyChannel || defaults.verifyChannel;
+        const endpoint = await helpers.verifyWebhookEndpoint(query, fresh, options.verifyWebhook || defaults.verifyWebhook, true);
+        // Check the actual remote endpoint once, then every delivery principal.
+        // A moved webhook never silently changes a saved resource's channel.
+        for (const ownerId of principals) await verify({ userId: ownerId }, fresh.guild_id, fresh.channel_id);
+        await helpers.lockWebhookEndpoint(query, endpoint);
+        const checked = (await query('SELECT * FROM automation_destinations WHERE id=? FOR UPDATE', [fresh.id]))[0];
+        if (!checked || destinationIdentity(checked) !== destinationIdentity(fresh)) fail('DESTINATION_CHANGED', '通知先が変更されています。設定を確認し直してください。', 409);
+    }
+    async function validateRegistrationWorkflow(query, actor, kind, targetId) {
+        requireActor(actor);
+        if (!['auto', 'price'].includes(kind)) fail('INVALID_MONITOR', '監視の種類が不正です。');
+        const table = kind === 'auto' ? 'auto_watch' : 'price_watch';
+        const target = (await query(`SELECT t.user_id,t.guild_id,t.destination_type,m.scope,a.workflow_id,m.destination_id FROM ${table}_targets t
+            LEFT JOIN automation_monitors m ON m.target_kind=? AND m.target_id=t.id
+            LEFT JOIN automation_assignments a ON a.target_kind=? AND a.target_id=t.id WHERE t.id=? AND t.user_id=? FOR UPDATE`, [kind, kind, targetId, actor.userId]))[0];
+        if (!target) fail('NOT_FOUND', '監視が見つかりません。', 404);
+        const scope = target.scope || (target.destination_type === 'dm' || !target.guild_id ? 'private' : 'guild');
+        if (target.workflow_id) {
+            const workflow = (await query('SELECT * FROM automation_workflows WHERE id=? AND deleted_at_ms IS NULL FOR UPDATE', [target.workflow_id]))[0];
+            if (!workflow || workflow.scope !== scope || scope === 'private' && workflow.owner_user_id !== target.user_id
+                || scope === 'guild' && workflow.guild_id !== target.guild_id) fail('TARGET_SCOPE', '監視に割り当てたルールを確認してください。');
+            await validateWorkflowDestinations(query, workflow, [target.user_id]);
+        }
+        if (target.destination_id) {
+            const destination = (await query('SELECT * FROM automation_destinations WHERE id=? FOR UPDATE', [target.destination_id]))[0];
+            if (!destination || destination.deleted_at_ms) fail('NOT_FOUND', '通知先が見つかりません。', 404);
+            if (scope === 'guild' && (destination.scope !== 'guild' || destination.guild_id !== target.guild_id || destination.kind === 'dm')
+                || scope === 'private' && destination.scope === 'guild' && (destination.guild_id !== target.guild_id || destination.kind === 'dm')
+                || !['private', 'guild'].includes(destination.scope)) fail('DESTINATION_SCOPE', '監視と同じ公開範囲・サーバーの通知先を選び直してください。', 409);
+            if (destination.kind !== target.destination_type) fail('DESTINATION_CHANGED', '通知方法が変更されています。通知一覧で通知先を確認してください。', 409);
+            // Existing bound shared resources are use-only: the native owner
+            // needs actual recipient access, not new resource-edit privileges.
+            await validateDestinationOwners(destination, [target.user_id], query);
+        }
+    }
+    async function saveWorkflowRevision(query, actor, id, revision, definition, bindings, now, serialized = false) {
+        const body = serialized && typeof definition === 'string' ? definition : JSON.stringify(definition);
+        const refs = serialized && typeof bindings === 'string' ? bindings : JSON.stringify(bindings), checksum = hash(body + refs);
         await query('INSERT IGNORE INTO automation_revisions (workflow_id,revision,definition_json,bindings_json,checksum,actor_user_id,created_at_ms) VALUES (?,?,?,?,?,?,?)',
             [id, revision, body, refs, checksum, actor.userId, now]);
         const rows = await query('SELECT checksum,definition_json,bindings_json FROM automation_revisions WHERE workflow_id=? AND revision=?', [id, revision]);
@@ -119,37 +207,69 @@ function createService(db, options = {}) {
         const definition = assertWorkflow(input.definition || newWorkflow());
         const bindings = await validateBindings(actor, definition, input.bindings || {});
         const id = randomUUID(), now = Date.now();
-        await db.withDatabaseTransaction(async query => {
+        return db.withDatabaseTransaction(async query => {
+            let origin = null;
+            if (input.sourceWorkflowId !== undefined) {
+                // Ordinary UI copies retain the source's server-verified
+                // installation identity, including when copying a copy. Raw
+                // JSON imports continue to use their explicit rights workflow.
+                const source = await getRow('workflow', actor, input.sourceWorkflowId, false, query, true);
+                if (!Number.isSafeInteger(input.expectedSourceRevision) || input.expectedSourceRevision < 1 || input.expectedSourceRevision > Number(source.revision))
+                    fail('REVISION_CONFLICT', '複製元のルールが更新されています。再読み込みしてから複製してください。', 409);
+                const provenance = require('./workflow-package-provenance');
+                origin = provenance.requireKnownEdition(await provenance.revisionOrigin(query, input.sourceWorkflowId, input.expectedSourceRevision, Number(source.revision)));
+            }
             await query('INSERT INTO automation_workflows (id,owner_user_id,guild_id,scope,name,draft_json,draft_bindings_json,created_at_ms,updated_at_ms) VALUES (?,?,?,?,?,?,?,?,?)',
                 [id, owner.owner_user_id, owner.guild_id, owner.scope, definition.name, JSON.stringify(definition), JSON.stringify(bindings), now, now]);
             await saveWorkflowRevision(query, actor, id, 1, definition, bindings, now);
+            if (origin) {
+                await require('./workflow-package-provenance').rememberOrigin(query, id, 1, origin);
+                await query('INSERT INTO automation_package_installs (package_id,version,workflow_id,actor_user_id,created_at_ms) VALUES (?,?,?,?,?)', [origin.id, origin.version, id, actor.userId, now]);
+            }
             await audit(query, actor, id, 'workflow.create', { revision: 1 }, owner.guild_id);
+            // A response-read failure must abort creation rather than leave a
+            // committed resource behind an API error that invites another POST.
+            return publicWorkflow(await getRow('workflow', actor, id, false, query));
         });
-        return getWorkflow(actor, id);
     }
     async function getWorkflow(actor, id) { return publicWorkflow(await getRow('workflow', actor, id)); }
-    async function updateWorkflow(actor, id, input) {
+    async function updateWorkflow(actor, id, input, restoredRevision = undefined) {
         const definition = assertWorkflow(input.definition);
         return db.withDatabaseTransaction(async query => {
             const current = await getRow('workflow', actor, id, true, query, true);
             if (Number(current.revision) !== input.expectedRevision) fail('REVISION_CONFLICT', '別の変更が保存されています。再読み込みしてください。', 409);
             const bindings = await validateBindings(actor, definition, input.bindings || parse(current.draft_bindings_json), query);
             const now = Date.now(), revision = Number(current.revision) + 1;
+            const provenance = require('./workflow-package-provenance');
+            const origin = await provenance.revisionOrigin(query, id, restoredRevision === undefined ? Number(current.revision) : restoredRevision, Number(current.revision));
             // Capture the current draft as well: installations from the early
             // schema retained only applied editions. Never invent overwritten
             // history, but do retain the edition that is still available now.
             await saveWorkflowRevision(query, actor, id, current.revision, parse(current.draft_json), parse(current.draft_bindings_json), now);
             await saveWorkflowRevision(query, actor, id, revision, definition, bindings, now);
+            await provenance.rememberOrigin(query, id, revision, origin);
             await query('UPDATE automation_workflows SET name=?,draft_json=?,draft_bindings_json=?,revision=revision+1,updated_at_ms=? WHERE id=?',
                 [definition.name, JSON.stringify(definition), JSON.stringify(bindings), now, id]);
             await audit(query, actor, id, 'workflow.update', { before: Number(current.revision), after: Number(current.revision) + 1 }, current.guild_id);
             return { revision: Number(current.revision) + 1 };
         });
     }
-    async function activateWorkflow(actor, id, input) {
+    async function activationPreview(actor, id) {
         return db.withDatabaseTransaction(async query => {
             const row = await getRow('workflow', actor, id, true, query, true);
+            const { workflowTargets, targetsToken } = require('./workflow-targets');
+            const affectedTargets = await workflowTargets(query, row);
+            return { expectedRevision: Number(row.revision), affectedTargets, expectedTargetsToken: targetsToken(row, affectedTargets) };
+        });
+    }
+    async function activateWorkflow(actor, id, input, options = {}) {
+        const activate = async (query, row, lockedTargets) => {
             if (Number(row.revision) !== input.expectedRevision) fail('REVISION_CONFLICT', '編集内容が変更されています。', 409);
+            const { workflowTargets, targetsToken } = require('./workflow-targets');
+            const affectedTargets = lockedTargets || (input.expectedTargetsToken !== undefined || options.requireTargetsToken ? await workflowTargets(query, row) : []);
+            if ((input.expectedTargetsToken !== undefined || options.requireTargetsToken && affectedTargets.length)
+                && input.expectedTargetsToken !== targetsToken(row, affectedTargets))
+                fail('WORKFLOW_TARGETS_CHANGED', 'このルールを使う通知が変更されています。適用先を再確認してください。', 409);
             const definition = assertWorkflow(parse(row.draft_json));
             const bindings = await validateBindings(actor, definition, parse(row.draft_bindings_json), query, true);
             // Shared workflows cannot smuggle a personal DM destination or
@@ -164,16 +284,20 @@ function createService(db, options = {}) {
                     if (dictionary.scope !== 'guild' || dictionary.guild_id !== row.guild_id) fail('PRIVATE_BINDING', '共有ルールでは同じサーバーの共有辞書を使ってください。');
                 }
             }
-            await saveWorkflowRevision(query, actor, id, row.revision, definition, bindings, Date.now());
+            await validateWorkflowDestinations(query, row, [...affectedTargets.map(target => target.ownerId), actor.userId], { definition_json: definition, bindings_json: bindings });
+            // Validation may omit a deleted, unused binding. Activation does
+            // not edit the immutable draft edition: a later save/restore
+            // records that normalization as a new revision instead.
+            await saveWorkflowRevision(query, actor, id, row.revision, definition, parse(row.draft_bindings_json), Date.now());
             await query('UPDATE automation_workflows SET active_revision=revision,enabled=1,updated_at_ms=? WHERE id=?', [Date.now(), id]);
             await audit(query, actor, id, 'workflow.activate', { revision: Number(row.revision) }, row.guild_id);
             return { activeRevision: Number(row.revision), enabled: true };
-        });
+        };
+        return require('./workflow-deletion').withLockedWorkflowTargets(db, actor, id, input.expectedRevision, { getRow, audit }, activate);
     }
     async function setWorkflowState(actor, id, input) {
         if (typeof input?.enabled !== 'boolean') fail('INVALID_STATE', '有効・停止の状態を確認してください。');
-        return db.withDatabaseTransaction(async query => {
-            const row = await getRow('workflow', actor, id, true, query, true);
+        const change = async (query, row, targets = []) => {
             if (Number(row.revision) !== input.expectedRevision) fail('REVISION_CONFLICT', '編集内容が変更されています。', 409);
             if (input.enabled && !row.active_revision) fail('NOT_ACTIVE', 'ルールを適用してから有効にしてください。');
             if (input.enabled) {
@@ -181,18 +305,28 @@ function createService(db, options = {}) {
                 if (!snapshots.length) fail('NOT_ACTIVE', '適用済みのルールを確認できません。再度適用してください。');
                 const definition = assertWorkflow(parse(snapshots[0].definition_json));
                 await validateBindings(actor, definition, parse(snapshots[0].bindings_json), query, true);
+                await validateWorkflowDestinations(query, row, [...targets.map(target => target.ownerId), actor.userId], snapshots[0]);
             }
-            await query('UPDATE automation_workflows SET enabled=?,revision=revision+1,updated_at_ms=? WHERE id=?', [input.enabled ? 1 : 0, Date.now(), id]);
+            const now = Date.now(), revision = Number(row.revision) + 1, provenance = require('./workflow-package-provenance');
+            const origin = await provenance.revisionOrigin(query, id, Number(row.revision), Number(row.revision));
+            // A state CAS also advances the displayed draft revision. Preserve
+            // that edition's source without validating/parsing a legacy broken
+            // draft: its owner must always be able to pause notifications.
+            await saveWorkflowRevision(query, actor, id, revision, row.draft_json, row.draft_bindings_json, now, true);
+            await provenance.rememberOrigin(query, id, revision, origin);
+            await query('UPDATE automation_workflows SET enabled=?,revision=revision+1,updated_at_ms=? WHERE id=?', [input.enabled ? 1 : 0, now, id]);
             await audit(query, actor, id, 'workflow.state', { enabled: !!input.enabled }, row.guild_id);
             return { enabled: !!input.enabled, revision: Number(row.revision) + 1 };
-        });
+        };
+        return input.enabled ? require('./workflow-deletion').withLockedWorkflowTargets(db, actor, id, input.expectedRevision, { getRow, audit }, change)
+            : db.withDatabaseTransaction(async query => change(query, await getRow('workflow', actor, id, true, query, true)));
     }
     async function remove(kind, actor, id, expectedRevision) {
+        if (kind === 'workflow') return require('./workflow-deletion').removeWorkflow(db, actor, id, expectedRevision, { getRow, audit });
         return db.withDatabaseTransaction(async query => {
             const row = await getRow(kind, actor, id, true, query, true);
             if (Number(row.revision) !== expectedRevision) fail('REVISION_CONFLICT', '対象が更新されています。', 409);
             await query(`UPDATE ${TABLES[kind]} SET deleted_at_ms=?,revision=revision+1,updated_at_ms=? WHERE id=?`, [Date.now(), Date.now(), id]);
-            if (kind === 'workflow') await query("UPDATE automation_jobs j JOIN automation_runs r ON r.id=j.run_id SET j.state='cancelled',j.updated_at_ms=? WHERE r.workflow_id=? AND j.state IN ('pending','held','leased','aggregated')", [Date.now(), id]);
             await audit(query, actor, id, `${kind}.delete`, { revision: expectedRevision }, row.guild_id);
             return { deleted: true };
         });
@@ -206,9 +340,9 @@ function createService(db, options = {}) {
         await getRow('workflow', actor, id, true);
         const rows = await db.queryDatabase('SELECT definition_json,bindings_json FROM automation_revisions WHERE workflow_id=? AND revision=?', [id, revision]);
         if (!rows.length) fail('NOT_FOUND', '版が見つかりません。', 404);
-        return updateWorkflow(actor, id, { expectedRevision, definition: parse(rows[0].definition_json), bindings: parse(rows[0].bindings_json) });
+        return updateWorkflow(actor, id, { expectedRevision, definition: parse(rows[0].definition_json), bindings: parse(rows[0].bindings_json) }, revision);
     }
-    async function saveDictionary(actor, input, id = null) {
+    async function saveDictionary(actor, input, id = null, sourceRevision = undefined) {
         if (id) await getRow('dictionary', actor, id, true); else scopeFor(actor, input.scope || 'private');
         const data = validateDictionary(input.dictionary);
         dictionaryValidator ||= require('./evaluation').createEvaluator(null);
@@ -219,10 +353,15 @@ function createService(db, options = {}) {
         const compressed = await compress(bytes), checksum = hash(bytes);
         return db.withDatabaseTransaction(async query => {
             let owner, revision = 1;
+            let origin = null;
             const resourceId = id || randomUUID();
             if (id) {
                 owner = await getRow('dictionary', actor, id, true, query, true);
                 if (Number(owner.revision) !== input.expectedRevision) fail('REVISION_CONFLICT', '辞書が更新されています。', 409);
+                const inherited = sourceRevision === undefined ? Number(owner.revision) : sourceRevision;
+                if (!Number.isSafeInteger(inherited) || inherited < 1) fail('DICTIONARY_VERSION_MISSING', '辞書の版が見つかりません。', 404);
+                origin = (await query('SELECT source_package_id,source_package_version,origin_reviewed,package_dependencies_json FROM automation_dictionary_revisions WHERE dictionary_id=? AND revision=?', [id, inherited]))[0];
+                if (!origin) fail('DICTIONARY_VERSION_MISSING', '辞書の版が見つかりません。', 404);
                 revision = Number(owner.revision) + 1;
                 await query('UPDATE automation_dictionaries SET name=?,revision=?,entry_count=?,updated_at_ms=? WHERE id=?', [data.name, revision, data.entries.length, Date.now(), id]);
             } else {
@@ -230,8 +369,8 @@ function createService(db, options = {}) {
                 await query('INSERT INTO automation_dictionaries (id,owner_user_id,guild_id,scope,name,revision,entry_count,created_at_ms,updated_at_ms) VALUES (?,?,?,?,?,?,?,?,?)',
                     [resourceId, owner.owner_user_id, owner.guild_id, owner.scope, data.name, revision, data.entries.length, Date.now(), Date.now()]);
             }
-            await query('INSERT INTO automation_dictionary_revisions (dictionary_id,revision,data_gzip,checksum,entry_count,source_text,license_text,created_at_ms) VALUES (?,?,?,?,?,?,?,?)',
-                [resourceId, revision, compressed, checksum, data.entries.length, String(data.source || '').slice(0, 8000), String(data.license || '').slice(0, 8000), Date.now()]);
+            await query('INSERT INTO automation_dictionary_revisions (dictionary_id,revision,data_gzip,checksum,entry_count,source_text,license_text,source_package_id,source_package_version,origin_reviewed,package_dependencies_json,created_at_ms) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)',
+                [resourceId, revision, compressed, checksum, data.entries.length, String(data.source || '').slice(0, 8000), String(data.license || '').slice(0, 8000), origin?.source_package_id || null, origin?.source_package_version || null, id ? origin?.origin_reviewed ?? null : 1, origin?.package_dependencies_json ?? null, Date.now()]);
             await audit(query, actor, resourceId, 'dictionary.save', { revision, checksum, entryCount: data.entries.length }, owner.guild_id);
             return { id: resourceId, revision, checksum, entryCount: data.entries.length };
         });
@@ -303,17 +442,18 @@ function createService(db, options = {}) {
             if (rule.scope !== scopeOf(target)) fail('TARGET_SCOPE', '監視とルールの公開範囲を一致させてください。');
             if (rule.scope === 'guild' && (target.guild_id !== rule.guild_id || target.destination_type === 'dm')) fail('TARGET_SCOPE', '共有ルールは同じサーバーの共有通知に割り当ててください。');
             if (rule.scope === 'private' && target.user_id !== actor.userId) fail('TARGET_SCOPE', '個人ルールは自分の監視に割り当ててください。');
-            if (guarded && beforeWorkflowId === workflowId) return { attached: true, unchanged: true, revision: beforeRevision };
+            await validateWorkflowDestinations(query, rule, [target.user_id, actor.userId]);
+            if (beforeWorkflowId === workflowId) return { attached: true, unchanged: true, revision: beforeRevision };
             await query('INSERT INTO automation_assignments (target_kind,target_id,workflow_id,created_at_ms) VALUES (?,?,?,?) ON DUPLICATE KEY UPDATE workflow_id=VALUES(workflow_id)', [targetKind, String(targetId), workflowId, Date.now()]);
-            const revision = guarded ? await advanceMonitorRevision(query, targetKind, targetId, scopeOf(target), beforeRevision) : undefined;
-            if (guarded) await cancelPending(query, targetKind, targetId);
+            const revision = await advanceMonitorRevision(query, targetKind, targetId, scopeOf(target), beforeRevision);
+            await cancelPending(query, targetKind, targetId);
             await audit(query, actor, workflowId, 'workflow.attach', { targetKind, targetId: String(targetId), ...(guarded ? { guarded: true,
                 beforeWorkflowId, afterWorkflowId: workflowId, beforeRevision, afterRevision: revision } : {}) }, target.guild_id);
-            return { attached: true, ...(guarded ? { revision } : {}) };
+            return { attached: true, revision };
         });
     }
-    const service = { list, getRow, getWorkflow, createWorkflow, updateWorkflow, activateWorkflow, setWorkflowState, remove, history,
-        restoreRevision, validateBindings, saveDictionary, getDictionary, dictionaryData, saveDestination, attach, audit,
+    const service = { list, getRow, getWorkflow, createWorkflow, updateWorkflow, activationPreview, activateWorkflow, setWorkflowState, remove, history,
+        restoreRevision, validateBindings, validateWorkflowDestinations, validateDestinationOwners, validateRegistrationWorkflow, saveDictionary, getDictionary, dictionaryData, saveDestination, attach, audit,
         withOperation, rateLimiter };
     for (const name of ['createWorkflow', 'updateWorkflow', 'activateWorkflow', 'restoreRevision', 'saveDictionary', 'saveDestination', 'attach']) {
         const operation = /** @type {Function} */ (service[name]);

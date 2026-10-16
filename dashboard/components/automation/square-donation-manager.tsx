@@ -60,6 +60,8 @@ export function SquareDonationManager({ api = donationAPI, loadSquare = loadSqua
   const [amount, setAmount] = useState(""), [name, setName] = useState(""), [email, setEmail] = useState(""), [quote, setQuote] = useState<Quote | null>(null), [consent, setConsent] = useState(false);
   const [busy, setBusy] = useState(false), [attempt, setAttempt] = useState<string | null>(null), [checked, setChecked] = useState(false), [cardReady, setCardReady] = useState(false), [cardError, setCardError] = useState(""), [cardVersion, setCardVersion] = useState(0);
   const [currentTime, setCurrentTime] = useState(() => Date.now());
+  const [historyLoading, setHistoryLoading] = useState(false), [historyError, setHistoryError] = useState("");
+  const historyGeneration = useRef(0), historyLock = useRef(false);
   const mounted = useRef(true), loadVersion = useRef(0), actionLock = useRef(false), card = useRef<Card | null>(null), source = useRef<{ attemptId: string; sourceId: string } | null>(null);
   const cardId = `square-donation-card-${useId().replace(/[^a-zA-Z0-9_-]/g, "")}`;
   const blocked = Boolean(attempt || status?.pending);
@@ -68,16 +70,31 @@ export function SquareDonationManager({ api = donationAPI, loadSquare = loadSqua
   const refreshWaiting = retryDelay > 0;
   const parsed = options?.minorUnitDigits !== null && options?.minorUnitDigits !== undefined ? donationAmount(amount, options.minorUnitDigits) : null;
   const valid = Boolean(options && parsed !== null && options.minimumAmount !== null && options.maximumAmount !== null && parsed >= options.minimumAmount && parsed <= options.maximumAmount && name.trim() && name.trim().length <= 120 && isPaymentEmail(email.trim()));
+  function applyStatus(next: Status) {
+    historyGeneration.current++; historyLock.current = false; setHistoryLoading(false); setHistoryError(""); setStatus(next);
+  }
+  async function loadOlderHistory() {
+    const cursor = status?.historyNextCursor;
+    if (!cursor || historyLock.current) return;
+    const generation = historyGeneration.current;
+    historyLock.current = true; setHistoryLoading(true); setHistoryError("");
+    try {
+      const page: { items: DonationHistory[]; nextCursor: string | null } = await api(`history?after=${encodeURIComponent(cursor)}`);
+      if (!mounted.current || generation !== historyGeneration.current) return;
+      setStatus(previous => previous && previous.historyNextCursor === cursor ? { ...previous, history: [...previous.history, ...page.items.filter(item => !previous.history.some(existing => existing.attemptId === item.attemptId))], historyNextCursor: page.nextCursor } : previous);
+    } catch { if (mounted.current && generation === historyGeneration.current) setHistoryError("過去の寄付履歴を取得できませんでした。もう一度表示できます。"); }
+    finally { if (mounted.current && generation === historyGeneration.current) { historyLock.current = false; setHistoryLoading(false); } }
+  }
   async function load() {
     const version = ++loadVersion.current; setLoading(true); setLoadError("");
     const results = await Promise.allSettled([api("options"), api("status")]);
     if (!mounted.current || version !== loadVersion.current) return;
     if (results[0].status === "fulfilled") setOptions(results[0].value);
-    if (results[1].status === "fulfilled") { setStatus(results[1].value); setChecked(true); setCurrentTime(Date.now()); }
+    if (results[1].status === "fulfilled") { applyStatus(results[1].value); setChecked(true); setCurrentTime(Date.now()); }
     if (results.some(result => result.status === "rejected")) setLoadError("寄付の受付条件・支払い状態を取得できませんでした。入力内容を保持しています。再読み込みしてください。");
     setLoading(false);
   }
-  useEffect(() => { mounted.current = true; void load(); return () => { mounted.current = false; loadVersion.current++; source.current = null; }; }, [api]);
+  useEffect(() => { mounted.current = true; void load(); return () => { mounted.current = false; loadVersion.current++; historyGeneration.current++; source.current = null; }; }, [api]);
   useEffect(() => { if (status) window.dispatchEvent(new Event("notification:usage-changed")); }, [status]);
   useEffect(() => {
     if (!refreshWaiting) return;
@@ -122,18 +139,18 @@ export function SquareDonationManager({ api = donationAPI, loadSquare = loadSqua
       if (!mounted.current || source.current?.attemptId !== quote.attemptId) return;
       setAttempt(quote.attemptId); setChecked(false);
       const next: Status = await api("donate", "POST", { attemptId: quote.attemptId, sourceId: source.current.sourceId, consent: true });
-      if (mounted.current) { setStatus(next); setChecked(true); setCurrentTime(Date.now()); setMessage("支払いの受付結果を確認しました。確定した結果は寄付履歴に表示されます。"); }
+      if (mounted.current) { applyStatus(next); setChecked(true); setCurrentTime(Date.now()); setMessage("支払いの受付結果を確認しました。確定した結果は寄付履歴に表示されます。"); }
     } catch (cause) {
       if (!mounted.current) return;
       if (source.current) {
         setError(`${automationRetryDelay(cause) !== null ? safeError(cause, "") + " " : ""}支払い結果を確認できませんでした。新しい支払いを始めず、状態を再確認してください。`);
-        try { const next: Status = await api("status"); if (mounted.current) { setStatus(next); setChecked(true); setCurrentTime(Date.now()); } } catch { /* An uncertain payment remains blocked. */ }
+        try { const next: Status = await api("status"); if (mounted.current) { applyStatus(next); setChecked(true); setCurrentTime(Date.now()); } } catch { /* An uncertain payment remains blocked. */ }
       } else setError("カード情報を確認できませんでした。入力内容を確認して再試行してください。");
     } finally { actionLock.current = false; if (mounted.current) setBusy(false); }
   }
   async function check() {
     if (actionLock.current || refreshWaiting) return; actionLock.current = true; setBusy(true); setError("");
-    try { const next: Status = await api("status"); if (mounted.current) { setStatus(next); setChecked(true); setCurrentTime(Date.now()); setMessage(next.refresh && next.refresh.state !== "checked" ? "保存された支払い結果を取得しました。Squareとの最新の確認状態は下の案内をご覧ください。" : "Squareで支払い状態を再確認しました。"); } }
+    try { const next: Status = await api("status"); if (mounted.current) { applyStatus(next); setChecked(true); setCurrentTime(Date.now()); setMessage(next.refresh && next.refresh.state !== "checked" ? "保存された支払い結果を取得しました。Squareとの最新の確認状態は下の案内をご覧ください。" : "Squareで支払い状態を再確認しました。"); } }
     catch { if (mounted.current) setError("支払い状態を確認できませんでした。新しい支払いを始めず、再確認してください。"); }
     finally { actionLock.current = false; if (mounted.current) setBusy(false); }
   }
@@ -166,7 +183,7 @@ export function SquareDonationManager({ api = donationAPI, loadSquare = loadSqua
     </form> : null}
     {quote && !blocked ? <section aria-label="寄付内容の確認" className="space-y-4 rounded-xl border p-5"><h2 className="text-lg font-semibold">寄付内容の確認</h2><p className="text-2xl font-semibold">{donationMoney(quote.amount, quote.currency)}<span className="ml-2 text-sm font-normal text-muted-foreground">今回1回のみ</span></p><p className="text-sm">領収名: {quote.name}<br />領収先: {quote.email}</p><div id={cardId} aria-label="Squareカード入力欄" />{cardError ? <p role="alert" className="text-sm text-destructive">{cardError}<Button type="button" variant="outline" className="ml-2" disabled={busy} onClick={() => setCardVersion(value => value + 1)}>カード入力欄を再読み込み</Button></p> : !cardReady ? <p role="status" className="text-sm">カード入力欄を読み込み中…</p> : null}<label className="flex items-start gap-2 text-sm"><input type="checkbox" checked={consent} disabled={busy} onChange={event => setConsent(event.target.checked)} /><span>{donationMoney(quote.amount, quote.currency)}を今回1回だけ支払うことに同意します。継続課金は発生しません。</span></label><div className="flex flex-wrap gap-2"><Button type="button" disabled={busy || !consent || !cardReady || Boolean(loadError)} onClick={() => void submit()}>同意して寄付を支払う</Button><Button type="button" variant="outline" disabled={busy} onClick={() => { source.current = null; setQuote(null); setConsent(false); setError(""); }}>金額の入力へ戻る</Button></div></section> : null}
     {error ? <p role="alert" className="rounded-lg border p-4 text-sm text-destructive">{error}</p> : null}{message ? <p role="status" className="text-sm">{message}</p> : null}
-    {status ? <section aria-label="寄付履歴" className="notification-payment-history space-y-3"><h2 className="text-lg font-semibold">寄付履歴</h2>{status.history.length ? <div className="overflow-x-auto"><table className="w-full min-w-[32rem] text-left text-sm"><thead><tr><th className="py-2">受付日時</th><th>金額</th><th>返金済み</th><th>支援額</th><th>状態</th></tr></thead><tbody>{status.history.map(item => <tr key={item.attemptId} className="border-t"><td className="py-3">{jst(item.createdAtMs)}</td><td>{donationMoney(item.amount, item.currency)}</td><td>{donationMoney(item.refundedAmount, item.currency)}</td><td>{donationMoney(item.netAmount, item.currency)}</td><td>{paymentLabel(item)}</td></tr>)}</tbody></table></div> : <p className="text-sm text-muted-foreground">寄付履歴はまだありません。</p>}</section> : null}
+    {status ? <section aria-label="寄付履歴" className="notification-payment-history space-y-3"><h2 className="text-lg font-semibold">寄付履歴</h2>{status.history.length ? <div className="overflow-x-auto"><table className="w-full min-w-[32rem] text-left text-sm"><thead><tr><th className="py-2">受付日時</th><th>金額</th><th>返金済み</th><th>支援額</th><th>状態</th></tr></thead><tbody>{status.history.map(item => <tr key={item.attemptId} className="border-t"><td className="py-3">{jst(item.createdAtMs)}</td><td>{donationMoney(item.amount, item.currency)}</td><td>{donationMoney(item.refundedAmount, item.currency)}</td><td>{donationMoney(item.netAmount, item.currency)}</td><td>{paymentLabel(item)}</td></tr>)}</tbody></table></div> : <p className="text-sm text-muted-foreground">寄付履歴はまだありません。</p>}{historyError ? <p role="alert" className="text-sm text-destructive">{historyError}</p> : null}{status.historyNextCursor ? <Button type="button" variant="outline" disabled={historyLoading || busy || loading} onClick={() => void loadOlderHistory()}>{historyLoading ? "履歴を読み込み中…" : "過去の履歴を表示"}</Button> : null}</section> : null}
     {!loading && options ? <details aria-label="旧制度の支援集計" className="notification-billing-legacy space-y-2"><summary>以前の支援記録を確認</summary>
       <p>{options.supporterThreshold === null ? "旧集計: 支援者枠の自動適用は未設定です。寄付は支払い履歴として記録されます。" : `旧集計: ${options.validityDays === null ? "全期間" : `過去${options.validityDays}日間`}の返金を除いた累計支援額が${donationMoney(options.supporterThreshold, options.currency)}以上かどうかで、旧制度の支援者状態を判定します。${options.validityDays === null ? "集計期間の有効期限はありません。" : "対象期間を過ぎた寄付は累計から外れ、旧制度の適用状態が変わります。"}`}</p>
       {status?.supporter ? <p>旧制度での状態: {status.supporter.active ? `Square寄付の支援者枠を利用中 · ${jst(status.supporter.validUntilAtMs)}` : status.supporter.manualActive ? "手動で付与された支援者枠を利用中" : "Square寄付による支援者枠の適用なし"} · 対象期間内の正味支援額 {donationMoney(status.supporter.netAmount, options.currency)}</p> : null}

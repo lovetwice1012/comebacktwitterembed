@@ -93,7 +93,13 @@ async function* projectedCardChunks(response) {
                 if (end < 0) break;
                 markup = '';
                 if (!invalid) {
-                    try { markup = compactCardMarkup(await projector.end()); } catch (error) {
+                    try {
+                        const cards = await projector.end();
+                        markup = compactCardMarkup(cards);
+                        // The projection removes the large JSON attribute. Keep
+                        // a small marker for a genuinely explicit empty index.
+                        if (attribute.toLowerCase() === 'data-items' && Array.isArray(cards) && cards.length === 0) markup += '<span data-cbte-booth-empty-catalog="1"></span>';
+                    } catch (error) {
                         if (error?.code === 'AUTO_WATCH_RESOURCE_PRESSURE') throw error;
                         // Invalid data attributes have always been ignored by
                         // the guest card parser; ordinary item links remain.
@@ -187,7 +193,11 @@ async function fetch(source, context) {
         readBody: readShopProjection,
     });
     if (response.notModified) return { notModified: true, state: source.state || {}, etag: response.etag, lastModified: response.lastModified, rateLimit: response.rateLimit };
-    return { items: itemLinks(response.body, source.source_key), state: source.state || {}, etag: response.etag, lastModified: response.lastModified, rateLimit: response.rateLimit };
+    const items = itemLinks(response.body, source.source_key);
+    if (!items.length && !response.body.includes('data-cbte-booth-empty-catalog="1"')) {
+        throw monitorError('AUTO_WATCH_INVALID_RESPONSE', 'BOOTH did not return a recognized public shop catalog.');
+    }
+    return { items, state: source.state || {}, etag: response.etag, lastModified: response.lastModified, rateLimit: response.rateLimit };
 }
 
 module.exports = {

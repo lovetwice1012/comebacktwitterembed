@@ -96,9 +96,10 @@ function createGraphStore(db) {
         if (!row || hash(row.payload_json) !== row.checksum) throw fault('FLOW_UNIT_CORRUPT');
         const unit = parse(row.payload_json);
         if (!eligibleOnly) return unit;
+        const current = await require('./recovery-origin').currentRunIds(query, unit.members.map(member => member.runId), { revoke: true });
         const revoked = await query('SELECT DISTINCT r.run_id FROM automation_flow_members m JOIN automation_flow_runs r ON r.run_id=m.run_id WHERE m.unit_id=? AND r.revoked_at_ms IS NOT NULL', [unitId]);
         const ids = new Set(revoked.map(item => item.run_id));
-        return { ...unit, members: unit.members.filter(member => !ids.has(member.runId)) };
+        return { ...unit, members: unit.members.filter(member => current.has(member.runId) && !ids.has(member.runId)) };
     }
     async function claim(now) {
         const candidates = await db.queryDatabase("SELECT id,namespace_key FROM automation_flow_steps WHERE (state='pending' AND wake_at_ms<=?) OR (state='leased' AND lease_until_ms<=?) ORDER BY wake_at_ms,id LIMIT 1", [now, now]);
@@ -109,6 +110,33 @@ function createGraphStore(db) {
             const token = randomUUID(), evaluatedAt = row.evaluation_at_ms == null ? now : Number(row.evaluation_at_ms);
             await query("UPDATE automation_flow_steps SET state='leased',lease_token=?,lease_until_ms=?,evaluation_at_ms=?,version=version+1,updated_at_ms=? WHERE id=?", [token, now + 120000, evaluatedAt, now, row.id]);
             return { ...row, state: 'leased', lease_token: token, lease_until_ms: now + 120000, evaluation_at_ms: evaluatedAt, version: Number(row.version) + 1, unit: await readUnit(query, row.continuation_unit_id || row.input_unit_id, true) };
+        });
+    }
+    async function repairInitialStep(step, startId, now) {
+        if (step.node_id !== 'start' || startId === 'start') return step;
+        return locked(step.namespace_key, async query => {
+            const row = (await query('SELECT * FROM automation_flow_steps WHERE id=? FOR UPDATE', [step.id]))[0];
+            if (!row || row.namespace_key !== step.namespace_key || row.state !== 'leased' || row.lease_token !== step.lease_token || Number(row.lease_until_ms) <= now) return null;
+            // The legacy producer used a literal start ID. Repair only its
+            // unprocessed initial activation, never a downstream node which is
+            // legitimately named start, a wait continuation or a settled step.
+            if (row.node_id !== 'start' || row.via_edge_id != null || row.continuation_unit_id != null || row.decision_json != null) return step;
+            const unit = await readUnit(query, row.input_unit_id);
+            if (unit.kind !== 'event' || unit.ancestry?.length || unit.members.length !== 1) return step;
+            const member = unit.members[0], runId = member.runId;
+            if (member.id !== runId || row.input_unit_id !== uuid(`initial:${runId}`) || row.id !== uuid(`step:initial:${runId}`) || row.activation_key !== hash(`initial:${runId}`)) return step;
+            const origin = (await query('SELECT namespace_key,context_json FROM automation_flow_runs WHERE run_id=?', [runId]))[0];
+            if (!origin || origin.namespace_key !== row.namespace_key) return step;
+            const context = parse(origin.context_json);
+            if (namespaceKey(context) !== row.namespace_key) return step;
+            const revision = (await query('SELECT definition_json FROM automation_revisions WHERE workflow_id=? AND revision=?', [context.workflowId, context.revision]))[0];
+            if (!revision || require('./graph-plan').compileWorkflow(parse(revision.definition_json)).startId !== startId) return step;
+            const progressed = await query('SELECT s.id FROM automation_flow_steps s JOIN automation_flow_members m ON m.unit_id=s.input_unit_id WHERE m.run_id=? AND s.id<>? LIMIT 1', [runId, row.id]);
+            const edges = await query('SELECT receipt_key FROM automation_flow_edges WHERE run_id=? LIMIT 1', [runId]);
+            const sends = await query('SELECT s.id FROM automation_flow_sends s JOIN automation_flow_members m ON m.unit_id=s.unit_id WHERE m.run_id=? LIMIT 1', [runId]);
+            if (progressed.length || edges.length || sends.length) return step;
+            await query('UPDATE automation_flow_steps SET node_id=?,updated_at_ms=? WHERE id=? AND lease_token=?', [startId, now, row.id, row.lease_token]);
+            return { ...step, node_id: startId };
         });
     }
     async function owned(query, step, now) {
@@ -184,6 +212,37 @@ function createGraphStore(db) {
             return { state: transition.state === 'excluded' ? 'excluded' : 'complete', emitted };
         });
     }
+    async function failStep(step, code, edges, now) {
+        if (!require('./graph-failure').permanentFailure({ code })) throw fault('FLOW_FAILURE_INVALID');
+        return locked(step.namespace_key, async query => {
+            const current = await owned(query, step, now);
+            if (current.lost) return { state: 'lease_lost' };
+            if (current.done) return { state: 'already_settled' };
+            const row = current.row;
+            if (Number(row.version) !== Number(step.version) || row.node_id !== step.node_id || row.input_unit_id !== step.input_unit_id
+                || row.continuation_unit_id !== step.continuation_unit_id) return { state: 'lease_lost' };
+            const unit = await readUnit(query, row.continuation_unit_id || row.input_unit_id), runs = [...new Set(unit.members.map(member => member.runId))];
+            // The failed evaluation/storage transaction has already rolled
+            // back. Close only this activation's outgoing paths. Other branches
+            // of the same run remain eligible for joins and physical delivery.
+            let receipts = [];
+            async function append(runId, edgeId, kind, unitId) {
+                receipts.push([hash(JSON.stringify([row.namespace_key, runId, edgeId, kind, unitId])), row.namespace_key, runId, edgeId, row.id, kind, unitId, now]);
+                if (receipts.length === 1000) { await query('INSERT IGNORE INTO automation_flow_edges (receipt_key,namespace_key,run_id,edge_id,activation_id,receipt_kind,unit_id,created_at_ms) VALUES ?', [receipts]); receipts = []; }
+            }
+            for (const runId of runs) {
+                for (const edge of edges) await append(runId, edge.id, 'closed', null);
+                await append(runId, `${row.id}:${code}`, 'step_failed', unit.id);
+            }
+            if (receipts.length) await query('INSERT IGNORE INTO automation_flow_edges (receipt_key,namespace_key,run_id,edge_id,activation_id,receipt_kind,unit_id,created_at_ms) VALUES ?', [receipts]);
+            // Preserve a previous wait/pruning decision verbatim. The bounded
+            // relational failure receipt identifies its exact continuation;
+            // duplicating that old decision could itself exceed the JSON cap.
+            await query("UPDATE automation_flow_steps SET state='excluded',decision_json=COALESCE(decision_json,?),lease_token=NULL,lease_until_ms=0,updated_at_ms=? WHERE id=?", [encode({ code, terminalFailure: true }), now, row.id]);
+            await query('UPDATE automation_flow_runs r JOIN automation_flow_members m ON m.run_id=r.run_id SET r.needs_sync=1 WHERE m.unit_id=?', [row.input_unit_id]);
+            return { state: 'failed', code };
+        });
+    }
     async function revokeRun(runId, code, now) {
         const origin = (await db.queryDatabase('SELECT namespace_key FROM automation_flow_runs WHERE run_id=?', [runId]))[0];
         if (!origin) return false;
@@ -242,34 +301,66 @@ function createGraphStore(db) {
             if (row.state !== 'open') return { state: 'already_sealed', unitId: row.output_unit_id, outcome: parse(row.outcome_json) };
             if (Number(row.closes_at_ms) > now) return { state: 'waiting', wakeAtMs: Number(row.closes_at_ms) };
             const inputs = await query('SELECT * FROM automation_flow_batch_inputs WHERE batch_id=? ORDER BY ordinal', [row.id]);
-            const eligible = [], excluded = [], affectedRuns = new Set();
+            const eligible = [], syncRuns = new Set(); let excludedCount = 0;
+            // Failure evidence belongs to the existing relational membership,
+            // not an ever-growing JSON copy. One row identifies the exact
+            // original member; joins can recover its batch, run and reason.
+            async function exclusions(input, members, kind) {
+                for (let at = 0; at < members.length; at += 1000) {
+                    const values = members.slice(at, at + 1000).map(member => {
+                        const edge = hash(`${row.id}:${member.id}`);
+                        return [hash(JSON.stringify([row.namespace_key, member.runId, edge, kind, input.input_unit_id])), row.namespace_key, member.runId, edge, input.activation_id, kind, input.input_unit_id, now];
+                    });
+                    await query('INSERT IGNORE INTO automation_flow_edges (receipt_key,namespace_key,run_id,edge_id,activation_id,receipt_kind,unit_id,created_at_ms) VALUES ?', [values]);
+                }
+                excludedCount += members.length;
+            }
             for (const input of inputs) {
                 const snapshot = await readUnit(query, input.input_unit_id), unit = await readUnit(query, input.input_unit_id, true);
-                for (const member of snapshot.members) affectedRuns.add(member.runId);
+                for (const member of snapshot.members) if (syncRuns.size < 1000) syncRuns.add(member.runId);
+                // Each immutable input is capped at 10000 members. This
+                // bounded join marks every origin without a giant IN list.
+                await query('UPDATE automation_flow_runs r JOIN automation_flow_members m ON m.run_id=r.run_id SET r.needs_sync=1 WHERE m.unit_id=?', [input.input_unit_id]);
                 const retained = unit.members.filter(member => now <= Math.min(member.deadlineMs ?? Infinity, member.scheduleDeadlineMs ?? Infinity));
-                const ids = new Set(retained.map(member => member.id));
-                excluded.push(...snapshot.members.filter(member => !ids.has(member.id)).map(member => ({ memberId: member.id, runId: member.runId, inputUnitId: unit.id, code: unit.members.some(item => item.id === member.id) ? 'DEADLINE_EXCEEDED' : 'MONITOR_CHANGED' })));
+                const ids = new Set(retained.map(member => member.id)), liveIds = new Set(unit.members.map(member => member.id));
+                await exclusions(input, snapshot.members.filter(member => !liveIds.has(member.id)), 'batch_changed');
+                await exclusions(input, unit.members.filter(member => !ids.has(member.id)), 'batch_expired');
                 if (retained.length) eligible.push({ ...input, unit: { ...unit, members: retained } });
             }
             const selected = row.mode === 'latest' ? eligible.slice(-1) : eligible;
-            const members = selected.flatMap(input => input.unit.members.map(member => ({ ...member, id: hash(JSON.stringify([row.id, input.ordinal, member.id])), lineageId: member.lineageId || member.id })));
-            let unitId = null;
+            const selectedMembers = selected.reduce((count, input) => count + input.unit.members.length, 0);
+            let unitId = null, materializationCode = null;
             const steps = [];
-            if (members.length) {
-                const unit = { id: uuid(`sealed:${row.id}`), kind: 'batch', members, ancestry: [...new Map(selected.flatMap(input => input.unit.ancestry || []).map(item => [encode(item), item])).values(), { batchId: row.id, nodeId: row.node_id }],
-                    batchInputs: selected.map(input => ({ unitId: input.input_unit_id, ordinal: Number(input.ordinal) })), receivedCount: Number(row.received_count) };
-                unitId = await putUnit(query, row.namespace_key, unit, now);
-                for (const edge of edges) {
+            if (selectedMembers) {
+                try {
+                    // Check the existing unit contract before flattening a
+                    // potentially million-member accepted aggregate chain.
+                    if (selectedMembers > 10000) throw fault('FLOW_UNIT_INVALID');
+                    const members = selected.flatMap(input => input.unit.members.map(member => ({ ...member, id: hash(JSON.stringify([row.id, input.ordinal, member.id])), lineageId: member.lineageId || member.id })));
+                    const unit = { id: uuid(`sealed:${row.id}`), kind: 'batch', members, ancestry: [...new Map(selected.flatMap(input => input.unit.ancestry || []).map(item => [encode(item), item])).values(), { batchId: row.id, nodeId: row.node_id }],
+                        batchInputs: selected.map(input => ({ unitId: input.input_unit_id, ordinal: Number(input.ordinal) })), receivedCount: Number(row.received_count) };
+                    unitId = await putUnit(query, row.namespace_key, unit, now);
+                }
+                catch (error) {
+                    if (!['GRAPH_INPUT_LIMIT', 'FLOW_SNAPSHOT_LIMIT', 'FLOW_UNIT_INVALID'].includes(error.code)) throw error;
+                    // The accepted inputs remain immutable and inspectable. A
+                    // permanently oversized batch is terminal, never truncated
+                    // or repeatedly selected ahead of healthy work.
+                    materializationCode = error.code;
+                    for (const input of selected) await exclusions(input, input.unit.members, 'batch_failed');
+                }
+                for (const edge of unitId ? edges : []) {
                     steps.push(await putStep(query, row.namespace_key, `batch-output:${row.id}:${edge.id}`, edge.target, unitId, edge.id, now, now));
-                    for (const runId of [...new Set(members.map(member => member.runId))]) {
-                        const input = selected.find(item => item.unit.members.some(member => member.runId === runId));
-                        await receipt(query, { ...row, id: input.activation_id }, { runId, edgeId: edge.id, kind: 'data', unitId }, now);
+                    const emittedRuns = new Set();
+                    for (const input of selected) for (const member of input.unit.members) if (!emittedRuns.has(member.runId)) {
+                        emittedRuns.add(member.runId); await receipt(query, { ...row, id: input.activation_id }, { runId: member.runId, edgeId: edge.id, kind: 'data', unitId }, now);
                     }
                 }
             }
-            const outcome = { receivedCount: Number(row.received_count), retainedInputs: selected.length, retainedMembers: members.length, excluded, runIds: [...affectedRuns],
+            const outcome = { version: 2, ...(materializationCode ? { code: materializationCode } : {}), selectedInputs: selected.length, selectedMembers,
+                receivedCount: Number(row.received_count), retainedInputs: materializationCode ? 0 : selected.length, retainedMembers: materializationCode ? 0 : selectedMembers, excludedCount,
                 supersededInputs: row.mode === 'latest' ? eligible.slice(0, -1).map(input => input.input_unit_id) : [] };
-            await query('UPDATE automation_flow_batches SET state=?,output_unit_id=?,outcome_json=?,updated_at_ms=? WHERE id=?', [unitId ? 'sealed' : 'empty', unitId, encode(outcome), now, row.id]);
+            await query('UPDATE automation_flow_batches SET state=?,output_unit_id=?,outcome_json=?,updated_at_ms=? WHERE id=?', [materializationCode ? 'failed' : unitId ? 'sealed' : 'empty', unitId, encode(outcome), now, row.id]);
             for (const id of [...new Set(inputs.map(input => input.activation_id))]) {
                 const open = await query("SELECT b.id FROM automation_flow_batch_inputs i JOIN automation_flow_batches b ON b.id=i.batch_id WHERE i.activation_id=? AND b.state='open' LIMIT 1", [id]);
                 if (!open.length) {
@@ -285,8 +376,7 @@ function createGraphStore(db) {
                     }
                 }
             }
-            if (affectedRuns.size) await query('UPDATE automation_flow_runs SET needs_sync=1 WHERE run_id IN (?)', [[...affectedRuns]]);
-            return { state: unitId ? 'sealed' : 'empty', unitId, stepIds: steps, outcome };
+            return { state: materializationCode ? 'failed' : unitId ? 'sealed' : 'empty', unitId, stepIds: steps, outcome, syncRunIds: [...syncRuns] };
         });
     }
     async function recordSend(step, unit, destination, now) {
@@ -311,6 +401,6 @@ function createGraphStore(db) {
         return { namespace: first.namespace_key, runIds: rows.map(row => row.run_id) };
     }
     const joins = require('./graph-join-store').createJoinStore({ db, locked, putUnit, putStep, receipt, readUnit, uuid, encode, fault });
-    return { initialize, initializeInTransaction: initializeQuery, claim, settle, admitBatch, dueBatch, closeBatch, parkMerge, recordSend, synchronizationBatch, revokeRun, ...joins, readUnit: (id, eligibleOnly = false) => readUnit(db.queryDatabase, id, eligibleOnly) };
+    return { initialize, initializeInTransaction: initializeQuery, claim, repairInitialStep, settle, failStep, admitBatch, dueBatch, closeBatch, parkMerge, recordSend, synchronizationBatch, revokeRun, ...joins, readUnit: (id, eligibleOnly = false) => readUnit(db.queryDatabase, id, eligibleOnly) };
 }
 module.exports = { createGraphStore, namespaceKey, uuid };

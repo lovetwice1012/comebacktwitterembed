@@ -544,8 +544,8 @@ async function workspaceFixture({ existing = null, canEdit = true, activationFai
     const f = await reactFixture('export { AutomationWorkspace } from "./components/automation/automation-workspace";');
     flowEnvironment(f);
     const requests = [], monitors = [
-        { id: 'private-monitor', kind: 'auto', name: '自分の通知', scope: 'private', providerId: 'github', source: 'https://example.test/private', enabled: true, destinationId: 'dm', destinationType: 'dm' },
-        { id: 'shared-monitor', kind: 'auto', name: '共有の通知', scope: 'guild', providerId: 'github', source: 'https://example.test/shared', enabled: true, destinationId: 'dm' },
+        { id: 'private-monitor', kind: 'auto', name: '自分の通知', scope: 'private', providerId: 'github', source: 'https://example.test/private', enabled: true, destinationId: 'dm', destinationType: 'dm', revision: 1 },
+        { id: 'shared-monitor', kind: 'auto', name: '共有の通知', scope: 'guild', providerId: 'github', source: 'https://example.test/shared', enabled: true, destinationId: 'dm', revision: 1 },
     ];
     let stored = existing ? structuredClone(existing) : null, attached = false;
     f.set('fetch', async (address, options) => {
@@ -561,7 +561,7 @@ async function workspaceFixture({ existing = null, canEdit = true, activationFai
         else if (route === 'providers') result = { auto: [{ id: 'github' }], price: [{ id: 'steam' }], autoRegistration: { eligible: true } };
         else if (route === 'entitlements') result = { plan: { name: '無料プラン', priority: 0, slotLimit: 5, dayLimit: 24, minuteLimit: 5 }, slots: { used: 2, max: 5, available: 3 }, usage: { entries: [] } };
         else if (route === 'destinations') result = { items: [{ id: 'dm', name: '自分のDM', kind: 'dm', scope: 'private', enabled: true }] };
-        else if (route === 'dictionaries') result = { items: [] };
+        else if (route === 'dictionaries' || route === 'x-monitors') result = { items: [] };
         else if (route === 'template') result = template(url.searchParams.get('goal'), url.searchParams.get('time'), url.searchParams.get('format'));
         else if (route.startsWith('monitors/')) result = { items: monitors.filter(row => row.kind === route.slice(9)), nextCursor: null };
         else if (route === 'validate') {
@@ -576,8 +576,9 @@ async function workspaceFixture({ existing = null, canEdit = true, activationFai
         else if (route === `workflows/${stored?.id}` && options.method === 'PATCH') {
             assert.equal(body.expectedRevision, stored.revision);
             stored = { ...stored, revision: stored.revision + 1, name: body.definition.name, draft: structuredClone(body.definition), bindings: structuredClone(body.bindings) }; result = structuredClone(stored);
+        } else if (route === `workflows/${stored?.id}/activation-preview`) { result = { expectedRevision: stored.revision, expectedTargetsToken: "fixture-target-token", affectedTargets: monitors.filter(row => row.workflowId === stored.id) };
         } else if (route === `workflows/${stored?.id}/activate`) {
-            assert.equal(body.expectedRevision, stored.revision);
+            assert.equal(body.expectedRevision, stored.revision); assert.equal(body.expectedTargetsToken, "fixture-target-token");
             if (activationFails) { activationFails = false; return new Response(JSON.stringify({ error: 'fixture revision conflict' }), { status: 409 }); }
             stored = { ...stored, activeRevision: stored.revision, enabled: true }; result = structuredClone(stored);
         } else if (route === `workflows/${stored?.id}/attach`) {
@@ -627,7 +628,7 @@ test('a new rule is saved and activated before assignment; failed activation can
         assert.equal(f.stored().enabled, false);
         await press(f, '保存して通知に適用'); await settle(f);
         assert.deepEqual(writes().map(item => `${item.method} ${item.route}`), ['POST workflows', 'POST workflows/saved-rule/activate', 'POST workflows/saved-rule/activate', 'POST workflows/saved-rule/attach']);
-        assert.deepEqual(writes().at(-1).body, { targetKind: 'auto', targetId: 'private-monitor' });
+        assert.deepEqual(writes().at(-1).body, { targetKind: 'auto', targetId: 'private-monitor', expectedRevision: 1, expectedWorkflowId: null });
         assert.equal(f.stored().activeRevision, 1);
         assert(f.container.textContent.includes('「自分の通知」に適用しました。'));
         assert.equal(f.container.querySelector('dialog'), null, 'successful assignment closes the dialog');
@@ -761,7 +762,7 @@ test('inline resource choices and pasted binding collisions are one undoable gra
         await f.fill(field(f, '通知の宛先'), second);
         const alias = f.latest().nodes.find(node => node.type === 'send').config.destination;
         assert.notEqual(alias, 'alerts'); assert.equal(f.latestBindings().destinations[alias], second);
-        assert.equal(f.latestBindings().destinations.alerts, first);
+        assert.equal(f.latestBindings().destinations.alerts, undefined, 'the replaced and unused destination alias is removed');
         await keyboard(f, editorRoot(f), 'z', { ctrlKey: true });
         assert.deepEqual(f.latest(), original); assert.deepEqual(f.latestBindings(), initialBindings);
         const incoming = copySelection(original, ['deliver_z81'], { destinations: { alerts: second }, dictionaries: {} });
@@ -1183,5 +1184,23 @@ test('service notification limits appear in delivery history as waiting or conte
         await f.render(f.React.createElement(f.exports.DeliveryHistory, { api, canEdit: true })); await f.settle();
         assert.match(f.container.textContent, /次に送信できる時刻まで待機/); assert.match(f.container.textContent, /通知内容を短くするか、まとめる件数を減らして/);
         assert(!f.container.textContent.includes('AUTOMATION_'));
+    } finally { await f.close(); }
+});
+
+
+test('T10 returning a send block to its monitor destination removes only the last unused binding and undo restores both', async () => {
+    const original = arbitraryRule(), first = original.nodes.find(node => node.type === 'send');
+    first.config.destination = 'shared'; original.nodes.push({ ...structuredClone(first), id: 'second-send' });
+    const initialBindings = { destinations: { shared: 'owned-destination' }, dictionaries: {} };
+    const f = await editorFixture(original, { controlledFlow: true, bindings: initialBindings, resources: { destinations: [{ id: 'owned-destination', name: 'Owned destination' }], dictionaries: [] } });
+    try {
+        canvasGeometry(f);
+        const edit = async id => clickElement(f, f.container.querySelector(`[data-id="${id}"] button[aria-label="${catalogs.nodes.send.label}の内容を編集"]`));
+        await edit(first.id); await f.fill(field(f, '通知の宛先'), 'default');
+        assert.equal(f.latestBindings().destinations.shared, 'owned-destination', 'another send still uses this binding');
+        await press(f, '編集を閉じる'); await edit('second-send'); await f.fill(field(f, '通知の宛先'), 'default');
+        assert.deepEqual(f.latestBindings().destinations, {});
+        await keyboard(f, editorRoot(f), 'z', { ctrlKey: true });
+        assert.equal(f.latest().nodes.find(node => node.id === 'second-send').config.destination, 'shared'); assert.equal(f.latestBindings().destinations.shared, 'owned-destination');
     } finally { await f.close(); }
 });

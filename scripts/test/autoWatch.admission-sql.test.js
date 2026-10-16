@@ -52,13 +52,17 @@ test('SQL partial source admission preserves validators, observation time, faile
         const third = await target('444444444444444444');
         await db.queryDatabase('UPDATE auto_watch_targets SET created_at_ms=? WHERE id=?', [observationAt + 1, third.id]);
         now += 60000;
-        items = [...items, { contentId: '26', title: 'new after baseline', url: 'https://github.com/octocat/repo/releases/tag/26' }];
+        // The upstream rolling page has already evicted every earlier item.
+        // Admission must use the complete persisted first observation instead.
+        items = [{ contentId: '26', title: 'new after baseline', url: 'https://github.com/octocat/repo/releases/tag/26' }];
         injectFailure = true;
         assert.equal((await run()).status, 'failed');
         injectFailure = false;
         assert.deepEqual((await db.queryDatabase('SELECT cursor_json,etag,last_modified FROM auto_watch_sources WHERE id=?', [row.source_id]))[0], checkpoint);
         assert.equal((await db.queryDatabase('SELECT baseline_at_ms FROM auto_watch_targets WHERE id=?', [third.id]))[0].baseline_at_ms, null);
-        assert.equal((await run()).newItemCount, 6);
+        assert.equal((await run()).newItemCount, 5);
+        assert.equal((await db.queryDatabase('SELECT baseline_at_ms FROM auto_watch_targets WHERE id=?', [third.id]))[0].baseline_at_ms, null, 'A local backlog drain cannot establish a new subscriber baseline');
+        assert.equal((await run()).newItemCount, 1);
         const counts = await db.queryDatabase('SELECT target_id,COUNT(*) AS n FROM auto_watch_deliveries GROUP BY target_id');
         assert.deepEqual(counts.map(r => [String(r.target_id), Number(r.n)]), [[first.id, 26], [second.id, 1]]);
         assert.equal(Number((await db.queryDatabase("SELECT COUNT(*) AS n FROM auto_watch_deliveries WHERE status='failed'"))[0].n), 1);

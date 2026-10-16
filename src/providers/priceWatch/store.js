@@ -45,10 +45,13 @@ function normalizeDestination(value) {
     return destination;
 }
 
-function finiteThreshold(value, minimum, maximum) {
-    if (value === undefined || value === null || value === '') return null;
+function finiteThreshold(value, minimum, maximum, field) {
+    if (value === undefined || value === null || typeof value === 'string' && !value.trim()) return null;
     const number = Number(value);
-    if (!Number.isFinite(number) || number < minimum || number > maximum) return null;
+    if (!['number', 'string'].includes(typeof value) || typeof value === 'string' && !/^(?:\d+(?:\.\d*)?|\.\d+)$/.test(value.trim())
+        || !Number.isFinite(number) || number < minimum || number > maximum) {
+        throw Object.assign(error('A supplied price condition is outside its valid range.', 'PRICE_WATCH_INVALID_THRESHOLD'), { field });
+    }
     return number;
 }
 
@@ -56,8 +59,8 @@ function normalizeRule(input) {
     const mode = String(input.mode || '').toLowerCase();
     if (mode === 'change') return { mode, maxPriceAmount: null, minDiscountPercent: null, ruleKey: 'change' };
     if (mode !== 'threshold') throw error('Price-watch mode must be change or threshold.', 'PRICE_WATCH_INVALID_MODE');
-    const maxPriceAmount = finiteThreshold(input.maxPriceAmount, 0, 999999999999999);
-    const minDiscountPercent = finiteThreshold(input.minDiscountPercent, 0.01, 100);
+    const maxPriceAmount = finiteThreshold(input.maxPriceAmount, 0, 999999999999999, 'maxPriceAmount');
+    const minDiscountPercent = finiteThreshold(input.minDiscountPercent, 0.01, 100, 'minDiscountPercent');
     if (maxPriceAmount === null && minDiscountPercent === null) {
         throw error('Set a maximum price or minimum discount percentage.', 'PRICE_WATCH_THRESHOLD_REQUIRED');
     }
@@ -106,7 +109,8 @@ async function registerTargetAdmitted(input, options = {}) {
     return await db.withDatabaseTransaction(async query => {
         await entitlements.lockOwner(query, userId);
         const webhookEndpointId = destinationType === 'webhook' ? await upsertWebhook(query, webhookUrl) : null;
-        const destinationKey = destinationType === 'dm' ? `dm:${userId}` : `webhook:${webhookEndpointId}`;
+        let destinationKey = destinationType === 'dm' ? `dm:${userId}`
+            : input.destinationChannelId ? `channel:${input.guildId}:${input.destinationChannelId}` : `webhook:${webhookEndpointId}`;
         const initialDue = now + Math.floor(Math.max(0, Math.min(1, Number(random()) || 0)) * jitter);
         await query(
             `INSERT INTO ${TABLES.priceWatchSources}
@@ -121,15 +125,27 @@ async function registerTargetAdmitted(input, options = {}) {
         );
         const source = sourceRows[0];
         if (!source?.id) throw error('Price-watch source could not be saved.', 'PRICE_WATCH_SOURCE_STORE_FAILED');
-        const existing = await query(`SELECT id FROM ${TABLES.priceWatchTargets}
+        let existing = input.destinationChannelId ? await query(`SELECT id,destination_key FROM ${TABLES.priceWatchTargets}
+            WHERE source_id=? AND user_id=? AND destination_key IN (?,?) AND watch_mode=? AND rule_key=?
+            ORDER BY (destination_key=?) DESC LIMIT 1`, [source.id, userId, destinationKey, `webhook:${webhookEndpointId}`, rule.mode, rule.ruleKey, destinationKey])
+            : await query(`SELECT id FROM ${TABLES.priceWatchTargets}
             WHERE source_id=? AND user_id=? AND destination_key=? AND watch_mode=? AND rule_key=? LIMIT 1`, [source.id, userId, destinationKey, rule.mode, rule.ruleKey]);
+        if (!existing.length && input.destinationChannelId) {
+            const legacy = await require('../autoWatch/channel-registration').legacyChannelRegistration(query, {
+                kind: 'price', userId, sourceId: source.id, guildId: String(input.guildId), channelId: String(input.destinationChannelId), endpointId: webhookEndpointId, rule,
+                verify: options.validateWebhook || ((url, verifyOptions) => require('../autoWatch/store').validateWebhook(url, { ...verifyOptions, fetch: options.fetch })),
+            });
+            if (legacy) existing = [legacy];
+        }
+        if (existing[0]?.destination_key) destinationKey = existing[0].destination_key;
+        if (existing[0]) await (options.service || require('../../automation/service').createService(db)).validateRegistrationWorkflow(query, { userId }, 'price', String(existing[0].id));
         await entitlements.assertSlotAvailable(query, userId, 'price', existing[0]?.id);
         await query(
             `INSERT INTO ${TABLES.priceWatchTargets}
              (source_id, user_id, guild_id, origin_channel_id, destination_type, destination_key, webhook_endpoint_id,
               watch_mode, rule_key, max_price_amount, min_discount_percent, enabled, created_at_ms)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
-             ON DUPLICATE KEY UPDATE baseline_at_ms=IF(enabled=0,NULL,baseline_at_ms),condition_active=IF(enabled=0,0,condition_active),created_at_ms=IF(enabled=0,VALUES(created_at_ms),created_at_ms),enabled=1, id=LAST_INSERT_ID(id)`,
+             ON DUPLICATE KEY UPDATE baseline_at_ms=IF(enabled=0,NULL,baseline_at_ms),condition_active=IF(enabled=0,0,condition_active),created_at_ms=IF(enabled=0,VALUES(created_at_ms),created_at_ms),enabled=1,webhook_endpoint_id=VALUES(webhook_endpoint_id), id=LAST_INSERT_ID(id)`,
             [
                 source.id,
                 userId,
@@ -157,6 +173,8 @@ async function registerTargetAdmitted(input, options = {}) {
             productUrl: normalized.productUrl,
             destinationType,
             mode: rule.mode,
+            maxPriceAmount: rule.maxPriceAmount,
+            minDiscountPercent: rule.minDiscountPercent,
             initialCheckNotBeforeMs: source.initialized_at_ms ? null : initialDue,
         };
     });

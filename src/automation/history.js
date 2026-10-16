@@ -3,6 +3,7 @@
 const { requireActor, assertAccess, AutomationError, hash } = require('./service');
 const { scheduleDelivery } = require('./schedule');
 const { FIELDS } = require('./schema');
+const { indexedTrace, readTracePage } = require('./flow-trace');
 const parse = value => typeof value === 'string' ? JSON.parse(value) : value;
 const fail = (code, message, status = 400) => { throw new AutomationError(code, message, status); };
 function version(row) { return hash(JSON.stringify([row.state, row.due_at_ms, row.updated_at_ms, row.lease_token, row.attempts, row.plan_json])); }
@@ -20,15 +21,18 @@ function snapshot(row) {
     const fallbackEvent = read(plan.event, {}, eventObject), originalEvent = read(row.event_json, fallbackEvent, eventObject), originalTrace = read(row.trace_json, [], traceArray);
     const members = plan.members === undefined ? [] : read(plan.members, [], value => Array.isArray(value) && value.every(member => object(member) && eventObject(member.event) && displayText(member.text) && displayText(member.defaultPriceText)));
     const latest = plan.aggregate?.mode === 'latest' && members.length > 0;
-    const event = latest ? members.at(-1).event : originalEvent;
+    const representative = members.length ? latest ? members.at(-1) : members[0] : null;
+    // A graph job keeps its durable originating run even when that member has
+    // expired. Public delivery data describes the members still being sent.
+    const event = latest || plan.flowV2 && representative ? representative.event : originalEvent;
     const trace = latest && plan.latestTrace != null ? read(plan.latestTrace, [], traceArray) : originalTrace;
-    return { plan, members, event, trace, originalEvent, originalTrace, invalid };
+    return { plan, members, representative, event, trace, originalEvent, originalTrace, invalid };
 }
 function formatJob(row) {
-    const { plan, members, event, invalid } = snapshot(row);
+    const { plan, members, representative, event, invalid } = snapshot(row);
     return { id: row.id, runId: row.run_id, state: row.state, version: version(row), dueAtMs: Number(row.due_at_ms), deadlineMs: row.deadline_ms == null ? null : Number(row.deadline_ms),
         title: event?.title, url: event?.url, providerId: event?.providerId, scope: row.scope, workflowId: row.workflow_id, ruleRevision: row.revision,
-        targetKind: row.target_kind, targetId: String(row.target_id), destinationId: row.destination_id, parentJobId: row.parent_job_id,
+        targetKind: plan.flowV2 && representative ? representative.targetKind : row.target_kind, targetId: String(plan.flowV2 && representative ? representative.targetId : row.target_id), destinationId: row.destination_id, parentJobId: row.parent_job_id,
         attempts: Number(row.attempts), sentSteps: Number(row.sent_steps), messageId: row.discord_message_id, errorCode: row.last_error_code,
         aggregateItems: members.length || null, aggregateReceived: plan.aggregateCount || members.length || null, aggregateMode: plan.aggregate?.mode || null,
         snapshotInvalid: invalid, preview: invalid ? '保存された配信データを読み取れません。この通知は再送せず、設定から新しい通知を作成してください。' : members.length ? members.map(member => member.defaultPriceText || member.text).join('\n\n') : plan.defaultPriceText || plan.text,
@@ -77,12 +81,42 @@ function createHistory(db, service) {
         if (cursor) { conditions.push('(j.created_at_ms<? OR (j.created_at_ms=? AND j.id<?))'); params.push(cursor.at, cursor.at, cursor.id); }
         const rows = await db.queryDatabase(`${selection} WHERE ${conditions.join(' AND ')} ORDER BY j.created_at_ms DESC,j.id DESC LIMIT 51`, params);
         const selected = rows.slice(0, 50), last = selected.at(-1);
-        return { items: selected.map(formatJob), ...(targeted ? { activity } : {}), nextCursor: rows.length > 50 ? Buffer.from(JSON.stringify({ at: Number(last.created_at_ms), id: last.id })).toString('base64url') : null };
+        const rulePage = targeted && !input.cursor ? await excluded(actor, '', input) : null;
+        return { items: selected.map(formatJob), ...(targeted ? { activity, ruleRuns: rulePage?.items || [], ruleRunsNextCursor: rulePage?.nextCursor || null } : {}), nextCursor: rows.length > 50 ? Buffer.from(JSON.stringify({ at: Number(last.created_at_ms), id: last.id })).toString('base64url') : null };
     }
     async function detail(actor, id) {
         const row = await getRow(actor, id);
-        const data = snapshot(row);
-        return { ...formatJob(row), event: data.event, trace: data.trace, plan: data.plan, originalEvent: data.originalEvent };
+        const data = snapshot(row); let traceRunId = row.run_id;
+        const retainedRunId = data.plan.flowV2 && data.representative?.runId;
+        if (retainedRunId && retainedRunId !== row.run_id) {
+            const retained = (await db.queryDatabase(`SELECT trace_json FROM automation_runs WHERE id=? AND owner_user_id=? AND scope=?
+                AND (scope='private' OR guild_id<=>?) AND workflow_id<=>? AND revision<=>?`, [retainedRunId, row.owner_user_id, row.scope, row.guild_id, row.workflow_id, row.revision]))[0];
+            if (retained) { data.trace = snapshot({ ...row, trace_json: retained.trace_json }).trace; traceRunId = retainedRunId; }
+        }
+        const indexed = indexedTrace(data.trace), graph = indexed || (await db.queryDatabase('SELECT run_id FROM automation_flow_runs WHERE run_id=?', [traceRunId])).length > 0;
+        let traceHistory = graph ? { runId: traceRunId, indexed, firstPage: false, totalEntries: null } : undefined;
+        if (indexed) {
+            try { const page = await trace(actor, traceRunId); data.trace = page.items; traceHistory = { runId: traceRunId, indexed, firstPage: true, totalEntries: page.totalEntries, sourceRevision: page.sourceRevision, nextCursor: page.nextCursor }; }
+            // A diagnostic read failure must not discard the delivery state or
+            // cause a committed action to be offered for submission again.
+            catch (error) { traceHistory.errorCode = error instanceof AutomationError ? error.code : 'HISTORY_TRACE_UNAVAILABLE'; }
+        }
+        return { ...formatJob(row), event: data.event, trace: data.trace, plan: data.plan, originalEvent: data.originalEvent, ...(traceHistory ? { traceHistory } : {}) };
+    }
+    async function trace(actor, runId, input = {}) {
+        requireActor(actor);
+        if (!/^[0-9a-f-]{36}$/.test(runId || '')) fail('NOT_FOUND', '処理記録が見つかりません。', 404);
+        const header = () => db.queryDatabase('SELECT id,owner_user_id,guild_id,scope,workflow_id,revision,state FROM automation_runs WHERE id=?', [runId]);
+        try {
+            const row = (await header())[0]; assertAccess(actor, row);
+            const page = await readTracePage(db.queryDatabase, row, input);
+            const current = (await header())[0]; assertAccess(actor, current);
+            if (JSON.stringify(current) !== JSON.stringify(row)) fail('HISTORY_TRACE_CHANGED', '処理履歴が更新されました。先頭から読み直してください。', 409);
+            return page;
+        } catch (error) {
+            if (error instanceof AutomationError) throw error;
+            fail('HISTORY_TRACE_UNAVAILABLE', '処理記録を読み込めませんでした。再試行してください。', 503);
+        }
     }
     async function change(actor, id, input) {
         if (!['cancel', 'reschedule', 'retry'].includes(input.action)) fail('INVALID_ACTION', '配信操作が不正です。');
@@ -92,7 +126,7 @@ function createHistory(db, service) {
             if (row.parent_job_id) fail('AGGREGATED_MEMBER', 'まとめ通知の親の配信を操作してください。');
             if (['unknown', 'partial', 'sending', 'sent'].includes(row.state) || Number(row.sent_steps) > 0 || row.discord_message_id) fail('DELIVERY_NOT_REPLAYABLE', '送信済み・送信中・結果不明の通知は二重送信を避けるため、この操作を実行できません。');
             if (input.action !== 'cancel' && snapshot(row).invalid) fail('HISTORY_SNAPSHOT_INVALID', '保存された配信データを読み取れないため、再送・再予約はできません。');
-            let state = row.state, due = Number(row.due_at_ms);
+            let state = row.state, due = Number(row.due_at_ms), changedPlan = null;
             const now = Date.now();
             if (input.action === 'cancel') state = 'cancelled';
             else {
@@ -101,23 +135,35 @@ function createHistory(db, service) {
                 const requested = input.action === 'retry' ? now : Number(input.dueAtMs);
                 if (!Number.isSafeInteger(requested) || requested < now || requested > now + 366 * 86400000) fail('INVALID_DUE_TIME', '配信時刻は現在から1年以内で指定してください。');
                 const plan = parse(row.plan_json);
-                due = scheduleDelivery(requested, plan.schedules, row.deadline_ms == null ? Infinity : Number(row.deadline_ms));
+                if (plan.flowV2 && Array.isArray(plan.members)) {
+                    due = require('./flow-projector').flowDeliveryWindow(plan.members, requested)?.dueAtMs ?? null;
+                    plan.flowV2.originalDueAtMs = requested; changedPlan = JSON.stringify(plan);
+                } else due = scheduleDelivery(requested, plan.schedules, row.deadline_ms == null ? Infinity : Number(row.deadline_ms));
                 if (due === null) fail('DEADLINE_EXCEEDED', 'ルールの期限・通知可能時間内に予約できません。');
                 state = 'pending';
             }
-            await query('UPDATE automation_jobs SET state=?,due_at_ms=?,lease_token=NULL,lease_until_ms=0,attempts=IF(?=\'retry\',0,attempts),last_error_code=?,updated_at_ms=? WHERE id=?',
-                [state, due, input.action, `USER_${input.action.toUpperCase()}`, now, id]);
+            await query('UPDATE automation_jobs SET state=?,due_at_ms=?,plan_json=COALESCE(?,plan_json),lease_token=NULL,lease_until_ms=0,attempts=IF(?=\'retry\',0,attempts),last_error_code=?,updated_at_ms=? WHERE id=?',
+                [state, due, changedPlan, input.action, `USER_${input.action.toUpperCase()}`, now, id]);
             if (state === 'cancelled') await query("UPDATE automation_jobs SET state='cancelled',last_error_code='PARENT_CANCELLED',updated_at_ms=? WHERE parent_job_id=? AND state='aggregated'", [now, id]);
             await service.audit(query, actor, id, `job.${input.action}`, { previousState: row.state, dueAtMs: due }, row.guild_id);
             return { state, dueAtMs: due };
         });
     }
-    async function excluded(actor, after = '') {
+    async function excluded(actor, after = '', input = {}) {
         requireActor(actor);
-        const rows = await db.queryDatabase(`SELECT id,workflow_id,revision,target_kind,target_id,event_json,trace_json,state,created_at_ms FROM automation_runs
-            WHERE state='excluded' AND id>? AND ((scope='private' AND owner_user_id=?) OR (scope='guild' AND guild_id=? AND ?=1)) ORDER BY id LIMIT 51`, [after, actor.userId, actor.guildId || null, actor.canView ? 1 : 0]);
-        return { items: rows.slice(0, 50).map(r => ({ ...r, event: parse(r.event_json), trace: parse(r.trace_json), event_json: undefined, trace_json: undefined })), nextCursor: rows.length > 50 ? rows[49].id : null };
+        const targeted = input.targetKind != null || input.targetId != null;
+        if (targeted && (!['auto', 'price', 'x'].includes(input.targetKind) || !/^[1-9][0-9]{0,19}$/.test(input.targetId || ''))) fail('INVALID_TARGET', '通知の指定を確認してください。');
+        const rows = await db.queryDatabase(`SELECT r.id,r.workflow_id,r.revision,r.target_kind,r.target_id,r.event_json,r.trace_json,r.state,r.created_at_ms,
+            EXISTS (SELECT 1 FROM automation_flow_runs f WHERE f.run_id=r.id) AS is_flow FROM automation_runs r
+            WHERE r.state IN ('excluded','waiting','flow_pending','expired','failed','cancelled') AND r.id>?
+            AND ((r.scope='private' AND r.owner_user_id=?) OR (r.scope='guild' AND r.guild_id=? AND ?=1))
+            ${targeted ? 'AND r.target_kind=? AND r.target_id=?' : ''}
+            AND NOT EXISTS (SELECT 1 FROM automation_jobs j WHERE (j.execution_version<>2 AND j.run_id=r.id) OR (j.execution_version=2
+                AND JSON_CONTAINS(IF(JSON_VALID(j.plan_json),j.plan_json,'{}'),JSON_OBJECT('runId',r.id),'$.members')=1))
+            ORDER BY r.id LIMIT 51`, [after, actor.userId, actor.guildId || null, actor.canView ? 1 : 0, ...(targeted ? [input.targetKind, String(input.targetId)] : [])]);
+        return { items: rows.slice(0, 50).map(({ is_flow, ...r }) => { const entries = parse(r.trace_json); return { ...r, event: parse(r.event_json), trace: entries,
+            ...(is_flow ? { traceHistory: { runId: r.id, indexed: indexedTrace(entries), firstPage: false, totalEntries: null } } : {}), event_json: undefined, trace_json: undefined }; }), nextCursor: rows.length > 50 ? rows[49].id : null };
     }
-    return { list, detail, change, excluded };
+    return { list, detail, change, excluded, trace };
 }
 module.exports = { createHistory, formatJob, version };

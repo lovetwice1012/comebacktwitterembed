@@ -32,6 +32,7 @@ async function dispatchCore({ method, path, search = new URLSearchParams(), body
     const { service, market, evaluator, schema, format, bundle, catalog, destinations, monitors, history, dictionaryService, moderation, starter } = services;
     let result;
     const xQuota = () => services.xQuota || require('./x-monitor-quota').createXMonitorQuota(services.db, {
+      service,
       registrationEnabled: process.env.ANGELIC_X_REGISTRATION_ENABLED === '1',
       useLegacyUserInterval: process.env.ANGELIC_X_USE_LEGACY_USER_INTERVAL === '1',
     });
@@ -128,6 +129,7 @@ async function dispatchCore({ method, path, search = new URLSearchParams(), body
       if (!donations) throw new AutomationError('SQUARE_NOT_CONFIGURED', '決済機能は準備中です。', 503);
       if (action === "options" && method === "GET") result = await donations.getOptions(actor);
       else if (action === "status" && method === "GET") result = await donations.getStatus(actor);
+      else if (action === "history" && method === "GET") result = await donations.getHistory(actor, search.get('after') || '');
       else if (action === "policy" && method === "GET") result = await donations.getAdmin(actor);
       else if (action === "policy" && method === "PATCH") result = await donations.savePolicy(actor, body);
       else if (action === "quote" && method === "POST") result = await donations.createQuote(actor, body);
@@ -144,7 +146,7 @@ async function dispatchCore({ method, path, search = new URLSearchParams(), body
       else if (id === "subscribe" && method === "POST" && !action) result = await billing.subscribe(actor, body);
       else if (id === "resume" && method === "POST" && !action) result = await billing.resume(actor, body);
       else if (id === "abort" && method === "POST" && !action) result = await billing.abort(actor, body);
-      else if (id === "cancel" && method === "POST" && !action) result = await billing.cancel(actor);
+      else if (id === "cancel" && method === "POST" && !action) result = await billing.cancel(actor, body);
     }
     else if (kind === "providers" && method === "GET") result = await monitors.providers(actor);
     else if (kind === "channels" && method === "GET") result = await destinations.channels(actor);
@@ -159,7 +161,8 @@ async function dispatchCore({ method, path, search = new URLSearchParams(), body
       else if (id && method === "GET") result = await history.detail(actor, id);
       else if (id && method === "PATCH") result = await history.change(actor, id, body);
     }
-    else if (kind === "excluded" && method === "GET") result = await history.excluded(actor, search.get("afterId") || "");
+    else if (kind === "runs" && id && action === "trace" && method === "GET") result = await history.trace(actor, id, { cursor: search.get("cursor") || undefined });
+    else if (kind === "excluded" && method === "GET") result = await history.excluded(actor, search.get("afterId") || "", { targetKind: search.get("targetKind"), targetId: search.get("targetId") });
     else if (kind === "monitors" && ["auto", "price"].includes(id)) {
       if (action === "preview" && method === "POST") result = await monitors.preview(actor, id, body);
       else if (!action && method === "GET") result = await monitors.list(actor, id, search.get("afterId") || "0", { query: search.get("query") || '', state: search.get("state") || 'all' });
@@ -185,12 +188,14 @@ async function dispatchCore({ method, path, search = new URLSearchParams(), body
       else if (id && !action && method === "GET") result = await service.getWorkflow(actor, id);
       else if (id && !action && method === "PATCH") result = await service.updateWorkflow(actor, id, body);
       else if (id && !action && method === "DELETE") result = await service.remove("workflow", actor, id, body.expectedRevision);
-      else if (action === "activate" && method === "POST") result = await service.activateWorkflow(actor, id, body);
+      else if (action === "activation-preview" && method === "GET") result = await service.activationPreview(actor, id);
+      else if (action === "activate" && method === "POST") result = await service.activateWorkflow(actor, id, body, { requireTargetsToken: true });
       else if (action === "state" && method === "POST") result = await service.setWorkflowState(actor, id, body);
       else if (action === "history" && method === "GET") result = await service.history(actor, id);
       else if (action === "restore" && method === "POST") result = await service.restoreRevision(actor, id, body.revision, body.expectedRevision);
       else if (action === "attach" && method === "POST") result = await service.attach(actor, id, body.targetKind, body.targetId,
         Object.hasOwn(body, 'expectedRevision') || Object.hasOwn(body, 'expectedWorkflowId') ? validateAssignmentGuards({ expectedRevision: body.expectedRevision, expectedWorkflowId: body.expectedWorkflowId }) : undefined);
+      else if (action === "publication-export" && method === "GET") result = await market.exportWorkflowPublication(actor, id);
       else if (action === "export" && method === "GET") {
         const data = await market.exportWorkflow(actor, id);
         result = search.get("format") === "zip" ? { base64: Buffer.from(bundle.encodeBundle(data)).toString("base64") } : data;
@@ -207,6 +212,7 @@ async function dispatchCore({ method, path, search = new URLSearchParams(), body
       else if (action === "diff" && method === "POST") result = await dictionaryService.diff(actor, id, body.from, body.to);
       else if (action === "restore" && method === "POST") result = await dictionaryService.restore(actor, id, body);
       else if (action === "export" && method === "GET") result = await dictionaryService.exportData(actor, id, Number(search.get("revision")) || undefined, search.get("format") || "json");
+      else if (action === "package-export" && method === "GET") result = await market.exportDictionaryPackage(actor, id, Number(search.get("revision")));
       else if (action === "test" && method === "POST") {
         const row = await service.getRow("dictionary", actor, id);
         result = await evaluator.match({ id, revision: Number(body.revision || row.revision) }, body.text);
@@ -222,6 +228,7 @@ async function dispatchCore({ method, path, search = new URLSearchParams(), body
       else if (id && !action && method === "GET") result = await market.get(actor, id, Number(search.get("version")) || undefined, search.get("shareKey"));
       else if (id && !action && method === "PATCH") result = await market.save(actor, body, id);
       else if (action === "install" && method === "POST") result = await market.install(actor, id, body);
+      else if (action === "editing-import" && method === "POST") result = await market.importForEditing(actor, id, body);
       else if (action === "status" && method === "POST") result = await market.setStatus(actor, id, body);
       else if (action === "feedback" && method === "POST") result = await market.feedback(actor, id, body);
       else if (action === "versions" && method === "GET") result = await market.versions(actor, id, { shareKey: search.get("shareKey"), before: search.get("before") });

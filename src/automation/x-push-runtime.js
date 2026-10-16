@@ -26,7 +26,7 @@ function createXPushRuntime(db, queue, options = {}) {
     if (!Number.isInteger(maxConnections) || maxConnections < 1 || maxConnections > 10000
         || !Number.isInteger(pageSize) || pageSize < 1 || pageSize > 100
         || !Number.isInteger(intervalMs) || intervalMs < 100 || intervalMs > 60000) throw new Error('X_PUSH_RUNTIME_CONFIG_INVALID');
-    const sessions = new Map(), leases = new Map(), draining = new Map(), cooldowns = new Map(), drainAgain = new Set(), receiptIds = new Map();
+    const sessions = new Map(), sessionControls = new Map(), leases = new Map(), draining = new Map(), cooldowns = new Map(), drainAgain = new Set(), receiptIds = new Map();
     // Recovered/processed states are durable; this bounded cache merely avoids
     // retrying still-unknown formats on every tick during the same process.
     const quarantineCursors = new Map(), realtimeCursors = new Map();
@@ -39,6 +39,29 @@ function createXPushRuntime(db, queue, options = {}) {
         WHERE s.id>? AND COALESCE(r.state,'awaiting')<>'requires_reenrollment' AND COALESCE(r.retry_at_ms,0)<=? AND EXISTS (SELECT 1 FROM automation_x_monitors m WHERE m.owner_user_id=s.owner_user_id AND m.enabled=1 AND m.state='ready'
           AND CASE WHEN JSON_VALID(m.notification_settings_json) THEN JSON_UNQUOTE(JSON_EXTRACT(m.notification_settings_json,'$.subscriptionId')) ELSE NULL END=s.id)
         ORDER BY s.id LIMIT ?`, [afterId, clock(), pageSize]));
+    const listActiveSessions = options.listActiveSessions || (async ids => db.queryDatabase(`SELECT s.id,s.owner_user_id,s.revision
+        FROM automation_x_subscriptions s WHERE s.id IN (?) AND EXISTS (
+            SELECT 1 FROM automation_x_monitors m WHERE m.owner_user_id=s.owner_user_id AND m.enabled=1 AND m.state='ready'
+            AND CASE WHEN JSON_VALID(m.notification_settings_json) THEN JSON_UNQUOTE(JSON_EXTRACT(m.notification_settings_json,'$.subscriptionId')) ELSE NULL END=s.id)`, [ids]));
+
+    async function reconcileSessions() {
+        if (!sessions.size) return;
+        const eligible = await listActiveSessions([...sessions.keys()]);
+        if (!Array.isArray(eligible)) throw new Error('X_PUSH_RUNTIME_CANDIDATES_INVALID');
+        const current = new Map(eligible.map(row => [row.id, row]));
+        const closing = [];
+        for (const [id, record] of sessionControls) {
+            const row = current.get(id);
+            if (row && row.owner_user_id === record.ownerUserId && Number(row.revision || 1) === record.revision) continue;
+            record.controller.abort();
+            closing.push(sessions.get(id));
+        }
+        if (!closing.length) return;
+        let deadline;
+        try {
+            await Promise.race([Promise.allSettled(closing), new Promise(resolve => { deadline = setTimeout(resolve, 5000); })]);
+        } finally { clearTimeout(deadline); }
+    }
 
     async function recoverQuarantined(lease) {
         if (typeof gateway.store.listQuarantinedInbox !== 'function' || typeof gateway.decryptQuarantinedInbox !== 'function'
@@ -48,6 +71,7 @@ function createXPushRuntime(db, queue, options = {}) {
         for (const row of rows) {
             if (stopped || controller.signal.aborted) return;
             assertAllowed();
+            if (!require('./recovery-origin').inboxAllowed(row)) { await gateway.store.markRecoveryQuarantined(lease, row.id); continue; }
             try {
                 const payload = await gateway.decryptQuarantinedInbox(lease, row);
                 if (stopped || controller.signal.aborted) return;
@@ -85,9 +109,10 @@ function createXPushRuntime(db, queue, options = {}) {
         if (!enabled || stopped || controller.signal.aborted || !cadenceConfigured) return { state: 'not_configured' };
         enqueueReceipt(lease, trigger);
         if (draining.has(lease.subscriptionId)) return draining.get(lease.subscriptionId);
+        const sessionSignal = sessionControls.get(lease.subscriptionId)?.controller.signal;
         const work = (async () => {
             const processed = new Set();
-            const halted = () => stopped || controller.signal.aborted;
+            const halted = () => stopped || controller.signal.aborted || sessionSignal?.aborted === true;
             async function permitted() {
                 if (halted()) return false;
                 assertAllowed();
@@ -101,6 +126,14 @@ function createXPushRuntime(db, queue, options = {}) {
             async function route(inbox, processingMode) {
                 if (halted() || inbox.status !== 'received') return;
                 assertAllowed(); await gateway.store.assertLease(lease);
+                // Restored ciphertext is retained for investigation. Its
+                // original receipt time is checked before any decryption or
+                // creation of a post-recovery run/job.
+                if (!require('./recovery-origin').inboxAllowed(inbox)) {
+                    await gateway.store.markRecoveryQuarantined(lease, inbox.id);
+                    if (!halted()) processed.add(inbox.id);
+                    return;
+                }
                 try {
                     const payload = await gateway.decryptInbox(lease, inbox);
                     if (halted()) return;
@@ -199,6 +232,7 @@ function createXPushRuntime(db, queue, options = {}) {
         const work = (async () => {
             if (!gateway || typeof gateway.run !== 'function') throw new Error('X_PUSH_GATEWAY_UNAVAILABLE');
             assertAllowed();
+            await reconcileSessions();
             const candidates = await listCandidates(cursor);
             if (!Array.isArray(candidates)) throw new Error('X_PUSH_RUNTIME_CANDIDATES_INVALID');
             cursor = candidates.length === pageSize ? candidates.at(-1).id : '';
@@ -210,13 +244,16 @@ function createXPushRuntime(db, queue, options = {}) {
                 if (!policy.eligible) continue;
                 let active = true;
                 const revision = Number(candidate.revision || 1);
-                const rememberSession = value => { if (active && sessions.get(candidate.id) === pending) remember(value); };
+                const localController = new AbortController();
+                const record = { controller: localController, ownerUserId: candidate.owner_user_id, revision };
+                sessionControls.set(candidate.id, record);
+                const rememberSession = value => { if (active && !localController.signal.aborted && sessions.get(candidate.id) === pending) remember(value); };
                 const pending = Promise.resolve().then(() => gateway.run({ subscriptionId: candidate.id, ownerUserId: candidate.owner_user_id,
-                    workerId, signal: controller.signal, onSession: rememberSession, onLease: rememberSession,
-                    onReceived: async ({ lease, inbox }) => { if (!active || sessions.get(candidate.id) !== pending || stopped) return; rememberSession({ lease }); await drain(lease, { received: true, inbox }); } }))
+                    workerId, signal: localController.signal, onSession: rememberSession, onLease: rememberSession,
+                    onReceived: async ({ lease, inbox }) => { if (!active || localController.signal.aborted || sessions.get(candidate.id) !== pending || stopped) return; rememberSession({ lease }); await drain(lease, { received: true, inbox }); } }))
                     .catch(error => ({ state: 'error', reasonCode: /^X_PUSH_[A-Z_]+$/.test(String(error?.code || '')) ? error.code : 'X_PUSH_CONNECTION_FAILED' }))
                     .then(async result => {
-                        if (stopped || controller.signal.aborted || ['busy', 'requires_reenrollment'].includes(result?.state)) return;
+                        if (stopped || controller.signal.aborted || localController.signal.aborted || ['busy', 'requires_reenrollment'].includes(result?.state)) return;
                         const lease = leases.get(candidate.id);
                         const identity = { subscriptionId: candidate.id, ownerUserId: candidate.owner_user_id, revision: lease?.revision || revision };
                         const status = await gateway.store.status(identity);
@@ -228,9 +265,13 @@ function createXPushRuntime(db, queue, options = {}) {
                     .catch(() => {
                         // A failed metadata write must not cause an immediate
                         // reconnect storm. The next successful DB access persists it.
-                        if (!stopped) cooldowns.set(candidate.id, Math.max(cooldowns.get(candidate.id) || 0, clock() + 300000));
+                        if (!stopped && !localController.signal.aborted) cooldowns.set(candidate.id, Math.max(cooldowns.get(candidate.id) || 0, clock() + 300000));
                     })
-                    .finally(() => { active = false; if (sessions.get(candidate.id) === pending) { sessions.delete(candidate.id); leases.delete(candidate.id); } });
+                    .finally(() => {
+                        active = false;
+                        if (sessions.get(candidate.id) === pending) { sessions.delete(candidate.id); leases.delete(candidate.id); }
+                        if (sessionControls.get(candidate.id) === record) sessionControls.delete(candidate.id);
+                    });
                 sessions.set(candidate.id, pending);
             }
             const results = await Promise.allSettled([...leases.values()].map(drain));
@@ -254,6 +295,7 @@ function createXPushRuntime(db, queue, options = {}) {
     }
     async function stop() {
         stopped = true; clearTimeout(timer); timer = null; controller.abort();
+        for (const record of sessionControls.values()) record.controller.abort();
         let deadline;
         try { await Promise.race([Promise.allSettled([...sessions.values(), ...draining.values(), ...(ticking ? [ticking] : [])]),
             new Promise(resolve => { deadline = setTimeout(resolve, 5000); })]); }

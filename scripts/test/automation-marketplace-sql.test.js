@@ -21,7 +21,14 @@ test('real SQL marketplace: version review, pinned installs, safe updates, dicti
     const owner = { userId: '222222222222222222', guildId: '111111111111111111', canView: true, canEdit: true };
     const member = { ...owner, userId: '333333333333333333' }, admin = { ...owner, userId: '444444444444444444', isAdmin: true };
     const dictionary = { schemaVersion: 1, name: '共有用サンプル', source: '自作テストデータ', license: 'CC0-1.0', entries: ['word-one'] };
-    const bundle = name => ({ schemaVersion: 1, kind: 'workflow', workflow: newWorkflow(name), dictionaries: { words: dictionary }, license: 'CC0-1.0' });
+    const bundle = name => {
+        const workflow = newWorkflow(name);
+        // Preserve an actually used custom destination across package updates.
+        // The literal default uses the monitor's own destination and has no
+        // resource binding for an import/update to preserve.
+        workflow.nodes.find(node => node.type === 'send').config.destination = 'alerts';
+        return { schemaVersion: 1, kind: 'workflow', workflow, dictionaries: { words: dictionary }, license: 'CC0-1.0' };
+    };
     const input = (name, visibility = 'public') => ({ title: name, description: 'テスト用共有ルール', visibility, rightsConfirmed: true, bundle: bundle(name) });
     let published, installed, dm;
     try {
@@ -39,7 +46,7 @@ test('real SQL marketplace: version review, pinned installs, safe updates, dicti
             installed = await market.install(member, published.id, { version: 1 });
             assert.equal(installed.workflow.enabled, false);
             dm = await service.saveDestination(member, { name: 'private DM', kind: 'dm', scope: 'private' });
-            await service.updateWorkflow(member, installed.workflow.id, { expectedRevision: 1, definition: installed.workflow.draft, bindings: { ...installed.workflow.bindings, destinations: { default: dm.id } } });
+            await service.updateWorkflow(member, installed.workflow.id, { expectedRevision: 1, definition: installed.workflow.draft, bindings: { ...installed.workflow.bindings, destinations: { alerts: dm.id } } });
             await service.activateWorkflow(member, installed.workflow.id, { expectedRevision: 2 });
             const rejecting = createMarketplace(db, { service, evaluator, moderationMatcher: { match: async () => [{ term: 'benign-test-marker' }] } });
             await assert.rejects(rejecting.save(owner, { ...input('拒否する変更'), expectedVersion: 1 }, published.id), { code: 'PUBLICATION_REJECTED' });
@@ -62,7 +69,7 @@ test('real SQL marketplace: version review, pinned installs, safe updates, dicti
             await assert.rejects(market.updateInstall(member, published.id, { ...args, expectedToken: preview.token }), { code: 'LOCAL_CHANGES' });
             await market.updateInstall(member, published.id, { ...args, expectedToken: preview.token, replaceLocalChanges: true });
             const updated = await service.getWorkflow(member, current.id);
-            assert.equal(updated.draft.name, '公開版3'); assert.equal(updated.activeRevision, 2); assert.equal(updated.bindings.destinations.default, dm.id);
+            assert.equal(updated.draft.name, '公開版3'); assert.equal(updated.activeRevision, 2); assert.equal(updated.bindings.destinations.alerts, dm.id);
             assert.equal((await market.installations(member)).items[0].version, 3);
             await assert.rejects(market.updateInstall(member, published.id, { ...args, expectedToken: preview.token, replaceLocalChanges: true }), { code: 'REVISION_CONFLICT' });
         });

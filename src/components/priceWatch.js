@@ -11,10 +11,13 @@ const {
     TextInputStyle,
 } = require('discord.js');
 const { normalizeSource } = require('../providers/priceWatch');
-const { deleteTarget, registerTarget } = require('../providers/priceWatch/store');
+const { deleteTarget, registerTarget, normalizeRule } = require('../providers/priceWatch/store');
 const { validateWebhook } = require('../providers/autoWatch/store');
-const { createWebhookForChannel } = require('./_webhookDestination');
+const { withWebhookForChannel, verifyChannelForNotification } = require('./_webhookDestination');
+const db = require('../db');
+const { withChannelWebhookOperation } = require('../automation/webhook-registration');
 const permissions = require('./_permissionCheck');
+const { notificationDestinationFailure } = require('../userFacingErrors');
 
 const PROVIDERS = Object.freeze({ a: 'amazon', s: 'steam' });
 
@@ -127,10 +130,13 @@ function modalValue(interaction, id) {
 
 function confirmation(locale, result) {
     const japanese = ja(locale);
+    const conditions = [];
+    if (result.maxPriceAmount !== null && result.maxPriceAmount !== undefined) conditions.push(japanese ? `上限価格: ${result.maxPriceAmount}` : `Maximum price: ${result.maxPriceAmount}`);
+    if (result.minDiscountPercent !== null && result.minDiscountPercent !== undefined) conditions.push(japanese ? `最低割引率: ${result.minDiscountPercent}%` : `Minimum discount: ${result.minDiscountPercent}%`);
     return {
         content: japanese
-            ? `価格通知を登録しました。\n対象: ${result.productUrl}\n通知先: ${result.destinationType === 'dm' ? 'DM' : 'Webhook'}\n方式: ${result.mode === 'change' ? '価格変動' : '条件達成'}`
-            : `Price alert registered.\nItem: ${result.productUrl}\nDestination: ${result.destinationType === 'dm' ? 'DM' : 'Webhook'}\nMode: ${result.mode === 'change' ? 'price changes' : 'price condition'}`,
+            ? `価格通知を登録しました。\n対象: ${result.productUrl}\n通知先: ${result.destinationType === 'dm' ? 'DM' : 'Webhook'}\n方式: ${result.mode === 'change' ? '価格変動' : '条件達成'}${conditions.length ? `\n${conditions.join('\n')}` : ''}`
+            : `Price alert registered.\nItem: ${result.productUrl}\nDestination: ${result.destinationType === 'dm' ? 'DM' : 'Webhook'}\nMode: ${result.mode === 'change' ? 'price changes' : 'price condition'}${conditions.length ? `\n${conditions.join('\n')}` : ''}`,
         components: [new ActionRowBuilder().addComponents(
             new ButtonBuilder()
                 .setStyle(ButtonStyle.Danger)
@@ -141,20 +147,14 @@ function confirmation(locale, result) {
 }
 
 async function register(interaction, source, mode, destination, options = {}) {
+    // Validate every supplied condition before source REST or webhook creation.
+    normalizeRule({ mode, maxPriceAmount: options.maxPriceAmount, minDiscountPercent: options.minDiscountPercent });
+    // Schema DDL must finish before the channel-operation transaction begins;
+    // MySQL DDL would otherwise implicitly commit its cross-process lock.
+    await require('../db_schema').ensureDatabaseSchema();
     const { normalized, productName } = await sourceFromMessage(interaction, source);
-    let webhookUrl = options.webhookUrl || null;
-    let createdWebhook = null;
-    if (destination === 'webhook') {
-        const checked = await validateWebhook(webhookUrl);
-        if (checked.guildId !== interaction.guildId) throw Object.assign(new Error('The webhook belongs to another server.'), { code: 'PRICE_WATCH_WEBHOOK_GUILD_MISMATCH' });
-    }
-    if (destination === 'channel') {
-        const created = await createWebhookForChannel(interaction, options.channelId, 'ComebackTwitterEmbed price alerts');
-        webhookUrl = created.webhookUrl;
-        createdWebhook = created.webhook;
-    }
-    try {
-        return await registerTarget({
+    const webhookUrl = options.webhookUrl || null;
+    const save = (url, destinationChannelId = undefined) => registerTarget({
             userId: interaction.user.id,
             providerId: source.providerId,
             productUrl: normalized.productUrl,
@@ -163,26 +163,73 @@ async function register(interaction, source, mode, destination, options = {}) {
             guildId: interaction.guildId,
             channelId: interaction.channelId,
             destinationType: destination === 'dm' ? 'dm' : 'webhook',
-            webhookUrl,
+            webhookUrl: url,
             mode,
             maxPriceAmount: options.maxPriceAmount,
             minDiscountPercent: options.minDiscountPercent,
+            destinationChannelId,
         });
-    } catch (error) {
-        try { await createdWebhook?.delete?.(); } catch { /* keep the original registration failure */ }
-        throw error;
+    if (destination === 'channel') {
+        return withWebhookForChannel(interaction, options.channelId, 'ComebackTwitterEmbed price alerts', created => save(created.webhookUrl, options.channelId), { db });
     }
+    if (destination === 'webhook') {
+        const checked = await validateWebhook(webhookUrl);
+        if (checked.guildId !== interaction.guildId) throw Object.assign(new Error('The webhook belongs to another server.'), { code: 'PRICE_WATCH_WEBHOOK_GUILD_MISMATCH' });
+        return withChannelWebhookOperation(db, interaction.guildId, checked.channelId, async () => {
+            const current = await validateWebhook(webhookUrl);
+            if (current.id !== checked.id || current.guildId !== checked.guildId || current.channelId !== checked.channelId) throw Object.assign(new Error('The webhook destination changed.'), { code: 'AUTO_WATCH_INVALID_WEBHOOK' });
+            await verifyChannelForNotification(interaction, current.channelId);
+            return save(webhookUrl);
+        });
+    }
+    return save(webhookUrl);
+}
+
+async function registerAndConfirm(interaction, source, mode, destination, options = {}) {
+    let result;
+    try { result = await register(interaction, source, mode, destination, options); }
+    catch (error) {
+        let content;
+        if (error?.code === 'PRICE_WATCH_INVALID_THRESHOLD') {
+            const discount = error.field === 'minDiscountPercent';
+            content = ja(interaction.locale)
+                ? discount ? '最低割引率は0.01〜100の数値で入力してください。' : '上限価格は0〜999999999999999の数値で入力してください。'
+                : discount ? 'Enter a minimum discount from 0.01 to 100.' : 'Enter a maximum price from 0 to 999999999999999.';
+        } else if (/^WEBHOOK_DESTINATION_(?:USER|BOT)_PERMISSION$/.test(String(error?.code || ''))) {
+            content = ja(interaction.locale)
+                ? '通知先で利用者とBotの閲覧・送信権限を確認してください。Webhookを作成する場合はWebhook管理権限も必要です。'
+                : 'Check View Channel and Send Messages permissions for you and the bot. Creating a webhook also requires Manage Webhooks.';
+        } else if (error?.code === 'AUTO_WATCH_INVALID_WEBHOOK') {
+            content = ja(interaction.locale) ? '通知先のWebhookを確認して、もう一度登録してください。' : 'Check the destination webhook and register again.';
+        } else if (['NATIVE_CHANNEL_REPAIR_REQUIRED', 'NATIVE_CHANNEL_VERIFICATION_UNAVAILABLE'].includes(error?.code)) {
+            const id = /^\d{1,20}$/.test(String(error.targetId || '')) ? String(error.targetId) : '';
+            const repair = error.code === 'NATIVE_CHANNEL_REPAIR_REQUIRED';
+            content = ja(interaction.locale)
+                ? repair ? `通知一覧でID ${id}を開き、通知先を選び直してください。既存の登録枠で修復できます。` : `通知先の確認を再試行してください。時間をおいて再登録するか、通知一覧のID ${id}から通知先を選び直せます。`
+                : repair ? `Open notification ID ${id} in your notification list and choose its destination again. This uses the existing slot.` : `Retry destination verification shortly, or choose a destination for notification ID ${id} in your notification list.`;
+        }
+        content ||= notificationDestinationFailure(error, interaction.locale);
+        if (!content) throw error;
+        await interaction.editReply({ content });
+        return;
+    }
+    // Confirmation failure occurs after commit and must not delete its hook.
+    await interaction.editReply(confirmation(interaction.locale, result));
 }
 
 async function handle(interaction) {
     const cancel = String(interaction.customId || '').match(/^priceWatchCancel:(\d{1,20})$/);
     if (cancel) {
+        await interaction.deferUpdate?.();
         await deleteTarget(interaction.user.id, cancel[1]);
-        await interaction.update({ content: ja(interaction.locale) ? '価格通知を解除しました。' : 'Price alert removed.', components: [] });
+        await interaction.editReply({ content: ja(interaction.locale) ? '価格通知を解除しました。' : 'Price alert removed.', components: [] });
         return;
     }
     const actionSource = parseInitial(interaction.customId) || parseDestination(interaction.customId) || parseChannel(interaction.customId);
     if (!actionSource) throw Object.assign(new Error('Invalid price alert action.'), { code: 'PRICE_WATCH_INVALID_COMPONENT' });
+    const registering = parseChannel(interaction.customId)?.mode === 'change'
+        || Boolean(parseDestination(interaction.customId) && interaction.values?.[0] === 'change:dm');
+    if (registering) await interaction.deferUpdate?.();
     if (!(await permissions.isAllowed(interaction, { providerId: actionSource.providerId }))) return false;
     const initial = parseInitial(interaction.customId);
     if (initial) {
@@ -208,8 +255,7 @@ async function handle(interaction) {
         const target = choice[1];
         if (!['change', 'threshold'].includes(mode) || !['dm', 'webhook', 'channel'].includes(target)) throw Object.assign(new Error('Invalid price alert selection.'), { code: 'PRICE_WATCH_INVALID_SELECTION' });
         if (target === 'dm' && mode === 'change') {
-            const result = await register(interaction, destination, mode, target);
-            await interaction.update(confirmation(interaction.locale, result));
+            await registerAndConfirm(interaction, destination, mode, target);
             return;
         }
         if (target === 'channel') {
@@ -230,8 +276,7 @@ async function handle(interaction) {
         const channelId = interaction.values?.[0];
         if (!/^\d{16,22}$/.test(String(channelId || ''))) throw Object.assign(new Error('Select one channel.'), { code: 'PRICE_WATCH_CHANNEL_REQUIRED' });
         if (channel.mode === 'change') {
-            const result = await register(interaction, channel, 'change', 'channel', { channelId });
-            await interaction.update(confirmation(interaction.locale, result));
+            await registerAndConfirm(interaction, channel, 'change', 'channel', { channelId });
             return;
         }
         await interaction.showModal(modalFor(channel, 'threshold', 'channel', channelId, interaction.locale));
@@ -243,6 +288,7 @@ async function handle(interaction) {
 async function handleModal(interaction) {
     const parsed = parseModal(interaction.customId);
     if (!parsed) throw Object.assign(new Error('Invalid price alert form.'), { code: 'PRICE_WATCH_INVALID_MODAL' });
+    await interaction.deferReply?.({ ephemeral: true });
     if (!(await permissions.isAllowed(interaction, { providerId: parsed.providerId }))) return false;
     const options = {};
     if (parsed.destination === 'webhook') options.webhookUrl = modalValue(interaction, 'webhook');
@@ -251,8 +297,7 @@ async function handleModal(interaction) {
         options.maxPriceAmount = modalValue(interaction, 'maxPrice').replace(/[,\s]/g, '');
         options.minDiscountPercent = modalValue(interaction, 'minDiscount').replace(/[%\s]/g, '');
     }
-    const result = await register(interaction, parsed, parsed.mode, parsed.destination, options);
-    await interaction.reply({ ...confirmation(interaction.locale, result), ephemeral: true });
+    await registerAndConfirm(interaction, parsed, parsed.mode, parsed.destination, options);
 }
 
 function handles(customId) {

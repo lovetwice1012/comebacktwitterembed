@@ -128,7 +128,8 @@ test('cross-monitor candidates share one batch within the owner namespace and se
     const batch = (await f.query('SELECT * FROM automation_flow_batches WHERE id=?', [first.admitted.batches[0]]))[0];
     const closed = await f.store.closeBatch(batch, [{ id: 'out', target: 'send' }], baseTime + 600000);
     assert.equal(closed.outcome.receivedCount, 2); assert.equal(closed.outcome.retainedMembers, 1);
-    assert.equal(closed.outcome.excluded[0].runId, first.origin.runId);
+    assert.equal(closed.outcome.excludedCount, 1);
+    assert.equal((await f.query("SELECT run_id FROM automation_flow_edges WHERE receipt_kind='batch_changed'"))[0].run_id, first.origin.runId);
     const unit = await f.store.readUnit(closed.unitId); assert.equal(unit.members[0].event.title, 'second');
     assert.equal((await createGraphStore(f.db).closeBatch(batch, [{ id: 'out', target: 'send' }], baseTime + 600000)).state, 'already_sealed');
     assert.equal(Number((await f.query("SELECT COUNT(*) AS n FROM automation_flow_steps WHERE node_id='send'"))[0].n), 1);

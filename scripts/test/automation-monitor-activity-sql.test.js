@@ -38,6 +38,22 @@ test('monitor activity attributes final delivery plans and preserves history acc
             await job({ target: '6', execution: 2, plan: { members: [{ targetKind: 'auto', targetId: '3', event: {} }, { targetKind: 'x', targetId: '7', event: {} }] } });
             assert.equal((await list('6')).items.length, 0);
         });
+        await t.test('latest mixed-monitor snapshots use the same representative for title, target and trace', async () => {
+            const lastJob = await job({ target: '12' }), lastRun = (await db.queryDatabase('SELECT run_id FROM automation_jobs WHERE id=?', [lastJob]))[0].run_id;
+            await db.queryDatabase('UPDATE automation_runs SET trace_json=? WHERE id=?', [JSON.stringify([{ nodeId: 'latest-source', outcome: 'yes' }]), lastRun]);
+            const plan = { flowV2: {}, aggregate: { mode: 'latest' }, members: [
+                { runId: 'replaced-below', targetKind: 'x', targetId: '11', event: { title: 'first post' }, text: 'first' },
+                { runId: lastRun, targetKind: 'x', targetId: '12', event: { title: 'latest post' }, text: 'latest' },
+            ] };
+            const id = await job({ target: '11', execution: 2, plan }), initialRun = (await db.queryDatabase('SELECT run_id FROM automation_jobs WHERE id=?', [id]))[0].run_id;
+            plan.members[0].runId = initialRun;
+            await db.queryDatabase('UPDATE automation_jobs SET plan_json=? WHERE id=?', [JSON.stringify(plan), id]);
+            await db.queryDatabase('UPDATE automation_runs SET trace_json=? WHERE id=?', [JSON.stringify([{ nodeId: 'first-source', outcome: 'no' }]), initialRun]);
+            const listed = (await list('12')).items.find(row => row.id === id), detail = await history.detail(actor, id);
+            assert.equal(listed.title, 'latest post'); assert.equal(listed.targetKind, 'x'); assert.equal(listed.targetId, '12');
+            assert.equal(detail.title, listed.title); assert.equal(detail.event.title, 'latest post'); assert.equal(detail.targetId, '12');
+            assert.deepEqual(detail.trace, [{ nodeId: 'latest-source', outcome: 'yes' }]);
+        });
         await t.test('summary remains accurate beyond pagination and state filters; tuple cursors stay target-scoped', async () => {
             await job({ target: '8', updated: 22000 });
             for (let index = 0; index < 52; index++) await job({ target: '8', state: 'pending', steps: 0, message: null, due: 30000 + index });

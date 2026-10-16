@@ -56,6 +56,33 @@ test('Square donations: no local secrets or invented monetary defaults; login an
     await assert.rejects(service.getStatus({ userId: 'client-not-discord' }), { code: 'AUTOMATION_AUTH_REQUIRED' });
 });
 
+test('S34-2 owner history pages past 100 unsubmitted quotes with stable equal-time boundaries and no grant changes', { skip: !port }, async () => {
+    const db = await createTestDatabase(port); let clock = Date.parse('2026-10-13T00:00:00Z');
+    const square = mockSquare(() => clock), donations = createSquareDonations(db, { env: ENV, fetch: square.fetch, clock: () => clock });
+    const owner = actor(150), stranger = actor(151);
+    try {
+        await donations.savePolicy(ADMIN, { enabled: true, currency: 'JPY', minimumAmount: 100, maximumAmount: 10000, supporterThreshold: null, validityDays: null, expectedUpdatedAtMs: null });
+        const quote = who => donations.createQuote(who, { amount: 2000, email: 'buyer@example.test', name: 'Fixture' });
+        const paid = await quote(owner); await donations.donate(owner, { attemptId: paid.attemptId, sourceId: 'cnon:history-fixture', consent: true });
+        clock += 1000;
+        for (let i = 0; i < 101; i++) await quote(owner);
+        const foreign = await quote(stranger);
+        const before = await db.queryDatabase('SELECT * FROM automation_push_support_grants WHERE owner_user_id=?', [owner.userId]);
+        const first = await donations.getStatus(owner); assert.equal(first.history.length, 100); assert(first.historyNextCursor);
+        assert(!first.history.some(row => row.attemptId === paid.attemptId));
+        clock += 1000; const inserted = await quote(owner);
+        const second = await donations.getHistory(owner, first.historyNextCursor);
+        assert.equal(second.items.length, 2); assert.equal(second.nextCursor, null);
+        assert(second.items.some(row => row.attemptId === paid.attemptId && row.verified && row.amount === 2000));
+        const ids = [...first.history, ...second.items].map(row => row.attemptId);
+        assert.equal(new Set(ids).size, 102); assert(!ids.includes(foreign.attemptId)); assert(!ids.includes(inserted.attemptId));
+        assert.equal((await donations.getHistory(owner)).items[0].attemptId, inserted.attemptId);
+        assert(!(await donations.getHistory(stranger, first.historyNextCursor)).items.some(row => ids.includes(row.attemptId)));
+        await assert.rejects(donations.getHistory(owner, 'invalid-cursor'), { code: 'SQUARE_DONATION_HISTORY_CURSOR' });
+        assert.deepEqual(await db.queryDatabase('SELECT * FROM automation_push_support_grants WHERE owner_user_id=?', [owner.userId]), before);
+    } finally { await db.close(); }
+});
+
 test('Square donations real SQL with mocked REST: trusted payment, durable ownership, refunds, rolling eligibility', { skip: !port, timeout: 120000 }, async t => {
     const db = await createTestDatabase(port), initial = Date.parse('2026-10-13T00:00:00Z'); let clock = initial;
     const square = mockSquare(() => clock), make = () => createSquareDonations(db, { env: ENV, fetch: square.fetch, clock: () => clock });

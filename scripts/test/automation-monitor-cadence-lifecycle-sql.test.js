@@ -38,7 +38,8 @@ test('SQL cadence handoff retains leased events after grant changes and shares s
         }
         async function select(f, cost) {
             const current = (await db.queryDatabase("SELECT updated_at_ms FROM automation_monitor_cadence WHERE target_kind='auto' AND target_id=?", [f.target.id]))[0];
-            return monitors.setCadence(f.owner, 'auto', f.target.id, { slotCost: cost, expectedRevision: 1, expectedUpdatedAtMs: current ? Number(current.updated_at_ms) : null });
+            const metadata = (await db.queryDatabase("SELECT revision FROM automation_monitors WHERE target_kind='auto' AND target_id=?", [f.target.id]))[0];
+            return monitors.setCadence(f.owner, 'auto', f.target.id, { slotCost: cost, expectedRevision: Number(metadata?.revision || 1), expectedUpdatedAtMs: current ? Number(current.updated_at_ms) : null });
         }
         async function claim(f, at) { return (await store.claimDueDeliveries(at, 256)).find(row => String(row.target_id) === f.target.id); }
         async function counts(f) {

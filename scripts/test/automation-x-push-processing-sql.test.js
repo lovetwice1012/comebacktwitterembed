@@ -61,6 +61,7 @@ async function fixture(work, runtimeOptions = {}) {
             runtime = createXPushRuntime(db, queue, { enabled: true, gateway: runtimeGateway, clock,
                 router: { hasRealtimeTargets: realRouter.hasRealtimeTargets, hasBatchTargets: realRouter.hasBatchTargets, routeReceived: input => routeOverride ? routeOverride(input, realRouter) : realRouter.routeReceived(input) },
                 rolloutMode: 'public', assertAllowed: () => {}, pageSize: 2,
+                listActiveSessions: async () => [{ id: subscription.subscriptionId, owner_user_id: U }],
                 listCandidates: async () => [{ id: subscription.subscriptionId, owner_user_id: U }], ...runtimeOptions, ...options });
             return runtime;
         }

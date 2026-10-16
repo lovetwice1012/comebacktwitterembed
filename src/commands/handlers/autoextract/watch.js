@@ -2,11 +2,12 @@
 
 const { provider } = require('../../../providers/autoWatch');
 const { registerTarget, validateWebhook, assertRegistrationAllowed } = require('../../../providers/autoWatch/store');
-const { createWebhookForChannel } = require('../../../components/_webhookDestination');
-const { failureReason } = require('../../../userFacingErrors');
+const { withWebhookForChannel, verifyChannelForNotification } = require('../../../components/_webhookDestination');
+const { failureReason, notificationDestinationFailure } = require('../../../userFacingErrors');
 const { recordError } = require('../../../errorTracking');
 const db = require('../../../db');
 const { withRateOperation } = require('../../../automation/rate-operation');
+const { withChannelWebhookOperation } = require('../../../automation/webhook-registration');
 
 function localized(locale, japanese, english) {
     return String(locale || '').toLowerCase().startsWith('ja') ? japanese : english;
@@ -36,8 +37,7 @@ module.exports = async function (interaction) {
             '内容・権利・通知先を確認し、responsibility を true にしてください。機械チェックは適法性や安全性を保証しません。',
             'Confirm content, rights and destination and set responsibility to true. Mechanical checks do not guarantee legality or safety.')));
     }
-    /** @type {import('discord.js').Webhook | null} */
-    let createdWebhook = null;
+    const committed = { targetId: '' };
     try {
         await require('../../../db_schema').ensureDatabaseSchema();
         return await withRateOperation(db, { userId: interaction.user.id }, 'monitor', async () => {
@@ -47,32 +47,38 @@ module.exports = async function (interaction) {
         }
         let destinationType = destination === 'dm' ? 'dm' : 'webhook';
         let destinationLabel = localized(interaction.locale, 'DM', 'DM');
+        const register = async (url, destinationChannelId = undefined) => {
+            let checked;
+            if (destinationType === 'webhook') {
+                const webhook = await validateWebhook(url); checked = webhook;
+                if (webhook.guildId !== interaction.guildId) {
+                    throw Object.assign(new Error('The webhook belongs to another server.'), { code: 'AUTO_WATCH_WEBHOOK_GUILD_MISMATCH' });
+                }
+                if (destination === 'webhook') destinationLabel = localized(interaction.locale, '指定Webhook', 'Specified webhook');
+            }
+            const save = () => registerTarget({
+                userId: interaction.user.id, providerId, source, destinationType, webhookUrl: url,
+                guildId: interaction.guildId, channelId: interaction.channelId,
+                channelNsfw: interaction.channel?.nsfw === true, sourceLocale: interaction.locale, destinationChannelId,
+            });
+            if (destination === 'webhook') return withChannelWebhookOperation(db, interaction.guildId, checked.channelId, async () => {
+                const current = await validateWebhook(url);
+                if (current.id !== checked.id || current.guildId !== checked.guildId || current.channelId !== checked.channelId) throw Object.assign(new Error('The webhook destination changed.'), { code: 'AUTO_WATCH_INVALID_WEBHOOK' });
+                await verifyChannelForNotification(interaction, current.channelId);
+                return save();
+            });
+            return save();
+        };
+        let result;
         if (destination === 'channel') {
             const channel = interaction.options.getChannel('channel');
             if (!channel?.id) return await interaction.editReply(errorReply(interaction.locale, localized(interaction.locale, 'Webhookを作成するチャンネルを指定してください。', 'Select a channel where the bot can create a webhook.')));
-            const created = await createWebhookForChannel(interaction, channel.id, 'ComebackTwitterEmbed auto watch');
-            createdWebhook = created.webhook;
-            webhookUrl = created.webhookUrl;
-            destinationLabel = localized(interaction.locale, `チャンネル #${created.channel.name || created.channel.id}`, `Channel #${created.channel.name || created.channel.id}`);
-        }
-        if (destinationType === 'webhook') {
-            const webhook = await validateWebhook(webhookUrl);
-            if (webhook.guildId !== interaction.guildId) {
-                return await interaction.editReply(errorReply(interaction.locale, localized(interaction.locale, 'Webhookはこのサーバーのものではありません。', 'The webhook belongs to another server.')));
-            }
-            if (destination === 'webhook') destinationLabel = localized(interaction.locale, '指定Webhook', 'Specified webhook');
-        }
-        const result = await registerTarget({
-            userId: interaction.user.id,
-            providerId,
-            source,
-            destinationType,
-            webhookUrl,
-            guildId: interaction.guildId,
-            channelId: interaction.channelId,
-            channelNsfw: interaction.channel?.nsfw === true,
-            sourceLocale: interaction.locale,
-        });
+            result = await withWebhookForChannel(interaction, channel.id, 'ComebackTwitterEmbed auto watch', created => {
+                destinationLabel = localized(interaction.locale, `チャンネル #${created.channel.name || created.channel.id}`, `Channel #${created.channel.name || created.channel.id}`);
+                return register(created.webhookUrl, channel.id);
+            }, { db });
+        } else result = await register(webhookUrl);
+        committed.targetId = String(result.id);
         const adapter = provider(result.providerId);
         const initial = result.initialCheckNotBeforeMs
             ? localized(interaction.locale, `<t:${Math.floor(result.initialCheckNotBeforeMs / 1000)}:R> に初回確認し、既存投稿は送信しません。`, `The first check is <t:${Math.floor(result.initialCheckNotBeforeMs / 1000)}:R> and will not post historical items.`)
@@ -94,7 +100,14 @@ module.exports = async function (interaction) {
         });
         });
     } catch (error) {
-        try { await createdWebhook?.delete?.(); } catch { /* keep the original registration failure */ }
+        if (committed.targetId) {
+            recordError(error, { source: 'autoextract.watch.confirmation', targetId: committed.targetId });
+            // The registration is already durable. A reply failure must never
+            // revoke its working destination or report a failed registration.
+            return await interaction.editReply({ content: localized(interaction.locale,
+                `新着通知を登録しました。ID: ${committed.targetId}。通知一覧で設定を確認できます。`,
+                `Auto watch registered. ID: ${committed.targetId}. Check your notification list for its settings.`) });
+        }
         if (error?.code === 'AUTOMATION_RATE_LIMITED') {
             const hour = error.windowMs === 3600000, limit = Number.isSafeInteger(error.limit) ? error.limit : hour ? 120 : 10;
             const seconds = Math.ceil((Number.isFinite(error.retryAfterMs) ? error.retryAfterMs : 60000) / 1000);
@@ -109,11 +122,20 @@ module.exports = async function (interaction) {
             '利用制限を確認できませんでした。少し待ってから再度お試しください。', 'Usage limits could not be verified. Please try again shortly.')));
         recordError(error, { source: 'autoextract.watch', providerId, guildId: interaction.guildId, userId: interaction.user.id });
         const code = String(error?.code || '');
-        const explanation = code === 'AUTO_WATCH_INVALID_SOURCE'
+        const targetId = /^\d{1,20}$/.test(String(error?.targetId || '')) ? String(error.targetId) : '';
+        const explanation = code === 'NATIVE_CHANNEL_REPAIR_REQUIRED'
+            ? localized(interaction.locale, `通知一覧でID ${targetId}を開き、通知先を選び直してください。既存の登録枠で修復できます。`, `Open notification ID ${targetId} in your notification list and choose its destination again. This uses the existing slot.`)
+            : code === 'NATIVE_CHANNEL_VERIFICATION_UNAVAILABLE'
+                ? localized(interaction.locale, `通知先の確認を再試行してください。時間をおいて再登録するか、通知一覧のID ${targetId}から通知先を選び直せます。`, `Retry destination verification shortly, or choose a destination for notification ID ${targetId} in your notification list.`)
+            : code === 'AUTO_WATCH_WEBHOOK_GUILD_MISMATCH'
+            ? localized(interaction.locale, 'Webhookはこのサーバーのものではありません。', 'The webhook belongs to another server.')
+            : /^WEBHOOK_DESTINATION_(?:USER|BOT)_PERMISSION$/.test(code)
+                ? localized(interaction.locale, '通知先で利用者とBotの閲覧・送信権限を確認してください。Webhookを作成する場合はWebhook管理権限も必要です。', 'Check View Channel and Send Messages permissions for you and the bot. Creating a webhook also requires Manage Webhooks.')
+            : code === 'AUTO_WATCH_INVALID_SOURCE'
             ? localized(interaction.locale, require('../../../automation/monitor-input').sourceGuidance(providerId).help, 'Use an account profile or channel URL rather than a single post.')
             : code === 'AUTO_WATCH_SLOT_LIMIT' ? localized(interaction.locale, '登録できる監視枠がありません。不要な監視を削除してから再度登録してください。一時停止中も枠を使用します。', 'No watch slots remain. Delete an unused watch before registering another; paused watches still occupy a slot.')
                 : code === 'AUTO_WATCH_INVALID_WEBHOOK' ? localized(interaction.locale, '通知先のWebhookを確認してください。DMを選ぶとWebhookなしで登録できます。', 'Check the destination webhook, or choose DM to register without a webhook.')
-                    : failureReason(error, interaction.locale);
+                    : notificationDestinationFailure(error, interaction.locale) || failureReason(error, interaction.locale);
         return await interaction.editReply(errorReply(interaction.locale, explanation));
     }
 };

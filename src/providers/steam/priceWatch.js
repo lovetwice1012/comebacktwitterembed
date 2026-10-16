@@ -39,6 +39,9 @@ function snapshotFromPrice(parsed, name, price) {
     if (priceAmount === null || !/^[A-Z]{3}$/.test(currency)) {
         throw Object.assign(new Error('Steam did not expose a reliable current price.'), { code: 'PRICE_WATCH_PRICE_UNAVAILABLE' });
     }
+    const rawDiscount = price?.discount_percent;
+    const knownDiscount = rawDiscount !== null && rawDiscount !== undefined && rawDiscount !== '' && Number.isFinite(Number(rawDiscount))
+        && Number(rawDiscount) >= 0 && Number(rawDiscount) <= 100 ? Number(rawDiscount) : null;
     return {
         providerId: 'steam',
         productKey: `${parsed.kind}:${parsed.id}`,
@@ -46,9 +49,9 @@ function snapshotFromPrice(parsed, name, price) {
         productName: cleanSteamTitle(name) || `Steam ${parsed.kind} #${parsed.id}`,
         priceAmount,
         referencePriceAmount,
-        discountPercent: Number(price?.discount_percent) || (referencePriceAmount && referencePriceAmount > priceAmount
-            ? ((referencePriceAmount - priceAmount) / referencePriceAmount) * 100
-            : 0),
+        discountPercent: knownDiscount ?? (referencePriceAmount !== null && referencePriceAmount >= priceAmount
+            ? (referencePriceAmount > 0 ? ((referencePriceAmount - priceAmount) / referencePriceAmount) * 100 : 0)
+            : null),
         currency,
     };
 }

@@ -7,7 +7,7 @@ export interface SquareQuote { checkoutId: string; expiresAtMs: number; plan: Sq
 export interface SquareStatus {
     configured: boolean;
     environment: 'sandbox' | 'production' | null;
-    subscription: null | { planId: string; label: string; state: string; cadence?: string; amount?: number; currency?: string; paidThroughAtMs: number | null; validUntilAtMs: number | null; canceledDate: string | null; active: boolean; cancelScheduled: boolean };
+    subscription: null | { subscriptionId: string; checkoutId: string; planId: string; label: string; state: string; cadence?: string; amount?: number; currency?: string; paidThroughAtMs: number | null; validUntilAtMs: number | null; canceledDate: string | null; active: boolean; cancelScheduled: boolean };
     pending: null | { checkoutId: string; state: string; retryable: boolean; resumeAllowed: boolean; abortAllowed: boolean; quote: SquareQuote };
   refresh: {
     state: "checked" | "busy" | "cooldown" | "failed";
@@ -54,7 +54,7 @@ export function createSquareBilling(db: { queryDatabase: Function; withDatabaseT
     input: { checkoutId: string; consent: boolean },
   ): Promise<SquareStatus>;
     abort(actor: SquareActor, input: { checkoutId: string }): Promise<SquareStatus>;
-    cancel(actor: SquareActor): Promise<SquareStatus>;
+    cancel(actor: SquareActor, input: { subscriptionId: string; checkoutId: string }): Promise<SquareStatus>;
     handleWebhook(rawBody: string | Buffer, signature: string): Promise<{ accepted: boolean; duplicate: boolean }>;
 };
 export function verifyWebhookSignature(rawBody: string | Buffer, signature: string, signatureKey: string, notificationUrl: string): boolean;

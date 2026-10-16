@@ -12,7 +12,8 @@ function createJoinStore({ db, locked, putUnit, putStep, receipt, readUnit, uuid
         if (!requested.length) return { changes: 0 };
         if (requested.length > 1000) throw fault('FLOW_SYNC_LIMIT');
         return locked(namespace, async query => {
-            const origins = await query('SELECT run_id,revoked_at_ms FROM automation_flow_runs WHERE namespace_key=? AND run_id IN (?)', [namespace, requested]);
+            await require('./recovery-origin').currentRunIds(query, requested, { revoke: true, now });
+            const origins = await query('SELECT run_id,revoked_at_ms,revocation_code FROM automation_flow_runs WHERE namespace_key=? AND run_id IN (?)', [namespace, requested]);
             if (origins.length !== requested.length) throw fault('FLOW_MEMBER_NAMESPACE');
             // A temporal continuation is a new immutable unit. Its removed
             // members are terminal for this activation and must not keep a
@@ -23,7 +24,7 @@ function createJoinStore({ db, locked, putUnit, putStep, receipt, readUnit, uuid
                 if (!steps.has(row.id)) steps.set(row.id, { id: row.id, nodeId: row.node_id, state: row.state, unitId: row.continuation_unit_id || row.input_unit_id, runIds: [] });
                 steps.get(row.id).runIds.push(row.run_id);
             }
-            const edges = await query('SELECT run_id AS runId,edge_id AS edgeId,receipt_kind AS kind,unit_id AS unitId FROM automation_flow_edges WHERE namespace_key=? AND run_id IN (?)', [namespace, requested]);
+            const edges = await query("SELECT run_id AS runId,edge_id AS edgeId,receipt_kind AS kind,unit_id AS unitId FROM automation_flow_edges WHERE namespace_key=? AND run_id IN (?) AND receipt_kind IN ('data','closed')", [namespace, requested]);
             const decisions = await query('SELECT node_id,run_id,state FROM automation_flow_merge_decisions WHERE namespace_key=? AND run_id IN (?)', [namespace, requested]);
             let changes = 0;
             for (const runId of requested) {
@@ -33,6 +34,10 @@ function createJoinStore({ db, locked, putUnit, putStep, receipt, readUnit, uuid
                 // that original event. It must release healthy batch peers;
                 // it never changes their shared immutable unit.
                 if (origin.revoked_at_ms != null) {
+                    if (origin.revocation_code === 'RECOVERY_QUARANTINED') {
+                        await query("UPDATE automation_flow_merge_decisions SET state='excluded',updated_at_ms=? WHERE namespace_key=? AND run_id=? AND state='ready'", [now, namespace, runId]);
+                        for (const decision of decisions) if (decision.run_id === runId && decision.state === 'ready') decision.state = 'excluded';
+                    }
                     for (const node of plan.nodes.filter(item => item.type === 'merge')) {
                         if (decisions.some(row => row.run_id === runId && row.node_id === node.id)) continue;
                         await query('INSERT IGNORE INTO automation_flow_merge_decisions (namespace_key,node_id,run_id,state,anchor_unit_id,signature_key,decision_json,created_at_ms,updated_at_ms) VALUES (?,?,?,?,?,?,?,?,?)', [namespace, node.id, runId, 'excluded', null, hash(`revoked:${runId}`), encode({ state: 'excluded', code: 'RUN_REVOKED', matchedEdges: [] }), now, now]);
@@ -64,8 +69,26 @@ function createJoinStore({ db, locked, putUnit, putStep, receipt, readUnit, uuid
                     const closed = relevant.filter(edge => edge.kind === 'closed').map(edge => edge.edgeId);
                     if (incoming.some(id => !closed.includes(id))) continue;
                     const arrivals = [];
-                    for (const edge of relevant.filter(row => row.kind === 'data')) arrivals.push({ edgeId: edge.edgeId, unit: await unit(edge.unitId) });
-                    const decision = mergeLineage({ node, runId: origin.run_id, incomingEdgeIds: incoming, closedEdgeIds: closed, arrivals });
+                    for (const edge of relevant.filter(row => row.kind === 'data')) {
+                        const source = await unit(edge.unitId);
+                        // The immutable unit was validated when persisted.
+                        // A lineage join needs this run's occurrences, not the
+                        // unrelated payload of every peer in both batches.
+                        // Preserve the original unit identity and ancestry so
+                        // grouping/provenance remain unchanged; the pure helper
+                        // still validates and bounds its projected input.
+                        arrivals.push({ edgeId: edge.edgeId, unit: { id: source.id, kind: source.kind, ancestry: source.ancestry || [],
+                            members: source.members.filter(member => member.runId === origin.run_id) } });
+                    }
+                    let decision;
+                    try { decision = mergeLineage({ node, runId: origin.run_id, incomingEdgeIds: incoming, closedEdgeIds: closed, arrivals }); }
+                    catch (error) {
+                        if (!require('./graph-failure').permanentFailure(error)) throw error;
+                        // The immutable arrivals and canonical data receipts
+                        // retain every input. A bounded per-lineage decision
+                        // releases this join without revoking sibling branches.
+                        decision = { state: 'excluded', code: error.code, terminalFailure: true };
+                    }
                     if (decision.state === 'waiting') continue;
                     await query('INSERT INTO automation_flow_merge_decisions (namespace_key,node_id,run_id,state,anchor_unit_id,signature_key,decision_json,created_at_ms,updated_at_ms) VALUES (?,?,?,?,?,?,?,?,?)', [namespace, node.id, origin.run_id, decision.state === 'accepted' ? 'ready' : 'excluded', decision.anchorUnitId || null, hash(decision.signature || origin.run_id), encode(decision), now, now]);
                     changes++;
@@ -90,12 +113,24 @@ function createJoinStore({ db, locked, putUnit, putStep, receipt, readUnit, uuid
                     // A's already-complete direct path behind B. Ready peers
                     // present in this exact pass stay batched; a later peer is
                     // emitted as its own deterministic fragment.
-                    const values = group.map(row => parse(row.decision_json));
-                    const groupVersion = hash(group.map(row => row.run_id).sort().join(','));
-                    const output = { id: uuid(`merge-output:${namespace}:${node.id}:${groupKey}:${groupVersion}`), kind: anchor ? 'batch' : 'event', members: values.map(value => value.member),
-                        ancestry: [...new Map(values.flatMap(value => value.ancestry).map(value => [encode(value), value])).values()], mergeNodeId: node.id,
-                        inputUnitIds: [...new Set(values.flatMap(value => value.inputUnitIds))].sort() };
-                    await putUnit(query, namespace, output, now);
+                    let output;
+                    await query('SAVEPOINT flow_merge_materialization');
+                    try {
+                        const values = group.map(row => parse(row.decision_json));
+                        const groupVersion = hash(group.map(row => row.run_id).sort().join(','));
+                        output = { id: uuid(`merge-output:${namespace}:${node.id}:${groupKey}:${groupVersion}`), kind: anchor ? 'batch' : 'event', members: values.map(value => value.member),
+                            ancestry: [...new Map(values.flatMap(value => value.ancestry).map(value => [encode(value), value])).values()], mergeNodeId: node.id,
+                            inputUnitIds: [...new Set(values.flatMap(value => value.inputUnitIds))].sort() };
+                        await putUnit(query, namespace, output, now);
+                    } catch (error) {
+                        if (!require('./graph-failure').permanentFailure(error)) throw error;
+                        await query('ROLLBACK TO SAVEPOINT flow_merge_materialization');
+                        await query('RELEASE SAVEPOINT flow_merge_materialization');
+                        for (const row of group) await query("UPDATE automation_flow_merge_decisions SET state='excluded',decision_json=?,updated_at_ms=? WHERE namespace_key=? AND node_id=? AND run_id=? AND state='ready'",
+                            [encode({ state: 'excluded', code: error.code, terminalFailure: true }), now, namespace, node.id, row.run_id]);
+                        changes += group.length; continue;
+                    }
+                    await query('RELEASE SAVEPOINT flow_merge_materialization');
                     for (const edge of plan.outgoing.get(node.id)) {
                         await putStep(query, namespace, `merge-successor:${output.id}:${edge.id}`, edge.target, output.id, edge.id, now, now);
                         for (const row of group) {
@@ -116,6 +151,7 @@ function createJoinStore({ db, locked, putUnit, putStep, receipt, readUnit, uuid
                 }
             }
             if (!changes) await query('UPDATE automation_flow_runs SET needs_sync=0 WHERE namespace_key=? AND run_id IN (?)', [namespace, requested]);
+            await require('./flow-history').refreshFlowHistory(query, requested);
             return { changes };
         });
     }

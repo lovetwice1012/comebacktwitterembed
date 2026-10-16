@@ -26,6 +26,97 @@ function createMarketplace(db, options = {}) {
         if (!/^[0-9a-f-]{36}$/i.test(id || '')) fail('NOT_FOUND', '共有ルールが見つかりません。', 404);
         return (await query(`${selection} WHERE p.id=?${lock ? ' FOR UPDATE' : ''}`, [id]))[0];
     }
+    async function storedEdition(id, version, query = db.queryDatabase) {
+        const record = (await query('SELECT * FROM automation_package_versions WHERE package_id=? AND version=?', [id, version]))[0];
+        if (!record) fail('BUNDLE_CHECK_FAILED', '配布元の保存済みデータを確認できません。', 503);
+        try {
+            const bytes = await decompress(record.bundle_gzip, { maxOutputLength: MAX_EXPANDED });
+            if (hash(bytes) !== record.checksum) throw new Error('BUNDLE_CHECKSUM');
+            const bundle = validateBundle(JSON.parse(bytes.toString('utf8')));
+            return { record, bundle, version: Number(record.version), dependencies: await require('./package-dependencies').packageDetails(query, record.package_dependencies_json, bundle.dictionaries) };
+        } catch { fail('BUNDLE_CHECK_FAILED', 'パッケージの整合性を確認できません。', 503); }
+    }
+    function retainDescription(current, inherited) {
+        const source = String(inherited || '').trim(), text = String(current || '').trim();
+        if (!source || text.includes(source)) return text;
+        const result = [text, source].filter(Boolean).join('\n\n');
+        if (result.length > 8000) fail('FORK_ATTRIBUTION_LIMIT', '配布元の説明・出典を含めて8000文字以内にしてください。');
+        return result;
+    }
+    async function installedOrigin(actor, workflowId, query = db.queryDatabase, lock = false) {
+        // Authority comes from a readable local workflow and its server-created
+        // install row, never from a bundle's text/name or client-supplied origin.
+        const workflow = await service.getRow('workflow', actor, workflowId, false, query, lock);
+        const provenance = require('./workflow-package-provenance');
+        const origin = provenance.requireKnownEdition(await provenance.revisionOrigin(query, workflowId, Number(workflow.revision), Number(workflow.revision)));
+        if (!origin) return null;
+        const edition = await storedEdition(origin.id, origin.version, query);
+        // Source ownership is immutable. Do not lock its package after the
+        // workflow: install/update takes those locks in the opposite order.
+        const parent = (await query('SELECT owner_user_id FROM automation_packages WHERE id=?', [origin.id]))[0];
+        if (!parent?.owner_user_id) fail('BUNDLE_CHECK_FAILED', '配布元の保存済みデータを確認できません。', 503);
+        const description = retainDescription(retainDescription(edition.bundle.description, edition.record.description),
+            `Source: ${edition.record.title} (${origin.id}) v${origin.version}; author ${parent.owner_user_id}`);
+        return { packageId: origin.id, version: origin.version, ...edition, bundle: { ...edition.bundle, description } };
+    }
+    async function dictionaryProof(actor, dictionaryId, revision, query = db.queryDatabase, lock = false) {
+        const dictionary = await service.getRow('dictionary', actor, dictionaryId, false, query, lock);
+        if (!Number.isSafeInteger(revision) || revision < 1 || revision > Number(dictionary.revision)) fail('REVISION_CONFLICT', '共有する辞書の版を確認してください。', 409);
+        const proof = (await query(`SELECT checksum,source_package_id,source_package_version,origin_reviewed,package_dependencies_json FROM automation_dictionary_revisions WHERE dictionary_id=? AND revision=?${lock ? ' FOR UPDATE' : ''}`, [dictionaryId, revision]))[0];
+        if (!proof) fail('DICTIONARY_VERSION_MISSING', '辞書の版が見つかりません。', 404);
+        if (Number(proof.origin_reviewed) !== 1 || (proof.source_package_id != null || proof.source_package_version != null) && (!proof.source_package_id || !Number.isSafeInteger(Number(proof.source_package_version)) || Number(proof.source_package_version) < 1))
+            fail('DICTIONARY_ORIGIN_REVIEW_REQUIRED', 'この辞書の保存版の配布元を確認できません。内容は保持されています。運営に確認を依頼してください。', 409);
+        let origin = null;
+        if (proof.source_package_id) {
+            const edition = await storedEdition(proof.source_package_id, Number(proof.source_package_version), query);
+            const parent = (await query('SELECT owner_user_id FROM automation_packages WHERE id=?', [proof.source_package_id]))[0];
+            if (!parent?.owner_user_id) fail('BUNDLE_CHECK_FAILED', '配布元の保存済みデータを確認できません。', 503);
+            const description = retainDescription(retainDescription(edition.bundle.description, edition.record.description),
+                `Source: ${edition.record.title} (${proof.source_package_id}) v${proof.source_package_version}; author ${parent.owner_user_id}`);
+            origin = { packageId: proof.source_package_id, version: Number(proof.source_package_version), ...edition, bundle: { ...edition.bundle, description } };
+        }
+        return { checksum: proof.checksum, origin, references: await require('./package-dependencies').dictionaryReferences(query, proof) };
+    }
+    async function workflowAssets(actor, workflowId, query = db.queryDatabase, lock = false) {
+        const row = await service.getRow('workflow', actor, workflowId, false, query, lock), definition = parse(row.draft_json);
+        const bindings = await service.validateBindings(actor, definition, { dictionaries: parse(row.draft_bindings_json).dictionaries || {} }, query);
+        const dictionaries = Object.create(null), references = Object.create(null);
+        for (const [alias, ref] of Object.entries(bindings.dictionaries)) {
+            const proof = await dictionaryProof(actor, ref.id, ref.revision, query, lock);
+            dictionaries[alias] = await service.dictionaryData(ref.id, ref.revision); references[alias] = proof.references;
+        }
+        return { dictionaries, references };
+    }
+    function sameDictionary(a, b) { return JSON.stringify(require('./dictionary').validateDictionary(a)) === JSON.stringify(require('./dictionary').validateDictionary(b)); }
+    async function publicationDependencies(actor, input, bundle, previous, query = db.queryDatabase, lock = false) {
+        const dependencies = require('./package-dependencies'), refs = Object.create(null);
+        if (input.sourceWorkflowId) {
+            const assets = await workflowAssets(actor, input.sourceWorkflowId, query, lock);
+            if (JSON.stringify(Object.keys(assets.dictionaries).sort()) !== JSON.stringify(Object.keys(bundle.dictionaries).sort())) fail('REVISION_CONFLICT', '共有する辞書の保存版を確認し直してください。', 409);
+            for (const [alias, dictionary] of Object.entries(assets.dictionaries)) {
+                if (!sameDictionary(dictionary, bundle.dictionaries[alias])) fail('REVISION_CONFLICT', '共有する辞書の内容が変更されています。保存版を確認し直してください。', 409);
+                refs[alias] = assets.references[alias];
+            }
+        } else if (input.sourceDictionaryId) {
+            refs.words = (await dictionaryProof(actor, input.sourceDictionaryId, input.sourceDictionaryRevision, query, lock)).references;
+        } else if (previous || input.forkOf) {
+            const source = previous ? await storedEdition(previous.id, Number(previous.latest_version), query) : await get(actor, input.forkOf, input.forkVersion, input.shareKey);
+            const prior = source.bundle, old = source.dependencies.dictionaries;
+            const immediate = !previous ? await dependencies.nearestReference(query, input.forkOf, source.version) : null;
+            const removed = Object.keys(prior.dictionaries).filter(alias => !Object.hasOwn(bundle.dictionaries, alias));
+            for (const alias of Object.keys(bundle.dictionaries)) {
+                const oldAlias = Object.hasOwn(prior.dictionaries, alias) ? alias : null;
+                if (!oldAlias && removed.some(name => old[name]?.length)) fail('PACKAGE_DEPENDENCIES_INVALID', '辞書の配布元を確認できません。保存済みの辞書を割り当てたルールから共有し直してください。', 409);
+                refs[alias] = dependencies.references([...(oldAlias ? dependencies.portableReferences(old[oldAlias]) : []), ...(immediate ? [immediate] : [])]);
+            }
+        }
+        // A same-package revision uses its new outer license and upstream
+        // dependencies, rather than recursively depending on its older self.
+        if (previous) for (const alias of Object.keys(refs)) refs[alias] = refs[alias].filter(ref => ref.packageId !== previous.id);
+        const result = Object.create(null);
+        for (const [alias, entries] of Object.entries(refs)) if (entries.length) result[alias] = await dependencies.describe(query, entries);
+        return { dictionaries: result };
+    }
     const privileged = (actor, row) => row.owner_user_id === actor.userId || actor.isAdmin && row.visibility !== 'private';
     async function getRow(actor, id, shareKey, write = false, query = db.queryDatabase, lock = false) {
         requireActor(actor); const row = await rawRow(id, query, lock);
@@ -48,7 +139,44 @@ function createMarketplace(db, options = {}) {
         const previous = id ? await getRow(actor, id, null, true) : null;
         if (previous?.status === 'revoked') fail('MARKET_REVOKED', '安全上停止されたパッケージは編集・再公開できません。');
         if (previous && Number(previous.latest_version) !== input.expectedVersion) fail('REVISION_CONFLICT', '共有ルールが更新されています。', 409);
-        const bundle = validateBundle(input.bundle), title = textField(input.title, 120), description = textField(input.description || '', 8000, false), category = textField(input.category || 'general', 64), changelog = textField(input.changelog || '', 4000, false);
+        let bundle = structuredClone(validateBundle(input.bundle)), description = textField(input.description || '', 8000, false);
+        const title = textField(input.title, 120), category = textField(input.category || 'general', 64), changelog = textField(input.changelog || '', 4000, false);
+        if (previous && Object.hasOwn(input, 'forkOf') && input.forkOf !== previous.fork_of) fail('FORK_SOURCE_IMMUTABLE', 'コピー元は変更できません。別の共有内容として保存してください。');
+        if (input.sourceWorkflowId && input.sourceDictionaryId) fail('FORK_SOURCE_IMMUTABLE', '共有元はルールか辞書のどちらかを選んでください。');
+        const dictionarySource = input.sourceDictionaryId ? await dictionaryProof(actor, input.sourceDictionaryId, input.sourceDictionaryRevision) : null;
+        if (dictionarySource) {
+            if (bundle.kind !== 'dictionary' || Object.keys(bundle.dictionaries).length !== 1 || !bundle.dictionaries.words) fail('FORK_SOURCE_IMMUTABLE', '選択した辞書の保存版から共有内容を作り直してください。');
+            const data = await service.dictionaryData(input.sourceDictionaryId, input.sourceDictionaryRevision);
+            if (JSON.stringify(require('./dictionary').validateDictionary(bundle.dictionaries.words)) !== JSON.stringify(data)) fail('REVISION_CONFLICT', '共有する辞書の内容と保存版が一致しません。内容を確認し直してください。', 409);
+        }
+        const sourceOrigin = input.sourceWorkflowId ? await installedOrigin(actor, input.sourceWorkflowId) : dictionarySource?.origin || null;
+        const ownEdition = previous && sourceOrigin?.packageId === previous.id;
+        const forkOf = previous ? previous.fork_of : input.forkOf || sourceOrigin?.packageId || null;
+        let sourceBundle = null;
+        if (sourceOrigin && (previous && !ownEdition && previous.fork_of !== sourceOrigin.packageId || !previous && input.forkOf && input.forkOf !== sourceOrigin.packageId)) fail('FORK_SOURCE_IMMUTABLE', 'コピー元は変更できません。別の共有内容として保存してください。');
+        if (previous?.fork_of) {
+            // The first fork edition is immutable and remains available to its
+            // owner even after the upstream package is withdrawn or private.
+            sourceBundle = (await storedEdition(previous.id, 1)).bundle;
+        } else if (sourceOrigin && !ownEdition) {
+            sourceBundle = sourceOrigin.bundle;
+            description = retainDescription(description, sourceOrigin.record.description);
+        } else if (input.forkOf) {
+            const parent = await get(actor, input.forkOf, input.forkVersion, input.shareKey);
+            sourceBundle = { ...parent.bundle, description: retainDescription(retainDescription(parent.bundle.description, parent.description),
+                `Fork of ${parent.title} (${parent.id}) v${parent.version}; author ${parent.owner_user_id}`) };
+        }
+        if (sourceBundle) {
+            if (!sourceBundle.license || bundle.license !== sourceBundle.license) fail('FORK_LICENSE', 'コピー元のライセンスを保持してください。');
+            bundle.description = retainDescription(bundle.description, sourceBundle.description);
+            description = retainDescription(description, sourceBundle.description);
+        }
+        const dependencySnapshot = await publicationDependencies(actor, input, bundle, previous);
+        // Keep all source notices in the unchanged portable description.
+        bundle.description = retainDescription(bundle.description, require('./package-dependencies').notice(dependencySnapshot, sourceOrigin));
+        // Inherited package descriptions may have been private metadata. The
+        // final portable bundle must still satisfy its credential/text bounds.
+        bundle = validateBundle(bundle);
         if (!['private', 'unlisted', 'public'].includes(input.visibility)) fail('MARKET_VISIBILITY', '共有範囲が不正です。');
         const publish = input.visibility !== 'private', packageId = id || randomUUID(), version = previous ? Number(previous.latest_version) + 1 : 1;
         let assessment = null;
@@ -58,19 +186,31 @@ function createMarketplace(db, options = {}) {
             assessment = await inspectPublication({ id: packageId, version, owner_user_id: actor.userId, title, description, category, changelog, bundle });
             options.assertPublicationAllowed?.();
         }
-        if (input.forkOf) { const parent = await get(actor, input.forkOf, input.forkVersion, input.shareKey); if (!parent.bundle.license || bundle.license !== parent.bundle.license) fail('FORK_LICENSE', 'フォーク元のライセンスを保持してください。'); }
         const bytes = Buffer.from(JSON.stringify(bundle)), compressed = await compress(bytes), checksum = hash(bytes), status = publish ? 'active' : 'draft';
         return db.withDatabaseTransaction(async query => {
+            const freshDependencies = await publicationDependencies(actor, input, bundle, previous, query, true);
+            if (JSON.stringify(freshDependencies) !== JSON.stringify(dependencySnapshot)) fail('REVISION_CONFLICT', '共有する辞書の配布元が更新されています。確認し直してください。', 409);
+            if (input.sourceWorkflowId) {
+                const currentOrigin = await installedOrigin(actor, input.sourceWorkflowId, query, true);
+                if ((currentOrigin?.packageId || null) !== (sourceOrigin?.packageId || null) || (currentOrigin?.version || null) !== (sourceOrigin?.version || null)) fail('REVISION_CONFLICT', 'ルールの配布元が更新されています。共有内容を再確認してください。', 409);
+            }
+            if (dictionarySource) {
+                const current = await dictionaryProof(actor, input.sourceDictionaryId, input.sourceDictionaryRevision, query, true);
+                if (!sameDictionary(await service.dictionaryData(input.sourceDictionaryId, input.sourceDictionaryRevision), bundle.dictionaries.words)) fail('REVISION_CONFLICT', '共有する辞書の内容が変更されています。保存版を確認し直してください。', 409);
+                if (current.checksum !== dictionarySource.checksum || (current.origin?.packageId || null) !== (sourceOrigin?.packageId || null) || (current.origin?.version || null) !== (sourceOrigin?.version || null))
+                    fail('REVISION_CONFLICT', '辞書の配布元が更新されています。共有内容を再確認してください。', 409);
+            }
             if (id) {
                 const row = await getRow(actor, id, null, true, query, true);
                 if (row.status === 'revoked') fail('MARKET_REVOKED', '安全上停止されたパッケージは編集・再公開できません。');
                 if (Number(row.latest_version) !== input.expectedVersion) fail('REVISION_CONFLICT', '共有ルールが更新されています。', 409);
+                if (row.fork_of !== previous.fork_of) fail('REVISION_CONFLICT', 'コピー元が更新されています。共有内容を再確認してください。', 409);
                 if (row.kind !== bundle.kind) fail('PACKAGE_KIND_IMMUTABLE', 'パッケージの種類は変更できません。新規作成してください。');
                 await query('UPDATE automation_packages SET title=?,description=?,category=?,visibility=?,status=?,latest_version=?,updated_at_ms=? WHERE id=?', [title, description, category, input.visibility, status, version, Date.now(), id]);
                 await query("UPDATE automation_package_versions SET status='superseded' WHERE package_id=? AND status='pending'", [id]);
-            } else await query('INSERT INTO automation_packages (id,owner_user_id,title,description,category,kind,visibility,status,share_key,latest_version,fork_of,created_at_ms,updated_at_ms) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)', [packageId, actor.userId, title, description, category, bundle.kind, input.visibility, status, randomBytes(32).toString('hex'), version, input.forkOf || null, Date.now(), Date.now()]);
+            } else await query('INSERT INTO automation_packages (id,owner_user_id,title,description,category,kind,visibility,status,share_key,latest_version,fork_of,created_at_ms,updated_at_ms) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)', [packageId, actor.userId, title, description, category, bundle.kind, input.visibility, status, randomBytes(32).toString('hex'), version, forkOf, Date.now(), Date.now()]);
             if (publish) options.assertPublicationAllowed?.();
-            await query('INSERT INTO automation_package_versions (package_id,version,bundle_gzip,checksum,changelog,title,description,category,visibility,status,created_at_ms) VALUES (?,?,?,?,?,?,?,?,?,?,?)', [packageId, version, compressed, checksum, changelog, title, description, category, input.visibility, status, Date.now()]);
+            await query('INSERT INTO automation_package_versions (package_id,version,bundle_gzip,checksum,changelog,title,description,category,visibility,status,package_dependencies_json,created_at_ms) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)', [packageId, version, compressed, checksum, changelog, title, description, category, input.visibility, status, require('./package-dependencies').serializePackage(dependencySnapshot, bundle.dictionaries), Date.now()]);
             if (publish) await query('UPDATE automation_packages SET published_version=? WHERE id=?', [version, packageId]);
             await service.audit(query, actor, packageId, 'package.save', { version, checksum, visibility: input.visibility, assessment, responsibility: publish ? { acknowledged: true, policyVersion: require('./safety').POLICY_VERSION } : null }, null);
             return { id: packageId, version, checksum, status };
@@ -104,7 +244,7 @@ function createMarketplace(db, options = {}) {
         const stats = (await db.queryDatabase("SELECT (SELECT COUNT(*) FROM automation_package_installs WHERE package_id=?) + (SELECT COUNT(*) FROM automation_package_dictionary_installs WHERE package_id=?) AS installs,(SELECT AVG(CAST(JSON_UNQUOTE(JSON_EXTRACT(value_json,'$.rating')) AS DECIMAL(3,2))) FROM automation_feedback WHERE subject_id=? AND kind='rating') AS rating", [id, id, id]))[0];
         return { ...visiblePackage(row, actor), latest_version: Number(privileged(actor, row) ? row.latest_version : row.published_version), packageStatus: row.status, packageVisibility: row.visibility,
             title: record.title, description: record.description, category: record.category, visibility: record.visibility, status: record.status,
-            version: selected, checksum: record.checksum, changelog: record.changelog, reviewNote: privileged(actor, row) ? record.review_note : undefined, bundle,
+            version: selected, checksum: record.checksum, changelog: record.changelog, reviewNote: privileged(actor, row) ? record.review_note : undefined, bundle, dependencies: await require('./package-dependencies').packageDetails(db.queryDatabase, record.package_dependencies_json, bundle.dictionaries),
             mine: row.owner_user_id === actor.userId, canModerate: !!actor.isAdmin, feedback: Object.fromEntries(feedback.map(f => [f.kind, parse(f.value_json)])), following: following.length > 0, installs: Number(stats.installs), rating: stats.rating == null ? null : Number(stats.rating) };
     }
     async function versions(actor, id, input = {}) {
@@ -113,10 +253,28 @@ function createMarketplace(db, options = {}) {
         const rows = await db.queryDatabase(`SELECT version,checksum,changelog,status,visibility,created_at_ms FROM automation_package_versions WHERE package_id=? AND version<? ${clause} ORDER BY version DESC LIMIT 51`, [id, Number(input.before || Number.MAX_SAFE_INTEGER), ...(owner || actor.isAdmin ? [] : [equalKey(row.share_key, input.shareKey) ? 1 : 0])]);
         return { items: rows.slice(0, 50).map(r => ({ ...r, version: Number(r.version) })), nextVersion: rows.length > 50 ? Number(rows[49].version) : null };
     }
-    async function exportWorkflow(actor, id) {
-        const rule = await service.getWorkflow(actor, id), dictionaries = Object.create(null);
-        for (const [alias, ref] of Object.entries(rule.bindings.dictionaries || {})) { await service.getRow('dictionary', actor, ref.id); dictionaries[alias] = await service.dictionaryData(ref.id, ref.revision); }
-        return validateBundle({ schemaVersion: 1, kind: 'workflow', workflow: rule.draft, dictionaries });
+    async function exportWorkflowPublication(actor, id) {
+        return db.withDatabaseTransaction(async query => {
+            const origin = await installedOrigin(actor, id, query, true);
+            const rule = await service.getWorkflow(actor, id), assets = await workflowAssets(actor, id, query, true), dictionaries = assets.dictionaries;
+            const dependencies = { dictionaries: Object.create(null) };
+            for (const [alias, refs] of Object.entries(assets.references)) if (refs.length) dependencies.dictionaries[alias] = await require('./package-dependencies').describe(query, refs);
+            const description = retainDescription(origin ? retainDescription(origin.bundle.description, origin.record.description) : '', require('./package-dependencies').notice(dependencies, origin));
+            const bundle = validateBundle({ schemaVersion: 1, kind: 'workflow', workflow: rule.draft, dictionaries,
+                ...(origin ? { license: origin.bundle.license || '' } : {}), ...(description ? { description } : {}) });
+            return { bundle, dependencies };
+        });
+    }
+    async function exportWorkflow(actor, id) { return (await exportWorkflowPublication(actor, id)).bundle; }
+    async function exportDictionaryPackage(actor, id, revision) {
+        return db.withDatabaseTransaction(async query => {
+            const proof = await dictionaryProof(actor, id, revision, query, true), data = await service.dictionaryData(id, revision);
+            const dependencies = { dictionaries: proof.references.length ? { words: await require('./package-dependencies').describe(query, proof.references) } : {} };
+            const description = retainDescription(proof.origin?.bundle.description, require('./package-dependencies').notice(dependencies, proof.origin));
+            const bundle = validateBundle({ schemaVersion: 1, kind: 'dictionary', dictionaries: { words: data },
+                license: proof.origin?.bundle.license || '', ...(description ? { description } : {}) });
+            return { bundle, dependencies, sourceDictionaryId: id, sourceDictionaryRevision: revision, sourcePackageId: proof.origin?.packageId || null };
+        });
     }
     async function setStatus(actor, id, input) {
         let assessment = null;
@@ -204,7 +362,7 @@ function createMarketplace(db, options = {}) {
     }
     async function fork(actor, id, input) {
         const parent = await get(actor, id, input.version, input.shareKey); if (!parent.bundle.license) fail('FORK_LICENSE', 'フォーク元のライセンスが未指定です。');
-        const bundle = structuredClone(parent.bundle); bundle.description = `${bundle.description || ''}\nFork of ${parent.title} (${id}) v${parent.version}; author ${parent.owner_user_id}`.trim();
+        const bundle = structuredClone(parent.bundle); bundle.description = retainDescription(retainDescription(bundle.description, parent.description), `Fork of ${parent.title} (${id}) v${parent.version}; author ${parent.owner_user_id}`);
         return save(actor, { bundle, title: `${parent.title} のフォーク`.slice(0, 120), description: bundle.description.slice(0, 8000), category: parent.category, visibility: 'private', forkOf: id, forkVersion: parent.version, shareKey: input.shareKey });
     }
     async function feedback(actor, id, input) {
@@ -234,7 +392,7 @@ function createMarketplace(db, options = {}) {
         await service.audit(db.queryDatabase, actor, id, 'report.resolve', { note: textField(input.note || '', 1000, false) }, null); return { resolved: true };
     }
     const installs = require('./marketplace-installs').createInstalls(db, service, get, options.evaluator);
-    return { list, save: (actor, input, id) => service.withOperation(actor, 'publication', () => save(actor, input, id)), get, exportWorkflow,
+    return { list, save: (actor, input, id) => service.withOperation(actor, 'publication', () => save(actor, input, id)), get, exportWorkflow, exportWorkflowPublication, exportDictionaryPackage,
         setStatus: (actor, id, input) => input.status === 'withdrawn' ? setStatus(actor, id, input) : service.withOperation(actor, 'publication', () => setStatus(actor, id, input)),
         reviewPending, feedback, reviewQueue, resolveReport, versions, fork, ...installs };
 }
