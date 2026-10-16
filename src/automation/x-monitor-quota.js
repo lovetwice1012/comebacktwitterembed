@@ -95,8 +95,9 @@ function createXMonitorQuota(db, options = {}) {
     }
     async function verifySettings(query, actor, config, requireDestinationEnabled = false) {
         for (const [key, table] of [['workflowId','automation_workflows'],['destinationId','automation_destinations']]) if (config[key]) {
-            const rows = await query(`SELECT id,enabled FROM ${table} WHERE id=? AND owner_user_id=? AND scope='private' AND deleted_at_ms IS NULL FOR UPDATE`, [config[key], actor.userId]);
+            const rows = await query(`SELECT * FROM ${table} WHERE id=? AND owner_user_id=? AND scope='private' AND deleted_at_ms IS NULL FOR UPDATE`, [config[key], actor.userId]);
             if (!rows.length) fail('NOT_FOUND', '自分のルール・通知先を指定してください。', 404);
+            if (key === 'workflowId') await (options.service || require('./service').createService(db)).validateWorkflowDestinations(query, rows[0], [actor.userId]);
             if (key === 'destinationId' && requireDestinationEnabled && !rows[0].enabled) fail('DESTINATION_DISABLED', '通知先を有効にしてから通知を再開してください。', 409);
         }
         if (config.subscriptionId) {

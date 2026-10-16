@@ -26,7 +26,7 @@ async function main() {
     cleanupOnFailure = close;
     process.on('SIGINT', () => { void close(); }); process.on('SIGTERM', () => { void close(); });
     console.log(JSON.stringify({ fixtureAllocated: true, schema: db.schema, pid: process.pid, auditReadiness }));
-    const service = require('../src/automation/service').createService(db);
+    const service = require('../src/automation/service').createService(db, { verifyChannel: (actor, guildId, channelId) => destinations.verifyChannel(actor, guildId, channelId) });
     const actor = { userId: '222222222222222222', guildId: '111111111111111111', canView: true, canEdit: true, isAdmin: true };
     await require('./lib/automation-test-db').grantTestDonor(db, actor.userId);
     evaluator = require('../src/automation/evaluation').createEvaluator(service.dictionaryData);
@@ -90,7 +90,7 @@ async function main() {
         const { publicKey } = require('node:crypto').generateKeyPairSync('rsa', { modulusLength: 3072 });
         const sealer = require('../src/automation/x-setup-transfer').createTransferPublicSealer({ activeKeyId: 'ui-fixture-public', publicKeys: { 'ui-fixture-public': publicKey } });
         services.xSetup = require('../src/automation/x-setup').createXSetup(db, { sealer, receiverEnabled: true, rolloutMode: 'supporters' });
-        services.xQuota = require('../src/automation/x-monitor-quota').createXMonitorQuota(db, { registrationEnabled: true, rolloutMode: 'supporters' });
+        services.xQuota = require('../src/automation/x-monitor-quota').createXMonitorQuota(db, { service, registrationEnabled: true, rolloutMode: 'supporters' });
         services.xProcessingSettings = require('../src/automation/x-processing-settings').createXProcessingSettings(db, { rolloutMode: 'supporters' });
         for (const item of fixtures) await services.xQuota.register(actor, { accountHandle: `qa_${item.suffix}`, name: `X：${item.name}`, processingMode: 'batch', notificationSettings: { subscriptionId: subscription.subscriptionId, workflowId: item.rule, destinationId: item.destination } });
         console.log(JSON.stringify({ readinessSeeded: true, native: 3, x: 3, receiverStateIsSynthetic: true }));

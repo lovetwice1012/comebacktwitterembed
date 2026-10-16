@@ -11,6 +11,7 @@ const schema = require('../../src/db_schema');
 const { createQueue } = require('../../src/automation/queue');
 const { createService, hash } = require('../../src/automation/service');
 const { createDestinations } = require('../../src/automation/destinations');
+const { createMonitors } = require('../../src/automation/monitors');
 const root = path.resolve(__dirname, '../..'), port = Number(process.env.AUTOMATION_TEST_DB_PORT);
 const U = '222222222222222222', G = '111111111111111111', C = '333333333333333333', B = '555555555555555555', M = '888888888888888888';
 const deferred = () => { let resolve; const promise = new Promise(yes => { resolve = yes; }); return { promise, resolve }; };
@@ -55,11 +56,11 @@ async function fixture(kind) {
         const handler = (helper, beforeRegister = async () => {}, observedDb = binding, options = {}) => {
             const validate = async url => {
                 await beforeRegister(url);
-                if (options.checkRemote && ![...hooks.values()].some(hook => hook.url === url)) throw Object.assign(new Error('Synthetic remote HTTP404'), { code: 'AUTO_WATCH_INVALID_WEBHOOK' });
+                if (options.checkRemote && ![...hooks.values()].some(hook => hook.url === url)) throw Object.assign(new Error('Synthetic remote HTTP404'), { code: 'AUTO_WATCH_INVALID_WEBHOOK', status: 404 });
                 return { id: /webhooks\/(\d+)/.exec(url)?.[1], guildId: G, channelId: C };
             };
             const registerTarget = async input => {
-                const result = await native.registerTarget(input);
+                const result = await native.registerTarget(input, { validateWebhook: options.legacyVerifier || validate });
                 await options.afterRegister?.(input, result);
                 return result;
             };
@@ -81,7 +82,154 @@ async function fixture(kind) {
     } catch (error) { await db.close(); throw error; }
 }
 
+async function pendingNativeJob(f, kind, targetId) {
+    const now = Date.now() + 1000, target = (await f.db.queryDatabase(`SELECT * FROM ${f.table} WHERE id=?`, [targetId]))[0];
+    await f.db.queryDatabase(`UPDATE ${f.table} SET baseline_at_ms=?,created_at_ms=? WHERE id=?`, [now - 5000, now - 10000, targetId]);
+    if (kind === 'auto') {
+        await f.db.queryDatabase('UPDATE auto_watch_targets SET last_polled_at_ms=?,next_poll_at_ms=0,last_notification_window_at_ms=? WHERE id=?', [now - 86400000, now - 86400000, targetId]);
+        const source = (await f.db.queryDatabase('SELECT * FROM auto_watch_sources WHERE id=?', [target.source_id]))[0];
+        await f.native.createItemsAndDeliveries(source, [{ contentId: 'legacy-pending-item', url: 'https://github.com/octocat/repo/commit/fixture', title: 'Keep this legacy notification', discoveredAtMs: now }], now);
+    } else {
+        await f.db.queryDatabase('UPDATE price_watch_sources SET lease_token=\'legacy-fixture\',lease_expires_at_ms=? WHERE id=?', [Date.now() + 60000, target.source_id]);
+        const source = (await f.db.queryDatabase('SELECT * FROM price_watch_sources WHERE id=?', [target.source_id]))[0];
+        await f.native.completeSource(source, { productName: 'Fixture', priceAmount: 500, currency: 'JPY' },
+            [{ targetId, eventKey: 'legacy-pending-event', messageText: 'Keep this legacy price notification', event: { providerId: 'steam', kind: 'price', url: source.product_url, observedAtMs: now, priceAmount: 500, currency: 'JPY' } }],
+            [{ targetId, ruleKey: target.rule_key, destinationKey: target.destination_key, configurationRevision: 7, conditionActive: true }], now, now + 60000);
+    }
+    const delivery = (await f.native.claimDueDeliveries(now, 1))[0]; assert(delivery);
+    const queue = createQueue(f.db, {}, { clock: () => now }); assert.equal((await queue.route(kind, delivery, now)).state, 'routed');
+    const job = (await f.db.queryDatabase('SELECT * FROM automation_jobs'))[0]; assert(job);
+    return { queue, job, now };
+}
+
 for (const kind of ['auto', 'price']) {
+    test(`S8 legacy ${kind}: an unknown deleted pre-change endpoint fails closed at capacity and explicit UI target-ID repair keeps the existing slot`, { skip: !port }, async () => {
+        const f = await fixture(kind);
+        try {
+            const channel = f.interaction().channel, oldHook = await channel.createWebhook({ name: f.purpose });
+            const legacy = await f.native.registerTarget({ ...f.input(oldHook.url), destinationChannelId: undefined });
+            const original = (await f.db.queryDatabase(`SELECT * FROM ${f.table} WHERE id=?`, [legacy.id]))[0];
+            assert.match(original.destination_key, /^webhook:/);
+            for (let index = 0; index < 4; index++) await f.native.registerTarget({ ...f.input(null), destinationChannelId: undefined, destinationType: 'dm',
+                ...(kind === 'auto' ? { source: `filler-${index}` } : { productUrl: `https://store.steampowered.com/app/${740 + index}` }) });
+            assert.equal(Number((await f.db.queryDatabase('SELECT COUNT(*) n FROM automation_notification_slots'))[0].n), 5);
+            f.hooks.delete(oldHook.id);
+            await f.handler(f.helperA, async () => {}, f.binding, { checkRemote: true })(f.interaction());
+            const feedback = JSON.stringify(f.replies.at(-1));
+            assert(feedback.includes(`ID ${legacy.id}`)); assert.match(feedback, /既存の登録枠/); assert.doesNotMatch(feedback, /synthetic-token|https:|HTTP404/);
+            const english = f.interaction(); english.locale = 'en-US';
+            await f.handler(f.helperA, async () => {}, f.binding, { checkRemote: true })(english);
+            const englishFeedback = JSON.stringify(f.replies.at(-1));
+            assert(englishFeedback.includes(`notification ID ${legacy.id}`)); assert.match(englishFeedback, /existing slot/); assert.doesNotMatch(englishFeedback, /synthetic-token|https:|HTTP404/);
+            assert.equal(Number((await f.db.queryDatabase(`SELECT COUNT(*) n FROM ${f.table}`))[0].n), 5);
+            assert.equal(Number((await f.db.queryDatabase('SELECT COUNT(*) n FROM automation_notification_slots'))[0].n), 5);
+            assert.equal(String((await f.db.queryDatabase(`SELECT webhook_endpoint_id FROM ${f.table} WHERE id=?`, [legacy.id]))[0].webhook_endpoint_id), String(original.webhook_endpoint_id));
+            // The notification UI explicitly edits the existing target ID and
+            // chooses a newly verified resource; no former channel is inferred.
+            const fresh = await channel.createWebhook({ name: 'ComebackTwitterEmbed Auto' }), service = createService(f.db);
+            const actor = { userId: U, guildId: G, canView: true, canEdit: true };
+            await f.db.queryDatabase('INSERT INTO webhook_endpoints (webhook_url_hash,webhook_url) VALUES (?,?)', [hash(fresh.url), fresh.url]);
+            const endpoint = (await f.db.queryDatabase('SELECT id FROM webhook_endpoints WHERE webhook_url_hash=?', [hash(fresh.url)]))[0];
+            const destination = await service.saveDestination(actor, { name: 'Replacement channel', kind: 'channel', scope: 'guild' },
+                { webhookEndpointId: String(endpoint.id), guildId: G, channelId: C, createdByBot: true });
+            const monitors = createMonitors(f.db, service, { verifyChannel: async (_actor, guildId, channelId) => {
+                assert.equal(guildId, G); assert.equal(channelId, C); return { channel: { id: C, nsfw: false } };
+            } });
+            const repaired = await monitors.save(actor, kind, { expectedRevision: 1, name: 'Explicit repair', providerId: kind === 'auto' ? 'github' : 'steam',
+                source: kind === 'auto' ? 'octocat' : 'https://store.steampowered.com/app/730', destinationId: destination.id, ...(kind === 'price' ? { mode: 'change' } : {}) }, legacy.id);
+            assert.equal(repaired.id, legacy.id);
+            assert.equal(Number((await f.db.queryDatabase('SELECT COUNT(*) n FROM automation_notification_slots'))[0].n), 5);
+            assert.equal(String((await f.db.queryDatabase(`SELECT webhook_endpoint_id FROM ${f.table} WHERE id=?`, [legacy.id]))[0].webhook_endpoint_id), String(endpoint.id));
+        } finally { await f.db.close(); }
+    });
+
+    test(`S8 legacy ${kind}: owned managed same-channel metadata repairs the old target/resource atomically without changing its legacy key or revision`, { skip: !port }, async () => {
+        const f = await fixture(kind);
+        try {
+            const oldHook = await f.interaction().channel.createWebhook({ name: f.purpose });
+            const legacy = await f.native.registerTarget({ ...f.input(oldHook.url), destinationChannelId: undefined });
+            const original = (await f.db.queryDatabase(`SELECT * FROM ${f.table} WHERE id=?`, [legacy.id]))[0], service = createService(f.db);
+            const destination = await service.saveDestination({ userId: U, guildId: G }, { name: 'Owned legacy destination', kind: 'webhook', scope: 'private' },
+                { webhookEndpointId: String(original.webhook_endpoint_id), guildId: G, channelId: C, createdByBot: true });
+            await f.db.queryDatabase('INSERT INTO automation_monitors (target_kind,target_id,name,scope,destination_id,revision) VALUES (?,?,?,\'private\',?,7)', [kind, legacy.id, 'Keep legacy title', destination.id]);
+            for (let index = 0; index < 4; index++) await f.native.registerTarget({ ...f.input(null), destinationChannelId: undefined, destinationType: 'dm',
+                ...(kind === 'auto' ? { source: `managed-filler-${index}` } : { productUrl: `https://store.steampowered.com/app/${750 + index}` }) });
+            const pending = await pendingNativeJob(f, kind, legacy.id);
+            f.hooks.delete(oldHook.id);
+            const beforeResource = (await f.db.queryDatabase('SELECT webhook_endpoint_id,created_by_bot,revision,updated_at_ms FROM automation_destinations WHERE id=?', [destination.id]))[0];
+            const transaction = f.binding.withDatabaseTransaction;
+            f.binding.withDatabaseTransaction = work => f.db.withDatabaseTransaction(query => work(async (sql, params) => {
+                if (/INSERT INTO automation_audit/.test(sql) && params[3] === 'destination.channel-repair') throw new Error('Synthetic managed repair audit failure');
+                return query(sql, params);
+            }));
+            await f.handler(f.helperA, async () => {}, f.binding, { checkRemote: true })(f.interaction()).catch(error => { assert.match(error.message, /Synthetic managed repair audit failure/); });
+            f.binding.withDatabaseTransaction = transaction;
+            assert.deepEqual((await f.db.queryDatabase('SELECT webhook_endpoint_id,created_by_bot,revision,updated_at_ms FROM automation_destinations WHERE id=?', [destination.id]))[0], beforeResource);
+            assert.equal(String((await f.db.queryDatabase(`SELECT webhook_endpoint_id FROM ${f.table} WHERE id=?`, [legacy.id]))[0].webhook_endpoint_id), String(original.webhook_endpoint_id));
+            assert.equal(Number((await f.db.queryDatabase('SELECT COUNT(*) n FROM automation_notification_slots'))[0].n), 5);
+            await f.handler(f.helperA, async () => {}, f.binding, { checkRemote: true })(f.interaction());
+            const target = (await f.db.queryDatabase(`SELECT * FROM ${f.table} WHERE id=?`, [legacy.id]))[0], fresh = [...f.hooks.values()][0]; assert(fresh);
+            assert.equal(target.destination_key, original.destination_key); assert.notEqual(String(target.webhook_endpoint_id), String(original.webhook_endpoint_id));
+            const resource = (await f.db.queryDatabase('SELECT * FROM automation_destinations WHERE id=?', [destination.id]))[0];
+            assert.equal(String(resource.webhook_endpoint_id), String(target.webhook_endpoint_id)); assert.equal(Number(resource.revision), 2);
+            assert.equal(resource.owner_user_id, U); assert.equal(resource.guild_id, G); assert.equal(resource.channel_id, C);
+            assert.equal(Number((await f.db.queryDatabase('SELECT revision FROM automation_monitors WHERE target_kind=? AND target_id=?', [kind, legacy.id]))[0].revision), 7);
+            assert.equal(Number((await f.db.queryDatabase(`SELECT COUNT(*) n FROM ${f.table}`))[0].n), 5);
+            assert.equal(Number((await f.db.queryDatabase('SELECT COUNT(*) n FROM automation_notification_slots'))[0].n), 5);
+            assert.equal(Number((await f.db.queryDatabase("SELECT COUNT(*) n FROM automation_audit WHERE action='destination.channel-repair'"))[0].n), 1);
+            assert.doesNotMatch(JSON.stringify(await f.db.queryDatabase('SELECT detail_json FROM automation_audit')), /synthetic-token/);
+            const job = (await f.db.queryDatabase('SELECT state,plan_json FROM automation_jobs WHERE id=?', [pending.job.id]))[0];
+            assert.equal(job.state, pending.job.state); assert.equal(job.plan_json, pending.job.plan_json);
+            const claimed = await pending.queue.claim(pending.now), checked = await pending.queue.check(claimed, pending.now);
+            assert.equal(checked.state, 'ready'); assert.equal(String(checked.destination.webhook_endpoint_id), String(target.webhook_endpoint_id));
+        } finally { await f.db.close(); }
+    });
+
+    test(`S8 legacy ${kind}: healthy different-channel endpoints allow a new channel; dead endpoints and temporary verification failures remain distinct`, { skip: !port }, async () => {
+        const f = await fixture(kind);
+        try {
+            const oldHook = await f.interaction().channel.createWebhook({ name: 'Different-channel legacy hook' });
+            const legacy = await f.native.registerTarget({ ...f.input(oldHook.url), destinationChannelId: undefined });
+            // This hook belongs to another channel and is therefore absent from
+            // the selected channel's webhook enumeration, but its GET is valid.
+            f.hooks.delete(oldHook.id);
+            for (const status of [404, 503, 403, 429, undefined]) {
+                await assert.rejects(f.native.registerTarget(f.input('https://discord.com/api/webhooks/777777777777777777/synthetic-new-token'), {
+                    validateWebhook: async () => { throw Object.assign(new Error('Sensitive URL/token transport details'), { status, code: status ? 'AUTO_WATCH_INVALID_WEBHOOK' : 'ECONNRESET' }); },
+                }), error => error.targetId === legacy.id && error.code === (status === 404 ? 'NATIVE_CHANNEL_REPAIR_REQUIRED' : 'NATIVE_CHANNEL_VERIFICATION_UNAVAILABLE') && !/Sensitive|token/.test(error.message));
+            }
+            for (const locale of ['ja', 'en-US']) {
+                const interaction = f.interaction(); interaction.locale = locale;
+                await f.handler(f.helperA, async () => {}, f.binding, { legacyVerifier: async () => { throw Object.assign(new Error('Sensitive transport details and token'), { status: 503 }); } })(interaction);
+                const feedback = JSON.stringify(f.replies.at(-1));
+                assert(feedback.includes(`ID ${legacy.id}`)); assert.match(feedback, locale === 'ja' ? /再試行/ : /Retry/); assert.doesNotMatch(feedback, /Sensitive|synthetic-token|https:/);
+            }
+            await f.handler(f.helperA, async () => {}, f.binding, { legacyVerifier: async () => ({ guildId: G, channelId: '999999999999999999' }) })(f.interaction());
+            assert.equal(Number((await f.db.queryDatabase(`SELECT COUNT(*) n FROM ${f.table}`))[0].n), 2);
+            assert.equal(Number((await f.db.queryDatabase('SELECT COUNT(*) n FROM automation_notification_slots'))[0].n), 2);
+            assert.equal((await f.db.queryDatabase(`SELECT webhook_endpoint_id FROM ${f.table} WHERE id=?`, [legacy.id]))[0].webhook_endpoint_id, '1');
+        } finally { await f.db.close(); }
+    });
+
+    test(`S8 legacy ${kind}: foreign or other-guild managed resources cannot prove an owned channel or be repointed`, { skip: !port }, async () => {
+        const f = await fixture(kind);
+        try {
+            const oldHook = await f.interaction().channel.createWebhook({ name: f.purpose }), legacy = await f.native.registerTarget({ ...f.input(oldHook.url), destinationChannelId: undefined });
+            const target = (await f.db.queryDatabase(`SELECT * FROM ${f.table} WHERE id=?`, [legacy.id]))[0], service = createService(f.db);
+            const foreign = await service.saveDestination({ userId: '888888888888888888', guildId: G }, { name: 'Foreign destination', kind: 'webhook', scope: 'private' },
+                { webhookEndpointId: String(target.webhook_endpoint_id), guildId: G, channelId: C, createdByBot: true });
+            await f.db.queryDatabase('INSERT INTO automation_monitors (target_kind,target_id,name,scope,destination_id,revision) VALUES (?,?,?,\'private\',?,1)', [kind, legacy.id, 'Legacy destination', foreign.id]);
+            f.hooks.delete(oldHook.id);
+            for (const metadata of [{ owner: '888888888888888888', guild: G }, { owner: U, guild: '999999999999999999' }]) {
+                await f.db.queryDatabase('UPDATE automation_destinations SET owner_user_id=?,guild_id=? WHERE id=?', [metadata.owner, metadata.guild, foreign.id]);
+                await f.handler(f.helperA, async () => {}, f.binding, { checkRemote: true })(f.interaction());
+                assert.equal(Number((await f.db.queryDatabase(`SELECT COUNT(*) n FROM ${f.table}`))[0].n), 1);
+                const row = (await f.db.queryDatabase('SELECT webhook_endpoint_id,revision FROM automation_destinations WHERE id=?', [foreign.id]))[0];
+                assert.equal(String(row.webhook_endpoint_id), String(target.webhook_endpoint_id)); assert.equal(Number(row.revision), 1);
+            }
+        } finally { await f.db.close(); }
+    });
+
     test(`ROUND1 ${kind}: an existing-URL adopter revalidates after a failed creator's partial SQL rollback instead of committing its deleted hook`, { skip: !port }, async () => {
         const f = await fixture(kind), registered = deferred(), release = deferred(), secondStarted = deferred(), pending = [];
         try {

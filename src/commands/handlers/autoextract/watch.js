@@ -122,7 +122,12 @@ module.exports = async function (interaction) {
             '利用制限を確認できませんでした。少し待ってから再度お試しください。', 'Usage limits could not be verified. Please try again shortly.')));
         recordError(error, { source: 'autoextract.watch', providerId, guildId: interaction.guildId, userId: interaction.user.id });
         const code = String(error?.code || '');
-        const explanation = code === 'AUTO_WATCH_WEBHOOK_GUILD_MISMATCH'
+        const targetId = /^\d{1,20}$/.test(String(error?.targetId || '')) ? String(error.targetId) : '';
+        const explanation = code === 'NATIVE_CHANNEL_REPAIR_REQUIRED'
+            ? localized(interaction.locale, `通知一覧でID ${targetId}を開き、通知先を選び直してください。既存の登録枠で修復できます。`, `Open notification ID ${targetId} in your notification list and choose its destination again. This uses the existing slot.`)
+            : code === 'NATIVE_CHANNEL_VERIFICATION_UNAVAILABLE'
+                ? localized(interaction.locale, `通知先の確認を再試行してください。時間をおいて再登録するか、通知一覧のID ${targetId}から通知先を選び直せます。`, `Retry destination verification shortly, or choose a destination for notification ID ${targetId} in your notification list.`)
+            : code === 'AUTO_WATCH_WEBHOOK_GUILD_MISMATCH'
             ? localized(interaction.locale, 'Webhookはこのサーバーのものではありません。', 'The webhook belongs to another server.')
             : /^WEBHOOK_DESTINATION_(?:USER|BOT)_PERMISSION$/.test(code)
                 ? localized(interaction.locale, '通知先で利用者とBotの閲覧・送信権限を確認してください。Webhookを作成する場合はWebhook管理権限も必要です。', 'Check View Channel and Send Messages permissions for you and the bot. Creating a webhook also requires Manage Webhooks.')

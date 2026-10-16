@@ -10,10 +10,12 @@ const packageKinds: Record<string, string> = { workflow: "ルール", dictionary
 function download(data: any) { const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: "application/json" })); const a = document.createElement("a"); a.href = url; a.download = "automation-package.json"; a.click(); URL.revokeObjectURL(url); }
 const blank = { title: "", description: "", category: "general", visibility: "private", license: "", changelog: "", rightsConfirmed: false };
 
-export function preparePublicationBundle(bundle: any, requestedLicense: string) {
+export function preparePublicationBundle(bundle: any, requestedLicense: string, ownOriginalRevision = false) {
   const inherited = typeof bundle.license === "string" ? bundle.license : "", requested = requestedLicense.trim();
-  if (inherited && requested && inherited !== requested) throw new Error("コピー元のライセンスを保持してください。");
-  return { ...bundle, license: inherited || requested };
+  if (inherited && requested && inherited !== requested && !ownOriginalRevision) throw new Error("コピー元のライセンスを保持してください。");
+  // The server verifies source identity and the package's immutable fork
+  // lineage. An author's original package keeps its normal license control.
+  return { ...bundle, license: ownOriginalRevision && requested ? requested : inherited || requested };
 }
 
 export function MarketplaceManager({ api, scope, canEdit, rules, dictionaries, currentRuleId, refresh, openRule, active = true }: { active?: boolean; api: AutomationApi; scope: string; canEdit: boolean; rules: any[]; dictionaries: any[]; currentRuleId?: string; refresh: () => Promise<void>; openRule: (id: string) => Promise<void> }) {
@@ -87,7 +89,7 @@ export function MarketplaceManager({ api, scope, canEdit, rules, dictionaries, c
     if (sourceType === "current") { if (!editingBundle) throw new Error("編集対象のパッケージを選んでください。"); bundle = editingBundle; }
     else if (sourceType === "workflow") { if (!sourceId) throw new Error("保存済みのルールを選んでください。"); bundle = await api(`workflows/${sourceId}/export`); }
     else { if (!sourceId) throw new Error("辞書を選んでください。"); const data = await api(`dictionaries/${sourceId}/export?format=json`); bundle = { schemaVersion: 1, kind: "dictionary", dictionaries: { words: JSON.parse(data.text) } }; }
-    bundle = preparePublicationBundle(bundle, form.license);
+    bundle = preparePublicationBundle(bundle, form.license, Boolean(editing && !editing.fork_of));
     if (form.visibility !== "private" && !bundle.license.trim()) throw new Error("ライセンスを指定してください。");
     const saved = await api(`marketplace${editing ? `/${editing.id}` : ""}`, editing ? "PATCH" : "POST", { ...form, description: form.description || bundle.description || "", bundle, sourceWorkflowId: sourceType === "workflow" ? sourceId : undefined, expectedVersion: editing?.latest_version });
     setEditing(null); setEditingBundle(null); setSourceType("workflow"); setSourceId(""); setForm(blank); setNotice(saved.status === "active" ? form.visibility === "unlisted" ? "限定共有を開始しました。" : "公開しました。" : "下書きを保存しました。");

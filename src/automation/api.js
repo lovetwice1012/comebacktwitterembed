@@ -32,6 +32,7 @@ async function dispatchCore({ method, path, search = new URLSearchParams(), body
     const { service, market, evaluator, schema, format, bundle, catalog, destinations, monitors, history, dictionaryService, moderation, starter } = services;
     let result;
     const xQuota = () => services.xQuota || require('./x-monitor-quota').createXMonitorQuota(services.db, {
+      service,
       registrationEnabled: process.env.ANGELIC_X_REGISTRATION_ENABLED === '1',
       useLegacyUserInterval: process.env.ANGELIC_X_USE_LEGACY_USER_INTERVAL === '1',
     });

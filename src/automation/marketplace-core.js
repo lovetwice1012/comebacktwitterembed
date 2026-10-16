@@ -84,14 +84,15 @@ function createMarketplace(db, options = {}) {
         const title = textField(input.title, 120), category = textField(input.category || 'general', 64), changelog = textField(input.changelog || '', 4000, false);
         if (previous && Object.hasOwn(input, 'forkOf') && input.forkOf !== previous.fork_of) fail('FORK_SOURCE_IMMUTABLE', 'コピー元は変更できません。別の共有内容として保存してください。');
         const workflowOrigin = input.sourceWorkflowId ? await installedOrigin(actor, input.sourceWorkflowId) : null;
-        const forkOf = previous?.fork_of || input.forkOf || workflowOrigin?.packageId || null;
+        const ownEdition = previous && workflowOrigin?.packageId === previous.id;
+        const forkOf = previous ? previous.fork_of : input.forkOf || workflowOrigin?.packageId || null;
         let sourceBundle = null;
-        if (workflowOrigin && (previous && previous.fork_of !== workflowOrigin.packageId || input.forkOf && input.forkOf !== workflowOrigin.packageId)) fail('FORK_SOURCE_IMMUTABLE', 'コピー元は変更できません。別の共有内容として保存してください。');
+        if (workflowOrigin && (previous && !ownEdition && previous.fork_of !== workflowOrigin.packageId || !previous && input.forkOf && input.forkOf !== workflowOrigin.packageId)) fail('FORK_SOURCE_IMMUTABLE', 'コピー元は変更できません。別の共有内容として保存してください。');
         if (previous?.fork_of) {
             // The first fork edition is immutable and remains available to its
             // owner even after the upstream package is withdrawn or private.
             sourceBundle = (await storedEdition(previous.id, 1)).bundle;
-        } else if (workflowOrigin) {
+        } else if (workflowOrigin && !ownEdition) {
             sourceBundle = workflowOrigin.bundle;
             description = retainDescription(description, workflowOrigin.record.description);
         } else if (input.forkOf) {

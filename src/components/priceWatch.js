@@ -200,6 +200,12 @@ async function registerAndConfirm(interaction, source, mode, destination, option
                 : 'Check View Channel and Send Messages permissions for you and the bot. Creating a webhook also requires Manage Webhooks.';
         } else if (error?.code === 'AUTO_WATCH_INVALID_WEBHOOK') {
             content = ja(interaction.locale) ? '通知先のWebhookを確認して、もう一度登録してください。' : 'Check the destination webhook and register again.';
+        } else if (['NATIVE_CHANNEL_REPAIR_REQUIRED', 'NATIVE_CHANNEL_VERIFICATION_UNAVAILABLE'].includes(error?.code)) {
+            const id = /^\d{1,20}$/.test(String(error.targetId || '')) ? String(error.targetId) : '';
+            const repair = error.code === 'NATIVE_CHANNEL_REPAIR_REQUIRED';
+            content = ja(interaction.locale)
+                ? repair ? `通知一覧でID ${id}を開き、通知先を選び直してください。既存の登録枠で修復できます。` : `通知先の確認を再試行してください。時間をおいて再登録するか、通知一覧のID ${id}から通知先を選び直せます。`
+                : repair ? `Open notification ID ${id} in your notification list and choose its destination again. This uses the existing slot.` : `Retry destination verification shortly, or choose a destination for notification ID ${id} in your notification list.`;
         }
         if (!content) throw error;
         await interaction.editReply({ content });

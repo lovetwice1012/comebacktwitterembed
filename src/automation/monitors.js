@@ -311,6 +311,10 @@ function createMonitors(db, service, destinations, options = {}) {
                 const locked = await getRow(actor, kind, id, true, query, true);
                 if (Number(locked.revision || 1) !== input.expectedRevision) fail('REVISION_CONFLICT', '監視が更新されています。', 409);
                 const enabled = input.enabled === undefined ? !!locked.enabled : input.enabled === true;
+                if (enabled && !locked.enabled && locked.workflow_id) {
+                    const workflow = await service.getRow('workflow', actor, locked.workflow_id, true, query, true);
+                    await service.validateWorkflowDestinations(query, workflow, [ownerId, actor.userId]);
+                }
                 if (checked) await lockResumeDestination(query, actor, locked, checked);
                 if (enabled) {
                     const slot = await entitlements.assertSlotAvailable(query, ownerId, kind, id);
@@ -340,6 +344,10 @@ function createMonitors(db, service, destinations, options = {}) {
                 if (kind === 'auto') await require('./monitor-cadence').lockTargetSource(query, ownerId, String(id));
                 locked = await getRow(actor, kind, id, true, query, true);
                 if (Number(locked.revision || 1) !== input.expectedRevision) fail('REVISION_CONFLICT', '監視が更新されています。', 409);
+            }
+            if (enabled && locked && !locked.enabled && locked.workflow_id) {
+                const workflow = await service.getRow('workflow', actor, locked.workflow_id, true, query, true);
+                await service.validateWorkflowDestinations(query, workflow, [ownerId, actor.userId]);
             }
             if (needsRegistration(locked)) await assertRegistration(query, true);
             if (!id || enabled) await entitlements.assertSlotAvailable(query, ownerId, kind, id || undefined);

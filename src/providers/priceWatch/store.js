@@ -125,12 +125,20 @@ async function registerTargetAdmitted(input, options = {}) {
         );
         const source = sourceRows[0];
         if (!source?.id) throw error('Price-watch source could not be saved.', 'PRICE_WATCH_SOURCE_STORE_FAILED');
-        const existing = input.destinationChannelId ? await query(`SELECT id,destination_key FROM ${TABLES.priceWatchTargets}
+        let existing = input.destinationChannelId ? await query(`SELECT id,destination_key FROM ${TABLES.priceWatchTargets}
             WHERE source_id=? AND user_id=? AND destination_key IN (?,?) AND watch_mode=? AND rule_key=?
             ORDER BY (destination_key=?) DESC LIMIT 1`, [source.id, userId, destinationKey, `webhook:${webhookEndpointId}`, rule.mode, rule.ruleKey, destinationKey])
             : await query(`SELECT id FROM ${TABLES.priceWatchTargets}
             WHERE source_id=? AND user_id=? AND destination_key=? AND watch_mode=? AND rule_key=? LIMIT 1`, [source.id, userId, destinationKey, rule.mode, rule.ruleKey]);
+        if (!existing.length && input.destinationChannelId) {
+            const legacy = await require('../autoWatch/channel-registration').legacyChannelRegistration(query, {
+                kind: 'price', userId, sourceId: source.id, guildId: String(input.guildId), channelId: String(input.destinationChannelId), endpointId: webhookEndpointId, rule,
+                verify: options.validateWebhook || ((url, verifyOptions) => require('../autoWatch/store').validateWebhook(url, { ...verifyOptions, fetch: options.fetch })),
+            });
+            if (legacy) existing = [legacy];
+        }
         if (existing[0]?.destination_key) destinationKey = existing[0].destination_key;
+        if (existing[0]) await (options.service || require('../../automation/service').createService(db)).validateRegistrationWorkflow(query, { userId }, 'price', String(existing[0].id));
         await entitlements.assertSlotAvailable(query, userId, 'price', existing[0]?.id);
         await query(
             `INSERT INTO ${TABLES.priceWatchTargets}

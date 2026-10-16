@@ -18,6 +18,8 @@ const files=[
   "scripts/test/automation-flow-projector-sql.test.js",
   "scripts/test/automation-native-operation-sql.test.js",
   "scripts/test/automation-workflow-history-sql.test.js",
+  "scripts/test/automation-workflow-destination-principals-sql.test.js",
+  "scripts/test/automation-aggregate-member-boundary.test.js",
   "scripts/test/automation-service-policy-sql.test.js",
   "scripts/test/automation-destination-context.test.js",
   "scripts/test/automation-destination-ui.test.js",

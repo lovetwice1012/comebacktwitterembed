@@ -55,7 +55,7 @@ function validateAssignmentGuards(guards) {
     return { expectedRevision: guards.expectedRevision, expectedWorkflowId: guards.expectedWorkflowId };
 }
 
-/** @param {any} db @param {{rateLimiter?:any,rateOptions?:any}} [options] */
+/** @param {any} db @param {{rateLimiter?:any,rateOptions?:any,verifyChannel?:any}} [options] */
 function createService(db, options = {}) {
     const rateLimiter = options.rateLimiter || createRateLimiter(db, options.rateOptions);
     async function withOperation(actor, group, work) {
@@ -89,7 +89,7 @@ function createService(db, options = {}) {
     async function validateBindings(actor, workflow, bindings, query = db.queryDatabase, strict = false) {
         if (!bindings || typeof bindings !== 'object' || Array.isArray(bindings) || Object.keys(bindings).some(k => !['destinations', 'dictionaries'].includes(k))) fail('INVALID_BINDINGS', '通知先・辞書の割り当てが不正です。');
         const safe = { destinations: Object.create(null), dictionaries: Object.create(null) };
-        const usedDestinations = new Set(workflow.nodes.filter(node => node.type === 'send').map(node => node.config.destination));
+        const usedDestinations = new Set(workflow.nodes.filter(node => node.type === 'send' && node.config.destination !== 'default').map(node => node.config.destination));
         const usedDictionaries = new Set(workflow.nodes.filter(node => node.type === 'dictionary').map(node => node.config.dictionary));
         for (const [alias, id] of Object.entries(bindings.destinations || {})) {
             if (!/^[a-zA-Z][a-zA-Z0-9_-]{0,63}$/.test(alias) || ['constructor', 'prototype'].includes(alias)) fail('INVALID_BINDINGS', '通知先の名前が不正です。');
@@ -120,6 +120,52 @@ function createService(db, options = {}) {
             if (node.type === 'send' && node.config.destination !== 'default' && !safe.destinations[node.config.destination]) fail('DESTINATION_REQUIRED', `通知先 ${node.config.destination} の割り当てが必要です。`);
         }
         return safe;
+    }
+    async function validateWorkflowDestinations(query, workflow, ownerIds, snapshot = null) {
+        if (!ownerIds.length) return;
+        if (!snapshot) {
+            if (!workflow.active_revision) return;
+            snapshot = (await query('SELECT definition_json,bindings_json FROM automation_revisions WHERE workflow_id=? AND revision=?', [workflow.id, workflow.active_revision]))[0];
+            if (!snapshot) fail('NOT_ACTIVE', '適用済みのルールを確認できません。再度適用してください。');
+        }
+        const definition = assertWorkflow(parse(snapshot.definition_json)), bindings = parse(snapshot.bindings_json);
+        const aliases = [...new Set(definition.nodes.filter(node => node.type === 'send' && node.config.destination !== 'default').map(node => node.config.destination))];
+        for (const alias of aliases) {
+            const id = bindings?.destinations?.[alias];
+            if (!id) fail('DESTINATION_REQUIRED', `通知先 ${alias} の割り当てが必要です。`);
+            const destination = (await query('SELECT * FROM automation_destinations WHERE id=? FOR UPDATE', [id]))[0];
+            if (!destination || destination.deleted_at_ms) fail('NOT_FOUND', '通知先が見つかりません。', 404);
+            if (!destination.enabled) fail('DESTINATION_DISABLED', '通知先を有効にしてから通知を再開してください。', 409);
+            if (workflow.scope === 'guild' && (destination.scope !== 'guild' || destination.guild_id !== workflow.guild_id || destination.kind === 'dm')
+                || workflow.scope === 'private' && destination.scope === 'private' && destination.owner_user_id !== workflow.owner_user_id)
+                fail('PRIVATE_BINDING', 'ルールと同じ公開範囲の通知先を指定してください。');
+            for (const ownerId of [...new Set(ownerIds)]) {
+                if (destination.kind === 'dm') {
+                    if (destination.dm_user_id !== ownerId) fail('DM_OWNER_MISMATCH', '登録した本人のDMを指定してください。', 403);
+                } else {
+                    // Editing a shared resource does not give its consumers
+                    // access to a channel. Delivery runs as the registration
+                    // owner, so check that exact principal before committing.
+                    const verify = options.verifyChannel || require('./destinations').createDestinations(db, service).verifyChannel;
+                    await verify({ userId: ownerId }, destination.guild_id, destination.channel_id);
+                }
+            }
+        }
+    }
+    async function validateRegistrationWorkflow(query, actor, kind, targetId) {
+        requireActor(actor);
+        if (!['auto', 'price'].includes(kind)) fail('INVALID_MONITOR', '監視の種類が不正です。');
+        const table = kind === 'auto' ? 'auto_watch' : 'price_watch';
+        const target = (await query(`SELECT t.user_id,t.guild_id,t.destination_type,m.scope,a.workflow_id FROM ${table}_targets t
+            LEFT JOIN automation_monitors m ON m.target_kind=? AND m.target_id=t.id
+            LEFT JOIN automation_assignments a ON a.target_kind=? AND a.target_id=t.id WHERE t.id=? AND t.user_id=? FOR UPDATE`, [kind, kind, targetId, actor.userId]))[0];
+        if (!target) fail('NOT_FOUND', '監視が見つかりません。', 404);
+        if (!target.workflow_id) return;
+        const workflow = (await query('SELECT * FROM automation_workflows WHERE id=? AND deleted_at_ms IS NULL FOR UPDATE', [target.workflow_id]))[0];
+        const scope = target.scope || (target.destination_type === 'dm' || !target.guild_id ? 'private' : 'guild');
+        if (!workflow || workflow.scope !== scope || scope === 'private' && workflow.owner_user_id !== target.user_id
+            || scope === 'guild' && workflow.guild_id !== target.guild_id) fail('TARGET_SCOPE', '監視に割り当てたルールを確認してください。');
+        await validateWorkflowDestinations(query, workflow, [target.user_id]);
     }
     async function saveWorkflowRevision(query, actor, id, revision, definition, bindings, now, serialized = false) {
         const body = serialized && typeof definition === 'string' ? definition : JSON.stringify(definition);
@@ -209,6 +255,7 @@ function createService(db, options = {}) {
                     if (dictionary.scope !== 'guild' || dictionary.guild_id !== row.guild_id) fail('PRIVATE_BINDING', '共有ルールでは同じサーバーの共有辞書を使ってください。');
                 }
             }
+            await validateWorkflowDestinations(query, row, [...affectedTargets.map(target => target.ownerId), actor.userId], { definition_json: definition, bindings_json: bindings });
             // Validation may omit a deleted, unused binding. Activation does
             // not edit the immutable draft edition: a later save/restore
             // records that normalization as a new revision instead.
@@ -217,14 +264,11 @@ function createService(db, options = {}) {
             await audit(query, actor, id, 'workflow.activate', { revision: Number(row.revision) }, row.guild_id);
             return { activeRevision: Number(row.revision), enabled: true };
         };
-        if (input.expectedTargetsToken !== undefined || options.requireTargetsToken)
-            return require('./workflow-deletion').withLockedWorkflowTargets(db, actor, id, input.expectedRevision, { getRow, audit }, activate);
-        return db.withDatabaseTransaction(async query => activate(query, await getRow('workflow', actor, id, true, query, true)));
+        return require('./workflow-deletion').withLockedWorkflowTargets(db, actor, id, input.expectedRevision, { getRow, audit }, activate);
     }
     async function setWorkflowState(actor, id, input) {
         if (typeof input?.enabled !== 'boolean') fail('INVALID_STATE', '有効・停止の状態を確認してください。');
-        return db.withDatabaseTransaction(async query => {
-            const row = await getRow('workflow', actor, id, true, query, true);
+        const change = async (query, row, targets = []) => {
             if (Number(row.revision) !== input.expectedRevision) fail('REVISION_CONFLICT', '編集内容が変更されています。', 409);
             if (input.enabled && !row.active_revision) fail('NOT_ACTIVE', 'ルールを適用してから有効にしてください。');
             if (input.enabled) {
@@ -232,6 +276,7 @@ function createService(db, options = {}) {
                 if (!snapshots.length) fail('NOT_ACTIVE', '適用済みのルールを確認できません。再度適用してください。');
                 const definition = assertWorkflow(parse(snapshots[0].definition_json));
                 await validateBindings(actor, definition, parse(snapshots[0].bindings_json), query, true);
+                await validateWorkflowDestinations(query, row, [...targets.map(target => target.ownerId), actor.userId], snapshots[0]);
             }
             const now = Date.now(), revision = Number(row.revision) + 1, provenance = require('./workflow-package-provenance');
             const origin = await provenance.revisionOrigin(query, id, Number(row.revision), Number(row.revision));
@@ -243,7 +288,9 @@ function createService(db, options = {}) {
             await query('UPDATE automation_workflows SET enabled=?,revision=revision+1,updated_at_ms=? WHERE id=?', [input.enabled ? 1 : 0, now, id]);
             await audit(query, actor, id, 'workflow.state', { enabled: !!input.enabled }, row.guild_id);
             return { enabled: !!input.enabled, revision: Number(row.revision) + 1 };
-        });
+        };
+        return input.enabled ? require('./workflow-deletion').withLockedWorkflowTargets(db, actor, id, input.expectedRevision, { getRow, audit }, change)
+            : db.withDatabaseTransaction(async query => change(query, await getRow('workflow', actor, id, true, query, true)));
     }
     async function remove(kind, actor, id, expectedRevision) {
         if (kind === 'workflow') return require('./workflow-deletion').removeWorkflow(db, actor, id, expectedRevision, { getRow, audit });
@@ -366,6 +413,7 @@ function createService(db, options = {}) {
             if (rule.scope !== scopeOf(target)) fail('TARGET_SCOPE', '監視とルールの公開範囲を一致させてください。');
             if (rule.scope === 'guild' && (target.guild_id !== rule.guild_id || target.destination_type === 'dm')) fail('TARGET_SCOPE', '共有ルールは同じサーバーの共有通知に割り当ててください。');
             if (rule.scope === 'private' && target.user_id !== actor.userId) fail('TARGET_SCOPE', '個人ルールは自分の監視に割り当ててください。');
+            await validateWorkflowDestinations(query, rule, [target.user_id, actor.userId]);
             if (beforeWorkflowId === workflowId) return { attached: true, unchanged: true, revision: beforeRevision };
             await query('INSERT INTO automation_assignments (target_kind,target_id,workflow_id,created_at_ms) VALUES (?,?,?,?) ON DUPLICATE KEY UPDATE workflow_id=VALUES(workflow_id)', [targetKind, String(targetId), workflowId, Date.now()]);
             const revision = await advanceMonitorRevision(query, targetKind, targetId, scopeOf(target), beforeRevision);
@@ -376,7 +424,7 @@ function createService(db, options = {}) {
         });
     }
     const service = { list, getRow, getWorkflow, createWorkflow, updateWorkflow, activationPreview, activateWorkflow, setWorkflowState, remove, history,
-        restoreRevision, validateBindings, saveDictionary, getDictionary, dictionaryData, saveDestination, attach, audit,
+        restoreRevision, validateBindings, validateWorkflowDestinations, validateRegistrationWorkflow, saveDictionary, getDictionary, dictionaryData, saveDestination, attach, audit,
         withOperation, rateLimiter };
     for (const name of ['createWorkflow', 'updateWorkflow', 'activateWorkflow', 'restoreRevision', 'saveDictionary', 'saveDestination', 'attach']) {
         const operation = /** @type {Function} */ (service[name]);

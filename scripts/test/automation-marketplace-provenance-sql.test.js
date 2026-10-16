@@ -18,13 +18,13 @@ const LICENSE = 'CC-BY-SA-4.0';
 const input = (name, license = LICENSE) => ({ title: name, description: `Package description: ${name}`, category: 'general', visibility: 'public', rightsConfirmed: true,
     bundle: { schemaVersion: 1, kind: 'workflow', workflow: newWorkflow(name), dictionaries: {}, description: `Attribution: Original Author — ${name}`, license } });
 
-function preparePublicationBundle(bundle, requested) {
+function preparePublicationBundle(bundle, requested, ownOriginalRevision = false) {
     // Exercise the actual ordinary UI preparation rather than copying it into
     // the fixture. No React render or browser/network is needed for this helper.
     const filename = path.resolve(__dirname, '../../dashboard/components/automation/marketplace-manager.tsx'), native = createRequire(filename), mod = { exports: {} };
     const compiled = transformSync(fs.readFileSync(filename, 'utf8'), { loader: 'tsx', format: 'cjs' }).code;
     compileFunction(compiled, ['require', 'module', 'exports'], { filename })(native, mod, mod.exports);
-    return mod.exports.preparePublicationBundle(bundle, requested);
+    return mod.exports.preparePublicationBundle(bundle, requested, ownOriginalRevision);
 }
 
 function fixture(db) {
@@ -225,5 +225,27 @@ test('S4-4 legacy migration retains unknown editions without guessing and verifi
         await db.queryDatabase('UPDATE automation_revisions SET source_package_version=1 WHERE workflow_id=? AND revision=?', [old.id, before.revision]);
         await databaseSchema._internal.applyMigrationFile(db.queryDatabase, '20261016_add_workflow_package_provenance.sql');
         assert.equal((await fixture(db).market.exportWorkflow(member, old.id)).license, LICENSE);
+    } finally { await db.close(); }
+});
+
+test('S4-4 editing imports can revise their own original or fork without self-forking or shedding upstream rights', { skip: !port }, async () => {
+    const db = await createTestDatabase(port);
+    try {
+        const { service, market } = fixture(db), original = await market.save(author, input('Editable package'));
+        const fork = await market.fork(member, original.id, { version: 1 });
+        for (const [owner, packageId, parent, license] of [[author, original.id, null, 'MIT'], [member, fork.id, original.id, LICENSE]]) {
+            const pack = await market.get(owner, packageId), imported = await market.importForEditing(owner, packageId, { version: 1, scope: 'private' });
+            await service.updateWorkflow(owner, imported.workflow.id, { expectedRevision: imported.workflow.revision, definition: { ...imported.workflow.draft, name: 'Edited locally' }, bindings: imported.workflow.bindings });
+            const bundle = await market.exportWorkflow(owner, imported.workflow.id);
+            const prepared = preparePublicationBundle(bundle, license, !pack.fork_of);
+            const request = { ...input('Revised existing package'), expectedVersion: 1, sourceWorkflowId: imported.workflow.id, bundle: prepared };
+            if (parent) await assert.rejects(market.save(owner, { ...request, bundle: { ...prepared, license: 'MIT' } }, packageId), { code: 'FORK_LICENSE' });
+            const result = await market.save(owner, request, packageId), read = await market.get(owner, result.id);
+            assert.equal(result.id, packageId); assert.equal(result.version, 2); assert.equal(read.fork_of, parent); assert.equal(read.bundle.license, license);
+            if (parent) assert.match(read.bundle.description, /Attribution: Original Author/);
+        }
+        const unrelated = await market.save(author, input('Other package'));
+        const otherImport = await market.importForEditing(author, unrelated.id, { version: 1, scope: 'private' });
+        await assert.rejects(market.save(author, { ...input('Retarget attempt'), expectedVersion: 2, sourceWorkflowId: otherImport.workflow.id }, original.id), { code: 'FORK_SOURCE_IMMUTABLE' });
     } finally { await db.close(); }
 });

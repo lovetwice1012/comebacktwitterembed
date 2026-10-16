@@ -288,7 +288,7 @@ function createGraphStore(db) {
                     batchInputs: selected.map(input => ({ unitId: input.input_unit_id, ordinal: Number(input.ordinal) })), receivedCount: Number(row.received_count) };
                 try { unitId = await putUnit(query, row.namespace_key, unit, now); }
                 catch (error) {
-                    if (!['GRAPH_INPUT_LIMIT', 'FLOW_SNAPSHOT_LIMIT'].includes(error.code)) throw error;
+                    if (!['GRAPH_INPUT_LIMIT', 'FLOW_SNAPSHOT_LIMIT', 'FLOW_UNIT_INVALID'].includes(error.code)) throw error;
                     // The accepted inputs remain immutable and inspectable. A
                     // permanently oversized batch is terminal, never truncated
                     // or repeatedly selected ahead of healthy work.

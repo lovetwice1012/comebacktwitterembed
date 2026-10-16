@@ -70,7 +70,7 @@ async function validateWebhook(webhookUrl, options = {}) {
     if (!response.ok || body?.type !== 1 || !/^\d{16,22}$/.test(String(body?.id || ''))
         || !/^\d{16,22}$/.test(String(body?.guild_id || ''))
         || !/^\d{16,22}$/.test(String(body?.channel_id || ''))) {
-        throw error(`Webhook validation failed (HTTP ${response.status}).`, 'AUTO_WATCH_INVALID_WEBHOOK');
+        throw Object.assign(error(`Webhook validation failed (HTTP ${response.status}).`, 'AUTO_WATCH_INVALID_WEBHOOK'), { status: response.status });
     }
     return { id: String(body.id), guildId: String(body.guild_id), channelId: String(body.channel_id) };
 }
@@ -150,10 +150,15 @@ async function registerTargetAdmitted(input, options = {}) {
              WHERE user_id=? AND source_id=? AND destination_key=? LIMIT 1`,
             [userId, source.id, destinationKey]
         );
-        const existing = existingRows[0];
+        let existing = existingRows[0];
+        if (!existing && input.destinationChannelId) existing = await require('./channel-registration').legacyChannelRegistration(query, {
+            kind: 'auto', userId, sourceId: source.id, guildId: String(input.guildId), channelId: String(input.destinationChannelId), endpointId: webhookEndpointId,
+            verify: options.validateWebhook || ((url, verifyOptions) => validateWebhook(url, { ...verifyOptions, fetch: options.fetch })),
+        });
         // Reusing an older purpose-named webhook must return its existing
         // registration without changing its key or invalidating pending jobs.
         if (existing?.destination_key) destinationKey = existing.destination_key;
+        if (existing) await (options.service || require('../../automation/service').createService(db)).validateRegistrationWorkflow(query, { userId }, 'auto', String(existing.id));
         await entitlements.assertSlotAvailable(query, userId, 'auto', existing?.id);
         const slot = { premiumSlot: existing ? Number(existing.premium_slot) ? 1 : 0 : 0 };
         await query(
