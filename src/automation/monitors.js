@@ -3,6 +3,7 @@
 const { AutomationError, requireActor, scopeFor, hash } = require('./service');
 const entitlements = require('./entitlements');
 const eligibility = require('../providers/autoWatch/eligibility');
+const { verifyWebhookEndpoint, lockWebhookEndpoint } = require('./destinations');
 const fail = (code, message, status = 400) => { throw new AutomationError(code, message, status); };
 const tableFor = kind => {
     if (!['auto', 'price'].includes(kind)) fail('INVALID_MONITOR', '監視の種類が不正です。');
@@ -212,12 +213,13 @@ function createMonitors(db, service, destinations, options = {}) {
         if (!row.enabled) fail('DESTINATION_DISABLED', '通知先が停止中です。');
         if (scope === 'guild' && (row.scope !== 'guild' || row.guild_id !== actor.guildId || row.kind === 'dm')) fail('DESTINATION_SCOPE', '共有監視には同じサーバーの共有通知先を使ってください。');
         if (row.kind === 'dm' && row.dm_user_id !== ownerId) fail('DM_OWNER', '他の人の監視を自分のDMへ変更できません。');
-        let nsfw = false;
+        let nsfw = false, endpointSnapshot = null;
         if (row.kind !== 'dm') {
+            endpointSnapshot = await verifyWebhookEndpoint(query, row, destinations.verifyWebhook);
             nsfw = await verifyDestinationChannel(actor, row.guild_id, row.channel_id, ownerId,
                 selected.existingShared || row.scope === 'private' && String(row.owner_user_id) === ownerId);
         }
-        return { row, nsfw, key: row.kind === 'dm' ? `dm:${ownerId}` : `webhook:${row.webhook_endpoint_id}` };
+        return { row, nsfw, endpointSnapshot, key: row.kind === 'dm' ? `dm:${ownerId}` : `webhook:${row.webhook_endpoint_id}` };
     }
     const resumeIdentity = row => JSON.stringify([row.user_id, row.destination_id || null, row.destination_type, row.destination_key, row.guild_id, row.origin_channel_id, row.webhook_endpoint_id]);
     const destinationIdentity = row => JSON.stringify([row.id, Number(row.revision), row.scope, row.owner_user_id, row.guild_id, row.kind, row.channel_id, row.dm_user_id, row.webhook_endpoint_id]);
@@ -226,7 +228,7 @@ function createMonitors(db, service, destinations, options = {}) {
         const kind = managed?.row.kind || row.destination_type;
         if (kind === 'dm' && !managed && row.destination_key !== `dm:${ownerId}`) fail('DM_OWNER', '通知先のDMを確認してください。');
         const endpointId = kind === 'dm' ? null : managed?.row.webhook_endpoint_id || row.webhook_endpoint_id;
-        let endpointSnapshot = null;
+        let endpointSnapshot = managed?.endpointSnapshot || null;
         if (kind !== 'dm') {
             if (kind !== 'webhook' || !endpointId || !(await db.queryDatabase('SELECT id FROM webhook_endpoints WHERE id=?', [endpointId])).length) fail('DESTINATION_DELETED', '通知先を選び直してから再開してください。');
             if (!managed) {
@@ -248,12 +250,10 @@ function createMonitors(db, service, destinations, options = {}) {
             const fresh = (await destinationForMonitor(actor, checked.managed.id, String(row.user_id), row, query, true)).row;
             if (!fresh.enabled || destinationIdentity(fresh) !== destinationIdentity(checked.managed)) fail('DESTINATION_CHANGED', '通知先が変更されました。再試行してください。', 409);
         }
-        if (checked.endpointId) {
+        if (checked.endpointSnapshot) await lockWebhookEndpoint(query, checked.endpointSnapshot);
+        else if (checked.endpointId) {
             const fresh = (await query(`SELECT ${checked.endpointSnapshot ? 'id,webhook_url,webhook_url_hash' : 'id'} FROM webhook_endpoints WHERE id=? FOR UPDATE`, [checked.endpointId]))[0];
             if (!fresh) fail('DESTINATION_DELETED', '通知先を選び直してから再開してください。');
-            if (checked.endpointSnapshot && (fresh.webhook_url !== checked.endpointSnapshot.webhook_url || fresh.webhook_url_hash !== checked.endpointSnapshot.webhook_url_hash)) {
-                fail('DESTINATION_CHANGED', '通知先が変更されています。設定を確認し直してください。', 409);
-            }
         }
     }
     async function save(actor, kind, input, id = null) {
@@ -370,7 +370,8 @@ function createMonitors(db, service, destinations, options = {}) {
             // Lock the destination against concurrent disable/delete after its
             // remote permission check and before adopting its identity.
             const freshDest = (await destinationForMonitor(actor, destId, ownerId, locked, query, true)).row;
-            if (!freshDest.enabled || freshDest.revision !== dest.row.revision) fail('DESTINATION_CHANGED', '通知先が変更されました。再試行してください。', 409);
+            if (!freshDest.enabled || destinationIdentity(freshDest) !== destinationIdentity(dest.row)) fail('DESTINATION_CHANGED', '通知先が変更されました。再試行してください。', 409);
+            if (dest.endpointSnapshot) await lockWebhookEndpoint(query, dest.endpointSnapshot);
             await query('INSERT IGNORE INTO users (user_id,registered_at_ms) VALUES (?,?)', [ownerId, Date.now()]);
             let premium = Number(locked?.premium_slot || 0);
             if (kind === 'auto' && enabled) premium = (await entitlements.inspectPlan(query, ownerId)).priority > 0 ? 1 : 0;

@@ -16,11 +16,20 @@ const actor = userId => ({ userId, guildId: G, canView: true, canEdit: true });
 const definition = custom => { const rule = newWorkflow('Actual delivery principal'); if (custom) rule.nodes.find(node => node.type === 'send').config.destination = 'alerts'; return rule; };
 
 async function fixture(work) {
-    const db = await createTestDatabase(port), query = db.queryDatabase, denied = new Map(), calls = []; let unavailable = false;
+    const db = await createTestDatabase(port), query = db.queryDatabase, denied = new Map(), calls = [], webhooks = new Map(); let unavailable = false;
+    const remote = { status: 0, patch: {}, onMetadata: null };
     const service = createService(db, { verifyChannel: (principal, guild, channel) => destinations.verifyChannel(principal, guild, channel),
+        verifyWebhook: (guild, url) => destinations.verifyWebhook(guild, url),
         rateOptions: { policy: { operations: { write: { minute: 1000, hour: 1000 }, monitor: { minute: 1000, hour: 1000 } } } } });
     const rest = async route => {
         calls.push(route); if (unavailable) throw Object.assign(new Error('Synthetic private upstream error'), { status: 503 });
+        if (route.startsWith('/webhooks/')) {
+            if (remote.status) throw Object.assign(new Error('Sensitive webhook upstream details'), { status: remote.status });
+            const hook = webhooks.get(route);
+            assert(hook, 'Only fixture-owned webhook metadata can be read');
+            const data = { ...hook, ...remote.patch }, work = remote.onMetadata; remote.onMetadata = null; await work?.();
+            return { data };
+        }
         if (route === `/guilds/${G}`) return { data: { id: G, owner_id: BOT } };
         if (route === `/guilds/${G}/roles`) return { data: [{ id: G, permissions: String(VIEW | SEND) }] };
         if (route === '/users/@me') return { data: { id: BOT } };
@@ -32,6 +41,7 @@ async function fixture(work) {
     const destinations = createDestinations(db, service, { rest }), monitors = createMonitors(db, service, destinations);
     async function destination(who = B, scope = 'guild', channelId = CUSTOM) {
         const url = `https://discord.com/api/webhooks/555111111111111111/${randomUUID().replaceAll('-', '')}`;
+        webhooks.set(url.replace('https://discord.com/api', ''), { id: '555111111111111111', type: 1, guild_id: G, channel_id: channelId });
         const endpoint = await query('INSERT INTO webhook_endpoints (webhook_url_hash,webhook_url) VALUES (?,?)', [hash(url), url]);
         return (await service.saveDestination(actor(who), { name: 'Synthetic destination', kind: 'webhook', scope }, { webhookEndpointId: String(endpoint.insertId), guildId: G, channelId })).id;
     }
@@ -51,7 +61,7 @@ async function fixture(work) {
     }
     try {
         for (const owner of [A, B, D]) await grantTestDonor(db, owner);
-        await work({ db, query, service, monitors, destinations, destination, monitor, workflow, state, denied, calls, setUnavailable: value => { unavailable = value; } });
+        await work({ db, query, service, monitors, destinations, destination, monitor, workflow, state, denied, calls, remote, setUnavailable: value => { unavailable = value; } });
     } finally { await db.close(); }
 }
 
@@ -114,6 +124,12 @@ for (const kind of ['auto', 'price']) test(`S24-1 native ${kind} repeated regist
     compileFunction(fs.readFileSync(filename, 'utf8'), ['require', 'module', 'exports'], { filename })(id => id === '../../db' ? binding : id === '../../db_schema' ? { ...native(id), ensureDatabaseSchema: async () => {} } : native(id), mod, mod.exports);
     const input = { userId: A, guildId: G, providerId: kind === 'auto' ? 'github' : 'steam', source: kind === 'auto' ? record.source_url : record.product_url,
         destinationType: 'webhook', webhookUrl: record.webhook_url, channelId: C, ...(kind === 'price' ? { mode: 'change', productUrl: record.product_url, locale: record.source_locale || 'ja' } : {}) };
+    for (const [status, code] of [[404, 'DESTINATION_DELETED'], [503, 'DISCORD_UNAVAILABLE']]) {
+        f.remote.status = status;
+        await assert.rejects(mod.exports.registerTarget(input, { service: f.service, initialJitterMs: 0 }), { code }); assert.deepEqual(await f.state(rule.id, kind, target.id), before);
+    }
+    f.remote.status = 0; f.remote.patch = { channel_id: C };
+    await assert.rejects(mod.exports.registerTarget(input, { service: f.service, initialJitterMs: 0 }), { code: 'WEBHOOK_DESTINATION_CHANGED' }); assert.deepEqual(await f.state(rule.id, kind, target.id), before); f.remote.patch = {};
     f.denied.set(A, SEND);
     await assert.rejects(mod.exports.registerTarget(input, { service: f.service, initialJitterMs: 0 }), { code: 'CHANNEL_PERMISSION' });
     assert.deepEqual(await f.state(rule.id, kind, target.id), before); f.denied.clear();
@@ -124,6 +140,12 @@ for (const kind of ['auto', 'price']) test(`S24-1 native ${kind} repeated regist
 
 test('S24-1 X enrollment, settings and resume share the actual-owner custom destination guard', { skip: !port }, async () => fixture(async f => {
     const rule = await f.workflow(true, A, 'private'), quota = require('../../src/automation/x-monitor-quota').createXMonitorQuota(f.db, { service: f.service, registrationEnabled: true, rolloutMode: 'public' });
+    for (const [status, code] of [[404, 'DESTINATION_DELETED'], [503, 'DISCORD_UNAVAILABLE']]) {
+        f.remote.status = status;
+        await assert.rejects(quota.register({ userId: A }, { accountHandle: 'example', notificationSettings: { workflowId: rule.id } }), { code }); assert.equal((await f.query('SELECT * FROM automation_x_monitors')).length, 0);
+    }
+    f.remote.status = 0; f.remote.patch = { channel_id: C };
+    await assert.rejects(quota.register({ userId: A }, { accountHandle: 'example', notificationSettings: { workflowId: rule.id } }), { code: 'WEBHOOK_DESTINATION_CHANGED' }); f.remote.patch = {};
     f.denied.set(A, SEND);
     await assert.rejects(quota.register({ userId: A }, { accountHandle: 'example', notificationSettings: { workflowId: rule.id } }), { code: 'CHANNEL_PERMISSION' });
     assert.equal((await f.query('SELECT * FROM automation_x_monitors')).length, 0); f.denied.clear();
@@ -200,4 +222,65 @@ test('T10 ignored legacy default binding can be deleted without altering its imm
     const persisted = (await f.query('SELECT bindings_json,checksum FROM automation_revisions WHERE workflow_id=? AND revision=1', [rule.id]))[0];
     assert.equal(persisted.bindings_json, legacy); assert.equal(persisted.checksum, checksum);
     assert.equal(f.calls.length, 0);
+}));
+
+for (const kind of ['auto', 'price']) test(`S18/S24 managed ${kind}: custom activation, attach and workflow resume reject deleted or moved webhook recipients`, { skip: !port }, async () => fixture(async f => {
+    const target = await f.monitor(kind), dest = await f.destination(B, 'guild', CUSTOM);
+    const rule = await f.service.createWorkflow(actor(B), { scope: 'guild', definition: definition(true), bindings: { destinations: { alerts: dest } } });
+    const snapshot = async () => ({ ...await f.state(rule.id, kind, target.id),
+        destinations: await f.query('SELECT * FROM automation_destinations ORDER BY id'), endpoints: await f.query('SELECT * FROM webhook_endpoints ORDER BY id') });
+    const failures = [[404, 'DESTINATION_DELETED'], [410, 'DESTINATION_DELETED'], [403, 'DISCORD_ACCESS_DENIED'], [503, 'DISCORD_UNAVAILABLE'], [429, 'DISCORD_RATE_LIMITED']];
+    const before = await snapshot();
+    for (const [status, code] of failures) {
+        f.remote.status = status;
+        await assert.rejects(f.service.activateWorkflow(actor(B), rule.id, { expectedRevision: 1 }), { code }); assert.deepEqual(await snapshot(), before);
+    }
+    f.remote.status = 0; f.remote.patch = { channel_id: C };
+    await assert.rejects(f.service.activateWorkflow(actor(B), rule.id, { expectedRevision: 1 }), { code: 'WEBHOOK_DESTINATION_CHANGED', status: 409 }); assert.deepEqual(await snapshot(), before);
+    f.remote.patch = {};
+    const endpoint = (await f.query('SELECT e.* FROM webhook_endpoints e JOIN automation_destinations d ON d.webhook_endpoint_id=e.id WHERE d.id=?', [dest]))[0];
+    const changedUrl = endpoint.webhook_url + 'changed';
+    f.remote.onMetadata = () => f.query('UPDATE webhook_endpoints SET webhook_url=?,webhook_url_hash=? WHERE id=?', [changedUrl, hash(changedUrl), endpoint.id]);
+    await assert.rejects(f.service.activateWorkflow(actor(B), rule.id, { expectedRevision: 1 }), { code: 'DESTINATION_CHANGED', status: 409 }); assert.deepEqual(await snapshot(), before);
+    f.remote.onMetadata = () => f.query('UPDATE automation_destinations SET channel_id=? WHERE id=?', [C, dest]);
+    await assert.rejects(f.service.activateWorkflow(actor(B), rule.id, { expectedRevision: 1 }), { code: 'DESTINATION_CHANGED', status: 409 }); assert.deepEqual(await snapshot(), before);
+    await f.service.activateWorkflow(actor(B), rule.id, { expectedRevision: 1 }); const activated = await snapshot();
+    for (const [status, code] of failures) {
+        f.remote.status = status;
+        await assert.rejects(f.service.attach(actor(B), rule.id, kind, target.id), { code }); assert.deepEqual(await snapshot(), activated);
+    }
+    f.remote.status = 0; f.remote.patch = { channel_id: C };
+    await assert.rejects(f.service.attach(actor(B), rule.id, kind, target.id), { code: 'WEBHOOK_DESTINATION_CHANGED' }); assert.deepEqual(await snapshot(), activated);
+    f.remote.patch = {}; await f.service.attach(actor(B), rule.id, kind, target.id);
+    const paused = await f.service.setWorkflowState(actor(B), rule.id, { expectedRevision: 1, enabled: false });
+    const stopped = await snapshot(); f.remote.status = 404;
+    await assert.rejects(f.service.setWorkflowState(actor(B), rule.id, { expectedRevision: paused.revision, enabled: true }), { code: 'DESTINATION_DELETED' }); assert.deepEqual(await snapshot(), stopped);
+    f.remote.status = 0; assert.equal((await f.service.setWorkflowState(actor(B), rule.id, { expectedRevision: paused.revision, enabled: true })).enabled, true);
+}));
+
+test('S18/S24 managed X: enrollment, active binding selection and resume validate real default webhook identity transactionally', { skip: !port }, async () => fixture(async f => {
+    const who = { userId: A }, destinationId = await f.destination(A, 'private', CUSTOM);
+    const quota = require('../../src/automation/x-monitor-quota').createXMonitorQuota(f.db, { service: f.service, registrationEnabled: true, rolloutMode: 'public' });
+    const snapshot = async () => ({ monitors: await f.query('SELECT * FROM automation_x_monitors ORDER BY id'), slots: await f.query('SELECT * FROM automation_notification_slots ORDER BY owner_user_id,slot_index'),
+        audit: await f.query('SELECT * FROM automation_audit ORDER BY id'), destinations: await f.query('SELECT * FROM automation_destinations ORDER BY id'), endpoints: await f.query('SELECT * FROM webhook_endpoints ORDER BY id') });
+    const before = await snapshot(), input = { accountHandle: 'verifieddefault', notificationSettings: { destinationId } };
+    for (const [status, code] of [[404, 'DESTINATION_DELETED'], [410, 'DESTINATION_DELETED'], [403, 'DISCORD_ACCESS_DENIED'], [503, 'DISCORD_UNAVAILABLE'], [429, 'DISCORD_RATE_LIMITED']]) {
+        f.remote.status = status; await assert.rejects(quota.register(who, input), { code }); assert.deepEqual(await snapshot(), before);
+    }
+    f.remote.status = 0; f.remote.patch = { channel_id: C };
+    await assert.rejects(quota.register(who, input), { code: 'WEBHOOK_DESTINATION_CHANGED' }); assert.deepEqual(await snapshot(), before); f.remote.patch = {};
+    const endpoint = (await f.query('SELECT e.* FROM webhook_endpoints e JOIN automation_destinations d ON d.webhook_endpoint_id=e.id WHERE d.id=?', [destinationId]))[0];
+    const changedUrl = endpoint.webhook_url + 'changed';
+    f.remote.onMetadata = () => f.query('UPDATE webhook_endpoints SET webhook_url=?,webhook_url_hash=? WHERE id=?', [changedUrl, hash(changedUrl), endpoint.id]);
+    await assert.rejects(quota.register(who, input), { code: 'DESTINATION_CHANGED', status: 409 }); assert.deepEqual(await snapshot(), before);
+    const registered = await quota.register(who, input), other = await f.destination(A, 'private', CUSTOM), active = await snapshot();
+    f.remote.status = 404;
+    await assert.rejects(quota.update(who, registered.id, { expectedRevision: registered.revision, notificationSettings: { destinationId: other } }), { code: 'DESTINATION_DELETED' }); assert.deepEqual(await snapshot(), active);
+    f.calls.length = 0;
+    const paused = await quota.update(who, registered.id, { expectedRevision: registered.revision, enabled: false }); assert.equal(f.calls.length, 0);
+    const stopped = await snapshot();
+    await assert.rejects(quota.update(who, registered.id, { expectedRevision: paused.revision, enabled: true }), { code: 'DESTINATION_DELETED' }); assert.deepEqual(await snapshot(), stopped);
+    f.remote.status = 0; f.remote.patch = { channel_id: C };
+    await assert.rejects(quota.update(who, registered.id, { expectedRevision: paused.revision, enabled: true }), { code: 'WEBHOOK_DESTINATION_CHANGED' }); assert.deepEqual(await snapshot(), stopped);
+    f.remote.patch = {}; assert.equal((await quota.update(who, registered.id, { expectedRevision: paused.revision, enabled: true })).enabled, true);
 }));

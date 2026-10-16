@@ -134,7 +134,10 @@ for (const kind of ['auto', 'price']) {
                 { webhookEndpointId: String(endpoint.id), guildId: G, channelId: C, createdByBot: true });
             const monitors = createMonitors(f.db, service, { verifyChannel: async (_actor, guildId, channelId) => {
                 assert.equal(guildId, G); assert.equal(channelId, C); return { channel: { id: C, nsfw: false } };
-            } });
+            }, verifyWebhook: createDestinations(f.db, service, { rest: async route => {
+                const hook = [...f.hooks.values()].find(item => route === `/webhooks/${item.id}/${item.token}`);
+                assert(hook, 'Only fixture-owned hooks can be verified'); return { data: { id: hook.id, type: 1, guild_id: G, channel_id: C } };
+            } }).verifyWebhook });
             const repaired = await monitors.save(actor, kind, { expectedRevision: 1, name: 'Explicit repair', providerId: kind === 'auto' ? 'github' : 'steam',
                 source: kind === 'auto' ? 'octocat' : 'https://store.steampowered.com/app/730', destinationId: destination.id, ...(kind === 'price' ? { mode: 'change' } : {}) }, legacy.id);
             assert.equal(repaired.id, legacy.id);

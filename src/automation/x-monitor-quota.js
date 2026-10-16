@@ -100,7 +100,7 @@ function createXMonitorQuota(db, options = {}) {
             if (requireDestinationEnabled) {
                 const service = options.service || require('./service').createService(db);
                 if (key === 'workflowId') await service.validateWorkflowDestinations(query, rows[0], [actor.userId]);
-                else await service.validateDestinationOwners(rows[0], [actor.userId]);
+                else await service.validateDestinationOwners(rows[0], [actor.userId], query);
             }
         }
         if (config.subscriptionId) {

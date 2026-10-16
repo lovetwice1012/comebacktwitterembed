@@ -162,7 +162,8 @@ function createRunner(db, queue, transport, options = {}) {
 function services(client) {
     if (singleton) return singleton;
     const db = require('../db');
-    const service = require('./service').createService(db, { verifyChannel: (actor, guildId, channelId) => destinations.verifyChannel(actor, guildId, channelId) });
+    const service = require('./service').createService(db, { verifyChannel: (actor, guildId, channelId) => destinations.verifyChannel(actor, guildId, channelId),
+        verifyWebhook: (guildId, url) => destinations.verifyWebhook(guildId, url) });
     const destinations = require('./destinations').createDestinations(db, service);
     const evaluator = require('./evaluation').createEvaluator(service.dictionaryData);
     const control = { stopped: false };

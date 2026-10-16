@@ -55,7 +55,7 @@ function validateAssignmentGuards(guards) {
     return { expectedRevision: guards.expectedRevision, expectedWorkflowId: guards.expectedWorkflowId };
 }
 
-/** @param {any} db @param {{rateLimiter?:any,rateOptions?:any,verifyChannel?:any}} [options] */
+/** @param {any} db @param {{rateLimiter?:any,rateOptions?:any,verifyChannel?:any,verifyWebhook?:any}} [options] */
 function createService(db, options = {}) {
     const rateLimiter = options.rateLimiter || createRateLimiter(db, options.rateOptions);
     async function withOperation(actor, group, work) {
@@ -139,23 +139,33 @@ function createService(db, options = {}) {
             if (workflow.scope === 'guild' && (destination.scope !== 'guild' || destination.guild_id !== workflow.guild_id || destination.kind === 'dm')
                 || workflow.scope === 'private' && destination.scope === 'private' && destination.owner_user_id !== workflow.owner_user_id)
                 fail('PRIVATE_BINDING', 'ルールと同じ公開範囲の通知先を指定してください。');
-            await validateDestinationOwners(destination, ownerIds);
+            await validateDestinationOwners(destination, ownerIds, query);
         }
     }
-    async function validateDestinationOwners(destination, ownerIds) {
+    const destinationIdentity = row => JSON.stringify([row.id, Number(row.revision), row.scope, row.owner_user_id, row.guild_id, row.kind, row.channel_id, row.dm_user_id, row.webhook_endpoint_id, Number(row.enabled), row.deleted_at_ms]);
+    async function validateDestinationOwners(destination, ownerIds, query = undefined) {
+        if (!query) return db.withDatabaseTransaction(q => validateDestinationOwners(destination, ownerIds, q));
         if (!destination || destination.deleted_at_ms) fail('NOT_FOUND', '通知先が見つかりません。', 404);
         if (!destination.enabled) fail('DESTINATION_DISABLED', '通知先を有効にしてから通知を再開してください。', 409);
-        for (const ownerId of [...new Set(ownerIds)]) {
-            if (destination.scope === 'private' && destination.owner_user_id !== ownerId) fail('NOT_FOUND', '通知先が見つかりません。', 404);
-            if (destination.kind === 'dm') {
-                if (destination.dm_user_id !== ownerId) fail('DM_OWNER_MISMATCH', '登録した本人のDMを指定してください。', 403);
-            } else {
-                // Both custom workflow aliases and a monitor's default
-                // destination execute as the actual registration owner.
-                const verify = options.verifyChannel || require('./destinations').createDestinations(db, service).verifyChannel;
-                await verify({ userId: ownerId }, destination.guild_id, destination.channel_id);
-            }
+        const fresh = (await query('SELECT * FROM automation_destinations WHERE id=? FOR UPDATE', [destination.id]))[0];
+        if (!fresh || fresh.deleted_at_ms) fail('NOT_FOUND', '通知先が見つかりません。', 404);
+        if (destinationIdentity(fresh) !== destinationIdentity(destination)) fail('DESTINATION_CHANGED', '通知先が変更されています。設定を確認し直してください。', 409);
+        const principals = [...new Set(ownerIds)];
+        for (const ownerId of principals) {
+            if (fresh.scope === 'private' && fresh.owner_user_id !== ownerId) fail('NOT_FOUND', '通知先が見つかりません。', 404);
+            if (fresh.kind === 'dm' && fresh.dm_user_id !== ownerId) fail('DM_OWNER_MISMATCH', '登録した本人のDMを指定してください。', 403);
         }
+        if (fresh.kind === 'dm') return;
+        if (fresh.kind !== 'webhook') fail('INVALID_DESTINATION', '通知先を選び直してください。');
+        const helpers = require('./destinations'), defaults = helpers.createDestinations(db, service);
+        const verify = options.verifyChannel || defaults.verifyChannel;
+        const endpoint = await helpers.verifyWebhookEndpoint(query, fresh, options.verifyWebhook || defaults.verifyWebhook, true);
+        // Check the actual remote endpoint once, then every delivery principal.
+        // A moved webhook never silently changes a saved resource's channel.
+        for (const ownerId of principals) await verify({ userId: ownerId }, fresh.guild_id, fresh.channel_id);
+        await helpers.lockWebhookEndpoint(query, endpoint);
+        const checked = (await query('SELECT * FROM automation_destinations WHERE id=? FOR UPDATE', [fresh.id]))[0];
+        if (!checked || destinationIdentity(checked) !== destinationIdentity(fresh)) fail('DESTINATION_CHANGED', '通知先が変更されています。設定を確認し直してください。', 409);
     }
     async function validateRegistrationWorkflow(query, actor, kind, targetId) {
         requireActor(actor);

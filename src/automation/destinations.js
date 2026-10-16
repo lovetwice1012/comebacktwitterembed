@@ -36,6 +36,24 @@ function webhookParts(raw) {
     return { id: match[1], token: match[2], url: `https://discord.com/api/webhooks/${match[1]}/${match[2]}` };
 }
 
+async function verifyWebhookEndpoint(query, destination, verifyWebhook, lock = false) {
+    const endpoint = destination.webhook_endpoint_id && (await query(`SELECT id,webhook_url,webhook_url_hash FROM webhook_endpoints WHERE id=?${lock ? ' FOR UPDATE' : ''}`, [destination.webhook_endpoint_id]))[0];
+    if (!endpoint) fail('DESTINATION_DELETED', '通知先のWebhookを確認し、通知先を選び直してください。', 404);
+    const verified = await verifyWebhook(destination.guild_id, endpoint.webhook_url);
+    if (verified.guildId !== destination.guild_id || verified.channelId !== destination.channel_id) {
+        fail('WEBHOOK_DESTINATION_CHANGED', '通知先のWebhookが変更されています。通知先を選び直してください。', 409);
+    }
+    return endpoint;
+}
+
+async function lockWebhookEndpoint(query, snapshot) {
+    const fresh = (await query('SELECT id,webhook_url,webhook_url_hash FROM webhook_endpoints WHERE id=? FOR UPDATE', [snapshot.id]))[0];
+    if (!fresh) fail('DESTINATION_DELETED', '通知先のWebhookを確認し、通知先を選び直してください。', 404);
+    if (fresh.webhook_url !== snapshot.webhook_url || fresh.webhook_url_hash !== snapshot.webhook_url_hash) {
+        fail('DESTINATION_CHANGED', '通知先が変更されています。設定を確認し直してください。', 409);
+    }
+}
+
 function createDestinations(db, service, options = {}) {
     const rest = options.rest || require('../adminSupport/discord').rest;
     async function call(route, init, missingWebhook = false) {
@@ -166,4 +184,4 @@ function createDestinations(db, service, options = {}) {
     }
     return { channels, save: (actor, input, id) => service.withOperation(actor, 'write', () => save(actor, input, id)), verifyChannel, verifyWebhook };
 }
-module.exports = { createDestinations, permissions, webhookParts, has, VIEW, SEND, MANAGE_WEBHOOKS };
+module.exports = { createDestinations, permissions, webhookParts, verifyWebhookEndpoint, lockWebhookEndpoint, has, VIEW, SEND, MANAGE_WEBHOOKS };

@@ -41,7 +41,8 @@ async function fixture(kind) {
             } else assert.fail(`Unexpected mock Discord route ${route}`);
             return { data };
         };
-        const service = createService(db, { rateLimiter: { consumeOperation: async () => {} } });
+        const service = createService(db, { rateLimiter: { consumeOperation: async () => {} },
+            verifyChannel: (principal, guild, channel) => destinations.verifyChannel(principal, guild, channel), verifyWebhook: (guild, url) => destinations.verifyWebhook(guild, url) });
         const destinations = createDestinations(db, service, { rest }), monitors = createMonitors(db, service, destinations);
         const binding = { ...db, ensureUserExistsInDatabase: async () => {} };
         const native = load(`src/providers/${kind === 'auto' ? 'autoWatch' : 'priceWatch'}/store.js`, { '../../db': binding, '../../db_schema': { ...schema, ensureDatabaseSchema: async () => {} } });
@@ -158,6 +159,71 @@ for (const kind of ['auto', 'price']) test(`S18/S24 unmanaged ${kind}: actual na
             await f.db.queryDatabase(`UPDATE ${f.table}_targets SET destination_key=? WHERE id=?`, [`dm:${E}`, dm.id]); const beforeForgery = await f.snapshot();
             await assert.rejects(f.monitors.save({ userId: U }, kind, { expectedRevision: stopped.revision, enabled: true }, dm.id), { code: 'DM_OWNER' });
             assert.equal(f.calls.length, 0); assert.deepEqual(await f.snapshot(), beforeForgery);
+        });
+    } finally { await f.db.close(); }
+});
+
+for (const kind of ['auto', 'price']) test(`S18/S24 managed ${kind}: native recipient resources are checked remotely on registration, resume and active binding save`, { skip: !port, timeout: 120000 }, async t => {
+    const f = await fixture(kind);
+    try {
+        const resource = await f.destinations.save(actor(U), { name: 'Managed native recipient', kind: 'webhook', scope: 'guild', webhookUrl: URL });
+        const edited = await f.monitors.save(actor(U), kind, { expectedRevision: f.paused.revision, destinationId: resource.id, enabled: false }, f.target.id);
+        const before = await f.snapshot(); assert.equal(before.slots.filter(row => row.target_kind).length, 5);
+        const registration = { name: 'Another managed monitor', scope: 'guild', providerId: kind === 'auto' ? 'github' : 'steam',
+            source: kind === 'auto' ? 'managedcandidate' : 'https://store.steampowered.com/app/440', destinationId: resource.id, ...(kind === 'price' ? { mode: 'change' } : {}) };
+        const fullSave = () => f.monitors.save(actor(E), kind, { expectedRevision: edited.revision, enabled: true, destinationId: resource.id }, f.target.id);
+        await t.test('missing/access/rate/outage failures reject both passive resume and full save without mutating slots or jobs', async () => {
+            for (const [status, code] of [[404, 'DESTINATION_DELETED'], [410, 'DESTINATION_DELETED'], [403, 'DISCORD_ACCESS_DENIED'], [503, 'DISCORD_UNAVAILABLE'], [429, 'DISCORD_RATE_LIMITED']]) {
+                f.state.metadataStatus = status;
+                for (const run of [() => f.resume(E, edited.revision), fullSave, () => f.monitors.save(actor(U), kind, registration)]) {
+                    await assert.rejects(run(), error => error.code === code && !/Sensitive|synthetic-token|https:/.test(error.message));
+                    assert.deepEqual(await f.snapshot(), before);
+                }
+            }
+            f.state.metadataStatus = 0;
+        });
+        await t.test('a remotely moved hook never changes the saved recipient; the physical transport also rejects it', async () => {
+            f.state.webhook.channel_id = O;
+            for (const run of [() => f.resume(E, edited.revision), fullSave, () => f.monitors.save(actor(U), kind, registration)]) {
+                await assert.rejects(run(), { code: 'WEBHOOK_DESTINATION_CHANGED', status: 409 }); assert.deepEqual(await f.snapshot(), before);
+            }
+            let sends = 0;
+            const transport = require('../../src/automation/transport').createTransport(f.db, f.destinations, {}, { rest: {
+                get: async () => structuredClone(f.state.webhook), post: async () => { sends++; assert.fail('No physical Discord send is permitted'); },
+            } });
+            const destination = (await f.db.queryDatabase('SELECT * FROM automation_destinations WHERE id=?', [resource.id]))[0];
+            await assert.rejects(transport.prepare({ id: 'synthetic', owner_user_id: U, target_kind: kind, target_id: f.target.id, destination_id: resource.id, plan: {} }, destination), { code: 'WEBHOOK_MOVED', status: 403 });
+            assert.equal(sends, 0); f.state.webhook.channel_id = C;
+        });
+        await t.test('endpoint and resource identity swaps after remote checks fail CAS before target mutation', async () => {
+            const endpoint = (await f.db.queryDatabase('SELECT e.* FROM webhook_endpoints e JOIN automation_destinations d ON d.webhook_endpoint_id=e.id WHERE d.id=?', [resource.id]))[0];
+            const replacement = URL.replace(H, '666666666666666667');
+            f.state.onMetadata = () => f.db.queryDatabase('UPDATE webhook_endpoints SET webhook_url=?,webhook_url_hash=? WHERE id=?', [replacement, hash(replacement), endpoint.id]);
+            await assert.rejects(fullSave(), { code: 'DESTINATION_CHANGED', status: 409 }); assert.deepEqual(await f.snapshot(), before);
+            await f.db.queryDatabase('UPDATE webhook_endpoints SET webhook_url=?,webhook_url_hash=? WHERE id=?', [endpoint.webhook_url, endpoint.webhook_url_hash, endpoint.id]);
+            f.state.onMetadata = () => f.db.queryDatabase('UPDATE automation_destinations SET channel_id=? WHERE id=?', [O, resource.id]);
+            await assert.rejects(f.resume(E, edited.revision), { code: 'DESTINATION_CHANGED', status: 409 }); assert.deepEqual(await f.snapshot(), before);
+            await f.db.queryDatabase('UPDATE automation_destinations SET channel_id=? WHERE id=?', [C, resource.id]);
+        });
+        await t.test('healthy resume/save verifies both principals, retains five slots, and active no-op saves recheck deletion', async () => {
+            for (const principal of [U, E]) {
+                f.denied.set(principal, SEND); await assert.rejects(f.resume(E, edited.revision), { code: 'CHANNEL_PERMISSION' }); f.denied.clear();
+            }
+            const transaction = f.db.withDatabaseTransaction;
+            f.db.withDatabaseTransaction = work => transaction(query => work((sql, params) => {
+                if (sql.startsWith('INSERT INTO automation_audit')) throw new Error('Synthetic managed audit failure'); return query(sql, params);
+            }));
+            try { await assert.rejects(fullSave(), /Synthetic managed audit failure/); } finally { f.db.withDatabaseTransaction = transaction; }
+            assert.deepEqual(await f.snapshot(), before); f.calls.length = 0;
+            const resumed = await f.resume(E, edited.revision);
+            assert.equal(resumed.revision, edited.revision + 1); assert.deepEqual((await f.snapshot()).slots, before.slots);
+            assert(f.calls.some(route => route.startsWith('/webhooks/'))); assert(f.calls.includes(`/guilds/${G}/members/${U}`)); assert(f.calls.includes(`/guilds/${G}/members/${E}`));
+            const saved = await f.monitors.save(actor(E), kind, { expectedRevision: resumed.revision, enabled: true, destinationId: resource.id, name: 'Active managed save' }, f.target.id);
+            const active = await f.snapshot(); f.state.metadataStatus = 404;
+            await assert.rejects(f.monitors.save(actor(U), kind, { expectedRevision: saved.revision, enabled: true }, f.target.id), { code: 'DESTINATION_DELETED' }); assert.deepEqual(await f.snapshot(), active);
+            f.calls.length = 0;
+            const paused = await f.monitors.save(actor(U), kind, { expectedRevision: saved.revision, enabled: false }, f.target.id);
+            await f.monitors.remove(actor(U), kind, f.target.id, paused.revision); assert.equal(f.calls.length, 0);
         });
     } finally { await f.db.close(); }
 });
