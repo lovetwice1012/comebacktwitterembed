@@ -1923,16 +1923,32 @@
       "scripts": "469425581fda5bd14d8ccda9d902e96c179fd998",
       "migrations": "17a97bd36dab00b719e832bd810f0eba04f05c4d"
     },
-    "finalMainSha": null,
-    "productionSha": null,
+    "finalMainSha": "c63003f5dbd585a3f09e8672a0f80fa5db460165",
+    "productionSha": "c63003f5dbd585a3f09e8672a0f80fa5db460165",
     "pullRequest": {
       "number": 49,
-      "status": "draft",
-      "mergeRequiresFinal176Success": true
+      "status": "merged",
+      "mergeRequiresFinal176Success": true,
+      "mergedMainSha": "c63003f5dbd585a3f09e8672a0f80fa5db460165"
+    },
+    "deployedCoreTreeIds": {
+      "src": "09515e8d67a9f9f2514393fbd51c282bf4b3f3a3",
+      "index.js": "f1e198b2844674bb452432655873c7f688eb004e",
+      "package.json": "b83d13a7ba8ea97c210c9de0cbe11a058e394320",
+      "package-lock.json": "555308dc110a193fa169c3129af3c9ca60a08ff6",
+      "packages/angelic-angel": "4c160dd8368ae39c82d92dfad3013f17588d4574",
+      "dashboard": "45274e20281e44bb721ee0a73c57e0cc283e9616",
+      "scripts": "469425581fda5bd14d8ccda9d902e96c179fd998",
+      "migrations": "17a97bd36dab00b719e832bd810f0eba04f05c4d"
+    },
+    "documentationRecord": {
+      "localAcceptanceEvidenceCommit": "f5e776590113e6f02bbd6b9579596caae8ffc318",
+      "finalEvidenceCommit": null,
+      "note": "The later evidence-only commit/PR50 is separate from the tested source b4 and deployed runtime c630. It must not replace finalMainSha or productionSha."
     }
   },
   "acceptance": {
-    "status": "v7-local-53-findings-verified-production-pending",
+    "status": "v7-local53-and-production-deployment-verified",
     "finalRun": "evidence/frozen-176-tests.xml",
     "tests": 2066,
     "passed": 2066,
@@ -2014,12 +2030,12 @@
       "evidence": "evidence/legacy-scope-rejected-variant-witness.json",
       "countedAsClean": false
     },
-    "deploymentVerified": false,
+    "deploymentVerified": true,
     "productionChangedByThisReport": false,
     "realOAuthVerified": false,
     "realNewXToDiscordDeliveryVerified": false,
     "realSquarePaymentVerified": false,
-    "actualV7BundleReviewed": null,
+    "actualV7BundleReviewed": true,
     "todo": 0,
     "completedAt": "2026-10-16T03:10:28.856Z",
     "historyUiEvidenceCarryForward": {
@@ -2083,13 +2099,16 @@
     },
     "operationsPreparation": {
       "sourceApproved": "b4c77bf99b7db3579dea54b966c43fb1531b8dba",
-      "status": "local-preparation-only-actual-main-and-bundle-pending",
+      "status": "preparation-and-actual-c630-bundle-reviewed",
       "independentTestsPassed": 160,
       "independentReview": "evidence/v7-preparation-review.json",
       "independentReviewSha256": "da053f7cc0dd23234548ce84fb8afa8820d4e08c241e28714cab01bcf9d1c878",
       "testProof": "evidence/v7-preparation-160-tests.json",
       "testProofSha256": "884b249c970ef7321811a90de888953556746da24b77f33a3dcadc1bfb7ef88c",
-      "actualBundleReviewed": null
+      "actualBundleReviewed": true,
+      "actualMainSha": "c63003f5dbd585a3f09e8672a0f80fa5db460165",
+      "actualBundleManifestSha256": "5f7f244bd62bd00cecfa01057f1dea4e7b012aae9176f0636b50963a01b88f95",
+      "actualBundleReview": "evidence/v7-actual-bundle-review.json"
     },
     "executionConfirmation": {
       "source": "parent-confirmed-process-exit",
@@ -2104,6 +2123,16 @@
       "verifiedCoverageManifestEntries": 107,
       "verifiedPreparedManifestEntries": 133,
       "currentHeadAtFinalization": "b4c77bf99b7db3579dea54b966c43fb1531b8dba"
+    },
+    "deploymentProofBasis": "Root-executed exact promotion/live/application/resident evidence, independently reviewed clean at2026-10-16T03:41:35Z; saved production observation at2026-10-16T03:38:08Z.",
+    "finalProductionIndependentReview": {
+      "status": "independent-v7-production-saved-evidence-review-clean",
+      "evidence": "evidence/v7-production-independent-review.json",
+      "sha256": "1c2439df155259914e2f0d0a6f4b686f9b33b194ecd564fc02e390ef13bf2be7",
+      "clean": true,
+      "reviewedAt": "2026-10-16T03:41:35.773467+00:00",
+      "observationUtc": "2026-10-16T03:38:08.210689+00:00",
+      "reviewerAccess": "independent review of saved authenticated root-command evidence; reviewer did not access production directly"
     }
   },
   "migration": {
@@ -6194,10 +6223,10 @@
     "Complete history uses existing durable sources and paging; no term, diagnostic field, position, user reason or record is truncated.",
     "The historical 175-file/2056-case success and 1d32f10 source manifests remain preserved but are not production acceptance or V7 results.",
     "V6 HTTP33/Gateway14 success was rejected after notification bootstrap failed and the eligible X receiver stayed stopped.",
-    "V7 final acceptance counts, final source/main/production SHA and actual bundle review remain null until their own gates finish.",
-    "Existing per-ID historical pass statuses retain their historical basis; R32 adds ten managed-data startup cases without adding a 54th issue.",
     "V7 local acceptance uses the closed176-file JUnit and matching Node spec summary after the parent confirmed run76246 exit0; old175 XML is immutable.",
-    "Current b4 CORE8, canonical raw Git source and observed working bytes match the frozen manifests. Final main, actual bundle, deployment and real-delivery evidence remain separate and pending."
+    "Actual merged main and resident runtime are c63003f5; tested source remains b4c77bf with matching CORE8. A later documentation-only evidence commit does not change the deployed SHA.",
+    "V7 actual bundle, stages, consistent backup, worker-before-Web promotion,47live checks,13application checks and resident identity/startup were verified; saved authenticated production evidence was independently reviewed clean.",
+    "Final main and production SHA are c63003f5dbd585a3f09e8672a0f80fa5db460165; tested source stays b4c77bf99b7db3579dea54b966c43fb1531b8dba with identical CORE8. Real OAuth, new X-to-Discord delivery and real Square payments remain unverified."
   ],
   "historicalVerification": [
     {
@@ -7459,6 +7488,341 @@
         "sha256": "8f3d4bbc51cc0e9474a61b9b260a26d0f15d8bb31480a591fed050f6a9394311",
         "use": "HTTP33 pass only; explicitly not accepted as notification startup or production success."
       }
+    ]
+  },
+  "productionDeployment": {
+    "status": "production-deployment-and-startup-verified",
+    "deployedRevision": "c63003f5dbd585a3f09e8672a0f80fa5db460165",
+    "testedSourceRevision": "b4c77bf99b7db3579dea54b966c43fb1531b8dba",
+    "coreTreesMatchTestedSource": true,
+    "coreTreeIds": {
+      "src": "09515e8d67a9f9f2514393fbd51c282bf4b3f3a3",
+      "index.js": "f1e198b2844674bb452432655873c7f688eb004e",
+      "package.json": "b83d13a7ba8ea97c210c9de0cbe11a058e394320",
+      "package-lock.json": "555308dc110a193fa169c3129af3c9ca60a08ff6",
+      "packages/angelic-angel": "4c160dd8368ae39c82d92dfad3013f17588d4574",
+      "dashboard": "45274e20281e44bb721ee0a73c57e0cc283e9616",
+      "scripts": "469425581fda5bd14d8ccda9d902e96c179fd998",
+      "migrations": "17a97bd36dab00b719e832bd810f0eba04f05c4d"
+    },
+    "observedAt": "2026-10-16T03:38:08.210689+00:00",
+    "observedAtJst": "2026-10-16 12:38:08 JST",
+    "actualBundle": {
+      "manifestSha256": "5f7f244bd62bd00cecfa01057f1dea4e7b012aae9176f0636b50963a01b88f95",
+      "file": "evidence/v7-upload-manifest.json",
+      "authorFreeze": "evidence/v7-actual-bundle-freeze.json",
+      "independentReview": "evidence/v7-actual-bundle-review.json",
+      "tests": 160,
+      "reviewed": true
+    },
+    "stage": {
+      "floorChecks": 17,
+      "finalChecks": 17,
+      "bothPassed": true,
+      "stageProcessesRemoved": true,
+      "schemaAndLedgerUnchanged": true,
+      "evidence": "evidence/v7-stage-data-proofs.jsonl",
+      "independentReview": "evidence/v7-stage-backup-review.json",
+      "mutationsPerformed": false
+    },
+    "backup": {
+      "tables": 78,
+      "bytes": 35469,
+      "at": "2026-10-16T03:25:37.920146+00:00",
+      "dumpSha256": "81a7466572f381b6764bb0ab599502e70ed94c812f1711b849783be369100619",
+      "manifestSha256": "104892ea7b67f794d530a228412b29588a007d23632374f1f4e7be486bed0017",
+      "credentialsFileRemoved": true,
+      "databaseWritten": false,
+      "automaticRestore": false,
+      "evidence": "evidence/v7-data-backup.json"
+    },
+    "promotion": {
+      "workerReadyBeforeWeb": true,
+      "rollout": "supporters",
+      "proofSha256": "dd39b75cb264e95c1a24c95efcf6eaf94756879aadc9e7892fbeb5654215737a",
+      "evidence": "evidence/v7-promotion.jsonl"
+    },
+    "live": {
+      "checks": 47,
+      "passed": 47,
+      "failed": 0,
+      "proofSha256": "e29ff1386c678a652610cc1b879da75d3e051a3422f433f747faa125728cb398",
+      "evidence": "evidence/v7-live-verification.jsonl"
+    },
+    "application": {
+      "checks": 13,
+      "allPassed": true,
+      "readyBeforeWeb": true,
+      "proofSha256": "f283a6ffbf886f011e7b32ce257c83e90024f883f51fc13dc8e74d68012fef2e",
+      "bootstrapCompleteRequiredFence": true,
+      "bootstrapRequiredFenceVersion": 2,
+      "boundReadyEnabledSubscriptions": 1,
+      "eligibleSupporterSubscriptions": 1,
+      "freshListeningEligibleSubscriptions": 1,
+      "workerStartedAtMs": 1792121680933,
+      "observedAtMs": 1792121866349,
+      "requiredLeaseRevisionAndPostStartConnectionChecksPassed": true,
+      "evidence": "evidence/v7-application-live.json",
+      "allTenBootstrapScopesComplete": true
+    },
+    "resident": {
+      "worker": {
+        "pid": 678911,
+        "startTicks": "315861479",
+        "cwd": "/opt/cbte-releases/x-delivery-c63003f5-20261016-audit53-v7-final",
+        "revision": "c63003f5dbd585a3f09e8672a0f80fa5db460165",
+        "guardianPid": 656448,
+        "environmentSha256": "c9e332b7ea75207115c2e2bae4651c6aae5961ba91a21d455f5dab374906a502",
+        "executableSha256": "7fde7b8afa198da66257f42ee2001d874c7355631e6d1579a5fb5ef1f246df4c"
+      },
+      "dashboard": {
+        "wrapperPid": 694968,
+        "nextPid": 694991,
+        "cwd": "/opt/cbte-releases/x-delivery-c63003f5-20261016-audit53-v7-final/dashboard",
+        "revision": "c63003f5dbd585a3f09e8672a0f80fa5db460165",
+        "workerRevision": "c63003f5dbd585a3f09e8672a0f80fa5db460165"
+      },
+      "lease": {
+        "state": "active",
+        "childPid": 678911,
+        "validUntilUnixMs": 1792121951859
+      },
+      "heartbeat": {
+        "pid": 678911,
+        "revision": "c63003f5dbd585a3f09e8672a0f80fa5db460165",
+        "ready": true,
+        "shards": {
+          "manager_status": "ready",
+          "offline": 0,
+          "online": 14,
+          "total": 14,
+          "unknown": 0
+        },
+        "shardRows": [
+          {
+            "last_ping_at_ms": 1792121841701,
+            "online": true,
+            "ping_ms": 304,
+            "shardId": "0",
+            "shard_id": "0",
+            "status": "ready"
+          },
+          {
+            "last_ping_at_ms": 1792121870640,
+            "online": true,
+            "ping_ms": 284,
+            "shardId": "1",
+            "shard_id": "1",
+            "status": "ready"
+          },
+          {
+            "last_ping_at_ms": 1792121871451,
+            "online": true,
+            "ping_ms": 303,
+            "shardId": "2",
+            "shard_id": "2",
+            "status": "ready"
+          },
+          {
+            "last_ping_at_ms": 1792121849664,
+            "online": true,
+            "ping_ms": 282,
+            "shardId": "3",
+            "shard_id": "3",
+            "status": "ready"
+          },
+          {
+            "last_ping_at_ms": 1792121846615,
+            "online": true,
+            "ping_ms": 720,
+            "shardId": "4",
+            "shard_id": "4",
+            "status": "ready"
+          },
+          {
+            "last_ping_at_ms": 1792121857782,
+            "online": true,
+            "ping_ms": 312,
+            "shardId": "5",
+            "shard_id": "5",
+            "status": "ready"
+          },
+          {
+            "last_ping_at_ms": 1792121836525,
+            "online": true,
+            "ping_ms": 305,
+            "shardId": "6",
+            "shard_id": "6",
+            "status": "ready"
+          },
+          {
+            "last_ping_at_ms": 1792121839491,
+            "online": true,
+            "ping_ms": 306,
+            "shardId": "7",
+            "shard_id": "7",
+            "status": "ready"
+          },
+          {
+            "last_ping_at_ms": 1792121874640,
+            "online": true,
+            "ping_ms": 282,
+            "shardId": "8",
+            "shard_id": "8",
+            "status": "ready"
+          },
+          {
+            "last_ping_at_ms": 1792121875873,
+            "online": true,
+            "ping_ms": 283,
+            "shardId": "9",
+            "shard_id": "9",
+            "status": "ready"
+          },
+          {
+            "last_ping_at_ms": 1792121839985,
+            "online": true,
+            "ping_ms": 286,
+            "shardId": "10",
+            "shard_id": "10",
+            "status": "ready"
+          },
+          {
+            "last_ping_at_ms": 1792121867855,
+            "online": true,
+            "ping_ms": 311,
+            "shardId": "11",
+            "shard_id": "11",
+            "status": "ready"
+          },
+          {
+            "last_ping_at_ms": 1792121855948,
+            "online": true,
+            "ping_ms": 693,
+            "shardId": "12",
+            "shard_id": "12",
+            "status": "ready"
+          },
+          {
+            "last_ping_at_ms": 1792121837939,
+            "online": true,
+            "ping_ms": 292,
+            "shardId": "13",
+            "shard_id": "13",
+            "status": "ready"
+          }
+        ],
+        "uptimeSeconds": 195.902472889,
+        "ageSeconds": 8.91
+      },
+      "webPointer": "/opt/cbte-releases/x-delivery-c63003f5-20261016-audit53-v7-final",
+      "nodeVersion": "v24.21.0",
+      "nodeSha256": "7fde7b8afa198da66257f42ee2001d874c7355631e6d1579a5fb5ef1f246df4c",
+      "keySha256": "5a1046422a23ccc0e38bfef9b044c86829b899c083aa165f4eff2c7c90d94ca9",
+      "flags": {
+        "X_NOTIFICATION_ROLLOUT": "supporters",
+        "X_NOTIFICATION_INTAKE_ENABLED": "1",
+        "ANGELIC_X_REGISTRATION_ENABLED": "1",
+        "X_NOTIFICATION_RECEIVER_ENABLED": "1",
+        "X_NOTIFICATION_PROCESSING_POLICY": "batch"
+      },
+      "policiesUnchanged": true,
+      "planFingerprint": "70f69940e5b4303425c629490dd9b8eccd4252188cbfb31b8a02a032ff9bfec7",
+      "adminUserCadenceMinutes": 5,
+      "receiverState": "listening",
+      "migrationProof": {
+        "status": "exact-nine-nullable-columns-four-migrations-verified",
+        "newNullableColumns": 0,
+        "migrationIds": [
+          "20261016_add_dictionary_package_provenance",
+          "20261016_add_workflow_package_provenance",
+          "20261016_bind_automation_rate_reservations",
+          "20261016_preserve_dictionary_package_dependencies"
+        ],
+        "dictionaryImmutableDataPreserved": true,
+        "dictionaryDependenciesJsonPreserved": true,
+        "workflowImmutableDataPreserved": true,
+        "packageVersionsImmutableDataPreserved": true,
+        "packageVersionDependenciesJsonPreserved": true,
+        "workflowEditionNeverInferred": true,
+        "onlyReviewedBackfills": true,
+        "administratorIntervalsPreserved": true,
+        "databaseRestored": false,
+        "beforeSha256": "fa4e53a84fdb5082e4d5fc68a3e3b9e602fcc662edde3ad2b6c655330c60dfd7",
+        "afterSha256": "fa4e53a84fdb5082e4d5fc68a3e3b9e602fcc662edde3ad2b6c655330c60dfd7"
+      },
+      "evidence": "evidence/v7-resident-after.json"
+    },
+    "independentFinalReview": {
+      "status": "independent-v7-production-saved-evidence-review-clean",
+      "evidence": "evidence/v7-production-independent-review.json",
+      "sha256": "1c2439df155259914e2f0d0a6f4b686f9b33b194ecd564fc02e390ef13bf2be7",
+      "clean": true,
+      "reviewedAt": "2026-10-16T03:41:35.773467+00:00",
+      "observationUtc": "2026-10-16T03:38:08.210689+00:00",
+      "reviewerAccess": "independent review of saved authenticated root-command evidence; reviewer did not access production directly"
+    },
+    "evidenceFiles": [
+      {
+        "file": "evidence/v7-actual-bundle-freeze.json",
+        "sha256": "1c71414340e09807940739b9b85f38e5b94fbded7f23caa6c2d8e6b0641c474a",
+        "sourcePath": "C:/Users/yussy/AppData/Local/Temp/cbte-audit53-startup-compat-v7-20261016/actual-v7-bundle-freeze-20261016T031352126347Z.json"
+      },
+      {
+        "file": "evidence/v7-actual-bundle-review.json",
+        "sha256": "d3f0a5c3851e5e950d4190dadb9bf293601fb792e4bd46b7d21533c453a9cf35",
+        "sourcePath": "C:/Users/yussy/AppData/Local/Temp/cbte-audit53-startup-compat-v7-20261016/independent-actual-v7-bundle-review-20261016T031815881093Z.json"
+      },
+      {
+        "file": "evidence/v7-stage-data-proofs.jsonl",
+        "sha256": "25fb60d228937551488dd2d7f55ce70aaf2eb0050224b1f57d15b10ea85fb6ce",
+        "sourcePath": "C:/Users/yussy/AppData/Local/Temp/cbte-audit53-startup-compat-v7-20261016/stage-and-data-proofs-v7-1.jsonl"
+      },
+      {
+        "file": "evidence/v7-data-backup.json",
+        "sha256": "dcdb8ebd772f4a3ce41d7853ab1443737db178f19d8f22f59620d348fa0b0606",
+        "sourcePath": "C:/Users/yussy/AppData/Local/Temp/cbte-audit53-startup-compat-v7-20261016/data-backup-v7.json"
+      },
+      {
+        "file": "evidence/v7-stage-backup-review.json",
+        "sha256": "cd8c58088983a4092564b25a83bd056027a32ba510b7c1851ca2ed189490a599",
+        "sourcePath": "C:/Users/yussy/AppData/Local/Temp/cbte-audit53-startup-compat-v7-20261016/independent-v7-stage-backup-proof-review-20261016T033118121639Z.json"
+      },
+      {
+        "file": "evidence/v7-promotion.jsonl",
+        "sha256": "f8cf16be577ab690e456d70efa9850adbcd23fd3953901bd12c4e6580b4228c6",
+        "sourcePath": "C:/Users/yussy/AppData/Local/Temp/cbte-audit53-startup-compat-v7-20261016/promotion-poll-v7-4.jsonl"
+      },
+      {
+        "file": "evidence/v7-live-verification.jsonl",
+        "sha256": "78b01b42ce7afd6cd86a44bc1714b2fd9cd5dc2c63e0a1fd194f5981501d55bb",
+        "sourcePath": "C:/Users/yussy/AppData/Local/Temp/cbte-audit53-startup-compat-v7-20261016/live-verification-v7-1.jsonl"
+      },
+      {
+        "file": "evidence/v7-application-live.json",
+        "sha256": "ba91b1484db56667b741fa7a95facd60574610f610e5b3ff046b97a6bc263a74",
+        "sourcePath": "C:/Users/yussy/AppData/Local/Temp/cbte-audit53-startup-compat-v7-20261016/application-live-v7.json"
+      },
+      {
+        "file": "evidence/v7-resident-after.json",
+        "sha256": "a56b64ab806948d10c6cb7f86e81919435992836968bd6ef0294b99c5e266ccb",
+        "sourcePath": "C:/Users/yussy/AppData/Local/Temp/cbte-audit53-startup-compat-v7-20261016/resident-after-v7.json"
+      },
+      {
+        "file": "evidence/v7-upload-manifest.json",
+        "sha256": "5f7f244bd62bd00cecfa01057f1dea4e7b012aae9176f0636b50963a01b88f95",
+        "sourcePath": "C:/Users/yussy/AppData/Local/Temp/cbte-audit53-startup-compat-v7-20261016/ops/generated-c63003f5dbd5/upload-manifest.json"
+      },
+      {
+        "file": "evidence/v7-production-independent-review.json",
+        "sha256": "1c2439df155259914e2f0d0a6f4b686f9b33b194ecd564fc02e390ef13bf2be7",
+        "sourcePath": "C:/Users/yussy/AppData/Local/Temp/cbte-audit53-startup-compat-v7-20261016/independent-v7-production-evidence-review-20261016T034135774224Z.json"
+      }
+    ],
+    "limitations": [
+      "Production identity/startup/receiver evidence is accepted at2026-10-16T03:38:08Z; independent review examined saved authenticated command evidence without separate production access.",
+      "Listening proves the existing receiver connection/startup, not real OAuth or a newly posted X message reaching Discord.",
+      "No real Square charge/payment, test production monitor or test Discord/X message was created for this verification."
     ]
   }
 }

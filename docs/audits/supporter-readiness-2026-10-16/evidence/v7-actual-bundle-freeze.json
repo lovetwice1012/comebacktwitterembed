@@ -1,0 +1,70 @@
+{
+  "status": "actual-v7-bundle-160-local-tests-passed-ready-for-independent-review-not-uploaded",
+  "sourceRevision": "b4c77bf99b7db3579dea54b966c43fb1531b8dba",
+  "finalRevision": "c63003f5dbd585a3f09e8672a0f80fa5db460165",
+  "floorRevision": "f241aa268344b407adf64735f1d8bd3c3aa12968",
+  "bundle": "C:\\Users\\yussy\\AppData\\Local\\Temp\\cbte-audit53-startup-compat-v7-20261016\\ops\\generated-c63003f5dbd5",
+  "manifestSha256": "5f7f244bd62bd00cecfa01057f1dea4e7b012aae9176f0636b50963a01b88f95",
+  "tests": 160,
+  "steps": [
+    {
+      "step": "generator-check",
+      "proof": "C:\\Users\\yussy\\AppData\\Local\\Temp\\cbte-audit53-startup-compat-v7-20261016\\actual-v7-generator-check-20261016T031352126347Z.json",
+      "sha256": "7b6556bbdd0df20c92e55e803ebb5ae58de75a17a5cae42ebd967793c4a4713c"
+    },
+    {
+      "step": "generation",
+      "proof": "C:\\Users\\yussy\\AppData\\Local\\Temp\\cbte-audit53-startup-compat-v7-20261016\\actual-v7-generation-20261016T031352126347Z.json",
+      "sha256": "78f4e2680f8e3f0eead1bdb0cd1a76fc2880e4a6ccc8c56bc0ff0d999e870404"
+    },
+    {
+      "step": "offline114",
+      "proof": "C:\\Users\\yussy\\AppData\\Local\\Temp\\cbte-audit53-startup-compat-v7-20261016\\actual-v7-offline114-20261016T031352126347Z.json",
+      "sha256": "fc86ab0a9f39106987cd45342e7f4b0baac997dbacbfca8d0a88ed2bc7b8c313"
+    },
+    {
+      "step": "uploader28",
+      "proof": "C:\\Users\\yussy\\AppData\\Local\\Temp\\cbte-audit53-startup-compat-v7-20261016\\actual-v7-uploader28-20261016T031352126347Z.json",
+      "sha256": "975b3b1910fb1a0741f69444320f62c6c72ace22f7132ff3baecbcf833cd8916"
+    },
+    {
+      "step": "transport14",
+      "proof": "C:\\Users\\yussy\\AppData\\Local\\Temp\\cbte-audit53-startup-compat-v7-20261016\\actual-v7-transport14-20261016T031352126347Z.json",
+      "sha256": "8706444c162cdc22ccb41d2d2bb440497a64311e8bfd9aab2b4b1fdba3a7f3ee"
+    },
+    {
+      "step": "approval-guards4",
+      "proof": "C:\\Users\\yussy\\AppData\\Local\\Temp\\cbte-audit53-startup-compat-v7-20261016\\actual-v7-approval-guards4-20261016T031352126347Z.json",
+      "sha256": "ad1fec99537d806feae5ffe5230282b2e51c56f3bfe94476a22a4037c7576835"
+    },
+    {
+      "step": "archive-verifier",
+      "proof": "C:\\Users\\yussy\\AppData\\Local\\Temp\\cbte-audit53-startup-compat-v7-20261016\\actual-v7-archive-verifier-20261016T031352126347Z.json",
+      "sha256": "fbec5b682270a163b18ac9984d2dd8ac2dc03529a4a1a031a4d95e873c762480"
+    },
+    {
+      "step": "uploader-check",
+      "proof": "C:\\Users\\yussy\\AppData\\Local\\Temp\\cbte-audit53-startup-compat-v7-20261016\\actual-v7-uploader-check-20261016T031352126347Z.json",
+      "sha256": "09b78b2ecbe3fb625c92910bc0a147687c8e41583754e0957bea3a66edd48d86"
+    }
+  ],
+  "preservedInputs": {
+    "roots": 4,
+    "files": 167,
+    "unchanged": true,
+    "snapshotSha256": "c45873fff99a97bb82ef3e7bdee0ec77960ce45e8eddd5fe891461a72e891860",
+    "v6Inputs": 92,
+    "v6InputsUnchanged": true,
+    "v6SnapshotSha256": "d30e60b478a9a0474e8ced421fc28cfb9e9759433f8cbf389d8d5e50068e4934"
+  },
+  "sourceContractSha256": "651336920c41c21e43c0040d3222f910af4a27f858aef6af4db2bf76ac5f3a47",
+  "generatorSha256": "cead74661f9b258d55fa27d33c4f3c9304bdd5bffe50ec805f9fd61a2b9db120",
+  "uploaderSha256": "435fa087b76865afb9d72a891d0e8eab7f66fe73cdaa83d1dacf2d90a99b9edb",
+  "transportWrapperSha256": "99e581e81d24c97759ed5d6c2c73c1dce29c2cb853154da25b833e6b89932787",
+  "transportEngineSha256": "4d750e3f07b28efd03b3f557cab34272b4a9a669322359fffad42909ede8664d",
+  "networkPerformed": false,
+  "databaseWritten": false,
+  "servicesChanged": false,
+  "gitWritesPerformed": false,
+  "independentActualArtifactReviewPending": true
+}

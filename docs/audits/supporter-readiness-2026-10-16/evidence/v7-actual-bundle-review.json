@@ -1,0 +1,202 @@
+{
+  "status": "independent-actual-v7-bundle-review-clean",
+  "at": "2026-10-16T03:18:15.880805+00:00",
+  "bundle": "C:\\Users\\yussy\\AppData\\Local\\Temp\\cbte-audit53-startup-compat-v7-20261016\\ops\\generated-c63003f5dbd5",
+  "manifestSha256": "5f7f244bd62bd00cecfa01057f1dea4e7b012aae9176f0636b50963a01b88f95",
+  "sourceRevision": "b4c77bf99b7db3579dea54b966c43fb1531b8dba",
+  "actualMainRevision": "c63003f5dbd585a3f09e8672a0f80fa5db460165",
+  "floorRevision": "f241aa268344b407adf64735f1d8bd3c3aa12968",
+  "coreTreeIds": {
+    "src": "09515e8d67a9f9f2514393fbd51c282bf4b3f3a3",
+    "index.js": "f1e198b2844674bb452432655873c7f688eb004e",
+    "package.json": "b83d13a7ba8ea97c210c9de0cbe11a058e394320",
+    "package-lock.json": "555308dc110a193fa169c3129af3c9ca60a08ff6",
+    "packages/angelic-angel": "4c160dd8368ae39c82d92dfad3013f17588d4574",
+    "dashboard": "45274e20281e44bb721ee0a73c57e0cc283e9616",
+    "scripts": "469425581fda5bd14d8ccda9d902e96c179fd998",
+    "migrations": "17a97bd36dab00b719e832bd810f0eba04f05c4d"
+  },
+  "allRawArchiveEntriesIndependentlyVerified": {
+    "final": {
+      "revision": "c63003f5dbd585a3f09e8672a0f80fa5db460165",
+      "entries": 1692,
+      "directories": 215,
+      "rawGitBlobBytes": 31642261,
+      "archiveSha256": "f8fc3c941bb41b22ba0e938f323671faeff2f3d6d904a571b1ced88cab335b37"
+    },
+    "floor": {
+      "revision": "f241aa268344b407adf64735f1d8bd3c3aa12968",
+      "entries": 1619,
+      "directories": 213,
+      "rawGitBlobBytes": 28777241,
+      "archiveSha256": "a23ae2b6a9adfd8612aedd3bf2fc78d6e2864ffaa043adb32e96e413448ab31d"
+    }
+  },
+  "tests": 160,
+  "independentActual114Proof": {
+    "path": "C:\\Users\\yussy\\AppData\\Local\\Temp\\cbte-audit53-startup-compat-v7-20261016\\ops\\offline-validation-v7-20261016T031532868441Z.json",
+    "sha256": "8f82ed10d0f7dd81be3c04c8d6946d2b8dd07559eed02a37aca317798a2144a2",
+    "proof": {
+      "status": "actual-v7-bundle-offline-guards-passed",
+      "at": "20261016T031532868441Z",
+      "tests": 114,
+      "results": [
+        {
+          "name": "test_v7_guards.py",
+          "tests": 28,
+          "log": "C:\\Users\\yussy\\AppData\\Local\\Temp\\cbte-audit53-startup-compat-v7-20261016\\ops\\test_v7_guards.py.20261016T031532868441Z.offline.log",
+          "logSha256": "7ec0e44a83bc6736d5fe6f4c4631fc0d94320d9220bb4b69a9c78437f1f8719d"
+        },
+        {
+          "name": "test_paired_release.py",
+          "tests": 29,
+          "log": "C:\\Users\\yussy\\AppData\\Local\\Temp\\cbte-audit53-startup-compat-v7-20261016\\ops\\test_paired_release.py.20261016T031532868441Z.offline.log",
+          "logSha256": "5c1ed528eb21027afa3f34355aa1df6d7da850ae1f8c874b10f13c0bcef521be"
+        },
+        {
+          "name": "test-stage-stop.py",
+          "tests": 14,
+          "log": "C:\\Users\\yussy\\AppData\\Local\\Temp\\cbte-audit53-startup-compat-v7-20261016\\ops\\test-stage-stop.py.20261016T031532868441Z.offline.log",
+          "logSha256": "c4fc0933f39423d9b401007d344c50aa903914f94b92ff6c01d1ea6d28096344"
+        },
+        {
+          "name": "test_source_archives.py",
+          "tests": 3,
+          "log": "C:\\Users\\yussy\\AppData\\Local\\Temp\\cbte-audit53-startup-compat-v7-20261016\\ops\\test_source_archives.py.20261016T031532868441Z.offline.log",
+          "logSha256": "d6e986b56a4376e71258edd66be8517894fb90f5d519e197ca5a9a9aee5d13b8"
+        },
+        {
+          "name": "test_v7_live_runtime_acceptance.py",
+          "tests": 40,
+          "log": "C:\\Users\\yussy\\AppData\\Local\\Temp\\cbte-audit53-startup-compat-v7-20261016\\ops\\test_v7_live_runtime_acceptance.py.20261016T031532868441Z.offline.log",
+          "logSha256": "7cf753ed7875520f8075b56560ae8fe90ce76627412a2a4bcfdd2d027813eb4b"
+        }
+      ],
+      "actualBundleTested": "C:\\Users\\yussy\\AppData\\Local\\Temp\\cbte-audit53-startup-compat-v7-20261016\\ops\\generated-c63003f5dbd5",
+      "operationsLaunched": false,
+      "databaseWritten": false,
+      "sshPerformed": false,
+      "gitWritesPerformed": false,
+      "generatorSha256": "cead74661f9b258d55fa27d33c4f3c9304bdd5bffe50ec805f9fd61a2b9db120",
+      "pins": {
+        "paired_release.py": "6a0dc9084e7dcf02917ff17095ae2162e2b2599c55390d89623ea7c8968c11aa",
+        "build-and-stage.py": "a3de2a93128f06f4860096ce853261aa81f543241dda531c39102110b09ebbad",
+        "verify-monitor-release.py": "bdbec35eec4352ea4f016fd9a32dbe82003934ae8d044c91b38fd3df61dd7008",
+        "native_release_guards.py": "141955d37228d2977d8e6ad16e63da76117e042dec41da8de97ddc5a4710f75b",
+        "dashboard_release_base.py": "7bc05ad276128774c9f9d9bdd2db0ea98c03a638ea1356a8e0c7ef7a6e3a5087",
+        "live_runtime_acceptance.py": "111896a34ee02f716dc06a44de463778431bbb6981f12587c5b5c6101649f68f"
+      },
+      "preservedPredecessors": {
+        "roots": 4,
+        "files": 167,
+        "unchanged": true,
+        "snapshotSha256": "c45873fff99a97bb82ef3e7bdee0ec77960ce45e8eddd5fe891461a72e891860",
+        "v6Inputs": 92,
+        "v6InputsUnchanged": true,
+        "v6SnapshotSha256": "d30e60b478a9a0474e8ced421fc28cfb9e9759433f8cbf389d8d5e50068e4934"
+      },
+      "migrationCount": 4,
+      "nullableColumnCount": 9,
+      "existingTableCount": 4,
+      "sourceApprovalPending": false,
+      "finalDeliveryClaim": false
+    }
+  },
+  "additional42CapturedTests": [
+    {
+      "name": "test_upload_and_launch_v7.py",
+      "tests": 28,
+      "exitCode": 0,
+      "stdout": "",
+      "stderr": "test_check_only_never_executes_or_claims (__main__.LocalValidationTests.test_check_only_never_executes_or_claims) ... ok\ntest_explicit_source_and_final_and_manifest_hash_required (__main__.LocalValidationTests.test_explicit_source_and_final_and_manifest_hash_required) ... ok\ntest_file_bytes_rejected (__main__.LocalValidationTests.test_file_bytes_rejected) ... ok\ntest_hash_refreshed_malicious_launcher_still_rejected (__main__.LocalValidationTests.test_hash_refreshed_malicious_launcher_still_rejected) ... ok\ntest_hash_refreshed_node_key_floor_config_still_rejected (__main__.LocalValidationTests.test_hash_refreshed_node_key_floor_config_still_rejected) ... ok\ntest_invalid_bundle_never_calls_session (__main__.LocalValidationTests.test_invalid_bundle_never_calls_session) ... ok\ntest_json_duplicate_keys_rejected (__main__.LocalValidationTests.test_json_duplicate_keys_rejected) ... ok\ntest_manifest_identity_and_no_operations (__main__.LocalValidationTests.test_manifest_identity_and_no_operations) ... ok\ntest_manifest_path_traversal_duplicate_remote_and_executable_mode (__main__.LocalValidationTests.test_manifest_path_traversal_duplicate_remote_and_executable_mode) ... ok\ntest_missing_or_extra_file_set (__main__.LocalValidationTests.test_missing_or_extra_file_set) ... ok\ntest_nine_columns_four_migrations_four_tables_only (__main__.LocalValidationTests.test_nine_columns_four_migrations_four_tables_only) ... ok\ntest_pinned_real_preparation_read_only (__main__.LocalValidationTests.test_pinned_real_preparation_read_only) ... ok\ntest_remote_directory_namespace_and_mode (__main__.LocalValidationTests.test_remote_directory_namespace_and_mode) ... ok\ntest_synthetic_control_fixture_accepts_with_real_templates (__main__.LocalValidationTests.test_synthetic_control_fixture_accepts_with_real_templates) ... ok\ntest_wrong_bundle_parent (__main__.LocalValidationTests.test_wrong_bundle_parent) ... ok\ntest_failed_partial_upload_leaves_claim_and_retry_blocks (__main__.OrchestrationTests.test_failed_partial_upload_leaves_claim_and_retry_blocks) ... ok\ntest_invalid_reservation_never_uploads (__main__.OrchestrationTests.test_invalid_reservation_never_uploads) ... ok\ntest_local_receipt_or_claim_collision_blocks_all_network (__main__.OrchestrationTests.test_local_receipt_or_claim_collision_blocks_all_network) ... ok\ntest_write_exclusive_does_not_replace_existing_bytes (__main__.OrchestrationTests.test_write_exclusive_does_not_replace_existing_bytes) ... ok\ntest_all_bytes_verified_before_stage_sentinel (__main__.RemoteProgramTests.test_all_bytes_verified_before_stage_sentinel) ... ok\ntest_directory_owner_dev_inode_mode_or_replaced_type_rejected (__main__.RemoteProgramTests.test_directory_owner_dev_inode_mode_or_replaced_type_rejected) ... ok\ntest_each_file_owner_mode_size_type_symlink_hash_rejected_before_launch (__main__.RemoteProgramTests.test_each_file_owner_mode_size_type_symlink_hash_rejected_before_launch) ... ok\ntest_generated_gate_never_contains_credentials_or_remote_transport (__main__.RemoteProgramTests.test_generated_gate_never_contains_credentials_or_remote_transport) ... ok\ntest_missing_launcher_cannot_launch (__main__.RemoteProgramTests.test_missing_launcher_cannot_launch) ... ok\ntest_remote_programs_compile (__main__.RemoteProgramTests.test_remote_programs_compile) ... ok\ntest_reserve_collision_and_symlink_fail_before_any_mkdir (__main__.RemoteProgramTests.test_reserve_collision_and_symlink_fail_before_any_mkdir) ... ok\ntest_reserve_fresh_exact_two_directory_identities (__main__.RemoteProgramTests.test_reserve_fresh_exact_two_directory_identities) ... ok\ntest_reserve_owner_mismatch_rejected (__main__.RemoteProgramTests.test_reserve_owner_mismatch_rejected) ... ok\n\n----------------------------------------------------------------------\nRan 28 tests in 4.237s\n\nOK\n"
+    },
+    {
+      "name": "test_v7_exclusive_transport.py",
+      "tests": 14,
+      "exitCode": 0,
+      "stdout": "",
+      "stderr": "test_chmod0600_happens_before_every_actual_write_and_same_handle_readback (__main__.ExclusiveTransportTests.test_chmod0600_happens_before_every_actual_write_and_same_handle_readback) ... ok\ntest_connection_failure_does_not_print_password_or_exception_data (__main__.ExclusiveTransportTests.test_connection_failure_does_not_print_password_or_exception_data) ... ok\ntest_directory_owner_mode_symlink_rejected_before_open (__main__.ExclusiveTransportTests.test_directory_owner_mode_symlink_rejected_before_open) ... ok\ntest_failed_chmod_retains_empty_artifact_and_writes_nothing (__main__.ExclusiveTransportTests.test_failed_chmod_retains_empty_artifact_and_writes_nothing) ... ok\ntest_installed_paramiko_open_and_file_code_are_not_mocked (__main__.ExclusiveTransportTests.test_installed_paramiko_open_and_file_code_are_not_mocked) ... ok\ntest_interrupted_actual_write_retains_partial_and_rejects_retry (__main__.ExclusiveTransportTests.test_interrupted_actual_write_retains_partial_and_rejects_retry) ... ok\ntest_local_receipt_creation_is_exclusive_and_retains_first_bytes (__main__.ExclusiveTransportTests.test_local_receipt_creation_is_exclusive_and_retains_first_bytes) ... ok\ntest_preexisting_local_receipt_fails_before_password_or_network (__main__.ExclusiveTransportTests.test_preexisting_local_receipt_fails_before_password_or_network) ... ok\ntest_preexisting_regular_or_symlink_target_is_untouched (__main__.ExclusiveTransportTests.test_preexisting_regular_or_symlink_target_is_untouched) ... ok\ntest_racing_target_between_lstat_and_actual_paramiko_open_is_untouched (__main__.ExclusiveTransportTests.test_racing_target_between_lstat_and_actual_paramiko_open_is_untouched) ... ok\ntest_readback_corruption_rejects_and_retains_artifact (__main__.ExclusiveTransportTests.test_readback_corruption_rejects_and_retains_artifact) ... ok\ntest_reservation_scope_and_owner_required (__main__.ExclusiveTransportTests.test_reservation_scope_and_owner_required) ... ok\ntest_upload_namespace_exact (__main__.ExclusiveTransportTests.test_upload_namespace_exact) ... ok\ntest_wb_negative_control_reproduces_the_legacy_overwrite (__main__.ExclusiveTransportTests.test_wb_negative_control_reproduces_the_legacy_overwrite) ... ok\n\n----------------------------------------------------------------------\nRan 14 tests in 0.096s\n\nOK\n"
+    },
+    {
+      "name": "test_v7_preparation_pending.py",
+      "tests": 4,
+      "exitCode": 0,
+      "stdout": "",
+      "stderr": "test_frozen_exclusive_engine_is_exact_reviewed_bytes (__main__.Preparation.test_frozen_exclusive_engine_is_exact_reviewed_bytes) ... ok\ntest_short_revision_or_bad_manifest_rejects_before_transport (__main__.Preparation.test_short_revision_or_bad_manifest_rejects_before_transport) ... ok\ntest_transport_wrapper_has_only_two_v7_upload_parents (__main__.Preparation.test_transport_wrapper_has_only_two_v7_upload_parents) ... ok\ntest_uploader_rejects_missing_committed_approval_before_transport (__main__.Preparation.test_uploader_rejects_missing_committed_approval_before_transport) ... ok\n\n----------------------------------------------------------------------\nRan 4 tests in 0.274s\n\nOK\n"
+    }
+  ],
+  "freshExactUploaderCheckOnly": {
+    "status": "local-v7-upload-plan-verified-not-executed",
+    "manifestSha256": "5f7f244bd62bd00cecfa01057f1dea4e7b012aae9176f0636b50963a01b88f95",
+    "sourceRevision": "b4c77bf99b7db3579dea54b966c43fb1531b8dba",
+    "finalRevision": "c63003f5dbd585a3f09e8672a0f80fa5db460165",
+    "files": 24,
+    "bytes": 25759860,
+    "remoteDirectories": [
+      "/tmp/cbte-x-deploy-audit53-v7-final-20261016",
+      "/tmp/cbte-x-deploy-audit53-v7-floor-20261016"
+    ],
+    "networkPerformed": false,
+    "operationsLaunched": false
+  },
+  "generatedFilesBeforeAfter": {
+    "build-and-stage.py": "a3de2a93128f06f4860096ce853261aa81f543241dda531c39102110b09ebbad",
+    "dashboard_release_base.py": "7bc05ad276128774c9f9d9bdd2db0ea98c03a638ea1356a8e0c7ef7a6e3a5087",
+    "final-source.tgz": "f8fc3c941bb41b22ba0e938f323671faeff2f3d6d904a571b1ced88cab335b37",
+    "floor-build-config.json": "6974afcea01bd84f8b1abd11dcc94e155ad6bb8ffc0137b763ad295c38fe3cab",
+    "floor-source.tgz": "a23ae2b6a9adfd8612aedd3bf2fc78d6e2864ffaa043adb32e96e413448ab31d",
+    "launch-floor.py": "325484ad6e662cf52eba90787f9342d55121868ad2eb7be210db102928fddd07",
+    "launch-live-verification.py": "6e79b6eafa33654ef5ffe41fbf292b481ce44c58da9a63f4326d384a76ca5de4",
+    "launch-rollback.py": "556c4186e5b1d71dcf647d374a1ce4241e930ee6b14c6bd83e99ff0e8e164ed5",
+    "launch-stage.py": "ad58e35bcf078614d9acae6fb2914ccfa6c90cfa0e304a14d595f142f07a4dc8",
+    "live_runtime_acceptance.py": "111896a34ee02f716dc06a44de463778431bbb6981f12587c5b5c6101649f68f",
+    "native_release_guards.py": "141955d37228d2977d8e6ad16e63da76117e042dec41da8de97ddc5a4710f75b",
+    "package-lock.json": "185ebccc914b4abceac3694d962a49fff2e578696394b6987e13c887f8c65a73",
+    "paired_release.py": "6a0dc9084e7dcf02917ff17095ae2162e2b2599c55390d89623ea7c8968c11aa",
+    "poll-build.py": "edc8c8890c623817628634333d336e9bfde907d52bad1b92ca89dac4fbb1f172",
+    "poll-live-verification.py": "37acdd7cba7896289b946f05641e7d12fb431f54de28e0467c9ebca5299c0eed",
+    "poll-promotion.py": "53a46d4fe7d4223d385d4186cd7a5d5c8dccc90e9cdfe961e1b717e6a0cf458d",
+    "read-stage-proofs.py": "f2914f97182ba8429e79864baaab534e870820bebfb4955a247e6039a4406157",
+    "release-config.json": "6974afcea01bd84f8b1abd11dcc94e155ad6bb8ffc0137b763ad295c38fe3cab",
+    "review-and-launch-promotion.py": "c817fd65b88a3195545e0db846359155278287436312a7dedd85c294c9f86028",
+    "reviewed-resident-schema.json": "e4f735d28c48a1d62393f2877e25fd4477a1392e736afaa88611a60bc5ba47dc",
+    "snapshot-current-data.py": "1b429d1c8708cc7b634c8ed665eecda0ec7792e3a5e1354fc1163849f125e30c",
+    "source-archive-verification.json": "eea175d2469762cc53373c959624ca6ff500ca89d4ecdc9d1f277c30e63d0a81",
+    "upload-manifest.json": "5f7f244bd62bd00cecfa01057f1dea4e7b012aae9176f0636b50963a01b88f95",
+    "verify-monitor-release.py": "bdbec35eec4352ea4f016fd9a32dbe82003934ae8d044c91b38fd3df61dd7008"
+  },
+  "frozenV7AssetsUnchanged": 38,
+  "preservedPriorInputs": {
+    "roots": 4,
+    "files": 167,
+    "unchanged": true,
+    "snapshotSha256": "c45873fff99a97bb82ef3e7bdee0ec77960ce45e8eddd5fe891461a72e891860",
+    "v6Inputs": 92,
+    "v6InputsUnchanged": true,
+    "v6SnapshotSha256": "d30e60b478a9a0474e8ced421fc28cfb9e9759433f8cbf389d8d5e50068e4934"
+  },
+  "reviewedGates": [
+    "Actualmain+source runtime trees and exact canonical source contract, full manifest config/template/wrapper comparison",
+    "Raw1692final+1619floor Git blob bytes, modes, full entrysets and PAX revision",
+    "Existing9nullablecolumns4ledgers strict preflight; expected0newDDL, exact immutabledata/JSON strings-orNULL retained",
+    "Fresh worker lease/PID/parent/cwd/revision/Node/key/allshards before application acceptance",
+    "Physical bootstrapcompletefence2/all10scopes and fresh owner-bound existingeligibleXlistening lease/subrevision/connectedAt after workerstart before Web",
+    "Same application acceptance repeated by final live verifier",
+    "Explicit f241floor legacybootstrap compatibility and fresh receiver proof before rollbackWeb",
+    "Same exclusiveParamiko4d750 engine with V7namespace-only wrapper; no truncatingput/retry/unlink",
+    "Separate stage, consistentbackup hash review and promotion; no source/plan/cadence/key/Node/payment reset"
+  ],
+  "reportingMechanicalIssueCorrected": "Initial independent execution completed160 and both verifier/upload checks successfully; final report construction then hit CP932 decoding of UTF8 Python source. Corrected static reads use explicitUTF8. The actual114 proof was retained;42short controls and exact uploader check-only were captured again without changing any reviewed asset.",
+  "confirmedBlockingFindings": [],
+  "networkPerformed": false,
+  "sshPerformed": false,
+  "gitWritesPerformed": false,
+  "sourceAssetsWritten": false,
+  "productionAccessPerformed": false,
+  "actualBundleReviewed": true,
+  "limitations": [
+    "Actual artifacts are clean for the reviewed upload/stage process; fresh live inventory/CAS, both stage proofs and consistent backup review remain required before promotion.",
+    "Production V7 readiness requires fresh exact resident worker/bootstrap2/allshards/eligibleXreceiver lease+poststart listening and finalWeb/live evidence. This review did not access production.",
+    "No real OAuth, payment or new X-to-Discord message delivery was performed or established."
+  ]
+}
