@@ -69,8 +69,26 @@ function createJoinStore({ db, locked, putUnit, putStep, receipt, readUnit, uuid
                     const closed = relevant.filter(edge => edge.kind === 'closed').map(edge => edge.edgeId);
                     if (incoming.some(id => !closed.includes(id))) continue;
                     const arrivals = [];
-                    for (const edge of relevant.filter(row => row.kind === 'data')) arrivals.push({ edgeId: edge.edgeId, unit: await unit(edge.unitId) });
-                    const decision = mergeLineage({ node, runId: origin.run_id, incomingEdgeIds: incoming, closedEdgeIds: closed, arrivals });
+                    for (const edge of relevant.filter(row => row.kind === 'data')) {
+                        const source = await unit(edge.unitId);
+                        // The immutable unit was validated when persisted.
+                        // A lineage join needs this run's occurrences, not the
+                        // unrelated payload of every peer in both batches.
+                        // Preserve the original unit identity and ancestry so
+                        // grouping/provenance remain unchanged; the pure helper
+                        // still validates and bounds its projected input.
+                        arrivals.push({ edgeId: edge.edgeId, unit: { id: source.id, kind: source.kind, ancestry: source.ancestry || [],
+                            members: source.members.filter(member => member.runId === origin.run_id) } });
+                    }
+                    let decision;
+                    try { decision = mergeLineage({ node, runId: origin.run_id, incomingEdgeIds: incoming, closedEdgeIds: closed, arrivals }); }
+                    catch (error) {
+                        if (!require('./graph-failure').permanentFailure(error)) throw error;
+                        // The immutable arrivals and canonical data receipts
+                        // retain every input. A bounded per-lineage decision
+                        // releases this join without revoking sibling branches.
+                        decision = { state: 'excluded', code: error.code, terminalFailure: true };
+                    }
                     if (decision.state === 'waiting') continue;
                     await query('INSERT INTO automation_flow_merge_decisions (namespace_key,node_id,run_id,state,anchor_unit_id,signature_key,decision_json,created_at_ms,updated_at_ms) VALUES (?,?,?,?,?,?,?,?,?)', [namespace, node.id, origin.run_id, decision.state === 'accepted' ? 'ready' : 'excluded', decision.anchorUnitId || null, hash(decision.signature || origin.run_id), encode(decision), now, now]);
                     changes++;
@@ -95,12 +113,24 @@ function createJoinStore({ db, locked, putUnit, putStep, receipt, readUnit, uuid
                     // A's already-complete direct path behind B. Ready peers
                     // present in this exact pass stay batched; a later peer is
                     // emitted as its own deterministic fragment.
-                    const values = group.map(row => parse(row.decision_json));
-                    const groupVersion = hash(group.map(row => row.run_id).sort().join(','));
-                    const output = { id: uuid(`merge-output:${namespace}:${node.id}:${groupKey}:${groupVersion}`), kind: anchor ? 'batch' : 'event', members: values.map(value => value.member),
-                        ancestry: [...new Map(values.flatMap(value => value.ancestry).map(value => [encode(value), value])).values()], mergeNodeId: node.id,
-                        inputUnitIds: [...new Set(values.flatMap(value => value.inputUnitIds))].sort() };
-                    await putUnit(query, namespace, output, now);
+                    let output;
+                    await query('SAVEPOINT flow_merge_materialization');
+                    try {
+                        const values = group.map(row => parse(row.decision_json));
+                        const groupVersion = hash(group.map(row => row.run_id).sort().join(','));
+                        output = { id: uuid(`merge-output:${namespace}:${node.id}:${groupKey}:${groupVersion}`), kind: anchor ? 'batch' : 'event', members: values.map(value => value.member),
+                            ancestry: [...new Map(values.flatMap(value => value.ancestry).map(value => [encode(value), value])).values()], mergeNodeId: node.id,
+                            inputUnitIds: [...new Set(values.flatMap(value => value.inputUnitIds))].sort() };
+                        await putUnit(query, namespace, output, now);
+                    } catch (error) {
+                        if (!require('./graph-failure').permanentFailure(error)) throw error;
+                        await query('ROLLBACK TO SAVEPOINT flow_merge_materialization');
+                        await query('RELEASE SAVEPOINT flow_merge_materialization');
+                        for (const row of group) await query("UPDATE automation_flow_merge_decisions SET state='excluded',decision_json=?,updated_at_ms=? WHERE namespace_key=? AND node_id=? AND run_id=? AND state='ready'",
+                            [encode({ state: 'excluded', code: error.code, terminalFailure: true }), now, namespace, node.id, row.run_id]);
+                        changes += group.length; continue;
+                    }
+                    await query('RELEASE SAVEPOINT flow_merge_materialization');
                     for (const edge of plan.outgoing.get(node.id)) {
                         await putStep(query, namespace, `merge-successor:${output.id}:${edge.id}`, edge.target, output.id, edge.id, now, now);
                         for (const row of group) {

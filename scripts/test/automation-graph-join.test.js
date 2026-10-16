@@ -8,6 +8,14 @@ const member = runId => ({ id: runId, runId, event: { title: runId }, display: {
 const unit = (id, runIds, batch = false) => ({ id, kind: batch ? 'batch' : 'event', members: runIds.map(member), ancestry: batch ? [{ batchId: id }] : [] });
 const node = { id: 'join', type: 'merge', config: { mode: 'any', displayConflict: 'stop' } };
 function merge(runId, arrivals, options = {}) { return mergeLineage({ node, runId, incomingEdgeIds: ['left', 'right'], closedEdgeIds: ['left', 'right'], arrivals, ...options }); }
+
+test('pure join still rejects accessors and cycles without invoking getters, including unrelated members', () => {
+    const input = unit('batch', ['a', 'b'], true); let invoked = false;
+    Object.defineProperty(input.members[1], 'event', { enumerable: true, get() { invoked = true; return { title: 'b' }; } });
+    assert.throws(() => merge('a', [{ edgeId: 'left', unit: input }]), { code: 'GRAPH_INPUT_INVALID' }); assert.equal(invoked, false);
+    const cyclic = unit('batch', ['a'], true); cyclic.ancestry.push(cyclic);
+    assert.throws(() => merge('a', [{ edgeId: 'left', unit: cyclic }]), { code: 'GRAPH_INPUT_INVALID' });
+});
 test('join waits for completion even when both branches already produced data', () => {
     const arrivals = [{ edgeId: 'left', unit: unit('one', ['a']) }, { edgeId: 'right', unit: unit('two', ['a']) }];
     assert.equal(merge('a', arrivals, { closedEdgeIds: ['left'] }).state, 'waiting');

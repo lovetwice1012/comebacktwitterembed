@@ -212,6 +212,37 @@ function createGraphStore(db) {
             return { state: transition.state === 'excluded' ? 'excluded' : 'complete', emitted };
         });
     }
+    async function failStep(step, code, edges, now) {
+        if (!require('./graph-failure').permanentFailure({ code })) throw fault('FLOW_FAILURE_INVALID');
+        return locked(step.namespace_key, async query => {
+            const current = await owned(query, step, now);
+            if (current.lost) return { state: 'lease_lost' };
+            if (current.done) return { state: 'already_settled' };
+            const row = current.row;
+            if (Number(row.version) !== Number(step.version) || row.node_id !== step.node_id || row.input_unit_id !== step.input_unit_id
+                || row.continuation_unit_id !== step.continuation_unit_id) return { state: 'lease_lost' };
+            const unit = await readUnit(query, row.continuation_unit_id || row.input_unit_id), runs = [...new Set(unit.members.map(member => member.runId))];
+            // The failed evaluation/storage transaction has already rolled
+            // back. Close only this activation's outgoing paths. Other branches
+            // of the same run remain eligible for joins and physical delivery.
+            let receipts = [];
+            async function append(runId, edgeId, kind, unitId) {
+                receipts.push([hash(JSON.stringify([row.namespace_key, runId, edgeId, kind, unitId])), row.namespace_key, runId, edgeId, row.id, kind, unitId, now]);
+                if (receipts.length === 1000) { await query('INSERT IGNORE INTO automation_flow_edges (receipt_key,namespace_key,run_id,edge_id,activation_id,receipt_kind,unit_id,created_at_ms) VALUES ?', [receipts]); receipts = []; }
+            }
+            for (const runId of runs) {
+                for (const edge of edges) await append(runId, edge.id, 'closed', null);
+                await append(runId, `${row.id}:${code}`, 'step_failed', unit.id);
+            }
+            if (receipts.length) await query('INSERT IGNORE INTO automation_flow_edges (receipt_key,namespace_key,run_id,edge_id,activation_id,receipt_kind,unit_id,created_at_ms) VALUES ?', [receipts]);
+            // Preserve a previous wait/pruning decision verbatim. The bounded
+            // relational failure receipt identifies its exact continuation;
+            // duplicating that old decision could itself exceed the JSON cap.
+            await query("UPDATE automation_flow_steps SET state='excluded',decision_json=COALESCE(decision_json,?),lease_token=NULL,lease_until_ms=0,updated_at_ms=? WHERE id=?", [encode({ code, terminalFailure: true }), now, row.id]);
+            await query('UPDATE automation_flow_runs r JOIN automation_flow_members m ON m.run_id=r.run_id SET r.needs_sync=1 WHERE m.unit_id=?', [row.input_unit_id]);
+            return { state: 'failed', code };
+        });
+    }
     async function revokeRun(runId, code, now) {
         const origin = (await db.queryDatabase('SELECT namespace_key FROM automation_flow_runs WHERE run_id=?', [runId]))[0];
         if (!origin) return false;
@@ -370,6 +401,6 @@ function createGraphStore(db) {
         return { namespace: first.namespace_key, runIds: rows.map(row => row.run_id) };
     }
     const joins = require('./graph-join-store').createJoinStore({ db, locked, putUnit, putStep, receipt, readUnit, uuid, encode, fault });
-    return { initialize, initializeInTransaction: initializeQuery, claim, repairInitialStep, settle, admitBatch, dueBatch, closeBatch, parkMerge, recordSend, synchronizationBatch, revokeRun, ...joins, readUnit: (id, eligibleOnly = false) => readUnit(db.queryDatabase, id, eligibleOnly) };
+    return { initialize, initializeInTransaction: initializeQuery, claim, repairInitialStep, settle, failStep, admitBatch, dueBatch, closeBatch, parkMerge, recordSend, synchronizationBatch, revokeRun, ...joins, readUnit: (id, eligibleOnly = false) => readUnit(db.queryDatabase, id, eligibleOnly) };
 }
 module.exports = { createGraphStore, namespaceKey, uuid };
