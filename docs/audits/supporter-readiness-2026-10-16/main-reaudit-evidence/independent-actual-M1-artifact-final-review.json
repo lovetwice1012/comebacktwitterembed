@@ -1,0 +1,295 @@
+{
+  "status": "independent-v8-rev4-actual-M1-artifact-review-clean",
+  "at": "2026-10-16T10:36:59.231679+00:00",
+  "actualMainM1": "cf22327dc39964194fbc2c48d8002366cfb22613",
+  "approvedFinalSourceF": "e88e74412905987352af0ae7cec665963fc737d0",
+  "compatibleFloor": "c63003f5dbd585a3f09e8672a0f80fa5db460165",
+  "bundle": "C:\\Users\\yussy\\AppData\\Local\\Temp\\cbte-main-reaudit10-v8-source-rev4-20261016\\ops\\generated-cf22327dc399",
+  "manifestSha256": "89c2f688cad7232757a6172e0b4f3d196de276033155e8c225db0a5a3de9f8a8",
+  "archiveProofSha256": "24d2c2223654dff384eac7b339889839b677fee4615abf63360e199d7ce52ff7",
+  "sourceAndActualMainCoreTrees": {
+    "src": "84ed827c988b15dc6bd331814a8f0c95dd9fb0b2",
+    "index.js": "f1e198b2844674bb452432655873c7f688eb004e",
+    "package.json": "b83d13a7ba8ea97c210c9de0cbe11a058e394320",
+    "package-lock.json": "555308dc110a193fa169c3129af3c9ca60a08ff6",
+    "packages/angelic-angel": "4c160dd8368ae39c82d92dfad3013f17588d4574",
+    "dashboard": "16e5482fe1fc827cbe9a6172634b4e5ac23124a3",
+    "scripts": "3b8068755e251b3da658d707a8ef1bab6082c34b",
+    "migrations": "17a97bd36dab00b719e832bd810f0eba04f05c4d"
+  },
+  "allCanonicalRawArchiveEntriesModesAndPaxVerified": {
+    "final": {
+      "revision": "cf22327dc39964194fbc2c48d8002366cfb22613",
+      "entries": 1712,
+      "directories": 215,
+      "rawGitBlobBytes": 31909646,
+      "archiveSha256": "9a623a271f1cd34b103f6d1700f9b6b3b656b460a38654449d8883a13f5689d8"
+    },
+    "floor": {
+      "revision": "c63003f5dbd585a3f09e8672a0f80fa5db460165",
+      "entries": 1692,
+      "directories": 215,
+      "rawGitBlobBytes": 31642261,
+      "archiveSha256": "f8fc3c941bb41b22ba0e938f323671faeff2f3d6d904a571b1ced88cab335b37"
+    }
+  },
+  "schemaPathsIncludingPrismaUnchanged": 69,
+  "schemaMapPaths": 68,
+  "separatePrismaPaths": 1,
+  "prismaCanonicalMode": "100644",
+  "schemaMode": "strict-unchanged",
+  "newDdlOrBackfill": 0,
+  "existingColumns": 9,
+  "existingMigrationLedgerEntries": 4,
+  "canonicalAndResidentDualPinsIncludingPrismaModeVerified": true,
+  "actualArtifactControls": 202,
+  "results": [
+    {
+      "suite": "test_v8_guards.py",
+      "pid": 24440,
+      "tests": 28,
+      "exitCode": 0,
+      "log": "C:\\Users\\yussy\\AppData\\Local\\Temp\\cbte-main-reaudit10-v8-source-rev4-20261016\\independent-actual-M1-review-20261016T103517137409Z\\test_v8_guards.py.log",
+      "logSha256": "58d186f571f591846f3894c89e6b67bce1e2cab68ee0506ec77685d461c4ced8"
+    },
+    {
+      "suite": "test_paired_release.py",
+      "pid": 96644,
+      "tests": 29,
+      "exitCode": 0,
+      "log": "C:\\Users\\yussy\\AppData\\Local\\Temp\\cbte-main-reaudit10-v8-source-rev4-20261016\\independent-actual-M1-review-20261016T103517137409Z\\test_paired_release.py.log",
+      "logSha256": "eaf50a7e65bf4a6b452b2e071b029c167d957901abf276a2332c45ec9ea03c7c"
+    },
+    {
+      "suite": "test-stage-stop.py",
+      "pid": 97812,
+      "tests": 14,
+      "exitCode": 0,
+      "log": "C:\\Users\\yussy\\AppData\\Local\\Temp\\cbte-main-reaudit10-v8-source-rev4-20261016\\independent-actual-M1-review-20261016T103517137409Z\\test-stage-stop.py.log",
+      "logSha256": "c4fc0933f39423d9b401007d344c50aa903914f94b92ff6c01d1ea6d28096344"
+    },
+    {
+      "suite": "test_source_archives.py",
+      "pid": 85996,
+      "tests": 3,
+      "exitCode": 0,
+      "log": "C:\\Users\\yussy\\AppData\\Local\\Temp\\cbte-main-reaudit10-v8-source-rev4-20261016\\independent-actual-M1-review-20261016T103517137409Z\\test_source_archives.py.log",
+      "logSha256": "4f24ba659d414117095c66b3008cf075fc6d25dd0ed10c8e062649b3a18dd2a9"
+    },
+    {
+      "suite": "test_v8_live_runtime_acceptance.py",
+      "pid": 52908,
+      "tests": 40,
+      "exitCode": 0,
+      "log": "C:\\Users\\yussy\\AppData\\Local\\Temp\\cbte-main-reaudit10-v8-source-rev4-20261016\\independent-actual-M1-review-20261016T103517137409Z\\test_v8_live_runtime_acceptance.py.log",
+      "logSha256": "7cf753ed7875520f8075b56560ae8fe90ce76627412a2a4bcfdd2d027813eb4b"
+    },
+    {
+      "suite": "test_v8_strict_mode.py",
+      "pid": 42328,
+      "tests": 32,
+      "exitCode": 0,
+      "log": "C:\\Users\\yussy\\AppData\\Local\\Temp\\cbte-main-reaudit10-v8-source-rev4-20261016\\independent-actual-M1-review-20261016T103517137409Z\\test_v8_strict_mode.py.log",
+      "logSha256": "b198a6555381d53a9c2aaf20217fadfe8e623ee66d9deaa8416f1519672db820"
+    },
+    {
+      "suite": "test_upload_and_launch_v8.py",
+      "pid": 91348,
+      "tests": 28,
+      "exitCode": 0,
+      "log": "C:\\Users\\yussy\\AppData\\Local\\Temp\\cbte-main-reaudit10-v8-source-rev4-20261016\\independent-actual-M1-review-20261016T103517137409Z\\test_upload_and_launch_v8.py.log",
+      "logSha256": "4af6c05ffb1e9da816665c4d19cabf84bcd29599c2924000849c853725d01fda"
+    },
+    {
+      "suite": "test_v8_exclusive_transport.py",
+      "pid": 93428,
+      "tests": 14,
+      "exitCode": 0,
+      "log": "C:\\Users\\yussy\\AppData\\Local\\Temp\\cbte-main-reaudit10-v8-source-rev4-20261016\\independent-actual-M1-review-20261016T103517137409Z\\test_v8_exclusive_transport.py.log",
+      "logSha256": "143abe4559876b909ab3a51fccdb7c76b6afed2e694df99d6482ff28de7b908d"
+    },
+    {
+      "suite": "test_v8_preparation_pending.py",
+      "pid": 94804,
+      "tests": 4,
+      "exitCode": 0,
+      "log": "C:\\Users\\yussy\\AppData\\Local\\Temp\\cbte-main-reaudit10-v8-source-rev4-20261016\\independent-actual-M1-review-20261016T103517137409Z\\test_v8_preparation_pending.py.log",
+      "logSha256": "c8a87246ad5789a0a56f0785267bbe9a75dacdec24e5e7799f67bc902a598a1d"
+    },
+    {
+      "suite": "test_v8_runbook_calls.py",
+      "pid": 52316,
+      "tests": 10,
+      "exitCode": 0,
+      "log": "C:\\Users\\yussy\\AppData\\Local\\Temp\\cbte-main-reaudit10-v8-source-rev4-20261016\\independent-actual-M1-review-20261016T103517137409Z\\test_v8_runbook_calls.py.log",
+      "logSha256": "33beabca09b030af74149987fc5934a3a50269d0d0813308aeedc46dab332437"
+    }
+  ],
+  "actualVerifiers": [
+    {
+      "name": "full-raw-archive-and-source-verifier",
+      "exitCode": 0,
+      "result": {
+        "status": "actual-v8-bundle-raw-git-dual-pins-verified",
+        "manifestSha256": "89c2f688cad7232757a6172e0b4f3d196de276033155e8c225db0a5a3de9f8a8",
+        "finalRevision": "cf22327dc39964194fbc2c48d8002366cfb22613",
+        "schemaMode": "strict-unchanged",
+        "newMigrationCount": 0,
+        "newNullableColumnCount": 0,
+        "migrationCount": 4,
+        "nullableColumnCount": 9,
+        "existingTableCount": 4,
+        "operationsLaunched": false
+      }
+    },
+    {
+      "name": "source-pinned-uploader-check-only",
+      "exitCode": 0,
+      "result": {
+        "status": "local-v8-upload-plan-verified-not-executed",
+        "manifestSha256": "89c2f688cad7232757a6172e0b4f3d196de276033155e8c225db0a5a3de9f8a8",
+        "sourceRevision": "e88e74412905987352af0ae7cec665963fc737d0",
+        "finalRevision": "cf22327dc39964194fbc2c48d8002366cfb22613",
+        "files": 24,
+        "bytes": 26451522,
+        "remoteDirectories": [
+          "/tmp/cbte-x-deploy-reaudit10-v8-final-20261016",
+          "/tmp/cbte-x-deploy-reaudit10-v8-floor-20261016"
+        ],
+        "networkPerformed": false,
+        "operationsLaunched": false
+      }
+    }
+  ],
+  "allTenControlChildrenExitedZero": true,
+  "all24GeneratedFilesUnchanged": {
+    "build-and-stage.py": "2d3d057647c55cb4df25c062e1fb2ffa4088fcb6ef20f8b28dcc46b10d6cbc89",
+    "dashboard_release_base.py": "7bc05ad276128774c9f9d9bdd2db0ea98c03a638ea1356a8e0c7ef7a6e3a5087",
+    "final-source.tgz": "9a623a271f1cd34b103f6d1700f9b6b3b656b460a38654449d8883a13f5689d8",
+    "floor-build-config.json": "4c1b2d143fcf4382289185a455b07168a598fc519c0d2c860af403b6aa3e9594",
+    "floor-source.tgz": "f8fc3c941bb41b22ba0e938f323671faeff2f3d6d904a571b1ced88cab335b37",
+    "launch-floor.py": "ecdfe5c90dabfe90db8d1b0d4aa3c79b44fe404a783947b269098eedaeb4a11c",
+    "launch-live-verification.py": "8bd248ae0d98559240c80daebf79d8593472f73d788bd1102a1ba1e29b113eea",
+    "launch-rollback.py": "e972dae30101b42890be75285767599495414ce882ae9a0741180cadc47a8c15",
+    "launch-stage.py": "c54b6baf51982e1f492280844a229bc99957bdc025327a586d86aa4acd3affd8",
+    "live_runtime_acceptance.py": "111896a34ee02f716dc06a44de463778431bbb6981f12587c5b5c6101649f68f",
+    "native_release_guards.py": "cbff894e1a953a1f72dafa7f05f0312c4b604feee023a7e8219fdd2708018da9",
+    "package-lock.json": "185ebccc914b4abceac3694d962a49fff2e578696394b6987e13c887f8c65a73",
+    "paired_release.py": "000b420fbc4d709fa114912f6d106b3e3759ef9bc14b1fbdbb46500d258f8e0f",
+    "poll-build.py": "bc2d9549a6d12d897760d8358e789a7015109846d46dde2e6cff303cbdddd113",
+    "poll-live-verification.py": "5cb6bb1676ae6d0bb1f7c4b8eaa5b97dee77005b3cd8b01a487578467ea7aab0",
+    "poll-promotion.py": "e7c9416e4653d5b5eb2f17e7605b35630aae2afb485a0bf234c0412282c0b954",
+    "read-stage-proofs.py": "07225b721b7939d52e24b0010836e0413bc8eec00e9964cca00586ae79540b78",
+    "release-config.json": "4c1b2d143fcf4382289185a455b07168a598fc519c0d2c860af403b6aa3e9594",
+    "review-and-launch-promotion.py": "f2cb7c34f8d7d4793312048d62f1cc1a3a1deb52f8b3647d647f292b581bc766",
+    "reviewed-resident-schema.json": "04cb557422a29bdb0d6712f1393a60f5596e3ea4cb90447ce1101f38afedd545",
+    "snapshot-current-data.py": "0f79b56f7ecf18fcd4ad7e28a315ffaf201942d00ade6a9d6a2d5b0734edcc89",
+    "source-archive-verification.json": "24d2c2223654dff384eac7b339889839b677fee4615abf63360e199d7ce52ff7",
+    "upload-manifest.json": "89c2f688cad7232757a6172e0b4f3d196de276033155e8c225db0a5a3de9f8a8",
+    "verify-monitor-release.py": "5f8db4ac81d300668fee0ddb54c17284deb74a717f1b363295acc52c0a4dc54b"
+  },
+  "all2134FrozenPrepAssetsUnchanged": true,
+  "historicalAuthorityChecks": [
+    {
+      "helper": "check-v8-rev3-history.py",
+      "records": [
+        {
+          "status": "v8-f915-and-prior-preparation-history-unchanged",
+          "f915StaticInputs": 52,
+          "initialSnapshotInputs": 56,
+          "preapprovalV2Inputs": 70,
+          "filesWritten": 0,
+          "sshPerformed": false
+        },
+        {
+          "status": "v8-approved0769-and-earlier-history-unchanged",
+          "approved0769StaticInputs": 239,
+          "pendingRev2SnapshotInputs": 233,
+          "filesWritten": 0,
+          "sshPerformed": false
+        }
+      ],
+      "exitCode": 0
+    },
+    {
+      "helper": "check-v8-rev4-history.py",
+      "records": [
+        {
+          "status": "v8-f915-and-prior-preparation-history-unchanged",
+          "f915StaticInputs": 52,
+          "initialSnapshotInputs": 56,
+          "preapprovalV2Inputs": 70,
+          "filesWritten": 0,
+          "sshPerformed": false
+        },
+        {
+          "status": "v8-approved0769-and-earlier-history-unchanged",
+          "approved0769StaticInputs": 239,
+          "pendingRev2SnapshotInputs": 233,
+          "filesWritten": 0,
+          "sshPerformed": false
+        },
+        {
+          "status": "v8-approved-d2-and-earlier-history-unchanged",
+          "approvedD2StaticInputs": 713,
+          "pendingRev3SnapshotInputs": 707,
+          "filesWritten": 0,
+          "testsRun": false,
+          "sshPerformed": false
+        }
+      ],
+      "exitCode": 0
+    },
+    {
+      "helper": "check-v8-revision-history.py",
+      "records": [
+        {
+          "status": "v8-f915-and-prior-preparation-history-unchanged",
+          "f915StaticInputs": 52,
+          "initialSnapshotInputs": 56,
+          "preapprovalV2Inputs": 70,
+          "filesWritten": 0,
+          "sshPerformed": false
+        }
+      ],
+      "exitCode": 0
+    }
+  ],
+  "bothRolesRequireBootstrap2All10ExistingEligibleXFreshLeaseRevisionPostStartBeforeWeb": true,
+  "allDynamicShardsWorkerIdentityLeaseNodeKeyBeforeWebRequired": true,
+  "finalLiveVerifierRepeatsStrictSchemaAndApplicationAcceptance": true,
+  "sourceSpecificUploaderAndManifestDerivedCallerVerifiedByControlSuite": true,
+  "exclusiveEngineSha256": "4d750e3f07b28efd03b3f557cab34272b4a9a669322359fffad42909ede8664d",
+  "rootReportedProductValidation": {
+    "testedSourceRevision": "d2e792d30a44723e603869b27970b05597d51a9d",
+    "fullPassCount": 2151,
+    "finalSourceRevision": "e88e74412905987352af0ae7cec665963fc737d0",
+    "finalFocusedPassCount": 22,
+    "semanticCarryReported": true,
+    "fullFinalSourceRunClaimed": false
+  },
+  "productValidationBoundary": "Root D2full2151 is not a full run on F. Factualfocused22 and root/compiler/lint/strictASTtypes/semantic carry remain separately described. This202 execution validates actual release controls, not a fullF product aggregate.",
+  "confirmedBlockingFindings": [],
+  "networkPerformed": false,
+  "sqlConnectionsPerformed": false,
+  "gitWritesPerformed": false,
+  "productSourceEdited": false,
+  "productionAccessPerformed": false,
+  "actualBundleReviewed": true,
+  "limitations": [
+    "Actual M1 artifacts are clean for the reviewed exclusive upload/stage workflow. Root still must obtain fresh live c630 inventory/CAS, stage proofs and consistentbackup evidence before promotion.",
+    "Production readiness requires new resident identity/lease/allshards/bootstrap2 and existing eligibleXfreshlistening/poststart lease/revision proof before Web plus finalLive. No production operation was performed by this reviewer.",
+    "No real OAuth, payment or newly posted X-to-Discord delivery was tested."
+  ],
+  "authorActualArtifactFreeze": {
+    "path": "C:\\Users\\yussy\\AppData\\Local\\Temp\\cbte-main-reaudit10-v8-source-rev4-20261016\\v8-actual-cf22327d-artifact-freeze-20261016T103501667460Z.json",
+    "sha256": "d06cda070d9b9254aec9c546a728da0621e8cfe92099aa25129316b95097e0cf",
+    "all24BundleFilesSizesAndHashesMatch": true,
+    "tests": 202,
+    "notUploadedAtAuthorFreeze": true
+  },
+  "initialIndependentControlReport": {
+    "path": "C:\\Users\\yussy\\AppData\\Local\\Temp\\cbte-main-reaudit10-v8-source-rev4-20261016\\independent-actual-M1-review-20261016T103517137409Z\\M1-actual-artifact-review.json",
+    "sha256": "cfe314a2210c90baa598c2ce7c30bc42854326d179e0eb20775ea83faba12c58"
+  }
+}

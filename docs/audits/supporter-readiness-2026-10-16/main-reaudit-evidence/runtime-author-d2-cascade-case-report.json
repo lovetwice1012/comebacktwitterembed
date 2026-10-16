@@ -1,0 +1,143 @@
+{
+  "status": "author-final-source-frozen-awaiting-root-independent-review-and-dynamic-185-file-acceptance",
+  "baseBeforeRootCommit": "07696234f4a8b57c123b7748b36366d7a7f1e3e2",
+  "generatedAtUtc": "2026-10-16T09:41:47.8117061Z",
+  "ids": [
+    "MAIN-FRESH-4",
+    "MAIN-FRESH-5"
+  ],
+  "files": [
+    {
+      "file": "src/automation/flow-history.js",
+      "sha256": "60ff0447147e5ae84e15108c14e5883f4d5092969cd652549dffde67b7163824"
+    },
+    {
+      "file": "src/automation/queue.js",
+      "sha256": "1a6106b6493d3b1d9652dfd8289905c689ffd2d10cf6df30926e45cacd6a625c"
+    },
+    {
+      "file": "scripts/lib/automation-test-db.js",
+      "sha256": "dd18673b8f4c52f7e7c5c85e07298aa371670898aa1e0ea8a314619f2d63be1b"
+    },
+    {
+      "file": "scripts/test/automation-test-db-connect.test.js",
+      "sha256": "b571b74bf0a963610cde79a60b553572b0f518e16f108ff369688609e670b3e3"
+    },
+    {
+      "file": "scripts/test/automation-flow-state-reconciliation-sql.test.js",
+      "sha256": "a8aefab66521112321eb1752d816ea219668539cf603229d0c666bc69a6ebd93"
+    }
+  ],
+  "unchangedAcceptanceFiles": {
+    "legacySQL": "scripts/test/automation-sql.test.js",
+    "legacySQLsha256": "c1429ca028d3b413723ab9150440d52d5ed7b2f71101ff94b35178522b0190b0",
+    "ownerCAS": "scripts/test/automation-monitor-workflow-cas-sql.test.js",
+    "ownerCASsha256": "e0170abf799e953e7f3b55e52bb70db9d0b90442bfddd4234467f14dd3e33bd9"
+  },
+  "closedOriginalFullDiagnostic": {
+    "tests": 2126,
+    "pass": 2120,
+    "fail": 6,
+    "actualFailedCases": 4,
+    "failedParents": 2,
+    "skip": 0,
+    "cancel": 0,
+    "nativeConnectFailures": 3,
+    "actualQueueRegression": 1,
+    "providedBy": "root closed XML parse",
+    "cause": "Three exact loopback TCP connect ETIMEDOUT admission failures before SQL; one valid legacy-parent child-cascade assertion failure"
+  },
+  "queueFix": [
+    "Initial eligible recovery roster remains LIMIT 100",
+    "Direct child metadata discovery and current mutation pages each LIMIT 100 with stable PK cursor",
+    "Workflow fences include the actual v1 parent and mixed v2 child anchor workflows; graph namespaces are locked before jobs",
+    "A parent made terminal by held/sending recovery propagates to every still-aggregated child within the same transaction",
+    "Already terminal sent/unknown/partial children retain their exact receipts",
+    "Expired sending parent remains unknown including a prior ACK; no automatic replay",
+    "Projection or later-page failure rolls back roots, every child page and run traces together",
+    "External/stored UUID spelling, namespaceKey and JSON protocol are unchanged; only internal mutex UUID keys and graph run-ID membership comparisons casefold before dedup/sort"
+  ],
+  "testHelperFix": [
+    "At most three getConnection admissions, delays 50/100ms",
+    "Only ETIMEDOUT with syscall=connect, address=127.0.0.1 and exact explicitly validated non-3306 port",
+    "No supplied connection and no sql/sqlState fields",
+    "Every retry emits only safe code, next attempt and loopback port",
+    "No retry of SQL, user work, COMMIT, auth, schema refusal, ping or post-handshake failures",
+    "Exhaustion returns the exact final error and closes the unopened pool",
+    "No new exports, production DB runtime or OS network changes"
+  ],
+  "verification": {
+    "priorNineFileSource": {
+      "tests": 150,
+      "pass": 150,
+      "fail": 0,
+      "skip": 0,
+      "cancel": 0,
+      "durationMs": 185550.2498,
+      "exitCode": 0,
+      "junit": "C:/Users/yussy/AppData/Local/Temp/reaudit-cascade-connect-final-focus.xml",
+      "sha256": "9d407490b07a25e73cdeb29d1acda482713f1648fe94228c6b8665ca69bd28eb",
+      "actualAdmissionRetriesObserved": 1,
+      "basis": "Specific pre-casefold source; not substituted for final-source aggregate"
+    },
+    "finalTargeted": {
+      "tests": 62,
+      "pass": 62,
+      "fail": 0,
+      "skip": 0,
+      "cancel": 0,
+      "durationMs": 62482.1344,
+      "exitCode": 0,
+      "junit": "C:/Users/yussy/AppData/Local/Temp/reaudit-cascade-case-final-targeted.xml",
+      "sha256": "bd8ec8d01542f3d74f012b6b5e6d1338569879c5cafb084cb3a4389b6a7beaae",
+      "parts": [
+        "22 actual flow reconciliation SQL cases",
+        "21 owner-CAS/physical-send/real-deadlock SQL cases",
+        "19 isolated pool-admission factory unit cases"
+      ]
+    },
+    "caseIdentityRed": {
+      "tests": 2,
+      "fail": 2,
+      "junit": "C:/Users/yussy/AppData/Local/Temp/reaudit-workflow-uuid-case-red.xml",
+      "sha256": "208a8c9b114ed325d3114f6eaf3609d4de40a80d7a31c4881fa6c866f92ece3e",
+      "cause": "Uppercase source copy bypassed lowercase workflow barrier; uppercase job run reference omitted its actual namespace"
+    },
+    "caseIdentityGreen": {
+      "tests": 2,
+      "pass": 2,
+      "junit": "C:/Users/yussy/AppData/Local/Temp/reaudit-workflow-uuid-case-green.xml",
+      "sha256": "595ad1ae5f1c642d9f241ed61205fa8a944659570574615353487c2554b32824"
+    },
+    "rootTypeScriptExitCode": 0,
+    "eslintChangedFiveExitCode": 0,
+    "diffCheckExitCode": 0
+  },
+  "newSQLBoundaryEvidence": [
+    "Actual legacy producer creates a v1 parent and aggregate child; one claim fails both while preserving unrelated future due time",
+    "Mixed v1 parent/v2 children recover failed or unknown and immediately project the correct run state",
+    "Existing sent/unknown sibling receipts and partial run history remain intact",
+    "Two genuine legacy groups of 52 members each create 102 children, requiring a second 100-row page",
+    "Injected EIO after a later-page mutation follows an already committed-within-transaction graph partial projection; full row/run snapshots then roll back identically",
+    "Uppercase source-copy lookup remains uppercase externally while its internal S mutex blocks lowercase package X",
+    "A stored uppercase job run reference remains byte-identical while cancellation waits on the canonical attested graph namespace"
+  ],
+  "cleanup": {
+    "allAuthorTestProcessesExited": true,
+    "successfulFixturesClosedInFinally": true,
+    "casFixtureInFinalLog": "cbte_automation_test_40d5b00edc5cfe80c136",
+    "postRunCatalogVerification": "Not performed while ownership transfers to independent SQL reviewer",
+    "unknownPreexistingSchemasDeleted": 0
+  },
+  "migrationChanges": 0,
+  "automaticSlotMoves": 0,
+  "productionWrites": 0,
+  "gitCommitsByAuthor": 0,
+  "externalMessages": 0,
+  "remainingGates": [
+    "Root new source commit and independent final probes",
+    "One dynamic 185-file final-source full acceptance run",
+    "Root versioned main merge and supporters-only production rollout/resident proof"
+  ],
+  "vendorCIReport": "C:/Users/yussy/AppData/Local/Temp/cbte-codacy-vendor-076-20261016/findings.json"
+}

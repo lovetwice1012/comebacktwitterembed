@@ -1,0 +1,73 @@
+{
+  "generatedAt": "2026-10-16T10:24:32.020Z",
+  "reviewer": "reaudit_independent_review",
+  "result": "CLEAN-APPLIED-AA158-FLOW22-PASS-AND-DISPOSABLE-SCHEMA-CLEANUP",
+  "testedSource": {
+    "canonicalBaselineRevision": "d2e792d30a44723e603869b27970b05597d51a9d",
+    "workingCandidateSha256": "aa1580814a0289b029a17a1805485391026a0b68ed8418a6250e1c637b95f6f4",
+    "finalCandidateRevision": null,
+    "exactTestFile": "scripts/test/automation-flow-state-reconciliation-sql.test.js",
+    "exactTestFileSha256": "a8aefab66521112321eb1752d816ea219668539cf603229d0c666bc69a6ebd93"
+  },
+  "nativeExitCode": 0,
+  "summary": {
+    "tests": 22,
+    "suites": 0,
+    "pass": 22,
+    "fail": 0,
+    "cancelled": 0,
+    "skipped": 0,
+    "todo": 0
+  },
+  "junit": {
+    "closedXml": true,
+    "tests": 22,
+    "forbiddenNodes": 0
+  },
+  "durationMs": 57402.6721,
+  "retryDiagnostics": {
+    "specLines": 0,
+    "outerLines": 0,
+    "channelsNotSummed": true
+  },
+  "artifacts": {
+    "C:\\Users\\yussy\\AppData\\Local\\Temp\\main-reaudit-independent-aa158-flow22.xml": "027b6febd5dcf00073eefe20d5c48ccd7327d397ba1dc3fb303fe0293f013b02",
+    "C:\\Users\\yussy\\AppData\\Local\\Temp\\main-reaudit-independent-aa158-flow22.spec.log": "30b814913451eb7ff08ecfd1a91a40334d8da3f1297b2c2779a8f2f9654a9e11",
+    "C:\\Users\\yussy\\AppData\\Local\\Temp\\main-reaudit-independent-aa158-flow22.outer.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "C:\\Users\\yussy\\AppData\\Local\\Temp\\main-reaudit-independent-aa158-flow22.exit.json": "591a05ac1ec70c97713d028e191c8e17f856962a26dccf3b0ab173e22ea56490"
+  },
+  "cleanup": {
+    "newFixtureSchemasRemaining": 0,
+    "previousUnownedSchemas": [
+      "cbte_automation_test_0d82fde7dd8679c8e6dc",
+      "cbte_automation_test_170ffeed5a5590aff1d9",
+      "cbte_automation_test_2fd8d6feb071f7b0d825",
+      "cbte_automation_test_62e283d41c6fca1d4936",
+      "cbte_automation_test_7201d3c2f1e071f32dd1",
+      "cbte_automation_test_88a88bbde1f86928f9f4",
+      "cbte_automation_test_92e99d3eaa31cd121490"
+    ],
+    "presentSchemas": [
+      "cbte_automation_test_0d82fde7dd8679c8e6dc",
+      "cbte_automation_test_170ffeed5a5590aff1d9",
+      "cbte_automation_test_2fd8d6feb071f7b0d825",
+      "cbte_automation_test_62e283d41c6fca1d4936",
+      "cbte_automation_test_7201d3c2f1e071f32dd1",
+      "cbte_automation_test_88a88bbde1f86928f9f4",
+      "cbte_automation_test_92e99d3eaa31cd121490"
+    ],
+    "unownedSchemasTouched": false,
+    "activeNewFixtureConnections": 0,
+    "observedUnownedFixtureConnections": []
+  },
+  "wholeFullSuiteExecutedOnCandidate": false,
+  "mainOrProductionApproved": false,
+  "operations": {
+    "testExecutedOnce": true,
+    "productOrTestEdits": 0,
+    "gitWrites": 0,
+    "productionAccessed": false,
+    "cleanupQueriesReadOnly": true,
+    "noDatabaseRestartOrConfigurationChange": true
+  }
+}

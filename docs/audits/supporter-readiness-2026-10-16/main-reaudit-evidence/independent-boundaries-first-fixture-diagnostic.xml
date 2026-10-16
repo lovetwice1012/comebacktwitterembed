@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="utf-8"?>
+<testsuites>
+	<testcase name="Independent MAIN-FRESH-2: actual SQL ownership loss after history SELECT prevents both old-client and paged disclosure" time="1.855900" classname="test" file="C:\Users\yussy\AppData\Local\Temp\main-reaudit-independent-boundaries.cjs"/>
+	<testcase name="Independent MAIN-POST-2/DATA-2: racing same-edition reason rewrite and resolve never resolves an unseen reason" time="1.849681" classname="test" file="C:\Users\yussy\AppData\Local\Temp\main-reaudit-independent-boundaries.cjs"/>
+	<testcase name="Independent MAIN-DATA-1: malformed financial cursors never cause any SQL read or fallback" time="0.011555" classname="test" file="C:\Users\yussy\AppData\Local\Temp\main-reaudit-independent-boundaries.cjs" failure="Expected values to be strictly deep-equal:&#10;+ actual - expected&#10;&#10;+ Comparison {}&#10;- Comparison {&#10;-   code: 'INVALID_CURSOR'&#10;- }&#10;">
+		<failure type="testCodeFailure" message="Expected values to be strictly deep-equal:&#10;+ actual - expected&#10;&#10;+ Comparison {}&#10;- Comparison {&#10;-   code: 'INVALID_CURSOR'&#10;- }">
+[Error [ERR_TEST_FAILURE]: Expected values to be strictly deep-equal:
++ actual - expected
+
++ Comparison {}
+- Comparison {
+-   code: 'INVALID_CURSOR'
+- }
+] {
+  code: 'ERR_TEST_FAILURE',
+  failureType: 'testCodeFailure',
+  cause: AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:
+  + actual - expected
+  
+  + Comparison {}
+  - Comparison {
+  -   code: 'INVALID_CURSOR'
+  - }
+  
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async TestContext.&lt;anonymous> (C:\Users\yussy\AppData\Local\Temp\main-reaudit-independent-boundaries.cjs:43:16)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: Error: Must not query
+        at queryDatabase (C:\Users\yussy\AppData\Local\Temp\main-reaudit-independent-boundaries.cjs:43:205)
+        at Object.getSupporterGrantHistory (C:\Users\yussy\.codex\worktrees\x-realtime-choice-20261014\comebacktwitterembed\src\automation\push-support-grants.js:112:24)
+        at dispatchCore (C:\Users\yussy\.codex\worktrees\x-realtime-choice-20261014\comebacktwitterembed\src\automation\api.js:87:38)
+        at dispatch (C:\Users\yussy\.codex\worktrees\x-realtime-choice-20261014\comebacktwitterembed\src\automation\api.js:22:24)
+        at TestContext.&lt;anonymous> (C:\Users\yussy\AppData\Local\Temp\main-reaudit-independent-boundaries.cjs:43:37)
+        at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+        at async Test.run (node:internal/test_runner/test:1409:7)
+        at async Test.processPendingSubtests (node:internal/test_runner/test:974:7),
+    expected: { code: 'INVALID_CURSOR' },
+    operator: 'rejects',
+    diff: 'simple'
+  }
+}
+		</failure>
+	</testcase>
+	<!-- tests 3 -->
+	<!-- suites 0 -->
+	<!-- pass 2 -->
+	<!-- fail 1 -->
+	<!-- cancelled 0 -->
+	<!-- skipped 0 -->
+	<!-- todo 0 -->
+	<!-- duration_ms 3823.7739 -->
+</testsuites>

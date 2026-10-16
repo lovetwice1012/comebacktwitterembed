@@ -1,0 +1,25 @@
+{
+  "checkedAt": "2026-10-16T09:43:51.923Z",
+  "readOnly": true,
+  "knownOwnSchemas": [
+    "cbte_automation_test_120be05110535fea36d5",
+    "cbte_automation_test_1cb5890ea0d696a3ab3a",
+    "cbte_automation_test_292fd2b7780bc80e2a2e",
+    "cbte_automation_test_30761af9ed4a2e1283bb",
+    "cbte_automation_test_3b4ad2a772156aabcdd2",
+    "cbte_automation_test_8edb20420444025c317a",
+    "cbte_automation_test_f78812bf8192092b9e7a"
+  ],
+  "ownRemaining": [],
+  "remainingUnownedSchemaCount": 7,
+  "remainingUnownedSchemas": [
+    "cbte_automation_test_0d82fde7dd8679c8e6dc",
+    "cbte_automation_test_170ffeed5a5590aff1d9",
+    "cbte_automation_test_2fd8d6feb071f7b0d825",
+    "cbte_automation_test_62e283d41c6fca1d4936",
+    "cbte_automation_test_7201d3c2f1e071f32dd1",
+    "cbte_automation_test_88a88bbde1f86928f9f4",
+    "cbte_automation_test_92e99d3eaa31cd121490"
+  ],
+  "unknownSchemasTouched": false
+}

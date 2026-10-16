@@ -1,0 +1,43 @@
+{
+  "sourceRevision": "07696234f4a8b57c123b7748b36366d7a7f1e3e2",
+  "session": 47219,
+  "exitCode": 1,
+  "aggregateCompleted": true,
+  "acceptance": false,
+  "xmlSha256": "001ab1646173baf38f682bca14117096aad60ac9b739396dbee3bb820ed57818",
+  "rootAttributes": {},
+  "failedCases": [
+    {
+      "test": "S7 valid 5000-member dictionary trace failure becomes terminal after its output transaction rolls back",
+      "file": "C:\\Users\\yussy\\.codex\\worktrees\\x-realtime-choice-20261014\\comebacktwitterembed\\scripts\\test\\automation-flow-permanent-failure-sql.test.js",
+      "time": "0.366130",
+      "type": "testCodeFailure",
+      "message": "connect ETIMEDOUT 127.0.0.1:33621",
+      "detail": "\n[Error [ERR_TEST_FAILURE]: connect ETIMEDOUT 127.0.0.1:33621] {\n  code: 'ERR_TEST_FAILURE',\n  failureType: 'testCodeFailure',\n  cause: Error: connect ETIMEDOUT 127.0.0.1:33621\n      at TCPConnectWrap.afterConnect [as oncomplete] (node:net:2021:16)\n      --------------------\n      at Protocol._enqueue (C:\\Users\\yussy\\Documents\\comebacktwitterembed\\node_modules\\mysql\\lib\\protocol\\Protocol.js:144:48)\n      at Protocol.handshake (C:\\Users\\yussy\\Documents\\comebacktwitterembed\\node_modules\\mysql\\lib\\protocol\\Protocol.js:51:23)\n      at PoolConnection.connect (C:\\Users\\yussy\\Documents\\comebacktwitterembed\\node_modules\\mysql\\lib\\Connection.js:116:18)\n      at Pool.getConnection (C:\\Users\\yussy\\Documents\\comebacktwitterembed\\node_modules\\mysql\\lib\\Pool.js:48:16)\n      at C:\\Users\\yussy\\.codex\\worktrees\\x-realtime-choice-20261014\\comebacktwitterembed\\scripts\\lib\\automation-test-db.js:11:65\n      at new Promise (<anonymous>)\n      at acquire (C:\\Users\\yussy\\.codex\\worktrees\\x-realtime-choice-20261014\\comebacktwitterembed\\scripts\\lib\\automation-test-db.js:11:27)\n      at Object.queryDatabase (C:\\Users\\yussy\\.codex\\worktrees\\x-realtime-choice-20261014\\comebacktwitterembed\\scripts\\lib\\automation-test-db.js:20:29)\n      at createTestDatabase (C:\\Users\\yussy\\.codex\\worktrees\\x-realtime-choice-20261014\\comebacktwitterembed\\scripts\\lib\\automation-test-db.js:38:118)\n      at process.processTicksAndRejections (node:internal/process/task_queues:104:5) {\n    errno: -4039,\n    code: 'ETIMEDOUT',\n    syscall: 'connect',\n    address: '127.0.0.1',\n    port: 33621,\n    fatal: true\n  }\n}\n\t\t"
+    },
+    {
+      "test": "S7 merge output savepoint removes partial unit writes before recording a bounded group failure",
+      "file": "C:\\Users\\yussy\\.codex\\worktrees\\x-realtime-choice-20261014\\comebacktwitterembed\\scripts\\test\\automation-flow-permanent-failure-sql.test.js",
+      "time": "0.305133",
+      "type": "testCodeFailure",
+      "message": "connect ETIMEDOUT 127.0.0.1:33621",
+      "detail": "\n[Error [ERR_TEST_FAILURE]: connect ETIMEDOUT 127.0.0.1:33621] {\n  code: 'ERR_TEST_FAILURE',\n  failureType: 'testCodeFailure',\n  cause: Error: connect ETIMEDOUT 127.0.0.1:33621\n      at TCPConnectWrap.afterConnect [as oncomplete] (node:net:2021:16)\n      --------------------\n      at Protocol._enqueue (C:\\Users\\yussy\\Documents\\comebacktwitterembed\\node_modules\\mysql\\lib\\protocol\\Protocol.js:144:48)\n      at Protocol.handshake (C:\\Users\\yussy\\Documents\\comebacktwitterembed\\node_modules\\mysql\\lib\\protocol\\Protocol.js:51:23)\n      at PoolConnection.connect (C:\\Users\\yussy\\Documents\\comebacktwitterembed\\node_modules\\mysql\\lib\\Connection.js:116:18)\n      at Pool.getConnection (C:\\Users\\yussy\\Documents\\comebacktwitterembed\\node_modules\\mysql\\lib\\Pool.js:48:16)\n      at C:\\Users\\yussy\\.codex\\worktrees\\x-realtime-choice-20261014\\comebacktwitterembed\\scripts\\lib\\automation-test-db.js:11:65\n      at new Promise (<anonymous>)\n      at acquire (C:\\Users\\yussy\\.codex\\worktrees\\x-realtime-choice-20261014\\comebacktwitterembed\\scripts\\lib\\automation-test-db.js:11:27)\n      at createTestDatabase (C:\\Users\\yussy\\.codex\\worktrees\\x-realtime-choice-20261014\\comebacktwitterembed\\scripts\\lib\\automation-test-db.js:13:25)\n      at fixture (C:\\Users\\yussy\\.codex\\worktrees\\x-realtime-choice-20261014\\comebacktwitterembed\\scripts\\test\\automation-flow-permanent-failure-sql.test.js:19:22)\n      at TestContext.<anonymous> (C:\\Users\\yussy\\.codex\\worktrees\\x-realtime-choice-20261014\\comebacktwitterembed\\scripts\\test\\automation-flow-permanent-failure-sql.test.js:209:133) {\n    errno: -4039,\n    code: 'ETIMEDOUT',\n    syscall: 'connect',\n    address: '127.0.0.1',\n    port: 33621,\n    fatal: true\n  }\n}\n\t\t"
+    },
+    {
+      "test": "all/defer",
+      "file": "C:\\Users\\yussy\\.codex\\worktrees\\x-realtime-choice-20261014\\comebacktwitterembed\\scripts\\test\\automation-graph-store-sql.test.js",
+      "time": "0.313195",
+      "type": "testCodeFailure",
+      "message": "connect ETIMEDOUT 127.0.0.1:33621",
+      "detail": "\nError [ERR_TEST_FAILURE]: connect ETIMEDOUT 127.0.0.1:33621\n    at async TestContext.<anonymous> (C:\\Users\\yussy\\.codex\\worktrees\\x-realtime-choice-20261014\\comebacktwitterembed\\scripts\\test\\automation-graph-store-sql.test.js:204:82) {\n  code: 'ERR_TEST_FAILURE',\n  failureType: 'testCodeFailure',\n  cause: Error: connect ETIMEDOUT 127.0.0.1:33621\n      at TCPConnectWrap.afterConnect [as oncomplete] (node:net:2021:16)\n      --------------------\n      at Protocol._enqueue (C:\\Users\\yussy\\Documents\\comebacktwitterembed\\node_modules\\mysql\\lib\\protocol\\Protocol.js:144:48)\n      at Protocol.handshake (C:\\Users\\yussy\\Documents\\comebacktwitterembed\\node_modules\\mysql\\lib\\protocol\\Protocol.js:51:23)\n      at PoolConnection.connect (C:\\Users\\yussy\\Documents\\comebacktwitterembed\\node_modules\\mysql\\lib\\Connection.js:116:18)\n      at Pool.getConnection (C:\\Users\\yussy\\Documents\\comebacktwitterembed\\node_modules\\mysql\\lib\\Pool.js:48:16)\n      at C:\\Users\\yussy\\.codex\\worktrees\\x-realtime-choice-20261014\\comebacktwitterembed\\scripts\\lib\\automation-test-db.js:11:65\n      at new Promise (<anonymous>)\n      at acquire (C:\\Users\\yussy\\.codex\\worktrees\\x-realtime-choice-20261014\\comebacktwitterembed\\scripts\\lib\\automation-test-db.js:11:27)\n      at Object.queryDatabase (C:\\Users\\yussy\\.codex\\worktrees\\x-realtime-choice-20261014\\comebacktwitterembed\\scripts\\lib\\automation-test-db.js:20:29)\n      at createTestDatabase (C:\\Users\\yussy\\.codex\\worktrees\\x-realtime-choice-20261014\\comebacktwitterembed\\scripts\\lib\\automation-test-db.js:38:118)\n      at process.processTicksAndRejections (node:internal/process/task_queues:104:5) {\n    errno: -4039,\n    code: 'ETIMEDOUT',\n    syscall: 'connect',\n    address: '127.0.0.1',\n    port: 33621,\n    fatal: true\n  }\n}\n\t\t\t"
+    },
+    {
+      "test": "legacy aggregate members follow terminal parents without moving scheduled pending jobs",
+      "file": "C:\\Users\\yussy\\.codex\\worktrees\\x-realtime-choice-20261014\\comebacktwitterembed\\scripts\\test\\automation-sql.test.js",
+      "time": "0.013465",
+      "type": "testCodeFailure",
+      "message": "The expression evaluated to a falsy value:\n\n  assert(members.every(member => member.state === 'failed'))",
+      "detail": "\nError [ERR_TEST_FAILURE]: The expression evaluated to a falsy value:\n\n  assert(members.every(member => member.state === 'failed'))\n\n    at async TestContext.<anonymous> (C:\\Users\\yussy\\.codex\\worktrees\\x-realtime-choice-20261014\\comebacktwitterembed\\scripts\\test\\automation-sql.test.js:197:9) {\n  code: 'ERR_TEST_FAILURE',\n  failureType: 'testCodeFailure',\n  cause: AssertionError [ERR_ASSERTION]: The expression evaluated to a falsy value:\n  \n    assert(members.every(member => member.state === 'failed'))\n  \n      at TestContext.<anonymous> (C:\\Users\\yussy\\.codex\\worktrees\\x-realtime-choice-20261014\\comebacktwitterembed\\scripts\\test\\automation-sql.test.js:207:41)\n      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)\n      at async Test.run (node:internal/test_runner/test:1409:7)\n      at async TestContext.<anonymous> (C:\\Users\\yussy\\.codex\\worktrees\\x-realtime-choice-20261014\\comebacktwitterembed\\scripts\\test\\automation-sql.test.js:197:9)\n      at async Test.run (node:internal/test_runner/test:1409:7)\n      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:387:3) {\n    generatedMessage: true,\n    code: 'ERR_ASSERTION',\n    actual: false,\n    expected: true,\n    operator: '==',\n    diff: 'simple'\n  }\n}\n\t\t\t"
+    }
+  ]
+}

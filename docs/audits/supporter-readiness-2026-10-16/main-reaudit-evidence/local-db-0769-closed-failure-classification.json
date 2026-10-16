@@ -1,0 +1,122 @@
+{
+  "generatedAt": "2026-10-16T09:28:16.492Z",
+  "reviewer": "reaudit_independent_review",
+  "result": "THREE-NATIVE-PRE-SQL-CONNECT-FAILURES-CONFIRMED-ONE-GENUINE-PRODUCT-ASSERTION-SEPARATE",
+  "sourceRevision": "07696234f4a8b57c123b7748b36366d7a7f1e3e2",
+  "fullRun": {
+    "session": 47219,
+    "exitCode": 1,
+    "closed": true,
+    "accepted": false,
+    "tests": 2126,
+    "pass": 2120,
+    "fail": 6,
+    "cancelled": 0,
+    "skipped": 0,
+    "todo": 0,
+    "duration_ms": 1311051.6327,
+    "actualLeafFailures": 4,
+    "parentAggregateFailures": 2
+  },
+  "artifacts": [
+    {
+      "file": "C:\\Users\\yussy\\AppData\\Local\\Temp\\cbte-main-reaudit10-v8-source-rev2-20261016\\main-reaudit-0769623-frozen-184-closed-diagnostic.json",
+      "sha256": "a293f4e5c88a1054335bd5dd8de7cac875c499715b7146fca5e768a43b0554a8"
+    },
+    {
+      "file": "C:\\Users\\yussy\\AppData\\Local\\Temp\\cbte-main-reaudit10-v8-source-rev2-20261016\\main-reaudit-0769623-frozen-184-tests.xml",
+      "sha256": "001ab1646173baf38f682bca14117096aad60ac9b739396dbee3bb820ed57818"
+    },
+    {
+      "file": "C:\\Users\\yussy\\AppData\\Local\\Temp\\main-reaudit-local-db-native-connect-diagnosis.json",
+      "sha256": "a52acdffa57e72642fa2391a43235cce7769d4ab3636289c2cbeb292e64720d5"
+    }
+  ],
+  "confirmedNativeFailures": [
+    {
+      "test": "S7 valid 5000-member dictionary trace failure becomes terminal after its output transaction rolls back",
+      "file": "C:\\Users\\yussy\\.codex\\worktrees\\x-realtime-choice-20261014\\comebacktwitterembed\\scripts\\test\\automation-flow-permanent-failure-sql.test.js",
+      "durationMs": 366.13,
+      "code": "ETIMEDOUT",
+      "errno": -4039,
+      "syscall": "connect",
+      "address": "127.0.0.1",
+      "port": 33621,
+      "fatal": true,
+      "phase": "pool acquisition during schema DDL construction before application fixture/assertions"
+    },
+    {
+      "test": "S7 merge output savepoint removes partial unit writes before recording a bounded group failure",
+      "file": "C:\\Users\\yussy\\.codex\\worktrees\\x-realtime-choice-20261014\\comebacktwitterembed\\scripts\\test\\automation-flow-permanent-failure-sql.test.js",
+      "durationMs": 305.133,
+      "code": "ETIMEDOUT",
+      "errno": -4039,
+      "syscall": "connect",
+      "address": "127.0.0.1",
+      "port": 33621,
+      "fatal": true,
+      "phase": "initial admin pool acquisition before database creation"
+    },
+    {
+      "test": "all/defer",
+      "file": "C:\\Users\\yussy\\.codex\\worktrees\\x-realtime-choice-20261014\\comebacktwitterembed\\scripts\\test\\automation-graph-store-sql.test.js",
+      "durationMs": 313.195,
+      "code": "ETIMEDOUT",
+      "errno": -4039,
+      "syscall": "connect",
+      "address": "127.0.0.1",
+      "port": 33621,
+      "fatal": true,
+      "phase": "pool acquisition during schema DDL construction before application fixture/assertions"
+    }
+  ],
+  "classification": {
+    "sameObservedBoundaryAsPrior321ms": true,
+    "sameSpecificWindowsOsCauseProven": false,
+    "rootCauseBoundary": "Windows native TCP connect completion before mysql handshake/SQL, not the application assertions",
+    "specificWindowsCause": "Unknown: ERROR_SEM_TIMEOUT121 and WSAETIMEDOUT10060 map to the same libuv errno; no packet/ETW/native-raw-status evidence was captured at the failure instants",
+    "not250msFamilyTimer": "Confirmed from actual builtin literal-IP fastpath",
+    "notMysql10SecondTimer": "Confirmed from native afterConnect stack/errno/address rather than driver timer",
+    "notEvidenceOf": [
+      "Node timer bug",
+      "server backlog exhaustion",
+      "ephemeral port exhaustion",
+      "WFP/AV filtering",
+      "SQL/migration assertion failure"
+    ]
+  },
+  "genuineProductFailure": {
+    "test": "legacy aggregate members follow terminal parents without moving scheduled pending jobs",
+    "file": "C:\\Users\\yussy\\.codex\\worktrees\\x-realtime-choice-20261014\\comebacktwitterembed\\scripts\\test\\automation-sql.test.js",
+    "message": "The expression evaluated to a falsy value:\n\n  assert(members.every(member => member.state === 'failed'))",
+    "leafApplicationAssertion": true,
+    "transportFailure": false,
+    "recovery": "Must fix parent-to-aggregate-child housekeeping and preserve the old assertion, not retry the test or reclassify as TCP instability"
+  },
+  "plannedIndependentProductReview": [
+    "Root roster limited100, all descendants/children processed in stable primary-key pages100 in one transaction; root budget is not a child truncation limit",
+    "Acquire all relevant workflow/shared and namespace fences before job locks using durable SQL lineage, never parsed foreign JSON IDs; re-read current parent and children after waiting for barriers",
+    "Propagate terminal parent outcomes through complete eligible aggregated child closure and every affected v2 run projection in the same transaction",
+    "Preserve already-terminal children/ACK/unknown/partial state and independent future pending jobs and due times",
+    "Audit/projection/transaction failure must roll back every page of root+children+run summaries; do not partially release leases or receipts",
+    "Mixed v1 parent and v2 child lineage must retain complete locks/projections without changing execution1 semantics or introducing automatic retries",
+    "Use deterministic opposite-order live SQL barrier controls after author focus completes; no competing SQL now",
+    "Test-helper admission retry must match verified native new-connect only, bounded attempts/diagnostics; never retry SQL/BEGIN/COMMIT/assertions"
+  ],
+  "acceptanceBoundary": {
+    "currentCoreUnfrozen": true,
+    "newAll10SourceApprovalPending": true,
+    "prior076ReviewHistoricalOnly": true,
+    "wholeRun2120PassIsNotAnAcceptance": true,
+    "mainOrProductionApproved": false
+  },
+  "operations": {
+    "sqlConnectionsOpened": 0,
+    "testsRun": 0,
+    "coreWrites": 0,
+    "restartsOrReconfiguration": false,
+    "unknownSchemaCleanup": false,
+    "readClosedXmlOnly": true,
+    "reportFilesOnly": true
+  }
+}

@@ -1,0 +1,2 @@
+{"status": "v8-upload-readback-verified", "manifestSha256": "89c2f688cad7232757a6172e0b4f3d196de276033155e8c225db0a5a3de9f8a8", "files": 24, "servicesChanged": false, "databaseWritten": false}
+{"phase": "isolated-final-build-and-stage-launched", "pid": 339643, "revision": "cf22327dc39964194fbc2c48d8002366cfb22613", "liveServicesChanged": false}

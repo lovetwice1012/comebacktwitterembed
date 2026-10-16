@@ -1,0 +1,79 @@
+{
+  "status": "vendor-rule-defect-deterministically-reproduced-no-repository-changes",
+  "sourceCommit": "07696234f4a8b57c123b7748b36366d7a7f1e3e2",
+  "rootProvidedRemoteEvidence": {
+    "image": "codacy/codacy-eslint:9.18.12",
+    "checkRun": 116897451184,
+    "screenshot": "codacy-076-plugin-crash.jpg",
+    "sha256": "ea86f2b3a5dae7d1729e08d133d4d847d885fe2d07a872cbc9866d62ab4af0e1",
+    "observedBy": "root browser UI",
+    "timeUtc": "2026-10-16T09:08:16Z"
+  },
+  "cause": "The vendor rule assumes TryStatement.handler is non-null. Legal async try/finally has no catch and handler=null; reading handler.type throws before the analyzer can report results.",
+  "exactSignature": {
+    "name": "TypeError",
+    "message": "Cannot read properties of null (reading 'type')",
+    "helper": "isTryCatchStatement:41:21",
+    "listener": "FunctionDeclaration:113:19"
+  },
+  "engineLockDependencies": {
+    "eslint": {
+      "version": "8.57.0",
+      "integrity": "sha512-dZ6+mexnaTIbSBZWgou51U6OmzIhYM2VcNdtiTtI7qPNZm35Akpr0f6vtw3w1Kmn5PYo+tZVfh13WrhpS6oLqQ=="
+    },
+    "@typescript-eslint/parser": {
+      "version": "7.18.0",
+      "integrity": "sha512-4Z+L8I2OqhZV8qA132M4wNL30ypZGYOQVBfMgxDH/K5UX0PNqTu1c6za9ST5r9+tavvHiTWmBnKzpCJ/GlVFtg=="
+    },
+    "eslint-plugin-security-node": {
+      "version": "1.1.4",
+      "integrity": "sha512-8+agTMb2glNbP1zFhqo/Ixwtz16Hn0TvJW5KgpoHkAzGjDUhQf9iT+D6OgbhvZCMWRKMjc+5FbJ2Lh0UEUz7fQ=="
+    }
+  },
+  "currentUpstream": {
+    "latest": "1.1.4",
+    "publishedAt": "2024-01-03T17:46:05.422Z",
+    "fixedPublishedVersionVerified": false,
+    "pr63Fixes": "Null catch-binding param/name, not absent catch-handler/type"
+  },
+  "reproduction": {
+    "officialNpmIntegrityVerified": true,
+    "ruleSha256": "d7edbaed8f6c13a222f1402ffbe9ca926ec9d359106ef0e02b96955bed7deeb2",
+    "affectedFiles": 5,
+    "sameFiveCrashes": true,
+    "allBlobsIdenticalAcross076_2a_c630": true,
+    "guardedVendorOnlyCompletedFiles": 5,
+    "targetRuleRemainsEnabledAsError": true,
+    "existingProjectRuleSettingsChanged": 0,
+    "surfaceDiagnostics": 3,
+    "diagnosticsAreCleanSecurityPass": false,
+    "noRulesDisabledOrExtraSourceExcluded": true,
+    "scopeNote": "The benchmark content is linted with a virtual src filename to apply the same root rules despite the repository normal scripts ignore. No file is written there."
+  },
+  "sources": [
+    "https://raw.githubusercontent.com/codacy/codacy-eslint/9.18.12/package-lock.json",
+    "https://registry.npmjs.org/eslint-plugin-security-node",
+    "https://registry.npmjs.org/eslint-plugin-security-node/-/eslint-plugin-security-node-1.1.4.tgz",
+    "https://github.com/gkouziik/eslint-plugin-security-node/blob/master/lib/rules/detect-unhandled-async-errors.js",
+    "https://github.com/gkouziik/eslint-plugin-security-node/pull/63",
+    "https://docs.codacy.com/repositories-configure/local-analysis/running-eslint/"
+  ],
+  "recommendedNextStep": "Codacy/vendor maintainers must ship the missing null-handler guard while preserving the rule and all enabled patterns. A same-image rerun is not expected to fix this deterministic crash. No verified newer npm plugin fixes it; do not downgrade security policy or rewrite product cleanup code around the analyzer.",
+  "equivalenceLimits": [
+    "Local ESLint/parser versions differ from complete remote Docker image; all versions recorded",
+    "Remote per-repository enabled pattern set was not downloaded and no Codacy OAuth or configuration changed",
+    "The exact vendor rule plus every existing local project rule was exercised; three unchanged-source rule diagnostics remain for separate interpretation",
+    "Code presence at older commits is proven by blob equality, but historical remote CI failure/pass was not fetched"
+  ],
+  "artifacts": {
+    "inputs": "vendor-inputs.json",
+    "rawLocalProof": "local-vendor-recheck.json",
+    "rawProofSha256": "8f62cd78364db32827994250daa278f33bc837f30feba7c86f49639c71e727ae",
+    "guardedVendorFile": "guarded-vendor-rule.cjs",
+    "guardedVendorFileIsInstalled": false
+  },
+  "repositoryWrites": 0,
+  "packageInstalls": 0,
+  "databaseQueries": 0,
+  "externalWrites": 0
+}

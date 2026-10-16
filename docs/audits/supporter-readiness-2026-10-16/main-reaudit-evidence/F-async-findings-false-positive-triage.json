@@ -1,0 +1,343 @@
+{
+  "sourceRevision": "e88e74412905987352af0ae7cec665963fc737d0",
+  "previousRevision": "d2e792d30a44723e603869b27970b05597d51a9d",
+  "exactCurrentCheck": 116927587463,
+  "officialRule": {
+    "package": "eslint-plugin-security-node",
+    "version": "1.1.4",
+    "ruleId": "security-node/detect-unhandled-async-errors",
+    "sha256": "d7edbaed8f6c13a222f1402ffbe9ca926ec9d359106ef0e02b96955bed7deeb2",
+    "originalUnmodified": true,
+    "eslintVersion": "8.57.0",
+    "source": "https://github.com/gkouziik/eslint-plugin-security-node/blob/master/lib/rules/detect-unhandled-async-errors.js"
+  },
+  "classification": "Both findings are false positives for awaited transaction-internal helpers; no rejection is swallowed or detached.",
+  "currentDiagnostics": [
+    {
+      "ruleId": "security-node/detect-unhandled-async-errors",
+      "line": 210,
+      "endLine": 222,
+      "message": "Unhandled errors detected in asynchronous function",
+      "fatal": false,
+      "function": "lockFlowWorkflows"
+    },
+    {
+      "ruleId": "security-node/detect-unhandled-async-errors",
+      "line": 282,
+      "endLine": 283,
+      "message": "Unhandled errors detected in asynchronous function",
+      "fatal": false,
+      "function": "refreshWorkflowFlowHistory"
+    }
+  ],
+  "previousDiagnostics": [
+    {
+      "ruleId": "security-node/detect-unhandled-async-errors",
+      "line": 95,
+      "endLine": 104,
+      "message": "Unhandled errors detected in asynchronous function",
+      "fatal": false,
+      "function": "lockFlowWorkflows"
+    },
+    {
+      "ruleId": "security-node/detect-unhandled-async-errors",
+      "line": 131,
+      "endLine": 131,
+      "message": "Unhandled errors detected in asynchronous function",
+      "fatal": false,
+      "function": "refreshWorkflowFlowHistory"
+    }
+  ],
+  "syntaxControls": [
+    {
+      "name": "await-at-top-level-without-catch",
+      "source": "async function step(action) { await action(); }",
+      "expected": 0,
+      "diagnostics": []
+    },
+    {
+      "name": "same-awaited-call-inside-loop-without-catch",
+      "source": "async function step(action) { for (const item of [1]) await action(); }",
+      "expected": 1,
+      "diagnostics": [
+        {
+          "ruleId": "security-node/detect-unhandled-async-errors",
+          "line": 1,
+          "endLine": 1,
+          "message": "Unhandled errors detected in asynchronous function",
+          "fatal": false
+        }
+      ]
+    },
+    {
+      "name": "returned-rejection-without-catch",
+      "source": "async function step(action) { return action(); }",
+      "expected": 0,
+      "diagnostics": []
+    },
+    {
+      "name": "local-rethrow-without-recovery",
+      "source": "async function step(action) { try { for (const item of [1]) await action(); } catch (error) { throw error; } }",
+      "expected": 0,
+      "diagnostics": []
+    }
+  ],
+  "driverControls": [
+    {
+      "kind": "lock",
+      "failureAtBodyStatement": 0,
+      "rollbackFails": false,
+      "originalErrorIdentityPreserved": false,
+      "statements": [
+        "START TRANSACTION",
+        "WORKFLOW MUTEX STATEMENT",
+        "WORKFLOW MUTEX STATEMENT",
+        "COMMIT"
+      ],
+      "counts": {
+        "body": 2,
+        "release": 1,
+        "destroy": 0,
+        "onError": 0
+      },
+      "usesActualProductionPoolWrapper": true,
+      "driverDoubleOnly": true,
+      "realDatabaseConnections": 0
+    },
+    {
+      "kind": "lock",
+      "failureAtBodyStatement": 1,
+      "rollbackFails": false,
+      "originalErrorIdentityPreserved": true,
+      "statements": [
+        "START TRANSACTION",
+        "WORKFLOW MUTEX STATEMENT",
+        "ROLLBACK"
+      ],
+      "counts": {
+        "body": 1,
+        "release": 1,
+        "destroy": 0,
+        "onError": 1
+      },
+      "usesActualProductionPoolWrapper": true,
+      "driverDoubleOnly": true,
+      "realDatabaseConnections": 0
+    },
+    {
+      "kind": "lock",
+      "failureAtBodyStatement": 2,
+      "rollbackFails": false,
+      "originalErrorIdentityPreserved": true,
+      "statements": [
+        "START TRANSACTION",
+        "WORKFLOW MUTEX STATEMENT",
+        "WORKFLOW MUTEX STATEMENT",
+        "ROLLBACK"
+      ],
+      "counts": {
+        "body": 2,
+        "release": 1,
+        "destroy": 0,
+        "onError": 1
+      },
+      "usesActualProductionPoolWrapper": true,
+      "driverDoubleOnly": true,
+      "realDatabaseConnections": 0
+    },
+    {
+      "kind": "lock",
+      "failureAtBodyStatement": 2,
+      "rollbackFails": true,
+      "originalErrorIdentityPreserved": true,
+      "statements": [
+        "START TRANSACTION",
+        "WORKFLOW MUTEX STATEMENT",
+        "WORKFLOW MUTEX STATEMENT",
+        "ROLLBACK"
+      ],
+      "counts": {
+        "body": 2,
+        "release": 0,
+        "destroy": 1,
+        "onError": 2
+      },
+      "usesActualProductionPoolWrapper": true,
+      "driverDoubleOnly": true,
+      "realDatabaseConnections": 0
+    },
+    {
+      "kind": "refresh",
+      "failureAtBodyStatement": 0,
+      "rollbackFails": false,
+      "originalErrorIdentityPreserved": false,
+      "statements": [
+        "START TRANSACTION",
+        "RUN HISTORY CURRENT READ",
+        "RUN HISTORY CURRENT READ",
+        "COMMIT"
+      ],
+      "counts": {
+        "body": 2,
+        "release": 1,
+        "destroy": 0,
+        "onError": 0
+      },
+      "usesActualProductionPoolWrapper": true,
+      "driverDoubleOnly": true,
+      "realDatabaseConnections": 0
+    },
+    {
+      "kind": "refresh",
+      "failureAtBodyStatement": 1,
+      "rollbackFails": false,
+      "originalErrorIdentityPreserved": true,
+      "statements": [
+        "START TRANSACTION",
+        "RUN HISTORY CURRENT READ",
+        "ROLLBACK"
+      ],
+      "counts": {
+        "body": 1,
+        "release": 1,
+        "destroy": 0,
+        "onError": 1
+      },
+      "usesActualProductionPoolWrapper": true,
+      "driverDoubleOnly": true,
+      "realDatabaseConnections": 0
+    },
+    {
+      "kind": "refresh",
+      "failureAtBodyStatement": 2,
+      "rollbackFails": false,
+      "originalErrorIdentityPreserved": true,
+      "statements": [
+        "START TRANSACTION",
+        "RUN HISTORY CURRENT READ",
+        "RUN HISTORY CURRENT READ",
+        "ROLLBACK"
+      ],
+      "counts": {
+        "body": 2,
+        "release": 1,
+        "destroy": 0,
+        "onError": 1
+      },
+      "usesActualProductionPoolWrapper": true,
+      "driverDoubleOnly": true,
+      "realDatabaseConnections": 0
+    },
+    {
+      "kind": "refresh",
+      "failureAtBodyStatement": 2,
+      "rollbackFails": true,
+      "originalErrorIdentityPreserved": true,
+      "statements": [
+        "START TRANSACTION",
+        "RUN HISTORY CURRENT READ",
+        "RUN HISTORY CURRENT READ",
+        "ROLLBACK"
+      ],
+      "counts": {
+        "body": 2,
+        "release": 0,
+        "destroy": 1,
+        "onError": 2
+      },
+      "usesActualProductionPoolWrapper": true,
+      "driverDoubleOnly": true,
+      "realDatabaseConnections": 0
+    }
+  ],
+  "unhandledRejections": 0,
+  "mechanism": "The vendor rule counts a direct await call or return as an error handler, but does not inspect await calls within ForStatement/ForOfStatement bodies or their caller transaction boundaries.",
+  "boundary": {
+    "actualProductionWrapper": "src/databasePool.js:32-53 awaits work, rolls back on rejection, rethrows the original error and releases/destroys the connection.",
+    "databaseDelegation": "src/db.js:95-99 returns withTransaction using AsyncLocalStorage; nested work returns its promise.",
+    "localCatchRecommendation": "Do not swallow these failures. They must reach the transaction owner so its changes roll back.",
+    "catchAndRethrowRequired": false,
+    "ruleDisableRequired": false
+  },
+  "callerInventory": {
+    "lockFlowWorkflows": [
+      "flow-history.lockJobFlowHistory awaits -> queue/history transaction writers",
+      "flow-history.lockWorkflowFlowHistory awaits -> workflow deletion/package revoke transaction writers",
+      "flow-projector.projectOne awaits inside returned withDatabaseTransaction",
+      "graph-store.locked awaits inside withDatabaseTransaction with bounded ER_LOCK_DEADLOCK retry, rethrow otherwise",
+      "graph-store.initializeQuery awaits; initialize uses locked, initializeInTransaction is awaited by queue.route transaction",
+      "queue.route awaits inside returned withDatabaseTransaction",
+      "service.createWorkflow source copy awaits inside returned withDatabaseTransaction"
+    ],
+    "refreshWorkflowFlowHistory": [
+      "workflow-deletion.removeWorkflow callback awaits -> withLockedWorkflowTargets returns withDatabaseTransaction",
+      "marketplace-core.setStatus revoke callback awaits inside returned withDatabaseTransaction"
+    ],
+    "topLevelBoundaries": [
+      "runtime.js:210-218 awaits flow/runner ticks and catches failures after transaction rollback",
+      "dashboard/app/api/automation/[...path]/route.ts:58-62 awaits dispatch and catches API failures",
+      "api.js:203,206,257 awaits create/delete/status operations"
+    ]
+  },
+  "existingRealSqlEvidenceNotRerun": [
+    "automation-flow-state-reconciliation-sql.test.js:169 audit/projection rollback",
+    "automation-flow-state-reconciliation-sql.test.js:263 delete/revoke audit rollback controls",
+    "automation-flow-state-reconciliation-sql.test.js:393 later child page rollback",
+    "automation-flow-history-read-sql.test.js:98 projection rollback and restart"
+  ],
+  "sourceHashes": [
+    {
+      "file": "src/databasePool.js",
+      "sha256": "48b08d6da2f8bae5fb854f691e7f26229000fcd3d59d3c3dc2e632a1d381c2e5"
+    },
+    {
+      "file": "src/db.js",
+      "sha256": "9c0bd04ccce3a5c50bd817f49693ab6cc65bf31e5bfb5de90d88b208c04c9fad"
+    },
+    {
+      "file": "src/automation/flow-history.js",
+      "sha256": "aa1580814a0289b029a17a1805485391026a0b68ed8418a6250e1c637b95f6f4"
+    },
+    {
+      "file": "src/automation/graph-store.js",
+      "sha256": "637914a3b5b9a5ea31cce4a8cfec940563a5d9a105de065736e28105d7c24853"
+    },
+    {
+      "file": "src/automation/flow-projector.js",
+      "sha256": "4f8c63a56089c2984e54db52e624d52675243a5733dd12c2faf0797e518137a9"
+    },
+    {
+      "file": "src/automation/queue.js",
+      "sha256": "1a6106b6493d3b1d9652dfd8289905c689ffd2d10cf6df30926e45cacd6a625c"
+    },
+    {
+      "file": "src/automation/service.js",
+      "sha256": "76efee6def6fc3bcc073d1dc9fda49592c415f763ea1b184612a8d1a22f9d1e6"
+    },
+    {
+      "file": "src/automation/marketplace-core.js",
+      "sha256": "c468bba9ebac0a2ded2be2ae53d681390e71c8cf0bf7adc2329caf6c1cdd932d"
+    },
+    {
+      "file": "src/automation/workflow-deletion.js",
+      "sha256": "9e0195e67f026e662dc9c4b3f102d65496d320a61e84acc279e5dcf452ff7c15"
+    },
+    {
+      "file": "src/automation/runtime.js",
+      "sha256": "d58e3ab9cebca8f69c952383a06caae2646673e7e6260a317b9f4a07fc9d9c9b"
+    },
+    {
+      "file": "dashboard/app/api/automation/[...path]/route.ts",
+      "sha256": "af87f8aa2355095cc5002cc0d7132cf74e5e2efc3b65651476a9c2ca5b378f16"
+    }
+  ],
+  "limitations": [
+    "No real SQL executed in this read-only triage. Driver controls use actual production wrapper and actual helpers with callback driver doubles.",
+    "No remote Codacy profile change or false-positive dismissal has been performed.",
+    "The older vendor try/finally null-handler crash is a separate analyzer failure, not the explanation for these two successfully emitted findings."
+  ],
+  "repositoryEdits": 0,
+  "gitWrites": 0,
+  "sqlConnections": 0,
+  "production": 0
+}

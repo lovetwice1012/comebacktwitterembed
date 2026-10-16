@@ -1,0 +1,24 @@
+{
+  "schemas": [
+    "cbte_automation_test_f78812bf8192092b9e7a",
+    "cbte_automation_test_3b4ad2a772156aabcdd2"
+  ],
+  "observations": [
+    {
+      "winner": "edit",
+      "expected": "cancelled",
+      "parentAndAll3Children": "cancelled",
+      "graphRunState": "cancelled",
+      "concurrentEditCode": null,
+      "futureDuePreserved": true
+    },
+    {
+      "winner": "claim",
+      "expected": "failed",
+      "parentAndAll3Children": "failed",
+      "graphRunState": "failed",
+      "concurrentEditCode": "REVISION_CONFLICT",
+      "futureDuePreserved": true
+    }
+  ]
+}

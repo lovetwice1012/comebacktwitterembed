@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<testsuites>
+	<testcase name="real branched runner and all terminal state permutations produce deterministic complete/partial/unknown summaries" time="4.236892" classname="test" file="C:\Users\yussy\.codex\worktrees\x-realtime-choice-20261014\comebacktwitterembed\scripts\test\automation-flow-state-reconciliation-sql.test.js"/>
+	<testcase name="restart lease recovery preserves unknown policy even after an ACK and never reclaims it for delivery" time="1.979356" classname="test" file="C:\Users\yussy\.codex\worktrees\x-realtime-choice-20261014\comebacktwitterembed\scripts\test\automation-flow-state-reconciliation-sql.test.js"/>
+	<testcase name="cancel, retry, reschedule and legacy held cleanup atomically update the immediately readable run history" time="2.141783" classname="test" file="C:\Users\yussy\.codex\worktrees\x-realtime-choice-20261014\comebacktwitterembed\scripts\test\automation-flow-state-reconciliation-sql.test.js"/>
+	<testcase name="damaged pre-receipt legacy snapshots fail their attested anchor while new multi-member jobs retain every exact lineage" time="4.028900" classname="test" file="C:\Users\yussy\.codex\worktrees\x-realtime-choice-20261014\comebacktwitterembed\scripts\test\automation-flow-state-reconciliation-sql.test.js"/>
+	<testcase name="audit and projection failures roll back both job and run changes, including restart cleanup" time="2.032104" classname="test" file="C:\Users\yussy\.codex\worktrees\x-realtime-choice-20261014\comebacktwitterembed\scripts\test\automation-flow-state-reconciliation-sql.test.js"/>
+	<testcase name="simultaneous sibling transitions serialize before current projection reads and preserve both outcomes" time="2.061884" classname="test" file="C:\Users\yussy\.codex\worktrees\x-realtime-choice-20261014\comebacktwitterembed\scripts\test\automation-flow-state-reconciliation-sql.test.js"/>
+	<testcase name="unattested foreign IDs in a syntactically valid damaged plan cannot lock or reproject another namespace" time="2.101637" classname="test" file="C:\Users\yussy\.codex\worktrees\x-realtime-choice-20261014\comebacktwitterembed\scripts\test\automation-flow-state-reconciliation-sql.test.js"/>
+	<testcase name="housekeeping bounds each transaction to 100 jobs and later claims finish the remaining exact runs" time="10.787116" classname="test" file="C:\Users\yussy\.codex\worktrees\x-realtime-choice-20261014\comebacktwitterembed\scripts\test\automation-flow-state-reconciliation-sql.test.js"/>
+	<testcase name="legacy aggregated children retain their own flow histories through parent cancellation, failure and recovery" time="2.395423" classname="test" file="C:\Users\yussy\.codex\worktrees\x-realtime-choice-20261014\comebacktwitterembed\scripts\test\automation-flow-state-reconciliation-sql.test.js"/>
+	<testcase name="one pruned occurrence does not erase a surviving occurrence of the same run after snapshot corruption" time="2.118934" classname="test" file="C:\Users\yussy\.codex\worktrees\x-realtime-choice-20261014\comebacktwitterembed\scripts\test\automation-flow-state-reconciliation-sql.test.js"/>
+	<testcase name="empty-roster delete fences both branch projectors before mutation and keeps its stop after commit" time="2.255082" classname="test" file="C:\Users\yussy\.codex\worktrees\x-realtime-choice-20261014\comebacktwitterembed\scripts\test\automation-flow-state-reconciliation-sql.test.js"/>
+	<testcase name="empty-roster delete fences both branch projectors before mutation and releases intact admission on rollback" time="2.103934" classname="test" file="C:\Users\yussy\.codex\worktrees\x-realtime-choice-20261014\comebacktwitterembed\scripts\test\automation-flow-state-reconciliation-sql.test.js"/>
+	<testcase name="empty-roster revoke fences both branch projectors before mutation and keeps its stop after commit" time="2.065222" classname="test" file="C:\Users\yussy\.codex\worktrees\x-realtime-choice-20261014\comebacktwitterembed\scripts\test\automation-flow-state-reconciliation-sql.test.js"/>
+	<testcase name="empty-roster revoke fences both branch projectors before mutation and releases intact admission on rollback" time="2.036857" classname="test" file="C:\Users\yussy\.codex\worktrees\x-realtime-choice-20261014\comebacktwitterembed\scripts\test\automation-flow-state-reconciliation-sql.test.js"/>
+	<testcase name="revoke revalidates an installation copy committed while waiting for its workflow fence and retries with the complete roster" time="1.784996" classname="test" file="C:\Users\yussy\.codex\worktrees\x-realtime-choice-20261014\comebacktwitterembed\scripts\test\automation-flow-state-reconciliation-sql.test.js"/>
+	<testcase name="package stop namespace inventory preserves both historical workflows without locking mutable monitor revocation rows first" time="2.167315" classname="test" file="C:\Users\yussy\.codex\worktrees\x-realtime-choice-20261014\comebacktwitterembed\scripts\test\automation-flow-state-reconciliation-sql.test.js"/>
+	<!-- ["fulfilled","fulfilled"] -->
+	<!-- tests 16 -->
+	<!-- suites 0 -->
+	<!-- pass 16 -->
+	<!-- fail 0 -->
+	<!-- cancelled 0 -->
+	<!-- skipped 0 -->
+	<!-- todo 0 -->
+	<!-- duration_ms 46430.901 -->
+</testsuites>

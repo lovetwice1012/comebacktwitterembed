@@ -1,0 +1,163 @@
+{
+  "ids": [
+    "MAIN-FRESH-4",
+    "MAIN-FRESH-5"
+  ],
+  "alias": "MAIN-RUNTIME-MIXED",
+  "base": "2a000c89a293e2ee71ef0c579a63def2ff12cbdb",
+  "status": "implemented-focused-validated-awaiting-independent-root-integration",
+  "generatedAtUtc": "2026-10-16T08:13:26.4367023Z",
+  "files": [
+    {
+      "file": "src/automation/flow-history.js",
+      "sha256": "6c7e0bfa2770bea77ec309079f545d48b5481b1fa59c1d3206b2194e444da8a0"
+    },
+    {
+      "file": "src/automation/flow-projector.js",
+      "sha256": "3be159aeaafba090db7c252d7a670ca9612d9942e6bafdd49c7f9b141f5155c8"
+    },
+    {
+      "file": "src/automation/history.js",
+      "sha256": "37ae7b3a4e93b2f3e2451306a70fa81e651c5346f594b99377c5a390ab5a3c57"
+    },
+    {
+      "file": "src/automation/queue.js",
+      "sha256": "3948f61a305cced1e8fec2e68d08f0cd8e63d62b745b1a4b20a41cf5e181df71"
+    },
+    {
+      "file": "src/automation/workflow-deletion.js",
+      "sha256": "705c4a348c7b4328ed6b5333cacdc1e9a304f330b2067a3b240e4aee34f5253c"
+    },
+    {
+      "file": "scripts/test/automation-flow-state-reconciliation-sql.test.js",
+      "sha256": "5ffc9329e922dd84b47f859f84aaed26b73fb07600a41ada20511843d05a90e1"
+    },
+    {
+      "file": "scripts/test/automation-flow-permanent-failure-sql.test.js",
+      "sha256": "8a89d7964a69f5c6e98e7ee7f284523c45ae6e3f5b74a898b5fda1843a4f2ec6"
+    },
+    {
+      "file": "scripts/test/automation-aggregate-member-boundary.test.js",
+      "sha256": "af58b2ce57e1cd50ff54ad16c1ece74dbc75e203a0803d8658b3047613c2af3e"
+    }
+  ],
+  "redWitness": {
+    "directory": "C:/Users/yussy/AppData/Local/Temp/cbte-main-reaudit-runtime-red",
+    "cases": 2,
+    "reproduced": [
+      "sent+failed became sent; ID swaps inverted all mixed terminal summaries",
+      "expired sending/cancel/retry/held left run stale; corrupt plan later projected excluded"
+    ]
+  },
+  "finalFocus": {
+    "exitCode": 0,
+    "tests": 42,
+    "pass": 42,
+    "fail": 0,
+    "cancelled": 0,
+    "skipped": 0,
+    "todo": 0,
+    "durationMs": 179703.2714,
+    "junit": "C:/Users/yussy/AppData/Local/Temp/reaudit-runtime-final-focused.xml",
+    "sha256": "c78f18a98444e6f44d1bef736e3c42b4267692fa8dd1149247a6c8f3385fb907",
+    "log": "C:/Users/yussy/AppData/Local/Temp/reaudit-runtime-final-focused.log",
+    "newCases": 10,
+    "terminalStatePairs": 144,
+    "bounds": [
+      "100 jobs per housekeeping transaction; 105-job two-claim test",
+      "100 job membership PK ranges per query",
+      "500 run IDs per projection batch",
+      "10200/51000/51000 original complete member boundaries preserved"
+    ]
+  },
+  "staticChecks": [
+    "root TypeScript --noEmit passed",
+    "ESLint all 8 owned files --no-ignore passed",
+    "git diff --check passed"
+  ],
+  "writerInventory": [
+    {
+      "file": "src/automation/queue.js",
+      "paths": [
+        "claim held/sending/legacy aggregate cleanup",
+        "claim structurally corrupt plans and aggregated children",
+        "claim leased transition",
+        "refreshFlowJob member pruning",
+        "transition including aggregated children",
+        "beginSend"
+      ],
+      "guarantee": "namespace-first current reads; job and all affected run projection same transaction; sending expiry remains unknown with no replay"
+    },
+    {
+      "file": "src/automation/history.js",
+      "paths": [
+        "cancel",
+        "retry",
+        "reschedule",
+        "parent cancellation children"
+      ],
+      "guarantee": "same transaction as CAS, job update and audit"
+    },
+    {
+      "file": "src/automation/workflow-deletion.js",
+      "paths": [
+        "workflow revoke and job cancellation"
+      ],
+      "guarantee": "existing revocation policy plus immediate projection in same transaction"
+    },
+    {
+      "file": "src/automation/marketplace-core.js",
+      "paths": [
+        "package safety revoke"
+      ],
+      "owner": "reaudit_data_fixes",
+      "guarantee": "namespace lock before workflow/job mutation; same transaction job exclusion, all lineage projection and audit"
+    },
+    {
+      "file": "src/automation/monitors.js",
+      "paths": [
+        "native cancelPending"
+      ],
+      "guarantee": "direct job mutation explicitly execution_version=1; execution_version=2 uses existing membership revocation/needs_sync"
+    },
+    {
+      "file": "src/automation/queue.js",
+      "paths": [
+        "legacy route aggregate supersession",
+        "acknowledgeStep",
+        "renewLease"
+      ],
+      "guarantee": "route writes execution_version=1 only; ACK/renew change metadata without changing job state; existing uncertainty policy maintained"
+    },
+    {
+      "file": "src/automation/runtime.js",
+      "paths": [
+        "attempt counter"
+      ],
+      "guarantee": "metadata only; no out-of-band job state mutation"
+    }
+  ],
+  "semantics": [
+    "active jobs queued, unprojected branch flow_pending, all sent sent, any confirmed/partial plus incomplete terminal branch partial",
+    "without confirmed delivery: unknown > failed > expired > cancelled > excluded",
+    "explicit origin revocation and active graph waiting policy preserved",
+    "all immutable step/batch/merge/send trace data and receipts retained",
+    "new per-member job_member/job_excluded receipts reuse existing flow_edges; paired indexed primary-key ranges; no DDL/new tables",
+    "exact send-unit/member/anchor namespace validation; no parsed foreign run-ID projection",
+    "preexisting already-corrupt snapshot without membership receipts only uses attested anchor; new multi-member corrupted snapshots recover every linked run",
+    "existing graph-store/join/trace positive receipt-kind filters ignore these non-evaluator receipts"
+  ],
+  "diagnosticRuns": [
+    "initial 22 existing tests passed",
+    "46 focused tests passed before final receipt refinement",
+    "67 diagnostic tests: 65 pass, 2 old sent assertions corrected to partial with physical-send and failure evidence retained",
+    "old locking join 42-case diagnostic: 40 pass, 2 60-second boundary timeouts; fixed exact PK joins; final42 allpass",
+    "final boundary51k tests 14541ms and13473ms; complete original data retained"
+  ],
+  "limits": [
+    "no production or external messages/payments/OAuth performed by runtime subagent",
+    "independent review and root frozen full acceptance still required"
+  ],
+  "schemaChanges": 0,
+  "automaticSlotMoves": 0
+}

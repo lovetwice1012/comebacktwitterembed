@@ -1,0 +1,98 @@
+{
+  "generatedAt": "2026-10-16T10:23:54.111Z",
+  "reviewer": "reaudit_independent_review",
+  "result": "CLEAN-EXACT-NULLABLE-FORMAT-CANDIDATE-CLOSED-D2-CARRY-PLAN",
+  "findings": [],
+  "testsExecutedRevision": "d2e792d30a44723e603869b27970b05597d51a9d",
+  "finalCandidateRevision": null,
+  "finalCandidateWorkingSha256": "aa1580814a0289b029a17a1805485391026a0b68ed8418a6250e1c637b95f6f4",
+  "onlyCoreDelta": "src/automation/flow-history.js",
+  "sourceIdentity": {
+    "reviewedSourceFiles": 32,
+    "otherReviewedFilesRawUnchanged": 31,
+    "allOtherTrackedCoreUnchanged": true,
+    "untrackedCoreFiles": 0,
+    "all185TestFilesRawUnchanged": true,
+    "dependencyFilesUnchanged": true,
+    "nodeVersion": "24.21.0",
+    "nodeExecutableSha256": "ba4e6d110e8c1592a1ecd390f6b05f3da124b13871a5be62b341a07a853c6c32"
+  },
+  "closedFull": {
+    "nativeExitCode": 0,
+    "testFiles": 185,
+    "tests": 2151,
+    "suites": 0,
+    "pass": 2151,
+    "fail": 0,
+    "cancelled": 0,
+    "skipped": 0,
+    "todo": 0,
+    "junitLeafTests": 2090,
+    "junitParentTests": 61,
+    "forbiddenXmlNodes": 0,
+    "hashes": {
+      "main-reaudit-d2e792d-frozen-185-tests.xml": "3897be2c24b4f0c037b3a4ad5b6de5b9f11643a1b807c1940b9ec0485bcf4176",
+      "main-reaudit-d2e792d-frozen-185-progress.log": "12406487946539e91735d3c2c46b695abde4883088bd816828c88d8cf8c0dc08",
+      "main-reaudit-d2e792d-frozen-185-outer.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "nativeExitReceipt": {
+      "file": "C:\\Users\\yussy\\AppData\\Local\\Temp\\cbte-main-reaudit10-v8-source-rev3-20261016\\main-reaudit-d2e792d-frozen-185-exit.json",
+      "sha256": "06606420304002134ece266694ba7f7502e4c6e9ac14ba5d3b8027202c47c06d"
+    },
+    "retryDiagnostics": {
+      "specLines": 1,
+      "outerLines": 0,
+      "channelsNotSummed": true
+    }
+  },
+  "independentCurrentAst": {
+    "espreeEqual": true,
+    "typescriptEqual": true,
+    "baselineNodes": 2649,
+    "currentNodes": 2653,
+    "transparentParenthesesBefore": 6,
+    "transparentParenthesesAfter": 10,
+    "allRuntimeAstIncludingSqlAndTemplateLiteralsUnchanged": true
+  },
+  "priorIndependentProof": {
+    "file": "C:\\Users\\yussy\\AppData\\Local\\Temp\\main-reaudit-flow-style-nullable-independent-assessment.json",
+    "sha256": "7d611deb1afca814dce9d86e13aa5bd71dec9ce544705add569b8ef4e9a62935",
+    "pureDeliveryStatePairs": 169,
+    "readJobFlowPlanCases": 7,
+    "workflowSqlComparisons": 2,
+    "sourceReflectionDependencyFound": false
+  },
+  "effectiveTypes": {
+    "proofHashes": {
+      "final-candidate-report.json": "17ca055d6a45bac1285320fc9326775b825f06617adf5334118324a4b64ef793",
+      "effective-type-equivalence.json": "c4d412457e6a7116d6b62fef22ae9914a36a38cbc34da83c5da68c2d3813e41c"
+    },
+    "independentProofCodeReview": true,
+    "wholeProjectProofIndependentlyReexecuted": false,
+    "sameProgramEffectiveFunctionsBothStrictModes": 11,
+    "normalDiagnostics": "0 to 0",
+    "strictNullChecksDiagnostics": "527 existing to 527 existing; no new diagnostics",
+    "truthfulNullableDocumentation": true
+  },
+  "judgment": "The completed D2 full suite can be retained as full functional regression evidence for the exact final formatting/JSDoc candidate, bridged by the complete runtime AST/literal identity, unchanged other CORE/dependencies/tests, effective type equivalence and actual final-candidate targeted checks. This is not an execution of the whole suite on a future F revision.",
+  "remainingGates": [
+    "actual applied-candidate TypeScript/lint and the authorized exact 22-case flow reconciliation SQL target must pass",
+    "immutable F Git blob must match aa158 exactly; all other CORE/test bytes must still match D2",
+    "fresh exclusive REV4 F/main-bound source contract and approval; retain all D2 and earlier evidence",
+    "testsExecutedRevision remains D2 and future finalCandidateRevision is separately identified"
+  ],
+  "requireFullFIf": [
+    "any runtime AST/literal/regex/template/export or other CORE/test/dependency difference",
+    "source-reflection dependency or effective type/targeted check failure",
+    "final F differs from exact aa158 candidate or closed full/source identity cannot be established"
+  ],
+  "fullSuiteExecutedOnFinalCandidate": false,
+  "finalSourceApproved": false,
+  "mainOrProductionApproved": false,
+  "operations": {
+    "coreWrites": 0,
+    "gitWrites": 0,
+    "sqlExecutedByThisVerifier": false,
+    "productionAccessed": false
+  }
+}

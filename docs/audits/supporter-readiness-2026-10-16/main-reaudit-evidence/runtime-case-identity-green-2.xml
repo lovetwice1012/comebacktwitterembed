@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<testsuites>
+	<testcase name="an uppercase source-copy UUID shares the exact lowercase package-stop workflow fence" time="2.442763" classname="test" file="C:\Users\yussy\.codex\worktrees\x-realtime-choice-20261014\comebacktwitterembed\scripts\test\automation-flow-state-reconciliation-sql.test.js"/>
+	<testcase name="a mixed-case stored job run reference still waits for its attested graph namespace" time="2.018458" classname="test" file="C:\Users\yussy\.codex\worktrees\x-realtime-choice-20261014\comebacktwitterembed\scripts\test\automation-flow-state-reconciliation-sql.test.js"/>
+	<!-- tests 2 -->
+	<!-- suites 0 -->
+	<!-- pass 2 -->
+	<!-- fail 0 -->
+	<!-- cancelled 0 -->
+	<!-- skipped 0 -->
+	<!-- todo 0 -->
+	<!-- duration_ms 4600.5258 -->
+</testsuites>

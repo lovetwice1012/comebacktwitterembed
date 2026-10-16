@@ -1,0 +1,9 @@
+# Runtime独立レビュー：MAIN-FRESH-5の追加修正が必要
+
+固定source fdde3bd98bee5774eea0aac59466a5d7656a0c42で、既存6ファイル58/58と独立境界2/2は成功しました。ただし、空のjob候補一覧を取得した直後に分岐projectorが入る実SQLの追加競合で ER_LOCK_DEADLOCK を再現しました。
+
+workflow-deletion.js は最初のjob候補だけからnamespaceを取得します。候補が空なら、既存flow runとunprojected sendがあってもnamespace mutexなしでrun/jobを変更できます。2枝のうち1枝のjobがその直後に作られ、別枝projectorと削除が並行すると、namespace/send/unitとrun/jobの順序が逆転します。probeでは削除は成功、第二projectorがER_LOCK_DEADLOCKで失敗しました。データ消失・二重送信・恒久停止は実証していません。
+
+これはMAIN-FRESH-5修正内のfollow-upとして扱い、10件の数を増やしません。既存flow run/workflow/packageから対象namespaceを確保し、job候補0でも共通の順序を守る修正を依頼しました。Marketplace revokeにも同じ静的パターンがあり、そちらの実再現は未実施です。
+
+初期の自作gateの無効な診断と有効なv4 witnessは分けて保持しています。最初の2schemaは所有を確認して削除済み、有効v4はfixture finallyで削除済み。詳細とhashは同名JSONに記録しています。

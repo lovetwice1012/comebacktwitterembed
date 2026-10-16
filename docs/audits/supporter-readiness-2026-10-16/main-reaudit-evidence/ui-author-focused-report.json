@@ -1,0 +1,103 @@
+{
+  "ids": [
+    "MAIN-UI-1",
+    "MAIN-UI-2",
+    "MAIN-FRESH-2",
+    "MAIN-FRESH-3",
+    "MAIN-POST-1"
+  ],
+  "status": "fixed-focused-verified",
+  "unverified": [
+    "root frozen aggregate acceptance",
+    "browser geometry",
+    "real OAuth/Discord/X/Square",
+    "production rollout"
+  ],
+  "frozenFiles": [
+    {
+      "file": "dashboard/components/automation/monitor-manager.tsx",
+      "sha256": "080eb3be855ca7ac6c30d4926e590cc2825c8d5245f368af31a4fbb82f4f84f7"
+    },
+    {
+      "file": "dashboard/components/automation/monitor-cadence-editor.tsx",
+      "sha256": "2fc1bc7224cc79905c6e1c06fa3b837f9a116987c42942da1fcbcb3f5f870286"
+    },
+    {
+      "file": "dashboard/components/automation/x-monitor-manager.tsx",
+      "sha256": "5df715aa48c20053f2bab0e9962bf612f5ea5b651081266b254f085f7a463295"
+    },
+    {
+      "file": "dashboard/components/automation/automation-workspace.tsx",
+      "sha256": "bb8c715aec34a4a55939eed39adea2121664e3e8b100da7771e071a1b4e80969"
+    },
+    {
+      "file": "dashboard/components/admin/square-commerce-manager.tsx",
+      "sha256": "898607fdc8030dd0935ef218d8ad00318c2a364bd89eae057cb27f3919f6ecec"
+    },
+    {
+      "file": "dashboard/components/admin/notification-plan-manager.tsx",
+      "sha256": "492151e1327a58fea40b7603a0bc3c859362c29d269fa7fd5da550d3f18a444f"
+    },
+    {
+      "file": "src/automation/service.js",
+      "sha256": "0a69bb5feb96bd2218933b2070bc89861f4b6c4b356b1f272f76d165956d4573"
+    },
+    {
+      "file": "scripts/test/automation-main-ui-draft-cadence.test.js",
+      "sha256": "8d1276237de5bc493a627cdeb3f8f6769db1e29cdcdc72d92bdc424c6e1eda57"
+    },
+    {
+      "file": "scripts/test/automation-main-cadence-read-recovery.test.js",
+      "sha256": "54a53c067687e1e874814ef1d3bf714f0e9c25dedf19ff58ae26b12df5000d93"
+    },
+    {
+      "file": "scripts/test/automation-main-x-read-write-ui.test.js",
+      "sha256": "9355cc4c672c305a38349323e732249a0d075a80a3aaa59e2ca9a85cf33fae63"
+    },
+    {
+      "file": "scripts/test/automation-main-admin-cas-ui.test.js",
+      "sha256": "62fb82064c19c19c10e19d22747a85fc644a7c796466c3ca47ea25b98e68935f"
+    },
+    {
+      "file": "scripts/test/automation-main-workflow-history.test.js",
+      "sha256": "98ba5e4ce0f6f9bdaf706352e62a22a3b4cd7cebb05aeea3e1c24d848cc6f920"
+    }
+  ],
+  "tests": {
+    "final": {
+      "xml": "C:\\Users\\yussy\\AppData\\Local\\Temp\\main-ui-reaudit-final-28.xml",
+      "tests": 28,
+      "failures": 0,
+      "skipped": 0,
+      "sha256": "c3d7d96139a4c5cc106db925faac9a3300c5d20638cb1da88eae5602881a3cbf"
+    },
+    "broadDiagnostic": {
+      "path": "C:\\Users\\yussy\\AppData\\Local\\Temp\\main-ui-reaudit-focused.log",
+      "tests": 203,
+      "failures": 0,
+      "skipped": 0,
+      "sha256": "3853bf949c0a8ad7e33849013e3150b7fe9a239b06539672d246181c59b9e5b6",
+      "note": "Last two targeted deltas were prepared while this broad run completed; final28 and15 reruns include them. Root immutable aggregate still required."
+    },
+    "latestHistoryX": {
+      "path": "C:\\Users\\yussy\\AppData\\Local\\Temp\\main-ui-history-final.log",
+      "tests": 15,
+      "failures": 0,
+      "skipped": 0,
+      "sha256": "42038d43e9cd241da02f26fcf39ca94b1d8ed16850dd9b878044a4ab983c5ceb"
+    }
+  },
+  "checks": {
+    "dashboardTsc": 0,
+    "dashboardEslint6Files": 0,
+    "rootEslintServiceAnd5Tests": 0,
+    "diffCheck": 0
+  },
+  "workflowHistoryContract": {
+    "legacy": "No pagination parameters returns complete array, removing silent100limit",
+    "paged": "GET workflows/:id/history?page=1&limit=50&beforeRevision=N → {items,nextRevision}; stable revision<before; max100; first UI cutoff selectedRevision+1",
+    "guards": "owner access before and after SQL; selected workflow/revision/API/viewer and read generation checked before UI apply; failed/cyclic pages preserve cursor and loaded rows"
+  },
+  "productionActions": false,
+  "gitActions": false
+}

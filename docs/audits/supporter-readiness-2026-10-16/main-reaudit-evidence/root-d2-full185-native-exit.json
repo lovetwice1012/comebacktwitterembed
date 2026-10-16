@@ -1,0 +1,16 @@
+{
+  "status": "native-exit-recorded-acceptance-not-yet-evaluated",
+  "sourceRevision": "d2e792d30a44723e603869b27970b05597d51a9d",
+  "acceptanceTestFiles": 185,
+  "exitCode": 0,
+  "startedAt": "2026-10-16T09:54:35.3714823Z",
+  "finishedAt": "2026-10-16T10:17:46.6258795Z",
+  "outputSha256": {
+    "main-reaudit-d2e792d-frozen-185-tests.xml": "3897be2c24b4f0c037b3a4ad5b6de5b9f11643a1b807c1940b9ec0485bcf4176",
+    "main-reaudit-d2e792d-frozen-185-progress.log": "12406487946539e91735d3c2c46b695abde4883088bd816828c88d8cf8c0dc08",
+    "main-reaudit-d2e792d-frozen-185-outer.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "acceptance": false,
+  "productionAccessed": false,
+  "acceptanceSuiteOrAssertionRetriedByWrapper": false
+}

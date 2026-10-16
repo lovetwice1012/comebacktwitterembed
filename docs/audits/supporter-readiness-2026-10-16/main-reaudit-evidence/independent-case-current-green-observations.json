@@ -1,0 +1,24 @@
+{
+  "oldHelper": false,
+  "observations": [
+    {
+      "case": "uppercase-source-copy",
+      "oldHelper": false,
+      "collation": "utf8mb4_unicode_ci",
+      "bypassWhileCopyHeld": false,
+      "copied": "fulfilled",
+      "stopped": "REVISION_CONFLICT"
+    },
+    {
+      "case": "mixed-case-run-id",
+      "oldHelper": false,
+      "namespaceLocked": true,
+      "externalRunIdUnchanged": true,
+      "planUnchanged": true
+    }
+  ],
+  "schemas": [
+    "cbte_automation_test_8edb20420444025c317a",
+    "cbte_automation_test_292fd2b7780bc80e2a2e"
+  ]
+}

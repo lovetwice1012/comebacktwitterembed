@@ -1,0 +1,28 @@
+{
+  "status": "local-ui-scenario-verified-runtime-followup-pending",
+  "sourceRevision": "fdde3bd98bee5774eea0aac59466a5d7656a0c42",
+  "localhost": "http://127.0.0.1:57157/dashboard/automation",
+  "schema": "cbte_automation_test_e39159c63c1e7c0b80cc",
+  "workflowId": "1415464e-632c-4822-aafc-219de7fea29d",
+  "loadedHistoryCounts": [
+    50,
+    100,
+    102
+  ],
+  "oldestRevisions": [
+    2,
+    1
+  ],
+  "restoredFromRevision": 1,
+  "newDraftRevision": 103,
+  "displayedRestoredName": "版履歴の確認",
+  "screenshot": "history-restored-desktop.jpg",
+  "screenshotSha256": "e0505cb3d34df30ae7868b55aaed4bf3b1ff6f82f63f025d8e867333c4affd80",
+  "realReact": true,
+  "realServiceAPI": true,
+  "disposableSql": true,
+  "mockDiscord": true,
+  "productionWritten": false,
+  "realOAuthVerified": false,
+  "finalSourceAccepted": false
+}

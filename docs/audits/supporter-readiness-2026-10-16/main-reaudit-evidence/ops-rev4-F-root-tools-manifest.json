@@ -1,0 +1,25 @@
+{
+  "status": "v8-source-rev4-approved-e88e7441-roottools-main-pending",
+  "sourceRevision": "e88e74412905987352af0ae7cec665963fc737d0",
+  "finalRevision": null,
+  "approvedContractSha256": "cce8754626219c9124ef725a2846cb7a9da3c2eb60c9ac46a076a793e1fa205b",
+  "reviewedManifestSha256": "9d4390bfeb6f5a5a886641652b84611318b46604e76cb57d425a989538237d60",
+  "compatibleFloorRevision": "c63003f5dbd585a3f09e8672a0f80fa5db460165",
+  "files": {
+    "upload-and-launch-v8.py": "fcd09dccdb364a6bf7fda46955d8581fad65a24744465a0b7fd594b97fe8bef4",
+    "prepare-reviewed-v8-call.py": "8627ff08b3b2545d7a95144dd0233f8e83d2e4d9e37a4c40e602607b04dd5406",
+    "ssh-session-v8-exclusive.py": "f6aeece35eeb53461d0a2e647b212367fa580ed08ea977bfc2bc460427dee413",
+    "ssh-session-v6-exclusive.py": "4d750e3f07b28efd03b3f557cab34272b4a9a669322359fffad42909ede8664d",
+    "read-live-v8-acceptance.py": "b7ff874a4191839642b99814fb7abe7eda6e430d6938757a33e67442344b86d4",
+    "test_upload_and_launch_v8.py": "285b39a9c88693dbc21ec1a5a3734ff3f4327b464642407884f3dffb294195da",
+    "test_v8_exclusive_transport.py": "bb40be1a0df1a1812abe26919b24a205e5016b333e3d771ffe938c57c0ffd5d6",
+    "test_v8_preparation_pending.py": "d79076b610bdcf3ce9b2cc7acd0a7e5f00057f95576233909e222af728d2e874",
+    "test_v8_runbook_calls.py": "49eb3056ec616340459c117c2df5fb7b1660f98037ec649a12e8af6940bdd178",
+    "check-v8-revision-history.py": "8039a3fc49827b8c8c947e9c27374d02e01bbeb2918a574078b4fcf100fc74f7",
+    "check-v8-rev3-history.py": "2849d6d117b091ecb83827e9672123a1e0c56fcbdede766c0072e709e66d26d6",
+    "check-v8-rev4-history.py": "1217c07ce805ff96f9ace5681bb11bb6324b4e85c9b13c3cb50768854667bf1e",
+    "V8-ROOT-RUNBOOK.md": "b856a38100716bb19efd350326015a82e2918329d63a1b245088fdff213f2995",
+    "V8-UPLOADER-USAGE.txt": "efd786266431e99e6ae7e1420a30882c6de113dac61ebdf427cc74066b75b8a9",
+    "V8-SOURCE-REV4-WORKFLOW.md": "aa494b4fa1e851cd7279cf84246a056190ebc8afa31b92303dffe7fe06be6ca1"
+  }
+}

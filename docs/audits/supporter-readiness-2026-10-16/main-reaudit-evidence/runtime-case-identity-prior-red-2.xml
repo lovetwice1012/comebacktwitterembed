@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="utf-8"?>
+<testsuites>
+	<testcase name="an uppercase source-copy UUID shares the exact lowercase package-stop workflow fence" time="2.295935" classname="test" file="C:\Users\yussy\.codex\worktrees\x-realtime-choice-20261014\comebacktwitterembed\scripts\test\automation-flow-state-reconciliation-sql.test.js" failure="Expected values to be strictly equal:&#10;&#10;true !== false&#10;">
+		<failure type="testCodeFailure" message="Expected values to be strictly equal:&#10;&#10;true !== false">
+[Error [ERR_TEST_FAILURE]: Expected values to be strictly equal:
+
+true !== false
+] {
+  code: 'ERR_TEST_FAILURE',
+  failureType: 'testCodeFailure',
+  cause: AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  true !== false
+  
+      at fixture.multiple (C:\Users\yussy\.codex\worktrees\x-realtime-choice-20261014\comebacktwitterembed\scripts\test\automation-flow-state-reconciliation-sql.test.js:448:72)
+      at async fixture (C:\Users\yussy\.codex\worktrees\x-realtime-choice-20261014\comebacktwitterembed\scripts\test\automation-flow-state-reconciliation-sql.test.js:92:9)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:387:3) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: true,
+    expected: false,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+}
+		</failure>
+	</testcase>
+	<testcase name="a mixed-case stored job run reference still waits for its attested graph namespace" time="1.722627" classname="test" file="C:\Users\yussy\.codex\worktrees\x-realtime-choice-20261014\comebacktwitterembed\scripts\test\automation-flow-state-reconciliation-sql.test.js" failure="Expected values to be strictly equal:&#10;&#10;true !== false&#10;">
+		<failure type="testCodeFailure" message="Expected values to be strictly equal:&#10;&#10;true !== false">
+[Error [ERR_TEST_FAILURE]: Expected values to be strictly equal:
+
+true !== false
+] {
+  code: 'ERR_TEST_FAILURE',
+  failureType: 'testCodeFailure',
+  cause: AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  true !== false
+  
+      at C:\Users\yussy\.codex\worktrees\x-realtime-choice-20261014\comebacktwitterembed\scripts\test\automation-flow-state-reconciliation-sql.test.js:470:72
+      at async fixture (C:\Users\yussy\.codex\worktrees\x-realtime-choice-20261014\comebacktwitterembed\scripts\test\automation-flow-state-reconciliation-sql.test.js:92:9)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: true,
+    expected: false,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+}
+		</failure>
+	</testcase>
+	<!-- tests 2 -->
+	<!-- suites 0 -->
+	<!-- pass 0 -->
+	<!-- fail 2 -->
+	<!-- cancelled 0 -->
+	<!-- skipped 0 -->
+	<!-- todo 0 -->
+	<!-- duration_ms 4158.9185 -->
+</testsuites>

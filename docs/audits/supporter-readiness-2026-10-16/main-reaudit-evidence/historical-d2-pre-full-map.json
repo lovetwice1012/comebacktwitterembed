@@ -1,0 +1,2465 @@
+{
+  "schemaVersion": 1,
+  "auditedRevision": "2a000c89a293e2ee71ef0c579a63def2ff12cbdb",
+  "previousFixedFindings": 53,
+  "newFindingCount": 10,
+  "sourceEvidence": [
+    {
+      "file": "main-revalidation-summary.md",
+      "source": "C:\\Users\\yussy\\Documents\\comebacktwitterembed\\docs\\audits\\supporter-readiness-2026-10-16\\main-revalidation\\main-revalidation-summary.md",
+      "sha256": "1ce723eb4a7b22aa98af63ce6c68ee36c649889221303be912546b7d9b14ffc2",
+      "retainedFile": "main-reaudit-evidence/main-revalidation-summary.md"
+    },
+    {
+      "file": "main-revalidation-summary.json",
+      "source": "C:\\Users\\yussy\\Documents\\comebacktwitterembed\\docs\\audits\\supporter-readiness-2026-10-16\\main-revalidation\\main-revalidation-summary.json",
+      "sha256": "92cf5b512785068cf4b1ebe611003ac1c911e2c3f77b38321139c3bfbc9a6104",
+      "retainedFile": "main-reaudit-evidence/main-revalidation-summary.json"
+    },
+    {
+      "file": "fresh-saturation-report.md",
+      "source": "C:\\Users\\yussy\\Documents\\comebacktwitterembed\\docs\\audits\\supporter-readiness-2026-10-16\\main-revalidation\\fresh-saturation-report.md",
+      "sha256": "a36cad2e172cee4757ab72ebc32a37709230009b32df49e70bf2f116df288693",
+      "retainedFile": "main-reaudit-evidence/fresh-saturation-report.md"
+    },
+    {
+      "file": "independent-data-findings.md",
+      "source": "C:\\Users\\yussy\\Documents\\comebacktwitterembed\\docs\\audits\\supporter-readiness-2026-10-16\\main-revalidation\\independent-data-findings.md",
+      "sha256": "8ec28dc2824a56f498e60b4de6d61020b51bf0c65c7882e2cbf96fd047611411",
+      "retainedFile": "main-reaudit-evidence/independent-data-findings.md"
+    },
+    {
+      "file": "post-findings-ui-data-saturation.md",
+      "source": "C:\\Users\\yussy\\Documents\\comebacktwitterembed\\docs\\audits\\supporter-readiness-2026-10-16\\main-revalidation\\post-findings-ui-data-saturation.md",
+      "sha256": "8a4703427f763c54720986b55cdb85ff90365fadfa4688cbddf0d433a2daae8c",
+      "retainedFile": "main-reaudit-evidence/post-findings-ui-data-saturation.md"
+    },
+    {
+      "file": "post-findings-runtime-saturation.md",
+      "source": "C:\\Users\\yussy\\Documents\\comebacktwitterembed\\docs\\audits\\supporter-readiness-2026-10-16\\main-revalidation\\post-findings-runtime-saturation.md",
+      "sha256": "a75d50013ef5f56fab0e3e847632c3bf7739c13af9ab5f172b595b17a4ee9f44",
+      "retainedFile": "main-reaudit-evidence/post-findings-runtime-saturation.md"
+    },
+    {
+      "file": "round3-runtime-saturation.md",
+      "source": "C:\\Users\\yussy\\Documents\\comebacktwitterembed\\docs\\audits\\supporter-readiness-2026-10-16\\main-revalidation\\round3-runtime-saturation.md",
+      "sha256": "4fa2db63829e0fc63dfab6312259d44bf8e0e7fa44f01b836cac656fcbfe3fcc",
+      "retainedFile": "main-reaudit-evidence/round3-runtime-saturation.md"
+    },
+    {
+      "file": "final-cross-seam-saturation.md",
+      "source": "C:\\Users\\yussy\\Documents\\comebacktwitterembed\\docs\\audits\\supporter-readiness-2026-10-16\\main-revalidation\\final-cross-seam-saturation.md",
+      "sha256": "bd02303ea86e3e2ffd6a4147dee643209a54c573ed0c7f25743e64a82dd23d72",
+      "retainedFile": "main-reaudit-evidence/final-cross-seam-saturation.md"
+    }
+  ],
+  "issues": [
+    {
+      "id": "MAIN-UI-1",
+      "alias": null,
+      "priority": "P2",
+      "title": "Cross-kind numeric monitor ID deletion clears an unrelated retained draft",
+      "status": "d2-independent-source-verified-new185-root-run-pending",
+      "implementation": [
+        {
+          "file": "dashboard/components/automation/monitor-manager.tsx",
+          "line": 225,
+          "change": "Delete compares both selected kind and id before clearing a retained draft.",
+          "referenceStatus": "reviewed-d2-source; refresh-on-final-root-acceptance",
+          "locator": "async function removeMonitor"
+        }
+      ],
+      "tests": [
+        {
+          "file": "scripts/test/automation-main-ui-draft-cadence.test.js",
+          "line": 80,
+          "declaration": "for (const operation of",
+          "expandedCases": 4,
+          "coverage": "Same numeric IDs across kinds; failed delete and toggle controls; exact same-kind delete.",
+          "execution": "covered-by-d2-scoped-source-review; new185-root-run-not-started"
+        }
+      ],
+      "verification": {
+        "finalAccepted": false,
+        "scopedIndependentReview": "independent-final-d2-cascade-case-admission.json",
+        "reviewResult": "CLEAN-ALL-10-FINAL-SOURCE-CASCADE-CASE-ADMISSION-INCREMENTAL-APPROVAL",
+        "finalSourceRecheckRequired": false,
+        "rootAggregatePending": true,
+        "reviewedSourceRevision": "d2e792d30a44723e603869b27970b05597d51a9d",
+        "historicalF915ScopedReview": {
+          "sourceRevision": "f915a68819b38b01664a3bde25770c46eda7bcbc",
+          "result": "CLEAN-ALL-10-FINAL-SOURCE-INCREMENTAL-APPROVAL",
+          "report": "independent-final-f915-incremental.json"
+        },
+        "candidateSourceRevision": "d2e792d30a44723e603869b27970b05597d51a9d"
+      }
+    },
+    {
+      "id": "MAIN-UI-2",
+      "alias": "MAIN-FRESH-1",
+      "priority": "P2",
+      "title": "Page-two cadence commit cannot refresh its monitor or CAS baseline",
+      "status": "d2-independent-source-verified-new185-root-run-pending",
+      "implementation": [
+        {
+          "file": "dashboard/components/automation/monitor-manager.tsx",
+          "line": 240,
+          "change": "Owner-scoped full keyset traversal finds a page-two monitor and updates its canonical cadence baseline while retaining loaded pages.",
+          "referenceStatus": "reviewed-d2-source; refresh-on-final-root-acceptance",
+          "locator": "async function reloadCadence"
+        },
+        {
+          "file": "dashboard/components/automation/monitor-manager.tsx",
+          "line": 259,
+          "change": "Rebases the edited monitor without remounting the cadence editor.",
+          "referenceStatus": "reviewed-d2-source; refresh-on-final-root-acceptance",
+          "locator": "async function reloadEditedCadence"
+        },
+        {
+          "file": "dashboard/components/automation/monitor-cadence-editor.tsx",
+          "line": 36,
+          "change": "An accepted write with missing/failed follow-up read requires explicit recovery before another write.",
+          "referenceStatus": "reviewed-d2-source; refresh-on-final-root-acceptance",
+          "locator": "async function save"
+        }
+      ],
+      "tests": [
+        {
+          "file": "scripts/test/automation-main-ui-draft-cadence.test.js",
+          "line": 99,
+          "declaration": "test('MAIN-UI-2",
+          "expandedCases": 1,
+          "coverage": "Page-two save, all loaded rows retained, latest revision/cadence CAS supports another save.",
+          "execution": "covered-by-d2-scoped-source-review; new185-root-run-not-started"
+        },
+        {
+          "file": "scripts/test/automation-main-cadence-read-recovery.test.js",
+          "line": 4,
+          "declaration": "for (const failure of",
+          "expandedCases": 2,
+          "coverage": "Committed null/throw read failure blocks replay until explicit reload.",
+          "execution": "covered-by-d2-scoped-source-review; new185-root-run-not-started"
+        }
+      ],
+      "verification": {
+        "finalAccepted": false,
+        "scopedIndependentReview": "independent-final-d2-cascade-case-admission.json",
+        "reviewResult": "CLEAN-ALL-10-FINAL-SOURCE-CASCADE-CASE-ADMISSION-INCREMENTAL-APPROVAL",
+        "finalSourceRecheckRequired": false,
+        "rootAggregatePending": true,
+        "reviewedSourceRevision": "d2e792d30a44723e603869b27970b05597d51a9d",
+        "historicalF915ScopedReview": {
+          "sourceRevision": "f915a68819b38b01664a3bde25770c46eda7bcbc",
+          "result": "CLEAN-ALL-10-FINAL-SOURCE-INCREMENTAL-APPROVAL",
+          "report": "independent-final-f915-incremental.json"
+        },
+        "candidateSourceRevision": "d2e792d30a44723e603869b27970b05597d51a9d"
+      }
+    },
+    {
+      "id": "MAIN-FRESH-2",
+      "alias": null,
+      "priority": "P2",
+      "title": "Workflow revision history silently truncates after 100 versions",
+      "status": "d2-independent-source-verified-new185-root-run-pending",
+      "implementation": [
+        {
+          "file": "src/automation/service.js",
+          "line": 335,
+          "change": "Legacy callers receive every revision; opt-in pages use revision keysets and recheck access after SQL.",
+          "referenceStatus": "reviewed-d2-source; refresh-on-final-root-acceptance",
+          "locator": "async function history"
+        },
+        {
+          "file": "src/automation/api.js",
+          "line": 210,
+          "change": "Validates optional page, limit and beforeRevision; preserves the no-argument array contract.",
+          "referenceStatus": "reviewed-d2-source; refresh-on-final-root-acceptance",
+          "locator": "else if (action === \"history\" && method === \"GET\")"
+        },
+        {
+          "file": "dashboard/components/automation/automation-workspace.tsx",
+          "line": 83,
+          "change": "Initial bound is selectedRevision+1; pages reject invalid/cyclic cursors and stale workflow/revision/viewer/API generations.",
+          "referenceStatus": "reviewed-d2-source; refresh-on-final-root-acceptance",
+          "locator": "async function loadHistory"
+        }
+      ],
+      "tests": [
+        {
+          "file": "scripts/test/automation-main-workflow-history.test.js",
+          "line": 14,
+          "declaration": "test('MAIN-FRESH-2 SQL",
+          "expandedCases": 1,
+          "coverage": "102 revisions, old-client full array, stable pages with concurrent103, owner ACL, restart, DB failure/retry and restore1.",
+          "execution": "covered-by-d2-scoped-source-review; new185-root-run-not-started"
+        },
+        {
+          "file": "scripts/test/automation-main-workflow-history.test.js",
+          "line": 69,
+          "declaration": "for(const mode of",
+          "expandedCases": 3,
+          "coverage": "Real React/API/SQL failure, cursor cycle and concurrent103-before-first-read controls reach oldest editions.",
+          "execution": "covered-by-d2-scoped-source-review; new185-root-run-not-started"
+        },
+        {
+          "file": "scripts/test/automation-main-workflow-history.test.js",
+          "line": 86,
+          "declaration": "for(const contextChange of",
+          "expandedCases": 3,
+          "coverage": "Delayed pages are rejected after workflow, viewer or close changes.",
+          "execution": "covered-by-d2-scoped-source-review; new185-root-run-not-started"
+        }
+      ],
+      "verification": {
+        "finalAccepted": false,
+        "scopedIndependentReview": "independent-final-d2-cascade-case-admission.json",
+        "reviewResult": "CLEAN-ALL-10-FINAL-SOURCE-CASCADE-CASE-ADMISSION-INCREMENTAL-APPROVAL",
+        "finalSourceRecheckRequired": false,
+        "rootAggregatePending": true,
+        "reviewedSourceRevision": "d2e792d30a44723e603869b27970b05597d51a9d",
+        "historicalF915ScopedReview": {
+          "sourceRevision": "f915a68819b38b01664a3bde25770c46eda7bcbc",
+          "result": "CLEAN-ALL-10-FINAL-SOURCE-INCREMENTAL-APPROVAL",
+          "report": "independent-final-f915-incremental.json"
+        },
+        "candidateSourceRevision": "d2e792d30a44723e603869b27970b05597d51a9d"
+      }
+    },
+    {
+      "id": "MAIN-FRESH-3",
+      "alias": null,
+      "priority": "P2",
+      "title": "Unrelated X receiver refresh discards a committed monitor mutation response",
+      "status": "d2-independent-source-verified-new185-root-run-pending",
+      "implementation": [
+        {
+          "file": "dashboard/components/automation/x-monitor-manager.tsx",
+          "line": 50,
+          "change": "Writes retain a separate API/editor-context identity from receiver-list reads.",
+          "referenceStatus": "reviewed-d2-source; refresh-on-final-root-acceptance",
+          "locator": "const mutationEpoch ="
+        },
+        {
+          "file": "dashboard/components/automation/x-monitor-manager.tsx",
+          "line": 124,
+          "change": "Read refreshes cannot cancel a confirmed mutation or its error; prior reads are fenced when canonical results are adopted.",
+          "referenceStatus": "reviewed-d2-source; refresh-on-final-root-acceptance",
+          "locator": "async function mutate"
+        }
+      ],
+      "tests": [
+        {
+          "file": "scripts/test/automation-main-x-read-write-ui.test.js",
+          "line": 22,
+          "declaration": "for (const operation of",
+          "expandedCases": 8,
+          "coverage": "Create/edit/pause/resume survive immediate and delayed unrelated receiver reads; subsequent edit uses advanced CAS.",
+          "execution": "covered-by-d2-scoped-source-review; new185-root-run-not-started"
+        }
+      ],
+      "verification": {
+        "finalAccepted": false,
+        "scopedIndependentReview": "independent-final-d2-cascade-case-admission.json",
+        "reviewResult": "CLEAN-ALL-10-FINAL-SOURCE-CASCADE-CASE-ADMISSION-INCREMENTAL-APPROVAL",
+        "finalSourceRecheckRequired": false,
+        "rootAggregatePending": true,
+        "reviewedSourceRevision": "d2e792d30a44723e603869b27970b05597d51a9d",
+        "historicalF915ScopedReview": {
+          "sourceRevision": "f915a68819b38b01664a3bde25770c46eda7bcbc",
+          "result": "CLEAN-ALL-10-FINAL-SOURCE-INCREMENTAL-APPROVAL",
+          "report": "independent-final-f915-incremental.json"
+        },
+        "candidateSourceRevision": "d2e792d30a44723e603869b27970b05597d51a9d"
+      }
+    },
+    {
+      "id": "MAIN-DATA-1",
+      "alias": null,
+      "priority": "P2",
+      "title": "Push-capacity payment history mixes Square environments and merchants",
+      "status": "d2-independent-source-verified-new185-root-run-pending",
+      "implementation": [
+        {
+          "file": "src/automation/api.js",
+          "line": 72,
+          "change": "Payment/grant cursors bind owner and current Square environment/merchant; payment SQL remains scoped when credentials are paused.",
+          "referenceStatus": "reviewed-d2-source; refresh-on-final-root-acceptance",
+          "locator": "else if (id === 'history' && !action && method === 'GET')"
+        },
+        {
+          "file": "dashboard/components/admin/push-capacity-diagnostics.tsx",
+          "line": 101,
+          "change": "Shows financial scope and clears prior records if scope changes during paging.",
+          "referenceStatus": "reviewed-d2-source; refresh-on-final-root-acceptance",
+          "locator": "async function loadHistory"
+        }
+      ],
+      "tests": [
+        {
+          "file": "scripts/test/automation-main-data-revalidation-sql.test.js",
+          "line": 27,
+          "declaration": "test('MAIN-DATA-1: Push",
+          "expandedCases": 1,
+          "coverage": "Real payment SQL and cursor bind owner/environment/merchant.",
+          "execution": "covered-by-d2-scoped-source-review; new185-root-run-not-started"
+        },
+        {
+          "file": "scripts/test/automation-main-data-revalidation-sql.test.js",
+          "line": 72,
+          "declaration": "test('MAIN-DATA-1: grant",
+          "expandedCases": 1,
+          "coverage": "Grant cursors share scope and owner boundary; missing credentials preserve scoped local history.",
+          "execution": "covered-by-d2-scoped-source-review; new185-root-run-not-started"
+        },
+        {
+          "file": "scripts/test/automation-main-data-revalidation-sql.test.js",
+          "line": 96,
+          "declaration": "test('MAIN-DATA-1: administrator",
+          "expandedCases": 1,
+          "coverage": "Admin ACL, malformed cursor and SQL errors never permit unscoped fallback.",
+          "execution": "covered-by-d2-scoped-source-review; new185-root-run-not-started"
+        },
+        {
+          "file": "scripts/test/automation-main-data-revalidation-ui.test.js",
+          "line": 96,
+          "declaration": "test('MAIN-DATA-1 actual",
+          "expandedCases": 1,
+          "coverage": "Real React/API/SQL displays current scope and omits foreign environment/merchant payments.",
+          "execution": "covered-by-d2-scoped-source-review; new185-root-run-not-started"
+        },
+        {
+          "file": "scripts/test/automation-main-data-revalidation-ui.test.js",
+          "line": 112,
+          "declaration": "test('MAIN-DATA-1 UI:",
+          "expandedCases": 1,
+          "coverage": "A changed financial scope clears old paged rows.",
+          "execution": "covered-by-d2-scoped-source-review; new185-root-run-not-started"
+        }
+      ],
+      "verification": {
+        "finalAccepted": false,
+        "scopedIndependentReview": "independent-final-d2-cascade-case-admission.json",
+        "reviewResult": "CLEAN-ALL-10-FINAL-SOURCE-CASCADE-CASE-ADMISSION-INCREMENTAL-APPROVAL",
+        "finalSourceRecheckRequired": false,
+        "rootAggregatePending": true,
+        "reviewedSourceRevision": "d2e792d30a44723e603869b27970b05597d51a9d",
+        "historicalF915ScopedReview": {
+          "sourceRevision": "f915a68819b38b01664a3bde25770c46eda7bcbc",
+          "result": "CLEAN-ALL-10-FINAL-SOURCE-INCREMENTAL-APPROVAL",
+          "report": "independent-final-f915-incremental.json"
+        },
+        "candidateSourceRevision": "d2e792d30a44723e603869b27970b05597d51a9d"
+      }
+    },
+    {
+      "id": "MAIN-DATA-2",
+      "alias": null,
+      "priority": "P2",
+      "title": "Report resolution commits before its required audit record",
+      "status": "d2-independent-source-verified-new185-root-run-pending",
+      "implementation": [
+        {
+          "file": "src/automation/marketplace-core.js",
+          "line": 421,
+          "change": "Report CAS, resolved state and required audit are committed in one database transaction.",
+          "referenceStatus": "reviewed-d2-source; refresh-on-final-root-acceptance",
+          "locator": "async function resolveReport"
+        }
+      ],
+      "tests": [
+        {
+          "file": "scripts/test/automation-main-data-revalidation-sql.test.js",
+          "line": 52,
+          "declaration": "test('MAIN-DATA-2: report",
+          "expandedCases": 1,
+          "coverage": "Audit failure rolls back resolved state; concurrent retry yields one state/audit pair.",
+          "execution": "covered-by-d2-scoped-source-review; new185-root-run-not-started"
+        },
+        {
+          "file": "scripts/test/automation-main-data-revalidation-sql.test.js",
+          "line": 108,
+          "declaration": "test('MAIN-DATA-2: real",
+          "expandedCases": 1,
+          "coverage": "Real SQL/commit failure stays retryable; legacy target remains unknown.",
+          "execution": "covered-by-d2-scoped-source-review; new185-root-run-not-started"
+        },
+        {
+          "file": "scripts/test/automation-main-data-revalidation-sql.test.js",
+          "line": 175,
+          "declaration": "test('MAIN-POST-2 / MAIN-DATA-2:",
+          "expandedCases": 1,
+          "coverage": "Same-edition reason changes and reopening advance monotonic CAS.",
+          "execution": "covered-by-d2-scoped-source-review; new185-root-run-not-started"
+        },
+        {
+          "file": "scripts/test/automation-main-data-revalidation-ui.test.js",
+          "line": 78,
+          "declaration": "test('MAIN-POST-2 / MAIN-DATA-2 actual",
+          "expandedCases": 1,
+          "coverage": "Stale resolution preserves updated reason; refresh retries with current CAS.",
+          "execution": "covered-by-d2-scoped-source-review; new185-root-run-not-started"
+        }
+      ],
+      "verification": {
+        "finalAccepted": false,
+        "scopedIndependentReview": "independent-final-d2-cascade-case-admission.json",
+        "reviewResult": "CLEAN-ALL-10-FINAL-SOURCE-CASCADE-CASE-ADMISSION-INCREMENTAL-APPROVAL",
+        "finalSourceRecheckRequired": false,
+        "rootAggregatePending": true,
+        "reviewedSourceRevision": "d2e792d30a44723e603869b27970b05597d51a9d",
+        "historicalF915ScopedReview": {
+          "sourceRevision": "f915a68819b38b01664a3bde25770c46eda7bcbc",
+          "result": "CLEAN-ALL-10-FINAL-SOURCE-INCREMENTAL-APPROVAL",
+          "report": "independent-final-f915-incremental.json"
+        },
+        "candidateSourceRevision": "d2e792d30a44723e603869b27970b05597d51a9d"
+      }
+    },
+    {
+      "id": "MAIN-POST-1",
+      "alias": null,
+      "priority": "P2",
+      "title": "Pre-commit parent reads roll back committed admin CAS baselines",
+      "status": "d2-independent-source-verified-new185-root-run-pending",
+      "implementation": [
+        {
+          "file": "dashboard/components/admin/square-commerce-manager.tsx",
+          "line": 113,
+          "change": "Canonical saves invalidate earlier parent reads; monotonic merge is confined to the same API context; creation callback is fully guarded.",
+          "referenceStatus": "reviewed-d2-source; refresh-on-final-root-acceptance",
+          "locator": "export function SquareCouponManager"
+        },
+        {
+          "file": "dashboard/components/admin/notification-plan-manager.tsx",
+          "line": 201,
+          "change": "Plan canonical save invalidates prior reads and keeps version comparison within its API context.",
+          "referenceStatus": "reviewed-d2-source; refresh-on-final-root-acceptance",
+          "locator": "export function NotificationPlanManager"
+        }
+      ],
+      "tests": [
+        {
+          "file": "scripts/test/automation-main-admin-cas-ui.test.js",
+          "line": 17,
+          "declaration": "for(const kind of ['coupon','plan']) for",
+          "expandedCases": 4,
+          "coverage": "Real React/API/SQL coupon/plan precommit reads return success/failure after canonical save; next save uses latest CAS.",
+          "execution": "covered-by-d2-scoped-source-review; new185-root-run-not-started"
+        },
+        {
+          "file": "scripts/test/automation-main-admin-cas-ui.test.js",
+          "line": 60,
+          "declaration": "for(const kind of ['coupon','plan'])test",
+          "expandedCases": 2,
+          "coverage": "Same ID in a new API context adopts lower canonical timestamp rather than retaining prior-context values.",
+          "execution": "covered-by-d2-scoped-source-review; new185-root-run-not-started"
+        }
+      ],
+      "verification": {
+        "finalAccepted": false,
+        "scopedIndependentReview": "independent-final-d2-cascade-case-admission.json",
+        "reviewResult": "CLEAN-ALL-10-FINAL-SOURCE-CASCADE-CASE-ADMISSION-INCREMENTAL-APPROVAL",
+        "finalSourceRecheckRequired": false,
+        "rootAggregatePending": true,
+        "reviewedSourceRevision": "d2e792d30a44723e603869b27970b05597d51a9d",
+        "historicalF915ScopedReview": {
+          "sourceRevision": "f915a68819b38b01664a3bde25770c46eda7bcbc",
+          "result": "CLEAN-ALL-10-FINAL-SOURCE-INCREMENTAL-APPROVAL",
+          "report": "independent-final-f915-incremental.json"
+        },
+        "candidateSourceRevision": "d2e792d30a44723e603869b27970b05597d51a9d"
+      }
+    },
+    {
+      "id": "MAIN-POST-2",
+      "alias": null,
+      "priority": "P2",
+      "title": "Marketplace reports are not bound to the reported immutable edition",
+      "status": "d2-independent-source-verified-new185-root-run-pending",
+      "implementation": [
+        {
+          "file": "src/automation/marketplace-core.js",
+          "line": 383,
+          "change": "Report admission locks and validates the displayed immutable version/checksum; open reports cannot silently switch editions.",
+          "referenceStatus": "reviewed-d2-source; refresh-on-final-root-acceptance",
+          "locator": "async function feedback"
+        },
+        {
+          "file": "src/automation/marketplace-core.js",
+          "line": 440,
+          "change": "Moderator inspection loads the exact reported edition even if it later becomes private/withdrawn/revoked; unknown legacy editions remain unknown.",
+          "referenceStatus": "reviewed-d2-source; refresh-on-final-root-acceptance",
+          "locator": "async function reportContent"
+        },
+        {
+          "file": "dashboard/components/automation/marketplace-manager.tsx",
+          "line": 81,
+          "change": "Report UI requests the exact stored subject edition and uses current report CAS for resolution.",
+          "referenceStatus": "reviewed-d2-source; refresh-on-final-root-acceptance",
+          "locator": "async function openReport"
+        }
+      ],
+      "tests": [
+        {
+          "file": "scripts/test/automation-main-data-revalidation-sql.test.js",
+          "line": 133,
+          "declaration": "test('MAIN-POST-2: forged",
+          "expandedCases": 1,
+          "coverage": "Forged/inaccessible target rejected; open report cannot change edition; reopening pins newly displayed version.",
+          "execution": "covered-by-d2-scoped-source-review; new185-root-run-not-started"
+        },
+        {
+          "file": "scripts/test/automation-main-data-revalidation-sql.test.js",
+          "line": 161,
+          "declaration": "for(const status of",
+          "expandedCases": 2,
+          "coverage": "Exact reported edition remains inspectable only to moderator after withdrawal/revocation.",
+          "execution": "covered-by-d2-scoped-source-review; new185-root-run-not-started"
+        },
+        {
+          "file": "scripts/test/automation-main-data-revalidation-sql.test.js",
+          "line": 200,
+          "declaration": "test('MAIN-POST-2: a report",
+          "expandedCases": 1,
+          "coverage": "Later private publication cannot redirect report target.",
+          "execution": "covered-by-d2-scoped-source-review; new185-root-run-not-started"
+        },
+        {
+          "file": "scripts/test/automation-main-data-revalidation-ui.test.js",
+          "line": 33,
+          "declaration": "test('MAIN-POST-2 actual",
+          "expandedCases": 1,
+          "coverage": "Real React/API/SQL report remains on displayed v1 after publicv2/privatev3.",
+          "execution": "covered-by-d2-scoped-source-review; new185-root-run-not-started"
+        },
+        {
+          "file": "scripts/test/automation-main-data-revalidation-ui.test.js",
+          "line": 66,
+          "declaration": "test('MAIN-POST-2 actual React/SQL/API: legacy",
+          "expandedCases": 1,
+          "coverage": "Legacy reports visibly retain unknown edition and can be explicitly resolved.",
+          "execution": "covered-by-d2-scoped-source-review; new185-root-run-not-started"
+        }
+      ],
+      "verification": {
+        "finalAccepted": false,
+        "scopedIndependentReview": "independent-final-d2-cascade-case-admission.json",
+        "reviewResult": "CLEAN-ALL-10-FINAL-SOURCE-CASCADE-CASE-ADMISSION-INCREMENTAL-APPROVAL",
+        "finalSourceRecheckRequired": false,
+        "rootAggregatePending": true,
+        "reviewedSourceRevision": "d2e792d30a44723e603869b27970b05597d51a9d",
+        "historicalF915ScopedReview": {
+          "sourceRevision": "f915a68819b38b01664a3bde25770c46eda7bcbc",
+          "result": "CLEAN-ALL-10-FINAL-SOURCE-INCREMENTAL-APPROVAL",
+          "report": "independent-final-f915-incremental.json"
+        },
+        "candidateSourceRevision": "d2e792d30a44723e603869b27970b05597d51a9d"
+      }
+    },
+    {
+      "id": "MAIN-FRESH-4",
+      "alias": "MAIN-RUNTIME-MIXED",
+      "priority": "P2",
+      "title": "Multi-job flow summary depends on unordered job row order",
+      "status": "d2-independent-source-verified-new185-root-run-pending",
+      "implementation": [
+        {
+          "file": "src/automation/flow-history.js",
+          "line": 37,
+          "change": "Aggregates all branch states independently of SQL row order; mixed confirmed delivery and terminal failure is partial.",
+          "referenceStatus": "reviewed-d2-source; refresh-on-final-root-acceptance",
+          "locator": "function deliveryState"
+        },
+        {
+          "file": "src/automation/flow-history.js",
+          "line": 147,
+          "change": "Projects current durable graph/job outcomes and preserves complete per-lineage receipts.",
+          "referenceStatus": "reviewed-d2-source; refresh-on-final-root-acceptance",
+          "locator": "async function refreshFlowHistory"
+        }
+      ],
+      "tests": [
+        {
+          "file": "scripts/test/automation-flow-state-reconciliation-sql.test.js",
+          "line": 96,
+          "declaration": "test('real branched runner",
+          "expandedCases": 1,
+          "coverage": "Real branched runner checks all144 state pairs and job-order swaps; pending and partial/unknown summaries remain deterministic.",
+          "execution": "covered-by-d2-scoped-source-review; new185-root-run-not-started"
+        }
+      ],
+      "verification": {
+        "finalAccepted": false,
+        "scopedIndependentReview": "independent-final-d2-cascade-case-admission.json",
+        "reviewResult": "CLEAN-ALL-10-FINAL-SOURCE-CASCADE-CASE-ADMISSION-INCREMENTAL-APPROVAL",
+        "finalSourceRecheckRequired": false,
+        "rootAggregatePending": true,
+        "reviewedSourceRevision": "d2e792d30a44723e603869b27970b05597d51a9d",
+        "historicalF915ScopedReview": {
+          "sourceRevision": "f915a68819b38b01664a3bde25770c46eda7bcbc",
+          "result": "CLEAN-ALL-10-FINAL-SOURCE-INCREMENTAL-APPROVAL",
+          "report": "independent-final-f915-incremental.json"
+        },
+        "candidateSourceRevision": "d2e792d30a44723e603869b27970b05597d51a9d"
+      }
+    },
+    {
+      "id": "MAIN-FRESH-5",
+      "alias": null,
+      "priority": "P2",
+      "title": "Out-of-band job state changes do not refresh flow run history",
+      "status": "d2-independent-source-verified-new185-root-run-pending",
+      "implementation": [
+        {
+          "file": "src/automation/flow-history.js",
+          "line": 106,
+          "change": "common existing-table workflow barrier covers empty initial job rosters before graph mutation.",
+          "referenceStatus": "reviewed-d2-source; refresh-on-final-root-acceptance",
+          "locator": "async function lockWorkflowFlowHistory"
+        },
+        {
+          "file": "src/automation/flow-history.js",
+          "line": 133,
+          "change": "Refreshes affected run histories in the same transaction as direct job state mutations.",
+          "referenceStatus": "reviewed-d2-source; refresh-on-final-root-acceptance",
+          "locator": "async function refreshJobFlowHistory"
+        },
+        {
+          "file": "src/automation/queue.js",
+          "line": 347,
+          "change": "Lease recovery and direct queue changes project affected runs immediately.",
+          "referenceStatus": "reviewed-d2-source; refresh-on-final-root-acceptance",
+          "locator": "await require('./flow-history').refreshJobFlowHistory(query, recovered);"
+        },
+        {
+          "file": "src/automation/history.js",
+          "line": 125,
+          "change": "Cancel/retry/reschedule keep CAS, audit and projection in one transaction.",
+          "referenceStatus": "reviewed-d2-source; refresh-on-final-root-acceptance",
+          "locator": "await require('./flow-history').lockJobFlowHistory(query, [candidate]);"
+        },
+        {
+          "file": "src/automation/workflow-deletion.js",
+          "line": 54,
+          "change": "explicit stop/deletion must share the workflow/namespace barrier even before first job projection.",
+          "referenceStatus": "reviewed-d2-source; refresh-on-final-root-acceptance",
+          "locator": "async function removeWorkflow"
+        },
+        {
+          "file": "src/automation/marketplace-core.js",
+          "line": 306,
+          "change": "package safety revoke uses matching empty-roster fencing and current owner/routing checks.",
+          "referenceStatus": "reviewed-d2-source; refresh-on-final-root-acceptance",
+          "locator": "await require('./flow-history').lockWorkflowFlowHistory(query, installedWorkflows.map(row => row.workflow_id));"
+        },
+        {
+          "file": "src/automation/graph-store.js",
+          "line": 36,
+          "locator": "await require('./flow-history').lockFlowWorkflows(query, workflowIds);",
+          "change": "Graph runtime takes shared workflow barriers before namespace/resource mutation; administrative exclusive barriers drain writers.",
+          "referenceStatus": "reviewed-d2-source; refresh-on-final-root-acceptance"
+        },
+        {
+          "file": "src/automation/flow-history.js",
+          "line": 91,
+          "locator": "async function lockFlowWorkflows",
+          "change": "Shared runtime versus exclusive stop barriers reuse existing durable lock rows; no shared-to-exclusive upgrade.",
+          "referenceStatus": "reviewed-d2-source; refresh-on-final-root-acceptance"
+        },
+        {
+          "file": "src/automation/flow-projector.js",
+          "line": 42,
+          "locator": "await require('./flow-history').lockFlowWorkflows(query, workflows.map(row => row.workflow_id));",
+          "change": "Projector admission shares the same workflow-before-namespace lock order.",
+          "referenceStatus": "reviewed-d2-source; refresh-on-final-root-acceptance"
+        },
+        {
+          "file": "src/automation/queue.js",
+          "line": 359,
+          "locator": "AND p.state IN ('unknown','partial','cancelled','sent','failed','expired','excluded') AND j.id>? ORDER BY j.id LIMIT 100 FOR UPDATE",
+          "change": "Stable PK child pages retain the complete eligible closure inside the parent recovery transaction.",
+          "referenceStatus": "reviewed-d2-source; root185-pending"
+        },
+        {
+          "file": "src/automation/flow-history.js",
+          "line": 94,
+          "locator": "const ids = workflowIds.filter",
+          "change": "UUID casefold applies only to internal mutex keys before dedup/sort/hash; external identifiers and namespace/JSON are unchanged.",
+          "referenceStatus": "reviewed-d2-source; root185-pending"
+        }
+      ],
+      "tests": [
+        {
+          "file": "scripts/test/automation-flow-state-reconciliation-sql.test.js",
+          "line": 122,
+          "declaration": "test('restart lease",
+          "expandedCases": 1,
+          "coverage": "Sending expiry remains unknown after ACK and cannot be reclaimed for delivery.",
+          "execution": "covered-by-d2-scoped-source-review; new185-root-run-not-started"
+        },
+        {
+          "file": "scripts/test/automation-flow-state-reconciliation-sql.test.js",
+          "line": 135,
+          "declaration": "test('cancel, retry",
+          "expandedCases": 1,
+          "coverage": "Cancel/retry/reschedule/held cleanup update immediately readable history.",
+          "execution": "covered-by-d2-scoped-source-review; new185-root-run-not-started"
+        },
+        {
+          "file": "scripts/test/automation-flow-state-reconciliation-sql.test.js",
+          "line": 149,
+          "declaration": "test('damaged pre-receipt legacy",
+          "expandedCases": 1,
+          "coverage": "Pre-receipt legacy corruption requires attested anchor; new exact membership links preserve every lineage.",
+          "execution": "covered-by-d2-scoped-source-review; new185-root-run-not-started"
+        },
+        {
+          "file": "scripts/test/automation-flow-state-reconciliation-sql.test.js",
+          "line": 169,
+          "declaration": "test('audit and projection",
+          "expandedCases": 1,
+          "coverage": "Audit/projection failure rolls back job and run state; restart cleanup is checked.",
+          "execution": "covered-by-d2-scoped-source-review; new185-root-run-not-started"
+        },
+        {
+          "file": "scripts/test/automation-flow-state-reconciliation-sql.test.js",
+          "line": 183,
+          "declaration": "test('simultaneous sibling",
+          "expandedCases": 1,
+          "coverage": "Sibling transitions serialize and retain both outcomes.",
+          "execution": "covered-by-d2-scoped-source-review; new185-root-run-not-started"
+        },
+        {
+          "file": "scripts/test/automation-flow-state-reconciliation-sql.test.js",
+          "line": 191,
+          "declaration": "test('unattested foreign",
+          "expandedCases": 1,
+          "coverage": "Damaged foreign run IDs cannot lock/reproject another namespace.",
+          "execution": "covered-by-d2-scoped-source-review; new185-root-run-not-started"
+        },
+        {
+          "file": "scripts/test/automation-flow-state-reconciliation-sql.test.js",
+          "line": 210,
+          "declaration": "test('housekeeping bounds",
+          "expandedCases": 1,
+          "coverage": "Bounded100-job transaction handles105 through subsequent claim without omissions.",
+          "execution": "covered-by-d2-scoped-source-review; new185-root-run-not-started"
+        },
+        {
+          "file": "scripts/test/automation-flow-state-reconciliation-sql.test.js",
+          "line": 222,
+          "declaration": "test('legacy aggregated",
+          "expandedCases": 1,
+          "coverage": "Aggregated child histories survive parent cancel/failure/recovery.",
+          "execution": "covered-by-d2-scoped-source-review; new185-root-run-not-started"
+        },
+        {
+          "file": "scripts/test/automation-flow-state-reconciliation-sql.test.js",
+          "line": 242,
+          "declaration": "test('one pruned occurrence",
+          "expandedCases": 1,
+          "coverage": "Surviving occurrence is retained after snapshot corruption.",
+          "execution": "covered-by-d2-scoped-source-review; new185-root-run-not-started"
+        },
+        {
+          "file": "scripts/test/automation-flow-state-reconciliation-sql.test.js",
+          "line": 263,
+          "declaration": "for (const action of ['delete', 'revoke'])",
+          "expandedCases": 4,
+          "coverage": "Actual empty-roster delete/revoke commit/rollback controls drain first projector writers and preserve admission on rollback.",
+          "execution": "covered-by-d2-scoped-source-review; new185-root-run-not-started"
+        },
+        {
+          "file": "scripts/test/automation-flow-state-reconciliation-sql.test.js",
+          "line": 295,
+          "declaration": "test('revoke revalidates an installation copy",
+          "expandedCases": 1,
+          "coverage": "Concurrent installed copy changes the indexed consumer roster, produces409 before mutation and supports current-roster retry.",
+          "execution": "covered-by-d2-scoped-source-review; new185-root-run-not-started"
+        },
+        {
+          "file": "scripts/test/automation-flow-state-reconciliation-sql.test.js",
+          "line": 325,
+          "declaration": "test('package stop namespace inventory",
+          "expandedCases": 1,
+          "coverage": "Actual native attach between installed workflow copies and package revoke both succeed; immutable inventory exactly preserves both historical namespaces.",
+          "execution": "covered-by-d2-scoped-source-review; new185-root-run-not-started"
+        },
+        {
+          "file": "scripts/test/automation-monitor-workflow-cas-sql.test.js",
+          "line": 205,
+          "declaration": "await t.test('the owner fence serializes physical delivery",
+          "expandedCases": 1,
+          "testApi": "t.test",
+          "coverage": "Actual owner fence serializes competing monitor choice and physical delivery; both legitimate winners preserve correct cancellation/revision/receipts.",
+          "execution": "covered-by-d2-scoped-source-review; new185-root-run-not-started"
+        },
+        {
+          "file": "scripts/test/automation-monitor-workflow-cas-sql.test.js",
+          "line": 261,
+          "declaration": "await t.test('a real two-row InnoDB deadlock",
+          "expandedCases": 1,
+          "testApi": "t.test",
+          "coverage": "Real two-row InnoDB cycle occurs before wire; rolled-back attempt produces zero physical sends and a valid retry completes the old delivery once.",
+          "execution": "covered-by-d2-scoped-source-review; new185-root-run-not-started"
+        },
+        {
+          "file": "scripts/test/automation-flow-state-reconciliation-sql.test.js",
+          "line": 361,
+          "declaration": "test('one legacy recovery transaction",
+          "expandedCases": 1,
+          "coverage": "Actual legacy parent and child terminalize in one claim, preserving unrelated future due time.",
+          "execution": "passed-d2-author62-and-independent59-controls; root185-pending"
+        },
+        {
+          "file": "scripts/test/automation-flow-state-reconciliation-sql.test.js",
+          "line": 371,
+          "declaration": "for (const state of ['held', 'sending'])",
+          "expandedCases": 2,
+          "coverage": "Mixed v1/v2 children and terminal receipts reconcile atomically for failed/unknown parents.",
+          "execution": "passed-d2-author62-and-independent59-controls; root185-pending"
+        },
+        {
+          "file": "scripts/test/automation-flow-state-reconciliation-sql.test.js",
+          "line": 393,
+          "declaration": "test('a failure on the later 100-child page",
+          "expandedCases": 1,
+          "coverage": "102 children require a second page; injected EIO after graph projection rolls back complete parent/child/run/trace snapshots.",
+          "execution": "passed-d2-author62-and-independent59-controls; root185-pending"
+        },
+        {
+          "file": "scripts/test/automation-flow-state-reconciliation-sql.test.js",
+          "line": 427,
+          "declaration": "test('an uppercase source-copy UUID",
+          "expandedCases": 1,
+          "coverage": "Uppercase external source lookup takes the same internal shared barrier as lowercase package stop, preserving external spelling.",
+          "execution": "passed-d2-author62-and-independent59-controls; root185-pending"
+        },
+        {
+          "file": "scripts/test/automation-flow-state-reconciliation-sql.test.js",
+          "line": 456,
+          "declaration": "test('a mixed-case stored job run reference",
+          "expandedCases": 1,
+          "coverage": "Stored uppercase run FK retains its exact namespace lock and original JSON bytes.",
+          "execution": "passed-d2-author62-and-independent59-controls; root185-pending"
+        },
+        {
+          "file": "scripts/test/automation-sql.test.js",
+          "line": 197,
+          "declaration": "await t.test('legacy aggregate members follow terminal parents",
+          "expandedCases": 1,
+          "testApi": "t.test",
+          "coverage": "Original regression assertion unchanged: every aggregate child follows its terminal parent in the same call; future pending jobs retain schedule.",
+          "execution": "passed-current-independent51-pack; root185-pending"
+        }
+      ],
+      "verification": {
+        "finalAccepted": false,
+        "scopedIndependentReview": "independent-final-d2-cascade-case-admission.json",
+        "reviewResult": "CLEAN-ALL-10-FINAL-SOURCE-CASCADE-CASE-ADMISSION-INCREMENTAL-APPROVAL",
+        "finalSourceRecheckRequired": false,
+        "rootAggregatePending": true,
+        "reviewedSourceRevision": "d2e792d30a44723e603869b27970b05597d51a9d",
+        "historicalFollowup": {
+          "witness": "independent-runtime-delete-project-race-v4.xml",
+          "result": "ER_LOCK_DEADLOCK",
+          "noJobRosterAtInitialRead": true,
+          "impact": "concurrent normal deletion/projector tick fails; transaction rollback retained; data loss and duplicate send were not demonstrated",
+          "requiredRetest": [
+            "validv4 race under final source",
+            "empty-roster package revoke/projector race",
+            "owner/config/routing current-read and ordering controls",
+            "independent corrected-order review"
+          ],
+          "status": "fixed-on-f915-focused-and-independent-controls",
+          "evidence": "runtime-author-final-f915-report.json"
+        },
+        "historicalF915ScopedReview": {
+          "sourceRevision": "f915a68819b38b01664a3bde25770c46eda7bcbc",
+          "result": "CLEAN-ALL-10-FINAL-SOURCE-INCREMENTAL-APPROVAL",
+          "report": "independent-final-f915-incremental.json"
+        },
+        "candidateSourceRevision": "d2e792d30a44723e603869b27970b05597d51a9d",
+        "closedRootRegression": {
+          "execSession": 47219,
+          "file": "scripts/test/automation-sql.test.js",
+          "line": 207,
+          "reason": "legacy held parent terminalizes without its aggregated children in the same bounded cleanup transaction",
+          "fixStatus": "fixed-d2-focused-and-independent-proof; root185-full-pending"
+        }
+      }
+    }
+  ],
+  "implementationSourceSha": null,
+  "finalMainSha": null,
+  "productionSha": null,
+  "acceptance": {
+    "status": "d2-source-reviewed-new185-whole-matrix-not-started",
+    "tests": null,
+    "passed": null,
+    "failed": null,
+    "skipped": null,
+    "sourceFrozen": true,
+    "independentReviews": [
+      {
+        "file": "main-reaudit-evidence/independent-eight-id-report.json",
+        "scope": "eight UI/data IDs",
+        "result": "scoped-CLEAN-only",
+        "tests": 43,
+        "boundaries": 3
+      },
+      {
+        "file": "main-reaudit-evidence/independent-runtime-fdde-followup.json",
+        "scope": "two runtime IDs on rejected intermediate fdde",
+        "result": "fix-required",
+        "focusedTestsPassed": 58,
+        "boundaryTestsPassed": 2,
+        "newValidWitnessFailed": 1
+      }
+    ],
+    "deploymentVerified": false,
+    "realOAuthVerified": false,
+    "realNewXToDiscordDeliveryVerified": false,
+    "realSquarePaymentVerified": false,
+    "cancelled": null,
+    "files": null,
+    "junitSha256": null,
+    "plannedTestFiles": 185,
+    "todo": null,
+    "durationMs": null,
+    "finalRun": null,
+    "progressSha256": null,
+    "actualV8BundleReviewed": null,
+    "sourceLint": null,
+    "typechecks": null,
+    "pendingRun": null,
+    "historicalF915IndependentReview": {
+      "file": "main-reaudit-evidence/independent-final-f915-incremental.json",
+      "sha256": "04479dba77189c8b0ff207de4058419edd778867b6713bbbe830884021270980",
+      "sourceRevision": "f915a68819b38b01664a3bde25770c46eda7bcbc",
+      "result": "CLEAN-ALL-10-FINAL-SOURCE-INCREMENTAL-APPROVAL",
+      "incrementalIndependentTests": 2,
+      "priorDifferentSourceIndependentTests": 83,
+      "countsAreNotWholeSuite": true
+    },
+    "nextRun": null,
+    "historical0769IndependentReview": {
+      "file": "main-reaudit-evidence/independent-final-0769-owner-v2.json",
+      "sha256": "394cb32e57dc2ca4bfb52133f1ce80d98b862cfbdd805c44ca02764f53c13b2d",
+      "sourceRevision": "07696234f4a8b57c123b7748b36366d7a7f1e3e2",
+      "result": "CLEAN-ALL-10-FINAL-SOURCE-OWNER-FIXTURE-INCREMENTAL-APPROVAL",
+      "independentIncrementalTests": 21,
+      "priorReviewsHistoricalOnly": true,
+      "rootAggregatePending": true
+    },
+    "finalIndependentReview": {
+      "file": "main-reaudit-evidence/independent-final-d2-cascade-case-admission.json",
+      "sha256": "57f09a331e492359123eb81fa63cfe445942d0fce01a179c508fb705bc3fb6e7",
+      "sourceRevision": "d2e792d30a44723e603869b27970b05597d51a9d",
+      "result": "CLEAN-ALL-10-FINAL-SOURCE-CASCADE-CASE-ADMISSION-INCREMENTAL-APPROVAL",
+      "independentTests": 59,
+      "actualSqlCases": 40,
+      "socketFreeHelperUnitCases": 19,
+      "rootAggregatePending": true
+    },
+    "lastAttempt": {
+      "sourceRevision": "07696234f4a8b57c123b7748b36366d7a7f1e3e2",
+      "execSession": 47219,
+      "status": "CLOSED-FAILED-NOT-ACCEPTED",
+      "exitCode": 1,
+      "aggregateCompleted": true,
+      "files": 184,
+      "counts": {
+        "tests": 2126,
+        "suites": 0,
+        "pass": 2120,
+        "fail": 6,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0,
+        "duration_ms": 1311051.6327
+      },
+      "directFailureCauses": 4,
+      "failedParentTests": 2,
+      "classification": {
+        "nativeTcpAcquireFailures": 3,
+        "productRegressionFailures": 1,
+        "reason": "Three native TCP connection/acquisition failures before application SQL/DDL assertions; one actual bounded legacy cleanup regression leaves aggregated children behind a failed held parent in the same claim."
+      },
+      "junit": "main-reaudit-evidence/root-0769-closed-failed-184-tests.xml",
+      "junitSha256": "001ab1646173baf38f682bca14117096aad60ac9b739396dbee3bb820ed57818",
+      "progress": "main-reaudit-evidence/root-0769-closed-failed-184-progress.log",
+      "progressSha256": "7e5e1dc03bc2d026cda4b6f1d4556f29dae1ac59d07f0fa70b46a3c930be8ede",
+      "diagnostic": "main-reaudit-evidence/root-0769-closed-failure-diagnostic.json",
+      "diagnosticSha256": "a293f4e5c88a1054335bd5dd8de7cac875c499715b7146fca5e768a43b0554a8",
+      "acceptance": false
+    },
+    "historical0769Run": {
+      "sourceRevision": "07696234f4a8b57c123b7748b36366d7a7f1e3e2",
+      "execSession": 47219,
+      "status": "completed-failed",
+      "xmlPath": "C:\\Users\\yussy\\AppData\\Local\\Temp\\cbte-main-reaudit10-v8-source-rev2-20261016\\main-reaudit-0769623-frozen-184-tests.xml",
+      "progressPath": "C:\\Users\\yussy\\AppData\\Local\\Temp\\cbte-main-reaudit10-v8-source-rev2-20261016\\main-reaudit-0769623-frozen-184-progress.log",
+      "expectedTestFiles": 184,
+      "counts": {
+        "tests": 2126,
+        "suites": 0,
+        "pass": 2120,
+        "fail": 6,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0,
+        "duration_ms": 1311051.6327
+      },
+      "exitCode": 1,
+      "aggregateCompleted": true,
+      "xmlSha256": "001ab1646173baf38f682bca14117096aad60ac9b739396dbee3bb820ed57818",
+      "progressSha256": "7e5e1dc03bc2d026cda4b6f1d4556f29dae1ac59d07f0fa70b46a3c930be8ede",
+      "acceptance": false,
+      "supersededNotReusable": true
+    }
+  },
+  "updatedAtUtc": "2026-10-16T09:51:14.035886+00:00",
+  "coverage": {
+    "mappedIds": 10,
+    "unmappedIds": [],
+    "scopedIndependentReviewedIds": 10,
+    "finalAcceptedIds": 0,
+    "testCountPolicy": "Per-declaration expanded counts describe coverage only; overlapping declarations are not summed as a whole-suite total.",
+    "historicalF915IndependentlyReviewedIds": 10,
+    "historical0769IndependentlyReviewedIds": 10
+  },
+  "evidenceArtifacts": [
+    {
+      "file": "main-reaudit-evidence/ui-author-focused-report.json",
+      "sha256": "d5c56c7fd4c38a9210dccc59056d3c853655e4a821e5af92671b5bab3e5903d1",
+      "kind": "author-report",
+      "scope": "28 actual React/SQL focused cases; final aggregate pending"
+    },
+    {
+      "file": "main-reaudit-evidence/ui-author-focused-28.xml",
+      "sha256": "c3d7d96139a4c5cc106db925faac9a3300c5d20638cb1da88eae5602881a3cbf",
+      "kind": "focused-junit",
+      "scope": "28 pass / 0 fail / 0 skip"
+    },
+    {
+      "file": "main-reaudit-evidence/data-author-focused-report.json",
+      "sha256": "770508c886d92e79d9eb54159a317cce781d2de6a29edede90b76981b2e4ec05",
+      "kind": "author-report",
+      "scope": "57 focused pass; broader123 sweep separately retains one TCP setup failure"
+    },
+    {
+      "file": "main-reaudit-evidence/independent-eight-id-report.json",
+      "sha256": "317152eae3cda3b0a68b59f89ae12f44824ab5c8b0161220cf84c9f77f341999",
+      "kind": "independent-report",
+      "scope": "CLEAN for eight scoped UI/data IDs only"
+    },
+    {
+      "file": "main-reaudit-evidence/independent-eight-id-report.md",
+      "sha256": "e1c4c897d1a694f34d0f76db624febca379c04261475e190ebdaa8e53751e560",
+      "kind": "independent-report",
+      "scope": "eight scoped IDs; runtime and aggregate pending"
+    },
+    {
+      "file": "main-reaudit-evidence/independent-eight-id-focused-43.xml",
+      "sha256": "cca4aeb4fcf1606756c4ae6a9bcaeb125c1c78ae73971ffc0936e37fcfffa686",
+      "kind": "focused-junit",
+      "scope": "43 pass / 0 fail / 0 skip"
+    },
+    {
+      "file": "main-reaudit-evidence/independent-eight-id-boundaries-3.xml",
+      "sha256": "8b936b9d44b6c4a9f1b2eda2f3e8b57ad5e707b0721da9955af8c0d377745fea",
+      "kind": "focused-junit",
+      "scope": "3 corrected independent boundary controls pass"
+    },
+    {
+      "file": "main-reaudit-evidence/independent-boundaries-first-fixture-diagnostic.xml",
+      "sha256": "29bee38391bc3e3799464ba1bdf1d5f2aa6cd1d7e3d28f5dc034a9bc9a7ecd67",
+      "kind": "diagnostic-junit",
+      "scope": "2 pass / 1 invalid over-strong fixture assumption; not an acceptance pass"
+    },
+    {
+      "file": "main-reaudit-evidence/data-adjacent-123-diagnostic.xml",
+      "sha256": "98f7d6237f4efb7dba5cb6d3ba8b64b9a5ddb4f95cef1ded9f5d6e971b048005",
+      "kind": "diagnostic-junit",
+      "scope": "122 pass / 1 TCP setup ETIMEDOUT; isolated replay recorded in author report, never relabelled allpass"
+    },
+    {
+      "file": "main-reaudit-evidence/runtime-author-fdde-superseded-report.json",
+      "sha256": "6fbe93a9659cfb1b84f54e24510500d8ff038176f4d7c95f20dae495b508143b",
+      "kind": "superseded-author-report",
+      "scope": "42 focused pass on fdde-era source; later independent follow-up rejects the candidate"
+    },
+    {
+      "file": "main-reaudit-evidence/runtime-author-fdde-focused-42.xml",
+      "sha256": "c78f18a98444e6f44d1bef736e3c42b4267692fa8dd1149247a6c8f3385fb907",
+      "kind": "superseded-focused-junit",
+      "scope": "42 pass; source subsequently rejected for empty-roster deletion/projector race"
+    },
+    {
+      "file": "main-reaudit-evidence/independent-runtime-fdde-followup.json",
+      "sha256": "ac47212e51f65b07a1397ed6b7208c50a414fc211f8c2ab8b83c4f7e4ebf4da9",
+      "kind": "independent-finding-report",
+      "scope": "MAIN-FRESH-5 follow-up, actual ER_LOCK_DEADLOCK; final candidate rejected"
+    },
+    {
+      "file": "main-reaudit-evidence/independent-runtime-fdde-followup.md",
+      "sha256": "236b772821e3e579c6c3b1599bf1148f032b767e76946bbd678e9de70d3c533b",
+      "kind": "independent-finding-report",
+      "scope": "runtime follow-up remains under implementation"
+    },
+    {
+      "file": "main-reaudit-evidence/independent-runtime-fdde-focused-58.xml",
+      "sha256": "a57548262f1c07877597d6db031d82c279d485ef4ebffb1071ccf18e6ffb98a0",
+      "kind": "superseded-focused-junit",
+      "scope": "58 pass; independent v4 race nevertheless fails"
+    },
+    {
+      "file": "main-reaudit-evidence/independent-runtime-fdde-boundaries-2.xml",
+      "sha256": "d2b2b5cbacc1d579956acb4d041d8875f9bcdb5188f89c0f842ee8920dbeef74",
+      "kind": "superseded-focused-junit",
+      "scope": "2 focused boundary controls pass; no global CLEAN result"
+    },
+    {
+      "file": "main-reaudit-evidence/independent-runtime-delete-project-race-v4.xml",
+      "sha256": "cfd144ee7340cf4f0c3cefdda65c224b2a19843d8cdb492aefa49b0504d4f0ab",
+      "kind": "rejected-candidate-witness-junit",
+      "scope": "valid race fails with real SQL deadlock; this is retained failure evidence"
+    },
+    {
+      "file": "main-reaudit-evidence/independent-runtime-delete-project-race-v4-result.json",
+      "sha256": "61f87f3e7616defd3cb4575e17867fe0ee55365367bf75dafd88898a7d0b6604",
+      "kind": "rejected-candidate-witness-result",
+      "scope": "delete fulfilled; projector ER_LOCK_DEADLOCK; no data loss/duplicate delivery demonstrated"
+    },
+    {
+      "file": "main-reaudit-evidence/browser-history-fdde-scenario.json",
+      "sha256": "8bbd26e1cb40d17ff2826b5c631c5fcc0d14770d2b86be16ff7be1c6c3d4fab2",
+      "kind": "browser-scenario",
+      "scope": "actual React/API/SQL pages50/100/102 and restore1→103; mock Discord, no final runtime proof"
+    },
+    {
+      "file": "main-reaudit-evidence/history-restored-desktop-fdde.jpg",
+      "sha256": "e0505cb3d34df30ae7868b55aaed4bf3b1ff6f82f63f025d8e867333c4affd80",
+      "kind": "native-browser-screenshot",
+      "scope": "native IAB screenshot, test environment, fdde UI scope only"
+    },
+    {
+      "file": "main-reaudit-evidence/independent-final-f915-incremental.json",
+      "sha256": "04479dba77189c8b0ff207de4058419edd778867b6713bbbe830884021270980",
+      "kind": "independent-source-approval",
+      "scope": "Source/focused evidence only; root immutable whole-matrix and production acceptance remain separate."
+    },
+    {
+      "file": "main-reaudit-evidence/independent-final-f915-incremental.md",
+      "sha256": "201f2a3effcad2e86ceba12d2a56d648bacc613fb08278441b1801293a445b93",
+      "kind": "independent-source-approval",
+      "scope": "Source/focused evidence only; root immutable whole-matrix and production acceptance remain separate."
+    },
+    {
+      "file": "main-reaudit-evidence/runtime-author-final-f915-report.json",
+      "sha256": "4e7b169f6ac8b7e91136279ad8c507be555b69df82e417c32fc9b027d0e8336c",
+      "kind": "author-final-source-focused-report",
+      "scope": "Source/focused evidence only; root immutable whole-matrix and production acceptance remain separate."
+    },
+    {
+      "file": "main-reaudit-evidence/runtime-author-final-f915-16.xml",
+      "sha256": "4983c3cfd18587968ccee65c0aea3e89a05f511bb5a7e3658abd1c15c144b476",
+      "kind": "focused-junit",
+      "scope": "Source/focused evidence only; root immutable whole-matrix and production acceptance remain separate."
+    },
+    {
+      "file": "main-reaudit-evidence/independent-final-f915-monitor-revoke.xml",
+      "sha256": "9c6eccd37ca9b195aa78a4cb186f8d227dff04c33ef62e0ea0948e9ad764d502",
+      "kind": "independent-focused-junit",
+      "scope": "Source/focused evidence only; root immutable whole-matrix and production acceptance remain separate."
+    },
+    {
+      "file": "main-reaudit-evidence/independent-final-f915-runtime-first.xml",
+      "sha256": "0844ba766659e5756babea76117512548daab1994b931ca2394add2d6674a5bd",
+      "kind": "independent-focused-junit",
+      "scope": "Source/focused evidence only; root immutable whole-matrix and production acceptance remain separate."
+    },
+    {
+      "file": "main-reaudit-evidence/independent-d6-superseded-local-report.json",
+      "sha256": "692cbcbed6f676d61d70a439978b7a0d14035a46cd2124ac8037ddc0d8c75a85",
+      "kind": "historical-prior-source-review",
+      "scope": "Source/focused evidence only; root immutable whole-matrix and production acceptance remain separate."
+    },
+    {
+      "file": "main-reaudit-evidence/runtime-monitor-revoke-d6-red.xml",
+      "sha256": "59fc2e4a77d201fb499517ec53102029d7ca6bc655034e5b881a11402bdbcd51",
+      "kind": "historical-red-junit",
+      "scope": "Source/focused evidence only; root immutable whole-matrix and production acceptance remain separate."
+    },
+    {
+      "file": "main-reaudit-evidence/canonical-source-f915-manifest.json",
+      "sha256": "f60ccd74c2e029ab2635f880cf8d8a4aa8dc9bb05adf1256ef0e3391536f6d0f",
+      "kind": "canonical-source-manifest-not-deployment-approval",
+      "scope": "29 canonical Git source/test blobs and modes; V8 source/bundle deployment approval remains pending."
+    },
+    {
+      "file": "main-reaudit-evidence/historical-f915-pending-map.json",
+      "sha256": "a155318683530a44760270cb922eb3bbfffd9a9b76fc1af790616030114565e5",
+      "kind": "historical-pending-map",
+      "scope": "Historical failed/incomplete f915 attempt only. No final whole-matrix success or new-source approval."
+    },
+    {
+      "file": "main-reaudit-evidence/historical-f915-pending-report.md",
+      "sha256": "4da56ff6fe0df3ed87f783ef402bec7bb42d84fd22e16d1a9dd6a233e95017bb",
+      "kind": "historical-pending-markdown",
+      "scope": "Historical failed/incomplete f915 attempt only. No final whole-matrix success or new-source approval."
+    },
+    {
+      "file": "main-reaudit-evidence/root-f915-failed-incomplete-tests.xml",
+      "sha256": "3fff342c77a4f19d7eb929822375a104b884d4aaa02f66165b7133d15aefbcc5",
+      "kind": "failed-incomplete-root-junit",
+      "scope": "Historical failed/incomplete f915 attempt only. No final whole-matrix success or new-source approval."
+    },
+    {
+      "file": "main-reaudit-evidence/root-f915-failed-incomplete-progress.log",
+      "sha256": "62c232ef7924ea2d38da770f1646861cccca4e769c0e6ae3a88bfd6389b0261e",
+      "kind": "failed-incomplete-root-progress",
+      "scope": "Historical failed/incomplete f915 attempt only. No final whole-matrix success or new-source approval."
+    },
+    {
+      "file": "main-reaudit-evidence/root-f915-failed-diagnostic-v2.json",
+      "sha256": "00ff6944accf45d06c1b109ce229c764cab79f61d12a06a05502e9f615959619",
+      "kind": "valid-root-failure-receipt",
+      "scope": "Historical failed/incomplete f915 attempt only. No final whole-matrix success or new-source approval."
+    },
+    {
+      "file": "main-reaudit-evidence/root-f915-invalid-null-diagnostic.json",
+      "sha256": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+      "kind": "invalid-diagnostic-retained",
+      "scope": "Historical failed/incomplete f915 attempt only. No final whole-matrix success or new-source approval."
+    },
+    {
+      "file": "main-reaudit-evidence/f915-retired-finalizer-static-review.json",
+      "sha256": "d1b622cf24e3b61f20be6a5bd12a1456f39bb46469bac54a38e7d4030b9c2ef8",
+      "kind": "retired-finalizer-static-review",
+      "scope": "Historical failed/incomplete f915 attempt only. No final whole-matrix success or new-source approval."
+    },
+    {
+      "file": "main-reaudit-evidence/historical-after-f915-failure-pending-map.json",
+      "sha256": "d171be759f0ee1a51d49c0c279c2a83ac34dcb509dae02f7bfc6303f752dc69a",
+      "kind": "historical-post-failure-pending-map",
+      "scope": "Candidate0769 author/static proof only; new canonical source manifest, independent approval and root whole-matrix are pending."
+    },
+    {
+      "file": "main-reaudit-evidence/historical-after-f915-failure-pending-report.md",
+      "sha256": "812aa5e4ef902ce0ae6b437ae73bd401906e8053ca65dd0e3c03357a04952a34",
+      "kind": "historical-post-failure-pending-markdown",
+      "scope": "Candidate0769 author/static proof only; new canonical source manifest, independent approval and root whole-matrix are pending."
+    },
+    {
+      "file": "main-reaudit-evidence/source-0769-flow-history-format-ast-proof.json",
+      "sha256": "9b03830c4695c7821ab87c2979fd2846804aa36dfb4ecae759a0b21dfcc19d4e",
+      "kind": "product-format-ast-proof",
+      "scope": "Candidate0769 author/static proof only; new canonical source manifest, independent approval and root whole-matrix are pending."
+    },
+    {
+      "file": "main-reaudit-evidence/source-0769-owner-order-v3-21.xml",
+      "sha256": "2153aba093a91a8404707c5c1e4144cf606ec3d42fbc96994d500ecb3fa3d9ac",
+      "kind": "focused-author-junit",
+      "scope": "Candidate0769 author/static proof only; new canonical source manifest, independent approval and root whole-matrix are pending."
+    },
+    {
+      "file": "main-reaudit-evidence/historical-0769-preapproval-pending-map.json",
+      "sha256": "f914ca214db0d3e1837aa41eaa3279f1e657386017478f7b942dcc7ab71f3d8b",
+      "kind": "historical-pending-map",
+      "scope": "0769 local source review/focused proof; full root47219, actual bundle and production are separate pending gates."
+    },
+    {
+      "file": "main-reaudit-evidence/historical-0769-preapproval-pending-report.md",
+      "sha256": "1cf9ae91a392451f039c7afeca31133d31e099a3fe1c10f380a0904121f234f4",
+      "kind": "historical-pending-report",
+      "scope": "0769 local source review/focused proof; full root47219, actual bundle and production are separate pending gates."
+    },
+    {
+      "file": "main-reaudit-evidence/independent-final-0769-owner-v2.json",
+      "sha256": "394cb32e57dc2ca4bfb52133f1ce80d98b862cfbdd805c44ca02764f53c13b2d",
+      "kind": "independent-source-approval",
+      "scope": "0769 local source review/focused proof; full root47219, actual bundle and production are separate pending gates."
+    },
+    {
+      "file": "main-reaudit-evidence/independent-final-0769-owner-v2.md",
+      "sha256": "1faad188f7b9b992c2ae210419a7a58b391f863552a441a123281b8dc4baf0bb",
+      "kind": "independent-source-approval",
+      "scope": "0769 local source review/focused proof; full root47219, actual bundle and production are separate pending gates."
+    },
+    {
+      "file": "main-reaudit-evidence/independent-0769-first-ast-serializer-diagnostic.json",
+      "sha256": "87e58eb2a1fc6007b3cc5f137f49d603c5310050528d73554f9e85b5d6d68fe0",
+      "kind": "superseded-ast-serializer-diagnostic",
+      "scope": "0769 local source review/focused proof; full root47219, actual bundle and production are separate pending gates."
+    },
+    {
+      "file": "main-reaudit-evidence/independent-final-0769-owner-21.xml",
+      "sha256": "a4183da9cd0b4699262f3dd49bf8512ef4616bb968a60e8c01b3711e8a3c3912",
+      "kind": "independent-focused-junit",
+      "scope": "0769 local source review/focused proof; full root47219, actual bundle and production are separate pending gates."
+    },
+    {
+      "file": "main-reaudit-evidence/canonical-source-0769-manifest.json",
+      "sha256": "98a3343b2cf3cf0e874d2da1a11496286de6d7427f241d2ed3de750840510734",
+      "kind": "canonical-source-manifest-not-deployment-approval",
+      "scope": "0769 local source review/focused proof; full root47219, actual bundle and production are separate pending gates."
+    },
+    {
+      "file": "main-reaudit-evidence/codacy-0769-plugin-crash.jpg",
+      "sha256": "ea86f2b3a5dae7d1729e08d133d4d847d885fe2d07a872cbc9866d62ab4af0e1",
+      "kind": "native-public-codacy-log-screenshot",
+      "scope": "Cloud analysis failure on exact0769; vendor plugin null.type crash observed. No all-CI-green claim."
+    },
+    {
+      "file": "main-reaudit-evidence/historical-0769-reviewed-running-map.json",
+      "sha256": "78a4ad390cc2372eebe91dee7c86fe8c526b10ccfdaa645b2734134067938e85",
+      "kind": "historical-pending-map",
+      "scope": "Exact0769 full run47219 CLOSED FAILED exit1; not an acceptance pass or finalizable candidate."
+    },
+    {
+      "file": "main-reaudit-evidence/historical-0769-reviewed-running-report.md",
+      "sha256": "c08cbf19f50f923421a11dfb3e19d1fef7febb73ab112e509ced376883029ef5",
+      "kind": "historical-pending-markdown",
+      "scope": "Exact0769 full run47219 CLOSED FAILED exit1; not an acceptance pass or finalizable candidate."
+    },
+    {
+      "file": "main-reaudit-evidence/root-0769-closed-failed-184-tests.xml",
+      "sha256": "001ab1646173baf38f682bca14117096aad60ac9b739396dbee3bb820ed57818",
+      "kind": "closed-failed-root-whole-matrix-junit",
+      "scope": "Exact0769 full run47219 CLOSED FAILED exit1; not an acceptance pass or finalizable candidate."
+    },
+    {
+      "file": "main-reaudit-evidence/root-0769-closed-failed-184-progress.log",
+      "sha256": "7e5e1dc03bc2d026cda4b6f1d4556f29dae1ac59d07f0fa70b46a3c930be8ede",
+      "kind": "closed-failed-root-progress",
+      "scope": "Exact0769 full run47219 CLOSED FAILED exit1; not an acceptance pass or finalizable candidate."
+    },
+    {
+      "file": "main-reaudit-evidence/root-0769-closed-failure-diagnostic.json",
+      "sha256": "a293f4e5c88a1054335bd5dd8de7cac875c499715b7146fca5e768a43b0554a8",
+      "kind": "closed-root-failure-diagnostic",
+      "scope": "Exact0769 full run47219 CLOSED FAILED exit1; not an acceptance pass or finalizable candidate."
+    },
+    {
+      "file": "main-reaudit-evidence/historical-0769-closed-failed-map.json",
+      "sha256": "d1b6743bca616a342b43e6fbbb9daf295d189667056f93095c934d05a2bd42c0",
+      "kind": "historical-failed-map",
+      "scope": "Scoped d2 source/focused or explicitly historical diagnostics only; no final185-matrix acceptance, main/bundle or deployment approval."
+    },
+    {
+      "file": "main-reaudit-evidence/historical-0769-closed-failed-report.md",
+      "sha256": "5a046775018f1142ac39f5bfe37e133d89ce75f1e24c533925783b3a47795a94",
+      "kind": "historical-failed-report",
+      "scope": "Scoped d2 source/focused or explicitly historical diagnostics only; no final185-matrix acceptance, main/bundle or deployment approval."
+    },
+    {
+      "file": "main-reaudit-evidence/runtime-author-d2-cascade-case-report.json",
+      "sha256": "25c46fc0a6fb740d3fd09c2ee205ed9a717d6725fa1024058425385fe5b7bf8d",
+      "kind": "author-final-source-report",
+      "scope": "Scoped d2 source/focused or explicitly historical diagnostics only; no final185-matrix acceptance, main/bundle or deployment approval."
+    },
+    {
+      "file": "main-reaudit-evidence/runtime-prior-casefold-focused-150.xml",
+      "sha256": "9d407490b07a25e73cdeb29d1acda482713f1648fe94228c6b8665ca69bd28eb",
+      "kind": "historical-prior-casefold-focused-junit",
+      "scope": "Scoped d2 source/focused or explicitly historical diagnostics only; no final185-matrix acceptance, main/bundle or deployment approval."
+    },
+    {
+      "file": "main-reaudit-evidence/runtime-author-d2-final-targeted-62.xml",
+      "sha256": "bd8ec8d01542f3d74f012b6b5e6d1338569879c5cafb084cb3a4389b6a7beaae",
+      "kind": "author-current-source-focused-junit",
+      "scope": "Scoped d2 source/focused or explicitly historical diagnostics only; no final185-matrix acceptance, main/bundle or deployment approval."
+    },
+    {
+      "file": "main-reaudit-evidence/runtime-case-identity-prior-red-2.xml",
+      "sha256": "208a8c9b114ed325d3114f6eaf3609d4de40a80d7a31c4881fa6c866f92ece3e",
+      "kind": "historical-case-identity-red",
+      "scope": "Scoped d2 source/focused or explicitly historical diagnostics only; no final185-matrix acceptance, main/bundle or deployment approval."
+    },
+    {
+      "file": "main-reaudit-evidence/runtime-case-identity-green-2.xml",
+      "sha256": "595ad1ae5f1c642d9f241ed61205fa8a944659570574615353487c2554b32824",
+      "kind": "case-identity-focused-green",
+      "scope": "Scoped d2 source/focused or explicitly historical diagnostics only; no final185-matrix acceptance, main/bundle or deployment approval."
+    },
+    {
+      "file": "main-reaudit-evidence/independent-final-d2-cascade-case-admission.json",
+      "sha256": "57f09a331e492359123eb81fa63cfe445942d0fce01a179c508fb705bc3fb6e7",
+      "kind": "independent-current-source-approval",
+      "scope": "Scoped d2 source/focused or explicitly historical diagnostics only; no final185-matrix acceptance, main/bundle or deployment approval."
+    },
+    {
+      "file": "main-reaudit-evidence/independent-final-d2-cascade-case-admission.md",
+      "sha256": "0e64221cf5e23dc7f8a17fb4ede54b7c2f060cb83e5f9547d568cca9aa48718a",
+      "kind": "independent-current-source-approval",
+      "scope": "Scoped d2 source/focused or explicitly historical diagnostics only; no final185-matrix acceptance, main/bundle or deployment approval."
+    },
+    {
+      "file": "main-reaudit-evidence/canonical-source-d2-manifest.json",
+      "sha256": "a350a1b0b59491025a67818a4f5bcd5157a13cecc624b0f7953790ab273bdcc7",
+      "kind": "canonical-source-manifest-not-bundle-approval",
+      "scope": "Scoped d2 source/focused or explicitly historical diagnostics only; no final185-matrix acceptance, main/bundle or deployment approval."
+    },
+    {
+      "file": "main-reaudit-evidence/independent-d2-case-green-2.xml",
+      "sha256": "1186e51842695046bd8fcb5a50486ce3b4510e0b32f4607740ad5670a7ee7712",
+      "kind": "independent-current-source-junit",
+      "scope": "Scoped d2 source/focused or explicitly historical diagnostics only; no final185-matrix acceptance, main/bundle or deployment approval."
+    },
+    {
+      "file": "main-reaudit-evidence/independent-d2-cascade-barriers-2.xml",
+      "sha256": "1bad45c499aa3d4b46aad06d7d5e83bbfe3e1d5f20c64dbdf9c1f02d45e518c4",
+      "kind": "independent-current-source-junit",
+      "scope": "Scoped d2 source/focused or explicitly historical diagnostics only; no final185-matrix acceptance, main/bundle or deployment approval."
+    },
+    {
+      "file": "main-reaudit-evidence/independent-d2-legacy-cas-helper-51.xml",
+      "sha256": "4bde6599b504fb376035dfbfc7273ccbf0b687a33f1f5bd01d5fafdc3364a5f1",
+      "kind": "independent-current-source-junit",
+      "scope": "Scoped d2 source/focused or explicitly historical diagnostics only; no final185-matrix acceptance, main/bundle or deployment approval."
+    },
+    {
+      "file": "main-reaudit-evidence/independent-d2-cascade-rollback-4.xml",
+      "sha256": "64fe75d063dea0be5d810d0c93e6a7daff23a35223c82d53fa0f42e452e0d737",
+      "kind": "independent-current-source-junit",
+      "scope": "Scoped d2 source/focused or explicitly historical diagnostics only; no final185-matrix acceptance, main/bundle or deployment approval."
+    },
+    {
+      "file": "main-reaudit-evidence/independent-d2-fixture-cleanup.json",
+      "sha256": "4cf823fc31181fa5341dcb5ed2a8e0d5e3833f351a0a85b995b1f414ff0970c0",
+      "kind": "independent-owned-schema-cleanup",
+      "scope": "Scoped d2 source/focused or explicitly historical diagnostics only; no final185-matrix acceptance, main/bundle or deployment approval."
+    },
+    {
+      "file": "main-reaudit-evidence/independent-case-prior-helper-red-2.xml",
+      "sha256": "93e178aa6f88a04de63aa31c9973617879c5a8e8f211fc8d39008f8017e11580",
+      "kind": "historical-prior-helper-red",
+      "scope": "Scoped d2 source/focused or explicitly historical diagnostics only; no final185-matrix acceptance, main/bundle or deployment approval."
+    },
+    {
+      "file": "main-reaudit-evidence/independent-case-prior-red-observations.json",
+      "sha256": "a0d012cda858c675b3a20349cf06841a21b1757f082d276d54de592dbd368493",
+      "kind": "historical-prior-helper-observation",
+      "scope": "Scoped d2 source/focused or explicitly historical diagnostics only; no final185-matrix acceptance, main/bundle or deployment approval."
+    },
+    {
+      "file": "main-reaudit-evidence/independent-case-current-green-observations.json",
+      "sha256": "4f59c1606f8945c8ab955ec5ffe3175a2937cf88a7cde9b32f201a0ef9f1936e",
+      "kind": "independent-current-source-observation",
+      "scope": "Scoped d2 source/focused or explicitly historical diagnostics only; no final185-matrix acceptance, main/bundle or deployment approval."
+    },
+    {
+      "file": "main-reaudit-evidence/independent-d2-cascade-barrier-observations.json",
+      "sha256": "83ff45cf5bb66796fb77fdce3456d292e82e64dafc6e82c3b2869b00c9950953",
+      "kind": "independent-current-source-observation",
+      "scope": "Scoped d2 source/focused or explicitly historical diagnostics only; no final185-matrix acceptance, main/bundle or deployment approval."
+    },
+    {
+      "file": "main-reaudit-evidence/local-db-native-connect-causal-boundary.json",
+      "sha256": "a52acdffa57e72642fa2391a43235cce7769d4ab3636289c2cbeb292e64720d5",
+      "kind": "native-tcp-causal-boundary-diagnostic",
+      "scope": "Scoped d2 source/focused or explicitly historical diagnostics only; no final185-matrix acceptance, main/bundle or deployment approval."
+    },
+    {
+      "file": "main-reaudit-evidence/local-db-0769-closed-failure-classification.json",
+      "sha256": "2f524a07c16a96c3ed0cbf7e5f39611424d8c1b59bcdea3ca6f3788a090d5e67",
+      "kind": "closed-failure-causal-classification",
+      "scope": "Scoped d2 source/focused or explicitly historical diagnostics only; no final185-matrix acceptance, main/bundle or deployment approval."
+    },
+    {
+      "file": "main-reaudit-evidence/codacy-0769-vendor-rule-findings.json",
+      "sha256": "ef6ebd46d27611eafdb488ef735762f3474cabf8803ce78c746f73e582dd1b79",
+      "kind": "deterministic-vendor-rule-diagnostic",
+      "scope": "Scoped d2 source/focused or explicitly historical diagnostics only; no final185-matrix acceptance, main/bundle or deployment approval."
+    },
+    {
+      "file": "main-reaudit-evidence/codacy-0769-local-vendor-recheck.json",
+      "sha256": "8f62cd78364db32827994250daa278f33bc837f30feba7c86f49639c71e727ae",
+      "kind": "local-vendor-only-reproduction-not-clean-ci",
+      "scope": "Scoped d2 source/focused or explicitly historical diagnostics only; no final185-matrix acceptance, main/bundle or deployment approval."
+    }
+  ],
+  "sourceHistory": [
+    {
+      "sha": "fdde3bd98bee5774eea0aac59466a5d7656a0c42",
+      "status": "rejected-intermediate",
+      "reason": "MAIN-FRESH-5 valid empty-job-roster workflow-delete/projector witness produced ER_LOCK_DEADLOCK after42author+58independent+2boundary focused passes.",
+      "failureEvidence": "main-reaudit-evidence/independent-runtime-fdde-followup.json",
+      "replacementSourceSha": null
+    },
+    {
+      "sha": "d6ecac0ad33e42340487061abbfcc55a91d43084",
+      "status": "superseded-intermediate",
+      "review": "83 focused independent passes were source-scoped, not whole-matrix acceptance. Subsequent actual monitor attach A-to-B versus package revoke reproduced a distinct lock dependency within MAIN-FRESH-5.",
+      "failureEvidence": "main-reaudit-evidence/runtime-monitor-revoke-d6-red.xml",
+      "replacementSourceSha": "f915a68819b38b01664a3bde25770c46eda7bcbc"
+    },
+    {
+      "sha": "f915a68819b38b01664a3bde25770c46eda7bcbc",
+      "status": "focused-reviewed-but-root-full-run-failed-incomplete",
+      "rootRunExecSession": 19271,
+      "rootRunExitCode": 1,
+      "aggregateCompleted": false,
+      "reason": "Existing test interleaving waits for target lock while worker holds earlier shared owner/workflow fence; no real SQL cycle can signal target gate",
+      "evidence": "main-reaudit-evidence/root-f915-failed-diagnostic-v2.json",
+      "newSourceSha": null,
+      "productLossOrDuplicateDeliveryDemonstrated": false
+    },
+    {
+      "sha": "07696234f4a8b57c123b7748b36366d7a7f1e3e2",
+      "status": "rejected-whole-matrix-closed-failed",
+      "execSession": 47219,
+      "exitCode": 1,
+      "counts": {
+        "tests": 2126,
+        "suites": 0,
+        "pass": 2120,
+        "fail": 6,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0,
+        "duration_ms": 1311051.6327
+      },
+      "actualProductRegression": "held legacy parent becomes failed but aggregated children remain aggregated in the same cleanup call",
+      "failedRootRunEvidence": "main-reaudit-evidence/root-0769-closed-failure-diagnostic.json",
+      "newSourceSha": null
+    }
+  ],
+  "sourceObservation": {
+    "status": "d2-committed-source-focused-and-independent-clean-new185-full-not-started",
+    "candidateSourceSha": "d2e792d30a44723e603869b27970b05597d51a9d",
+    "finalFrozen": true,
+    "finalLocalAcceptance": false,
+    "sourceApprovalForNewRevision": "independent-final-d2-cascade-case-admission.json",
+    "note": "Independent59 controls approve exact32 canonical and working files and CORE8; root local source certificate and ops preparation are separate. No new root full run has started."
+  },
+  "diagnosticEvidence": [
+    {
+      "scope": "data adjacent sweep",
+      "tests": 123,
+      "passed": 122,
+      "failed": 1,
+      "classification": "TCP connect ETIMEDOUT in disposable schema setup before migration/application/assertions",
+      "isolatedReplay": {
+        "tests": 1,
+        "passed": 1,
+        "failed": 0
+      },
+      "environmentalCauseProven": false,
+      "acceptancePass": false,
+      "file": "main-reaudit-evidence/data-adjacent-123-diagnostic.xml"
+    },
+    {
+      "scope": "original independent cursor fixture",
+      "tests": 3,
+      "passed": 2,
+      "failed": 1,
+      "classification": "fixture incorrectly rejected the separately scoped grant SELECT before payment-cursor validation; corrected fixture permits it and requires zero payment SELECTs",
+      "acceptancePass": false,
+      "file": "main-reaudit-evidence/independent-boundaries-first-fixture-diagnostic.xml"
+    },
+    {
+      "scope": "runtime early diagnostic runs",
+      "classification": "source-spanning; original performance timeouts and invalidv1/v2/v3 race fixtures are retained in author/independent reports; none is promoted to an acceptance pass",
+      "files": [
+        "main-reaudit-evidence/runtime-author-fdde-superseded-report.json",
+        "main-reaudit-evidence/independent-runtime-fdde-followup.json"
+      ]
+    },
+    {
+      "scope": "root f915 full attempt19271",
+      "status": "failed-incomplete-not-acceptance",
+      "exitCode": 1,
+      "tests": null,
+      "passed": null,
+      "failed": null,
+      "skipped": null,
+      "aggregateCompleted": false,
+      "classification": "obsolete test fixture promise cycle after earlier owner/workflow fence; not a demonstrated real InnoDB cycle",
+      "validReceipt": "main-reaudit-evidence/root-f915-failed-diagnostic-v2.json",
+      "invalidReceipt": "main-reaudit-evidence/root-f915-invalid-null-diagnostic.json",
+      "failedTest": "a known transaction deadlock before physical send preserves either the cancelled new choice or the complete old delivery",
+      "failedDurationMs": 120000.9522,
+      "stoppedOwnRunnerPid": 53868,
+      "stoppedOwnChildPid": 23064,
+      "sharedDatabaseRestarted": false,
+      "sourceChangesPending": {
+        "test": "scripts/test/automation-monitor-workflow-cas-sql.test.js",
+        "scope": "Replace obsolete interleaving with real owner-fence serialization and separate two-row InnoDB deadlock before physical send; no product retry-policy change.",
+        "formatting": {
+          "file": "src/automation/flow-history.js",
+          "result": "AST-identical-formatting-root-attested",
+          "toolOutputChunk": "840d66"
+        }
+      },
+      "replacementRun": null
+    },
+    {
+      "scope": "initial0769 independent AST serialization",
+      "classification": "initial callback returned Array.push length and stopped TypeScript forEachChild early; v2 uses void callback and recomputes entire AST",
+      "supersededReport": "main-reaudit-evidence/independent-0769-first-ast-serializer-diagnostic.json",
+      "authoritativeReview": "main-reaudit-evidence/independent-final-0769-owner-v2.json",
+      "productOrSqlResultChanged": false,
+      "rootOriginalAstProofWasCorrect": true,
+      "notAcceptanceEvidence": true
+    },
+    {
+      "scope": "complete0769 root run47219",
+      "status": "CLOSED-FAILED-NOT-ACCEPTED",
+      "counts": {
+        "tests": 2126,
+        "suites": 0,
+        "pass": 2120,
+        "fail": 6,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0,
+        "duration_ms": 1311051.6327
+      },
+      "failureAccounting": "4 actual leaf causes plus2 failing parents are reported as6 Node failures; none is hidden or reclassified as pass.",
+      "nativeTcpFailures": {
+        "count": 3,
+        "code": "ETIMEDOUT",
+        "nativeErrno": -4039,
+        "phase": "test helper connection/admin/DDL acquire before application assertions",
+        "environmentalMechanismProven": false
+      },
+      "actualProductRegression": {
+        "count": 1,
+        "file": "scripts/test/automation-sql.test.js",
+        "line": 207,
+        "assertion": "members.every(member => member.state === 'failed')",
+        "observation": "held parent failed while aggregated child is not failed in the same cleanup claim",
+        "existingAssertionMustRemain": true
+      },
+      "evidence": "main-reaudit-evidence/root-0769-closed-failure-diagnostic.json"
+    }
+  ],
+  "browserVerification": {
+    "sourceSha": "fdde3bd98bee5774eea0aac59466a5d7656a0c42",
+    "status": "historical-fdde-local-ui-evidence-final-d2-comparison-pending",
+    "realReact": true,
+    "realServiceApi": true,
+    "disposableSql": true,
+    "mockDiscord": true,
+    "historyPageCounts": [
+      50,
+      100,
+      102
+    ],
+    "oldestRevisions": [
+      2,
+      1
+    ],
+    "restoredFrom": 1,
+    "newDraftRevision": 103,
+    "scenario": "main-reaudit-evidence/browser-history-fdde-scenario.json",
+    "screenshot": "main-reaudit-evidence/history-restored-desktop-fdde.jpg",
+    "cleanup": {
+      "ownedHarnessStopExecSession": 81056,
+      "exitCode": 0,
+      "ownedSchema": "cbte_automation_test_e39159c63c1e7c0b80cc",
+      "ownedSchemaDropped": true,
+      "browserTabsClosed": true,
+      "stopMethod": "POST /fixture/stop; stdin already closed",
+      "closedTabId": "8"
+    },
+    "finalSourceAccepted": false,
+    "localUiCarryForwardPendingCoreComparison": true,
+    "currentReviewedSourceSha": "d2e792d30a44723e603869b27970b05597d51a9d",
+    "carryForwardComponentFiles": [
+      "dashboard/components/automation/monitor-manager.tsx",
+      "dashboard/components/automation/monitor-cadence-editor.tsx",
+      "dashboard/components/automation/x-monitor-manager.tsx",
+      "dashboard/components/automation/automation-workspace.tsx",
+      "dashboard/components/admin/square-commerce-manager.tsx",
+      "dashboard/components/admin/notification-plan-manager.tsx"
+    ],
+    "basis": "Historical actual IAB scenario tests workflow-history UI only. Six relevant edited UI components are unchanged from fdde; finalizer verifies canonical blob equality. This is not a fresh runtime browser or real-provider proof."
+  },
+  "productionObservation": {
+    "atUtc": "2026-10-16T07:56:20.182660+00:00",
+    "revision": "c63003f5dbd585a3f09e8672a0f80fa5db460165",
+    "rollout": "supporters",
+    "shardsReady": 14,
+    "shardsTotal": 14,
+    "leaseActive": true,
+    "explicitUserCadenceMinutes": 5,
+    "newTenFindingSourceDeployed": false,
+    "scope": "root read-only resident observation; this documentation task has performed no production action"
+  },
+  "finalizationChecklist": [
+    {
+      "gate": "new-source",
+      "status": "d2-scoped-reviewed-root-certificate-pending",
+      "requires": "Exact d2 source32 manifest/independent59 proof recorded; root source certificate, ops independent preparation and a fresh185-file full run remain required."
+    },
+    {
+      "gate": "runtime-independent",
+      "status": "d2-focused-and-independent-clean-local-only",
+      "requires": "Final16 author cases and2 independently repeated incremental controls pass; final whole-matrix still required."
+    },
+    {
+      "gate": "full-matrix",
+      "status": "new185-root-run-not-started",
+      "requires": "Fresh immutable full test matrix with discovered file list, source hash manifest and closed JUnit; derive all counts from that run, require failures/skips/cancelled0. Do not assume184files or substitute combined diagnostic runs."
+    },
+    {
+      "gate": "ui-source-comparison",
+      "status": "queue-regression-correction-new-source-and-full-run-pending",
+      "requires": "Confirm final UI/API paths equal the browser-tested bytes or rerun affected UI; retained fdde UI evidence cannot establish new runtime acceptance."
+    },
+    {
+      "gate": "merge",
+      "status": "pending",
+      "requires": "After complete root tests and source review, inspect exact-head cloud checks including observed Codacy vendor-rule failure; do not claim all CI green. Record actual main SHA only after a real merge."
+    },
+    {
+      "gate": "v8-operations",
+      "status": "rev3-local-preparation-not-actual-bundle-main-or-production",
+      "requires": "Approve actual final source/bundle and independent deployment evidence; existing V8 preparation is not a production deployment or approved candidate."
+    },
+    {
+      "gate": "supporters-live",
+      "status": "pending",
+      "requires": "After authorized versioned rollout, verify exact resident main, all dynamic shards/lease/heartbeat, application startup and existing X receiver, supporters flags, durable data/plan settings and explicit5-minute override; retain rollback proof."
+    },
+    {
+      "gate": "real-provider-boundaries",
+      "status": "not-claimed",
+      "requires": "Leave real OAuth/newX-to-Discord/realSquare flags false unless corresponding actual evidence is supplied."
+    }
+  ],
+  "cadencePreservationRequired": {
+    "normalPlanCadenceMinutes": 30,
+    "explicitUserCadenceMinutes": 5,
+    "basis": "existing accepted policy; final deployment must preserve both, separately from the last read-only resident proof"
+  },
+  "pullRequest": {
+    "url": "https://github.com/lovetwice1012/comebacktwitterembed/pull/51",
+    "draft": true,
+    "status": "d2-head-scoped-reviewed-root-certificate-ops-and-new185-full-pending"
+  },
+  "finalSourceHashes": null,
+  "finalCoreTreeIds": null,
+  "priorReviewedSourceSha": "f915a68819b38b01664a3bde25770c46eda7bcbc",
+  "reviewedSourceSha": "d2e792d30a44723e603869b27970b05597d51a9d",
+  "historicalReviewedSourceHashesF915": [
+    {
+      "file": "dashboard/components/admin/notification-plan-manager.tsx",
+      "expectedWorkingCopySha256": "492151e1327a58fea40b7603a0bc3c859362c29d269fa7fd5da550d3f18a444f",
+      "observedWorkingCopySha256": "492151e1327a58fea40b7603a0bc3c859362c29d269fa7fd5da550d3f18a444f",
+      "canonicalGitSha256": "492151e1327a58fea40b7603a0bc3c859362c29d269fa7fd5da550d3f18a444f"
+    },
+    {
+      "file": "dashboard/components/admin/push-capacity-diagnostics.tsx",
+      "expectedWorkingCopySha256": "4c478fde8e6db83e620664b23fa9c7bfcf4a1a29cde4223c8eca7e2fa85527ea",
+      "observedWorkingCopySha256": "4c478fde8e6db83e620664b23fa9c7bfcf4a1a29cde4223c8eca7e2fa85527ea",
+      "canonicalGitSha256": "4c478fde8e6db83e620664b23fa9c7bfcf4a1a29cde4223c8eca7e2fa85527ea"
+    },
+    {
+      "file": "dashboard/components/admin/square-commerce-manager.tsx",
+      "expectedWorkingCopySha256": "898607fdc8030dd0935ef218d8ad00318c2a364bd89eae057cb27f3919f6ecec",
+      "observedWorkingCopySha256": "898607fdc8030dd0935ef218d8ad00318c2a364bd89eae057cb27f3919f6ecec",
+      "canonicalGitSha256": "898607fdc8030dd0935ef218d8ad00318c2a364bd89eae057cb27f3919f6ecec"
+    },
+    {
+      "file": "dashboard/components/automation/automation-workspace.tsx",
+      "expectedWorkingCopySha256": "bb8c715aec34a4a55939eed39adea2121664e3e8b100da7771e071a1b4e80969",
+      "observedWorkingCopySha256": "bb8c715aec34a4a55939eed39adea2121664e3e8b100da7771e071a1b4e80969",
+      "canonicalGitSha256": "bb8c715aec34a4a55939eed39adea2121664e3e8b100da7771e071a1b4e80969"
+    },
+    {
+      "file": "dashboard/components/automation/marketplace-manager.tsx",
+      "expectedWorkingCopySha256": "d18aee7fe5573809e253d919f71308fcf539ffd22dc29934a79413b6e5cecd23",
+      "observedWorkingCopySha256": "d18aee7fe5573809e253d919f71308fcf539ffd22dc29934a79413b6e5cecd23",
+      "canonicalGitSha256": "d18aee7fe5573809e253d919f71308fcf539ffd22dc29934a79413b6e5cecd23"
+    },
+    {
+      "file": "dashboard/components/automation/monitor-cadence-editor.tsx",
+      "expectedWorkingCopySha256": "2fc1bc7224cc79905c6e1c06fa3b837f9a116987c42942da1fcbcb3f5f870286",
+      "observedWorkingCopySha256": "2fc1bc7224cc79905c6e1c06fa3b837f9a116987c42942da1fcbcb3f5f870286",
+      "canonicalGitSha256": "768cb88cb8e5cb05eb7396da4dcced26bae132ce0d9fa89032e10ce76b71377a"
+    },
+    {
+      "file": "dashboard/components/automation/monitor-manager.tsx",
+      "expectedWorkingCopySha256": "080eb3be855ca7ac6c30d4926e590cc2825c8d5245f368af31a4fbb82f4f84f7",
+      "observedWorkingCopySha256": "080eb3be855ca7ac6c30d4926e590cc2825c8d5245f368af31a4fbb82f4f84f7",
+      "canonicalGitSha256": "080eb3be855ca7ac6c30d4926e590cc2825c8d5245f368af31a4fbb82f4f84f7"
+    },
+    {
+      "file": "dashboard/components/automation/x-monitor-manager.tsx",
+      "expectedWorkingCopySha256": "5df715aa48c20053f2bab0e9962bf612f5ea5b651081266b254f085f7a463295",
+      "observedWorkingCopySha256": "5df715aa48c20053f2bab0e9962bf612f5ea5b651081266b254f085f7a463295",
+      "canonicalGitSha256": "5df715aa48c20053f2bab0e9962bf612f5ea5b651081266b254f085f7a463295"
+    },
+    {
+      "file": "scripts/test/automation-aggregate-member-boundary.test.js",
+      "expectedWorkingCopySha256": "af58b2ce57e1cd50ff54ad16c1ece74dbc75e203a0803d8658b3047613c2af3e",
+      "observedWorkingCopySha256": "af58b2ce57e1cd50ff54ad16c1ece74dbc75e203a0803d8658b3047613c2af3e",
+      "canonicalGitSha256": "af58b2ce57e1cd50ff54ad16c1ece74dbc75e203a0803d8658b3047613c2af3e"
+    },
+    {
+      "file": "scripts/test/automation-flow-permanent-failure-sql.test.js",
+      "expectedWorkingCopySha256": "8a89d7964a69f5c6e98e7ee7f284523c45ae6e3f5b74a898b5fda1843a4f2ec6",
+      "observedWorkingCopySha256": "8a89d7964a69f5c6e98e7ee7f284523c45ae6e3f5b74a898b5fda1843a4f2ec6",
+      "canonicalGitSha256": "8a89d7964a69f5c6e98e7ee7f284523c45ae6e3f5b74a898b5fda1843a4f2ec6"
+    },
+    {
+      "file": "scripts/test/automation-flow-state-reconciliation-sql.test.js",
+      "expectedWorkingCopySha256": "5501d23ef37b0492a0fb815881c8c71e619397d961e9e3bf62f01aedcc8ad407",
+      "observedWorkingCopySha256": "5501d23ef37b0492a0fb815881c8c71e619397d961e9e3bf62f01aedcc8ad407",
+      "canonicalGitSha256": "5501d23ef37b0492a0fb815881c8c71e619397d961e9e3bf62f01aedcc8ad407"
+    },
+    {
+      "file": "scripts/test/automation-main-admin-cas-ui.test.js",
+      "expectedWorkingCopySha256": "62fb82064c19c19c10e19d22747a85fc644a7c796466c3ca47ea25b98e68935f",
+      "observedWorkingCopySha256": "62fb82064c19c19c10e19d22747a85fc644a7c796466c3ca47ea25b98e68935f",
+      "canonicalGitSha256": "62fb82064c19c19c10e19d22747a85fc644a7c796466c3ca47ea25b98e68935f"
+    },
+    {
+      "file": "scripts/test/automation-main-cadence-read-recovery.test.js",
+      "expectedWorkingCopySha256": "54a53c067687e1e874814ef1d3bf714f0e9c25dedf19ff58ae26b12df5000d93",
+      "observedWorkingCopySha256": "54a53c067687e1e874814ef1d3bf714f0e9c25dedf19ff58ae26b12df5000d93",
+      "canonicalGitSha256": "54a53c067687e1e874814ef1d3bf714f0e9c25dedf19ff58ae26b12df5000d93"
+    },
+    {
+      "file": "scripts/test/automation-main-data-revalidation-sql.test.js",
+      "expectedWorkingCopySha256": "e6a81fb538c74e6360df22b12346f1376e5339326f2463b14d53b00997fd8774",
+      "observedWorkingCopySha256": "e6a81fb538c74e6360df22b12346f1376e5339326f2463b14d53b00997fd8774",
+      "canonicalGitSha256": "e6a81fb538c74e6360df22b12346f1376e5339326f2463b14d53b00997fd8774"
+    },
+    {
+      "file": "scripts/test/automation-main-data-revalidation-ui.test.js",
+      "expectedWorkingCopySha256": "3c32a2e56c7a0890820834cb8338cfe10576c0efa101cf9ff1c2e5c2cdec2ace",
+      "observedWorkingCopySha256": "3c32a2e56c7a0890820834cb8338cfe10576c0efa101cf9ff1c2e5c2cdec2ace",
+      "canonicalGitSha256": "3c32a2e56c7a0890820834cb8338cfe10576c0efa101cf9ff1c2e5c2cdec2ace"
+    },
+    {
+      "file": "scripts/test/automation-main-ui-draft-cadence.test.js",
+      "expectedWorkingCopySha256": "8d1276237de5bc493a627cdeb3f8f6769db1e29cdcdc72d92bdc424c6e1eda57",
+      "observedWorkingCopySha256": "8d1276237de5bc493a627cdeb3f8f6769db1e29cdcdc72d92bdc424c6e1eda57",
+      "canonicalGitSha256": "8d1276237de5bc493a627cdeb3f8f6769db1e29cdcdc72d92bdc424c6e1eda57"
+    },
+    {
+      "file": "scripts/test/automation-main-workflow-history.test.js",
+      "expectedWorkingCopySha256": "98ba5e4ce0f6f9bdaf706352e62a22a3b4cd7cebb05aeea3e1c24d848cc6f920",
+      "observedWorkingCopySha256": "98ba5e4ce0f6f9bdaf706352e62a22a3b4cd7cebb05aeea3e1c24d848cc6f920",
+      "canonicalGitSha256": "98ba5e4ce0f6f9bdaf706352e62a22a3b4cd7cebb05aeea3e1c24d848cc6f920"
+    },
+    {
+      "file": "scripts/test/automation-main-x-read-write-ui.test.js",
+      "expectedWorkingCopySha256": "9355cc4c672c305a38349323e732249a0d075a80a3aaa59e2ca9a85cf33fae63",
+      "observedWorkingCopySha256": "9355cc4c672c305a38349323e732249a0d075a80a3aaa59e2ca9a85cf33fae63",
+      "canonicalGitSha256": "9355cc4c672c305a38349323e732249a0d075a80a3aaa59e2ca9a85cf33fae63"
+    },
+    {
+      "file": "scripts/test/automation-marketplace-sql.test.js",
+      "expectedWorkingCopySha256": "e0ad872c05ef8acec9da353b44ef034864d3fefc50a3dc024dcd0f71d1cb32f8",
+      "observedWorkingCopySha256": "e0ad872c05ef8acec9da353b44ef034864d3fefc50a3dc024dcd0f71d1cb32f8",
+      "canonicalGitSha256": "e0ad872c05ef8acec9da353b44ef034864d3fefc50a3dc024dcd0f71d1cb32f8"
+    },
+    {
+      "file": "scripts/test/automation-push-capacity-ui.test.js",
+      "expectedWorkingCopySha256": "dc444dc311ffbac8ffa40465866b02b16b4f6b8bd835f8d414f76767194c982f",
+      "observedWorkingCopySha256": "dc444dc311ffbac8ffa40465866b02b16b4f6b8bd835f8d414f76767194c982f",
+      "canonicalGitSha256": "dc444dc311ffbac8ffa40465866b02b16b4f6b8bd835f8d414f76767194c982f"
+    },
+    {
+      "file": "src/automation/api.js",
+      "expectedWorkingCopySha256": "846f6a36d3046fd1685ee015051af819e959302ec867408348fcde6e56e01e8d",
+      "observedWorkingCopySha256": "846f6a36d3046fd1685ee015051af819e959302ec867408348fcde6e56e01e8d",
+      "canonicalGitSha256": "9535ddbaad8e2995d8e062f997559926494f58098ce69f83004a65df0c609ee4"
+    },
+    {
+      "file": "src/automation/flow-history.js",
+      "expectedWorkingCopySha256": "e0e4f4fa8a3653ba39765c0977bfb82afceb368a9fca5e83cabced81370b61c1",
+      "observedWorkingCopySha256": "e0e4f4fa8a3653ba39765c0977bfb82afceb368a9fca5e83cabced81370b61c1",
+      "canonicalGitSha256": "e0e4f4fa8a3653ba39765c0977bfb82afceb368a9fca5e83cabced81370b61c1"
+    },
+    {
+      "file": "src/automation/flow-projector.js",
+      "expectedWorkingCopySha256": "4f8c63a56089c2984e54db52e624d52675243a5733dd12c2faf0797e518137a9",
+      "observedWorkingCopySha256": "4f8c63a56089c2984e54db52e624d52675243a5733dd12c2faf0797e518137a9",
+      "canonicalGitSha256": "4f8c63a56089c2984e54db52e624d52675243a5733dd12c2faf0797e518137a9"
+    },
+    {
+      "file": "src/automation/graph-store.js",
+      "expectedWorkingCopySha256": "637914a3b5b9a5ea31cce4a8cfec940563a5d9a105de065736e28105d7c24853",
+      "observedWorkingCopySha256": "637914a3b5b9a5ea31cce4a8cfec940563a5d9a105de065736e28105d7c24853",
+      "canonicalGitSha256": "637914a3b5b9a5ea31cce4a8cfec940563a5d9a105de065736e28105d7c24853"
+    },
+    {
+      "file": "src/automation/history.js",
+      "expectedWorkingCopySha256": "37ae7b3a4e93b2f3e2451306a70fa81e651c5346f594b99377c5a390ab5a3c57",
+      "observedWorkingCopySha256": "37ae7b3a4e93b2f3e2451306a70fa81e651c5346f594b99377c5a390ab5a3c57",
+      "canonicalGitSha256": "37ae7b3a4e93b2f3e2451306a70fa81e651c5346f594b99377c5a390ab5a3c57"
+    },
+    {
+      "file": "src/automation/marketplace-core.js",
+      "expectedWorkingCopySha256": "c468bba9ebac0a2ded2be2ae53d681390e71c8cf0bf7adc2329caf6c1cdd932d",
+      "observedWorkingCopySha256": "c468bba9ebac0a2ded2be2ae53d681390e71c8cf0bf7adc2329caf6c1cdd932d",
+      "canonicalGitSha256": "0c0a04dd8cb590c0801e1c20b6b46ea23ccc3d1a918f176d813c3ee4c4ad0bf9"
+    },
+    {
+      "file": "src/automation/queue.js",
+      "expectedWorkingCopySha256": "bc8422f9efc0cc608ef6523d44ad7af2ccb5cf2f29458879c50df4a2fbdb014a",
+      "observedWorkingCopySha256": "bc8422f9efc0cc608ef6523d44ad7af2ccb5cf2f29458879c50df4a2fbdb014a",
+      "canonicalGitSha256": "bc8422f9efc0cc608ef6523d44ad7af2ccb5cf2f29458879c50df4a2fbdb014a"
+    },
+    {
+      "file": "src/automation/service.js",
+      "expectedWorkingCopySha256": "76efee6def6fc3bcc073d1dc9fda49592c415f763ea1b184612a8d1a22f9d1e6",
+      "observedWorkingCopySha256": "76efee6def6fc3bcc073d1dc9fda49592c415f763ea1b184612a8d1a22f9d1e6",
+      "canonicalGitSha256": "76efee6def6fc3bcc073d1dc9fda49592c415f763ea1b184612a8d1a22f9d1e6"
+    },
+    {
+      "file": "src/automation/workflow-deletion.js",
+      "expectedWorkingCopySha256": "9e0195e67f026e662dc9c4b3f102d65496d320a61e84acc279e5dcf452ff7c15",
+      "observedWorkingCopySha256": "9e0195e67f026e662dc9c4b3f102d65496d320a61e84acc279e5dcf452ff7c15",
+      "canonicalGitSha256": "9e0195e67f026e662dc9c4b3f102d65496d320a61e84acc279e5dcf452ff7c15"
+    }
+  ],
+  "reviewedSourceHashes": [
+    {
+      "file": "dashboard/components/admin/notification-plan-manager.tsx",
+      "mode": "100644",
+      "gitBlob": "9c6ad7dfa36ce8b0ec1d4e8d671e7903ddc9e65b",
+      "canonicalGitSha256": "492151e1327a58fea40b7603a0bc3c859362c29d269fa7fd5da550d3f18a444f",
+      "observedWorkingCopySha256": "492151e1327a58fea40b7603a0bc3c859362c29d269fa7fd5da550d3f18a444f",
+      "expectedWorkingCopySha256": "492151e1327a58fea40b7603a0bc3c859362c29d269fa7fd5da550d3f18a444f",
+      "sourceRevision": "d2e792d30a44723e603869b27970b05597d51a9d"
+    },
+    {
+      "file": "dashboard/components/admin/push-capacity-diagnostics.tsx",
+      "mode": "100644",
+      "gitBlob": "9510d314bded300f6a73d6994bd660cad341f557",
+      "canonicalGitSha256": "4c478fde8e6db83e620664b23fa9c7bfcf4a1a29cde4223c8eca7e2fa85527ea",
+      "observedWorkingCopySha256": "4c478fde8e6db83e620664b23fa9c7bfcf4a1a29cde4223c8eca7e2fa85527ea",
+      "expectedWorkingCopySha256": "4c478fde8e6db83e620664b23fa9c7bfcf4a1a29cde4223c8eca7e2fa85527ea",
+      "sourceRevision": "d2e792d30a44723e603869b27970b05597d51a9d"
+    },
+    {
+      "file": "dashboard/components/admin/square-commerce-manager.tsx",
+      "mode": "100644",
+      "gitBlob": "bae84066b642ebb936f1d7bebac199862ed10da1",
+      "canonicalGitSha256": "898607fdc8030dd0935ef218d8ad00318c2a364bd89eae057cb27f3919f6ecec",
+      "observedWorkingCopySha256": "898607fdc8030dd0935ef218d8ad00318c2a364bd89eae057cb27f3919f6ecec",
+      "expectedWorkingCopySha256": "898607fdc8030dd0935ef218d8ad00318c2a364bd89eae057cb27f3919f6ecec",
+      "sourceRevision": "d2e792d30a44723e603869b27970b05597d51a9d"
+    },
+    {
+      "file": "dashboard/components/automation/automation-workspace.tsx",
+      "mode": "100644",
+      "gitBlob": "281068b238de02b0d237747e5e632b89fe8fc807",
+      "canonicalGitSha256": "bb8c715aec34a4a55939eed39adea2121664e3e8b100da7771e071a1b4e80969",
+      "observedWorkingCopySha256": "bb8c715aec34a4a55939eed39adea2121664e3e8b100da7771e071a1b4e80969",
+      "expectedWorkingCopySha256": "bb8c715aec34a4a55939eed39adea2121664e3e8b100da7771e071a1b4e80969",
+      "sourceRevision": "d2e792d30a44723e603869b27970b05597d51a9d"
+    },
+    {
+      "file": "dashboard/components/automation/marketplace-manager.tsx",
+      "mode": "100644",
+      "gitBlob": "4b41c74c09a8b580245559d3abd8cf44bec54fc6",
+      "canonicalGitSha256": "d18aee7fe5573809e253d919f71308fcf539ffd22dc29934a79413b6e5cecd23",
+      "observedWorkingCopySha256": "d18aee7fe5573809e253d919f71308fcf539ffd22dc29934a79413b6e5cecd23",
+      "expectedWorkingCopySha256": "d18aee7fe5573809e253d919f71308fcf539ffd22dc29934a79413b6e5cecd23",
+      "sourceRevision": "d2e792d30a44723e603869b27970b05597d51a9d"
+    },
+    {
+      "file": "dashboard/components/automation/monitor-cadence-editor.tsx",
+      "mode": "100644",
+      "gitBlob": "0e8638e1ee543f6e4787c7ee06953604bc3408f4",
+      "canonicalGitSha256": "768cb88cb8e5cb05eb7396da4dcced26bae132ce0d9fa89032e10ce76b71377a",
+      "observedWorkingCopySha256": "2fc1bc7224cc79905c6e1c06fa3b837f9a116987c42942da1fcbcb3f5f870286",
+      "expectedWorkingCopySha256": "2fc1bc7224cc79905c6e1c06fa3b837f9a116987c42942da1fcbcb3f5f870286",
+      "sourceRevision": "d2e792d30a44723e603869b27970b05597d51a9d"
+    },
+    {
+      "file": "dashboard/components/automation/monitor-manager.tsx",
+      "mode": "100644",
+      "gitBlob": "f11db0103fea4cbe0e37f747def819603d36cb60",
+      "canonicalGitSha256": "080eb3be855ca7ac6c30d4926e590cc2825c8d5245f368af31a4fbb82f4f84f7",
+      "observedWorkingCopySha256": "080eb3be855ca7ac6c30d4926e590cc2825c8d5245f368af31a4fbb82f4f84f7",
+      "expectedWorkingCopySha256": "080eb3be855ca7ac6c30d4926e590cc2825c8d5245f368af31a4fbb82f4f84f7",
+      "sourceRevision": "d2e792d30a44723e603869b27970b05597d51a9d"
+    },
+    {
+      "file": "dashboard/components/automation/x-monitor-manager.tsx",
+      "mode": "100644",
+      "gitBlob": "82f72abef6e46abbff346efdf4679445fd712218",
+      "canonicalGitSha256": "5df715aa48c20053f2bab0e9962bf612f5ea5b651081266b254f085f7a463295",
+      "observedWorkingCopySha256": "5df715aa48c20053f2bab0e9962bf612f5ea5b651081266b254f085f7a463295",
+      "expectedWorkingCopySha256": "5df715aa48c20053f2bab0e9962bf612f5ea5b651081266b254f085f7a463295",
+      "sourceRevision": "d2e792d30a44723e603869b27970b05597d51a9d"
+    },
+    {
+      "file": "scripts/lib/automation-test-db.js",
+      "mode": "100644",
+      "gitBlob": "7220bb5b2aa4a494ae96d9cc1f908cc19fc5f424",
+      "canonicalGitSha256": "de08c0efb3319f0df35724cf8b13ef764c834a7deaea55696bebfe391eec03de",
+      "observedWorkingCopySha256": "dd18673b8f4c52f7e7c5c85e07298aa371670898aa1e0ea8a314619f2d63be1b",
+      "expectedWorkingCopySha256": "dd18673b8f4c52f7e7c5c85e07298aa371670898aa1e0ea8a314619f2d63be1b",
+      "sourceRevision": "d2e792d30a44723e603869b27970b05597d51a9d"
+    },
+    {
+      "file": "scripts/test/automation-aggregate-member-boundary.test.js",
+      "mode": "100644",
+      "gitBlob": "b1b43fc3d68330a885d7a0afff41c7a2cc9d791d",
+      "canonicalGitSha256": "af58b2ce57e1cd50ff54ad16c1ece74dbc75e203a0803d8658b3047613c2af3e",
+      "observedWorkingCopySha256": "af58b2ce57e1cd50ff54ad16c1ece74dbc75e203a0803d8658b3047613c2af3e",
+      "expectedWorkingCopySha256": "af58b2ce57e1cd50ff54ad16c1ece74dbc75e203a0803d8658b3047613c2af3e",
+      "sourceRevision": "d2e792d30a44723e603869b27970b05597d51a9d"
+    },
+    {
+      "file": "scripts/test/automation-flow-permanent-failure-sql.test.js",
+      "mode": "100644",
+      "gitBlob": "c1995b5fcc2f77db53399cd33d245e059e92c1c2",
+      "canonicalGitSha256": "8a89d7964a69f5c6e98e7ee7f284523c45ae6e3f5b74a898b5fda1843a4f2ec6",
+      "observedWorkingCopySha256": "8a89d7964a69f5c6e98e7ee7f284523c45ae6e3f5b74a898b5fda1843a4f2ec6",
+      "expectedWorkingCopySha256": "8a89d7964a69f5c6e98e7ee7f284523c45ae6e3f5b74a898b5fda1843a4f2ec6",
+      "sourceRevision": "d2e792d30a44723e603869b27970b05597d51a9d"
+    },
+    {
+      "file": "scripts/test/automation-flow-state-reconciliation-sql.test.js",
+      "mode": "100644",
+      "gitBlob": "332ccabbc93a71cee2517df25b44cb81329a811a",
+      "canonicalGitSha256": "a8aefab66521112321eb1752d816ea219668539cf603229d0c666bc69a6ebd93",
+      "observedWorkingCopySha256": "a8aefab66521112321eb1752d816ea219668539cf603229d0c666bc69a6ebd93",
+      "expectedWorkingCopySha256": "a8aefab66521112321eb1752d816ea219668539cf603229d0c666bc69a6ebd93",
+      "sourceRevision": "d2e792d30a44723e603869b27970b05597d51a9d"
+    },
+    {
+      "file": "scripts/test/automation-main-admin-cas-ui.test.js",
+      "mode": "100644",
+      "gitBlob": "58b965aeaaaacc63b1903d60b165d4cfe150bd32",
+      "canonicalGitSha256": "62fb82064c19c19c10e19d22747a85fc644a7c796466c3ca47ea25b98e68935f",
+      "observedWorkingCopySha256": "62fb82064c19c19c10e19d22747a85fc644a7c796466c3ca47ea25b98e68935f",
+      "expectedWorkingCopySha256": "62fb82064c19c19c10e19d22747a85fc644a7c796466c3ca47ea25b98e68935f",
+      "sourceRevision": "d2e792d30a44723e603869b27970b05597d51a9d"
+    },
+    {
+      "file": "scripts/test/automation-main-cadence-read-recovery.test.js",
+      "mode": "100644",
+      "gitBlob": "f49c36bb61b52ac29b24f48d3c62af9cd7969b2d",
+      "canonicalGitSha256": "54a53c067687e1e874814ef1d3bf714f0e9c25dedf19ff58ae26b12df5000d93",
+      "observedWorkingCopySha256": "54a53c067687e1e874814ef1d3bf714f0e9c25dedf19ff58ae26b12df5000d93",
+      "expectedWorkingCopySha256": "54a53c067687e1e874814ef1d3bf714f0e9c25dedf19ff58ae26b12df5000d93",
+      "sourceRevision": "d2e792d30a44723e603869b27970b05597d51a9d"
+    },
+    {
+      "file": "scripts/test/automation-main-data-revalidation-sql.test.js",
+      "mode": "100644",
+      "gitBlob": "e66713653d3d6590294d5dca3b91f2c0281d16ef",
+      "canonicalGitSha256": "e6a81fb538c74e6360df22b12346f1376e5339326f2463b14d53b00997fd8774",
+      "observedWorkingCopySha256": "e6a81fb538c74e6360df22b12346f1376e5339326f2463b14d53b00997fd8774",
+      "expectedWorkingCopySha256": "e6a81fb538c74e6360df22b12346f1376e5339326f2463b14d53b00997fd8774",
+      "sourceRevision": "d2e792d30a44723e603869b27970b05597d51a9d"
+    },
+    {
+      "file": "scripts/test/automation-main-data-revalidation-ui.test.js",
+      "mode": "100644",
+      "gitBlob": "30be62b89950760e3853b2b53d41c4e690a3c50b",
+      "canonicalGitSha256": "3c32a2e56c7a0890820834cb8338cfe10576c0efa101cf9ff1c2e5c2cdec2ace",
+      "observedWorkingCopySha256": "3c32a2e56c7a0890820834cb8338cfe10576c0efa101cf9ff1c2e5c2cdec2ace",
+      "expectedWorkingCopySha256": "3c32a2e56c7a0890820834cb8338cfe10576c0efa101cf9ff1c2e5c2cdec2ace",
+      "sourceRevision": "d2e792d30a44723e603869b27970b05597d51a9d"
+    },
+    {
+      "file": "scripts/test/automation-main-ui-draft-cadence.test.js",
+      "mode": "100644",
+      "gitBlob": "aa0760245519b609cc2be8d76410d745ecbd2931",
+      "canonicalGitSha256": "8d1276237de5bc493a627cdeb3f8f6769db1e29cdcdc72d92bdc424c6e1eda57",
+      "observedWorkingCopySha256": "8d1276237de5bc493a627cdeb3f8f6769db1e29cdcdc72d92bdc424c6e1eda57",
+      "expectedWorkingCopySha256": "8d1276237de5bc493a627cdeb3f8f6769db1e29cdcdc72d92bdc424c6e1eda57",
+      "sourceRevision": "d2e792d30a44723e603869b27970b05597d51a9d"
+    },
+    {
+      "file": "scripts/test/automation-main-workflow-history.test.js",
+      "mode": "100644",
+      "gitBlob": "c30f23f49d1aedaaa979f9af5a778b391f4c274c",
+      "canonicalGitSha256": "98ba5e4ce0f6f9bdaf706352e62a22a3b4cd7cebb05aeea3e1c24d848cc6f920",
+      "observedWorkingCopySha256": "98ba5e4ce0f6f9bdaf706352e62a22a3b4cd7cebb05aeea3e1c24d848cc6f920",
+      "expectedWorkingCopySha256": "98ba5e4ce0f6f9bdaf706352e62a22a3b4cd7cebb05aeea3e1c24d848cc6f920",
+      "sourceRevision": "d2e792d30a44723e603869b27970b05597d51a9d"
+    },
+    {
+      "file": "scripts/test/automation-main-x-read-write-ui.test.js",
+      "mode": "100644",
+      "gitBlob": "ae42bcf93e26d209aa7b7caae171cd361d5f29b3",
+      "canonicalGitSha256": "9355cc4c672c305a38349323e732249a0d075a80a3aaa59e2ca9a85cf33fae63",
+      "observedWorkingCopySha256": "9355cc4c672c305a38349323e732249a0d075a80a3aaa59e2ca9a85cf33fae63",
+      "expectedWorkingCopySha256": "9355cc4c672c305a38349323e732249a0d075a80a3aaa59e2ca9a85cf33fae63",
+      "sourceRevision": "d2e792d30a44723e603869b27970b05597d51a9d"
+    },
+    {
+      "file": "scripts/test/automation-marketplace-sql.test.js",
+      "mode": "100644",
+      "gitBlob": "a8df63b3cf7e4c1ff179270645c0a2045d7803dd",
+      "canonicalGitSha256": "e0ad872c05ef8acec9da353b44ef034864d3fefc50a3dc024dcd0f71d1cb32f8",
+      "observedWorkingCopySha256": "e0ad872c05ef8acec9da353b44ef034864d3fefc50a3dc024dcd0f71d1cb32f8",
+      "expectedWorkingCopySha256": "e0ad872c05ef8acec9da353b44ef034864d3fefc50a3dc024dcd0f71d1cb32f8",
+      "sourceRevision": "d2e792d30a44723e603869b27970b05597d51a9d"
+    },
+    {
+      "file": "scripts/test/automation-monitor-workflow-cas-sql.test.js",
+      "mode": "100644",
+      "gitBlob": "fb82368a2c7f5eb55bef582149fb8a6e0a6185bc",
+      "canonicalGitSha256": "e0170abf799e953e7f3b55e52bb70db9d0b90442bfddd4234467f14dd3e33bd9",
+      "observedWorkingCopySha256": "e0170abf799e953e7f3b55e52bb70db9d0b90442bfddd4234467f14dd3e33bd9",
+      "expectedWorkingCopySha256": "e0170abf799e953e7f3b55e52bb70db9d0b90442bfddd4234467f14dd3e33bd9",
+      "sourceRevision": "d2e792d30a44723e603869b27970b05597d51a9d"
+    },
+    {
+      "file": "scripts/test/automation-push-capacity-ui.test.js",
+      "mode": "100644",
+      "gitBlob": "26260d1329bc15e2cd460500fbee287437f0bcba",
+      "canonicalGitSha256": "dc444dc311ffbac8ffa40465866b02b16b4f6b8bd835f8d414f76767194c982f",
+      "observedWorkingCopySha256": "dc444dc311ffbac8ffa40465866b02b16b4f6b8bd835f8d414f76767194c982f",
+      "expectedWorkingCopySha256": "dc444dc311ffbac8ffa40465866b02b16b4f6b8bd835f8d414f76767194c982f",
+      "sourceRevision": "d2e792d30a44723e603869b27970b05597d51a9d"
+    },
+    {
+      "file": "scripts/test/automation-test-db-connect.test.js",
+      "mode": "100644",
+      "gitBlob": "0ff3d5a01d438216a3b75d57c846bd83d5f3ae8c",
+      "canonicalGitSha256": "b571b74bf0a963610cde79a60b553572b0f518e16f108ff369688609e670b3e3",
+      "observedWorkingCopySha256": "b571b74bf0a963610cde79a60b553572b0f518e16f108ff369688609e670b3e3",
+      "expectedWorkingCopySha256": "b571b74bf0a963610cde79a60b553572b0f518e16f108ff369688609e670b3e3",
+      "sourceRevision": "d2e792d30a44723e603869b27970b05597d51a9d"
+    },
+    {
+      "file": "src/automation/api.js",
+      "mode": "100644",
+      "gitBlob": "ea79e3646c735c9275ff9d56ec32f610ef607fe7",
+      "canonicalGitSha256": "9535ddbaad8e2995d8e062f997559926494f58098ce69f83004a65df0c609ee4",
+      "observedWorkingCopySha256": "846f6a36d3046fd1685ee015051af819e959302ec867408348fcde6e56e01e8d",
+      "expectedWorkingCopySha256": "846f6a36d3046fd1685ee015051af819e959302ec867408348fcde6e56e01e8d",
+      "sourceRevision": "d2e792d30a44723e603869b27970b05597d51a9d"
+    },
+    {
+      "file": "src/automation/flow-history.js",
+      "mode": "100644",
+      "gitBlob": "138b2217a8ec4f2fe6b3d87e3f8f146a2554d002",
+      "canonicalGitSha256": "60ff0447147e5ae84e15108c14e5883f4d5092969cd652549dffde67b7163824",
+      "observedWorkingCopySha256": "60ff0447147e5ae84e15108c14e5883f4d5092969cd652549dffde67b7163824",
+      "expectedWorkingCopySha256": "60ff0447147e5ae84e15108c14e5883f4d5092969cd652549dffde67b7163824",
+      "sourceRevision": "d2e792d30a44723e603869b27970b05597d51a9d"
+    },
+    {
+      "file": "src/automation/flow-projector.js",
+      "mode": "100644",
+      "gitBlob": "6edabacb932566218dd9f0ae722edbb0d11fc15d",
+      "canonicalGitSha256": "4f8c63a56089c2984e54db52e624d52675243a5733dd12c2faf0797e518137a9",
+      "observedWorkingCopySha256": "4f8c63a56089c2984e54db52e624d52675243a5733dd12c2faf0797e518137a9",
+      "expectedWorkingCopySha256": "4f8c63a56089c2984e54db52e624d52675243a5733dd12c2faf0797e518137a9",
+      "sourceRevision": "d2e792d30a44723e603869b27970b05597d51a9d"
+    },
+    {
+      "file": "src/automation/graph-store.js",
+      "mode": "100644",
+      "gitBlob": "2c0512cff35c6d991f26a17984d6fc80455f5212",
+      "canonicalGitSha256": "637914a3b5b9a5ea31cce4a8cfec940563a5d9a105de065736e28105d7c24853",
+      "observedWorkingCopySha256": "637914a3b5b9a5ea31cce4a8cfec940563a5d9a105de065736e28105d7c24853",
+      "expectedWorkingCopySha256": "637914a3b5b9a5ea31cce4a8cfec940563a5d9a105de065736e28105d7c24853",
+      "sourceRevision": "d2e792d30a44723e603869b27970b05597d51a9d"
+    },
+    {
+      "file": "src/automation/history.js",
+      "mode": "100644",
+      "gitBlob": "acb50ac44370e9eee7ea23865f77b58fc5a06464",
+      "canonicalGitSha256": "37ae7b3a4e93b2f3e2451306a70fa81e651c5346f594b99377c5a390ab5a3c57",
+      "observedWorkingCopySha256": "37ae7b3a4e93b2f3e2451306a70fa81e651c5346f594b99377c5a390ab5a3c57",
+      "expectedWorkingCopySha256": "37ae7b3a4e93b2f3e2451306a70fa81e651c5346f594b99377c5a390ab5a3c57",
+      "sourceRevision": "d2e792d30a44723e603869b27970b05597d51a9d"
+    },
+    {
+      "file": "src/automation/marketplace-core.js",
+      "mode": "100644",
+      "gitBlob": "0d5bbdec530b8c0884595b7d565ce11f5a1e45c4",
+      "canonicalGitSha256": "0c0a04dd8cb590c0801e1c20b6b46ea23ccc3d1a918f176d813c3ee4c4ad0bf9",
+      "observedWorkingCopySha256": "c468bba9ebac0a2ded2be2ae53d681390e71c8cf0bf7adc2329caf6c1cdd932d",
+      "expectedWorkingCopySha256": "c468bba9ebac0a2ded2be2ae53d681390e71c8cf0bf7adc2329caf6c1cdd932d",
+      "sourceRevision": "d2e792d30a44723e603869b27970b05597d51a9d"
+    },
+    {
+      "file": "src/automation/queue.js",
+      "mode": "100644",
+      "gitBlob": "df602c373f9af89f4691710b4df04663f433cacc",
+      "canonicalGitSha256": "1a6106b6493d3b1d9652dfd8289905c689ffd2d10cf6df30926e45cacd6a625c",
+      "observedWorkingCopySha256": "1a6106b6493d3b1d9652dfd8289905c689ffd2d10cf6df30926e45cacd6a625c",
+      "expectedWorkingCopySha256": "1a6106b6493d3b1d9652dfd8289905c689ffd2d10cf6df30926e45cacd6a625c",
+      "sourceRevision": "d2e792d30a44723e603869b27970b05597d51a9d"
+    },
+    {
+      "file": "src/automation/service.js",
+      "mode": "100644",
+      "gitBlob": "c1708fccc191ce0e9e4354b5dfede90af518edc2",
+      "canonicalGitSha256": "76efee6def6fc3bcc073d1dc9fda49592c415f763ea1b184612a8d1a22f9d1e6",
+      "observedWorkingCopySha256": "76efee6def6fc3bcc073d1dc9fda49592c415f763ea1b184612a8d1a22f9d1e6",
+      "expectedWorkingCopySha256": "76efee6def6fc3bcc073d1dc9fda49592c415f763ea1b184612a8d1a22f9d1e6",
+      "sourceRevision": "d2e792d30a44723e603869b27970b05597d51a9d"
+    },
+    {
+      "file": "src/automation/workflow-deletion.js",
+      "mode": "100644",
+      "gitBlob": "f8b8a82802791879fc55a7a2d433c3d2703b37c2",
+      "canonicalGitSha256": "9e0195e67f026e662dc9c4b3f102d65496d320a61e84acc279e5dcf452ff7c15",
+      "observedWorkingCopySha256": "9e0195e67f026e662dc9c4b3f102d65496d320a61e84acc279e5dcf452ff7c15",
+      "expectedWorkingCopySha256": "9e0195e67f026e662dc9c4b3f102d65496d320a61e84acc279e5dcf452ff7c15",
+      "sourceRevision": "d2e792d30a44723e603869b27970b05597d51a9d"
+    }
+  ],
+  "retiredFinalizer": {
+    "file": "C:/Users/yussy/AppData/Local/Temp/finalize-main-reaudit-f915-184.cjs",
+    "sha256": "8348f70a9716b35c3416111a0ae3abec4a6a71618f2b158572cf0a02c75de29d",
+    "status": "NEVER-EXECUTE-source-docs-and-root-run-superseded",
+    "mainExecuted": false,
+    "staticReview": "main-reaudit-evidence/f915-retired-finalizer-static-review.json",
+    "staticReviewSha256": "d1b622cf24e3b61f20be6a5bd12a1456f39bb46469bac54a38e7d4030b9c2ef8",
+    "scope": "Static guards CLEAN is not execution approval; old full run exited1 and did not finish."
+  },
+  "candidateSourceSha": "d2e792d30a44723e603869b27970b05597d51a9d",
+  "candidateChangedCorePaths": 32,
+  "candidateFocusedEvidence": {
+    "sourceRevision": "d2e792d30a44723e603869b27970b05597d51a9d",
+    "authorReport": "main-reaudit-evidence/runtime-author-d2-cascade-case-report.json",
+    "authorCurrentSource": {
+      "file": "main-reaudit-evidence/runtime-author-d2-final-targeted-62.xml",
+      "tests": 62,
+      "pass": 62,
+      "fail": 0,
+      "skip": 0,
+      "durationMs": 62482.1344
+    },
+    "authorPriorSource": {
+      "file": "main-reaudit-evidence/runtime-prior-casefold-focused-150.xml",
+      "tests": 150,
+      "pass": 150,
+      "fail": 0,
+      "actualSafeAcquireRetriesObserved": 1,
+      "basis": "Pre-casefold source only; not reused as final-source aggregate"
+    },
+    "independentCurrentSource": {
+      "report": "main-reaudit-evidence/independent-final-d2-cascade-case-admission.json",
+      "tests": 59,
+      "pass": 59,
+      "fail": 0,
+      "actualSqlCases": 40,
+      "socketFreeHelperUnitCases": 19,
+      "countsNotCombined": true
+    },
+    "wholeMatrix": null,
+    "canonicalManifest": {
+      "file": "main-reaudit-evidence/canonical-source-d2-manifest.json",
+      "sha256": "a350a1b0b59491025a67818a4f5bcd5157a13cecc624b0f7953790ab273bdcc7",
+      "bundleApproval": false
+    }
+  },
+  "operationsPreparation": {
+    "taskRoot": "C:\\Users\\yussy\\AppData\\Local\\Temp\\cbte-main-reaudit10-v8-source-rev3-20261016",
+    "status": "rev3-preparation-root-source-certificate-and-independent-ops-checks-pending",
+    "sourceCandidateSha": "d2e792d30a44723e603869b27970b05597d51a9d",
+    "approvedSource": null,
+    "actualBundleReviewed": null,
+    "historicalF915TaskRoot": "C:\\Users\\yussy\\AppData\\Local\\Temp\\cbte-main-reaudit10-v8-20261016",
+    "historicalF915NamespaceImmutable": true,
+    "productionActions": false,
+    "nextNamespace": "root-managed-exclusive-rev3",
+    "rev3ActualPathAwaitingRoot": false,
+    "historicalRev2Immutable": true,
+    "rootCertificateExecSession": 98119,
+    "fullRunStarted": false
+  },
+  "reviewedCoreTreeIds": {
+    "src": "aff0ea89718b32f4fc86e97f0c439883feac4e75",
+    "index.js": "f1e198b2844674bb452432655873c7f688eb004e",
+    "package.json": "b83d13a7ba8ea97c210c9de0cbe11a058e394320",
+    "package-lock.json": "555308dc110a193fa169c3129af3c9ca60a08ff6",
+    "packages/angelic-angel": "4c160dd8368ae39c82d92dfad3013f17588d4574",
+    "dashboard": "16e5482fe1fc827cbe9a6172634b4e5ac23124a3",
+    "scripts": "3b8068755e251b3da658d707a8ef1bab6082c34b",
+    "migrations": "17a97bd36dab00b719e832bd810f0eba04f05c4d"
+  },
+  "continuousIntegration": {
+    "sourceRevision": "07696234f4a8b57c123b7748b36366d7a7f1e3e2",
+    "allChecksPassed": false,
+    "codacy": {
+      "githubRunId": "1168974511843",
+      "status": "failure",
+      "observedAtUtc": "2026-10-16T09:08:16Z",
+      "artifact": "main-reaudit-evidence/codacy-0769-plugin-crash.jpg",
+      "sha256": "ea86f2b3a5dae7d1729e08d133d4d847d885fe2d07a872cbc9866d62ab4af0e1",
+      "analyzerImage": "codacy/codacy-eslint:9.18.12",
+      "rule": "security-node/detect-unhandled-async-errors",
+      "observedFailure": "vendor rule throws reading null.type during analysis of unchanged files",
+      "unchangedLocations": [
+        "autopush.ts:497",
+        "personal-links route:8",
+        "benchmark:61",
+        "streaming:29",
+        "messageComponents:117"
+      ],
+      "annotationState": "Old f915 style annotations remain in the cloud result although root verified exact0769 remote first18 lines contain the corrected declarations and product AST is unchanged.",
+      "investigation": "root/runtime read-only official investigation active; no security rule disabled or excluded",
+      "localTypeLintPassIsNotCloudSuccess": true
+    },
+    "currentCandidateSourceRevision": "d2e792d30a44723e603869b27970b05597d51a9d",
+    "currentCandidateCloudStatus": "not claimed; latest observed cloud failure belongs to0769",
+    "vendorCauseConfirmed": {
+      "findings": "main-reaudit-evidence/codacy-0769-vendor-rule-findings.json",
+      "sha256": "ef6ebd46d27611eafdb488ef735762f3474cabf8803ce78c746f73e582dd1b79",
+      "localRecheck": "main-reaudit-evidence/codacy-0769-local-vendor-recheck.json",
+      "localRecheckSha256": "8f62cd78364db32827994250daa278f33bc837f30feba7c86f49639c71e727ae",
+      "cause": "Legal async try/finally has TryStatement.handler=null; vendor rule reads handler.type without a null guard.",
+      "sameFiveCrashesReproduced": true,
+      "vendorGuardInstalled": false,
+      "rulesDisabledOrExcluded": false,
+      "guardedLocalAnalysisIsCleanCiPass": false
+    }
+  },
+  "failedRootRuns": [
+    {
+      "sourceRevision": "07696234f4a8b57c123b7748b36366d7a7f1e3e2",
+      "execSession": 47219,
+      "status": "CLOSED-FAILED-NOT-ACCEPTED",
+      "exitCode": 1,
+      "aggregateCompleted": true,
+      "files": 184,
+      "counts": {
+        "tests": 2126,
+        "suites": 0,
+        "pass": 2120,
+        "fail": 6,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0,
+        "duration_ms": 1311051.6327
+      },
+      "directFailureCauses": 4,
+      "failedParentTests": 2,
+      "classification": {
+        "nativeTcpAcquireFailures": 3,
+        "productRegressionFailures": 1,
+        "reason": "Three native TCP connection/acquisition failures before application SQL/DDL assertions; one actual bounded legacy cleanup regression leaves aggregated children behind a failed held parent in the same claim."
+      },
+      "junit": "main-reaudit-evidence/root-0769-closed-failed-184-tests.xml",
+      "junitSha256": "001ab1646173baf38f682bca14117096aad60ac9b739396dbee3bb820ed57818",
+      "progress": "main-reaudit-evidence/root-0769-closed-failed-184-progress.log",
+      "progressSha256": "7e5e1dc03bc2d026cda4b6f1d4556f29dae1ac59d07f0fa70b46a3c930be8ede",
+      "diagnostic": "main-reaudit-evidence/root-0769-closed-failure-diagnostic.json",
+      "diagnosticSha256": "a293f4e5c88a1054335bd5dd8de7cac875c499715b7146fca5e768a43b0554a8",
+      "acceptance": false
+    }
+  ],
+  "previousCandidateSourceSha": "07696234f4a8b57c123b7748b36366d7a7f1e3e2",
+  "retiredFinalizers": [
+    {
+      "file": "C:/Users/yussy/AppData/Local/Temp/finalize-main-reaudit-0769623-184-v2.cjs",
+      "sha256": "d20746edc495bd10f359df634203caa14e89ac0e8cda94f3f3dd1dfb814e5552",
+      "status": "NEVER-EXECUTE-root47219-CLOSED-FAILED-exit1",
+      "mainExecuted": false,
+      "sourceRevision": "07696234f4a8b57c123b7748b36366d7a7f1e3e2",
+      "rootExecSession": 47219,
+      "replacementFinalizer": null
+    }
+  ],
+  "nextCorrectionPlan": {
+    "status": "d2-correction-focused-and-independent-complete-full185-pending",
+    "queue": "Atomic bounded cascade of legacy aggregated children with their terminal held parent; preserve existing regression assertions and job/run consistency.",
+    "testDatabaseHelper": "At most3 narrow native TCP acquisition attempts plus safe diagnostics in test helper only; never retry application SQL or transaction statements.",
+    "newUnitTestsPlanned": 19,
+    "expectedChangedCorePathsNotFinal": 32,
+    "expectedMatrixFilesNotFinal": 185,
+    "finalSourceSha": "d2e792d30a44723e603869b27970b05597d51a9d",
+    "finalCanonicalManifest": "main-reaudit-evidence/canonical-source-d2-manifest.json",
+    "newIndependentReview": "main-reaudit-evidence/independent-final-d2-cascade-case-admission.json",
+    "newRootRun": null,
+    "nextFinalizerPolicy": "Do not prepare a new finalizer until actual future185-file whole-matrix exit0 and matching closed evidence."
+  },
+  "verificationInfrastructure": {
+    "scope": "test helper only; no production retry/OS/network changes",
+    "implementation": {
+      "file": "scripts/lib/automation-test-db.js",
+      "line": 6,
+      "locator": "async function createTestDatabase",
+      "workingSha256": "dd18673b8f4c52f7e7c5c85e07298aa371670898aa1e0ea8a314619f2d63be1b"
+    },
+    "tests": [
+      {
+        "file": "scripts/test/automation-test-db-connect.test.js",
+        "line": 46,
+        "declaration": "for (const failures of",
+        "expandedCases": 2,
+        "coverage": "One/two proven loopback TCP acquisition failures produce safe observable retries before first SQL.",
+        "execution": "passed-d2-author-and-independent-socket-free-unit19; root185-pending"
+      },
+      {
+        "file": "scripts/test/automation-test-db-connect.test.js",
+        "line": 57,
+        "declaration": "test('three failed TCP admissions",
+        "expandedCases": 1,
+        "coverage": "Exactly3 failed admissions return final error, close unopened pool and execute no SQL.",
+        "execution": "passed-d2-author-and-independent-socket-free-unit19; root185-pending"
+      },
+      {
+        "file": "scripts/test/automation-test-db-connect.test.js",
+        "line": 69,
+        "declaration": "test(`pool admission never retries",
+        "expandedCases": 10,
+        "coverage": "Foreign host/port, production port, unknown syscall, protocol/auth/schema failures and any SQL/sqlState fields never retry.",
+        "execution": "passed-d2-author-and-independent-socket-free-unit19; root185-pending"
+      },
+      {
+        "file": "scripts/test/automation-test-db-connect.test.js",
+        "line": 75,
+        "declaration": "test('the explicit non-production",
+        "expandedCases": 1,
+        "coverage": "Port validation precedes pool creation.",
+        "execution": "passed-d2-author-and-independent-socket-free-unit19; root185-pending"
+      },
+      {
+        "file": "scripts/test/automation-test-db-connect.test.js",
+        "line": 82,
+        "declaration": "test('a callback that already supplies",
+        "expandedCases": 1,
+        "coverage": "A supplied connection disqualifies pre-handshake retry.",
+        "execution": "passed-d2-author-and-independent-socket-free-unit19; root185-pending"
+      },
+      {
+        "file": "scripts/test/automation-test-db-connect.test.js",
+        "line": 89,
+        "declaration": "for (const phase of ['query', 'work', 'commit'])",
+        "expandedCases": 3,
+        "coverage": "Query/work/commit errors are never replayed.",
+        "execution": "passed-d2-author-and-independent-socket-free-unit19; root185-pending"
+      },
+      {
+        "file": "scripts/test/automation-test-db-connect.test.js",
+        "line": 107,
+        "declaration": "test('successful transaction work",
+        "expandedCases": 1,
+        "coverage": "Successful work/commit/release execute exactly once.",
+        "execution": "passed-d2-author-and-independent-socket-free-unit19; root185-pending"
+      }
+    ],
+    "expandedCases": 19,
+    "retryEligibility": "At most3 getConnection calls, 50/100ms, only exact127.0.0.1 validated non3306 port connect ETIMEDOUT with no connection/sql/sqlState; every retry reports safe code/attempt/port. Never replay SQL, BEGIN/work/COMMIT or assertions.",
+    "specificWindowsRootCauseProven": false
+  },
+  "nativeTcpDiagnosis": {
+    "boundary": "Native Windows TCP connect completion before mysql handshake/SQL confirmed from exact closed three failures.",
+    "specificWindowsOsCause": "Unproven: ERROR_SEM_TIMEOUT121 and WSAETIMEDOUT10060 map to same libuv ETIMEDOUT; no raw Windows status/packet trace was captured at failure time.",
+    "excludedExplanations": [
+      "250ms autoSelectFamily timer for literal127.0.0.1",
+      "mysql configured10-second connect timer",
+      "application SQL/assertion"
+    ],
+    "boundedRetryIsMitigationNotOsRootCauseFix": true,
+    "historicalAnalysis": "main-reaudit-evidence/local-db-native-connect-causal-boundary.json",
+    "closed0769Classification": "main-reaudit-evidence/local-db-0769-closed-failure-classification.json"
+  }
+}

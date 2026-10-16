@@ -1,0 +1,821 @@
+{
+  "status": "approved-committed-source-contract",
+  "sourceRevision": "e88e74412905987352af0ae7cec665963fc737d0",
+  "baselineRevision": "c63003f5dbd585a3f09e8672a0f80fa5db460165",
+  "reviewBaseRevision": "2a000c89a293e2ee71ef0c579a63def2ff12cbdb",
+  "schemaMode": "strict-unchanged",
+  "schemaProof": {
+    "schemaMode": "strict-unchanged",
+    "baseline": {
+      "migrations/20260630_add_youtube_description_max_length.sql": "41256946ef488d92879fb7b98219f3e0b625d8cddf59eed2e1557a1f1c44957e",
+      "migrations/20260630_add_zz_tiktok_hq.sql": "e1343e1abfa98f96b65bd1f309b3aac5aa1e10e86243530c7cbba5cb57994071",
+      "migrations/20260630_add_zzz_provider_output_settings.sql": "79f67bb5ee655d9b087e121fff3d5da895bb9a83e56fde5cab80d31eb873e5d8",
+      "migrations/20260630_add_zzzz_common_provider_output_controls.sql": "1f5ba2ca0936f48a0aaa74b0b869f1c95cfbeae9eadbd6471ec493a2780d58c0",
+      "migrations/20260701_add_amazon_extract_targets.sql": "449314f6623137a0c25786417dc4d0e4f93c5182d6b6504b8309460123c946ef",
+      "migrations/20260701_add_dashboard_audit_logs.sql": "1a0f9edc1c2918398ecc7ea73253cd4330bcad843b4b6711dddfb04cfbac0299",
+      "migrations/20260702_add_bot_analytics_events.sql": "82b7eca92a4c1109094f003c7405a02269734e92494dbb617243ba7dd23ae2d4",
+      "migrations/20260702_add_bot_provider_hourly_aggregates.sql": "03b01ddc60ff12d64e5cbeb163984a06597bc5df62098d3dc330a61a32be3dc5",
+      "migrations/20260702_add_provider_content_facet_observation_metadata.sql": "3e0cf2195b1a86906d0411c5b12ee3669d6ffeb727d55b8342f1c8f9c5edfe8d",
+      "migrations/20260702_add_sensitive_content_controls.sql": "31e067184721c26547f7bb9f1dc57becbbcf0aca1c13d9bf4661f65d7a25785d",
+      "migrations/20260702_add_settings_webui_notice_state.sql": "4bb54c728fdaa760f1846909168e06905228e2a8efcf92169b668d2b8967cf9c",
+      "migrations/20260702_add_twitter_quote_depth_by_account.sql": "f5696a3ddf8cbded13176f1f2f4c1927cba12c01eed990064471eb1f8c9ba2d1",
+      "migrations/20260702_add_zz_pixiv_general_sensitive_controls.sql": "a0d854c445b3bf3b32a5d6eeaa42353d2ae78e58def17617212637236a684398",
+      "migrations/20260702_add_zzz_drop_pixiv_general_sensitive_controls.sql": "b15bc3e8e6d606f8e75f7322d241c24845ba384cc2277290ec3407805877b493",
+      "migrations/20260705_add_bot_error_alert_incidents.sql": "adc7f099c220dec09084ee515c6930a22151ba09ede9065c5a1abe8ab99e3be2",
+      "migrations/20260708_add_twitter_secondary_source_embed_suppression.sql": "8a1e75ed0e3dc507ef56240232c9fd18388960bc753c6dc49c0d18b60dbdd663",
+      "migrations/20260715_add_admin_analytics_time_indexes.sql": "f6b981d90b88e756afd10d85ccc2168ce387bde2b3c6a03566b3e51b6bfc7b00",
+      "migrations/20260715_add_provider_settings_cache_invalidations.sql": "d6651de61d877a1de1f8168eb714c70885587085dfa7472e6532f1d23d37ce80",
+      "migrations/20260716_add_admin_report_snapshots_and_covering_indexes.sql": "2bcb91c0f56c0ce7305f699899a4db44eca76b55159237a971d4099169f80a1e",
+      "migrations/20260717_add_dashboard_delegated_access_grants.sql": "86cc20ff1e329a9a2083b8dcf18dc00bc4574870eb5db2c92e19428fcb75d8fe",
+      "migrations/20260809_add_admin_analytics_join_indexes.sql": "1d491213fab6317fbce947e375fa2c5710e3ca7f329cc1688cf0e4e7e7f23769",
+      "migrations/20260907_add_provider_metric_observation_rollup.sql": "a1f0c4d31c1b1a02206be14bccf50d99f3aef4e2ff58b09ba0e9eeea6965fa98",
+      "migrations/20260916_add_auto_watch.sql": "80e7f8d34e77e166d1fd3e5ea3625f19a28227e7714dabde15e2dc1000e68944",
+      "migrations/20260916_add_bot_provider_expansion_traces.sql": "941fef4832b0d5da638e4d5be2c3364580b0a4a76c3ab060a72a5a1fb6720013",
+      "migrations/20260916_add_users_donor_flag.sql": "071fd71d3e0d4f486674e5a01b6fae7cdf038a246f7d679498af2cbe59777f37",
+      "migrations/20260921_add_automation_platform.sql": "6d3ab166710dc6c42fdda0ef64093deaf5a0c9450ec316c20ff43a3d32622d8c",
+      "migrations/20260921_add_price_watch_destinations.sql": "52f6915b63cf955f253763e69473c49b842c1c101f03d6cf250ba05d866cb14e",
+      "migrations/20260921_add_zz_automation_price_events.sql": "38b1ee42dbcea9ec016a87d79e86ae1cf47c41b8841d601dce06f6e19ab2ba37",
+      "migrations/20260922_add_automation_flow_execution.sql": "e53e675b3847f439c35cb354816dc150cf23d26b2320fd4f8c21215cf25fddae",
+      "migrations/20260922_add_automation_monitors.sql": "68429c30a7da823904cf4c0329b1ae181d06e10efad19487f0c5f208add1fd93",
+      "migrations/20260922_add_expansion_trace_message_index.sql": "573055e7bf3790b146136058d1eb44c6797ebb729fd42bb78db81a18d759ffea",
+      "migrations/20260922_add_link_presentation.sql": "1777e8cddbb9d884e0265ac03e8fc873bc2656475a3c08cb14578682e0cae6a7",
+      "migrations/20260922_add_personal_links.sql": "a1c99f5d543738adaf0ba794e9783690d011f063ef3aa245dcbdbf0217c58f78",
+      "migrations/20260922_add_previous_shares_setting.sql": "e50d1f9bb634f9c6ddffa9d377fccaec5c1b6ab59592d05ecc5c917de9ad7460",
+      "migrations/20260922_add_watch_target_baselines.sql": "ee46ad5f7fb958480ec557ddadb2fd4b81f174fcb42410ea6396ae25ff5c3c34",
+      "migrations/20260922_upgrade_automation_runtime_and_marketplace.sql": "cf203685d7e2e4964cd4caa3aa9b972b1b33f1e8348bc2460cf2ef5efcfdbc54",
+      "migrations/20261006_add_silent_expansion.sql": "5312a519782b2bd8804234cfbfb43d3f7d936547d7589dd65d5ea6d15dcffafb",
+      "migrations/20261006_add_user_auto_watch_intervals.sql": "ea429fc9e88c1faaa4485e6914e46f9d889b3b66055405debe4f2b582f03dc1e",
+      "migrations/20261014_add_donor_admin_records.sql": "bfa31c4f709de3f087d5786761f46a2c8219b53ea132c0fe3abeb7ab8be9aa1a",
+      "migrations/20261014_add_plan_confirmation_interval.sql": "6669bfb224e3fdf692601d5691168b02169067422cd2cdf2681fc08d3038cb54",
+      "migrations/20261014_add_square_payment_intervals.sql": "fd27c6e3a36112e86dadcace1efca06815b0ea6c3c2aeefd443e371bcbab48ad",
+      "migrations/20261014_add_x_notification_intake.sql": "a4dfd91386a0e07c5b21889f92a1af5b2f7a70edba5a77d564436d63e0fa72d5",
+      "migrations/20261014_add_x_push_receiver.sql": "af3b0a0d629b142a37ac34ba4550fb924d202c0610242bd5f60bbc773f1aa834",
+      "migrations/20261014_add_x_realtime_processing.sql": "cc2000330ab6eb080669ebfce0dc9f1e930298d27c3124a3dafcccac399ecdc5",
+      "migrations/20261016_add_auto_watch_notification_window.sql": "33e64b90aee48340984702e371ea1de8b0081cd0a9731e327cd0cd4e6cd578a5",
+      "migrations/20261016_add_dictionary_package_provenance.sql": "76159bca5fc05801fb0c1fefacfe6d8d29fb1d2f77ce332eb43a263d28fd1627",
+      "migrations/20261016_add_workflow_package_provenance.sql": "fb1b1c856fb118e7aa8bedbda09229e2104caeacb22426fbab96f6070d302874",
+      "migrations/20261016_bind_automation_rate_reservations.sql": "a0de3e2a89be284444d348191f2f242ba9043f3ad51a87c6f65b1f5b043df7e8",
+      "migrations/20261016_preserve_dictionary_package_dependencies.sql": "987303670412cc858de10e8c14ee5b47d27a84da0b23c06f094f8a9af7ed411e",
+      "src/automation/dictionary-package-provenance.js": "5ce288e01f682af91761e4ae807e19d1679047aa8901f1bc617534357f32039b",
+      "src/automation/donor-admin-schema.sql.js": "82c5a62d9199ac315c7d7f3fe5590d4a434568b6abf993e97cd6ae8d83efed96",
+      "src/automation/graph-schema.sql.js": "62153bad13d819d985801fc0200358d4ef93597551f0ce99918aee3a1646e24d",
+      "src/automation/monitor-cadence-schema.sql.js": "1b7072a0353c81771154ae62f158904a7c1a837b9ba79975146477b6a28d6dd9",
+      "src/automation/push-capacity-schema.sql.js": "367c7043c3c133cd95e9a6e23f0a465689f9f5c666a534b431599f94f6f2c9ee",
+      "src/automation/push-support-grants-schema.sql.js": "8bd830fa25f7a8db9e4ef958bde3ddfd4f4f0c6f0b648f85cf8c56427e3bc93a",
+      "src/automation/quota-migration.js": "1b3d0d86f4638b7863093acd5b75241f9638760a83e7597ee30c3004c3f07fa1",
+      "src/automation/schema.sql.js": "ed60da4f0bf5ae571a19aeba31fa8682cc541a6ea72b9055ca284ca38640eccd",
+      "src/automation/square-billing-schema.sql.js": "c857dc2e31e41f15e587f8513e3f437d5a3a8de6122736252da33d8b65aef6fb",
+      "src/automation/square-commerce-schema.sql.js": "c5c892578afc7124ec48743ce9cacbb5bb8a6c2e996f76d79b97b8a64511a597",
+      "src/automation/square-donation-schema.sql.js": "28ed346745663473c249e572af6852f67ae2b96741c2b6075bc96ae566c29340",
+      "src/automation/workflow-package-provenance.js": "7d79c85b615a3425ead82c12ddf2e9d5b80e42c292f4a107d840bfd06613c180",
+      "src/automation/x-monitor-schema.sql.js": "776c3858b909a4f3d27debcefc6b997bd4f6cd360aef3e3d8d6a915d2cc7ed7a",
+      "src/automation/x-push-schema.sql.js": "6633d3cd6bf3b163802062d8edc78aa8c92ba2b5540adc8f51afd861f43f84d5",
+      "src/automation/x-setup-schema.sql.js": "b2192b5484d65156adbe92e7e0ebb8c1a885f13b75776f1d835a8678776518ff",
+      "src/db_schema.js": "a532f13033f1c0f5315fe09aca12d3524a6ca9ef68d248a67ddbdfb0599fda9f",
+      "src/linkPresentationSchema.js": "eaf9e84cc329a02627e004583d0cb0a796c1c47315d2c70e87599cc03e056967",
+      "src/personalLinks/schema.js": "9a68a22117c2b22a9a7f9d48ef5e1466ae8e0ee8b09372bfa7e3881e21f690ad",
+      "src/tableCounts.js": "7343f99ae6a1fdf5b89bb2883ca9e51a5a5558b6aeae2e44cbd4b4560d4c6c21"
+    },
+    "final": {
+      "migrations/20260630_add_youtube_description_max_length.sql": "41256946ef488d92879fb7b98219f3e0b625d8cddf59eed2e1557a1f1c44957e",
+      "migrations/20260630_add_zz_tiktok_hq.sql": "e1343e1abfa98f96b65bd1f309b3aac5aa1e10e86243530c7cbba5cb57994071",
+      "migrations/20260630_add_zzz_provider_output_settings.sql": "79f67bb5ee655d9b087e121fff3d5da895bb9a83e56fde5cab80d31eb873e5d8",
+      "migrations/20260630_add_zzzz_common_provider_output_controls.sql": "1f5ba2ca0936f48a0aaa74b0b869f1c95cfbeae9eadbd6471ec493a2780d58c0",
+      "migrations/20260701_add_amazon_extract_targets.sql": "449314f6623137a0c25786417dc4d0e4f93c5182d6b6504b8309460123c946ef",
+      "migrations/20260701_add_dashboard_audit_logs.sql": "1a0f9edc1c2918398ecc7ea73253cd4330bcad843b4b6711dddfb04cfbac0299",
+      "migrations/20260702_add_bot_analytics_events.sql": "82b7eca92a4c1109094f003c7405a02269734e92494dbb617243ba7dd23ae2d4",
+      "migrations/20260702_add_bot_provider_hourly_aggregates.sql": "03b01ddc60ff12d64e5cbeb163984a06597bc5df62098d3dc330a61a32be3dc5",
+      "migrations/20260702_add_provider_content_facet_observation_metadata.sql": "3e0cf2195b1a86906d0411c5b12ee3669d6ffeb727d55b8342f1c8f9c5edfe8d",
+      "migrations/20260702_add_sensitive_content_controls.sql": "31e067184721c26547f7bb9f1dc57becbbcf0aca1c13d9bf4661f65d7a25785d",
+      "migrations/20260702_add_settings_webui_notice_state.sql": "4bb54c728fdaa760f1846909168e06905228e2a8efcf92169b668d2b8967cf9c",
+      "migrations/20260702_add_twitter_quote_depth_by_account.sql": "f5696a3ddf8cbded13176f1f2f4c1927cba12c01eed990064471eb1f8c9ba2d1",
+      "migrations/20260702_add_zz_pixiv_general_sensitive_controls.sql": "a0d854c445b3bf3b32a5d6eeaa42353d2ae78e58def17617212637236a684398",
+      "migrations/20260702_add_zzz_drop_pixiv_general_sensitive_controls.sql": "b15bc3e8e6d606f8e75f7322d241c24845ba384cc2277290ec3407805877b493",
+      "migrations/20260705_add_bot_error_alert_incidents.sql": "adc7f099c220dec09084ee515c6930a22151ba09ede9065c5a1abe8ab99e3be2",
+      "migrations/20260708_add_twitter_secondary_source_embed_suppression.sql": "8a1e75ed0e3dc507ef56240232c9fd18388960bc753c6dc49c0d18b60dbdd663",
+      "migrations/20260715_add_admin_analytics_time_indexes.sql": "f6b981d90b88e756afd10d85ccc2168ce387bde2b3c6a03566b3e51b6bfc7b00",
+      "migrations/20260715_add_provider_settings_cache_invalidations.sql": "d6651de61d877a1de1f8168eb714c70885587085dfa7472e6532f1d23d37ce80",
+      "migrations/20260716_add_admin_report_snapshots_and_covering_indexes.sql": "2bcb91c0f56c0ce7305f699899a4db44eca76b55159237a971d4099169f80a1e",
+      "migrations/20260717_add_dashboard_delegated_access_grants.sql": "86cc20ff1e329a9a2083b8dcf18dc00bc4574870eb5db2c92e19428fcb75d8fe",
+      "migrations/20260809_add_admin_analytics_join_indexes.sql": "1d491213fab6317fbce947e375fa2c5710e3ca7f329cc1688cf0e4e7e7f23769",
+      "migrations/20260907_add_provider_metric_observation_rollup.sql": "a1f0c4d31c1b1a02206be14bccf50d99f3aef4e2ff58b09ba0e9eeea6965fa98",
+      "migrations/20260916_add_auto_watch.sql": "80e7f8d34e77e166d1fd3e5ea3625f19a28227e7714dabde15e2dc1000e68944",
+      "migrations/20260916_add_bot_provider_expansion_traces.sql": "941fef4832b0d5da638e4d5be2c3364580b0a4a76c3ab060a72a5a1fb6720013",
+      "migrations/20260916_add_users_donor_flag.sql": "071fd71d3e0d4f486674e5a01b6fae7cdf038a246f7d679498af2cbe59777f37",
+      "migrations/20260921_add_automation_platform.sql": "6d3ab166710dc6c42fdda0ef64093deaf5a0c9450ec316c20ff43a3d32622d8c",
+      "migrations/20260921_add_price_watch_destinations.sql": "52f6915b63cf955f253763e69473c49b842c1c101f03d6cf250ba05d866cb14e",
+      "migrations/20260921_add_zz_automation_price_events.sql": "38b1ee42dbcea9ec016a87d79e86ae1cf47c41b8841d601dce06f6e19ab2ba37",
+      "migrations/20260922_add_automation_flow_execution.sql": "e53e675b3847f439c35cb354816dc150cf23d26b2320fd4f8c21215cf25fddae",
+      "migrations/20260922_add_automation_monitors.sql": "68429c30a7da823904cf4c0329b1ae181d06e10efad19487f0c5f208add1fd93",
+      "migrations/20260922_add_expansion_trace_message_index.sql": "573055e7bf3790b146136058d1eb44c6797ebb729fd42bb78db81a18d759ffea",
+      "migrations/20260922_add_link_presentation.sql": "1777e8cddbb9d884e0265ac03e8fc873bc2656475a3c08cb14578682e0cae6a7",
+      "migrations/20260922_add_personal_links.sql": "a1c99f5d543738adaf0ba794e9783690d011f063ef3aa245dcbdbf0217c58f78",
+      "migrations/20260922_add_previous_shares_setting.sql": "e50d1f9bb634f9c6ddffa9d377fccaec5c1b6ab59592d05ecc5c917de9ad7460",
+      "migrations/20260922_add_watch_target_baselines.sql": "ee46ad5f7fb958480ec557ddadb2fd4b81f174fcb42410ea6396ae25ff5c3c34",
+      "migrations/20260922_upgrade_automation_runtime_and_marketplace.sql": "cf203685d7e2e4964cd4caa3aa9b972b1b33f1e8348bc2460cf2ef5efcfdbc54",
+      "migrations/20261006_add_silent_expansion.sql": "5312a519782b2bd8804234cfbfb43d3f7d936547d7589dd65d5ea6d15dcffafb",
+      "migrations/20261006_add_user_auto_watch_intervals.sql": "ea429fc9e88c1faaa4485e6914e46f9d889b3b66055405debe4f2b582f03dc1e",
+      "migrations/20261014_add_donor_admin_records.sql": "bfa31c4f709de3f087d5786761f46a2c8219b53ea132c0fe3abeb7ab8be9aa1a",
+      "migrations/20261014_add_plan_confirmation_interval.sql": "6669bfb224e3fdf692601d5691168b02169067422cd2cdf2681fc08d3038cb54",
+      "migrations/20261014_add_square_payment_intervals.sql": "fd27c6e3a36112e86dadcace1efca06815b0ea6c3c2aeefd443e371bcbab48ad",
+      "migrations/20261014_add_x_notification_intake.sql": "a4dfd91386a0e07c5b21889f92a1af5b2f7a70edba5a77d564436d63e0fa72d5",
+      "migrations/20261014_add_x_push_receiver.sql": "af3b0a0d629b142a37ac34ba4550fb924d202c0610242bd5f60bbc773f1aa834",
+      "migrations/20261014_add_x_realtime_processing.sql": "cc2000330ab6eb080669ebfce0dc9f1e930298d27c3124a3dafcccac399ecdc5",
+      "migrations/20261016_add_auto_watch_notification_window.sql": "33e64b90aee48340984702e371ea1de8b0081cd0a9731e327cd0cd4e6cd578a5",
+      "migrations/20261016_add_dictionary_package_provenance.sql": "76159bca5fc05801fb0c1fefacfe6d8d29fb1d2f77ce332eb43a263d28fd1627",
+      "migrations/20261016_add_workflow_package_provenance.sql": "fb1b1c856fb118e7aa8bedbda09229e2104caeacb22426fbab96f6070d302874",
+      "migrations/20261016_bind_automation_rate_reservations.sql": "a0de3e2a89be284444d348191f2f242ba9043f3ad51a87c6f65b1f5b043df7e8",
+      "migrations/20261016_preserve_dictionary_package_dependencies.sql": "987303670412cc858de10e8c14ee5b47d27a84da0b23c06f094f8a9af7ed411e",
+      "src/automation/dictionary-package-provenance.js": "5ce288e01f682af91761e4ae807e19d1679047aa8901f1bc617534357f32039b",
+      "src/automation/donor-admin-schema.sql.js": "82c5a62d9199ac315c7d7f3fe5590d4a434568b6abf993e97cd6ae8d83efed96",
+      "src/automation/graph-schema.sql.js": "62153bad13d819d985801fc0200358d4ef93597551f0ce99918aee3a1646e24d",
+      "src/automation/monitor-cadence-schema.sql.js": "1b7072a0353c81771154ae62f158904a7c1a837b9ba79975146477b6a28d6dd9",
+      "src/automation/push-capacity-schema.sql.js": "367c7043c3c133cd95e9a6e23f0a465689f9f5c666a534b431599f94f6f2c9ee",
+      "src/automation/push-support-grants-schema.sql.js": "8bd830fa25f7a8db9e4ef958bde3ddfd4f4f0c6f0b648f85cf8c56427e3bc93a",
+      "src/automation/quota-migration.js": "1b3d0d86f4638b7863093acd5b75241f9638760a83e7597ee30c3004c3f07fa1",
+      "src/automation/schema.sql.js": "ed60da4f0bf5ae571a19aeba31fa8682cc541a6ea72b9055ca284ca38640eccd",
+      "src/automation/square-billing-schema.sql.js": "c857dc2e31e41f15e587f8513e3f437d5a3a8de6122736252da33d8b65aef6fb",
+      "src/automation/square-commerce-schema.sql.js": "c5c892578afc7124ec48743ce9cacbb5bb8a6c2e996f76d79b97b8a64511a597",
+      "src/automation/square-donation-schema.sql.js": "28ed346745663473c249e572af6852f67ae2b96741c2b6075bc96ae566c29340",
+      "src/automation/workflow-package-provenance.js": "7d79c85b615a3425ead82c12ddf2e9d5b80e42c292f4a107d840bfd06613c180",
+      "src/automation/x-monitor-schema.sql.js": "776c3858b909a4f3d27debcefc6b997bd4f6cd360aef3e3d8d6a915d2cc7ed7a",
+      "src/automation/x-push-schema.sql.js": "6633d3cd6bf3b163802062d8edc78aa8c92ba2b5540adc8f51afd861f43f84d5",
+      "src/automation/x-setup-schema.sql.js": "b2192b5484d65156adbe92e7e0ebb8c1a885f13b75776f1d835a8678776518ff",
+      "src/db_schema.js": "a532f13033f1c0f5315fe09aca12d3524a6ca9ef68d248a67ddbdfb0599fda9f",
+      "src/linkPresentationSchema.js": "eaf9e84cc329a02627e004583d0cb0a796c1c47315d2c70e87599cc03e056967",
+      "src/personalLinks/schema.js": "9a68a22117c2b22a9a7f9d48ef5e1466ae8e0ee8b09372bfa7e3881e21f690ad",
+      "src/tableCounts.js": "7343f99ae6a1fdf5b89bb2883ca9e51a5a5558b6aeae2e44cbd4b4560d4c6c21"
+    },
+    "baselineModes": {
+      "migrations/20260630_add_youtube_description_max_length.sql": "100644",
+      "migrations/20260630_add_zz_tiktok_hq.sql": "100644",
+      "migrations/20260630_add_zzz_provider_output_settings.sql": "100644",
+      "migrations/20260630_add_zzzz_common_provider_output_controls.sql": "100644",
+      "migrations/20260701_add_amazon_extract_targets.sql": "100644",
+      "migrations/20260701_add_dashboard_audit_logs.sql": "100644",
+      "migrations/20260702_add_bot_analytics_events.sql": "100644",
+      "migrations/20260702_add_bot_provider_hourly_aggregates.sql": "100644",
+      "migrations/20260702_add_provider_content_facet_observation_metadata.sql": "100644",
+      "migrations/20260702_add_sensitive_content_controls.sql": "100644",
+      "migrations/20260702_add_settings_webui_notice_state.sql": "100644",
+      "migrations/20260702_add_twitter_quote_depth_by_account.sql": "100644",
+      "migrations/20260702_add_zz_pixiv_general_sensitive_controls.sql": "100644",
+      "migrations/20260702_add_zzz_drop_pixiv_general_sensitive_controls.sql": "100644",
+      "migrations/20260705_add_bot_error_alert_incidents.sql": "100644",
+      "migrations/20260708_add_twitter_secondary_source_embed_suppression.sql": "100644",
+      "migrations/20260715_add_admin_analytics_time_indexes.sql": "100644",
+      "migrations/20260715_add_provider_settings_cache_invalidations.sql": "100644",
+      "migrations/20260716_add_admin_report_snapshots_and_covering_indexes.sql": "100644",
+      "migrations/20260717_add_dashboard_delegated_access_grants.sql": "100644",
+      "migrations/20260809_add_admin_analytics_join_indexes.sql": "100644",
+      "migrations/20260907_add_provider_metric_observation_rollup.sql": "100644",
+      "migrations/20260916_add_auto_watch.sql": "100644",
+      "migrations/20260916_add_bot_provider_expansion_traces.sql": "100644",
+      "migrations/20260916_add_users_donor_flag.sql": "100644",
+      "migrations/20260921_add_automation_platform.sql": "100644",
+      "migrations/20260921_add_price_watch_destinations.sql": "100644",
+      "migrations/20260921_add_zz_automation_price_events.sql": "100644",
+      "migrations/20260922_add_automation_flow_execution.sql": "100644",
+      "migrations/20260922_add_automation_monitors.sql": "100644",
+      "migrations/20260922_add_expansion_trace_message_index.sql": "100644",
+      "migrations/20260922_add_link_presentation.sql": "100644",
+      "migrations/20260922_add_personal_links.sql": "100644",
+      "migrations/20260922_add_previous_shares_setting.sql": "100644",
+      "migrations/20260922_add_watch_target_baselines.sql": "100644",
+      "migrations/20260922_upgrade_automation_runtime_and_marketplace.sql": "100644",
+      "migrations/20261006_add_silent_expansion.sql": "100644",
+      "migrations/20261006_add_user_auto_watch_intervals.sql": "100644",
+      "migrations/20261014_add_donor_admin_records.sql": "100644",
+      "migrations/20261014_add_plan_confirmation_interval.sql": "100644",
+      "migrations/20261014_add_square_payment_intervals.sql": "100644",
+      "migrations/20261014_add_x_notification_intake.sql": "100644",
+      "migrations/20261014_add_x_push_receiver.sql": "100644",
+      "migrations/20261014_add_x_realtime_processing.sql": "100644",
+      "migrations/20261016_add_auto_watch_notification_window.sql": "100644",
+      "migrations/20261016_add_dictionary_package_provenance.sql": "100644",
+      "migrations/20261016_add_workflow_package_provenance.sql": "100644",
+      "migrations/20261016_bind_automation_rate_reservations.sql": "100644",
+      "migrations/20261016_preserve_dictionary_package_dependencies.sql": "100644",
+      "src/automation/dictionary-package-provenance.js": "100644",
+      "src/automation/donor-admin-schema.sql.js": "100644",
+      "src/automation/graph-schema.sql.js": "100644",
+      "src/automation/monitor-cadence-schema.sql.js": "100644",
+      "src/automation/push-capacity-schema.sql.js": "100644",
+      "src/automation/push-support-grants-schema.sql.js": "100644",
+      "src/automation/quota-migration.js": "100644",
+      "src/automation/schema.sql.js": "100644",
+      "src/automation/square-billing-schema.sql.js": "100644",
+      "src/automation/square-commerce-schema.sql.js": "100644",
+      "src/automation/square-donation-schema.sql.js": "100644",
+      "src/automation/workflow-package-provenance.js": "100644",
+      "src/automation/x-monitor-schema.sql.js": "100644",
+      "src/automation/x-push-schema.sql.js": "100644",
+      "src/automation/x-setup-schema.sql.js": "100644",
+      "src/db_schema.js": "100644",
+      "src/linkPresentationSchema.js": "100644",
+      "src/personalLinks/schema.js": "100644",
+      "src/tableCounts.js": "100644"
+    },
+    "finalModes": {
+      "migrations/20260630_add_youtube_description_max_length.sql": "100644",
+      "migrations/20260630_add_zz_tiktok_hq.sql": "100644",
+      "migrations/20260630_add_zzz_provider_output_settings.sql": "100644",
+      "migrations/20260630_add_zzzz_common_provider_output_controls.sql": "100644",
+      "migrations/20260701_add_amazon_extract_targets.sql": "100644",
+      "migrations/20260701_add_dashboard_audit_logs.sql": "100644",
+      "migrations/20260702_add_bot_analytics_events.sql": "100644",
+      "migrations/20260702_add_bot_provider_hourly_aggregates.sql": "100644",
+      "migrations/20260702_add_provider_content_facet_observation_metadata.sql": "100644",
+      "migrations/20260702_add_sensitive_content_controls.sql": "100644",
+      "migrations/20260702_add_settings_webui_notice_state.sql": "100644",
+      "migrations/20260702_add_twitter_quote_depth_by_account.sql": "100644",
+      "migrations/20260702_add_zz_pixiv_general_sensitive_controls.sql": "100644",
+      "migrations/20260702_add_zzz_drop_pixiv_general_sensitive_controls.sql": "100644",
+      "migrations/20260705_add_bot_error_alert_incidents.sql": "100644",
+      "migrations/20260708_add_twitter_secondary_source_embed_suppression.sql": "100644",
+      "migrations/20260715_add_admin_analytics_time_indexes.sql": "100644",
+      "migrations/20260715_add_provider_settings_cache_invalidations.sql": "100644",
+      "migrations/20260716_add_admin_report_snapshots_and_covering_indexes.sql": "100644",
+      "migrations/20260717_add_dashboard_delegated_access_grants.sql": "100644",
+      "migrations/20260809_add_admin_analytics_join_indexes.sql": "100644",
+      "migrations/20260907_add_provider_metric_observation_rollup.sql": "100644",
+      "migrations/20260916_add_auto_watch.sql": "100644",
+      "migrations/20260916_add_bot_provider_expansion_traces.sql": "100644",
+      "migrations/20260916_add_users_donor_flag.sql": "100644",
+      "migrations/20260921_add_automation_platform.sql": "100644",
+      "migrations/20260921_add_price_watch_destinations.sql": "100644",
+      "migrations/20260921_add_zz_automation_price_events.sql": "100644",
+      "migrations/20260922_add_automation_flow_execution.sql": "100644",
+      "migrations/20260922_add_automation_monitors.sql": "100644",
+      "migrations/20260922_add_expansion_trace_message_index.sql": "100644",
+      "migrations/20260922_add_link_presentation.sql": "100644",
+      "migrations/20260922_add_personal_links.sql": "100644",
+      "migrations/20260922_add_previous_shares_setting.sql": "100644",
+      "migrations/20260922_add_watch_target_baselines.sql": "100644",
+      "migrations/20260922_upgrade_automation_runtime_and_marketplace.sql": "100644",
+      "migrations/20261006_add_silent_expansion.sql": "100644",
+      "migrations/20261006_add_user_auto_watch_intervals.sql": "100644",
+      "migrations/20261014_add_donor_admin_records.sql": "100644",
+      "migrations/20261014_add_plan_confirmation_interval.sql": "100644",
+      "migrations/20261014_add_square_payment_intervals.sql": "100644",
+      "migrations/20261014_add_x_notification_intake.sql": "100644",
+      "migrations/20261014_add_x_push_receiver.sql": "100644",
+      "migrations/20261014_add_x_realtime_processing.sql": "100644",
+      "migrations/20261016_add_auto_watch_notification_window.sql": "100644",
+      "migrations/20261016_add_dictionary_package_provenance.sql": "100644",
+      "migrations/20261016_add_workflow_package_provenance.sql": "100644",
+      "migrations/20261016_bind_automation_rate_reservations.sql": "100644",
+      "migrations/20261016_preserve_dictionary_package_dependencies.sql": "100644",
+      "src/automation/dictionary-package-provenance.js": "100644",
+      "src/automation/donor-admin-schema.sql.js": "100644",
+      "src/automation/graph-schema.sql.js": "100644",
+      "src/automation/monitor-cadence-schema.sql.js": "100644",
+      "src/automation/push-capacity-schema.sql.js": "100644",
+      "src/automation/push-support-grants-schema.sql.js": "100644",
+      "src/automation/quota-migration.js": "100644",
+      "src/automation/schema.sql.js": "100644",
+      "src/automation/square-billing-schema.sql.js": "100644",
+      "src/automation/square-commerce-schema.sql.js": "100644",
+      "src/automation/square-donation-schema.sql.js": "100644",
+      "src/automation/workflow-package-provenance.js": "100644",
+      "src/automation/x-monitor-schema.sql.js": "100644",
+      "src/automation/x-push-schema.sql.js": "100644",
+      "src/automation/x-setup-schema.sql.js": "100644",
+      "src/db_schema.js": "100644",
+      "src/linkPresentationSchema.js": "100644",
+      "src/personalLinks/schema.js": "100644",
+      "src/tableCounts.js": "100644"
+    },
+    "dashboardPrismaSha256": "7b1c0b6b6c7ce5b4346d5dda450fe9ff574eb28032953a93d740fc914bc469e3",
+    "baselinePrismaGitMode": "100644",
+    "finalPrismaGitMode": "100644",
+    "migrationIds": [
+      "20261016_add_dictionary_package_provenance",
+      "20261016_add_workflow_package_provenance",
+      "20261016_bind_automation_rate_reservations",
+      "20261016_preserve_dictionary_package_dependencies"
+    ],
+    "migrationSha256": {
+      "20261016_bind_automation_rate_reservations": "a0de3e2a89be284444d348191f2f242ba9043f3ad51a87c6f65b1f5b043df7e8",
+      "20261016_add_dictionary_package_provenance": "76159bca5fc05801fb0c1fefacfe6d8d29fb1d2f77ce332eb43a263d28fd1627",
+      "20261016_add_workflow_package_provenance": "fb1b1c856fb118e7aa8bedbda09229e2104caeacb22426fbab96f6070d302874",
+      "20261016_preserve_dictionary_package_dependencies": "987303670412cc858de10e8c14ee5b47d27a84da0b23c06f094f8a9af7ed411e"
+    },
+    "allowedChangedPaths": [],
+    "nullableColumnCount": 9,
+    "migrationCount": 4,
+    "existingTableCount": 4,
+    "newNullableColumnCount": 0,
+    "newMigrationCount": 0,
+    "ddlExpected": false,
+    "backfillExpected": false,
+    "baselineMigrationIds": [
+      "20260630_add_youtube_description_max_length",
+      "20260630_add_zz_tiktok_hq",
+      "20260630_add_zzz_provider_output_settings",
+      "20260630_add_zzzz_common_provider_output_controls",
+      "20260701_add_amazon_extract_targets",
+      "20260701_add_dashboard_audit_logs",
+      "20260702_add_bot_analytics_events",
+      "20260702_add_bot_provider_hourly_aggregates",
+      "20260702_add_provider_content_facet_observation_metadata",
+      "20260702_add_sensitive_content_controls",
+      "20260702_add_settings_webui_notice_state",
+      "20260702_add_twitter_quote_depth_by_account",
+      "20260702_add_zz_pixiv_general_sensitive_controls",
+      "20260702_add_zzz_drop_pixiv_general_sensitive_controls",
+      "20260705_add_bot_error_alert_incidents",
+      "20260708_add_twitter_secondary_source_embed_suppression",
+      "20260715_add_admin_analytics_time_indexes",
+      "20260715_add_provider_settings_cache_invalidations",
+      "20260716_add_admin_report_snapshots_and_covering_indexes",
+      "20260717_add_dashboard_delegated_access_grants",
+      "20260809_add_admin_analytics_join_indexes",
+      "20260907_add_provider_metric_observation_rollup",
+      "20260916_add_auto_watch",
+      "20260916_add_bot_provider_expansion_traces",
+      "20260916_add_users_donor_flag",
+      "20260921_add_automation_platform",
+      "20260921_add_price_watch_destinations",
+      "20260921_add_zz_automation_price_events",
+      "20260922_add_automation_flow_execution",
+      "20260922_add_automation_monitors",
+      "20260922_add_expansion_trace_message_index",
+      "20260922_add_link_presentation",
+      "20260922_add_personal_links",
+      "20260922_add_previous_shares_setting",
+      "20260922_add_watch_target_baselines",
+      "20260922_upgrade_automation_runtime_and_marketplace",
+      "20261006_add_silent_expansion",
+      "20261006_add_user_auto_watch_intervals",
+      "20261014_add_donor_admin_records",
+      "20261014_add_plan_confirmation_interval",
+      "20261014_add_square_payment_intervals",
+      "20261014_add_x_notification_intake",
+      "20261014_add_x_push_receiver",
+      "20261014_add_x_realtime_processing",
+      "20261016_add_auto_watch_notification_window",
+      "20261016_add_dictionary_package_provenance",
+      "20261016_add_workflow_package_provenance",
+      "20261016_bind_automation_rate_reservations",
+      "20261016_preserve_dictionary_package_dependencies"
+    ]
+  },
+  "reviewedManifestSha256": "9d4390bfeb6f5a5a886641652b84611318b46604e76cb57d425a989538237d60",
+  "reviewedSourceManifest": {
+    "formatVersion": 1,
+    "status": "root-reviewed-v8-canonical-core-source-manifest",
+    "reviewBaseRevision": "2a000c89a293e2ee71ef0c579a63def2ff12cbdb",
+    "sourceRevision": "e88e74412905987352af0ae7cec665963fc737d0",
+    "corePaths": [
+      "src",
+      "index.js",
+      "package.json",
+      "package-lock.json",
+      "packages/angelic-angel",
+      "dashboard",
+      "scripts",
+      "migrations"
+    ],
+    "files": [
+      {
+        "path": "dashboard/components/admin/notification-plan-manager.tsx",
+        "before": {
+          "mode": "100644",
+          "gitBlob": "40b21bf84dbcbfc265f5e4210d8aa7a080303dea",
+          "bytes": 32435,
+          "sha256": "001040963d5f1b00cc250d666a478315701d2e3423d5175999ea147ce156ad6f"
+        },
+        "after": {
+          "mode": "100644",
+          "gitBlob": "9c6ad7dfa36ce8b0ec1d4e8d671e7903ddc9e65b",
+          "bytes": 32984,
+          "sha256": "492151e1327a58fea40b7603a0bc3c859362c29d269fa7fd5da550d3f18a444f"
+        }
+      },
+      {
+        "path": "dashboard/components/admin/push-capacity-diagnostics.tsx",
+        "before": {
+          "mode": "100644",
+          "gitBlob": "69858f7c621f787e4ebad5c0b83af60629be4b38",
+          "bytes": 28537,
+          "sha256": "789d7e2a2a7bfaf49cdb80002e6526e0481a88ffdcf506139520d50a186a32b8"
+        },
+        "after": {
+          "mode": "100644",
+          "gitBlob": "9510d314bded300f6a73d6994bd660cad341f557",
+          "bytes": 29907,
+          "sha256": "4c478fde8e6db83e620664b23fa9c7bfcf4a1a29cde4223c8eca7e2fa85527ea"
+        }
+      },
+      {
+        "path": "dashboard/components/admin/square-commerce-manager.tsx",
+        "before": {
+          "mode": "100644",
+          "gitBlob": "4322cf69366a73986de258a343a34199e1997ef4",
+          "bytes": 26591,
+          "sha256": "e0a1c611768f6710fa408911f1c5921c9b19864f7cd155b3120a0753042514d8"
+        },
+        "after": {
+          "mode": "100644",
+          "gitBlob": "bae84066b642ebb936f1d7bebac199862ed10da1",
+          "bytes": 27401,
+          "sha256": "898607fdc8030dd0935ef218d8ad00318c2a364bd89eae057cb27f3919f6ecec"
+        }
+      },
+      {
+        "path": "dashboard/components/automation/automation-workspace.tsx",
+        "before": {
+          "mode": "100644",
+          "gitBlob": "ee814136a3b219e180fbd7c8ba421474b30ac541",
+          "bytes": 48246,
+          "sha256": "da50bf45b0587f112fde5ecb94c99885be7eb50b8da3d974449f3f036df0ac27"
+        },
+        "after": {
+          "mode": "100644",
+          "gitBlob": "281068b238de02b0d237747e5e632b89fe8fc807",
+          "bytes": 51576,
+          "sha256": "bb8c715aec34a4a55939eed39adea2121664e3e8b100da7771e071a1b4e80969"
+        }
+      },
+      {
+        "path": "dashboard/components/automation/marketplace-manager.tsx",
+        "before": {
+          "mode": "100644",
+          "gitBlob": "7d8a0e47c65cb42827d249c34e5a1f773fdddc05",
+          "bytes": 39469,
+          "sha256": "c65f8135dd5bc2f7da748e3ad9e382609e826ada4812726ae5350d08290decec"
+        },
+        "after": {
+          "mode": "100644",
+          "gitBlob": "4b41c74c09a8b580245559d3abd8cf44bec54fc6",
+          "bytes": 41056,
+          "sha256": "d18aee7fe5573809e253d919f71308fcf539ffd22dc29934a79413b6e5cecd23"
+        }
+      },
+      {
+        "path": "dashboard/components/automation/monitor-cadence-editor.tsx",
+        "before": {
+          "mode": "100644",
+          "gitBlob": "6ba6ea4d1812c2579d1e2c21b7c1af80749aeda4",
+          "bytes": 10025,
+          "sha256": "492247afa2d1e31a35da9c00f1186f1a3b77dfdba06416f4d0691c4b871c3a24"
+        },
+        "after": {
+          "mode": "100644",
+          "gitBlob": "0e8638e1ee543f6e4787c7ee06953604bc3408f4",
+          "bytes": 10139,
+          "sha256": "768cb88cb8e5cb05eb7396da4dcced26bae132ce0d9fa89032e10ce76b71377a"
+        }
+      },
+      {
+        "path": "dashboard/components/automation/monitor-manager.tsx",
+        "before": {
+          "mode": "100644",
+          "gitBlob": "3dd51cf3e1bf8ec9e823b953a520bd8b69cffe6b",
+          "bytes": 35390,
+          "sha256": "bbef3cf94cedacee13ab0b0972eec0ad814559d126f5325441bbdbe22ef4e492"
+        },
+        "after": {
+          "mode": "100644",
+          "gitBlob": "f11db0103fea4cbe0e37f747def819603d36cb60",
+          "bytes": 35992,
+          "sha256": "080eb3be855ca7ac6c30d4926e590cc2825c8d5245f368af31a4fbb82f4f84f7"
+        }
+      },
+      {
+        "path": "dashboard/components/automation/x-monitor-manager.tsx",
+        "before": {
+          "mode": "100644",
+          "gitBlob": "fbf9d10bb72bb431680b5cae9cdab86454a47dec",
+          "bytes": 50351,
+          "sha256": "1130c78b371a06e79dd5819186d7ae6a6db9009b81fc26316769a22ef331469b"
+        },
+        "after": {
+          "mode": "100644",
+          "gitBlob": "82f72abef6e46abbff346efdf4679445fd712218",
+          "bytes": 51662,
+          "sha256": "5df715aa48c20053f2bab0e9962bf612f5ea5b651081266b254f085f7a463295"
+        }
+      },
+      {
+        "path": "scripts/lib/automation-test-db.js",
+        "before": {
+          "mode": "100644",
+          "gitBlob": "904ac04886edb9ccfb8e0b2191d8f3c2c3589ddf",
+          "bytes": 3335,
+          "sha256": "f22dcb18b4e2090b171e7bb3e1ad18b004d6f31858548ae5dc8576c74953a591"
+        },
+        "after": {
+          "mode": "100644",
+          "gitBlob": "7220bb5b2aa4a494ae96d9cc1f908cc19fc5f424",
+          "bytes": 4624,
+          "sha256": "de08c0efb3319f0df35724cf8b13ef764c834a7deaea55696bebfe391eec03de"
+        }
+      },
+      {
+        "path": "scripts/test/automation-aggregate-member-boundary.test.js",
+        "before": {
+          "mode": "100644",
+          "gitBlob": "5db5313435b1abe7fbacb852e912acdf2eb2cbe2",
+          "bytes": 10871,
+          "sha256": "94b696b468047f8db10cf093ff93497b315a811938227d930234bc2a3668609b"
+        },
+        "after": {
+          "mode": "100644",
+          "gitBlob": "b1b43fc3d68330a885d7a0afff41c7a2cc9d791d",
+          "bytes": 11048,
+          "sha256": "af58b2ce57e1cd50ff54ad16c1ece74dbc75e203a0803d8658b3047613c2af3e"
+        }
+      },
+      {
+        "path": "scripts/test/automation-flow-permanent-failure-sql.test.js",
+        "before": {
+          "mode": "100644",
+          "gitBlob": "e4922776657941b60b946dd44e51e0c58d6b968b",
+          "bytes": 28347,
+          "sha256": "f7b3ceec11ad72dca508e5f11703582b16400d25c4b107a9267e67cc9ee645a9"
+        },
+        "after": {
+          "mode": "100644",
+          "gitBlob": "c1995b5fcc2f77db53399cd33d245e059e92c1c2",
+          "bytes": 28931,
+          "sha256": "8a89d7964a69f5c6e98e7ee7f284523c45ae6e3f5b74a898b5fda1843a4f2ec6"
+        }
+      },
+      {
+        "path": "scripts/test/automation-flow-state-reconciliation-sql.test.js",
+        "before": null,
+        "after": {
+          "mode": "100644",
+          "gitBlob": "332ccabbc93a71cee2517df25b44cb81329a811a",
+          "bytes": 46033,
+          "sha256": "a8aefab66521112321eb1752d816ea219668539cf603229d0c666bc69a6ebd93"
+        }
+      },
+      {
+        "path": "scripts/test/automation-main-admin-cas-ui.test.js",
+        "before": null,
+        "after": {
+          "mode": "100644",
+          "gitBlob": "58b965aeaaaacc63b1903d60b165d4cfe150bd32",
+          "bytes": 8819,
+          "sha256": "62fb82064c19c19c10e19d22747a85fc644a7c796466c3ca47ea25b98e68935f"
+        }
+      },
+      {
+        "path": "scripts/test/automation-main-cadence-read-recovery.test.js",
+        "before": null,
+        "after": {
+          "mode": "100644",
+          "gitBlob": "f49c36bb61b52ac29b24f48d3c62af9cd7969b2d",
+          "bytes": 1994,
+          "sha256": "54a53c067687e1e874814ef1d3bf714f0e9c25dedf19ff58ae26b12df5000d93"
+        }
+      },
+      {
+        "path": "scripts/test/automation-main-data-revalidation-sql.test.js",
+        "before": null,
+        "after": {
+          "mode": "100644",
+          "gitBlob": "e66713653d3d6590294d5dca3b91f2c0281d16ef",
+          "bytes": 21360,
+          "sha256": "e6a81fb538c74e6360df22b12346f1376e5339326f2463b14d53b00997fd8774"
+        }
+      },
+      {
+        "path": "scripts/test/automation-main-data-revalidation-ui.test.js",
+        "before": null,
+        "after": {
+          "mode": "100644",
+          "gitBlob": "30be62b89950760e3853b2b53d41c4e690a3c50b",
+          "bytes": 12113,
+          "sha256": "3c32a2e56c7a0890820834cb8338cfe10576c0efa101cf9ff1c2e5c2cdec2ace"
+        }
+      },
+      {
+        "path": "scripts/test/automation-main-ui-draft-cadence.test.js",
+        "before": null,
+        "after": {
+          "mode": "100644",
+          "gitBlob": "aa0760245519b609cc2be8d76410d745ecbd2931",
+          "bytes": 9696,
+          "sha256": "8d1276237de5bc493a627cdeb3f8f6769db1e29cdcdc72d92bdc424c6e1eda57"
+        }
+      },
+      {
+        "path": "scripts/test/automation-main-workflow-history.test.js",
+        "before": null,
+        "after": {
+          "mode": "100644",
+          "gitBlob": "c30f23f49d1aedaaa979f9af5a778b391f4c274c",
+          "bytes": 9821,
+          "sha256": "98ba5e4ce0f6f9bdaf706352e62a22a3b4cd7cebb05aeea3e1c24d848cc6f920"
+        }
+      },
+      {
+        "path": "scripts/test/automation-main-x-read-write-ui.test.js",
+        "before": null,
+        "after": {
+          "mode": "100644",
+          "gitBlob": "ae42bcf93e26d209aa7b7caae171cd361d5f29b3",
+          "bytes": 6892,
+          "sha256": "9355cc4c672c305a38349323e732249a0d075a80a3aaa59e2ca9a85cf33fae63"
+        }
+      },
+      {
+        "path": "scripts/test/automation-marketplace-sql.test.js",
+        "before": {
+          "mode": "100644",
+          "gitBlob": "cea8050c3d5d20ef266be7709fc630d833a78094",
+          "bytes": 25083,
+          "sha256": "21dd321347c0c7de1733946b283c64a395790fff0697b9c1163cb300cdcab753"
+        },
+        "after": {
+          "mode": "100644",
+          "gitBlob": "a8df63b3cf7e4c1ff179270645c0a2045d7803dd",
+          "bytes": 25391,
+          "sha256": "e0ad872c05ef8acec9da353b44ef034864d3fefc50a3dc024dcd0f71d1cb32f8"
+        }
+      },
+      {
+        "path": "scripts/test/automation-monitor-workflow-cas-sql.test.js",
+        "before": {
+          "mode": "100644",
+          "gitBlob": "fef78317e3723285d1a9151f5aaf0fa29e16edfd",
+          "bytes": 25142,
+          "sha256": "68c168460e591a8ce44df3fbd8dd6558d504dab4d688702c6eb7c471f321340f"
+        },
+        "after": {
+          "mode": "100644",
+          "gitBlob": "fb82368a2c7f5eb55bef582149fb8a6e0a6185bc",
+          "bytes": 32148,
+          "sha256": "e0170abf799e953e7f3b55e52bb70db9d0b90442bfddd4234467f14dd3e33bd9"
+        }
+      },
+      {
+        "path": "scripts/test/automation-push-capacity-ui.test.js",
+        "before": {
+          "mode": "100644",
+          "gitBlob": "9233d4870bb5125a52f1cf10f97724d0f2674011",
+          "bytes": 39664,
+          "sha256": "e3878237275d43401d31907dce95624302398762f5b9247c7bff90d3a9a167c9"
+        },
+        "after": {
+          "mode": "100644",
+          "gitBlob": "26260d1329bc15e2cd460500fbee287437f0bcba",
+          "bytes": 39738,
+          "sha256": "dc444dc311ffbac8ffa40465866b02b16b4f6b8bd835f8d414f76767194c982f"
+        }
+      },
+      {
+        "path": "scripts/test/automation-test-db-connect.test.js",
+        "before": null,
+        "after": {
+          "mode": "100644",
+          "gitBlob": "0ff3d5a01d438216a3b75d57c846bd83d5f3ae8c",
+          "bytes": 7631,
+          "sha256": "b571b74bf0a963610cde79a60b553572b0f518e16f108ff369688609e670b3e3"
+        }
+      },
+      {
+        "path": "src/automation/api.js",
+        "before": {
+          "mode": "100644",
+          "gitBlob": "4a028ed3286a1f08074a1682a06602b971a03c1c",
+          "bytes": 26260,
+          "sha256": "f92e45ac6173b4ff79d16f98ed9e97a146381263c31582bb63dc75fc10533060"
+        },
+        "after": {
+          "mode": "100644",
+          "gitBlob": "ea79e3646c735c9275ff9d56ec32f610ef607fe7",
+          "bytes": 29429,
+          "sha256": "9535ddbaad8e2995d8e062f997559926494f58098ce69f83004a65df0c609ee4"
+        }
+      },
+      {
+        "path": "src/automation/flow-history.js",
+        "before": {
+          "mode": "100644",
+          "gitBlob": "f670663f1aa5289d61c0ec77aa2fcf8f8999bdbf",
+          "bytes": 8686,
+          "sha256": "fb4f255c35ff65025e7187d88fbc16c069a8e1a51fac25347c0b3bf8b96bac05"
+        },
+        "after": {
+          "mode": "100644",
+          "gitBlob": "56ccecb6558285ed498693abd0ef4d4a0696d9be",
+          "bytes": 26015,
+          "sha256": "aa1580814a0289b029a17a1805485391026a0b68ed8418a6250e1c637b95f6f4"
+        }
+      },
+      {
+        "path": "src/automation/flow-projector.js",
+        "before": {
+          "mode": "100644",
+          "gitBlob": "ab897d72ab0a699f0bb9b8bfe496428665502a66",
+          "bytes": 9377,
+          "sha256": "3f7893334eb5e3e851614c00f79e032635c526d56522c2f92f76c37f06ee1512"
+        },
+        "after": {
+          "mode": "100644",
+          "gitBlob": "6edabacb932566218dd9f0ae722edbb0d11fc15d",
+          "bytes": 10187,
+          "sha256": "4f8c63a56089c2984e54db52e624d52675243a5733dd12c2faf0797e518137a9"
+        }
+      },
+      {
+        "path": "src/automation/graph-store.js",
+        "before": {
+          "mode": "100644",
+          "gitBlob": "c4ff6af4626a00ec25c60dbb4ecb8367a9781686",
+          "bytes": 36239,
+          "sha256": "026136bf8e095e047aacbab5f9be8a2bca4919ddbc9e1e7b7a178327fcc80765"
+        },
+        "after": {
+          "mode": "100644",
+          "gitBlob": "2c0512cff35c6d991f26a17984d6fc80455f5212",
+          "bytes": 36947,
+          "sha256": "637914a3b5b9a5ea31cce4a8cfec940563a5d9a105de065736e28105d7c24853"
+        }
+      },
+      {
+        "path": "src/automation/history.js",
+        "before": {
+          "mode": "100644",
+          "gitBlob": "4dbfe7e5286aee64c53993fc487e310228394dc9",
+          "bytes": 16233,
+          "sha256": "5637d3d965e7f32f9cf7210a3ce98920cb2b40e5928ec5e7f0a6426b9b4b5e61"
+        },
+        "after": {
+          "mode": "100644",
+          "gitBlob": "acb50ac44370e9eee7ea23865f77b58fc5a06464",
+          "bytes": 16705,
+          "sha256": "37ae7b3a4e93b2f3e2451306a70fa81e651c5346f594b99377c5a390ab5a3c57"
+        }
+      },
+      {
+        "path": "src/automation/marketplace-core.js",
+        "before": {
+          "mode": "100644",
+          "gitBlob": "4c6cc963e0f1d3b12cf5b9314b1cb9eaba77afee",
+          "bytes": 43038,
+          "sha256": "8dd24c0333ce49389cb0e3a71a2bcd448e441cdba89cef5a11b8adc8335888c2"
+        },
+        "after": {
+          "mode": "100644",
+          "gitBlob": "0d5bbdec530b8c0884595b7d565ce11f5a1e45c4",
+          "bytes": 49969,
+          "sha256": "0c0a04dd8cb590c0801e1c20b6b46ea23ccc3d1a918f176d813c3ee4c4ad0bf9"
+        }
+      },
+      {
+        "path": "src/automation/queue.js",
+        "before": {
+          "mode": "100644",
+          "gitBlob": "1f286c39b146a28728621f295f7ca37c115664f8",
+          "bytes": 56708,
+          "sha256": "7d4123c5c15b50345681cb9ef17fbc3f9c851989b3eb95db82cc4ffd15a571a9"
+        },
+        "after": {
+          "mode": "100644",
+          "gitBlob": "df602c373f9af89f4691710b4df04663f433cacc",
+          "bytes": 61568,
+          "sha256": "1a6106b6493d3b1d9652dfd8289905c689ffd2d10cf6df30926e45cacd6a625c"
+        }
+      },
+      {
+        "path": "src/automation/service.js",
+        "before": {
+          "mode": "100644",
+          "gitBlob": "46a7a3b594ff86dfea73f90058f0c3ebf7da3152",
+          "bytes": 42555,
+          "sha256": "58d8bfd82966f5d18efeae9d494dcb408a178cc981ab26d2443441a1f9a97e30"
+        },
+        "after": {
+          "mode": "100644",
+          "gitBlob": "c1708fccc191ce0e9e4354b5dfede90af518edc2",
+          "bytes": 43529,
+          "sha256": "76efee6def6fc3bcc073d1dc9fda49592c415f763ea1b184612a8d1a22f9d1e6"
+        }
+      },
+      {
+        "path": "src/automation/workflow-deletion.js",
+        "before": {
+          "mode": "100644",
+          "gitBlob": "8b7c6afd2c1ae6ff68704be261408a43bf666a84",
+          "bytes": 7391,
+          "sha256": "440c3dc29b740783f128cc42e4c6d5a2aaccc2cda608239be5fa7106de4ef58f"
+        },
+        "after": {
+          "mode": "100644",
+          "gitBlob": "f8b8a82802791879fc55a7a2d433c3d2703b37c2",
+          "bytes": 7151,
+          "sha256": "9e0195e67f026e662dc9c4b3f102d65496d320a61e84acc279e5dcf452ff7c15"
+        }
+      }
+    ]
+  },
+  "finalRevision": null,
+  "operationsLaunched": false,
+  "databaseWritten": false
+}

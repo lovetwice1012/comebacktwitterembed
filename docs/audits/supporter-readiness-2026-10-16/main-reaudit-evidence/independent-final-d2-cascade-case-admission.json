@@ -1,0 +1,984 @@
+{
+  "generatedAt": "2026-10-16T09:46:31.928Z",
+  "reviewer": "reaudit_independent_review",
+  "result": "CLEAN-ALL-10-FINAL-SOURCE-CASCADE-CASE-ADMISSION-INCREMENTAL-APPROVAL",
+  "sourceRevision": "d2e792d30a44723e603869b27970b05597d51a9d",
+  "baseRevision": "2a000c89a293e2ee71ef0c579a63def2ff12cbdb",
+  "priorSourceRevision": "07696234f4a8b57c123b7748b36366d7a7f1e3e2",
+  "ids": [
+    "MAIN-UI-1",
+    "MAIN-UI-2",
+    "MAIN-FRESH-2",
+    "MAIN-FRESH-3",
+    "MAIN-POST-1",
+    "MAIN-DATA-1",
+    "MAIN-DATA-2",
+    "MAIN-POST-2",
+    "MAIN-FRESH-4",
+    "MAIN-FRESH-5"
+  ],
+  "findings": [],
+  "sourceManifest": {
+    "file": "C:\\Users\\yussy\\AppData\\Local\\Temp\\cbte-main-reaudit10-v8-source-rev3-20261016\\source-manifest-d2e792d3-unapproved.json",
+    "sha256": "a350a1b0b59491025a67818a4f5bcd5157a13cecc624b0f7953790ab273bdcc7",
+    "originalStatus": "unapproved-v8-canonical-core-source-manifest",
+    "independentlyValidated": true,
+    "changedFiles": 32
+  },
+  "sourceFreeze": [
+    {
+      "file": "dashboard/components/admin/notification-plan-manager.tsx",
+      "mode": "100644",
+      "gitBlob": "9c6ad7dfa36ce8b0ec1d4e8d671e7903ddc9e65b",
+      "canonicalGitSha256": "492151e1327a58fea40b7603a0bc3c859362c29d269fa7fd5da550d3f18a444f",
+      "observedWorkingCopySha256": "492151e1327a58fea40b7603a0bc3c859362c29d269fa7fd5da550d3f18a444f",
+      "expectedWorkingCopySha256": "492151e1327a58fea40b7603a0bc3c859362c29d269fa7fd5da550d3f18a444f",
+      "sourceRevision": "d2e792d30a44723e603869b27970b05597d51a9d"
+    },
+    {
+      "file": "dashboard/components/admin/push-capacity-diagnostics.tsx",
+      "mode": "100644",
+      "gitBlob": "9510d314bded300f6a73d6994bd660cad341f557",
+      "canonicalGitSha256": "4c478fde8e6db83e620664b23fa9c7bfcf4a1a29cde4223c8eca7e2fa85527ea",
+      "observedWorkingCopySha256": "4c478fde8e6db83e620664b23fa9c7bfcf4a1a29cde4223c8eca7e2fa85527ea",
+      "expectedWorkingCopySha256": "4c478fde8e6db83e620664b23fa9c7bfcf4a1a29cde4223c8eca7e2fa85527ea",
+      "sourceRevision": "d2e792d30a44723e603869b27970b05597d51a9d"
+    },
+    {
+      "file": "dashboard/components/admin/square-commerce-manager.tsx",
+      "mode": "100644",
+      "gitBlob": "bae84066b642ebb936f1d7bebac199862ed10da1",
+      "canonicalGitSha256": "898607fdc8030dd0935ef218d8ad00318c2a364bd89eae057cb27f3919f6ecec",
+      "observedWorkingCopySha256": "898607fdc8030dd0935ef218d8ad00318c2a364bd89eae057cb27f3919f6ecec",
+      "expectedWorkingCopySha256": "898607fdc8030dd0935ef218d8ad00318c2a364bd89eae057cb27f3919f6ecec",
+      "sourceRevision": "d2e792d30a44723e603869b27970b05597d51a9d"
+    },
+    {
+      "file": "dashboard/components/automation/automation-workspace.tsx",
+      "mode": "100644",
+      "gitBlob": "281068b238de02b0d237747e5e632b89fe8fc807",
+      "canonicalGitSha256": "bb8c715aec34a4a55939eed39adea2121664e3e8b100da7771e071a1b4e80969",
+      "observedWorkingCopySha256": "bb8c715aec34a4a55939eed39adea2121664e3e8b100da7771e071a1b4e80969",
+      "expectedWorkingCopySha256": "bb8c715aec34a4a55939eed39adea2121664e3e8b100da7771e071a1b4e80969",
+      "sourceRevision": "d2e792d30a44723e603869b27970b05597d51a9d"
+    },
+    {
+      "file": "dashboard/components/automation/marketplace-manager.tsx",
+      "mode": "100644",
+      "gitBlob": "4b41c74c09a8b580245559d3abd8cf44bec54fc6",
+      "canonicalGitSha256": "d18aee7fe5573809e253d919f71308fcf539ffd22dc29934a79413b6e5cecd23",
+      "observedWorkingCopySha256": "d18aee7fe5573809e253d919f71308fcf539ffd22dc29934a79413b6e5cecd23",
+      "expectedWorkingCopySha256": "d18aee7fe5573809e253d919f71308fcf539ffd22dc29934a79413b6e5cecd23",
+      "sourceRevision": "d2e792d30a44723e603869b27970b05597d51a9d"
+    },
+    {
+      "file": "dashboard/components/automation/monitor-cadence-editor.tsx",
+      "mode": "100644",
+      "gitBlob": "0e8638e1ee543f6e4787c7ee06953604bc3408f4",
+      "canonicalGitSha256": "768cb88cb8e5cb05eb7396da4dcced26bae132ce0d9fa89032e10ce76b71377a",
+      "observedWorkingCopySha256": "2fc1bc7224cc79905c6e1c06fa3b837f9a116987c42942da1fcbcb3f5f870286",
+      "expectedWorkingCopySha256": "2fc1bc7224cc79905c6e1c06fa3b837f9a116987c42942da1fcbcb3f5f870286",
+      "sourceRevision": "d2e792d30a44723e603869b27970b05597d51a9d"
+    },
+    {
+      "file": "dashboard/components/automation/monitor-manager.tsx",
+      "mode": "100644",
+      "gitBlob": "f11db0103fea4cbe0e37f747def819603d36cb60",
+      "canonicalGitSha256": "080eb3be855ca7ac6c30d4926e590cc2825c8d5245f368af31a4fbb82f4f84f7",
+      "observedWorkingCopySha256": "080eb3be855ca7ac6c30d4926e590cc2825c8d5245f368af31a4fbb82f4f84f7",
+      "expectedWorkingCopySha256": "080eb3be855ca7ac6c30d4926e590cc2825c8d5245f368af31a4fbb82f4f84f7",
+      "sourceRevision": "d2e792d30a44723e603869b27970b05597d51a9d"
+    },
+    {
+      "file": "dashboard/components/automation/x-monitor-manager.tsx",
+      "mode": "100644",
+      "gitBlob": "82f72abef6e46abbff346efdf4679445fd712218",
+      "canonicalGitSha256": "5df715aa48c20053f2bab0e9962bf612f5ea5b651081266b254f085f7a463295",
+      "observedWorkingCopySha256": "5df715aa48c20053f2bab0e9962bf612f5ea5b651081266b254f085f7a463295",
+      "expectedWorkingCopySha256": "5df715aa48c20053f2bab0e9962bf612f5ea5b651081266b254f085f7a463295",
+      "sourceRevision": "d2e792d30a44723e603869b27970b05597d51a9d"
+    },
+    {
+      "file": "scripts/lib/automation-test-db.js",
+      "mode": "100644",
+      "gitBlob": "7220bb5b2aa4a494ae96d9cc1f908cc19fc5f424",
+      "canonicalGitSha256": "de08c0efb3319f0df35724cf8b13ef764c834a7deaea55696bebfe391eec03de",
+      "observedWorkingCopySha256": "dd18673b8f4c52f7e7c5c85e07298aa371670898aa1e0ea8a314619f2d63be1b",
+      "expectedWorkingCopySha256": "dd18673b8f4c52f7e7c5c85e07298aa371670898aa1e0ea8a314619f2d63be1b",
+      "sourceRevision": "d2e792d30a44723e603869b27970b05597d51a9d"
+    },
+    {
+      "file": "scripts/test/automation-aggregate-member-boundary.test.js",
+      "mode": "100644",
+      "gitBlob": "b1b43fc3d68330a885d7a0afff41c7a2cc9d791d",
+      "canonicalGitSha256": "af58b2ce57e1cd50ff54ad16c1ece74dbc75e203a0803d8658b3047613c2af3e",
+      "observedWorkingCopySha256": "af58b2ce57e1cd50ff54ad16c1ece74dbc75e203a0803d8658b3047613c2af3e",
+      "expectedWorkingCopySha256": "af58b2ce57e1cd50ff54ad16c1ece74dbc75e203a0803d8658b3047613c2af3e",
+      "sourceRevision": "d2e792d30a44723e603869b27970b05597d51a9d"
+    },
+    {
+      "file": "scripts/test/automation-flow-permanent-failure-sql.test.js",
+      "mode": "100644",
+      "gitBlob": "c1995b5fcc2f77db53399cd33d245e059e92c1c2",
+      "canonicalGitSha256": "8a89d7964a69f5c6e98e7ee7f284523c45ae6e3f5b74a898b5fda1843a4f2ec6",
+      "observedWorkingCopySha256": "8a89d7964a69f5c6e98e7ee7f284523c45ae6e3f5b74a898b5fda1843a4f2ec6",
+      "expectedWorkingCopySha256": "8a89d7964a69f5c6e98e7ee7f284523c45ae6e3f5b74a898b5fda1843a4f2ec6",
+      "sourceRevision": "d2e792d30a44723e603869b27970b05597d51a9d"
+    },
+    {
+      "file": "scripts/test/automation-flow-state-reconciliation-sql.test.js",
+      "mode": "100644",
+      "gitBlob": "332ccabbc93a71cee2517df25b44cb81329a811a",
+      "canonicalGitSha256": "a8aefab66521112321eb1752d816ea219668539cf603229d0c666bc69a6ebd93",
+      "observedWorkingCopySha256": "a8aefab66521112321eb1752d816ea219668539cf603229d0c666bc69a6ebd93",
+      "expectedWorkingCopySha256": "a8aefab66521112321eb1752d816ea219668539cf603229d0c666bc69a6ebd93",
+      "sourceRevision": "d2e792d30a44723e603869b27970b05597d51a9d"
+    },
+    {
+      "file": "scripts/test/automation-main-admin-cas-ui.test.js",
+      "mode": "100644",
+      "gitBlob": "58b965aeaaaacc63b1903d60b165d4cfe150bd32",
+      "canonicalGitSha256": "62fb82064c19c19c10e19d22747a85fc644a7c796466c3ca47ea25b98e68935f",
+      "observedWorkingCopySha256": "62fb82064c19c19c10e19d22747a85fc644a7c796466c3ca47ea25b98e68935f",
+      "expectedWorkingCopySha256": "62fb82064c19c19c10e19d22747a85fc644a7c796466c3ca47ea25b98e68935f",
+      "sourceRevision": "d2e792d30a44723e603869b27970b05597d51a9d"
+    },
+    {
+      "file": "scripts/test/automation-main-cadence-read-recovery.test.js",
+      "mode": "100644",
+      "gitBlob": "f49c36bb61b52ac29b24f48d3c62af9cd7969b2d",
+      "canonicalGitSha256": "54a53c067687e1e874814ef1d3bf714f0e9c25dedf19ff58ae26b12df5000d93",
+      "observedWorkingCopySha256": "54a53c067687e1e874814ef1d3bf714f0e9c25dedf19ff58ae26b12df5000d93",
+      "expectedWorkingCopySha256": "54a53c067687e1e874814ef1d3bf714f0e9c25dedf19ff58ae26b12df5000d93",
+      "sourceRevision": "d2e792d30a44723e603869b27970b05597d51a9d"
+    },
+    {
+      "file": "scripts/test/automation-main-data-revalidation-sql.test.js",
+      "mode": "100644",
+      "gitBlob": "e66713653d3d6590294d5dca3b91f2c0281d16ef",
+      "canonicalGitSha256": "e6a81fb538c74e6360df22b12346f1376e5339326f2463b14d53b00997fd8774",
+      "observedWorkingCopySha256": "e6a81fb538c74e6360df22b12346f1376e5339326f2463b14d53b00997fd8774",
+      "expectedWorkingCopySha256": "e6a81fb538c74e6360df22b12346f1376e5339326f2463b14d53b00997fd8774",
+      "sourceRevision": "d2e792d30a44723e603869b27970b05597d51a9d"
+    },
+    {
+      "file": "scripts/test/automation-main-data-revalidation-ui.test.js",
+      "mode": "100644",
+      "gitBlob": "30be62b89950760e3853b2b53d41c4e690a3c50b",
+      "canonicalGitSha256": "3c32a2e56c7a0890820834cb8338cfe10576c0efa101cf9ff1c2e5c2cdec2ace",
+      "observedWorkingCopySha256": "3c32a2e56c7a0890820834cb8338cfe10576c0efa101cf9ff1c2e5c2cdec2ace",
+      "expectedWorkingCopySha256": "3c32a2e56c7a0890820834cb8338cfe10576c0efa101cf9ff1c2e5c2cdec2ace",
+      "sourceRevision": "d2e792d30a44723e603869b27970b05597d51a9d"
+    },
+    {
+      "file": "scripts/test/automation-main-ui-draft-cadence.test.js",
+      "mode": "100644",
+      "gitBlob": "aa0760245519b609cc2be8d76410d745ecbd2931",
+      "canonicalGitSha256": "8d1276237de5bc493a627cdeb3f8f6769db1e29cdcdc72d92bdc424c6e1eda57",
+      "observedWorkingCopySha256": "8d1276237de5bc493a627cdeb3f8f6769db1e29cdcdc72d92bdc424c6e1eda57",
+      "expectedWorkingCopySha256": "8d1276237de5bc493a627cdeb3f8f6769db1e29cdcdc72d92bdc424c6e1eda57",
+      "sourceRevision": "d2e792d30a44723e603869b27970b05597d51a9d"
+    },
+    {
+      "file": "scripts/test/automation-main-workflow-history.test.js",
+      "mode": "100644",
+      "gitBlob": "c30f23f49d1aedaaa979f9af5a778b391f4c274c",
+      "canonicalGitSha256": "98ba5e4ce0f6f9bdaf706352e62a22a3b4cd7cebb05aeea3e1c24d848cc6f920",
+      "observedWorkingCopySha256": "98ba5e4ce0f6f9bdaf706352e62a22a3b4cd7cebb05aeea3e1c24d848cc6f920",
+      "expectedWorkingCopySha256": "98ba5e4ce0f6f9bdaf706352e62a22a3b4cd7cebb05aeea3e1c24d848cc6f920",
+      "sourceRevision": "d2e792d30a44723e603869b27970b05597d51a9d"
+    },
+    {
+      "file": "scripts/test/automation-main-x-read-write-ui.test.js",
+      "mode": "100644",
+      "gitBlob": "ae42bcf93e26d209aa7b7caae171cd361d5f29b3",
+      "canonicalGitSha256": "9355cc4c672c305a38349323e732249a0d075a80a3aaa59e2ca9a85cf33fae63",
+      "observedWorkingCopySha256": "9355cc4c672c305a38349323e732249a0d075a80a3aaa59e2ca9a85cf33fae63",
+      "expectedWorkingCopySha256": "9355cc4c672c305a38349323e732249a0d075a80a3aaa59e2ca9a85cf33fae63",
+      "sourceRevision": "d2e792d30a44723e603869b27970b05597d51a9d"
+    },
+    {
+      "file": "scripts/test/automation-marketplace-sql.test.js",
+      "mode": "100644",
+      "gitBlob": "a8df63b3cf7e4c1ff179270645c0a2045d7803dd",
+      "canonicalGitSha256": "e0ad872c05ef8acec9da353b44ef034864d3fefc50a3dc024dcd0f71d1cb32f8",
+      "observedWorkingCopySha256": "e0ad872c05ef8acec9da353b44ef034864d3fefc50a3dc024dcd0f71d1cb32f8",
+      "expectedWorkingCopySha256": "e0ad872c05ef8acec9da353b44ef034864d3fefc50a3dc024dcd0f71d1cb32f8",
+      "sourceRevision": "d2e792d30a44723e603869b27970b05597d51a9d"
+    },
+    {
+      "file": "scripts/test/automation-monitor-workflow-cas-sql.test.js",
+      "mode": "100644",
+      "gitBlob": "fb82368a2c7f5eb55bef582149fb8a6e0a6185bc",
+      "canonicalGitSha256": "e0170abf799e953e7f3b55e52bb70db9d0b90442bfddd4234467f14dd3e33bd9",
+      "observedWorkingCopySha256": "e0170abf799e953e7f3b55e52bb70db9d0b90442bfddd4234467f14dd3e33bd9",
+      "expectedWorkingCopySha256": "e0170abf799e953e7f3b55e52bb70db9d0b90442bfddd4234467f14dd3e33bd9",
+      "sourceRevision": "d2e792d30a44723e603869b27970b05597d51a9d"
+    },
+    {
+      "file": "scripts/test/automation-push-capacity-ui.test.js",
+      "mode": "100644",
+      "gitBlob": "26260d1329bc15e2cd460500fbee287437f0bcba",
+      "canonicalGitSha256": "dc444dc311ffbac8ffa40465866b02b16b4f6b8bd835f8d414f76767194c982f",
+      "observedWorkingCopySha256": "dc444dc311ffbac8ffa40465866b02b16b4f6b8bd835f8d414f76767194c982f",
+      "expectedWorkingCopySha256": "dc444dc311ffbac8ffa40465866b02b16b4f6b8bd835f8d414f76767194c982f",
+      "sourceRevision": "d2e792d30a44723e603869b27970b05597d51a9d"
+    },
+    {
+      "file": "scripts/test/automation-test-db-connect.test.js",
+      "mode": "100644",
+      "gitBlob": "0ff3d5a01d438216a3b75d57c846bd83d5f3ae8c",
+      "canonicalGitSha256": "b571b74bf0a963610cde79a60b553572b0f518e16f108ff369688609e670b3e3",
+      "observedWorkingCopySha256": "b571b74bf0a963610cde79a60b553572b0f518e16f108ff369688609e670b3e3",
+      "expectedWorkingCopySha256": "b571b74bf0a963610cde79a60b553572b0f518e16f108ff369688609e670b3e3",
+      "sourceRevision": "d2e792d30a44723e603869b27970b05597d51a9d"
+    },
+    {
+      "file": "src/automation/api.js",
+      "mode": "100644",
+      "gitBlob": "ea79e3646c735c9275ff9d56ec32f610ef607fe7",
+      "canonicalGitSha256": "9535ddbaad8e2995d8e062f997559926494f58098ce69f83004a65df0c609ee4",
+      "observedWorkingCopySha256": "846f6a36d3046fd1685ee015051af819e959302ec867408348fcde6e56e01e8d",
+      "expectedWorkingCopySha256": "846f6a36d3046fd1685ee015051af819e959302ec867408348fcde6e56e01e8d",
+      "sourceRevision": "d2e792d30a44723e603869b27970b05597d51a9d"
+    },
+    {
+      "file": "src/automation/flow-history.js",
+      "mode": "100644",
+      "gitBlob": "138b2217a8ec4f2fe6b3d87e3f8f146a2554d002",
+      "canonicalGitSha256": "60ff0447147e5ae84e15108c14e5883f4d5092969cd652549dffde67b7163824",
+      "observedWorkingCopySha256": "60ff0447147e5ae84e15108c14e5883f4d5092969cd652549dffde67b7163824",
+      "expectedWorkingCopySha256": "60ff0447147e5ae84e15108c14e5883f4d5092969cd652549dffde67b7163824",
+      "sourceRevision": "d2e792d30a44723e603869b27970b05597d51a9d"
+    },
+    {
+      "file": "src/automation/flow-projector.js",
+      "mode": "100644",
+      "gitBlob": "6edabacb932566218dd9f0ae722edbb0d11fc15d",
+      "canonicalGitSha256": "4f8c63a56089c2984e54db52e624d52675243a5733dd12c2faf0797e518137a9",
+      "observedWorkingCopySha256": "4f8c63a56089c2984e54db52e624d52675243a5733dd12c2faf0797e518137a9",
+      "expectedWorkingCopySha256": "4f8c63a56089c2984e54db52e624d52675243a5733dd12c2faf0797e518137a9",
+      "sourceRevision": "d2e792d30a44723e603869b27970b05597d51a9d"
+    },
+    {
+      "file": "src/automation/graph-store.js",
+      "mode": "100644",
+      "gitBlob": "2c0512cff35c6d991f26a17984d6fc80455f5212",
+      "canonicalGitSha256": "637914a3b5b9a5ea31cce4a8cfec940563a5d9a105de065736e28105d7c24853",
+      "observedWorkingCopySha256": "637914a3b5b9a5ea31cce4a8cfec940563a5d9a105de065736e28105d7c24853",
+      "expectedWorkingCopySha256": "637914a3b5b9a5ea31cce4a8cfec940563a5d9a105de065736e28105d7c24853",
+      "sourceRevision": "d2e792d30a44723e603869b27970b05597d51a9d"
+    },
+    {
+      "file": "src/automation/history.js",
+      "mode": "100644",
+      "gitBlob": "acb50ac44370e9eee7ea23865f77b58fc5a06464",
+      "canonicalGitSha256": "37ae7b3a4e93b2f3e2451306a70fa81e651c5346f594b99377c5a390ab5a3c57",
+      "observedWorkingCopySha256": "37ae7b3a4e93b2f3e2451306a70fa81e651c5346f594b99377c5a390ab5a3c57",
+      "expectedWorkingCopySha256": "37ae7b3a4e93b2f3e2451306a70fa81e651c5346f594b99377c5a390ab5a3c57",
+      "sourceRevision": "d2e792d30a44723e603869b27970b05597d51a9d"
+    },
+    {
+      "file": "src/automation/marketplace-core.js",
+      "mode": "100644",
+      "gitBlob": "0d5bbdec530b8c0884595b7d565ce11f5a1e45c4",
+      "canonicalGitSha256": "0c0a04dd8cb590c0801e1c20b6b46ea23ccc3d1a918f176d813c3ee4c4ad0bf9",
+      "observedWorkingCopySha256": "c468bba9ebac0a2ded2be2ae53d681390e71c8cf0bf7adc2329caf6c1cdd932d",
+      "expectedWorkingCopySha256": "c468bba9ebac0a2ded2be2ae53d681390e71c8cf0bf7adc2329caf6c1cdd932d",
+      "sourceRevision": "d2e792d30a44723e603869b27970b05597d51a9d"
+    },
+    {
+      "file": "src/automation/queue.js",
+      "mode": "100644",
+      "gitBlob": "df602c373f9af89f4691710b4df04663f433cacc",
+      "canonicalGitSha256": "1a6106b6493d3b1d9652dfd8289905c689ffd2d10cf6df30926e45cacd6a625c",
+      "observedWorkingCopySha256": "1a6106b6493d3b1d9652dfd8289905c689ffd2d10cf6df30926e45cacd6a625c",
+      "expectedWorkingCopySha256": "1a6106b6493d3b1d9652dfd8289905c689ffd2d10cf6df30926e45cacd6a625c",
+      "sourceRevision": "d2e792d30a44723e603869b27970b05597d51a9d"
+    },
+    {
+      "file": "src/automation/service.js",
+      "mode": "100644",
+      "gitBlob": "c1708fccc191ce0e9e4354b5dfede90af518edc2",
+      "canonicalGitSha256": "76efee6def6fc3bcc073d1dc9fda49592c415f763ea1b184612a8d1a22f9d1e6",
+      "observedWorkingCopySha256": "76efee6def6fc3bcc073d1dc9fda49592c415f763ea1b184612a8d1a22f9d1e6",
+      "expectedWorkingCopySha256": "76efee6def6fc3bcc073d1dc9fda49592c415f763ea1b184612a8d1a22f9d1e6",
+      "sourceRevision": "d2e792d30a44723e603869b27970b05597d51a9d"
+    },
+    {
+      "file": "src/automation/workflow-deletion.js",
+      "mode": "100644",
+      "gitBlob": "f8b8a82802791879fc55a7a2d433c3d2703b37c2",
+      "canonicalGitSha256": "9e0195e67f026e662dc9c4b3f102d65496d320a61e84acc279e5dcf452ff7c15",
+      "observedWorkingCopySha256": "9e0195e67f026e662dc9c4b3f102d65496d320a61e84acc279e5dcf452ff7c15",
+      "expectedWorkingCopySha256": "9e0195e67f026e662dc9c4b3f102d65496d320a61e84acc279e5dcf452ff7c15",
+      "sourceRevision": "d2e792d30a44723e603869b27970b05597d51a9d"
+    }
+  ],
+  "incrementalFiles": [
+    "scripts/lib/automation-test-db.js",
+    "scripts/test/automation-flow-state-reconciliation-sql.test.js",
+    "scripts/test/automation-test-db-connect.test.js",
+    "src/automation/flow-history.js",
+    "src/automation/queue.js"
+  ],
+  "coreTreeIds": {
+    "src": "aff0ea89718b32f4fc86e97f0c439883feac4e75",
+    "index.js": "f1e198b2844674bb452432655873c7f688eb004e",
+    "package.json": "b83d13a7ba8ea97c210c9de0cbe11a058e394320",
+    "package-lock.json": "555308dc110a193fa169c3129af3c9ca60a08ff6",
+    "packages/angelic-angel": "4c160dd8368ae39c82d92dfad3013f17588d4574",
+    "dashboard": "16e5482fe1fc827cbe9a6172634b4e5ac23124a3",
+    "scripts": "3b8068755e251b3da658d707a8ef1bab6082c34b",
+    "migrations": "17a97bd36dab00b719e832bd810f0eba04f05c4d"
+  },
+  "schemaCompatibility": {
+    "baselineRevision": "c63003f5dbd585a3f09e8672a0f80fa5db460165",
+    "paths": 69,
+    "rawBytesAndModesUnchanged": true,
+    "newDDL": false,
+    "newMigration": false,
+    "prismaMode": "100644",
+    "inventory": [
+      {
+        "file": "dashboard/prisma/schema.prisma",
+        "mode": "100644",
+        "gitBlob": "c26160ef73e214cdc36feb54243b22357893df33",
+        "sha256": "7b1c0b6b6c7ce5b4346d5dda450fe9ff574eb28032953a93d740fc914bc469e3",
+        "unchangedFrom": "c63003f5dbd585a3f09e8672a0f80fa5db460165"
+      },
+      {
+        "file": "migrations/20260630_add_youtube_description_max_length.sql",
+        "mode": "100644",
+        "gitBlob": "c44638d6bf28bedb00e534a09a862b9c6e085284",
+        "sha256": "41256946ef488d92879fb7b98219f3e0b625d8cddf59eed2e1557a1f1c44957e",
+        "unchangedFrom": "c63003f5dbd585a3f09e8672a0f80fa5db460165"
+      },
+      {
+        "file": "migrations/20260630_add_zz_tiktok_hq.sql",
+        "mode": "100644",
+        "gitBlob": "93cce3b79ec00ba47358f10ea510ec1316efe8b1",
+        "sha256": "e1343e1abfa98f96b65bd1f309b3aac5aa1e10e86243530c7cbba5cb57994071",
+        "unchangedFrom": "c63003f5dbd585a3f09e8672a0f80fa5db460165"
+      },
+      {
+        "file": "migrations/20260630_add_zzz_provider_output_settings.sql",
+        "mode": "100644",
+        "gitBlob": "61bca5d3e3f43a8035c50e155497194779b429f7",
+        "sha256": "79f67bb5ee655d9b087e121fff3d5da895bb9a83e56fde5cab80d31eb873e5d8",
+        "unchangedFrom": "c63003f5dbd585a3f09e8672a0f80fa5db460165"
+      },
+      {
+        "file": "migrations/20260630_add_zzzz_common_provider_output_controls.sql",
+        "mode": "100644",
+        "gitBlob": "d4a0a22d1db9113e95e5736b4959f266fe1f692b",
+        "sha256": "1f5ba2ca0936f48a0aaa74b0b869f1c95cfbeae9eadbd6471ec493a2780d58c0",
+        "unchangedFrom": "c63003f5dbd585a3f09e8672a0f80fa5db460165"
+      },
+      {
+        "file": "migrations/20260701_add_amazon_extract_targets.sql",
+        "mode": "100644",
+        "gitBlob": "225be54358a079cdabd97bdfc840a471d24d1e60",
+        "sha256": "449314f6623137a0c25786417dc4d0e4f93c5182d6b6504b8309460123c946ef",
+        "unchangedFrom": "c63003f5dbd585a3f09e8672a0f80fa5db460165"
+      },
+      {
+        "file": "migrations/20260701_add_dashboard_audit_logs.sql",
+        "mode": "100644",
+        "gitBlob": "0bb556b8d9ff4d3b00d6003caafb86384d76474b",
+        "sha256": "1a0f9edc1c2918398ecc7ea73253cd4330bcad843b4b6711dddfb04cfbac0299",
+        "unchangedFrom": "c63003f5dbd585a3f09e8672a0f80fa5db460165"
+      },
+      {
+        "file": "migrations/20260702_add_bot_analytics_events.sql",
+        "mode": "100644",
+        "gitBlob": "0fb9681805ab8846123d975f811b2d101157438c",
+        "sha256": "82b7eca92a4c1109094f003c7405a02269734e92494dbb617243ba7dd23ae2d4",
+        "unchangedFrom": "c63003f5dbd585a3f09e8672a0f80fa5db460165"
+      },
+      {
+        "file": "migrations/20260702_add_bot_provider_hourly_aggregates.sql",
+        "mode": "100644",
+        "gitBlob": "f5934c6fb4902f520fb9a22fe975b70b8cdb5441",
+        "sha256": "03b01ddc60ff12d64e5cbeb163984a06597bc5df62098d3dc330a61a32be3dc5",
+        "unchangedFrom": "c63003f5dbd585a3f09e8672a0f80fa5db460165"
+      },
+      {
+        "file": "migrations/20260702_add_provider_content_facet_observation_metadata.sql",
+        "mode": "100644",
+        "gitBlob": "b5db8350a1c919070981e00678367038192368c6",
+        "sha256": "3e0cf2195b1a86906d0411c5b12ee3669d6ffeb727d55b8342f1c8f9c5edfe8d",
+        "unchangedFrom": "c63003f5dbd585a3f09e8672a0f80fa5db460165"
+      },
+      {
+        "file": "migrations/20260702_add_sensitive_content_controls.sql",
+        "mode": "100644",
+        "gitBlob": "ea5e35a9201dcb831a60ea43f4a7a2cb21f11bca",
+        "sha256": "31e067184721c26547f7bb9f1dc57becbbcf0aca1c13d9bf4661f65d7a25785d",
+        "unchangedFrom": "c63003f5dbd585a3f09e8672a0f80fa5db460165"
+      },
+      {
+        "file": "migrations/20260702_add_settings_webui_notice_state.sql",
+        "mode": "100644",
+        "gitBlob": "0ad11798de0d05ad84eae0b1e59d1c0766ff461f",
+        "sha256": "4bb54c728fdaa760f1846909168e06905228e2a8efcf92169b668d2b8967cf9c",
+        "unchangedFrom": "c63003f5dbd585a3f09e8672a0f80fa5db460165"
+      },
+      {
+        "file": "migrations/20260702_add_twitter_quote_depth_by_account.sql",
+        "mode": "100644",
+        "gitBlob": "f348fe4a5e7d2e1bb1f9ae9cd2ce44e9478d1a16",
+        "sha256": "f5696a3ddf8cbded13176f1f2f4c1927cba12c01eed990064471eb1f8c9ba2d1",
+        "unchangedFrom": "c63003f5dbd585a3f09e8672a0f80fa5db460165"
+      },
+      {
+        "file": "migrations/20260702_add_zz_pixiv_general_sensitive_controls.sql",
+        "mode": "100644",
+        "gitBlob": "60cf7cec4cc954a2e043affbe6fce9b071f30f93",
+        "sha256": "a0d854c445b3bf3b32a5d6eeaa42353d2ae78e58def17617212637236a684398",
+        "unchangedFrom": "c63003f5dbd585a3f09e8672a0f80fa5db460165"
+      },
+      {
+        "file": "migrations/20260702_add_zzz_drop_pixiv_general_sensitive_controls.sql",
+        "mode": "100644",
+        "gitBlob": "1d266f725da051169dac379fe44fb97a7d985500",
+        "sha256": "b15bc3e8e6d606f8e75f7322d241c24845ba384cc2277290ec3407805877b493",
+        "unchangedFrom": "c63003f5dbd585a3f09e8672a0f80fa5db460165"
+      },
+      {
+        "file": "migrations/20260705_add_bot_error_alert_incidents.sql",
+        "mode": "100644",
+        "gitBlob": "7c39f9e37d1420550e74419c8e52f2413dbfc90e",
+        "sha256": "adc7f099c220dec09084ee515c6930a22151ba09ede9065c5a1abe8ab99e3be2",
+        "unchangedFrom": "c63003f5dbd585a3f09e8672a0f80fa5db460165"
+      },
+      {
+        "file": "migrations/20260708_add_twitter_secondary_source_embed_suppression.sql",
+        "mode": "100644",
+        "gitBlob": "8e2dc7479c9455215d71344e081083a2be65ac1e",
+        "sha256": "8a1e75ed0e3dc507ef56240232c9fd18388960bc753c6dc49c0d18b60dbdd663",
+        "unchangedFrom": "c63003f5dbd585a3f09e8672a0f80fa5db460165"
+      },
+      {
+        "file": "migrations/20260715_add_admin_analytics_time_indexes.sql",
+        "mode": "100644",
+        "gitBlob": "7a74f15ebe1bb4d14b3ae7e1fcada60e171d86cb",
+        "sha256": "f6b981d90b88e756afd10d85ccc2168ce387bde2b3c6a03566b3e51b6bfc7b00",
+        "unchangedFrom": "c63003f5dbd585a3f09e8672a0f80fa5db460165"
+      },
+      {
+        "file": "migrations/20260715_add_provider_settings_cache_invalidations.sql",
+        "mode": "100644",
+        "gitBlob": "ca3f301563b2239b7bf53a2a97ffe94c4283330f",
+        "sha256": "d6651de61d877a1de1f8168eb714c70885587085dfa7472e6532f1d23d37ce80",
+        "unchangedFrom": "c63003f5dbd585a3f09e8672a0f80fa5db460165"
+      },
+      {
+        "file": "migrations/20260716_add_admin_report_snapshots_and_covering_indexes.sql",
+        "mode": "100644",
+        "gitBlob": "09f9a2693b1cf03260b10e914b10111270437905",
+        "sha256": "2bcb91c0f56c0ce7305f699899a4db44eca76b55159237a971d4099169f80a1e",
+        "unchangedFrom": "c63003f5dbd585a3f09e8672a0f80fa5db460165"
+      },
+      {
+        "file": "migrations/20260717_add_dashboard_delegated_access_grants.sql",
+        "mode": "100644",
+        "gitBlob": "a430170c9895205e87654a473d6e859b32a7afde",
+        "sha256": "86cc20ff1e329a9a2083b8dcf18dc00bc4574870eb5db2c92e19428fcb75d8fe",
+        "unchangedFrom": "c63003f5dbd585a3f09e8672a0f80fa5db460165"
+      },
+      {
+        "file": "migrations/20260809_add_admin_analytics_join_indexes.sql",
+        "mode": "100644",
+        "gitBlob": "9010392fdfac8ad768a86bcbbe6a41c41b4b1ef2",
+        "sha256": "1d491213fab6317fbce947e375fa2c5710e3ca7f329cc1688cf0e4e7e7f23769",
+        "unchangedFrom": "c63003f5dbd585a3f09e8672a0f80fa5db460165"
+      },
+      {
+        "file": "migrations/20260907_add_provider_metric_observation_rollup.sql",
+        "mode": "100644",
+        "gitBlob": "48fa454a7bc7e45b1f2c30a8e3023f20aa4026ed",
+        "sha256": "a1f0c4d31c1b1a02206be14bccf50d99f3aef4e2ff58b09ba0e9eeea6965fa98",
+        "unchangedFrom": "c63003f5dbd585a3f09e8672a0f80fa5db460165"
+      },
+      {
+        "file": "migrations/20260916_add_auto_watch.sql",
+        "mode": "100644",
+        "gitBlob": "93b3f5c3226631ed4b61b3304a308df2258e2f65",
+        "sha256": "80e7f8d34e77e166d1fd3e5ea3625f19a28227e7714dabde15e2dc1000e68944",
+        "unchangedFrom": "c63003f5dbd585a3f09e8672a0f80fa5db460165"
+      },
+      {
+        "file": "migrations/20260916_add_bot_provider_expansion_traces.sql",
+        "mode": "100644",
+        "gitBlob": "211f9d442c294408b0723c683bdc31645c8735b4",
+        "sha256": "941fef4832b0d5da638e4d5be2c3364580b0a4a76c3ab060a72a5a1fb6720013",
+        "unchangedFrom": "c63003f5dbd585a3f09e8672a0f80fa5db460165"
+      },
+      {
+        "file": "migrations/20260916_add_users_donor_flag.sql",
+        "mode": "100644",
+        "gitBlob": "d111881852bbf45853bcb8ee0104b636de69e4ea",
+        "sha256": "071fd71d3e0d4f486674e5a01b6fae7cdf038a246f7d679498af2cbe59777f37",
+        "unchangedFrom": "c63003f5dbd585a3f09e8672a0f80fa5db460165"
+      },
+      {
+        "file": "migrations/20260921_add_automation_platform.sql",
+        "mode": "100644",
+        "gitBlob": "6ef78a3352b3c1f17e3bf7d72b71a0b6eb066c14",
+        "sha256": "6d3ab166710dc6c42fdda0ef64093deaf5a0c9450ec316c20ff43a3d32622d8c",
+        "unchangedFrom": "c63003f5dbd585a3f09e8672a0f80fa5db460165"
+      },
+      {
+        "file": "migrations/20260921_add_price_watch_destinations.sql",
+        "mode": "100644",
+        "gitBlob": "32a1980f87c7ad473d2ec1c7a7b6de7f50f376e2",
+        "sha256": "52f6915b63cf955f253763e69473c49b842c1c101f03d6cf250ba05d866cb14e",
+        "unchangedFrom": "c63003f5dbd585a3f09e8672a0f80fa5db460165"
+      },
+      {
+        "file": "migrations/20260921_add_zz_automation_price_events.sql",
+        "mode": "100644",
+        "gitBlob": "66a20b90e63051d93af2408927f5666ceb1c54d8",
+        "sha256": "38b1ee42dbcea9ec016a87d79e86ae1cf47c41b8841d601dce06f6e19ab2ba37",
+        "unchangedFrom": "c63003f5dbd585a3f09e8672a0f80fa5db460165"
+      },
+      {
+        "file": "migrations/20260922_add_automation_flow_execution.sql",
+        "mode": "100644",
+        "gitBlob": "c195678a38fc17f363cd958cf13b08203f8fcce5",
+        "sha256": "e53e675b3847f439c35cb354816dc150cf23d26b2320fd4f8c21215cf25fddae",
+        "unchangedFrom": "c63003f5dbd585a3f09e8672a0f80fa5db460165"
+      },
+      {
+        "file": "migrations/20260922_add_automation_monitors.sql",
+        "mode": "100644",
+        "gitBlob": "b0e8b615e92771616e1471262c15cd630a240abf",
+        "sha256": "68429c30a7da823904cf4c0329b1ae181d06e10efad19487f0c5f208add1fd93",
+        "unchangedFrom": "c63003f5dbd585a3f09e8672a0f80fa5db460165"
+      },
+      {
+        "file": "migrations/20260922_add_expansion_trace_message_index.sql",
+        "mode": "100644",
+        "gitBlob": "d8ab46362fa45b4f91a71d2cbd3110a970923590",
+        "sha256": "573055e7bf3790b146136058d1eb44c6797ebb729fd42bb78db81a18d759ffea",
+        "unchangedFrom": "c63003f5dbd585a3f09e8672a0f80fa5db460165"
+      },
+      {
+        "file": "migrations/20260922_add_link_presentation.sql",
+        "mode": "100644",
+        "gitBlob": "4b74553db67f996c955e6a32a32c052a92e5b326",
+        "sha256": "1777e8cddbb9d884e0265ac03e8fc873bc2656475a3c08cb14578682e0cae6a7",
+        "unchangedFrom": "c63003f5dbd585a3f09e8672a0f80fa5db460165"
+      },
+      {
+        "file": "migrations/20260922_add_personal_links.sql",
+        "mode": "100644",
+        "gitBlob": "f43e0534b8fb7207ab0a5f6d36338ab411a7db65",
+        "sha256": "a1c99f5d543738adaf0ba794e9783690d011f063ef3aa245dcbdbf0217c58f78",
+        "unchangedFrom": "c63003f5dbd585a3f09e8672a0f80fa5db460165"
+      },
+      {
+        "file": "migrations/20260922_add_previous_shares_setting.sql",
+        "mode": "100644",
+        "gitBlob": "c805f999f51ee8c4c85f1cd16b696606d030962f",
+        "sha256": "e50d1f9bb634f9c6ddffa9d377fccaec5c1b6ab59592d05ecc5c917de9ad7460",
+        "unchangedFrom": "c63003f5dbd585a3f09e8672a0f80fa5db460165"
+      },
+      {
+        "file": "migrations/20260922_add_watch_target_baselines.sql",
+        "mode": "100644",
+        "gitBlob": "7a7b9e31974e324279299d01c554a680a2db40d7",
+        "sha256": "ee46ad5f7fb958480ec557ddadb2fd4b81f174fcb42410ea6396ae25ff5c3c34",
+        "unchangedFrom": "c63003f5dbd585a3f09e8672a0f80fa5db460165"
+      },
+      {
+        "file": "migrations/20260922_upgrade_automation_runtime_and_marketplace.sql",
+        "mode": "100644",
+        "gitBlob": "a6c25a86b06e8f64a2df62f86a5acbcad869dbb0",
+        "sha256": "cf203685d7e2e4964cd4caa3aa9b972b1b33f1e8348bc2460cf2ef5efcfdbc54",
+        "unchangedFrom": "c63003f5dbd585a3f09e8672a0f80fa5db460165"
+      },
+      {
+        "file": "migrations/20261006_add_silent_expansion.sql",
+        "mode": "100644",
+        "gitBlob": "b53176dd6f6db6721f2d845769f71951e91ebd0c",
+        "sha256": "5312a519782b2bd8804234cfbfb43d3f7d936547d7589dd65d5ea6d15dcffafb",
+        "unchangedFrom": "c63003f5dbd585a3f09e8672a0f80fa5db460165"
+      },
+      {
+        "file": "migrations/20261006_add_user_auto_watch_intervals.sql",
+        "mode": "100644",
+        "gitBlob": "0383702401bbd31c8a26056da7cc333c78eb3173",
+        "sha256": "ea429fc9e88c1faaa4485e6914e46f9d889b3b66055405debe4f2b582f03dc1e",
+        "unchangedFrom": "c63003f5dbd585a3f09e8672a0f80fa5db460165"
+      },
+      {
+        "file": "migrations/20261014_add_donor_admin_records.sql",
+        "mode": "100644",
+        "gitBlob": "f58cd6b1006f82ef1b0fd20553ab1e922815c17f",
+        "sha256": "bfa31c4f709de3f087d5786761f46a2c8219b53ea132c0fe3abeb7ab8be9aa1a",
+        "unchangedFrom": "c63003f5dbd585a3f09e8672a0f80fa5db460165"
+      },
+      {
+        "file": "migrations/20261014_add_plan_confirmation_interval.sql",
+        "mode": "100644",
+        "gitBlob": "2d532eed8fd0c417a1dbc6ec0c3b01f7a1893092",
+        "sha256": "6669bfb224e3fdf692601d5691168b02169067422cd2cdf2681fc08d3038cb54",
+        "unchangedFrom": "c63003f5dbd585a3f09e8672a0f80fa5db460165"
+      },
+      {
+        "file": "migrations/20261014_add_square_payment_intervals.sql",
+        "mode": "100644",
+        "gitBlob": "504d26db4257eff4461905c8a7536a908cd3d2ab",
+        "sha256": "fd27c6e3a36112e86dadcace1efca06815b0ea6c3c2aeefd443e371bcbab48ad",
+        "unchangedFrom": "c63003f5dbd585a3f09e8672a0f80fa5db460165"
+      },
+      {
+        "file": "migrations/20261014_add_x_notification_intake.sql",
+        "mode": "100644",
+        "gitBlob": "269c28a2c71217cdc86df95ca685451f0db392d3",
+        "sha256": "a4dfd91386a0e07c5b21889f92a1af5b2f7a70edba5a77d564436d63e0fa72d5",
+        "unchangedFrom": "c63003f5dbd585a3f09e8672a0f80fa5db460165"
+      },
+      {
+        "file": "migrations/20261014_add_x_push_receiver.sql",
+        "mode": "100644",
+        "gitBlob": "b55b92652b10329e403d53a5089b3b5f87586ffa",
+        "sha256": "af3b0a0d629b142a37ac34ba4550fb924d202c0610242bd5f60bbc773f1aa834",
+        "unchangedFrom": "c63003f5dbd585a3f09e8672a0f80fa5db460165"
+      },
+      {
+        "file": "migrations/20261014_add_x_realtime_processing.sql",
+        "mode": "100644",
+        "gitBlob": "3857235c9f70ea669213fefcaba8655f3ce22fb8",
+        "sha256": "cc2000330ab6eb080669ebfce0dc9f1e930298d27c3124a3dafcccac399ecdc5",
+        "unchangedFrom": "c63003f5dbd585a3f09e8672a0f80fa5db460165"
+      },
+      {
+        "file": "migrations/20261016_add_auto_watch_notification_window.sql",
+        "mode": "100644",
+        "gitBlob": "a3f62e84d629091a2be3905a1e64604cf8ddcc6d",
+        "sha256": "33e64b90aee48340984702e371ea1de8b0081cd0a9731e327cd0cd4e6cd578a5",
+        "unchangedFrom": "c63003f5dbd585a3f09e8672a0f80fa5db460165"
+      },
+      {
+        "file": "migrations/20261016_add_dictionary_package_provenance.sql",
+        "mode": "100644",
+        "gitBlob": "97dc33762a5afe4b796cf514049dbc24abb7a33d",
+        "sha256": "76159bca5fc05801fb0c1fefacfe6d8d29fb1d2f77ce332eb43a263d28fd1627",
+        "unchangedFrom": "c63003f5dbd585a3f09e8672a0f80fa5db460165"
+      },
+      {
+        "file": "migrations/20261016_add_workflow_package_provenance.sql",
+        "mode": "100644",
+        "gitBlob": "a60b0d1690ff2f7f97b426e79b71c12fab08e51c",
+        "sha256": "fb1b1c856fb118e7aa8bedbda09229e2104caeacb22426fbab96f6070d302874",
+        "unchangedFrom": "c63003f5dbd585a3f09e8672a0f80fa5db460165"
+      },
+      {
+        "file": "migrations/20261016_bind_automation_rate_reservations.sql",
+        "mode": "100644",
+        "gitBlob": "f51f4be8d773dcdcaf1ea5b940251ac62d5fcf33",
+        "sha256": "a0de3e2a89be284444d348191f2f242ba9043f3ad51a87c6f65b1f5b043df7e8",
+        "unchangedFrom": "c63003f5dbd585a3f09e8672a0f80fa5db460165"
+      },
+      {
+        "file": "migrations/20261016_preserve_dictionary_package_dependencies.sql",
+        "mode": "100644",
+        "gitBlob": "a338217bce4543e6fb6ce82ccf5b95604814d8f9",
+        "sha256": "987303670412cc858de10e8c14ee5b47d27a84da0b23c06f094f8a9af7ed411e",
+        "unchangedFrom": "c63003f5dbd585a3f09e8672a0f80fa5db460165"
+      },
+      {
+        "file": "src/automation/dictionary-package-provenance.js",
+        "mode": "100644",
+        "gitBlob": "f15a17751be47da653872a633e845031a5db5fe4",
+        "sha256": "5ce288e01f682af91761e4ae807e19d1679047aa8901f1bc617534357f32039b",
+        "unchangedFrom": "c63003f5dbd585a3f09e8672a0f80fa5db460165"
+      },
+      {
+        "file": "src/automation/donor-admin-schema.sql.js",
+        "mode": "100644",
+        "gitBlob": "4d0c0304355e1c5a41634d485858a8e376f521a5",
+        "sha256": "82c5a62d9199ac315c7d7f3fe5590d4a434568b6abf993e97cd6ae8d83efed96",
+        "unchangedFrom": "c63003f5dbd585a3f09e8672a0f80fa5db460165"
+      },
+      {
+        "file": "src/automation/graph-schema.sql.js",
+        "mode": "100644",
+        "gitBlob": "4a8d9843a2e6de38d35c27fd336b1995aa71c1a5",
+        "sha256": "62153bad13d819d985801fc0200358d4ef93597551f0ce99918aee3a1646e24d",
+        "unchangedFrom": "c63003f5dbd585a3f09e8672a0f80fa5db460165"
+      },
+      {
+        "file": "src/automation/monitor-cadence-schema.sql.js",
+        "mode": "100644",
+        "gitBlob": "17e902af9cd0440d5d8e8307d4f4911e488a3a55",
+        "sha256": "1b7072a0353c81771154ae62f158904a7c1a837b9ba79975146477b6a28d6dd9",
+        "unchangedFrom": "c63003f5dbd585a3f09e8672a0f80fa5db460165"
+      },
+      {
+        "file": "src/automation/push-capacity-schema.sql.js",
+        "mode": "100644",
+        "gitBlob": "daf3ade9e660346b2e451ea787aa7d3a6d89858f",
+        "sha256": "367c7043c3c133cd95e9a6e23f0a465689f9f5c666a534b431599f94f6f2c9ee",
+        "unchangedFrom": "c63003f5dbd585a3f09e8672a0f80fa5db460165"
+      },
+      {
+        "file": "src/automation/push-support-grants-schema.sql.js",
+        "mode": "100644",
+        "gitBlob": "00110a3f349a398ffb5d35f14d3af4efaab1bc42",
+        "sha256": "8bd830fa25f7a8db9e4ef958bde3ddfd4f4f0c6f0b648f85cf8c56427e3bc93a",
+        "unchangedFrom": "c63003f5dbd585a3f09e8672a0f80fa5db460165"
+      },
+      {
+        "file": "src/automation/quota-migration.js",
+        "mode": "100644",
+        "gitBlob": "ecfb678375b4bb0bf192feef4d04914e5ee266fb",
+        "sha256": "1b3d0d86f4638b7863093acd5b75241f9638760a83e7597ee30c3004c3f07fa1",
+        "unchangedFrom": "c63003f5dbd585a3f09e8672a0f80fa5db460165"
+      },
+      {
+        "file": "src/automation/schema.sql.js",
+        "mode": "100644",
+        "gitBlob": "60c2893e6b53bca0d3972b9d6f2f0f657c4d8e64",
+        "sha256": "ed60da4f0bf5ae571a19aeba31fa8682cc541a6ea72b9055ca284ca38640eccd",
+        "unchangedFrom": "c63003f5dbd585a3f09e8672a0f80fa5db460165"
+      },
+      {
+        "file": "src/automation/square-billing-schema.sql.js",
+        "mode": "100644",
+        "gitBlob": "1c401d0d81c13bc5975ec6924f4018b608e08292",
+        "sha256": "c857dc2e31e41f15e587f8513e3f437d5a3a8de6122736252da33d8b65aef6fb",
+        "unchangedFrom": "c63003f5dbd585a3f09e8672a0f80fa5db460165"
+      },
+      {
+        "file": "src/automation/square-commerce-schema.sql.js",
+        "mode": "100644",
+        "gitBlob": "c9aa85463c81d436df23b4f43101b4d92f813bd7",
+        "sha256": "c5c892578afc7124ec48743ce9cacbb5bb8a6c2e996f76d79b97b8a64511a597",
+        "unchangedFrom": "c63003f5dbd585a3f09e8672a0f80fa5db460165"
+      },
+      {
+        "file": "src/automation/square-donation-schema.sql.js",
+        "mode": "100644",
+        "gitBlob": "77113448fab9667c4ae31447e33a4959db2b4680",
+        "sha256": "28ed346745663473c249e572af6852f67ae2b96741c2b6075bc96ae566c29340",
+        "unchangedFrom": "c63003f5dbd585a3f09e8672a0f80fa5db460165"
+      },
+      {
+        "file": "src/automation/workflow-package-provenance.js",
+        "mode": "100644",
+        "gitBlob": "6cacefe7f15edce34df31d007a9da68b8d7df9db",
+        "sha256": "7d79c85b615a3425ead82c12ddf2e9d5b80e42c292f4a107d840bfd06613c180",
+        "unchangedFrom": "c63003f5dbd585a3f09e8672a0f80fa5db460165"
+      },
+      {
+        "file": "src/automation/x-monitor-schema.sql.js",
+        "mode": "100644",
+        "gitBlob": "e0dd33f53564a9d5ec57faca0ccb7e39410e961a",
+        "sha256": "776c3858b909a4f3d27debcefc6b997bd4f6cd360aef3e3d8d6a915d2cc7ed7a",
+        "unchangedFrom": "c63003f5dbd585a3f09e8672a0f80fa5db460165"
+      },
+      {
+        "file": "src/automation/x-push-schema.sql.js",
+        "mode": "100644",
+        "gitBlob": "731e596aca5c72e44c33f866c40abd9951fd25a5",
+        "sha256": "6633d3cd6bf3b163802062d8edc78aa8c92ba2b5540adc8f51afd861f43f84d5",
+        "unchangedFrom": "c63003f5dbd585a3f09e8672a0f80fa5db460165"
+      },
+      {
+        "file": "src/automation/x-setup-schema.sql.js",
+        "mode": "100644",
+        "gitBlob": "6e8f8b2becbbfd4b1b11075a297bdfe1db58382e",
+        "sha256": "b2192b5484d65156adbe92e7e0ebb8c1a885f13b75776f1d835a8678776518ff",
+        "unchangedFrom": "c63003f5dbd585a3f09e8672a0f80fa5db460165"
+      },
+      {
+        "file": "src/db_schema.js",
+        "mode": "100644",
+        "gitBlob": "c39312485ee832fc30b32cba6adefa9a1edf381d",
+        "sha256": "a532f13033f1c0f5315fe09aca12d3524a6ca9ef68d248a67ddbdfb0599fda9f",
+        "unchangedFrom": "c63003f5dbd585a3f09e8672a0f80fa5db460165"
+      },
+      {
+        "file": "src/linkPresentationSchema.js",
+        "mode": "100644",
+        "gitBlob": "393cf6a42287ff7c8b71a7e6a404db77a97de1e9",
+        "sha256": "eaf9e84cc329a02627e004583d0cb0a796c1c47315d2c70e87599cc03e056967",
+        "unchangedFrom": "c63003f5dbd585a3f09e8672a0f80fa5db460165"
+      },
+      {
+        "file": "src/personalLinks/schema.js",
+        "mode": "100644",
+        "gitBlob": "757b64396f55d7661a1123202f36c9d61721f6ae",
+        "sha256": "9a68a22117c2b22a9a7f9d48ef5e1466ae8e0ee8b09372bfa7e3881e21f690ad",
+        "unchangedFrom": "c63003f5dbd585a3f09e8672a0f80fa5db460165"
+      },
+      {
+        "file": "src/tableCounts.js",
+        "mode": "100644",
+        "gitBlob": "013422d0884f48470e9730da47db6abbd26b820b",
+        "sha256": "7343f99ae6a1fdf5b89bb2883ca9e51a5a5558b6aeae2e44cbd4b4560d4c6c21",
+        "unchangedFrom": "c63003f5dbd585a3f09e8672a0f80fa5db460165"
+      }
+    ]
+  },
+  "independentChecks": {
+    "passed": 59,
+    "failed": 0,
+    "skipped": 0,
+    "cancelled": 0,
+    "todo": 0,
+    "includes19SocketFreeHelperUnitCases": true,
+    "tests": [
+      {
+        "file": "C:\\Users\\yussy\\AppData\\Local\\Temp\\main-reaudit-independent-case-new-green.xml",
+        "sha256": "1186e51842695046bd8fcb5a50486ce3b4510e0b32f4607740ad5670a7ee7712",
+        "specFile": "C:\\Users\\yussy\\AppData\\Local\\Temp\\main-reaudit-independent-case-new-green.log",
+        "specSha256": "47b326d5717de8c4d1d0d928484a50a0d73ec0114f3cdb07b0a025ca4b79f8cd",
+        "nativeAdmissionRetryMarkers": 0,
+        "tests": 2,
+        "pass": 2,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0,
+        "duration_ms": 4253.3874
+      },
+      {
+        "file": "C:\\Users\\yussy\\AppData\\Local\\Temp\\main-reaudit-independent-cascade-barriers-final.xml",
+        "sha256": "1bad45c499aa3d4b46aad06d7d5e83bbfe3e1d5f20c64dbdf9c1f02d45e518c4",
+        "specFile": "C:\\Users\\yussy\\AppData\\Local\\Temp\\main-reaudit-independent-cascade-barriers-final.log",
+        "specSha256": "09e61a79cc25dcb9a9be252101ff03e0798713d308e8ca95b2a79af3e06c08f6",
+        "nativeAdmissionRetryMarkers": 0,
+        "tests": 2,
+        "pass": 2,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0,
+        "duration_ms": 4841.8309
+      },
+      {
+        "file": "C:\\Users\\yussy\\AppData\\Local\\Temp\\main-reaudit-independent-d2-legacy-cas-helper.xml",
+        "sha256": "4bde6599b504fb376035dfbfc7273ccbf0b687a33f1f5bd01d5fafdc3364a5f1",
+        "specFile": "C:\\Users\\yussy\\AppData\\Local\\Temp\\main-reaudit-independent-d2-legacy-cas-helper.log",
+        "specSha256": "f4f513b67fc1b20ea83abd2c6d6033bb3d3fe3d68baf1e4c0ca8d13d58387af3",
+        "nativeAdmissionRetryMarkers": 0,
+        "tests": 51,
+        "pass": 51,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0,
+        "duration_ms": 6273.1354
+      },
+      {
+        "file": "C:\\Users\\yussy\\AppData\\Local\\Temp\\main-reaudit-independent-d2-cascade-rollback-four.xml",
+        "sha256": "64fe75d063dea0be5d810d0c93e6a7daff23a35223c82d53fa0f42e452e0d737",
+        "specFile": "C:\\Users\\yussy\\AppData\\Local\\Temp\\main-reaudit-independent-d2-cascade-rollback-four.log",
+        "specSha256": "380af76983bb4a63107f9ff1e8cd99839848991330ac0d6fd3cf2f40df5eac42",
+        "nativeAdmissionRetryMarkers": 0,
+        "tests": 4,
+        "pass": 4,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0,
+        "duration_ms": 9974.8706
+      }
+    ]
+  },
+  "oldHelperExpectedRed": {
+    "helperSha256": "9d28ae98f0b47854bb62b4b372b9acf9e952e116d72085275d218aaff9897a58",
+    "result": "2 expected failures; controlled old-helper snapshot only, not current-source failures",
+    "copyRevoke": "same CI database identity allowed uppercase S/lowercase X at once",
+    "restoredRun": "uppercase valid FK omitted actual graph namespace"
+  },
+  "confirmedFixes": [
+    "One recovery transaction updates newly terminal legacy parents, all direct aggregate children in100-row pages and every affected v2 run projection",
+    "Original automation-sql legacy child assertion and strengthened CAS file remain byte-identical; current51-case independent pack passes",
+    "102-child later-page EIO occurs after an earlier graph projection; exact complete job/run/trace snapshots roll back, then one normal claim recovers the full closure",
+    "Mixed v1 parents and v2 active children update together; confirmed sent/unknown siblings, physical ACK fields and independent future due remain unchanged",
+    "Independent opposite-order actual SQL controls: manual cancel wins before claim current read and remains cancelled; claim locks first and complete failed closure persists while stale manual CAS gets409",
+    "Workflow mutex UUID canonicalization happens before internal dedup/sort/hash, and graph-run comparisons follow CI UUID identity; external UUID strings, namespace keys and plan JSON remain unchanged",
+    "Independent actual uppercase-copy/lowercase-revoke control now blocks, then detects current installation roster with409 after the copy commits",
+    "Independent restored mixed-case run FK retains exact namespace lock without rewriting stored reference or JSON",
+    "Only test-helper getConnection admission repeats a matched loopback connect error before SQL, at most3 attempts and50/100ms; supplied connection, SQL fields, authentication, protocol and post-admission SQL/work/commit faults are not retried"
+  ],
+  "diagnosticBoundary": {
+    "prior47219": "Failed2126/2120pass/6fail remains historical non-acceptance:3 native pre-SQL TCP leaf errors,1 genuine legacy cascade assertion and2 parent aggregate failures",
+    "nativeOsSpecificCause": "ERROR_SEM_TIMEOUT121 versus WSAETIMEDOUT10060 remains unknown; not claimed fixed by bounded admission retry",
+    "fullMatrixCountsNotCombined": true
+  },
+  "cleanup": {
+    "file": "C:\\Users\\yussy\\AppData\\Local\\Temp\\main-reaudit-independent-d2-cleanup.json",
+    "sha256": "4cf823fc31181fa5341dcb5ed2a8e0d5e3833f351a0a85b995b1f414ff0970c0",
+    "ownSchemasRemaining": 0,
+    "remainingPreexistingUnknownSchemas": 7,
+    "unknownSchemasTouched": false,
+    "allIndependentSqlWorkEnded": true
+  },
+  "artifacts": [
+    {
+      "file": "C:\\Users\\yussy\\AppData\\Local\\Temp\\main-reaudit-independent-case-old-red.xml",
+      "sha256": "93e178aa6f88a04de63aa31c9973617879c5a8e8f211fc8d39008f8017e11580"
+    },
+    {
+      "file": "C:\\Users\\yussy\\AppData\\Local\\Temp\\main-reaudit-independent-case-old-red.log",
+      "sha256": "1fdb86d739056c8d2afa6a0bb25bc560349bf794e70b8ea6ee1938e7c21a0f01"
+    },
+    {
+      "file": "C:\\Users\\yussy\\AppData\\Local\\Temp\\main-reaudit-case-fence-old-red-observations.json",
+      "sha256": "a0d012cda858c675b3a20349cf06841a21b1757f082d276d54de592dbd368493"
+    },
+    {
+      "file": "C:\\Users\\yussy\\AppData\\Local\\Temp\\main-reaudit-case-fence-new-green-observations.json",
+      "sha256": "4f59c1606f8945c8ab955ec5ffe3175a2937cf88a7cde9b32f201a0ef9f1936e"
+    },
+    {
+      "file": "C:\\Users\\yussy\\AppData\\Local\\Temp\\main-reaudit-independent-legacy-cascade-barriers-observations.json",
+      "sha256": "83ff45cf5bb66796fb77fdce3456d292e82e64dafc6e82c3b2869b00c9950953"
+    },
+    {
+      "file": "C:\\Users\\yussy\\AppData\\Local\\Temp\\main-reaudit-case-fence-pre-fix-9d28ae98.js",
+      "sha256": "9d28ae98f0b47854bb62b4b372b9acf9e952e116d72085275d218aaff9897a58"
+    },
+    {
+      "file": "C:\\Users\\yussy\\AppData\\Local\\Temp\\main-reaudit-independent-case-fence-sql.cjs",
+      "sha256": "c25372b52473e7273f56348e84f5dec91fd65d2394ccd8b9350dc8179acd0f33"
+    },
+    {
+      "file": "C:\\Users\\yussy\\AppData\\Local\\Temp\\main-reaudit-independent-legacy-cascade-barriers.cjs",
+      "sha256": "3bfdeabedd25cfbbbac1352b7d3c5687528d3b0e392d90f518edeb9c005b7541"
+    },
+    {
+      "file": "C:\\Users\\yussy\\AppData\\Local\\Temp\\main-reaudit-local-db-closed-confirmation.json",
+      "sha256": "2f524a07c16a96c3ed0cbf7e5f39611424d8c1b59bcdea3ca6f3788a090d5e67"
+    },
+    {
+      "file": "C:\\Users\\yussy\\AppData\\Local\\Temp\\main-reaudit-local-db-native-connect-diagnosis.json",
+      "sha256": "a52acdffa57e72642fa2391a43235cce7769d4ab3636289c2cbeb292e64720d5"
+    }
+  ],
+  "acceptanceBoundary": {
+    "newRootFull185Required": true,
+    "fullMatrixAccepted": false,
+    "finalMainSha": null,
+    "productionSha": null,
+    "actualBundleReviewed": false,
+    "deploymentApproved": false,
+    "realOAuthVerified": false,
+    "realNewXToDiscordDeliveryVerified": false,
+    "realSquarePaymentVerified": false
+  },
+  "operations": {
+    "coreWrites": false,
+    "gitWrites": false,
+    "productionWrites": false,
+    "sharedDatabaseReconfigured": false,
+    "realExternalMessagesOrPayments": false
+  }
+}

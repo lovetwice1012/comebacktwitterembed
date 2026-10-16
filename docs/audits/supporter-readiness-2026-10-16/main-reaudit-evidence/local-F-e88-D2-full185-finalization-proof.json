@@ -1,0 +1,372 @@
+{
+  "status": "local-dual-source-finalized-production-and-upload-stage-acceptance-pending",
+  "at": "2026-10-16T10:45:29.760Z",
+  "testsExecutedRevision": "d2e792d30a44723e603869b27970b05597d51a9d",
+  "finalSourceRevision": "e88e74412905987352af0ae7cec665963fc737d0",
+  "mergedMainSha": "cf22327dc39964194fbc2c48d8002366cfb22613",
+  "fullSuiteExecutedOnFinalSource": false,
+  "fullCounts": {
+    "tests": 2151,
+    "suites": 0,
+    "pass": 2151,
+    "fail": 0,
+    "cancelled": 0,
+    "skipped": 0,
+    "todo": 0,
+    "duration_ms": 1390863.7977
+  },
+  "files": 185,
+  "fullLeafTests": 2090,
+  "fullParentTests": 61,
+  "actualF22": {
+    "tests": 22,
+    "pass": 22,
+    "durationMs": 57402.6721,
+    "nativeExitCode": 0,
+    "wholeFullSuiteExecutedOnFinalSource": false
+  },
+  "canonicalFPaths": 32,
+  "canonicalSchemaPaths": 69,
+  "mappedDeclarations": [
+    {
+      "issueId": "MAIN-UI-1",
+      "file": "scripts/test/automation-main-ui-draft-cadence.test.js",
+      "line": 80,
+      "matchedCases": 4
+    },
+    {
+      "issueId": "MAIN-UI-2",
+      "file": "scripts/test/automation-main-ui-draft-cadence.test.js",
+      "line": 99,
+      "matchedCases": 1
+    },
+    {
+      "issueId": "MAIN-UI-2",
+      "file": "scripts/test/automation-main-cadence-read-recovery.test.js",
+      "line": 4,
+      "matchedCases": 2
+    },
+    {
+      "issueId": "MAIN-FRESH-2",
+      "file": "scripts/test/automation-main-workflow-history.test.js",
+      "line": 14,
+      "matchedCases": 1
+    },
+    {
+      "issueId": "MAIN-FRESH-2",
+      "file": "scripts/test/automation-main-workflow-history.test.js",
+      "line": 69,
+      "matchedCases": 3
+    },
+    {
+      "issueId": "MAIN-FRESH-2",
+      "file": "scripts/test/automation-main-workflow-history.test.js",
+      "line": 86,
+      "matchedCases": 3
+    },
+    {
+      "issueId": "MAIN-FRESH-3",
+      "file": "scripts/test/automation-main-x-read-write-ui.test.js",
+      "line": 22,
+      "matchedCases": 8
+    },
+    {
+      "issueId": "MAIN-DATA-1",
+      "file": "scripts/test/automation-main-data-revalidation-sql.test.js",
+      "line": 27,
+      "matchedCases": 1
+    },
+    {
+      "issueId": "MAIN-DATA-1",
+      "file": "scripts/test/automation-main-data-revalidation-sql.test.js",
+      "line": 72,
+      "matchedCases": 1
+    },
+    {
+      "issueId": "MAIN-DATA-1",
+      "file": "scripts/test/automation-main-data-revalidation-sql.test.js",
+      "line": 96,
+      "matchedCases": 1
+    },
+    {
+      "issueId": "MAIN-DATA-1",
+      "file": "scripts/test/automation-main-data-revalidation-ui.test.js",
+      "line": 96,
+      "matchedCases": 1
+    },
+    {
+      "issueId": "MAIN-DATA-1",
+      "file": "scripts/test/automation-main-data-revalidation-ui.test.js",
+      "line": 112,
+      "matchedCases": 1
+    },
+    {
+      "issueId": "MAIN-DATA-2",
+      "file": "scripts/test/automation-main-data-revalidation-sql.test.js",
+      "line": 52,
+      "matchedCases": 1
+    },
+    {
+      "issueId": "MAIN-DATA-2",
+      "file": "scripts/test/automation-main-data-revalidation-sql.test.js",
+      "line": 108,
+      "matchedCases": 1
+    },
+    {
+      "issueId": "MAIN-DATA-2",
+      "file": "scripts/test/automation-main-data-revalidation-sql.test.js",
+      "line": 175,
+      "matchedCases": 1
+    },
+    {
+      "issueId": "MAIN-DATA-2",
+      "file": "scripts/test/automation-main-data-revalidation-ui.test.js",
+      "line": 78,
+      "matchedCases": 1
+    },
+    {
+      "issueId": "MAIN-POST-1",
+      "file": "scripts/test/automation-main-admin-cas-ui.test.js",
+      "line": 17,
+      "matchedCases": 4
+    },
+    {
+      "issueId": "MAIN-POST-1",
+      "file": "scripts/test/automation-main-admin-cas-ui.test.js",
+      "line": 60,
+      "matchedCases": 2
+    },
+    {
+      "issueId": "MAIN-POST-2",
+      "file": "scripts/test/automation-main-data-revalidation-sql.test.js",
+      "line": 133,
+      "matchedCases": 1
+    },
+    {
+      "issueId": "MAIN-POST-2",
+      "file": "scripts/test/automation-main-data-revalidation-sql.test.js",
+      "line": 161,
+      "matchedCases": 2
+    },
+    {
+      "issueId": "MAIN-POST-2",
+      "file": "scripts/test/automation-main-data-revalidation-sql.test.js",
+      "line": 200,
+      "matchedCases": 1
+    },
+    {
+      "issueId": "MAIN-POST-2",
+      "file": "scripts/test/automation-main-data-revalidation-ui.test.js",
+      "line": 33,
+      "matchedCases": 1
+    },
+    {
+      "issueId": "MAIN-POST-2",
+      "file": "scripts/test/automation-main-data-revalidation-ui.test.js",
+      "line": 66,
+      "matchedCases": 1
+    },
+    {
+      "issueId": "MAIN-FRESH-4",
+      "file": "scripts/test/automation-flow-state-reconciliation-sql.test.js",
+      "line": 96,
+      "matchedCases": 1
+    },
+    {
+      "issueId": "MAIN-FRESH-5",
+      "file": "scripts/test/automation-flow-state-reconciliation-sql.test.js",
+      "line": 122,
+      "matchedCases": 1
+    },
+    {
+      "issueId": "MAIN-FRESH-5",
+      "file": "scripts/test/automation-flow-state-reconciliation-sql.test.js",
+      "line": 135,
+      "matchedCases": 1
+    },
+    {
+      "issueId": "MAIN-FRESH-5",
+      "file": "scripts/test/automation-flow-state-reconciliation-sql.test.js",
+      "line": 149,
+      "matchedCases": 1
+    },
+    {
+      "issueId": "MAIN-FRESH-5",
+      "file": "scripts/test/automation-flow-state-reconciliation-sql.test.js",
+      "line": 169,
+      "matchedCases": 1
+    },
+    {
+      "issueId": "MAIN-FRESH-5",
+      "file": "scripts/test/automation-flow-state-reconciliation-sql.test.js",
+      "line": 183,
+      "matchedCases": 1
+    },
+    {
+      "issueId": "MAIN-FRESH-5",
+      "file": "scripts/test/automation-flow-state-reconciliation-sql.test.js",
+      "line": 191,
+      "matchedCases": 1
+    },
+    {
+      "issueId": "MAIN-FRESH-5",
+      "file": "scripts/test/automation-flow-state-reconciliation-sql.test.js",
+      "line": 210,
+      "matchedCases": 1
+    },
+    {
+      "issueId": "MAIN-FRESH-5",
+      "file": "scripts/test/automation-flow-state-reconciliation-sql.test.js",
+      "line": 222,
+      "matchedCases": 1
+    },
+    {
+      "issueId": "MAIN-FRESH-5",
+      "file": "scripts/test/automation-flow-state-reconciliation-sql.test.js",
+      "line": 242,
+      "matchedCases": 1
+    },
+    {
+      "issueId": "MAIN-FRESH-5",
+      "file": "scripts/test/automation-flow-state-reconciliation-sql.test.js",
+      "line": 263,
+      "matchedCases": 4
+    },
+    {
+      "issueId": "MAIN-FRESH-5",
+      "file": "scripts/test/automation-flow-state-reconciliation-sql.test.js",
+      "line": 295,
+      "matchedCases": 1
+    },
+    {
+      "issueId": "MAIN-FRESH-5",
+      "file": "scripts/test/automation-flow-state-reconciliation-sql.test.js",
+      "line": 325,
+      "matchedCases": 1
+    },
+    {
+      "issueId": "MAIN-FRESH-5",
+      "file": "scripts/test/automation-monitor-workflow-cas-sql.test.js",
+      "line": 205,
+      "matchedCases": 1
+    },
+    {
+      "issueId": "MAIN-FRESH-5",
+      "file": "scripts/test/automation-monitor-workflow-cas-sql.test.js",
+      "line": 261,
+      "matchedCases": 1
+    },
+    {
+      "issueId": "MAIN-FRESH-5",
+      "file": "scripts/test/automation-flow-state-reconciliation-sql.test.js",
+      "line": 361,
+      "matchedCases": 1
+    },
+    {
+      "issueId": "MAIN-FRESH-5",
+      "file": "scripts/test/automation-flow-state-reconciliation-sql.test.js",
+      "line": 371,
+      "matchedCases": 2
+    },
+    {
+      "issueId": "MAIN-FRESH-5",
+      "file": "scripts/test/automation-flow-state-reconciliation-sql.test.js",
+      "line": 393,
+      "matchedCases": 1
+    },
+    {
+      "issueId": "MAIN-FRESH-5",
+      "file": "scripts/test/automation-flow-state-reconciliation-sql.test.js",
+      "line": 427,
+      "matchedCases": 1
+    },
+    {
+      "issueId": "MAIN-FRESH-5",
+      "file": "scripts/test/automation-flow-state-reconciliation-sql.test.js",
+      "line": 456,
+      "matchedCases": 1
+    },
+    {
+      "issueId": "MAIN-FRESH-5",
+      "file": "scripts/test/automation-sql.test.js",
+      "line": 197,
+      "matchedCases": 1
+    },
+    {
+      "issueId": "test-infrastructure-only",
+      "file": "scripts/test/automation-test-db-connect.test.js",
+      "line": 46,
+      "matchedCases": 2
+    },
+    {
+      "issueId": "test-infrastructure-only",
+      "file": "scripts/test/automation-test-db-connect.test.js",
+      "line": 57,
+      "matchedCases": 1
+    },
+    {
+      "issueId": "test-infrastructure-only",
+      "file": "scripts/test/automation-test-db-connect.test.js",
+      "line": 69,
+      "matchedCases": 10
+    },
+    {
+      "issueId": "test-infrastructure-only",
+      "file": "scripts/test/automation-test-db-connect.test.js",
+      "line": 75,
+      "matchedCases": 1
+    },
+    {
+      "issueId": "test-infrastructure-only",
+      "file": "scripts/test/automation-test-db-connect.test.js",
+      "line": 82,
+      "matchedCases": 1
+    },
+    {
+      "issueId": "test-infrastructure-only",
+      "file": "scripts/test/automation-test-db-connect.test.js",
+      "line": 89,
+      "matchedCases": 3
+    },
+    {
+      "issueId": "test-infrastructure-only",
+      "file": "scripts/test/automation-test-db-connect.test.js",
+      "line": 107,
+      "matchedCases": 1
+    }
+  ],
+  "fullXmlSha256": "3897be2c24b4f0c037b3a4ad5b6de5b9f11643a1b807c1940b9ec0485bcf4176",
+  "nativeReceiptSha256": "06606420304002134ece266694ba7f7502e4c6e9ac14ba5d3b8027202c47c06d",
+  "semanticCarry": {
+    "testsExecutedRevision": "d2e792d30a44723e603869b27970b05597d51a9d",
+    "finalSourceRevision": "e88e74412905987352af0ae7cec665963fc737d0",
+    "fullSuiteExecutedOnFinalSource": false,
+    "proof": "independent-closed-D2-format-carry-plan.json"
+  },
+  "localOps": {
+    "source": "e88e74412905987352af0ae7cec665963fc737d0",
+    "testedSource": "d2e792d30a44723e603869b27970b05597d51a9d",
+    "localPreparationTests": 202,
+    "sourceContractSha256": "cce8754626219c9124ef725a2846cb7a9da3c2eb60c9ac46a076a793e1fa205b"
+  },
+  "recordedArtifactReview": {
+    "actualMainM1": "cf22327dc39964194fbc2c48d8002366cfb22613",
+    "finalSourceF": "e88e74412905987352af0ae7cec665963fc737d0",
+    "localArtifactReviewed": true,
+    "recordedIndependentArtifactControls": 202,
+    "manifestSha256": "89c2f688cad7232757a6172e0b4f3d196de276033155e8c225db0a5a3de9f8a8",
+    "uploadStageOrProductionAcceptedByThisFinalizer": false
+  },
+  "ci": {
+    "rootAcceptedFalsePositiveFindings": 2,
+    "actualWrapperDriverDoubles": 8,
+    "realSqlInTriage": 0,
+    "cloudActionRequired": true,
+    "allCiPassed": false
+  },
+  "pendingDocumentHashes": {
+    "main-reaudit-remediation.json": "1db0b85747f4d37ceba8de3e0285b75fca65dd55f7c80c5c8006e55e148cc5cc",
+    "main-reaudit-remediation.md": "3661086af329d7e1cae8cabcbe571783da73a3c6afcd31f1bf052ba5388b0da0"
+  },
+  "productionSha": null
+}

@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<testsuites>
+	<testcase name="Independent: new branch projection after empty deletion roster obeys namespace before flow run locks" time="2.442705" classname="test" file="C:\Users\yussy\AppData\Local\Temp\main-reaudit-independent-delete-project-race-v4.cjs" failure="[{&amp;quot;status&amp;quot;:&amp;quot;fulfilled&amp;quot;},{&amp;quot;status&amp;quot;:&amp;quot;rejected&amp;quot;,&amp;quot;code&amp;quot;:&amp;quot;ER_LOCK_DEADLOCK&amp;quot;}]">
+		<failure type="testCodeFailure" message="[{&amp;quot;status&amp;quot;:&amp;quot;fulfilled&amp;quot;},{&amp;quot;status&amp;quot;:&amp;quot;rejected&amp;quot;,&amp;quot;code&amp;quot;:&amp;quot;ER_LOCK_DEADLOCK&amp;quot;}]">
+[Error [ERR_TEST_FAILURE]: [{"status":"fulfilled"},{"status":"rejected","code":"ER_LOCK_DEADLOCK"}]] {
+  code: 'ERR_TEST_FAILURE',
+  failureType: 'testCodeFailure',
+  cause: AssertionError [ERR_ASSERTION]: [{"status":"fulfilled"},{"status":"rejected","code":"ER_LOCK_DEADLOCK"}]
+      at fixture.multiple (C:\Users\yussy\AppData\Local\Temp\main-reaudit-independent-delete-project-race-v4.cjs:27:2)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async fixture (eval at &lt;anonymous> (C:\Users\yussy\AppData\Local\Temp\main-reaudit-independent-delete-project-race-v4.cjs:5:15), &lt;anonymous>:48:9)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:387:3) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: '==',
+    diff: 'simple'
+  }
+}
+		</failure>
+	</testcase>
+	<!-- tests 1 -->
+	<!-- suites 0 -->
+	<!-- pass 0 -->
+	<!-- fail 1 -->
+	<!-- cancelled 0 -->
+	<!-- skipped 0 -->
+	<!-- todo 0 -->
+	<!-- duration_ms 2568.8762 -->
+</testsuites>

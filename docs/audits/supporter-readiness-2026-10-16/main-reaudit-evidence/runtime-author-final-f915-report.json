@@ -1,0 +1,139 @@
+{
+  "ids": [
+    "MAIN-FRESH-4",
+    "MAIN-FRESH-5"
+  ],
+  "status": "final-source-frozen-author-focus-passed-awaiting-root-aggregate",
+  "baseHead": "d6ecac0ad33e42340487061abbfcc55a91d43084",
+  "generatedAtUtc": "2026-10-16T08:41:28.3176958Z",
+  "files": [
+    {
+      "file": "src/automation/flow-history.js",
+      "sha256": "e0e4f4fa8a3653ba39765c0977bfb82afceb368a9fca5e83cabced81370b61c1"
+    },
+    {
+      "file": "src/automation/graph-store.js",
+      "sha256": "637914a3b5b9a5ea31cce4a8cfec940563a5d9a105de065736e28105d7c24853"
+    },
+    {
+      "file": "src/automation/flow-projector.js",
+      "sha256": "4f8c63a56089c2984e54db52e624d52675243a5733dd12c2faf0797e518137a9"
+    },
+    {
+      "file": "src/automation/queue.js",
+      "sha256": "bc8422f9efc0cc608ef6523d44ad7af2ccb5cf2f29458879c50df4a2fbdb014a"
+    },
+    {
+      "file": "src/automation/workflow-deletion.js",
+      "sha256": "9e0195e67f026e662dc9c4b3f102d65496d320a61e84acc279e5dcf452ff7c15"
+    },
+    {
+      "file": "src/automation/marketplace-core.js",
+      "sha256": "c468bba9ebac0a2ded2be2ae53d681390e71c8cf0bf7adc2329caf6c1cdd932d"
+    },
+    {
+      "file": "src/automation/service.js",
+      "sha256": "76efee6def6fc3bcc073d1dc9fda49592c415f763ea1b184612a8d1a22f9d1e6"
+    },
+    {
+      "file": "src/automation/history.js",
+      "sha256": "37ae7b3a4e93b2f3e2451306a70fa81e651c5346f594b99377c5a390ab5a3c57"
+    },
+    {
+      "file": "scripts/test/automation-flow-state-reconciliation-sql.test.js",
+      "sha256": "5501d23ef37b0492a0fb815881c8c71e619397d961e9e3bf62f01aedcc8ad407"
+    },
+    {
+      "file": "scripts/test/automation-flow-permanent-failure-sql.test.js",
+      "sha256": "8a89d7964a69f5c6e98e7ee7f284523c45ae6e3f5b74a898b5fda1843a4f2ec6"
+    },
+    {
+      "file": "scripts/test/automation-aggregate-member-boundary.test.js",
+      "sha256": "af58b2ce57e1cd50ff54ad16c1ece74dbc75e203a0803d8658b3047613c2af3e"
+    }
+  ],
+  "finalDeltaFromBase": [
+    "src/automation/flow-history.js: namespace inventory uses immutable units and relational member/run join instead of taking mutable flow-run share locks before workflow locks",
+    "scripts/test/automation-flow-state-reconciliation-sql.test.js: actual cross-copy monitor-assignment vs package revoke control, with exact old/new namespace parity"
+  ],
+  "finalTargeted": {
+    "tests": 16,
+    "pass": 16,
+    "fail": 0,
+    "cancelled": 0,
+    "skipped": 0,
+    "todo": 0,
+    "durationMs": 46430.901,
+    "exitCode": 0,
+    "junit": "C:/Users/yussy/AppData/Local/Temp/reaudit-runtime-final16-tests.xml",
+    "sha256": "4983c3cfd18587968ccee65c0aea3e89a05f511bb5a7e3658abd1c15c144b476",
+    "log": "C:/Users/yussy/AppData/Local/Temp/reaudit-runtime-final16-tests.log"
+  },
+  "priorFrozenBroader": {
+    "source": "d6ecac0ad33e42340487061abbfcc55a91d43084",
+    "files": 11,
+    "tests": 112,
+    "pass": 112,
+    "fail": 0,
+    "cancelled": 0,
+    "skipped": 0,
+    "durationMs": 286955.0178,
+    "exitCode": 0,
+    "junit": "C:/Users/yussy/AppData/Local/Temp/reaudit-runtime-empty-roster-final-focused.xml",
+    "sha256": "fa4ac158f734ab5ccc27dad0b2a56c341d9710f10ba183716b4651c7cb7d4975",
+    "basis": "Historical prior-source proof; final two-file delta requires root frozen aggregate",
+    "coverage": [
+      "graph store and driver",
+      "flow projection and routing",
+      "history full trace and restart",
+      "permanent failures and 51000-member complete boundaries",
+      "workflow deletion",
+      "marketplace and provenance",
+      "15 reconciliation controls"
+    ]
+  },
+  "redGreen": [
+    {
+      "name": "empty-job-roster deletion/projector race",
+      "redSource": "fdde3bd98bee5774eea0aac59466a5d7656a0c42",
+      "redLoader": "C:/Users/yussy/AppData/Local/Temp/reaudit-runtime-fdde3-red-loader.cjs",
+      "redXml": "C:/Users/yussy/AppData/Local/Temp/reaudit-runtime-author-fdde3-red.xml",
+      "redResult": "C:/Users/yussy/AppData/Local/Temp/reaudit-runtime-author-fdde3-red-result.json",
+      "result": "delete fulfilled; second real projector ER_LOCK_DEADLOCK",
+      "green": "four actual empty-roster delete/revoke commit/rollback controls pass in final16"
+    },
+    {
+      "name": "monitor assignment between two installed copies versus package revoke",
+      "redSourceFlowHistorySha": "554195c090354f59b734e9a2f3d81bfc4453b6b547a5ba72e98d6e48001d6c39",
+      "redXml": "C:/Users/yussy/AppData/Local/Temp/reaudit-runtime-monitor-lock-order-red.xml",
+      "redSha256": "59fc2e4a77d201fb499517ec53102029d7ca6bc655034e5b881a11402bdbcd51",
+      "redResult": "assignment fulfilled; package revoke ER_LOCK_DEADLOCK",
+      "greenXml": "C:/Users/yussy/AppData/Local/Temp/reaudit-runtime-monitor-lock-order-green.xml",
+      "greenSha256": "8f5ea03cc86fce47faaaeee264f46a1d9fd60e258b74a72314ce9e4a50962034",
+      "greenResult": "both fulfilled; exact two-workflow historical namespace inventory parity"
+    }
+  ],
+  "lockContract": [
+    "runtime graph/job writers shared workflow fence before exclusive namespace/job locks",
+    "administrative stop exclusive workflow fence independent of current job roster, then current immutable namespace inventory",
+    "normal runtime namespaces retain parallel shared workflow access; no shared-to-exclusive upgrade",
+    "owner fence precedes workflow fence for ingress/beginSend/refresh and existing workflow target administration",
+    "source copy shared workflow fence precedes source row and installation insert",
+    "package revoke revalidates current indexed installation roster; changed consumer set causes explicit conflict before mutations",
+    "run/job state mutations and audit/projected history commit or roll back together",
+    "package safety runtime reads have no exclusive package-row locks; no new product deadlock catch or suppression"
+  ],
+  "staticChecks": {
+    "rootTypeScriptExitCode": 0,
+    "eslintTouched8ExitCode": 0,
+    "diffCheckExitCode": 0
+  },
+  "preservation": [
+    "no DDL or new table; existing flow_locks and flow_edges reused",
+    "no automatic slot moves, billing activation, external messages or production writes",
+    "all immutable event/trace/member/ACK data retained; unknown/partial not automatically redelivered",
+    "old compatibility readers ignore non-evaluator receipt kinds",
+    "historical sent/unknown-only jobs preserve stop policy; active unprojected branches receive existing explicit stop reason"
+  ],
+  "remaining": "Independent final helper delta and root single frozen aggregate/main/supporters-only production verification remain root integration gates, not claimed complete here"
+}
