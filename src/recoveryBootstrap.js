@@ -49,7 +49,17 @@ function write(filename, value) {
     try { fs.writeFileSync(descriptor, bytes); fs.fsyncSync(descriptor); }
     finally { fs.closeSync(descriptor); }
     try {
-        fs.renameSync(temporary, filename);
+        for (let attempt = 0; ; attempt++) {
+            try { fs.renameSync(temporary, filename); break; }
+            catch (error) {
+                // Windows readers may temporarily deny delete-sharing on the
+                // existing receipt. Keep the same fsynced temporary file and
+                // atomic replacement; never unlink the old cutoff or mark a
+                // failed write complete. Permanent failures still fail closed.
+                if (process.platform !== 'win32' || !['EPERM', 'EBUSY'].includes(error.code) || attempt >= 10) throw error;
+                Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10);
+            }
+        }
         if (process.platform !== 'win32') {
             const directory = fs.openSync(path.dirname(filename), 'r');
             try { fs.fsyncSync(directory); } finally { fs.closeSync(directory); }
