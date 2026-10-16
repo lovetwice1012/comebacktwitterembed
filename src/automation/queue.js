@@ -345,6 +345,25 @@ function createQueue(db, evaluator, options = {}) {
                 await query('UPDATE automation_jobs SET state=?,last_error_code=?,lease_token=NULL,lease_until_ms=0,updated_at_ms=? WHERE id=?', [state, code, now, job.id]);
             }
             await require('./flow-history').refreshJobFlowHistory(query, recovered);
+            // A parent recovered above has only just become terminal. Its
+            // aggregated children were not eligible in the initial roster;
+            // propagate now, within this same transaction, rather than leave
+            // their durable state/history stale until another claim or restart.
+            // Producers append only to pending parents, so held/sending/terminal
+            // parents cannot grow a new child namespace after the closure fence.
+            if (recovered.length) {
+                let after = '';
+                for (;;) {
+                    const children = await query(`SELECT j.*,p.state AS parent_state,p.last_error_code AS parent_error FROM automation_jobs j
+                        JOIN automation_jobs p ON p.id=j.parent_job_id WHERE j.parent_job_id IN (?) AND j.state='aggregated'
+                        AND p.state IN ('unknown','partial','cancelled','sent','failed','expired','excluded') AND j.id>? ORDER BY j.id LIMIT 100 FOR UPDATE`, [recovered.map(job => job.id), after]);
+                    if (!children.length) break;
+                    for (const child of children) await query('UPDATE automation_jobs SET state=?,last_error_code=?,lease_token=NULL,lease_until_ms=0,updated_at_ms=? WHERE id=?', [child.parent_state, child.parent_error, now, child.id]);
+                    await require('./flow-history').refreshJobFlowHistory(query, children);
+                    after = children.at(-1).id;
+                    if (children.length < 100) break;
+                }
+            }
         });
         return db.withDatabaseTransaction(async query => {
             const priorityKey = hash('automation:discord:priority-turn');

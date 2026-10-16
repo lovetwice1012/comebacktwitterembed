@@ -64,12 +64,23 @@ async function recordJobFlowMembers(query, job) {
     }
 }
 async function lockJobFlowHistory(query, jobs) {
-    const children = jobs.length ? await query("SELECT run_id,execution_version FROM automation_jobs WHERE parent_job_id IN (?) AND state='aggregated'", [jobs.map(job => job.id)]) : [];
-    const rows = [...jobs, ...children].filter(job => Number(job.execution_version) === 2);
+    const rows = [...jobs], known = new Set(jobs.map(job => job.id));
+    // Restored legacy parents can own graph jobs. Discover that entire direct
+    // closure before taking any job locks, using only attested relational IDs.
+    for (let at = 0; at < jobs.length; at += 100) {
+        let after = '';
+        for (;;) {
+            const children = await query("SELECT id,run_id,execution_version FROM automation_jobs WHERE parent_job_id IN (?) AND state='aggregated' AND id>? ORDER BY id LIMIT 100", [jobs.slice(at, at + 100).map(job => job.id), after]);
+            for (const child of children) if (!known.has(child.id)) { known.add(child.id); rows.push(child); }
+            if (children.length < 100) break;
+            after = children.at(-1).id;
+        }
+    }
     if (!rows.length) return;
-    const origins = await query('SELECT DISTINCT f.namespace_key,r.workflow_id FROM automation_flow_runs f JOIN automation_runs r ON r.id=f.run_id WHERE f.run_id IN (?)', [[...new Set(rows.map(job => job.run_id))]]);
+    const ids = [...new Set(rows.map(job => job.run_id))], graphIds = new Set(rows.filter(job => Number(job.execution_version) === 2).map(job => job.run_id.toLowerCase())), origins = [];
+    for (let at = 0; at < ids.length; at += 500) origins.push(...await query('SELECT r.id AS run_id,r.workflow_id,f.namespace_key FROM automation_runs r LEFT JOIN automation_flow_runs f ON f.run_id=r.id WHERE r.id IN (?)', [ids.slice(at, at + 500)]));
     await lockFlowWorkflows(query, origins.map(row => row.workflow_id));
-    const namespaces = origins.map(row => row.namespace_key).sort();
+    const namespaces = [...new Set(origins.filter(row => graphIds.has(row.run_id.toLowerCase()) && row.namespace_key).map(row => row.namespace_key))].sort();
     // Graph evaluation uses this same namespace mutex. Take it before locking
     // individual jobs so simultaneous sibling ACKs cannot deadlock on the run
     // projection or overwrite one another with a repeatable-read snapshot.
@@ -78,7 +89,10 @@ async function lockJobFlowHistory(query, jobs) {
     }
 }
 async function lockFlowWorkflows(query, workflowIds, exclusive = false) {
-    for (const id of [...new Set(workflowIds)].filter(id => /^[0-9a-f-]{36}$/i.test(id || '')).sort()) {
+    // Internal mutex identity follows the database's case-insensitive UUID
+    // comparison while preserving all stored IDs and namespace snapshots.
+    const ids = workflowIds.filter(id => typeof id === 'string' && /^[0-9a-f-]{36}$/i.test(id)).map(id => id.toLowerCase());
+    for (const id of [...new Set(ids)].sort()) {
         const key = digest(JSON.stringify(['flow-workflow-fence', id]));
         // Runtime writers keep a shared duplicate-key lock and never upgrade
         // it. An administrative stop takes the exclusive upsert first, before

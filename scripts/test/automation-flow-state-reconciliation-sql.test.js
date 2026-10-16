@@ -41,6 +41,29 @@ async function unprojectedRun(f, workflow) {
     assert.equal(Number((await f.query("SELECT COUNT(*) AS n FROM automation_flow_sends WHERE state='unprojected'"))[0].n), 2);
     return run;
 }
+function legacyDefinition(maxItems = 100) {
+    const rule = definition(false);
+    rule.nodes.splice(1, 0, { id: 'group', type: 'aggregate', config: { ...NODE_TYPES.aggregate.defaults, minutes: 10, key: 'all', maxItems } });
+    rule.edges = [{ id: 'a', source: 'start', target: 'group', port: 'out' }, { id: 'b', source: 'group', target: 'left', port: 'out' }];
+    return rule;
+}
+async function legacyAggregate(f, count = 2) {
+    const queue = createQueue(f.db, f.evaluator, { clock: f.clock });
+    const target = (await f.query('SELECT * FROM auto_watch_targets WHERE id=?', [f.monitor.id]))[0];
+    for (let index = 0; index < count; index++) {
+        const content = randomUUID(), token = randomUUID(), now = f.clock();
+        const item = await f.query('INSERT INTO auto_watch_items (source_id,content_key,content_url,title,payload_json,discovered_at_ms) VALUES (?,?,?,?,?,?)', [target.source_id, content, 'https://github.com/example/legacy-cascade', 'Legacy event', '{}', now]);
+        const delivery = await f.query("INSERT INTO auto_watch_deliveries (item_id,target_id,status,next_attempt_at_ms,lease_token,lease_expires_at_ms) VALUES (?,?,'pending',?,?,?)", [item.insertId, f.monitor.id, now, token, now + 60000]);
+        assert.equal((await queue.route('auto', { id: String(delivery.insertId), target_id: f.monitor.id, lease_token: token, provider_id: 'github', content_key: content,
+            content_url: 'https://github.com/example/legacy-cascade', title: 'Legacy event', payload_json: '{}', discovered_at_ms: now }, now)).state, 'routed');
+    }
+    return { queue, jobs: await f.query('SELECT * FROM automation_jobs ORDER BY id') };
+}
+async function futureJob(f, sourceJobId) {
+    const id = randomUUID(), due = f.clock() + 86400000;
+    await f.query("INSERT INTO automation_jobs (id,run_id,plan_json,due_at_ms,state,created_at_ms,updated_at_ms) SELECT ?,run_id,plan_json,?,'pending',?,? FROM automation_jobs WHERE id=?", [id, due, f.clock(), f.clock(), sourceJobId]);
+    return { id, due };
+}
 async function fixture(work, input = {}) {
     const db = await createTestDatabase(port), query = db.queryDatabase, actor = { userId: '222222222222228744' }, service = createService(db);
     let evaluator, flow;
@@ -334,3 +357,120 @@ test('package stop namespace inventory preserves both historical workflows witho
         assert.deepEqual(observed, expected); assert.equal(await f.state(run.runId), 'excluded');
     } finally { proceed.resolve(); revocationAttempt.resolve(); await editing; await stopping; }
 }, { multiple: true }));
+
+test('one legacy recovery transaction propagates a newly terminal parent to its actual aggregate child', { skip: !port }, async () => fixture(async f => {
+    const legacy = await legacyAggregate(f), parent = legacy.jobs.find(job => !job.parent_job_id), child = legacy.jobs.find(job => job.parent_job_id === parent.id);
+    assert.equal(legacy.jobs.length, 2); assert(child); assert(legacy.jobs.every(job => Number(job.execution_version) === 1));
+    const future = await futureJob(f, parent.id);
+    await f.query("UPDATE automation_jobs SET state='held',sent_steps=0,discord_message_id=NULL WHERE id=?", [parent.id]);
+    assert.equal(await legacy.queue.claim(f.clock()), null);
+    assert.equal((await f.history.detail(f.actor, parent.id)).state, 'failed'); assert.equal((await f.history.detail(f.actor, child.id)).state, 'failed');
+    const scheduled = await f.history.detail(f.actor, future.id); assert.equal(scheduled.state, 'pending'); assert.equal(scheduled.dueAtMs, future.due);
+}, { definition: legacyDefinition() }));
+
+for (const state of ['held', 'sending']) test(`${state} legacy parent recovery reconciles mixed graph children while preserving terminal receipts and future schedules`, { skip: !port }, async () => fixture(async f => {
+    const legacy = await legacyAggregate(f), parent = legacy.jobs.find(job => !job.parent_job_id), future = await futureJob(f, parent.id);
+    await f.service.updateWorkflow(f.actor, f.workflow.id, { definition: definition(true), expectedRevision: 1 });
+    await f.service.activateWorkflow(f.actor, f.workflow.id, { expectedRevision: 2 });
+    const graph = await f.run('mixed migrated children'), protectedRun = await f.run('confirmed historical siblings');
+    for (const child of graph.jobs) await f.query("UPDATE automation_jobs SET parent_job_id=?,state='aggregated' WHERE id=?", [parent.id, child.id]);
+    for (const [index, child] of protectedRun.jobs.entries()) await f.query('UPDATE automation_jobs SET parent_job_id=?,state=?,sent_steps=1,discord_message_id=? WHERE id=?', [parent.id, index ? 'unknown' : 'sent', '555555555555555555', child.id]);
+    await f.db.withDatabaseTransaction(query => refreshFlowHistory(query, [protectedRun.runId]));
+    const retained = await f.query('SELECT id,state,sent_steps,discord_message_id,updated_at_ms FROM automation_jobs WHERE id IN (?) ORDER BY id', [protectedRun.jobs.map(job => job.id)]);
+    assert.equal(await f.state(protectedRun.runId), 'partial');
+    await f.query('UPDATE automation_jobs SET state=?,sent_steps=?,discord_message_id=?,lease_until_ms=? WHERE id=?', [state, state === 'sending' ? 1 : 0, state === 'sending' ? '555555555555555556' : null, f.clock() - 1, parent.id]);
+    assert.equal(await legacy.queue.claim(f.clock()), null);
+    const expected = state === 'held' ? 'failed' : 'unknown';
+    assert.equal((await f.history.detail(f.actor, parent.id)).state, expected);
+    for (const child of graph.jobs) assert.equal((await f.history.detail(f.actor, child.id)).state, expected);
+    assert.equal(await f.state(graph.runId), expected); assert.equal(await f.state(protectedRun.runId), 'partial');
+    assert.deepEqual(await f.query('SELECT id,state,sent_steps,discord_message_id,updated_at_ms FROM automation_jobs WHERE id IN (?) ORDER BY id', [protectedRun.jobs.map(job => job.id)]), retained);
+    const scheduled = await f.history.detail(f.actor, future.id); assert.equal(scheduled.state, 'pending'); assert.equal(scheduled.dueAtMs, future.due);
+    if (state === 'sending') { const ack = await f.history.detail(f.actor, parent.id); assert.equal(ack.sentSteps, 1); assert.equal(ack.messageId, '555555555555555556'); }
+    assert.equal(await legacy.queue.claim(f.clock()), null);
+}, { definition: legacyDefinition() }));
+
+test('a failure on the later 100-child page rolls back both parent recovery and an already projected graph result', { skip: !port, timeout: 120000 }, async () => fixture(async f => {
+    // Two genuine legacy groups of 52 members each stay within maxItems=60.
+    // Their 102 child rows require two bounded cascade pages in one transaction.
+    const first = await legacyAggregate(f, 52), firstParent = first.jobs.find(job => !job.parent_job_id);
+    // Seal this historical parent before admitting the next group. Production
+    // appends only to pending parents; equal fixture timestamps must not choose
+    // between two pending groups and accidentally alter this page boundary.
+    await f.query("UPDATE automation_jobs SET state='held' WHERE id=?", [firstParent.id]);
+    const legacy = await legacyAggregate(f, 52), parents = legacy.jobs.filter(job => !job.parent_job_id), children = legacy.jobs.filter(job => job.parent_job_id);
+    assert.equal(parents.length, 2); assert.equal(children.length, 102);
+    await f.service.updateWorkflow(f.actor, f.workflow.id, { definition: definition(true), expectedRevision: 1 });
+    await f.service.activateWorkflow(f.actor, f.workflow.id, { expectedRevision: 2 });
+    const graph = await f.run('projection before later page'), future = await futureJob(f, parents[0].id);
+    await f.query("UPDATE automation_jobs SET state='held',sent_steps=0,discord_message_id=NULL WHERE id IN (?)", [[...parents.map(parent => parent.id), graph.jobs[0].id]]);
+    await f.query("UPDATE automation_jobs SET state='sent',sent_steps=1,discord_message_id='555555555555555557' WHERE id=?", [graph.jobs[1].id]);
+    await f.db.withDatabaseTransaction(query => refreshFlowHistory(query, [graph.runId])); assert.equal(await f.state(graph.runId), 'queued');
+    const snapshot = await f.query('SELECT * FROM automation_jobs ORDER BY id'), runSnapshot = await f.query('SELECT id,state,trace_json FROM automation_runs ORDER BY id');
+    const laterIds = new Set(children.map(child => child.id).sort().slice(100)); let injected = false, firstProjection = false;
+    const broken = { ...f.db, withDatabaseTransaction: work => f.db.withDatabaseTransaction(transaction => work(async (sql, params) => {
+        const result = await transaction(sql, params);
+        if (sql.startsWith('UPDATE automation_runs SET state=') && params[2] === graph.runId && params[0] === 'partial') firstProjection = true;
+        if (!injected && sql.startsWith('UPDATE automation_jobs SET state=') && params.flat(Infinity).some(value => laterIds.has(value))) {
+            injected = true; assert.equal(firstProjection, true); throw Object.assign(new Error('Injected later cascade page failure'), { code: 'EIO' });
+        }
+        return result;
+    })) };
+    await assert.rejects(createQueue(broken, f.evaluator).claim(f.clock()), { code: 'EIO' }); assert.equal(injected, true);
+    assert.deepEqual(await f.query('SELECT * FROM automation_jobs ORDER BY id'), snapshot); assert.deepEqual(await f.query('SELECT id,state,trace_json FROM automation_runs ORDER BY id'), runSnapshot);
+    assert.equal(await legacy.queue.claim(f.clock()), null);
+    assert((await f.query('SELECT state FROM automation_jobs WHERE parent_job_id IN (?)', [parents.map(parent => parent.id)])).every(child => child.state === 'failed'));
+    assert.equal(await f.state(graph.runId), 'partial');
+    const scheduled = await f.history.detail(f.actor, future.id); assert.equal(scheduled.state, 'pending'); assert.equal(scheduled.dueAtMs, future.due);
+}, { definition: legacyDefinition(60) }));
+
+test('an uppercase source-copy UUID shares the exact lowercase package-stop workflow fence', { skip: !port, timeout: 60000 }, async () => fixture(async f => {
+    const published = await publishedWorkflow(f), source = await f.service.getWorkflow(f.actor, published.workflow.id), upper = source.id.toUpperCase();
+    assert.notEqual(upper, source.id);
+    const held = gate(), release = gate(); let sourceLookup, sharedKey, exclusiveReady = false;
+    const copyDb = { ...f.db, withDatabaseTransaction: work => f.db.withDatabaseTransaction(query => work(async (sql, params) => {
+        if (sql === 'SELECT * FROM automation_workflows WHERE id=? FOR UPDATE') sourceLookup = params[0];
+        const result = await query(sql, params);
+        if (sql.startsWith('INSERT IGNORE INTO automation_flow_locks ') && !sharedKey) { sharedKey = params[0]; held.resolve(); await release.promise; }
+        return result;
+    })) };
+    const input = { sourceWorkflowId: upper, expectedSourceRevision: source.revision, definition: source.draft, bindings: source.bindings };
+    const copy = createService(copyDb).createWorkflow(f.actor, input).then(value => ({ value }), error => ({ error })); let stop;
+    try {
+        await Promise.race([held.promise, copy.then(result => { throw result.error || new Error('Copy skipped its shared workflow fence'); })]);
+        const stoppedDb = { ...f.db, withDatabaseTransaction: work => f.db.withDatabaseTransaction(query => work(async (sql, params) => {
+            const result = await query(sql, params);
+            if (sql.startsWith('INSERT INTO automation_flow_locks ') && params[0] === workflowFence(source.id)) exclusiveReady = true;
+            return result;
+        })) };
+        stop = createMarketplace(stoppedDb, { service: createService(stoppedDb) }).setStatus({ ...f.actor, isAdmin: true }, published.pack.id,
+            { status: 'revoked', expectedVersion: 1, note: 'case-insensitive workflow identity fixture' }).then(value => ({ value }), error => ({ error }));
+        await new Promise(resolve => setTimeout(resolve, 100)); assert.equal(exclusiveReady, false);
+        assert.equal(sharedKey, workflowFence(source.id)); release.resolve();
+        assert.equal((await copy).error, undefined); assert.equal((await stop).error?.code, 'REVISION_CONFLICT');
+        assert.equal(sourceLookup, upper); assert.equal(input.sourceWorkflowId, upper, 'external identity is not rewritten');
+        assert.equal((await f.query('SELECT status FROM automation_packages WHERE id=?', [published.pack.id]))[0].status, 'active');
+    } finally { release.resolve(); await copy; await stop; }
+}, { multiple: true }));
+
+test('a mixed-case stored job run reference still waits for its attested graph namespace', { skip: !port, timeout: 60000 }, async () => fixture(async f => {
+    const run = await f.run(), job = run.jobs[0], upper = run.runId.toUpperCase(); assert.notEqual(upper, run.runId);
+    await f.query('UPDATE automation_jobs SET run_id=? WHERE id=?', [upper, job.id]);
+    const namespace = (await f.query('SELECT namespace_key FROM automation_flow_runs WHERE run_id=?', [run.runId]))[0].namespace_key;
+    const held = gate(), release = gate(); let completed = false;
+    const holder = f.db.withDatabaseTransaction(async query => {
+        await require('../../src/automation/flow-history').lockFlowWorkflows(query, [f.workflow.id]);
+        await query('INSERT INTO automation_flow_locks (namespace_key) VALUES (?) ON DUPLICATE KEY UPDATE namespace_key=VALUES(namespace_key)', [namespace]);
+        held.resolve(); await release.promise;
+    });
+    let changing;
+    try {
+        await held.promise; const detail = await f.history.detail(f.actor, job.id);
+        changing = f.history.change(f.actor, job.id, { action: 'cancel', expectedVersion: detail.version }).then(value => { completed = true; return { value }; }, error => { completed = true; return { error }; });
+        await new Promise(resolve => setTimeout(resolve, 100)); assert.equal(completed, false);
+        release.resolve(); await holder; assert.equal((await changing).error, undefined);
+        assert.equal(await f.state(run.runId), 'cancelled');
+        assert.equal((await f.query('SELECT run_id FROM automation_jobs WHERE id=?', [job.id]))[0].run_id, upper, 'stored reference is preserved byte-for-byte');
+        assert.equal((await f.query('SELECT id FROM automation_runs WHERE id=?', [upper]))[0].id, run.runId);
+    } finally { release.resolve(); await holder; await changing; }
+}));
