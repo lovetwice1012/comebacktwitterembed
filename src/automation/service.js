@@ -171,16 +171,28 @@ function createService(db, options = {}) {
         requireActor(actor);
         if (!['auto', 'price'].includes(kind)) fail('INVALID_MONITOR', '監視の種類が不正です。');
         const table = kind === 'auto' ? 'auto_watch' : 'price_watch';
-        const target = (await query(`SELECT t.user_id,t.guild_id,t.destination_type,m.scope,a.workflow_id FROM ${table}_targets t
+        const target = (await query(`SELECT t.user_id,t.guild_id,t.destination_type,m.scope,a.workflow_id,m.destination_id FROM ${table}_targets t
             LEFT JOIN automation_monitors m ON m.target_kind=? AND m.target_id=t.id
             LEFT JOIN automation_assignments a ON a.target_kind=? AND a.target_id=t.id WHERE t.id=? AND t.user_id=? FOR UPDATE`, [kind, kind, targetId, actor.userId]))[0];
         if (!target) fail('NOT_FOUND', '監視が見つかりません。', 404);
-        if (!target.workflow_id) return;
-        const workflow = (await query('SELECT * FROM automation_workflows WHERE id=? AND deleted_at_ms IS NULL FOR UPDATE', [target.workflow_id]))[0];
         const scope = target.scope || (target.destination_type === 'dm' || !target.guild_id ? 'private' : 'guild');
-        if (!workflow || workflow.scope !== scope || scope === 'private' && workflow.owner_user_id !== target.user_id
-            || scope === 'guild' && workflow.guild_id !== target.guild_id) fail('TARGET_SCOPE', '監視に割り当てたルールを確認してください。');
-        await validateWorkflowDestinations(query, workflow, [target.user_id]);
+        if (target.workflow_id) {
+            const workflow = (await query('SELECT * FROM automation_workflows WHERE id=? AND deleted_at_ms IS NULL FOR UPDATE', [target.workflow_id]))[0];
+            if (!workflow || workflow.scope !== scope || scope === 'private' && workflow.owner_user_id !== target.user_id
+                || scope === 'guild' && workflow.guild_id !== target.guild_id) fail('TARGET_SCOPE', '監視に割り当てたルールを確認してください。');
+            await validateWorkflowDestinations(query, workflow, [target.user_id]);
+        }
+        if (target.destination_id) {
+            const destination = (await query('SELECT * FROM automation_destinations WHERE id=? FOR UPDATE', [target.destination_id]))[0];
+            if (!destination || destination.deleted_at_ms) fail('NOT_FOUND', '通知先が見つかりません。', 404);
+            if (scope === 'guild' && (destination.scope !== 'guild' || destination.guild_id !== target.guild_id || destination.kind === 'dm')
+                || scope === 'private' && destination.scope === 'guild' && (destination.guild_id !== target.guild_id || destination.kind === 'dm')
+                || !['private', 'guild'].includes(destination.scope)) fail('DESTINATION_SCOPE', '監視と同じ公開範囲・サーバーの通知先を選び直してください。', 409);
+            if (destination.kind !== target.destination_type) fail('DESTINATION_CHANGED', '通知方法が変更されています。通知一覧で通知先を確認してください。', 409);
+            // Existing bound shared resources are use-only: the native owner
+            // needs actual recipient access, not new resource-edit privileges.
+            await validateDestinationOwners(destination, [target.user_id], query);
+        }
     }
     async function saveWorkflowRevision(query, actor, id, revision, definition, bindings, now, serialized = false) {
         const body = serialized && typeof definition === 'string' ? definition : JSON.stringify(definition);

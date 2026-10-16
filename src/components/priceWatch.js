@@ -17,6 +17,7 @@ const { withWebhookForChannel, verifyChannelForNotification } = require('./_webh
 const db = require('../db');
 const { withChannelWebhookOperation } = require('../automation/webhook-registration');
 const permissions = require('./_permissionCheck');
+const { notificationDestinationFailure } = require('../userFacingErrors');
 
 const PROVIDERS = Object.freeze({ a: 'amazon', s: 'steam' });
 
@@ -207,6 +208,7 @@ async function registerAndConfirm(interaction, source, mode, destination, option
                 ? repair ? `通知一覧でID ${id}を開き、通知先を選び直してください。既存の登録枠で修復できます。` : `通知先の確認を再試行してください。時間をおいて再登録するか、通知一覧のID ${id}から通知先を選び直せます。`
                 : repair ? `Open notification ID ${id} in your notification list and choose its destination again. This uses the existing slot.` : `Retry destination verification shortly, or choose a destination for notification ID ${id} in your notification list.`;
         }
+        content ||= notificationDestinationFailure(error, interaction.locale);
         if (!content) throw error;
         await interaction.editReply({ content });
         return;

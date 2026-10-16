@@ -10,7 +10,7 @@ const { createTestDatabase, grantTestDonor } = require('../lib/automation-test-d
 const schema = require('../../src/db_schema');
 const { createQueue } = require('../../src/automation/queue');
 const { createService, hash } = require('../../src/automation/service');
-const { createDestinations } = require('../../src/automation/destinations');
+const { createDestinations, VIEW, SEND } = require('../../src/automation/destinations');
 const { createMonitors } = require('../../src/automation/monitors');
 const root = path.resolve(__dirname, '../..'), port = Number(process.env.AUTOMATION_TEST_DB_PORT);
 const U = '222222222222222222', G = '111111111111111111', C = '333333333333333333', B = '555555555555555555', M = '888888888888888888';
@@ -39,6 +39,21 @@ async function fixture(kind) {
                     delete: async () => { trace.push(`delete:${id}`); deleted.push(id); hooks.delete(id); } };
                 hooks.set(id, hook); trace.push(`create:${id}`); return hook;
             } };
+        const registrationService = createService(db, { verifyChannel: (actor, guildId, channelId) => checkedDestinations.verifyChannel(actor, guildId, channelId),
+            verifyWebhook: (guildId, url) => checkedDestinations.verifyWebhook(guildId, url) });
+        const checkedDestinations = createDestinations(db, registrationService, { rest: async route => {
+            let data;
+            if (route === `/guilds/${G}`) data = { id: G, owner_id: '999999999999999999' };
+            else if (route === `/guilds/${G}/roles`) data = [{ id: G, permissions: String(VIEW | SEND) }];
+            else if (route.startsWith(`/guilds/${G}/members/`)) data = { user: { id: route.split('/').at(-1) }, roles: [] };
+            else if (route === '/users/@me') data = { id: B };
+            else if (route === `/channels/${C}`) data = { id: C, guild_id: G, type: 0, permission_overwrites: [] };
+            else {
+                const hook = [...hooks.values()].find(item => route === `/webhooks/${item.id}/${item.token}`);
+                assert(hook, 'Only fixture-owned hook metadata can be read'); data = { id: hook.id, type: 1, guild_id: G, channel_id: C };
+            }
+            return { data };
+        } });
         const interaction = (failReply = false) => {
             let attempts = 0;
             return { user: { id: U }, member: { id: U }, client: { user: { id: B } }, guildId: G, channelId: C, channel, locale: 'ja',
@@ -60,7 +75,7 @@ async function fixture(kind) {
                 return { id: /webhooks\/(\d+)/.exec(url)?.[1], guildId: G, channelId: C };
             };
             const registerTarget = async input => {
-                const result = await native.registerTarget(input, { validateWebhook: options.legacyVerifier || validate });
+                const result = await native.registerTarget(input, { validateWebhook: options.legacyVerifier || validate, service: registrationService });
                 await options.afterRegister?.(input, result);
                 return result;
             };

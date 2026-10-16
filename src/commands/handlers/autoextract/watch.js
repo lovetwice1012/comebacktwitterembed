@@ -3,7 +3,7 @@
 const { provider } = require('../../../providers/autoWatch');
 const { registerTarget, validateWebhook, assertRegistrationAllowed } = require('../../../providers/autoWatch/store');
 const { withWebhookForChannel, verifyChannelForNotification } = require('../../../components/_webhookDestination');
-const { failureReason } = require('../../../userFacingErrors');
+const { failureReason, notificationDestinationFailure } = require('../../../userFacingErrors');
 const { recordError } = require('../../../errorTracking');
 const db = require('../../../db');
 const { withRateOperation } = require('../../../automation/rate-operation');
@@ -135,7 +135,7 @@ module.exports = async function (interaction) {
             ? localized(interaction.locale, require('../../../automation/monitor-input').sourceGuidance(providerId).help, 'Use an account profile or channel URL rather than a single post.')
             : code === 'AUTO_WATCH_SLOT_LIMIT' ? localized(interaction.locale, '登録できる監視枠がありません。不要な監視を削除してから再度登録してください。一時停止中も枠を使用します。', 'No watch slots remain. Delete an unused watch before registering another; paused watches still occupy a slot.')
                 : code === 'AUTO_WATCH_INVALID_WEBHOOK' ? localized(interaction.locale, '通知先のWebhookを確認してください。DMを選ぶとWebhookなしで登録できます。', 'Check the destination webhook, or choose DM to register without a webhook.')
-                    : failureReason(error, interaction.locale);
+                    : notificationDestinationFailure(error, interaction.locale) || failureReason(error, interaction.locale);
         return await interaction.editReply(errorReply(interaction.locale, explanation));
     }
 };

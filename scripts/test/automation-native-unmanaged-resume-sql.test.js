@@ -227,3 +227,127 @@ for (const kind of ['auto', 'price']) test(`S18/S24 managed ${kind}: native reci
         });
     } finally { await f.db.close(); }
 });
+
+function nativeCommand(f, kind, type, index) {
+    const binding = { ...f.db, ensureUserExistsInDatabase: async () => {} }, ensure = { ...schema, ensureDatabaseSchema: async () => {} };
+    binding.withDatabaseTransaction = work => f.db.withDatabaseTransaction(work);
+    const limiter = require('../../src/automation/rate-limits').createRateLimiter(binding, { policy: { operations: { monitor: { minute: 1000, hour: 1000 } } } });
+    const auto = load('src/providers/autoWatch/store.js', { '../../db': binding, '../../db_schema': ensure });
+    const store = kind === 'auto' ? auto : load('src/providers/priceWatch/store.js', { '../../db': binding, '../../db_schema': ensure });
+    const register = input => store.registerTarget(input, { service: f.service, operationRateLimiter: limiter, initialJitterMs: 0 });
+    const validated = { ...auto, validateWebhook: url => auto.validateWebhook(url, { fetch: async () => {
+        try { const result = await f.rest(`/webhooks/${H}/synthetic-token-never-submitted`); return { ok: true, status: 200, json: async () => result.data }; }
+        catch (error) { return { ok: false, status: error.status, json: async () => ({}) }; }
+    } }), registerTarget: register };
+    const purpose = kind === 'auto' ? 'ComebackTwitterEmbed auto watch' : 'ComebackTwitterEmbed price alerts';
+    const hook = { id: H, type: 1, name: purpose, owner: { id: B }, token: 'synthetic-token-never-submitted', url: URL };
+    const channel = { id: C, type: 0, name: 'recipient', permissionsFor: () => ({ has: () => true }),
+        fetchWebhooks: async () => new Map([[H, hook]]), createWebhook: async () => assert.fail('The existing hook must be reused') };
+    const replies = [], source = `native-user-${index}`, product = String(730 + index), messageId = '888888888888888888';
+    const interaction = locale => ({ user: { id: U }, member: { id: U }, guildId: G, channelId: O, channel: { id: O }, locale, client: { user: { id: B } },
+        guild: { id: G, members: { me: { id: B } }, channels: { cache: new Map([[C, channel], [O, { ...channel, id: O }]]) } },
+        options: { getBoolean: () => true, getString: key => ({ provider: 'github', source, destination: type, webhook: URL })[key] || null, getChannel: () => channel },
+        customId: type === 'channel' ? `priceWatchChannel:s:app:${product}:ja:${messageId}:change`
+            : type === 'dm' ? `priceWatchDestination:s:app:${product}:ja:${messageId}` : `priceWatchModal:change:webhook:s:app:${product}:ja:${messageId}`,
+        values: type === 'channel' ? [C] : ['change:dm'], message: { id: messageId, embeds: [{ url: `https://store.steampowered.com/app/${product}` }] },
+        fields: { getTextInputValue: () => URL }, deferReply: async () => {}, deferUpdate: async () => {}, editReply: async value => replies.push(value) });
+    const command = kind === 'auto' ? load('src/commands/handlers/autoextract/watch.js', { '../../../db': binding, '../../../db_schema': ensure,
+        '../../../providers/autoWatch/store': validated, '../../../errorTracking': { recordError: () => {} },
+        '../../../automation/rate-operation': { withRateOperation: (db, who, group, work) => require('../../src/automation/rate-operation').withRateOperation(db, who, group, work, { rateLimiter: limiter }) } })
+        : (() => { const component = load('src/components/priceWatch.js', { '../db': binding, '../db_schema': ensure, '../providers/autoWatch/store': validated,
+            '../providers/priceWatch/store': { ...store, registerTarget: register }, './_permissionCheck': { isAllowed: async () => true } });
+        return type === 'webhook' ? component.handleModal : component.handle; })();
+    const input = { userId: U, providerId: kind === 'auto' ? 'github' : 'steam', source, productUrl: `https://store.steampowered.com/app/${product}`, locale: 'ja', mode: 'change',
+        destinationType: type === 'dm' ? 'dm' : 'webhook', webhookUrl: type === 'dm' ? '' : URL, guildId: G, channelId: O, destinationChannelId: type === 'channel' ? C : undefined };
+    return { run: async (locale = 'ja') => { replies.length = 0; await command(interaction(locale)); return JSON.stringify(replies.at(-1)); }, register: () => register(input) };
+}
+
+for (const kind of ['auto', 'price']) for (const type of ['dm', 'webhook', 'channel']) test(`S18/S24 native ${kind}/${type}: every existing registration validates its bound default at full capacity`, { skip: !port, timeout: 120000 }, async t => {
+    const f = await fixture(kind), index = type === 'dm' ? 1 : 0, target = index ? f.fillers[0] : f.target;
+    try {
+        const resource = type === 'dm' ? await f.service.saveDestination({ userId: U }, { name: 'Owned native DM', kind: 'dm' })
+            : await f.destinations.save(actor(U), { name: 'Existing default', kind: 'webhook', scope: 'guild', webhookUrl: URL });
+        const edited = await f.monitors.save(actor(U), kind, { expectedRevision: index ? 1 : f.paused.revision, destinationId: resource.id, enabled: false }, target.id);
+        const harness = nativeCommand(f, kind, type, index); let before = await f.snapshot();
+        assert.equal(before.slots.filter(row => row.target_kind).length, 5);
+        const resourceRow = (await f.db.queryDatabase('SELECT * FROM automation_destinations WHERE id=?', [resource.id]))[0];
+        await t.test('disabled, deleted and foreign defaults reject actual Japanese/English commands with actionable safe replies', async () => {
+            for (const state of ['disabled', 'deleted', 'foreign']) {
+                if (state === 'disabled') await f.service.saveDestination(actor(U), { name: 'Stopped default', kind: type === 'dm' ? 'dm' : 'webhook', scope: resourceRow.scope, expectedRevision: 1, enabled: false },
+                    type === 'dm' ? {} : { webhookEndpointId: String(resourceRow.webhook_endpoint_id), guildId: G, channelId: C }, resource.id);
+                if (state === 'deleted') await f.service.remove('destination', actor(U), resource.id, 1);
+                if (state === 'foreign') await f.db.queryDatabase("UPDATE automation_destinations SET scope='private',owner_user_id=? WHERE id=?", [E, resource.id]);
+                const adverse = await f.snapshot();
+                f.calls.length = 0;
+                for (const locale of ['ja', 'en-US']) {
+                    const reply = await harness.run(locale);
+                    assert.doesNotMatch(reply, /登録しました|registered\./i); assert.match(reply, locale === 'ja' ? /通知一覧/ : /notification list/i);
+                    assert.doesNotMatch(reply, /Sensitive|synthetic-token|https:|999999|222222222222222223/); assert.deepEqual(await f.snapshot(), adverse);
+                }
+                if (type === 'dm') assert.equal(f.calls.length, 0);
+                await f.db.queryDatabase('UPDATE automation_destinations SET name=?,scope=?,owner_user_id=?,enabled=1,deleted_at_ms=NULL,revision=1,updated_at_ms=? WHERE id=?', [resourceRow.name, resourceRow.scope, resourceRow.owner_user_id, resourceRow.updated_at_ms, resource.id]);
+                before = await f.snapshot();
+            }
+        });
+        await t.test('actual store guards default recipient identity, outage and DM ownership without assignment shortcuts', async () => {
+            if (type !== 'dm') {
+                for (const [status, code] of [[404, 'DESTINATION_DELETED'], [503, 'DISCORD_UNAVAILABLE'], [429, 'DISCORD_RATE_LIMITED']]) {
+                    f.state.metadataStatus = status; await assert.rejects(harness.register(), { code }); assert.deepEqual(await f.snapshot(), before);
+                }
+                f.state.metadataStatus = 0; f.state.webhook.channel_id = O;
+                await assert.rejects(harness.register(), { code: 'WEBHOOK_DESTINATION_CHANGED' }); assert.deepEqual(await f.snapshot(), before); f.state.webhook.channel_id = C;
+                f.denied.set(U, SEND); await assert.rejects(harness.register(), { code: 'CHANNEL_PERMISSION' }); assert.deepEqual(await f.snapshot(), before); f.denied.clear();
+                f.state.onMetadata = () => f.db.queryDatabase('UPDATE automation_destinations SET enabled=0 WHERE id=?', [resource.id]);
+                await assert.rejects(harness.register(), { code: 'DESTINATION_CHANGED' }); assert.deepEqual(await f.snapshot(), before);
+                assert.equal((await f.db.queryDatabase('SELECT enabled FROM automation_destinations WHERE id=?', [resource.id]))[0].enabled, 1, 'In-transaction resource mutation rolls back with failed admission');
+            } else {
+                f.calls.length = 0; await f.db.queryDatabase('UPDATE automation_destinations SET dm_user_id=? WHERE id=?', [E, resource.id]);
+                await assert.rejects(harness.register(), { code: 'DM_OWNER_MISMATCH' }); assert.deepEqual(await f.snapshot(), before); assert.equal(f.calls.length, 0);
+                await f.db.queryDatabase('UPDATE automation_destinations SET dm_user_id=? WHERE id=?', [U, resource.id]);
+                const transaction = f.db.withDatabaseTransaction; let changed = false;
+                f.db.withDatabaseTransaction = work => transaction(query => work(async (sql, params) => {
+                    const result = await query(sql, params);
+                    if (!changed && sql === 'SELECT * FROM automation_destinations WHERE id=? FOR UPDATE' && params[0] === resource.id) {
+                        changed = true; await query('UPDATE automation_destinations SET enabled=0 WHERE id=?', [resource.id]);
+                    }
+                    return result;
+                }));
+                try { await assert.rejects(harness.register(), { code: 'DESTINATION_CHANGED' }); } finally { f.db.withDatabaseTransaction = transaction; }
+                assert.deepEqual(await f.snapshot(), before); assert.equal(f.calls.length, 0);
+                assert.equal((await f.db.queryDatabase('SELECT enabled FROM automation_destinations WHERE id=?', [resource.id]))[0].enabled, 1);
+            }
+        });
+        await t.test('healthy command reuses the same target/slot/default; enabled-target retries also recheck default state', async () => {
+            f.calls.length = 0; const reply = await harness.run(); assert.match(reply, /登録しました/);
+            const active = await f.snapshot(), actual = active.targets.find(row => String(row.id) === String(target.id)); assert.equal(actual.enabled, 1);
+            assert.equal(active.targets.length, 5); assert.deepEqual(active.slots, before.slots);
+            assert.equal(active.monitors.find(row => String(row.target_id) === String(target.id)).destination_id, resource.id);
+            assert.equal(active.monitors.find(row => String(row.target_id) === String(target.id)).revision, edited.revision);
+            if (type === 'dm') assert.equal(f.calls.length, 0);
+            await f.db.queryDatabase('UPDATE automation_destinations SET enabled=0 WHERE id=?', [resource.id]);
+            assert.match(await harness.run(), /通知一覧/); assert.deepEqual(await f.snapshot(), active);
+            await f.db.queryDatabase('UPDATE automation_destinations SET enabled=1 WHERE id=?', [resource.id]);
+        });
+        await t.test('owned private use of a bound shared resource needs recipient access only; SQL failure preserves assignment, audit, jobs and slots', async () => {
+            if (type !== 'dm') {
+                await f.db.queryDatabase("UPDATE automation_monitors SET scope='private' WHERE target_kind=? AND target_id=?", [kind, target.id]);
+                await f.db.queryDatabase('UPDATE automation_destinations SET owner_user_id=? WHERE id=?', [E, resource.id]);
+                await harness.register();
+            }
+            const who = { userId: U }, workflow = await f.service.createWorkflow(who, { name: 'Existing assignment' });
+            await f.service.activateWorkflow(who, workflow.id, { expectedRevision: 1 }); await f.service.attach(who, workflow.id, kind, target.id);
+            const record = (await f.db.queryDatabase('SELECT revision FROM automation_monitors WHERE target_kind=? AND target_id=?', [kind, target.id]))[0];
+            await f.monitors.save(who, kind, { expectedRevision: Number(record.revision), enabled: false }, target.id);
+            const paused = await f.snapshot(), assignments = await f.db.queryDatabase('SELECT * FROM automation_assignments ORDER BY target_kind,target_id'), transaction = f.db.withDatabaseTransaction;
+            f.db.withDatabaseTransaction = work => transaction(query => work(async (sql, params) => {
+                const result = await query(sql, params);
+                if (sql.includes(`INSERT INTO ${f.table}_targets`)) throw new Error('Synthetic native post-upsert SQL failure'); return result;
+            }));
+            try { await assert.rejects(harness.register(), /Synthetic native post-upsert SQL failure/); } finally { f.db.withDatabaseTransaction = transaction; }
+            assert.deepEqual(await f.snapshot(), paused); assert.deepEqual(await f.db.queryDatabase('SELECT * FROM automation_assignments ORDER BY target_kind,target_id'), assignments);
+            await harness.register(); assert.deepEqual((await f.snapshot()).slots, paused.slots); assert.deepEqual(await f.db.queryDatabase('SELECT * FROM automation_assignments ORDER BY target_kind,target_id'), assignments);
+            if (type === 'dm') assert.equal(f.calls.length, 0);
+            const counters = await f.db.queryDatabase('SELECT used_count FROM automation_counters WHERE used_count>0'); assert(counters.length > 0, 'Actual command/store operation budgets remain durable');
+        });
+    } finally { await f.db.close(); }
+});

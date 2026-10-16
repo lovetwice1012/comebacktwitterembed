@@ -22,4 +22,21 @@ function failureReason(error, locale = 'en') {
         : 'The content could not be retrieved or parsed. Please check the original link.';
 }
 
-module.exports = { failureReason };
+function notificationDestinationFailure(error, locale = 'en') {
+    const japanese = String(locale).toLowerCase().startsWith('ja'), code = String(error?.code || '');
+    if (code === 'DESTINATION_DISABLED') return japanese
+        ? '通知一覧で既存の通知先を有効にしてから、再登録してください。'
+        : 'Enable the existing destination in your notification list, then register again.';
+    if (['NOT_FOUND', 'DESTINATION_DELETED', 'DESTINATION_SCOPE', 'DESTINATION_CHANGED', 'WEBHOOK_DESTINATION_CHANGED', 'DM_OWNER_MISMATCH', 'DM_OWNER'].includes(code)) return japanese
+        ? '通知一覧で既存の通知を開き、利用できる通知先を選び直してください。既存の登録枠で修復できます。'
+        : 'Open the existing notification in your notification list and choose an available destination. This uses its existing slot.';
+    if (['CHANNEL_PERMISSION', 'DISCORD_ACCESS_DENIED'].includes(code)) return japanese
+        ? '通知先の閲覧・送信権限を確認してください。通知一覧から既存の通知先を選び直すこともできます。'
+        : 'Check access and Send Messages permissions for the destination, or choose another destination in your notification list.';
+    if (['DISCORD_UNAVAILABLE', 'DISCORD_RATE_LIMITED'].includes(code)) return japanese
+        ? '通知先の確認を再試行してください。時間をおいてから再登録できます。'
+        : 'Try destination verification again shortly, then register again.';
+    return null;
+}
+
+module.exports = { failureReason, notificationDestinationFailure };
