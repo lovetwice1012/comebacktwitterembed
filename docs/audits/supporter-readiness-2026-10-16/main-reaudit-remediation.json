@@ -2401,6 +2401,18 @@
       "sha256": "e60d763178ba53fb91c093c7e6fa837a3a89b6500d2f29ae0d83c98759fa48fe",
       "kind": "immutable-before-production-docs-append",
       "scope": "Exact prior local acceptance map/report, with production pending."
+    },
+    {
+      "file": "main-reaudit-evidence/before-docs-PR52-publication-map.json",
+      "sha256": "b5972e22f3a457c9cc54009446335df0b238628c210985278fceaf0797ed5441",
+      "kind": "before-documentation-publication-metadata",
+      "scope": "Preserved actual production acceptance; only publication metadata and completed-check wording changed."
+    },
+    {
+      "file": "main-reaudit-evidence/before-docs-PR52-publication-report.md",
+      "sha256": "c623531402648b1156e29ca1268018555cf33d889e3aec34e04ab829bd681200",
+      "kind": "before-documentation-publication-metadata",
+      "scope": "Preserved actual production acceptance; only publication metadata and completed-check wording changed."
     }
   ],
   "sourceHistory": [
@@ -2695,7 +2707,7 @@
     {
       "gate": "runtime-independent",
       "status": "completed-local-dual-source-proof",
-      "requires": "Final16 author cases and2 independently repeated incremental controls pass; final whole-matrix still required."
+      "requires": "Completed D2 full2151 and final F22 plus exact runtime/type identity; final F all10 independent review CLEAN."
     },
     {
       "gate": "full-matrix",
@@ -2739,7 +2751,7 @@
     "status": "merged-by-root-mainM1",
     "mergedMainSha": "cf22327dc39964194fbc2c48d8002366cfb22613",
     "finalCodeSourceSha": "e88e74412905987352af0ae7cec665963fc737d0",
-    "docsFollowup": "Root will publish the final documentation separately; record the actual returned PR URL rather than predict its number."
+    "docsFollowup": "https://github.com/lovetwice1012/comebacktwitterembed/pull/52"
   },
   "finalSourceHashes": [
     {
@@ -4160,8 +4172,11 @@
     "realSquarePaymentVerified": false
   },
   "docsFollowup": {
-    "status": "not-yet-published",
-    "pullRequestUrl": null,
-    "pullRequestNumber": null
+    "pullRequestUrl": "https://github.com/lovetwice1012/comebacktwitterembed/pull/52",
+    "pullRequestNumber": 52,
+    "kind": "documentation-only",
+    "codeRevisionOnProduction": "cf22327dc39964194fbc2c48d8002366cfb22613",
+    "mergeStateAuthoritativeAt": "https://github.com/lovetwice1012/comebacktwitterembed/pull/52",
+    "publicationProof": "main-reaudit-evidence/documentation-PR52-publication-metadata-proof.json"
   }
 }

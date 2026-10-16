@@ -84,3 +84,5 @@ Guarded finalizerでD2の閉じたXML・summary・native receipt、185のraw tes
 [workerを先に準備した切替](main-reaudit-evidence/production-M1-closed-promotion.jsonl)後、[live47件](main-reaudit-evidence/production-M1-closed-live47.jsonl)と[application13件](main-reaudit-evidence/production-M1-closed-application13.json)がすべて成功しました。[名前付き検証と保存状態](main-reaudit-evidence/production-M1-pinned-proof-details.json)で、DBの前後fingerprint一致、DDL追加0、全14シャードready、leaseとheartbeat、BotとWebのM1一致を確認しています。[独立した本番レビュー](main-reaudit-evidence/independent-M1-production-final-review.json)もCLEANです。
 
 [10:59 UTCの常駐確認](main-reaudit-evidence/production-M1-resident-after.json)はworker459285とM1のWeb、支援者限定・受付・登録・受信有効、batch、6プランと個別5分設定の維持を示します。bootstrap v2完了と既存の利用対象1件のfresh listeningを確認しました。この既存受信状態は、新しい実X投稿からDiscordへの配信を確認したという意味ではありません。実OAuth・新しい実X投稿の配信・実Square決済は未検証です。D2全体2,151成功と実F22件／等価引継ぎ、クラウドaction_requiredの2誤検知は上記のとおり区別しています。
+
+報告書と証跡の掲載先：[文書PR #52](https://github.com/lovetwice1012/comebacktwitterembed/pull/52)。本番の稼働コードはM1 `cf22327d` です。
