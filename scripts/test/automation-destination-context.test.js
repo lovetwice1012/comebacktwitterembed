@@ -17,7 +17,7 @@ const actor = { userId: USER, guildId: GUILD, canView: false, canEdit: false };
 const createInput = { name: '個人のチャンネル通知', kind: 'channel', scope: 'private', channelId: CHANNEL, enabled: true };
 
 function fixture(options = {}) {
-    const state = { destinations: new Map(), endpoints: new Map(), audits: [] };
+    const state = { destinations: new Map(), endpoints: new Map(), counters: new Map(), audits: [] };
     const statements = [], calls = [], admissions = [];
     const discord = {
         channel: { id: CHANNEL, guild_id: GUILD, type: 0, name: '通知', permission_overwrites: [] },
@@ -29,6 +29,8 @@ function fixture(options = {}) {
     };
     const query = async (sql, params = []) => {
         statements.push({ sql, params });
+        if (sql.startsWith('INSERT IGNORE INTO automation_counters')) { state.counters.set(params[0], { counter_key: params[0] }); return { affectedRows: 1 }; }
+        if (sql.startsWith('SELECT counter_key FROM automation_counters')) return [state.counters.get(params[0])].filter(Boolean);
         if (sql.startsWith('INSERT INTO webhook_endpoints')) {
             if (!state.endpoints.has(params[0])) state.endpoints.set(params[0], { id: String(state.endpoints.size + 1), webhook_url: params[1] });
             return { affectedRows: 1 };

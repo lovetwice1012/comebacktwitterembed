@@ -5,12 +5,13 @@ export interface DonationQuote { attemptId: string; expiresAtMs: number; amount:
 export interface DonationHistory { attemptId: string; state: string; amount: number; currency: string; refundedAmount: number; netAmount: number; verified: boolean; createdAtMs: number; completedAtMs: number | null }
 export interface DonationGrant { active: boolean; threshold: number | null; validityDays: number | null; netAmount: number; validUntilAtMs: number | null; unitAmount: number | null; slotsPerUnit: number | null; purchaseUnits: number; extraSlots: number; paymentCount: number; unitsValidUntilAtMs: number | null }
 export interface DonationSupporter extends DonationGrant { manualActive: boolean }
-export interface DonationStatus { configured: boolean; environment: 'sandbox' | 'production' | null; history: DonationHistory[]; pending: null | (DonationQuote & { state: string; retryable: boolean }); supporter: DonationSupporter; permanentSupport?: {totalSupporterSlots:number;legacySlots:number;newPaidSlots:number;isSupporter:boolean}; refresh?: { state: 'checked' | 'cooldown' | 'busy' | 'failed'; retryAtMs: number | null } }
+export interface DonationStatus { configured: boolean; environment: 'sandbox' | 'production' | null; history: DonationHistory[]; historyNextCursor?: string | null; pending: null | (DonationQuote & { state: string; retryable: boolean }); supporter: DonationSupporter; permanentSupport?: {totalSupporterSlots:number;legacySlots:number;newPaidSlots:number;isSupporter:boolean}; refresh?: { state: 'checked' | 'cooldown' | 'busy' | 'failed'; retryAtMs: number | null } }
 /** Verified observations also update the permanent support-slot ledger. These
  * original policy/status fields retain their rolling financial semantics. */
 export function createSquareDonations(db: { queryDatabase: Function; withDatabaseTransaction: Function }, options?: { env?: Record<string, string | undefined>; fetch?: typeof fetch; clock?: () => number }): {
     getOptions(actor: SquareActor): Promise<DonationOptions>;
     getStatus(actor: SquareActor): Promise<DonationStatus>;
+    getHistory(actor: SquareActor, after?: string): Promise<{items: DonationHistory[]; nextCursor: string | null}>;
     getAdmin(actor: SquareActor): Promise<{ configured: boolean; environment: 'sandbox' | 'production' | null; missing: string[]; policy: DonationPolicy; locationCurrency?: string | null; minorUnitDigits: number | null }>;
     savePolicy(actor: SquareActor, input: Omit<DonationPolicy, 'updatedAtMs' | 'unitAmount' | 'slotsPerUnit'> & { expectedUpdatedAtMs: number | null; unitAmount?: number | null; slotsPerUnit?: number | null }): Promise<DonationPolicy>;
     createQuote(actor: SquareActor, input: { amount: number; email: string; name: string }): Promise<DonationQuote>;

@@ -299,6 +299,19 @@ function createXPushStore(db, options = {}) {
             return result.affectedRows === 1;
         });
     }
+    async function markRecoveryQuarantined(lease, id) {
+        if (!/^[1-9]\d{0,19}$/.test(String(id))) fail('X_PUSH_INBOX_INVALID');
+        return locked(lease, async (query, subscription, receiver) => {
+            fence(lease, subscription, receiver);
+            const row = (await query('SELECT id,received_at_ms FROM automation_x_push_inbox WHERE id=? AND subscription_id=? AND subscription_revision=? FOR UPDATE', [String(id), lease.subscriptionId, lease.revision]))[0];
+            if (!row || require('./recovery-origin').inboxAllowed({ id: row.id, subscriptionId: lease.subscriptionId, revision: lease.revision, receivedAtMs: Number(row.received_at_ms) })) return false;
+            const result = await query("UPDATE automation_x_push_inbox SET status='recovery_quarantined' WHERE id=? AND subscription_id=? AND subscription_revision=? AND status IN ('received','unsupported')", [String(id), lease.subscriptionId, lease.revision]);
+            if (Number(result.affectedRows) === 1) await query('INSERT INTO automation_audit (actor_user_id,entity_id,action,detail_json,created_at_ms) VALUES (?,?,?,?,?)',
+                [lease.ownerUserId, lease.subscriptionId, 'x.push.recovery.quarantine', JSON.stringify({ inboxId: String(id), revision: lease.revision }), now()]);
+            fence(lease, subscription, receiver);
+            return Number(result.affectedRows) === 1;
+        });
+    }
     async function recordRetry(input, reasonCode, delayMs) {
         if (!Number.isSafeInteger(input?.revision) || input.revision < 1) fail('X_PUSH_IDENTITY_INVALID');
         validReason(reasonCode);
@@ -327,7 +340,7 @@ function createXPushStore(db, options = {}) {
         });
     }
     return { claim, renew, assertLease, markState, release, recordFrame, markRouted, auditUse, getInbox, listInbox, status, list, leaseMs,
-        beginProcessing, advanceProcessing, completeProcessing, markUnsupported, recordRetry, resetRetry,
+        beginProcessing, advanceProcessing, completeProcessing, markUnsupported, markRecoveryQuarantined, recordRetry, resetRetry,
         listQuarantinedInbox, restoreQuarantinedInbox, markUnmatched };
 }
 

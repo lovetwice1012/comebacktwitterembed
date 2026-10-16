@@ -35,6 +35,31 @@ async function policyFixture({ initial = policy(), respond } = {}) {
 }
 const writes = f => f.calls.filter(item => item.method !== 'GET');
 
+test('S34-2 history paging retains existing rows and permanent grants, retries a failed page and discards retired responses', async () => {
+    const recent = entry({ attemptId: 'recent', state: 'QUOTED', verified: false });
+    const paid = entry({ attemptId: 'old-paid', amount: 2000, netAmount: 2000 });
+    let failOnce = true, resolvePage;
+    let current = status({ history: [recent], historyNextCursor: 'older-page', permanentSupport: { totalSupporterSlots: 4, legacySlots: 0, newPaidSlots: 4, isSupporter: true } });
+    const f = await donationFixture({ respond: route => {
+        if (route === 'status') return current;
+        if (route === 'history?after=older-page') { if (failOnce) { failOnce = false; throw new Error('Temporary read failure'); } return { items: [recent, paid], nextCursor: 'last-page' }; }
+        if (route === 'history?after=last-page') return new Promise(resolve => { resolvePage = resolve; });
+        return undefined;
+    } });
+    try {
+        await f.click('過去の履歴を表示'); assert.match(f.container.textContent, /過去の寄付履歴を取得できませんでした/);
+        assert.equal(f.container.querySelectorAll('tbody tr').length, 1);
+        await f.click('過去の履歴を表示'); assert.equal(f.container.querySelectorAll('tbody tr').length, 2);
+        assert.match(f.container.textContent, /支払い確定/); assert.equal(writes(f).length, 0);
+        await f.click('過去の履歴を表示');
+        current = status({ history: [entry({ attemptId: 'newest' })], historyNextCursor: 'new-chain' });
+        await f.click('再読み込み');
+        await f.act(async () => resolvePage({ items: [entry({ attemptId: 'retired-page' })], nextCursor: null }));
+        assert.equal(f.container.querySelectorAll('tbody tr').length, 1);
+        assert(f.container.textContent.includes('過去の履歴を表示')); assert.equal(writes(f).length, 0);
+    } finally { await f.close(); }
+});
+
 test('donation route requires a session and existing payment/workspace routes expose support without replacing subscription', () => {
     const root = path.resolve(__dirname, '../..');
     const page = fs.readFileSync(path.join(root, 'dashboard/app/dashboard/automation/support/page.tsx'), 'utf8');

@@ -30,14 +30,19 @@ function createGraphDriver(store, options) {
             await sync(batch.namespace_key, plan, result.outcome?.runIds || [], now);
             return { kind: 'batch', ...result };
         }
-        const step = await store.claim(now);
+        let step = await store.claim(now);
         if (!step) {
             const work = await store.synchronizationBatch();
             if (!work) return { state: 'idle' };
             const plan = await options.loadPlan(work.namespace);
             return { state: 'synchronized', ...await store.synchronize(work.namespace, plan, work.runIds, now) };
         }
-        const plan = await options.loadPlan(step.namespace_key), node = plan.byId.get(step.node_id);
+        const plan = await options.loadPlan(step.namespace_key);
+        if (store.repairInitialStep) {
+            step = await store.repairInitialStep(step, plan.startId, now);
+            if (!step) return { state: 'lease_lost' };
+        }
+        const node = plan.byId.get(step.node_id);
         if (!node) throw new Error('FLOW_NODE_MISSING');
         const original = await store.readUnit(step.input_unit_id);
         // Freeze predicates across lease recovery. Actual-time temporal and

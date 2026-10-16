@@ -173,7 +173,7 @@ function deliveryRetryAt(delivery, now, error) {
 async function deliverOne(delivery, context) {
     const { now, store } = context;
     const recoveryRecord = { id: delivery.id, target_id: delivery.target_id, destination_type: delivery.destination_type };
-    if (!recoveryBootstrap.notificationAllowed('price_watch_delivery', recoveryRecord, Date.parse(delivery.created_at))) {
+    if (!recoveryBootstrap.notificationAllowed('price_watch_delivery', recoveryRecord, require('../../automation/recovery-origin').priceObservedAt(delivery))) {
         await store.markDeliverySuppressed(delivery, now);
         return { status: 'suppressed', deliveryId: delivery.id };
     }

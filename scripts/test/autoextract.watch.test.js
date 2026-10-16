@@ -11,10 +11,19 @@ const webhookDestinationPath = require.resolve('../../src/components/_webhookDes
 
 function replaceModule(path, exports) {
     const restores = [];
+    if (path === webhookDestinationPath && exports.createWebhookForChannel) {
+        const create = exports.createWebhookForChannel;
+        exports = { ...exports, withWebhookForChannel: async (interaction, channelId, name, register) => {
+            const created = await create(interaction, channelId, name);
+            try { return await register(created); }
+            catch (error) { if (created.created !== false) await created.webhook?.delete?.(); throw error; }
+        } };
+    }
     if (path === storePath) {
-        const schemaPath = require.resolve('../../src/db_schema'), operationPath = require.resolve('../../src/automation/rate-operation'), trackingPath = require.resolve('../../src/errorTracking');
+        const schemaPath = require.resolve('../../src/db_schema'), operationPath = require.resolve('../../src/automation/rate-operation'), trackingPath = require.resolve('../../src/errorTracking'), webhookOperationPath = require.resolve('../../src/automation/webhook-registration');
         for (const [target, replacement] of [[schemaPath, { ensureDatabaseSchema: async () => {} }],
-            [operationPath, { withRateOperation: exports.operationAdmission || (async (_db, _actor, _group, work) => work()) }], [trackingPath, { recordError: () => {} }]]) {
+            [operationPath, { withRateOperation: exports.operationAdmission || (async (_db, _actor, _group, work) => work()) }], [trackingPath, { recordError: () => {} }],
+            [webhookOperationPath, { withChannelWebhookOperation: async (_db, _guild, _channel, work) => work() }]]) {
             const saved = require.cache[target]; require.cache[target] = { id: target, filename: target, loaded: true, exports: replacement };
             restores.push(() => { if (saved) require.cache[target] = saved; else delete require.cache[target]; });
         }
@@ -74,7 +83,8 @@ test('autoextract watch validates and registers a non-Twitter source without exp
             editReply: async payload => replies.push(payload),
         });
         assert.equal(calls[0].type, 'validate');
-        assert.equal(calls[1].input.providerId, 'youtube');
+        assert.equal(calls.at(-1).input.providerId, 'youtube');
+        assert.equal(calls.filter(call => call.type === 'validate').length, 2, 'The existing URL is revalidated after its channel lock');
         assert.equal(replies.length, 1);
         assert.doesNotMatch(JSON.stringify(replies[0]), /token-is-not-disclosed/);
         assert.match(replies[0].embeds[0].description, /YouTube/);

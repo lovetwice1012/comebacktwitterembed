@@ -96,9 +96,10 @@ function createGraphStore(db) {
         if (!row || hash(row.payload_json) !== row.checksum) throw fault('FLOW_UNIT_CORRUPT');
         const unit = parse(row.payload_json);
         if (!eligibleOnly) return unit;
+        const current = await require('./recovery-origin').currentRunIds(query, unit.members.map(member => member.runId), { revoke: true });
         const revoked = await query('SELECT DISTINCT r.run_id FROM automation_flow_members m JOIN automation_flow_runs r ON r.run_id=m.run_id WHERE m.unit_id=? AND r.revoked_at_ms IS NOT NULL', [unitId]);
         const ids = new Set(revoked.map(item => item.run_id));
-        return { ...unit, members: unit.members.filter(member => !ids.has(member.runId)) };
+        return { ...unit, members: unit.members.filter(member => current.has(member.runId) && !ids.has(member.runId)) };
     }
     async function claim(now) {
         const candidates = await db.queryDatabase("SELECT id,namespace_key FROM automation_flow_steps WHERE (state='pending' AND wake_at_ms<=?) OR (state='leased' AND lease_until_ms<=?) ORDER BY wake_at_ms,id LIMIT 1", [now, now]);
@@ -109,6 +110,33 @@ function createGraphStore(db) {
             const token = randomUUID(), evaluatedAt = row.evaluation_at_ms == null ? now : Number(row.evaluation_at_ms);
             await query("UPDATE automation_flow_steps SET state='leased',lease_token=?,lease_until_ms=?,evaluation_at_ms=?,version=version+1,updated_at_ms=? WHERE id=?", [token, now + 120000, evaluatedAt, now, row.id]);
             return { ...row, state: 'leased', lease_token: token, lease_until_ms: now + 120000, evaluation_at_ms: evaluatedAt, version: Number(row.version) + 1, unit: await readUnit(query, row.continuation_unit_id || row.input_unit_id, true) };
+        });
+    }
+    async function repairInitialStep(step, startId, now) {
+        if (step.node_id !== 'start' || startId === 'start') return step;
+        return locked(step.namespace_key, async query => {
+            const row = (await query('SELECT * FROM automation_flow_steps WHERE id=? FOR UPDATE', [step.id]))[0];
+            if (!row || row.namespace_key !== step.namespace_key || row.state !== 'leased' || row.lease_token !== step.lease_token || Number(row.lease_until_ms) <= now) return null;
+            // The legacy producer used a literal start ID. Repair only its
+            // unprocessed initial activation, never a downstream node which is
+            // legitimately named start, a wait continuation or a settled step.
+            if (row.node_id !== 'start' || row.via_edge_id != null || row.continuation_unit_id != null || row.decision_json != null) return step;
+            const unit = await readUnit(query, row.input_unit_id);
+            if (unit.kind !== 'event' || unit.ancestry?.length || unit.members.length !== 1) return step;
+            const member = unit.members[0], runId = member.runId;
+            if (member.id !== runId || row.input_unit_id !== uuid(`initial:${runId}`) || row.id !== uuid(`step:initial:${runId}`) || row.activation_key !== hash(`initial:${runId}`)) return step;
+            const origin = (await query('SELECT namespace_key,context_json FROM automation_flow_runs WHERE run_id=?', [runId]))[0];
+            if (!origin || origin.namespace_key !== row.namespace_key) return step;
+            const context = parse(origin.context_json);
+            if (namespaceKey(context) !== row.namespace_key) return step;
+            const revision = (await query('SELECT definition_json FROM automation_revisions WHERE workflow_id=? AND revision=?', [context.workflowId, context.revision]))[0];
+            if (!revision || require('./graph-plan').compileWorkflow(parse(revision.definition_json)).startId !== startId) return step;
+            const progressed = await query('SELECT s.id FROM automation_flow_steps s JOIN automation_flow_members m ON m.unit_id=s.input_unit_id WHERE m.run_id=? AND s.id<>? LIMIT 1', [runId, row.id]);
+            const edges = await query('SELECT receipt_key FROM automation_flow_edges WHERE run_id=? LIMIT 1', [runId]);
+            const sends = await query('SELECT s.id FROM automation_flow_sends s JOIN automation_flow_members m ON m.unit_id=s.unit_id WHERE m.run_id=? LIMIT 1', [runId]);
+            if (progressed.length || edges.length || sends.length) return step;
+            await query('UPDATE automation_flow_steps SET node_id=?,updated_at_ms=? WHERE id=? AND lease_token=?', [startId, now, row.id, row.lease_token]);
+            return { ...step, node_id: startId };
         });
     }
     async function owned(query, step, now) {
@@ -319,6 +347,6 @@ function createGraphStore(db) {
         return { namespace: first.namespace_key, runIds: rows.map(row => row.run_id) };
     }
     const joins = require('./graph-join-store').createJoinStore({ db, locked, putUnit, putStep, receipt, readUnit, uuid, encode, fault });
-    return { initialize, initializeInTransaction: initializeQuery, claim, settle, admitBatch, dueBatch, closeBatch, parkMerge, recordSend, synchronizationBatch, revokeRun, ...joins, readUnit: (id, eligibleOnly = false) => readUnit(db.queryDatabase, id, eligibleOnly) };
+    return { initialize, initializeInTransaction: initializeQuery, claim, repairInitialStep, settle, admitBatch, dueBatch, closeBatch, parkMerge, recordSend, synchronizationBatch, revokeRun, ...joins, readUnit: (id, eligibleOnly = false) => readUnit(db.queryDatabase, id, eligibleOnly) };
 }
 module.exports = { createGraphStore, namespaceKey, uuid };

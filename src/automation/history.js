@@ -20,15 +20,18 @@ function snapshot(row) {
     const fallbackEvent = read(plan.event, {}, eventObject), originalEvent = read(row.event_json, fallbackEvent, eventObject), originalTrace = read(row.trace_json, [], traceArray);
     const members = plan.members === undefined ? [] : read(plan.members, [], value => Array.isArray(value) && value.every(member => object(member) && eventObject(member.event) && displayText(member.text) && displayText(member.defaultPriceText)));
     const latest = plan.aggregate?.mode === 'latest' && members.length > 0;
-    const event = latest ? members.at(-1).event : originalEvent;
+    const representative = members.length ? latest ? members.at(-1) : members[0] : null;
+    // A graph job keeps its durable originating run even when that member has
+    // expired. Public delivery data describes the members still being sent.
+    const event = latest || plan.flowV2 && representative ? representative.event : originalEvent;
     const trace = latest && plan.latestTrace != null ? read(plan.latestTrace, [], traceArray) : originalTrace;
-    return { plan, members, event, trace, originalEvent, originalTrace, invalid };
+    return { plan, members, representative, event, trace, originalEvent, originalTrace, invalid };
 }
 function formatJob(row) {
-    const { plan, members, event, invalid } = snapshot(row);
+    const { plan, members, representative, event, invalid } = snapshot(row);
     return { id: row.id, runId: row.run_id, state: row.state, version: version(row), dueAtMs: Number(row.due_at_ms), deadlineMs: row.deadline_ms == null ? null : Number(row.deadline_ms),
         title: event?.title, url: event?.url, providerId: event?.providerId, scope: row.scope, workflowId: row.workflow_id, ruleRevision: row.revision,
-        targetKind: row.target_kind, targetId: String(row.target_id), destinationId: row.destination_id, parentJobId: row.parent_job_id,
+        targetKind: plan.flowV2 && representative ? representative.targetKind : row.target_kind, targetId: String(plan.flowV2 && representative ? representative.targetId : row.target_id), destinationId: row.destination_id, parentJobId: row.parent_job_id,
         attempts: Number(row.attempts), sentSteps: Number(row.sent_steps), messageId: row.discord_message_id, errorCode: row.last_error_code,
         aggregateItems: members.length || null, aggregateReceived: plan.aggregateCount || members.length || null, aggregateMode: plan.aggregate?.mode || null,
         snapshotInvalid: invalid, preview: invalid ? '保存された配信データを読み取れません。この通知は再送せず、設定から新しい通知を作成してください。' : members.length ? members.map(member => member.defaultPriceText || member.text).join('\n\n') : plan.defaultPriceText || plan.text,
@@ -77,11 +80,18 @@ function createHistory(db, service) {
         if (cursor) { conditions.push('(j.created_at_ms<? OR (j.created_at_ms=? AND j.id<?))'); params.push(cursor.at, cursor.at, cursor.id); }
         const rows = await db.queryDatabase(`${selection} WHERE ${conditions.join(' AND ')} ORDER BY j.created_at_ms DESC,j.id DESC LIMIT 51`, params);
         const selected = rows.slice(0, 50), last = selected.at(-1);
-        return { items: selected.map(formatJob), ...(targeted ? { activity } : {}), nextCursor: rows.length > 50 ? Buffer.from(JSON.stringify({ at: Number(last.created_at_ms), id: last.id })).toString('base64url') : null };
+        const rulePage = targeted && !input.cursor ? await excluded(actor, '', input) : null;
+        return { items: selected.map(formatJob), ...(targeted ? { activity, ruleRuns: rulePage?.items || [], ruleRunsNextCursor: rulePage?.nextCursor || null } : {}), nextCursor: rows.length > 50 ? Buffer.from(JSON.stringify({ at: Number(last.created_at_ms), id: last.id })).toString('base64url') : null };
     }
     async function detail(actor, id) {
         const row = await getRow(actor, id);
         const data = snapshot(row);
+        const retainedRunId = data.plan.flowV2 && data.representative?.runId;
+        if (retainedRunId && retainedRunId !== row.run_id) {
+            const retained = (await db.queryDatabase(`SELECT trace_json FROM automation_runs WHERE id=? AND owner_user_id=? AND scope=?
+                AND (scope='private' OR guild_id<=>?) AND workflow_id<=>? AND revision<=>?`, [retainedRunId, row.owner_user_id, row.scope, row.guild_id, row.workflow_id, row.revision]))[0];
+            if (retained) data.trace = snapshot({ ...row, trace_json: retained.trace_json }).trace;
+        }
         return { ...formatJob(row), event: data.event, trace: data.trace, plan: data.plan, originalEvent: data.originalEvent };
     }
     async function change(actor, id, input) {
@@ -115,14 +125,17 @@ function createHistory(db, service) {
             return { state, dueAtMs: due };
         });
     }
-    async function excluded(actor, after = '') {
+    async function excluded(actor, after = '', input = {}) {
         requireActor(actor);
+        const targeted = input.targetKind != null || input.targetId != null;
+        if (targeted && (!['auto', 'price', 'x'].includes(input.targetKind) || !/^[1-9][0-9]{0,19}$/.test(input.targetId || ''))) fail('INVALID_TARGET', '通知の指定を確認してください。');
         const rows = await db.queryDatabase(`SELECT r.id,r.workflow_id,r.revision,r.target_kind,r.target_id,r.event_json,r.trace_json,r.state,r.created_at_ms FROM automation_runs r
             WHERE r.state IN ('excluded','waiting','flow_pending','expired','failed','cancelled') AND r.id>?
             AND ((r.scope='private' AND r.owner_user_id=?) OR (r.scope='guild' AND r.guild_id=? AND ?=1))
-            AND NOT EXISTS (SELECT 1 FROM automation_jobs j WHERE j.run_id=r.id OR (j.execution_version=2
-                AND JSON_CONTAINS(IF(JSON_VALID(j.plan_json),j.plan_json,'{}'),JSON_OBJECT('runId',r.id),'$.flowV2.members')=1))
-            ORDER BY r.id LIMIT 51`, [after, actor.userId, actor.guildId || null, actor.canView ? 1 : 0]);
+            ${targeted ? 'AND r.target_kind=? AND r.target_id=?' : ''}
+            AND NOT EXISTS (SELECT 1 FROM automation_jobs j WHERE (j.execution_version<>2 AND j.run_id=r.id) OR (j.execution_version=2
+                AND JSON_CONTAINS(IF(JSON_VALID(j.plan_json),j.plan_json,'{}'),JSON_OBJECT('runId',r.id),'$.members')=1))
+            ORDER BY r.id LIMIT 51`, [after, actor.userId, actor.guildId || null, actor.canView ? 1 : 0, ...(targeted ? [input.targetKind, String(input.targetId)] : [])]);
         return { items: rows.slice(0, 50).map(r => ({ ...r, event: parse(r.event_json), trace: parse(r.trace_json), event_json: undefined, trace_json: undefined })), nextCursor: rows.length > 50 ? rows[49].id : null };
     }
     return { list, detail, change, excluded };

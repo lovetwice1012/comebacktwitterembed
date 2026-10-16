@@ -25,6 +25,7 @@ function baseStore(sourceRows) {
         reserveProviderRequest: async () => ({ allowed: true }),
         recordProviderRateLimit: async () => {},
         completeSource: async (_source, result) => calls.complete.push(result),
+        async completeBacklog(source, result) { return this.completeSource(source, result); },
         createItemsAndDeliveries: async (_source, items) => calls.create.push(items),
         rescheduleSource: async (_source, when) => calls.reschedule.push(when),
         cooldownProvider: async () => {},
@@ -176,9 +177,11 @@ test('partial admission clears both validators durably and drains after restart 
     assert.equal(admitted.length, 25); assert.equal(new Set(admitted.map(item => item.contentId)).size, 25);
     assert(admitted.every(item => item.discoveredAtMs === 1000000));
     assert.equal(JSON.parse(saved.cursor_json).deferredObservations, undefined);
-    assert.equal((await run(3000000)).status, 'not_modified');
+    assert.equal(requests.length, 1, 'Draining a complete checkpoint never fetches upstream');
+    assert.equal((await run(3000000)).newItemCount, 0);
     assert.equal(saved.etag, 'new'); assert.equal(saved.last_modified, 'new-date');
     assert.deepEqual(requests[1], { etag: null, lastModified: null });
+    assert.equal((await run(4000000)).status, 'not_modified');
 });
 
 test('HTTP 304 cannot seed a first baseline or discard unadmitted discoveries', async () => {

@@ -155,6 +155,16 @@ function createQueue(db, evaluator, options = {}) {
             const records = kind === 'x' ? [] : await query(`SELECT status,lease_token,lease_expires_at_ms,next_attempt_at_ms${kind === 'auto' ? ',cadence_due_at_ms' : ''} FROM ${table(kind)}_deliveries WHERE id=? FOR UPDATE`, [delivery.id]);
             const record = records[0];
             if (kind !== 'x' && (!record || record.status !== 'pending' || record.lease_token !== delivery.lease_token || Number(record.lease_expires_at_ms) <= clock())) return { state: 'lease_lost' };
+            if (kind !== 'x' && require('../recoveryBootstrap').begin()) {
+                const original = kind === 'auto'
+                    ? (await query('SELECT i.discovered_at_ms FROM auto_watch_items i JOIN auto_watch_deliveries d ON d.item_id=i.id WHERE d.id=?', [delivery.id]))[0]
+                    : (await query('SELECT event_json,created_at FROM price_watch_deliveries WHERE id=?', [delivery.id]))[0];
+                const createdAtMs = kind === 'auto' ? Number(original?.discovered_at_ms) : require('./recovery-origin').priceObservedAt(original || {});
+                if (!require('../recoveryBootstrap').notificationAllowed(`${kind}_watch_delivery`, { id: String(delivery.id), target_id: String(delivery.target_id) }, createdAtMs)) {
+                    await finishLegacy(query, kind, delivery, 'suppressed', now, 'RECOVERY_QUARANTINED');
+                    return { state: 'suppressed', code: 'RECOVERY_QUARANTINED' };
+                }
+            }
             if (kind === 'auto' && record.cadence_due_at_ms === null) {
                 // Old claimants may already hold a native delivery lease.
                 // Freeze its current scheduled time under that same locked
@@ -164,8 +174,9 @@ function createQueue(db, evaluator, options = {}) {
             }
             if (kind === 'x') {
                 if (target?.user_id !== delivery.owner_user_id || target.x_subscription_id !== delivery.subscription_id || target.x_subscription_revision !== delivery.subscription_revision || !require('./x-event-router').matchesXMonitor(target, delivery.x_notification)) return { state: 'cancelled', code: 'X_MONITOR_CHANGED' };
-                const received = await query("SELECT i.id FROM automation_x_push_inbox i JOIN automation_x_subscriptions s ON s.id=i.subscription_id WHERE i.id=? AND i.subscription_id=? AND s.owner_user_id=? AND i.subscription_revision=s.revision AND i.status IN ('received','routed') FOR UPDATE", [delivery.id, delivery.subscription_id, delivery.owner_user_id]);
+                const received = await query("SELECT i.id,i.received_at_ms FROM automation_x_push_inbox i JOIN automation_x_subscriptions s ON s.id=i.subscription_id WHERE i.id=? AND i.subscription_id=? AND s.owner_user_id=? AND i.subscription_revision=s.revision AND i.status IN ('received','routed') FOR UPDATE", [delivery.id, delivery.subscription_id, delivery.owner_user_id]);
                 if (!received.length) return { state: 'cancelled', code: 'X_NOTIFICATION_INBOX_CHANGED' };
+                if (!require('./recovery-origin').inboxAllowed({ id: delivery.id, subscriptionId: delivery.subscription_id, revision: delivery.subscription_revision, receivedAtMs: Number(received[0].received_at_ms) })) return { state: 'cancelled', code: 'RECOVERY_QUARANTINED' };
                 if (delivery.x_processing_mode === 'realtime') {
                     const current = await require('./x-processing-settings').inspectXMonitorProcessing(query, target, now);
                     if (current.effectiveMode !== 'realtime') return { state: 'pending', code: 'X_REALTIME_NOT_ELIGIBLE' };
@@ -304,6 +315,7 @@ function createQueue(db, evaluator, options = {}) {
             || input.processingMode !== undefined && !['batch','realtime'].includes(input.processingMode)) fail('X_NOTIFICATION_INBOX_INVALID', 'X通知の受信元を確認できません。');
         const inbox = (await queryDB("SELECT i.subscription_revision,i.received_at_ms FROM automation_x_push_inbox i JOIN automation_x_subscriptions s ON s.id=i.subscription_id WHERE i.id=? AND i.subscription_id=? AND s.owner_user_id=? AND i.subscription_revision=s.revision AND i.status IN ('received','routed')", [String(input.inboxEventId), input.subscriptionId, String(input.ownerUserId)]))[0];
         if (!inbox) return { state: 'cancelled', code: 'X_NOTIFICATION_INBOX_CHANGED' };
+        if (!require('./recovery-origin').inboxAllowed({ id: input.inboxEventId, subscriptionId: input.subscriptionId, revision: Number(inbox.subscription_revision), receivedAtMs: Number(inbox.received_at_ms) })) return { state: 'cancelled', code: 'RECOVERY_QUARANTINED' };
         const notification = require('./x-event-router').normalizeXNotification(input.payload, { receivedAtMs: Number(inbox.received_at_ms) });
         const delivery = { id: String(input.inboxEventId), target_id: String(input.monitorId), owner_user_id: String(input.ownerUserId),
             subscription_id: input.subscriptionId, subscription_revision: Number(inbox.subscription_revision), x_notification: notification, x_processing_mode: input.processingMode };
@@ -361,6 +373,7 @@ function createQueue(db, evaluator, options = {}) {
     async function validFlowMembers(query, job, plan, lock = false, now = clock()) {
         const members = Array.isArray(plan.members) ? plan.members : [];
         const accepted = [], missing = [];
+        const currentOrigins = await require('./recovery-origin').currentRunIds(query, members.map(member => member?.runId));
         const eligibility = new Map();
         // Locked X/mixed flows share this connection's owner mutex and current
         // snapshot. Do not depend on a DB adapter implicitly merging nested
@@ -368,6 +381,7 @@ function createQueue(db, evaluator, options = {}) {
         const entitlementDb = lock && containsX(job, plan) ? { withDatabaseTransaction: work => work(query) } : db;
         let paused = false, eligibilityCode = null, pauseCode = null, pauseDueAtMs = null;
         for (const member of members) {
+            if (member && !currentOrigins.has(member.runId)) { eligibilityCode = 'RECOVERY_QUARANTINED'; missing.push(member); continue; }
             if (member && now > require('./flow-projector').memberDeadline(member)) { missing.push(member); continue; }
             if (!member || !['auto', 'price', 'x'].includes(member.targetKind) || !/^\d{1,20}$/.test(String(member.targetId))) { missing.push(member); continue; }
             const key = `${member.targetKind}:${member.targetId}`;
@@ -450,6 +464,7 @@ function createQueue(db, evaluator, options = {}) {
         // before those reads establish a REPEATABLE READ snapshot, otherwise a
         // concurrent committed move can mix a new monitor with old ranks/audit.
         if (lock && containsX(job)) await require('./entitlements').lockOwner(query, job.owner_user_id);
+        if (!job.plan?.flowV2 && !(await require('./recovery-origin').currentRunIds(query, [job.run_id])).has(job.run_id)) return { state: 'cancelled', code: 'RECOVERY_QUARANTINED' };
         try { await require('./package-safety').assertPackageSafety(query, job); }
         catch (error) { if (error instanceof require('./safety').SafetyError) return { state: error.decision === 'deny' ? 'excluded' : 'failed', code: error.code }; throw error; }
         if (job.plan?.flowV2) {

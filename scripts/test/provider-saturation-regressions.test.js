@@ -30,12 +30,13 @@ function memorySource() {
 }
 
 test('T1 rolling observations drain complete durable payloads with immutable timestamps and no duplicate IDs', async () => {
-    let saved = memorySource(), items = [], savedItems = [], failure;
+    let saved = memorySource(), items = [], savedItems = [], failure, firstNewAt;
     const store = { computedPollInterval: () => 30000, policyFor: () => ({}), reserveProviderRequest: async () => ({ allowed: true }),
         recordProviderRateLimit: async () => {}, atomicSourceCompletion: true,
         completeSource: async (_source, result) => { savedItems.push(...result.items || []); saved = { ...saved, cursor_json: JSON.stringify(result.cursor) }; },
+        async completeBacklog(source, result) { return this.completeSource(source, result); },
         failSource: async (_source, result) => { failure = result; } };
-    const run = now => runner.processSource(structuredClone(saved), { now, store, config: {}, sourceCounts: new Map(), fetchSource: async () => ({ items, state: {} }) });
+    const run = now => runner.processSource(structuredClone(saved), { now, store, config: {}, sourceCounts: new Map(), fetchSource: async () => { if (items[0]?.contentId.startsWith('new-')) firstNewAt ??= now; return { items, state: {} }; } });
     const page = prefix => Array.from({ length: 100 }, (_, i) => ({ contentId: `${prefix}-${i}`, title: `title ${prefix}-${i}`,
         url: `https://github.com/octocat/repo/commit/${prefix}-${i}`, publishedAtMs: 1000, metadata: { retained: true } }));
     items = page('old');
@@ -46,7 +47,7 @@ test('T1 rolling observations drain complete durable payloads with immutable tim
     assert.equal(savedItems.length, 200);
     assert.equal(new Set(savedItems.map(item => item.contentId)).size, 200);
     assert(savedItems.filter(item => item.contentId.startsWith('old-')).every(item => item.discoveredAtMs === 100000 && item.metadata.retained));
-    assert(savedItems.filter(item => item.contentId.startsWith('new-')).every(item => item.discoveredAtMs === 200000));
+    assert(savedItems.filter(item => item.contentId.startsWith('new-')).every(item => item.discoveredAtMs === firstNewAt));
     assert.equal(JSON.parse(saved.cursor_json).deferredItems, undefined);
     assert.equal((await run(900000)).newItemCount, 0);
     assert.equal(failure, undefined);
@@ -157,7 +158,7 @@ async function commandFixture() {
         const watch = load('src/commands/handlers/autoextract/watch.js', { '../../../providers/autoWatch/store': auto, '../../../db': binding,
             '../../../db_schema': { ...schema, ensureDatabaseSchema: async () => {} }, '../../../errorTracking': { recordError: () => {} } });
         const price = load('src/components/priceWatch.js', { '../providers/priceWatch/store': nativePrice,
-            '../providers/autoWatch/store': auto, './_permissionCheck': { isAllowed: async () => true } });
+            '../providers/autoWatch/store': auto, '../db': binding, '../db_schema': { ...schema, ensureDatabaseSchema: async () => {} }, './_permissionCheck': { isAllowed: async () => true } });
         const interaction = () => {
             let attempts = 0;
             const value = { locale: 'ja', user: { id: U }, guildId: G, channelId: C, member: { id: U }, client: { user: { id: B } },

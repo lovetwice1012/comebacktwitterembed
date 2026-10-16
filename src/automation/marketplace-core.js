@@ -45,18 +45,18 @@ function createMarketplace(db, options = {}) {
     async function installedOrigin(actor, workflowId, query = db.queryDatabase, lock = false) {
         // Authority comes from a readable local workflow and its server-created
         // install row, never from a bundle's text/name or client-supplied origin.
-        await service.getRow('workflow', actor, workflowId, false, query, lock);
-        const rows = await query(`SELECT package_id,version FROM automation_package_installs WHERE workflow_id=?${lock ? ' FOR UPDATE' : ''}`, [workflowId]);
-        if (rows.length > 1) fail('BUNDLE_CHECK_FAILED', 'ルールの配布元を確認できません。', 503);
-        if (!rows.length) return null;
-        const origin = rows[0], edition = await storedEdition(origin.package_id, Number(origin.version), query);
+        const workflow = await service.getRow('workflow', actor, workflowId, false, query, lock);
+        const provenance = require('./workflow-package-provenance');
+        const origin = provenance.requireKnownEdition(await provenance.revisionOrigin(query, workflowId, Number(workflow.revision), Number(workflow.revision)));
+        if (!origin) return null;
+        const edition = await storedEdition(origin.id, origin.version, query);
         // Source ownership is immutable. Do not lock its package after the
         // workflow: install/update takes those locks in the opposite order.
-        const parent = (await query('SELECT owner_user_id FROM automation_packages WHERE id=?', [origin.package_id]))[0];
+        const parent = (await query('SELECT owner_user_id FROM automation_packages WHERE id=?', [origin.id]))[0];
         if (!parent?.owner_user_id) fail('BUNDLE_CHECK_FAILED', '配布元の保存済みデータを確認できません。', 503);
         const description = retainDescription(retainDescription(edition.bundle.description, edition.record.description),
-            `Source: ${edition.record.title} (${origin.package_id}) v${origin.version}; author ${parent.owner_user_id}`);
-        return { packageId: origin.package_id, version: Number(origin.version), ...edition, bundle: { ...edition.bundle, description } };
+            `Source: ${edition.record.title} (${origin.id}) v${origin.version}; author ${parent.owner_user_id}`);
+        return { packageId: origin.id, version: origin.version, ...edition, bundle: { ...edition.bundle, description } };
     }
     const privileged = (actor, row) => row.owner_user_id === actor.userId || actor.isAdmin && row.visibility !== 'private';
     async function getRow(actor, id, shareKey, write = false, query = db.queryDatabase, lock = false) {
@@ -179,7 +179,8 @@ function createMarketplace(db, options = {}) {
         return db.withDatabaseTransaction(async query => {
             const origin = await installedOrigin(actor, id, query, true);
             const rule = await service.getWorkflow(actor, id), dictionaries = Object.create(null);
-            for (const [alias, ref] of Object.entries(rule.bindings.dictionaries || {})) { await service.getRow('dictionary', actor, ref.id); dictionaries[alias] = await service.dictionaryData(ref.id, ref.revision); }
+            const bindings = await service.validateBindings(actor, rule.draft, { dictionaries: rule.bindings.dictionaries || {} }, query);
+            for (const [alias, ref] of Object.entries(bindings.dictionaries)) dictionaries[alias] = await service.dictionaryData(ref.id, ref.revision);
             const description = origin ? retainDescription(origin.bundle.description, origin.record.description) : undefined;
             return validateBundle({ schemaVersion: 1, kind: 'workflow', workflow: rule.draft, dictionaries,
                 ...(origin ? { license: origin.bundle.license || '', description } : {}) });

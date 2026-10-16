@@ -39,11 +39,11 @@ for (const obsoleteError of [false, true]) test(`N8 last selected delivery wins 
     } finally { await f.close(); }
 });
 
-async function workspaceFixture({ paginate = false, failAfterSave = false, guildId, ruleScope = "private", canEdit = true, xOnly = false, tokenRace = false, xCompanion = false } = {}) {
+async function workspaceFixture({ paginate = false, failAfterSave = false, guildId, ruleScope = "private", canEdit = true, xOnly = false, tokenRace = false, xCompanion = false, failRestoreRead = false } = {}) {
     const f = await reactFixture('export { AutomationWorkspace } from "./components/automation/automation-workspace";'); flowEnvironment(f);
     const bindings = { destinations: {}, dictionaries: {} }, stored = new Map(), requests = [];
     for (const id of ['A', 'B']) { const draft = { ...template('all', 'now', 'normal'), name: `Rule ${id}` }; stored.set(id, { id, name: draft.name, draft, bindings, scope: ruleScope, revision: 2, activeRevision: 1, enabled: true }); }
-    let committed = false;
+    let committed = false, restoredReadFailure = false;
     const xRows = xOnly ? [{ id: 'X', name: 'Owner X monitor', revision: 7, enabled: true, state: 'active', notificationSettings: { workflowId: 'A', destinationId: 'owned-destination', subscriptionId: 'owned-receiver' } }] : [];
     if (xCompanion) xRows.push({ ...structuredClone(xRows[0]), id: 'X2', name: 'Other X monitor' });
     const targets = id => xRows.filter(row => row.notificationSettings.workflowId === id).map(row => ({ ...row, kind: 'x', scope: 'private', workflowId: id, destinationId: row.notificationSettings.destinationId }));
@@ -59,15 +59,17 @@ async function workspaceFixture({ paginate = false, failAfterSave = false, guild
         } else if (route === 'workflows' && method === 'POST') { result = { id: 'copy', name: body.definition.name, draft: body.definition, bindings: body.bindings, scope: body.scope, revision: 1, activeRevision: null, enabled: false }; stored.set(result.id, result); committed = true; }
         else if (route.startsWith('workflows/')) {
             const [, id, action] = route.split('/'); result = stored.get(id);
+            if (!action && method === 'GET' && restoredReadFailure) return new Response(JSON.stringify({ error: 'synthetic restored detail read failure' }), { status: 503 });
             if (action === 'history') result = [{ revision: 1, createdAtMs: 1 }];
             else if (action === 'activation-preview') result = { expectedRevision: result.revision, expectedTargetsToken: 'fixture-target-token', affectedTargets: targets(id) };
             else if (action === 'activate') { assert.equal(body.expectedTargetsToken, 'fixture-target-token'); if (tokenRace) return new Response(JSON.stringify({ code: 'WORKFLOW_TARGETS_CHANGED', error: 'Targets changed' }), { status: 409 }); result = { ...result, enabled: true, activeRevision: result.revision }; stored.set(id, result); }
-            else if (action === 'restore') { result = { ...result, revision: 3, name: 'Restored', draft: { ...result.draft, name: 'Restored' } }; stored.set(id, result); result = { revision: 3 }; }
+            else if (action === 'restore') { restoredReadFailure = failRestoreRead; result = { ...result, revision: 3, name: 'Restored', draft: { ...result.draft, name: 'Restored' } }; stored.set(id, result); result = { revision: 3 }; }
             else if (method === 'PATCH') { result = { ...result, draft: body.definition, name: body.definition.name, bindings: body.bindings, revision: result.revision + 1 }; stored.set(id, result); committed = true; result = { revision: result.revision }; }
         } else if (route === 'validate') {
             try { const definition = body.text === undefined ? body.definition : parseWorkflow(body.text, body.format); result = { ...validateWorkflow(definition), definition, text: stringifyDraft(definition, body.format) }; }
             catch { result = { valid: false, issues: [{ message: 'invalid source' }] }; }
-        } else if (route === 'x-monitors') result = { items: structuredClone(xRows), nextCursor: null };
+        } else if (route === 'import') { if (body.preview) result = { workflow: { name: 'Imported workflow' } }; else { result = { workflow: { id: 'imported', name: 'Imported workflow', draft: { ...template('all', 'now', 'normal'), name: 'Imported workflow' }, bindings, scope: 'private', revision: 1, activeRevision: null, enabled: false } }; stored.set('imported', result.workflow); committed = true; } }
+        else if (route === 'x-monitors') result = { items: structuredClone(xRows), nextCursor: null };
         else if (route === 'x-monitors/X' && method === 'PATCH') { assert.equal(body.expectedRevision, xRows[0].revision); xRows[0] = { ...xRows[0], notificationSettings: body.notificationSettings, revision: xRows[0].revision + 1 }; result = { item: structuredClone(xRows[0]) }; }
         else if (route === 'destinations' || route === 'dictionaries') result = { items: [], nextCursor: null };
         else if (route === 'monitors/auto' || route === 'monitors/price') result = { items: [], nextCursor: null };
@@ -75,7 +77,7 @@ async function workspaceFixture({ paginate = false, failAfterSave = false, guild
         return new Response(JSON.stringify(result), { status: 200 });
     });
     await f.render(f.React.createElement(f.exports.AutomationWorkspace, { viewerId: '222222222222222222', guildId, canEdit })); await tick(f);
-    return Object.assign(f, { stored, requests, xRows });
+    return Object.assign(f, { stored, requests, xRows, recoverReads: () => { restoredReadFailure = false; committed = false; } });
 }
 async function openRule(f, name = 'Rule A') { await f.click('通知ルール'); await click(f, [...f.container.querySelectorAll('.studio-rule-card')].find(node => node.textContent.includes(name))); await tick(f, 450); }
 test('N9 all workflow pages participate in search and selection', async () => {
@@ -126,7 +128,7 @@ for (const [ruleScope, listScope] of [['private', 'guild'], ['guild', 'private']
     try {
         await f.fill(f.field('作成先'), listScope); await openRule(f);
         await f.click('ルールを複製'); await tick(f, 450);
-        const create = f.requests.find(row => row.route === 'workflows' && row.method === 'POST'); assert.equal(create.body.scope, ruleScope);
+        const create = f.requests.find(row => row.route === 'workflows' && row.method === 'POST'); assert.equal(create.body.scope, ruleScope); assert.equal(create.body.sourceWorkflowId, "A"); assert.equal(create.body.expectedSourceRevision, 2);
         assert.equal(f.stored.get('copy').scope, ruleScope);
     } finally { await f.close(); }
 });
@@ -212,7 +214,7 @@ test('S7-3 an isolated X clone uses the X CAS route and preserves destination an
         await f.click('ルールを複製して、この通知だけに適用');
         const patch = f.requests.find(row => row.route === 'x-monitors/X' && row.method === 'PATCH');
         assert.deepEqual(patch.body, { expectedRevision: 7, notificationSettings: { workflowId: 'copy', destinationId: 'owned-destination', subscriptionId: 'owned-receiver' } });
-        assert.equal(f.xRows[0].revision, 8); assert.equal(f.xRows[1].notificationSettings.workflowId, 'A'); assert.equal(f.stored.get('A').activeRevision, 1);
+        assert.equal(f.requests.find(row => row.route === 'workflows' && row.method === 'POST').body.sourceWorkflowId, 'A'); assert.equal(f.requests.find(row => row.route === 'workflows' && row.method === 'POST').body.expectedSourceRevision, 2); assert.equal(f.xRows[0].revision, 8); assert.equal(f.xRows[1].notificationSettings.workflowId, 'A'); assert.equal(f.stored.get('A').activeRevision, 1);
     } finally { await f.close(); }
 });
 test('S20-1 an atomic target-token conflict keeps application pending and exposes no false success', async () => {
@@ -236,5 +238,30 @@ test('N6 pre-job rule history shows durable waits and preserves user exclusion r
         await f.render(f.React.createElement(f.exports.DeliveryHistory, { api, canEdit: true })); await f.settle(); await f.click('除外理由を確認');
         assert(f.container.textContent.includes('ルールの処理履歴')); assert(f.container.textContent.includes('指定時刻まで待機中')); assert(f.container.textContent.includes('利用者が指定した対象外の理由')); assert(f.container.textContent.includes('配信期限を過ぎました。')); assert(!f.container.textContent.includes('FLOW_WAITING')); assert(!f.container.textContent.includes('DEADLINE_EXCEEDED'));
         assert(f.container.querySelector('[data-job-id="normal"]')); assert(f.container.querySelector('time'));
+    } finally { await f.close(); }
+});
+
+
+test('S24-2 restored workflow commit blocks obsolete restore and resumes the saved revision after a failed read', async () => {
+    const f = await workspaceFixture({ failRestoreRead: true });
+    try {
+        await openRule(f); await f.click('テキスト'); await f.fill(f.container.querySelector('[aria-label="ルールJSONまたはYAML"]'), 'nodes: [pending old text'); await tick(f, 450); await f.click('変更履歴'); await f.click('この版を下書きに復元');
+        assert.equal(f.dom.window.sessionStorage.length, 0, 'discarded text must not be recovered with the committed restore revision');
+        assert.equal(f.stored.get('A').revision, 3); assert(f.container.querySelector('[aria-label="保存後の表示の再取得"]'));
+        const old = byText(f.container, 'この版を下書きに復元'); if (old) { assert(old.matches(':disabled')); await f.act(async () => old.click()); }
+        assert.equal(f.requests.filter(row => row.route.endsWith('/restore')).length, 1);
+        f.recoverReads(); await f.click('保存後の表示を更新'); await tick(f, 450); assert.equal(f.container.querySelector('[aria-label="ルール名"]').value, 'Restored');
+        await f.fill(f.container.querySelector('[aria-label="ルール名"]'), 'After restore'); await tick(f, 450); await f.click('下書きを保存'); assert.equal(f.requests.filter(row => row.method === 'PATCH').at(-1).body.expectedRevision, 3);
+    } finally { await f.close(); }
+});
+test('S24-2 imported workflow commit retains its returned identity while resource-list recovery performs no duplicate import', async () => {
+    const f = await workspaceFixture({ failAfterSave: true });
+    try {
+        await f.click('通知ルール'); const input = f.container.querySelector('.studio-import input');
+        Object.defineProperty(input, 'files', { configurable: true, value: [{ name: 'workflow.json', size: 100, text: async () => JSON.stringify({ schemaVersion: 1, kind: 'workflow', workflow: template('all', 'now', 'normal'), dictionaries: {} }) }] });
+        await f.act(async () => input.dispatchEvent(new f.dom.window.Event('change', { bubbles: true })));
+        assert(f.stored.has('imported')); assert(f.container.querySelector('[aria-label="保存後の表示の再取得"]')); assert(input.matches(':disabled'));
+        f.recoverReads(); await f.click('保存後の表示を更新'); await tick(f, 450);
+        assert.equal(f.requests.filter(row => row.route === 'import' && !row.body.preview).length, 1); assert.equal(f.container.querySelector('[aria-label="ルール名"]').value, 'Imported workflow');
     } finally { await f.close(); }
 });

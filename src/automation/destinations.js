@@ -1,4 +1,5 @@
 'use strict';
+const { withChannelWebhookOperation } = require('./webhook-registration');
 
 const { AutomationError, requireActor, hash } = require('./service');
 const ID = /^\d{16,22}$/;
@@ -116,9 +117,16 @@ function createDestinations(db, service, options = {}) {
             webhook.token = parts.token;
         }
         if (webhook.type !== 1 || webhook.guild_id !== actor.guildId || !ID.test(webhook.channel_id || '')) fail('WEBHOOK_GUILD_MISMATCH', 'このサーバーの受信Webhookを使ってください。');
-        const ctx = await verifyChannel(actor, actor.guildId, webhook.channel_id);
+        await verifyChannel(actor, actor.guildId, webhook.channel_id);
         const parts = webhookParts(`https://discord.com/api/webhooks/${webhook.id}/${webhook.token}`);
-        return db.withDatabaseTransaction(async query => {
+        const channelId = webhook.channel_id;
+        return withChannelWebhookOperation(db, actor.guildId, channelId, async query => {
+            // A channel-creation request may have failed and removed this hook
+            // while the existing-URL request waited for its SQL lock. Check the
+            // live endpoint again before committing a destination using it.
+            const current = await call(`/webhooks/${parts.id}/${parts.token}`);
+            if (current.id !== parts.id || current.type !== 1 || current.guild_id !== actor.guildId || current.channel_id !== channelId) fail('WEBHOOK_DESTINATION_CHANGED', '通知先が変更されています。Webhookを確認して再登録してください。', 409);
+            const ctx = await verifyChannel(actor, actor.guildId, channelId);
             await query('INSERT INTO webhook_endpoints (webhook_url_hash,webhook_url) VALUES (?,?) ON DUPLICATE KEY UPDATE id=LAST_INSERT_ID(id)', [hash(parts.url), parts.url]);
             const rows = await query('SELECT id FROM webhook_endpoints WHERE webhook_url_hash=?', [hash(parts.url)]);
             return service.saveDestination(actor, input, { webhookEndpointId: String(rows[0].id), guildId: actor.guildId, channelId: ctx.channel.id, createdByBot }, id);

@@ -230,7 +230,8 @@ test('real SQL handle-only registration needs no numeric ID and keeps internal i
 
 test('real SQL handle-only creation reuses a legacy numeric registration without changing its settings', { timeout: 30000 }, async () => fixture(async db => {
     const quota = quotaFor(db), legacy = await quota.register(A, target(40));
-    const duplicate = await quota.register(A, { accountHandle: '@FIXTURE40', name: 'ignored duplicate name' });
+    await assert.rejects(quota.register(A, { accountHandle: '@FIXTURE40', name: 'changed duplicate name' }), errorCode('X_MONITOR_REGISTRATION_CONFLICT'));
+    const duplicate = await quota.register(A, { accountHandle: '@FIXTURE40' });
     assert.deepEqual(duplicate, legacy); assert.equal((await quota.summary(A)).personal.used, 1);
     await assert.rejects(quota.register(A, { accountId: '98765', accountHandle: 'fixture40' }), errorCode('X_MONITOR_HANDLE_CONFLICT'));
     assert.equal((await quota.list(A)).items.length, 1);

@@ -71,6 +71,7 @@ function createXPushRuntime(db, queue, options = {}) {
         for (const row of rows) {
             if (stopped || controller.signal.aborted) return;
             assertAllowed();
+            if (!require('./recovery-origin').inboxAllowed(row)) { await gateway.store.markRecoveryQuarantined(lease, row.id); continue; }
             try {
                 const payload = await gateway.decryptQuarantinedInbox(lease, row);
                 if (stopped || controller.signal.aborted) return;
@@ -125,6 +126,14 @@ function createXPushRuntime(db, queue, options = {}) {
             async function route(inbox, processingMode) {
                 if (halted() || inbox.status !== 'received') return;
                 assertAllowed(); await gateway.store.assertLease(lease);
+                // Restored ciphertext is retained for investigation. Its
+                // original receipt time is checked before any decryption or
+                // creation of a post-recovery run/job.
+                if (!require('./recovery-origin').inboxAllowed(inbox)) {
+                    await gateway.store.markRecoveryQuarantined(lease, inbox.id);
+                    if (!halted()) processed.add(inbox.id);
+                    return;
+                }
                 try {
                     const payload = await gateway.decryptInbox(lease, inbox);
                     if (halted()) return;

@@ -30,12 +30,14 @@ export function DeliveryHistory({ api, canEdit, active = true }: { api: Automati
   const [state, setState] = useState(""), [items, setItems] = useState<any[]>([]), [cursor, setCursor] = useState<string | null>(null), [selected, setSelected] = useState<any>(null);
   const [busy, setBusy] = useState(false), [error, setError] = useState(""), [notice, setNotice] = useState(""), [due, setDue] = useState(""), [excluded, setExcluded] = useState<any[] | null>(null);
   const [loading, setLoading] = useState(true), [listError, setListError] = useState("");
+  const [committedDetail, setCommittedDetail] = useState<string | null>(null);
   const listVersion = useRef(0), detailVersion = useRef(0), detailHeading = useRef<HTMLHeadingElement>(null), listHeading = useRef<HTMLHeadingElement>(null), root = useRef<HTMLElement>(null), returnJob = useRef("");
   const selectedRef = useRef(selected), activeRef = useRef(active); selectedRef.current = selected; activeRef.current = active;
+  const stateRef = useRef(state); stateRef.current = state;
   const load = useCallback(async (after?: string) => {
     if (!activeRef.current) return;
-    const version = ++listVersion.current; setLoading(true); setListError("");
-    try { const result = await api(`jobs?state=${state}${after ? `&cursor=${after}` : ""}`); if (!activeRef.current || version !== listVersion.current) return; setItems(old => after ? [...old, ...result.items] : result.items); setCursor(result.nextCursor); }
+    const version = ++listVersion.current, requestedState = stateRef.current; setLoading(true); setListError("");
+    try { const result = await api(`jobs?state=${requestedState}${after ? `&cursor=${after}` : ""}`); if (!activeRef.current || version !== listVersion.current || requestedState !== stateRef.current) return; setItems(old => after ? [...old, ...result.items] : result.items); setCursor(result.nextCursor); }
     catch (cause: any) { if (activeRef.current && version === listVersion.current) setListError(cause.message); }
     finally { if (activeRef.current && version === listVersion.current) setLoading(false); }
   }, [api, state]);
@@ -43,7 +45,7 @@ export function DeliveryHistory({ api, canEdit, active = true }: { api: Automati
   const reloadDetail = useCallback(async () => {
     const item = selectedRef.current; if (!item || !activeRef.current) return;
     const version = ++detailVersion.current;
-    try { const next = await api(`jobs/${item.id}`); if (activeRef.current && version === detailVersion.current && selectedRef.current?.id === item.id) { setSelected(next); setError(""); } }
+    try { const next = await api(`jobs/${item.id}`); if (activeRef.current && version === detailVersion.current && selectedRef.current?.id === item.id) { setSelected(next); setCommittedDetail(null); setError(""); } }
     catch (cause: any) { if (activeRef.current && version === detailVersion.current) setError(cause.message); }
   }, [api]);
   function closeDetail() { detailVersion.current++; setSelected(null); requestAnimationFrame(() => { const cards = [...(root.current?.querySelectorAll<HTMLButtonElement>("[data-job-id]") || [])]; const target = cards.find(node => node.dataset.jobId === returnJob.current) || cards[0] || listHeading.current; target?.focus(); target?.scrollIntoView?.({ block: "nearest" }); }); }
@@ -52,16 +54,24 @@ export function DeliveryHistory({ api, canEdit, active = true }: { api: Automati
     try {
       const next = await api(`jobs/${id}`);
       if (!activeRef.current || version !== detailVersion.current) return;
-      setSelected(next); setDue(""); setError("");
+      setSelected(next); setCommittedDetail(null); setDue(""); setError("");
     } catch (cause: any) { if (activeRef.current && version === detailVersion.current) setError(cause.message); }
   }
   const task = async (work: () => Promise<void>) => { setBusy(true); setError(""); setNotice(""); try { await work(); } catch (e: any) { setError(e.message); } finally { setBusy(false); } };
   useEffect(() => { if (active) void load(); return () => { listVersion.current++; }; }, [load, active]);
   useEffect(() => { if (active) void reloadDetail(); return () => { detailVersion.current++; }; }, [reloadDetail, active]);
   async function change(action: string) {
-    const result = await api(`jobs/${selected.id}`, "PATCH", { action, expectedVersion: selected.version, dueAtMs: action === "reschedule" ? new Date(due).getTime() : undefined });
-    await load(); setSelected(await api(`jobs/${selected.id}`));
+    const item = selected;
+    if (!item || committedDetail === item.id) return;
+    const version = ++detailVersion.current;
+    const result = await api(`jobs/${item.id}`, "PATCH", { action, expectedVersion: item.version, dueAtMs: action === "reschedule" ? new Date(due).getTime() : undefined });
+    const current = () => activeRef.current && version === detailVersion.current && selectedRef.current?.id === item.id;
+    const known = { ...item, ...result };
+    setItems(previous => previous.map(row => row.id === item.id ? { ...row, ...result } : row));
+    if (current()) { setSelected(known); setCommittedDetail(item.id); }
     setNotice(action === "reschedule" ? `${new Date(result.dueAtMs).toLocaleString()} に予約しました。` : action === "cancel" ? "配信を取り消しました。" : "配信を再試行します。");
+    try { await load(); const next = await api(`jobs/${item.id}`); if (current()) { setSelected(next); setCommittedDetail(null); } }
+    catch { if (current()) setError("配信の変更は保存済みです。［配信の詳細を更新］で最新の状態を確認してください。"); }
   }
   return <section ref={root} className="space-y-4 rounded border bg-card p-4"><h2 ref={listHeading} tabIndex={-1} className="font-semibold">配信予定・履歴</h2>
     {error && <p role="alert" className="text-sm text-destructive">{error}</p>}{notice && <p role="status" className="text-sm">{notice}</p>}
@@ -74,7 +84,7 @@ export function DeliveryHistory({ api, canEdit, active = true }: { api: Automati
       <details><summary className="text-sm">処理の詳細</summary><ol className="automation-trace">{selected.trace.map((trace: any, i: number) => <li key={i}><Circle size={12} aria-hidden="true" /><span>{trace.nodeId}</span><span>{valueLabels[trace.outcome] || trace.outcome}</span>{trace.reason && <span>{trace.reason}</span>}{trace.dueAtMs && <time>{new Date(trace.dueAtMs).toLocaleString()}</time>}</li>)}</ol></details>
       {selected.parentJobId && <button className={button} onClick={() => void openDetail(selected.parentJobId)}>まとめ通知を開く</button>}
       {selected.scope === "guild" && !canEdit && <p className="automation-critical-note"><LockKeyhole size={16} aria-hidden="true" />配信の変更にはサーバーの編集権限が必要です。</p>}
-      {!selected.parentJobId && (selected.scope !== "guild" || canEdit) && <div className="space-y-3">{["pending", "held", "leased"].includes(selected.state) && <><label className="grid gap-2 text-sm">配信時刻（ブラウザの時刻）<input type="datetime-local" className={field + " max-w-sm"} value={due} onChange={e => setDue(e.target.value)} /></label><p className="automation-critical-note"><Info size={16} aria-hidden="true" />通知可能時間に合わせて予約します。</p><div className="flex flex-wrap gap-2"><button className={button} disabled={busy || !due} onClick={() => void task(() => change("reschedule"))}>配信を予約し直す</button><button className={button + " text-destructive"} disabled={busy} onClick={() => { if (confirm("この配信を取り消しますか？")) void task(() => change("cancel")); }}>配信を取り消す</button></div></>}{selected.state === "failed" && selected.sentSteps === 0 && !selected.snapshotInvalid && <button className={button} disabled={busy} onClick={() => { if (confirm("この通知の送信を再試行しますか？")) void task(() => change("retry")); }}>送信を再試行</button>}</div>}
+      {!selected.parentJobId && (selected.scope !== "guild" || canEdit) && <fieldset disabled={busy || committedDetail === selected.id} className="space-y-3">{["pending", "held", "leased"].includes(selected.state) && <><label className="grid gap-2 text-sm">配信時刻（ブラウザの時刻）<input type="datetime-local" className={field + " max-w-sm"} value={due} onChange={e => setDue(e.target.value)} /></label><p className="automation-critical-note"><Info size={16} aria-hidden="true" />通知可能時間に合わせて予約します。</p><div className="flex flex-wrap gap-2"><button className={button} disabled={busy || !due} onClick={() => void task(() => change("reschedule"))}>配信を予約し直す</button><button className={button + " text-destructive"} disabled={busy} onClick={() => { if (confirm("この配信を取り消しますか？")) void task(() => change("cancel")); }}>配信を取り消す</button></div></>}{selected.state === "failed" && selected.sentSteps === 0 && !selected.snapshotInvalid && <button className={button} disabled={busy} onClick={() => { if (confirm("この通知の送信を再試行しますか？")) void task(() => change("retry")); }}>送信を再試行</button>}</fieldset>}
       {["unknown", "partial"].includes(selected.state) && <p className="automation-critical-note"><Info size={16} aria-hidden="true" />Discordで送信結果を確認してください。重複を防ぐため再送できません。</p>}
       <details><summary className="text-sm">取得時のデータ</summary><pre className="max-h-64 overflow-auto whitespace-pre-wrap text-xs">{JSON.stringify(selected.event, null, 2)}</pre></details>
       {selected.aggregateMode === "latest" && selected.aggregateReceived > 1 && <details><summary className="text-sm">まとめ通知の最初のイベント</summary><pre className="max-h-64 overflow-auto whitespace-pre-wrap text-xs">{JSON.stringify(selected.originalEvent, null, 2)}</pre></details>}

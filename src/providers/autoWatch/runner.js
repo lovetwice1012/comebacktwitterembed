@@ -48,9 +48,13 @@ function parseCursor(raw) {
             || !item.contentId || typeof item.url !== 'string' || !item.url
             || !Number.isSafeInteger(item.discoveredAtMs) || item.discoveredAtMs < 0)
             || Buffer.byteLength(JSON.stringify(deferredItems)) > MAX_DEFERRED_BYTES) throw new Error('Invalid deferred items');
-        /** @type {{ seenContentIds: string[], admissionVersion?: number, deferredObservations?: Array<[string, number]>, deferredItems?: any[], baselineMaxNumericContentId?: string }} */
+        /** @type {{ seenContentIds: string[], admissionVersion?: number, deferredObservations?: Array<[string, number]>, deferredItems?: any[], nextRemoteCheckAtMs?: number, baselineMaxNumericContentId?: string }} */
         const cursor = { seenContentIds, ...(deferredObservations.length ? { deferredObservations } : {}) };
         if (deferredItems.length) cursor.deferredItems = deferredItems;
+        if (value?.nextRemoteCheckAtMs !== undefined) {
+            if (!Number.isSafeInteger(value.nextRemoteCheckAtMs) || value.nextRemoteCheckAtMs < 0) throw new Error('Invalid remote observation schedule');
+            cursor.nextRemoteCheckAtMs = value.nextRemoteCheckAtMs;
+        }
         if (value?.admissionVersion === 1) cursor.admissionVersion = 1;
         if (/^\d{1,20}$/.test(String(value?.baselineMaxNumericContentId || ''))) {
             cursor.baselineMaxNumericContentId = String(value.baselineMaxNumericContentId);
@@ -122,6 +126,16 @@ function retryAfterFromResponse(response, payload) {
 
 async function processSource(source, context) {
     const { now, store, config, fetch, fetchSource, sourceCounts } = context;
+    // A complete durable observation is already independent of upstream health
+    // and request budgets. Drain it before attempting any new remote operation.
+    let durableCursor;
+    try { durableCursor = parseCursor(source.cursor_json); }
+    catch (error) {
+        await store.failSource(source, { error, nextCheckAtMs: sourceRetryAt(source, now, error), checkedAtMs: now });
+        recordError(error, { errorType: 'auto_watch_source_failed', source: 'autoWatchMonitor.processSource', providerId: source.provider_id, sourceId: source.id });
+        return { status: 'failed', providerId: source.provider_id, sourceId: source.id, errorCode: error.code };
+    }
+    if (durableCursor.deferredItems?.length) return drainBacklog(source, durableCursor, context);
     const activeCount = sourceCounts.get(source.provider_id) || 1;
     const pollIntervalMs = store.computedPollInterval(source, activeCount, config);
     const standardNextCheck = now + pollIntervalMs;
@@ -132,9 +146,8 @@ async function processSource(source, context) {
     }
 
     try {
-        const cursor = parseCursor(source.cursor_json);
-        // Partial admission must survive a restart. Fetch the representation
-        // again unconditionally until every observed item has been admitted.
+        const cursor = durableCursor;
+        // Legacy ID-only admission checkpoints still need a full observation.
         // Old cursors may already carry a validator for a partially admitted
         // response. Repair them with one full observation at the normal poll.
         const needsFullObservation = !source.initialized_at_ms || cursor.admissionVersion !== 1 || !!cursor.deferredObservations?.length || !!cursor.deferredItems?.length;
@@ -194,8 +207,9 @@ async function processSource(source, context) {
         nextCursor.admissionVersion = 1;
         delete nextCursor.deferredObservations;
         delete nextCursor.deferredItems;
+        delete nextCursor.nextRemoteCheckAtMs;
         if (deferredObservations.length) nextCursor.deferredObservations = deferredObservations;
-        if (deferredItems.length) nextCursor.deferredItems = deferredItems;
+        if (deferredItems.length) { nextCursor.deferredItems = deferredItems; nextCursor.nextRemoteCheckAtMs = standardNextCheck; }
         if (Buffer.byteLength(JSON.stringify(nextCursor)) > 15 * 1024 * 1024) throw Object.assign(new Error('Discovery cursor exceeds its durable metadata budget.'), { code: 'AUTO_WATCH_BACKLOG_LIMIT' });
         if (admitted.length && !store.atomicSourceCompletion) await store.createItemsAndDeliveries(source, admitted, now);
         await store.completeSource(source, {
@@ -215,6 +229,38 @@ async function processSource(source, context) {
         await store.failSource(source, { error, nextCheckAtMs: retryAt, checkedAtMs: now });
         recordError(error, { errorType: 'auto_watch_source_failed', source: 'autoWatchMonitor.processSource', providerId: source.provider_id, sourceId: source.id });
         return { status: 'failed', providerId: source.provider_id, sourceId: source.id, errorCode: error?.code || 'AUTO_WATCH_UPSTREAM_ERROR' };
+    }
+}
+
+async function drainBacklog(source, cursor, context) {
+    const { now, store } = context;
+    const delay = integer(process.env.AUTO_WATCH_TICK_MS, DEFAULT_TICK_MS, 5000, 10 * MINUTE);
+    try {
+        if (typeof store.completeBacklog !== 'function') throw Object.assign(new Error('The atomic discovery backlog store is unavailable.'), { code: 'AUTO_WATCH_BACKLOG_STORE_REQUIRED' });
+        const known = new Set(cursor.seenContentIds);
+        const pending = normalizeItems(cursor.deferredItems).filter(item => !known.has(String(item.contentId)) && !isHistoricalAtBaseline(source.provider_id, cursor, item));
+        const admitted = pending.slice(0, integer(process.env.AUTO_WATCH_MAX_NEW_ITEMS_PER_SOURCE, MAX_NEW_ITEMS_PER_SOURCE, 1, 100));
+        if (admitted.some(item => item.discoveredAtMs > now)) throw Object.assign(new Error('The original discovery time is ahead of the local clock.'), { code: 'AUTO_WATCH_BACKLOG_CLOCK_NOT_READY' });
+        const remaining = pending.slice(admitted.length), nextCursor = advanceCursor(cursor, admitted, admitted);
+        const remoteAt = cursor.nextRemoteCheckAtMs ?? integer(source.next_check_at_ms, now, 0);
+        delete nextCursor.deferredItems; delete nextCursor.deferredObservations; delete nextCursor.nextRemoteCheckAtMs;
+        if (remaining.length) {
+            nextCursor.deferredItems = remaining;
+            nextCursor.deferredObservations = remaining.map(item => [String(item.contentId), item.discoveredAtMs]);
+            nextCursor.nextRemoteCheckAtMs = remoteAt;
+        }
+        await store.completeBacklog(source, { items: admitted, cursor: nextCursor, processedAtMs: now,
+            nextCheckAtMs: remaining.length ? now + delay : Math.max(now + delay, remoteAt),
+            // Retained validators describe the last real HTTP observation.
+            etag: source.etag, lastModified: source.last_modified });
+        return { status: 'processed', providerId: source.provider_id, sourceId: source.id, newItemCount: admitted.length,
+            deferredItemCount: remaining.length, backlogOnly: true, remoteChecked: false };
+    } catch (error) {
+        // A local transaction failure is not a failed/successful remote check.
+        // Preserve the upstream diagnostic and poll/baseline receipts for retry.
+        await store.rescheduleSource(source, now + delay);
+        recordError(error, { errorType: 'auto_watch_backlog_failed', source: 'autoWatchMonitor.drainBacklog', providerId: source.provider_id, sourceId: source.id });
+        return { status: 'failed', providerId: source.provider_id, sourceId: source.id, errorCode: error?.code || 'AUTO_WATCH_BACKLOG_STORE_FAILED', backlogOnly: true, remoteChecked: false };
     }
 }
 

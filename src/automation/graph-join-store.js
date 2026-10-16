@@ -12,7 +12,8 @@ function createJoinStore({ db, locked, putUnit, putStep, receipt, readUnit, uuid
         if (!requested.length) return { changes: 0 };
         if (requested.length > 1000) throw fault('FLOW_SYNC_LIMIT');
         return locked(namespace, async query => {
-            const origins = await query('SELECT run_id,revoked_at_ms FROM automation_flow_runs WHERE namespace_key=? AND run_id IN (?)', [namespace, requested]);
+            await require('./recovery-origin').currentRunIds(query, requested, { revoke: true, now });
+            const origins = await query('SELECT run_id,revoked_at_ms,revocation_code FROM automation_flow_runs WHERE namespace_key=? AND run_id IN (?)', [namespace, requested]);
             if (origins.length !== requested.length) throw fault('FLOW_MEMBER_NAMESPACE');
             // A temporal continuation is a new immutable unit. Its removed
             // members are terminal for this activation and must not keep a
@@ -33,6 +34,10 @@ function createJoinStore({ db, locked, putUnit, putStep, receipt, readUnit, uuid
                 // that original event. It must release healthy batch peers;
                 // it never changes their shared immutable unit.
                 if (origin.revoked_at_ms != null) {
+                    if (origin.revocation_code === 'RECOVERY_QUARANTINED') {
+                        await query("UPDATE automation_flow_merge_decisions SET state='excluded',updated_at_ms=? WHERE namespace_key=? AND run_id=? AND state='ready'", [now, namespace, runId]);
+                        for (const decision of decisions) if (decision.run_id === runId && decision.state === 'ready') decision.state = 'excluded';
+                    }
                     for (const node of plan.nodes.filter(item => item.type === 'merge')) {
                         if (decisions.some(row => row.run_id === runId && row.node_id === node.id)) continue;
                         await query('INSERT IGNORE INTO automation_flow_merge_decisions (namespace_key,node_id,run_id,state,anchor_unit_id,signature_key,decision_json,created_at_ms,updated_at_ms) VALUES (?,?,?,?,?,?,?,?,?)', [namespace, node.id, runId, 'excluded', null, hash(`revoked:${runId}`), encode({ state: 'excluded', code: 'RUN_REVOKED', matchedEdges: [] }), now, now]);

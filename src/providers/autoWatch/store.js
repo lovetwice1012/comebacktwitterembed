@@ -14,6 +14,8 @@ const USER_FREE_SLOT_LIMIT = 5;
 const SOURCE_LEASE_MS = 2 * 60 * 1000;
 const DELIVERY_LEASE_MS = 45 * 1000;
 const INITIAL_JITTER_MS = 5 * 60 * 1000;
+const LEGACY_BACKLOG_SCAN_ROWS = 8;
+let legacyBacklogScanAfterId = '0';
 
 function integer(value, fallback, minimum = 0, maximum = Number.MAX_SAFE_INTEGER) {
     const number = Number(value);
@@ -165,7 +167,7 @@ async function registerTargetAdmitted(input, options = {}) {
                 next_poll_at_ms=IF(enabled=0,NULL,next_poll_at_ms),
                 last_notification_window_at_ms=IF(enabled=0,NULL,last_notification_window_at_ms),
                 created_at_ms=IF(enabled=0, VALUES(created_at_ms), created_at_ms),
-                enabled=1, premium_slot=VALUES(premium_slot), id=LAST_INSERT_ID(id)`,
+                enabled=1, premium_slot=VALUES(premium_slot), webhook_endpoint_id=VALUES(webhook_endpoint_id), id=LAST_INSERT_ID(id)`,
             [
                 userId,
                 source.id,
@@ -265,7 +267,49 @@ function sourceLeaseMs(config = monitorConfig()) {
     return Math.max(SOURCE_LEASE_MS, config.timeoutMs * 3 + 30000);
 }
 
+async function rescueLegacyBacklog(now) {
+    // Read a bounded primary-key page, not every future source or its payload.
+    // At most one complete cursor is read/repaired per claim call. Later calls
+    // continue the sweep; the durable marker survives a restart/local failure.
+    const rows = await db.queryDatabase(`SELECT id,next_check_at_ms,lease_expires_at_ms,
+        CASE WHEN JSON_VALID(cursor_json) THEN JSON_TYPE(JSON_EXTRACT(cursor_json,'$.deferredItems'))='ARRAY'
+            AND JSON_LENGTH(JSON_EXTRACT(cursor_json,'$.deferredItems'))>0
+            AND JSON_CONTAINS_PATH(cursor_json,'one','$.nextRemoteCheckAtMs')=0 ELSE 0 END AS legacy_backlog
+        FROM auto_watch_sources WHERE id>? ORDER BY id LIMIT ?`, [legacyBacklogScanAfterId, LEGACY_BACKLOG_SCAN_ROWS]);
+    if (!rows.length) { legacyBacklogScanAfterId = '0'; return; }
+    for (const candidate of rows) {
+        legacyBacklogScanAfterId = String(candidate.id);
+        if (!Number(candidate.legacy_backlog) || Number(candidate.next_check_at_ms) <= now || Number(candidate.lease_expires_at_ms) > now) continue;
+        const source = (await db.queryDatabase('SELECT cursor_json,next_check_at_ms,initialized_at_ms FROM auto_watch_sources WHERE id=?', [candidate.id]))[0];
+        if (!source || !Number(source.initialized_at_ms) || Number(source.next_check_at_ms) <= now) return;
+        if (typeof source.cursor_json !== 'string' || Buffer.byteLength(source.cursor_json) > 15 * 1024 * 1024) return;
+        let cursor;
+        try {
+            cursor = JSON.parse(source.cursor_json);
+            if (Object.hasOwn(cursor, 'nextRemoteCheckAtMs') || !Array.isArray(cursor.seenContentIds) || cursor.seenContentIds.length > 5000
+                || !Array.isArray(cursor.deferredItems) || !cursor.deferredItems.length || cursor.deferredItems.length > 5000
+                || cursor.deferredItems.some(item => !item || typeof item.contentId !== 'string' || !item.contentId || item.contentId.length > 255
+                    || typeof item.url !== 'string' || !item.url || !Number.isSafeInteger(item.discoveredAtMs) || item.discoveredAtMs < 0)
+                || Buffer.byteLength(JSON.stringify(cursor.deferredItems)) > 12 * 1024 * 1024) return;
+            // Load lazily after module initialization: this pure authoritative
+            // parser validates legacy observation pairs and cursor bounds too.
+            require('./runner')._internal.parseCursor(cursor);
+        } catch { return; }
+        const remoteAt = Number(source.next_check_at_ms);
+        if (!Number.isSafeInteger(remoteAt) || remoteAt < 0) return;
+        const repaired = { ...cursor, nextRemoteCheckAtMs: remoteAt };
+        const fingerprint = crypto.createHash('sha256').update(source.cursor_json).digest('hex');
+        await db.queryDatabase(`UPDATE auto_watch_sources SET cursor_json=?,next_check_at_ms=?
+            WHERE id=? AND next_check_at_ms=? AND lease_expires_at_ms<=? AND SHA2(cursor_json,256)=?
+            AND EXISTS (SELECT 1 FROM auto_watch_targets t WHERE t.source_id=auto_watch_sources.id AND t.enabled=1)`,
+        [sourceCursorJson(repaired), now, candidate.id, remoteAt, now, fingerprint]);
+        return;
+    }
+    if (rows.length < LEGACY_BACKLOG_SCAN_ROWS) legacyBacklogScanAfterId = '0';
+}
+
 async function claimDueSources(now, limit = 16, config = monitorConfig()) {
+    await rescueLegacyBacklog(now);
     const leaseMs = sourceLeaseMs(config);
     const boundedLimit = integer(limit, 16, 1, 128);
     const rows = await db.queryDatabase(
@@ -299,6 +343,21 @@ async function claimDueSources(now, limit = 16, config = monitorConfig()) {
     return claimed;
 }
 
+async function currentPollInterval(query, sourceId, now) {
+    const schedule = (await query(`SELECT s.*,
+            (SELECT MIN(COALESCE(u.auto_watch_interval_minutes*60000,s.poll_interval_ms)) FROM auto_watch_targets t
+             JOIN users u ON u.user_id=t.user_id WHERE t.source_id=s.id AND t.enabled=1) AS requested_poll_interval_ms,
+            EXISTS(SELECT 1 FROM auto_watch_targets t JOIN users u ON u.user_id=t.user_id
+             WHERE t.source_id=s.id AND t.enabled=1 AND u.auto_watch_interval_minutes IS NOT NULL) AS has_user_interval,
+            EXISTS(SELECT 1 FROM automation_notification_boost_slots b JOIN auto_watch_targets bt ON bt.id=b.target_id
+             WHERE b.target_kind='auto' AND bt.source_id=s.id AND bt.enabled=1) AS has_slot_boost
+            FROM auto_watch_sources s WHERE s.id=?`, [sourceId]))[0];
+    if (!schedule) return null;
+    const counts = await activeSourceCounts();
+    if (Number(schedule.has_slot_boost)) Object.assign(schedule, await require('../../automation/monitor-cadence').sourceSchedule(query, schedule, now));
+    return computedPollInterval(schedule, counts.get(schedule.provider_id) || 1);
+}
+
 async function completeSource(source, result) {
     const values = [
         sourceStateJson(result.state),
@@ -313,18 +372,14 @@ async function completeSource(source, result) {
     ];
     await db.withDatabaseTransaction(async query => {
         await query(`SELECT id FROM ${TABLES.autoWatchSources} WHERE id=? AND lease_token=? FOR UPDATE`, [source.id, source.lease_token]);
-        const schedule = (await query(`SELECT s.*,
-            (SELECT MIN(COALESCE(u.auto_watch_interval_minutes*60000,s.poll_interval_ms)) FROM auto_watch_targets t
-             JOIN users u ON u.user_id=t.user_id WHERE t.source_id=s.id AND t.enabled=1) AS requested_poll_interval_ms,
-            EXISTS(SELECT 1 FROM auto_watch_targets t JOIN users u ON u.user_id=t.user_id
-             WHERE t.source_id=s.id AND t.enabled=1 AND u.auto_watch_interval_minutes IS NOT NULL) AS has_user_interval,
-            EXISTS(SELECT 1 FROM automation_notification_boost_slots b JOIN auto_watch_targets bt ON bt.id=b.target_id
-             WHERE b.target_kind='auto' AND bt.source_id=s.id AND bt.enabled=1) AS has_slot_boost
-            FROM auto_watch_sources s WHERE s.id=?`, [source.id]))[0];
-        const counts = await activeSourceCounts();
-        if (schedule) {
-            if (Number(schedule.has_slot_boost)) Object.assign(schedule, await require('../../automation/monitor-cadence').sourceSchedule(query, schedule, result.checkedAtMs));
-            values[5] = result.checkedAtMs + computedPollInterval(schedule, counts.get(schedule.provider_id) || 1);
+        const interval = await currentPollInterval(query, source.id, result.checkedAtMs);
+        if (interval !== null) values[5] = result.checkedAtMs + interval;
+        if (result.cursor?.deferredItems?.length) {
+            // Materialize the durable tail on later local ticks without bringing
+            // forward the next upstream request or spending another API permit.
+            result.cursor.nextRemoteCheckAtMs = values[5];
+            values[1] = sourceCursorJson(result.cursor);
+            values[5] = result.checkedAtMs + integer(process.env.AUTO_WATCH_TICK_MS, 30000, 5000, 600000);
         }
         const updated = await query(
         `UPDATE ${TABLES.autoWatchSources}
@@ -349,6 +404,27 @@ async function completeSource(source, result) {
                 [result.checkedAtMs, result.checkedAtMs + Number(target.interval_ms), target.id]);
         }
         await query(`UPDATE ${TABLES.autoWatchTargets} SET baseline_at_ms=? WHERE source_id=? AND enabled=1 AND baseline_at_ms IS NULL`, [result.checkedAtMs, source.id]);
+    });
+}
+
+async function completeBacklog(source, result) {
+    return db.withDatabaseTransaction(async query => {
+        const rows = await query(`SELECT * FROM ${TABLES.autoWatchSources}
+            WHERE id=? AND lease_token=? AND lease_expires_at_ms>? FOR UPDATE`, [source.id, source.lease_token, Date.now()]);
+        if (!rows.length) throw error('Automatic-watch source lease was lost.', 'AUTO_WATCH_LEASE_LOST');
+        let nextCheckAtMs = result.nextCheckAtMs;
+        if (!result.cursor?.deferredItems?.length && !rows[0].last_error_code && Number(rows[0].last_checked_at_ms) > 0) {
+            // An interval change during local admission applies to the next
+            // real poll. A recorded upstream failure keeps its retry/backoff.
+            const interval = await currentPollInterval(query, source.id, result.processedAtMs);
+            if (interval !== null) nextCheckAtMs = Math.max(result.processedAtMs + integer(process.env.AUTO_WATCH_TICK_MS, 30000, 5000, 600000), Number(rows[0].last_checked_at_ms) + interval);
+        }
+        if (result.items?.length) await createItemsAndDeliveries(source, result.items, result.processedAtMs);
+        const updated = await query(`UPDATE ${TABLES.autoWatchSources}
+            SET cursor_json=?,next_check_at_ms=?,lease_token=NULL,lease_expires_at_ms=0
+            WHERE id=? AND lease_token=? AND lease_expires_at_ms>?`,
+        [sourceCursorJson(result.cursor), nextCheckAtMs, source.id, source.lease_token, Date.now()]);
+        if (Number(updated.affectedRows) !== 1) throw error('Automatic-watch source lease was lost.', 'AUTO_WATCH_LEASE_LOST');
     });
 }
 
@@ -617,6 +693,7 @@ function policyFor(providerId, _config) {
 }
 
 module.exports = {
+    completeBacklog,
     atomicSourceCompletion: true,
     DELIVERY_LEASE_MS,
     FREE_SLOT_LIMIT,

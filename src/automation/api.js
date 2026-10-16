@@ -128,6 +128,7 @@ async function dispatchCore({ method, path, search = new URLSearchParams(), body
       if (!donations) throw new AutomationError('SQUARE_NOT_CONFIGURED', '決済機能は準備中です。', 503);
       if (action === "options" && method === "GET") result = await donations.getOptions(actor);
       else if (action === "status" && method === "GET") result = await donations.getStatus(actor);
+      else if (action === "history" && method === "GET") result = await donations.getHistory(actor, search.get('after') || '');
       else if (action === "policy" && method === "GET") result = await donations.getAdmin(actor);
       else if (action === "policy" && method === "PATCH") result = await donations.savePolicy(actor, body);
       else if (action === "quote" && method === "POST") result = await donations.createQuote(actor, body);
@@ -144,7 +145,7 @@ async function dispatchCore({ method, path, search = new URLSearchParams(), body
       else if (id === "subscribe" && method === "POST" && !action) result = await billing.subscribe(actor, body);
       else if (id === "resume" && method === "POST" && !action) result = await billing.resume(actor, body);
       else if (id === "abort" && method === "POST" && !action) result = await billing.abort(actor, body);
-      else if (id === "cancel" && method === "POST" && !action) result = await billing.cancel(actor);
+      else if (id === "cancel" && method === "POST" && !action) result = await billing.cancel(actor, body);
     }
     else if (kind === "providers" && method === "GET") result = await monitors.providers(actor);
     else if (kind === "channels" && method === "GET") result = await destinations.channels(actor);
@@ -159,7 +160,7 @@ async function dispatchCore({ method, path, search = new URLSearchParams(), body
       else if (id && method === "GET") result = await history.detail(actor, id);
       else if (id && method === "PATCH") result = await history.change(actor, id, body);
     }
-    else if (kind === "excluded" && method === "GET") result = await history.excluded(actor, search.get("afterId") || "");
+    else if (kind === "excluded" && method === "GET") result = await history.excluded(actor, search.get("afterId") || "", { targetKind: search.get("targetKind"), targetId: search.get("targetId") });
     else if (kind === "monitors" && ["auto", "price"].includes(id)) {
       if (action === "preview" && method === "POST") result = await monitors.preview(actor, id, body);
       else if (!action && method === "GET") result = await monitors.list(actor, id, search.get("afterId") || "0", { query: search.get("query") || '', state: search.get("state") || 'all' });
@@ -223,6 +224,7 @@ async function dispatchCore({ method, path, search = new URLSearchParams(), body
       else if (id && !action && method === "GET") result = await market.get(actor, id, Number(search.get("version")) || undefined, search.get("shareKey"));
       else if (id && !action && method === "PATCH") result = await market.save(actor, body, id);
       else if (action === "install" && method === "POST") result = await market.install(actor, id, body);
+      else if (action === "editing-import" && method === "POST") result = await market.importForEditing(actor, id, body);
       else if (action === "status" && method === "POST") result = await market.setStatus(actor, id, body);
       else if (action === "feedback" && method === "POST") result = await market.feedback(actor, id, body);
       else if (action === "versions" && method === "GET") result = await market.versions(actor, id, { shareKey: search.get("shareKey"), before: search.get("before") });

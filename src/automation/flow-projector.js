@@ -49,6 +49,7 @@ function createFlowProjector(db) {
                 return { state: 'failed', code: error.code, id: send.id };
             }
             const runIds = [...new Set(unit.members.map(member => member.runId))];
+            await require('./recovery-origin').currentRunIds(query, runIds, { revoke: true, now });
             const flowRuns = await query('SELECT run_id,context_json,revoked_at_ms FROM automation_flow_runs WHERE run_id IN (?) FOR UPDATE', [runIds]);
             if (flowRuns.length !== runIds.length) throw invalid('FLOW_MEMBER_NAMESPACE');
             const contexts = new Map(flowRuns.map(row => [row.run_id, { ...parse(row.context_json), revokedAtMs: row.revoked_at_ms == null ? null : Number(row.revoked_at_ms) }]));

@@ -8,7 +8,7 @@ const { reactFixture } = require('./helpers/react-dom-fixture.cjs');
 const plan = (changes = {}) => ({ planId: 'configured', label: '管理者設定プラン', slotLimit: 12, minuteLimit: 9, dayLimit: 96, priority: 3, variationId: 'VARIATION', catalogName: 'Square月額設定', cadence: 'MONTHLY', amount: 1500, currency: 'JPY', ...changes });
 const options = (changes = {}) => ({ configured: true, environment: 'sandbox', applicationId: 'sandbox-app', locationId: 'location', plans: [plan()], ...changes });
 const status = (changes = {}) => ({ configured: true, environment: 'sandbox', subscription: null, pending: null, ...changes });
-const contract = (changes = {}) => ({ planId: 'configured', label: '管理者設定プラン', state: 'ACTIVE', paidThroughAtMs: 1794423600000, validUntilAtMs: 1794423600000, canceledDate: null, active: true, cancelScheduled: false, ...changes });
+const contract = (changes = {}) => ({ subscriptionId: 'SUBSCRIPTION-1', checkoutId: '11111111-1111-4111-8111-111111111111', planId: 'configured', label: '管理者設定プラン', state: 'ACTIVE', paidThroughAtMs: 1794423600000, validUntilAtMs: 1794423600000, canceledDate: null, active: true, cancelScheduled: false, ...changes });
 // The production Square SDK rejects these fields for STORE before it reads the card form.
 // https://developer.squareup.com/reference/sdks/web/payments/objects/StoreCardVerificationDetails
 function squareStoreToken(data, token = 'cnon:private-nonce') {
@@ -47,6 +47,21 @@ async function fixture({ initialOptions = options(), initialStatus = status(), r
 const writes = f => f.calls.filter(call => call.method !== 'GET');
 const pendingCheckout = (changes = {}) => ({ checkoutId: 'old-checkout', state: 'CARD_STORED', retryable: false, resumeAllowed: true, abortAllowed: true,
     quote: { checkoutId: 'old-checkout', expiresAtMs: Date.now() - 60000, plan: plan(), email: 'saved@example.test', name: '保存された請求名' }, ...changes });
+
+for (const replacement of [false, true]) test(`S34-1 canonical refresh dismisses cancellation confirmation (${replacement ? 'replacement contract' : 'same contract'})`, async () => {
+    let current = status({ subscription: contract() });
+    const f = await fixture({ respond: route => route === 'status' ? current : undefined });
+    try {
+        await f.click('サブスクリプションを解約');
+        assert([...f.container.querySelectorAll('button')].some(button => button.textContent === '解約を申し込む'));
+        if (replacement) current = status({ subscription: contract({ subscriptionId: 'SUBSCRIPTION-2', checkoutId: '22222222-2222-4222-8222-222222222222', planId: 'replacement', label: '変更後のプラン' }) });
+        await f.click('契約状態を再確認'); await f.settle();
+        assert.equal([...f.container.querySelectorAll('button')].find(button => button.textContent === '解約を申し込む'), undefined);
+        assert.equal(writes(f).length, 0);
+        await f.click('サブスクリプションを解約'); await f.click('解約を申し込む');
+        assert.deepEqual(writes(f)[0].body, { subscriptionId: current.subscription.subscriptionId, checkoutId: current.subscription.checkoutId });
+    } finally { await f.close(); }
+});
 
 test('subscription submit handler rejects overlength and ambiguous email separators while preserving Unicode subdomains', async () => {
     const f = await fixture();
@@ -279,7 +294,7 @@ test('an existing verified subscription blocks a new contract and cancellation r
     const f = await fixture({ initialStatus: status({ subscription: contract() }) });
     try {
         assert.match(f.container.textContent, /現在の契約: 管理者設定プラン/); assert.match(f.container.textContent, /利用中/); assert.match(f.container.textContent, /JST/); assert.equal(f.container.querySelector('input[type=radio]'), null);
-        await f.click('サブスクリプションを解約'); assert.equal(writes(f).length, 0); await f.click('解約を申し込む'); assert.deepEqual(writes(f), [{ route: 'cancel', method: 'POST', body: {} }]);
+        await f.click('サブスクリプションを解約'); assert.equal(writes(f).length, 0); await f.click('解約を申し込む'); assert.deepEqual(writes(f), [{ route: 'cancel', method: 'POST', body: { subscriptionId: 'SUBSCRIPTION-1', checkoutId: '11111111-1111-4111-8111-111111111111' } }]);
         assert.match(f.container.textContent, /解約予定/); assert.equal(f.sdk.loads.length, 0);
     } finally { await f.close(); }
 });
@@ -514,7 +529,7 @@ test('proration verification warning survives a fresh reload while the owned unv
         assert.match(f.container.textContent, /初回の日割り請求の期間を確認できません.*管理者にお問い合わせ/); assert.match(f.container.textContent, /解約操作は引き続き利用/);
         assert.equal(f.container.querySelector('input[type=radio]'), null); assert.equal(f.sdk.loads.length, 0);
         await f.click('サブスクリプションを解約'); await f.click('解約を申し込む'); assert.match(f.container.textContent, /解約予定/); assert(!f.container.textContent.includes('利用中'));
-        assert.deepEqual(writes(f), [{ route: 'cancel', method: 'POST', body: {} }]);
+        assert.deepEqual(writes(f), [{ route: 'cancel', method: 'POST', body: { subscriptionId: 'SUBSCRIPTION-1', checkoutId: '11111111-1111-4111-8111-111111111111' } }]);
     } finally { await f.close(); }
 });
 

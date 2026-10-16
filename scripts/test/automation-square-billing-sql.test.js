@@ -95,6 +95,7 @@ test('Square real SQL with mocked REST: paid subscription lifecycle, exact user 
     const quote = owner => billing.createQuote(owner, { planId: 'pro', email: 'buyer@example.com', name: 'Fixture Buyer', userId: actor(99).userId });
     const submit = (owner, checkout) => billing.subscribe(owner, { checkoutId: checkout.checkoutId, sourceId: `cnon:fixture-${owner.userId}`, consent: true, userId: actor(99).userId, tier: 'forged' });
     const rowFor = owner => db.queryDatabase('SELECT * FROM automation_square_subscriptions WHERE owner_user_id=?', [owner.userId]).then(rows => rows[0]);
+    const cancellationFor = async owner => { const row = await rowFor(owner); return { subscriptionId: row.subscription_id, checkoutId: row.checkout_id }; };
     const eventFor = (row, eventId, type = 'subscription.updated', overrides = {}) => signed({ event_id: eventId, merchant_id: 'MERCHANT', type, data: { id: row.subscription_id, object: { subscription: { id: row.subscription_id, status: 'ACTIVE' } } }, ...overrides });
     try {
         await entitlements.savePlanPolicy(db.queryDatabase, ADMIN, { planId: 'pro', label: 'Pro', slotLimit: 15, minuteLimit: 12, dayLimit: 500, priority: 3 });
@@ -374,8 +375,8 @@ test('Square real SQL with mocked REST: paid subscription lifecycle, exact user 
                 const submitted = await submit(own, checkout); assert.equal(submitted.refresh.state, 'failed'); assert.equal(submitted.verificationWarning.code, 'SQUARE_PRORATION_UNVERIFIED'); assert.match(submitted.verificationWarning.message, /管理者にお問い合わせ/);
                 const row = await rowFor(own); assert.equal(Number(row.verified), 0); assert.equal(row.valid_until_at_ms, null);
                 const restored = await make().getStatus(own); assert.equal(restored.subscription.active, false); assert.equal(restored.verificationWarning.code, 'SQUARE_PRORATION_UNVERIFIED');
-                const canceled = await make().cancel(own); assert.equal(canceled.subscription.cancelScheduled, true); assert.equal(canceled.subscription.active, false); assert.equal(canceled.verificationWarning.code, 'SQUARE_PRORATION_UNVERIFIED');
-                const before = square.requests.length; await make().cancel(own); assert.equal(square.requests.length, before);
+                const canceled = await make().cancel(own, await cancellationFor(own)); assert.equal(canceled.subscription.cancelScheduled, true); assert.equal(canceled.subscription.active, false); assert.equal(canceled.verificationWarning.code, 'SQUARE_PRORATION_UNVERIFIED');
+                const before = square.requests.length; await make().cancel(own, await cancellationFor(own)); assert.equal(square.requests.length, before);
                 const invoice = square.invoices.get(square.subscriptions.get(row.subscription_id).invoice_ids[0]); invoice.status = 'REFUNDED';
                 const event = eventFor(row, 'event-unverifiable-proration-refund'); await make().handleWebhook(event.body, event.signature);
                 assert.equal((await rowFor(own)).valid_until_at_ms, null);
@@ -402,7 +403,7 @@ test('Square real SQL with mocked REST: paid subscription lifecycle, exact user 
                 if (decodeURIComponent(new URL(url).pathname) === `/v2/invoices/${row.current_invoice_id}` && !held) { held = true; started(); await gate; }
                 return json(snapshot, response.status);
             };
-            const slow = make({ fetch }).cancel(own).catch(error => error); await ready;
+            const slow = make({ fetch }).cancel(own, await cancellationFor(own)).catch(error => error); await ready;
             invoice.status = 'REFUNDED';
             const busy = await make().getStatus(own); assert.equal(busy.refresh.state, 'busy');
             const refundEvent = eventFor(row, 'event-refund-during-cancel');
@@ -413,7 +414,7 @@ test('Square real SQL with mocked REST: paid subscription lifecycle, exact user 
             // observed by the failing cancel itself.
             clock += 31000; // A new cancel attempt is admitted after its dedicated cooldown.
             const alone = make({ fetch: async (url, options) => new URL(url).pathname.endsWith('/cancel') ? json({ errors: [{}] }, 503) : square.fetch(url, options) });
-            await assert.rejects(alone.cancel(own), { code: 'SQUARE_RESULT_UNKNOWN' }); assert.equal((await rowFor(own)).valid_until_at_ms, null);
+            await assert.rejects(alone.cancel(own, await cancellationFor(own)), { code: 'SQUARE_RESULT_UNKNOWN' }); assert.equal((await rowFor(own)).valid_until_at_ms, null);
         });
         await t.test('slow old checkout recovery cannot replace a newly completed subscription for the same owner', async () => {
             const own = actor(14), checkout = await quote(own); square.state.lost = '/v2/subscriptions'; await assert.rejects(submit(own, checkout), { code: 'SQUARE_RESULT_UNKNOWN' });
@@ -445,8 +446,8 @@ test('Square real SQL with mocked REST: paid subscription lifecycle, exact user 
         });
         await t.test('cancel schedules end of paid cycle, preserves paid remainder and is safe to repeat; actual expiry removes access', async () => {
             const own = actor(5), before = square.requests.filter(request => request.path.endsWith('/cancel')).length;
-            const result = await billing.cancel(own); assert.equal(result.subscription.cancelScheduled, true); assert.equal(result.subscription.active, true);
-            await billing.cancel(own); assert.equal(square.requests.filter(request => request.path.endsWith('/cancel')).length, before + 1);
+            const result = await billing.cancel(own, await cancellationFor(own)); assert.equal(result.subscription.cancelScheduled, true); assert.equal(result.subscription.active, true);
+            await billing.cancel(own, await cancellationFor(own)); assert.equal(square.requests.filter(request => request.path.endsWith('/cancel')).length, before + 1);
             clock = Date.parse('2026-10-31T15:00:00Z'); assert.equal((await billing.getStatus(own)).subscription.active, false);
             const row = await rowFor(own), sub = square.subscriptions.get(row.subscription_id); sub.status = 'CANCELED'; sub.version++;
             clock += 31000; await billing.getStatus(own);
@@ -457,38 +458,43 @@ test('Square real SQL with mocked REST: paid subscription lifecycle, exact user 
             assert.equal((await make().getStatus(own)).refresh.state, 'cooldown');
             let release, started, once = true; const ready = new Promise(resolve => { started = resolve; }), gate = new Promise(resolve => { release = resolve; });
             const beforeWire = square.requests.filter(item => item.path.endsWith('/cancel')).length;
-            const slow = make({ fetch: async (url, options) => { const response = await square.fetch(url, options); if (new URL(url).pathname === `/v2/subscriptions/${row.subscription_id}` && once) { once = false; started(); await gate; } return response; } }).cancel(own);
+            const slow = make({ fetch: async (url, options) => { const response = await square.fetch(url, options); if (new URL(url).pathname === `/v2/subscriptions/${row.subscription_id}` && once) { once = false; started(); await gate; } return response; } }).cancel(own, await cancellationFor(own));
             await ready;
             try {
                 const before = square.requests.length;
-                const other = await make().cancel(own); assert.equal(other.refresh.state, 'busy'); assert.equal(square.requests.length, before); assert.equal(other.subscription.cancelScheduled, false);
+                const other = await make().cancel(own, await cancellationFor(own)); assert.equal(other.refresh.state, 'busy'); assert.equal(square.requests.length, before); assert.equal(other.subscription.cancelScheduled, false);
             } finally { release(); }
             const canceled = await slow; assert.equal(canceled.subscription.cancelScheduled, true); assert.equal(square.requests.filter(item => item.path.endsWith('/cancel')).length, beforeWire + 1);
             const after = square.requests.length;
-            for (let i = 0; i < 3; i++) { const result = await make().cancel(own); assert.equal(result.subscription.cancelScheduled, true); assert.equal(result.refresh.state, 'cooldown'); }
+            for (let i = 0; i < 3; i++) { const result = await make().cancel(own, await cancellationFor(own)); assert.equal(result.subscription.cancelScheduled, true); assert.equal(result.refresh.state, 'cooldown'); }
             assert.equal(square.requests.length, after, 'already observed cancellation must not force two fresh REST scans on every POST');
         });
         await t.test('an unknown cancel result keeps its actual error and a durable same-contract retry cooldown prevents repeated forced scans', async () => {
             const own = actor(121), checkout = await quote(own); await submit(own, checkout); let calls = 0;
             const failing = () => make({ fetch: async (url, options) => { calls++; return new URL(url).pathname.endsWith('/cancel') ? json({ errors: [{}] }, 503) : square.fetch(url, options); } });
-            await assert.rejects(failing().cancel(own), { code: 'SQUARE_RESULT_UNKNOWN' }); const before = calls;
-            for (let i = 0; i < 3; i++) { const result = await failing().cancel(own); assert.equal(result.refresh.state, 'cooldown'); assert.equal(result.subscription.cancelScheduled, false); }
+            await assert.rejects(failing().cancel(own, await cancellationFor(own)), { code: 'SQUARE_RESULT_UNKNOWN' }); const before = calls;
+            for (let i = 0; i < 3; i++) { const result = await failing().cancel(own, await cancellationFor(own)); assert.equal(result.refresh.state, 'cooldown'); assert.equal(result.subscription.cancelScheduled, false); }
             assert.equal(calls, before);
-            clock += 31000; assert.equal((await make().cancel(own)).subscription.cancelScheduled, true);
+            clock += 31000; assert.equal((await make().cancel(own, await cancellationFor(own))).subscription.cancelScheduled, true);
         });
         await t.test('a replacement contract is never bound by the previous contract cancel retry cooldown', async () => {
             const own = actor(122), first = await quote(own); await submit(own, first);
-            await assert.rejects(make({ fetch: async (url, options) => new URL(url).pathname.endsWith('/cancel') ? json({ errors: [{}] }, 503) : square.fetch(url, options) }).cancel(own), { code: 'SQUARE_RESULT_UNKNOWN' });
+            await assert.rejects(make({ fetch: async (url, options) => new URL(url).pathname.endsWith('/cancel') ? json({ errors: [{}] }, 503) : square.fetch(url, options) }).cancel(own, await cancellationFor(own)), { code: 'SQUARE_RESULT_UNKNOWN' });
             const previous = await rowFor(own), old = square.subscriptions.get(previous.subscription_id); old.status = 'COMPLETED'; old.version++;
             const event = eventFor(previous, 'event-cancel-replaced-terminal'); await make().handleWebhook(event.body, event.signature);
             const replacement = await quote(own); await submit(own, replacement); const next = await rowFor(own); assert.notEqual(next.subscription_id, previous.subscription_id);
-            const result = await make().cancel(own); assert.equal(result.subscription.cancelScheduled, true);
+            const beforeStale = square.requests.length;
+            await assert.rejects(make().cancel(own, { subscriptionId: previous.subscription_id, checkoutId: previous.checkout_id }), { code: 'SQUARE_CANCEL_CONTRACT_CHANGED' });
+            await assert.rejects(make().cancel(own, {}), { code: 'SQUARE_CANCEL_CONFIRMATION_REQUIRED' });
+            assert.equal(square.requests.length, beforeStale, 'An obsolete or absent UI confirmation makes no remote request');
+            assert.equal(square.subscriptions.get(next.subscription_id).status, 'ACTIVE');
+            const result = await make().cancel(own, await cancellationFor(own)); assert.equal(result.subscription.cancelScheduled, true);
             const cancel = square.requests.filter(item => item.path.endsWith('/cancel')).at(-1); assert.equal(cancel.path, `/v2/subscriptions/${next.subscription_id}/cancel`);
         });
         await t.test('a delayed expired cancellation cannot select or cancel a newly enrolled replacement contract', async () => {
             const own = actor(123), first = await quote(own); await submit(own, first); const previous = await rowFor(own);
             let release, started, once = true; const ready = new Promise(resolve => { started = resolve; }), gate = new Promise(resolve => { release = resolve; });
-            const slow = make({ fetch: async (url, options) => { const response = await square.fetch(url, options), snapshot = structuredClone(await response.json()); if (new URL(url).pathname === `/v2/subscriptions/${previous.subscription_id}` && once) { once = false; started(); await gate; } return json(snapshot, response.status); } }).cancel(own).catch(error => error);
+            const slow = make({ fetch: async (url, options) => { const response = await square.fetch(url, options), snapshot = structuredClone(await response.json()); if (new URL(url).pathname === `/v2/subscriptions/${previous.subscription_id}` && once) { once = false; started(); await gate; } return json(snapshot, response.status); } }).cancel(own, await cancellationFor(own)).catch(error => error);
             await ready;
             let replacement;
             try {
@@ -511,7 +517,7 @@ test('Square real SQL with mocked REST: paid subscription lifecycle, exact user 
             const oldPoll = make({ fetch: async (url, options) => { const response = await square.fetch(url, options), snapshot = structuredClone(await response.json()); if (decodeURIComponent(new URL(url).pathname) === `/v2/invoices/${row.current_invoice_id}`) { pollStarted(); await pollGate; } return json(snapshot, response.status); } }).getStatus(own);
             await pollReady;
             let once = true;
-            const cancellation = make({ fetch: async (url, options) => { const response = await square.fetch(url, options); if (new URL(url).pathname === `/v2/subscriptions/${row.subscription_id}` && once) { once = false; cancelStarted(); await cancelGate; } return response; } }).cancel(own);
+            const cancellation = make({ fetch: async (url, options) => { const response = await square.fetch(url, options); if (new URL(url).pathname === `/v2/subscriptions/${row.subscription_id}` && once) { once = false; cancelStarted(); await cancelGate; } return response; } }).cancel(own, await cancellationFor(own));
             await cancelReady;
             try {
                 releasePoll(); const result = await oldPoll; assert.equal(result.refresh.state, 'busy');
@@ -535,8 +541,8 @@ test('Square real SQL with mocked REST: paid subscription lifecycle, exact user 
                     assert.equal(Number((await db.queryDatabase('SELECT COUNT(*) AS n FROM automation_square_webhook_events WHERE event_id=? AND processed_at_ms IS NOT NULL', ['event-proration-invalid-' + defect]))[0].n), 1);
                     clock += 31000; const failed = await make().getStatus(own); assert.equal(failed.refresh.state, 'failed'); assert.equal(failed.subscription.active, false); assert.equal(failed.subscription.validUntilAtMs, null); assert.equal(failed.verificationWarning.code, 'SQUARE_PRORATION_UNVERIFIED');
                     const stored = await rowFor(own); assert.equal(Number(stored.verified), 0); assert.equal(stored.valid_until_at_ms, null);
-                    const canceled = await make().cancel(own); assert.equal(canceled.subscription.cancelScheduled, true); assert.equal(canceled.subscription.active, false);
-                    const before = square.requests.length; await make().cancel(own); assert.equal(square.requests.length, before);
+                    const canceled = await make().cancel(own, await cancellationFor(own)); assert.equal(canceled.subscription.cancelScheduled, true); assert.equal(canceled.subscription.active, false);
+                    const before = square.requests.length; await make().cancel(own, await cancellationFor(own)); assert.equal(square.requests.length, before);
                     const invoice = square.invoices.get(subscription.invoice_ids[0]); invoice.status = 'REFUNDED';
                     const refunded = eventFor(row, 'event-proration-refund-' + defect); await make().handleWebhook(refunded.body, refunded.signature);
                     const warning = (await db.queryDatabase('SELECT warning_code FROM automation_square_billing_reconciliation WHERE owner_user_id=? AND environment=? AND merchant_id=?', [own.userId, 'sandbox', 'MERCHANT']))[0]; assert.equal(warning.warning_code, null); assert.equal((await rowFor(own)).valid_until_at_ms, null);

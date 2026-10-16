@@ -262,6 +262,25 @@ function createSquareDonations(db, options = {}) {
         }
         return { state: failed ? 'failed' : 'checked', retryAtMs: now() + REFRESH_MS };
     }
+    async function getHistory(actor, after = '') {
+        const owner = user(actor);
+        let boundary = null;
+        if (after) {
+            try {
+                if (typeof after !== 'string' || after.length > 180 || !/^[A-Za-z0-9_-]+$/.test(after)) throw new Error('CURSOR');
+                boundary = JSON.parse(Buffer.from(after, 'base64url').toString('utf8'));
+                if (!Array.isArray(boundary) || boundary.length !== 2 || !Number.isSafeInteger(boundary[0]) || boundary[0] < 0 || !UUID.test(boundary[1])) throw new Error('CURSOR');
+            } catch { throw fail('SQUARE_DONATION_HISTORY_CURSOR', '寄付履歴を再読み込みしてください。', 400); }
+        }
+        if (!c.configured) return { items: [], nextCursor: null };
+        // This cursor is exclusively for owner-scoped display. It never drives
+        // payment reconciliation or changes grant/payment state.
+        const rows = await db.queryDatabase(`SELECT * FROM automation_square_donation_attempts WHERE owner_user_id=? AND environment=? AND merchant_id=?
+            ${boundary ? 'AND (created_at_ms<? OR (created_at_ms=? AND id<?))' : ''} ORDER BY created_at_ms DESC,id DESC LIMIT 101`,
+        [owner, ...scope, ...(boundary ? [boundary[0], boundary[0], boundary[1]] : [])]);
+        const page = rows.slice(0, 100), last = page.at(-1);
+        return { items: page.map(historyDto), nextCursor: rows.length > 100 ? Buffer.from(JSON.stringify([Number(last.created_at_ms), last.id])).toString('base64url') : null };
+    }
     async function getStatus(actor) {
         const owner = user(actor);
         const permanent = async () => {
@@ -271,14 +290,14 @@ function createSquareDonations(db, options = {}) {
             const held=await require('./push-support-grants').getSupporterHolding(db.queryDatabase,owner,now(),{configured:c.configured,environment:c.environment,merchantId:c.merchantId});
             return { totalSupporterSlots:held.totalSupporterSlots,legacySlots:held.legacySlots,newPaidSlots:held.newPaidSlots,isSupporter:held.isSupporter };
         };
-        if (!c.configured) return { configured: false, environment: c.environment, history: [], pending: null,
+        if (!c.configured) return { configured: false, environment: c.environment, history: [], historyNextCursor: null, pending: null,
             supporter: { ...await donationGrant(db.queryDatabase, owner, null, [], now()), manualActive: false }, permanentSupport:await permanent() };
         const refresh = await reconcileOwner(owner);
         const supporter = await db.withDatabaseTransaction(async query => { await lockOwner(query, owner); return recomputeSupporter(query, owner); });
-        const rows = await db.queryDatabase('SELECT * FROM automation_square_donation_attempts WHERE owner_user_id=? AND environment=? AND merchant_id=? ORDER BY created_at_ms DESC,id DESC LIMIT 100', [owner, ...scope]);
+        const history = await getHistory(actor);
         const pending = (await db.queryDatabase(`SELECT * FROM automation_square_donation_attempts WHERE owner_user_id=? AND environment=? AND merchant_id=? AND state IN ('SUBMITTING','UNKNOWN','APPROVED','PENDING') ORDER BY created_at_ms,id LIMIT 1`, [owner, ...scope]))[0];
         const manual = (await db.queryDatabase('SELECT is_donor FROM users WHERE user_id=?', [owner]))[0];
-        return { configured: true, environment: c.environment, history: rows.map(historyDto), pending: pending ? { ...quoteDto(pending), state: pending.state, retryable: false } : null,
+        return { configured: true, environment: c.environment, history: history.items, historyNextCursor: history.nextCursor, pending: pending ? { ...quoteDto(pending), state: pending.state, retryable: false } : null,
             supporter: { ...supporter, manualActive: Number(manual?.is_donor) === 1 }, permanentSupport:await permanent(), refresh };
     }
     async function getAttempt(actor, attemptId) {
@@ -351,7 +370,7 @@ function createSquareDonations(db, options = {}) {
         if (current.state === 'QUOTED') throw mismatch();
         await applyObservation(query, current, await observePayment(current, payment));
     }
-    return { getOptions, getStatus, getAdmin, savePolicy, createQuote, donate, getAttempt, handleVerifiedWebhook };
+    return { getOptions, getStatus, getHistory, getAdmin, savePolicy, createQuote, donate, getAttempt, handleVerifiedWebhook };
 }
 
 module.exports = { createSquareDonations, isSquareDonationSupporter, getSquareDonationGrant };

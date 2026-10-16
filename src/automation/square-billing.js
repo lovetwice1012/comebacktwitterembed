@@ -568,7 +568,7 @@ function createSquareBilling(db, options = {}) {
         const verificationWarning = observation?.warning_subscription_id === row?.subscription_id && observation?.warning_checkout_id === row?.checkout_id && observation?.warning_code === 'SQUARE_PRORATION_UNVERIFIED'
             ? { code: observation.warning_code, message: observation.warning_message } : null;
         const idle = pending && (!pending.lease_token || Number(pending.lease_until_at_ms) <= now());
-        return { configured: true, environment: c.environment, refresh, ...(verificationWarning ? { verificationWarning } : {}), subscription: row ? { planId: row.plan_id, label: labels[0]?.label || row.plan_id, state: row.state, ...recurringTerms,
+        return { configured: true, environment: c.environment, refresh, ...(verificationWarning ? { verificationWarning } : {}), subscription: row ? { subscriptionId: row.subscription_id, checkoutId: row.checkout_id, planId: row.plan_id, label: labels[0]?.label || row.plan_id, state: row.state, ...recurringTerms,
             paidThroughAtMs: row.paid_through_at_ms === null ? null : Number(row.paid_through_at_ms), validUntilAtMs: row.valid_until_at_ms === null ? null : Number(row.valid_until_at_ms), canceledDate: row.canceled_date,
             active: Number(row.verified) === 1 && ['ACTIVE', 'CANCELED'].includes(row.state) && Number(row.valid_until_at_ms) > now(), cancelScheduled: !!row.canceled_date } : null,
         pending: pending ? { checkoutId: pending.id, state: pending.state, retryable: Boolean(idle && RETRYABLE.has(pending.state)),
@@ -673,9 +673,11 @@ function createSquareBilling(db, options = {}) {
         }
         return statusAfterMutation(actor);
     }
-    async function claimCancellation(owner) {
+    async function claimCancellation(owner, expected) {
         const initial = await subscriptionRow(owner);
         if (!initial) throw fail('SQUARE_SUBSCRIPTION_NOT_FOUND', '契約が見つかりません。', 404);
+        const matches = row => row?.subscription_id === expected.subscriptionId && row.checkout_id === expected.checkoutId;
+        if (!matches(initial)) throw fail('SQUARE_CANCEL_CONTRACT_CHANGED', '現在の契約を再確認して、解約を申し込んでください。', 409);
         return db.withDatabaseTransaction(async query => {
             await query(`INSERT INTO automation_square_billing_cancellations (owner_user_id,environment,merchant_id,subscription_id) VALUES (?,?,?,?)
                 ON DUPLICATE KEY UPDATE owner_user_id=VALUES(owner_user_id)`, [owner, ...scope, initial.subscription_id]);
@@ -683,6 +685,7 @@ function createSquareBilling(db, options = {}) {
             await lockOwner(query, owner);
             const current = await subscriptionRow(owner, query);
             if (!current) throw fail('SQUARE_SUBSCRIPTION_NOT_FOUND', '契約が見つかりません。', 404);
+            if (!matches(current)) throw fail('SQUARE_CANCEL_CONTRACT_CHANGED', '現在の契約を再確認して、解約を申し込んでください。', 409);
             const same = previous.subscription_id === current.subscription_id;
             if (same && previous.lease_token && Number(previous.lease_until_at_ms) > now()) return { state: 'busy', retryAtMs: Number(previous.lease_until_at_ms) };
             if (current.canceled_date || TERMINAL.has(current.state)) return { state: 'complete' };
@@ -706,9 +709,12 @@ function createSquareBilling(db, options = {}) {
             return current?.subscription_id === claim.subscriptionId && current.checkout_id === claim.checkoutId ? current : null;
         });
     }
-    async function cancel(actor) {
+    async function cancel(actor, input) {
         const owner = user(actor); requireConfigured();
-        const claim = await claimCancellation(owner);
+        if (typeof input?.subscriptionId !== 'string' || !SQUARE_ID.test(input.subscriptionId)
+            || typeof input?.checkoutId !== 'string' || !UUID.test(input.checkoutId))
+            throw fail('SQUARE_CANCEL_CONFIRMATION_REQUIRED', '契約状態を再確認してから、解約する契約を選んでください。', 409);
+        const claim = await claimCancellation(owner, input);
         if (claim.state === 'complete') return getStatus(actor);
         if (claim.state !== 'claimed') return statusDto(owner, { state: claim.state, retryAtMs: claim.retryAtMs });
         try {

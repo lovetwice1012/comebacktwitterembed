@@ -13,7 +13,9 @@ const {
 const { normalizeSource } = require('../providers/priceWatch');
 const { deleteTarget, registerTarget, normalizeRule } = require('../providers/priceWatch/store');
 const { validateWebhook } = require('../providers/autoWatch/store');
-const { createWebhookForChannel, verifyChannelForNotification } = require('./_webhookDestination');
+const { withWebhookForChannel, verifyChannelForNotification } = require('./_webhookDestination');
+const db = require('../db');
+const { withChannelWebhookOperation } = require('../automation/webhook-registration');
 const permissions = require('./_permissionCheck');
 
 const PROVIDERS = Object.freeze({ a: 'amazon', s: 'steam' });
@@ -146,21 +148,12 @@ function confirmation(locale, result) {
 async function register(interaction, source, mode, destination, options = {}) {
     // Validate every supplied condition before source REST or webhook creation.
     normalizeRule({ mode, maxPriceAmount: options.maxPriceAmount, minDiscountPercent: options.minDiscountPercent });
+    // Schema DDL must finish before the channel-operation transaction begins;
+    // MySQL DDL would otherwise implicitly commit its cross-process lock.
+    await require('../db_schema').ensureDatabaseSchema();
     const { normalized, productName } = await sourceFromMessage(interaction, source);
-    let webhookUrl = options.webhookUrl || null;
-    let createdWebhook = null;
-    if (destination === 'webhook') {
-        const checked = await validateWebhook(webhookUrl);
-        if (checked.guildId !== interaction.guildId) throw Object.assign(new Error('The webhook belongs to another server.'), { code: 'PRICE_WATCH_WEBHOOK_GUILD_MISMATCH' });
-        await verifyChannelForNotification(interaction, checked.channelId);
-    }
-    if (destination === 'channel') {
-        const created = await createWebhookForChannel(interaction, options.channelId, 'ComebackTwitterEmbed price alerts');
-        webhookUrl = created.webhookUrl;
-        if (created.created !== false) createdWebhook = created.webhook;
-    }
-    try {
-        return await registerTarget({
+    const webhookUrl = options.webhookUrl || null;
+    const save = (url, destinationChannelId = undefined) => registerTarget({
             userId: interaction.user.id,
             providerId: source.providerId,
             productUrl: normalized.productUrl,
@@ -169,16 +162,26 @@ async function register(interaction, source, mode, destination, options = {}) {
             guildId: interaction.guildId,
             channelId: interaction.channelId,
             destinationType: destination === 'dm' ? 'dm' : 'webhook',
-            webhookUrl,
+            webhookUrl: url,
             mode,
             maxPriceAmount: options.maxPriceAmount,
             minDiscountPercent: options.minDiscountPercent,
-            destinationChannelId: destination === 'channel' ? options.channelId : undefined,
+            destinationChannelId,
         });
-    } catch (error) {
-        try { await createdWebhook?.delete?.(); } catch { /* keep the original registration failure */ }
-        throw error;
+    if (destination === 'channel') {
+        return withWebhookForChannel(interaction, options.channelId, 'ComebackTwitterEmbed price alerts', created => save(created.webhookUrl, options.channelId), { db });
     }
+    if (destination === 'webhook') {
+        const checked = await validateWebhook(webhookUrl);
+        if (checked.guildId !== interaction.guildId) throw Object.assign(new Error('The webhook belongs to another server.'), { code: 'PRICE_WATCH_WEBHOOK_GUILD_MISMATCH' });
+        return withChannelWebhookOperation(db, interaction.guildId, checked.channelId, async () => {
+            const current = await validateWebhook(webhookUrl);
+            if (current.id !== checked.id || current.guildId !== checked.guildId || current.channelId !== checked.channelId) throw Object.assign(new Error('The webhook destination changed.'), { code: 'AUTO_WATCH_INVALID_WEBHOOK' });
+            await verifyChannelForNotification(interaction, current.channelId);
+            return save(webhookUrl);
+        });
+    }
+    return save(webhookUrl);
 }
 
 async function registerAndConfirm(interaction, source, mode, destination, options = {}) {
@@ -195,6 +198,8 @@ async function registerAndConfirm(interaction, source, mode, destination, option
             content = ja(interaction.locale)
                 ? '通知先で利用者とBotの閲覧・送信権限を確認してください。Webhookを作成する場合はWebhook管理権限も必要です。'
                 : 'Check View Channel and Send Messages permissions for you and the bot. Creating a webhook also requires Manage Webhooks.';
+        } else if (error?.code === 'AUTO_WATCH_INVALID_WEBHOOK') {
+            content = ja(interaction.locale) ? '通知先のWebhookを確認して、もう一度登録してください。' : 'Check the destination webhook and register again.';
         }
         if (!content) throw error;
         await interaction.editReply({ content });

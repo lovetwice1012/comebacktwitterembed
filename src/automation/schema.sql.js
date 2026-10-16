@@ -67,6 +67,8 @@ const SCHEMA = [
         checksum CHAR(64) NOT NULL,
         actor_user_id VARCHAR(32) NOT NULL,
         created_at_ms BIGINT NOT NULL,
+        source_package_id CHAR(36) NULL,
+        source_package_version INT UNSIGNED NULL,
         PRIMARY KEY (workflow_id, revision),
         CONSTRAINT fk_automation_revision_workflow FOREIGN KEY (workflow_id) REFERENCES automation_workflows(id) ON DELETE CASCADE
     ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,

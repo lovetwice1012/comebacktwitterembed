@@ -8,6 +8,7 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 
 const MAX_BYTES = 4 * 1024 * 1024;
+const NOTIFICATION_FENCE_VERSION = 2;
 let cached;
 let initializing;
 
@@ -123,12 +124,17 @@ function currentWindowStart(startMs) {
 }
 async function initialize(options = {}) {
     const state = begin();
-    if (!state || state.complete) return state;
+    if (!state || state.complete && state.notificationFenceVersion === NOTIFICATION_FENCE_VERSION) return state;
     if (initializing) return initializing;
     initializing = (async () => {
         const query = options.query || require('./db').queryDatabase;
         const tables = options.tables || require('./db_schema').TABLES;
         const subscriptions = options.subscriptions || require('./providers/booth/_notifications');
+        // Explicit table fixtures may opt into this scope. Production always
+        // scans the existing automation tables before notification timers start.
+        const automation = options.automationTables || (!options.tables ? {
+            jobs: 'automation_jobs', steps: 'automation_flow_steps', batches: 'automation_flow_batches', sends: 'automation_flow_sends', inbox: 'automation_x_push_inbox',
+        } : {});
         const deadline = Date.now() + 60000;
         const sources = [
             ['autoextract_targets', tables.autoExtractTargets, 'id', 'created_at_ms <= ?', [state.startedAtMs]],
@@ -136,12 +142,17 @@ async function initialize(options = {}) {
             ...(tables.priceWatchDeliveries ? [['price_watch_pending_deliveries', tables.priceWatchDeliveries, 'id', "status = 'pending'", []]] : []),
             ['deregister_pending', tables.deregisterNotifications, 'notification_id', 'dm_sent = 0 AND created_at_ms <= ?', [state.startedAtMs]],
             ['error_incidents', tables.botErrorAlerts, 'alert_key', 'active = 1', []],
+            ...(automation.jobs ? [['automation_pending_jobs', automation.jobs, 'id', "state IN ('pending','held','leased','aggregated') AND created_at_ms<=?", [state.startedAtMs], 'id,run_id,state,created_at_ms,sent_steps,discord_message_id']] : []),
+            ...(automation.steps ? [['automation_pending_steps', automation.steps, 'id', "state IN ('pending','leased','joining','aggregating') AND created_at_ms<=?", [state.startedAtMs], 'id,namespace_key,node_id,state,created_at_ms']] : []),
+            ...(automation.batches ? [['automation_open_batches', automation.batches, 'id', "state='open' AND created_at_ms<=?", [state.startedAtMs], 'id,namespace_key,node_id,state,created_at_ms,closes_at_ms']] : []),
+            ...(automation.sends ? [['automation_unprojected_sends', automation.sends, 'id', "state='unprojected' AND created_at_ms<=?", [state.startedAtMs], 'id,namespace_key,unit_id,state,created_at_ms']] : []),
+            ...(automation.inbox ? [['x_push_pending_inbox', automation.inbox, 'id', "status IN ('received','unsupported') AND received_at_ms<=?", [state.startedAtMs], 'id,subscription_id,subscription_revision,status,received_at_ms,ack_code']] : []),
         ];
-        for (const [kind, table, key, predicate, params] of sources) {
+        for (const [kind, table, key, predicate, params, fields = '*'] of sources) {
             let progress = state.tables[kind] || { cursor: key === 'alert_key' ? '' : '0', pages: 0, rows: 0, complete: false };
             while (!progress.complete) {
                 if (Date.now() >= deadline || progress.pages >= 500) throw failure('Recovery quarantine scan exceeded its bounded startup budget. Background notifications remain stopped.');
-                const rows = await query(`SELECT * FROM ${table} WHERE ${predicate} AND ${key} > ? ORDER BY ${key} LIMIT 200`, [...params, progress.cursor], { timeoutMs: Math.max(1, Math.min(5000, deadline - Date.now())) });
+                const rows = await query(`SELECT ${fields} FROM ${table} WHERE ${predicate} AND ${key} > ? ORDER BY ${key} LIMIT 200`, [...params, progress.cursor], { timeoutMs: Math.max(1, Math.min(5000, deadline - Date.now())) });
                 if (!Array.isArray(rows) || rows.length > 200) throw failure('Recovery quarantine scan returned invalid rows.');
                 if (rows.length) {
                     quarantine(kind, `page:${progress.cursor}`, { rows });
@@ -163,7 +174,7 @@ async function initialize(options = {}) {
             if (Date.now() >= deadline) throw failure('Recovery notification quarantine exceeded its startup budget. Background notifications remain stopped.');
             if (!record.notified) notificationAllowed('booth_sale', record, record.registeredAt);
         }
-        const completed = { ...state, complete: true, completedAtMs: Date.now() };
+        const completed = { ...state, notificationFenceVersion: NOTIFICATION_FENCE_VERSION, complete: true, completedAtMs: Date.now() };
         save(completed);
         Object.assign(state, completed);
         return state;

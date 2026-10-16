@@ -45,6 +45,40 @@ test('S4-1 actual start ID is used and send called start cannot bypass selection
     const definition = graph([node('entry', 'start', { providers: ['youtube'] }), node('start', 'send')], [['entry', 'start']]);
     await fixture(definition, async f => { const result = await f.add('wrong service'); await f.drain(); assert.equal((await f.query('SELECT * FROM automation_jobs')).length, 0); assert.equal((await f.query('SELECT state FROM automation_runs WHERE id=?', [result.runId]))[0].state, 'excluded'); });
 });
+test('S4-1 historical pending and expired-leased initial activations recover the immutable start guard', { skip: !port, timeout: 45000 }, async () => {
+    const cases = [
+        { definition: direct('entry'), sends: 1 },
+        { definition: graph([node('entry', 'start', { providers: ['youtube'] }), node('start', 'send')], [['entry', 'start']]), sends: 0 },
+        { definition: graph([node('entry', 'start', { providers: ['github'] }), node('start', 'send')], [['entry', 'start']]), sends: 1 },
+        { definition: direct(), sends: 1 },
+    ];
+    for (const state of ['pending', 'leased']) for (const scenario of cases) await fixture(scenario.definition, async f => {
+        const admitted = await f.add(`historical ${state}`);
+        const initial = (await f.query('SELECT s.* FROM automation_flow_steps s JOIN automation_flow_members m ON m.unit_id=s.input_unit_id WHERE m.run_id=?', [admitted.runId]))[0];
+        // Recreate the exact pre-fix initial shape; no completed work is reset.
+        await f.query("UPDATE automation_flow_steps SET node_id='start',state=?,lease_token=?,lease_until_ms=?,evaluation_at_ms=? WHERE id=?", [state, state === 'leased' ? randomUUID() : null, state === 'leased' ? base - 1 : 0, state === 'leased' ? base - 1000 : null, initial.id]);
+        f.flow.clear();
+        const restarted = createFlowRuntime(f.db, f.evaluator, createGraphStore(f.db), { assertEnabled: () => {} });
+        try { for (let tick = 0; tick < 12; tick++) await restarted.tick(base); }
+        finally { restarted.clear(); }
+        const saved = (await f.query('SELECT node_id,state,input_unit_id,activation_key FROM automation_flow_steps WHERE id=?', [initial.id]))[0];
+        assert.equal(saved.node_id, scenario.definition.nodes.find(item => item.type === 'start').id); assert.equal(saved.state, 'complete'); assert.equal(saved.input_unit_id, initial.input_unit_id); assert.equal(saved.activation_key, initial.activation_key);
+        assert.equal((await f.query('SELECT * FROM automation_jobs')).length, scenario.sends);
+        if (!scenario.sends) assert.equal((await f.query('SELECT state FROM automation_runs WHERE id=?', [admitted.runId]))[0].state, 'excluded');
+    });
+});
+test('S4-1 progressed downstream node named start is preserved across restart', { skip: !port }, async () => {
+    const definition = graph([node('entry', 'start', { providers: ['github'] }), node('start', 'send')], [['entry', 'start']]);
+    await fixture(definition, async f => {
+        await f.add('accepted post'); await f.flow.tick(base);
+        const downstream = (await f.query("SELECT * FROM automation_flow_steps WHERE node_id='start'"))[0]; assert(downstream.via_edge_id);
+        f.flow.clear(); const restarted = createFlowRuntime(f.db, f.evaluator, createGraphStore(f.db), { assertEnabled: () => {} });
+        try { for (let tick = 0; tick < 8; tick++) await restarted.tick(base); } finally { restarted.clear(); }
+        assert.equal((await f.query('SELECT * FROM automation_flow_steps')).length, 2);
+        assert.equal((await f.query('SELECT node_id,state FROM automation_flow_steps WHERE id=?', [downstream.id]))[0].node_id, 'start');
+        assert.equal((await f.query('SELECT * FROM automation_jobs')).length, 1);
+    });
+});
 test('N1 legacy DM and two webhook destinations project beside Dashboard registrations', { skip: !port }, async () => fixture(direct(), async f => {
     const targets = [f.monitor];
     for (const name of ['github', 'microsoft', 'google']) targets.push(await f.monitors.save(f.actor, 'auto', { name, providerId: 'github', source: name, destinationId: f.destination.id }));
@@ -127,6 +161,37 @@ test('T6 projected frozen maximum wait survives reload and exact deadline bounda
 test('S4-2 expired aggregate member is pruned while its healthy peer remains sendable', { skip: !port }, async () => {
     const definition = graph([node('start', 'start'), node('batch', 'aggregate', { minutes: 1, key: 'all' }), node('send', 'send')], [['start', 'batch'], ['batch', 'send']]); definition.expiresAfterMinutes = 3;
     await fixture(definition, async f => { await f.add('older'); await f.drain(); f.now = base + 30000; await f.add('healthy'); await f.drain(); await f.drain(base + 60000); const job = await f.queue.claim(base + 180001); assert.equal(job.plan.members.length, 2); const refreshed = await f.queue.refreshFlowJob(job, base + 180001); assert.equal(refreshed.state, 'ready'); assert.deepEqual(refreshed.job.plan.members.map(member => member.event.title), ['healthy']); assert.equal((await f.queue.check(refreshed.job, base + 180001)).state, 'ready'); });
+});
+test('S4-2 and N6 expired anchor and non-anchor runs stay visible only in their own monitor history', { skip: !port, timeout: 30000 }, async () => {
+    const definition = graph([node('start', 'start'), node('choose', 'condition', { predicate: { field: 'title', op: 'contains', value: 'older' } }),
+        node('short', 'schedule', { zone: 'UTC', maxWaitDays: 1, windows: [{ start: '00:00', end: '24:00' }] }),
+        node('long', 'schedule', { zone: 'UTC', maxWaitDays: 2, windows: [{ start: '00:00', end: '24:00' }] }),
+        node('batch', 'aggregate', { minutes: 1, key: 'all' }), node('send', 'send'), node('stop', 'stop')],
+    [['start', 'choose'], ['choose', 'short', 'yes'], ['choose', 'long', 'no'], ['choose', 'stop', 'unknown'], ['short', 'batch'], ['long', 'batch'], ['batch', 'send']]);
+    for (const expiredAnchor of [true, false]) await fixture(definition, async f => {
+        const second = await f.monitors.save(f.actor, 'auto', { name: 'second source', providerId: 'github', source: 'github', destinationId: f.destination.id }); await f.service.attach(f.actor, f.workflow.id, 'auto', second.id);
+        const firstRun = await f.add(expiredAnchor ? 'older first' : 'healthy first'); await f.drain(); f.now = base + 30000;
+        const secondRun = await f.add(expiredAnchor ? 'healthy second' : 'older second', {}, second); await f.drain(); await f.drain(base + 60000);
+        const expiredTarget = expiredAnchor ? f.monitor : second, healthyTarget = expiredAnchor ? second : f.monitor, expiredRun = expiredAnchor ? firstRun : secondRun, healthyRun = expiredAnchor ? secondRun : firstRun;
+        const original = (await f.query('SELECT id,run_id FROM automation_jobs'))[0]; assert.equal(original.run_id, firstRun.runId);
+        f.now = base + 86400000 + (expiredAnchor ? 0 : 30000) + 1;
+        f.flow.clear(); const refreshed = await f.queue.refreshFlowJob(await f.queue.claim(f.now), f.now); assert.equal(refreshed.state, 'ready'); assert.deepEqual(refreshed.job.plan.members.map(member => member.runId), [healthyRun.runId]);
+        const history = require('../../src/automation/history').createHistory(f.db, f.service);
+        const allRuns = await history.excluded(f.actor); assert.deepEqual(allRuns.items.map(run => run.id), [expiredRun.runId]); assert.equal(allRuns.items[0].state, 'expired'); assert(allRuns.items[0].trace.some(item => item.reason === 'DEADLINE_EXCEEDED'));
+        const expiredPage = await history.list(f.actor, { targetKind: 'auto', targetId: expiredTarget.id }); assert.equal(expiredPage.items.length, 0); assert.deepEqual(expiredPage.activity, { lastSentAtMs: null, nextDueAtMs: null }); assert.deepEqual(expiredPage.ruleRuns.map(run => run.id), [expiredRun.runId]);
+        const healthyPage = await history.list(f.actor, { targetKind: 'auto', targetId: healthyTarget.id }); assert.equal(healthyPage.items.length, 1); assert.equal(healthyPage.items[0].targetId, healthyTarget.id); assert.match(healthyPage.items[0].title, /healthy/); assert.equal(healthyPage.ruleRuns.length, 0);
+        const detail = await history.detail(f.actor, original.id); assert.match(detail.event.title, /healthy/); assert(!detail.trace.some(item => item.outcome === 'expired'));
+        const query = new URLSearchParams({ targetKind: 'auto', targetId: expiredTarget.id }); const { dispatch } = require('../../src/automation/api');
+        assert.deepEqual((await dispatch({ method: 'GET', path: ['excluded'], search: query }, f.actor, { history })).items.map(run => run.id), [expiredRun.runId]);
+        assert.equal((await history.excluded({ userId: '999999999999999999' }, '', { targetKind: 'auto', targetId: expiredTarget.id })).items.length, 0);
+        await assert.rejects(history.excluded(f.actor, '', { targetKind: 'auto' }), { code: 'INVALID_TARGET' });
+        await f.queue.transition(refreshed.job, 'pending', null, f.now);
+        const transport = require('../../src/automation/transport').createTransport(f.db, {}, { options: { jsonTransformer: value => value } }, { clock: () => f.now, rest: { post: async route => route === '/users/@me/channels' ? { id: C } : { id: M, channel_id: C } } });
+        const runner = require('../../src/automation/runtime').createRunner(f.db, f.queue, transport, { clock: () => f.now, assertAllowed: () => {}, notificationAllowed: () => true, sleep: async ms => { f.now += ms; } });
+        assert.equal((await runner.tick()).state, 'sent');
+        const sentPage = await history.list(f.actor, { targetKind: 'auto', targetId: healthyTarget.id }); assert.equal(sentPage.items[0].state, 'sent'); assert(sentPage.activity.lastSentAtMs); assert.equal(sentPage.ruleRuns.length, 0);
+        const stillExpired = await history.list(f.actor, { targetKind: 'auto', targetId: expiredTarget.id }); assert.equal(stillExpired.items.length, 0); assert.equal(stillExpired.ruleRuns.length, 1); assert.equal(stillExpired.activity.lastSentAtMs, null);
+    });
 });
 test('S4-2 disjoint member schedules wake at the first expiry and preserve a manual lower bound', { skip: !port }, async () => {
     const day = 86400000, monday = Date.parse('2026-10-05T00:00:00Z');

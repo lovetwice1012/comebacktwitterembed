@@ -2,11 +2,12 @@
 
 const { provider } = require('../../../providers/autoWatch');
 const { registerTarget, validateWebhook, assertRegistrationAllowed } = require('../../../providers/autoWatch/store');
-const { createWebhookForChannel, verifyChannelForNotification } = require('../../../components/_webhookDestination');
+const { withWebhookForChannel, verifyChannelForNotification } = require('../../../components/_webhookDestination');
 const { failureReason } = require('../../../userFacingErrors');
 const { recordError } = require('../../../errorTracking');
 const db = require('../../../db');
 const { withRateOperation } = require('../../../automation/rate-operation');
+const { withChannelWebhookOperation } = require('../../../automation/webhook-registration');
 
 function localized(locale, japanese, english) {
     return String(locale || '').toLowerCase().startsWith('ja') ? japanese : english;
@@ -36,8 +37,6 @@ module.exports = async function (interaction) {
             '内容・権利・通知先を確認し、responsibility を true にしてください。機械チェックは適法性や安全性を保証しません。',
             'Confirm content, rights and destination and set responsibility to true. Mechanical checks do not guarantee legality or safety.')));
     }
-    /** @type {import('discord.js').Webhook | null} */
-    let createdWebhook = null;
     const committed = { targetId: '' };
     try {
         await require('../../../db_schema').ensureDatabaseSchema();
@@ -48,34 +47,37 @@ module.exports = async function (interaction) {
         }
         let destinationType = destination === 'dm' ? 'dm' : 'webhook';
         let destinationLabel = localized(interaction.locale, 'DM', 'DM');
+        const register = async (url, destinationChannelId = undefined) => {
+            let checked;
+            if (destinationType === 'webhook') {
+                const webhook = await validateWebhook(url); checked = webhook;
+                if (webhook.guildId !== interaction.guildId) {
+                    throw Object.assign(new Error('The webhook belongs to another server.'), { code: 'AUTO_WATCH_WEBHOOK_GUILD_MISMATCH' });
+                }
+                if (destination === 'webhook') destinationLabel = localized(interaction.locale, '指定Webhook', 'Specified webhook');
+            }
+            const save = () => registerTarget({
+                userId: interaction.user.id, providerId, source, destinationType, webhookUrl: url,
+                guildId: interaction.guildId, channelId: interaction.channelId,
+                channelNsfw: interaction.channel?.nsfw === true, sourceLocale: interaction.locale, destinationChannelId,
+            });
+            if (destination === 'webhook') return withChannelWebhookOperation(db, interaction.guildId, checked.channelId, async () => {
+                const current = await validateWebhook(url);
+                if (current.id !== checked.id || current.guildId !== checked.guildId || current.channelId !== checked.channelId) throw Object.assign(new Error('The webhook destination changed.'), { code: 'AUTO_WATCH_INVALID_WEBHOOK' });
+                await verifyChannelForNotification(interaction, current.channelId);
+                return save();
+            });
+            return save();
+        };
+        let result;
         if (destination === 'channel') {
             const channel = interaction.options.getChannel('channel');
             if (!channel?.id) return await interaction.editReply(errorReply(interaction.locale, localized(interaction.locale, 'Webhookを作成するチャンネルを指定してください。', 'Select a channel where the bot can create a webhook.')));
-            const created = await createWebhookForChannel(interaction, channel.id, 'ComebackTwitterEmbed auto watch');
-            if (created.created !== false) createdWebhook = created.webhook;
-            webhookUrl = created.webhookUrl;
-            destinationLabel = localized(interaction.locale, `チャンネル #${created.channel.name || created.channel.id}`, `Channel #${created.channel.name || created.channel.id}`);
-        }
-        if (destinationType === 'webhook') {
-            const webhook = await validateWebhook(webhookUrl);
-            if (webhook.guildId !== interaction.guildId) {
-                throw Object.assign(new Error('The webhook belongs to another server.'), { code: 'AUTO_WATCH_WEBHOOK_GUILD_MISMATCH' });
-            }
-            if (destination === 'webhook') await verifyChannelForNotification(interaction, webhook.channelId);
-            if (destination === 'webhook') destinationLabel = localized(interaction.locale, '指定Webhook', 'Specified webhook');
-        }
-        const result = await registerTarget({
-            userId: interaction.user.id,
-            providerId,
-            source,
-            destinationType,
-            webhookUrl,
-            guildId: interaction.guildId,
-            channelId: interaction.channelId,
-            channelNsfw: interaction.channel?.nsfw === true,
-            sourceLocale: interaction.locale,
-            destinationChannelId: destination === 'channel' ? interaction.options.getChannel('channel').id : undefined,
-        });
+            result = await withWebhookForChannel(interaction, channel.id, 'ComebackTwitterEmbed auto watch', created => {
+                destinationLabel = localized(interaction.locale, `チャンネル #${created.channel.name || created.channel.id}`, `Channel #${created.channel.name || created.channel.id}`);
+                return register(created.webhookUrl, channel.id);
+            }, { db });
+        } else result = await register(webhookUrl);
         committed.targetId = String(result.id);
         const adapter = provider(result.providerId);
         const initial = result.initialCheckNotBeforeMs
@@ -106,7 +108,6 @@ module.exports = async function (interaction) {
                 `新着通知を登録しました。ID: ${committed.targetId}。通知一覧で設定を確認できます。`,
                 `Auto watch registered. ID: ${committed.targetId}. Check your notification list for its settings.`) });
         }
-        try { await createdWebhook?.delete?.(); } catch { /* keep the original registration failure */ }
         if (error?.code === 'AUTOMATION_RATE_LIMITED') {
             const hour = error.windowMs === 3600000, limit = Number.isSafeInteger(error.limit) ? error.limit : hour ? 120 : 10;
             const seconds = Math.ceil((Number.isFinite(error.retryAfterMs) ? error.retryAfterMs : 60000) / 1000);

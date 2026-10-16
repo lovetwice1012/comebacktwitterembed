@@ -220,7 +220,7 @@ function createXMonitorQuota(db, options = {}) {
         const suppliedSettings = input.notificationSettings === undefined ? undefined : inputSettings(input.notificationSettings);
         const currentDestinations = Object.fromEntries(Object.entries(currentSettings).filter(([key]) => key !== 'processingMode'));
         const changed = input.name !== undefined && input.name.trim() !== row.name
-            || input.accountHandle !== undefined && handleOf(input.accountHandle) !== row.account_handle
+            || input.accountHandle !== undefined && (handleOf(input.accountHandle)?.toLowerCase() || null) !== (row.account_handle?.toLowerCase() || null)
             || input.processingMode !== undefined && input.processingMode !== currentSettings.processingMode
             || suppliedSettings && (Object.keys(suppliedSettings).length !== Object.keys(currentDestinations).length
                 || Object.keys(suppliedSettings).some(key => suppliedSettings[key] !== currentDestinations[key]));

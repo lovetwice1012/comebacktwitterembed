@@ -36,6 +36,39 @@ const pack = (name, dictionaries, workflow) => ({ title: name, description: 'Syn
     bundle: { schemaVersion: 1, kind: workflow ? 'workflow' : 'dictionary', ...(workflow ? { workflow } : {}), dictionaries, license: 'CC0-1.0' } });
 const dependencyJob = ref => ({ plan: { dictionaryRefs: { words: ref } } });
 
+test('T10: restoring a rule prunes removed unused dictionaries while retaining optional live and enforcing used bindings', { skip: !port }, async () => fixture(async f => {
+    const removed = await f.service.saveDictionary(B, { dictionary: dictionary('removed optional') });
+    const live = await f.service.saveDictionary(B, { dictionary: dictionary('live optional') });
+    const bindings = { dictionaries: { removed: { id: removed.id, revision: 1 }, live: { id: live.id, revision: 1 } } };
+    const rule = await f.service.createWorkflow(B, { definition: newWorkflow('optional package dictionary'), bindings });
+    const usedDefinition = newWorkflow('required dictionary');
+    usedDefinition.nodes.splice(1, 0, { id: 'lookup', type: 'dictionary', config: { dictionary: 'removed', fields: ['title'] } });
+    usedDefinition.edges = [{ id: 'e1', source: 'start', port: 'out', target: 'lookup' }, { id: 'e2', source: 'lookup', port: 'yes', target: 'send' }];
+    const used = await f.service.createWorkflow(B, { definition: usedDefinition, bindings });
+    await f.service.remove('dictionary', B, removed.id, 1);
+    const frozen = await f.db.queryDatabase('SELECT checksum,bindings_json FROM automation_revisions WHERE workflow_id=? AND revision=1', [rule.id]);
+    assert.equal((await f.service.activateWorkflow(B, rule.id, { expectedRevision: 1 })).activeRevision, 1);
+    assert.deepEqual(Object.keys((await f.market.exportWorkflow(B, rule.id)).dictionaries), ['live']);
+    await assert.rejects(f.market.exportWorkflow(B, used.id), { code: 'NOT_FOUND' });
+    assert.deepEqual(await f.db.queryDatabase('SELECT checksum,bindings_json FROM automation_revisions WHERE workflow_id=? AND revision=1', [rule.id]), frozen);
+    assert.equal((await f.service.restoreRevision(B, rule.id, 1, 1)).revision, 2);
+    assert.deepEqual((await f.service.getWorkflow(B, rule.id)).bindings.dictionaries, { live: { id: live.id, revision: 1 } });
+    await f.service.activateWorkflow(B, rule.id, { expectedRevision: 2 });
+    await assert.rejects(f.service.restoreRevision(B, used.id, 1, 1), { code: 'NOT_FOUND' });
+    await assert.rejects(f.service.activateWorkflow(B, used.id, { expectedRevision: 1 }), { code: 'NOT_FOUND' });
+    assert.equal((await f.service.getWorkflow(B, used.id)).revision, 1);
+    const destination = await f.service.saveDestination(B, { name: 'optional notification destination', scope: 'private', kind: 'dm' });
+    const destinationRule = await f.service.createWorkflow(B, { definition: newWorkflow('unused destination'), bindings: { destinations: { unused: destination.id } } });
+    // Legacy drafts retained unused destination aliases. Their existing
+    // immutable edition must remain untouched when it is activated directly.
+    const oldBindings = JSON.stringify({ destinations: { unused: destination.id }, dictionaries: {} });
+    const definition = JSON.stringify(destinationRule.draft);
+    await f.db.queryDatabase('UPDATE automation_workflows SET draft_bindings_json=? WHERE id=?', [oldBindings, destinationRule.id]);
+    await f.db.queryDatabase('UPDATE automation_revisions SET bindings_json=?,checksum=? WHERE workflow_id=? AND revision=1', [oldBindings, require('../../src/automation/service').hash(definition + oldBindings), destinationRule.id]);
+    await f.service.remove('destination', B, destination.id, 1);
+    assert.equal((await f.service.activateWorkflow(B, destinationRule.id, { expectedRevision: 1 })).activeRevision, 1);
+}));
+
 test('T5: dictionary origin survives rename, removal, update and local edit/restore while current aliases stay current', { skip: !port }, async () => fixture(async f => {
     const first = await f.market.save(A, pack('source-v1', { original: dictionary('first') }));
     const installed = await f.market.install(B, first.id, { version: 1 });

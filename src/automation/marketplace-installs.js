@@ -30,6 +30,7 @@ function createInstalls(db, service, getPackage, evaluator) {
                 return { dictionaries: refs, installId };
             }
             const workflow = await service.createWorkflow(actor, { definition: bundle.workflow, bindings: { dictionaries: refs, destinations: input.destinations || {} }, scope: owner.scope });
+            await require('./workflow-package-provenance').rememberOrigin(query, workflow.id, workflow.revision, origin);
             if (origin) await query('INSERT INTO automation_package_installs (package_id,version,workflow_id,actor_user_id,created_at_ms) VALUES (?,?,?,?,?)', [origin.id, origin.version, workflow.id, actor.userId, Date.now()]);
             return { workflow, dictionaries: refs };
         });
@@ -43,6 +44,20 @@ function createInstalls(db, service, getPackage, evaluator) {
             const pack = await getPackage(actor, id, input.version, input.shareKey);
             if (pack.status !== 'active' || ['withdrawn', 'revoked'].includes(pack.packageStatus) || pack.packageVisibility === 'private') fail('MARKET_NOT_ACTIVE', '現在公開されている機械チェック済みの版を選んでください。');
             return importBundle(actor, pack.bundle, input, { id, version: pack.version });
+        });
+    }
+    async function importForEditing(actor, id, input) {
+        requireActor(actor);
+        if (!Number.isSafeInteger(input.version) || input.version < 1) fail('MARKET_VERSION', '編集する版を選んでください。');
+        return db.withDatabaseTransaction(async query => {
+            await query('SELECT id FROM automation_packages WHERE id=? FOR UPDATE', [id]);
+            // The package identity and immutable edition come from the server.
+            // This built-in editing action is distinct from a user's external
+            // file import and carries its verified license/attribution origin.
+            const pack = await getPackage(actor, id, input.version);
+            if (!pack.mine) fail('NOT_FOUND', '対象が見つかりません。', 404);
+            if (pack.packageStatus === 'revoked' || pack.status === 'revoked') fail('MARKET_REVOKED', '安全上停止されたパッケージは取り込めません。');
+            return importBundle(actor, pack.bundle, { scope: input.scope }, { id, version: pack.version });
         });
     }
     async function installations(actor, input = {}) {
@@ -114,7 +129,8 @@ function createInstalls(db, service, getPackage, evaluator) {
                 await rememberOrigin(query, refs[alias], { id, version: plan.toVersion });
             }
             if (input.workflowId) {
-                await service.updateWorkflow(actor, input.workflowId, { expectedRevision: plan.currentRevision, definition: plan._pack.bundle.workflow, bindings: { dictionaries: refs, destinations: plan.preservedDestinations } });
+                const saved = await service.updateWorkflow(actor, input.workflowId, { expectedRevision: plan.currentRevision, definition: plan._pack.bundle.workflow, bindings: { dictionaries: refs, destinations: plan.preservedDestinations } });
+                await require('./workflow-package-provenance').rememberOrigin(query, input.workflowId, saved.revision, { id, version: plan.toVersion });
                 await query('UPDATE automation_package_installs SET version=? WHERE package_id=? AND workflow_id=?', [plan.toVersion, id, input.workflowId]);
             } else {
                 const updated = await query('UPDATE automation_package_dictionary_installs SET version=?,dictionary_bindings_json=?,updated_at_ms=? WHERE id=? AND version=?', [plan.toVersion, JSON.stringify(refs), Date.now(), input.installId, plan.fromVersion]);
@@ -124,6 +140,6 @@ function createInstalls(db, service, getPackage, evaluator) {
             return { version: plan.toVersion, workflowId: input.workflowId || null, dictionaries: refs, activated: false };
         });
     }
-    return { importBundle, install, installations, previewUpdate, updateInstall };
+    return { importBundle, install, importForEditing, installations, previewUpdate, updateInstall };
 }
 module.exports = { createInstalls };

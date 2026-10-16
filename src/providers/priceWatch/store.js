@@ -137,7 +137,7 @@ async function registerTargetAdmitted(input, options = {}) {
              (source_id, user_id, guild_id, origin_channel_id, destination_type, destination_key, webhook_endpoint_id,
               watch_mode, rule_key, max_price_amount, min_discount_percent, enabled, created_at_ms)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
-             ON DUPLICATE KEY UPDATE baseline_at_ms=IF(enabled=0,NULL,baseline_at_ms),condition_active=IF(enabled=0,0,condition_active),created_at_ms=IF(enabled=0,VALUES(created_at_ms),created_at_ms),enabled=1, id=LAST_INSERT_ID(id)`,
+             ON DUPLICATE KEY UPDATE baseline_at_ms=IF(enabled=0,NULL,baseline_at_ms),condition_active=IF(enabled=0,0,condition_active),created_at_ms=IF(enabled=0,VALUES(created_at_ms),created_at_ms),enabled=1,webhook_endpoint_id=VALUES(webhook_endpoint_id), id=LAST_INSERT_ID(id)`,
             [
                 source.id,
                 userId,
