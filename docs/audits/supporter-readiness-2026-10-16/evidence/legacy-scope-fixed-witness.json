@@ -1,0 +1,24 @@
+{
+  "status": "independent-fixed-legacy-scope-witness-passed",
+  "sourceRevision": "b4c77bf99b7db3579dea54b966c43fb1531b8dba",
+  "sourceSha256BeforeAfter": "d7151347a8780f3b105f760bb35a1ef4d5a5b70044bd5138f729d4ca168e4b2e",
+  "primaryAcceptedHistoricalThreeScopeReceipt": true,
+  "pendingAutoRows": 1,
+  "pendingPriceRows": 1,
+  "requiredPriceReadOutageRejectedBeforeFenceCompletion": true,
+  "completedAutoScopeCheckpointed": true,
+  "primaryResumeSkippedCompletedAutoAndScannedMissingPrice": true,
+  "finalVersion": 2,
+  "originalCutoffPreserved": true,
+  "quarantineKinds": [
+    "auto_watch_pending_deliveries",
+    "price_watch_pending_deliveries"
+  ],
+  "allQuarantinesNotDeliveryReceipts": true,
+  "allSourceRowsUnchanged": true,
+  "boothActualProviderWithDirectoryAndLeafAlias": true,
+  "boothExistingFileBytesUnchanged": true,
+  "boothOldPendingSuppressedAndNewPendingEligible": true,
+  "version2RestartDidNotRescan": true,
+  "productionAccess": false
+}

@@ -1,0 +1,91 @@
+{
+  "status": "independent-v7-preparation-test-reproduction-passed",
+  "at": "2026-10-16T02:58:23.025309+00:00",
+  "sourceRevision": "b4c77bf99b7db3579dea54b966c43fb1531b8dba",
+  "finalRevision": null,
+  "frozenAssetsMatchedBeforeAfter": {
+    "ssh-session-v6-exclusive.py": "4d750e3f07b28efd03b3f557cab34272b4a9a669322359fffad42909ede8664d",
+    "ssh-session-v7-exclusive.py": "99e581e81d24c97759ed5d6c2c73c1dce29c2cb853154da25b833e6b89932787",
+    "test_upload_and_launch_v7.py": "a6de4e3f26c01ced0c4eb12ccf3d6f4b0a6d76692136c731490c28526b567a8f",
+    "test_v7_exclusive_transport.py": "3cdad35fca1216b0cd8645d6a7a3d4b1d2a612a9383bd2b5a79cc4e0906f16af",
+    "test_v7_preparation_pending.py": "22a1bee74efb6116aa38fbc248ec83c55be82d783efab05a47afc7913f22e072",
+    "upload-and-launch-v7.py": "435fa087b76865afb9d72a891d0e8eab7f66fe73cdaa83d1dacf2d90a99b9edb",
+    "V7-UPLOADER-USAGE.txt": "44ff9c340f218781af3e0c7728a4f04f961fc719e0ce7983f7fccffe9f5ca446",
+    "ops/approve-v7-sources.py": "64395addf900e6b7787c8067de8ea49584051c31d5dcaaf8383960da81f7d96c",
+    "ops/approved-source-contract.json": "651336920c41c21e43c0040d3222f910af4a27f858aef6af4db2bf76ac5f3a47",
+    "ops/build-and-stage.py": "a3de2a93128f06f4860096ce853261aa81f543241dda531c39102110b09ebbad",
+    "ops/dashboard_release_base.py": "7bc05ad276128774c9f9d9bdd2db0ea98c03a638ea1356a8e0c7ef7a6e3a5087",
+    "ops/frozen-predecessors.json": "c45873fff99a97bb82ef3e7bdee0ec77960ce45e8eddd5fe891461a72e891860",
+    "ops/frozen-v5c-pins.json": "ead4fb6d0f0a0eebbdd01fdc77a7fc273abdfb165e581807c94747fa8a089615",
+    "ops/frozen-v6-inputs.json": "d30e60b478a9a0474e8ced421fc28cfb9e9759433f8cbf389d8d5e50068e4934",
+    "ops/frozen_predecessors.py": "8762b1fa0850c848a94bca9ff2db9eb3a713cb7546d57bfc9a7d82b15b613441",
+    "ops/generate-v7-release.py": "cead74661f9b258d55fa27d33c4f3c9304bdd5bffe50ec805f9fd61a2b9db120",
+    "ops/live_runtime_acceptance.py": "111896a34ee02f716dc06a44de463778431bbb6981f12587c5b5c6101649f68f",
+    "ops/native_release_guards.py": "141955d37228d2977d8e6ad16e63da76117e042dec41da8de97ddc5a4710f75b",
+    "ops/paired_release.py": "6a0dc9084e7dcf02917ff17095ae2162e2b2599c55390d89623ea7c8968c11aa",
+    "ops/prepare-v7-pins.py": "979920da25416d6206bc0607bc5b3f794837cc2605c1a3a76744e74bc6b60fa7",
+    "ops/run-v7-offline.py": "0c4be85138342cd3acf2d5782c2c01042da6888ab8104ad898a7f5ef56a927da",
+    "ops/schema-source-contract-v6-reference.json": "3e23735581cb9f7370053a061aef9bc92daa2ef504f00cae4ac1f298c4fc90c6",
+    "ops/source_archive_guards.py": "cd3eb085c508351d684ab97c65324df52fb02f0fc1458511c8e0025d37467ac1",
+    "ops/template-provenance-v7.json": "bc2891a0792b2586fc8b30704854d0861c6ccd31f02f6fcf8ce7454e3c6167a2",
+    "ops/test-stage-stop.py": "773a60671cb7fb68e07df5b5e2502fe6c6e01f113b428da6dc013a29bf93db2a",
+    "ops/test_paired_release.py": "1dc7d4a8032d55401e03561704afa18bd8c84e8332f7277bd784f8ba7611f0d8",
+    "ops/test_source_archives.py": "1dec8fa027583f7e4c6b8b91b9c67516695ad6bd7394721c5b9868d9824abffe",
+    "ops/test_v7_guards.py": "646e5ce675c2ff1dcf21c9f6d929dd56f211e5505d9e833af81862ceab2338b4",
+    "ops/test_v7_live_runtime_acceptance.py": "27728f3568d38631260117441098a9566296b6b2bcbd966f7fe78cced49310ef",
+    "ops/V7-USAGE.txt": "cf0b52ace9249277b54486843ef58a933b5b3fc7e13fb15a7bd2d5168f341254",
+    "ops/verify-monitor-release.py": "bdbec35eec4352ea4f016fd9a32dbe82003934ae8d044c91b38fd3df61dd7008",
+    "ops/verify-v7-generated-bundle.py": "021de64e76736b851abe2935f1b234bea29e669b25b8b9fab66c933a6a8ec97e",
+    "ops/approved-source-bytes/20261016_add_dictionary_package_provenance.sql": "76159bca5fc05801fb0c1fefacfe6d8d29fb1d2f77ce332eb43a263d28fd1627",
+    "ops/approved-source-bytes/20261016_bind_automation_rate_reservations.sql": "a0de3e2a89be284444d348191f2f242ba9043f3ad51a87c6f65b1f5b043df7e8",
+    "ops/approved-source-bytes/dictionary-package-provenance.js": "5ce288e01f682af91761e4ae807e19d1679047aa8901f1bc617534357f32039b",
+    "ops/draft-source-bytes/20261016_add_workflow_package_provenance.sql": "fb1b1c856fb118e7aa8bedbda09229e2104caeacb22426fbab96f6070d302874",
+    "ops/draft-source-bytes/20261016_preserve_dictionary_package_dependencies.sql": "987303670412cc858de10e8c14ee5b47d27a84da0b23c06f094f8a9af7ed411e",
+    "ops/draft-source-bytes/workflow-package-provenance.js": "7d79c85b615a3425ead82c12ddf2e9d5b80e42c292f4a107d840bfd06613c180"
+  },
+  "authorFreezeSha256": "3b5475ccef8469ab97dd0e59d8ff60015d851a7d3da45ec697dc1eb10f68c628",
+  "tests": 160,
+  "results": [
+    {
+      "name": "release114",
+      "tests": 114,
+      "exitCode": 0,
+      "stdout": "{\"status\": \"v7-preparation-fixtures-passed-awaiting-source-and-main\", \"tests\": 114, \"report\": \"C:\\\\Users\\\\yussy\\\\AppData\\\\Local\\\\Temp\\\\cbte-audit53-startup-compat-v7-20261016\\\\ops\\\\offline-validation-v7-20261016T025759287960Z.json\", \"operationsLaunched\": false}\n",
+      "stderr": ""
+    },
+    {
+      "name": "uploader28",
+      "tests": 28,
+      "exitCode": 0,
+      "stdout": "",
+      "stderr": "test_check_only_never_executes_or_claims (__main__.LocalValidationTests.test_check_only_never_executes_or_claims) ... ok\ntest_explicit_source_and_final_and_manifest_hash_required (__main__.LocalValidationTests.test_explicit_source_and_final_and_manifest_hash_required) ... ok\ntest_file_bytes_rejected (__main__.LocalValidationTests.test_file_bytes_rejected) ... ok\ntest_hash_refreshed_malicious_launcher_still_rejected (__main__.LocalValidationTests.test_hash_refreshed_malicious_launcher_still_rejected) ... ok\ntest_hash_refreshed_node_key_floor_config_still_rejected (__main__.LocalValidationTests.test_hash_refreshed_node_key_floor_config_still_rejected) ... ok\ntest_invalid_bundle_never_calls_session (__main__.LocalValidationTests.test_invalid_bundle_never_calls_session) ... ok\ntest_json_duplicate_keys_rejected (__main__.LocalValidationTests.test_json_duplicate_keys_rejected) ... ok\ntest_manifest_identity_and_no_operations (__main__.LocalValidationTests.test_manifest_identity_and_no_operations) ... ok\ntest_manifest_path_traversal_duplicate_remote_and_executable_mode (__main__.LocalValidationTests.test_manifest_path_traversal_duplicate_remote_and_executable_mode) ... ok\ntest_missing_or_extra_file_set (__main__.LocalValidationTests.test_missing_or_extra_file_set) ... ok\ntest_nine_columns_four_migrations_four_tables_only (__main__.LocalValidationTests.test_nine_columns_four_migrations_four_tables_only) ... ok\ntest_pinned_real_preparation_read_only (__main__.LocalValidationTests.test_pinned_real_preparation_read_only) ... ok\ntest_remote_directory_namespace_and_mode (__main__.LocalValidationTests.test_remote_directory_namespace_and_mode) ... ok\ntest_synthetic_control_fixture_accepts_with_real_templates (__main__.LocalValidationTests.test_synthetic_control_fixture_accepts_with_real_templates) ... ok\ntest_wrong_bundle_parent (__main__.LocalValidationTests.test_wrong_bundle_parent) ... ok\ntest_failed_partial_upload_leaves_claim_and_retry_blocks (__main__.OrchestrationTests.test_failed_partial_upload_leaves_claim_and_retry_blocks) ... ok\ntest_invalid_reservation_never_uploads (__main__.OrchestrationTests.test_invalid_reservation_never_uploads) ... ok\ntest_local_receipt_or_claim_collision_blocks_all_network (__main__.OrchestrationTests.test_local_receipt_or_claim_collision_blocks_all_network) ... ok\ntest_write_exclusive_does_not_replace_existing_bytes (__main__.OrchestrationTests.test_write_exclusive_does_not_replace_existing_bytes) ... ok\ntest_all_bytes_verified_before_stage_sentinel (__main__.RemoteProgramTests.test_all_bytes_verified_before_stage_sentinel) ... ok\ntest_directory_owner_dev_inode_mode_or_replaced_type_rejected (__main__.RemoteProgramTests.test_directory_owner_dev_inode_mode_or_replaced_type_rejected) ... ok\ntest_each_file_owner_mode_size_type_symlink_hash_rejected_before_launch (__main__.RemoteProgramTests.test_each_file_owner_mode_size_type_symlink_hash_rejected_before_launch) ... ok\ntest_generated_gate_never_contains_credentials_or_remote_transport (__main__.RemoteProgramTests.test_generated_gate_never_contains_credentials_or_remote_transport) ... ok\ntest_missing_launcher_cannot_launch (__main__.RemoteProgramTests.test_missing_launcher_cannot_launch) ... ok\ntest_remote_programs_compile (__main__.RemoteProgramTests.test_remote_programs_compile) ... ok\ntest_reserve_collision_and_symlink_fail_before_any_mkdir (__main__.RemoteProgramTests.test_reserve_collision_and_symlink_fail_before_any_mkdir) ... ok\ntest_reserve_fresh_exact_two_directory_identities (__main__.RemoteProgramTests.test_reserve_fresh_exact_two_directory_identities) ... ok\ntest_reserve_owner_mismatch_rejected (__main__.RemoteProgramTests.test_reserve_owner_mismatch_rejected) ... ok\n\n----------------------------------------------------------------------\nRan 28 tests in 4.603s\n\nOK\n"
+    },
+    {
+      "name": "transport14",
+      "tests": 14,
+      "exitCode": 0,
+      "stdout": "",
+      "stderr": "test_chmod0600_happens_before_every_actual_write_and_same_handle_readback (__main__.ExclusiveTransportTests.test_chmod0600_happens_before_every_actual_write_and_same_handle_readback) ... ok\ntest_connection_failure_does_not_print_password_or_exception_data (__main__.ExclusiveTransportTests.test_connection_failure_does_not_print_password_or_exception_data) ... ok\ntest_directory_owner_mode_symlink_rejected_before_open (__main__.ExclusiveTransportTests.test_directory_owner_mode_symlink_rejected_before_open) ... ok\ntest_failed_chmod_retains_empty_artifact_and_writes_nothing (__main__.ExclusiveTransportTests.test_failed_chmod_retains_empty_artifact_and_writes_nothing) ... ok\ntest_installed_paramiko_open_and_file_code_are_not_mocked (__main__.ExclusiveTransportTests.test_installed_paramiko_open_and_file_code_are_not_mocked) ... ok\ntest_interrupted_actual_write_retains_partial_and_rejects_retry (__main__.ExclusiveTransportTests.test_interrupted_actual_write_retains_partial_and_rejects_retry) ... ok\ntest_local_receipt_creation_is_exclusive_and_retains_first_bytes (__main__.ExclusiveTransportTests.test_local_receipt_creation_is_exclusive_and_retains_first_bytes) ... ok\ntest_preexisting_local_receipt_fails_before_password_or_network (__main__.ExclusiveTransportTests.test_preexisting_local_receipt_fails_before_password_or_network) ... ok\ntest_preexisting_regular_or_symlink_target_is_untouched (__main__.ExclusiveTransportTests.test_preexisting_regular_or_symlink_target_is_untouched) ... ok\ntest_racing_target_between_lstat_and_actual_paramiko_open_is_untouched (__main__.ExclusiveTransportTests.test_racing_target_between_lstat_and_actual_paramiko_open_is_untouched) ... ok\ntest_readback_corruption_rejects_and_retains_artifact (__main__.ExclusiveTransportTests.test_readback_corruption_rejects_and_retains_artifact) ... ok\ntest_reservation_scope_and_owner_required (__main__.ExclusiveTransportTests.test_reservation_scope_and_owner_required) ... ok\ntest_upload_namespace_exact (__main__.ExclusiveTransportTests.test_upload_namespace_exact) ... ok\ntest_wb_negative_control_reproduces_the_legacy_overwrite (__main__.ExclusiveTransportTests.test_wb_negative_control_reproduces_the_legacy_overwrite) ... ok\n\n----------------------------------------------------------------------\nRan 14 tests in 0.123s\n\nOK\n"
+    },
+    {
+      "name": "pending4",
+      "tests": 4,
+      "exitCode": 0,
+      "stdout": "",
+      "stderr": "test_frozen_exclusive_engine_is_exact_reviewed_bytes (__main__.Preparation.test_frozen_exclusive_engine_is_exact_reviewed_bytes) ... ok\ntest_short_revision_or_bad_manifest_rejects_before_transport (__main__.Preparation.test_short_revision_or_bad_manifest_rejects_before_transport) ... ok\ntest_transport_wrapper_has_only_two_v7_upload_parents (__main__.Preparation.test_transport_wrapper_has_only_two_v7_upload_parents) ... ok\ntest_uploader_rejects_missing_committed_approval_before_transport (__main__.Preparation.test_uploader_rejects_missing_committed_approval_before_transport) ... ok\n\n----------------------------------------------------------------------\nRan 4 tests in 0.299s\n\nOK\n"
+    }
+  ],
+  "preservedInputs": {
+    "roots": 4,
+    "files": 167,
+    "unchanged": true,
+    "snapshotSha256": "c45873fff99a97bb82ef3e7bdee0ec77960ce45e8eddd5fe891461a72e891860",
+    "v6Inputs": 92,
+    "v6InputsUnchanged": true,
+    "v6SnapshotSha256": "d30e60b478a9a0474e8ced421fc28cfb9e9759433f8cbf389d8d5e50068e4934"
+  },
+  "networkPerformed": false,
+  "gitWritesPerformed": false,
+  "sourceAssetsWritten": false,
+  "actualBundleReviewed": false
+}

@@ -1,0 +1,82 @@
+{
+  "status": "independent-startup-compatibility-source-review-clean",
+  "at": "2026-10-16T02:52:50.973304+00:00",
+  "sourceRevision": "b4c77bf99b7db3579dea54b966c43fb1531b8dba",
+  "baseRevision": "e661ea65436606f6177d9917f7cfb1861bcc1c39",
+  "sourceWorkingBytesSha256": "d7151347a8780f3b105f760bb35a1ef4d5a5b70044bd5138f729d4ca168e4b2e",
+  "testWorkingBytesSha256": "e054e84a2c5bd318d3041eb559b3820bec24b768fa007bd2b1315865cccfebc9",
+  "canonicalGitSourceSha256": "d8de5ecca7f1528bfe867cdbd267d6ce747d5b456a552fe2559b70d1b4763e38",
+  "workingTreeClean": true,
+  "legacySqlSourcesAndLoopExactlyEqualE661": true,
+  "sqlScopesIndependentlyResumeMissingAndPartialInsteadOfTrustingGlobalComplete": true,
+  "historical1409CompleteSavedOnlyAfterBoothLoadAndEveryRecordScan": true,
+  "boothSnapshotSkipLimitedToAlreadyCompletedLegacyPhase": true,
+  "independentOriginalFindingWitnessPreserved": {
+    "file": "independent-recovery-legacy-scope-witness-1792118885848.json",
+    "sha256": "c8a777665d982fcb3f7064de128444f82c26accf7ac41cccc3ec07b37917dfc3"
+  },
+  "independentFixedWitness": {
+    "path": "C:\\Users\\yussy\\AppData\\Local\\Temp\\cbte-audit52-release-v6-20261016\\independent-fixed-recovery-witness-1792119133863.json",
+    "sha256": "ee419b03c0b477a77885fbb4db22cfca1905a7ebf2b9ae93b819bfccae8fe02a",
+    "evidence": {
+      "status": "independent-fixed-legacy-scope-witness-passed",
+      "sourceRevision": "b4c77bf99b7db3579dea54b966c43fb1531b8dba",
+      "sourceSha256BeforeAfter": "d7151347a8780f3b105f760bb35a1ef4d5a5b70044bd5138f729d4ca168e4b2e",
+      "primaryAcceptedHistoricalThreeScopeReceipt": true,
+      "pendingAutoRows": 1,
+      "pendingPriceRows": 1,
+      "requiredPriceReadOutageRejectedBeforeFenceCompletion": true,
+      "completedAutoScopeCheckpointed": true,
+      "primaryResumeSkippedCompletedAutoAndScannedMissingPrice": true,
+      "finalVersion": 2,
+      "originalCutoffPreserved": true,
+      "quarantineKinds": [
+        "auto_watch_pending_deliveries",
+        "price_watch_pending_deliveries"
+      ],
+      "allQuarantinesNotDeliveryReceipts": true,
+      "allSourceRowsUnchanged": true,
+      "boothActualProviderWithDirectoryAndLeafAlias": true,
+      "boothExistingFileBytesUnchanged": true,
+      "boothOldPendingSuppressedAndNewPendingEligible": true,
+      "version2RestartDidNotRescan": true,
+      "productionAccess": false
+    }
+  },
+  "focusedTests": {
+    "command": "node scripts/run-project-node.cjs --test --test-reporter=spec scripts/test/automation-recovery-managed-data.test.js scripts/test/recovery-bootstrap.test.js scripts/test/recovery-lease.test.js scripts/test/automation-recovery-cutoff-sql.test.js scripts/test/automation-recovery-windows-rename.test.js",
+    "dbPort": 33621,
+    "toolOutputChunk": "4a50b1",
+    "exitCode": 0,
+    "tests": 33,
+    "pass": 33,
+    "fail": 0,
+    "skipped": 0,
+    "durationMs": 8539.3063,
+    "newManagedDataCases": 10
+  },
+  "coveredBoundaries": [
+    "Old three-scope complete receipt on primary with pending native and price records",
+    "Required SQL outage prevents notificationFenceVersion2 completion",
+    "Completed per-kind checkpoint survives restart; only missing/partial SQL scopes resume",
+    "Both native/price rows durably quarantined as delivered=false, source SQL remains unchanged",
+    "Actual BOOTH provider through shared data directory and leaf aliases retains bytes and rejects old pending while accepting fresh entries",
+    "Fresh/incomplete linked BOOTH startup remains blocked; actual ready method does not start outgoing workload timers",
+    "R32 origin-time fences for native, price, aggregate/direct graph and encrypted X inbox, with DB/file errors/restarts/lease controls",
+    "Windows receipt locking and permanent EIO retain cutoff and fail closed",
+    "No new schema, no cutoff reseeding, no file symlink validation relaxation for new/incomplete recovery"
+  ],
+  "remainingConfirmedBlockingFindings": [],
+  "sshPerformed": false,
+  "productionAccessPerformed": false,
+  "gitWritesPerformed": false,
+  "sourceAssetsWritten": false,
+  "testDatabaseOriginalRowsUnchanged": true,
+  "ownDisposableSchemaCleaned": true,
+  "limitations": [
+    "This is source/local integration review, including real SQL/provider and actual ready initialization with controlled workload start spies. It is not proof that eleven production workloads ran.",
+    "Frozen176-file acceptance and newmain/release artifact review remain separate release gates.",
+    "The prior V6 production startup failed. Fresh V7 resident bootstrap2, valid lease/allshards and actual X receiver connected/listening proof are required before claiming deployment success.",
+    "No production monitor, payment or Discord/X message was created during review."
+  ]
+}
