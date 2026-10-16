@@ -1,6 +1,6 @@
 # 自動通知・自動展開 53件の修正対応
 
-2026年10月16日。監査50件と追加のR32-1、S34-1、S34-2を、実装と自動試験へ対応付けた。対象はP1 12件、P2 41件。**V7候補のローカル検証は完了**。固定b4c77bfの176試験ファイルで2,066件が成功し、失敗・skip・cancel・todoは0件。旧V6ソースの175試験ファイル・2,056件成功は過去のローカル結果として保持する。V6本番反映は通知起動の失敗で不採用となり、互換版へ切り戻した。V7の全176試験はローカル結果として記録し、実bundle・本番常駐と実着信は引き続き確認待ちとする。
+2026年10月16日。監査50件と追加のR32-1、S34-1、S34-2を、実装と自動試験へ対応付けた。対象はP1 12件、P2 41件。**V7のローカル検証と本番反映の確認を完了**した。固定b4c77bfの176試験ファイルで2,066件が成功し、失敗・skip・cancel・todoは0件。旧V6ソースの175試験ファイル・2,056件成功は過去のローカル結果として保持する。V6本番反映は通知起動の失敗で不採用となり、互換版へ切り戻した。V7は実bundleの独立確認と本番反映を完了し、47項目のlive確認と13項目の通知起動確認を通過した。最終独立レビューもclean。実OAuth・新しいX投稿のDiscord着信・実決済は未検証である。
 
 機械可読の対応と試験の実際の宣言名・行番号は [saturation-remediation-map.json](saturation-remediation-map.json) に保存した。全53 IDに実装箇所と存在確認済みの自動試験を対応付けており、未対応IDは0件。試験宣言の存在と、最終ソースでの実行成功は分けて記録する。
 
@@ -9,11 +9,15 @@
 | 項目 | この文書を作成した時点の状態 |
 | --- | --- |
 | 実装の比較基準 | `f241aa268344b407adf64735f1d8bd3c3aa12968` |
-| V7の固定候補ソース | `b4c77bf99b7db3579dea54b966c43fb1531b8dba` |
+| ローカル検証したV7ソース | `b4c77bf99b7db3579dea54b966c43fb1531b8dba` |
 | ローカル検証したソース | b4c77bfの176試験ファイルで2,066件成功。現在HEADもCORE8と固定ソースが一致 |
 | ローカル検証済みソースSHA・全ソースハッシュ | `b4c77bf99b7db3579dea54b966c43fb1531b8dba`。Git原文SHA-256・観測作業バイト・CORE8を照合しJSONへ記録。旧1d32f10を過去記録として保持 |
-| 最終main SHA | V7は未統合。PR48を含む旧mainは `e661ea65436606f6177d9917f7cfb1861bcc1c39`。PR49 draftは全176試験後に判断する |
-| V7本番SHA・配備証拠 | 未確認。保存済みの最新証拠では互換版 `f241aa268344b407adf64735f1d8bd3c3aa12968` へ切り戻し済み |
+| 最終main SHA | PR49統合後の `c63003f5dbd585a3f09e8672a0f80fa5db460165`。b4のCORE8と一致 |
+| V7本番SHA・配備証拠 | `c63003f5dbd585a3f09e8672a0f80fa5db460165`。2026年10月16日12:38:08 JSTの[常駐確認](evidence/v7-resident-after.json)でWorker・Webとも一致 |
+| 実V7 bundle | manifest `5f7f244bd62bd00cecfa01057f1dea4e7b012aae9176f0636b50963a01b88f95`。[実bundle独立確認](evidence/v7-actual-bundle-review.json)はclean、160件成功 |
+| stage・バックアップ | floor／finalとも17/17。78テーブル・35,469 bytesの整合バックアップを確認。[独立確認](evidence/v7-stage-backup-review.json)はclean |
+| 本番通知の起動確認 | [live 47/47](evidence/v7-live-verification.jsonl)、[通知起動13/13](evidence/v7-application-live.json)。復旧fence2・既存X 1受信のfresh listeningをWeb前に確認 |
+| 最終独立レビュー | 03:38:08 UTCの認証済み実行証拠を03:41:35 UTCに独立確認し[clean](evidence/v7-production-independent-review.json)。別の本番操作は行っていない |
 | 過去の全175試験ファイル | 1d32f10の2,056件成功・失敗0・skip 0、型検査・lint成功を保持。V7や本番の合格へ転用しない |
 | V7全176試験ファイル | 2,066件成功、失敗0・skip 0・cancel 0・todo 0。[今回のXML](evidence/frozen-176-tests.xml)を保存。b4 root型検査・変更箇所lint成功、dashboard検査は不変treeの既存成功を保持 |
 | V7起動修正の独立確認 | b4c77bfで33/33成功、新規managed-data 10ケース。全176試験・本番常駐とは別証拠 |
@@ -144,21 +148,31 @@ N6とS7-1の追加対応では、小さな履歴の既存配列を維持し、�
 
 `scripts/run-supporter-readiness-acceptance.cjs` は既存のPR47用XMLを既定出力先にするため、今回の実行では `SUPPORTER_READINESS_TEST_REPORT` に今回専用の出力先を指定した。固定ソースで全試験、root/dashboard型検査、変更箇所lintを実行し、ログ・件数・失敗・skip・ハッシュをこの報告とJSONへ記録した。
 
-ローカル成功を本番配備や実着信と同じ証拠にはしない。最終mainの反映後、本番のrelease SHA、WorkerのPID/cwd/revision、lease、heartbeat、全シャード、Webのrevisionを照合して記録する。本人による実OAuthと新しいX投稿からDiscordへの実着信は、別の確認項目として結果を記録する。価格・寄付条件、枠の自動再配分、支払いをこの報告のために設定・実行しない。
+ローカル試験と、本番の常駐・通知起動の証拠を分けて保存した。配備SHAはc63003f5で、後から保存する文書・証拠だけのcommitとは区別する。本人による実OAuthと新しいX投稿からDiscordへの実着信、実Square決済は未検証として残す。価格・寄付条件、枠の自動再配分を変えず、確認用の本番監視・支払い・メッセージを作成していない。
 
-## V7ローカル検証と残る配備確認
+## V7ローカル検証と実配備
 
 全176ファイルの終了コード0、閉じたXMLとNodeの最終summary、全試験ファイルと対応表、b4c77bfのCORE8・Git原文・観測作業バイトの一致を確認した。2,066件成功・失敗／skip／cancel／todo 0を記録し、[今回のXML](evidence/frozen-176-tests.xml)を別名で保存した。175ファイルのXMLは変更していない。
 
 `acceptance.finalRun/xmlSha256` と実行結果、`candidate.finalSourceSha/finalSourceHashes/finalCoreTreeIds`、全53 IDとcoverageの実行状態を今回の証拠で確定した。root型検査とb4変更2ファイルのlintは親作業の実行成功を記録した。dashboardと履歴UIのコードが旧1d32f10から不変なため、旧型検査・lint・独立70件・実SQL/IABのローカル証拠を引き継ぐ。実OAuthや新しいX投稿の実着信を確認したことにはしない。旧1d32f10の `historicalVerification` とV6不採用・切り戻しは保持した。
 
-このローカル全試験の成功後にPR49を判断し、実際に統合したmain SHAを記録する。そのmainから新しいV7 bundleを作成・検査し、実bundleの内容・hashと運用レビューを保存する。V6 bundleの合格記録は流用しない。
+全176試験の成功後にPR49を統合し、実main c63003f5からV7 bundleを生成した。[manifest](evidence/v7-upload-manifest.json)と[作者側の固定記録](evidence/v7-actual-bundle-freeze.json)、[実bundle独立レビュー](evidence/v7-actual-bundle-review.json)を保存した。V6資材の成功を実V7資材の代わりには使っていない。
 
-Workerを起動した後は、HTTPとGatewayに加え、復旧記録の `complete=true`・`notificationFenceVersion=2`、実PID/cwd/revision、active leaseと新しいheartbeatを確認する。既存のeligibleなX受信について、登録版と受信版の一致、現在有効な受信lease、新Worker起動後の接続と新しい更新時刻、listeningを確認してからWebへ進める。監視ready件数だけでは受信起動の証明にしない。
+Workerを先に起動し、復旧記録の `complete=true`・`notificationFenceVersion=2`、実PID/cwd/revision、active lease、heartbeatと14/14 readyを確認した。既存のeligibleなX 1受信について、登録版・受信版、有効lease、新Worker起動後の接続と新しい更新時刻、listeningを確認してからWebへ進めた。[通知起動の13項目](evidence/v7-application-live.json)と[47項目のlive確認](evidence/v7-live-verification.jsonl)は全項目成功した。
 
 Node・鍵・プラン、利用者の5分overrideと現在の30分defaultを変更しない。検証用の本番監視・決済・メッセージは作らない。実OAuthと新しいX投稿からDiscordへの実着信は未検証のまま区別し、本人の実操作で得た結果を別途記録する。
 
-V7配布準備の[独立レビュー](evidence/v7-preparation-review.json)と[独立160件のローカル試験](evidence/v7-preparation-160-tests.json)も保持する。これらは準備資材の証拠で、実際のmainから生成したbundleの承認ではない。
+V7配布準備の[独立レビュー](evidence/v7-preparation-review.json)と[独立160件のローカル試験](evidence/v7-preparation-160-tests.json)も保持する。これらの準備資材の証拠に加え、実mainから生成したV7 bundleの独立確認も別に保存した。
+
+## V7の本番証拠
+
+2026年10月16日12:38:08 JSTの常駐読み取りでは、Worker PID 678911、guardian PID 656448、Web wrapper PID 694968／Next PID 694991が同じc63003f5 releaseを使用していた。leaseはactive、heartbeatの全14シャードはready。Node 24.21.0、鍵、プランfingerprint、利用者の5分overrideを保持し、適用済み9列・4移行記録のまま新しいDDLとDB復元は行っていない。[常駐証拠](evidence/v7-resident-after.json)
+
+配備前はfloorとfinalのstage各17項目を通し、stageプロセスの削除とschema／移行記録の不変を確認した。78テーブル・35,469 bytesのバックアップは03:25:37 UTCに整合性とhashを確認した。[stageとbackup](evidence/v7-stage-data-proofs.jsonl)・[バックアップ記録](evidence/v7-data-backup.json)・[独立レビュー](evidence/v7-stage-backup-review.json)
+
+[promotion](evidence/v7-promotion.jsonl)はWorkerと通知起動をWebより先に確認して完了した。live proofは `e29ff1386c678a652610cc1b879da75d3e051a3422f433f747faa125728cb398`、application proofは `f283a6ffbf886f011e7b32ce257c83e90024f883f51fc13dc8e74d68012fef2e`。個々の記録ファイル自体のSHA-256と、記録内のproof SHAはJSONで別に管理する。
+
+[最終独立レビュー](evidence/v7-production-independent-review.json)は、保存された認証済み実行証拠を確認してcleanと判定した。復旧fence2と全10scope完了、Web前の通知起動13項目、live 47項目、既存eligible 1受信の新Worker起動後listeningとlease・版、14シャード、Node・鍵・プラン・既存データの保持を確認している。レビュー担当は別の本番操作を行っていない。受信のlisteningはOAuthや新しいX投稿のDiscord着信を実施した証明ではない。以後の証拠保存commit／PR50は配備SHA c63003f5と区別する。
 
 ## 自動試験ファイル
 

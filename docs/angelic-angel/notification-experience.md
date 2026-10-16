@@ -382,6 +382,16 @@ Node・鍵・プランと、既存の利用者5分override・現在の30分defau
 切り戻し後の既存X受信のlisteningは、V7の起動証拠には代用しない。
 詳細は[53件の修正対応](../audits/supporter-readiness-2026-10-16/saturation-remediation.md)へ記録する。
 
+V7は2026年10月16日12:38:08 JSTの確認で、main・Worker・Webが
+`c63003f5dbd585a3f09e8672a0f80fa5db460165` に一致した。
+復旧fence2と全10scope完了、既存eligible 1受信の新Worker起動後listening・版・有効leaseをWeb前に確認し、
+通知起動13項目と最終live 47項目が成功した。
+14シャードのready、Node・鍵・プラン・利用者の5分override、適用済み9列・4移行記録を保持し、
+V7では新しいDDLとDB復元を行っていない。
+保存された認証済み実行証拠の[最終独立レビュー](../audits/supporter-readiness-2026-10-16/evidence/v7-production-independent-review.json)もcleanだった。
+後続の文書・証拠保存commitは配備SHAと区別する。
+実OAuth、新しいX投稿からDiscordへの着信、実Square決済は未検証として残す。
+
 ### 保存後の表示と契約確認
 
 書き込みが成功した時点で、返却されたID・版・削除済み状態を画面へ反映する。

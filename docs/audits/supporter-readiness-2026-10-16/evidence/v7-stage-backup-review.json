@@ -1,0 +1,61 @@
+{
+  "status": "independent-v7-stage-backup-and-exact-promotion-caller-review-clean",
+  "at": "2026-10-16T03:31:18.121119+00:00",
+  "actualMain": "c63003f5dbd585a3f09e8672a0f80fa5db460165",
+  "sourceRevision": "b4c77bf99b7db3579dea54b966c43fb1531b8dba",
+  "floorRevision": "f241aa268344b407adf64735f1d8bd3c3aa12968",
+  "manifestSha256": "5f7f244bd62bd00cecfa01057f1dea4e7b012aae9176f0636b50963a01b88f95",
+  "promotionEntrySha256": "c817fd65b88a3195545e0db846359155278287436312a7dedd85c294c9f86028",
+  "promotionCallerSha256": "6f5875ee82c20de6a3c16c760719a551e01361394866d790fbf017135141f104",
+  "astVerifiedPins": {
+    "path": "/tmp/cbte-x-deploy-audit53-v7-final-20261016/review-and-launch-promotion.py",
+    "expected": "c817fd65b88a3195545e0db846359155278287436312a7dedd85c294c9f86028",
+    "size": 4898,
+    "uid": 1001
+  },
+  "astVerifiedFourArguments": {
+    "floor-proof-sha256": "49794ba931e05a8dae714b30f8848c71f3b97d8710b6dd63476822b3e77d4fec",
+    "final-proof-sha256": "60a984078aa34629e998fbe5d39265d0a652ba01a984f04e23d588ac6ec2028e",
+    "data-manifest-sha256": "104892ea7b67f794d530a228412b29588a007d23632374f1f4e7be486bed0017",
+    "data-dump-sha256": "81a7466572f381b6764bb0ab599502e70ed94c812f1711b849783be369100619"
+  },
+  "localProofFileSha256": {
+    "stage-and-data-proofs-v7-1.jsonl": "25fb60d228937551488dd2d7f55ce70aaf2eb0050224b1f57d15b10ea85fb6ce",
+    "stage-poll-v7-3.jsonl": "a22ed48434218eb2710ae041a7e36e5ee55e94653a9f580dcd64e061e9126b7b",
+    "data-backup-v7.json": "dcdb8ebd772f4a3ce41d7853ab1443737db178f19d8f22f59620d348fa0b0606",
+    "upload-preflight-v7.json": "5b198cbf72d76200e9c5080dab0f2049f763f65856076c73f02e54c2222d5a95",
+    "stage-launch-v7.json": "db3c07969bcf0b7f5f509cf46437921540fa8a335fa116c1f1066ee2d84ac104",
+    "reviewed-call-v7-review-and-launch-promotion-5f7f244bd62b.py": "6f5875ee82c20de6a3c16c760719a551e01361394866d790fbf017135141f104"
+  },
+  "upload24ExclusiveReadbackComplete": true,
+  "bothBuildsAllSevenStepsPassed": true,
+  "bothStageSummariesSeventeenChecksPassed": true,
+  "stageProcessesRemovedAndProtectedSchemaLedgerUnchanged": true,
+  "stageProgressChronology": "stage-poll-v7-3 third row is earlier prepare; later stage-and-data-proofs-v7-1 first row is terminal both-stages-verified for same revision/start-time and is used as final evidence.",
+  "backup": {
+    "tables": 78,
+    "bytes": 35469,
+    "xTablesIncluded": true,
+    "credentialsFileRemoved": true,
+    "manifestCanonicalSerializationSha256Matches": true,
+    "dumpSha256": "81a7466572f381b6764bb0ab599502e70ed94c812f1711b849783be369100619",
+    "databaseWritten": false,
+    "automaticRestore": false
+  },
+  "allGeneratedFilesStillMatchManifest": true,
+  "callerReadsVerifiedRegular0600User1001PayloadNoFollowNonblock": true,
+  "callerUsesActualManifest64CharacterShaNotPastedGuess": true,
+  "wrapperRechecksActualRemoteFullStageProofsAndBackupBytesBeforeLaunch": true,
+  "confirmedBlockingFindings": [],
+  "networkPerformed": false,
+  "sshPerformed": false,
+  "productionAccessPerformed": false,
+  "gitWritesPerformed": false,
+  "sourceAssetsWritten": false,
+  "productionPromotedByReviewer": false,
+  "limitations": [
+    "Local authenticated command summaries and exact caller/wrapper bytes were reviewed; pinned wrapper revalidates remote raw stageproof and backup bytes before launching.",
+    "Stage17 checks are read-only staging evidence, not notification lifecycle success. New production acceptance still requires fresh worker/bootstrap2/all10scope/Xreceiver-poststart listening+lease proof before Web and finallive checks.",
+    "No OAuth/new X-to-Discord message/payment was created or verified."
+  ]
+}
