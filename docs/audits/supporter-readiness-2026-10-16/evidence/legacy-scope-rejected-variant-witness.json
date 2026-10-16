@@ -1,0 +1,21 @@
+{
+  "status": "confirmed-missing-legacy-scope-scan",
+  "sourceSha256Before": "6fa2f2784f83d89fa06b3431b10ae1a106a419a20e9ab68feae1b03a5f8a6850",
+  "sourceSha256After": "6fa2f2784f83d89fa06b3431b10ae1a106a419a20e9ab68feae1b03a5f8a6850",
+  "sourceStable": true,
+  "primaryAcceptedOriginalThreeScopeReceipt": true,
+  "restoredPendingAutoRows": 1,
+  "restoredPendingPriceRows": 1,
+  "initializeSucceededDespiteRequiredScopeReadOutage": true,
+  "requiredScopeReadAttempts": 0,
+  "actualSqlQueries": 5,
+  "upgradedFenceVersion": 2,
+  "upgradedComplete": true,
+  "missingProgressKinds": [
+    "auto_watch_pending_deliveries",
+    "price_watch_pending_deliveries"
+  ],
+  "quarantineKinds": [],
+  "databaseSourceRowsUnchanged": true,
+  "productionAccess": false
+}

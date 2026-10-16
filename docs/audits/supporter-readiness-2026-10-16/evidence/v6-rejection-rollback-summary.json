@@ -1,0 +1,182 @@
+{
+  "schemaVersion": 1,
+  "status": "v6-rejected-and-rolled-back-v7-pending",
+  "v6Revision": "e661ea65436606f6177d9917f7cfb1861bcc1c39",
+  "compatibleFloorRevision": "f241aa268344b407adf64735f1d8bd3c3aa12968",
+  "readinessInsufficient": {
+    "httpChecks": {
+      "passed": 33,
+      "ok": true,
+      "notProductionAcceptance": true
+    },
+    "gateway": {
+      "online": 14,
+      "total": 14,
+      "notNotificationLifecycleProof": true
+    },
+    "existingXMonitorReadyCount": 1,
+    "existingDonorCount": 1,
+    "receiverState": "stopped",
+    "readyInitializeError": "Recovery bootstrap paths must not contain symbolic links.",
+    "errorLocationAtV6": "src/recoveryBootstrap.js:178 plain(subscriptions.FILE)",
+    "outgoingBackgroundWorkloadsStarted": false
+  },
+  "constructorProbeInterpretation": {
+    "sourceEvidence": "evidence/v6-runtime-startup-probe.json",
+    "valid": false,
+    "missingFixtureCapability": "withDatabaseTransaction",
+    "reportedCode": "X_PUSH_WORKER_KEY_UNAVAILABLE",
+    "provesKeyFailure": false
+  },
+  "migrationBaseline": {
+    "status": "exact-nine-nullable-columns-four-migrations-verified",
+    "nullableColumns": 9,
+    "migrationLedgerEntries": 4,
+    "newV7Ddl": 0,
+    "databaseRestored": false,
+    "addedColumnsAndLedgersRetainedOnRollback": true,
+    "immutableDataPreserved": true
+  },
+  "rollback": {
+    "at": "2026-10-16T02:48:24.844649+00:00",
+    "rollbackAlive": false,
+    "status": "rolled-back-to-compatible-core-floor",
+    "resultSha256": "bfd0ba4fd9bc448b16cfa4baaa80d76ce67fa72fb86b98fecff8b3e0671ffb29",
+    "revision": "f241aa268344b407adf64735f1d8bd3c3aa12968",
+    "workerReadyBeforeWeb": true,
+    "databaseRestored": false,
+    "addedColumnsPreserved": true,
+    "worker": {
+      "pid": 226442,
+      "cwd": "/opt/cbte-releases/x-delivery-f241aa26-20261016-audit52-v6-floor",
+      "revision": "f241aa268344b407adf64735f1d8bd3c3aa12968"
+    },
+    "leaseState": "active",
+    "heartbeatAt": "2026-10-16T02:48:13.753000000Z",
+    "heartbeatRevision": "f241aa268344b407adf64735f1d8bd3c3aa12968",
+    "shards": {
+      "manager_status": "ready",
+      "offline": 0,
+      "online": 14,
+      "total": 14,
+      "unknown": 0
+    },
+    "webPointer": "/opt/cbte-releases/x-delivery-f241aa26-20261016-audit52-v6-floor",
+    "databaseWrites": false,
+    "servicesChanged": false,
+    "sourceEvidence": "evidence/v6-rollback-state.json"
+  },
+  "existingEligibleReceiverAfterRollback": {
+    "at": "2026-10-16T02:49:59.674683+00:00",
+    "revision": "f241aa268344b407adf64735f1d8bd3c3aa12968",
+    "workerPid": 226442,
+    "database": {
+      "checkedAtMs": 1792118999664,
+      "monitorStates": [
+        {
+          "enabled": 1,
+          "state": "ready",
+          "count": 1
+        }
+      ],
+      "receivers": [
+        {
+          "subscriptionRevision": 1,
+          "receiverRevision": 1,
+          "state": "listening",
+          "reason_code": null,
+          "retry_at_ms": null,
+          "retry_attempt": 0,
+          "lease_expires_at_ms": 1792119027646,
+          "last_connected_at_ms": 1792118787990,
+          "updated_at_ms": 1792118997646,
+          "readyBoundCount": 1,
+          "existingDonor": 1
+        }
+      ]
+    },
+    "databaseWrites": false,
+    "servicesChanged": false,
+    "sourceEvidence": "evidence/v6-floor-receiver.json"
+  },
+  "policies": {
+    "nodeVersion": "24.21.0",
+    "nodeChanged": false,
+    "keyChanged": false,
+    "plansChanged": false,
+    "userCadenceOverrideMinutes": 5,
+    "currentDefaultMinutes": 30,
+    "cadencePolicyChanged": false,
+    "automaticSlotReallocation": false
+  },
+  "v7RequiredBeforeWeb": [
+    "bootstrap.complete === true and notificationFenceVersion === 2",
+    "exact worker PID/cwd/revision and active lease/current heartbeat",
+    "all current Gateway shards ready",
+    "existing eligible X receiver fresh listening, bound receiver/subscription revisions match, active receiver lease and connection observation after the new worker start"
+  ],
+  "productionTestAssetsCreated": {
+    "monitors": 0,
+    "payments": 0,
+    "messages": 0
+  },
+  "evidence": [
+    {
+      "sourcePath": "C:/Users/yussy/AppData/Local/Temp/cbte-audit52-release-v6-20261016/bootstrap-layout-v6.json",
+      "file": "evidence/v6-bootstrap-layout.json",
+      "sha256": "2ae6616c7a139af3c2cbae8b77c11ced91d138d77044653124a4ff673e7040ae"
+    },
+    {
+      "sourcePath": "C:/Users/yussy/AppData/Local/Temp/cbte-audit52-release-v6-20261016/runtime-startup-v6-1.json",
+      "file": "evidence/v6-runtime-startup-probe.json",
+      "sha256": "f9f3785420621d5edfc37e7ec364902928b6b33f3059bff4798b4ca419f0db4c"
+    },
+    {
+      "sourcePath": "C:/Users/yussy/AppData/Local/Temp/cbte-audit52-release-v6-20261016/rollback-state-v6-2.json",
+      "file": "evidence/v6-rollback-state.json",
+      "sha256": "ad84b765f0404fec7419794bd24ca212afeaf52696a884b049973e5ea35c5df0"
+    },
+    {
+      "sourcePath": "C:/Users/yussy/AppData/Local/Temp/cbte-audit52-release-v6-20261016/receiver-floor-v6.json",
+      "file": "evidence/v6-floor-receiver.json",
+      "sha256": "08e03d93a69047a540283d74b5879c9a378c580e9c4934c99f0dfa37dbf0af37"
+    },
+    {
+      "sourcePath": "C:/Users/yussy/AppData/Local/Temp/cbte-audit52-release-v6-20261016/receiver-state-v6-1.json",
+      "file": "evidence/v6-stopped-receiver.json",
+      "sha256": "3d2f5ab6c269485727768450933eccf40555fa51a041e013bb803aa58a1349d0"
+    },
+    {
+      "sourcePath": "C:/Users/yussy/AppData/Local/Temp/cbte-audit52-release-v6-20261016/independent-startup-source-b4c77bf-review-20261016T025251021762Z.json",
+      "file": "evidence/startup-source-b4c77bf-review.json",
+      "sha256": "4422f525f4457d21e616f805f8ca29c2067ffbb624028eabdee36defedd19c3f"
+    },
+    {
+      "sourcePath": "C:/Users/yussy/AppData/Local/Temp/cbte-audit52-release-v6-20261016/independent-recovery-legacy-scope-witness-1792118885848.json",
+      "file": "evidence/legacy-scope-rejected-variant-witness.json",
+      "sha256": "c8a777665d982fcb3f7064de128444f82c26accf7ac41cccc3ec07b37917dfc3"
+    },
+    {
+      "sourcePath": "C:/Users/yussy/AppData/Local/Temp/cbte-audit52-release-v6-20261016/independent-fixed-recovery-witness-1792119133863.json",
+      "file": "evidence/legacy-scope-fixed-witness.json",
+      "sha256": "ee419b03c0b477a77885fbb4db22cfca1905a7ebf2b9ae93b819bfccae8fe02a"
+    }
+  ],
+  "limitations": [
+    "These are saved V6 observations, not fresh V7 deployment proof.",
+    "The constructor probe lacked withDatabaseTransaction and must not be used as evidence of a bad key.",
+    "HTTP/Gateway success did not establish completion of the notification startup lifecycle."
+  ],
+  "additionalSourceObservations": [
+    {
+      "sourcePath": "C:/Users/yussy/AppData/Local/Temp/cbte-audit52-release-v6-20261016/resident-after-v6.json",
+      "sha256": "03c0ea9fada8b4e1d0ca75b9f8ad12796cbf27e0b39f6110b41dea76769757d1",
+      "use": "Gateway/worker identity and applied migration baseline; selected safe fields retained in this summary."
+    },
+    {
+      "sourcePath": "C:/Users/yussy/AppData/Local/Temp/cbte-audit52-release-v6-20261016/live-verification-v6-1.jsonl",
+      "sha256": "8f3d4bbc51cc0e9474a61b9b260a26d0f15d8bb31480a591fed050f6a9394311",
+      "use": "HTTP33 pass only; explicitly not accepted as notification startup or production success."
+    }
+  ]
+}

@@ -1,0 +1,146 @@
+{
+  "status": "independent-v7-preparation-review-clean-awaiting-actual-main-and-bundle",
+  "at": "2026-10-16T03:00:13.366283+00:00",
+  "sourceRevision": "b4c77bf99b7db3579dea54b966c43fb1531b8dba",
+  "finalRevision": null,
+  "currentResidentReleaseRequired": "/opt/cbte-releases/x-delivery-f241aa26-20261016-audit52-v6-floor",
+  "compatibleFloorRevision": "f241aa268344b407adf64735f1d8bd3c3aa12968",
+  "authorFreezeSha256": "3b5475ccef8469ab97dd0e59d8ff60015d851a7d3da45ec697dc1eb10f68c628",
+  "frozenAssetsBeforeAfterMatched": {
+    "ssh-session-v6-exclusive.py": "4d750e3f07b28efd03b3f557cab34272b4a9a669322359fffad42909ede8664d",
+    "ssh-session-v7-exclusive.py": "99e581e81d24c97759ed5d6c2c73c1dce29c2cb853154da25b833e6b89932787",
+    "test_upload_and_launch_v7.py": "a6de4e3f26c01ced0c4eb12ccf3d6f4b0a6d76692136c731490c28526b567a8f",
+    "test_v7_exclusive_transport.py": "3cdad35fca1216b0cd8645d6a7a3d4b1d2a612a9383bd2b5a79cc4e0906f16af",
+    "test_v7_preparation_pending.py": "22a1bee74efb6116aa38fbc248ec83c55be82d783efab05a47afc7913f22e072",
+    "upload-and-launch-v7.py": "435fa087b76865afb9d72a891d0e8eab7f66fe73cdaa83d1dacf2d90a99b9edb",
+    "V7-UPLOADER-USAGE.txt": "44ff9c340f218781af3e0c7728a4f04f961fc719e0ce7983f7fccffe9f5ca446",
+    "ops/approve-v7-sources.py": "64395addf900e6b7787c8067de8ea49584051c31d5dcaaf8383960da81f7d96c",
+    "ops/approved-source-contract.json": "651336920c41c21e43c0040d3222f910af4a27f858aef6af4db2bf76ac5f3a47",
+    "ops/build-and-stage.py": "a3de2a93128f06f4860096ce853261aa81f543241dda531c39102110b09ebbad",
+    "ops/dashboard_release_base.py": "7bc05ad276128774c9f9d9bdd2db0ea98c03a638ea1356a8e0c7ef7a6e3a5087",
+    "ops/frozen-predecessors.json": "c45873fff99a97bb82ef3e7bdee0ec77960ce45e8eddd5fe891461a72e891860",
+    "ops/frozen-v5c-pins.json": "ead4fb6d0f0a0eebbdd01fdc77a7fc273abdfb165e581807c94747fa8a089615",
+    "ops/frozen-v6-inputs.json": "d30e60b478a9a0474e8ced421fc28cfb9e9759433f8cbf389d8d5e50068e4934",
+    "ops/frozen_predecessors.py": "8762b1fa0850c848a94bca9ff2db9eb3a713cb7546d57bfc9a7d82b15b613441",
+    "ops/generate-v7-release.py": "cead74661f9b258d55fa27d33c4f3c9304bdd5bffe50ec805f9fd61a2b9db120",
+    "ops/live_runtime_acceptance.py": "111896a34ee02f716dc06a44de463778431bbb6981f12587c5b5c6101649f68f",
+    "ops/native_release_guards.py": "141955d37228d2977d8e6ad16e63da76117e042dec41da8de97ddc5a4710f75b",
+    "ops/paired_release.py": "6a0dc9084e7dcf02917ff17095ae2162e2b2599c55390d89623ea7c8968c11aa",
+    "ops/prepare-v7-pins.py": "979920da25416d6206bc0607bc5b3f794837cc2605c1a3a76744e74bc6b60fa7",
+    "ops/run-v7-offline.py": "0c4be85138342cd3acf2d5782c2c01042da6888ab8104ad898a7f5ef56a927da",
+    "ops/schema-source-contract-v6-reference.json": "3e23735581cb9f7370053a061aef9bc92daa2ef504f00cae4ac1f298c4fc90c6",
+    "ops/source_archive_guards.py": "cd3eb085c508351d684ab97c65324df52fb02f0fc1458511c8e0025d37467ac1",
+    "ops/template-provenance-v7.json": "bc2891a0792b2586fc8b30704854d0861c6ccd31f02f6fcf8ce7454e3c6167a2",
+    "ops/test-stage-stop.py": "773a60671cb7fb68e07df5b5e2502fe6c6e01f113b428da6dc013a29bf93db2a",
+    "ops/test_paired_release.py": "1dc7d4a8032d55401e03561704afa18bd8c84e8332f7277bd784f8ba7611f0d8",
+    "ops/test_source_archives.py": "1dec8fa027583f7e4c6b8b91b9c67516695ad6bd7394721c5b9868d9824abffe",
+    "ops/test_v7_guards.py": "646e5ce675c2ff1dcf21c9f6d929dd56f211e5505d9e833af81862ceab2338b4",
+    "ops/test_v7_live_runtime_acceptance.py": "27728f3568d38631260117441098a9566296b6b2bcbd966f7fe78cced49310ef",
+    "ops/V7-USAGE.txt": "cf0b52ace9249277b54486843ef58a933b5b3fc7e13fb15a7bd2d5168f341254",
+    "ops/verify-monitor-release.py": "bdbec35eec4352ea4f016fd9a32dbe82003934ae8d044c91b38fd3df61dd7008",
+    "ops/verify-v7-generated-bundle.py": "021de64e76736b851abe2935f1b234bea29e669b25b8b9fab66c933a6a8ec97e",
+    "ops/approved-source-bytes/20261016_add_dictionary_package_provenance.sql": "76159bca5fc05801fb0c1fefacfe6d8d29fb1d2f77ce332eb43a263d28fd1627",
+    "ops/approved-source-bytes/20261016_bind_automation_rate_reservations.sql": "a0de3e2a89be284444d348191f2f242ba9043f3ad51a87c6f65b1f5b043df7e8",
+    "ops/approved-source-bytes/dictionary-package-provenance.js": "5ce288e01f682af91761e4ae807e19d1679047aa8901f1bc617534357f32039b",
+    "ops/draft-source-bytes/20261016_add_workflow_package_provenance.sql": "fb1b1c856fb118e7aa8bedbda09229e2104caeacb22426fbab96f6070d302874",
+    "ops/draft-source-bytes/20261016_preserve_dictionary_package_dependencies.sql": "987303670412cc858de10e8c14ee5b47d27a84da0b23c06f094f8a9af7ed411e",
+    "ops/draft-source-bytes/workflow-package-provenance.js": "7d79c85b615a3425ead82c12ddf2e9d5b80e42c292f4a107d840bfd06613c180"
+  },
+  "independent160TestProof": {
+    "path": "C:\\Users\\yussy\\AppData\\Local\\Temp\\cbte-audit53-startup-compat-v7-20261016\\independent-v7-preparation-test-proof-20261016T025823025604Z.json",
+    "sha256": "884b249c970ef7321811a90de888953556746da24b77f33a3dcadc1bfb7ef88c"
+  },
+  "realNodeSqlProjectionEvidence": {
+    "path": "C:\\Users\\yussy\\AppData\\Local\\Temp\\cbte-audit53-startup-compat-v7-20261016\\independent-live-node-sql-projection-1792119538713.json",
+    "sha256": "8e09925d91541e512ef2b9e6d52fa913cd36b7a6ba53486f1f4d22cb39e50850",
+    "cases": 6,
+    "adapter": "Only credentials redirected to owned disposable schema port33621; actual projection SQL, installed mysql and rollout policy executed; no real receiver/browser started."
+  },
+  "realSqlProjectionValidatedByPythonAcceptance": [
+    {
+      "name": "fresh existing eligible listening",
+      "ok": true,
+      "failedChecks": []
+    },
+    {
+      "name": "unhealthy receiver remains in cohort: error",
+      "ok": false,
+      "failedChecks": [
+        "eligible_receivers_listening",
+        "eligible_receivers_no_retry",
+        "ready_lifecycle_conditional_evidence"
+      ]
+    },
+    {
+      "name": "unhealthy receiver remains in cohort: requires_reenrollment",
+      "ok": false,
+      "failedChecks": [
+        "eligible_receivers_listening",
+        "eligible_receivers_no_retry",
+        "ready_lifecycle_conditional_evidence"
+      ]
+    },
+    {
+      "name": "unhealthy receiver remains in cohort: connecting",
+      "ok": false,
+      "failedChecks": [
+        "eligible_receivers_listening",
+        "eligible_receivers_no_retry",
+        "ready_lifecycle_conditional_evidence"
+      ]
+    },
+    {
+      "name": "expired listening lease remains observable",
+      "ok": false,
+      "failedChecks": [
+        "eligible_receivers_unexpired_lease",
+        "ready_lifecycle_conditional_evidence"
+      ]
+    },
+    {
+      "name": "old process connection remains observable",
+      "ok": false,
+      "failedChecks": [
+        "eligible_receivers_connected_after_worker_start",
+        "ready_lifecycle_conditional_evidence"
+      ]
+    }
+  ],
+  "canonicalSourceSchemaAndTwoFileRemediationProofMatches": true,
+  "reviewedBoundaries": [
+    "Current resident is exact f241 V6 floor; canonical f241 and resident expected bytes remain separate pins",
+    "Strict V7 preflight requires already-present9columns/4ledgers; unchanged metadata/immutabledata/exactJSONNULLorstring checked; no new DDL/backfill intended",
+    "Actual final main must be explicit40SHA, current main and runtime-tree-equal to approved b4 source; sourceapproval cannot silently reset",
+    "Worker lease/PID/parent/cwd/revision/Node/key/all dynamic shards before application gate",
+    "After worker and before Web: physical bootstrapcomplete fence2 and all10scope receipts plus existing owner-bound ready enabled supporter cohort",
+    "Unhealthy retry/error/reenrollment receivers stay in acceptance cohort; each eligible lease/revision/connectedAt after actual worker start required",
+    "No existing eligible monitors is recorded as conditional evidence, not a synthetic receiver success",
+    "Application acceptance repeats in final live verifier; floor rollback explicitly permits complete original3scope receipt while requiring fresh real receiver state",
+    "All stage GETs remain read-only; no quotas/enrollment/test notifications/payment toggles are invoked",
+    "Exclusive Paramiko engine exact4d750; wrapper overrides only allowedV7parents; old reservation marker intentionally wire-compatible; no put/truncating fallback/automaticretry",
+    "Separate stage/consistentbackup/hashreview/promotion, CAS/operationlock and worker-before-Web rollback to f241 retain all data/columns",
+    "Administrator cadence, current plans, five-minute user override, supporters/batch/manualfailback, key and Node remain configuration-derived and preserved"
+  ],
+  "remainingConfirmedBlockingFindings": [],
+  "preservedInputs": {
+    "roots": 4,
+    "files": 167,
+    "unchanged": true,
+    "snapshotSha256": "c45873fff99a97bb82ef3e7bdee0ec77960ce45e8eddd5fe891461a72e891860",
+    "v6Inputs": 92,
+    "v6InputsUnchanged": true,
+    "v6SnapshotSha256": "d30e60b478a9a0474e8ced421fc28cfb9e9759433f8cbf389d8d5e50068e4934"
+  },
+  "networkPerformed": false,
+  "sshPerformed": false,
+  "productionAccessPerformed": false,
+  "gitWritesPerformed": false,
+  "sourceAssetsWritten": false,
+  "actualBundleReviewed": false,
+  "limitations": [
+    "160 tests and realSQL projection are local preparation evidence only. Actual newmain and releasebundle do not exist in the reviewed preparation.",
+    "Actual generated archives/wrappers/manifest require fresh full tests and independent actual-artifact review before root uploads.",
+    "Fresh staged/live application proof must still establish bootstrap2 and actual existing eligible receiver listening after new worker start with valid lease; local metadata fixtures cannot prove production startup.",
+    "No OAuth/new X-to-Discord message delivery or payment was tested in production."
+  ]
+}

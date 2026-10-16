@@ -139,7 +139,12 @@ async function initialize(options = {}) {
     initializing = (async () => {
         const query = options.query || require('./db').queryDatabase;
         const tables = options.tables || require('./db_schema').TABLES;
-        const subscriptions = options.subscriptions || require('./providers/booth/_notifications');
+        // Every valid legacy completion includes its BOOTH snapshot at this
+        // exact cutoff. Do not reopen that completed file through intentional
+        // managed-release data links. SQL scopes have independent receipts:
+        // newly introduced or incomplete scopes must still be scanned below.
+        // Fresh/incomplete recoveries still inspect the file with plain().
+        const legacyComplete = state.complete === true;
         // Explicit table fixtures may opt into this scope. Production always
         // scans the existing automation tables before notification timers start.
         const automation = options.automationTables || (!options.tables ? {
@@ -174,15 +179,18 @@ async function initialize(options = {}) {
                 save(state);
             }
         }
-        if (subscriptions.FILE && fs.existsSync(subscriptions.FILE)) {
-            plain(subscriptions.FILE);
-            if (fs.statSync(subscriptions.FILE).size > MAX_BYTES) throw failure('Restored Booth subscriptions exceed the bounded bootstrap size.');
-        }
-        const records = subscriptions.load();
-        if (!Array.isArray(records) || records.length > 10000) throw failure('Restored Booth subscriptions exceed the bounded bootstrap count.');
-        for (const record of records) {
-            if (Date.now() >= deadline) throw failure('Recovery notification quarantine exceeded its startup budget. Background notifications remain stopped.');
-            if (!record.notified) notificationAllowed('booth_sale', record, record.registeredAt);
+        if (!legacyComplete) {
+            const subscriptions = options.subscriptions || require('./providers/booth/_notifications');
+            if (subscriptions.FILE && fs.existsSync(subscriptions.FILE)) {
+                plain(subscriptions.FILE);
+                if (fs.statSync(subscriptions.FILE).size > MAX_BYTES) throw failure('Restored Booth subscriptions exceed the bounded bootstrap size.');
+            }
+            const records = subscriptions.load();
+            if (!Array.isArray(records) || records.length > 10000) throw failure('Restored Booth subscriptions exceed the bounded bootstrap count.');
+            for (const record of records) {
+                if (Date.now() >= deadline) throw failure('Recovery notification quarantine exceeded its startup budget. Background notifications remain stopped.');
+                if (!record.notified) notificationAllowed('booth_sale', record, record.registeredAt);
+            }
         }
         const completed = { ...state, notificationFenceVersion: NOTIFICATION_FENCE_VERSION, complete: true, completedAtMs: Date.now() };
         save(completed);
