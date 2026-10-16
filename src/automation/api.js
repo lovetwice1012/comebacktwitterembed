@@ -161,6 +161,7 @@ async function dispatchCore({ method, path, search = new URLSearchParams(), body
       else if (id && method === "GET") result = await history.detail(actor, id);
       else if (id && method === "PATCH") result = await history.change(actor, id, body);
     }
+    else if (kind === "runs" && id && action === "trace" && method === "GET") result = await history.trace(actor, id, { cursor: search.get("cursor") || undefined });
     else if (kind === "excluded" && method === "GET") result = await history.excluded(actor, search.get("afterId") || "", { targetKind: search.get("targetKind"), targetId: search.get("targetId") });
     else if (kind === "monitors" && ["auto", "price"].includes(id)) {
       if (action === "preview" && method === "POST") result = await monitors.preview(actor, id, body);

@@ -3,6 +3,7 @@
 const { requireActor, assertAccess, AutomationError, hash } = require('./service');
 const { scheduleDelivery } = require('./schedule');
 const { FIELDS } = require('./schema');
+const { indexedTrace, readTracePage } = require('./flow-trace');
 const parse = value => typeof value === 'string' ? JSON.parse(value) : value;
 const fail = (code, message, status = 400) => { throw new AutomationError(code, message, status); };
 function version(row) { return hash(JSON.stringify([row.state, row.due_at_ms, row.updated_at_ms, row.lease_token, row.attempts, row.plan_json])); }
@@ -85,14 +86,37 @@ function createHistory(db, service) {
     }
     async function detail(actor, id) {
         const row = await getRow(actor, id);
-        const data = snapshot(row);
+        const data = snapshot(row); let traceRunId = row.run_id;
         const retainedRunId = data.plan.flowV2 && data.representative?.runId;
         if (retainedRunId && retainedRunId !== row.run_id) {
             const retained = (await db.queryDatabase(`SELECT trace_json FROM automation_runs WHERE id=? AND owner_user_id=? AND scope=?
                 AND (scope='private' OR guild_id<=>?) AND workflow_id<=>? AND revision<=>?`, [retainedRunId, row.owner_user_id, row.scope, row.guild_id, row.workflow_id, row.revision]))[0];
-            if (retained) data.trace = snapshot({ ...row, trace_json: retained.trace_json }).trace;
+            if (retained) { data.trace = snapshot({ ...row, trace_json: retained.trace_json }).trace; traceRunId = retainedRunId; }
         }
-        return { ...formatJob(row), event: data.event, trace: data.trace, plan: data.plan, originalEvent: data.originalEvent };
+        const indexed = indexedTrace(data.trace), graph = indexed || (await db.queryDatabase('SELECT run_id FROM automation_flow_runs WHERE run_id=?', [traceRunId])).length > 0;
+        let traceHistory = graph ? { runId: traceRunId, indexed, firstPage: false, totalEntries: null } : undefined;
+        if (indexed) {
+            try { const page = await trace(actor, traceRunId); data.trace = page.items; traceHistory = { runId: traceRunId, indexed, firstPage: true, totalEntries: page.totalEntries, sourceRevision: page.sourceRevision, nextCursor: page.nextCursor }; }
+            // A diagnostic read failure must not discard the delivery state or
+            // cause a committed action to be offered for submission again.
+            catch (error) { traceHistory.errorCode = error instanceof AutomationError ? error.code : 'HISTORY_TRACE_UNAVAILABLE'; }
+        }
+        return { ...formatJob(row), event: data.event, trace: data.trace, plan: data.plan, originalEvent: data.originalEvent, ...(traceHistory ? { traceHistory } : {}) };
+    }
+    async function trace(actor, runId, input = {}) {
+        requireActor(actor);
+        if (!/^[0-9a-f-]{36}$/.test(runId || '')) fail('NOT_FOUND', '処理記録が見つかりません。', 404);
+        const header = () => db.queryDatabase('SELECT id,owner_user_id,guild_id,scope,workflow_id,revision,state FROM automation_runs WHERE id=?', [runId]);
+        try {
+            const row = (await header())[0]; assertAccess(actor, row);
+            const page = await readTracePage(db.queryDatabase, row, input);
+            const current = (await header())[0]; assertAccess(actor, current);
+            if (JSON.stringify(current) !== JSON.stringify(row)) fail('HISTORY_TRACE_CHANGED', '処理履歴が更新されました。先頭から読み直してください。', 409);
+            return page;
+        } catch (error) {
+            if (error instanceof AutomationError) throw error;
+            fail('HISTORY_TRACE_UNAVAILABLE', '処理記録を読み込めませんでした。再試行してください。', 503);
+        }
     }
     async function change(actor, id, input) {
         if (!['cancel', 'reschedule', 'retry'].includes(input.action)) fail('INVALID_ACTION', '配信操作が不正です。');
@@ -129,15 +153,17 @@ function createHistory(db, service) {
         requireActor(actor);
         const targeted = input.targetKind != null || input.targetId != null;
         if (targeted && (!['auto', 'price', 'x'].includes(input.targetKind) || !/^[1-9][0-9]{0,19}$/.test(input.targetId || ''))) fail('INVALID_TARGET', '通知の指定を確認してください。');
-        const rows = await db.queryDatabase(`SELECT r.id,r.workflow_id,r.revision,r.target_kind,r.target_id,r.event_json,r.trace_json,r.state,r.created_at_ms FROM automation_runs r
+        const rows = await db.queryDatabase(`SELECT r.id,r.workflow_id,r.revision,r.target_kind,r.target_id,r.event_json,r.trace_json,r.state,r.created_at_ms,
+            EXISTS (SELECT 1 FROM automation_flow_runs f WHERE f.run_id=r.id) AS is_flow FROM automation_runs r
             WHERE r.state IN ('excluded','waiting','flow_pending','expired','failed','cancelled') AND r.id>?
             AND ((r.scope='private' AND r.owner_user_id=?) OR (r.scope='guild' AND r.guild_id=? AND ?=1))
             ${targeted ? 'AND r.target_kind=? AND r.target_id=?' : ''}
             AND NOT EXISTS (SELECT 1 FROM automation_jobs j WHERE (j.execution_version<>2 AND j.run_id=r.id) OR (j.execution_version=2
                 AND JSON_CONTAINS(IF(JSON_VALID(j.plan_json),j.plan_json,'{}'),JSON_OBJECT('runId',r.id),'$.members')=1))
             ORDER BY r.id LIMIT 51`, [after, actor.userId, actor.guildId || null, actor.canView ? 1 : 0, ...(targeted ? [input.targetKind, String(input.targetId)] : [])]);
-        return { items: rows.slice(0, 50).map(r => ({ ...r, event: parse(r.event_json), trace: parse(r.trace_json), event_json: undefined, trace_json: undefined })), nextCursor: rows.length > 50 ? rows[49].id : null };
+        return { items: rows.slice(0, 50).map(({ is_flow, ...r }) => { const entries = parse(r.trace_json); return { ...r, event: parse(r.event_json), trace: entries,
+            ...(is_flow ? { traceHistory: { runId: r.id, indexed: indexedTrace(entries), firstPage: false, totalEntries: null } } : {}), event_json: undefined, trace_json: undefined }; }), nextCursor: rows.length > 50 ? rows[49].id : null };
     }
-    return { list, detail, change, excluded };
+    return { list, detail, change, excluded, trace };
 }
 module.exports = { createHistory, formatJob, version };

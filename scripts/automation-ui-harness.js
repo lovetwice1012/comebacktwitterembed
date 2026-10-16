@@ -63,7 +63,7 @@ async function main() {
             for (const planId of ['free', 'supporter']) await entitlements.savePlanPolicy(query, actor, { planId, label: `検証用${planId}`, slotLimit: 20, minuteLimit: 5, dayLimit: 24, priority: 1, intervalMinutes: 5 });
         });
         const liveDestination = await service.saveDestination(actor, { name: '検証用：使用中のDM', kind: 'dm', scope: 'private' });
-        const pausedDestination = await service.saveDestination(actor, { name: '検証用：停止中のDM', kind: 'dm', scope: 'private', enabled: false });
+        const pausedDestination = await service.saveDestination(actor, { name: '検証用：停止中のDM', kind: 'dm', scope: 'private' });
         const { newWorkflow } = services.schema;
         const unapplied = await service.createWorkflow(actor, { definition: newWorkflow('検証用：未適用のルール') });
         const paused = await service.createWorkflow(actor, { definition: newWorkflow('検証用：停止中のルール') });
@@ -94,6 +94,10 @@ async function main() {
         services.xQuota = require('../src/automation/x-monitor-quota').createXMonitorQuota(db, { service, registrationEnabled: true, rolloutMode: 'supporters' });
         services.xProcessingSettings = require('../src/automation/x-processing-settings').createXProcessingSettings(db, { rolloutMode: 'supporters' });
         for (const item of fixtures) await services.xQuota.register(actor, { accountHandle: `qa_${item.suffix}`, name: `X：${item.name}`, processingMode: 'batch', notificationSettings: { subscriptionId: subscription.subscriptionId, workflowId: item.rule, destinationId: item.destination } });
+        // Build the paused-destination state through the supported lifecycle:
+        // bind while usable, then stop the resource without losing monitors.
+        const pausedDestinationRow = await service.getRow('destination', actor, pausedDestination.id);
+        await service.saveDestination(actor, { name: '検証用：停止中のDM', kind: 'dm', scope: 'private', enabled: false, expectedRevision: Number(pausedDestinationRow.revision) }, {}, pausedDestination.id);
         console.log(JSON.stringify({ readinessSeeded: true, native: 3, x: 3, receiverStateIsSynthetic: true }));
     }
     const assets = new Map();

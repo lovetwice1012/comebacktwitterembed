@@ -14,11 +14,17 @@ async function refreshFlowHistory(query, runIds) {
     // Deduplicate the narrow membership keys before reading a potentially
     // large immutable decision. DISTINCT over the joined JSON would otherwise
     // materialize thousands of copies for one run with repeated occurrences.
-    const allSteps = await query(`SELECT m.run_id,s.id,s.node_id,s.state,s.decision_json,s.wake_at_ms,s.created_at_ms FROM automation_flow_steps s
-        JOIN (SELECT DISTINCT run_id,unit_id FROM automation_flow_members WHERE run_id IN (?)) m ON m.unit_id=s.input_unit_id ORDER BY s.created_at_ms,s.id`, [ids]);
-    const allBatches = await query(`SELECT m.run_id,b.node_id,b.outcome_json FROM automation_flow_batches b
-        JOIN (SELECT DISTINCT i.batch_id,m.run_id FROM automation_flow_batch_inputs i JOIN automation_flow_members m ON m.unit_id=i.input_unit_id WHERE m.run_id IN (?)) m ON m.batch_id=b.id WHERE b.state<>'open'`, [ids]);
-    const batchExclusions = await query(`SELECT DISTINCT m.run_id,b.node_id,e.receipt_kind,b.outcome_json FROM automation_flow_batch_inputs i
+    const stepLinks = await query(`SELECT DISTINCT m.run_id,s.id FROM automation_flow_steps s JOIN automation_flow_members m ON m.unit_id=s.input_unit_id WHERE m.run_id IN (?)`, [ids]);
+    const stepRows = await query(`SELECT s.id,s.node_id,s.state,s.decision_json,s.wake_at_ms,s.created_at_ms FROM automation_flow_steps s
+        WHERE EXISTS (SELECT 1 FROM automation_flow_members m WHERE m.unit_id=s.input_unit_id AND m.run_id IN (?)) ORDER BY s.created_at_ms,s.id`, [ids]);
+    const stepsById = new Map(stepRows.map(row => [row.id, { ...row, decision: parse(row.decision_json) || {} }]));
+    const memberships = new Map(); for (const link of stepLinks) { if (!memberships.has(link.run_id)) memberships.set(link.run_id, new Set()); memberships.get(link.run_id).add(link.id); }
+    const batchLinks = await query(`SELECT DISTINCT i.batch_id,m.run_id FROM automation_flow_batch_inputs i JOIN automation_flow_members m ON m.unit_id=i.input_unit_id WHERE m.run_id IN (?)`, [ids]);
+    const batchRows = await query(`SELECT b.id,b.node_id,b.outcome_json FROM automation_flow_batches b WHERE b.state<>'open'
+        AND EXISTS (SELECT 1 FROM automation_flow_batch_inputs i JOIN automation_flow_members m ON m.unit_id=i.input_unit_id WHERE i.batch_id=b.id AND m.run_id IN (?)) ORDER BY b.created_at_ms,b.id`, [ids]);
+    const batchById = new Map(batchRows.map(row => [row.id, { ...row, outcome: parse(row.outcome_json) || {} }]));
+    const allBatches = batchLinks.flatMap(link => batchById.has(link.batch_id) ? [{ ...batchById.get(link.batch_id), run_id: link.run_id }] : []);
+    const batchExclusions = await query(`SELECT DISTINCT m.run_id,b.node_id,e.receipt_kind,JSON_UNQUOTE(JSON_EXTRACT(b.outcome_json,'$.code')) AS code FROM automation_flow_batch_inputs i
         JOIN automation_flow_batches b ON b.id=i.batch_id JOIN automation_flow_members m ON m.unit_id=i.input_unit_id
         JOIN automation_flow_edges e ON e.activation_id=i.activation_id AND e.unit_id=i.input_unit_id AND e.run_id=m.run_id
             AND e.edge_id=SHA2(CONCAT(b.id,':',m.member_id),256)
@@ -37,20 +43,20 @@ async function refreshFlowHistory(query, runIds) {
     const allJobs = anchors.length ? (await query('SELECT state,plan_json FROM automation_jobs WHERE execution_version=2 AND run_id IN (?)', [anchors.map(row => row.run_id)]))
         .flatMap(row => { try { const plan = parse(row.plan_json); return sendIds.has(plan.flowV2?.sendId) ? [{ ...row, plan }] : []; } catch { return []; } }) : [];
     for (const origin of origins) {
-        const runId = origin.run_id, steps = allSteps.filter(row => row.run_id === runId);
-        const trace = [];
+        const runId = origin.run_id, steps = stepRows.filter(row => memberships.get(runId)?.has(row.id)).map(row => stepsById.get(row.id));
+        const trace = require('./flow-trace').traceProjection();
         for (const step of steps) {
-            const decision = parse(step.decision_json) || {};
+            const decision = step.decision;
             const entries = (decision.trace || []).filter(item => !item.runId || item.runId === runId);
             trace.push(...entries);
             if (!entries.length && !decision.terminalFailure && (decision.code || ['pending','leased','joining','aggregating'].includes(step.state))) trace.push({ nodeId: step.node_id,
                 outcome: ['pending','leased','joining','aggregating'].includes(step.state) ? 'wait' : 'excluded', reason: decision.code || 'FLOW_WAITING', wakeAtMs: Number(step.wake_at_ms) });
         }
         const batches = allBatches.filter(row => row.run_id === runId);
-        for (const batch of batches) for (const excluded of parse(batch.outcome_json)?.excluded || []) if (excluded.runId === runId) trace.push({ nodeId: batch.node_id, outcome: excluded.code === 'DEADLINE_EXCEEDED' ? 'expired' : 'excluded', reason: excluded.code });
+        for (const batch of batches) for (const excluded of batch.outcome.excluded || []) if (excluded.runId === runId) trace.push({ nodeId: batch.node_id, outcome: excluded.code === 'DEADLINE_EXCEEDED' ? 'expired' : 'excluded', reason: excluded.code });
         for (const batch of batchExclusions.filter(row => row.run_id === runId)) trace.push({ nodeId: batch.node_id,
             outcome: batch.receipt_kind === 'batch_expired' ? 'expired' : 'excluded', reason: batch.receipt_kind === 'batch_expired' ? 'DEADLINE_EXCEEDED'
-                : batch.receipt_kind === 'batch_changed' ? 'MONITOR_CHANGED' : parse(batch.outcome_json)?.code || 'FLOW_UNIT_INVALID' });
+                : batch.receipt_kind === 'batch_changed' ? 'MONITOR_CHANGED' : batch.code || 'FLOW_UNIT_INVALID' });
         for (const failed of failedSteps.filter(row => row.run_id === runId)) trace.push({ nodeId: failed.node_id, outcome: 'excluded', reason: failed.edge_id.slice(37) });
         for (const failed of failedMerges.filter(row => row.run_id === runId)) trace.push({ nodeId: failed.node_id, outcome: 'excluded', reason: failed.code });
         const sends = allSends.filter(row => row.run_id === runId), lineageJobs = allJobs.filter(row => [...(row.plan.flowV2.members || []), ...(row.plan.flowV2.excludedMembers || [])].some(member => member.runId === runId));
@@ -62,9 +68,9 @@ async function refreshFlowHistory(query, runIds) {
         else if (jobs.length) state = jobs.every(job => job.state === 'sent') ? 'sent' : jobs.some(job => ['pending','leased','sending'].includes(job.state)) ? 'queued' : jobs[0].state;
         else if (sends.some(send => send.state === 'unprojected')) state = 'flow_pending';
         else if (sends.some(send => send.state === 'failed')) state = 'failed';
-        else state = trace.some(entry => require('./graph-failure').permanentFailure({ code: entry.reason })) ? 'failed' : trace.some(entry => entry.outcome === 'expired') ? 'expired' : 'excluded';
+        else state = trace.permanent ? 'failed' : trace.expired ? 'expired' : 'excluded';
         for (const send of sends.filter(item => ['failed','cancelled','expired'].includes(item.state))) trace.push({ nodeId: steps.find(step => step.id === send.activation_id)?.node_id || 'send', outcome: send.state === 'expired' ? 'expired' : 'excluded', reason: send.state === 'failed' ? 'FLOW_DESTINATION_MISSING' : send.state === 'expired' ? 'DEADLINE_EXCEEDED' : 'ALL_MEMBERS_REVOKED' });
-        await query('UPDATE automation_runs SET state=?,trace_json=? WHERE id=?', [state, JSON.stringify(trace), runId]);
+        await query('UPDATE automation_runs SET state=?,trace_json=? WHERE id=?', [state, JSON.stringify(trace.result()), runId]);
     }
 }
 module.exports = { refreshFlowHistory };
