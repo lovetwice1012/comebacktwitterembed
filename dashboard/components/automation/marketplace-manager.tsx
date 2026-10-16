@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Info, LockKeyhole, Users } from "lucide-react";
 import type { AutomationApi } from "./rule-editor";
 const field = "w-full rounded border bg-background px-3 py-2 text-sm";
@@ -12,7 +12,7 @@ const blank = { title: "", description: "", category: "general", visibility: "pr
 function DependencyFacts({ bundle, dependencies }: { bundle: any; dependencies: any }) {
   const groups = Object.entries(dependencies?.dictionaries || {}).filter(([, entries]) => Array.isArray(entries) && entries.length);
   if (!groups.length) return null;
-  return <details className="space-y-2 rounded border p-3"><summary>辞書のライセンス・出典</summary>{groups.map(([alias, entries]) => <section key={alias} className="mt-3 space-y-2"><h3 className="text-sm font-medium">{bundle.dictionaries?.[alias]?.name || alias}</h3>{(entries as any[]).map((entry, index) => entry && <div key={`${entry.packageId}:${entry.version}:${index}`} className="rounded bg-muted p-3 text-sm"><div className="automation-meta"><span>{typeof entry.license === "string" && entry.license || "ライセンス未指定"}</span><span>配布元の版 {entry.version}</span></div><p className="mt-2 whitespace-pre-wrap">{typeof entry.description === "string" ? entry.description : "出典を再確認してください。"}</p></div>)}</section>)}</details>;
+  return <details className="min-w-0 space-y-2 rounded border p-3 [overflow-wrap:anywhere]"><summary>辞書のライセンス・出典</summary>{groups.map(([alias, entries]) => <section key={alias} className="mt-3 space-y-2"><h3 className="text-sm font-medium">{bundle.dictionaries?.[alias]?.name || alias}</h3>{(entries as any[]).map((entry, index) => entry && <div key={`${entry.packageId}:${entry.version}:${index}`} className="rounded bg-muted p-3 text-sm"><div className="automation-meta"><span>{typeof entry.license === "string" && entry.license || "ライセンス未指定"}</span><span>配布元の版 {entry.version}</span></div><p className="mt-2 whitespace-pre-wrap">{typeof entry.description === "string" ? entry.description : "出典を再確認してください。"}</p></div>)}</section>)}</details>;
 }
 
 export function preparePublicationBundle(bundle: any, requestedLicense: string, ownOriginalRevision = false) {
@@ -28,7 +28,13 @@ export function MarketplaceManager({ api, scope, canEdit, rules, dictionaries, c
   const [busy, setBusy] = useState(false), [error, setError] = useState(""), [notice, setNotice] = useState(""), [shareKey, setShareKey] = useState(""), [openId, setOpenId] = useState(""), [versions, setVersions] = useState<any[]>([]), [versionCursor, setVersionCursor] = useState<number | null>(null);
   const [form, setForm] = useState<any>(blank), [editing, setEditing] = useState<any>(null), [sourceType, setSourceType] = useState("workflow"), [sourceId, setSourceId] = useState(currentRuleId || ""), [editingBundle, setEditingBundle] = useState<any>(null);
   const [sourceInfo, setSourceInfo] = useState<any>(null);
-  useEffect(() => { setSourceInfo(null); }, [sourceType, sourceId, editingBundle]);
+  const sourceRevision = (sourceType === "dictionary" ? dictionaries : rules).find(item => item.id === sourceId)?.revision;
+  const sourceIdentity = useMemo(() => ({ api, scope, sourceType, sourceId, sourceRevision, editingId: editing?.id, editingVersion: editing?.latest_version, editingBundle }), [api, scope, sourceType, sourceId, sourceRevision, editing?.id, editing?.latest_version, editingBundle]);
+  const sourceIdentityRef = useRef(sourceIdentity); sourceIdentityRef.current = sourceIdentity;
+  useEffect(() => {
+    setSourceInfo(null);
+    setForm((current: typeof blank) => current.rightsConfirmed ? { ...current, rightsConfirmed: false } : current);
+  }, [sourceIdentity]);
   const [installed, setInstalled] = useState<any[]>([]), [installedKind, setInstalledKind] = useState("workflow"), [installedCursor, setInstalledCursor] = useState<string | null>(null), [updateTarget, setUpdateTarget] = useState<any>(null), [updateVersion, setUpdateVersion] = useState(1), [updateShareKey, setUpdateShareKey] = useState(""), [updatePreview, setUpdatePreview] = useState<any>(null), [replaceLocal, setReplaceLocal] = useState(false);
   const [review, setReview] = useState<any>(null), [reviewNote, setReviewNote] = useState(""), [report, setReport] = useState(""), [starter, setStarter] = useState<any>(null), [language, setLanguage] = useState("all"), [moderation, setModeration] = useState<any>(null);
   const errorRef = useRef<HTMLParagraphElement>(null), detailHeading = useRef<HTMLHeadingElement>(null), listHeading = useRef<HTMLHeadingElement>(null), view = useRef<HTMLFieldSetElement>(null), returnPackage = useRef("");
@@ -91,10 +97,14 @@ export function MarketplaceManager({ api, scope, canEdit, rules, dictionaries, c
     await finishCommit(kind === "report" ? "通報を受け付けました。" : "評価・フォローの変更を保存しました。", () => open(current.id, current.version, key));
   }
   async function previewSource() {
-    const epoch = savedReadEpoch.current;
-    const info = sourceType === "current" ? { bundle: editingBundle, dependencies: editing?.dependencies } : sourceType === "workflow" ? await api(`workflows/${sourceId}/publication-export`)
-      : await api(`dictionaries/${sourceId}/package-export?revision=${dictionaries.find(item => item.id === sourceId)?.revision}`);
-    if (activeRef.current && epoch === savedReadEpoch.current) setSourceInfo(info);
+    const epoch = savedReadEpoch.current, identity = sourceIdentity;
+    try {
+      const info = sourceType === "current" ? { bundle: editingBundle, dependencies: editing?.dependencies } : sourceType === "workflow" ? await api(`workflows/${sourceId}/publication-export`)
+        : await api(`dictionaries/${sourceId}/package-export?revision=${dictionaries.find(item => item.id === sourceId)?.revision}`);
+      if (activeRef.current && epoch === savedReadEpoch.current && identity === sourceIdentityRef.current) setSourceInfo({ ...info, sourceIdentity: identity });
+    } catch (cause) {
+      if (activeRef.current && epoch === savedReadEpoch.current && identity === sourceIdentityRef.current) throw cause;
+    }
   }
   async function savePackage() {
     if (form.visibility !== "private" && !form.rightsConfirmed) throw new Error("内容・再配布する権利・公開範囲を確認してください。");
@@ -159,7 +169,7 @@ export function MarketplaceManager({ api, scope, canEdit, rules, dictionaries, c
           {[["title", "名前", 120], ["category", "カテゴリ", 64], ["license", "ライセンス", 8000]].map(([key, label, limit]) => <label className="text-sm" key={key}>{label}<input className={field} placeholder={key === "license" ? sourceType === "dictionary" ? "CC-BY-4.0、MITなど" : "元の指定を使用" : undefined} maxLength={Number(limit)} value={form[key]} onChange={e => changeForm({ [key]: e.target.value })} /></label>)}
           <label className="text-sm">公開範囲<select className={field} value={form.visibility} onChange={e => changeForm({ visibility: e.target.value })}><option value="private">自分だけ</option><option value="unlisted">限定共有</option><option value="public">公開</option></select></label>
         </div>
-        <div><button className={button} disabled={busy || sourceType !== "current" && !sourceId} onClick={() => void task(previewSource)}>共有元のライセンス・出典を確認</button>{sourceInfo && <DependencyFacts bundle={sourceInfo.bundle} dependencies={sourceInfo.dependencies} />}</div>
+        <div><button className={button} disabled={busy || sourceType !== "current" && !sourceId} onClick={() => void task(previewSource)}>共有元のライセンス・出典を確認</button>{sourceInfo?.sourceIdentity === sourceIdentity && <DependencyFacts bundle={sourceInfo.bundle} dependencies={sourceInfo.dependencies} />}</div>
         {[["description", "説明", 8000], ["changelog", "変更内容", 4000]].map(([key, label, limit]) => <label key={key} className="block text-sm">{label}<textarea className={field} maxLength={Number(limit)} value={form[key]} onChange={e => changeForm({ [key]: e.target.value })} /></label>)}
         {form.visibility !== "private" && <><p className="automation-critical-note automation-critical-note-warning"><Users size={16} aria-hidden="true" />{form.visibility === "unlisted" ? "保存すると、リンクを知る人に共有されます。" : "保存すると、すべての利用者に公開されます。"}</p><label className="flex items-start gap-2 text-sm"><input className="mt-1 shrink-0" type="checkbox" checked={form.rightsConfirmed} onChange={e => setForm({ ...form, rightsConfirmed: e.target.checked })} />内容・再配布する権利・公開範囲を確認しました。</label></>}
         <div className="flex flex-wrap gap-2"><button className={button + " bg-primary text-primary-foreground hover:bg-primary/90"} disabled={busy || !form.title.trim() || sourceType !== "current" && !sourceId || form.visibility !== "private" && !form.rightsConfirmed} onClick={() => void task(savePackage)}>{form.visibility === "private" ? "下書きを保存" : form.visibility === "unlisted" ? "限定共有を開始" : "公開する"}</button>{editing && <button className={button} onClick={() => { setEditing(null); setEditingBundle(null); setForm(blank); setSourceType("workflow"); setSourceId(""); }}>改訂を取り消す</button>}</div>
