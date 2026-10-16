@@ -38,12 +38,13 @@ function webhookParts(raw) {
 
 function createDestinations(db, service, options = {}) {
     const rest = options.rest || require('../adminSupport/discord').rest;
-    async function call(route, init) {
+    async function call(route, init, missingWebhook = false) {
         try { return (await rest(route, init)).data; }
         catch (error) {
             // Neither Discord response objects nor URLs containing webhook
             // tokens reach HTTP errors/audit/telemetry.
             const status = Number(error.status);
+            if (missingWebhook && [404, 410].includes(status)) fail('DESTINATION_DELETED', '通知先のWebhookを確認し、通知先を選び直してから再開してください。', 404);
             if (status === 429) fail('DISCORD_RATE_LIMITED', 'Discordが混雑しています。時間をおいて再試行してください。', 503);
             if ([401, 403, 404].includes(status)) fail('DISCORD_ACCESS_DENIED', 'Botまたは利用者が通知先へアクセスできません。', 403);
             fail('DISCORD_UNAVAILABLE', 'Discordに接続できません。Botの設定と接続状態を確認してください。', 503);
@@ -70,6 +71,15 @@ function createDestinations(db, service, options = {}) {
             if (!has(permissions(ctx.guild, ctx.roles, botMember, channel), required)) fail('BOT_CHANNEL_PERMISSION', 'Botにもチャンネルの閲覧・送信・Webhook管理権限が必要です。', 403);
         }
         return { ...ctx, channel };
+    }
+    async function verifyWebhook(guildId, raw) {
+        // Resolve only the persisted secret against Discord. An invocation's
+        // origin channel and caller-supplied metadata are not recipient proof.
+        const parts = webhookParts(raw), webhook = await call(`/webhooks/${parts.id}/${parts.token}`, undefined, true);
+        if (webhook?.id !== parts.id || webhook.type !== 1 || webhook.guild_id !== guildId || !ID.test(webhook.channel_id || '')) {
+            fail('WEBHOOK_DESTINATION_CHANGED', '通知先のWebhookが変更されています。通知先を選び直してください。', 409);
+        }
+        return { id: parts.id, guildId: webhook.guild_id, channelId: webhook.channel_id };
     }
     async function channels(actor) {
         const ctx = await context(actor, actor.guildId);
@@ -154,6 +164,6 @@ function createDestinations(db, service, options = {}) {
             }
         });
     }
-    return { channels, save: (actor, input, id) => service.withOperation(actor, 'write', () => save(actor, input, id)), verifyChannel };
+    return { channels, save: (actor, input, id) => service.withOperation(actor, 'write', () => save(actor, input, id)), verifyChannel, verifyWebhook };
 }
 module.exports = { createDestinations, permissions, webhookParts, has, VIEW, SEND, MANAGE_WEBHOOKS };

@@ -226,11 +226,21 @@ function createMonitors(db, service, destinations, options = {}) {
         const kind = managed?.row.kind || row.destination_type;
         if (kind === 'dm' && !managed && row.destination_key !== `dm:${ownerId}`) fail('DM_OWNER', '通知先のDMを確認してください。');
         const endpointId = kind === 'dm' ? null : managed?.row.webhook_endpoint_id || row.webhook_endpoint_id;
+        let endpointSnapshot = null;
         if (kind !== 'dm') {
             if (kind !== 'webhook' || !endpointId || !(await db.queryDatabase('SELECT id FROM webhook_endpoints WHERE id=?', [endpointId])).length) fail('DESTINATION_DELETED', '通知先を選び直してから再開してください。');
-            if (!managed) await verifyDestinationChannel(actor, row.guild_id, row.origin_channel_id, ownerId, scope === 'private');
+            if (!managed) {
+                endpointSnapshot = (await db.queryDatabase('SELECT id,webhook_url,webhook_url_hash FROM webhook_endpoints WHERE id=?', [endpointId]))[0];
+                if (!endpointSnapshot) fail('DESTINATION_DELETED', '通知先を選び直してから再開してください。');
+                const verified = await destinations.verifyWebhook(row.guild_id, endpointSnapshot.webhook_url);
+                const selectedChannel = /^channel:(\d{16,22}):(\d{16,22})$/.exec(row.destination_key);
+                if (selectedChannel ? selectedChannel[1] !== verified.guildId || selectedChannel[2] !== verified.channelId : row.destination_key !== `webhook:${endpointId}`) {
+                    fail('DESTINATION_CHANGED', '通知先が変更されています。通知先を選び直してから再開してください。', 409);
+                }
+                await verifyDestinationChannel(actor, verified.guildId, verified.channelId, ownerId, scope === 'private');
+            }
         }
-        return { target: resumeIdentity(row), managed: managed?.row, endpointId };
+        return { target: resumeIdentity(row), managed: managed?.row, endpointId, endpointSnapshot };
     }
     async function lockResumeDestination(query, actor, row, checked) {
         if (resumeIdentity(row) !== checked.target) fail('REVISION_CONFLICT', '通知先が変更されています。設定を確認し直してください。', 409);
@@ -238,7 +248,13 @@ function createMonitors(db, service, destinations, options = {}) {
             const fresh = (await destinationForMonitor(actor, checked.managed.id, String(row.user_id), row, query, true)).row;
             if (!fresh.enabled || destinationIdentity(fresh) !== destinationIdentity(checked.managed)) fail('DESTINATION_CHANGED', '通知先が変更されました。再試行してください。', 409);
         }
-        if (checked.endpointId && !(await query('SELECT id FROM webhook_endpoints WHERE id=? FOR UPDATE', [checked.endpointId])).length) fail('DESTINATION_DELETED', '通知先を選び直してから再開してください。');
+        if (checked.endpointId) {
+            const fresh = (await query(`SELECT ${checked.endpointSnapshot ? 'id,webhook_url,webhook_url_hash' : 'id'} FROM webhook_endpoints WHERE id=? FOR UPDATE`, [checked.endpointId]))[0];
+            if (!fresh) fail('DESTINATION_DELETED', '通知先を選び直してから再開してください。');
+            if (checked.endpointSnapshot && (fresh.webhook_url !== checked.endpointSnapshot.webhook_url || fresh.webhook_url_hash !== checked.endpointSnapshot.webhook_url_hash)) {
+                fail('DESTINATION_CHANGED', '通知先が変更されています。設定を確認し直してください。', 409);
+            }
+        }
     }
     async function save(actor, kind, input, id = null) {
         requireActor(actor); tableFor(kind);
@@ -303,7 +319,7 @@ function createMonitors(db, service, destinations, options = {}) {
         // the old secret. Editing their source/destination requires choosing a
         // newly verified destination explicitly.
         if (current && Object.keys(input).every(k => ['expectedRevision', 'enabled', 'name'].includes(k))) {
-            const checked = enabled && !current.enabled ? await resumeDestination(actor, current, scope, ownerId) : null;
+            const checked = enabled ? await resumeDestination(actor, current, scope, ownerId) : null;
             return db.withDatabaseTransaction(async query => {
                 await entitlements.lockOwner(query, ownerId);
                 await lockSlots(query, kind);

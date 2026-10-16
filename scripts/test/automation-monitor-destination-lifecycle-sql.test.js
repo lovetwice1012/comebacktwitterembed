@@ -33,6 +33,7 @@ test('native monitor destinations preserve ownership, verify both delivery princ
         }
         if (route === '/users/@me') return { data: { id: BOT } };
         if (route === `/channels/${C}`) return { data: { id: C, guild_id: G, type: 0, permission_overwrites: [...viewDenied].map(id => ({ id, type: 1, deny: String(VIEW), allow: '0' })), nsfw: false } };
+        if (route.startsWith('/webhooks/555111111111111111/')) return { data: { id: '555111111111111111', type: 1, guild_id: G, channel_id: C } };
         assert.fail(route);
     };
     const destinations = createDestinations(db, service, { rest }), monitors = createMonitors(db, service, destinations);
