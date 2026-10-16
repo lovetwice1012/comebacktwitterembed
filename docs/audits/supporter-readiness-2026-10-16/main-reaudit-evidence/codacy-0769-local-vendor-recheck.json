@@ -1,0 +1,324 @@
+{
+  "sourceCommit": "07696234f4a8b57c123b7748b36366d7a7f1e3e2",
+  "fetchedVendorInputs": "vendor-inputs.json",
+  "vendorRuleSha256": "d7edbaed8f6c13a222f1402ffbe9ca926ec9d359106ef0e02b96955bed7deeb2",
+  "localGuardedVendorRuleSha256": "da6c678cbbcadca989089781e0cdc36fbcc981973a31ca5618d20e01a104dfb0",
+  "localOnlyChange": "A null handler guard in the downloaded vendor rule; no repository rules/config/source changes",
+  "controls": [
+    {
+      "name": "tryFinally",
+      "upstream": {
+        "completed": false,
+        "error": "Cannot read properties of null (reading 'type')\nOccurred while linting <input>:1\nRule: \"security-node/detect-unhandled-async-errors\"",
+        "stack": [
+          "TypeError: Cannot read properties of null (reading 'type')",
+          "Occurred while linting <input>:1",
+          "Rule: \"security-node/detect-unhandled-async-errors\"",
+          "    at isTryCatchStatement (C:\\Users\\yussy\\AppData\\Local\\Temp\\cbte-codacy-vendor-076-20261016\\package__lib__rules__detect-unhandled-async-errors.js:41:21)",
+          "    at FunctionDeclaration (C:\\Users\\yussy\\AppData\\Local\\Temp\\cbte-codacy-vendor-076-20261016\\package__lib__rules__detect-unhandled-async-errors.js:113:19)"
+        ]
+      },
+      "guardedLocalVendorOnly": {
+        "completed": true,
+        "diagnostics": [
+          {
+            "ruleId": "security-node/detect-unhandled-async-errors",
+            "severity": 2,
+            "line": 1,
+            "fatal": false
+          }
+        ]
+      }
+    },
+    {
+      "name": "catchWithBinding",
+      "upstream": {
+        "completed": true,
+        "diagnostics": []
+      },
+      "guardedLocalVendorOnly": {
+        "completed": true,
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "missingHandler",
+      "upstream": {
+        "completed": true,
+        "diagnostics": []
+      },
+      "guardedLocalVendorOnly": {
+        "completed": true,
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "catchWithoutBinding",
+      "upstream": {
+        "completed": true,
+        "diagnostics": [
+          {
+            "ruleId": "security-node/detect-unhandled-async-errors",
+            "severity": 2,
+            "line": 1,
+            "fatal": false
+          }
+        ]
+      },
+      "guardedLocalVendorOnly": {
+        "completed": true,
+        "diagnostics": [
+          {
+            "ruleId": "security-node/detect-unhandled-async-errors",
+            "severity": 2,
+            "line": 1,
+            "fatal": false
+          }
+        ]
+      }
+    },
+    {
+      "name": "generatorFinally",
+      "upstream": {
+        "completed": false,
+        "error": "Cannot read properties of null (reading 'type')\nOccurred while linting <input>:1\nRule: \"security-node/detect-unhandled-async-errors\"",
+        "stack": [
+          "TypeError: Cannot read properties of null (reading 'type')",
+          "Occurred while linting <input>:1",
+          "Rule: \"security-node/detect-unhandled-async-errors\"",
+          "    at isTryCatchStatement (C:\\Users\\yussy\\AppData\\Local\\Temp\\cbte-codacy-vendor-076-20261016\\package__lib__rules__detect-unhandled-async-errors.js:41:21)",
+          "    at FunctionDeclaration (C:\\Users\\yussy\\AppData\\Local\\Temp\\cbte-codacy-vendor-076-20261016\\package__lib__rules__detect-unhandled-async-errors.js:113:19)"
+        ]
+      },
+      "guardedLocalVendorOnly": {
+        "completed": true,
+        "diagnostics": [
+          {
+            "ruleId": "security-node/detect-unhandled-async-errors",
+            "severity": 2,
+            "line": 1,
+            "fatal": false
+          }
+        ]
+      }
+    }
+  ],
+  "files": [
+    {
+      "file": "packages/angelic-angel/src/autopush.ts",
+      "workingCopySha256": "54d5832815de87d2b67464265a175e3d9ed61b30c327cc791a6b68b0cce6c00e",
+      "blobIds": {
+        "07696234f4a8b57c123b7748b36366d7a7f1e3e2": "038c818409ffec9e73965d945880e3738892041a",
+        "2a000c89a293e2ee71ef0c579a63def2ff12cbdb": "038c818409ffec9e73965d945880e3738892041a",
+        "c63003f5dbd585a3f09e8672a0f80fa5db460165": "038c818409ffec9e73965d945880e3738892041a"
+      },
+      "allThreeBlobsIdentical": true,
+      "localEslintVersion": "10.12.0",
+      "localParserVersion": "8.71.2",
+      "lintPath": "src/autopush.ts",
+      "syntheticFilenameForBaselineScope": false,
+      "baselineRuleCount": 46,
+      "upstream": {
+        "completed": false,
+        "existingRulesChanged": [],
+        "targetRuleEnabled": [
+          2
+        ],
+        "error": "Cannot read properties of null (reading 'type')\nOccurred while linting C:\\Users\\yussy\\.codex\\worktrees\\x-realtime-choice-20261014\\comebacktwitterembed\\packages\\angelic-angel\\src\\autopush.ts:497\nRule: \"security-node/detect-unhandled-async-errors\"",
+        "stack": [
+          "TypeError: Cannot read properties of null (reading 'type')",
+          "Occurred while linting C:\\Users\\yussy\\.codex\\worktrees\\x-realtime-choice-20261014\\comebacktwitterembed\\packages\\angelic-angel\\src\\autopush.ts:497",
+          "Rule: \"security-node/detect-unhandled-async-errors\"",
+          "    at isTryCatchStatement (C:\\Users\\yussy\\AppData\\Local\\Temp\\cbte-codacy-vendor-076-20261016\\package__lib__rules__detect-unhandled-async-errors.js:41:21)",
+          "    at FunctionDeclaration (C:\\Users\\yussy\\AppData\\Local\\Temp\\cbte-codacy-vendor-076-20261016\\package__lib__rules__detect-unhandled-async-errors.js:113:19)",
+          "    at SourceCodeVisitor.callSync (C:\\Users\\yussy\\Documents\\comebacktwitterembed\\packages\\angelic-angel\\node_modules\\eslint\\lib\\linter\\source-code-visitor.js:158:6)"
+        ]
+      },
+      "guardedLocalVendorOnly": {
+        "completed": true,
+        "existingRulesChanged": [],
+        "targetRuleEnabled": [
+          2
+        ],
+        "diagnostics": [
+          {
+            "ruleId": "security-node/detect-unhandled-async-errors",
+            "severity": 2,
+            "line": 499,
+            "fatal": false
+          },
+          {
+            "ruleId": "security-node/detect-unhandled-async-errors",
+            "severity": 2,
+            "line": 522,
+            "fatal": false
+          }
+        ]
+      }
+    },
+    {
+      "file": "dashboard/app/api/personal-links/[...path]/route.ts",
+      "workingCopySha256": "b385974dee09dff15adadd6386d3aad1f1a1e3a9c20eb4d9a79988942062bd53",
+      "blobIds": {
+        "07696234f4a8b57c123b7748b36366d7a7f1e3e2": "15c201565f5e77c182cf0372b37013dea2c84423",
+        "2a000c89a293e2ee71ef0c579a63def2ff12cbdb": "15c201565f5e77c182cf0372b37013dea2c84423",
+        "c63003f5dbd585a3f09e8672a0f80fa5db460165": "15c201565f5e77c182cf0372b37013dea2c84423"
+      },
+      "allThreeBlobsIdentical": true,
+      "localEslintVersion": "9.39.4",
+      "localParserVersion": "8.62.1",
+      "lintPath": "app/api/personal-links/[...path]/route.ts",
+      "syntheticFilenameForBaselineScope": false,
+      "baselineRuleCount": 88,
+      "upstream": {
+        "completed": false,
+        "existingRulesChanged": [],
+        "targetRuleEnabled": [
+          2
+        ],
+        "error": "Cannot read properties of null (reading 'type')\nOccurred while linting C:\\Users\\yussy\\.codex\\worktrees\\x-realtime-choice-20261014\\comebacktwitterembed\\dashboard\\app\\api\\personal-links\\[...path]\\route.ts:8\nRule: \"security-node/detect-unhandled-async-errors\"",
+        "stack": [
+          "TypeError: Cannot read properties of null (reading 'type')",
+          "Occurred while linting C:\\Users\\yussy\\.codex\\worktrees\\x-realtime-choice-20261014\\comebacktwitterembed\\dashboard\\app\\api\\personal-links\\[...path]\\route.ts:8",
+          "Rule: \"security-node/detect-unhandled-async-errors\"",
+          "    at isTryCatchStatement (C:\\Users\\yussy\\AppData\\Local\\Temp\\cbte-codacy-vendor-076-20261016\\package__lib__rules__detect-unhandled-async-errors.js:41:21)",
+          "    at FunctionDeclaration (C:\\Users\\yussy\\AppData\\Local\\Temp\\cbte-codacy-vendor-076-20261016\\package__lib__rules__detect-unhandled-async-errors.js:113:19)",
+          "    at ruleErrorHandler (C:\\Users\\yussy\\Documents\\comebacktwitterembed\\dashboard\\node_modules\\eslint\\lib\\linter\\linter.js:1173:33)"
+        ]
+      },
+      "guardedLocalVendorOnly": {
+        "completed": true,
+        "existingRulesChanged": [],
+        "targetRuleEnabled": [
+          2
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "file": "scripts/benchmark_main_instagram_cache.js",
+      "workingCopySha256": "e2390c8f7a93ee2df5734edfb73cd258bff864e953550291e5f2dc1e600996c6",
+      "blobIds": {
+        "07696234f4a8b57c123b7748b36366d7a7f1e3e2": "b055a7eacbb4fc96d5cdb8f597802d3c31da5711",
+        "2a000c89a293e2ee71ef0c579a63def2ff12cbdb": "b055a7eacbb4fc96d5cdb8f597802d3c31da5711",
+        "c63003f5dbd585a3f09e8672a0f80fa5db460165": "b055a7eacbb4fc96d5cdb8f597802d3c31da5711"
+      },
+      "allThreeBlobsIdentical": true,
+      "localEslintVersion": "9.39.4",
+      "localParserVersion": "espree",
+      "lintPath": "src/__codacy_benchmark_equivalent.js",
+      "syntheticFilenameForBaselineScope": true,
+      "baselineRuleCount": 62,
+      "upstream": {
+        "completed": false,
+        "existingRulesChanged": [],
+        "targetRuleEnabled": [
+          2
+        ],
+        "error": "Cannot read properties of null (reading 'type')\nOccurred while linting C:\\Users\\yussy\\.codex\\worktrees\\x-realtime-choice-20261014\\comebacktwitterembed\\src\\__codacy_benchmark_equivalent.js:61\nRule: \"security-node/detect-unhandled-async-errors\"",
+        "stack": [
+          "TypeError: Cannot read properties of null (reading 'type')",
+          "Occurred while linting C:\\Users\\yussy\\.codex\\worktrees\\x-realtime-choice-20261014\\comebacktwitterembed\\src\\__codacy_benchmark_equivalent.js:61",
+          "Rule: \"security-node/detect-unhandled-async-errors\"",
+          "    at isTryCatchStatement (C:\\Users\\yussy\\AppData\\Local\\Temp\\cbte-codacy-vendor-076-20261016\\package__lib__rules__detect-unhandled-async-errors.js:41:21)",
+          "    at FunctionDeclaration (C:\\Users\\yussy\\AppData\\Local\\Temp\\cbte-codacy-vendor-076-20261016\\package__lib__rules__detect-unhandled-async-errors.js:113:19)",
+          "    at ruleErrorHandler (C:\\Users\\yussy\\Documents\\comebacktwitterembed\\node_modules\\eslint\\lib\\linter\\linter.js:1173:33)"
+        ]
+      },
+      "guardedLocalVendorOnly": {
+        "completed": true,
+        "existingRulesChanged": [],
+        "targetRuleEnabled": [
+          2
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "file": "src/providers/autoWatch/streaming.js",
+      "workingCopySha256": "358d269e520bb93f063e27da889f8de01b4b0b81049afb40b7eaeec5789b7679",
+      "blobIds": {
+        "07696234f4a8b57c123b7748b36366d7a7f1e3e2": "912ed18e9de5b52177c22148a71476090e1c9286",
+        "2a000c89a293e2ee71ef0c579a63def2ff12cbdb": "912ed18e9de5b52177c22148a71476090e1c9286",
+        "c63003f5dbd585a3f09e8672a0f80fa5db460165": "912ed18e9de5b52177c22148a71476090e1c9286"
+      },
+      "allThreeBlobsIdentical": true,
+      "localEslintVersion": "9.39.4",
+      "localParserVersion": "espree",
+      "lintPath": "src/providers/autoWatch/streaming.js",
+      "syntheticFilenameForBaselineScope": false,
+      "baselineRuleCount": 62,
+      "upstream": {
+        "completed": false,
+        "existingRulesChanged": [],
+        "targetRuleEnabled": [
+          2
+        ],
+        "error": "Cannot read properties of null (reading 'type')\nOccurred while linting C:\\Users\\yussy\\.codex\\worktrees\\x-realtime-choice-20261014\\comebacktwitterembed\\src\\providers\\autoWatch\\streaming.js:29\nRule: \"security-node/detect-unhandled-async-errors\"",
+        "stack": [
+          "TypeError: Cannot read properties of null (reading 'type')",
+          "Occurred while linting C:\\Users\\yussy\\.codex\\worktrees\\x-realtime-choice-20261014\\comebacktwitterembed\\src\\providers\\autoWatch\\streaming.js:29",
+          "Rule: \"security-node/detect-unhandled-async-errors\"",
+          "    at isTryCatchStatement (C:\\Users\\yussy\\AppData\\Local\\Temp\\cbte-codacy-vendor-076-20261016\\package__lib__rules__detect-unhandled-async-errors.js:41:21)",
+          "    at FunctionDeclaration (C:\\Users\\yussy\\AppData\\Local\\Temp\\cbte-codacy-vendor-076-20261016\\package__lib__rules__detect-unhandled-async-errors.js:113:19)",
+          "    at ruleErrorHandler (C:\\Users\\yussy\\Documents\\comebacktwitterembed\\node_modules\\eslint\\lib\\linter\\linter.js:1173:33)"
+        ]
+      },
+      "guardedLocalVendorOnly": {
+        "completed": true,
+        "existingRulesChanged": [],
+        "targetRuleEnabled": [
+          2
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "file": "src/handlers/messageComponents.js",
+      "workingCopySha256": "a350e39e113b1c7e971b412fe22a0f1d622d9b105a162882e8219f9d73989aee",
+      "blobIds": {
+        "07696234f4a8b57c123b7748b36366d7a7f1e3e2": "b53090d75e7194732a52dca68db5a8005368de72",
+        "2a000c89a293e2ee71ef0c579a63def2ff12cbdb": "b53090d75e7194732a52dca68db5a8005368de72",
+        "c63003f5dbd585a3f09e8672a0f80fa5db460165": "b53090d75e7194732a52dca68db5a8005368de72"
+      },
+      "allThreeBlobsIdentical": true,
+      "localEslintVersion": "9.39.4",
+      "localParserVersion": "espree",
+      "lintPath": "src/handlers/messageComponents.js",
+      "syntheticFilenameForBaselineScope": false,
+      "baselineRuleCount": 62,
+      "upstream": {
+        "completed": false,
+        "existingRulesChanged": [],
+        "targetRuleEnabled": [
+          2
+        ],
+        "error": "Cannot read properties of null (reading 'type')\nOccurred while linting C:\\Users\\yussy\\.codex\\worktrees\\x-realtime-choice-20261014\\comebacktwitterembed\\src\\handlers\\messageComponents.js:117\nRule: \"security-node/detect-unhandled-async-errors\"",
+        "stack": [
+          "TypeError: Cannot read properties of null (reading 'type')",
+          "Occurred while linting C:\\Users\\yussy\\.codex\\worktrees\\x-realtime-choice-20261014\\comebacktwitterembed\\src\\handlers\\messageComponents.js:117",
+          "Rule: \"security-node/detect-unhandled-async-errors\"",
+          "    at isTryCatchStatement (C:\\Users\\yussy\\AppData\\Local\\Temp\\cbte-codacy-vendor-076-20261016\\package__lib__rules__detect-unhandled-async-errors.js:41:21)",
+          "    at FunctionDeclaration (C:\\Users\\yussy\\AppData\\Local\\Temp\\cbte-codacy-vendor-076-20261016\\package__lib__rules__detect-unhandled-async-errors.js:113:19)",
+          "    at ruleErrorHandler (C:\\Users\\yussy\\Documents\\comebacktwitterembed\\node_modules\\eslint\\lib\\linter\\linter.js:1173:33)"
+        ]
+      },
+      "guardedLocalVendorOnly": {
+        "completed": true,
+        "existingRulesChanged": [],
+        "targetRuleEnabled": [
+          2
+        ],
+        "diagnostics": [
+          {
+            "ruleId": "security-node/detect-unhandled-async-errors",
+            "severity": 2,
+            "line": 119,
+            "fatal": false
+          }
+        ]
+      }
+    }
+  ],
+  "limitation": "This reproduces the exact npm rule in the installed local ESLint/parsers, not the complete Codacy Docker image or its remote per-repository rule configuration. Other project rule settings are verified unchanged; the affected rule stays enabled."
+}

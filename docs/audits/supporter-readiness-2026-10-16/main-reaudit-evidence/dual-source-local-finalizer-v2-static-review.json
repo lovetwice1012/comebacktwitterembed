@@ -1,0 +1,409 @@
+{
+  "generatedAt": "2026-10-16T10:44:09.980Z",
+  "reviewer": "reaudit_independent_review",
+  "result": "CLEAN-STATIC-ONLY-DUAL-SOURCE-FINALIZER-V2",
+  "reviewedScript": {
+    "file": "C:\\Users\\yussy\\AppData\\Local\\Temp\\finalize-main-reaudit-F-e88-D2-185-v2.cjs",
+    "sha256": "4d83491bd578368fb66e6ee0fe4d4c071209c5c6924a90bebe0792ef08e75f0b",
+    "executed": false,
+    "imported": false
+  },
+  "pendingDocumentPins": {
+    "main-reaudit-remediation.json": "1db0b85747f4d37ceba8de3e0285b75fca65dd55f7c80c5c8006e55e148cc5cc",
+    "main-reaudit-remediation.md": "3661086af329d7e1cae8cabcbe571783da73a3c6afcd31f1bf052ba5388b0da0"
+  },
+  "preservedImmutablePins": 165,
+  "independentStaticInputChecks": {
+    "all165PreservedFilesHashMatched": true,
+    "pendingDocumentsHashMatched": true,
+    "closedD2XmlAndNativeReceipt": true,
+    "full": {
+      "files": 185,
+      "tests": 2151,
+      "pass": 2151,
+      "leaf": 2090,
+      "parent": 61,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "todo": 0
+    },
+    "all185RawTestHashesMatched": true,
+    "mappedFindingDeclarations": 44,
+    "infrastructureDeclarations": 7,
+    "infrastructureExpandedCases": 19,
+    "totalMappedDeclarations": 51,
+    "mappedNamesActuallyPresentInClosedD2Xml": true,
+    "sameProgramTypeProofBothModes11Functions": true,
+    "currentCiActualShapeConfirmed": true
+  },
+  "resolvedInitialFindings": [
+    {
+      "scriptSha256": "e9e3b24a18ebade4dd912127cc9471c8dadb4a33dec7b76919379278f8ddda16",
+      "line": 454,
+      "problem": "verifyCi read nonexistent checkRunRead instead of actual pinned top-level check/annotations; it would throw before writes.",
+      "resolution": "v2 binds sourceRevision/check.head_sha/check.id/check.conclusion/annotations/cloudCiPassed directly; current action_required stays false-success."
+    },
+    {
+      "scriptSha256": "e9e3b24a18ebade4dd912127cc9471c8dadb4a33dec7b76919379278f8ddda16",
+      "line": 340,
+      "problem": "Implementation metadata retained stale canonical-0769 label.",
+      "resolution": "v2 names canonical-final-F-e88e-source-verified."
+    }
+  ],
+  "guardReview": {
+    "requiredFlags": [
+      "--confirmed-d2-exit-code=0",
+      "--approved-D2-to-F-carry"
+    ],
+    "noOverrideArguments": true,
+    "exactNodeVersionAndExecutableHash": true,
+    "sourceF": "e88e74412905987352af0ae7cec665963fc737d0",
+    "testedSourceD2": "d2e792d30a44723e603869b27970b05597d51a9d",
+    "actualMainM1": "cf22327dc39964194fbc2c48d8002366cfb22613",
+    "canonical32ModesHashesAndWorkingBytes": true,
+    "core8FHeadM1Equality": true,
+    "schema69AgainstC630": true,
+    "full185IdentityWithNative0AndClosedXmlSummaryCounts": true,
+    "appliedF22Native0AndCleanup": true,
+    "sameProgramTypesAndRuntimeCarryPins": true,
+    "rev4Local202IndependentAndAuthorPins": true,
+    "actualM1Artifact202IndependentAndAuthorPins": true,
+    "ci2FalsePositiveTriageRootAcceptedPinned": true,
+    "cloudActionRequiredRetained": true,
+    "oldVendorCrashSeparate": true,
+    "preservedHistoricalFailures": true,
+    "validationsFinishBeforeFirstWrite": true,
+    "exclusiveNewProofAndBeforeDocumentCopies": true,
+    "documentWritesConfinedAndSymlinkGuarded": true,
+    "rechecksEvidenceDocsWorkingBytesTestsAndCoreBeforeWrites": true,
+    "mainMayRecordExactObservedM1": true,
+    "productionAndProviderAcceptanceRemainFalse": true,
+    "fullSuiteExecutionOnFRemainsFalse": true
+  },
+  "remainingBoundaries": [
+    "This is a static review, not finalizer execution or new source/SQL/operations tests.",
+    "Reviewer did not rerun Git source checks; the reviewed program executes its fixed read-only Git guards when root runs it.",
+    "Root controls finalizer execution. Its documentation-only result does not approve transfer, stage, service cutover, production or real-provider delivery.",
+    "Any script or pending-document byte change invalidates this exact approval."
+  ],
+  "findings": [],
+  "mappedDeclarationWitness": [
+    {
+      "issue": "MAIN-UI-1",
+      "file": "scripts/test/automation-main-ui-draft-cadence.test.js",
+      "line": 80,
+      "cases": 4
+    },
+    {
+      "issue": "MAIN-UI-2",
+      "file": "scripts/test/automation-main-ui-draft-cadence.test.js",
+      "line": 99,
+      "cases": 1
+    },
+    {
+      "issue": "MAIN-UI-2",
+      "file": "scripts/test/automation-main-cadence-read-recovery.test.js",
+      "line": 4,
+      "cases": 2
+    },
+    {
+      "issue": "MAIN-FRESH-2",
+      "file": "scripts/test/automation-main-workflow-history.test.js",
+      "line": 14,
+      "cases": 1
+    },
+    {
+      "issue": "MAIN-FRESH-2",
+      "file": "scripts/test/automation-main-workflow-history.test.js",
+      "line": 69,
+      "cases": 3
+    },
+    {
+      "issue": "MAIN-FRESH-2",
+      "file": "scripts/test/automation-main-workflow-history.test.js",
+      "line": 86,
+      "cases": 3
+    },
+    {
+      "issue": "MAIN-FRESH-3",
+      "file": "scripts/test/automation-main-x-read-write-ui.test.js",
+      "line": 22,
+      "cases": 8
+    },
+    {
+      "issue": "MAIN-DATA-1",
+      "file": "scripts/test/automation-main-data-revalidation-sql.test.js",
+      "line": 27,
+      "cases": 1
+    },
+    {
+      "issue": "MAIN-DATA-1",
+      "file": "scripts/test/automation-main-data-revalidation-sql.test.js",
+      "line": 72,
+      "cases": 1
+    },
+    {
+      "issue": "MAIN-DATA-1",
+      "file": "scripts/test/automation-main-data-revalidation-sql.test.js",
+      "line": 96,
+      "cases": 1
+    },
+    {
+      "issue": "MAIN-DATA-1",
+      "file": "scripts/test/automation-main-data-revalidation-ui.test.js",
+      "line": 96,
+      "cases": 1
+    },
+    {
+      "issue": "MAIN-DATA-1",
+      "file": "scripts/test/automation-main-data-revalidation-ui.test.js",
+      "line": 112,
+      "cases": 1
+    },
+    {
+      "issue": "MAIN-DATA-2",
+      "file": "scripts/test/automation-main-data-revalidation-sql.test.js",
+      "line": 52,
+      "cases": 1
+    },
+    {
+      "issue": "MAIN-DATA-2",
+      "file": "scripts/test/automation-main-data-revalidation-sql.test.js",
+      "line": 108,
+      "cases": 1
+    },
+    {
+      "issue": "MAIN-DATA-2",
+      "file": "scripts/test/automation-main-data-revalidation-sql.test.js",
+      "line": 175,
+      "cases": 1
+    },
+    {
+      "issue": "MAIN-DATA-2",
+      "file": "scripts/test/automation-main-data-revalidation-ui.test.js",
+      "line": 78,
+      "cases": 1
+    },
+    {
+      "issue": "MAIN-POST-1",
+      "file": "scripts/test/automation-main-admin-cas-ui.test.js",
+      "line": 17,
+      "cases": 4
+    },
+    {
+      "issue": "MAIN-POST-1",
+      "file": "scripts/test/automation-main-admin-cas-ui.test.js",
+      "line": 60,
+      "cases": 2
+    },
+    {
+      "issue": "MAIN-POST-2",
+      "file": "scripts/test/automation-main-data-revalidation-sql.test.js",
+      "line": 133,
+      "cases": 1
+    },
+    {
+      "issue": "MAIN-POST-2",
+      "file": "scripts/test/automation-main-data-revalidation-sql.test.js",
+      "line": 161,
+      "cases": 2
+    },
+    {
+      "issue": "MAIN-POST-2",
+      "file": "scripts/test/automation-main-data-revalidation-sql.test.js",
+      "line": 200,
+      "cases": 1
+    },
+    {
+      "issue": "MAIN-POST-2",
+      "file": "scripts/test/automation-main-data-revalidation-ui.test.js",
+      "line": 33,
+      "cases": 1
+    },
+    {
+      "issue": "MAIN-POST-2",
+      "file": "scripts/test/automation-main-data-revalidation-ui.test.js",
+      "line": 66,
+      "cases": 1
+    },
+    {
+      "issue": "MAIN-FRESH-4",
+      "file": "scripts/test/automation-flow-state-reconciliation-sql.test.js",
+      "line": 96,
+      "cases": 1
+    },
+    {
+      "issue": "MAIN-FRESH-5",
+      "file": "scripts/test/automation-flow-state-reconciliation-sql.test.js",
+      "line": 122,
+      "cases": 1
+    },
+    {
+      "issue": "MAIN-FRESH-5",
+      "file": "scripts/test/automation-flow-state-reconciliation-sql.test.js",
+      "line": 135,
+      "cases": 1
+    },
+    {
+      "issue": "MAIN-FRESH-5",
+      "file": "scripts/test/automation-flow-state-reconciliation-sql.test.js",
+      "line": 149,
+      "cases": 1
+    },
+    {
+      "issue": "MAIN-FRESH-5",
+      "file": "scripts/test/automation-flow-state-reconciliation-sql.test.js",
+      "line": 169,
+      "cases": 1
+    },
+    {
+      "issue": "MAIN-FRESH-5",
+      "file": "scripts/test/automation-flow-state-reconciliation-sql.test.js",
+      "line": 183,
+      "cases": 1
+    },
+    {
+      "issue": "MAIN-FRESH-5",
+      "file": "scripts/test/automation-flow-state-reconciliation-sql.test.js",
+      "line": 191,
+      "cases": 1
+    },
+    {
+      "issue": "MAIN-FRESH-5",
+      "file": "scripts/test/automation-flow-state-reconciliation-sql.test.js",
+      "line": 210,
+      "cases": 1
+    },
+    {
+      "issue": "MAIN-FRESH-5",
+      "file": "scripts/test/automation-flow-state-reconciliation-sql.test.js",
+      "line": 222,
+      "cases": 1
+    },
+    {
+      "issue": "MAIN-FRESH-5",
+      "file": "scripts/test/automation-flow-state-reconciliation-sql.test.js",
+      "line": 242,
+      "cases": 1
+    },
+    {
+      "issue": "MAIN-FRESH-5",
+      "file": "scripts/test/automation-flow-state-reconciliation-sql.test.js",
+      "line": 263,
+      "cases": 4
+    },
+    {
+      "issue": "MAIN-FRESH-5",
+      "file": "scripts/test/automation-flow-state-reconciliation-sql.test.js",
+      "line": 295,
+      "cases": 1
+    },
+    {
+      "issue": "MAIN-FRESH-5",
+      "file": "scripts/test/automation-flow-state-reconciliation-sql.test.js",
+      "line": 325,
+      "cases": 1
+    },
+    {
+      "issue": "MAIN-FRESH-5",
+      "file": "scripts/test/automation-monitor-workflow-cas-sql.test.js",
+      "line": 205,
+      "cases": 1
+    },
+    {
+      "issue": "MAIN-FRESH-5",
+      "file": "scripts/test/automation-monitor-workflow-cas-sql.test.js",
+      "line": 261,
+      "cases": 1
+    },
+    {
+      "issue": "MAIN-FRESH-5",
+      "file": "scripts/test/automation-flow-state-reconciliation-sql.test.js",
+      "line": 361,
+      "cases": 1
+    },
+    {
+      "issue": "MAIN-FRESH-5",
+      "file": "scripts/test/automation-flow-state-reconciliation-sql.test.js",
+      "line": 371,
+      "cases": 2
+    },
+    {
+      "issue": "MAIN-FRESH-5",
+      "file": "scripts/test/automation-flow-state-reconciliation-sql.test.js",
+      "line": 393,
+      "cases": 1
+    },
+    {
+      "issue": "MAIN-FRESH-5",
+      "file": "scripts/test/automation-flow-state-reconciliation-sql.test.js",
+      "line": 427,
+      "cases": 1
+    },
+    {
+      "issue": "MAIN-FRESH-5",
+      "file": "scripts/test/automation-flow-state-reconciliation-sql.test.js",
+      "line": 456,
+      "cases": 1
+    },
+    {
+      "issue": "MAIN-FRESH-5",
+      "file": "scripts/test/automation-sql.test.js",
+      "line": 197,
+      "cases": 1
+    },
+    {
+      "issue": "test-infrastructure-only",
+      "file": "scripts/test/automation-test-db-connect.test.js",
+      "line": 46,
+      "cases": 2
+    },
+    {
+      "issue": "test-infrastructure-only",
+      "file": "scripts/test/automation-test-db-connect.test.js",
+      "line": 57,
+      "cases": 1
+    },
+    {
+      "issue": "test-infrastructure-only",
+      "file": "scripts/test/automation-test-db-connect.test.js",
+      "line": 69,
+      "cases": 10
+    },
+    {
+      "issue": "test-infrastructure-only",
+      "file": "scripts/test/automation-test-db-connect.test.js",
+      "line": 75,
+      "cases": 1
+    },
+    {
+      "issue": "test-infrastructure-only",
+      "file": "scripts/test/automation-test-db-connect.test.js",
+      "line": 82,
+      "cases": 1
+    },
+    {
+      "issue": "test-infrastructure-only",
+      "file": "scripts/test/automation-test-db-connect.test.js",
+      "line": 89,
+      "cases": 3
+    },
+    {
+      "issue": "test-infrastructure-only",
+      "file": "scripts/test/automation-test-db-connect.test.js",
+      "line": 107,
+      "cases": 1
+    }
+  ],
+  "operations": {
+    "finalizerExecuted": false,
+    "finalizerImported": false,
+    "gitCommands": 0,
+    "sqlConnections": 0,
+    "networkCalls": 0,
+    "productWrites": 0,
+    "productionAccess": false,
+    "onlyNewTempReviewReportWritten": true
+  }
+}

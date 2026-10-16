@@ -1,0 +1,100 @@
+{
+  "sourceRevision": "d2e792d30a44723e603869b27970b05597d51a9d",
+  "readOnly": true,
+  "cloudCiPassed": false,
+  "checksAndStatuses": {
+    "headRevision": "d2e792d30a44723e603869b27970b05597d51a9d",
+    "checks": [
+      {
+        "id": 116911852085,
+        "name": "Codacy Static Code Analysis",
+        "head_sha": "d2e792d30a44723e603869b27970b05597d51a9d",
+        "status": "completed",
+        "conclusion": "action_required",
+        "details_url": "https://app.codacy.com/gh/lovetwice1012/comebacktwitterembed/pull-requests/51",
+        "output": {
+          "title": "3 new issues (0 max.) of at least minor severity.",
+          "summary": "\n![Codacy](https://app.codacy.com/assets/images/favicon.png) Here is an overview of what got changed by this pull request:\n\n\n```diff\n\nIssues\n======\n+ Solved 5\n- Added 3\n           \n\nComplexity increasing per file\n==============================\n- dashboard/components/automation/automation-workspace.tsx  14\n- dashboard/components/automation/marketplace-manager.tsx  63\n- dashboard/components/automation/monitor-manager.tsx  13\n- scripts/lib/automation-test-db.js  14\n- src/automation/api.js  4\n- src/automation/flow-projector.js  1\n- src/automation/graph-store.js  3\n- src/automation/history.js  2\n- src/automation/marketplace-core.js  53\n- src/automation/queue.js  24\n- src/automation/service.js  16\n- dashboard/components/admin/square-commerce-manager.tsx  19\n- dashboard/components/automation/monitor-cadence-editor.tsx  3\n- dashboard/components/admin/push-capacity-diagnostics.tsx  22\n- dashboard/components/automation/x-monitor-manager.tsx  5\n- scripts/test/automation-monitor-workflow-cas-sql.test.js  32\n- src/automation/flow-history.js  89\n- scripts/test/automation-flow-permanent-failure-sql.test.js  2\n- scripts/test/automation-flow-state-reconciliation-sql.test.js  210\n- scripts/test/automation-main-admin-cas-ui.test.js  75\n- scripts/test/automation-main-cadence-read-recovery.test.js  6\n- scripts/test/automation-main-data-revalidation-sql.test.js  49\n- scripts/test/automation-main-data-revalidation-ui.test.js  43\n- scripts/test/automation-main-ui-draft-cadence.test.js  59\n- scripts/test/automation-main-workflow-history.test.js  66\n- scripts/test/automation-main-x-read-write-ui.test.js  48\n- scripts/test/automation-test-db-connect.test.js  48\n         \n```\n\n\nSee the complete overview on [Codacy](https://app.codacy.com/gh/lovetwice1012/comebacktwitterembed/pull-requests/51)\n        ",
+          "text": null,
+          "annotations_count": 3
+        }
+      }
+    ],
+    "statuses": [
+      {
+        "context": "CodeRabbit",
+        "state": "success",
+        "description": "Review skipped: manual review required for this OSS repository",
+        "target_url": null
+      },
+      {
+        "context": "security/snyk (lovetwice1012)",
+        "state": "success",
+        "description": "No manifest changes detected in 1 project",
+        "target_url": "https://app.snyk.io/org/lovetwice1012/pr-checks/a5e52f1c-76c8-4ca4-b53d-1938d2d29c18"
+      }
+    ],
+    "annotations": [],
+    "hasMore": false,
+    "job": null,
+    "jobs": [],
+    "log": null,
+    "logTruncated": false,
+    "providerGuidance": "GitHub guidance for this response only: use checkRunId for output and annotations, runId from a GitHub Actions /runs/<id> link to list jobs, or jobId from a /jobs/<id> link for logs. page paginates checks, jobs or annotations. Keep the supplied account and returned headRevision on follow-up reads. Third-party CI exposes only the output reported to GitHub."
+  },
+  "checkRunRead": {
+    "headRevision": "d2e792d30a44723e603869b27970b05597d51a9d",
+    "checks": [
+      {
+        "id": 116911852085,
+        "name": "Codacy Static Code Analysis",
+        "head_sha": "d2e792d30a44723e603869b27970b05597d51a9d",
+        "status": "completed",
+        "conclusion": "action_required",
+        "details_url": "https://app.codacy.com/gh/lovetwice1012/comebacktwitterembed/pull-requests/51",
+        "output": {
+          "title": "3 new issues (0 max.) of at least minor severity.",
+          "summary": "\n![Codacy](https://app.codacy.com/assets/images/favicon.png) Here is an overview of what got changed by this pull request:\n\n\n```diff\n\nIssues\n======\n+ Solved 5\n- Added 3\n           \n\nComplexity increasing per file\n==============================\n- dashboard/components/automation/automation-workspace.tsx  14\n- dashboard/components/automation/marketplace-manager.tsx  63\n- dashboard/components/automation/monitor-manager.tsx  13\n- scripts/lib/automation-test-db.js  14\n- src/automation/api.js  4\n- src/automation/flow-projector.js  1\n- src/automation/graph-store.js  3\n- src/automation/history.js  2\n- src/automation/marketplace-core.js  53\n- src/automation/queue.js  24\n- src/automation/service.js  16\n- dashboard/components/admin/square-commerce-manager.tsx  19\n- dashboard/components/automation/monitor-cadence-editor.tsx  3\n- dashboard/components/admin/push-capacity-diagnostics.tsx  22\n- dashboard/components/automation/x-monitor-manager.tsx  5\n- scripts/test/automation-monitor-workflow-cas-sql.test.js  32\n- src/automation/flow-history.js  89\n- scripts/test/automation-flow-permanent-failure-sql.test.js  2\n- scripts/test/automation-flow-state-reconciliation-sql.test.js  210\n- scripts/test/automation-main-admin-cas-ui.test.js  75\n- scripts/test/automation-main-cadence-read-recovery.test.js  6\n- scripts/test/automation-main-data-revalidation-sql.test.js  49\n- scripts/test/automation-main-data-revalidation-ui.test.js  43\n- scripts/test/automation-main-ui-draft-cadence.test.js  59\n- scripts/test/automation-main-workflow-history.test.js  66\n- scripts/test/automation-main-x-read-write-ui.test.js  48\n- scripts/test/automation-test-db-connect.test.js  48\n         \n```\n\n\nSee the complete overview on [Codacy](https://app.codacy.com/gh/lovetwice1012/comebacktwitterembed/pull-requests/51)\n        ",
+          "text": null,
+          "annotations_count": 3
+        }
+      }
+    ],
+    "statuses": [],
+    "annotations": [
+      {
+        "path": "src/automation/flow-history.js",
+        "start_line": 15,
+        "end_line": 15,
+        "annotation_level": "notice",
+        "message": "Missing JSDoc comment.",
+        "title": "src/automation/flow-history.js#L15",
+        "raw_details": null
+      },
+      {
+        "path": "src/automation/flow-history.js",
+        "start_line": 16,
+        "end_line": 16,
+        "annotation_level": "notice",
+        "message": "Delete `··`",
+        "title": "src/automation/flow-history.js#L16",
+        "raw_details": null
+      },
+      {
+        "path": "src/automation/flow-history.js",
+        "start_line": 17,
+        "end_line": 17,
+        "annotation_level": "notice",
+        "message": "Replace `········const·plan·=·parse(value),·flow·=·plan?.flowV2,·member·=·value·=>·value·&&·typeof·value.memberId·===·'string'·&&·/^[0-9a-f-]{36}$/i.test(value.runId·||·''` with `····const·plan·=·parse(value),⏎······flow·=·plan?.flowV2,⏎······member·=·(value)·=>⏎········value·&&⏎········typeof·value.memberId·===·\"string\"·&&⏎········/^[0-9a-f-]{36}$/i.test(value.runId·||·\"\"`",
+        "title": "src/automation/flow-history.js#L17",
+        "raw_details": null
+      }
+    ],
+    "hasMore": false,
+    "job": null,
+    "jobs": [],
+    "log": null,
+    "logTruncated": false,
+    "providerGuidance": "GitHub guidance for this response only: use checkRunId for output and annotations, runId from a GitHub Actions /runs/<id> link to list jobs, or jobId from a /jobs/<id> link for logs. page paginates checks, jobs or annotations. Keep the supplied account and returned headRevision on follow-up reads. Third-party CI exposes only the output reported to GitHub."
+  }
+}

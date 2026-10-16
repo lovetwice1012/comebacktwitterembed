@@ -1,0 +1,10 @@
+{
+  "startedAt": "2026-10-16T10:22:51.2574054Z",
+  "finishedAt": "2026-10-16T10:23:48.8754830Z",
+  "exitCode": 0,
+  "testedBaselineRevision": "d2e792d30a44723e603869b27970b05597d51a9d",
+  "testedWorkingCandidateSha256": "aa1580814a0289b029a17a1805485391026a0b68ed8418a6250e1c637b95f6f4",
+  "testFile": "scripts/test/automation-flow-state-reconciliation-sql.test.js",
+  "testFileSha256": "a8aefab66521112321eb1752d816ea219668539cf603229d0c666bc69a6ebd93",
+  "productionAccessed": false
+}

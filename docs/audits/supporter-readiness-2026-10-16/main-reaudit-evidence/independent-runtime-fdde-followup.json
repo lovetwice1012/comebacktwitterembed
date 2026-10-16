@@ -1,0 +1,152 @@
+{
+  "createdAt": "2026-10-16T08:18:40.202Z",
+  "reviewer": "reaudit_independent_review",
+  "reviewedSource": "fdde3bd98bee5774eea0aac59466a5d7656a0c42",
+  "baseline": "2a000c89a293e2ee71ef0c579a63def2ff12cbdb",
+  "result": "FIX-REQUIRED-MAIN-FRESH-5",
+  "ids": [
+    "MAIN-FRESH-4",
+    "MAIN-FRESH-5"
+  ],
+  "sourceFreeze": [
+    {
+      "file": "src/automation/flow-history.js",
+      "sha256": "6c7e0bfa2770bea77ec309079f545d48b5481b1fa59c1d3206b2194e444da8a0",
+      "observedSha256": "6c7e0bfa2770bea77ec309079f545d48b5481b1fa59c1d3206b2194e444da8a0"
+    },
+    {
+      "file": "src/automation/flow-projector.js",
+      "sha256": "3be159aeaafba090db7c252d7a670ca9612d9942e6bafdd49c7f9b141f5155c8",
+      "observedSha256": "3be159aeaafba090db7c252d7a670ca9612d9942e6bafdd49c7f9b141f5155c8"
+    },
+    {
+      "file": "src/automation/history.js",
+      "sha256": "37ae7b3a4e93b2f3e2451306a70fa81e651c5346f594b99377c5a390ab5a3c57",
+      "observedSha256": "37ae7b3a4e93b2f3e2451306a70fa81e651c5346f594b99377c5a390ab5a3c57"
+    },
+    {
+      "file": "src/automation/queue.js",
+      "sha256": "3948f61a305cced1e8fec2e68d08f0cd8e63d62b745b1a4b20a41cf5e181df71",
+      "observedSha256": "3948f61a305cced1e8fec2e68d08f0cd8e63d62b745b1a4b20a41cf5e181df71"
+    },
+    {
+      "file": "src/automation/workflow-deletion.js",
+      "sha256": "705c4a348c7b4328ed6b5333cacdc1e9a304f330b2067a3b240e4aee34f5253c",
+      "observedSha256": "705c4a348c7b4328ed6b5333cacdc1e9a304f330b2067a3b240e4aee34f5253c"
+    },
+    {
+      "file": "scripts/test/automation-flow-state-reconciliation-sql.test.js",
+      "sha256": "5ffc9329e922dd84b47f859f84aaed26b73fb07600a41ada20511843d05a90e1",
+      "observedSha256": "5ffc9329e922dd84b47f859f84aaed26b73fb07600a41ada20511843d05a90e1"
+    },
+    {
+      "file": "scripts/test/automation-flow-permanent-failure-sql.test.js",
+      "sha256": "8a89d7964a69f5c6e98e7ee7f284523c45ae6e3f5b74a898b5fda1843a4f2ec6",
+      "observedSha256": "8a89d7964a69f5c6e98e7ee7f284523c45ae6e3f5b74a898b5fda1843a4f2ec6"
+    },
+    {
+      "file": "scripts/test/automation-aggregate-member-boundary.test.js",
+      "sha256": "af58b2ce57e1cd50ff54ad16c1ece74dbc75e203a0803d8658b3047613c2af3e",
+      "observedSha256": "af58b2ce57e1cd50ff54ad16c1ece74dbc75e203a0803d8658b3047613c2af3e"
+    }
+  ],
+  "sourceHashesStillMatch": true,
+  "tests": {
+    "independentFocused": {
+      "files": 6,
+      "tests": 58,
+      "pass": 58,
+      "fail": 0,
+      "skipped": 0,
+      "durationMs": 164665.6922
+    },
+    "independentBoundaries": {
+      "tests": 2,
+      "pass": 2,
+      "fail": 0,
+      "skipped": 0,
+      "checks": [
+        "pre-mutex REPEATABLE-READ snapshot cannot overwrite committed sent+failed sibling outcomes",
+        "concurrent real history.cancel and sibling queue.transition(sent) preserve partial state and exactly one audit; restart does not replay"
+      ]
+    },
+    "newWitness": {
+      "tests": 1,
+      "pass": 0,
+      "fail": 1,
+      "result": "actual ER_LOCK_DEADLOCK",
+      "deletion": "fulfilled",
+      "secondProjector": "rejected ER_LOCK_DEADLOCK",
+      "providerTraffic": false,
+      "cleanup": "fixture finally drops its schema"
+    }
+  },
+  "finding": {
+    "id": "MAIN-FRESH-5",
+    "severity": "P2 follow-up within existing finding",
+    "file": "src/automation/workflow-deletion.js",
+    "lines": [
+      70,
+      72,
+      78,
+      80
+    ],
+    "title": "An empty initial job roster does not acquire the existing graph namespace before run/job mutation",
+    "reproduction": [
+      "Real branched graph driver creates two unprojected send intents for one run; no jobs yet",
+      "Workflow deletion SELECT obtains empty candidate jobs",
+      "An independent projector transaction creates first branch job before deletion proceeds",
+      "Second projector takes same namespace/send/unit while deletion starts UPDATE automation_flow_runs",
+      "One transaction is ER_LOCK_DEADLOCK because deletion did not take namespace from existing flow-run/workflow membership when candidate jobs were empty"
+    ],
+    "observedImpact": "A normal concurrent deletion/projector tick fails with a database deadlock. Transaction rollback is retained; loss, duplicate send or permanent outage was not demonstrated.",
+    "recommendation": "Take all relevant existing workflow/package graph namespaces before graph/job mutation even with zero initial jobs, using the same order as the graph and owner/config fences. Review package revoke matchingJobs-empty path too.",
+    "notYetWitnessed": "Marketplace revoke has the same static candidate-only pattern but is not reproduced by this witness."
+  },
+  "invalidDiagnostics": {
+    "v1": "COUNT returned string; corrected with Number before concurrency scenario executed",
+    "v2": "Gate waited for job lock already held implicitly by DELETE update; no product finding. Own schema e3d48f4b40ed0433684f removed after owned probe termination.",
+    "v3": "Gate waited for send lock already held implicitly by DELETE update; no product finding. Own schema63735e55760069cf8db3 removed after owned probe termination.",
+    "v4": "Valid race. Both transactions proceed to real SQL deadlock detection; no artificial indefinitely blocked gate."
+  },
+  "artifacts": [
+    {
+      "file": "C:\\Users\\yussy\\AppData\\Local\\Temp\\main-reaudit-independent-runtime.xml",
+      "sha256": "a57548262f1c07877597d6db031d82c279d485ef4ebffb1071ccf18e6ffb98a0"
+    },
+    {
+      "file": "C:\\Users\\yussy\\AppData\\Local\\Temp\\main-reaudit-independent-runtime-boundaries.cjs",
+      "sha256": "fdc1bad8dbca4658d7538c27903145df27c99361884ae4961d78115eba715bc8"
+    },
+    {
+      "file": "C:\\Users\\yussy\\AppData\\Local\\Temp\\main-reaudit-independent-runtime-boundaries.xml",
+      "sha256": "d2b2b5cbacc1d579956acb4d041d8875f9bcdb5188f89c0f842ee8920dbeef74"
+    },
+    {
+      "file": "C:\\Users\\yussy\\AppData\\Local\\Temp\\main-reaudit-independent-delete-project-race-v4.cjs",
+      "sha256": "be120752b5409a93e79234d719a2784acb28b6143ba39f66a4b1094cd95a3dbc"
+    },
+    {
+      "file": "C:\\Users\\yussy\\AppData\\Local\\Temp\\main-reaudit-independent-delete-project-race-v4.xml",
+      "sha256": "cfd144ee7340cf4f0c3cefdda65c224b2a19843d8cdb492aefa49b0504d4f0ab"
+    },
+    {
+      "file": "C:\\Users\\yussy\\AppData\\Local\\Temp\\main-reaudit-independent-delete-project-race-v4-result.json",
+      "sha256": "61f87f3e7616defd3cb4575e17867fe0ee55365367bf75dafd88898a7d0b6604"
+    }
+  ],
+  "operations": {
+    "repoSourceWrites": false,
+    "gitWrites": false,
+    "productionWrites": false,
+    "realProviderRequests": false,
+    "sharedDatabaseReconfigured": false,
+    "unknownSchemasTouched": false
+  },
+  "remaining": [
+    "author fix and new source freeze",
+    "fresh focused regression and independent corrected-order proof",
+    "root immutable full aggregate",
+    "production/OAuth/actual notifications not verified"
+  ]
+}

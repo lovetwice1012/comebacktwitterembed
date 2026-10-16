@@ -1,0 +1,320 @@
+{
+  "revision": "d2e792d30a44723e603869b27970b05597d51a9d",
+  "checkJs": true,
+  "noEmit": true,
+  "virtualReadOnlyHost": true,
+  "sameProgramBidirectionalAssignability": true,
+  "modes": [
+    {
+      "strictNullChecks": false,
+      "rootProjectDiagnosticsBefore": 0,
+      "rootProjectDiagnosticsAfter": 0,
+      "rootProjectDiagnosticDelta": 0,
+      "sourceFilesBaseline": 745,
+      "sourceFilesIncludingVirtualBaseline": 746,
+      "signatures": [
+        {
+          "name": "readJobFlowPlan",
+          "effectiveReturnBefore": "any",
+          "effectiveReturnAfter": "any",
+          "parameterTypes": [
+            "any"
+          ],
+          "baselineAssignableToCandidate": true,
+          "candidateAssignableToBaseline": true,
+          "renderedSignatureBefore": "(value: any): any",
+          "renderedSignatureAfter": "(value: any): any"
+        },
+        {
+          "name": "jobFlowLinks",
+          "effectiveReturnBefore": "Promise<any[]>",
+          "effectiveReturnAfter": "Promise<any[]>",
+          "parameterTypes": [
+            "any",
+            "any"
+          ],
+          "baselineAssignableToCandidate": true,
+          "candidateAssignableToBaseline": true,
+          "renderedSignatureBefore": "(query: any, jobs: any): Promise<any[]>",
+          "renderedSignatureAfter": "(query: any, jobs: any): Promise<any[]>"
+        },
+        {
+          "name": "deliveryState",
+          "effectiveReturnBefore": "string",
+          "effectiveReturnAfter": "string",
+          "parameterTypes": [
+            "any"
+          ],
+          "baselineAssignableToCandidate": true,
+          "candidateAssignableToBaseline": true,
+          "renderedSignatureBefore": "(states: any): string",
+          "renderedSignatureAfter": "(states: any): string | null"
+        },
+        {
+          "name": "recordJobFlowMembers",
+          "effectiveReturnBefore": "Promise<void>",
+          "effectiveReturnAfter": "Promise<void>",
+          "parameterTypes": [
+            "any",
+            "any"
+          ],
+          "baselineAssignableToCandidate": true,
+          "candidateAssignableToBaseline": true,
+          "renderedSignatureBefore": "(query: any, job: any): Promise<void>",
+          "renderedSignatureAfter": "(query: any, job: any): Promise<void>"
+        },
+        {
+          "name": "lockJobFlowHistory",
+          "effectiveReturnBefore": "Promise<void>",
+          "effectiveReturnAfter": "Promise<void>",
+          "parameterTypes": [
+            "any",
+            "any"
+          ],
+          "baselineAssignableToCandidate": true,
+          "candidateAssignableToBaseline": true,
+          "renderedSignatureBefore": "(query: any, jobs: any): Promise<void>",
+          "renderedSignatureAfter": "(query: any, jobs: any): Promise<void>"
+        },
+        {
+          "name": "lockFlowWorkflows",
+          "effectiveReturnBefore": "Promise<void>",
+          "effectiveReturnAfter": "Promise<void>",
+          "parameterTypes": [
+            "any",
+            "any",
+            "boolean"
+          ],
+          "baselineAssignableToCandidate": true,
+          "candidateAssignableToBaseline": true,
+          "renderedSignatureBefore": "(query: any, workflowIds: any, exclusive?: boolean): Promise<void>",
+          "renderedSignatureAfter": "(query: any, workflowIds: any, exclusive?: boolean): Promise<void>"
+        },
+        {
+          "name": "lockWorkflowFlowHistory",
+          "effectiveReturnBefore": "Promise<void>",
+          "effectiveReturnAfter": "Promise<void>",
+          "parameterTypes": [
+            "any",
+            "any"
+          ],
+          "baselineAssignableToCandidate": true,
+          "candidateAssignableToBaseline": true,
+          "renderedSignatureBefore": "(query: any, workflowIds: any): Promise<void>",
+          "renderedSignatureAfter": "(query: any, workflowIds: any): Promise<void>"
+        },
+        {
+          "name": "revokeWorkflowFlowHistory",
+          "effectiveReturnBefore": "Promise<any>",
+          "effectiveReturnAfter": "Promise<any>",
+          "parameterTypes": [
+            "any",
+            "any",
+            "any",
+            "any"
+          ],
+          "baselineAssignableToCandidate": true,
+          "candidateAssignableToBaseline": true,
+          "renderedSignatureBefore": "(query: any, workflowIds: any, code: any, now: any): Promise<any>",
+          "renderedSignatureAfter": "(query: any, workflowIds: any, code: any, now: any): Promise<any>"
+        },
+        {
+          "name": "refreshWorkflowFlowHistory",
+          "effectiveReturnBefore": "Promise<void>",
+          "effectiveReturnAfter": "Promise<void>",
+          "parameterTypes": [
+            "any",
+            "any"
+          ],
+          "baselineAssignableToCandidate": true,
+          "candidateAssignableToBaseline": true,
+          "renderedSignatureBefore": "(query: any, runIds: any): Promise<void>",
+          "renderedSignatureAfter": "(query: any, runIds: any): Promise<void>"
+        },
+        {
+          "name": "refreshJobFlowHistory",
+          "effectiveReturnBefore": "Promise<void>",
+          "effectiveReturnAfter": "Promise<void>",
+          "parameterTypes": [
+            "any",
+            "any"
+          ],
+          "baselineAssignableToCandidate": true,
+          "candidateAssignableToBaseline": true,
+          "renderedSignatureBefore": "(query: any, jobs: any): Promise<void>",
+          "renderedSignatureAfter": "(query: any, jobs: any): Promise<void>"
+        },
+        {
+          "name": "refreshFlowHistory",
+          "effectiveReturnBefore": "Promise<void>",
+          "effectiveReturnAfter": "Promise<void>",
+          "parameterTypes": [
+            "any",
+            "any"
+          ],
+          "baselineAssignableToCandidate": true,
+          "candidateAssignableToBaseline": true,
+          "renderedSignatureBefore": "(query: any, runIds: any): Promise<void>",
+          "renderedSignatureAfter": "(query: any, runIds: any): Promise<void>"
+        }
+      ]
+    },
+    {
+      "strictNullChecks": true,
+      "rootProjectDiagnosticsBefore": 527,
+      "rootProjectDiagnosticsAfter": 527,
+      "rootProjectDiagnosticDelta": 0,
+      "sourceFilesBaseline": 745,
+      "sourceFilesIncludingVirtualBaseline": 746,
+      "signatures": [
+        {
+          "name": "readJobFlowPlan",
+          "effectiveReturnBefore": "any",
+          "effectiveReturnAfter": "any",
+          "parameterTypes": [
+            "any"
+          ],
+          "baselineAssignableToCandidate": true,
+          "candidateAssignableToBaseline": true,
+          "renderedSignatureBefore": "(value: any): any",
+          "renderedSignatureAfter": "(value: any): any"
+        },
+        {
+          "name": "jobFlowLinks",
+          "effectiveReturnBefore": "Promise<any[]>",
+          "effectiveReturnAfter": "Promise<any[]>",
+          "parameterTypes": [
+            "any",
+            "any"
+          ],
+          "baselineAssignableToCandidate": true,
+          "candidateAssignableToBaseline": true,
+          "renderedSignatureBefore": "(query: any, jobs: any): Promise<any[]>",
+          "renderedSignatureAfter": "(query: any, jobs: any): Promise<any[]>"
+        },
+        {
+          "name": "deliveryState",
+          "effectiveReturnBefore": "string | null",
+          "effectiveReturnAfter": "string | null",
+          "parameterTypes": [
+            "any"
+          ],
+          "baselineAssignableToCandidate": true,
+          "candidateAssignableToBaseline": true,
+          "renderedSignatureBefore": "(states: any): string | null",
+          "renderedSignatureAfter": "(states: any): string | null"
+        },
+        {
+          "name": "recordJobFlowMembers",
+          "effectiveReturnBefore": "Promise<void>",
+          "effectiveReturnAfter": "Promise<void>",
+          "parameterTypes": [
+            "any",
+            "any"
+          ],
+          "baselineAssignableToCandidate": true,
+          "candidateAssignableToBaseline": true,
+          "renderedSignatureBefore": "(query: any, job: any): Promise<void>",
+          "renderedSignatureAfter": "(query: any, job: any): Promise<void>"
+        },
+        {
+          "name": "lockJobFlowHistory",
+          "effectiveReturnBefore": "Promise<void>",
+          "effectiveReturnAfter": "Promise<void>",
+          "parameterTypes": [
+            "any",
+            "any"
+          ],
+          "baselineAssignableToCandidate": true,
+          "candidateAssignableToBaseline": true,
+          "renderedSignatureBefore": "(query: any, jobs: any): Promise<void>",
+          "renderedSignatureAfter": "(query: any, jobs: any): Promise<void>"
+        },
+        {
+          "name": "lockFlowWorkflows",
+          "effectiveReturnBefore": "Promise<void>",
+          "effectiveReturnAfter": "Promise<void>",
+          "parameterTypes": [
+            "any",
+            "any",
+            "boolean"
+          ],
+          "baselineAssignableToCandidate": true,
+          "candidateAssignableToBaseline": true,
+          "renderedSignatureBefore": "(query: any, workflowIds: any, exclusive?: boolean): Promise<void>",
+          "renderedSignatureAfter": "(query: any, workflowIds: any, exclusive?: boolean): Promise<void>"
+        },
+        {
+          "name": "lockWorkflowFlowHistory",
+          "effectiveReturnBefore": "Promise<void>",
+          "effectiveReturnAfter": "Promise<void>",
+          "parameterTypes": [
+            "any",
+            "any"
+          ],
+          "baselineAssignableToCandidate": true,
+          "candidateAssignableToBaseline": true,
+          "renderedSignatureBefore": "(query: any, workflowIds: any): Promise<void>",
+          "renderedSignatureAfter": "(query: any, workflowIds: any): Promise<void>"
+        },
+        {
+          "name": "revokeWorkflowFlowHistory",
+          "effectiveReturnBefore": "Promise<any>",
+          "effectiveReturnAfter": "Promise<any>",
+          "parameterTypes": [
+            "any",
+            "any",
+            "any",
+            "any"
+          ],
+          "baselineAssignableToCandidate": true,
+          "candidateAssignableToBaseline": true,
+          "renderedSignatureBefore": "(query: any, workflowIds: any, code: any, now: any): Promise<any>",
+          "renderedSignatureAfter": "(query: any, workflowIds: any, code: any, now: any): Promise<any>"
+        },
+        {
+          "name": "refreshWorkflowFlowHistory",
+          "effectiveReturnBefore": "Promise<void>",
+          "effectiveReturnAfter": "Promise<void>",
+          "parameterTypes": [
+            "any",
+            "any"
+          ],
+          "baselineAssignableToCandidate": true,
+          "candidateAssignableToBaseline": true,
+          "renderedSignatureBefore": "(query: any, runIds: any): Promise<void>",
+          "renderedSignatureAfter": "(query: any, runIds: any): Promise<void>"
+        },
+        {
+          "name": "refreshJobFlowHistory",
+          "effectiveReturnBefore": "Promise<void>",
+          "effectiveReturnAfter": "Promise<void>",
+          "parameterTypes": [
+            "any",
+            "any"
+          ],
+          "baselineAssignableToCandidate": true,
+          "candidateAssignableToBaseline": true,
+          "renderedSignatureBefore": "(query: any, jobs: any): Promise<void>",
+          "renderedSignatureAfter": "(query: any, jobs: any): Promise<void>"
+        },
+        {
+          "name": "refreshFlowHistory",
+          "effectiveReturnBefore": "Promise<void>",
+          "effectiveReturnAfter": "Promise<void>",
+          "parameterTypes": [
+            "any",
+            "any"
+          ],
+          "baselineAssignableToCandidate": true,
+          "candidateAssignableToBaseline": true,
+          "renderedSignatureBefore": "(query: any, runIds: any): Promise<void>",
+          "renderedSignatureAfter": "(query: any, runIds: any): Promise<void>"
+        }
+      ]
+    }
+  ],
+  "renderedSignatureDifference": "With strictNullChecks:false only, deliveryState includes its explicitly documented null in signatureToString while the effective return type remains string; strictNullChecks:true returns string|null before and after.",
+  "repositoryEdited": false,
+  "sqlExecuted": false
+}

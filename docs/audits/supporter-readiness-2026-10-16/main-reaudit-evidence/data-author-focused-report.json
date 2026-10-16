@@ -1,0 +1,114 @@
+{
+  "ids": [
+    "MAIN-DATA-1",
+    "MAIN-DATA-2",
+    "MAIN-POST-2"
+  ],
+  "baseline": "2a000c89a293e2ee71ef0c579a63def2ff12cbdb",
+  "sourceFrozen": true,
+  "files": [
+    {
+      "path": "src/automation/api.js",
+      "sha256": "846f6a36d3046fd1685ee015051af819e959302ec867408348fcde6e56e01e8d"
+    },
+    {
+      "path": "src/automation/marketplace-core.js",
+      "sha256": "c57e2ffbde2e4b5e3dda6747932af6e5dd9430ee034e8b7ee02700cee6409732"
+    },
+    {
+      "path": "dashboard/components/automation/marketplace-manager.tsx",
+      "sha256": "d18aee7fe5573809e253d919f71308fcf539ffd22dc29934a79413b6e5cecd23"
+    },
+    {
+      "path": "dashboard/components/admin/push-capacity-diagnostics.tsx",
+      "sha256": "4c478fde8e6db83e620664b23fa9c7bfcf4a1a29cde4223c8eca7e2fa85527ea"
+    },
+    {
+      "path": "scripts/test/automation-main-data-revalidation-sql.test.js",
+      "sha256": "e6a81fb538c74e6360df22b12346f1376e5339326f2463b14d53b00997fd8774"
+    },
+    {
+      "path": "scripts/test/automation-main-data-revalidation-ui.test.js",
+      "sha256": "3c32a2e56c7a0890820834cb8338cfe10576c0efa101cf9ff1c2e5c2cdec2ace"
+    },
+    {
+      "path": "scripts/test/automation-marketplace-sql.test.js",
+      "sha256": "e0ad872c05ef8acec9da353b44ef034864d3fefc50a3dc024dcd0f71d1cb32f8"
+    },
+    {
+      "path": "scripts/test/automation-push-capacity-ui.test.js",
+      "sha256": "dc444dc311ffbac8ffa40465866b02b16b4f6b8bd835f8d414f76767194c982f"
+    }
+  ],
+  "redWitness": {
+    "command": "node scripts/run-project-node.cjs --test scripts/test/automation-main-data-revalidation-sql.test.js",
+    "execChunk": "2cf8e0",
+    "tests": 3,
+    "pass": 0,
+    "fail": 3,
+    "assertions": [
+      "foreign-scope payments returned",
+      "resolved != open after audit failure",
+      "undefined != 1 for report edition"
+    ]
+  },
+  "focusedFinal": {
+    "execSession": 33074,
+    "tests": 57,
+    "pass": 57,
+    "fail": 0,
+    "skip": 0,
+    "files": [
+      "scripts/test/automation-main-data-revalidation-sql.test.js",
+      "scripts/test/automation-main-data-revalidation-ui.test.js",
+      "scripts/test/automation-marketplace-sql.test.js",
+      "scripts/test/automation-push-capacity-ui.test.js"
+    ]
+  },
+  "adjacentRegression": {
+    "junit": "C:\\Users\\yussy\\AppData\\Local\\Temp\\main-data-reaudit-regression-20261016.xml",
+    "sha256": "98f7d6237f4efb7dba5cb6d3ba8b64b9a5ddb4f95cef1ded9f5d6e971b048005",
+    "tests": 123,
+    "pass": 122,
+    "fail": 1,
+    "failures": [
+      {
+        "name": "donor metadata migration is additive and replay-safe on both legacy and current schemas",
+        "file": "C:\\Users\\yussy\\.codex\\worktrees\\x-realtime-choice-20261014\\comebacktwitterembed\\scripts\\test\\automation-donor-admin-sql.test.js",
+        "failure": "\n[Error [ERR_TEST_FAILURE]: connect ETIMEDOUT 127.0.0.1:33621] {\n  code: 'ERR_TEST_FAILURE',\n  failureType: 'testCodeFailure',\n  cause: Error: connect ETIMEDOUT 127.0.0.1:33621\n      at TCPConnectWrap.afterConnect [as oncomplete] (node:net:2021:16)\n      --------------------\n      at Protocol._enqueue (C:\\Users\\yussy\\Documents\\comebacktwitterembed\\node_modules\\mysql\\lib\\protocol\\Protocol.js:144:48)\n      at Protocol.handshake (C:\\Users\\yussy\\Documents\\comebacktwitterembed\\node_modules\\mysql\\lib\\protocol\\Protocol.js:51:23)\n      at PoolConnection.connect (C:\\Users\\yussy\\Documents\\comebacktwitterembed\\node_modules\\mysql\\lib\\Connection.js:116:18)\n      at Pool.getConnection (C:\\Users\\yussy\\Documents\\comebacktwitterembed\\node_modules\\mysql\\lib\\Pool.js:48:16)\n      at C:\\Users\\yussy\\.codex\\worktrees\\x-realtime-choice-20261014\\comebacktwitterembed\\scripts\\lib\\automation-test-db.js:11:65\n      at new Promise (<anonymous>)\n      at acquire (C:\\Users\\yussy\\.codex\\worktrees\\x-realtime-choice-20261014\\comebacktwitterembed\\scripts\\lib\\automation-test-db.js:11:27)\n      at Object.queryDatabase (C:\\Users\\yussy\\.codex\\worktrees\\x-realtime-choice-20261014\\comebacktwitterembed\\scripts\\lib\\automation-test-db.js:20:29)\n      at createTestDatabase (C:\\Users\\yussy\\.codex\\worktrees\\x-realtime-choice-20261014\\comebacktwitterembed\\scripts\\lib\\automation-test-db.js:38:118)\n      at process.processTicksAndRejections (node:internal/process/task_queues:104:5) {\n    errno: -4039,\n    code: 'ETIMEDOUT',\n    syscall: 'connect',\n    address: '127.0.0.1',\n    port: 33621,\n    fatal: true\n  }\n}\n\t\t"
+      }
+    ]
+  },
+  "isolatedFailureReplay": {
+    "log": "C:\\Users\\yussy\\AppData\\Local\\Temp\\main-data-reaudit-donor-migration-isolated-replay-20261016.log",
+    "sha256": "13c291bccebccc674593d8bead61a2feeacf7351fc70a63e09d6735f0554babb",
+    "tests": 1,
+    "pass": 1,
+    "fail": 0,
+    "limitations": "Original failure is TCP connect ETIMEDOUT during disposable schema construction before migration/apply/assertions. Underlying environmental cause unproven; not suppressed or classified as product assertion failure."
+  },
+  "staticChecks": {
+    "dashboardTsc": true,
+    "ownedTsxEslint": true,
+    "ownedJsAndTestEslint": true,
+    "gitDiffCheck": true
+  },
+  "operations": {
+    "newDDL": false,
+    "newTables": false,
+    "dataBackfill": false,
+    "productionOrProviderWrites": false,
+    "databaseReconfigured": false,
+    "unknownSchemasTouched": false
+  },
+  "handoffs": {
+    "apiWorkflowHistory": "service.history(actor,id,{limit,beforeRevision}), page=1 legacy arrays preserved",
+    "marketplaceSafetyRevoke": "namespace before workflow/job locks; refreshJobFlowHistory after direct job mutation in same transaction"
+  },
+  "compatibility": {
+    "legacyReports": "Reasons preserved; unknown edition never inferred; current report timestamp required for explicit resolution",
+    "reportEdition": "Open report cannot silently switch edition; resolved records can reopen with monotonic updated_at_ms and fresh CAS",
+    "squareCredentialsPause": "Current environment/merchant local history remains readable without credentials; missing scope yields no payments and preserves manual grants",
+    "rollback": "No DDL: old source can read added JSON fields, but would not preserve new scope/CAS protections. No database rollback necessary."
+  }
+}

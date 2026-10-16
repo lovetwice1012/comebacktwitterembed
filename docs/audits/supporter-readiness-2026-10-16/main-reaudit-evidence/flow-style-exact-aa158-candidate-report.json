@@ -1,0 +1,197 @@
+{
+  "status": "frozen-nullable-temp-candidate-not-applied",
+  "baseRevision": "d2e792d30a44723e603869b27970b05597d51a9d",
+  "coreSha256Unchanged": "60ff0447147e5ae84e15108c14e5883f4d5092969cd652549dffde67b7163824",
+  "candidateSha256": "aa1580814a0289b029a17a1805485391026a0b68ed8418a6250e1c637b95f6f4",
+  "candidateAbsolutePath": "C:\\Users\\yussy\\AppData\\Local\\Temp\\cbte-flow-history-style-d2-20261016\\nullable-final\\flow-history.candidate.js",
+  "unappliedPatchAbsolutePath": "C:\\Users\\yussy\\AppData\\Local\\Temp\\cbte-flow-history-style-d2-20261016\\nullable-final\\flow-history-format-jsdoc.UNAPPLIED.patch",
+  "changeScope": "Whole-file official Prettier formatting and accurate JSDoc for all 11 function declarations, including deliveryState string|null. Effective types preserved under both null-check settings.",
+  "exactCurrentGitHubCheck": 116911852085,
+  "annotationsReproduced": [
+    {
+      "line": 15,
+      "message": "Missing JSDoc comment.",
+      "localRules": [
+        "require-jsdoc",
+        "jsdoc/require-jsdoc"
+      ]
+    },
+    {
+      "line": 16,
+      "message": "Delete `··`",
+      "localRules": [
+        "prettier/prettier"
+      ]
+    },
+    {
+      "line": 17,
+      "message": "Replace `········const·plan·=·parse(value),·flow·=·plan?.flowV2,·member·=·value·=>·value·&&·typeof·value.memberId·===·'string'·&&·/^[0-9a-f-]{36}$/i.test(value.runId·||·''` with `····const·plan·=·parse(value),⏎······flow·=·plan?.flowV2,⏎······member·=·(value)·=>⏎········value·&&⏎········typeof·value.memberId·===·\"string\"·&&⏎········/^[0-9a-f-]{36}$/i.test(value.runId·||·\"\"`",
+      "localRules": [
+        "prettier/prettier"
+      ]
+    }
+  ],
+  "officialEngine": "codacy/codacy-eslint:9.18.12",
+  "versions": [
+    {
+      "name": "eslint",
+      "version": "8.57.0",
+      "integrity": "sha512-dZ6+mexnaTIbSBZWgou51U6OmzIhYM2VcNdtiTtI7qPNZm35Akpr0f6vtw3w1Kmn5PYo+tZVfh13WrhpS6oLqQ==",
+      "officialRegistry": "https://registry.npmjs.org/eslint/-/eslint-8.57.0.tgz",
+      "exactVendorLockMatch": true
+    },
+    {
+      "name": "eslint-plugin-jsdoc",
+      "version": "61.1.9",
+      "integrity": "sha512-X2AzSGbq1CzBRgKcVAu2qzOV9ogqygkUDk5AX6eNK5G+kY3I5Op5E5b99fE+FN0/bGnk2KGcsMIG6ZLF+di69A==",
+      "officialRegistry": "https://registry.npmjs.org/eslint-plugin-jsdoc/-/eslint-plugin-jsdoc-61.1.9.tgz",
+      "exactVendorLockMatch": true
+    },
+    {
+      "name": "eslint-plugin-prettier",
+      "version": "5.2.1",
+      "integrity": "sha512-gH3iR3g4JfF+yYPaJYkN7jEl9QbweL/YfkoRlNnuIEHEz1vHVlCmWOS+eGGiRuzHQXdJFCOTxRgvju9b8VUmrw==",
+      "officialRegistry": "https://registry.npmjs.org/eslint-plugin-prettier/-/eslint-plugin-prettier-5.2.1.tgz",
+      "exactVendorLockMatch": true
+    },
+    {
+      "name": "prettier",
+      "version": "3.3.3",
+      "integrity": "sha512-i2tDNA0O5IrMO757lfrdQZCc2jPNDVntV0m/+4whiDfWaTKfMNgR7Qz0NAeGz/nRqF4m5/6CLzbP4/liHt12Ew==",
+      "officialRegistry": "https://registry.npmjs.org/prettier/-/prettier-3.3.3.tgz",
+      "exactVendorLockMatch": true
+    }
+  ],
+  "checks": {
+    "prettierDefaultCheck": true,
+    "fourteenExplicitDocAndFormatRulesMessages": 0,
+    "rootRepositoryEslintMessages": 0,
+    "types": [
+      {
+        "strictNullChecks": false,
+        "configuredProjectDiagnosticsBefore": 0,
+        "configuredProjectDiagnosticsAfter": 0,
+        "diagnosticDelta": 0,
+        "functionsBidirectionallyAssignable": 11,
+        "effectiveParameterAndReturnTypesEqual": true,
+        "renderedSignatureDifferences": [
+          {
+            "name": "deliveryState",
+            "effectiveReturnBefore": "string",
+            "effectiveReturnAfter": "string",
+            "parameterTypes": [
+              "any"
+            ],
+            "baselineAssignableToCandidate": true,
+            "candidateAssignableToBaseline": true,
+            "renderedSignatureBefore": "(states: any): string",
+            "renderedSignatureAfter": "(states: any): string | null"
+          }
+        ]
+      },
+      {
+        "strictNullChecks": true,
+        "configuredProjectDiagnosticsBefore": 527,
+        "configuredProjectDiagnosticsAfter": 527,
+        "diagnosticDelta": 0,
+        "functionsBidirectionallyAssignable": 11,
+        "effectiveParameterAndReturnTypesEqual": true,
+        "renderedSignatureDifferences": []
+      }
+    ],
+    "espreeCompleteRuntimeAstIdentical": true,
+    "typeScriptCompleteRuntimeAstIdentical": true,
+    "typeScriptOnlyNormalization": "Transparent ParenthesizedExpression wrappers (6 before / 10 after), source positions/comments/quote spelling",
+    "literalsIdentical": 151,
+    "templateRawAndCookedIdentical": 16,
+    "exportsIdentical": true,
+    "directiveSuppressionsAdded": 0
+  },
+  "attribution": {
+    "remoteEnabledProfileAvailable": false,
+    "allRemoteChecksPassed": false,
+    "codacyVendorCrashSeparate": true,
+    "noRuntimeTestsExecutedForTempCandidate": true,
+    "currentD2FullRunRemainsAttributedToD2": true,
+    "finalAppliedSourceTscRequired": true,
+    "strictNullChecksTrue527ArePreexistingNotIntroduced": true,
+    "supersedesIntermediateCandidates": [
+      "../flow-history.candidate.js (untyped)",
+      "../typed-final/flow-history.candidate.js (string)"
+    ]
+  },
+  "effects": {
+    "repositoryEdits": 0,
+    "gitWrites": 0,
+    "sql": 0,
+    "production": 0,
+    "dependencyChangesInRepository": 0
+  },
+  "manifest": [
+    {
+      "name": "flow-history.candidate.js",
+      "sha256": "aa1580814a0289b029a17a1805485391026a0b68ed8418a6250e1c637b95f6f4",
+      "bytes": 26015
+    },
+    {
+      "name": "flow-history-format-jsdoc.UNAPPLIED.patch",
+      "sha256": "8a9361c0ba93ccaa9d62d016f0ffc51cbb89c46c22ac9d3be376b6f48dc23037",
+      "bytes": 44216
+    },
+    {
+      "name": "candidate-verification.json",
+      "sha256": "4a70258ec6b01c78f252ec6123f2ac30a657647e2fa43a0d72ead4cd0ecd21ad",
+      "bytes": 4698
+    },
+    {
+      "name": "effective-type-equivalence.json",
+      "sha256": "c4d412457e6a7116d6b62fef22ae9914a36a38cbc34da83c5da68c2d3813e41c",
+      "bytes": 12162
+    },
+    {
+      "name": "type-diagnostics-strict-null-false.json",
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "bytes": 2
+    },
+    {
+      "name": "type-diagnostics-strict-null-true.json",
+      "sha256": "616ad7cc5c06df123944527d7f05ba203d3f78b3fd557ed6ba45754166f30de7",
+      "bytes": 103986
+    },
+    {
+      "name": "lint-baseline-d2.json",
+      "sha256": "587a1ed122b6f65b7cd647b2b53e7ac52e1449677979e297ed534a3b5f60dd35",
+      "bytes": 110371
+    },
+    {
+      "name": "lint-candidate.json",
+      "sha256": "135b47be209bf94142272d792f98ba39e6e0c52a33d0c4cb19b55637294e00a6",
+      "bytes": 1081
+    },
+    {
+      "name": "literal-export-manifest.json",
+      "sha256": "f9043db8c465d4cffad0adcd88aaed0a92259025213f04e0eeb33edfc2847a98",
+      "bytes": 435439
+    },
+    {
+      "name": "root-eslint-candidate.json",
+      "sha256": "d6e020ab90a0e95af477dc0ecdbdd85e211801fc54a191576a8d23f601fea29b",
+      "bytes": 358
+    },
+    {
+      "name": "official-patterns-selected.json",
+      "sha256": "325ff7a1cbd429dda3ce58aeef26eb4f46834159a8cb4998fcbf04afe9f9b48f",
+      "bytes": 2590
+    },
+    {
+      "name": "verify-candidate.cjs",
+      "sha256": "52cc2dcbf3c8716e6de9664d525a1f2f425bc942a9f93a3a963ebcf0ed5e0800",
+      "bytes": 9786
+    },
+    {
+      "name": "verify-effective-types.cjs",
+      "sha256": "1e09a459201d9515d0c457490f2c75c13812c3fa4bcd724dc6075aea28d07e9b",
+      "bytes": 6190
+    }
+  ]
+}

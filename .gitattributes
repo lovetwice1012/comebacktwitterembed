@@ -7,3 +7,7 @@ client/angelic-setup/** whitespace=cr-at-eol,-blank-at-eof
 packages/angelic-angel/legacy-rust/** whitespace=cr-at-eol
 # Machine-generated test receipts retain their captured formatting and hashes.
 docs/angelic-angel/*.xml -text -whitespace
+# Captured audit receipts preserve their original bytes, including failed runs.
+docs/audits/supporter-readiness-2026-10-16/main-reaudit-evidence/** -text -whitespace
+docs/audits/supporter-readiness-2026-10-16/main-reaudit-remediation.json -text whitespace=cr-at-eol
+docs/audits/supporter-readiness-2026-10-16/main-reaudit-remediation.md -text whitespace=cr-at-eol

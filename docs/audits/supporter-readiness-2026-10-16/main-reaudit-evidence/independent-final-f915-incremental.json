@@ -1,0 +1,259 @@
+{
+  "createdAt": "2026-10-16T08:41:55.137Z",
+  "reviewer": "reaudit_independent_review",
+  "sourceRevision": "f915a68819b38b01664a3bde25770c46eda7bcbc",
+  "baseRevision": "2a000c89a293e2ee71ef0c579a63def2ff12cbdb",
+  "priorReviewedRevision": "d6ecac0ad33e42340487061abbfcc55a91d43084",
+  "result": "CLEAN-ALL-10-FINAL-SOURCE-INCREMENTAL-APPROVAL",
+  "ids": [
+    "MAIN-UI-1",
+    "MAIN-UI-2",
+    "MAIN-FRESH-2",
+    "MAIN-FRESH-3",
+    "MAIN-POST-1",
+    "MAIN-DATA-1",
+    "MAIN-DATA-2",
+    "MAIN-POST-2",
+    "MAIN-FRESH-4",
+    "MAIN-FRESH-5"
+  ],
+  "findings": [],
+  "sourceFreeze": [
+    {
+      "file": "dashboard/components/admin/notification-plan-manager.tsx",
+      "expectedWorkingCopySha256": "492151e1327a58fea40b7603a0bc3c859362c29d269fa7fd5da550d3f18a444f",
+      "observedWorkingCopySha256": "492151e1327a58fea40b7603a0bc3c859362c29d269fa7fd5da550d3f18a444f",
+      "canonicalGitSha256": "492151e1327a58fea40b7603a0bc3c859362c29d269fa7fd5da550d3f18a444f"
+    },
+    {
+      "file": "dashboard/components/admin/push-capacity-diagnostics.tsx",
+      "expectedWorkingCopySha256": "4c478fde8e6db83e620664b23fa9c7bfcf4a1a29cde4223c8eca7e2fa85527ea",
+      "observedWorkingCopySha256": "4c478fde8e6db83e620664b23fa9c7bfcf4a1a29cde4223c8eca7e2fa85527ea",
+      "canonicalGitSha256": "4c478fde8e6db83e620664b23fa9c7bfcf4a1a29cde4223c8eca7e2fa85527ea"
+    },
+    {
+      "file": "dashboard/components/admin/square-commerce-manager.tsx",
+      "expectedWorkingCopySha256": "898607fdc8030dd0935ef218d8ad00318c2a364bd89eae057cb27f3919f6ecec",
+      "observedWorkingCopySha256": "898607fdc8030dd0935ef218d8ad00318c2a364bd89eae057cb27f3919f6ecec",
+      "canonicalGitSha256": "898607fdc8030dd0935ef218d8ad00318c2a364bd89eae057cb27f3919f6ecec"
+    },
+    {
+      "file": "dashboard/components/automation/automation-workspace.tsx",
+      "expectedWorkingCopySha256": "bb8c715aec34a4a55939eed39adea2121664e3e8b100da7771e071a1b4e80969",
+      "observedWorkingCopySha256": "bb8c715aec34a4a55939eed39adea2121664e3e8b100da7771e071a1b4e80969",
+      "canonicalGitSha256": "bb8c715aec34a4a55939eed39adea2121664e3e8b100da7771e071a1b4e80969"
+    },
+    {
+      "file": "dashboard/components/automation/marketplace-manager.tsx",
+      "expectedWorkingCopySha256": "d18aee7fe5573809e253d919f71308fcf539ffd22dc29934a79413b6e5cecd23",
+      "observedWorkingCopySha256": "d18aee7fe5573809e253d919f71308fcf539ffd22dc29934a79413b6e5cecd23",
+      "canonicalGitSha256": "d18aee7fe5573809e253d919f71308fcf539ffd22dc29934a79413b6e5cecd23"
+    },
+    {
+      "file": "dashboard/components/automation/monitor-cadence-editor.tsx",
+      "expectedWorkingCopySha256": "2fc1bc7224cc79905c6e1c06fa3b837f9a116987c42942da1fcbcb3f5f870286",
+      "observedWorkingCopySha256": "2fc1bc7224cc79905c6e1c06fa3b837f9a116987c42942da1fcbcb3f5f870286",
+      "canonicalGitSha256": "768cb88cb8e5cb05eb7396da4dcced26bae132ce0d9fa89032e10ce76b71377a"
+    },
+    {
+      "file": "dashboard/components/automation/monitor-manager.tsx",
+      "expectedWorkingCopySha256": "080eb3be855ca7ac6c30d4926e590cc2825c8d5245f368af31a4fbb82f4f84f7",
+      "observedWorkingCopySha256": "080eb3be855ca7ac6c30d4926e590cc2825c8d5245f368af31a4fbb82f4f84f7",
+      "canonicalGitSha256": "080eb3be855ca7ac6c30d4926e590cc2825c8d5245f368af31a4fbb82f4f84f7"
+    },
+    {
+      "file": "dashboard/components/automation/x-monitor-manager.tsx",
+      "expectedWorkingCopySha256": "5df715aa48c20053f2bab0e9962bf612f5ea5b651081266b254f085f7a463295",
+      "observedWorkingCopySha256": "5df715aa48c20053f2bab0e9962bf612f5ea5b651081266b254f085f7a463295",
+      "canonicalGitSha256": "5df715aa48c20053f2bab0e9962bf612f5ea5b651081266b254f085f7a463295"
+    },
+    {
+      "file": "scripts/test/automation-aggregate-member-boundary.test.js",
+      "expectedWorkingCopySha256": "af58b2ce57e1cd50ff54ad16c1ece74dbc75e203a0803d8658b3047613c2af3e",
+      "observedWorkingCopySha256": "af58b2ce57e1cd50ff54ad16c1ece74dbc75e203a0803d8658b3047613c2af3e",
+      "canonicalGitSha256": "af58b2ce57e1cd50ff54ad16c1ece74dbc75e203a0803d8658b3047613c2af3e"
+    },
+    {
+      "file": "scripts/test/automation-flow-permanent-failure-sql.test.js",
+      "expectedWorkingCopySha256": "8a89d7964a69f5c6e98e7ee7f284523c45ae6e3f5b74a898b5fda1843a4f2ec6",
+      "observedWorkingCopySha256": "8a89d7964a69f5c6e98e7ee7f284523c45ae6e3f5b74a898b5fda1843a4f2ec6",
+      "canonicalGitSha256": "8a89d7964a69f5c6e98e7ee7f284523c45ae6e3f5b74a898b5fda1843a4f2ec6"
+    },
+    {
+      "file": "scripts/test/automation-flow-state-reconciliation-sql.test.js",
+      "expectedWorkingCopySha256": "5501d23ef37b0492a0fb815881c8c71e619397d961e9e3bf62f01aedcc8ad407",
+      "observedWorkingCopySha256": "5501d23ef37b0492a0fb815881c8c71e619397d961e9e3bf62f01aedcc8ad407",
+      "canonicalGitSha256": "5501d23ef37b0492a0fb815881c8c71e619397d961e9e3bf62f01aedcc8ad407"
+    },
+    {
+      "file": "scripts/test/automation-main-admin-cas-ui.test.js",
+      "expectedWorkingCopySha256": "62fb82064c19c19c10e19d22747a85fc644a7c796466c3ca47ea25b98e68935f",
+      "observedWorkingCopySha256": "62fb82064c19c19c10e19d22747a85fc644a7c796466c3ca47ea25b98e68935f",
+      "canonicalGitSha256": "62fb82064c19c19c10e19d22747a85fc644a7c796466c3ca47ea25b98e68935f"
+    },
+    {
+      "file": "scripts/test/automation-main-cadence-read-recovery.test.js",
+      "expectedWorkingCopySha256": "54a53c067687e1e874814ef1d3bf714f0e9c25dedf19ff58ae26b12df5000d93",
+      "observedWorkingCopySha256": "54a53c067687e1e874814ef1d3bf714f0e9c25dedf19ff58ae26b12df5000d93",
+      "canonicalGitSha256": "54a53c067687e1e874814ef1d3bf714f0e9c25dedf19ff58ae26b12df5000d93"
+    },
+    {
+      "file": "scripts/test/automation-main-data-revalidation-sql.test.js",
+      "expectedWorkingCopySha256": "e6a81fb538c74e6360df22b12346f1376e5339326f2463b14d53b00997fd8774",
+      "observedWorkingCopySha256": "e6a81fb538c74e6360df22b12346f1376e5339326f2463b14d53b00997fd8774",
+      "canonicalGitSha256": "e6a81fb538c74e6360df22b12346f1376e5339326f2463b14d53b00997fd8774"
+    },
+    {
+      "file": "scripts/test/automation-main-data-revalidation-ui.test.js",
+      "expectedWorkingCopySha256": "3c32a2e56c7a0890820834cb8338cfe10576c0efa101cf9ff1c2e5c2cdec2ace",
+      "observedWorkingCopySha256": "3c32a2e56c7a0890820834cb8338cfe10576c0efa101cf9ff1c2e5c2cdec2ace",
+      "canonicalGitSha256": "3c32a2e56c7a0890820834cb8338cfe10576c0efa101cf9ff1c2e5c2cdec2ace"
+    },
+    {
+      "file": "scripts/test/automation-main-ui-draft-cadence.test.js",
+      "expectedWorkingCopySha256": "8d1276237de5bc493a627cdeb3f8f6769db1e29cdcdc72d92bdc424c6e1eda57",
+      "observedWorkingCopySha256": "8d1276237de5bc493a627cdeb3f8f6769db1e29cdcdc72d92bdc424c6e1eda57",
+      "canonicalGitSha256": "8d1276237de5bc493a627cdeb3f8f6769db1e29cdcdc72d92bdc424c6e1eda57"
+    },
+    {
+      "file": "scripts/test/automation-main-workflow-history.test.js",
+      "expectedWorkingCopySha256": "98ba5e4ce0f6f9bdaf706352e62a22a3b4cd7cebb05aeea3e1c24d848cc6f920",
+      "observedWorkingCopySha256": "98ba5e4ce0f6f9bdaf706352e62a22a3b4cd7cebb05aeea3e1c24d848cc6f920",
+      "canonicalGitSha256": "98ba5e4ce0f6f9bdaf706352e62a22a3b4cd7cebb05aeea3e1c24d848cc6f920"
+    },
+    {
+      "file": "scripts/test/automation-main-x-read-write-ui.test.js",
+      "expectedWorkingCopySha256": "9355cc4c672c305a38349323e732249a0d075a80a3aaa59e2ca9a85cf33fae63",
+      "observedWorkingCopySha256": "9355cc4c672c305a38349323e732249a0d075a80a3aaa59e2ca9a85cf33fae63",
+      "canonicalGitSha256": "9355cc4c672c305a38349323e732249a0d075a80a3aaa59e2ca9a85cf33fae63"
+    },
+    {
+      "file": "scripts/test/automation-marketplace-sql.test.js",
+      "expectedWorkingCopySha256": "e0ad872c05ef8acec9da353b44ef034864d3fefc50a3dc024dcd0f71d1cb32f8",
+      "observedWorkingCopySha256": "e0ad872c05ef8acec9da353b44ef034864d3fefc50a3dc024dcd0f71d1cb32f8",
+      "canonicalGitSha256": "e0ad872c05ef8acec9da353b44ef034864d3fefc50a3dc024dcd0f71d1cb32f8"
+    },
+    {
+      "file": "scripts/test/automation-push-capacity-ui.test.js",
+      "expectedWorkingCopySha256": "dc444dc311ffbac8ffa40465866b02b16b4f6b8bd835f8d414f76767194c982f",
+      "observedWorkingCopySha256": "dc444dc311ffbac8ffa40465866b02b16b4f6b8bd835f8d414f76767194c982f",
+      "canonicalGitSha256": "dc444dc311ffbac8ffa40465866b02b16b4f6b8bd835f8d414f76767194c982f"
+    },
+    {
+      "file": "src/automation/api.js",
+      "expectedWorkingCopySha256": "846f6a36d3046fd1685ee015051af819e959302ec867408348fcde6e56e01e8d",
+      "observedWorkingCopySha256": "846f6a36d3046fd1685ee015051af819e959302ec867408348fcde6e56e01e8d",
+      "canonicalGitSha256": "9535ddbaad8e2995d8e062f997559926494f58098ce69f83004a65df0c609ee4"
+    },
+    {
+      "file": "src/automation/flow-history.js",
+      "expectedWorkingCopySha256": "e0e4f4fa8a3653ba39765c0977bfb82afceb368a9fca5e83cabced81370b61c1",
+      "observedWorkingCopySha256": "e0e4f4fa8a3653ba39765c0977bfb82afceb368a9fca5e83cabced81370b61c1",
+      "canonicalGitSha256": "e0e4f4fa8a3653ba39765c0977bfb82afceb368a9fca5e83cabced81370b61c1"
+    },
+    {
+      "file": "src/automation/flow-projector.js",
+      "expectedWorkingCopySha256": "4f8c63a56089c2984e54db52e624d52675243a5733dd12c2faf0797e518137a9",
+      "observedWorkingCopySha256": "4f8c63a56089c2984e54db52e624d52675243a5733dd12c2faf0797e518137a9",
+      "canonicalGitSha256": "4f8c63a56089c2984e54db52e624d52675243a5733dd12c2faf0797e518137a9"
+    },
+    {
+      "file": "src/automation/graph-store.js",
+      "expectedWorkingCopySha256": "637914a3b5b9a5ea31cce4a8cfec940563a5d9a105de065736e28105d7c24853",
+      "observedWorkingCopySha256": "637914a3b5b9a5ea31cce4a8cfec940563a5d9a105de065736e28105d7c24853",
+      "canonicalGitSha256": "637914a3b5b9a5ea31cce4a8cfec940563a5d9a105de065736e28105d7c24853"
+    },
+    {
+      "file": "src/automation/history.js",
+      "expectedWorkingCopySha256": "37ae7b3a4e93b2f3e2451306a70fa81e651c5346f594b99377c5a390ab5a3c57",
+      "observedWorkingCopySha256": "37ae7b3a4e93b2f3e2451306a70fa81e651c5346f594b99377c5a390ab5a3c57",
+      "canonicalGitSha256": "37ae7b3a4e93b2f3e2451306a70fa81e651c5346f594b99377c5a390ab5a3c57"
+    },
+    {
+      "file": "src/automation/marketplace-core.js",
+      "expectedWorkingCopySha256": "c468bba9ebac0a2ded2be2ae53d681390e71c8cf0bf7adc2329caf6c1cdd932d",
+      "observedWorkingCopySha256": "c468bba9ebac0a2ded2be2ae53d681390e71c8cf0bf7adc2329caf6c1cdd932d",
+      "canonicalGitSha256": "0c0a04dd8cb590c0801e1c20b6b46ea23ccc3d1a918f176d813c3ee4c4ad0bf9"
+    },
+    {
+      "file": "src/automation/queue.js",
+      "expectedWorkingCopySha256": "bc8422f9efc0cc608ef6523d44ad7af2ccb5cf2f29458879c50df4a2fbdb014a",
+      "observedWorkingCopySha256": "bc8422f9efc0cc608ef6523d44ad7af2ccb5cf2f29458879c50df4a2fbdb014a",
+      "canonicalGitSha256": "bc8422f9efc0cc608ef6523d44ad7af2ccb5cf2f29458879c50df4a2fbdb014a"
+    },
+    {
+      "file": "src/automation/service.js",
+      "expectedWorkingCopySha256": "76efee6def6fc3bcc073d1dc9fda49592c415f763ea1b184612a8d1a22f9d1e6",
+      "observedWorkingCopySha256": "76efee6def6fc3bcc073d1dc9fda49592c415f763ea1b184612a8d1a22f9d1e6",
+      "canonicalGitSha256": "76efee6def6fc3bcc073d1dc9fda49592c415f763ea1b184612a8d1a22f9d1e6"
+    },
+    {
+      "file": "src/automation/workflow-deletion.js",
+      "expectedWorkingCopySha256": "9e0195e67f026e662dc9c4b3f102d65496d320a61e84acc279e5dcf452ff7c15",
+      "observedWorkingCopySha256": "9e0195e67f026e662dc9c4b3f102d65496d320a61e84acc279e5dcf452ff7c15",
+      "canonicalGitSha256": "9e0195e67f026e662dc9c4b3f102d65496d320a61e84acc279e5dcf452ff7c15"
+    }
+  ],
+  "incrementalFiles": [
+    "scripts/test/automation-flow-state-reconciliation-sql.test.js",
+    "src/automation/flow-history.js"
+  ],
+  "priorIndependentReview": {
+    "file": "C:\\Users\\yussy\\AppData\\Local\\Temp\\main-reaudit-independent-final-report.json",
+    "sha256": "692cbcbed6f676d61d70a439978b7a0d14035a46cd2124ac8037ddc0d8c75a85",
+    "tests": 83,
+    "scope": "Prior fixed candidate only; retained as staged evidence and not rewritten as final whole-suite result"
+  },
+  "independentIncrementalRuns": [
+    {
+      "file": "C:\\Users\\yussy\\AppData\\Local\\Temp\\main-reaudit-independent-final-inventory.xml",
+      "sha256": "9c6eccd37ca9b195aa78a4cb186f8d227dff04c33ef62e0ea0948e9ad764d502",
+      "tests": 1,
+      "pass": 1,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "todo": 0
+    },
+    {
+      "file": "C:\\Users\\yussy\\AppData\\Local\\Temp\\main-reaudit-independent-final-inventory-runtime-first.xml",
+      "sha256": "0844ba766659e5756babea76117512548daab1994b931ca2394add2d6674a5bd",
+      "tests": 1,
+      "pass": 1,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "todo": 0
+    }
+  ],
+  "authorHistoricalRed": {
+    "file": "C:\\Users\\yussy\\AppData\\Local\\Temp\\reaudit-runtime-monitor-lock-order-red.xml",
+    "sha256": "59fc2e4a77d201fb499517ec53102029d7ca6bc655034e5b881a11402bdbcd51",
+    "provenance": "Author real SQL control; independently inspected artifact, not independently rerun",
+    "result": "attach fulfilled, package revoke ER_LOCK_DEADLOCK on the old mutable-flow-run inventory read"
+  },
+  "incrementalReview": {
+    "actualCondition": "An owner can attach a native monitor from installed workflow A to installed copy B of the same package, holding B workflow row before its prior-lineage revocation UPDATE. Package revoke does not share the owner mutex. Old inventory held A mutable flow-run S lock before waiting on B workflow row.",
+    "fix": "Only the namespace inventory read changes from mutable flow_runs to current immutable units/members and originating automation_runs workflow identity. Initial graph admission persists origin, initial unit and member in one transaction; derived units retain the same validated namespace. This removes the flow-run-before-workflow dependency and preserves all historical namespaces.",
+    "proof": [
+      "Independent final new16th control: actual native attach and package stop both fulfilled; exact equality of both old and new historical namespaces for A and B",
+      "Independent runtime-first three-branch revoke still waits for in-flight shared workflow then commits: first job excluded, later intents remain stopped, no extra jobs",
+      "All other27 reviewed source/test files match prior freeze; helper workflow shared/exclusive and namespace order are unchanged",
+      "No new tables, columns, migrations, retention policy, automatic slot moves or real provider operations"
+    ]
+  },
+  "acceptanceBoundary": [
+    "Root final frozen184-file whole-suite acceptance is still required",
+    "This attestation approves local source and focused incremental proof, not production deployment or real delivery/OAuth/payments",
+    "Previous old d6 review and red witness remain immutable historical evidence"
+  ],
+  "operations": {
+    "productWrites": false,
+    "gitWrites": false,
+    "productionWrites": false,
+    "realMessagesPaymentsOrOAuth": false,
+    "unknownSchemasTouched": false,
+    "sharedMariaDbReconfigured": false,
+    "ownSchemasCleaned": true
+  }
+}

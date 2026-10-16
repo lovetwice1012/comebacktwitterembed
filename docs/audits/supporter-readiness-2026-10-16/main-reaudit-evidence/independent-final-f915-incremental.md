@@ -1,0 +1,9 @@
+# 追加監査10件：最終増分の独立承認
+
+固定source `f915a68819b38b01664a3bde25770c46eda7bcbc` の判定は **CLEAN**。最終変更はnamespace inventory query/commentと回帰テストの2ファイルです。他27ファイルは前回固定sourceの83成功時と一致します。
+
+実native attach A→Bとpackage revokeの最後の競合controlを独立実行し、両操作成功と旧・新2 historical namespaceの完全一致を確認しました。逆順の実3枝runtime先行revoke controlも成功しました。2/2成功、failure/skip/cancel/todoは0です。
+
+mutable flow_runをworkflow行より先にSロックする依存を除去し、原子的に保存されるimmutable unit/memberとoriginから同じnamespace集合を取得します。旧sourceの実ER_LOCK_DEADLOCK witnessとd6の83成功報告は上書きせず保持しています。
+
+rootの最終固定184ファイル全体テスト、本番反映、実OAuth・X→Discord・Square決済とは受入を分けています。詳細・hashは同名JSONを参照してください。

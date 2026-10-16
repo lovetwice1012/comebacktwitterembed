@@ -1,0 +1,453 @@
+{
+  "formatVersion": 1,
+  "status": "root-reviewed-v8-canonical-core-source-manifest",
+  "reviewBaseRevision": "2a000c89a293e2ee71ef0c579a63def2ff12cbdb",
+  "sourceRevision": "e88e74412905987352af0ae7cec665963fc737d0",
+  "corePaths": [
+    "src",
+    "index.js",
+    "package.json",
+    "package-lock.json",
+    "packages/angelic-angel",
+    "dashboard",
+    "scripts",
+    "migrations"
+  ],
+  "files": [
+    {
+      "path": "dashboard/components/admin/notification-plan-manager.tsx",
+      "before": {
+        "mode": "100644",
+        "gitBlob": "40b21bf84dbcbfc265f5e4210d8aa7a080303dea",
+        "bytes": 32435,
+        "sha256": "001040963d5f1b00cc250d666a478315701d2e3423d5175999ea147ce156ad6f"
+      },
+      "after": {
+        "mode": "100644",
+        "gitBlob": "9c6ad7dfa36ce8b0ec1d4e8d671e7903ddc9e65b",
+        "bytes": 32984,
+        "sha256": "492151e1327a58fea40b7603a0bc3c859362c29d269fa7fd5da550d3f18a444f"
+      }
+    },
+    {
+      "path": "dashboard/components/admin/push-capacity-diagnostics.tsx",
+      "before": {
+        "mode": "100644",
+        "gitBlob": "69858f7c621f787e4ebad5c0b83af60629be4b38",
+        "bytes": 28537,
+        "sha256": "789d7e2a2a7bfaf49cdb80002e6526e0481a88ffdcf506139520d50a186a32b8"
+      },
+      "after": {
+        "mode": "100644",
+        "gitBlob": "9510d314bded300f6a73d6994bd660cad341f557",
+        "bytes": 29907,
+        "sha256": "4c478fde8e6db83e620664b23fa9c7bfcf4a1a29cde4223c8eca7e2fa85527ea"
+      }
+    },
+    {
+      "path": "dashboard/components/admin/square-commerce-manager.tsx",
+      "before": {
+        "mode": "100644",
+        "gitBlob": "4322cf69366a73986de258a343a34199e1997ef4",
+        "bytes": 26591,
+        "sha256": "e0a1c611768f6710fa408911f1c5921c9b19864f7cd155b3120a0753042514d8"
+      },
+      "after": {
+        "mode": "100644",
+        "gitBlob": "bae84066b642ebb936f1d7bebac199862ed10da1",
+        "bytes": 27401,
+        "sha256": "898607fdc8030dd0935ef218d8ad00318c2a364bd89eae057cb27f3919f6ecec"
+      }
+    },
+    {
+      "path": "dashboard/components/automation/automation-workspace.tsx",
+      "before": {
+        "mode": "100644",
+        "gitBlob": "ee814136a3b219e180fbd7c8ba421474b30ac541",
+        "bytes": 48246,
+        "sha256": "da50bf45b0587f112fde5ecb94c99885be7eb50b8da3d974449f3f036df0ac27"
+      },
+      "after": {
+        "mode": "100644",
+        "gitBlob": "281068b238de02b0d237747e5e632b89fe8fc807",
+        "bytes": 51576,
+        "sha256": "bb8c715aec34a4a55939eed39adea2121664e3e8b100da7771e071a1b4e80969"
+      }
+    },
+    {
+      "path": "dashboard/components/automation/marketplace-manager.tsx",
+      "before": {
+        "mode": "100644",
+        "gitBlob": "7d8a0e47c65cb42827d249c34e5a1f773fdddc05",
+        "bytes": 39469,
+        "sha256": "c65f8135dd5bc2f7da748e3ad9e382609e826ada4812726ae5350d08290decec"
+      },
+      "after": {
+        "mode": "100644",
+        "gitBlob": "4b41c74c09a8b580245559d3abd8cf44bec54fc6",
+        "bytes": 41056,
+        "sha256": "d18aee7fe5573809e253d919f71308fcf539ffd22dc29934a79413b6e5cecd23"
+      }
+    },
+    {
+      "path": "dashboard/components/automation/monitor-cadence-editor.tsx",
+      "before": {
+        "mode": "100644",
+        "gitBlob": "6ba6ea4d1812c2579d1e2c21b7c1af80749aeda4",
+        "bytes": 10025,
+        "sha256": "492247afa2d1e31a35da9c00f1186f1a3b77dfdba06416f4d0691c4b871c3a24"
+      },
+      "after": {
+        "mode": "100644",
+        "gitBlob": "0e8638e1ee543f6e4787c7ee06953604bc3408f4",
+        "bytes": 10139,
+        "sha256": "768cb88cb8e5cb05eb7396da4dcced26bae132ce0d9fa89032e10ce76b71377a"
+      }
+    },
+    {
+      "path": "dashboard/components/automation/monitor-manager.tsx",
+      "before": {
+        "mode": "100644",
+        "gitBlob": "3dd51cf3e1bf8ec9e823b953a520bd8b69cffe6b",
+        "bytes": 35390,
+        "sha256": "bbef3cf94cedacee13ab0b0972eec0ad814559d126f5325441bbdbe22ef4e492"
+      },
+      "after": {
+        "mode": "100644",
+        "gitBlob": "f11db0103fea4cbe0e37f747def819603d36cb60",
+        "bytes": 35992,
+        "sha256": "080eb3be855ca7ac6c30d4926e590cc2825c8d5245f368af31a4fbb82f4f84f7"
+      }
+    },
+    {
+      "path": "dashboard/components/automation/x-monitor-manager.tsx",
+      "before": {
+        "mode": "100644",
+        "gitBlob": "fbf9d10bb72bb431680b5cae9cdab86454a47dec",
+        "bytes": 50351,
+        "sha256": "1130c78b371a06e79dd5819186d7ae6a6db9009b81fc26316769a22ef331469b"
+      },
+      "after": {
+        "mode": "100644",
+        "gitBlob": "82f72abef6e46abbff346efdf4679445fd712218",
+        "bytes": 51662,
+        "sha256": "5df715aa48c20053f2bab0e9962bf612f5ea5b651081266b254f085f7a463295"
+      }
+    },
+    {
+      "path": "scripts/lib/automation-test-db.js",
+      "before": {
+        "mode": "100644",
+        "gitBlob": "904ac04886edb9ccfb8e0b2191d8f3c2c3589ddf",
+        "bytes": 3335,
+        "sha256": "f22dcb18b4e2090b171e7bb3e1ad18b004d6f31858548ae5dc8576c74953a591"
+      },
+      "after": {
+        "mode": "100644",
+        "gitBlob": "7220bb5b2aa4a494ae96d9cc1f908cc19fc5f424",
+        "bytes": 4624,
+        "sha256": "de08c0efb3319f0df35724cf8b13ef764c834a7deaea55696bebfe391eec03de"
+      }
+    },
+    {
+      "path": "scripts/test/automation-aggregate-member-boundary.test.js",
+      "before": {
+        "mode": "100644",
+        "gitBlob": "5db5313435b1abe7fbacb852e912acdf2eb2cbe2",
+        "bytes": 10871,
+        "sha256": "94b696b468047f8db10cf093ff93497b315a811938227d930234bc2a3668609b"
+      },
+      "after": {
+        "mode": "100644",
+        "gitBlob": "b1b43fc3d68330a885d7a0afff41c7a2cc9d791d",
+        "bytes": 11048,
+        "sha256": "af58b2ce57e1cd50ff54ad16c1ece74dbc75e203a0803d8658b3047613c2af3e"
+      }
+    },
+    {
+      "path": "scripts/test/automation-flow-permanent-failure-sql.test.js",
+      "before": {
+        "mode": "100644",
+        "gitBlob": "e4922776657941b60b946dd44e51e0c58d6b968b",
+        "bytes": 28347,
+        "sha256": "f7b3ceec11ad72dca508e5f11703582b16400d25c4b107a9267e67cc9ee645a9"
+      },
+      "after": {
+        "mode": "100644",
+        "gitBlob": "c1995b5fcc2f77db53399cd33d245e059e92c1c2",
+        "bytes": 28931,
+        "sha256": "8a89d7964a69f5c6e98e7ee7f284523c45ae6e3f5b74a898b5fda1843a4f2ec6"
+      }
+    },
+    {
+      "path": "scripts/test/automation-flow-state-reconciliation-sql.test.js",
+      "before": null,
+      "after": {
+        "mode": "100644",
+        "gitBlob": "332ccabbc93a71cee2517df25b44cb81329a811a",
+        "bytes": 46033,
+        "sha256": "a8aefab66521112321eb1752d816ea219668539cf603229d0c666bc69a6ebd93"
+      }
+    },
+    {
+      "path": "scripts/test/automation-main-admin-cas-ui.test.js",
+      "before": null,
+      "after": {
+        "mode": "100644",
+        "gitBlob": "58b965aeaaaacc63b1903d60b165d4cfe150bd32",
+        "bytes": 8819,
+        "sha256": "62fb82064c19c19c10e19d22747a85fc644a7c796466c3ca47ea25b98e68935f"
+      }
+    },
+    {
+      "path": "scripts/test/automation-main-cadence-read-recovery.test.js",
+      "before": null,
+      "after": {
+        "mode": "100644",
+        "gitBlob": "f49c36bb61b52ac29b24f48d3c62af9cd7969b2d",
+        "bytes": 1994,
+        "sha256": "54a53c067687e1e874814ef1d3bf714f0e9c25dedf19ff58ae26b12df5000d93"
+      }
+    },
+    {
+      "path": "scripts/test/automation-main-data-revalidation-sql.test.js",
+      "before": null,
+      "after": {
+        "mode": "100644",
+        "gitBlob": "e66713653d3d6590294d5dca3b91f2c0281d16ef",
+        "bytes": 21360,
+        "sha256": "e6a81fb538c74e6360df22b12346f1376e5339326f2463b14d53b00997fd8774"
+      }
+    },
+    {
+      "path": "scripts/test/automation-main-data-revalidation-ui.test.js",
+      "before": null,
+      "after": {
+        "mode": "100644",
+        "gitBlob": "30be62b89950760e3853b2b53d41c4e690a3c50b",
+        "bytes": 12113,
+        "sha256": "3c32a2e56c7a0890820834cb8338cfe10576c0efa101cf9ff1c2e5c2cdec2ace"
+      }
+    },
+    {
+      "path": "scripts/test/automation-main-ui-draft-cadence.test.js",
+      "before": null,
+      "after": {
+        "mode": "100644",
+        "gitBlob": "aa0760245519b609cc2be8d76410d745ecbd2931",
+        "bytes": 9696,
+        "sha256": "8d1276237de5bc493a627cdeb3f8f6769db1e29cdcdc72d92bdc424c6e1eda57"
+      }
+    },
+    {
+      "path": "scripts/test/automation-main-workflow-history.test.js",
+      "before": null,
+      "after": {
+        "mode": "100644",
+        "gitBlob": "c30f23f49d1aedaaa979f9af5a778b391f4c274c",
+        "bytes": 9821,
+        "sha256": "98ba5e4ce0f6f9bdaf706352e62a22a3b4cd7cebb05aeea3e1c24d848cc6f920"
+      }
+    },
+    {
+      "path": "scripts/test/automation-main-x-read-write-ui.test.js",
+      "before": null,
+      "after": {
+        "mode": "100644",
+        "gitBlob": "ae42bcf93e26d209aa7b7caae171cd361d5f29b3",
+        "bytes": 6892,
+        "sha256": "9355cc4c672c305a38349323e732249a0d075a80a3aaa59e2ca9a85cf33fae63"
+      }
+    },
+    {
+      "path": "scripts/test/automation-marketplace-sql.test.js",
+      "before": {
+        "mode": "100644",
+        "gitBlob": "cea8050c3d5d20ef266be7709fc630d833a78094",
+        "bytes": 25083,
+        "sha256": "21dd321347c0c7de1733946b283c64a395790fff0697b9c1163cb300cdcab753"
+      },
+      "after": {
+        "mode": "100644",
+        "gitBlob": "a8df63b3cf7e4c1ff179270645c0a2045d7803dd",
+        "bytes": 25391,
+        "sha256": "e0ad872c05ef8acec9da353b44ef034864d3fefc50a3dc024dcd0f71d1cb32f8"
+      }
+    },
+    {
+      "path": "scripts/test/automation-monitor-workflow-cas-sql.test.js",
+      "before": {
+        "mode": "100644",
+        "gitBlob": "fef78317e3723285d1a9151f5aaf0fa29e16edfd",
+        "bytes": 25142,
+        "sha256": "68c168460e591a8ce44df3fbd8dd6558d504dab4d688702c6eb7c471f321340f"
+      },
+      "after": {
+        "mode": "100644",
+        "gitBlob": "fb82368a2c7f5eb55bef582149fb8a6e0a6185bc",
+        "bytes": 32148,
+        "sha256": "e0170abf799e953e7f3b55e52bb70db9d0b90442bfddd4234467f14dd3e33bd9"
+      }
+    },
+    {
+      "path": "scripts/test/automation-push-capacity-ui.test.js",
+      "before": {
+        "mode": "100644",
+        "gitBlob": "9233d4870bb5125a52f1cf10f97724d0f2674011",
+        "bytes": 39664,
+        "sha256": "e3878237275d43401d31907dce95624302398762f5b9247c7bff90d3a9a167c9"
+      },
+      "after": {
+        "mode": "100644",
+        "gitBlob": "26260d1329bc15e2cd460500fbee287437f0bcba",
+        "bytes": 39738,
+        "sha256": "dc444dc311ffbac8ffa40465866b02b16b4f6b8bd835f8d414f76767194c982f"
+      }
+    },
+    {
+      "path": "scripts/test/automation-test-db-connect.test.js",
+      "before": null,
+      "after": {
+        "mode": "100644",
+        "gitBlob": "0ff3d5a01d438216a3b75d57c846bd83d5f3ae8c",
+        "bytes": 7631,
+        "sha256": "b571b74bf0a963610cde79a60b553572b0f518e16f108ff369688609e670b3e3"
+      }
+    },
+    {
+      "path": "src/automation/api.js",
+      "before": {
+        "mode": "100644",
+        "gitBlob": "4a028ed3286a1f08074a1682a06602b971a03c1c",
+        "bytes": 26260,
+        "sha256": "f92e45ac6173b4ff79d16f98ed9e97a146381263c31582bb63dc75fc10533060"
+      },
+      "after": {
+        "mode": "100644",
+        "gitBlob": "ea79e3646c735c9275ff9d56ec32f610ef607fe7",
+        "bytes": 29429,
+        "sha256": "9535ddbaad8e2995d8e062f997559926494f58098ce69f83004a65df0c609ee4"
+      }
+    },
+    {
+      "path": "src/automation/flow-history.js",
+      "before": {
+        "mode": "100644",
+        "gitBlob": "f670663f1aa5289d61c0ec77aa2fcf8f8999bdbf",
+        "bytes": 8686,
+        "sha256": "fb4f255c35ff65025e7187d88fbc16c069a8e1a51fac25347c0b3bf8b96bac05"
+      },
+      "after": {
+        "mode": "100644",
+        "gitBlob": "56ccecb6558285ed498693abd0ef4d4a0696d9be",
+        "bytes": 26015,
+        "sha256": "aa1580814a0289b029a17a1805485391026a0b68ed8418a6250e1c637b95f6f4"
+      }
+    },
+    {
+      "path": "src/automation/flow-projector.js",
+      "before": {
+        "mode": "100644",
+        "gitBlob": "ab897d72ab0a699f0bb9b8bfe496428665502a66",
+        "bytes": 9377,
+        "sha256": "3f7893334eb5e3e851614c00f79e032635c526d56522c2f92f76c37f06ee1512"
+      },
+      "after": {
+        "mode": "100644",
+        "gitBlob": "6edabacb932566218dd9f0ae722edbb0d11fc15d",
+        "bytes": 10187,
+        "sha256": "4f8c63a56089c2984e54db52e624d52675243a5733dd12c2faf0797e518137a9"
+      }
+    },
+    {
+      "path": "src/automation/graph-store.js",
+      "before": {
+        "mode": "100644",
+        "gitBlob": "c4ff6af4626a00ec25c60dbb4ecb8367a9781686",
+        "bytes": 36239,
+        "sha256": "026136bf8e095e047aacbab5f9be8a2bca4919ddbc9e1e7b7a178327fcc80765"
+      },
+      "after": {
+        "mode": "100644",
+        "gitBlob": "2c0512cff35c6d991f26a17984d6fc80455f5212",
+        "bytes": 36947,
+        "sha256": "637914a3b5b9a5ea31cce4a8cfec940563a5d9a105de065736e28105d7c24853"
+      }
+    },
+    {
+      "path": "src/automation/history.js",
+      "before": {
+        "mode": "100644",
+        "gitBlob": "4dbfe7e5286aee64c53993fc487e310228394dc9",
+        "bytes": 16233,
+        "sha256": "5637d3d965e7f32f9cf7210a3ce98920cb2b40e5928ec5e7f0a6426b9b4b5e61"
+      },
+      "after": {
+        "mode": "100644",
+        "gitBlob": "acb50ac44370e9eee7ea23865f77b58fc5a06464",
+        "bytes": 16705,
+        "sha256": "37ae7b3a4e93b2f3e2451306a70fa81e651c5346f594b99377c5a390ab5a3c57"
+      }
+    },
+    {
+      "path": "src/automation/marketplace-core.js",
+      "before": {
+        "mode": "100644",
+        "gitBlob": "4c6cc963e0f1d3b12cf5b9314b1cb9eaba77afee",
+        "bytes": 43038,
+        "sha256": "8dd24c0333ce49389cb0e3a71a2bcd448e441cdba89cef5a11b8adc8335888c2"
+      },
+      "after": {
+        "mode": "100644",
+        "gitBlob": "0d5bbdec530b8c0884595b7d565ce11f5a1e45c4",
+        "bytes": 49969,
+        "sha256": "0c0a04dd8cb590c0801e1c20b6b46ea23ccc3d1a918f176d813c3ee4c4ad0bf9"
+      }
+    },
+    {
+      "path": "src/automation/queue.js",
+      "before": {
+        "mode": "100644",
+        "gitBlob": "1f286c39b146a28728621f295f7ca37c115664f8",
+        "bytes": 56708,
+        "sha256": "7d4123c5c15b50345681cb9ef17fbc3f9c851989b3eb95db82cc4ffd15a571a9"
+      },
+      "after": {
+        "mode": "100644",
+        "gitBlob": "df602c373f9af89f4691710b4df04663f433cacc",
+        "bytes": 61568,
+        "sha256": "1a6106b6493d3b1d9652dfd8289905c689ffd2d10cf6df30926e45cacd6a625c"
+      }
+    },
+    {
+      "path": "src/automation/service.js",
+      "before": {
+        "mode": "100644",
+        "gitBlob": "46a7a3b594ff86dfea73f90058f0c3ebf7da3152",
+        "bytes": 42555,
+        "sha256": "58d8bfd82966f5d18efeae9d494dcb408a178cc981ab26d2443441a1f9a97e30"
+      },
+      "after": {
+        "mode": "100644",
+        "gitBlob": "c1708fccc191ce0e9e4354b5dfede90af518edc2",
+        "bytes": 43529,
+        "sha256": "76efee6def6fc3bcc073d1dc9fda49592c415f763ea1b184612a8d1a22f9d1e6"
+      }
+    },
+    {
+      "path": "src/automation/workflow-deletion.js",
+      "before": {
+        "mode": "100644",
+        "gitBlob": "8b7c6afd2c1ae6ff68704be261408a43bf666a84",
+        "bytes": 7391,
+        "sha256": "440c3dc29b740783f128cc42e4c6d5a2aaccc2cda608239be5fa7106de4ef58f"
+      },
+      "after": {
+        "mode": "100644",
+        "gitBlob": "f8b8a82802791879fc55a7a2d433c3d2703b37c2",
+        "bytes": 7151,
+        "sha256": "9e0195e67f026e662dc9c4b3f102d65496d320a61e84acc279e5dcf452ff7c15"
+      }
+    }
+  ]
+}

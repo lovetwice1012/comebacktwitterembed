@@ -1,0 +1,61 @@
+{
+  "schemaVersion": 1,
+  "auditedAtJst": "2026-10-16",
+  "head": "2a000c89a293e2ee71ef0c579a63def2ff12cbdb",
+  "originMainMatches": true,
+  "productTreeClean": true,
+  "knownFindings": {
+    "total": 53,
+    "p1": 12,
+    "p2": 41,
+    "fixed": 53,
+    "notFixed": 0,
+    "inconclusive": 0
+  },
+  "newFindings": {
+    "p1": 0,
+    "p2": 10,
+    "items": [
+      { "id": "MAIN-UI-1", "priority": "P2", "title": "Cross-kind numeric monitor ID deletion clears an unrelated retained draft" },
+      { "id": "MAIN-UI-2", "alias": "MAIN-FRESH-1", "priority": "P2", "title": "Page-two cadence commit cannot refresh its monitor or CAS baseline" },
+      { "id": "MAIN-FRESH-2", "priority": "P2", "title": "Workflow revision history silently truncates after 100 versions" },
+      { "id": "MAIN-FRESH-3", "priority": "P2", "title": "Unrelated X receiver refresh discards a committed monitor mutation response" },
+      { "id": "MAIN-DATA-1", "priority": "P2", "title": "Push-capacity payment history mixes Square environments and merchants" },
+      { "id": "MAIN-DATA-2", "priority": "P2", "title": "Report resolution commits before its required audit record" },
+      { "id": "MAIN-POST-1", "priority": "P2", "title": "Pre-commit parent reads roll back committed admin CAS baselines" },
+      { "id": "MAIN-POST-2", "priority": "P2", "title": "Marketplace reports are not bound to the reported immutable edition" },
+      { "id": "MAIN-FRESH-4", "alias": "MAIN-RUNTIME-MIXED", "priority": "P2", "title": "Multi-job flow summary depends on unordered job row order" },
+      { "id": "MAIN-FRESH-5", "priority": "P2", "title": "Out-of-band job state changes do not refresh flow run history" }
+    ]
+  },
+  "acceptance": {
+    "files": 176,
+    "tests": 2066,
+    "passedFirstRun": 2065,
+    "failedFirstRun": 1,
+    "firstRunFailure": "MariaDB connect ETIMEDOUT before test assertion",
+    "failedFileRerun": { "tests": 8, "passed": 8, "failed": 0 },
+    "lint": { "root": "passed", "dashboard": "passed" },
+    "typecheck": { "dashboard": "passed", "rootWithTemporaryEmptyIgnoredConfig": "passed" }
+  },
+  "finalZeroFindingRounds": [
+    { "name": "round3-ui-data", "passed": 143, "failed": 0, "newP1": 0, "newP2": 0 },
+    { "name": "round3-data-api", "passed": 186, "failed": 0, "newP1": 0, "newP2": 0 },
+    { "name": "round4-runtime", "passed": 63, "failed": 0, "newP1": 0, "newP2": 0 },
+    { "name": "round4-cross-lane", "passed": 151, "failed": 0, "newP1": 0, "newP2": 0 },
+    { "name": "final-cross-seam", "passed": 118, "failed": 0, "newP1": 0, "newP2": 0 }
+  ],
+  "cleanup": {
+    "auditOwnedSchemasDropped": true,
+    "preExistingSchemasRetained": 7,
+    "productFilesModified": false
+  },
+  "notExercised": [
+    "real Discord delivery",
+    "new real X post delivery",
+    "OAuth",
+    "real Square payment",
+    "production database writes",
+    "redeployment"
+  ]
+}

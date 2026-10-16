@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="utf-8"?>
+<testsuites>
+	<testcase name="Independent SQL: uppercase source copy and lowercase package revoke share one workflow fence and current installation CAS" time="2.151643" classname="test" file="C:\Users\yussy\AppData\Local\Temp\main-reaudit-independent-case-fence-sql.cjs" failure="same CI database identity must not acquire independent workflow mutexes&#10;&#10;true !== false&#10;">
+		<failure type="testCodeFailure" message="same CI database identity must not acquire independent workflow mutexes&#10;&#10;true !== false">
+[Error [ERR_TEST_FAILURE]: same CI database identity must not acquire independent workflow mutexes
+
+true !== false
+] {
+  code: 'ERR_TEST_FAILURE',
+  failureType: 'testCodeFailure',
+  cause: AssertionError [ERR_ASSERTION]: same CI database identity must not acquire independent workflow mutexes
+  
+  true !== false
+  
+      at C:\Users\yussy\AppData\Local\Temp\main-reaudit-independent-case-fence-sql.cjs:36:47
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async fixture (eval at &lt;anonymous> (C:\Users\yussy\AppData\Local\Temp\main-reaudit-independent-case-fence-sql.cjs:11:35), &lt;anonymous>:94:9)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:387:3) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: true,
+    expected: false,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+}
+		</failure>
+	</testcase>
+	<testcase name="Independent SQL: case-fold-equal restored job run ID retains its actual v2 namespace lock without rewriting external data" time="1.893433" classname="test" file="C:\Users\yussy\AppData\Local\Temp\main-reaudit-independent-case-fence-sql.cjs" failure="attested case-fold-equal FK must retain namespace exclusion">
+		<failure type="testCodeFailure" message="attested case-fold-equal FK must retain namespace exclusion">
+[Error [ERR_TEST_FAILURE]: attested case-fold-equal FK must retain namespace exclusion] {
+  code: 'ERR_TEST_FAILURE',
+  failureType: 'testCodeFailure',
+  cause: AssertionError [ERR_ASSERTION]: attested case-fold-equal FK must retain namespace exclusion
+      at C:\Users\yussy\AppData\Local\Temp\main-reaudit-independent-case-fence-sql.cjs:49:2
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async fixture (eval at &lt;anonymous> (C:\Users\yussy\AppData\Local\Temp\main-reaudit-independent-case-fence-sql.cjs:11:35), &lt;anonymous>:94:9)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: '==',
+    diff: 'simple'
+  }
+}
+		</failure>
+	</testcase>
+	<!-- tests 2 -->
+	<!-- suites 0 -->
+	<!-- pass 0 -->
+	<!-- fail 2 -->
+	<!-- cancelled 0 -->
+	<!-- skipped 0 -->
+	<!-- todo 0 -->
+	<!-- duration_ms 4209.5536 -->
+</testsuites>

@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<testsuites>
+	<testcase name="MAIN-POST-1 real SQL coupon canonical CAS survives precommit success list response" time="2.380697" classname="test" file="C:\Users\yussy\.codex\worktrees\x-realtime-choice-20261014\comebacktwitterembed\scripts\test\automation-main-admin-cas-ui.test.js"/>
+	<testcase name="MAIN-POST-1 real SQL coupon canonical CAS survives precommit failure list response" time="2.120702" classname="test" file="C:\Users\yussy\.codex\worktrees\x-realtime-choice-20261014\comebacktwitterembed\scripts\test\automation-main-admin-cas-ui.test.js"/>
+	<testcase name="MAIN-POST-1 real SQL plan canonical CAS survives precommit success list response" time="2.588286" classname="test" file="C:\Users\yussy\.codex\worktrees\x-realtime-choice-20261014\comebacktwitterembed\scripts\test\automation-main-admin-cas-ui.test.js"/>
+	<testcase name="MAIN-POST-1 real SQL plan canonical CAS survives precommit failure list response" time="2.260072" classname="test" file="C:\Users\yussy\.codex\worktrees\x-realtime-choice-20261014\comebacktwitterembed\scripts\test\automation-main-admin-cas-ui.test.js"/>
+	<testcase name="MAIN-POST-1 coupon same IDs in a new API context adopt its lower canonical revision" time="0.133948" classname="test" file="C:\Users\yussy\.codex\worktrees\x-realtime-choice-20261014\comebacktwitterembed\scripts\test\automation-main-admin-cas-ui.test.js"/>
+	<testcase name="MAIN-POST-1 plan same IDs in a new API context adopt its lower canonical revision" time="0.160095" classname="test" file="C:\Users\yussy\.codex\worktrees\x-realtime-choice-20261014\comebacktwitterembed\scripts\test\automation-main-admin-cas-ui.test.js"/>
+	<testcase name="MAIN-UI-2 committed cadence null read requires explicit recovery before the next write" time="0.149397" classname="test" file="C:\Users\yussy\.codex\worktrees\x-realtime-choice-20261014\comebacktwitterembed\scripts\test\automation-main-cadence-read-recovery.test.js"/>
+	<testcase name="MAIN-UI-2 committed cadence throw read requires explicit recovery before the next write" time="0.031606" classname="test" file="C:\Users\yussy\.codex\worktrees\x-realtime-choice-20261014\comebacktwitterembed\scripts\test\automation-main-cadence-read-recovery.test.js"/>
+	<testcase name="MAIN-UI-1 typed monitor draft survives delete-price" time="0.344649" classname="test" file="C:\Users\yussy\.codex\worktrees\x-realtime-choice-20261014\comebacktwitterembed\scripts\test\automation-main-ui-draft-cadence.test.js"/>
+	<testcase name="MAIN-UI-1 typed monitor draft survives failed-delete" time="0.202078" classname="test" file="C:\Users\yussy\.codex\worktrees\x-realtime-choice-20261014\comebacktwitterembed\scripts\test\automation-main-ui-draft-cadence.test.js"/>
+	<testcase name="MAIN-UI-1 typed monitor draft survives toggle-price" time="0.194381" classname="test" file="C:\Users\yussy\.codex\worktrees\x-realtime-choice-20261014\comebacktwitterembed\scripts\test\automation-main-ui-draft-cadence.test.js"/>
+	<testcase name="MAIN-UI-1 typed monitor draft survives delete-auto" time="0.129122" classname="test" file="C:\Users\yussy\.codex\worktrees\x-realtime-choice-20261014\comebacktwitterembed\scripts\test\automation-main-ui-draft-cadence.test.js"/>
+	<testcase name="MAIN-UI-2 page-two cadence save adopts fresh baseline and supports another CAS save" time="0.729906" classname="test" file="C:\Users\yussy\.codex\worktrees\x-realtime-choice-20261014\comebacktwitterembed\scripts\test\automation-main-ui-draft-cadence.test.js"/>
+	<testcase name="MAIN-FRESH-2 SQL history reaches every old edition with stable keysets, legacy arrays, restart and access fences" time="2.213568" classname="test" file="C:\Users\yussy\.codex\worktrees\x-realtime-choice-20261014\comebacktwitterembed\scripts\test\automation-main-workflow-history.test.js"/>
+	<testcase name="MAIN-FRESH-2 actual React+SQL paged history failure recovers without losing pages and restores edition1" time="3.517479" classname="test" file="C:\Users\yussy\.codex\worktrees\x-realtime-choice-20261014\comebacktwitterembed\scripts\test\automation-main-workflow-history.test.js"/>
+	<testcase name="MAIN-FRESH-2 actual React+SQL paged history cycle recovers without losing pages and restores edition1" time="3.382454" classname="test" file="C:\Users\yussy\.codex\worktrees\x-realtime-choice-20261014\comebacktwitterembed\scripts\test\automation-main-workflow-history.test.js"/>
+	<testcase name="MAIN-FRESH-2 actual React+SQL paged history concurrent recovers without losing pages and restores edition1" time="2.597520" classname="test" file="C:\Users\yussy\.codex\worktrees\x-realtime-choice-20261014\comebacktwitterembed\scripts\test\automation-main-workflow-history.test.js"/>
+	<testcase name="MAIN-FRESH-2 late history page is discarded after workflow change" time="2.692466" classname="test" file="C:\Users\yussy\.codex\worktrees\x-realtime-choice-20261014\comebacktwitterembed\scripts\test\automation-main-workflow-history.test.js"/>
+	<testcase name="MAIN-FRESH-2 late history page is discarded after viewer change" time="2.895557" classname="test" file="C:\Users\yussy\.codex\worktrees\x-realtime-choice-20261014\comebacktwitterembed\scripts\test\automation-main-workflow-history.test.js"/>
+	<testcase name="MAIN-FRESH-2 late history page is discarded after close change" time="2.562302" classname="test" file="C:\Users\yussy\.codex\worktrees\x-realtime-choice-20261014\comebacktwitterembed\scripts\test\automation-main-workflow-history.test.js"/>
+	<testcase name="MAIN-FRESH-3 immediate receiver read preserves canonical X edit response" time="0.242432" classname="test" file="C:\Users\yussy\.codex\worktrees\x-realtime-choice-20261014\comebacktwitterembed\scripts\test\automation-main-x-read-write-ui.test.js"/>
+	<testcase name="MAIN-FRESH-3 late receiver read preserves canonical X edit response" time="0.093605" classname="test" file="C:\Users\yussy\.codex\worktrees\x-realtime-choice-20261014\comebacktwitterembed\scripts\test\automation-main-x-read-write-ui.test.js"/>
+	<testcase name="MAIN-FRESH-3 immediate receiver read preserves canonical X create response" time="0.075133" classname="test" file="C:\Users\yussy\.codex\worktrees\x-realtime-choice-20261014\comebacktwitterembed\scripts\test\automation-main-x-read-write-ui.test.js"/>
+	<testcase name="MAIN-FRESH-3 late receiver read preserves canonical X create response" time="0.068990" classname="test" file="C:\Users\yussy\.codex\worktrees\x-realtime-choice-20261014\comebacktwitterembed\scripts\test\automation-main-x-read-write-ui.test.js"/>
+	<testcase name="MAIN-FRESH-3 immediate receiver read preserves canonical X stop response" time="0.052983" classname="test" file="C:\Users\yussy\.codex\worktrees\x-realtime-choice-20261014\comebacktwitterembed\scripts\test\automation-main-x-read-write-ui.test.js"/>
+	<testcase name="MAIN-FRESH-3 late receiver read preserves canonical X stop response" time="0.051272" classname="test" file="C:\Users\yussy\.codex\worktrees\x-realtime-choice-20261014\comebacktwitterembed\scripts\test\automation-main-x-read-write-ui.test.js"/>
+	<testcase name="MAIN-FRESH-3 immediate receiver read preserves canonical X resume response" time="0.051281" classname="test" file="C:\Users\yussy\.codex\worktrees\x-realtime-choice-20261014\comebacktwitterembed\scripts\test\automation-main-x-read-write-ui.test.js"/>
+	<testcase name="MAIN-FRESH-3 late receiver read preserves canonical X resume response" time="0.051719" classname="test" file="C:\Users\yussy\.codex\worktrees\x-realtime-choice-20261014\comebacktwitterembed\scripts\test\automation-main-x-read-write-ui.test.js"/>
+	<!-- tests 28 -->
+	<!-- suites 0 -->
+	<!-- pass 28 -->
+	<!-- fail 0 -->
+	<!-- cancelled 0 -->
+	<!-- skipped 0 -->
+	<!-- todo 0 -->
+	<!-- duration_ms 36051.7845 -->
+</testsuites>

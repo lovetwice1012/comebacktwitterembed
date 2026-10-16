@@ -1,0 +1,163 @@
+{
+  "generatedAt": "2026-10-16T09:23:49.226Z",
+  "reviewer": "reaudit_independent_review",
+  "status": "READ-ONLY-CAUSAL-BOUNDARY-CONFIRMED-OS-ROOT-CAUSE-UNPROVEN",
+  "scope": "Windows local disposable MariaDB TCP admission; no current open aggregate XML read",
+  "confirmed": {
+    "historicalFailure": {
+      "source": "C:\\Users\\yussy\\.codex\\worktrees\\x-realtime-choice-20261014\\comebacktwitterembed\\docs\\audits\\supporter-readiness-2026-10-16\\main-reaudit-evidence\\data-adjacent-123-diagnostic.xml",
+      "sha256": "98f7d6237f4efb7dba5cb6d3ba8b64b9a5ddb4f95cef1ded9f5d6e971b048005",
+      "test": "donor metadata migration is additive and replay-safe on both legacy and current schemas",
+      "wallDurationMs": 321.311,
+      "code": "ETIMEDOUT",
+      "errno": -4039,
+      "syscall": "connect",
+      "address": "127.0.0.1",
+      "port": 33621,
+      "fatal": true,
+      "stackHead": "TCPConnectWrap.afterConnect (node:net:2021:16)",
+      "factoryPhase": "createTestDatabase schema DDL construction, acquiring a pool connection before that SQL/fixture application assertions",
+      "notClaimed": "No inference that this older failure and the current three fast failures share the same native cause before the current full XML closes"
+    },
+    "nodeRuntime": {
+      "node": "24.21.0",
+      "libuv": "1.52.1",
+      "execPath": "C:\\Users\\yussy\\AppData\\Local\\cbte-runtimes\\node-v24.21.0-win-x64\\node-v24.21.0-win-x64\\node.exe",
+      "nodeOptions": null,
+      "autoSelectFamily": true,
+      "familyAttemptTimeoutMs": 250,
+      "nativeErrnoName": "ETIMEDOUT",
+      "builtinNetSha256": "c7590a582389b00fbb48c78c417343a3fb58b4a900029f00b74e313098f61e87",
+      "ipLiteralFastPathLine": 1714,
+      "ipLiteralFastPath": "  const addressType = isIP(host);\r\n  if (addressType) {\r\n    // An adopted BoundSocket needs no lookup: issue connect(2) in-tick so the\r\n    // kernel-resolved concrete source address is observable synchronously.\r\n    // Connection failures are still reported via a deferred 'error' event.\r\n    if (self[kBoundSource]) {\r\n      defaultTriggerAsyncIdScope(\r\n        self[async_id_symbol],\r\n        internalConnect,\r\n        self, host, port, addressType, localAddress, localPort,\r\n      );\r\n      return;\r\n    }\r\n    defaultTriggerAsyncIdScope(self[async_id_symbol], process.nextTick, () => {\r\n      if (self.connecting)\r\n        defaultTriggerAsyncIdScope(\r\n          self[async_id_symbol],\r\n          internalConnect,\r\n          self, host, port, addressType, localAddress, localPort,\r\n        );\r\n    });\r\n    return;\r\n  }\r\n\r\n  if (options.lookup != null)\r\n    validateFunction(options.lookup, 'options.lookup');\r\n\r",
+      "conclusion": "For numeric127.0.0.1 the builtin returns through internalConnect before DNS/multiple-family attempts. The default250ms autoSelectFamily attempt timer does not apply."
+    },
+    "mysqlDriver": {
+      "defaultConnectTimeoutMs": 10000,
+      "timeoutPath": "Connection._handleConnectTimeout constructs Error(connect ETIMEDOUT), sets code/syscall, and destroys socket",
+      "nativePath": "Observed historical error has numeric native errno/address/port and TCPConnectWrap.afterConnect rather than _handleConnectTimeout",
+      "poolFailure": "Pool.getConnection purges a failed connection before callback(err); acquiring a new connection precedes SQL dispatch/BEGIN"
+    },
+    "windowsObservations": {
+      "serverPid": 95728,
+      "serverExecutable": "mariadbd.exe",
+      "listen": {
+        "address": "127.0.0.1",
+        "port": 33621,
+        "pid": 95728
+      },
+      "dynamicIpv4Tcp": {
+        "startPort": 49152,
+        "numberOfPorts": 16384
+      },
+      "observedDbTimeWaitCounts": [
+        92,
+        95,
+        69
+      ],
+      "observedEstablishedDbConnections": [
+        2
+      ],
+      "initialRtoMs": 1000,
+      "maxSynRetransmissions": 4,
+      "nodeOptions": null,
+      "conclusion": "Snapshots show a live listener and no current evidence of ephemeral-port exhaustion. They cannot establish backlog, WFP/filter, resource or antivirus behavior at the original failure instant."
+    }
+  },
+  "nativeCausalBoundary": {
+    "officialNodeVersionSource": "https://raw.githubusercontent.com/nodejs/node/v24.21.0/deps/uv/src/win/tcp.c",
+    "connectCompletionLines": "1174-1206",
+    "behavior": "Windows completion/delayed error is passed through uv_translate_sys_error to the connect callback; no300ms timer in this completion routine",
+    "errorMappingSource": "https://raw.githubusercontent.com/nodejs/node/v24.21.0/deps/uv/src/win/error.c",
+    "errorMappingLines": "160-161",
+    "mapping": "Both ERROR_SEM_TIMEOUT and WSAETIMEDOUT map to UV_ETIMEDOUT. The JS errno alone cannot identify which native Windows error occurred.",
+    "actualOsComponentCause": "UNPROVEN",
+    "excludedExplanations": [
+      "250ms dual-stack family-autoselection timer for this IPv4 literal",
+      "mysql configured10-second timer as the source of the historical321ms native afterConnect error",
+      "SQL assertion/migration logic as source of the historical TCP connect failure"
+    ],
+    "notProven": [
+      "Backlog/admission saturation",
+      "Port exhaustion at the failure instant",
+      "WFP/firewall/filter/antivirus involvement",
+      "A Node or MariaDB defect"
+    ]
+  },
+  "currentFullRun": {
+    "execSession": 47219,
+    "phase": "still running during this investigation",
+    "currentOpenXmlRead": false,
+    "firstThreeFastFailureStacks": "pending closed evidence; not classified by assumption",
+    "separateFourthRegression": {
+      "source": "Root/runtime-author read-only investigation",
+      "description": "legacy held parent becomes failed while aggregated child was absent from initial eligible cleanup roster; child only updates on the next claim",
+      "classification": "genuine behavior regression; never treat it as transient TCP admission or retry the assertion"
+    }
+  },
+  "recommendedNextEvidenceAfterFullClose": [
+    "Read exact current errors/errno/syscall/stack and factory phase from the closed XML, preserving all original failures",
+    "If native pre-handshake connect matches, record bounded actual connect events: monotonic start/connect/error timestamps, bytesRead/bytesWritten, local port, configured attempt deadline and exact errno; do not log credentials/query payloads",
+    "Read server admission counters after the current suite: Connections, Aborted_connects, connection errors, Threads_connected/Max_used_connections and max_connections/back_log; correlate with event times",
+    "If low-level attribution remains needed, use a separately approved, tightly filtered loopback/33621 TCP/IP or WFP trace; a healthy listener snapshot alone cannot identify the original drop"
+  ],
+  "proposedMitigationNotImplemented": {
+    "boundary": "test-only pool.getConnection new native TCP admission before SQL/BEGIN",
+    "maxAttempts": 3,
+    "waitMs": [
+      100,
+      250
+    ],
+    "eligibility": "Windows disposable127.0.0.1 explicit nonproduction port; code ETIMEDOUT, errno-4039, syscall connect, exact address/port; original failed connection already purged",
+    "recordEveryRecovery": true,
+    "doNotRetry": [
+      "SQL statements",
+      "BEGIN/COMMIT/ROLLBACK uncertainty",
+      "Assertions or whole tests",
+      "Authentication/configuration errors",
+      "POOL_CLOSED",
+      "Protocol/handshake timeout without matching native connect evidence",
+      "ER_LOCK_DEADLOCK inside application SQL"
+    ],
+    "acceptance": "A bounded acquire recovery is dependency resilience, not proof of an unmeasured OS root cause and not permission to relabel the prior failed suite as passed."
+  },
+  "sourceHashes": [
+    {
+      "file": "scripts/lib/automation-test-db.js",
+      "sha256": "e08c249ca7132a16ee65e54444dba3e2b25451e288b3ad6b71f327a408c6b488"
+    },
+    {
+      "file": "node_modules/mysql/lib/ConnectionConfig.js",
+      "sha256": "8885f1f0e1c11dc90ee160b0f5096617c3d7f7dcd98d4e8c2335fd12f43ade05"
+    },
+    {
+      "file": "node_modules/mysql/lib/Connection.js",
+      "sha256": "5461ef37661de026c8e0629e801c97fb4fd98b832cc6507193e6d46cff7b6c14"
+    },
+    {
+      "file": "node_modules/mysql/lib/Pool.js",
+      "sha256": "b6e8d830822418442dd73e3d4280977fe802c419e99c96f43e3723baa28571dc"
+    }
+  ],
+  "references": {
+    "nodeTcp": "https://raw.githubusercontent.com/nodejs/node/v24.21.0/deps/uv/src/win/tcp.c",
+    "nodeUvError": "https://raw.githubusercontent.com/nodejs/node/v24.21.0/deps/uv/src/win/error.c",
+    "windowsDiagnosis": "https://learn.microsoft.com/en-us/troubleshoot/windows-client/networking/tcp-ip-connectivity-issues-troubleshooting",
+    "windowsConnectEx": "https://learn.microsoft.com/en-us/windows/win32/api/mswsock/nc-mswsock-lpfn_connectex"
+  },
+  "operations": {
+    "sqlConnectionsOpened": 0,
+    "testsRun": 0,
+    "coreEdits": 0,
+    "mariaDbRestartOrReconfiguration": false,
+    "unknownSchemaCleanup": false,
+    "openRootXmlRead": false,
+    "reportFilesOnly": true,
+    "ownReadOnlyNetstatReader": {
+      "pid": 97712,
+      "verifiedParentPid": 70244,
+      "stopped": true,
+      "reason": "Avoided leaving a DNS-resolving statistics reader running; MariaDB process untouched"
+    }
+  }
+}

@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<testsuites>
+	<testcase name="package stop namespace inventory preserves both historical workflows without locking mutable monitor revocation rows first" time="2.620646" classname="test" file="C:\Users\yussy\.codex\worktrees\x-realtime-choice-20261014\comebacktwitterembed\scripts\test\automation-flow-state-reconciliation-sql.test.js" failure="[&amp;quot;fulfilled&amp;quot;,&amp;quot;ER_LOCK_DEADLOCK&amp;quot;]">
+		<failure type="testCodeFailure" message="[&amp;quot;fulfilled&amp;quot;,&amp;quot;ER_LOCK_DEADLOCK&amp;quot;]">
+[Error [ERR_TEST_FAILURE]: ["fulfilled","ER_LOCK_DEADLOCK"]] {
+  code: 'ERR_TEST_FAILURE',
+  failureType: 'testCodeFailure',
+  cause: AssertionError [ERR_ASSERTION]: ["fulfilled","ER_LOCK_DEADLOCK"]
+      at fixture.multiple (C:\Users\yussy\.codex\worktrees\x-realtime-choice-20261014\comebacktwitterembed\scripts\test\automation-flow-state-reconciliation-sql.test.js:333:9)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async fixture (C:\Users\yussy\.codex\worktrees\x-realtime-choice-20261014\comebacktwitterembed\scripts\test\automation-flow-state-reconciliation-sql.test.js:69:9)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:387:3) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: '==',
+    diff: 'simple'
+  }
+}
+		</failure>
+	</testcase>
+	<!-- ["fulfilled","ER_LOCK_DEADLOCK"] -->
+	<!-- tests 1 -->
+	<!-- suites 0 -->
+	<!-- pass 0 -->
+	<!-- fail 1 -->
+	<!-- cancelled 0 -->
+	<!-- skipped 0 -->
+	<!-- todo 0 -->
+	<!-- duration_ms 2747.0596 -->
+</testsuites>

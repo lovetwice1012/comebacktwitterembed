@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<testsuites>
+	<testcase name="Independent MAIN-FRESH-2: actual SQL ownership loss after history SELECT prevents both old-client and paged disclosure" time="2.143750" classname="test" file="C:\Users\yussy\AppData\Local\Temp\main-reaudit-independent-boundaries.cjs"/>
+	<testcase name="Independent MAIN-POST-2/DATA-2: racing same-edition reason rewrite and resolve never resolves an unseen reason" time="2.451590" classname="test" file="C:\Users\yussy\AppData\Local\Temp\main-reaudit-independent-boundaries.cjs"/>
+	<testcase name="Independent MAIN-DATA-1: malformed financial cursors never cause payment SQL reads or fallback" time="0.010504" classname="test" file="C:\Users\yussy\AppData\Local\Temp\main-reaudit-independent-boundaries.cjs"/>
+	<!-- tests 3 -->
+	<!-- suites 0 -->
+	<!-- pass 3 -->
+	<!-- fail 0 -->
+	<!-- cancelled 0 -->
+	<!-- skipped 0 -->
+	<!-- todo 0 -->
+	<!-- duration_ms 4713.5018 -->
+</testsuites>

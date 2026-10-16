@@ -1,0 +1,9 @@
+# 追加10件：owner順序テスト修正後の独立承認
+
+固定source `07696234f4a8b57c123b7748b36366d7a7f1e3e2` の判定は **CLEAN**。f915からの変更は、製品ASTが同一の3定義の整形と、旧fixtureの待機循環を置き換えたテストの2ファイルです。元の基準から変更した30ファイルのGit原文と作業ファイルを固定しました。
+
+独立実行は21/21成功、failure/skip/cancel/todoは0です。guard先行の0送信、worker先行の1送信、実SQLの2行deadlockでwire前rollback、その後のfresh leaseで1度だけ送信する経路とCAS・receipt・releaseを確認しました。64件は個別PK UPDATEであり、ER例外を模擬していません。通知transportは模擬、DB・service・queue・runnerは実装を使用しています。
+
+旧f915の全体実行19271は失敗として保持します。今回の21成功や過去のfocused件数を全体結果へ合算しません。独立schemaの不存在も読み取り確認済みです。rootの新しい184ファイル全体テスト、本番・OAuth・X→Discord実着信・実Square決済とは判定を分けます。
+
+v2では独立AST serializerのcallbackをvoidへ修正し、全ASTの一致を再計算しました。前版はcallbackの返り値で走査が早期停止していました。rootの既存AST proofは最初から正しいvoid callbackです。SQL21件の結果と製品sourceには変更ありません。前版報告も上書きせず保持しています。

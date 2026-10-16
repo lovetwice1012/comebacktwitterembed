@@ -1,0 +1,196 @@
+{
+  "createdAt": "2026-10-16T08:09:59.282Z",
+  "reviewer": "reaudit_independent_review",
+  "baseline": "2a000c89a293e2ee71ef0c579a63def2ff12cbdb",
+  "result": "CLEAN-for-8-frozen-UI-data-IDs",
+  "ids": [
+    "MAIN-UI-1",
+    "MAIN-UI-2",
+    "MAIN-FRESH-2",
+    "MAIN-FRESH-3",
+    "MAIN-POST-1",
+    "MAIN-DATA-1",
+    "MAIN-DATA-2",
+    "MAIN-POST-2"
+  ],
+  "runtimeIdsPending": [
+    "MAIN-FRESH-4",
+    "MAIN-FRESH-5"
+  ],
+  "findings": [],
+  "sourceFreeze": [
+    {
+      "file": "dashboard/components/automation/monitor-manager.tsx",
+      "sha256": "080eb3be855ca7ac6c30d4926e590cc2825c8d5245f368af31a4fbb82f4f84f7",
+      "observedSha256": "080eb3be855ca7ac6c30d4926e590cc2825c8d5245f368af31a4fbb82f4f84f7"
+    },
+    {
+      "file": "dashboard/components/automation/monitor-cadence-editor.tsx",
+      "sha256": "2fc1bc7224cc79905c6e1c06fa3b837f9a116987c42942da1fcbcb3f5f870286",
+      "observedSha256": "2fc1bc7224cc79905c6e1c06fa3b837f9a116987c42942da1fcbcb3f5f870286"
+    },
+    {
+      "file": "dashboard/components/automation/x-monitor-manager.tsx",
+      "sha256": "5df715aa48c20053f2bab0e9962bf612f5ea5b651081266b254f085f7a463295",
+      "observedSha256": "5df715aa48c20053f2bab0e9962bf612f5ea5b651081266b254f085f7a463295"
+    },
+    {
+      "file": "dashboard/components/automation/automation-workspace.tsx",
+      "sha256": "bb8c715aec34a4a55939eed39adea2121664e3e8b100da7771e071a1b4e80969",
+      "observedSha256": "bb8c715aec34a4a55939eed39adea2121664e3e8b100da7771e071a1b4e80969"
+    },
+    {
+      "file": "dashboard/components/admin/square-commerce-manager.tsx",
+      "sha256": "898607fdc8030dd0935ef218d8ad00318c2a364bd89eae057cb27f3919f6ecec",
+      "observedSha256": "898607fdc8030dd0935ef218d8ad00318c2a364bd89eae057cb27f3919f6ecec"
+    },
+    {
+      "file": "dashboard/components/admin/notification-plan-manager.tsx",
+      "sha256": "492151e1327a58fea40b7603a0bc3c859362c29d269fa7fd5da550d3f18a444f",
+      "observedSha256": "492151e1327a58fea40b7603a0bc3c859362c29d269fa7fd5da550d3f18a444f"
+    },
+    {
+      "file": "src/automation/service.js",
+      "sha256": "0a69bb5feb96bd2218933b2070bc89861f4b6c4b356b1f272f76d165956d4573",
+      "observedSha256": "0a69bb5feb96bd2218933b2070bc89861f4b6c4b356b1f272f76d165956d4573"
+    },
+    {
+      "file": "scripts/test/automation-main-ui-draft-cadence.test.js",
+      "sha256": "8d1276237de5bc493a627cdeb3f8f6769db1e29cdcdc72d92bdc424c6e1eda57",
+      "observedSha256": "8d1276237de5bc493a627cdeb3f8f6769db1e29cdcdc72d92bdc424c6e1eda57"
+    },
+    {
+      "file": "scripts/test/automation-main-cadence-read-recovery.test.js",
+      "sha256": "54a53c067687e1e874814ef1d3bf714f0e9c25dedf19ff58ae26b12df5000d93",
+      "observedSha256": "54a53c067687e1e874814ef1d3bf714f0e9c25dedf19ff58ae26b12df5000d93"
+    },
+    {
+      "file": "scripts/test/automation-main-x-read-write-ui.test.js",
+      "sha256": "9355cc4c672c305a38349323e732249a0d075a80a3aaa59e2ca9a85cf33fae63",
+      "observedSha256": "9355cc4c672c305a38349323e732249a0d075a80a3aaa59e2ca9a85cf33fae63"
+    },
+    {
+      "file": "scripts/test/automation-main-admin-cas-ui.test.js",
+      "sha256": "62fb82064c19c19c10e19d22747a85fc644a7c796466c3ca47ea25b98e68935f",
+      "observedSha256": "62fb82064c19c19c10e19d22747a85fc644a7c796466c3ca47ea25b98e68935f"
+    },
+    {
+      "file": "scripts/test/automation-main-workflow-history.test.js",
+      "sha256": "98ba5e4ce0f6f9bdaf706352e62a22a3b4cd7cebb05aeea3e1c24d848cc6f920",
+      "observedSha256": "98ba5e4ce0f6f9bdaf706352e62a22a3b4cd7cebb05aeea3e1c24d848cc6f920"
+    },
+    {
+      "file": "src/automation/api.js",
+      "sha256": "846f6a36d3046fd1685ee015051af819e959302ec867408348fcde6e56e01e8d",
+      "observedSha256": "846f6a36d3046fd1685ee015051af819e959302ec867408348fcde6e56e01e8d"
+    },
+    {
+      "file": "src/automation/marketplace-core.js",
+      "sha256": "c57e2ffbde2e4b5e3dda6747932af6e5dd9430ee034e8b7ee02700cee6409732",
+      "observedSha256": "c57e2ffbde2e4b5e3dda6747932af6e5dd9430ee034e8b7ee02700cee6409732"
+    },
+    {
+      "file": "dashboard/components/automation/marketplace-manager.tsx",
+      "sha256": "d18aee7fe5573809e253d919f71308fcf539ffd22dc29934a79413b6e5cecd23",
+      "observedSha256": "d18aee7fe5573809e253d919f71308fcf539ffd22dc29934a79413b6e5cecd23"
+    },
+    {
+      "file": "dashboard/components/admin/push-capacity-diagnostics.tsx",
+      "sha256": "4c478fde8e6db83e620664b23fa9c7bfcf4a1a29cde4223c8eca7e2fa85527ea",
+      "observedSha256": "4c478fde8e6db83e620664b23fa9c7bfcf4a1a29cde4223c8eca7e2fa85527ea"
+    },
+    {
+      "file": "scripts/test/automation-main-data-revalidation-sql.test.js",
+      "sha256": "e6a81fb538c74e6360df22b12346f1376e5339326f2463b14d53b00997fd8774",
+      "observedSha256": "e6a81fb538c74e6360df22b12346f1376e5339326f2463b14d53b00997fd8774"
+    },
+    {
+      "file": "scripts/test/automation-main-data-revalidation-ui.test.js",
+      "sha256": "3c32a2e56c7a0890820834cb8338cfe10576c0efa101cf9ff1c2e5c2cdec2ace",
+      "observedSha256": "3c32a2e56c7a0890820834cb8338cfe10576c0efa101cf9ff1c2e5c2cdec2ace"
+    },
+    {
+      "file": "scripts/test/automation-marketplace-sql.test.js",
+      "sha256": "e0ad872c05ef8acec9da353b44ef034864d3fefc50a3dc024dcd0f71d1cb32f8",
+      "observedSha256": "e0ad872c05ef8acec9da353b44ef034864d3fefc50a3dc024dcd0f71d1cb32f8"
+    },
+    {
+      "file": "scripts/test/automation-push-capacity-ui.test.js",
+      "sha256": "dc444dc311ffbac8ffa40465866b02b16b4f6b8bd835f8d414f76767194c982f",
+      "observedSha256": "dc444dc311ffbac8ffa40465866b02b16b4f6b8bd835f8d414f76767194c982f"
+    }
+  ],
+  "tests": {
+    "focused": {
+      "files": 7,
+      "tests": 43,
+      "pass": 43,
+      "fail": 0,
+      "skipped": 0
+    },
+    "independentBoundaries": {
+      "tests": 3,
+      "pass": 3,
+      "fail": 0,
+      "skipped": 0,
+      "checks": [
+        "history old-client and paged SELECT followed by ownership loss returns404",
+        "five real SQL simultaneous same-edition reason edits/resolves leave new reason open and require current CAS",
+        "malformed grant/payment cursors reject before payment SELECT without unscoped fallback"
+      ]
+    },
+    "originalIndependentFixture": {
+      "tests": 3,
+      "pass": 2,
+      "fail": 1,
+      "classification": "invalid over-strong fixture assumption, not product failure",
+      "explanation": "The payment cursor is validated after the separately scoped grant SELECT. Initial stub rejected any SQL. Corrected stub allows grant SQL and asserts zero payment SQL reads; original fixture/XML retained."
+    }
+  },
+  "artifacts": [
+    {
+      "file": "C:\\Users\\yussy\\AppData\\Local\\Temp\\main-reaudit-independent-8-ids.xml",
+      "sha256": "cca4aeb4fcf1606756c4ae6a9bcaeb125c1c78ae73971ffc0936e37fcfffa686"
+    },
+    {
+      "file": "C:\\Users\\yussy\\AppData\\Local\\Temp\\main-reaudit-independent-boundaries.cjs",
+      "sha256": "bb9e9fe3693038cbe83b5e30607fe5d1ce426bcef419a86f2547c5f3e81993fc"
+    },
+    {
+      "file": "C:\\Users\\yussy\\AppData\\Local\\Temp\\main-reaudit-independent-boundaries-final.xml",
+      "sha256": "8b936b9d44b6c4a9f1b2eda2f3e8b57ad5e707b0721da9955af8c0d377745fea"
+    },
+    {
+      "file": "C:\\Users\\yussy\\AppData\\Local\\Temp\\main-reaudit-independent-boundaries-first-fixture.cjs",
+      "sha256": "0310ddf61d483c36d66f86fa9b108a7b2757e4e4da99df52da607bfaa7bedb47"
+    },
+    {
+      "file": "C:\\Users\\yussy\\AppData\\Local\\Temp\\main-reaudit-independent-boundaries.xml",
+      "sha256": "29bee38391bc3e3799464ba1bdf1d5f2aa6cd1d7e3d28f5dc034a9bc9a7ecd67"
+    }
+  ],
+  "staticReview": [
+    "(kind,id) draft comparison and delete failure preservation",
+    "page-two cadence canonical revision and postcommit read recovery",
+    "workflow history keysets, selected-revision cutoff, cursor cycle rejection and context cancellation",
+    "X write generation separate from receiver refresh and API/editor context changes",
+    "plan/coupon canonical responses fence old parent reads and same-ID new API can adopt lower timestamps",
+    "Square environment/merchant/owner are in SQL scope and cursor filter, paused credentials preserve scoped local history",
+    "resolve state and report.resolve audit share transaction and CAS timestamp is monotonic",
+    "reports pin immutable version/checksum; exact previously reported edition is available only via admin report inspection after private/withdrawn/revoked changes"
+  ],
+  "limitations": [
+    "runtime2 source still being finalized, not accepted by this 8-ID report",
+    "root immutable aggregate pending",
+    "React jsdom and disposable MariaDB only; browser layout not rerun",
+    "real OAuth, Discord/X delivery, Square payments and production not exercised"
+  ],
+  "operations": {
+    "repoSourceWrites": false,
+    "gitWrites": false,
+    "productionWrites": false,
+    "realProviderRequests": false,
+    "unknownSchemasTouched": false,
+    "sharedDbReconfigured": false
+  }
+}

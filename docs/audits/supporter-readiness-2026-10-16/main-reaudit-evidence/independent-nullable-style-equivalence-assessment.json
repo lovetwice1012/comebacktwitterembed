@@ -1,0 +1,910 @@
+{
+  "generatedAt": "2026-10-16T10:20:09.021Z",
+  "reviewer": "reaudit_independent_review",
+  "status": "NULLABLE-FORMAT-CANDIDATE-RUNTIME-TYPE-EQUIVALENCE-CONFIRMED-ACCEPTANCE-CONDITIONAL",
+  "testsExecutedRevision": "d2e792d30a44723e603869b27970b05597d51a9d",
+  "finalCandidateRevision": null,
+  "finalCandidateFile": "C:\\Users\\yussy\\AppData\\Local\\Temp\\cbte-flow-history-style-d2-20261016\\nullable-final\\flow-history.candidate.js",
+  "baselineSha256": "60ff0447147e5ae84e15108c14e5883f4d5092969cd652549dffde67b7163824",
+  "candidateSha256": "aa1580814a0289b029a17a1805485391026a0b68ed8418a6250e1c637b95f6f4",
+  "independentComparison": {
+    "espree": {
+      "equal": true,
+      "version": "10.4.0",
+      "normalizedSha256": "837f0eee17a6377ca2bde77090c5991c993b100480d56428b30852d9d3693dae",
+      "omissions": [
+        "positions/comments/tokens",
+        "Literal.raw quote spelling only"
+      ],
+      "templateRawCookedAndRegexRetained": true
+    },
+    "typescript": {
+      "equal": true,
+      "version": "5.9.3",
+      "oldNodes": 2649,
+      "newNodes": 2653,
+      "oldParentheses": 6,
+      "newParentheses": 10,
+      "normalization": "ParenthesizedExpression wrapper only; complete void-callback traversal; runtime scope flags/text/operators retained"
+    },
+    "literalAndSqlValues": {
+      "equal": true,
+      "literals": 151,
+      "templateElements": 16,
+      "functions": 11,
+      "manifestSha256": "b562d0b956b01a6722c26aea40baf4dbcb768f5c51b5245ab0ca2ca8b46973e4"
+    },
+    "exportsShape": [
+      {
+        "name": "refreshFlowHistory",
+        "functionName": "refreshFlowHistory",
+        "length": 2
+      },
+      {
+        "name": "refreshJobFlowHistory",
+        "functionName": "refreshJobFlowHistory",
+        "length": 2
+      },
+      {
+        "name": "recordJobFlowMembers",
+        "functionName": "recordJobFlowMembers",
+        "length": 2
+      },
+      {
+        "name": "lockJobFlowHistory",
+        "functionName": "lockJobFlowHistory",
+        "length": 2
+      },
+      {
+        "name": "lockFlowWorkflows",
+        "functionName": "lockFlowWorkflows",
+        "length": 2
+      },
+      {
+        "name": "lockWorkflowFlowHistory",
+        "functionName": "lockWorkflowFlowHistory",
+        "length": 2
+      },
+      {
+        "name": "revokeWorkflowFlowHistory",
+        "functionName": "revokeWorkflowFlowHistory",
+        "length": 4
+      },
+      {
+        "name": "refreshWorkflowFlowHistory",
+        "functionName": "refreshWorkflowFlowHistory",
+        "length": 2
+      },
+      {
+        "name": "readJobFlowPlan",
+        "functionName": "readJobFlowPlan",
+        "length": 1
+      },
+      {
+        "name": "deliveryState",
+        "functionName": "deliveryState",
+        "length": 1
+      }
+    ],
+    "pureChecks": {
+      "deliveryStatePairs": 169,
+      "readJobFlowPlanSamples": 7,
+      "recordedQueryComparisons": 2,
+      "sqlExecuted": false
+    },
+    "jsdoc": {
+      "functionBlocks": 11,
+      "typedAnnotations": 34,
+      "suppressionDirectives": 0,
+      "deliveryStateReturn": "string|null; preserves actual nullable behavior"
+    }
+  },
+  "typeEvidence": {
+    "file": "C:\\Users\\yussy\\AppData\\Local\\Temp\\cbte-flow-history-style-d2-20261016\\nullable-final\\effective-type-equivalence.json",
+    "sha256": "c4d412457e6a7116d6b62fef22ae9914a36a38cbc34da83c5da68c2d3813e41c",
+    "independentCodeReviewOfProof": true,
+    "independentlyReexecutedWholeProjectChecker": false,
+    "checkJs": true,
+    "sameProgramBidirectionalAssignability": true,
+    "normalProject": {
+      "sourceFiles": 745,
+      "diagnosticsBefore": 0,
+      "diagnosticsAfter": 0,
+      "equivalentFunctionTypes": 11
+    },
+    "strictNullChecksTrue": {
+      "diagnosticsBefore": 527,
+      "diagnosticsAfter": 527,
+      "diagnosticDelta": 0,
+      "equivalentFunctionTypes": 11
+    },
+    "signatureSpelling": "Only deliveryState rendered signature differs in normal strictNullChecks:false mode: inferred string versus explicitly documented string|null. Effective types match; strictNullChecks:true returns string|null both before and after. Nullable documentation was not narrowed to force display equality."
+  },
+  "sourceTextDependencyReview": {
+    "identifiedImporters": 13,
+    "normalRequireAndFunctionCalls": true,
+    "directFlowHistoryReadFileOrFunctionToStringExpectationsFound": false,
+    "recursiveTestSourceScanTargets": "provider parsers/package fixtures/user data; none enumerates flow-history source",
+    "sqlMocksPresent": true,
+    "conclusion": "No discovered runtime/test behavior depends on this module source spelling. Existing SQL prefix/regex mocks are protected by exact literal/template equality. External release/source-hash guards intentionally require a new final revision/manifest."
+  },
+  "baselineTestFiles": [
+    {
+      "file": "scripts/test/angelic-setup-export-consent.test.js",
+      "workingSha256": "dcd645900bb44995456ca309e9b48279bdc3a7dab199cafe3ea2c653df5d2bcb"
+    },
+    {
+      "file": "scripts/test/angelic-setup-package.test.js",
+      "workingSha256": "63c25babd7286dc6289e76129dfca5a457838f87b55e2e549133fd47484c4c7d"
+    },
+    {
+      "file": "scripts/test/autoWatch.admission-sql.test.js",
+      "workingSha256": "c1f78e38af2dcb1105fbd61aedbeeb5558836dca6f34ce48429930fd6eaf01fe"
+    },
+    {
+      "file": "scripts/test/autoWatch.dm.test.js",
+      "workingSha256": "cc0de6efc7149d01fff9b5b0eb315224f96f92dc9631f817167c48b13fe5e3dd"
+    },
+    {
+      "file": "scripts/test/autoWatch.donor-sql.test.js",
+      "workingSha256": "80f440de778ce0c14d94125386eec73bcae2be2eda4874abc47f36afbbd0e192"
+    },
+    {
+      "file": "scripts/test/autoWatch.eligibility.test.js",
+      "workingSha256": "27202a98f9f56c13a8a7bc759f028f30be689782b3825d940c01bad78c168d02"
+    },
+    {
+      "file": "scripts/test/autoWatch.interval-form.test.js",
+      "workingSha256": "3b5f1cd1800571d6454293c4234ab2db299a99a00c90a65de86e31c20483c5ca"
+    },
+    {
+      "file": "scripts/test/autoWatch.intervals.test.js",
+      "workingSha256": "5a4dec073a02e5cb7217e93c59c8ca58230ec45522c4910daeaa6c7e2cd6f44b"
+    },
+    {
+      "file": "scripts/test/autoWatch.isolated-fetch.test.js",
+      "workingSha256": "3f63ef0fcea32487b22a52847ea3c94724d62791a1c63206ff1ddf1979db25aa"
+    },
+    {
+      "file": "scripts/test/autoWatch.providers.test.js",
+      "workingSha256": "18cc70f6bee439d42b2e00a01d077a70fab1fb6b7de8e56026c08735da650b70"
+    },
+    {
+      "file": "scripts/test/autoWatch.runner.test.js",
+      "workingSha256": "0a8736c587caa78f735c087536f86ece57f4f6033329889dbcb5cfd7cba48215"
+    },
+    {
+      "file": "scripts/test/autoWatch.source-isolation-sql.test.js",
+      "workingSha256": "d81ff138c58180a4b8a50594bd7e56076a500bf998c556f304c2e598b2124614"
+    },
+    {
+      "file": "scripts/test/autoWatch.streaming-providers.test.js",
+      "workingSha256": "59a9eb1bb4f4b9400f856238bd7e5fc1e36c82df4c9a34724cbbe0df11575797"
+    },
+    {
+      "file": "scripts/test/autoWatch.streaming.test.js",
+      "workingSha256": "590ba9a01f46a5ce6b05e7efb1564c097dca9acd4dbce865b8e3c5d62df0562b"
+    },
+    {
+      "file": "scripts/test/autoWatch.youtube-fallback.test.js",
+      "workingSha256": "0517e812e65bec0b882612ddbe8217cc8849680cf9f21ba55f30508f3ac14ac0"
+    },
+    {
+      "file": "scripts/test/autoextract.add.test.js",
+      "workingSha256": "75a5aeae4eea37c76769e281235abeeecee573ff4c04917a90ce0b6cfbacd0f6"
+    },
+    {
+      "file": "scripts/test/autoextract.additionalautoextractslot.test.js",
+      "workingSha256": "e599271bc255c48de1801c2b688e6ce5e03d0a58c3c3686a7eaa521aee0935f9"
+    },
+    {
+      "file": "scripts/test/autoextract.checkfreeslot.test.js",
+      "workingSha256": "e68064edffd8382067f609df62303b161fdc693fdaefdc53fadb626ff328551d"
+    },
+    {
+      "file": "scripts/test/autoextract.list.test.js",
+      "workingSha256": "053db4ec51db80f5203d631981c1654e7db698723e49b3c7dd8abb2f9d7d0513"
+    },
+    {
+      "file": "scripts/test/autoextract.unwatch.test.js",
+      "workingSha256": "2778b1e6edef8b1a8414df00487bf1bd3e4bb8c3246e92224da9d12ba9636b7e"
+    },
+    {
+      "file": "scripts/test/autoextract.watch.test.js",
+      "workingSha256": "d8cbe1f4017992fd3ed22fbdb5b22ba50954d13258dc5da26437928a0b99bca8"
+    },
+    {
+      "file": "scripts/test/automation-abuse-validation.test.js",
+      "workingSha256": "0cedff75d1058a782c4281a045d6c5a3cb917fc452aa2ac2441928ac2aa680b7"
+    },
+    {
+      "file": "scripts/test/automation-admission.test.js",
+      "workingSha256": "52c3047ecbab353838836a4092b5c869a70111bc8d5edc0238addc54c8ae435e"
+    },
+    {
+      "file": "scripts/test/automation-aggregate-member-boundary.test.js",
+      "workingSha256": "af58b2ce57e1cd50ff54ad16c1ece74dbc75e203a0803d8658b3047613c2af3e"
+    },
+    {
+      "file": "scripts/test/automation-aggregate-rendering.test.js",
+      "workingSha256": "db93ce5a73b6458c4519af328d6bec3539444ebb76364324cdd23019df6730e0"
+    },
+    {
+      "file": "scripts/test/automation-aggregation-sql.test.js",
+      "workingSha256": "1caca3419755e66ba9115589e7ea35f18ced78fd3fe8818e377657e346a90344"
+    },
+    {
+      "file": "scripts/test/automation-billing-boundary.test.js",
+      "workingSha256": "c2b08eee3ab59b7e97494b8c522fa786b56e88590ed7a633ee824834f3d042b6"
+    },
+    {
+      "file": "scripts/test/automation-boundaries.test.js",
+      "workingSha256": "8ef26f54dcac07c5318ac9f45312187c2e59d70a5ac951872314f408f5195604"
+    },
+    {
+      "file": "scripts/test/automation-canvas-right-pan.test.js",
+      "workingSha256": "50aa29b444b1c4422b5cf2756b16174b503653b1eda54ab2f729ee2438a9bfde"
+    },
+    {
+      "file": "scripts/test/automation-commerce-boundary.test.js",
+      "workingSha256": "2d1c6c90e08d31078fce05de55d49bfdc63eda21f901f211e07bd6e9ce0bb007"
+    },
+    {
+      "file": "scripts/test/automation-core.test.js",
+      "workingSha256": "0f0ee3e35951ad2206d8a9f1233500c82f675dd353964ac544b8267223796ae4"
+    },
+    {
+      "file": "scripts/test/automation-dashboard-webhook-creation-sql.test.js",
+      "workingSha256": "a98d07e65b0f9ffecab3381aafb7b0cdf71dafa7b0cc2ac0d9e3bd7dc0bb3bc3"
+    },
+    {
+      "file": "scripts/test/automation-delivery-gate.test.js",
+      "workingSha256": "8573aef2bb6b10774a44f6383b509d4cd5543f63d3d680c47490796a2e85f78d"
+    },
+    {
+      "file": "scripts/test/automation-destination-context.test.js",
+      "workingSha256": "90949d818856384ce4340d34b2c62f923c0697c612fc8e301036427e7a6dbc97"
+    },
+    {
+      "file": "scripts/test/automation-destination-ui.test.js",
+      "workingSha256": "fa6a572ba957342b8c302722bd25f322b1d1a538d3a3ca98b5d6d85b69e90518"
+    },
+    {
+      "file": "scripts/test/automation-destination-workspace.test.js",
+      "workingSha256": "c7191bae153b1b7cb1e6ec33fcd1e29f92c08d97916b61d3a16446c251a446ac"
+    },
+    {
+      "file": "scripts/test/automation-dictionary-compact.test.js",
+      "workingSha256": "3125a755ceb4067412f224fa44ae77952e5737407e3c90f70cb41ee5a83d8352"
+    },
+    {
+      "file": "scripts/test/automation-dictionary-editing.test.js",
+      "workingSha256": "0d4c27bc1aca5fa198ff3106cc7a228cd09789905ce9b52dd8dac1e94a1f3b50"
+    },
+    {
+      "file": "scripts/test/automation-dictionary-publication-sql.test.js",
+      "workingSha256": "01199b066b5e4e780c6c265d7c5abf891562eda7e82ffe76e8774ebf26f0dd6c"
+    },
+    {
+      "file": "scripts/test/automation-dictionary-publication-ui.test.js",
+      "workingSha256": "e2c417a48be81777637feecd87c5ac2e40db3d035d17d5022d44055ecea3dadf"
+    },
+    {
+      "file": "scripts/test/automation-donation-ui.test.js",
+      "workingSha256": "6ca4f72e17688e66a6f4e7fa1ac03936022367ea8003e126bd1d1e072bcd41ab"
+    },
+    {
+      "file": "scripts/test/automation-donor-admin-boundary.test.js",
+      "workingSha256": "f0237ad5ce4b733ff7eda84e5aca5da247f71b8c5f9973703a412425113d7908"
+    },
+    {
+      "file": "scripts/test/automation-donor-admin-sql.test.js",
+      "workingSha256": "2f2c3cd61d51d22796a1a3dd4f0d059a36d3fdcf2218958110b9aad3443cfecb"
+    },
+    {
+      "file": "scripts/test/automation-donor-admin-ui.test.js",
+      "workingSha256": "fa85c73d014e4c693fa8c49e23c744cd10f30efec97cc98408921153590bf85e"
+    },
+    {
+      "file": "scripts/test/automation-draft-recovery.test.js",
+      "workingSha256": "452305444910f95f2fbae2799d18e7df2013a52006fa1d57c1df594fe41e2a68"
+    },
+    {
+      "file": "scripts/test/automation-editor-clipboard.test.js",
+      "workingSha256": "c7234d3fb4c5faae300a83587576820a510aef26d73ebea47411083b342b3f5d"
+    },
+    {
+      "file": "scripts/test/automation-editor-component.test.js",
+      "workingSha256": "69f8969255aa61e298fa754503467c38912a75b7f5bcc1bfbb94ea3e5c010824"
+    },
+    {
+      "file": "scripts/test/automation-editor-edge-crossings.test.js",
+      "workingSha256": "a7bad42d031581aa4ca60502850fbde488bad9db7e4cfe8c10b87e8b354ab2ba"
+    },
+    {
+      "file": "scripts/test/automation-editor-edge-routing.test.js",
+      "workingSha256": "c3f62225dfc757617aa041926dc66895db26fed8ec43708ff7a1ca11e9a2aed0"
+    },
+    {
+      "file": "scripts/test/automation-editor-model.test.js",
+      "workingSha256": "7462b3984fb6bb39857c60359fc4cddbf72774d6b6c1411b439035a86ab73cb6"
+    },
+    {
+      "file": "scripts/test/automation-entitlements-sql.test.js",
+      "workingSha256": "ec77720e81c5210bf516b8866d9eba63db24768028e4dbc88c0128af195c972f"
+    },
+    {
+      "file": "scripts/test/automation-evaluator-cache.test.js",
+      "workingSha256": "aa5fc31678a48471d70c09ec4008b2c01f115326f415bdc40535f4ea4da92418"
+    },
+    {
+      "file": "scripts/test/automation-flow-history-pages-sql.test.js",
+      "workingSha256": "851c117d77ca9d61efeba40d366ad27e95f885e2d8e1624561a7736267239dd7"
+    },
+    {
+      "file": "scripts/test/automation-flow-history-read-sql.test.js",
+      "workingSha256": "b5eea3951378901a1a48741007755d21f5080d940f2b9a0a84a9c80b2b374d36"
+    },
+    {
+      "file": "scripts/test/automation-flow-permanent-failure-sql.test.js",
+      "workingSha256": "8a89d7964a69f5c6e98e7ee7f284523c45ae6e3f5b74a898b5fda1843a4f2ec6"
+    },
+    {
+      "file": "scripts/test/automation-flow-projector-sql.test.js",
+      "workingSha256": "293d9a1714fce51d910a7ce6012397331ab53b1e0e032d91f71c018bc84911c8"
+    },
+    {
+      "file": "scripts/test/automation-flow-route-sql.test.js",
+      "workingSha256": "677033854f059909546ad103e1c7c84022bb8762183be549446ae4ba679ca304"
+    },
+    {
+      "file": "scripts/test/automation-flow-state-reconciliation-sql.test.js",
+      "workingSha256": "a8aefab66521112321eb1752d816ea219668539cf603229d0c666bc69a6ebd93"
+    },
+    {
+      "file": "scripts/test/automation-flow-trace.test.js",
+      "workingSha256": "b3406623fbb639373ce7959a225b80ca1989b4e937bf95c1b3d8101063963d2f"
+    },
+    {
+      "file": "scripts/test/automation-graph-driver-sql.test.js",
+      "workingSha256": "eb0659a3571e4807d27416115c36503d2974e97b1999e0beb3202094909aa77d"
+    },
+    {
+      "file": "scripts/test/automation-graph-join.test.js",
+      "workingSha256": "57e9c7a0cd126b9f99167e20a8f8c02708dabbed3ec32d081288468f572957c1"
+    },
+    {
+      "file": "scripts/test/automation-graph-step.test.js",
+      "workingSha256": "7afeea254c87d5d20870698dfe2f84132e71c7ed312b369494e6a55adbe43dda"
+    },
+    {
+      "file": "scripts/test/automation-graph-store-sql.test.js",
+      "workingSha256": "392dfd1c614349d4eaa994142c3d021e68d46ed462c1763f30a23c22510cd2c3"
+    },
+    {
+      "file": "scripts/test/automation-history-trace-ui.test.js",
+      "workingSha256": "b1fe499474a904a6ac2747561481b2b8eec0ae87105635cfc7d557e42d210f0c"
+    },
+    {
+      "file": "scripts/test/automation-http-boundary.test.js",
+      "workingSha256": "4f58546ef53344e5966c4cee488c16a1db7a912f8e02a58cdede5ef53ce9fec7"
+    },
+    {
+      "file": "scripts/test/automation-main-admin-cas-ui.test.js",
+      "workingSha256": "62fb82064c19c19c10e19d22747a85fc644a7c796466c3ca47ea25b98e68935f"
+    },
+    {
+      "file": "scripts/test/automation-main-cadence-read-recovery.test.js",
+      "workingSha256": "54a53c067687e1e874814ef1d3bf714f0e9c25dedf19ff58ae26b12df5000d93"
+    },
+    {
+      "file": "scripts/test/automation-main-data-revalidation-sql.test.js",
+      "workingSha256": "e6a81fb538c74e6360df22b12346f1376e5339326f2463b14d53b00997fd8774"
+    },
+    {
+      "file": "scripts/test/automation-main-data-revalidation-ui.test.js",
+      "workingSha256": "3c32a2e56c7a0890820834cb8338cfe10576c0efa101cf9ff1c2e5c2cdec2ace"
+    },
+    {
+      "file": "scripts/test/automation-main-ui-draft-cadence.test.js",
+      "workingSha256": "8d1276237de5bc493a627cdeb3f8f6769db1e29cdcdc72d92bdc424c6e1eda57"
+    },
+    {
+      "file": "scripts/test/automation-main-workflow-history.test.js",
+      "workingSha256": "98ba5e4ce0f6f9bdaf706352e62a22a3b4cd7cebb05aeea3e1c24d848cc6f920"
+    },
+    {
+      "file": "scripts/test/automation-main-x-read-write-ui.test.js",
+      "workingSha256": "9355cc4c672c305a38349323e732249a0d075a80a3aaa59e2ca9a85cf33fae63"
+    },
+    {
+      "file": "scripts/test/automation-management.test.js",
+      "workingSha256": "9aca566499332094c5c661d04699e11aa4b320e10a0ae86f78040390ab2a7781"
+    },
+    {
+      "file": "scripts/test/automation-marketplace-provenance-sql.test.js",
+      "workingSha256": "828691c2d7a06da157299fbb8add9b01fb5461feed71e205e02195c87da7a58c"
+    },
+    {
+      "file": "scripts/test/automation-marketplace-sql.test.js",
+      "workingSha256": "e0ad872c05ef8acec9da353b44ef034864d3fefc50a3dc024dcd0f71d1cb32f8"
+    },
+    {
+      "file": "scripts/test/automation-merge.test.js",
+      "workingSha256": "accb3367ee00a789abfde98af590f8b734ea478b14fce2c9807e4e4da69a0de5"
+    },
+    {
+      "file": "scripts/test/automation-migration-sql.test.js",
+      "workingSha256": "a094572128a9a2f0caacea5d069dd47356f2e9ce72d3175005468a0e0ae3a1fe"
+    },
+    {
+      "file": "scripts/test/automation-moderation.test.js",
+      "workingSha256": "9b6fd12ac7372c1df366ad0e545b40eef491bd2f05385518f61704d7034d7767"
+    },
+    {
+      "file": "scripts/test/automation-monitor-activity-sql.test.js",
+      "workingSha256": "b01cadfaf521cf68d70745b4e6541fc0a1b879105793b5fc68ff31ac9b926121"
+    },
+    {
+      "file": "scripts/test/automation-monitor-activity-ui.test.js",
+      "workingSha256": "370e0da4c8443792e0fb78e276f9a19c5b9dcd9e254ca407065ea6a4f257f809"
+    },
+    {
+      "file": "scripts/test/automation-monitor-cadence-lifecycle-sql.test.js",
+      "workingSha256": "6a0e3d1b4a10a00722ed03085f86675c972cb0ebef4a52d33f4496dc88e05ede"
+    },
+    {
+      "file": "scripts/test/automation-monitor-cadence-sql.test.js",
+      "workingSha256": "3b8b599962d82aafcabc7f416da6706fd8974f0ea379859f271ea3b7b81661bb"
+    },
+    {
+      "file": "scripts/test/automation-monitor-cadence-ui.test.js",
+      "workingSha256": "b91b4d826bb00ef7c1562cfaa4b9c485d864227cd6401e8132172ae2878378a8"
+    },
+    {
+      "file": "scripts/test/automation-monitor-destination-lifecycle-sql.test.js",
+      "workingSha256": "b7560ea7818ae24b35477c6d6e1ae0f0a1076d3aa42da55d3af3f2418afc7f1b"
+    },
+    {
+      "file": "scripts/test/automation-monitor-editor-ui.test.js",
+      "workingSha256": "24ce2a30777871ad58c3769f179bbc7dd062ef304f7685d5e586ee07a90049e4"
+    },
+    {
+      "file": "scripts/test/automation-monitor-input.test.js",
+      "workingSha256": "a408347b633a18e5abc23f9e7cc9d83195f4bf8419849f34d631aef0b32fb9e6"
+    },
+    {
+      "file": "scripts/test/automation-monitor-label-sql.test.js",
+      "workingSha256": "eaabaf22a7501d2d40511dbcf88fe08127a72412f34d52af635b4ed7c53d0b53"
+    },
+    {
+      "file": "scripts/test/automation-monitor-readiness-sql.test.js",
+      "workingSha256": "9aa682305068fdca9b780270af63b7528abb990eff7ed8830779a9ffb56284c7"
+    },
+    {
+      "file": "scripts/test/automation-monitor-revision-compat.test.js",
+      "workingSha256": "574b3f9da4d59d0dc4bedf7ccaad5c46087bd77cfd638916553adcc985f77252"
+    },
+    {
+      "file": "scripts/test/automation-monitor-revision-queue-sql.test.js",
+      "workingSha256": "c51a0fb43ce07aca233e2c08c1b7e3a73b08d4bd409687778bb6d27085762e9a"
+    },
+    {
+      "file": "scripts/test/automation-monitor-target-timing-sql.test.js",
+      "workingSha256": "f39e01c3fff55d5e98738bbe1d6ef012cc4be20d044e19cff70f51083831b1d3"
+    },
+    {
+      "file": "scripts/test/automation-monitor-workflow-cas-sql.test.js",
+      "workingSha256": "e0170abf799e953e7f3b55e52bb70db9d0b90442bfddd4234467f14dd3e33bd9"
+    },
+    {
+      "file": "scripts/test/automation-native-operation-sql.test.js",
+      "workingSha256": "3fda8ab461036f769c1f3c73178932b9a6dfffcffd791a0b5f6263b23521d3a7"
+    },
+    {
+      "file": "scripts/test/automation-native-unmanaged-resume-sql.test.js",
+      "workingSha256": "10579091460c77c11923b0ec19941cc181ad47681e4687e367b4b1f1aeb2d6a4"
+    },
+    {
+      "file": "scripts/test/automation-native-webhook-lifecycle-sql.test.js",
+      "workingSha256": "d5fa90f7f91fc15ab87600858cd68a978f67375a190b8948fc91d8265a414e5a"
+    },
+    {
+      "file": "scripts/test/automation-normal-handoff.test.js",
+      "workingSha256": "4bc3104708024271716ada1980b95dde79c887c2b4cad0dda90e96b26d7bf92a"
+    },
+    {
+      "file": "scripts/test/automation-notification-quota-ui.test.js",
+      "workingSha256": "8851f42fcff1aeddd7808d7fe1984ca605e99d9f8a62f70673e7d5f026ac05fb"
+    },
+    {
+      "file": "scripts/test/automation-outbound-guard.test.js",
+      "workingSha256": "84c02a71ce9b5d963ed68a5f6c707f7dba792ad5eb51c1395e6c50b403ce2ce7"
+    },
+    {
+      "file": "scripts/test/automation-package-lineage-sql.test.js",
+      "workingSha256": "fc474b9a19b61cc8761139a4ab569a8ffe2be69485bf025b1076ccfccbf0b31e"
+    },
+    {
+      "file": "scripts/test/automation-package-lineage-ui.test.js",
+      "workingSha256": "478e5b767feebb1576270c313bdd303b0e1c51e2a20414aac57c22be71ab9df9"
+    },
+    {
+      "file": "scripts/test/automation-payment-navigation.test.js",
+      "workingSha256": "2a34b96c47f896d60faa198a320c30911fe97893ccd705c616b2ae3d7774d838"
+    },
+    {
+      "file": "scripts/test/automation-plan-admin-sql.test.js",
+      "workingSha256": "3ac6e8aa01ce95e06bb13d36842ab7de9b19ec155842fd50566031c48286d1e8"
+    },
+    {
+      "file": "scripts/test/automation-plan-admin-ui.test.js",
+      "workingSha256": "d892b6822079d5bc78ab6e6d2805a963ff94678ca5988f039e2dcb11656b1080"
+    },
+    {
+      "file": "scripts/test/automation-post-commit-ui.test.js",
+      "workingSha256": "abdd21dbe4a2a5279acaf1bebeff34481bfca674bd1fcc1cb5d1c7f5236fd811"
+    },
+    {
+      "file": "scripts/test/automation-publication-sql.test.js",
+      "workingSha256": "0ff1e122d969c6d027df117dfb06d8a76fe1a3d0bdbc9a14644167bbc4a53cb6"
+    },
+    {
+      "file": "scripts/test/automation-push-capacity-sql.test.js",
+      "workingSha256": "d5ed5a0b0b67d8a6cbcf126d7e9d9ff752bcee8ad765364b84c8204030e32b45"
+    },
+    {
+      "file": "scripts/test/automation-push-capacity-ui.test.js",
+      "workingSha256": "dc444dc311ffbac8ffa40465866b02b16b4f6b8bd835f8d414f76767194c982f"
+    },
+    {
+      "file": "scripts/test/automation-push-support-grants-sql.test.js",
+      "workingSha256": "777b090711a66770a7141766e839bbe3e1982a9f95ca3a64ff528cfa1a493efc"
+    },
+    {
+      "file": "scripts/test/automation-rate-limits-sql.test.js",
+      "workingSha256": "55262d31847ceca5cf08b782dc28e6abd81eddd9d686bc5aa972b0343c9d5818"
+    },
+    {
+      "file": "scripts/test/automation-readiness-feedback-ui.test.js",
+      "workingSha256": "db7b43503e46f544d3c85ee422930096b8d219bf21a251df2daf3c7f02bd9806"
+    },
+    {
+      "file": "scripts/test/automation-recovery-cutoff-sql.test.js",
+      "workingSha256": "f3923e0d474feb62b62904ae601fb46c5feaebe45bec14f561d3415d39cb7b60"
+    },
+    {
+      "file": "scripts/test/automation-recovery-managed-data.test.js",
+      "workingSha256": "e054e84a2c5bd318d3041eb559b3820bec24b768fa007bd2b1315865cccfebc9"
+    },
+    {
+      "file": "scripts/test/automation-recovery-origin-ui.test.js",
+      "workingSha256": "61b33bc6b31c5e87420874604078eb09a937fc959e625c9d10b7e21fd3329074"
+    },
+    {
+      "file": "scripts/test/automation-recovery-windows-rename.test.js",
+      "workingSha256": "65198afc74f8955615ed68c77d6d7cff3b8f3fb24b50aa79b36c12bd6d253072"
+    },
+    {
+      "file": "scripts/test/automation-runtime.test.js",
+      "workingSha256": "0a21e519c9280c3f39d2578c325781f4eeb08fbf0f5a88a0c24c649c0348d838"
+    },
+    {
+      "file": "scripts/test/automation-safety.test.js",
+      "workingSha256": "35373d23422dc7d782a17509e5dec8db4cc2a6b24bc14960009ef6e519dc2ca6"
+    },
+    {
+      "file": "scripts/test/automation-saturation-boundary-sql.test.js",
+      "workingSha256": "f3c61d6e7fa8b4b7f927aa042aa31a6d12f270068e134c335a211978646dedd8"
+    },
+    {
+      "file": "scripts/test/automation-saturation-data-sql.test.js",
+      "workingSha256": "14e66893b0c4a14474f6a90126bee31d21957fe252b6cf766d41147ea9313bb5"
+    },
+    {
+      "file": "scripts/test/automation-saturation-runtime.test.js",
+      "workingSha256": "57d244dedfa276787e3b3ebbed07784548152eb4350749d3a2a3da8656f1f285"
+    },
+    {
+      "file": "scripts/test/automation-saturation-ui.test.js",
+      "workingSha256": "f47a6b39116d03b0ed1f8ff232da806c64e5bb72555e7164ed7ab3eeeafca9fc"
+    },
+    {
+      "file": "scripts/test/automation-schedule-dst.test.js",
+      "workingSha256": "3eef15b06106cfa0b4d52ef6498ead46767f20878fb964ef6aa3d67bda3b90b3"
+    },
+    {
+      "file": "scripts/test/automation-service-commit-response-sql.test.js",
+      "workingSha256": "22ad568050222c9b4f8e547d8b7c54c4e2ab2aea28304bc5575dbf8691843b3f"
+    },
+    {
+      "file": "scripts/test/automation-service-policy-sql.test.js",
+      "workingSha256": "07c21f25254c8438ea01e0301cd800b06a3da3a702c18a2411be579980fc1013"
+    },
+    {
+      "file": "scripts/test/automation-source-consistency-sql.test.js",
+      "workingSha256": "f2b47d2c86dacb1802b82fbcc9523171e8d44bf5cf38c512b7a15e8a7d14c163"
+    },
+    {
+      "file": "scripts/test/automation-sql.test.js",
+      "workingSha256": "c1429ca028d3b413723ab9150440d52d5ed7b2f71101ff94b35178522b0190b0"
+    },
+    {
+      "file": "scripts/test/automation-square-billing-sql.test.js",
+      "workingSha256": "355262d057028138d2f072eb8d47dd8c8c485d6469b85249fc829e432fcc5f01"
+    },
+    {
+      "file": "scripts/test/automation-square-commerce-sql.test.js",
+      "workingSha256": "30d5220ebd8f45dc92e756da39b4e37a13559dc01532575998a2b8629bf3ce94"
+    },
+    {
+      "file": "scripts/test/automation-square-commerce-ui.test.js",
+      "workingSha256": "30f458cb16c25d73578497f4716edb60c43eb73b0d879be78006b512d6c2b258"
+    },
+    {
+      "file": "scripts/test/automation-square-donations-sql.test.js",
+      "workingSha256": "166c5fbe1239fb5d74187df2fbcadc70cb0149562da082756b0e5a307456497f"
+    },
+    {
+      "file": "scripts/test/automation-square-payment-interval-migration-sql.test.js",
+      "workingSha256": "19d09a5b84be4faaefd366614a3c893325959c2ca6f0085a29f446f3fc56b7bf"
+    },
+    {
+      "file": "scripts/test/automation-studio-routing.test.js",
+      "workingSha256": "367223e38646bc0d65b43cfe0b0690950ff6ef591ceb9e529175f131c6a1fe66"
+    },
+    {
+      "file": "scripts/test/automation-studio-ui.test.js",
+      "workingSha256": "ffda0809e4cc524eb89dd33e9575b760d8e8d44240aba0f630dc2046ed3f1ef2"
+    },
+    {
+      "file": "scripts/test/automation-subscription-ui.test.js",
+      "workingSha256": "b294f8004cd2822aae26f821c6967a6857a16f58ab42d1a7675571e15afa6bcf"
+    },
+    {
+      "file": "scripts/test/automation-supporter-audit-runtime-sql.test.js",
+      "workingSha256": "8317f007fae66756552cefa63b65625a1e8fa6b0797d0407ba6b126fde3c7bfb"
+    },
+    {
+      "file": "scripts/test/automation-test-db-connect.test.js",
+      "workingSha256": "b571b74bf0a963610cde79a60b553572b0f518e16f108ff369688609e670b3e3"
+    },
+    {
+      "file": "scripts/test/automation-text-transform.test.js",
+      "workingSha256": "beb41f9967ee5bc5a501932a7e406897e7fad1c4f1f0c2397609dcfa8fdc1c6f"
+    },
+    {
+      "file": "scripts/test/automation-usability-recovery.test.js",
+      "workingSha256": "84d5dddaef78013159d3f049280e0d2ec966ae11a286bbddceb6e521a32b01ab"
+    },
+    {
+      "file": "scripts/test/automation-workflow-deletion-sql.test.js",
+      "workingSha256": "99ac957fbae797f9e0116a949397d61fbab31c7e2695cef137ecaea9415b7864"
+    },
+    {
+      "file": "scripts/test/automation-workflow-destination-principals-sql.test.js",
+      "workingSha256": "1ce981a2bc5de7938008a4dc080ba0e61e0b32036d663401e40bac08c6cc8d9a"
+    },
+    {
+      "file": "scripts/test/automation-workflow-history-sql.test.js",
+      "workingSha256": "169139baf3ac53cc3da21dca6a322dbcc07126ffdd5d6e36527fdc2d314a1d88"
+    },
+    {
+      "file": "scripts/test/automation-x-binding-sql.test.js",
+      "workingSha256": "fd28e24987649b40ddc48a327c33c04b85a771d3c2c3220b1e8e80f21779cb85"
+    },
+    {
+      "file": "scripts/test/automation-x-delivery-sql.test.js",
+      "workingSha256": "889f3322c77bfeace43e3dfeafa279d8d5bbd68d9eb446619cd22bd7d52cba99"
+    },
+    {
+      "file": "scripts/test/automation-x-delivery.test.js",
+      "workingSha256": "2e5ea63f464f654b21c271c9ff2d5f66afa955fca27f9f65aa4a44c6ede80e25"
+    },
+    {
+      "file": "scripts/test/automation-x-integration-contracts.test.js",
+      "workingSha256": "f709b2c1961bc0d786d3b4aca68fa4a97020c889be154a1f4aa515d102a38273"
+    },
+    {
+      "file": "scripts/test/automation-x-monitor-processing-sql.test.js",
+      "workingSha256": "f75837ab17df6090fe2ee181bda99e667d7b1bb10286ce1432ab235a6c580764"
+    },
+    {
+      "file": "scripts/test/automation-x-monitor-timing-ui.test.js",
+      "workingSha256": "98ff92a7fb32105f93730c73b93137654884db812eea8e9b11b2ae6324bea3f9"
+    },
+    {
+      "file": "scripts/test/automation-x-monitor-ui.test.js",
+      "workingSha256": "371de686686a22d54b454e737bc0fe800ea47c9d2926b6d8eb1f4b3fc28f748a"
+    },
+    {
+      "file": "scripts/test/automation-x-processing-fixture-cleanup.test.js",
+      "workingSha256": "62977be36ec09eb91c19e3dcb34ea87c85269954aa372b6caa262a0b8dee466c"
+    },
+    {
+      "file": "scripts/test/automation-x-processing-settings-sql.test.js",
+      "workingSha256": "6399ae75e97fe2a4b6e19a438eb09d8b50e5e79e78cb04849b9d4aee421de76c"
+    },
+    {
+      "file": "scripts/test/automation-x-processing-settings-ui.test.js",
+      "workingSha256": "068923443d6a49ba327a1a8f6f5852b569dad75370f7b9a8f719379b68374b07"
+    },
+    {
+      "file": "scripts/test/automation-x-processing-settings.test.js",
+      "workingSha256": "e03f113c904a2658b248206ca67a92b3a71460bff2fce55cfcbcb0fb217802bf"
+    },
+    {
+      "file": "scripts/test/automation-x-push-gateway.test.js",
+      "workingSha256": "383f6ed6a8c8b2c2e62f596b54ae3172114d07f29ec349d81e5a63ea0b38ffab"
+    },
+    {
+      "file": "scripts/test/automation-x-push-processing-sql.test.js",
+      "workingSha256": "516eeca123e6dd0c7afb25d1a9b0adf9ffcf0d84febb9e6c897ea1030d3bc432"
+    },
+    {
+      "file": "scripts/test/automation-x-push-runtime-retry.test.js",
+      "workingSha256": "1e42e1ccc8300d845f4443cb6fe2025e69897538207a30c0ba503bd375dd10e6"
+    },
+    {
+      "file": "scripts/test/automation-x-push-runtime.test.js",
+      "workingSha256": "8b6a3428ce924e90fb0760e45d3c6a26f9ee23dcefac0db944b13b6aa2ba781a"
+    },
+    {
+      "file": "scripts/test/automation-x-push-store.test.js",
+      "workingSha256": "ea67536da7f6b3d3b9985056e3ebc69d8a2500a6825de36d0bd603a0b786b351"
+    },
+    {
+      "file": "scripts/test/automation-x-quota-migration.test.js",
+      "workingSha256": "1b2998979d1dd81cc42c7d26f208253fa7ccdbb7d5113349120e33b20f8c7305"
+    },
+    {
+      "file": "scripts/test/automation-x-quota-sql.test.js",
+      "workingSha256": "417530f95d8b1ed106b1d2c18f013a08f603125d32fea7eb717809dab9567076"
+    },
+    {
+      "file": "scripts/test/automation-x-rollout-policy.test.js",
+      "workingSha256": "28a5bb00941f38efa2d60bb1a2116a49d2fe5249af7bda5f6e3c1eefcae277cf"
+    },
+    {
+      "file": "scripts/test/automation-x-session-lifecycle-sql.test.js",
+      "workingSha256": "a66b3fe64d8492e7affb5e90be17e8a47f1af2d3fdf976eedc7311e0e2af5897"
+    },
+    {
+      "file": "scripts/test/automation-x-setup-download.test.js",
+      "workingSha256": "ccb836b597e4bae4396f638748f8ce2f8fcaa68e9925ea55e20287716710c423"
+    },
+    {
+      "file": "scripts/test/automation-x-setup-sql.test.js",
+      "workingSha256": "c8ed1ccfa58bb7022d259d93a779690811002cf313472a766983718f3479fa69"
+    },
+    {
+      "file": "scripts/test/automation-x-setup-transfer.test.js",
+      "workingSha256": "167a8ad07765b6ab900bc4b54a97ded2c5be162394cefbd2b332c0efa4cf82dc"
+    },
+    {
+      "file": "scripts/test/automation-x-setup-ui.test.js",
+      "workingSha256": "f31dfe8d3b291a7c316e105ede3f52010db8409aa355481075a35cbb9a40ff74"
+    },
+    {
+      "file": "scripts/test/automation-x-supporter-direct-sql.test.js",
+      "workingSha256": "5e8d4ff5b1fe3b2000ff7b290a98fd8e886c2edfb91992dde780517f1affa7bb"
+    },
+    {
+      "file": "scripts/test/automation-x-unified-edit-sql.test.js",
+      "workingSha256": "472837f93152677720615aab76fc9a7e2402d56a81c1f3175af160f4384e693d"
+    },
+    {
+      "file": "scripts/test/automation-x-webpush-adapter.test.js",
+      "workingSha256": "6488adc094337d0ffb869a7fc57a157d4ce0e49e71c204cc9f6437f789aefdc1"
+    },
+    {
+      "file": "scripts/test/automation-x-worker-config.test.js",
+      "workingSha256": "dbda9b0ce521c600eccf33e3214d8ff1b114c99151c3ab19e139e8bdd1c760dc"
+    },
+    {
+      "file": "scripts/test/dashboard-destination-guilds.test.js",
+      "workingSha256": "0fc8599e541a7d1f2fd5923d715dadd48cedb0b6c9b25712ba3ac7988e4cd1fb"
+    },
+    {
+      "file": "scripts/test/notification-usage-overview.test.js",
+      "workingSha256": "31ec637683e2da450059700339ecf4c7184f7a625a1bff159a410ff46c128298"
+    },
+    {
+      "file": "scripts/test/notification-workspace-navigation.test.js",
+      "workingSha256": "687bb4e787c8c1a2e790ecf8420bd40f43864250a50a8770d21d1509ff894c72"
+    },
+    {
+      "file": "scripts/test/priceWatch.component.test.js",
+      "workingSha256": "bded6eb420f0b81069103e8d3cd02b2035680cf4972656ee24b7a1cc8a59299b"
+    },
+    {
+      "file": "scripts/test/priceWatch.providers.test.js",
+      "workingSha256": "b2481a40ccb1020d9c0d74d30cab3686e97c7fb14cca26a858a6977653cb25a5"
+    },
+    {
+      "file": "scripts/test/priceWatch.runner.test.js",
+      "workingSha256": "dada50f1f7ec6d1d57bb2e9c3a057cf3e145bf2d263e23367b14d20a9e02636e"
+    },
+    {
+      "file": "scripts/test/project-node-runtime.test.js",
+      "workingSha256": "fa880cc23f0b834b32081761bd7f258b7927ead158955afc39a25177fe530fb3"
+    },
+    {
+      "file": "scripts/test/provider-saturation-backlog-sql.test.js",
+      "workingSha256": "2b698482bb8269749fe5c865da0118c9038b16ac97758e3e8aa17f5f8ee2facc"
+    },
+    {
+      "file": "scripts/test/provider-saturation-regressions.test.js",
+      "workingSha256": "be978a0bcd9c352230a46064bd265c0703e5604a979dfd1d986b71b73640fcb0"
+    },
+    {
+      "file": "scripts/test/provider-saturation-sql.test.js",
+      "workingSha256": "86b0a2e06a82d8c801d5f02fcaf0357df0e659f59103eac6bc61c26c244eff40"
+    },
+    {
+      "file": "scripts/test/recovery-bootstrap.test.js",
+      "workingSha256": "cf2d0216f0054f092c55e81152460e19aab4294ed0f44c6c7b3babda228a869d"
+    },
+    {
+      "file": "scripts/test/recovery-lease.test.js",
+      "workingSha256": "aa3f65ee5ad5a8a73f75629e590ca2e1affc70b54cfd06cfe8357acdbe419e9a"
+    },
+    {
+      "file": "scripts/test/runtime.test.js",
+      "workingSha256": "6e61e9da4b7781557a42d1d2421ee20c2beb5b1667b0849704ef2e77d1ff19e7"
+    },
+    {
+      "file": "scripts/test/steam.parser.test.js",
+      "workingSha256": "d58f9052c302d6a715fa68d15439d7bdcf2d03c4f67dce30c40199bee53389bc"
+    },
+    {
+      "file": "scripts/test/webhook-destination.test.js",
+      "workingSha256": "735280ff749a59c9f1120662d0cafd0d582d57d6eb37b869af8132004ce50411"
+    },
+    {
+      "file": "scripts/test/windows-node-bootstrap.test.js",
+      "workingSha256": "2e54c81457efb10b874b277b70de14c56f3e07ae58e25570fd048233ef471a87"
+    },
+    {
+      "file": "scripts/test/x-notification-reader.test.js",
+      "workingSha256": "9d1d106aeae9a3898d3c37ad5d53b2313d9a95e8d2964dad818006e0a3fe4d87"
+    }
+  ],
+  "validationRecommendation": {
+    "recommendation": "Carrying a completed all-pass D2 full185 result to an exact runtime-equivalent format/JSDoc final F is technically defensible under the explicit gates below; it is not a claim that the full runner executed F. These gates retain the complete functional regression requirement, with a separate exact equivalence bridge for the final documentation-only delta.",
+    "requiredGates": [
+      "D2 full185 must actually finish exit0 with closed XML and all zero failure/cancel/skip/todo; keep original run/diagnostics/retry logs unchanged",
+      "Final F may differ from D2 in this one file only, matching this exact aa158 candidate; all other31 changed CORE source files, all other runtime files and all185 test files/raw dependency/toolchain/runtime bytes must match",
+      "Recompute both whole-runtime AST comparisons and every literal/template/regex/exports proof from canonical Git blobs of F, not just this temporary file",
+      "Run F checkJs TypeScript and normal root lint plus exact formatter/JSDoc lint and git diff checks; verify final effective-type proof against exact F and preserve truthful string|null docs",
+      "Run relevant final source-sensitive checks and a bounded flow-history functional target on F; no DB work until the active D2 full run ends",
+      "Use a new exclusive REV4 F/main-bound source manifest and bundle contract; retain D2 approvals and failed/intermediate source histories unchanged",
+      "Record testsExecutedRevision=D2 and finalCandidateRevision=F with equivalence proof; never label the D2 XML as full-byte-identical execution on F or overwrite it"
+    ],
+    "mustRunFullFIf": [
+      "Any AST/literal/template/regex/exports difference or other CORE/test/dependency change appears",
+      "A source-text/toString behavior dependency is found and its effects are not conclusively verified",
+      "F effective types/lint/targeted functional checks fail or final candidate differs from the reviewed hash",
+      "D2 full run fails or the required source/runner/runtime identity evidence is incomplete"
+    ]
+  },
+  "notYetVerified": [
+    "The ongoing D2 full185 result",
+    "Final F commit/hash and31-other-source/185-test identity",
+    "Final F actual typecheck/lint/targeted functional validation after application",
+    "Codacy remote engine result; exact remote profile is not available locally"
+  ],
+  "supersededCandidates": [
+    "untyped f9cd intermediate",
+    "typed-final false string-only deliveryState intermediate; not used"
+  ],
+  "acceptance": false,
+  "mainOrProductionApproved": false,
+  "operations": {
+    "sqlConnections": 0,
+    "coreWrites": 0,
+    "gitWrites": 0,
+    "botStartup": false,
+    "temporaryModuleCompileOnly": true
+  }
+}

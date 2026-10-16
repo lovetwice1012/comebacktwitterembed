@@ -1,0 +1,17 @@
+{
+  "status": "actual-created-PR52-publication-metadata-recorded",
+  "at": "2026-10-16T11:12:06.673Z",
+  "url": "https://github.com/lovetwice1012/comebacktwitterembed/pull/52",
+  "number": 52,
+  "before": {
+    "map": "b5972e22f3a457c9cc54009446335df0b238628c210985278fceaf0797ed5441",
+    "md": "c623531402648b1156e29ca1268018555cf33d889e3aec34e04ab829bd681200"
+  },
+  "after": {
+    "map": "0a4bd66fb6dbb8b4c045df09e51221beaef81ad416e4cc026573541813ce1b0c",
+    "md": "6dcb86bbaf388e73df231a2eb876d939b429e8b1ccd27587cf68ed3ccca979a1"
+  },
+  "codeRevisionOnProduction": "cf22327dc39964194fbc2c48d8002366cfb22613",
+  "deploymentAcceptanceChanged": false,
+  "mergeStateAuthoritativeAt": "https://github.com/lovetwice1012/comebacktwitterembed/pull/52"
+}

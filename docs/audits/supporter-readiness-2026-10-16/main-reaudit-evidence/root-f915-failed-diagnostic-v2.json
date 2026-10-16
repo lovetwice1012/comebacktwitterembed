@@ -1,0 +1,17 @@
+{
+  "sourceRevision": "f915a68819b38b01664a3bde25770c46eda7bcbc",
+  "session": 19271,
+  "exitCode": 1,
+  "acceptance": false,
+  "aggregateCompleted": false,
+  "reason": "Existing test interleaving waits for target lock while worker holds earlier shared owner/workflow fence; no real SQL cycle can signal target gate",
+  "failedTest": "a known transaction deadlock before physical send preserves either the cancelled new choice or the complete old delivery",
+  "failedDurationMs": 120000.9522,
+  "stoppedOwnRunnerPid": 53868,
+  "stoppedOwnChildPid": 23064,
+  "sharedDatabaseRestarted": false,
+  "recordedAt": "2026-10-16T08:57:30.1779471Z",
+  "xmlSha256": "3fff342c77a4f19d7eb929822375a104b884d4aaa02f66165b7133d15aefbcc5",
+  "progressSha256": "62c232ef7924ea2d38da770f1646861cccca4e769c0e6ae3a88bfd6389b0261e",
+  "invalidPriorReceipt": "diagnostic.json is null due to PowerShell literal error; not valid evidence, preserved"
+}

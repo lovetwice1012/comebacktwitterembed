@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<testsuites>
+	<testcase name="Independent SQL: uppercase source copy and lowercase package revoke share one workflow fence and current installation CAS" time="2.344723" classname="test" file="C:\Users\yussy\AppData\Local\Temp\main-reaudit-independent-case-fence-sql.cjs"/>
+	<testcase name="Independent SQL: case-fold-equal restored job run ID retains its actual v2 namespace lock without rewriting external data" time="1.763302" classname="test" file="C:\Users\yussy\AppData\Local\Temp\main-reaudit-independent-case-fence-sql.cjs"/>
+	<!-- tests 2 -->
+	<!-- suites 0 -->
+	<!-- pass 2 -->
+	<!-- fail 0 -->
+	<!-- cancelled 0 -->
+	<!-- skipped 0 -->
+	<!-- todo 0 -->
+	<!-- duration_ms 4253.3874 -->
+</testsuites>

@@ -1,0 +1,14 @@
+[
+  {
+    "status": "fulfilled",
+    "value": {
+      "deleted": true,
+      "pausedTargets": 1
+    }
+  },
+  {
+    "status": "rejected",
+    "code": "ER_LOCK_DEADLOCK",
+    "message": "ER_LOCK_DEADLOCK: Deadlock found when trying to get lock; try restarting transaction"
+  }
+]
