@@ -84,10 +84,12 @@ async function lockFlowWorkflows(query, workflowIds, exclusive = false) {
 async function lockWorkflowFlowHistory(query, workflowIds) {
     if (!workflowIds.length) return;
     await lockFlowWorkflows(query, workflowIds, true);
-    // The exclusive workflow fence has drained every graph/job writer. A
-    // current read can safely collect all revisions and recipient namespaces,
-    // including those committed after this transaction's earlier snapshot.
-    const origins = await query('SELECT DISTINCT f.namespace_key FROM automation_flow_runs f JOIN automation_runs r ON r.id=f.run_id WHERE r.workflow_id IN (?) LOCK IN SHARE MODE', [workflowIds]);
+    // Read immutable unit membership, not mutable flow-run revocation rows:
+    // a monitor edit can hold its workflow row before revoking a lineage.
+    // Initial graph admission persists the origin/unit/membership atomically,
+    // so this current read retains every historical revision and recipient
+    // namespace without adding a flow-run -> workflow lock dependency.
+    const origins = await query('SELECT DISTINCT u.namespace_key FROM automation_runs r STRAIGHT_JOIN automation_flow_members m ON m.run_id=r.id STRAIGHT_JOIN automation_flow_units u ON u.id=m.unit_id WHERE r.workflow_id IN (?) LOCK IN SHARE MODE', [workflowIds]);
     for (const namespace of origins.map(row => row.namespace_key).sort()) {
         await query('INSERT INTO automation_flow_locks (namespace_key) VALUES (?) ON DUPLICATE KEY UPDATE namespace_key=VALUES(namespace_key)', [namespace]);
     }

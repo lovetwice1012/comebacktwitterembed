@@ -298,3 +298,39 @@ test('revoke revalidates an installation copy committed while waiting for its wo
         assert((await f.query('SELECT w.enabled FROM automation_workflows w JOIN automation_package_installs i ON i.workflow_id=w.id WHERE i.package_id=?', [published.pack.id])).every(row => Number(row.enabled) === 0));
     } finally { copyRelease.resolve(); await copy; await revocation; }
 }, { multiple: true }));
+
+test('package stop namespace inventory preserves both historical workflows without locking mutable monitor revocation rows first', { skip: !port, timeout: 60000 }, async t => fixture(async f => {
+    const published = await publishedWorkflow(f), second = await published.market.install(f.actor, published.pack.id, { version: 1 });
+    await f.service.activateWorkflow(f.actor, second.workflow.id, { expectedRevision: 1 });
+    await f.service.attach(f.actor, second.workflow.id, 'auto', f.monitor.id); await f.run('historical second workflow');
+    await f.service.attach(f.actor, published.workflow.id, 'auto', f.monitor.id); const run = await f.run('current first workflow');
+    const workflowIds = [published.workflow.id, second.workflow.id], expected = (await f.query('SELECT DISTINCT f.namespace_key FROM automation_flow_runs f JOIN automation_runs r ON r.id=f.run_id WHERE r.workflow_id IN (?)', [workflowIds])).map(row => row.namespace_key).sort();
+    assert.equal(expected.length, 2);
+    const workflowHeld = gate(), proceed = gate(), namespaceRead = gate(), revocationAttempt = gate(); let paused = false, observed;
+    const editingDb = { ...f.db, withDatabaseTransaction: work => f.db.withDatabaseTransaction(query => work(async (sql, params) => {
+        if (sql.startsWith('UPDATE automation_flow_runs f JOIN automation_runs r ON r.id=f.run_id')) revocationAttempt.resolve();
+        const result = await query(sql, params);
+        if (!paused && sql === 'SELECT * FROM automation_workflows WHERE id=? FOR UPDATE' && params[0] === second.workflow.id) {
+            paused = true; workflowHeld.resolve(); await proceed.promise;
+        }
+        return result;
+    })) };
+    const editing = createService(editingDb).attach(f.actor, second.workflow.id, 'auto', f.monitor.id).then(value => ({ value }), error => ({ error }));
+    let stopping;
+    try {
+        await workflowHeld.promise;
+        const stoppedDb = { ...f.db, withDatabaseTransaction: work => f.db.withDatabaseTransaction(query => work(async (sql, params) => {
+            const result = await query(sql, params);
+            if (sql.startsWith('SELECT DISTINCT ') && sql.endsWith('WHERE r.workflow_id IN (?) LOCK IN SHARE MODE')) {
+                observed = result.map(row => row.namespace_key).sort(); namespaceRead.resolve(); await revocationAttempt.promise;
+            }
+            return result;
+        })) };
+        stopping = createMarketplace(stoppedDb, { service: createService(stoppedDb) }).setStatus({ ...f.actor, isAdmin: true }, published.pack.id,
+            { status: 'revoked', expectedVersion: 1, note: 'monitor mutation lock order fixture' }).then(value => ({ value }), error => ({ error }));
+        await namespaceRead.promise; proceed.resolve();
+        const results = await Promise.all([editing, stopping]); t.diagnostic(JSON.stringify(results.map(result => result.error?.code || 'fulfilled')));
+        assert(results.every(result => !result.error), JSON.stringify(results.map(result => result.error?.code || 'fulfilled')));
+        assert.deepEqual(observed, expected); assert.equal(await f.state(run.runId), 'excluded');
+    } finally { proceed.resolve(); revocationAttempt.resolve(); await editing; await stopping; }
+}, { multiple: true }));
