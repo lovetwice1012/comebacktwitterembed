@@ -245,7 +245,7 @@ const adminSummary = changes => ({ pools: { free: { limit: 50, used: 49, availab
     audits: [{ id: '9', actor_user_id: '999', entity_id: 'x:7', action: 'x.quota.allocate', detail_json: '{"PRIVATE_AUDIT_SECRET":"masked"}', created_at_ms: 1791932400000 }],
     integrity: { issues: [] }, ...changes });
 const grantHistory = changes => ({ grants: [{ grantId: 'old-record', kind: 'historical_admin', slots: 0, purchasedSlots: 1, amountYen: null, confirmedRefundedAmount: 0, financialReviewRequired: false, createdAtMs: 1791932400000 }],
-    payments: [{ attemptId: 'pay-old', amount: 1000, currency: 'JPY', verified: 1, state: 'COMPLETED', created_at_ms: 1791932400000 }], nextCursor: null, ...changes });
+    paymentScope: { environment: 'sandbox', merchantId: 'MERCHANT_CURRENT' }, payments: [{ attemptId: 'pay-old', amount: 1000, currency: 'JPY', verified: 1, state: 'COMPLETED', created_at_ms: 1791932400000 }], nextCursor: null, ...changes });
 async function openDiagnostics(f) { await f.click('使用状況・付与履歴を確認'); await f.settle(); }
 async function enterGrant(f, changes = {}) {
     const values = { '付与対象の利用者ID': '111111111111111111', '購入で付与された枠数': '1', '購入記録の参照ID': 'receipt:historic-1', '記録の根拠・理由': '確認済みの旧購入記録', ...changes };

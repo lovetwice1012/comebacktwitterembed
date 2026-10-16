@@ -45,6 +45,13 @@ function XMonitorEditor({ api, active, allowSetup, subscriptionsVersion, destina
   const [profileCopyMessage, setProfileCopyMessage] = useState("");
   const [reviewedRule, setReviewedRule] = useState<any>(null);
   const mounted = useRef(false), activeRef = useRef(active), epoch = useRef(0), action = useRef(false);
+  // Receiver refreshes invalidate reads, while a write belongs to its API and
+  // active editor context. A background read cannot cancel a committed write.
+  const mutationEpoch = useRef(0), context = useRef({ api, active, allowSetup });
+  if (context.current.api !== api || context.current.active !== active || context.current.allowSetup !== allowSetup) {
+    context.current = { api, active, allowSetup }; mutationEpoch.current++; epoch.current++;
+  }
+  const renderContext = context.current;
   const draftRef = useRef(draft); draftRef.current = draft;
   const consumedRequest = useRef(0), draftForm = useRef<HTMLFormElement>(null), draftFocusPending = useRef(false);
   const chosenSubscriptions = useRef(new Map<string, XSetupSubscription>()), consumedConnection = useRef(false);
@@ -87,7 +94,8 @@ function XMonitorEditor({ api, active, allowSetup, subscriptionsVersion, destina
     setLoading(false);
     return listLoaded;
   }, [api, allowSetup]);
-  useEffect(() => { mounted.current = true; if (active) void load(); return () => { mounted.current = false; epoch.current++; }; }, [load, active, subscriptionsVersion]);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; epoch.current++; mutationEpoch.current++; }; }, []);
+  useEffect(() => { if (active) void load(); return () => { epoch.current++; }; }, [load, active, subscriptionsVersion]);
   useEffect(() => {
     if (!active || loading || !setup || draftRef.current || consumedConnection.current) return;
     const selectedId = new URLSearchParams(window.location.search).get("xSubscriptionId");
@@ -115,8 +123,8 @@ function XMonitorEditor({ api, active, allowSetup, subscriptionsVersion, destina
   function update<K extends keyof Draft>(key: K, value: Draft[K]) { if (!action.current) { setDraft(previous => previous ? { ...previous, [key]: value, ...(key === "accountHandle" && value !== previous.accountHandle ? { firefoxAcknowledgedHandle: null } : {}) } : previous); if (key === "accountHandle") setProfileCopyMessage(""); setReview(null); setNotice(""); } }
   async function mutate(work: () => Promise<void>) {
     if (action.current || !activeRef.current) return;
-    action.current = true; const version = ++epoch.current; setLoading(false); setBusy(true); setError(""); setNotice("");
-    try { await work(); } catch (cause) { if (mounted.current && activeRef.current && version === epoch.current) { setReview(null); setError(xFeedback(cause)); } }
+    action.current = true; const version = ++mutationEpoch.current; epoch.current++; setLoading(false); setBusy(true); setError(""); setNotice("");
+    try { await work(); } catch (cause) { if (mounted.current && activeRef.current && version === mutationEpoch.current) { setReview(null); setError(xFeedback(cause)); } }
     finally { action.current = false; if (mounted.current) setBusy(false); }
   }
   const validSubscription = !draft?.subscriptionId || draft.subscriptionId === current?.notificationSettings.subscriptionId || Boolean(setup?.available && setup.subscriptions.some(item => item.id === draft.subscriptionId));
@@ -147,11 +155,12 @@ function XMonitorEditor({ api, active, allowSetup, subscriptionsVersion, destina
     const before = current, requested = draft;
     if (!before || !requested) return;
     await mutate(async () => {
-      const version = epoch.current, response = xObject(await api("x-monitors"));
+      const version = mutationEpoch.current, response = xObject(await api("x-monitors"));
       if (!Array.isArray(response.items)) throw new Error("Invalid X list");
       const latestItems = response.items.map(parseXMonitor), latest = latestItems.find(item => item.id === before.id && item.state !== "deleted");
-      if (!mounted.current || !activeRef.current || version !== epoch.current || draftRef.current !== requested) return;
+      if (!mounted.current || !activeRef.current || version !== mutationEpoch.current || draftRef.current !== requested) return;
       if (!latest) throw { code: "NOT_FOUND", status: 404 };
+      epoch.current++; setLoading(false);
       setItems(latestItems); setEditingBaseline(latest); setDraft(rebaseDraft(before, requested, latest));
       setRevisionConflict(false); setRebasedReview(true); setProcessingQuoteStale(false); setReview(null);
       setNotice("最新の通知設定を取得しました。変更した入力を引き継いでいます。内容を確認して保存してください。");
@@ -171,10 +180,11 @@ function XMonitorEditor({ api, active, allowSetup, subscriptionsVersion, destina
         ...(registrationQuote ? { processingMode: draft.processingMode, ...(draft.processingMode === "realtime" ? { expectedRealtimeSlotCost: registrationQuote.realtimeSlotCost,
           ...(draft.poolPreference === "supporter" ? { poolPreference: "supporter" } : {}) } : {}) } : {}) };
     await mutate(async () => {
-      const version = epoch.current;
+      const version = mutationEpoch.current;
       let rawResponse;
       try { rawResponse = await api(current ? `x-monitors/${encodeURIComponent(current.id)}` : "x-monitors", current ? "PATCH" : "POST", body); }
       catch (cause) {
+        if (!mounted.current || !activeRef.current || version !== mutationEpoch.current) return;
         const failure = cause && typeof cause === "object" ? cause as { code?: string; status?: number } : {};
         if (newRealtime || failure.code === "X_REALTIME_COST_CONFLICT") setProcessingQuoteStale(true);
         if (current && (["REVISION_CONFLICT", "X_MONITOR_REVISION_CONFLICT"].includes(failure.code ?? "") || failure.status === 409 && !failure.code)) setRevisionConflict(true);
@@ -182,17 +192,19 @@ function XMonitorEditor({ api, active, allowSetup, subscriptionsVersion, destina
       }
       const response = xObject(rawResponse);
       const saved = parseXMonitor(response.item ?? response);
-      if (!mounted.current || !activeRef.current || version !== epoch.current) return;
+      if (!mounted.current || !activeRef.current || version !== mutationEpoch.current) return;
+      epoch.current++; setLoading(false);
       setItems(previous => [...previous.filter(item => item.id !== saved.id), saved]); setDraft(null); setEditingId(null); setEditingBaseline(null); setRevisionConflict(false); setRebasedReview(false); setReview(null); setEditorOpen(false);
       setNotice(saved.notificationSettings.subscriptionId ? "X監視の設定を保存しました。" : "X監視の設定を保存しました。接続設定から受信情報を選んでください。"); await load();
     });
   }
   async function toggle(item: XMonitor) {
     if (item.enabled || canResume(item)) await mutate(async () => {
-      const version = epoch.current;
+      const version = mutationEpoch.current;
       const response = xObject(await api(`x-monitors/${encodeURIComponent(item.id)}`, "PATCH", { expectedRevision: item.revision, enabled: !item.enabled }));
       const saved = parseXMonitor(response.item ?? response);
-      if (!mounted.current || !activeRef.current || version !== epoch.current) return;
+      if (!mounted.current || !activeRef.current || version !== mutationEpoch.current) return;
+      epoch.current++; setLoading(false);
       setItems(previous => previous.map(row => row.id === saved.id ? saved : row)); setNotice(item.enabled ? "X監視を停止しました。" : "X監視を再開しました。"); await load();
     });
   }
@@ -226,10 +238,10 @@ function XMonitorEditor({ api, active, allowSetup, subscriptionsVersion, destina
         event.preventDefault(); if (!canReview) return;
         reviewProcessingCost.current = newRealtime ? registrationQuote?.realtimeSlotCost ?? null : null;
         if (needsConfirmation) void mutate(async () => {
-          const request = epoch.current, requested = draft;
+          const request = mutationEpoch.current, requested = draft;
           let selectedRule: any = null;
           if (draft.workflowId) { try { const found = await api(`workflows/${encodeURIComponent(draft.workflowId)}`); selectedRule = found && typeof found === "object" && "id" in found && found.id === draft.workflowId ? found : { id: draft.workflowId }; } catch { selectedRule = { id: draft.workflowId }; } }
-          if (!mounted.current || !activeRef.current || request !== epoch.current || draftRef.current !== requested) return;
+          if (!mounted.current || !activeRef.current || request !== mutationEpoch.current || draftRef.current !== requested) return;
           setReviewedRule(selectedRule); setReview(current?.revision ?? 0);
         }); else void save(current?.revision ?? 0);
       }}>
@@ -255,9 +267,9 @@ function XMonitorEditor({ api, active, allowSetup, subscriptionsVersion, destina
       <fieldset disabled={busy || !active} className="nx-editor-section"><legend>通知先</legend>
         <label className="text-sm">通知先<select className={field} value={draft.destinationId} onChange={event => update("destinationId", event.target.value)}><option value="">{draft.workflowId ? "詳細ルールで指定" : "本人のDM"}</option>{draft.destinationId && !destinations.some(item => item.id === draft.destinationId && item.enabled !== false && item.scope !== "guild") ? <option value={draft.destinationId} disabled>現在の通知先（候補を確認）</option> : null}{destinations.filter(item => item.enabled !== false && item.scope !== "guild").map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
         {onAddDestination ? <button type="button" className={button} disabled={busy || loading || !active} onClick={() => {
-          const requestingDraft = draft;
+          const requestingDraft = draft, requestingContext = context.current;
           onAddDestination(id => {
-            if (!mounted.current || !activeRef.current || draftRef.current !== requestingDraft) return;
+            if (!mounted.current || !activeRef.current || context.current !== requestingContext || draftRef.current !== requestingDraft) return;
             setDraft(currentDraft => currentDraft === requestingDraft ? { ...currentDraft, destinationId: id } : currentDraft); setReview(null);
           });
         }}>チャンネル・Webhookを追加</button> : null}
@@ -297,10 +309,12 @@ function XMonitorEditor({ api, active, allowSetup, subscriptionsVersion, destina
       </footer>
       </form>
       {current ? <details className="nx-editor-advanced"><summary>利用枠の種類を変更</summary><p className="nx-field-note">現在の枠 {xPoolName(liveCurrent?.poolKind ?? current.poolKind)}</p><XMonitorMoveEditor row={liveCurrent ?? current} api={api} disabled={!active || busy} onBusy={value => { action.current = value; setBusy(value); if (value) { epoch.current++; setLoading(false); } }} onReload={load} onSaved={async saved => {
+        if (!mounted.current || !activeRef.current || context.current !== renderContext) return;
+        epoch.current++; setLoading(false);
         setItems(previous => previous.map(row => row.id === saved.id ? saved : row)); setDraft(previous => previous ? rebaseDraft(current, previous, saved) : previous); setEditingBaseline(saved); setRevisionConflict(false); setRebasedReview(true); setReview(null); await load();
       }} /></details> : null}
       {setupOpen ? <AutomationDialog title="Xとの接続" busy={busy} open={active} onCancel={() => setSetupOpen(false)}><XNotificationSetup api={api} active={active} initiallyOpen embedded onSubscriptionsChanged={() => { void load(); }} onChooseSubscription={subscription => {
-        if (!activeRef.current || !mounted.current) return;
+        if (!activeRef.current || !mounted.current || context.current !== renderContext) return;
         chosenSubscriptions.current.set(subscription.id, subscription);
         setSetup(previous => previous ? { ...previous, subscriptions: [...previous.subscriptions.filter(item => item.id !== subscription.id), subscription] } : previous);
         setDraft(previous => previous ? { ...previous, subscriptionId: subscription.id } : previous); setReview(null); setSetupOpen(false); void load();
@@ -323,8 +337,10 @@ function XMonitorEditor({ api, active, allowSetup, subscriptionsVersion, destina
       </div> : null}
       <details className="nx-field-note"><summary>登録情報の詳細</summary>{item.accountId !== null ? <p>XアカウントID：{item.accountId}</p> : null}<p>利用枠 {xPoolName(item.poolKind)}</p><p>送信上限 1分{item.quality.minuteLimit}通／1日{item.quality.dayLimit}通</p></details>
       {deleting === item.id ? <AutomationDialog title="X監視を削除" open={active} busy={busy} onCancel={() => setDeleting(null)} error={error || undefined}><p>このX監視の登録を削除して利用枠を解放します。</p><footer className="notification-editor-actions"><button className={`${button} text-destructive`} disabled={!active || busy} onClick={() => void mutate(async () => {
+        const version = mutationEpoch.current;
         await api(`x-monitors/${encodeURIComponent(item.id)}`, "DELETE", { expectedRevision: item.revision });
-        if (!mounted.current) return; setItems(previous => previous.filter(row => row.id !== item.id)); setDeleting(null); if (editingId === item.id) { setDraft(null); setEditingId(null); setEditingBaseline(null); setRevisionConflict(false); setRebasedReview(false); }
+        if (!mounted.current || !activeRef.current || version !== mutationEpoch.current) return;
+        epoch.current++; setLoading(false); setItems(previous => previous.filter(row => row.id !== item.id)); setDeleting(null); if (editingId === item.id) { setDraft(null); setEditingId(null); setEditingBaseline(null); setRevisionConflict(false); setRebasedReview(false); }
         setNotice("X監視を削除しました。"); await load();
       })}>このX監視を削除</button></footer></AutomationDialog> : null}
     </article>; })}</div>

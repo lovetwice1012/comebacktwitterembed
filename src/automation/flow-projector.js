@@ -36,7 +36,10 @@ function safeUnit(row) {
 function createFlowProjector(db) {
     async function projectOne(now = Date.now()) {
         return db.withDatabaseTransaction(async query => {
-            const sends = await query("SELECT * FROM automation_flow_sends WHERE state='unprojected' ORDER BY created_at_ms,id LIMIT 1 FOR UPDATE");
+            const pending = await query("SELECT * FROM automation_flow_sends WHERE state='unprojected' ORDER BY created_at_ms,id LIMIT 1");
+            if (!pending.length) return null;
+            await query('INSERT INTO automation_flow_locks (namespace_key) VALUES (?) ON DUPLICATE KEY UPDATE namespace_key=VALUES(namespace_key)', [pending[0].namespace_key]);
+            const sends = await query("SELECT * FROM automation_flow_sends WHERE id=? AND state='unprojected' FOR UPDATE", [pending[0].id]);
             if (!sends.length) return null;
             const send = sends[0];
             let unit;
@@ -95,6 +98,7 @@ function createFlowProjector(db) {
                     members, aggregateSnapshot: unit.kind !== 'event' || !!unit.ancestry?.some(stage => stage.batchId), event: first.event, display: first.display, text: first.text, defaultPriceText: first.defaultPriceText || null, schedules, deadlineMs, context: firstContext, dictionaryRefs: contexts.get(first.runId).bindings?.dictionaries || {} };
                 const id = uuid(`flow-job:${send.id}:${partitionKey}`), runId = members[0].runId;
                 await query('INSERT IGNORE INTO automation_jobs (id,run_id,destination_id,execution_version,plan_json,due_at_ms,deadline_ms,state,created_at_ms,updated_at_ms) VALUES (?,?,?,?,?,?,?,?,?,?)', [id, runId, destinationId, 2, JSON.stringify(plan), dueAtMs, deadlineMs, 'pending', now, now]);
+                await require('./flow-history').recordJobFlowMembers(query, { id, run_id: runId, execution_version: 2, plan_json: plan, created_at_ms: now });
                 jobs.push(id);
             }
             await query("UPDATE automation_flow_sends SET state=? WHERE id=?", [jobs.length ? 'projected' : 'expired', send.id]);

@@ -223,9 +223,10 @@ export function MonitorManager({ api, guildId, canEdit, scope, destinations: sup
     throw new Error("この通知が見つかりません。入力を保持しています。削除や権限の変更をご確認ください。");
   }
   async function removeMonitor(row: any) {
-    await api(`monitors/${kind}/${row.id}`, "DELETE", { expectedRevision: row.revision });
+    const selectedKind = row.kind || kind;
+    await api(`monitors/${selectedKind}/${row.id}`, "DELETE", { expectedRevision: row.revision });
     setItems(previous => previous.filter(item => item.id !== row.id));
-    if (monitor?.id === row.id) { setMonitor(null); setMonitorOpen(false); monitorOriginal.current = null; }
+    if (String(monitor?.id) === String(row.id) && (monitor.kind || kind) === selectedKind) { setMonitor(null); setMonitorOpen(false); monitorOriginal.current = null; }
     setNotice("通知を削除しました。");
     try { await load(); } catch { setError("通知は削除済みです。［一覧を再読み込み］で一覧を確認してください。"); }
   }
@@ -239,17 +240,28 @@ export function MonitorManager({ api, guildId, canEdit, scope, destinations: sup
   async function reloadCadence(id: string) {
     if (!activeRef.current || kindRef.current !== "auto") return null;
     const epoch = ++requestEpoch.current;
-    const result = await api(`monitors/auto?${new URLSearchParams({ query, state })}`);
-    if (!activeRef.current || epoch !== requestEpoch.current || kindRef.current !== "auto") return null;
-    setItems(result.items); setCursor(result.nextCursor); await loadProfile();
-    return result.items.find((row: any) => row.id === id) ?? null;
+    const seen = new Set<string>(); let after = "";
+    do {
+      const result = await api(`monitors/auto?${new URLSearchParams({ state: "all", ...(after ? { afterId: after } : {}) })}`);
+      if (!activeRef.current || epoch !== requestEpoch.current || kindRef.current !== "auto") return null;
+      const latest = result.items.find((row: any) => String(row.id) === String(id));
+      if (latest) {
+        // A targeted re-read must retain the already loaded pages and filters.
+        setItems(previous => previous.map(row => String(row.id) === String(id) ? latest : row));
+        await loadProfile(); return latest;
+      }
+      after = result.nextCursor || "";
+      if (after && (typeof after !== "string" || seen.has(after))) throw new Error("通知を再取得できませんでした。");
+      if (after) seen.add(after);
+    } while (after);
+    return null;
   }
   async function reloadEditedCadence(id: string) {
     const draft = monitorDraft.current, before = monitorOriginal.current;
     const latest = await reloadCadence(id);
     if (latest && draft?.id === id && before && monitorDraft.current === draft) {
       monitorOriginal.current = { ...latest, kind: "auto" };
-      setMonitor(rebaseMonitorDraft(before, draft, latest, "auto")); setMonitorEditVersion(value => value + 1);
+      setMonitor(rebaseMonitorDraft(before, draft, latest, "auto"));
     }
     return latest;
   }

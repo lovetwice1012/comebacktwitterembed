@@ -14,7 +14,8 @@ type InvalidRegistration = { id: string; ownerUserId: string };
 type Summary = { pools: { free: XPool; supporter: XPool }; owners: Owner[]; invalidOwners: string[]; nextCursor: string | null; registrations: (XMonitor & { ownerUserId: string })[]; invalidRegistrations: InvalidRegistration[]; registrationNextCursor: string | null; audits: Audit[]; auditNextCursor: string | null; issues: Issue[] };
 type Grant = { id: string; kind: string; slots: number; purchasedSlots: number; amountYen: number | null; refunded: number; financialReview: boolean; at: number | null; actor: string | null; reason: string | null };
 type Payment = { id: string; amountYen: number | null; state: string; verified: boolean; at: number | null };
-type History = { grants: Grant[]; payments: Payment[]; nextCursor: string | null; paymentNextCursor: string | null };
+type PaymentScope = { environment: "sandbox" | "production"; merchantId: string };
+type History = { grants: Grant[]; payments: Payment[]; paymentScope: PaymentScope | null; nextCursor: string | null; paymentNextCursor: string | null };
 type GrantDraft = { userId: string; slots: string; reference: string; reason: string; purchasedAt: string; included: boolean };
 const emptyGrant: GrantDraft = { userId: "", slots: "", reference: "", reason: "", purchasedAt: "", included: false };
 const numeric = (value: unknown): number | null => xCount(value) ? value : typeof value === "string" && /^\d{1,16}$/u.test(value) && xCount(Number(value)) ? Number(value) : null;
@@ -43,9 +44,12 @@ function parseSummary(value: unknown): Summary {
 function parseHistory(value: unknown): History {
   const data = xObject(value);
   if (!Array.isArray(data.grants) || !Array.isArray(data.payments)) throw new Error("Invalid admin history");
+  const scope = data.paymentScope == null ? null : xObject(data.paymentScope);
+  if (scope && (!["sandbox", "production"].includes(String(scope.environment)) || typeof scope.merchantId !== "string" || !/^[A-Za-z0-9:_-]{1,255}$/u.test(scope.merchantId)) || data.payments.length && !scope) throw new Error("Invalid payment scope");
   return { grants: data.grants.map(value => { const row = xObject(value); if (!Number.isSafeInteger(row.slots) || !xCount(row.purchasedSlots)) throw new Error("Invalid support grant");
     return { id: String(row.grantId), kind: typeof row.kind === "string" ? row.kind : "", slots: Number(row.slots), purchasedSlots: row.purchasedSlots, amountYen: numeric(row.amountYen), refunded: numeric(row.confirmedRefundedAmount) ?? 0, financialReview: row.financialReviewRequired === true, at: numeric(row.createdAtMs), actor: typeof row.actorUserId === "string" && /^\d{1,32}$/u.test(row.actorUserId) ? row.actorUserId : null, reason: typeof row.reason === "string" && row.reason.length <= 240 ? row.reason : null }; }),
     payments: data.payments.map(value => { const row = xObject(value); if (typeof row.attemptId !== "string") throw new Error("Invalid payment history"); return { id: row.attemptId, amountYen: numeric(row.amountYen ?? (row.currency === "JPY" ? row.amount : null)), state: typeof row.state === "string" ? row.state : "", verified: row.verified === true || row.verified === 1, at: numeric(row.createdAtMs ?? row.created_at_ms) }; }),
+    paymentScope: scope ? { environment: scope.environment as PaymentScope["environment"], merchantId: scope.merchantId as string } : null,
     nextCursor: typeof data.nextCursor === "string" ? data.nextCursor : null, paymentNextCursor: typeof data.paymentNextCursor === "string" ? data.paymentNextCursor : null };
 }
 function safeFailure(cause: unknown): string {
@@ -100,10 +104,11 @@ function Diagnostics({ api, refreshVersion }: { api: XMonitorAPI; refreshVersion
     if (id !== historyUser) { setHistory(null); setHistoryUser(id); }
     try {
       const next = parseHistory(await api(`push-capacity/history?userId=${encodeURIComponent(id)}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}${afterPaymentId ? `&afterPaymentId=${encodeURIComponent(afterPaymentId)}` : ""}`));
+      if (mounted.current && version === historyRequest.current && (cursor || afterPaymentId) && history && JSON.stringify(history.paymentScope) !== JSON.stringify(next.paymentScope)) { setHistory(null); setHistoryError("決済環境が変わりました。履歴を先頭から取得してください。"); return; }
       if (mounted.current && version === historyRequest.current) { setHistory(previous => (cursor || afterPaymentId) && previous ? { ...next,
         grants: [...new Map([...previous.grants, ...next.grants].map(item => [item.id, item])).values()], payments: [...new Map([...previous.payments, ...next.payments].map(item => [item.id, item])).values()],
         nextCursor: cursor ? next.nextCursor : previous.nextCursor, paymentNextCursor: afterPaymentId ? next.paymentNextCursor : previous.paymentNextCursor } : next); setHistoryUser(id); }
-    } catch (cause) { if (mounted.current && version === historyRequest.current) { const status = cause && typeof cause === "object" ? (cause as { status?: number }).status : undefined; if (status === 401 || status === 403) setHistory(null); setHistoryError(safeFailure(cause)); } }
+    } catch (cause) { if (mounted.current && version === historyRequest.current) { const error = cause && typeof cause === "object" ? cause as { status?: number; code?: string } : {}; if (error.status === 401 || error.status === 403 || error.code === "INVALID_CURSOR") setHistory(null); setHistoryError(error.code === "INVALID_CURSOR" ? "決済環境または利用者が変わっています。履歴を先頭から取得してください。" : safeFailure(cause)); } }
   }
   const purchasedAtMs = receiptTime(draft.purchasedAt);
   const validGrant = /^\d{1,32}$/u.test(draft.userId) && /^\d+$/u.test(draft.slots) && xCount(Number(draft.slots)) && Number(draft.slots) > 0
@@ -146,6 +151,7 @@ function Diagnostics({ api, refreshVersion }: { api: XMonitorAPI; refreshVersion
     <section aria-label="支援決済・付与履歴" className="space-y-3 rounded border p-4"><h3 className="font-medium">支援・決済・付与履歴</h3><form className="flex flex-wrap items-end gap-2" onSubmit={event => { event.preventDefault(); void loadHistory(); }}><label className="text-sm">履歴を確認する利用者ID<Input value={user} inputMode="numeric" maxLength={32} onChange={event => setUser(event.target.value)} /></label><Button disabled={!summary || busy || !/^\d{1,32}$/u.test(user)}>履歴を取得</Button></form>
       {historyError ? <p role="alert" className="text-sm text-destructive">{historyError}</p> : null}{history ? <div className="space-y-2"><p className="text-sm">利用者 {historyUser} の記録です。</p><ul className="space-y-2 text-sm">{history.grants.map(item => <li key={item.id} className="rounded border p-2">{grantKind(item.kind)} · 購入枠{item.purchasedSlots}／追加付与{item.slots}枠 · 金額{item.amountYen === null ? "未記録" : `${item.amountYen.toLocaleString("ja-JP")}円`}<br /><span className="text-xs text-muted-foreground">記録日時 {displayDate(item.at)}{item.actor ? ` · 記録した管理者 ${item.actor}` : ""}{item.financialReview ? ` · 確認済み返金${item.refunded}円、運営による確認が必要` : ""}</span>{item.reason ? <p className="text-xs">記録理由: {item.reason}</p> : null}</li>)}</ul>
         {!history.grants.length ? <p className="text-sm">個別の付与履歴は未記録です。旧制度の保有数は利用者一覧で確認できます。</p> : null}
+        {history.paymentScope && <dl className="text-xs"><div><dt>決済環境</dt><dd>{history.paymentScope.environment === "production" ? "本番" : "テスト"}</dd></div><div><dt>加盟店</dt><dd className="break-all">{history.paymentScope.merchantId}</dd></div></dl>}
         <p className="text-xs text-muted-foreground">支援決済の取得記録: {history.payments.length}件</p>{history.payments.map(item => <p className="text-xs" key={item.id}>{displayDate(item.at)} · {item.verified ? "検証済み" : "検証待ち"} · {item.amountYen === null ? "金額未取得" : `${item.amountYen.toLocaleString("ja-JP")}円`} · {({ COMPLETED: "完了", FAILED: "失敗", UNKNOWN: "確認待ち" } as Record<string, string>)[item.state] ?? "状態の確認が必要"}</p>)}
         {history.nextCursor ? <Button variant="outline" disabled={busy} onClick={() => void loadHistory(historyUser, history.nextCursor!)}>付与履歴の続きを取得</Button> : null}
         {history.paymentNextCursor ? <Button variant="outline" disabled={busy} onClick={() => void loadHistory(historyUser, undefined, history.paymentNextCursor!)}>決済履歴の続きを取得</Button> : null}

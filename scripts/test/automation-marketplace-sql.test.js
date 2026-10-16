@@ -165,11 +165,12 @@ test('real SQL marketplace: version review, pinned installs, safe updates, dicti
             await assert.rejects(market.get(member, pack.id, 3), { status: 404 });
         });
         await t.test('reports need reviewer authority, can be resolved, and new reports reopen the record', async () => {
-            await market.feedback(member, published.id, { kind: 'report', reason: '確認してください' });
+            const displayed = await market.get(member, published.id);
+            await market.feedback(member, published.id, { kind: 'report', reason: '確認してください', version: displayed.version, checksum: displayed.checksum });
             const report = (await market.reviewQueue(admin)).reports[0];
             await assert.rejects(market.resolveReport(member, report.id, {}), { status: 403 });
-            await market.resolveReport(admin, report.id, { note: '確認済み' }); assert.equal((await market.reviewQueue(admin)).reports.length, 0);
-            await market.feedback(member, published.id, { kind: 'report', reason: '追加の確認' }); assert.equal((await market.reviewQueue(admin)).reports.length, 1);
+            await market.resolveReport(admin, report.id, { note: '確認済み', expectedUpdatedAtMs:Number(report.updated_at_ms), expectedVersion:displayed.version, expectedChecksum:displayed.checksum }); assert.equal((await market.reviewQueue(admin)).reports.length, 0);
+            await market.feedback(member, published.id, { kind: 'report', reason: '追加の確認', version: displayed.version, checksum: displayed.checksum }); assert.equal((await market.reviewQueue(admin)).reports.length, 1);
         });
         await t.test('starter attribution and administrator-selected dictionary moderate listings without rejecting filter terms', async () => {
             assert.equal(starterInfo().languages.length, 28); assert(starterInfo().uniqueEntries > 2500); assert.equal(starterDictionary().license.startsWith('CC-BY-4.0'), true);

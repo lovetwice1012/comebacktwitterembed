@@ -2,7 +2,7 @@
 
 // The web boundary derives actor from the authenticated session. This dispatcher
 // is also used by loopback-only fixture tests; it contains no auth bypass.
-const { requireActor, AutomationError, publicDestination, validateAssignmentGuards } = require('./service');
+const { requireActor, AutomationError, publicDestination, validateAssignmentGuards, hash } = require('./service');
 /** @param {{method:string,path:string[],search?:URLSearchParams,body?:Record<string,any>}} request */
 async function dispatch(request, actor, services) {
     requireActor(actor);
@@ -73,13 +73,28 @@ async function dispatchCore({ method, path, search = new URLSearchParams(), body
         const owner = search.get('userId');
         const grants = require('./push-support-grants');
         if (!/^\d{1,32}$/.test(owner || '')) throw new AutomationError('INVALID_INPUT','利用者を指定してください。');
-        const history = await grants.getSupporterGrantHistory(services.db.queryDatabase, owner, { cursor: search.get('cursor') || undefined });
+        const configured = require('./square-billing').getSquareScope();
+        // Local verified history remains readable while payment credentials are
+        // paused, using the same environment/merchant boundary as grant reads.
+        const scope = ['sandbox','production'].includes(configured.environment) && /^[A-Za-z0-9:_-]{1,255}$/.test(configured.merchantId || '') ? { environment: configured.environment, merchantId: configured.merchantId } : null;
+        const grantFilter = hash(JSON.stringify(['push-grants-v1',owner,scope]));
+        let grantCursor;
+        const rawGrantCursor = search.get('cursor');
+        if (rawGrantCursor) {
+          try { if (rawGrantCursor.length > 1024 || !/^[A-Za-z0-9_-]+$/.test(rawGrantCursor)) throw new Error('cursor'); grantCursor = JSON.parse(Buffer.from(rawGrantCursor,'base64url').toString('utf8')); } catch { throw new AutomationError('INVALID_CURSOR','付与履歴を先頭から読み直してください。'); }
+          if (grantCursor?.filter !== grantFilter || typeof grantCursor.position !== 'string' || !/^\d{1,16}:[a-f0-9]{64}$/.test(grantCursor.position)) throw new AutomationError('INVALID_CURSOR','決済の環境または利用者が変わっています。履歴を先頭から読み直してください。');
+        }
+        const history = await grants.getSupporterGrantHistory(services.db.queryDatabase, owner, { cursor: grantCursor?.position, scope });
         const afterPaymentId=search.get('afterPaymentId');
-        const match=afterPaymentId?.match(/^(\d{1,16}):([0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12})$/);
-        if(afterPaymentId&&(!match||!Number.isSafeInteger(Number(match[1])))) throw new AutomationError('INVALID_CURSOR','決済履歴の位置を確認してください。');
-        const payments = await services.db.queryDatabase(`SELECT id,state,amount,currency,refunded_amount,verified,completed_at_ms,created_at_ms FROM automation_square_donation_attempts WHERE owner_user_id=?${match?' AND (created_at_ms<? OR (created_at_ms=? AND id<?))':''} ORDER BY created_at_ms DESC,id DESC LIMIT 101`, match?[owner,match[1],match[1],match[2]]:[owner]);
-        result = { grants: history.items, nextCursor: history.nextCursor || null, paymentNextCursor:payments.length>100?`${payments[99].created_at_ms}:${payments[99].id}`:null,
-          payments: payments.slice(0,100).map(row=>({attemptId:row.id,state:row.state,amount:Number(row.amount),currency:row.currency,refundedAmount:Number(row.refunded_amount),verified:Number(row.verified)===1,createdAtMs:Number(row.created_at_ms),completedAtMs:row.completed_at_ms==null?null:Number(row.completed_at_ms)})) };
+        const filter = hash(JSON.stringify(['push-payments-v1',owner,scope]));
+        let cursor;
+        if (afterPaymentId) {
+          try { if (afterPaymentId.length > 1024 || !/^[A-Za-z0-9_-]+$/.test(afterPaymentId)) throw new Error('cursor'); cursor = JSON.parse(Buffer.from(afterPaymentId,'base64url').toString('utf8')); } catch { throw new AutomationError('INVALID_CURSOR','決済履歴を先頭から読み直してください。'); }
+          if (!scope || cursor?.filter !== filter || !Number.isSafeInteger(cursor.at) || cursor.at < 0 || !/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/.test(cursor.id || '')) throw new AutomationError('INVALID_CURSOR','決済の環境または利用者が変わっています。履歴を先頭から読み直してください。');
+        }
+        const payments = scope ? await services.db.queryDatabase(`SELECT id,state,amount,currency,refunded_amount,verified,completed_at_ms,created_at_ms FROM automation_square_donation_attempts WHERE owner_user_id=? AND environment=? AND merchant_id=?${cursor?' AND (created_at_ms<? OR (created_at_ms=? AND id<?))':''} ORDER BY created_at_ms DESC,id DESC LIMIT 101`, [owner,scope.environment,scope.merchantId,...(cursor?[cursor.at,cursor.at,cursor.id]:[])]) : [];
+        result = { grants: history.items, nextCursor: history.nextCursor?Buffer.from(JSON.stringify({filter:grantFilter,position:history.nextCursor})).toString('base64url'):null, paymentScope:scope, paymentNextCursor:payments.length>100?Buffer.from(JSON.stringify({filter,at:Number(payments[99].created_at_ms),id:payments[99].id})).toString('base64url'):null,
+          payments: payments.slice(0,100).map(row=>({attemptId:row.id,environment:scope.environment,merchantId:scope.merchantId,state:row.state,amount:Number(row.amount),currency:row.currency,refundedAmount:Number(row.refunded_amount),verified:Number(row.verified)===1,createdAtMs:Number(row.created_at_ms),completedAtMs:row.completed_at_ms==null?null:Number(row.completed_at_ms)})) };
       }
       else if (id === 'grants' && !action && method === 'POST') {
         if (Object.keys(body).some(key=>!['userId','slots','idempotencyKey','reason','purchasedAtMs','alreadyIncludedInLegacy'].includes(key)) || typeof body.reason!=='string' || !body.reason.trim() || body.reason.length>240) throw new AutomationError('AUTOMATION_SUPPORT_GRANT_INVALID','確認した購入回数と付与の根拠を指定してください。',422);
@@ -155,7 +170,8 @@ async function dispatchCore({ method, path, search = new URLSearchParams(), body
     else if (kind === "moderation" && method === "GET") result = await moderation.get(actor);
     else if (kind === "moderation" && method === "POST") result = await moderation.save(actor, body);
     else if (kind === "installations" && method === "GET") result = await market.installations(actor, { kind: search.get("kind"), afterId: search.get("afterId") });
-    else if (kind === "reports" && id && method === "POST") result = await market.resolveReport(actor, id, body);
+    else if (kind === "reports" && id && !action && method === "POST") result = await market.resolveReport(actor, id, body);
+    else if (kind === "reports" && id && action === "content" && method === "GET") result = await market.reportContent(actor, id);
     else if (kind === "jobs") {
       if (!id && method === "GET") result = await history.list(actor, { state: search.get("state"), cursor: search.get("cursor"), targetKind: search.get("targetKind") ?? undefined, targetId: search.get("targetId") ?? undefined });
       else if (id && method === "GET") result = await history.detail(actor, id);
@@ -191,7 +207,16 @@ async function dispatchCore({ method, path, search = new URLSearchParams(), body
       else if (action === "activation-preview" && method === "GET") result = await service.activationPreview(actor, id);
       else if (action === "activate" && method === "POST") result = await service.activateWorkflow(actor, id, body, { requireTargetsToken: true });
       else if (action === "state" && method === "POST") result = await service.setWorkflowState(actor, id, body);
-      else if (action === "history" && method === "GET") result = await service.history(actor, id);
+      else if (action === "history" && method === "GET") {
+        if (!["page","limit","beforeRevision"].some(key => search.has(key))) result = await service.history(actor, id);
+        else {
+          const readPositive = (key, fallback) => { const value = search.get(key); if (value === null) return fallback; if (!/^[1-9]\d*$/.test(value) || !Number.isSafeInteger(Number(value))) throw new AutomationError('INVALID_CURSOR','履歴の位置を確認してください。'); return Number(value); };
+          if (search.has('page') && search.get('page') !== '1') throw new AutomationError('INVALID_CURSOR','履歴の位置を確認してください。');
+          const limit = readPositive('limit',50), beforeRevision = readPositive('beforeRevision',undefined);
+          if (limit > 100) throw new AutomationError('INVALID_CURSOR','履歴は100件以内で取得してください。');
+          result = await service.history(actor,id,{limit,beforeRevision});
+        }
+      }
       else if (action === "restore" && method === "POST") result = await service.restoreRevision(actor, id, body.revision, body.expectedRevision);
       else if (action === "attach" && method === "POST") result = await service.attach(actor, id, body.targetKind, body.targetId,
         Object.hasOwn(body, 'expectedRevision') || Object.hasOwn(body, 'expectedWorkflowId') ? validateAssignmentGuards({ expectedRevision: body.expectedRevision, expectedWorkflowId: body.expectedWorkflowId }) : undefined);
