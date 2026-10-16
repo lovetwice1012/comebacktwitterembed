@@ -8,9 +8,35 @@ async function createTestDatabase(port) {
     const schema = `cbte_automation_test_${randomBytes(10).toString('hex')}`;
     const pool = mysql.createPool({ host: '127.0.0.1', port, user: 'root', password: process.env.AUTOMATION_TEST_DB_PASSWORD || '', connectionLimit: 8, supportBigNumbers: true, bigNumberStrings: true });
     const context = new AsyncLocalStorage();
-    const acquire = () => new Promise((resolve, reject) => pool.getConnection((error, c) => error ? reject(error) : resolve(c)));
+    const acquire = async () => {
+        for (let attempt = 1; ; attempt++) {
+            let suppliedConnection = false;
+            try {
+                return await new Promise((resolve, reject) => pool.getConnection((error, connection) => {
+                    suppliedConnection = connection != null;
+                    if (error) reject(error); else resolve(connection);
+                }));
+            } catch (error) {
+                // Only a proven TCP connect failure before pool admission is
+                // safe to repeat. Never replay a handshake, SQL or transaction.
+                const connectOnly = error && typeof error === 'object' && !suppliedConnection
+                    && error.code === 'ETIMEDOUT' && error.syscall === 'connect'
+                    && error.address === '127.0.0.1' && error.port === port
+                    && !('sql' in error) && !('sqlState' in error);
+                if (!connectOnly || attempt >= 3) throw error;
+                process.stderr.write(JSON.stringify({ code: 'AUTOMATION_TEST_DB_CONNECT_RETRY', attempt: attempt + 1, port }) + '\n');
+                await new Promise(resolve => setTimeout(resolve, attempt * 50));
+            }
+        }
+    };
     const queryOn = c => (sql, params = []) => new Promise((resolve, reject) => c.query(sql, params, (error, rows) => error ? reject(error) : resolve(rows)));
-    const admin = await acquire(), adminQuery = queryOn(admin);
+    let admin;
+    try { admin = await acquire(); }
+    catch (error) {
+        try { await new Promise(resolve => pool.end(resolve)); } catch { /* Preserve the exact original admission error. */ }
+        throw error;
+    }
+    const adminQuery = queryOn(admin);
     await adminQuery(`CREATE DATABASE ${mysql.escapeId(schema)} CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
     let closed = false;
     const db = {

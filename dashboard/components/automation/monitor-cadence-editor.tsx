@@ -41,11 +41,13 @@ export function MonitorCadenceEditor({ row, pool, api, disabled = false, draftVa
       const result = await api(`monitors/auto/${encodeURIComponent(row.id)}`, "POST", { action: "cadence", slotCost: selected, expectedRevision: row.revision, expectedUpdatedAtMs: row.cadenceUpdatedAtMs ?? null });
       accepted = true; if (!mounted.current) return;
       const saved = validCost(Number(result.slotCost)) ? String(result.slotCost) : draft; setDraft(saved); onDraft(saved); setConfirmation(null);
-      await onReload(); if (!mounted.current) return;
+      const latest = await onReload(); if (!mounted.current) return;
+      if (!latest) throw new Error("Missing saved monitor");
+      setConflict(false);
       setMessage(`枠配分を保存しました。サービスの設定間隔は${minutes(Number(result.intervalMs) / 60000)}です。実際の確認は取得先と送信上限の範囲で行います。`);
     } catch (cause: any) {
       if (!mounted.current) return; setConfirmation(null);
-      const stale = !accepted && (cause?.status === 409 || ["REVISION_CONFLICT", "AUTOMATION_CADENCE_CONFLICT"].includes(cause?.code)); setConflict(stale);
+      const stale = !accepted && (cause?.status === 409 || ["REVISION_CONFLICT", "AUTOMATION_CADENCE_CONFLICT"].includes(cause?.code)); setConflict(accepted || stale);
       setError(accepted ? "枠配分は保存済みです。一覧・利用枠の再取得に失敗しました。最新の設定を再取得してください。" : stale ? "通知または枠配分が別の操作で変更されました。最新の設定を取得し、保持した入力内容と比較してください。" : cause?.code === "AUTOMATION_SLOT_LIMIT" ? "この配分に必要な空き枠が足りません。利用枠を再確認してください。入力内容は保持されています。" : automationRetryDelay(cause) !== null ? cause.message : "枠配分を保存できませんでした。入力内容を保持しています。設定を確認して再試行してください。");
     } finally { actionLock.current = false; if (mounted.current) setBusy(false); }
   }

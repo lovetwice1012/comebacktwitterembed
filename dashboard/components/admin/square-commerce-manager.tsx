@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { automationRetryDelay } from "@/components/automation/automation-feedback";
@@ -112,11 +112,13 @@ function CouponEditor({ coupon, plans, api, refreshing, onSaved, onCancel }: { c
 
 export function SquareCouponManager({ plans, configured, api }: { plans: CommercePlan[]; configured: boolean; api: CommerceAPI }) {
   const [opened, setOpened] = useState(false), [loading, setLoading] = useState(false), [items, setItems] = useState<Coupon[]>([]), [error, setError] = useState(""), [creating, setCreating] = useState(false);
-  const version = useRef(0);
-  async function load() { setOpened(true); const current = ++version.current; setLoading(true); setError(""); try { const data: Admin = await api("billing/commerce/admin"); if (current === version.current) setItems(data.coupons); } catch (cause) { if (current === version.current) setError(errorMessage(cause, "クーポンを取得できませんでした。入力内容を保持して再試行できます。")); } finally { if (current === version.current) setLoading(false); } }
-  const saved = (coupon: Coupon) => setItems(previous => [...previous.filter(item => item.code !== coupon.code), coupon].sort((a, b) => a.code.localeCompare(b.code)));
+  const version = useRef(0), currentAPI = useRef(api), itemsAPI = useRef(api), alive = useRef(true);
+  if (currentAPI.current !== api) { currentAPI.current = api; version.current++; }
+  useEffect(() => { alive.current = true; return () => { alive.current = false; version.current++; }; }, []);
+  async function load() { setOpened(true); const current = ++version.current; setLoading(true); setError(""); try { const data: Admin = await api("billing/commerce/admin"); if (alive.current && currentAPI.current === api && current === version.current) { const sameContext = itemsAPI.current === api; itemsAPI.current = api; setItems(previous => sameContext ? data.coupons.map(item => previous.find(known => known.code === item.code && known.updatedAtMs > item.updatedAtMs) ?? item) : data.coupons); } } catch (cause) { if (alive.current && currentAPI.current === api && current === version.current) setError(errorMessage(cause, "クーポンを取得できませんでした。入力内容を保持して再試行できます。")); } finally { if (alive.current && currentAPI.current === api && current === version.current) setLoading(false); } }
+  const saved = (coupon: Coupon) => { if (!alive.current || currentAPI.current !== api) return; version.current++; setLoading(false); setError(""); setItems(previous => [...previous.filter(item => item.code !== coupon.code), coupon].sort((a, b) => a.code.localeCompare(b.code))); };
   const paid = plans.filter(plan => plan.tier === "paid");
   return <section aria-label="初回請求の割引クーポン" className="space-y-4 rounded-xl border p-5"><div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-lg font-semibold">割引クーポン</h2><p className="mt-1 text-sm text-muted-foreground">有償プランの初回請求に固定額・割合の割引を設定します。次回以降の継続課金は通常料金です。</p></div><Button type="button" variant="outline" disabled={!configured || loading} onClick={() => void load()}>{opened ? "クーポン一覧を更新" : "割引クーポンを管理"}</Button></div>{!configured ? <p className="text-sm text-muted-foreground">Square連携を完了すると、クーポンを発行・管理できます。</p> : null}
-    {opened ? <>{loading ? <p role="status" className="text-sm">クーポンを読み込み中…</p> : null}{error ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}{!loading && !error ? <Button type="button" disabled={creating || !paid.length} onClick={() => setCreating(true)}>クーポンを発行</Button> : null}{!loading && !items.length && !error ? <p className="text-sm text-muted-foreground">発行済みのクーポンはありません。</p> : null}{items.map(coupon => <CouponEditor key={coupon.code} coupon={coupon} plans={paid} api={api} refreshing={loading} onSaved={saved} />)}{creating ? <CouponEditor key="new-coupon" plans={paid} api={api} refreshing={loading} onSaved={coupon => { saved(coupon); setCreating(false); }} onCancel={() => setCreating(false)} /> : null}</> : null}
+    {opened ? <>{loading ? <p role="status" className="text-sm">クーポンを読み込み中…</p> : null}{error ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}{!loading && !error ? <Button type="button" disabled={creating || !paid.length} onClick={() => setCreating(true)}>クーポンを発行</Button> : null}{!loading && !items.length && !error ? <p className="text-sm text-muted-foreground">発行済みのクーポンはありません。</p> : null}{items.map(coupon => <CouponEditor key={coupon.code} coupon={coupon} plans={paid} api={api} refreshing={loading} onSaved={saved} />)}{creating ? <CouponEditor key="new-coupon" plans={paid} api={api} refreshing={loading} onSaved={coupon => { if (alive.current && currentAPI.current === api) { saved(coupon); setCreating(false); } }} onCancel={() => setCreating(false)} /> : null}</> : null}
   </section>;
 }

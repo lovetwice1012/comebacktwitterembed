@@ -19,9 +19,13 @@ const U = '225555555555555555', V = '226666666666666666';
 const actor = { userId: U }, ADMIN = { userId: '444444444444444444', isAdmin: true };
 const tableFor = kind => kind === 'auto' ? 'auto_watch' : 'price_watch';
 const guards = (revision = 1, workflowId = null) => ({ expectedRevision: revision, expectedWorkflowId: workflowId });
+const gate = () => { let resolve; const promise = new Promise(done => { resolve = done; }); return { promise, resolve }; };
+const capture = promise => promise.then(value => ({ value }), error => ({ error }));
+const entered = (barrier, operation) => Promise.race([barrier.promise, operation.then(result => { throw result.error || new Error('Operation completed before the expected SQL barrier'); })]);
 
 test('workflow-only native edits use atomic target/assignment CAS and preserve unrelated deliveries', { timeout: 120000 }, async t => {
     const db = await createTestDatabase(port), query = db.queryDatabase; t.after(() => db.close());
+    t.diagnostic(`Disposable workflow-CAS database: ${db.schema}`);
     const serviceFor = adapter => createService(adapter, { rateLimiter: createRateLimiter(adapter, { policy: { operations: { write: { minute: 1000, hour: 10000 }, monitor: { minute: 1000, hour: 10000 } } } }) });
     const service = serviceFor(db), monitors = createMonitors(db, service, {});
     await query('INSERT INTO users (user_id,registered_at_ms,is_donor) VALUES (?,0,1)', [U]);
@@ -198,61 +202,117 @@ test('workflow-only native edits use atomic target/assignment CAS and preserve u
         assert.equal((await attach({})).attached, true, 'unguarded HTTP clients remain supported');
     });
 
-    await t.test('a known transaction deadlock before physical send preserves either the cancelled new choice or the complete old delivery', async () => {
-        const entry = await target('auto'), old = await rule(), next = await rule();
-        await service.activateWorkflow(actor, old.id, { expectedRevision: old.revision });
-        await service.attach(actor, old.id, 'auto', entry.id);
-        const initialRevision = Number((await metadata(entry)).revision);
-        const queued = await job(entry, 'leased', old.id), raw = (await query('SELECT * FROM auto_watch_targets WHERE id=?', [entry.id]))[0];
-        queued.plan.targetIdentity = targetIdentity(raw);
-        await query('UPDATE automation_jobs SET plan_json=? WHERE id=?', [JSON.stringify(queued.plan), queued.id]);
-        let workerHasJob, guardHasTarget, workerRequestsTarget;
-        const jobLocked = new Promise(resolve => { workerHasJob = resolve; }), targetLocked = new Promise(resolve => { guardHasTarget = resolve; });
-        const targetRequested = new Promise(resolve => { workerRequestsTarget = resolve; });
-        const deadlocks = [];
-        const workerDb = { ...db, withDatabaseTransaction: work => db.withDatabaseTransaction(transactionQuery => work(async (sql, params) => {
-            try {
-                if (sql.startsWith('SELECT * FROM automation_jobs WHERE id=? FOR UPDATE')) {
-                    const result = await transactionQuery(sql, params); workerHasJob(); await targetLocked; return result;
-                }
-                if (sql.includes('FROM auto_watch_targets t LEFT JOIN automation_monitors') && sql.endsWith('FOR UPDATE')) {
-                    const pending = transactionQuery(sql, params); workerRequestsTarget(); return await pending;
-                }
-                return await transactionQuery(sql, params);
-            } catch (error) { if (error.code === 'ER_LOCK_DEADLOCK') deadlocks.push('worker'); throw error; }
-        })) };
-        const guardedDb = { ...db, withDatabaseTransaction: work => db.withDatabaseTransaction(transactionQuery => work(async (sql, params) => {
-            try {
+    await t.test('the owner fence serializes physical delivery and a workflow choice, preserving both legitimate winners', async () => {
+        for (const winner of ['guard', 'worker']) {
+            const entry = await target('auto'), old = await rule(), next = await rule();
+            await service.activateWorkflow(actor, old.id, { expectedRevision: old.revision }); await service.attach(actor, old.id, 'auto', entry.id);
+            const initialRevision = Number((await metadata(entry)).revision), queued = await job(entry, 'leased', old.id);
+            queued.plan.targetIdentity = targetIdentity((await query('SELECT * FROM auto_watch_targets WHERE id=?', [entry.id]))[0]);
+            await query('UPDATE automation_jobs SET plan_json=? WHERE id=?', [JSON.stringify(queued.plan), queued.id]);
+            const workerReady = gate(), releaseWorker = gate(), guardReady = gate(), releaseGuard = gate();
+            let workerPaused = false, guardHasTarget = false, time = queued.now, claims = 0, sends = 0, releases = 0;
+            time = Math.max(time, Number((await query('SELECT MAX(expires_at_ms) AS due FROM automation_counters WHERE counter_key IN (?)', [[hash('automation:discord:global'), hash(`automation:discord:destination:${U}`)]]))[0].due || 0));
+            const workerDb = { ...db, withDatabaseTransaction: work => db.withDatabaseTransaction(transactionQuery => work(async (sql, params) => {
                 const result = await transactionQuery(sql, params);
-                if (sql.includes('m.revision AS monitor_revision FROM auto_watch_targets') && sql.endsWith('FOR UPDATE')) {
-                    guardHasTarget(); await targetRequested;
+                if (winner === 'worker' && !workerPaused && sql === 'SELECT * FROM automation_jobs WHERE id=? FOR UPDATE') {
+                    workerPaused = true; workerReady.resolve(); await releaseWorker.promise;
                 }
                 return result;
-            } catch (error) { if (error.code === 'ER_LOCK_DEADLOCK') deadlocks.push('guard'); throw error; }
+            })) };
+            const guardedDb = { ...db, withDatabaseTransaction: work => db.withDatabaseTransaction(transactionQuery => work(async (sql, params) => {
+                const result = await transactionQuery(sql, params);
+                if (winner === 'worker' && sql.includes('m.revision AS monitor_revision FROM auto_watch_targets') && sql.endsWith('FOR UPDATE')) {
+                    guardHasTarget = true; guardReady.resolve(); await releaseGuard.promise;
+                }
+                return result;
+            })) };
+            const queue = createQueue(workerDb, {}, { clock: () => time });
+            const jobObject = { id: queued.id, owner_user_id: U, workflow_id: old.id, revision: 1, target_kind: 'auto', target_id: entry.id,
+                scope: 'private', plan: queued.plan, lease_token: queued.lease, due_at_ms: time, created_at_ms: time, attempts: 0 };
+            const runner = createRunner(workerDb, { ...queue, claim: async () => claims++ === 0 ? jobObject : null }, {
+                prepare: async () => { if (winner === 'guard') { workerReady.resolve(); await releaseWorker.promise; } return { payloads: [{}] }; },
+                release: async () => { releases++; }, sendStep: async () => { sends++; return '555555555555555555'; },
+            }, { clock: () => time, sleep: async ms => { time += ms; }, assertAllowed: () => {}, notificationAllowed: () => true });
+            const sending = capture(runner.tick()); let attaching;
+            try {
+                await entered(workerReady, sending);
+                attaching = capture(serviceFor(guardedDb).attach(actor, next.id, 'auto', entry.id, guards(initialRevision, old.id)));
+                if (winner === 'guard') { assert.equal((await attaching).error, undefined); releaseWorker.resolve(); }
+                else {
+                    // The worker owns the actual owner row before its job row.
+                    // The edit must wait, rather than holding a target row that
+                    // a client-side barrier prevents the worker from reaching.
+                    await new Promise(resolve => setTimeout(resolve, 50)); assert.equal(guardHasTarget, false);
+                    releaseWorker.resolve(); await entered(guardReady, attaching);
+                    assert.equal((await sending).value.state, 'sent');
+                    releaseGuard.resolve();
+                }
+                assert.equal((await sending).error, undefined); assert.equal((await attaching).error, undefined);
+                const stored = (await query('SELECT * FROM automation_jobs WHERE id=?', [queued.id]))[0];
+                assert.equal(await assignment(entry), next.id); assert.equal(Number((await metadata(entry)).revision), initialRevision + 1);
+                assert.equal(stored.state, winner === 'guard' ? 'cancelled' : 'sent'); assert.equal(sends, winner === 'guard' ? 0 : 1);
+                assert.equal(Number(stored.sent_steps), sends); assert.equal(stored.discord_message_id, sends ? '555555555555555555' : null);
+                assert.equal(releases, 1); assert.notEqual(stored.state, 'unknown'); assert.notEqual(stored.state, 'partial');
+                assert.equal((await runner.tick()).state, 'idle'); assert.ok(sends <= 1);
+            } finally { releaseWorker.resolve(); releaseGuard.resolve(); await sending; await attaching; }
+        }
+    });
+
+    await t.test('a real two-row InnoDB deadlock before the wire rolls back the attempt and a valid retry completes the old delivery once', async () => {
+        const entry = await target('auto'), old = await rule();
+        await service.activateWorkflow(actor, old.id, { expectedRevision: old.revision }); await service.attach(actor, old.id, 'auto', entry.id);
+        const initialRevision = Number((await metadata(entry)).revision), queued = await job(entry, 'leased', old.id);
+        queued.plan.targetIdentity = targetIdentity((await query('SELECT * FROM auto_watch_targets WHERE id=?', [entry.id]))[0]);
+        await query('UPDATE automation_jobs SET plan_json=? WHERE id=?', [JSON.stringify(queued.plan), queued.id]);
+        const first = hash(randomUUID()), others = Array.from({ length: 64 }, () => hash(randomUUID())), second = others[0];
+        await query('INSERT INTO automation_counters (counter_key,used_count,expires_at_ms) VALUES ?', [[first, ...others].map(key => [key, 0, Number.MAX_SAFE_INTEGER])]);
+        const auxiliaryReady = gate(), workerReady = gate(), auxiliaryRequestsFirst = gate(); let injected = false, observedDeadlock = false;
+        // The independent transaction has more undo records than the worker,
+        // making the real InnoDB victim deterministic. Neither side touches
+        // the other side's owner/target fence while arranging this row cycle.
+        const auxiliary = capture(db.withDatabaseTransaction(async transactionQuery => {
+            for (const key of others) await transactionQuery('UPDATE automation_counters SET used_count=used_count+1 WHERE counter_key=?', [key]);
+            auxiliaryReady.resolve();
+            await workerReady.promise; const pending = transactionQuery('UPDATE automation_counters SET used_count=used_count+1 WHERE counter_key=?', [first]);
+            auxiliaryRequestsFirst.resolve(); await pending;
+        }));
+        const workerDb = { ...db, withDatabaseTransaction: work => db.withDatabaseTransaction(transactionQuery => work(async (sql, params) => {
+            const result = await transactionQuery(sql, params);
+            if (!injected && sql === 'SELECT * FROM automation_jobs WHERE id=? FOR UPDATE') {
+                injected = true; await entered(auxiliaryReady, auxiliary);
+                await transactionQuery('UPDATE automation_counters SET used_count=used_count+1 WHERE counter_key=?', [first]); workerReady.resolve();
+                await auxiliaryRequestsFirst.promise;
+                try { await transactionQuery('UPDATE automation_counters SET used_count=used_count+1 WHERE counter_key=?', [second]); }
+                catch (error) { observedDeadlock = error.code === 'ER_LOCK_DEADLOCK'; throw error; }
+            }
+            return result;
         })) };
         let time = queued.now, claims = 0, sends = 0, releases = 0;
+        time = Math.max(time, Number((await query('SELECT MAX(expires_at_ms) AS due FROM automation_counters WHERE counter_key IN (?)', [[hash('automation:discord:global'), hash(`automation:discord:destination:${U}`)]]))[0].due || 0));
         const queue = createQueue(workerDb, {}, { clock: () => time });
         const jobObject = { id: queued.id, owner_user_id: U, workflow_id: old.id, revision: 1, target_kind: 'auto', target_id: entry.id,
             scope: 'private', plan: queued.plan, lease_token: queued.lease, due_at_ms: time, created_at_ms: time, attempts: 0 };
-        const runner = createRunner(workerDb, { ...queue, claim: async () => claims++ === 0 ? jobObject : null }, {
-            prepare: async () => ({ payloads: [{}] }), release: async () => { releases++; },
-            sendStep: async () => { sends++; return '555555555555555555'; },
-        }, { clock: () => time, sleep: async ms => { time += ms; }, assertAllowed: () => {}, notificationAllowed: () => true });
-        const sending = runner.tick(); await jobLocked;
-        const attaching = serviceFor(guardedDb).attach(actor, next.id, 'auto', entry.id, guards(initialRevision, old.id));
-        const results = await Promise.allSettled([sending, attaching]);
-        assert.ok(deadlocks.length > 0, 'the fixture must exercise a real InnoDB transaction-abort conflict');
-        assert.equal(results[0].status, 'fulfilled');
-        const stored = (await query('SELECT * FROM automation_jobs WHERE id=?', [queued.id]))[0];
-        if (results[1].status === 'fulfilled') {
-            assert.equal(await assignment(entry), next.id); assert.equal(Number((await metadata(entry)).revision), initialRevision + 1);
-            assert.equal(stored.state, 'cancelled'); assert.equal(sends, 0);
-        } else {
-            assert.equal(results[1].reason.code, 'ER_LOCK_DEADLOCK');
+        const transport = { prepare: async () => ({ payloads: [{}] }), release: async () => { releases++; }, sendStep: async () => { sends++; return '555555555555555555'; } };
+        const options = { clock: () => time, sleep: async ms => { time += ms; }, assertAllowed: () => {}, notificationAllowed: () => true };
+        const runner = createRunner(workerDb, { ...queue, claim: async () => claims++ === 0 ? jobObject : null }, transport, options);
+        try {
+            assert.equal((await runner.tick()).state, 'pending'); assert.equal((await auxiliary).error, undefined); assert.equal(observedDeadlock, true);
+            let stored = (await query('SELECT * FROM automation_jobs WHERE id=?', [queued.id]))[0];
+            assert.equal(stored.state, 'pending'); assert.equal(sends, 0); assert.equal(releases, 1);
+            assert.equal(Number(stored.sent_steps), 0); assert.equal(stored.discord_message_id, null); assert.equal(Number(stored.attempts), 1);
             assert.equal(await assignment(entry), old.id); assert.equal(Number((await metadata(entry)).revision), initialRevision);
-            assert.equal(stored.state, 'sent'); assert.equal(sends, 1);
-        }
-        assert.equal(releases, 1); assert.notEqual(stored.state, 'unknown'); assert.notEqual(stored.state, 'partial');
-        assert.equal((await runner.tick()).state, 'idle'); assert.ok(sends <= 1);
+            assert.equal(Number((await query('SELECT used_count FROM automation_counters WHERE counter_key=?', [first]))[0].used_count), 1, 'the worker row mutation rolled back; only the independent transaction committed');
+            assert.equal((await runner.tick()).state, 'idle'); assert.equal(sends, 0);
+            // Resume only the known-unsent durable job with a fresh lease.
+            time = Number(stored.due_at_ms); const lease = randomUUID();
+            await query("UPDATE automation_jobs SET state='leased',lease_token=?,lease_until_ms=? WHERE id=? AND state='pending'", [lease, time + 120000, queued.id]);
+            let retryClaims = 0;
+            const retry = createRunner(workerDb, { ...queue, claim: async () => retryClaims++ === 0 ? { ...jobObject, lease_token: lease, attempts: Number(stored.attempts), due_at_ms: time } : null }, transport, options);
+            assert.equal((await retry.tick()).state, 'sent'); stored = (await query('SELECT * FROM automation_jobs WHERE id=?', [queued.id]))[0];
+            assert.equal(stored.state, 'sent'); assert.equal(sends, 1); assert.equal(releases, 2);
+            assert.equal(Number(stored.sent_steps), 1); assert.equal(stored.discord_message_id, '555555555555555555');
+            assert.notEqual(stored.state, 'unknown'); assert.notEqual(stored.state, 'partial');
+            assert.equal((await retry.tick()).state, 'idle'); assert.equal(sends, 1);
+        } finally { workerReady.resolve(); auxiliaryRequestsFirst.resolve(); await auxiliary; }
     });
 });

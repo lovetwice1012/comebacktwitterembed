@@ -48,6 +48,9 @@ export function AutomationWorkspace({ viewerId, guildId, canEdit = true, present
   }
   const [goal, setGoal] = useState("all"), [time, setTime] = useState("now"), [display, setDisplay] = useState("normal"), [scope, setScope] = useState("private");
   const [history, setHistory] = useState<any[]>([]);
+  const [historyOpen, setHistoryOpen] = useState(false), [historyNext, setHistoryNext] = useState<number | null>(null), [historyLoading, setHistoryLoading] = useState(false), [historyError, setHistoryError] = useState("");
+  const historyRequest = useRef(0), historyCursors = useRef(new Set<number>());
+  const historySelection = useRef(selected); historySelection.current = selected;
   const [visitedResources, setVisitedResources] = useState<string[]>(["monitors"]);
   useEffect(() => { setVisitedResources(old => old.includes(tab) ? old : [...old, tab]); }, [tab]);
   const [textDraft, setTextDraft] = useState<{ text: string; format: string } | null>(null), [recoveryReady, setRecoveryReady] = useState(false), [recoveryWarning, setRecoveryWarning] = useState("");
@@ -69,6 +72,38 @@ export function AutomationWorkspace({ viewerId, guildId, canEdit = true, present
     const url = `/api/automation/${path}${path.includes("?") ? "&" : "?"}${guildId ? `guildId=${encodeURIComponent(guildId)}` : ""}`;
     return automationFetch(url, { method, credentials: "same-origin", cache: "no-store", headers: { "Content-Type": "application/json" }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
   }, [guildId]);
+  const historyContext = useRef({ api, viewerId });
+  if (historyContext.current.api !== api || historyContext.current.viewerId !== viewerId) {
+    historyContext.current = { api, viewerId }; historyRequest.current++;
+  }
+  useEffect(() => {
+    historyRequest.current++; historyCursors.current.clear(); setHistory([]); setHistoryNext(null); setHistoryOpen(false); setHistoryError(""); setHistoryLoading(false);
+    return () => { historyRequest.current++; };
+  }, [api, viewerId, selected?.id, selected?.revision]);
+  async function loadHistory(beforeRevision?: number) {
+    const target = historySelection.current, context = historyContext.current;
+    if (!target) return;
+    const request = ++historyRequest.current;
+    setHistoryOpen(true); setHistoryLoading(true); setHistoryError("");
+    const current = () => request === historyRequest.current && context === historyContext.current && target.id === historySelection.current?.id && target.revision === historySelection.current?.revision;
+    try {
+      const result = await api(`workflows/${target.id}/history?${new URLSearchParams({ page: "1", limit: "50", beforeRevision: String(beforeRevision ?? target.revision + 1) })}`);
+      if (!current()) return;
+      const items = Array.isArray(result) ? result : result?.items, next = Array.isArray(result) ? null : result?.nextRevision;
+      if (!Array.isArray(items)) throw new Error("Invalid history page");
+      let previous = beforeRevision ?? Number.POSITIVE_INFINITY;
+      for (const row of items) {
+        if (!Number.isSafeInteger(row.revision) || row.revision < 1 || row.revision >= previous || row.revision > target.revision) throw new Error("Invalid history order");
+        previous = row.revision;
+      }
+      if (next !== null && (!Number.isSafeInteger(next) || next < 1 || !items.length || next !== items[items.length - 1].revision || beforeRevision !== undefined && historyCursors.current.has(next))) throw new Error("Invalid history cursor");
+      if (beforeRevision === undefined) historyCursors.current.clear();
+      if (next !== null) historyCursors.current.add(next);
+      setHistory(old => beforeRevision === undefined ? items : [...old, ...items]); setHistoryNext(next);
+      if (actionsMenu.current) actionsMenu.current.open = false;
+    } catch { if (current()) setHistoryError("変更履歴を取得できませんでした。もう一度読み込んでください。"); }
+    finally { if (current()) setHistoryLoading(false); }
+  }
   const destinationLoadEpoch = useRef(0), destinationAPI = useRef(api);
   destinationAPI.current = api;
   useEffect(() => {
@@ -333,7 +368,7 @@ export function AutomationWorkspace({ viewerId, guildId, canEdit = true, present
                   <button className={button} disabled={!editorValid || readOnly} onClick={() => void task(async () => { const copy = await api("workflows", "POST", { scope: currentScope, definition: { ...draft, name: `${draft.name} のコピー`.slice(0, 120) }, bindings, sourceWorkflowId: selected?.id, expectedSourceRevision: selected?.revision }); setSelected(copy); setDraft(copy.draft); setBindings(copy.bindings); setTextDraft(null); setEditorVersion(previous => previous + 1); setNotice("ルールを複製しました。"); try { await refresh(); } catch { setError("複製したルールは保存済みです。［一覧を再読み込み］で再確認してください。"); } })}>ルールを複製</button>
                   <button className={button} onClick={() => { if (dirty && !confirm("未保存の編集は含まれません。保存済みの下書きをエクスポートしますか？")) return; void task(async () => { const data = await api(`workflows/${selected.id}/export`); download(JSON.stringify(data, null, 2), "automation-package.json"); }); }}>共有用に書き出す</button>
                 </div></div>
-                <div role="group" aria-label="版の確認"><h2>版の確認</h2><button className={button} onClick={() => void task(async () => { setHistory(await api(`workflows/${selected.id}/history`)); if (actionsMenu.current) actionsMenu.current.open = false; })}>変更履歴</button></div>
+                <div role="group" aria-label="版の確認"><h2>版の確認</h2><button className={button} disabled={historyLoading} onClick={() => void loadHistory()}>変更履歴</button></div>
                 <div role="group" aria-label="ルールの削除" className="automation-workspace-danger"><h2>削除</h2>
                   <button className={`${button} text-destructive`} disabled={selected.scope === "guild" && !canEdit} onClick={() => { if (confirm("このルールを削除し、使用中の通知を停止します。ルールの割り当ても外れます。通知を再開すると通常通知になります。削除しますか？")) void task(async () => { await api(`workflows/${selected.id}`, "DELETE", { expectedRevision: selected.revision }); setItems(previous => previous.filter(row => row.id !== selected.id)); setSelected(null); setDraft(null); setTextDraft(null); setNotice("ルールを削除しました。"); try { await refresh(); } catch { setError("ルールは削除済みです。［一覧を再読み込み］で一覧を確認してください。"); } }); }}>ルールを削除</button>
                 </div>
@@ -342,12 +377,15 @@ export function AutomationWorkspace({ viewerId, guildId, canEdit = true, present
           </div>
           {(readOnly || dirty || !selected?.activeRevision || selected.revision !== selected.activeRevision) && <p className="studio-save-guidance studio-critical-note">{readOnly ? <><LockKeyhole size={13} aria-hidden="true" />共有ルールの編集にはサーバー管理権限が必要です</> : <><Check size={13} aria-hidden="true" />下書きを保存しても、適用するまで通知は変わりません</>}</p>}
         </header>
-        {history.length > 0 && <section ref={historyPanel} tabIndex={-1} className="automation-version-history nokey" aria-label="変更履歴">
-          <div className="automation-version-history-heading"><h2>変更履歴</h2><button className={button} onClick={() => { setHistory([]); actionsToggle.current?.focus(); }}>履歴を閉じる</button></div>
+        {historyOpen && <section ref={historyPanel} tabIndex={-1} className="automation-version-history nokey" aria-label="変更履歴">
+          <div className="automation-version-history-heading"><h2>変更履歴</h2><button className={button} onClick={() => { historyRequest.current++; setHistory([]); setHistoryNext(null); setHistoryOpen(false); setHistoryLoading(false); actionsToggle.current?.focus(); }}>履歴を閉じる</button></div>
           <div className="automation-version-history-list">{history.map(row => <div className="automation-version-row" data-workflow-revision={row.revision} key={row.revision}>
             <div id={`${workspaceId}-revision-${row.revision}`}><span>版 {row.revision}</span><time dateTime={new Date(row.createdAtMs).toISOString()}>{new Date(row.createdAtMs).toLocaleString()}</time>{row.revision === selected?.activeRevision && <span className="automation-version-badge">{selected.enabled ? "実行版" : "適用版"}</span>}{row.revision === selected?.revision && <span className="automation-version-badge">保存済みの下書き</span>}</div>
             <button className={button} aria-describedby={`${workspaceId}-revision-${row.revision}`} disabled={selected?.scope === "guild" && !canEdit} onClick={() => { if (dirty && !confirm("未保存の編集を置き換えて、この版を下書きに復元しますか？実行中の版は変わりません。")) return; void task(async () => { const saved = await api(`workflows/${selected.id}/restore`, "POST", { revision: row.revision, expectedRevision: selected.revision }); setSelected(null); setDraft(null); setTextDraft(null); setHistory([]); await finishCommit(Number.isSafeInteger(saved.revision) ? `版 ${saved.revision} を下書きに復元しました。` : "ルールを下書きに復元しました。", async () => { await choose({ id: selected.id }); await refresh(); }); }); }}>この版を下書きに復元</button>
           </div>)}</div>
+          {historyLoading ? <p role="status">変更履歴を読み込み中…</p> : null}
+          {historyError ? <p role="alert">{historyError}</p> : null}
+          {historyNext !== null ? <button className={button} disabled={historyLoading} onClick={() => void loadHistory(historyNext)}>古い版を読み込む</button> : historyError ? <button className={button} disabled={historyLoading} onClick={() => void loadHistory()}>変更履歴を再取得</button> : null}
         </section>}
         <RuleEditor key={`${selected?.id || "new"}:${editorVersion}`} onValidityChange={setEditorValid} value={draft} bindings={bindings} resources={{ destinations, dictionaries }} onBindingsChange={setBindings} onChange={setDraft} catalog={catalog} api={api} readOnly={busy || selected?.scope === "guild" && !canEdit} initialTextDraft={textDraft} onTextDraftChange={setTextDraft} />
       </fieldset>}

@@ -25,6 +25,7 @@ async function withLockedWorkflowTargets(db, actor, id, expectedRevision, servic
         }
         const owners = [...new Set([candidate.owner_user_id, ...roster.map(target => target.ownerId)])].sort();
         for (const owner of owners) await lockOwner(query, owner);
+        await require('./flow-history').lockWorkflowFlowHistory(query, [id]);
         const uniqueSources = [...new Map(sources.map(source => [`${source.kind}:${source.id}`, source])).values()].sort((a, b) => `${a.kind}:${a.id}`.localeCompare(`${b.kind}:${b.id}`));
         for (const source of uniqueSources) if (!(await query(`SELECT id FROM ${nativeTable(source.kind)}_sources WHERE id=? FOR UPDATE`, [source.id])).length) changed();
         for (const target of roster) {
@@ -67,13 +68,11 @@ async function removeWorkflow(db, actor, id, expectedRevision, service) {
         }
         // Fence in-flight graph work before cancelling the projected jobs.
         // Historical sent/unknown jobs retain their exact status and receipts.
-        await query(`UPDATE automation_flow_runs f JOIN automation_runs r ON r.id=f.run_id
-            SET f.revoked_at_ms=COALESCE(f.revoked_at_ms,?),f.revocation_code=COALESCE(f.revocation_code,'WORKFLOW_DELETED'),f.needs_sync=1
-            WHERE r.workflow_id=? AND (EXISTS (SELECT 1 FROM automation_flow_steps s JOIN automation_flow_members m ON m.unit_id=COALESCE(s.continuation_unit_id,s.input_unit_id)
-                WHERE m.run_id=f.run_id AND s.state IN ('pending','leased','joining','aggregating'))
-            OR EXISTS (SELECT 1 FROM automation_flow_sends s JOIN automation_flow_members m ON m.unit_id=s.unit_id WHERE m.run_id=f.run_id AND s.state='unprojected')
-            OR EXISTS (SELECT 1 FROM automation_jobs j WHERE j.run_id=f.run_id AND j.state IN ('pending','held','leased','aggregated')))`, [now, id]);
+        const revokedRuns = await require('./flow-history').revokeWorkflowFlowHistory(query, [id], 'WORKFLOW_DELETED', now);
+        const jobs = await query("SELECT j.* FROM automation_jobs j JOIN automation_runs r ON r.id=j.run_id WHERE r.workflow_id=? AND j.state IN ('pending','held','leased','aggregated') ORDER BY j.id FOR UPDATE", [id]);
         await query("UPDATE automation_jobs j JOIN automation_runs r ON r.id=j.run_id SET j.state='cancelled',j.last_error_code='WORKFLOW_DELETED',j.lease_token=NULL,j.lease_until_ms=0,j.updated_at_ms=? WHERE r.workflow_id=? AND j.state IN ('pending','held','leased','aggregated')", [now, id]);
+        await require('./flow-history').refreshJobFlowHistory(query, jobs);
+        await require('./flow-history').refreshWorkflowFlowHistory(query, revokedRuns);
         await query('UPDATE automation_workflows SET deleted_at_ms=?,enabled=0,revision=revision+1,updated_at_ms=? WHERE id=?', [now, now, id]);
         await service.audit(query, actor, id, 'workflow.delete', { revision: expectedRevision, pausedTargets: roster.map(target => ({ kind: target.kind, id: target.id })) }, row.guild_id);
         return { deleted: true, pausedTargets: roster.length };

@@ -213,6 +213,7 @@ function createService(db, options = {}) {
                 // Ordinary UI copies retain the source's server-verified
                 // installation identity, including when copying a copy. Raw
                 // JSON imports continue to use their explicit rights workflow.
+                await require('./flow-history').lockFlowWorkflows(query, [input.sourceWorkflowId]);
                 const source = await getRow('workflow', actor, input.sourceWorkflowId, false, query, true);
                 if (!Number.isSafeInteger(input.expectedSourceRevision) || input.expectedSourceRevision < 1 || input.expectedSourceRevision > Number(source.revision))
                     fail('REVISION_CONFLICT', '複製元のルールが更新されています。再読み込みしてから複製してください。', 409);
@@ -331,10 +332,17 @@ function createService(db, options = {}) {
             return { deleted: true };
         });
     }
-    async function history(actor, id) {
+    async function history(actor, id, options) {
         await getRow('workflow', actor, id);
-        const rows = await db.queryDatabase('SELECT revision,checksum,actor_user_id,created_at_ms FROM automation_revisions WHERE workflow_id=? ORDER BY revision DESC LIMIT 100', [id]);
-        return rows.map(r => ({ revision: Number(r.revision), checksum: r.checksum, actorId: r.actor_user_id, createdAtMs: Number(r.created_at_ms) }));
+        const paged = options !== undefined, limit = options?.limit ?? 50, before = options?.beforeRevision;
+        if (paged && (!Number.isSafeInteger(limit) || limit < 1 || limit > 100 || before !== undefined && (!Number.isSafeInteger(before) || before < 1))) fail('INVALID_CURSOR', '変更履歴の取得位置を確認してください。');
+        const rows = await db.queryDatabase(`SELECT revision,checksum,actor_user_id,created_at_ms FROM automation_revisions WHERE workflow_id=?${paged && before !== undefined ? ' AND revision<?' : ''} ORDER BY revision DESC${paged ? ' LIMIT ?' : ''}`,
+            [id, ...(paged && before !== undefined ? [before] : []), ...(paged ? [limit + 1] : [])]);
+        // Recheck access after the read as well: a concurrent delete or scope
+        // change must not disclose the previous owner's history.
+        await getRow('workflow', actor, id);
+        const items = (paged ? rows.slice(0, limit) : rows).map(r => ({ revision: Number(r.revision), checksum: r.checksum, actorId: r.actor_user_id, createdAtMs: Number(r.created_at_ms) }));
+        return paged ? { items, nextRevision: rows.length > limit ? items[items.length - 1].revision : null } : items;
     }
     async function restoreRevision(actor, id, revision, expectedRevision) {
         await getRow('workflow', actor, id, true);

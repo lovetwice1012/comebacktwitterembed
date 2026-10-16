@@ -233,6 +233,10 @@ function createMarketplace(db, options = {}) {
         const record = (await db.queryDatabase('SELECT * FROM automation_package_versions WHERE package_id=? AND version=?', [id, selected]))[0];
         const canInspect = record && (row.owner_user_id === actor.userId || actor.isAdmin && row.visibility !== 'private' && record.visibility !== 'private');
         if (!record || !canInspect && (record.status !== 'active' || !(record.visibility === 'public' || record.visibility === 'unlisted' && equalKey(row.share_key, shareKey)))) fail('NOT_FOUND', '公開された版が見つかりません。', 404);
+        return editionView(actor, row, selected, record);
+    }
+    async function editionView(actor, row, selected, record) {
+        const id = row.id;
         let bundle;
         try {
             const bytes = await decompress(record.bundle_gzip, { maxOutputLength: MAX_EXPANDED });
@@ -298,12 +302,23 @@ function createMarketplace(db, options = {}) {
             if (input.status === 'revoked') {
                 if (!actor.isAdmin) fail('FORBIDDEN', '安全上の停止には管理者権限が必要です。', 403);
                 const note = textField(input.note, 4000), now = Date.now();
+                const installedWorkflows = await query('SELECT workflow_id FROM automation_package_installs WHERE package_id=?', [id]);
+                await require('./flow-history').lockWorkflowFlowHistory(query, installedWorkflows.map(row => row.workflow_id));
+                const currentWorkflows = await query('SELECT workflow_id FROM automation_package_installs WHERE package_id=? ORDER BY workflow_id FOR UPDATE', [id]);
+                if (JSON.stringify(currentWorkflows.map(row => row.workflow_id)) !== JSON.stringify(installedWorkflows.map(row => row.workflow_id).sort()))
+                    fail('REVISION_CONFLICT', '共有ルールの導入先が変更されました。もう一度停止してください。', 409);
                 await query("UPDATE automation_package_versions SET status='revoked',review_note=? WHERE package_id=? AND visibility<>'private'", [note, id]);
                 await query("UPDATE automation_packages SET status='revoked',updated_at_ms=? WHERE id=?", [now, id]);
+                const matchingJobs = `SELECT j.* FROM automation_jobs j JOIN automation_runs r ON r.id=j.run_id JOIN automation_package_installs i ON i.workflow_id=r.workflow_id
+                    WHERE i.package_id=? AND j.state IN ('pending','held','leased','aggregated')`;
                 await query("UPDATE automation_workflows w JOIN automation_package_installs i ON i.workflow_id=w.id SET w.enabled=0,w.updated_at_ms=? WHERE i.package_id=?", [now, id]);
+                const revokedRuns = await require('./flow-history').revokeWorkflowFlowHistory(query, currentWorkflows.map(row => row.workflow_id), 'SAFETY_PACKAGE_REVOKED', now);
+                const affectedJobs = await query(`${matchingJobs} ORDER BY j.id FOR UPDATE`, [id]);
                 await query(`UPDATE automation_jobs j JOIN automation_runs r ON r.id=j.run_id JOIN automation_package_installs i ON i.workflow_id=r.workflow_id
                     SET j.state='excluded',j.last_error_code='SAFETY_PACKAGE_REVOKED',j.lease_token=NULL,j.lease_until_ms=0,j.updated_at_ms=?
                     WHERE i.package_id=? AND j.state IN ('pending','held','leased','aggregated')`, [now, id]);
+                await require('./flow-history').refreshJobFlowHistory(query,affectedJobs);
+                await require('./flow-history').refreshWorkflowFlowHistory(query, revokedRuns);
                 await service.audit(query, actor, id, 'package.revoke', { version: Number(row.latest_version) }, null);
                 return { status: 'revoked' };
             }
@@ -375,25 +390,71 @@ function createMarketplace(db, options = {}) {
         }
         let value;
         if (input.kind === 'rating') { if (!Number.isInteger(input.rating) || input.rating < 1 || input.rating > 5) fail('MARKET_RATING', '評価は1〜5です。'); value = { rating: input.rating }; }
-        else if (input.kind === 'report') value = { reason: textField(input.reason, 2000) }; else value = { enabled: input.enabled !== false };
+        else if (input.kind === 'report') {
+            if (!Number.isSafeInteger(input.version) || input.version < 1 || !/^[a-f0-9]{64}$/.test(input.checksum || '')) fail('MARKET_REPORT_EDITION', '表示した版を確認してから通報してください。', 422);
+            const reason = textField(input.reason, 2000);
+            return db.withDatabaseTransaction(async query => {
+                // Lock the package before reading the requested edition so a
+                // publication/visibility change cannot race the admission.
+                const current = await getRow(actor, id, input.shareKey, false, query, true);
+                const record = (await query('SELECT version,checksum,status,visibility FROM automation_package_versions WHERE package_id=? AND version=? FOR UPDATE', [id, input.version]))[0];
+                const canInspect = record && (current.owner_user_id === actor.userId || actor.isAdmin && current.visibility !== 'private' && record.visibility !== 'private');
+                if (!record || !canInspect && (record.status !== 'active' || !(record.visibility === 'public' || record.visibility === 'unlisted' && equalKey(current.share_key, input.shareKey)))) fail('NOT_FOUND', '表示した版を確認できません。', 404);
+                if (!equalKey(record.checksum, input.checksum)) fail('MARKET_REPORT_EDITION', '表示した版と内容が一致しません。共有内容を開き直してください。', 409);
+                const previous = (await query("SELECT state,value_json FROM automation_feedback WHERE subject_id=? AND actor_user_id=? AND kind='report' FOR UPDATE", [id, actor.userId]))[0];
+                const old = previous && parse(previous.value_json);
+                if (previous?.state === 'open' && (old?.version !== input.version || old?.checksum !== input.checksum)) fail('MARKET_REPORT_ALREADY_OPEN', 'この共有内容には確認中の通報があります。', 409);
+                value = { reason, version: input.version, checksum: record.checksum };
+                await query("INSERT INTO automation_feedback (id,subject_id,actor_user_id,kind,value_json,created_at_ms,updated_at_ms) VALUES (?,?,?,'report',?,?,?) ON DUPLICATE KEY UPDATE value_json=VALUES(value_json),state='open',updated_at_ms=GREATEST(updated_at_ms+1,VALUES(updated_at_ms))", [randomUUID(), id, actor.userId, JSON.stringify(value), Date.now(), Date.now()]);
+                return { saved: true };
+            });
+        } else value = { enabled: input.enabled !== false };
         await db.queryDatabase('INSERT INTO automation_feedback (id,subject_id,actor_user_id,kind,value_json,created_at_ms,updated_at_ms) VALUES (?,?,?,?,?,?,?) ON DUPLICATE KEY UPDATE value_json=VALUES(value_json),state=\'open\',updated_at_ms=VALUES(updated_at_ms)', [randomUUID(), id, actor.userId, input.kind, JSON.stringify(value), Date.now(), Date.now()]);
         return { saved: true };
     }
     async function reviewQueue(actor) {
         requireActor(actor); if (!actor.isAdmin) fail('FORBIDDEN', '公開審査の権限が必要です。', 403);
         const packages = await db.queryDatabase("SELECT p.id,p.title,p.owner_user_id,p.latest_version,p.updated_at_ms FROM automation_packages p JOIN automation_package_versions v ON v.package_id=p.id AND v.version=p.latest_version WHERE p.status<>'withdrawn' AND v.status='pending' ORDER BY p.updated_at_ms LIMIT 100");
-        const reports = await db.queryDatabase("SELECT id,subject_id,actor_user_id,value_json,created_at_ms FROM automation_feedback WHERE kind='report' AND state='open' ORDER BY created_at_ms LIMIT 100");
+        const reports = await db.queryDatabase("SELECT id,subject_id,actor_user_id,value_json,created_at_ms,updated_at_ms FROM automation_feedback WHERE kind='report' AND state='open' ORDER BY created_at_ms LIMIT 100");
         return { packages, reports: reports.map(r => ({ ...r, value: parse(r.value_json) })) };
     }
     async function resolveReport(actor, id, input) {
         requireActor(actor); if (!actor.isAdmin) fail('FORBIDDEN', '公開審査の権限が必要です。', 403);
-        const result = await db.queryDatabase("UPDATE automation_feedback SET state='resolved',updated_at_ms=? WHERE id=? AND kind='report' AND state='open'", [Date.now(), id]);
-        if (!result.affectedRows) fail('NOT_FOUND', '未処理の通報が見つかりません。', 404);
-        await service.audit(db.queryDatabase, actor, id, 'report.resolve', { note: textField(input.note || '', 1000, false) }, null); return { resolved: true };
+        const note = textField(input.note || '', 1000, false);
+        return db.withDatabaseTransaction(async query => {
+            const report = (await query("SELECT subject_id,value_json,updated_at_ms FROM automation_feedback WHERE id=? AND kind='report' AND state='open' FOR UPDATE", [id]))[0];
+            if (!report) fail('NOT_FOUND', '未処理の通報が見つかりません。', 404);
+            const target = parse(report.value_json);
+            const bound = Number.isSafeInteger(target?.version) && target.version > 0 && /^[a-f0-9]{64}$/.test(target?.checksum || '');
+            if (!Number.isSafeInteger(input.expectedUpdatedAtMs) || input.expectedUpdatedAtMs < 0 || input.expectedUpdatedAtMs !== Number(report.updated_at_ms)
+                || bound && (input.expectedVersion !== target.version || input.expectedChecksum !== target.checksum)
+                || !bound && (input.expectedVersion != null || input.expectedChecksum != null)) fail('REVISION_CONFLICT', '通報が更新されています。通報を読み直してください。', 409);
+            const result = await query("UPDATE automation_feedback SET state='resolved',updated_at_ms=GREATEST(updated_at_ms+1,?) WHERE id=? AND kind='report' AND state='open'", [Date.now(), id]);
+            if (!result.affectedRows) fail('NOT_FOUND', '未処理の通報が見つかりません。', 404);
+            await service.audit(query, actor, id, 'report.resolve', { note, packageId: report.subject_id, reportUpdatedAtMs:Number(report.updated_at_ms),
+                version: Number.isSafeInteger(target?.version) && target.version > 0 ? target.version : null,
+                checksum: /^[a-f0-9]{64}$/.test(target?.checksum || '') ? target.checksum : null }, null);
+            return { resolved: true };
+        });
+    }
+    async function reportContent(actor, id) {
+        requireActor(actor); if (!actor.isAdmin) fail('FORBIDDEN', '通報内容の確認には管理者権限が必要です。', 403);
+        const report = (await db.queryDatabase("SELECT subject_id,value_json FROM automation_feedback WHERE id=? AND kind='report'", [id]))[0];
+        if (!report) fail('NOT_FOUND', '通報が見つかりません。', 404);
+        const target = parse(report.value_json);
+        // Historical reasons have no verifiable edition. Never substitute the
+        // latest package, including when an author has since made it private.
+        if (!Number.isSafeInteger(target?.version) || target.version < 1 || !/^[a-f0-9]{64}$/.test(target?.checksum || '')) fail('MARKET_REPORT_UNBOUND', 'この通報の対象版は記録されていません。', 409);
+        const row = await rawRow(report.subject_id);
+        const record = row && (await db.queryDatabase('SELECT * FROM automation_package_versions WHERE package_id=? AND version=?', [row.id, target.version]))[0];
+        if (!record || !equalKey(record.checksum, target.checksum)) fail('BUNDLE_CHECK_FAILED', '通報された版の内容を確認できません。', 503);
+        // This dedicated admin-only path grants inspection of the exact
+        // edition previously admitted for reporting, never normal visibility.
+        return { ...await editionView(actor,row,target.version,record), latest_version:Number(row.latest_version), reportId:id, reportInspection:true };
     }
     const installs = require('./marketplace-installs').createInstalls(db, service, get, options.evaluator);
     return { list, save: (actor, input, id) => service.withOperation(actor, 'publication', () => save(actor, input, id)), get, exportWorkflow, exportWorkflowPublication, exportDictionaryPackage,
         setStatus: (actor, id, input) => input.status === 'withdrawn' ? setStatus(actor, id, input) : service.withOperation(actor, 'publication', () => setStatus(actor, id, input)),
-        reviewPending, feedback, reviewQueue, resolveReport, versions, fork, ...installs };
+        reviewPending, feedback, reviewQueue, resolveReport, reportContent, versions, fork, ...installs };
 }
 module.exports = { createMarketplace, equalKey, visiblePackage };

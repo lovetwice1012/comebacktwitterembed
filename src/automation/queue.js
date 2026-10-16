@@ -147,8 +147,10 @@ function createQueue(db, evaluator, options = {}) {
         return db.withDatabaseTransaction(async query => {
             let source = null;
             if (kind === 'x') await require('./entitlements').lockOwner(query, delivery.owner_user_id);
+            if (kind === 'price' && before?.user_id) await require('./entitlements').lockOwner(query, before.user_id);
+            if (before?.user_id && kind === 'auto') await require('./entitlements').lockOwner(query, before.user_id);
+            if (graphEnabled) await require('./flow-history').lockFlowWorkflows(query, [before.workflow_id]);
             if (kind === 'auto' && before?.user_id) {
-                await require('./entitlements').lockOwner(query, before.user_id);
                 source = await require('./monitor-cadence').lockTargetSource(query, before.user_id, String(delivery.target_id));
             }
             const target = await snapshot(query, kind, delivery.target_id, true, kind === 'x' ? delivery.owner_user_id : null);
@@ -323,12 +325,47 @@ function createQueue(db, evaluator, options = {}) {
         return route('x', delivery, now);
     }
     async function claim(now = Date.now()) {
-        return db.withDatabaseTransaction(async query => {
+        await db.withDatabaseTransaction(async query => {
             // A crashed process may have submitted a message before its DB ACK.
             // Never recycle a sending lease into pending automatically.
-            await query("UPDATE automation_jobs SET state=IF(sent_steps>0 OR discord_message_id IS NOT NULL,'partial','failed'),last_error_code='LEGACY_REVIEW_ENDED',lease_token=NULL,lease_until_ms=0,updated_at_ms=? WHERE state='held'", [now]);
-            await query("UPDATE automation_jobs SET state='unknown',last_error_code='SEND_LEASE_EXPIRED',lease_token=NULL,lease_until_ms=0,updated_at_ms=? WHERE state='sending' AND lease_until_ms<=?", [now, now]);
-            await query("UPDATE automation_jobs child JOIN automation_jobs parent ON child.parent_job_id=parent.id SET child.state=parent.state,child.last_error_code=parent.last_error_code,child.updated_at_ms=? WHERE child.state='aggregated' AND parent.state IN ('unknown','partial','cancelled','sent','failed','expired','excluded')", [now]);
+            const recoverySelection = `SELECT j.*,p.state AS parent_state,p.last_error_code AS parent_error FROM automation_jobs j
+                LEFT JOIN automation_jobs p ON p.id=j.parent_job_id WHERE j.state='held' OR (j.state='sending' AND j.lease_until_ms<=?)
+                OR (j.state='aggregated' AND p.state IN ('unknown','partial','cancelled','sent','failed','expired','excluded')) ORDER BY j.id LIMIT 100`;
+            const candidates = await query(recoverySelection, [now]);
+            await require('./flow-history').lockJobFlowHistory(query, candidates);
+            // Recheck exactly this bounded roster after waiting for a graph
+            // writer; a later claim handles any newly eligible namespace.
+            const recovered = candidates.length ? await query(`SELECT j.*,p.state AS parent_state,p.last_error_code AS parent_error FROM automation_jobs j
+                LEFT JOIN automation_jobs p ON p.id=j.parent_job_id WHERE j.id IN (?) AND (j.state='held' OR (j.state='sending' AND j.lease_until_ms<=?)
+                OR (j.state='aggregated' AND p.state IN ('unknown','partial','cancelled','sent','failed','expired','excluded'))) ORDER BY j.id FOR UPDATE`, [candidates.map(job => job.id), now]) : [];
+            for (const job of recovered) {
+                const state = job.state === 'held' ? Number(job.sent_steps) > 0 || job.discord_message_id ? 'partial' : 'failed'
+                    : job.state === 'sending' ? 'unknown' : job.parent_state;
+                const code = job.state === 'held' ? 'LEGACY_REVIEW_ENDED' : job.state === 'sending' ? 'SEND_LEASE_EXPIRED' : job.parent_error;
+                await query('UPDATE automation_jobs SET state=?,last_error_code=?,lease_token=NULL,lease_until_ms=0,updated_at_ms=? WHERE id=?', [state, code, now, job.id]);
+            }
+            await require('./flow-history').refreshJobFlowHistory(query, recovered);
+            // A parent recovered above has only just become terminal. Its
+            // aggregated children were not eligible in the initial roster;
+            // propagate now, within this same transaction, rather than leave
+            // their durable state/history stale until another claim or restart.
+            // Producers append only to pending parents, so held/sending/terminal
+            // parents cannot grow a new child namespace after the closure fence.
+            if (recovered.length) {
+                let after = '';
+                for (;;) {
+                    const children = await query(`SELECT j.*,p.state AS parent_state,p.last_error_code AS parent_error FROM automation_jobs j
+                        JOIN automation_jobs p ON p.id=j.parent_job_id WHERE j.parent_job_id IN (?) AND j.state='aggregated'
+                        AND p.state IN ('unknown','partial','cancelled','sent','failed','expired','excluded') AND j.id>? ORDER BY j.id LIMIT 100 FOR UPDATE`, [recovered.map(job => job.id), after]);
+                    if (!children.length) break;
+                    for (const child of children) await query('UPDATE automation_jobs SET state=?,last_error_code=?,lease_token=NULL,lease_until_ms=0,updated_at_ms=? WHERE id=?', [child.parent_state, child.parent_error, now, child.id]);
+                    await require('./flow-history').refreshJobFlowHistory(query, children);
+                    after = children.at(-1).id;
+                    if (children.length < 100) break;
+                }
+            }
+        });
+        return db.withDatabaseTransaction(async query => {
             const priorityKey = hash('automation:discord:priority-turn');
             await query('INSERT INTO automation_counters (counter_key,used_count,expires_at_ms) VALUES (?,0,?) ON DUPLICATE KEY UPDATE counter_key=VALUES(counter_key)', [priorityKey, Number.MAX_SAFE_INTEGER]);
             const turn = Number((await query('SELECT used_count FROM automation_counters WHERE counter_key=? FOR UPDATE', [priorityKey]))[0]?.used_count || 0) % 4;
@@ -350,22 +387,29 @@ function createQueue(db, evaluator, options = {}) {
                 LEFT JOIN automation_square_donation_supporters ds ON ds.owner_user_id=r.owner_user_id AND ds.environment=dp.environment AND ds.merchant_id=dp.merchant_id AND ds.policy_updated_at_ms=dp.updated_at_ms AND ds.active=1 AND (ds.valid_until_at_ms IS NULL OR ds.valid_until_at_ms>?)` : ''}
                 LEFT JOIN automation_notification_plans b ON b.plan_id=IF(${supporter},'supporter','free') AND ${validPolicy('b')} WHERE
                 (j.state='pending' AND j.due_at_ms<=? OR j.state='leased' AND j.lease_until_ms<=?)
-                ORDER BY ${turn === 3 ? '' : `${priority} DESC,`}j.due_at_ms,j.created_at_ms,j.id LIMIT 1 FOR UPDATE`, [now, ...(square.configured ? [square.environment, square.merchantId, now, square.environment, square.merchantId, now] : []), now, now]);
+                ORDER BY ${turn === 3 ? '' : `${priority} DESC,`}j.due_at_ms,j.created_at_ms,j.id LIMIT 1`, [now, ...(square.configured ? [square.environment, square.merchantId, now, square.environment, square.merchantId, now] : []), now, now]);
             if (!rows.length) return null;
-            const job = rows[0], token = randomUUID();
+            await require('./flow-history').lockJobFlowHistory(query, rows);
+            const locked = (await query("SELECT * FROM automation_jobs WHERE id=? AND (state='pending' AND due_at_ms<=? OR state='leased' AND lease_until_ms<=?) FOR UPDATE", [rows[0].id, now, now]))[0];
+            if (!locked) return null;
+            const job = { ...rows[0], ...locked }, token = randomUUID();
             let plan;
             try {
                 plan = parse(job.plan_json);
                 if (!plan || typeof plan !== 'object' || Array.isArray(plan) || !Array.isArray(plan.schedules) || !plan.context || typeof plan.context !== 'object' || Array.isArray(plan.context)) throw new Error('QUEUE_PLAN_INVALID');
+                if (Number(job.execution_version) === 2 && !require('./flow-history').readJobFlowPlan(plan)) throw new Error('QUEUE_PLAN_INVALID');
             } catch {
                 // One corrupt legacy snapshot must not roll back cleanup and
                 // keep every later job (or old safety hold) stuck indefinitely.
                 const state = Number(job.sent_steps) > 0 || job.discord_message_id ? 'partial' : 'failed';
+                const children = await query("SELECT * FROM automation_jobs WHERE parent_job_id=? AND state='aggregated' ORDER BY id FOR UPDATE", [job.id]);
                 await query("UPDATE automation_jobs SET state=?,last_error_code='QUEUE_PLAN_INVALID',lease_token=NULL,lease_until_ms=0,updated_at_ms=? WHERE id=?", [state, now, job.id]);
                 await query("UPDATE automation_jobs SET state=?,last_error_code='QUEUE_PLAN_INVALID',updated_at_ms=? WHERE parent_job_id=? AND state='aggregated'", [state, now, job.id]);
+                await require('./flow-history').refreshJobFlowHistory(query, [job, ...children]);
                 return null;
             }
             await query("UPDATE automation_jobs SET state='leased',lease_token=?,lease_until_ms=?,updated_at_ms=? WHERE id=?", [token, now + 120000, now, job.id]);
+            await require('./flow-history').refreshJobFlowHistory(query, [job]);
             await query('UPDATE automation_counters SET used_count=? WHERE counter_key=?', [(turn + 1) % 4, priorityKey]);
             return { ...job, state: 'leased', lease_token: token, lease_until_ms: now + 120000, plan };
         });
@@ -414,6 +458,8 @@ function createQueue(db, evaluator, options = {}) {
     async function refreshFlowJob(job, now = Date.now()) {
         if (!job.plan?.flowV2) return { state: 'ready', job };
         return db.withDatabaseTransaction(async query => {
+            await require('./entitlements').lockOwner(query, job.owner_user_id);
+            await require('./flow-history').lockJobFlowHistory(query, await query('SELECT * FROM automation_jobs WHERE id=?', [job.id]));
             const rows = await query('SELECT * FROM automation_jobs WHERE id=? FOR UPDATE', [job.id]);
             const row = rows[0];
             if (!row || row.state !== 'leased' || row.lease_token !== job.lease_token || Number(row.lease_until_ms) <= now) return { state: 'lease_lost' };
@@ -451,7 +497,7 @@ function createQueue(db, evaluator, options = {}) {
                 plan.deadlineMs = require('./flow-projector').jobDeadline(plan.members);
                 plan.schedules = require('./flow-projector').uniqueSchedules(plan.members);
                 await query('UPDATE automation_jobs SET plan_json=?,deadline_ms=?,updated_at_ms=? WHERE id=? AND lease_token=?', [JSON.stringify(plan), plan.deadlineMs, now, job.id, job.lease_token]);
-                await require('./flow-history').refreshFlowHistory(query, [...plan.flowV2.members, ...plan.flowV2.excludedMembers].map(member => member.runId));
+                await require('./flow-history').refreshJobFlowHistory(query, [{ ...row, plan_json: plan }]);
             }
             return { state: status.paused ? 'pending' : 'ready', code: status.paused ? status.pauseCode || 'WORKFLOW_PAUSED' : null, dueAtMs: status.paused ? status.pauseDueAtMs || now + 60000 : null, job: { ...job, deadline_ms: plan.deadlineMs, plan } };
         });
@@ -510,14 +556,20 @@ function createQueue(db, evaluator, options = {}) {
     }
     async function transition(job, state, code = null, dueAtMs = null) {
         return db.withDatabaseTransaction(async query => {
+            await require('./flow-history').lockJobFlowHistory(query, await query('SELECT * FROM automation_jobs WHERE id=?', [job.id]));
+            const current = (await query('SELECT * FROM automation_jobs WHERE id=? FOR UPDATE', [job.id]))[0];
+            if (!current || current.lease_token !== job.lease_token || !['leased', 'sending'].includes(current.state)) return false;
+            const children = !['pending', 'leased', 'sending', 'held'].includes(state) ? await query("SELECT * FROM automation_jobs WHERE parent_job_id=? AND state='aggregated' ORDER BY id FOR UPDATE", [job.id]) : [];
             const result = await query("UPDATE automation_jobs SET state=?,last_error_code=?,due_at_ms=COALESCE(?,due_at_ms),lease_token=NULL,lease_until_ms=0,updated_at_ms=? WHERE id=? AND lease_token=? AND state IN ('leased','sending')", [state, code, dueAtMs, Date.now(), job.id, job.lease_token]);
             if (Number(result.affectedRows) === 1 && !['pending', 'leased', 'sending', 'held'].includes(state)) await query('UPDATE automation_jobs SET state=?,last_error_code=?,updated_at_ms=? WHERE parent_job_id=? AND state=\'aggregated\'', [state, code, Date.now(), job.id]);
-            if (Number(result.affectedRows) === 1 && job.plan?.flowV2) await require('./flow-history').refreshFlowHistory(query, job.plan.flowV2.members.map(member => member.runId));
+            if (Number(result.affectedRows) === 1) await require('./flow-history').refreshJobFlowHistory(query, [current, ...children]);
             return Number(result.affectedRows) === 1;
         });
     }
     async function beginSend(job, now = Date.now()) {
         return db.withDatabaseTransaction(async query => {
+            if (job.owner_user_id) await require('./entitlements').lockOwner(query, job.owner_user_id);
+            await require('./flow-history').lockJobFlowHistory(query, await query('SELECT * FROM automation_jobs WHERE id=?', [job.id]));
             const rows = await query('SELECT * FROM automation_jobs WHERE id=? FOR UPDATE', [job.id]);
             if (rows[0]?.state !== 'leased' || rows[0]?.lease_token !== job.lease_token || Number(rows[0]?.lease_until_ms) <= now) return { state: 'lease_lost' };
             const checkResult = await check(job, now, query, true);
@@ -536,6 +588,7 @@ function createQueue(db, evaluator, options = {}) {
             for (const gate of keys) await query('UPDATE automation_counters SET used_count=used_count+1 WHERE counter_key=?', [gate.counterKey]);
             plan.limitsCharged = true;
             await query("UPDATE automation_jobs SET state='sending',plan_json=?,attempts=attempts+1,lease_until_ms=?,updated_at_ms=? WHERE id=? AND lease_token=?", [JSON.stringify(plan), now + 120000, now, job.id, job.lease_token]);
+            await require('./flow-history').refreshJobFlowHistory(query, [{ ...rows[0], plan_json: plan }]);
             return { state: 'sending', attempts: Number(rows[0].attempts) + 1 };
         });
     }

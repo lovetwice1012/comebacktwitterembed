@@ -82,7 +82,8 @@ for (const { groupSize, prune } of [{ groupSize: 200 }, { groupSize: 1000 }, { g
         assert.equal(sent, 1);
         await require('../../src/automation/flow-history').refreshFlowHistory(query, [runId, failedRunId]);
         const history = await query('SELECT id,state,trace_json FROM automation_runs WHERE id IN (?)', [[runId, failedRunId]]);
-        assert.equal(history.find(row => row.id === runId).state, 'sent'); assert.equal(history.find(row => row.id === failedRunId).state, prune ? 'expired' : 'failed');
+        assert.equal(history.find(row => row.id === runId).state, 'partial'); assert.equal(history.find(row => row.id === failedRunId).state, prune ? 'expired' : 'failed');
+        assert.deepEqual((await query('SELECT state,sent_steps FROM automation_jobs WHERE run_id=?', [runId])).map(row => ({ ...row })), [{ state: 'sent', sent_steps: 1 }]);
         assert(history.every(row => JSON.parse(row.trace_json).some(entry => entry.reason === (prune ? 'DEADLINE_EXCEEDED' : 'FLOW_UNIT_INVALID'))));
         assert((await query('SELECT revoked_at_ms FROM automation_flow_runs')).every(row => row.revoked_at_ms === null));
         const page = await createHistory(db, service).excluded(actor); assert(page.items.some(item => item.id === failedRunId)); assert(!page.items.some(item => item.id === runId));

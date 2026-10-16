@@ -64,7 +64,12 @@ test('S7 valid 5000-member dictionary trace failure becomes terminal after its o
     assert.equal((await f.query('SELECT payload_json FROM automation_flow_units WHERE id=?', [input.unit.id]))[0].payload_json, input.payload);
     assert.equal(await f.healthy(), 1, 'any merge keeps the healthy sibling of this same run');
     await require('../../src/automation/flow-history').refreshFlowHistory(f.query, [f.runId]);
-    const run = (await f.query('SELECT state,trace_json FROM automation_runs WHERE id=?', [f.runId]))[0]; assert.equal(run.state, 'sent'); assert(JSON.parse(run.trace_json).some(entry => entry.reason === 'GRAPH_INPUT_LIMIT'));
+    const run = (await f.query('SELECT state,trace_json FROM automation_runs WHERE id=?', [f.runId]))[0];
+    // The healthy sibling still delivers once. The failed branch remains part
+    // of this run, so a complete-success summary would hide that failure.
+    assert.equal(run.state, 'partial'); assert(JSON.parse(run.trace_json).some(entry => entry.reason === 'GRAPH_INPUT_LIMIT'));
+    assert.deepEqual((await f.query('SELECT state,sent_steps FROM automation_jobs WHERE run_id=?', [f.runId])).map(row => ({ ...row })), [{ state: 'sent', sent_steps: 1 }]);
+    assert.equal(Number((await f.query("SELECT COUNT(*) AS n FROM automation_flow_edges WHERE run_id=? AND receipt_kind='step_failed'", [f.runId]))[0].n), 1);
 }));
 
 test('S7 permanent trace failure is visible as failed when no sibling matches, with its full original input retained', { skip: !port }, async () => fixture('dictionary', { fields: ['body'] }, async f => {
@@ -167,7 +172,8 @@ test('S7 wait/prune history stays byte-identical and a later failure belongs onl
     const failed = await f.query("SELECT run_id,unit_id FROM automation_flow_edges WHERE receipt_kind='step_failed'"); assert.equal(failed.length, 1); assert.equal(failed[0].run_id, waitingRun); assert.equal(failed[0].unit_id, pending.continuation_unit_id);
     await require('../../src/automation/flow-history').refreshFlowHistory(f.query, [f.runId, waitingRun]);
     const history = await f.query('SELECT id,state,trace_json FROM automation_runs WHERE id IN (?)', [[f.runId, waitingRun]]), healthy = history.find(row => row.id === f.runId), terminal = history.find(row => row.id === waitingRun);
-    assert.equal(healthy.state, 'sent'); assert(!JSON.parse(healthy.trace_json).some(entry => entry.reason === 'GRAPH_INPUT_LIMIT'));
+    assert.equal(healthy.state, 'partial'); assert(JSON.parse(healthy.trace_json).some(entry => entry.outcome === 'expired'));
+    assert(!JSON.parse(healthy.trace_json).some(entry => entry.reason === 'GRAPH_INPUT_LIMIT'));
     assert.equal(terminal.state, 'failed'); assert(JSON.parse(terminal.trace_json).some(entry => entry.reason === 'GRAPH_INPUT_LIMIT'));
 }));
 

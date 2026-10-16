@@ -203,10 +203,11 @@ export function NotificationPlanManager({ api = notificationPlanAPI }: { api?: N
   const [error, setError] = useState(""), [creating, setCreating] = useState(false);
   const [billingData, setBillingData] = useState<SquareAdmin | null>(null), [billingLoading, setBillingLoading] = useState(true), [billingError, setBillingError] = useState("");
   const request = useRef(0), alive = useRef(true);
-  const billingRequest = useRef(0);
+  const billingRequest = useRef(0), currentAPI = useRef(api), itemsAPI = useRef(api);
+  if (currentAPI.current !== api) { currentAPI.current = api; request.current++; }
   async function load() {
     const version = ++request.current; setLoading(true); setError("");
-    try { const data = await api("plans"); if (alive.current && version === request.current) setItems(data.items); }
+    try { const data = await api("plans"); if (alive.current && version === request.current) { const sameContext = itemsAPI.current === api; itemsAPI.current = api; setItems(previous => sameContext ? data.items.map((item: NotificationPlanPolicy) => previous.find(known => known.planId === item.planId && known.updatedAtMs > item.updatedAtMs) ?? item) : data.items); } }
     catch (cause) { if (alive.current && version === request.current) setError(cause instanceof Error ? cause.message : "通知プランを読み込めませんでした。"); }
     finally { if (alive.current && version === request.current) setLoading(false); }
   }
@@ -217,7 +218,7 @@ export function NotificationPlanManager({ api = notificationPlanAPI }: { api?: N
     finally { if (alive.current && version === billingRequest.current) setBillingLoading(false); }
   }
   useEffect(() => { alive.current = true; void load(); void loadBilling(); return () => { alive.current = false; request.current++; billingRequest.current++; }; }, [api]);
-  function saved(plan: NotificationPlanPolicy) { setItems(previous => [...previous.filter(item => item.planId !== plan.planId), plan].sort((a, b) => (a.isBuiltin ? a.planId === "free" ? 0 : 1 : 2) - (b.isBuiltin ? b.planId === "free" ? 0 : 1 : 2) || a.planId.localeCompare(b.planId))); }
+  function saved(plan: NotificationPlanPolicy) { if (!alive.current || currentAPI.current !== api) return; request.current++; setLoading(false); setError(""); setItems(previous => [...previous.filter(item => item.planId !== plan.planId), plan].sort((a, b) => (a.isBuiltin ? a.planId === "free" ? 0 : 1 : 2) - (b.isBuiltin ? b.planId === "free" ? 0 : 1 : 2) || a.planId.localeCompare(b.planId))); }
   const billing: BillingState = { data: billingData, loading: billingLoading, error: billingError, refresh: loadBilling, saved: binding => { billingRequest.current++; setBillingLoading(false); setBillingError(""); setBillingData(previous => previous ? { ...previous, bindings: [...previous.bindings.filter(item => item.planId !== binding.planId || item.cadence !== binding.cadence), binding] } : previous); }, reloaded: data => { billingRequest.current++; setBillingLoading(false); setBillingError(""); setBillingData(data); } };
   return <div className="space-y-5">
     <section className="space-y-2 rounded-xl bg-muted/40 p-4 text-sm"><p>ユーザーごとの通知枠と、1枠あたりの送信件数を設定します。新着・価格通知で枠を共有し、停止中の登録も1枠を使います。</p><p className="text-muted-foreground">実際に送信したメッセージ1件＝1通。分割送信は通数を加算し、日次件数は日本時間の0時にリセットします。優先度は0が通常で、値が大きいプランほど先に処理します。</p></section>
@@ -226,7 +227,7 @@ export function NotificationPlanManager({ api = notificationPlanAPI }: { api?: N
     {error ? <div role="alert" className="space-y-2 rounded-lg border border-destructive/30 p-4 text-sm"><p>{error}</p><Button type="button" variant="outline" onClick={() => void load()}>読み込みを再試行</Button></div> : null}
     <section aria-label="Square連携の状態" className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-4 text-sm"><div><p className="font-medium">Square連携: {billingLoading ? "確認中" : billingData?.configured ? billingData.environment === "production" ? "本番環境" : "サンドボックス" : "未設定"}</p>{billingError ? <p role="alert" className="mt-1 text-destructive">{billingError}</p> : null}<p className="mt-1 text-muted-foreground">有償プランごとに月額・年額などの料金を作成・紐付けし、支払い間隔別に購入受付を設定できます。</p>{billingData && !billingData.configured && billingData.missing.length ? <details className="mt-2 text-muted-foreground"><summary className="cursor-pointer">接続に必要な設定</summary><ul className="mt-2 list-inside list-disc">{billingData.missing.map(key => <li key={key}>{({ SQUARE_ENVIRONMENT: "Squareの接続環境が未設定、または不正です。", SQUARE_ACCESS_TOKEN: "Squareの接続トークンが未設定です。", SQUARE_APPLICATION_ID: "SquareのアプリケーションIDが未設定、または不正です。", SQUARE_LOCATION_ID: "Squareの店舗IDが未設定、または不正です。", SQUARE_MERCHANT_ID: "Squareの加盟店IDが未設定、または不正です。", SQUARE_WEBHOOK_SIGNATURE_KEY: "Webhookの署名キーが未設定です。", SQUARE_WEBHOOK_NOTIFICATION_URL: "Webhookの通知先URLが未設定、または不正です。" } as Record<string, string>)[key] ?? "Squareのサーバー設定に不足があります。"}</li>)}</ul></details> : null}</div><Button type="button" variant="outline" disabled={billingLoading} onClick={() => void loadBilling()}>Square連携を再確認</Button></section>
     {items.map(plan => <PlanEditor key={plan.planId} plan={plan} api={api} billing={billing} onSaved={saved} />)}
-    {creating ? <PlanEditor key="new-plan" api={api} billing={billing} onSaved={plan => { saved(plan); setCreating(false); }} onCancel={() => setCreating(false)} /> : null}
+    {creating ? <PlanEditor key="new-plan" api={api} billing={billing} onSaved={plan => { if (alive.current && currentAPI.current === api) { saved(plan); setCreating(false); } }} onCancel={() => setCreating(false)} /> : null}
     <SquareCouponManager plans={items} configured={billingData?.configured === true} api={api} />
     <PushCapacityManager api={api} plans={items} />
   </div>;

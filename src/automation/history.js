@@ -121,6 +121,8 @@ function createHistory(db, service) {
     async function change(actor, id, input) {
         if (!['cancel', 'reschedule', 'retry'].includes(input.action)) fail('INVALID_ACTION', '配信操作が不正です。');
         return db.withDatabaseTransaction(async query => {
+            const candidate = await getRow(actor, id, true, query);
+            await require('./flow-history').lockJobFlowHistory(query, [candidate]);
             const row = await getRow(actor, id, true, query, true);
             if (version(row) !== input.expectedVersion) fail('REVISION_CONFLICT', '配信状態が変わりました。再読み込みしてください。', 409);
             if (row.parent_job_id) fail('AGGREGATED_MEMBER', 'まとめ通知の親の配信を操作してください。');
@@ -144,7 +146,9 @@ function createHistory(db, service) {
             }
             await query('UPDATE automation_jobs SET state=?,due_at_ms=?,plan_json=COALESCE(?,plan_json),lease_token=NULL,lease_until_ms=0,attempts=IF(?=\'retry\',0,attempts),last_error_code=?,updated_at_ms=? WHERE id=?',
                 [state, due, changedPlan, input.action, `USER_${input.action.toUpperCase()}`, now, id]);
+            const children = state === 'cancelled' ? await query("SELECT * FROM automation_jobs WHERE parent_job_id=? AND state='aggregated' ORDER BY id FOR UPDATE", [id]) : [];
             if (state === 'cancelled') await query("UPDATE automation_jobs SET state='cancelled',last_error_code='PARENT_CANCELLED',updated_at_ms=? WHERE parent_job_id=? AND state='aggregated'", [now, id]);
+            await require('./flow-history').refreshJobFlowHistory(query, [{ ...row, plan_json: changedPlan || row.plan_json }, ...children]);
             await service.audit(query, actor, id, `job.${input.action}`, { previousState: row.state, dueAtMs: due }, row.guild_id);
             return { state, dueAtMs: due };
         });
