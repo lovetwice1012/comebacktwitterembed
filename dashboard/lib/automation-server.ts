@@ -10,6 +10,7 @@ export function automationServices() {
   const db = guardedDashboardDatabase(requireBotModule<any>("src/db.js"));
   const service = requireBotModule<any>("src/automation/service.js").createService(db, {
     verifyChannel: (actor: any, guildId: string, channelId: string) => destinations.verifyChannel(actor, guildId, channelId),
+    verifyWebhook: (guildId: string, url: string) => destinations.verifyWebhook(guildId, url),
   });
   const destinations = requireBotModule<any>("src/automation/destinations.js").createDestinations(db, service);
   const monitors = requireBotModule<any>("src/automation/monitors.js").createMonitors(db, service, destinations);

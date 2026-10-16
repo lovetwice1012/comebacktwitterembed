@@ -26,7 +26,8 @@ async function main() {
     cleanupOnFailure = close;
     process.on('SIGINT', () => { void close(); }); process.on('SIGTERM', () => { void close(); });
     console.log(JSON.stringify({ fixtureAllocated: true, schema: db.schema, pid: process.pid, auditReadiness }));
-    const service = require('../src/automation/service').createService(db, { verifyChannel: (actor, guildId, channelId) => destinations.verifyChannel(actor, guildId, channelId) });
+    const service = require('../src/automation/service').createService(db, { verifyChannel: (actor, guildId, channelId) => destinations.verifyChannel(actor, guildId, channelId),
+        verifyWebhook: (guildId, url) => destinations.verifyWebhook(guildId, url) });
     const actor = { userId: '222222222222222222', guildId: '111111111111111111', canView: true, canEdit: true, isAdmin: true };
     await require('./lib/automation-test-db').grantTestDonor(db, actor.userId);
     evaluator = require('../src/automation/evaluation').createEvaluator(service.dictionaryData);
