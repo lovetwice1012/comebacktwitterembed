@@ -1,0 +1,4219 @@
+{
+  "schemaVersion": 1,
+  "preparedAt": "2026-10-16T01:48:53.670Z",
+  "scope": {
+    "count": 53,
+    "p1": 12,
+    "p2": 41,
+    "composition": "original 50 + R32-1 + S34-1 + S34-2"
+  },
+  "auditSources": [
+    {
+      "relativeToOriginalSaturation": "master-findings.md",
+      "absolutePath": "C:/Users/yussy/Documents/comebacktwitterembed/docs/audits/supporter-readiness-2026-10-16/saturation/master-findings.md",
+      "sha256": "17d81d7ba8bbd512b5629583f53ecacc6379bcebaddab8a21588d48dc8928bf5"
+    },
+    {
+      "relativeToOriginalSaturation": "round-31/ui-data-report.md",
+      "absolutePath": "C:/Users/yussy/Documents/comebacktwitterembed/docs/audits/supporter-readiness-2026-10-16/saturation/round-31/ui-data-report.md",
+      "sha256": "716550b8447286e1c70b35e335a9ca5b0685d9fae747de039cf7405292f0c6b4"
+    },
+    {
+      "relativeToOriginalSaturation": "round-32/recovery-probes.json",
+      "absolutePath": "C:/Users/yussy/Documents/comebacktwitterembed/docs/audits/supporter-readiness-2026-10-16/saturation/round-32/recovery-probes.json",
+      "sha256": "cc65c8cbdf6c6e50b17bc2c2c0476608f0f0b43cc3e546f2ade3681841b0d55b"
+    },
+    {
+      "relativeToOriginalSaturation": "round-34/ui-report.md",
+      "absolutePath": "C:/Users/yussy/Documents/comebacktwitterembed/docs/audits/supporter-readiness-2026-10-16/saturation/round-34/ui-report.md",
+      "sha256": "24d7868bdedf130eeb909623008942124889fab5f9f7b2e1f110ffc52b2b19c8"
+    }
+  ],
+  "candidate": {
+    "observedHead": "d21301e81307012226d253e7a9119f32e7bbd5d5",
+    "includesUncommittedHistoryChanges": true,
+    "implementationBase": "f241aa268344b407adf64735f1d8bd3c3aa12968",
+    "finalSourceSha": "1d32f101922cc7eef9d971e36b8ab1ecbbdabbf2",
+    "finalSourceHashes": [
+      {
+        "file": "dashboard/components/automation/automation-workspace.tsx",
+        "sha256": "da50bf45b0587f112fde5ecb94c99885be7eb50b8da3d974449f3f036df0ac27"
+      },
+      {
+        "file": "dashboard/components/automation/delivery-history.tsx",
+        "sha256": "079d782058b0255939c203ec682cd515f5d48bd2acaef963bcbb3e543fadccb4"
+      },
+      {
+        "file": "dashboard/components/automation/dictionary-manager.tsx",
+        "sha256": "796f58fa07a42d4618a12ef7a34eff054e7738dad190495932370843110e8e8c"
+      },
+      {
+        "file": "dashboard/components/automation/marketplace-manager.tsx",
+        "sha256": "c65f8135dd5bc2f7da748e3ad9e382609e826ada4812726ae5350d08290decec"
+      },
+      {
+        "file": "dashboard/components/automation/monitor-delivery-activity.tsx",
+        "sha256": "18e2d0ca77ea9620181c73ce567e5fc5a529fa23264642d87dd221b30955d348"
+      },
+      {
+        "file": "dashboard/components/automation/monitor-manager.tsx",
+        "sha256": "bbef3cf94cedacee13ab0b0972eec0ad814559d126f5325441bbdbe22ef4e492"
+      },
+      {
+        "file": "dashboard/components/automation/processing-trace.tsx",
+        "sha256": "e6fce2c94cc2c066227b79a309a99b574fbb026306ac4fcf29d1a7af4a340668"
+      },
+      {
+        "file": "dashboard/components/automation/rule-editor-canvas.tsx",
+        "sha256": "8150fe945b2e8215e37ba8044783341f208a6ba5e1d81fb2ec4f4efcea016493"
+      },
+      {
+        "file": "dashboard/components/automation/square-donation-manager.tsx",
+        "sha256": "4bf3a00dc73e17298a667ef6c48ccfdf9db867e191e0168a9736a8d44d703c99"
+      },
+      {
+        "file": "dashboard/components/automation/subscription-manager.tsx",
+        "sha256": "69fe84c2bcb021e57a75f7a65ffc2bad8257b6a71548d340ab6749c65fe3ce05"
+      },
+      {
+        "file": "dashboard/lib/automation-server.ts",
+        "sha256": "60ff85cafd74172158047670152becf913713bf75c757f0930813fd07029a5b2"
+      },
+      {
+        "file": "migrations/20261016_add_dictionary_package_provenance.sql",
+        "sha256": "76159bca5fc05801fb0c1fefacfe6d8d29fb1d2f77ce332eb43a263d28fd1627"
+      },
+      {
+        "file": "migrations/20261016_add_workflow_package_provenance.sql",
+        "sha256": "fb1b1c856fb118e7aa8bedbda09229e2104caeacb22426fbab96f6070d302874"
+      },
+      {
+        "file": "migrations/20261016_bind_automation_rate_reservations.sql",
+        "sha256": "a0de3e2a89be284444d348191f2f242ba9043f3ad51a87c6f65b1f5b043df7e8"
+      },
+      {
+        "file": "migrations/20261016_preserve_dictionary_package_dependencies.sql",
+        "sha256": "987303670412cc858de10e8c14ee5b47d27a84da0b23c06f094f8a9af7ed411e"
+      },
+      {
+        "file": "scripts/automation-ui-harness.js",
+        "sha256": "300f9af0863c758e7f47628133345e0f1127a4868084258a21ada9af3d075bf6"
+      },
+      {
+        "file": "scripts/notification-experience-ui-harness.cjs",
+        "sha256": "1d5a7ff5a950661fdb7482257fb0a4ffad540aba6ccd60286f05bdccc59b7fce"
+      },
+      {
+        "file": "scripts/run-supporter-readiness-acceptance.cjs",
+        "sha256": "0c9f99adba18ce569049d0a7f81e6e289ed2fd228a118a208a3d5ef98792b867"
+      },
+      {
+        "file": "scripts/run-x-notification-acceptance.cjs",
+        "sha256": "9ff7122500485f0725d89fdb882b45cd672c6a984282587da3a51bd5172cf7cd"
+      },
+      {
+        "file": "scripts/test/autoWatch.admission-sql.test.js",
+        "sha256": "3cc4a2ac8a4df6b0c525603f194b46215a2709ef452bd5152a88424670976384"
+      },
+      {
+        "file": "scripts/test/autoWatch.runner.test.js",
+        "sha256": "51ced7adcd9464ef7b5a311ff69a3ced31adefd0807631bda672ae9f617ab05e"
+      },
+      {
+        "file": "scripts/test/autoextract.watch.test.js",
+        "sha256": "f5bf1a69ef60428d6ba30e067d736d76aa075ebdb3259a4ebfc07c42fd792cd3"
+      },
+      {
+        "file": "scripts/test/automation-aggregate-member-boundary.test.js",
+        "sha256": "94b696b468047f8db10cf093ff93497b315a811938227d930234bc2a3668609b"
+      },
+      {
+        "file": "scripts/test/automation-dashboard-webhook-creation-sql.test.js",
+        "sha256": "a98d07e65b0f9ffecab3381aafb7b0cdf71dafa7b0cc2ac0d9e3bd7dc0bb3bc3"
+      },
+      {
+        "file": "scripts/test/automation-destination-context.test.js",
+        "sha256": "90949d818856384ce4340d34b2c62f923c0697c612fc8e301036427e7a6dbc97"
+      },
+      {
+        "file": "scripts/test/automation-destination-workspace.test.js",
+        "sha256": "c7191bae153b1b7cb1e6ec33fcd1e29f92c08d97916b61d3a16446c251a446ac"
+      },
+      {
+        "file": "scripts/test/automation-dictionary-publication-sql.test.js",
+        "sha256": "8b0e0e9c4cbe708f0d26582035f0a0691f1fd425e160429f02722c5a9def31c2"
+      },
+      {
+        "file": "scripts/test/automation-dictionary-publication-ui.test.js",
+        "sha256": "e2c417a48be81777637feecd87c5ac2e40db3d035d17d5022d44055ecea3dadf"
+      },
+      {
+        "file": "scripts/test/automation-donation-ui.test.js",
+        "sha256": "73e5fbba578b511af7a39c48313a22f39c49f41d912be952a7254584a6d9cd76"
+      },
+      {
+        "file": "scripts/test/automation-flow-history-pages-sql.test.js",
+        "sha256": "851c117d77ca9d61efeba40d366ad27e95f885e2d8e1624561a7736267239dd7"
+      },
+      {
+        "file": "scripts/test/automation-flow-history-read-sql.test.js",
+        "sha256": "b5eea3951378901a1a48741007755d21f5080d940f2b9a0a84a9c80b2b374d36"
+      },
+      {
+        "file": "scripts/test/automation-flow-permanent-failure-sql.test.js",
+        "sha256": "f7b3ceec11ad72dca508e5f11703582b16400d25c4b107a9267e67cc9ee645a9"
+      },
+      {
+        "file": "scripts/test/automation-flow-projector-sql.test.js",
+        "sha256": "293d9a1714fce51d910a7ce6012397331ab53b1e0e032d91f71c018bc84911c8"
+      },
+      {
+        "file": "scripts/test/automation-flow-trace.test.js",
+        "sha256": "b3406623fbb639373ce7959a225b80ca1989b4e937bf95c1b3d8101063963d2f"
+      },
+      {
+        "file": "scripts/test/automation-graph-join.test.js",
+        "sha256": "141d37caf8d856de246a71b6ab543eb74777e5a32ae9ab3ae5066c6a5118a3ab"
+      },
+      {
+        "file": "scripts/test/automation-graph-store-sql.test.js",
+        "sha256": "3ca2d3b9733ac40a25991948b31df2748bbbd293d9067a40caf5d479a48b5933"
+      },
+      {
+        "file": "scripts/test/automation-history-trace-ui.test.js",
+        "sha256": "ef369b0b7b3b61d8a0b172d4d81ea28ccfc79d487c9659d8ecc44dc8204e0741"
+      },
+      {
+        "file": "scripts/test/automation-management.test.js",
+        "sha256": "415acaf52bd1144c5be53931f88e73b31ac04dd261a40641332d10350a8f06bb"
+      },
+      {
+        "file": "scripts/test/automation-marketplace-provenance-sql.test.js",
+        "sha256": "828691c2d7a06da157299fbb8add9b01fb5461feed71e205e02195c87da7a58c"
+      },
+      {
+        "file": "scripts/test/automation-marketplace-sql.test.js",
+        "sha256": "21dd321347c0c7de1733946b283c64a395790fff0697b9c1163cb300cdcab753"
+      },
+      {
+        "file": "scripts/test/automation-monitor-activity-sql.test.js",
+        "sha256": "b01cadfaf521cf68d70745b4e6541fc0a1b879105793b5fc68ff31ac9b926121"
+      },
+      {
+        "file": "scripts/test/automation-monitor-activity-ui.test.js",
+        "sha256": "370e0da4c8443792e0fb78e276f9a19c5b9dcd9e254ca407065ea6a4f257f809"
+      },
+      {
+        "file": "scripts/test/automation-monitor-cadence-lifecycle-sql.test.js",
+        "sha256": "539820314623cf32f69a7aeab545777ef6013e8b50846562f3c968b732a5c0a4"
+      },
+      {
+        "file": "scripts/test/automation-monitor-destination-lifecycle-sql.test.js",
+        "sha256": "b7560ea7818ae24b35477c6d6e1ae0f0a1076d3aa42da55d3af3f2418afc7f1b"
+      },
+      {
+        "file": "scripts/test/automation-monitor-editor-ui.test.js",
+        "sha256": "24ce2a30777871ad58c3769f179bbc7dd062ef304f7685d5e586ee07a90049e4"
+      },
+      {
+        "file": "scripts/test/automation-monitor-workflow-cas-sql.test.js",
+        "sha256": "68c168460e591a8ce44df3fbd8dd6558d504dab4d688702c6eb7c471f321340f"
+      },
+      {
+        "file": "scripts/test/automation-native-unmanaged-resume-sql.test.js",
+        "sha256": "10579091460c77c11923b0ec19941cc181ad47681e4687e367b4b1f1aeb2d6a4"
+      },
+      {
+        "file": "scripts/test/automation-native-webhook-lifecycle-sql.test.js",
+        "sha256": "d5fa90f7f91fc15ab87600858cd68a978f67375a190b8948fc91d8265a414e5a"
+      },
+      {
+        "file": "scripts/test/automation-package-lineage-sql.test.js",
+        "sha256": "d04cb66723353cb287fe239fcd77ed616b2a7961642c39511745b0075d55e2ff"
+      },
+      {
+        "file": "scripts/test/automation-package-lineage-ui.test.js",
+        "sha256": "772bda690268571268d1e78a07e8ce8de40a101e823cacb9310ca5ad64ad9bcd"
+      },
+      {
+        "file": "scripts/test/automation-post-commit-ui.test.js",
+        "sha256": "abdd21dbe4a2a5279acaf1bebeff34481bfca674bd1fcc1cb5d1c7f5236fd811"
+      },
+      {
+        "file": "scripts/test/automation-rate-limits-sql.test.js",
+        "sha256": "55262d31847ceca5cf08b782dc28e6abd81eddd9d686bc5aa972b0343c9d5818"
+      },
+      {
+        "file": "scripts/test/automation-recovery-cutoff-sql.test.js",
+        "sha256": "f3923e0d474feb62b62904ae601fb46c5feaebe45bec14f561d3415d39cb7b60"
+      },
+      {
+        "file": "scripts/test/automation-recovery-origin-ui.test.js",
+        "sha256": "61b33bc6b31c5e87420874604078eb09a937fc959e625c9d10b7e21fd3329074"
+      },
+      {
+        "file": "scripts/test/automation-recovery-windows-rename.test.js",
+        "sha256": "65198afc74f8955615ed68c77d6d7cff3b8f3fb24b50aa79b36c12bd6d253072"
+      },
+      {
+        "file": "scripts/test/automation-saturation-boundary-sql.test.js",
+        "sha256": "f3c61d6e7fa8b4b7f927aa042aa31a6d12f270068e134c335a211978646dedd8"
+      },
+      {
+        "file": "scripts/test/automation-saturation-data-sql.test.js",
+        "sha256": "14e66893b0c4a14474f6a90126bee31d21957fe252b6cf766d41147ea9313bb5"
+      },
+      {
+        "file": "scripts/test/automation-saturation-runtime.test.js",
+        "sha256": "57d244dedfa276787e3b3ebbed07784548152eb4350749d3a2a3da8656f1f285"
+      },
+      {
+        "file": "scripts/test/automation-saturation-ui.test.js",
+        "sha256": "f47a6b39116d03b0ed1f8ff232da806c64e5bb72555e7164ed7ab3eeeafca9fc"
+      },
+      {
+        "file": "scripts/test/automation-service-commit-response-sql.test.js",
+        "sha256": "aca17c6ae770eaff6ad674bfd5f1b5505e4a6bf1320f98d8840062035890d687"
+      },
+      {
+        "file": "scripts/test/automation-service-policy-sql.test.js",
+        "sha256": "bef5fd8e601fcab7824e5c287cdb5678fc97f2cefb77ad6091198c399ee10e9f"
+      },
+      {
+        "file": "scripts/test/automation-sql.test.js",
+        "sha256": "c1429ca028d3b413723ab9150440d52d5ed7b2f71101ff94b35178522b0190b0"
+      },
+      {
+        "file": "scripts/test/automation-square-billing-sql.test.js",
+        "sha256": "055702ec0acd22a80a4d97aa17913e4abb8224636edfdbe26c4d80c5413fa24b"
+      },
+      {
+        "file": "scripts/test/automation-square-donations-sql.test.js",
+        "sha256": "17efcad59aad75e9d52a54e5c259d9a1b73f587cef0bf1b655e0ace5692736ed"
+      },
+      {
+        "file": "scripts/test/automation-studio-ui.test.js",
+        "sha256": "ffda0809e4cc524eb89dd33e9575b760d8e8d44240aba0f630dc2046ed3f1ef2"
+      },
+      {
+        "file": "scripts/test/automation-subscription-ui.test.js",
+        "sha256": "e6afcd7e9d700e20c7bb99700d05154e3f547cf8966bea37dfa605ef4b91df0e"
+      },
+      {
+        "file": "scripts/test/automation-supporter-audit-runtime-sql.test.js",
+        "sha256": "8317f007fae66756552cefa63b65625a1e8fa6b0797d0407ba6b126fde3c7bfb"
+      },
+      {
+        "file": "scripts/test/automation-usability-recovery.test.js",
+        "sha256": "84d5dddaef78013159d3f049280e0d2ec966ae11a286bbddceb6e521a32b01ab"
+      },
+      {
+        "file": "scripts/test/automation-workflow-deletion-sql.test.js",
+        "sha256": "99ac957fbae797f9e0116a949397d61fbab31c7e2695cef137ecaea9415b7864"
+      },
+      {
+        "file": "scripts/test/automation-workflow-destination-principals-sql.test.js",
+        "sha256": "1ce981a2bc5de7938008a4dc080ba0e61e0b32036d663401e40bac08c6cc8d9a"
+      },
+      {
+        "file": "scripts/test/automation-x-binding-sql.test.js",
+        "sha256": "1f78c166ad70e004228a6fce3b2233168bdb5861651a2cfbffa7bc9406e08fad"
+      },
+      {
+        "file": "scripts/test/automation-x-push-processing-sql.test.js",
+        "sha256": "516eeca123e6dd0c7afb25d1a9b0adf9ffcf0d84febb9e6c897ea1030d3bc432"
+      },
+      {
+        "file": "scripts/test/automation-x-push-runtime-retry.test.js",
+        "sha256": "fb4f2ec47396ca3dbbb95775fc5ea32d3dcf778cb25520aca98875d34631d5d7"
+      },
+      {
+        "file": "scripts/test/automation-x-push-runtime.test.js",
+        "sha256": "8b6a3428ce924e90fb0760e45d3c6a26f9ee23dcefac0db944b13b6aa2ba781a"
+      },
+      {
+        "file": "scripts/test/automation-x-session-lifecycle-sql.test.js",
+        "sha256": "a66b3fe64d8492e7affb5e90be17e8a47f1af2d3fdf976eedc7311e0e2af5897"
+      },
+      {
+        "file": "scripts/test/provider-saturation-backlog-sql.test.js",
+        "sha256": "2b698482bb8269749fe5c865da0118c9038b16ac97758e3e8aa17f5f8ee2facc"
+      },
+      {
+        "file": "scripts/test/provider-saturation-regressions.test.js",
+        "sha256": "be978a0bcd9c352230a46064bd265c0703e5604a979dfd1d986b71b73640fcb0"
+      },
+      {
+        "file": "scripts/test/provider-saturation-sql.test.js",
+        "sha256": "86b0a2e06a82d8c801d5f02fcaf0357df0e659f59103eac6bc61c26c244eff40"
+      },
+      {
+        "file": "scripts/test/steam.parser.test.js",
+        "sha256": "f79fc4d239263f354bb6fffe60d5be26dcb4e0e2e39c6859ec60ff33953826ee"
+      },
+      {
+        "file": "scripts/test/webhook-destination.test.js",
+        "sha256": "eac88f2194af766765f73faefb388549f3d9d7d99ccd39091a2254368744c3a4"
+      },
+      {
+        "file": "src/automation/api.js",
+        "sha256": "f92e45ac6173b4ff79d16f98ed9e97a146381263c31582bb63dc75fc10533060"
+      },
+      {
+        "file": "src/automation/destinations.js",
+        "sha256": "76b2d2b849a6faf3272314b279c312db8c26c7e00996a33b30a7b89afe91443b"
+      },
+      {
+        "file": "src/automation/dictionary-package-provenance.js",
+        "sha256": "5ce288e01f682af91761e4ae807e19d1679047aa8901f1bc617534357f32039b"
+      },
+      {
+        "file": "src/automation/dictionary-service.js",
+        "sha256": "7ccd9d7d9d37a0e867201ae93893ab28619cdabf952aeb2f372883ad57a72230"
+      },
+      {
+        "file": "src/automation/engine.js",
+        "sha256": "7f81338ac52bfff88b7668d54bc6e8a473bb20a5d639b47ef6de2d86de5aaf40"
+      },
+      {
+        "file": "src/automation/evaluation.js",
+        "sha256": "ab0918e376beedda202217e4037eb15e17a03c9d444324901c7ccdb81e1c588d"
+      },
+      {
+        "file": "src/automation/flow-history.js",
+        "sha256": "fb4f255c35ff65025e7187d88fbc16c069a8e1a51fac25347c0b3bf8b96bac05"
+      },
+      {
+        "file": "src/automation/flow-projector.js",
+        "sha256": "3f7893334eb5e3e851614c00f79e032635c526d56522c2f92f76c37f06ee1512"
+      },
+      {
+        "file": "src/automation/flow-runtime.js",
+        "sha256": "3f86b1e12ae8d9285b7b1451c69436d3b59f4dca0b68f3c6af8dea7b0e22a8eb"
+      },
+      {
+        "file": "src/automation/flow-trace.js",
+        "sha256": "ffb1111067fb0db4ff7758e87682004035ce387e4f2f234df5ecccaeba28cb00"
+      },
+      {
+        "file": "src/automation/graph-driver.js",
+        "sha256": "500fd9cf9b512f35724ce4bba635ea61c501eb348a936c8591599590c747b885"
+      },
+      {
+        "file": "src/automation/graph-failure.js",
+        "sha256": "79cf9e70e7ec9e218801321b2b6417e4fd3989b56af03a4e43445d644306a5c7"
+      },
+      {
+        "file": "src/automation/graph-join-store.js",
+        "sha256": "7cd60929bafadbc411d74907f2d1299b0f2c59ece4e73c3d5f3e086825cf8859"
+      },
+      {
+        "file": "src/automation/graph-store.js",
+        "sha256": "026136bf8e095e047aacbab5f9be8a2bca4919ddbc9e1e7b7a178327fcc80765"
+      },
+      {
+        "file": "src/automation/history.js",
+        "sha256": "5637d3d965e7f32f9cf7210a3ce98920cb2b40e5928ec5e7f0a6426b9b4b5e61"
+      },
+      {
+        "file": "src/automation/marketplace-core.js",
+        "sha256": "8dd24c0333ce49389cb0e3a71a2bcd448e441cdba89cef5a11b8adc8335888c2"
+      },
+      {
+        "file": "src/automation/marketplace-installs.js",
+        "sha256": "5d97cb474bb547acea944ee0c923404d4a0fe5ad3888d87a31af32fe42fd89a6"
+      },
+      {
+        "file": "src/automation/monitors.js",
+        "sha256": "24990cc86d996961775a98875c7fa3030e841b69418f41d887f742233509b249"
+      },
+      {
+        "file": "src/automation/package-dependencies.js",
+        "sha256": "0d820b77df81b3ca100d409515ec07c913ac4d76e06257fd2a3ec65fd31408de"
+      },
+      {
+        "file": "src/automation/package-safety.js",
+        "sha256": "a444c39a639298ef0be050ea24b013dcabb5b62488e4c252246f3078b1df5ccb"
+      },
+      {
+        "file": "src/automation/queue.js",
+        "sha256": "7d4123c5c15b50345681cb9ef17fbc3f9c851989b3eb95db82cc4ffd15a571a9"
+      },
+      {
+        "file": "src/automation/rate-limits.js",
+        "sha256": "fd74bf00aff945349cc00fe104eb415f7ad6c388b8b560f6921a9e6896db1fb5"
+      },
+      {
+        "file": "src/automation/recovery-origin.js",
+        "sha256": "c3ae631b4e02b84a482a84508129dc29a8df9f2e203278444c1cafa043dc2b4f"
+      },
+      {
+        "file": "src/automation/runtime.js",
+        "sha256": "d58e3ab9cebca8f69c952383a06caae2646673e7e6260a317b9f4a07fc9d9c9b"
+      },
+      {
+        "file": "src/automation/schema.sql.js",
+        "sha256": "ed60da4f0bf5ae571a19aeba31fa8682cc541a6ea72b9055ca284ca38640eccd"
+      },
+      {
+        "file": "src/automation/service.js",
+        "sha256": "58d8bfd82966f5d18efeae9d494dcb408a178cc981ab26d2443441a1f9a97e30"
+      },
+      {
+        "file": "src/automation/square-billing.d.ts",
+        "sha256": "67c25d11ab1c9b2d35e2fd1b9e68f91d5a0cafd58c62f386335644e0f3b0c112"
+      },
+      {
+        "file": "src/automation/square-billing.js",
+        "sha256": "420286141a5b1cc9b28f9e0cb08c249f27d1e66cafd5fd281d1296525f30a3f0"
+      },
+      {
+        "file": "src/automation/square-donations.d.ts",
+        "sha256": "0a30ba7e6f29159084d77e16129ab27f26dc6951be9691019390599f199f14c1"
+      },
+      {
+        "file": "src/automation/square-donations.js",
+        "sha256": "dbffca5691b0de3431feaa6551182076bb8a254428c23ea7a4d05c2a3f680df0"
+      },
+      {
+        "file": "src/automation/transport.js",
+        "sha256": "120852a3e08e8d7b827eaeb6a4bbe122970451e93e87d6a5e6e67042eee3db97"
+      },
+      {
+        "file": "src/automation/webhook-registration.js",
+        "sha256": "2eabd0018c09b1daa11916a589ab6639bb1626df97b0651616dceb9309beba37"
+      },
+      {
+        "file": "src/automation/workflow-deletion.js",
+        "sha256": "440c3dc29b740783f128cc42e4c6d5a2aaccc2cda608239be5fa7106de4ef58f"
+      },
+      {
+        "file": "src/automation/workflow-package-provenance.js",
+        "sha256": "7d79c85b615a3425ead82c12ddf2e9d5b80e42c292f4a107d840bfd06613c180"
+      },
+      {
+        "file": "src/automation/workflow-targets.js",
+        "sha256": "68949704f3b8aecda8c4b83a4eb59627f053ef8530c23cf4cd1f15da769814c2"
+      },
+      {
+        "file": "src/automation/x-monitor-quota.js",
+        "sha256": "302ef72c0f217f8ce64ad586e423c04c42aa3f19a8dd251325a308eb0da8e08b"
+      },
+      {
+        "file": "src/automation/x-push-runtime.js",
+        "sha256": "b53611ce8eb92784f1d4083d8925c49f93e6634e1019845d65306e86e8788e81"
+      },
+      {
+        "file": "src/automation/x-push-store.js",
+        "sha256": "df82f8be91a36342f90528171429d6fafa757f62a4ea1eda7bed754adf262a95"
+      },
+      {
+        "file": "src/commands/handlers/autoextract/watch.js",
+        "sha256": "589adcd443e67153741818883b7b98f57d6d04eba0cf2aa17632a2cf97af606e"
+      },
+      {
+        "file": "src/components/_webhookDestination.js",
+        "sha256": "5342faa1bd1672647870a5e4c2a79725f191a51c14cd1f4d9111847c2ec63b92"
+      },
+      {
+        "file": "src/components/priceWatch.js",
+        "sha256": "a4ba5a1ed4031b5ff6cf3fae85827e11eb7b9cc9969b9f3d4dcdc1394ed52944"
+      },
+      {
+        "file": "src/db_schema.js",
+        "sha256": "a532f13033f1c0f5315fe09aca12d3524a6ca9ef68d248a67ddbdfb0599fda9f"
+      },
+      {
+        "file": "src/providers/autoWatch/channel-registration.js",
+        "sha256": "63dd72be16217f36048062095c97b2a64d27af187f369e44964b19e48904c3ec"
+      },
+      {
+        "file": "src/providers/autoWatch/runner.js",
+        "sha256": "eb3402dd3536a7cbb11e72c8b9ef618cdfcb4642ba52e73cd8c46e091681d0c5"
+      },
+      {
+        "file": "src/providers/autoWatch/store.js",
+        "sha256": "b75e3f4e3cc63d5526519d95ace9646a6528a461b9fc4dbe83177ad474fa6970"
+      },
+      {
+        "file": "src/providers/booth/autoWatch.js",
+        "sha256": "c957daf121b4b9ca6c0bc1c7e6d61b196ba61a3f4a775ca0836b2950026e4698"
+      },
+      {
+        "file": "src/providers/priceWatch/runner.js",
+        "sha256": "474cddb30336394210dfcd11c5584bc3ead30fefeae6c81c61f4c93dcc174888"
+      },
+      {
+        "file": "src/providers/priceWatch/store.js",
+        "sha256": "6ff69c176e637d2ad9c1c06926c2dcf083d19b38774f49d07fbbc455c9de8316"
+      },
+      {
+        "file": "src/providers/steam/priceWatch.js",
+        "sha256": "cd65cab8182e7d33a6738fc4e48f95a2632f1fe3a593bc3af4745e7bea2e9c27"
+      },
+      {
+        "file": "src/providers/steam/steamSourceParser/index.js",
+        "sha256": "b933ee0d0cc392b8d450a30b341fcabe0547ed0fd1554c599e999934d7335e20"
+      },
+      {
+        "file": "src/recoveryBootstrap.js",
+        "sha256": "ee22163e0c21cd77a8b1cda3f5f834b4d745b0405df9193523194d2a3da15a91"
+      },
+      {
+        "file": "src/userFacingErrors.js",
+        "sha256": "d623a9452544d7fe807934a612c19da0df0bb5f91471555a462f7e93afecfb0e"
+      }
+    ],
+    "finalMainSha": null,
+    "productionSha": null,
+    "finalCoreTreeIds": {
+      "src": "52a27337f821176a0232475436a94c71fa4b0b67",
+      "index.js": "f1e198b2844674bb452432655873c7f688eb004e",
+      "package.json": "b83d13a7ba8ea97c210c9de0cbe11a058e394320",
+      "package-lock.json": "555308dc110a193fa169c3129af3c9ca60a08ff6",
+      "packages/angelic-angel": "4c160dd8368ae39c82d92dfad3013f17588d4574",
+      "dashboard": "45274e20281e44bb721ee0a73c57e0cc283e9616",
+      "scripts": "79f2d3a09b43d20d9084bd3a39951723ff255b7b",
+      "migrations": "17a97bd36dab00b719e832bd810f0eba04f05c4d"
+    }
+  },
+  "acceptance": {
+    "status": "local-53-findings-verified-production-pending",
+    "finalRun": "evidence/frozen-175-tests.xml",
+    "tests": 2056,
+    "passed": 2056,
+    "failed": 0,
+    "skipped": 0,
+    "typechecks": {
+      "root": "passed",
+      "dashboard": "passed"
+    },
+    "sourceLint": {
+      "changedRootJavaScript": "passed --no-ignore",
+      "changedDashboardTypeScript": "passed"
+    },
+    "historyUiAcceptance": "passed-independent-70-plus-local-browser-sql",
+    "dataIndependentCleanPasses": 2,
+    "dataIndependentEvidence": [
+      "evidence/data-review-1.md",
+      "evidence/data-review-2.md"
+    ],
+    "productionChangedByThisReport": false,
+    "realOAuthVerified": false,
+    "realNewXToDiscordDeliveryVerified": false,
+    "realSquarePaymentVerified": false,
+    "deploymentVerified": false,
+    "cancelled": 0,
+    "testFiles": 175,
+    "durationMs": 1153707.1459,
+    "nodeVersion": "24.21.0",
+    "sqlHost": "127.0.0.1:33621",
+    "independentReviews": [
+      "evidence/provider-review.md",
+      "evidence/runtime-review.md",
+      "evidence/history-ui-review.md"
+    ],
+    "xmlSha256": "69bc1d3858a16febbc6155197bd9b939cc98dab079b1a279f9dd4d77976ce9d1",
+    "localBrowser": {
+      "kind": "disposable MariaDB plus actual React and IAB; Discord transport mocked",
+      "records": 700,
+      "projectionBytes": 168,
+      "firstPage": 38,
+      "pageCountsObserved": [
+        38,
+        76,
+        304
+      ],
+      "concurrentSourceChange": "409 clears prior records; explicit restart shows 38 original entries",
+      "mobile": {
+        "viewportWidth": 390,
+        "scrollWidth": 375,
+        "horizontalOverflow": false,
+        "matchPositionsVisible": true
+      },
+      "pausedDestination": "actual enabled=0 and correct readiness text",
+      "fixtureShutdown": true,
+      "realDiscordMessages": 0,
+      "productionWrites": 0,
+      "evidence": "evidence/history-mobile.jpg"
+    },
+    "independentLargeHistory": {
+      "nodes": 52,
+      "edges": 81,
+      "termCharacters": 255,
+      "entries": 4113,
+      "dictionaryEntries": 3840,
+      "canonicalBytes": 25765177,
+      "pages": 104,
+      "deepEqual": true,
+      "evidence": "evidence/runtime-review.md"
+    },
+    "operationsPreparation": {
+      "sourceApproved": "1d32f101922cc7eef9d971e36b8ab1ecbbdabbf2",
+      "migrations": 4,
+      "nullableColumns": 9,
+      "existingTables": 4,
+      "offlineTestsPassed": 70,
+      "columnLedgerCombinations": 8192,
+      "independentReview": "evidence/ops-preparation-review.json",
+      "actualBundleReviewed": false
+    }
+  },
+  "migration": {
+    "newMigrationCount": 4,
+    "newNullableColumnCount": 9,
+    "existingTableCount": 4,
+    "newTables": 0,
+    "files": [
+      {
+        "id": "20261016_bind_automation_rate_reservations",
+        "file": "migrations/20261016_bind_automation_rate_reservations.sql",
+        "sha256": "a0de3e2a89be284444d348191f2f242ba9043f3ad51a87c6f65b1f5b043df7e8",
+        "observedWorkingCopySha256": "a0de3e2a89be284444d348191f2f242ba9043f3ad51a87c6f65b1f5b043df7e8",
+        "hashEncoding": "canonical raw Git blob"
+      },
+      {
+        "id": "20261016_add_dictionary_package_provenance",
+        "file": "migrations/20261016_add_dictionary_package_provenance.sql",
+        "sha256": "76159bca5fc05801fb0c1fefacfe6d8d29fb1d2f77ce332eb43a263d28fd1627",
+        "observedWorkingCopySha256": "76159bca5fc05801fb0c1fefacfe6d8d29fb1d2f77ce332eb43a263d28fd1627",
+        "hashEncoding": "canonical raw Git blob"
+      },
+      {
+        "id": "20261016_add_workflow_package_provenance",
+        "file": "migrations/20261016_add_workflow_package_provenance.sql",
+        "sha256": "fb1b1c856fb118e7aa8bedbda09229e2104caeacb22426fbab96f6070d302874",
+        "observedWorkingCopySha256": "fb1b1c856fb118e7aa8bedbda09229e2104caeacb22426fbab96f6070d302874",
+        "hashEncoding": "canonical raw Git blob"
+      },
+      {
+        "id": "20261016_preserve_dictionary_package_dependencies",
+        "file": "migrations/20261016_preserve_dictionary_package_dependencies.sql",
+        "sha256": "987303670412cc858de10e8c14ee5b47d27a84da0b23c06f094f8a9af7ed411e",
+        "observedWorkingCopySha256": "764a7d0148f21811a494ad4afc41e5edf1939dfa17ef14ff930c4511ea03420e",
+        "hashEncoding": "canonical raw Git blob"
+      }
+    ],
+    "tables": [
+      {
+        "table": "automation_rate_reservations",
+        "nullableColumns": [
+          "job_id",
+          "lease_token"
+        ]
+      },
+      {
+        "table": "automation_dictionary_revisions",
+        "nullableColumns": [
+          "source_package_id",
+          "source_package_version",
+          "origin_reviewed",
+          "package_dependencies_json"
+        ]
+      },
+      {
+        "table": "automation_revisions",
+        "nullableColumns": [
+          "source_package_id",
+          "source_package_version"
+        ]
+      },
+      {
+        "table": "automation_package_versions",
+        "nullableColumns": [
+          "package_dependencies_json"
+        ]
+      }
+    ],
+    "priorR1Migration": "20261016_add_auto_watch_notification_window already existed in the implementation base and is outside these four new migrations",
+    "rollback": "Keep added columns, origin/dependency metadata and all existing data; do not drop columns or restore the database. Select a compatible code version with explicit operating recovery checks."
+  },
+  "issues": [
+    {
+      "id": "R1",
+      "priority": "P1",
+      "title": "同時に見つかった新着が確認間隔ごとに1件ずつ処理される",
+      "implementationStatus": "implemented-in-candidate",
+      "implementationSummary": "同じ取得回で見つかった通知を不変の通知ウィンドウへまとめ、再起動・再試行後も元の確認間隔で処理する。",
+      "implementationFiles": [
+        "src/automation/native-notification-window.js",
+        "src/automation/queue.js",
+        "src/providers/autoWatch/store.js"
+      ],
+      "coverage": [
+        {
+          "file": "scripts/test/automation-supporter-audit-runtime-sql.test.js",
+          "selector": "audit R1",
+          "testCases": [
+            {
+              "declaredName": "audit R1: real standard-store sequential claims retain a durable bounded handoff window",
+              "line": 34,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "audit R1 additive migration is idempotent and preserves existing targets and receipts",
+              "line": 332,
+              "nameKind": "literal"
+            }
+          ],
+          "executionStatus": "passed-frozen-source-tests"
+        },
+        {
+          "file": "scripts/test/automation-monitor-cadence-lifecycle-sql.test.js",
+          "selector": "stable native admission window|restart after one batch|cadence reset",
+          "testCases": [
+            {
+              "declaredName": "one stable native admission window routes all leased discoveries for legacy and graph rules, while later claims retain cadence",
+              "line": 218,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "a cadence reset after the first batch item rejects the old admission snapshot for remaining items",
+              "line": 238,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "a restart after one batch item reclaims the remainder in the persisted current window",
+              "line": 249,
+              "nameKind": "literal"
+            }
+          ],
+          "executionStatus": "passed-frozen-source-tests"
+        }
+      ],
+      "verificationStatus": "passed-frozen-source-tests"
+    },
+    {
+      "id": "R2",
+      "priority": "P1",
+      "title": "Discordの制限応答で試行回数を二重に数える",
+      "implementationStatus": "implemented-in-candidate",
+      "implementationSummary": "送信開始時の試行加算を再利用し、Discordの拒否応答で二重加算しない。結果不明・一部送信は自動再送しない。",
+      "implementationFiles": [
+        "src/automation/runtime.js",
+        "src/automation/queue.js"
+      ],
+      "coverage": [
+        {
+          "file": "scripts/test/automation-supporter-audit-runtime-sql.test.js",
+          "selector": "audit R2",
+          "testCases": [
+            {
+              "declaredName": "audit R2: real queue counts one attempt per Discord rejection and keeps unknown or partial work terminal",
+              "line": 247,
+              "nameKind": "literal"
+            }
+          ],
+          "executionStatus": "passed-frozen-source-tests"
+        }
+      ],
+      "verificationStatus": "passed-frozen-source-tests"
+    },
+    {
+      "id": "R3",
+      "priority": "P1",
+      "title": "ルール停止中でも通知一覧が正常稼働に見える",
+      "implementationStatus": "implemented-in-candidate",
+      "implementationSummary": "割当済みルールの未適用・停止・削除を監視状態へ反映し、実際に待機している理由を表示する。",
+      "implementationFiles": [
+        "src/automation/monitors.js",
+        "dashboard/components/automation/monitor-manager.tsx"
+      ],
+      "coverage": [
+        {
+          "file": "scripts/test/automation-readiness-feedback-ui.test.js",
+          "selector": "paused|unapplied|registration review refreshes",
+          "testCases": [
+            {
+              "declaredName": "verified paused/unapplied rules remain visible beyond the workflow list page and open their exact assigned rule",
+              "line": 11,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "registration review refreshes the selected rule state and explains a paused rule before saving",
+              "line": 36,
+              "nameKind": "literal"
+            }
+          ],
+          "executionStatus": "passed-frozen-source-tests"
+        }
+      ],
+      "verificationStatus": "passed-frozen-source-tests"
+    },
+    {
+      "id": "R4",
+      "priority": "P2",
+      "title": "通信障害時にJSON解析エラーをそのまま表示する",
+      "implementationStatus": "implemented-in-candidate",
+      "implementationSummary": "非JSON・通信障害・不正な成功応答を安全な画面メッセージに変換し、再読込で回復できる。",
+      "implementationFiles": [
+        "dashboard/components/automation/automation-feedback.ts",
+        "dashboard/components/automation/automation-workspace.tsx"
+      ],
+      "coverage": [
+        {
+          "file": "scripts/test/automation-readiness-feedback-ui.test.js",
+          "selector": "safe HTTP|malformed successful|gateway error",
+          "testCases": [
+            {
+              "declaredName": "safe HTTP feedback preserves structured validation and never includes non-JSON, network or authentication internals",
+              "line": 64,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "malformed successful collections fail safely while history arrays and write responses remain valid",
+              "line": 79,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "the real workspace keeps malformed successful lists out of rendering and recovers on reload",
+              "line": 95,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "the real workspace presents one safe gateway error and recovers resource loading without page reload",
+              "line": 117,
+              "nameKind": "literal"
+            }
+          ],
+          "executionStatus": "passed-frozen-source-tests"
+        },
+        {
+          "file": "scripts/test/automation-http-boundary.test.js",
+          "selector": "Next HTTP boundary",
+          "testCases": [
+            {
+              "declaredName": "Next HTTP boundary enforces origin, session, current guild access and safe errors around the real dispatcher",
+              "line": 13,
+              "nameKind": "literal"
+            }
+          ],
+          "executionStatus": "passed-frozen-source-tests"
+        }
+      ],
+      "verificationStatus": "passed-frozen-source-tests"
+    },
+    {
+      "id": "R5",
+      "priority": "P2",
+      "title": "Discordで監視削除に失敗すると内部エラーを返信する",
+      "implementationStatus": "implemented-in-candidate",
+      "implementationSummary": "監視削除の失敗を固定した日本語・英語の案内に変換し、内部例外や他人の情報を公開返信へ出さない。",
+      "implementationFiles": [
+        "src/commands/handlers/autoextract/unwatch.js",
+        "src/userFacingErrors.js"
+      ],
+      "coverage": [
+        {
+          "file": "scripts/test/autoextract.unwatch.test.js",
+          "selector": "unwatch",
+          "testCases": [
+            {
+              "declaredName": "unwatch never exposes raw exception representations in its public reply",
+              "line": 30,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "unwatch not-found messages are static and do not reveal another owner or raw message",
+              "line": 48,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "unwatch diagnostics failure keeps safe retry guidance available",
+              "line": 56,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "unwatch preserves caller-scoped deletion and localized success",
+              "line": 62,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "unwatch validates IDs before any delete or diagnostics",
+              "line": 71,
+              "nameKind": "literal"
+            }
+          ],
+          "executionStatus": "passed-frozen-source-tests"
+        }
+      ],
+      "verificationStatus": "passed-frozen-source-tests"
+    },
+    {
+      "id": "R6",
+      "priority": "P2",
+      "title": "Discord一覧の次回確認時刻が利用者別の間隔と違う",
+      "implementationStatus": "implemented-in-candidate",
+      "implementationSummary": "共有取得時刻とは別に、各登録者の確認間隔から次回確認時刻を返す。",
+      "implementationFiles": [
+        "src/providers/autoWatch/store.js",
+        "src/commands/handlers/autoextract/list.js"
+      ],
+      "coverage": [
+        {
+          "file": "scripts/test/automation-supporter-audit-runtime-sql.test.js",
+          "selector": "audit R6",
+          "testCases": [
+            {
+              "declaredName": "audit R6: Discord list exposes each owner cadence separately from shared acquisition timestamps",
+              "line": 312,
+              "nameKind": "literal"
+            }
+          ],
+          "executionStatus": "passed-frozen-source-tests"
+        },
+        {
+          "file": "scripts/test/autoextract.list.test.js",
+          "selector": "relative check times",
+          "testCases": [
+            {
+              "declaredName": "auto watch list shows active, paused, initial and failing monitors with relative check times",
+              "line": 22,
+              "nameKind": "literal"
+            }
+          ],
+          "executionStatus": "passed-frozen-source-tests"
+        }
+      ],
+      "verificationStatus": "passed-frozen-source-tests"
+    },
+    {
+      "id": "N1",
+      "priority": "P1",
+      "title": "Discordで作った監視へのルール適用が他の通知も止める",
+      "implementationStatus": "implemented-in-candidate",
+      "implementationSummary": "Discordの既存DM・Webhook通知先をgraph送信へ引き継ぎ、不正な1件が別の送信を止めない。",
+      "implementationFiles": [
+        "src/automation/flow-projector.js"
+      ],
+      "coverage": [
+        {
+          "file": "scripts/test/automation-saturation-runtime.test.js",
+          "selector": "^N1",
+          "testCases": [
+            {
+              "declaredName": "N1 legacy DM and two webhook destinations project beside Dashboard registrations",
+              "line": 82,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "N1 one invalid legacy destination is terminal and never blocks a later healthy send intent",
+              "line": 102,
+              "nameKind": "literal"
+            }
+          ],
+          "executionStatus": "passed-frozen-source-tests"
+        }
+      ],
+      "verificationStatus": "passed-frozen-source-tests"
+    },
+    {
+      "id": "N2",
+      "priority": "P1",
+      "title": "別の通知の編集で通知先と確認画面が混ざる",
+      "implementationStatus": "implemented-in-candidate",
+      "implementationSummary": "通知の種類とIDで編集状態を分離し、別通知へ前の通知先や確認状態を持ち越さない。",
+      "implementationFiles": [
+        "dashboard/components/automation/monitor-manager.tsx"
+      ],
+      "coverage": [
+        {
+          "file": "scripts/test/automation-monitor-editor-ui.test.js",
+          "selector": "^N2|closing and switching",
+          "testCases": [
+            {
+              "declaredName": "closing and switching notification tabs retains an edit without saving or reopening it on the wrong kind",
+              "line": 214,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "N2 a retained ${mode} confirmation cannot leak into another monitor and same-monitor resume keeps it",
+              "line": 282,
+              "nameKind": "template"
+            }
+          ],
+          "executionStatus": "passed-frozen-source-tests"
+        }
+      ],
+      "verificationStatus": "passed-frozen-source-tests"
+    },
+    {
+      "id": "N3",
+      "priority": "P1",
+      "title": "単独の直接展開でも画像なしカードになる",
+      "implementationStatus": "implemented-in-candidate",
+      "implementationSummary": "単独の直接展開もproviderの展開処理を使い、画像・リンク・表示設定を保持する。",
+      "implementationFiles": [
+        "src/automation/transport.js"
+      ],
+      "coverage": [
+        {
+          "file": "scripts/test/automation-saturation-runtime.test.js",
+          "selector": "^N3",
+          "testCases": [
+            {
+              "declaredName": "N3 single direct expansion invokes provider and retains hide/links controls",
+              "line": 113,
+              "nameKind": "literal"
+            }
+          ],
+          "executionStatus": "passed-frozen-source-tests"
+        }
+      ],
+      "verificationStatus": "passed-frozen-source-tests"
+    },
+    {
+      "id": "N4",
+      "priority": "P2",
+      "title": "送信前の異常終了で未送信分の利用枠が残る",
+      "implementationStatus": "implemented-in-candidate",
+      "implementationSummary": "予約をjobとleaseへ結び付け、送信前と確認できる未送信分だけを異常終了後に回収する。",
+      "implementationFiles": [
+        "src/automation/rate-limits.js",
+        "src/automation/transport.js",
+        "migrations/20261016_bind_automation_rate_reservations.sql"
+      ],
+      "coverage": [
+        {
+          "file": "scripts/test/automation-saturation-boundary-sql.test.js",
+          "selector": "^N4",
+          "testCases": [
+            {
+              "declaredName": "N4 durable reservation recovery refunds only reserved parts of expired attempt generations",
+              "line": 86,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "N4 recovery rollback, live lease fencing, legacy holds and repeated migration preserve accounting",
+              "line": 100,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "N4 actual process exit after quota reservation recovers last daily slot after restart",
+              "line": 148,
+              "nameKind": "literal"
+            }
+          ],
+          "executionStatus": "passed-frozen-source-tests"
+        }
+      ],
+      "verificationStatus": "passed-frozen-source-tests"
+    },
+    {
+      "id": "N5",
+      "priority": "P2",
+      "title": "分割通知の途中で権限を失っても送信を続ける",
+      "implementationStatus": "implemented-in-candidate",
+      "implementationSummary": "物理送信の各通直前に権限・NSFW・送信先・安全状態を確認し、送信済みACKと未送信分を区別する。",
+      "implementationFiles": [
+        "src/automation/transport.js",
+        "src/automation/runtime.js"
+      ],
+      "coverage": [
+        {
+          "file": "scripts/test/automation-saturation-boundary-sql.test.js",
+          "selector": "^N5",
+          "testCases": [
+            {
+              "declaredName": "N5 per-part permission revocation preserves partial ACK and refunds only unsent parts",
+              "line": 32,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "N5 transient authorization read before the first wire submission returns pending with no false unknown",
+              "line": 42,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "N5 direct transport callers also recheck permission before every physical part",
+              "line": 51,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "N5 fresh NSFW status is inspected before each part and valid unchanged permission sends all parts",
+              "line": 62,
+              "nameKind": "literal"
+            }
+          ],
+          "executionStatus": "passed-frozen-source-tests"
+        }
+      ],
+      "verificationStatus": "passed-frozen-source-tests"
+    },
+    {
+      "id": "N6",
+      "priority": "P2",
+      "title": "ルールで除外した理由が履歴に出ない",
+      "implementationStatus": "implemented-in-candidate",
+      "implementationSummary": "除外・待機・期限切れと各経路の理由を永続履歴へ投影する。大きな履歴は原記録を全件ページ取得する。",
+      "implementationFiles": [
+        "src/automation/flow-history.js",
+        "src/automation/flow-trace.js",
+        "src/automation/history.js",
+        "dashboard/components/automation/processing-trace.tsx"
+      ],
+      "coverage": [
+        {
+          "file": "scripts/test/automation-saturation-runtime.test.js",
+          "selector": "^N6|S4-2 and N6",
+          "testCases": [
+            {
+              "declaredName": "N6 excluded, waiting and queued decisions survive as public run history",
+              "line": 133,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "S4-2 and N6 expired anchor and non-anchor runs stay visible only in their own monitor history",
+              "line": 165,
+              "nameKind": "literal"
+            }
+          ],
+          "executionStatus": "passed-frozen-source-tests"
+        },
+        {
+          "file": "scripts/test/automation-monitor-activity-sql.test.js",
+          "selector": "monitor activity",
+          "testCases": [
+            {
+              "declaredName": "monitor activity attributes final delivery plans and preserves history access controls",
+              "line": 9,
+              "nameKind": "literal"
+            }
+          ],
+          "executionStatus": "passed-frozen-source-tests"
+        },
+        {
+          "file": "scripts/test/automation-flow-history-pages-sql.test.js",
+          "selector": "S7/N6",
+          "testCases": [
+            {
+              "declaredName": "S7/N6 full 52-node real-worker history with ${termSize}-character terms sends once and remains completely readable",
+              "line": 46,
+              "nameKind": "template"
+            }
+          ],
+          "executionStatus": "passed-frozen-source-tests"
+        },
+        {
+          "file": "scripts/test/automation-flow-history-read-sql.test.js",
+          "selector": "history",
+          "testCases": [
+            {
+              "declaredName": "history read pages preserve every original field, match and position, with read-only restart and stable cursor",
+              "line": 33,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "history guild reads require the current guild view permission and do not inherit platform admin access",
+              "line": 44,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "history refuses stale cursors and a source changed during a read without mixing records",
+              "line": 50,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "history rechecks authorization after reading a page and sanitizes DB and parse failures",
+              "line": 71,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "large indexed detail and pre-job history expose complete pages; page failures retain canonical delivery actions",
+              "line": 87,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "history projection rollback retains prior history, and restart reconstructs all indexed entries from immutable sources",
+              "line": 98,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "legacy raw-array history stays readable without graph rows, including an intact oversized entry",
+              "line": 107,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "full ${kind} failure history reconstructs every original member from relational receipts across pages",
+              "line": 132,
+              "nameKind": "template"
+            }
+          ],
+          "executionStatus": "passed-frozen-source-tests"
+        },
+        {
+          "file": "scripts/test/automation-history-trace-ui.test.js",
+          "selector": "trace|record|history|excluded|monitor",
+          "testCases": [
+            {
+              "declaredName": "small and legacy trace arrays keep their exact matches, reasons and full diagnostic fields without making requests",
+              "line": 19,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "an ordinary small graph trace can explicitly open complete durable records without changing its raw entries",
+              "line": 30,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "an indexed trace reads every page only after expansion and reports processing records separately from notifications",
+              "line": 40,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "a page read failure keeps displayed records and retries the same cursor without duplicate data or writes",
+              "line": 61,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "a ${changed} trace cannot mix live editions and requires an explicit restart",
+              "line": 71,
+              "nameKind": "template"
+            },
+            {
+              "declaredName": "a ${status} trace read removes obsolete private records and makes no notification mutation",
+              "line": 84,
+              "nameKind": "template"
+            },
+            {
+              "declaredName": "fifty excluded rows keep trace requests lazy and preserve independent run-list paging",
+              "line": 123,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "trace read failures cannot re-enable a committed job mutation or replay its saved PATCH",
+              "line": 133,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "switching delivery workspace or selected job removes the old private event before old trace errors arrive",
+              "line": 150,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "monitor activity exposes complete records for both pre-job runs and grouped job detail with read-only requests",
+              "line": 160,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "monitor context replacement clears private run data immediately and fences pending trace errors",
+              "line": 178,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "long match terms and one large legacy diagnostic entry remain complete in the explicit record view",
+              "line": 190,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "an interrupted excluded-list read becomes usable on reactivation without accepting its obsolete private result",
+              "line": 200,
+              "nameKind": "literal"
+            }
+          ],
+          "executionStatus": "passed-frozen-source-tests"
+        }
+      ],
+      "verificationStatus": "passed-frozen-source-tests",
+      "additionalReview": "complete-history-ui-acceptance-pending"
+    },
+    {
+      "id": "N7",
+      "priority": "P2",
+      "title": "通常方式の価格通知だけ通常のBot展開が抑止される",
+      "implementationStatus": "implemented-in-candidate",
+      "implementationSummary": "通常方式の価格通知は通常Bot展開の引渡し対象とし、直接展開の二重展開抑止だけを残す。",
+      "implementationFiles": [
+        "src/automation/transport.js"
+      ],
+      "coverage": [
+        {
+          "file": "scripts/test/automation-saturation-boundary-sql.test.js",
+          "selector": "^N7",
+          "testCases": [
+            {
+              "declaredName": "N7 observed normal price notification reaches the ordinary expansion handler once while direct output is guarded",
+              "line": 72,
+              "nameKind": "literal"
+            }
+          ],
+          "executionStatus": "passed-frozen-source-tests"
+        }
+      ],
+      "verificationStatus": "passed-frozen-source-tests"
+    },
+    {
+      "id": "N8",
+      "priority": "P2",
+      "title": "履歴の応答が逆順で返ると別の配信を操作対象にする",
+      "implementationStatus": "implemented-in-candidate",
+      "implementationSummary": "履歴詳細の選択・画面状態を世代管理し、遅い旧応答で別配信を操作対象にしない。",
+      "implementationFiles": [
+        "dashboard/components/automation/delivery-history.tsx"
+      ],
+      "coverage": [
+        {
+          "file": "scripts/test/automation-saturation-ui.test.js",
+          "selector": "^N8",
+          "testCases": [
+            {
+              "declaredName": "N8 last selected delivery wins over obsolete ${obsoleteError ? 'failure' : 'success'} and closing invalidates requests",
+              "line": 18,
+              "nameKind": "template"
+            }
+          ],
+          "executionStatus": "passed-frozen-source-tests"
+        }
+      ],
+      "verificationStatus": "passed-frozen-source-tests"
+    },
+    {
+      "id": "N9",
+      "priority": "P2",
+      "title": "101件目以降のルールを一覧や検索から開けない",
+      "implementationStatus": "implemented-in-candidate",
+      "implementationSummary": "ルール・通知先・辞書の全ページを読み込み、後続ページも選択・検索へ含める。循環cursorは安全に拒否する。",
+      "implementationFiles": [
+        "dashboard/components/automation/automation-workspace.tsx"
+      ],
+      "coverage": [
+        {
+          "file": "scripts/test/automation-saturation-ui.test.js",
+          "selector": "^N9",
+          "testCases": [
+            {
+              "declaredName": "N9 all workflow pages participate in search and selection",
+              "line": 83,
+              "nameKind": "literal"
+            }
+          ],
+          "executionStatus": "passed-frozen-source-tests"
+        },
+        {
+          "file": "scripts/test/automation-destination-workspace.test.js",
+          "selector": "paginated|repeated destination page",
+          "testCases": [
+            {
+              "declaredName": "the real workspace loads all paginated destinations and offers second-page choices in an X draft",
+              "line": 51,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "a repeated destination page cursor stops with a visible retry message instead of looping or offering a partial list",
+              "line": 83,
+              "nameKind": "literal"
+            }
+          ],
+          "executionStatus": "passed-frozen-source-tests"
+        }
+      ],
+      "verificationStatus": "passed-frozen-source-tests"
+    },
+    {
+      "id": "T1",
+      "priority": "P1",
+      "title": "検知済みの新着が上流一覧から消えると永久に失われる",
+      "implementationStatus": "implemented-in-candidate",
+      "implementationSummary": "検知済み新着の本文と初回観測時刻を永続化し、上流一覧から消えた後も外部取得より先に保留分を処理する。",
+      "implementationFiles": [
+        "src/providers/autoWatch/store.js",
+        "src/providers/autoWatch/runner.js"
+      ],
+      "coverage": [
+        {
+          "file": "scripts/test/provider-saturation-backlog-sql.test.js",
+          "selector": "^T1",
+          "testCases": [
+            {
+              "declaredName": "T1 SQL bounded CAS rescue claims a pre-upgrade future-due payload once, preserves remote metadata and cannot hot-loop failed local admission",
+              "line": 58,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "T1 SQL durable batches drain across fresh runner instances before unavailable permits/503/404 and retain remote diagnostics, validators and new-subscriber baseline",
+              "line": 100,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "T1 SQL local backlog failures and lost leases roll back items, deliveries and cursor together; the configured admission cap remains active",
+              "line": 137,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "T1/R32 SQL a restored old discovery retains its original cutoff time when a new local drain creates its delivery after bootstrap",
+              "line": 168,
+              "nameKind": "literal"
+            }
+          ],
+          "executionStatus": "passed-frozen-source-tests"
+        },
+        {
+          "file": "scripts/test/provider-saturation-regressions.test.js",
+          "selector": "^T1",
+          "testCases": [
+            {
+              "declaredName": "T1 rolling observations drain complete durable payloads with immutable timestamps and no duplicate IDs",
+              "line": 32,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "T1 backlog limits fail atomically and a damaged durable backlog never resets to an empty baseline",
+              "line": 56,
+              "nameKind": "literal"
+            }
+          ],
+          "executionStatus": "passed-frozen-source-tests"
+        }
+      ],
+      "verificationStatus": "passed-frozen-source-tests"
+    },
+    {
+      "id": "T2",
+      "priority": "P1",
+      "title": "辞書が9件以上一致すると実行だけが例外で止まる",
+      "implementationStatus": "implemented-in-candidate",
+      "implementationSummary": "辞書の一致診断を実行器の上限に合わせ、8件・9件以上の一致でも判定を続ける。",
+      "implementationFiles": [
+        "src/automation/engine.js"
+      ],
+      "coverage": [
+        {
+          "file": "scripts/test/automation-saturation-runtime.test.js",
+          "selector": "^T2",
+          "testCases": [
+            {
+              "declaredName": "T2 dictionary diagnostic cardinality agrees for 8,9,21 matches and unmatched control",
+              "line": 144,
+              "nameKind": "literal"
+            }
+          ],
+          "executionStatus": "passed-frozen-source-tests"
+        }
+      ],
+      "verificationStatus": "passed-frozen-source-tests"
+    },
+    {
+      "id": "T3",
+      "priority": "P1",
+      "title": "個人用ルールの複製が確認なしにサーバー共有になる",
+      "implementationStatus": "implemented-in-candidate",
+      "implementationSummary": "通常複製と通知別複製に表示中ルールのscopeを使い、共有閲覧者の隠れた複製を許可しない。",
+      "implementationFiles": [
+        "dashboard/components/automation/automation-workspace.tsx"
+      ],
+      "coverage": [
+        {
+          "file": "scripts/test/automation-saturation-ui.test.js",
+          "selector": "^T3",
+          "testCases": [
+            {
+              "declaredName": "T3 clones preserve displayed ${ruleScope} scope despite hidden ${listScope} creation preference",
+              "line": 126,
+              "nameKind": "template"
+            },
+            {
+              "declaredName": "T3 a viewer of a shared rule cannot create a hidden shared clone",
+              "line": 135,
+              "nameKind": "literal"
+            }
+          ],
+          "executionStatus": "passed-frozen-source-tests"
+        }
+      ],
+      "verificationStatus": "passed-frozen-source-tests"
+    },
+    {
+      "id": "T4",
+      "priority": "P1",
+      "title": "安全停止した辞書パッケージを使う通知が送信可能のままになる",
+      "implementationStatus": "implemented-in-candidate",
+      "implementationSummary": "job内の空の辞書情報に依存せず、不変ルール版の辞書bindingと配布元の安全停止を確認する。",
+      "implementationFiles": [
+        "src/automation/package-safety.js",
+        "src/automation/queue.js"
+      ],
+      "coverage": [
+        {
+          "file": "scripts/test/automation-saturation-boundary-sql.test.js",
+          "selector": "^T4",
+          "testCases": [
+            {
+              "declaredName": "T4 authoritative frozen dictionaries cover existing empty plans and preserve valid native controls",
+              "line": 118,
+              "nameKind": "literal"
+            }
+          ],
+          "executionStatus": "passed-frozen-source-tests"
+        }
+      ],
+      "verificationStatus": "passed-frozen-source-tests"
+    },
+    {
+      "id": "T5",
+      "priority": "P2",
+      "title": "パッケージ更新で旧辞書の由来が消え、安全停止が効かなくなる",
+      "implementationStatus": "implemented-in-candidate",
+      "implementationSummary": "辞書保存版ごとの配布元と複数依存元を保持する。名前変更・更新・編集・復元・再導入後も固定した各版の安全停止を確認する。",
+      "implementationFiles": [
+        "src/automation/package-dependencies.js",
+        "src/automation/package-safety.js",
+        "src/automation/marketplace-installs.js",
+        "src/automation/service.js"
+      ],
+      "coverage": [
+        {
+          "file": "scripts/test/automation-saturation-data-sql.test.js",
+          "selector": "^T5",
+          "testCases": [
+            {
+              "declaredName": "T5: dictionary origin survives rename, removal, update and local edit/restore while current aliases stay current",
+              "line": 72,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "T5: workflow package dictionaries reused by another private rule retain package safety; raw imports cannot forge it",
+              "line": 91,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "T5: the real migration backfills only exact recoverable legacy associations and preserves unrelated local dictionaries",
+              "line": 104,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "T5: irrecoverable legacy workflow-update origins stop the migration before DDL until explicitly reviewed",
+              "line": 140,
+              "nameKind": "literal"
+            }
+          ],
+          "executionStatus": "passed-frozen-source-tests"
+        },
+        {
+          "file": "scripts/test/automation-package-lineage-sql.test.js",
+          "selector": "exact per-dictionary",
+          "testCases": [
+            {
+              "declaredName": "exact per-dictionary package lineage survives normal workflows, independent licenses, copies and official updates",
+              "line": 23,
+              "nameKind": "literal"
+            }
+          ],
+          "executionStatus": "passed-frozen-source-tests"
+        }
+      ],
+      "verificationStatus": "passed-frozen-source-tests"
+    },
+    {
+      "id": "T6",
+      "priority": "P2",
+      "title": "最大待機期間を過ぎても送信可能になる",
+      "implementationStatus": "implemented-in-candidate",
+      "implementationSummary": "初回観測を起点とする最大待機期限をgraphの保存・再読込・送信判定まで引き継ぐ。",
+      "implementationFiles": [
+        "src/automation/engine.js",
+        "src/automation/graph-driver.js",
+        "src/automation/flow-projector.js"
+      ],
+      "coverage": [
+        {
+          "file": "scripts/test/automation-saturation-runtime.test.js",
+          "selector": "^T6",
+          "testCases": [
+            {
+              "declaredName": "T6 projected frozen maximum wait survives reload and exact deadline boundary",
+              "line": 157,
+              "nameKind": "literal"
+            }
+          ],
+          "executionStatus": "passed-frozen-source-tests"
+        }
+      ],
+      "verificationStatus": "passed-frozen-source-tests"
+    },
+    {
+      "id": "T7",
+      "priority": "P2",
+      "title": "Steamの代替取得で割引通知が欠落し、復帰後に同じセールを再通知する",
+      "implementationStatus": "implemented-in-candidate",
+      "implementationSummary": "SteamのAPIとHTMLの割引・参照価格を揃え、取得不明をセール終了と扱わず再通知を防ぐ。",
+      "implementationFiles": [
+        "src/providers/steam/steamSourceParser/index.js",
+        "src/providers/steam/priceWatch.js",
+        "src/providers/priceWatch/store.js"
+      ],
+      "coverage": [
+        {
+          "file": "scripts/test/provider-saturation-sql.test.js",
+          "selector": "^T7",
+          "testCases": [
+            {
+              "declaredName": "T7 SQL Steam API/HTML fallback retains the current sale condition across restart, and a verified sale end permits a later alert",
+              "line": 70,
+              "nameKind": "literal"
+            }
+          ],
+          "executionStatus": "passed-frozen-source-tests"
+        },
+        {
+          "file": "scripts/test/provider-saturation-regressions.test.js",
+          "selector": "^T7",
+          "testCases": [
+            {
+              "declaredName": "T7 Steam API and matching HTML fallback preserve discount/reference price; missing metadata remains unknown",
+              "line": 86,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "T7 API→unknown HTML→API does not reset a live sale, but a real sale ending and returning alerts again",
+              "line": 99,
+              "nameKind": "literal"
+            }
+          ],
+          "executionStatus": "passed-frozen-source-tests"
+        },
+        {
+          "file": "scripts/test/steam.parser.test.js",
+          "selector": "price",
+          "testCases": [
+            {
+              "declaredName": "Steam source prices select the requested package cart action instead of an included app",
+              "line": 32,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "Steam source prices use bundle purchase totals and bundle discount",
+              "line": 45,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "Steam source prices trust app Offer metadata instead of DLC and recommendation prices",
+              "line": 57,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "Steam source prices parse market decimal separators without treating comma decimals as thousands",
+              "line": 66,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "Steam source prices omit absent or malformed amounts and ignore script price markup",
+              "line": 73,
+              "nameKind": "literal"
+            }
+          ],
+          "executionStatus": "passed-frozen-source-tests"
+        }
+      ],
+      "verificationStatus": "passed-frozen-source-tests"
+    },
+    {
+      "id": "T8",
+      "priority": "P2",
+      "title": "Discord価格登録が不正な条件を捨てて成功扱いにする",
+      "implementationStatus": "implemented-in-candidate",
+      "implementationSummary": "Discord価格登録で入力された全条件を検証し、不正な第2条件を黙って捨てず登録前に拒否する。",
+      "implementationFiles": [
+        "src/components/priceWatch.js"
+      ],
+      "coverage": [
+        {
+          "file": "scripts/test/provider-saturation-regressions.test.js",
+          "selector": "^T8",
+          "testCases": [
+            {
+              "declaredName": "T8 every supplied threshold is validated, including an invalid secondary condition",
+              "line": 117,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "T8 invalid Discord secondary condition has field guidance and creates no target, slot or webhook",
+              "line": 255,
+              "nameKind": "literal"
+            }
+          ],
+          "executionStatus": "passed-frozen-source-tests"
+        }
+      ],
+      "verificationStatus": "passed-frozen-source-tests"
+    },
+    {
+      "id": "T9",
+      "priority": "P2",
+      "title": "過去版へ復元しても破棄したはずのテキストが残る",
+      "implementationStatus": "implemented-in-candidate",
+      "implementationSummary": "履歴復元時に保留中テキストと旧ファイル読込を無効化し、復元した版からエディターを開き直す。",
+      "implementationFiles": [
+        "dashboard/components/automation/automation-workspace.tsx",
+        "dashboard/components/automation/rule-editor-canvas.tsx"
+      ],
+      "coverage": [
+        {
+          "file": "scripts/test/automation-saturation-ui.test.js",
+          "selector": "^T9",
+          "testCases": [
+            {
+              "declaredName": "T9 restoring a revision discards pending source and invalidates late file parsing for the same workflow",
+              "line": 92,
+              "nameKind": "literal"
+            }
+          ],
+          "executionStatus": "passed-frozen-source-tests"
+        }
+      ],
+      "verificationStatus": "passed-frozen-source-tests"
+    },
+    {
+      "id": "T10",
+      "priority": "P2",
+      "title": "もう使っていない通知先の削除でルールを保存できなくなる",
+      "implementationStatus": "implemented-in-candidate",
+      "implementationSummary": "使われていない削除済み通知先・辞書bindingを保存・復元時に除き、使用中の資源は検証する。不変の旧版は変更しない。",
+      "implementationFiles": [
+        "src/automation/service.js",
+        "dashboard/components/automation/rule-editor-canvas.tsx"
+      ],
+      "coverage": [
+        {
+          "file": "scripts/test/automation-saturation-data-sql.test.js",
+          "selector": "^T10",
+          "testCases": [
+            {
+              "declaredName": "T10: restoring a rule prunes removed unused dictionaries while retaining optional live and enforcing used bindings",
+              "line": 39,
+              "nameKind": "literal"
+            }
+          ],
+          "executionStatus": "passed-frozen-source-tests"
+        },
+        {
+          "file": "scripts/test/automation-workflow-destination-principals-sql.test.js",
+          "selector": "^T10",
+          "testCases": [
+            {
+              "declaredName": "T10 ignored legacy default binding can be deleted without altering its immutable workflow edition",
+              "line": 213,
+              "nameKind": "literal"
+            }
+          ],
+          "executionStatus": "passed-frozen-source-tests"
+        }
+      ],
+      "verificationStatus": "passed-frozen-source-tests"
+    },
+    {
+      "id": "T11",
+      "priority": "P2",
+      "title": "古い画面から別タブのルール割当を削除できる",
+      "implementationStatus": "implemented-in-candidate",
+      "implementationSummary": "割当・解除の全経路で監視版を進め、版と元割当を照合して古い画面からの解除を拒否する。",
+      "implementationFiles": [
+        "src/automation/service.js",
+        "src/automation/monitors.js"
+      ],
+      "coverage": [
+        {
+          "file": "scripts/test/automation-saturation-data-sql.test.js",
+          "selector": "^T11",
+          "testCases": [
+            {
+              "declaredName": "T11: legacy attach and detach also advance monitor CAS and reject stale destructive edits",
+              "line": 174,
+              "nameKind": "literal"
+            }
+          ],
+          "executionStatus": "passed-frozen-source-tests"
+        },
+        {
+          "file": "scripts/test/automation-monitor-workflow-cas-sql.test.js",
+          "selector": "attach|detach|assignment|workflow",
+          "testCases": [
+            {
+              "declaredName": "workflow-only native edits use atomic target/assignment CAS and preserve unrelated deliveries",
+              "line": 23,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "${kind}: two competing workflow choices from one editor version admit exactly one",
+              "line": 65,
+              "nameKind": "template"
+            },
+            {
+              "declaredName": "${kind}: a stale monitor revision or old assignment cannot replace the newer choice",
+              "line": 74,
+              "nameKind": "template"
+            },
+            {
+              "declaredName": "${kind}: guarded attach/detach advance revisions and unchanged assignments are safe no-ops",
+              "line": 85,
+              "nameKind": "template"
+            },
+            {
+              "declaredName": "${kind}: a simultaneous guarded detach cannot erase a newer workflow choice",
+              "line": 99,
+              "nameKind": "template"
+            },
+            {
+              "declaredName": "${kind}: an audit failure rolls back assignment, revision and all pending cancellation",
+              "line": 130,
+              "nameKind": "template"
+            },
+            {
+              "declaredName": "HTTP attach and detach validate complete guards and forward the current previous assignment",
+              "line": 190,
+              "nameKind": "literal"
+            }
+          ],
+          "executionStatus": "passed-frozen-source-tests"
+        }
+      ],
+      "verificationStatus": "passed-frozen-source-tests"
+    },
+    {
+      "id": "S4-1",
+      "priority": "P1",
+      "title": "開始ノードIDの固定により実行不能・開始条件の省略が起きる",
+      "implementationStatus": "implemented-in-candidate",
+      "implementationSummary": "固定文字列startではなく不変ルールの実際の開始IDを使い、旧未処理状態も開始条件を確認する。",
+      "implementationFiles": [
+        "src/automation/graph-store.js",
+        "src/automation/queue.js"
+      ],
+      "coverage": [
+        {
+          "file": "scripts/test/automation-saturation-runtime.test.js",
+          "selector": "^S4-1",
+          "testCases": [
+            {
+              "declaredName": "S4-1 actual start ID is used and send called start cannot bypass selection",
+              "line": 43,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "S4-1 historical pending and expired-leased initial activations recover the immutable start guard",
+              "line": 48,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "S4-1 progressed downstream node named start is preserved across restart",
+              "line": 70,
+              "nameKind": "literal"
+            }
+          ],
+          "executionStatus": "passed-frozen-source-tests"
+        }
+      ],
+      "verificationStatus": "passed-frozen-source-tests"
+    },
+    {
+      "id": "S4-2",
+      "priority": "P2",
+      "title": "まとめ通知の古い項目の期限切れで健全な項目まで破棄する",
+      "implementationStatus": "implemented-in-candidate",
+      "implementationSummary": "期限切れの集約メンバーだけを除き、健全なメンバーの期限・通知可能時間・手動予約の下限を保持する。",
+      "implementationFiles": [
+        "src/automation/flow-projector.js",
+        "src/automation/queue.js",
+        "src/automation/history.js"
+      ],
+      "coverage": [
+        {
+          "file": "scripts/test/automation-saturation-runtime.test.js",
+          "selector": "^S4-2",
+          "testCases": [
+            {
+              "declaredName": "S4-2 expired aggregate member is pruned while its healthy peer remains sendable",
+              "line": 161,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "S4-2 and N6 expired anchor and non-anchor runs stay visible only in their own monitor history",
+              "line": 165,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "S4-2 disjoint member schedules wake at the first expiry and preserve a manual lower bound",
+              "line": 196,
+              "nameKind": "literal"
+            }
+          ],
+          "executionStatus": "passed-frozen-source-tests"
+        },
+        {
+          "file": "scripts/test/automation-monitor-activity-sql.test.js",
+          "selector": "latest mixed-monitor|grouped send",
+          "testCases": [
+            {
+              "declaredName": "a graph member can receive a grouped send even when it is not the primary run",
+              "line": 30,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "latest mixed-monitor snapshots use the same representative for title, target and trace",
+              "line": 41,
+              "nameKind": "literal"
+            }
+          ],
+          "executionStatus": "passed-frozen-source-tests"
+        }
+      ],
+      "verificationStatus": "passed-frozen-source-tests"
+    },
+    {
+      "id": "S4-3",
+      "priority": "P2",
+      "title": "遅い共有リンクの応答が最後に選んだ導入対象を上書きする",
+      "implementationStatus": "implemented-in-candidate",
+      "implementationSummary": "共有リンクとパッケージ詳細の応答を選択世代へ結び付け、古い成功・失敗で現在のIDや共有キーを上書きしない。",
+      "implementationFiles": [
+        "dashboard/components/automation/marketplace-manager.tsx"
+      ],
+      "coverage": [
+        {
+          "file": "scripts/test/automation-saturation-ui.test.js",
+          "selector": "^S4-3",
+          "testCases": [
+            {
+              "declaredName": "S4-3 the last package selection and key survive delayed hash ${obsoleteError ? 'failure' : 'success'}",
+              "line": 141,
+              "nameKind": "template"
+            }
+          ],
+          "executionStatus": "passed-frozen-source-tests"
+        }
+      ],
+      "verificationStatus": "passed-frozen-source-tests"
+    },
+    {
+      "id": "S4-4",
+      "priority": "P2",
+      "title": "フォークの改訂が元ライセンスの保持規則を回避する",
+      "implementationStatus": "implemented-in-candidate",
+      "implementationSummary": "不変な配布元版・最初のfork版を根拠にライセンスと出典を保持する。通常複製・復元・辞書共有・再導入も検証し、同じ所有パッケージの改訂は自己forkを作らない。",
+      "implementationFiles": [
+        "src/automation/marketplace-core.js",
+        "src/automation/workflow-package-provenance.js",
+        "src/automation/package-dependencies.js",
+        "src/automation/service.js",
+        "dashboard/components/automation/marketplace-manager.tsx"
+      ],
+      "coverage": [
+        {
+          "file": "scripts/test/automation-marketplace-provenance-sql.test.js",
+          "selector": "^S4-4",
+          "testCases": [
+            {
+              "declaredName": "S4-4 persisted fork license/provenance survives ordinary revisions without forkOf and upstream withdrawal/private changes",
+              "line": 37,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "S4-4 installed workflow export and ordinary UI republication preserve exact source edition metadata and bind the server-known origin",
+              "line": 75,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "S4-4 ordinary workflow copies and copies of copies retain trusted installation license and attribution",
+              "line": 114,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "S4-4 source-install changes during publication fail before commit and corrupt source editions never shed their license",
+              "line": 137,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "S4-4 a stale copy cannot stamp a replacement installation edition onto the older displayed content",
+              "line": 159,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "S4-4 built-in editing imports of owned private forks retain server-verified origin and reject foreign packages",
+              "line": 191,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "S4-4 legacy migration retains unknown editions without guessing and verified operator repair restores export",
+              "line": 207,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "S4-4 editing imports can revise their own original or fork without self-forking or shedding upstream rights",
+              "line": 231,
+              "nameKind": "literal"
+            }
+          ],
+          "executionStatus": "passed-frozen-source-tests"
+        },
+        {
+          "file": "scripts/test/automation-dictionary-publication-sql.test.js",
+          "selector": "dictionary publication",
+          "testCases": [
+            {
+              "declaredName": "dictionary publication uses exact immutable origin and never replaces a package license with its inner dictionary license",
+              "line": 15,
+              "nameKind": "literal"
+            }
+          ],
+          "executionStatus": "passed-frozen-source-tests"
+        },
+        {
+          "file": "scripts/test/automation-dictionary-publication-ui.test.js",
+          "selector": "publication|unknown source|original package",
+          "testCases": [
+            {
+              "declaredName": "dictionary publication freezes the displayed revision and uses the verified package bundle and source proof",
+              "line": 33,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "unknown source editions and mismatched export revisions retain the composer and never submit a publication",
+              "line": 45,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "an original package author can revise its own imported dictionary source license without client origin fields",
+              "line": 54,
+              "nameKind": "literal"
+            }
+          ],
+          "executionStatus": "passed-frozen-source-tests"
+        },
+        {
+          "file": "scripts/test/automation-package-lineage-sql.test.js",
+          "selector": "exact per-dictionary",
+          "testCases": [
+            {
+              "declaredName": "exact per-dictionary package lineage survives normal workflows, independent licenses, copies and official updates",
+              "line": 23,
+              "nameKind": "literal"
+            }
+          ],
+          "executionStatus": "passed-frozen-source-tests"
+        },
+        {
+          "file": "scripts/test/automation-package-lineage-ui.test.js",
+          "selector": "dictionary package|delayed",
+          "testCases": [
+            {
+              "declaredName": "all dictionary package licenses and source notices are available in the source preview and published package",
+              "line": 11,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "a delayed ${kind} source preview ${failed ? 'error' : 'response'} cannot restore credits or consent from an older displayed revision",
+              "line": 34,
+              "nameKind": "template"
+            }
+          ],
+          "executionStatus": "passed-frozen-source-tests"
+        },
+        {
+          "file": "scripts/test/automation-recovery-origin-ui.test.js",
+          "selector": "conflicted recovery",
+          "testCases": [
+            {
+              "declaredName": "conflicted recovery retains the exact source edition across reloads and preserves the draft when its trusted origin is unavailable",
+              "line": 11,
+              "nameKind": "literal"
+            }
+          ],
+          "executionStatus": "passed-frozen-source-tests"
+        }
+      ],
+      "verificationStatus": "passed-frozen-source-tests"
+    },
+    {
+      "id": "S4-5",
+      "priority": "P2",
+      "title": "個人画面で提示されるチャンネル通知の編集が保存できない",
+      "implementationStatus": "implemented-in-candidate",
+      "implementationSummary": "個人画面で本人所有の既存チャンネル監視を編集する際、保存済みguildと宛先を使って本人の現在権限を検証する。",
+      "implementationFiles": [
+        "src/automation/monitors.js"
+      ],
+      "coverage": [
+        {
+          "file": "scripts/test/automation-monitor-destination-lifecycle-sql.test.js",
+          "selector": "S4-5",
+          "testCases": [
+            {
+              "declaredName": "${kind} S4-5: owner edits a private channel monitor from the personal page using only the stored guild",
+              "line": 57,
+              "nameKind": "template"
+            },
+            {
+              "declaredName": "${kind} S4-5: personal edits and resume reuse only the owned monitor's unchanged shared destination",
+              "line": 130,
+              "nameKind": "template"
+            }
+          ],
+          "executionStatus": "passed-frozen-source-tests"
+        }
+      ],
+      "verificationStatus": "passed-frozen-source-tests"
+    },
+    {
+      "id": "S4-6",
+      "priority": "P2",
+      "title": "X監視解除後の接続が上限を占有し別登録が接続できない",
+      "implementationStatus": "implemented-in-candidate",
+      "implementationSummary": "監視解除・再接続で不要になったXセッションを閉じ、別監視で使用中の接続と暗号化受信記録を保持する。",
+      "implementationFiles": [
+        "src/automation/x-push-runtime.js",
+        "src/automation/x-push-store.js"
+      ],
+      "coverage": [
+        {
+          "file": "scripts/test/automation-x-session-lifecycle-sql.test.js",
+          "selector": "^S4-6",
+          "testCases": [
+            {
+              "declaredName": "S4-6: releasing the last monitor frees the receiver cap without restarting or deleting ciphertext",
+              "line": 46,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "S4-6: another eligible monitor keeps a shared session until its last user is paused",
+              "line": 62,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "S4-6: rebinding moves the socket and subscription deletion closes only its session",
+              "line": 73,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "S4-6: an eligibility DB failure retains a healthy connection and retries without opening duplicates",
+              "line": 84,
+              "nameKind": "literal"
+            }
+          ],
+          "executionStatus": "passed-frozen-source-tests"
+        }
+      ],
+      "verificationStatus": "passed-frozen-source-tests"
+    },
+    {
+      "id": "S5-1",
+      "priority": "P2",
+      "title": "シミュレーターが時間経過・順序・合流を実処理と異なって判定する",
+      "implementationStatus": "implemented-in-candidate",
+      "implementationSummary": "シミュレーターを同じgraph実行器へ揃え、時間経過・経路の完了・合流の順序を実処理と一致させる。",
+      "implementationFiles": [
+        "src/automation/evaluation.js",
+        "src/automation/graph-driver.js"
+      ],
+      "coverage": [
+        {
+          "file": "scripts/test/automation-saturation-runtime.test.js",
+          "selector": "^S5-1",
+          "testCases": [
+            {
+              "declaredName": "S5-1 age ${op} ${after ? 'after' : 'before'} delay matches ordered SQL execution",
+              "line": 228,
+              "nameKind": "template"
+            },
+            {
+              "declaredName": "S5-1 horizon freezes at schedule entry ${scheduleFirst}",
+              "line": 234,
+              "nameKind": "template"
+            },
+            {
+              "declaredName": "S5-1 unequal aggregate branches merge at the later close without false rejection",
+              "line": 240,
+              "nameKind": "literal"
+            }
+          ],
+          "executionStatus": "passed-frozen-source-tests"
+        },
+        {
+          "file": "scripts/test/automation-graph-join.test.js",
+          "selector": "join waits|closed-empty|overlapping|batch and individual",
+          "testCases": [
+            {
+              "declaredName": "join waits for completion even when both branches already produced data",
+              "line": 19,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "a closed-empty dropped path excludes all but permits any after closure",
+              "line": 24,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "overlapping batches merge by original event lineage, not batch identity or Cartesian product",
+              "line": 29,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "batch and individual bypass inputs share a finite batch anchor and retain the slower restrictions",
+              "line": 38,
+              "nameKind": "literal"
+            }
+          ],
+          "executionStatus": "passed-frozen-source-tests"
+        }
+      ],
+      "verificationStatus": "passed-frozen-source-tests"
+    },
+    {
+      "id": "S7-1",
+      "priority": "P2",
+      "title": "保存可能な集約ルールが内部サイズ上限で再試行し続け、正常なルールも進まない",
+      "implementationStatus": "implemented-in-candidate",
+      "implementationSummary": "永続的なサイズ・形状・メンバー数超過をロールバック後に失敗確定し、正常な後続を進める。履歴が大きい正常処理は全記録を保持してページ表示する。",
+      "implementationFiles": [
+        "src/automation/graph-failure.js",
+        "src/automation/graph-join-store.js",
+        "src/automation/graph-store.js",
+        "src/automation/flow-trace.js",
+        "src/automation/flow-history.js"
+      ],
+      "coverage": [
+        {
+          "file": "scripts/test/automation-saturation-runtime.test.js",
+          "selector": "^S7-1",
+          "testCases": [
+            {
+              "declaredName": "S7-1 oversized accepted aggregate records terminal failure and healthy work still advances",
+              "line": 245,
+              "nameKind": "literal"
+            }
+          ],
+          "executionStatus": "passed-frozen-source-tests"
+        },
+        {
+          "file": "scripts/test/automation-aggregate-member-boundary.test.js",
+          "selector": "^S7-1",
+          "testCases": [
+            {
+              "declaredName": "S7-1 accepted 100/${groupSize / 100}/100 aggregate handles ${51 * groupSize} ${prune ? 'mostly expired' : 'oversized'} members without starving healthy work",
+              "line": 16,
+              "nameKind": "template"
+            }
+          ],
+          "executionStatus": "passed-frozen-source-tests"
+        },
+        {
+          "file": "scripts/test/automation-flow-permanent-failure-sql.test.js",
+          "selector": "^S7",
+          "testCases": [
+            {
+              "declaredName": "S7 valid 5000-member dictionary trace failure becomes terminal after its output transaction rolls back",
+              "line": 57,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "S7 permanent trace failure is visible as failed when no sibling matches, with its full original input retained",
+              "line": 70,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "S7 genuine 95-input aggregate can fail downstream transform once and release the next healthy execution",
+              "line": 77,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "S7 accepted ${count}-schedule input keeps the existing schedule cap and ${count === 128 ? 'terminalizes growth' : 'remains a legitimate control'}",
+              "line": 95,
+              "nameKind": "template"
+            },
+            {
+              "declaredName": "S7 storage shape ${variant} rolls back every partial output before bounded terminal settlement",
+              "line": 102,
+              "nameKind": "template"
+            },
+            {
+              "declaredName": "S7 matcher output outside its immutable eight-match shape is terminal while the legal sibling remains sendable",
+              "line": 111,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "S7 failed failure-bookkeeping transaction rolls back all receipts, then lease-expiry restart terminalizes exactly once",
+              "line": 117,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "S7 stale lease/version cannot terminalize a successor and concurrent current settlements remain idempotent",
+              "line": 126,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "S7 an evaluator finishing after concurrent lease takeover cannot fail the successor activation",
+              "line": 135,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "S7 transient evaluator failure remains leased and a later legitimate retry can deliver normally",
+              "line": 146,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "S7 wait/prune history stays byte-identical and a later failure belongs only to the immutable continuation",
+              "line": 153,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "S7 two individually legal wide arrivals terminalize a merge budget failure without blocking another execution",
+              "line": 174,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "S7 large unrelated batch peers are projected per lineage and a legal wide merge still succeeds",
+              "line": 187,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "S7 merge output savepoint removes partial unit writes before recording a bounded group failure",
+              "line": 203,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "S7 merge failure bookkeeping DB error rolls back and restart preserves the exact original arrivals",
+              "line": 216,
+              "nameKind": "literal"
+            }
+          ],
+          "executionStatus": "passed-frozen-source-tests"
+        },
+        {
+          "file": "scripts/test/automation-flow-history-pages-sql.test.js",
+          "selector": "S7/N6",
+          "testCases": [
+            {
+              "declaredName": "S7/N6 full 52-node real-worker history with ${termSize}-character terms sends once and remains completely readable",
+              "line": 46,
+              "nameKind": "template"
+            }
+          ],
+          "executionStatus": "passed-frozen-source-tests"
+        },
+        {
+          "file": "scripts/test/automation-flow-history-read-sql.test.js",
+          "selector": "history",
+          "testCases": [
+            {
+              "declaredName": "history read pages preserve every original field, match and position, with read-only restart and stable cursor",
+              "line": 33,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "history guild reads require the current guild view permission and do not inherit platform admin access",
+              "line": 44,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "history refuses stale cursors and a source changed during a read without mixing records",
+              "line": 50,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "history rechecks authorization after reading a page and sanitizes DB and parse failures",
+              "line": 71,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "large indexed detail and pre-job history expose complete pages; page failures retain canonical delivery actions",
+              "line": 87,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "history projection rollback retains prior history, and restart reconstructs all indexed entries from immutable sources",
+              "line": 98,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "legacy raw-array history stays readable without graph rows, including an intact oversized entry",
+              "line": 107,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "full ${kind} failure history reconstructs every original member from relational receipts across pages",
+              "line": 132,
+              "nameKind": "template"
+            }
+          ],
+          "executionStatus": "passed-frozen-source-tests"
+        },
+        {
+          "file": "scripts/test/automation-flow-trace.test.js",
+          "selector": "history",
+          "testCases": [
+            {
+              "declaredName": "small history projections retain ordinary arrays and every original field",
+              "line": 5,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "large history projections store a bounded array index while counting and hashing every later record",
+              "line": 9,
+              "nameKind": "literal"
+            }
+          ],
+          "executionStatus": "passed-frozen-source-tests"
+        },
+        {
+          "file": "scripts/test/automation-history-trace-ui.test.js",
+          "selector": "trace|record|history|excluded|monitor",
+          "testCases": [
+            {
+              "declaredName": "small and legacy trace arrays keep their exact matches, reasons and full diagnostic fields without making requests",
+              "line": 19,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "an ordinary small graph trace can explicitly open complete durable records without changing its raw entries",
+              "line": 30,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "an indexed trace reads every page only after expansion and reports processing records separately from notifications",
+              "line": 40,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "a page read failure keeps displayed records and retries the same cursor without duplicate data or writes",
+              "line": 61,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "a ${changed} trace cannot mix live editions and requires an explicit restart",
+              "line": 71,
+              "nameKind": "template"
+            },
+            {
+              "declaredName": "a ${status} trace read removes obsolete private records and makes no notification mutation",
+              "line": 84,
+              "nameKind": "template"
+            },
+            {
+              "declaredName": "fifty excluded rows keep trace requests lazy and preserve independent run-list paging",
+              "line": 123,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "trace read failures cannot re-enable a committed job mutation or replay its saved PATCH",
+              "line": 133,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "switching delivery workspace or selected job removes the old private event before old trace errors arrive",
+              "line": 150,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "monitor activity exposes complete records for both pre-job runs and grouped job detail with read-only requests",
+              "line": 160,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "monitor context replacement clears private run data immediately and fences pending trace errors",
+              "line": 178,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "long match terms and one large legacy diagnostic entry remain complete in the explicit record view",
+              "line": 190,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "an interrupted excluded-list read becomes usable on reactivation without accepting its obsolete private result",
+              "line": 200,
+              "nameKind": "literal"
+            }
+          ],
+          "executionStatus": "passed-frozen-source-tests"
+        }
+      ],
+      "verificationStatus": "passed-frozen-source-tests",
+      "additionalReview": "complete-history-ui-acceptance-pending"
+    },
+    {
+      "id": "S7-2",
+      "priority": "P2",
+      "title": "別辞書の取込保存で、編集中の辞書の変更を無確認で破棄する",
+      "implementationStatus": "implemented-in-candidate",
+      "implementationSummary": "別辞書としての取込保存前に未保存変更の破棄を確認し、取消時は編集と取込の両方の入力を保持する。",
+      "implementationFiles": [
+        "dashboard/components/automation/dictionary-manager.tsx"
+      ],
+      "coverage": [
+        {
+          "file": "scripts/test/automation-saturation-ui.test.js",
+          "selector": "^S7-2",
+          "testCases": [
+            {
+              "declaredName": "S7-2 separate dictionary import confirms discarding staged edits and cancellation retains both buffers",
+              "line": 162,
+              "nameKind": "literal"
+            }
+          ],
+          "executionStatus": "passed-frozen-source-tests"
+        }
+      ],
+      "verificationStatus": "passed-frozen-source-tests"
+    },
+    {
+      "id": "S7-3",
+      "priority": "P2",
+      "title": "Xの割当がルール適用画面から欠落し、適用不能・未表示の対象変更になる",
+      "implementationStatus": "implemented-in-candidate",
+      "implementationSummary": "Xを含むすべての割当先を適用確認へ表示し、通知別コピーではXの版と既存設定を保持する。",
+      "implementationFiles": [
+        "dashboard/components/automation/automation-workspace.tsx",
+        "src/automation/workflow-targets.js"
+      ],
+      "coverage": [
+        {
+          "file": "scripts/test/automation-saturation-data-sql.test.js",
+          "selector": "^S7-3/S20-1",
+          "testCases": [
+            {
+              "declaredName": "S7-3/S20-1: activation preview covers X and native consumers and rejects a changed set atomically",
+              "line": 184,
+              "nameKind": "literal"
+            }
+          ],
+          "executionStatus": "passed-frozen-source-tests"
+        },
+        {
+          "file": "scripts/test/automation-saturation-ui.test.js",
+          "selector": "^S7-3",
+          "testCases": [
+            {
+              "declaredName": "S7-3 X-only consumers appear in application review in a private guild-workspace rule and the token is sent",
+              "line": 199,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "S7-3 an isolated X clone uses the X CAS route and preserves destination and receiver settings",
+              "line": 209,
+              "nameKind": "literal"
+            }
+          ],
+          "executionStatus": "passed-frozen-source-tests"
+        }
+      ],
+      "verificationStatus": "passed-frozen-source-tests"
+    },
+    {
+      "id": "S8-1",
+      "priority": "P2",
+      "title": "登録後のDiscord確認返信失敗で、保存済みの通知先を削除する",
+      "implementationStatus": "implemented-in-candidate",
+      "implementationSummary": "登録保存とDiscord確認返信を分離し、返信失敗や保存結果不明で使用中のWebhookを削除しない。チャンネルの作成・採用・後片付けを直列化する。",
+      "implementationFiles": [
+        "src/automation/webhook-registration.js",
+        "src/providers/autoWatch/channel-registration.js",
+        "src/components/_webhookDestination.js",
+        "src/commands/handlers/autoextract/watch.js"
+      ],
+      "coverage": [
+        {
+          "file": "scripts/test/provider-saturation-regressions.test.js",
+          "selector": "^S8-1/2",
+          "testCases": [
+            {
+              "declaredName": "S8-1/2 committed Discord watch keeps its webhook after reply failure and repeated/concurrent channel choices use one slot",
+              "line": 181,
+              "nameKind": "literal"
+            }
+          ],
+          "executionStatus": "passed-frozen-source-tests"
+        },
+        {
+          "file": "scripts/test/automation-dashboard-webhook-creation-sql.test.js",
+          "selector": "S8 dashboard",
+          "testCases": [
+            {
+              "declaredName": "S8 dashboard: concurrent distinct private resources share one hook and endpoint under the channel SQL lock",
+              "line": 76,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "S8 dashboard: a creator rollback deletes only its unused hook before a waiting resource chooses a fresh hook",
+              "line": 91,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "S8 dashboard: a raw-URL adopter revalidates after the creator rolls back instead of committing a deleted endpoint",
+              "line": 106,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "S8 dashboard: native ${kind} direct adoption also waits for creator rollback and cannot save its deleted hook",
+              "line": 119,
+              "nameKind": "template"
+            },
+            {
+              "declaredName": "S8 dashboard: COMMIT acknowledgement uncertainty and unknown remote creation keep hooks for safe later reuse",
+              "line": 146,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "S8 dashboard: cleanup retains an already committed destination which adopted the newly created hook",
+              "line": 166,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "S8 dashboard: user/bot permissions and 503/404 failures leave foreign hooks and private resources untouched",
+              "line": 183,
+              "nameKind": "literal"
+            }
+          ],
+          "executionStatus": "passed-frozen-source-tests"
+        },
+        {
+          "file": "scripts/test/automation-native-webhook-lifecycle-sql.test.js",
+          "selector": "S8 legacy|ROUND1",
+          "testCases": [
+            {
+              "declaredName": "S8 legacy ${kind}: an unknown deleted pre-change endpoint fails closed at capacity and explicit UI target-ID repair keeps the existing slot",
+              "line": 121,
+              "nameKind": "template"
+            },
+            {
+              "declaredName": "S8 legacy ${kind}: owned managed same-channel metadata repairs the old target/resource atomically without changing its legacy key or revision",
+              "line": 164,
+              "nameKind": "template"
+            },
+            {
+              "declaredName": "S8 legacy ${kind}: healthy different-channel endpoints allow a new channel; dead endpoints and temporary verification failures remain distinct",
+              "line": 206,
+              "nameKind": "template"
+            },
+            {
+              "declaredName": "S8 legacy ${kind}: foreign or other-guild managed resources cannot prove an owned channel or be repointed",
+              "line": 232,
+              "nameKind": "template"
+            },
+            {
+              "declaredName": "ROUND1 ${kind}: an existing-URL adopter revalidates after a failed creator's partial SQL rollback instead of committing its deleted hook",
+              "line": 251,
+              "nameKind": "template"
+            },
+            {
+              "declaredName": "ROUND1 ${kind}: full channel lifecycle serializes across helper instances and failed creators cannot delete the later registration",
+              "line": 278,
+              "nameKind": "template"
+            },
+            {
+              "declaredName": "ROUND1 ${kind}: a concurrently committed direct registration preserves the shared hook when its creator fails",
+              "line": 303,
+              "nameKind": "template"
+            },
+            {
+              "declaredName": "ROUND1 ${kind}: unused hook cleanup rolls back partial registration, while COMMIT acknowledgement uncertainty retains a committed hook",
+              "line": 317,
+              "nameKind": "template"
+            },
+            {
+              "declaredName": "ROUND1 ${kind}: replacing a deleted channel hook preserves target/settings/slot/revision and pending jobs use the repaired endpoint",
+              "line": 333,
+              "nameKind": "template"
+            },
+            {
+              "declaredName": "ROUND1 dashboard: an existing-URL destination waits for channel creation and rejects a hook deleted by partial native SQL rollback",
+              "line": 383,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "ROUND1 cleanup preserves an already committed managed destination reference",
+              "line": 416,
+              "nameKind": "literal"
+            }
+          ],
+          "executionStatus": "passed-frozen-source-tests"
+        }
+      ],
+      "verificationStatus": "passed-frozen-source-tests"
+    },
+    {
+      "id": "S8-2",
+      "priority": "P2",
+      "title": "同じ対象とチャンネルのDiscord再登録が通知と枠を重複作成する",
+      "implementationStatus": "implemented-in-candidate",
+      "implementationSummary": "同一所有者・対象・チャンネルの再登録は既存登録と枠を再利用し、同時実行や旧Webhook修復でも重複登録しない。",
+      "implementationFiles": [
+        "src/providers/autoWatch/channel-registration.js",
+        "src/providers/autoWatch/store.js",
+        "src/providers/priceWatch/store.js",
+        "src/components/_webhookDestination.js"
+      ],
+      "coverage": [
+        {
+          "file": "scripts/test/provider-saturation-regressions.test.js",
+          "selector": "^S8-1/2",
+          "testCases": [
+            {
+              "declaredName": "S8-1/2 committed Discord watch keeps its webhook after reply failure and repeated/concurrent channel choices use one slot",
+              "line": 181,
+              "nameKind": "literal"
+            }
+          ],
+          "executionStatus": "passed-frozen-source-tests"
+        },
+        {
+          "file": "scripts/test/automation-dashboard-webhook-creation-sql.test.js",
+          "selector": "S8 dashboard",
+          "testCases": [
+            {
+              "declaredName": "S8 dashboard: concurrent distinct private resources share one hook and endpoint under the channel SQL lock",
+              "line": 76,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "S8 dashboard: a creator rollback deletes only its unused hook before a waiting resource chooses a fresh hook",
+              "line": 91,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "S8 dashboard: a raw-URL adopter revalidates after the creator rolls back instead of committing a deleted endpoint",
+              "line": 106,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "S8 dashboard: native ${kind} direct adoption also waits for creator rollback and cannot save its deleted hook",
+              "line": 119,
+              "nameKind": "template"
+            },
+            {
+              "declaredName": "S8 dashboard: COMMIT acknowledgement uncertainty and unknown remote creation keep hooks for safe later reuse",
+              "line": 146,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "S8 dashboard: cleanup retains an already committed destination which adopted the newly created hook",
+              "line": 166,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "S8 dashboard: user/bot permissions and 503/404 failures leave foreign hooks and private resources untouched",
+              "line": 183,
+              "nameKind": "literal"
+            }
+          ],
+          "executionStatus": "passed-frozen-source-tests"
+        },
+        {
+          "file": "scripts/test/automation-native-webhook-lifecycle-sql.test.js",
+          "selector": "S8 legacy|ROUND1",
+          "testCases": [
+            {
+              "declaredName": "S8 legacy ${kind}: an unknown deleted pre-change endpoint fails closed at capacity and explicit UI target-ID repair keeps the existing slot",
+              "line": 121,
+              "nameKind": "template"
+            },
+            {
+              "declaredName": "S8 legacy ${kind}: owned managed same-channel metadata repairs the old target/resource atomically without changing its legacy key or revision",
+              "line": 164,
+              "nameKind": "template"
+            },
+            {
+              "declaredName": "S8 legacy ${kind}: healthy different-channel endpoints allow a new channel; dead endpoints and temporary verification failures remain distinct",
+              "line": 206,
+              "nameKind": "template"
+            },
+            {
+              "declaredName": "S8 legacy ${kind}: foreign or other-guild managed resources cannot prove an owned channel or be repointed",
+              "line": 232,
+              "nameKind": "template"
+            },
+            {
+              "declaredName": "ROUND1 ${kind}: an existing-URL adopter revalidates after a failed creator's partial SQL rollback instead of committing its deleted hook",
+              "line": 251,
+              "nameKind": "template"
+            },
+            {
+              "declaredName": "ROUND1 ${kind}: full channel lifecycle serializes across helper instances and failed creators cannot delete the later registration",
+              "line": 278,
+              "nameKind": "template"
+            },
+            {
+              "declaredName": "ROUND1 ${kind}: a concurrently committed direct registration preserves the shared hook when its creator fails",
+              "line": 303,
+              "nameKind": "template"
+            },
+            {
+              "declaredName": "ROUND1 ${kind}: unused hook cleanup rolls back partial registration, while COMMIT acknowledgement uncertainty retains a committed hook",
+              "line": 317,
+              "nameKind": "template"
+            },
+            {
+              "declaredName": "ROUND1 ${kind}: replacing a deleted channel hook preserves target/settings/slot/revision and pending jobs use the repaired endpoint",
+              "line": 333,
+              "nameKind": "template"
+            },
+            {
+              "declaredName": "ROUND1 dashboard: an existing-URL destination waits for channel creation and rejects a hook deleted by partial native SQL rollback",
+              "line": 383,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "ROUND1 cleanup preserves an already committed managed destination reference",
+              "line": 416,
+              "nameKind": "literal"
+            }
+          ],
+          "executionStatus": "passed-frozen-source-tests"
+        }
+      ],
+      "verificationStatus": "passed-frozen-source-tests"
+    },
+    {
+      "id": "S9-1",
+      "priority": "P2",
+      "title": "別ルールへ切替後の部品ファイル読込が、そのルールを元の内容で上書きする",
+      "implementationStatus": "implemented-in-candidate",
+      "implementationSummary": "部品・ルールファイルの読込を対象の内容と世代へ結び付け、選択変更・復元・unmount後の旧読込を破棄する。",
+      "implementationFiles": [
+        "dashboard/components/automation/rule-editor-canvas.tsx"
+      ],
+      "coverage": [
+        {
+          "file": "scripts/test/automation-saturation-ui.test.js",
+          "selector": "S9-1|^T9",
+          "testCases": [
+            {
+              "declaredName": "T9 restoring a revision discards pending source and invalidates late file parsing for the same workflow",
+              "line": 92,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "S9-1 a delayed ${kind} file cannot replace another workflow",
+              "line": 102,
+              "nameKind": "template"
+            }
+          ],
+          "executionStatus": "passed-frozen-source-tests"
+        }
+      ],
+      "verificationStatus": "passed-frozen-source-tests"
+    },
+    {
+      "id": "S12-1",
+      "priority": "P2",
+      "title": "Discord登録が通知先の送信権限不足を成功扱いにし、利用枠を使ったまま初回配信に失敗する",
+      "implementationStatus": "implemented-in-candidate",
+      "implementationSummary": "Discordチャンネル登録前に登録者とBotの閲覧・送信・Webhook管理権限を確認し、失敗時は通知・枠を作らない。",
+      "implementationFiles": [
+        "src/components/_webhookDestination.js",
+        "src/commands/handlers/autoextract/watch.js",
+        "src/components/priceWatch.js"
+      ],
+      "coverage": [
+        {
+          "file": "scripts/test/provider-saturation-regressions.test.js",
+          "selector": "^S12-1",
+          "testCases": [
+            {
+              "declaredName": "S12-1 view/send/manage permissions for both owner and bot reject before webhook or slot commit",
+              "line": 208,
+              "nameKind": "literal"
+            }
+          ],
+          "executionStatus": "passed-frozen-source-tests"
+        }
+      ],
+      "verificationStatus": "passed-frozen-source-tests"
+    },
+    {
+      "id": "S12-2",
+      "priority": "P2",
+      "title": "価格登録が初回応答の期限までに応答せず、設定と枠だけ保存してDiscord画面で失敗する",
+      "implementationStatus": "implemented-in-candidate",
+      "implementationSummary": "価格登録の遅い処理より前に非公開deferを行い、モーダルを開く操作の応答方式は保持する。",
+      "implementationFiles": [
+        "src/components/priceWatch.js"
+      ],
+      "coverage": [
+        {
+          "file": "scripts/test/provider-saturation-regressions.test.js",
+          "selector": "^S12-2",
+          "testCases": [
+            {
+              "declaredName": "S12-2 all price registration paths defer privately before slow source/webhook/SQL work; modal-opening actions remain undeferred",
+              "line": 228,
+              "nameKind": "literal"
+            }
+          ],
+          "executionStatus": "passed-frozen-source-tests"
+        }
+      ],
+      "verificationStatus": "passed-frozen-source-tests"
+    },
+    {
+      "id": "S14-1",
+      "priority": "P2",
+      "title": "BOOTHの初回取得がHTTP 200のエラーページだと空の基準を保存し、復旧後に既存商品を新着扱いする",
+      "implementationStatus": "implemented-in-candidate",
+      "implementationSummary": "BOOTHの未認識HTTP200ページを取得失敗として扱い、明示された空ショップだけを空基準にする。",
+      "implementationFiles": [
+        "src/providers/booth/autoWatch.js"
+      ],
+      "coverage": [
+        {
+          "file": "scripts/test/provider-saturation-sql.test.js",
+          "selector": "^S14-1",
+          "testCases": [
+            {
+              "declaredName": "S14-1 SQL BOOTH unavailable first page preserves uninitialized state; recovery seeds history, explicit empty shop admits future items",
+              "line": 28,
+              "nameKind": "literal"
+            }
+          ],
+          "executionStatus": "passed-frozen-source-tests"
+        },
+        {
+          "file": "scripts/test/provider-saturation-regressions.test.js",
+          "selector": "^S14-1",
+          "testCases": [
+            {
+              "declaredName": "S14-1 BOOTH rejects unrecognized HTTP200 pages and accepts an explicit empty shop index",
+              "line": 128,
+              "nameKind": "literal"
+            }
+          ],
+          "executionStatus": "passed-frozen-source-tests"
+        }
+      ],
+      "verificationStatus": "passed-frozen-source-tests"
+    },
+    {
+      "id": "S18-1",
+      "priority": "P2",
+      "title": "停止中通知の再開が保存先の停止・削除を確認せず、有効表示と枠使用だけを戻す",
+      "implementationStatus": "implemented-in-candidate",
+      "implementationSummary": "再開・有効な設定保存・再登録で、管理済み／旧通知先の有効状態・保存ID・実Webhook宛先・実行者権限を確認する。停止・削除と本人DMは維持する。",
+      "implementationFiles": [
+        "src/automation/monitors.js",
+        "src/automation/service.js",
+        "src/automation/x-monitor-quota.js",
+        "src/providers/autoWatch/store.js",
+        "src/providers/priceWatch/store.js"
+      ],
+      "coverage": [
+        {
+          "file": "scripts/test/automation-monitor-destination-lifecycle-sql.test.js",
+          "selector": "S18-1",
+          "testCases": [
+            {
+              "declaredName": "${kind} S18-1: ${resourceState} destination cannot resume; pause and delete remain available",
+              "line": 85,
+              "nameKind": "template"
+            },
+            {
+              "declaredName": "${kind} S18-1: healthy DM resumes and preserves its destination and owner",
+              "line": 95,
+              "nameKind": "template"
+            },
+            {
+              "declaredName": "${kind} S18-1: destination change after remote verification fails before enabled or slots change",
+              "line": 100,
+              "nameKind": "template"
+            },
+            {
+              "declaredName": "${kind} S18-1: a concurrent monitor revision and unknown Discord failure both retain the paused target",
+              "line": 106,
+              "nameKind": "template"
+            },
+            {
+              "declaredName": "${kind} S18-1: audit failure rolls the destination-validated resume back atomically",
+              "line": 114,
+              "nameKind": "template"
+            }
+          ],
+          "executionStatus": "passed-frozen-source-tests"
+        },
+        {
+          "file": "scripts/test/automation-workflow-destination-principals-sql.test.js",
+          "selector": "S18/S24|S24-1",
+          "testCases": [
+            {
+              "declaredName": "S24-1 ${kind} shared attach verifies editor and actual target owner before any assignment mutation",
+              "line": 68,
+              "nameKind": "template"
+            },
+            {
+              "declaredName": "S24-1 activation checks every attached owner under the reviewed roster for API and direct callers",
+              "line": 86,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "S24-1 workflow resume validates the immutable active bindings while a different draft remains unapplied",
+              "line": 98,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "S24-1 ${kind} monitor resume verifies custom workflow channels as well as its default destination",
+              "line": 109,
+              "nameKind": "template"
+            },
+            {
+              "declaredName": "S24-1 native ${kind} repeated registration cannot re-enable an unusable custom workflow destination",
+              "line": 117,
+              "nameKind": "template"
+            },
+            {
+              "declaredName": "S24-1 X enrollment, settings and resume share the actual-owner custom destination guard",
+              "line": 141,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "S18/S24 X default channels validate actual owner, enabled state and transient failures atomically",
+              "line": 160,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "S24-1 default sends and private custom DM keep zero Discord reads through attach, activate and resume",
+              "line": 204,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "S18/S24 managed ${kind}: custom activation, attach and workflow resume reject deleted or moved webhook recipients",
+              "line": 227,
+              "nameKind": "template"
+            },
+            {
+              "declaredName": "S18/S24 managed X: enrollment, active binding selection and resume validate real default webhook identity transactionally",
+              "line": 261,
+              "nameKind": "literal"
+            }
+          ],
+          "executionStatus": "passed-frozen-source-tests"
+        },
+        {
+          "file": "scripts/test/automation-native-unmanaged-resume-sql.test.js",
+          "selector": "S18/S24",
+          "testCases": [
+            {
+              "declaredName": "S18/S24 unmanaged ${kind}: actual native recipient, endpoint CAS and owner/editor permissions at full capacity",
+              "line": 68,
+              "nameKind": "template"
+            },
+            {
+              "declaredName": "S18/S24 managed ${kind}: native recipient resources are checked remotely on registration, resume and active binding save",
+              "line": 166,
+              "nameKind": "template"
+            },
+            {
+              "declaredName": "S18/S24 native ${kind}/${type}: every existing registration validates its bound default at full capacity",
+              "line": 265,
+              "nameKind": "template"
+            }
+          ],
+          "executionStatus": "passed-frozen-source-tests"
+        }
+      ],
+      "verificationStatus": "passed-frozen-source-tests"
+    },
+    {
+      "id": "S20-1",
+      "priority": "P2",
+      "title": "適用対象の再確認後に別通知が同じルールへ割り当てられると、確認に出ていない通知まで新しい版へ切り替わる",
+      "implementationStatus": "implemented-in-candidate",
+      "implementationSummary": "適用対象集合のトークンと各登録者・元設定・割当のロックを同じトランザクションで照合し、確認外の通知が増えた場合は競合にする。",
+      "implementationFiles": [
+        "src/automation/workflow-targets.js",
+        "src/automation/workflow-deletion.js",
+        "src/automation/service.js",
+        "dashboard/components/automation/automation-workspace.tsx"
+      ],
+      "coverage": [
+        {
+          "file": "scripts/test/automation-saturation-data-sql.test.js",
+          "selector": "^S7-3/S20-1",
+          "testCases": [
+            {
+              "declaredName": "S7-3/S20-1: activation preview covers X and native consumers and rejects a changed set atomically",
+              "line": 184,
+              "nameKind": "literal"
+            }
+          ],
+          "executionStatus": "passed-frozen-source-tests"
+        },
+        {
+          "file": "scripts/test/automation-saturation-ui.test.js",
+          "selector": "^S20-1",
+          "testCases": [
+            {
+              "declaredName": "S20-1 an atomic target-token conflict keeps application pending and exposes no false success",
+              "line": 220,
+              "nameKind": "literal"
+            }
+          ],
+          "executionStatus": "passed-frozen-source-tests"
+        }
+      ],
+      "verificationStatus": "passed-frozen-source-tests"
+    },
+    {
+      "id": "S20-2",
+      "priority": "P2",
+      "title": "同じXアカウントを変更内容付きで再登録すると旧設定を保持したまま、画面が保存成功と表示する",
+      "implementationStatus": "implemented-in-candidate",
+      "implementationSummary": "同一Xアカウントの登録再送は、明示指定した設定が同じ場合だけ既存登録として成功させる。変更は編集操作へ案内する。",
+      "implementationFiles": [
+        "src/automation/x-monitor-quota.js"
+      ],
+      "coverage": [
+        {
+          "file": "scripts/test/automation-saturation-data-sql.test.js",
+          "selector": "^S20-2",
+          "testCases": [
+            {
+              "declaredName": "S20-2: a repeated X registration is idempotent only for the same explicitly supplied configuration",
+              "line": 202,
+              "nameKind": "literal"
+            }
+          ],
+          "executionStatus": "passed-frozen-source-tests"
+        }
+      ],
+      "verificationStatus": "passed-frozen-source-tests"
+    },
+    {
+      "id": "S21-1",
+      "priority": "P2",
+      "title": "適用中ルールを削除しても通知が有効・枠使用のまま残り、以後の新着を内部で取り消し続ける",
+      "implementationStatus": "implemented-in-candidate",
+      "implementationSummary": "ルール削除を全割当先の停止・解除とgraph処理の失効へまとめ、通知登録・枠・送信済み／結果不明の記録を保持する。",
+      "implementationFiles": [
+        "src/automation/workflow-deletion.js",
+        "src/automation/workflow-targets.js"
+      ],
+      "coverage": [
+        {
+          "file": "scripts/test/automation-workflow-deletion-sql.test.js",
+          "selector": "^S21-1",
+          "testCases": [
+            {
+              "declaredName": "S21-1 deleting a used rule pauses and detaches auto, price and X while preserving registrations and slots",
+              "line": 46,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "S21-1 legacy native consumers receive a paused CAS row without losing their source or destination identity",
+              "line": 79,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "S21-1 no-consumer delete succeeds, stale revision and foreign owner cannot mutate a used rule",
+              "line": 86,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "S21-1 DB failure after pause rolls back monitor state, assignment, audit and workflow deletion atomically",
+              "line": 93,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "S21-1 a guild attachment committed before final workflow lock produces a clean conflict rather than a missed consumer",
+              "line": 103,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "S21-1 same-owner concurrent attach and delete serialize without leaving an enabled orphan assignment",
+              "line": 122,
+              "nameKind": "literal"
+            }
+          ],
+          "executionStatus": "passed-frozen-source-tests"
+        }
+      ],
+      "verificationStatus": "passed-frozen-source-tests"
+    },
+    {
+      "id": "S22-1",
+      "priority": "P2",
+      "title": "別の共有パッケージの改訂を始めると、最初のパッケージの未保存改訂内容を確認なしに破棄する",
+      "implementationStatus": "implemented-in-candidate",
+      "implementationSummary": "別パッケージの改訂を始める前に未保存共有内容の破棄を確認し、取消時は元の入力を保持する。",
+      "implementationFiles": [
+        "dashboard/components/automation/marketplace-manager.tsx"
+      ],
+      "coverage": [
+        {
+          "file": "scripts/test/automation-saturation-ui.test.js",
+          "selector": "^S22-1",
+          "testCases": [
+            {
+              "declaredName": "S22-1 switching package revision drafts requires consent and retains the previous composer on cancellation",
+              "line": 182,
+              "nameKind": "literal"
+            }
+          ],
+          "executionStatus": "passed-frozen-source-tests"
+        }
+      ],
+      "verificationStatus": "passed-frozen-source-tests"
+    },
+    {
+      "id": "S24-1",
+      "priority": "P2",
+      "title": "共同編集者が自分だけ使える通知先を保存でき、配信時の所有者権限確認で初めて失敗する",
+      "implementationStatus": "implemented-in-candidate",
+      "implementationSummary": "共同編集者と実際の通知所有者を分けて権限確認する。ルール適用・再開は全割当所有者、追加割当・監視再開・再登録は対象所有者を確認する。",
+      "implementationFiles": [
+        "src/automation/service.js",
+        "src/automation/monitors.js",
+        "src/automation/x-monitor-quota.js",
+        "src/providers/autoWatch/store.js",
+        "src/providers/priceWatch/store.js"
+      ],
+      "coverage": [
+        {
+          "file": "scripts/test/automation-monitor-destination-lifecycle-sql.test.js",
+          "selector": "S24-1",
+          "testCases": [
+            {
+              "declaredName": "${kind} S24-1: guild edits validate both editor and original owner with actual role permissions",
+              "line": 64,
+              "nameKind": "template"
+            },
+            {
+              "declaredName": "${kind} S24-1: passive guild resume also checks the editor and original owner before changing state",
+              "line": 74,
+              "nameKind": "template"
+            }
+          ],
+          "executionStatus": "passed-frozen-source-tests"
+        },
+        {
+          "file": "scripts/test/automation-workflow-destination-principals-sql.test.js",
+          "selector": "S24-1|S18/S24",
+          "testCases": [
+            {
+              "declaredName": "S24-1 ${kind} shared attach verifies editor and actual target owner before any assignment mutation",
+              "line": 68,
+              "nameKind": "template"
+            },
+            {
+              "declaredName": "S24-1 activation checks every attached owner under the reviewed roster for API and direct callers",
+              "line": 86,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "S24-1 workflow resume validates the immutable active bindings while a different draft remains unapplied",
+              "line": 98,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "S24-1 ${kind} monitor resume verifies custom workflow channels as well as its default destination",
+              "line": 109,
+              "nameKind": "template"
+            },
+            {
+              "declaredName": "S24-1 native ${kind} repeated registration cannot re-enable an unusable custom workflow destination",
+              "line": 117,
+              "nameKind": "template"
+            },
+            {
+              "declaredName": "S24-1 X enrollment, settings and resume share the actual-owner custom destination guard",
+              "line": 141,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "S18/S24 X default channels validate actual owner, enabled state and transient failures atomically",
+              "line": 160,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "S24-1 default sends and private custom DM keep zero Discord reads through attach, activate and resume",
+              "line": 204,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "S18/S24 managed ${kind}: custom activation, attach and workflow resume reject deleted or moved webhook recipients",
+              "line": 227,
+              "nameKind": "template"
+            },
+            {
+              "declaredName": "S18/S24 managed X: enrollment, active binding selection and resume validate real default webhook identity transactionally",
+              "line": 261,
+              "nameKind": "literal"
+            }
+          ],
+          "executionStatus": "passed-frozen-source-tests"
+        },
+        {
+          "file": "scripts/test/automation-native-unmanaged-resume-sql.test.js",
+          "selector": "S18/S24",
+          "testCases": [
+            {
+              "declaredName": "S18/S24 unmanaged ${kind}: actual native recipient, endpoint CAS and owner/editor permissions at full capacity",
+              "line": 68,
+              "nameKind": "template"
+            },
+            {
+              "declaredName": "S18/S24 managed ${kind}: native recipient resources are checked remotely on registration, resume and active binding save",
+              "line": 166,
+              "nameKind": "template"
+            },
+            {
+              "declaredName": "S18/S24 native ${kind}/${type}: every existing registration validates its bound default at full capacity",
+              "line": 265,
+              "nameKind": "template"
+            }
+          ],
+          "executionStatus": "passed-frozen-source-tests"
+        }
+      ],
+      "verificationStatus": "passed-frozen-source-tests"
+    },
+    {
+      "id": "S24-2",
+      "priority": "P2",
+      "title": "状態変更・作成の保存後に再取得だけ失敗すると、画面が古い版を残し再試行が競合・重複作成になる",
+      "implementationStatus": "implemented-in-candidate",
+      "implementationSummary": "成功応答のID・版・削除状態を先に反映し、後続取得だけを再試行する。新規ルールの応答読込は作成トランザクションに含め、失敗時は全体を取り消す。",
+      "implementationFiles": [
+        "dashboard/components/automation/automation-workspace.tsx",
+        "dashboard/components/automation/dictionary-manager.tsx",
+        "dashboard/components/automation/marketplace-manager.tsx",
+        "dashboard/components/automation/monitor-manager.tsx",
+        "dashboard/components/automation/delivery-history.tsx",
+        "src/automation/service.js"
+      ],
+      "coverage": [
+        {
+          "file": "scripts/test/automation-post-commit-ui.test.js",
+          "selector": "S24-2",
+          "testCases": [
+            {
+              "declaredName": "S24-2 ${operation} stays deleted after the follow-up read fails",
+              "line": 13,
+              "nameKind": "template"
+            },
+            {
+              "declaredName": "S24-2 history ${action} consumes the old CAS until canonical detail reload",
+              "line": 34,
+              "nameKind": "template"
+            },
+            {
+              "declaredName": "S24-2 dictionary ${operation} survives committed ${readFailure} read failure without repeating writes",
+              "line": 76,
+              "nameKind": "template"
+            },
+            {
+              "declaredName": "S24-2 dictionary creation without a returned ID requires a list reload and never replays the POST",
+              "line": 90,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "S24-2 marketplace ${operation} retains its committed identity or consumes its token before read failure",
+              "line": 127,
+              "nameKind": "template"
+            },
+            {
+              "declaredName": "S24-2 marketplace create without a returned identity blocks repeat creation until its list is read",
+              "line": 144,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "S24-2 a committed package fork resumes its returned identity after a failed detail read",
+              "line": 152,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "S24-2 withdrawing a package removes the obsolete status action before a failed list refresh",
+              "line": 159,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "S24-2 resolving a report consumes its row before the review list read fails",
+              "line": 166,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "S24-2 moderation changes require canonical revision refresh before another save",
+              "line": 173,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "S24-2 a delayed history commit cannot replace a newer filter or reopen its closed detail",
+              "line": 183,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "S24-2 a committed install returning to an inactive view keeps recovery pending without background reads or duplicate creation",
+              "line": 200,
+              "nameKind": "literal"
+            }
+          ],
+          "executionStatus": "passed-frozen-source-tests"
+        },
+        {
+          "file": "scripts/test/automation-saturation-ui.test.js",
+          "selector": "^S24-2",
+          "testCases": [
+            {
+              "declaredName": "S24-2 a committed workflow save advances its local revision even when the list refresh fails",
+              "line": 116,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "S24-2 restored workflow commit blocks obsolete restore and resumes the saved revision after a failed read",
+              "line": 245,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "S24-2 imported workflow commit retains its returned identity while resource-list recovery performs no duplicate import",
+              "line": 257,
+              "nameKind": "literal"
+            }
+          ],
+          "executionStatus": "passed-frozen-source-tests"
+        },
+        {
+          "file": "scripts/test/automation-service-commit-response-sql.test.js",
+          "selector": "canonical creation|DTO read|nested workflow|dictionary and destination",
+          "testCases": [
+            {
+              "declaredName": "canonical creation responses belong to their write transaction, including nested imports and failures",
+              "line": 9,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "a canonical DTO read failure rolls back the workflow, edition and audit; retry creates one resource",
+              "line": 25,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "nested workflow+dictionary import aborts every resource when its workflow response cannot be read",
+              "line": 32,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "dictionary and destination summaries already return within the transaction and audit failures leave no orphan resources",
+              "line": 38,
+              "nameKind": "literal"
+            }
+          ],
+          "executionStatus": "passed-frozen-source-tests"
+        },
+        {
+          "file": "scripts/test/automation-history-trace-ui.test.js",
+          "selector": "committed job",
+          "testCases": [
+            {
+              "declaredName": "trace read failures cannot re-enable a committed job mutation or replay its saved PATCH",
+              "line": 133,
+              "nameKind": "literal"
+            }
+          ],
+          "executionStatus": "passed-frozen-source-tests"
+        }
+      ],
+      "verificationStatus": "passed-frozen-source-tests"
+    },
+    {
+      "id": "S26-1",
+      "priority": "P2",
+      "title": "X編集の競合後に古い入力を再送すると、別タブで更新した通知先・ルール・受信情報を巻き戻す",
+      "implementationStatus": "implemented-in-candidate",
+      "implementationSummary": "X編集の競合後は入力を保持し、明示的な再確認で変更項目だけを最新設定へ重ねる。旧通知先・ルール・受信情報を丸ごと再送しない。",
+      "implementationFiles": [
+        "dashboard/components/automation/x-monitor-manager.tsx"
+      ],
+      "coverage": [
+        {
+          "file": "scripts/test/automation-x-monitor-ui.test.js",
+          "selector": "owner CAS conflict|revision conflict preserves",
+          "testCases": [
+            {
+              "declaredName": "an owner CAS conflict retains the draft and only explicit rebase adopts the latest revision",
+              "line": 189,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "invalid handle edits do not write and a revision conflict preserves the corrected handle for explicit retry",
+              "line": 271,
+              "nameKind": "literal"
+            }
+          ],
+          "executionStatus": "passed-frozen-source-tests"
+        }
+      ],
+      "verificationStatus": "passed-frozen-source-tests"
+    },
+    {
+      "id": "R32-1",
+      "priority": "P1",
+      "title": "Restored durable origins must retain the recovery notification cutoff",
+      "implementationStatus": "implemented-in-candidate",
+      "implementationSummary": "元run・初回観測・暗号化X受信の時刻で復旧隔離を判定し、復旧後の再投影や保留取出しで通知を若返らせない。旧完了記録の最初の境界を保持する。",
+      "implementationFiles": [
+        "src/recoveryBootstrap.js",
+        "src/automation/recovery-origin.js",
+        "src/automation/flow-projector.js",
+        "src/automation/x-push-runtime.js",
+        "src/providers/autoWatch/runner.js"
+      ],
+      "coverage": [
+        {
+          "file": "scripts/test/automation-recovery-cutoff-sql.test.js",
+          "selector": "R32-1|existing completed|old final control|file and DB|encrypted old inbox|fresh native|restart",
+          "testCases": [
+            {
+              "declaredName": "R32-1 restored flow and encrypted X origins cannot become new deliverable jobs after recovery",
+              "line": 20,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "an existing completed v1 receipt upgrades the automation scan without moving its cutoff",
+              "line": 109,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "old final control and post-cutoff jobs with old durable origins never prepare or send",
+              "line": 121,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "file and DB failures leave old flow work intact and retry cannot re-age it",
+              "line": 133,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "encrypted old inbox is fenced before decryption with transaction and lease protection",
+              "line": 148,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "fresh native, price, graph and X inputs on existing registrations remain deliverable",
+              "line": 160,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "restart and existing primary failback keep cutoff and never restore quarantined ciphertext",
+              "line": 177,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "R32-1 price cutoff uses the immutable observation in milliseconds and keeps legacy date fallback",
+              "line": 194,
+              "nameKind": "literal"
+            }
+          ],
+          "executionStatus": "passed-frozen-source-tests"
+        },
+        {
+          "file": "scripts/test/provider-saturation-backlog-sql.test.js",
+          "selector": "T1/R32",
+          "testCases": [
+            {
+              "declaredName": "T1/R32 SQL a restored old discovery retains its original cutoff time when a new local drain creates its delivery after bootstrap",
+              "line": 168,
+              "nameKind": "literal"
+            }
+          ],
+          "executionStatus": "passed-frozen-source-tests"
+        },
+        {
+          "file": "scripts/test/recovery-bootstrap.test.js",
+          "selector": "primary failback|restored outgoing|failed durable|paged database",
+          "testCases": [
+            {
+              "declaredName": "primary failback preserves the OCI notification cutoff and refuses a new bootstrap",
+              "line": 39,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "restored outgoing rows and targets are quarantined read-only and completion survives Bot restart",
+              "line": 54,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "failed durable completion does not enable timers or skip retry on the same process",
+              "line": 104,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "paged database evidence resumes after failure and never changes restored cursor or delivery rows",
+              "line": 124,
+              "nameKind": "literal"
+            }
+          ],
+          "executionStatus": "passed-frozen-source-tests"
+        },
+        {
+          "file": "scripts/test/recovery-lease.test.js",
+          "selector": "matching lease|worker",
+          "testCases": [
+            {
+              "declaredName": "unmanaged development remains explicit while managed workloads need a current matching lease",
+              "line": 9,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "an independent admin worker refuses a mutation before schema or transaction work when the lease is missing",
+              "line": 30,
+              "nameKind": "literal"
+            }
+          ],
+          "executionStatus": "passed-frozen-source-tests"
+        }
+      ],
+      "verificationStatus": "passed-frozen-source-tests"
+    },
+    {
+      "id": "S34-1",
+      "priority": "P2",
+      "title": "Cancellation confirmation must belong to the displayed contract",
+      "implementationStatus": "implemented-in-candidate",
+      "implementationSummary": "解約確認と要求を表示済み契約ID・申込IDへ結び付け、正規の状態再取得で再確認を求める。サーバーも所有者ロック下で同じ契約を照合する。",
+      "implementationFiles": [
+        "src/automation/square-billing.js",
+        "src/automation/api.js",
+        "dashboard/components/automation/subscription-manager.tsx"
+      ],
+      "coverage": [
+        {
+          "file": "scripts/test/automation-square-billing-sql.test.js",
+          "selector": "cancel|cancellation|replacement contract",
+          "testCases": [
+            {
+              "declaredName": "unverifiable paid first proration retains an actionable warning and cancellation access after reload without granting",
+              "line": 371,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "observed refund persists even if cancel result is unknown; a stale PAID read cannot overwrite later refund with same subscription version",
+              "line": 395,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "cancel schedules end of paid cycle, preserves paid remainder and is safe to repeat; actual expiry removes access",
+              "line": 447,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "dedicated cancel admission survives factories, coalesces concurrent requests and preserves cancellation during ordinary GET cooldown",
+              "line": 456,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "an unknown cancel result keeps its actual error and a durable same-contract retry cooldown prevents repeated forced scans",
+              "line": 472,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "a replacement contract is never bound by the previous contract cancel retry cooldown",
+              "line": 480,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "a delayed expired cancellation cannot select or cancel a newly enrolled replacement contract",
+              "line": 494,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "a fenced old poll reports the newer durable busy observation while cancellation is still reading Square",
+              "line": 509,
+              "nameKind": "literal"
+            },
+            {
+              "declaredName": "missing first-proration dates or a changed anchor revoke an earlier same-version grant before preserving owned cancellation",
+              "line": 528,
+              "nameKind": "literal"
+            }
+          ],
+          "executionStatus": "passed-frozen-source-tests"
+        },
+        {
+          "file": "scripts/test/automation-subscription-ui.test.js",
+          "selector": "^S34-1|cancellation requires",
+          "testCases": [
+            {
+              "declaredName": "S34-1 canonical refresh dismisses cancellation confirmation (${replacement ? 'replacement contract' : 'same contract'})",
+              "line": 51,
+              "nameKind": "template"
+            },
+            {
+              "declaredName": "an existing verified subscription blocks a new contract and cancellation requires an explicit second confirmation",
+              "line": 293,
+              "nameKind": "literal"
+            }
+          ],
+          "executionStatus": "passed-frozen-source-tests"
+        }
+      ],
+      "verificationStatus": "passed-frozen-source-tests"
+    },
+    {
+      "id": "S34-2",
+      "priority": "P2",
+      "title": "Donation history must reach older verified payments beyond 100 quotes",
+      "implementationStatus": "implemented-in-candidate",
+      "implementationSummary": "寄付履歴を受付時刻とIDの安定cursorで過去へ取得し、100件の未送信見積りより古い確定支払いも表示する。決済照合cursorと支援枠を変更しない。",
+      "implementationFiles": [
+        "src/automation/square-donations.js",
+        "src/automation/api.js",
+        "dashboard/components/automation/square-donation-manager.tsx"
+      ],
+      "coverage": [
+        {
+          "file": "scripts/test/automation-square-donations-sql.test.js",
+          "selector": "^S34-2",
+          "testCases": [
+            {
+              "declaredName": "S34-2 owner history pages past 100 unsubmitted quotes with stable equal-time boundaries and no grant changes",
+              "line": 59,
+              "nameKind": "literal"
+            }
+          ],
+          "executionStatus": "passed-frozen-source-tests"
+        },
+        {
+          "file": "scripts/test/automation-donation-ui.test.js",
+          "selector": "^S34-2",
+          "testCases": [
+            {
+              "declaredName": "S34-2 history paging retains existing rows and permanent grants, retries a failed page and discards retired responses",
+              "line": 38,
+              "nameKind": "literal"
+            }
+          ],
+          "executionStatus": "passed-frozen-source-tests"
+        }
+      ],
+      "verificationStatus": "passed-frozen-source-tests"
+    }
+  ],
+  "unmappedIssueIds": [],
+  "coverageSourceSnapshot": [
+    {
+      "file": "dashboard/components/automation/automation-feedback.ts",
+      "sha256": "3275baec4e678c1f2eb586cf5a45c84b80ad2312da840c9cbaad7aabe8cd9500"
+    },
+    {
+      "file": "dashboard/components/automation/automation-workspace.tsx",
+      "sha256": "da50bf45b0587f112fde5ecb94c99885be7eb50b8da3d974449f3f036df0ac27"
+    },
+    {
+      "file": "dashboard/components/automation/delivery-history.tsx",
+      "sha256": "2065a838e73245291b3828e3fa515c926cf987c0212eef12c17143e1148ed316"
+    },
+    {
+      "file": "dashboard/components/automation/dictionary-manager.tsx",
+      "sha256": "796f58fa07a42d4618a12ef7a34eff054e7738dad190495932370843110e8e8c"
+    },
+    {
+      "file": "dashboard/components/automation/marketplace-manager.tsx",
+      "sha256": "37beab1442ff55675fb2aa2675c1de9a0add49c62a295a1205d7be512545dbb9"
+    },
+    {
+      "file": "dashboard/components/automation/monitor-manager.tsx",
+      "sha256": "bbef3cf94cedacee13ab0b0972eec0ad814559d126f5325441bbdbe22ef4e492"
+    },
+    {
+      "file": "dashboard/components/automation/processing-trace.tsx",
+      "sha256": "0bb0c14a9cd0b8d577ab1dfeda52125a52743d047f657cff137e979b7f1d440d"
+    },
+    {
+      "file": "dashboard/components/automation/rule-editor-canvas.tsx",
+      "sha256": "8150fe945b2e8215e37ba8044783341f208a6ba5e1d81fb2ec4f4efcea016493"
+    },
+    {
+      "file": "dashboard/components/automation/square-donation-manager.tsx",
+      "sha256": "b74fdc8995ad7071fbc5903310c98bb43be85b5cc0974e4305f18c42bd45d5e7"
+    },
+    {
+      "file": "dashboard/components/automation/subscription-manager.tsx",
+      "sha256": "4f2abb2bc95245cf6706384f173f5b89b30174768cce71a5cd98cca2b71481b6"
+    },
+    {
+      "file": "dashboard/components/automation/x-monitor-manager.tsx",
+      "sha256": "b08c07f0636c9ae4fbacab14e592475efdf6ddc09f3ed608df25740864efb2a6"
+    },
+    {
+      "file": "migrations/20261016_bind_automation_rate_reservations.sql",
+      "sha256": "a0de3e2a89be284444d348191f2f242ba9043f3ad51a87c6f65b1f5b043df7e8"
+    },
+    {
+      "file": "scripts/test/autoextract.list.test.js",
+      "sha256": "053db4ec51db80f5203d631981c1654e7db698723e49b3c7dd8abb2f9d7d0513"
+    },
+    {
+      "file": "scripts/test/autoextract.unwatch.test.js",
+      "sha256": "2778b1e6edef8b1a8414df00487bf1bd3e4bb8c3246e92224da9d12ba9636b7e"
+    },
+    {
+      "file": "scripts/test/automation-aggregate-member-boundary.test.js",
+      "sha256": "94b696b468047f8db10cf093ff93497b315a811938227d930234bc2a3668609b"
+    },
+    {
+      "file": "scripts/test/automation-dashboard-webhook-creation-sql.test.js",
+      "sha256": "a98d07e65b0f9ffecab3381aafb7b0cdf71dafa7b0cc2ac0d9e3bd7dc0bb3bc3"
+    },
+    {
+      "file": "scripts/test/automation-destination-workspace.test.js",
+      "sha256": "c7191bae153b1b7cb1e6ec33fcd1e29f92c08d97916b61d3a16446c251a446ac"
+    },
+    {
+      "file": "scripts/test/automation-dictionary-publication-sql.test.js",
+      "sha256": "01199b066b5e4e780c6c265d7c5abf891562eda7e82ffe76e8774ebf26f0dd6c"
+    },
+    {
+      "file": "scripts/test/automation-dictionary-publication-ui.test.js",
+      "sha256": "e2c417a48be81777637feecd87c5ac2e40db3d035d17d5022d44055ecea3dadf"
+    },
+    {
+      "file": "scripts/test/automation-donation-ui.test.js",
+      "sha256": "6ca4f72e17688e66a6f4e7fa1ac03936022367ea8003e126bd1d1e072bcd41ab"
+    },
+    {
+      "file": "scripts/test/automation-flow-history-pages-sql.test.js",
+      "sha256": "851c117d77ca9d61efeba40d366ad27e95f885e2d8e1624561a7736267239dd7"
+    },
+    {
+      "file": "scripts/test/automation-flow-history-read-sql.test.js",
+      "sha256": "b5eea3951378901a1a48741007755d21f5080d940f2b9a0a84a9c80b2b374d36"
+    },
+    {
+      "file": "scripts/test/automation-flow-permanent-failure-sql.test.js",
+      "sha256": "f7b3ceec11ad72dca508e5f11703582b16400d25c4b107a9267e67cc9ee645a9"
+    },
+    {
+      "file": "scripts/test/automation-flow-trace.test.js",
+      "sha256": "b3406623fbb639373ce7959a225b80ca1989b4e937bf95c1b3d8101063963d2f"
+    },
+    {
+      "file": "scripts/test/automation-graph-join.test.js",
+      "sha256": "57e9c7a0cd126b9f99167e20a8f8c02708dabbed3ec32d081288468f572957c1"
+    },
+    {
+      "file": "scripts/test/automation-history-trace-ui.test.js",
+      "sha256": "b1fe499474a904a6ac2747561481b2b8eec0ae87105635cfc7d557e42d210f0c"
+    },
+    {
+      "file": "scripts/test/automation-http-boundary.test.js",
+      "sha256": "4f58546ef53344e5966c4cee488c16a1db7a912f8e02a58cdede5ef53ce9fec7"
+    },
+    {
+      "file": "scripts/test/automation-marketplace-provenance-sql.test.js",
+      "sha256": "828691c2d7a06da157299fbb8add9b01fb5461feed71e205e02195c87da7a58c"
+    },
+    {
+      "file": "scripts/test/automation-monitor-activity-sql.test.js",
+      "sha256": "b01cadfaf521cf68d70745b4e6541fc0a1b879105793b5fc68ff31ac9b926121"
+    },
+    {
+      "file": "scripts/test/automation-monitor-cadence-lifecycle-sql.test.js",
+      "sha256": "6a0e3d1b4a10a00722ed03085f86675c972cb0ebef4a52d33f4496dc88e05ede"
+    },
+    {
+      "file": "scripts/test/automation-monitor-destination-lifecycle-sql.test.js",
+      "sha256": "b7560ea7818ae24b35477c6d6e1ae0f0a1076d3aa42da55d3af3f2418afc7f1b"
+    },
+    {
+      "file": "scripts/test/automation-monitor-editor-ui.test.js",
+      "sha256": "24ce2a30777871ad58c3769f179bbc7dd062ef304f7685d5e586ee07a90049e4"
+    },
+    {
+      "file": "scripts/test/automation-monitor-workflow-cas-sql.test.js",
+      "sha256": "68c168460e591a8ce44df3fbd8dd6558d504dab4d688702c6eb7c471f321340f"
+    },
+    {
+      "file": "scripts/test/automation-native-unmanaged-resume-sql.test.js",
+      "sha256": "10579091460c77c11923b0ec19941cc181ad47681e4687e367b4b1f1aeb2d6a4"
+    },
+    {
+      "file": "scripts/test/automation-native-webhook-lifecycle-sql.test.js",
+      "sha256": "d5fa90f7f91fc15ab87600858cd68a978f67375a190b8948fc91d8265a414e5a"
+    },
+    {
+      "file": "scripts/test/automation-package-lineage-sql.test.js",
+      "sha256": "fc474b9a19b61cc8761139a4ab569a8ffe2be69485bf025b1076ccfccbf0b31e"
+    },
+    {
+      "file": "scripts/test/automation-package-lineage-ui.test.js",
+      "sha256": "478e5b767feebb1576270c313bdd303b0e1c51e2a20414aac57c22be71ab9df9"
+    },
+    {
+      "file": "scripts/test/automation-post-commit-ui.test.js",
+      "sha256": "abdd21dbe4a2a5279acaf1bebeff34481bfca674bd1fcc1cb5d1c7f5236fd811"
+    },
+    {
+      "file": "scripts/test/automation-readiness-feedback-ui.test.js",
+      "sha256": "db7b43503e46f544d3c85ee422930096b8d219bf21a251df2daf3c7f02bd9806"
+    },
+    {
+      "file": "scripts/test/automation-recovery-cutoff-sql.test.js",
+      "sha256": "f3923e0d474feb62b62904ae601fb46c5feaebe45bec14f561d3415d39cb7b60"
+    },
+    {
+      "file": "scripts/test/automation-recovery-origin-ui.test.js",
+      "sha256": "61b33bc6b31c5e87420874604078eb09a937fc959e625c9d10b7e21fd3329074"
+    },
+    {
+      "file": "scripts/test/automation-saturation-boundary-sql.test.js",
+      "sha256": "f3c61d6e7fa8b4b7f927aa042aa31a6d12f270068e134c335a211978646dedd8"
+    },
+    {
+      "file": "scripts/test/automation-saturation-data-sql.test.js",
+      "sha256": "14e66893b0c4a14474f6a90126bee31d21957fe252b6cf766d41147ea9313bb5"
+    },
+    {
+      "file": "scripts/test/automation-saturation-runtime.test.js",
+      "sha256": "57d244dedfa276787e3b3ebbed07784548152eb4350749d3a2a3da8656f1f285"
+    },
+    {
+      "file": "scripts/test/automation-saturation-ui.test.js",
+      "sha256": "f47a6b39116d03b0ed1f8ff232da806c64e5bb72555e7164ed7ab3eeeafca9fc"
+    },
+    {
+      "file": "scripts/test/automation-service-commit-response-sql.test.js",
+      "sha256": "22ad568050222c9b4f8e547d8b7c54c4e2ab2aea28304bc5575dbf8691843b3f"
+    },
+    {
+      "file": "scripts/test/automation-square-billing-sql.test.js",
+      "sha256": "355262d057028138d2f072eb8d47dd8c8c485d6469b85249fc829e432fcc5f01"
+    },
+    {
+      "file": "scripts/test/automation-square-donations-sql.test.js",
+      "sha256": "166c5fbe1239fb5d74187df2fbcadc70cb0149562da082756b0e5a307456497f"
+    },
+    {
+      "file": "scripts/test/automation-subscription-ui.test.js",
+      "sha256": "b294f8004cd2822aae26f821c6967a6857a16f58ab42d1a7675571e15afa6bcf"
+    },
+    {
+      "file": "scripts/test/automation-supporter-audit-runtime-sql.test.js",
+      "sha256": "8317f007fae66756552cefa63b65625a1e8fa6b0797d0407ba6b126fde3c7bfb"
+    },
+    {
+      "file": "scripts/test/automation-workflow-deletion-sql.test.js",
+      "sha256": "99ac957fbae797f9e0116a949397d61fbab31c7e2695cef137ecaea9415b7864"
+    },
+    {
+      "file": "scripts/test/automation-workflow-destination-principals-sql.test.js",
+      "sha256": "1ce981a2bc5de7938008a4dc080ba0e61e0b32036d663401e40bac08c6cc8d9a"
+    },
+    {
+      "file": "scripts/test/automation-x-monitor-ui.test.js",
+      "sha256": "371de686686a22d54b454e737bc0fe800ea47c9d2926b6d8eb1f4b3fc28f748a"
+    },
+    {
+      "file": "scripts/test/automation-x-session-lifecycle-sql.test.js",
+      "sha256": "a66b3fe64d8492e7affb5e90be17e8a47f1af2d3fdf976eedc7311e0e2af5897"
+    },
+    {
+      "file": "scripts/test/provider-saturation-backlog-sql.test.js",
+      "sha256": "2b698482bb8269749fe5c865da0118c9038b16ac97758e3e8aa17f5f8ee2facc"
+    },
+    {
+      "file": "scripts/test/provider-saturation-regressions.test.js",
+      "sha256": "be978a0bcd9c352230a46064bd265c0703e5604a979dfd1d986b71b73640fcb0"
+    },
+    {
+      "file": "scripts/test/provider-saturation-sql.test.js",
+      "sha256": "86b0a2e06a82d8c801d5f02fcaf0357df0e659f59103eac6bc61c26c244eff40"
+    },
+    {
+      "file": "scripts/test/recovery-bootstrap.test.js",
+      "sha256": "cf2d0216f0054f092c55e81152460e19aab4294ed0f44c6c7b3babda228a869d"
+    },
+    {
+      "file": "scripts/test/recovery-lease.test.js",
+      "sha256": "aa3f65ee5ad5a8a73f75629e590ca2e1affc70b54cfd06cfe8357acdbe419e9a"
+    },
+    {
+      "file": "scripts/test/steam.parser.test.js",
+      "sha256": "d58f9052c302d6a715fa68d15439d7bdcf2d03c4f67dce30c40199bee53389bc"
+    },
+    {
+      "file": "src/automation/api.js",
+      "sha256": "a3175214dec438d0e28375ed48855175b76e9130d8eae816a75d8532d6aaf808"
+    },
+    {
+      "file": "src/automation/engine.js",
+      "sha256": "7f81338ac52bfff88b7668d54bc6e8a473bb20a5d639b47ef6de2d86de5aaf40"
+    },
+    {
+      "file": "src/automation/evaluation.js",
+      "sha256": "ab0918e376beedda202217e4037eb15e17a03c9d444324901c7ccdb81e1c588d"
+    },
+    {
+      "file": "src/automation/flow-history.js",
+      "sha256": "fb4f255c35ff65025e7187d88fbc16c069a8e1a51fac25347c0b3bf8b96bac05"
+    },
+    {
+      "file": "src/automation/flow-projector.js",
+      "sha256": "3f7893334eb5e3e851614c00f79e032635c526d56522c2f92f76c37f06ee1512"
+    },
+    {
+      "file": "src/automation/flow-trace.js",
+      "sha256": "ffb1111067fb0db4ff7758e87682004035ce387e4f2f234df5ecccaeba28cb00"
+    },
+    {
+      "file": "src/automation/graph-driver.js",
+      "sha256": "d5226e0006aea153fa77f45d1ae2281979236cc292180fd2d50fab965a6b7aa8"
+    },
+    {
+      "file": "src/automation/graph-failure.js",
+      "sha256": "79cf9e70e7ec9e218801321b2b6417e4fd3989b56af03a4e43445d644306a5c7"
+    },
+    {
+      "file": "src/automation/graph-join-store.js",
+      "sha256": "7cd60929bafadbc411d74907f2d1299b0f2c59ece4e73c3d5f3e086825cf8859"
+    },
+    {
+      "file": "src/automation/graph-store.js",
+      "sha256": "026136bf8e095e047aacbab5f9be8a2bca4919ddbc9e1e7b7a178327fcc80765"
+    },
+    {
+      "file": "src/automation/history.js",
+      "sha256": "5637d3d965e7f32f9cf7210a3ce98920cb2b40e5928ec5e7f0a6426b9b4b5e61"
+    },
+    {
+      "file": "src/automation/marketplace-core.js",
+      "sha256": "2d969de00d009623775339641c6385d70a8a9d12d55c03f9a326c140c3d476cc"
+    },
+    {
+      "file": "src/automation/marketplace-installs.js",
+      "sha256": "876d9ba7e5c4734afcff1f16f71df1dfad77a418e33bf28e81fa0723ad171488"
+    },
+    {
+      "file": "src/automation/monitors.js",
+      "sha256": "20d07c58eb1798a4cea9b5875cdfb530c6d6808e09b3c18e206eea48c00bff71"
+    },
+    {
+      "file": "src/automation/native-notification-window.js",
+      "sha256": "4321bf8f0c8163859d3fca2a5ddc6e7d75dee42898da3f66c48dbabab080c716"
+    },
+    {
+      "file": "src/automation/package-dependencies.js",
+      "sha256": "0005490963be0ae3c51dc917f4a7216ee60dea01e18a92f42cfbaaa9f4133471"
+    },
+    {
+      "file": "src/automation/package-safety.js",
+      "sha256": "a444c39a639298ef0be050ea24b013dcabb5b62488e4c252246f3078b1df5ccb"
+    },
+    {
+      "file": "src/automation/queue.js",
+      "sha256": "7d4123c5c15b50345681cb9ef17fbc3f9c851989b3eb95db82cc4ffd15a571a9"
+    },
+    {
+      "file": "src/automation/rate-limits.js",
+      "sha256": "fd74bf00aff945349cc00fe104eb415f7ad6c388b8b560f6921a9e6896db1fb5"
+    },
+    {
+      "file": "src/automation/recovery-origin.js",
+      "sha256": "c3ae631b4e02b84a482a84508129dc29a8df9f2e203278444c1cafa043dc2b4f"
+    },
+    {
+      "file": "src/automation/runtime.js",
+      "sha256": "d58e3ab9cebca8f69c952383a06caae2646673e7e6260a317b9f4a07fc9d9c9b"
+    },
+    {
+      "file": "src/automation/service.js",
+      "sha256": "58d8bfd82966f5d18efeae9d494dcb408a178cc981ab26d2443441a1f9a97e30"
+    },
+    {
+      "file": "src/automation/square-billing.js",
+      "sha256": "3b6e48bebf9789a76134fce050c3b2ae9fb66b49ee77e1829d5ce59a887eaa8e"
+    },
+    {
+      "file": "src/automation/square-donations.js",
+      "sha256": "2b2c82337241f085588442405cb2915f69eee78560938ecb34286079fb1a9bc5"
+    },
+    {
+      "file": "src/automation/transport.js",
+      "sha256": "120852a3e08e8d7b827eaeb6a4bbe122970451e93e87d6a5e6e67042eee3db97"
+    },
+    {
+      "file": "src/automation/webhook-registration.js",
+      "sha256": "2eabd0018c09b1daa11916a589ab6639bb1626df97b0651616dceb9309beba37"
+    },
+    {
+      "file": "src/automation/workflow-deletion.js",
+      "sha256": "440c3dc29b740783f128cc42e4c6d5a2aaccc2cda608239be5fa7106de4ef58f"
+    },
+    {
+      "file": "src/automation/workflow-package-provenance.js",
+      "sha256": "7d79c85b615a3425ead82c12ddf2e9d5b80e42c292f4a107d840bfd06613c180"
+    },
+    {
+      "file": "src/automation/workflow-targets.js",
+      "sha256": "68949704f3b8aecda8c4b83a4eb59627f053ef8530c23cf4cd1f15da769814c2"
+    },
+    {
+      "file": "src/automation/x-monitor-quota.js",
+      "sha256": "d1b8d411ce2707561b713bf929ce5efc617a82c9fa40e33d854ea97b2de6e7c4"
+    },
+    {
+      "file": "src/automation/x-push-runtime.js",
+      "sha256": "b53611ce8eb92784f1d4083d8925c49f93e6634e1019845d65306e86e8788e81"
+    },
+    {
+      "file": "src/automation/x-push-store.js",
+      "sha256": "57ad2f9dc58ba727a495619a5cdf195541d2ccd5007b024c7357c5de2c6a05d8"
+    },
+    {
+      "file": "src/commands/handlers/autoextract/list.js",
+      "sha256": "9ae0b73b6a470758c9f091eab17e05c875f9ffd81e8afc7e4757bac6c22dc96d"
+    },
+    {
+      "file": "src/commands/handlers/autoextract/unwatch.js",
+      "sha256": "f9dc9b97dda83647d598714562fb407de3facc2fe420f6ea4dde267a84834d50"
+    },
+    {
+      "file": "src/commands/handlers/autoextract/watch.js",
+      "sha256": "e11514836c1194448383425bf5716d633188610a3a44b61123b1c9577bff19b6"
+    },
+    {
+      "file": "src/components/_webhookDestination.js",
+      "sha256": "cd1aa47fce6198f485be35697c77954707172bc7a0df4c12e31e4b14e7bd537f"
+    },
+    {
+      "file": "src/components/priceWatch.js",
+      "sha256": "94060338b1f3bb704c301d2a10e3da24c89b7d37533cbd1975391076148cf135"
+    },
+    {
+      "file": "src/providers/autoWatch/channel-registration.js",
+      "sha256": "63dd72be16217f36048062095c97b2a64d27af187f369e44964b19e48904c3ec"
+    },
+    {
+      "file": "src/providers/autoWatch/runner.js",
+      "sha256": "f3e8e44dd69d763285b8e1a1d815bb50101d500309308248fb957b0ea24b1046"
+    },
+    {
+      "file": "src/providers/autoWatch/store.js",
+      "sha256": "15cf6aad6ea3e8afbe34fa320daeea50afccb6026f9b2c9dfc936087c6cee42f"
+    },
+    {
+      "file": "src/providers/booth/autoWatch.js",
+      "sha256": "2c06b7686e62c41b2cb6e38f4211a99ea271fad8021fd3da87f2499387b68084"
+    },
+    {
+      "file": "src/providers/priceWatch/store.js",
+      "sha256": "34b8aa3003091966522b658234c6aac6a0347c1575e3a530f62957eaaf6df735"
+    },
+    {
+      "file": "src/providers/steam/priceWatch.js",
+      "sha256": "806114abdf37306ee1ee72983563725f6df5fb9e683aebc2f4f9df98d6f4001d"
+    },
+    {
+      "file": "src/providers/steam/steamSourceParser/index.js",
+      "sha256": "7b08713e9b0b6756aa1c4662575d55d9e39a2d19638102fb3a33d9cfdf0a74f9"
+    },
+    {
+      "file": "src/recoveryBootstrap.js",
+      "sha256": "08a8344ae39ff13c232db8c93512b6a21cd9fcf3240e81f2f637b93c03291827"
+    },
+    {
+      "file": "src/userFacingErrors.js",
+      "sha256": "ed7298270d0d2b5caaa3740478c12dc864d0ce2610203cd12d70791f4f7f42bb"
+    }
+  ],
+  "notes": [
+    "A matching declaration proves the named automatic case exists, not that the final frozen candidate passed it.",
+    "Template declarations record their source expression; loop variants are executed by the normal test runner.",
+    "Original audit reports and the historical PR47 six-issue acceptance report are unchanged.",
+    "Complete history uses existing durable sources and paging; no term, diagnostic field, position, user reason or record is truncated.",
+    "The completed 175-file frozen-source run succeeds without skips. Earlier source-spanning or failed diagnostics remain separate evidence and are not substituted for this run.",
+    "The final source SHA binds runtime and test trees; a later documentation-only commit may be merged when all core tree IDs remain identical."
+  ]
+}

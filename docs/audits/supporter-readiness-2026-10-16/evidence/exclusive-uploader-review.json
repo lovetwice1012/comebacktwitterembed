@@ -1,0 +1,69 @@
+{
+  "status": "independent-exclusive-uploader-preparation-review-passed",
+  "at": "2026-10-16T02:07:09.246383+00:00",
+  "sourceRevision": "1d32f101922cc7eef9d971e36b8ab1ecbbdabbf2",
+  "finalRevision": null,
+  "authorProof": {
+    "path": "C:\\Users\\yussy\\AppData\\Local\\Temp\\cbte-audit52-release-v6-20261016\\uploader-exclusive-offline-freeze-20261016T020635422186Z.json",
+    "sha256": "423f211295df838aad401c5d376c27b1603935053546932e55e75b737696986a"
+  },
+  "assetsBeforeAfter": {
+    "upload-and-launch-v6.py": "cce0e4c6bd3ff4fbf465300c17f496c813ac3d8ee67bae0b1eaabc9d8d7e6e7f",
+    "ssh-session-v6-exclusive.py": "4d750e3f07b28efd03b3f557cab34272b4a9a669322359fffad42909ede8664d",
+    "test_upload_and_launch_v6.py": "1f997d134410d8c8fedfe58f1ae115ef9346c050b5d5d5f37e88098029f123f2",
+    "test_v6_exclusive_transport.py": "c74146cf908c003ffdffb6ba269ea3780b0f685ec870f38e2a0c56e7cd0f30b6",
+    "V6-UPLOADER-USAGE.txt": "e9a97b60c5380c64ce867185348f93b8ea980a33f671e109b31601cc32c987ab"
+  },
+  "approvedPreparationFilesUnchanged": 63,
+  "frozenPredecessors": {
+    "roots": 4,
+    "files": 167,
+    "unchanged": true,
+    "snapshotSha256": "c45873fff99a97bb82ef3e7bdee0ec77960ce45e8eddd5fe891461a72e891860"
+  },
+  "legacyTransportUnchanged": "051701e0f5c2a91f98569aed2b246ab27c299e44706b1294830b1dc6c96350a5",
+  "tests": 42,
+  "testResults": [
+    {
+      "suite": "test_upload_and_launch_v6.py",
+      "tests": 28,
+      "exitCode": 0,
+      "stdout": "",
+      "stderr": "test_check_only_never_executes_or_claims (__main__.LocalValidationTests.test_check_only_never_executes_or_claims) ... ok\ntest_explicit_source_and_final_and_manifest_hash_required (__main__.LocalValidationTests.test_explicit_source_and_final_and_manifest_hash_required) ... ok\ntest_file_bytes_rejected (__main__.LocalValidationTests.test_file_bytes_rejected) ... ok\ntest_hash_refreshed_malicious_launcher_still_rejected (__main__.LocalValidationTests.test_hash_refreshed_malicious_launcher_still_rejected) ... ok\ntest_hash_refreshed_node_key_floor_config_still_rejected (__main__.LocalValidationTests.test_hash_refreshed_node_key_floor_config_still_rejected) ... ok\ntest_invalid_bundle_never_calls_session (__main__.LocalValidationTests.test_invalid_bundle_never_calls_session) ... ok\ntest_json_duplicate_keys_rejected (__main__.LocalValidationTests.test_json_duplicate_keys_rejected) ... ok\ntest_manifest_identity_and_no_operations (__main__.LocalValidationTests.test_manifest_identity_and_no_operations) ... ok\ntest_manifest_path_traversal_duplicate_remote_and_executable_mode (__main__.LocalValidationTests.test_manifest_path_traversal_duplicate_remote_and_executable_mode) ... ok\ntest_missing_or_extra_file_set (__main__.LocalValidationTests.test_missing_or_extra_file_set) ... ok\ntest_nine_columns_four_migrations_four_tables_only (__main__.LocalValidationTests.test_nine_columns_four_migrations_four_tables_only) ... ok\ntest_pinned_real_preparation_read_only (__main__.LocalValidationTests.test_pinned_real_preparation_read_only) ... ok\ntest_remote_directory_namespace_and_mode (__main__.LocalValidationTests.test_remote_directory_namespace_and_mode) ... ok\ntest_synthetic_control_fixture_accepts_with_real_templates (__main__.LocalValidationTests.test_synthetic_control_fixture_accepts_with_real_templates) ... ok\ntest_wrong_bundle_parent (__main__.LocalValidationTests.test_wrong_bundle_parent) ... ok\ntest_failed_partial_upload_leaves_claim_and_retry_blocks (__main__.OrchestrationTests.test_failed_partial_upload_leaves_claim_and_retry_blocks) ... ok\ntest_invalid_reservation_never_uploads (__main__.OrchestrationTests.test_invalid_reservation_never_uploads) ... ok\ntest_local_receipt_or_claim_collision_blocks_all_network (__main__.OrchestrationTests.test_local_receipt_or_claim_collision_blocks_all_network) ... ok\ntest_write_exclusive_does_not_replace_existing_bytes (__main__.OrchestrationTests.test_write_exclusive_does_not_replace_existing_bytes) ... ok\ntest_all_bytes_verified_before_stage_sentinel (__main__.RemoteProgramTests.test_all_bytes_verified_before_stage_sentinel) ... ok\ntest_directory_owner_dev_inode_mode_or_replaced_type_rejected (__main__.RemoteProgramTests.test_directory_owner_dev_inode_mode_or_replaced_type_rejected) ... ok\ntest_each_file_owner_mode_size_type_symlink_hash_rejected_before_launch (__main__.RemoteProgramTests.test_each_file_owner_mode_size_type_symlink_hash_rejected_before_launch) ... ok\ntest_generated_gate_never_contains_credentials_or_remote_transport (__main__.RemoteProgramTests.test_generated_gate_never_contains_credentials_or_remote_transport) ... ok\ntest_missing_launcher_cannot_launch (__main__.RemoteProgramTests.test_missing_launcher_cannot_launch) ... ok\ntest_remote_programs_compile (__main__.RemoteProgramTests.test_remote_programs_compile) ... ok\ntest_reserve_collision_and_symlink_fail_before_any_mkdir (__main__.RemoteProgramTests.test_reserve_collision_and_symlink_fail_before_any_mkdir) ... ok\ntest_reserve_fresh_exact_two_directory_identities (__main__.RemoteProgramTests.test_reserve_fresh_exact_two_directory_identities) ... ok\ntest_reserve_owner_mismatch_rejected (__main__.RemoteProgramTests.test_reserve_owner_mismatch_rejected) ... ok\n\n----------------------------------------------------------------------\nRan 28 tests in 3.955s\n\nOK\n"
+    },
+    {
+      "suite": "test_v6_exclusive_transport.py",
+      "tests": 14,
+      "exitCode": 0,
+      "stdout": "",
+      "stderr": "test_chmod0600_happens_before_every_actual_write_and_same_handle_readback (__main__.ExclusiveTransportTests.test_chmod0600_happens_before_every_actual_write_and_same_handle_readback) ... ok\ntest_connection_failure_does_not_print_password_or_exception_data (__main__.ExclusiveTransportTests.test_connection_failure_does_not_print_password_or_exception_data) ... ok\ntest_directory_owner_mode_symlink_rejected_before_open (__main__.ExclusiveTransportTests.test_directory_owner_mode_symlink_rejected_before_open) ... ok\ntest_failed_chmod_retains_empty_artifact_and_writes_nothing (__main__.ExclusiveTransportTests.test_failed_chmod_retains_empty_artifact_and_writes_nothing) ... ok\ntest_installed_paramiko_open_and_file_code_are_not_mocked (__main__.ExclusiveTransportTests.test_installed_paramiko_open_and_file_code_are_not_mocked) ... ok\ntest_interrupted_actual_write_retains_partial_and_rejects_retry (__main__.ExclusiveTransportTests.test_interrupted_actual_write_retains_partial_and_rejects_retry) ... ok\ntest_local_receipt_creation_is_exclusive_and_retains_first_bytes (__main__.ExclusiveTransportTests.test_local_receipt_creation_is_exclusive_and_retains_first_bytes) ... ok\ntest_preexisting_local_receipt_fails_before_password_or_network (__main__.ExclusiveTransportTests.test_preexisting_local_receipt_fails_before_password_or_network) ... ok\ntest_preexisting_regular_or_symlink_target_is_untouched (__main__.ExclusiveTransportTests.test_preexisting_regular_or_symlink_target_is_untouched) ... ok\ntest_racing_target_between_lstat_and_actual_paramiko_open_is_untouched (__main__.ExclusiveTransportTests.test_racing_target_between_lstat_and_actual_paramiko_open_is_untouched) ... ok\ntest_readback_corruption_rejects_and_retains_artifact (__main__.ExclusiveTransportTests.test_readback_corruption_rejects_and_retains_artifact) ... ok\ntest_reservation_scope_and_owner_required (__main__.ExclusiveTransportTests.test_reservation_scope_and_owner_required) ... ok\ntest_upload_namespace_exact (__main__.ExclusiveTransportTests.test_upload_namespace_exact) ... ok\ntest_wb_negative_control_reproduces_the_legacy_overwrite (__main__.ExclusiveTransportTests.test_wb_negative_control_reproduces_the_legacy_overwrite) ... ok\n\n----------------------------------------------------------------------\nRan 14 tests in 0.099s\n\nOK\n"
+    }
+  ],
+  "findingsClosed": [
+    {
+      "id": "V6-UPLOAD-EXCLUSIVE-CREATE",
+      "priority": 2,
+      "proof": "Real installed Paramiko open and SFTPFile against deterministic packet backend enforce EXCL at CMD_OPEN; racing target retains old bytes with EEXIST. wb negative control overwrites, proving test sensitivity."
+    }
+  ],
+  "remainingConfirmedBlockingFindings": [],
+  "reviewedBoundaries": [
+    "Actual-main/full-source-contract/raw-Git-archive check before any network.",
+    "Exact local/remote file sets, wrapper/config/template comparison, source and node/key/floor schema pins.",
+    "Two remote directories created exclusively0700 and UID/dev/inode/mode checked by root readback gate.",
+    "Atomic exclusive per-file creation, chmod0600 before first write, same-handle hash/stat/readback, no put/unlink/truncating fallback.",
+    "Partial artifacts and local execution claim retained; retry/collision rejected without networking.",
+    "All uploaded bytes checked before interpreting verified stage-launcher bytes.",
+    "Gate O_NONBLOCK and regular-file checks reject FIFO and symlinks without reading them.",
+    "Credentials and exception data suppressed, known host verification retained."
+  ],
+  "limitations": [
+    "Local preparation plus synthetic remote packet/backend tests only; no SSH or production connection was used.",
+    "Actual final main, generated release artifacts and actual-bundle independent review remain outstanding.",
+    "Real production OAuth/new X/Discord delivery is not established by these tests."
+  ],
+  "networkPerformed": false,
+  "gitWritesPerformed": false,
+  "sourceAssetsWritten": false,
+  "productionReadinessApproved": false
+}
