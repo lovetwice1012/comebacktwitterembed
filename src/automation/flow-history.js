@@ -59,7 +59,8 @@ async function lockJobFlowHistory(query, jobs) {
     const children = jobs.length ? await query("SELECT run_id,execution_version FROM automation_jobs WHERE parent_job_id IN (?) AND state='aggregated'", [jobs.map(job => job.id)]) : [];
     const rows = [...jobs, ...children].filter(job => Number(job.execution_version) === 2);
     if (!rows.length) return;
-    const origins = await query('SELECT DISTINCT namespace_key FROM automation_flow_runs WHERE run_id IN (?)', [[...new Set(rows.map(job => job.run_id))]]);
+    const origins = await query('SELECT DISTINCT f.namespace_key,r.workflow_id FROM automation_flow_runs f JOIN automation_runs r ON r.id=f.run_id WHERE f.run_id IN (?)', [[...new Set(rows.map(job => job.run_id))]]);
+    await lockFlowWorkflows(query, origins.map(row => row.workflow_id));
     const namespaces = origins.map(row => row.namespace_key).sort();
     // Graph evaluation uses this same namespace mutex. Take it before locking
     // individual jobs so simultaneous sibling ACKs cannot deadlock on the run
@@ -67,6 +68,43 @@ async function lockJobFlowHistory(query, jobs) {
     for (const namespace of namespaces) {
         await query('INSERT INTO automation_flow_locks (namespace_key) VALUES (?) ON DUPLICATE KEY UPDATE namespace_key=VALUES(namespace_key)', [namespace]);
     }
+}
+async function lockFlowWorkflows(query, workflowIds, exclusive = false) {
+    for (const id of [...new Set(workflowIds)].filter(id => /^[0-9a-f-]{36}$/i.test(id || '')).sort()) {
+        const key = digest(JSON.stringify(['flow-workflow-fence', id]));
+        // Runtime writers keep a shared duplicate-key lock and never upgrade
+        // it. An administrative stop takes the exclusive upsert first, before
+        // inspecting namespace/job rosters. This also fences an empty roster
+        // while a first job or a new recipient namespace is being projected.
+        await query(exclusive
+            ? 'INSERT INTO automation_flow_locks (namespace_key) VALUES (?) ON DUPLICATE KEY UPDATE namespace_key=VALUES(namespace_key)'
+            : 'INSERT IGNORE INTO automation_flow_locks (namespace_key) VALUES (?)', [key]);
+    }
+}
+async function lockWorkflowFlowHistory(query, workflowIds) {
+    if (!workflowIds.length) return;
+    await lockFlowWorkflows(query, workflowIds, true);
+    // The exclusive workflow fence has drained every graph/job writer. A
+    // current read can safely collect all revisions and recipient namespaces,
+    // including those committed after this transaction's earlier snapshot.
+    const origins = await query('SELECT DISTINCT f.namespace_key FROM automation_flow_runs f JOIN automation_runs r ON r.id=f.run_id WHERE r.workflow_id IN (?) LOCK IN SHARE MODE', [workflowIds]);
+    for (const namespace of origins.map(row => row.namespace_key).sort()) {
+        await query('INSERT INTO automation_flow_locks (namespace_key) VALUES (?) ON DUPLICATE KEY UPDATE namespace_key=VALUES(namespace_key)', [namespace]);
+    }
+}
+async function revokeWorkflowFlowHistory(query, workflowIds, code, now) {
+    if (!workflowIds.length) return [];
+    const origins = await query(`SELECT f.run_id FROM automation_flow_runs f JOIN automation_runs r ON r.id=f.run_id
+        WHERE r.workflow_id IN (?) AND (EXISTS (SELECT 1 FROM automation_flow_steps s JOIN automation_flow_members m ON m.unit_id=COALESCE(s.continuation_unit_id,s.input_unit_id)
+            WHERE m.run_id=f.run_id AND s.state IN ('pending','leased','joining','aggregating'))
+        OR EXISTS (SELECT 1 FROM automation_flow_sends s JOIN automation_flow_members m ON m.unit_id=s.unit_id WHERE m.run_id=f.run_id AND s.state='unprojected')
+        OR EXISTS (SELECT 1 FROM automation_jobs j WHERE j.run_id=f.run_id AND j.state IN ('pending','held','leased','aggregated'))) ORDER BY f.run_id FOR UPDATE`, [workflowIds]);
+    const ids = origins.map(row => row.run_id);
+    for (let at = 0; at < ids.length; at += 500) await query(`UPDATE automation_flow_runs SET revoked_at_ms=COALESCE(revoked_at_ms,?),revocation_code=COALESCE(revocation_code,?),needs_sync=1 WHERE run_id IN (?)`, [now, code, ids.slice(at, at + 500)]);
+    return ids;
+}
+async function refreshWorkflowFlowHistory(query, runIds) {
+    for (let at = 0; at < runIds.length; at += 500) await refreshFlowHistory(query, runIds.slice(at, at + 500));
 }
 async function refreshJobFlowHistory(query, jobs) {
     const rows = jobs.filter(job => Number(job.execution_version) === 2);
@@ -175,4 +213,4 @@ async function refreshFlowHistory(query, runIds) {
         await query('UPDATE automation_runs SET state=?,trace_json=? WHERE id=?', [state, JSON.stringify(trace.result()), runId]);
     }
 }
-module.exports = { refreshFlowHistory, refreshJobFlowHistory, recordJobFlowMembers, lockJobFlowHistory, readJobFlowPlan, deliveryState };
+module.exports = { refreshFlowHistory, refreshJobFlowHistory, recordJobFlowMembers, lockJobFlowHistory, lockFlowWorkflows, lockWorkflowFlowHistory, revokeWorkflowFlowHistory, refreshWorkflowFlowHistory, readJobFlowPlan, deliveryState };

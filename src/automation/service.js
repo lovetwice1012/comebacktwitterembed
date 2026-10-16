@@ -213,6 +213,7 @@ function createService(db, options = {}) {
                 // Ordinary UI copies retain the source's server-verified
                 // installation identity, including when copying a copy. Raw
                 // JSON imports continue to use their explicit rights workflow.
+                await require('./flow-history').lockFlowWorkflows(query, [input.sourceWorkflowId]);
                 const source = await getRow('workflow', actor, input.sourceWorkflowId, false, query, true);
                 if (!Number.isSafeInteger(input.expectedSourceRevision) || input.expectedSourceRevision < 1 || input.expectedSourceRevision > Number(source.revision))
                     fail('REVISION_CONFLICT', '複製元のルールが更新されています。再読み込みしてから複製してください。', 409);

@@ -147,8 +147,10 @@ function createQueue(db, evaluator, options = {}) {
         return db.withDatabaseTransaction(async query => {
             let source = null;
             if (kind === 'x') await require('./entitlements').lockOwner(query, delivery.owner_user_id);
+            if (kind === 'price' && before?.user_id) await require('./entitlements').lockOwner(query, before.user_id);
+            if (before?.user_id && kind === 'auto') await require('./entitlements').lockOwner(query, before.user_id);
+            if (graphEnabled) await require('./flow-history').lockFlowWorkflows(query, [before.workflow_id]);
             if (kind === 'auto' && before?.user_id) {
-                await require('./entitlements').lockOwner(query, before.user_id);
                 source = await require('./monitor-cadence').lockTargetSource(query, before.user_id, String(delivery.target_id));
             }
             const target = await snapshot(query, kind, delivery.target_id, true, kind === 'x' ? delivery.owner_user_id : null);

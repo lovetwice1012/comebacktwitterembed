@@ -38,6 +38,8 @@ function createFlowProjector(db) {
         return db.withDatabaseTransaction(async query => {
             const pending = await query("SELECT * FROM automation_flow_sends WHERE state='unprojected' ORDER BY created_at_ms,id LIMIT 1");
             if (!pending.length) return null;
+            const workflows = await query('SELECT DISTINCT r.workflow_id FROM automation_flow_members m JOIN automation_runs r ON r.id=m.run_id WHERE m.unit_id=?', [pending[0].unit_id]);
+            await require('./flow-history').lockFlowWorkflows(query, workflows.map(row => row.workflow_id));
             await query('INSERT INTO automation_flow_locks (namespace_key) VALUES (?) ON DUPLICATE KEY UPDATE namespace_key=VALUES(namespace_key)', [pending[0].namespace_key]);
             const sends = await query("SELECT * FROM automation_flow_sends WHERE id=? AND state='unprojected' FOR UPDATE", [pending[0].id]);
             if (!sends.length) return null;

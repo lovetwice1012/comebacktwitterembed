@@ -21,14 +21,19 @@ function encode(value) {
     return text;
 }
 function createGraphStore(db) {
-    async function locked(namespace, work) {
+    async function locked(namespace, work, knownWorkflowIds = undefined) {
         if (!/^[a-f0-9]{64}$/.test(namespace || '')) throw fault('FLOW_NAMESPACE_INVALID');
+        // Resolve immutable ownership outside this top-level transaction so a
+        // wait for an administrative workflow fence cannot pin an older RR
+        // snapshot. Initial admission already knows its workflow identity.
+        const workflowIds = knownWorkflowIds || (await db.queryDatabase('SELECT DISTINCT r.workflow_id FROM automation_flow_runs f JOIN automation_runs r ON r.id=f.run_id WHERE f.namespace_key=?', [namespace])).map(row => row.workflow_id);
         // These public primitives own a top-level transaction. A future source
         // handoff must expose an explicit in-transaction variant, not nest this
         // retry loop inside a transaction owned by another service.
         for (let attempt = 0; ; attempt++) {
             try {
                 return await db.withDatabaseTransaction(async query => {
+                    await require('./flow-history').lockFlowWorkflows(query, workflowIds);
                     // INSERT IGNORE takes a shared duplicate-key lock; two
                     // workers then upgrading to FOR UPDATE can deadlock. The
                     // no-op upsert obtains the exclusive namespace lock directly.
@@ -71,6 +76,7 @@ function createGraphStore(db) {
     }
     async function initializeQuery(query, { runId, context, unit, nodeId = 'start', now }) {
         const namespace = namespaceKey(context);
+        await require('./flow-history').lockFlowWorkflows(query, [context.workflowId]);
         // This upsert is also the namespace lock. Callers already inside an
         // outer source-delivery transaction use initializeInTransaction so the
         // legacy handoff and first graph activation cannot tear apart.
@@ -89,7 +95,7 @@ function createGraphStore(db) {
     }
     async function initialize(input) {
         const namespace = namespaceKey(input.context);
-        return locked(namespace, query => initializeQuery(query, input));
+        return locked(namespace, query => initializeQuery(query, input), [input.context.workflowId]);
     }
     async function readUnit(query, unitId, eligibleOnly = false) {
         const row = (await query('SELECT * FROM automation_flow_units WHERE id=?', [unitId]))[0];

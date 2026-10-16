@@ -302,17 +302,23 @@ function createMarketplace(db, options = {}) {
             if (input.status === 'revoked') {
                 if (!actor.isAdmin) fail('FORBIDDEN', '安全上の停止には管理者権限が必要です。', 403);
                 const note = textField(input.note, 4000), now = Date.now();
+                const installedWorkflows = await query('SELECT workflow_id FROM automation_package_installs WHERE package_id=?', [id]);
+                await require('./flow-history').lockWorkflowFlowHistory(query, installedWorkflows.map(row => row.workflow_id));
+                const currentWorkflows = await query('SELECT workflow_id FROM automation_package_installs WHERE package_id=? ORDER BY workflow_id FOR UPDATE', [id]);
+                if (JSON.stringify(currentWorkflows.map(row => row.workflow_id)) !== JSON.stringify(installedWorkflows.map(row => row.workflow_id).sort()))
+                    fail('REVISION_CONFLICT', '共有ルールの導入先が変更されました。もう一度停止してください。', 409);
                 await query("UPDATE automation_package_versions SET status='revoked',review_note=? WHERE package_id=? AND visibility<>'private'", [note, id]);
                 await query("UPDATE automation_packages SET status='revoked',updated_at_ms=? WHERE id=?", [now, id]);
                 const matchingJobs = `SELECT j.* FROM automation_jobs j JOIN automation_runs r ON r.id=j.run_id JOIN automation_package_installs i ON i.workflow_id=r.workflow_id
                     WHERE i.package_id=? AND j.state IN ('pending','held','leased','aggregated')`;
-                await require('./flow-history').lockJobFlowHistory(query,await query(matchingJobs,[id]));
                 await query("UPDATE automation_workflows w JOIN automation_package_installs i ON i.workflow_id=w.id SET w.enabled=0,w.updated_at_ms=? WHERE i.package_id=?", [now, id]);
+                const revokedRuns = await require('./flow-history').revokeWorkflowFlowHistory(query, currentWorkflows.map(row => row.workflow_id), 'SAFETY_PACKAGE_REVOKED', now);
                 const affectedJobs = await query(`${matchingJobs} ORDER BY j.id FOR UPDATE`, [id]);
                 await query(`UPDATE automation_jobs j JOIN automation_runs r ON r.id=j.run_id JOIN automation_package_installs i ON i.workflow_id=r.workflow_id
                     SET j.state='excluded',j.last_error_code='SAFETY_PACKAGE_REVOKED',j.lease_token=NULL,j.lease_until_ms=0,j.updated_at_ms=?
                     WHERE i.package_id=? AND j.state IN ('pending','held','leased','aggregated')`, [now, id]);
                 await require('./flow-history').refreshJobFlowHistory(query,affectedJobs);
+                await require('./flow-history').refreshWorkflowFlowHistory(query, revokedRuns);
                 await service.audit(query, actor, id, 'package.revoke', { version: Number(row.latest_version) }, null);
                 return { status: 'revoked' };
             }

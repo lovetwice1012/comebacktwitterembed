@@ -10,6 +10,10 @@ const { createGraphStore } = require('../../src/automation/graph-store');
 const { createFlowRuntime } = require('../../src/automation/flow-runtime');
 const { createEvaluator } = require('../../src/automation/evaluation');
 const { createRunner } = require('../../src/automation/runtime');
+const { createGraphDriver } = require('../../src/automation/graph-driver');
+const { createFlowProjector } = require('../../src/automation/flow-projector');
+const { compileWorkflow } = require('../../src/automation/graph-plan');
+const { createMarketplace } = require('../../src/automation/marketplace');
 const { createHistory } = require('../../src/automation/history');
 const { refreshFlowHistory } = require('../../src/automation/flow-history');
 const { NODE_TYPES } = require('../../src/automation/schema');
@@ -18,6 +22,25 @@ const node = (id, type) => ({ id, type, config: structuredClone(NODE_TYPES[type]
 const definition = multiple => ({ schemaVersion: 1, name: 'Delivery state reconciliation',
     nodes: [node('start', 'start'), node('left', 'send'), ...(multiple ? [node('right', 'send')] : [])],
     edges: [{ id: 'left', source: 'start', target: 'left', port: 'out' }, ...(multiple ? [{ id: 'right', source: 'start', target: 'right', port: 'out' }] : [])] });
+const gate = () => { let resolve; const promise = new Promise(done => { resolve = done; }); return { promise, resolve }; };
+const workflowFence = id => require('node:crypto').createHash('sha256').update(JSON.stringify(['flow-workflow-fence', id])).digest('hex');
+async function publishedWorkflow(f) {
+    const market = createMarketplace(f.db, { service: f.service });
+    const pack = await market.save(f.actor, { title: 'Atomic workflow stop', description: 'Local transaction fixture', visibility: 'public', rightsConfirmed: true,
+        bundle: { schemaVersion: 1, kind: 'workflow', workflow: definition(true), dictionaries: {}, license: 'CC0-1.0' } });
+    const installed = await market.install(f.actor, pack.id, { version: 1 });
+    await f.service.activateWorkflow(f.actor, installed.workflow.id, { expectedRevision: 1 });
+    await f.service.attach(f.actor, installed.workflow.id, 'auto', f.monitor.id);
+    return { market, pack, workflow: installed.workflow };
+}
+async function unprojectedRun(f, workflow) {
+    const run = await f.run('stop before projection', false), plan = compileWorkflow((await f.service.getWorkflow(f.actor, workflow.id)).draft);
+    const driver = createGraphDriver(createGraphStore(f.db), { assertEnabled: () => {}, loadPlan: async () => plan });
+    for (let index = 0; index < 15; index++) { if ((await driver.tick(f.clock())).state === 'idle') break; }
+    assert.equal(Number((await f.query('SELECT COUNT(*) AS n FROM automation_jobs'))[0].n), 0);
+    assert.equal(Number((await f.query("SELECT COUNT(*) AS n FROM automation_flow_sends WHERE state='unprojected'"))[0].n), 2);
+    return run;
+}
 async function fixture(work, input = {}) {
     const db = await createTestDatabase(port), query = db.queryDatabase, actor = { userId: '222222222222228744' }, service = createService(db);
     let evaluator, flow;
@@ -213,3 +236,65 @@ test('one pruned occurrence does not erase a surviving occurrence of the same ru
         assert.equal(Number((await f.query("SELECT COUNT(*) AS n FROM automation_flow_edges WHERE edge_id=? AND receipt_kind='job_member'", [job.id]))[0].n), 2);
     }, { definition: branched });
 });
+
+for (const action of ['delete', 'revoke']) for (const rollback of [false, true]) test(`empty-roster ${action} fences both branch projectors before mutation and ${rollback ? 'releases intact admission on rollback' : 'keeps its stop after commit'}`, { skip: !port, timeout: 60000 }, async () => fixture(async f => {
+    const published = action === 'revoke' ? await publishedWorkflow(f) : null, workflow = published?.workflow || f.workflow;
+    const run = await unprojectedRun(f, workflow), held = gate(), release = gate(); let paused = false, completed = false;
+    const stoppedDb = { ...f.db, withDatabaseTransaction: work => f.db.withDatabaseTransaction(query => work(async (sql, params) => {
+        if (rollback && sql.startsWith('INSERT INTO automation_audit ') && params[3] === (action === 'delete' ? 'workflow.delete' : 'package.revoke')) throw new Error('stop audit unavailable');
+        const result = await query(sql, params);
+        if (!paused && sql.startsWith('INSERT INTO automation_flow_locks ') && sql.includes('ON DUPLICATE KEY UPDATE') && params[0] === workflowFence(workflow.id)) {
+            paused = true; held.resolve(); await release.promise;
+        }
+        return result;
+    })) };
+    const stopping = (action === 'delete' ? createService(stoppedDb).remove('workflow', f.actor, workflow.id, 1)
+        : createMarketplace(stoppedDb, { service: createService(stoppedDb) }).setStatus({ ...f.actor, isAdmin: true }, published.pack.id, { status: 'revoked', expectedVersion: 1, note: 'transaction fixture' }))
+        .then(value => ({ value }), error => ({ error }));
+    let projections = [];
+    try {
+        await Promise.race([held.promise, stopping.then(result => { throw result.error || new Error('stop did not acquire its workflow fence'); })]);
+        projections = [1, 2].map(() => createFlowProjector(f.db).projectOne(f.clock()).then(value => { completed = true; return { value }; }, error => { completed = true; return { error }; }));
+        // Both real SQL projectors are blocked by the exclusive workflow row,
+        // not merely delayed by a mock. No job existed when the stop began.
+        await new Promise(resolve => setTimeout(resolve, 100)); assert.equal(completed, false);
+        assert.equal(Number((await f.query('SELECT COUNT(*) AS n FROM automation_jobs'))[0].n), 0);
+        release.resolve(); const result = await stopping;
+        if (rollback) assert.match(result.error?.message || '', /stop audit unavailable/); else assert.equal(result.error, undefined);
+        for (const result of await Promise.all(projections)) assert.equal(result.error, undefined);
+        for (let index = 0; index < 3; index++) await createFlowProjector(f.db).projectOne(f.clock());
+        const jobs = await f.query('SELECT state FROM automation_jobs');
+        if (rollback) { assert.equal(jobs.length, 2); assert(jobs.every(job => job.state === 'pending')); assert.equal(await f.state(run.runId), 'queued'); }
+        else { assert.equal(jobs.length, 0); assert.equal(await f.state(run.runId), 'excluded'); }
+    } finally { release.resolve(); await stopping; await Promise.all(projections); }
+}, { multiple: true }));
+
+test('revoke revalidates an installation copy committed while waiting for its workflow fence and retries with the complete roster', { skip: !port, timeout: 60000 }, async () => fixture(async f => {
+    const published = await publishedWorkflow(f), copying = gate(), copyRelease = gate(), rosterRead = gate(); let paused = false;
+    const copyDb = { ...f.db, withDatabaseTransaction: work => f.db.withDatabaseTransaction(query => work(async (sql, params) => {
+        const result = await query(sql, params);
+        if (!paused && sql.startsWith('INSERT IGNORE INTO automation_flow_locks ') && params[0] === workflowFence(published.workflow.id)) {
+            paused = true; copying.resolve(); await copyRelease.promise;
+        }
+        return result;
+    })) };
+    const source = await f.service.getWorkflow(f.actor, published.workflow.id);
+    const copy = createService(copyDb).createWorkflow(f.actor, { sourceWorkflowId: source.id, expectedSourceRevision: source.revision, definition: source.draft, bindings: source.bindings }).then(value => ({ value }), error => ({ error }));
+    let revocation;
+    try {
+        await copying.promise;
+        const revokeDb = { ...f.db, withDatabaseTransaction: work => f.db.withDatabaseTransaction(query => work(async (sql, params) => {
+            const result = await query(sql, params); if (sql === 'SELECT workflow_id FROM automation_package_installs WHERE package_id=?') rosterRead.resolve(); return result;
+        })) };
+        const admin = { ...f.actor, isAdmin: true }, input = { status: 'revoked', expectedVersion: 1, note: 'roster fixture' };
+        revocation = createMarketplace(revokeDb, { service: createService(revokeDb) }).setStatus(admin, published.pack.id, input).then(value => ({ value }), error => ({ error }));
+        await rosterRead.promise; copyRelease.resolve(); assert.equal((await copy).error, undefined);
+        assert.equal((await revocation).error?.code, 'REVISION_CONFLICT');
+        assert.equal((await f.query('SELECT status FROM automation_packages WHERE id=?', [published.pack.id]))[0].status, 'active');
+        assert.equal(Number((await f.query('SELECT COUNT(*) AS n FROM automation_package_installs WHERE package_id=?', [published.pack.id]))[0].n), 2);
+        // Publication attempts retain the real actor rate limit. A second
+        // authorized moderator performs the fresh-roster confirmation here.
+        await published.market.setStatus({ ...admin, userId: '222222222222228756' }, published.pack.id, input);
+        assert((await f.query('SELECT w.enabled FROM automation_workflows w JOIN automation_package_installs i ON i.workflow_id=w.id WHERE i.package_id=?', [published.pack.id])).every(row => Number(row.enabled) === 0));
+    } finally { copyRelease.resolve(); await copy; await revocation; }
+}, { multiple: true }));
