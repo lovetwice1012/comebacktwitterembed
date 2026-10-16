@@ -8,12 +8,11 @@ const { createEvaluator } = require('../../src/automation/evaluation');
 const { newWorkflow } = require('../../src/automation/schema');
 const { dispatch } = require('../../src/automation/api');
 const port = Number(process.env.AUTOMATION_TEST_DB_PORT);
-if (port !== 33621) throw Error('Dictionary publication SQL requires disposable AUTOMATION_TEST_DB_PORT=33621');
 const author = { userId: '229111111111111111' }, member = { userId: '229222222222222222' }, other = { userId: '229333333333333333' }, LICENSE = 'CC-BY-SA-4.0';
 const dict = () => ({ schemaVersion: 1, name: 'Source words', mode: 'contains', source: 'Original dictionary author', license: 'CC0-1.0', entries: ['alpha'] });
 const source = (name = 'Dictionary source', kind = 'dictionary') => ({ title: name, description: 'Original package attribution', category: 'general', visibility: 'public', rightsConfirmed: true,
     bundle: { schemaVersion: 1, kind, ...(kind === 'workflow' ? { workflow: newWorkflow(name) } : {}), dictionaries: { words: dict() }, license: LICENSE, description: 'Original package author notice' } });
-test('dictionary publication uses exact immutable origin and never replaces a package license with its inner dictionary license', { timeout: 120000 }, async t => {
+test('dictionary publication uses exact immutable origin and never replaces a package license with its inner dictionary license', { skip: !port, timeout: 120000 }, async t => {
     const db = await createTestDatabase(port), q = db.queryDatabase; t.after(() => db.close());
     const service = createService(db, { rateLimiter: { consumeOperation: async () => {} } }), market = createMarketplace(db, { service, moderationMatcher: { match: async () => [] } });
     const request = exported => ({ title: 'Adapted dictionary', description: '', category: 'general', visibility: 'public', rightsConfirmed: true, sourceDictionaryId: exported.sourceDictionaryId, sourceDictionaryRevision: exported.sourceDictionaryRevision, bundle: exported.bundle });

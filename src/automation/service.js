@@ -338,7 +338,7 @@ function createService(db, options = {}) {
                 if (Number(owner.revision) !== input.expectedRevision) fail('REVISION_CONFLICT', '辞書が更新されています。', 409);
                 const inherited = sourceRevision === undefined ? Number(owner.revision) : sourceRevision;
                 if (!Number.isSafeInteger(inherited) || inherited < 1) fail('DICTIONARY_VERSION_MISSING', '辞書の版が見つかりません。', 404);
-                origin = (await query('SELECT source_package_id,source_package_version,origin_reviewed FROM automation_dictionary_revisions WHERE dictionary_id=? AND revision=?', [id, inherited]))[0];
+                origin = (await query('SELECT source_package_id,source_package_version,origin_reviewed,package_dependencies_json FROM automation_dictionary_revisions WHERE dictionary_id=? AND revision=?', [id, inherited]))[0];
                 if (!origin) fail('DICTIONARY_VERSION_MISSING', '辞書の版が見つかりません。', 404);
                 revision = Number(owner.revision) + 1;
                 await query('UPDATE automation_dictionaries SET name=?,revision=?,entry_count=?,updated_at_ms=? WHERE id=?', [data.name, revision, data.entries.length, Date.now(), id]);
@@ -347,8 +347,8 @@ function createService(db, options = {}) {
                 await query('INSERT INTO automation_dictionaries (id,owner_user_id,guild_id,scope,name,revision,entry_count,created_at_ms,updated_at_ms) VALUES (?,?,?,?,?,?,?,?,?)',
                     [resourceId, owner.owner_user_id, owner.guild_id, owner.scope, data.name, revision, data.entries.length, Date.now(), Date.now()]);
             }
-            await query('INSERT INTO automation_dictionary_revisions (dictionary_id,revision,data_gzip,checksum,entry_count,source_text,license_text,source_package_id,source_package_version,origin_reviewed,created_at_ms) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
-                [resourceId, revision, compressed, checksum, data.entries.length, String(data.source || '').slice(0, 8000), String(data.license || '').slice(0, 8000), origin?.source_package_id || null, origin?.source_package_version || null, id ? origin?.origin_reviewed ?? null : 1, Date.now()]);
+            await query('INSERT INTO automation_dictionary_revisions (dictionary_id,revision,data_gzip,checksum,entry_count,source_text,license_text,source_package_id,source_package_version,origin_reviewed,package_dependencies_json,created_at_ms) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)',
+                [resourceId, revision, compressed, checksum, data.entries.length, String(data.source || '').slice(0, 8000), String(data.license || '').slice(0, 8000), origin?.source_package_id || null, origin?.source_package_version || null, id ? origin?.origin_reviewed ?? null : 1, origin?.package_dependencies_json ?? null, Date.now()]);
             await audit(query, actor, resourceId, 'dictionary.save', { revision, checksum, entryCount: data.entries.length }, owner.guild_id);
             return { id: resourceId, revision, checksum, entryCount: data.entries.length };
         });

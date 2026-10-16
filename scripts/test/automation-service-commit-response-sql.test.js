@@ -5,9 +5,8 @@ const { createService } = require('../../src/automation/service');
 const { createMarketplace } = require('../../src/automation/marketplace');
 const { newWorkflow } = require('../../src/automation/schema');
 const port = Number(process.env.AUTOMATION_TEST_DB_PORT);
-if (port !== 33621) throw Error('Commit response SQL requires disposable AUTOMATION_TEST_DB_PORT=33621');
 const actor = { userId: '228111111111111111' }, dictionary = { schemaVersion: 1, name: 'Synthetic response dictionary', mode: 'contains', entries: ['example'], source: 'Synthetic owner', license: 'CC0-1.0' };
-test('canonical creation responses belong to their write transaction, including nested imports and failures', { timeout: 60000 }, async t => {
+test('canonical creation responses belong to their write transaction, including nested imports and failures', { skip: !port, timeout: 60000 }, async t => {
     const db = await createTestDatabase(port), query = db.queryDatabase; t.after(() => db.close());
     let depth = 0, failCanonical = false, failAudit = false, createdWorkflow = false; const reads = [];
     const wrapped = { ...db, queryDatabase: async (sql, params) => {

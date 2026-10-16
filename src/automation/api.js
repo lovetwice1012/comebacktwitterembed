@@ -194,6 +194,7 @@ async function dispatchCore({ method, path, search = new URLSearchParams(), body
       else if (action === "restore" && method === "POST") result = await service.restoreRevision(actor, id, body.revision, body.expectedRevision);
       else if (action === "attach" && method === "POST") result = await service.attach(actor, id, body.targetKind, body.targetId,
         Object.hasOwn(body, 'expectedRevision') || Object.hasOwn(body, 'expectedWorkflowId') ? validateAssignmentGuards({ expectedRevision: body.expectedRevision, expectedWorkflowId: body.expectedWorkflowId }) : undefined);
+      else if (action === "publication-export" && method === "GET") result = await market.exportWorkflowPublication(actor, id);
       else if (action === "export" && method === "GET") {
         const data = await market.exportWorkflow(actor, id);
         result = search.get("format") === "zip" ? { base64: Buffer.from(bundle.encodeBundle(data)).toString("base64") } : data;

@@ -126,6 +126,7 @@ const SCHEMA = [
         source_package_id CHAR(36) NULL,
         source_package_version INT UNSIGNED NULL,
         origin_reviewed TINYINT(1) NULL,
+        package_dependencies_json TEXT NULL,
         created_at_ms BIGINT NOT NULL,
         PRIMARY KEY (dictionary_id, revision),
         CONSTRAINT fk_automation_dictionary_revision FOREIGN KEY (dictionary_id) REFERENCES automation_dictionaries(id)
@@ -232,6 +233,7 @@ const SCHEMA = [
         visibility VARCHAR(16) NOT NULL,
         status VARCHAR(24) NOT NULL DEFAULT 'pending',
         review_note TEXT NULL,
+        package_dependencies_json MEDIUMTEXT NULL,
         created_at_ms BIGINT NOT NULL,
         PRIMARY KEY (package_id, version),
         CONSTRAINT fk_automation_package_version FOREIGN KEY (package_id) REFERENCES automation_packages(id)

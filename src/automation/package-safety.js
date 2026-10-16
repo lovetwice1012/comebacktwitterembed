@@ -29,6 +29,17 @@ async function assertPackageSafety(query, job) {
             LEFT JOIN automation_package_versions v ON v.package_id=r.source_package_id AND v.version=r.source_package_version
             WHERE r.dictionary_id=? AND r.revision=? AND (p.status='revoked' OR v.status='revoked') LIMIT 1`, [ref.id, ref.revision]);
         if (rows.length) throw new SafetyError('SAFETY_DICTIONARY_REVOKED');
+        const source = (await query('SELECT package_dependencies_json FROM automation_dictionary_revisions WHERE dictionary_id=? AND revision=?', [ref.id, ref.revision]))[0];
+        if (source?.package_dependencies_json != null) {
+            let lineage;
+            try { lineage = require('./package-dependencies').storedReferences(source.package_dependencies_json); }
+            catch { throw new SafetyError('SAFETY_DEPENDENCIES_UNAVAILABLE', 'error'); }
+            for (const dependency of lineage) {
+                const status = (await query('SELECT p.status AS package_status,v.status AS edition_status,v.checksum FROM automation_packages p JOIN automation_package_versions v ON v.package_id=p.id WHERE p.id=? AND v.version=?', [dependency.packageId, dependency.version]))[0];
+                if (!status || status.checksum !== dependency.checksum) throw new SafetyError('SAFETY_DEPENDENCIES_UNAVAILABLE', 'error');
+                if (status.package_status === 'revoked' || status.edition_status === 'revoked') throw new SafetyError('SAFETY_DICTIONARY_REVOKED');
+            }
+        }
     }
     // Existing databases may contain pre-provenance revisions. Preserve their
     // current-install revocation check rather than treating missing origin as
