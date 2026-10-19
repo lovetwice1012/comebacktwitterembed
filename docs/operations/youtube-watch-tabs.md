@@ -24,6 +24,8 @@ sourceの`state_json.youtubeTabs`は追加取得経路の初回確認を記録�
 5. 初回確認後に、sourceの追加欄基準と対象別基準、失敗コード、次回確認予定を確認する。初回の過去分の一斉通知がないことを確認する。
 6. Webで保存・再読み込み・編集競合を確認する。実際のDiscord送信試験は、通知先と送信範囲の許可を別に確認して行う。
 
+画面だけの修正では、Botと共用するバックエンドの同一性を確認したうえで、独立したDashboardサービスだけを更新できる。その場合は`APP_REVISION`に管理画面のrevision、`BOT_BUILD_REVISION`に稼働Botのrevisionを設定し、両方を記録する。Guardian、Botの起動設定、DBスキーマを変更せず、BotのPIDが維持されていることも確認する。
+
 通常のYouTube確認では、handle解決、RSS、uploadsフォールバック、リリース、投稿欄を合わせて最大5経路を使用する。既存のリクエスト予約とペーシングに5単位を予約する。隔離ワーカーの期限はYouTubeのみHTTP期限の5倍＋10秒、source leaseは少なくともHTTP期限の5倍＋30秒にする。確認間隔と通知待遇は既存の設定を使用する。
 
 ## 切り戻し
@@ -44,3 +46,5 @@ node scripts/probe-youtube-watch.cjs UCvhViFXvb5Y83YGEpRX1cvg aqVt_zlAwK8
 ```
 
 公開ページの読み取り証拠、回帰テスト、型検査、lintは`docs/qa/youtube-tabs-20261020/`へ保存する。公開GETやローカルの隔離処理・SQL・React DOM試験の成功は、本番反映やDiscordへの配信成功の証明とは区別する。
+
+2026年10月20日の反映結果は[本番反映記録](../qa/youtube-tabs-production-20261020/README.md)を参照する。

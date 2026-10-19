@@ -1,0 +1,105 @@
+{
+  "status": "production-deployed",
+  "verifiedAt": "2026-10-19T18:01:01.187483+00:00",
+  "workerRevision": "2cd5c4aefbee4cb60648ca8243a378608e69ab5c",
+  "dashboardRevision": "e81614dedef0aaed8677a67ce8d1a426d3eec772",
+  "backendCompatibility": {
+    "files": 518,
+    "equivalent": true,
+    "workerRevision": "2cd5c4aefbee4cb60648ca8243a378608e69ab5c",
+    "dashboardRevision": "e81614dedef0aaed8677a67ce8d1a426d3eec772"
+  },
+  "defaults": {
+    "releases": true,
+    "community": false
+  },
+  "existingIntervalMinutes": 5,
+  "secondScheduledPollVerified": true,
+  "retroactiveNotificationsOnFirstBaseline": 0,
+  "workerReadyShards": 14,
+  "existingXReceiverAcceptanceChecksPassed": true,
+  "bootstrapFenceVersion": 2,
+  "existingPoliciesAndTargetsPreserved": true,
+  "sharedWordMatchingRemainsPaused": true,
+  "uiOnlyFixRestartedBot": false,
+  "syntheticMessagesSent": 0,
+  "browserChecks": {
+    "authenticatedListLoaded": true,
+    "existingMonitorsDisplayed": 2,
+    "releaseChecked": true,
+    "communityChecked": false,
+    "intervalMinutes": 5,
+    "monitorSettingsSaved": false,
+    "ownVerificationTabClosed": true
+  },
+  "tests": {
+    "featureRegression": {
+      "tests": 259,
+      "pass": 259,
+      "skipped": 0
+    },
+    "automationUIInitialRun": {
+      "tests": 487,
+      "pass": 479,
+      "fail": 0,
+      "skipped": 8,
+      "todo": 0
+    },
+    "sqlUiFollowup": {
+      "tests": 11,
+      "pass": 11,
+      "fail": 0,
+      "skipped": 0,
+      "todo": 0
+    },
+    "previousSqlSkipsCoveredByFollowup": 8,
+    "readQueueAndFeedbackRegression": {
+      "tests": 15,
+      "pass": 15,
+      "skipped": 0
+    },
+    "checks": [
+      "dashboard typecheck PASS",
+      "dashboard changed-file lint PASS",
+      "Linux production build PASS",
+      "UI deploy controls 9 PASS"
+    ]
+  },
+  "existingOperationalIssue": {
+    "category": "historical-management-telemetry-backlog",
+    "actualOversizeRejectionConfirmed": true,
+    "originalRecordsPreserved": true,
+    "freshHeartbeatRecovered": true,
+    "historicalBacklogFullyDrained": false,
+    "preventiveLoggingCodeChangeIncluded": false
+  },
+  "verificationBoundary": {
+    "realDiscordNotificationSendTest": false,
+    "liveCommunityEnabledOnCustomerMonitor": false
+  },
+  "privateEvidenceDigests": {
+    "verification-v2-final.json": "2ae621d7def15f87a8b5f9c6ec0e37c44d0e675921ad5fa79e65d804d4608b9d",
+    "ui-verification-final.json": "77163b9932158b7ae2a3d43ab6b1d9ad02971437906d3b73e00ff58b3f84684a",
+    "oversized-ingest-confirmation.json": "00cd6fd84d7cf12b7f41f6255fea09ce5f1051ca39ba6b276019597bb3dd0b04",
+    "read-queue-tests.log": "4d24d7d2796c5fddbbb3484ebcb7be097d11e3d2ed999a73308b95d0bced9b3b",
+    "all-automation-ui.tap": "278d271793de649809d098d35123a528ee03d0ea250459ac538c5acef879ce5b",
+    "ui-sql-followup.tap": "e0320e43c35961d04e7def9dd786e8ff0fea71370b2a2b97520433849a6167c3",
+    "ui-deploy-controls.log": "94d2141ee30975512c374de858c5f3d3b3dcc47037f0e32e05c0a72e4c0fb725",
+    "linux-public-probe.json": "ddaea34141f4974675e9d918596eac23e65041332da70bc34e8539b27d559b31",
+    "final-metadata.json": "b8b5b084bf91e3d785394f5fdb7614dbe010b7edab993901aaa976927d2028ad"
+  },
+  "linuxPublicIsolatedProbe": {
+    "at": "2026-10-19T18:08:08.769Z",
+    "platform": "linux",
+    "isolatedWorker": true,
+    "workerRevision": "2cd5c4aefbee4cb60648ca8243a378608e69ab5c",
+    "expectedReleaseFound": true,
+    "releases": 5,
+    "communityPosts": 10,
+    "postUrlsCanonical": true,
+    "databaseWrites": 0,
+    "monitorSettingsChanged": false,
+    "messagesSent": 0
+  },
+  "controlFileModeRestoredToOriginal": true
+}
