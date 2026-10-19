@@ -1,7 +1,27 @@
 const MAX_RETRY_DELAY = 24 * 60 * 60 * 1000;
+let activeReads = 0;
+const waitingReads: Array<() => void> = [];
+
+// Keep background reads below the server's four-request actor ceiling,
+// leaving capacity for explicit edits. Mutations start immediately.
+async function readInOrder<T>(work: () => Promise<T>): Promise<T> {
+  if (activeReads >= 2) await new Promise<void>(resolve => waitingReads.push(resolve));
+  else activeReads++;
+  try { return await work(); }
+  finally {
+    const next = waitingReads.shift();
+    if (next) next();
+    else activeReads--;
+  }
+}
+
+export function automationFetch(url: string, init?: RequestInit): Promise<any> {
+  return (init?.method || "GET").toUpperCase() === "GET"
+    ? readInOrder(() => requestAutomation(url, init)) : requestAutomation(url, init);
+}
 
 /** A transport failure never includes an upstream body or browser exception. */
-export async function automationFetch(url: string, init?: RequestInit): Promise<any> {
+async function requestAutomation(url: string, init?: RequestInit): Promise<any> {
   let response: Response;
   try { response = await fetch(url, init); }
   catch { throw Object.assign(new Error("通信できませんでした。接続を確認して、一覧を再読み込みしてください。入力内容は保持されています。"), { code: "AUTOMATION_NETWORK_ERROR", status: 0 }); }
