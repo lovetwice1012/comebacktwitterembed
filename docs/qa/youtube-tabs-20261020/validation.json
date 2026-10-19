@@ -1,0 +1,152 @@
+{
+  "at": "2026-10-19T16:50:58.060714+00:00",
+  "sourceCommit": "6f76990a54bd0c6eb893923d48f1695582b1ef57",
+  "codeAcceptance": "PASS",
+  "productionDeployed": false,
+  "productionDatabaseWrites": 0,
+  "discordMessagesSent": 0,
+  "tests": {
+    "regression": {
+      "tests": 259,
+      "pass": 259,
+      "fail": 0,
+      "skipped": 0,
+      "todo": 0
+    },
+    "youtubeAndUI": {
+      "tests": 44,
+      "pass": 44,
+      "fail": 0,
+      "skipped": 0,
+      "todo": 0
+    },
+    "overlap": true
+  },
+  "checks": {
+    "botTypecheck": 0,
+    "dashboardTypecheck": 0,
+    "botLint": 0,
+    "dashboardLint": 0,
+    "dashboardBuildFinal": 0
+  },
+  "publicProbe": "PASS",
+  "windowsIsolatedPublicProbe": "PASS",
+  "localBuildActivationTransientFailurePreserved": true,
+  "unverified": [
+    "Linux production migration and live runtime",
+    "Real Discord notification delivery",
+    "Holder of the transient Windows EPERM lock"
+  ],
+  "sourceFiles": {
+    "dashboard/components/automation/monitor-edit-view.ts": {
+      "workingFileSha256": "3203c545d55db98a522bd59c39b1ea793f78710be72d661158b8708ea3448cbc",
+      "gitBlob": "a3cf97ba15b060bfe1a6c486b7ffc49b35a2fe32"
+    },
+    "dashboard/components/automation/monitor-manager.tsx": {
+      "workingFileSha256": "eedeeda392629599c4226929040eda423ab940e94cf7c289eba51d3a9aa7e8a2",
+      "gitBlob": "19da3e3e0f64596e700b7fb5d0eed341f4f44438"
+    },
+    "dashboard/components/automation/monitor-registration.tsx": {
+      "workingFileSha256": "f1980e7c907b8be8f6597b67d531e88dcc3a39c982a5ec956fc5105e6e8073e6",
+      "gitBlob": "995aeab3ef3ac36a82c7ee14e47ec01c05776b6e"
+    },
+    "dashboard/components/automation/youtube-watch-options.tsx": {
+      "workingFileSha256": "315f0797ac1cbcca28b26a766da03fac7589d1de174899689945336bef38c6b3",
+      "gitBlob": "d869c017bee019c3b21862647c7b8d6183f8c576"
+    },
+    "docs/auto-watch.md": {
+      "workingFileSha256": "c5fa4bc49c73a616e407124e66029c4974485ddec5da2c74b5b6b49ff9f00057",
+      "gitBlob": "dea9213dec0b57c328ba5efb402e2fc7326b5aaf"
+    },
+    "docs/operations/youtube-watch-tabs.md": {
+      "workingFileSha256": "9d1f8f662749cdf5abd6e5e262b20385c1ae6fff38546f499cec99cf8e31079a",
+      "gitBlob": "f27cf4fba8e7b012fe56fba0b70d73810992783f"
+    },
+    "migrations/20261020_add_youtube_watch_options.sql": {
+      "workingFileSha256": "cc29cd1234b648d12ae030e66f143e7d871b176b78918b503a483074651a1b17",
+      "gitBlob": "ad3ad7e96f4bd9a6f2b7668dc01792dd28d6292a"
+    },
+    "scripts/probe-youtube-watch.cjs": {
+      "workingFileSha256": "d8471b33f819147c4a5f44669fd5011dd043b85e9b6bbd469da4c995a3cf54aa",
+      "gitBlob": "87474d456323be5944b693c306e9030b25bf8837"
+    },
+    "scripts/test/autoWatch.isolated-fetch.test.js": {
+      "workingFileSha256": "c39fc9eed6451a9b5accb226d97be971dcb387529446627b62520ae4db0de058",
+      "gitBlob": "a33eda4cfbf30b7f5093d2b18c6d8e62f5705c2c"
+    },
+    "scripts/test/autoWatch.providers.test.js": {
+      "workingFileSha256": "3635536f90e3069c3b8334ceaf7ad79419ccb91224a3f5252756ee579527eb48",
+      "gitBlob": "f237db327fde1a89ca85a3c56f1c35f2c6b8e20a"
+    },
+    "scripts/test/autoWatch.source-isolation-sql.test.js": {
+      "workingFileSha256": "cfeb58a2288a64a2f130061a7114cbdecd69d9777831917d95f4a1be2652ae8f",
+      "gitBlob": "2b2ec25a1d062fec9105a123800544545e86df63"
+    },
+    "scripts/test/autoWatch.youtube-fallback.test.js": {
+      "workingFileSha256": "5b17f27311ea54d866dbc025259fd5021f84fe279e864a7648f8d93ae53d51e0",
+      "gitBlob": "faa73a5e0038ce3adb94173d19fbc42a3203d97a"
+    },
+    "scripts/test/autoWatch.youtube-tabs-sql.test.js": {
+      "workingFileSha256": "d10f055453bbebbc3ca638dd34ff4ca41f8229452f7c33eee670040d5f178996",
+      "gitBlob": "fdf7f28e608332525d583f6ca2d422aa1d0a986a"
+    },
+    "scripts/test/autoWatch.youtube-tabs.test.js": {
+      "workingFileSha256": "cae59a0a4ebf13d87d1e991ccb64833abf0fcb7ab8b5e5f76629f80df561b23e",
+      "gitBlob": "4716f01666557dc9fe4e48fc903faac48df143fb"
+    },
+    "scripts/test/automation-youtube-options-ui.test.js": {
+      "workingFileSha256": "0831bff305a28bbbb387659abb355ad452d63418193915aed3958b7acab39dbe",
+      "gitBlob": "f924ba7d68625295c3b1ce2def8bf4a17db8add0"
+    },
+    "scripts/test/helpers/youtube-watch-fixture.cjs": {
+      "workingFileSha256": "63a7de6f595993dbd58262a863fc613ac6c65d0bb4aba5473e27223f5125c4cf",
+      "gitBlob": "4a58b8fb1aa5ef9a0b127b37648ba5d8f2ff3cb9"
+    },
+    "src/automation/monitors.js": {
+      "workingFileSha256": "762adb4af3300e1cad5f73e3464e27d3c55626760610d49b14149a3d86b415c0",
+      "gitBlob": "4673ab1494573d1340a258f8b1463b8edeb8529b"
+    },
+    "src/db_schema.js": {
+      "workingFileSha256": "1adac5800dae39f5db4ffe2c773f9ca1af21b1758926f6bf157bb1febcec0af4",
+      "gitBlob": "d54c6715fd63d7b66c738ae32a41185076cb66cf"
+    },
+    "src/providers/autoWatch/isolatedFetch.js": {
+      "workingFileSha256": "1561a0ae707ea2e3f7fc532f668a06ed863ae9d970f688d3a05d26b8d6ea6a70",
+      "gitBlob": "62580754b9058028b0e2e8ff97add9114588d0a2"
+    },
+    "src/providers/autoWatch/runner.js": {
+      "workingFileSha256": "8d2a5d1539478586b8389d0806d6c2cc681c6d311d85edf8c245e49c53921ec5",
+      "gitBlob": "2a4bb30c1f1165d11ffb2f02ecb2fcf56cb4300d"
+    },
+    "src/providers/autoWatch/store.js": {
+      "workingFileSha256": "7cc2625153f2ea30980fbe0356ffa398b615f058f97e6e98007eb7edb0777ea3",
+      "gitBlob": "d77f558a4f3bf765ca2d10ecea8528f84feac35e"
+    },
+    "src/providers/youtube/autoWatch.js": {
+      "workingFileSha256": "457ce6a4496131786e2cf45e8a0a04279d1552a2e8d622011b1a37455611a231",
+      "gitBlob": "f57cb2e6330e046b149abc8cbc6dedcefb97d7a1"
+    },
+    "src/providers/youtube/watch-options.js": {
+      "workingFileSha256": "d0a0895f14e12e5c1d472f061eaa4d36c629ab8759248e9d3f20c1cb0d472d89",
+      "gitBlob": "4db4547d91229e7a9f34ae0c955d9872fbcdf0a9"
+    },
+    "src/providers/youtube/watch-tabs.js": {
+      "workingFileSha256": "d411fc3289464b51bcc7f2464793ad90c4b679bf6c7dc6d6f18578df51d024a0",
+      "gitBlob": "8eb1fda37c71aee8232f204eb9826c3bf825b91c"
+    }
+  },
+  "artifacts": {
+    ".gitattributes": "705fd4d6451a31d36b3df7de96f83f30ac976c9b4a6d1e51671d8e2f33e2d0da",
+    "bot-lint.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "bot-typecheck.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "dashboard-build-activation-retry.log": "e2beea5cbd1322f1cfad912e4c887298a6ec60899493899de5396a4442097f48",
+    "dashboard-build.log": "d4cff960b2e832c97ad213a3a8ef0be20ebef1e776b7076b368677b5361d5cd7",
+    "dashboard-lint.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "dashboard-typecheck.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "isolated-public-probe.json": "165df72ff07d05c9768513234817d6add31153baa9ed461ce9793287f0e10098",
+    "public-probe.json": "91e949673866fa9b06cfe12f2d5ae31865faf625c7382895c6bafef6a1d60990",
+    "README.md": "03a914999cb56effcafdc373899615c79e9f517922b8aca974eacb2c1d6c39d8",
+    "regression.tap": "d5786e01a9489249e10adf28ccf9c42f8f3e50afe041f217bdd00deaa4485168",
+    "youtube-and-ui.tap": "794ee1c175c6db2832fa2b490c22ad8368645365795675c8ad8f277331b67c80"
+  }
+}

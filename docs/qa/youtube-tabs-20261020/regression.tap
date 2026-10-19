@@ -1,0 +1,1578 @@
+TAP version 13
+# Subtest: SQL partial source admission preserves validators, observation time, failed deliveries and new-target baselines across restart/failure
+ok 1 - SQL partial source admission preserves validators, observation time, failed deliveries and new-target baselines across restart/failure
+  ---
+  duration_ms: 2435.9712
+  type: 'test'
+  ...
+# Subtest: DM and webhook monitoring share the guarded durable runner with no direct-send fallback
+ok 2 - DM and webhook monitoring share the guarded durable runner with no direct-send fallback
+  ---
+  duration_ms: 4.0444
+  type: 'test'
+  ...
+# Subtest: real SQL free admission permits direct/API registration, changes and resume while supporter status stays server-owned
+ok 3 - real SQL free admission permits direct/API registration, changes and resume while supporter status stays server-owned
+  ---
+  duration_ms: 2939.6533
+  type: 'test'
+  ...
+# Subtest: free users may register; supporter status no longer acts as a donor-only admission gate
+ok 4 - free users may register; supporter status no longer acts as a donor-only admission gate
+  ---
+  duration_ms: 1.228
+  type: 'test'
+  ...
+# Subtest: registration can still lock a trusted user row and propagates database failures
+ok 5 - registration can still lock a trusted user row and propagates database failures
+  ---
+  duration_ms: 0.4361
+  type: 'test'
+  ...
+# Subtest: admin interval form loads, saves five minutes, rejects short input and resets to defaults
+ok 6 - admin interval form loads, saves five minutes, rejects short input and resets to defaults
+  ---
+  duration_ms: 174.8331
+  type: 'test'
+  ...
+# Subtest: interval overrides accept only integer minutes at least five, and retain provider budgets
+ok 7 - interval overrides accept only integer minutes at least five, and retain provider budgets
+  ---
+  duration_ms: 0.9217
+  type: 'test'
+  ...
+# Subtest: shared SQL retrieval uses the fastest active user but routes notifications at independent user windows
+ok 8 - shared SQL retrieval uses the fastest active user but routes notifications at independent user windows
+  ---
+  duration_ms: 4783.234
+  type: 'test'
+  ...
+# Subtest: admin interval API rejects ordinary members and cross-origin writes before looking up or changing policies
+ok 9 - admin interval API rejects ordinary members and cross-origin writes before looking up or changing policies
+  ---
+  duration_ms: 135.8973
+  type: 'test'
+  ...
+# Subtest: acquisition sandbox has independent OS memory, CPU, lifetime and process limits
+ok 10 - acquisition sandbox has independent OS memory, CPU, lifetime and process limits
+  ---
+  duration_ms: 1.9406
+  type: 'test'
+  ...
+# Subtest: only a successful isolated observation is returned to the Bot
+ok 11 - only a successful isolated observation is returned to the Bot
+  ---
+  duration_ms: 1.892
+  type: 'test'
+  ...
+# Subtest: legacy Linux cgroups constrain total RAM plus swap before fetching
+ok 12 - legacy Linux cgroups constrain total RAM plus swap before fetching
+  ---
+  duration_ms: 0.5084
+  type: 'test'
+  ...
+# Subtest: provider redirects stay within HTTPS provider hosts; unsafe targets are rejected before fetching
+ok 13 - provider redirects stay within HTTPS provider hosts; unsafe targets are rejected before fetching
+  ---
+  duration_ms: 0.8244
+  type: 'test'
+  ...
+# Subtest: rate limits and upstream error pages never need to buffer their bodies
+ok 14 - rate limits and upstream error pages never need to buffer their bodies
+  ---
+  duration_ms: 0.2359
+  type: 'test'
+  ...
+# Subtest: streamed JSON rate-limit errors preserve body-based quota classification and retry hints
+ok 15 - streamed JSON rate-limit errors preserve body-based quota classification and retry hints
+  ---
+  duration_ms: 6.57
+  type: 'test'
+  ...
+# Subtest: DNS socket destinations reject private, metadata, mapped IPv4 and reserved addresses
+ok 16 - DNS socket destinations reject private, metadata, mapped IPv4 and reserved addresses
+  ---
+  duration_ms: 3.1635
+  type: 'test'
+  ...
+# Subtest: source leases cover the largest supported isolated acquisition deadline
+ok 17 - source leases cover the largest supported isolated acquisition deadline
+  ---
+  duration_ms: 26.2254
+  type: 'test'
+  ...
+# Subtest: the production-default tick isolates acquisition and passes its HTTP deadline to source claims
+ok 18 - the production-default tick isolates acquisition and passes its HTTP deadline to source claims
+  ---
+  duration_ms: 5.5046
+  type: 'test'
+  ...
+# Subtest: guest source normalization accepts only account-shaped inputs
+ok 19 - guest source normalization accepts only account-shaped inputs
+  ---
+  duration_ms: 1.5401
+  type: 'test'
+  ...
+# Subtest: YouTube watcher consumes the public Atom feed without an API key
+ok 20 - YouTube watcher consumes the public Atom feed without an API key
+  ---
+  duration_ms: 2.6524
+  type: 'test'
+  ...
+# Subtest: GitHub watcher remains anonymous and maps a public push event to a commit URL
+ok 21 - GitHub watcher remains anonymous and maps a public push event to a commit URL
+  ---
+  duration_ms: 2.6877
+  type: 'test'
+  ...
+# Subtest: Twitch and Spotify watchers use guest web routes without OAuth headers
+ok 22 - Twitch and Spotify watchers use guest web routes without OAuth headers
+  ---
+  duration_ms: 2.1779
+  type: 'test'
+  ...
+# Subtest: rate policy leaves material headroom in the anonymous GitHub bucket
+ok 23 - rate policy leaves material headroom in the anonymous GitHub bucket
+  ---
+  duration_ms: 0.1926
+  type: 'test'
+  ...
+# Subtest: BOOTH guest hydration discovers owner-qualified cards and excludes unrelated recommendations
+ok 24 - BOOTH guest hydration discovers owner-qualified cards and excludes unrelated recommendations
+  ---
+  duration_ms: 1.8313
+  type: 'test'
+  ...
+# Subtest: guest acquisition does not seed an empty baseline from malformed or incomplete successful responses
+ok 25 - guest acquisition does not seed an empty baseline from malformed or incomplete successful responses
+  ---
+  duration_ms: 1.2954
+  type: 'test'
+  ...
+# Subtest: Spotify release discovery excludes popular recommendations and featuring sections
+ok 26 - Spotify release discovery excludes popular recommendations and featuring sections
+  ---
+  duration_ms: 0.4268
+  type: 'test'
+  ...
+# Subtest: BOOTH guest cards preserve owned title and explicit publication time without inventing missing metadata
+ok 27 - BOOTH guest cards preserve owned title and explicit publication time without inventing missing metadata
+  ---
+  duration_ms: 3.2329
+  type: 'test'
+  ...
+# Subtest: Spotify metadata stays within release cards, excludes year subtitles and accepts only explicit album timestamps
+ok 28 - Spotify metadata stays within release cards, excludes year subtitles and accepts only explicit album timestamps
+  ---
+  duration_ms: 1.3115
+  type: 'test'
+  ...
+# Subtest: first guest observation seeds the cursor without posting historical items
+ok 29 - first guest observation seeds the cursor without posting historical items
+  ---
+  duration_ms: 1.6737
+  type: 'test'
+  ...
+# Subtest: later observation queues only new items and preserves the known cursor
+ok 30 - later observation queues only new items and preserves the known cursor
+  ---
+  duration_ms: 0.2923
+  type: 'test'
+  ...
+# Subtest: Pixiv baseline high-water mark suppresses old artwork beyond the stored ID window
+ok 31 - Pixiv baseline high-water mark suppresses old artwork beyond the stored ID window
+  ---
+  duration_ms: 0.2049
+  type: 'test'
+  ...
+# Subtest: large Pixiv first observation records its full visible baseline without historical replay
+ok 32 - large Pixiv first observation records its full visible baseline without historical replay
+  ---
+  duration_ms: 0.8098
+  type: 'test'
+  ...
+# Subtest: provider pacing reschedules a source before any upstream request
+ok 33 - provider pacing reschedules a source before any upstream request
+  ---
+  duration_ms: 0.1974
+  type: 'test'
+  ...
+# Subtest: guarded router throttling keeps a delivery pending for the server-specified retry delay
+ok 34 - guarded router throttling keeps a delivery pending for the server-specified retry delay
+  ---
+  duration_ms: 2.4223
+  type: 'test'
+  ...
+# Subtest: recovery quarantine record never contains the signed webhook URL
+ok 35 - recovery quarantine record never contains the signed webhook URL
+  ---
+  duration_ms: 0.187
+  type: 'test'
+  ...
+# Subtest: pacing defers until the next available request slot, not a whole source polling cycle
+ok 36 - pacing defers until the next available request slot, not a whole source polling cycle
+  ---
+  duration_ms: 0.1675
+  type: 'test'
+  ...
+# Subtest: Discord retry delay falls back to its body when the header is absent
+ok 37 - Discord retry delay falls back to its body when the header is absent
+  ---
+  duration_ms: 0.1131
+  type: 'test'
+  ...
+# Subtest: partial admission clears both validators durably and drains after restart before accepting 304
+ok 38 - partial admission clears both validators durably and drains after restart before accepting 304
+  ---
+  duration_ms: 0.8631
+  type: 'test'
+  ...
+# Subtest: HTTP 304 cannot seed a first baseline or discard unadmitted discoveries
+ok 39 - HTTP 304 cannot seed a first baseline or discard unadmitted discoveries
+  ---
+  duration_ms: 0.6356
+  type: 'test'
+  ...
+# Subtest: first full baseline acknowledges every visible item even when its size exceeds the admission batch
+ok 40 - first full baseline acknowledges every visible item even when its size exceeds the admission batch
+  ---
+  duration_ms: 0.2284
+  type: 'test'
+  ...
+# Subtest: legacy cursor with an already-advanced validator gets one unconditional repair observation
+ok 41 - legacy cursor with an already-advanced validator gets one unconditional repair observation
+  ---
+  duration_ms: 0.2443
+  type: 'test'
+  ...
+# Subtest: SQL leases cover slow isolated acquisition and resource retries retain cursor and enabled targets
+ok 42 - SQL leases cover slow isolated acquisition and resource retries retain cursor and enabled targets
+  ---
+  duration_ms: 1922.799
+  type: 'test'
+  ...
+# Subtest: GitHub streaming keeps all notification fields after a large irrelevant commit payload
+ok 43 - GitHub streaming keeps all notification fields after a large irrelevant commit payload
+  ---
+  duration_ms: 41.312
+  type: 'test'
+  ...
+# Subtest: GitHub release body remains complete beyond the former metadata token size
+ok 44 - GitHub release body remains complete beyond the former metadata token size
+  ---
+  duration_ms: 114.927
+  type: 'test'
+  ...
+# Subtest: Twitch streaming preserves offline/null state and live metadata past unrelated large JSON
+ok 45 - Twitch streaming preserves offline/null state and live metadata past unrelated large JSON
+  ---
+  duration_ms: 135.2941
+  type: 'test'
+  ...
+# Subtest: Pixiv streaming keeps null index entries, timestamps, and empty manga index
+ok 46 - Pixiv streaming keeps null index entries, timestamps, and empty manga index
+  ---
+  duration_ms: 32.7449
+  type: 'test'
+  ...
+# Subtest: Spotify streaming ignores large assets and preserves release section membership and metadata
+ok 47 - Spotify streaming ignores large assets and preserves release section membership and metadata
+  ---
+  duration_ms: 19.462
+  type: 'test'
+  ...
+# Subtest: Spotify keeps release cards when optional JSON-LD metadata is malformed
+ok 48 - Spotify keeps release cards when optional JSON-LD metadata is malformed
+  ---
+  duration_ms: 2.3551
+  type: 'test'
+  ...
+# Subtest: BOOTH streaming keeps owner-qualified hydration cards after large script assets
+ok 49 - BOOTH streaming keeps owner-qualified hydration cards after large script assets
+  ---
+  duration_ms: 31.671
+  type: 'test'
+  ...
+# Subtest: BOOTH streams huge irrelevant card attributes and preserves every card in a large shop
+ok 50 - BOOTH streams huge irrelevant card attributes and preserves every card in a large shop
+  ---
+  duration_ms: 231.9799
+  type: 'test'
+  ...
+# Subtest: BOOTH attribute projection retains credential and protocol rejection semantics
+ok 51 - BOOTH attribute projection retains credential and protocol rejection semantics
+  ---
+  duration_ms: 1.1534
+  type: 'test'
+  ...
+# Subtest: streaming JSON keeps rate limit errors, with malformed and incomplete bodies rejected
+ok 52 - streaming JSON keeps rate limit errors, with malformed and incomplete bodies rejected
+  ---
+  duration_ms: 123.4544
+  type: 'test'
+  ...
+# Subtest: JSON projection ignores arbitrarily large unselected strings and preserves selected metadata
+ok 53 - JSON projection ignores arbitrarily large unselected strings and preserves selected metadata
+  ---
+  duration_ms: 101.719
+  type: 'test'
+  ...
+# Subtest: JSON projection preserves array roots, wildcard nulls, empty maps and recursive paths
+ok 54 - JSON projection preserves array roots, wildcard nulls, empty maps and recursive paths
+  ---
+  duration_ms: 3.5861
+  type: 'test'
+  ...
+# Subtest: JSON projection skips prototype keys and preserves long selected strings without rejecting body size
+ok 55 - JSON projection skips prototype keys and preserves long selected strings without rejecting body size
+  ---
+  duration_ms: 0.9643
+  type: 'test'
+  ...
+# Subtest: HTML projection discards huge scripts and handles hydration markers and UTF-8 across chunk boundaries
+ok 56 - HTML projection discards huge scripts and handles hydration markers and UTF-8 across chunk boundaries
+  ---
+  duration_ms: 70.974
+  type: 'test'
+  ...
+# Subtest: HTML projection preserves selected script attributes and ordinary metadata markup
+ok 57 - HTML projection preserves selected script attributes and ordinary metadata markup
+  ---
+  duration_ms: 2.4799
+  type: 'test'
+  ...
+# Subtest: malformed JSON, incomplete hydration and body errors retain their failure contracts
+ok 58 - malformed JSON, incomplete hydration and body errors retain their failure contracts
+  ---
+  duration_ms: 1.7356
+  type: 'test'
+  ...
+# Subtest: optional malformed hydration scripts cannot hide valid ordinary content
+ok 59 - optional malformed hydration scripts cannot hide valid ordinary content
+  ---
+  duration_ms: 2.8979
+  type: 'test'
+  ...
+# Subtest: excessive relevant structure fails transiently without confusing it with a page size cap
+ok 60 - excessive relevant structure fails transiently without confusing it with a page size cap
+  ---
+  duration_ms: 0.6846
+  type: 'test'
+  ...
+# Subtest: RSS 404 uses verified uploads containing regular videos, Shorts and streams; older history is excluded
+ok 61 - RSS 404 uses verified uploads containing regular videos, Shorts and streams; older history is excluded
+  ---
+  duration_ms: 7.3909
+  type: 'test'
+  ...
+# Subtest: first fallback without a known anchor quietly baselines history, then detects a later upload
+ok 62 - first fallback without a known anchor quietly baselines history, then detects a later upload
+  ---
+  duration_ms: 2.2152
+  type: 'test'
+  ...
+# Subtest: fresh registration returns a baseline and RSS recovery cannot replay excluded uploads or reuse HTML validators
+ok 63 - fresh registration returns a baseline and RSS recovery cannot replay excluded uploads or reuse HTML validators
+  ---
+  duration_ms: 3.0862
+  type: 'test'
+  ...
+# Subtest: rate limits and forbidden responses preserve backoff and never cause extra crawl requests
+ok 64 - rate limits and forbidden responses preserve backoff and never cause extra crawl requests
+  ---
+  duration_ms: 0.6999
+  type: 'test'
+  ...
+# Subtest: legacy/modern playlist renderers are supported while wrong channels, consent and malformed responses cannot seed a baseline
+ok 65 - legacy/modern playlist renderers are supported while wrong channels, consent and malformed responses cannot seed a baseline
+  ---
+  duration_ms: 2.3673
+  type: 'test'
+  ...
+# Subtest: HTTP 200 HTML masquerading as RSS also uses the uploads fallback
+ok 66 - HTTP 200 HTML masquerading as RSS also uses the uploads fallback
+  ---
+  duration_ms: 0.827
+  type: 'test'
+  ...
+# Subtest: queued new uploads behind an already admitted anchor survive partial admission and never become excluded history
+ok 67 - queued new uploads behind an already admitted anchor survive partial admission and never become excluded history
+  ---
+  duration_ms: 0.8173
+  type: 'test'
+  ...
+# Subtest: streaming shared requests and the YouTube fallback discard assets above the former 2 MiB limit
+ok 68 - streaming shared requests and the YouTube fallback discard assets above the former 2 MiB limit
+  ---
+  duration_ms: 30.4696
+  type: 'test'
+  ...
+# Subtest: streaming hydration discards unrelated values above 8 MiB without replaying unanchored history
+ok 69 - streaming hydration discards unrelated values above 8 MiB without replaying unanchored history
+  ---
+  duration_ms: 89.7457
+  type: 'test'
+  ...
+# Subtest: streaming RSS keeps owner and upload metadata across split UTF-8, CDATA and large ignored media text
+ok 70 - streaming RSS keeps owner and upload metadata across split UTF-8, CDATA and large ignored media text
+  ---
+  duration_ms: 68.9979
+  type: 'test'
+  ...
+# Subtest: streaming RSS rejects incomplete documents and cannot seed a partial baseline
+ok 71 - streaming RSS rejects incomplete documents and cannot seed a partial baseline
+  ---
+  duration_ms: 0.6198
+  type: 'test'
+  ...
+# Subtest: handle streaming resolution uses the verified primary channel metadata
+ok 72 - handle streaming resolution uses the verified primary channel metadata
+  ---
+  duration_ms: 0.7443
+  type: 'test'
+  ...
+# Subtest: YouTube SQL settings, atomic baseline/admission, shared-source isolation, rollback and restart
+    # Subtest: migration adds safe defaults to legacy targets and can be applied idempotently
+    ok 1 - migration adds safe defaults to legacy targets and can be applied idempotently
+      ---
+      duration_ms: 332.9975
+      type: 'test'
+      ...
+    # Subtest: initial observation quietly seeds all lanes and leaves slots, cadence and destinations intact
+    ok 2 - initial observation quietly seeds all lanes and leaves slots, cadence and destinations intact
+      ---
+      duration_ms: 95.2065
+      type: 'test'
+      ...
+    # Subtest: later new releases and posts route only to eligible targets, then survive restart without duplicate admission
+    ok 3 - later new releases and posts route only to eligible targets, then survive restart without duplicate admission
+      ---
+      duration_ms: 75.8351
+      type: 'test'
+      ...
+    # Subtest: delivery SQL failure rolls back items, cursor and tab baseline together, then retries once
+    ok 4 - delivery SQL failure rolls back items, cursor and tab baseline together, then retries once
+      ---
+      duration_ms: 134.6128
+      type: 'test'
+      ...
+    # Subtest: options can be edited with CAS; stale, unauthorized and malformed writes are rejected
+    ok 5 - options can be edited with CAS; stale, unauthorized and malformed writes are rejected
+      ---
+      duration_ms: 148.1144
+      type: 'test'
+      ...
+    # Subtest: enabling a lane on a shared active source quietly baselines only that target, even after SQL retry
+    ok 6 - enabling a lane on a shared active source quietly baselines only that target, even after SQL retry
+      ---
+      duration_ms: 203.689
+      type: 'test'
+      ...
+    # Subtest: concurrent option saves are fenced by revision and cannot silently overwrite each other
+    ok 7 - concurrent option saves are fenced by revision and cannot silently overwrite each other
+      ---
+      duration_ms: 121.0755
+      type: 'test'
+      ...
+    # Subtest: an in-flight poll that did not fetch posts cannot establish the baseline of a newly enabled target
+    ok 8 - an in-flight poll that did not fetch posts cannot establish the baseline of a newly enabled target
+      ---
+      duration_ms: 242.8314
+      type: 'test'
+      ...
+    1..8
+ok 73 - YouTube SQL settings, atomic baseline/admission, shared-source isolation, rollback and restart
+  ---
+  duration_ms: 4062.1131
+  type: 'test'
+  ...
+# Subtest: YouTube options default to releases on/posts off and validate all server input
+ok 74 - YouTube options default to releases on/posts off and validate all server input
+  ---
+  duration_ms: 1.1458
+  type: 'test'
+  ...
+# Subtest: verified releases include Topic-owned tracks from the artist tab; albums link their whole playlist
+ok 75 - verified releases include Topic-owned tracks from the artist tab; albums link their whole playlist
+  ---
+  duration_ms: 0.6533
+  type: 'test'
+  ...
+# Subtest: community posts keep Unicode text and canonical post URL while excluding other authors and attached videos
+ok 76 - community posts keep Unicode text and canonical post URL while excluding other authors and attached videos
+  ---
+  duration_ms: 0.3198
+  type: 'test'
+  ...
+# Subtest: wrong channels, redirected tabs, consent, malformed JSON and unsafe IDs fail without baselining
+ok 77 - wrong channels, redirected tabs, consent, malformed JSON and unsafe IDs fail without baselining
+  ---
+  duration_ms: 0.4618
+  type: 'test'
+  ...
+# Subtest: streamed tab projections discard large unrelated/tracking values and preserve actual card fields
+ok 78 - streamed tab projections discard large unrelated/tracking values and preserve actual card fields
+  ---
+  duration_ms: 118.2973
+  type: 'test'
+  ...
+# Subtest: existing watches quietly baseline new lanes; RSS 304 still detects subsequent releases and opted-in posts
+ok 79 - existing watches quietly baseline new lanes; RSS 304 still detects subsequent releases and opted-in posts
+  ---
+  duration_ms: 5.9746
+  type: 'test'
+  ...
+# Subtest: default posts off performs no posts request; switching off both optional lanes preserves RSS conditional polling
+ok 80 - default posts off performs no posts request; switching off both optional lanes preserves RSS conditional polling
+  ---
+  duration_ms: 1.4328
+  type: 'test'
+  ...
+# Subtest: the existing crawl kill switch preserves ordinary RSS monitoring and quietly reseeds optional tabs when restored
+ok 81 - the existing crawl kill switch preserves ordinary RSS monitoring and quietly reseeds optional tabs when restored
+  ---
+  duration_ms: 1.5665
+  type: 'test'
+  ...
+# Subtest: RSS/upload and release overlap produces one ordinary video notification and does not baseline that new upload
+ok 82 - RSS/upload and release overlap produces one ordinary video notification and does not baseline that new upload
+  ---
+  duration_ms: 0.8544
+  type: 'test'
+  ...
+# Subtest: rate limits or failed optional tabs abort the atomic observation without hiding pending discoveries
+ok 83 - rate limits or failed optional tabs abort the atomic observation without hiding pending discoveries
+  ---
+  duration_ms: 0.6354
+  type: 'test'
+  ...
+# Subtest: per-target selection and opt-in timestamp reject old backlog but never alter ordinary videos
+ok 84 - per-target selection and opt-in timestamp reject old backlog but never alter ordinary videos
+  ---
+  duration_ms: 0.1341
+  type: 'test'
+  ...
+# Subtest: community text and release video URLs survive the real event normalizer and ordinary notification formatter
+ok 85 - community text and release video URLs survive the real event normalizer and ordinary notification formatter
+  ---
+  duration_ms: 25.3122
+  type: 'test'
+  ...
+# Subtest: monitor activity attributes final delivery plans and preserves history access controls
+    # Subtest: standalone delivery proof excludes partial, unknown, unconfirmed and foreign-owner jobs
+    ok 1 - standalone delivery proof excludes partial, unknown, unconfirmed and foreign-owner jobs
+      ---
+      duration_ms: 68.438
+      type: 'test'
+      ...
+    # Subtest: a graph member can receive a grouped send even when it is not the primary run
+    ok 2 - a graph member can receive a grouped send even when it is not the primary run
+      ---
+      duration_ms: 54.1261
+      type: 'test'
+      ...
+    # Subtest: latest mixed-monitor snapshots use the same representative for title, target and trace
+    ok 3 - latest mixed-monitor snapshots use the same representative for title, target and trace
+      ---
+      duration_ms: 79.0398
+      type: 'test'
+      ...
+    # Subtest: summary remains accurate beyond pagination and state filters; tuple cursors stay target-scoped
+    ok 4 - summary remains accurate beyond pagination and state filters; tuple cursors stay target-scoped
+      ---
+      duration_ms: 423.7929
+      type: 'test'
+      ...
+    # Subtest: shared history needs the original guild view permission and never exposes another private owner
+    ok 5 - shared history needs the original guild view permission and never exposes another private owner
+      ---
+      duration_ms: 27.0577
+      type: 'test'
+      ...
+    # Subtest: invalid or partial target selectors fail instead of broadening the query
+    ok 6 - invalid or partial target selectors fail instead of broadening the query
+      ---
+      duration_ms: 2.7111
+      type: 'test'
+      ...
+    1..6
+ok 86 - monitor activity attributes final delivery plans and preserves history access controls
+  ---
+  duration_ms: 2419.9199
+  type: 'test'
+  ...
+# Subtest: monitor activity reads only after explicit expansion and distinguishes send proof from pending work
+ok 87 - monitor activity reads only after explicit expansion and distinguishes send proof from pending work
+  ---
+  duration_ms: 153.2926
+  type: 'test'
+  ...
+# Subtest: grouped notification detail stays in the monitor card and never invents delivery success
+ok 88 - grouped notification detail stays in the monitor card and never invents delivery success
+  ---
+  duration_ms: 23.4914
+  type: 'test'
+  ...
+# Subtest: a response for the previous monitor cannot replace the selected monitor activity
+ok 89 - a response for the previous monitor cannot replace the selected monitor activity
+  ---
+  duration_ms: 18.393
+  type: 'test'
+  ...
+# Subtest: expired graph origin remains visible without inventing a grouped delivery for that monitor
+ok 90 - expired graph origin remains visible without inventing a grouped delivery for that monitor
+  ---
+  duration_ms: 18.3766
+  type: 'test'
+  ...
+# Subtest: job pagination retains rule history and a late rule-history page cannot cross monitor selection
+ok 91 - job pagination retains rule history and a late rule-history page cannot cross monitor selection
+  ---
+  duration_ms: 22.2162
+  type: 'test'
+  ...
+# Subtest: SQL cadence handoff retains leased events after grant changes and shares source-first locks with completion
+    # Subtest: returning three slots to one after claim postpones the legacy event until exactly thirty minutes
+    ok 1 - returning three slots to one after claim postpones the legacy event until exactly thirty minutes
+      ---
+      duration_ms: 378.0847
+      type: 'test'
+      ...
+    # Subtest: returning frames after claim does not create a graph run or lose its event and rule
+    ok 2 - returning frames after claim does not create a graph run or lose its event and rule
+      ---
+      duration_ms: 404.463
+      type: 'test'
+      ...
+    # Subtest: paid downgrade after claim restores the base interval at native handoff
+    ok 3 - paid downgrade after claim restores the base interval at native handoff
+      ---
+      duration_ms: 424.8592
+      type: 'test'
+      ...
+    # Subtest: local verified unit expiry and refund after claim retain the event without the old divisor
+    ok 4 - local verified unit expiry and refund after claim retain the event without the old divisor
+      ---
+      duration_ms: 904.8207
+      type: 'test'
+      ...
+    # Subtest: source completion and cadence edits wait on the source before acquiring the target
+    ok 5 - source completion and cadence edits wait on the source before acquiring the target
+      ---
+      duration_ms: 171.066
+      type: 'test'
+      ...
+    # Subtest: native handoff also waits behind successful source completion without taking its target lock
+    ok 6 - native handoff also waits behind successful source completion without taking its target lock
+      ---
+      duration_ms: 309.1249
+      type: 'test'
+      ...
+    # Subtest: pause, remove and native deletion queue behind source completion without first locking its target
+        # Subtest: pause
+        ok 1 - pause
+          ---
+          duration_ms: 152.5414
+          type: 'test'
+          ...
+        # Subtest: remove
+        ok 2 - remove
+          ---
+          duration_ms: 112.5774
+          type: 'test'
+          ...
+        # Subtest: nativeDelete
+        ok 3 - nativeDelete
+          ---
+          duration_ms: 131.4578
+          type: 'test'
+          ...
+        # Subtest: detach
+        ok 4 - detach
+          ---
+          duration_ms: 119.3845
+          type: 'test'
+          ...
+        # Subtest: resume
+        ok 5 - resume
+          ---
+          duration_ms: 199.9914
+          type: 'test'
+          ...
+        # Subtest: fullSave
+        ok 6 - fullSave
+          ---
+          duration_ms: 265.8425
+          type: 'test'
+          ...
+        1..6
+    ok 7 - pause, remove and native deletion queue behind source completion without first locking its target
+      ---
+      duration_ms: 983.1012
+      type: 'test'
+      ...
+    # Subtest: one stable native admission window routes all leased discoveries for legacy and graph rules, while later claims retain cadence
+        # Subtest: legacy
+        ok 1 - legacy
+          ---
+          duration_ms: 913.919
+          type: 'test'
+          ...
+        # Subtest: graph
+        ok 2 - graph
+          ---
+          duration_ms: 665.0207
+          type: 'test'
+          ...
+        1..2
+    ok 8 - one stable native admission window routes all leased discoveries for legacy and graph rules, while later claims retain cadence
+      ---
+      duration_ms: 1579.4348
+      type: 'test'
+      ...
+    # Subtest: a cadence reset after the first batch item rejects the old admission snapshot for remaining items
+    ok 9 - a cadence reset after the first batch item rejects the old admission snapshot for remaining items
+      ---
+      duration_ms: 360.3095
+      type: 'test'
+      ...
+    # Subtest: a restart after one batch item reclaims the remainder in the persisted current window
+    ok 10 - a restart after one batch item reclaims the remainder in the persisted current window
+      ---
+      duration_ms: 371.5138
+      type: 'test'
+      ...
+    # Subtest: expiry, refund and administrator downgrade between batch items reapply the live base interval
+        # Subtest: expiry
+        ok 1 - expiry
+          ---
+          duration_ms: 390.5713
+          type: 'test'
+          ...
+        # Subtest: refund
+        ok 2 - refund
+          ---
+          duration_ms: 377.7184
+          type: 'test'
+          ...
+        # Subtest: downgrade
+        ok 3 - downgrade
+          ---
+          duration_ms: 252.5631
+          type: 'test'
+          ...
+        1..3
+    ok 11 - expiry, refund and administrator downgrade between batch items reapply the live base interval
+      ---
+      duration_ms: 1038.4784
+      type: 'test'
+      ...
+    1..11
+ok 92 - SQL cadence handoff retains leased events after grant changes and shares source-first locks with completion
+  ---
+  duration_ms: 9083.5996
+  type: 'test'
+  ...
+# Subtest: real SQL per-monitor cadence uses shared physical notification slots and preserves source and delivery timing
+    # Subtest: cost three reserves real numbered frames; paused auto and price share the five-frame pool and retain canonical slot identity
+    ok 1 - cost three reserves real numbered frames; paused auto and price share the five-frame pool and retain canonical slot identity
+      ---
+      duration_ms: 382.2168
+      type: 'test'
+      ...
+    # Subtest: concurrent boosts cannot double-book numbered frames or let new registrations steal a reserved index
+    ok 2 - concurrent boosts cannot double-book numbered frames or let new registrations steal a reserved index
+      ---
+      duration_ms: 323.3638
+      type: 'test'
+      ...
+    # Subtest: reducing to one frame is allowed while operation limits reject increases; deletion releases all boosted frames
+    ok 3 - reducing to one frame is allowed while operation limits reject increases; deletion releases all boosted frames
+      ---
+      duration_ms: 265.3395
+      type: 'test'
+      ...
+    # Subtest: guild editors cannot spend another owner frames, even on a shared monitor they can edit
+    ok 4 - guild editors cannot spend another owner frames, even on a shared monitor they can edit
+      ---
+      duration_ms: 150.8263
+      type: 'test'
+      ...
+    # Subtest: tier downgrade uses one frame at runtime while preserving the selected three-frame preference
+    ok 5 - tier downgrade uses one frame at runtime while preserving the selected three-frame preference
+      ---
+      duration_ms: 395.9672
+      type: 'test'
+      ...
+    # Subtest: shared source takes the fastest eligible target while the default peer keeps its own delivery schedule without buying frames
+    ok 6 - shared source takes the fastest eligible target while the default peer keeps its own delivery schedule without buying frames
+      ---
+      duration_ms: 306.0449
+      type: 'test'
+      ...
+    # Subtest: source claims expose actual requested boosted cadence and provider budget still imposes a floor
+    ok 7 - source claims expose actual requested boosted cadence and provider budget still imposes a floor
+      ---
+      duration_ms: 119.6395
+      type: 'test'
+      ...
+    # Subtest: cadence edits shift untouched pending attempts without resetting baseline, cursor or creating duplicate discoveries
+    ok 8 - cadence edits shift untouched pending attempts without resetting baseline, cursor or creating duplicate discoveries
+      ---
+      duration_ms: 249.0977
+      type: 'test'
+      ...
+    # Subtest: already pending boosted delivery is rechecked against fresh entitlement after downgrade before native claim
+    ok 9 - already pending boosted delivery is rechecked against fresh entitlement after downgrade before native claim
+      ---
+      duration_ms: 481.4538
+      type: 'test'
+      ...
+    # Subtest: admin user-base interval updates retain a valid monitor three-frame divisor in target and pending schedules
+    ok 10 - admin user-base interval updates retain a valid monitor three-frame divisor in target and pending schedules
+      ---
+      duration_ms: 194.1031
+      type: 'test'
+      ...
+    1..10
+ok 93 - real SQL per-monitor cadence uses shared physical notification slots and preserves source and delivery timing
+  ---
+  duration_ms: 4777.1034
+  type: 'test'
+  ...
+# Subtest: cadence editor waits for an explicit allocation and previews shared pool use before posting typed CAS values
+ok 94 - cadence editor waits for an explicit allocation and previews shared pool use before posting typed CAS values
+  ---
+  duration_ms: 178.4348
+  type: 'test'
+  ...
+# Subtest: an exhausted weighted pool blocks increases and invalid or blank numeric drafts stay intact
+ok 95 - an exhausted weighted pool blocks increases and invalid or blank numeric drafts stay intact
+  ---
+  duration_ms: 33.139
+  type: 'test'
+  ...
+# Subtest: restoring one slot releases extra allocation even without entitlement metadata and requires explicit confirmation
+ok 96 - restoring one slot releases extra allocation even without entitlement metadata and requires explicit confirmation
+  ---
+  duration_ms: 28.9797
+  type: 'test'
+  ...
+# Subtest: a downgraded pool accounts for the full selected allocation when checking how many frames still fit
+ok 97 - a downgraded pool accounts for the full selected allocation when checking how many frames still fit
+  ---
+  duration_ms: 30.1038
+  type: 'test'
+  ...
+# Subtest: request estimates respect the five-minute floor and confirmed service interval is shown instead of promising the estimate
+ok 98 - request estimates respect the five-minute floor and confirmed service interval is shown instead of promising the estimate
+  ---
+  duration_ms: 30.0787
+  type: 'test'
+  ...
+# Subtest: rapid save clicks post once, and a late result after unmount cannot start another request
+ok 99 - rapid save clicks post once, and a late result after unmount cannot start another request
+  ---
+  duration_ms: 29.7598
+  type: 'test'
+  ...
+# Subtest: cadence conflict retains entered count and reload requires reviewing the new notification and allocation versions
+ok 100 - cadence conflict retains entered count and reload requires reviewing the new notification and allocation versions
+  ---
+  duration_ms: 33.1632
+  type: 'test'
+  ...
+# Subtest: a refreshed baseline makes a stale reviewed allocation unsavable until review is repeated
+ok 101 - a refreshed baseline makes a stale reviewed allocation unsavable until review is repeated
+  ---
+  duration_ms: 28.125
+  type: 'test'
+  ...
+# Subtest: closing or refreshing the parent notification list preserves a draft without automatically reallocating frames
+ok 102 - closing or refreshing the parent notification list preserves a draft without automatically reallocating frames
+  ---
+  duration_ms: 95.6424
+  type: 'test'
+  ...
+# Subtest: cadence save through the parent refreshes both notification rows and the shared weighted allocation profile
+ok 103 - cadence save through the parent refreshes both notification rows and the shared weighted allocation profile
+  ---
+  duration_ms: 79.3558
+  type: 'test'
+  ...
+# Subtest: foreign-owner or legacy rows expose no allocation entry point and unknown stored count is never silently treated as one
+ok 104 - foreign-owner or legacy rows expose no allocation entry point and unknown stored count is never silently treated as one
+  ---
+  duration_ms: 139.4387
+  type: 'test'
+  ...
+# Subtest: native monitor destinations preserve ownership, verify both delivery principals and fence passive resumes
+    # Subtest: auto S4-5: owner edits a private channel monitor from the personal page using only the stored guild
+    ok 1 - auto S4-5: owner edits a private channel monitor from the personal page using only the stored guild
+      ---
+      duration_ms: 524.9805
+      type: 'test'
+      ...
+    # Subtest: auto S24-1: guild edits validate both editor and original owner with actual role permissions
+    ok 2 - auto S24-1: guild edits validate both editor and original owner with actual role permissions
+      ---
+      duration_ms: 300.1936
+      type: 'test'
+      ...
+    # Subtest: auto S24-1: passive guild resume also checks the editor and original owner before changing state
+    ok 3 - auto S24-1: passive guild resume also checks the editor and original owner before changing state
+      ---
+      duration_ms: 175.2065
+      type: 'test'
+      ...
+    # Subtest: auto S18-1: disabled destination cannot resume; pause and delete remain available
+    ok 4 - auto S18-1: disabled destination cannot resume; pause and delete remain available
+      ---
+      duration_ms: 271.1617
+      type: 'test'
+      ...
+    # Subtest: auto S18-1: deleted destination cannot resume; pause and delete remain available
+    ok 5 - auto S18-1: deleted destination cannot resume; pause and delete remain available
+      ---
+      duration_ms: 185.3149
+      type: 'test'
+      ...
+    # Subtest: auto S18-1: foreign destination cannot resume; pause and delete remain available
+    ok 6 - auto S18-1: foreign destination cannot resume; pause and delete remain available
+      ---
+      duration_ms: 123.0699
+      type: 'test'
+      ...
+    # Subtest: auto S18-1: healthy DM resumes and preserves its destination and owner
+    ok 7 - auto S18-1: healthy DM resumes and preserves its destination and owner
+      ---
+      duration_ms: 192.9167
+      type: 'test'
+      ...
+    # Subtest: auto S18-1: destination change after remote verification fails before enabled or slots change
+    ok 8 - auto S18-1: destination change after remote verification fails before enabled or slots change
+      ---
+      duration_ms: 116.4591
+      type: 'test'
+      ...
+    # Subtest: auto S18-1: a concurrent monitor revision and unknown Discord failure both retain the paused target
+    ok 9 - auto S18-1: a concurrent monitor revision and unknown Discord failure both retain the paused target
+      ---
+      duration_ms: 263.2337
+      type: 'test'
+      ...
+    # Subtest: auto S18-1: audit failure rolls the destination-validated resume back atomically
+    ok 10 - auto S18-1: audit failure rolls the destination-validated resume back atomically
+      ---
+      duration_ms: 228.6772
+      type: 'test'
+      ...
+    # Subtest: auto legacy DM and webhook targets resume without fabricating resources; a missing endpoint blocks the webhook
+    ok 11 - auto legacy DM and webhook targets resume without fabricating resources; a missing endpoint blocks the webhook
+      ---
+      duration_ms: 296.517
+      type: 'test'
+      ...
+    # Subtest: auto S4-5: personal edits and resume reuse only the owned monitor's unchanged shared destination
+    ok 12 - auto S4-5: personal edits and resume reuse only the owned monitor's unchanged shared destination
+      ---
+      duration_ms: 257.2765
+      type: 'test'
+      ...
+    # Subtest: auto: working private monitors using a shared same-guild destination retain truthful active readiness and queue permission
+    ok 13 - auto: working private monitors using a shared same-guild destination retain truthful active readiness and queue permission
+      ---
+      duration_ms: 154.6349
+      type: 'test'
+      ...
+    # Subtest: price S4-5: owner edits a private channel monitor from the personal page using only the stored guild
+    ok 14 - price S4-5: owner edits a private channel monitor from the personal page using only the stored guild
+      ---
+      duration_ms: 115.9568
+      type: 'test'
+      ...
+    # Subtest: price S24-1: guild edits validate both editor and original owner with actual role permissions
+    ok 15 - price S24-1: guild edits validate both editor and original owner with actual role permissions
+      ---
+      duration_ms: 137.4282
+      type: 'test'
+      ...
+    # Subtest: price S24-1: passive guild resume also checks the editor and original owner before changing state
+    ok 16 - price S24-1: passive guild resume also checks the editor and original owner before changing state
+      ---
+      duration_ms: 335.8527
+      type: 'test'
+      ...
+    # Subtest: price S18-1: disabled destination cannot resume; pause and delete remain available
+    ok 17 - price S18-1: disabled destination cannot resume; pause and delete remain available
+      ---
+      duration_ms: 192.3082
+      type: 'test'
+      ...
+    # Subtest: price S18-1: deleted destination cannot resume; pause and delete remain available
+    ok 18 - price S18-1: deleted destination cannot resume; pause and delete remain available
+      ---
+      duration_ms: 152.9706
+      type: 'test'
+      ...
+    # Subtest: price S18-1: foreign destination cannot resume; pause and delete remain available
+    ok 19 - price S18-1: foreign destination cannot resume; pause and delete remain available
+      ---
+      duration_ms: 156.6339
+      type: 'test'
+      ...
+    # Subtest: price S18-1: healthy DM resumes and preserves its destination and owner
+    ok 20 - price S18-1: healthy DM resumes and preserves its destination and owner
+      ---
+      duration_ms: 131.1723
+      type: 'test'
+      ...
+    # Subtest: price S18-1: destination change after remote verification fails before enabled or slots change
+    ok 21 - price S18-1: destination change after remote verification fails before enabled or slots change
+      ---
+      duration_ms: 88.004
+      type: 'test'
+      ...
+    # Subtest: price S18-1: a concurrent monitor revision and unknown Discord failure both retain the paused target
+    ok 22 - price S18-1: a concurrent monitor revision and unknown Discord failure both retain the paused target
+      ---
+      duration_ms: 146.7497
+      type: 'test'
+      ...
+    # Subtest: price S18-1: audit failure rolls the destination-validated resume back atomically
+    ok 23 - price S18-1: audit failure rolls the destination-validated resume back atomically
+      ---
+      duration_ms: 88.7819
+      type: 'test'
+      ...
+    # Subtest: price legacy DM and webhook targets resume without fabricating resources; a missing endpoint blocks the webhook
+    ok 24 - price legacy DM and webhook targets resume without fabricating resources; a missing endpoint blocks the webhook
+      ---
+      duration_ms: 454.5852
+      type: 'test'
+      ...
+    # Subtest: price S4-5: personal edits and resume reuse only the owned monitor's unchanged shared destination
+    ok 25 - price S4-5: personal edits and resume reuse only the owned monitor's unchanged shared destination
+      ---
+      duration_ms: 485.6764
+      type: 'test'
+      ...
+    # Subtest: price: working private monitors using a shared same-guild destination retain truthful active readiness and queue permission
+    ok 26 - price: working private monitors using a shared same-guild destination retain truthful active readiness and queue permission
+      ---
+      duration_ms: 129.0449
+      type: 'test'
+      ...
+    1..26
+ok 105 - native monitor destinations preserve ownership, verify both delivery principals and fence passive resumes
+  ---
+  duration_ms: 8144.9066
+  type: 'test'
+  ...
+# Subtest: auto label-only editing saves once with metadata-only CAS and no workflow or preview operations
+ok 106 - auto label-only editing saves once with metadata-only CAS and no workflow or preview operations
+  ---
+  duration_ms: 229.1083
+  type: 'test'
+  ...
+# Subtest: price label-only editing saves once with metadata-only CAS and no workflow or preview operations
+ok 107 - price label-only editing saves once with metadata-only CAS and no workflow or preview operations
+  ---
+  duration_ms: 109.5567
+  type: 'test'
+  ...
+# Subtest: destination changes show one review, retain all inputs on Back, and do not reattach an unchanged rule
+ok 108 - destination changes show one review, retain all inputs on Back, and do not reattach an unchanged rule
+  ---
+  duration_ms: 106.6839
+  type: 'test'
+  ...
+# Subtest: price source condition and destination edits share the same form and are saved only after their review
+ok 109 - price source condition and destination edits share the same form and are saved only after their review
+  ---
+  duration_ms: 146.6148
+  type: 'test'
+  ...
+# Subtest: workflow-only changes require review but do not write the unchanged target; repeated saves do not attach twice
+ok 110 - workflow-only changes require review but do not write the unchanged target; repeated saves do not attach twice
+  ---
+  duration_ms: 85.5978
+  type: 'test'
+  ...
+# Subtest: a failed rule attachment keeps the saved target and retries only the failed attachment
+ok 111 - a failed rule attachment keeps the saved target and retries only the failed attachment
+  ---
+  duration_ms: 105.5193
+  type: 'test'
+  ...
+# Subtest: creating with a failed optional rule keeps the new monitor ID and retries its guarded attachment without duplicate creation
+ok 112 - creating with a failed optional rule keeps the new monitor ID and retries its guarded attachment without duplicate creation
+  ---
+  duration_ms: 91.3711
+  type: 'test'
+  ...
+# Subtest: a new-registration duplicate response keeps the editable draft instead of requiring a nonexistent target revision
+ok 113 - a new-registration duplicate response keeps the editable draft instead of requiring a nonexistent target revision
+  ---
+  duration_ms: 80.1332
+  type: 'test'
+  ...
+# Subtest: a concurrent workflow assignment blocks guarded retries until explicit reload and review of the retained choice
+ok 114 - a concurrent workflow assignment blocks guarded retries until explicit reload and review of the retained choice
+  ---
+  duration_ms: 79.7817
+  type: 'test'
+  ...
+# Subtest: detach guards both target revision and the previously selected workflow even for legacy same-revision changes
+ok 115 - detach guards both target revision and the previously selected workflow even for legacy same-revision changes
+  ---
+  duration_ms: 74.6655
+  type: 'test'
+  ...
+# Subtest: a successful guarded assignment retains its returned revision if subsequent display refresh fails
+ok 116 - a successful guarded assignment retains its returned revision if subsequent display refresh fails
+  ---
+  duration_ms: 69.3249
+  type: 'test'
+  ...
+# Subtest: stale edits preserve their inputs and explicitly rebase changed fields while retaining other current server settings
+ok 117 - stale edits preserve their inputs and explicitly rebase changed fields while retaining other current server settings
+  ---
+  duration_ms: 60.496
+  type: 'test'
+  ...
+# Subtest: closing and switching notification tabs retains an edit without saving or reopening it on the wrong kind
+ok 118 - closing and switching notification tabs retains an edit without saving or reopening it on the wrong kind
+  ---
+  duration_ms: 89.6061
+  type: 'test'
+  ...
+# Subtest: the unified timing editor serializes its atomic save and keeps other unsaved changes for review with the new revision
+ok 119 - the unified timing editor serializes its atomic save and keeps other unsaved changes for review with the new revision
+  ---
+  duration_ms: 120.6296
+  type: 'test'
+  ...
+# Subtest: dialogs trap focus in the topmost dialog and prevent lower dialog cancellation until its nested destination closes
+ok 120 - dialogs trap focus in the topmost dialog and prevent lower dialog cancellation until its nested destination closes
+  ---
+  duration_ms: 18.0344
+  type: 'test'
+  ...
+# Subtest: S24-2 a committed resume updates the displayed state and retry revision before a failed list refresh
+ok 121 - S24-2 a committed resume updates the displayed state and retry revision before a failed list refresh
+  ---
+  duration_ms: 69.6023
+  type: 'test'
+  ...
+# Subtest: N2 a retained dm confirmation cannot leak into another monitor and same-monitor resume keeps it
+ok 122 - N2 a retained dm confirmation cannot leak into another monitor and same-monitor resume keeps it
+  ---
+  duration_ms: 121.4583
+  type: 'test'
+  ...
+# Subtest: N2 a retained channel confirmation cannot leak into another monitor and same-monitor resume keeps it
+ok 123 - N2 a retained channel confirmation cannot leak into another monitor and same-monitor resume keeps it
+  ---
+  duration_ms: 148.5987
+  type: 'test'
+  ...
+# Subtest: monitor URL inference respects domain boundaries, credentials, protocol and short-link services
+ok 124 - monitor URL inference respects domain boundaries, credentials, protocol and short-link services
+  ---
+  duration_ms: 0.717
+  type: 'test'
+  ...
+# Subtest: state labels distinguish initial baseline, pause, rate limit, corruption and ordinary failures
+ok 125 - state labels distinguish initial baseline, pause, rate limit, corruption and ordinary failures
+  ---
+  duration_ms: 0.7561
+  type: 'test'
+  ...
+# Subtest: format normalization preview covers all guest and price sources without provider HTTP or resource mutation
+ok 126 - format normalization preview covers all guest and price sources without provider HTTP or resource mutation
+  ---
+  duration_ms: 443.9024
+  type: 'test'
+  ...
+# Subtest: SQL monitor search finds rows beyond the first page, treats wildcards literally and excludes other owners
+ok 127 - SQL monitor search finds rows beyond the first page, treats wildcards literally and excludes other owners
+  ---
+  duration_ms: 2813.8018
+  type: 'test'
+  ...
+# Subtest: native display-label edits keep notification identity and optimistic concurrency
+    # Subtest: auto: one-save label change preserves every target field and records the harmless revision step
+    ok 1 - auto: one-save label change preserves every target field and records the harmless revision step
+      ---
+      duration_ms: 66.6782
+      type: 'test'
+      ...
+    # Subtest: auto: stale concurrent label saves do not overwrite each other
+    ok 2 - auto: stale concurrent label saves do not overwrite each other
+      ---
+      duration_ms: 57.0193
+      type: 'test'
+      ...
+    # Subtest: auto: an audit failure rolls the label and revision back
+    ok 3 - auto: an audit failure rolls the label and revision back
+      ---
+      duration_ms: 31.2888
+      type: 'test'
+      ...
+    # Subtest: auto: another owner cannot rename a private monitor
+    ok 4 - auto: another owner cannot rename a private monitor
+      ---
+      duration_ms: 52.7143
+      type: 'test'
+      ...
+    # Subtest: auto: stopped notifications remain stopped and a retried unchanged label does not advance revision
+    ok 5 - auto: stopped notifications remain stopped and a retried unchanged label does not advance revision
+      ---
+      duration_ms: 81.8823
+      type: 'test'
+      ...
+    # Subtest: price: one-save label change preserves every target field and records the harmless revision step
+    ok 6 - price: one-save label change preserves every target field and records the harmless revision step
+      ---
+      duration_ms: 34.687
+      type: 'test'
+      ...
+    # Subtest: price: stale concurrent label saves do not overwrite each other
+    ok 7 - price: stale concurrent label saves do not overwrite each other
+      ---
+      duration_ms: 35.6263
+      type: 'test'
+      ...
+    # Subtest: price: an audit failure rolls the label and revision back
+    ok 8 - price: an audit failure rolls the label and revision back
+      ---
+      duration_ms: 24.3203
+      type: 'test'
+      ...
+    # Subtest: price: another owner cannot rename a private monitor
+    ok 9 - price: another owner cannot rename a private monitor
+      ---
+      duration_ms: 15.3579
+      type: 'test'
+      ...
+    # Subtest: price: stopped notifications remain stopped and a retried unchanged label does not advance revision
+    ok 10 - price: stopped notifications remain stopped and a retried unchanged label does not advance revision
+      ---
+      duration_ms: 67.4493
+      type: 'test'
+      ...
+    # Subtest: a price completion holding its source and a concurrent label save both commit without losing the notification
+    ok 11 - a price completion holding its source and a concurrent label save both commit without losing the notification
+      ---
+      duration_ms: 484.6072
+      type: 'test'
+      ...
+    # Subtest: a price fetch finishing after a label edit retains the notification; a functional revision still invalidates it
+    ok 12 - a price fetch finishing after a label edit retains the notification; a functional revision still invalidates it
+      ---
+      duration_ms: 66.7504
+      type: 'test'
+      ...
+    1..12
+ok 128 - native display-label edits keep notification identity and optimistic concurrency
+  ---
+  duration_ms: 2553.4092
+  type: 'test'
+  ...
+# Subtest: monitor readiness reads current rules and destinations independently of resource pagination
+    # Subtest: auto: the default notification has no artificial rule requirement
+    ok 1 - auto: the default notification has no artificial rule requirement
+      ---
+      duration_ms: 16.4572
+      type: 'test'
+      ...
+    # Subtest: auto: unapplied paused and missing rules have distinct verified status
+    ok 2 - auto: unapplied paused and missing rules have distinct verified status
+      ---
+      duration_ms: 73.4863
+      type: 'test'
+      ...
+    # Subtest: auto: disabled deleted missing and foreign destinations are never healthy
+    ok 3 - auto: disabled deleted missing and foreign destinations are never healthy
+      ---
+      duration_ms: 35.0391
+      type: 'test'
+      ...
+    # Subtest: price: the default notification has no artificial rule requirement
+    ok 4 - price: the default notification has no artificial rule requirement
+      ---
+      duration_ms: 7.5141
+      type: 'test'
+      ...
+    # Subtest: price: unapplied paused and missing rules have distinct verified status
+    ok 5 - price: unapplied paused and missing rules have distinct verified status
+      ---
+      duration_ms: 92.9472
+      type: 'test'
+      ...
+    # Subtest: price: disabled deleted missing and foreign destinations are never healthy
+    ok 6 - price: disabled deleted missing and foreign destinations are never healthy
+      ---
+      duration_ms: 58.1412
+      type: 'test'
+      ...
+    # Subtest: X readiness verifies private resources without changing monitor identity, reservations or revision
+    ok 7 - X readiness verifies private resources without changing monitor identity, reservations or revision
+      ---
+      duration_ms: 673.7582
+      type: 'test'
+      ...
+    1..7
+ok 129 - monitor readiness reads current rules and destinations independently of resource pagination
+  ---
+  duration_ms: 3246.6966
+  type: 'test'
+  ...
+# Subtest: unchanged valid revisions require no audit read and invalid identity/revision shapes fail closed
+ok 130 - unchanged valid revisions require no audit read and invalid identity/revision shapes fail closed
+  ---
+  duration_ms: 0.6189
+  type: 'test'
+  ...
+# Subtest: auto accepts only complete owned harmless metadata chains
+ok 131 - auto accepts only complete owned harmless metadata chains
+  ---
+  duration_ms: 0.9209
+  type: 'test'
+  ...
+# Subtest: price accepts only complete owned harmless metadata chains
+ok 132 - price accepts only complete owned harmless metadata chains
+  ---
+  duration_ms: 0.627
+  type: 'test'
+  ...
+# Subtest: x accepts only complete owned harmless metadata chains
+ok 133 - x accepts only complete owned harmless metadata chains
+  ---
+  duration_ms: 0.1778
+  type: 'test'
+  ...
+# Subtest: X can mix pure pool moves and renames but functional combined edits cannot bridge a missing revision
+ok 134 - X can mix pure pool moves and renames but functional combined edits cannot bridge a missing revision
+  ---
+  duration_ms: 0.2303
+  type: 'test'
+  ...
+# Subtest: persisted native, X and mixed graph jobs survive audited display-label edits while functional edits remain fenced
+    # Subtest: real producers rename all three kinds and ordinary and mixed preflight retain frozen plans
+    ok 1 - real producers rename all three kinds and ordinary and mixed preflight retain frozen plans
+      ---
+      duration_ms: 255.6238
+      type: 'test'
+      ...
+    # Subtest: missing, foreign, duplicate and damaged native/X rename history cannot authorize retained jobs
+    ok 2 - missing, foreign, duplicate and damaged native/X rename history cannot authorize retained jobs
+      ---
+      duration_ms: 1378.8601
+      type: 'test'
+      ...
+    # Subtest: identity checks and actual configuration changes retain their cancellation policy after a valid rename
+    ok 3 - identity checks and actual configuration changes retain their cancellation policy after a valid rename
+      ---
+      duration_ms: 416.4545
+      type: 'test'
+      ...
+    1..3
+ok 135 - persisted native, X and mixed graph jobs survive audited display-label edits while functional edits remain fenced
+  ---
+  duration_ms: 4711.3002
+  type: 'test'
+  ...
+# Subtest: Discord and Dashboard distinguish a target plan from shared acquisition without changing schedules
+    # Subtest: actual registration against an initialized shared source remains pending its own first check
+    ok 1 - actual registration against an initialized shared source remains pending its own first check
+      ---
+      duration_ms: 13.119
+      type: 'test'
+      ...
+    # Subtest: two owners retain distinct target intervals while sharing the same acquisition evidence
+    ok 2 - two owners retain distinct target intervals while sharing the same acquisition evidence
+      ---
+      duration_ms: 17.3847
+      type: 'test'
+      ...
+    # Subtest: a shared upstream 429 delays both displayed next checks but preserves both raw target plans
+    ok 3 - a shared upstream 429 delays both displayed next checks but preserves both raw target plans
+      ---
+      duration_ms: 14.9949
+      type: 'test'
+      ...
+    # Subtest: an absent target plan never inherits the shared next-check timestamp
+    ok 4 - an absent target plan never inherits the shared next-check timestamp
+      ---
+      duration_ms: 10.5857
+      type: 'test'
+      ...
+    1..4
+ok 136 - Discord and Dashboard distinguish a target plan from shared acquisition without changing schedules
+  ---
+  duration_ms: 2391.3659
+  type: 'test'
+  ...
+# Subtest: price timing keeps its previous source-based meaning and receives no auto-target plan fields
+ok 137 - price timing keeps its previous source-based meaning and receives no auto-target plan fields
+  ---
+  duration_ms: 0.1806
+  type: 'test'
+  ...
+# Subtest: workflow-only native edits use atomic target/assignment CAS and preserve unrelated deliveries
+    # Subtest: auto: two competing workflow choices from one editor version admit exactly one
+    ok 1 - auto: two competing workflow choices from one editor version admit exactly one
+      ---
+      duration_ms: 106.0841
+      type: 'test'
+      ...
+    # Subtest: auto: a stale monitor revision or old assignment cannot replace the newer choice
+    ok 2 - auto: a stale monitor revision or old assignment cannot replace the newer choice
+      ---
+      duration_ms: 111.133
+      type: 'test'
+      ...
+    # Subtest: auto: guarded attach/detach advance revisions and unchanged assignments are safe no-ops
+    ok 3 - auto: guarded attach/detach advance revisions and unchanged assignments are safe no-ops
+      ---
+      duration_ms: 146.1513
+      type: 'test'
+      ...
+    # Subtest: auto: a simultaneous guarded detach cannot erase a newer workflow choice
+    ok 4 - auto: a simultaneous guarded detach cannot erase a newer workflow choice
+      ---
+      duration_ms: 140.0844
+      type: 'test'
+      ...
+    # Subtest: auto: legacy unguarded calls retain their flags while fencing newer choices and cancelling obsolete jobs
+    ok 5 - auto: legacy unguarded calls retain their flags while fencing newer choices and cancelling obsolete jobs
+      ---
+      duration_ms: 184.4755
+      type: 'test'
+      ...
+    # Subtest: auto: private ownership remains required for guarded changes even for an administrator
+    ok 6 - auto: private ownership remains required for guarded changes even for an administrator
+      ---
+      duration_ms: 104.9031
+      type: 'test'
+      ...
+    # Subtest: auto: an audit failure rolls back assignment, revision and all pending cancellation
+    ok 7 - auto: an audit failure rolls back assignment, revision and all pending cancellation
+      ---
+      duration_ms: 191.3126
+      type: 'test'
+      ...
+    # Subtest: auto: cancellation affects only the edited target; unknown/sent records and v2 peers remain intact
+    ok 8 - auto: cancellation affects only the edited target; unknown/sent records and v2 peers remain intact
+      ---
+      duration_ms: 476.6078
+      type: 'test'
+      ...
+    # Subtest: price: two competing workflow choices from one editor version admit exactly one
+    ok 9 - price: two competing workflow choices from one editor version admit exactly one
+      ---
+      duration_ms: 99.8352
+      type: 'test'
+      ...
+    # Subtest: price: a stale monitor revision or old assignment cannot replace the newer choice
+    ok 10 - price: a stale monitor revision or old assignment cannot replace the newer choice
+      ---
+      duration_ms: 183.4009
+      type: 'test'
+      ...
+    # Subtest: price: guarded attach/detach advance revisions and unchanged assignments are safe no-ops
+    ok 11 - price: guarded attach/detach advance revisions and unchanged assignments are safe no-ops
+      ---
+      duration_ms: 183.5475
+      type: 'test'
+      ...
+    # Subtest: price: a simultaneous guarded detach cannot erase a newer workflow choice
+    ok 12 - price: a simultaneous guarded detach cannot erase a newer workflow choice
+      ---
+      duration_ms: 114.0822
+      type: 'test'
+      ...
+    # Subtest: price: legacy unguarded calls retain their flags while fencing newer choices and cancelling obsolete jobs
+    ok 13 - price: legacy unguarded calls retain their flags while fencing newer choices and cancelling obsolete jobs
+      ---
+      duration_ms: 129.4121
+      type: 'test'
+      ...
+    # Subtest: price: private ownership remains required for guarded changes even for an administrator
+    ok 14 - price: private ownership remains required for guarded changes even for an administrator
+      ---
+      duration_ms: 90.2318
+      type: 'test'
+      ...
+    # Subtest: price: an audit failure rolls back assignment, revision and all pending cancellation
+    ok 15 - price: an audit failure rolls back assignment, revision and all pending cancellation
+      ---
+      duration_ms: 144.0512
+      type: 'test'
+      ...
+    # Subtest: price: cancellation affects only the edited target; unknown/sent records and v2 peers remain intact
+    ok 16 - price: cancellation affects only the edited target; unknown/sent records and v2 peers remain intact
+      ---
+      duration_ms: 327.9206
+      type: 'test'
+      ...
+    # Subtest: legacy targets without saved metadata acquire a CAS revision without replacing their display-label fallback
+    ok 17 - legacy targets without saved metadata acquire a CAS revision without replacing their display-label fallback
+      ---
+      duration_ms: 56.6392
+      type: 'test'
+      ...
+    # Subtest: HTTP attach and detach validate complete guards and forward the current previous assignment
+    ok 18 - HTTP attach and detach validate complete guards and forward the current previous assignment
+      ---
+      duration_ms: 136.9603
+      type: 'test'
+      ...
+    # Subtest: the owner fence serializes physical delivery and a workflow choice, preserving both legitimate winners
+    ok 19 - the owner fence serializes physical delivery and a workflow choice, preserving both legitimate winners
+      ---
+      duration_ms: 409.4487
+      type: 'test'
+      ...
+    # Subtest: a real two-row InnoDB deadlock before the wire rolls back the attempt and a valid retry completes the old delivery once
+    ok 20 - a real two-row InnoDB deadlock before the wire rolls back the attempt and a valid retry completes the old delivery once
+      ---
+      duration_ms: 230.5118
+      type: 'test'
+      ...
+    1..20
+ok 138 - workflow-only native edits use atomic target/assignment CAS and preserve unrelated deliveries
+  ---
+  duration_ms: 5641.7743
+  type: 'test'
+  ...
+# Disposable workflow-CAS database: cbte_automation_test_581103615d66679e440f
+# Subtest: YouTube registration defaults to releases on/posts off; toggles survive review/back and save
+ok 139 - YouTube registration defaults to releases on/posts off; toggles survive review/back and save
+  ---
+  duration_ms: 183.0072
+  type: 'test'
+  ...
+# Subtest: existing YouTube options are editable and reviewed instead of being dropped as a label-only change
+ok 140 - existing YouTube options are editable and reviewed instead of being dropped as a label-only change
+  ---
+  duration_ms: 26.9609
+  type: 'test'
+  ...
+# Subtest: other services do not display YouTube controls
+ok 141 - other services do not display YouTube controls
+  ---
+  duration_ms: 18.947
+  type: 'test'
+  ...
+1..141
+# tests 259
+# suites 0
+# pass 259
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 75036.0119

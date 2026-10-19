@@ -1,0 +1,99 @@
+
+> comebacktwitterembed-dashboard@0.1.0 build
+> node scripts/start-dashboard.js build
+
+[dashboard] building production dashboard into .next-build.
+[dashboard] Prisma schema differs from the generated client; skipping `prisma generate` so live dashboard builds remain swappable. Stop the dashboard and set DASHBOARD_FORCE_PRISMA_GENERATE=1 when regenerated Prisma types are required.
+[dashboard] using existing Prisma Client.
+   ▲ Next.js 15.5.19
+   - Experiments (use with caution):
+     · cpus: 2
+
+   Creating an optimized production build ...
+ ✓ Compiled successfully in 15.7s
+   Linting and checking validity of types ...
+
+ ⚠ The Next.js plugin was not detected in your ESLint configuration. See https://nextjs.org/docs/app/api-reference/config/eslint#migrating-existing-config
+   Collecting page data ...
+   Generating static pages (0/31) ...
+   Generating static pages (7/31) 
+   Generating static pages (15/31) 
+   Generating static pages (23/31) 
+ ✓ Generating static pages (31/31)
+   Finalizing page optimization ...
+   Collecting build traces ...
+
+Route (app)                                                   Size  First Load JS
+┌ ƒ /                                                      1.47 kB         148 kB
+├ ƒ /_not-found                                              993 B         103 kB
+├ ƒ /admin                                                 2.38 kB         108 kB
+├ ƒ /admin/auto-watch-intervals                            2.37 kB         115 kB
+├ ƒ /admin/donors                                           9.9 kB         140 kB
+├ ƒ /admin/notification-plans                              27.7 kB         163 kB
+├ ƒ /admin/send-message                                    2.38 kB         105 kB
+├ ƒ /admin/support-console                                 2.38 kB         105 kB
+├ ƒ /admin/url-inspector                                   2.38 kB         105 kB
+├ ƒ /api/admin/agent-recovery                                223 B         103 kB
+├ ƒ /api/admin/agent/[...path]                               223 B         103 kB
+├ ƒ /api/admin/analytics                                     223 B         103 kB
+├ ƒ /api/admin/auto-watch-intervals                          223 B         103 kB
+├ ƒ /api/admin/catalog                                       223 B         103 kB
+├ ƒ /api/admin/database                                      223 B         103 kB
+├ ƒ /api/admin/directory                                     223 B         103 kB
+├ ƒ /api/admin/guild-analytics-preview                       223 B         103 kB
+├ ƒ /api/admin/logs                                          223 B         103 kB
+├ ƒ /api/admin/overview                                      223 B         103 kB
+├ ƒ /api/admin/provider-marketing-preview                    223 B         103 kB
+├ ƒ /api/admin/recovery                                      223 B         103 kB
+├ ƒ /api/admin/settings                                      223 B         103 kB
+├ ƒ /api/auth/[...nextauth]                                  223 B         103 kB
+├ ƒ /api/automation/[...path]                                223 B         103 kB
+├ ƒ /api/automation/square/webhook                           223 B         103 kB
+├ ƒ /api/automation/x-setup/download                         223 B         103 kB
+├ ƒ /api/guilds                                              223 B         103 kB
+├ ƒ /api/guilds/[guildId]/access                             223 B         103 kB
+├ ƒ /api/guilds/[guildId]/audit-logs                         223 B         103 kB
+├ ƒ /api/guilds/[guildId]/catalog                            223 B         103 kB
+├ ƒ /api/guilds/[guildId]/media                              223 B         103 kB
+├ ƒ /api/guilds/[guildId]/providers                          223 B         103 kB
+├ ƒ /api/guilds/[guildId]/providers/[providerId]/reset       223 B         103 kB
+├ ƒ /api/guilds/[guildId]/providers/[providerId]/settings    223 B         103 kB
+├ ƒ /api/guilds/[guildId]/providers/bulk                     223 B         103 kB
+├ ƒ /api/guilds/[guildId]/settings                           223 B         103 kB
+├ ƒ /api/guilds/switcher                                     223 B         103 kB
+├ ƒ /api/guilds/sync                                         223 B         103 kB
+├ ƒ /api/health                                              223 B         103 kB
+├ ƒ /api/me                                                  223 B         103 kB
+├ ƒ /api/me/dashboard-ui                                     223 B         103 kB
+├ ƒ /api/personal-links/[...path]                            223 B         103 kB
+├ ƒ /dashboard                                              4.8 kB         186 kB
+├ ƒ /dashboard/[guildId]                                     254 B         182 kB
+├ ƒ /dashboard/[guildId]/[section]                          2.2 kB         184 kB
+├ ƒ /dashboard/[guildId]/access                            6.44 kB         188 kB
+├ ƒ /dashboard/[guildId]/audit-logs                         2.2 kB         184 kB
+├ ƒ /dashboard/[guildId]/automation                          904 B         302 kB
+├ ƒ /dashboard/[guildId]/diagnostics                         237 B         182 kB
+├ ƒ /dashboard/[guildId]/logs                               2.2 kB         184 kB
+├ ƒ /dashboard/[guildId]/media                             1.68 kB         183 kB
+├ ƒ /dashboard/[guildId]/preview                            2.9 kB         184 kB
+├ ƒ /dashboard/[guildId]/providers                         2.44 kB         184 kB
+├ ƒ /dashboard/[guildId]/providers/[providerId]              252 B         201 kB
+├ ƒ /dashboard/[guildId]/settings                          7.43 kB         189 kB
+├ ƒ /dashboard/automation                                  2.02 kB         329 kB
+├ ƒ /dashboard/automation/plans                              247 B         161 kB
+├ ƒ /dashboard/automation/support                            249 B         168 kB
+├ ƒ /dashboard/automation/x                                4.05 kB         160 kB
+├ ƒ /dashboard/bulk                                         5.1 kB         206 kB
+├ ƒ /dashboard/personal-links                              14.5 kB         153 kB
+├ ƒ /media/[providerId]/[token]/[filename]                   223 B         103 kB
+├ ƒ /niconico-downloads/[token]/[filename]                   223 B         103 kB
+└ ƒ /youtube-downloads/[token]/[filename]                    223 B         103 kB
++ First Load JS shared by all                               103 kB
+  ├ chunks/1683-8fc30983627309b5.js                        46.1 kB
+  ├ chunks/f2003b4b-588cca8ef55eafe7.js                    54.2 kB
+  └ other shared chunks (total)                            2.17 kB
+
+
+ƒ  (Dynamic)  server-rendered on demand
+
+[dashboard] could not activate .next-builds/20261019164744-85536-55uqu2: EPERM: operation not permitted, rename 'C:\Users\yussy\.codex\worktrees\x-realtime-choice-20261014\comebacktwitterembed\dashboard\.next-build' -> 'C:\Users\yussy\.codex\worktrees\x-realtime-choice-20261014\comebacktwitterembed\dashboard\.next-builds\20261019164744-85536-55uqu2'

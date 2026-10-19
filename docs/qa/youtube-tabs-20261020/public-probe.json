@@ -1,0 +1,60 @@
+{
+  "at": "2026-10-19T16:42:44.067Z",
+  "channelId": "UCvhViFXvb5Y83YGEpRX1cvg",
+  "readOnly": true,
+  "databaseWrites": 0,
+  "notificationsSent": 0,
+  "isolatedWorkerTest": false,
+  "publicFetch": true,
+  "releaseCount": 5,
+  "communityCount": 10,
+  "expectedVideo": "aqVt_zlAwK8",
+  "expectedReleaseFound": true,
+  "quietBaselineCount": 15,
+  "secondBaselineCount": 0,
+  "secondNewIds": [],
+  "releases": [
+    {
+      "id": "aqVt_zlAwK8",
+      "title": "Odd Dice",
+      "url": "https://www.youtube.com/watch?v=aqVt_zlAwK8"
+    },
+    {
+      "id": "release:OLAK5uy_m-n2BxPc4Jv0WMt4DrofL1wKdNiYdj2yg",
+      "title": "Narasu",
+      "url": "https://www.youtube.com/playlist?list=OLAK5uy_m-n2BxPc4Jv0WMt4DrofL1wKdNiYdj2yg"
+    },
+    {
+      "id": "XYpcz_mI4ck",
+      "title": "Where Our Blue Is (Cover)",
+      "url": "https://www.youtube.com/watch?v=XYpcz_mI4ck"
+    },
+    {
+      "id": "uZh2qHvJFTI",
+      "title": "unravel (Cover)",
+      "url": "https://www.youtube.com/watch?v=uZh2qHvJFTI"
+    },
+    {
+      "id": "-CFoE43oPOk",
+      "title": "On the Day the Carnations Bloom",
+      "url": "https://www.youtube.com/watch?v=-CFoE43oPOk"
+    }
+  ],
+  "posts": [
+    {
+      "id": "post:UgkxkBbh6RX5JCtF4qdd2_apG645e5hQ_luB",
+      "title": "【音楽配信情報】\nmillsage「Odd Dice」\nhttps://bmu.lnk.to/millsage_OddDiceid\n\n各音楽配信サービスにてお聴きいただけます。\n※一部サービス順次配信開始\n\n#バンドリ #millsage",
+      "url": "https://www.youtube.com/post/UgkxkBbh6RX5JCtF4qdd2_apG645e5hQ_luB"
+    },
+    {
+      "id": "post:UgkxPL9PaOm-tWxWSa70VSxILn5oTJf-_yba",
+      "title": "【MV公開】\n💐millsage「everscape」\nhttps://youtu.be/nPv1dBYawZQ\n\n#バンドリ #millsage",
+      "url": "https://www.youtube.com/post/UgkxPL9PaOm-tWxWSa70VSxILn5oTJf-_yba"
+    },
+    {
+      "id": "post:UgkxNyEW4s4N7TY0exx34OTGCDTn0FyvEciV",
+      "title": "【新曲公開】\n💐millsage「鳴らす」\nhttps://youtu.be/pZgZXej3OCg\n\n#バンドリ #millsage",
+      "url": "https://www.youtube.com/post/UgkxNyEW4s4N7TY0exx34OTGCDTn0FyvEciV"
+    }
+  ]
+}

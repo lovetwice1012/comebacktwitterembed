@@ -1,0 +1,274 @@
+TAP version 13
+# Subtest: youtube extract: builds a self-owned video embed from Invidious metadata
+ok 1 - youtube extract: builds a self-owned video embed from Invidious metadata
+  ---
+  duration_ms: 463.9844
+  type: 'test'
+  ...
+# Subtest: youtube extract: falls back to YouTube page metadata when Invidious returns 404
+ok 2 - youtube extract: falls back to YouTube page metadata when Invidious returns 404
+  ---
+  duration_ms: 1.4909
+  type: 'test'
+  ...
+# Subtest: youtube extract: shorts URLs are labeled as Shorts
+ok 3 - youtube extract: shorts URLs are labeled as Shorts
+  ---
+  duration_ms: 0.6206
+  type: 'test'
+  ...
+# Subtest: youtube extract: live videos are labeled as Live now and the type field can be hidden
+ok 4 - youtube extract: live videos are labeled as Live now and the type field can be hidden
+  ---
+  duration_ms: 0.9771
+  type: 'test'
+  ...
+# Subtest: youtube extract: premieres are labeled as Premiere and the type field can be hidden
+ok 5 - youtube extract: premieres are labeled as Premiere and the type field can be hidden
+  ---
+  duration_ms: 0.9503
+  type: 'test'
+  ...
+# Subtest: youtube extract: honors the DB-backed description length setting
+ok 6 - youtube extract: honors the DB-backed description length setting
+  ---
+  duration_ms: 0.672
+  type: 'test'
+  ...
+# Subtest: youtube extract: can hide YouTube descriptions
+ok 7 - youtube extract: can hide YouTube descriptions
+  ---
+  duration_ms: 0.502
+  type: 'test'
+  ...
+# Subtest: youtube extract: can re-enable the temporary download button with env flag
+ok 8 - youtube extract: can re-enable the temporary download button with env flag
+  ---
+  duration_ms: 0.6505
+  type: 'test'
+  ...
+# Subtest: youtube extract: builds playlist embeds from playlist metadata
+ok 9 - youtube extract: builds playlist embeds from playlist metadata
+  ---
+  duration_ms: 0.7349
+  type: 'test'
+  ...
+# Subtest: youtube extract: GUI output settings can hide stats and playlist video list
+ok 10 - youtube extract: GUI output settings can hide stats and playlist video list
+  ---
+  duration_ms: 0.5731
+  type: 'test'
+  ...
+# Subtest: youtube extract: video list count setting limits playlist items
+ok 11 - youtube extract: video list count setting limits playlist items
+  ---
+  duration_ms: 0.5386
+  type: 'test'
+  ...
+# Subtest: youtube extract: compact density and link-only media produce a lightweight playlist embed
+ok 12 - youtube extract: compact density and link-only media produce a lightweight playlist embed
+  ---
+  duration_ms: 0.6036
+  type: 'test'
+  ...
+# Subtest: youtube extract: falls back to YouTube page metadata for playlists
+ok 13 - youtube extract: falls back to YouTube page metadata for playlists
+  ---
+  duration_ms: 1.3994
+  type: 'test'
+  ...
+# Subtest: youtube extract: resolves handle urls before building channel embeds
+ok 14 - youtube extract: resolves handle urls before building channel embeds
+  ---
+  duration_ms: 0.6665
+  type: 'test'
+  ...
+# Subtest: youtube extract: falls back to YouTube page metadata for channels
+ok 15 - youtube extract: falls back to YouTube page metadata for channels
+  ---
+  duration_ms: 0.8889
+  type: 'test'
+  ...
+# Subtest: youtube extract: honors reply, delete source, and anonymous settings
+ok 16 - youtube extract: honors reply, delete source, and anonymous settings
+  ---
+  duration_ms: 0.3978
+  type: 'test'
+  ...
+# Subtest: youtube parse: rejects non-youtube urls
+ok 17 - youtube parse: rejects non-youtube urls
+  ---
+  duration_ms: 8.5361
+  type: 'test'
+  ...
+# Subtest: youtube extract: reaches oEmbed after instance and page failures and retains analytics
+ok 18 - youtube extract: reaches oEmbed after instance and page failures and retains analytics
+  ---
+  duration_ms: 0.8175
+  type: 'test'
+  ...
+# Subtest: youtube extract: hidden stats retain native analytics and reloaded clients keep their transport
+ok 19 - youtube extract: hidden stats retain native analytics and reloaded clients keep their transport
+  ---
+  duration_ms: 0.6487
+  type: 'test'
+  ...
+# Subtest: loader: youtube provider is registered with required keys
+ok 20 - loader: youtube provider is registered with required keys
+  ---
+  duration_ms: 623.8193
+  type: 'test'
+  ...
+# Subtest: loader: extractAllUrls picks up youtube variants
+ok 21 - loader: extractAllUrls picks up youtube variants
+  ---
+  duration_ms: 1.7117
+  type: 'test'
+  ...
+# Subtest: loader: youtube urlPattern does not match unrelated or already-rewritten urls
+ok 22 - loader: youtube urlPattern does not match unrelated or already-rewritten urls
+  ---
+  duration_ms: 0.6489
+  type: 'test'
+  ...
+# Subtest: loader: cleanContent strips <...> / ||...|| wrapped youtube urls
+ok 23 - loader: cleanContent strips <...> / ||...|| wrapped youtube urls
+  ---
+  duration_ms: 0.8882
+  type: 'test'
+  ...
+# Subtest: youtube download store cleanup deletes expired indexed files and old orphan dirs
+ok 24 - youtube download store cleanup deletes expired indexed files and old orphan dirs
+  ---
+  duration_ms: 17.3438
+  type: 'test'
+  ...
+# Subtest: youtube download store builds the requested public download URL
+ok 25 - youtube download store builds the requested public download URL
+  ---
+  duration_ms: 0.8114
+  type: 'test'
+  ...
+# Subtest: youtube download store uses audio-only format for YouTube Music links
+ok 26 - youtube download store uses audio-only format for YouTube Music links
+  ---
+  duration_ms: 0.1911
+  type: 'test'
+  ...
+# Subtest: youtube download store uses the best merged format for regular YouTube videos
+ok 27 - youtube download store uses the best merged format for regular YouTube videos
+  ---
+  duration_ms: 0.1251
+  type: 'test'
+  ...
+# Subtest: youtube download store keeps the download button disabled unless explicitly enabled
+ok 28 - youtube download store keeps the download button disabled unless explicitly enabled
+  ---
+  duration_ms: 0.1523
+  type: 'test'
+  ...
+# Subtest: youtube download store includes progress logs when yt-dlp fails
+ok 29 - youtube download store includes progress logs when yt-dlp fails
+  ---
+  duration_ms: 4.4081
+  type: 'test'
+  ...
+# Subtest: YouTube options default to releases on/posts off and validate all server input
+ok 30 - YouTube options default to releases on/posts off and validate all server input
+  ---
+  duration_ms: 1.3891
+  type: 'test'
+  ...
+# Subtest: verified releases include Topic-owned tracks from the artist tab; albums link their whole playlist
+ok 31 - verified releases include Topic-owned tracks from the artist tab; albums link their whole playlist
+  ---
+  duration_ms: 0.7808
+  type: 'test'
+  ...
+# Subtest: community posts keep Unicode text and canonical post URL while excluding other authors and attached videos
+ok 32 - community posts keep Unicode text and canonical post URL while excluding other authors and attached videos
+  ---
+  duration_ms: 0.3692
+  type: 'test'
+  ...
+# Subtest: wrong channels, redirected tabs, consent, malformed JSON and unsafe IDs fail without baselining
+ok 33 - wrong channels, redirected tabs, consent, malformed JSON and unsafe IDs fail without baselining
+  ---
+  duration_ms: 0.7081
+  type: 'test'
+  ...
+# Subtest: streamed tab projections discard large unrelated/tracking values and preserve actual card fields
+ok 34 - streamed tab projections discard large unrelated/tracking values and preserve actual card fields
+  ---
+  duration_ms: 133.567
+  type: 'test'
+  ...
+# Subtest: existing watches quietly baseline new lanes; RSS 304 still detects subsequent releases and opted-in posts
+ok 35 - existing watches quietly baseline new lanes; RSS 304 still detects subsequent releases and opted-in posts
+  ---
+  duration_ms: 5.5163
+  type: 'test'
+  ...
+# Subtest: default posts off performs no posts request; switching off both optional lanes preserves RSS conditional polling
+ok 36 - default posts off performs no posts request; switching off both optional lanes preserves RSS conditional polling
+  ---
+  duration_ms: 1.261
+  type: 'test'
+  ...
+# Subtest: the existing crawl kill switch preserves ordinary RSS monitoring and quietly reseeds optional tabs when restored
+ok 37 - the existing crawl kill switch preserves ordinary RSS monitoring and quietly reseeds optional tabs when restored
+  ---
+  duration_ms: 1.7136
+  type: 'test'
+  ...
+# Subtest: RSS/upload and release overlap produces one ordinary video notification and does not baseline that new upload
+ok 38 - RSS/upload and release overlap produces one ordinary video notification and does not baseline that new upload
+  ---
+  duration_ms: 0.7983
+  type: 'test'
+  ...
+# Subtest: rate limits or failed optional tabs abort the atomic observation without hiding pending discoveries
+ok 39 - rate limits or failed optional tabs abort the atomic observation without hiding pending discoveries
+  ---
+  duration_ms: 0.6612
+  type: 'test'
+  ...
+# Subtest: per-target selection and opt-in timestamp reject old backlog but never alter ordinary videos
+ok 40 - per-target selection and opt-in timestamp reject old backlog but never alter ordinary videos
+  ---
+  duration_ms: 0.1271
+  type: 'test'
+  ...
+# Subtest: community text and release video URLs survive the real event normalizer and ordinary notification formatter
+ok 41 - community text and release video URLs survive the real event normalizer and ordinary notification formatter
+  ---
+  duration_ms: 22.894
+  type: 'test'
+  ...
+# Subtest: YouTube registration defaults to releases on/posts off; toggles survive review/back and save
+ok 42 - YouTube registration defaults to releases on/posts off; toggles survive review/back and save
+  ---
+  duration_ms: 194.8641
+  type: 'test'
+  ...
+# Subtest: existing YouTube options are editable and reviewed instead of being dropped as a label-only change
+ok 43 - existing YouTube options are editable and reviewed instead of being dropped as a label-only change
+  ---
+  duration_ms: 29.6678
+  type: 'test'
+  ...
+# Subtest: other services do not display YouTube controls
+ok 44 - other services do not display YouTube controls
+  ---
+  duration_ms: 20.9301
+  type: 'test'
+  ...
+1..44
+# tests 44
+# suites 0
+# pass 44
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 2767.1633
