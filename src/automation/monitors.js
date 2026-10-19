@@ -23,6 +23,7 @@ function publicMonitor(kind, row) {
     return { kind, id: String(row.id), ownerId: row.user_id, scope: scopeOf(row), guildId: row.guild_id,
         name: row.monitor_name || row.product_name || row.source_url || row.product_url, revision: Number(row.revision || 1),
         providerId: row.provider_id, source: row.source_url || row.product_url, locale: row.source_locale || 'ja', enabled: !!row.enabled,
+        ...(kind === 'auto' && row.provider_id === 'youtube' ? { youtubeOptions: require('../providers/youtube/watch-options').optionsFromRow(row) } : {}),
         destinationId: row.destination_id, destinationType: row.destination_type, channelId: row.origin_channel_id,
         workflowId: row.workflow_id, workflowStatus: row.workflow_status ?? (row.workflow_id ? 'unknown' : null),
         destinationStatus: row.destination_status ?? (row.destination_id ? 'unknown' : null),
@@ -290,6 +291,10 @@ function createMonitors(db, service, destinations, options = {}) {
         const scope = current ? scopeOf(current) : scopeFor(actor, input.scope || 'private').scope;
         if (current && input.scope && input.scope !== scope) fail('SCOPE_IMMUTABLE', '公開範囲は変更できません。');
         const providerId = input.providerId || current?.provider_id;
+        if (kind === 'auto' && providerId === 'youtube') {
+            try { require('../providers/youtube/watch-options').normalizeOptions(input.youtubeOptions, current || {}); }
+            catch { fail('INVALID_YOUTUBE_OPTIONS', 'YouTubeの通知対象を選び直してください。'); }
+        }
         if (['twitter', 'x'].includes(String(providerId).toLowerCase())) fail('TWITTER_REGISTRATION_PAUSED', 'Twitterの新規監視登録は停止しています。');
         const name = String(input.name ?? current?.monitor_name ?? '新しい監視').trim();
         if (!name || name.length > 120) fail('NAME_REQUIRED', '名前は1〜120文字です。');
@@ -389,6 +394,15 @@ function createMonitors(db, service, destinations, options = {}) {
                 enabled: enabled ? 1 : 0, ...(kind === 'auto' ? { premium_slot: premium, source_locale: locale, origin_channel_nsfw: dest.nsfw ? 1 : 0 }
                     : { watch_mode: rule.mode, rule_key: rule.ruleKey, max_price_amount: rule.maxPriceAmount, min_discount_percent: rule.minDiscountPercent, condition_active: 0 }) });
             const identityChanged = !locked || String(locked.source_id) !== String(sourceId) || locked.destination_key !== dest.key || kind === 'price' && locked.rule_key !== rule.ruleKey || !locked.enabled && enabled;
+            if (kind === 'auto' && providerId === 'youtube') {
+                const youtube = require('../providers/youtube/watch-options');
+                const selected = youtube.normalizeOptions(input.youtubeOptions, locked || {}), previous = youtube.optionsFromRow(locked || {});
+                for (const key of ['releases', 'community']) {
+                    fields[`youtube_include_${key}`] = selected[key] ? 1 : 0;
+                    fields[`youtube_${key}_since_ms`] = selected[key] && (identityChanged || !previous[key]) ? now : locked?.[`youtube_${key}_since_ms`] ?? null;
+                    fields[`youtube_${key}_baseline_at_ms`] = identityChanged || !selected[key] || !previous[key] ? null : locked?.[`youtube_${key}_baseline_at_ms`] ?? null;
+                }
+            }
             if (identityChanged) fields.baseline_at_ms = null;
             if (kind === 'auto' && identityChanged) Object.assign(fields, { last_polled_at_ms: null, next_poll_at_ms: null, last_notification_window_at_ms: null });
             if (kind === 'price' && !identityChanged) fields.condition_active = Number(locked.condition_active || 0);
@@ -404,7 +418,9 @@ function createMonitors(db, service, destinations, options = {}) {
             if (!id || enabled) await entitlements.assignSlot(query, ownerId, kind, String(targetId));
             if (kind === 'auto' && enabled) await require('../providers/autoWatch/intervalPolicy').bringSourceForward(query, ownerId, sourceId, now);
             await query('INSERT INTO automation_monitors (target_kind,target_id,name,scope,destination_id,revision) VALUES (?,?,?,?,?,?) ON DUPLICATE KEY UPDATE name=VALUES(name),destination_id=VALUES(destination_id),revision=revision+1', [kind, targetId, name, scope, destId, id ? Number(locked.revision || 1) + 1 : 1]);
-            await service.audit(query, actor, `${kind}:${targetId}`, id ? 'monitor.update' : 'monitor.create', { providerId, destinationId: destId, enabled, usagePolicyVersion: require('./safety').POLICY_VERSION }, guildId);
+            await service.audit(query, actor, `${kind}:${targetId}`, id ? 'monitor.update' : 'monitor.create', { providerId, destinationId: destId, enabled,
+                ...(kind === 'auto' && providerId === 'youtube' ? { youtubeOptions: require('../providers/youtube/watch-options').optionsFromRow(fields) } : {}),
+                usagePolicyVersion: require('./safety').POLICY_VERSION }, guildId);
             return { id: String(targetId), revision: id ? Number(locked.revision || 1) + 1 : 1 };
         });
     }

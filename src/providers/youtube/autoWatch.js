@@ -69,7 +69,7 @@ async function resolveChannelId(source, context) {
     return channelId;
 }
 
-async function fetch(source, context) {
+async function fetchVideos(source, context) {
     const channelId = await resolveChannelId(source, context);
     const excluded = new Set(Array.isArray(source.state?.fallbackExcludedIds) ? source.state.fallbackExcludedIds : []);
     const rssSource = source.state?.fetchMode === 'uploads' ? { ...source, etag: null, last_modified: null } : source;
@@ -90,6 +90,10 @@ async function fetch(source, context) {
     if (response.notModified) return { notModified: true, state, etag: response.etag, lastModified: response.lastModified, rateLimit: response.rateLimit };
     state.fetchMode = 'rss';
     return { items: feedItems(response.body).filter(item => !excluded.has(item.contentId)), state, etag: response.etag, lastModified: response.lastModified, rateLimit: response.rateLimit };
+}
+
+async function fetch(source, context) {
+    return require('./watch-tabs').fetchTabs(source, context, await fetchVideos(source, context));
 }
 
 async function fetchUploads(source, context, channelId, excluded) {
@@ -127,7 +131,7 @@ module.exports = {
     minPollMs: 15 * MINUTE,
     defaultPollMs: 30 * MINUTE,
     globalSpacingMs: 5000,
-    requestCost: 3,
+    requestCost: 5,
     normalizeSource,
     fetch,
     _internal: { feedItems, normalizeSource, resolveChannelId, xmlValue },

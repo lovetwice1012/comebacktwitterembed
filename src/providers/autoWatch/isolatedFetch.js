@@ -31,8 +31,8 @@ function commandFor(platform, timeoutMs) {
 }
 
 async function fetchIsolated(source, config, options = {}) {
-    // Handle resolution plus RSS/fallback may use three network requests.
-    const timeoutMs = config.timeoutMs * 3 + 10000;
+    // YouTube can resolve a handle, read RSS/uploads, releases and posts.
+    const timeoutMs = config.timeoutMs * (source.provider_id === 'youtube' ? 5 : 3) + 10000;
     const spec = commandFor(options.platform || process.platform, timeoutMs);
     const launch = options.spawn || spawn;
     return new Promise((resolve, reject) => {

@@ -211,6 +211,7 @@ async function listTargets(userId) {
     await ensureDatabaseSchema();
     const rows = await db.queryDatabase(
         `SELECT t.id, t.enabled, t.premium_slot, t.created_at_ms, t.destination_type,
+                t.youtube_include_releases,t.youtube_include_community,
                 t.last_polled_at_ms,t.next_poll_at_ms,
                 s.provider_id, s.source_key, s.source_url, s.last_checked_at_ms, s.next_check_at_ms,
                 s.failure_count, s.last_error_code,
@@ -229,6 +230,7 @@ async function listTargets(userId) {
         enabled: Boolean(row.enabled),
         premium: Boolean(row.premium_slot),
         destinationType: row.destination_type,
+        ...(row.provider_id === 'youtube' ? { youtubeOptions: require('../youtube/watch-options').optionsFromRow(row) } : {}),
         webhookEndpointId: row.webhook_endpoint_id ? String(row.webhook_endpoint_id) : null,
         ...require('./target-timing').targetTiming(row),
         failureCount: Number(row.failure_count || 0),
@@ -269,7 +271,7 @@ async function activeSourceCounts() {
 }
 
 function sourceLeaseMs(config = monitorConfig()) {
-    return Math.max(SOURCE_LEASE_MS, config.timeoutMs * 3 + 30000);
+    return Math.max(SOURCE_LEASE_MS, config.timeoutMs * 5 + 30000);
 }
 
 async function rescueLegacyBacklog(now) {
@@ -319,6 +321,8 @@ async function claimDueSources(now, limit = 16, config = monitorConfig()) {
     const boundedLimit = integer(limit, 16, 1, 128);
     const rows = await db.queryDatabase(
         `SELECT s.*,
+         EXISTS(SELECT 1 FROM auto_watch_targets yt WHERE yt.source_id=s.id AND yt.enabled=1 AND yt.youtube_include_releases=1) AS youtube_fetch_releases,
+         EXISTS(SELECT 1 FROM auto_watch_targets yt WHERE yt.source_id=s.id AND yt.enabled=1 AND yt.youtube_include_community=1) AS youtube_fetch_community,
          (SELECT MIN(COALESCE(u.auto_watch_interval_minutes*60000,s.poll_interval_ms))
           FROM ${TABLES.autoWatchTargets} t JOIN ${TABLES.users} u ON u.user_id=t.user_id WHERE t.source_id=s.id AND t.enabled=1) AS requested_poll_interval_ms,
          EXISTS(SELECT 1 FROM ${TABLES.autoWatchTargets} t JOIN ${TABLES.users} u ON u.user_id=t.user_id
@@ -409,6 +413,11 @@ async function completeSource(source, result) {
                 [result.checkedAtMs, result.checkedAtMs + Number(target.interval_ms), target.id]);
         }
         await query(`UPDATE ${TABLES.autoWatchTargets} SET baseline_at_ms=? WHERE source_id=? AND enabled=1 AND baseline_at_ms IS NULL`, [result.checkedAtMs, source.id]);
+        if (source.provider_id === 'youtube') await query(`UPDATE auto_watch_targets SET
+            youtube_releases_baseline_at_ms=IF(?=1 AND youtube_include_releases=1,COALESCE(youtube_releases_baseline_at_ms,?),youtube_releases_baseline_at_ms),
+            youtube_community_baseline_at_ms=IF(?=1 AND youtube_include_community=1,COALESCE(youtube_community_baseline_at_ms,?),youtube_community_baseline_at_ms)
+            WHERE source_id=? AND enabled=1`, [result.state?.youtubeTabs?.releases?.initialized === true ? 1 : 0, result.checkedAtMs,
+                result.state?.youtubeTabs?.community?.initialized === true ? 1 : 0, result.checkedAtMs, source.id]);
     });
 }
 
@@ -560,6 +569,8 @@ async function cooldownProvider(providerId, untilMs) {
 async function createItemsAndDeliveries(source, items, now) {
     const targets = await db.queryDatabase(
         `SELECT t.id,t.created_at_ms,t.baseline_at_ms,t.next_poll_at_ms,t.last_notification_window_at_ms,t.user_id,
+            t.youtube_include_releases,t.youtube_include_community,t.youtube_releases_since_ms,t.youtube_community_since_ms,
+            t.youtube_releases_baseline_at_ms,t.youtube_community_baseline_at_ms,
             (SELECT slot_cost FROM automation_monitor_cadence c WHERE c.target_kind='auto' AND c.target_id=t.id AND c.owner_user_id=t.user_id) AS slot_cost,
             (SELECT COALESCE(u.auto_watch_interval_minutes*60000,(SELECT poll_interval_ms FROM auto_watch_sources WHERE id=t.source_id))
              FROM users u WHERE u.user_id=t.user_id) AS interval_ms
@@ -595,6 +606,7 @@ async function createItemsAndDeliveries(source, items, now) {
             // A newly registered watcher must not receive older discoveries
             // merely because a prior delivery was repaired after a restart.
             if (Number(target.created_at_ms || 0) > discoveredAtMs || Number(target.baseline_at_ms) >= discoveredAtMs) continue;
+            if (source.provider_id === 'youtube' && !require('../youtube/watch-options').acceptsItem(target, item, discoveredAtMs)) continue;
             const cadenceDueAtMs = Math.max(now, Number(target.next_poll_at_ms || 0),
                 Number(target.last_notification_window_at_ms || 0) ? Number(target.last_notification_window_at_ms) + Number(target.interval_ms) : 0);
             await db.queryDatabase(

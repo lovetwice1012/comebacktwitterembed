@@ -26,7 +26,7 @@ test('SQL leases cover slow isolated acquisition and resource retries retain cur
         const id = (await db.queryDatabase('SELECT id FROM auto_watch_sources'))[0].id;
         await db.queryDatabase("INSERT INTO auto_watch_targets (source_id,user_id,destination_type,destination_key,enabled,created_at_ms,baseline_at_ms) VALUES (?,?,'dm',?,1,?,?)", [id, user, `dm:${user}`, now - 1000, now - 1000]);
         const [source] = await store.claimDueSources(now, 1, { timeoutMs: 120000 });
-        assert.equal(Number(source.lease_expires_at_ms), now + 390000);
+        assert.equal(Number(source.lease_expires_at_ms), now + 630000);
         assert.deepEqual(await store.claimDueSources(now + 120001), []);
         const result = await runner.processSource(source, { now, store, config: {}, sourceCounts: new Map([['youtube', 1]]),
             fetchSource: async () => { throw Object.assign(new Error('Isolated metadata pressure'), { code: 'AUTO_WATCH_RESOURCE_PRESSURE', retryAfterMs: 60000 }); } });

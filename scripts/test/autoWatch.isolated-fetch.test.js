@@ -112,8 +112,8 @@ test('DNS socket destinations reject private, metadata, mapped IPv4 and reserved
 
 test('source leases cover the largest supported isolated acquisition deadline', () => {
     const { sourceLeaseMs } = require('../../src/providers/autoWatch/store')._internal;
-    assert.equal(sourceLeaseMs({ timeoutMs: 20000 }), 120000);
-    assert(sourceLeaseMs({ timeoutMs: 120000 }) > 120000 * 3 + 20000);
+    assert.equal(sourceLeaseMs({ timeoutMs: 20000 }), 130000);
+    assert(sourceLeaseMs({ timeoutMs: 120000 }) > 120000 * 5 + 20000);
 });
 
 test('the production-default tick isolates acquisition and passes its HTTP deadline to source claims', async () => {

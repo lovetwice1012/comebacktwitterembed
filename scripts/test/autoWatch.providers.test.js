@@ -31,6 +31,7 @@ test('YouTube watcher consumes the public Atom feed without an API key', async (
     const calls = [];
     const result = await fetchSource({
         provider_id: 'youtube',
+        youtube_fetch_releases: 0,
         source_key: 'channel:UC_x5XG1OV2P6uZZ5FSM9Ttw',
         state_json: '{}',
         etag: 'old-etag',

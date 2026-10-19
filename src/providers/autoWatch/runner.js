@@ -155,6 +155,8 @@ async function processSource(source, context) {
             ? { ...source, etag: null, last_modified: null } : source, { config, fetch, isolate: context.isolateFetch });
         await store.recordProviderRateLimit(source.provider_id, result.rateLimit, now);
         const observed = normalizeItems(result.items);
+        const baselineItems = normalizeItems(result.baselineItems);
+        const baselineIds = new Set(baselineItems.map(item => String(item.contentId)));
         const isFirstObservation = !source.initialized_at_ms;
         if (result.notModified && needsFullObservation) {
             throw Object.assign(new Error('An unconditional observation cannot establish or drain its baseline from HTTP 304.'), { code: 'AUTO_WATCH_INCOMPLETE_NOT_MODIFIED' });
@@ -194,7 +196,7 @@ async function processSource(source, context) {
         // Old ID-only checkpoints retain their original observation timestamp.
         const previousObservations = new Map(cursor.deferredObservations || []);
         for (const item of cursor.deferredItems || []) previousObservations.set(String(item.contentId), item.discoveredAtMs);
-        const pending = normalizeItems([...(cursor.deferredItems || []), ...observed]).filter(item => !known.has(String(item.contentId))
+        const pending = normalizeItems([...(cursor.deferredItems || []), ...observed]).filter(item => !known.has(String(item.contentId)) && !baselineIds.has(String(item.contentId))
             && !isHistoricalAtBaseline(source.provider_id, cursor, item));
         const accepted = pending.slice(0, integer(process.env.AUTO_WATCH_MAX_NEW_ITEMS_PER_SOURCE, MAX_NEW_ITEMS_PER_SOURCE, 1, 100));
         const firstObserved = item => previousObservations.get(String(item.contentId)) ?? now;
@@ -203,7 +205,7 @@ async function processSource(source, context) {
         if (deferredObservations.length > MAX_DEFERRED_IDS) throw Object.assign(new Error('Too many unadmitted discoveries in one observation.'), { code: 'AUTO_WATCH_BACKLOG_LIMIT' });
         if (Buffer.byteLength(JSON.stringify(deferredItems)) > MAX_DEFERRED_BYTES) throw Object.assign(new Error('Unadmitted discoveries exceed their durable metadata budget.'), { code: 'AUTO_WATCH_BACKLOG_LIMIT' });
         const admitted = accepted.map(item => ({ ...item, discoveredAtMs: firstObserved(item) }));
-        const nextCursor = advanceCursor(cursor, [...observed, ...accepted], accepted);
+        const nextCursor = advanceCursor(cursor, [...observed, ...accepted, ...baselineItems], [...accepted, ...baselineItems]);
         nextCursor.admissionVersion = 1;
         delete nextCursor.deferredObservations;
         delete nextCursor.deferredItems;

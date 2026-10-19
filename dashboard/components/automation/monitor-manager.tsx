@@ -13,6 +13,7 @@ import { DestinationEditor } from "./destination-editor";
 import { monitorBehaviorChanged, monitorWorkflowChanged, rebaseMonitorDraft } from "./monitor-edit-view";
 import { MonitorDeliveryActivity } from "./monitor-delivery-activity";
 import { readinessOf } from "./monitor-readiness";
+import { youtubeReceiveSummary } from "./youtube-watch-options";
 
 const field = "w-full rounded border bg-background px-3 py-2 text-sm";
 const button = "rounded border bg-background px-3 py-2 text-sm hover:bg-muted disabled:opacity-40";
@@ -21,6 +22,7 @@ type DestinationOrigin = { kind: "normal"; monitor: any } | { kind: "x"; onCreat
 const newMonitor = (kind: string) => ({ kind, name: "", providerId: kind === "auto" ? "youtube" : "amazon", source: "", locale: "ja", destinationId: "", enabled: true, mode: "change", maxPriceAmount: "", minDiscountPercent: "", workflowId: "" });
 type NotificationProfile = { plan: { id: string; tier: string; name: string; priority: number; slotLimit: number; minuteLimit: number; dayLimit: number }; slots: { used: number; max: number; available: number }; usage: { entries: { targetKind: string; targetId: string; todayUsed: number; todayReserved: number; dayLimit: number; minuteLimit: number; resetAtMs: number; allowed?: boolean }[] } };
 function receiveSummary(row: any) {
+  if (row.kind === "auto" && row.providerId === "youtube") return youtubeReceiveSummary(row.youtubeOptions);
   if (row.kind === "auto") return "新しい投稿を通知";
   if (row.mode === "change") return "価格の変化を通知";
   return [row.maxPriceAmount != null && `価格が${row.maxPriceAmount}以下`, row.minDiscountPercent != null && `割引率が${row.minDiscountPercent}%以上`].filter(Boolean).join(" または ");

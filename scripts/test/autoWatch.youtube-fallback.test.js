@@ -17,7 +17,7 @@ function page(ids, owner = channel, modern = true) {
     return `<script>var ytInitialData = ${JSON.stringify({ header: { playlistHeaderRenderer: { ownerText: { runs: [{ navigationEndpoint: { browseEndpoint: { browseId: owner } } }] } } }, contents: { twoColumnBrowseResultsRenderer: { tabs: [{ tabRenderer: { selected: true, content: { sectionListRenderer: { contents } } } }] } }, irrelevant: { lockupViewModel: { contentId: 'notOurVideo1', contentType: 'LOCKUP_CONTENT_TYPE_VIDEO' } } })};</script>`;
 }
 const response = (body, status = 200, headers = {}) => ({ status, ok: status >= 200 && status < 300, body: Readable.from([body]), text: async () => body, headers: { get: key => headers[key] || null } });
-const source = (extras = {}) => ({ provider_id: 'youtube', source_key: `channel:${channel}`, state_json: '{}', initialized_at_ms: 100, cursor_json: JSON.stringify({ seenContentIds: [old], admissionVersion: 1 }), ...extras });
+const source = (extras = {}) => ({ provider_id: 'youtube', youtube_fetch_releases: 0, source_key: `channel:${channel}`, state_json: '{}', initialized_at_ms: 100, cursor_json: JSON.stringify({ seenContentIds: [old], admissionVersion: 1 }), ...extras });
 const fallback = html => async url => response(String(url).includes('/feeds/') ? 'Not found' : html, String(url).includes('/feeds/') ? 404 : 200);
 
 test('RSS 404 uses verified uploads containing regular videos, Shorts and streams; older history is excluded', async () => {
