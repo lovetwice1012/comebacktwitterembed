@@ -16,6 +16,7 @@ import subprocess
 import sys
 import time
 import urllib.parse
+import urllib.error
 import urllib.request
 
 ROOT = pathlib.Path(os.environ.get('CBTE_RECOVERY_APP_ROOT') or pathlib.Path(__file__).resolve().parent.parent).resolve()
@@ -159,10 +160,21 @@ def submit(events, token, base):
         raise ValueError('Recovery batch exceeds safe size')
     req = urllib.request.Request(base.rstrip('/') + '/v1/events', data=body, method='POST',
                                  headers={'Content-Type': 'application/json', 'X-Admin-Agent-Token': token})
-    with urllib.request.urlopen(req, timeout=15) as response:
-        if response.status != 200:
-            raise RuntimeError('AGENT_INGESTION_FAILED')
-        return json.load(response)
+    for attempt in range(3):
+        try:
+            with urllib.request.urlopen(req, timeout=15) as response:
+                if response.status != 200:
+                    raise RuntimeError('AGENT_INGESTION_FAILED')
+                return json.load(response)
+        except urllib.error.HTTPError as error:
+            if error.code not in (429, 502, 503, 504) or attempt == 2:
+                raise RuntimeError('AGENT_HTTP_' + str(error.code)) from None
+        except (urllib.error.URLError, TimeoutError):
+            if attempt == 2:
+                raise RuntimeError('AGENT_CONNECTION_FAILED') from None
+        # Stable event IDs make a retry safe even if the response was lost
+        # after the agent committed the previous batch.
+        time.sleep(0.5 * (attempt + 1))
 
 
 def main():

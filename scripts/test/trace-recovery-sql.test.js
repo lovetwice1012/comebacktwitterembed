@@ -22,10 +22,13 @@ test('retained SQL traces recover through the agent exactly once across an inges
         if (result.status !== 0) throw new Error('SQLite fixture failed');
         return result.stdout.trim();
     };
-    let remainingBeforeFailure = -1;
+    let remainingBeforeFailure = -1, failuresRemaining = 0;
     const server = http.createServer(async (req, res) => {
         const chunks = []; for await (const chunk of req) chunks.push(chunk);
-        if (remainingBeforeFailure === 0) { remainingBeforeFailure = -1; res.statusCode = 503; return res.end('{}'); }
+        if (remainingBeforeFailure === 0 && failuresRemaining > 0) {
+            failuresRemaining--; if (!failuresRemaining) remainingBeforeFailure = -1;
+            res.statusCode = 503; return res.end('{}');
+        }
         if (remainingBeforeFailure > 0) remainingBeforeFailure--;
         try {
             runPython(`import sqlite3,sys,json
@@ -57,7 +60,8 @@ d=sqlite3.connect(sys.argv[1]);d.executescript("CREATE TABLE request_roots_meta(
             let out='',err=''; child.stdout.on('data', b => { out+=b; }); child.stderr.on('data', b => { err+=b; }); child.on('close', code => resolve({ code,out,err }));
         });
         const dry = await invoke(false); assert.equal(dry.code, 0, dry.err); assert.equal(JSON.parse(dry.out).missing, 201);
-        remainingBeforeFailure = 1; const failed = await invoke(true); assert.notEqual(failed.code, 0);
+        remainingBeforeFailure = 1; failuresRemaining = 3;
+        const failed = await invoke(true); assert.notEqual(failed.code, 0); assert.match(failed.err, /AGENT_HTTP_503/);
         const restored = await invoke(true); assert.equal(restored.code, 0, restored.err); assert.equal(JSON.parse(restored.out).missing, 1);
         const again = await invoke(true); assert.equal(again.code, 0, again.err); assert.equal(JSON.parse(again.out).missing, 0);
         assert.equal(runPython("import sqlite3,sys;d=sqlite3.connect(sys.argv[1]);print(d.execute('select count(*) from request_roots').fetchone()[0]);d.close()"), '201');
