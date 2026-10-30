@@ -74,9 +74,12 @@ class RecoveryTests(unittest.TestCase):
         server = HTTPServer(('127.0.0.1', 0), Handler)
         worker = threading.Thread(target=server.serve_forever, daemon=True); worker.start()
         try:
-            result = recovery.submit(recovery.recovered_events(trace()), 'fixture', 'http://127.0.0.1:%d' % server.server_port)
+            events = recovery.recovered_events(trace())
+            events[1]['details']['reason'] = 'legacy ' + chr(0xd83c)
+            result = recovery.submit(events, 'fixture', 'http://127.0.0.1:%d' % server.server_port)
             self.assertEqual(result['accepted'], 2)
             self.assertEqual(len(got), 2)
+            self.assertEqual(got[1]['details']['reason'], 'legacy ' + chr(0xd83c))
             with self.assertRaises(ValueError):
                 recovery.submit([], 'fixture', 'https://example.com')
         finally:

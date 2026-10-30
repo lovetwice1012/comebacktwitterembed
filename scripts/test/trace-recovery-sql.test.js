@@ -50,8 +50,8 @@ d=sqlite3.connect(sys.argv[1]);d.executescript("CREATE TABLE request_roots_meta(
         await db.queryDatabase(`GRANT SELECT ON \`${db.schema}\`.* TO '${user}'@'127.0.0.1'`);
         const stamp = Date.now() - 600000;
         for (let i = 0; i < 201; i++) await db.queryDatabase(`INSERT INTO ${TABLES.botProviderExpansionTraces}
-            (trace_id,boot_id,state,outcome,created_at_ms,updated_at_ms,completed_at_ms,provider_id,raw_url,guild_id,channel_id,author_user_id,message_id)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`, [randomUUID(), 'fixture', 'completed', 'F', stamp+i, stamp+i+100, stamp+i+100, ['twitter','niconico','booth'][i % 3], 'https://example.test/', '1', '2', '3', String(i)]);
+            (trace_id,boot_id,state,outcome,created_at_ms,updated_at_ms,completed_at_ms,provider_id,raw_url,guild_id,channel_id,author_user_id,message_id,output_json)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, [randomUUID(), 'fixture', 'completed', 'F', stamp+i, stamp+i+100, stamp+i+100, ['twitter','niconico','booth'][i % 3], 'https://example.test/', '1', '2', '3', String(i), i === 0 ? JSON.stringify({ text: String.fromCharCode(0xd83c) }) : null]);
         const env = { ...process.env, DB_HOST: '127.0.0.1', DB_USER: user, DB_PASSWORD: password, DB_DATABASE: db.schema,
             RECOVERY_DB_PORT: String(port), ADMIN_AGENT_TOKEN: 'fixture', ADMIN_AGENT_URL: `http://127.0.0.1:${server.address().port}`, ADMIN_TELEMETRY_DIR: spool };
         const invoke = apply => new Promise(resolve => {

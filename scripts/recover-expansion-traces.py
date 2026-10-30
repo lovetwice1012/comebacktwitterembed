@@ -155,7 +155,10 @@ def submit(events, token, base):
     parsed = urllib.parse.urlparse(base)
     if parsed.scheme != 'http' or parsed.hostname not in ('127.0.0.1', 'localhost') or parsed.username or parsed.password:
         raise ValueError('Management ingestion must use the local HTTP agent')
-    body = json.dumps({'events': events}, ensure_ascii=False, separators=(',', ':')).encode()
+    # Historical JSON may contain lone UTF-16 surrogates. Escaping them keeps
+    # the request valid without making UTF-8 encoding fail. The retained MySQL
+    # source remains unchanged even if the receiving JSON parser normalizes it.
+    body = json.dumps({'events': events}, ensure_ascii=True, separators=(',', ':')).encode('ascii')
     if len(body) > 6 * 1024 * 1024:
         raise ValueError('Recovery batch exceeds safe size')
     req = urllib.request.Request(base.rstrip('/') + '/v1/events', data=body, method='POST',
