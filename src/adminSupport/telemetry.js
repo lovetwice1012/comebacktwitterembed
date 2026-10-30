@@ -5,6 +5,7 @@
 const { Worker } = require('worker_threads');
 const path = require('path');
 const crypto = require('crypto');
+const { binaryMetadata, boundEvent } = require('./telemetryPayload');
 const { AsyncLocalStorage } = require('async_hooks');
 const storage = new AsyncLocalStorage();
 const bootId = crypto.randomUUID();
@@ -30,6 +31,10 @@ function serializable(value) {
     const ancestors = [];
     return JSON.parse(JSON.stringify(value, function (key, item) {
         if (SENSITIVE_KEY.test(key)) return undefined;
+        // Buffer.toJSON runs before the replacer; inspect the original value
+        // so attachments never turn into multi-megabyte arrays of integers.
+        const binary = binaryMetadata(this[key]);
+        if (binary) return binary;
         if (typeof item === 'bigint') return String(item);
         if (typeof item === 'function') return undefined;
         if (item instanceof Error) return errorData(item);
@@ -92,7 +97,7 @@ function run(context, fn) {
 }
 function event(stage, kind, details = {}, extra = {}) {
     const context = current() || {};
-    const row = serializable({ event_id: crypto.randomUUID(), trace_id: context.trace_id || crypto.randomUUID(),
+    let row = serializable({ event_id: crypto.randomUUID(), trace_id: context.trace_id || crypto.randomUUID(),
         operation_id: context.operation_id, request_id: context.request_id,
         parent_span_id: context.parent_span_id, span_id: extra.span_id || crypto.randomUUID(),
         sequence: ++sequence, stage, kind, occurred_at: new Date().toISOString(),
@@ -107,6 +112,7 @@ function event(stage, kind, details = {}, extra = {}) {
         guildId: row.guild_id, channelId: row.channel_id, userId: row.user_id, provider: row.provider_id,
         triggerType: row.trigger_type, occurredAt: row.occurred_at, actorId: row.actor_id, initiatedVia: row.initiated_via,
         shardId: row.shard_id });
+    row = boundEvent(row);
     if (context.events) context.events.push(row);
     if (context.parentEvents && context.parentEvents !== context.events) context.parentEvents.push(row);
     if (context.preview) return row;
