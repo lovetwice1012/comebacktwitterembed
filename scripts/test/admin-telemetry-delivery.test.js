@@ -95,7 +95,7 @@ test('legacy oversized events preserve original bytes, survive retry/restart, an
         await delay(130);
         assert.match(f.health.at(-1).deliveryError, /503/);
         assert.match(f.health.at(-1).error, /503/, 'fsync must not clear an unresolved ingest failure');
-        const before = (await fs.readdir(f.root)).filter(name => name.startsWith('oversized-'));
+        const before = (await fs.readdir(f.root)).filter(name => name.startsWith('replayed-'));
         assert.equal(before.length, 1);
         assert.equal(await fs.readFile(path.join(f.root, before[0]), 'utf8'), original);
         f.setStatus(200); await f.restart();
@@ -104,7 +104,7 @@ test('legacy oversized events preserve original bytes, survive retry/restart, an
         assert(accepted.some(row => row.event_id === 'heartbeat'));
         const recovered = accepted.find(row => row.event_id === 'legacy');
         assert.equal(recovered.details.truncation.archiveFile, before[0]);
-        assert.deepEqual((await fs.readdir(f.root)).filter(name => name.startsWith('oversized-')), before);
+        assert.deepEqual((await fs.readdir(f.root)).filter(name => name.startsWith('replayed-')), before);
         assert.equal(await fs.readFile(path.join(f.root, before[0]), 'utf8'), original);
         assert.equal(f.health.at(-1).pendingBytes, 0);
         assert(f.health.at(-1).archiveBytes > 0);
@@ -114,7 +114,7 @@ test('legacy oversized events preserve original bytes, survive retry/restart, an
 test('new oversized events are bounded before persistence and normal events continue after ingestion recovery', { timeout: 15000 }, async () => {
     await fixture(async f => {
         f.post({ event_id: 'new-large', sequence: 1, kind: 'completed', details: { body: 'x'.repeat(9 * 1024 * 1024) } });
-        f.post({ event_id: 'new-heartbeat', sequence: 2, kind: 'heartbeat' }); f.flush();
+        f.post({ event_id: 'new-heartbeat', sequence: 2, kind: 'heartbeat', occurredAt: new Date().toISOString() }); f.flush();
         await until(() => f.health.some(row => row.deliveryError)); await delay(100);
         assert(f.health.at(-1).error);
         f.setStatus(200); f.flush();
@@ -124,4 +124,20 @@ test('new oversized events are bounded before persistence and normal events cont
         assert.equal(accepted.find(row => row.event_id === 'new-large').details.truncation.reason, 'event_size_limit');
         assert.deepEqual(await fs.readdir(f.root), []);
     });
+});
+
+test('replaying historical heartbeats cannot replace live status and preserves the exact original segment', { timeout: 15000 }, async () => {
+    const old = { event_id: 'old-heartbeat', sequence: 1, kind: 'runtime.heartbeat',
+        occurredAt: '2026-01-01T00:00:00.000Z', triggerType: 'user', details: { ready: true } };
+    const original = JSON.stringify(old) + '\n';
+    await fixture(async f => {
+        f.setStatus(200); f.flush();
+        await until(() => f.received.some(batch => batch.status === 200));
+        const row = f.received.filter(batch => batch.status === 200).flatMap(batch => batch.events).find(event => event.event_id === old.event_id);
+        assert.equal(row.triggerType, 'diagnostic');
+        assert.equal(row.trigger_type, 'diagnostic');
+        assert.equal(row.details.replay.historicalHeartbeat, true);
+        assert.equal(row.details.replay.originalTriggerType, 'user');
+        assert.equal(await fs.readFile(path.join(f.root, row.details.replay.archiveFile), 'utf8'), original);
+    }, original);
 });

@@ -65,7 +65,7 @@ function fixture(t, initial) {
         health() { return messages.filter(message => message.type === 'health').at(-1); },
     };
 }
-const row = sequence => ({ event_id: `event-${sequence}`, sequence, kind: 'heartbeat', details: { ready: true } });
+const row = sequence => ({ event_id: `event-${sequence}`, sequence, kind: 'heartbeat', occurredAt: '2099-01-01T00:00:00.000Z', details: { ready: true } });
 
 test('a partial append error rolls back only rejected bytes and preserves both neighboring events and quota accounting', async t => {
     const f = fixture(t); f.post(row(1)); f.failPartial(10); f.post(row(2)); f.post(row(3)); await f.flush();
@@ -113,7 +113,7 @@ test('atomic archive publication preserves the pending original through write/fs
         f.recover(); await f.flush();
         assert.deepEqual(f.batches.map(event => event.event_id), ['event-1', 'event-2']);
         const archived = f.batches[0].details.truncation.archiveFile;
-        assert.match(archived, /^oversized-[a-f0-9]{64}\.jsonl$/); assert.deepEqual(fs.readFileSync(path.join(f.root, archived)), original);
+        assert.match(archived, /^replayed-[a-f0-9]{64}\.jsonl$/); assert.deepEqual(fs.readFileSync(path.join(f.root, archived)), original);
         assert.deepEqual(f.batches[1], row(2), 'the following heartbeat is unmodified');
         assert.equal(fs.existsSync(f.initialFile), false); assert.deepEqual(fs.readdirSync(f.root), [archived]);
         assert.equal(f.health().pendingBytes, 0); assert.equal(f.health().archiveBytes, original.length); assert.equal(f.health().diskBytes, original.length); assert.equal(f.health().error, null);

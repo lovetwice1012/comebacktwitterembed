@@ -112,6 +112,11 @@ function preserve(name, bytes) {
     }
     if (failure) throw failure;
 }
+function isHistoricalHeartbeat(row) {
+    if (!['heartbeat', 'bot.heartbeat', 'runtime.heartbeat'].includes(row.kind)) return false;
+    const occurred = Date.parse(row.occurredAt || row.occurred_at || '');
+    return !Number.isFinite(occurred) || occurred < Date.now() - 2 * 60 * 1000;
+}
 async function deliver() {
     try {
         sync();
@@ -138,12 +143,23 @@ async function deliver() {
                 rows.push({ event_id: crypto.createHash('sha256').update(bytes).update('corrupt').digest('hex'), kind: 'recording.gap', stage: 'recording',
                     occurred_at: new Date().toISOString(), trigger_type: 'system', details: { reason: 'incomplete_or_corrupt_spool_record', segment: name, lines: invalid.map(item => item.line) } });
             }
-            if (rows.some(row => agentEncodedBytes(JSON.stringify(row)) > MAX_EVENT_BYTES)) {
+            const oldHeartbeat = rows.some(isHistoricalHeartbeat);
+            const oversized = rows.some(row => agentEncodedBytes(JSON.stringify(row)) > MAX_EVENT_BYTES);
+            if (oldHeartbeat || oversized) {
                 // Keep the original bytes durably before sending a bounded
                 // event with the same identity. A restart reuses this archive.
-                const archive = `oversized-${crypto.createHash('sha256').update(bytes).digest('hex')}.jsonl`;
+                // Replayed old heartbeats must not replace current liveness.
+                const archive = `replayed-${crypto.createHash('sha256').update(bytes).digest('hex')}.jsonl`;
                 preserve(archive, bytes);
-                rows = rows.map(row => boundEvent(row, archive));
+                rows = rows.map(row => {
+                    if (isHistoricalHeartbeat(row)) {
+                        const details = row.details && typeof row.details === 'object' && !Array.isArray(row.details) ? row.details : {};
+                        row = { ...row, triggerType: 'diagnostic', trigger_type: 'diagnostic',
+                            details: { ...details, replay: { historicalHeartbeat: true,
+                                originalTriggerType: row.triggerType || row.trigger_type || null, archiveFile: archive } } };
+                    }
+                    return boundEvent(row, archive);
+                });
             }
             for (let offset = 0; offset < rows.length;) {
                 const batch = []; let size = 0;
