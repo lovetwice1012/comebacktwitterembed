@@ -18,9 +18,9 @@ import time
 import urllib.parse
 import urllib.request
 
-ROOT = pathlib.Path(__file__).resolve().parent.parent
+ROOT = pathlib.Path(os.environ.get('CBTE_RECOVERY_APP_ROOT') or pathlib.Path(__file__).resolve().parent.parent).resolve()
 MYSQL_PAGE = r"""
-const mysql=require('mysql'),config=require('./src/db').getDbCredentials();
+const mysql=require('mysql'),readline=require('readline'),config=require('./src/db').getDbCredentials();
 if(process.env.RECOVERY_DB_PORT){const n=Number(process.env.RECOVERY_DB_PORT);if(!Number.isInteger(n)||n<1||n>65535)throw new Error('INVALID_DB_PORT');config.port=n}
 const c=mysql.createConnection(config);
 const sql=`SELECT trace_id,boot_id,state,outcome,reason_code,created_at_ms,completed_at_ms,updated_at_ms,
@@ -28,11 +28,14 @@ provider_id,raw_url,guild_id,channel_id,author_user_id,message_id,output_json,de
 FROM bot_provider_expansion_traces
 WHERE created_at_ms>=? AND created_at_ms<? AND (created_at_ms>? OR (created_at_ms=? AND trace_id>?))
 ORDER BY created_at_ms,trace_id LIMIT ?`;
-const a=JSON.parse(process.argv[1]);
-c.query({sql,values:[a.start,a.end,a.last,a.last,a.id,a.limit],timeout:20000},(e,rows)=>{
- if(e){process.stderr.write(String(e.code||'DB_ERROR'));process.exitCode=1}
- else process.stdout.write(JSON.stringify(rows));c.end();
+const input=readline.createInterface({input:process.stdin});
+input.on('line',line=>{let a;try{a=JSON.parse(line)}catch{process.stdout.write('{"error":"INVALID_PAGE"}\n');return}
+ c.query({sql,values:[a.start,a.end,a.last,a.last,a.id,a.limit],timeout:20000},(e,rows)=>{
+  if(e)process.stdout.write('{"error":"MYSQL_READ_FAILED"}\n');
+  else process.stdout.write(JSON.stringify({rows})+'\n');
+ });
 });
+input.on('close',()=>c.end());
 """
 VALID_OUTCOMES = set('FDPEUSCIX')
 
@@ -114,12 +117,17 @@ def recovered_events(row, original_completion=None):
     return events
 
 
-def page(start, end, last, trace_id, limit):
+def page(process, start, end, last, trace_id, limit):
     args = json.dumps({'start': start, 'end': end, 'last': last, 'id': trace_id, 'limit': limit})
-    result = subprocess.run(['node', '-e', MYSQL_PAGE, args], cwd=ROOT, capture_output=True, text=True, timeout=30)
-    if result.returncode:
+    process.stdin.write(args + '\n')
+    process.stdin.flush()
+    output = process.stdout.readline()
+    if not output:
         raise RuntimeError('MYSQL_READ_FAILED')
-    return json.loads(result.stdout)
+    result = json.loads(output)
+    if 'error' in result:
+        raise RuntimeError('MYSQL_READ_FAILED')
+    return result['rows']
 
 
 def find_missing(db, rows):
@@ -167,7 +175,7 @@ def main():
     args = parser.parse_args()
     if args.from_ms < 0 or args.until_ms <= args.from_ms or args.until_ms > int(time.time() * 1000) - 180000:
         parser.error('Use a fixed historical interval ending at least three minutes ago')
-    if args.max_traces < 1 or args.max_traces > 1000000:
+    if args.max_traces < 1 or args.max_traces > 2000000:
         parser.error('Invalid trace bound')
     token = os.environ.get('ADMIN_AGENT_TOKEN', '')
     if args.apply and not token:
@@ -180,24 +188,48 @@ def main():
         raise RuntimeError('ROOT_INDEX_NOT_READY')
     stats = {'examined': 0, 'missing': 0, 'originalCompletionsReused': 0, 'eventsAcknowledged': 0, 'apply': args.apply}
     last, trace_id = args.from_ms - 1, ''
-    while stats['examined'] < args.max_traces:
-        rows = page(args.from_ms, args.until_ms, last, trace_id, min(200, args.max_traces - stats['examined']))
-        if not rows:
-            break
-        missing = find_missing(db, rows)
-        stats['examined'] += len(rows)
-        stats['missing'] += len(missing)
-        for row in missing:
-            original = original_completion(db, str(row['trace_id']))
-            stats['originalCompletionsReused'] += int(original is not None)
-            events = recovered_events(row, original)
-            if args.apply:
-                submit(events, token, os.environ.get('ADMIN_AGENT_URL', 'http://127.0.0.1:30988'))
-                stats['eventsAcknowledged'] += len(events)
-                time.sleep(0.05)
-        last, trace_id = int(rows[-1]['created_at_ms']), str(rows[-1]['trace_id'])
-    db.close()
+    worker = subprocess.Popen(['node', '-e', MYSQL_PAGE], cwd=ROOT, stdin=subprocess.PIPE,
+                              stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, bufsize=1)
+    try:
+        while stats['examined'] < args.max_traces:
+            rows = page(worker, args.from_ms, args.until_ms, last, trace_id, min(600, args.max_traces - stats['examined']))
+            if not rows:
+                break
+            missing = find_missing(db, rows)
+            stats['examined'] += len(rows)
+            stats['missing'] += len(missing)
+            batch, batch_bytes = [], 0
+            for row in missing:
+                original = original_completion(db, str(row['trace_id']))
+                stats['originalCompletionsReused'] += int(original is not None)
+                events = recovered_events(row, original)
+                estimated = sum(len(json.dumps(event, ensure_ascii=True).encode()) * 2 for event in events)
+                if estimated > 4 * 1024 * 1024:
+                    raise RuntimeError('RECOVERY_EVENT_EXCEEDS_SAFE_BATCH')
+                if args.apply and batch and (len(batch) + len(events) > 100 or batch_bytes + estimated > 4 * 1024 * 1024):
+                    submit(batch, token, os.environ.get('ADMIN_AGENT_URL', 'http://127.0.0.1:30988'))
+                    stats['eventsAcknowledged'] += len(batch)
+                    batch, batch_bytes = [], 0
+                    time.sleep(0.1)
+                batch.extend(events)
+                batch_bytes += estimated
+            if args.apply and batch:
+                submit(batch, token, os.environ.get('ADMIN_AGENT_URL', 'http://127.0.0.1:30988'))
+                stats['eventsAcknowledged'] += len(batch)
+                time.sleep(0.1)
+            last, trace_id = int(rows[-1]['created_at_ms']), str(rows[-1]['trace_id'])
+            if args.apply and stats['examined'] % 6000 == 0:
+                print(json.dumps({'progress': stats['examined'], 'missing': stats['missing'], 'lastProcessedMs': last}), file=sys.stderr, flush=True)
+    finally:
+        worker.stdin.close()
+        try:
+            worker.wait(timeout=25)
+        except subprocess.TimeoutExpired:
+            worker.terminate()
+            worker.wait(timeout=5)
+        db.close()
     stats['hitLimit'] = stats['examined'] >= args.max_traces
+    stats['lastProcessedMs'] = last
     print(json.dumps(stats, sort_keys=True))
 
 

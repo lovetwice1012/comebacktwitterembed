@@ -46,9 +46,9 @@ d=sqlite3.connect(sys.argv[1]);d.executescript("CREATE TABLE request_roots_meta(
         await db.queryDatabase(`CREATE USER '${user}'@'127.0.0.1' IDENTIFIED BY '${password}'`);
         await db.queryDatabase(`GRANT SELECT ON \`${db.schema}\`.* TO '${user}'@'127.0.0.1'`);
         const stamp = Date.now() - 600000;
-        for (let i = 0; i < 3; i++) await db.queryDatabase(`INSERT INTO ${TABLES.botProviderExpansionTraces}
+        for (let i = 0; i < 51; i++) await db.queryDatabase(`INSERT INTO ${TABLES.botProviderExpansionTraces}
             (trace_id,boot_id,state,outcome,created_at_ms,updated_at_ms,completed_at_ms,provider_id,raw_url,guild_id,channel_id,author_user_id,message_id)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`, [randomUUID(), 'fixture', 'completed', 'F', stamp+i, stamp+i+100, stamp+i+100, ['twitter','niconico','booth'][i], 'https://example.test/', '1', '2', '3', String(i)]);
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`, [randomUUID(), 'fixture', 'completed', 'F', stamp+i, stamp+i+100, stamp+i+100, ['twitter','niconico','booth'][i % 3], 'https://example.test/', '1', '2', '3', String(i)]);
         const env = { ...process.env, DB_HOST: '127.0.0.1', DB_USER: user, DB_PASSWORD: password, DB_DATABASE: db.schema,
             RECOVERY_DB_PORT: String(port), ADMIN_AGENT_TOKEN: 'fixture', ADMIN_AGENT_URL: `http://127.0.0.1:${server.address().port}`, ADMIN_TELEMETRY_DIR: spool };
         const invoke = apply => new Promise(resolve => {
@@ -56,12 +56,12 @@ d=sqlite3.connect(sys.argv[1]);d.executescript("CREATE TABLE request_roots_meta(
             const child = spawn(py, args, { cwd: path.resolve(__dirname, '../..'), env });
             let out='',err=''; child.stdout.on('data', b => { out+=b; }); child.stderr.on('data', b => { err+=b; }); child.on('close', code => resolve({ code,out,err }));
         });
-        const dry = await invoke(false); assert.equal(dry.code, 0, dry.err); assert.equal(JSON.parse(dry.out).missing, 3);
+        const dry = await invoke(false); assert.equal(dry.code, 0, dry.err); assert.equal(JSON.parse(dry.out).missing, 51);
         remainingBeforeFailure = 1; const failed = await invoke(true); assert.notEqual(failed.code, 0);
-        const restored = await invoke(true); assert.equal(restored.code, 0, restored.err); assert.equal(JSON.parse(restored.out).missing, 2);
+        const restored = await invoke(true); assert.equal(restored.code, 0, restored.err); assert.equal(JSON.parse(restored.out).missing, 1);
         const again = await invoke(true); assert.equal(again.code, 0, again.err); assert.equal(JSON.parse(again.out).missing, 0);
-        assert.equal(runPython("import sqlite3,sys;d=sqlite3.connect(sys.argv[1]);print(d.execute('select count(*) from request_roots').fetchone()[0]);d.close()"), '3');
-        assert.equal(runPython("import sqlite3,sys;d=sqlite3.connect(sys.argv[1]);print(d.execute('select count(*) from events').fetchone()[0]);d.close()"), '6');
+        assert.equal(runPython("import sqlite3,sys;d=sqlite3.connect(sys.argv[1]);print(d.execute('select count(*) from request_roots').fetchone()[0]);d.close()"), '51');
+        assert.equal(runPython("import sqlite3,sys;d=sqlite3.connect(sys.argv[1]);print(d.execute('select count(*) from events').fetchone()[0]);d.close()"), '102');
     } finally {
         server.closeAllConnections(); await new Promise(resolve => server.close(resolve));
         await db.queryDatabase(`DROP USER IF EXISTS '${user}'@'127.0.0.1'`); await db.close();
