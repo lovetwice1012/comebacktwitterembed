@@ -9,9 +9,17 @@ function parseInstagramOEmbed(text) {
 }
 
 function parseInstagramGraphql(text, shortcode = '') {
-    if (text.includes('require_login')) return null;
+    return parseInstagramGraphqlSource(text, shortcode).data;
+}
+
+function parseInstagramGraphqlSource(text, shortcode = '') {
+    if (text.includes('require_login')) return { data: null };
     const node = parsing.findMediaNode([parsing.tryParseJson(text)], shortcode);
-    return parsing.normalizeMediaNode(node);
+    const data = parsing.normalizeMediaNode(node);
+    if (data || !node) return { data };
+    const source = parsing.sidecarNodes(node);
+    return { data: null, incompleteMedia: true, expectedMediaCount: source.length,
+        expectedVideoPositions: source.flatMap((media, index) => parsing.isVideoNode(media) ? [index] : []) };
 }
 
 module.exports = {
@@ -19,4 +27,5 @@ module.exports = {
     ...urls,
     parseInstagramOEmbed,
     parseInstagramGraphql,
+    parseInstagramGraphqlSource,
 };

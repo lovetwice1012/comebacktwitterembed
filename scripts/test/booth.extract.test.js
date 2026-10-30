@@ -5,6 +5,7 @@ const assert = require('node:assert/strict');
 
 const boothModulePath = require.resolve('../../src/providers/booth');
 const fetchModulePath = require.resolve('node-fetch');
+const fixtureItem = Symbol('generated BOOTH fixture');
 
 function loadBoothProviderWithFetch(fakeFetch) {
     const originalFetchModule = require.cache[fetchModulePath];
@@ -14,7 +15,16 @@ function loadBoothProviderWithFetch(fakeFetch) {
         id: fetchModulePath,
         filename: fetchModulePath,
         loaded: true,
-        exports: fakeFetch,
+        exports: async (url, options) => {
+            const response = await fakeFetch(url, options);
+            if (!response.ok || typeof response.json !== 'function') return response;
+            return { ...response, json: async () => {
+                const data = await response.json();
+                if (!data?.[fixtureItem]) return data;
+                const id = new URL(url).pathname.match(/\/items\/(\d+)/)?.[1];
+                return id ? { ...data, id: Number(id), url: `https://shop.booth.pm/items/${id}` } : data;
+            } };
+        },
     };
     delete require.cache[boothModulePath];
 
@@ -42,6 +52,7 @@ function createMessage(content) {
 
 function createInfo(imageCount, overrides = {}) {
     return {
+        [fixtureItem]: true,
         id: 123456,
         name: 'sample item',
         url: 'https://shop.booth.pm/items/123456',
@@ -77,6 +88,98 @@ test('booth extract: builds embeds for shop subdomain url', async () => {
     assert.equal(result[0].embeds[0].title, 'sample item');
     assert.ok(result[0].embeds[0].fields.some(f => f.value === '1,000 JPY'));
     assert.ok(result[0].embeds[0].fields.some(f => f.value === 'VRoid'));
+});
+
+test('BOOTH shop lookup can use a verified public canonical item when the shop endpoint is blocked', async () => {
+    const calls = [];
+    const provider = loadBoothProviderWithFetch(async url => {
+        calls.push(url);
+        if (String(url).startsWith('https://shop.booth.pm/')) return { ok: false, status: 403 };
+        return { ok: true, json: async () => ({ id: 123456, name: '対象の商品', is_adult: false,
+            url: 'https://shop.booth.pm/items/123456', shop: { subdomain: 'shop', name: 'shop' }, images: [] }) };
+    });
+    const url = 'https://shop.booth.pm/items/123456?variation_id=987';
+    const result = await provider.extract(createMessage(url), url, {});
+    assert.equal(result[0].embeds[0].title, '対象の商品');
+    assert.deepEqual(calls, ['https://shop.booth.pm/items/123456.json', 'https://booth.pm/en/items/123456.json']);
+});
+
+test('BOOTH never uses another shop, wrong item, or unknown adult classification as the canonical fallback', async () => {
+    for (const override of [{ id: 2 }, { shop: { subdomain: 'other' } }, { is_adult: undefined }]) {
+        let calls = 0;
+        const provider = loadBoothProviderWithFetch(async () => {
+            calls++;
+            if (calls === 1) return { ok: false, status: 403 };
+            return { ok: true, json: async () => ({ id: 1, name: 'sample', is_adult: false, shop: { subdomain: 'shop' }, ...override }) };
+        });
+        const url = 'https://shop.booth.pm/items/1';
+        const result = await provider.extract(createMessage(url), url, { failure_display_policy: 'source_link' });
+        assert.equal(result[0].outputRole, 'failure_notice'); assert.equal(result[0].embeds, undefined); assert.equal(calls, 2);
+    }
+});
+
+test('BOOTH does not retry authentication failures, rate limits, or server failures on another endpoint', async () => {
+    for (const status of [401, 429, 500, 503]) {
+        let calls = 0;
+        const provider = loadBoothProviderWithFetch(async () => { calls++; return { ok: false, status }; });
+        const url = 'https://shop.booth.pm/items/1';
+        const result = await provider.extract(createMessage(url), url, { failure_display_policy: 'source_link' });
+        assert.equal(result[0].outputRole, 'failure_notice'); assert.equal(calls, 1);
+    }
+});
+
+test('BOOTH URL recognition retains variants and rejects spoofed domains or partial item IDs', async () => {
+    const provider = loadBoothProviderWithFetch(async () => ({ ok: true, json: async () => createInfo(0) }));
+    const text = 'https://shop.booth.pm/items/123456?variation_id=9 https://booth.pm/ja/items/1. https://evilbooth.pm/items/1 https://shop.booth.pm/items/12xyz';
+    const matches = [...text.matchAll(new RegExp(provider.urlPattern.source, provider.urlPattern.flags))].map(match => match[0]);
+    assert.deepEqual(matches, ['https://shop.booth.pm/items/123456?variation_id=9', 'https://booth.pm/ja/items/1']);
+    assert.equal(await provider.extract(createMessage(), 'https://evilbooth.pm/items/1', {}), null);
+    assert.equal(await provider.extract(createMessage(), 'https://shop.booth.pm/items/12xyz', {}), null);
+});
+
+test('BOOTH shop root expands verified direct metadata and retains normal delivery settings', async () => {
+    const provider = loadBoothProviderWithFetch(async () => ({ ok: true, url: 'https://shop.booth.pm/', text: async () =>
+        '<meta content="https://shop.booth.pm/" property="og:url"><meta property="og:title" content="Example &amp; Shop"><meta property="og:description" content="Welcome">' }));
+    const url = 'https://shop.booth.pm/';
+    const result = await provider.extract(createMessage(url), url, { alwaysreplyifpostedtweetlink: true });
+    assert.equal(result[0].embeds[0].title, 'Example & Shop');
+    assert.equal(result[0].embeds[0].description, 'Welcome');
+    assert.equal(result[0].send, 'reply-source');
+});
+
+test('BOOTH shop root uses only matching official search cards after a blocked root', async () => {
+    const calls = [];
+    const provider = loadBoothProviderWithFetch(async url => {
+        calls.push(String(url));
+        if (calls.length === 1) return { ok: false, status: 403 };
+        return { ok: true, url: 'https://booth.pm/ja/search/shop', text: async () =>
+            '<a class="item-card__shop-name-anchor" href="https://other.booth.pm/"><div class="item-card__shop-name">Wrong</div></a>' +
+            '<a class="item-card__shop-name-anchor nav" href="https://shop.booth.pm/"><div class="item-card__shop-name">Correct</div></a>' };
+    });
+    const url = 'https://shop.booth.pm/';
+    assert.equal((await provider.extract(createMessage(url), url, {}))[0].embeds[0].title, 'Correct');
+    assert.deepEqual(calls, ['https://shop.booth.pm/', 'https://booth.pm/ja/search/shop']);
+});
+
+test('BOOTH shop root never invents an identity or bypasses rate limits', async () => {
+    for (const status of [401, 404, 429, 500]) {
+        let calls = 0;
+        const provider = loadBoothProviderWithFetch(async () => { calls++; return { ok: false, status }; });
+        const url = 'https://shop.booth.pm/';
+        assert.equal((await provider.extract(createMessage(url), url, { failure_display_policy: 'source_link' }))[0].outputRole, 'failure_notice');
+        assert.equal(calls, 1);
+    }
+    const provider = loadBoothProviderWithFetch(async url => String(url).startsWith('https://shop.') ? { ok: false, status: 403 }
+        : { ok: true, text: async () => '<a class="item-card__shop-name-anchor" href="https://other.booth.pm/"><div class="item-card__shop-name">Wrong</div></a>' });
+    const url = 'https://shop.booth.pm/';
+    assert.equal((await provider.extract(createMessage(url), url, { failure_display_policy: 'source_link' }))[0].outputRole, 'failure_notice');
+});
+
+test('BOOTH shop recognition does not turn unrelated paths or service domains into shop roots', () => {
+    const provider = loadBoothProviderWithFetch(async () => ({}));
+    const text = 'https://shop.booth.pm/ https://shop.booth.pm https://shop.booth.pm/about https://booth.pm/ https://shop.booth.pm/items/12';
+    assert.deepEqual([...text.matchAll(new RegExp(provider.urlPattern.source, provider.urlPattern.flags))].map(m => m[0]),
+        ['https://shop.booth.pm/', 'https://shop.booth.pm', 'https://shop.booth.pm/items/12']);
 });
 
 test('booth extract: honors description length setting', async () => {

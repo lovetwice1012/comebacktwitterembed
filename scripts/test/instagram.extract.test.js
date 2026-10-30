@@ -352,7 +352,27 @@ test('instagram extract: crawler mixed carousel uses the video stream, not its t
     assert.equal(result[0].files[1].attachment.includes('thumbnail'), false);
 });
 
-test('instagram extract: does not upload a video thumbnail as a video file when no stream is available', async () => {
+test('instagram extract: a partial carousel never presents a video poster as the full result', async () => {
+    const carousel = { __typename: 'XIGPolarisCarouselMedia', media_type: 8, shortcode: 'CODE123', carousel_media: [
+        xigImage(1), { __typename: 'XIGPolarisVideoMedia', media_type: 2, display_uri: 'https://example.com/poster.jpg' }, xigImage(3),
+    ] };
+    const provider = loadInstagramProviderWithFetch(async url => String(url).includes('/graphql/') || String(url).includes('/oembed/')
+        ? { ok: false, status: 403, text: async () => '' } : { ok: true, text: async () => crawlerHtml(carousel) });
+    const url = 'https://www.instagram.com/p/CODE123/';
+    const result = await provider.extract(createMessage(url), url, { failure_display_policy: 'source_link' });
+    assert.equal(result[0].outputRole, 'failure_notice'); assert.equal(result[0].files, undefined);
+});
+
+test('instagram extract: an extensionless verified video source is attached as MP4', async () => {
+    const provider = loadInstagramProviderWithFetch(async () => ({ ok: true, text: async () => crawlerHtml({
+        __typename: 'XIGPolarisVideoMedia', media_type: 2, shortcode: 'CODE123', video_url: 'https://example.com/stream/opaque?token=fixture',
+    }) }));
+    const result = await provider.extract(createMessage(), 'https://www.instagram.com/reel/CODE123/', {});
+    assert.equal(result[0].files[0].attachment, 'https://example.com/stream/opaque?token=fixture');
+    assert.equal(result[0].files[0].name, 'instagram-1.mp4');
+});
+
+test('instagram extract: unavailable Reel video never expands its poster as media', async () => {
     const provider = loadInstagramProviderWithFetch(async () => ({
         ok: true,
         text: async () => crawlerHtml({
@@ -365,9 +385,34 @@ test('instagram extract: does not upload a video thumbnail as a video file when 
 
     const result = await provider.extract(createMessage(), 'https://www.instagram.com/reel/CODE123/', {});
 
-    assert.equal(result[0].files.length, 0);
-    assert.equal(result[0].embeds.length, 1);
-    assert.equal(result[0].embeds[0].image.url.endsWith('video-thumbnail.jpg'), true);
+    assert.equal(result, null);
+});
+
+test('instagram extract: Reel DASH manifest supplies an MP4 attachment when video_versions is absent', async () => {
+    const provider = loadInstagramProviderWithFetch(async () => ({
+        ok: true,
+        text: async () => crawlerHtml({
+            __typename: 'XIGPolarisVideoMedia',
+            media_type: 2,
+            shortcode: 'CODE123',
+            display_uri: 'https://example.com/play-button-poster.jpg',
+            video_dash_manifest: '<MPD><Period><AdaptationSet mimeType="audio/mp4"><Representation><BaseURL>https://example.com/audio.mp4</BaseURL></Representation></AdaptationSet><AdaptationSet mimeType="video/mp4"><Representation><BaseURL>https://example.com/reel.mp4?sig=1&amp;v=2</BaseURL></Representation></AdaptationSet></Period></MPD>',
+        }),
+    }));
+    const result = await provider.extract(createMessage(), 'https://www.instagram.com/reel/CODE123/', {});
+    assert.equal(result[0].files[0].attachment, 'https://example.com/reel.mp4?sig=1&v=2');
+    assert.equal(result[0].files[0].name, 'instagram-1.mp4');
+    assert.equal(result[0].embeds[0].image, undefined);
+});
+
+test('instagram extract: unavailable Reel video uses the configured source-link failure notice', async () => {
+    const provider = loadInstagramProviderWithFetch(async () => ({ ok: true, text: async () => reelPoster() }));
+    const url = 'https://www.instagram.com/reel/Ddmd-UrRH2B/';
+    const result = await provider.extract(createMessage(url), url, { failure_display_policy: 'source_link' });
+    assert.equal(result.length, 1);
+    assert.equal(result[0].files, undefined);
+    assert.equal(result[0].embeds, undefined);
+    assert.equal(result[0].outputRole, 'failure_notice');
 });
 
 test('instagram extract: GUI output settings control caption length and media limit', async () => {

@@ -406,7 +406,19 @@ function register(client) {
         }).finally(() => activeMessageIds.delete(message.id));
     };
     messageHandlers.set(client, handleMessage);
-    client.on(Events.MessageCreate, message => handleMessage(message));
+    client.on(Events.MessageCreate, message => {
+        const failed = error => {
+            // EventEmitter does not await listeners. Admission failures (for
+            // example the webhook guard's database lookup) must be contained
+            // here, while explicit retry callers still receive their error.
+            recordError(error, {
+                fallbackType: 'message_create_failed', source: 'messageCreate.admission', message,
+            });
+            return { status: 'failed' };
+        };
+        try { return handleMessage(message)?.catch(failed); }
+        catch (error) { return failed(error); }
+    });
 }
 
 async function retryMessage(client, message) {

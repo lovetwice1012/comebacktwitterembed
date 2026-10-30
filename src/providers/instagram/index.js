@@ -40,7 +40,7 @@ async function extract(message, url, s, opts) {
         try {
             profile = await fetchProfileData(parsed.username);
         } catch (err) {
-            console.warn(`[instagram] Failed to extract profile ${url}: ${err?.message || err}`);
+            console.warn('[instagram] profile lookup failed:', err?.code || (Number.isInteger(err?.status) ? `HTTP_${err.status}` : 'INSTAGRAM_UPSTREAM_ERROR'));
             recordProviderError('instagram', err, message, url, { endpointKey: 'instagram/profile' });
             return buildFailureResponse('instagram', url, s, err);
         }

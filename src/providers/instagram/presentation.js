@@ -65,7 +65,7 @@ function mediaUrlExtension(rawUrl) {
 }
 
 function hasDirectVideoUrl(media) {
-    return isVideoMedia(media) && videoExtensions.includes(mediaUrlExtension(media?.url));
+    return isVideoMedia(media) && (media?.verifiedVideoSource === true || videoExtensions.includes(mediaUrlExtension(media?.url)));
 }
 
 function mediaFilePayload(media, index) {

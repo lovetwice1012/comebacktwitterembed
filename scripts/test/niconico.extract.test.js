@@ -88,8 +88,8 @@ function watchData() {
         media: {
             domand: {
                 accessRightKey: 'access-key',
-                videos: [],
-                audios: [],
+                videos: [{ id: 'video', isAvailable: true }],
+                audios: [{ id: 'audio', isAvailable: true }],
             },
         },
     };
@@ -145,6 +145,17 @@ test('niconico extract: builds a video embed from watch data with the download b
         if (oldEnabled === undefined) delete process.env.NICONICO_DOWNLOAD_BUTTON_ENABLED;
         else process.env.NICONICO_DOWNLOAD_BUTTON_ENABLED = oldEnabled;
     }
+});
+
+test('niconico extract: unavailable video formats do not advertise a broken download', async () => {
+    const data = watchResponse();
+    data.data.response.media.domand.videos = [];
+    const provider = loadNiconicoProviderWithFetch(async () => okJson(data));
+    const url = 'https://www.nicovideo.jp/watch/sm9';
+    const result = await provider.extract(createMessage(url), url, {});
+    const buttons = result[0].components.flatMap(row => row.components);
+    assert(!buttons.some(button => button.data.custom_id === 'downloadNiconicoVideo'));
+    assert.equal(result[0].embeds[0].title, 'Niconico Test Video');
 });
 
 test('niconico extract: can hide the temporary download button with env flag', async () => {

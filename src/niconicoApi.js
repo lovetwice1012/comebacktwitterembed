@@ -115,27 +115,75 @@ async function fetchJsonWithCookies(url, options = {}, cookieJar = new Map()) {
     const res = await fetch(url, options);
     storeResponseCookies(res.headers, cookieJar);
     if (!res.ok) {
-        const err = Object.assign(new Error(`Niconico API returned ${res.status} for ${url}`), {
+        const err = Object.assign(new Error(`Niconico API returned ${res.status}`), {
             status: res.status,
-            url,
+            code: 'NICONICO_UPSTREAM_HTTP',
         });
         throw err;
     }
     return await res.json();
 }
 
+function decodeHtmlAttribute(value) {
+    const named = { quot: '"', amp: '&', lt: '<', gt: '>', apos: "'" };
+    return String(value).replace(/&(#x[0-9a-f]+|#\d+|quot|amp|lt|gt|apos);/gi, (raw, key) => {
+        if (key[0] !== '#') return named[key.toLowerCase()] || raw;
+        const number = key[1].toLowerCase() === 'x' ? parseInt(key.slice(2), 16) : Number(key.slice(1));
+        return number > 0 && number <= 0x10ffff && !(number >= 0xd800 && number <= 0xdfff) ? String.fromCodePoint(number) : raw;
+    });
+}
+
+function normalizeWatchResponse(json, videoId) {
+    if (!json || Number(json?.meta?.status) >= 400) return null;
+    const source = json?.data?.response;
+    const data = source?.$watchV4?.data || source;
+    if (!data || typeof data !== 'object' || Array.isArray(data) || !data.video || typeof data.video !== 'object') return null;
+    const id = String(data.video.id || data.client?.watchId || '').toLowerCase();
+    if (id !== String(videoId).toLowerCase() || typeof data.video.title !== 'string' || !data.video.title.trim()) return null;
+    if (data.client?.watchId && String(data.client.watchId).toLowerCase() !== id) return null;
+    const media = data.media || {};
+    const newMedia = !media.domand && media.contents && typeof media.contents === 'object' ? {
+        ...media, domand: { ...media.contents, accessRightKey: media.accessRightKey },
+    } : media;
+    const pageOwner = data.metadata?.jsonLd?.owner;
+    const identity = pageOwner && ['user', 'channel'].includes(pageOwner.type) && /^(?:ch)?\d+$/.test(String(pageOwner.id || ''))
+        ? pageOwner.type === 'user' ? { owner: { id: pageOwner.id, nickname: pageOwner.name, iconUrl: pageOwner.iconUrl } }
+            : { channel: { id: pageOwner.id, name: pageOwner.name, thumbnail: { url: pageOwner.iconUrl } } }
+        : {};
+    return { ...data, ...(!data.owner && !data.channel ? identity : {}), tag: data.tag || data.tags, media: newMedia };
+}
+
+function watchResponseFromHtml(html, videoId) {
+    for (const tag of String(html || '').match(/<meta\b[^>]*>/gi) || []) {
+        const attrs = {};
+        const attribute = /([^\s=<>/"']+)\s*=\s*(?:"([^"]*)"|'([^']*)')/g;
+        for (const match of tag.matchAll(attribute)) attrs[match[1].toLowerCase()] = decodeHtmlAttribute(match[2] ?? match[3]);
+        if (attrs.name !== 'server-response' || !attrs.content) continue;
+        try { return normalizeWatchResponse(JSON.parse(attrs.content), videoId); } catch { return null; }
+    }
+    return null;
+}
+
 async function fetchWatchData(videoId, cookieJar = new Map()) {
     const url = `${niconicoVideoUrl(videoId)}?responseType=json`;
-    const json = await fetchJsonWithCookies(url, {
-        headers: requestHeaders(url, {}, cookieJar),
-    }, cookieJar);
-
-    const response = json?.data?.response;
-    if (!response || json?.meta?.status >= 400) {
-        const code = json?.data?.response?.errorCode || json?.meta?.code || 'unknown';
-        throw new Error(`Niconico watch API did not return watch data (${code})`);
+    let failure;
+    try {
+        const json = await fetchJsonWithCookies(url, { headers: requestHeaders(url, {}, cookieJar) }, cookieJar);
+        const response = normalizeWatchResponse(json, videoId);
+        if (response) return response;
+        failure = Object.assign(new Error('Niconico watch API returned invalid video data'), { code: 'NICONICO_INVALID_RESPONSE' });
+    } catch (error) {
+        if (![400, 404, 405].includes(error?.status) && !(error instanceof SyntaxError)) throw error;
+        failure = error;
     }
-    return response;
+    const pageUrl = niconicoVideoUrl(videoId);
+    const page = await fetch(pageUrl, { headers: requestHeaders(pageUrl, { Accept: 'text/html' }, cookieJar) });
+    storeResponseCookies(page.headers, cookieJar);
+    if (!page.ok) throw Object.assign(new Error(`Niconico watch page returned ${page.status}`), { status: page.status });
+    if (page.url && !/^(?:www\.)?nicovideo\.jp$/i.test(new URL(page.url).hostname)) throw new Error('Niconico watch page redirected outside its service');
+    const parsed = watchResponseFromHtml(await page.text(), videoId);
+    if (!parsed) throw failure;
+    return parsed;
 }
 
 function pickHighestQualityAudio(audios) {
@@ -215,5 +263,8 @@ module.exports = {
     storeResponseCookies,
     _internal: {
         setCookieValues,
+        decodeHtmlAttribute,
+        normalizeWatchResponse,
+        watchResponseFromHtml,
     },
 };

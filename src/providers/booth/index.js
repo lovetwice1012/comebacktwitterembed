@@ -108,18 +108,19 @@ function tr(spec, lang) {
 //   https://<shop>.booth.pm/items/<id>
 // `accounts.booth.pm` 等の特殊サブドメインは除外。
 const BOOTH_URL_PATTERN =
-    /https?:\/\/(?:(?:[a-z0-9][a-z0-9-]*\.)?booth\.pm)\/(?:[a-z]{2}(?:-[a-z]{2})?\/)?items\/\d+/g;
+    /https?:\/\/(?:(?:(?:[a-z0-9][a-z0-9-]*\.)?booth\.pm)\/(?:[a-z]{2}(?:-[a-z]{2})?\/)?items\/\d+\/?|[a-z0-9][a-z0-9-]*\.booth\.pm\/?)(?:\?[^\s<>|]*)?(?=$|[\s<>|#),!'"]|[.](?=$|[\s<>|)]))/gi;
 
 const EXCLUDED_SUBDOMAINS = new Set(['accounts', 'asset']);
 
 /**
  * URL から item_id / language / shop subdomain を抽出。
- * @returns {{id: string, language: string, shop: string|null} | null}
+ * @returns {{id: string, language: string, shop: string|null, type?: 'shop'} | null}
  */
 function parseBoothUrl(rawUrl, defaultLanguage) {
     let u;
     try { u = new URL(rawUrl); } catch { return null; }
-    if (!/booth\.pm$/.test(u.hostname)) return null;
+    if (!['http:', 'https:'].includes(u.protocol) || u.username || u.password || u.port
+        || !(u.hostname === 'booth.pm' || /^[a-z0-9][a-z0-9-]*\.booth\.pm$/i.test(u.hostname))) return null;
 
     // shop subdomain を抽出 (booth.pm 直接 / www / accounts は shop なし扱い)
     const hostParts = u.hostname.split('.');
@@ -131,11 +132,12 @@ function parseBoothUrl(rawUrl, defaultLanguage) {
         else shop = sub;
     }
 
-    const m = u.pathname.match(/^\/(?:([a-z]{2}(?:-[a-z]{2})?)\/)?items\/(\d+)/);
+    const m = u.pathname.match(/^\/(?:([a-z]{2}(?:-[a-z]{2})?)\/)?items\/(\d+)\/?$/i);
+    if (!m && shop && /^\/?$/.test(u.pathname)) return { id: '', language: defaultLanguage, shop, type: 'shop' };
     if (!m) return null;
     return {
         id: m[2],
-        language: m[1] || defaultLanguage,
+        language: m[1]?.toLowerCase() || defaultLanguage,
         shop,
     };
 }
@@ -149,23 +151,39 @@ function buildItemJsonUrl(parsed) {
 }
 
 function buildCanonicalUrl(parsed, info) {
-    if (info && typeof info.url === 'string' && info.url) return info.url;
+    if (info && typeof info.url === 'string' && info.url) {
+        const canonical = parseBoothUrl(info.url, parsed.language);
+        if (canonical && canonical.id === parsed.id && new URL(info.url).protocol === 'https:') return info.url;
+    }
     const lang = parsed.language || 'ja';
     if (parsed.shop) return `https://${parsed.shop}.booth.pm/items/${parsed.id}`;
     return `https://booth.pm/${lang}/items/${parsed.id}`;
 }
 
 async function fetchBoothInfo(parsed) {
-    const api = buildItemJsonUrl(parsed);
-    const res = await fetch(api, {
-        headers: {
-            // booth は Accept: application/json でも JSON を返すが念のため UA を付与。
-            'Accept': 'application/json',
-            'User-Agent': 'Mozilla/5.0 (compatible; comebacktwitterembed/1.0; +https://github.com/lovetwice1012/comebacktwitterembed)',
-        },
-    });
-    if (!res.ok) throw new Error(`booth api ${res.status} for ${api}`);
-    return /** @type {any} */ (await res.json());
+    const primary = buildItemJsonUrl(parsed);
+    const canonical = buildItemJsonUrl({ ...parsed, shop: null });
+    const request = async (url, requireShopMatch) => {
+        const res = await fetch(url, { headers: { Accept: 'application/json',
+            'User-Agent': 'Mozilla/5.0 (compatible; comebacktwitterembed/1.0; +https://github.com/lovetwice1012/comebacktwitterembed)' } });
+        if (!res.ok) throw Object.assign(new Error(`booth api ${res.status}`), { code: 'BOOTH_UPSTREAM_HTTP', status: res.status });
+        const info = await res.json();
+        if (!info || typeof info !== 'object' || Array.isArray(info) || String(info.id) !== parsed.id
+            || typeof info.name !== 'string' || !info.name.trim() || typeof info.is_adult !== 'boolean') {
+            throw Object.assign(new Error('booth returned invalid item data'), { code: 'BOOTH_INVALID_RESPONSE' });
+        }
+        if (requireShopMatch) {
+            const canonicalShop = typeof info.shop?.subdomain === 'string' ? info.shop.subdomain.toLowerCase()
+                : typeof info.url === 'string' ? parseBoothUrl(info.url, parsed.language)?.shop : null;
+            if (canonicalShop !== parsed.shop) throw Object.assign(new Error('booth shop does not match the requested item'), { code: 'BOOTH_SHOP_MISMATCH' });
+        }
+        return info;
+    };
+    try { return await request(primary, Boolean(parsed.shop)); }
+    catch (error) {
+        if (!parsed.shop || !([403, 404].includes(error?.status) || error?.code === 'BOOTH_INVALID_RESPONSE' || error instanceof SyntaxError)) throw error;
+        return await request(canonical, true);
+    }
 }
 
 function truncate(s, max) {
@@ -392,13 +410,14 @@ async function extract(message, url, s) {
 
     const parsed = parseBoothUrl(url, apiLang);
     if (!parsed) return null;
+    if (parsed.type === 'shop') return require('./shop').extractShop({ fetch, message, url, settings: s, parsed, recordProviderError, buildFailureResponse, stripHtml });
 
     let info;
     try {
         info = await fetchBoothInfo(parsed);
     } catch (err) {
         recordProviderError('booth', err, message, url, { endpointKey: 'booth/items.json' });
-        console.log(err);
+        console.warn('[booth] item lookup failed:', err?.code || 'BOOTH_UPSTREAM_ERROR');
         return buildFailureResponse('booth', url, s, err);
     }
 

@@ -16,6 +16,7 @@ const {
     NICONICO_URL_PATTERN,
     niconicoVideoUrl,
     parseNiconicoUrl,
+    pickBestDomandOutput,
 } = require('../../niconicoApi');
 const { toApiLocaleFamily } = require('../../discordLocales');
 const { createProviderAnalytics, facet, finiteNumber, tagFacets } = require('../../analytics/providerMetrics');
@@ -78,6 +79,7 @@ function truncate(value, maxLength) {
 }
 
 function formatNumber(value) {
+    if (value === null || value === undefined || value === '') return null;
     const n = Number(value);
     if (!Number.isFinite(n)) return null;
     return n.toLocaleString('en-US');
@@ -286,11 +288,11 @@ function buildNiconicoAnalytics(watchData, parsed) {
     });
 }
 
-function buildStep(embed, message, url, s, lang, mediaUrls = [], analytics = null) {
+function buildStep(embed, message, url, s, lang, mediaUrls = [], analytics = null, includeDownload = true) {
     /** @type {import('../_types').SendStep} */
     const step = {
         embeds: [embed],
-        components: buildComponents(lang, true),
+        components: buildComponents(lang, includeDownload),
         allowedMentions: { repliedUser: false },
         send: s.alwaysreplyifpostedtweetlink === true ? 'reply-source' : 'channel',
         suppressSourceEmbeds: true,
@@ -320,7 +322,9 @@ async function extract(message, url, s) {
         const watchData = await fetchWatchData(parsed.id);
         const embed = buildVideoEmbed(watchData, parsed, message, s);
         const mediaUrl = thumbnailUrl(watchData?.video?.thumbnail);
-        return [buildStep(embed, message, url, s, lang, mediaUrl ? [mediaUrl] : [], buildNiconicoAnalytics(watchData, parsed))];
+        const playable = Boolean(watchData?.client?.watchId && watchData?.client?.watchTrackId
+            && watchData?.media?.domand?.accessRightKey && pickBestDomandOutput(watchData));
+        return [buildStep(embed, message, url, s, lang, mediaUrl ? [mediaUrl] : [], buildNiconicoAnalytics(watchData, parsed), playable)];
     } catch (err) {
         recordProviderError('niconico', err, message, url, { endpointKey: 'nicovideo/watch' });
         return buildFailureResponse('niconico', url, s, err);

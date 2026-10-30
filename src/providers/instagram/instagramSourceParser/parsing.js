@@ -114,7 +114,7 @@ function scrapeFromEmbedHtml(html, shortcode = '') {
 
     if (!mediaUrl) {
         mediaUrl = getMetaContent(html, 'og:video') || getMetaContent(html, 'og:image');
-        typeName = getMetaContent(html, 'og:video') ? 'GraphVideo' : 'GraphImage';
+        typeName = getMetaContent(html, 'og:video') || /video/i.test(getMetaContent(html, 'og:type')) ? 'GraphVideo' : 'GraphImage';
     }
     if (!mediaUrl) return null;
 
@@ -128,7 +128,8 @@ function scrapeFromEmbedHtml(html, shortcode = '') {
     return {
         username,
         caption,
-        medias: [{ typeName, url: normalizeCdnUrl(mediaUrl) }],
+        medias: [{ typeName, url: normalizeCdnUrl(mediaUrl),
+            ...(typeName === 'GraphVideo' && isVideoSourceUrl(mediaUrl) && (videoTag || getMetaContent(html, 'og:video')) ? { verifiedVideoSource: true } : {}) }],
     };
 }
 
@@ -300,6 +301,7 @@ function isVideoNode(node) {
     return Number(node?.media_type) === 2
         || /video/i.test(String(node?.__typename || ''))
         || Boolean(node?.video_url)
+        || Boolean(node?.video_dash_manifest)
         || (Array.isArray(node?.video_versions) && node.video_versions.length > 0);
 }
 
@@ -385,10 +387,41 @@ function normalizeCdnUrl(rawUrl) {
     }
 }
 
+function videoUrlFromManifest(manifest) {
+    if (typeof manifest !== 'string' || !manifest) return '';
+    const xml = decodeHtmlEntities(manifest);
+    const videoSets = xml.match(/<AdaptationSet\b[^>]*mimeType=["']video\/mp4["'][^>]*>[\s\S]*?<\/AdaptationSet>/gi) || [];
+    for (const set of videoSets) {
+        const urls = [...set.matchAll(/<BaseURL>([^<]+)<\/BaseURL>/gi)]
+            .map(match => normalizeCdnUrl(decodeHtmlEntities(match[1])));
+        const video = urls.find(url => {
+            try { return new URL(url).protocol === 'https:' && /\.mp4$/i.test(new URL(url).pathname); }
+            catch { return false; }
+        });
+        if (video) return video;
+    }
+    return '';
+}
+
+function isVideoSourceUrl(rawUrl) {
+    try {
+        const url = new URL(rawUrl);
+        if (url.protocol !== 'https:' || url.username || url.password) return false;
+        const extension = url.pathname.match(/\.([a-z0-9]{1,8})$/i)?.[1]?.toLowerCase();
+        return !extension || ['mp4', 'mov', 'webm', 'm4v', 'mkv', 'avi'].includes(extension);
+    } catch { return false; }
+}
+
+function videoSourceFromNode(node) {
+    const candidates = [node?.video_url, ...(Array.isArray(node?.video_versions) ? node.video_versions.map(item => item?.url) : []), videoUrlFromManifest(node?.video_dash_manifest)];
+    const video = candidates.find(isVideoSourceUrl);
+    return video ? normalizeCdnUrl(video) : '';
+}
+
 function mediaUrlFromNode(node) {
     if (isVideoNode(node)) {
-        const video = firstString(node, ['video_url', 'video_versions.0.url']);
-        if (video) return normalizeCdnUrl(video);
+        const video = videoSourceFromNode(node);
+        if (video) return video;
     }
 
     const versions = getPath(node, 'image_versions2.candidates');
@@ -426,12 +459,13 @@ function normalizeMediaNode(node) {
 
     const mediaNodes = sidecarNodes(node);
     const inspectNodes = [node, ...mediaNodes.filter(media => media !== node)];
-    const medias = mediaNodes
+    const rawMedias = mediaNodes
         .map(media => ({
             typeName: isVideoNode(media) ? 'GraphVideo' : (media.__typename || 'GraphImage'),
             url: mediaUrlFromNode(media),
-        }))
-        .filter(media => media.url);
+            ...(isVideoNode(media) && videoSourceFromNode(media) ? { verifiedVideoSource: true } : {}),
+        }));
+    const medias = rawMedias.filter(media => media.url);
 
     if (medias.length === 0) return null;
 
@@ -443,6 +477,9 @@ function normalizeMediaNode(node) {
             'caption.text',
             'accessibility_caption',
         ]),
+        ...(rawMedias.some(media => !media.url || media.typeName === 'GraphVideo' && !media.verifiedVideoSource)
+            ? { incompleteMedia: true, expectedMediaCount: mediaNodes.length,
+                expectedVideoPositions: rawMedias.flatMap((media, index) => media.typeName === 'GraphVideo' ? [index] : []) } : {}),
         likeCount: countFromPath(node, 'edge_media_preview_like'),
         commentCount: countFromPath(node, 'edge_media_to_comment'),
         locationName: firstString(node, ['location.name', 'location.city_name', 'location.short_name']),
@@ -484,6 +521,11 @@ function parseInstagramHtmlSource(html, shortcode = '') {
     const node = findMediaNode(collectJsonCandidates(html), shortcode);
     const normalized = normalizeMediaNode(node);
     if (normalized) return { data: normalized, previewOnly: normalized.medias.length === 1 && hasResizedImage(normalized) };
+    if (node) {
+        const source = sidecarNodes(node);
+        return { data: null, previewOnly: true, incompleteMedia: true, expectedMediaCount: source.length,
+            expectedVideoPositions: source.flatMap((media, index) => isVideoNode(media) ? [index] : []) };
+    }
 
     return {
         data: scrapeFromEmbedHtml(html, shortcode),
@@ -627,6 +669,8 @@ module.exports = {
     parseInstagramHtml,
     parseInstagramHtmlSource,
     normalizeMediaNode,
+    sidecarNodes,
+    isVideoNode,
     normalizeOEmbedData,
     normalizeProfileData,
     normalizeProfileHtmlData,
