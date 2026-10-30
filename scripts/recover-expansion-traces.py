@@ -206,7 +206,7 @@ def main():
                 estimated = sum(len(json.dumps(event, ensure_ascii=True).encode()) * 2 for event in events)
                 if estimated > 4 * 1024 * 1024:
                     raise RuntimeError('RECOVERY_EVENT_EXCEEDS_SAFE_BATCH')
-                if args.apply and batch and (len(batch) + len(events) > 100 or batch_bytes + estimated > 4 * 1024 * 1024):
+                if args.apply and batch and (len(batch) + len(events) > 400 or batch_bytes + estimated > 4 * 1024 * 1024):
                     submit(batch, token, os.environ.get('ADMIN_AGENT_URL', 'http://127.0.0.1:30988'))
                     stats['eventsAcknowledged'] += len(batch)
                     batch, batch_bytes = [], 0
