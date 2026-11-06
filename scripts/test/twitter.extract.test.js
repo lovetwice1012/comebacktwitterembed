@@ -2,6 +2,9 @@
 
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
+const { readFileSync } = require('node:fs');
+const { createRequire } = require('node:module');
+const { compileFunction } = require('node:vm');
 
 const twitterModulePath = require.resolve('../../src/providers/twitter');
 const fetchModulePath = require.resolve('node-fetch');
@@ -84,19 +87,103 @@ function createTweet(id, overrides = {}) {
     };
 }
 
-test('twitter extract: secondary mode suppresses single-image tweet when target is multiple images/video', async () => {
+test('secondary mode supplies an image when the source preview is suppressed', async () => {
     const provider = loadTwitterProviderWithTweets({
         1: createTweet('1', { mediaURLs: ['https://pbs.twimg.com/media/one.jpg'] }),
     });
 
-    const result = await provider.extract(createMessage(), 'https://twitter.com/a/status/1', {
+    const message = createMessage();
+    message.flags = { bitfield: 4 };
+    message.embeds = [];
+    const result = await provider.extract(message, 'https://twitter.com/a/status/1', {
         legacy_mode: false,
         secondary_extract_mode: true,
         secondary_extract_mode_multiple_images: true,
         secondary_extract_mode_video: true,
     });
 
-    assert.equal(result, null);
+    assert.equal(result[0].embeds[0].image.url, 'https://pbs.twimg.com/media/one.jpg');
+    assert.equal(result[0].deleteSource, undefined);
+    assert.equal(result[0].suppressSourceEmbeds, undefined);
+});
+
+test('secondary mode does not duplicate an already visible matching image preview', async () => {
+    const provider = loadTwitterProviderWithTweets({
+        1: createTweet('1', { mediaURLs: ['https://pbs.twimg.com/media/one.jpg'] }),
+    });
+    const message = createMessage();
+    message.flags = { bitfield: 0 };
+    message.embeds = [{ url: 'https://twitter.com/a/status/1', image: { url: 'https://pbs.twimg.com/media/one.jpg' } }];
+    assert.equal(await provider.extract(message, 'https://twitter.com/a/status/1', {
+        legacy_mode: false, secondary_extract_mode: true,
+    }), null);
+});
+
+test('secondary image fallback covers absent previews and respects display settings', async () => {
+    const provider = loadTwitterProviderWithTweets({
+        1: createTweet('1', { mediaURLs: ['https://pbs.twimg.com/media/one.jpg'] }),
+    });
+    for (const [mode, verify] of [
+        ['embed', step => assert.equal(step.embeds[0].image.url, 'https://pbs.twimg.com/media/one.jpg')],
+        ['thumbnail_only', step => assert.equal(step.embeds[0].thumbnail.url, 'https://pbs.twimg.com/media/one.jpg')],
+        ['attachment', step => assert.deepEqual(step.files, ['https://pbs.twimg.com/media/one.jpg'])],
+        ['link_only', step => assert.match(step.content, /https:\/\/pbs\.twimg\.com\/media\/one\.jpg/)],
+    ]) {
+        const message = createMessage(); message.flags = { bitfield: 0 }; message.embeds = [];
+        const result = await provider.extract(message, 'https://twitter.com/a/status/1', {
+            legacy_mode: false, secondary_extract_mode: true, media_display_mode: mode,
+            alwaysreplyifpostedtweetlink: true,
+        });
+        assert.equal(result[0].send, 'reply-source'); verify(result[0]);
+    }
+});
+
+test('secondary fallback shows only an image without bypassing video or multi-image filters', async () => {
+    const provider = loadTwitterProviderWithTweets({
+        1: createTweet('1', { mediaURLs: ['https://pbs.twimg.com/media/one.jpg', 'https://pbs.twimg.com/media/two.jpg'] }),
+        2: createTweet('2', { mediaURLs: ['https://video.twimg.com/a.mp4'] }),
+        3: createTweet('3', { mediaURLs: ['https://other.example/image.jpg', 'http://pbs.twimg.com/media/unsafe.jpg'] }),
+    });
+    const settings = { legacy_mode: false, secondary_extract_mode: true,
+        secondary_extract_mode_multiple_images: false, secondary_extract_mode_video: false };
+    const image = await provider.extract(createMessage('1'), 'https://twitter.com/a/status/1', settings);
+    assert.equal(image.length, 1); assert.equal(image[0].embeds[0].image.url, 'https://pbs.twimg.com/media/one.jpg');
+    assert.equal(await provider.extract(createMessage('2'), 'https://twitter.com/a/status/2', settings), null);
+    assert.equal(await provider.extract(createMessage('3'), 'https://twitter.com/a/status/3', settings), null);
+});
+
+test('normal webhook notification yields a visible secondary image without changing the source', async () => {
+    const { snapshotSteps } = require('../../src/automation/transport');
+    const sourceUrl = 'https://twitter.com/a/status/1';
+    const notification = snapshotSteps({ display: { format: 'normal' }, text: `Update\n${sourceUrl}` }, 'x')[0];
+    assert.equal(notification.flags, 4);
+    const provider = loadTwitterProviderWithTweets({
+        1: createTweet('1', { mediaURLs: ['https://pbs.twimg.com/media/one.jpg'] }),
+    });
+    const filename = require.resolve('../../src/providers/_dispatcher'), actualRequire = createRequire(filename), mod = { exports: {} };
+    const mocks = {
+        '../adminSupport/telemetry': { event() {}, errorData: value => value, serializable: value => value },
+        '../errorTracking': { recordError() {}, recordMetric() {}, recordAnalyticsEvent() {} },
+        '../state': { incrementProcessedCounters() {} },
+        '../settings': { checkComponentIncludesDisabledButtonAndIfFindDeleteIt: async rows => rows },
+        '../sharedPostHistory': { run: (_message, steps, _context, send) => send(steps) },
+        '../mediaGallery': { prepare: async step => ({ step }) },
+        '../personalLinks/cards': { prepare: async step => ({ step }) },
+    };
+    compileFunction(readFileSync(filename, 'utf8'), ['require', 'module', 'exports', 'console'], { filename })(
+        id => mocks[id] || actualRequire(id), mod, mod.exports, { warn() {}, log() {} });
+    for (const denied of [false, true]) {
+        const sent = [], cleanup = [], message = createMessage();
+        message.content = notification.content; message.flags = { bitfield: notification.flags }; message.embeds = [];
+        message.channelId = 'channel'; message.guildId = 'guild';
+        message.channel.send = async payload => { if (denied) throw { status: 403, code: 50013 }; sent.push(payload); return { id: 'sent', channelId: 'channel' }; };
+        message.suppressEmbeds = async () => cleanup.push('suppress'); message.delete = async () => cleanup.push('delete');
+        const steps = await provider.extract(message, sourceUrl, { legacy_mode: false, secondary_extract_mode: true });
+        const result = await mod.exports.runSendSteps(message, steps, 'twitter', { presentationSettings: {} });
+        assert.equal(result.outcome, denied ? 'E' : 'F');
+        assert.deepEqual(cleanup, []);
+        if (!denied) assert.equal(sent[0].embeds[0].image.url, 'https://pbs.twimg.com/media/one.jpg');
+    }
 });
 
 test('twitter extract: fxtwitter fallback keeps the normalized status URL', async () => {
@@ -502,7 +589,7 @@ test('twitter extract: attachment mode prunes media-only embeds while keeping me
     ]);
 });
 
-test('twitter extract: secondary mode can skip source tweet and expand matching quote tweet', async () => {
+test('secondary image fallback preserves a matching quoted tweet', async () => {
     const provider = loadTwitterProviderWithTweets({
         1: createTweet('1', {
             mediaURLs: ['https://pbs.twimg.com/media/one.jpg'],
@@ -524,9 +611,11 @@ test('twitter extract: secondary mode can skip source tweet and expand matching 
     });
 
     assert.ok(Array.isArray(result));
-    assert.equal(result.length, 1);
-    assert.equal(result[0].content, 'Quoted tweet:');
-    assert.equal(result[0].embeds[0].url, 'https://twitter.com/a/status/2');
+    assert.equal(result.length, 2);
+    assert.equal(result[0].embeds[0].image.url, 'https://pbs.twimg.com/media/one.jpg');
+    assert.equal(result[1].content, 'Quoted tweet:');
+    assert.equal(result[1].embeds[0].url, 'https://twitter.com/a/status/2');
+    assert.equal(result[1].send, 'reply-previous');
 });
 
 test('twitter extract: secondary mode still sends article-only tweets', async () => {
