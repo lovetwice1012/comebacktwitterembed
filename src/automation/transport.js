@@ -70,8 +70,9 @@ function filterMedia(payload, mode) {
 // Rich summaries are built from snapshots; missing media is never invented.
 function snapshotSteps(plan, kind, expandedSnapshot = false) {
     const event = plan.event || {}, display = plan.display;
-    if (plan.defaultPriceText) return splitText(plan.defaultPriceText).map(content => ({ content, flags: 4, ...(display.format === 'normal' ? { normalExpansion: true } : {}) }));
-    if (display.format === 'normal') return splitText(plan.text).map(content => ({ content, flags: 4, normalExpansion: true }));
+    if (plan.defaultPriceText) return splitText(plan.defaultPriceText).map(content => display.format === 'normal'
+        ? { content, normalExpansion: true } : { content, flags: 4 });
+    if (display.format === 'normal') return splitText(plan.text).map(content => ({ content, normalExpansion: true }));
     if (display.format === 'text' || display.format === 'url') return splitText(plan.text).map(content => ({ content, flags: 4 }));
     if (display.format === 'card' || display.format === 'expanded' && (kind === 'price' || expandedSnapshot)) {
         const fields = [];

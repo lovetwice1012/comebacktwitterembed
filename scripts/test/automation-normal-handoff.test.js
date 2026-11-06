@@ -161,6 +161,7 @@ test('normal automation hands off early and late Gateway events to ordinary sett
         assert.equal(h.directFetches, 0);
         assert.equal(h.submitted[0].content, `new video\n${samples.youtube}`);
         assert.equal(h.submitted[0].embeds, undefined);
+        assert.equal((h.submitted[0].flags || 0) & 4, 0, 'Discord preview remains available for normal notifications');
         assert.equal(h.events.extracted.length, 1);
         assert.equal(h.events.extracted[0].settings.silent_expansion, true);
         assert.equal(h.events.payloads[0].flags, 4096);

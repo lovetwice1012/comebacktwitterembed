@@ -37,8 +37,18 @@ test('normal aggregates post all source URLs without preparing direct media', as
     const bodies = await prepare('normal', members);
     assert.equal(bodies.length, 1);
     assert.equal(bodies[0].content, members.map(member => member.text).join('\n\n'));
-    assert.equal(bodies[0].flags, 4);
+    assert.equal((bodies[0].flags || 0) & 4, 0);
     assert.equal(bodies[0].embeds, undefined);
+});
+
+test('normal price text keeps Discord preview while text and URL modes remain explicit', () => {
+    const { snapshotSteps } = require('../../src/automation/transport');
+    for (const format of ['normal', 'text', 'url']) {
+        const steps = snapshotSteps({ display: { format }, event: {}, text: 'unused',
+            defaultPriceText: 'Item https://example.test/item' }, 'price');
+        assert.equal((steps[0].flags || 0) & 4, format === 'normal' ? 0 : 4);
+        assert.equal(steps[0].normalExpansion === true, format === 'normal');
+    }
 });
 test('expanded aggregate snapshots preserve historical prices and deltas without refetching', async () => {
     const bodies = await prepare('expanded', [{ event: { title: 'observed', priceAmount: 950, priceDelta: -150, currency: 'JPY', observedAtMs: 1000 }, text: 'recorded' }], 'price');

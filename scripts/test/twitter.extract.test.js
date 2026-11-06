@@ -99,6 +99,20 @@ test('twitter extract: secondary mode suppresses single-image tweet when target 
     assert.equal(result, null);
 });
 
+test('secondary mode never forces skipped sensitive or single-image content into Bot output', async () => {
+    const provider = loadTwitterProviderWithTweets({
+        1: createTweet('1', { mediaURLs: ['https://pbs.twimg.com/media/one.jpg'], possibly_sensitive: true }),
+        2: createTweet('2', { mediaURLs: ['https://pbs.twimg.com/media/two.jpg'], possibly_sensitive: false }),
+    });
+    for (const id of ['1', '2']) {
+        const message = createMessage(id); message.flags = { bitfield: 0 }; message.embeds = [];
+        assert.equal(await provider.extract(message, `https://twitter.com/a/status/${id}`, {
+            legacy_mode: false, secondary_extract_mode: true,
+            secondary_extract_mode_multiple_images: true, secondary_extract_mode_video: true,
+        }), null);
+    }
+});
+
 test('twitter extract: fxtwitter fallback keeps the normalized status URL', async () => {
     const requestedUrls = [];
     const provider = loadTwitterProviderWithFetch(async (url) => {
