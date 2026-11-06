@@ -21,7 +21,7 @@ const {
 } = require('./twitterSourceParser');
 
 const fetch = require('../../providerFetch').withDeadline(require('node-fetch'));
-const { ButtonBuilder, ButtonStyle, ComponentType, PermissionsBitField, MessageFlags } = require('discord.js');
+const { ButtonBuilder, ButtonStyle, ComponentType, PermissionsBitField } = require('discord.js');
 const { isOnlyUrlMessageContent, videoExtensions } = require('../../utils');
 const { recordProviderError } = require('../../errorTracking');
 const { createProviderAnalytics, facet, tagFacets } = require('../../analytics/providerMetrics');
@@ -590,49 +590,6 @@ function routeMedia(tweet, baseEmbed, compact, lang, sendAsAttachmentsByDefault)
     return { embeds, files: attachments, extraButton, compactSingleImageHandled };
 }
 
-function secondaryImagePreview(message, url, tweet, settings, quoted, forceSendMode) {
-    const imageUrl = (tweet.mediaURLs || []).find(value => {
-        if (typeof value !== 'string' || isVideoUrl(value)) return false;
-        try {
-            const parsed = new URL(value);
-            return parsed.protocol === 'https:' && parsed.hostname === 'pbs.twimg.com' && !parsed.username && !parsed.password && !parsed.port;
-        } catch { return false; }
-    });
-    if (!imageUrl) return null;
-
-    let suppressed = false;
-    try {
-        const flags = message.flags;
-        suppressed = typeof flags?.has === 'function' ? flags.has(MessageFlags.SuppressEmbeds)
-            : (BigInt(flags?.bitfield ?? flags ?? 0) & BigInt(MessageFlags.SuppressEmbeds)) !== 0n;
-    } catch { /* Missing flags do not prove a preview is visible. */ }
-    const image = new URL(imageUrl);
-    const statusId = String(url).match(/\/status\/(\d+)/i)?.[1];
-    const visible = !suppressed && Array.isArray(message.embeds) && message.embeds.some(embed => {
-        const candidate = typeof embed?.toJSON === 'function' ? embed.toJSON() : embed;
-        const media = candidate?.image?.url || candidate?.thumbnail?.url;
-        if (!media) return false;
-        try {
-            const mediaUrl = new URL(media);
-            if (mediaUrl.hostname === image.hostname && mediaUrl.pathname === image.pathname) return true;
-            const linked = new URL(candidate.url);
-            return statusId && /^(?:www\.)?(?:x|twitter)\.com$/i.test(linked.hostname)
-                && linked.pathname.match(/\/status\/(\d+)/i)?.[1] === statusId;
-        } catch { return false; }
-    });
-    if (visible) return null;
-
-    const step = {
-        embeds: [{ url, image: { url: imageUrl } }],
-        allowedMentions: { repliedUser: false },
-        analytics: buildTwitterAnalytics(tweet, url),
-        send: quoted ? 'reply-previous' : forceSendMode || (settings.alwaysreplyifpostedtweetlink === true ? 'reply-source' : 'channel'),
-    };
-    applyMediaDisplayToStep(step, settings, [imageUrl], 'Media');
-    require('../../adminSupport/telemetry').event('decision', 'secondary_image_fallback', { reason: 'source_preview_unavailable' });
-    return step;
-}
-
 // ---- メイン extractor -------------------------------------------------------
 
 /**
@@ -727,12 +684,12 @@ async function extract(message, url, s, opts) {
             ((s.secondary_extract_mode_multiple_images ?? true) && containsMultiImg)
             || ((s.secondary_extract_mode_video ?? true) && containsVideo);
         const shouldSuppress = !shouldExtract && (mediaURLs.length > 0 || !tweet.article);
+        if (shouldSuppress && tweet.qrtURL && canRecurseQuoted(s, depth)) {
+            const r = await recurseQuoted(message, tweet.qrtURL, s, depth);
+            if (r == null) return null;
+            return Array.isArray(r) ? r : [r];
+        }
         if (shouldSuppress) {
-            const quote = tweet.qrtURL && canRecurseQuoted(s, depth)
-                ? await recurseQuoted(message, tweet.qrtURL, s, depth) : null;
-            const preview = secondaryImagePreview(message, url, tweet, s, quoted, opts.forceSendMode);
-            if (preview) return [preview, ...(quote ? (Array.isArray(quote) ? quote : [quote]) : [])];
-            if (quote) return Array.isArray(quote) ? quote : [quote];
             require('../../adminSupport/telemetry').markOutcome('skipped', 'secondary_extract_filter', { containsVideo, imageCount, mediaCount: mediaURLs.length,
                 multipleImagesEnabled: s.secondary_extract_mode_multiple_images, videoEnabled: s.secondary_extract_mode_video });
             return null;
