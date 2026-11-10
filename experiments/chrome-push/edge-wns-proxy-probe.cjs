@@ -89,6 +89,7 @@ async function main() {
     const testOffline = process.env.EDGE_PROBE_OFFLINE === '1';
     const testDurable = process.env.EDGE_PROBE_DURABLE === '1';
     const testDurableFailure = process.env.EDGE_PROBE_DURABLE_FAIL_INSERT === '1';
+    const testProcessCrash = process.env.EDGE_PROBE_DURABLE_PROCESS_CRASH === '1';
     if (testWrongKey && (noRelay || process.env.EDGE_PROBE_RECONNECT !== '1' || process.env.EDGE_PROBE_COPY_PROFILE !== '1'
         || process.env.EDGE_PROBE_MINIMAL_PROFILE !== '1' || process.env.EDGE_PROBE_DECRYPT_RECEIVED === '1'
         || (process.env.EDGE_PROBE_OMIT_COMPONENT || '').split(',').includes('push-store'))) throw new Error('PROBE_MODE_INVALID');
@@ -109,6 +110,7 @@ async function main() {
         || process.env.EDGE_PROBE_GENERATED_HANDSHAKE !== '1' || process.env.EDGE_PROBE_ROTATION === '1' || process.env.EDGE_PROBE_ACK_FOLLOWUP === '1'))
         throw new Error('PROBE_MODE_INVALID');
     if (testDurableFailure && !testDurable) throw new Error('PROBE_MODE_INVALID');
+    if (testProcessCrash && (!testDurable || testDurableFailure)) throw new Error('PROBE_MODE_INVALID');
     const temp = await fs.realpath(os.tmpdir()), root = await fs.mkdtemp(path.join(temp, 'cbte-edge-wns-probe-'));
     let browser, cdp, pageServer, relay, durableDb, browserReceived = false, copiedProfileResult = null, detachedConnectionResult = null, independentResult = null, durableResult = null, routingResult = null, handshakeShape = null, handshakeRelations = null, relationDeviceRecord = null, relationSiteRecord = null, independentWebPush = null, independentChannel = null, productConstants = null, capturedCipherDecrypted = null, appServerKeyMatches = null, deviceFields, expectedCipher, otherCipher, expectedNextCipher, otherNextCipher; const sockets = new Set(), events = [];
     const browserEvents = { initial: 0, second: 0, third: 0, fourth: 0, copy: 0, other: 0 };
@@ -775,10 +777,12 @@ async function main() {
                     return result;
                 })) } : durableDb;
                 durableStore = createXPushStore(storeDb, { leaseMs: 30000 });
-                durableLease = await durableStore.claim({ ...durableSubscription, workerId: 'synthetic-wns-first' });
-                durableReceiver = createSyntheticDurableReceiver({ scope: `${origin}/`, store: durableStore, lease: durableLease,
-                    channel: independentChannel, authorize: async () => {}, sendAck: async () => { targetAcks++; },
-                    beforeAck: async saved => { durableInboxId = saved.id; throw Object.assign(new Error('PROBE_SYNTHETIC_STOP'), { code: 'PROBE_SYNTHETIC_STOP' }); } });
+                if (!testProcessCrash) {
+                    durableLease = await durableStore.claim({ ...durableSubscription, workerId: 'synthetic-wns-first' });
+                    durableReceiver = createSyntheticDurableReceiver({ scope: `${origin}/`, store: durableStore, lease: durableLease,
+                        channel: independentChannel, authorize: async () => {}, sendAck: async () => { targetAcks++; },
+                        beforeAck: async saved => { durableInboxId = saved.id; throw Object.assign(new Error('PROBE_SYNTHETIC_STOP'), { code: 'PROBE_SYNTHETIC_STOP' }); } });
+                }
             }
             const direct = (token, label, captureToken, ackAndFollowup, observePrior) => independentSyntheticReconnect({ frames, key, token, productConstants,
                 generatedPrelude: process.env.EDGE_PROBE_GENERATED_PRELUDE === '1', generatedHandshake, clientMetadata, ackAndFollowup,
@@ -802,6 +806,49 @@ async function main() {
             try {
                 const testRotation = process.env.EDGE_PROBE_ROTATION === '1';
                 if (testRotation && !generatedHandshake) throw new Error('PROBE_MODE_INVALID');
+                if (testProcessCrash) {
+                    const entitlements = require('../../src/automation/entitlements');
+                    await durableDb.withDatabaseTransaction(query => entitlements.savePlanPolicy(query, { userId: '666666666666666666', isAdmin: true },
+                        { planId: 'free', label: 'fixture', slotLimit: 5, minuteLimit: 5, dayLimit: 24, priority: 0, intervalMinutes: 5 }));
+                    const monitor = await durableDb.queryDatabase("INSERT INTO automation_x_monitors (owner_user_id,account_id,account_handle,name,enabled,state,pool_kind,notification_settings_json,subscription_state,revision,created_at_ms,updated_at_ms) VALUES (?,'12345','synthetic','fixture',1,'ready','free',?,'bound',1,?,?)",
+                        [durableSubscription.ownerUserId, JSON.stringify({ subscriptionId: durableSubscription.subscriptionId }), Date.now(), Date.now()]);
+                    await durableDb.withDatabaseTransaction(query => entitlements.assignSlot(query, durableSubscription.ownerUserId, 'x', String(monitor.insertId)));
+                    const { startSyntheticWorker } = require('./edge-fixture-process.cjs');
+                    const input = { schema: durableDb.schema, dbPort: 33621, scope: `${origin}/`, subscriptionId: durableSubscription.subscriptionId,
+                        ownerUserId: durableSubscription.ownerUserId, deviceKey: key.toString('base64'), token: deviceFields[2].toString('utf8'),
+                        channel: independentChannel.toString('base64'), productKey: productConstants.key.toString('base64'), productId: productConstants.id.toString('base64'),
+                        publicKey: independentWebPush.publicKey.toString('base64'), privateKey: independentWebPush.privateKey.toString('base64'),
+                        auth: independentWebPush.auth.toString('base64'), subscription: value.subscription, otherSubscription, vapid, clientMetadata };
+                    let firstWorker, successorWorker;
+                    try {
+                        firstWorker = startSyntheticWorker({ ...input, worker: 'first' });
+                        const committed = await firstWorker.wait('committed');
+                        if (!/^[1-9]\d{0,19}$/.test(String(committed.inboxId || '')) || !Number.isInteger(committed.pid) || committed.pid === process.pid)
+                            throw new Error('PROBE_WORKER_RECEIPT_INVALID');
+                        const rows = await durableDb.queryDatabase('SELECT lease_token,subscription_revision,lease_expires_at_ms FROM automation_x_push_receivers WHERE subscription_id=?', [durableSubscription.subscriptionId]);
+                        if (rows.length !== 1 || Date.now() >= Number(rows[0].lease_expires_at_ms)) throw new Error('PROBE_DURABLE_LEASE_FAILED');
+                        const stale = { subscriptionId: durableSubscription.subscriptionId, ownerUserId: durableSubscription.ownerUserId,
+                            revision: Number(rows[0].subscription_revision), token: rows[0].lease_token };
+                        if (await durableStore.claim({ ...durableSubscription, workerId: 'synthetic-wns-contender' })) throw new Error('PROBE_DURABLE_LEASE_FAILED');
+                        await firstWorker.terminate();
+                        const retained = await durableStore.getInbox({ ...durableSubscription, id: committed.inboxId });
+                        if (!retained || retained.status !== 'received') throw new Error('PROBE_DURABLE_RECEIPT_FAILED');
+                        for (let i = 0; i < 400 && Date.now() <= Number(rows[0].lease_expires_at_ms); i++) await wait(100);
+                        if (Date.now() <= Number(rows[0].lease_expires_at_ms)) throw new Error('PROBE_DURABLE_LEASE_TIMEOUT');
+                        successorWorker = startSyntheticWorker({ ...input, worker: 'successor', inboxId: committed.inboxId });
+                        const recovered = await successorWorker.wait('recovered'); await successorWorker.waitExit();
+                        let oldLeaseRejected = false;
+                        try { await durableStore.assertLease(stale); } catch (error) { if (error.code === 'X_PUSH_LEASE_LOST') oldLeaseRejected = true; else throw error; }
+                        if (!oldLeaseRejected || !Number.isInteger(recovered.pid) || recovered.pid === process.pid || recovered.pid === committed.pid
+                            || recovered.inboxCount !== 1 || recovered.jobCount !== 1) throw new Error('PROBE_DURABLE_ROUTE_FAILED');
+                        independentResult = { killedAfterCommitBeforeTargetAck: true };
+                        durableResult = { realWnsCipherCommitted: true, separateWorkerProcesses: true, actualLeaseExpiry: true,
+                            staleLeaseRejected: true, successorDecrypted: true, foreignPersisted: false, inboxCount: recovered.inboxCount, jobCount: recovered.jobCount };
+                    } finally {
+                        const cleanup = await Promise.allSettled([firstWorker, successorWorker].filter(Boolean).map(worker => worker.cleanup()));
+                        if (cleanup.some(result => result.status === 'rejected')) throw new Error('PROBE_WORKER_CLEANUP_FAILED');
+                    }
+                } else {
                 const label = testDurable ? JSON.stringify({ notificationType: 'tweet', author: { id: '12345', handle: 'synthetic' },
                     url: 'https://x.com/synthetic/status/1234567890123456789', text: 'synthetic-durable-event' }) : 'synthetic-independent-first';
                 try { independentResult = await direct(deviceFields[2].toString('utf8'), label, testRotation, process.env.EDGE_PROBE_ACK_FOLLOWUP === '1'); }
@@ -863,6 +910,7 @@ async function main() {
                     const observation = testOffline ? { offlineCipher, priorCipher: firstCipher, windowMs: 10000 } : undefined;
                     try { independentResult.rotation = { reusedPreviousToken: useOldToken, ...await direct(useOldToken ? deviceFields[2].toString('utf8') : rotatedToken.toString('ascii'), 'synthetic-independent-next', false, false, observation) }; }
                     catch (error) { independentResult.rotation = { errorCode: /^PROBE_[A-Z_]+$/.test(error?.code || '') ? error.code : 'PROBE_ROTATION_FAILED' }; }
+                }
                 }
             } finally { rotatedToken?.fill(0); firstCipher?.fill(0); offlineCipher?.fill(0); durableCipher?.fill(0); key.fill(0); if (frames) for (const frame of Object.values(frames)) frame.fill(0); }
         }
