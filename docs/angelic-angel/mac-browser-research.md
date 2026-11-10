@@ -13,7 +13,7 @@ MacでもFirefox・Chrome・Brave・Edge・Safariの利用者が設定用ファ�
 
 Microsoftの[配布情報API](https://edgeupdates.microsoft.com/api/products?view=enterprise)に掲載されたMac版Edge 157.0.4341.46のインストーラーを、一時コンテナ内でSHA-256 `71c48e8f6b559c52744771606c8bce4c30e9fab71692c563fdfa69b2ef3c8d20` と照合した。取り出した公開バイナリーのフレームワーク（SHA-256 `c46c439714319fe6fab91ceacc82f3ad502a218b29f2f4be7b4de408a962fe97`）には、IntelとApple Siliconの両方でWNS接続先、組み込みWNSクライアント、Windows版で観測した通知ストア名、EdgeのSafe Storage名が含まれていた。文字列の存在は、実際にMac上でそのコードが選択されること、ストア形式、鍵の保護方式、サーバー側への移行が可能なことを証明しない。実機の使い捨てプロファイルで確かめるまで、Windows版の方式をMac版として有効化しない。
 
-Mac向けに、Chromeとは別の専用Edgeプロファイルを作成・照合し、観測したストア名のLevelDBを1個だけロックする試験用処理を追加した。Linuxの使い捨てLevelDBで、別ブラウザーのプロファイルを拒否し、ロック中の競合と解放後の再オープンを確認した。Mac版Edgeが実際にこのストアを使うこと、格納形式、通知の取得・受信は未確認であり、配布用の起動経路やサーバー受付には接続していない。
+Mac向けに、Chromeとは別の専用Edgeプロファイルを作成・照合し、観測したストア名のLevelDBを1個だけロックする試験用処理を追加した。ロック中に通知ストアだけを一時コピーし、既存のEdge用リーダーで読み取った後に片付ける処理も接続した。Linuxの使い捨てLevelDBで、別ブラウザーのプロファイルを拒否し、ロック競合、購読情報の選択、不明な通知の検出、Cookie等の除外と一時コピーの削除を確認した。Mac版Edgeが実際にこのストアを使うこと、格納形式、通知の取得・受信は未確認であり、配布用の起動経路やサーバー受付には接続していない。
 
 Chromiumの現行公開ソースでは、[Macの鍵導出](https://chromium.googlesource.com/chromium/src/+/refs/heads/main/components/os_crypt/async/browser/keychain_key_provider.mm)と[暗号処理](https://chromium.googlesource.com/chromium/src/+/refs/heads/main/components/os_crypt/async/common/encryptor.cc)が `v10` のAES-CBC方式を実装し、[GCMストア](https://chromium.googlesource.com/chromium/src/+/refs/heads/main/google_apis/gcm/engine/gcm_store_impl.cc)が端末トークンの暗号化を利用している。通知用トークンに限定した復号部品と隔離スナップショットの読み取りを接続し、Windows上の合成値と一時LevelDBで確認した。CBCには改ざん検出がなく、数字として復号できることだけでは鍵や出所の正しさを証明できない。親プロセスからパイプで呼ぶMac用読み取り入口も合成データで検証したが、配布ツール本体は未実装で、Keychain操作は実機未検証。親プロセス側には専用プロファイルの所有確認、停止、保護したスナップショットと出力、他サイト通知の説明・確認が必要。ブラウザーごとの識別子、Keychain権限、実プロファイルでの形式とサーバー受信は、使い捨てMac環境で検証する。
 

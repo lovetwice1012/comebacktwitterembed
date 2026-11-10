@@ -8,10 +8,11 @@ const { spawn } = require('node:child_process');
 const { once } = require('node:events');
 const vm = require('node:vm');
 const { ClassicLevel } = require('classic-level');
-const { createHash, createCipheriv, pbkdf2Sync, randomBytes, generateKeyPairSync } = require('node:crypto');
+const { createHash, createCipheriv, createECDH, pbkdf2Sync, randomBytes, generateKeyPairSync } = require('node:crypto');
 const { createMacChromeProfile, createMacEdgeProfile } = require('../../src/automation/chrome-mac-profile');
 const { withMacStoreLocks } = require('../../src/automation/chrome-mac-store-locks');
-const { withMacChromeSnapshot } = require('../../src/automation/chrome-mac-snapshot');
+const { withMacChromeSnapshot, withMacEdgeSnapshot } = require('../../src/automation/chrome-mac-snapshot');
+const { readEdgeSnapshot } = require('../../src/automation/edge-wns-snapshot-io');
 const { readChromeSnapshot } = require('../../src/automation/chrome-snapshot-io');
 const { parseUniqueJson } = require('../../src/automation/strict-json');
 const helper = process.env.MAC_LOCK_HELPER;
@@ -188,4 +189,42 @@ test('experimental Edge profile locks one real LevelDB and rejects Chrome profil
     } }), 'protected');
     const reopen = new ClassicLevel(store, { createIfMissing: false });
     try { assert.equal(await reopen.get('fixture'), 'synthetic'); } finally { await reopen.close(); }
+});
+test('experimental Mac Edge snapshot copies one store, filters other files and cleans up', { skip: !helper || process.platform === 'win32', timeout: 15000 }, async t => {
+    const parent = await fs.realpath(os.tmpdir()), base = await fs.mkdtemp(path.join(parent, 'cbte-mac-edge-snapshot-test-'));
+    t.after(async () => {
+        const real = await fs.realpath(base); assert.equal(path.dirname(real), parent);
+        assert.match(path.basename(real), /^cbte-mac-edge-snapshot-test-/); await fs.rm(real, { recursive: true });
+    });
+    const edge = await createMacEdgeProfile(base), defaults = path.join(edge.profilePath, 'Default');
+    const store = path.join(defaults, 'EdgePushStorageWithConnectTokenAndKey'); await fs.mkdir(path.dirname(store), { recursive: true });
+    await fs.writeFile(path.join(defaults, 'Cookies'), 'must not be copied');
+    const key = generateKeyPairSync('ec', { namedCurve: 'prime256v1' }), jwk = key.publicKey.export({ format: 'jwk' });
+    const app = createECDH('prime256v1'); app.generateKeys();
+    const expected = { endpoint: 'https://wns2-pn1p.notify.windows.com/?token=synthetic',
+        publicKey: Buffer.concat([Buffer.from([4]), Buffer.from(jwk.x, 'base64url'), Buffer.from(jwk.y, 'base64url')]),
+        auth: randomBytes(16), applicationServerKey: app.getPublicKey() };
+    const record = Buffer.concat([field(1, 'synthetic-channel'), field(3, expected.endpoint), field(6, expected.auth),
+        field(7, key.privateKey.export({ format: 'der', type: 'pkcs8' })), field(8, Buffer.concat([field(1, 'origin'), field(2, 'https://x.com/')])), field(16, expected.applicationServerKey)]);
+    const db = new ClassicLevel(store, { keyEncoding: 'buffer', valueEncoding: 'buffer' });
+    try { await db.put(Buffer.from('device'), Buffer.concat([field(2, 'synthetic-token'), field(3, randomBytes(32).toString('base64'))]));
+        await db.put(Buffer.from('target'), record); await db.put(Buffer.from('unknown'), Buffer.alloc(8)); } finally { await db.close(); }
+    const args = { rootPath: edge.rootPath, profileId: edge.profileId, helperPath: helper,
+        expectedSha256: createHash('sha256').update(await fs.readFile(helper)).digest('hex') };
+    let snapshotPath;
+    const result = await withMacEdgeSnapshot({ ...args, work: async snapshot => {
+        snapshotPath = snapshot.snapshotPath;
+        await assert.rejects(fs.access(path.join(snapshotPath, 'Default', 'Cookies')), { code: 'ENOENT' });
+        await assert.rejects(fs.access(path.join(snapshotPath, 'Default', 'Preferences')), { code: 'ENOENT' });
+        return readEdgeSnapshot({ ...snapshot, expected, browserVersion: '157.0.0.1',
+            agent: { os: 'Fixture OS', osVersion: '1', architecture: 'fixture', locale: 'en' },
+            client: { channel: 'abc', protocolVersion: '1.0', clientName: 'Synthetic', clientVersion: '1.2.3.4' },
+            dbFactory: directory => new ClassicLevel(directory, { createIfMissing: false, keyEncoding: 'buffer', valueEncoding: 'buffer' }) });
+    } });
+    assert.equal(result.file.version, 3); assert.equal(result.file.push.scope, 'https://x.com/');
+    assert.equal(result.otherNotificationsPossible, true); assert.equal(result.unclassifiedRecordCount, 1);
+    await assert.rejects(fs.access(snapshotPath), { code: 'ENOENT' });
+    await fs.writeFile(path.join(store, 'unexpected.txt'), 'must reject');
+    await assert.rejects(withMacEdgeSnapshot({ ...args, work: async () => {} }), { code: 'X_CHROME_MAC_SNAPSHOT_INVALID' });
+    assert((await fs.readdir(edge.rootPath)).every(name => !name.startsWith('edge-snapshot-')));
 });
