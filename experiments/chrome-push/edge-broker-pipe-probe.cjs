@@ -69,6 +69,13 @@ async function main() {
             // A separate disposable profile is calibrated. The profile whose
             // notification settings will be exported never uses the relay.
             const calibrationProfile = path.join(root, 'calibration-profile');
+            if (process.env.EDGE_PROBE_CALIBRATION_PIPE === '1') {
+                chrome = spawn(edge, ['--headless=new', '--remote-debugging-pipe', `--user-data-dir=${calibrationProfile}`,
+                    '--no-first-run', '--no-default-browser-check', 'about:blank'], { windowsHide: true, stdio: ['ignore', 'ignore', 'ignore', 'pipe', 'pipe'] });
+                const pipe = require('../../src/automation/chrome-cdp-pipe').createChromePipe(chrome, { origin, browserMode: 'edge', calibration: true, timeoutMs: 30000 });
+                if (await pipe.ready() !== browserProduct.split('/')[1] || await pipe.prepareCalibration(vapid.publicKey) !== true) throw new Error('PROBE_CALIBRATION_PROFILE_INVALID');
+                await pipe.closeBrowser(); chrome = null;
+            } else {
             chrome = spawn(edge, ['--headless=new', '--remote-debugging-port=0', `--user-data-dir=${calibrationProfile}`,
                 '--no-first-run', '--no-default-browser-check', 'about:blank'], { windowsHide: true, stdio: 'ignore' });
             let calibrationPort;
@@ -85,6 +92,7 @@ async function main() {
                 || calibrationSubscription.result.value.keys?.p256dh === captured.keys.p256dh) throw new Error('PROBE_CALIBRATION_PROFILE_INVALID');
             const calibrationExit = chrome.exitCode === null ? once(chrome, 'exit') : Promise.resolve();
             await cdp.Browser.close(); await cdp.close(); cdp = null; await calibrationExit; chrome = null;
+            }
             const certHelper = path.resolve(__dirname, '../../client/angelic-setup/EdgeEphemeralCertificate.ps1').replace(/'/g, "''");
             const certCommand = `$ErrorActionPreference='Stop'; . '${certHelper}'; $c=New-XEdgeEphemeralCertificate; try { [ordered]@{pfx=[Convert]::ToBase64String($c.pfx);password=$c.password;certificate=[Convert]::ToBase64String($c.certificate)}|ConvertTo-Json -Compress } finally { [Array]::Clear($c.pfx,0,$c.pfx.Length);[Array]::Clear($c.certificate,0,$c.certificate.Length) }`;
             const certOutput = require('node:child_process').spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(certCommand, 'utf16le').toString('base64')],
