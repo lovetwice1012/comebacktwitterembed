@@ -50,6 +50,19 @@ test('a failed initial claim rolls back its new receiver row', async () => setup
     assert.equal(Number((await db.queryDatabase('SELECT COUNT(*) n FROM automation_x_push_receivers WHERE subscription_id=?', [subscription.subscriptionId]))[0].n), 0);
 }));
 
+test('a burst of distinct first receivers can claim and release without crossing owners', { timeout: 30000 }, async () => setup(async db => {
+    const subscriptions = [];
+    for (let i = 0; i < 100; i++) subscriptions.push(await insertSubscription(db, undefined, String(222222222222222222n + BigInt(i))));
+    const store = createXPushStore(db);
+    const claims = await Promise.all(subscriptions.map((subscription, i) => store.claim({ ...subscription, workerId: `burst-${i}` })));
+    assert.equal(claims.filter(Boolean).length, subscriptions.length);
+    assert.equal(new Set(claims.map(lease => lease.token)).size, subscriptions.length);
+    assert(claims.every((lease, i) => lease.ownerUserId === subscriptions[i].ownerUserId && lease.subscriptionId === subscriptions[i].subscriptionId));
+    await Promise.all(claims.map(lease => store.release(lease)));
+    const rows = await db.queryDatabase("SELECT COUNT(*) n FROM automation_x_push_receivers WHERE state='stopped' AND lease_token IS NULL");
+    assert.equal(Number(rows[0].n), subscriptions.length);
+}));
+
 test('SQL claim races have one winner; owner checks and random expired tokens fence old workers', async () => setup(async db => {
     let clock = 1000;
     const subscription = await insertSubscription(db), store = createXPushStore(db, { now: () => clock, leaseMs: 1000 });
