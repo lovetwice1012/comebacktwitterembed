@@ -30,6 +30,14 @@ async function verifyDerived(channel, protocolVersion) {
     Object.assign(env, { EDGE_PROBE_SYSTEM_DEFAULT: '1', EDGE_PROBE_RECONNECT: '1', EDGE_PROBE_COPY_PROFILE: '1', EDGE_PROBE_MINIMAL_PROFILE: '1',
         EDGE_PROBE_OMIT_COMPONENT: 'local-state,preferences', EDGE_PROBE_INDEPENDENT_RECONNECT: '1', EDGE_PROBE_GENERATED_HANDSHAKE: '1',
         EDGE_PROBE_SYNTHETIC_CHANNEL: channel, EDGE_PROBE_SYNTHETIC_PROTOCOL: protocolVersion, EDGE_PROBE_REPORT_DIRECT_IPC: '1' });
+    if (process.env.EDGE_PROBE_VALIDATE_SKIP_CHALLENGE === '1') {
+        if (process.env.NODE_ENV !== 'test') throw new Error('PROBE_MODE_INVALID');
+        env.EDGE_PROBE_SKIP_CHALLENGE = '1';
+    }
+    if (process.env.EDGE_PROBE_VALIDATE_NO_RELAY === '1') {
+        if (process.env.NODE_ENV !== 'test' || process.env.EDGE_PROBE_VALIDATE_SKIP_CHALLENGE !== '1') throw new Error('PROBE_MODE_INVALID');
+        env.EDGE_PROBE_NO_RELAY = '1';
+    }
     if (process.env.EDGE_PROBE_VALIDATE_ACK === '1') env.EDGE_PROBE_ACK_FOLLOWUP = '1';
     if (process.env.EDGE_PROBE_VALIDATE_ROTATION === '1') env.EDGE_PROBE_ROTATION = '1';
     if (process.env.EDGE_PROBE_VALIDATE_STALE === '1') { env.EDGE_PROBE_ROTATION = '1'; env.EDGE_PROBE_USE_STALE_TOKEN = '1'; }
@@ -44,7 +52,8 @@ async function verifyDerived(channel, protocolVersion) {
             child.once('error', () => { clearTimeout(timer); reject(new Error('PROBE_COMPARE_FAILED')); });
             child.once('close', code => {
                 clearTimeout(timer);
-                if (code === 0 && result?.independentResult) resolve(result.independentResult);
+                if (code === 0 && result?.independentResult && (process.env.EDGE_PROBE_VALIDATE_NO_RELAY !== '1' || result.noRelayVerified === true))
+                    resolve({ ...result.independentResult, noRelayVerified: result.noRelayVerified === true });
                 else reject(new Error(diagnostic.match(/\bPROBE_(?!STAGE)[A-Z_]+\b/)?.[0] || 'PROBE_COMPARE_FAILED'));
             });
         });
@@ -80,6 +89,7 @@ async function main() {
             identicalAcrossProfiles: distinct === 1, protocolVersionsIdentical: protocolDistinct === 1, generatedFramesWithoutCapturedMetadata: directResult === null ? null
                 : Boolean(directResult.notificationReceived && directResult.matchesSentCiphertext && directResult.payloadDecrypted),
             reconnectTokenUnchanged: directResult?.reconnectTokenUnchanged ?? null,
+            noRelayVerified: directResult?.noRelayVerified ?? null,
             ackWritten: directResult?.ackWritten ?? null, followupReceived: directResult?.followupReceived ?? null,
             followupMatches: directResult?.followupMatches ?? null, followupDecrypted: directResult?.followupDecrypted ?? null,
             rotation: directResult?.rotation ?? null }));

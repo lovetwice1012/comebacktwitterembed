@@ -98,7 +98,7 @@ async function main() {
     if (testTlsIsolation && (noRelay || process.env.NODE_ENV !== 'test')) throw new Error('PROBE_MODE_INVALID');
     if (testBindShape && (!testIndependent || process.env.NODE_ENV !== 'test')) throw new Error('PROBE_MODE_INVALID');
     if (testSkipChallenge && (!testIndependent || process.env.NODE_ENV !== 'test'
-        || process.env.EDGE_PROBE_GENERATED_HANDSHAKE === '1' && process.env.EDGE_PROBE_CLIENT_METADATA !== '1'
+        || process.env.EDGE_PROBE_GENERATED_HANDSHAKE === '1' && process.env.EDGE_PROBE_CLIENT_METADATA !== '1' && !process.env.EDGE_PROBE_SYNTHETIC_CHANNEL
         || process.env.EDGE_PROBE_DURABLE === '1' && process.env.EDGE_PROBE_DURABLE_GATEWAY !== '1')) throw new Error('PROBE_MODE_INVALID');
     if (testSession && (!testIndependent || !testTwoSites || process.env.NODE_ENV !== 'test'
         || process.env.EDGE_PROBE_GENERATED_HANDSHAKE !== '1' || process.env.EDGE_PROBE_CLIENT_METADATA !== '1'
@@ -118,7 +118,9 @@ async function main() {
     if (testRewrite && (testWrongKey || noRelay || process.env.EDGE_PROBE_RECONNECT !== '1' || process.env.EDGE_PROBE_COPY_PROFILE !== '1'
         || process.env.EDGE_PROBE_MINIMAL_PROFILE !== '1' || process.env.EDGE_PROBE_KEEP_SOCKET === '1'
         || (process.env.EDGE_PROBE_OMIT_COMPONENT || '').split(',').includes('push-store'))) throw new Error('PROBE_MODE_INVALID');
-    if (testIndependent && (testRewrite || testWrongKey || noRelay || process.env.EDGE_PROBE_RECONNECT !== '1'
+    if (testIndependent && (testRewrite || testWrongKey || noRelay && (!testSkipChallenge || process.env.EDGE_PROBE_GENERATED_HANDSHAKE !== '1'
+        || !process.env.EDGE_PROBE_SYNTHETIC_CHANNEL || process.env.EDGE_PROBE_CLIENT_METADATA === '1' || testTwoSites)
+        || process.env.EDGE_PROBE_RECONNECT !== '1'
         || process.env.EDGE_PROBE_COPY_PROFILE !== '1' || process.env.EDGE_PROBE_MINIMAL_PROFILE !== '1'
         || process.env.EDGE_PROBE_KEEP_SOCKET === '1' || process.env.EDGE_PROBE_DECRYPT_RECEIVED === '1'
         || (process.env.EDGE_PROBE_OMIT_COMPONENT || '').split(',').includes('push-store')))
@@ -805,7 +807,7 @@ async function main() {
                 ...endpointArgs,
                 '--no-first-run', '--no-default-browser-check', '--disable-sync', 'about:blank'], { windowsHide: true, stdio: 'ignore' });
             const originalCount = events.length;
-            for (let i = 0; i < 120 && events.length <= originalCount; i++) await wait(100);
+            if (!noRelay) for (let i = 0; i < 120 && events.length <= originalCount; i++) await wait(100);
             await wait(3000);
             if (copyProfile) {
                 let reopenedPort;
@@ -855,7 +857,7 @@ async function main() {
         }
         let snapshotIoVerified = false;
         if (testIndependent) {
-            if (events.length !== 2 || !copiedProfileResult?.sameSubscription || !copiedProfileResult?.receivedAfterCopy || !deviceFields?.[2] || !deviceFields?.[3] || !independentWebPush)
+            if ((!noRelay && events.length !== 2) || (noRelay && events.length !== 0) || !copiedProfileResult?.sameSubscription || !copiedProfileResult?.receivedAfterCopy || !deviceFields?.[2] || !deviceFields?.[3] || !independentWebPush)
                 throw new Error('PROBE_DIRECT_PREREQUISITE_FAILED');
             await cdp.Browser.close().catch(() => {}); await cdp.close().catch(() => {}); cdp = null;
             if (browser.exitCode === null) await new Promise(resolve => browser.once('exit', resolve));
@@ -1205,7 +1207,7 @@ async function main() {
         });
         if (process.env.EDGE_PROBE_REPORT_DIRECT_IPC === '1') {
             if (!testIndependent || typeof process.send !== 'function') throw new Error('PROBE_MODE_INVALID');
-            await new Promise((resolve, reject) => process.send({ independentResult }, error => error ? reject(new Error('PROBE_IPC_FAILED')) : resolve()));
+            await new Promise((resolve, reject) => process.send({ independentResult, noRelayVerified: noRelay && events.length === 0 && endpointArgs.length === 0 }, error => error ? reject(new Error('PROBE_IPC_FAILED')) : resolve()));
         }
         console.log(JSON.stringify({ syntheticProfile: true, snapshotIoVerified, testWrongKey, testRewrite, testIndependent, testTwoSites, testDurable, tlsIsolationVerified, winrtFeatureOverride: featureArgs.length > 0, endpointOverride: !noRelay, builtInStorePresent, relayConnections: events.length, events: shapes, initialNotificationReceived: browserEvents.initial > 0, browserReceived, copiedProfileResult, detachedConnectionResult, independentResult, durableResult, routingResult, handshakeShape, handshakeRelations, bindShape, exchangeShapes, capturedCipherDecrypted, appServerKeyMatches,
             subscription: value.ok ? { ok: true, host: new URL(value.subscription.endpoint).hostname } : value }));
