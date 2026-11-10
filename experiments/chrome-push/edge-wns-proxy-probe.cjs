@@ -72,7 +72,7 @@ async function main() {
     const temp = await fs.realpath(os.tmpdir()), root = await fs.mkdtemp(path.join(temp, 'cbte-edge-wns-probe-'));
     let browser, cdp, pageServer, relay, browserReceived = false, copiedProfileResult = null, detachedConnectionResult = null, capturedCipherDecrypted = null, appServerKeyMatches = null, deviceFields, expectedCipher; const sockets = new Set(), events = [];
     const browserEvents = { initial: 0, second: 0, third: 0, fourth: 0 };
-    let probeStage = 'setup';
+    let probeStage = 'setup', previousServerNonce = null;
     try {
         const cert = spawnSync('python', ['-c', python], { encoding: 'utf8', windowsHide: true, timeout: 10000 });
         if (cert.status !== 0) throw new Error('PROBE_CERT_FAILED');
@@ -214,8 +214,30 @@ async function main() {
                         }
                         for (const data of Object.values(variants)) data.fill(0);
                     }
+                    const pairedNonceMatches = [];
+                    const clientNonce = values(sentText, 'nonce')[0], serverNonces = values(receivedText, 'nonce');
+                    const pairedNonceCompared = Boolean(previousServerNonce && clientNonce && signatures.length);
+                    if (pairedNonceCompared) {
+                        const encodings = value => ({ text: Buffer.from(value), hex: Buffer.from(value, 'hex'), utf16: Buffer.from(value, 'utf16le') });
+                        const left = encodings(previousServerNonce), right = encodings(clientNonce);
+                        for (const [leftName, leftBytes] of Object.entries(left)) for (const [rightName, rightBytes] of Object.entries(right)) {
+                            for (const separator of ['', ':', '|', '\0']) for (const reverse of [false, true]) {
+                                const data = Buffer.concat(reverse ? [rightBytes, Buffer.from(separator), leftBytes] : [leftBytes, Buffer.from(separator), rightBytes]);
+                                for (const [keyName, key] of Object.entries(keys)) for (const algorithm of ['md5', 'sha1', 'sha256', 'sha512']) {
+                                    const digest = createHmac(algorithm, key).update(data).digest();
+                                    if (signatures.includes(digest.subarray(0, 16).toString('base64')))
+                                        pairedNonceMatches.push(`${leftName}:${rightName}:${separator ? 'separator' : 'none'}:${reverse ? 'reverse' : 'forward'}:${keyName}:${algorithm}`);
+                                    digest.fill(0);
+                                }
+                                data.fill(0);
+                            }
+                        }
+                        for (const data of [...Object.values(left), ...Object.values(right)]) data.fill(0);
+                    }
+                    if (serverNonces.length) previousServerNonce = serverNonces.at(-1);
                     for (const key of Object.values(keys)) key.fill(0);
-                    cross = { nonceCounts: { sent: values(sentText, 'nonce').length, received: values(receivedText, 'nonce').length }, signatureCount: signatures.length, hmacMatches: matches };
+                    cross = { nonceCounts: { sent: values(sentText, 'nonce').length, received: values(receivedText, 'nonce').length }, signatureCount: signatures.length,
+                        hmacMatches: matches, pairedNonceCompared, pairedNonceMatches };
                 }
                 const describe = chunks => { const b = Buffer.concat(chunks), text = b.toString('latin1');
                     const frames = chunks.map(chunk => { const end = chunk.indexOf('\r\n');
