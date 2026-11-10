@@ -59,6 +59,27 @@ async function verifyDerived(channel, protocolVersion) {
         });
     } finally { if (child.exitCode === null && child.signalCode === null) child.kill(); }
 }
+async function verifyPipeline(channel, protocolVersion) {
+    if (process.env.NODE_ENV !== 'test' || Number(process.env.AUTOMATION_TEST_DB_PORT) !== 33621) throw new Error('PROBE_MODE_INVALID');
+    const env = { ...process.env };
+    for (const name of Object.keys(env)) if (name.startsWith('EDGE_PROBE_')) delete env[name];
+    Object.assign(env, { EDGE_PROBE_REAL_WNS: '1', EDGE_PROBE_DATABASE: '1', EDGE_PROBE_SYNTHETIC_CHANNEL: channel, EDGE_PROBE_SYNTHETIC_PROTOCOL: protocolVersion });
+    const child = fork(path.join(__dirname, 'edge-broker-pipe-probe.cjs'), [], { env, windowsHide: true, stdio: ['ignore', 'ignore', 'pipe', 'ipc'] });
+    let result, diagnostic = '';
+    child.stderr.on('data', chunk => { diagnostic = (diagnostic + chunk.toString('utf8')).slice(-4096); });
+    try {
+        return await new Promise((resolve, reject) => {
+            const timer = setTimeout(() => { child.kill(); reject(new Error('PROBE_COMPARE_TIMEOUT')); }, 90000);
+            child.once('message', value => { result = value; });
+            child.once('error', () => { clearTimeout(timer); reject(new Error('PROBE_COMPARE_FAILED')); });
+            child.once('close', code => {
+                clearTimeout(timer);
+                if (code === 0 && result?.realWnsWorkerTested === true && result?.databaseRecovery === true) resolve(true);
+                else reject(new Error(diagnostic.match(/\bPROBE_(?!STAGE)[A-Z_]+\b/)?.[0] || 'PROBE_COMPARE_FAILED'));
+            });
+        });
+    } finally { if (child.exitCode === null && child.signalCode === null) child.kill(); }
+}
 async function main() {
     const salt = randomBytes(32), fingerprints = [];
     try {
@@ -66,7 +87,7 @@ async function main() {
         for (let i = 0; i < 3; i++) fingerprints.push(await sample(encoded));
         const distinct = new Set(fingerprints.map(value => value.channelFingerprint)).size;
         const protocolDistinct = new Set(fingerprints.map(value => value.protocolFingerprint)).size;
-        let directResult = null, binaryMatches = null;
+        let directResult = null, binaryMatches = null, pipelineVerified = null;
         if (process.env.EDGE_PROBE_VALIDATE_DERIVED === '1' && distinct === 1 && protocolDistinct === 1) {
             // The observed synthetic identifier is exactly three decimal digits.
             // Recover it only in memory to test a fourth isolated profile.
@@ -100,12 +121,13 @@ async function main() {
                 } finally { dll.fill(0); }
             }
             directResult = await verifyDerived(channel, protocolVersion);
+            if (process.env.EDGE_PROBE_VALIDATE_PIPELINE === '1') pipelineVerified = await verifyPipeline(channel, protocolVersion);
         }
         console.log(JSON.stringify({ syntheticProfiles: fingerprints.length, distinctIdentifiers: distinct,
             identicalAcrossProfiles: distinct === 1, protocolVersionsIdentical: protocolDistinct === 1, generatedFramesWithoutCapturedMetadata: directResult === null ? null
                 : Boolean(directResult.notificationReceived && directResult.matchesSentCiphertext && directResult.payloadDecrypted),
             reconnectTokenUnchanged: directResult?.reconnectTokenUnchanged ?? null,
-            noRelayVerified: directResult?.noRelayVerified ?? null, binaryMatches,
+            noRelayVerified: directResult?.noRelayVerified ?? null, binaryMatches, pipelineVerified,
             ackWritten: directResult?.ackWritten ?? null, followupReceived: directResult?.followupReceived ?? null,
             followupMatches: directResult?.followupMatches ?? null, followupDecrypted: directResult?.followupDecrypted ?? null,
             rotation: directResult?.rotation ?? null }));

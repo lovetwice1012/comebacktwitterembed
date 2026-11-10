@@ -20,6 +20,9 @@ const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
 let stage = 'start';
 async function main() {
     if (process.env.NODE_ENV !== 'test' || process.platform !== 'win32') throw new Error('PROBE_MODE_INVALID');
+    const realWns = process.env.EDGE_PROBE_REAL_WNS === '1';
+    if (realWns && (process.env.EDGE_PROBE_DATABASE !== '1' || !/^[1-9]\d{2}$/.test(process.env.EDGE_PROBE_SYNTHETIC_CHANNEL || '')
+        || !/^\d\.\d$/.test(process.env.EDGE_PROBE_SYNTHETIC_PROTOCOL || ''))) throw new Error('PROBE_MODE_INVALID');
     const temp = await fs.realpath(os.tmpdir()), root = await fs.mkdtemp(path.join(temp, 'cbte-edge-broker-fixture-'));
     const profile = path.join(root, 'profile'), edge = 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
     let server, chrome, cdp, broker, testDb;
@@ -84,7 +87,8 @@ async function main() {
         try {
             result = await readEdgeSnapshot({ snapshotPath, token, expected: observed, browserVersion: browserProduct.split('/')[1],
                 agent: { os: 'Windows', osVersion: '1', architecture: 'x64', locale: 'en' },
-                client: { channel: 'abc', protocolVersion: '1.0', clientName: 'Synthetic', clientVersion: '1.2.3.4' },
+                client: { channel: realWns ? process.env.EDGE_PROBE_SYNTHETIC_CHANNEL : 'abc', protocolVersion: realWns ? process.env.EDGE_PROBE_SYNTHETIC_PROTOCOL : '1.0',
+                    clientName: 'Synthetic client', clientVersion: '1.2.3.4' },
                 dbFactory: location => new ClassicLevel(location, { createIfMissing: false, keyEncoding: 'buffer', valueEncoding: 'buffer' }) });
         } finally { observed.publicKey.fill(0); observed.auth.fill(0); observed.applicationServerKey.fill(0); }
         if (result.file.push.p256dhPublicKey !== captured.keys.p256dh || result.file.push.authenticationSecret !== captured.keys.auth
@@ -100,7 +104,7 @@ async function main() {
         const { decryptNotification } = await import(pathToFileURL(path.resolve(__dirname, '../../packages/angelic-angel/dist/crypto.js')).href);
         const wire = encryptFixture(cryptoKeys, JSON.stringify({ text: 'synthetic' }));
         if (decryptNotification(wire.data, wire.headers, cryptoKeys)?.text !== 'synthetic') throw new Error('PROBE_DECRYPT_FAILED');
-        let databaseRecovery = false;
+        let databaseRecovery = false, realWnsWorkerTested = false;
         if (process.env.EDGE_PROBE_DATABASE === '1') {
             if (Number(process.env.AUTOMATION_TEST_DB_PORT) !== 33621) throw new Error('PROBE_MODE_INVALID');
             stage = 'database';
@@ -119,10 +123,33 @@ async function main() {
                 if ((await gateway.decryptInbox(lease, inbox))?.text !== 'synthetic') throw new Error('PROBE_DATABASE_FAILED');
                 databaseRecovery = true;
             } finally { await gateway.store.release(lease); }
+            if (realWns) {
+                stage = 'wns';
+                const { createWnsTokenWorkerVault } = require('../../src/automation/x-setup-transfer');
+                const wnsGateway = createXPushGateway(testDb, { enabled: true, edgeEnabled: true, privateWorkerVault: vault,
+                    edgeTokenVault: createWnsTokenWorkerVault(config), rolloutMode: 'public' });
+                const controller = new AbortController(), timer = setTimeout(() => controller.abort(), 30000); let received;
+                webpush.setVapidDetails('mailto:test@example.com', vapid.publicKey, vapid.privateKey);
+                try {
+                    await wnsGateway.run({ ...identity, workerId: 'synthetic-edge-wns', signal: controller.signal,
+                        onSession: async () => { await webpush.sendNotification(expected, JSON.stringify({ text: 'synthetic-real-wns' }), { TTL: 60 }); },
+                        onReceived: async event => { received = event; controller.abort(); } });
+                    if (received?.payload?.text !== 'synthetic-real-wns') throw new Error('PROBE_WNS_PIPELINE_FAILED');
+                    const recovery = await wnsGateway.store.claim({ ...identity, workerId: 'synthetic-edge-recovery' });
+                    if (!recovery) throw new Error('PROBE_WNS_PIPELINE_FAILED');
+                    try {
+                        const restoredReceipt = await wnsGateway.store.getInbox({ ...identity, id: received.inbox.id });
+                        if ((await wnsGateway.decryptInbox(recovery, restoredReceipt))?.text !== 'synthetic-real-wns') throw new Error('PROBE_WNS_PIPELINE_FAILED');
+                    } finally { await wnsGateway.store.release(recovery); }
+                    realWnsWorkerTested = true;
+                } finally { clearTimeout(timer); controller.abort(); }
+            }
         }
         for (const field of Object.values(cryptoKeys)) field.fill(0);
-        console.log(JSON.stringify({ syntheticProfile: true, privatePipeCapture: true, subscriptionMatched: true, applicationKeyMatched: true,
-            snapshotSelected: true, ownerBoundVault: true, fixtureDecrypted: true, databaseRecovery, browserClosed: broker.chrome.exitCode !== null, realWnsWorkerTested: false }));
+        const summary = { syntheticProfile: true, privatePipeCapture: true, subscriptionMatched: true, applicationKeyMatched: true,
+            snapshotSelected: true, ownerBoundVault: true, fixtureDecrypted: true, databaseRecovery, browserClosed: broker.chrome.exitCode !== null, realWnsWorkerTested };
+        if (typeof process.send === 'function') await new Promise((resolve, reject) => process.send(summary, error => error ? reject(new Error('PROBE_IPC_FAILED')) : resolve()));
+        else console.log(JSON.stringify(summary));
     } finally {
         if (testDb) await testDb.close();
         if (cdp) await cdp.close().catch(() => {});
