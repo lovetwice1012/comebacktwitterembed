@@ -248,7 +248,18 @@ async function main() {
             if (!deviceFields?.[2] || !deviceFields?.[3]) throw new Error('PROBE_DEVICE_MISSING');
             const copyProfile = process.env.EDGE_PROBE_COPY_PROFILE === '1';
             const reopenProfile = copyProfile ? path.join(root, 'synthetic-profile-copy') : profile;
-            if (copyProfile) await fs.cp(profile, reopenProfile, { recursive: true, errorOnExist: true, force: false });
+            if (copyProfile && process.env.EDGE_PROBE_MINIMAL_PROFILE === '1') {
+                await fs.mkdir(path.join(reopenProfile, 'Default'), { recursive: true });
+                const components = { 'local-state': 'Local State', preferences: path.join('Default', 'Preferences'),
+                    'service-worker': path.join('Default', 'Service Worker'), 'push-store': path.join('Default', 'EdgePushStorageWithConnectTokenAndKey') };
+                const omit = (process.env.EDGE_PROBE_OMIT_COMPONENT || '').split(',').filter(Boolean);
+                if (omit.some(name => !Object.hasOwn(components, name)) || new Set(omit).size !== omit.length) throw new Error('PROBE_COMPONENT_INVALID');
+                for (const [name, relative] of Object.entries(components)) {
+                    if (omit.includes(name)) continue;
+                    const source = path.join(profile, relative), target = path.join(reopenProfile, relative);
+                    await fs.cp(source, target, { recursive: true, errorOnExist: true, force: false });
+                }
+            } else if (copyProfile) await fs.cp(profile, reopenProfile, { recursive: true, errorOnExist: true, force: false });
             if (copyProfile) await fs.rm(path.join(reopenProfile, 'DevToolsActivePort'), { force: true });
             browser = spawn(edge, ['--headless=new', ...(copyProfile ? ['--remote-debugging-port=0'] : []), `--user-data-dir=${reopenProfile}`, '--disable-features=msPushWinrt',
                 '--ignore-certificate-errors', `--edge-wns-push-server-url=https://127.0.0.1:${relay.address().port}`,
@@ -277,7 +288,7 @@ async function main() {
                     await webpush.sendNotification(value.subscription, 'synthetic-wns-copy-probe', { TTL: 60 });
                     for (let i = 0; i < 80 && !browserReceived; i++) await wait(100);
                 }
-                copiedProfileResult = { sameSubscription, receivedAfterCopy: browserReceived };
+                copiedProfileResult = { minimal: process.env.EDGE_PROBE_MINIMAL_PROFILE === '1', omitted: process.env.EDGE_PROBE_OMIT_COMPONENT || null, sameSubscription, receivedAfterCopy: browserReceived };
             }
         }
         const shapes = events.map(event => { const { describe, ...metadata } = event; return { ...metadata, shape: describe() }; });
