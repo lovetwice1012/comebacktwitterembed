@@ -7,7 +7,8 @@ const path = require('node:path');
 const { createHash } = require('node:crypto');
 const esbuild = require('esbuild');
 const root = path.resolve(__dirname, '..');
-async function buildChromeBundles({ nodePaths = [] } = {}) {
+async function buildChromeBundles({ nodePaths = [], includeEdge = false } = {}) {
+    if (typeof includeEdge !== 'boolean') throw new Error('Invalid bundle selection');
     const outputs = {}, dependencyRoots = new Set();
     const levelBinding = { name: 'flat-windows-leveldb', setup(build) {
         build.onResolve({ filter: /^\.\/binding$/ }, args => /[\\/]classic-level[\\/][^\\/]+\.js$/.test(args.importer)
@@ -15,7 +16,9 @@ async function buildChromeBundles({ nodePaths = [] } = {}) {
         build.onLoad({ filter: /.*/, namespace: 'chrome-level-binding' }, () => ({ contents:
             "module.exports = require(require('node:path').join(__dirname, 'ChromeLevelDB.node'));", loader: 'js' }));
     } };
-    for (const [name, entry] of [['ChromeBroker.cjs', 'chrome-setup-broker.cjs'], ['ChromeCapture.cjs', 'chrome-setup-capture.cjs'], ['ChromeReader.cjs', 'chrome-setup-reader.cjs']]) {
+    const entries = [['ChromeBroker.cjs', 'chrome-setup-broker.cjs'], ['ChromeCapture.cjs', 'chrome-setup-capture.cjs'], ['ChromeReader.cjs', 'chrome-setup-reader.cjs']];
+    if (includeEdge) entries.push(['EdgeReader.cjs', 'edge-setup-reader.cjs']);
+    for (const [name, entry] of entries) {
         const result = await esbuild.build({ entryPoints: [path.join(__dirname, entry)], absWorkingDir: root,
             bundle: true, write: false, platform: 'node', format: 'cjs', target: 'node24', nodePaths,
             logLevel: 'silent', legalComments: 'inline', plugins: [levelBinding], metafile: true });

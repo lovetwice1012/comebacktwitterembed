@@ -6,6 +6,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { createECDH, generateKeyPairSync, randomBytes } = require('node:crypto');
 const { ClassicLevel } = require('classic-level');
+const { spawnSync } = require('node:child_process');
 const { readEdgeSnapshot } = require('../../src/automation/edge-wns-snapshot-io');
 function varint(number) { const out = []; do { let byte = number % 128; number = Math.floor(number / 128); if (number) byte |= 128; out.push(byte); } while (number); return Buffer.from(out); }
 function field(number, value) { const data = Buffer.isBuffer(value) ? value : Buffer.from(value); return Buffer.concat([varint(number * 8 + 2), varint(data.length), data]); }
@@ -51,4 +52,31 @@ test('refuses a truncated enumeration and closes the database', async t => {
     const fake = { async open() {}, async *iterator() { for (let i = 0; i < 129; i++) { const value = Buffer.from('v'); borrowed.push(value); yield [Buffer.from('k'), value]; } }, async close() { closed = true; } };
     await assert.rejects(readEdgeSnapshot({ ...options, dbFactory: () => fake }), { code: 'X_EDGE_WNS_SNAPSHOT_INVALID' }); assert.equal(closed, true);
     assert(borrowed.every(value => value.every(byte => byte === 0)));
+});
+test('local reader returns selected X settings and safe errors over standard streams', async t => {
+    const { options } = await setup(t), reader = path.resolve(__dirname, '../edge-setup-reader.cjs');
+    const { dbFactory: _factory, ...plain } = options;
+    const input = { ...plain, expected: { endpoint: plain.expected.endpoint, publicKey: plain.expected.publicKey.toString('base64url'),
+        auth: plain.expected.auth.toString('base64url'), applicationServerKey: plain.expected.applicationServerKey.toString('base64url') } };
+    const run = value => spawnSync(process.execPath, [reader], { input: value, encoding: 'utf8', windowsHide: true, timeout: 15000 });
+    const result = run(JSON.stringify(input)); assert.equal(result.status, 0, result.stderr);
+    const parsed = JSON.parse(result.stdout); assert.equal(parsed.ok, true); assert.equal(parsed.file.version, 3);
+    assert.equal(parsed.otherSubscriptionCount, 1); assert.equal(parsed.otherNotificationsPossible, true);
+    assert(!result.stdout.includes('other.example')); assert.equal(result.stderr, '');
+    const bad = run(JSON.stringify({ ...input, expected: { ...input.expected, auth: 'private-sentinel' } }));
+    assert.notEqual(bad.status, 0); assert.deepEqual(JSON.parse(bad.stdout), { ok: false, errorCode: 'X_EDGE_READER_INPUT_INVALID' });
+    assert(!bad.stdout.includes('private-sentinel')); assert.equal(bad.stderr, '');
+});
+test('bundled Edge reader works without a locally installed dependency', { skip: process.platform !== 'win32' }, async t => {
+    const { options } = await setup(t), root = path.dirname(options.snapshotPath);
+    const bundles = await require('../build-chrome-setup-bundles.cjs').buildChromeBundles({ includeEdge: true });
+    await fs.writeFile(path.join(root, 'EdgeReader.cjs'), bundles['EdgeReader.cjs']);
+    await fs.writeFile(path.join(root, 'ChromeLevelDB.node'), bundles['ChromeLevelDB.node']);
+    const { dbFactory: _factory, ...plain } = options;
+    const input = { ...plain, expected: { endpoint: plain.expected.endpoint, publicKey: plain.expected.publicKey.toString('base64url'),
+        auth: plain.expected.auth.toString('base64url'), applicationServerKey: plain.expected.applicationServerKey.toString('base64url') } };
+    const env = { ...process.env }; delete env.NODE_PATH; delete env.NODE_OPTIONS;
+    const run = spawnSync(process.execPath, [path.join(root, 'EdgeReader.cjs')], { input: JSON.stringify(input), encoding: 'utf8', env, windowsHide: true, timeout: 15000 });
+    assert.equal(run.status, 0, run.stderr); const parsed = JSON.parse(run.stdout);
+    assert.equal(parsed.ok, true); assert.equal(parsed.file.version, 3); assert.equal(parsed.otherNotificationsPossible, true);
 });
