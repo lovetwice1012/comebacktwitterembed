@@ -5,6 +5,8 @@ const mysql = require('mysql');
 const { AsyncLocalStorage } = require('node:async_hooks');
 const { createTransferPrivateWorkerVault } = require('../../src/automation/x-setup-transfer');
 const { createXPushGateway } = require('../../src/automation/x-push-gateway');
+const { createXPushRuntime } = require('../../src/automation/x-push-runtime');
+const { createQueue } = require('../../src/automation/queue');
 
 process.once('message', async input => {
     let pool;
@@ -33,13 +35,30 @@ process.once('message', async input => {
             rolloutMode: 'public', requestTimeoutMs: 10000, leaseMs: 3000 });
         const controller = new AbortController();
         process.on('message', message => { if (message?.action === 'stop') controller.abort(); });
-        const result = await gateway.run({ subscriptionId: input.subscriptionId, ownerUserId: input.ownerUserId, workerId: input.worker, signal: controller.signal,
-            onSession: () => process.send?.({ event: 'ready' }),
-            onReceived: ({ payload }) => {
+        const notify = ({ payload }) => {
                 const label = payload?.text === 'synthetic-before-crash' ? 'before' : payload?.text === 'synthetic-during-failover' ? 'offline' : 'unexpected';
                 process.send?.({ event: 'received', label });
-            } });
-        process.send?.({ event: 'done', state: result.state });
+            };
+        if (input.supervisor === true) {
+            let busyReported = false;
+            const wrappedGateway = { ...gateway, run: async params => {
+                const result = await gateway.run({ ...params,
+                    onSession: async value => { process.send?.({ event: 'ready' }); await params.onSession?.(value); },
+                    onReceived: async value => { notify(value); await params.onReceived?.(value); } });
+                if (result.state === 'busy' && !busyReported) { busyReported = true; process.send?.({ event: 'busy' }); }
+                return result;
+            } };
+            const queue = createQueue(db, {}, { rolloutMode: 'public' });
+            const runtime = createXPushRuntime(db, queue, { enabled: true, gateway: wrappedGateway, rolloutMode: 'public',
+                processingPolicy: 'batch', tickMs: 500, assertAllowed() {} });
+            try { runtime.start(); await new Promise(resolve => controller.signal.addEventListener('abort', resolve, { once: true })); }
+            finally { await runtime.stop(); }
+            process.send?.({ event: 'done', state: 'stopped' });
+        } else {
+            const result = await gateway.run({ subscriptionId: input.subscriptionId, ownerUserId: input.ownerUserId, workerId: input.worker, signal: controller.signal,
+                onSession: () => process.send?.({ event: 'ready' }), onReceived: notify });
+            process.send?.({ event: 'done', state: result.state });
+        }
     } catch (error) {
         process.send?.({ event: 'failure', code: /^X_[A-Z_]+$/.test(error?.code || '') ? error.code : 'FIXTURE_WORKER_FAILED' });
         process.exitCode = 1;
