@@ -1,18 +1,20 @@
 ﻿#requires -Version 5.1
 <#
 .SYNOPSIS
-専用Chromeで設定したX通知の受信情報を、手動アップロード用ファイルに保存します。
+専用ブラウザーで設定したX通知の受信情報を、手動アップロード用ファイルに保存します。
 .DESCRIPTION
 このツールは受信情報を送信しません。ログインと通知設定、作成したファイルの
-アップロードは利用者本人が行います。普段のChromeプロファイルは開きません。
+アップロードは利用者本人が行います。普段のブラウザー設定は開きません。
 X以外の通知も同じ受信情報に含まれる場合、ファイル作成前に確認します。
 #>
 [CmdletBinding()]
 param([ValidateSet('Status','Prepare','Open','Export')][string] $Action='Status',
+      [ValidateSet('chrome','brave')][string] $Browser='chrome',
       [string] $PrivateRoot, [string] $OutputPath, [switch] $PromptForOtherNotifications,
       [switch] $AllowOtherNotifications)
 Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
+$Browser=$Browser.ToLowerInvariant()
 $script:Utf8 = New-Object Text.UTF8Encoding($false)
 [Console]::OutputEncoding = $script:Utf8
 $script:AppId = 'x-notification-setup'
@@ -121,7 +123,7 @@ function Assert-PrivateDirectory([string]$Path) {
 function Assert-Package {
     $names=@('ChromeSetup.ps1','Start-ChromeSetup.ps1','ChromeSnapshot.ps1','NativeSetup.ps1','ChromeReader.cjs',
         'ChromeBroker.cjs','ChromeCapture.cjs','ChromeLevelDB.node','ChromeNode.exe','ChromeNode-LICENSE.txt',
-        'ChromeDependencies-LICENSE.txt','はじめに.txt','Chromeで開始.cmd','LICENSE')
+        'ChromeDependencies-LICENSE.txt','はじめに.txt','Chromeで開始.cmd','Braveで開始.cmd','LICENSE')
     Assert-SafePath $script:PackageRoot
     $allowed=$names+@('package-manifest.json'); $entries=@(Get-ChildItem -LiteralPath $script:PackageRoot -Force)
     if ($entries.Count -ne $allowed.Count) { throw 'Package entries invalid' }
@@ -157,6 +159,12 @@ function Get-Owner {
         Assert-SafePath $dir
         if (-not [IO.Directory]::Exists($dir)) { throw 'Owner directory missing' }
     }
+    $browserMarker=[IO.Path]::Combine($script:Root,'browser.json')
+    if ($null -ne (Get-PathAttributes $browserMarker)) {
+        $browserData=Read-SmallJson $browserMarker
+        Assert-PropertyNames $browserData @('profileId','browser')
+        if ($browserData.profileId -cne $owner.profileId -or $browserData.browser -cne $Browser) { throw 'Browser profile mismatch' }
+    } elseif ($Browser -ceq 'brave') { throw 'Browser profile missing' }
     return $owner
 }
 function Get-ActiveLaunch($Owner) {
@@ -164,10 +172,13 @@ function Get-ActiveLaunch($Owner) {
     foreach ($item in @(Get-ChildItem -LiteralPath $script:Launches -Force)) {
         if ($item.PSIsContainer -or $item.Name -cnotmatch '^launch-[0-9a-f-]{36}\.json$') { throw 'Launch metadata invalid' }
         $record=Read-SmallJson $item.FullName
-        Assert-PropertyNames $record @('schemaVersion','appId','profileId','pid','processStartedUtc','browserVersion','port','brokerToken')
+        $hasEngine=$null -ne $record.PSObject.Properties['engineVersion']
+        if ($hasEngine) { Assert-PropertyNames $record @('schemaVersion','appId','profileId','pid','processStartedUtc','browserVersion','engineVersion','port','brokerToken') }
+        else { Assert-PropertyNames $record @('schemaVersion','appId','profileId','pid','processStartedUtc','browserVersion','port','brokerToken') }
+        $engineVersion=if ($hasEngine) { [string]$record.engineVersion } else { [string]$record.browserVersion }
         if ($record.schemaVersion -ne 1 -or $record.appId -cne $script:AppId -or $record.profileId -cne $Owner.profileId -or
             $record.pid -isnot [int] -and $record.pid -isnot [long] -or $record.browserVersion -isnot [string] -or
-            $record.browserVersion -cnotmatch '^[0-9]{1,3}(\.[0-9]{1,5}){3}$' -or $record.port -isnot [int] -or
+            $record.browserVersion -cnotmatch '^[0-9]{1,3}(\.[0-9]{1,5}){3}$' -or $engineVersion -cnotmatch '^[0-9]{1,3}(\.[0-9]{1,5}){3}$' -or $record.port -isnot [int] -or
             $record.port -lt 1024 -or $record.port -gt 65535 -or $record.brokerToken -isnot [string] -or
             $record.brokerToken -cnotmatch '^[0-9a-f]{64}$') { throw 'Launch metadata invalid' }
         $started=[DateTime]::MinValue
@@ -180,7 +191,7 @@ function Get-ActiveLaunch($Owner) {
                 if ($process.StartTime.ToUniversalTime().Ticks -eq $started.ToUniversalTime().Ticks) {
                     if ($null -ne $active) { throw 'Multiple Chrome processes' }
                     if ([IO.Path]::GetFullPath($process.Path) -ine [IO.Path]::Combine($script:PackageRoot,'ChromeNode.exe')) { throw 'Broker process mismatch' }
-                    $active=[pscustomobject]@{ pid=[int]$record.pid; started=$started; browserVersion=[string]$record.browserVersion;
+                    $active=[pscustomobject]@{ pid=[int]$record.pid; started=$started; browserVersion=[string]$record.browserVersion; engineVersion=$engineVersion;
                         port=[int]$record.port; token=[string]$record.brokerToken }
                 }
             } finally { $process.Dispose() }
@@ -193,16 +204,19 @@ function Get-ChromeExecutable {
     # モジュールを明示して読み込み、異なる版のモジュール混入を防ぎます。
     $securityModule=[IO.Path]::Combine($PSHOME,'Modules','Microsoft.PowerShell.Security','Microsoft.PowerShell.Security.psd1')
     Import-Module -Name $securityModule -ErrorAction Stop
-    $candidates=@([IO.Path]::Combine($env:ProgramFiles,'Google\Chrome\Application\chrome.exe'))
-    if (${env:ProgramFiles(x86)}) { $candidates+= [IO.Path]::Combine(${env:ProgramFiles(x86)},'Google\Chrome\Application\chrome.exe') }
-    if ($env:LOCALAPPDATA) { $candidates+= [IO.Path]::Combine($env:LOCALAPPDATA,'Google\Chrome\Application\chrome.exe') }
+    $relative=if ($Browser -ceq 'brave') { 'BraveSoftware\Brave-Browser\Application\brave.exe' } else { 'Google\Chrome\Application\chrome.exe' }
+    $signer=if ($Browser -ceq 'brave') { 'Brave Software, Inc.' } else { 'Google LLC' }
+    $browserLabel=if ($Browser -ceq 'brave') { 'Brave' } else { 'Google Chrome' }
+    $candidates=@([IO.Path]::Combine($env:ProgramFiles,$relative))
+    if (${env:ProgramFiles(x86)}) { $candidates+= [IO.Path]::Combine(${env:ProgramFiles(x86)},$relative) }
+    if ($env:LOCALAPPDATA) { $candidates+= [IO.Path]::Combine($env:LOCALAPPDATA,$relative) }
     foreach ($candidate in $candidates) {
         if (-not [IO.File]::Exists($candidate)) { continue }
         Assert-SafePath $candidate
         $signature=Get-AuthenticodeSignature -LiteralPath $candidate
-        if ($signature.Status -eq 'Valid' -and $signature.SignerCertificate.GetNameInfo([Security.Cryptography.X509Certificates.X509NameType]::SimpleName,$false) -ceq 'Google LLC') { return $candidate }
+        if ($signature.Status -eq 'Valid' -and $signature.SignerCertificate.GetNameInfo([Security.Cryptography.X509Certificates.X509NameType]::SimpleName,$false) -ceq $signer) { return $candidate }
     }
-    Fail-Safely 'X_CHROME_NOT_FOUND' 'Google Chromeをインストールしてから、もう一度お試しください。'
+    Fail-Safely 'X_CHROME_NOT_FOUND' ($browserLabel+'をインストールしてから、もう一度お試しください。')
 }
 function Quote-WindowsArgument([string]$Value) {
     $escaped=[regex]::Replace($Value,'(\\*)"','$1$1\"'); $escaped=[regex]::Replace($escaped,'(\\+)$','$1$1')
@@ -252,11 +266,12 @@ function Start-PrivateBroker([string]$Chrome,[string]$Profile) {
         $text=$line.GetAwaiter().GetResult()
         if ([string]::IsNullOrWhiteSpace($text) -or $text.Length -gt 4096) { throw 'Broker result invalid' }
         $ready=$text | ConvertFrom-Json
-        Assert-PropertyNames $ready @('ok','port','token','pid','browserPid')
+        Assert-PropertyNames $ready @('ok','port','token','pid','browserPid','engineVersion')
         if ($ready.ok -ne $true -or $ready.pid -ne $process.Id -or $ready.port -isnot [int] -or $ready.port -lt 1024 -or
-            $ready.port -gt 65535 -or $ready.token -isnot [string] -or $ready.token -cnotmatch '^[0-9a-f]{64}$') { throw 'Broker result invalid' }
+            $ready.port -gt 65535 -or $ready.token -isnot [string] -or $ready.token -cnotmatch '^[0-9a-f]{64}$' -or
+            $ready.engineVersion -isnot [string] -or $ready.engineVersion -cnotmatch '^[0-9]{1,3}(\.[0-9]{1,5}){3}$') { throw 'Broker result invalid' }
         $result=[pscustomobject]@{ pid=[int]$process.Id; started=$process.StartTime.ToUniversalTime().ToString('o');
-            port=[int]$ready.port; token=[string]$ready.token }
+            port=[int]$ready.port; token=[string]$ready.token; engineVersion=[string]$ready.engineVersion }
         $success=$true; return $result
     } finally {
         if (-not $success -and -not $process.HasExited) { $process.Kill(); $process.WaitForExit() }
@@ -266,7 +281,7 @@ function Start-PrivateBroker([string]$Chrome,[string]$Profile) {
 
 try {
     try { Assert-Package } catch { Fail-Safely 'X_CHROME_PACKAGE_INVALID' 'ZIPを新しくダウンロードし、すべて展開してください。' }
-    if ([string]::IsNullOrWhiteSpace($PrivateRoot)) { $PrivateRoot=[IO.Path]::Combine($env:LOCALAPPDATA,'XNotificationSetup','ChromeSetup') }
+    if ([string]::IsNullOrWhiteSpace($PrivateRoot)) { $PrivateRoot=[IO.Path]::Combine($env:LOCALAPPDATA,'XNotificationSetup',$(if ($Browser -ceq 'brave') { 'BraveSetup' } else { 'ChromeSetup' })) }
     $script:Root=Get-LocalPath $PrivateRoot
     if ($script:Root.Length -le 3 -or (Test-InPath $script:Root $script:PackageRoot) -or (Test-InPath $script:PackageRoot $script:Root)) { throw 'Unsafe root' }
     $script:Profile=[IO.Path]::Combine($script:Root,'chrome-profile'); $script:Launches=[IO.Path]::Combine($script:Root,'launches')
@@ -282,19 +297,27 @@ try {
             if (-not [IO.Directory]::Exists($parent)) { $null=[IO.Directory]::CreateDirectory($parent); Assert-SafePath $parent }
             New-PrivateDirectory $script:Root; Assert-SafePath $script:Root; Assert-PrivateDirectory $script:Root
             $null=[IO.Directory]::CreateDirectory($script:Profile); $null=[IO.Directory]::CreateDirectory($script:Launches)
+            $profileId=[Guid]::NewGuid().ToString('D')
+            if ($Browser -ceq 'brave') {
+                # このツール専用の新規プロファイルだけでGoogleの通知サービスを
+                # 有効にします。普段使いのBrave設定には触れません。
+                $braveDefault=[IO.Path]::Combine($script:Profile,'Default'); $null=[IO.Directory]::CreateDirectory($braveDefault)
+                Write-NewJson ([IO.Path]::Combine($braveDefault,'Preferences')) ([ordered]@{ brave=[ordered]@{ gcm=[ordered]@{ channel_status=$true } } })
+                Write-NewJson ([IO.Path]::Combine($script:Root,'browser.json')) ([ordered]@{ profileId=$profileId; browser='brave' })
+            }
             Write-NewJson ([IO.Path]::Combine($script:Root,'owner.json')) ([ordered]@{ schemaVersion=1; appId=$script:AppId;
-                profileId=[Guid]::NewGuid().ToString('D'); rootPath=$script:Root; profilePath=$script:Profile })
+                profileId=$profileId; rootPath=$script:Root; profilePath=$script:Profile })
             $owner=Get-Owner
         }
         if ($Action -eq 'Open') {
-            if ($null -eq $owner) { Fail-Safely 'X_CHROME_NOT_PREPARED' '最初にChromeの準備を行ってください。' }
-            if ($null -ne (Get-ActiveLaunch $owner)) { Fail-Safely 'X_CHROME_BUSY' '設定用Chromeはすでに開いています。' }
+            if ($null -eq $owner) { Fail-Safely 'X_CHROME_NOT_PREPARED' '最初にブラウザーの準備を行ってください。' }
+            if ($null -ne (Get-ActiveLaunch $owner)) { Fail-Safely 'X_CHROME_BUSY' '設定用ブラウザーはすでに開いています。' }
             $chrome=Get-ChromeExecutable
             $broker=Start-PrivateBroker $chrome $script:Profile
             try {
                 Write-NewJson ([IO.Path]::Combine($script:Launches,('launch-'+[Guid]::NewGuid().ToString('D')+'.json'))) ([ordered]@{
                     schemaVersion=1; appId=$script:AppId; profileId=$owner.profileId; pid=$broker.pid;
-                    processStartedUtc=$broker.started; browserVersion=(Get-Item -LiteralPath $chrome).VersionInfo.FileVersion;
+                    processStartedUtc=$broker.started; browserVersion=(Get-Item -LiteralPath $chrome).VersionInfo.FileVersion; engineVersion=$broker.engineVersion;
                     port=$broker.port; brokerToken=$broker.token })
             } catch {
                 # 起動直後の自分の仲介プロセスだけを停止します。PIDが再利用
@@ -310,20 +333,20 @@ try {
             }
         }
         if ($Action -eq 'Export') {
-            if ($null -eq $owner) { Fail-Safely 'X_CHROME_NOT_PREPARED' '設定用Chromeで通知をオンにしてください。' }
+            if ($null -eq $owner) { Fail-Safely 'X_CHROME_NOT_PREPARED' '設定用ブラウザーで通知をオンにしてください。' }
             $target=Get-LocalPath $OutputPath; Assert-SafePath $target
             if ((Test-InPath $target $script:Root) -or (Test-InPath $target $script:PackageRoot) -or
                 $null -ne (Get-PathAttributes $target) -or -not [IO.Directory]::Exists([IO.Path]::GetDirectoryName($target))) {
                 Fail-Safely 'X_CHROME_OUTPUT_INVALID' '新しいファイル名を選んでください。'
             }
             $launch=Get-ActiveLaunch $owner
-            if ($null -eq $launch) { Fail-Safely 'X_CHROME_NOT_RUNNING' '設定用Chromeを開き、Xで通知をオンにしてください。' }
+            if ($null -eq $launch) { Fail-Safely 'X_CHROME_NOT_RUNNING' '設定用ブラウザーを開き、Xで通知をオンにしてください。' }
             $broker=Get-BrokerEndpoint $launch
             $capture=Invoke-Helper 'ChromeCapture.cjs' ([ordered]@{port=$broker.port;token=$broker.token})
             if ($capture.ok -ne $true) {
-                if ($capture.errorCode -ceq 'X_CHROME_CAPTURE_AMBIGUOUS') { Fail-Safely 'X_CHROME_CAPTURE_AMBIGUOUS' '設定用ChromeでXのタブを1つだけ開き、もう一度お試しください。' }
-                if ($capture.errorCode -ceq 'X_CHROME_CAPTURE_NOT_FOUND') { Fail-Safely 'X_CHROME_CAPTURE_NOT_FOUND' '設定用ChromeでXを開いてから、もう一度お試しください。' }
-                Fail-Safely 'X_CHROME_CAPTURE_FAILED' '設定用ChromeのXタブで、ブラウザー通知と投稿通知をオンにしてください。'
+                if ($capture.errorCode -ceq 'X_CHROME_CAPTURE_AMBIGUOUS') { Fail-Safely 'X_CHROME_CAPTURE_AMBIGUOUS' '設定用ブラウザーでXのタブを1つだけ開き、もう一度お試しください。' }
+                if ($capture.errorCode -ceq 'X_CHROME_CAPTURE_NOT_FOUND') { Fail-Safely 'X_CHROME_CAPTURE_NOT_FOUND' '設定用ブラウザーでXを開いてから、もう一度お試しください。' }
+                Fail-Safely 'X_CHROME_CAPTURE_FAILED' '設定用ブラウザーのXタブで、ブラウザー通知と投稿通知をオンにしてください。'
             }
             $process=Get-Process -Id $launch.pid -ErrorAction SilentlyContinue
             if ($null -ne $process) {
@@ -343,15 +366,17 @@ try {
                 if ($key.Length -ne 32) { throw 'OS key invalid' }
                 try {
                     $reader=Invoke-Helper 'ChromeReader.cjs' ([ordered]@{snapshotPath=$snapshot.path;token=$snapshot.token;
-                        subscription=$capture.subscription;browserVersion=$launch.browserVersion;
+                        subscription=$capture.subscription;browserVersion=$launch.browserVersion;engineVersion=$launch.engineVersion;
                         profileKey=([Convert]::ToBase64String($key).TrimEnd('=').Replace('+','-').Replace('/','_'))})
                 } finally { [Array]::Clear($key,0,$key.Length) }
                 if ($reader.ok -ne $true) {
-                    if ($reader.errorCode -ceq 'X_CHROME_SNAPSHOT_UNSUPPORTED') { Fail-Safely 'X_CHROME_BROWSER_UNSUPPORTED' 'このChromeの通知保存形式はまだ対応していません。' }
-                    if ($reader.errorCode -ceq 'X_CHROME_SNAPSHOT_AMBIGUOUS') { Fail-Safely 'X_CHROME_SUBSCRIPTION_AMBIGUOUS' 'Xの通知設定が複数見つかりました。設定用Chromeの通知設定を確認してください。' }
-                    if ($reader.errorCode -ceq 'X_CHROME_SNAPSHOT_NOT_FOUND') { Fail-Safely 'X_CHROME_SUBSCRIPTION_NOT_FOUND' '設定用ChromeでXの通知をオンにしてから、もう一度お試しください。' }
-                    Fail-Safely 'X_CHROME_READER_FAILED' 'Xの通知情報を確認できませんでした。設定用Chromeで通知をオンにしてください。'
+                    if ($reader.errorCode -ceq 'X_CHROME_SNAPSHOT_UNSUPPORTED') { Fail-Safely 'X_CHROME_BROWSER_UNSUPPORTED' 'このブラウザーの通知保存形式はまだ対応していません。' }
+                    if ($reader.errorCode -ceq 'X_CHROME_SNAPSHOT_AMBIGUOUS') { Fail-Safely 'X_CHROME_SUBSCRIPTION_AMBIGUOUS' 'Xの通知設定が複数見つかりました。設定用ブラウザーの通知設定を確認してください。' }
+                    if ($reader.errorCode -ceq 'X_CHROME_SNAPSHOT_NOT_FOUND') { Fail-Safely 'X_CHROME_SUBSCRIPTION_NOT_FOUND' '設定用ブラウザーでXの通知をオンにしてから、もう一度お試しください。' }
+                    Fail-Safely 'X_CHROME_READER_FAILED' 'Xの通知情報を確認できませんでした。設定用ブラウザーで通知をオンにしてください。'
                 }
+                if (($Browser -ceq 'brave' -and $reader.file.provenance.kind -cne 'brave-gcm') -or
+                    ($Browser -ceq 'chrome' -and $reader.file.provenance.kind -cne 'chrome-gcm')) { throw 'Browser profile mismatch' }
                 if ($reader.file.version -ne 2 -or $reader.otherSubscriptionCount -lt 0 -or $reader.otherSubscriptionCount -gt 63) { throw 'Reader failed' }
                 $document=$reader.file | ConvertTo-Json -Depth 12 -Compress
             } finally { Remove-XChromeSnapshot -Snapshot $snapshot.path -Token $snapshot.token -PrivateRoot $script:Root }
@@ -378,7 +403,7 @@ try {
     } finally { if ($held) { $mutex.ReleaseMutex() }; $mutex.Dispose() }
 } catch {
     $message=[string]$_.Exception.Message
-    if ($message -notmatch '^X_CHROME_[A-Z_]+: ') { $message='X_CHROME_FAILED: 通知情報を保存できませんでした。設定用Chromeを開き、通知設定を確認してください。' }
+    if ($message -notmatch '^X_CHROME_[A-Z_]+: ') { $message='X_CHROME_FAILED: 通知情報を保存できませんでした。設定用ブラウザーを開き、通知設定を確認してください。' }
     [ordered]@{ok=$false;message=$message} | ConvertTo-Json -Compress
     exit 1
 }

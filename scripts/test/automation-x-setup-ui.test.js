@@ -70,7 +70,7 @@ test('beginner setup leads with concrete steps and clearly explains manual uploa
 });
 
 test('Chrome preparation and review appear only when Chrome intake is enabled', async () => {
-    const f = await fixture({ current: status({ chromeEnabled: true, receiverEnabled: true }), upload: false,
+    const f = await fixture({ current: status({ chromeEnabled: true, braveEnabled: true, receiverEnabled: true }), upload: false,
         respond: (route, method) => route === 'x-setup/validate' && method === 'POST'
             ? { valid: true, browserVersion: '156.0.8078.80', scope: 'https://x.com/', formatVersion: 2 } : undefined });
     try {
@@ -84,6 +84,39 @@ test('Chrome preparation and review appear only when Chrome intake is enabled', 
     const disabled = await fixture({ current: status({ chromeEnabled: false }), upload: false });
     try { assert.equal([...disabled.container.querySelectorAll('label')].some(label => label.textContent.trim() === 'Chrome'), false); }
     finally { await disabled.close(); }
+    const chromeOnly = await fixture({ current: status({ chromeEnabled: true, braveEnabled: false }), upload: false });
+    try { assert.equal([...chromeOnly.container.querySelectorAll('label')].some(label => label.textContent.trim() === 'Brave'), false); }
+    finally { await chromeOnly.close(); }
+});
+test('Brave preparation uses a separate launcher and review labels the imported browser', async () => {
+    const f = await fixture({ current: status({ chromeEnabled: true, braveEnabled: true, receiverEnabled: true }), upload: false,
+        respond: (route, method) => route === 'x-setup/validate' && method === 'POST'
+            ? { valid: true, browserVersion: '157.1.99.55', browserKind: 'brave', scope: 'https://x.com/', formatVersion: 2 } : undefined });
+    try {
+        const brave = [...f.container.querySelectorAll('label')].find(label => label.textContent.trim() === 'Brave');
+        assert(brave); await f.act(async () => brave.querySelector('input').click());
+        assert.equal(f.container.querySelector('a[download]').getAttribute('href'), '/api/automation/x-setup/download-chrome');
+        assert.match(f.container.textContent, /Braveで開始/); assert.match(f.container.textContent, /Google のプッシュ通知サービス/);
+        await f.showUpload(); await f.agree(); await f.choose(); await f.validate();
+        assert.match(f.review().textContent, /Brave 157\.1\.99\.55/); f.assertPrivate();
+    } finally { await f.close(); }
+});
+test('saved Brave receiver remains identifiable and compatible with old receiver responses', async () => {
+    const f = await fixture({ current: status({ chromeEnabled: true, subscriptions: [subscription({ browserKind: 'brave', browserVersion: '157.1.99.55' })] }), upload: false });
+    try {
+        assert.match(f.container.textContent, /Brave 157\.1\.99\.55/);
+        assert.equal(f.exports.parseXSetupSubscription(subscription({ browserKind: 'brave' })).browserKind, 'brave');
+        assert.equal(f.exports.parseXSetupSubscription(subscription()).browserKind, 'firefox');
+    } finally { await f.close(); }
+});
+test('provider loss notice is visible without exposing event identifiers', async () => {
+    const f = await fixture({ current: status({ subscriptions: [subscription({ lastProviderLossAtMs: 1791921600000 })] }), upload: false });
+    try {
+        assert.match(f.container.textContent, /通知サービスから未受信の通知が失われた.*Xの投稿を確認/);
+        assert.equal(f.exports.parseXSetupSubscription(subscription({ lastProviderLossAtMs: 1791921600000 })).lastProviderLossAtMs, 1791921600000);
+        assert.throws(() => f.exports.parseXSetupSubscription(subscription({ lastProviderLossAtMs: -1 })));
+        f.assertPrivate();
+    } finally { await f.close(); }
 });
 
 test('unavailable intake preserves instructions/download and own deletion but cannot select or submit a file', async () => {

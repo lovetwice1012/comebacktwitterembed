@@ -24,6 +24,7 @@ test('Chrome gateway requests server confirmation during a sustained receipt bur
     const store = { leaseMs: 60000, claim: async () => lease, renew: async () => lease, assertLease: async () => {}, auditUse: async () => {},
         chromeCheckinState: async () => ({ checkedAtMs: Date.now(), intervalSeconds: 172800 }),
         recordChromeCheckin: async () => { throw new Error('Check-in should not run during this receipt test'); },
+        recordMcsControl: async () => { throw new Error('Control notice should not occur during this receipt test'); },
         markState: async () => {}, resetRetry: async () => {}, release: async () => {}, pendingMcs: async () => [...pending],
         confirmMcs: async (_lease, ids) => ids.forEach(id => pending.delete(id)),
         recordMcsFrame: async (_lease, frame) => { commits++; pending.add(frame.version); return { ...frame, id: String(commits), duplicate: false }; } };

@@ -30,17 +30,21 @@ function normalizeChromeTransfer(file) {
     try {
         object(file, ['format', 'version', 'provenance', 'push']);
         if (file.format !== 'x-notification-subscription' || file.version !== 2) throw INVALID();
-        object(file.provenance, ['kind', 'adapterVersion', 'browserVersion', 'readMethod']);
+        const kindDescriptor = file.provenance && Object.getOwnPropertyDescriptor(file.provenance, 'kind');
+        const isBrave = kindDescriptor && Object.hasOwn(kindDescriptor, 'value') && kindDescriptor.value === 'brave-gcm';
+        object(file.provenance, isBrave ? ['kind', 'adapterVersion', 'browserVersion', 'engineVersion', 'readMethod']
+            : ['kind', 'adapterVersion', 'browserVersion', 'readMethod']);
         const provenance = file.provenance;
-        if (provenance.kind !== 'chrome-gcm' || provenance.adapterVersion !== '1.0.0'
-            || provenance.readMethod !== 'chrome-gcm-snapshot'
-            || typeof provenance.browserVersion !== 'string' || !/^[0-9]{1,3}(?:\.[0-9]{1,5}){3}$/.test(provenance.browserVersion)) throw INVALID();
+        const versionPattern = /^[0-9]{1,3}(?:\.[0-9]{1,5}){3}$/;
+        if ((!isBrave && (provenance.kind !== 'chrome-gcm' || provenance.readMethod !== 'chrome-gcm-snapshot'))
+            || (isBrave && (provenance.readMethod !== 'brave-gcm-snapshot' || typeof provenance.engineVersion !== 'string' || !versionPattern.test(provenance.engineVersion)))
+            || provenance.adapterVersion !== '1.0.0' || typeof provenance.browserVersion !== 'string' || !versionPattern.test(provenance.browserVersion)) throw INVALID();
         object(file.push, ['deviceId', 'securityToken', 'appId', 'productCategory', 'authorizedEntity', 'scope',
             'p256dhPublicKey', 'authenticationSecret', 'p256dhPrivateKey']);
         const push = file.push;
         decimal(push.deviceId); decimal(push.securityToken);
         if (typeof push.appId !== 'string' || !APP_ID.test(push.appId)
-            || push.productCategory !== 'com.chrome.windows' || push.scope !== 'https://x.com/'
+            || push.productCategory !== (isBrave ? 'com.brave.windows' : 'com.chrome.windows') || push.scope !== 'https://x.com/'
             || typeof push.authorizedEntity !== 'string' || !/^[A-Za-z0-9_-]{1,1024}$/.test(push.authorizedEntity)) throw INVALID();
         const publicKey = base64url(push.p256dhPublicKey, 65);
         base64url(push.authenticationSecret, 16);
@@ -52,7 +56,8 @@ function normalizeChromeTransfer(file) {
         const ecdh = createECDH('prime256v1'); ecdh.setPrivateKey(d);
         if (!timingSafeEqual(publicKey, expected) || !timingSafeEqual(publicKey, ecdh.getPublicKey())) throw INVALID();
         return { format: file.format, version: 2,
-            provenance: { kind: provenance.kind, adapterVersion: provenance.adapterVersion, browserVersion: provenance.browserVersion, readMethod: provenance.readMethod },
+            provenance: { kind: provenance.kind, adapterVersion: provenance.adapterVersion, browserVersion: provenance.browserVersion,
+                ...(isBrave ? { engineVersion: provenance.engineVersion } : {}), readMethod: provenance.readMethod },
             push: { deviceId: push.deviceId, securityToken: push.securityToken, appId: push.appId,
                 productCategory: push.productCategory, authorizedEntity: push.authorizedEntity, scope: push.scope,
                 p256dhPublicKey: push.p256dhPublicKey, authenticationSecret: push.authenticationSecret,

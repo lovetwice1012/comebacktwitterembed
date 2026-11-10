@@ -1,6 +1,6 @@
 'use strict';
 
-const { randomBytes } = require('node:crypto');
+const { randomBytes, createHash } = require('node:crypto');
 const { lockOwner } = require('./entitlements');
 
 const MAX_FRAME_BYTES = 64 * 1024;
@@ -171,6 +171,13 @@ function createXPushStore(db, options = {}) {
             // The worker's trusted rollout guard runs under the same owner
             // lock as revocation, immediately before this receipt is written.
             if (authorize) await authorize(query);
+            if (mcsPending) {
+                const controlHash = createHash('sha256').update('mcs-control\0' + input.version).digest('hex');
+                const controls = await query(`SELECT id FROM automation_audit WHERE actor_user_id=? AND entity_id=?
+                    AND action IN ('x.push.provider.deleted_messages','x.push.provider.send_error') AND JSON_VALID(detail_json)
+                    AND JSON_UNQUOTE(JSON_EXTRACT(detail_json,'$.providerEventIdHash'))=? LIMIT 1`, [lease.ownerUserId, lease.subscriptionId, controlHash]);
+                if (controls.length) fail('X_PUSH_MCS_ID_CONFLICT');
+            }
             let row = (await query('SELECT * FROM automation_x_push_inbox WHERE subscription_id=? AND version=?', [lease.subscriptionId, input.version]))[0];
             const duplicate = Boolean(row);
             if (mcsPending && row && Number(row.subscription_revision) !== lease.revision) fail('X_PUSH_REVISION_CONFLICT');
@@ -180,9 +187,11 @@ function createXPushStore(db, options = {}) {
                 row = (await query('SELECT * FROM automation_x_push_inbox WHERE id=?', [result.insertId]))[0];
             }
             if (mcsPending) {
-                const pending = await query('SELECT persistent_id,subscription_revision FROM automation_x_mcs_pending WHERE subscription_id=? FOR UPDATE',
+                const pending = await query('SELECT persistent_id,subscription_revision,inbox_id FROM automation_x_mcs_pending WHERE subscription_id=? FOR UPDATE',
                     [lease.subscriptionId]);
                 if (pending.some(item => Number(item.subscription_revision) !== lease.revision)) fail('X_PUSH_REVISION_CONFLICT');
+                const same = pending.find(item => item.persistent_id === input.version);
+                if (same && (same.inbox_id == null || String(same.inbox_id) !== String(row.id))) fail('X_PUSH_MCS_ID_CONFLICT');
                 if (pending.length >= 100 && !pending.some(item => item.persistent_id === input.version)) fail('X_PUSH_MCS_PENDING_LIMIT');
                 await query(`INSERT INTO automation_x_mcs_pending (subscription_id,subscription_revision,persistent_id,inbox_id,created_at_ms)
                     VALUES (?,?,?,?,?) ON DUPLICATE KEY UPDATE persistent_id=VALUES(persistent_id)`,
@@ -196,6 +205,38 @@ function createXPushStore(db, options = {}) {
     }
     async function recordMcsFrame(lease, input, { authorize } = {}) {
         return recordFrame(lease, input, { authorize, mcsPending: true });
+    }
+    async function recordMcsControl(lease, input, { authorize } = {}) {
+        if (!input || !['deleted_messages', 'send_error'].includes(input.kind)
+            || input.persistentId !== null && (typeof input.persistentId !== 'string' || !/^[\x21-\x7e]{1,256}$/.test(input.persistentId)))
+            fail('X_PUSH_FRAME_INVALID');
+        const idHash = input.persistentId === null ? null : createHash('sha256').update('mcs-control\0' + input.persistentId).digest('hex');
+        const action = `x.push.provider.${input.kind}`;
+        return locked(lease, async (query, subscription, receiver) => {
+            fence(lease, subscription, receiver);
+            if (authorize) await authorize(query);
+            if (input.persistentId !== null) {
+                const inbox = await query('SELECT id FROM automation_x_push_inbox WHERE subscription_id=? AND version=? LIMIT 1',
+                    [lease.subscriptionId, input.persistentId]);
+                if (inbox.length) fail('X_PUSH_MCS_ID_CONFLICT');
+                const pending = await query('SELECT persistent_id,subscription_revision,inbox_id FROM automation_x_mcs_pending WHERE subscription_id=? FOR UPDATE', [lease.subscriptionId]);
+                if (pending.some(item => Number(item.subscription_revision) !== lease.revision)) fail('X_PUSH_REVISION_CONFLICT');
+                const same = pending.find(item => item.persistent_id === input.persistentId);
+                if (same && same.inbox_id != null) fail('X_PUSH_MCS_ID_CONFLICT');
+                if (pending.length >= 100 && !same) fail('X_PUSH_MCS_PENDING_LIMIT');
+                await query(`INSERT INTO automation_x_mcs_pending (subscription_id,subscription_revision,persistent_id,inbox_id,created_at_ms)
+                    VALUES (?,?,?,NULL,?) ON DUPLICATE KEY UPDATE persistent_id=VALUES(persistent_id)`,
+                [lease.subscriptionId, lease.revision, input.persistentId, now()]);
+            }
+            const previous = idHash === null ? [] : await query(`SELECT action FROM automation_audit WHERE actor_user_id=? AND entity_id=?
+                AND action IN ('x.push.provider.deleted_messages','x.push.provider.send_error') AND JSON_VALID(detail_json)
+                AND JSON_UNQUOTE(JSON_EXTRACT(detail_json,'$.providerEventIdHash'))=? LIMIT 1`, [lease.ownerUserId, lease.subscriptionId, idHash]);
+            if (previous.length && previous[0].action !== action) fail('X_PUSH_MCS_ID_CONFLICT');
+            if (!previous.length) await query('INSERT INTO automation_audit (actor_user_id,entity_id,action,detail_json,created_at_ms) VALUES (?,?,?,?,?)',
+                [lease.ownerUserId, lease.subscriptionId, action, JSON.stringify({ revision: lease.revision, providerEventIdHash: idHash }), now()]);
+            fence(lease, subscription, receiver);
+            return { duplicate: previous.length > 0 };
+        });
     }
     async function pendingMcs(lease, { authorize } = {}) {
         return locked(lease, async (query, subscription, receiver) => {
@@ -402,7 +443,7 @@ function createXPushStore(db, options = {}) {
             return { retryAtMs: null, retryAttempt: 0 };
         });
     }
-    return { claim, renew, assertLease, chromeCheckinState, recordChromeCheckin, markState, release, recordFrame, recordMcsFrame, pendingMcs, confirmMcs, markRouted, auditUse, getInbox, listInbox, status, list, leaseMs,
+    return { claim, renew, assertLease, chromeCheckinState, recordChromeCheckin, markState, release, recordFrame, recordMcsFrame, recordMcsControl, pendingMcs, confirmMcs, markRouted, auditUse, getInbox, listInbox, status, list, leaseMs,
         beginProcessing, advanceProcessing, completeProcessing, markUnsupported, markRecoveryQuarantined, recordRetry, resetRetry,
         listQuarantinedInbox, restoreQuarantinedInbox, markUnmatched };
 }

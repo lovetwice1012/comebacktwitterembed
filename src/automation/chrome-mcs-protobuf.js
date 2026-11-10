@@ -138,8 +138,10 @@ function dataMessage(buffer, { expectedCategory, expectedAppId, expectedSender }
             headers[key] = value;
         }
     }
-    // Deleted-message and send-error control events are not push payloads.
-    // The worker must handle them explicitly rather than acknowledge them as X.
+    // These are provider control notices, not encrypted X posts. In particular
+    // deleted_messages signals that the provider has already lost messages.
+    if (messageType === 'deleted_messages' || messageType === 'send_error')
+        return { matches: true, control: messageType, persistentId: persistent?.length ? text(persistent, 256) : null };
     if (messageType !== undefined && messageType !== 'gcm') throw fault();
     return { matches: true, from, persistentId: persistent ? text(persistent, 256) : null,
         rawData: raw ? Buffer.from(raw) : Buffer.alloc(0), headers };

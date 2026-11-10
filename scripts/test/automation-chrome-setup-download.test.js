@@ -30,6 +30,13 @@ test('download package is pinned, complete and includes no profile data', () => 
         assert(!Buffer.from(entries[name]).includes(Buffer.from('--remote-debugging-port')));
     }
     assert(Buffer.from(entries['ChromeBroker.cjs']).includes(Buffer.from('--remote-debugging-pipe')));
+    assert(Buffer.from(entries['Braveで開始.cmd']).includes(Buffer.from('-Browser brave')));
+    for (const name of ['Chromeで開始.cmd', 'Braveで開始.cmd']) {
+        const launcher = Buffer.from(entries[name]).toString('utf8');
+        assert(!/(?<!\r)\n/.test(launcher), `${name} must use CRLF for cmd.exe`);
+    }
+    for (const name of ['ChromeSetup.ps1', 'Start-ChromeSetup.ps1', 'ChromeSnapshot.ps1'])
+        assert.deepEqual([...Buffer.from(entries[name]).subarray(0, 3)], [0xef, 0xbb, 0xbf], `${name} needs UTF-8 BOM for Windows PowerShell 5.1`);
 });
 test('Windows release rebuild matches the pinned Chrome download', { skip: process.platform !== 'win32', timeout: 60000 }, async () => {
     const meta = load('dashboard/lib/x-chrome-setup-download.ts', { 'server-only': {}, 'node:crypto': { createHash },

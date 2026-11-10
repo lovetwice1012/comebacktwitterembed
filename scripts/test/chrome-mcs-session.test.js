@@ -52,6 +52,29 @@ test('other apps are discarded without committing or notifying', async () => {
     assert.deepEqual(await h.session.receive(frame({ subtype: 'other' })), { state: 'discarded' });
     assert.deepEqual(h.steps, ['send']); assert.equal(h.pending.size, 0);
 });
+test('provider loss notice is recorded before acknowledgment and does not become a notification', async () => {
+    const h = harness();
+    h.store.control = async message => { h.steps.push('control'); if (message.persistentId) h.pending.add(message.persistentId); };
+    await h.session.start(); await h.session.receive(login(1)); h.steps.length = 0;
+    const message = frame({ id: 'lost-1' }); message.payload = Buffer.concat([message.payload, pair('message_type', 'deleted_messages')]);
+    assert.deepEqual(await h.session.receive(message), { state: 'provider_control', kind: 'deleted_messages' });
+    assert.deepEqual(h.steps, ['control', 'send']); assert(h.pending.has('lost-1'));
+    await h.session.receive({ tag: 1, payload: Buffer.from([16, 2]) }); assert.equal(h.pending.size, 0);
+});
+test('failed provider notice recording does not acknowledge the message', async () => {
+    const h = harness(); h.store.control = async () => { throw new Error('AUDIT_FAILED'); };
+    await h.session.start(); await h.session.receive(login(1));
+    const message = frame({ id: 'lost-2' }); message.payload = Buffer.concat([message.payload, pair('message_type', 'deleted_messages')]);
+    await assert.rejects(h.session.receive(message), /AUDIT_FAILED/); assert.equal(h.writes.length, 1);
+});
+test('provider notices without a persistent ID can be audited and acknowledged', async () => {
+    const h = harness(); let control;
+    h.store.control = async message => { control = message; h.steps.push('control'); };
+    await h.session.start(); await h.session.receive(login(1)); h.steps.length = 0;
+    const message = frame({ id: '' }); message.payload = Buffer.concat([message.payload, pair('message_type', 'send_error')]);
+    assert.deepEqual(await h.session.receive(message), { state: 'provider_control', kind: 'send_error' });
+    assert.equal(control.persistentId, null); assert.deepEqual(h.steps, ['control', 'send']); assert.equal(h.pending.size, 0);
+});
 test('MCS idle control receives a protocol response without creating a user receipt', async () => {
     const h = harness(); await h.session.start(); await h.session.receive(login(1)); h.steps.length = 0;
     const control = { tag: 8, payload: Buffer.concat([b(5, 'com.google.android.gsf.gtalkservice'), pair('IdleNotification', 'true')]) };

@@ -7,15 +7,15 @@ const { PassThrough, Writable } = require('node:stream');
 const { startChromeBroker } = require('../../src/automation/chrome-private-broker');
 const { captureFromBroker } = require('../../src/automation/chrome-broker-client');
 const expected = { scope: 'https://x.com/', endpoint: 'https://fcm.googleapis.com/fcm/send/test', keys: { p256dh: 'public', auth: 'auth' } };
-function fakeChrome({ evaluateDelay = 0 } = {}) {
+function fakeChrome({ evaluateDelay = 0, targetInfos, subscriptions = {} } = {}) {
     const chrome = new EventEmitter(); chrome.exitCode = null; chrome.pid = 12345;
     const output = new PassThrough();
     const input = new Writable({ write(chunk, _encoding, done) {
         const request = JSON.parse(chunk.subarray(0, -1).toString()); let result;
         if (request.method === 'Browser.getVersion') result = { product: 'Chrome/156.0.1.1' };
-        else if (request.method === 'Target.getTargets') result = { targetInfos: [{ type: 'page', url: 'https://x.com/home', targetId: 'target' }] };
-        else if (request.method === 'Target.attachToTarget') result = { sessionId: 'session' };
-        else if (request.method === 'Runtime.evaluate') result = { result: { type: 'object', value: expected } };
+        else if (request.method === 'Target.getTargets') result = { targetInfos: targetInfos || [{ type: 'page', url: 'https://x.com/home', targetId: 'target' }] };
+        else if (request.method === 'Target.attachToTarget') result = { sessionId: request.params.targetId };
+        else if (request.method === 'Runtime.evaluate') result = { result: { type: 'object', value: subscriptions[request.sessionId] || expected } };
         else if (request.method === 'Target.detachFromTarget') result = {};
         else if (request.method === 'Browser.close') result = {};
         else return done(new Error('unexpected command'));
@@ -48,6 +48,17 @@ test('broker exposes no DevTools TCP interface and requires its private capabili
         assert.equal(await unauthenticated(broker.port, JSON.stringify({ command: 'capture', token: '0'.repeat(64) }) + '\n'), '');
         assert.deepEqual(await captureFromBroker({ port: broker.port, token: broker.token }), expected);
     } finally { await broker.stop(); }
+});
+test('multiple tabs in the same browser profile must expose identical subscriptions', async () => {
+    const targets = ['first', 'second'].map(targetId => ({ type: 'page', url: 'https://x.com/home', targetId, browserContextId: 'profile' }));
+    const good = await startChromeBroker({ chromePath: 'synthetic.exe', profilePath: 'synthetic-profile', spawnChrome: () => fakeChrome({ targetInfos: targets }) });
+    try { assert.deepEqual(await captureFromBroker({ port: good.port, token: good.token }), expected); } finally { await good.stop(); }
+    const different = { ...expected, keys: { ...expected.keys, auth: 'different' } };
+    const bad = await startChromeBroker({ chromePath: 'synthetic.exe', profilePath: 'synthetic-profile', spawnChrome: () => fakeChrome({ targetInfos: targets, subscriptions: { second: different } }) });
+    try { await assert.rejects(captureFromBroker({ port: bad.port, token: bad.token }), { code: 'X_CHROME_CAPTURE_AMBIGUOUS' }); } finally { await bad.stop(); }
+    const otherContext = [targets[0], { ...targets[1], browserContextId: 'other' }];
+    const cross = await startChromeBroker({ chromePath: 'synthetic.exe', profilePath: 'synthetic-profile', spawnChrome: () => fakeChrome({ targetInfos: otherContext }) });
+    try { await assert.rejects(captureFromBroker({ port: cross.port, token: cross.token }), { code: 'X_CHROME_CAPTURE_AMBIGUOUS' }); } finally { await cross.stop(); }
 });
 test('a disconnected capture client does not close the browser and can retry', async () => {
     const chrome = fakeChrome({ evaluateDelay: 80 });

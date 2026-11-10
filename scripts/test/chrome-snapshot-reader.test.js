@@ -22,6 +22,16 @@ test('selects X and reports other subscriptions without exposing their data', ()
     assert(!JSON.stringify(result).includes('example.com'));
     assert(!JSON.stringify(result).includes('/fcm/send/'));
 });
+test('Brave snapshot retains its real browser and Chromium engine versions separately', () => {
+    const f = fixture(); f.preferences.gcm.product_category_for_subtypes = 'com.brave.windows';
+    f.browserVersion = '157.1.99.55'; f.engineVersion = '157.0.8103.39';
+    const result = buildChromeTransfer(f);
+    assert.equal(result.file.provenance.kind, 'brave-gcm');
+    assert.equal(result.file.provenance.browserVersion, '157.1.99.55');
+    assert.equal(result.file.provenance.engineVersion, '157.0.8103.39');
+    assert.equal(result.file.push.productCategory, 'com.brave.windows');
+    delete f.engineVersion; assert.throws(() => buildChromeTransfer(f), /X_CHROME_SNAPSHOT_INVALID/);
+});
 test('rejects ambiguous X subscriptions, mismatched keys and foreign endpoint or scope', () => {
     for (const mutate of [f => f.preferences.gcm.push_messaging_application_id_map['second'] = 'https://x.com/#456',
         f => f.subscription.scope = 'https://x.com.attacker/', f => f.subscription.endpoint = 'https://attacker/fcm/send/1',

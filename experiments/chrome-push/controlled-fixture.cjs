@@ -44,6 +44,10 @@ async function removeOwnedProfile(profile) {
 }
 async function main() {
     const profile = await fs.mkdtemp(path.join(os.tmpdir(), 'cbte-chrome-fixture-'));
+    if (process.env.CHROMIUM_PROBE_BRAVE_RAW === '1') {
+        await fs.mkdir(path.join(profile, 'Default'));
+        await fs.writeFile(path.join(profile, 'Default', 'Preferences'), JSON.stringify({ brave: { gcm: { channel_status: true } } }));
+    }
     const vapid = webpush.generateVAPIDKeys();
     webpush.setVapidDetails('mailto:test@example.com', vapid.publicKey, vapid.privateKey);
     const marker = randomBytes(8).toString('hex');
@@ -91,6 +95,7 @@ async function main() {
         const browserPath = (await fs.readFile(path.join(profile, 'DevToolsActivePort'), 'utf8')).split('\n')[1].trim();
         await closeDedicatedChrome({ port, browserPath, WebSocket });
         if (child.exitCode === null) await new Promise(resolve => child.once('exit', resolve));
+        if (process.env.CHROMIUM_PROBE_BRAVE_RAW !== '1') {
         // Restart the same synthetic profile using anonymous DevTools pipes.
         // A separate unauthenticated client must not gain debugger access.
         await fs.unlink(path.join(profile, 'DevToolsActivePort')).catch(error => { if (error.code !== 'ENOENT') throw error; });
@@ -117,6 +122,7 @@ async function main() {
         } finally {
             await broker.stop();
             if (broker.chrome.exitCode === null) { broker.chrome.kill(); await new Promise(resolve => broker.chrome.once('exit', resolve)); }
+        }
         }
         const prefs = JSON.parse(await fs.readFile(path.join(profile, 'Default', 'Preferences'), 'utf8'));
         const map = prefs.gcm?.push_messaging_application_id_map;
@@ -153,6 +159,7 @@ async function main() {
         const securityToken = Buffer.concat([decipher.update(encryptedToken.subarray(15, -16)), decipher.final()]).toString('utf8');
         const fixtureProfileKey = Buffer.from(key);
         key.fill(0);
+        if (process.env.CHROMIUM_PROBE_BRAVE_RAW !== '1') {
         // Only the test origin is substituted; no X account is used. This
         // checks Chrome-produced key and identifier formats against intake.
         normalizeChromeTransfer({ format: 'x-notification-subscription', version: 2,
@@ -195,6 +202,11 @@ async function main() {
                 unprotect: async () => Buffer.from(fixtureProfileKey), parseJson: text => parseUniqueJson(text, 64) });
         } finally { fixtureProfileKey.fill(0); }
         console.log(JSON.stringify({ chromeSnapshotLeveldbVerified: true }));
+        } else {
+            fixtureProfileKey.fill(0);
+            if (prefs.gcm.product_category_for_subtypes !== 'com.brave.windows') throw new Error('BRAVE_CATEGORY_INVALID');
+            console.log(JSON.stringify({ braveCategoryVerified: true, syntheticProfile: true }));
+        }
         if (process.env.CHROME_FIXTURE_GATEWAY === '1') {
             const { createTestDatabase } = require('../../scripts/lib/automation-test-db');
             const { insertSubscription } = require('../../scripts/test/helpers/x-push-fixture.cjs');

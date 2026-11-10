@@ -44,6 +44,35 @@ function chromeFixture() {
             p256dhPublicKey: old.push.p256dhPublicKey, authenticationSecret: old.push.authenticationSecret,
             p256dhPrivateKey: { kty: key.kty, crv: key.crv, x: key.x, y: key.y, d: key.d } } };
 }
+function braveFixture() {
+    const file = chromeFixture();
+    file.provenance = { kind: 'brave-gcm', adapterVersion: '1.0.0', browserVersion: '157.1.99.55', engineVersion: '157.0.8103.39', readMethod: 'brave-gcm-snapshot' };
+    file.push.productCategory = 'com.brave.windows';
+    return file;
+}
+test('Brave intake is gated, owner-bound and retains distinct browser and engine versions', async t => setup(t, async db => {
+    const file = braveFixture(), disabled = createXSetup(db, { sealer, chromeEnabled: false, receiverEnabled: true });
+    const rejected = await payload(disabled, A, file);
+    await assert.rejects(disabled.importFile(A, rejected), code('X_SETUP_CHROME_NOT_READY'));
+    const chromeOnly = createXSetup(db, { sealer, chromeEnabled: true, braveEnabled: false, receiverEnabled: true });
+    const notEnabled = await payload(chromeOnly, A, file);
+    await assert.rejects(chromeOnly.importFile(A, notEnabled), code('X_SETUP_BRAVE_NOT_READY'));
+    const service = createXSetup(db, { sealer, chromeEnabled: true, braveEnabled: true, receiverEnabled: true });
+    const body = await payload(service, A, file);
+    const preview = await service.validate(A, { sessionId: body.sessionId, fileText: body.fileText });
+    assert.equal(preview.browserKind, 'brave'); assert.equal(preview.browserVersion, file.provenance.browserVersion);
+    const saved = await service.importFile(A, body); assert.equal(saved.subscription.browserKind, 'brave');
+    const row = (await db.queryDatabase('SELECT * FROM automation_x_subscriptions WHERE id=?', [saved.subscription.id]))[0];
+    const vault = createTransferPrivateWorkerVault({ activeKeyId: 'fixture1', privateKeys: { fixture1: privateKey } });
+    assert.deepEqual(vault.open(JSON.parse(row.sealed_json), { subscriptionId: row.id, ownerUserId: A.userId, revision: Number(row.revision) }), file);
+    await assert.rejects(service.importFile(B, await payload(service, B, file)), code('X_SETUP_SUBSCRIPTION_CONFLICT'));
+    const updated = structuredClone(file); updated.provenance.engineVersion = '157.0.8103.40';
+    const repeated = await service.importFile(A, await payload(service, A, updated));
+    assert.equal(repeated.duplicate, true); assert.equal(repeated.subscription.id, saved.subscription.id);
+    const refreshed = (await db.queryDatabase('SELECT * FROM automation_x_subscriptions WHERE id=?', [row.id]))[0];
+    assert.equal(Number(refreshed.revision), Number(row.revision));
+    assert.deepEqual(vault.open(JSON.parse(refreshed.sealed_json), { subscriptionId: row.id, ownerUserId: A.userId, revision: Number(row.revision) }), updated);
+}));
 test('Chrome transfers stay unavailable until the complete receiver is enabled', async t => setup(t, async db => {
     const chrome = chromeFixture();
     const service = createXSetup(db, { sealer }), body = await payload(service, A, chrome);

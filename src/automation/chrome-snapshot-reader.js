@@ -21,7 +21,7 @@ function bytes(value, length) {
 function selectChromeMapping(preferences) {
     dataObject(preferences); const gcm = dataObject(preferences.gcm);
     const map = dataObject(gcm.push_messaging_application_id_map);
-    if (gcm.product_category_for_subtypes !== 'com.chrome.windows') throw fault('X_CHROME_SNAPSHOT_UNSUPPORTED');
+    if (!['com.chrome.windows', 'com.brave.windows'].includes(gcm.product_category_for_subtypes)) throw fault('X_CHROME_SNAPSHOT_UNSUPPORTED');
     const entries = Object.entries(map);
     if (entries.length > 64 || entries.some(([id, value]) => typeof id !== 'string' || typeof value !== 'string' || value.length > 2048))
         throw fault('X_CHROME_SNAPSHOT_INVALID');
@@ -30,7 +30,7 @@ function selectChromeMapping(preferences) {
     if (!isChromeAppId(selected[0][0])) throw fault('X_CHROME_SNAPSHOT_INVALID');
     return { appId: selected[0][0], productCategory: gcm.product_category_for_subtypes, otherSubscriptionCount: entries.length - 1 };
 }
-function buildChromeTransfer({ preferences, subscription, records, deviceId, securityToken, browserVersion }) {
+function buildChromeTransfer({ preferences, subscription, records, deviceId, securityToken, browserVersion, engineVersion }) {
     try {
         const selected = selectChromeMapping(preferences);
         dataObject(subscription); dataObject(subscription.keys);
@@ -50,8 +50,10 @@ function buildChromeTransfer({ preferences, subscription, records, deviceId, sec
         const keys = readEncryptionData(candidates[0].value, { expectedAppId: appId,
             expectedPublicKey: bytes(subscription.keys.p256dh, 65), expectedAuthSecret: bytes(subscription.keys.auth, 16) });
         if (!keys.authorizedEntity || candidates[0].key !== `${appId},${keys.authorizedEntity}`) throw fault('X_CHROME_SNAPSHOT_INVALID');
+        const isBrave = selected.productCategory === 'com.brave.windows';
         const file = normalizeChromeTransfer({ format: 'x-notification-subscription', version: 2,
-            provenance: { kind: 'chrome-gcm', adapterVersion: '1.0.0', browserVersion, readMethod: 'chrome-gcm-snapshot' },
+            provenance: isBrave ? { kind: 'brave-gcm', adapterVersion: '1.0.0', browserVersion, engineVersion, readMethod: 'brave-gcm-snapshot' }
+                : { kind: 'chrome-gcm', adapterVersion: '1.0.0', browserVersion, readMethod: 'chrome-gcm-snapshot' },
             push: { deviceId, securityToken, appId, productCategory: selected.productCategory,
                 authorizedEntity: keys.authorizedEntity, scope: 'https://x.com/', p256dhPublicKey: subscription.keys.p256dh,
                 authenticationSecret: subscription.keys.auth, p256dhPrivateKey: keys.privateKey } });

@@ -20,7 +20,11 @@ export interface ChromeTransferFile {
         scope: 'https://x.com/'; p256dhPublicKey: string; authenticationSecret: string;
         p256dhPrivateKey: { kty: 'EC'; crv: 'P-256'; x: string; y: string; d: string } };
 }
-export type TransferFile = FirefoxTransferFile | ChromeTransferFile;
+export interface BraveTransferFile extends Omit<ChromeTransferFile, 'provenance' | 'push'> {
+    provenance: { kind: 'brave-gcm'; adapterVersion: '1.0.0'; browserVersion: string; engineVersion: string; readMethod: 'brave-gcm-snapshot' };
+    push: Omit<ChromeTransferFile['push'], 'productCategory'> & { productCategory: 'com.brave.windows' };
+}
+export type TransferFile = FirefoxTransferFile | ChromeTransferFile | BraveTransferFile;
 export interface TransferIdentity { uaidHash: string; channelHash: string; contentHash: string }
 export interface TransferContext { subscriptionId: string; ownerUserId: string; revision: number }
 export interface TransferVaultOptions { activeKeyId: string; keys: Record<string, Buffer> | Map<string, Buffer> }

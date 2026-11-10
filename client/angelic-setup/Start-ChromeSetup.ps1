@@ -4,8 +4,11 @@ X通知用ファイルを作る画面です。設定用Chromeを開いて通知�
 「通知データを保存」を押すと、このPCのファイルを作成します。
 ファイルをWeb画面にアップロードする操作は、ご本人が行います。
 #>
+param([ValidateSet('chrome','brave')][string] $Browser='chrome')
 Set-StrictMode -Version 2.0
 $ErrorActionPreference='Stop'
+$Browser=$Browser.ToLowerInvariant()
+$script:BrowserLabel=if ($Browser -ceq 'brave') { 'Brave' } else { 'Chrome' }
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 [Windows.Forms.Application]::EnableVisualStyles()
@@ -21,7 +24,7 @@ function Invoke-ChromeSetup([string]$Action,[string]$OutputPath='') {
     $info=New-Object Diagnostics.ProcessStartInfo
     $info.FileName=[IO.Path]::Combine($env:SystemRoot,'System32','WindowsPowerShell','v1.0','powershell.exe')
     $args=@('-NoLogo','-NoProfile','-NonInteractive','-STA','-ExecutionPolicy','Bypass','-File',
-        [IO.Path]::Combine($script:Root,'ChromeSetup.ps1'),'-Action',$Action)
+        [IO.Path]::Combine($script:Root,'ChromeSetup.ps1'),'-Action',$Action,'-Browser',$Browser)
     if ($Action -eq 'Export') { $args+=@('-OutputPath',$OutputPath,'-PromptForOtherNotifications') }
     $info.Arguments=($args | ForEach-Object { Quote-Argument $_ }) -join ' '
     $info.UseShellExecute=$false; $info.CreateNoWindow=$true
@@ -57,18 +60,19 @@ $script:Form=New-Object Windows.Forms.Form
 $script:Form.Text='X通知の準備'; $script:Form.StartPosition='CenterScreen'; $script:Form.ClientSize=New-Object Drawing.Size(540,410)
 $script:Form.MinimumSize=New-Object Drawing.Size(556,449); $script:Form.MaximizeBox=$false
 $script:Form.Font=New-Object Drawing.Font('Yu Gothic UI',10)
-$heading=New-Object Windows.Forms.Label; $heading.Text='ChromeでX通知を準備'; $heading.AutoSize=$true
+$heading=New-Object Windows.Forms.Label; $heading.Text=$script:BrowserLabel+'でX通知を準備'; $heading.AutoSize=$true
 $heading.Font=New-Object Drawing.Font('Yu Gothic UI',15,[Drawing.FontStyle]::Bold); $heading.Location=New-Object Drawing.Point(22,20)
 $script:Form.Controls.Add($heading)
 $description=New-Object Windows.Forms.Label; $description.Location=New-Object Drawing.Point(25,64); $description.Size=New-Object Drawing.Size(480,82)
-$description.Text="1. 設定用ChromeでXにログインします。`r`n2. 監視したいアカウントの投稿通知とブラウザー通知をオンにします。`r`n3. 通知データを保存し、Webの登録画面でファイルを選びます。"
+$description.Text="1. 設定用$($script:BrowserLabel)でXにログインします。`r`n2. 監視したいアカウントの投稿通知とブラウザー通知をオンにします。`r`n3. 通知データを保存し、Webの登録画面でファイルを選びます。"
+if ($Browser -ceq 'brave') { $description.Text+="`r`n専用設定でGoogleの通知サービスを利用します。" }
 $script:Form.Controls.Add($description)
-$script:OpenButton=New-Object Windows.Forms.Button; $script:OpenButton.Text='設定用Chromeを開く'; $script:OpenButton.Location=New-Object Drawing.Point(25,154); $script:OpenButton.Size=New-Object Drawing.Size(240,42)
+$script:OpenButton=New-Object Windows.Forms.Button; $script:OpenButton.Text='設定用'+$script:BrowserLabel+'を開く'; $script:OpenButton.Location=New-Object Drawing.Point(25,154); $script:OpenButton.Size=New-Object Drawing.Size(240,42)
 $script:Form.Controls.Add($script:OpenButton)
 $script:SaveButton=New-Object Windows.Forms.Button; $script:SaveButton.Text='通知データを保存'; $script:SaveButton.Location=New-Object Drawing.Point(25,211); $script:SaveButton.Size=New-Object Drawing.Size(240,42)
 $script:Form.Controls.Add($script:SaveButton)
 $hint=New-Object Windows.Forms.Label; $hint.Location=New-Object Drawing.Point(25,270); $hint.Size=New-Object Drawing.Size(475,66)
-$hint.Text="保存すると設定用Chromeが閉じます。`r`nファイルは登録画面でのみ使用してください。`r`nChromeを開き直した後も、保存して登録してください。"
+$hint.Text="保存すると設定用$($script:BrowserLabel)が閉じます。`r`nファイルは登録画面でのみ使用してください。`r`n開き直した後も、保存して登録してください。"
 $script:Form.Controls.Add($hint)
 $script:Status=New-Object Windows.Forms.Label; $script:Status.Location=New-Object Drawing.Point(25,349); $script:Status.Size=New-Object Drawing.Size(475,40)
 $script:Form.Controls.Add($script:Status)
@@ -86,7 +90,7 @@ $script:SaveButton.Add_Click({
         $target=$dialog.FileName
         if ([IO.File]::Exists($target)) { Show-Error '新しいファイル名を選んでください。'; return }
     } finally { $dialog.Dispose() }
-    $confirm=[Windows.Forms.MessageBox]::Show($script:Form,'設定用Chromeを閉じて、通知データを保存します。続けますか？','X通知の準備',
+    $confirm=[Windows.Forms.MessageBox]::Show($script:Form,('設定用'+$script:BrowserLabel+'を閉じて、通知データを保存します。続けますか？'),'X通知の準備',
         [Windows.Forms.MessageBoxButtons]::YesNo,[Windows.Forms.MessageBoxIcon]::Information,[Windows.Forms.MessageBoxDefaultButton]::Button2)
     if ($confirm -ne [Windows.Forms.DialogResult]::Yes) { return }
     Set-Busy $true

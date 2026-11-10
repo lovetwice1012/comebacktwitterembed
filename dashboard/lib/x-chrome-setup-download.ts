@@ -9,8 +9,8 @@ import { repoRoot } from "@/lib/env";
 export const X_CHROME_SETUP_DOWNLOAD = Object.freeze({
   version: "0.1.0-chrome-preview.1",
   filename: "chrome-setup-0.1.0-chrome-preview.1.zip",
-  sha256: "a7af147f8f910d14445825941ee7b7ac06873df1a49e963ad0bbc793fd284b97",
-  bytes: 35923611,
+  sha256: "5714030bc7dddd8d892640b2f104900bf304e9b75fd0c868d20124819544077c",
+  bytes: 35925419,
   href: "/api/automation/x-setup/download-chrome",
 });
 

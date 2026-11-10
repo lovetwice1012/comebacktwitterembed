@@ -10,7 +10,7 @@ const ROOT = path.resolve(__dirname, '..'), SOURCE = path.join(ROOT, 'client', '
 const VERSION = '0.1.0-chrome-preview.1';
 const SOURCES = Object.freeze({ 'ChromeSetup.ps1': 'ChromeSetup.ps1', 'Start-ChromeSetup.ps1': 'Start-ChromeSetup.ps1',
     'ChromeSnapshot.ps1': 'ChromeSnapshot.ps1', 'NativeSetup.ps1': 'FirefoxReader.ps1',
-    'はじめに.txt': 'Chrome-はじめに.txt', 'Chromeで開始.cmd': 'Chromeで開始.cmd', LICENSE: 'LICENSE' });
+    'はじめに.txt': 'Chrome-はじめに.txt', 'Chromeで開始.cmd': 'Chromeで開始.cmd', 'Braveで開始.cmd': 'Braveで開始.cmd', LICENSE: 'LICENSE' });
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
 
 async function readFile(filename, limit) {

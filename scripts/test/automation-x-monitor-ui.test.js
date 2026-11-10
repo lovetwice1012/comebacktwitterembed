@@ -792,7 +792,7 @@ test('a new X target requires its own browser notification acknowledgement even 
     const f = await fixture({ compact: true, items: [], currentQuota: current, respond: route => route === 'x-setup' ? setup({ subscriptions: [subscription({ receiverState: 'listening' })] }) : undefined });
     try {
         await f.click('X監視を追加'); await f.fill(f.field('Xアカウント名'), 'new_author'); await f.fill(f.field('使用する自分の受信情報'), SUBSCRIPTION_ID);
-        const guide = f.form().querySelector('[aria-label="設定用ブラウザーで対象アカウントの通知を設定"]'); assert.match(guide.textContent, /設定用ブラウザーで @new_author の投稿通知をON/); assert.match(guide.textContent, /ブラウザー通知を許可.*投稿通知ベルをON/); assert.match(guide.textContent, /X側の設定と、この画面での登録が両方必要/); assert.match(guide.textContent, /登録済みの接続を使う場合も.*アカウントごと/); assert.match(guide.textContent, /設定用Chromeのプッシュ通知はサーバー側で受信.*もう一度登録/);
+        const guide = f.form().querySelector('[aria-label="設定用ブラウザーで対象アカウントの通知を設定"]'); assert.match(guide.textContent, /設定用ブラウザーで @new_author の投稿通知をON/); assert.match(guide.textContent, /ブラウザー通知を許可.*投稿通知ベルをON/); assert.match(guide.textContent, /X側の設定と、この画面での登録が両方必要/); assert.match(guide.textContent, /登録済みの接続を使う場合も.*アカウントごと/); assert.match(guide.textContent, /設定用Chrome・Braveのプッシュ通知はサーバー側で受信.*もう一度登録/);
         await f.submitX(false); assert.equal(writes(f).length, 0); assert.equal(f.container.querySelector('[aria-label="X監視の変更確認"]'), null);
         await f.act(async () => f.form().querySelector('.nx-firefox-ack input').click()); await f.submitX(false); assert(f.container.querySelector('[aria-label="X監視の変更確認"]'));
         await f.fill(f.field('Xアカウント名'), 'other_author'); assert.equal(f.form().querySelector('.nx-firefox-ack input').checked, false); await f.submitX(false); assert.equal(writes(f).length, 0);

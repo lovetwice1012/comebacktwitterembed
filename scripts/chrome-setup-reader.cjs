@@ -15,13 +15,13 @@ async function main() {
     }
     const input = parseUniqueJson(Buffer.concat(chunks).toString('utf8'));
     if (!input || typeof input !== 'object' || Array.isArray(input)
-        || Object.keys(input).sort().join(',') !== 'browserVersion,profileKey,snapshotPath,subscription,token'
+        || !['browserVersion,profileKey,snapshotPath,subscription,token', 'browserVersion,engineVersion,profileKey,snapshotPath,subscription,token'].includes(Object.keys(input).sort().join(','))
         || typeof input.profileKey !== 'string' || !/^[A-Za-z0-9_-]{43}$/.test(input.profileKey)) throw new Error('X_CHROME_READER_INPUT_INVALID');
     const profileKey = Buffer.from(input.profileKey, 'base64url');
     if (profileKey.length !== 32 || profileKey.toString('base64url') !== input.profileKey) throw new Error('X_CHROME_READER_INPUT_INVALID');
     try {
         const result = await readChromeSnapshot({ snapshotPath: input.snapshotPath, token: input.token,
-            subscription: input.subscription, browserVersion: input.browserVersion,
+            subscription: input.subscription, browserVersion: input.browserVersion, engineVersion: input.engineVersion,
             unprotect: async () => Buffer.from(profileKey), parseJson: text => parseUniqueJson(text, 64),
             dbFactory: location => new ClassicLevel(location, { createIfMissing: false, keyEncoding: 'utf8', valueEncoding: 'buffer' }) });
         process.stdout.write(JSON.stringify({ ok: true, ...result }));

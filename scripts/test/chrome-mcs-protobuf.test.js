@@ -40,7 +40,11 @@ test('only the selected app is decoded and unrelated data is discarded', () => {
     assert.deepEqual(result.rawData, Buffer.from([1, 2])); assert.deepEqual({ ...result.headers }, { 'content-encoding': 'aes128gcm' });
     assert.throws(() => mcs.dataMessage(Buffer.concat([msg, entry('content-encoding', 'aesgcm')]), expected), /X_CHROME_MCS_PROTO_INVALID/);
     assert.throws(() => mcs.dataMessage(Buffer.concat([msg, entry('subtype', 'another')]), expected), /X_CHROME_MCS_PROTO_INVALID/);
-    assert.throws(() => mcs.dataMessage(Buffer.concat([msg, entry('message_type', 'deleted_messages')]), expected), /X_CHROME_MCS_PROTO_INVALID/);
+    assert.deepEqual(mcs.dataMessage(Buffer.concat([msg, entry('message_type', 'deleted_messages')]), expected),
+        { matches: true, control: 'deleted_messages', persistentId: 'persist' });
+    assert.deepEqual(mcs.dataMessage(Buffer.concat([msg, entry('message_type', 'send_error')]), expected),
+        { matches: true, control: 'send_error', persistentId: 'persist' });
+    assert.throws(() => mcs.dataMessage(Buffer.concat([msg, entry('message_type', 'future_unknown')]), expected), /X_CHROME_MCS_PROTO_INVALID/);
 });
 
 test('selective acknowledgment uses MCS IQ extension 12', () => {

@@ -255,9 +255,9 @@ function XMonitorEditor({ api, active, allowSetup, subscriptionsVersion, destina
       <p className="nx-field-note">通知を受け取りたい相手の現在の@ユーザー名を入力してください。</p>
       {!current ? <section aria-label="設定用ブラウザーで対象アカウントの通知を設定" className="nx-firefox-target-step">
         <h3>設定用ブラウザーで{validHandle ? ` @${draft.accountHandle} の` : "対象アカウントの"}投稿通知をON</h3>
-        {selectedBrowser ? <p className="nx-field-note">選択中の受信情報：{selectedBrowser === "chrome" ? "Chrome" : "Firefox"}</p> : null}
+        {selectedBrowser ? <p className="nx-field-note">選択中の受信情報：{selectedBrowser === "brave" ? "Brave" : selectedBrowser === "chrome" ? "Chrome" : "Firefox"}</p> : null}
         <p>保存ツールで開いた設定用ブラウザーで、ブラウザー通知を許可し、対象プロフィールの投稿通知ベルをONにしてください。X側の設定と、この画面での登録が両方必要です。</p>
-        <p className="nx-field-note">登録済みの接続を使う場合も、追加するアカウントごとに設定します。設定用Chromeのプッシュ通知はサーバー側で受信します。設定後は通知データを保存し、「ブラウザーの準備手順」からもう一度登録してください。</p>
+        <p className="nx-field-note">登録済みの接続を使う場合も、追加するアカウントごとに設定します。設定用Chrome・Braveのプッシュ通知はサーバー側で受信します。設定後は通知データを保存し、「ブラウザーの準備手順」からもう一度登録してください。</p>
         <div className="nx-actions"><button type="button" className={button} disabled={!validHandle || busy || !active} onClick={async () => {
           try { await navigator.clipboard.writeText(`https://x.com/${draft.accountHandle}`); if (mounted.current && activeRef.current) setProfileCopyMessage("プロフィールURLをコピーしました。"); }
           catch { if (mounted.current && activeRef.current) setProfileCopyMessage(`設定用ブラウザーで https://x.com/${draft.accountHandle} を開いてください。`); }
@@ -288,7 +288,7 @@ function XMonitorEditor({ api, active, allowSetup, subscriptionsVersion, destina
       {newRealtime && realtimeQuoteReady && registrationQuote?.realtimeSlotCost === 5 ? <p className="nx-slot-consent">個人枠を合計5枠使用します。通常の1枠に加えて4枠を確保します。</p> : null}
       {processingQuoteStale ? <p role="alert" className="nx-feedback">必要な枠数を再確認してください。<button type="button" className={button} disabled={busy || loading || !active} onClick={() => { setReview(null); void load(); }}>枠数を再確認</button></p> : null}
       {allowSetup ? <fieldset disabled={busy || !active} className="nx-editor-section"><legend>接続設定</legend>
-        <label className="text-sm">使用する自分の受信情報<select className={field} disabled={!setup?.available || loading} value={draft.subscriptionId} onChange={event => update("subscriptionId", event.target.value)}><option value="">受信情報を選択</option>{draft.subscriptionId && !setup?.subscriptions.some(item => item.id === draft.subscriptionId) ? <option value={draft.subscriptionId} disabled>現在の受信情報（一覧を確認）</option> : null}{setup?.subscriptions.map((item, index) => <option key={item.id} value={item.id}>受信情報 {index + 1} · {item.browserKind === "chrome" ? "Chrome" : "Firefox"} · {xReceiverLabel(item.receiverState)}</option>)}</select></label>
+        <label className="text-sm">使用する自分の受信情報<select className={field} disabled={!setup?.available || loading} value={draft.subscriptionId} onChange={event => update("subscriptionId", event.target.value)}><option value="">受信情報を選択</option>{draft.subscriptionId && !setup?.subscriptions.some(item => item.id === draft.subscriptionId) ? <option value={draft.subscriptionId} disabled>現在の受信情報（一覧を確認）</option> : null}{setup?.subscriptions.map((item, index) => <option key={item.id} value={item.id}>受信情報 {index + 1} · {item.browserKind === "brave" ? "Brave" : item.browserKind === "chrome" ? "Chrome" : "Firefox"} · {xReceiverLabel(item.receiverState)}</option>)}</select></label>
         <button type="button" className={button} onClick={() => setSetupOpen(true)}>PCの通知データを登録</button>
         {setup?.nextCursor ? <button type="button" className={button} disabled={busy || loading || !active} onClick={() => void mutate(async () => { const next = parseXSetupStatus(await api(`x-setup?afterId=${encodeURIComponent(setup.nextCursor ?? "")}`)); if (mounted.current && activeRef.current) setSetup(previous => previous ? { ...next, subscriptions: [...previous.subscriptions, ...next.subscriptions.filter(item => !previous.subscriptions.some(row => row.id === item.id))] } : next); })}>受信情報の候補をさらに表示</button> : null}
       </fieldset> : null}

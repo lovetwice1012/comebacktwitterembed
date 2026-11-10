@@ -21,7 +21,7 @@ async function main() {
         const sealer = createTransferPublicSealer({ activeKeyId: 'fixture', publicKeys: { fixture: keys.publicKey } });
         const vault = createTransferPrivateWorkerVault({ activeKeyId: 'fixture', privateKeys: { fixture: keys.privateKey } });
         const actor = { userId: '222222222222222222' }, admin = { userId: '666666666666666666', isAdmin: true };
-        const setup = createXSetup(db, { sealer, chromeEnabled: true, receiverEnabled: true, rolloutMode: 'public' });
+        const setup = createXSetup(db, { sealer, chromeEnabled: true, braveEnabled: file.provenance.kind === 'brave-gcm', receiverEnabled: true, rolloutMode: 'public' });
         const session = await setup.startSession(actor, { consent: true });
         const saved = await setup.importFile(actor, { sessionId: session.sessionId, fileText: JSON.stringify(file), consent: true });
         await db.withDatabaseTransaction(query => entitlements.savePlanPolicy(query, admin,
@@ -30,7 +30,7 @@ async function main() {
         const monitor = await db.queryDatabase("INSERT INTO automation_x_monitors (owner_user_id,account_id,account_handle,name,enabled,state,pool_kind,notification_settings_json,subscription_state,revision,created_at_ms,updated_at_ms) VALUES (?,'12345','synthetic','fixture',1,'ready','free',?,'bound',1,?,?)",
             [actor.userId, JSON.stringify({ subscriptionId: saved.subscription.id }), now, now]);
         await db.withDatabaseTransaction(query => entitlements.assignSlot(query, actor.userId, 'x', String(monitor.insertId)));
-        await checkin({ deviceId: file.push.deviceId, securityToken: file.push.securityToken, browserVersion: file.provenance.browserVersion });
+        await checkin({ deviceId: file.push.deviceId, securityToken: file.push.securityToken, browserVersion: file.provenance.engineVersion || file.provenance.browserVersion });
         const gateway = createXPushGateway(db, { enabled: true, chromeEnabled: true, privateWorkerVault: vault,
             rolloutMode: 'public', requestTimeoutMs: 15000, leaseMs: 300000 });
         const queue = createQueue(db, {}, { rolloutMode: 'public' });

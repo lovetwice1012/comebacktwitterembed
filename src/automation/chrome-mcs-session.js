@@ -79,6 +79,15 @@ function createChromeMcsSession({ credentials, route, store, send, onReceipt = (
             }
             const message = protocol.dataMessage(frame.payload, route);
             if (!message.matches) { await acknowledge(7); return { state: 'discarded' }; }
+            if (message.control) {
+                if (typeof store.control !== 'function') throw error('X_CHROME_SESSION_CONTROL_UNAVAILABLE');
+                // The audit and replay ID commit before the stream ACK. No
+                // control data is passed to the notification router.
+                await store.control(message);
+                if (message.persistentId) unacknowledged.push(message.persistentId);
+                await acknowledge(7);
+                return { state: 'provider_control', kind: message.control };
+            }
             if (!message.persistentId) throw error('X_CHROME_SESSION_ID_MISSING');
             const encrypted = protocol.encryptedPayload(message);
             // commit must atomically persist both ciphertext and replay ID and

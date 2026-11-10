@@ -56,7 +56,7 @@ async function verifyLeveldb(directory, allowEncryptionDirectory) {
         if (stat.size > 64 * 1024 * 1024 || total > 128 * 1024 * 1024) throw fault('X_CHROME_SNAPSHOT_INVALID');
     }
 }
-async function readChromeSnapshot({ snapshotPath, token, subscription, browserVersion, dbFactory, unprotect, parseJson }) {
+async function readChromeSnapshot({ snapshotPath, token, subscription, browserVersion, engineVersion, dbFactory, unprotect, parseJson }) {
     let deviceStore, encryptionStore, key;
     try {
         if (typeof snapshotPath !== 'string' || !path.isAbsolute(snapshotPath) || !/^[0-9a-f]{32}$/.test(token)
@@ -92,7 +92,7 @@ async function readChromeSnapshot({ snapshotPath, token, subscription, browserVe
             if (records.length >= 4) throw fault('X_CHROME_SNAPSHOT_AMBIGUOUS');
             records.push({ key: recordKey, value });
         }
-        return buildChromeTransfer({ preferences, subscription, records, deviceId, securityToken, browserVersion });
+        return buildChromeTransfer({ preferences, subscription, records, deviceId, securityToken, browserVersion, engineVersion });
     } catch (error) {
         const code = typeof error?.code === 'string' && /^X_CHROME_SNAPSHOT_[A-Z_]+$/.test(error.code)
             ? error.code : 'X_CHROME_SNAPSHOT_INVALID';

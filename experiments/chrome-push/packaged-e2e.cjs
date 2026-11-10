@@ -13,12 +13,40 @@ const CDP = require('chrome-remote-interface');
 const { parseTransferFile } = require('../../src/automation/x-setup-transfer');
 
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
-const chrome = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
+const testBrowser = process.env.CHROMIUM_PROBE_BROWSER === 'brave' ? 'brave' : 'chrome';
+const chrome = testBrowser === 'brave' ? 'C:\\Program Files\\BraveSoftware\\Brave-Browser\\Application\\brave.exe'
+    : 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
 const powershell = path.join(process.env.SystemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
 async function removeOwnedFixture(root, temp) {
     const actual = await fs.realpath(root);
     if (path.dirname(actual).toLowerCase() !== temp.toLowerCase() || !/^cbte-chrome-full-e2e-[A-Za-z0-9]+$/.test(path.basename(actual))) throw new Error('FIXTURE_CLEANUP_INVALID');
     await fs.rm(actual, { recursive: true });
+}
+async function stopOwnedBrokers(root) {
+    const launchDir = path.join(root, 'owned', 'launches'), bundleExe = path.join(root, 'bundle', 'ChromeNode.exe');
+    let names;
+    try { names = await fs.readdir(launchDir); } catch (error) { if (error.code === 'ENOENT') return; throw error; }
+    const cleanup = `$p=Get-Process -Id ([int]$env:CBTE_FIXTURE_PID) -ErrorAction SilentlyContinue
+if ($null -ne $p) {
+  try {
+    $started=[DateTime]::Parse($env:CBTE_FIXTURE_STARTED).ToUniversalTime()
+    # A finished broker's PID may already belong to an unrelated process.
+    if ([IO.Path]::GetFullPath($p.Path) -ine [IO.Path]::GetFullPath($env:CBTE_FIXTURE_EXE) -or $p.StartTime.ToUniversalTime().Ticks -ne $started.Ticks) { return }
+    & "$env:SystemRoot\\System32\\taskkill.exe" /PID $p.Id /T /F | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw 'Fixture stop failed' }
+  } finally { $p.Dispose() }
+}
+exit 0`;
+    for (const name of names) {
+        if (!/^launch-[0-9a-f-]{36}\.json$/.test(name)) throw new Error('FIXTURE_LAUNCH_INVALID');
+        const launch = JSON.parse(await fs.readFile(path.join(launchDir, name), 'utf8'));
+        if (!Number.isInteger(launch.pid) || launch.pid < 1 || typeof launch.processStartedUtc !== 'string') throw new Error('FIXTURE_LAUNCH_INVALID');
+        const result = spawnSync(powershell, ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(cleanup, 'utf16le').toString('base64')], {
+            windowsHide: true, timeout: 20000, encoding: 'utf8', env: { ...process.env, CBTE_FIXTURE_PID: String(launch.pid),
+                CBTE_FIXTURE_STARTED: launch.processStartedUtc, CBTE_FIXTURE_EXE: bundleExe },
+        });
+        if (result.status !== 0) throw new Error(`FIXTURE_BROKER_CLEANUP_FAILED: ${result.error?.code || result.status}: ${(result.stderr || '').slice(-3000)}`);
+    }
 }
 const python = `from cryptography import x509
 from cryptography.x509.oid import NameOID
@@ -50,7 +78,7 @@ async function main() {
             // the browser's separate lifecycle to close a pipe.
             const name = require('node:crypto').randomUUID(), outPath = path.join(root, `${name}.out`), errPath = path.join(root, `${name}.err`);
             const out = syncFs.openSync(outPath, 'wx'), err = syncFs.openSync(errPath, 'wx'); let result;
-            try { result = spawnSync(powershell, ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', core, ...args],
+            try { result = spawnSync(powershell, ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', core, '-Browser', testBrowser, ...args],
                 { windowsHide: true, timeout: 40000, stdio: ['ignore', out, err] }); }
             finally { syncFs.closeSync(out); syncFs.closeSync(err); }
             if (result.error) throw result.error;
@@ -165,6 +193,7 @@ async function main() {
             console.log(JSON.stringify({ separateProcessDebuggerAccessBlocked: true }));
         }
         await openPrivateBrowser();
+        if (process.env.CHROME_FIXTURE_FORCE_FAILURE === '1') throw new Error('FIXTURE_FORCED_FAILURE');
         let exportStart = Date.now();
         let exported = invoke(['-Action', 'Export', '-PrivateRoot', owned, '-OutputPath', output]);
         if (process.env.CHROME_FIXTURE_DIAGNOSTIC === '1') console.log(JSON.stringify({ exportMs: Date.now() - exportStart }));
@@ -185,7 +214,7 @@ async function main() {
             throw new Error(code);
         }
         const result = parseTransferFile(await fs.readFile(output, 'utf8'));
-        if (result.version !== 2 || result.push.p256dhPublicKey !== value.result.value.keys.p256dh
+        if (result.version !== 2 || result.provenance.kind !== (testBrowser === 'brave' ? 'brave-gcm' : 'chrome-gcm') || result.push.p256dhPublicKey !== value.result.value.keys.p256dh
             || result.push.authenticationSecret !== value.result.value.keys.auth) throw new Error('FIXTURE_OUTPUT_MISMATCH');
         console.log(JSON.stringify({ packagedChromeExport: true, actualLevelDb: true, separateProfile: true, noExternalUpload: true }));
         if (process.env.CHROME_FIXTURE_LINUX === '1') {
@@ -194,7 +223,9 @@ async function main() {
             const withDb = process.env.CHROME_FIXTURE_LINUX_DB === '1';
             const probePath = withDb ? '/tmp/cbte-linux-worker/experiments/chrome-push/linux-worker-fixture.cjs'
                 : '/tmp/cbte-saved-control/experiments/chrome-push/linux-mcs-fixture.cjs';
-            const probe = spawn('wsl.exe', ['-d', 'cbte-chrome-compat-20261110', '-u', 'root', '--exec', '/usr/bin/node', probePath],
+            const distro = process.env.CHROME_FIXTURE_LINUX_DISTRO || 'cbte-chrome-compat-20261110';
+            if (!/^cbte-[a-z0-9-]+$/.test(distro)) throw new Error('FIXTURE_LINUX_DISTRO_INVALID');
+            const probe = spawn('wsl.exe', ['-d', distro, '-u', 'root', '--exec', '/usr/bin/node', probePath],
                 { windowsHide: true, stdio: ['pipe', 'pipe', 'ignore'] });
             let outputText = '', readyResolve, readyReject, exitResolve;
             const ready = new Promise((resolve, reject) => { readyResolve = resolve; readyReject = reject; });
@@ -210,7 +241,7 @@ async function main() {
             const timer = setTimeout(() => { probe.kill(); readyReject(new Error('FIXTURE_LINUX_TIMEOUT')); }, 45000);
             try {
                 probe.stdin.end(JSON.stringify(withDb ? result : { credentials: { deviceId: result.push.deviceId, securityToken: result.push.securityToken,
-                    clientVersion: result.provenance.browserVersion }, route: { expectedCategory: result.push.productCategory,
+                    clientVersion: result.provenance.engineVersion || result.provenance.browserVersion }, route: { expectedCategory: result.push.productCategory,
                     expectedAppId: result.push.appId, expectedSender: result.push.authorizedEntity } }));
                 await ready;
                 await webpush.sendNotification(value.result.value, JSON.stringify({ notificationType: 'tweet', text: 'linux-synthetic',
@@ -224,7 +255,7 @@ async function main() {
         if (process.env.CHROME_FIXTURE_CHECKIN === '1') {
             const { checkin } = require('../../src/automation/chrome-checkin');
             const checked = await checkin({ deviceId: result.push.deviceId, securityToken: result.push.securityToken,
-                browserVersion: result.provenance.browserVersion });
+                browserVersion: result.provenance.engineVersion || result.provenance.browserVersion });
             console.log(JSON.stringify({ syntheticDeviceCheckin: true, realGoogleCheckin: true, intervalSeconds: checked.intervalSeconds }));
         }
         if (process.env.CHROME_FIXTURE_MYSQL_PORT) {
@@ -237,7 +268,7 @@ async function main() {
             const keys = generateKeyPairSync('rsa', { modulusLength: 3072 });
             const sealer = createTransferPublicSealer({ activeKeyId: 'fixture', publicKeys: { fixture: keys.publicKey } });
             const vault = createTransferPrivateWorkerVault({ activeKeyId: 'fixture', privateKeys: { fixture: keys.privateKey } });
-            const setup = createXSetup(testDb, { sealer, chromeEnabled: true, receiverEnabled: true, rolloutMode: 'public' });
+            const setup = createXSetup(testDb, { sealer, chromeEnabled: true, braveEnabled: testBrowser === 'brave', receiverEnabled: true, rolloutMode: 'public' });
             const actor = { userId: '222222222222222222' }, session = await setup.startSession(actor, { consent: true });
             const fileText = await fs.readFile(output, 'utf8');
             const preview = await setup.validate(actor, { sessionId: session.sessionId, fileText });
@@ -394,6 +425,7 @@ async function main() {
     } finally {
         await cdp?.close().catch(() => {});
         if (child && child.exitCode === null) { child.kill(); await new Promise(resolve => child.once('exit', resolve)); }
+        await stopOwnedBrokers(root);
         if (server) await new Promise(resolve => server.close(resolve));
         await testDb?.close();
         await removeOwnedFixture(root, temp);

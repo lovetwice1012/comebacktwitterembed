@@ -123,3 +123,59 @@ test('check-in update rolls back when its lease expires before commit', async ()
     const row = (await db.queryDatabase('SELECT chrome_checkin_at_ms,chrome_checkin_interval_seconds,chrome_checkin_revision FROM automation_x_push_receivers WHERE subscription_id=?', [sub.subscriptionId]))[0];
     assert.equal(row.chrome_checkin_at_ms, null); assert.equal(row.chrome_checkin_interval_seconds, null); assert.equal(row.chrome_checkin_revision, null);
 }));
+test('provider control notices are durable, owner-scoped, deduplicated and never create an inbox payload', async () => setup(async db => {
+    const sub = await insertSubscription(db), store = createXPushStore(db);
+    let lease = await store.claim({ ...sub, workerId: 'control-one' });
+    const notice = { kind: 'deleted_messages', persistentId: 'provider-loss-1' };
+    assert.deepEqual(await store.recordMcsControl(lease, notice), { duplicate: false });
+    assert.deepEqual(await store.pendingMcs(lease), ['provider-loss-1']);
+    assert.equal((await db.queryDatabase('SELECT * FROM automation_x_push_inbox')).length, 0);
+    const audit = await db.queryDatabase("SELECT * FROM automation_audit WHERE action='x.push.provider.deleted_messages'");
+    assert.equal(audit.length, 1); assert(!JSON.stringify(audit).includes('provider-loss-1'));
+    const status = await require('../../src/automation/x-setup').createXSetup(db, { sealer: null, rolloutMode: 'public' }).status({ userId: sub.ownerUserId });
+    assert.equal(status.subscriptions[0].lastProviderLossAtMs, Number(audit[0].created_at_ms));
+    const other = await require('../../src/automation/x-setup').createXSetup(db, { sealer: null, rolloutMode: 'public' }).status({ userId: '333333333333333333' });
+    assert.deepEqual(other.subscriptions, []);
+    await assert.rejects(store.recordMcsControl({ ...lease, ownerUserId: '333333333333333333' }, notice), { code: 'X_PUSH_SUBSCRIPTION_NOT_FOUND' });
+    await assert.rejects(store.recordMcsFrame(lease, frame('provider-loss-1')), { code: 'X_PUSH_MCS_ID_CONFLICT' });
+    await store.release(lease); lease = await store.claim({ ...sub, workerId: 'control-two' });
+    assert.deepEqual(await store.pendingMcs(lease), ['provider-loss-1']);
+    assert.deepEqual(await store.recordMcsControl(lease, notice), { duplicate: true });
+    await store.confirmMcs(lease, ['provider-loss-1']);
+    assert.deepEqual(await store.recordMcsControl(lease, notice), { duplicate: true });
+    assert.equal((await db.queryDatabase("SELECT id FROM automation_audit WHERE action='x.push.provider.deleted_messages'")).length, 1);
+    await assert.rejects(store.recordMcsControl(lease, { ...notice, kind: 'send_error' }), { code: 'X_PUSH_MCS_ID_CONFLICT' });
+    await assert.rejects(store.recordMcsFrame(lease, frame('provider-loss-1')), { code: 'X_PUSH_MCS_ID_CONFLICT' });
+    await store.recordMcsControl(lease, { kind: 'send_error', persistentId: null });
+    assert.equal((await db.queryDatabase("SELECT id FROM automation_audit WHERE action='x.push.provider.send_error'")).length, 1);
+}));
+test('provider control audit failure rolls back the pending acknowledgment', async () => setup(async db => {
+    const sub = await insertSubscription(db), store = createXPushStore(db), lease = await store.claim({ ...sub, workerId: 'control-failure' });
+    const failing = { queryDatabase: db.queryDatabase, withDatabaseTransaction: work => db.withDatabaseTransaction(query => work(async (sql, params) => {
+        if (sql.startsWith('INSERT INTO automation_audit')) throw new Error('synthetic audit failure');
+        return query(sql, params);
+    })) };
+    await assert.rejects(createXPushStore(failing).recordMcsControl(lease, { kind: 'deleted_messages', persistentId: 'loss-rollback' }),
+        { code: 'X_PUSH_STORE_UNAVAILABLE' });
+    assert.deepEqual(await store.pendingMcs(lease), []);
+    assert.equal((await db.queryDatabase("SELECT id FROM automation_audit WHERE action='x.push.provider.deleted_messages'")).length, 0);
+}));
+test('control pending migration is repeatable and preserves prior receipts', async () => setup(async db => {
+    const sub = await insertSubscription(db), store = createXPushStore(db), lease = await store.claim({ ...sub, workerId: 'control-migration' });
+    const old = await store.recordFrame(lease, frame('legacy-receipt'));
+    const existing = await store.recordMcsFrame(lease, frame('existing-pending'));
+    await db.queryDatabase('ALTER TABLE automation_x_mcs_pending MODIFY COLUMN inbox_id BIGINT UNSIGNED NOT NULL');
+    const migration = readFileSync(path.resolve(__dirname, '../../migrations/20261110_allow_chrome_mcs_control_pending.sql'), 'utf8');
+    const statements = migration.replace(/^--.*$/gm, '').split(';').map(s => s.trim()).filter(Boolean);
+    for (let i = 0; i < 2; i++) for (const statement of statements) await db.queryDatabase(statement);
+    await store.recordMcsControl(lease, { kind: 'deleted_messages', persistentId: 'control-after-migration' });
+    assert.equal((await store.getInbox({ ...sub, id: old.id })).version, 'legacy-receipt');
+    assert.equal((await store.getInbox({ ...sub, id: existing.id })).version, 'existing-pending');
+    assert((await store.pendingMcs(lease)).includes('existing-pending'));
+    await assert.rejects(db.queryDatabase('ALTER TABLE automation_x_mcs_pending MODIFY COLUMN inbox_id BIGINT UNSIGNED NOT NULL'));
+    assert((await store.pendingMcs(lease)).includes('control-after-migration'));
+    await store.confirmMcs(lease, ['control-after-migration']);
+    await db.queryDatabase('ALTER TABLE automation_x_mcs_pending MODIFY COLUMN inbox_id BIGINT UNSIGNED NOT NULL');
+    assert.equal((await store.getInbox({ ...sub, id: old.id })).version, 'legacy-receipt');
+    assert.deepEqual(await store.pendingMcs(lease), ['existing-pending']);
+}));

@@ -30,6 +30,21 @@ test('accepts a correctly scoped Chrome record and produces stable domain-separa
     updated.push.securityToken = '987654321';
     assert.notEqual(identifyChromeTransfer(updated).contentHash, identifyChromeTransfer(f).contentHash);
 });
+test('Brave records bind the browser, engine and trusted product category without changing Chrome format', () => {
+    const f = fixture();
+    f.provenance = { kind: 'brave-gcm', adapterVersion: '1.0.0', browserVersion: '157.1.99.55', engineVersion: '157.0.8103.39', readMethod: 'brave-gcm-snapshot' };
+    f.push.productCategory = 'com.brave.windows';
+    assert.deepEqual(normalizeChromeTransfer(f), f);
+    assert.deepEqual(parseTransferFile(JSON.stringify(f)), f);
+    const wrong = structuredClone(f); wrong.push.productCategory = 'com.chrome.windows';
+    assert.throws(() => normalizeChromeTransfer(wrong), /X_CHROME_TRANSFER_INVALID/);
+    const missing = structuredClone(f); delete missing.provenance.engineVersion;
+    assert.throws(() => normalizeChromeTransfer(missing), /X_CHROME_TRANSFER_INVALID/);
+    const faked = structuredClone(f); Object.defineProperty(faked.provenance, 'kind', { enumerable: true, get() { throw new Error('getter invoked'); } });
+    assert.throws(() => normalizeChromeTransfer(faked), /X_CHROME_TRANSFER_INVALID/);
+    const changed = structuredClone(f); changed.provenance.browserVersion = '158.1.0.0'; changed.provenance.engineVersion = '158.0.0.0';
+    assert.equal(identifyChromeTransfer(changed).contentHash, identifyChromeTransfer(f).contentHash);
+});
 test('rejects wrong origin, sender or category and unsupported identifiers', () => {
     for (const edit of [f => f.push.scope = 'https://x.com.evil/', f => f.push.appId = f.push.appId.replace('x.com', 'evil.com'),
         f => f.push.appId = f.push.appId.toLowerCase(), f => f.push.productCategory = 'com.chromium.windows',

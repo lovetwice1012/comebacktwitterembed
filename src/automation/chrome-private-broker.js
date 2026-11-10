@@ -23,7 +23,8 @@ async function startChromeBroker({ chromePath, profilePath, origin = 'https://x.
         '--no-first-run', '--no-default-browser-check', ...extraArgs, `${origin}/`],
     { windowsHide: false, stdio: ['ignore', 'ignore', 'ignore', 'pipe', 'pipe'] });
     const pipe = createChromePipe(chrome, { origin });
-    try { await pipe.ready(); } catch (error) { if (chrome.exitCode === null) chrome.kill(); throw error; }
+    let engineVersion;
+    try { engineVersion = await pipe.ready(); } catch (error) { if (chrome.exitCode === null) chrome.kill(); throw error; }
     let busy = false, stopped = false;
     const clients = new Set();
     const server = net.createServer(socket => {
@@ -71,6 +72,6 @@ async function startChromeBroker({ chromePath, profilePath, origin = 'https://x.
     try { await new Promise((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); }); }
     catch (error) { if (chrome.exitCode === null) chrome.kill(); throw error; }
     if (chrome.exitCode !== null) { await stop(); throw fault('X_CHROME_BROKER_INVALID'); }
-    return { port: server.address().port, token: token.toString('hex'), pid: process.pid, browserPid: chrome.pid, stop, chrome };
+    return { port: server.address().port, token: token.toString('hex'), pid: process.pid, browserPid: chrome.pid, engineVersion, stop, chrome };
 }
 module.exports = { startChromeBroker };

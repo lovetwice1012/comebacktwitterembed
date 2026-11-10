@@ -266,7 +266,7 @@ function createXPushGateway(db, options = {}) {
                 await transport.connect();
                 const chromeStore = createChromeMcsStoreAdapter({ store, lease, authorize, decrypt: row => decrypt(crypto, file, row) });
                 const session = createChromeMcsSession({
-                    credentials: { deviceId: file.push.deviceId, securityToken: file.push.securityToken, clientVersion: file.provenance.browserVersion },
+                    credentials: { deviceId: file.push.deviceId, securityToken: file.push.securityToken, clientVersion: file.provenance.engineVersion || file.provenance.browserVersion },
                     route: { expectedCategory: file.push.productCategory, expectedAppId: file.push.appId, expectedSender: file.push.authorizedEntity },
                     store: chromeStore,
                     send: async wire => {
@@ -291,7 +291,7 @@ function createXPushGateway(db, options = {}) {
                 await deadline(store.resetRetry(lease), timeoutMs, 'X_PUSH_STORE_TIMEOUT');
                 const { createChromeCheckinRunner } = require('./chrome-checkin-runner');
                 checkinRunner = createChromeCheckinRunner({ lease, store, authorize, now,
-                    credentials: { deviceId: file.push.deviceId, securityToken: file.push.securityToken, browserVersion: file.provenance.browserVersion },
+                    credentials: { deviceId: file.push.deviceId, securityToken: file.push.securityToken, browserVersion: file.provenance.engineVersion || file.provenance.browserVersion },
                     ...(options.chromeCheckin ? { send: options.chromeCheckin } : {}),
                     ...(options.chromeCheckinSetTimer ? { setTimer: options.chromeCheckinSetTimer } : {}),
                     ...(options.chromeCheckinClearTimer ? { clearTimer: options.chromeCheckinClearTimer } : {}),

@@ -19,6 +19,12 @@ function chromeFixture() {
             p256dhPublicKey: old.push.p256dhPublicKey, authenticationSecret: old.push.authenticationSecret,
             p256dhPrivateKey: { kty: key.kty, crv: key.crv, x: key.x, y: key.y, d: key.d } } };
 }
+function braveFixture() {
+    const file = chromeFixture();
+    file.provenance = { kind: 'brave-gcm', adapterVersion: '1.0.0', browserVersion: '157.1.99.55', engineVersion: '157.0.8103.39', readMethod: 'brave-gcm-snapshot' };
+    file.push.productCategory = 'com.brave.windows';
+    return file;
+}
 class FakeSocket extends EventEmitter {
     constructor(db) { super(); this.db = db; this.writes = []; this.destroyed = false; queueMicrotask(() => this.emit('secureConnect')); }
     write(wire, done) {
@@ -102,6 +108,31 @@ test('Chrome worker runs and saves check-in without interrupting the MCS session
         } finally { controller.abort(); await running; }
     } finally { await db.close(); }
 });
+test('Brave worker uses its Chromium engine version for both MCS login and check-in', async () => {
+    const db = await createTestDatabase(Number(process.env.AUTOMATION_TEST_DB_PORT));
+    try {
+        for (const sql of require('../../src/automation/x-chrome-mcs-schema.sql').SCHEMA) await db.queryDatabase(sql);
+        const file = braveFixture(), subscription = await insertSubscription(db, file), controller = new AbortController();
+        let clock = 1000000, fire, socket, checkedVersion;
+        const gateway = createXPushGateway(db, { enabled: true, chromeEnabled: true, privateWorkerVault: vault, rolloutMode: 'public',
+            requestTimeoutMs: 3000, leaseMs: 300000, now: () => clock, createChromeSocket: () => socket = new FakeSocket(db),
+            chromeCheckinSetTimer: cb => { fire = cb; return 1; }, chromeCheckinClearTimer: () => {},
+            chromeCheckin: async credentials => { checkedVersion = credentials.browserVersion; return { intervalSeconds: 50000 }; } });
+        const running = gateway.run({ ...subscription, workerId: 'brave-checkin', signal: controller.signal,
+            onSession: () => { clock += 60001; fire(); } });
+        try {
+            let saved;
+            for (let i = 0; i < 100; i++) {
+                saved = (await db.queryDatabase('SELECT chrome_checkin_at_ms FROM automation_x_push_receivers WHERE subscription_id=?', [subscription.subscriptionId]))[0];
+                if (saved?.chrome_checkin_at_ms != null) break;
+                await new Promise(resolve => setTimeout(resolve, 20));
+            }
+            assert.equal(checkedVersion, file.provenance.engineVersion); assert.ok(saved?.chrome_checkin_at_ms != null);
+            assert(socket.writes[0].includes(Buffer.from('chrome-' + file.provenance.engineVersion)));
+            assert(!socket.writes[0].includes(Buffer.from(file.provenance.browserVersion)));
+        } finally { controller.abort(); await running; }
+    } finally { await db.close(); }
+});
 test('invalid Chrome device credentials stop the worker and require re-enrollment without replacing the subscription', async () => {
     const db = await createTestDatabase(Number(process.env.AUTOMATION_TEST_DB_PORT));
     try {
@@ -118,5 +149,37 @@ test('invalid Chrome device credentials stop the worker and require re-enrollmen
         assert.equal(rows[0].state, 'requires_reenrollment'); assert.equal(rows[0].reason_code, 'X_PUSH_CHECKIN_UNAUTHORIZED');
         assert.equal(rows[0].chrome_checkin_at_ms, null);
         assert.equal((await db.queryDatabase('SELECT id FROM automation_x_subscriptions WHERE id=?', [subscription.subscriptionId])).length, 1);
+    } finally { await db.close(); }
+});
+test('a provider loss notice is recorded before ACK and later encrypted posts still route', async () => {
+    const db = await createTestDatabase(Number(process.env.AUTOMATION_TEST_DB_PORT));
+    try {
+        for (const sql of require('../../src/automation/x-chrome-mcs-schema.sql').SCHEMA) await db.queryDatabase(sql);
+        const file = chromeFixture(), subscription = await insertSubscription(db, file), controller = new AbortController();
+        const payload = { notificationType: 'tweet', text: 'fixture-after-control' }, cipher = await encrypted(file, payload);
+        const control = Buffer.concat([bytes(3, file.push.authorizedEntity), bytes(5, file.push.productCategory),
+            pair('subtype', file.push.appId), pair('message_type', 'deleted_messages'), bytes(9, 'provider-loss')]);
+        const message = Buffer.concat([bytes(3, file.push.authorizedEntity), bytes(5, file.push.productCategory),
+            pair('subtype', file.push.appId), pair('content-encoding', 'aes128gcm'), bytes(9, 'after-loss'), bytes(21, Buffer.from(cipher.data, 'base64url'))]);
+        let socket, acks = 0, received;
+        class ControlSocket extends EventEmitter {
+            constructor() { super(); this.destroyed = false; queueMicrotask(() => this.emit('secureConnect')); }
+            write(wire, done) {
+                if (wire[0] === 41) { done(); queueMicrotask(() => this.emit('data', encodeFrame(3, bytes(1, 'ok'), { first: true }))); return; }
+                if (wire[0] !== 7) { done(); return; }
+                db.queryDatabase("SELECT COUNT(*) n FROM automation_audit WHERE action='x.push.provider.deleted_messages'").then(rows => {
+                    if (Number(rows[0].n) !== 1) return done(new Error('ACK_BEFORE_AUDIT'));
+                    done(); if (++acks === 1) queueMicrotask(() => this.emit('data', encodeFrame(8, message)));
+                }, done);
+            }
+            pause() {} resume() {} destroy() { this.destroyed = true; }
+        }
+        const gateway = createXPushGateway(db, { enabled: true, chromeEnabled: true, privateWorkerVault: vault, rolloutMode: 'public',
+            requestTimeoutMs: 3000, createChromeSocket: () => socket = new ControlSocket() });
+        await gateway.run({ ...subscription, workerId: 'control-test', signal: controller.signal,
+            onSession: () => socket.emit('data', encodeFrame(8, control)), onReceived: value => { received = value; controller.abort(); } });
+        assert.deepEqual(received.payload, payload); assert.equal(acks, 2);
+        assert.equal((await db.queryDatabase('SELECT * FROM automation_x_push_inbox')).length, 1);
+        assert.deepEqual((await db.queryDatabase('SELECT persistent_id FROM automation_x_mcs_pending ORDER BY persistent_id')).map(row => row.persistent_id), ['after-loss', 'provider-loss']);
     } finally { await db.close(); }
 });

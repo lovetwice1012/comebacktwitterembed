@@ -42,7 +42,8 @@ function createChromePipe(chrome, { origin = 'https://x.com', timeoutMs = 10000 
     }
     async function ready() {
         const version = await call('Browser.getVersion');
-        if (typeof version.product !== 'string' || !/^Chrome\/[0-9.]+$/.test(version.product)) throw fault('X_CHROME_PIPE_INVALID');
+        if (typeof version.product !== 'string' || !/^Chrome\/[0-9]{1,3}(?:\.[0-9]{1,5}){3}$/.test(version.product)) throw fault('X_CHROME_PIPE_INVALID');
+        return version.product.slice('Chrome/'.length);
     }
     async function capture() {
         const result = await call('Target.getTargets');
@@ -50,10 +51,14 @@ function createChromePipe(chrome, { origin = 'https://x.com', timeoutMs = 10000 
         const matches = result.targetInfos.filter(target => {
             try { return target && target.type === 'page' && new URL(target.url).origin === origin; } catch { return false; }
         });
-        if (matches.length !== 1) throw fault(matches.length ? 'X_CHROME_CAPTURE_AMBIGUOUS' : 'X_CHROME_CAPTURE_NOT_FOUND');
-        const attached = await call('Target.attachToTarget', { targetId: matches[0].targetId, flatten: true });
-        if (typeof attached.sessionId !== 'string' || attached.sessionId.length > 256) throw fault('X_CHROME_CAPTURE_INVALID');
-        try {
+        if (!matches.length) throw fault('X_CHROME_CAPTURE_NOT_FOUND');
+        if (matches.length > 8 || new Set(matches.map(target => target.browserContextId || '')).size !== 1
+            || matches.some(target => typeof target.targetId !== 'string' || !target.targetId || target.targetId.length > 256)
+            || new Set(matches.map(target => target.targetId)).size !== matches.length) throw fault('X_CHROME_CAPTURE_AMBIGUOUS');
+        const captureTarget = async target => {
+            const attached = await call('Target.attachToTarget', { targetId: target.targetId, flatten: true });
+            if (typeof attached.sessionId !== 'string' || attached.sessionId.length > 256) throw fault('X_CHROME_CAPTURE_INVALID');
+            try {
             const expression = `(async()=>{if(location.origin!==${JSON.stringify(origin)})throw Error('origin');const found=[];` +
                 `for(const r of await navigator.serviceWorker.getRegistrations()){if(new URL(r.scope).origin!==${JSON.stringify(origin)})continue;` +
                 `const s=await r.pushManager.getSubscription();if(s)found.push({scope:r.scope,...s.toJSON()});}` +
@@ -63,8 +68,20 @@ function createChromePipe(chrome, { origin = 'https://x.com', timeoutMs = 10000 
             if (response.exceptionDetails || response.result?.type !== 'object' || !value || typeof value.scope !== 'string'
                 || typeof value.endpoint !== 'string' || value.scope.length > 4096 || value.endpoint.length > 4096 || !value.keys
                 || typeof value.keys.p256dh !== 'string' || typeof value.keys.auth !== 'string') throw fault('X_CHROME_CAPTURE_INVALID');
-            return { scope: value.scope, endpoint: value.endpoint, keys: { p256dh: value.keys.p256dh, auth: value.keys.auth } };
-        } finally { await call('Target.detachFromTarget', { sessionId: attached.sessionId }).catch(() => {}); }
+                return { scope: value.scope, endpoint: value.endpoint, keys: { p256dh: value.keys.p256dh, auth: value.keys.auth } };
+            } finally { await call('Target.detachFromTarget', { sessionId: attached.sessionId }).catch(() => {}); }
+        };
+        let selected;
+        for (const target of matches) {
+            let value;
+            try { value = await captureTarget(target); }
+            catch (error) { if (matches.length > 1) throw fault('X_CHROME_CAPTURE_AMBIGUOUS'); throw error; }
+            if (selected && (value.scope !== selected.scope || value.endpoint !== selected.endpoint
+                || value.keys.p256dh !== selected.keys.p256dh || value.keys.auth !== selected.keys.auth))
+                throw fault('X_CHROME_CAPTURE_AMBIGUOUS');
+            selected = value;
+        }
+        return selected;
     }
     async function closeBrowser() {
         if (chrome.exitCode !== null) return;
