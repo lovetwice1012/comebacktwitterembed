@@ -17,7 +17,7 @@ async function buildChromeBundles({ nodePaths = [], includeEdge = false } = {}) 
             "module.exports = require(require('node:path').join(__dirname, 'ChromeLevelDB.node'));", loader: 'js' }));
     } };
     const entries = [['ChromeBroker.cjs', 'chrome-setup-broker.cjs'], ['ChromeCapture.cjs', 'chrome-setup-capture.cjs'], ['ChromeReader.cjs', 'chrome-setup-reader.cjs']];
-    if (includeEdge) entries.push(['EdgeReader.cjs', 'edge-setup-reader.cjs']);
+    if (includeEdge) entries.push(['EdgeReader.cjs', 'edge-setup-reader.cjs'], ['EdgeBroker.cjs', 'edge-setup-broker.cjs'], ['EdgeCapture.cjs', 'edge-setup-capture.cjs']);
     for (const [name, entry] of entries) {
         const result = await esbuild.build({ entryPoints: [path.join(__dirname, entry)], absWorkingDir: root,
             bundle: true, write: false, platform: 'node', format: 'cjs', target: 'node24', nodePaths,

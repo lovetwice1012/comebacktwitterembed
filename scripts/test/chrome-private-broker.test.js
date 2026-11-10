@@ -9,12 +9,12 @@ const { captureFromBroker } = require('../../src/automation/chrome-broker-client
 const { createChromePipe } = require('../../src/automation/chrome-cdp-pipe');
 const { randomBytes } = require('node:crypto');
 const expected = { scope: 'https://x.com/', endpoint: 'https://fcm.googleapis.com/fcm/send/test', keys: { p256dh: 'public', auth: 'auth' } };
-function fakeChrome({ evaluateDelay = 0, targetInfos, subscriptions = {} } = {}) {
+function fakeChrome({ evaluateDelay = 0, targetInfos, subscriptions = {}, product = 'Chrome/156.0.1.1' } = {}) {
     const chrome = new EventEmitter(); chrome.exitCode = null; chrome.pid = 12345;
     const output = new PassThrough();
     const input = new Writable({ write(chunk, _encoding, done) {
         const request = JSON.parse(chunk.subarray(0, -1).toString()); let result;
-        if (request.method === 'Browser.getVersion') result = { product: 'Chrome/156.0.1.1' };
+        if (request.method === 'Browser.getVersion') result = { product };
         else if (request.method === 'Target.getTargets') result = { targetInfos: targetInfos || [{ type: 'page', url: 'https://x.com/home', targetId: 'target' }] };
         else if (request.method === 'Target.attachToTarget') result = { sessionId: request.params.targetId };
         else if (request.method === 'Runtime.evaluate') result = { result: { type: 'object', value: subscriptions[request.sessionId] || expected } };
@@ -102,9 +102,18 @@ test('optional Edge capture includes a canonical application server key and chec
     await assert.rejects(ambiguous.capture(), { code: 'X_CHROME_CAPTURE_AMBIGUOUS' });
 });
 test('private broker transports optional Edge key only when explicitly enabled', async () => {
-    const value = { ...expected, applicationServerKey: randomBytes(65).toString('base64url') };
-    const broker = await startChromeBroker({ chromePath: 'synthetic.exe', profilePath: 'synthetic-profile', includeApplicationServerKey: true,
-        spawnChrome: () => fakeChrome({ subscriptions: { target: value } }) });
+    const value = { ...expected, applicationServerKey: randomBytes(65).toString('base64url') }; let launchArgs;
+    const broker = await startChromeBroker({ chromePath: 'synthetic.exe', profilePath: 'synthetic-profile', browserMode: 'edge', includeApplicationServerKey: true,
+        spawnChrome: (_exe, args) => { launchArgs = args; return fakeChrome({ subscriptions: { target: value }, product: 'Edg/157.0.1.1' }); } });
     try { assert.deepEqual(await captureFromBroker({ port: broker.port, token: broker.token, includeApplicationServerKey: true }), value); }
     finally { await broker.stop(); }
+    assert(launchArgs.includes('--remote-debugging-pipe'));
+    assert(!launchArgs.some(arg => arg.startsWith('--gcm-mcs-endpoint=') || arg.startsWith('--host-resolver-rules=')));
+    await assert.rejects(startChromeBroker({ chromePath: 'synthetic.exe', profilePath: 'synthetic-profile', browserMode: 'edge', spawnChrome: () => fakeChrome() }), { code: 'X_CHROME_BROKER_INVALID' });
+});
+test('browser version handshake accepts only the selected browser family', async () => {
+    assert.equal(await createChromePipe(fakeChrome({ product: 'Edg/157.0.4341.42' }), { browserMode: 'edge' }).ready(), '157.0.4341.42');
+    assert.equal(await createChromePipe(fakeChrome(), { browserMode: 'chrome' }).ready(), '156.0.1.1');
+    await assert.rejects(createChromePipe(fakeChrome({ product: 'Edg/157.0.4341.42' }), { browserMode: 'chrome' }).ready(), { code: 'X_CHROME_PIPE_INVALID' });
+    await assert.rejects(createChromePipe(fakeChrome(), { browserMode: 'edge' }).ready(), { code: 'X_CHROME_PIPE_INVALID' });
 });

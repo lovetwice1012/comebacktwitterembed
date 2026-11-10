@@ -4,9 +4,9 @@
 // Only fixed commands for selecting the X page, reading its PushSubscription
 // and closing this dedicated browser are exposed to the local broker.
 const fault = code => Object.assign(new Error(code), { code });
-function createChromePipe(chrome, { origin = 'https://x.com', timeoutMs = 10000, includeApplicationServerKey = false } = {}) {
+function createChromePipe(chrome, { origin = 'https://x.com', timeoutMs = 10000, includeApplicationServerKey = false, browserMode = 'chrome' } = {}) {
     if (!chrome?.stdio?.[3] || !chrome?.stdio?.[4] || typeof origin !== 'string'
-        || typeof includeApplicationServerKey !== 'boolean'
+        || typeof includeApplicationServerKey !== 'boolean' || !['chrome', 'edge'].includes(browserMode)
         || (origin !== 'https://x.com' && !/^http:\/\/127\.0\.0\.1:[1-9][0-9]{0,4}$/.test(origin))) throw fault('X_CHROME_PIPE_INVALID');
     const input = chrome.stdio[3], output = chrome.stdio[4], waiting = new Map();
     let sequence = 0, buffer = Buffer.alloc(0), failed = false;
@@ -43,8 +43,9 @@ function createChromePipe(chrome, { origin = 'https://x.com', timeoutMs = 10000,
     }
     async function ready() {
         const version = await call('Browser.getVersion');
-        if (typeof version.product !== 'string' || !/^Chrome\/[0-9]{1,3}(?:\.[0-9]{1,5}){3}$/.test(version.product)) throw fault('X_CHROME_PIPE_INVALID');
-        return version.product.slice('Chrome/'.length);
+        const pattern = browserMode === 'edge' ? /^Edg\/[0-9]{1,3}(?:\.[0-9]{1,5}){3}$/ : /^Chrome\/[0-9]{1,3}(?:\.[0-9]{1,5}){3}$/;
+        if (typeof version.product !== 'string' || !pattern.test(version.product)) throw fault('X_CHROME_PIPE_INVALID');
+        return version.product.slice(version.product.indexOf('/') + 1);
     }
     async function capture() {
         const result = await call('Target.getTargets');
