@@ -9,6 +9,9 @@ const fail = code => Object.assign(new Error(code), { code });
 // bounds so normal bursts do not force a disconnect before persistence.
 const HIGH_FRAMES = 8, LOW_FRAMES = 4, MAX_FRAMES = 1040;
 const HIGH_BYTES = MAX_CHUNK * 2, LOW_BYTES = MAX_CHUNK, MAX_BYTES = MAX_CHUNK * 4;
+// Frames queued before a failed read were fully decoded and remain bounded.
+// They can be persisted by the lease holder even when later input is bad.
+const DRAINABLE_FAILURES = new Set(['X_EDGE_WNS_SOCKET_FAILED', 'X_EDGE_WNS_SOCKET_CLOSED', 'X_EDGE_WNS_BACKPRESSURE', 'X_EDGE_WNS_FRAME_INVALID']);
 /** @param {{socketFactory?: () => any, timeoutMs?: number, signal?: AbortSignal}} [options] */
 function createEdgeWnsTransport({ socketFactory, timeoutMs = 15000, signal } = {}) {
     if (socketFactory !== undefined && typeof socketFactory !== 'function' || !Number.isSafeInteger(timeoutMs)
@@ -56,12 +59,15 @@ function createEdgeWnsTransport({ socketFactory, timeoutMs = 15000, signal } = {
                 if (waiting) { const pending = waiting; waiting = undefined; clearTimeout(pending.timer); pending.resolve(frame); }
                 else { queue.push(frame); queuedBytes += frame.length; }
             }
+            // Ownership has moved to the waiter/queue; an error pausing the
+            // socket must not wipe frames that are eligible for draining.
+            frames = null;
             if (!paused && (queue.length >= HIGH_FRAMES || queuedBytes >= HIGH_BYTES) && typeof socket.pause === 'function' && typeof socket.resume === 'function') {
                 paused = true; socket.pause();
             }
         } catch (error) {
             if (frames) for (const frame of frames) frame.fill(0);
-            abort(error?.code === 'X_EDGE_WNS_BACKPRESSURE' ? error.code : 'X_EDGE_WNS_FRAME_INVALID');
+            abort(error?.code === 'X_EDGE_WNS_BACKPRESSURE' ? error.code : 'X_EDGE_WNS_FRAME_INVALID', true);
         }
     });
     if (signal) {
@@ -70,10 +76,10 @@ function createEdgeWnsTransport({ socketFactory, timeoutMs = 15000, signal } = {
     return Object.freeze({
         connect: () => connection,
         hasBufferedAfterDisconnect() {
-            return Boolean(failure && ['X_EDGE_WNS_SOCKET_FAILED', 'X_EDGE_WNS_SOCKET_CLOSED'].includes(failure.code) && queue.length);
+            return Boolean(failure && DRAINABLE_FAILURES.has(failure.code) && queue.length);
         },
         takeBufferedAfterDisconnect() {
-            if (!failure || !['X_EDGE_WNS_SOCKET_FAILED', 'X_EDGE_WNS_SOCKET_CLOSED'].includes(failure.code)) return [];
+            if (!failure || !DRAINABLE_FAILURES.has(failure.code)) return [];
             const buffered = queue.splice(0); queuedBytes = 0; return buffered;
         },
         next(waitMs = timeoutMs) {

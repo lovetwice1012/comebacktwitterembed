@@ -100,7 +100,7 @@ test('slow delivery callbacks do not block persistence of a burst of Edge notifi
         assert.equal(callbacks, 2); assert.equal(lastInbox.version.length, 64);
     } finally { release(); controller.abort(); }
 }));
-test('disconnect persists buffered owned notifications for the next worker without ACK', { skip: skipped }, async () => setup(async db => {
+for (const failure of ['disconnect', 'malformed']) test(`${failure} preserves buffered owned notifications for the next worker without ACK`, { skip: skipped }, async () => setup(async db => {
     const sub = await insertSubscription(db, edgeFixture()); await db.queryDatabase("UPDATE automation_x_subscriptions SET browser_kind='edge' WHERE id=?", [sub.subscriptionId]);
     const cipher = await encrypted(sub.file, { text: 'recover-after-disconnect' }), socket = new EventEmitter(), sends = [];
     socket.write = (data, done) => {
@@ -116,7 +116,8 @@ test('disconnect persists buffered owned notifications for the next worker witho
         } });
     await assert.rejects(gateway.run({ ...sub, workerId: 'edge-disconnect', onSession: () => {
         socket.emit('data', Buffer.concat([notification('target', cipher, 'one'), notification('other', cipher, 'foreign'), notification('target', cipher, 'two')]));
-        socket.emit('close');
+        if (failure === 'disconnect') socket.emit('close');
+        else socket.emit('data', Buffer.from('invalid\n'));
     } }), { code: 'X_PUSH_RECEIVER_FAILED' });
     assert(!sends.includes('ACK'));
     const identity = { subscriptionId: sub.subscriptionId, ownerUserId: sub.ownerUserId };

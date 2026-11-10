@@ -75,10 +75,10 @@ async function runEdgeWnsGateway({ store, lease, vault, authorize, credentials, 
         return { state: 'stopped' };
     } catch (error) {
         if (stopped()) return { state: 'stopped' };
-        if (established && ['X_EDGE_WNS_SOCKET_FAILED', 'X_EDGE_WNS_SOCKET_CLOSED', 'X_EDGE_WNS_ACK_FAILED'].includes(error?.code)
+        if (established && ['X_EDGE_WNS_SOCKET_FAILED', 'X_EDGE_WNS_SOCKET_CLOSED', 'X_EDGE_WNS_ACK_FAILED', 'X_EDGE_WNS_BACKPRESSURE', 'X_EDGE_WNS_FRAME_INVALID'].includes(error?.code)
             && transport?.hasBufferedAfterDisconnect?.() && typeof transport.takeBufferedAfterDisconnect === 'function') {
-            // The provider may not replay frames after disconnect. Persist only
-            // complete, already-received frames while this lease remains valid;
+            // The provider may not replay frames after a failed connection. Persist
+            // only complete, already-received frames while this lease remains valid;
             // there is no socket on which to acknowledge them.
             const frames = transport.takeBufferedAfterDisconnect(); let drain;
             try {

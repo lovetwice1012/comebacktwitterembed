@@ -46,6 +46,19 @@ test('continued input while paused remains bounded and fails closed', async () =
     socket.emit('data', Buffer.from('X 0\r\n'.repeat(1024))); assert.equal(socket.pauseCount, 1);
     socket.emit('data', Buffer.from('X 0\r\n'.repeat(17))); assert.equal(socket.destroyed, true);
     await assert.rejects(transport.next(), { code: 'X_EDGE_WNS_BACKPRESSURE' });
+    const retained = transport.takeBufferedAfterDisconnect();
+    assert.equal(retained.length, 1024);
+    assert(retained.every(value => value.equals(Buffer.from('X 0\r\n'))));
+    for (const value of retained) value.fill(0);
+    transport.close();
+});
+test('malformed later input retains earlier complete frames but discards the bad chunk', async () => {
+    const { socket, transport } = fixture(); socket.emit('secureConnect'); await transport.connect();
+    socket.emit('data', frame); socket.emit('data', Buffer.concat([frame, Buffer.from('bad\n')]));
+    await assert.rejects(transport.next(), { code: 'X_EDGE_WNS_FRAME_INVALID' });
+    const retained = transport.takeBufferedAfterDisconnect();
+    assert.equal(retained.length, 1); assert.deepEqual(retained[0], frame);
+    retained[0].fill(0); transport.close();
 });
 test('stream backpressure retains later chunks until the queue has space', async () => {
     const socket = new PassThrough(), transport = createEdgeWnsTransport({ socketFactory: () => socket, timeoutMs: 1000 });
