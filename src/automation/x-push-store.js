@@ -169,8 +169,10 @@ function createXPushStore(db, options = {}) {
         if (!vault || typeof vault.seal !== 'function' || typeof vault.open !== 'function' || typeof authorize !== 'function')
             fail('X_PUSH_WNS_CONFIG_INVALID');
     }
+    /** @param {any} lease @param {{vault?: any, authorize?: any}} [options] */
     async function readWnsTokenState(lease, { vault, authorize } = {}) {
         validateWnsOptions(vault, authorize);
+        /** @type {Buffer | undefined} */
         let opened;
         try {
             return await locked(lease, async (query, subscription, receiver) => {
@@ -186,6 +188,7 @@ function createXPushStore(db, options = {}) {
             });
         } catch (error) { opened?.fill(0); throw error; }
     }
+    /** @param {any} lease @param {{vault?: any, authorize?: any, token?: Buffer, expectedGeneration?: number}} [options] */
     async function saveWnsTokenState(lease, { vault, authorize, token, expectedGeneration } = {}) {
         validateWnsOptions(vault, authorize);
         if (!Number.isSafeInteger(expectedGeneration) || expectedGeneration < 0 || expectedGeneration >= Number.MAX_SAFE_INTEGER)
