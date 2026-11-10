@@ -11,6 +11,7 @@ const { pathToFileURL } = require('node:url');
 const webpush = require('web-push');
 const CDP = require('chrome-remote-interface');
 const { ClassicLevel } = require('classic-level');
+const { selectSyntheticEdgeRecord } = require('./edge-fixture-record.cjs');
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
 function wireShape(bytes) {
     const fields = []; let pos = 0;
@@ -120,15 +121,16 @@ async function main() {
         const stat = async p => { try { return (await fs.stat(p)).isDirectory(); } catch { return false; } };
         const dirs = (await fs.readdir(path.join(profile, 'Default'), { withFileTypes: true }))
             .filter(entry => entry.isDirectory() && /^(?:EdgePushStorageWithWinRt|EdgePushStorageWithConnectTokenAndKey|EdgeFCMPushStorage)$/.test(entry.name)).map(entry => entry.name);
-        const stores = [];
+        const stores = []; let scopedSelectorPassed = false;
         if (kind === 'edge' && process.env.CHROMIUM_PROBE_STORE_SHAPE === '1') {
             for (const name of dirs) {
                 const db = new ClassicLevel(path.join(profile, 'Default', name), { createIfMissing: false, keyEncoding: 'buffer', valueEncoding: 'buffer' });
-                const records = [];
+                const records = [], rawRecords = [];
                 try {
                     await db.open();
                     for await (const [key, value] of db.iterator({ limit: 32 })) {
                         if (key.length > 4096 || value.length > 1024 * 1024) throw new Error('PROBE_STORE_TOO_LARGE');
+                        if (otherSubscription) rawRecords.push(Buffer.from(value));
                         // Never print key or value bytes. The profile is a
                         // disposable test profile, and only size/format hints
                         // are needed to choose a possible integration design.
@@ -202,8 +204,28 @@ async function main() {
                             otherDecrypts, otherExactFields,
                             osCryptV10: value.subarray(0, 3).toString('ascii') === 'v10', osCryptV20: value.subarray(0, 3).toString('ascii') === 'v20' });
                     }
+                    if (otherSubscription) {
+                        let first, second;
+                        try {
+                            first = selectSyntheticEdgeRecord(rawRecords, `${origin}/`);
+                            second = selectSyntheticEdgeRecord(rawRecords, `${otherOrigin}/`);
+                            const matches = (selected, subscription) => selected.endpoint === subscription.endpoint
+                                && selected.publicKey.equals(Buffer.from(subscription.keys.p256dh, 'base64url'))
+                                && selected.auth.equals(Buffer.from(subscription.keys.auth, 'base64url'))
+                                && selected.applicationServerKey.equals(Buffer.from(vapid.publicKey, 'base64url'));
+                            scopedSelectorPassed = matches(first, syntheticSubscription) && matches(second, otherSubscription);
+                            if (!scopedSelectorPassed) throw new Error('PROBE_SCOPE_MISMATCH');
+                            const firstRaw = rawRecords.find(record => record.includes(Buffer.from(origin)));
+                            let duplicateRejected = false;
+                            try { selectSyntheticEdgeRecord([...rawRecords, firstRaw], `${origin}/`); }
+                            catch (error) { duplicateRejected = error?.code === 'EDGE_FIXTURE_RECORD_INVALID'; }
+                            if (!duplicateRejected) throw new Error('PROBE_DUPLICATE_ACCEPTED');
+                        } finally {
+                            for (const selected of [first, second]) if (selected) for (const key of ['publicKey', 'auth', 'privateKey', 'applicationServerKey']) selected[key].fill(0);
+                        }
+                    }
                     stores.push({ name, records });
-                } finally { await db.close().catch(() => {}); }
+                } finally { rawRecords.forEach(value => value.fill(0)); await db.close().catch(() => {}); }
             }
         }
         if (otherSubscription && process.env.CHROMIUM_PROBE_STORE_SHAPE === '1') {
@@ -218,7 +240,7 @@ async function main() {
             const first = records.filter(record => matches(record, 'first')), other = records.filter(record => matches(record, 'second'));
             if (first.length !== 1 || other.length !== 1 || first[0] === other[0]) throw new Error('PROBE_SCOPE_MISMATCH');
         }
-        console.log(JSON.stringify({ browser: kind, product: version.product, subscription: publicSubscription, secondSyntheticOrigin: Boolean(otherSubscription),
+        console.log(JSON.stringify({ browser: kind, product: version.product, subscription: publicSubscription, secondSyntheticOrigin: Boolean(otherSubscription), scopedSelectorPassed,
             category: typeof prefs.gcm?.product_category_for_subtypes === 'string' ? prefs.gcm.product_category_for_subtypes : null,
             mappingPresent: Boolean(prefs.gcm?.push_messaging_application_id_map),
             gcmStorePresent: await stat(path.join(profile, 'Default', 'GCM Store')),
