@@ -325,6 +325,19 @@ function runChecked(command, args, options) {
     return result.status ?? 1;
 }
 
+function renameBuildDirectory(source, destination, platform = process.platform) {
+    for (let attempt = 0; ; attempt++) {
+        try { fs.renameSync(source, destination); return; }
+        catch (error) {
+            // A Windows reader can briefly deny delete-sharing after the build
+            // process exits. Preserve the same staging directory and current
+            // build; unrelated or persistent failures still fail closed.
+            if (platform !== 'win32' || !['EPERM', 'EBUSY'].includes(error?.code) || attempt >= 20) throw error;
+            Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50);
+        }
+    }
+}
+
 function runProductionBuild(dashboardDir, env) {
     const stagingDistDir = BUILD_WORK_DIR;
     const finalDistDir = buildDistDirName();
@@ -373,7 +386,7 @@ function runProductionBuild(dashboardDir, env) {
 
     removeDirectoryBestEffort(absoluteFinalDistDir);
     try {
-        fs.renameSync(absoluteStagingDistDir, absoluteFinalDistDir);
+        renameBuildDirectory(absoluteStagingDistDir, absoluteFinalDistDir);
     } catch (error) {
         console.error(`[dashboard] could not activate ${finalDistDir}: ${error?.message || error}`);
         removeDirectoryBestEffort(absoluteStagingDistDir);
@@ -598,6 +611,7 @@ module.exports = {
         findProductionBuild,
         loadRuntimeEnvironment,
         main,
+        renameBuildDirectory,
         readCurrentBuild,
         startManagedProductionServer,
     },
