@@ -1,8 +1,10 @@
 # X通知セットアップのWebダウンロード
 
-ログイン済みの利用者は `/api/automation/x-setup/download` から PowerShell 配布版 `0.1.0-preview.4` を取得できる。レスポンスは ZIP の添付ファイルで、成功・エラーとも `private, no-store`。この GET はPCの情報や通知ファイルを受信しない。
+ログイン済みの利用者は `/api/automation/x-setup/download` から PowerShell 配布版 `0.1.0-preview.5` を取得できる。レスポンスは ZIP の添付ファイルで、成功・エラーとも `private, no-store`。この GET はPCの情報や通知ファイルを受信しない。
 
-配布ファイル名は `x-notification-setup-0.1.0-preview.4.zip`、サイズは 68,653 bytes、SHA-256 は `c41a47ecb694cc8afe19ccfab3420d492a5a327b8264cb84b46da9ab1d7325db`。`scripts/build-angelic-setup-package.cjs` の固定された9ファイルと生成マニフェストから、検証済み版と同一の ZIP をメモリ上で再構成する。サーバー側には配布 ZIP を書き出さず、Git 管理外の `artifacts/` にも依存しない。
+配布ファイル名は `x-notification-setup-0.1.0-preview.5.zip`、サイズは 68,992 bytes、SHA-256 は `4c0678e1257d116fc9760db8484c6744294602fe41042598fdcd8537570a7e98`。`scripts/build-angelic-setup-package.cjs` の固定された9ファイルと生成マニフェストから、検証済み版と同一の ZIP をメモリ上で再構成する。サーバー側には配布 ZIP を書き出さず、Git 管理外の `artifacts/` にも依存しない。
+
+preview.5では、書き込み失敗時の片付けを作成済みハンドルに限定する。失敗後に保存先のパスが別のファイルを指した場合、その別ファイルを削除しない。
 
 preview.4は利用者向けの文章を整理した版。保存ツールと登録画面を、できること・操作・次の手順から案内する。確認結果は `positive-copy-review.md` を参照。
 

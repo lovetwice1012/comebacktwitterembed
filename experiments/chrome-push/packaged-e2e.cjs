@@ -161,6 +161,16 @@ async function main() {
         await fs.writeFile(brokerFile, testBroker);
         const manifestPath = path.join(bundle, 'package-manifest.json'), manifest = JSON.parse(await fs.readFile(manifestPath, 'utf8'));
         manifest.files['ChromeBroker.cjs'] = require('node:crypto').createHash('sha256').update(testBroker).digest('hex');
+        if (process.env.CHROME_FIXTURE_WRITE_FAILURE === '1') {
+            // Inject only into this disposable extracted package, never the
+            // release or an existing browser profile.
+            const originalCore = await fs.readFile(core, 'utf8');
+            const marker = "$stream=[XSetupNative.ReaderJob]::CreatePrivateFile($target,$script:UserSid.Value)";
+            if (originalCore.split(marker).length !== 2) throw new Error('FIXTURE_WRITE_FAILURE_SHAPE_CHANGED');
+            const testCore = originalCore.replace(marker, `${marker}\n                if ($env:CBTE_FIXTURE_FORCE_OUTPUT_FAILURE -eq '1') { throw 'synthetic output failure' }`);
+            await fs.writeFile(core, testCore, 'utf8');
+            manifest.files['ChromeSetup.ps1'] = require('node:crypto').createHash('sha256').update(testCore).digest('hex');
+        }
         if (process.env.CHROME_FIXTURE_DIAGNOSTIC === '1') {
             const originalCore = await fs.readFile(core, 'utf8');
             const marker = "} catch {\n    $message=[string]$_.Exception.Message";
@@ -196,6 +206,24 @@ async function main() {
         }
         await openPrivateBrowser();
         if (process.env.CHROME_FIXTURE_FORCE_FAILURE === '1') throw new Error('FIXTURE_FORCED_FAILURE');
+        if (process.env.CHROME_FIXTURE_WRITE_FAILURE === '1') {
+            const failedOutput = path.join(root, 'failed-output.json'), untouched = path.join(root, 'unrelated.txt');
+            await fs.writeFile(untouched, 'synthetic sentinel', { flag: 'wx' });
+            const prior = process.env.CBTE_FIXTURE_FORCE_OUTPUT_FAILURE;
+            let failed;
+            try {
+                process.env.CBTE_FIXTURE_FORCE_OUTPUT_FAILURE = '1';
+                failed = invoke(['-Action', 'Export', '-PrivateRoot', owned, '-OutputPath', failedOutput]);
+            } finally {
+                if (prior === undefined) delete process.env.CBTE_FIXTURE_FORCE_OUTPUT_FAILURE;
+                else process.env.CBTE_FIXTURE_FORCE_OUTPUT_FAILURE = prior;
+            }
+            if (failed.status === 0) throw new Error('FIXTURE_WRITE_FAILURE_NOT_DETECTED');
+            try { await fs.stat(failedOutput); throw new Error('FIXTURE_PARTIAL_OUTPUT_REMAINS'); } catch (error) { if (error.code !== 'ENOENT') throw error; }
+            if (await fs.readFile(untouched, 'utf8') !== 'synthetic sentinel') throw new Error('FIXTURE_UNRELATED_FILE_CHANGED');
+            console.log(JSON.stringify({ failedOutputRemovedByOwnedHandle: true, unrelatedFilePreserved: true }));
+            await openPrivateBrowser();
+        }
         let exportStart = Date.now();
         let exported = invoke(['-Action', 'Export', '-PrivateRoot', owned, '-OutputPath', output]);
         if (process.env.CHROME_FIXTURE_DIAGNOSTIC === '1') console.log(JSON.stringify({ exportMs: Date.now() - exportStart }));

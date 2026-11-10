@@ -312,7 +312,7 @@ try {
  if($intro -notmatch 'ファイル' -or $intro -notmatch 'ご自身' -or $intro -notmatch '送信'){throw 'Missing file/manual-upload explanation'}
  if($limitation -notmatch '確認|未対応|まだ利用でき|まだ使え'){throw 'Missing initial-state explanation'}
  if($form.Text -match 'Angelic|Angel'){throw 'Unrequested branding in title'}
- Update-ReadyState ([pscustomobject]@{appId='x-notification-setup';version='0.1.0-preview.4';packageVerified=$true;prepared=$true;privateRoot=$OwnRoot;profilePath=($OwnRoot+'\\firefox-profile');capabilities=[pscustomobject]@{prepareProfile=$true;openFirefox=$true;realPushExport=$true;serverTransfer=$false}})
+ Update-ReadyState ([pscustomobject]@{appId='x-notification-setup';version='0.1.0-preview.5';packageVerified=$true;prepared=$true;privateRoot=$OwnRoot;profilePath=($OwnRoot+'\\firefox-profile');capabilities=[pscustomobject]@{prepareProfile=$true;openFirefox=$true;realPushExport=$true;serverTransfer=$false}})
  if(-not $export.Enabled -or $folder.Enabled -or -not $open.Enabled){throw 'Readiness was confused with file success'}
  if($form.Controls.Find('LimitationLabel',$true)[0].Text -notmatch 'ご自身|自分|本人'){throw 'Missing manual upload instruction'}
  Set-BusyState $true

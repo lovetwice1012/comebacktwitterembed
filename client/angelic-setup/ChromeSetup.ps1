@@ -21,7 +21,7 @@ $script:AppId = 'x-notification-setup'
 $script:UserSid = [Security.Principal.WindowsIdentity]::GetCurrent().User
 $script:SystemSid = New-Object Security.Principal.SecurityIdentifier('S-1-5-18')
 $script:PackageRoot = [IO.Path]::GetFullPath($PSScriptRoot).TrimEnd([char]'\')
-$script:PackageVersion = '0.1.0-chrome-preview.1'
+$script:PackageVersion = '0.1.0-chrome-preview.2'
 
 function Fail-Safely([string]$Code,[string]$Message) { throw ($Code + ': ' + $Message) }
 function Get-PathAttributes([string]$Path) {
@@ -388,13 +388,18 @@ try {
             }
             . ([IO.Path]::Combine($script:PackageRoot,'NativeSetup.ps1'))
             Initialize-XSetupReaderJob
-            $stream=$null; $created=$false
+            $stream=$null
             try {
-                $stream=[XSetupNative.ReaderJob]::CreatePrivateFile($target,$script:UserSid.Value); $created=$true
+                $stream=[XSetupNative.ReaderJob]::CreatePrivateFile($target,$script:UserSid.Value)
                 $bytes=$script:Utf8.GetBytes($document); $stream.Write($bytes,0,$bytes.Length); $stream.Flush($true)
+                $stream.Dispose(); $stream=$null
             } catch {
-                if ($null -ne $stream) { $stream.Dispose(); $stream=$null }
-                if ($created) { Assert-SafePath $target; [IO.File]::Delete($target) }
+                $cleanupFailed=$_.Exception.ToString().Contains('X_SETUP_PRIVATE_CLEANUP_FAILED')
+                if ($null -ne $stream) {
+                    try { [XSetupNative.ReaderJob]::DeleteCreatedFile($stream) } catch { $cleanupFailed=$true }
+                    finally { try { $stream.Dispose() } catch { $cleanupFailed=$true }; $stream=$null }
+                }
+                if ($cleanupFailed) { Fail-Safely 'X_CHROME_OUTPUT_CLEANUP_FAILED' '保存できませんでした。保存先に途中のファイルが残っていないか確認してください。' }
                 throw
             } finally { if ($null -ne $stream) { $stream.Dispose() } }
         }

@@ -15,7 +15,7 @@ const nextConfig: NextConfig = {
   outputFileTracingIncludes: {
     "/api/automation/x-setup/download-chrome": [
       "../src/providers/_loader.js",
-      "../artifacts/angelic-setup/chrome-setup-0.1.0-chrome-preview.1.zip",
+      "../artifacts/angelic-setup/chrome-setup-0.1.0-chrome-preview.2.zip",
     ],
     "/api/automation/x-setup/download": [
       // repoRoot() uses this existing directory as its runtime layout marker.

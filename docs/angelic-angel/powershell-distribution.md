@@ -1,7 +1,7 @@
 # 新Xセットアップ PowerShell配布版
 
 **履歴資料（preview.1）。** 以下は抽出機能追加前の配布物と受入の記録であり、現在の操作手順ではない。
-現行の `0.1.0-preview.4` は [ファイル作成クライアント](powershell-file-client.md) と
+現行の `0.1.0-preview.5` は [ファイル作成クライアント](powershell-file-client.md) と
 [Webダウンロード](x-setup-download.md) を参照する。現在の入口は「ダブルクリックで開始.cmd」。
 旧ZIPと当時の検証証拠は履歴として保持する。
 

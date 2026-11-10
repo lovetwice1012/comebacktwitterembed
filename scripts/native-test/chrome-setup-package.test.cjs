@@ -17,7 +17,7 @@ test('Windows Chrome package protects its profile, rejects tampering and never o
         });
         const bundle = path.join(root, '配布 & fixture'), owned = path.join(root, '専用 & fixture');
         await fsp.mkdir(bundle);
-        const archive = await fsp.readFile(path.resolve(__dirname, '../../artifacts/angelic-setup/chrome-setup-0.1.0-chrome-preview.1.zip'));
+        const archive = await fsp.readFile(path.resolve(__dirname, '../../artifacts/angelic-setup/chrome-setup-0.1.0-chrome-preview.2.zip'));
         for (const [name, content] of Object.entries(unzipSync(archive))) {
             assert.equal(path.basename(name), name); await fsp.writeFile(path.join(bundle, name), content, { flag: 'wx' });
         }

@@ -166,20 +166,24 @@ function Write-XSetupProtectedExport {
     param([string] $Path, [string] $Text)
     # CreateFileのSECURITY_ATTRIBUTESへprivate DACLを渡し、生成する瞬間から共有不可・本人+SYSTEMにします。
     # 生成後にACLを付けるまでの競合時間を作りません。既存ファイルはCREATE_NEWにより拒否します。
-    $created = $false
     $stream = $null
     try {
         Assert-SafePath $Path
         Initialize-XSetupReaderJob
         $stream = [XSetupNative.ReaderJob]::CreatePrivateFile($Path, $script:UserSid.Value)
-        $created = $true
         $bytes = $script:Utf8.GetBytes($Text)
         $stream.Write($bytes, 0, $bytes.Length)
         $stream.Flush($true)
+        $stream.Dispose()
+        $stream = $null
     }
     catch {
-        if ($null -ne $stream) { $stream.Dispose(); $stream = $null }
-        if ($created) { Assert-SafePath $Path; [IO.File]::Delete($Path) }
+        $cleanupFailed = $_.Exception.ToString().Contains('X_SETUP_PRIVATE_CLEANUP_FAILED')
+        if ($null -ne $stream) {
+            try { [XSetupNative.ReaderJob]::DeleteCreatedFile($stream) } catch { $cleanupFailed = $true }
+            finally { try { $stream.Dispose() } catch { $cleanupFailed = $true }; $stream = $null }
+        }
+        if ($cleanupFailed) { throw 'X_SETUP_EXPORT_FILE_FAILED: 保存できませんでした。保存先に途中のファイルが残っていないか確認してください。' }
         throw 'X_SETUP_EXPORT_FILE_FAILED: 新しい保存ファイルを安全に作成できませんでした。既存ファイルは上書きしていません。'
     }
     finally { if ($null -ne $stream) { $stream.Dispose() } }

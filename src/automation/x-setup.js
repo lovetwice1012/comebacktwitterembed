@@ -8,8 +8,8 @@ const { evaluateXRollout, requireXEnrollment } = require('./x-rollout-policy');
 const { resolveXProcessingPolicy } = require('./x-processing-policy');
 
 const SESSION_TTL_MS = 10 * 60 * 1000;
-const DOWNLOAD = Object.freeze({ url: '/api/automation/x-setup/download', version: '0.1.0-preview.4',
-    sha256: 'c41a47ecb694cc8afe19ccfab3420d492a5a327b8264cb84b46da9ab1d7325db' });
+const DOWNLOAD = Object.freeze({ url: '/api/automation/x-setup/download', version: '0.1.0-preview.5',
+    sha256: '4c0678e1257d116fc9760db8484c6744294602fe41042598fdcd8537570a7e98' });
 const UUID = /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/;
 const hash = text => createHash('sha256').update(text).digest('hex');
 const fail = (code, message, status = 422) => { throw new AutomationError(code, message, status); };

@@ -8,7 +8,7 @@ const { zipSync } = require('fflate');
 const ROOT = path.resolve(__dirname, '..');
 const SOURCE = path.join(ROOT, 'client', 'angelic-setup');
 const FILES = Object.freeze(['LICENSE', 'README-ja.md', 'Setup-XNotifications.ps1', 'Start-Setup.ps1', 'FirefoxReader.ps1', 'Export-XNotificationData.ps1', 'Read-PushSubscription.js', 'はじめに読んでください.txt', 'ダブルクリックで開始.cmd']);
-const VERSION = '0.1.0-preview.4';
+const VERSION = '0.1.0-preview.5';
 const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
 
 async function rejectLinks(target) {
