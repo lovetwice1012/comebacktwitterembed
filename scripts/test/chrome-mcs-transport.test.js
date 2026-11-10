@@ -31,3 +31,36 @@ test('MCS transport fails closed on invalid framing, flood and abort', async () 
     await transport.connect(); const reading = transport.read(1000); transport.abort('X_PUSH_LEASE_LOST');
     await assert.rejects(reading, e => e.code === 'X_PUSH_LEASE_LOST');
 });
+test('pending writes reject immediately on socket error, remote close or explicit shutdown', async () => {
+    for (const mode of ['error', 'remote-close', 'shutdown']) {
+        const socket = new FakeSocket(), callbacks = [];
+        socket.write = (_data, callback) => { callbacks.push(callback); return true; };
+        const transport = createChromeMcsTransport({ timeoutMs: 1000, createSocket: () => socket });
+        await transport.connect();
+        const first = transport.send(Buffer.from('one')), second = transport.send(Buffer.from('two'));
+        const code = mode === 'error' ? 'X_PUSH_SOCKET_FAILED' : 'X_PUSH_SOCKET_CLOSED';
+        const rejected = Promise.all([assert.rejects(first, { code }), assert.rejects(second, { code })]);
+        if (mode === 'error') socket.emit('error', new Error('private detail'));
+        else if (mode === 'remote-close') socket.emit('close');
+        else await transport.close();
+        await rejected;
+        // A callback arriving after socket termination must not resettle a send.
+        for (const callback of callbacks) callback();
+        await transport.close();
+    }
+});
+test('one write error rejects all pending writes and retains the safe error', async () => {
+    const socket = new FakeSocket(), callbacks = [];
+    socket.write = (_data, callback) => { callbacks.push(callback); return true; };
+    const transport = createChromeMcsTransport({ timeoutMs: 1000, createSocket: () => socket });
+    await transport.connect();
+    const first = transport.send(Buffer.from('one')), second = transport.send(Buffer.from('two'));
+    const rejected = Promise.all([assert.rejects(first, { code: 'X_PUSH_SOCKET_FAILED' }), assert.rejects(second, { code: 'X_PUSH_SOCKET_FAILED' })]);
+    callbacks[0](new Error('private detail')); await rejected; callbacks[1](); await transport.close();
+});
+test('a stalled write times out and closes the socket', async () => {
+    const socket = new FakeSocket(); socket.write = () => true;
+    const transport = createChromeMcsTransport({ timeoutMs: 25, createSocket: () => socket });
+    await transport.connect(); await assert.rejects(transport.send(Buffer.from('one')), { code: 'X_PUSH_SEND_TIMEOUT' });
+    assert(socket.destroyed); await transport.close();
+});
