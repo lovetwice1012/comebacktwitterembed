@@ -17,7 +17,11 @@ function startSyntheticWorker(input) {
             const deadline = Date.now() + timeoutMs;
             while (Date.now() < deadline) {
                 const failure = events.find(item => item?.event === 'failure');
-                if (failure) throw new Error(/^PROBE_[A-Z_]+$/.test(failure.code || '') ? failure.code : 'PROBE_WORKER_FAILED');
+                if (failure) {
+                    const code = failure.code || '';
+                    throw new Error(/^PROBE_[A-Z_]+$/.test(code) ? code
+                        : /^(?:X_PUSH|X_SETUP|X_EDGE_WNS)_[A-Z_]+$/.test(code) ? `PROBE_WORKER_${code}` : 'PROBE_WORKER_FAILED');
+                }
                 const found = events.find(item => item?.event === event); if (found) return found;
                 if (closed) throw new Error('PROBE_WORKER_EXITED');
                 await delay(50);

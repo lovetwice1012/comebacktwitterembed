@@ -90,14 +90,21 @@ async function main() {
     const testXSelector = process.env.EDGE_PROBE_X_SELECTOR === '1';
     const testTlsIsolation = process.env.EDGE_PROBE_TLS_ISOLATION === '1';
     const testBindShape = process.env.EDGE_PROBE_BIND_SHAPE === '1';
+    const testSession = process.env.EDGE_PROBE_SESSION === '1';
+    const testSessionDb = process.env.EDGE_PROBE_SESSION_DB === '1';
     if (testXSelector && (!testTwoSites || process.env.NODE_ENV !== 'test')) throw new Error('PROBE_MODE_INVALID');
     if (testTlsIsolation && (noRelay || process.env.NODE_ENV !== 'test')) throw new Error('PROBE_MODE_INVALID');
     if (testBindShape && (!testIndependent || process.env.NODE_ENV !== 'test')) throw new Error('PROBE_MODE_INVALID');
+    if (testSession && (!testIndependent || !testTwoSites || process.env.NODE_ENV !== 'test'
+        || process.env.EDGE_PROBE_GENERATED_HANDSHAKE !== '1' || process.env.EDGE_PROBE_CLIENT_METADATA !== '1'
+        || process.env.EDGE_PROBE_DURABLE === '1' || process.env.EDGE_PROBE_ROTATION === '1')) throw new Error('PROBE_MODE_INVALID');
+    if (testSessionDb && (!testSession || Number(process.env.AUTOMATION_TEST_DB_PORT) !== 33621)) throw new Error('PROBE_MODE_INVALID');
     const testOffline = process.env.EDGE_PROBE_OFFLINE === '1';
     const testDurable = process.env.EDGE_PROBE_DURABLE === '1';
     const testDurableFailure = process.env.EDGE_PROBE_DURABLE_FAIL_INSERT === '1';
     const testProcessCrash = process.env.EDGE_PROBE_DURABLE_PROCESS_CRASH === '1';
     const testTokenState = process.env.EDGE_PROBE_DURABLE_TOKEN_STATE === '1';
+    const testProductionState = process.env.EDGE_PROBE_DURABLE_PRODUCTION_STATE === '1';
     if (testWrongKey && (noRelay || process.env.EDGE_PROBE_RECONNECT !== '1' || process.env.EDGE_PROBE_COPY_PROFILE !== '1'
         || process.env.EDGE_PROBE_MINIMAL_PROFILE !== '1' || process.env.EDGE_PROBE_DECRYPT_RECEIVED === '1'
         || (process.env.EDGE_PROBE_OMIT_COMPONENT || '').split(',').includes('push-store'))) throw new Error('PROBE_MODE_INVALID');
@@ -120,8 +127,9 @@ async function main() {
     if (testDurableFailure && !testDurable) throw new Error('PROBE_MODE_INVALID');
     if (testProcessCrash && (!testDurable || testDurableFailure)) throw new Error('PROBE_MODE_INVALID');
     if (testTokenState && !testProcessCrash) throw new Error('PROBE_MODE_INVALID');
+    if (testProductionState && !testTokenState) throw new Error('PROBE_MODE_INVALID');
     const temp = await fs.realpath(os.tmpdir()), root = await fs.mkdtemp(path.join(temp, 'cbte-edge-wns-probe-'));
-    let browser, cdp, pageServer, relay, untrustedServer, durableDb, browserReceived = false, copiedProfileResult = null, detachedConnectionResult = null, independentResult = null, durableResult = null, routingResult = null, handshakeShape = null, handshakeRelations = null, bindShape = null, relationDeviceRecord = null, relationSiteRecord = null, independentWebPush = null, independentChannel = null, productConstants = null, capturedCipherDecrypted = null, appServerKeyMatches = null, deviceFields, expectedCipher, otherCipher, expectedNextCipher, otherNextCipher, tlsIsolationVerified = false; const sockets = new Set(), events = [];
+    let browser, cdp, pageServer, relay, untrustedServer, durableDb, browserReceived = false, copiedProfileResult = null, detachedConnectionResult = null, independentResult = null, durableResult = null, routingResult = null, handshakeShape = null, handshakeRelations = null, bindShape = null, relationDeviceRecord = null, relationSiteRecord = null, independentWebPush = null, independentChannel = null, productConstants = null, capturedCipherDecrypted = null, appServerKeyMatches = null, deviceFields, expectedCipher, otherCipher, expectedNextCipher, otherNextCipher, tlsIsolationVerified = false; const sockets = new Set(), events = [], exchangeShapes = [];
     const browserEvents = { initial: 0, second: 0, third: 0, fourth: 0, copy: 0, other: 0 };
     let probeStage = 'setup', previousServerNonce = null;
     try {
@@ -815,6 +823,7 @@ async function main() {
                 // Placeholder subscription supplies only the existing owner and
                 // lease fence; the ciphertext uses the disposable Edge key.
                 durableSubscription = await insertSubscription(durableDb);
+                if (testProductionState) await durableDb.queryDatabase("UPDATE automation_x_subscriptions SET browser_kind='edge' WHERE id=?", [durableSubscription.subscriptionId]);
                 const storeDb = testDurableFailure ? { ...durableDb, withDatabaseTransaction: work => durableDb.withDatabaseTransaction(query => work(async (sql, params) => {
                     const result = await query(sql, params);
                     if (sql.startsWith('INSERT INTO automation_x_push_inbox')) throw new Error('synthetic-db-failure');
@@ -834,6 +843,7 @@ async function main() {
                 ackSettleMs: captureToken && testOffline && process.env.EDGE_PROBE_OFFLINE_ACK === '1' ? 1000 : 0,
                 ...(captureToken ? { onRotatedToken: value => { rotatedToken?.fill(0); rotatedToken = Buffer.from(value); } } : {}),
                 ...(testBindShape ? { onBindShape: value => { bindShape = value; } } : {}),
+                ...(testBindShape ? { onExchangeShape: value => { exchangeShapes.push(value); } } : {}),
                 ...(captureToken && testOffline ? { onTargetCiphertext: value => { firstCipher?.fill(0); firstCipher = Buffer.from(value); } } : {}),
                 ...(testDurable ? { onTargetCiphertext: async (ciphertext, frame) => {
                     durableCipher = Buffer.from(ciphertext); await durableReceiver.receive(frame, 6);
@@ -856,10 +866,12 @@ async function main() {
                     let statePrivateKey;
                     if (testTokenState) {
                         statePrivateKey = generateKeyPairSync('rsa', { modulusLength: 3072 }).privateKey.export({ type: 'pkcs8', format: 'pem' });
-                        const { createSyntheticStateVault } = require('./edge-fixture-state-vault.cjs');
-                        const { createSyntheticTokenStateStore } = require('./edge-fixture-state-store.cjs');
-                        const state = createSyntheticTokenStateStore({ ...durableDb, fixturePort: 33621 }, { vault: createSyntheticStateVault(statePrivateKey) });
-                        await state.initialize();
+                        if (!testProductionState) {
+                            const { createSyntheticStateVault } = require('./edge-fixture-state-vault.cjs');
+                            const { createSyntheticTokenStateStore } = require('./edge-fixture-state-store.cjs');
+                            const state = createSyntheticTokenStateStore({ ...durableDb, fixturePort: 33621 }, { vault: createSyntheticStateVault(statePrivateKey) });
+                            await state.initialize();
+                        }
                     }
                     const entitlements = require('../../src/automation/entitlements');
                     await durableDb.withDatabaseTransaction(query => entitlements.savePlanPolicy(query, { userId: '666666666666666666', isAdmin: true },
@@ -873,7 +885,7 @@ async function main() {
                         channel: independentChannel.toString('base64'), productKey: productConstants.key.toString('base64'), productId: productConstants.id.toString('base64'),
                         publicKey: independentWebPush.publicKey.toString('base64'), privateKey: independentWebPush.privateKey.toString('base64'),
                         auth: independentWebPush.auth.toString('base64'), subscription: value.subscription, otherSubscription, vapid, clientMetadata,
-                        ...(testTokenState ? { stateEnabled: true, statePrivateKey } : {}) };
+                        ...(testTokenState ? { stateEnabled: true, statePrivateKey, productionState: testProductionState } : {}) };
                     let firstWorker, successorWorker, processFailure;
                     try {
                         firstWorker = startSyntheticWorker({ ...input, worker: 'first' });
@@ -901,7 +913,7 @@ async function main() {
                         independentResult = { killedAfterCommitBeforeTargetAck: true };
                         durableResult = { realWnsCipherCommitted: true, separateWorkerProcesses: true, actualLeaseExpiry: true,
                             staleLeaseRejected: true, successorDecrypted: true, foreignPersisted: false, inboxCount: recovered.inboxCount, jobCount: recovered.jobCount,
-                            tokenStateSaved: testTokenState, successorReconnected: recovered.reconnected, tokenGeneration: recovered.stateGeneration };
+                            tokenStateSaved: testTokenState, productionState: testProductionState, successorReconnected: recovered.reconnected, tokenGeneration: recovered.stateGeneration };
                     } catch (error) { processFailure = error; }
                     const cleanup = await Promise.allSettled([firstWorker, successorWorker].filter(Boolean).map(worker => worker.cleanup()));
                     if (cleanup.some(result => result.status === 'rejected')) {
@@ -909,6 +921,73 @@ async function main() {
                         else processFailure = new Error('PROBE_WORKER_CLEANUP_FAILED');
                     }
                     if (processFailure) throw processFailure;
+                } else if (testSession) {
+                    const { createEdgeWnsSession } = require('../../src/automation/edge-wns-session');
+                    const { createEdgeWnsTransport } = require('../../src/automation/edge-wns-transport');
+                    const { decryptEce } = await import(pathToFileURL(path.resolve(__dirname, '../../packages/angelic-angel/dist/crypto.js')).href);
+                    let lease = { subscriptionId: '33333333-3333-4333-8333-333333333333', ownerUserId: '123456789', revision: 1 };
+                    let expected, borrowed, persisted = 0, dbStore, vault, identity, tokenHash, released = false;
+                    if (testSessionDb) {
+                        const { createTestDatabase } = require('../../scripts/lib/automation-test-db');
+                        const { insertSubscription } = require('../../scripts/test/helpers/x-push-fixture.cjs');
+                        const { createXPushStore } = require('../../src/automation/x-push-store');
+                        const { createWnsTokenWorkerVault } = require('../../src/automation/x-setup-transfer');
+                        durableDb = await createTestDatabase(33621);
+                        identity = await insertSubscription(durableDb);
+                        await durableDb.queryDatabase("UPDATE automation_x_subscriptions SET browser_kind='edge' WHERE id=?", [identity.subscriptionId]);
+                        dbStore = createXPushStore(durableDb); lease = await dbStore.claim({ ...identity, workerId: 'synthetic-session' });
+                        if (!lease) throw new Error('PROBE_SESSION_LEASE_INVALID');
+                        vault = createWnsTokenWorkerVault({ activeKeyId: 'synthetic1', privateKeys: { synthetic1: generateKeyPairSync('rsa', { modulusLength: 3072 }).privateKey } });
+                    }
+                    const store = { async assertLease(current, options) { if (dbStore) return dbStore.assertLease(current, options); await options.authorize(); },
+                        async recordFrame(current, entry, options) {
+                            const saved = dbStore ? await dbStore.recordFrame(current, entry, options) : (await options.authorize(), { ...lease, ...entry, id: '1', duplicate: false });
+                            const encrypted = Buffer.from(entry.data, 'base64url'); let plain;
+                            try {
+                                if (!expected || !encrypted.equals(expected)) throw new Error('PROBE_SESSION_CIPHER_INVALID');
+                                plain = decryptEce(encrypted, { encoding: 'aes128gcm' }, { public_key: [...independentWebPush.publicKey],
+                                    private_key: [...independentWebPush.privateKey], auth_secret: [...independentWebPush.auth] });
+                                if (!plain.equals(Buffer.from('synthetic-session-target'))) throw new Error('PROBE_SESSION_DECRYPT_INVALID');
+                                persisted++; return saved;
+                            } finally { encrypted.fill(0); plain?.fill(0); }
+                        } };
+                    const initialToken = Buffer.from(deviceFields[2]);
+                    const session = createEdgeWnsSession({ transport: createEdgeWnsTransport(), store, lease, siteChannel: independentChannel,
+                        authorize: async () => {}, saveRotatedToken: async token => {
+                            borrowed = token; tokenHash = createHash('sha256').update(token).digest('hex');
+                            if (dbStore) await dbStore.saveWnsTokenState(lease, { vault, token, expectedGeneration: 0, authorize: async () => {} });
+                        },
+                        agent: { os: 'Windows 10', osVersion: '10.0.00000', architecture: 'x86_64', locale: 'en' }, client: clientMetadata,
+                        deviceKey: key, reconnectToken: initialToken, productKey: productConstants.key, productId: productConstants.id });
+                    try {
+                        await session.start();
+                        if (!borrowed?.length || !borrowed.every(byte => byte === 0)) throw new Error('PROBE_SESSION_TOKEN_INVALID');
+                        const other = await sendFixture(otherSubscription, 'synthetic-session-other'); other.fill(0);
+                        const foreign = await session.next(15000);
+                        if (durableDb && Number((await durableDb.queryDatabase('SELECT COUNT(*) n FROM automation_x_push_inbox'))[0].n) !== 0)
+                            throw new Error('PROBE_SESSION_FOREIGN_STORED');
+                        expected = await sendFixture(value.subscription, 'synthetic-session-target');
+                        const target = await session.next(15000);
+                        if (foreign.state !== 'discarded' || target.state !== 'persisted' || persisted !== 1) throw new Error('PROBE_SESSION_ROUTE_INVALID');
+                        if (dbStore) {
+                            session.close(); await dbStore.release(lease); released = true;
+                            const successor = await dbStore.claim({ ...identity, workerId: 'synthetic-session-successor' });
+                            if (!successor) throw new Error('PROBE_SESSION_LEASE_INVALID');
+                            try {
+                                const recovered = await dbStore.readWnsTokenState(successor, { vault, authorize: async () => {} });
+                                try {
+                                    if (!recovered || recovered.generation !== 1 || createHash('sha256').update(recovered.token).digest('hex') !== tokenHash)
+                                        throw new Error('PROBE_SESSION_STATE_INVALID');
+                                } finally { recovered?.token.fill(0); }
+                                if (Number((await durableDb.queryDatabase('SELECT COUNT(*) n FROM automation_x_push_inbox'))[0].n) !== 1)
+                                    throw new Error('PROBE_SESSION_ROUTE_INVALID');
+                            } finally { await dbStore.release(successor); }
+                        }
+                        independentResult = { sessionReady: true, tokenCleared: true, foreignDiscarded: true, targetReceived: true, productionStoreRecovered: Boolean(dbStore) };
+                    } finally {
+                        expected?.fill(0); initialToken.fill(0); session.close();
+                        if (dbStore && !released) await dbStore.release(lease).catch(() => {});
+                    }
                 } else {
                 const label = testDurable ? JSON.stringify({ notificationType: 'tweet', author: { id: '12345', handle: 'synthetic' },
                     url: 'https://x.com/synthetic/status/1234567890123456789', text: 'synthetic-durable-event' }) : 'synthetic-independent-first';
@@ -988,7 +1067,7 @@ async function main() {
             if (!testIndependent || typeof process.send !== 'function') throw new Error('PROBE_MODE_INVALID');
             await new Promise((resolve, reject) => process.send({ independentResult }, error => error ? reject(new Error('PROBE_IPC_FAILED')) : resolve()));
         }
-        console.log(JSON.stringify({ syntheticProfile: true, testWrongKey, testRewrite, testIndependent, testTwoSites, testDurable, tlsIsolationVerified, winrtFeatureOverride: featureArgs.length > 0, endpointOverride: !noRelay, builtInStorePresent, relayConnections: events.length, events: shapes, initialNotificationReceived: browserEvents.initial > 0, browserReceived, copiedProfileResult, detachedConnectionResult, independentResult, durableResult, routingResult, handshakeShape, handshakeRelations, bindShape, capturedCipherDecrypted, appServerKeyMatches,
+        console.log(JSON.stringify({ syntheticProfile: true, testWrongKey, testRewrite, testIndependent, testTwoSites, testDurable, tlsIsolationVerified, winrtFeatureOverride: featureArgs.length > 0, endpointOverride: !noRelay, builtInStorePresent, relayConnections: events.length, events: shapes, initialNotificationReceived: browserEvents.initial > 0, browserReceived, copiedProfileResult, detachedConnectionResult, independentResult, durableResult, routingResult, handshakeShape, handshakeRelations, bindShape, exchangeShapes, capturedCipherDecrypted, appServerKeyMatches,
             subscription: value.ok ? { ok: true, host: new URL(value.subscription.endpoint).hostname } : value }));
     } catch (error) {
         console.error('PROBE_STAGE', probeStage, /^PROBE_[A-Z_]+$/.test(error?.message || '') ? error.message : error?.name || 'Error');

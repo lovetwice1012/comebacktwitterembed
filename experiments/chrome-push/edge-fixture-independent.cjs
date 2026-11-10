@@ -145,12 +145,13 @@ function syntheticHandshake(key, token, productConstants, metadata) {
 }
 
 async function independentSyntheticReconnect({ frames, key, token, connect = () => tls.connect({ host: 'client.wns.windows.com', port: 443,
-    servername: 'client.wns.windows.com', rejectUnauthorized: true }), timeoutMs = 15000, sendNotification, decryptNotification, productConstants, generatedPrelude = false, generatedHandshake = false, clientMetadata, ackAndFollowup = false, ackSingle = false, ackSettleMs = 0, onRotatedToken, onTargetCiphertext, onBindShape, observePrior, expectedChannel, sendOtherNotification }) {
+    servername: 'client.wns.windows.com', rejectUnauthorized: true }), timeoutMs = 15000, sendNotification, decryptNotification, productConstants, generatedPrelude = false, generatedHandshake = false, clientMetadata, ackAndFollowup = false, ackSingle = false, ackSettleMs = 0, onRotatedToken, onTargetCiphertext, onBindShape, onExchangeShape, observePrior, expectedChannel, sendOtherNotification }) {
     if ((!frames && !generatedHandshake) || !Buffer.isBuffer(key) || key.length !== 32 || typeof token !== 'string' || typeof connect !== 'function'
         || !Number.isInteger(timeoutMs) || timeoutMs < 100 || timeoutMs > 30000
         || onRotatedToken !== undefined && typeof onRotatedToken !== 'function'
         || onTargetCiphertext !== undefined && typeof onTargetCiphertext !== 'function'
         || onBindShape !== undefined && typeof onBindShape !== 'function'
+        || onExchangeShape !== undefined && typeof onExchangeShape !== 'function'
         || !Number.isInteger(ackSettleMs) || ackSettleMs < 0 || ackSettleMs > 2000 || ackSingle && ackAndFollowup) throw fail('PROBE_DIRECT_CONFIG_INVALID');
     if (observePrior !== undefined && (!observePrior || !Buffer.isBuffer(observePrior.offlineCipher)
         || !Buffer.isBuffer(observePrior.priorCipher) || !Number.isInteger(observePrior.windowMs)
@@ -183,6 +184,16 @@ async function independentSyntheticReconnect({ frames, key, token, connect = () 
                     : (parts[0] || '') === '' ? 'EMPTY' : 'OTHER';
                 const route = ['CON', 'WNS', 'WNS\\CHALLENGE', 'WNS\\NOTIF'].includes(parts[2]) ? parts[2].replace('\\', '_') : 'OTHER';
                 throw fail(`PROBE_DIRECT_EXPECTED_${verb}_GOT_${actual}_ROUTE_${route}`);
+            }
+            if (onExchangeShape) {
+                const requestEnd = frame.indexOf('\r\n'), requestParts = frame.subarray(0, requestEnd).toString('ascii').split(' ');
+                const separator = response.indexOf('\r\n\r\n', end + 2);
+                const headerText = separator >= 0 ? response.subarray(end + 2, separator).toString('ascii') : '';
+                const headerNames = headerText.split('\r\n').map(line => line.slice(0, line.indexOf(':')).toLowerCase())
+                    .map(name => ['ms-cv', 'context', 'status', 'status-code', 'error', 'error-code', 'content-type'].includes(name) ? name : 'other');
+                const body = separator >= 0 ? response.subarray(separator + 4).toString('ascii') : '';
+                await onExchangeShape({ verb, responseParts: parts.length, sequenceMatchesRequest: parts[1] === requestParts[1],
+                    hasHeaders: separator >= 0, headerNames, hasBody: body.length > 0, hasErrorTag: /<error(?:\s|>)/i.test(body) });
             }
             if (verb !== 'BND') return {};
             if (onBindShape) {

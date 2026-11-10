@@ -13,6 +13,7 @@ const { createQueue } = require('../../src/automation/queue');
 const { createXEventRouter } = require('../../src/automation/x-event-router');
 const { createSyntheticStateVault } = require('./edge-fixture-state-vault.cjs');
 const { createSyntheticTokenStateStore } = require('./edge-fixture-state-store.cjs');
+const { createWnsTokenWorkerVault } = require('../../src/automation/x-setup-transfer');
 const notify = value => new Promise((resolve, reject) => process.send(value, error => error ? reject(new Error('PROBE_IPC_FAILED')) : resolve()));
 async function syntheticSend(subscription, message, vapid) {
     const webpush = require('web-push');
@@ -54,8 +55,20 @@ async function run(input) {
                 catch (error) { await query('ROLLBACK'); throw error; } finally { connection.release(); } },
         };
         const store = createXPushStore(db, { leaseMs: 30000 });
-        if (input.stateEnabled && (typeof input.statePrivateKey !== 'string' || input.statePrivateKey.length > 16384)) throw new Error('PROBE_WORKER_INPUT_INVALID');
-        const state = input.stateEnabled ? createSyntheticTokenStateStore(db, { vault: createSyntheticStateVault(input.statePrivateKey) }) : null;
+        if (input.stateEnabled && (typeof input.statePrivateKey !== 'string' || input.statePrivateKey.length > 16384)
+            || input.productionState && !input.stateEnabled) throw new Error('PROBE_WORKER_INPUT_INVALID');
+        let state = null;
+        if (input.stateEnabled && input.productionState) {
+            const vault = createWnsTokenWorkerVault({ activeKeyId: 'synthetic1', privateKeys: { synthetic1: input.statePrivateKey } });
+            state = { save: (current, token, expectedGeneration, authorize) => store.saveWnsTokenState(current, { vault, token, expectedGeneration, authorize }),
+                read: (current, authorize) => store.readWnsTokenState(current, { vault, authorize }) };
+        } else if (input.stateEnabled) state = createSyntheticTokenStateStore(db, { vault: createSyntheticStateVault(input.statePrivateKey) });
+        async function assertTokenEncrypted(token) {
+            const sql = input.productionState ? 'SELECT wns_token_sealed_json AS sealed_json FROM automation_x_push_receivers WHERE subscription_id=?'
+                : 'SELECT sealed_json FROM cbte_fixture_wns_state WHERE subscription_id=?';
+            const row = (await db.queryDatabase(sql, [input.subscriptionId]))[0];
+            if (!row || typeof row.sealed_json !== 'string' || row.sealed_json.includes(token.toString('ascii'))) throw new Error('PROBE_WORKER_STATE_INVALID');
+        }
         const identity = { subscriptionId: input.subscriptionId, ownerUserId: input.ownerUserId };
         const lease = await store.claim({ ...identity, workerId: `synthetic-wns-${input.worker}` });
         if (!lease) throw new Error('PROBE_WORKER_BUSY');
@@ -90,8 +103,7 @@ async function run(input) {
                         expectedChannel: channel, ackSingle: true,
                         onRotatedToken: async token => {
                             const updated = await state.save(lease, token, 1, async () => {}); stateGeneration = updated.generation;
-                            const row = (await db.queryDatabase('SELECT sealed_json FROM cbte_fixture_wns_state WHERE subscription_id=?', [input.subscriptionId]))[0];
-                            if (!row || row.sealed_json.includes(token.toString('ascii'))) throw new Error('PROBE_WORKER_STATE_INVALID');
+                            await assertTokenEncrypted(token);
                         },
                         sendNotification: () => syntheticSend(input.subscription, nextLabel, input.vapid),
                         decryptNotification: async ciphertext => {
@@ -121,15 +133,18 @@ async function run(input) {
             generatedHandshake: true, clientMetadata: input.clientMetadata, expectedChannel: channel,
             ...(state ? { onRotatedToken: async token => {
                 await state.save(lease, token, 0, async () => {});
-                const row = (await db.queryDatabase('SELECT sealed_json FROM cbte_fixture_wns_state WHERE subscription_id=?', [input.subscriptionId]))[0];
-                if (!row || row.sealed_json.includes(token.toString('ascii'))) throw new Error('PROBE_WORKER_STATE_INVALID');
+                await assertTokenEncrypted(token);
             } } : {}),
             sendOtherNotification: () => syntheticSend(input.otherSubscription, 'synthetic-independent-other', input.vapid), sendNotification: () => syntheticSend(input.subscription, label, input.vapid),
             decryptNotification: async () => { throw new Error('PROBE_TARGET_DECRYPT_UNEXPECTED'); },
             onTargetCiphertext: async (_ciphertext, frame) => receiver.receive(frame, 6) });
         throw new Error('PROBE_WORKER_STOP_EXPECTED');
     } catch (error) {
-        await notify({ event: 'failure', code: /^PROBE_[A-Z_]+$/.test(error?.code || error?.message || '') ? (error.code || error.message) : 'PROBE_WORKER_FAILED' }).catch(() => {});
+        const code = error?.code || error?.message || '';
+        const safe = /^(?:PROBE|X_PUSH|X_SETUP|X_EDGE_WNS)_[A-Z_]+$/.test(code) ? code
+            : /^(?:ER_BAD_FIELD_ERROR|ER_NO_SUCH_TABLE|ER_DATA_TOO_LONG|ER_PARSE_ERROR|ER_DUP_ENTRY)$/.test(code) ? `PROBE_WORKER_${code}`
+                : error?.name === 'TypeError' ? 'PROBE_WORKER_TYPE_ERROR' : error?.name === 'RangeError' ? 'PROBE_WORKER_RANGE_ERROR' : 'PROBE_WORKER_FAILED';
+        await notify({ event: 'failure', code: safe }).catch(() => {});
         process.exitCode = 1;
     } finally {
         for (const value of [key, channel, productKey, productId, publicKey, privateKey, auth]) value?.fill(0);

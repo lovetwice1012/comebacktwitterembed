@@ -39,7 +39,7 @@ test('foreign synthetic notifications are fenced and never persisted', async () 
 });
 test('collision, failed DB, post-commit failure and lost lease never send ACK', async () => {
     const collision = fixture(); await collision.receiver.receive(frame(), 5); collision.steps.length = 0;
-    await assert.rejects(collision.receiver.receive(frame('1;synthetic-target', 'synthetic-id', 'different'), 6), { code: 'PROBE_DURABLE_ID_CONFLICT' });
+    await assert.rejects(collision.receiver.receive(frame('1;synthetic-target', 'synthetic-id', 'different'), 6), { code: 'X_EDGE_WNS_RECEIPT_CONFLICT' });
     assert(!collision.steps.includes('ack'));
     for (const options of [{ dbFailure: true }, { failAfterCommit: true }, { expireAfterCommit: true }]) {
         const f = fixture(options); await assert.rejects(f.receiver.receive(frame(), 5)); assert(!f.steps.includes('ack'));
