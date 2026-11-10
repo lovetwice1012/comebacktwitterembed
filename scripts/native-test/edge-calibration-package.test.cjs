@@ -15,7 +15,8 @@ test('bundled Edge calibration obtains metadata using only an owned synthetic pr
     await fs.mkdir(pkg); await fs.mkdir(path.join(calibrationRoot, 'profile'), { recursive: true });
     await fs.writeFile(path.join(calibrationRoot, 'owner.json'), JSON.stringify({ appId: 'x-notification-setup', kind: 'edge-calibration-v1', token }));
     const source = path.resolve(__dirname, '../../client/angelic-setup');
-    for (const name of ['EdgePeerIdentity.ps1', 'EdgePeerVerify.ps1', 'EdgeCalibrationJob.ps1']) await fs.copyFile(path.join(source, name), path.join(pkg, name));
+    for (const name of ['EdgePeerIdentity.ps1', 'EdgePeerVerify.ps1', 'EdgeCalibrationJob.ps1', 'EdgeCalibration.ps1', 'EdgeEphemeralCertificate.ps1'])
+        await fs.copyFile(path.join(source, name), path.join(pkg, name));
     const bundles = await buildChromeBundles({ includeEdge: true }); await fs.writeFile(path.join(pkg, 'EdgeCalibrate.cjs'), bundles['EdgeCalibrate.cjs']);
     const helper = path.join(source, 'EdgeEphemeralCertificate.ps1').replace(/'/g, "''");
     const certScript = `$ErrorActionPreference='Stop'; . '${helper}'; $c=New-XEdgeEphemeralCertificate; try { [ordered]@{pfx=[Convert]::ToBase64String($c.pfx).TrimEnd('=').Replace('+','-').Replace('/','_');passphrase=$c.password;certificate=[Convert]::ToBase64String($c.certificate).TrimEnd('=').Replace('+','-').Replace('/','_')}|ConvertTo-Json -Compress } finally { [Array]::Clear($c.pfx,0,$c.pfx.Length);[Array]::Clear($c.certificate,0,$c.certificate.Length) }`;
@@ -55,4 +56,31 @@ try { $read=$job.ReadLimitedAsync(16384);$write=$job.WriteAndCloseAsync($inputBy
     assert.equal(viaJob.status, 0, viaJob.stderr || 'job calibration failed');
     const jobResult = JSON.parse(viaJob.stdout); assert.equal(jobResult.ok, true); assert.equal(jobResult.browserVersion, resultData.browserVersion);
     assert(!viaJob.stdout.includes(cert.pfx)); assert(!viaJob.stdout.includes(cert.passphrase));
+    await fs.link(process.execPath, path.join(pkg, 'ChromeNode.exe'));
+    const owned = path.join(root, 'owned'), version = resultData.browserVersion;
+    const wrapperScript = `$ErrorActionPreference='Stop';$script:Root=${quoted(owned)};$script:PackageRoot=${quoted(pkg)}
+$script:Utf8=New-Object Text.UTF8Encoding($false);$script:UserSid=[Security.Principal.WindowsIdentity]::GetCurrent().User
+$script:SystemSid=New-Object Security.Principal.SecurityIdentifier('S-1-5-18')
+function New-PrivateDirectory([string]$p) { $acl=New-Object Security.AccessControl.DirectorySecurity;$acl.SetAccessRuleProtection($true,$false)
+  foreach($sid in @($script:UserSid,$script:SystemSid)) { $rule=New-Object Security.AccessControl.FileSystemAccessRule($sid,'FullControl','ContainerInherit,ObjectInherit','None','Allow');$acl.AddAccessRule($rule) };$null=[IO.Directory]::CreateDirectory($p,$acl) }
+function Assert-PrivateDirectory([string]$p) { $acl=(New-Object IO.DirectoryInfo($p)).GetAccessControl();if (-not $acl.AreAccessRulesProtected -or @($acl.GetAccessRules($true,$true,[Security.Principal.SecurityIdentifier])).Count -ne 2) { throw 'ACL invalid' } }
+function Assert-SafePath([string]$p) { if (-not $p.StartsWith(${quoted(root)},[StringComparison]::OrdinalIgnoreCase)) { throw 'outside' }
+  $current=[IO.Path]::GetPathRoot($p);foreach($part in $p.Substring($current.Length).Split([char]92)) { if($part.Length){$current=[IO.Path]::Combine($current,$part)};if([IO.File]::Exists($current) -or [IO.Directory]::Exists($current)) { if([IO.File]::GetAttributes($current) -band [IO.FileAttributes]::ReparsePoint){throw 'reparse'} } } }
+function Get-PathAttributes([string]$p) { if(Test-Path -LiteralPath $p){[IO.File]::GetAttributes($p)}else{$null} }
+function Write-NewJson([string]$p,$value) { [IO.File]::WriteAllText($p,($value|ConvertTo-Json -Compress),$script:Utf8) }
+function Read-SmallJson([string]$p) { [IO.File]::ReadAllText($p,$script:Utf8)|ConvertFrom-Json }
+function Assert-PropertyNames($o,[string[]]$names) { $actual=@($o.PSObject.Properties|ForEach-Object{$_.Name});if($actual.Count -ne $names.Count){throw 'bad fields'};foreach($name in $actual){if($names -cnotcontains $name){throw 'bad field'}} }
+function Quote-WindowsArgument([string]$v) { '"'+$v+'"' }
+New-PrivateDirectory $script:Root
+. ${quoted(path.join(pkg, 'EdgeCalibration.ps1'))}
+$value=Invoke-XEdgeCalibration -EdgePath ${quoted(input.edgePath)} -BrowserVersion ${quoted(version)}
+if (@(Get-ChildItem -LiteralPath $script:Root -Directory -Filter 'edge-calibration-*').Count -ne 0) { throw 'temporary profile remains' }
+$failed=$false;try { Invoke-XEdgeCalibration -EdgePath ${quoted(fakeEdge)} -BrowserVersion ${quoted(version)} } catch { $failed=$true }
+if (-not $failed -or @(Get-ChildItem -LiteralPath $script:Root -Directory -Filter 'edge-calibration-*').Count -ne 0) { throw 'failed calibration not cleaned' }
+if ([IO.File]::ReadAllText(${quoted(fakeEdge)}) -cne 'unsigned fixture') { throw 'foreign executable changed' }
+$value|ConvertTo-Json -Compress`;
+    const wrapper = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(wrapperScript, 'utf16le').toString('base64')],
+        { encoding: 'utf8', windowsHide: true, env, timeout: 75000 });
+    assert.equal(wrapper.status, 0, wrapper.stderr || 'wrapper calibration failed');
+    const wrapperResult = JSON.parse(wrapper.stdout); assert(wrapperResult.client.channel); assert.equal(wrapperResult.agent.os, 'Windows');
 });
