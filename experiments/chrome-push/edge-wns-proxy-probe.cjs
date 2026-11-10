@@ -688,18 +688,29 @@ async function main() {
                 clientMetadata = { channel, protocolVersion, clientName: 'Synthetic client', clientVersion: '1.2.3.4' };
             }
             const frames = generatedHandshake ? null : events[1].fixtureSentFrames(), key = Buffer.from(deviceFields[3].toString('ascii'), 'base64');
-            try { independentResult = await independentSyntheticReconnect({ frames, key, token: deviceFields[2].toString('utf8'), productConstants,
-                generatedPrelude: process.env.EDGE_PROBE_GENERATED_PRELUDE === '1',
-                generatedHandshake,
-                clientMetadata,
-                sendNotification: () => sendFixture(value.subscription, 'synthetic-independent'),
+            let rotatedToken;
+            const direct = (token, label, captureToken, ackAndFollowup) => independentSyntheticReconnect({ frames, key, token, productConstants,
+                generatedPrelude: process.env.EDGE_PROBE_GENERATED_PRELUDE === '1', generatedHandshake, clientMetadata, ackAndFollowup,
+                ...(captureToken ? { onRotatedToken: value => { rotatedToken?.fill(0); rotatedToken = Buffer.from(value); } } : {}),
+                sendNotification: () => sendFixture(value.subscription, label),
                 decryptNotification: async ciphertext => {
                     const { decryptEce } = await import(pathToFileURL(path.resolve(__dirname, '../../packages/angelic-angel/dist/crypto.js')).href);
                     const plain = decryptEce(ciphertext, { encoding: 'aes128gcm' }, { public_key: [...independentWebPush.publicKey],
                         private_key: [...independentWebPush.privateKey], auth_secret: [...independentWebPush.auth] });
-                    try { return plain.equals(Buffer.from('synthetic-independent')); } finally { plain.fill(0); }
-                } }); }
-            finally { key.fill(0); if (frames) for (const frame of Object.values(frames)) frame.fill(0); }
+                    try { return plain.equals(Buffer.from(label)); } finally { plain.fill(0); }
+                } });
+            try {
+                const testRotation = process.env.EDGE_PROBE_ROTATION === '1';
+                if (testRotation && !generatedHandshake) throw new Error('PROBE_MODE_INVALID');
+                independentResult = await direct(deviceFields[2].toString('utf8'), 'synthetic-independent-first', testRotation,
+                    process.env.EDGE_PROBE_ACK_FOLLOWUP === '1');
+                if (testRotation) {
+                    if (!rotatedToken || !independentResult.notificationReceived) throw new Error('PROBE_ROTATION_PREREQUISITE_FAILED');
+                    const useOldToken = process.env.EDGE_PROBE_USE_STALE_TOKEN === '1';
+                    try { independentResult.rotation = { reusedPreviousToken: useOldToken, ...await direct(useOldToken ? deviceFields[2].toString('utf8') : rotatedToken.toString('ascii'), 'synthetic-independent-next', false, false) }; }
+                    catch (error) { independentResult.rotation = { errorCode: /^PROBE_[A-Z_]+$/.test(error?.code || '') ? error.code : 'PROBE_ROTATION_FAILED' }; }
+                }
+            } finally { rotatedToken?.fill(0); key.fill(0); if (frames) for (const frame of Object.values(frames)) frame.fill(0); }
         }
         const shapes = events.map(event => { const { describe, fixtureCipher, fixtureLayout, fixtureBindResponses, fixtureSentFrames, fixtureRelations, fixtureAcknowledgementAnalysis, upstreamOpen, containsFixtureCipher, acknowledgeSyntheticSecond, closeFixtureConnection, ...metadata } = event;
             return { ...metadata, fixtureLayout: fixtureLayout(), bindResponses: fixtureBindResponses(), acknowledgementAnalysis: fixtureAcknowledgementAnalysis(), shape: describe() }; });

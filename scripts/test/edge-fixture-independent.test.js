@@ -75,7 +75,7 @@ test('independent fixture only reports a notification after ciphertext and plain
     } finally { sentBind?.fill(0); }
 });
 test('independent fixture uses a fresh nonce and handles split server frames', async () => {
-    const frames = selectSyntheticHandshake([fixture()]); let writes = 0, sentBind;
+    const frames = selectSyntheticHandshake([fixture()]); let writes = 0, sentBind, receivedToken, borrowedToken;
     const socket = new EventEmitter();
     socket.write = (buffer, callback) => {
         writes++;
@@ -88,8 +88,52 @@ test('independent fixture uses a fresh nonce and handles split server frames', a
     socket.destroy = () => { socket.emit('close'); };
     const connect = () => { queueMicrotask(() => socket.emit('secureConnect')); return socket; };
     try {
-        assert.deepEqual(await independentSyntheticReconnect({ frames, key, token, connect, timeoutMs: 1000 }),
-            { cntResponse: true, athResponse: true, bindResponse: true, hasReconnectToken: true, hasNonce: true });
+        assert.deepEqual(await independentSyntheticReconnect({ frames, key, token, connect, timeoutMs: 1000,
+            onRotatedToken: value => { borrowedToken = value; receivedToken = Buffer.from(value); } }),
+            { cntResponse: true, athResponse: true, bindResponse: true, hasReconnectToken: true, hasNonce: true, reconnectTokenUnchanged: false });
         assert.equal(writes, 3); assert(!sentBind.includes(Buffer.from(`<nonce>${nonce}</nonce>`)));
-    } finally { sentBind?.fill(0); for (const value of Object.values(frames)) value.fill(0); }
+        assert.equal(receivedToken.toString('ascii'), 'synthetic'); assert(borrowedToken.every(byte => byte === 0));
+    } finally { sentBind?.fill(0); receivedToken?.fill(0); for (const value of Object.values(frames)) value.fill(0); }
+});
+test('synthetic direct receiver acknowledges only after verification and accepts a follow-up', async () => {
+    let writes = 0, sends = 0, ack;
+    const socket = new EventEmitter();
+    socket.write = (buffer, callback) => {
+        writes++;
+        if (writes === 5) { ack = Buffer.from(buffer); queueMicrotask(callback); return true; }
+        const response = writes === 1 ? frame('CNT 1 CON', '<connect/>') : writes === 2 ? frame('ATH 2 CON', '')
+            : writes === 3 ? frame('BND 3 CON', '<wns><reconnect-token>synthetic</reconnect-token><nonce>synthetic</nonce></wns>') : frame('PUT 4 WNS', '');
+        queueMicrotask(() => { callback(); socket.emit('data', response); }); return true;
+    };
+    socket.destroy = () => socket.emit('close');
+    const connect = () => { queueMicrotask(() => socket.emit('secureConnect')); return socket; };
+    const sendNotification = async () => {
+        sends++; const text = `synthetic-cipher-${sends}`;
+        queueMicrotask(() => socket.emit('data', frame('NFY 5 WNS\\NOTIF A1', `Msg-Id: fixture-${sends}\r\nContent-Encoding: aes128gcm\r\n\r\n${text}`)));
+        return Buffer.from(text);
+    };
+    try {
+        const result = await independentSyntheticReconnect({ frames: null, key, token, connect, timeoutMs: 1000, sendNotification,
+            productConstants, generatedHandshake: true, ackAndFollowup: true, decryptNotification: async () => true });
+        assert.equal(result.ackWritten, true); assert.equal(result.followupReceived, true);
+        assert.equal(result.followupMatches, true); assert.equal(result.followupDecrypted, true);
+        assert(ack.includes(Buffer.from('Msg-Id: fixture-1'))); assert.equal(sends, 2);
+    } finally { ack?.fill(0); }
+});
+test('synthetic receiver stops before challenge if token capture fails', async () => {
+    const frames = selectSyntheticHandshake([fixture()]); let writes = 0, borrowed;
+    const socket = new EventEmitter();
+    socket.write = (_buffer, callback) => {
+        writes++;
+        const response = writes === 1 ? frame('CNT 1 CON', '<connect/>') : writes === 2 ? frame('ATH 2 CON', '')
+            : frame('BND 3 CON', '<wns><reconnect-token>synthetic</reconnect-token><nonce>synthetic</nonce></wns>');
+        queueMicrotask(() => { callback(); socket.emit('data', response); }); return true;
+    };
+    socket.destroy = () => socket.emit('close');
+    const connect = () => { queueMicrotask(() => socket.emit('secureConnect')); return socket; };
+    try {
+        await assert.rejects(independentSyntheticReconnect({ frames, key, token, connect, timeoutMs: 1000,
+            onRotatedToken: value => { borrowed = value; throw new Error('synthetic-storage-failure'); } }), /synthetic-storage-failure/);
+        assert.equal(writes, 3); assert(borrowed.every(byte => byte === 0));
+    } finally { for (const value of Object.values(frames)) value.fill(0); }
 });

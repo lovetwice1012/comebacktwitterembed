@@ -7,6 +7,7 @@ const { rewriteSyntheticBind } = require('./edge-fixture-rewrite.cjs');
 const { firstFixtureNotification } = require('./edge-wns-fixture-framing.cjs');
 const { rewriteSyntheticChallenge } = require('./edge-fixture-challenge.cjs');
 const { syntheticReconnectSignature } = require('./edge-fixture-signature.cjs');
+const { syntheticNotificationAck } = require('./edge-fixture-ack.cjs');
 const fail = code => Object.assign(new Error(code), { code });
 
 function selectSyntheticHandshake(chunks) {
@@ -140,9 +141,10 @@ function syntheticHandshake(key, token, productConstants, metadata = { channel: 
 }
 
 async function independentSyntheticReconnect({ frames, key, token, connect = () => tls.connect({ host: 'client.wns.windows.com', port: 443,
-    servername: 'client.wns.windows.com', rejectUnauthorized: true }), timeoutMs = 15000, sendNotification, decryptNotification, productConstants, generatedPrelude = false, generatedHandshake = false, clientMetadata }) {
+    servername: 'client.wns.windows.com', rejectUnauthorized: true }), timeoutMs = 15000, sendNotification, decryptNotification, productConstants, generatedPrelude = false, generatedHandshake = false, clientMetadata, ackAndFollowup = false, onRotatedToken }) {
     if ((!frames && !generatedHandshake) || !Buffer.isBuffer(key) || key.length !== 32 || typeof token !== 'string' || typeof connect !== 'function'
-        || !Number.isInteger(timeoutMs) || timeoutMs < 100 || timeoutMs > 30000) throw fail('PROBE_DIRECT_CONFIG_INVALID');
+        || !Number.isInteger(timeoutMs) || timeoutMs < 100 || timeoutMs > 30000
+        || onRotatedToken !== undefined && typeof onRotatedToken !== 'function') throw fail('PROBE_DIRECT_CONFIG_INVALID');
     const nonce = String(randomInt(1, 10)) + Array.from({ length: 31 }, () => String(randomInt(0, 10))).join('');
     const generated = generatedHandshake ? syntheticHandshake(key, token, productConstants, clientMetadata) : null;
     const bind = generated?.bnd || rewriteSyntheticBind(frames.bnd, key, token, nonce);
@@ -189,8 +191,15 @@ async function independentSyntheticReconnect({ frames, key, token, connect = () 
             }
             if (verb !== 'BND') return {};
             const nonces = [...response.toString('ascii').matchAll(/<nonce>([^<]{1,256})<\/nonce>/g)];
+            const tokens = [...response.toString('ascii').matchAll(/<reconnect-token>([^<]{1,4096})<\/reconnect-token>/g)];
+            if (onRotatedToken) {
+                if (tokens.length !== 1 || !/^[\x21-\x7e]{1,4096}$/.test(tokens[0][1])) throw fail('PROBE_DIRECT_FRAME_INVALID');
+                const captured = Buffer.from(tokens[0][1], 'ascii');
+                try { await onRotatedToken(captured); } finally { captured.fill(0); }
+            }
             return { hasReconnectToken: response.includes(Buffer.from('<reconnect-token>')),
-                hasNonce: nonces.length === 1, serverNonce: nonces.length === 1 ? nonces[0][1] : null };
+                hasNonce: nonces.length === 1, reconnectTokenUnchanged: tokens.length === 1 ? tokens[0][1] === token : null,
+                serverNonce: nonces.length === 1 ? nonces[0][1] : null };
         } finally { response.fill(0); }
     }
     try {
@@ -202,7 +211,7 @@ async function independentSyntheticReconnect({ frames, key, token, connect = () 
         await exchange(prelude?.cnt || frames.cnt, 'CNT'); await exchange(prelude?.ath || frames.ath, 'ATH');
         const response = await exchange(bind, 'BND');
         const result = { cntResponse: true, athResponse: true, bindResponse: true,
-            hasReconnectToken: response.hasReconnectToken, hasNonce: response.hasNonce };
+            hasReconnectToken: response.hasReconnectToken, hasNonce: response.hasNonce, reconnectTokenUnchanged: response.reconnectTokenUnchanged };
         if (sendNotification !== undefined || decryptNotification !== undefined) {
             const challengeTemplate = generated?.challenge || frames?.challenge;
             if (!Buffer.isBuffer(challengeTemplate) || typeof sendNotification !== 'function' || typeof decryptNotification !== 'function'
@@ -220,7 +229,26 @@ async function independentSyntheticReconnect({ frames, key, token, connect = () 
                 try {
                     const ciphertext = firstFixtureNotification([notification]);
                     if (!ciphertext) return { ...result, notificationReceived: false };
-                    try { return { ...result, notificationReceived: true, matchesSentCiphertext: ciphertext.equals(expected), payloadDecrypted: await decryptNotification(ciphertext) }; }
+                    try {
+                        const received = { ...result, notificationReceived: true, matchesSentCiphertext: ciphertext.equals(expected), payloadDecrypted: await decryptNotification(ciphertext) };
+                        if (!ackAndFollowup || !received.matchesSentCiphertext || !received.payloadDecrypted) return received;
+                        const acknowledgement = syntheticNotificationAck(notification, 5);
+                        try { await new Promise((resolve, reject) => socket.write(acknowledgement, error => error ? reject(fail('PROBE_DIRECT_WRITE_FAILED')) : resolve())); }
+                        finally { acknowledgement.fill(0); }
+                        const expectedNext = await sendNotification();
+                        if (!Buffer.isBuffer(expectedNext)) throw fail('PROBE_DIRECT_CONFIG_INVALID');
+                        try {
+                            let followup;
+                            try { followup = await next(); }
+                            catch (error) { if (error.code === 'PROBE_DIRECT_TIMEOUT' || error.code === 'PROBE_DIRECT_SOCKET_CLOSED') return { ...received, ackWritten: true, followupReceived: false }; throw error; }
+                            try {
+                                const nextCipher = firstFixtureNotification([followup]);
+                                if (!nextCipher) return { ...received, ackWritten: true, followupReceived: false };
+                                try { return { ...received, ackWritten: true, followupReceived: true, followupMatches: nextCipher.equals(expectedNext), followupDecrypted: await decryptNotification(nextCipher) }; }
+                                finally { nextCipher.fill(0); }
+                            } finally { followup.fill(0); }
+                        } finally { expectedNext.fill(0); }
+                    }
                     finally { ciphertext.fill(0); }
                 } finally { notification.fill(0); }
             } finally { expected.fill(0); }

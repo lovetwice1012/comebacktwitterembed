@@ -30,6 +30,9 @@ async function verifyDerived(channel, protocolVersion) {
     Object.assign(env, { EDGE_PROBE_SYSTEM_DEFAULT: '1', EDGE_PROBE_RECONNECT: '1', EDGE_PROBE_COPY_PROFILE: '1', EDGE_PROBE_MINIMAL_PROFILE: '1',
         EDGE_PROBE_OMIT_COMPONENT: 'local-state,preferences', EDGE_PROBE_INDEPENDENT_RECONNECT: '1', EDGE_PROBE_GENERATED_HANDSHAKE: '1',
         EDGE_PROBE_SYNTHETIC_CHANNEL: channel, EDGE_PROBE_SYNTHETIC_PROTOCOL: protocolVersion, EDGE_PROBE_REPORT_DIRECT_IPC: '1' });
+    if (process.env.EDGE_PROBE_VALIDATE_ACK === '1') env.EDGE_PROBE_ACK_FOLLOWUP = '1';
+    if (process.env.EDGE_PROBE_VALIDATE_ROTATION === '1') env.EDGE_PROBE_ROTATION = '1';
+    if (process.env.EDGE_PROBE_VALIDATE_STALE === '1') { env.EDGE_PROBE_ROTATION = '1'; env.EDGE_PROBE_USE_STALE_TOKEN = '1'; }
     const child = fork(path.join(__dirname, 'edge-wns-proxy-probe.cjs'), [], { env, windowsHide: true, stdio: ['ignore', 'ignore', 'pipe', 'ipc'] });
     let result, diagnostic = '';
     child.stderr.on('data', chunk => { diagnostic = (diagnostic + chunk.toString('utf8')).slice(-4096); });
@@ -74,7 +77,11 @@ async function main() {
         }
         console.log(JSON.stringify({ syntheticProfiles: fingerprints.length, distinctIdentifiers: distinct,
             identicalAcrossProfiles: distinct === 1, protocolVersionsIdentical: protocolDistinct === 1, generatedFramesWithoutCapturedMetadata: directResult === null ? null
-                : Boolean(directResult.notificationReceived && directResult.matchesSentCiphertext && directResult.payloadDecrypted) }));
+                : Boolean(directResult.notificationReceived && directResult.matchesSentCiphertext && directResult.payloadDecrypted),
+            reconnectTokenUnchanged: directResult?.reconnectTokenUnchanged ?? null,
+            ackWritten: directResult?.ackWritten ?? null, followupReceived: directResult?.followupReceived ?? null,
+            followupMatches: directResult?.followupMatches ?? null, followupDecrypted: directResult?.followupDecrypted ?? null,
+            rotation: directResult?.rotation ?? null }));
     } finally { salt.fill(0); fingerprints.length = 0; }
 }
 main().catch(error => { console.error(/^PROBE_[A-Z_]+$/.test(error?.message || '') ? error.message : 'PROBE_COMPARE_FAILED'); process.exitCode = 1; });
