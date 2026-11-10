@@ -822,6 +822,21 @@ async function main() {
                 clientMetadata = { channel, protocolVersion, clientName: 'Synthetic client', clientVersion: '1.2.3.4' };
             }
             const frames = generatedHandshake ? null : events[1].fixtureSentFrames(), key = Buffer.from(deviceFields[3].toString('ascii'), 'base64');
+            if (process.env.EDGE_PROBE_TRANSFER === '1') {
+                if (!testSession || !testTwoSites || !testSkipChallenge || !clientMetadata || !independentChannel) throw new Error('PROBE_MODE_INVALID');
+                const { normalizeEdgeTransfer } = require('../../src/automation/edge-wns-transfer');
+                const publicKey = independentWebPush.publicKey;
+                // Localhost fixture values only; the X scope exercises the intake contract.
+                const normalized = normalizeEdgeTransfer({ format: 'x-notification-subscription', version: 3,
+                    provenance: { kind: 'edge-wns', adapterVersion: '1.0.0', browserVersion: '157.0.0.0', readMethod: 'edge-wns-snapshot' },
+                    push: { scope: 'https://x.com/', siteChannel: independentChannel.toString('ascii'), deviceKey: key.toString('base64url'),
+                        reconnectToken: deviceFields[2].toString('ascii'), agent: { os: 'Windows 10', osVersion: '10.0.00000', architecture: 'x86_64', locale: 'en' },
+                        client: clientMetadata, p256dhPublicKey: publicKey.toString('base64url'), authenticationSecret: independentWebPush.auth.toString('base64url'),
+                        p256dhPrivateKey: { kty: 'EC', crv: 'P-256', x: publicKey.subarray(1, 33).toString('base64url'),
+                            y: publicKey.subarray(33).toString('base64url'), d: independentWebPush.privateKey.toString('base64url') },
+                        applicationServerKey: vapid.publicKey } });
+                if (normalized.version !== 3) throw new Error('PROBE_TRANSFER_INVALID');
+            }
             let rotatedToken, firstCipher, offlineCipher, durableCipher, durableReceiver, durableStore, durableLease, durableSubscription, durableInboxId, targetAcks = 0, targetDecrypts = 0;
             if (testDurable) {
                 const { createTestDatabase } = require('../../scripts/lib/automation-test-db');
