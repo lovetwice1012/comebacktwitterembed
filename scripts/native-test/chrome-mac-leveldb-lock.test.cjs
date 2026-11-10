@@ -6,6 +6,7 @@ const path = require('node:path');
 const os = require('node:os');
 const { spawn } = require('node:child_process');
 const { once } = require('node:events');
+const vm = require('node:vm');
 const { ClassicLevel } = require('classic-level');
 const { createHash, createCipheriv, pbkdf2Sync, randomBytes, generateKeyPairSync } = require('node:crypto');
 const { createMacChromeProfile } = require('../../src/automation/chrome-mac-profile');
@@ -64,7 +65,7 @@ test('Mac snapshot copies only notification data under both locks and is removed
     const store = path.join(defaults, 'GCM Store'), nested = path.join(store, 'Encryption'); await fs.mkdir(nested, { recursive: true });
     const appId = 'wp:https://x.com/#01234567-89AB-4CDE-8FAB-012345678-V2', sender = 'sender_123';
     await fs.writeFile(path.join(defaults, 'Preferences'), JSON.stringify({ gcm: { product_category_for_subtypes: 'com.chrome.macosx',
-        push_messaging_application_id_map: { [appId]: 'https://x.com/#1#' } } }));
+        push_messaging_application_id_map: { [appId]: 'https://x.com/#1#', other: 'https://example.com/#2#' } } }));
     for (const name of ['Cookies', 'History', 'Login Data']) await fs.writeFile(path.join(defaults, name), 'must not be copied');
     const password = Buffer.from('synthetic-password'), key = pbkdf2Sync(password, 'saltysalt', 1003, 16, 'sha1');
     const cipher = createCipheriv('aes-128-cbc', key, Buffer.alloc(16, 0x20));
@@ -90,6 +91,34 @@ test('Mac snapshot copies only notification data under both locks and is removed
     assert.equal(result.push.securityToken, '456'); assert.equal(result.push.productCategory, 'com.chrome.macosx');
     await assert.rejects(fs.access(snapshotPath), { code: 'ENOENT' });
     assert((await fs.readdir(profile.rootPath)).every(name => !name.startsWith('chrome-snapshot-')));
+    const flowFile = path.join(__dirname, '../../src/automation/chrome-mac-export-flow.js');
+    const flowSource = await fs.readFile(flowFile, 'utf8'), module = { exports: {} }; let borrowed;
+    const mockedRequire = name => {
+        if (name === './chrome-mac-keychain') return { withMacChromeKeychainPassword: async options => {
+            assert.equal(options.confirmed, true); borrowed = Buffer.from(password);
+            try { return await options.work(borrowed); } finally { borrowed.fill(0); }
+        } };
+        if (name.startsWith('./')) return require(path.join(path.dirname(flowFile), name));
+        return require(name);
+    };
+    vm.runInNewContext(flowSource, { module, exports: module.exports, require: mockedRequire, AbortSignal, Object, Number });
+    const flowArgs = { ...args, subscription, browserVersion: '140.0.7339.42', keychainConfirmed: true };
+    const confirm = async details => {
+        assert.equal(details.otherSubscriptionCount, 1); assert.equal(details.otherNotificationsMayReachServer, true);
+        assert(borrowed.every(byte => byte === 0));
+        assert((await fs.readdir(profile.rootPath)).every(name => !name.startsWith('chrome-snapshot-')));
+    };
+    assert.equal((await module.exports.exportMacChromeNotifications({ ...flowArgs, confirmSave: async details => { await confirm(details); return null; } })).state, 'cancelled');
+    await assert.rejects(module.exports.exportMacChromeNotifications({ ...flowArgs, confirmSave: async details => {
+        await confirm(details); return { confirmed: true, otherSitesConsent: false, directory: base, filename: 'rejected.json' };
+    } }), { code: 'X_CHROME_MAC_FLOW_CONFIRMATION_REQUIRED' });
+    await assert.rejects(fs.access(path.join(base, 'rejected.json')), { code: 'ENOENT' });
+    const output = await module.exports.exportMacChromeNotifications({ ...flowArgs, confirmSave: async details => {
+        await confirm(details); return { confirmed: true, otherSitesConsent: true, directory: base, filename: 'notifications.json' };
+    } });
+    assert.equal(output.state, 'saved'); assert.equal(output.uploaded, false);
+    const saved = JSON.parse(await fs.readFile(path.join(base, 'notifications.json'), 'utf8'));
+    assert.equal(saved.push.securityToken, '456'); assert(!JSON.stringify(saved).includes('synthetic-password'));
     await assert.rejects(withMacChromeSnapshot({ ...args, work: async () => { throw new Error('synthetic read failure'); } }), { code: 'X_CHROME_MAC_LOCK_FAILED' });
     assert((await fs.readdir(profile.rootPath)).every(name => !name.startsWith('chrome-snapshot-')));
     await fs.writeFile(path.join(store, 'unexpected.txt'), 'must reject');
