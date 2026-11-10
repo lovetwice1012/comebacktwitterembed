@@ -18,10 +18,11 @@ function bytes(value, length) {
     if (decoded.length !== length || decoded.toString('base64url') !== value) throw fault('X_CHROME_SNAPSHOT_INVALID');
     return decoded;
 }
-function selectChromeMapping(preferences) {
+function selectChromeMapping(preferences, { allowMac = false } = {}) {
     dataObject(preferences); const gcm = dataObject(preferences.gcm);
     const map = dataObject(gcm.push_messaging_application_id_map);
-    if (!['com.chrome.windows', 'com.brave.windows'].includes(gcm.product_category_for_subtypes)) throw fault('X_CHROME_SNAPSHOT_UNSUPPORTED');
+    if (!['com.chrome.windows', 'com.brave.windows'].includes(gcm.product_category_for_subtypes)
+        && !(allowMac === true && gcm.product_category_for_subtypes === 'com.chrome.macosx')) throw fault('X_CHROME_SNAPSHOT_UNSUPPORTED');
     const entries = Object.entries(map);
     if (entries.length > 64 || entries.some(([id, value]) => typeof id !== 'string' || typeof value !== 'string' || value.length > 2048))
         throw fault('X_CHROME_SNAPSHOT_INVALID');
@@ -30,9 +31,9 @@ function selectChromeMapping(preferences) {
     if (!isChromeAppId(selected[0][0])) throw fault('X_CHROME_SNAPSHOT_INVALID');
     return { appId: selected[0][0], productCategory: gcm.product_category_for_subtypes, otherSubscriptionCount: entries.length - 1 };
 }
-function buildChromeTransfer({ preferences, subscription, records, deviceId, securityToken, browserVersion, engineVersion }) {
+function buildChromeTransfer({ preferences, subscription, records, deviceId, securityToken, browserVersion, engineVersion, allowMac = false }) {
     try {
-        const selected = selectChromeMapping(preferences);
+        const selected = selectChromeMapping(preferences, { allowMac });
         dataObject(subscription); dataObject(subscription.keys);
         const origin = new URL(subscription.scope);
         const endpoint = new URL(subscription.endpoint);
@@ -56,7 +57,7 @@ function buildChromeTransfer({ preferences, subscription, records, deviceId, sec
                 : { kind: 'chrome-gcm', adapterVersion: '1.0.0', browserVersion, readMethod: 'chrome-gcm-snapshot' },
             push: { deviceId, securityToken, appId, productCategory: selected.productCategory,
                 authorizedEntity: keys.authorizedEntity, scope: 'https://x.com/', p256dhPublicKey: subscription.keys.p256dh,
-                authenticationSecret: subscription.keys.auth, p256dhPrivateKey: keys.privateKey } });
+                authenticationSecret: subscription.keys.auth, p256dhPrivateKey: keys.privateKey } }, { allowMac });
         return { file, otherSubscriptionCount: selected.otherSubscriptionCount };
     } catch (error) {
         const code = typeof error?.code === 'string' && /^X_CHROME_SNAPSHOT_[A-Z_]+$/.test(error.code)
