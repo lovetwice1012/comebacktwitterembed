@@ -2,7 +2,7 @@
 // Synthetic FCM subscription; disposable loopback MariaDB and child workers.
 // No real X account, user profile or Discord endpoint is used.
 const assert = require('node:assert/strict');
-const { fork } = require('node:child_process');
+const { fork, spawn } = require('node:child_process');
 const { generateKeyPairSync } = require('node:crypto');
 const path = require('node:path');
 const webpush = require('web-push');
@@ -15,13 +15,27 @@ const entitlements = require('../../src/automation/entitlements');
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 function startWorker(input) {
-    const child = fork(path.join(__dirname, 'failover-worker-fixture.cjs'), [], { windowsHide: true, stdio: ['ignore', 'ignore', 'ignore', 'ipc'] });
+    const linux = process.env.CBTE_FIXTURE_LINUX_DISTRO;
+    if (linux && linux !== 'cbte-linux-failover-20261110') throw new Error('FIXTURE_DISTRO_INVALID');
+    const child = linux ? spawn('wsl.exe', ['-d', linux, '-u', 'root', '--exec', '/usr/bin/node', '/tmp/cbte-linux-worker/experiments/chrome-push/failover-worker-fixture.cjs', '--stdio'],
+        { windowsHide: true, stdio: ['pipe', 'pipe', 'ignore'] })
+        : fork(path.join(__dirname, 'failover-worker-fixture.cjs'), [], { windowsHide: true, stdio: ['ignore', 'ignore', 'ignore', 'ipc'] });
     const events = []; let exited = false;
-    child.on('message', message => events.push(message));
+    if (linux) {
+        const lines = require('node:readline').createInterface({ input: child.stdout });
+        lines.on('line', line => { try { if (line.length > 1024) throw new Error(); events.push(JSON.parse(line)); } catch { events.push({ event: 'failure' }); } });
+        child.stdin.on('error', () => events.push({ event: 'failure' }));
+    } else child.on('message', message => events.push(message));
+    child.on('error', () => events.push({ event: 'failure' }));
     child.on('exit', () => { exited = true; });
-    child.send(input);
+    const send = message => {
+        if (linux) { if (child.stdin.destroyed) return false; return child.stdin.write(JSON.stringify(message) + '\n'); }
+        if (!child.connected) return false;
+        return child.send(message);
+    };
+    send(input);
     return {
-        child,
+        child, send,
         async wait(event, label, timeout = 30000) {
             const end = Date.now() + timeout;
             while (Date.now() < end) {
@@ -38,9 +52,10 @@ function startWorker(input) {
 }
 
 async function main() {
-    assert.equal(Number(process.env.AUTOMATION_TEST_DB_PORT), 33631, 'Use isolated fixture DB port 33631');
+    const linux = Boolean(process.env.CBTE_FIXTURE_LINUX_DISTRO), dbPort = linux ? 33621 : 33631;
+    assert.equal(Number(process.env.AUTOMATION_TEST_DB_PORT), dbPort, 'Use the selected isolated fixture DB port');
     const browser = process.env.CHROMIUM_PROBE_BROWSER === 'brave' ? 'brave' : 'chrome';
-    const fixture = await createSyntheticSubscription(browser), db = await createTestDatabase(33631); const workers = [];
+    const fixture = await createSyntheticSubscription(browser), db = await createTestDatabase(dbPort); const workers = [];
     try {
         const supervisor = process.env.CBTE_FIXTURE_SUPERVISOR === '1', productionTiming = process.env.CBTE_FIXTURE_PRODUCTION_TIMING === '1';
         if (productionTiming && !supervisor) throw new Error('FIXTURE_TIMING_CONFIG_INVALID');
@@ -56,7 +71,7 @@ async function main() {
                 [actor.userId, JSON.stringify({ subscriptionId: saved.subscription.id }), now, now]);
             await db.withDatabaseTransaction(query => entitlements.assignSlot(query, actor.userId, 'x', String(monitor.insertId)));
         }
-        const input = { schema: db.schema, subscriptionId: saved.subscription.id, ownerUserId: actor.userId,
+        const input = { schema: db.schema, dbPort, subscriptionId: saved.subscription.id, ownerUserId: actor.userId,
             privateKey: keys.privateKey.export({ type: 'pkcs8', format: 'pem' }), supervisor, productionTiming };
         const first = startWorker({ ...input, worker: 'first' }); workers.push(first); await first.wait('ready');
         const row = (await db.queryDatabase('SELECT lease_token,subscription_revision FROM automation_x_push_receivers WHERE subscription_id=?', [saved.subscription.id]))[0];
@@ -69,7 +84,7 @@ async function main() {
             author: { handle: 'synthetic', id: '12345' } }),
         { TTL: 120, vapidDetails: { subject: 'mailto:test@example.com', publicKey: fixture.vapid.publicKey, privateKey: fixture.vapid.privateKey } });
         await send('synthetic-before-crash'); await first.wait('received', 'before');
-        first.child.kill(); await first.waitExit();
+        first.send({ action: 'crash' }); await first.waitExit();
         const expiry = Number((await db.queryDatabase('SELECT lease_expires_at_ms FROM automation_x_push_receivers WHERE subscription_id=?', [saved.subscription.id]))[0].lease_expires_at_ms);
         if (Date.now() >= expiry) throw new Error('FIXTURE_OFFLINE_WINDOW_MISSED');
         await send('synthetic-during-failover');
@@ -89,12 +104,12 @@ async function main() {
             }
             if (jobs !== 2) throw new Error('FIXTURE_FAILOVER_ROUTE_FAILED');
         }
-        successor.child.send({ action: 'stop' }); await successor.wait('done', 'stopped'); await successor.waitExit();
-        console.log(JSON.stringify({ browser, realFcm: true, exclusiveLease: true, abruptWorkerExit: true, actualLeaseExpiry: true,
+        successor.send({ action: 'stop' }); await successor.wait('done', 'stopped'); await successor.waitExit();
+        console.log(JSON.stringify({ browser, workerPlatform: linux ? 'linux' : 'windows', realFcm: true, exclusiveLease: true, abruptWorkerExit: true, actualLeaseExpiry: true,
             successorReceivedOfflinePush: true, staleWorkerFenced: true, encryptedReceipts: 2, duplicateRows: 0,
             automaticSupervisorTakeover: supervisor, productionTiming, isolatedJobs: supervisor ? 2 : null, discordRequests: 0 }));
     } finally {
-        for (const worker of workers) if (worker.child.exitCode === null && worker.child.signalCode === null) worker.child.kill();
+        for (const worker of workers) if (worker.child.exitCode === null && worker.child.signalCode === null) worker.send({ action: 'crash' });
         await Promise.allSettled(workers.map(worker => worker.waitExit()));
         await db.close();
     }
