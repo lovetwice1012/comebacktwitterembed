@@ -535,7 +535,8 @@ async function main() {
             if (browser.exitCode === null) await new Promise(resolve => browser.once('exit', resolve));
             const store = new ClassicLevel(path.join(profile, 'Default', 'EdgePushStorageWithConnectTokenAndKey'),
                 { createIfMissing: false, keyEncoding: 'buffer', valueEncoding: 'buffer' });
-            let firstRecord, otherRecord;
+            let firstRecord, otherRecord; const unknownRecords = [];
+            const counts = { device: 0, target: 0, other: 0, unknown: 0 };
             try {
                 await store.open();
                 for await (const [_key, stored] of store.iterator({ limit: 128 })) {
@@ -543,9 +544,14 @@ async function main() {
                         && stored.includes(Buffer.from(subscription.keys.p256dh, 'base64url')) && stored.includes(Buffer.from(subscription.keys.auth, 'base64url'));
                     if (belongs(origin, value.subscription)) { if (firstRecord) throw new Error('PROBE_SUBSCRIPTION_AMBIGUOUS'); firstRecord = Buffer.from(stored); }
                     if (belongs(otherOrigin, otherSubscription)) { if (otherRecord) throw new Error('PROBE_SUBSCRIPTION_AMBIGUOUS'); otherRecord = Buffer.from(stored); }
+                    if (_key.toString('utf8').toLowerCase().includes('device')) counts.device++;
+                    else if (belongs(origin, value.subscription)) counts.target++;
+                    else if (belongs(otherOrigin, otherSubscription)) counts.other++;
+                    else { counts.unknown++; if (process.env.EDGE_PROBE_ENUMERATE === '1') unknownRecords.push(Buffer.from(stored)); }
                 }
                 if (!firstRecord || !otherRecord || events.length !== 1) throw new Error('PROBE_TWO_SITE_RECORD_FAILED');
                 routingResult = events[0].fixtureRouting(expectedCipher, otherCipher, firstRecord, otherRecord);
+                if (process.env.EDGE_PROBE_ENUMERATE === '1') routingResult.recordCounts = counts;
                 const selected = selectSyntheticEdgeRecord([firstRecord, otherRecord], `${origin}/`);
                 try {
                     if (testXSelector) {
@@ -555,6 +561,15 @@ async function main() {
                         let checked;
                         try {
                             checked = selectXRecord([otherRecord, rewritten], expected);
+                            if (require('../../src/automation/edge-wns-record').countOtherSiteRecords([otherRecord, rewritten]) !== 1)
+                                throw new Error('PROBE_X_SELECTOR_MISMATCH');
+                            if (process.env.EDGE_PROBE_ENUMERATE === '1') {
+                                counts.unknownWithSiteOrigin = 0;
+                                for (const candidate of unknownRecords) {
+                                    try { if (require('../../src/automation/edge-wns-record').countOtherSiteRecords([rewritten, candidate]) === 1) counts.unknownWithSiteOrigin++; }
+                                    catch { /* Classify only; never expose candidate content. */ }
+                                }
+                            }
                             if (!checked.channel.equals(selected.channel) || !checked.privateKey.equals(selected.privateKey)
                                 || !checked.publicKey.equals(selected.publicKey) || !checked.auth.equals(selected.auth)) throw new Error('PROBE_X_SELECTOR_MISMATCH');
                             routingResult.xSelectorMatchesSyntheticBrowser = true;
@@ -574,7 +589,7 @@ async function main() {
                     finally { plaintext.fill(0); }
                     if (!routingResult.targetDecrypted) throw new Error('PROBE_TWO_SITE_DECRYPT_FAILED');
                 } finally { for (const name of ['channel', 'publicKey', 'auth', 'privateKey', 'applicationServerKey']) selected[name].fill(0); }
-            } finally { firstRecord?.fill(0); otherRecord?.fill(0); await store.close().catch(() => {}); }
+            } finally { firstRecord?.fill(0); otherRecord?.fill(0); for (const item of unknownRecords) item.fill(0); await store.close().catch(() => {}); }
         }
         await wait(1000);
         if (value.ok && process.env.EDGE_PROBE_KEEP_SOCKET === '1') {

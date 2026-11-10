@@ -67,6 +67,26 @@ function validExpected(expected) {
 function clearRecord(record) {
     if (record) for (const name of ['channel', 'publicKey', 'auth', 'privateKey', 'applicationServerKey']) record[name]?.fill(0);
 }
+// Inspect only each record's origin metadata. If any site record cannot be
+// classified, fail closed instead of understating the other-site count.
+function countOtherSiteRecords(records) {
+    if (!Array.isArray(records) || !records.length || records.length > 128) throw fail();
+    let xCount = 0, otherCount = 0;
+    try {
+        for (const raw of records) {
+            const parsed = fields(raw), origins = [];
+            for (const item of parsed.filter(field => field.number === 8)) {
+                if (item.wire !== 2) throw fail();
+                const pair = fields(item.value), name = text(one(pair, 1, 2));
+                if (name === 'origin') origins.push(text(one(pair, 2, 2)));
+            }
+            if (origins.length !== 1 || !origins[0] || origins[0].length > 4096 || /[\u0000-\u001f\u007f]/.test(origins[0])) throw fail(); // eslint-disable-line no-control-regex
+            if (origins[0] === SCOPE) xCount++; else otherCount++;
+        }
+        if (xCount !== 1) throw fail();
+        return otherCount;
+    } catch { throw fail(); }
+}
 // Parse only an already-selected device record. Profile discovery, snapshot
 // creation and identifying the unique device key belong to the caller.
 function selectDeviceRecord(raw) {
@@ -121,4 +141,4 @@ function selectXRecord(records, expected) {
         return selected;
     } catch { clearRecord(selected); throw fail(); }
 }
-module.exports = { selectXRecord, selectDeviceRecord, clearRecord };
+module.exports = { selectXRecord, selectDeviceRecord, countOtherSiteRecords, clearRecord };

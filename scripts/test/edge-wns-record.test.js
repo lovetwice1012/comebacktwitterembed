@@ -2,7 +2,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { generateKeyPairSync, randomBytes } = require('node:crypto');
-const { selectXRecord, selectDeviceRecord, clearRecord } = require('../../src/automation/edge-wns-record');
+const { selectXRecord, selectDeviceRecord, countOtherSiteRecords, clearRecord } = require('../../src/automation/edge-wns-record');
 const { buildEdgeTransfer } = require('../../src/automation/edge-wns-snapshot');
 function varint(number) { const out = []; do { let byte = number % 128; number = Math.floor(number / 128); if (number) byte |= 128; out.push(byte); } while (number); return Buffer.from(out); }
 function bytes(field, value) { const data = Buffer.isBuffer(value) ? value : Buffer.from(value); return Buffer.concat([varint(field * 8 + 2), varint(data.length), data]); }
@@ -65,9 +65,15 @@ test('builds only the selected X transfer from matching browser records', async 
     const input = { siteRecords: [other.record, target.record], deviceRecord, expected: target.expected, browserVersion: '157.0.0.1',
         agent: { os: 'Windows', osVersion: '1', architecture: 'x64', locale: 'en' },
         client: { channel: 'abc', protocolVersion: '1.0', clientName: 'Synthetic', clientVersion: '1.2.3.4' } };
-    const file = await buildEdgeTransfer(input);
+    const { file, otherSubscriptionCount } = await buildEdgeTransfer(input); assert.equal(otherSubscriptionCount, 1);
     assert.equal(file.push.siteChannel, '1;synthetic-channel'); assert.equal(file.push.deviceKey, secret.toString('base64url'));
     assert.equal(file.push.p256dhPublicKey, target.expected.publicKey.toString('base64url'));
     await assert.rejects(buildEdgeTransfer({ ...input, expected: { ...input.expected, auth: randomBytes(16) } }), { code: 'X_EDGE_WNS_SNAPSHOT_INVALID' });
     await assert.rejects(buildEdgeTransfer({ ...input, siteRecords: [target.record, target.record] }), { code: 'X_EDGE_WNS_SNAPSHOT_INVALID' });
+});
+test('reports foreign subscription count and refuses records that cannot be classified', () => {
+    const x = fixture(), other = fixture('https://other.example/');
+    assert.equal(countOtherSiteRecords([x.record]), 0); assert.equal(countOtherSiteRecords([other.record, x.record, other.record]), 2);
+    for (const records of [[], [other.record], [x.record, x.record], [x.record, Buffer.from([0])],
+        [x.record, Buffer.concat([other.record, metadata('https://other.example/')])]]) invalid(() => countOtherSiteRecords(records));
 });
