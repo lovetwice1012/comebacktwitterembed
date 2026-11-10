@@ -28,9 +28,10 @@ async function checkRoot(rootPath, token) {
         || (await fs.readdir(profile)).length !== 0) throw fail('X_EDGE_CALIBRATION_CONFIG_INVALID');
     return profile;
 }
-/** @param {{rootPath:string, token:string, edgePath:string, pfx:Buffer, passphrase:string, certificate:Buffer, captureIdentity:Function, authorizePeer:Function, signal?:AbortSignal, timeoutMs?:number, spawnBrowser?:Function}} options */
-async function runEdgeCalibration({ rootPath, token, edgePath, pfx, passphrase, certificate, captureIdentity, authorizePeer, signal, timeoutMs = 60000, spawnBrowser = spawn }) {
-    if (typeof edgePath !== 'string' || !path.isAbsolute(edgePath) || path.basename(edgePath).toLowerCase() !== 'msedge.exe'
+/** @param {{rootPath:string, token:string, edgePath:string, pfx:Buffer, passphrase:string, certificate:Buffer, captureIdentity:Function, authorizePeer:Function, signal?:AbortSignal, timeoutMs?:number, spawnBrowser?:Function, platform?:'windows'|'macos'}} options */
+async function runEdgeCalibration({ rootPath, token, edgePath, pfx, passphrase, certificate, captureIdentity, authorizePeer, signal, timeoutMs = 60000, spawnBrowser = spawn, platform = 'windows' }) {
+    if (!['windows', 'macos'].includes(platform) || typeof edgePath !== 'string' || !path.isAbsolute(edgePath)
+        || path.basename(edgePath).toLowerCase() !== (platform === 'macos' ? 'microsoft edge' : 'msedge.exe')
         || !Buffer.isBuffer(pfx) || !Buffer.isBuffer(certificate) || typeof captureIdentity !== 'function' || typeof authorizePeer !== 'function'
         || typeof spawnBrowser !== 'function' || signal !== undefined && !(signal instanceof AbortSignal)
         || !Number.isSafeInteger(timeoutMs) || timeoutMs < 1000 || timeoutMs > 120000) throw fail('X_EDGE_CALIBRATION_CONFIG_INVALID');
@@ -95,7 +96,10 @@ async function runEdgeCalibration({ rootPath, token, edgePath, pfx, passphrase, 
         let identityPromise;
         relay = await wait(createEdgeCalibrationRelay({ pfx, passphrase, timeoutMs: Math.min(timeoutMs, 30000), authorizePeer: async ports => {
             const identity = await identityPromise;
-            if (controller.signal.aborted || !identity || typeof identity.startTicks !== 'string' || !/^\d{18}$/.test(identity.startTicks)) return false;
+            // macOS identity uses the process start seconds and six-digit
+            // microseconds reported by proc_bsdinfo, never PID alone.
+            const identityPattern = platform === 'macos' ? /^[1-9]\d{0,19}:[0-9]{6}$/ : /^\d{18}$/;
+            if (controller.signal.aborted || !identity || typeof identity.startTicks !== 'string' || !identityPattern.test(identity.startTicks)) return false;
             return (await authorizePeer({ ...ports, browserPid: identity.pid, browserStartTicks: identity.startTicks, browserExecutable: edgePath })) === true;
         } }));
         const resumed = start([...common, `--edge-wns-push-server-url=https://127.0.0.1:${relay.port}`, `--ignore-certificate-errors-spki-list=${spki}`, 'about:blank']);
