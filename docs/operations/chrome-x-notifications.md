@@ -19,12 +19,12 @@ Chromeの接続情報は同一プロファイル内の通知を共用します�
 本番データ変更、マイグレーション、本番デプロイは事前承認を得てから行います。以下は手順であり、実施済みを意味しません。
 
 1. DBバックアップの取得と復元手順を確認し、既存Firefoxの受信設定・通知件数を記録する。
-2. `migrations/20261110_add_x_subscription_browser_kind.sql`、`migrations/20261110_add_chrome_mcs_pending.sql`、`migrations/20261110_add_chrome_checkin.sql`、`migrations/20261110_allow_chrome_mcs_control_pending.sql` をこの順に適用する。既存の受信設定を `firefox` として保持し、未確認の受信IDと端末確認の予定を保存する。最後の変更は通知サービスの制御メッセージにも同じ再送確認を使用するためのもの。
+2. 実行対象のDBとバックアップを確認し、サービスと同じDB接続設定を使用して `node scripts/migrate-chromium-schema.cjs --check` を実行する。問題がなければ `node scripts/migrate-chromium-schema.cjs --apply` を実行する。既存の受信設定を `firefox` として保持し、未確認の受信IDと端末確認の予定を保存する。既定の移行管理を使うため、SQLファイルを単独で繰り返し実行しない。この手順では未接続のEdge研究用トークンを将来保存するためのNULL許容列も追加するが、Edgeの受付・受信は有効にならない。
 3. 検証済みZIP `artifacts/angelic-setup/chrome-setup-0.1.0-chrome-preview.4.zip` をダッシュボードの配布物に含め、SHA-256とバイト数が `dashboard/lib/x-chrome-setup-download.ts` の値と一致することを確認する。
 4. Webと受信ワーカーの両方で `X_NOTIFICATION_CHROME_ENABLED=1` を設定する。Braveの受付は、すべてのWeb・受信ワーカーがBrave対応版へ更新されたことを確認してから、Web側で `X_NOTIFICATION_BRAVE_ENABLED=1` を設定する。既存の `X_NOTIFICATION_RECEIVER_ENABLED=1`、処理ポリシー、暗号鍵、fleet leaseも必要。支援者限定で公開する場合は `X_NOTIFICATION_ROLLOUT=supporters` を維持し、対象者以外の登録が拒否されることを確認する。
 5. 利用者自身が設定した実際のX通知で、登録画面、接続状態、投稿通知、Discord配信を確認する。接続確認だけで配送成功と判断しない。
 
-上記4件の移行を記載順に適用・再適用し、既存Firefoxの暗号化通知が復号できること、Chrome・Braveの登録情報と未確認IDが保持されることを隔離MariaDBで確認しています。Braveだけの受付停止と、Chrome・Brave両方の受付停止も同じ試験で確認しています。本番DBへの適用は行っていません。
+上記の限定移行を適用・再適用し、既存Firefoxの暗号化通知が復号できること、Chrome・Braveの登録情報と未確認IDが保持されることを隔離MySQL 8.0.42とMariaDB 11.4.10で確認しています。両DBで不正な既存列の検出と、途中停止からの再開も検証しています。MySQLのDDLは自動コミットされるため、途中で失敗した場合は全体がロールバックされたと見なさず、状態とバックアップを確認してから再開してください。Botの通常起動はこの限定ツール以外の未適用マイグレーションも実行するため、起動前に `schema_migrations` と配布物を照合し、対象外の移行がないことも確認します。本番DBへの適用は行っていません。
 
 ## 停止とロールバック
 

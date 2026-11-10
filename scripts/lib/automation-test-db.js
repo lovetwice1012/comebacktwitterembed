@@ -70,4 +70,13 @@ async function grantTestDonor(db, userId) {
     if (!/^cbte_automation_test_[0-9a-f]{20}$/.test(db.schema || '')) throw new Error('Donor fixtures require a disposable test schema');
     await db.queryDatabase('INSERT INTO users (user_id,registered_at_ms,is_donor) VALUES (?,0,1) ON DUPLICATE KEY UPDATE is_donor=1', [userId]);
 }
-module.exports = { createTestDatabase, grantTestDonor };
+async function applyTestMigration(db, filename) {
+    if (!/^cbte_automation_test_[0-9a-f]{20}$/.test(db.schema || '') || !/^\d{8}_[a-z0-9_]+\.sql$/.test(filename))
+        throw new Error('Migration fixtures require a disposable test schema and a known migration name');
+    const schema = require('../../src/db_schema');
+    const tracking = schema.SCHEMA_STATEMENTS.find(sql => /^CREATE TABLE IF NOT EXISTS schema_migrations\s*\(/.test(sql));
+    if (!tracking) throw new Error('Migration tracking schema missing');
+    await db.queryDatabase(tracking);
+    await schema._internal.applyMigrationFile(db.queryDatabase, filename);
+}
+module.exports = { createTestDatabase, grantTestDonor, applyTestMigration };

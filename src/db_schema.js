@@ -1049,12 +1049,12 @@ function parseAddIndexStatement(statement) {
 async function shouldSkipMigrationStatement(queryDatabase, statement) {
     const addColumn = parseAddColumnStatement(statement);
     if (addColumn) {
-        const rows = await queryDatabase(`SHOW COLUMNS FROM ${addColumn.table} LIKE ?`, [addColumn.column]);
+        const rows = await queryDatabase(`SHOW COLUMNS FROM ${addColumn.table} WHERE Field = ?`, [addColumn.column]);
         return rows.length > 0;
     }
     const dropColumn = parseDropColumnStatement(statement);
     if (dropColumn) {
-        const rows = await queryDatabase(`SHOW COLUMNS FROM ${dropColumn.table} LIKE ?`, [dropColumn.column]);
+        const rows = await queryDatabase(`SHOW COLUMNS FROM ${dropColumn.table} WHERE Field = ?`, [dropColumn.column]);
         return rows.length === 0;
     }
     const addIndex = parseAddIndexStatement(statement);

@@ -360,7 +360,7 @@ test('database schema can detect add-column migrations before execution', async 
 
     assert.equal(skip, true);
     assert.deepEqual(queries, [{
-        sql: 'SHOW COLUMNS FROM guild_provider_settings LIKE ?',
+        sql: 'SHOW COLUMNS FROM guild_provider_settings WHERE Field = ?',
         params: ['tiktok_hq'],
     }]);
 });
@@ -380,7 +380,7 @@ test('database schema can skip drop-column migrations when column is absent', as
 
     assert.equal(skipMissing, true);
     assert.deepEqual(queries, [{
-        sql: 'SHOW COLUMNS FROM guild_provider_settings LIKE ?',
+        sql: 'SHOW COLUMNS FROM guild_provider_settings WHERE Field = ?',
         params: ['pixiv_sensitive_display_mode'],
     }]);
 

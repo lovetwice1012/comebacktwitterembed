@@ -1,11 +1,11 @@
 'use strict';
-// Upgrade and feature-disable exercise against disposable MariaDB only.
+// Upgrade and feature-disable exercise against a disposable SQL database.
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { readFileSync } = require('node:fs');
 const { generateKeyPairSync, randomUUID } = require('node:crypto');
-const path = require('node:path');
 const { createTestDatabase } = require('../lib/automation-test-db');
+const schema = require('../../src/db_schema');
+const chromiumMigration = require('../migrate-chromium-schema.cjs');
 const { fixture, insertSubscription, encrypted, vault: legacyVault } = require('./helpers/x-push-fixture.cjs');
 const { createXPushStore } = require('../../src/automation/x-push-store');
 const { createXPushGateway } = require('../../src/automation/x-push-gateway');
@@ -22,10 +22,6 @@ function chromiumFile(kind, deviceId) {
             p256dhPublicKey: firefox.push.p256dhPublicKey, authenticationSecret: firefox.push.authenticationSecret,
             p256dhPrivateKey: { kty: key.kty, crv: key.crv, x: key.x, y: key.y, d: key.d } } };
 }
-async function migration(db, filename) {
-    const text = readFileSync(path.resolve(__dirname, '../../migrations', filename), 'utf8');
-    for (const sql of text.replace(/^--.*$/gm, '').split(';').map(statement => statement.trim()).filter(Boolean)) await db.queryDatabase(sql);
-}
 async function save(setup, actor, file) {
     const session = await setup.startSession(actor, { consent: true });
     return setup.importFile(actor, { sessionId: session.sessionId, fileText: JSON.stringify(file), consent: true });
@@ -36,16 +32,20 @@ test('complete Chromium upgrade and feature-disable retain Firefox receipts and 
     try {
         assert.match(db.schema, /^cbte_automation_test_[0-9a-f]{20}$/);
         await db.queryDatabase('DROP TABLE automation_x_mcs_pending');
+        await db.queryDatabase(schema.SCHEMA_STATEMENTS.find(sql => /^CREATE TABLE IF NOT EXISTS schema_migrations\s*\(/.test(sql)));
         await db.queryDatabase('ALTER TABLE automation_x_subscriptions DROP COLUMN browser_kind');
+        // An underscore is a wildcard in SQL LIKE; this unrelated name must
+        // never cause the real migration to be skipped.
+        await db.queryDatabase('ALTER TABLE automation_x_subscriptions ADD COLUMN browserXkind VARCHAR(16) NULL');
         await db.queryDatabase('ALTER TABLE automation_x_push_receivers DROP COLUMN chrome_checkin_at_ms, DROP COLUMN chrome_checkin_interval_seconds, DROP COLUMN chrome_checkin_revision');
+        await db.queryDatabase('ALTER TABLE automation_x_push_receivers DROP COLUMN wns_token_sealed_json, DROP COLUMN wns_token_revision, DROP COLUMN wns_token_generation');
         const legacy = await insertSubscription(db), store = createXPushStore(db), oldLease = await store.claim({ ...legacy, workerId: 'old-firefox' });
         const event = { notificationType: 'tweet', text: 'synthetic-retained' }, wire = await encrypted(legacy.file, event);
         const oldInbox = await store.recordFrame(oldLease, { version: 'legacy-1', data: wire.data, headers: wire.headers, status: 'received', ackCode: 100 });
         await store.release(oldLease);
         const before = (await db.queryDatabase('SELECT sealed_json,revision FROM automation_x_subscriptions WHERE id=?', [legacy.subscriptionId]))[0];
-        const files = ['20261110_add_x_subscription_browser_kind.sql', '20261110_add_chrome_mcs_pending.sql',
-            '20261110_add_chrome_checkin.sql', '20261110_allow_chrome_mcs_control_pending.sql'];
-        for (const file of files) await migration(db, file);
+        assert.equal((await chromiumMigration.run(db.queryDatabase, schema._internal.applyMigrationFile)).state, 'checked');
+        assert.equal((await chromiumMigration.run(db.queryDatabase, schema._internal.applyMigrationFile, { apply: true })).state, 'applied');
         const after = (await db.queryDatabase('SELECT browser_kind,sealed_json,revision FROM automation_x_subscriptions WHERE id=?', [legacy.subscriptionId]))[0];
         assert.equal(after.browser_kind, 'firefox'); assert.equal(after.sealed_json, before.sealed_json); assert.equal(Number(after.revision), Number(before.revision));
         const lease = await store.claim({ ...legacy, workerId: 'new-firefox' });
@@ -62,7 +62,7 @@ test('complete Chromium upgrade and feature-disable retain Firefox receipts and 
         const chromeLease = await store.claim({ subscriptionId: chromeSaved.subscription.id, ownerUserId: chromeOwner.userId, workerId: 'chrome' });
         await store.recordMcsControl(chromeLease, { kind: 'deleted_messages', persistentId: 'control-1' });
         await store.release(chromeLease);
-        for (const file of files) await migration(db, file);
+        assert.equal((await chromiumMigration.run(db.queryDatabase, schema._internal.applyMigrationFile, { apply: true })).state, 'applied');
         const pending = await db.queryDatabase('SELECT inbox_id,persistent_id FROM automation_x_mcs_pending WHERE subscription_id=?', [chromeSaved.subscription.id]);
         assert.equal(pending.length, 1); assert.equal(pending[0].inbox_id, null); assert.equal(pending[0].persistent_id, 'control-1');
         const chromeOnly = createXSetup(db, { sealer, chromeEnabled: true, braveEnabled: false, receiverEnabled: true, rolloutMode: 'public' });
@@ -82,5 +82,42 @@ test('complete Chromium upgrade and feature-disable retain Firefox receipts and 
         assert.deepEqual(await gateway.decryptInbox(restoredLegacy, await store.getInbox({ ...restoredLegacy, id: oldInbox.id })), event);
         await store.release(restoredLegacy);
         assert.equal((await db.queryDatabase('SELECT id FROM automation_x_push_inbox WHERE id=?', [oldInbox.id])).length, 1);
+    } finally { await db.close(); }
+});
+test('preflight rejects incompatible existing columns before writing migrations', async () => {
+    const db = await createTestDatabase(Number(process.env.AUTOMATION_TEST_DB_PORT));
+    try {
+        await db.queryDatabase(schema.SCHEMA_STATEMENTS.find(sql => /^CREATE TABLE IF NOT EXISTS schema_migrations\s*\(/.test(sql)));
+        await db.queryDatabase('DROP TABLE automation_x_mcs_pending');
+        await db.queryDatabase('ALTER TABLE automation_x_subscriptions MODIFY COLUMN browser_kind INT NULL');
+        await assert.rejects(chromiumMigration.run(db.queryDatabase, schema._internal.applyMigrationFile, { apply: true }), { code: 'CHROMIUM_MIGRATION_SCHEMA_INVALID' });
+        await db.queryDatabase("ALTER TABLE automation_x_subscriptions MODIFY COLUMN browser_kind VARCHAR(16) CHARACTER SET ascii COLLATE ascii_bin NOT NULL DEFAULT 'firefox'");
+        await db.queryDatabase('ALTER TABLE automation_x_push_receivers MODIFY COLUMN chrome_checkin_at_ms BIGINT NULL DEFAULT 1');
+        await assert.rejects(chromiumMigration.run(db.queryDatabase, schema._internal.applyMigrationFile, { apply: true }), { code: 'CHROMIUM_MIGRATION_SCHEMA_INVALID' });
+        const rows = await db.queryDatabase('SELECT migration_id FROM schema_migrations');
+        assert.equal(rows.length, 0);
+        const tables = await db.queryDatabase("SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='automation_x_mcs_pending'");
+        assert.equal(tables.length, 0);
+    } finally { await db.close(); }
+});
+test('interrupted DDL can be reviewed and resumed without losing the Firefox receipt', async () => {
+    const db = await createTestDatabase(Number(process.env.AUTOMATION_TEST_DB_PORT));
+    try {
+        await db.queryDatabase(schema.SCHEMA_STATEMENTS.find(sql => /^CREATE TABLE IF NOT EXISTS schema_migrations\s*\(/.test(sql)));
+        await db.queryDatabase('DROP TABLE automation_x_mcs_pending');
+        await db.queryDatabase('ALTER TABLE automation_x_subscriptions DROP COLUMN browser_kind');
+        await db.queryDatabase('ALTER TABLE automation_x_push_receivers DROP COLUMN chrome_checkin_at_ms, DROP COLUMN chrome_checkin_interval_seconds, DROP COLUMN chrome_checkin_revision');
+        await db.queryDatabase('ALTER TABLE automation_x_push_receivers DROP COLUMN wns_token_sealed_json, DROP COLUMN wns_token_revision, DROP COLUMN wns_token_generation');
+        const sub = await insertSubscription(db), store = createXPushStore(db), lease = await store.claim({ ...sub, workerId: 'ddl-resume' });
+        const receipt = await store.recordFrame(lease, { version: 'preserved', data: 'AA', headers: {}, status: 'received', ackCode: 100 });
+        let applied = 0;
+        await assert.rejects(chromiumMigration.run(db.queryDatabase, async (query, file) => {
+            if (applied++ === 2) throw new Error('synthetic interruption');
+            return schema._internal.applyMigrationFile(query, file);
+        }, { apply: true }), /synthetic interruption/);
+        assert.equal((await db.queryDatabase('SELECT migration_id FROM schema_migrations')).length, 2);
+        assert.equal((await chromiumMigration.run(db.queryDatabase, schema._internal.applyMigrationFile)).state, 'checked');
+        assert.equal((await chromiumMigration.run(db.queryDatabase, schema._internal.applyMigrationFile, { apply: true })).state, 'applied');
+        assert.equal((await store.getInbox({ ...sub, id: receipt.id })).version, 'preserved');
     } finally { await db.close(); }
 });

@@ -2,9 +2,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { generateKeyPairSync } = require('node:crypto');
-const { readFileSync } = require('node:fs');
-const path = require('node:path');
-const { createTestDatabase } = require('../lib/automation-test-db');
+const { createTestDatabase, applyTestMigration } = require('../lib/automation-test-db');
 const { createXPushStore } = require('../../src/automation/x-push-store');
 const { createWnsTokenWorkerVault } = require('../../src/automation/x-setup-transfer');
 const { insertSubscription } = require('./helpers/x-push-fixture.cjs');
@@ -60,8 +58,7 @@ test('Firefox is ineligible and migration repeats without changing existing rece
     await assert.rejects(store.saveWnsTokenState(lease, { vault, authorize, token, expectedGeneration: 0 }), { code: 'X_PUSH_WNS_BROWSER_INVALID' });
     const receipt = await store.recordFrame(lease, { version: 'before-wns', data: 'AA', headers: {}, status: 'received', ackCode: 100 });
     for (const column of ['wns_token_sealed_json', 'wns_token_revision', 'wns_token_generation']) await db.queryDatabase(`ALTER TABLE automation_x_push_receivers DROP COLUMN ${column}`);
-    const migration = readFileSync(path.resolve(__dirname, '../../migrations/20261110_add_wns_token_state.sql'), 'utf8');
-    for (let i = 0; i < 2; i++) for (const statement of migration.split(';').map(value => value.trim()).filter(Boolean)) await db.queryDatabase(statement);
+    for (let i = 0; i < 2; i++) await applyTestMigration(db, '20261110_add_wns_token_state.sql');
     assert.equal((await store.getInbox({ ...sub, id: receipt.id })).version, 'before-wns');
 }));
 test('late lease expiry rolls back rotation and failed read commit clears plaintext', async () => setup(async db => {
