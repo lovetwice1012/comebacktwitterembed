@@ -37,9 +37,10 @@ async function run(input) {
             || !/^http:\/\/127\.0\.0\.1:[1-9][0-9]{0,4}\/$/.test(input.scope || '')
             || !/^[0-9a-f-]{36}$/.test(input.subscriptionId || '') || !/^\d{1,32}$/.test(input.ownerUserId || '')) throw new Error('PROBE_WORKER_INPUT_INVALID');
         key = Buffer.from(input.deviceKey, 'base64'); channel = Buffer.from(input.channel, 'base64');
-        productKey = Buffer.from(input.productKey, 'base64'); productId = Buffer.from(input.productId, 'base64');
+        if (input.boundMode !== undefined && (input.boundMode !== true || !input.useGateway || input.productKey !== undefined || input.productId !== undefined)) throw new Error('PROBE_WORKER_INPUT_INVALID');
+        if (!input.boundMode) { productKey = Buffer.from(input.productKey, 'base64'); productId = Buffer.from(input.productId, 'base64'); }
         publicKey = Buffer.from(input.publicKey, 'base64'); privateKey = Buffer.from(input.privateKey, 'base64'); auth = Buffer.from(input.auth, 'base64');
-        if (key.length !== 32 || !channel.length || channel.length > 256 || productKey.length !== 16 || productId.length !== 16
+        if (key.length !== 32 || !channel.length || channel.length > 256 || !input.boundMode && (productKey.length !== 16 || productId.length !== 16)
             || publicKey.length !== 65 || privateKey.length !== 32 || auth.length !== 16) throw new Error('PROBE_WORKER_INPUT_INVALID');
         pool = mysql.createPool({ host: '127.0.0.1', port: 33621, user: 'root', password: '', database: input.schema,
             connectionLimit: 4, supportBigNumbers: true, bigNumberStrings: true });
@@ -111,7 +112,8 @@ async function run(input) {
                         try {
                             await runEdgeWnsGateway({ store: instrumented, lease, vault: productionVault, authorize: async () => {}, signal: controller.signal,
                                 credentials: { agent: { os: 'Windows 10', osVersion: '10.0.00000', architecture: 'x86_64', locale: 'en' },
-                                    client: input.clientMetadata, deviceKey: key, reconnectToken: saved.token, productKey, productId, siteChannel: channel },
+                                    client: input.clientMetadata, deviceKey: key, reconnectToken: saved.token,
+                                    ...(input.boundMode ? { authenticationMode: 'bound' } : { productKey, productId }), siteChannel: channel },
                                 onReady: async () => { expectedNext = await syntheticSend(input.subscription, nextLabel, input.vapid); },
                                 onReceived: async () => { delivered++; controller.abort(); } });
                             if (delivered !== 1) throw new Error('PROBE_WORKER_RECONNECT_FAILED');
@@ -159,7 +161,8 @@ async function run(input) {
                 await notify({ event: 'ready' });
                 await runEdgeWnsGateway({ store: instrumented, lease, vault: productionVault, authorize: async () => {}, signal: controller.signal,
                     credentials: { agent: { os: 'Windows 10', osVersion: '10.0.00000', architecture: 'x86_64', locale: 'en' },
-                        client: input.clientMetadata, deviceKey: key, reconnectToken: initialToken, productKey, productId, siteChannel: channel },
+                        client: input.clientMetadata, deviceKey: key, reconnectToken: initialToken,
+                        ...(input.boundMode ? { authenticationMode: 'bound' } : { productKey, productId }), siteChannel: channel },
                     onReady: async () => {
                         const other = await syntheticSend(input.otherSubscription, 'synthetic-independent-other', input.vapid); other.fill(0);
                         const target = await syntheticSend(input.subscription, label, input.vapid); target.fill(0);

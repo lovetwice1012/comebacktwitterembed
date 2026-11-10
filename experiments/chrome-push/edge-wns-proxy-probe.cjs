@@ -99,7 +99,7 @@ async function main() {
     if (testBindShape && (!testIndependent || process.env.NODE_ENV !== 'test')) throw new Error('PROBE_MODE_INVALID');
     if (testSkipChallenge && (!testIndependent || process.env.NODE_ENV !== 'test'
         || process.env.EDGE_PROBE_GENERATED_HANDSHAKE === '1' && process.env.EDGE_PROBE_CLIENT_METADATA !== '1'
-        || process.env.EDGE_PROBE_DURABLE === '1')) throw new Error('PROBE_MODE_INVALID');
+        || process.env.EDGE_PROBE_DURABLE === '1' && process.env.EDGE_PROBE_DURABLE_GATEWAY !== '1')) throw new Error('PROBE_MODE_INVALID');
     if (testSession && (!testIndependent || !testTwoSites || process.env.NODE_ENV !== 'test'
         || process.env.EDGE_PROBE_GENERATED_HANDSHAKE !== '1' || process.env.EDGE_PROBE_CLIENT_METADATA !== '1'
         || process.env.EDGE_PROBE_DURABLE === '1' || process.env.EDGE_PROBE_ROTATION === '1')) throw new Error('PROBE_MODE_INVALID');
@@ -891,7 +891,8 @@ async function main() {
                     const { startSyntheticWorker } = require('./edge-fixture-process.cjs');
                     const input = { schema: durableDb.schema, dbPort: 33621, scope: `${origin}/`, subscriptionId: durableSubscription.subscriptionId,
                         ownerUserId: durableSubscription.ownerUserId, deviceKey: key.toString('base64'), token: deviceFields[2].toString('utf8'),
-                        channel: independentChannel.toString('base64'), productKey: productConstants.key.toString('base64'), productId: productConstants.id.toString('base64'),
+                        channel: independentChannel.toString('base64'), ...(testSkipChallenge ? { boundMode: true }
+                            : { productKey: productConstants.key.toString('base64'), productId: productConstants.id.toString('base64') }),
                         publicKey: independentWebPush.publicKey.toString('base64'), privateKey: independentWebPush.privateKey.toString('base64'),
                         auth: independentWebPush.auth.toString('base64'), subscription: value.subscription, otherSubscription, vapid, clientMetadata,
                         ...(testTokenState ? { stateEnabled: true, statePrivateKey, productionState: testProductionState, useGateway: testDurableGateway } : {}) };
@@ -932,6 +933,7 @@ async function main() {
                     }
                     if (processFailure) throw processFailure;
                 } else if (testSession) {
+                    probeStage = 'session';
                     const { createEdgeWnsSession } = require('../../src/automation/edge-wns-session');
                     const { createEdgeWnsTransport } = require('../../src/automation/edge-wns-transport');
                     const { decryptEce } = await import(pathToFileURL(path.resolve(__dirname, '../../packages/angelic-angel/dist/crypto.js')).href);
@@ -1101,7 +1103,8 @@ async function main() {
         console.log(JSON.stringify({ syntheticProfile: true, testWrongKey, testRewrite, testIndependent, testTwoSites, testDurable, tlsIsolationVerified, winrtFeatureOverride: featureArgs.length > 0, endpointOverride: !noRelay, builtInStorePresent, relayConnections: events.length, events: shapes, initialNotificationReceived: browserEvents.initial > 0, browserReceived, copiedProfileResult, detachedConnectionResult, independentResult, durableResult, routingResult, handshakeShape, handshakeRelations, bindShape, exchangeShapes, capturedCipherDecrypted, appServerKeyMatches,
             subscription: value.ok ? { ok: true, host: new URL(value.subscription.endpoint).hostname } : value }));
     } catch (error) {
-        console.error('PROBE_STAGE', probeStage, /^PROBE_[A-Z_]+$/.test(error?.message || '') ? error.message : error?.name || 'Error');
+        const safeCode = typeof error?.code === 'string' && /^[A-Z][A-Z0-9_]{1,63}$/.test(error.code) ? error.code : null;
+        console.error('PROBE_STAGE', probeStage, /^PROBE_[A-Z_]+$/.test(error?.message || '') ? error.message : safeCode || error?.name || 'Error');
         throw error;
     } finally {
         if (durableDb) try { await durableDb.close(); } catch { process.stderr.write('PROBE_DB_CLEANUP_FAILED\n'); process.exitCode = 1; }
