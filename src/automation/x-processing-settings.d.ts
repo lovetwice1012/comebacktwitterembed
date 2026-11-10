@@ -14,6 +14,9 @@ export type XMonitorProcessing = {
     planId: string; planLabel: string; intervalMinutes: number | null; configured: boolean; reasonCode: string | null; isPreview?: boolean;
 };
 export function inspectXMonitorProcessing(query: Query, monitor: { id?: number | string; owner_user_id: string; pool_kind: string | null;
+    notification_settings_json: string; state?: string }, now: number | undefined, options: { plan?: import('./entitlements').NotificationPlan;
+    ownerSettings?: XProcessingSettings; useLegacyUserInterval?: boolean; modeOnly: true }): Promise<{ effectiveMode: XProcessingMode }>;
+export function inspectXMonitorProcessing(query: Query, monitor: { id?: number | string; owner_user_id: string; pool_kind: string | null;
     notification_settings_json: string; state?: string }, now?: number, options?: { plan?: import('./entitlements').NotificationPlan;
     ownerSettings?: XProcessingSettings; useLegacyUserInterval?: boolean; prospectivePool?: boolean; registrationPreview?: boolean }): Promise<XMonitorProcessing>;
 export function inspectXRegistrationProcessing(query: Query, owner: string, poolKind: string | null, processingMode?: XProcessingMode,

@@ -157,6 +157,7 @@ function createXEventRouter(db, queue, options = {}) {
     const clock = options.clock || Date.now;
     const inspect = (row) => require('./x-processing-settings').inspectXMonitorProcessing(db.queryDatabase, row, clock(), {
         useLegacyUserInterval: options.useLegacyUserInterval === true,
+        modeOnly: true,
     });
     async function boundTargets(lease) {
         if (!lease || !UUID.test(String(lease.subscriptionId || '')) || !/^\d{1,32}$/.test(String(lease.ownerUserId || '')))

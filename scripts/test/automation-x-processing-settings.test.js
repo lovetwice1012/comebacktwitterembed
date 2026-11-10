@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { inspectXProcessingSettings, createXProcessingSettings } = require('../../src/automation/x-processing-settings');
+const { inspectXProcessingSettings, inspectXMonitorProcessing, createXProcessingSettings } = require('../../src/automation/x-processing-settings');
 const plan = changes => ({ planId: 'ConfiguredPlan', label: '任意の名前', tier: 'paid', intervalMinutes: 30,
     priority: 17, slotLimit: 9, minuteLimit: 3, dayLimit: 12, ...changes });
 
@@ -13,6 +13,18 @@ function queryFor({ requestedMode = 'batch', realtimeEnabled = 0, enabled = 1 } 
         assert.fail('unexpected settings query');
     };
 }
+
+test('mode-only batch inspection skips slot lookups but validates settings and never skips requested realtime', async () => {
+    const monitor = { owner_user_id: '1', pool_kind: 'free', notification_settings_json: '{}' };
+    const opts = { plan: plan(), ownerSettings: { requestedMode: 'batch' }, modeOnly: true };
+    const noQuery = async () => { throw new Error('SLOT_QUERY'); };
+    assert.deepEqual(await inspectXMonitorProcessing(noQuery, monitor, 1000, opts), { effectiveMode: 'batch' });
+    assert.deepEqual(await inspectXMonitorProcessing(noQuery, { ...monitor, notification_settings_json: '{"processingMode":"batch"}' }, 1000,
+        { ...opts, ownerSettings: { requestedMode: 'realtime' } }), { effectiveMode: 'batch' });
+    await assert.rejects(inspectXMonitorProcessing(noQuery, { ...monitor, notification_settings_json: '{"processingMode":"unknown"}' }, 1000, opts), { code: 'X_MONITOR_INVALID_INPUT' });
+    await assert.rejects(inspectXMonitorProcessing(noQuery, { ...monitor, notification_settings_json: '{"processingMode":"realtime"}' }, 1000, opts), /SLOT_QUERY/);
+    await assert.rejects(inspectXMonitorProcessing(noQuery, monitor, 1000, { ...opts, modeOnly: false }), /SLOT_QUERY/);
+});
 
 test('owner defaults to the existing plan batch interval even when realtime is available', async () => {
     const result = await inspectXProcessingSettings(queryFor({ realtimeEnabled: 1 }), '1', 1000, { plan: plan() });
