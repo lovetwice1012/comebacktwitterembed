@@ -357,6 +357,8 @@ function createXPushRuntimeFromEnvironment(db, queue, options = {}) {
         } finally { fs.closeSync(handle); }
         if (!config || typeof config !== 'object' || Array.isArray(config) || Object.keys(config).some(key => !['activeKeyId', 'privateKeys'].includes(key))) throw new Error();
         const privateWorkerVault = require('./x-setup-transfer').createTransferPrivateWorkerVault(config);
+        const edgeEnabled = env.X_NOTIFICATION_EDGE_ENABLED === '1';
+        const edgeTokenVault = edgeEnabled ? require('./x-setup-transfer').createWnsTokenWorkerVault(config) : undefined;
         const numberOption = (name, fallback, maximum) => {
             const value = env[name];
             if (value === undefined) return fallback;
@@ -369,7 +371,7 @@ function createXPushRuntimeFromEnvironment(db, queue, options = {}) {
         const maxConnections = numberOption('X_NOTIFICATION_MAX_CONNECTIONS', 1000, 10000);
         const drainConcurrency = numberOption('X_NOTIFICATION_DRAIN_CONCURRENCY', 16, 100);
         const gateway = require('./x-push-gateway').createXPushGateway(db, { enabled: true, privateWorkerVault,
-            chromeEnabled: env.X_NOTIFICATION_CHROME_ENABLED === '1' });
+            chromeEnabled: env.X_NOTIFICATION_CHROME_ENABLED === '1', edgeEnabled, edgeTokenVault });
         return createXPushRuntime(db, queue, { enabled: true, gateway, processingPolicy: env.X_NOTIFICATION_PROCESSING_POLICY,
             maxConnections, drainConcurrency,
             useLegacyUserInterval: env.ANGELIC_X_USE_LEGACY_USER_INTERVAL === '1',

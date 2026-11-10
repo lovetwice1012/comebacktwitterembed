@@ -252,6 +252,38 @@ function createXPushGateway(db, options = {}) {
             await assertAuthorized();
             if (renewalFailure) throw renewalFailure;
             if (input.signal?.aborted) throw fault('X_PUSH_STOPPED');
+            if (file.version === 3) {
+                // The separate Edge gate defaults off. Intake remains closed
+                // until its exporter and end-to-end lifecycle are ready.
+                if (options.edgeEnabled !== true || !options.edgeTokenVault
+                    || typeof options.edgeTokenVault.seal !== 'function' || typeof options.edgeTokenVault.open !== 'function')
+                    throw fault('X_PUSH_PROTOCOL_INVALID');
+                const { runEdgeWnsGateway } = require('./edge-wns-gateway');
+                const { withEdgeWnsCredentials } = require('./edge-wns-credentials');
+                const controller = new AbortController();
+                transport = { abort: () => controller.abort(), close: () => controller.abort() };
+                input.signal?.addEventListener('abort', aborted, { once: true });
+                if (input.signal?.aborted) aborted();
+                const edgeStore = Object.fromEntries(['readWnsTokenState', 'saveWnsTokenState', 'assertLease', 'recordFrame', 'getInbox']
+                    .map(name => [name, (...args) => deadline(store[name](...args), timeoutMs, 'X_PUSH_STORE_TIMEOUT')]));
+                await withEdgeWnsCredentials(file, credentials => runEdgeWnsGateway({
+                    store: edgeStore, lease, vault: options.edgeTokenVault, authorize, credentials, signal: controller.signal,
+                    ...(options.createEdgeTransport ? { transportFactory: options.createEdgeTransport } : {}),
+                    onReady: async () => {
+                        await assertAuthorized();
+                        await deadline(store.markState(lease, 'listening'), timeoutMs, 'X_PUSH_STORE_TIMEOUT');
+                        await deadline(store.resetRetry(lease), timeoutMs, 'X_PUSH_STORE_TIMEOUT');
+                        if (typeof input.onSession === 'function') await notify(input.onSession, { lease }, input.signal);
+                    },
+                    onReceived: async ({ inbox }) => {
+                        if (typeof input.onReceived !== 'function') return;
+                        const payload = decrypt(crypto, file, inbox);
+                        await notify(input.onReceived, { lease, inbox, payload }, input.signal);
+                    },
+                }));
+                if (renewalFailure) throw renewalFailure;
+                return { state: 'stopped', reasonCode: null };
+            }
             if (file.version === 2) {
                 // A separate, explicitly enabled MCS gateway; never send a
                 // Chrome device identity to the Mozilla WebSocket endpoint.
