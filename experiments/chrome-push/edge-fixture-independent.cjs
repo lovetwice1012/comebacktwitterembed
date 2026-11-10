@@ -142,18 +142,23 @@ function syntheticHandshake(key, token, productConstants, metadata = { channel: 
 }
 
 async function independentSyntheticReconnect({ frames, key, token, connect = () => tls.connect({ host: 'client.wns.windows.com', port: 443,
-    servername: 'client.wns.windows.com', rejectUnauthorized: true }), timeoutMs = 15000, sendNotification, decryptNotification, productConstants, generatedPrelude = false, generatedHandshake = false, clientMetadata, ackAndFollowup = false, onRotatedToken, expectedChannel, sendOtherNotification }) {
+    servername: 'client.wns.windows.com', rejectUnauthorized: true }), timeoutMs = 15000, sendNotification, decryptNotification, productConstants, generatedPrelude = false, generatedHandshake = false, clientMetadata, ackAndFollowup = false, ackSingle = false, ackSettleMs = 0, onRotatedToken, onTargetCiphertext, observePrior, expectedChannel, sendOtherNotification }) {
     if ((!frames && !generatedHandshake) || !Buffer.isBuffer(key) || key.length !== 32 || typeof token !== 'string' || typeof connect !== 'function'
         || !Number.isInteger(timeoutMs) || timeoutMs < 100 || timeoutMs > 30000
-        || onRotatedToken !== undefined && typeof onRotatedToken !== 'function') throw fail('PROBE_DIRECT_CONFIG_INVALID');
+        || onRotatedToken !== undefined && typeof onRotatedToken !== 'function'
+        || onTargetCiphertext !== undefined && typeof onTargetCiphertext !== 'function'
+        || !Number.isInteger(ackSettleMs) || ackSettleMs < 0 || ackSettleMs > 2000 || ackSingle && ackAndFollowup) throw fail('PROBE_DIRECT_CONFIG_INVALID');
+    if (observePrior !== undefined && (!observePrior || !Buffer.isBuffer(observePrior.offlineCipher)
+        || !Buffer.isBuffer(observePrior.priorCipher) || !Number.isInteger(observePrior.windowMs)
+        || observePrior.windowMs < 100 || observePrior.windowMs > 30000)) throw fail('PROBE_DIRECT_CONFIG_INVALID');
     const nonce = String(randomInt(1, 10)) + Array.from({ length: 31 }, () => String(randomInt(0, 10))).join('');
     const generated = generatedHandshake ? syntheticHandshake(key, token, productConstants, clientMetadata) : null;
     const bind = generated?.bnd || rewriteSyntheticBind(frames.bnd, key, token, nonce);
     const prelude = generated || (generatedPrelude ? syntheticPrelude() : null), socket = connect();
-    let pending = Buffer.alloc(0), waiting = null, failure = null; const queue = [];
+    let pending = Buffer.alloc(0), waiting = null, failure = null, closed = false; const queue = [];
     const abort = code => { if (failure) return; failure = fail(code); if (waiting) { const w = waiting; waiting = null; clearTimeout(w.timer); w.reject(failure); } };
     socket.on('error', () => abort('PROBE_DIRECT_SOCKET_FAILED'));
-    socket.on('close', () => abort('PROBE_DIRECT_SOCKET_CLOSED'));
+    socket.on('close', () => { closed = true; abort('PROBE_DIRECT_SOCKET_CLOSED'); });
     socket.on('data', chunk => {
         try {
             if (!Buffer.isBuffer(chunk) || pending.length + chunk.length > 262144) throw fail('PROBE_DIRECT_FRAME_INVALID');
@@ -172,10 +177,10 @@ async function independentSyntheticReconnect({ frames, key, token, connect = () 
             }
         } catch { abort('PROBE_DIRECT_FRAME_INVALID'); socket.destroy(); }
     });
-    function next() {
+    function next(waitMs = timeoutMs) {
         if (failure) return Promise.reject(failure);
         if (queue.length) return Promise.resolve(queue.shift());
-        return new Promise((resolve, reject) => { const timer = setTimeout(() => { waiting = null; reject(fail('PROBE_DIRECT_TIMEOUT')); }, timeoutMs); waiting = { resolve, reject, timer }; });
+        return new Promise((resolve, reject) => { const timer = setTimeout(() => { waiting = null; reject(fail('PROBE_DIRECT_TIMEOUT')); }, waitMs); waiting = { resolve, reject, timer }; });
     }
     async function exchange(frame, verb, destination = 'CON') {
         await new Promise((resolve, reject) => socket.write(frame, error => error ? reject(fail('PROBE_DIRECT_WRITE_FAILED')) : resolve()));
@@ -221,6 +226,25 @@ async function independentSyntheticReconnect({ frames, key, token, connect = () 
             const challenge = rewriteSyntheticChallenge(challengeTemplate, response.serverNonce, productConstants.key, productConstants.id);
             try { await exchange(challenge, 'PUT', 'WNS'); result.challengeResponse = true; }
             finally { challenge.fill(0); }
+            if (observePrior) {
+                const observed = { offlineNotification: false, priorNotificationReplay: false, otherFrames: 0 };
+                const deadline = Date.now() + observePrior.windowMs;
+                while (Date.now() < deadline) {
+                    let frame;
+                    try { frame = await next(Math.max(1, deadline - Date.now())); }
+                    catch (error) { if (error.code === 'PROBE_DIRECT_TIMEOUT') break; throw error; }
+                    try {
+                        const cipher = firstFixtureNotification([frame]);
+                        if (!cipher) { observed.otherFrames++; continue; }
+                        try {
+                            if (cipher.equals(observePrior.offlineCipher)) observed.offlineNotification = true;
+                            else if (cipher.equals(observePrior.priorCipher)) observed.priorNotificationReplay = true;
+                            else observed.otherFrames++;
+                        } finally { cipher.fill(0); }
+                    } finally { frame.fill(0); }
+                }
+                result.beforeNewSend = observed;
+            }
             let acknowledgementSequence = 5;
             if (sendOtherNotification !== undefined) {
                 if (typeof sendOtherNotification !== 'function' || !Buffer.isBuffer(expectedChannel)) throw fail('PROBE_DIRECT_CONFIG_INVALID');
@@ -252,10 +276,15 @@ async function independentSyntheticReconnect({ frames, key, token, connect = () 
                     if (!ciphertext) return { ...result, notificationReceived: false };
                     try {
                         const received = { ...result, notificationReceived: true, matchesSentCiphertext: ciphertext.equals(expected), payloadDecrypted: await decryptNotification(ciphertext) };
-                        if (!ackAndFollowup || !received.matchesSentCiphertext || !received.payloadDecrypted) return received;
+                        if (onTargetCiphertext && received.matchesSentCiphertext && received.payloadDecrypted) await onTargetCiphertext(ciphertext);
+                        if ((!ackAndFollowup && !ackSingle) || !received.matchesSentCiphertext || !received.payloadDecrypted) return received;
                         const acknowledgement = syntheticNotificationAck(notification, acknowledgementSequence++);
                         try { await new Promise((resolve, reject) => socket.write(acknowledgement, error => error ? reject(fail('PROBE_DIRECT_WRITE_FAILED')) : resolve())); }
                         finally { acknowledgement.fill(0); }
+                        if (ackSingle) {
+                            if (ackSettleMs) await new Promise(resolve => setTimeout(resolve, ackSettleMs));
+                            return { ...received, ackWritten: true };
+                        }
                         const expectedNext = await sendNotification();
                         if (!Buffer.isBuffer(expectedNext)) throw fail('PROBE_DIRECT_CONFIG_INVALID');
                         try {
@@ -275,6 +304,13 @@ async function independentSyntheticReconnect({ frames, key, token, connect = () 
             } finally { expected.fill(0); }
         }
         return result;
-    } finally { socket.destroy(); pending.fill(0); for (const frame of queue) frame.fill(0); bind.fill(0); if (prelude) for (const frame of Object.values(prelude)) frame.fill(0); }
+    } finally {
+        if (!closed) {
+            let timer;
+            const done = new Promise(resolve => { socket.once('close', resolve); timer = setTimeout(resolve, 2000); });
+            socket.destroy(); await done; clearTimeout(timer);
+        }
+        pending.fill(0); for (const frame of queue) frame.fill(0); bind.fill(0); if (prelude) for (const frame of Object.values(prelude)) frame.fill(0);
+    }
 }
 module.exports = { selectSyntheticHandshake, describeSyntheticHandshake, syntheticHandshakeRelations, syntheticPrelude, syntheticClientMetadata, syntheticHandshake, independentSyntheticReconnect };

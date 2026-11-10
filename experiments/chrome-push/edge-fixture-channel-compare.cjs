@@ -33,6 +33,7 @@ async function verifyDerived(channel, protocolVersion) {
     if (process.env.EDGE_PROBE_VALIDATE_ACK === '1') env.EDGE_PROBE_ACK_FOLLOWUP = '1';
     if (process.env.EDGE_PROBE_VALIDATE_ROTATION === '1') env.EDGE_PROBE_ROTATION = '1';
     if (process.env.EDGE_PROBE_VALIDATE_STALE === '1') { env.EDGE_PROBE_ROTATION = '1'; env.EDGE_PROBE_USE_STALE_TOKEN = '1'; }
+    if (process.env.EDGE_PROBE_VALIDATE_OFFLINE === '1') { env.EDGE_PROBE_ROTATION = '1'; env.EDGE_PROBE_OFFLINE = '1'; }
     const child = fork(path.join(__dirname, 'edge-wns-proxy-probe.cjs'), [], { env, windowsHide: true, stdio: ['ignore', 'ignore', 'pipe', 'ipc'] });
     let result, diagnostic = '';
     child.stderr.on('data', chunk => { diagnostic = (diagnostic + chunk.toString('utf8')).slice(-4096); });

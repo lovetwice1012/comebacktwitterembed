@@ -85,6 +85,7 @@ async function main() {
     const testRewrite = process.env.EDGE_PROBE_REWRITE_SIGNATURE === '1';
     const testIndependent = process.env.EDGE_PROBE_INDEPENDENT_RECONNECT === '1';
     const testTwoSites = process.env.EDGE_PROBE_TWO_SITES === '1';
+    const testOffline = process.env.EDGE_PROBE_OFFLINE === '1';
     if (testWrongKey && (noRelay || process.env.EDGE_PROBE_RECONNECT !== '1' || process.env.EDGE_PROBE_COPY_PROFILE !== '1'
         || process.env.EDGE_PROBE_MINIMAL_PROFILE !== '1' || process.env.EDGE_PROBE_DECRYPT_RECEIVED === '1'
         || (process.env.EDGE_PROBE_OMIT_COMPONENT || '').split(',').includes('push-store'))) throw new Error('PROBE_MODE_INVALID');
@@ -98,6 +99,9 @@ async function main() {
         throw new Error('PROBE_MODE_INVALID');
     if (testTwoSites && (testRewrite || testWrongKey || noRelay || process.env.EDGE_PROBE_KEEP_SOCKET === '1'
         || !testIndependent && process.env.EDGE_PROBE_RECONNECT === '1')) throw new Error('PROBE_MODE_INVALID');
+    if (testOffline && (!testIndependent || testTwoSites || process.env.EDGE_PROBE_ROTATION !== '1'
+        || process.env.EDGE_PROBE_GENERATED_HANDSHAKE !== '1' || process.env.EDGE_PROBE_ACK_FOLLOWUP === '1'
+        || process.env.EDGE_PROBE_USE_STALE_TOKEN === '1')) throw new Error('PROBE_MODE_INVALID');
     const temp = await fs.realpath(os.tmpdir()), root = await fs.mkdtemp(path.join(temp, 'cbte-edge-wns-probe-'));
     let browser, cdp, pageServer, relay, browserReceived = false, copiedProfileResult = null, detachedConnectionResult = null, independentResult = null, routingResult = null, handshakeShape = null, handshakeRelations = null, relationDeviceRecord = null, relationSiteRecord = null, independentWebPush = null, independentChannel = null, productConstants = null, capturedCipherDecrypted = null, appServerKeyMatches = null, deviceFields, expectedCipher, otherCipher, expectedNextCipher, otherNextCipher; const sockets = new Set(), events = [];
     const browserEvents = { initial: 0, second: 0, third: 0, fourth: 0, copy: 0, other: 0 };
@@ -749,10 +753,14 @@ async function main() {
                 clientMetadata = { channel, protocolVersion, clientName: 'Synthetic client', clientVersion: '1.2.3.4' };
             }
             const frames = generatedHandshake ? null : events[1].fixtureSentFrames(), key = Buffer.from(deviceFields[3].toString('ascii'), 'base64');
-            let rotatedToken;
-            const direct = (token, label, captureToken, ackAndFollowup) => independentSyntheticReconnect({ frames, key, token, productConstants,
+            let rotatedToken, firstCipher, offlineCipher;
+            const direct = (token, label, captureToken, ackAndFollowup, observePrior) => independentSyntheticReconnect({ frames, key, token, productConstants,
                 generatedPrelude: process.env.EDGE_PROBE_GENERATED_PRELUDE === '1', generatedHandshake, clientMetadata, ackAndFollowup,
+                ackSingle: Boolean(captureToken && testOffline && process.env.EDGE_PROBE_OFFLINE_ACK === '1'),
+                ackSettleMs: captureToken && testOffline && process.env.EDGE_PROBE_OFFLINE_ACK === '1' ? 1000 : 0,
                 ...(captureToken ? { onRotatedToken: value => { rotatedToken?.fill(0); rotatedToken = Buffer.from(value); } } : {}),
+                ...(captureToken && testOffline ? { onTargetCiphertext: value => { firstCipher?.fill(0); firstCipher = Buffer.from(value); } } : {}),
+                ...(observePrior ? { observePrior } : {}),
                 ...(testTwoSites ? { expectedChannel: independentChannel, sendOtherNotification: () => sendFixture(otherSubscription, 'synthetic-independent-other') } : {}),
                 sendNotification: () => sendFixture(value.subscription, label),
                 decryptNotification: async ciphertext => {
@@ -769,10 +777,18 @@ async function main() {
                 if (testRotation) {
                     if (!rotatedToken || !independentResult.notificationReceived) throw new Error('PROBE_ROTATION_PREREQUISITE_FAILED');
                     const useOldToken = process.env.EDGE_PROBE_USE_STALE_TOKEN === '1';
-                    try { independentResult.rotation = { reusedPreviousToken: useOldToken, ...await direct(useOldToken ? deviceFields[2].toString('utf8') : rotatedToken.toString('ascii'), 'synthetic-independent-next', false, false) }; }
+                    if (testOffline) {
+                        if (!firstCipher) throw new Error('PROBE_OFFLINE_PREREQUISITE_FAILED');
+                        for (let i = 0; i < 50 && events.some(event => event.upstreamOpen()); i++) await wait(100);
+                        if (events.some(event => event.upstreamOpen())) throw new Error('PROBE_OFFLINE_PREREQUISITE_FAILED');
+                        await wait(1000);
+                        offlineCipher = await sendFixture(value.subscription, 'synthetic-offline');
+                    }
+                    const observation = testOffline ? { offlineCipher, priorCipher: firstCipher, windowMs: 10000 } : undefined;
+                    try { independentResult.rotation = { reusedPreviousToken: useOldToken, ...await direct(useOldToken ? deviceFields[2].toString('utf8') : rotatedToken.toString('ascii'), 'synthetic-independent-next', false, false, observation) }; }
                     catch (error) { independentResult.rotation = { errorCode: /^PROBE_[A-Z_]+$/.test(error?.code || '') ? error.code : 'PROBE_ROTATION_FAILED' }; }
                 }
-            } finally { rotatedToken?.fill(0); key.fill(0); if (frames) for (const frame of Object.values(frames)) frame.fill(0); }
+            } finally { rotatedToken?.fill(0); firstCipher?.fill(0); offlineCipher?.fill(0); key.fill(0); if (frames) for (const frame of Object.values(frames)) frame.fill(0); }
         }
         const shapes = events.map(event => { const { describe, fixtureCipher, fixtureLayout, fixtureBindResponses, fixtureSentFrames, fixtureRelations, fixtureRouting, fixtureRecipient, fixtureChannelStability, fixtureAcknowledgementAnalysis, upstreamOpen, containsFixtureCipher, acknowledgeSyntheticSecond, closeFixtureConnection, ...metadata } = event;
             return { ...metadata, fixtureLayout: fixtureLayout(), bindResponses: fixtureBindResponses(), acknowledgementAnalysis: fixtureAcknowledgementAnalysis(), shape: describe() }; });

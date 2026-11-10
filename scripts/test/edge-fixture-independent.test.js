@@ -120,6 +120,38 @@ test('synthetic direct receiver acknowledges only after verification and accepts
         assert(ack.includes(Buffer.from('Msg-Id: fixture-1'))); assert.equal(sends, 2);
     } finally { ack?.fill(0); }
 });
+test('single synthetic ACK is not sent when decryption fails', async () => {
+    let writes = 0;
+    const socket = new EventEmitter();
+    socket.write = (_buffer, callback) => {
+        writes++;
+        const response = writes === 1 ? frame('CNT 1 CON', '<connect/>') : writes === 2 ? frame('ATH 2 CON', '')
+            : writes === 3 ? frame('BND 3 CON', '<wns><reconnect-token>synthetic</reconnect-token><nonce>synthetic</nonce></wns>') : frame('PUT 4 WNS', '');
+        queueMicrotask(() => { callback(); socket.emit('data', response); }); return true;
+    };
+    socket.destroy = () => socket.emit('close');
+    const connect = () => { queueMicrotask(() => socket.emit('secureConnect')); return socket; };
+    const result = await independentSyntheticReconnect({ frames: null, key, token, connect, timeoutMs: 1000, productConstants, generatedHandshake: true, ackSingle: true,
+        sendNotification: async () => { queueMicrotask(() => socket.emit('data', frame('NFY 5 WNS\\NOTIF A1', 'Msg-Id: synthetic\r\nContent-Encoding: aes128gcm\r\n\r\ncipher'))); return Buffer.from('cipher'); },
+        decryptNotification: async () => false });
+    assert.equal(result.payloadDecrypted, false); assert.equal(result.ackWritten, undefined); assert.equal(writes, 4);
+});
+test('single synthetic ACK is not sent when receipt persistence fails', async () => {
+    let writes = 0;
+    const socket = new EventEmitter();
+    socket.write = (_buffer, callback) => {
+        writes++;
+        const response = writes === 1 ? frame('CNT 1 CON', '<connect/>') : writes === 2 ? frame('ATH 2 CON', '')
+            : writes === 3 ? frame('BND 3 CON', '<wns><reconnect-token>synthetic</reconnect-token><nonce>synthetic</nonce></wns>') : frame('PUT 4 WNS', '');
+        queueMicrotask(() => { callback(); socket.emit('data', response); }); return true;
+    };
+    socket.destroy = () => socket.emit('close');
+    const connect = () => { queueMicrotask(() => socket.emit('secureConnect')); return socket; };
+    await assert.rejects(independentSyntheticReconnect({ frames: null, key, token, connect, timeoutMs: 1000, productConstants, generatedHandshake: true, ackSingle: true,
+        sendNotification: async () => { queueMicrotask(() => socket.emit('data', frame('NFY 5 WNS\\NOTIF A1', 'Msg-Id: synthetic\r\nContent-Encoding: aes128gcm\r\n\r\ncipher'))); return Buffer.from('cipher'); },
+        decryptNotification: async () => true, onTargetCiphertext: async () => { throw new Error('synthetic-durable-write-failed'); } }), /synthetic-durable-write-failed/);
+    assert.equal(writes, 4);
+});
 test('synthetic receiver stops before challenge if token capture fails', async () => {
     const frames = selectSyntheticHandshake([fixture()]); let writes = 0, borrowed;
     const socket = new EventEmitter();
@@ -180,4 +212,34 @@ test('ambiguous foreign channel is neither acknowledged nor decrypted', async ()
         }, sendNotification: async () => { targetSends++; return Buffer.from('target-cipher'); }, decryptNotification: async () => { decrypts++; return true; } }),
     /PROBE_ROUTING_INVALID/);
     assert.equal(writes, 4); assert.equal(targetSends, 0); assert.equal(decrypts, 0);
+});
+test('offline observation happens before a new synthetic notification is sent', async () => {
+    let writes = 0, sends = 0, observedAtSend, borrowed;
+    const socket = new EventEmitter();
+    const notification = body => frame('NFY 5 WNS\\NOTIF A1', `Content-Encoding: aes128gcm\r\n\r\n${body}`);
+    socket.write = (_buffer, callback) => {
+        writes++;
+        const response = writes === 1 ? frame('CNT 1 CON', '<connect/>') : writes === 2 ? frame('ATH 2 CON', '')
+            : writes === 3 ? frame('BND 3 CON', '<wns><reconnect-token>synthetic</reconnect-token><nonce>synthetic</nonce></wns>') : frame('PUT 4 WNS', '');
+        queueMicrotask(() => { callback(); socket.emit('data', response); if (writes === 4) socket.emit('data', notification('offline-cipher')); });
+        return true;
+    };
+    socket.destroy = () => socket.emit('close');
+    const connect = () => { queueMicrotask(() => socket.emit('secureConnect')); return socket; };
+    const sendNotification = async () => {
+        sends++; observedAtSend = true; queueMicrotask(() => socket.emit('data', notification('fresh-cipher'))); return Buffer.from('fresh-cipher');
+    };
+    const result = await independentSyntheticReconnect({ frames: null, key, token, connect, timeoutMs: 1000, productConstants, generatedHandshake: true,
+        observePrior: { offlineCipher: Buffer.from('offline-cipher'), priorCipher: Buffer.from('old-cipher'), windowMs: 100 },
+        sendNotification, decryptNotification: async cipher => cipher.toString() === 'fresh-cipher', onTargetCiphertext: value => { borrowed = value; } });
+    assert.deepEqual(result.beforeNewSend, { offlineNotification: true, priorNotificationReplay: false, otherFrames: 0 });
+    assert.equal(result.payloadDecrypted, true); assert.equal(sends, 1); assert.equal(observedAtSend, true);
+    assert(borrowed.every(byte => byte === 0));
+});
+test('invalid offline observation does not open a connection', async () => {
+    let connects = 0;
+    await assert.rejects(independentSyntheticReconnect({ frames: null, key, token, generatedHandshake: true, productConstants,
+        connect: () => { connects++; throw new Error('unexpected-connection'); },
+        observePrior: { offlineCipher: Buffer.alloc(1), priorCipher: Buffer.alloc(1), windowMs: 30001 } }), { code: 'PROBE_DIRECT_CONFIG_INVALID' });
+    assert.equal(connects, 0);
 });
