@@ -104,6 +104,23 @@ test('a persisted receipt with no callback is recovered through onSession and a 
     assert.equal(f.rows[0].status, 'routed'); assert.equal(f.runtime.status().sessions, 1);
 });
 
+test('periodic mode snapshot is refreshed on every drain and receipt wakeups recheck realtime', async t => {
+    const f = fixture(t, { requestedMode: 'batch' });
+    let mode = 'batch', snapshots = 0, immediateChecks = 0;
+    f.router.targetModes = async () => { snapshots++; return { realtime: mode === 'realtime', batch: mode === 'batch' }; };
+    f.router.hasRealtimeTargets = async () => { immediateChecks++; return mode === 'realtime'; };
+    f.router.hasBatchTargets = async () => mode === 'batch';
+    await f.runtime.drain(f.lease);
+    assert.equal(snapshots, 1); assert.equal(f.counters.begin, 1);
+    mode = 'realtime'; f.requestedMode('realtime'); f.realtimeEnabled(true);
+    const receipt = f.add();
+    await f.runtime.drain(f.lease, { received: true, inbox: receipt });
+    assert.equal(snapshots, 1); assert.equal(immediateChecks, 1);
+    assert.deepEqual(f.routed.map(row => row.processingMode), ['realtime']);
+    await f.runtime.drain(f.lease);
+    assert.equal(snapshots, 2); assert.equal(f.counters.begin, 1);
+});
+
 test('batch pages keep one cutoff and defer later arrivals while all earlier pages drain', async t => {
     const f = fixture(t); for (let i = 0; i < 5; i++) f.add();
     assert.equal((await f.runtime.drain(f.lease)).processed, 2);

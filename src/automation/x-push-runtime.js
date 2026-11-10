@@ -156,12 +156,12 @@ function createXPushRuntime(db, queue, options = {}) {
                 }
                 if (!halted()) processed.add(inbox.id);
             }
-            async function realtimePass() {
+            async function realtimePass(modes) {
                 drainAgain.delete(lease.subscriptionId);
                 const pending = receiptIds.get(lease.subscriptionId);
                 receiptIds.delete(lease.subscriptionId);
                 try {
-                    if (!await router.hasRealtimeTargets(lease)) return;
+                    if (!(modes ? modes.realtime : await router.hasRealtimeTargets(lease))) return;
                     // The callback is only a wake-up/identity hint. Read owned,
                     // persisted ciphertext again; never route its supplied payload.
                     for (const id of pending || []) {
@@ -190,9 +190,12 @@ function createXPushRuntime(db, queue, options = {}) {
                     throw error;
                 }
             }
-            await realtimePass();
+            // One snapshot for this drain only. The delivery path and batch
+            // window still revalidate current authorization and settings.
+            const modes = trigger.received !== true && typeof router.targetModes === 'function' ? await router.targetModes(lease) : null;
+            await realtimePass(modes);
             let result = { state: 'processed' };
-            if (!halted() && trigger.received !== true && await router.hasBatchTargets(lease)) {
+            if (!halted() && trigger.received !== true && (modes?.batch || await router.hasBatchTargets(lease))) {
                 // Owner realtime is merely a legacy per-monitor default. Every
                 // batch target uses the current plan interval, even when another
                 // monitor on this subscription is being delivered immediately.

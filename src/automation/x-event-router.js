@@ -173,6 +173,16 @@ function createXEventRouter(db, queue, options = {}) {
         for (const row of await boundTargets(lease)) if (active(row) && (await inspect(row)).effectiveMode === mode) return true;
         return false;
     }
+    async function targetModes(lease) {
+        const modes = { realtime: false, batch: false };
+        for (const row of await boundTargets(lease)) {
+            if (!active(row)) continue;
+            const mode = (await inspect(row)).effectiveMode;
+            if (mode === 'realtime' || mode === 'batch') modes[mode] = true;
+            if (modes.realtime && modes.batch) break;
+        }
+        return modes;
+    }
     async function routeReceived({ lease, inbox, payload, processingMode }) {
         if (!lease || !inbox || !/^[1-9]\d{0,19}$/.test(String(inbox.id || '')) || !UUID.test(String(lease.subscriptionId || ''))
             || !/^\d{1,32}$/.test(String(lease.ownerUserId || '')) || inbox.ownerUserId !== lease.ownerUserId || inbox.subscriptionId !== lease.subscriptionId
@@ -197,7 +207,7 @@ function createXEventRouter(db, queue, options = {}) {
         }
         return { state: !matched ? 'unmatched' : pending || results.some(result => result.state === 'pending') ? 'pending' : 'routed', results };
     }
-    return { routeReceived, hasRealtimeTargets: lease => hasTargets(lease, 'realtime'), hasBatchTargets: lease => hasTargets(lease, 'batch') };
+    return { routeReceived, targetModes, hasRealtimeTargets: lease => hasTargets(lease, 'realtime'), hasBatchTargets: lease => hasTargets(lease, 'batch') };
 }
 
 module.exports = { createXEventRouter, normalizeXNotification, matchesXMonitor, inspectXWebPushPostCandidate };
