@@ -42,7 +42,8 @@ async function main() {
     const browser = process.env.CHROMIUM_PROBE_BROWSER === 'brave' ? 'brave' : 'chrome';
     const fixture = await createSyntheticSubscription(browser), db = await createTestDatabase(33631); const workers = [];
     try {
-        const supervisor = process.env.CBTE_FIXTURE_SUPERVISOR === '1';
+        const supervisor = process.env.CBTE_FIXTURE_SUPERVISOR === '1', productionTiming = process.env.CBTE_FIXTURE_PRODUCTION_TIMING === '1';
+        if (productionTiming && !supervisor) throw new Error('FIXTURE_TIMING_CONFIG_INVALID');
         const keys = generateKeyPairSync('rsa', { modulusLength: 3072 });
         const sealer = createTransferPublicSealer({ activeKeyId: 'fixture', publicKeys: { fixture: keys.publicKey } });
         const setup = createXSetup(db, { sealer, chromeEnabled: true, braveEnabled: browser === 'brave', receiverEnabled: true, rolloutMode: 'public' });
@@ -56,7 +57,7 @@ async function main() {
             await db.withDatabaseTransaction(query => entitlements.assignSlot(query, actor.userId, 'x', String(monitor.insertId)));
         }
         const input = { schema: db.schema, subscriptionId: saved.subscription.id, ownerUserId: actor.userId,
-            privateKey: keys.privateKey.export({ type: 'pkcs8', format: 'pem' }), supervisor };
+            privateKey: keys.privateKey.export({ type: 'pkcs8', format: 'pem' }), supervisor, productionTiming };
         const first = startWorker({ ...input, worker: 'first' }); workers.push(first); await first.wait('ready');
         const row = (await db.queryDatabase('SELECT lease_token,subscription_revision FROM automation_x_push_receivers WHERE subscription_id=?', [saved.subscription.id]))[0];
         const stale = { subscriptionId: saved.subscription.id, ownerUserId: actor.userId, revision: Number(row.subscription_revision), token: row.lease_token };
@@ -72,10 +73,10 @@ async function main() {
         const expiry = Number((await db.queryDatabase('SELECT lease_expires_at_ms FROM automation_x_push_receivers WHERE subscription_id=?', [saved.subscription.id]))[0].lease_expires_at_ms);
         if (Date.now() >= expiry) throw new Error('FIXTURE_OFFLINE_WINDOW_MISSED');
         await send('synthetic-during-failover');
-        for (let i = 0; i < 100 && Date.now() <= expiry; i++) await delay(100);
+        for (let i = 0; i < 450 && Date.now() <= expiry; i++) await delay(100);
         if (Date.now() <= expiry) throw new Error('FIXTURE_LEASE_TIMEOUT');
         const successor = supervisor ? contender : startWorker({ ...input, worker: 'successor' });
-        if (!supervisor) workers.push(successor); await successor.wait('ready');
+        if (!supervisor) workers.push(successor); await successor.wait('ready', undefined, 60000);
         await assert.rejects(createXPushStore(db).assertLease(stale), { code: 'X_PUSH_LEASE_LOST' });
         await successor.wait('received', 'offline');
         const inbox = await db.queryDatabase('SELECT COUNT(*) n,COUNT(DISTINCT version) versions FROM automation_x_push_inbox WHERE subscription_id=?', [saved.subscription.id]);
@@ -83,7 +84,7 @@ async function main() {
         if (supervisor) {
             await db.queryDatabase('UPDATE automation_x_push_receivers SET last_process_at_ms=? WHERE subscription_id=?', [Date.now() - 301000, saved.subscription.id]);
             let jobs = 0;
-            for (let i = 0; i < 100 && jobs < 2; i++) {
+            for (let i = 0; i < 200 && jobs < 2; i++) {
                 jobs = Number((await db.queryDatabase('SELECT COUNT(*) n FROM automation_jobs'))[0].n); if (jobs < 2) await delay(100);
             }
             if (jobs !== 2) throw new Error('FIXTURE_FAILOVER_ROUTE_FAILED');
@@ -91,7 +92,7 @@ async function main() {
         successor.child.send({ action: 'stop' }); await successor.wait('done', 'stopped'); await successor.waitExit();
         console.log(JSON.stringify({ browser, realFcm: true, exclusiveLease: true, abruptWorkerExit: true, actualLeaseExpiry: true,
             successorReceivedOfflinePush: true, staleWorkerFenced: true, encryptedReceipts: 2, duplicateRows: 0,
-            automaticSupervisorTakeover: supervisor, isolatedJobs: supervisor ? 2 : null, discordRequests: 0 }));
+            automaticSupervisorTakeover: supervisor, productionTiming, isolatedJobs: supervisor ? 2 : null, discordRequests: 0 }));
     } finally {
         for (const worker of workers) if (worker.child.exitCode === null && worker.child.signalCode === null) worker.child.kill();
         await Promise.allSettled(workers.map(worker => worker.waitExit()));

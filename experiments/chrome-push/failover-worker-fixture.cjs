@@ -32,7 +32,7 @@ process.once('message', async input => {
         };
         const vault = createTransferPrivateWorkerVault({ activeKeyId: 'fixture', privateKeys: { fixture: input.privateKey } });
         const gateway = createXPushGateway(db, { enabled: true, chromeEnabled: true, privateWorkerVault: vault,
-            rolloutMode: 'public', requestTimeoutMs: 10000, leaseMs: 3000 });
+            rolloutMode: 'public', requestTimeoutMs: 10000, leaseMs: input.productionTiming === true ? 30000 : 3000 });
         const controller = new AbortController();
         process.on('message', message => { if (message?.action === 'stop') controller.abort(); });
         const notify = ({ payload }) => {
@@ -50,7 +50,7 @@ process.once('message', async input => {
             } };
             const queue = createQueue(db, {}, { rolloutMode: 'public' });
             const runtime = createXPushRuntime(db, queue, { enabled: true, gateway: wrappedGateway, rolloutMode: 'public',
-                processingPolicy: 'batch', tickMs: 500, assertAllowed() {} });
+                processingPolicy: 'batch', tickMs: input.productionTiming === true ? 5000 : 500, assertAllowed() {} });
             try { runtime.start(); await new Promise(resolve => controller.signal.addEventListener('abort', resolve, { once: true })); }
             finally { await runtime.stop(); }
             process.send?.({ event: 'done', state: 'stopped' });
