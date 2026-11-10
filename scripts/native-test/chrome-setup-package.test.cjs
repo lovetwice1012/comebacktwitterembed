@@ -1,0 +1,44 @@
+'use strict';
+const { test } = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const fsp = require('node:fs/promises');
+const os = require('node:os');
+const path = require('node:path');
+const { spawnSync } = require('node:child_process');
+const { unzipSync } = require('fflate');
+
+test('Windows Chrome package protects its profile, rejects tampering and never overwrites existing output',
+    { skip: process.platform !== 'win32', timeout: 90000 }, async t => {
+        const parent = await fsp.realpath(os.tmpdir()), root = await fsp.mkdtemp(path.join(parent, 'cbte-chrome-package-test-'));
+        t.after(async () => {
+            const actual = await fsp.realpath(root); assert.equal(path.dirname(actual).toLowerCase(), parent.toLowerCase());
+            assert.match(path.basename(actual), /^cbte-chrome-package-test-/); await fsp.rm(actual, { recursive: true });
+        });
+        const bundle = path.join(root, '配布 & fixture'), owned = path.join(root, '専用 & fixture');
+        await fsp.mkdir(bundle);
+        const archive = await fsp.readFile(path.resolve(__dirname, '../../artifacts/angelic-setup/chrome-setup-0.1.0-chrome-preview.1.zip'));
+        for (const [name, content] of Object.entries(unzipSync(archive))) {
+            assert.equal(path.basename(name), name); await fsp.writeFile(path.join(bundle, name), content, { flag: 'wx' });
+        }
+        const powershell = path.join(process.env.SystemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
+        const invoke = args => {
+            const result = spawnSync(powershell, ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', path.join(bundle, 'ChromeSetup.ps1'), ...args],
+                { encoding: 'utf8', windowsHide: true, timeout: 30000 });
+            if (result.error) throw result.error;
+            return { ...result, data: JSON.parse(result.stdout) };
+        };
+        assert.equal(invoke(['-Action', 'Status', '-PrivateRoot', owned]).data.prepared, false);
+        assert.equal(invoke(['-Action', 'Prepare', '-PrivateRoot', owned]).data.prepared, true);
+        const output = path.join(root, 'existing.json'); await fsp.writeFile(output, 'existing');
+        const rejected = invoke(['-Action', 'Export', '-PrivateRoot', owned, '-OutputPath', output]);
+        assert.equal(rejected.status, 1); assert.match(rejected.data.message, /^X_CHROME_OUTPUT_INVALID:/);
+        assert.equal(await fsp.readFile(output, 'utf8'), 'existing');
+        const foreign = path.join(root, 'foreign'); await fsp.mkdir(foreign); await fsp.writeFile(path.join(foreign, 'keep.txt'), 'keep');
+        assert.equal(invoke(['-Action', 'Prepare', '-PrivateRoot', foreign]).status, 1);
+        assert.equal(await fsp.readFile(path.join(foreign, 'keep.txt'), 'utf8'), 'keep');
+        await fsp.appendFile(path.join(bundle, 'ChromeCapture.cjs'), '\n// modified\n');
+        const tampered = invoke(['-Action', 'Status', '-PrivateRoot', path.join(root, 'new-owned')]);
+        assert.equal(tampered.status, 1); assert.match(tampered.data.message, /^X_CHROME_PACKAGE_INVALID:/);
+        assert.equal(fs.existsSync(path.join(root, 'new-owned')), false);
+    });

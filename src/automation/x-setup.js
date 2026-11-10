@@ -22,10 +22,12 @@ function consent(input) {
     if (input.consent !== true) fail('X_SETUP_CONSENT_REQUIRED', '受信設定の取り扱いを確認して同意してください。');
 }
 function publicSubscription(row, currentTime = Date.now()) {
+    if (row.browser_kind !== undefined && row.browser_kind !== 'firefox' && row.browser_kind !== 'chrome')
+        fail('X_SETUP_BROWSER_INVALID', '受信情報を確認できません。管理者にご相談ください。', 503);
     const states = ['awaiting', 'connecting', 'listening', 'requires_reenrollment', 'stopped', 'error'];
     let receiverState = states.includes(row.receiver_state) ? row.receiver_state : 'awaiting';
     if (['connecting', 'listening'].includes(receiverState) && Number(row.lease_expires_at_ms || 0) <= currentTime) receiverState = 'stopped';
-    return { id: row.id, state: 'stored', revision: Number(row.revision), browserVersion: row.browser_version,
+    return { id: row.id, state: 'stored', revision: Number(row.revision), browserKind: row.browser_kind === 'chrome' ? 'chrome' : 'firefox', browserVersion: row.browser_version,
         createdAtMs: Number(row.created_at_ms), updatedAtMs: Number(row.updated_at_ms), receiverState,
         boundMonitorCount: Number(row.bound_monitor_count || 0), lastReceivedAtMs: row.last_received_at_ms == null ? null : Number(row.last_received_at_ms),
         // These are inbox states, not Discord delivery counts. Return only
@@ -57,8 +59,9 @@ function createXSetup(db, options = {}) {
     const rolloutOptions = options.rolloutMode === undefined ? {} : { mode: options.rolloutMode };
     const receiverEnabled = options.receiverEnabled === undefined ? process.env.X_NOTIFICATION_RECEIVER_ENABLED === '1'
         && resolveXProcessingPolicy(process.env.X_NOTIFICATION_PROCESSING_POLICY) !== null : options.receiverEnabled === true;
+    const chromeEnabled = options.chromeEnabled === undefined ? process.env.X_NOTIFICATION_CHROME_ENABLED === '1' : options.chromeEnabled === true;
     async function subscriptionRows(query, owner, filter = {}) {
-        return query(`SELECT s.id,s.revision,s.browser_version,s.created_at_ms,s.updated_at_ms,r.state AS receiver_state,r.lease_expires_at_ms,
+        return query(`SELECT s.id,s.revision,s.browser_kind,s.browser_version,s.created_at_ms,s.updated_at_ms,r.state AS receiver_state,r.lease_expires_at_ms,
             (SELECT COUNT(*) FROM automation_x_monitors m WHERE m.owner_user_id=s.owner_user_id AND m.state<>'deleted'
                 AND CASE WHEN JSON_VALID(m.notification_settings_json) THEN JSON_UNQUOTE(JSON_EXTRACT(m.notification_settings_json,'$.subscriptionId')) ELSE NULL END=s.id) AS bound_monitor_count,
             (SELECT MAX(i.received_at_ms) FROM automation_x_push_inbox i WHERE i.subscription_id=s.id) AS last_received_at_ms,
@@ -97,6 +100,7 @@ function createXSetup(db, options = {}) {
         const rows = await subscriptionRows(db.queryDatabase, actor.userId, input);
         const rollout = await evaluateXRollout(db.queryDatabase, actor, rolloutOptions);
         return { available: Boolean(sealer) && rollout.eligible, reasonCode: !rollout.eligible ? rollout.reasonCode : sealer ? null : 'X_SETUP_NOT_CONFIGURED', rollout,
+            chromeEnabled: chromeEnabled && receiverEnabled && rollout.eligible,
             receiverEnabled: receiverEnabled && rollout.eligible, download: DOWNLOAD, maxFileBytes: MAX_FILE_BYTES,
             subscriptions: rows.slice(0, 100).map(row => publicSubscription(row, now())), nextCursor: rows.length > 100 ? rows[99].id : null };
     }
@@ -119,6 +123,7 @@ function createXSetup(db, options = {}) {
         await requireXEnrollment(db.queryDatabase, actor, rolloutOptions);
         await checkSession(db.queryDatabase, actor, input.sessionId);
         const file = parseTransferFile(input.fileText);
+        if (file.version === 2 && (!chromeEnabled || !receiverEnabled)) fail('X_SETUP_CHROME_NOT_READY', 'Chromeでの通知設定は準備中です。');
         return { valid: true, browserVersion: file.provenance.browserVersion, scope: file.push.scope, formatVersion: file.version };
     }
     async function importFile(actor, input) {
@@ -127,7 +132,9 @@ function createXSetup(db, options = {}) {
         // Check authentication/session before any key operations. Repeat under
         // the owner lock after parsing so concurrent imports cannot replay it.
         await checkSession(db.queryDatabase, actor, input.sessionId);
-        const file = parseTransferFile(input.fileText), identity = identifyTransfer(file);
+        const file = parseTransferFile(input.fileText);
+        if (file.version === 2 && (!chromeEnabled || !receiverEnabled)) fail('X_SETUP_CHROME_NOT_READY', 'Chromeでの通知設定は準備中です。');
+        const identity = identifyTransfer(file);
         try {
             return await db.withDatabaseTransaction(async query => {
                 await lockOwner(query, actor.userId);
@@ -141,9 +148,26 @@ function createXSetup(db, options = {}) {
                 if (!row) {
                     const id = randomUUID(), createdAtMs = now(), revision = 1;
                     const envelope = sealer.seal(file, { subscriptionId: id, ownerUserId: actor.userId, revision });
-                    await query(`INSERT INTO automation_x_subscriptions (id,owner_user_id,uaid_hash,channel_hash,content_hash,sealed_json,key_id,browser_version,revision,created_at_ms,updated_at_ms) VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
-                        [id, actor.userId, identity.uaidHash, identity.channelHash, identity.contentHash, JSON.stringify(envelope), envelope.keyId, file.provenance.browserVersion, revision, createdAtMs, createdAtMs]);
-                    row = { id, revision, browser_version: file.provenance.browserVersion, created_at_ms: createdAtMs, updated_at_ms: createdAtMs };
+                    const browserKind = file.version === 2 ? 'chrome' : 'firefox';
+                    await query(`INSERT INTO automation_x_subscriptions (id,owner_user_id,uaid_hash,channel_hash,content_hash,sealed_json,key_id,browser_kind,browser_version,revision,created_at_ms,updated_at_ms) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+                        [id, actor.userId, identity.uaidHash, identity.channelHash, identity.contentHash, JSON.stringify(envelope), envelope.keyId, browserKind, file.provenance.browserVersion, revision, createdAtMs, createdAtMs]);
+                    row = { id, revision, browser_kind: browserKind, browser_version: file.provenance.browserVersion, created_at_ms: createdAtMs, updated_at_ms: createdAtMs };
+                } else if (file.version === 2) {
+                    // Opening the dedicated Chrome profile can take over the
+                    // Google Push connection without closing the worker's TCP
+                    // socket. A user-confirmed upload requests a new connection
+                    // without changing keys, revision, monitors or inbox rows.
+                    if (row.browser_version !== file.provenance.browserVersion) {
+                        const envelope = sealer.seal(file, { subscriptionId: row.id, ownerUserId: actor.userId, revision: Number(row.revision) });
+                        await query('UPDATE automation_x_subscriptions SET sealed_json=?,key_id=?,browser_version=?,updated_at_ms=GREATEST(updated_at_ms+1,?) WHERE id=? AND owner_user_id=?',
+                            [JSON.stringify(envelope), envelope.keyId, file.provenance.browserVersion, now(), row.id, actor.userId]);
+                    } else await query('UPDATE automation_x_subscriptions SET updated_at_ms=GREATEST(updated_at_ms+1,?) WHERE id=? AND owner_user_id=?',
+                        [now(), row.id, actor.userId]);
+                    // The previous socket may still look connected even though
+                    // Chrome has taken it over. Show the refresh as pending
+                    // until the replacement socket has actually logged in.
+                    await query("UPDATE automation_x_push_receivers SET state='connecting',reason_code=NULL,updated_at_ms=? WHERE subscription_id=? AND state IN ('connecting','listening')",
+                        [now(), row.id]);
                 }
                 await query('UPDATE automation_x_setup_sessions SET consumed_at_ms=? WHERE owner_user_id=?', [now(), actor.userId]);
                 await audit(query, actor, row.id, 'x.setup.import', { revision: Number(row.revision), duplicate: Boolean(existing), consentVersion: 1 });

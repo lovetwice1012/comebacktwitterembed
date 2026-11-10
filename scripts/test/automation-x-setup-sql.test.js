@@ -35,6 +35,85 @@ async function payload(service, actor, file = fixture()) {
 }
 const code = expected => error => error.code === expected;
 
+function chromeFixture() {
+    const old = fixture(), key = old.push.p256dhPrivateKey;
+    return { format: old.format, version: 2,
+        provenance: { kind: 'chrome-gcm', adapterVersion: '1.0.0', browserVersion: '140.0.7339.42', readMethod: 'chrome-gcm-snapshot' },
+        push: { deviceId: '123456', securityToken: '987654', appId: 'wp:https://x.com/#01234567-89AB-4CDE-8FAB-012345678-V2',
+            productCategory: 'com.chrome.windows', authorizedEntity: 'sender_123', scope: 'https://x.com/',
+            p256dhPublicKey: old.push.p256dhPublicKey, authenticationSecret: old.push.authenticationSecret,
+            p256dhPrivateKey: { kty: key.kty, crv: key.crv, x: key.x, y: key.y, d: key.d } } };
+}
+test('Chrome transfers stay unavailable until the complete receiver is enabled', async t => setup(t, async db => {
+    const chrome = chromeFixture();
+    const service = createXSetup(db, { sealer }), body = await payload(service, A, chrome);
+    await assert.rejects(service.validate(A, { sessionId: body.sessionId, fileText: body.fileText }), code('X_SETUP_CHROME_NOT_READY'));
+    await assert.rejects(service.importFile(A, body), code('X_SETUP_CHROME_NOT_READY'));
+    assert.equal((await db.queryDatabase('SELECT * FROM automation_x_subscriptions')).length, 0);
+    assert.equal((await db.queryDatabase('SELECT consumed_at_ms FROM automation_x_setup_sessions'))[0].consumed_at_ms, null);
+}));
+test('enabled Chrome intake encrypts the transfer, binds ownership and preserves existing subscriptions', async t => setup(t, async db => {
+    const service = createXSetup(db, { sealer, chromeEnabled: true, receiverEnabled: true });
+    const file = chromeFixture(), body = await payload(service, A, file);
+    assert.equal((await service.status(A)).chromeEnabled, true);
+    assert.equal((await service.validate(A, { sessionId: body.sessionId, fileText: body.fileText })).formatVersion, 2);
+    const saved = await service.importFile(A, body); assert.equal(saved.duplicate, false);
+    assert.equal(saved.subscription.browserKind, 'chrome');
+    const row = (await db.queryDatabase('SELECT * FROM automation_x_subscriptions'))[0];
+    assert(!JSON.stringify(row).includes(file.push.securityToken));
+    const vault = createTransferPrivateWorkerVault({ activeKeyId: 'fixture1', privateKeys: { fixture1: privateKey } });
+    assert.deepEqual(vault.open(JSON.parse(row.sealed_json), { subscriptionId: row.id, ownerUserId: A.userId, revision: Number(row.revision) }), file);
+    const receiver = require('../../src/automation/x-push-store').createXPushStore(db);
+    const lease = await receiver.claim({ subscriptionId: row.id, ownerUserId: A.userId, workerId: 'refresh-test' });
+    await receiver.markState(lease, 'listening');
+    const repeated = await service.importFile(A, await payload(service, A, file));
+    const after = (await db.queryDatabase('SELECT * FROM automation_x_subscriptions WHERE id=?', [row.id]))[0];
+    assert.equal(repeated.duplicate, true); assert.equal(repeated.subscription.id, saved.subscription.id);
+    assert.equal(repeated.subscription.receiverState, 'connecting');
+    assert(Number(after.updated_at_ms) > Number(row.updated_at_ms));
+    assert.equal(after.sealed_json, row.sealed_json); assert.equal(Number(after.revision), Number(row.revision));
+    const updatedFile = structuredClone(file); updatedFile.provenance.browserVersion = '141.0.0.1';
+    const updated = await service.importFile(A, await payload(service, A, updatedFile));
+    const updatedRow = (await db.queryDatabase('SELECT * FROM automation_x_subscriptions WHERE id=?', [row.id]))[0];
+    assert.equal(updated.duplicate, true); assert.equal(updated.subscription.browserVersion, '141.0.0.1');
+    assert.equal(Number(updatedRow.revision), Number(row.revision));
+    assert.deepEqual(vault.open(JSON.parse(updatedRow.sealed_json), { subscriptionId: row.id, ownerUserId: A.userId, revision: Number(row.revision) }), updatedFile);
+    const other = await payload(service, B, file);
+    await assert.rejects(service.importFile(B, other), code('X_SETUP_SUBSCRIPTION_CONFLICT'));
+    assert.equal(Number((await db.queryDatabase('SELECT updated_at_ms FROM automation_x_subscriptions WHERE id=?', [row.id]))[0].updated_at_ms), Number(updatedRow.updated_at_ms));
+    const changedSecret = structuredClone(file); changedSecret.push.securityToken = '987655';
+    await assert.rejects(service.importFile(A, await payload(service, A, changedSecret)), code('X_SETUP_SUBSCRIPTION_CONFLICT'));
+    assert.equal((await db.queryDatabase('SELECT * FROM automation_x_subscriptions')).length, 1);
+}));
+test('browser metadata migration preserves older Firefox records and is repeatable', async t => setup(t, async db => {
+    assert.match(db.schema, /^cbte_automation_test_[0-9a-f]{20}$/);
+    const service = createXSetup(db, { sealer }), initial = await service.importFile(A, await payload(service, A));
+    assert.equal(initial.subscription.browserKind, 'firefox');
+    await db.queryDatabase('ALTER TABLE automation_x_subscriptions DROP COLUMN browser_kind');
+    const migration = readFileSync(path.resolve(__dirname, '../../migrations/20261110_add_x_subscription_browser_kind.sql'), 'utf8');
+    await db.queryDatabase(migration); await db.queryDatabase(migration);
+    const status = await service.status(A);
+    assert.equal(status.subscriptions.length, 1); assert.equal(status.subscriptions[0].browserKind, 'firefox');
+    assert.equal(status.subscriptions[0].id, initial.subscription.id);
+}));
+test('Chrome refresh and version change roll back when its audit fails', async t => setup(t, async db => {
+    const service = createXSetup(db, { sealer, chromeEnabled: true, receiverEnabled: true });
+    const file = chromeFixture(), saved = await service.importFile(A, await payload(service, A, file));
+    const before = (await db.queryDatabase('SELECT * FROM automation_x_subscriptions WHERE id=?', [saved.subscription.id]))[0];
+    const changed = structuredClone(file); changed.provenance.browserVersion = '141.0.0.1';
+    const next = await payload(service, A, changed);
+    const failingDb = { queryDatabase: db.queryDatabase, withDatabaseTransaction: work => db.withDatabaseTransaction(query => work(async (sql, params) => {
+        if (/INSERT INTO automation_audit/i.test(sql)) throw new Error('synthetic audit failure');
+        return query(sql, params);
+    })) };
+    const failingService = createXSetup(failingDb, { sealer, chromeEnabled: true, receiverEnabled: true });
+    await assert.rejects(failingService.importFile(A, next));
+    const after = (await db.queryDatabase('SELECT * FROM automation_x_subscriptions WHERE id=?', [saved.subscription.id]))[0];
+    assert.equal(after.sealed_json, before.sealed_json); assert.equal(after.browser_version, before.browser_version);
+    assert.equal(String(after.updated_at_ms), String(before.updated_at_ms));
+    assert.equal((await db.queryDatabase('SELECT consumed_at_ms FROM automation_x_setup_sessions WHERE owner_user_id=?', [A.userId]))[0].consumed_at_ms, null);
+}));
+
 test('file intake requires explicit config, consent, ownership and bounded one-time sessions', async t => setup(t, async db => {
     let clock = 10000;
     const service = createXSetup(db, { sealer, now: () => clock });
@@ -239,7 +318,11 @@ test('additive SQL migration is repeatable and disabling intake preserves existi
     // Git may check JS templates and SQL files out with different line endings.
     // Preserve the exact SQL text check while treating CRLF and LF alike.
     const canonicalSql = value => value.replace(/\r\n/g, '\n').trim();
-    const expected = require('../../src/automation/x-setup-schema.sql').SCHEMA.map(canonicalSql);
+    // This historical migration predates browser_kind. The later additive
+    // migration is tested separately and must not rewrite migration history.
+    const expected = require('../../src/automation/x-setup-schema.sql').SCHEMA
+        .map(sql => sql.replace(/^\s*browser_kind VARCHAR\(16\).*\n/m, ''))
+        .map(canonicalSql);
     assert.deepEqual(statements.map(canonicalSql), expected);
     for (const ending of ['\n', '\r\n']) {
         const variant = migration.replace(/\r\n/g, '\n').replace(/\n/g, ending);

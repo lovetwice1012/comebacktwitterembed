@@ -20,6 +20,7 @@ const SCHEMA = [
         content_hash CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
         sealed_json TEXT NOT NULL,
         key_id VARCHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+        browser_kind VARCHAR(16) CHARACTER SET ascii COLLATE ascii_bin NOT NULL DEFAULT 'firefox',
         browser_version VARCHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
         revision INT UNSIGNED NOT NULL DEFAULT 1,
         created_at_ms BIGINT NOT NULL,

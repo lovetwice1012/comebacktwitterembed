@@ -3,6 +3,7 @@
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const { createRequire } = require('node:module');
+const { createHash } = require('node:crypto');
 const { TextDecoder } = require('node:util');
 const { createXPushStore, MAX_FRAME_BYTES, validateFrame } = require('./x-push-store');
 const { requireXEnrollment } = require('./x-rollout-policy');
@@ -26,6 +27,11 @@ function duration(value, fallback, minimum, maximum) {
     const result = value === undefined ? fallback : value;
     if (!Number.isInteger(result) || result < minimum || result > maximum) throw fault('X_PUSH_CONFIG_INVALID');
     return result;
+}
+function renewalDelayMs(subscriptionId, leaseMs) {
+    const interval = Math.max(25, Math.floor(leaseMs / 3)), spread = Math.floor(interval / 2);
+    const offset = createHash('sha256').update(subscriptionId).digest().readUInt32BE(0) % (spread + 1);
+    return { interval, firstDelay: interval + offset };
 }
 async function deadline(promise, timeoutMs, code) {
     let timer;
@@ -204,7 +210,7 @@ function createXPushGateway(db, options = {}) {
         if (input.signal?.aborted) return { state: 'stopped', reasonCode: null };
         let lease = await deadline(store.claim(input), timeoutMs, 'X_PUSH_STORE_TIMEOUT');
         if (!lease) return { state: 'busy', reasonCode: 'X_PUSH_LEASE_UNAVAILABLE' };
-        let transport, renewal, expiryTimer, renewalFailure, renewing = false, finished = false, finalState = 'stopped', reasonCode = null;
+        let transport, checkinRunner, renewal, renewalStart, expiryTimer, renewalFailure, renewing = false, finished = false, finalState = 'stopped', reasonCode = null;
         let renewalWork = Promise.resolve();
         const aborted = () => transport?.abort('X_PUSH_STOPPED');
         const authorize = async query => {
@@ -226,7 +232,8 @@ function createXPushGateway(db, options = {}) {
         const assertAuthorized = () => deadline(store.assertLease(lease, { authorize }), timeoutMs, 'X_PUSH_STORE_TIMEOUT');
         try {
             watchLease();
-            renewal = setInterval(() => {
+            const schedule = renewalDelayMs(lease.subscriptionId, store.leaseMs), renewEvery = schedule.interval;
+            const renew = () => {
                 if (renewing) return;
                 renewing = true;
                 renewalWork = deadline(store.renew(lease, { authorize }), timeoutMs, 'X_PUSH_STORE_TIMEOUT').then(async updated => {
@@ -236,12 +243,92 @@ function createXPushGateway(db, options = {}) {
                     renewalFailure = fault(['X_PUSH_ROLLOUT_WITHDRAWN', 'X_PUSH_ROLLOUT_CHECK_FAILED', 'X_PUSH_STORE_TIMEOUT'].includes(error?.code) ? error.code : 'X_PUSH_LEASE_LOST');
                     transport?.abort(renewalFailure.code);
                 }).finally(() => { renewing = false; });
-            }, Math.max(25, Math.floor(store.leaseMs / 3)));
+            };
+            // Spread the first renewal of simultaneously started sessions so
+            // a large fleet does not lock the database all at the same instant.
+            renewalStart = setTimeout(() => { renew(); renewal = setInterval(renew, renewEvery); }, schedule.firstDelay);
             const file = await openSubscription(lease);
             const [protocol, crypto] = await loadProtocol();
             await assertAuthorized();
             if (renewalFailure) throw renewalFailure;
             if (input.signal?.aborted) throw fault('X_PUSH_STOPPED');
+            if (file.version === 2) {
+                // A separate, explicitly enabled MCS gateway; never send a
+                // Chrome device identity to the Mozilla WebSocket endpoint.
+                if (options.chromeEnabled !== true) throw fault('X_PUSH_PROTOCOL_INVALID');
+                const { createChromeMcsTransport } = require('./chrome-mcs-transport');
+                const { createChromeMcsSession } = require('./chrome-mcs-session');
+                const { createChromeMcsStoreAdapter } = require('./chrome-mcs-store-adapter');
+                let heartbeatMs = duration(options.chromeHeartbeatMs, 900000, 25, 3600000);
+                transport = createChromeMcsTransport({ timeoutMs, ...(options.createChromeSocket ? { createSocket: options.createChromeSocket } : {}) });
+                input.signal?.addEventListener('abort', aborted, { once: true });
+                if (input.signal?.aborted) aborted();
+                await transport.connect();
+                const chromeStore = createChromeMcsStoreAdapter({ store, lease, authorize, decrypt: row => decrypt(crypto, file, row) });
+                const session = createChromeMcsSession({
+                    credentials: { deviceId: file.push.deviceId, securityToken: file.push.securityToken, clientVersion: file.provenance.browserVersion },
+                    route: { expectedCategory: file.push.productCategory, expectedAppId: file.push.appId, expectedSender: file.push.authorizedEntity },
+                    store: chromeStore,
+                    send: async wire => {
+                        await assertAuthorized();
+                        if (renewalFailure || input.signal?.aborted) throw renewalFailure || fault('X_PUSH_STOPPED');
+                        await transport.send(wire);
+                    },
+                    onReceipt: async inbox => {
+                        if (!inbox.duplicate && inbox.status === 'received' && typeof input.onReceived === 'function') {
+                            const payload = decrypt(crypto, file, inbox);
+                            await notify(input.onReceived, { lease, inbox, payload }, input.signal);
+                        }
+                    },
+                });
+                await session.start();
+                const hello = await transport.read(timeoutMs);
+                if (!hello) throw fault('X_PUSH_HELLO_FAILED');
+                const connected = await session.receive(hello);
+                if (connected.state !== 'listening') throw fault('X_PUSH_HELLO_FAILED');
+                if (connected.heartbeatIntervalMs) heartbeatMs = connected.heartbeatIntervalMs;
+                await deadline(store.markState(lease, 'listening'), timeoutMs, 'X_PUSH_STORE_TIMEOUT');
+                await deadline(store.resetRetry(lease), timeoutMs, 'X_PUSH_STORE_TIMEOUT');
+                const { createChromeCheckinRunner } = require('./chrome-checkin-runner');
+                checkinRunner = createChromeCheckinRunner({ lease, store, authorize, now,
+                    credentials: { deviceId: file.push.deviceId, securityToken: file.push.securityToken, browserVersion: file.provenance.browserVersion },
+                    ...(options.chromeCheckin ? { send: options.chromeCheckin } : {}),
+                    ...(options.chromeCheckinSetTimer ? { setTimer: options.chromeCheckinSetTimer } : {}),
+                    ...(options.chromeCheckinClearTimer ? { clearTimer: options.chromeCheckinClearTimer } : {}),
+                    onFailure: error => {
+                        if (finished || input.signal?.aborted) return;
+                        const code = /^X_PUSH_[A-Z_]+$/.test(error?.code || '') ? error.code : 'X_PUSH_CHECKIN_FAILED';
+                        if (code === 'X_PUSH_CHECKIN_UNAUTHORIZED' || code === 'X_PUSH_CHECKIN_ID_CHANGED') {
+                            finalState = 'requires_reenrollment'; reasonCode = code;
+                        }
+                        renewalFailure = fault(code);
+                        transport?.abort(code);
+                    },
+                });
+                await deadline(checkinRunner.start(), timeoutMs, 'X_PUSH_STORE_TIMEOUT');
+                if (typeof input.onSession === 'function') await notify(input.onSession, { lease }, input.signal);
+                let nextPing = now() + heartbeatMs, pingDeadline = null, receiptsSincePing = 0;
+                while (!input.signal?.aborted) {
+                    if (renewalFailure) throw renewalFailure;
+                    const frame = await transport.read(Math.max(1, (pingDeadline || nextPing) - now()));
+                    if (!frame) {
+                        if (pingDeadline !== null) throw fault('X_PUSH_PONG_TIMEOUT');
+                        await session.ping(); pingDeadline = now() + Math.max(timeoutMs, 60000); continue;
+                    }
+                    const outcome = await session.receive(frame);
+                    pingDeadline = null; nextPing = now() + heartbeatMs;
+                    // Under sustained traffic, request confirmations before
+                    // the durable replay-ID limit is reached. This does not
+                    // acknowledge any receipt before its DB commit.
+                    if (outcome.state === 'received' && ++receiptsSincePing >= 25) {
+                        await session.ping(); receiptsSincePing = 0;
+                        pingDeadline = now() + Math.max(timeoutMs, 60000);
+                    }
+                }
+                session.close();
+                return { state: 'stopped', reasonCode: null };
+            }
+            if (file.version !== 1) throw fault('X_PUSH_PROTOCOL_INVALID');
             transport = socketTransport(createSocket, timeoutMs, protocol.AUTOPUSH_USER_AGENT);
             input.signal?.addEventListener('abort', aborted, { once: true });
             if (input.signal?.aborted) aborted();
@@ -332,9 +419,11 @@ function createXPushGateway(db, options = {}) {
             throw fault(reasonCode);
         } finally {
             finished = true;
+            clearTimeout(renewalStart);
             clearInterval(renewal);
             clearTimeout(expiryTimer);
             input.signal?.removeEventListener('abort', aborted);
+            if (checkinRunner) try { await deadline(checkinRunner.stop(), timeoutMs, 'X_PUSH_STORE_TIMEOUT'); } catch { /* A stale worker is fenced by its lease. */ }
             await transport?.close();
             try { await deadline(renewalWork, timeoutMs, 'X_PUSH_STORE_TIMEOUT'); } catch { /* A stalled DB cannot hold shutdown indefinitely. */ }
             try { await deadline(store.release(lease, { state: finalState, reasonCode }), timeoutMs, 'X_PUSH_STORE_TIMEOUT'); } catch { /* Expiry/deletion fences this worker; never overwrite its successor. */ }
@@ -343,4 +432,4 @@ function createXPushGateway(db, options = {}) {
     return { run, decryptInbox, decryptQuarantinedInbox, store };
 }
 
-module.exports = { createXPushGateway, AUTOPUSH_URL };
+module.exports = { createXPushGateway, AUTOPUSH_URL, renewalDelayMs };

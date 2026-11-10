@@ -45,6 +45,12 @@ test('worker key file is bounded, private-role only, and defaults to batch witho
     assert.equal(runtime.status().processingConfigured, true);
     assert.equal(runtime.status().processingPolicy, 'batch');
     await runtime.stop();
+    env.X_NOTIFICATION_MAX_CONNECTIONS = '0';
+    assert.throws(attempt, error => error.code === 'X_PUSH_WORKER_CAPACITY_INVALID');
+    env.X_NOTIFICATION_MAX_CONNECTIONS = '1001'; env.X_NOTIFICATION_DRAIN_CONCURRENCY = '101';
+    assert.throws(attempt, error => error.code === 'X_PUSH_WORKER_CAPACITY_INVALID');
+    env.X_NOTIFICATION_DRAIN_CONCURRENCY = '8';
+    const sized = attempt(); await sized.stop();
     env.X_NOTIFICATION_PROCESSING_POLICY = 'realtime';
     const unsupported = attempt(); unsupported.start();
     assert.equal(unsupported.status().processingConfigured, false);
