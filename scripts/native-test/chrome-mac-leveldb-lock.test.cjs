@@ -18,8 +18,8 @@ const helper = process.env.MAC_LOCK_HELPER;
 function vint(n) { const a = []; do { let b = n % 128; n = Math.floor(n / 128); if (n) b |= 128; a.push(b); } while (n); return Buffer.from(a); }
 function field(n, value) { const b = Buffer.isBuffer(value) ? value : Buffer.from(value); return Buffer.concat([vint(n * 8 + 2), vint(b.length), b]); }
 
-function runLock(first, second) {
-    const child = spawn(helper, [first, second], { stdio: ['pipe', 'pipe', 'pipe'] });
+function runLock(...locks) {
+    const child = spawn(helper, locks, { stdio: ['pipe', 'pipe', 'pipe'] });
     const exited = once(child, 'exit');
     const ready = Promise.race([
         once(child.stdout, 'data').then(([data]) => data.toString('ascii')),
@@ -51,6 +51,11 @@ test('native helper holds real LevelDB fcntl locks and releases them on EOF', { 
     const partial = runLock(locks[0], locks[1]); processes.push(partial); assert.equal(await partial.ready, 'B'); await partial.exited;
     const afterPartial = runLock(locks[0], locks[3]); processes.push(afterPartial); assert.equal(await afterPartial.ready, 'R');
     afterPartial.child.stdin.end(); await afterPartial.exited; holder.child.stdin.end(); await holder.exited;
+    const single = runLock(locks[0]); processes.push(single); assert.equal(await single.ready, 'R');
+    const blocked = new ClassicLevel(dirs[0], { createIfMissing: false });
+    try { await assert.rejects(blocked.open(), error => /lock/i.test(String(error.cause?.message || error.message))); }
+    finally { await blocked.close().catch(() => {}); }
+    single.child.stdin.end(); assert.equal((await single.exited)[0], 0);
     const link = path.join(root, 'link'); await fs.symlink(locks[0], link);
     const invalid = runLock(link, locks[1]); processes.push(invalid); assert.equal(await invalid.ready, 'E'); await invalid.exited;
     const same = runLock(locks[0], path.join(dirs[0], '.', 'LOCK')); processes.push(same); assert.equal(await same.ready, 'E'); await same.exited;
