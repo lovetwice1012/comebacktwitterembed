@@ -27,11 +27,13 @@ function fixed(field, n) {
     const value = Buffer.alloc(8); value.writeBigUInt64LE(n);
     return Buffer.concat([varint(field * 8 + 1), value]);
 }
-function encodeRequest({ deviceId, securityToken, browserVersion }) {
+function encodeRequest({ deviceId, securityToken, browserVersion, platform = 'windows' }) {
     const id = integer(deviceId), token = integer(securityToken);
     if (typeof browserVersion !== 'string' || !/^[0-9]{1,3}(?:\.[0-9]{1,5}){3}$/.test(browserVersion)) throw invalid();
-    // Windows Chrome is the only currently supported distribution.
-    const build = Buffer.concat([number(1, 1), bytes(2, browserVersion), number(3, 1)]);
+    // Values are Chromium ChromeBuildProto.Platform, not the worker OS.
+    // The caller must determine the source browser's platform explicitly.
+    if (platform !== 'windows' && platform !== 'macos') throw invalid();
+    const build = Buffer.concat([number(1, platform === 'macos' ? 2 : 1), bytes(2, browserVersion), number(3, 1)]);
     const checkin = Buffer.concat([number(12, 3), bytes(13, build)]);
     return Buffer.concat([number(2, id), bytes(4, checkin), fixed(13, token), number(14, 3), number(22, 0)]);
 }

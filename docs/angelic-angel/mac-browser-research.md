@@ -11,6 +11,8 @@ MacでもFirefox・Chrome・Brave・Edge・Safariの利用者が設定用ファ�
 
 Chromiumの現行公開ソースでは、[Macの鍵導出](https://chromium.googlesource.com/chromium/src/+/refs/heads/main/components/os_crypt/async/browser/keychain_key_provider.mm)と[暗号処理](https://chromium.googlesource.com/chromium/src/+/refs/heads/main/components/os_crypt/async/common/encryptor.cc)が `v10` のAES-CBC方式を実装し、[GCMストア](https://chromium.googlesource.com/chromium/src/+/refs/heads/main/google_apis/gcm/engine/gcm_store_impl.cc)が端末トークンの暗号化を利用している。通知用トークンに限定した復号部品を追加し、独立に生成した合成値で確認した。CBCには改ざん検出がなく、数字として復号できることだけでは鍵や出所の正しさを証明できない。この部品は配布ツールやサーバーの受付にまだ接続しておらず、Keychain操作もしない。ブラウザーごとの識別子、Keychain権限、実プロファイルでの形式とサーバー受信は、使い捨てMac環境で検証してから統合する。
 
+[Chromiumのカテゴリ生成](https://chromium.googlesource.com/chromium/src/+/refs/heads/main/chrome/browser/gcm/gcm_product_util.cc)は製品名とOS名を使い、[OS名の定義](https://chromium.googlesource.com/chromium/src/+/refs/heads/main/base/version_info/version_info.h)はMacを `Mac OS X` とする。Chromiumの[設定名のコメント](https://github.com/chromium/chromium/blob/main/chrome/common/pref_names.h)もChromeのカテゴリ例として `com.chrome.macosx` を示す。ただし既存設定の値は維持されるため、実機で取得値を照合する。定期確認の[プロトコル定義](https://chromium.googlesource.com/chromium/chromium/+/trunk/google_apis/gcm/protocol/android_checkin.proto)はWindowsを1、Macを2と定める。送信データ生成部はMac値を明示指定できるようにしたが、実ワーカーからの指定・Macカテゴリの受付はまだ接続していない。現在のWindows用データは従来どおりWindows値を使う。
+
 ## Safariの受信経路の追加調査（公開ソース）
 
 以下はWebKit公開ソースのコミット `b82767f9fd20225dbec19f86947188825535202b` から確認した内容であり、利用者のmacOSの実装・アクセス権を実測した結果ではない。
