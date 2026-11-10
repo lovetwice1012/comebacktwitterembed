@@ -16,11 +16,14 @@ function macho(cpu, min = 0x000d0500) {
 }
 test('unsigned Mac preview layout preserves executable permissions and local manifest', async () => {
     const runtime = macho(0x0100000c), helper = macho(0x0100000c), bundle = { 'MacSetup.cjs': Buffer.from('fixture'), 'MacLevelDB.node': Buffer.from('fixture') };
-    const zip = assembleMacApp({ bundle, runtime, helper, license: Buffer.from('test license') }), files = unzipSync(zip);
+    const zip = assembleMacApp({ bundle, runtime, helper, license: Buffer.from('test license'),
+        projectLicense: Buffer.from('project license'), guide: Buffer.from('test guide') }), files = unzipSync(zip);
     const root = 'X通知の準備.app/Contents/', manifest = JSON.parse(Buffer.from(files[`${root}MacOS/MacSetup-manifest.json`]).toString());
     assert(Buffer.from(files[`${root}Info.plist`]).toString().includes('<key>LSMinimumSystemVersion</key><string>13.5</string>'));
     assert.equal(manifest.packageId, 'x-notification-mac-chrome-setup');
     assert.equal(manifest.lockSha256, createHash('sha256').update(helper).digest('hex'));
+    assert.equal(Buffer.from(files['はじめに.txt']).toString(), 'test guide');
+    assert.equal(Buffer.from(files[`${root}MacOS/LICENSE.txt`]).toString(), 'project license');
     const launch = Buffer.from(files[`${root}MacOS/Launch`]).toString();
     assert(launch.includes('MacNode')); assert(launch.includes('MacSetup.cjs')); assert(launch.includes('unset NODE_OPTIONS'));
     const modes = {};

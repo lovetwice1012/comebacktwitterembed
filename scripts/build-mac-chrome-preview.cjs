@@ -19,11 +19,14 @@ const PLIST = `<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE plist PUBLIC "-
 
 // Pure layout helper; the public preview builder verifies all executable inputs
 // before calling it. It is not a signing or release operation.
-function assembleMacApp({ bundle, runtime, helper, license }) {
+function assembleMacApp({ bundle, runtime, helper, license, projectLicense, guide }) {
+    if (!Buffer.isBuffer(projectLicense) || !projectLicense.length || !Buffer.isBuffer(guide) || !guide.length)
+        throw new Error('Missing preview documentation');
     const manifest = Buffer.from(JSON.stringify({ packageId: 'x-notification-mac-chrome-setup', version: VERSION, lockSha256: hash(helper) }) + '\n');
     const contents = { [`${APP}Info.plist`]: [Buffer.from(PLIST), false], [`${APP}MacOS/Launch`]: [Buffer.from(LAUNCH), true],
         [`${APP}MacOS/MacNode`]: [runtime, true], [`${APP}MacOS/MacStoreLock`]: [helper, true],
-        [`${APP}MacOS/MacSetup-manifest.json`]: [manifest, false], [`${APP}MacOS/Node-LICENSE.txt`]: [license, false] };
+        [`${APP}MacOS/MacSetup-manifest.json`]: [manifest, false], [`${APP}MacOS/Node-LICENSE.txt`]: [license, false],
+        [`${APP}MacOS/LICENSE.txt`]: [projectLicense, false], 'はじめに.txt': [guide, false] };
     for (const [name, data] of Object.entries(bundle)) contents[`${APP}MacOS/${name}`] = [data, false];
     const entries = Object.fromEntries(Object.entries(contents).map(([name, [data, executable]]) => [name,
         [data, { mtime: new Date('2020-01-01T00:00:00Z'), os: 3, attrs: ((executable ? 0o100755 : 0o100644) << 16) >>> 0 }]]));
@@ -34,8 +37,10 @@ async function buildMacChromePreview({ arch, runtime, helper, license }) {
         || runtime.length > 150 * 1024 * 1024 || helper.length > 4 * 1024 * 1024 || license.length > 1024 * 1024
         || hash(runtime) !== RUNTIME_HASH[arch] || hash(license) !== LICENSE_HASH
         || !isMachOExecutable(runtime, arch) || !isMachOExecutable(helper, arch)) throw new Error('Mac preview input verification failed');
-    const bundle = await buildMacChromeBundle();
-    const archive = assembleMacApp({ bundle, runtime, helper, license });
+    const [bundle, projectLicense, guide] = await Promise.all([buildMacChromeBundle(),
+        readInput(path.resolve(__dirname, '../client/angelic-setup/LICENSE'), 1024 * 1024),
+        readInput(path.resolve(__dirname, '../client/angelic-setup/mac/はじめに.txt'), 64 * 1024)]);
+    const archive = assembleMacApp({ bundle, runtime, helper, license, projectLicense, guide });
     return { archive, sha256: hash(archive), version: VERSION, arch, signed: false };
 }
 async function readInput(filename, max) {
