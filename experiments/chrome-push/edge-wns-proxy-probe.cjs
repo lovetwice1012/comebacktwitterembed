@@ -9,7 +9,7 @@ const http = require('node:http');
 const https = require('node:https');
 const tls = require('node:tls');
 const { spawn, spawnSync } = require('node:child_process');
-const { createHmac, createHash, createCipheriv, createPrivateKey } = require('node:crypto');
+const { createHmac, createHash, createCipheriv, createPrivateKey, randomInt } = require('node:crypto');
 const { pathToFileURL } = require('node:url');
 const webpush = require('web-push');
 const CDP = require('chrome-remote-interface');
@@ -17,6 +17,11 @@ const { ClassicLevel } = require('classic-level');
 const { firstFixtureNotification, fixtureBindResponses } = require('./edge-wns-fixture-framing.cjs');
 const { workerSource, acceptedCase } = require('./edge-fixture-notification.cjs');
 const { replaceSyntheticKey } = require('./edge-fixture-device.cjs');
+const { syntheticReconnectSignature } = require('./edge-fixture-signature.cjs');
+const { createSyntheticRewriteStream } = require('./edge-fixture-rewrite.cjs');
+const { selectSyntheticHandshake, independentSyntheticReconnect } = require('./edge-fixture-independent.cjs');
+const { readSyntheticProductConstants } = require('./edge-fixture-product.cjs');
+const { syntheticChallengeResponse } = require('./edge-fixture-challenge.cjs');
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
 const edge = 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
 async function sendFixture(subscription, message) {
@@ -75,14 +80,25 @@ async function main() {
     const noRelay = process.env.EDGE_PROBE_NO_RELAY === '1';
     if (noRelay && featureArgs.length) throw new Error('PROBE_MODE_INVALID');
     const testWrongKey = process.env.EDGE_PROBE_TEST_WRONG_KEY === '1';
+    const testRewrite = process.env.EDGE_PROBE_REWRITE_SIGNATURE === '1';
+    const testIndependent = process.env.EDGE_PROBE_INDEPENDENT_RECONNECT === '1';
     if (testWrongKey && (noRelay || process.env.EDGE_PROBE_RECONNECT !== '1' || process.env.EDGE_PROBE_COPY_PROFILE !== '1'
         || process.env.EDGE_PROBE_MINIMAL_PROFILE !== '1' || process.env.EDGE_PROBE_DECRYPT_RECEIVED === '1'
         || (process.env.EDGE_PROBE_OMIT_COMPONENT || '').split(',').includes('push-store'))) throw new Error('PROBE_MODE_INVALID');
+    if (testRewrite && (testWrongKey || noRelay || process.env.EDGE_PROBE_RECONNECT !== '1' || process.env.EDGE_PROBE_COPY_PROFILE !== '1'
+        || process.env.EDGE_PROBE_MINIMAL_PROFILE !== '1' || process.env.EDGE_PROBE_KEEP_SOCKET === '1'
+        || (process.env.EDGE_PROBE_OMIT_COMPONENT || '').split(',').includes('push-store'))) throw new Error('PROBE_MODE_INVALID');
+    if (testIndependent && (testRewrite || testWrongKey || noRelay || process.env.EDGE_PROBE_RECONNECT !== '1'
+        || process.env.EDGE_PROBE_COPY_PROFILE !== '1' || process.env.EDGE_PROBE_MINIMAL_PROFILE !== '1'
+        || process.env.EDGE_PROBE_KEEP_SOCKET === '1' || process.env.EDGE_PROBE_DECRYPT_RECEIVED === '1'
+        || (process.env.EDGE_PROBE_OMIT_COMPONENT || '').split(',').includes('push-store')))
+        throw new Error('PROBE_MODE_INVALID');
     const temp = await fs.realpath(os.tmpdir()), root = await fs.mkdtemp(path.join(temp, 'cbte-edge-wns-probe-'));
-    let browser, cdp, pageServer, relay, browserReceived = false, copiedProfileResult = null, detachedConnectionResult = null, capturedCipherDecrypted = null, appServerKeyMatches = null, deviceFields, expectedCipher; const sockets = new Set(), events = [];
+    let browser, cdp, pageServer, relay, browserReceived = false, copiedProfileResult = null, detachedConnectionResult = null, independentResult = null, independentWebPush = null, productConstants = null, capturedCipherDecrypted = null, appServerKeyMatches = null, deviceFields, expectedCipher; const sockets = new Set(), events = [];
     const browserEvents = { initial: 0, second: 0, third: 0, fourth: 0, copy: 0 };
     let probeStage = 'setup', previousServerNonce = null;
     try {
+        if (testIndependent || process.env.EDGE_PROBE_COMPARE_CHALLENGE === '1') productConstants = await readSyntheticProductConstants();
         const cert = spawnSync('python', ['-c', python], { encoding: 'utf8', windowsHide: true, timeout: 10000 });
         if (cert.status !== 0) throw new Error('PROBE_CERT_FAILED');
         const tlsConfig = JSON.parse(cert.stdout);
@@ -96,6 +112,7 @@ async function main() {
                 sentBytes: 0, receivedBytes: 0, firstSend: null }; events.push(event);
             const sent = [], received = [];
             event.fixtureBindResponses = () => fixtureBindResponses(received);
+            event.fixtureSentFrames = () => selectSyntheticHandshake(sent);
             event.upstreamOpen = () => !upstream.destroyed;
             event.closeFixtureConnection = () => upstream.destroy();
             event.containsFixtureCipher = () => {
@@ -246,8 +263,18 @@ async function main() {
                     }
                     if (serverNonces.length) previousServerNonce = serverNonces.at(-1);
                     for (const key of Object.values(keys)) key.fill(0);
+                    let challengeCandidateMatches = null, productIdMatches = null;
+                    if (productConstants) {
+                        const appIds = values(sentText, 'appId'), responses = values(sentText, 'response');
+                        if (appIds.length === 1 && responses.length === 1 && serverNonces.length === 1) {
+                            productIdMatches = Buffer.from(appIds[0], 'ascii').equals(productConstants.id);
+                            const candidate = syntheticChallengeResponse(serverNonces[0], productConstants.key, productConstants.id);
+                            try { challengeCandidateMatches = candidate.toString('hex').toLowerCase() === responses[0].toLowerCase(); }
+                            finally { candidate.fill(0); }
+                        }
+                    }
                     cross = { nonceCounts: { sent: values(sentText, 'nonce').length, received: values(receivedText, 'nonce').length }, signatureCount: signatures.length,
-                        hmacMatches: matches, pairedNonceCompared, pairedNonceMatches };
+                        hmacMatches: matches, pairedNonceCompared, pairedNonceMatches, challengeCandidateMatches, productIdMatches };
                 }
                 const describe = chunks => { const b = Buffer.concat(chunks), text = b.toString('latin1');
                     const frames = chunks.map(chunk => { const end = chunk.indexOf('\r\n');
@@ -278,6 +305,33 @@ async function main() {
                                 nonceLength: nonce.length, nonceBase64: /^[A-Za-z0-9+/]+={0,2}$/.test(nonce), nonceHex: /^[0-9a-f]+$/i.test(nonce),
                                 signatureLength: signature.length, signatureBase64: /^[A-Za-z0-9+/]+={0,2}$/.test(signature), signatureHex: /^[0-9a-f]+$/i.test(signature) };
                             const decodedKey = Buffer.from(stored, 'base64');
+                            const syntheticSignature = syntheticReconnectSignature(decodedKey, token, nonce);
+                            result.inferredSignatureMatches = syntheticSignature.toString('base64') === signature;
+                            syntheticSignature.fill(0);
+                            // Test a single inferred format on synthetic data only.
+                            // No key, token, nonce, digest or signature is logged.
+                            const candidateInput = Buffer.from((token || '') + nonce, 'utf8');
+                            const digest = createHmac('sha256', decodedKey).update(candidateInput).digest();
+                            const versioned = Buffer.concat([Buffer.from([1]), digest.subarray(0, 16)]);
+                            result.versionedTokenNonceHmac = versioned.toString('base64') === signature;
+                            candidateInput.fill(0); digest.fill(0); versioned.fill(0);
+                            result.versionedHmacMatches = [];
+                            for (const [keyLabel, keyBytes] of [['decoded', decodedKey], ['text', Buffer.from(stored, 'utf8')]]) {
+                                for (const [messageLabel, message] of [['token-nonce', (token || '') + nonce], ['nonce-token', nonce + (token || '')]]) {
+                                    for (const algorithm of ['sha256', 'sha1', 'sha512']) {
+                                        const mac = createHmac(algorithm, keyBytes).update(message, 'utf8').digest();
+                                        for (const [partLabel, part] of [['first', mac.subarray(0, 16)], ['last', mac.subarray(-16)]]) {
+                                            for (const version of [0, 1, 2, 49]) for (const placement of ['prefix', 'suffix']) {
+                                                const encoded = placement === 'prefix' ? Buffer.concat([Buffer.from([version]), part]) : Buffer.concat([part, Buffer.from([version])]);
+                                                if (encoded.toString('base64') === signature) result.versionedHmacMatches.push(`${keyLabel}:${messageLabel}:${algorithm}:${partLabel}:${placement}:${version}`);
+                                                encoded.fill(0);
+                                            }
+                                        }
+                                        mac.fill(0);
+                                    }
+                                }
+                                if (keyLabel === 'text') keyBytes.fill(0);
+                            }
                             const keys = { storedText: Buffer.from(stored), storedUtf16: Buffer.from(stored, 'utf16le'), storedBase64: decodedKey,
                                 first16: Buffer.from(decodedKey.subarray(0, 16)), last16: Buffer.from(decodedKey.subarray(-16)),
                                 md5: createHash('md5').update(decodedKey).digest(), sha256: createHash('sha256').update(decodedKey).digest() };
@@ -348,7 +402,15 @@ async function main() {
             incoming.on('close', () => { if (process.env.EDGE_PROBE_KEEP_SOCKET === '1') { upstream.unpipe(incoming); upstream.resume(); } });
             upstream.on('error', () => incoming.destroy());
             upstream.once('secureConnect', () => { event.upstreamAlpn = upstream.alpnProtocol || null;
-                incoming.pipe(upstream, { end: process.env.EDGE_PROBE_KEEP_SOCKET !== '1' }); upstream.pipe(incoming); });
+                if (testRewrite && events.length === 2) {
+                    if (!deviceFields?.[2] || !deviceFields?.[3]) { incoming.destroy(); upstream.destroy(); return; }
+                    const nonce = String(randomInt(1, 10)) + Array.from({ length: 31 }, () => String(randomInt(0, 10))).join('');
+                    const rewriter = createSyntheticRewriteStream({ key: Buffer.from(deviceFields[3].toString('ascii'), 'base64'),
+                        token: deviceFields[2].toString('utf8'), nonce, onRewrite: () => { event.signatureRewritten = true; } });
+                    rewriter.on('error', () => { incoming.destroy(); upstream.destroy(); });
+                    incoming.pipe(rewriter).pipe(upstream);
+                } else incoming.pipe(upstream, { end: process.env.EDGE_PROBE_KEEP_SOCKET !== '1' });
+                upstream.pipe(incoming); });
         });
         await new Promise(resolve => relay.listen(0, '127.0.0.1', resolve));
         const vapid = webpush.generateVAPIDKeys(); webpush.setVapidDetails('mailto:test@example.com', vapid.publicKey, vapid.privateKey);
@@ -479,7 +541,7 @@ async function main() {
                         if (deviceFields) throw new Error('PROBE_DEVICE_AMBIGUOUS');
                         deviceFields = protoBytes(stored, [2, 3]);
                         if (testWrongKey) { deviceKey = Buffer.from(key); deviceRecord = Buffer.from(stored); }
-                    } else if (process.env.EDGE_PROBE_DECRYPT_RECEIVED === '1' && stored.includes(Buffer.from(origin))
+                    } else if ((testIndependent || process.env.EDGE_PROBE_DECRYPT_RECEIVED === '1') && stored.includes(Buffer.from(origin))
                         && stored.includes(Buffer.from(value.subscription.keys.p256dh, 'base64url'))
                         && stored.includes(Buffer.from(value.subscription.keys.auth, 'base64url'))) {
                         if (subscriptionFields) throw new Error('PROBE_SUBSCRIPTION_AMBIGUOUS');
@@ -499,6 +561,17 @@ async function main() {
                 }
             } finally { await db.close().catch(() => {}); }
             if (!deviceFields?.[2] || !deviceFields?.[3]) throw new Error('PROBE_DEVICE_MISSING');
+            if (testIndependent) {
+                if (!subscriptionFields?.[6] || !subscriptionFields?.[7] || !subscriptionFields?.[16]) throw new Error('PROBE_SUBSCRIPTION_MISSING');
+                try {
+                    const jwk = createPrivateKey({ key: subscriptionFields[7], format: 'der', type: 'pkcs8' }).export({ format: 'jwk' });
+                    const publicKey = Buffer.concat([Buffer.from([4]), Buffer.from(jwk.x, 'base64url'), Buffer.from(jwk.y, 'base64url')]);
+                    if (!publicKey.equals(Buffer.from(value.subscription.keys.p256dh, 'base64url'))
+                        || !subscriptionFields[6].equals(Buffer.from(value.subscription.keys.auth, 'base64url'))
+                        || !subscriptionFields[16].equals(Buffer.from(vapid.publicKey, 'base64url'))) throw new Error('PROBE_KEY_MISMATCH');
+                    independentWebPush = { publicKey, privateKey: Buffer.from(jwk.d, 'base64url'), auth: Buffer.from(subscriptionFields[6]) };
+                } finally { for (const field of Object.values(subscriptionFields)) field.fill(0); }
+            }
             if (process.env.EDGE_PROBE_DECRYPT_RECEIVED === '1') {
                 probeStage = 'decrypt-received';
                 if (!subscriptionFields?.[6] || !subscriptionFields?.[7] || !subscriptionFields?.[16]) throw new Error('PROBE_SUBSCRIPTION_MISSING');
@@ -563,18 +636,36 @@ async function main() {
                 copiedProfileResult = { minimal: process.env.EDGE_PROBE_MINIMAL_PROFILE === '1', omitted: process.env.EDGE_PROBE_OMIT_COMPONENT || null, sameSubscription, receivedAfterCopy: browserReceived };
             }
         }
-        const shapes = events.map(event => { const { describe, fixtureCipher, fixtureLayout, fixtureBindResponses, fixtureAcknowledgementAnalysis, upstreamOpen, containsFixtureCipher, acknowledgeSyntheticSecond, closeFixtureConnection, ...metadata } = event;
+        if (testIndependent) {
+            if (events.length !== 2 || !copiedProfileResult?.sameSubscription || !copiedProfileResult?.receivedAfterCopy || !deviceFields?.[2] || !deviceFields?.[3] || !independentWebPush)
+                throw new Error('PROBE_DIRECT_PREREQUISITE_FAILED');
+            await cdp.Browser.close().catch(() => {}); await cdp.close().catch(() => {}); cdp = null;
+            if (browser.exitCode === null) await new Promise(resolve => browser.once('exit', resolve));
+            const frames = events[1].fixtureSentFrames(), key = Buffer.from(deviceFields[3].toString('ascii'), 'base64');
+            try { independentResult = await independentSyntheticReconnect({ frames, key, token: deviceFields[2].toString('utf8'), productConstants,
+                sendNotification: () => sendFixture(value.subscription, 'synthetic-independent'),
+                decryptNotification: async ciphertext => {
+                    const { decryptEce } = await import(pathToFileURL(path.resolve(__dirname, '../../packages/angelic-angel/dist/crypto.js')).href);
+                    const plain = decryptEce(ciphertext, { encoding: 'aes128gcm' }, { public_key: [...independentWebPush.publicKey],
+                        private_key: [...independentWebPush.privateKey], auth_secret: [...independentWebPush.auth] });
+                    try { return plain.equals(Buffer.from('synthetic-independent')); } finally { plain.fill(0); }
+                } }); }
+            finally { key.fill(0); for (const frame of Object.values(frames)) frame.fill(0); }
+        }
+        const shapes = events.map(event => { const { describe, fixtureCipher, fixtureLayout, fixtureBindResponses, fixtureSentFrames, fixtureAcknowledgementAnalysis, upstreamOpen, containsFixtureCipher, acknowledgeSyntheticSecond, closeFixtureConnection, ...metadata } = event;
             return { ...metadata, fixtureLayout: fixtureLayout(), bindResponses: fixtureBindResponses(), acknowledgementAnalysis: fixtureAcknowledgementAnalysis(), shape: describe() }; });
         if (deviceFields) for (const value of Object.values(deviceFields)) value.fill(0);
         const builtInStorePresent = await fs.stat(path.join(profile, 'Default', 'EdgePushStorageWithConnectTokenAndKey')).then(() => true, error => {
             if (error.code === 'ENOENT') return false; throw error;
         });
-        console.log(JSON.stringify({ syntheticProfile: true, testWrongKey, winrtFeatureOverride: featureArgs.length > 0, endpointOverride: !noRelay, builtInStorePresent, relayConnections: events.length, events: shapes, initialNotificationReceived: browserEvents.initial > 0, browserReceived, copiedProfileResult, detachedConnectionResult, capturedCipherDecrypted, appServerKeyMatches,
+        console.log(JSON.stringify({ syntheticProfile: true, testWrongKey, testRewrite, testIndependent, winrtFeatureOverride: featureArgs.length > 0, endpointOverride: !noRelay, builtInStorePresent, relayConnections: events.length, events: shapes, initialNotificationReceived: browserEvents.initial > 0, browserReceived, copiedProfileResult, detachedConnectionResult, independentResult, capturedCipherDecrypted, appServerKeyMatches,
             subscription: value.ok ? { ok: true, host: new URL(value.subscription.endpoint).hostname } : value }));
     } catch (error) {
         console.error('PROBE_STAGE', probeStage, /^PROBE_[A-Z_]+$/.test(error?.message || '') ? error.message : error?.name || 'Error');
         throw error;
     } finally {
+        if (independentWebPush) for (const secret of Object.values(independentWebPush)) secret.fill(0);
+        if (productConstants) for (const secret of Object.values(productConstants)) secret.fill(0);
         await cdp?.close().catch(() => {});
         if (browser && browser.exitCode === null) { browser.kill(); await new Promise(resolve => browser.once('exit', resolve)); }
         for (const socket of sockets) socket.destroy();
