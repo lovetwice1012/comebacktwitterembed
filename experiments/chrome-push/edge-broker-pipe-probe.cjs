@@ -6,17 +6,23 @@ const path = require('node:path');
 const http = require('node:http');
 const { spawn } = require('node:child_process');
 const { once } = require('node:events');
+const { randomBytes, generateKeyPairSync } = require('node:crypto');
+const { pathToFileURL } = require('node:url');
 const CDP = require('chrome-remote-interface');
 const webpush = require('web-push');
+const { ClassicLevel } = require('classic-level');
 const { startChromeBroker } = require('../../src/automation/chrome-private-broker');
 const { captureFromBroker } = require('../../src/automation/chrome-broker-client');
+const { rewriteSyntheticOrigin } = require('./edge-fixture-record.cjs');
+const { readEdgeSnapshot } = require('../../src/automation/edge-wns-snapshot-io');
+const { createTransferPublicSealer, createTransferPrivateWorkerVault } = require('../../src/automation/x-setup-transfer');
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
 let stage = 'start';
 async function main() {
     if (process.env.NODE_ENV !== 'test' || process.platform !== 'win32') throw new Error('PROBE_MODE_INVALID');
     const temp = await fs.realpath(os.tmpdir()), root = await fs.mkdtemp(path.join(temp, 'cbte-edge-broker-fixture-'));
     const profile = path.join(root, 'profile'), edge = 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
-    let server, chrome, cdp, broker;
+    let server, chrome, cdp, broker, testDb;
     try {
         const vapid = webpush.generateVAPIDKeys();
         server = http.createServer((request, response) => {
@@ -53,8 +59,72 @@ async function main() {
         }
         if (!captured || captured.endpoint !== expected.endpoint || captured.keys.p256dh !== expected.keys.p256dh
             || captured.keys.auth !== expected.keys.auth || captured.applicationServerKey !== vapid.publicKey) throw new Error('PROBE_CAPTURE_MISMATCH');
-        console.log(JSON.stringify({ syntheticProfile: true, privatePipeCapture: true, subscriptionMatched: true, applicationKeyMatched: true, browserClosed: broker.chrome.exitCode !== null }));
+        stage = 'snapshot';
+        const token = randomBytes(16).toString('hex'), snapshotPath = path.join(root, `edge-snapshot-${token}`);
+        const storePath = path.join(snapshotPath, 'Default', 'EdgePushStorageWithConnectTokenAndKey');
+        await fs.mkdir(path.dirname(storePath), { recursive: true });
+        await fs.cp(path.join(profile, 'Default', 'EdgePushStorageWithConnectTokenAndKey'), storePath, { recursive: true, errorOnExist: true, force: false });
+        await fs.writeFile(path.join(snapshotPath, 'snapshot-owner.json'), JSON.stringify({ appId: 'x-notification-setup', kind: 'edge-snapshot-v1', token }), { flag: 'wx' });
+        const db = new ClassicLevel(storePath, { createIfMissing: false, keyEncoding: 'buffer', valueEncoding: 'buffer' });
+        let rewriteKey, rewriteValue;
+        try {
+            await db.open();
+            for await (const [candidateKey, value] of db.iterator({ limit: 128 })) {
+                if (value.includes(Buffer.from(origin)) && value.includes(Buffer.from(captured.keys.p256dh, 'base64url')) && value.includes(Buffer.from(captured.keys.auth, 'base64url'))) {
+                    if (rewriteKey) throw new Error('PROBE_SUBSCRIPTION_AMBIGUOUS');
+                    rewriteKey = Buffer.from(candidateKey); rewriteValue = rewriteSyntheticOrigin(value, `${origin}/`);
+                }
+            }
+            if (!rewriteKey) throw new Error('PROBE_SUBSCRIPTION_FAILED');
+            await db.put(rewriteKey, rewriteValue);
+        } finally { rewriteKey?.fill(0); rewriteValue?.fill(0); await db.close().catch(() => {}); }
+        const observed = { endpoint: captured.endpoint, publicKey: Buffer.from(captured.keys.p256dh, 'base64url'), auth: Buffer.from(captured.keys.auth, 'base64url'),
+            applicationServerKey: Buffer.from(captured.applicationServerKey, 'base64url') };
+        let result;
+        try {
+            result = await readEdgeSnapshot({ snapshotPath, token, expected: observed, browserVersion: browserProduct.split('/')[1],
+                agent: { os: 'Windows', osVersion: '1', architecture: 'x64', locale: 'en' },
+                client: { channel: 'abc', protocolVersion: '1.0', clientName: 'Synthetic', clientVersion: '1.2.3.4' },
+                dbFactory: location => new ClassicLevel(location, { createIfMissing: false, keyEncoding: 'buffer', valueEncoding: 'buffer' }) });
+        } finally { observed.publicKey.fill(0); observed.auth.fill(0); observed.applicationServerKey.fill(0); }
+        if (result.file.push.p256dhPublicKey !== captured.keys.p256dh || result.file.push.authenticationSecret !== captured.keys.auth
+            || result.file.push.applicationServerKey !== captured.applicationServerKey) throw new Error('PROBE_CAPTURE_MISMATCH');
+        stage = 'vault';
+        const keys = generateKeyPairSync('rsa', { modulusLength: 3072 }), config = { activeKeyId: 'test', privateKeys: { test: keys.privateKey } };
+        const sealer = createTransferPublicSealer({ activeKeyId: 'test', publicKeys: { test: keys.publicKey } }), vault = createTransferPrivateWorkerVault(config);
+        const context = { subscriptionId: '33333333-3333-4333-8333-333333333333', ownerUserId: '123456789', revision: 1 };
+        const restored = vault.open(sealer.seal(result.file, context), context);
+        const cryptoKeys = { public_key: [...Buffer.from(restored.push.p256dhPublicKey, 'base64url')],
+            private_key: [...Buffer.from(restored.push.p256dhPrivateKey.d, 'base64url')], auth_secret: [...Buffer.from(restored.push.authenticationSecret, 'base64url')] };
+        const { encryptFixture } = await import(pathToFileURL(path.resolve(__dirname, '../../packages/angelic-angel/tests/fixtures/crypto-fixture-builder.mjs')).href);
+        const { decryptNotification } = await import(pathToFileURL(path.resolve(__dirname, '../../packages/angelic-angel/dist/crypto.js')).href);
+        const wire = encryptFixture(cryptoKeys, JSON.stringify({ text: 'synthetic' }));
+        if (decryptNotification(wire.data, wire.headers, cryptoKeys)?.text !== 'synthetic') throw new Error('PROBE_DECRYPT_FAILED');
+        let databaseRecovery = false;
+        if (process.env.EDGE_PROBE_DATABASE === '1') {
+            if (Number(process.env.AUTOMATION_TEST_DB_PORT) !== 33621) throw new Error('PROBE_MODE_INVALID');
+            stage = 'database';
+            testDb = await require('../../scripts/lib/automation-test-db').createTestDatabase(33621);
+            const { createXSetup } = require('../../src/automation/x-setup');
+            const service = createXSetup(testDb, { sealer, rolloutMode: 'public', edgeEnabled: true, receiverEnabled: true });
+            const actor = { userId: context.ownerUserId }, session = await service.startSession(actor, { consent: true });
+            const saved = await service.importFile(actor, { sessionId: session.sessionId, fileText: JSON.stringify(result.file), consent: true });
+            const { createXPushGateway } = require('../../src/automation/x-push-gateway');
+            const gateway = createXPushGateway(testDb, { enabled: true, privateWorkerVault: vault, rolloutMode: 'public' });
+            const identity = { subscriptionId: saved.subscription.id, ownerUserId: actor.userId };
+            const lease = await gateway.store.claim({ ...identity, workerId: 'synthetic-edge-pipeline' });
+            if (!lease) throw new Error('PROBE_DATABASE_FAILED');
+            try {
+                const inbox = await gateway.store.recordFrame(lease, { version: 'synthetic', data: wire.data, headers: wire.headers, status: 'received', ackCode: 100 });
+                if ((await gateway.decryptInbox(lease, inbox))?.text !== 'synthetic') throw new Error('PROBE_DATABASE_FAILED');
+                databaseRecovery = true;
+            } finally { await gateway.store.release(lease); }
+        }
+        for (const field of Object.values(cryptoKeys)) field.fill(0);
+        console.log(JSON.stringify({ syntheticProfile: true, privatePipeCapture: true, subscriptionMatched: true, applicationKeyMatched: true,
+            snapshotSelected: true, ownerBoundVault: true, fixtureDecrypted: true, databaseRecovery, browserClosed: broker.chrome.exitCode !== null, realWnsWorkerTested: false }));
     } finally {
+        if (testDb) await testDb.close();
         if (cdp) await cdp.close().catch(() => {});
         if (broker) { await broker.stop().catch(() => {}); if (broker.chrome.exitCode === null) { broker.chrome.kill(); await once(broker.chrome, 'exit').catch(() => {}); } }
         if (chrome && chrome.exitCode === null) { chrome.kill(); await once(chrome, 'exit').catch(() => {}); }
