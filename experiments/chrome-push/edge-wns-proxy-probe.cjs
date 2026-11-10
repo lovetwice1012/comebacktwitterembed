@@ -14,7 +14,7 @@ const { pathToFileURL } = require('node:url');
 const webpush = require('web-push');
 const CDP = require('chrome-remote-interface');
 const { ClassicLevel } = require('classic-level');
-const { firstFixtureNotification } = require('./edge-wns-fixture-framing.cjs');
+const { firstFixtureNotification, fixtureBindResponses } = require('./edge-wns-fixture-framing.cjs');
 const { workerSource, acceptedCase } = require('./edge-fixture-notification.cjs');
 const { replaceSyntheticKey } = require('./edge-fixture-device.cjs');
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -95,6 +95,7 @@ async function main() {
             const event = { clientAlpn: incoming.alpnProtocol || null, upstreamAlpn: null, sentChunks: 0, receivedChunks: 0,
                 sentBytes: 0, receivedBytes: 0, firstSend: null }; events.push(event);
             const sent = [], received = [];
+            event.fixtureBindResponses = () => fixtureBindResponses(received);
             event.upstreamOpen = () => !upstream.destroyed;
             event.closeFixtureConnection = () => upstream.destroy();
             event.containsFixtureCipher = () => {
@@ -562,8 +563,8 @@ async function main() {
                 copiedProfileResult = { minimal: process.env.EDGE_PROBE_MINIMAL_PROFILE === '1', omitted: process.env.EDGE_PROBE_OMIT_COMPONENT || null, sameSubscription, receivedAfterCopy: browserReceived };
             }
         }
-        const shapes = events.map(event => { const { describe, fixtureCipher, fixtureLayout, fixtureAcknowledgementAnalysis, upstreamOpen, containsFixtureCipher, acknowledgeSyntheticSecond, closeFixtureConnection, ...metadata } = event;
-            return { ...metadata, fixtureLayout: fixtureLayout(), acknowledgementAnalysis: fixtureAcknowledgementAnalysis(), shape: describe() }; });
+        const shapes = events.map(event => { const { describe, fixtureCipher, fixtureLayout, fixtureBindResponses, fixtureAcknowledgementAnalysis, upstreamOpen, containsFixtureCipher, acknowledgeSyntheticSecond, closeFixtureConnection, ...metadata } = event;
+            return { ...metadata, fixtureLayout: fixtureLayout(), bindResponses: fixtureBindResponses(), acknowledgementAnalysis: fixtureAcknowledgementAnalysis(), shape: describe() }; });
         if (deviceFields) for (const value of Object.values(deviceFields)) value.fill(0);
         const builtInStorePresent = await fs.stat(path.join(profile, 'Default', 'EdgePushStorageWithConnectTokenAndKey')).then(() => true, error => {
             if (error.code === 'ENOENT') return false; throw error;

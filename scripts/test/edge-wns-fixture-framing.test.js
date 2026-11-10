@@ -1,7 +1,7 @@
 'use strict';
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { firstFixtureNotification } = require('../../experiments/chrome-push/edge-wns-fixture-framing.cjs');
+const { firstFixtureNotification, fixtureBindResponses } = require('../../experiments/chrome-push/edge-wns-fixture-framing.cjs');
 const frame = (prefix, body) => Buffer.concat([Buffer.from(`${prefix} ${body.length}\r\n`), body]);
 const notification = (body, headers = 'Content-Encoding: aes128gcm\r\nX-Test: synthetic\r\n\r\n') =>
     frame('NFY 1 WNS\\NOTIF 1', Buffer.concat([Buffer.from(headers), body]));
@@ -33,4 +33,14 @@ test('research capture rejects incomplete, oversized, ambiguous or different enc
     assert.equal(firstFixtureNotification(['not a buffer']), null);
     const invalidHeader = Buffer.from(good); invalidHeader[0] |= 0x80;
     assert.equal(firstFixtureNotification([invalidHeader]), null);
+});
+
+test('synthetic bind responses expose only bounded safe metadata', () => {
+    const body = Buffer.from('Status: 401\r\nMS-CV: private-fixture\r\nSensitive: private-fixture\r\n\r\n<error>private-fixture</error>');
+    const bytes = Buffer.concat([frame('CNT 1 CON', Buffer.from('x')), frame('BND 2 CON', body)]);
+    for (let i = 0; i <= bytes.length; i++) assert.deepEqual(fixtureBindResponses([bytes.subarray(0, i), bytes.subarray(i)]),
+        [{ headerNames: ['status', 'ms-cv'], statusClasses: ['4xx'], root: 'error' }]);
+    assert.equal(JSON.stringify(fixtureBindResponses([bytes])).includes('private-fixture'), false);
+    assert.equal(fixtureBindResponses([bytes.subarray(0, -1)]), null);
+    assert.equal(fixtureBindResponses([Buffer.alloc(262145)]), null);
 });
