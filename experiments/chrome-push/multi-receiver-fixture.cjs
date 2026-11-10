@@ -5,6 +5,7 @@ const assert = require('node:assert/strict');
 const { fork } = require('node:child_process');
 const { generateKeyPairSync } = require('node:crypto');
 const path = require('node:path');
+const tls = require('node:tls');
 const webpush = require('web-push');
 const { createTestDatabase } = require('../../scripts/lib/automation-test-db');
 const { createXSetup } = require('../../src/automation/x-setup');
@@ -64,7 +65,18 @@ async function main() {
             catch (error) { if (/^ER_[A-Z_]+$/.test(error?.code || '')) console.error(JSON.stringify({ fixtureDatabaseError: error.code })); throw error; }
         } };
         stage = 'connect';
-        const gateway = createXPushGateway(tracedDb, { enabled: true, chromeEnabled: true, privateWorkerVault: vault, rolloutMode: 'public', requestTimeoutMs: 15000, leaseMs: 300000 });
+        const expectedVersions = new Map(), observedVersions = new Set();
+        const gateway = createXPushGateway(tracedDb, { enabled: true, chromeEnabled: true, privateWorkerVault: vault, rolloutMode: 'public', requestTimeoutMs: 15000, leaseMs: 300000,
+            createChromeSocket: () => {
+                const socket = tls.connect({ host: 'mtalk.google.com', port: 443, servername: 'mtalk.google.com', rejectUnauthorized: true });
+                const write = socket.write.bind(socket);
+                socket.write = (data, ...args) => {
+                    if (Buffer.isBuffer(data) && data[0] === 41) for (const [index, version] of expectedVersions)
+                        if (data.includes(Buffer.from(`chrome-${version}`))) observedVersions.add(index);
+                    return write(data, ...args);
+                };
+                return socket;
+            } });
         const queue = createQueue(db, {}, { clock: () => clock, rolloutMode: 'public' });
         runtime = createXPushRuntime(db, queue, { enabled: true, gateway, clock: () => clock, rolloutMode: 'public', processingPolicy: 'batch', assertAllowed() {} });
         await runtime.tick(); let connected = false;
@@ -110,44 +122,56 @@ async function main() {
             console.error(JSON.stringify({ fixtureJobCount: jobs.length, ownerCounts, inboxStates: states }));
             throw new Error('FIXTURE_MULTI_ROUTE_FAILED');
         }
-        stage = 'refresh-one';
+        async function refreshAndProve(index, sequence, versionField) {
+        stage = `refresh-${index}`;
+        const otherIndex = 1 - index, wantedJobs = (sequence + 1) * 2;
         const before = await db.queryDatabase('SELECT subscription_id,lease_token FROM automation_x_push_receivers WHERE subscription_id IN (?)',
             [fixtures.map(fixture => fixture.subscriptionId)]);
         const priorTokens = new Map(before.map(row => [row.subscription_id, row.lease_token]));
-        const actor = { userId: owners[0] }, newSession = await setup.startSession(actor, { consent: true });
-        const refreshed = await setup.importFile(actor, { sessionId: newSession.sessionId, fileText: JSON.stringify(fixtures[0].transfer), consent: true });
-        if (!refreshed.duplicate || refreshed.subscription.id !== fixtures[0].subscriptionId) throw new Error('FIXTURE_MULTI_REFRESH_FAILED');
+        const previousRevision = Number((await db.queryDatabase('SELECT revision FROM automation_x_subscriptions WHERE id=?', [fixtures[index].subscriptionId]))[0].revision);
+        const changedTransfer = structuredClone(fixtures[index].transfer), version = changedTransfer.provenance[versionField].split('.');
+        version[3] = String((Number(version[3]) + 1) % 100000); changedTransfer.provenance[versionField] = version.join('.');
+        expectedVersions.set(index, changedTransfer.provenance[versionField]);
+        const actor = { userId: owners[index] }, newSession = await setup.startSession(actor, { consent: true });
+        const refreshed = await setup.importFile(actor, { sessionId: newSession.sessionId, fileText: JSON.stringify(changedTransfer), consent: true });
+        if (!refreshed.duplicate || refreshed.subscription.id !== fixtures[index].subscriptionId
+            || refreshed.subscription.revision !== previousRevision || refreshed.subscription.browserVersion !== changedTransfer.provenance.browserVersion)
+            throw new Error('FIXTURE_MULTI_REFRESH_FAILED');
         clock = Date.now();
         const refreshTick = runtime.tick();
-        await Promise.all([refreshTick, send(1, 1)]);
+        await Promise.all([refreshTick, send(otherIndex, sequence)]);
         let refreshReady = false;
         for (let i = 0; i < 120 && !refreshReady; i++) {
             clock = Date.now(); await runtime.tick();
             const rows = await db.queryDatabase('SELECT subscription_id,state,lease_token FROM automation_x_push_receivers WHERE subscription_id IN (?)',
                 [fixtures.map(fixture => fixture.subscriptionId)]);
-            const first = rows.find(row => row.subscription_id === fixtures[0].subscriptionId), other = rows.find(row => row.subscription_id === fixtures[1].subscriptionId);
-            if (!other || other.state !== 'listening' || other.lease_token !== priorTokens.get(fixtures[1].subscriptionId)) throw new Error('FIXTURE_OTHER_CONNECTION_CHANGED');
-            refreshReady = first?.state === 'listening' && first.lease_token !== priorTokens.get(fixtures[0].subscriptionId);
+            const first = rows.find(row => row.subscription_id === fixtures[index].subscriptionId), other = rows.find(row => row.subscription_id === fixtures[otherIndex].subscriptionId);
+            if (!other || other.state !== 'listening' || other.lease_token !== priorTokens.get(fixtures[otherIndex].subscriptionId)) throw new Error('FIXTURE_OTHER_CONNECTION_CHANGED');
+            refreshReady = first?.state === 'listening' && first.lease_token !== priorTokens.get(fixtures[index].subscriptionId);
             if (!refreshReady) await delay(250);
         }
-        if (!refreshReady) throw new Error('FIXTURE_MULTI_REFRESH_TIMEOUT');
-        await send(0, 1);
-        let bothTwice = false;
-        for (let i = 0; i < 120 && !bothTwice; i++) {
+        if (!refreshReady || !observedVersions.has(index)) throw new Error('FIXTURE_MULTI_REFRESH_TIMEOUT');
+        await send(index, sequence);
+        let allReceived = false;
+        for (let i = 0; i < 120 && !allReceived; i++) {
             const rows = await db.queryDatabase('SELECT subscription_id,COUNT(*) n FROM automation_x_push_inbox GROUP BY subscription_id');
-            bothTwice = rows.length === 2 && rows.every(row => Number(row.n) === 2); if (!bothTwice) await delay(250);
+            allReceived = rows.length === 2 && rows.every(row => Number(row.n) === sequence + 1); if (!allReceived) await delay(250);
         }
-        if (!bothTwice) throw new Error('FIXTURE_MULTI_REFRESH_RECEIPT_FAILED');
+        if (!allReceived) throw new Error('FIXTURE_MULTI_REFRESH_RECEIPT_FAILED');
         clock = Date.now();
         await db.queryDatabase('UPDATE automation_x_push_receivers SET last_process_at_ms=? WHERE subscription_id IN (?)',
             [clock - 301000, fixtures.map(fixture => fixture.subscriptionId)]);
-        for (let i = 0; i < 30 && jobs.length < 4; i++) {
+        for (let i = 0; i < 30 && jobs.length < wantedJobs; i++) {
             await runtime.tick(); jobs = await db.queryDatabase('SELECT r.owner_user_id FROM automation_jobs j JOIN automation_runs r ON r.id=j.run_id');
-            if (jobs.length < 4) await delay(250);
+            if (jobs.length < wantedJobs) await delay(250);
         }
-        if (jobs.length !== 4 || owners.some(owner => jobs.filter(row => row.owner_user_id === owner).length !== 2)) throw new Error('FIXTURE_MULTI_REFRESH_ROUTE_FAILED');
+        if (jobs.length !== wantedJobs || owners.some(owner => jobs.filter(row => row.owner_user_id === owner).length !== sequence + 1)) throw new Error('FIXTURE_MULTI_REFRESH_ROUTE_FAILED');
+        }
+        await refreshAndProve(0, 1, 'browserVersion');
+        await refreshAndProve(1, 2, 'engineVersion');
         console.log(JSON.stringify({ syntheticProfiles: 2, receiverProcesses: 1, simultaneousConnections: 2, realFcm: true,
-            encryptedReceipts: 4, isolatedOwnerJobs: 4, targetedRefreshPreservedOtherConnection: true, discordRequests: 0 }));
+            encryptedReceipts: 6, isolatedOwnerJobs: 6, simulatedChromeVersionUpdate: true, simulatedBraveEngineUpdate: true,
+            targetedRefreshPreservedOtherConnection: true, discordRequests: 0 }));
     } finally { await runtime?.stop(); await db.close(); }
 }
 main().catch(error => { console.error(JSON.stringify({ stage, code: /^FIXTURE_[A-Z_]+$/.test(error?.message || '') ? error.message : error?.code || error?.name || 'FIXTURE_MULTI_FAILED' })); process.exitCode = 1; });
