@@ -15,7 +15,7 @@ test('bundled Edge calibration obtains metadata using only an owned synthetic pr
     await fs.mkdir(pkg); await fs.mkdir(path.join(calibrationRoot, 'profile'), { recursive: true });
     await fs.writeFile(path.join(calibrationRoot, 'owner.json'), JSON.stringify({ appId: 'x-notification-setup', kind: 'edge-calibration-v1', token }));
     const source = path.resolve(__dirname, '../../client/angelic-setup');
-    for (const name of ['EdgePeerIdentity.ps1', 'EdgePeerVerify.ps1']) await fs.copyFile(path.join(source, name), path.join(pkg, name));
+    for (const name of ['EdgePeerIdentity.ps1', 'EdgePeerVerify.ps1', 'EdgeCalibrationJob.ps1']) await fs.copyFile(path.join(source, name), path.join(pkg, name));
     const bundles = await buildChromeBundles({ includeEdge: true }); await fs.writeFile(path.join(pkg, 'EdgeCalibrate.cjs'), bundles['EdgeCalibrate.cjs']);
     const helper = path.join(source, 'EdgeEphemeralCertificate.ps1').replace(/'/g, "''");
     const certScript = `$ErrorActionPreference='Stop'; . '${helper}'; $c=New-XEdgeEphemeralCertificate; try { [ordered]@{pfx=[Convert]::ToBase64String($c.pfx).TrimEnd('=').Replace('+','-').Replace('/','_');passphrase=$c.password;certificate=[Convert]::ToBase64String($c.certificate).TrimEnd('=').Replace('+','-').Replace('/','_')}|ConvertTo-Json -Compress } finally { [Array]::Clear($c.pfx,0,$c.pfx.Length);[Array]::Clear($c.certificate,0,$c.certificate.Length) }`;
@@ -38,4 +38,21 @@ test('bundled Edge calibration obtains metadata using only an owned synthetic pr
         { input: JSON.stringify({ ...input, rootPath: badRoot, token: badToken, edgePath: fakeEdge }), encoding: 'utf8', windowsHide: true, env, timeout: 15000 });
     assert.notEqual(rejected.status, 0); assert.equal(JSON.parse(rejected.stdout).errorCode, 'X_EDGE_CALIBRATION_CONFIG_INVALID');
     assert.deepEqual(await fs.readdir(path.join(badRoot, 'profile')), []);
+    const jobToken = randomBytes(16).toString('hex'), jobRoot = path.join(root, `edge-calibration-${jobToken}`);
+    await fs.mkdir(path.join(jobRoot, 'profile'), { recursive: true });
+    await fs.writeFile(path.join(jobRoot, 'owner.json'), JSON.stringify({ appId: 'x-notification-setup', kind: 'edge-calibration-v1', token: jobToken }));
+    const quoted = value => `'${value.replace(/'/g, "''")}'`;
+    const jobScript = `$ErrorActionPreference='Stop'; . ${quoted(path.join(pkg, 'EdgeCalibrationJob.ps1'))}; Initialize-XEdgeCalibrationJob
+$memory=New-Object IO.MemoryStream; [Console]::OpenStandardInput().CopyTo($memory); $inputBytes=$memory.ToArray();$memory.Dispose()
+$job=[XEdgeNative.CalibrationJob]::Start(${quoted(process.execPath)},('"'+${quoted(path.join(pkg, 'EdgeCalibrate.cjs'))}+'"'),${quoted(pkg)},$null)
+try { $read=$job.ReadLimitedAsync(16384);$write=$job.WriteAndCloseAsync($inputBytes)
+  if (-not $write.Wait(10000) -or -not $job.WaitForExit(65000)) { throw 'calibration timed out' }; $null=$write.GetAwaiter().GetResult()
+  if ($job.ExitCode -ne 0) { throw 'calibration failed' };$data=$read.GetAwaiter().GetResult();[Console]::OpenStandardOutput().Write($data,0,$data.Length)
+  $job.Stop()
+} finally { [Array]::Clear($inputBytes,0,$inputBytes.Length);$job.Dispose() }`;
+    const viaJob = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(jobScript, 'utf16le').toString('base64')],
+        { input: JSON.stringify({ ...input, rootPath: jobRoot, token: jobToken }), encoding: 'utf8', windowsHide: true, env, timeout: 75000 });
+    assert.equal(viaJob.status, 0, viaJob.stderr || 'job calibration failed');
+    const jobResult = JSON.parse(viaJob.stdout); assert.equal(jobResult.ok, true); assert.equal(jobResult.browserVersion, resultData.browserVersion);
+    assert(!viaJob.stdout.includes(cert.pfx)); assert(!viaJob.stdout.includes(cert.passphrase));
 });
