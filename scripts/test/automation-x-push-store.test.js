@@ -21,6 +21,35 @@ test('encrypted frame validation rejects headers, getters, text and oversized in
         assert.throws(() => validateFrame({ ...frame('v1'), ...changed }), code('X_PUSH_FRAME_INVALID'));
 });
 
+test('unrelated first claims do not deadlock when both create receiver rows at once', { timeout: 20000 }, async () => setup(async db => {
+    const owners = ['222222222222222222', '333333333333333333'];
+    const subscriptions = await Promise.all(owners.map(owner => insertSubscription(db, undefined, owner)));
+    let arrivals = 0, release;
+    const barrier = new Promise(resolve => { release = resolve; });
+    const wrapped = { ...db, withDatabaseTransaction: work => db.withDatabaseTransaction(query => {
+        let delayed = false;
+        return work(async (sql, args) => {
+            if (!delayed && sql.startsWith('INSERT INTO automation_x_push_receivers ')) {
+                delayed = true; if (++arrivals === 2) release(); await barrier;
+            }
+            return query(sql, args);
+        });
+    }) };
+    const store = createXPushStore(wrapped);
+    const claims = await Promise.all(subscriptions.map((subscription, index) => store.claim({ ...subscription, workerId: `first-${index}` })));
+    assert.equal(arrivals, 2); assert.equal(claims.filter(Boolean).length, 2);
+    assert.notEqual(claims[0].token, claims[1].token);
+    assert.equal(Number((await db.queryDatabase("SELECT COUNT(*) n FROM automation_x_push_receivers WHERE state='connecting'"))[0].n), 2);
+    await Promise.all(claims.map(lease => store.release(lease)));
+}));
+
+test('a failed initial claim rolls back its new receiver row', async () => setup(async db => {
+    const subscription = await insertSubscription(db), store = createXPushStore(db);
+    await db.queryDatabase('UPDATE automation_x_subscriptions SET sealed_json=? WHERE id=?', ['not-json', subscription.subscriptionId]);
+    await assert.rejects(store.claim({ ...subscription, workerId: 'invalid-envelope' }), code('X_PUSH_VAULT_INVALID'));
+    assert.equal(Number((await db.queryDatabase('SELECT COUNT(*) n FROM automation_x_push_receivers WHERE subscription_id=?', [subscription.subscriptionId]))[0].n), 0);
+}));
+
 test('SQL claim races have one winner; owner checks and random expired tokens fence old workers', async () => setup(async db => {
     let clock = 1000;
     const subscription = await insertSubscription(db), store = createXPushStore(db, { now: () => clock, leaseMs: 1000 });

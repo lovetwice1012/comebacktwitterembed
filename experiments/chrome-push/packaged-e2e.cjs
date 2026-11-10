@@ -217,6 +217,14 @@ async function main() {
         if (result.version !== 2 || result.provenance.kind !== (testBrowser === 'brave' ? 'brave-gcm' : 'chrome-gcm') || result.push.p256dhPublicKey !== value.result.value.keys.p256dh
             || result.push.authenticationSecret !== value.result.value.keys.auth) throw new Error('FIXTURE_OUTPUT_MISMATCH');
         console.log(JSON.stringify({ packagedChromeExport: true, actualLevelDb: true, separateProfile: true, noExternalUpload: true }));
+        if (process.env.CHROME_FIXTURE_SYNTHETIC_IPC === '1') {
+            // Only this disposable profile's locally generated subscription is
+            // shared with the parent fixture; never write it to stdout or logs.
+            if (typeof process.send !== 'function') throw new Error('FIXTURE_IPC_REQUIRED');
+            await new Promise((resolve, reject) => process.send({ browser: testBrowser, transfer: result,
+                subscription: value.result.value, vapid }, error => error ? reject(error) : resolve()));
+            return;
+        }
         if (process.env.CHROME_FIXTURE_LINUX === '1') {
             // The named WSL instance is a disposable fixture. Credentials
             // from this synthetic Chrome profile are passed via stdin only.

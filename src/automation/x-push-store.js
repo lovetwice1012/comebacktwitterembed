@@ -63,13 +63,20 @@ function createXPushStore(db, options = {}) {
         || !Number.isSafeInteger(leaseMs) || leaseMs < 100 || leaseMs > 300000) fail('X_PUSH_STORE_CONFIG_INVALID');
     // Keep the owner -> subscription -> receiver lock order used by intake and
     // deletion. A delete cannot race a fenced inbox commit or resurrect a lease.
-    async function locked(input, work) {
+    async function locked(input, work, { createReceiver = false } = {}) {
         identity(input);
         try {
             return await db.withDatabaseTransaction(async query => {
                 await lockOwner(query, input.ownerUserId);
                 const subscription = (await query('SELECT * FROM automation_x_subscriptions WHERE id=? AND owner_user_id=? FOR UPDATE', [input.subscriptionId, input.ownerUserId]))[0];
                 if (!subscription) fail('X_PUSH_SUBSCRIPTION_NOT_FOUND');
+                // A missing-key SELECT ... FOR UPDATE takes an InnoDB gap
+                // lock. Two unrelated first claims can then deadlock while
+                // inserting into that gap. Insert the placeholder before the
+                // locking read, while still holding owner and subscription.
+                if (createReceiver) await query(`INSERT INTO automation_x_push_receivers (subscription_id,state,subscription_revision,updated_at_ms)
+                    VALUES (?,'awaiting',?,?) ON DUPLICATE KEY UPDATE subscription_id=VALUES(subscription_id)`,
+                [input.subscriptionId, Number(subscription.revision), now()]);
                 const receiver = (await query('SELECT * FROM automation_x_push_receivers WHERE subscription_id=? FOR UPDATE', [input.subscriptionId]))[0];
                 return work(query, subscription, receiver);
             });
@@ -95,7 +102,7 @@ function createXPushStore(db, options = {}) {
             let sealedEnvelope;
             try { sealedEnvelope = JSON.parse(subscription.sealed_json); } catch { fail('X_PUSH_VAULT_INVALID'); }
             return { subscriptionId: input.subscriptionId, ownerUserId: input.ownerUserId, revision, token, expiresAtMs, sealedEnvelope };
-        });
+        }, { createReceiver: true });
     }
     async function renew(lease, { authorize } = { authorize: undefined }) {
         return locked(lease, async (query, subscription, receiver) => {
