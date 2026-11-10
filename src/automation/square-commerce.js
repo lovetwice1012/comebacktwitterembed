@@ -134,8 +134,9 @@ function createSquareCommerce(db, options = {}) {
     async function createCatalogQuote(actor, input) {
         admin(actor); requireConfigured();
         if (!PLAN.test(input?.planId || '') || ['free','supporter'].includes(input.planId.toLowerCase()) || typeof input.name !== 'string' || !input.name.trim() || input.name.length > 120 || !CADENCES.has(input.cadence) || !/^[A-Z]{3}$/.test(input.currency || '')) throw fail('SQUARE_COMMERCE_INVALID', '有償プラン名・通貨・課金周期を確認してください。');
+        if (input.enabled !== undefined && typeof input.enabled !== 'boolean') throw fail('SQUARE_COMMERCE_INVALID', '購入受付の状態を確認してください。');
         const amount = positive(input.amount), found = await location(); if (found.currency !== input.currency) throw fail('SQUARE_COMMERCE_CURRENCY_MISMATCH', '店舗の通貨と料金の通貨を合わせてください。');
-        const terms = { planId: input.planId, name: input.name.trim(), cadence: input.cadence, amount, currency: input.currency };
+        const terms = { planId: input.planId, name: input.name.trim(), cadence: input.cadence, amount, currency: input.currency, ...(input.enabled === undefined ? {} : { enabled: input.enabled }) };
         return db.withDatabaseTransaction(async query => {
             const plans = await query('SELECT * FROM automation_notification_plans WHERE plan_id=? FOR UPDATE', [terms.planId]); if (!plans[0]) throw fail('AUTOMATION_PLAN_NOT_FOUND', '通知プランを先に登録してください。', 404);
             if ((await query('SELECT plan_id FROM automation_square_bindings WHERE plan_id=? AND environment=? AND merchant_id=? AND cadence=?', [terms.planId, ...scope, terms.cadence])).length) throw fail('SQUARE_CATALOG_ALREADY_BOUND', 'このプランの支払い間隔はSquareと連携済みです。', 409);
@@ -179,7 +180,7 @@ function createSquareCommerce(db, options = {}) {
                 const active = (await query('SELECT * FROM automation_square_catalog_creations WHERE id=? FOR UPDATE', [row.id]))[0]; if (active.lease_token !== token) throw fail('SQUARE_CATALOG_BUSY', '料金作成の結果を確認してください。', 409);
                 const bound = await query('SELECT * FROM automation_square_bindings WHERE plan_id=? AND environment=? AND merchant_id=? AND cadence=? FOR UPDATE', [row.plan_id, ...scope, terms.cadence]);
                 if (bound.length && bound[0].variation_id !== variationId) throw fail('SQUARE_CATALOG_ALREADY_BOUND', '別の料金へ連携が変更されています。', 409);
-                if (!bound.length) await query('INSERT INTO automation_square_bindings (plan_id,environment,merchant_id,variation_id,enabled,catalog_name,cadence,amount,currency,catalog_version,verified_at_ms,actor_user_id) VALUES (?,?,?,?,1,?,?,?,?,?,?,?)', [row.plan_id, ...scope, variationId, catalog.catalogName, catalog.cadence, catalog.amount, catalog.currency, catalog.catalogVersion, now(), actor.userId]);
+                if (!bound.length) await query('INSERT INTO automation_square_bindings (plan_id,environment,merchant_id,variation_id,enabled,catalog_name,cadence,amount,currency,catalog_version,verified_at_ms,actor_user_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)', [row.plan_id, ...scope, variationId, terms.enabled === false ? 0 : 1, catalog.catalogName, catalog.cadence, catalog.amount, catalog.currency, catalog.catalogVersion, now(), actor.userId]);
                 await query("UPDATE automation_square_catalog_creations SET state='COMPLETE',variation_id=?,updated_at_ms=? WHERE id=?", [variationId, now(), row.id]);
             });
         } catch (error) {

@@ -33,7 +33,7 @@ function publicMonitor(kind, row) {
             lastCheckedAtMs: Number(row.last_checked_at_ms || 0), nextCheckAtMs: Number(row.next_check_at_ms || 0),
         }),
         intervalMinutes: kind === 'auto' ? row.cadence_info?.intervalMs / 60000 || Number(row.user_interval_minutes ?? Number(row.poll_interval_ms) / 60000) : undefined,
-        baseIntervalMinutes: kind === 'auto' ? Number(row.user_interval_minutes ?? Number(row.poll_interval_ms) / 60000) : undefined,
+        baseIntervalMinutes: kind === 'auto' ? row.cadence_info?.baseIntervalMs / 60000 || Number(row.user_interval_minutes ?? Number(row.poll_interval_ms) / 60000) : undefined,
         slotCost: Number(row.slot_cost || 1), effectiveSlotCost: row.cadence_info?.effectiveSlotCost || 1,
         cadenceUpdatedAtMs: row.cadence_updated_at_ms == null ? null : Number(row.cadence_updated_at_ms), cadenceLimited: row.cadence_info?.limited === true,
         errorCode: row.last_error_code, premium: !!row.premium_slot };
@@ -159,7 +159,7 @@ function createMonitors(db, service, destinations, options = {}) {
         [afterId, actor.userId, actor.guildId || null, actor.canView ? 1 : 0, ...params]);
         const selected = rows.slice(0, 100);
         const items = await Promise.all(selected.map(async row => {
-            if (kind === 'auto' && Number(row.slot_cost) > 1) row.cadence_info = await require('./monitor-cadence').runtimeCadence(db.queryDatabase, row.user_id, kind, String(row.id), Number(row.user_interval_minutes ?? Number(row.poll_interval_ms) / 60000) * 60000);
+            if (kind === 'auto') row.cadence_info = await require('./monitor-cadence').runtimeCadence(db.queryDatabase, row.user_id, kind, String(row.id), Number(row.user_interval_minutes ?? Number(row.poll_interval_ms) / 60000) * 60000);
             return { ...publicMonitor(kind, row), canAllocateCadence: kind === 'auto' && String(row.user_id) === actor.userId && (scopeOf(row) === 'private' || actor.canEdit === true) };
         }));
         return { items, nextCursor: rows.length > 100 ? String(selected.at(-1).id) : null };
@@ -347,6 +347,10 @@ function createMonitors(db, service, destinations, options = {}) {
                 await query(`UPDATE ${tableFor(kind)}_targets SET enabled=? WHERE id=?`, [enabled ? 1 : 0, id]);
                 if (enabled && !locked.enabled) {
                     await query(`UPDATE ${tableFor(kind)}_targets SET baseline_at_ms=NULL,created_at_ms=?${kind === 'price' ? ',condition_active=0' : ',last_polled_at_ms=NULL,next_poll_at_ms=NULL,last_notification_window_at_ms=NULL'} WHERE id=?`, [Date.now(), id]);
+                    if (kind === 'price') {
+                        await query('DELETE FROM automation_price_watch_cadence WHERE target_id=?', [id]);
+                        await require('./plan-interval').wakeOwnerSources(query, ownerId);
+                    }
                     if (kind === 'auto') await require('../providers/autoWatch/intervalPolicy').bringSourceForward(query, ownerId, locked.source_id, Date.now());
                 }
                 await query('INSERT INTO automation_monitors (target_kind,target_id,name,scope,revision) VALUES (?,?,?,?,2) ON DUPLICATE KEY UPDATE name=VALUES(name),revision=revision+1', [kind, id, name, scope]);
@@ -416,6 +420,10 @@ function createMonitors(db, service, destinations, options = {}) {
                 targetId = String(inserted.insertId);
             }
             if (!id || enabled) await entitlements.assignSlot(query, ownerId, kind, String(targetId));
+            if (kind === 'price' && enabled && (!id || identityChanged || !locked?.enabled)) {
+                await query('DELETE FROM automation_price_watch_cadence WHERE target_id=?', [targetId]);
+                await require('./plan-interval').wakeOwnerSources(query, ownerId, now);
+            }
             if (kind === 'auto' && enabled) await require('../providers/autoWatch/intervalPolicy').bringSourceForward(query, ownerId, sourceId, now);
             await query('INSERT INTO automation_monitors (target_kind,target_id,name,scope,destination_id,revision) VALUES (?,?,?,?,?,?) ON DUPLICATE KEY UPDATE name=VALUES(name),destination_id=VALUES(destination_id),revision=revision+1', [kind, targetId, name, scope, destId, id ? Number(locked.revision || 1) + 1 : 1]);
             await service.audit(query, actor, `${kind}:${targetId}`, id ? 'monitor.update' : 'monitor.create', { providerId, destinationId: destId, enabled,

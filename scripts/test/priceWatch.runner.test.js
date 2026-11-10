@@ -54,6 +54,21 @@ test('a later price change creates one change-notification delivery', async () =
     assert.match(store.calls.deliveries[0][0].messageText, /価格が変わりました/);
 });
 
+test('shared price source keeps each plan on its own schedule and compares its own prior price', async () => {
+    const before = { productName: 'Fixture game', productUrl: 'https://store.steampowered.com/app/730', priceAmount: 1500, currency: 'JPY' };
+    const store = storeWith([source({ initialized_at_ms: 1, state_json: JSON.stringify(before) })]);
+    store.sourceTargets = async () => [
+        { id: '1', watch_mode: 'change', baseline_at_ms: 1, condition_active: 0, planCadence: { intervalMs: 300000, lastCheckedAtMs: 1000, baseline: before } },
+        { id: '2', watch_mode: 'change', baseline_at_ms: 1, condition_active: 0, planCadence: { intervalMs: 10800000, lastCheckedAtMs: 1000, baseline: { ...before, priceAmount: 2000 } } },
+    ];
+    await tick({ now: 301000, store, fetchPrice: async () => ({ ...before, priceAmount: 1000 }) });
+    assert.deepEqual(store.calls.deliveries[0].map(item => item.targetId), ['1']);
+    await tick({ now: 10801000, store, fetchPrice: async () => ({ ...before, priceAmount: 1000 }) });
+    const slow = store.calls.deliveries[1].find(item => item.targetId === '2');
+    assert.equal(slow.event.previousPriceAmount, 2000);
+    assert.equal(slow.event.priceDelta, -1000);
+});
+
 test('price-watch helper transitions can be evaluated without duplicate threshold alerts', () => {
     const { _internal } = require('../../src/providers/priceWatch/runner');
     const target = { max_price_amount: 1500, min_discount_percent: null };

@@ -56,8 +56,7 @@ async function inspectXMonitorProcessing(query, monitor, now = Date.now(), optio
         && slots.some(slot => Number(slot.slot_index) === Number(row.slot_index) && !slot.target_kind));
     const validReserved = own.length === 4 && validOwn.length === 4 && new Set(own.map(row => Number(row.slot_index))).size === 4;
     const baseUsable = preview ? vacant > 0 : !!primary && Number(primary.slot_index) >= 1 && Number(primary.slot_index) <= plan.slotLimit && monitor.state !== 'deleted' && monitor.state !== 'suspended';
-    const donor = (await query('SELECT is_donor FROM users WHERE user_id=?', [owner]))[0];
-    const existingDonor = donor?.is_donor === 1 || donor?.is_donor === '1';
+    const existingDonor = await require('./legacy-donor-benefits').isLegacyDonor(query, owner);
     let poolUsable = monitor.pool_kind === 'free';
     if (monitor.pool_kind === 'supporter') {
         const holding = await require('./push-support-grants').getSupporterHolding(query, owner, now);

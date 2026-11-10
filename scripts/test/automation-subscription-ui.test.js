@@ -110,6 +110,17 @@ test('catalog cards show only offered server terms and do not invent X eligibili
     } finally { await f.close(); }
 });
 
+test('catalog cards show the actual configured interval and realtime entitlement', async () => {
+    const f = await fixture({ initialOptions: options({ plans: [plan({ intervalMinutes: 10, realtimeEnabled: true, xRolloutMode: 'supporters' })] }) });
+    try {
+        const choice = f.container.querySelector('[aria-label="有償プランの選択"]');
+        assert.match(choice.textContent, /新着・価格・Xの確認間隔 10分/);
+        assert.match(choice.textContent, /Xのリアルタイム通知に対応/);
+        assert.match(choice.textContent, /支援者向け先行公開中/);
+        assert.equal(f.sdk.loads.length, 0);
+    } finally { await f.close(); }
+});
+
 test('plan selection shows server prices and quota, then loads Square only after quote review and holds payment behind explicit consent', async () => {
     const f = await fixture();
     try {

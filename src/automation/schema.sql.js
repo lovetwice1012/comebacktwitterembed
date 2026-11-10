@@ -23,6 +23,29 @@ const SCHEMA = [
         updated_at_ms BIGINT NOT NULL,
         INDEX idx_notification_entitlement_plan (plan_id)
     ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
+    `CREATE TABLE IF NOT EXISTS automation_legacy_donor_benefits (
+        owner_user_id VARCHAR(32) NOT NULL PRIMARY KEY,
+        slot_limit INT UNSIGNED NOT NULL,
+        minute_limit INT UNSIGNED NOT NULL,
+        day_limit INT UNSIGNED NOT NULL,
+        priority INT UNSIGNED NOT NULL,
+        confirmation_interval_minutes INT UNSIGNED NULL,
+        granted_at_ms BIGINT NOT NULL,
+        actor_user_id VARCHAR(32) NOT NULL
+    ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
+    `CREATE TABLE IF NOT EXISTS automation_legacy_donor_cutover (
+        id TINYINT UNSIGNED NOT NULL PRIMARY KEY,
+        activated_at_ms BIGINT NOT NULL,
+        actor_user_id VARCHAR(32) NOT NULL,
+        CHECK (id=1)
+    ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
+    `CREATE TABLE IF NOT EXISTS automation_price_watch_cadence (
+        target_id BIGINT UNSIGNED NOT NULL PRIMARY KEY,
+        last_checked_at_ms BIGINT NOT NULL,
+        next_check_at_ms BIGINT NOT NULL,
+        baseline_json MEDIUMTEXT NULL,
+        CONSTRAINT fk_price_cadence_target FOREIGN KEY (target_id) REFERENCES price_watch_targets(id) ON DELETE CASCADE
+    ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
     `CREATE TABLE IF NOT EXISTS automation_notification_slots (
         owner_user_id VARCHAR(32) NOT NULL,
         slot_index INT UNSIGNED NOT NULL,

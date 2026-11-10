@@ -52,11 +52,13 @@ async function inspectPlan(query, userId, now = Date.now(), squareScope) {
     const additional = Number(users[0]?.additional_auto_extract_slots || 0);
     const manualExtraSlots = Number.isSafeInteger(additional) && additional > 0 ? additional : 0;
     const holding = await require('./push-support-grants').getSupporterHolding(query, id, now, square);
+    const legacy = await require('./legacy-donor-benefits').inspectLegacyBenefit(query, id);
     // The permanent ledger is the personal additional allowance. Legacy
     // recorded grants are frozen there; new rolling financial multipliers do
     // not mint a second registration allowance for the same new payment.
     const totalExtras = holding.totalSupporterSlots;
     const withAdditional = plan => {
+        if (legacy.cutover && legacy.benefit) plan = require('./legacy-donor-benefits').applyLegacyBenefit(plan, legacy.benefit);
         if (!Number.isSafeInteger(plan.slotLimit + totalExtras)) throw error('AUTOMATION_SLOT_ALLOWANCE_INVALID','個人の登録上限を安全に計算できません。管理者による確認が必要です。',503);
         return ({ ...plan, baseSlotLimit: plan.slotLimit, manualExtraSlots,
         addonGrantUnits: donation.purchaseUnits, addonExtraSlots: totalExtras - manualExtraSlots, donationPaymentCount: donation.paymentCount,
@@ -82,7 +84,7 @@ async function inspectPlan(query, userId, now = Date.now(), squareScope) {
         const row = subscriptions[0];
         if (row && !builtinPlan(row.plan_id) && validPolicy(row)) return withAdditional({ tier: 'paid', planId: row.plan_id, label: row.label, slotLimit: Number(row.slot_limit), minuteLimit: Number(row.minute_limit), dayLimit: Number(row.day_limit), priority: Number(row.priority) });
     }
-    const supporter = Number(users[0]?.is_donor) === 1 || donation.active;
+    const supporter = !legacy.cutover && (Number(users[0]?.is_donor) === 1 || donation.active);
     const base = supporter ? SUPPORTER_PLAN : FREE_PLAN;
     const policies = await query('SELECT * FROM automation_notification_plans WHERE plan_id=? LIMIT 1', [base.planId]);
     const configured = policies[0] && validPolicy(policies[0]) ? policyDto(policies[0]) : base;
@@ -101,6 +103,11 @@ async function inspectXPlan(query, userId, now = Date.now(), options = {}) {
         const overrides = await query('SELECT auto_watch_interval_minutes FROM users WHERE user_id=?', [String(userId)]);
         const legacy = Number(overrides[0]?.auto_watch_interval_minutes);
         if (Number.isSafeInteger(legacy) && legacy >= 5 && legacy <= 10080) intervalMinutes = legacy;
+    }
+    if (normal.legacyDonor) {
+        const legacy = await require('./legacy-donor-benefits').inspectLegacyBenefit(query, userId);
+        if (!legacy.cutover || !legacy.benefit) throw error('LEGACY_DONOR_BENEFIT_INVALID', '支援者特典を確認できません。', 503);
+        if (legacy.benefit.intervalMinutes != null) intervalMinutes = intervalMinutes == null ? legacy.benefit.intervalMinutes : Math.min(intervalMinutes, legacy.benefit.intervalMinutes);
     }
     return { ...normal, intervalMinutes };
 }
@@ -219,6 +226,7 @@ async function savePlanPolicy(query, actor, input) {
     if (input.intervalMinutes !== undefined) {
         if (input.intervalMinutes !== null) number(input.intervalMinutes, 5, 10080, '$.intervalMinutes');
         await query('UPDATE automation_notification_plans SET confirmation_interval_minutes=? WHERE plan_id=?', [input.intervalMinutes, planId]);
+        await require('./plan-interval').wakePolicySources(query, timestamp);
     }
     return policyDto((await query('SELECT * FROM automation_notification_plans WHERE plan_id=? LIMIT 1', [planId]))[0]);
 }
@@ -226,6 +234,7 @@ async function setUserPlan(query, actor, userId, planId, options = {}) {
     const actorId = admin(actor), id = await lockOwner(query, userId);
     if (planId === null || builtinPlan(planId)?.planId === 'free') {
         await query('DELETE FROM automation_notification_entitlements WHERE owner_user_id=?', [id]);
+        await require('./plan-interval').wakeOwnerSources(query, id);
         return inspectPlan(query, id);
     }
     if (!PLAN_ID.test(planId || '') || builtinPlan(planId)) throw error('AUTOMATION_PLAN_INVALID', '有償プランを確認してください。', 422);
@@ -235,6 +244,7 @@ async function setUserPlan(query, actor, userId, planId, options = {}) {
     if (expires !== null && (!Number.isSafeInteger(expires) || expires <= Date.now())) throw error('AUTOMATION_PLAN_INVALID', '将来の有効期限を指定してください。', 422);
     await query(`INSERT INTO automation_notification_entitlements (owner_user_id,plan_id,expires_at_ms,actor_user_id,updated_at_ms) VALUES (?,?,?,?,?)
         ON DUPLICATE KEY UPDATE plan_id=VALUES(plan_id),expires_at_ms=VALUES(expires_at_ms),actor_user_id=VALUES(actor_user_id),updated_at_ms=VALUES(updated_at_ms)`, [id, rows[0].plan_id, expires, actorId, Date.now()]);
+    await require('./plan-interval').wakeOwnerSources(query, id);
     return inspectPlan(query, id);
 }
 async function listPlanPolicies(query, actor) {

@@ -11,7 +11,15 @@ async function lockTargetSource(query, owner, targetId) {
 }
 async function runtimeCadence(query, owner, kind, targetId, baseMs, now = Date.now()) {
     const selected = (await query('SELECT slot_cost,updated_at_ms FROM automation_monitor_cadence WHERE owner_user_id=? AND target_kind=? AND target_id=?', [owner, kind, targetId]))[0];
-    const cost = Number(selected?.slot_cost || 1), base = Number(baseMs);
+    const cost = Number(selected?.slot_cost || 1);
+    let base = Number(baseMs), planDriven = false;
+    if (kind === 'auto') {
+        const interval = await require('./plan-interval').currentPlanInterval(query, owner, now);
+        if (interval !== null) {
+            base = interval * 60000;
+            planDriven = true;
+        }
+    }
     let effectiveCost = 1;
     if (cost > 1) {
         const plan = await require('./entitlements').inspectPersonalPlan(query, owner, now);
@@ -20,7 +28,7 @@ async function runtimeCadence(query, owner, kind, targetId, baseMs, now = Date.n
         if (main && Number(main.slot_index) <= plan.slotLimit && extra.length === cost - 1 && extra.every(row => Number(row.slot_index) <= plan.slotLimit)) effectiveCost = cost;
     }
     return { slotCost: cost, effectiveSlotCost: effectiveCost, intervalMs: effectiveCost === 1 ? base : Math.max(MIN_INTERVAL_MS, Math.ceil(base / effectiveCost)), baseIntervalMs: base,
-        updatedAtMs: selected ? Number(selected.updated_at_ms) : null, limited: effectiveCost !== cost };
+        updatedAtMs: selected ? Number(selected.updated_at_ms) : null, limited: effectiveCost !== cost, ...(planDriven ? { planDriven: true } : {}) };
 }
 // Caller holds the persistent owner lock; real numbered slots are reserved so
 // pause, delete, concurrent registration and downgrades use one capacity pool.
@@ -62,7 +70,7 @@ async function sourceSchedule(query, source, now = Date.now()) {
     let requested = Infinity, override = false;
     for (const target of targets) {
         const cadence = await runtimeCadence(query, target.user_id, 'auto', String(target.id), Number(target.base_interval_ms), now);
-        requested = Math.min(requested, cadence.intervalMs); override ||= cadence.effectiveSlotCost > 1 || target.auto_watch_interval_minutes != null;
+        requested = Math.min(requested, cadence.intervalMs); override ||= cadence.planDriven || cadence.effectiveSlotCost > 1 || target.auto_watch_interval_minutes != null;
     }
     return { requested_poll_interval_ms: Number.isFinite(requested) ? requested : source.poll_interval_ms, has_user_interval: override ? 1 : 0 };
 }

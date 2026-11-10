@@ -1,7 +1,7 @@
 export interface SquareActor { userId: string; isAdmin?: boolean }
 export interface SquareVariation { variationId: string; catalogName: string; cadence: string; amount: number; currency: string; billingAnchorDay?: number | null; canProrate?: boolean }
 export interface SquareBinding extends SquareVariation { planId: string; enabled: boolean; verifiedAtMs: number }
-export interface SquarePlan extends SquareBinding { label: string; slotLimit: number; minuteLimit: number; dayLimit: number; priority: number; firstAmount?: number; regularAmount?: number; coupon?: import('./square-commerce').CouponTerms }
+export interface SquarePlan extends SquareBinding { label: string; slotLimit: number; minuteLimit: number; dayLimit: number; priority: number; intervalMinutes: number | null; specialSlotLimit: number; realtimeEnabled: boolean; xRolloutMode: 'public' | 'supporters' | 'disabled'; firstAmount?: number; regularAmount?: number; coupon?: import('./square-commerce').CouponTerms }
 export interface SquareOptions { configured: boolean; environment: 'sandbox' | 'production' | null; applicationId?: string; locationId?: string; plans: SquarePlan[] }
 export interface SquareQuote { checkoutId: string; expiresAtMs: number; plan: SquarePlan; email: string; name: string }
 export interface SquareStatus {

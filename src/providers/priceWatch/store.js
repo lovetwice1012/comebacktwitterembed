@@ -167,6 +167,10 @@ async function registerTargetAdmitted(input, options = {}) {
             [source.id, userId, destinationKey, rule.mode, rule.ruleKey]
         );
         await entitlements.assignSlot(query, userId, 'price', String(targetRows[0]?.id || ''));
+        if ((await query('SELECT id FROM automation_legacy_donor_cutover WHERE id=1'))[0]) {
+            await query('DELETE c FROM automation_price_watch_cadence c JOIN price_watch_targets t ON t.id=c.target_id WHERE t.id=? AND t.baseline_at_ms IS NULL', [targetRows[0].id]);
+            await query('UPDATE price_watch_sources SET next_check_at_ms=LEAST(next_check_at_ms,?) WHERE id=?', [initialDue, source.id]);
+        }
         return {
             id: String(targetRows[0]?.id || ''),
             providerId,
@@ -217,15 +221,29 @@ async function claimDueSources(now, limit = 32) {
     return claimed;
 }
 
-async function sourceTargets(sourceId) {
-    return await db.queryDatabase(
-        `SELECT t.*, w.webhook_url,COALESCE(m.revision,1) AS configuration_revision
+async function sourceTargets(sourceId, now = Date.now()) {
+    const rows = await db.queryDatabase(
+        `SELECT t.*, w.webhook_url,COALESCE(m.revision,1) AS configuration_revision,
+                c.last_checked_at_ms AS cadence_last_checked_at_ms,c.baseline_json AS cadence_baseline_json,
+                EXISTS(SELECT 1 FROM automation_legacy_donor_cutover WHERE id=1) AS plan_cadence_active
          FROM ${TABLES.priceWatchTargets} t
          LEFT JOIN ${TABLES.webhookEndpoints} w ON w.id=t.webhook_endpoint_id
          LEFT JOIN automation_monitors m ON m.target_kind='price' AND m.target_id=t.id
+         LEFT JOIN automation_price_watch_cadence c ON c.target_id=t.id
          WHERE t.source_id=? AND t.enabled=1 ORDER BY t.id`,
         [sourceId]
     );
+    for (const row of rows) if (Number(row.plan_cadence_active) === 1) {
+        const minutes = await require('../../automation/plan-interval').currentPlanInterval(db.queryDatabase, row.user_id, now);
+        if (minutes === null) throw error('Price-watch plan interval unavailable.', 'PRICE_WATCH_PLAN_INTERVAL_UNAVAILABLE');
+        const baseline = row.cadence_baseline_json == null ? null : parseJson(row.cadence_baseline_json, null);
+        if (row.cadence_baseline_json != null && (!baseline || typeof baseline !== 'object' || Array.isArray(baseline)
+            || baseline.priceAmount == null || !Number.isFinite(Number(baseline.priceAmount)) || Number(baseline.priceAmount) < 0 || !/^[A-Z]{3}$/.test(String(baseline.currency || ''))))
+            throw error('Price-watch cadence baseline is invalid.', 'PRICE_WATCH_CADENCE_CORRUPT');
+        row.planCadence = { intervalMs: minutes * 60000, lastCheckedAtMs: row.cadence_last_checked_at_ms == null ? null : Number(row.cadence_last_checked_at_ms),
+            baseline };
+    }
+    return rows;
 }
 
 async function completeSource(source, snapshot, events, targetStates, now, nextCheckAtMs) {
@@ -240,15 +258,26 @@ async function completeSource(source, snapshot, events, targetStates, now, nextC
         );
         if (Number(updated.affectedRows) !== 1) throw error('Price-watch source lease was lost.', 'PRICE_WATCH_LEASE_LOST');
         const eligibleTargets = new Set();
+        let stalePolicy = false;
         for (const state of targetStates) {
             const rows = await query(`SELECT t.*,COALESCE(m.revision,1) AS configuration_revision FROM ${TABLES.priceWatchTargets} t LEFT JOIN automation_monitors m ON m.target_kind='price' AND m.target_id=t.id WHERE t.id=? AND t.source_id=? AND t.enabled=1 FOR UPDATE`, [state.targetId, source.id]);
             const target = rows[0];
             if (!target || state.ruleKey !== target.rule_key || state.destinationKey !== target.destination_key) continue;
             if (!await require('../../automation/monitor-revision-compat').monitorRevisionCompatible(query, { kind: 'price', targetId: String(target.id),
                 ownerUserId: String(target.user_id), expectedRevision: Number(state.configurationRevision), currentRevision: Number(target.configuration_revision) })) continue;
+            if (state.planCadence) {
+                const minutes = await require('../../automation/plan-interval').currentPlanInterval(query, target.user_id, now);
+                const current = (await query('SELECT last_checked_at_ms FROM automation_price_watch_cadence WHERE target_id=? FOR UPDATE', [target.id]))[0];
+                const last = current?.last_checked_at_ms == null ? null : Number(current.last_checked_at_ms);
+                if (minutes === null || minutes * 60000 !== state.planCadence.intervalMs || last !== state.planCadence.lastCheckedAtMs) { stalePolicy = true; continue; }
+                await query(`INSERT INTO automation_price_watch_cadence (target_id,last_checked_at_ms,next_check_at_ms,baseline_json) VALUES (?,?,?,?)
+                    ON DUPLICATE KEY UPDATE last_checked_at_ms=VALUES(last_checked_at_ms),next_check_at_ms=VALUES(next_check_at_ms),baseline_json=VALUES(baseline_json)`,
+                [target.id, now, now + state.planCadence.intervalMs, json(snapshot)]);
+            }
             eligibleTargets.add(String(state.targetId));
             await query(`UPDATE ${TABLES.priceWatchTargets} SET condition_active=?,baseline_at_ms=COALESCE(baseline_at_ms,?) WHERE id=?`, [state.conditionActive ? 1 : 0, now, state.targetId]);
         }
+        if (stalePolicy) await query('UPDATE price_watch_sources SET next_check_at_ms=LEAST(next_check_at_ms,?) WHERE id=?', [now + 1000, source.id]);
         for (const event of events) {
             if (!eligibleTargets.has(String(event.targetId))) continue;
             await query(

@@ -107,7 +107,7 @@ function failureDelay(source, now, error) {
 async function processSource(source, context) {
     const { now, store, fetch, fetchPrice } = context;
     const adapter = provider(source.provider_id);
-    const nextCheckAtMs = now + nextIntervalMs(source.provider_id);
+    let nextCheckAtMs = now + nextIntervalMs(source.provider_id);
     const permit = await store.reserveProvider(source.provider_id, adapter.globalSpacingMs, now);
     if (!permit.allowed) {
         await store.rescheduleSource(source, Math.max(now + 1000, permit.nextCheckAtMs));
@@ -126,31 +126,40 @@ async function processSource(source, context) {
             throw Object.assign(new Error('The price currency changed; the previous baseline is retained.'), { code: 'PRICE_WATCH_CURRENCY_CHANGED' });
         }
         after.observationSequence = Number(before.observationSequence || 0) + 1;
-        const targets = await store.sourceTargets(source.id);
+        const targets = await store.sourceTargets(source.id, now);
         const initial = !source.initialized_at_ms;
         const events = [];
         const targetStates = [];
+        let nextPlanCheck = Infinity;
         for (const target of targets) {
+            if (target.planCadence) {
+                const due = target.planCadence.lastCheckedAtMs === null ? now : target.planCadence.lastCheckedAtMs + target.planCadence.intervalMs;
+                if (due > now) { nextPlanCheck = Math.min(nextPlanCheck, due); continue; }
+                nextPlanCheck = Math.min(nextPlanCheck, now + target.planCadence.intervalMs);
+            }
+            const targetBefore = target.planCadence?.baseline || before;
             const observedActive = target.watch_mode === 'threshold' ? thresholdActive(target, after) : false;
             // Missing discount metadata is not proof that a sale ended. Retain
             // each target's last condition state until the condition is known.
             const active = observedActive === null ? Boolean(target.condition_active) : observedActive;
-            targetStates.push({ targetId: target.id, conditionActive: active, ruleKey: target.rule_key, destinationKey: target.destination_key, configurationRevision: Number(target.configuration_revision || 1) });
+            targetStates.push({ targetId: target.id, conditionActive: active, ruleKey: target.rule_key, destinationKey: target.destination_key, configurationRevision: Number(target.configuration_revision || 1),
+                ...(target.planCadence ? { planCadence: target.planCadence } : {}) });
             if (initial || target.baseline_at_ms === null) continue;
-            const sendChange = target.watch_mode === 'change' && priceChanged(before, after);
+            const sendChange = target.watch_mode === 'change' && priceChanged(targetBefore, after);
             const sendThreshold = target.watch_mode === 'threshold' && observedActive === true && !target.condition_active;
             if (!sendChange && !sendThreshold) continue;
             events.push({
                 targetId: target.id,
-                eventKey: eventKey(target, before, after, active),
-                messageText: messageFor(target, adapter, before, after, source.source_locale),
+                eventKey: eventKey(target, targetBefore, after, active),
+                messageText: messageFor(target, adapter, targetBefore, after, source.source_locale),
                 event: { providerId: source.provider_id, kind: 'price', sourceKey: source.product_key,
                     title: after.productName, url: after.productUrl, observedAtMs: now,
                     priceAmount: after.priceAmount, currency: after.currency, discountPercent: after.discountPercent,
-                    previousPriceAmount: before.currency === after.currency ? before.priceAmount : null,
-                    priceDelta: before.currency === after.currency && number(before.priceAmount) !== null ? after.priceAmount - before.priceAmount : null },
+                    previousPriceAmount: targetBefore.currency === after.currency ? targetBefore.priceAmount : null,
+                    priceDelta: targetBefore.currency === after.currency && number(targetBefore.priceAmount) !== null ? after.priceAmount - targetBefore.priceAmount : null },
             });
         }
+        if (Number.isFinite(nextPlanCheck)) nextCheckAtMs = Math.max(now + Number(adapter.globalSpacingMs || 0), nextPlanCheck);
         await store.completeSource(source, after, events, targetStates, now, nextCheckAtMs);
         return { status: initial ? 'seeded' : 'processed', sourceId: source.id, eventCount: events.length };
     } catch (error) {

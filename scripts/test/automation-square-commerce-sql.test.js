@@ -83,6 +83,26 @@ test('Square commerce fixtures default to unconfigured without secret access and
     const service = createSquareCommerce({}, { env: {} }); assert.equal((await service.getAdmin(ADMIN)).configured, false);
     await assert.rejects(service.createCatalogQuote(actor(1), {}), { code: 'AUTOMATION_FORBIDDEN' }); await assert.rejects(service.saveCoupon(actor(1), {}), { code: 'AUTOMATION_FORBIDDEN' });
 });
+test('approved monthly prices are created in Square while purchase remains disabled', { skip: !port, timeout: 90000 }, async () => {
+    const db = await createTestDatabase(port), square = mockSquare(() => Date.now());
+    const { PLANS } = require('../../src/automation/plan-redesign');
+    const { stagePlanPrices } = require('../../src/automation/stage-plan-prices');
+    const commerce = createSquareCommerce(db, { env: ENV, fetch: square.fetch });
+    const billing = createSquareBilling(db, { env: ENV, fetch: square.fetch });
+    try {
+        for (const p of PLANS.filter(item => item.amountYen > 0)) await savePlanPolicy(db.queryDatabase, ADMIN, { ...p, enabled: true });
+        const first = await stagePlanPrices({ billing, commerce, actor: ADMIN, expectedEnvironment: 'sandbox' });
+        assert.equal(first.length, 4);
+        assert.equal((await billing.getOptions(actor(1))).plans.length, 0);
+        const rows = await db.queryDatabase('SELECT amount,cadence,enabled FROM automation_square_bindings ORDER BY amount');
+        assert.deepEqual(rows.map(row => Number(row.amount)), [130, 400, 980, 1480]);
+        assert(rows.every(row => row.cadence === 'MONTHLY' && Number(row.enabled) === 0));
+        const existingObjects = square.catalog.size;
+        await stagePlanPrices({ billing, commerce, actor: ADMIN, expectedEnvironment: 'sandbox' });
+        assert.equal(square.catalog.size, existingObjects);
+        assert.equal((await billing.getOptions(actor(1))).plans.length, 0);
+    } finally { await db.close(); }
+});
 test('Square multiple payment intervals share one notification policy with independent quotes, bindings, leases and coupon terms', { skip: !port, timeout: 90000 }, async t => {
     const db = await createTestDatabase(port); let clock = Date.parse('2026-10-13T00:00:00Z');
     const square = mockSquare(() => clock), commerce = () => createSquareCommerce(db, { env: ENV, fetch: square.fetch, clock: () => clock }), billing = () => createSquareBilling(db, { env: ENV, fetch: square.fetch, clock: () => clock });
@@ -109,6 +129,17 @@ test('Square multiple payment intervals share one notification policy with indep
             assert.equal(wires.length, 2); assert.deepEqual(wires[0].body, wires[1].body);
             assert.equal((await billing().getOptions(actor(200))).plans.filter(item => item.planId === 'multi').length, 2);
             await assert.rejects(commerce().createCatalogQuote(ADMIN, { planId: 'multi', name: 'Duplicate monthly', cadence: 'MONTHLY', amount: 1, currency: 'JPY' }), { code: 'SQUARE_CATALOG_ALREADY_BOUND' });
+        });
+        await t.test('private catalog creation stays unavailable after an uncertain response and retry', async () => {
+            await savePlanPolicy(db.queryDatabase, ADMIN, { planId: 'private', label: 'Private', slotLimit: 5, minuteLimit: 5, dayLimit: 24, priority: 2 });
+            const quote = await commerce().createCatalogQuote(ADMIN, { planId: 'private', name: 'Private', cadence: 'MONTHLY', amount: 980, currency: 'JPY', enabled: false });
+            square.state.lost = '/v2/catalog/object';
+            await assert.rejects(commerce().confirmCatalogCreation(ADMIN, { creationId: quote.creationId, consent: true }), { code: 'SQUARE_RESULT_UNKNOWN' });
+            const done = await commerce().confirmCatalogCreation(ADMIN, { creationId: quote.creationId, consent: true });
+            assert.equal(done.state, 'COMPLETE');
+            const rows = await db.queryDatabase("SELECT enabled FROM automation_square_bindings WHERE plan_id='private'");
+            assert.equal(Number(rows[0].enabled), 0);
+            assert.equal((await billing().getOptions(actor(200))).plans.some(item => item.planId === 'private'), false);
         });
         await t.test('explicit variation selects its exact interval and ambiguous old clients fail before financial writes', async () => {
             const before = square.requests.filter(item => item.method === 'POST').length;

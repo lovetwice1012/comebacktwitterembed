@@ -23,6 +23,10 @@ type Plan = {
   minuteLimit: number;
   dayLimit: number;
   priority: number;
+  intervalMinutes?: number | null;
+  specialSlotLimit?: number;
+  realtimeEnabled?: boolean;
+  xRolloutMode?: "public" | "supporters" | "disabled";
   variationId: string;
   catalogName: string;
   cadence: string;
@@ -76,7 +80,7 @@ function PlanDetails({ plan, monthlyFirst = false }: { plan: Plan; monthlyFirst?
   const monthBasedAnchor = ["MONTHLY", "EVERY_TWO_MONTHS", "QUARTERLY", "EVERY_FOUR_MONTHS", "EVERY_SIX_MONTHS", "ANNUAL", "EVERY_TWO_YEARS"].includes(plan.cadence) && Number.isInteger(plan.billingAnchorDay) && Number(plan.billingAnchorDay) >= 1 && Number(plan.billingAnchorDay) <= 31;
   const monthly = <>{subscriptionMonthlyPrice(plan)}<span className="ml-2 text-sm font-normal text-muted-foreground">/ 月{plan.cadence !== "MONTHLY" ? "（換算）" : ""}</span></>;
   const billed = <>{subscriptionPrice(plan)}<span className="ml-2 text-sm font-normal text-muted-foreground">{cadences[plan.cadence] ?? "Squareで設定した周期"}</span></>;
-  return <><p className="text-2xl font-semibold">{monthlyFirst ? monthly : billed}</p><p className="text-sm text-muted-foreground">{monthlyFirst ? <>請求額: {billed}</> : <>月あたり: {monthly}</>}</p>{subscriptionMonthlyApproximate(plan.cadence) ? <p className="text-xs text-muted-foreground">月額換算は1か月＝30日として計算した概算です。</p> : null}{monthBasedAnchor ? <p className="rounded-lg bg-muted/30 p-3 text-sm">{plan.cadence === "MONTHLY" ? "毎月" : "課金月の"}{plan.billingAnchorDay}日が課金日です。{plan.canProrate === true ? "初回は日割りで、表示された定期料金と異なる場合があります。初回の請求額はSquareが確定します。" : plan.canProrate === false ? "初回は日割りせず、表示された定期料金が適用されます。次の課金日までの期間が通常より短くなる場合があります。" : "初回の請求条件はSquareで確認されます。"}</p> : null}<p className="text-sm">通知{plan.slotLimit}枠 · 1枠あたり1日{plan.dayLimit}通・1分{plan.minuteLimit}通</p><p className="text-xs text-muted-foreground">{plan.priority > 0 ? "優先処理の対象です。" : "標準の処理順で通知します。"} メッセージ1件＝1通。日次上限は日本時間の0時にリセット。</p></>;
+  return <><p className="text-2xl font-semibold">{monthlyFirst ? monthly : billed}</p><p className="text-sm text-muted-foreground">{monthlyFirst ? <>請求額: {billed}</> : <>月あたり: {monthly}</>}</p>{subscriptionMonthlyApproximate(plan.cadence) ? <p className="text-xs text-muted-foreground">月額換算は1か月＝30日として計算した概算です。</p> : null}{monthBasedAnchor ? <p className="rounded-lg bg-muted/30 p-3 text-sm">{plan.cadence === "MONTHLY" ? "毎月" : "課金月の"}{plan.billingAnchorDay}日が課金日です。{plan.canProrate === true ? "初回は日割りで、表示された定期料金と異なる場合があります。初回の請求額はSquareが確定します。" : plan.canProrate === false ? "初回は日割りせず、表示された定期料金が適用されます。次の課金日までの期間が通常より短くなる場合があります。" : "初回の請求条件はSquareで確認されます。"}</p> : null}<p className="text-sm">通知{plan.slotLimit}枠 · 1枠あたり1日{plan.dayLimit}通・1分{plan.minuteLimit}通</p>{plan.intervalMinutes != null ? <p className="text-sm">新着・価格・Xの確認間隔 {plan.intervalMinutes}分</p> : null}{plan.realtimeEnabled ? <p className="text-sm">Xのリアルタイム通知に対応{plan.xRolloutMode === "supporters" ? "（支援者向け先行公開中）" : plan.xRolloutMode === "disabled" ? "（提供準備中）" : ""}</p> : null}<p className="text-xs text-muted-foreground">{plan.priority > 0 ? "優先処理の対象です。" : "標準の処理順で通知します。"} メッセージ1件＝1通。日次上限は日本時間の0時にリセット。</p></>;
 }
 function groupedPlans(plans: Plan[], intervals: Record<string, string>, selected: string) {
   const groups = new Map<string, Plan[]>();

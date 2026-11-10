@@ -211,7 +211,7 @@ function createQueue(db, evaluator, options = {}) {
                 // returning frames, refund, expiry or downgrade. Native handoff
                 // is the cadence boundary; already routed workflow events keep
                 // their own schedules and live per-slot send quota checks.
-                if (cadence.updatedAtMs !== null || Number(delivery.slot_cost) > 1) {
+                if (cadence.planDriven || cadence.updatedAtMs !== null || Number(delivery.slot_cost) > 1) {
                     const windows = require('./native-notification-window');
                     nativeWindow = windows.readWindow(target, cadence, handoffAtMs);
                     const inWindow = windows.contains(nativeWindow, { id: delivery.id, cadence_due_at_ms: record.cadence_due_at_ms, next_attempt_at_ms: record.next_attempt_at_ms });
@@ -370,8 +370,8 @@ function createQueue(db, evaluator, options = {}) {
             await query('INSERT INTO automation_counters (counter_key,used_count,expires_at_ms) VALUES (?,0,?) ON DUPLICATE KEY UPDATE counter_key=VALUES(counter_key)', [priorityKey, Number.MAX_SAFE_INTEGER]);
             const turn = Number((await query('SELECT used_count FROM automation_counters WHERE counter_key=? FOR UPDATE', [priorityKey]))[0]?.used_count || 0) % 4;
             const square = require('./square-billing').getSquareScope();
-            const supporter = `u.is_donor=1${square.configured ? ' OR ds.active=1' : ''}`;
-            const priority = `COALESCE(p.priority,${square.configured ? 'sp.priority,' : ''}b.priority,IF(${supporter},1,0))`;
+            const supporter = `lc.id IS NULL AND (u.is_donor=1${square.configured ? ' OR ds.active=1' : ''})`;
+            const priority = `GREATEST(COALESCE(p.priority,${square.configured ? 'sp.priority,' : ''}b.priority,IF(${supporter},1,0)),COALESCE(lb.priority,0))`;
             const validPolicy = alias => `${alias}.slot_limit BETWEEN 1 AND 10000 AND ${alias}.minute_limit BETWEEN 1 AND 10000 AND ${alias}.day_limit BETWEEN 1 AND 1000000 AND ${alias}.priority BETWEEN 0 AND 100`;
             // Three priority turns, then an oldest-first turn. This durable
             // shared fair turn also serves lower nonzero priorities when an
@@ -379,6 +379,8 @@ function createQueue(db, evaluator, options = {}) {
             const rows = await query(`SELECT j.*,r.workflow_id,r.revision,r.target_kind,r.target_id,r.owner_user_id,r.guild_id,r.scope
                 FROM automation_jobs j JOIN automation_runs r ON r.id=j.run_id
                 LEFT JOIN users u ON u.user_id=r.owner_user_id
+                LEFT JOIN automation_legacy_donor_cutover lc ON lc.id=1
+                LEFT JOIN automation_legacy_donor_benefits lb ON lc.id=1 AND lb.owner_user_id=r.owner_user_id
                 LEFT JOIN automation_notification_entitlements e ON e.owner_user_id=r.owner_user_id AND (e.expires_at_ms IS NULL OR e.expires_at_ms>?)
                 LEFT JOIN automation_notification_plans p ON p.plan_id=e.plan_id AND p.enabled=1 AND p.plan_id NOT IN ('free','supporter') AND ${validPolicy('p')}
                 ${square.configured ? `LEFT JOIN automation_square_subscriptions ss ON ss.owner_user_id=r.owner_user_id AND ss.environment=? AND ss.merchant_id=? AND ss.verified=1 AND ss.state IN ('ACTIVE','CANCELED') AND ss.valid_until_at_ms>?

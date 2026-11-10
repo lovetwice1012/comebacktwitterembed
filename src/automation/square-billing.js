@@ -54,7 +54,10 @@ function config(env = readServerEnvironment()) {
 function getSquareScope(env) { const c = config(env); return { configured: c.configured, environment: c.environment, merchantId: c.merchantId || null }; }
 function bindingDto(row) { return { planId: row.plan_id, variationId: row.variation_id, enabled: Number(row.enabled) === 1,
     catalogName: row.catalog_name, cadence: row.cadence, amount: Number(row.amount), currency: row.currency, verifiedAtMs: Number(row.verified_at_ms) }; }
-function planDto(row, binding) { return { planId: row.plan_id, label: row.label, slotLimit: Number(row.slot_limit), minuteLimit: Number(row.minute_limit), dayLimit: Number(row.day_limit), priority: Number(row.priority), ...bindingDto(binding) }; }
+function planDto(row, binding) { return { planId: row.plan_id, label: row.label, slotLimit: Number(row.slot_limit), minuteLimit: Number(row.minute_limit), dayLimit: Number(row.day_limit), priority: Number(row.priority),
+    intervalMinutes: row.confirmation_interval_minutes == null ? null : Number(row.confirmation_interval_minutes),
+    specialSlotLimit: Number(row.special_slot_limit || 0), realtimeEnabled: Number(row.realtime_enabled) === 1,
+    xRolloutMode: ['public', 'supporters'].includes(process.env.X_NOTIFICATION_ROLLOUT) ? process.env.X_NOTIFICATION_ROLLOUT : 'disabled', ...bindingDto(binding) }; }
 function dateEnd(date, timezone) {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date || '')) return null;
     const base = Date.parse(`${date}T00:00:00Z`);
@@ -185,8 +188,8 @@ function createSquareBilling(db, options = {}) {
     async function getOptions(actor) {
         user(actor);
         if (!c.configured) return { configured: false, environment: c.environment, plans: [] };
-        const rows = await db.queryDatabase(`SELECT p.*,b.variation_id,b.catalog_name,b.cadence,b.amount,b.currency,b.verified_at_ms,b.enabled AS binding_enabled
-            FROM automation_notification_plans p JOIN automation_square_bindings b ON b.plan_id=p.plan_id
+        const rows = await db.queryDatabase(`SELECT p.*,c.special_slot_limit,c.realtime_enabled,b.variation_id,b.catalog_name,b.cadence,b.amount,b.currency,b.verified_at_ms,b.enabled AS binding_enabled
+            FROM automation_notification_plans p JOIN automation_square_bindings b ON b.plan_id=p.plan_id LEFT JOIN automation_push_plan_policy c ON c.plan_id=p.plan_id
             WHERE p.enabled=1 AND p.plan_id NOT IN ('free','supporter') AND b.enabled=1 AND b.environment=? AND b.merchant_id=? ORDER BY p.plan_id,b.cadence`, scope);
         return { configured: true, environment: c.environment, applicationId: c.applicationId, locationId: c.locationId, plans: rows.map(row => planDto(row, { ...row, enabled: row.binding_enabled })) };
     }
@@ -470,6 +473,8 @@ function createSquareBilling(db, options = {}) {
         await query(`UPDATE automation_square_subscriptions SET state=?,paid_through_at_ms=?,valid_until_at_ms=?,canceled_date=?,current_invoice_id=?,square_version=?,verified=1,updated_at_ms=?
             WHERE owner_user_id=? AND environment=? AND merchant_id=? AND subscription_id=? AND (square_version IS NULL OR square_version<=?)`,
         [subscription.status || 'UNKNOWN', paidThrough, validUntil, subscription.canceled_date || null, invoiceId, version, now(), row.owner_user_id, ...scope, row.subscription_id, version]);
+        if (Number(row.verified) !== 1 || row.state !== (subscription.status || 'UNKNOWN') || Number(row.valid_until_at_ms || 0) !== Number(validUntil || 0))
+            await require('./plan-interval').wakeOwnerSources(query, row.owner_user_id, now());
         await query('UPDATE automation_square_billing_reconciliation SET warning_subscription_id=NULL,warning_checkout_id=NULL,warning_code=NULL,warning_message=NULL WHERE owner_user_id=? AND environment=? AND merchant_id=?', [row.owner_user_id, ...scope]);
     }
     async function recordProrationFailure(query, row, snapshot, error) {
@@ -477,7 +482,10 @@ function createSquareBilling(db, options = {}) {
         const result = await query(`UPDATE automation_square_subscriptions SET state=?,paid_through_at_ms=NULL,valid_until_at_ms=NULL,canceled_date=?,current_invoice_id=?,square_version=?,verified=0,updated_at_ms=?
             WHERE owner_user_id=? AND environment=? AND merchant_id=? AND subscription_id=? AND checkout_id=? AND (square_version IS NULL OR square_version<=?)`,
         [subscription.status || 'UNKNOWN', subscription.canceled_date || null, candidate || null, version, now(), row.owner_user_id, ...scope, row.subscription_id, row.checkout_id, version]);
-        if (result.affectedRows) await query('UPDATE automation_square_billing_reconciliation SET warning_subscription_id=?,warning_checkout_id=?,warning_code=?,warning_message=? WHERE owner_user_id=? AND environment=? AND merchant_id=?', [row.subscription_id, row.checkout_id, error.code, error.message, row.owner_user_id, ...scope]);
+        if (result.affectedRows) {
+            await query('UPDATE automation_square_billing_reconciliation SET warning_subscription_id=?,warning_checkout_id=?,warning_code=?,warning_message=? WHERE owner_user_id=? AND environment=? AND merchant_id=?', [row.subscription_id, row.checkout_id, error.code, error.message, row.owner_user_id, ...scope]);
+            await require('./plan-interval').wakeOwnerSources(query, row.owner_user_id, now());
+        }
     }
     async function currentRefreshState(owner) {
         const row = (await db.queryDatabase('SELECT * FROM automation_square_billing_reconciliation WHERE owner_user_id=? AND environment=? AND merchant_id=?', [owner, ...scope]))[0];

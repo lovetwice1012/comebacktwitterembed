@@ -82,7 +82,7 @@ function createXMonitorQuota(db, options = {}) {
     }
     async function planFor(query, owner) { return entitlements.inspectXPlan(query, owner, now(), { useLegacyUserInterval: options.useLegacyUserInterval === true }); }
     async function supportFor(query, owner) { return grants.getSupporterHolding(query, owner, now()); }
-    async function isLegacyDonor(query, owner) { return Number((await query('SELECT is_donor FROM users WHERE user_id=?', [owner]))[0]?.is_donor) === 1; }
+    async function isLegacyDonor(query, owner) { return require('./legacy-donor-benefits').isLegacyDonor(query, owner); }
     async function choosePool(query, owner, plan, locked = true) {
         const shared = await pools(query, locked);
         if (shared.free.available > 0) return 'free';

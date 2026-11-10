@@ -328,7 +328,8 @@ async function claimDueSources(now, limit = 16, config = monitorConfig()) {
          EXISTS(SELECT 1 FROM ${TABLES.autoWatchTargets} t JOIN ${TABLES.users} u ON u.user_id=t.user_id
           WHERE t.source_id=s.id AND t.enabled=1 AND u.auto_watch_interval_minutes IS NOT NULL) AS has_user_interval,
          EXISTS(SELECT 1 FROM automation_notification_boost_slots b JOIN auto_watch_targets bt ON bt.id=b.target_id
-          WHERE b.target_kind='auto' AND bt.source_id=s.id AND bt.enabled=1) AS has_slot_boost
+          WHERE b.target_kind='auto' AND bt.source_id=s.id AND bt.enabled=1) AS has_slot_boost,
+         EXISTS(SELECT 1 FROM automation_legacy_donor_cutover WHERE id=1) AS plan_cadence_active
          FROM ${TABLES.autoWatchSources} s
          WHERE s.next_check_at_ms<=?
            AND s.lease_expires_at_ms<=?
@@ -338,7 +339,7 @@ async function claimDueSources(now, limit = 16, config = monitorConfig()) {
     );
     const claimed = [];
     for (const source of rows) {
-        if (Number(source.has_slot_boost)) Object.assign(source, await require('../../automation/monitor-cadence').sourceSchedule(db.queryDatabase, source, now));
+        if (Number(source.has_slot_boost) || Number(source.plan_cadence_active)) Object.assign(source, await require('../../automation/monitor-cadence').sourceSchedule(db.queryDatabase, source, now));
         const leaseToken = crypto.randomUUID();
         const result = await db.queryDatabase(
             `UPDATE ${TABLES.autoWatchSources}
@@ -359,11 +360,12 @@ async function currentPollInterval(query, sourceId, now) {
             EXISTS(SELECT 1 FROM auto_watch_targets t JOIN users u ON u.user_id=t.user_id
              WHERE t.source_id=s.id AND t.enabled=1 AND u.auto_watch_interval_minutes IS NOT NULL) AS has_user_interval,
             EXISTS(SELECT 1 FROM automation_notification_boost_slots b JOIN auto_watch_targets bt ON bt.id=b.target_id
-             WHERE b.target_kind='auto' AND bt.source_id=s.id AND bt.enabled=1) AS has_slot_boost
+             WHERE b.target_kind='auto' AND bt.source_id=s.id AND bt.enabled=1) AS has_slot_boost,
+            EXISTS(SELECT 1 FROM automation_legacy_donor_cutover WHERE id=1) AS plan_cadence_active
             FROM auto_watch_sources s WHERE s.id=?`, [sourceId]))[0];
     if (!schedule) return null;
     const counts = await activeSourceCounts();
-    if (Number(schedule.has_slot_boost)) Object.assign(schedule, await require('../../automation/monitor-cadence').sourceSchedule(query, schedule, now));
+    if (Number(schedule.has_slot_boost) || Number(schedule.plan_cadence_active)) Object.assign(schedule, await require('../../automation/monitor-cadence').sourceSchedule(query, schedule, now));
     return computedPollInterval(schedule, counts.get(schedule.provider_id) || 1);
 }
 
@@ -400,15 +402,24 @@ async function completeSource(source, result) {
         );
         if (Number(updated.affectedRows) !== 1) throw error('Automatic-watch source lease was lost.', 'AUTO_WATCH_LEASE_LOST');
         if (result.items?.length) await createItemsAndDeliveries(source, result.items, result.checkedAtMs);
-        const targets = await query(`SELECT t.id,t.next_poll_at_ms,t.user_id,
+        const targets = await query(`SELECT t.id,t.next_poll_at_ms,t.last_polled_at_ms,t.last_notification_window_at_ms,t.user_id,
             (SELECT slot_cost FROM automation_monitor_cadence c WHERE c.target_kind='auto' AND c.target_id=t.id AND c.owner_user_id=t.user_id) AS slot_cost,
             (SELECT COALESCE(u.auto_watch_interval_minutes*60000,(SELECT poll_interval_ms FROM auto_watch_sources WHERE id=t.source_id))
              FROM users u WHERE u.user_id=t.user_id) AS interval_ms
             FROM auto_watch_targets t
             WHERE t.source_id=? AND t.enabled=1 FOR UPDATE`, [source.id]);
         for (const target of targets) {
-            if (Number(target.slot_cost) > 1) target.interval_ms = (await require('../../automation/monitor-cadence').runtimeCadence(query, target.user_id, 'auto', String(target.id), Number(target.interval_ms), result.checkedAtMs)).intervalMs;
-            if (Number(target.next_poll_at_ms || 0) > result.checkedAtMs) continue;
+            const cadence = await require('../../automation/monitor-cadence').runtimeCadence(query, target.user_id, 'auto', String(target.id), Number(target.interval_ms), result.checkedAtMs);
+            target.interval_ms = cadence.intervalMs;
+            const due = cadence.planDriven && target.last_polled_at_ms != null ? Number(target.last_polled_at_ms) + cadence.intervalMs : Number(target.next_poll_at_ms || 0);
+            if (cadence.planDriven) await query(`UPDATE auto_watch_deliveries d JOIN auto_watch_items i ON i.id=d.item_id
+                SET d.next_attempt_at_ms=GREATEST(i.discovered_at_ms,?,?+?),d.cadence_due_at_ms=GREATEST(i.discovered_at_ms,?,?+?)
+                WHERE d.target_id=? AND d.status='pending' AND d.attempt_count=0 AND d.lease_expires_at_ms<=?`,
+            [due, Number(target.last_notification_window_at_ms || 0), cadence.intervalMs, due, Number(target.last_notification_window_at_ms || 0), cadence.intervalMs, target.id, result.checkedAtMs]);
+            if (due > result.checkedAtMs) {
+                if (cadence.planDriven && due !== Number(target.next_poll_at_ms)) await query('UPDATE auto_watch_targets SET next_poll_at_ms=? WHERE id=?', [due, target.id]);
+                continue;
+            }
             await query('UPDATE auto_watch_targets SET last_polled_at_ms=?,next_poll_at_ms=? WHERE id=?',
                 [result.checkedAtMs, result.checkedAtMs + Number(target.interval_ms), target.id]);
         }
@@ -568,7 +579,7 @@ async function cooldownProvider(providerId, untilMs) {
 
 async function createItemsAndDeliveries(source, items, now) {
     const targets = await db.queryDatabase(
-        `SELECT t.id,t.created_at_ms,t.baseline_at_ms,t.next_poll_at_ms,t.last_notification_window_at_ms,t.user_id,
+        `SELECT t.id,t.created_at_ms,t.baseline_at_ms,t.next_poll_at_ms,t.last_polled_at_ms,t.last_notification_window_at_ms,t.user_id,
             t.youtube_include_releases,t.youtube_include_community,t.youtube_releases_since_ms,t.youtube_community_since_ms,
             t.youtube_releases_baseline_at_ms,t.youtube_community_baseline_at_ms,
             (SELECT slot_cost FROM automation_monitor_cadence c WHERE c.target_kind='auto' AND c.target_id=t.id AND c.owner_user_id=t.user_id) AS slot_cost,
@@ -578,7 +589,11 @@ async function createItemsAndDeliveries(source, items, now) {
          WHERE t.source_id=? AND t.enabled=1 AND t.baseline_at_ms IS NOT NULL FOR UPDATE`,
         [source.id]
     );
-    for (const target of targets) if (Number(target.slot_cost) > 1) target.interval_ms = (await require('../../automation/monitor-cadence').runtimeCadence(db.queryDatabase, target.user_id, 'auto', String(target.id), Number(target.interval_ms), now)).intervalMs;
+    for (const target of targets) {
+        const cadence = await require('../../automation/monitor-cadence').runtimeCadence(db.queryDatabase, target.user_id, 'auto', String(target.id), Number(target.interval_ms), now);
+        target.interval_ms = cadence.intervalMs;
+        if (cadence.planDriven && target.last_polled_at_ms != null) target.next_poll_at_ms = Number(target.last_polled_at_ms) + cadence.intervalMs;
+    }
     let created = 0;
     for (const item of items) {
         const result = await db.queryDatabase(
@@ -639,16 +654,16 @@ async function claimDueDeliveries(now, limit = 32) {
     const claimed = [];
     for (const delivery of rows) {
         let cadenceClaim = null;
-        if (delivery.slot_cost != null) {
+        {
             const cadence = await require('../../automation/monitor-cadence').runtimeCadence(db.queryDatabase, delivery.destination_user_id, 'auto', String(delivery.target_id), Number(delivery.base_interval_ms), now);
             const anchor = Number(delivery.last_notification_window_at_ms || delivery.baseline_at_ms || 0);
             const windows = require('../../automation/native-notification-window');
             const inWindow = windows.contains(windows.readWindow(delivery, cadence, now), delivery);
             // Keep the legacy claim shape for internal consumers; authority is
             // the durable target receipt, rechecked under its lock at handoff.
-            cadenceClaim = { updatedAtMs: cadence.updatedAtMs, effectiveSlotCost: cadence.effectiveSlotCost, intervalMs: cadence.intervalMs, baseIntervalMs: cadence.baseIntervalMs, anchorAtMs: anchor };
+            if (delivery.slot_cost != null || cadence.planDriven) cadenceClaim = { updatedAtMs: cadence.updatedAtMs, effectiveSlotCost: cadence.effectiveSlotCost, intervalMs: cadence.intervalMs, baseIntervalMs: cadence.baseIntervalMs, anchorAtMs: anchor };
             const due = Math.max(Number(delivery.next_attempt_at_ms), !inWindow && anchor ? anchor + cadence.intervalMs : 0);
-            if (due > now) {
+            if ((delivery.slot_cost != null || cadence.planDriven) && due > now) {
                 await db.queryDatabase("UPDATE auto_watch_deliveries SET next_attempt_at_ms=? WHERE id=? AND status='pending' AND lease_expires_at_ms<=?", [due, delivery.id, now]);
                 continue;
             }

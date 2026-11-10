@@ -52,7 +52,13 @@ for(const kind of ['coupon','plan']) for(const oldRead of ['success','failure'])
   assert.doesNotMatch(article.textContent,/ほかの管理者による変更があります|old list failed/);
   await f.fill(field(article,label),kind==='coupon'?'30':'Second committed plan');await submit(f,article);await click(f,article,confirm);await wait(f);
   assert.equal(writes.length,2);assert.equal(writes[1].expectedUpdatedAtMs,baseline);
-  const rows=kind==='coupon'?await db.queryDatabase("SELECT discount_value FROM automation_square_coupons WHERE code='WELCOME'"):await db.queryDatabase("SELECT label FROM automation_notification_plans WHERE plan_id='paid_saved'");
+  let rows;
+  for(let attempt=0;attempt<100;attempt++){
+   rows=kind==='coupon'?await db.queryDatabase("SELECT discount_value FROM automation_square_coupons WHERE code='WELCOME'"):await db.queryDatabase("SELECT label FROM automation_notification_plans WHERE plan_id='paid_saved'");
+   if((kind==='coupon'?Number(rows[0].discount_value):rows[0].label)===(kind==='coupon'?30:'Second committed plan'))break;
+   await wait(f);
+  }
+  await wait(f);
   assert.equal(kind==='coupon'?Number(rows[0].discount_value):rows[0].label,kind==='coupon'?30:'Second committed plan');
  }finally{if(f)await f.close();await db.close();}
 });

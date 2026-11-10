@@ -14,6 +14,7 @@ async function run({ tier = 'free', used = 0, limit = 5, locale = 'ja', manualDo
     const slots = Array.from({ length: used }, (_, i) => ({ slot_index: i + 1, target_kind: i % 2 ? 'price' : 'auto', target_id: String(i + 1) }));
     const queryDatabase = async (sql, params) => {
         calls.push({ sql, params });
+        if (sql.includes('LEFT JOIN automation_legacy_donor_cutover')) return [{ cutover_id: null }];
         if (sql.startsWith('SELECT is_donor,additional_auto_extract_slots')) return ownRow ? [{ is_donor: manualDonor ? 1 : 0, additional_auto_extract_slots: 0 }] : [];
         if (sql.includes('FROM automation_notification_entitlements e')) return tier === 'paid' ? [policy] : [];
         if (sql.includes('FROM automation_square_subscriptions s')) return [];
