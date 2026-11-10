@@ -535,7 +535,7 @@ async function main() {
             if (browser.exitCode === null) await new Promise(resolve => browser.once('exit', resolve));
             const store = new ClassicLevel(path.join(profile, 'Default', 'EdgePushStorageWithConnectTokenAndKey'),
                 { createIfMissing: false, keyEncoding: 'buffer', valueEncoding: 'buffer' });
-            let firstRecord, otherRecord; const unknownRecords = [];
+            let firstRecord, otherRecord, syntheticDeviceRecord; const unknownRecords = [];
             const counts = { device: 0, target: 0, other: 0, unknown: 0 };
             try {
                 await store.open();
@@ -544,7 +544,9 @@ async function main() {
                         && stored.includes(Buffer.from(subscription.keys.p256dh, 'base64url')) && stored.includes(Buffer.from(subscription.keys.auth, 'base64url'));
                     if (belongs(origin, value.subscription)) { if (firstRecord) throw new Error('PROBE_SUBSCRIPTION_AMBIGUOUS'); firstRecord = Buffer.from(stored); }
                     if (belongs(otherOrigin, otherSubscription)) { if (otherRecord) throw new Error('PROBE_SUBSCRIPTION_AMBIGUOUS'); otherRecord = Buffer.from(stored); }
-                    if (_key.toString('utf8').toLowerCase().includes('device')) counts.device++;
+                    if (_key.toString('utf8').toLowerCase().includes('device')) {
+                        counts.device++; if (process.env.EDGE_PROBE_ENUMERATE === '1') syntheticDeviceRecord = Buffer.from(stored);
+                    }
                     else if (belongs(origin, value.subscription)) counts.target++;
                     else if (belongs(otherOrigin, otherSubscription)) counts.other++;
                     else {
@@ -586,6 +588,10 @@ async function main() {
                             if (require('../../src/automation/edge-wns-record').countOtherSiteRecords([otherRecord, rewritten]) !== 1)
                                 throw new Error('PROBE_X_SELECTOR_MISMATCH');
                             if (process.env.EDGE_PROBE_ENUMERATE === '1') {
+                                const partitioned = require('../../src/automation/edge-wns-record').partitionStoreRecords([syntheticDeviceRecord, rewritten, otherRecord, ...unknownRecords]);
+                                counts.partitionedSites = partitioned.siteRecords.length;
+                                counts.partitionedUnknown = partitioned.unknownCount;
+                                if (counts.partitionedSites !== 2 || counts.partitionedUnknown !== unknownRecords.length) throw new Error('PROBE_X_SELECTOR_MISMATCH');
                                 counts.unknownWithSiteOrigin = 0;
                                 counts.unknownMatchingSiteInteger = 0;
                                 for (const candidate of unknownRecords) {
@@ -617,7 +623,7 @@ async function main() {
                     finally { plaintext.fill(0); }
                     if (!routingResult.targetDecrypted) throw new Error('PROBE_TWO_SITE_DECRYPT_FAILED');
                 } finally { for (const name of ['channel', 'publicKey', 'auth', 'privateKey', 'applicationServerKey']) selected[name].fill(0); }
-            } finally { firstRecord?.fill(0); otherRecord?.fill(0); for (const item of unknownRecords) item.fill(0); await store.close().catch(() => {}); }
+            } finally { firstRecord?.fill(0); otherRecord?.fill(0); syntheticDeviceRecord?.fill(0); for (const item of unknownRecords) item.fill(0); await store.close().catch(() => {}); }
         }
         await wait(1000);
         if (value.ok && process.env.EDGE_PROBE_KEEP_SOCKET === '1') {

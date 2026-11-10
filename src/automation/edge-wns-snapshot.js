@@ -2,7 +2,7 @@
 
 // Pure converter for an already isolated Edge snapshot. It does not read a
 // profile, launch a browser, create a file, or transmit any data.
-const { selectXRecord, selectDeviceRecord, countOtherSiteRecords, clearRecord } = require('./edge-wns-record');
+const { selectXRecord, selectDeviceRecord, countOtherSiteRecords, partitionStoreRecords, clearRecord } = require('./edge-wns-record');
 const { normalizeEdgeTransfer } = require('./edge-wns-transfer');
 const invalid = () => Object.assign(new Error('X_EDGE_WNS_SNAPSHOT_INVALID'), { code: 'X_EDGE_WNS_SNAPSHOT_INVALID' });
 async function buildEdgeTransfer({ siteRecords, deviceRecord, expected, browserVersion, agent, client }) {
@@ -23,4 +23,12 @@ async function buildEdgeTransfer({ siteRecords, deviceRecord, expected, browserV
     } catch { throw invalid(); }
     finally { clearRecord(selected); device?.deviceKey.fill(0); device?.reconnectToken.fill(0); }
 }
-module.exports = { buildEdgeTransfer };
+async function buildEdgeTransferFromStore({ records, expected, browserVersion, agent, client }) {
+    try {
+        const { siteRecords, deviceRecord, unknownCount } = partitionStoreRecords(records);
+        const result = await buildEdgeTransfer({ siteRecords, deviceRecord, expected, browserVersion, agent, client });
+        return { ...result, unclassifiedRecordCount: unknownCount,
+            otherNotificationsPossible: result.otherSubscriptionCount > 0 || unknownCount > 0 };
+    } catch { throw invalid(); }
+}
+module.exports = { buildEdgeTransfer, buildEdgeTransferFromStore };

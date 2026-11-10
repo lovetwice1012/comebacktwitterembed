@@ -87,6 +87,48 @@ function countOtherSiteRecords(records) {
         return otherCount;
     } catch { throw fail(); }
 }
+// For a complete bounded store enumeration, preserve uncertainty explicitly.
+// Unknown records may refer to other sites and must trigger the same consent
+// warning as a confirmed foreign subscription, not block export by themselves.
+function partitionStoreRecords(records) {
+    if (!Array.isArray(records) || !records.length || records.length > 128
+        || records.some(raw => !Buffer.isBuffer(raw) || raw.length > 65536)) throw fail();
+    let deviceRecord, unknownCount = 0; const siteRecords = [];
+    try {
+        for (const raw of records) {
+            let device;
+            try { device = selectDeviceRecord(raw); } catch { /* It is not a complete device record. */ }
+            if (device) {
+                device.deviceKey.fill(0); device.reconnectToken.fill(0);
+                if (deviceRecord) throw fail();
+                deviceRecord = raw; continue;
+            }
+            let isSite = false;
+            try {
+                const origins = [];
+                for (const item of fields(raw).filter(field => field.number === 8)) {
+                    if (item.wire !== 2) throw fail();
+                    const pair = fields(item.value), name = text(one(pair, 1, 2));
+                    if (name === 'origin') origins.push(text(one(pair, 2, 2)));
+                }
+                if (origins.length > 1) throw fail();
+                if (origins.length === 1) {
+                    if (!origins[0] || origins[0].length > 4096 || /[\u0000-\u001f\u007f]/.test(origins[0])) throw fail(); // eslint-disable-line no-control-regex
+                    isSite = true;
+                }
+            } catch { if (raw.includes(Buffer.from(SCOPE))) throw fail(); }
+            if (isSite) siteRecords.push(raw);
+            else {
+                // An X-bearing record that cannot be classified may be a
+                // damaged or duplicate subscription; do not silently skip it.
+                if (raw.includes(Buffer.from(SCOPE))) throw fail();
+                unknownCount++;
+            }
+        }
+        if (!deviceRecord || !siteRecords.length) throw fail();
+        return { deviceRecord, siteRecords, unknownCount };
+    } catch { throw fail(); }
+}
 // Parse only an already-selected device record. Profile discovery, snapshot
 // creation and identifying the unique device key belong to the caller.
 function selectDeviceRecord(raw) {
@@ -141,4 +183,4 @@ function selectXRecord(records, expected) {
         return selected;
     } catch { clearRecord(selected); throw fail(); }
 }
-module.exports = { selectXRecord, selectDeviceRecord, countOtherSiteRecords, clearRecord };
+module.exports = { selectXRecord, selectDeviceRecord, countOtherSiteRecords, partitionStoreRecords, clearRecord };

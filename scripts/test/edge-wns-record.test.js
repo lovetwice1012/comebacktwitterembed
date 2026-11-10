@@ -2,8 +2,8 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { generateKeyPairSync, randomBytes } = require('node:crypto');
-const { selectXRecord, selectDeviceRecord, countOtherSiteRecords, clearRecord } = require('../../src/automation/edge-wns-record');
-const { buildEdgeTransfer } = require('../../src/automation/edge-wns-snapshot');
+const { selectXRecord, selectDeviceRecord, countOtherSiteRecords, partitionStoreRecords, clearRecord } = require('../../src/automation/edge-wns-record');
+const { buildEdgeTransfer, buildEdgeTransferFromStore } = require('../../src/automation/edge-wns-snapshot');
 function varint(number) { const out = []; do { let byte = number % 128; number = Math.floor(number / 128); if (number) byte |= 128; out.push(byte); } while (number); return Buffer.from(out); }
 function bytes(field, value) { const data = Buffer.isBuffer(value) ? value : Buffer.from(value); return Buffer.concat([varint(field * 8 + 2), varint(data.length), data]); }
 function metadata(scope) { return bytes(8, Buffer.concat([bytes(1, 'origin'), bytes(2, scope)])); }
@@ -76,4 +76,20 @@ test('reports foreign subscription count and refuses records that cannot be clas
     assert.equal(countOtherSiteRecords([x.record]), 0); assert.equal(countOtherSiteRecords([other.record, x.record, other.record]), 2);
     for (const records of [[], [other.record], [x.record, x.record], [x.record, Buffer.from([0])],
         [x.record, Buffer.concat([other.record, metadata('https://other.example/')])]]) invalid(() => countOtherSiteRecords(records));
+});
+test('whole-store export reports confirmed and uncertain foreign records without exposing their contents', async () => {
+    const x = fixture(), other = fixture('https://other.example/'), device = Buffer.concat([bytes(2, 'synthetic-token'), bytes(3, randomBytes(32).toString('base64'))]);
+    const input = { records: [device, other.record, x.record, Buffer.alloc(8)], expected: x.expected, browserVersion: '157.0.0.1',
+        agent: { os: 'Windows', osVersion: '1', architecture: 'x64', locale: 'en' },
+        client: { channel: 'abc', protocolVersion: '1.0', clientName: 'Synthetic', clientVersion: '1.2.3.4' } };
+    const result = await buildEdgeTransferFromStore(input);
+    assert.equal(result.otherSubscriptionCount, 1); assert.equal(result.unclassifiedRecordCount, 1); assert.equal(result.otherNotificationsPossible, true);
+    assert(!JSON.stringify(result).includes('other.example'));
+    const clean = await buildEdgeTransferFromStore({ ...input, records: [device, x.record] });
+    assert.equal(clean.unclassifiedRecordCount, 0); assert.equal(clean.otherNotificationsPossible, false);
+    const uncertain = await buildEdgeTransferFromStore({ ...input, records: [device, x.record, Buffer.alloc(8)] });
+    assert.equal(uncertain.otherSubscriptionCount, 0); assert.equal(uncertain.otherNotificationsPossible, true);
+    invalid(() => partitionStoreRecords([device, device, x.record]));
+    invalid(() => partitionStoreRecords([device, x.record, Buffer.concat([Buffer.from('https://x.com/'), Buffer.from([0x80])])]));
+    await assert.rejects(buildEdgeTransferFromStore({ ...input, records: [device, x.record, x.record] }), { code: 'X_EDGE_WNS_SNAPSHOT_INVALID' });
 });
