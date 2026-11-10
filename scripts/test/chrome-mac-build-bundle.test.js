@@ -7,12 +7,20 @@ const path = require('node:path');
 const { createHash } = require('node:crypto');
 const { spawnSync } = require('node:child_process');
 const { buildMacChromeBundle, LEVELDB_SHA256 } = require('../build-mac-chrome-setup-bundle.cjs');
+const { isUniversalMacAddon } = require('../lib/mac-macho.cjs');
 
 test('Mac application bundle is self-contained and pins the universal LevelDB addon', async t => {
     const bundle = await buildMacChromeBundle();
     assert.deepEqual(Object.keys(bundle).sort(), ['MacDependencies-LICENSE.txt', 'MacLevelDB.node', 'MacSetup.cjs']);
     assert.equal(createHash('sha256').update(bundle['MacLevelDB.node']).digest('hex'), LEVELDB_SHA256);
     assert.equal(bundle['MacLevelDB.node'].readUInt32BE(0), 0xcafebabe);
+    assert(isUniversalMacAddon(bundle['MacLevelDB.node']));
+    const missingArch = Buffer.from(bundle['MacLevelDB.node']); missingArch.writeUInt32BE(1, 4);
+    assert.equal(isUniversalMacAddon(missingArch), false);
+    const overlap = Buffer.from(bundle['MacLevelDB.node']); overlap.writeUInt32BE(overlap.readUInt32BE(16), 36);
+    assert.equal(isUniversalMacAddon(overlap), false);
+    const wrongCpu = Buffer.from(bundle['MacLevelDB.node']); wrongCpu.writeUInt32BE(0, 8);
+    assert.equal(isUniversalMacAddon(wrongCpu), false);
     assert(bundle['MacDependencies-LICENSE.txt'].toString('utf8').includes('classic-level'));
     const parent = await fs.realpath(os.tmpdir()), temp = await fs.mkdtemp(path.join(parent, 'cbte-mac-bundle-test-'));
     t.after(async () => {

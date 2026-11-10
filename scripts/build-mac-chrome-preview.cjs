@@ -7,6 +7,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const { zipSync } = require('fflate');
 const { buildMacChromeBundle } = require('./build-mac-chrome-setup-bundle.cjs');
+const { isMacExecutable: isMachOExecutable } = require('./lib/mac-macho.cjs');
 const VERSION = '0.1.0-mac-preview.1';
 const RUNTIME_HASH = Object.freeze({ arm64: 'e4b5a3af0e05c75de2eae013904145f40fe7fc2a6e6f17510128bf45cca4e79b',
     x64: '7abcf39bd37ab251015337ff75304d7555f0d8e88c6e0fbf04bce8ce34636f49' });
@@ -16,28 +17,6 @@ const hash = data => createHash('sha256').update(data).digest('hex');
 const LAUNCH = `#!/bin/sh\nset -eu\nunset NODE_OPTIONS NODE_PATH NODE_EXTRA_CA_CERTS NODE_TLS_REJECT_UNAUTHORIZED DYLD_INSERT_LIBRARIES\ncase "$0" in */*) APP_DIRECTORY=\u0024{0%/*} ;; *) exit 1 ;; esac\nAPP_DIRECTORY=$(CDPATH= cd -P "$APP_DIRECTORY" && pwd -P)\nexec "$APP_DIRECTORY/MacNode" "$APP_DIRECTORY/MacSetup.cjs"\n`;
 const PLIST = `<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n<plist version="1.0"><dict>\n<key>CFBundleDisplayName</key><string>X通知の準備</string>\n<key>CFBundleName</key><string>X通知の準備</string>\n<key>CFBundleIdentifier</key><string>jp.cbte.xnotification.setup</string>\n<key>CFBundleExecutable</key><string>Launch</string>\n<key>CFBundlePackageType</key><string>APPL</string>\n<key>CFBundleShortVersionString</key><string>0.1.0</string>\n<key>CFBundleVersion</key><string>1</string>\n<key>LSMinimumSystemVersion</key><string>13.5</string>\n</dict></plist>\n`;
 
-function isMachOExecutable(bytes, arch) {
-    if (!['arm64', 'x64'].includes(arch) || !Buffer.isBuffer(bytes) || bytes.length < 32 || bytes.readUInt32LE(0) !== 0xfeedfacf
-        || bytes.readUInt32LE(4) !== (arch === 'arm64' ? 0x0100000c : 0x01000007) || bytes.readUInt32LE(12) !== 2) return false;
-    const count = bytes.readUInt32LE(16), length = bytes.readUInt32LE(20), end = 32 + length;
-    if (!count || count > 4096 || length > 4 * 1024 * 1024 || end > bytes.length) return false;
-    let offset = 32, minVersion = null;
-    for (let i = 0; i < count; i++) {
-        if (offset + 8 > end) return false;
-        const command = bytes.readUInt32LE(offset), size = bytes.readUInt32LE(offset + 4);
-        if (size < 8 || offset + size > end) return false;
-        if (command === 0x32) { // LC_BUILD_VERSION
-            if (size < 24 || bytes.readUInt32LE(offset + 8) !== 1 || minVersion !== null) return false;
-            minVersion = bytes.readUInt32LE(offset + 12);
-        } else if (command === 0x24) { // LC_VERSION_MIN_MACOSX
-            if (size < 16 || minVersion !== null) return false;
-            minVersion = bytes.readUInt32LE(offset + 8);
-        }
-        offset += size;
-    }
-    // Do not build an app that advertises support older than either binary.
-    return offset === end && minVersion !== null && minVersion > 0 && minVersion <= 0x000d0500;
-}
 // Pure layout helper; the public preview builder verifies all executable inputs
 // before calling it. It is not a signing or release operation.
 function assembleMacApp({ bundle, runtime, helper, license }) {

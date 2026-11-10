@@ -6,6 +6,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const { createHash } = require('node:crypto');
 const esbuild = require('esbuild');
+const { isUniversalMacAddon } = require('./lib/mac-macho.cjs');
 const root = path.resolve(__dirname, '..');
 const LEVELDB_SHA256 = 'e311fd4aadf58e151dcb19b0144fbbb468ef08fb73d77bca806e7320725ef26c';
 
@@ -26,7 +27,7 @@ async function buildMacChromeBundle() {
     const pkg = JSON.parse(await fs.readFile(pkgPath, 'utf8'));
     if (pkg.version !== '3.0.0') throw new Error('Unexpected LevelDB version');
     const addon = await fs.readFile(path.join(path.dirname(pkgPath), 'prebuilds', 'darwin-x64+arm64', 'classic-level.node'));
-    if (!addon.length || addon.length > 4 * 1024 * 1024 || addon.readUInt32BE(0) !== 0xcafebabe
+    if (!addon.length || addon.length > 4 * 1024 * 1024 || !isUniversalMacAddon(addon)
         || createHash('sha256').update(addon).digest('hex') !== LEVELDB_SHA256) throw new Error('Mac LevelDB addon verification failed');
     const dependencyRoots = new Set([path.dirname(pkgPath)]);
     for (const input of Object.keys(result.metafile.inputs)) {
