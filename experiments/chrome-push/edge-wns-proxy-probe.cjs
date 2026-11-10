@@ -9,7 +9,7 @@ const http = require('node:http');
 const https = require('node:https');
 const tls = require('node:tls');
 const { spawn, spawnSync } = require('node:child_process');
-const { createHmac, createHash, createCipheriv, createPrivateKey, generateKeyPairSync, randomInt } = require('node:crypto');
+const { createHmac, createHash, createCipheriv, createPrivateKey, generateKeyPairSync, randomInt, X509Certificate } = require('node:crypto');
 const { pathToFileURL } = require('node:url');
 const webpush = require('web-push');
 const CDP = require('chrome-remote-interface');
@@ -88,7 +88,9 @@ async function main() {
     const testIndependent = process.env.EDGE_PROBE_INDEPENDENT_RECONNECT === '1';
     const testTwoSites = process.env.EDGE_PROBE_TWO_SITES === '1';
     const testXSelector = process.env.EDGE_PROBE_X_SELECTOR === '1';
+    const testTlsIsolation = process.env.EDGE_PROBE_TLS_ISOLATION === '1';
     if (testXSelector && (!testTwoSites || process.env.NODE_ENV !== 'test')) throw new Error('PROBE_MODE_INVALID');
+    if (testTlsIsolation && (noRelay || process.env.NODE_ENV !== 'test')) throw new Error('PROBE_MODE_INVALID');
     const testOffline = process.env.EDGE_PROBE_OFFLINE === '1';
     const testDurable = process.env.EDGE_PROBE_DURABLE === '1';
     const testDurableFailure = process.env.EDGE_PROBE_DURABLE_FAIL_INSERT === '1';
@@ -117,7 +119,7 @@ async function main() {
     if (testProcessCrash && (!testDurable || testDurableFailure)) throw new Error('PROBE_MODE_INVALID');
     if (testTokenState && !testProcessCrash) throw new Error('PROBE_MODE_INVALID');
     const temp = await fs.realpath(os.tmpdir()), root = await fs.mkdtemp(path.join(temp, 'cbte-edge-wns-probe-'));
-    let browser, cdp, pageServer, relay, durableDb, browserReceived = false, copiedProfileResult = null, detachedConnectionResult = null, independentResult = null, durableResult = null, routingResult = null, handshakeShape = null, handshakeRelations = null, relationDeviceRecord = null, relationSiteRecord = null, independentWebPush = null, independentChannel = null, productConstants = null, capturedCipherDecrypted = null, appServerKeyMatches = null, deviceFields, expectedCipher, otherCipher, expectedNextCipher, otherNextCipher; const sockets = new Set(), events = [];
+    let browser, cdp, pageServer, relay, untrustedServer, durableDb, browserReceived = false, copiedProfileResult = null, detachedConnectionResult = null, independentResult = null, durableResult = null, routingResult = null, handshakeShape = null, handshakeRelations = null, relationDeviceRecord = null, relationSiteRecord = null, independentWebPush = null, independentChannel = null, productConstants = null, capturedCipherDecrypted = null, appServerKeyMatches = null, deviceFields, expectedCipher, otherCipher, expectedNextCipher, otherNextCipher, tlsIsolationVerified = false; const sockets = new Set(), events = [];
     const browserEvents = { initial: 0, second: 0, third: 0, fourth: 0, copy: 0, other: 0 };
     let probeStage = 'setup', previousServerNonce = null;
     try {
@@ -125,6 +127,15 @@ async function main() {
         const cert = spawnSync('python', ['-c', python], { encoding: 'utf8', windowsHide: true, timeout: 10000 });
         if (cert.status !== 0) throw new Error('PROBE_CERT_FAILED');
         const tlsConfig = JSON.parse(cert.stdout);
+        const relaySpki = createHash('sha256').update(new X509Certificate(tlsConfig.cert).publicKey.export({ type: 'spki', format: 'der' })).digest('base64');
+        if (testTlsIsolation) {
+            const otherCert = spawnSync('python', ['-c', python], { encoding: 'utf8', windowsHide: true, timeout: 10000 });
+            if (otherCert.status !== 0) throw new Error('PROBE_CERT_FAILED');
+            let unexpectedRequests = 0;
+            untrustedServer = https.createServer(JSON.parse(otherCert.stdout), (_req, res) => { unexpectedRequests++; res.end('synthetic'); });
+            untrustedServer.unexpectedRequests = () => unexpectedRequests;
+            await new Promise(resolve => untrustedServer.listen(0, '127.0.0.1', resolve));
+        }
         relay = tls.createServer({ ...tlsConfig, ALPNProtocols: ['h2', 'http/1.1'] }, incoming => {
             incoming.pause();
             sockets.add(incoming); incoming.once('close', () => sockets.delete(incoming));
@@ -448,7 +459,9 @@ async function main() {
         });
         await new Promise(resolve => pageServer.listen(0, '127.0.0.1', resolve));
         const origin = `http://127.0.0.1:${pageServer.address().port}`, profile = path.join(root, 'profile');
-        const endpointArgs = noRelay ? [] : ['--ignore-certificate-errors', `--edge-wns-push-server-url=https://127.0.0.1:${relay.address().port}`];
+        // Trust only this ephemeral relay key. Ordinary X HTTPS connections
+        // retain normal certificate verification in the dedicated profile.
+        const endpointArgs = noRelay ? [] : [`--ignore-certificate-errors-spki-list=${relaySpki}`, `--edge-wns-push-server-url=https://127.0.0.1:${relay.address().port}`];
         browser = spawn(edge, ['--headless=new', '--remote-debugging-port=0', `--user-data-dir=${profile}`, ...featureArgs,
             ...endpointArgs,
             '--no-first-run', '--no-default-browser-check', '--disable-sync', 'about:blank'], { windowsHide: true, stdio: 'ignore' });
@@ -459,7 +472,14 @@ async function main() {
         }
         if (!port) throw new Error('PROBE_BROWSER_TIMEOUT');
         cdp = await CDP({ port }); await cdp.Browser.grantPermissions({ origin, permissions: ['notifications'] });
-        await cdp.Page.enable(); const loaded = new Promise(resolve => cdp.Page.loadEventFired(resolve));
+        await cdp.Page.enable();
+        if (testTlsIsolation) {
+            const rejected = await cdp.Page.navigate({ url: `https://127.0.0.1:${untrustedServer.address().port}/` });
+            await wait(300);
+            if (!/^net::ERR_CERT_/.test(rejected.errorText || '') || untrustedServer.unexpectedRequests() !== 0) throw new Error('PROBE_TLS_ISOLATION_FAILED');
+            tlsIsolationVerified = true;
+        }
+        const loaded = new Promise(resolve => cdp.Page.loadEventFired(resolve));
         await cdp.Page.navigate({ url: origin }); await loaded;
         let timer;
         const result = await Promise.race([cdp.Runtime.evaluate({ awaitPromise: true, returnByValue: true, expression: `(async()=>{
@@ -851,7 +871,7 @@ async function main() {
                         publicKey: independentWebPush.publicKey.toString('base64'), privateKey: independentWebPush.privateKey.toString('base64'),
                         auth: independentWebPush.auth.toString('base64'), subscription: value.subscription, otherSubscription, vapid, clientMetadata,
                         ...(testTokenState ? { stateEnabled: true, statePrivateKey } : {}) };
-                    let firstWorker, successorWorker;
+                    let firstWorker, successorWorker, processFailure;
                     try {
                         firstWorker = startSyntheticWorker({ ...input, worker: 'first' });
                         const committed = await firstWorker.wait('committed');
@@ -879,10 +899,13 @@ async function main() {
                         durableResult = { realWnsCipherCommitted: true, separateWorkerProcesses: true, actualLeaseExpiry: true,
                             staleLeaseRejected: true, successorDecrypted: true, foreignPersisted: false, inboxCount: recovered.inboxCount, jobCount: recovered.jobCount,
                             tokenStateSaved: testTokenState, successorReconnected: recovered.reconnected, tokenGeneration: recovered.stateGeneration };
-                    } finally {
-                        const cleanup = await Promise.allSettled([firstWorker, successorWorker].filter(Boolean).map(worker => worker.cleanup()));
-                        if (cleanup.some(result => result.status === 'rejected')) throw new Error('PROBE_WORKER_CLEANUP_FAILED');
+                    } catch (error) { processFailure = error; }
+                    const cleanup = await Promise.allSettled([firstWorker, successorWorker].filter(Boolean).map(worker => worker.cleanup()));
+                    if (cleanup.some(result => result.status === 'rejected')) {
+                        if (processFailure) process.stderr.write('PROBE_WORKER_CLEANUP_FAILED\n');
+                        else processFailure = new Error('PROBE_WORKER_CLEANUP_FAILED');
                     }
+                    if (processFailure) throw processFailure;
                 } else {
                 const label = testDurable ? JSON.stringify({ notificationType: 'tweet', author: { id: '12345', handle: 'synthetic' },
                     url: 'https://x.com/synthetic/status/1234567890123456789', text: 'synthetic-durable-event' }) : 'synthetic-independent-first';
@@ -949,8 +972,11 @@ async function main() {
                 }
             } finally { rotatedToken?.fill(0); firstCipher?.fill(0); offlineCipher?.fill(0); durableCipher?.fill(0); key.fill(0); if (frames) for (const frame of Object.values(frames)) frame.fill(0); }
         }
-        const shapes = events.map(event => { const { describe, fixtureCipher, fixtureLayout, fixtureBindResponses, fixtureSentFrames, fixtureRelations, fixtureRouting, fixtureRecipient, fixtureChannelStability, fixtureAcknowledgementAnalysis, upstreamOpen, containsFixtureCipher, acknowledgeSyntheticSecond, closeFixtureConnection, ...metadata } = event;
-            return { ...metadata, fixtureLayout: fixtureLayout(), bindResponses: fixtureBindResponses(), acknowledgementAnalysis: fixtureAcknowledgementAnalysis(), shape: describe() }; });
+        const shapes = events.map(event => ({ clientAlpn: event.clientAlpn, upstreamAlpn: event.upstreamAlpn,
+            sentChunks: event.sentChunks, receivedChunks: event.receivedChunks, sentBytes: event.sentBytes, receivedBytes: event.receivedBytes,
+            firstSend: event.firstSend, ...(event.signatureRewritten === undefined ? {} : { signatureRewritten: event.signatureRewritten }),
+            fixtureLayout: event.fixtureLayout(), bindResponses: event.fixtureBindResponses(),
+            acknowledgementAnalysis: event.fixtureAcknowledgementAnalysis(), shape: event.describe() }));
         if (deviceFields) for (const value of Object.values(deviceFields)) value.fill(0);
         const builtInStorePresent = await fs.stat(path.join(profile, 'Default', 'EdgePushStorageWithConnectTokenAndKey')).then(() => true, error => {
             if (error.code === 'ENOENT') return false; throw error;
@@ -959,7 +985,7 @@ async function main() {
             if (!testIndependent || typeof process.send !== 'function') throw new Error('PROBE_MODE_INVALID');
             await new Promise((resolve, reject) => process.send({ independentResult }, error => error ? reject(new Error('PROBE_IPC_FAILED')) : resolve()));
         }
-        console.log(JSON.stringify({ syntheticProfile: true, testWrongKey, testRewrite, testIndependent, testTwoSites, testDurable, winrtFeatureOverride: featureArgs.length > 0, endpointOverride: !noRelay, builtInStorePresent, relayConnections: events.length, events: shapes, initialNotificationReceived: browserEvents.initial > 0, browserReceived, copiedProfileResult, detachedConnectionResult, independentResult, durableResult, routingResult, handshakeShape, handshakeRelations, capturedCipherDecrypted, appServerKeyMatches,
+        console.log(JSON.stringify({ syntheticProfile: true, testWrongKey, testRewrite, testIndependent, testTwoSites, testDurable, tlsIsolationVerified, winrtFeatureOverride: featureArgs.length > 0, endpointOverride: !noRelay, builtInStorePresent, relayConnections: events.length, events: shapes, initialNotificationReceived: browserEvents.initial > 0, browserReceived, copiedProfileResult, detachedConnectionResult, independentResult, durableResult, routingResult, handshakeShape, handshakeRelations, capturedCipherDecrypted, appServerKeyMatches,
             subscription: value.ok ? { ok: true, host: new URL(value.subscription.endpoint).hostname } : value }));
     } catch (error) {
         console.error('PROBE_STAGE', probeStage, /^PROBE_[A-Z_]+$/.test(error?.message || '') ? error.message : error?.name || 'Error');
@@ -975,6 +1001,7 @@ async function main() {
         if (browser && browser.exitCode === null) { browser.kill(); await new Promise(resolve => browser.once('exit', resolve)); }
         for (const socket of sockets) socket.destroy();
         if (relay) await new Promise(resolve => relay.close(resolve));
+        if (untrustedServer) await new Promise(resolve => untrustedServer.close(resolve));
         if (pageServer) await new Promise(resolve => pageServer.close(resolve));
         const actual = await fs.realpath(root), stat = await fs.lstat(root);
         if (stat.isSymbolicLink() || path.dirname(actual).toLowerCase() !== temp.toLowerCase()

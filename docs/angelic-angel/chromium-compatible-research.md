@@ -75,6 +75,8 @@ Edge の使い捨てプロファイルで、内蔵クライアントと通知サ
 
 Xの購読候補を選ぶ独立した解析処理を追加し、対象のスコープ・エンドポイント・公開鍵・認証情報・送信側公開鍵をブラウザーで確認した値と照合する合成テストを追加しました。重複や不正な鍵は拒否し、別サイトの記録は出力しません。使い捨てEdgeが生成した2サイトの購読について、対象レコードのスコープだけをメモリー内でXに置き換え、ブラウザーから得た鍵・通知先との一致を2プロファイルで確認しました。置換したレコードはファイルへ保存していません。この解析処理はまだ配布ツールや登録画面へ接続しておらず、実際のX購読形式は未検証です。
 
+以前の中継試験では、試験用Edgeに証明書エラーを広く無視する指定を使っていました。追加試験では、毎回作る中継用証明書の公開鍵だけを指定する方式に変更し、実WNSの合成通知を受信できる一方、別の自己署名証明書によるHTTPS接続が拒否されることを複数プロファイルで確認しました。同じ限定許可を使い、DB保存後の強制終了・別プロセスの再接続と、合成通知2件が2件のジョブになることも確認しています。これは使い捨てプロファイルと合成サイトによる検証であり、配布ツールへの実装や、他プロセスから中継鍵を保護できることを示すものではありません。[Chromiumの証明書指定に関する説明](https://chromium.googlesource.com/website/+/refs/heads/main/site/quic/playing-with-quic/index.md)
+
 Windows の一般的な通知チャネルはアプリ・利用者・端末にひも付き、有効期限や更新があります（[Microsoft のチャネル説明](https://learn.microsoft.com/en-us/windows/apps/develop/notifications/push-notifications/request-create-save-notification-channel)）。この説明だけから Edge の Web Push 購読に同じ有効期限が適用されるとは断定できませんが、ファイルを一度移すだけで長期運用できると決めつけず、実際の更新と失効も確認する必要があります。
 
 Windows の公開APIでチャネルを作成する方法についても確認しました。[Microsoft の API 説明](https://learn.microsoft.com/en-us/uwp/api/windows.networking.pushnotifications.pushnotificationchannelmanager.createpushnotificationchannelforapplicationasync)では、呼び出し元アプリに結び付くチャネルを作り、別のアプリIDを指定する場合も同じパッケージ内のアプリに限定されます。そのため、別のセットアップツールがこの公開APIを呼ぶだけで、既存の Edge の購読をサーバーへ引き継げる根拠にはなりません。これは API の適用範囲に関する判断であり、Edge の内部接続や別の正式な拡張経路が存在しないことを示すものではありません。
