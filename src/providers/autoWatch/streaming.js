@@ -2,7 +2,7 @@
 
 // Limits apply to the small metadata projection, never to the downloaded page.
 // Parsing is performed in the isolated fetch worker, outside the Bot process.
-const { parser } = require('stream-json');
+const { parserStream: parser } = require('stream-json');
 const { StringDecoder } = require('node:string_decoder');
 const { once } = require('node:events');
 const { finished } = require('node:stream/promises');
@@ -150,7 +150,8 @@ function createJsonProjector(paths, budget = createBudget()) {
     stream.on('error', failure => {
         // Only the JSON parser's errors are normalized here. Network/body
         // failures propagate from responseChunks with their original identity.
-        if (!failure.code) failure.code = 'AUTO_WATCH_INVALID_RESPONSE';
+        const normalized = /** @type {Error & { code?: string }} */ (failure);
+        if (!normalized.code) normalized.code = 'AUTO_WATCH_INVALID_RESPONSE';
         error ||= failure;
     });
     return {
