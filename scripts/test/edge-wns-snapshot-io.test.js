@@ -80,3 +80,54 @@ test('bundled Edge reader works without a locally installed dependency', { skip:
     assert.equal(run.status, 0, run.stderr); const parsed = JSON.parse(run.stdout);
     assert.equal(parsed.ok, true); assert.equal(parsed.file.version, 3); assert.equal(parsed.otherNotificationsPossible, true);
 });
+test('Windows export uses the bundled reader, consent and private file creation together', { skip: process.platform !== 'win32', timeout: 30000 }, async t => {
+    const { options, directory } = await setup(t), root = path.dirname(options.snapshotPath), pkg = path.join(root, 'package'), owned = path.join(root, 'owned');
+    const profile = path.join(owned, 'edge-profile'), dest = path.join(profile, 'Default', 'EdgePushStorageWithConnectTokenAndKey');
+    await fs.mkdir(path.dirname(dest), { recursive: true }); await fs.cp(directory, dest, { recursive: true }); await fs.mkdir(pkg);
+    const source = path.resolve(__dirname, '../../client/angelic-setup');
+    for (const [from, to] of [['EdgeExport.ps1', 'EdgeExport.ps1'], ['EdgeSnapshot.ps1', 'EdgeSnapshot.ps1'], ['FirefoxReader.ps1', 'NativeSetup.ps1']])
+        await fs.copyFile(path.join(source, from), path.join(pkg, to));
+    const bundles = await require('../build-chrome-setup-bundles.cjs').buildChromeBundles({ includeEdge: true });
+    for (const name of ['EdgeReader.cjs', 'ChromeLevelDB.node']) await fs.writeFile(path.join(pkg, name), bundles[name]);
+    const quoted = value => `'${value.replace(/'/g, "''")}'`, output = path.join(root, 'saved.json');
+    const expected = options.expected;
+    const capture = { scope: 'https://x.com/', endpoint: expected.endpoint, applicationServerKey: expected.applicationServerKey.toString('base64url'),
+        keys: { p256dh: expected.publicKey.toString('base64url'), auth: expected.auth.toString('base64url') } };
+    const encoded = Buffer.from(JSON.stringify({ capture, agent: options.agent, client: options.client })).toString('base64');
+    const script = `$ErrorActionPreference='Stop'
+$script:Root=${quoted(owned)}; $script:Profile=${quoted(profile)}; $script:PackageRoot=${quoted(pkg)}
+$script:Utf8=New-Object Text.UTF8Encoding($false); $script:UserSid=[Security.Principal.WindowsIdentity]::GetCurrent().User
+function Fail-Safely([string]$code,[string]$message) { throw ($code+': '+$message) }
+function Get-LocalPath([string]$p) { [IO.Path]::GetFullPath($p) }
+function Assert-SafePath([string]$p) { if (-not $p.StartsWith(${quoted(root)},[StringComparison]::OrdinalIgnoreCase)) { throw 'outside' } }
+function Test-InPath([string]$p,[string]$parent) { $p.StartsWith($parent+'\\',[StringComparison]::OrdinalIgnoreCase) }
+function Get-PathAttributes([string]$p) { if (Test-Path -LiteralPath $p) { [IO.File]::GetAttributes($p) } else { $null } }
+function Write-NewJson([string]$p,$v) { [IO.File]::WriteAllText($p,($v|ConvertTo-Json -Compress)) }
+function Read-SmallJson([string]$p) { [IO.File]::ReadAllText($p)|ConvertFrom-Json }
+function Assert-PropertyNames($o,[string[]]$n) { if (@($o.PSObject.Properties).Count -ne $n.Count) { throw 'bad marker' } }
+function Invoke-Helper([string]$name,$inputObject) {
+  if ($name -cne 'EdgeReader.cjs') { throw 'wrong helper' }
+  $info=New-Object Diagnostics.ProcessStartInfo; $info.FileName=${quoted(process.execPath)}
+  $info.Arguments='"'+[IO.Path]::Combine($script:PackageRoot,$name)+'"'; $info.UseShellExecute=$false; $info.CreateNoWindow=$true
+  $info.RedirectStandardInput=$true; $info.RedirectStandardOutput=$true; $info.RedirectStandardError=$true
+  $info.EnvironmentVariables.Remove('NODE_PATH'); $info.EnvironmentVariables.Remove('NODE_OPTIONS')
+  $process=[Diagnostics.Process]::Start($info)
+  try { $json=$inputObject|ConvertTo-Json -Depth 12 -Compress; $bytes=$script:Utf8.GetBytes($json); $process.StandardInput.BaseStream.Write($bytes,0,$bytes.Length); $process.StandardInput.Close()
+    $out=$process.StandardOutput.ReadToEnd(); $null=$process.StandardError.ReadToEnd(); if (-not $process.WaitForExit(15000) -or $process.ExitCode -ne 0) { throw 'reader failed' }; return ($out|ConvertFrom-Json)
+  } finally { $process.Dispose() }
+}
+. ${quoted(path.join(pkg, 'EdgeExport.ps1'))}
+$input=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String(${quoted(encoded)}))|ConvertFrom-Json
+$rejected=$false; try { Export-XEdgeTransfer -Capture $input.capture -Agent $input.agent -Client $input.client -BrowserVersion '157.0.0.1' -OutputPath ${quoted(output)} } catch { $rejected=$_.Exception.Message -like 'X_EDGE_OTHER_CONSENT_REQUIRED:*' }
+if (-not $rejected -or (Test-Path -LiteralPath ${quoted(output)})) { throw 'consent bypassed' }
+Export-XEdgeTransfer -Capture $input.capture -Agent $input.agent -Client $input.client -BrowserVersion '157.0.0.1' -OutputPath ${quoted(output)} -AllowOtherNotifications
+if (-not (Test-Path -LiteralPath ${quoted(output)})) { throw 'file missing' }
+if (@(Get-ChildItem -LiteralPath $script:Root -Directory -Filter 'edge-snapshot-*').Count -ne 0) { throw 'scratch remains' }
+'ok'`;
+    const result = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(script, 'utf16le').toString('base64')],
+        { encoding: 'utf8', windowsHide: true, timeout: 25000 });
+    assert.equal(result.status, 0, result.stderr); assert.match(result.stdout, /ok/);
+    const saved = JSON.parse(await fs.readFile(output, 'utf8'));
+    assert.equal(saved.version, 3); assert.equal(saved.push.p256dhPublicKey, capture.keys.p256dh);
+    assert(!JSON.stringify(saved).includes('other.example'));
+});
