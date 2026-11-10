@@ -7,10 +7,15 @@ const os = require('node:os');
 const { spawn } = require('node:child_process');
 const { once } = require('node:events');
 const { ClassicLevel } = require('classic-level');
-const { createHash } = require('node:crypto');
+const { createHash, createCipheriv, pbkdf2Sync, randomBytes, generateKeyPairSync } = require('node:crypto');
 const { createMacChromeProfile } = require('../../src/automation/chrome-mac-profile');
 const { withMacStoreLocks } = require('../../src/automation/chrome-mac-store-locks');
+const { withMacChromeSnapshot } = require('../../src/automation/chrome-mac-snapshot');
+const { readChromeSnapshot } = require('../../src/automation/chrome-snapshot-io');
+const { parseUniqueJson } = require('../../src/automation/strict-json');
 const helper = process.env.MAC_LOCK_HELPER;
+function vint(n) { const a = []; do { let b = n % 128; n = Math.floor(n / 128); if (n) b |= 128; a.push(b); } while (n); return Buffer.from(a); }
+function field(n, value) { const b = Buffer.isBuffer(value) ? value : Buffer.from(value); return Buffer.concat([vint(n * 8 + 2), vint(b.length), b]); }
 
 function runLock(first, second) {
     const child = spawn(helper, [first, second], { stdio: ['pipe', 'pipe', 'pipe'] });
@@ -48,6 +53,49 @@ test('native helper holds real LevelDB fcntl locks and releases them on EOF', { 
     const link = path.join(root, 'link'); await fs.symlink(locks[0], link);
     const invalid = runLock(link, locks[1]); processes.push(invalid); assert.equal(await invalid.ready, 'E'); await invalid.exited;
     const same = runLock(locks[0], path.join(dirs[0], '.', 'LOCK')); processes.push(same); assert.equal(await same.ready, 'E'); await same.exited;
+});
+test('Mac snapshot copies only notification data under both locks and is removed after reading', { skip: !helper || process.platform === 'win32', timeout: 20000 }, async t => {
+    const parent = await fs.realpath(os.tmpdir()), base = await fs.mkdtemp(path.join(parent, 'cbte-mac-snapshot-test-'));
+    t.after(async () => {
+        const real = await fs.realpath(base); assert.equal(path.dirname(real), parent);
+        assert.match(path.basename(real), /^cbte-mac-snapshot-test-/); await fs.rm(real, { recursive: true });
+    });
+    const profile = await createMacChromeProfile(base), defaults = path.join(profile.profilePath, 'Default');
+    const store = path.join(defaults, 'GCM Store'), nested = path.join(store, 'Encryption'); await fs.mkdir(nested, { recursive: true });
+    const appId = 'wp:https://x.com/#01234567-89AB-4CDE-8FAB-012345678-V2', sender = 'sender_123';
+    await fs.writeFile(path.join(defaults, 'Preferences'), JSON.stringify({ gcm: { product_category_for_subtypes: 'com.chrome.macosx',
+        push_messaging_application_id_map: { [appId]: 'https://x.com/#1#' } } }));
+    for (const name of ['Cookies', 'History', 'Login Data']) await fs.writeFile(path.join(defaults, name), 'must not be copied');
+    const password = Buffer.from('synthetic-password'), key = pbkdf2Sync(password, 'saltysalt', 1003, 16, 'sha1');
+    const cipher = createCipheriv('aes-128-cbc', key, Buffer.alloc(16, 0x20));
+    const encrypted = Buffer.concat([Buffer.from('v10'), cipher.update('456'), cipher.final()]); key.fill(0);
+    const ec = generateKeyPairSync('ec', { namedCurve: 'prime256v1' }), jwk = ec.publicKey.export({ format: 'jwk' }), auth = randomBytes(16);
+    const pub = Buffer.concat([Buffer.from([4]), Buffer.from(jwk.x, 'base64url'), Buffer.from(jwk.y, 'base64url')]);
+    const record = Buffer.concat([field(1, appId), field(3, auth), field(4, sender), field(5, ec.privateKey.export({ format: 'der', type: 'pkcs8' }))]);
+    for (const [dir, entries] of [[store, [['device_aid_key', Buffer.from('123')], ['device_token_key', encrypted]]], [nested, [[`${appId},${sender}`, record]]]]) {
+        const db = new ClassicLevel(dir, { keyEncoding: 'utf8', valueEncoding: 'buffer' });
+        try { for (const [keyName, value] of entries) await db.put(keyName, value); } finally { await db.close(); }
+    }
+    const args = { rootPath: profile.rootPath, profileId: profile.profileId, helperPath: helper,
+        expectedSha256: createHash('sha256').update(await fs.readFile(helper)).digest('hex') };
+    const subscription = { scope: 'https://x.com/', endpoint: 'https://fcm.googleapis.com/fcm/send/test', keys: { p256dh: pub.toString('base64url'), auth: auth.toString('base64url') } };
+    let snapshotPath;
+    const result = await withMacChromeSnapshot({ ...args, work: async snapshot => {
+        snapshotPath = snapshot.snapshotPath;
+        for (const name of ['Cookies', 'History', 'Login Data']) await assert.rejects(fs.access(path.join(snapshotPath, 'Default', name)), { code: 'ENOENT' });
+        const read = await readChromeSnapshot({ ...snapshot, subscription, browserVersion: '140.0.7339.42', platform: 'macos', macPassword: password,
+            parseJson: text => parseUniqueJson(text, 64), dbFactory: location => new ClassicLevel(location, { createIfMissing: false, keyEncoding: 'utf8', valueEncoding: 'buffer' }) });
+        return read.file;
+    } });
+    assert.equal(result.push.securityToken, '456'); assert.equal(result.push.productCategory, 'com.chrome.macosx');
+    await assert.rejects(fs.access(snapshotPath), { code: 'ENOENT' });
+    assert((await fs.readdir(profile.rootPath)).every(name => !name.startsWith('chrome-snapshot-')));
+    await assert.rejects(withMacChromeSnapshot({ ...args, work: async () => { throw new Error('synthetic read failure'); } }), { code: 'X_CHROME_MAC_LOCK_FAILED' });
+    assert((await fs.readdir(profile.rootPath)).every(name => !name.startsWith('chrome-snapshot-')));
+    await fs.writeFile(path.join(store, 'unexpected.txt'), 'must reject');
+    await assert.rejects(withMacChromeSnapshot({ ...args, work: async () => { throw new Error('must not run'); } }), { code: 'X_CHROME_MAC_SNAPSHOT_INVALID' });
+    assert((await fs.readdir(profile.rootPath)).every(name => !name.startsWith('chrome-snapshot-')));
+    password.fill(0);
 });
 test('profile lock wrapper fences browser starts and real LevelDB access until work finishes', { skip: !helper || process.platform === 'win32', timeout: 15000 }, async t => {
     const parent = await fs.realpath(os.tmpdir()), base = await fs.mkdtemp(path.join(parent, 'cbte-mac-lock-wrapper-test-'));

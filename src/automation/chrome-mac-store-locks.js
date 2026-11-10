@@ -72,7 +72,7 @@ async function withMacStoreLocks({ rootPath, profileId, helperPath, expectedSha2
         return value;
     } catch (error) {
         if (controller.signal.aborted && !closing) throw fail('X_CHROME_MAC_LOCK_LOST');
-        if (/^X_CHROME_MAC_(?:LOCK|PROFILE)_[A-Z_]+$/.test(error?.code || '')) throw error;
+        if (/^X_CHROME_MAC_(?:LOCK|PROFILE|SNAPSHOT)_[A-Z_]+$/.test(error?.code || '')) throw error;
         throw fail('X_CHROME_MAC_LOCK_FAILED');
     } finally {
         closing = true; controller.abort();
