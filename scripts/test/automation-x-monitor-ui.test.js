@@ -787,21 +787,32 @@ test('a selected existing donor quote becoming unavailable keeps the selected be
     } finally { await f.close(); }
 });
 
-test('a new X target requires its own Firefox notification acknowledgement even with an already listening connection', async () => {
+test('a new X target requires its own browser notification acknowledgement even with an already listening connection', async () => {
     const current = quota({ featureEnabled: true }); current.x.reasonCode = null;
     const f = await fixture({ compact: true, items: [], currentQuota: current, respond: route => route === 'x-setup' ? setup({ subscriptions: [subscription({ receiverState: 'listening' })] }) : undefined });
     try {
         await f.click('X監視を追加'); await f.fill(f.field('Xアカウント名'), 'new_author'); await f.fill(f.field('使用する自分の受信情報'), SUBSCRIPTION_ID);
-        const guide = f.form().querySelector('[aria-label="追加用Firefoxで対象アカウントの通知を設定"]'); assert.match(guide.textContent, /追加用Firefoxで @new_author の投稿通知をON/); assert.match(guide.textContent, /ブラウザー通知を許可.*投稿通知ベルをON/); assert.match(guide.textContent, /X側の設定と、この画面での登録が両方必要/); assert.match(guide.textContent, /登録済みの接続を使う場合も.*アカウントごと/);
+        const guide = f.form().querySelector('[aria-label="設定用ブラウザーで対象アカウントの通知を設定"]'); assert.match(guide.textContent, /設定用ブラウザーで @new_author の投稿通知をON/); assert.match(guide.textContent, /ブラウザー通知を許可.*投稿通知ベルをON/); assert.match(guide.textContent, /X側の設定と、この画面での登録が両方必要/); assert.match(guide.textContent, /登録済みの接続を使う場合も.*アカウントごと/); assert.match(guide.textContent, /設定用Chrome・Braveのプッシュ通知はサーバー側で受信.*もう一度登録/);
         await f.submitX(false); assert.equal(writes(f).length, 0); assert.equal(f.container.querySelector('[aria-label="X監視の変更確認"]'), null);
         await f.act(async () => f.form().querySelector('.nx-firefox-ack input').click()); await f.submitX(false); assert(f.container.querySelector('[aria-label="X監視の変更確認"]'));
         await f.fill(f.field('Xアカウント名'), 'other_author'); assert.equal(f.form().querySelector('.nx-firefox-ack input').checked, false); await f.submitX(false); assert.equal(writes(f).length, 0);
-        await f.submitX(); await f.click('このX監視設定で保存'); assert.equal(writes(f)[0].body.accountHandle, 'other_author'); assert.equal(Object.hasOwn(writes(f)[0].body, 'firefoxAcknowledgedHandle'), false); assert.equal(Object.hasOwn(writes(f)[0].body.notificationSettings, 'firefoxAcknowledgedHandle'), false);
+        await f.submitX(); await f.click('このX監視設定で保存'); assert.equal(writes(f)[0].body.accountHandle, 'other_author'); assert.equal(Object.hasOwn(writes(f)[0].body, 'browserAcknowledgedHandle'), false); assert.equal(Object.hasOwn(writes(f)[0].body.notificationSettings, 'browserAcknowledgedHandle'), false);
         assert.doesNotMatch(f.target().textContent, /投稿通知.*確認済み|配信成功|送信済み/);
     } finally { await f.close(); }
 });
 
-test('closing and resuming inline connection selection retains target, destination, timing and the per-target Firefox acknowledgement', async () => {
+test('monitor registration identifies the browser used by its selected receiver', async () => {
+    const current = quota({ featureEnabled: true }); current.x.reasonCode = null;
+    const f = await fixture({ compact: true, items: [], currentQuota: current,
+        respond: route => route === 'x-setup' ? setup({ subscriptions: [subscription({ browserKind: 'chrome', receiverState: 'listening' })] }) : undefined });
+    try {
+        await f.click('X監視を追加'); await f.fill(f.field('Xアカウント名'), 'new_author'); await f.fill(f.field('使用する自分の受信情報'), SUBSCRIPTION_ID);
+        assert.match(f.form().textContent, /選択中の受信情報：Chrome/);
+        assert.match(f.field('使用する自分の受信情報').textContent, /Chrome/);
+    } finally { await f.close(); }
+});
+
+test('closing and resuming inline connection selection retains target, destination, timing and the per-target browser acknowledgement', async () => {
     const current = quota({ featureEnabled: true, registrationProcessing: processingQuote() }); current.x.reasonCode = null; current.personal.available = 8;
     const f = await fixture({ compact: true, items: [], currentQuota: current, respond: route => route === 'x-setup' ? setup({ subscriptions: [subscription()] }) : undefined });
     try {

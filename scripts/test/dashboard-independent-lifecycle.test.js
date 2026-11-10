@@ -92,6 +92,36 @@ function selectBuild(fixture, name, id) {
     fs.writeFileSync(path.join(fixture.dashboard, '.next-builds/current.json'), JSON.stringify({ version: 1, distDir, buildId: id }));
 }
 
+test('activated production build preserves relative file traces outside the build directory', () => {
+    const fixture = sourceFixture();
+    try {
+        const client = path.join(fixture.dashboard, 'node_modules/.prisma/client');
+        fs.mkdirSync(client, { recursive: true }); fs.writeFileSync(path.join(client, 'index.js'), '');
+        const artifact = path.join(fixture.root, 'artifacts', 'fixture.zip');
+        fs.mkdirSync(path.dirname(artifact), { recursive: true }); fs.writeFileSync(artifact, 'fixture-only');
+        fs.writeFileSync(path.join(fixture.dashboard, 'node_modules/next/dist/bin/next'), `
+const fs = require('node:fs'), path = require('node:path');
+const dist = path.resolve(process.cwd(), process.env.DASHBOARD_NEXT_DIST_DIR);
+const traceDir = path.join(dist, 'server', 'app', 'api', 'download');
+fs.mkdirSync(traceDir, { recursive: true }); fs.writeFileSync(path.join(dist, 'BUILD_ID'), 'fixture-build');
+fs.writeFileSync(path.join(traceDir, 'route.js.nft.json'), JSON.stringify({ files: [path.relative(traceDir, path.resolve(process.cwd(), '../artifacts/fixture.zip'))] }));
+`);
+        const result = spawnSync(process.execPath, [path.join(fixture.dashboard, 'scripts/start-dashboard.js'), 'build'],
+            { cwd: fixture.dashboard, encoding: 'utf8', env: { ...process.env, DASHBOARD_BUILD_KEEP: '99' } });
+        assert.equal(result.status, 0, result.stderr);
+        const build = JSON.parse(fs.readFileSync(path.join(fixture.dashboard, '.next-builds/current.json'), 'utf8'));
+        const trace = path.join(fixture.dashboard, build.distDir, 'server/app/api/download/route.js.nft.json');
+        const entries = JSON.parse(fs.readFileSync(trace, 'utf8')).files;
+        assert.equal(entries.length, 1);
+        assert.equal(fs.readFileSync(path.resolve(path.dirname(trace), entries[0]), 'utf8'), 'fixture-only');
+        assert.equal(fs.existsSync(path.join(fixture.dashboard, '.next-builds/.next-build')), false);
+    } finally {
+        const actual = fs.realpathSync(fixture.root), temp = fs.realpathSync(os.tmpdir());
+        if (path.dirname(actual) !== temp || !/^cbte-independent-dashboard-[A-Za-z0-9]+$/.test(path.basename(actual))) throw new Error('Unsafe fixture cleanup');
+        fs.rmSync(actual, { recursive: true, force: true });
+    }
+});
+
 function launches(fixture) {
     const filename = path.join(fixture.dashboard, 'launches.jsonl');
     if (!fs.existsSync(filename)) return [];

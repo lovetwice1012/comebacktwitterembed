@@ -329,4 +329,13 @@ test('per-monitor realtime uses existing physical slots, current privileges and 
             assert.deepEqual([actual.priority, actual.minuteLimit, actual.dayLimit], [0, 5, 24]);
         } finally { await db.queryDatabase("UPDATE automation_notification_plans SET confirmation_interval_minutes=5 WHERE plan_id='free'"); }
     });
+    await t.test('mode-only inspection matches complete evaluation for all retained fixture monitors', async () => {
+        const rows = await db.queryDatabase('SELECT * FROM automation_x_monitors ORDER BY id');
+        assert(rows.length > 10);
+        for (const row of rows) {
+            const full = await inspectXMonitorProcessing(db.queryDatabase, row);
+            const fast = await inspectXMonitorProcessing(db.queryDatabase, row, undefined, { modeOnly: true });
+            assert.equal(fast.effectiveMode, full.effectiveMode);
+        }
+    });
 });

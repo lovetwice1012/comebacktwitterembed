@@ -2,6 +2,7 @@
 
 const { KeyObject, constants, createCipheriv, createDecipheriv, createECDH, createHash, createPrivateKey, createPublicKey, privateDecrypt, publicEncrypt, randomBytes, timingSafeEqual } = require('node:crypto');
 const { AutomationError } = require('./service');
+const { parseUniqueJson } = require('./strict-json');
 
 const MAX_FILE_BYTES = 32768;
 const UUID = /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/;
@@ -23,64 +24,6 @@ function exactFields(value, fields) {
     if (names.length !== fields.length || names.some(name => typeof name !== 'string' || !fields.includes(name) || !Object.hasOwn(descriptors[name], 'value'))) reject();
 }
 
-// JSON.parse alone silently accepts duplicate keys, including escaped aliases. Scan
-// every object before parsing and bound nesting independently of the JSON engine.
-function parseUniqueJson(source) {
-    let offset = 0;
-    // JSON strings must reject unescaped control bytes while allowing escapes.
-    // eslint-disable-next-line no-control-regex
-    const stringToken = /"(?:[^"\\\u0000-\u001f]|\\(?:["\\/bfnrt]|u[0-9a-fA-F]{4}))*"/y;
-    const numberToken = /-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?/y;
-    const whitespace = () => { while (offset < source.length && /[ \t\r\n]/.test(source[offset])) offset++; };
-    function readString() {
-        stringToken.lastIndex = offset;
-        const match = stringToken.exec(source);
-        if (!match) reject();
-        offset = stringToken.lastIndex;
-        return JSON.parse(match[0]);
-    }
-    function value(depth) {
-        if (depth > 12) reject();
-        whitespace();
-        if (source[offset] === '{') {
-            offset++; whitespace();
-            const names = new Set();
-            if (source[offset] === '}') { offset++; return; }
-            while (true) {
-                whitespace();
-                const name = readString();
-                if (names.has(name) || ['__proto__', 'prototype', 'constructor'].includes(name)) reject();
-                names.add(name); whitespace();
-                if (source[offset++] !== ':') reject();
-                value(depth + 1); whitespace();
-                const next = source[offset++];
-                if (next === '}') return;
-                if (next !== ',') reject();
-            }
-        }
-        if (source[offset] === '[') {
-            offset++; whitespace();
-            if (source[offset] === ']') { offset++; return; }
-            while (true) {
-                value(depth + 1); whitespace();
-                const next = source[offset++];
-                if (next === ']') return;
-                if (next !== ',') reject();
-            }
-        }
-        if (source[offset] === '"') { readString(); return; }
-        for (const literal of ['true', 'false', 'null']) {
-            if (source.startsWith(literal, offset)) { offset += literal.length; return; }
-        }
-        numberToken.lastIndex = offset;
-        if (!numberToken.exec(source)) reject();
-        offset = numberToken.lastIndex;
-    }
-    value(0); whitespace();
-    if (offset !== source.length) reject();
-    return JSON.parse(source);
-}
-
 function decode(value, length) {
     if (typeof value !== 'string' || value.length !== Math.ceil(length * 4 / 3) || !/^[A-Za-z0-9_-]+$/.test(value)) reject();
     const bytes = Buffer.from(value, 'base64url');
@@ -97,6 +40,9 @@ function canonicalUrl(value) {
 }
 function normalizeFile(file) {
     exactFields(file, ['format', 'version', 'provenance', 'push']);
+    // Version 2 is sealed with the same owner-bound vault. Intake separately
+    // enforces the server-controlled Chrome and receiver rollout flags.
+    if (file.version === 2) return require('./chrome-x-transfer').normalizeChromeTransfer(file);
     if (file.format !== 'x-notification-subscription' || file.version !== 1) reject();
     const provenance = file.provenance;
     exactFields(provenance, ['kind', 'adapterVersion', 'browserVersion', 'readMethod']);
@@ -144,6 +90,10 @@ function parseTransferFile(fileText) {
 function identifyTransfer(file) {
     try {
         const normalized = normalizeFile(file);
+        if (normalized.version === 2) {
+            const id = require('./chrome-x-transfer').identifyChromeTransfer(normalized);
+            return { uaidHash: id.deviceHash, channelHash: id.appHash, contentHash: id.contentHash };
+        }
         const hash = value => createHash('sha256').update(value, 'utf8').digest('hex');
         return { uaidHash: hash(normalized.push.uaid.replace(/-/g, '')), channelHash: hash(normalized.push.channelID), contentHash: hash(JSON.stringify(normalized)) };
     } catch { throw invalidFile(); }
@@ -292,4 +242,65 @@ function createTransferPrivateWorkerVault(options) {
     });
 }
 
-module.exports = { MAX_FILE_BYTES, parseTransferFile, identifyTransfer, createTransferSealer, createTransferWorkerVault, createTransferPublicSealer, createTransferPrivateWorkerVault };
+// WNS reconnect tokens change independently of the imported subscription.
+// Keep this worker-only vault separate from the transfer envelope domain.
+function createWnsTokenWorkerVault(options) {
+    const config = rsaKeys(options, 'private');
+    function aad(context, keyId) {
+        exactFields(context, ['subscriptionId', 'ownerUserId', 'revision', 'generation']);
+        if (typeof context.subscriptionId !== 'string' || !UUID.test(context.subscriptionId) || typeof context.ownerUserId !== 'string'
+            || !/^[0-9]{1,32}$/.test(context.ownerUserId) || !Number.isSafeInteger(context.revision)
+            || context.revision < 1 || !Number.isSafeInteger(context.generation) || context.generation < 1) throw new Error();
+        return Buffer.from(JSON.stringify(['x-notification-wns-state', 1, HYBRID_ALGORITHM, keyId,
+            context.subscriptionId, context.ownerUserId, context.revision, context.generation]));
+    }
+    function validToken(token) {
+        return Buffer.isBuffer(token) && token.length > 0 && token.length <= 4096
+            && !token.some(byte => byte < 0x21 || byte > 0x7e);
+    }
+    return Object.freeze({
+        seal(token, context) {
+            let dataKey;
+            try {
+                if (!validToken(token)) throw new Error();
+                const associated = aad(context, config.activeKeyId), iv = randomBytes(12);
+                dataKey = randomBytes(32);
+                const cipher = createCipheriv('aes-256-gcm', dataKey, iv, { authTagLength: 16 });
+                cipher.setAAD(associated);
+                const ciphertext = Buffer.concat([cipher.update(token), cipher.final()]);
+                const wrapped = publicEncrypt({ key: createPublicKey(config.keys.get(config.activeKeyId).key),
+                    padding: constants.RSA_PKCS1_OAEP_PADDING, oaepHash: 'sha256', oaepLabel: associated }, dataKey);
+                return { version: 1, algorithm: HYBRID_ALGORITHM, keyId: config.activeKeyId,
+                    wrappedKey: wrapped.toString('base64url'), iv: iv.toString('base64url'),
+                    ciphertext: ciphertext.toString('base64url'), tag: cipher.getAuthTag().toString('base64url') };
+            } catch { throw vaultUnavailable(); } finally { dataKey?.fill(0); }
+        },
+        open(envelope, context) {
+            let dataKey, plaintext, partial;
+            try {
+                exactFields(envelope, ['version', 'algorithm', 'keyId', 'wrappedKey', 'iv', 'ciphertext', 'tag']);
+                if (envelope.version !== 1 || envelope.algorithm !== HYBRID_ALGORITHM || typeof envelope.keyId !== 'string'
+                    || !KEY_ID.test(envelope.keyId) || typeof envelope.ciphertext !== 'string'
+                    || !/^[A-Za-z0-9_-]{1,5462}$/.test(envelope.ciphertext)) throw new Error();
+                const recipient = config.keys.get(envelope.keyId);
+                if (!recipient) throw new Error();
+                const ciphertext = Buffer.from(envelope.ciphertext, 'base64url');
+                if (ciphertext.toString('base64url') !== envelope.ciphertext) throw new Error();
+                const associated = aad(context, envelope.keyId);
+                dataKey = privateDecrypt({ key: recipient.key, padding: constants.RSA_PKCS1_OAEP_PADDING,
+                    oaepHash: 'sha256', oaepLabel: associated }, decode(envelope.wrappedKey, recipient.bytes));
+                if (dataKey.length !== 32) throw new Error();
+                const decipher = createDecipheriv('aes-256-gcm', dataKey, decode(envelope.iv, 12), { authTagLength: 16 });
+                decipher.setAAD(associated); decipher.setAuthTag(decode(envelope.tag, 16));
+                partial = decipher.update(ciphertext);
+                plaintext = Buffer.concat([partial, decipher.final()]);
+                if (!validToken(plaintext)) throw new Error();
+                return plaintext;
+            } catch { plaintext?.fill(0); throw decryptFailed(); } finally { partial?.fill(0); dataKey?.fill(0); }
+        },
+    });
+}
+
+module.exports = { MAX_FILE_BYTES, parseTransferFile, identifyTransfer, createTransferSealer, createTransferWorkerVault, createTransferPublicSealer, createTransferPrivateWorkerVault,
+    createWnsTokenWorkerVault,
+    parseChromeSnapshotJson: text => parseUniqueJson(text, 64) };

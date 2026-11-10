@@ -44,6 +44,10 @@ async function inspectXMonitorProcessing(query, monitor, now = Date.now(), optio
         || config.processingMode !== undefined && !isMode(config.processingMode)) fail('X_MONITOR_INVALID_INPUT', '監視の通知方法を確認してください。', 503);
     const explicitMode = config.processingMode ?? null;
     const requestedMode = explicitMode || common.requestedMode;
+    // A batch request can never become realtime because of slots, supporter
+    // status or plan benefits. The receiver needs only the mode; registration,
+    // UI and queue admission continue to request the full entitlement details.
+    if (options.modeOnly === true && requestedMode === 'batch') return { effectiveMode: 'batch' };
     const slots = await query('SELECT slot_index,target_kind,target_id FROM automation_notification_slots WHERE owner_user_id=? ORDER BY slot_index', [owner]);
     const boosts = await require('./monitor-cadence').boostRows(query, owner);
     const target = String(monitor.id || '');

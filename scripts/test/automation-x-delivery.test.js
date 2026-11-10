@@ -72,12 +72,14 @@ test('per-monitor router separates realtime fanout, retains matching batch/pause
     const router = createXEventRouter({ queryDatabase: async () => rows }, { routeX: async input => { calls.push(input); return { state: 'routed' }; } });
     const lease = { ownerUserId, subscriptionId }, inbox = { id: '1', ownerUserId, subscriptionId, status: 'received', receivedAtMs: 1000 };
     assert.equal(await router.hasRealtimeTargets(lease), true); assert.equal(await router.hasBatchTargets(lease), true);
+    assert.deepEqual(await router.targetModes(lease), { realtime: true, batch: true });
     assert.equal((await router.routeReceived({ lease, inbox, payload: payload(), processingMode: 'realtime' })).state, 'pending');
     assert.deepEqual(calls.map(row => [row.monitorId, row.processingMode]), [['1', 'realtime']]);
     calls.length = 0;
     assert.equal((await router.routeReceived({ lease, inbox, payload: payload(), processingMode: 'batch' })).state, 'pending');
     assert.deepEqual(calls.map(row => [row.monitorId, row.processingMode]), [['1', 'batch'], ['2', 'batch']]);
     rows = [monitor('2')]; calls.length = 0;
+    assert.deepEqual(await router.targetModes(lease), { realtime: false, batch: true });
     assert.equal((await router.routeReceived({ lease, inbox, payload: payload(), processingMode: 'realtime' })).state, 'pending');
     assert.equal(calls.length, 0);
     rows = [monitor('2', { account_id: '999' })];

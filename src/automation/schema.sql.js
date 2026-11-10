@@ -321,4 +321,5 @@ SCHEMA.push(...require('./push-support-grants-schema.sql').SCHEMA);
 SCHEMA.push(...require('./x-monitor-schema.sql').SCHEMA);
 SCHEMA.push(...require('./x-setup-schema.sql').SCHEMA);
 SCHEMA.push(...require('./x-push-schema.sql').SCHEMA);
+SCHEMA.push(...require('./x-chrome-mcs-schema.sql').SCHEMA);
 module.exports = { SCHEMA };

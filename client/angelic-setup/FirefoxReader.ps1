@@ -26,6 +26,7 @@ namespace XSetupNative {
   [StructLayout(LayoutKind.Sequential,CharSet=CharSet.Unicode)] struct STARTUP { public uint cb; public string reserved,desktop,title; public uint x,y,width,height,xChars,yChars,fill,flags; public ushort show,reservedBytes; public IntPtr reservedPointer,input,output,error; }
   [StructLayout(LayoutKind.Sequential)] struct PROCESS { public IntPtr process,thread; public uint pid,tid; }
   [StructLayout(LayoutKind.Sequential)] struct SECURITY_ATTRIBUTES { public uint size;public IntPtr descriptor;[MarshalAs(UnmanagedType.Bool)]public bool inherit; }
+  [StructLayout(LayoutKind.Sequential)] struct FILE_DISPOSITION_INFO { public byte DeleteFile; }
   [StructLayout(LayoutKind.Sequential,CharSet=CharSet.Unicode)] struct TRUST_FILE { public uint size; [MarshalAs(UnmanagedType.LPWStr)]public string path; public IntPtr file,subject; }
   [StructLayout(LayoutKind.Sequential,CharSet=CharSet.Unicode)] struct TRUST_DATA { public uint size; public IntPtr policy,sip; public uint ui,revocation,choice; public IntPtr file; public uint action; public IntPtr state,url; public uint flags,context; }
   [DllImport("kernel32.dll",CharSet=CharSet.Unicode,SetLastError=true)] static extern IntPtr CreateJobObject(IntPtr attributes,string name);
@@ -36,6 +37,7 @@ namespace XSetupNative {
   [DllImport("kernel32.dll",CharSet=CharSet.Unicode,SetLastError=true)] static extern bool CreateProcess(string application,StringBuilder command,IntPtr processAttributes,IntPtr threadAttributes,bool inherit,uint flags,IntPtr environment,string directory,ref STARTUP startup,out PROCESS process);
   [DllImport("kernel32.dll",SetLastError=true)] static extern uint ResumeThread(IntPtr thread);
   [DllImport("kernel32.dll",SetLastError=true)] static extern bool TerminateProcess(IntPtr process,uint code);
+  [DllImport("kernel32.dll",SetLastError=true)] static extern bool SetFileInformationByHandle(SafeFileHandle file,int kind,ref FILE_DISPOSITION_INFO info,uint size);
   [DllImport("kernel32.dll")] static extern uint WaitForSingleObject(IntPtr handle,uint milliseconds);
   [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr handle);
   [DllImport("kernel32.dll",CharSet=CharSet.Unicode,SetLastError=true)] static extern SafeFileHandle CreateFile(string path,uint access,uint share,ref SECURITY_ATTRIBUTES attributes,uint creation,uint flags,IntPtr template);
@@ -67,15 +69,25 @@ namespace XSetupNative {
     return user&&system;
    }finally{LocalFree(descriptor);}
   }
+  static void MarkCreatedFileForDeletion(SafeFileHandle handle) {
+   var info=new FILE_DISPOSITION_INFO();info.DeleteFile=1;
+   if(!SetFileInformationByHandle(handle,4,ref info,(uint)Marshal.SizeOf(typeof(FILE_DISPOSITION_INFO))))throw new Win32Exception();
+  }
+  public static void DeleteCreatedFile(FileStream stream) {
+   if(stream==null)throw new ArgumentNullException("stream");
+   MarkCreatedFileForDeletion(stream.SafeFileHandle);
+  }
   public static FileStream CreatePrivateFile(string path,string userSid) {
    IntPtr descriptor=IntPtr.Zero;uint size;
    try {
     if(!ConvertStringSecurityDescriptorToSecurityDescriptor("D:P(A;;FA;;;SY)(A;;FA;;;"+userSid+")",1,out descriptor,out size))throw new Win32Exception();
     var attributes=new SECURITY_ATTRIBUTES();attributes.size=(uint)Marshal.SizeOf(typeof(SECURITY_ATTRIBUTES));attributes.descriptor=descriptor;
     if(!SupportsPrivateAcl(path))throw new NotSupportedException("Output volume cannot persist private ACLs");
-    var handle=CreateFile(path,0x40020000,0,ref attributes,1,0x80,IntPtr.Zero);
+    // DELETE is needed to mark this exact CREATE_NEW handle on failure.
+    var handle=CreateFile(path,0x40030000,0,ref attributes,1,0x80,IntPtr.Zero);
     if(handle.IsInvalid){handle.Dispose();throw new Win32Exception();}
-    try{if(!HasExactPrivateAcl(handle,userSid))throw new InvalidOperationException("Output ACL verification failed");return new FileStream(handle,FileAccess.Write,4096,false);}catch{handle.Dispose();File.Delete(path);throw;}
+    try{if(!HasExactPrivateAcl(handle,userSid))throw new InvalidOperationException("Output ACL verification failed");return new FileStream(handle,FileAccess.Write,4096,false);}
+    catch{try{MarkCreatedFileForDeletion(handle);}catch{throw new IOException("X_SETUP_PRIVATE_CLEANUP_FAILED");}finally{handle.Dispose();}throw;}
    }finally{if(descriptor!=IntPtr.Zero)LocalFree(descriptor);}
   }
   public static bool IsSignedMozilla(string path) {

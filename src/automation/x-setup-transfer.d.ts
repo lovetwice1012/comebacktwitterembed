@@ -2,7 +2,7 @@ import type { Buffer } from 'node:buffer';
 import type { KeyObject } from 'node:crypto';
 
 export const MAX_FILE_BYTES: 32768;
-export interface TransferFile {
+export interface FirefoxTransferFile {
     format: 'x-notification-subscription';
     version: 1;
     provenance: { kind: 'firefox-pushdb'; adapterVersion: '1.0.0'; browserVersion: string; readMethod: 'gecko-indexeddb-readonly' };
@@ -12,6 +12,19 @@ export interface TransferFile {
         p256dhPrivateKey: { kty: 'EC'; crv: 'P-256'; x: string; y: string; d: string; ext: true; key_ops: ['deriveBits'] };
     };
 }
+export interface ChromeTransferFile {
+    format: 'x-notification-subscription';
+    version: 2;
+    provenance: { kind: 'chrome-gcm'; adapterVersion: '1.0.0'; browserVersion: string; readMethod: 'chrome-gcm-snapshot' };
+    push: { deviceId: string; securityToken: string; appId: string; productCategory: 'com.chrome.windows'; authorizedEntity: string;
+        scope: 'https://x.com/'; p256dhPublicKey: string; authenticationSecret: string;
+        p256dhPrivateKey: { kty: 'EC'; crv: 'P-256'; x: string; y: string; d: string } };
+}
+export interface BraveTransferFile extends Omit<ChromeTransferFile, 'provenance' | 'push'> {
+    provenance: { kind: 'brave-gcm'; adapterVersion: '1.0.0'; browserVersion: string; engineVersion: string; readMethod: 'brave-gcm-snapshot' };
+    push: Omit<ChromeTransferFile['push'], 'productCategory'> & { productCategory: 'com.brave.windows' };
+}
+export type TransferFile = FirefoxTransferFile | ChromeTransferFile | BraveTransferFile;
 export interface TransferIdentity { uaidHash: string; channelHash: string; contentHash: string }
 export interface TransferContext { subscriptionId: string; ownerUserId: string; revision: number }
 export interface TransferVaultOptions { activeKeyId: string; keys: Record<string, Buffer> | Map<string, Buffer> }
@@ -32,3 +45,10 @@ export interface TransferPrivateWorkerVault { open(envelope: TransferHybridEnvel
 export function createTransferPublicSealer(options: TransferPublicSealerOptions): TransferPublicSealer;
 /** Worker role: accepts RSA private material only and has no encryption API. */
 export function createTransferPrivateWorkerVault(options: TransferPrivateWorkerOptions): TransferPrivateWorkerVault;
+export interface WnsTokenContext extends TransferContext { generation: number }
+export interface WnsTokenEnvelope extends Omit<TransferHybridEnvelope, 'version'> { version: 1 }
+/** Worker only. The caller must clear the returned plaintext Buffer after use. */
+export function createWnsTokenWorkerVault(options: TransferPrivateWorkerOptions): {
+    seal(token: Buffer, context: WnsTokenContext): WnsTokenEnvelope;
+    open(envelope: WnsTokenEnvelope, context: WnsTokenContext): Buffer;
+};

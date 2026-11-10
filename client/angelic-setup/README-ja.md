@@ -1,6 +1,6 @@
 # X通知データの保存ツール
 
-バージョン: 0.1.0-preview.4（検証用）
+バージョン: 0.1.0-preview.5（検証用）
 
 専用FirefoxからX通知の情報を取り出し、Webへのアップロード用ファイルをPCに作ります。
 作成後は、利用者自身が案内されたWeb画面でファイルを選んでアップロードします。
@@ -105,7 +105,7 @@ Firefoxの実際の保存形式にテスト用の通知データを入れ、読�
 別途公表されたハッシュ値との比較が、配布元のZIPと同じ内容か確かめる手段になります。
 
 ```powershell
-Get-FileHash -Algorithm SHA256 -LiteralPath .\x-notification-setup-0.1.0-preview.4.zip
+Get-FileHash -Algorithm SHA256 -LiteralPath .\x-notification-setup-0.1.0-preview.5.zip
 ```
 
 ## コマンドで実行する

@@ -17,9 +17,9 @@ import "./notification-x.css";
 const field = "w-full rounded border bg-background px-3 py-2 text-sm";
 const button = "rounded border bg-background px-3 py-2 text-sm hover:bg-muted disabled:opacity-40";
 type Choice = { id: string; name: string; enabled?: boolean; scope?: string };
-type Draft = { accountHandle: string; name: string; enabled: boolean; destinationId: string; workflowId: string; subscriptionId: string; processingMode: XProcessingMode; processingTouched: boolean; poolPreference: "auto" | "supporter"; firefoxAcknowledgedHandle: string | null };
+type Draft = { accountHandle: string; name: string; enabled: boolean; destinationId: string; workflowId: string; subscriptionId: string; processingMode: XProcessingMode; processingTouched: boolean; poolPreference: "auto" | "supporter"; browserAcknowledgedHandle: string | null };
 const draftOf = (item?: XMonitor): Draft => ({ accountHandle: item?.accountHandle ?? "", name: item?.name ?? "", enabled: item?.enabled ?? true,
-  destinationId: item?.notificationSettings.destinationId ?? "", workflowId: item?.notificationSettings.workflowId ?? "", subscriptionId: item?.notificationSettings.subscriptionId ?? "", processingMode: item?.processing?.requestedMode ?? "batch", processingTouched: false, poolPreference: "auto", firefoxAcknowledgedHandle: null });
+  destinationId: item?.notificationSettings.destinationId ?? "", workflowId: item?.notificationSettings.workflowId ?? "", subscriptionId: item?.notificationSettings.subscriptionId ?? "", processingMode: item?.processing?.requestedMode ?? "batch", processingTouched: false, poolPreference: "auto", browserAcknowledgedHandle: null });
 // Refreshing receiver/plan information must not advance the edit's CAS token.
 // Only an explicit rebase (or this editor's successful pool move) adopts a new
 // snapshot, preserving fields the user changed and taking other fields fresh.
@@ -120,7 +120,7 @@ function XMonitorEditor({ api, active, allowSetup, subscriptionsVersion, destina
     const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ""; };
     window.addEventListener("beforeunload", warn); return () => window.removeEventListener("beforeunload", warn);
   }, [draft]);
-  function update<K extends keyof Draft>(key: K, value: Draft[K]) { if (!action.current) { setDraft(previous => previous ? { ...previous, [key]: value, ...(key === "accountHandle" && value !== previous.accountHandle ? { firefoxAcknowledgedHandle: null } : {}) } : previous); if (key === "accountHandle") setProfileCopyMessage(""); setReview(null); setNotice(""); } }
+  function update<K extends keyof Draft>(key: K, value: Draft[K]) { if (!action.current) { setDraft(previous => previous ? { ...previous, [key]: value, ...(key === "accountHandle" && value !== previous.accountHandle ? { browserAcknowledgedHandle: null } : {}) } : previous); if (key === "accountHandle") setProfileCopyMessage(""); setReview(null); setNotice(""); } }
   async function mutate(work: () => Promise<void>) {
     if (action.current || !activeRef.current) return;
     action.current = true; const version = ++mutationEpoch.current; epoch.current++; setLoading(false); setBusy(true); setError(""); setNotice("");
@@ -128,10 +128,11 @@ function XMonitorEditor({ api, active, allowSetup, subscriptionsVersion, destina
     finally { action.current = false; if (mounted.current) setBusy(false); }
   }
   const validSubscription = !draft?.subscriptionId || draft.subscriptionId === current?.notificationSettings.subscriptionId || Boolean(setup?.available && setup.subscriptions.some(item => item.id === draft.subscriptionId));
+  const selectedBrowser = setup?.subscriptions.find(item => item.id === draft?.subscriptionId)?.browserKind;
   const requiresHandle = !current || current.accountId === null;
   const validHandle = Boolean(draft && /^[A-Za-z0-9_]{1,15}$/u.test(draft.accountHandle) && !["i", "intent"].includes(draft.accountHandle.toLowerCase()));
   const valid = Boolean(draft && validSubscription && (validHandle || !requiresHandle && !draft.accountHandle) && draft.name.length <= 120 && (!current || draft.name.trim().length > 0)
-    && (current || draft.firefoxAcknowledgedHandle === draft.accountHandle));
+    && (current || draft.browserAcknowledgedHandle === draft.accountHandle));
   const resumes = Boolean(current && draft?.enabled && !current.enabled);
   const supporterQuote = current ? (liveCurrent ?? current).supporterRealtimeProcessing : quota?.supporterRealtimeRegistration;
   // Keep an explicitly selected pool when capacity or eligibility changes. A
@@ -252,16 +253,17 @@ function XMonitorEditor({ api, active, allowSetup, subscriptionsVersion, destina
         <label className="text-sm">監視の表示名（任意）<input className={field} maxLength={120} value={draft.name} onChange={event => update("name", event.target.value)} /></label>
       </fieldset>
       <p className="nx-field-note">通知を受け取りたい相手の現在の@ユーザー名を入力してください。</p>
-      {!current ? <section aria-label="追加用Firefoxで対象アカウントの通知を設定" className="nx-firefox-target-step">
-        <h3>追加用Firefoxで{validHandle ? ` @${draft.accountHandle} の` : "対象アカウントの"}投稿通知をON</h3>
-        <p>保存ツールで開いた追加用Firefoxで、ブラウザー通知を許可し、対象プロフィールの投稿通知ベルをONにしてください。X側の設定と、この画面での登録が両方必要です。</p>
-        <p className="nx-field-note">登録済みの接続を使う場合も、追加するアカウントごとに設定します。設定後は追加用Firefoxを閉じ、この画面へ戻ってください。</p>
+      {!current ? <section aria-label="設定用ブラウザーで対象アカウントの通知を設定" className="nx-firefox-target-step">
+        <h3>設定用ブラウザーで{validHandle ? ` @${draft.accountHandle} の` : "対象アカウントの"}投稿通知をON</h3>
+        {selectedBrowser ? <p className="nx-field-note">選択中の受信情報：{selectedBrowser === "brave" ? "Brave" : selectedBrowser === "chrome" ? "Chrome" : "Firefox"}</p> : null}
+        <p>保存ツールで開いた設定用ブラウザーで、ブラウザー通知を許可し、対象プロフィールの投稿通知ベルをONにしてください。X側の設定と、この画面での登録が両方必要です。</p>
+        <p className="nx-field-note">登録済みの接続を使う場合も、追加するアカウントごとに設定します。設定用Chrome・Braveのプッシュ通知はサーバー側で受信します。設定後は通知データを保存し、「ブラウザーの準備手順」からもう一度登録してください。</p>
         <div className="nx-actions"><button type="button" className={button} disabled={!validHandle || busy || !active} onClick={async () => {
           try { await navigator.clipboard.writeText(`https://x.com/${draft.accountHandle}`); if (mounted.current && activeRef.current) setProfileCopyMessage("プロフィールURLをコピーしました。"); }
-          catch { if (mounted.current && activeRef.current) setProfileCopyMessage(`追加用Firefoxで https://x.com/${draft.accountHandle} を開いてください。`); }
-        }}>プロフィールURLをコピー</button><button type="button" className="nx-text-link" disabled={busy || !active} onClick={() => setSetupOpen(true)}>Firefoxの準備手順</button></div>
+          catch { if (mounted.current && activeRef.current) setProfileCopyMessage(`設定用ブラウザーで https://x.com/${draft.accountHandle} を開いてください。`); }
+        }}>プロフィールURLをコピー</button><button type="button" className="nx-text-link" disabled={busy || !active} onClick={() => setSetupOpen(true)}>ブラウザーの準備手順</button></div>
         {profileCopyMessage ? <p role="status" className="nx-field-note">{profileCopyMessage}</p> : null}
-        <label className="nx-firefox-ack"><input type="checkbox" disabled={!validHandle || busy || !active} checked={draft.firefoxAcknowledgedHandle === draft.accountHandle} onChange={event => update("firefoxAcknowledgedHandle", event.target.checked ? draft.accountHandle : null)} /><span>追加用Firefoxで、このアカウントの投稿通知をONにしました</span></label>
+        <label className="nx-firefox-ack"><input type="checkbox" disabled={!validHandle || busy || !active} checked={draft.browserAcknowledgedHandle === draft.accountHandle} onChange={event => update("browserAcknowledgedHandle", event.target.checked ? draft.accountHandle : null)} /><span>設定用ブラウザーで、このアカウントの投稿通知をONにしました</span></label>
         <small className="nx-field-note">ご自身での確認です。接続状態と実際の通知は、登録後に確認できます。</small>
       </section> : null}
       <fieldset disabled={busy || !active} className="nx-editor-section"><legend>通知先</legend>
@@ -286,7 +288,7 @@ function XMonitorEditor({ api, active, allowSetup, subscriptionsVersion, destina
       {newRealtime && realtimeQuoteReady && registrationQuote?.realtimeSlotCost === 5 ? <p className="nx-slot-consent">個人枠を合計5枠使用します。通常の1枠に加えて4枠を確保します。</p> : null}
       {processingQuoteStale ? <p role="alert" className="nx-feedback">必要な枠数を再確認してください。<button type="button" className={button} disabled={busy || loading || !active} onClick={() => { setReview(null); void load(); }}>枠数を再確認</button></p> : null}
       {allowSetup ? <fieldset disabled={busy || !active} className="nx-editor-section"><legend>接続設定</legend>
-        <label className="text-sm">使用する自分の受信情報<select className={field} disabled={!setup?.available || loading} value={draft.subscriptionId} onChange={event => update("subscriptionId", event.target.value)}><option value="">受信情報を選択</option>{draft.subscriptionId && !setup?.subscriptions.some(item => item.id === draft.subscriptionId) ? <option value={draft.subscriptionId} disabled>現在の受信情報（一覧を確認）</option> : null}{setup?.subscriptions.map((item, index) => <option key={item.id} value={item.id}>受信情報 {index + 1} · {xReceiverLabel(item.receiverState)}</option>)}</select></label>
+        <label className="text-sm">使用する自分の受信情報<select className={field} disabled={!setup?.available || loading} value={draft.subscriptionId} onChange={event => update("subscriptionId", event.target.value)}><option value="">受信情報を選択</option>{draft.subscriptionId && !setup?.subscriptions.some(item => item.id === draft.subscriptionId) ? <option value={draft.subscriptionId} disabled>現在の受信情報（一覧を確認）</option> : null}{setup?.subscriptions.map((item, index) => <option key={item.id} value={item.id}>受信情報 {index + 1} · {item.browserKind === "brave" ? "Brave" : item.browserKind === "chrome" ? "Chrome" : "Firefox"} · {xReceiverLabel(item.receiverState)}</option>)}</select></label>
         <button type="button" className={button} onClick={() => setSetupOpen(true)}>PCの通知データを登録</button>
         {setup?.nextCursor ? <button type="button" className={button} disabled={busy || loading || !active} onClick={() => void mutate(async () => { const next = parseXSetupStatus(await api(`x-setup?afterId=${encodeURIComponent(setup.nextCursor ?? "")}`)); if (mounted.current && activeRef.current) setSetup(previous => previous ? { ...next, subscriptions: [...previous.subscriptions, ...next.subscriptions.filter(item => !previous.subscriptions.some(row => row.id === item.id))] } : next); })}>受信情報の候補をさらに表示</button> : null}
       </fieldset> : null}

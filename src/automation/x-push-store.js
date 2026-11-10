@@ -1,6 +1,6 @@
 'use strict';
 
-const { randomBytes } = require('node:crypto');
+const { randomBytes, createHash } = require('node:crypto');
 const { lockOwner } = require('./entitlements');
 
 const MAX_FRAME_BYTES = 64 * 1024;
@@ -63,13 +63,20 @@ function createXPushStore(db, options = {}) {
         || !Number.isSafeInteger(leaseMs) || leaseMs < 100 || leaseMs > 300000) fail('X_PUSH_STORE_CONFIG_INVALID');
     // Keep the owner -> subscription -> receiver lock order used by intake and
     // deletion. A delete cannot race a fenced inbox commit or resurrect a lease.
-    async function locked(input, work) {
+    async function locked(input, work, { createReceiver = false } = {}) {
         identity(input);
         try {
             return await db.withDatabaseTransaction(async query => {
                 await lockOwner(query, input.ownerUserId);
                 const subscription = (await query('SELECT * FROM automation_x_subscriptions WHERE id=? AND owner_user_id=? FOR UPDATE', [input.subscriptionId, input.ownerUserId]))[0];
                 if (!subscription) fail('X_PUSH_SUBSCRIPTION_NOT_FOUND');
+                // A missing-key SELECT ... FOR UPDATE takes an InnoDB gap
+                // lock. Two unrelated first claims can then deadlock while
+                // inserting into that gap. Insert the placeholder before the
+                // locking read, while still holding owner and subscription.
+                if (createReceiver) await query(`INSERT INTO automation_x_push_receivers (subscription_id,state,subscription_revision,updated_at_ms)
+                    VALUES (?,'awaiting',?,?) ON DUPLICATE KEY UPDATE subscription_id=VALUES(subscription_id)`,
+                [input.subscriptionId, Number(subscription.revision), now()]);
                 const receiver = (await query('SELECT * FROM automation_x_push_receivers WHERE subscription_id=? FOR UPDATE', [input.subscriptionId]))[0];
                 return work(query, subscription, receiver);
             });
@@ -95,7 +102,7 @@ function createXPushStore(db, options = {}) {
             let sealedEnvelope;
             try { sealedEnvelope = JSON.parse(subscription.sealed_json); } catch { fail('X_PUSH_VAULT_INVALID'); }
             return { subscriptionId: input.subscriptionId, ownerUserId: input.ownerUserId, revision, token, expiresAtMs, sealedEnvelope };
-        });
+        }, { createReceiver: true });
     }
     async function renew(lease, { authorize } = { authorize: undefined }) {
         return locked(lease, async (query, subscription, receiver) => {
@@ -119,6 +126,90 @@ function createXPushStore(db, options = {}) {
             return true;
         });
     }
+    async function chromeCheckinState(lease, { authorize } = { authorize: undefined }) {
+        return locked(lease, async (query, subscription, receiver) => {
+            fence(lease, subscription, receiver);
+            if (authorize) await authorize(query);
+            fence(lease, subscription, receiver);
+            if (Number(receiver.chrome_checkin_revision) !== lease.revision || receiver.chrome_checkin_at_ms == null)
+                return { checkedAtMs: null, intervalSeconds: 172800 };
+            const checkedAtMs = Number(receiver.chrome_checkin_at_ms), intervalSeconds = Number(receiver.chrome_checkin_interval_seconds);
+            if (!Number.isSafeInteger(checkedAtMs) || checkedAtMs < 0 || !Number.isSafeInteger(intervalSeconds)
+                || intervalSeconds < 43200 || intervalSeconds > 0xffffffff) fail('X_PUSH_CHECKIN_STATE_INVALID');
+            return { checkedAtMs, intervalSeconds };
+        });
+    }
+    async function recordChromeCheckin(lease, { intervalSeconds }, { authorize } = { authorize: undefined }) {
+        if (!Number.isSafeInteger(intervalSeconds) || intervalSeconds < 43200 || intervalSeconds > 0xffffffff) fail('X_PUSH_CHECKIN_STATE_INVALID');
+        return locked(lease, async (query, subscription, receiver) => {
+            fence(lease, subscription, receiver);
+            if (authorize) await authorize(query);
+            fence(lease, subscription, receiver);
+            const checkedAtMs = now();
+            await query('UPDATE automation_x_push_receivers SET chrome_checkin_at_ms=?,chrome_checkin_interval_seconds=?,chrome_checkin_revision=? WHERE subscription_id=?',
+                [checkedAtMs, intervalSeconds, lease.revision, lease.subscriptionId]);
+            fence(lease, subscription, receiver);
+            return { checkedAtMs, intervalSeconds };
+        });
+    }
+    // This API is inert until an Edge intake and receiver are explicitly wired.
+    // A token is never returned until the lease and authorization transaction commits.
+    function wnsState(receiver, revision) {
+        const values = [receiver.wns_token_sealed_json, receiver.wns_token_revision, receiver.wns_token_generation];
+        if (values.every(value => value == null)) return null;
+        const generation = Number(receiver.wns_token_generation);
+        if (values.some(value => value == null) || Number(receiver.wns_token_revision) !== revision
+            || !Number.isSafeInteger(generation) || generation < 1 || typeof values[0] !== 'string' || values[0].length > 8192)
+            fail('X_PUSH_WNS_STATE_INVALID');
+        let envelope;
+        try { envelope = JSON.parse(values[0]); } catch { fail('X_PUSH_WNS_STATE_INVALID'); }
+        return { generation, envelope };
+    }
+    function validateWnsOptions(vault, authorize) {
+        if (!vault || typeof vault.seal !== 'function' || typeof vault.open !== 'function' || typeof authorize !== 'function')
+            fail('X_PUSH_WNS_CONFIG_INVALID');
+    }
+    /** @param {any} lease @param {{vault?: any, authorize?: any}} [options] */
+    async function readWnsTokenState(lease, { vault, authorize } = {}) {
+        validateWnsOptions(vault, authorize);
+        /** @type {Buffer | undefined} */
+        let opened;
+        try {
+            return await locked(lease, async (query, subscription, receiver) => {
+                fence(lease, subscription, receiver);
+                if (subscription.browser_kind !== 'edge') fail('X_PUSH_WNS_BROWSER_INVALID');
+                await authorize(query); fence(lease, subscription, receiver);
+                const state = wnsState(receiver, lease.revision);
+                if (!state) return null;
+                opened = vault.open(state.envelope, { subscriptionId: lease.subscriptionId, ownerUserId: lease.ownerUserId,
+                    revision: lease.revision, generation: state.generation });
+                fence(lease, subscription, receiver);
+                return { generation: state.generation, token: opened };
+            });
+        } catch (error) { opened?.fill(0); throw error; }
+    }
+    /** @param {any} lease @param {{vault?: any, authorize?: any, token?: Buffer, expectedGeneration?: number}} [options] */
+    async function saveWnsTokenState(lease, { vault, authorize, token, expectedGeneration } = {}) {
+        validateWnsOptions(vault, authorize);
+        if (!Number.isSafeInteger(expectedGeneration) || expectedGeneration < 0 || expectedGeneration >= Number.MAX_SAFE_INTEGER)
+            fail('X_PUSH_WNS_STATE_INVALID');
+        return locked(lease, async (query, subscription, receiver) => {
+            fence(lease, subscription, receiver);
+            if (subscription.browser_kind !== 'edge') fail('X_PUSH_WNS_BROWSER_INVALID');
+            await authorize(query); fence(lease, subscription, receiver);
+            const state = wnsState(receiver, lease.revision);
+            if ((state?.generation || 0) !== expectedGeneration) fail('X_PUSH_WNS_STATE_CONFLICT');
+            const generation = expectedGeneration + 1;
+            const sealed = vault.seal(token, { subscriptionId: lease.subscriptionId, ownerUserId: lease.ownerUserId,
+                revision: lease.revision, generation });
+            const serialized = JSON.stringify(sealed);
+            if (typeof serialized !== 'string' || serialized.length > 8192) fail('X_PUSH_WNS_STATE_INVALID');
+            await query('UPDATE automation_x_push_receivers SET wns_token_sealed_json=?,wns_token_revision=?,wns_token_generation=? WHERE subscription_id=?',
+                [serialized, lease.revision, generation, lease.subscriptionId]);
+            fence(lease, subscription, receiver);
+            return { generation };
+        });
+    }
     async function markState(lease, state, reasonCode = null) {
         if (!STATES.has(state)) fail('X_PUSH_STATE_INVALID');
         validReason(reasonCode);
@@ -138,24 +229,102 @@ function createXPushStore(db, options = {}) {
             return true;
         });
     }
-    async function recordFrame(lease, input, { authorize } = { authorize: undefined }) {
+    async function recordFrame(lease, input, { authorize, mcsPending = false } = { authorize: undefined }) {
         const headers = validateFrame(input);
         return locked(lease, async (query, subscription, receiver) => {
             fence(lease, subscription, receiver);
             // The worker's trusted rollout guard runs under the same owner
             // lock as revocation, immediately before this receipt is written.
             if (authorize) await authorize(query);
+            if (mcsPending) {
+                const controlHash = createHash('sha256').update('mcs-control\0' + input.version).digest('hex');
+                const controls = await query(`SELECT id FROM automation_audit WHERE actor_user_id=? AND entity_id=?
+                    AND action IN ('x.push.provider.deleted_messages','x.push.provider.send_error') AND JSON_VALID(detail_json)
+                    AND JSON_UNQUOTE(JSON_EXTRACT(detail_json,'$.providerEventIdHash'))=? LIMIT 1`, [lease.ownerUserId, lease.subscriptionId, controlHash]);
+                if (controls.length) fail('X_PUSH_MCS_ID_CONFLICT');
+            }
             let row = (await query('SELECT * FROM automation_x_push_inbox WHERE subscription_id=? AND version=?', [lease.subscriptionId, input.version]))[0];
             const duplicate = Boolean(row);
+            if (mcsPending && row && Number(row.subscription_revision) !== lease.revision) fail('X_PUSH_REVISION_CONFLICT');
             if (!row) {
                 const result = await query(`INSERT INTO automation_x_push_inbox (subscription_id,subscription_revision,version,data_ciphertext,headers_json,ack_code,status,received_at_ms) VALUES (?,?,?,?,?,?,?,?)`,
                     [lease.subscriptionId, lease.revision, input.version, input.data, JSON.stringify(headers), input.ackCode, input.status, now()]);
                 row = (await query('SELECT * FROM automation_x_push_inbox WHERE id=?', [result.insertId]))[0];
             }
+            if (mcsPending) {
+                const pending = await query('SELECT persistent_id,subscription_revision,inbox_id FROM automation_x_mcs_pending WHERE subscription_id=? FOR UPDATE',
+                    [lease.subscriptionId]);
+                if (pending.some(item => Number(item.subscription_revision) !== lease.revision)) fail('X_PUSH_REVISION_CONFLICT');
+                const same = pending.find(item => item.persistent_id === input.version);
+                if (same && (same.inbox_id == null || String(same.inbox_id) !== String(row.id))) fail('X_PUSH_MCS_ID_CONFLICT');
+                if (pending.length >= 100 && !pending.some(item => item.persistent_id === input.version)) fail('X_PUSH_MCS_PENDING_LIMIT');
+                await query(`INSERT INTO automation_x_mcs_pending (subscription_id,subscription_revision,persistent_id,inbox_id,created_at_ms)
+                    VALUES (?,?,?,?,?) ON DUPLICATE KEY UPDATE persistent_id=VALUES(persistent_id)`,
+                [lease.subscriptionId, lease.revision, input.version, row.id, now()]);
+            }
             // Time can elapse during a slow database operation. Throwing here
             // rolls back the insert, and the caller must close without an ACK.
             fence(lease, subscription, receiver);
             return { ...inboxDto(row, lease.ownerUserId), duplicate };
+        });
+    }
+    async function recordMcsFrame(lease, input, { authorize } = { authorize: undefined }) {
+        return recordFrame(lease, input, { authorize, mcsPending: true });
+    }
+    async function recordMcsControl(lease, input, { authorize } = { authorize: undefined }) {
+        if (!input || !['deleted_messages', 'send_error'].includes(input.kind)
+            || input.persistentId !== null && (typeof input.persistentId !== 'string' || !/^[\x21-\x7e]{1,256}$/.test(input.persistentId)))
+            fail('X_PUSH_FRAME_INVALID');
+        const idHash = input.persistentId === null ? null : createHash('sha256').update('mcs-control\0' + input.persistentId).digest('hex');
+        const action = `x.push.provider.${input.kind}`;
+        return locked(lease, async (query, subscription, receiver) => {
+            fence(lease, subscription, receiver);
+            if (authorize) await authorize(query);
+            if (input.persistentId !== null) {
+                const inbox = await query('SELECT id FROM automation_x_push_inbox WHERE subscription_id=? AND version=? LIMIT 1',
+                    [lease.subscriptionId, input.persistentId]);
+                if (inbox.length) fail('X_PUSH_MCS_ID_CONFLICT');
+                const pending = await query('SELECT persistent_id,subscription_revision,inbox_id FROM automation_x_mcs_pending WHERE subscription_id=? FOR UPDATE', [lease.subscriptionId]);
+                if (pending.some(item => Number(item.subscription_revision) !== lease.revision)) fail('X_PUSH_REVISION_CONFLICT');
+                const same = pending.find(item => item.persistent_id === input.persistentId);
+                if (same && same.inbox_id != null) fail('X_PUSH_MCS_ID_CONFLICT');
+                if (pending.length >= 100 && !same) fail('X_PUSH_MCS_PENDING_LIMIT');
+                await query(`INSERT INTO automation_x_mcs_pending (subscription_id,subscription_revision,persistent_id,inbox_id,created_at_ms)
+                    VALUES (?,?,?,NULL,?) ON DUPLICATE KEY UPDATE persistent_id=VALUES(persistent_id)`,
+                [lease.subscriptionId, lease.revision, input.persistentId, now()]);
+            }
+            const previous = idHash === null ? [] : await query(`SELECT action FROM automation_audit WHERE actor_user_id=? AND entity_id=?
+                AND action IN ('x.push.provider.deleted_messages','x.push.provider.send_error') AND JSON_VALID(detail_json)
+                AND JSON_UNQUOTE(JSON_EXTRACT(detail_json,'$.providerEventIdHash'))=? LIMIT 1`, [lease.ownerUserId, lease.subscriptionId, idHash]);
+            if (previous.length && previous[0].action !== action) fail('X_PUSH_MCS_ID_CONFLICT');
+            if (!previous.length) await query('INSERT INTO automation_audit (actor_user_id,entity_id,action,detail_json,created_at_ms) VALUES (?,?,?,?,?)',
+                [lease.ownerUserId, lease.subscriptionId, action, JSON.stringify({ revision: lease.revision, providerEventIdHash: idHash }), now()]);
+            fence(lease, subscription, receiver);
+            return { duplicate: previous.length > 0 };
+        });
+    }
+    async function pendingMcs(lease, { authorize } = { authorize: undefined }) {
+        return locked(lease, async (query, subscription, receiver) => {
+            fence(lease, subscription, receiver);
+            if (authorize) await authorize(query);
+            const rows = await query('SELECT persistent_id,subscription_revision FROM automation_x_mcs_pending WHERE subscription_id=? ORDER BY created_at_ms,persistent_id LIMIT 101',
+                [lease.subscriptionId]);
+            fence(lease, subscription, receiver);
+            if (rows.length > 100) fail('X_PUSH_MCS_PENDING_LIMIT');
+            if (rows.some(row => Number(row.subscription_revision) !== lease.revision)) fail('X_PUSH_REVISION_CONFLICT');
+            return rows.map(row => row.persistent_id);
+        });
+    }
+    async function confirmMcs(lease, ids, { authorize } = { authorize: undefined }) {
+        if (!Array.isArray(ids) || !ids.length || ids.length > 100 || new Set(ids).size !== ids.length
+            || ids.some(id => typeof id !== 'string' || !/^[\x21-\x7e]{1,256}$/.test(id))) fail('X_PUSH_FRAME_INVALID');
+        return locked(lease, async (query, subscription, receiver) => {
+            fence(lease, subscription, receiver);
+            if (authorize) await authorize(query);
+            const result = await query('DELETE FROM automation_x_mcs_pending WHERE subscription_id=? AND subscription_revision=? AND persistent_id IN (?)',
+                [lease.subscriptionId, lease.revision, ids]);
+            fence(lease, subscription, receiver);
+            return Number(result.affectedRows);
         });
     }
     async function markRouted(lease, id) {
@@ -339,7 +508,7 @@ function createXPushStore(db, options = {}) {
             return { retryAtMs: null, retryAttempt: 0 };
         });
     }
-    return { claim, renew, assertLease, markState, release, recordFrame, markRouted, auditUse, getInbox, listInbox, status, list, leaseMs,
+    return { claim, renew, assertLease, chromeCheckinState, recordChromeCheckin, readWnsTokenState, saveWnsTokenState, markState, release, recordFrame, recordMcsFrame, recordMcsControl, pendingMcs, confirmMcs, markRouted, auditUse, getInbox, listInbox, status, list, leaseMs,
         beginProcessing, advanceProcessing, completeProcessing, markUnsupported, markRecoveryQuarantined, recordRetry, resetRetry,
         listQuarantinedInbox, restoreQuarantinedInbox, markUnmatched };
 }

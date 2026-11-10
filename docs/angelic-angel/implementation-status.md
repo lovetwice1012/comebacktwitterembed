@@ -91,7 +91,7 @@ Web実ブラウザーは11チェック成功、例外・外部通信は0。各�
 ## 残る受入
 
 2026-10-14の説明文改稿版は `0.1.0-preview.4`。保存ツール、登録・監視・枠変更画面、同梱ガイドを肯定的で具体的な文章に整理した。
-最新版の文章と配布・画面の確認結果は `positive-copy-review.md` / `positive-copy-validation.json`。
+この改稿時の文章と配布・画面の確認結果は `positive-copy-review.md` / `positive-copy-validation.json`。現行のFirefox配布版は `0.1.0-preview.5` で、配布情報は `x-setup-download.md` を参照する。
 上記のpreview.3検証記録と旧配布物は履歴として保持する。
 
 G1には指定した専用Firefox環境、手動X通知設定、監査可能なPush限定export、同一UAIDの移譲、実X通知復号、Mozilla/Xの運用条件確認が必要。合成fixtureやソース調査から成功を推定しない。

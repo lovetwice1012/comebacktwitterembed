@@ -13,20 +13,22 @@ function reconnectDelay(attempt, reasonCode, jitter = randomInt) {
     return base + jitter(0, Math.floor(base / 5) + 1);
 }
 
-// This supervisor does not import a browser or any X HTTP client. The only
-// external connection belongs to the explicitly enabled AutoPush gateway.
+// This supervisor does not import a browser or any X HTTP client. Connections
+// belong to the explicitly enabled Firefox or Chrome Push gateway.
 function createXPushRuntime(db, queue, options = {}) {
     const enabled = options.enabled === true, clock = options.clock || Date.now;
     const gateway = options.gateway || null;
     const router = options.router || (enabled ? createXEventRouter(db, queue, { clock, useLegacyUserInterval: options.useLegacyUserInterval === true }) : null);
     const mode = resolveXProcessingPolicy(options.processingPolicy);
     const cadenceConfigured = mode !== null;
-    const maxConnections = options.maxConnections ?? 1000, pageSize = options.pageSize ?? 100;
+    const maxConnections = options.maxConnections ?? 1000, pageSize = options.pageSize ?? 100, drainConcurrency = options.drainConcurrency ?? 16;
     const intervalMs = options.tickMs ?? 5000;
     if (!Number.isInteger(maxConnections) || maxConnections < 1 || maxConnections > 10000
         || !Number.isInteger(pageSize) || pageSize < 1 || pageSize > 100
+        || !Number.isInteger(drainConcurrency) || drainConcurrency < 1 || drainConcurrency > 100
         || !Number.isInteger(intervalMs) || intervalMs < 100 || intervalMs > 60000) throw new Error('X_PUSH_RUNTIME_CONFIG_INVALID');
     const sessions = new Map(), sessionControls = new Map(), leases = new Map(), draining = new Map(), cooldowns = new Map(), drainAgain = new Set(), receiptIds = new Map();
+    const refreshPending = new Map();
     // Recovered/processed states are durable; this bounded cache merely avoids
     // retrying still-unknown formats on every tick during the same process.
     const quarantineCursors = new Map(), realtimeCursors = new Map();
@@ -34,12 +36,12 @@ function createXPushRuntime(db, queue, options = {}) {
     const rolloutOptions = options.rolloutMode === undefined ? {} : { mode: options.rolloutMode };
     let timer, ticking = null, stopped = false, cursor = '';
     const assertAllowed = options.assertAllowed || (() => { throw new Error('X_PUSH_AUTHORITY_UNAVAILABLE'); });
-    const listCandidates = options.listCandidates || (async afterId => db.queryDatabase(`SELECT s.id,s.owner_user_id,s.revision FROM automation_x_subscriptions s
+    const listCandidates = options.listCandidates || (async afterId => db.queryDatabase(`SELECT s.id,s.owner_user_id,s.revision,s.updated_at_ms FROM automation_x_subscriptions s
         LEFT JOIN automation_x_push_receivers r ON r.subscription_id=s.id
         WHERE s.id>? AND COALESCE(r.state,'awaiting')<>'requires_reenrollment' AND COALESCE(r.retry_at_ms,0)<=? AND EXISTS (SELECT 1 FROM automation_x_monitors m WHERE m.owner_user_id=s.owner_user_id AND m.enabled=1 AND m.state='ready'
           AND CASE WHEN JSON_VALID(m.notification_settings_json) THEN JSON_UNQUOTE(JSON_EXTRACT(m.notification_settings_json,'$.subscriptionId')) ELSE NULL END=s.id)
         ORDER BY s.id LIMIT ?`, [afterId, clock(), pageSize]));
-    const listActiveSessions = options.listActiveSessions || (async ids => db.queryDatabase(`SELECT s.id,s.owner_user_id,s.revision
+    const listActiveSessions = options.listActiveSessions || (async ids => db.queryDatabase(`SELECT s.id,s.owner_user_id,s.revision,s.updated_at_ms
         FROM automation_x_subscriptions s WHERE s.id IN (?) AND EXISTS (
             SELECT 1 FROM automation_x_monitors m WHERE m.owner_user_id=s.owner_user_id AND m.enabled=1 AND m.state='ready'
             AND CASE WHEN JSON_VALID(m.notification_settings_json) THEN JSON_UNQUOTE(JSON_EXTRACT(m.notification_settings_json,'$.subscriptionId')) ELSE NULL END=s.id)`, [ids]));
@@ -52,7 +54,10 @@ function createXPushRuntime(db, queue, options = {}) {
         const closing = [];
         for (const [id, record] of sessionControls) {
             const row = current.get(id);
-            if (row && row.owner_user_id === record.ownerUserId && Number(row.revision || 1) === record.revision) continue;
+            if (row && row.owner_user_id === record.ownerUserId && Number(row.revision || 1) === record.revision
+                && Number(row.updated_at_ms || 0) === record.updatedAtMs) continue;
+            if (row && row.owner_user_id === record.ownerUserId && Number(row.revision || 1) === record.revision
+                && Number(row.updated_at_ms || 0) !== record.updatedAtMs) refreshPending.set(id, row);
             record.controller.abort();
             closing.push(sessions.get(id));
         }
@@ -151,12 +156,12 @@ function createXPushRuntime(db, queue, options = {}) {
                 }
                 if (!halted()) processed.add(inbox.id);
             }
-            async function realtimePass() {
+            async function realtimePass(modes) {
                 drainAgain.delete(lease.subscriptionId);
                 const pending = receiptIds.get(lease.subscriptionId);
                 receiptIds.delete(lease.subscriptionId);
                 try {
-                    if (!await router.hasRealtimeTargets(lease)) return;
+                    if (!(modes ? modes.realtime : await router.hasRealtimeTargets(lease))) return;
                     // The callback is only a wake-up/identity hint. Read owned,
                     // persisted ciphertext again; never route its supplied payload.
                     for (const id of pending || []) {
@@ -185,9 +190,12 @@ function createXPushRuntime(db, queue, options = {}) {
                     throw error;
                 }
             }
-            await realtimePass();
+            // One snapshot for this drain only. The delivery path and batch
+            // window still revalidate current authorization and settings.
+            const modes = trigger.received !== true && typeof router.targetModes === 'function' ? await router.targetModes(lease) : null;
+            await realtimePass(modes);
             let result = { state: 'processed' };
-            if (!halted() && trigger.received !== true && await router.hasBatchTargets(lease)) {
+            if (!halted() && trigger.received !== true && (modes?.batch || await router.hasBatchTargets(lease))) {
                 // Owner realtime is merely a legacy per-monitor default. Every
                 // batch target uses the current plan interval, even when another
                 // monitor on this subscription is being delivered immediately.
@@ -233,10 +241,17 @@ function createXPushRuntime(db, queue, options = {}) {
             if (!gateway || typeof gateway.run !== 'function') throw new Error('X_PUSH_GATEWAY_UNAVAILABLE');
             assertAllowed();
             await reconcileSessions();
-            const candidates = await listCandidates(cursor);
-            if (!Array.isArray(candidates)) throw new Error('X_PUSH_RUNTIME_CANDIDATES_INVALID');
-            cursor = candidates.length === pageSize ? candidates.at(-1).id : '';
-            for (const candidate of candidates) {
+            const page = await listCandidates(cursor);
+            if (!Array.isArray(page)) throw new Error('X_PUSH_RUNTIME_CANDIDATES_INVALID');
+            cursor = page.length === pageSize ? page.at(-1).id : '';
+            let refreshed = [];
+            if (refreshPending.size) {
+                refreshed = await listActiveSessions([...refreshPending.keys()]);
+                if (!Array.isArray(refreshed)) throw new Error('X_PUSH_RUNTIME_CANDIDATES_INVALID');
+                const eligibleIds = new Set(refreshed.map(row => row.id));
+                for (const id of refreshPending.keys()) if (!eligibleIds.has(id)) refreshPending.delete(id);
+            }
+            for (const candidate of [...refreshed, ...page]) {
                 if (stopped || sessions.size >= maxConnections) break;
                 if (sessions.has(candidate.id)) continue;
                 if ((cooldowns.get(candidate.id) || 0) > clock()) continue;
@@ -245,7 +260,7 @@ function createXPushRuntime(db, queue, options = {}) {
                 let active = true;
                 const revision = Number(candidate.revision || 1);
                 const localController = new AbortController();
-                const record = { controller: localController, ownerUserId: candidate.owner_user_id, revision };
+                const record = { controller: localController, ownerUserId: candidate.owner_user_id, revision, updatedAtMs: Number(candidate.updated_at_ms || 0) };
                 sessionControls.set(candidate.id, record);
                 const rememberSession = value => { if (active && !localController.signal.aborted && sessions.get(candidate.id) === pending) remember(value); };
                 const pending = Promise.resolve().then(() => gateway.run({ subscriptionId: candidate.id, ownerUserId: candidate.owner_user_id,
@@ -273,9 +288,19 @@ function createXPushRuntime(db, queue, options = {}) {
                         if (sessionControls.get(candidate.id) === record) sessionControls.delete(candidate.id);
                     });
                 sessions.set(candidate.id, pending);
+                refreshPending.delete(candidate.id);
             }
-            const results = await Promise.allSettled([...leases.values()].map(drain));
-            return { state: 'running', sessions: sessions.size, pending: results.filter(row => row.status === 'rejected').length };
+            // Thousands of live subscriptions must not all acquire database
+            // connections at once on each periodic scan. Immediate receipt
+            // wake-ups still use drain() directly and are not delayed here.
+            const current = [...leases.values()]; let next = 0, failures = 0;
+            await Promise.all(Array.from({ length: Math.min(drainConcurrency, current.length) }, async () => {
+                while (next < current.length && !stopped && !controller.signal.aborted) {
+                    const index = next++;
+                    try { await drain(current[index]); } catch { failures++; }
+                }
+            }));
+            return { state: 'running', sessions: sessions.size, pending: failures };
         })();
         ticking = work;
         try { return await work; } finally { if (ticking === work) ticking = null; }
@@ -324,11 +349,27 @@ function createXPushRuntimeFromEnvironment(db, queue, options = {}) {
         } finally { fs.closeSync(handle); }
         if (!config || typeof config !== 'object' || Array.isArray(config) || Object.keys(config).some(key => !['activeKeyId', 'privateKeys'].includes(key))) throw new Error();
         const privateWorkerVault = require('./x-setup-transfer').createTransferPrivateWorkerVault(config);
-        const gateway = require('./x-push-gateway').createXPushGateway(db, { enabled: true, privateWorkerVault });
+        const numberOption = (name, fallback, maximum) => {
+            const value = env[name];
+            if (value === undefined) return fallback;
+            const invalid = () => Object.assign(new Error('X notification worker capacity configuration is invalid'), { code: 'X_PUSH_WORKER_CAPACITY_INVALID' });
+            if (typeof value !== 'string' || !/^[1-9][0-9]*$/.test(value)) throw invalid();
+            const result = Number(value);
+            if (!Number.isSafeInteger(result) || result > maximum) throw invalid();
+            return result;
+        };
+        const maxConnections = numberOption('X_NOTIFICATION_MAX_CONNECTIONS', 1000, 10000);
+        const drainConcurrency = numberOption('X_NOTIFICATION_DRAIN_CONCURRENCY', 16, 100);
+        const gateway = require('./x-push-gateway').createXPushGateway(db, { enabled: true, privateWorkerVault,
+            chromeEnabled: env.X_NOTIFICATION_CHROME_ENABLED === '1' });
         return createXPushRuntime(db, queue, { enabled: true, gateway, processingPolicy: env.X_NOTIFICATION_PROCESSING_POLICY,
+            maxConnections, drainConcurrency,
             useLegacyUserInterval: env.ANGELIC_X_USE_LEGACY_USER_INTERVAL === '1',
             assertAllowed: options.assertAllowed || require('../recoveryLease').assertAllowed });
-    } catch { throw Object.assign(new Error('X notification receiver configuration is unavailable'), { code: 'X_PUSH_WORKER_KEY_UNAVAILABLE' }); }
+    } catch (error) {
+        if (error?.code === 'X_PUSH_WORKER_CAPACITY_INVALID') throw error;
+        throw Object.assign(new Error('X notification receiver configuration is unavailable'), { code: 'X_PUSH_WORKER_KEY_UNAVAILABLE' });
+    }
 }
 
 module.exports = { createXPushRuntime, createXPushRuntimeFromEnvironment, reconnectDelay };

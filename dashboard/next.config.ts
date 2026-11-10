@@ -13,6 +13,10 @@ const nextConfig: NextConfig = {
   // Runtime download uses requireBotModule, whose evaluated require is not
   // discoverable by Next's automatic file tracing. Include only release inputs.
   outputFileTracingIncludes: {
+    "/api/automation/x-setup/download-chrome": [
+      "../src/providers/_loader.js",
+      "../artifacts/angelic-setup/chrome-setup-0.1.0-chrome-preview.4.zip",
+    ],
     "/api/automation/x-setup/download": [
       // repoRoot() uses this existing directory as its runtime layout marker.
       "../src/providers/_loader.js",

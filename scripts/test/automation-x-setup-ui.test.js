@@ -62,10 +62,60 @@ test('beginner setup leads with concrete steps and clearly explains manual uploa
         const download = f.container.querySelector('a[download]'); assert.equal(download.getAttribute('href'), '/api/automation/x-setup/download');
         assert.match(text, /0\.1\.0-preview\.4/); assert.match(text, /SHA-256/); f.assertPrivate();
         await f.showUpload(); const uploadText = f.container.textContent;
-        for (const pattern of [/Cookie、閲覧履歴、保存パスワード/, /ファイル自体は暗号化せずに保存/, /それぞれの設定で通知を解除/, /他サイトの秘密鍵は含みません/, /暗号化された通知や識別情報もサーバーへ届く/, /受信後に破棄/, /運営側でそのデータを取得することは可能/, /別途明確な許可.*復号・利用・保存を行いません/, /他サイトの通知を利用する際は、あらためて許可を確認/, /Firefoxでも受け取れなくなる/]) assert.match(uploadText, pattern);
+        for (const pattern of [/Cookie、閲覧履歴、保存パスワード/, /ファイル自体は暗号化せずに保存/, /それぞれの設定で通知を解除/, /他サイトの秘密鍵は含みません/, /暗号化された通知や識別情報もサーバーへ届く/, /受信後に破棄/, /運営側でそのデータを取得することは可能/, /別途明確な許可.*復号・利用・保存を行いません/, /他サイトの通知を利用する際は、あらためて許可を確認/, /ブラウザーでも受け取れなくなる/]) assert.match(uploadText, pattern);
         assert.equal(f.fileInput().disabled, true);
         assert.match(f.consent().closest('label').textContent, /サーバーでX通知を受信・復号することに同意.*他サイトの通知も届く可能性.*別途許可するまでの破棄方針/);
         assert.doesNotMatch(text, /他サイトの通知は取得・登録しません/);
+    } finally { await f.close(); }
+});
+
+test('Chrome preparation and review appear only when Chrome intake is enabled', async () => {
+    const f = await fixture({ current: status({ chromeEnabled: true, braveEnabled: true, receiverEnabled: true }), upload: false,
+        respond: (route, method) => route === 'x-setup/validate' && method === 'POST'
+            ? { valid: true, browserVersion: '156.0.8078.80', scope: 'https://x.com/', formatVersion: 2 } : undefined });
+    try {
+        const chrome = [...f.container.querySelectorAll('label')].find(label => label.textContent.trim() === 'Chrome');
+        assert(chrome); await f.act(async () => chrome.querySelector('input').click());
+        assert.equal(f.container.querySelector('a[download]').getAttribute('href'), '/api/automation/x-setup/download-chrome');
+        assert.match(f.container.textContent, /監視したいアカウントごとに投稿通知をオン/);
+        await f.showUpload(); await f.agree(); await f.choose(); await f.validate();
+        assert.match(f.review().textContent, /Chrome 156\.0\.8078\.80/); f.assertPrivate();
+    } finally { await f.close(); }
+    const disabled = await fixture({ current: status({ chromeEnabled: false }), upload: false });
+    try { assert.equal([...disabled.container.querySelectorAll('label')].some(label => label.textContent.trim() === 'Chrome'), false); }
+    finally { await disabled.close(); }
+    const chromeOnly = await fixture({ current: status({ chromeEnabled: true, braveEnabled: false }), upload: false });
+    try { assert.equal([...chromeOnly.container.querySelectorAll('label')].some(label => label.textContent.trim() === 'Brave'), false); }
+    finally { await chromeOnly.close(); }
+});
+test('Brave preparation uses a separate launcher and review labels the imported browser', async () => {
+    const f = await fixture({ current: status({ chromeEnabled: true, braveEnabled: true, receiverEnabled: true }), upload: false,
+        respond: (route, method) => route === 'x-setup/validate' && method === 'POST'
+            ? { valid: true, browserVersion: '157.1.99.55', browserKind: 'brave', scope: 'https://x.com/', formatVersion: 2 } : undefined });
+    try {
+        const brave = [...f.container.querySelectorAll('label')].find(label => label.textContent.trim() === 'Brave');
+        assert(brave); await f.act(async () => brave.querySelector('input').click());
+        assert.equal(f.container.querySelector('a[download]').getAttribute('href'), '/api/automation/x-setup/download-chrome');
+        assert.match(f.container.textContent, /Braveで開始/); assert.match(f.container.textContent, /Google のプッシュ通知サービス/);
+        await f.showUpload(); await f.agree(); await f.choose(); await f.validate();
+        assert.match(f.review().textContent, /Brave 157\.1\.99\.55/); f.assertPrivate();
+    } finally { await f.close(); }
+});
+test('saved Brave receiver remains identifiable and compatible with old receiver responses', async () => {
+    const f = await fixture({ current: status({ chromeEnabled: true, subscriptions: [subscription({ browserKind: 'brave', browserVersion: '157.1.99.55' })] }), upload: false });
+    try {
+        assert.match(f.container.textContent, /Brave 157\.1\.99\.55/);
+        assert.equal(f.exports.parseXSetupSubscription(subscription({ browserKind: 'brave' })).browserKind, 'brave');
+        assert.equal(f.exports.parseXSetupSubscription(subscription()).browserKind, 'firefox');
+    } finally { await f.close(); }
+});
+test('provider loss notice is visible without exposing event identifiers', async () => {
+    const f = await fixture({ current: status({ subscriptions: [subscription({ lastProviderLossAtMs: 1791921600000 })] }), upload: false });
+    try {
+        assert.match(f.container.textContent, /通知サービスから未受信の通知が失われた.*Xの投稿を確認/);
+        assert.equal(f.exports.parseXSetupSubscription(subscription({ lastProviderLossAtMs: 1791921600000 })).lastProviderLossAtMs, 1791921600000);
+        assert.throws(() => f.exports.parseXSetupSubscription(subscription({ lastProviderLossAtMs: -1 })));
+        f.assertPrivate();
     } finally { await f.close(); }
 });
 
@@ -175,7 +225,7 @@ test('deletion asks for confirmation, uses the current revision, clears upload a
     const f = await fixture({ current: status({ subscriptions: [subscription({ revision: 7 })] }) });
     try {
         await f.agree(); await f.choose(); await f.validate(); await f.click('受信情報を削除'); assert.equal(f.review(), null); assert.equal(writes(f).length, 2);
-        assert.match(f.container.querySelector('[aria-label="受信情報の削除確認"]').textContent, /監視するアカウントと利用枠は保持.*X・Firefox側の通知を止める場合.*それぞれの設定で解除/);
+        assert.match(f.container.querySelector('[aria-label="受信情報の削除確認"]').textContent, /監視するアカウントと利用枠は保持.*Xとブラウザー側の通知を止める場合.*それぞれの設定で解除/);
         await f.click('削除を取り消す'); assert.equal(writes(f).length, 2); await f.click('受信情報を削除'); await f.click('この受信情報を削除');
         assert.deepEqual(writes(f).at(-1).body, { expectedRevision: 7 }); assert.match(f.container.textContent, /それぞれの設定から解除/); f.assertPrivate();
     } finally { await f.close(); }
@@ -331,11 +381,11 @@ test('stored receiver metadata distinguishes waiting, connecting, listening, ree
         assert.match(cards[0].textContent, /サーバー接続待ち.*保存が完了.*サーバーとの接続を待っています/);
         assert.match(cards[1].textContent, /サーバー接続中.*接続を準備.*受信記録と通知先への配信結果/);
         assert.match(cards[2].textContent, /サーバー接続を確認済み.*投稿通知が届いたら.*配信結果を確認/);
-        assert.match(cards[3].textContent, /再登録が必要.*専用Firefoxで通知を設定し直し.*新しいファイルを作成.*古い受信情報を削除して新しいファイルを登録.*監視するアカウントに設定/);
+        assert.match(cards[3].textContent, /再登録が必要.*設定用ブラウザーで通知を設定し直し.*新しいファイルを作成.*古い受信情報を削除して新しいファイルを登録.*監視するアカウントに設定/);
         assert.match(cards[4].textContent, /サーバー受信は停止中/); assert.match(cards[5].textContent, /サーバー接続の確認が必要/);
         assert.match(cards[2].textContent, /この受信情報を使う監視：2件/);
         assert.match(cards[0].textContent, /最初の受信を待っています/); assert.match(cards[2].textContent, /サーバーが最後に通知データ.*2026.*データの受信記録.*読み取りや通知先への配信結果は、別に確認/);
-        assert.match(f.container.textContent, /専用Firefoxを閉じたまま/); assert.match(f.container.textContent, /サーバー接続を確認済み.*実際のX通知が通知先に届くことを確認.*確認後は、PCの電源を切って使えます/);
+        assert.match(f.container.textContent, /設定用ブラウザーを閉じたまま/); assert.match(f.container.textContent, /接続を確認済み.*実際のX通知が通知先に届くことを確認.*確認後は、PCの電源を切って使えます/);
         assert.equal(writes(f).length, 0); f.assertPrivate();
     } finally { await f.close(); }
 });

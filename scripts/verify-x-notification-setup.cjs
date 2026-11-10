@@ -21,7 +21,7 @@ const { createXSetup } = require('../src/automation/x-setup');
 const ROOT = path.resolve(__dirname, '..'), DASHBOARD = path.join(ROOT, 'dashboard');
 const OUTPUT = path.join(ROOT, 'docs/angelic-angel/positive-copy-browser');
 const localRequire = createRequire(path.join(DASHBOARD, 'package.json'));
-const PIN = { bytes: 68653, sha256: 'c41a47ecb694cc8afe19ccfab3420d492a5a327b8264cb84b46da9ab1d7325db' };
+const PIN = { bytes: 68992, sha256: '4c0678e1257d116fc9760db8484c6744294602fe41042598fdcd8537570a7e98' };
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
 const actor = Object.freeze({ userId: '222222222222222222' });
 
@@ -204,7 +204,7 @@ async function main() {
         const pendingDownload = page.waitForEvent('download');
         await page.locator('a[download]').click();
         const received = await pendingDownload, receivedPath = await received.path(), packageBytes = await fs.readFile(receivedPath);
-        assert.equal(received.suggestedFilename(), 'x-notification-setup-0.1.0-preview.4.zip');
+        assert.equal(received.suggestedFilename(), 'x-notification-setup-0.1.0-preview.5.zip');
         assert.equal(packageBytes.length, PIN.bytes); assert.equal(hash(packageBytes), PIN.sha256); await received.delete();
         checks.push('actual-authenticated-download-route-pinned-release-bytes');
         await page.setViewportSize({ width: 390, height: 844 }); await page.evaluate(() => scrollTo(0, 0)); await capture('mobile-instructions');

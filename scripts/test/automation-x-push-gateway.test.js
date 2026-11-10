@@ -40,6 +40,20 @@ test('worker requires explicit enablement, private vault, rollout and same owner
     assert.equal(sockets, 0);
 }));
 
+test('Chrome envelopes can never be sent to the Firefox receiver', async () => setup(async db => {
+    const old = require('./helpers/x-push-fixture.cjs').fixture(), key = old.push.p256dhPrivateKey;
+    const chrome = { format: old.format, version: 2,
+        provenance: { kind: 'chrome-gcm', adapterVersion: '1.0.0', browserVersion: '140.0.7339.42', readMethod: 'chrome-gcm-snapshot' },
+        push: { deviceId: '123', securityToken: '456', appId: 'wp:https://x.com/#01234567-89AB-4CDE-8FAB-012345678-V2',
+            productCategory: 'com.chrome.windows', authorizedEntity: 'sender_123', scope: 'https://x.com/',
+            p256dhPublicKey: old.push.p256dhPublicKey, authenticationSecret: old.push.authenticationSecret,
+            p256dhPrivateKey: { kty: key.kty, crv: key.crv, x: key.x, y: key.y, d: key.d } } };
+    const subscription = await insertSubscription(db, chrome);
+    const h = harness(db, subscription, () => { throw new Error('must not connect'); });
+    await assert.rejects(h.run(), code('X_PUSH_PROTOCOL_INVALID'));
+    assert.equal(h.calls, 0);
+}));
+
 test('loopback WS decrypts both ECE schemes, commits before ACK, survives replay and recovers encrypted inbox after restart', async t => setup(async db => {
     const subscription = await insertSubscription(db), file = subscription.file;
     const payload = { notificationType: 'tweet', url: 'https://x.com/synthetic/status/123', author: { handle: 'synthetic', id: '123' }, text: 'PRIVATE-PLAINTEXT-SENTINEL' };
