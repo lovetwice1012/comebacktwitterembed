@@ -23,3 +23,5 @@ Two independent test profiles were compared. Each received one test notification
 ## Release follow-up
 
 Validate the final setup flow with an explicitly approved real X test, characterize reconnect and multi-notification offline behavior for supported Edge versions, and decide how to surface and mitigate provider-side delivery gaps. Keep any replay or delivery claim within the evidence gathered. Do not silently enable a polling fallback or alter the existing notification plan without an approved design.
+
+For a possible per-version protocol calibration, a Windows-only helper can create a short-lived localhost certificate in memory without installing it into the current user's certificate store. A disposable-profile test used its public-key pin for a local WNS relay and verified that an unrelated untrusted TLS endpoint stayed blocked. This is research infrastructure only: it is not yet part of the setup package, does not establish how to safely authenticate local relay connections, and does not justify intercepting a user's browsing traffic.

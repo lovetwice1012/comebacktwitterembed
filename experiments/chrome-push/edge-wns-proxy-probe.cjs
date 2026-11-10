@@ -141,18 +141,30 @@ async function main() {
     const temp = await fs.realpath(os.tmpdir()), root = await fs.mkdtemp(path.join(temp, 'cbte-edge-wns-probe-'));
     let browser, cdp, pageServer, relay, untrustedServer, durableDb, browserReceived = false, copiedProfileResult = null, detachedConnectionResult = null, independentResult = null, durableResult = null, routingResult = null, handshakeShape = null, handshakeRelations = null, bindShape = null, relationDeviceRecord = null, relationSiteRecord = null, independentWebPush = null, independentChannel = null, productConstants = null, capturedCipherDecrypted = null, appServerKeyMatches = null, deviceFields, expectedCipher, otherCipher, expectedNextCipher, otherNextCipher, tlsIsolationVerified = false; const sockets = new Set(), events = [], exchangeShapes = [];
     const browserEvents = { initial: 0, second: 0, third: 0, fourth: 0, copy: 0, other: 0 };
-    let probeStage = 'setup', previousServerNonce = null;
+    let probeStage = 'setup', previousServerNonce = null; const nativePfx = [];
     try {
         if (testIndependent && !testSkipChallenge || process.env.EDGE_PROBE_COMPARE_CHALLENGE === '1') productConstants = await readSyntheticProductConstants();
-        const cert = spawnSync('python', ['-c', python], { encoding: 'utf8', windowsHide: true, timeout: 10000 });
-        if (cert.status !== 0) throw new Error('PROBE_CERT_FAILED');
-        const tlsConfig = JSON.parse(cert.stdout);
-        const relaySpki = createHash('sha256').update(new X509Certificate(tlsConfig.cert).publicKey.export({ type: 'spki', format: 'der' })).digest('base64');
+        const createCertificate = () => {
+            if (process.env.EDGE_PROBE_NATIVE_CERT !== '1') {
+                const output = spawnSync('python', ['-c', python], { encoding: 'utf8', windowsHide: true, timeout: 10000 });
+                if (output.status !== 0) throw new Error('PROBE_CERT_FAILED');
+                const config = JSON.parse(output.stdout); return { config, certificate: config.cert };
+            }
+            if (process.env.NODE_ENV !== 'test' || process.platform !== 'win32') throw new Error('PROBE_MODE_INVALID');
+            const helper = path.resolve(__dirname, '../../client/angelic-setup/EdgeEphemeralCertificate.ps1').replace(/'/g, "''");
+            const command = `$ErrorActionPreference='Stop'; . '${helper}'; $c=New-XEdgeEphemeralCertificate; try { [ordered]@{pfx=[Convert]::ToBase64String($c.pfx);password=$c.password;certificate=[Convert]::ToBase64String($c.certificate)}|ConvertTo-Json -Compress } finally { [Array]::Clear($c.pfx,0,$c.pfx.Length);[Array]::Clear($c.certificate,0,$c.certificate.Length) }`;
+            const output = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(command, 'utf16le').toString('base64')],
+                { encoding: 'utf8', windowsHide: true, timeout: 10000 });
+            if (output.status !== 0) throw new Error('PROBE_CERT_FAILED');
+            const parsed = JSON.parse(output.stdout), pfx = Buffer.from(parsed.pfx, 'base64'); nativePfx.push(pfx);
+            return { config: { pfx, passphrase: parsed.password }, certificate: Buffer.from(parsed.certificate, 'base64') };
+        };
+        const cert = createCertificate(), tlsConfig = cert.config;
+        const relaySpki = createHash('sha256').update(new X509Certificate(cert.certificate).publicKey.export({ type: 'spki', format: 'der' })).digest('base64');
         if (testTlsIsolation) {
-            const otherCert = spawnSync('python', ['-c', python], { encoding: 'utf8', windowsHide: true, timeout: 10000 });
-            if (otherCert.status !== 0) throw new Error('PROBE_CERT_FAILED');
+            const otherCert = createCertificate();
             let unexpectedRequests = 0;
-            untrustedServer = https.createServer(JSON.parse(otherCert.stdout), (_req, res) => { unexpectedRequests++; res.end('synthetic'); });
+            untrustedServer = https.createServer(otherCert.config, (_req, res) => { unexpectedRequests++; res.end('synthetic'); });
             untrustedServer.unexpectedRequests = () => unexpectedRequests;
             await new Promise(resolve => untrustedServer.listen(0, '127.0.0.1', resolve));
         }
@@ -1225,6 +1237,7 @@ async function main() {
         if (independentWebPush) for (const secret of Object.values(independentWebPush)) secret.fill(0);
         independentChannel?.fill(0);
         if (productConstants) for (const secret of Object.values(productConstants)) secret.fill(0);
+        for (const value of nativePfx) value.fill(0);
         relationDeviceRecord?.fill(0); relationSiteRecord?.fill(0);
         expectedCipher?.fill(0); otherCipher?.fill(0); expectedNextCipher?.fill(0); otherNextCipher?.fill(0);
         await cdp?.close().catch(() => {});
