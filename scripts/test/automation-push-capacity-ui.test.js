@@ -388,7 +388,7 @@ test('optional plan interval leaves legacy bodies untouched, rejects invalid val
         for (const value of ['0', '4', '5.5', '10081', '1e2']) { await f.fill(interval, value); await f.submitIn(normal); assert.equal(normal.querySelector('[aria-label="変更内容の確認"]'), null); }
         await f.fill(interval, '15'); await f.submitIn(normal); await f.clickIn(normal, 'この内容で保存'); assert.equal(writes(f).at(-1).body.intervalMinutes, 15);
         await f.fill(interval, ''); await f.submitIn(normal); await f.clickIn(normal, 'この内容で保存'); assert.equal(writes(f).at(-1).body.intervalMinutes, null);
-        assert.match(normal.textContent, /既存通知の確認間隔・枠配分は保持/);
+        assert.match(normal.textContent, /新着・価格・X通知に適用/);
     } finally { await f.close(); }
 });
 

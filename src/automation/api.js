@@ -126,7 +126,11 @@ async function dispatchCore({ method, path, search = new URLSearchParams(), body
     }
     else if (kind === "plans") {
       const plans = require('./entitlements');
-      if (!id && method === "GET") result = { items: await plans.listPlanPolicies(services.db.queryDatabase, actor) };
+      if (!id && method === "GET") {
+        const items = await plans.listPlanPolicies(services.db.queryDatabase, actor);
+        const rows = await services.db.queryDatabase('SELECT id FROM automation_legacy_donor_cutover WHERE id=1');
+        result = { items, legacyDonorCutover: rows.length > 0 };
+      }
       else if (method === "POST" || method === "PATCH") result = await xQuota().mutatePolicy(actor,query => plans.savePlanPolicy(query, actor, { planId: id || body.planId, label: body.label, slotLimit: body.slotLimit, minuteLimit: body.minuteLimit, dayLimit: body.dayLimit, priority: body.priority, enabled: body.enabled, expectedUpdatedAtMs: body.expectedUpdatedAtMs, intervalMinutes: body.intervalMinutes }));
     }
     else if (kind === "entitlements" && id && method === "POST") result = await xQuota().mutatePolicy(actor,query => require('./entitlements').setUserPlan(query, actor, id, body.planId, { expiresAtMs: body.expiresAtMs }));

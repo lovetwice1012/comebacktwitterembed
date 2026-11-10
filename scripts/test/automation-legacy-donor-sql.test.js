@@ -21,6 +21,9 @@ test('legacy donor cutover preserves old holdings, floors, paid plans, and rollb
             await entitlements.savePlanPolicy(query, admin, { planId: 'basic', label: 'Basic', slotLimit: 10, minuteLimit: 20, dayLimit: 72, priority: 4, intervalMinutes: 10 });
             await entitlements.setUserPlan(query, admin, '200', 'basic');
         });
+        const dispatch = require('../../src/automation/api').dispatch;
+        assert.equal((await dispatch({ method: 'GET', path: ['plans'] }, admin, { db })).legacyDonorCutover, false);
+        await assert.rejects(dispatch({ method: 'GET', path: ['plans'] }, { userId: '100', isAdmin: false }, { db }), { code: 'AUTOMATION_FORBIDDEN' });
         await assert.rejects(db.withDatabaseTransaction(async query => {
             await snapshotLegacyBenefits(query, { ownerIds: ['100'], actor: admin, now: 10 });
             await activateLegacyCutover(query, { ownerIds: ['100'], actor: admin, now: 10 });
@@ -30,6 +33,7 @@ test('legacy donor cutover preserves old holdings, floors, paid plans, and rollb
             await snapshotLegacyBenefits(query, { ownerIds: ['100', '200'], actor: admin, now: 20 });
             await activateLegacyCutover(query, { ownerIds: ['100', '200'], actor: admin, now: 20 });
         });
+        assert.equal((await dispatch({ method: 'GET', path: ['plans'] }, admin, { db })).legacyDonorCutover, true);
         const old = await entitlements.inspectXPlan(db.queryDatabase, '100');
         assert.equal(old.planId, 'free'); assert.equal(old.baseSlotLimit, 5); assert.equal(old.slotLimit, 7);
         assert.equal(old.minuteLimit, 7); assert.equal(old.dayLimit, 36); assert.equal(old.priority, 1); assert.equal(old.intervalMinutes, 5);

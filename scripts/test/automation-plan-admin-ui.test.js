@@ -58,6 +58,23 @@ test('free/supporter editable defaults display server values and cannot be disab
     } finally { await f.close(); }
 });
 
+test('after donor cutover the retired supporter plan is hidden and intervals describe the active services', async () => {
+    const archived = policy('old_plus', { label: '旧プラス', enabled: false });
+    const f = await fixture({ plans: [policy('free'), policy('supporter'), policy('basic'), archived], respond: async (route, method) =>
+        route === 'plans' && method === 'GET' ? { items: [policy('free'), policy('supporter'), policy('basic'), archived], legacyDonorCutover: true } : undefined });
+    try {
+        assert.equal(f.container.querySelector('[aria-label="支援者の通知設定"]'), null);
+        assert(f.container.querySelector('[aria-label="無料の通知設定"]'));
+        assert.match(f.container.textContent, /新着・価格・X通知に適用/);
+        assert.match(f.container.textContent, /無料プランは無効にできません/);
+        assert.equal(f.container.querySelector('[aria-label="旧プラスの通知設定"]'), null);
+        await f.click('停止中のプランを表示');
+        assert(f.container.querySelector('[aria-label="旧プラスの通知設定"]'));
+        assert.equal(f.container.querySelector('[aria-label="支援者の通知設定"]'), null);
+        assert.equal(writes(f).length, 0);
+    } finally { await f.close(); }
+});
+
 test('numeric fields preserve empty input and reject non-integer and out-of-range values before opening confirmation or saving', async () => {
     const f = await fixture();
     try {
