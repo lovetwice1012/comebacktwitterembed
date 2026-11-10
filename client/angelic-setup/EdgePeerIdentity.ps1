@@ -18,13 +18,16 @@ function Test-XEdgeOwnedLoopbackPeer {
         if ($ClientPort -lt 1024 -or $ClientPort -gt 65535 -or $ServerPort -lt 1024 -or $ServerPort -gt 65535 -or
             $BrowserPid -le 4 -or $BrowserStartTicks -le 0 -or -not [IO.Path]::IsPathRooted($BrowserExecutable)) { return $false }
         $expected = [IO.Path]::GetFullPath($BrowserExecutable)
-        $rows = @(Get-NetTCPConnection -LocalAddress '127.0.0.1' -LocalPort $ClientPort -RemoteAddress '127.0.0.1' -RemotePort $ServerPort -State Established -ErrorAction Stop)
+        # 標準モジュールの絶対パスを使い、外部モジュールの混入を防ぎます。
+        Import-Module ([IO.Path]::Combine($PSHOME, 'Modules', 'NetTCPIP', 'NetTCPIP.psd1')) -ErrorAction Stop
+        Import-Module ([IO.Path]::Combine($PSHOME, 'Modules', 'CimCmdlets', 'CimCmdlets.psd1')) -ErrorAction Stop
+        $rows = @(NetTCPIP\Get-NetTCPConnection -LocalAddress '127.0.0.1' -LocalPort $ClientPort -RemoteAddress '127.0.0.1' -RemotePort $ServerPort -State Established -ErrorAction Stop)
         if ($rows.Count -ne 1 -or $rows[0].OwningProcess -le 4) { return $false }
         $peerPid = [int]$rows[0].OwningProcess; $current = $peerPid; $seen = @{}
         for ($depth = 0; $depth -lt 9; $depth++) {
             if ($current -le 4 -or $seen.ContainsKey($current)) { return $false }
             $seen[$current] = $true
-            $process = Get-Process -Id $current -ErrorAction Stop
+            $process = Microsoft.PowerShell.Management\Get-Process -Id $current -ErrorAction Stop
             try {
                 $ticks = $process.StartTime.ToUniversalTime().Ticks
                 $executable = [IO.Path]::GetFullPath($process.Path)
@@ -32,7 +35,7 @@ function Test-XEdgeOwnedLoopbackPeer {
                 $processes.Add([pscustomobject]@{ pid = $current; ticks = $ticks })
             } finally { $process.Dispose() }
             if ($current -eq $BrowserPid) { break }
-            $info = @(Get-CimInstance -ClassName Win32_Process -Filter ("ProcessId = " + $current) -ErrorAction Stop)
+            $info = @(CimCmdlets\Get-CimInstance -ClassName Win32_Process -Filter ("ProcessId = " + $current) -ErrorAction Stop)
             if ($info.Count -ne 1 -or [int]$info[0].ProcessId -ne $current) { return $false }
             $current = [int]$info[0].ParentProcessId
         }
@@ -43,11 +46,11 @@ function Test-XEdgeOwnedLoopbackPeer {
         }
         # PID 再利用や接続の切り替わりを避けるため、判定直前にもう一度照合します。
         foreach ($item in $processes) {
-            $again = Get-Process -Id $item.pid -ErrorAction Stop
+            $again = Microsoft.PowerShell.Management\Get-Process -Id $item.pid -ErrorAction Stop
             try { if ($again.StartTime.ToUniversalTime().Ticks -ne $item.ticks -or [IO.Path]::GetFullPath($again.Path) -ine $expected) { return $false } }
             finally { $again.Dispose() }
         }
-        $again = @(Get-NetTCPConnection -LocalAddress '127.0.0.1' -LocalPort $ClientPort -RemoteAddress '127.0.0.1' -RemotePort $ServerPort -State Established -ErrorAction Stop)
+        $again = @(NetTCPIP\Get-NetTCPConnection -LocalAddress '127.0.0.1' -LocalPort $ClientPort -RemoteAddress '127.0.0.1' -RemotePort $ServerPort -State Established -ErrorAction Stop)
         return ($again.Count -eq 1 -and [int]$again[0].OwningProcess -eq $peerPid)
     } catch { return $false }
 }
