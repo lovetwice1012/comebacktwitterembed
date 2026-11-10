@@ -9,6 +9,18 @@ MacでもFirefox・Chrome・Brave・Edge・Safariの利用者が設定用ファ�
 - Microsoftの組み込みWNSクライアントのポリシーはWindows向けで、macOSではサポート対象外とされている。[Microsoftのポリシー説明](https://learn.microsoft.com/en-us/deployedge/microsoft-edge-policies/forcebuiltinpushmessagingclient) からMac版Edgeがどの通知基盤を使うかは確定できない。WindowsのEdge処理をMacに流用せず、実機で別途調査する。
 - SafariのWeb PushはAPNsとWebKitの `webpushd` を利用する。[WebKitの説明](https://webkit.org/blog/12945/meet-web-push/) と [AppleのWeb Push案内](https://developer.apple.com/documentation/usernotifications/sending-web-push-notifications-in-web-apps-and-browsers) は、サイト運営者が通知を送るための公開方式を説明している。これだけでは、既存Safari購読の受信権限を別サーバーへ安全に移せることは証明できない。AppleはSafariで不可視のPushをサポートせず、通知表示を求めているため、設定用ブラウザーの受信を止める方式との関係も確認する。
 
+## Safariの受信経路の追加調査（公開ソース）
+
+以下はWebKit公開ソースのコミット `b82767f9fd20225dbec19f86947188825535202b` から確認した内容であり、利用者のmacOSの実装・アクセス権を実測した結果ではない。
+
+- [PushService](https://github.com/WebKit/WebKit/blob/b82767f9fd20225dbec19f86947188825535202b/Source/WebKit/webpushd/PushService.mm#L427-L442) は購読ごとにscope、endpoint、topic、公開鍵・秘密鍵、認証秘密をまとめて保存する。受信時にはtopicでレコードを探し、保存済み鍵で復号する（[受信処理](https://github.com/WebKit/WebKit/blob/b82767f9fd20225dbec19f86947188825535202b/Source/WebKit/webpushd/PushService.mm#L943-L989)）。Webページから公開される購読情報だけでは、この受信処理に必要な秘密鍵を満たせない。
+- [ApplePushServiceConnection](https://github.com/WebKit/WebKit/blob/b82767f9fd20225dbec19f86947188825535202b/Source/WebKit/webpushd/ApplePushServiceConnection.mm#L60-L105) はOS側の `APSConnection` を通して通知受信とURLトークンの取得を行う。Web Push送信先URLとWeb Push復号鍵を保存するだけで、別サーバーがAPNsの受信側になれることは示されていない。
+- [WebPushDaemonMain](https://github.com/WebKit/WebKit/blob/b82767f9fd20225dbec19f86947188825535202b/Source/WebKit/webpushd/WebPushDaemonMain.mm#L122-L143) には、古い保存先からAppleのアプリグループコンテナへのDB移行処理がある。[接続側の検査](https://github.com/WebKit/WebKit/blob/b82767f9fd20225dbec19f86947188825535202b/Source/WebKit/webpushd/PushClientConnection.mm#L145-L202)には署名されたホストの権限確認があり、通常の配布ツールが同じIPCを使えるとは限らない。アクセス制御を回避せず、実機で正規の利用可能な手段を確認する。
+- [公開トークンの変更時](https://github.com/WebKit/WebKit/blob/b82767f9fd20225dbec19f86947188825535202b/Source/WebKit/webpushd/PushService.mm#L926-L940)には既存購読が無効化される。ファイル作成時に保存した状態が将来も有効とは限らないため、再登録・トークン更新・競合を含めて確認する必要がある。
+- [Safari 17のプロファイル](https://webkit.org/blog/14445/webkit-features-in-safari-17-0/)ではWeb Push購読もプロファイル単位で分離される。対象の特定と誤ったプロファイルからの取り出し防止を設計に含める。
+
+次の実機確認では、利用者の既存データではなく新規の使い捨てmacOSユーザーとテストサイトを使用する。購読の作成・復号・再起動・ブラウザー終了中の受信、トークン更新、プロファイル分離を別々に検証し、取得可能な状態とサーバーへ移せる受信権限を区別する。これらは現時点では未検証であり、Safari受付を有効にする根拠にはしない。
+
 ## 実装・検証の条件
 
 設定ツールは対象サイトの通知情報だけを選別し、ファイル作成までを担当する。通常使用中のブラウザープロファイルやKeychain全体を読み出さない。必要な権限と、対象外サイトの通知がサーバーに到達する可能性は保存前に説明する。
