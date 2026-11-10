@@ -9,7 +9,7 @@ const http = require('node:http');
 const https = require('node:https');
 const tls = require('node:tls');
 const { spawn, spawnSync } = require('node:child_process');
-const { createHmac, createHash, createCipheriv, createPrivateKey, randomInt } = require('node:crypto');
+const { createHmac, createHash, createCipheriv, createPrivateKey, generateKeyPairSync, randomInt } = require('node:crypto');
 const { pathToFileURL } = require('node:url');
 const webpush = require('web-push');
 const CDP = require('chrome-remote-interface');
@@ -90,6 +90,7 @@ async function main() {
     const testDurable = process.env.EDGE_PROBE_DURABLE === '1';
     const testDurableFailure = process.env.EDGE_PROBE_DURABLE_FAIL_INSERT === '1';
     const testProcessCrash = process.env.EDGE_PROBE_DURABLE_PROCESS_CRASH === '1';
+    const testTokenState = process.env.EDGE_PROBE_DURABLE_TOKEN_STATE === '1';
     if (testWrongKey && (noRelay || process.env.EDGE_PROBE_RECONNECT !== '1' || process.env.EDGE_PROBE_COPY_PROFILE !== '1'
         || process.env.EDGE_PROBE_MINIMAL_PROFILE !== '1' || process.env.EDGE_PROBE_DECRYPT_RECEIVED === '1'
         || (process.env.EDGE_PROBE_OMIT_COMPONENT || '').split(',').includes('push-store'))) throw new Error('PROBE_MODE_INVALID');
@@ -111,6 +112,7 @@ async function main() {
         throw new Error('PROBE_MODE_INVALID');
     if (testDurableFailure && !testDurable) throw new Error('PROBE_MODE_INVALID');
     if (testProcessCrash && (!testDurable || testDurableFailure)) throw new Error('PROBE_MODE_INVALID');
+    if (testTokenState && !testProcessCrash) throw new Error('PROBE_MODE_INVALID');
     const temp = await fs.realpath(os.tmpdir()), root = await fs.mkdtemp(path.join(temp, 'cbte-edge-wns-probe-'));
     let browser, cdp, pageServer, relay, durableDb, browserReceived = false, copiedProfileResult = null, detachedConnectionResult = null, independentResult = null, durableResult = null, routingResult = null, handshakeShape = null, handshakeRelations = null, relationDeviceRecord = null, relationSiteRecord = null, independentWebPush = null, independentChannel = null, productConstants = null, capturedCipherDecrypted = null, appServerKeyMatches = null, deviceFields, expectedCipher, otherCipher, expectedNextCipher, otherNextCipher; const sockets = new Set(), events = [];
     const browserEvents = { initial: 0, second: 0, third: 0, fourth: 0, copy: 0, other: 0 };
@@ -807,6 +809,14 @@ async function main() {
                 const testRotation = process.env.EDGE_PROBE_ROTATION === '1';
                 if (testRotation && !generatedHandshake) throw new Error('PROBE_MODE_INVALID');
                 if (testProcessCrash) {
+                    let statePrivateKey;
+                    if (testTokenState) {
+                        statePrivateKey = generateKeyPairSync('rsa', { modulusLength: 3072 }).privateKey.export({ type: 'pkcs8', format: 'pem' });
+                        const { createSyntheticStateVault } = require('./edge-fixture-state-vault.cjs');
+                        const { createSyntheticTokenStateStore } = require('./edge-fixture-state-store.cjs');
+                        const state = createSyntheticTokenStateStore({ ...durableDb, fixturePort: 33621 }, { vault: createSyntheticStateVault(statePrivateKey) });
+                        await state.initialize();
+                    }
                     const entitlements = require('../../src/automation/entitlements');
                     await durableDb.withDatabaseTransaction(query => entitlements.savePlanPolicy(query, { userId: '666666666666666666', isAdmin: true },
                         { planId: 'free', label: 'fixture', slotLimit: 5, minuteLimit: 5, dayLimit: 24, priority: 0, intervalMinutes: 5 }));
@@ -818,7 +828,8 @@ async function main() {
                         ownerUserId: durableSubscription.ownerUserId, deviceKey: key.toString('base64'), token: deviceFields[2].toString('utf8'),
                         channel: independentChannel.toString('base64'), productKey: productConstants.key.toString('base64'), productId: productConstants.id.toString('base64'),
                         publicKey: independentWebPush.publicKey.toString('base64'), privateKey: independentWebPush.privateKey.toString('base64'),
-                        auth: independentWebPush.auth.toString('base64'), subscription: value.subscription, otherSubscription, vapid, clientMetadata };
+                        auth: independentWebPush.auth.toString('base64'), subscription: value.subscription, otherSubscription, vapid, clientMetadata,
+                        ...(testTokenState ? { stateEnabled: true, statePrivateKey } : {}) };
                     let firstWorker, successorWorker;
                     try {
                         firstWorker = startSyntheticWorker({ ...input, worker: 'first' });
@@ -839,11 +850,14 @@ async function main() {
                         const recovered = await successorWorker.wait('recovered'); await successorWorker.waitExit();
                         let oldLeaseRejected = false;
                         try { await durableStore.assertLease(stale); } catch (error) { if (error.code === 'X_PUSH_LEASE_LOST') oldLeaseRejected = true; else throw error; }
+                        const expectedCount = testTokenState ? 2 : 1;
                         if (!oldLeaseRejected || !Number.isInteger(recovered.pid) || recovered.pid === process.pid || recovered.pid === committed.pid
-                            || recovered.inboxCount !== 1 || recovered.jobCount !== 1) throw new Error('PROBE_DURABLE_ROUTE_FAILED');
+                            || recovered.inboxCount !== expectedCount || recovered.jobCount !== expectedCount
+                            || testTokenState && (!recovered.reconnected || recovered.stateGeneration !== 2)) throw new Error('PROBE_DURABLE_ROUTE_FAILED');
                         independentResult = { killedAfterCommitBeforeTargetAck: true };
                         durableResult = { realWnsCipherCommitted: true, separateWorkerProcesses: true, actualLeaseExpiry: true,
-                            staleLeaseRejected: true, successorDecrypted: true, foreignPersisted: false, inboxCount: recovered.inboxCount, jobCount: recovered.jobCount };
+                            staleLeaseRejected: true, successorDecrypted: true, foreignPersisted: false, inboxCount: recovered.inboxCount, jobCount: recovered.jobCount,
+                            tokenStateSaved: testTokenState, successorReconnected: recovered.reconnected, tokenGeneration: recovered.stateGeneration };
                     } finally {
                         const cleanup = await Promise.allSettled([firstWorker, successorWorker].filter(Boolean).map(worker => worker.cleanup()));
                         if (cleanup.some(result => result.status === 'rejected')) throw new Error('PROBE_WORKER_CLEANUP_FAILED');
