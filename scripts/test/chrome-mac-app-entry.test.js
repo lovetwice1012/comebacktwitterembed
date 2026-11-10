@@ -14,6 +14,7 @@ async function harness({ manifest, result = { state: 'saved' }, error } = {}) {
         if (name === 'node:fs/promises') return { open: async () => ({ stat: async () => ({ isFile: () => true, size: Buffer.byteLength(fileText) }),
             readFile: async () => fileText, close: async () => {} }), realpath: async value => value };
         if (name === 'node:os') return { homedir: () => '/Users/test' };
+        if (name === 'node:path') return path.posix;
         if (name === '../src/automation/chrome-mac-dialogs') return { createMacChromeDialogs: () => ui };
         if (name === '../src/automation/chrome-mac-app') return { runMacChromeApp: async options => {
             calls.push(options); if (error) throw Object.assign(new Error('private'), { code: error }); return result;

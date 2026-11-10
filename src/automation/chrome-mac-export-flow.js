@@ -12,7 +12,7 @@ const { writeMacChromeExport } = require('./chrome-mac-private-export');
 const fail = code => Object.assign(new Error(code), { code });
 
 async function exportMacChromeNotifications({ rootPath, profileId, helperPath, expectedSha256, subscription,
-    browserVersion, keychainConfirmed, confirmSave, signal }) {
+    browserVersion, keychainConfirmed, confirmSave, signal = undefined }) {
     if (keychainConfirmed !== true || typeof confirmSave !== 'function'
         || signal !== undefined && !(signal instanceof AbortSignal)) throw fail('X_CHROME_MAC_FLOW_INVALID');
     function check() { if (signal?.aborted) throw fail('X_CHROME_MAC_FLOW_CANCELLED'); }

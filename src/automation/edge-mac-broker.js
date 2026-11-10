@@ -31,14 +31,19 @@ async function verifyInstalledEdge() {
 async function startMacEdgeBroker({ rootPath, profileId, suppressReceive, profileLease }) {
     if (typeof suppressReceive !== 'boolean') throw fail('X_EDGE_MAC_BROKER_INVALID');
     const profile = await verifyMacEdgeProfile(rootPath, profileId), browserPath = await verifyInstalledEdge();
-    const ownsLease = profileLease === undefined; let lease = profileLease, operation, launched, launchedClosed = false;
+    const ownsLease = profileLease === undefined; let lease = profileLease, operation, launchedClosed = false;
+    /** @type {import('node:child_process').ChildProcess | null} */
+    let launched = null;
+    const spawnOwned = (file, args, options) => {
+        launched = spawn(file, args, options); launched.once('close', () => { launchedClosed = true; }); return launched;
+    };
     try {
         if (ownsLease) lease = await acquireMacProfileLease({ rootPath, profileId, browser: 'edge' });
         operation = beginMacProfileLease(lease, { rootPath, profileId, browser: 'edge' });
         await verifyMacEdgeProfile(rootPath, profileId);
         const broker = await startChromeBroker({ chromePath: browserPath, profilePath: profile.profilePath,
             browserMode: 'edge', includeApplicationServerKey: true, suppressReceive,
-            spawnChrome: (...args) => { launched = spawn(...args); launched.once('close', () => { launchedClosed = true; }); return launched; } });
+            spawnChrome: /** @type {typeof import('node:child_process').spawn} */ (/** @type {unknown} */ (spawnOwned)) });
         let released = false, settleRelease;
         const releaseComplete = new Promise(resolve => { settleRelease = resolve; });
         const release = async () => {
@@ -55,15 +60,16 @@ async function startMacEdgeBroker({ rootPath, profileId, suppressReceive, profil
         // A failed handshake can request termination before the OS has
         // reported that the child actually exited. Keep the profile locked
         // until then, rather than letting another setup start in that gap.
-        if (operation && launched && !launchedClosed && launched.exitCode === null && launched.signalCode === null) {
+        const active = /** @type {import('node:child_process').ChildProcess | null} */ (launched);
+        if (operation && active && !launchedClosed && active.exitCode === null && active.signalCode === null) {
             let finished = false;
             const releaseAfterExit = async () => {
                 if (finished) return; finished = true; operation.end();
                 await releaseMacProfileLease(lease).catch(() => {});
             };
-            launched.once('exit', () => { void releaseAfterExit(); });
-            launched.once('close', () => { void releaseAfterExit(); });
-            if (launchedClosed || launched.exitCode !== null || launched.signalCode !== null) void releaseAfterExit();
+            active.once('exit', () => { void releaseAfterExit(); });
+            active.once('close', () => { void releaseAfterExit(); });
+            if (launchedClosed || active.exitCode !== null || active.signalCode !== null) void releaseAfterExit();
             throw fail('X_EDGE_MAC_BROKER_CLEANUP_PENDING');
         }
         operation?.end();

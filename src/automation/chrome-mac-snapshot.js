@@ -96,6 +96,7 @@ async function withMacBrowserSnapshot({ rootPath, profileId, helperPath, expecte
             finally { await marker.close(); }
             if (browser === 'chrome') await copy(path.join(profilePath, 'Default', 'Preferences'), path.join(snapshot, 'Default', 'Preferences'), 4 * 1024 * 1024);
             const sourceStore = path.join(profilePath, 'Default', storeName);
+            /** @type {Array<[string, string, boolean]>} */
             const stores = browser === 'chrome' ? [[sourceStore, targetStore, true],
                 [path.join(sourceStore, 'Encryption'), path.join(targetStore, 'Encryption'), false]] : [[sourceStore, targetStore, false]];
             for (const [source, target, allowEncryption] of stores) {
