@@ -504,10 +504,13 @@ async function main() {
         let timer;
         const result = await Promise.race([cdp.Runtime.evaluate({ awaitPromise: true, returnByValue: true, expression: `(async()=>{
           try {const r=await navigator.serviceWorker.register('/sw.js');await navigator.serviceWorker.ready;
-          const s=await r.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:window.key});return {ok:true,subscription:s.toJSON()};}
+          const s=await r.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:window.key});
+          const k=s.options?.applicationServerKey;const appKey=k?btoa(String.fromCharCode(...new Uint8Array(k))).replace(/\\+/g,'-').replace(/\\//g,'_').replace(/=+$/,''):null;
+          return {ok:true,subscription:s.toJSON(),appKey};}
           catch(e){return {ok:false,name:e.name};}})()` }),
         new Promise(resolve => { timer = setTimeout(() => resolve(null), 30000); })]).finally(() => clearTimeout(timer));
         const value = result?.result?.value || { ok: false, name: 'Timeout' };
+        if (process.env.EDGE_PROBE_APP_KEY === '1' && (!value.ok || value.appKey !== vapid.publicKey)) throw new Error('PROBE_APP_KEY_MISMATCH');
         let otherSubscription, otherOrigin;
         if (value.ok) {
             expectedCipher = await sendFixture(value.subscription, 'synthetic-wns-probe');

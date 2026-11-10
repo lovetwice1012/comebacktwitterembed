@@ -4,8 +4,9 @@
 // Only fixed commands for selecting the X page, reading its PushSubscription
 // and closing this dedicated browser are exposed to the local broker.
 const fault = code => Object.assign(new Error(code), { code });
-function createChromePipe(chrome, { origin = 'https://x.com', timeoutMs = 10000 } = {}) {
+function createChromePipe(chrome, { origin = 'https://x.com', timeoutMs = 10000, includeApplicationServerKey = false } = {}) {
     if (!chrome?.stdio?.[3] || !chrome?.stdio?.[4] || typeof origin !== 'string'
+        || typeof includeApplicationServerKey !== 'boolean'
         || (origin !== 'https://x.com' && !/^http:\/\/127\.0\.0\.1:[1-9][0-9]{0,4}$/.test(origin))) throw fault('X_CHROME_PIPE_INVALID');
     const input = chrome.stdio[3], output = chrome.stdio[4], waiting = new Map();
     let sequence = 0, buffer = Buffer.alloc(0), failed = false;
@@ -61,14 +62,19 @@ function createChromePipe(chrome, { origin = 'https://x.com', timeoutMs = 10000 
             try {
             const expression = `(async()=>{if(location.origin!==${JSON.stringify(origin)})throw Error('origin');const found=[];` +
                 `for(const r of await navigator.serviceWorker.getRegistrations()){if(new URL(r.scope).origin!==${JSON.stringify(origin)})continue;` +
-                `const s=await r.pushManager.getSubscription();if(s)found.push({scope:r.scope,...s.toJSON()});}` +
+                `const s=await r.pushManager.getSubscription();if(s){const v={scope:r.scope,...s.toJSON()};` +
+                (includeApplicationServerKey ? `const k=s.options?.applicationServerKey;if(!k||k.byteLength!==65)throw Error('key');v.applicationServerKey=btoa(String.fromCharCode(...new Uint8Array(k))).replace(/\\+/g,'-').replace(/\\//g,'_').replace(/=+$/,'');` : '') +
+                `found.push(v);}}` +
                 `if(location.origin!==${JSON.stringify(origin)}||found.length!==1)throw Error('subscription');return found[0]})()`;
             const response = await call('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true }, attached.sessionId);
             const value = response.result?.value;
             if (response.exceptionDetails || response.result?.type !== 'object' || !value || typeof value.scope !== 'string'
                 || typeof value.endpoint !== 'string' || value.scope.length > 4096 || value.endpoint.length > 4096 || !value.keys
-                || typeof value.keys.p256dh !== 'string' || typeof value.keys.auth !== 'string') throw fault('X_CHROME_CAPTURE_INVALID');
-                return { scope: value.scope, endpoint: value.endpoint, keys: { p256dh: value.keys.p256dh, auth: value.keys.auth } };
+                || typeof value.keys.p256dh !== 'string' || typeof value.keys.auth !== 'string'
+                || includeApplicationServerKey && (typeof value.applicationServerKey !== 'string' || !/^[A-Za-z0-9_-]{87}$/.test(value.applicationServerKey)
+                    || Buffer.from(value.applicationServerKey, 'base64url').toString('base64url') !== value.applicationServerKey)) throw fault('X_CHROME_CAPTURE_INVALID');
+                return { scope: value.scope, endpoint: value.endpoint, keys: { p256dh: value.keys.p256dh, auth: value.keys.auth },
+                    ...(includeApplicationServerKey ? { applicationServerKey: value.applicationServerKey } : {}) };
             } finally { await call('Target.detachFromTarget', { sessionId: attached.sessionId }).catch(() => {}); }
         };
         let selected;
@@ -77,7 +83,8 @@ function createChromePipe(chrome, { origin = 'https://x.com', timeoutMs = 10000 
             try { value = await captureTarget(target); }
             catch (error) { if (matches.length > 1) throw fault('X_CHROME_CAPTURE_AMBIGUOUS'); throw error; }
             if (selected && (value.scope !== selected.scope || value.endpoint !== selected.endpoint
-                || value.keys.p256dh !== selected.keys.p256dh || value.keys.auth !== selected.keys.auth))
+                || value.keys.p256dh !== selected.keys.p256dh || value.keys.auth !== selected.keys.auth
+                || includeApplicationServerKey && value.applicationServerKey !== selected.applicationServerKey))
                 throw fault('X_CHROME_CAPTURE_AMBIGUOUS');
             selected = value;
         }

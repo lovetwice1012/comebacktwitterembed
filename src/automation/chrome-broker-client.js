@@ -2,8 +2,9 @@
 const net = require('node:net');
 const { parseUniqueJson } = require('./strict-json');
 const fault = code => Object.assign(new Error(code), { code });
-async function captureFromBroker({ port, token }) {
-    if (!Number.isInteger(port) || port < 1024 || port > 65535 || typeof token !== 'string' || !/^[0-9a-f]{64}$/.test(token))
+async function captureFromBroker({ port, token, includeApplicationServerKey = false }) {
+    if (!Number.isInteger(port) || port < 1024 || port > 65535 || typeof token !== 'string' || !/^[0-9a-f]{64}$/.test(token)
+        || typeof includeApplicationServerKey !== 'boolean')
         throw fault('X_CHROME_CAPTURE_INVALID');
     return new Promise((resolve, reject) => {
         const socket = net.connect({ host: '127.0.0.1', port }); let done = false, data = Buffer.alloc(0);
@@ -26,8 +27,11 @@ async function captureFromBroker({ port, token }) {
                 }
                 const value = response.subscription;
                 if (!value || typeof value.scope !== 'string' || typeof value.endpoint !== 'string' || !value.keys
-                    || typeof value.keys.p256dh !== 'string' || typeof value.keys.auth !== 'string') throw new Error();
-                finish(null, { scope: value.scope, endpoint: value.endpoint, keys: { p256dh: value.keys.p256dh, auth: value.keys.auth } });
+                    || typeof value.keys.p256dh !== 'string' || typeof value.keys.auth !== 'string'
+                    || includeApplicationServerKey && (typeof value.applicationServerKey !== 'string' || !/^[A-Za-z0-9_-]{87}$/.test(value.applicationServerKey)
+                        || Buffer.from(value.applicationServerKey, 'base64url').toString('base64url') !== value.applicationServerKey)) throw new Error();
+                finish(null, { scope: value.scope, endpoint: value.endpoint, keys: { p256dh: value.keys.p256dh, auth: value.keys.auth },
+                    ...(includeApplicationServerKey ? { applicationServerKey: value.applicationServerKey } : {}) });
             } catch { finish(fault('X_CHROME_CAPTURE_INVALID')); }
         });
         socket.on('error', () => finish(fault('X_CHROME_CAPTURE_UNAVAILABLE')));

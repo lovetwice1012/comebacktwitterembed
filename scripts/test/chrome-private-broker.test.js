@@ -6,6 +6,8 @@ const { EventEmitter } = require('node:events');
 const { PassThrough, Writable } = require('node:stream');
 const { startChromeBroker } = require('../../src/automation/chrome-private-broker');
 const { captureFromBroker } = require('../../src/automation/chrome-broker-client');
+const { createChromePipe } = require('../../src/automation/chrome-cdp-pipe');
+const { randomBytes } = require('node:crypto');
 const expected = { scope: 'https://x.com/', endpoint: 'https://fcm.googleapis.com/fcm/send/test', keys: { p256dh: 'public', auth: 'auth' } };
 function fakeChrome({ evaluateDelay = 0, targetInfos, subscriptions = {} } = {}) {
     const chrome = new EventEmitter(); chrome.exitCode = null; chrome.pid = 12345;
@@ -86,4 +88,23 @@ test('a disconnected capture client does not close the browser and can retry', a
         assert.equal(chrome.exitCode, null);
         assert.deepEqual(await captureFromBroker({ port: broker.port, token: broker.token }), expected);
     } finally { await broker.stop(); }
+});
+test('optional Edge capture includes a canonical application server key and checks all tabs agree', async () => {
+    const applicationServerKey = randomBytes(65).toString('base64url'), value = { ...expected, applicationServerKey };
+    const chrome = fakeChrome({ subscriptions: { target: value } });
+    const pipe = createChromePipe(chrome, { includeApplicationServerKey: true });
+    assert.deepEqual(await pipe.capture(), value); chrome.kill();
+    const missing = createChromePipe(fakeChrome(), { includeApplicationServerKey: true });
+    await assert.rejects(missing.capture(), { code: 'X_CHROME_CAPTURE_INVALID' });
+    const targets = ['first', 'second'].map(targetId => ({ type: 'page', url: 'https://x.com/home', targetId, browserContextId: 'profile' }));
+    const different = { ...value, applicationServerKey: randomBytes(65).toString('base64url') };
+    const ambiguous = createChromePipe(fakeChrome({ targetInfos: targets, subscriptions: { first: value, second: different } }), { includeApplicationServerKey: true });
+    await assert.rejects(ambiguous.capture(), { code: 'X_CHROME_CAPTURE_AMBIGUOUS' });
+});
+test('private broker transports optional Edge key only when explicitly enabled', async () => {
+    const value = { ...expected, applicationServerKey: randomBytes(65).toString('base64url') };
+    const broker = await startChromeBroker({ chromePath: 'synthetic.exe', profilePath: 'synthetic-profile', includeApplicationServerKey: true,
+        spawnChrome: () => fakeChrome({ subscriptions: { target: value } }) });
+    try { assert.deepEqual(await captureFromBroker({ port: broker.port, token: broker.token, includeApplicationServerKey: true }), value); }
+    finally { await broker.stop(); }
 });
