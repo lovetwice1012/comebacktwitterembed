@@ -74,7 +74,7 @@ async function main() {
         const profile = path.join(owned, 'chrome-profile');
         const chromeArgs = ['--headless=new', '--no-proxy-server', '--ignore-certificate-errors', '--remote-debugging-port=0',
             ...(process.env.CHROME_FIXTURE_BLOCK_INITIAL === '1' ? ['--gcm-mcs-endpoint=https://127.0.0.1:1'] : []),
-            `--user-data-dir=${profile}`, `--host-resolver-rules=MAP x.com 127.0.0.1:${server.address().port}, MAP example.test 127.0.0.1:${server.address().port}`,
+            `--user-data-dir=${profile}`, `--host-resolver-rules=MAP mtalk.google.com ~NOTFOUND, MAP x.com 127.0.0.1:${server.address().port}, MAP example.test 127.0.0.1:${server.address().port}`,
             '--no-first-run', '--no-default-browser-check', 'https://x.com/'];
         child = spawn(chrome, chromeArgs, { windowsHide: true, stdio: 'ignore' });
         let port;
@@ -119,8 +119,15 @@ async function main() {
         const needle = 'startChromeBroker({ chromePath: input.chromePath, profilePath: input.profilePath });';
         if (!originalBroker.includes(needle)) throw new Error('FIXTURE_BROKER_SHAPE_CHANGED');
         const extra = ['--headless=new', '--no-proxy-server', '--ignore-certificate-errors',
-            `--host-resolver-rules=MAP x.com 127.0.0.1:${server.address().port}, MAP example.test 127.0.0.1:${server.address().port}`];
-        const testBroker = originalBroker.replace(needle, `startChromeBroker({ chromePath: input.chromePath, profilePath: input.profilePath, extraArgs: ${JSON.stringify(extra)} });`);
+            `--host-resolver-rules=MAP mtalk.google.com ~NOTFOUND, MAP x.com 127.0.0.1:${server.address().port}, MAP example.test 127.0.0.1:${server.address().port}`];
+        let testBroker = originalBroker.replace(needle, `startChromeBroker({ chromePath: input.chromePath, profilePath: input.profilePath, extraArgs: ${JSON.stringify(extra)} });`);
+        if (process.env.CHROME_FIXTURE_DNS_ONLY === '1') {
+            const switchText = '"--gcm-mcs-endpoint=https://127.0.0.1:1",';
+            if (testBroker.split(switchText).length !== 2) throw new Error('FIXTURE_MCS_SWITCH_SHAPE_CHANGED');
+            // This extraction is disposable. Exercise the DNS safeguard alone
+            // without changing the shipped package or any user profile.
+            testBroker = testBroker.replace(switchText, '');
+        }
         await fs.writeFile(brokerFile, testBroker);
         const manifestPath = path.join(bundle, 'package-manifest.json'), manifest = JSON.parse(await fs.readFile(manifestPath, 'utf8'));
         manifest.files['ChromeBroker.cjs'] = require('node:crypto').createHash('sha256').update(testBroker).digest('hex');

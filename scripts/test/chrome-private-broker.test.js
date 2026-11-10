@@ -42,6 +42,7 @@ test('broker exposes no DevTools TCP interface and requires its private capabili
     try {
         assert(args.includes('--remote-debugging-pipe'));
         assert.equal(args.filter(arg => arg === '--gcm-mcs-endpoint=https://127.0.0.1:1').length, 1);
+        assert.equal(args.filter(arg => arg === '--host-resolver-rules=MAP mtalk.google.com ~NOTFOUND').length, 1);
         assert(!args.some(arg => arg.startsWith('--remote-debugging-port')));
         assert.equal(await unauthenticated(broker.port, 'GET /json/list HTTP/1.1\r\n\r\n'), '');
         assert.equal(await unauthenticated(broker.port, JSON.stringify({ command: 'capture', token: '0'.repeat(64) }) + '\n'), '');

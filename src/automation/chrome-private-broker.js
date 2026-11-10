@@ -18,7 +18,8 @@ async function startChromeBroker({ chromePath, profilePath, origin = 'https://x.
     // subscription registration endpoints available, but give its MCS
     // receive connection an unreachable loopback endpoint. This prevents the
     // setup browser from taking notifications away from the server worker.
-    const token = randomBytes(32), chrome = spawnChrome(chromePath, ['--remote-debugging-pipe', '--gcm-mcs-endpoint=https://127.0.0.1:1', `--user-data-dir=${profilePath}`,
+    const token = randomBytes(32), chrome = spawnChrome(chromePath, ['--remote-debugging-pipe', '--gcm-mcs-endpoint=https://127.0.0.1:1',
+        '--host-resolver-rules=MAP mtalk.google.com ~NOTFOUND', `--user-data-dir=${profilePath}`,
         '--no-first-run', '--no-default-browser-check', ...extraArgs, `${origin}/`],
     { windowsHide: false, stdio: ['ignore', 'ignore', 'ignore', 'pipe', 'pipe'] });
     const pipe = createChromePipe(chrome, { origin });
