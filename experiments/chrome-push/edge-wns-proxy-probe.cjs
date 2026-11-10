@@ -54,7 +54,7 @@ c=x509.CertificateBuilder().subject_name(n).issuer_name(n).public_key(k.public_k
 print(json.dumps({'key':k.private_bytes(serialization.Encoding.PEM,serialization.PrivateFormat.TraditionalOpenSSL,serialization.NoEncryption()).decode(),'cert':c.public_bytes(serialization.Encoding.PEM).decode()}))`;
 async function main() {
     const temp = await fs.realpath(os.tmpdir()), root = await fs.mkdtemp(path.join(temp, 'cbte-edge-wns-probe-'));
-    let browser, cdp, pageServer, relay, browserReceived = false, deviceFields; const sockets = new Set(), events = [];
+    let browser, cdp, pageServer, relay, browserReceived = false, copiedProfileResult = null, deviceFields; const sockets = new Set(), events = [];
     try {
         const cert = spawnSync('python', ['-c', python], { encoding: 'utf8', windowsHide: true, timeout: 10000 });
         if (cert.status !== 0) throw new Error('PROBE_CERT_FAILED');
@@ -246,16 +246,43 @@ async function main() {
                 }
             } finally { await db.close().catch(() => {}); }
             if (!deviceFields?.[2] || !deviceFields?.[3]) throw new Error('PROBE_DEVICE_MISSING');
-            browser = spawn(edge, ['--headless=new', `--user-data-dir=${profile}`, '--disable-features=msPushWinrt',
+            const copyProfile = process.env.EDGE_PROBE_COPY_PROFILE === '1';
+            const reopenProfile = copyProfile ? path.join(root, 'synthetic-profile-copy') : profile;
+            if (copyProfile) await fs.cp(profile, reopenProfile, { recursive: true, errorOnExist: true, force: false });
+            if (copyProfile) await fs.rm(path.join(reopenProfile, 'DevToolsActivePort'), { force: true });
+            browser = spawn(edge, ['--headless=new', ...(copyProfile ? ['--remote-debugging-port=0'] : []), `--user-data-dir=${reopenProfile}`, '--disable-features=msPushWinrt',
                 '--ignore-certificate-errors', `--edge-wns-push-server-url=https://127.0.0.1:${relay.address().port}`,
                 '--no-first-run', '--no-default-browser-check', '--disable-sync', 'about:blank'], { windowsHide: true, stdio: 'ignore' });
             const originalCount = events.length;
             for (let i = 0; i < 120 && events.length <= originalCount; i++) await wait(100);
             await wait(3000);
+            if (copyProfile) {
+                let reopenedPort;
+                for (let i = 0; i < 120 && !reopenedPort; i++) {
+                    try { reopenedPort = Number((await fs.readFile(path.join(reopenProfile, 'DevToolsActivePort'), 'utf8')).split('\n')[0]); } catch { await wait(100); }
+                    if (browser.exitCode !== null) throw new Error('PROBE_BROWSER_EXITED');
+                }
+                if (!reopenedPort) throw new Error('PROBE_BROWSER_TIMEOUT');
+                cdp = await CDP({ port: reopenedPort }); await cdp.Browser.grantPermissions({ origin, permissions: ['notifications'] });
+                await cdp.Page.enable(); const reloaded = new Promise(resolve => cdp.Page.loadEventFired(resolve));
+                await cdp.Page.navigate({ url: origin }); await reloaded;
+                let reopenTimer;
+                const reopened = await Promise.race([cdp.Runtime.evaluate({ awaitPromise: true, returnByValue: true, expression: `(async()=>{
+                    const r=await navigator.serviceWorker.ready; const s=await r.pushManager.getSubscription(); return s ? s.endpoint : null; })()` }),
+                new Promise(resolve => { reopenTimer = setTimeout(() => resolve(null), 15000); })]).finally(() => clearTimeout(reopenTimer));
+                if (!reopened) throw new Error('PROBE_SUBSCRIPTION_TIMEOUT');
+                const sameSubscription = reopened.result?.value === value.subscription.endpoint;
+                browserReceived = false;
+                if (sameSubscription) {
+                    await webpush.sendNotification(value.subscription, 'synthetic-wns-copy-probe', { TTL: 60 });
+                    for (let i = 0; i < 80 && !browserReceived; i++) await wait(100);
+                }
+                copiedProfileResult = { sameSubscription, receivedAfterCopy: browserReceived };
+            }
         }
         const shapes = events.map(event => { const { describe, ...metadata } = event; return { ...metadata, shape: describe() }; });
         if (deviceFields) for (const value of Object.values(deviceFields)) value.fill(0);
-        console.log(JSON.stringify({ syntheticProfile: true, relayConnections: events.length, events: shapes, browserReceived,
+        console.log(JSON.stringify({ syntheticProfile: true, relayConnections: events.length, events: shapes, browserReceived, copiedProfileResult,
             subscription: value.ok ? { ok: true, host: new URL(value.subscription.endpoint).hostname } : value }));
     } finally {
         await cdp?.close().catch(() => {});
