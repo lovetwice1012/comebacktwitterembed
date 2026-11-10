@@ -2,16 +2,16 @@
 // Direct WNS interoperability probe for freshly generated test credentials.
 // This is not a production receiver and never logs or persists its input.
 const tls = require('node:tls');
-const { randomInt, randomBytes } = require('node:crypto');
+const { randomBytes } = require('node:crypto');
 const { rewriteSyntheticBind } = require('./edge-fixture-rewrite.cjs');
 const { firstFixtureNotification } = require('./edge-wns-fixture-framing.cjs');
 const { rewriteSyntheticChallenge } = require('./edge-fixture-challenge.cjs');
-const { syntheticReconnectSignature } = require('./edge-fixture-signature.cjs');
 const { syntheticNotificationAck } = require('./edge-fixture-ack.cjs');
 const { syntheticRecipientMatches } = require('./edge-fixture-routing.cjs');
 const { createFrameDecoder } = require('../../src/automation/edge-wns-framing');
 const { parseNotification, createAcknowledgement } = require('../../src/automation/edge-wns-notification');
 const { parseBindResponse } = require('../../src/automation/edge-wns-bind');
+const wnsProtocol = require('../../src/automation/edge-wns-protocol');
 const fail = code => Object.assign(new Error(code), { code });
 
 function selectSyntheticHandshake(chunks) {
@@ -107,8 +107,8 @@ function syntheticFrame(command, body) {
 }
 function syntheticPrelude() {
     return {
-        cnt: syntheticFrame('CNT 1 CON', '<connect><ver>1</ver><agent><os>Windows 10</os><osVer>10.0.00000</osVer><proc>x86_64</proc><lcid>en</lcid></agent></connect>'),
-        ath: syntheticFrame('ATH 2 CON\\DEVICE', '<device><provision>false</provision></device>'),
+        cnt: wnsProtocol.connectFrame({ os: 'Windows 10', osVersion: '10.0.00000', architecture: 'x86_64', locale: 'en' }, 1),
+        ath: wnsProtocol.deviceFrame(2),
     };
 }
 
@@ -126,22 +126,22 @@ function syntheticClientMetadata(bindFrame) {
 }
 
 function syntheticHandshake(key, token, productConstants, metadata) {
-    if (!metadata || typeof metadata !== 'object' || typeof token !== 'string' || /[<>&]/.test(token) || !productConstants || !Buffer.isBuffer(productConstants.id)
+    if (!metadata || typeof metadata !== 'object' || typeof token !== 'string' || !/^[\x21-\x7e]{1,4096}$/.test(token) || /[<>&]/.test(token) || !productConstants || !Buffer.isBuffer(productConstants.id)
         || productConstants.id.length !== 16 || productConstants.id.some(byte => byte < 0x21 || byte > 0x7e)
         || !/^[^<>&\s]{16}$/.test(productConstants.id.toString('ascii')))
         throw fail('PROBE_DIRECT_CONFIG_INVALID');
-    const nonce = String(randomInt(1, 10)) + Array.from({ length: 31 }, () => String(randomInt(0, 10))).join('');
-    const signature = syntheticReconnectSignature(key, token, nonce);
+    const nonce = wnsProtocol.createNonce(), tokenBytes = Buffer.from(token, 'ascii'); let bnd;
     try {
         if (!/^[0-9a-f]{1,16}$/i.test(metadata.channel || '') || [metadata.protocolVersion, metadata.clientName, metadata.clientVersion]
             .some(value => typeof value !== 'string' || value.length < 1 || value.length > 128 || !/^[\x20-\x7e]+$/.test(value) || /[<>&]/.test(value)))
             throw fail('PROBE_DIRECT_CONFIG_INVALID');
+        bnd = wnsProtocol.bindFrame({ ...metadata, nonce, reconnectToken: tokenBytes, deviceKey: key }, 3);
         const prelude = syntheticPrelude();
         return { ...prelude,
-            bnd: syntheticFrame(`BND 3 CON\\WNS ${metadata.channel}`, `<wns><ver>${metadata.protocolVersion}</ver><client><name>${metadata.clientName}</name><ver>${metadata.clientVersion}</ver><nonce>${nonce}</nonce><signature>${signature.toString('base64')}</signature><reconnect-token>${token}</reconnect-token></client></wns>`),
+            bnd,
             challenge: syntheticFrame(`PUT 4 WNS\\CHALLENGE ${metadata.channel}`, `<challenge><appId>${productConstants.id.toString('ascii')}</appId><response>${'0'.repeat(32)}</response></challenge>`),
         };
-    } finally { signature.fill(0); }
+    } catch { bnd?.fill(0); throw fail('PROBE_DIRECT_CONFIG_INVALID'); } finally { tokenBytes.fill(0); }
 }
 
 async function independentSyntheticReconnect({ frames, key, token, connect = () => tls.connect({ host: 'client.wns.windows.com', port: 443,
@@ -155,7 +155,7 @@ async function independentSyntheticReconnect({ frames, key, token, connect = () 
     if (observePrior !== undefined && (!observePrior || !Buffer.isBuffer(observePrior.offlineCipher)
         || !Buffer.isBuffer(observePrior.priorCipher) || !Number.isInteger(observePrior.windowMs)
         || observePrior.windowMs < 100 || observePrior.windowMs > 30000)) throw fail('PROBE_DIRECT_CONFIG_INVALID');
-    const nonce = String(randomInt(1, 10)) + Array.from({ length: 31 }, () => String(randomInt(0, 10))).join('');
+    const nonce = wnsProtocol.createNonce();
     const generated = generatedHandshake ? syntheticHandshake(key, token, productConstants, clientMetadata) : null;
     const bind = generated?.bnd || rewriteSyntheticBind(frames.bnd, key, token, nonce);
     const prelude = generated || (generatedPrelude ? syntheticPrelude() : null), socket = connect();
@@ -227,7 +227,10 @@ async function independentSyntheticReconnect({ frames, key, token, connect = () 
             if (!Buffer.isBuffer(challengeTemplate) || typeof sendNotification !== 'function' || typeof decryptNotification !== 'function'
                 || !productConstants || !response.serverNonce)
                 throw fail('PROBE_DIRECT_CONFIG_INVALID');
-            const challenge = rewriteSyntheticChallenge(challengeTemplate, response.serverNonce, productConstants.key, productConstants.id);
+            const challenge = generatedHandshake
+                ? wnsProtocol.challengeFrame({ channel: clientMetadata.channel, serverNonce: response.serverNonce,
+                    productKey: productConstants.key, productId: productConstants.id }, 4)
+                : rewriteSyntheticChallenge(challengeTemplate, response.serverNonce, productConstants.key, productConstants.id);
             try { await exchange(challenge, 'PUT', 'WNS'); result.challengeResponse = true; }
             finally { challenge.fill(0); }
             if (observePrior) {
