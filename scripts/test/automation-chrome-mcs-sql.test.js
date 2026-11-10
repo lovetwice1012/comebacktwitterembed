@@ -1,7 +1,7 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { createTestDatabase } = require('../lib/automation-test-db');
+const { createTestDatabase, applyTestMigration } = require('../lib/automation-test-db');
 const { createXPushStore } = require('../../src/automation/x-push-store');
 const { createChromeMcsStoreAdapter } = require('../../src/automation/chrome-mcs-store-adapter');
 const { createChromeMcsSession } = require('../../src/automation/chrome-mcs-session');
@@ -146,9 +146,7 @@ test('check-in migration is repeatable and retains existing Firefox receiver dat
     const old = await store.recordFrame(lease, frame('before-checkin-migration'));
     for (const name of ['chrome_checkin_at_ms', 'chrome_checkin_interval_seconds', 'chrome_checkin_revision'])
         await db.queryDatabase(`ALTER TABLE automation_x_push_receivers DROP COLUMN ${name}`);
-    const migration = readFileSync(path.resolve(__dirname, '../../migrations/20261110_add_chrome_checkin.sql'), 'utf8');
-    const statements = migration.replace(/^--.*$/gm, '').split(';').map(s => s.trim()).filter(Boolean);
-    for (let i = 0; i < 2; i++) for (const statement of statements) await db.queryDatabase(statement);
+    for (let i = 0; i < 2; i++) await applyTestMigration(db, '20261110_add_chrome_checkin.sql');
     assert.equal((await store.getInbox({ ...sub, id: old.id })).version, 'before-checkin-migration');
     assert.deepEqual(await store.chromeCheckinState(lease), { checkedAtMs: null, intervalSeconds: 172800 });
 }));
