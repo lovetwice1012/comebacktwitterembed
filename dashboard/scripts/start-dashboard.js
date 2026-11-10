@@ -156,9 +156,79 @@ function restoreFiles(snapshots) {
     }
 }
 
-function shouldGeneratePrismaClient(dashboardDir) {
-    if (truthy(process.env.DASHBOARD_FORCE_PRISMA_GENERATE)) return true;
-    return !fs.existsSync(generatedPrismaClientPath(dashboardDir));
+function prismaClientState(dashboardDir) {
+    const clientDir = path.dirname(generatedPrismaClientPath(dashboardDir));
+    const index = path.join(clientDir, 'index.js');
+    const types = path.join(clientDir, 'index.d.ts');
+    const schema = generatedPrismaSchemaPath(dashboardDir);
+    const defaultJs = path.join(clientDir, 'default.js');
+    const defaultTypes = path.join(clientDir, 'default.d.ts');
+    const manifest = path.join(clientDir, 'package.json');
+    const templateDir = path.join(dashboardDir, 'node_modules', '@prisma', 'client', 'scripts');
+    const matchesTemplate = (file, template) => fs.existsSync(file) && fs.existsSync(template)
+        && fs.readFileSync(file).equals(fs.readFileSync(template));
+    const hasIndex = fs.existsSync(index);
+    const hasTypes = fs.existsSync(types);
+    const hasSchema = fs.existsSync(schema);
+    const jsTemplate = path.join(templateDir, 'default-index.js');
+    const typesTemplate = path.join(templateDir, 'default-index.d.ts');
+    const templatesPresent = [jsTemplate, typesTemplate].every(file => fs.existsSync(file) && fs.statSync(file).isFile() && fs.statSync(file).size > 0);
+    const indexIsStub = matchesTemplate(index, jsTemplate);
+    const typesAreStub = matchesTemplate(types, typesTemplate);
+
+    // A prior client may have lost its main entry while other live files
+    // remain. Only an empty directory or Prisma's exact placeholder set is
+    // safe to populate automatically.
+    const placeholders = new Map([
+        ...['index', 'edge', 'default', 'wasm', 'index-browser'].map(name => [`${name}.js`, 'default-index.js']),
+        ...['index', 'edge', 'default', 'wasm'].map(name => [`${name}.d.ts`, 'default-index.d.ts']),
+    ]);
+    const entries = fs.existsSync(clientDir) ? fs.readdirSync(clientDir) : [];
+    const onlyPlaceholders = entries.every(name => placeholders.has(name)
+        && matchesTemplate(path.join(clientDir, name), path.join(templateDir, placeholders.get(name))));
+    if (!hasIndex && !hasTypes && !hasSchema && entries.length === 0) return 'absent';
+    if (indexIsStub && !hasSchema && onlyPlaceholders) return 'stub';
+    const regularNonempty = file => fs.existsSync(file) && fs.statSync(file).isFile() && fs.statSync(file).size > 0;
+    if (hasIndex && hasTypes && hasSchema && templatesPresent && !indexIsStub && !typesAreStub
+        && [index, types, schema, defaultJs, defaultTypes, manifest].every(regularNonempty)
+        && !matchesTemplate(defaultJs, jsTemplate) && !matchesTemplate(defaultTypes, typesTemplate)) {
+        try {
+            const pkg = JSON.parse(fs.readFileSync(manifest, 'utf8'));
+            const defaultSource = fs.readFileSync(defaultJs, 'utf8');
+            const mainEntry = pkg.imports?.['#main-entry-point'];
+            const mainEntryValid = !defaultSource.includes('#main-entry-point')
+                || (mainEntry?.require?.node === './index.js' && mainEntry?.import?.node === './index.js');
+            if (pkg.main === 'index.js' && pkg.types === 'index.d.ts' && mainEntryValid) return 'generated';
+        } catch {
+            // Incomplete or malformed manifests cannot identify a working client.
+        }
+    }
+    return 'incomplete';
+}
+
+function shouldGeneratePrismaClient(dashboardDir, env = process.env) {
+    if (truthy(env.DASHBOARD_FORCE_PRISMA_GENERATE)) return true;
+    const state = prismaClientState(dashboardDir);
+    if (state === 'incomplete') {
+        throw new Error('Prisma Client is incomplete or cannot be verified. Stop the dashboard and set DASHBOARD_FORCE_PRISMA_GENERATE=1 to regenerate it safely.');
+    }
+    const generate = state === 'absent' || state === 'stub';
+    if (generate) {
+        // Never write to shared dependencies implicitly; a release or rollback
+        // may still be using that client via a symlink or Windows junction.
+        const linked = candidate => {
+            try { return fs.lstatSync(candidate).isSymbolicLink(); }
+            catch (error) { if (error.code === 'ENOENT') return false; throw error; }
+        };
+        const paths = ['node_modules', 'node_modules/.prisma', 'node_modules/.prisma/client',
+            'node_modules/@prisma', 'node_modules/@prisma/client'];
+        const clientDir = path.dirname(generatedPrismaClientPath(dashboardDir));
+        const linkedOutput = fs.existsSync(clientDir) && fs.readdirSync(clientDir, { withFileTypes: true }).some(entry => entry.isSymbolicLink());
+        if (paths.some(relative => linked(path.join(dashboardDir, relative))) || linkedOutput) {
+            throw new Error('Prisma Client uses linked dependencies. Use isolated dashboard dependencies before generating it.');
+        }
+    }
+    return generate;
 }
 
 function warnIfPrismaClientMayBeStale(dashboardDir) {
@@ -350,12 +420,23 @@ function runProductionBuild(dashboardDir, env) {
     removeDirectoryBestEffort(absoluteStagingDistDir);
 
     console.warn(`[dashboard] building production dashboard into ${stagingDistDir}.`);
-    if (shouldGeneratePrismaClient(dashboardDir)) {
+    let generatePrisma;
+    try {
+        generatePrisma = shouldGeneratePrismaClient(dashboardDir, env);
+    } catch (error) {
+        console.error(`[dashboard] ${error.message}`);
+        return 1;
+    }
+    if (generatePrisma) {
         const prismaStatus = runChecked(process.execPath, [prismaCli(dashboardDir), 'generate'], {
             cwd: dashboardDir,
             env,
         });
         if (prismaStatus !== 0) return prismaStatus;
+        if (prismaClientState(dashboardDir) !== 'generated') {
+            console.error('[dashboard] Prisma Client generation did not produce a complete client.');
+            return 1;
+        }
     } else {
         warnIfPrismaClientMayBeStale(dashboardDir);
         console.log('[dashboard] using existing Prisma Client.');
@@ -615,6 +696,9 @@ module.exports = {
         loadRuntimeEnvironment,
         main,
         renameBuildDirectory,
+        prismaClientState,
+        shouldGeneratePrismaClient,
+        runProductionBuild,
         readCurrentBuild,
         startManagedProductionServer,
     },

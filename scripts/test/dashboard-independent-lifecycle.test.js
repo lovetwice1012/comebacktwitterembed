@@ -96,7 +96,17 @@ test('activated production build preserves relative file traces outside the buil
     const fixture = sourceFixture();
     try {
         const client = path.join(fixture.dashboard, 'node_modules/.prisma/client');
-        fs.mkdirSync(client, { recursive: true }); fs.writeFileSync(path.join(client, 'index.js'), '');
+        fs.mkdirSync(client, { recursive: true });
+        fs.writeFileSync(path.join(client, 'index.js'), 'generated client');
+        fs.writeFileSync(path.join(client, 'index.d.ts'), 'generated client types');
+        fs.writeFileSync(path.join(client, 'schema.prisma'), 'generated schema');
+        fs.writeFileSync(path.join(client, 'default.js'), 'generated default');
+        fs.writeFileSync(path.join(client, 'default.d.ts'), 'generated default types');
+        fs.writeFileSync(path.join(client, 'package.json'), JSON.stringify({ main: 'index.js', types: 'index.d.ts' }));
+        const templates = path.join(fixture.dashboard, 'node_modules/@prisma/client/scripts');
+        fs.mkdirSync(templates, { recursive: true });
+        fs.writeFileSync(path.join(templates, 'default-index.js'), 'placeholder client');
+        fs.writeFileSync(path.join(templates, 'default-index.d.ts'), 'placeholder types');
         const artifact = path.join(fixture.root, 'artifacts', 'fixture.zip');
         fs.mkdirSync(path.dirname(artifact), { recursive: true }); fs.writeFileSync(artifact, 'fixture-only');
         fs.writeFileSync(path.join(fixture.dashboard, 'node_modules/next/dist/bin/next'), `
