@@ -104,7 +104,7 @@ test('synthetic WNS recipient and identifier conflicts never persist foreign dat
     assert.deepEqual(await receiver.receive(frame(f.cipher, 'foreign-id', '1;other'), 5), { state: 'discarded' });
     assert.equal(Number((await f.db.queryDatabase('SELECT COUNT(*) n FROM automation_x_push_inbox'))[0].n), 0);
     await receiver.receive(frame(f.cipher), 6); assert.equal(acknowledgements, 2);
-    await assert.rejects(receiver.receive(frame(Buffer.from('different'), 'synthetic-id'), 7), { code: 'PROBE_DURABLE_ID_CONFLICT' });
+    await assert.rejects(receiver.receive(frame(Buffer.from('different'), 'synthetic-id'), 7), { code: 'X_EDGE_WNS_RECEIPT_CONFLICT' });
     assert.equal(acknowledgements, 2); assert.equal(Number((await f.db.queryDatabase('SELECT COUNT(*) n FROM automation_x_push_inbox'))[0].n), 1);
     const forged = createSyntheticDurableReceiver({ scope: 'http://127.0.0.1:32123/', store: f.store,
         lease: { ...f.lease, ownerUserId: '999999999999999999' }, channel, authorize: async () => {}, sendAck: async () => { acknowledgements++; } });
