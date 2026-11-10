@@ -96,10 +96,10 @@ async function main() {
         || process.env.EDGE_PROBE_KEEP_SOCKET === '1' || process.env.EDGE_PROBE_DECRYPT_RECEIVED === '1'
         || (process.env.EDGE_PROBE_OMIT_COMPONENT || '').split(',').includes('push-store')))
         throw new Error('PROBE_MODE_INVALID');
-    if (testTwoSites && (testIndependent || testRewrite || testWrongKey || noRelay || process.env.EDGE_PROBE_RECONNECT === '1'
-        || process.env.EDGE_PROBE_KEEP_SOCKET === '1')) throw new Error('PROBE_MODE_INVALID');
+    if (testTwoSites && (testRewrite || testWrongKey || noRelay || process.env.EDGE_PROBE_KEEP_SOCKET === '1'
+        || !testIndependent && process.env.EDGE_PROBE_RECONNECT === '1')) throw new Error('PROBE_MODE_INVALID');
     const temp = await fs.realpath(os.tmpdir()), root = await fs.mkdtemp(path.join(temp, 'cbte-edge-wns-probe-'));
-    let browser, cdp, pageServer, relay, browserReceived = false, copiedProfileResult = null, detachedConnectionResult = null, independentResult = null, routingResult = null, handshakeShape = null, handshakeRelations = null, relationDeviceRecord = null, relationSiteRecord = null, independentWebPush = null, productConstants = null, capturedCipherDecrypted = null, appServerKeyMatches = null, deviceFields, expectedCipher, otherCipher, expectedNextCipher, otherNextCipher; const sockets = new Set(), events = [];
+    let browser, cdp, pageServer, relay, browserReceived = false, copiedProfileResult = null, detachedConnectionResult = null, independentResult = null, routingResult = null, handshakeShape = null, handshakeRelations = null, relationDeviceRecord = null, relationSiteRecord = null, independentWebPush = null, independentChannel = null, productConstants = null, capturedCipherDecrypted = null, appServerKeyMatches = null, deviceFields, expectedCipher, otherCipher, expectedNextCipher, otherNextCipher; const sockets = new Set(), events = [];
     const browserEvents = { initial: 0, second: 0, third: 0, fourth: 0, copy: 0, other: 0 };
     let probeStage = 'setup', previousServerNonce = null;
     try {
@@ -492,6 +492,7 @@ async function main() {
                 routingResult = events[0].fixtureRouting(expectedCipher, otherCipher, firstRecord, otherRecord);
                 const selected = selectSyntheticEdgeRecord([firstRecord, otherRecord], `${origin}/`);
                 try {
+                    if (testIndependent) independentChannel = Buffer.from(selected.channel);
                     const recipient = events[0].fixtureRecipient(expectedCipher, otherCipher, selected.channel);
                     const nextRecipient = events[0].fixtureRecipient(expectedNextCipher, otherNextCipher, selected.channel);
                     const stability = events[0].fixtureChannelStability(expectedCipher, expectedNextCipher, otherCipher, otherNextCipher);
@@ -510,7 +511,7 @@ async function main() {
         await wait(1000);
         if (value.ok && process.env.EDGE_PROBE_KEEP_SOCKET === '1') {
             if (process.env.EDGE_PROBE_RECONNECT === '1') throw new Error('PROBE_MODE_INVALID');
-            await cdp.Browser.close().catch(() => {}); await cdp.close().catch(() => {}); cdp = null;
+            if (cdp) { await cdp.Browser.close().catch(() => {}); await cdp.close().catch(() => {}); cdp = null; }
             if (browser.exitCode === null) await new Promise(resolve => browser.once('exit', resolve));
             const browserExited = browser.exitCode !== null;
             const initial = events[0], aliveAfterBrowserExit = initial?.upstreamOpen() === true;
@@ -590,7 +591,7 @@ async function main() {
                 decryptedWithoutBrowser, sameConnection: events.length === (replayAfterReconnect ? 2 : 1), acknowledgementSentByFixture: syntheticAckWritten, laterNotificationReceived, replayAfterReconnect };
         }
         if (value.ok && process.env.EDGE_PROBE_RECONNECT === '1') {
-            await cdp.Browser.close().catch(() => {}); await cdp.close().catch(() => {}); cdp = null;
+            if (cdp) { await cdp.Browser.close().catch(() => {}); await cdp.close().catch(() => {}); cdp = null; }
             if (browser.exitCode === null) await new Promise(resolve => browser.once('exit', resolve));
             probeStage = 'read-store';
             const db = new ClassicLevel(path.join(profile, 'Default', 'EdgePushStorageWithConnectTokenAndKey'),
@@ -752,6 +753,7 @@ async function main() {
             const direct = (token, label, captureToken, ackAndFollowup) => independentSyntheticReconnect({ frames, key, token, productConstants,
                 generatedPrelude: process.env.EDGE_PROBE_GENERATED_PRELUDE === '1', generatedHandshake, clientMetadata, ackAndFollowup,
                 ...(captureToken ? { onRotatedToken: value => { rotatedToken?.fill(0); rotatedToken = Buffer.from(value); } } : {}),
+                ...(testTwoSites ? { expectedChannel: independentChannel, sendOtherNotification: () => sendFixture(otherSubscription, 'synthetic-independent-other') } : {}),
                 sendNotification: () => sendFixture(value.subscription, label),
                 decryptNotification: async ciphertext => {
                     const { decryptEce } = await import(pathToFileURL(path.resolve(__dirname, '../../packages/angelic-angel/dist/crypto.js')).href);
@@ -789,6 +791,7 @@ async function main() {
         throw error;
     } finally {
         if (independentWebPush) for (const secret of Object.values(independentWebPush)) secret.fill(0);
+        independentChannel?.fill(0);
         if (productConstants) for (const secret of Object.values(productConstants)) secret.fill(0);
         relationDeviceRecord?.fill(0); relationSiteRecord?.fill(0);
         expectedCipher?.fill(0); otherCipher?.fill(0); expectedNextCipher?.fill(0); otherNextCipher?.fill(0);
