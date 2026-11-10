@@ -285,7 +285,7 @@ async function main() {
             if (preview.formatVersion !== 2) throw new Error('FIXTURE_PREVIEW_FAILED');
             const saved = await setup.importFile(actor, { sessionId: session.sessionId, fileText, consent: true });
             let clock = Date.now();
-            let foreignFrames = 0, foreignAckAttempts = 0, pingFrames = 0, inspectErrors = 0;
+            let foreignFrames = 0, foreignAckAttempts = 0, pingFrames = 0, serverConfirmations = 0, inspectErrors = 0;
             const inspectOther = process.env.CHROME_FIXTURE_OTHER_DELIVERY === '1';
             const inspectBurst = process.env.CHROME_FIXTURE_BURST === '1';
             if (inspectOther && (!otherSubscription || process.env.CHROME_FIXTURE_RUNTIME !== '1')) throw new Error('FIXTURE_OTHER_CONFIG_INVALID');
@@ -303,8 +303,10 @@ async function main() {
                     };
                     socket.on('data', chunk => {
                         try {
-                            for (const frame of decoder.push(chunk)) if (frame.tag === 8) {
+                            for (const frame of decoder.push(chunk)) {
                                 const protocol = require('../../src/automation/chrome-mcs-protobuf');
+                                if ([0, 1, 3, 7, 8].includes(frame.tag) && protocol.lastStreamReceived(frame.tag, frame.payload) > 0) serverConfirmations++;
+                                if (frame.tag !== 8) continue;
                                 if (protocol.inspectControlMessage(frame.payload)) continue;
                                 const message = protocol.dataMessage(frame.payload, {
                                     expectedCategory: result.push.productCategory, expectedAppId: result.push.appId, expectedSender: result.push.authorizedEntity });
@@ -391,18 +393,20 @@ async function main() {
                         console.log(JSON.stringify({ mockDiscordDmDelivered: true, actualDiscordRequests: 0, duplicateDelivery: false }));
                     }
                     if (inspectBurst) {
-                        const count = 26;
+                        const count = Number(process.env.CHROME_FIXTURE_BURST_COUNT || 26), previousConfirmations = serverConfirmations, previousPings = pingFrames;
+                        if (!Number.isInteger(count) || count < 25 || count > 104) throw new Error('FIXTURE_BURST_CONFIG_INVALID');
                         for (let i = 0; i < count; i++) {
                             await webpush.sendNotification(value.result.value, JSON.stringify({ notificationType: 'tweet', text: `synthetic-burst-${i}`,
                                 url: `https://x.com/synthetic/status/${1234567890123457000n + BigInt(i)}`, author: { handle: 'synthetic', id: '12345' } }), { TTL: 120 });
                             await pause(150);
                         }
                         let rows = [];
-                        for (let i = 0; i < 160 && (rows.length < count + 1 || !pingFrames); i++) {
+                        const wantedPings = Math.floor(count / 25);
+                        for (let i = 0; i < 160 && (rows.length < count + 1 || pingFrames - previousPings < wantedPings); i++) {
                             rows = await testDb.queryDatabase('SELECT data_ciphertext,headers_json FROM automation_x_push_inbox WHERE subscription_id=?', [saved.subscription.id]);
-                            if (rows.length < count + 1 || !pingFrames) await pause(250);
+                            if (rows.length < count + 1 || pingFrames - previousPings < wantedPings) await pause(250);
                         }
-                        if (rows.length !== count + 1 || !pingFrames || inspectErrors) throw new Error('FIXTURE_BURST_RECEIPT_FAILED');
+                        if (rows.length !== count + 1 || pingFrames - previousPings < wantedPings || inspectErrors) throw new Error('FIXTURE_BURST_RECEIPT_FAILED');
                         const { pathToFileURL } = require('node:url');
                         const { decryptNotification } = await import(pathToFileURL(path.resolve(__dirname, '../../packages/angelic-angel/dist/crypto.js')).href);
                         const keys = { public_key: [...Buffer.from(result.push.p256dhPublicKey, 'base64url')],
@@ -410,7 +414,15 @@ async function main() {
                         const texts = rows.map(row => decryptNotification(row.data_ciphertext, JSON.parse(row.headers_json), keys).text);
                         if (new Set(texts.filter(text => typeof text === 'string' && text.startsWith('synthetic-burst-'))).size !== count
                             || Array.from({ length: count }, (_unused, i) => `synthetic-burst-${i}`).some(text => !texts.includes(text))) throw new Error('FIXTURE_BURST_CONTENT_MISMATCH');
-                        console.log(JSON.stringify({ realFcmBurst: count, encryptedReceipts: rows.length, confirmationRequested: true, allSyntheticPostsRecovered: true }));
+                        let pendingCount = count + 1;
+                        for (let i = 0; i < 40 && (serverConfirmations === previousConfirmations || pendingCount > 25); i++) {
+                            const pending = await testDb.queryDatabase('SELECT COUNT(*) n FROM automation_x_mcs_pending WHERE subscription_id=?', [saved.subscription.id]);
+                            pendingCount = Number(pending[0].n);
+                            if (serverConfirmations === previousConfirmations || pendingCount > 25) await pause(250);
+                        }
+                        if (serverConfirmations === previousConfirmations || pendingCount > 25) throw new Error('FIXTURE_BURST_CONFIRM_FAILED');
+                        console.log(JSON.stringify({ realFcmBurst: count, encryptedReceipts: rows.length, confirmationRequested: true,
+                            serverConfirmedDuringBurst: true, pendingCount, allSyntheticPostsRecovered: true }));
                     }
                     if (process.env.CHROME_FIXTURE_REOPEN === '1') {
                         // The dedicated profile alone is reopened. Export closes
