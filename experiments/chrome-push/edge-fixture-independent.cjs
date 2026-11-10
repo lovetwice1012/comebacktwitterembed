@@ -275,8 +275,11 @@ async function independentSyntheticReconnect({ frames, key, token, connect = () 
                     const ciphertext = firstFixtureNotification([notification]);
                     if (!ciphertext) return { ...result, notificationReceived: false };
                     try {
-                        const received = { ...result, notificationReceived: true, matchesSentCiphertext: ciphertext.equals(expected), payloadDecrypted: await decryptNotification(ciphertext) };
-                        if (onTargetCiphertext && received.matchesSentCiphertext && received.payloadDecrypted) await onTargetCiphertext(ciphertext);
+                        const matchesSentCiphertext = ciphertext.equals(expected);
+                        // A durable receiver must have a chance to commit the
+                        // ciphertext before decryption or acknowledgement.
+                        if (onTargetCiphertext && matchesSentCiphertext) await onTargetCiphertext(ciphertext, notification);
+                        const received = { ...result, notificationReceived: true, matchesSentCiphertext, payloadDecrypted: await decryptNotification(ciphertext) };
                         if ((!ackAndFollowup && !ackSingle) || !received.matchesSentCiphertext || !received.payloadDecrypted) return received;
                         const acknowledgement = syntheticNotificationAck(notification, acknowledgementSequence++);
                         try { await new Promise((resolve, reject) => socket.write(acknowledgement, error => error ? reject(fail('PROBE_DIRECT_WRITE_FAILED')) : resolve())); }

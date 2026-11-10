@@ -137,7 +137,7 @@ test('single synthetic ACK is not sent when decryption fails', async () => {
     assert.equal(result.payloadDecrypted, false); assert.equal(result.ackWritten, undefined); assert.equal(writes, 4);
 });
 test('single synthetic ACK is not sent when receipt persistence fails', async () => {
-    let writes = 0;
+    let writes = 0, decrypts = 0;
     const socket = new EventEmitter();
     socket.write = (_buffer, callback) => {
         writes++;
@@ -149,8 +149,8 @@ test('single synthetic ACK is not sent when receipt persistence fails', async ()
     const connect = () => { queueMicrotask(() => socket.emit('secureConnect')); return socket; };
     await assert.rejects(independentSyntheticReconnect({ frames: null, key, token, connect, timeoutMs: 1000, productConstants, generatedHandshake: true, ackSingle: true,
         sendNotification: async () => { queueMicrotask(() => socket.emit('data', frame('NFY 5 WNS\\NOTIF A1', 'Msg-Id: synthetic\r\nContent-Encoding: aes128gcm\r\n\r\ncipher'))); return Buffer.from('cipher'); },
-        decryptNotification: async () => true, onTargetCiphertext: async () => { throw new Error('synthetic-durable-write-failed'); } }), /synthetic-durable-write-failed/);
-    assert.equal(writes, 4);
+        decryptNotification: async () => { decrypts++; return true; }, onTargetCiphertext: async () => { throw new Error('synthetic-durable-write-failed'); } }), /synthetic-durable-write-failed/);
+    assert.equal(writes, 4); assert.equal(decrypts, 0);
 });
 test('synthetic receiver stops before challenge if token capture fails', async () => {
     const frames = selectSyntheticHandshake([fixture()]); let writes = 0, borrowed;
