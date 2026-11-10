@@ -26,6 +26,10 @@ test('normalizes a valid bound Edge file and generates stable device and site id
     const changed = identifyEdgeTransfer(other);
     assert.equal(identity.deviceHash, changed.deviceHash); assert.notEqual(identity.channelHash, changed.channelHash);
     assert.notEqual(identity.contentHash, changed.contentHash);
+    const rotated = structuredClone(file); rotated.push.reconnectToken = 'fresh-token'; rotated.push.client.clientVersion = '2.3.4.5';
+    assert.deepEqual(identifyEdgeTransfer(rotated), identity);
+    rotated.push.authenticationSecret = randomBytes(16).toString('base64url');
+    assert.notEqual(identifyEdgeTransfer(rotated).contentHash, identity.contentHash);
 });
 test('rejects malformed and unsafe transfer data', () => {
     const mutations = [
@@ -56,14 +60,14 @@ test('Edge transfer uses owner-bound hybrid vault and distinct identities', () =
     assert.deepEqual(vault.open(envelope, context), file);
     assert.throws(() => vault.open(envelope, { ...context, ownerUserId: '987654321' }), { code: 'X_SETUP_DECRYPT_FAILED' });
 });
-test('unfinished Edge enrollment stays closed even when existing browsers are enabled', async () => {
+test('Edge enrollment stays closed unless independently enabled', async () => {
     const token = 'a'.repeat(64), tokenHash = createHash('sha256').update(token).digest('hex'); let writes = 0;
     const db = { queryDatabase: async sql => {
         assert.match(sql, /automation_x_setup_sessions/);
         return [{ token_hash: tokenHash, consent_version: 1, consumed_at_ms: null, expires_at_ms: Date.now() + 60000 }];
     }, withDatabaseTransaction: async () => { writes++; throw new Error('unexpected write'); } };
     const service = createXSetup(db, { rolloutMode: 'public', sealer: { seal() { throw new Error('unexpected seal'); } },
-        receiverEnabled: true, chromeEnabled: true, braveEnabled: true, edgeEnabled: true });
+        receiverEnabled: true, chromeEnabled: true, braveEnabled: true, edgeEnabled: false });
     const input = { sessionId: token, fileText: JSON.stringify(fixture()) };
     await assert.rejects(service.validate({ userId: '123456789' }, input), { code: 'X_SETUP_EDGE_NOT_READY' });
     await assert.rejects(service.importFile({ userId: '123456789' }, { ...input, consent: true }), { code: 'X_SETUP_EDGE_NOT_READY' });

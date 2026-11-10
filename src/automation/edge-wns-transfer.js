@@ -54,7 +54,11 @@ function normalizeEdgeTransfer(file) {
 function identifyEdgeTransfer(file) {
     const { push } = normalizeEdgeTransfer(file);
     const hash = value => createHash('sha256').update(value).digest('hex');
+    // The browser rotates the WNS reconnect token and updates client metadata.
+    // Those changes must not turn the same cryptographic subscription into a
+    // different identity or block a safe owner-confirmed refresh.
+    const { reconnectToken: _token, agent: _agent, client: _client, ...stable } = push;
     return { deviceHash: hash(`edge-device\0${push.deviceKey}`), channelHash: hash(`edge-channel\0${push.deviceKey}\0${push.siteChannel}`),
-        contentHash: hash(JSON.stringify(push)) };
+        contentHash: hash(JSON.stringify(stable)) };
 }
 module.exports = { normalizeEdgeTransfer, identifyEdgeTransfer };
