@@ -5,9 +5,11 @@ MacでもFirefox・Chrome・Brave・Edge・Safariの利用者が設定用ファ�
 ## 調査で確認した範囲
 
 - FirefoxのMac版はプロファイルを `~/Library/Application Support/Firefox/Profiles/` 以下に置く。これは既定の一般プロファイルの場所であり、専用プロファイルの安全な作成・読み取りを証明するものではない。[Mozillaのプロファイル案内](https://support.mozilla.org/en-US/kb/profiles-where-firefox-stores-user-data)
-- ChromiumのmacOS向け同期暗号処理にはKeychainとWindowsとは異なる暗号化実装がある。[Chromiumの実装](https://chromium.googlesource.com/chromium/src/+/main/components/os_crypt/sync/os_crypt_mac.mm) は実装の一例であり、現行版のChrome・Braveの通知情報が必ず同じ経路を使うという証明ではない。実機で使い捨てプロファイルを作り、対象レコード・鍵の保護形式・更新時の挙動をそれぞれ確認する。
+- ChromiumのmacOS向け暗号処理にはKeychainとWindowsとは異なる暗号化実装がある。[Chromiumの実装](https://chromium.googlesource.com/chromium/src/+/refs/heads/main/components/os_crypt/async/browser/keychain_key_provider.mm) は実装の一例であり、現行版のChrome・Braveの通知情報が必ず同じ経路を使うという証明ではない。実機で使い捨てプロファイルを作り、対象レコード・鍵の保護形式・更新時の挙動をそれぞれ確認する。
 - Microsoftの組み込みWNSクライアントのポリシーはWindows向けで、macOSではサポート対象外とされている。[Microsoftのポリシー説明](https://learn.microsoft.com/en-us/deployedge/microsoft-edge-policies/forcebuiltinpushmessagingclient) からMac版Edgeがどの通知基盤を使うかは確定できない。WindowsのEdge処理をMacに流用せず、実機で別途調査する。
 - SafariのWeb PushはAPNsとWebKitの `webpushd` を利用する。[WebKitの説明](https://webkit.org/blog/12945/meet-web-push/) と [AppleのWeb Push案内](https://developer.apple.com/documentation/usernotifications/sending-web-push-notifications-in-web-apps-and-browsers) は、サイト運営者が通知を送るための公開方式を説明している。これだけでは、既存Safari購読の受信権限を別サーバーへ安全に移せることは証明できない。AppleはSafariで不可視のPushをサポートせず、通知表示を求めているため、設定用ブラウザーの受信を止める方式との関係も確認する。
+
+Chromiumの現行公開ソースでは、[Macの鍵導出](https://chromium.googlesource.com/chromium/src/+/refs/heads/main/components/os_crypt/async/browser/keychain_key_provider.mm)と[暗号処理](https://chromium.googlesource.com/chromium/src/+/refs/heads/main/components/os_crypt/async/common/encryptor.cc)が `v10` のAES-CBC方式を実装し、[GCMストア](https://chromium.googlesource.com/chromium/src/+/refs/heads/main/google_apis/gcm/engine/gcm_store_impl.cc)が端末トークンの暗号化を利用している。通知用トークンに限定した復号部品を追加し、独立に生成した合成値で確認した。CBCには改ざん検出がなく、数字として復号できることだけでは鍵や出所の正しさを証明できない。この部品は配布ツールやサーバーの受付にまだ接続しておらず、Keychain操作もしない。ブラウザーごとの識別子、Keychain権限、実プロファイルでの形式とサーバー受信は、使い捨てMac環境で検証してから統合する。
 
 ## Safariの受信経路の追加調査（公開ソース）
 
