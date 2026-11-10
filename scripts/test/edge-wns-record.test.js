@@ -2,7 +2,8 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { generateKeyPairSync, randomBytes } = require('node:crypto');
-const { selectXRecord, clearRecord } = require('../../src/automation/edge-wns-record');
+const { selectXRecord, selectDeviceRecord, clearRecord } = require('../../src/automation/edge-wns-record');
+const { buildEdgeTransfer } = require('../../src/automation/edge-wns-snapshot');
 function varint(number) { const out = []; do { let byte = number % 128; number = Math.floor(number / 128); if (number) byte |= 128; out.push(byte); } while (number); return Buffer.from(out); }
 function bytes(field, value) { const data = Buffer.isBuffer(value) ? value : Buffer.from(value); return Buffer.concat([varint(field * 8 + 2), varint(data.length), data]); }
 function metadata(scope) { return bytes(8, Buffer.concat([bytes(1, 'origin'), bytes(2, scope)])); }
@@ -49,4 +50,24 @@ test('rejects unsafe shapes, invalid curves and oversized data without inspectin
     invalid(() => selectXRecord([target.record], { ...target.expected, extra: 'not allowed' }));
     const accessor = { ...target.expected }; Object.defineProperty(accessor, 'auth', { enumerable: true, get() { throw new Error('getter invoked'); } });
     invalid(() => selectXRecord([target.record], accessor));
+});
+test('selects a bounded device token and canonical key, rejecting ambiguous records', () => {
+    const secret = randomBytes(32), raw = Buffer.concat([bytes(2, 'synthetic-token'), bytes(3, secret.toString('base64'))]);
+    const result = selectDeviceRecord(raw); assert.deepEqual(result.deviceKey, secret); assert.equal(result.reconnectToken.toString(), 'synthetic-token');
+    result.deviceKey.fill(0); result.reconnectToken.fill(0); assert(secret.some(byte => byte !== 0));
+    for (const bad of [Buffer.concat([raw, bytes(2, 'duplicate')]), Buffer.concat([raw, bytes(3, secret.toString('base64'))]),
+        Buffer.concat([bytes(2, '<bad>'), bytes(3, secret.toString('base64'))]), Buffer.concat([bytes(2, 'ok'), bytes(3, 'not-base64')]),
+        Buffer.concat([raw, Buffer.from([0x80])]), Buffer.alloc(65537)]) invalid(() => selectDeviceRecord(bad));
+});
+test('builds only the selected X transfer from matching browser records', async () => {
+    const target = fixture(), other = fixture('https://other.example/'), secret = randomBytes(32);
+    const deviceRecord = Buffer.concat([bytes(2, 'synthetic-token'), bytes(3, secret.toString('base64'))]);
+    const input = { siteRecords: [other.record, target.record], deviceRecord, expected: target.expected, browserVersion: '157.0.0.1',
+        agent: { os: 'Windows', osVersion: '1', architecture: 'x64', locale: 'en' },
+        client: { channel: 'abc', protocolVersion: '1.0', clientName: 'Synthetic', clientVersion: '1.2.3.4' } };
+    const file = await buildEdgeTransfer(input);
+    assert.equal(file.push.siteChannel, '1;synthetic-channel'); assert.equal(file.push.deviceKey, secret.toString('base64url'));
+    assert.equal(file.push.p256dhPublicKey, target.expected.publicKey.toString('base64url'));
+    await assert.rejects(buildEdgeTransfer({ ...input, expected: { ...input.expected, auth: randomBytes(16) } }), { code: 'X_EDGE_WNS_SNAPSHOT_INVALID' });
+    await assert.rejects(buildEdgeTransfer({ ...input, siteRecords: [target.record, target.record] }), { code: 'X_EDGE_WNS_SNAPSHOT_INVALID' });
 });

@@ -671,6 +671,14 @@ async function main() {
                     if (key.toString('utf8').toLowerCase().includes('device')) {
                         if (deviceFields) throw new Error('PROBE_DEVICE_AMBIGUOUS');
                         deviceFields = protoBytes(stored, Array.from({ length: 20 }, (_, index) => index + 1));
+                        if (process.env.EDGE_PROBE_DEVICE_SELECTOR === '1') {
+                            if (!testIndependent || process.env.NODE_ENV !== 'test') throw new Error('PROBE_MODE_INVALID');
+                            const checked = require('../../src/automation/edge-wns-record').selectDeviceRecord(stored);
+                            try {
+                                if (!checked.reconnectToken.equals(deviceFields[2]) || checked.deviceKey.toString('base64') !== deviceFields[3].toString('ascii'))
+                                    throw new Error('PROBE_DEVICE_INVALID');
+                            } finally { checked.deviceKey.fill(0); checked.reconnectToken.fill(0); }
+                        }
                         if (process.env.EDGE_PROBE_DESCRIBE_HANDSHAKE === '1') relationDeviceRecord = Buffer.from(stored);
                         if (testWrongKey) { deviceKey = Buffer.from(key); deviceRecord = Buffer.from(stored); }
                     } else if ((testIndependent || process.env.EDGE_PROBE_DECRYPT_RECEIVED === '1' || process.env.EDGE_PROBE_DESCRIBE_HANDSHAKE === '1') && stored.includes(Buffer.from(origin))

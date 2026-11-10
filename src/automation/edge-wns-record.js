@@ -67,6 +67,21 @@ function validExpected(expected) {
 function clearRecord(record) {
     if (record) for (const name of ['channel', 'publicKey', 'auth', 'privateKey', 'applicationServerKey']) record[name]?.fill(0);
 }
+// Parse only an already-selected device record. Profile discovery, snapshot
+// creation and identifying the unique device key belong to the caller.
+function selectDeviceRecord(raw) {
+    let key;
+    try {
+        const parsed = fields(raw), token = one(parsed, 2, 2), encoded = one(parsed, 3, 2);
+        if (!token.length || token.length > 4096 || token.some(byte => byte < 0x21 || byte > 0x7e || [38, 60, 62].includes(byte))
+            || encoded.length !== 44 || encoded.some(byte => byte > 0x7f)) throw fail();
+        const textKey = encoded.toString('ascii');
+        if (!/^[A-Za-z0-9+/]{43}=$/.test(textKey)) throw fail();
+        key = Buffer.from(textKey, 'base64');
+        if (key.length !== 32 || key.toString('base64') !== textKey) throw fail();
+        return { reconnectToken: Buffer.from(token), deviceKey: Buffer.from(key) };
+    } catch { throw fail(); } finally { key?.fill(0); }
+}
 function selectXRecord(records, expected) {
     validExpected(expected);
     if (!Array.isArray(records) || records.length > 128 || records.some(raw => !Buffer.isBuffer(raw) || raw.length > 65536)) throw fail();
@@ -106,4 +121,4 @@ function selectXRecord(records, expected) {
         return selected;
     } catch { clearRecord(selected); throw fail(); }
 }
-module.exports = { selectXRecord, clearRecord };
+module.exports = { selectXRecord, selectDeviceRecord, clearRecord };
