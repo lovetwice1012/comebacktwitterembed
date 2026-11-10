@@ -24,7 +24,7 @@ async function sample(salt) {
         });
     } finally { if (child.exitCode === null && child.signalCode === null) child.kill(); }
 }
-async function verifyDerived(channel, protocolVersion) {
+async function verifyDerived(channel, protocolVersion, { acknowledgeBeforeClose = false } = {}) {
     const env = { ...process.env };
     for (const name of Object.keys(env)) if (name.startsWith('EDGE_PROBE_')) delete env[name];
     Object.assign(env, { EDGE_PROBE_SYSTEM_DEFAULT: '1', EDGE_PROBE_RECONNECT: '1', EDGE_PROBE_COPY_PROFILE: '1', EDGE_PROBE_MINIMAL_PROFILE: '1',
@@ -42,6 +42,11 @@ async function verifyDerived(channel, protocolVersion) {
     if (process.env.EDGE_PROBE_VALIDATE_ROTATION === '1') env.EDGE_PROBE_ROTATION = '1';
     if (process.env.EDGE_PROBE_VALIDATE_STALE === '1') { env.EDGE_PROBE_ROTATION = '1'; env.EDGE_PROBE_USE_STALE_TOKEN = '1'; }
     if (process.env.EDGE_PROBE_VALIDATE_OFFLINE === '1') { env.EDGE_PROBE_ROTATION = '1'; env.EDGE_PROBE_OFFLINE = '1'; }
+    if (acknowledgeBeforeClose) {
+        if (process.env.EDGE_PROBE_VALIDATE_OFFLINE !== '1') throw new Error('PROBE_MODE_INVALID');
+        env.EDGE_PROBE_OFFLINE_ACK = '1';
+    }
+    if (process.env.EDGE_PROBE_VALIDATE_OBSERVE_MS !== undefined) env.EDGE_PROBE_OBSERVE_MS = process.env.EDGE_PROBE_VALIDATE_OBSERVE_MS;
     const child = fork(path.join(__dirname, 'edge-wns-proxy-probe.cjs'), [], { env, windowsHide: true, stdio: ['ignore', 'ignore', 'pipe', 'ipc'] });
     let result, diagnostic = '';
     child.stderr.on('data', chunk => { diagnostic = (diagnostic + chunk.toString('utf8')).slice(-4096); });
@@ -87,7 +92,7 @@ async function main() {
         for (let i = 0; i < 3; i++) fingerprints.push(await sample(encoded));
         const distinct = new Set(fingerprints.map(value => value.channelFingerprint)).size;
         const protocolDistinct = new Set(fingerprints.map(value => value.protocolFingerprint)).size;
-        let directResult = null, binaryMatches = null, pipelineVerified = null;
+        let directResult = null, binaryMatches = null, pipelineVerified = null, acknowledgedResult = null;
         if (process.env.EDGE_PROBE_VALIDATE_DERIVED === '1' && distinct === 1 && protocolDistinct === 1) {
             // The observed synthetic identifier is exactly three decimal digits.
             // Recover it only in memory to test a fourth isolated profile.
@@ -121,6 +126,7 @@ async function main() {
                 } finally { dll.fill(0); }
             }
             directResult = await verifyDerived(channel, protocolVersion);
+            if (process.env.EDGE_PROBE_VALIDATE_REPLAY_PAIR === '1') acknowledgedResult = await verifyDerived(channel, protocolVersion, { acknowledgeBeforeClose: true });
             if (process.env.EDGE_PROBE_VALIDATE_PIPELINE === '1') pipelineVerified = await verifyPipeline(channel, protocolVersion);
         }
         console.log(JSON.stringify({ syntheticProfiles: fingerprints.length, distinctIdentifiers: distinct,
@@ -128,6 +134,8 @@ async function main() {
                 : Boolean(directResult.notificationReceived && directResult.matchesSentCiphertext && directResult.payloadDecrypted),
             reconnectTokenUnchanged: directResult?.reconnectTokenUnchanged ?? null,
             noRelayVerified: directResult?.noRelayVerified ?? null, binaryMatches, pipelineVerified,
+            acknowledgedBeforeClose: acknowledgedResult === null ? null : { ackWritten: acknowledgedResult.ackWritten === true,
+                rotation: acknowledgedResult.rotation ?? null },
             ackWritten: directResult?.ackWritten ?? null, followupReceived: directResult?.followupReceived ?? null,
             followupMatches: directResult?.followupMatches ?? null, followupDecrypted: directResult?.followupDecrypted ?? null,
             rotation: directResult?.rotation ?? null }));

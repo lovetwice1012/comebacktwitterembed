@@ -1192,7 +1192,9 @@ async function main() {
                         await wait(1000);
                         offlineCipher = await sendFixture(value.subscription, 'synthetic-offline');
                     }
-                    const observation = testOffline ? { offlineCipher, priorCipher: firstCipher, windowMs: 10000 } : undefined;
+                    const configuredWindow = process.env.EDGE_PROBE_OBSERVE_MS === undefined ? 10000 : Number(process.env.EDGE_PROBE_OBSERVE_MS);
+                    if (testOffline && (process.env.NODE_ENV !== 'test' || !Number.isInteger(configuredWindow) || configuredWindow < 100 || configuredWindow > 30000)) throw new Error('PROBE_MODE_INVALID');
+                    const observation = testOffline ? { offlineCipher, priorCipher: firstCipher, windowMs: configuredWindow } : undefined;
                     try { independentResult.rotation = { reusedPreviousToken: useOldToken, ...await direct(useOldToken ? deviceFields[2].toString('utf8') : rotatedToken.toString('ascii'), 'synthetic-independent-next', false, false, observation) }; }
                     catch (error) { independentResult.rotation = { errorCode: /^PROBE_[A-Z_]+$/.test(error?.code || '') ? error.code : 'PROBE_ROTATION_FAILED' }; }
                 }
