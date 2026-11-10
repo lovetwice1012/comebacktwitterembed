@@ -14,6 +14,7 @@ import { monitorBehaviorChanged, monitorWorkflowChanged, rebaseMonitorDraft } fr
 import { MonitorDeliveryActivity } from "./monitor-delivery-activity";
 import { readinessOf } from "./monitor-readiness";
 import { youtubeReceiveSummary } from "./youtube-watch-options";
+import { useAnonymousPageTiming } from "./anonymous-page-timing";
 
 const field = "w-full rounded border bg-background px-3 py-2 text-sm";
 const button = "rounded border bg-background px-3 py-2 text-sm hover:bg-muted disabled:opacity-40";
@@ -55,6 +56,7 @@ export function MonitorManager({ api, guildId, canEdit, scope, destinations: sup
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; destinationOrigin.current = null; }; }, []);
   const kindRef = useRef(kind); kindRef.current = kind;
   const normalActive = active && notificationView === "normal";
+  useAnonymousPageTiming("notifications", normalActive, loading, Boolean(error));
   const activeRef = useRef(normalActive); activeRef.current = normalActive;
   const workspaceActiveRef = useRef(active); workspaceActiveRef.current = active;
   const editable = (row: any) => row?.scope !== "guild" || canEdit;

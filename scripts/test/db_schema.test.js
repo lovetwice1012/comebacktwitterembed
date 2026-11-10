@@ -351,6 +351,8 @@ test('database schema can detect add-column migrations before execution', async 
         { table: 'guild_provider_settings', column: 'tiktok_hq' }
     );
     assert.equal(_internal.parseAddColumnStatement('CREATE TABLE example (id INT)'), null);
+    assert.deepEqual(_internal.parseAddColumnStatement('ALTER TABLE automation_x_subscriptions ADD COLUMN IF NOT EXISTS browser_kind VARCHAR(16)'),
+        { table: 'automation_x_subscriptions', column: 'browser_kind' });
 
     const queries = [];
     const skip = await _internal.shouldSkipMigrationStatement(async (sql, params) => {
@@ -360,9 +362,43 @@ test('database schema can detect add-column migrations before execution', async 
 
     assert.equal(skip, true);
     assert.deepEqual(queries, [{
-        sql: 'SHOW COLUMNS FROM guild_provider_settings WHERE Field = ?',
+        sql: 'SHOW COLUMNS FROM guild_provider_settings WHERE `Field` = ?',
         params: ['tiktok_hq'],
     }]);
+});
+
+test('IF NOT EXISTS column migrations use portable SQL and only ignore duplicate-column races', async (t) => {
+    const file = '20261110_add_x_subscription_browser_kind.sql', calls = [];
+    const migrationPath = path.join(MIGRATIONS_DIR, file);
+    const originalReadFileSync = fs.readFileSync;
+    let syntheticReads = 0;
+    t.mock.method(fs, 'readFileSync', function (filePath, ...args) {
+        if (filePath === migrationPath) {
+            syntheticReads++;
+            return 'ALTER TABLE automation_x_subscriptions ADD COLUMN IF NOT EXISTS browser_kind VARCHAR(16) NOT NULL DEFAULT \'firefox\';';
+        }
+        return originalReadFileSync.call(this, filePath, ...args);
+    });
+    const query = async (sql, params) => {
+        calls.push({ sql, params });
+        if (sql.startsWith('SHOW COLUMNS')) return [];
+        if (sql.startsWith('ALTER TABLE')) throw Object.assign(new Error('concurrent duplicate'), { code: 'ER_DUP_FIELDNAME' });
+        return { affectedRows: 1 };
+    };
+    await _internal.applyMigrationFile(query, file);
+    const alter = calls.find(call => call.sql.startsWith('ALTER TABLE'));
+    assert.match(alter.sql, /ADD COLUMN browser_kind/);
+    assert.doesNotMatch(alter.sql, /IF\s+NOT\s+EXISTS/i);
+    assert.deepEqual(calls[0].params, ['browser_kind']);
+    assert(calls.some(call => call.sql.includes('schema_migrations')));
+    let tracked = false;
+    await assert.rejects(_internal.applyMigrationFile(async sql => {
+        if (sql.startsWith('SHOW COLUMNS')) return [];
+        if (sql.startsWith('ALTER TABLE')) throw Object.assign(new Error('denied'), { code: 'ER_TABLEACCESS_DENIED_ERROR' });
+        tracked = true; return [];
+    }, file), { code: 'ER_TABLEACCESS_DENIED_ERROR' });
+    assert.equal(tracked, false);
+    assert.equal(syntheticReads, 2);
 });
 
 test('database schema can skip drop-column migrations when column is absent', async () => {
@@ -380,7 +416,7 @@ test('database schema can skip drop-column migrations when column is absent', as
 
     assert.equal(skipMissing, true);
     assert.deepEqual(queries, [{
-        sql: 'SHOW COLUMNS FROM guild_provider_settings WHERE Field = ?',
+        sql: 'SHOW COLUMNS FROM guild_provider_settings WHERE `Field` = ?',
         params: ['pixiv_sensitive_display_mode'],
     }]);
 

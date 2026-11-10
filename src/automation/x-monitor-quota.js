@@ -434,13 +434,26 @@ function createXMonitorQuota(db, options = {}) {
         requireActor(actor);
         return db.withDatabaseTransaction(async query => { await entitlements.lockOwner(query, actor.userId); return quota(query, actor); });
     }
+    // Serialization performs only unlocked reads and holds the same owner
+    // fence for the entire list. Share identical reads within this phase,
+    // never across requests or with the later quota/adoption writes.
+    async function serializeItems(query, rows, plan) {
+        const cache = new Map();
+        const read = (sql, params = []) => {
+            if (!/^\s*SELECT\b/i.test(sql) || /\bFOR\s+UPDATE\b/i.test(sql)) return query(sql, params);
+            const key = JSON.stringify([sql, params]);
+            if (!cache.has(key)) cache.set(key, query(sql, params));
+            return cache.get(key);
+        };
+        return Promise.all(rows.map(row => item(row, plan, read)));
+    }
     async function list(actor) {
         requireActor(actor);
-        return db.withDatabaseTransaction(async query => { await entitlements.lockOwner(query, actor.userId); const plan = await planFor(query, actor.userId); return { items: await Promise.all((await rowsFor(query, actor.userId)).map(row => item(row, plan, query))), quota: await quota(query, actor) }; });
+        return db.withDatabaseTransaction(async query => { await entitlements.lockOwner(query, actor.userId); const plan = await planFor(query, actor.userId); return { items: await serializeItems(query, await rowsFor(query, actor.userId), plan), quota: await quota(query, actor) }; });
     }
     async function reconcile(actor) {
         requireActor(actor);
-        return db.withDatabaseTransaction(async query => { await lockGlobal(query, actor); await reconcileRows(query, actor, [actor.userId]); const plan = await planFor(query, actor.userId); return { items: await Promise.all((await rowsFor(query, actor.userId)).map(row => item(row, plan, query))), quota: await quota(query, actor) }; });
+        return db.withDatabaseTransaction(async query => { await lockGlobal(query, actor); await reconcileRows(query, actor, [actor.userId]); const plan = await planFor(query, actor.userId); return { items: await serializeItems(query, await rowsFor(query, actor.userId), plan), quota: await quota(query, actor) }; });
     }
     async function integrity(actor) {
         capacity.requireAdmin(actor);

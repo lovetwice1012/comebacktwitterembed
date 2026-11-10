@@ -54,6 +54,13 @@ test('first guest observation seeds the cursor without posting historical items'
     assert.deepEqual(store.calls.complete[0].cursor.seenContentIds, ['old-1', 'old-2']);
 });
 
+test('new-content scheduler records only an aggregate delay for a due source', async () => {
+    const metric = require('../../src/adminSupport/databaseMetrics').sourceLag.auto, before = metric.snapshot().count;
+    const store = baseStore([source({ next_check_at_ms: 1000 })]);
+    await tick({ now: 2000, store, fetchSource: async () => ({ items: [], state: {} }) });
+    assert.equal(metric.snapshot().count, before + 1);
+});
+
 test('later observation queues only new items and preserves the known cursor', async () => {
     const store = baseStore([source({ initialized_at_ms: 1, cursor_json: JSON.stringify({ seenContentIds: ['old-1'] }) })]);
     const result = await tick({

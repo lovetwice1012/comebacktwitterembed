@@ -29,7 +29,7 @@ async function fixture({ row = monitor(), respond, active = true, reload } = {})
     f.open = () => f.click('通知方法を変更');
     f.choose = async mode => f.act(async () => f.container.querySelector(`input[value="${mode}"]`).click());
     f.review = () => f.click('通知方法の変更を確認');
-    f.save = cost => f.click(`${cost}枠を使って即時通知`);
+    f.save = cost => f.click(`${cost}枠でリアルタイムに変更`);
     await f.renderTiming(active); await f.settle(); return f;
 }
 
@@ -62,7 +62,7 @@ test('a reviewed one-slot quote changing to five slots disables confirmation unt
     const f = await fixture({ row: monitor({ processing: processing({ realtimeSlotCost: 1, realtimeEligibilitySource: 'plan', additionalSlotsNeeded: 0 }) }) });
     try {
         await f.open(); await f.choose('realtime'); await f.review(); await f.replace(monitor({ processing: processing() }));
-        assert.match(f.container.querySelector('[role="alert"]').textContent, /必要な枠数が変わりました/); assert.equal([...f.container.querySelectorAll('button')].find(item => item.textContent === '5枠を使って即時通知').disabled, true); await f.save(5); assert.equal(f.calls.length, 0);
+        assert.match(f.container.querySelector('[role="alert"]').textContent, /必要な枠数が変わりました/); assert.equal([...f.container.querySelectorAll('button')].find(item => item.textContent === '5枠でリアルタイムに変更').disabled, true); await f.save(5); assert.equal(f.calls.length, 0);
         await f.click('選び直す'); await f.review(); await f.save(5); assert.equal(f.calls[0].body.expectedRealtimeSlotCost, 5);
     } finally { await f.close(); }
 });
@@ -106,7 +106,7 @@ test('older or malformed optional processing metadata keeps timing read-only wit
 test('rapid save clicks issue one request and a response after the view is left cannot announce success or overwrite parent data', async () => {
     let finish;
     const f = await fixture({ respond: () => new Promise(resolve => { finish = resolve; }) });
-    try { await f.open(); await f.choose('realtime'); await f.review(); const save = [...f.container.querySelectorAll('button')].find(item => item.textContent === '5枠を使って即時通知'); await f.act(async () => { save.click(); save.click(); }); assert.equal(f.calls.length, 1); await f.renderTiming(false);
+    try { await f.open(); await f.choose('realtime'); await f.review(); const save = [...f.container.querySelectorAll('button')].find(item => item.textContent === '5枠でリアルタイムに変更'); await f.act(async () => { save.click(); save.click(); }); assert.equal(f.calls.length, 1); await f.renderTiming(false);
         await f.act(async () => finish(monitor({ revision: 4, processing: processing({ requestedMode: 'realtime', explicitMode: 'realtime', effectiveMode: 'realtime', realtimeSource: 'slots', slotCost: 5, effectiveSlotCost: 5 }) })));
         assert.equal(f.saved.length, 0); assert.doesNotMatch(f.container.textContent, /通知方法を保存しました/); assert.equal(f.busyStates.at(-1), false);
     } finally { if (finish) finish(monitor()); await f.close(); }

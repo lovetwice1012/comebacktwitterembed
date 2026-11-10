@@ -112,7 +112,20 @@ function createRunner(db, queue, transport, options = {}) {
                 await queue.acknowledgeStep(job, id);
                 confirmed++; sending = false;
             }
-            await queue.transition(job, 'sent');
+            const savedSent = await queue.transition(job, 'sent');
+            // Only persisted, Discord-acknowledged deliveries contribute.
+            // These process-local aggregates never retain the event or IDs.
+            try {
+                if (savedSent === true) {
+                    const metrics = require('../adminSupport/databaseMetrics').deliveryLag;
+                    const sentAt = clock(), due = Number(job.due_at_ms);
+                    if (['auto', 'price', 'x'].includes(job.target_kind) && Number.isSafeInteger(due) && due > 0 && sentAt >= due)
+                        metrics[job.target_kind].record(sentAt - due);
+                    const received = Number(job.plan?.event?.observedAtMs);
+                    if (job.target_kind === 'x' && Number.isSafeInteger(received) && received > 0 && sentAt >= received)
+                        metrics.xReceived.record(sentAt - received);
+                }
+            } catch { /* Metrics must never change delivery state. */ }
             return { state: 'sent', steps: confirmed };
         } catch (error) {
             if (error instanceof AutomationRateError) {

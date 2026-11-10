@@ -29,6 +29,20 @@ test('runner persists each confirmed step then completes; recovery quarantine pe
     await f.run({ notificationAllowed: () => false }); assert.equal(prepares, 1); assert.equal(sends, 2);
     assert.equal(f.states.at(-1).code, 'RECOVERY_QUARANTINED');
 });
+
+test('delivery metrics count only acknowledged and persisted X sends without retaining event data', async () => {
+    const metrics = require('../../src/adminSupport/databaseMetrics').deliveryLag;
+    const beforeDue = metrics.x.snapshot().count, beforeReceived = metrics.xReceived.snapshot().count;
+    const f = fixture({ prepare: async () => ({ payloads: [{}] }), sendStep: async () => M },
+        { target_kind: 'x', due_at_ms: 1500, plan: { context: { userId: U }, schedules: [], event: { observedAtMs: 1000, body: 'private-test-body' } } });
+    assert.equal((await f.run()).state, 'sent');
+    assert.equal(metrics.x.snapshot().count, beforeDue + 1); assert.equal(metrics.xReceived.snapshot().count, beforeReceived + 1);
+    assert.doesNotMatch(JSON.stringify(metrics.xReceived.snapshot()), /private-test-body/);
+    const lost = fixture({ prepare: async () => ({ payloads: [{}] }), sendStep: async () => M },
+        { target_kind: 'x', due_at_ms: 1500, plan: { context: { userId: U }, schedules: [], event: { observedAtMs: 1000 } } });
+    lost.queue.transition = async () => false;
+    await lost.run(); assert.equal(metrics.x.snapshot().count, beforeDue + 1);
+});
 test('timeout, HTTP 5xx and unpersistable ACK become unknown with no automatic resend', async () => {
     for (const failure of [Object.assign(new Error('secret'), { code: 'ETIMEDOUT' }), Object.assign(new Error('secret'), { status: 502 })]) {
         let calls = 0;

@@ -233,8 +233,10 @@ async function sourceTargets(sourceId, now = Date.now()) {
          WHERE t.source_id=? AND t.enabled=1 ORDER BY t.id`,
         [sourceId]
     );
-    for (const row of rows) if (Number(row.plan_cadence_active) === 1) {
-        const minutes = await require('../../automation/plan-interval').currentPlanInterval(db.queryDatabase, row.user_id, now);
+    const active = rows.filter(row => Number(row.plan_cadence_active) === 1);
+    const planIntervals = await require('../../automation/plan-interval').currentPlanIntervals(db.queryDatabase, active.map(row => row.user_id), now);
+    for (const row of active) {
+        const minutes = planIntervals.get(String(row.user_id));
         if (minutes === null) throw error('Price-watch plan interval unavailable.', 'PRICE_WATCH_PLAN_INTERVAL_UNAVAILABLE');
         const baseline = row.cadence_baseline_json == null ? null : parseJson(row.cadence_baseline_json, null);
         if (row.cadence_baseline_json != null && (!baseline || typeof baseline !== 'object' || Array.isArray(baseline)

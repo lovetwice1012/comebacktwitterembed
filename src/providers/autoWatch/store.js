@@ -404,12 +404,15 @@ async function completeSource(source, result) {
         if (result.items?.length) await createItemsAndDeliveries(source, result.items, result.checkedAtMs);
         const targets = await query(`SELECT t.id,t.next_poll_at_ms,t.last_polled_at_ms,t.last_notification_window_at_ms,t.user_id,
             (SELECT slot_cost FROM automation_monitor_cadence c WHERE c.target_kind='auto' AND c.target_id=t.id AND c.owner_user_id=t.user_id) AS slot_cost,
+            (SELECT updated_at_ms FROM automation_monitor_cadence c WHERE c.target_kind='auto' AND c.target_id=t.id AND c.owner_user_id=t.user_id) AS cadence_updated_at_ms,
             (SELECT COALESCE(u.auto_watch_interval_minutes*60000,(SELECT poll_interval_ms FROM auto_watch_sources WHERE id=t.source_id))
              FROM users u WHERE u.user_id=t.user_id) AS interval_ms
             FROM auto_watch_targets t
             WHERE t.source_id=? AND t.enabled=1 FOR UPDATE`, [source.id]);
+        const planIntervals = await require('../../automation/plan-interval').currentPlanIntervals(query, targets.map(target => target.user_id), result.checkedAtMs);
         for (const target of targets) {
-            const cadence = await require('../../automation/monitor-cadence').runtimeCadence(query, target.user_id, 'auto', String(target.id), Number(target.interval_ms), result.checkedAtMs);
+            const selectedCadence = target.slot_cost == null ? null : { slot_cost: target.slot_cost, updated_at_ms: target.cadence_updated_at_ms };
+            const cadence = await require('../../automation/monitor-cadence').runtimeCadence(query, target.user_id, 'auto', String(target.id), Number(target.interval_ms), result.checkedAtMs, { planIntervals, selectedCadence });
             target.interval_ms = cadence.intervalMs;
             const due = cadence.planDriven && target.last_polled_at_ms != null ? Number(target.last_polled_at_ms) + cadence.intervalMs : Number(target.next_poll_at_ms || 0);
             if (cadence.planDriven) await query(`UPDATE auto_watch_deliveries d JOIN auto_watch_items i ON i.id=d.item_id
@@ -583,14 +586,17 @@ async function createItemsAndDeliveries(source, items, now) {
             t.youtube_include_releases,t.youtube_include_community,t.youtube_releases_since_ms,t.youtube_community_since_ms,
             t.youtube_releases_baseline_at_ms,t.youtube_community_baseline_at_ms,
             (SELECT slot_cost FROM automation_monitor_cadence c WHERE c.target_kind='auto' AND c.target_id=t.id AND c.owner_user_id=t.user_id) AS slot_cost,
+            (SELECT updated_at_ms FROM automation_monitor_cadence c WHERE c.target_kind='auto' AND c.target_id=t.id AND c.owner_user_id=t.user_id) AS cadence_updated_at_ms,
             (SELECT COALESCE(u.auto_watch_interval_minutes*60000,(SELECT poll_interval_ms FROM auto_watch_sources WHERE id=t.source_id))
              FROM users u WHERE u.user_id=t.user_id) AS interval_ms
          FROM ${TABLES.autoWatchTargets} t
          WHERE t.source_id=? AND t.enabled=1 AND t.baseline_at_ms IS NOT NULL FOR UPDATE`,
         [source.id]
     );
+    const planIntervals = await require('../../automation/plan-interval').currentPlanIntervals(db.queryDatabase, targets.map(target => target.user_id), now);
     for (const target of targets) {
-        const cadence = await require('../../automation/monitor-cadence').runtimeCadence(db.queryDatabase, target.user_id, 'auto', String(target.id), Number(target.interval_ms), now);
+        const selectedCadence = target.slot_cost == null ? null : { slot_cost: target.slot_cost, updated_at_ms: target.cadence_updated_at_ms };
+        const cadence = await require('../../automation/monitor-cadence').runtimeCadence(db.queryDatabase, target.user_id, 'auto', String(target.id), Number(target.interval_ms), now, { planIntervals, selectedCadence });
         target.interval_ms = cadence.intervalMs;
         if (cadence.planDriven && target.last_polled_at_ms != null) target.next_poll_at_ms = Number(target.last_polled_at_ms) + cadence.intervalMs;
     }

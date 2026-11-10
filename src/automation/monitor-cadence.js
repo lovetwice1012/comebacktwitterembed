@@ -9,12 +9,12 @@ async function lockTargetSource(query, owner, targetId) {
     if (!target) return null;
     return (await query('SELECT id,poll_interval_ms FROM auto_watch_sources WHERE id=? FOR UPDATE', [target.source_id]))[0] || null;
 }
-async function runtimeCadence(query, owner, kind, targetId, baseMs, now = Date.now()) {
-    const selected = (await query('SELECT slot_cost,updated_at_ms FROM automation_monitor_cadence WHERE owner_user_id=? AND target_kind=? AND target_id=?', [owner, kind, targetId]))[0];
+async function runtimeCadence(query, owner, kind, targetId, baseMs, now = Date.now(), options = {}) {
+    const selected = Object.hasOwn(options, 'selectedCadence') ? options.selectedCadence : (await query('SELECT slot_cost,updated_at_ms FROM automation_monitor_cadence WHERE owner_user_id=? AND target_kind=? AND target_id=?', [owner, kind, targetId]))[0];
     const cost = Number(selected?.slot_cost || 1);
     let base = Number(baseMs), planDriven = false;
     if (kind === 'auto') {
-        const interval = await require('./plan-interval').currentPlanInterval(query, owner, now);
+        const interval = options.planIntervals?.has(String(owner)) ? options.planIntervals.get(String(owner)) : await require('./plan-interval').currentPlanInterval(query, owner, now);
         if (interval !== null) {
             base = interval * 60000;
             planDriven = true;
@@ -65,11 +65,16 @@ async function release(query, owner, kind, targetId) {
     await query('DELETE FROM automation_monitor_cadence WHERE owner_user_id=? AND target_kind=? AND target_id=?', [owner, kind, targetId]);
 }
 async function sourceSchedule(query, source, now = Date.now()) {
-    const targets = await query(`SELECT t.id,t.user_id,COALESCE(u.auto_watch_interval_minutes*60000,s.poll_interval_ms) AS base_interval_ms,u.auto_watch_interval_minutes
-        FROM auto_watch_targets t JOIN auto_watch_sources s ON s.id=t.source_id JOIN users u ON u.user_id=t.user_id WHERE t.source_id=? AND t.enabled=1`, [source.id]);
+    const targets = await query(`SELECT t.id,t.user_id,COALESCE(u.auto_watch_interval_minutes*60000,s.poll_interval_ms) AS base_interval_ms,u.auto_watch_interval_minutes,
+        c.slot_cost,c.updated_at_ms AS cadence_updated_at_ms
+        FROM auto_watch_targets t JOIN auto_watch_sources s ON s.id=t.source_id JOIN users u ON u.user_id=t.user_id
+        LEFT JOIN automation_monitor_cadence c ON c.owner_user_id=t.user_id AND c.target_kind='auto' AND c.target_id=t.id
+        WHERE t.source_id=? AND t.enabled=1`, [source.id]);
+    const planIntervals = await require('./plan-interval').currentPlanIntervals(query, targets.map(target => target.user_id), now);
     let requested = Infinity, override = false;
     for (const target of targets) {
-        const cadence = await runtimeCadence(query, target.user_id, 'auto', String(target.id), Number(target.base_interval_ms), now);
+        const selectedCadence = target.slot_cost == null ? null : { slot_cost: target.slot_cost, updated_at_ms: target.cadence_updated_at_ms };
+        const cadence = await runtimeCadence(query, target.user_id, 'auto', String(target.id), Number(target.base_interval_ms), now, { planIntervals, selectedCadence });
         requested = Math.min(requested, cadence.intervalMs); override ||= cadence.planDriven || cadence.effectiveSlotCost > 1 || target.auto_watch_interval_minutes != null;
     }
     return { requested_poll_interval_ms: Number.isFinite(requested) ? requested : source.poll_interval_ms, has_user_interval: override ? 1 : 0 };

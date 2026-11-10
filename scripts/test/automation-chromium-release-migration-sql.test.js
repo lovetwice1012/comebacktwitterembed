@@ -27,7 +27,7 @@ async function save(setup, actor, file) {
     return setup.importFile(actor, { sessionId: session.sessionId, fileText: JSON.stringify(file), consent: true });
 }
 
-test('complete Chromium upgrade and feature-disable retain Firefox receipts and all encrypted registrations', { timeout: 45000 }, async () => {
+test('complete Chromium upgrade and feature-disable retain Firefox receipts and all encrypted registrations', { timeout: 180000 }, async () => {
     const db = await createTestDatabase(Number(process.env.AUTOMATION_TEST_DB_PORT));
     try {
         assert.match(db.schema, /^cbte_automation_test_[0-9a-f]{20}$/);

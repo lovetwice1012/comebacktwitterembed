@@ -106,6 +106,10 @@ function failureDelay(source, now, error) {
 
 async function processSource(source, context) {
     const { now, store, fetch, fetchPrice } = context;
+    try {
+        const due = Number(source.next_check_at_ms);
+        if (Number.isSafeInteger(due) && due > 0 && now >= due) require('../../adminSupport/databaseMetrics').sourceLag.price.record(now - due);
+    } catch { /* Best-effort aggregate measurement. */ }
     const adapter = provider(source.provider_id);
     let nextCheckAtMs = now + nextIntervalMs(source.provider_id);
     const permit = await store.reserveProvider(source.provider_id, adapter.globalSpacingMs, now);

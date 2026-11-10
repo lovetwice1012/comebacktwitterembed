@@ -12,6 +12,7 @@ import { readinessOf, workflowStatus, workflowStatusLabel } from "./monitor-read
 import { monitorState } from "../../../src/automation/monitor-input";
 import { parseXSetupStatus, xReceiverLabel, type XSetupStatus, type XSetupSubscription } from "./x-setup-view";
 import { ArrowRight, Clock3, Radio, ShieldCheck, Users, Zap } from "lucide-react";
+import { useAnonymousPageTiming } from "./anonymous-page-timing";
 import "./notification-x.css";
 
 const field = "w-full rounded border bg-background px-3 py-2 text-sm";
@@ -57,6 +58,7 @@ function XMonitorEditor({ api, active, allowSetup, subscriptionsVersion, destina
   const chosenSubscriptions = useRef(new Map<string, XSetupSubscription>()), consumedConnection = useRef(false);
   const reviewProcessingCost = useRef<number | null>(null), [processingQuoteStale, setProcessingQuoteStale] = useState(false);
   activeRef.current = active;
+  useAnonymousPageTiming("x_monitors", active, loading, Boolean(readError || setupError));
   const liveCurrent = items.find(item => item.id === editingId);
   const current = editingBaseline?.id === editingId ? editingBaseline : undefined;
   const editConflict = revisionConflict || Boolean(current && liveCurrent && current.revision !== liveCurrent.revision);
@@ -107,20 +109,20 @@ function XMonitorEditor({ api, active, allowSetup, subscriptionsVersion, destina
     if (!active || !registrationRequest || !Number.isSafeInteger(registrationRequest.id) || registrationRequest.id <= consumedRequest.current) return;
     consumedRequest.current = registrationRequest.id;
     setEditorOpen(true);
-    if (draftRef.current) { draftForm.current?.querySelector<HTMLInputElement>("input")?.focus(); draftForm.current?.scrollIntoView?.({ block: "nearest" }); return; }
+    if (draftRef.current) { draftForm.current?.querySelector<HTMLInputElement>("input")?.focus({ preventScroll: true }); const dialog = draftForm.current?.closest("dialog"); if (dialog) dialog.scrollTop = 0; return; }
     draftFocusPending.current = true; setEditingId(null); setEditingBaseline(null); setRevisionConflict(false); setRebasedReview(false); setReview(null);
     setDraft({ ...draftOf(), accountHandle: registrationRequest.accountHandle?.replace(/^@/u, "") ?? "", name: registrationRequest.name ?? "", destinationId: registrationRequest.destinationId ?? "" });
   }, [active, registrationRequest]);
   useEffect(() => {
     if (!active || !draft || !draftFocusPending.current) return;
-    draftFocusPending.current = false; draftForm.current?.querySelector<HTMLInputElement>("input")?.focus(); draftForm.current?.scrollIntoView?.({ block: "nearest" });
+    draftFocusPending.current = false; draftForm.current?.querySelector<HTMLInputElement>("input")?.focus({ preventScroll: true }); const dialog = draftForm.current?.closest("dialog"); if (dialog) dialog.scrollTop = 0;
   }, [active, draft]);
   useEffect(() => {
     if (!draft) return;
     const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ""; };
     window.addEventListener("beforeunload", warn); return () => window.removeEventListener("beforeunload", warn);
   }, [draft]);
-  function update<K extends keyof Draft>(key: K, value: Draft[K]) { if (!action.current) { setDraft(previous => previous ? { ...previous, [key]: value, ...(key === "accountHandle" && value !== previous.accountHandle ? { browserAcknowledgedHandle: null } : {}) } : previous); if (key === "accountHandle") setProfileCopyMessage(""); setReview(null); setNotice(""); } }
+  function update<K extends keyof Draft>(key: K, value: Draft[K]) { if (!action.current) { setDraft(previous => previous ? { ...previous, [key]: value, ...((key === "accountHandle" && value !== previous.accountHandle || key === "subscriptionId" && value !== previous.subscriptionId) ? { browserAcknowledgedHandle: null } : {}) } : previous); if (key === "accountHandle") setProfileCopyMessage(""); setReview(null); setNotice(""); } }
   async function mutate(work: () => Promise<void>) {
     if (action.current || !activeRef.current) return;
     action.current = true; const version = ++mutationEpoch.current; epoch.current++; setLoading(false); setBusy(true); setError(""); setNotice("");
@@ -213,17 +215,16 @@ function XMonitorEditor({ api, active, allowSetup, subscriptionsVersion, destina
     {setup?.rollout.mode === "supporters" ? <p role="status" className="nx-state-line"><ShieldCheck size={16} aria-hidden="true" /><span>支援者向けベータ版{setup.rollout.eligible ? "・利用できます" : "・受付対象の拡大待ち"}</span></p> : null}
     {setup?.rollout.mode === "disabled" && quota?.x.reasonCode !== "X_ROLLOUT_DISABLED" ? <p role="status" className="text-sm">{xReason("X_ROLLOUT_DISABLED")}</p> : null}
     {compact ? <div className="nx-status-grid"><section aria-label="Xの接続状況" className="nx-compact-status"><header><Radio size={17} aria-hidden="true" /><h3>Xとの接続</h3></header><strong>{!allowSetup ? "個人ページで設定" : !setup ? "接続状況を確認中" : !setup.subscriptions.length && !setup.nextCursor ? "受信情報を登録しましょう" : setup.subscriptions.some(item => item.receiverState === "listening") ? "サーバー接続を確認済み" : setup.nextCursor ? "続きの受信情報を確認" : "接続の準備・確認中"}</strong>{setup?.subscriptions.some(item => item.receiverState === "requires_reenrollment") ? <p>受信情報を登録し直してください。</p> : null}<a className="nx-text-link" href="/dashboard/automation/x">接続を確認<ArrowRight size={14} aria-hidden="true" /></a></section><section aria-label="X通知のタイミング" className="nx-compact-status"><header><Clock3 size={17} aria-hidden="true" /><h3>通知方法</h3></header>{!loading && !readError && items.every(item => item.processing) ? <div className="nx-monitor-timing-status"><span className="nx-timing-chip"><Zap size={14} aria-hidden="true" />リアルタイム {items.filter(item => item.processing?.effectiveMode === "realtime").length}件</span><span className="nx-timing-chip"><Clock3 size={14} aria-hidden="true" />プランの間隔 {items.filter(item => item.processing?.effectiveMode === "batch").length}件</span></div> : <strong>{loading ? "確認中…" : "通知方法の確認待ち"}</strong>}</section></div> : null}
-    {quota && compact ? <section aria-label="X監視の個人利用枠" className="nx-quota-card"><dl className="nx-quota-summary"><div><dt>X監視の登録数</dt><dd>{quota.x.used}件</dd></div><div><dt>1枠利用で追加可能</dt><dd>{quota.x.available}件</dd></div><div><dt>現在のプラン</dt><dd>{quota.currentPlan.label}</dd></div></dl><a href="/dashboard/automation/plans" className="nx-text-link"><Users size={15} aria-hidden="true" />プランと利用枠を確認<ArrowRight size={14} aria-hidden="true" /></a>
+    {quota && compact ? <section aria-label="X監視の個人利用枠" className="nx-quota-card"><dl className="nx-quota-summary"><div><dt>基本枠</dt><dd>{quota.currentPlan.baseSlotLimit}枠</dd></div><div><dt>支援による追加</dt><dd>{quota.personal.supporterExtraSlots}枠</dd></div><div><dt>使用中</dt><dd>{quota.personal.used}／{quota.personal.totalLimit}枠</dd></div><div><dt>残り</dt><dd>{quota.personal.available}枠</dd></div><div><dt>1枠で追加できるX監視</dt><dd>{quota.x.available}件</dd></div><div><dt>現在のプラン</dt><dd>{quota.currentPlan.label}</dd></div></dl><a href="/dashboard/automation/plans" className="nx-text-link"><Users size={15} aria-hidden="true" />プランと利用枠を確認<ArrowRight size={14} aria-hidden="true" /></a>
       {!quota.featureEnabled && !quota.x.reasonCode?.startsWith("X_ROLLOUT_") ? <p role="status">{xReason("X_MONITOR_UNAVAILABLE")}</p> : null}{quota.x.reasonCode && (quota.featureEnabled || quota.x.reasonCode !== "X_MONITOR_UNAVAILABLE") ? <p role="status">{xReason(quota.x.reasonCode)}</p> : null}</section> : null}
     {quota && !compact ? <details aria-label="X監視の個人利用枠" className="space-y-2 rounded border bg-muted/30 p-4 text-sm"><summary>利用状況 {quota.personal.used}／{quota.personal.totalLimit}枠</summary>
       <p className="font-medium">現在のプラン: {quota.currentPlan.label}</p>
-      <dl className="grid gap-2 sm:grid-cols-2"><div><dt>個人の総登録上限</dt><dd>{quota.personal.totalLimit}枠（基本{quota.currentPlan.baseSlotLimit}＋支援追加{quota.personal.supporterExtraSlots}）</dd></div>
-        <div><dt>現在の登録数</dt><dd>{quota.personal.registeredCount === null ? "件数未取得" : `${quota.personal.registeredCount}件`}</dd></div>
-        <div><dt>現在の使用枠</dt><dd>{quota.personal.used}／{quota.personal.totalLimit}枠（空き{quota.personal.available}枠）</dd></div><div><dt>支援者追加枠の保有数</dt><dd>{quota.personal.supporterExtraSlots}枠</dd></div>
-        <div><dt>X監視の利用数・空き枠</dt><dd>{quota.x.used}件／空き{quota.x.available}件</dd></div><div><dt>無料共有枠の全体空き</dt><dd>{quota.pools.free.available}／{quota.pools.free.limit}枠</dd></div>
+      <dl className="grid gap-2 sm:grid-cols-2"><div><dt>基本枠</dt><dd>{quota.currentPlan.baseSlotLimit}枠</dd></div><div><dt>支援による追加</dt><dd>{quota.personal.supporterExtraSlots}枠</dd></div>
+        <div><dt>使用中</dt><dd>{quota.personal.used}／{quota.personal.totalLimit}枠</dd></div><div><dt>残り</dt><dd>{quota.personal.available}枠</dd></div>
+        <div><dt>登録している通知</dt><dd>{quota.personal.registeredCount === null ? "件数未取得" : `${quota.personal.registeredCount}件`}</dd></div>
+        <div><dt>1枠で追加できるX監視</dt><dd>{quota.x.available}件</dd></div><div><dt>無料共有枠の全体空き</dt><dd>{quota.pools.free.available}／{quota.pools.free.limit}枠</dd></div>
         <div><dt>現在プランの確認間隔</dt><dd>{xInterval(quota.currentPlan.intervalMinutes)}</dd></div></dl>
-      <p className="text-xs text-muted-foreground">X監視の使用枠は、通知方法ごとに確認できます。通常通知とX監視は、同じ個人の登録上限で数えます。寄付へのお礼で付与された追加枠は、月額プランの解約後も引き継ぎます。申込資格と全体枠の空きは、それぞれ確認します。</p>
-      <p className="text-xs text-muted-foreground">確認間隔の短縮に配分した追加枠も使用枠数に含みます。登録件数とは別に数えます。</p>
+      <p className="text-xs text-muted-foreground">通常通知とX監視は同じ枠を使います。停止中の通知と、確認間隔の短縮に使う追加枠も含みます。支援による追加枠は月額プランの解約後も引き継ぎます。</p>
       <p className="text-xs text-muted-foreground">標準の設定では、受信を開始すると通知を随時受け取り、現在のプランの間隔ごとに、届いた分をまとめて処理します。リアルタイムを選択して保存すると、受け取り次第処理します。通知先への送信には、ルールの条件と送信上限を適用します。</p>
       <p className="text-xs text-muted-foreground">確認間隔と送信上限には、現在の契約プランを適用します。どの種類の枠でも、1分{quota.currentPlan.minuteLimit}通・1日{quota.currentPlan.dayLimit}通までです。</p>
       {!quota.featureEnabled && !quota.x.reasonCode?.startsWith("X_ROLLOUT_") ? <p role="status">{xReason("X_MONITOR_UNAVAILABLE")}</p> : null}
@@ -234,7 +235,7 @@ function XMonitorEditor({ api, active, allowSetup, subscriptionsVersion, destina
       <button className={button} disabled={!active || busy || loading} onClick={() => { setReview(null); void load(); }}>X一覧・利用枠を更新</button></div>
     {draft && !editorOpen ? <div className="nx-actions"><button className={button} onClick={() => setEditorOpen(true)}>編集中の設定を開く</button><details className="nx-field-note"><summary>入力を破棄</summary><button className={button} onClick={() => { setDraft(null); setEditingId(null); setEditingBaseline(null); setRevisionConflict(false); setRebasedReview(false); setReview(null); setError(""); setProcessingQuoteStale(false); }}>この下書きを破棄</button></details></div> : null}
     {loading ? <p role="status" className="text-sm">X監視を読み込み中…</p> : null}
-    {draft && editorOpen ? <AutomationDialog title={current ? "通知設定" : "Xアカウントを登録"} open={active} busy={busy} onCancel={() => { setEditorOpen(false); setSetupOpen(false); }} error={error || undefined}>
+    {draft && editorOpen ? <AutomationDialog title={current ? "通知設定" : "Xアカウントを登録"} open={active} busy={busy} preserveInitialScroll onCancel={() => { setEditorOpen(false); setSetupOpen(false); }} error={error || undefined}>
       <form ref={draftForm} aria-label="X監視の登録設定" className="nx-unified-form" noValidate onSubmit={event => {
         event.preventDefault(); if (!canReview) return;
         reviewProcessingCost.current = newRealtime ? registrationQuote?.realtimeSlotCost ?? null : null;
@@ -246,6 +247,8 @@ function XMonitorEditor({ api, active, allowSetup, subscriptionsVersion, destina
           setReviewedRule(selectedRule); setReview(current?.revision ?? 0);
         }); else void save(current?.revision ?? 0);
       }}>
+      {!current ? <ol aria-label="X監視の登録手順" className="nx-registration-steps"><li>接続を準備</li><li>ブラウザーで通知をON</li><li>通知先とタイミング</li><li>確認して登録</li></ol> : null}
+      {!current ? <section aria-label="Xの接続準備" className="nx-editor-section"><h3>接続を準備</h3>{!allowSetup ? <a href="/dashboard/automation/x" className="nx-text-link">個人ページで接続を準備</a> : setup?.subscriptions.length ? <p className="nx-field-note">登録済みの接続を下で選べます。</p> : <button type="button" className={button} disabled={busy || !active} onClick={() => setSetupOpen(true)}>接続を準備する</button>}</section> : null}
       {editConflict ? <section aria-label="X通知設定の再確認" className="nx-feedback"><p>別の操作で設定が変更されました。変更した入力を保持して、最新の設定と確認できます。</p><button type="button" className={button} disabled={busy || loading || !active} onClick={() => void reloadDraft()}>最新設定を取得して入力を引き継ぐ</button></section> : null}
       {notice ? <p role="status" className="nx-field-note">{notice}</p> : null}
       <fieldset disabled={busy || !active} className="grid gap-3 sm:grid-cols-2">
@@ -257,7 +260,8 @@ function XMonitorEditor({ api, active, allowSetup, subscriptionsVersion, destina
         <h3>設定用ブラウザーで{validHandle ? ` @${draft.accountHandle} の` : "対象アカウントの"}投稿通知をON</h3>
         {selectedBrowser ? <p className="nx-field-note">選択中の受信情報：{selectedBrowser === "brave" ? "Brave" : selectedBrowser === "chrome" ? "Chrome" : "Firefox"}</p> : null}
         <p>保存ツールで開いた設定用ブラウザーで、ブラウザー通知を許可し、対象プロフィールの投稿通知ベルをONにしてください。X側の設定と、この画面での登録が両方必要です。</p>
-        <p className="nx-field-note">登録済みの接続を使う場合も、追加するアカウントごとに設定します。設定用Chrome・Braveのプッシュ通知はサーバー側で受信します。設定後は通知データを保存し、「ブラウザーの準備手順」からもう一度登録してください。</p>
+        <p className="nx-field-note">登録済みの接続を使う場合も、追加するアカウントごとに設定します。</p>
+        {selectedBrowser === "chrome" || selectedBrowser === "brave" ? <p className="nx-field-note">設定用Chrome・Braveのプッシュ通知はサーバー側で受信します。設定後は通知データを保存し、「ブラウザーの準備手順」からもう一度登録してください。</p> : null}
         <div className="nx-actions"><button type="button" className={button} disabled={!validHandle || busy || !active} onClick={async () => {
           try { await navigator.clipboard.writeText(`https://x.com/${draft.accountHandle}`); if (mounted.current && activeRef.current) setProfileCopyMessage("プロフィールURLをコピーしました。"); }
           catch { if (mounted.current && activeRef.current) setProfileCopyMessage(`設定用ブラウザーで https://x.com/${draft.accountHandle} を開いてください。`); }
@@ -278,7 +282,7 @@ function XMonitorEditor({ api, active, allowSetup, subscriptionsVersion, destina
       </fieldset>
       {registrationQuote ? <fieldset className="nx-timing-options nx-editor-section" disabled={busy || !active}><legend>通知タイミング</legend>
         <label className="nx-timing-option"><input type="radio" name="x-registration-timing" value="batch" checked={draft.processingMode === "batch"} onChange={() => chooseTiming("batch")} /><span><strong>プランの間隔で通知</strong><small>{xInterval(quota?.currentPlan.intervalMinutes ?? current?.quality.intervalMinutes ?? null)}・1枠</small></span></label>
-        <label className="nx-timing-option"><input type="radio" name="x-registration-timing" value="realtime" checked={draft.processingMode === "realtime"} disabled={!registrationQuote.canEnableRealtime || !selectedSupporterAvailable || processingQuoteStale} onChange={() => chooseTiming("realtime")} /><span><strong>リアルタイム</strong><small>{realtimeQuoteReady ? <>受信後すぐに通知・合計{registrationQuote.realtimeSlotCost}枠{xRealtimeBenefit(registrationQuote) ? `（${xRealtimeBenefit(registrationQuote)}）` : ""}</> : "利用資格と枠数を再確認してください"}</small></span></label>
+        <label className="nx-timing-option"><input type="radio" name="x-registration-timing" value="realtime" checked={draft.processingMode === "realtime"} disabled={!registrationQuote.canEnableRealtime || !selectedSupporterAvailable || processingQuoteStale} onChange={() => chooseTiming("realtime")} /><span><strong>リアルタイム</strong><small>{realtimeQuoteReady ? <>受信後、間隔を待たずに処理・合計{registrationQuote.realtimeSlotCost}枠{xRealtimeBenefit(registrationQuote) ? `（${xRealtimeBenefit(registrationQuote)}）` : ""}</> : "利用資格と枠数を再確認してください"}</small></span></label>
       </fieldset> : <p role="status" className="nx-field-note">通知タイミングの確認待ち</p>}
       {current && supporterQuote?.eligible && current.poolKind !== "supporter" ? <section className="nx-supporter-action"><button type="button" className={button} disabled={busy || loading || !active || !supporterOffer || processingQuoteStale} onClick={() => {
         setDraft(previous => previous ? { ...previous, processingMode: "realtime", processingTouched: true, poolPreference: "supporter" } : previous); setReview(null);
@@ -329,7 +333,7 @@ function XMonitorEditor({ api, active, allowSetup, subscriptionsVersion, destina
       return <article key={item.id} aria-label={`${item.name || item.accountHandle || item.accountId}のX監視`} className="monitor-card nx-monitor-card">
       <header className="nx-monitor-card-heading"><div><h3 className="font-medium">{item.name || item.accountHandle || item.accountId}</h3><p className="nx-field-note">{item.accountHandle ? `@${item.accountHandle}` : "Xアカウント"}</p></div><strong className={`nx-monitor-state${state === "停止中" ? " nx-monitor-state-muted" : ""}`}>{state}</strong></header>
       <dl className="monitor-facts"><div><dt>通知先</dt><dd>{destinations.find(destination => destination.id === item.notificationSettings.destinationId)?.name || (item.notificationSettings.destinationId ? "登録済みの通知先" : item.notificationSettings.workflowId ? "詳細ルールで指定" : "本人のDM")}</dd></div><div><dt>通知タイミング</dt><dd>{item.processing ? xTimingLabel(item.processing) : "確認待ち"}</dd></div><div><dt>使用枠</dt><dd>{item.processing ? `${item.processing.slotCost}枠` : "確認待ち"}</dd></div></dl>
-      {subscription?.lastReceivedAtMs ? <p className="nx-field-note">最終受信 {new Intl.DateTimeFormat("ja-JP", { timeZone: "Asia/Tokyo", month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(subscription.lastReceivedAtMs)}（接続単位）</p> : null}
+      <dl aria-label="X通知の状況" className="nx-delivery-stages"><div><dt>接続</dt><dd>{subscription ? xReceiverLabel(subscription.receiverState) : item.notificationSettings.subscriptionId ? "接続情報を確認" : "受信情報を選択"}</dd></div><div><dt>通知データの受信</dt><dd>{subscription?.lastReceivedAtMs ? <>最終受信 {new Intl.DateTimeFormat("ja-JP", { timeZone: "Asia/Tokyo", month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(subscription.lastReceivedAtMs)}（接続単位）</> : subscription ? subscription.receiverState === "listening" ? "この接続の初回受信待ち" : "この接続の受信記録なし" : "確認待ち"}</dd></div><div><dt>この監視の振り分け</dt><dd>配信予定・履歴で確認</dd></div><div><dt>Discordへの送信</dt><dd>配信予定・履歴で確認</dd></div></dl>
       <MonitorDeliveryActivity api={api} kind="x" targetId={item.id} active={active} />
       {item.enabled && item.state === "ready" && readiness.action ? <p className="nx-field-note">{readiness.description}{readiness.action === "workflow" && onOpenWorkflow && item.notificationSettings.workflowId ? <button type="button" className={button} disabled={!active || busy} onClick={() => { setEditorOpen(false); onOpenWorkflow(item.notificationSettings.workflowId!); }}>割り当てたルールを開く</button> : null}</p> : null}
       {item.state === "suspended" ? <p className="nx-field-note">利用資格を確認してください。監視対象と通知設定は保持されています。</p> : null}

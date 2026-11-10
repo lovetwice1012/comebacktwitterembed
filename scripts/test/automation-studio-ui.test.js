@@ -1187,6 +1187,16 @@ test('service notification limits appear in delivery history as waiting or conte
     } finally { await f.close(); }
 });
 
+test('partial delivery after a rate error does not promise automatic retry', async () => {
+    const f = await reactFixture('export { DeliveryHistory } from "./components/automation/delivery-history";');
+    const api = async () => ({ items: [{ id: 'partial', state: 'partial', providerId: 'youtube', title: '一部送信', dueAtMs: 1000, errorCode: 'AUTOMATION_RATE_LIMIT_UNAVAILABLE' }], nextCursor: null });
+    try {
+        await f.render(f.React.createElement(f.exports.DeliveryHistory, { api, canEdit: true })); await f.settle();
+        assert.match(f.container.textContent, /通知件数の上限を確認できませんでした/);
+        assert.doesNotMatch(f.container.textContent, /自動で再確認|待機しています/);
+    } finally { await f.close(); }
+});
+
 
 test('T10 returning a send block to its monitor destination removes only the last unused binding and undo restores both', async () => {
     const original = arbitraryRule(), first = original.nodes.find(node => node.type === 'send');

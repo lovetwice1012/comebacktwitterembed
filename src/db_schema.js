@@ -1029,7 +1029,7 @@ function listMigrationFiles() {
 }
 
 function parseAddColumnStatement(statement) {
-    const match = String(statement || '').match(/^ALTER\s+TABLE\s+`?([A-Za-z0-9_]+)`?\s+ADD\s+COLUMN\s+`?([A-Za-z0-9_]+)`?\b/i);
+    const match = String(statement || '').match(/^ALTER\s+TABLE\s+`?([A-Za-z0-9_]+)`?\s+ADD\s+COLUMN\s+(?:IF\s+NOT\s+EXISTS\s+)?`?([A-Za-z0-9_]+)`?\b/i);
     if (!match) return null;
     return { table: match[1], column: match[2] };
 }
@@ -1049,12 +1049,12 @@ function parseAddIndexStatement(statement) {
 async function shouldSkipMigrationStatement(queryDatabase, statement) {
     const addColumn = parseAddColumnStatement(statement);
     if (addColumn) {
-        const rows = await queryDatabase(`SHOW COLUMNS FROM ${addColumn.table} WHERE Field = ?`, [addColumn.column]);
+        const rows = await queryDatabase(`SHOW COLUMNS FROM ${addColumn.table} WHERE \`Field\` = ?`, [addColumn.column]);
         return rows.length > 0;
     }
     const dropColumn = parseDropColumnStatement(statement);
     if (dropColumn) {
-        const rows = await queryDatabase(`SHOW COLUMNS FROM ${dropColumn.table} WHERE Field = ?`, [dropColumn.column]);
+        const rows = await queryDatabase(`SHOW COLUMNS FROM ${dropColumn.table} WHERE \`Field\` = ?`, [dropColumn.column]);
         return rows.length === 0;
     }
     const addIndex = parseAddIndexStatement(statement);
@@ -1078,7 +1078,13 @@ async function applyMigrationFile(queryDatabase, file) {
             // A concurrent/previous deployment can create the same column or
             // index after the existence check. The migration handles that
             // expected race below, so do not emit a full MySQL error stack.
-            await queryDatabase(statement, [], { suppressErrorCodes: IDEMPOTENT_MIGRATION_ERROR_CODES });
+            // MySQL 8 does not support MariaDB's ADD COLUMN IF NOT EXISTS.
+            // The exact-name check above and duplicate-column race handler
+            // provide the same idempotence on both engines.
+            const portable = parseAddColumnStatement(statement)
+                ? statement.replace(/^(ALTER\s+TABLE\s+`?[A-Za-z0-9_]+`?\s+ADD\s+COLUMN\s+)IF\s+NOT\s+EXISTS\s+/i, '$1')
+                : statement;
+            await queryDatabase(portable, [], { suppressErrorCodes: IDEMPOTENT_MIGRATION_ERROR_CODES });
         } catch (err) {
             if (!IDEMPOTENT_MIGRATION_ERROR_CODES.includes(err?.code)) throw err;
         }

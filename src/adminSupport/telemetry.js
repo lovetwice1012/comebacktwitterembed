@@ -230,6 +230,11 @@ function start(client, options = {}) {
         const gatewayEvents = typeof options.gatewayMetrics?.snapshot === 'function'
             ? options.gatewayMetrics.snapshot() : null;
         event('runtime', 'heartbeat', { pid: process.pid, uptime_seconds: process.uptime(), memory: process.memoryUsage(),
+            database_timing: require('./databaseMetrics').shared.snapshot(),
+            database_pool: require('./databaseMetrics').poolRegistry.snapshot(),
+            x_receive_to_route_timing: { batch: require('./databaseMetrics').xLatency.batch.snapshot(), realtime: require('./databaseMetrics').xLatency.realtime.snapshot() },
+            delivery_after_due_timing: Object.fromEntries(Object.entries(require('./databaseMetrics').deliveryLag).map(([key, metric]) => [key, metric.snapshot()])),
+            source_schedule_lag: { auto: require('./databaseMetrics').sourceLag.auto.snapshot(), price: require('./databaseMetrics').sourceLag.price.snapshot() },
             gateway_ping_ms: client?.ws?.ping, ready: client?.isReady?.(), recording_failure: spoolFailure, recording_health: { ...spoolHealth, queuedBytes, durabilityWindowMs: 50 },
             queue: require('../workQueue').messageWorkQueue.snapshot(), shards: shards.items,
             shard_summary: { manager_status: shards.managerStatus, total: shards.total, online: shards.online, offline: shards.offline, unknown: shards.unknown },

@@ -42,6 +42,13 @@ test('first price observation seeds a source and does not create an alert', asyn
     assert.deepEqual(store.calls.deliveries, [[]]);
 });
 
+test('price scheduler records only an aggregate delay for a due source', async () => {
+    const metric = require('../../src/adminSupport/databaseMetrics').sourceLag.price, before = metric.snapshot().count;
+    const store = storeWith([source({ next_check_at_ms: 1000 })]);
+    await tick({ now: 2000, store, fetchPrice: async () => ({ productName: 'Fixture', productUrl: 'https://example.test', priceAmount: 1, currency: 'JPY' }) });
+    assert.equal(metric.snapshot().count, before + 1);
+});
+
 test('a later price change creates one change-notification delivery', async () => {
     const store = storeWith([source({ initialized_at_ms: 1, state_json: JSON.stringify({ productName: 'Fixture game', productUrl: 'https://store.steampowered.com/app/730', priceAmount: 2000, referencePriceAmount: 2000, discountPercent: 0, currency: 'JPY' }) })]);
     const result = await tick({

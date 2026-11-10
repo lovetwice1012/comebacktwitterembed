@@ -120,6 +120,31 @@ async function delivery(api) {
 }
 async function selectJob(f, id) { await f.act(async () => f.container.querySelector(`[data-job-id="${id}"]`).click()); await f.settle(); }
 
+test('history shows concrete supported exclusion reasons while preserving unknown outcomes', async () => {
+    const row = job('safe', { state: 'excluded', errorCode: 'SAFETY_CONTENT_DENIED' });
+    const run = { id: 'run-condition', state: 'excluded', event: { title: '条件' }, trace: [{ outcome: 'excluded', reason: 'EVENT_NOT_SELECTED' }] };
+    const f = await delivery(route => route.startsWith('jobs?') ? { items: [row], nextCursor: null } : route === 'excluded' ? { items: [run], nextCursor: null } : row);
+    try {
+        assert.match(f.container.textContent, /安全設定により送信対象外/);
+        await f.click('除外理由を確認'); assert.match(f.container.textContent, /この投稿は通知条件の対象外です/);
+        assert(!f.container.textContent.includes('SAFETY_CONTENT_DENIED')); assert(!f.container.textContent.includes('EVENT_NOT_SELECTED'));
+        assert.equal(f.calls.filter(call => call.method && call.method !== 'GET').length, 0);
+    } finally { await f.close(); }
+});
+
+test('a sent status without Discord receipt is not presented as confirmed or offered for resend', async () => {
+    const unknown = job('unconfirmed', { state: 'sent', sentSteps: 0, messageId: null });
+    const confirmed = job('confirmed', { state: 'sent', sentSteps: 1, messageId: '123456789' });
+    const f = await delivery(route => route.startsWith('jobs?') ? { items: [unknown, confirmed], nextCursor: null } : unknown);
+    try {
+        const unknownCard = f.container.querySelector('[data-job-id="unconfirmed"]'), confirmedCard = f.container.querySelector('[data-job-id="confirmed"]');
+        assert.match(unknownCard.textContent, /送信結果を確認/); assert(!unknownCard.textContent.includes('送信済み'));
+        assert.match(confirmedCard.textContent, /送信済み/);
+        await selectJob(f, 'unconfirmed'); assert.match(f.container.textContent, /Discordで送信結果を確認/);
+        assert(![...f.container.querySelectorAll('button')].some(node => /送信を再試行/.test(node.textContent)));
+    } finally { await f.close(); }
+});
+
 test('fifty excluded rows keep trace requests lazy and preserve independent run-list paging', async () => {
     const rows = Array.from({ length: 50 }, (_, i) => ({ id: `run-${i}`, state: 'waiting', event: { title: `Excluded ${i}` }, trace: [{ nodeId: 'history', outcome: 'wait' }], traceHistory: indexed(`run-${i}`) }));
     const f = await delivery(route => route.startsWith('jobs?') ? { items: [], nextCursor: null } : route === 'excluded' ? { items: rows, nextCursor: 'run-after' } : route === 'excluded?afterId=run-after' ? { items: [{ ...rows[0], id: 'last-run', event: { title: 'Last excluded event' }, traceHistory: indexed('last-run') }], nextCursor: null } : page([entry('selected-only')]));

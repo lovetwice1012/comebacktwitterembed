@@ -145,7 +145,15 @@ function createXPushRuntime(db, queue, options = {}) {
                     assertAllowed();
                     const result = await router.routeReceived({ lease, inbox, payload, processingMode });
                     if (halted()) return;
-                    if (result.state === 'routed') await gateway.store.markRouted(lease, inbox.id);
+                    if (result.state === 'routed') {
+                        const marked = await gateway.store.markRouted(lease, inbox.id);
+                        // Measurement must never change receipt state or cause a retry.
+                        try {
+                            const received = Number(inbox.receivedAtMs), lag = clock() - received;
+                            if (marked === true && Number.isSafeInteger(received) && received > 0 && Number.isFinite(lag) && lag >= 0)
+                                require('../adminSupport/databaseMetrics').xLatency[processingMode === 'realtime' ? 'realtime' : 'batch'].record(lag);
+                        } catch { /* Best-effort, aggregate-only measurement. */ }
+                    }
                     else if (result.state === 'unmatched') await gateway.store.markUnmatched(lease, inbox.id);
                 } catch (error) {
                     if (halted()) return;

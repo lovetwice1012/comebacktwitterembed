@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { automationResponseError } from "@/components/automation/automation-feedback";
 import { SquareCatalogCreator, SquareCouponManager } from "./square-commerce-manager";
+import { PerformanceSummary } from "./performance-summary";
 import { subscriptionCadenceLabels as cadenceLabels, subscriptionMonthlyApproximate, subscriptionMonthlyPrice } from "@/lib/subscription-pricing";
 import { PushCapacityManager } from "./push-capacity-manager";
 
@@ -234,5 +235,6 @@ export function NotificationPlanManager({ api = notificationPlanAPI }: { api?: N
     {creating ? <PlanEditor key="new-plan" api={api} billing={billing} onSaved={plan => { if (alive.current && currentAPI.current === api) { saved(plan); setCreating(false); } }} onCancel={() => setCreating(false)} /> : null}
     <SquareCouponManager plans={items} configured={billingData?.configured === true} api={api} />
     <PushCapacityManager api={api} plans={visiblePlans} />
+    <PerformanceSummary api={api} />
   </div>;
 }

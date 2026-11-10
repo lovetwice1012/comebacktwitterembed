@@ -31,6 +31,7 @@ test('batch remains the default and a plan without explicit realtime eligibility
     try {
         assert.equal(f.radio('batch').checked, true); assert.equal(f.radio('realtime').disabled, true);
         assert.match(f.container.textContent, /60分ごと/); assert.match(f.container.textContent, /管理者が対象に設定したプラン/);
+        assert.match(f.container.textContent, /受信後、間隔を待たずに処理/); assert.doesNotMatch(f.container.textContent, /受信後すぐに通知/);
         await f.select('realtime'); assert.equal(f.radio('batch').checked, true); assert.equal(writes(f).length, 0);
         assert.equal(f.saveButton().disabled, true);
     } finally { await f.close(); }

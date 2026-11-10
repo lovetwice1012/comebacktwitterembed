@@ -226,8 +226,11 @@ async function savePlanPolicy(query, actor, input) {
     if (input.intervalMinutes !== undefined) {
         if (input.intervalMinutes !== null) number(input.intervalMinutes, 5, 10080, '$.intervalMinutes');
         await query('UPDATE automation_notification_plans SET confirmation_interval_minutes=? WHERE plan_id=?', [input.intervalMinutes, planId]);
-        await require('./plan-interval').wakePolicySources(query, timestamp);
     }
+    // Eligibility changes also change the effective interval. Omitting enabled
+    // uses the legacy default (enabled), so every successful save can affect
+    // policy selection even when intervalMinutes itself was omitted.
+    await require('./plan-interval').wakePolicySources(query, timestamp, planId);
     return policyDto((await query('SELECT * FROM automation_notification_plans WHERE plan_id=? LIMIT 1', [planId]))[0]);
 }
 async function setUserPlan(query, actor, userId, planId, options = {}) {

@@ -96,7 +96,7 @@ export function XProcessingSettings({ api, active = true, compact = false }: { a
         <fieldset disabled={!active || loading || busy} className="space-y-3">
           <legend className="mb-2 font-medium">希望する通知方法</legend>
           <div className="nx-timing-options"><label className="nx-timing-option"><input type="radio" name="x-processing-mode" value="batch" checked={mode === "batch"} onChange={() => { setMode("batch"); setNotice(""); }} /><span><Clock3 size={18} aria-hidden="true" /><strong>プランの間隔でまとめて通知</strong></span></label>
-          <label className="nx-timing-option"><input type="radio" name="x-processing-mode" value="realtime" checked={mode === "realtime"} disabled={!settings.realtimeAllowed || !settings.rollout.eligible} onChange={() => { setMode("realtime"); setNotice(""); }} /><span><Zap size={18} aria-hidden="true" /><strong>リアルタイム</strong><small>受信後すぐに通知</small></span></label></div>
+          <label className="nx-timing-option"><input type="radio" name="x-processing-mode" value="realtime" checked={mode === "realtime"} disabled={!settings.realtimeAllowed || !settings.rollout.eligible} onChange={() => { setMode("realtime"); setNotice(""); }} /><span><Zap size={18} aria-hidden="true" /><strong>リアルタイム</strong><small>受信後、間隔を待たずに処理</small></span></label></div>
           {!settings.realtimeAllowed ? <p className="text-xs text-muted-foreground">リアルタイムは、管理者が対象に設定したプランで選べます。現在のプランでは、プランの間隔でまとめて通知できます。</p> : null}
         </fieldset>
         <button className="nx-primary" type="submit" disabled={!canSave}>{busy ? "保存中…" : "通知のタイミングを保存"}</button>

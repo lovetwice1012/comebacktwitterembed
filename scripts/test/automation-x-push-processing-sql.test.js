@@ -30,7 +30,7 @@ async function fixture(work, runtimeOptions = {}) {
     let runtime;
     try {
         const query = db.queryDatabase;
-        let now = FIXTURE_START, sequence = 0, lease, callbacks, auditFailure = false, auditHook = null, markFailure = false, ownerLockAttempt = null;
+        let now = FIXTURE_START, sequence = 0, lease, callbacks, auditFailure = false, auditHook = null, markFailure = false, markFalse = false, ownerLockAttempt = null;
         const clock = () => now, subscription = await insertSubscription(db);
         await db.withDatabaseTransaction(query => entitlements.savePlanPolicy(query, ADMIN, { planId: 'free', label: '無料', slotLimit: 5, minuteLimit: 5, dayLimit: 24, priority: 0, intervalMinutes: 5 }));
         const storeDb = { ...db, withDatabaseTransaction: work => db.withDatabaseTransaction(query => work(async (sql, args) => {
@@ -52,6 +52,7 @@ async function fixture(work, runtimeOptions = {}) {
             createSocket: () => assert.fail('processing fixture must never create a vendor socket') });
         const runtimeGateway = { ...gateway, store: { ...store, markRouted: async (...args) => {
             if (markFailure) throw Object.assign(new Error('private DB sentinel'), { code: 'X_PUSH_STORE_UNAVAILABLE' });
+            if (markFalse) return false;
             return store.markRouted(...args);
         } }, run: input => {
             callbacks = input; input.onSession({ lease });
@@ -77,7 +78,7 @@ async function fixture(work, runtimeOptions = {}) {
         const receiver = async () => (await query('SELECT * FROM automation_x_push_receivers WHERE subscription_id=?', [subscription.subscriptionId]))[0];
         const count = async table => Number((await query(`SELECT COUNT(*) n FROM ${table}`))[0].n);
         await work({ db, query, store, gateway, queue, subscription, clock, callbacks: () => callbacks, makeRuntime, runtime: () => runtime, lease: () => lease, refreshLease, record, receiver, count,
-            advance: amount => { now += amount; }, setRoute: value => { routeOverride = value; }, setAuditFailure: value => { auditFailure = value; }, setAuditHook: value => { auditHook = value; }, setMarkFailure: value => { markFailure = value; },
+            advance: amount => { now += amount; }, setRoute: value => { routeOverride = value; }, setAuditFailure: value => { auditFailure = value; }, setAuditHook: value => { auditHook = value; }, setMarkFailure: value => { markFailure = value; }, setMarkFalse: value => { markFalse = value; },
             setOwnerLockAttempt: value => { ownerLockAttempt = value; } });
     } finally {
         try { await runtime?.stop(); }
@@ -95,13 +96,18 @@ async function realtime(f, intervalMinutes = 15) {
     await createXProcessingSettings(f.db, { rolloutMode: 'public', now: f.clock }).save({ userId: U }, { mode: 'realtime', expectedMode: 'batch' });
 }
 
-test('real SQL: encrypted Push receipts are processed under explicit durable windows', { skip: !port, timeout: 120000 }, async t => {
+// Each subtest creates a fresh database. A remote disposable MySQL connection
+// adds round-trip latency to every setup/query; leave enough time for all cases.
+test('real SQL: encrypted Push receipts are processed under explicit durable windows', { skip: !port, timeout: 1800000 }, async t => {
     await t.test('actual-shaped encrypted quarantine recovers once through the same queue, ownership and batch policy', () => fixture(async f => {
+        const metric = require('../../src/adminSupport/databaseMetrics').xLatency.batch;
+        const beforeCount = metric.snapshot().count;
         const receipt = await f.record({ payload: webPost('1190000000000000001') });
         await f.store.markUnsupported(f.lease(), receipt.id);
         assert.equal((await f.runtime().drain(f.lease())).processed, 1);
         assert.equal((await f.store.getInbox({ ...f.subscription, id: receipt.id })).status, 'routed');
         assert.equal(await f.count('automation_jobs'), 1);
+        assert.equal(metric.snapshot().count, beforeCount + 1);
         assert.equal(Number((await f.query("SELECT COUNT(*) n FROM automation_audit WHERE action='x.push.adapter.recovered'"))[0].n), 1);
         assert.equal((await f.runtime().drain(f.lease())).state, 'pending');
         await f.runtime().stop(); const restarted = f.makeRuntime();
@@ -111,13 +117,22 @@ test('real SQL: encrypted Push receipts are processed under explicit durable win
     }));
 
     await t.test('recognized post from another account becomes unmatched without any delivery job', () => fixture(async f => {
+        const metric = require('../../src/adminSupport/databaseMetrics').xLatency.batch, beforeCount = metric.snapshot().count;
         const receipt = await f.record({ payload: webPost('1190000000000000002', 'other_author') });
         await f.store.markUnsupported(f.lease(), receipt.id);
         assert.equal((await f.runtime().drain(f.lease())).processed, 1);
         assert.equal((await f.store.getInbox({ ...f.subscription, id: receipt.id })).status, 'unmatched');
         assert.equal(await f.count('automation_runs'), 0); assert.equal(await f.count('automation_jobs'), 0);
+        assert.equal(metric.snapshot().count, beforeCount);
         assert.equal(Number((await f.query("SELECT COUNT(*) n FROM automation_audit WHERE action='x.push.target.unmatched'"))[0].n), 1);
         assert.equal(await f.store.markUnmatched(f.lease(), receipt.id), false);
+    }));
+
+    await t.test('a routed marker that does not commit is not counted as a confirmed timing sample', () => fixture(async f => {
+        const metric = require('../../src/adminSupport/databaseMetrics').xLatency.batch, before = metric.snapshot().count;
+        await f.record(); f.setMarkFalse(true);
+        await f.runtime().drain(f.lease());
+        assert.equal(metric.snapshot().count, before);
     }));
 
     await t.test('restoring quarantine and its audit are one transaction, idempotent and owner fenced', () => fixture(async f => {

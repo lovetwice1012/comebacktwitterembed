@@ -100,6 +100,35 @@ test('no Square contract is described as a payment state without reclassifying t
     } finally { await f.close(); }
 });
 
+test('no public paid plans hides checkout instructions and still preserves current benefits and support access', async () => {
+    const f = await fixture({ initialOptions: options({ plans: [] }) });
+    try {
+        assert.match(f.container.textContent, /有料プランの新規受付は停止中/);
+        assert.equal(f.container.querySelector('[aria-label="月額プランの申し込み手順"]'), null);
+        assert.equal(f.container.querySelector('[aria-label="有償プランの選択"]'), null);
+        assert(f.container.querySelector('a[href="/dashboard/automation/support"]'));
+        assert.equal(f.sdk.loads.length, 0); assert.equal(writes(f).length, 0);
+    } finally { await f.close(); }
+});
+
+test('a pending checkout remains visible when new plan offers are hidden', async () => {
+    const f = await fixture({ initialOptions: options({ plans: [] }), initialStatus: status({ pending: pendingCheckout() }) });
+    try {
+        assert(f.container.querySelector('[aria-label="月額プランの申し込み手順"]'));
+        assert.match(f.container.textContent, /申し込み/);
+        assert.equal(f.sdk.loads.length, 0); assert.equal(writes(f).length, 0);
+    } finally { await f.close(); }
+});
+
+test('an expired contract does not claim a new subscription is available when all offers are hidden', async () => {
+    const f = await fixture({ initialOptions: options({ plans: [] }), initialStatus: status({ subscription: contract({ state: 'CANCELED', active: false, validUntilAtMs: Date.now() - 1000 }) }) });
+    try {
+        assert.match(f.container.textContent, /利用期限終了/);
+        assert(!f.container.textContent.includes('新しいプランを契約できます'));
+        assert.equal(writes(f).length, 0);
+    } finally { await f.close(); }
+});
+
 test('catalog cards show only offered server terms and do not invent X eligibility from a plus plan name', async () => {
     const f = await fixture({ initialOptions: options({ plans: [plan({ label: 'ベーシック＋', specialSlotLimit: 777, realtimeAllowed: true, intervalMinutes: 1 })] }) });
     try {

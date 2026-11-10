@@ -2,6 +2,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { createDatabasePool } = require('../../src/databasePool');
+const { shared: databaseMetrics } = require('../../src/adminSupport/databaseMetrics');
 
 function harness(fail = () => false) {
     const calls = [];
@@ -31,6 +32,16 @@ test('database uses bounded connection and wait queues with finite query timeout
     await db.query('SELECT ?', [1]);
     assert.deepEqual(calls[0], { id: 'pool', sql: 'SELECT ?', params: [1], timeout: 30000 });
     await db.close();
+});
+
+test('query metrics aggregate success and failure without storing SQL or parameters', async () => {
+    const before = databaseMetrics.snapshot();
+    const { db } = harness(sql => sql.startsWith('FAIL'));
+    await db.query('SELECT private_sample', ['private-value']);
+    await assert.rejects(db.query('FAIL private_sample', ['private-value']));
+    const after = databaseMetrics.snapshot();
+    assert.equal(after.count - before.count, 2); assert.equal(after.failures - before.failures, 1);
+    assert.doesNotMatch(JSON.stringify(after), /private_sample|private-value/);
 });
 
 test('concurrent transactions keep each statement on its own connection and isolate ordinary reads', async () => {

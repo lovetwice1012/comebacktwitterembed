@@ -1,5 +1,8 @@
 'use strict';
 
+const { performance } = require('node:perf_hooks');
+const databaseMetrics = require('./adminSupport/databaseMetrics').shared;
+
 function positiveInteger(value, fallback, maximum) {
     const number = Number(value);
     return Number.isInteger(number) && number > 0 && number <= maximum ? number : fallback;
@@ -7,23 +10,31 @@ function positiveInteger(value, fallback, maximum) {
 
 function createDatabasePool({ createPool, credentials, env = process.env, onError = (_error, _options) => {} }) {
     const queryTimeout = positiveInteger(env.BOT_DB_QUERY_TIMEOUT_MS, 30000, 300000);
+    const connectionLimit = positiveInteger(env.BOT_DB_CONNECTION_LIMIT, 8, 64);
     const pool = createPool({
         ...credentials,
-        connectionLimit: positiveInteger(env.BOT_DB_CONNECTION_LIMIT, 8, 64),
+        connectionLimit,
         queueLimit: positiveInteger(env.BOT_DB_QUEUE_LIMIT, 512, 10000),
         waitForConnections: true,
         connectTimeout: 10000,
         acquireTimeout: 10000,
     });
+    require('./adminSupport/databaseMetrics').poolRegistry.register(pool, connectionLimit);
 
     function queryOn(target, sql, params = [], options = {}) {
         return new Promise((resolve, reject) => {
-            target.query({ sql, timeout: positiveInteger(options.timeoutMs, queryTimeout, 300000) }, params, (error, results) => {
+            const started = performance.now();
+            let measured = false;
+            const measure = failed => { if (!measured) { measured = true; databaseMetrics.record(performance.now() - started, failed); } };
+            const done = (error, results) => {
+                measure(!!error);
                 if (error) {
                     onError(error, options);
                     reject(error);
                 } else resolve(results);
-            });
+            };
+            try { target.query({ sql, timeout: positiveInteger(options.timeoutMs, queryTimeout, 300000) }, params, done); }
+            catch (error) { measure(true); reject(error); }
         });
     }
 

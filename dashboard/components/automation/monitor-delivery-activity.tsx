@@ -3,15 +3,16 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { AutomationApi } from "./rule-editor";
 import { ProcessingTrace, type TraceHistory } from "./processing-trace";
+import { excludedRunReason, hasConfirmedSend, historyReason } from "./history-reasons";
 
 const button = "rounded border bg-background px-3 py-2 text-sm hover:bg-muted disabled:opacity-40";
 const states: Record<string, string> = { pending: "送信待ち", held: "確認待ち", leased: "準備中", sending: "送信中", aggregated: "まとめ通知", sent: "送信済み", unknown: "送信結果不明", partial: "一部送信済み", failed: "失敗", expired: "期限切れ", cancelled: "取り消し済み", excluded: "送信対象外" };
 const runStates: Record<string, string> = { ...states, waiting: "指定時刻まで待機中", flow_pending: "ルールを処理中" };
-const runReasons: Record<string, string> = { EVENT_NOT_SELECTED: "この投稿は通知条件の対象外です。", ALL_MEMBERS_REVOKED: "対象の通知設定が変更されました。", RUN_REVOKED: "通知設定が変更されました。", FLOW_SNAPSHOT_LIMIT: "まとめる件数を確認してください。", AUTOMATION_SLOT_LIMIT: "現在のプランで使える通知枠を確認してください。", RATE_GATE_LIMIT: "通知件数の上限に達しました。", RATE_GATE_DEFERRED: "次に通知できる時刻を待っています。", DEADLINE_EXCEEDED: "配信期限を過ぎました。", DELAY_EXCEEDS_DEADLINE: "待機時刻が配信期限を過ぎています。", GRAPH_INPUT_LIMIT: "まとめる件数を確認してください。", FLOW_WAITING: "次の処理時刻を待っています。", FLOW_DESTINATION_MISSING: "通知先を選び直してください。", MONITOR_CHANGED: "通知設定が変更されました。", WORKFLOW_DELETED: "ルールの削除に伴い停止しました。" };
 type Activity = { lastSentAtMs: number | null; nextDueAtMs: number | null };
-type Job = { id: string; state: string; title?: string; url?: string; createdAtMs: number; updatedAtMs: number; sentSteps: number; messageId?: string; preview?: string; aggregateItems?: number; snapshotInvalid?: boolean; trace?: any[]; traceHistory?: TraceHistory };
+type Job = { id: string; state: string; title?: string; url?: string; errorCode?: string; createdAtMs: number; updatedAtMs: number; sentSteps: number; messageId?: string; preview?: string; aggregateItems?: number; snapshotInvalid?: boolean; trace?: any[]; traceHistory?: TraceHistory };
 type RuleRun = { id: string; state: string; event?: { title?: string; url?: string }; created_at_ms: number; trace?: any[]; traceHistory?: TraceHistory };
 const date = (ms: number) => new Date(ms).toLocaleString("ja-JP");
+const jobState = (job: Job) => job.state === "sent" && !hasConfirmedSend(job.state, job.sentSteps, job.messageId) ? "送信結果を確認" : states[job.state] || "状態を確認";
 
 type ActivityProps = { api: AutomationApi; kind: string; targetId: string; active?: boolean };
 export function MonitorDeliveryActivity(props: ActivityProps) {
@@ -62,13 +63,13 @@ function MonitorDeliveryActivityView({ api, kind, targetId, active = true, defau
       <button type="button" className={button} disabled={loading || !active} onClick={() => void load()}>配信情報を更新</button>
       {loading && <p role="status">配信情報を読み込み中…</p>}{error && <p role="alert">{error}</p>}
       {!loading && !error && !items.length && !ruleRuns.length && <p role="status">配信履歴は0件です</p>}
-      <ul aria-label="配信予定・履歴" className="space-y-2">{items.map(job => <li key={job.id}><button type="button" className={`${button} w-full text-left`} disabled={loading || !active} onClick={() => void detail(job)}><span>{states[job.state] || "状態を確認"}</span><span className="block break-words">{job.title || job.url || "通知"}</span><time className="block text-xs">{date(job.createdAtMs)}</time></button></li>)}</ul>
+      <ul aria-label="配信予定・履歴" className="space-y-2">{items.map(job => <li key={job.id}><button type="button" className={`${button} w-full text-left`} disabled={loading || !active} onClick={() => void detail(job)}><span>{jobState(job)}</span><span className="block break-words">{job.title || job.url || "通知"}</span>{job.errorCode && <span className="block text-xs">{historyReason(job.errorCode)}</span>}<time className="block text-xs">{date(job.createdAtMs)}</time></button></li>)}</ul>
       {cursor && <button type="button" className={button} disabled={loading || !active} onClick={() => void load(cursor)}>履歴をさらに表示</button>}
       {!!ruleRuns.length && <section aria-label="ルールの処理履歴" className="space-y-2"><h4>ルールの処理履歴</h4><ul className="space-y-2">{ruleRuns.map(run => {
-        const explanation = [...(run.trace || [])].reverse().find(entry => entry.reason)?.reason;
-        return <li key={run.id} className="rounded border p-3 text-sm"><span>{runStates[run.state] || "状態を確認"}</span><p className="break-words">{run.event?.title || run.event?.url || "通知"}</p>{explanation && <p>{runReasons[explanation] || (/^[A-Z][A-Z0-9_]+$/.test(explanation) ? "処理記録を確認してください。" : explanation)}</p>}<time className="text-xs">{date(Number(run.created_at_ms))}</time><ProcessingTrace api={api} trace={run.trace} traceHistory={run.traceHistory} active={active && open} label="処理記録を確認" reasonLabel={value => runReasons[value] || value} /></li>;
+        const explanation = excludedRunReason(run.trace);
+        return <li key={run.id} className="rounded border p-3 text-sm"><span>{runStates[run.state] || "状態を確認"}</span><p className="break-words">{run.event?.title || run.event?.url || "通知"}</p>{explanation && <p>{explanation}</p>}<time className="text-xs">{date(Number(run.created_at_ms))}</time><ProcessingTrace api={api} trace={run.trace} traceHistory={run.traceHistory} active={active && open} label="処理記録を確認" reasonLabel={historyReason} /></li>;
       })}</ul>{ruleCursor && <button type="button" className={button} disabled={loading || !active} onClick={() => void moreRuleRuns()}>ルールの処理履歴をさらに表示</button>}</section>}
-      {selected && <section className="space-y-2 rounded border p-3" aria-label="配信内容"><h4 ref={detailHeading} tabIndex={-1}>配信内容</h4><p>{states[selected.state] || "状態を確認"}{selected.aggregateItems ? "（まとめ通知）" : ""}</p><pre className="max-h-48 overflow-auto whitespace-pre-wrap break-words text-sm">{selected.preview}</pre>{["unknown", "partial"].includes(selected.state) && <p>Discordで送信結果を確認してください。</p>}<ProcessingTrace api={api} trace={selected.trace} traceHistory={selected.traceHistory} active={active && open} reasonLabel={value => runReasons[value] || value} /><button type="button" className={button} onClick={() => { version.current++; setSelected(null); }}>配信内容を閉じる</button></section>}
+      {selected && <section className="space-y-2 rounded border p-3" aria-label="配信内容"><h4 ref={detailHeading} tabIndex={-1}>配信内容</h4><p>{jobState(selected)}{selected.aggregateItems ? "（まとめ通知）" : ""}</p>{selected.errorCode && <p>{historyReason(selected.errorCode)}</p>}{kind === "x" && selected.errorCode === "AUTOMATION_SLOT_LIMIT" && <a href="/dashboard/automation/plans" className="inline-block text-sm text-primary underline">通知枠を確認</a>}<pre className="max-h-48 overflow-auto whitespace-pre-wrap break-words text-sm">{selected.preview}</pre>{(["unknown", "partial"].includes(selected.state) || selected.state === "sent" && !hasConfirmedSend(selected.state, selected.sentSteps, selected.messageId)) && <p>Discordで送信結果を確認してください。</p>}<ProcessingTrace api={api} trace={selected.trace} traceHistory={selected.traceHistory} active={active && open} reasonLabel={historyReason} /><button type="button" className={button} onClick={() => { version.current++; setSelected(null); }}>配信内容を閉じる</button></section>}
     </div>}
   </details>;
 }

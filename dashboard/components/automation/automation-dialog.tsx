@@ -4,7 +4,7 @@ let modalDepth = 0;
 let previousOverflow = "";
 const dialogStack: HTMLDialogElement[] = [];
 
-export function AutomationDialog({ title, children, onCancel, busy = false, error, errorAction, open = true }: { title: string; children: ReactNode; onCancel: () => void; busy?: boolean; error?: string; errorAction?: ReactNode; open?: boolean }) {
+export function AutomationDialog({ title, children, onCancel, busy = false, error, errorAction, open = true, preserveInitialScroll = false }: { title: string; children: ReactNode; onCancel: () => void; busy?: boolean; error?: string; errorAction?: ReactNode; open?: boolean; preserveInitialScroll?: boolean }) {
   const ref = useRef<HTMLDialogElement>(null), label = useId();
   useEffect(() => {
     const dialog = ref.current;
@@ -13,14 +13,19 @@ export function AutomationDialog({ title, children, onCancel, busy = false, erro
     if (modalDepth++ === 0) previousOverflow = document.body.style.overflow;
     dialogStack.push(dialog);
     document.body.style.overflow = "hidden";
-    if (!dialog.open) { dialog.showModal(); dialog.querySelector<HTMLElement>('input,select,textarea')?.focus(); }
+    if (!dialog.open) {
+      dialog.showModal();
+      const field = dialog.querySelector<HTMLElement>('input,select,textarea');
+      if (preserveInitialScroll) { field?.focus({ preventScroll: true }); dialog.scrollTop = 0; }
+      else field?.focus();
+    }
     return () => {
       const wasTop = dialogStack.at(-1) === dialog;
       const position = dialogStack.indexOf(dialog); if (position >= 0) dialogStack.splice(position, 1);
       if (dialog.open) dialog.close(); if (--modalDepth === 0) document.body.style.overflow = previousOverflow;
       if (wasTop && previousFocus?.isConnected) previousFocus.focus();
     };
-  }, [open]);
+  }, [open, preserveInitialScroll]);
   return <dialog ref={ref} aria-labelledby={label} aria-busy={busy || undefined} className="automation-dialog" onCancel={event => { event.preventDefault(); if (!busy && dialogStack.at(-1) === ref.current) onCancel(); }} onKeyDown={event => {
     const dialog = ref.current;
     if (event.key !== "Tab" || !dialog || dialogStack.at(-1) !== dialog) return;

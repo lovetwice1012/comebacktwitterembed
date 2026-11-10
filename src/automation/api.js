@@ -3,8 +3,18 @@
 // The web boundary derives actor from the authenticated session. This dispatcher
 // is also used by loopback-only fixture tests; it contains no auth bypass.
 const { requireActor, AutomationError, publicDestination, validateAssignmentGuards, hash } = require('./service');
+const { performance } = require('node:perf_hooks');
 /** @param {{method:string,path:string[],search?:URLSearchParams,body?:Record<string,any>}} request */
 async function dispatch(request, actor, services) {
+    const started = performance.now(); let failed = true;
+    try { const result = await dispatchMeasured(request, actor, services); failed = false; return result; }
+    finally {
+        try { const metrics = require('../adminSupport/databaseMetrics'); metrics.apiLatency[metrics.apiCategory(request?.path)].record(performance.now() - started, failed); }
+        catch { /* Metrics cannot change request results. */ }
+    }
+}
+/** @param {{method:string,path:string[],search?:URLSearchParams,body?:Record<string,any>}} request */
+async function dispatchMeasured(request, actor, services) {
     requireActor(actor);
     const { method, path, body = {} } = request;
     if (!Array.isArray(path) || path.length < 1 || path.length > 3 || !['GET','POST','PUT','PATCH','DELETE'].includes(method)) throw new AutomationError('NOT_FOUND', '操作が見つかりません。', 404);
@@ -36,7 +46,13 @@ async function dispatchCore({ method, path, search = new URLSearchParams(), body
       registrationEnabled: process.env.ANGELIC_X_REGISTRATION_ENABLED === '1',
       useLegacyUserInterval: process.env.ANGELIC_X_USE_LEGACY_USER_INTERVAL === '1',
     });
-    if (kind === 'x-processing-settings' && !id && !action) {
+    if (kind === 'performance' && !id && method === 'GET') {
+      if (actor.isAdmin !== true) throw new AutomationError('AUTOMATION_FORBIDDEN', '運用情報には管理者権限が必要です。', 403);
+      const metrics = require('../adminSupport/databaseMetrics');
+      result = { scope: 'current_process', uptimeSeconds: Math.floor(process.uptime()), database: metrics.shared.snapshot(), databasePool: metrics.poolRegistry.snapshot(),
+        api: Object.fromEntries(Object.entries(metrics.apiLatency).map(([key, value]) => [key, value.snapshot()])) };
+    }
+    else if (kind === 'x-processing-settings' && !id && !action) {
       const processing = services.xProcessingSettings || require('./x-processing-settings').createXProcessingSettings(services.db, { useLegacyUserInterval: process.env.ANGELIC_X_USE_LEGACY_USER_INTERVAL === '1' });
       if (method === 'GET') result = await processing.get(actor);
       else if (method === 'PUT') result = await processing.save(actor, body);

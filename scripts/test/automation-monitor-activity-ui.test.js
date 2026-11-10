@@ -20,6 +20,49 @@ test('monitor activity reads only after explicit expansion and distinguishes sen
         assert(!f.container.textContent.includes('接続済み'));
     } finally { await f.close(); }
 });
+test('excluded deliveries show known reasons without guessing unknown codes or exposing a resend action', async () => {
+    const items = [
+        { id: 'a', state: 'excluded', title: '枠', createdAtMs: 1000, errorCode: 'AUTOMATION_SLOT_LIMIT' },
+        { id: 'b', state: 'excluded', title: '安全', createdAtMs: 1000, errorCode: 'SAFETY_CONTENT_DENIED' },
+        { id: 'c', state: 'unknown', title: '確認中', createdAtMs: 1000, errorCode: 'UNRECOGNIZED_REASON' },
+    ];
+    const f = await fixture(route => route.includes('targetKind') ? page(items) : { ...items.find(row => route.endsWith(row.id)), sentSteps: 0, preview: '内容' });
+    try {
+        await f.open();
+        assert.match(f.container.textContent, /現在のプランで利用できる通知枠/);
+        assert.match(f.container.textContent, /安全設定により送信対象外/);
+        assert.match(f.container.textContent, /処理記録を確認してください/);
+        assert(!f.container.textContent.includes('UNRECOGNIZED_REASON'));
+        await f.act(async () => [...f.container.querySelectorAll('button')].find(node => node.textContent.includes('枠')).click()); await f.settle();
+        assert(f.container.querySelector('a[href="/dashboard/automation/plans"]'));
+        await f.act(async () => [...f.container.querySelectorAll('button')].find(node => node.textContent === '配信内容を閉じる').click());
+        await f.act(async () => [...f.container.querySelectorAll('button')].find(node => node.textContent.includes('確認中')).click()); await f.settle();
+        assert.match(f.container.textContent, /Discordで送信結果を確認/);
+        assert(![...f.container.querySelectorAll('button')].some(node => /再送|再試行/.test(node.textContent)));
+    } finally { await f.close(); }
+});
+
+test('partial rate-limit outcome never claims another attempt is scheduled', async () => {
+    const f = await fixture(() => page([{ id: 'partial', state: 'partial', title: '一部送信', createdAtMs: 1000, errorCode: 'AUTOMATION_RATE_LIMIT_UNAVAILABLE' }]));
+    try {
+        await f.open(); assert.match(f.container.textContent, /送信上限を確認できませんでした/);
+        assert.doesNotMatch(f.container.textContent, /自動で再確認|時刻を待っています/);
+    } finally { await f.close(); }
+});
+
+test('excluded rule history shows a supported reason and does not invent one from an unrelated merge', async () => {
+    const f = await fixture(() => ({ ...page(), ruleRuns: [
+        { id: 'known', state: 'excluded', event: { title: '条件' }, created_at_ms: 1000, trace: [{ outcome: 'excluded', reason: 'EVENT_NOT_SELECTED' }] },
+        { id: 'other', state: 'excluded', event: { title: '記録待ち' }, created_at_ms: 1000, trace: [{ outcome: 'merged', reason: '合流済み' }], traceHistory: { runId: 'other', indexed: true, firstPage: false, totalEntries: null } },
+        { id: 'legacy', state: 'excluded', event: { title: '旧記録' }, created_at_ms: 1000, trace: [{ reason: '確認処理に進みました' }] },
+    ] }));
+    try {
+        await f.open(); const runs = f.container.querySelector('[aria-label="ルールの処理履歴"]');
+        assert.match(runs.textContent, /この投稿は通知条件の対象外です/);
+        assert(!runs.querySelectorAll('li')[1].textContent.includes('合流済み'));
+        assert(![...runs.querySelectorAll('li')[2].children].some(child => child.tagName === 'P' && child.textContent.includes('確認処理に進みました')));
+    } finally { await f.close(); }
+});
 test('grouped notification detail stays in the monitor card and never invents delivery success', async () => {
     const f = await fixture(route => route.includes('targetKind') ? page([{ id: 'a', state: 'partial', title: '投稿A', createdAtMs: 1000 }]) : { id: 'a', state: 'partial', aggregateItems: 2, preview: '配信した内容', sentSteps: 1 });
     try {

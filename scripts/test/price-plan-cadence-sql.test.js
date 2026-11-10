@@ -27,6 +27,12 @@ test('shared price sources preserve each plan baseline and wake on upgrade', { t
         require.cache[paths[3]] = { ...previous[3], exports: { ...schema, ensureDatabaseSchema: async () => {} } };
         delete require.cache[paths[1]]; delete require.cache[paths[2]];
         const nativeStore = require(paths[1]), { tick } = require(paths[2]);
+        const queryDatabase = db.queryDatabase; let reads = 0;
+        db.queryDatabase = async (...args) => { reads++; return queryDatabase(...args); };
+        try {
+            const targetList = await nativeStore.sourceTargets(source.insertId, now);
+            assert.equal(targetList.length, 2); assert.equal(reads, 2, 'target rows and both owner policies use two reads rather than three');
+        } finally { db.queryDatabase = queryDatabase; }
         const store = { ...nativeStore, reserveProvider: async () => ({ allowed: true }), claimDueDeliveries: async () => [] };
         const fetchPrice = async () => ({ ...snapshot, priceAmount: 1000 });
         let result = await tick({ now: now + 10 * 60000, store, fetchPrice });

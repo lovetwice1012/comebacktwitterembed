@@ -16,8 +16,9 @@ const processingQuote = changes => ({ requestedMode: 'realtime', explicitMode: '
     slotCost: 5, effectiveSlotCost: 5, realtimeSlotCost: 5, canEnableRealtime: true, additionalSlotsNeeded: 4, configured: true, intervalMinutes: 60, reasonCode: null, isPreview: true, ...changes });
 const supporterQuote = changes => processingQuote({ realtimeSource: 'supporter', realtimeEligibilitySource: 'supporter', slotCost: 1, effectiveSlotCost: 1, realtimeSlotCost: 1,
     additionalSlotsNeeded: 0, poolKind: 'supporter', eligible: true, available: true, reason: null, ...changes });
-async function fixture({ currentQuota = quota(), items = [row()], respond, opened = true, active = true, parent = false, scope = 'private', guildId, compact = false, registrationRequest, hideAddAction = false, search = "" } = {}) {
+async function fixture({ currentQuota = quota(), items = [row()], respond, opened = true, active = true, parent = false, scope = 'private', guildId, compact = false, registrationRequest, hideAddAction = false, search = "", timing = false } = {}) {
     const f = await reactFixture('export { XMonitorManager } from "./components/automation/x-monitor-manager"; export { MonitorManager } from "./components/automation/monitor-manager"; export { parseXQuota,parseXMonitor,xFeedback } from "./components/automation/x-monitor-view";');
+    if (timing) f.dom.window.sessionStorage.setItem('cbte.pageTiming', '1');
     if (search) f.dom.window.history.replaceState({}, "", `/${search}`);
     f.calls = []; f.items = items; f.quota = currentQuota; f.setup = setup();
     const destinations = [{ id: 'dm-own', name: '本人のDM', scope: 'private', enabled: true }, { id: 'guild-dest', name: 'サーバー専用通知先', scope: 'guild', enabled: true }];
@@ -60,15 +61,44 @@ test('X owner controls load lazily, show actual plan/personal/supporter/free cap
     try {
         assert.equal(f.calls.length, 0); await f.click('Xアカウントの監視を管理');
         assert.deepEqual(f.calls.map(item => item.route).sort(), ['x-monitor-quota', 'x-monitors', 'x-processing-settings', 'x-setup']);
-        assert.match(f.container.textContent, /現在のプラン: ベーシック/); assert.match(f.container.textContent, /8枠（基本5＋支援追加3）/);
-        assert.match(f.container.textContent, /現在の登録数6件/); assert.match(f.container.textContent, /現在の使用枠6／8枠（空き2枠）/); assert.match(f.container.textContent, /支援者追加枠の保有数3枠/);
-        assert.match(f.container.textContent, /X監視の利用数・空き枠2件／空き2件/); assert.match(f.container.textContent, /無料共有枠の全体空き1／50枠/);
-        assert.match(f.container.textContent, /現在プランの確認間隔60分/); assert.match(f.container.textContent, /寄付へのお礼で付与された追加枠.*解約後も引き継ぎ/); assert.match(f.container.textContent, /申込資格と全体枠の空きは、それぞれ確認/); assert(!f.container.textContent.includes('買い切り'));
+        assert.match(f.container.textContent, /現在のプラン: ベーシック/); assert.match(f.container.textContent, /基本枠5枠/); assert.match(f.container.textContent, /支援による追加3枠/);
+        assert.match(f.container.textContent, /登録している通知6件/); assert.match(f.container.textContent, /使用中6／8枠/); assert.match(f.container.textContent, /残り2枠/);
+        assert.match(f.container.textContent, /1枠で追加できるX監視2件/); assert.match(f.container.textContent, /無料共有枠の全体空き1／50枠/);
+        assert.match(f.container.textContent, /現在プランの確認間隔60分/); assert.match(f.container.textContent, /支援による追加枠は月額プランの解約後も引き継ぎ/); assert(!f.container.textContent.includes('買い切り'));
         assert.match(f.container.textContent, /受信を開始すると通知を随時受け取り.*間隔ごとに.*まとめて処理/);
         assert.match(f.container.textContent, /ルールの条件と送信上限を適用/);
         assert.match(f.container.textContent, /新しい監視の受付は、受信テストの完了後/); assert.equal([...f.container.querySelectorAll('button')].find(item => item.textContent === 'X監視を追加').disabled, true);
         assert.equal(writes(f).length, 0);
     } finally { await f.close(); }
+});
+
+test('X monitor readiness measures only its own initial result when explicitly enabled', async () => {
+    for (const fail of [false, true]) {
+        const f = await fixture({ timing: true, currentQuota: fail ? null : quota(), compact: true });
+        try {
+            for (let i = 0; i < 50 && !f.dom.window.__cbtePageTimings?.snapshot().some(item => item.page === 'x_monitors'); i++)
+                await f.act(async () => { await new Promise(resolve => setTimeout(resolve, 20)); });
+            const samples = f.dom.window.__cbtePageTimings.snapshot().filter(item => item.page === 'x_monitors');
+            assert.equal(samples.length, 1); assert.equal(samples[0].outcome, fail ? 'error' : 'ready');
+            assert.deepEqual(Object.keys(samples[0]).sort(), ['durationMs', 'outcome', 'page']);
+            assert.equal(writes(f).length, 0);
+        } finally { await f.close(); }
+    }
+});
+
+test('notification-list timing records a loaded list and a failed list without extra requests', async () => {
+    for (const fail of [false, true]) {
+        const f = await fixture({ timing: true, parent: true, opened: false,
+            respond: async route => { if (fail && route.startsWith('monitors/')) throw new Error('PRIVATE_MONITOR_FAILURE'); } });
+        try {
+            for (let i = 0; i < 50 && !f.dom.window.__cbtePageTimings?.snapshot().some(item => item.page === 'notifications'); i++)
+                await f.act(async () => { await new Promise(resolve => setTimeout(resolve, 20)); });
+            const samples = f.dom.window.__cbtePageTimings.snapshot().filter(item => item.page === 'notifications');
+            assert.equal(samples.length, 1); assert.equal(samples[0].outcome, fail ? 'error' : 'ready');
+            assert.doesNotMatch(JSON.stringify(samples), /PRIVATE_MONITOR_FAILURE|222222/);
+            assert.equal(writes(f).length, 0);
+        } finally { await f.close(); }
+    }
 });
 
 test('personal-limit and full-global-pool reasons remain distinct even while receiver provision is off', async () => {
@@ -402,8 +432,8 @@ test('cadence boost consumption is separate from actual registration count and s
     const f = await fixture({ currentQuota: current });
     try {
         const panel = f.container.querySelector('[aria-label="X監視の個人利用枠"]');
-        assert.match(panel.textContent, /現在の登録数3件/); assert(!panel.textContent.includes('現在の登録数8件'));
-        assert.match(panel.textContent, /現在の使用枠8／8枠（空き0枠）/); assert.match(panel.textContent, /確認間隔の短縮に配分した追加枠も使用枠数に含みます/);
+        assert.match(panel.textContent, /登録している通知3件/); assert(!panel.textContent.includes('登録している通知8件'));
+        assert.match(panel.textContent, /使用中8／8枠/); assert.match(panel.textContent, /残り0枠/); assert.match(panel.textContent, /確認間隔の短縮に使う追加枠も含みます/);
         assert.equal([...f.container.querySelectorAll('button')].find(item => item.textContent === 'X監視を追加').disabled, true);
         assert.equal(writes(f).length, 0);
     } finally { await f.close(); }
@@ -493,13 +523,65 @@ test('the compact X tab opens monitoring directly with actual quota and timing s
     try {
         assert.equal(f.container.querySelector('[aria-label="X通知の受信設定"]'), null); assert.equal(f.container.querySelector('input[type="file"]'), null);
         const panel = f.container.querySelector('[aria-label="X監視の個人利用枠"]');
-        assert.match(panel.textContent, /X監視の登録数2件/); assert.match(panel.textContent, /1枠利用で追加可能2件/); assert.doesNotMatch(panel.textContent, /個人の総登録上限|無料共有枠|支援者追加枠の保有数/);
+        assert.match(panel.textContent, /基本枠5枠/); assert.match(panel.textContent, /支援による追加3枠/); assert.match(panel.textContent, /使用中6／8枠/); assert.match(panel.textContent, /残り2枠/); assert.match(panel.textContent, /1枠で追加できるX監視2件/);
         assert(panel.querySelector('a[href="/dashboard/automation/plans"]')); assert(f.container.querySelector('a[href="/dashboard/automation/x"]'));
         assert.match(f.container.querySelector('[aria-label="X通知のタイミング"]').textContent, /通知方法の確認待ち/);
         assert.equal(f.container.querySelector('[aria-label="X通知のタイミング"] form'), null);
         assert.deepEqual(f.calls.map(call => call.route).sort(), ['x-monitor-quota', 'x-monitors', 'x-setup']);
         await f.click('X監視を追加'); await f.fill(f.field('Xアカウント名'), 'compact_user'); await f.fill(f.field('通知先'), 'dm-own'); await f.submitX(); await f.click('このX監視設定で保存');
         assert.equal(writes(f).length, 1); assert.equal(writes(f)[0].body.accountHandle, 'compact_user'); assert.equal(writes(f)[0].body.notificationSettings.destinationId, 'dm-own');
+    } finally { await f.close(); }
+});
+
+test('opening X registration focuses the account field without hiding the first setup steps', async () => {
+    const current = quota({ featureEnabled: true }); current.x.reasonCode = null;
+    const f = await fixture({ compact: true, currentQuota: current });
+    const proto = f.dom.window.HTMLElement.prototype, original = proto.focus, calls = [];
+    proto.focus = function (options) { if (this.matches('input')) calls.push(options); return original.call(this, options); };
+    try {
+        await f.click('X監視を追加');
+        const input = f.field('Xアカウント名');
+        const dialog = input.closest('dialog');
+        assert.equal(f.dom.window.document.activeElement, input);
+        assert(calls.some(options => options?.preventScroll === true));
+        assert.equal(dialog.scrollTop, 0);
+        assert(dialog.querySelector('[aria-label="X監視の登録手順"]'));
+    } finally { proto.focus = original; await f.close(); }
+});
+
+test('monitor stages distinguish a shared connection receipt from this monitor and Discord delivery', async () => {
+    const current = quota({ featureEnabled: true }); current.x.reasonCode = null;
+    const connected = row({ notificationSettings: { ...row().notificationSettings, subscriptionId: SUBSCRIPTION_ID } });
+    const f = await fixture({ currentQuota: current, items: [connected], compact: true,
+        respond: route => route === 'x-setup' ? setup({ subscriptions: [subscription({ receiverState: 'listening', lastReceivedAtMs: 1791921600000 })] }) : undefined });
+    try {
+        const stages = f.target().querySelector('[aria-label="X通知の状況"]');
+        assert.match(stages.textContent, /接続.*サーバー接続を確認済み/);
+        assert.match(stages.textContent, /通知データの受信.*最終受信.*接続単位/);
+        assert.match(stages.textContent, /この監視の振り分け.*配信予定・履歴で確認/);
+        assert.match(stages.textContent, /Discordへの送信.*配信予定・履歴で確認/);
+        assert.doesNotMatch(stages.textContent, /送信済み|振り分け済み/);
+        assert(f.target().querySelector('.monitor-delivery-activity'));
+        assert.equal(f.calls.some(call => call.route.startsWith('jobs?')), false);
+        assert.equal(writes(f).length, 0);
+    } finally { await f.close(); }
+});
+
+test('new registration exposes connection preparation, the browser notification step and the final review', async () => {
+    const current = quota({ featureEnabled: true }); current.x.reasonCode = null;
+    const f = await fixture({ currentQuota: current, items: [], compact: true });
+    try {
+        await f.click('X監視を追加');
+        const steps = f.form().querySelector('[aria-label="X監視の登録手順"]');
+        assert.match(steps.textContent, /接続を準備.*ブラウザーで通知をON.*通知先とタイミング.*確認して登録/);
+        assert(f.form().querySelector('[aria-label="Xの接続準備"]'));
+        await f.fill(f.field('Xアカウント名'), '@example');
+        assert.match(f.form().querySelector('[aria-label="設定用ブラウザーで対象アカウントの通知を設定"]').textContent, /@example/);
+        await f.submitX(false); assert.equal(writes(f).length, 0);
+        assert.equal(f.form().querySelector('[aria-label="X監視の変更確認"]'), null);
+        await f.click('接続を準備する'); await f.settle();
+        assert(f.container.querySelector('.nx-setup-embedded'));
+        assert.equal(f.field('Xアカウント名').value, 'example');
     } finally { await f.close(); }
 });
 
@@ -792,12 +874,36 @@ test('a new X target requires its own browser notification acknowledgement even 
     const f = await fixture({ compact: true, items: [], currentQuota: current, respond: route => route === 'x-setup' ? setup({ subscriptions: [subscription({ receiverState: 'listening' })] }) : undefined });
     try {
         await f.click('X監視を追加'); await f.fill(f.field('Xアカウント名'), 'new_author'); await f.fill(f.field('使用する自分の受信情報'), SUBSCRIPTION_ID);
-        const guide = f.form().querySelector('[aria-label="設定用ブラウザーで対象アカウントの通知を設定"]'); assert.match(guide.textContent, /設定用ブラウザーで @new_author の投稿通知をON/); assert.match(guide.textContent, /ブラウザー通知を許可.*投稿通知ベルをON/); assert.match(guide.textContent, /X側の設定と、この画面での登録が両方必要/); assert.match(guide.textContent, /登録済みの接続を使う場合も.*アカウントごと/); assert.match(guide.textContent, /設定用Chrome・Braveのプッシュ通知はサーバー側で受信.*もう一度登録/);
+        const guide = f.form().querySelector('[aria-label="設定用ブラウザーで対象アカウントの通知を設定"]'); assert.match(guide.textContent, /設定用ブラウザーで @new_author の投稿通知をON/); assert.match(guide.textContent, /ブラウザー通知を許可.*投稿通知ベルをON/); assert.match(guide.textContent, /X側の設定と、この画面での登録が両方必要/); assert.match(guide.textContent, /登録済みの接続を使う場合も.*アカウントごと/); assert.doesNotMatch(guide.textContent, /設定用Chrome・Brave/);
         await f.submitX(false); assert.equal(writes(f).length, 0); assert.equal(f.container.querySelector('[aria-label="X監視の変更確認"]'), null);
         await f.act(async () => f.form().querySelector('.nx-firefox-ack input').click()); await f.submitX(false); assert(f.container.querySelector('[aria-label="X監視の変更確認"]'));
         await f.fill(f.field('Xアカウント名'), 'other_author'); assert.equal(f.form().querySelector('.nx-firefox-ack input').checked, false); await f.submitX(false); assert.equal(writes(f).length, 0);
         await f.submitX(); await f.click('このX監視設定で保存'); assert.equal(writes(f)[0].body.accountHandle, 'other_author'); assert.equal(Object.hasOwn(writes(f)[0].body, 'browserAcknowledgedHandle'), false); assert.equal(Object.hasOwn(writes(f)[0].body.notificationSettings, 'browserAcknowledgedHandle'), false);
         assert.doesNotMatch(f.target().textContent, /投稿通知.*確認済み|配信成功|送信済み/);
+    } finally { await f.close(); }
+});
+
+test('switching the receiver requires notification confirmation for the selected browser again', async () => {
+    const current = quota({ featureEnabled: true }); current.x.reasonCode = null;
+    const other = 'f2e1832a-65aa-4920-9235-81793968d245';
+    const brave = 'f2e1832a-65aa-4920-9235-81793968d246';
+    const f = await fixture({ compact: true, items: [], currentQuota: current, respond: route => route === 'x-setup' ? setup({ subscriptions: [subscription({ receiverState: 'listening', browserKind: 'firefox' }), subscription({ id: other, receiverState: 'listening', browserKind: 'chrome' }), subscription({ id: brave, receiverState: 'listening', browserKind: 'brave' })] }) : undefined });
+    try {
+        await f.click('X監視を追加'); await f.fill(f.field('Xアカウント名'), 'new_author'); await f.fill(f.field('使用する自分の受信情報'), SUBSCRIPTION_ID);
+        await f.act(async () => f.form().querySelector('.nx-firefox-ack input').click());
+        assert.equal(f.form().querySelector('.nx-firefox-ack input').checked, true);
+        await f.fill(f.field('使用する自分の受信情報'), other);
+        assert.equal(f.form().querySelector('.nx-firefox-ack input').checked, false);
+        assert.match(f.form().textContent, /選択中の受信情報：Chrome/);
+        assert.match(f.form().textContent, /設定用Chrome・Braveのプッシュ通知はサーバー側で受信.*もう一度登録/);
+        await f.submitX(false); assert.equal(writes(f).length, 0);
+        assert.equal(f.container.querySelector('[aria-label="X監視の変更確認"]'), null);
+        await f.act(async () => f.form().querySelector('.nx-firefox-ack input').click());
+        await f.fill(f.field('使用する自分の受信情報'), brave);
+        assert.equal(f.form().querySelector('.nx-firefox-ack input').checked, false);
+        assert.match(f.form().textContent, /選択中の受信情報：Brave/);
+        assert.match(f.form().textContent, /設定用Chrome・Braveのプッシュ通知はサーバー側で受信.*もう一度登録/);
+        await f.submitX(false); assert.equal(writes(f).length, 0);
     } finally { await f.close(); }
 });
 

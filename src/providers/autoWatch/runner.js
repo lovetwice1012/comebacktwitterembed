@@ -126,6 +126,10 @@ function retryAfterFromResponse(response, payload) {
 
 async function processSource(source, context) {
     const { now, store, config, fetch, fetchSource, sourceCounts } = context;
+    try {
+        const due = Number(source.next_check_at_ms);
+        if (Number.isSafeInteger(due) && due > 0 && now >= due) require('../../adminSupport/databaseMetrics').sourceLag.auto.record(now - due);
+    } catch { /* Best-effort aggregate measurement. */ }
     // A complete durable observation is already independent of upstream health
     // and request budgets. Drain it before attempting any new remote operation.
     let durableCursor;
