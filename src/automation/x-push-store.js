@@ -152,6 +152,61 @@ function createXPushStore(db, options = {}) {
             return { checkedAtMs, intervalSeconds };
         });
     }
+    // This API is inert until an Edge intake and receiver are explicitly wired.
+    // A token is never returned until the lease and authorization transaction commits.
+    function wnsState(receiver, revision) {
+        const values = [receiver.wns_token_sealed_json, receiver.wns_token_revision, receiver.wns_token_generation];
+        if (values.every(value => value == null)) return null;
+        const generation = Number(receiver.wns_token_generation);
+        if (values.some(value => value == null) || Number(receiver.wns_token_revision) !== revision
+            || !Number.isSafeInteger(generation) || generation < 1 || typeof values[0] !== 'string' || values[0].length > 8192)
+            fail('X_PUSH_WNS_STATE_INVALID');
+        let envelope;
+        try { envelope = JSON.parse(values[0]); } catch { fail('X_PUSH_WNS_STATE_INVALID'); }
+        return { generation, envelope };
+    }
+    function validateWnsOptions(vault, authorize) {
+        if (!vault || typeof vault.seal !== 'function' || typeof vault.open !== 'function' || typeof authorize !== 'function')
+            fail('X_PUSH_WNS_CONFIG_INVALID');
+    }
+    async function readWnsTokenState(lease, { vault, authorize } = {}) {
+        validateWnsOptions(vault, authorize);
+        let opened;
+        try {
+            return await locked(lease, async (query, subscription, receiver) => {
+                fence(lease, subscription, receiver);
+                if (subscription.browser_kind !== 'edge') fail('X_PUSH_WNS_BROWSER_INVALID');
+                await authorize(query); fence(lease, subscription, receiver);
+                const state = wnsState(receiver, lease.revision);
+                if (!state) return null;
+                opened = vault.open(state.envelope, { subscriptionId: lease.subscriptionId, ownerUserId: lease.ownerUserId,
+                    revision: lease.revision, generation: state.generation });
+                fence(lease, subscription, receiver);
+                return { generation: state.generation, token: opened };
+            });
+        } catch (error) { opened?.fill(0); throw error; }
+    }
+    async function saveWnsTokenState(lease, { vault, authorize, token, expectedGeneration } = {}) {
+        validateWnsOptions(vault, authorize);
+        if (!Number.isSafeInteger(expectedGeneration) || expectedGeneration < 0 || expectedGeneration >= Number.MAX_SAFE_INTEGER)
+            fail('X_PUSH_WNS_STATE_INVALID');
+        return locked(lease, async (query, subscription, receiver) => {
+            fence(lease, subscription, receiver);
+            if (subscription.browser_kind !== 'edge') fail('X_PUSH_WNS_BROWSER_INVALID');
+            await authorize(query); fence(lease, subscription, receiver);
+            const state = wnsState(receiver, lease.revision);
+            if ((state?.generation || 0) !== expectedGeneration) fail('X_PUSH_WNS_STATE_CONFLICT');
+            const generation = expectedGeneration + 1;
+            const sealed = vault.seal(token, { subscriptionId: lease.subscriptionId, ownerUserId: lease.ownerUserId,
+                revision: lease.revision, generation });
+            const serialized = JSON.stringify(sealed);
+            if (typeof serialized !== 'string' || serialized.length > 8192) fail('X_PUSH_WNS_STATE_INVALID');
+            await query('UPDATE automation_x_push_receivers SET wns_token_sealed_json=?,wns_token_revision=?,wns_token_generation=? WHERE subscription_id=?',
+                [serialized, lease.revision, generation, lease.subscriptionId]);
+            fence(lease, subscription, receiver);
+            return { generation };
+        });
+    }
     async function markState(lease, state, reasonCode = null) {
         if (!STATES.has(state)) fail('X_PUSH_STATE_INVALID');
         validReason(reasonCode);
@@ -450,7 +505,7 @@ function createXPushStore(db, options = {}) {
             return { retryAtMs: null, retryAttempt: 0 };
         });
     }
-    return { claim, renew, assertLease, chromeCheckinState, recordChromeCheckin, markState, release, recordFrame, recordMcsFrame, recordMcsControl, pendingMcs, confirmMcs, markRouted, auditUse, getInbox, listInbox, status, list, leaseMs,
+    return { claim, renew, assertLease, chromeCheckinState, recordChromeCheckin, readWnsTokenState, saveWnsTokenState, markState, release, recordFrame, recordMcsFrame, recordMcsControl, pendingMcs, confirmMcs, markRouted, auditUse, getInbox, listInbox, status, list, leaseMs,
         beginProcessing, advanceProcessing, completeProcessing, markUnsupported, markRecoveryQuarantined, recordRetry, resetRetry,
         listQuarantinedInbox, restoreQuarantinedInbox, markUnmatched };
 }

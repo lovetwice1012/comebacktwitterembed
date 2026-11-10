@@ -242,5 +242,65 @@ function createTransferPrivateWorkerVault(options) {
     });
 }
 
+// WNS reconnect tokens change independently of the imported subscription.
+// Keep this worker-only vault separate from the transfer envelope domain.
+function createWnsTokenWorkerVault(options) {
+    const config = rsaKeys(options, 'private');
+    function aad(context, keyId) {
+        exactFields(context, ['subscriptionId', 'ownerUserId', 'revision', 'generation']);
+        if (typeof context.subscriptionId !== 'string' || !UUID.test(context.subscriptionId) || typeof context.ownerUserId !== 'string'
+            || !/^[0-9]{1,32}$/.test(context.ownerUserId) || !Number.isSafeInteger(context.revision)
+            || context.revision < 1 || !Number.isSafeInteger(context.generation) || context.generation < 1) throw new Error();
+        return Buffer.from(JSON.stringify(['x-notification-wns-state', 1, HYBRID_ALGORITHM, keyId,
+            context.subscriptionId, context.ownerUserId, context.revision, context.generation]));
+    }
+    function validToken(token) {
+        return Buffer.isBuffer(token) && token.length > 0 && token.length <= 4096
+            && !token.some(byte => byte < 0x21 || byte > 0x7e);
+    }
+    return Object.freeze({
+        seal(token, context) {
+            let dataKey;
+            try {
+                if (!validToken(token)) throw new Error();
+                const associated = aad(context, config.activeKeyId), iv = randomBytes(12);
+                dataKey = randomBytes(32);
+                const cipher = createCipheriv('aes-256-gcm', dataKey, iv, { authTagLength: 16 });
+                cipher.setAAD(associated);
+                const ciphertext = Buffer.concat([cipher.update(token), cipher.final()]);
+                const wrapped = publicEncrypt({ key: createPublicKey(config.keys.get(config.activeKeyId).key),
+                    padding: constants.RSA_PKCS1_OAEP_PADDING, oaepHash: 'sha256', oaepLabel: associated }, dataKey);
+                return { version: 1, algorithm: HYBRID_ALGORITHM, keyId: config.activeKeyId,
+                    wrappedKey: wrapped.toString('base64url'), iv: iv.toString('base64url'),
+                    ciphertext: ciphertext.toString('base64url'), tag: cipher.getAuthTag().toString('base64url') };
+            } catch { throw vaultUnavailable(); } finally { dataKey?.fill(0); }
+        },
+        open(envelope, context) {
+            let dataKey, plaintext, partial;
+            try {
+                exactFields(envelope, ['version', 'algorithm', 'keyId', 'wrappedKey', 'iv', 'ciphertext', 'tag']);
+                if (envelope.version !== 1 || envelope.algorithm !== HYBRID_ALGORITHM || typeof envelope.keyId !== 'string'
+                    || !KEY_ID.test(envelope.keyId) || typeof envelope.ciphertext !== 'string'
+                    || !/^[A-Za-z0-9_-]{1,5462}$/.test(envelope.ciphertext)) throw new Error();
+                const recipient = config.keys.get(envelope.keyId);
+                if (!recipient) throw new Error();
+                const ciphertext = Buffer.from(envelope.ciphertext, 'base64url');
+                if (ciphertext.toString('base64url') !== envelope.ciphertext) throw new Error();
+                const associated = aad(context, envelope.keyId);
+                dataKey = privateDecrypt({ key: recipient.key, padding: constants.RSA_PKCS1_OAEP_PADDING,
+                    oaepHash: 'sha256', oaepLabel: associated }, decode(envelope.wrappedKey, recipient.bytes));
+                if (dataKey.length !== 32) throw new Error();
+                const decipher = createDecipheriv('aes-256-gcm', dataKey, decode(envelope.iv, 12), { authTagLength: 16 });
+                decipher.setAAD(associated); decipher.setAuthTag(decode(envelope.tag, 16));
+                partial = decipher.update(ciphertext);
+                plaintext = Buffer.concat([partial, decipher.final()]);
+                if (!validToken(plaintext)) throw new Error();
+                return plaintext;
+            } catch { plaintext?.fill(0); throw decryptFailed(); } finally { partial?.fill(0); dataKey?.fill(0); }
+        },
+    });
+}
+
 module.exports = { MAX_FILE_BYTES, parseTransferFile, identifyTransfer, createTransferSealer, createTransferWorkerVault, createTransferPublicSealer, createTransferPrivateWorkerVault,
+    createWnsTokenWorkerVault,
     parseChromeSnapshotJson: text => parseUniqueJson(text, 64) };

@@ -45,3 +45,10 @@ export interface TransferPrivateWorkerVault { open(envelope: TransferHybridEnvel
 export function createTransferPublicSealer(options: TransferPublicSealerOptions): TransferPublicSealer;
 /** Worker role: accepts RSA private material only and has no encryption API. */
 export function createTransferPrivateWorkerVault(options: TransferPrivateWorkerOptions): TransferPrivateWorkerVault;
+export interface WnsTokenContext extends TransferContext { generation: number }
+export interface WnsTokenEnvelope extends Omit<TransferHybridEnvelope, 'version'> { version: 1 }
+/** Worker only. The caller must clear the returned plaintext Buffer after use. */
+export function createWnsTokenWorkerVault(options: TransferPrivateWorkerOptions): {
+    seal(token: Buffer, context: WnsTokenContext): WnsTokenEnvelope;
+    open(envelope: WnsTokenEnvelope, context: WnsTokenContext): Buffer;
+};
