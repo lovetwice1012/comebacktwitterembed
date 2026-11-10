@@ -65,6 +65,34 @@ test('Chrome worker receives, commits and routes encrypted MCS data with the exi
         assert(socket.destroyed);
     } finally { await db.close(); }
 });
+test('Mac Chrome worker is gated and uses Mac check-in while routing owned receipts', async () => {
+    const db = await createTestDatabase(Number(process.env.AUTOMATION_TEST_DB_PORT));
+    try {
+        for (const sql of require('../../src/automation/x-chrome-mcs-schema.sql').SCHEMA) await db.queryDatabase(sql);
+        const file = chromeFixture(); file.push.productCategory = 'com.chrome.macosx';
+        const subscription = await insertSubscription(db, file), controller = new AbortController();
+        let opens = 0;
+        const disabled = createXPushGateway(db, { enabled: true, chromeEnabled: true, chromeMacEnabled: false, privateWorkerVault: vault,
+            rolloutMode: 'public', createChromeSocket: () => { opens++; throw new Error('unexpected connection'); } });
+        await assert.rejects(disabled.run({ ...subscription, workerId: 'mac-disabled' }), { code: 'X_PUSH_PROTOCOL_INVALID' });
+        assert.equal(opens, 0);
+        const payload = { notificationType: 'tweet', text: 'synthetic-mac' }, cipher = await encrypted(file, payload);
+        const message = Buffer.concat([bytes(3, file.push.authorizedEntity), bytes(5, file.push.productCategory),
+            pair('subtype', file.push.appId), pair('content-encoding', 'aes128gcm'), bytes(9, 'mac-fixture'), bytes(21, Buffer.from(cipher.data, 'base64url'))]);
+        let socket, clock = 1000000, fire, captured, confirmCheckin;
+        const checked = new Promise(resolve => { confirmCheckin = resolve; });
+        const gateway = createXPushGateway(db, { enabled: true, chromeEnabled: true, chromeMacEnabled: true, privateWorkerVault: vault,
+            rolloutMode: 'public', requestTimeoutMs: 3000, leaseMs: 300000, now: () => clock,
+            createChromeSocket: () => socket = new FakeSocket(db), chromeCheckinSetTimer: cb => { fire = cb; return 1; },
+            chromeCheckinClearTimer: () => {}, chromeCheckin: async credentials => { captured = credentials; confirmCheckin(); return { intervalSeconds: 50000 }; } });
+        let received;
+        const result = await gateway.run({ ...subscription, workerId: 'mac-enabled', signal: controller.signal,
+            onSession: async () => { clock += 60001; fire(); await checked; socket.emit('data', encodeFrame(8, message)); },
+            onReceived: value => { received = value; controller.abort(); } });
+        assert.equal(result.state, 'stopped'); assert.equal(captured.platform, 'macos'); assert.deepEqual(received.payload, payload);
+        assert.equal((await db.queryDatabase('SELECT * FROM automation_x_push_inbox')).length, 1);
+    } finally { await db.close(); }
+});
 test('Chrome worker fences ACK after a committed receipt if its lease is lost', async () => {
     const db = await createTestDatabase(Number(process.env.AUTOMATION_TEST_DB_PORT));
     try {

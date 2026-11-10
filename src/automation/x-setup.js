@@ -61,6 +61,7 @@ function createXSetup(db, options = {}) {
     const receiverEnabled = options.receiverEnabled === undefined ? process.env.X_NOTIFICATION_RECEIVER_ENABLED === '1'
         && resolveXProcessingPolicy(process.env.X_NOTIFICATION_PROCESSING_POLICY) !== null : options.receiverEnabled === true;
     const chromeEnabled = options.chromeEnabled === undefined ? process.env.X_NOTIFICATION_CHROME_ENABLED === '1' : options.chromeEnabled === true;
+    const chromeMacEnabled = chromeEnabled && (options.chromeMacEnabled === undefined ? process.env.X_NOTIFICATION_CHROME_MAC_ENABLED === '1' : options.chromeMacEnabled === true);
     // Brave intake stays off during rolling upgrades until every web and worker
     // process understands its browser kind and transfer metadata.
     const braveEnabled = chromeEnabled && (options.braveEnabled === undefined ? process.env.X_NOTIFICATION_BRAVE_ENABLED === '1' : options.braveEnabled === true);
@@ -133,6 +134,7 @@ function createXSetup(db, options = {}) {
         const file = parseTransferFile(input.fileText);
         if (file.version === 3 && (!edgeEnabled || !receiverEnabled)) fail('X_SETUP_EDGE_NOT_READY', 'このブラウザーの通知設定は準備中です。');
         if (file.version === 2 && (!chromeEnabled || !receiverEnabled)) fail('X_SETUP_CHROME_NOT_READY', 'このブラウザーの通知設定は準備中です。');
+        if (file.version === 2 && file.push.productCategory === 'com.chrome.macosx' && !chromeMacEnabled) fail('X_SETUP_CHROME_MAC_NOT_READY', 'このブラウザーの通知設定は準備中です。');
         if (file.version === 2 && file.provenance.kind === 'brave-gcm' && !braveEnabled) fail('X_SETUP_BRAVE_NOT_READY', 'Braveの通知設定は準備中です。');
         return { valid: true, browserVersion: file.provenance.browserVersion, scope: file.push.scope, formatVersion: file.version,
             ...(file.version === 2 && file.provenance.kind === 'brave-gcm' ? { browserKind: 'brave' } : file.version === 3 ? { browserKind: 'edge' } : {}) };
@@ -146,6 +148,7 @@ function createXSetup(db, options = {}) {
         const file = parseTransferFile(input.fileText);
         if (file.version === 3 && (!edgeEnabled || !receiverEnabled)) fail('X_SETUP_EDGE_NOT_READY', 'このブラウザーの通知設定は準備中です。');
         if (file.version === 2 && (!chromeEnabled || !receiverEnabled)) fail('X_SETUP_CHROME_NOT_READY', 'このブラウザーの通知設定は準備中です。');
+        if (file.version === 2 && file.push.productCategory === 'com.chrome.macosx' && !chromeMacEnabled) fail('X_SETUP_CHROME_MAC_NOT_READY', 'このブラウザーの通知設定は準備中です。');
         if (file.version === 2 && file.provenance.kind === 'brave-gcm' && !braveEnabled) fail('X_SETUP_BRAVE_NOT_READY', 'Braveの通知設定は準備中です。');
         const identity = identifyTransfer(file);
         try {

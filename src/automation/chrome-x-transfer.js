@@ -26,7 +26,7 @@ function base64url(value, size) {
     if (result.length !== size || result.toString('base64url') !== value) throw INVALID();
     return result;
 }
-function normalizeChromeTransfer(file, { allowMac = false } = {}) {
+function normalizeChromeTransfer(file, { allowMac = true } = {}) {
     try {
         object(file, ['format', 'version', 'provenance', 'push']);
         if (file.format !== 'x-notification-subscription' || file.version !== 2) throw INVALID();

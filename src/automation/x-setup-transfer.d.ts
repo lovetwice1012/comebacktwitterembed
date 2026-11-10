@@ -16,7 +16,7 @@ export interface ChromeTransferFile {
     format: 'x-notification-subscription';
     version: 2;
     provenance: { kind: 'chrome-gcm'; adapterVersion: '1.0.0'; browserVersion: string; readMethod: 'chrome-gcm-snapshot' };
-    push: { deviceId: string; securityToken: string; appId: string; productCategory: 'com.chrome.windows'; authorizedEntity: string;
+    push: { deviceId: string; securityToken: string; appId: string; productCategory: 'com.chrome.windows' | 'com.chrome.macosx'; authorizedEntity: string;
         scope: 'https://x.com/'; p256dhPublicKey: string; authenticationSecret: string;
         p256dhPrivateKey: { kty: 'EC'; crv: 'P-256'; x: string; y: string; d: string } };
 }

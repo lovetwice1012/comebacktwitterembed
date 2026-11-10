@@ -53,9 +53,9 @@ test('reads a synthetic Mac Chrome snapshot with explicit platform and rejects c
     const f = await fixture(t, 'macos'), result = await readChromeSnapshot(f.input);
     assert.equal(result.file.push.deviceId, '123'); assert.equal(result.file.push.securityToken, '456');
     assert.equal(result.file.push.productCategory, 'com.chrome.macosx'); assert.equal(f.opened.length, 2);
-    // The product import remains disabled until separately integrated and verified.
+    // Strict validation can explicitly exclude the experimental Mac category.
     const { normalizeChromeTransfer } = require('../../src/automation/chrome-x-transfer');
-    assert.throws(() => normalizeChromeTransfer(result.file), { code: 'X_CHROME_TRANSFER_INVALID' });
+    assert.throws(() => normalizeChromeTransfer(result.file, { allowMac: false }), { code: 'X_CHROME_TRANSFER_INVALID' });
     await assert.rejects(readChromeSnapshot({ ...f.input, platform: 'windows', unprotect: async () => Buffer.alloc(32) }), { code: 'X_CHROME_SNAPSHOT_UNSUPPORTED' });
     await assert.rejects(readChromeSnapshot({ ...f.input, macPassword: Buffer.from('wrong') }), { code: 'X_CHROME_SNAPSHOT_INVALID' });
 });
