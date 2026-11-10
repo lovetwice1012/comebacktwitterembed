@@ -56,9 +56,9 @@ async function cleanSnapshot(root, token, identity, browser) {
     await fs.rmdir(root);
 }
 
-async function withMacBrowserSnapshot({ rootPath, profileId, helperPath, expectedSha256, work, browser }) {
+async function withMacBrowserSnapshot({ rootPath, profileId, helperPath, expectedSha256, work, browser, profileLease }) {
     if (typeof work !== 'function') throw fail('X_CHROME_MAC_SNAPSHOT_INVALID');
-    return withMacStoreLocks({ rootPath, profileId, helperPath, expectedSha256, browser, work: async ({ profilePath, signal }) => {
+    return withMacStoreLocks({ rootPath, profileId, helperPath, expectedSha256, browser, profileLease, work: async ({ profilePath, signal }) => {
         const prefix = browser === 'edge' ? 'edge' : 'chrome';
         const storeName = browser === 'edge' ? 'EdgePushStorageWithConnectTokenAndKey' : 'GCM Store';
         const token = randomBytes(16).toString('hex'), snapshot = path.join(rootPath, `${prefix}-snapshot-${token}`);

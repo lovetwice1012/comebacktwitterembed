@@ -7,7 +7,7 @@ const { constants } = require('node:fs');
 const path = require('node:path');
 const { createHash } = require('node:crypto');
 const { spawn } = require('node:child_process');
-const { verifyMacChromeProfile, verifyMacEdgeProfile } = require('./chrome-mac-profile');
+const { acquireMacProfileLease, beginMacProfileLease, releaseMacProfileLease } = require('./chrome-mac-profile-lease');
 const fail = code => Object.assign(new Error(code), { code });
 
 async function checkedHelper(filename, expectedHash) {
@@ -37,18 +37,14 @@ async function lockFilePaths(profilePath, browser) {
     const store = path.join(profilePath, 'Default', 'GCM Store');
     return [path.join(store, 'LOCK'), path.join(store, 'Encryption', 'LOCK')];
 }
-async function withMacStoreLocks({ rootPath, profileId, helperPath, expectedSha256, work, browser = 'chrome' }) {
+async function withMacStoreLocks({ rootPath, profileId, helperPath, expectedSha256, work, browser = 'chrome', profileLease }) {
     if (typeof work !== 'function' || !['chrome', 'edge'].includes(browser)) throw fail('X_CHROME_MAC_LOCK_INVALID');
-    const profile = await (browser === 'edge' ? verifyMacEdgeProfile(rootPath, profileId) : verifyMacChromeProfile(rootPath, profileId));
-    let launchLock, launchStat, child, exited, closing = false, acquired = false;
-    const controller = new AbortController(), launchPath = path.join(profile.rootPath, 'broker.lock');
+    const ownsLease = profileLease === undefined; let lease = profileLease, operation, child, exited, closing = false, acquired = false;
+    const controller = new AbortController();
     try {
-        try { launchLock = await fs.open(launchPath, 'wx', 0o600); } catch (error) {
-            if (error?.code === 'EEXIST') throw fail('X_CHROME_MAC_LOCK_BUSY'); throw error;
-        }
-        launchStat = await launchLock.stat();
-        if (!launchStat.isFile() || launchStat.uid !== process.getuid() || (launchStat.mode & 0o777) !== 0o600 || launchStat.nlink !== 1)
-            throw fail('X_CHROME_MAC_LOCK_INVALID');
+        if (ownsLease) lease = await acquireMacProfileLease({ rootPath, profileId, browser });
+        operation = beginMacProfileLease(lease, { rootPath, profileId, browser });
+        const profile = operation.profile;
         const helper = await checkedHelper(helperPath, expectedSha256), lockPaths = await lockFilePaths(profile.profilePath, browser);
         child = spawn(helper, lockPaths, { stdio: ['pipe', 'pipe', 'ignore'], windowsHide: true });
         child.stdin.on('error', () => {}); // A helper that exits early closes this pipe.
@@ -74,6 +70,7 @@ async function withMacStoreLocks({ rootPath, profileId, helperPath, expectedSha2
         return value;
     } catch (error) {
         if (controller.signal.aborted && !closing) throw fail('X_CHROME_MAC_LOCK_LOST');
+        if (error?.code === 'X_CHROME_MAC_LEASE_BUSY') throw fail('X_CHROME_MAC_LOCK_BUSY');
         if (/^X_CHROME_MAC_(?:LOCK|PROFILE|SNAPSHOT)_[A-Z_]+$/.test(error?.code || '')) throw error;
         throw fail('X_CHROME_MAC_LOCK_FAILED');
     } finally {
@@ -83,14 +80,8 @@ async function withMacStoreLocks({ rootPath, profileId, helperPath, expectedSha2
             const timer = setTimeout(() => child.kill('SIGKILL'), 3000); timer.unref();
             try { await exited; } finally { clearTimeout(timer); }
         }
-        if (launchLock) {
-            try {
-                const current = await fs.lstat(launchPath);
-                if (!launchStat || current.dev !== launchStat.dev || current.ino !== launchStat.ino) throw new Error();
-                await fs.unlink(launchPath);
-            } catch { throw fail('X_CHROME_MAC_LOCK_CLEANUP_FAILED'); }
-            finally { await launchLock.close(); }
-        }
+        operation?.end();
+        if (ownsLease && lease) try { await releaseMacProfileLease(lease); } catch { throw fail('X_CHROME_MAC_LOCK_CLEANUP_FAILED'); }
     }
 }
 module.exports = { withMacStoreLocks };

@@ -5,9 +5,10 @@
 // The Mac Edge store and protocol still require native validation.
 const fs = require('node:fs/promises');
 const path = require('node:path');
-const { execFile } = require('node:child_process');
+const { execFile, spawn } = require('node:child_process');
 const { promisify } = require('node:util');
 const { verifyMacEdgeProfile } = require('./chrome-mac-profile');
+const { acquireMacProfileLease, beginMacProfileLease, releaseMacProfileLease } = require('./chrome-mac-profile-lease');
 const { startChromeBroker } = require('./edge-private-broker');
 const execFileAsync = promisify(execFile);
 const APP = '/Applications/Microsoft Edge.app';
@@ -27,36 +28,47 @@ async function verifyInstalledEdge() {
     } catch { throw fail('X_EDGE_MAC_BROWSER_INVALID'); }
 }
 
-async function startMacEdgeBroker({ rootPath, profileId, suppressReceive }) {
+async function startMacEdgeBroker({ rootPath, profileId, suppressReceive, profileLease }) {
     if (typeof suppressReceive !== 'boolean') throw fail('X_EDGE_MAC_BROKER_INVALID');
     const profile = await verifyMacEdgeProfile(rootPath, profileId), browserPath = await verifyInstalledEdge();
-    const lockPath = path.join(profile.rootPath, 'broker.lock');
-    let lock, lockStat;
+    const ownsLease = profileLease === undefined; let lease = profileLease, operation, launched, launchedClosed = false;
     try {
-        lock = await fs.open(lockPath, 'wx', 0o600); lockStat = await lock.stat();
-        if (!lockStat.isFile() || lockStat.uid !== process.getuid() || (lockStat.mode & 0o777) !== 0o600 || lockStat.nlink !== 1)
-            throw fail('X_EDGE_MAC_BROKER_INVALID');
-        await lock.writeFile(JSON.stringify({ profileId, pid: process.pid })); await lock.sync();
+        if (ownsLease) lease = await acquireMacProfileLease({ rootPath, profileId, browser: 'edge' });
+        operation = beginMacProfileLease(lease, { rootPath, profileId, browser: 'edge' });
+        await verifyMacEdgeProfile(rootPath, profileId);
         const broker = await startChromeBroker({ chromePath: browserPath, profilePath: profile.profilePath,
-            browserMode: 'edge', includeApplicationServerKey: true, suppressReceive });
+            browserMode: 'edge', includeApplicationServerKey: true, suppressReceive,
+            spawnChrome: (...args) => { launched = spawn(...args); launched.once('close', () => { launchedClosed = true; }); return launched; } });
         let released = false, settleRelease;
         const releaseComplete = new Promise(resolve => { settleRelease = resolve; });
         const release = async () => {
             if (released) return; released = true; let ok = false;
-            try { const current = await fs.lstat(lockPath); if (current.dev === lockStat.dev && current.ino === lockStat.ino) { await fs.unlink(lockPath); ok = true; } }
+            operation.end();
+            try { await releaseMacProfileLease(lease); ok = true; }
             catch { /* A stale lock fails closed. */ }
-            finally { await lock.close().catch(() => { ok = false; }); settleRelease(ok); }
+            finally { settleRelease(ok); }
         };
         broker.chrome.once('exit', () => { void release(); });
         if (broker.chrome.exitCode !== null) await release();
         return { ...broker, releaseComplete };
     } catch (error) {
-        if (lock) {
-            try { const current = await fs.lstat(lockPath); if (lockStat && current.dev === lockStat.dev && current.ino === lockStat.ino) await fs.unlink(lockPath); }
-            catch { /* Report only a fixed error. */ }
-            await lock.close().catch(() => {});
+        // A failed handshake can request termination before the OS has
+        // reported that the child actually exited. Keep the profile locked
+        // until then, rather than letting another setup start in that gap.
+        if (operation && launched && !launchedClosed && launched.exitCode === null && launched.signalCode === null) {
+            let finished = false;
+            const releaseAfterExit = async () => {
+                if (finished) return; finished = true; operation.end();
+                await releaseMacProfileLease(lease).catch(() => {});
+            };
+            launched.once('exit', () => { void releaseAfterExit(); });
+            launched.once('close', () => { void releaseAfterExit(); });
+            if (launchedClosed || launched.exitCode !== null || launched.signalCode !== null) void releaseAfterExit();
+            throw fail('X_EDGE_MAC_BROKER_CLEANUP_PENDING');
         }
-        if (error?.code === 'EEXIST') throw fail('X_EDGE_MAC_BROKER_BUSY');
+        operation?.end();
+        if (lease && (ownsLease || operation)) await releaseMacProfileLease(lease).catch(() => {});
+        if (error?.code === 'X_CHROME_MAC_LEASE_BUSY') throw fail('X_EDGE_MAC_BROKER_BUSY');
         throw fail('X_EDGE_MAC_BROKER_INVALID');
     }
 }

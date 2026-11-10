@@ -10,6 +10,7 @@ const vm = require('node:vm');
 const { ClassicLevel } = require('classic-level');
 const { createHash, createCipheriv, createECDH, pbkdf2Sync, randomBytes, generateKeyPairSync } = require('node:crypto');
 const { createMacChromeProfile, createMacEdgeProfile } = require('../../src/automation/chrome-mac-profile');
+const { acquireMacProfileLease, beginMacProfileLease, releaseMacProfileLease } = require('../../src/automation/chrome-mac-profile-lease');
 const { withMacStoreLocks } = require('../../src/automation/chrome-mac-store-locks');
 const { withMacChromeSnapshot, withMacEdgeSnapshot } = require('../../src/automation/chrome-mac-snapshot');
 const { readEdgeSnapshot } = require('../../src/automation/edge-wns-snapshot-io');
@@ -227,4 +228,58 @@ test('experimental Mac Edge snapshot copies one store, filters other files and c
     await fs.writeFile(path.join(store, 'unexpected.txt'), 'must reject');
     await assert.rejects(withMacEdgeSnapshot({ ...args, work: async () => {} }), { code: 'X_CHROME_MAC_SNAPSHOT_INVALID' });
     assert((await fs.readdir(edge.rootPath)).every(name => !name.startsWith('edge-snapshot-')));
+});
+test('Mac Edge inspection and launch retain one profile lease without an intervening gap', { skip: !helper || process.platform === 'win32', timeout: 15000 }, async t => {
+    const parent = await fs.realpath(os.tmpdir()), base = await fs.mkdtemp(path.join(parent, 'cbte-mac-edge-open-test-'));
+    t.after(async () => {
+        const real = await fs.realpath(base); assert.equal(path.dirname(real), parent);
+        assert.match(path.basename(real), /^cbte-mac-edge-open-test-/); await fs.rm(real, { recursive: true });
+    });
+    const sourceFile = path.join(__dirname, '../../src/automation/edge-mac-open.js');
+    const source = await fs.readFile(sourceFile, 'utf8'), module = { exports: {} }, calls = [];
+    let failPending = false, releasePending;
+    const mockedRequire = name => {
+        if (name === './edge-mac-broker') return { startMacEdgeBroker: async options => {
+            await assert.rejects(acquireMacProfileLease({ rootPath: options.rootPath, profileId: options.profileId, browser: 'edge' }), { code: 'X_CHROME_MAC_LEASE_BUSY' });
+            const names = await fs.readdir(options.rootPath); assert(names.every(name => !name.startsWith('edge-snapshot-')));
+            const operation = beginMacProfileLease(options.profileLease, { rootPath: options.rootPath, profileId: options.profileId, browser: 'edge' });
+            calls.push(options.suppressReceive);
+            if (failPending) {
+                releasePending = async () => { operation.end(); await releaseMacProfileLease(options.profileLease); };
+                throw Object.assign(new Error('synthetic'), { code: 'X_EDGE_MAC_BROKER_CLEANUP_PENDING' });
+            }
+            return { release: async () => { operation.end(); await releaseMacProfileLease(options.profileLease); } };
+        } };
+        if (name.startsWith('./')) return require(path.join(path.dirname(sourceFile), name));
+        return require(name);
+    };
+    vm.runInNewContext(source, { module, exports: module.exports, require: mockedRequire });
+    const hash = createHash('sha256').update(await fs.readFile(helper)).digest('hex');
+    for (const origin of ['fresh', 'https://x.com/', 'https://example.com/']) {
+        const profile = await createMacEdgeProfile(base);
+        if (origin !== 'fresh') {
+            const store = path.join(profile.profilePath, 'Default', 'EdgePushStorageWithConnectTokenAndKey');
+            await fs.mkdir(path.dirname(store), { recursive: true });
+            const db = new ClassicLevel(store, { keyEncoding: 'buffer', valueEncoding: 'buffer' });
+            try { await db.put(Buffer.from('site'), Buffer.concat([field(8, Buffer.concat([field(1, 'origin'), field(2, origin)]))])); }
+            finally { await db.close(); }
+        }
+        const args = { rootPath: profile.rootPath, profileId: profile.profileId, helperPath: helper, expectedSha256: hash };
+        const broker = await module.exports.openMacEdgeForSetup(args);
+        assert.equal(calls.at(-1), origin === 'https://x.com/');
+        await assert.rejects(acquireMacProfileLease({ ...args, browser: 'edge' }), { code: 'X_CHROME_MAC_LEASE_BUSY' });
+        await broker.release();
+    }
+    const ambiguous = await createMacEdgeProfile(base); await fs.mkdir(path.join(ambiguous.profilePath, 'Default'));
+    await assert.rejects(module.exports.openMacEdgeForSetup({ rootPath: ambiguous.rootPath, profileId: ambiguous.profileId,
+        helperPath: helper, expectedSha256: hash }));
+    assert.equal(calls.length, 3);
+    const recovered = await acquireMacProfileLease({ rootPath: ambiguous.rootPath, profileId: ambiguous.profileId, browser: 'edge' });
+    await releaseMacProfileLease(recovered);
+    const failing = await createMacEdgeProfile(base); failPending = true;
+    const failingArgs = { rootPath: failing.rootPath, profileId: failing.profileId, helperPath: helper, expectedSha256: hash };
+    await assert.rejects(module.exports.openMacEdgeForSetup(failingArgs), { code: 'X_EDGE_MAC_BROKER_CLEANUP_PENDING' });
+    await assert.rejects(acquireMacProfileLease({ ...failingArgs, browser: 'edge' }), { code: 'X_CHROME_MAC_LEASE_BUSY' });
+    await releasePending();
+    const afterFailure = await acquireMacProfileLease({ ...failingArgs, browser: 'edge' }); await releaseMacProfileLease(afterFailure);
 });
