@@ -9,7 +9,7 @@ const { once } = require('node:events');
 const vm = require('node:vm');
 const { ClassicLevel } = require('classic-level');
 const { createHash, createCipheriv, pbkdf2Sync, randomBytes, generateKeyPairSync } = require('node:crypto');
-const { createMacChromeProfile } = require('../../src/automation/chrome-mac-profile');
+const { createMacChromeProfile, createMacEdgeProfile } = require('../../src/automation/chrome-mac-profile');
 const { withMacStoreLocks } = require('../../src/automation/chrome-mac-store-locks');
 const { withMacChromeSnapshot } = require('../../src/automation/chrome-mac-snapshot');
 const { readChromeSnapshot } = require('../../src/automation/chrome-snapshot-io');
@@ -166,4 +166,26 @@ test('profile lock wrapper fences browser starts and real LevelDB access until w
     await assert.rejects(withMacStoreLocks({ ...args, helperPath: failingHelper, expectedSha256: badHash,
         work: ({ signal }) => new Promise(resolve => signal.addEventListener('abort', resolve, { once: true })) }), { code: 'X_CHROME_MAC_LOCK_LOST' });
     assert.equal(await withMacStoreLocks({ ...args, work: async () => 'released-after-exit' }), 'released-after-exit');
+});
+test('experimental Edge profile locks one real LevelDB and rejects Chrome profile confusion', { skip: !helper || process.platform === 'win32', timeout: 15000 }, async t => {
+    const parent = await fs.realpath(os.tmpdir()), base = await fs.mkdtemp(path.join(parent, 'cbte-mac-edge-lock-test-'));
+    t.after(async () => {
+        const real = await fs.realpath(base); assert.equal(path.dirname(real), parent);
+        assert.match(path.basename(real), /^cbte-mac-edge-lock-test-/); await fs.rm(real, { recursive: true });
+    });
+    const edge = await createMacEdgeProfile(base), chrome = await createMacChromeProfile(base);
+    const store = path.join(edge.profilePath, 'Default', 'EdgePushStorageWithConnectTokenAndKey');
+    await fs.mkdir(path.dirname(store), { recursive: true });
+    const db = new ClassicLevel(store); await db.put('fixture', 'synthetic'); await db.close();
+    const args = { browser: 'edge', rootPath: edge.rootPath, profileId: edge.profileId, helperPath: helper,
+        expectedSha256: createHash('sha256').update(await fs.readFile(helper)).digest('hex') };
+    await assert.rejects(withMacStoreLocks({ ...args, rootPath: chrome.rootPath, profileId: chrome.profileId, work: async () => {} }), { code: 'X_CHROME_MAC_PROFILE_INVALID' });
+    assert.equal(await withMacStoreLocks({ ...args, work: async () => {
+        const occupied = new ClassicLevel(store, { createIfMissing: false });
+        try { await assert.rejects(occupied.open(), error => /lock/i.test(String(error.cause?.message || error.message))); }
+        finally { await occupied.close().catch(() => {}); }
+        return 'protected';
+    } }), 'protected');
+    const reopen = new ClassicLevel(store, { createIfMissing: false });
+    try { assert.equal(await reopen.get('fixture'), 'synthetic'); } finally { await reopen.close(); }
 });

@@ -9,8 +9,9 @@ const path = require('node:path');
 const { randomBytes, randomUUID } = require('node:crypto');
 const { parseUniqueJson } = require('./strict-json');
 const fail = code => Object.assign(new Error(code), { code });
-const PREFIX = 'x-notification-setup-';
 const APP_ID = 'x-notification-setup';
+const BROWSERS = Object.freeze({ chrome: { prefix: 'x-notification-setup-', folder: 'chrome-profile' },
+    edge: { prefix: 'x-notification-edge-', folder: 'edge-profile' } });
 function requirePosix() {
     if (process.platform === 'win32' || typeof process.getuid !== 'function' || !constants.O_NOFOLLOW)
         throw fail('X_CHROME_MAC_PROFILE_UNSUPPORTED');
@@ -18,14 +19,16 @@ function requirePosix() {
 function isPrivateDirectory(stat) {
     return stat.isDirectory() && !stat.isSymbolicLink() && stat.uid === process.getuid() && (stat.mode & 0o777) === 0o700;
 }
-async function verifyMacChromeProfile(root, expectedProfileId) {
+async function verifyMacBrowserProfile(root, expectedProfileId, browser) {
     requirePosix();
     try {
-        if (typeof root !== 'string' || !path.isAbsolute(root) || !/^x-notification-setup-[0-9a-f]{32}$/.test(path.basename(root))
+        const selected = Object.hasOwn(BROWSERS, browser) ? BROWSERS[browser] : null;
+        if (!selected || typeof root !== 'string' || !path.isAbsolute(root)
+            || !new RegExp(`^${selected.prefix}[0-9a-f]{32}$`).test(path.basename(root))
             || typeof expectedProfileId !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(expectedProfileId)) throw fail('X_CHROME_MAC_PROFILE_INVALID');
         const expected = path.resolve(root), real = await fs.realpath(expected), rootStat = await fs.lstat(expected);
         if (real !== expected || !isPrivateDirectory(rootStat)) throw fail('X_CHROME_MAC_PROFILE_INVALID');
-        const profilePath = path.join(expected, 'chrome-profile'), profileStat = await fs.lstat(profilePath);
+        const profilePath = path.join(expected, selected.folder), profileStat = await fs.lstat(profilePath);
         if (!isPrivateDirectory(profileStat) || await fs.realpath(profilePath) !== profilePath) throw fail('X_CHROME_MAC_PROFILE_INVALID');
         const handle = await fs.open(path.join(expected, 'owner.json'), constants.O_RDONLY | constants.O_NOFOLLOW);
         let value;
@@ -45,9 +48,10 @@ async function verifyMacChromeProfile(root, expectedProfileId) {
         throw fail('X_CHROME_MAC_PROFILE_INVALID');
     }
 }
-async function createMacChromeProfile(parent) {
+async function createMacBrowserProfile(parent, browser) {
     requirePosix();
-    if (typeof parent !== 'string' || !path.isAbsolute(parent)) throw fail('X_CHROME_MAC_PROFILE_INVALID');
+    const selected = Object.hasOwn(BROWSERS, browser) ? BROWSERS[browser] : null;
+    if (!selected || typeof parent !== 'string' || !path.isAbsolute(parent)) throw fail('X_CHROME_MAC_PROFILE_INVALID');
     let root, profile, marker, handle, rootStat, profileStat, markerStat;
     let createdRoot = false, createdProfile = false, createdMarker = false;
     async function removeCreated(name, expected, remove) {
@@ -58,14 +62,14 @@ async function createMacChromeProfile(parent) {
     try {
         const base = await fs.realpath(parent), parentStat = await fs.stat(base);
         if (!parentStat.isDirectory() || parentStat.uid !== process.getuid() || (parentStat.mode & 0o022)) throw fail('X_CHROME_MAC_PROFILE_INVALID');
-        root = path.join(base, PREFIX + randomBytes(16).toString('hex'));
-        profile = path.join(root, 'chrome-profile'); marker = path.join(root, 'owner.json');
+        root = path.join(base, selected.prefix + randomBytes(16).toString('hex'));
+        profile = path.join(root, selected.folder); marker = path.join(root, 'owner.json');
         await fs.mkdir(root, { mode: 0o700 }); createdRoot = true; rootStat = await fs.lstat(root);
         await fs.mkdir(profile, { mode: 0o700 }); createdProfile = true; profileStat = await fs.lstat(profile);
         handle = await fs.open(marker, 'wx', 0o600); createdMarker = true; markerStat = await handle.stat();
         const owner = { schemaVersion: 1, appId: APP_ID, profileId: randomUUID(), rootPath: root, profilePath: profile };
         await handle.writeFile(JSON.stringify(owner)); await handle.sync(); await handle.close(); handle = null;
-        return await verifyMacChromeProfile(root, owner.profileId);
+        return await verifyMacBrowserProfile(root, owner.profileId, browser);
     } catch {
         let cleanupFailed = false;
         try { await handle?.close(); } catch { cleanupFailed = true; }
@@ -77,4 +81,8 @@ async function createMacChromeProfile(parent) {
         throw fail(cleanupFailed ? 'X_CHROME_MAC_PROFILE_CLEANUP_FAILED' : 'X_CHROME_MAC_PROFILE_INVALID');
     }
 }
-module.exports = { createMacChromeProfile, verifyMacChromeProfile };
+const createMacChromeProfile = parent => createMacBrowserProfile(parent, 'chrome');
+const verifyMacChromeProfile = (root, id) => verifyMacBrowserProfile(root, id, 'chrome');
+const createMacEdgeProfile = parent => createMacBrowserProfile(parent, 'edge');
+const verifyMacEdgeProfile = (root, id) => verifyMacBrowserProfile(root, id, 'edge');
+module.exports = { createMacChromeProfile, verifyMacChromeProfile, createMacEdgeProfile, verifyMacEdgeProfile };

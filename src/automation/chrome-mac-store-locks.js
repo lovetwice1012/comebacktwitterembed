@@ -1,13 +1,13 @@
 'use strict';
 
-// Holds the setup profile's launch lock and the two LevelDB fcntl locks while
+// Holds the setup profile's launch lock and the required LevelDB fcntl locks while
 // trusted local snapshot work runs. The caller must stop its browser first.
 const fs = require('node:fs/promises');
 const { constants } = require('node:fs');
 const path = require('node:path');
 const { createHash } = require('node:crypto');
 const { spawn } = require('node:child_process');
-const { verifyMacChromeProfile } = require('./chrome-mac-profile');
+const { verifyMacChromeProfile, verifyMacEdgeProfile } = require('./chrome-mac-profile');
 const fail = code => Object.assign(new Error(code), { code });
 
 async function checkedHelper(filename, expectedHash) {
@@ -24,20 +24,22 @@ async function checkedHelper(filename, expectedHash) {
     } finally { await handle.close(); }
     return resolved;
 }
-async function lockFilePaths(profilePath) {
+async function lockFilePaths(profilePath, browser) {
     let current = profilePath;
-    for (const part of ['Default', 'GCM Store', 'Encryption']) {
+    const parts = browser === 'edge' ? ['Default', 'EdgePushStorageWithConnectTokenAndKey'] : ['Default', 'GCM Store', 'Encryption'];
+    for (const part of parts) {
         current = path.join(current, part);
         const info = await fs.lstat(current);
         if (!info.isDirectory() || info.isSymbolicLink() || info.uid !== process.getuid() || await fs.realpath(current) !== current)
             throw fail('X_CHROME_MAC_LOCK_INVALID');
     }
+    if (browser === 'edge') return [path.join(current, 'LOCK')];
     const store = path.join(profilePath, 'Default', 'GCM Store');
     return [path.join(store, 'LOCK'), path.join(store, 'Encryption', 'LOCK')];
 }
-async function withMacStoreLocks({ rootPath, profileId, helperPath, expectedSha256, work }) {
-    if (typeof work !== 'function') throw fail('X_CHROME_MAC_LOCK_INVALID');
-    const profile = await verifyMacChromeProfile(rootPath, profileId);
+async function withMacStoreLocks({ rootPath, profileId, helperPath, expectedSha256, work, browser = 'chrome' }) {
+    if (typeof work !== 'function' || !['chrome', 'edge'].includes(browser)) throw fail('X_CHROME_MAC_LOCK_INVALID');
+    const profile = await (browser === 'edge' ? verifyMacEdgeProfile(rootPath, profileId) : verifyMacChromeProfile(rootPath, profileId));
     let launchLock, launchStat, child, exited, closing = false, acquired = false;
     const controller = new AbortController(), launchPath = path.join(profile.rootPath, 'broker.lock');
     try {
@@ -47,7 +49,7 @@ async function withMacStoreLocks({ rootPath, profileId, helperPath, expectedSha2
         launchStat = await launchLock.stat();
         if (!launchStat.isFile() || launchStat.uid !== process.getuid() || (launchStat.mode & 0o777) !== 0o600 || launchStat.nlink !== 1)
             throw fail('X_CHROME_MAC_LOCK_INVALID');
-        const helper = await checkedHelper(helperPath, expectedSha256), lockPaths = await lockFilePaths(profile.profilePath);
+        const helper = await checkedHelper(helperPath, expectedSha256), lockPaths = await lockFilePaths(profile.profilePath, browser);
         child = spawn(helper, lockPaths, { stdio: ['pipe', 'pipe', 'ignore'], windowsHide: true });
         child.stdin.on('error', () => {}); // A helper that exits early closes this pipe.
         exited = new Promise(resolve => {
