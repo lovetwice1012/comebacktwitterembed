@@ -9,8 +9,11 @@ const path = require('path');
 const DEFAULT_PORT = 30987;
 const LEGACY_DIST_DIR = '.next';
 const DEV_DIST_DIR = '.next-dev';
-const BUILD_WORK_DIR = '.next-build';
 const BUILD_ROOT_DIR = '.next-builds';
+// Next.js records file trace entries relative to the build output. Keep the
+// staging directory at the same depth as its final sibling so those paths
+// remain valid after activation.
+const BUILD_WORK_DIR = `${BUILD_ROOT_DIR}/.next-build`;
 const CURRENT_BUILD_FILE = 'current.json';
 const RESTART_DEBOUNCE_MS = 750;
 const RESTART_GRACE_MS = 10000;
