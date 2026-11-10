@@ -2,9 +2,7 @@
 // Synthetic profiles only. Setup children finish before one in-process worker
 // opens both real FCM connections. Credentials travel only over private IPC.
 const assert = require('node:assert/strict');
-const { fork } = require('node:child_process');
 const { generateKeyPairSync } = require('node:crypto');
-const path = require('node:path');
 const tls = require('node:tls');
 const webpush = require('web-push');
 const { createTestDatabase } = require('../../scripts/lib/automation-test-db');
@@ -14,23 +12,9 @@ const { createXPushGateway } = require('../../src/automation/x-push-gateway');
 const { createXPushRuntime } = require('../../src/automation/x-push-runtime');
 const { createQueue } = require('../../src/automation/queue');
 const entitlements = require('../../src/automation/entitlements');
+const { createSyntheticSubscription } = require('./synthetic-subscription-ipc.cjs');
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 let stage = 'start';
-async function createSyntheticSubscription(browser) {
-    const env = { ...process.env, CHROMIUM_PROBE_BROWSER: browser, CHROME_FIXTURE_SYNTHETIC_IPC: '1', CHROME_FIXTURE_BLOCK_INITIAL: '1' };
-    for (const key of ['CHROME_FIXTURE_LINUX', 'CHROME_FIXTURE_MYSQL_PORT', 'CHROME_FIXTURE_REOPEN', 'CHROME_FIXTURE_RUNTIME', 'CHROME_FIXTURE_OTHER']) delete env[key];
-    const child = fork(path.join(__dirname, 'packaged-e2e.cjs'), [], { env, windowsHide: true, stdio: ['ignore', 'ignore', 'ignore', 'ipc'] });
-    let data;
-    try {
-        await new Promise((resolve, reject) => {
-            const timer = setTimeout(() => { child.kill(); reject(new Error('FIXTURE_CHILD_TIMEOUT')); }, 90000);
-            child.once('message', value => { data = value; });
-            child.once('error', error => { clearTimeout(timer); reject(error); });
-            child.once('exit', code => { clearTimeout(timer); if (code === 0 && data?.browser === browser) resolve(); else reject(new Error('FIXTURE_CHILD_FAILED')); });
-        });
-        return data;
-    } finally { if (child.exitCode === null) child.kill(); }
-}
 async function main() {
     assert.equal(Number(process.env.AUTOMATION_TEST_DB_PORT), 33631, 'Use isolated fixture DB port 33631');
     stage = 'create-chrome'; const chrome = await createSyntheticSubscription('chrome');
