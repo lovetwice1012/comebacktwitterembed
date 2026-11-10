@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const { createTestDatabase } = require('../lib/automation-test-db');
 const { createXPushStore } = require('../../src/automation/x-push-store');
 const { createChromeMcsStoreAdapter } = require('../../src/automation/chrome-mcs-store-adapter');
+const { createChromeMcsSession } = require('../../src/automation/chrome-mcs-session');
 const { insertSubscription } = require('./helpers/x-push-fixture.cjs');
 const { readFileSync } = require('node:fs');
 const path = require('node:path');
@@ -13,6 +14,48 @@ async function setup(work) {
     try { for (const sql of require('../../src/automation/x-chrome-mcs-schema.sql').SCHEMA) await db.queryDatabase(sql); await work(db); }
     finally { await db.close(); }
 }
+test('100 unconfirmed receipts bound reconnect state and a rejected 101st leaves no partial receipt', async () => setup(async db => {
+    const sub = await insertSubscription(db), store = createXPushStore(db);
+    let lease = await store.claim({ ...sub, workerId: 'saturated' });
+    for (let i = 0; i < 100; i++) await store.recordMcsFrame(lease, frame(`pending-${i}`));
+    assert.equal((await store.pendingMcs(lease)).length, 100);
+    assert.equal((await store.recordMcsFrame(lease, frame('pending-0'))).duplicate, true);
+    await assert.rejects(store.recordMcsFrame(lease, frame('overflow')), { code: 'X_PUSH_MCS_PENDING_LIMIT' });
+    await assert.rejects(store.recordMcsControl(lease, { kind: 'deleted_messages', persistentId: 'overflow-control' }), { code: 'X_PUSH_MCS_PENDING_LIMIT' });
+    assert.equal((await db.queryDatabase("SELECT id FROM automation_x_push_inbox WHERE subscription_id=? AND version='overflow'", [sub.subscriptionId])).length, 0);
+    assert.equal((await db.queryDatabase("SELECT id FROM automation_audit WHERE entity_id=? AND action='x.push.provider.deleted_messages'", [sub.subscriptionId])).length, 0);
+    await store.release(lease);
+    const successor = createXPushStore(db); lease = await successor.claim({ ...sub, workerId: 'successor' });
+    const pending = await successor.pendingMcs(lease);
+    assert.equal(pending.length, 100);
+    assert.equal(await successor.confirmMcs(lease, pending), 100);
+    assert.equal((await successor.recordMcsFrame(lease, frame('overflow'))).duplicate, false);
+    assert.deepEqual(await successor.pendingMcs(lease), ['overflow']);
+}));
+test('saturated session closes without ACK and recovers after replay confirmation from a simulated server', async () => setup(async db => {
+    const sub = await insertSubscription(db), store = createXPushStore(db);
+    let lease = await store.claim({ ...sub, workerId: 'saturated-session' }), writes = 0, deliveries = 0;
+    const bytes = (n, value) => Buffer.concat([Buffer.from([n * 8 + 2, Buffer.byteLength(value)]), Buffer.from(value)]);
+    const pair = (key, value) => bytes(7, Buffer.concat([bytes(1, key), bytes(2, value)]));
+    const incoming = id => ({ tag: 8, payload: Buffer.concat([bytes(3, 'sender'), bytes(5, 'com.chrome.windows'), pair('subtype', 'app'),
+        pair('content-encoding', 'aes128gcm'), bytes(9, id), Buffer.from([0xaa, 1, 1, 42])]) });
+    const login = { tag: 3, payload: Buffer.concat([bytes(1, 'ok'), Buffer.from([48, 1])]) };
+    const makeSession = current => createChromeMcsSession({ credentials: { deviceId: '1', securityToken: '2', clientVersion: '140.0' },
+        route: { expectedCategory: 'com.chrome.windows', expectedAppId: 'app', expectedSender: 'sender' },
+        store: createChromeMcsStoreAdapter({ store, lease: current, authorize: async () => {}, decrypt: async () => {} }),
+        send: async () => { writes++; }, onReceipt: () => { deliveries++; } });
+    let session = makeSession(lease); await session.start(); await session.receive(login);
+    for (let i = 0; i < 100; i++) await session.receive(incoming(`pending-${i}`));
+    const before = writes;
+    await assert.rejects(session.receive(incoming('overflow')), { code: 'X_PUSH_MCS_PENDING_LIMIT' });
+    assert.equal(writes, before); assert.equal(deliveries, 100);
+    await assert.rejects(session.receive(incoming('overflow')), { code: 'X_CHROME_SESSION_INVALID' });
+    await store.release(lease); lease = await store.claim({ ...sub, workerId: 'successor-session' });
+    session = makeSession(lease); await session.start(); assert.equal((await store.pendingMcs(lease)).length, 100);
+    await session.receive(login); assert.equal((await store.pendingMcs(lease)).length, 0);
+    await session.receive(incoming('overflow')); assert.equal(deliveries, 101);
+    assert.deepEqual(await store.pendingMcs(lease), ['overflow']);
+}));
 test('MCS receipt and pending ACK persist together across workers and are owner/lease fenced', async () => setup(async db => {
     const sub = await insertSubscription(db), first = createXPushStore(db);
     let lease = await first.claim({ ...sub, workerId: 'one' });

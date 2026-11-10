@@ -29,6 +29,16 @@ test('reconnect replays saved IDs and login confirmation clears them', async () 
     assert(h.writes[0].includes(Buffer.from('prior'))); assert(h.pending.has('prior'));
     await h.session.receive(login(1)); assert.equal(h.pending.size, 0);
 });
+test('reconnect sends all 100 saved IDs before accepting new messages', async () => {
+    const ids = Array.from({ length: 100 }, (_, i) => `old-${i}`), h = harness(ids);
+    await h.session.start();
+    for (const id of ids) assert(h.writes[0].includes(Buffer.from(id)));
+    assert.equal(h.pending.size, 100);
+    await h.session.receive(login(1));
+    assert.equal(h.pending.size, 0);
+    await h.session.receive(frame({ id: 'after-reconnect' }));
+    assert.deepEqual([...h.pending], ['after-reconnect']);
+});
 test('failed commit or lost send never acknowledges a later frame', async () => {
     const h = harness(); await h.session.start(); await h.session.receive(login(1));
     h.store.commit = async () => { throw new Error('DB_FAILED'); };
