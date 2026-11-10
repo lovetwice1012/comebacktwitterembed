@@ -7,7 +7,7 @@ const { rejectLinks } = require('./build-angelic-setup-package.cjs');
 const { buildChromeBundles } = require('./build-chrome-setup-bundles.cjs');
 const { resolveProjectNode, NODE_EXE_SHA256 } = require('./run-project-node.cjs');
 const ROOT = path.resolve(__dirname, '..'), SOURCE = path.join(ROOT, 'client', 'angelic-setup');
-const VERSION = '0.1.0-chrome-preview.2';
+const VERSION = '0.1.0-chrome-preview.3';
 const SOURCES = Object.freeze({ 'ChromeSetup.ps1': 'ChromeSetup.ps1', 'Start-ChromeSetup.ps1': 'Start-ChromeSetup.ps1',
     'ChromeSnapshot.ps1': 'ChromeSnapshot.ps1', 'NativeSetup.ps1': 'FirefoxReader.ps1',
     'はじめに.txt': 'Chrome-はじめに.txt', 'Chromeで開始.cmd': 'Chromeで開始.cmd', 'Braveで開始.cmd': 'Braveで開始.cmd', LICENSE: 'LICENSE' });
@@ -36,7 +36,16 @@ async function buildArchive({ source = SOURCE, nodeExecutable = resolveProjectNo
     const files = Object.fromEntries(Object.entries(entries).map(([name, data]) => [name, hash(data)]));
     const manifest = { schemaVersion: 1, packageId: 'x-notification-chrome-setup', version: VERSION, files };
     entries['package-manifest.json'] = Buffer.from(JSON.stringify(manifest, null, 2) + '\n');
-    const zipped = Object.fromEntries(Object.entries(entries).map(([name, bytes]) => [name, [bytes, { mtime: new Date(2020, 0, 1) }]]));
+    // Keep the original, self-contained package intact in a subfolder. The
+    // only files users need to find are the two launchers and the guide.
+    const layout = Object.fromEntries(Object.entries(entries).map(([name, data]) => [`_app/${name}`, data]));
+    layout['はじめに.txt'] = entries['はじめに.txt'];
+    for (const name of ['Chromeで開始.cmd', 'Braveで開始.cmd']) {
+        const launcher = entries[name].toString('utf8');
+        if (!launcher.includes('%~dp0Start-ChromeSetup.ps1')) throw new Error('Launcher entry missing');
+        layout[name] = Buffer.from(launcher.replace('%~dp0Start-ChromeSetup.ps1', '%~dp0_app\\Start-ChromeSetup.ps1'), 'utf8');
+    }
+    const zipped = Object.fromEntries(Object.entries(layout).map(([name, bytes]) => [name, [bytes, { mtime: new Date(2020, 0, 1) }]]));
     const archive = Buffer.from(zipSync(zipped, { level: 6 }));
     return { archive, manifest, sha256: hash(archive), version: VERSION };
 }

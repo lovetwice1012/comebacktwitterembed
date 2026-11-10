@@ -24,7 +24,9 @@ async function removeOwnedFixture(root, temp) {
     await fs.rm(actual, { recursive: true });
 }
 async function stopOwnedBrokers(root) {
-    const launchDir = path.join(root, 'owned', 'launches'), bundleExe = path.join(root, 'bundle', 'ChromeNode.exe');
+    const launchDir = path.join(root, 'owned', 'launches');
+    const nested = path.join(root, 'bundle', '_app', 'ChromeNode.exe');
+    const bundleExe = syncFs.existsSync(nested) ? nested : path.join(root, 'bundle', 'ChromeNode.exe');
     let names;
     try { names = await fs.readdir(launchDir); } catch (error) { if (error.code === 'ENOENT') return; throw error; }
     const cleanup = `$p=Get-Process -Id ([int]$env:CBTE_FIXTURE_PID) -ErrorAction SilentlyContinue
@@ -65,12 +67,14 @@ async function main() {
     const temp = await fs.realpath(os.tmpdir()), root = await fs.mkdtemp(path.join(temp, 'cbte-chrome-full-e2e-'));
     let server, child, cdp, testDb, otherSubscription, browserPushEvents = 0;
     try {
-        const bundle = path.join(root, 'bundle'); await fs.mkdir(bundle);
+        const packageRoot = path.join(root, 'bundle'); await fs.mkdir(packageRoot);
         const entries = unzipSync(await fs.readFile(process.env.CHROME_SETUP_ZIP));
         for (const [name, bytes] of Object.entries(entries)) {
-            if (path.basename(name) !== name) throw new Error('FIXTURE_PACKAGE_INVALID');
-            await fs.writeFile(path.join(bundle, name), bytes, { flag: 'wx' });
+            if (!/^(?:_app\/)?[^/\\]+$/.test(name)) throw new Error('FIXTURE_PACKAGE_INVALID');
+            await fs.mkdir(path.dirname(path.join(packageRoot, name)), { recursive: true });
+            await fs.writeFile(path.join(packageRoot, name), bytes, { flag: 'wx' });
         }
+        const bundle = entries['_app/package-manifest.json'] ? path.join(packageRoot, '_app') : packageRoot;
         const owned = path.join(root, 'owned'), output = path.join(root, 'notification.json');
         const core = path.join(bundle, 'ChromeSetup.ps1');
         const invoke = args => {

@@ -17,13 +17,15 @@ test('Windows Chrome package protects its profile, rejects tampering and never o
         });
         const bundle = path.join(root, '配布 & fixture'), owned = path.join(root, '専用 & fixture');
         await fsp.mkdir(bundle);
-        const archive = await fsp.readFile(path.resolve(__dirname, '../../artifacts/angelic-setup/chrome-setup-0.1.0-chrome-preview.2.zip'));
+        const archive = await fsp.readFile(path.resolve(__dirname, '../../artifacts/angelic-setup/chrome-setup-0.1.0-chrome-preview.3.zip'));
         for (const [name, content] of Object.entries(unzipSync(archive))) {
-            assert.equal(path.basename(name), name); await fsp.writeFile(path.join(bundle, name), content, { flag: 'wx' });
+            assert.match(name, /^(?:_app\/)?[^/\\]+$/); await fsp.mkdir(path.dirname(path.join(bundle, name)), { recursive: true });
+            await fsp.writeFile(path.join(bundle, name), content, { flag: 'wx' });
         }
+        const app = path.join(bundle, '_app');
         const powershell = path.join(process.env.SystemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
         const invoke = args => {
-            const result = spawnSync(powershell, ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', path.join(bundle, 'ChromeSetup.ps1'), ...args],
+            const result = spawnSync(powershell, ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', path.join(app, 'ChromeSetup.ps1'), ...args],
                 { encoding: 'utf8', windowsHide: true, timeout: 30000 });
             if (result.error) throw result.error;
             return { ...result, data: JSON.parse(result.stdout) };
@@ -44,7 +46,7 @@ test('Windows Chrome package protects its profile, rejects tampering and never o
         const foreign = path.join(root, 'foreign'); await fsp.mkdir(foreign); await fsp.writeFile(path.join(foreign, 'keep.txt'), 'keep');
         assert.equal(invoke(['-Action', 'Prepare', '-PrivateRoot', foreign]).status, 1);
         assert.equal(await fsp.readFile(path.join(foreign, 'keep.txt'), 'utf8'), 'keep');
-        await fsp.appendFile(path.join(bundle, 'ChromeCapture.cjs'), '\n// modified\n');
+        await fsp.appendFile(path.join(app, 'ChromeCapture.cjs'), '\n// modified\n');
         const tampered = invoke(['-Action', 'Status', '-PrivateRoot', path.join(root, 'new-owned')]);
         assert.equal(tampered.status, 1); assert.match(tampered.data.message, /^X_CHROME_PACKAGE_INVALID:/);
         assert.equal(fs.existsSync(path.join(root, 'new-owned')), false);
@@ -55,9 +57,11 @@ test('Chrome and Brave launchers select the right browser in paths with Japanese
         t.after(async () => { const actual = await fsp.realpath(root); assert.equal(path.dirname(actual).toLowerCase(), parent.toLowerCase());
             assert.match(path.basename(actual), /^cbte-chrome-launch-test-/); await fsp.rm(actual, { recursive: true }); });
         const bundle = path.join(root, '日本語 [folder] & ! $value %literal%'); await fsp.mkdir(bundle);
-        for (const name of ['Chromeで開始.cmd', 'Braveで開始.cmd']) await fsp.copyFile(path.resolve(__dirname, '../../client/angelic-setup', name), path.join(bundle, name));
+        const entries = unzipSync(await fsp.readFile(path.resolve(__dirname, '../../artifacts/angelic-setup/chrome-setup-0.1.0-chrome-preview.3.zip')));
+        for (const name of ['Chromeで開始.cmd', 'Braveで開始.cmd']) await fsp.writeFile(path.join(bundle, name), entries[name]);
+        const app = path.join(bundle, '_app'); await fsp.mkdir(app);
         const resultPath = path.join(root, 'launcher-result.json');
-        await fsp.writeFile(path.join(bundle, 'Start-ChromeSetup.ps1'), Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from(`
+        await fsp.writeFile(path.join(app, 'Start-ChromeSetup.ps1'), Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from(`
 param([string]$Browser='chrome')
 [IO.File]::WriteAllText($env:X_SETUP_LAUNCH_RESULT,([ordered]@{browser=$Browser;apartment=[Threading.Thread]::CurrentThread.GetApartmentState().ToString();argumentCount=$args.Count;scriptDirectory=$PSScriptRoot}|ConvertTo-Json),(New-Object Text.UTF8Encoding($false)))
 exit 0
@@ -70,6 +74,6 @@ exit 0
             assert.equal(launched.status, 0, launched.stderr);
             const actual = JSON.parse(await fsp.readFile(resultPath, 'utf8'));
             assert.equal(actual.browser, expected); assert.equal(actual.apartment, 'STA'); assert.equal(actual.argumentCount, 0);
-            assert.equal(actual.scriptDirectory.toLowerCase(), bundle.toLowerCase());
+            assert.equal(actual.scriptDirectory.toLowerCase(), app.toLowerCase());
         }
     });

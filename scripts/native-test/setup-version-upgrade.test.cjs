@@ -24,12 +24,15 @@ test('new setup packages recognize profiles created by the previous releases', {
     assert.equal(newFirefox.version, '0.1.0-preview.5');
     const archives = [oldFirefox, newFirefox.archive,
         await fs.readFile(path.join(root, 'artifacts/angelic-setup/chrome-setup-0.1.0-chrome-preview.1.zip')),
-        await fs.readFile(path.join(root, 'artifacts/angelic-setup/chrome-setup-0.1.0-chrome-preview.2.zip'))];
+        await fs.readFile(path.join(root, 'artifacts/angelic-setup/chrome-setup-0.1.0-chrome-preview.2.zip')),
+        await fs.readFile(path.join(root, 'artifacts/angelic-setup/chrome-setup-0.1.0-chrome-preview.3.zip'))];
     const bundles = [];
     for (let i = 0; i < archives.length; i++) {
         const bundle = path.join(directory, `bundle-${i}`); await fs.mkdir(bundle); bundles.push(bundle);
         for (const [name, data] of Object.entries(unzipSync(archives[i]))) {
-            assert.equal(path.basename(name), name); await fs.writeFile(path.join(bundle, name), data, { flag: 'wx' });
+            assert.match(name, i === 4 ? /^(?:_app\/)?[^/\\]+$/ : /^[^/\\]+$/);
+            await fs.mkdir(path.dirname(path.join(bundle, name)), { recursive: true });
+            await fs.writeFile(path.join(bundle, name), data, { flag: 'wx' });
         }
     }
     const powershell = path.join(process.env.SystemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
@@ -49,6 +52,7 @@ test('new setup packages recognize profiles created by the previous releases', {
         assert.equal(invoke(oldScript, ['-Action', 'Prepare', '-Browser', browser, '-PrivateRoot', owned]).prepared, true);
         const owner = await fs.readFile(path.join(owned, 'owner.json'));
         assert.equal(invoke(newScript, ['-Action', 'Status', '-Browser', browser, '-PrivateRoot', owned]).prepared, true);
+        assert.equal(invoke(path.join(bundles[4], '_app', 'ChromeSetup.ps1'), ['-Action', 'Status', '-Browser', browser, '-PrivateRoot', owned]).prepared, true);
         assert.deepEqual(await fs.readFile(path.join(owned, 'owner.json')), owner);
     }
 });

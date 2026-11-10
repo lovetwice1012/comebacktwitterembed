@@ -7,10 +7,10 @@ import { repoRoot } from "@/lib/env";
 // A prebuilt, immutable Windows package. A Linux dashboard never builds or
 // executes the Windows runtime and never accepts a request-supplied path.
 export const X_CHROME_SETUP_DOWNLOAD = Object.freeze({
-  version: "0.1.0-chrome-preview.2",
-  filename: "chrome-setup-0.1.0-chrome-preview.2.zip",
-  sha256: "012119112fcc9c4204836182b9e9d5b7be7d6159e55d6a51cd097e203fee0924",
-  bytes: 35925791,
+  version: "0.1.0-chrome-preview.3",
+  filename: "chrome-setup-0.1.0-chrome-preview.3.zip",
+  sha256: "45f726dc35812309169276ec4276ebc85beaf510e40514dc3323c20171c49c37",
+  bytes: 35927566,
   href: "/api/automation/x-setup/download-chrome",
 });
 
