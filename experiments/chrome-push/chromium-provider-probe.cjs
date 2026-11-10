@@ -6,6 +6,7 @@ const path = require('node:path');
 const os = require('node:os');
 const http = require('node:http');
 const { spawn } = require('node:child_process');
+const { createPrivateKey, createPublicKey } = require('node:crypto');
 const webpush = require('web-push');
 const CDP = require('chrome-remote-interface');
 const { ClassicLevel } = require('classic-level');
@@ -25,6 +26,20 @@ function wireShape(bytes) {
         }
         return pos === bytes.length ? fields : null;
     } catch { return null; }
+}
+function protobufBytes(buffer, wanted) {
+    let pos = 0; const found = [];
+    function read() { let n = 0n; for (let i = 0; i < 10; i++) { if (pos >= buffer.length) throw new Error(); const b = buffer[pos++];
+        if (i === 9 && b > 1) throw new Error(); n |= BigInt(b & 127) << BigInt(i * 7); if (!(b & 128)) return n; } throw new Error(); }
+    while (pos < buffer.length) {
+        const header = read(), field = Number(header >> 3n), wire = Number(header & 7n);
+        if (wire === 0) read();
+        else if (wire === 2) { const length = Number(read()); if (!Number.isSafeInteger(length) || length > buffer.length - pos) throw new Error();
+            if (field === wanted) found.push(buffer.subarray(pos, pos + length)); pos += length; }
+        else if (wire === 1 || wire === 5) { pos += wire === 1 ? 8 : 4; if (pos > buffer.length) throw new Error(); }
+        else throw new Error();
+    }
+    return found;
 }
 const browsers = {
     edge: 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
@@ -67,10 +82,25 @@ async function main() {
         const result = await Promise.race([cdp.Runtime.evaluate({ awaitPromise: true, returnByValue: true, expression: `(async()=>{
           try {const r=await navigator.serviceWorker.register('/sw.js');await navigator.serviceWorker.ready;
           const s=await r.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:window.key});
-          return {ok:true,host:new URL(s.endpoint).hostname,protocol:new URL(s.endpoint).protocol};}
+          return {ok:true,host:new URL(s.endpoint).hostname,protocol:new URL(s.endpoint).protocol,syntheticSubscription:s.toJSON()};}
           catch(e){return {ok:false,name:e.name};}})()` }),
         new Promise((_resolve, reject) => { timer = setTimeout(() => reject(new Error('PROBE_SUBSCRIBE_TIMEOUT')), 30000); })]).finally(() => clearTimeout(timer));
         if (result.exceptionDetails || !result.result.value) throw new Error('PROBE_EVALUATE_FAILED');
+        const { syntheticSubscription, ...publicSubscription } = result.result.value;
+        let otherSubscription, otherOrigin;
+        if (kind === 'edge' && process.env.CHROMIUM_PROBE_TWO_ORIGINS === '1') {
+            otherOrigin = `http://localhost:${server.address().port}`;
+            await cdp.Browser.grantPermissions({ origin: otherOrigin, permissions: ['notifications'] });
+            const loadedOther = new Promise(resolve => cdp.Page.loadEventFired(resolve));
+            await cdp.Page.navigate({ url: otherOrigin }); await loadedOther;
+            let otherTimer;
+            const other = await Promise.race([cdp.Runtime.evaluate({ awaitPromise: true, returnByValue: true, expression: `(async()=>{
+                const r=await navigator.serviceWorker.register('/sw.js'); await navigator.serviceWorker.ready;
+                const s=await r.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:window.key}); return s.toJSON(); })()` }),
+            new Promise((_resolve, reject) => { otherTimer = setTimeout(() => reject(new Error('PROBE_SUBSCRIBE_TIMEOUT')), 30000); })]).finally(() => clearTimeout(otherTimer));
+            if (other.exceptionDetails || !other.result.value?.endpoint) throw new Error('PROBE_EVALUATE_FAILED');
+            otherSubscription = other.result.value;
+        }
         let edgeInternals = null;
         if (kind === 'edge') {
             const internalLoaded = new Promise(resolve => cdp.Page.loadEventFired(resolve));
@@ -104,14 +134,37 @@ async function main() {
                         try { const obj = JSON.parse(value.toString('utf8')); jsonObject = Boolean(obj && typeof obj === 'object'); } catch { /* Binary value. */ }
                         const nameHints = ['connect', 'token', 'key', 'device', 'registration', 'subscription', 'crypto', 'channel', 'secret', 'version']
                             .filter(word => key.toString('utf8').toLowerCase().includes(word));
+                        // Compare only with values created by this local fixture.
+                        // Neither the markers nor raw records are logged or persisted.
+                        const marker = (data, expected) => typeof expected === 'string' && expected.length > 0 && data.includes(Buffer.from(expected));
+                        const containsKey = encoded => typeof encoded === 'string' && encoded.length > 0 && value.includes(Buffer.from(encoded, 'base64url'));
+                        const keyMarker = containsKey(syntheticSubscription?.keys?.p256dh), authMarker = containsKey(syntheticSubscription?.keys?.auth);
+                        let privatePublic = null;
+                        if ((keyMarker && authMarker) || (containsKey(otherSubscription?.keys?.p256dh) && containsKey(otherSubscription?.keys?.auth))) {
+                            try {
+                                const fields = protobufBytes(value, 7);
+                                if (fields.length === 1) {
+                                    const key = createPrivateKey({ key: fields[0], format: 'der', type: 'pkcs8' });
+                                    const jwk = createPublicKey(key).export({ format: 'jwk' });
+                                    const point = Buffer.concat([Buffer.from([4]), Buffer.from(jwk.x, 'base64url'), Buffer.from(jwk.y, 'base64url')]);
+                                    privatePublic = point.toString('base64url');
+                                }
+                            } catch { /* This Edge version may use another representation. */ }
+                        }
                         records.push({ keyBytes: key.length, keyHints: nameHints, valueBytes: value.length, jsonObject, wireShape: wireShape(value),
+                            fixtureOriginInKey: marker(key, origin), fixtureOriginInValue: marker(value, origin),
+                            fixtureEndpointInValue: marker(value, syntheticSubscription?.endpoint), fixturePublicKeyInValue: keyMarker, fixtureAuthInValue: authMarker,
+                            fixturePrivateKeyMatches: Boolean(privatePublic && privatePublic === syntheticSubscription?.keys?.p256dh),
+                            otherOriginInValue: marker(value, otherOrigin), otherEndpointInValue: marker(value, otherSubscription?.endpoint),
+                            otherPublicKeyInValue: containsKey(otherSubscription?.keys?.p256dh), otherAuthInValue: containsKey(otherSubscription?.keys?.auth),
+                            otherPrivateKeyMatches: Boolean(privatePublic && privatePublic === otherSubscription?.keys?.p256dh),
                             osCryptV10: value.subarray(0, 3).toString('ascii') === 'v10', osCryptV20: value.subarray(0, 3).toString('ascii') === 'v20' });
                     }
                     stores.push({ name, records });
                 } finally { await db.close().catch(() => {}); }
             }
         }
-        console.log(JSON.stringify({ browser: kind, product: version.product, subscription: result.result.value,
+        console.log(JSON.stringify({ browser: kind, product: version.product, subscription: publicSubscription, secondSyntheticOrigin: Boolean(otherSubscription),
             category: typeof prefs.gcm?.product_category_for_subtypes === 'string' ? prefs.gcm.product_category_for_subtypes : null,
             mappingPresent: Boolean(prefs.gcm?.push_messaging_application_id_map),
             gcmStorePresent: await stat(path.join(profile, 'Default', 'GCM Store')),
