@@ -32,15 +32,18 @@ function copyObject(value, names) {
     if (keys.length !== names.length || keys.some(key => typeof key !== 'string' || !names.includes(key) || !Object.hasOwn(descriptors[key], 'value'))) throw fail('X_EDGE_WNS_SESSION_CONFIG_INVALID');
     return Object.fromEntries(names.map(name => [name, descriptors[name].value]));
 }
-function createEdgeWnsSession({ transport, store, lease, siteChannel, authorize, saveRotatedToken, agent, client, deviceKey, reconnectToken, productKey, productId }) {
+function createEdgeWnsSession({ transport, store, lease, siteChannel, authorize, saveRotatedToken, agent, client, deviceKey, reconnectToken, productKey, productId, authenticationMode = 'challenge' }) {
     if (!transport || ['connect', 'send', 'next', 'close'].some(name => typeof transport[name] !== 'function')
         || typeof saveRotatedToken !== 'function' || !Buffer.isBuffer(deviceKey) || deviceKey.length !== 32
         || !Buffer.isBuffer(reconnectToken) || !reconnectToken.length || reconnectToken.length > 4096
-        || !Buffer.isBuffer(productKey) || productKey.length !== 16 || !Buffer.isBuffer(productId) || productId.length !== 16)
+        || !['challenge', 'bound'].includes(authenticationMode)
+        || authenticationMode === 'challenge' && (!Buffer.isBuffer(productKey) || productKey.length !== 16 || !Buffer.isBuffer(productId) || productId.length !== 16)
+        || authenticationMode === 'bound' && (productKey !== undefined || productId !== undefined))
         throw fail('X_EDGE_WNS_SESSION_CONFIG_INVALID');
     const safeAgent = copyObject(agent, ['os', 'osVersion', 'architecture', 'locale']);
     const safeClient = copyObject(client, ['channel', 'protocolVersion', 'clientName', 'clientVersion']);
-    const secrets = { deviceKey: Buffer.from(deviceKey), reconnectToken: Buffer.from(reconnectToken), productKey: Buffer.from(productKey), productId: Buffer.from(productId) };
+    const secrets = { deviceKey: Buffer.from(deviceKey), reconnectToken: Buffer.from(reconnectToken),
+        ...(authenticationMode === 'challenge' ? { productKey: Buffer.from(productKey), productId: Buffer.from(productId) } : {}) };
     let receiver;
     try { receiver = createEdgeWnsReceiver({ store, lease, channel: siteChannel, authorize, sendAck: frame => transport.send(frame) }); }
     catch (error) { for (const value of Object.values(secrets)) value.fill(0); throw error; }
@@ -77,9 +80,11 @@ function createEdgeWnsSession({ transport, store, lease, siteChannel, authorize,
                 try {
                     await saveRotatedToken(binding.reconnectToken);
                     ensureOpen();
-                    const challenge = challengeFrame({ channel: safeClient.channel, serverNonce: binding.nonce,
-                        productKey: secrets.productKey, productId: secrets.productId }, 4);
-                    (await exchange(challenge, 'PUT', 4, 'WNS', { emptyBody: true })).fill(0);
+                    if (authenticationMode === 'challenge') {
+                        const challenge = challengeFrame({ channel: safeClient.channel, serverNonce: binding.nonce,
+                            productKey: secrets.productKey, productId: secrets.productId }, 4);
+                        (await exchange(challenge, 'PUT', 4, 'WNS', { emptyBody: true })).fill(0);
+                    }
                 } finally { binding.reconnectToken.fill(0); }
                 ensureOpen();
                 state = 'ready'; return { state };

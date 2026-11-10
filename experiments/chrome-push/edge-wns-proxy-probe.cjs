@@ -90,12 +90,16 @@ async function main() {
     const testXSelector = process.env.EDGE_PROBE_X_SELECTOR === '1';
     const testTlsIsolation = process.env.EDGE_PROBE_TLS_ISOLATION === '1';
     const testBindShape = process.env.EDGE_PROBE_BIND_SHAPE === '1';
+    const testSkipChallenge = process.env.EDGE_PROBE_SKIP_CHALLENGE === '1';
     const testSession = process.env.EDGE_PROBE_SESSION === '1';
     const testSessionDb = process.env.EDGE_PROBE_SESSION_DB === '1';
     const testGateway = process.env.EDGE_PROBE_GATEWAY === '1';
     if (testXSelector && (!testTwoSites || process.env.NODE_ENV !== 'test')) throw new Error('PROBE_MODE_INVALID');
     if (testTlsIsolation && (noRelay || process.env.NODE_ENV !== 'test')) throw new Error('PROBE_MODE_INVALID');
     if (testBindShape && (!testIndependent || process.env.NODE_ENV !== 'test')) throw new Error('PROBE_MODE_INVALID');
+    if (testSkipChallenge && (!testIndependent || process.env.NODE_ENV !== 'test'
+        || process.env.EDGE_PROBE_GENERATED_HANDSHAKE === '1' && process.env.EDGE_PROBE_CLIENT_METADATA !== '1'
+        || process.env.EDGE_PROBE_DURABLE === '1')) throw new Error('PROBE_MODE_INVALID');
     if (testSession && (!testIndependent || !testTwoSites || process.env.NODE_ENV !== 'test'
         || process.env.EDGE_PROBE_GENERATED_HANDSHAKE !== '1' || process.env.EDGE_PROBE_CLIENT_METADATA !== '1'
         || process.env.EDGE_PROBE_DURABLE === '1' || process.env.EDGE_PROBE_ROTATION === '1')) throw new Error('PROBE_MODE_INVALID');
@@ -137,7 +141,7 @@ async function main() {
     const browserEvents = { initial: 0, second: 0, third: 0, fourth: 0, copy: 0, other: 0 };
     let probeStage = 'setup', previousServerNonce = null;
     try {
-        if (testIndependent || process.env.EDGE_PROBE_COMPARE_CHALLENGE === '1') productConstants = await readSyntheticProductConstants();
+        if (testIndependent && !testSkipChallenge || process.env.EDGE_PROBE_COMPARE_CHALLENGE === '1') productConstants = await readSyntheticProductConstants();
         const cert = spawnSync('python', ['-c', python], { encoding: 'utf8', windowsHide: true, timeout: 10000 });
         if (cert.status !== 0) throw new Error('PROBE_CERT_FAILED');
         const tlsConfig = JSON.parse(cert.stdout);
@@ -843,6 +847,7 @@ async function main() {
             }
             const direct = (token, label, captureToken, ackAndFollowup, observePrior) => independentSyntheticReconnect({ frames, key, token, productConstants,
                 generatedPrelude: process.env.EDGE_PROBE_GENERATED_PRELUDE === '1', generatedHandshake, clientMetadata, ackAndFollowup,
+                skipChallenge: testSkipChallenge,
                 ackSingle: Boolean(captureToken && testOffline && process.env.EDGE_PROBE_OFFLINE_ACK === '1'),
                 ackSettleMs: captureToken && testOffline && process.env.EDGE_PROBE_OFFLINE_ACK === '1' ? 1000 : 0,
                 ...(captureToken ? { onRotatedToken: value => { rotatedToken?.fill(0); rotatedToken = Buffer.from(value); } } : {}),
@@ -965,7 +970,8 @@ async function main() {
                         authorize: async () => {}, saveRotatedToken: async token => {
                             borrowed = token; tokenHash = createHash('sha256').update(token).digest('hex');
                             if (dbStore) await dbStore.saveWnsTokenState(lease, { vault, token, expectedGeneration: 0, authorize: async () => {} });
-                        }, agent, client: clientMetadata, deviceKey: key, reconnectToken: initialToken, productKey: productConstants.key, productId: productConstants.id });
+                        }, agent, client: clientMetadata, deviceKey: key, reconnectToken: initialToken,
+                        ...(testSkipChallenge ? { authenticationMode: 'bound' } : { productKey: productConstants.key, productId: productConstants.id }) });
                     try {
                         if (testGateway) {
                             const { runEdgeWnsGateway } = require('../../src/automation/edge-wns-gateway');
@@ -974,7 +980,7 @@ async function main() {
                             try {
                                 await runEdgeWnsGateway({ store, lease, vault, authorize: async () => {}, signal: controller.signal,
                                     credentials: { agent, client: clientMetadata, deviceKey: key, reconnectToken: initialToken,
-                                        productKey: productConstants.key, productId: productConstants.id, siteChannel: independentChannel },
+                                        ...(testSkipChallenge ? { authenticationMode: 'bound' } : { productKey: productConstants.key, productId: productConstants.id }), siteChannel: independentChannel },
                                     onReady: async () => {
                                         const other = await sendFixture(otherSubscription, 'synthetic-session-other'); other.fill(0);
                                         expected = await sendFixture(value.subscription, 'synthetic-session-target');

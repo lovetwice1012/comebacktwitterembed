@@ -125,10 +125,12 @@ function syntheticClientMetadata(bindFrame) {
     return { channel: firstLine[3], protocolVersion: client[1], clientName: client[2], clientVersion: client[3] };
 }
 
-function syntheticHandshake(key, token, productConstants, metadata) {
-    if (!metadata || typeof metadata !== 'object' || typeof token !== 'string' || !/^[\x21-\x7e]{1,4096}$/.test(token) || /[<>&]/.test(token) || !productConstants || !Buffer.isBuffer(productConstants.id)
-        || productConstants.id.length !== 16 || productConstants.id.some(byte => byte < 0x21 || byte > 0x7e)
-        || !/^[^<>&\s]{16}$/.test(productConstants.id.toString('ascii')))
+function syntheticHandshake(key, token, productConstants, metadata, { includeChallenge = true } = {}) {
+    if (!metadata || typeof metadata !== 'object' || typeof includeChallenge !== 'boolean' || typeof token !== 'string'
+        || !/^[\x21-\x7e]{1,4096}$/.test(token) || /[<>&]/.test(token)
+        || includeChallenge && (!productConstants || !Buffer.isBuffer(productConstants.id) || productConstants.id.length !== 16
+            || productConstants.id.some(byte => byte < 0x21 || byte > 0x7e) || !/^[^<>&\s]{16}$/.test(productConstants.id.toString('ascii')))
+        || !includeChallenge && productConstants != null)
         throw fail('PROBE_DIRECT_CONFIG_INVALID');
     const nonce = wnsProtocol.createNonce(), tokenBytes = Buffer.from(token, 'ascii'); let bnd;
     try {
@@ -137,27 +139,27 @@ function syntheticHandshake(key, token, productConstants, metadata) {
             throw fail('PROBE_DIRECT_CONFIG_INVALID');
         bnd = wnsProtocol.bindFrame({ ...metadata, nonce, reconnectToken: tokenBytes, deviceKey: key }, 3);
         const prelude = syntheticPrelude();
-        return { ...prelude,
-            bnd,
+        return { ...prelude, bnd, ...(includeChallenge ? {
             challenge: syntheticFrame(`PUT 4 WNS\\CHALLENGE ${metadata.channel}`, `<challenge><appId>${productConstants.id.toString('ascii')}</appId><response>${'0'.repeat(32)}</response></challenge>`),
-        };
+        } : {}) };
     } catch { bnd?.fill(0); throw fail('PROBE_DIRECT_CONFIG_INVALID'); } finally { tokenBytes.fill(0); }
 }
 
 async function independentSyntheticReconnect({ frames, key, token, connect = () => tls.connect({ host: 'client.wns.windows.com', port: 443,
-    servername: 'client.wns.windows.com', rejectUnauthorized: true }), timeoutMs = 15000, sendNotification, decryptNotification, productConstants, generatedPrelude = false, generatedHandshake = false, clientMetadata, ackAndFollowup = false, ackSingle = false, ackSettleMs = 0, onRotatedToken, onTargetCiphertext, onBindShape, onExchangeShape, observePrior, expectedChannel, sendOtherNotification }) {
+    servername: 'client.wns.windows.com', rejectUnauthorized: true }), timeoutMs = 15000, sendNotification, decryptNotification, productConstants, generatedPrelude = false, generatedHandshake = false, clientMetadata, ackAndFollowup = false, ackSingle = false, ackSettleMs = 0, onRotatedToken, onTargetCiphertext, onBindShape, onExchangeShape, skipChallenge = false, observePrior, expectedChannel, sendOtherNotification }) {
     if ((!frames && !generatedHandshake) || !Buffer.isBuffer(key) || key.length !== 32 || typeof token !== 'string' || typeof connect !== 'function'
         || !Number.isInteger(timeoutMs) || timeoutMs < 100 || timeoutMs > 30000
         || onRotatedToken !== undefined && typeof onRotatedToken !== 'function'
         || onTargetCiphertext !== undefined && typeof onTargetCiphertext !== 'function'
         || onBindShape !== undefined && typeof onBindShape !== 'function'
         || onExchangeShape !== undefined && typeof onExchangeShape !== 'function'
+        || typeof skipChallenge !== 'boolean'
         || !Number.isInteger(ackSettleMs) || ackSettleMs < 0 || ackSettleMs > 2000 || ackSingle && ackAndFollowup) throw fail('PROBE_DIRECT_CONFIG_INVALID');
     if (observePrior !== undefined && (!observePrior || !Buffer.isBuffer(observePrior.offlineCipher)
         || !Buffer.isBuffer(observePrior.priorCipher) || !Number.isInteger(observePrior.windowMs)
         || observePrior.windowMs < 100 || observePrior.windowMs > 30000)) throw fail('PROBE_DIRECT_CONFIG_INVALID');
     const nonce = wnsProtocol.createNonce();
-    const generated = generatedHandshake ? syntheticHandshake(key, token, productConstants, clientMetadata) : null;
+    const generated = generatedHandshake ? syntheticHandshake(key, token, productConstants, clientMetadata, { includeChallenge: !skipChallenge }) : null;
     const bind = generated?.bnd || rewriteSyntheticBind(frames.bnd, key, token, nonce);
     const prelude = generated || (generatedPrelude ? syntheticPrelude() : null);
     const transport = createEdgeWnsTransport({ socketFactory: connect, timeoutMs });
@@ -222,15 +224,17 @@ async function independentSyntheticReconnect({ frames, key, token, connect = () 
             hasReconnectToken: response.hasReconnectToken, hasNonce: response.hasNonce, reconnectTokenUnchanged: response.reconnectTokenUnchanged };
         if (sendNotification !== undefined || decryptNotification !== undefined) {
             const challengeTemplate = generated?.challenge || frames?.challenge;
-            if (!Buffer.isBuffer(challengeTemplate) || typeof sendNotification !== 'function' || typeof decryptNotification !== 'function'
-                || !productConstants || !response.serverNonce)
+            if (typeof sendNotification !== 'function' || typeof decryptNotification !== 'function'
+                || !skipChallenge && (!Buffer.isBuffer(challengeTemplate) || !productConstants || !response.serverNonce))
                 throw fail('PROBE_DIRECT_CONFIG_INVALID');
-            const challenge = generatedHandshake
-                ? wnsProtocol.challengeFrame({ channel: clientMetadata.channel, serverNonce: response.serverNonce,
-                    productKey: productConstants.key, productId: productConstants.id }, 4)
-                : rewriteSyntheticChallenge(challengeTemplate, response.serverNonce, productConstants.key, productConstants.id);
-            try { await exchange(challenge, 'PUT', 'WNS'); result.challengeResponse = true; }
-            finally { challenge.fill(0); }
+            if (!skipChallenge) {
+                const challenge = generatedHandshake
+                    ? wnsProtocol.challengeFrame({ channel: clientMetadata.channel, serverNonce: response.serverNonce,
+                        productKey: productConstants.key, productId: productConstants.id }, 4)
+                    : rewriteSyntheticChallenge(challengeTemplate, response.serverNonce, productConstants.key, productConstants.id);
+                try { await exchange(challenge, 'PUT', 'WNS'); result.challengeResponse = true; }
+                finally { challenge.fill(0); }
+            }
             if (observePrior) {
                 const observed = { offlineNotification: false, priorNotificationReplay: false, otherFrames: 0 };
                 const deadline = Date.now() + observePrior.windowMs;

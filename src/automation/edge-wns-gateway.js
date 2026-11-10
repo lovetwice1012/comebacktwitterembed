@@ -7,7 +7,10 @@ const { createEdgeWnsSession } = require('./edge-wns-session');
 const fail = code => Object.assign(new Error(code), { code });
 function validateCredentials(value) {
     if (!value || typeof value !== 'object' || Array.isArray(value) || ![Object.prototype, null].includes(Object.getPrototypeOf(value))) throw fail('X_EDGE_WNS_GATEWAY_CONFIG_INVALID');
-    const descriptors = Object.getOwnPropertyDescriptors(value), names = ['agent', 'client', 'deviceKey', 'reconnectToken', 'productKey', 'productId', 'siteChannel'];
+    const descriptors = Object.getOwnPropertyDescriptors(value);
+    const bound = descriptors.authenticationMode && Object.hasOwn(descriptors.authenticationMode, 'value') && descriptors.authenticationMode.value === 'bound';
+    const names = bound ? ['agent', 'client', 'deviceKey', 'reconnectToken', 'siteChannel', 'authenticationMode']
+        : ['agent', 'client', 'deviceKey', 'reconnectToken', 'productKey', 'productId', 'siteChannel'];
     const keys = Reflect.ownKeys(descriptors);
     if (keys.length !== names.length || keys.some(key => typeof key !== 'string' || !names.includes(key) || !Object.hasOwn(descriptors[key], 'value'))) throw fail('X_EDGE_WNS_GATEWAY_CONFIG_INVALID');
 }
@@ -50,7 +53,7 @@ async function runEdgeWnsGateway({ store, lease, vault, authorize, credentials, 
                 generation = result.generation;
             },
             agent: credentials.agent, client: credentials.client, deviceKey: credentials.deviceKey, reconnectToken: token,
-            productKey: credentials.productKey, productId: credentials.productId });
+            productKey: credentials.productKey, productId: credentials.productId, authenticationMode: credentials.authenticationMode });
         token.fill(0); token = null;
         await session.start();
         if (stopped()) return { state: 'stopped' };
