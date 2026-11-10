@@ -16,6 +16,7 @@ const CDP = require('chrome-remote-interface');
 const { ClassicLevel } = require('classic-level');
 const { firstFixtureNotification } = require('./edge-wns-fixture-framing.cjs');
 const { workerSource, acceptedCase } = require('./edge-fixture-notification.cjs');
+const { replaceSyntheticKey } = require('./edge-fixture-device.cjs');
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
 const edge = 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
 async function sendFixture(subscription, message) {
@@ -73,6 +74,10 @@ async function main() {
     const featureArgs = process.env.EDGE_PROBE_SYSTEM_DEFAULT === '1' ? [] : ['--disable-features=msPushWinrt'];
     const noRelay = process.env.EDGE_PROBE_NO_RELAY === '1';
     if (noRelay && featureArgs.length) throw new Error('PROBE_MODE_INVALID');
+    const testWrongKey = process.env.EDGE_PROBE_TEST_WRONG_KEY === '1';
+    if (testWrongKey && (noRelay || process.env.EDGE_PROBE_RECONNECT !== '1' || process.env.EDGE_PROBE_COPY_PROFILE !== '1'
+        || process.env.EDGE_PROBE_MINIMAL_PROFILE !== '1' || process.env.EDGE_PROBE_DECRYPT_RECEIVED === '1'
+        || (process.env.EDGE_PROBE_OMIT_COMPONENT || '').split(',').includes('push-store'))) throw new Error('PROBE_MODE_INVALID');
     const temp = await fs.realpath(os.tmpdir()), root = await fs.mkdtemp(path.join(temp, 'cbte-edge-wns-probe-'));
     let browser, cdp, pageServer, relay, browserReceived = false, copiedProfileResult = null, detachedConnectionResult = null, capturedCipherDecrypted = null, appServerKeyMatches = null, deviceFields, expectedCipher; const sockets = new Set(), events = [];
     const browserEvents = { initial: 0, second: 0, third: 0, fourth: 0, copy: 0 };
@@ -465,19 +470,31 @@ async function main() {
             probeStage = 'read-store';
             const db = new ClassicLevel(path.join(profile, 'Default', 'EdgePushStorageWithConnectTokenAndKey'),
                 { createIfMissing: false, keyEncoding: 'buffer', valueEncoding: 'buffer' });
-            let subscriptionFields;
+            let subscriptionFields, deviceKey, deviceRecord;
             try {
                 await db.open();
                 for await (const [key, stored] of db.iterator({ limit: 64 })) {
                     if (key.toString('utf8').toLowerCase().includes('device')) {
                         if (deviceFields) throw new Error('PROBE_DEVICE_AMBIGUOUS');
                         deviceFields = protoBytes(stored, [2, 3]);
+                        if (testWrongKey) { deviceKey = Buffer.from(key); deviceRecord = Buffer.from(stored); }
                     } else if (process.env.EDGE_PROBE_DECRYPT_RECEIVED === '1' && stored.includes(Buffer.from(origin))
                         && stored.includes(Buffer.from(value.subscription.keys.p256dh, 'base64url'))
                         && stored.includes(Buffer.from(value.subscription.keys.auth, 'base64url'))) {
                         if (subscriptionFields) throw new Error('PROBE_SUBSCRIPTION_AMBIGUOUS');
                         subscriptionFields = protoBytes(stored, [6, 7, 16]);
                     }
+                }
+                if (testWrongKey) {
+                    if (!deviceKey || !deviceRecord || !deviceFields?.[2] || !deviceFields?.[3]) throw new Error('PROBE_DEVICE_MISSING');
+                    const altered = replaceSyntheticKey(deviceRecord, deviceFields[3]);
+                    try {
+                        const verify = protoBytes(altered.record, [2, 3]);
+                        if (!verify[2]?.equals(deviceFields[2]) || !verify[3]?.equals(altered.key)) throw new Error('PROBE_DEVICE_INVALID');
+                        await db.put(deviceKey, altered.record);
+                        deviceFields[3].fill(0); deviceFields[3] = Buffer.from(altered.key);
+                        for (const item of Object.values(verify)) item.fill(0);
+                    } finally { altered.key.fill(0); altered.record.fill(0); deviceKey.fill(0); deviceRecord.fill(0); }
                 }
             } finally { await db.close().catch(() => {}); }
             if (!deviceFields?.[2] || !deviceFields?.[3]) throw new Error('PROBE_DEVICE_MISSING');
@@ -551,7 +568,7 @@ async function main() {
         const builtInStorePresent = await fs.stat(path.join(profile, 'Default', 'EdgePushStorageWithConnectTokenAndKey')).then(() => true, error => {
             if (error.code === 'ENOENT') return false; throw error;
         });
-        console.log(JSON.stringify({ syntheticProfile: true, winrtFeatureOverride: featureArgs.length > 0, endpointOverride: !noRelay, builtInStorePresent, relayConnections: events.length, events: shapes, initialNotificationReceived: browserEvents.initial > 0, browserReceived, copiedProfileResult, detachedConnectionResult, capturedCipherDecrypted, appServerKeyMatches,
+        console.log(JSON.stringify({ syntheticProfile: true, testWrongKey, winrtFeatureOverride: featureArgs.length > 0, endpointOverride: !noRelay, builtInStorePresent, relayConnections: events.length, events: shapes, initialNotificationReceived: browserEvents.initial > 0, browserReceived, copiedProfileResult, detachedConnectionResult, capturedCipherDecrypted, appServerKeyMatches,
             subscription: value.ok ? { ok: true, host: new URL(value.subscription.endpoint).hostname } : value }));
     } catch (error) {
         console.error('PROBE_STAGE', probeStage, /^PROBE_[A-Z_]+$/.test(error?.message || '') ? error.message : error?.name || 'Error');

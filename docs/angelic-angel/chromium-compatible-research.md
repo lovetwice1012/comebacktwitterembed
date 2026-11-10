@@ -35,6 +35,8 @@ Edge の使い捨てプロファイルで、内蔵クライアントと通知サ
 
 この再試験の準備中、複製後の試験通知を受信確認に数えない試験コード上の不備を発見し、修正しました。上記の複製後の受信結果は修正後に再確認したものです。通知種類と試験側の受信確認先が対応することを自動テストに追加しています。
 
+接続先だけを試験用ローカル中継に変えた対照試験では、元の試験用 Push 保存領域を複製した場合に同じ購読で再受信できました。別の使い捨てプロファイルで、接続情報の保存記録内にある32バイトの鍵相当値だけを別の合成値に置き換えてから複製すると、同じ購読は復元されず、再接続時には元のトークンが送られました。通常のEdgeプロファイルや実際のXは触っていません。各1回の観測であり、変更値が署名鍵であることやWNS側がどの理由で接続を拒否したかはまだ確定できません。保存値、トークン、署名、通知内容は出力していません。
+
 Windows の一般的な通知チャネルはアプリ・利用者・端末にひも付き、有効期限や更新があります（[Microsoft のチャネル説明](https://learn.microsoft.com/en-us/windows/apps/develop/notifications/push-notifications/request-create-save-notification-channel)）。この説明だけから Edge の Web Push 購読に同じ有効期限が適用されるとは断定できませんが、ファイルを一度移すだけで長期運用できると決めつけず、実際の更新と失効も確認する必要があります。
 
 Windows の公開APIでチャネルを作成する方法についても確認しました。[Microsoft の API 説明](https://learn.microsoft.com/en-us/uwp/api/windows.networking.pushnotifications.pushnotificationchannelmanager.createpushnotificationchannelforapplicationasync)では、呼び出し元アプリに結び付くチャネルを作り、別のアプリIDを指定する場合も同じパッケージ内のアプリに限定されます。そのため、別のセットアップツールがこの公開APIを呼ぶだけで、既存の Edge の購読をサーバーへ引き継げる根拠にはなりません。これは API の適用範囲に関する判断であり、Edge の内部接続や別の正式な拡張経路が存在しないことを示すものではありません。
