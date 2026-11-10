@@ -1,11 +1,13 @@
 'use strict';
 // Local browser acceptance: synthetic keys, isolated MariaDB and loopback only.
 const assert = require('node:assert/strict');
-const { createECDH, generateKeyPairSync, randomBytes, randomUUID } = require('node:crypto');
+const { createECDH, createHash, generateKeyPairSync, randomBytes, randomUUID } = require('node:crypto');
 const fs = require('node:fs/promises');
+const syncFs = require('node:fs');
 const http = require('node:http');
 const os = require('node:os');
 const path = require('node:path');
+const vm = require('node:vm');
 const { createRequire } = require('node:module');
 const { createTestDatabase } = require('../../scripts/lib/automation-test-db');
 const { dispatch } = require('../../src/automation/api');
@@ -15,6 +17,14 @@ const { createTransferPublicSealer } = require('../../src/automation/x-setup-tra
 const { fixture: firefoxTransfer } = require('../../scripts/test/helpers/x-push-fixture.cjs');
 const root = path.resolve(__dirname, '../..'), dashboard = path.join(root, 'dashboard');
 const localRequire = createRequire(path.join(dashboard, 'package.json'));
+function loadTs(filename, dependencies, globals = {}) {
+    const ts = require('typescript'), exports = {};
+    const source = syncFs.readFileSync(path.join(root, filename), 'utf8');
+    const compiled = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true } }).outputText;
+    vm.runInNewContext(compiled, { exports, Buffer, Uint8Array, Response, process: { env: {} }, ...globals,
+        require(id) { assert(Object.hasOwn(dependencies, id), `Unexpected fixture import: ${id}`); return dependencies[id]; } });
+    return exports;
+}
 function transfer(kind) {
     if (kind === 'firefox') return firefoxTransfer();
     const ecdh = createECDH('prime256v1'); ecdh.generateKeys();
@@ -98,10 +108,22 @@ async function main() {
         }
         const services = { db, service: createService(db), xSetup: createXSetup(db, { sealer, rolloutMode: 'public', chromeEnabled: true, braveEnabled: true, receiverEnabled: true }) };
         const token = randomBytes(24).toString('hex'); let origin;
+        const download = loadTs('dashboard/lib/x-chrome-setup-download.ts', { 'server-only': {}, 'node:crypto': { createHash },
+            'node:fs/promises': { open: fs.open, lstat: fs.lstat }, 'node:path': path, '@/lib/env': { repoRoot: () => root } });
         server = http.createServer(async (req, res) => {
             try {
                 if (!origin || req.headers.host !== new URL(origin).host) { res.writeHead(403).end(); return; }
                 const url = new URL(req.url, origin);
+                if (url.pathname === '/api/automation/x-setup/download-chrome' && req.method === 'GET') {
+                    class ApiError extends Error { constructor(status) { super(); this.status = status; } }
+                    const route = loadTs('dashboard/app/api/automation/x-setup/download-chrome/route.ts', {
+                        '@/lib/api': { ApiError, requireSession: async () => { if (req.headers.cookie !== `fixture=${token}`) throw new ApiError(401); },
+                            json: (body, status) => new Response(JSON.stringify(body), { status }) },
+                        '@/lib/x-chrome-setup-download': download,
+                    }, { process: { env: { X_NOTIFICATION_CHROME_ENABLED: '1' } } });
+                    const response = await route.GET(); res.writeHead(response.status, Object.fromEntries(response.headers));
+                    res.end(Buffer.from(await response.arrayBuffer())); return;
+                }
                 if (url.pathname.startsWith('/api/automation/')) {
                     if (req.headers.cookie !== `fixture=${token}` || (req.method !== 'GET' && req.headers.origin !== origin)) { res.writeHead(403).end(); return; }
                     const chunks = []; let length = 0;
@@ -116,6 +138,9 @@ async function main() {
             } catch (error) { console.error('FIXTURE_API', /^[A-Z_]+$/.test(error.code || '') ? error.code : 'FAILED'); res.writeHead(Number(error.status) || 503, { 'Content-Type': 'application/json' }).end(JSON.stringify({ code: error.code || 'FIXTURE_FAILED' })); }
         });
         await new Promise(resolve => server.listen(0, '127.0.0.1', resolve)); origin = `http://127.0.0.1:${server.address().port}`;
+        const anonymousDownload = await fetch(`${origin}/api/automation/x-setup/download-chrome`);
+        assert.equal(anonymousDownload.status, 401);
+        assert.match(anonymousDownload.headers.get('cache-control'), /no-store/);
         const renderer = process.env.CBTE_FIXTURE_BROWSER || 'chrome';
         const executables = { chrome: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
             brave: 'C:\\Program Files\\BraveSoftware\\Brave-Browser\\Application\\brave.exe' };
@@ -134,6 +159,16 @@ async function main() {
             const label = kind === 'brave' ? 'Brave' : kind === 'chrome' ? 'Chrome' : 'Firefox';
             await page.getByRole('radio', { name: label, exact: true }).check();
             await page.getByRole('link', { name: kind === 'firefox' ? '保存ツール（ZIP）をダウンロード' : `${label}用ツールをダウンロード` }).waitFor();
+            if (kind !== 'firefox') {
+                const pendingDownload = page.waitForEvent('download');
+                await page.getByRole('link', { name: `${label}用ツールをダウンロード` }).click();
+                const saved = await pendingDownload;
+                assert.equal(saved.suggestedFilename(), download.X_CHROME_SETUP_DOWNLOAD.filename);
+                const archive = await fs.readFile(await saved.path());
+                assert.equal(archive.length, download.X_CHROME_SETUP_DOWNLOAD.bytes);
+                assert.equal(createHash('sha256').update(archive).digest('hex'), download.X_CHROME_SETUP_DOWNLOAD.sha256);
+                await saved.delete();
+            }
             assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
             await page.screenshot({ path: path.join(output, `${kind}-prepare.png`), fullPage: true });
             await page.getByRole('button', { name: 'ファイルを登録する' }).click();
@@ -170,7 +205,7 @@ async function main() {
         }
         const firefoxNativeWidth = process.env.CBTE_FIREFOX_FIXTURE === '1' ? await firefoxBrowserFixture(origin, token, output, db) : null;
         console.log(JSON.stringify({ renderer, firefoxMobile: true, chromeDesktop: true, braveMobile: true,
-            firefoxNative: process.env.CBTE_FIREFOX_FIXTURE === '1', firefoxNativeWidth, realIntakeApi: true,
+            firefoxNative: process.env.CBTE_FIREFOX_FIXTURE === '1', firefoxNativeWidth, realIntakeApi: true, pinnedDownload: true,
             encryptedRecords: process.env.CBTE_FIREFOX_FIXTURE === '1' ? 4 : 3, chromiumExternalRequests: 0, chromiumPageErrors: 0, screenshots: output }));
     } finally {
         if (browser) await browser.close();
