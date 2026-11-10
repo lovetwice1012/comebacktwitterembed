@@ -22,6 +22,8 @@ Chromeの接続情報は同一プロファイル内の通知を共用します�
 4. Webと受信ワーカーの両方で `X_NOTIFICATION_CHROME_ENABLED=1` を設定する。Braveの受付は、すべてのWeb・受信ワーカーがBrave対応版へ更新されたことを確認してから、Web側で `X_NOTIFICATION_BRAVE_ENABLED=1` を設定する。既存の `X_NOTIFICATION_RECEIVER_ENABLED=1`、処理ポリシー、暗号鍵、fleet leaseも必要。支援者限定で公開する場合は `X_NOTIFICATION_ROLLOUT=supporters` を維持し、対象者以外の登録が拒否されることを確認する。
 5. 利用者自身が設定した実際のX通知で、登録画面、接続状態、投稿通知、Discord配信を確認する。接続確認だけで配送成功と判断しない。
 
+上記4件の移行を記載順に適用・再適用し、既存Firefoxの暗号化通知が復号できること、Chrome・Braveの登録情報と未確認IDが保持されることを隔離MariaDBで確認しています。Braveだけの受付停止と、Chrome・Brave両方の受付停止も同じ試験で確認しています。本番DBへの適用は行っていません。
+
 ## 停止とロールバック
 
 Braveの新規受付だけを停止するにはWeb側の `X_NOTIFICATION_BRAVE_ENABLED` を無効にします。既存のBrave接続は受信を続けます。Chrome・Braveの新規受付を停止するにはWeb側の `X_NOTIFICATION_CHROME_ENABLED` を無効にします。受信側の同設定を無効にすると既存の両ブラウザーの接続も停止するため、影響する利用者へ案内し、未処理の受信記録と未確認IDを確認します。Firefoxの設定や共有登録枠を削除してはいけません。
