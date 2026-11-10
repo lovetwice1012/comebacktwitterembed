@@ -56,12 +56,12 @@ async function run(input) {
         };
         const store = createXPushStore(db, { leaseMs: 30000 });
         if (input.stateEnabled && (typeof input.statePrivateKey !== 'string' || input.statePrivateKey.length > 16384)
-            || input.productionState && !input.stateEnabled) throw new Error('PROBE_WORKER_INPUT_INVALID');
-        let state = null;
+            || input.productionState && !input.stateEnabled || input.useGateway && !input.productionState) throw new Error('PROBE_WORKER_INPUT_INVALID');
+        let state = null, productionVault;
         if (input.stateEnabled && input.productionState) {
-            const vault = createWnsTokenWorkerVault({ activeKeyId: 'synthetic1', privateKeys: { synthetic1: input.statePrivateKey } });
-            state = { save: (current, token, expectedGeneration, authorize) => store.saveWnsTokenState(current, { vault, token, expectedGeneration, authorize }),
-                read: (current, authorize) => store.readWnsTokenState(current, { vault, authorize }) };
+            productionVault = createWnsTokenWorkerVault({ activeKeyId: 'synthetic1', privateKeys: { synthetic1: input.statePrivateKey } });
+            state = { save: (current, token, expectedGeneration, authorize) => store.saveWnsTokenState(current, { vault: productionVault, token, expectedGeneration, authorize }),
+                read: (current, authorize) => store.readWnsTokenState(current, { vault: productionVault, authorize }) };
         } else if (input.stateEnabled) state = createSyntheticTokenStateStore(db, { vault: createSyntheticStateVault(input.statePrivateKey) });
         async function assertTokenEncrypted(token) {
             const sql = input.productionState ? 'SELECT wns_token_sealed_json AS sealed_json FROM automation_x_push_receivers WHERE subscription_id=?'
@@ -95,10 +95,29 @@ async function run(input) {
                 const nextLabel = JSON.stringify({ notificationType: 'tweet', author: { id: '12345', handle: 'synthetic' },
                     url: 'https://x.com/synthetic/status/1234567890123456790', text: 'synthetic-reconnected-event' });
                 let nextInboxId;
-                const receiver = createSyntheticDurableReceiver({ scope: input.scope, store, lease, channel, authorize: async () => {},
+                const receiver = input.useGateway ? null : createSyntheticDurableReceiver({ scope: input.scope, store, lease, channel, authorize: async () => {},
                     beforeAck: async savedReceipt => { nextInboxId = savedReceipt.id; }, sendAck: async () => {} });
                 try {
-                    reconnected = await independentSyntheticReconnect({ frames: null, key, token: saved.token.toString('ascii'),
+                    if (input.useGateway) {
+                        const { runEdgeWnsGateway } = require('../../src/automation/edge-wns-gateway');
+                        const controller = new AbortController(); let expectedNext, delivered = 0;
+                        const instrumented = { ...store,
+                            async saveWnsTokenState(current, options) { const updated = await store.saveWnsTokenState(current, options);
+                                stateGeneration = updated.generation; await assertTokenEncrypted(options.token); return updated; },
+                            async recordFrame(current, entry, options) { const result = await store.recordFrame(current, entry, options);
+                                if (!expectedNext || entry.data !== expectedNext.toString('base64url')) throw new Error('PROBE_WORKER_RECEIPT_INVALID');
+                                nextInboxId = result.id; return result; } };
+                        const timeout = setTimeout(() => controller.abort(), 30000);
+                        try {
+                            await runEdgeWnsGateway({ store: instrumented, lease, vault: productionVault, authorize: async () => {}, signal: controller.signal,
+                                credentials: { agent: { os: 'Windows 10', osVersion: '10.0.00000', architecture: 'x86_64', locale: 'en' },
+                                    client: input.clientMetadata, deviceKey: key, reconnectToken: saved.token, productKey, productId, siteChannel: channel },
+                                onReady: async () => { expectedNext = await syntheticSend(input.subscription, nextLabel, input.vapid); },
+                                onReceived: async () => { delivered++; controller.abort(); } });
+                            if (delivered !== 1) throw new Error('PROBE_WORKER_RECONNECT_FAILED');
+                            reconnected = { notificationReceived: true, matchesSentCiphertext: true, payloadDecrypted: true, ackWritten: true };
+                        } finally { clearTimeout(timeout); expectedNext?.fill(0); }
+                    } else reconnected = await independentSyntheticReconnect({ frames: null, key, token: saved.token.toString('ascii'),
                         productConstants: { key: productKey, id: productId }, generatedHandshake: true, clientMetadata: input.clientMetadata,
                         expectedChannel: channel, ackSingle: true,
                         onRotatedToken: async token => {
@@ -114,16 +133,39 @@ async function run(input) {
                     if (!reconnected.notificationReceived || !reconnected.matchesSentCiphertext || !reconnected.payloadDecrypted || !reconnected.ackWritten
                         || stateGeneration !== 2 || !nextInboxId) throw new Error('PROBE_WORKER_RECONNECT_FAILED');
                     const nextInbox = await store.getInbox({ ...identity, id: nextInboxId });
+                    const nextCipher = Buffer.from(nextInbox.data, 'base64url'); let nextPlain;
+                    try { nextPlain = decryptEce(nextCipher, { encoding: 'aes128gcm' }, { public_key: [...publicKey], private_key: [...privateKey], auth_secret: [...auth] });
+                        if (!nextPlain.equals(Buffer.from(nextLabel))) throw new Error('PROBE_WORKER_DECRYPT_FAILED'); }
+                    finally { nextCipher.fill(0); nextPlain?.fill(0); }
                     if ((await router.routeReceived({ lease, inbox: nextInbox, payload: JSON.parse(nextLabel), processingMode: 'batch' })).state !== 'routed')
                         throw new Error('PROBE_WORKER_ROUTE_FAILED');
                     await store.markRouted(lease, nextInbox.id);
-                } finally { saved.token.fill(0); }
+                } finally { receiver?.close(); saved.token.fill(0); }
             }
             const inboxCount = Number((await db.queryDatabase('SELECT COUNT(*) n FROM automation_x_push_inbox'))[0].n);
             const jobCount = Number((await db.queryDatabase('SELECT COUNT(*) n FROM automation_jobs'))[0].n);
             if (inboxCount !== (state ? 2 : 1) || jobCount !== (state ? 2 : 1)) throw new Error('PROBE_WORKER_ROUTE_FAILED');
             await notify({ event: 'recovered', pid: process.pid, inboxCount, jobCount, reconnected: state ? Boolean(reconnected?.notificationReceived) : null, stateGeneration });
             return;
+        }
+        if (input.useGateway) {
+            const { runEdgeWnsGateway } = require('../../src/automation/edge-wns-gateway');
+            const controller = new AbortController(), initialToken = Buffer.from(input.token, 'ascii');
+            const instrumented = { ...store,
+                async saveWnsTokenState(current, options) { const result = await store.saveWnsTokenState(current, options); await assertTokenEncrypted(options.token); return result; },
+                async recordFrame(current, entry, options) { const saved = await store.recordFrame(current, entry, options);
+                    await notify({ event: 'committed', pid: process.pid, inboxId: saved.id }); await new Promise(() => {}); return saved; } };
+            try {
+                await notify({ event: 'ready' });
+                await runEdgeWnsGateway({ store: instrumented, lease, vault: productionVault, authorize: async () => {}, signal: controller.signal,
+                    credentials: { agent: { os: 'Windows 10', osVersion: '10.0.00000', architecture: 'x86_64', locale: 'en' },
+                        client: input.clientMetadata, deviceKey: key, reconnectToken: initialToken, productKey, productId, siteChannel: channel },
+                    onReady: async () => {
+                        const other = await syntheticSend(input.otherSubscription, 'synthetic-independent-other', input.vapid); other.fill(0);
+                        const target = await syntheticSend(input.subscription, label, input.vapid); target.fill(0);
+                    } });
+            } finally { initialToken.fill(0); }
+            throw new Error('PROBE_WORKER_STOP_EXPECTED');
         }
         const receiver = createSyntheticDurableReceiver({ scope: input.scope, store, lease, channel, authorize: async () => {},
             sendAck: async () => { throw new Error('PROBE_TARGET_ACK_UNEXPECTED'); },

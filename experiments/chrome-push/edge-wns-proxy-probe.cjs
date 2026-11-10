@@ -107,6 +107,7 @@ async function main() {
     const testProcessCrash = process.env.EDGE_PROBE_DURABLE_PROCESS_CRASH === '1';
     const testTokenState = process.env.EDGE_PROBE_DURABLE_TOKEN_STATE === '1';
     const testProductionState = process.env.EDGE_PROBE_DURABLE_PRODUCTION_STATE === '1';
+    const testDurableGateway = process.env.EDGE_PROBE_DURABLE_GATEWAY === '1';
     if (testWrongKey && (noRelay || process.env.EDGE_PROBE_RECONNECT !== '1' || process.env.EDGE_PROBE_COPY_PROFILE !== '1'
         || process.env.EDGE_PROBE_MINIMAL_PROFILE !== '1' || process.env.EDGE_PROBE_DECRYPT_RECEIVED === '1'
         || (process.env.EDGE_PROBE_OMIT_COMPONENT || '').split(',').includes('push-store'))) throw new Error('PROBE_MODE_INVALID');
@@ -130,6 +131,7 @@ async function main() {
     if (testProcessCrash && (!testDurable || testDurableFailure)) throw new Error('PROBE_MODE_INVALID');
     if (testTokenState && !testProcessCrash) throw new Error('PROBE_MODE_INVALID');
     if (testProductionState && !testTokenState) throw new Error('PROBE_MODE_INVALID');
+    if (testDurableGateway && !testProductionState) throw new Error('PROBE_MODE_INVALID');
     const temp = await fs.realpath(os.tmpdir()), root = await fs.mkdtemp(path.join(temp, 'cbte-edge-wns-probe-'));
     let browser, cdp, pageServer, relay, untrustedServer, durableDb, browserReceived = false, copiedProfileResult = null, detachedConnectionResult = null, independentResult = null, durableResult = null, routingResult = null, handshakeShape = null, handshakeRelations = null, bindShape = null, relationDeviceRecord = null, relationSiteRecord = null, independentWebPush = null, independentChannel = null, productConstants = null, capturedCipherDecrypted = null, appServerKeyMatches = null, deviceFields, expectedCipher, otherCipher, expectedNextCipher, otherNextCipher, tlsIsolationVerified = false; const sockets = new Set(), events = [], exchangeShapes = [];
     const browserEvents = { initial: 0, second: 0, third: 0, fourth: 0, copy: 0, other: 0 };
@@ -887,7 +889,7 @@ async function main() {
                         channel: independentChannel.toString('base64'), productKey: productConstants.key.toString('base64'), productId: productConstants.id.toString('base64'),
                         publicKey: independentWebPush.publicKey.toString('base64'), privateKey: independentWebPush.privateKey.toString('base64'),
                         auth: independentWebPush.auth.toString('base64'), subscription: value.subscription, otherSubscription, vapid, clientMetadata,
-                        ...(testTokenState ? { stateEnabled: true, statePrivateKey, productionState: testProductionState } : {}) };
+                        ...(testTokenState ? { stateEnabled: true, statePrivateKey, productionState: testProductionState, useGateway: testDurableGateway } : {}) };
                     let firstWorker, successorWorker, processFailure;
                     try {
                         firstWorker = startSyntheticWorker({ ...input, worker: 'first' });
@@ -915,7 +917,8 @@ async function main() {
                         independentResult = { killedAfterCommitBeforeTargetAck: true };
                         durableResult = { realWnsCipherCommitted: true, separateWorkerProcesses: true, actualLeaseExpiry: true,
                             staleLeaseRejected: true, successorDecrypted: true, foreignPersisted: false, inboxCount: recovered.inboxCount, jobCount: recovered.jobCount,
-                            tokenStateSaved: testTokenState, productionState: testProductionState, successorReconnected: recovered.reconnected, tokenGeneration: recovered.stateGeneration };
+                            tokenStateSaved: testTokenState, productionState: testProductionState, gateway: testDurableGateway,
+                            successorReconnected: recovered.reconnected, tokenGeneration: recovered.stateGeneration };
                     } catch (error) { processFailure = error; }
                     const cleanup = await Promise.allSettled([firstWorker, successorWorker].filter(Boolean).map(worker => worker.cleanup()));
                     if (cleanup.some(result => result.status === 'rejected')) {
