@@ -19,9 +19,10 @@ const { workerSource, acceptedCase } = require('./edge-fixture-notification.cjs'
 const { replaceSyntheticKey } = require('./edge-fixture-device.cjs');
 const { syntheticReconnectSignature } = require('./edge-fixture-signature.cjs');
 const { createSyntheticRewriteStream } = require('./edge-fixture-rewrite.cjs');
-const { selectSyntheticHandshake, independentSyntheticReconnect } = require('./edge-fixture-independent.cjs');
+const { selectSyntheticHandshake, describeSyntheticHandshake, syntheticHandshakeRelations, syntheticClientMetadata, independentSyntheticReconnect } = require('./edge-fixture-independent.cjs');
 const { readSyntheticProductConstants } = require('./edge-fixture-product.cjs');
 const { syntheticChallengeResponse } = require('./edge-fixture-challenge.cjs');
+const { matchingSyntheticRecordFields } = require('./edge-fixture-record.cjs');
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
 const edge = 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
 async function sendFixture(subscription, message) {
@@ -94,7 +95,7 @@ async function main() {
         || (process.env.EDGE_PROBE_OMIT_COMPONENT || '').split(',').includes('push-store')))
         throw new Error('PROBE_MODE_INVALID');
     const temp = await fs.realpath(os.tmpdir()), root = await fs.mkdtemp(path.join(temp, 'cbte-edge-wns-probe-'));
-    let browser, cdp, pageServer, relay, browserReceived = false, copiedProfileResult = null, detachedConnectionResult = null, independentResult = null, independentWebPush = null, productConstants = null, capturedCipherDecrypted = null, appServerKeyMatches = null, deviceFields, expectedCipher; const sockets = new Set(), events = [];
+    let browser, cdp, pageServer, relay, browserReceived = false, copiedProfileResult = null, detachedConnectionResult = null, independentResult = null, handshakeShape = null, handshakeRelations = null, relationDeviceRecord = null, relationSiteRecord = null, independentWebPush = null, productConstants = null, capturedCipherDecrypted = null, appServerKeyMatches = null, deviceFields, expectedCipher; const sockets = new Set(), events = [];
     const browserEvents = { initial: 0, second: 0, third: 0, fourth: 0, copy: 0 };
     let probeStage = 'setup', previousServerNonce = null;
     try {
@@ -113,6 +114,7 @@ async function main() {
             const sent = [], received = [];
             event.fixtureBindResponses = () => fixtureBindResponses(received);
             event.fixtureSentFrames = () => selectSyntheticHandshake(sent);
+            event.fixtureRelations = frames => syntheticHandshakeRelations(frames, received, deviceFields);
             event.upstreamOpen = () => !upstream.destroyed;
             event.closeFixtureConnection = () => upstream.destroy();
             event.containsFixtureCipher = () => {
@@ -539,13 +541,15 @@ async function main() {
                 for await (const [key, stored] of db.iterator({ limit: 64 })) {
                     if (key.toString('utf8').toLowerCase().includes('device')) {
                         if (deviceFields) throw new Error('PROBE_DEVICE_AMBIGUOUS');
-                        deviceFields = protoBytes(stored, [2, 3]);
+                        deviceFields = protoBytes(stored, Array.from({ length: 20 }, (_, index) => index + 1));
+                        if (process.env.EDGE_PROBE_DESCRIBE_HANDSHAKE === '1') relationDeviceRecord = Buffer.from(stored);
                         if (testWrongKey) { deviceKey = Buffer.from(key); deviceRecord = Buffer.from(stored); }
-                    } else if ((testIndependent || process.env.EDGE_PROBE_DECRYPT_RECEIVED === '1') && stored.includes(Buffer.from(origin))
+                    } else if ((testIndependent || process.env.EDGE_PROBE_DECRYPT_RECEIVED === '1' || process.env.EDGE_PROBE_DESCRIBE_HANDSHAKE === '1') && stored.includes(Buffer.from(origin))
                         && stored.includes(Buffer.from(value.subscription.keys.p256dh, 'base64url'))
                         && stored.includes(Buffer.from(value.subscription.keys.auth, 'base64url'))) {
-                        if (subscriptionFields) throw new Error('PROBE_SUBSCRIPTION_AMBIGUOUS');
-                        subscriptionFields = protoBytes(stored, [6, 7, 16]);
+                        if (subscriptionFields || relationSiteRecord) throw new Error('PROBE_SUBSCRIPTION_AMBIGUOUS');
+                        if (process.env.EDGE_PROBE_DESCRIBE_HANDSHAKE === '1') relationSiteRecord = Buffer.from(stored);
+                        if (testIndependent || process.env.EDGE_PROBE_DECRYPT_RECEIVED === '1') subscriptionFields = protoBytes(stored, [6, 7, 16]);
                     }
                 }
                 if (testWrongKey) {
@@ -636,13 +640,58 @@ async function main() {
                 copiedProfileResult = { minimal: process.env.EDGE_PROBE_MINIMAL_PROFILE === '1', omitted: process.env.EDGE_PROBE_OMIT_COMPONENT || null, sameSubscription, receivedAfterCopy: browserReceived };
             }
         }
+        if (process.env.EDGE_PROBE_DESCRIBE_HANDSHAKE === '1') {
+            if (events.length !== 2) throw new Error('PROBE_DIRECT_PREREQUISITE_FAILED');
+            const frames = events[1].fixtureSentFrames();
+            try {
+                handshakeShape = describeSyntheticHandshake(frames); handshakeRelations = events[1].fixtureRelations(frames);
+                const channel = syntheticClientMetadata(frames.bnd).channel;
+                handshakeRelations.deviceRecordMatches = relationDeviceRecord ? matchingSyntheticRecordFields(relationDeviceRecord, channel) : null;
+                handshakeRelations.siteRecordMatches = relationSiteRecord ? matchingSyntheticRecordFields(relationSiteRecord, channel) : null;
+            }
+            finally { for (const frame of Object.values(frames)) frame.fill(0); }
+        }
+        if (process.env.EDGE_PROBE_COMPARE_CHANNEL === '1') {
+            if (events.length !== 2 || typeof process.send !== 'function' || !/^[0-9a-f]{64}$/.test(process.env.EDGE_PROBE_COMPARE_SALT || ''))
+                throw new Error('PROBE_MODE_INVALID');
+            const frames = events[1].fixtureSentFrames(), salt = Buffer.from(process.env.EDGE_PROBE_COMPARE_SALT, 'hex');
+            try {
+                const metadata = syntheticClientMetadata(frames.bnd);
+                const fingerprint = createHmac('sha256', salt).update(metadata.channel, 'ascii').digest('hex');
+                const protocolFingerprint = createHmac('sha256', salt).update(`protocol:${metadata.protocolVersion}`, 'ascii').digest('hex');
+                await new Promise((resolve, reject) => process.send({ channelFingerprint: fingerprint, protocolFingerprint }, error => error ? reject(new Error('PROBE_IPC_FAILED')) : resolve()));
+            } finally { salt.fill(0); for (const frame of Object.values(frames)) frame.fill(0); }
+        }
         if (testIndependent) {
             if (events.length !== 2 || !copiedProfileResult?.sameSubscription || !copiedProfileResult?.receivedAfterCopy || !deviceFields?.[2] || !deviceFields?.[3] || !independentWebPush)
                 throw new Error('PROBE_DIRECT_PREREQUISITE_FAILED');
             await cdp.Browser.close().catch(() => {}); await cdp.close().catch(() => {}); cdp = null;
             if (browser.exitCode === null) await new Promise(resolve => browser.once('exit', resolve));
-            const frames = events[1].fixtureSentFrames(), key = Buffer.from(deviceFields[3].toString('ascii'), 'base64');
+            const generatedHandshake = process.env.EDGE_PROBE_GENERATED_HANDSHAKE === '1';
+            let clientMetadata;
+            if (generatedHandshake && process.env.EDGE_PROBE_CLIENT_METADATA === '1') {
+                const captured = events[1].fixtureSentFrames();
+                try { clientMetadata = syntheticClientMetadata(captured.bnd); }
+                finally { for (const frame of Object.values(captured)) frame.fill(0); }
+                const override = process.env.EDGE_PROBE_METADATA_OVERRIDE;
+                if (override === 'channel') clientMetadata.channel = clientMetadata.channel === '100' ? '101' : '100';
+                else if (override === 'name') clientMetadata.clientName = 'Synthetic client';
+                else if (override === 'version') clientMetadata.clientVersion = '1.2.3.4';
+                else if (override === 'protocol') clientMetadata.protocolVersion = clientMetadata.protocolVersion === '1.0' ? '1.1' : '1.0';
+                else if (override) throw new Error('PROBE_MODE_INVALID');
+            }
+            if (generatedHandshake && process.env.EDGE_PROBE_SYNTHETIC_CHANNEL) {
+                const channel = process.env.EDGE_PROBE_SYNTHETIC_CHANNEL;
+                const protocolVersion = process.env.EDGE_PROBE_SYNTHETIC_PROTOCOL;
+                if (process.env.EDGE_PROBE_CLIENT_METADATA === '1' || !/^[1-9]\d{2}$/.test(channel) || !/^\d\.\d$/.test(protocolVersion || ''))
+                    throw new Error('PROBE_MODE_INVALID');
+                clientMetadata = { channel, protocolVersion, clientName: 'Synthetic client', clientVersion: '1.2.3.4' };
+            }
+            const frames = generatedHandshake ? null : events[1].fixtureSentFrames(), key = Buffer.from(deviceFields[3].toString('ascii'), 'base64');
             try { independentResult = await independentSyntheticReconnect({ frames, key, token: deviceFields[2].toString('utf8'), productConstants,
+                generatedPrelude: process.env.EDGE_PROBE_GENERATED_PRELUDE === '1',
+                generatedHandshake,
+                clientMetadata,
                 sendNotification: () => sendFixture(value.subscription, 'synthetic-independent'),
                 decryptNotification: async ciphertext => {
                     const { decryptEce } = await import(pathToFileURL(path.resolve(__dirname, '../../packages/angelic-angel/dist/crypto.js')).href);
@@ -650,15 +699,19 @@ async function main() {
                         private_key: [...independentWebPush.privateKey], auth_secret: [...independentWebPush.auth] });
                     try { return plain.equals(Buffer.from('synthetic-independent')); } finally { plain.fill(0); }
                 } }); }
-            finally { key.fill(0); for (const frame of Object.values(frames)) frame.fill(0); }
+            finally { key.fill(0); if (frames) for (const frame of Object.values(frames)) frame.fill(0); }
         }
-        const shapes = events.map(event => { const { describe, fixtureCipher, fixtureLayout, fixtureBindResponses, fixtureSentFrames, fixtureAcknowledgementAnalysis, upstreamOpen, containsFixtureCipher, acknowledgeSyntheticSecond, closeFixtureConnection, ...metadata } = event;
+        const shapes = events.map(event => { const { describe, fixtureCipher, fixtureLayout, fixtureBindResponses, fixtureSentFrames, fixtureRelations, fixtureAcknowledgementAnalysis, upstreamOpen, containsFixtureCipher, acknowledgeSyntheticSecond, closeFixtureConnection, ...metadata } = event;
             return { ...metadata, fixtureLayout: fixtureLayout(), bindResponses: fixtureBindResponses(), acknowledgementAnalysis: fixtureAcknowledgementAnalysis(), shape: describe() }; });
         if (deviceFields) for (const value of Object.values(deviceFields)) value.fill(0);
         const builtInStorePresent = await fs.stat(path.join(profile, 'Default', 'EdgePushStorageWithConnectTokenAndKey')).then(() => true, error => {
             if (error.code === 'ENOENT') return false; throw error;
         });
-        console.log(JSON.stringify({ syntheticProfile: true, testWrongKey, testRewrite, testIndependent, winrtFeatureOverride: featureArgs.length > 0, endpointOverride: !noRelay, builtInStorePresent, relayConnections: events.length, events: shapes, initialNotificationReceived: browserEvents.initial > 0, browserReceived, copiedProfileResult, detachedConnectionResult, independentResult, capturedCipherDecrypted, appServerKeyMatches,
+        if (process.env.EDGE_PROBE_REPORT_DIRECT_IPC === '1') {
+            if (!testIndependent || typeof process.send !== 'function') throw new Error('PROBE_MODE_INVALID');
+            await new Promise((resolve, reject) => process.send({ independentResult }, error => error ? reject(new Error('PROBE_IPC_FAILED')) : resolve()));
+        }
+        console.log(JSON.stringify({ syntheticProfile: true, testWrongKey, testRewrite, testIndependent, winrtFeatureOverride: featureArgs.length > 0, endpointOverride: !noRelay, builtInStorePresent, relayConnections: events.length, events: shapes, initialNotificationReceived: browserEvents.initial > 0, browserReceived, copiedProfileResult, detachedConnectionResult, independentResult, handshakeShape, handshakeRelations, capturedCipherDecrypted, appServerKeyMatches,
             subscription: value.ok ? { ok: true, host: new URL(value.subscription.endpoint).hostname } : value }));
     } catch (error) {
         console.error('PROBE_STAGE', probeStage, /^PROBE_[A-Z_]+$/.test(error?.message || '') ? error.message : error?.name || 'Error');
@@ -666,6 +719,7 @@ async function main() {
     } finally {
         if (independentWebPush) for (const secret of Object.values(independentWebPush)) secret.fill(0);
         if (productConstants) for (const secret of Object.values(productConstants)) secret.fill(0);
+        relationDeviceRecord?.fill(0); relationSiteRecord?.fill(0);
         await cdp?.close().catch(() => {});
         if (browser && browser.exitCode === null) { browser.kill(); await new Promise(resolve => browser.once('exit', resolve)); }
         for (const socket of sockets) socket.destroy();

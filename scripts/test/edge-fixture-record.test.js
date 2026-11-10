@@ -2,10 +2,16 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { generateKeyPairSync, randomBytes } = require('node:crypto');
-const { selectSyntheticEdgeRecord } = require('../../experiments/chrome-push/edge-fixture-record.cjs');
+const { selectSyntheticEdgeRecord, matchingSyntheticRecordFields } = require('../../experiments/chrome-push/edge-fixture-record.cjs');
 function varint(number) { const result = []; do { let part = number % 128; number = Math.floor(number / 128); if (number) part |= 128; result.push(part); } while (number); return Buffer.from(result); }
 const bytes = (field, value) => { const data = Buffer.isBuffer(value) ? value : Buffer.from(value); return Buffer.concat([varint(field * 8 + 2), varint(data.length), data]); };
 const metadata = origin => bytes(8, Buffer.concat([bytes(1, 'origin'), bytes(2, origin)]));
+test('synthetic record comparison exposes only matching field numbers', () => {
+    const record = Buffer.concat([Buffer.from([8, 42]), bytes(2, '2a'), bytes(3, 'private-synthetic')]);
+    assert.deepEqual(matchingSyntheticRecordFields(record, '2a'), [{ field: 1, wire: 0 }, { field: 2, wire: 2 }]);
+    assert.deepEqual(matchingSyntheticRecordFields(record, 'ff'), []);
+    assert.throws(() => matchingSyntheticRecordFields(record, 'not-hex'), { code: 'EDGE_FIXTURE_RECORD_INVALID' });
+});
 function sample(scope, override = {}) {
     const pair = generateKeyPairSync('ec', { namedCurve: 'prime256v1' }), jwk = pair.privateKey.export({ format: 'jwk' });
     const publicKey = Buffer.concat([Buffer.from([4]), Buffer.from(jwk.x, 'base64url'), Buffer.from(jwk.y, 'base64url')]);

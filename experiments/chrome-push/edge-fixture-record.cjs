@@ -77,4 +77,17 @@ function selectSyntheticEdgeRecord(records, expectedScope) {
         throw error;
     }
 }
-module.exports = { selectSyntheticEdgeRecord };
+// Return field numbers only; never expose the record or candidate value.
+function matchingSyntheticRecordFields(record, candidate) {
+    if (typeof candidate !== 'string' || !/^[0-9a-f]{1,16}$/i.test(candidate)) throw invalid();
+    const lhs = [BigInt(`0x${candidate}`), ...(/^\d+$/.test(candidate) ? [BigInt(candidate)] : [])];
+    return fields(record).filter(item => {
+        if (item.wire === 0) return lhs.some(value => value === item.value);
+        if (item.wire !== 2 || item.value.length > 32) return false;
+        const text = item.value.toString('ascii');
+        if (!/^[0-9a-f]{1,32}$/i.test(text)) return false;
+        const rhs = [BigInt(`0x${text}`), ...(/^\d+$/.test(text) ? [BigInt(text)] : [])];
+        return lhs.some(value => rhs.some(other => value === other));
+    }).map(item => ({ field: item.number, wire: item.wire }));
+}
+module.exports = { selectSyntheticEdgeRecord, matchingSyntheticRecordFields };
