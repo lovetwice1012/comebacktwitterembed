@@ -22,7 +22,8 @@ const { createSyntheticRewriteStream } = require('./edge-fixture-rewrite.cjs');
 const { selectSyntheticHandshake, describeSyntheticHandshake, syntheticHandshakeRelations, syntheticClientMetadata, independentSyntheticReconnect } = require('./edge-fixture-independent.cjs');
 const { readSyntheticProductConstants } = require('./edge-fixture-product.cjs');
 const { syntheticChallengeResponse } = require('./edge-fixture-challenge.cjs');
-const { matchingSyntheticRecordFields, selectSyntheticEdgeRecord } = require('./edge-fixture-record.cjs');
+const { matchingSyntheticRecordFields, selectSyntheticEdgeRecord, rewriteSyntheticOrigin } = require('./edge-fixture-record.cjs');
+const { selectXRecord, clearRecord } = require('../../src/automation/edge-wns-record');
 const { compareSyntheticRouting, syntheticRecipientProof, syntheticChannelStability } = require('./edge-fixture-routing.cjs');
 const { createSyntheticDurableReceiver } = require('./edge-fixture-durable.cjs');
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -86,6 +87,8 @@ async function main() {
     const testRewrite = process.env.EDGE_PROBE_REWRITE_SIGNATURE === '1';
     const testIndependent = process.env.EDGE_PROBE_INDEPENDENT_RECONNECT === '1';
     const testTwoSites = process.env.EDGE_PROBE_TWO_SITES === '1';
+    const testXSelector = process.env.EDGE_PROBE_X_SELECTOR === '1';
+    if (testXSelector && (!testTwoSites || process.env.NODE_ENV !== 'test')) throw new Error('PROBE_MODE_INVALID');
     const testOffline = process.env.EDGE_PROBE_OFFLINE === '1';
     const testDurable = process.env.EDGE_PROBE_DURABLE === '1';
     const testDurableFailure = process.env.EDGE_PROBE_DURABLE_FAIL_INSERT === '1';
@@ -507,6 +510,18 @@ async function main() {
                 routingResult = events[0].fixtureRouting(expectedCipher, otherCipher, firstRecord, otherRecord);
                 const selected = selectSyntheticEdgeRecord([firstRecord, otherRecord], `${origin}/`);
                 try {
+                    if (testXSelector) {
+                        const rewritten = rewriteSyntheticOrigin(firstRecord, `${origin}/`);
+                        const expected = { endpoint: value.subscription.endpoint, publicKey: Buffer.from(value.subscription.keys.p256dh, 'base64url'),
+                            auth: Buffer.from(value.subscription.keys.auth, 'base64url'), applicationServerKey: Buffer.from(vapid.publicKey, 'base64url') };
+                        let checked;
+                        try {
+                            checked = selectXRecord([otherRecord, rewritten], expected);
+                            if (!checked.channel.equals(selected.channel) || !checked.privateKey.equals(selected.privateKey)
+                                || !checked.publicKey.equals(selected.publicKey) || !checked.auth.equals(selected.auth)) throw new Error('PROBE_X_SELECTOR_MISMATCH');
+                            routingResult.xSelectorMatchesSyntheticBrowser = true;
+                        } finally { clearRecord(checked); rewritten.fill(0); for (const key of ['publicKey', 'auth', 'applicationServerKey']) expected[key].fill(0); }
+                    }
                     if (testIndependent) independentChannel = Buffer.from(selected.channel);
                     const recipient = events[0].fixtureRecipient(expectedCipher, otherCipher, selected.channel);
                     const nextRecipient = events[0].fixtureRecipient(expectedNextCipher, otherNextCipher, selected.channel);

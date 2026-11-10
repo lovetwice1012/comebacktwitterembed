@@ -98,4 +98,40 @@ function matchingSyntheticTextFields(record, candidate) {
         .map(item => ({ field: item.number, relation: item.value.equals(value) ? 'exact' : 'contains' })); }
     finally { value.fill(0); }
 }
-module.exports = { selectSyntheticEdgeRecord, matchingSyntheticRecordFields, matchingSyntheticTextFields };
+// Test-only transformation: preserve a disposable loopback record while
+// substituting its origin so the fixed-X production selector can validate the
+// browser-generated fields. Never write the transformed bytes to a profile.
+function rewriteSyntheticOrigin(record, originalScope) {
+    if (typeof originalScope !== 'string' || !/^http:\/\/(?:localhost|127\.0\.0\.1):[1-9][0-9]{0,4}\/$/.test(originalScope)) throw invalid();
+    try { if (new URL(originalScope).href !== originalScope) throw invalid(); } catch { throw invalid(); }
+    let changes = 0;
+    function encodeVarint(value) {
+        let n = BigInt(value); const out = [];
+        do { let byte = Number(n & 127n); n >>= 7n; if (n) byte |= 128; out.push(byte); } while (n);
+        return Buffer.from(out);
+    }
+    function encode(list) {
+        const chunks = [];
+        for (const item of list) {
+            chunks.push(encodeVarint(BigInt(item.number) * 8n + BigInt(item.wire)));
+            if (item.wire === 0) chunks.push(encodeVarint(item.value));
+            else if (item.wire === 2) chunks.push(encodeVarint(item.value.length), item.value);
+            else chunks.push(item.value);
+        }
+        return Buffer.concat(chunks);
+    }
+    const temporary = [];
+    try {
+        const list = fields(record).map(item => {
+            if (item.number !== 8 || item.wire !== 2) return item;
+            const pair = fields(item.value), name = string(one(pair, 1, 2));
+            if (name !== 'origin' || string(one(pair, 2, 2)) !== originalScope) return item;
+            changes++;
+            const updated = pair.map(field => field.number === 2 ? { ...field, value: Buffer.from('https://x.com/') } : field);
+            const value = encode(updated); temporary.push(value); return { ...item, value };
+        });
+        if (changes !== 1) throw invalid();
+        return encode(list);
+    } finally { for (const buffer of temporary) buffer.fill(0); }
+}
+module.exports = { selectSyntheticEdgeRecord, matchingSyntheticRecordFields, matchingSyntheticTextFields, rewriteSyntheticOrigin };

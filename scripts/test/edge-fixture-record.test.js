@@ -2,7 +2,8 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { generateKeyPairSync, randomBytes } = require('node:crypto');
-const { selectSyntheticEdgeRecord, matchingSyntheticRecordFields, matchingSyntheticTextFields } = require('../../experiments/chrome-push/edge-fixture-record.cjs');
+const { selectSyntheticEdgeRecord, matchingSyntheticRecordFields, matchingSyntheticTextFields, rewriteSyntheticOrigin } = require('../../experiments/chrome-push/edge-fixture-record.cjs');
+const { selectXRecord, clearRecord } = require('../../src/automation/edge-wns-record');
 function varint(number) { const result = []; do { let part = number % 128; number = Math.floor(number / 128); if (number) part |= 128; result.push(part); } while (number); return Buffer.from(result); }
 const bytes = (field, value) => { const data = Buffer.isBuffer(value) ? value : Buffer.from(value); return Buffer.concat([varint(field * 8 + 2), varint(data.length), data]); };
 const metadata = origin => bytes(8, Buffer.concat([bytes(1, 'origin'), bytes(2, origin)]));
@@ -23,8 +24,18 @@ function sample(scope, override = {}) {
     const der = pair.privateKey.export({ format: 'der', type: 'pkcs8' });
     const endpoint = override.endpoint || 'https://wns2-pn1p.notify.windows.com/?token=synthetic';
     const record = Buffer.concat([bytes(1, override.channel || '1;123456789'), bytes(3, endpoint), bytes(6, auth), bytes(7, der), metadata(scope), bytes(16, override.appKey || app)]);
-    return { record, auth, publicKey, endpoint };
+    return { record, auth, publicKey, endpoint, applicationServerKey: app };
 }
+test('fixture-only origin substitution preserves subscription fields for the X selector', () => {
+    const scope = 'http://127.0.0.1:12345/', item = sample(scope), changed = rewriteSyntheticOrigin(item.record, scope);
+    try {
+        const result = selectXRecord([changed], { endpoint: item.endpoint, auth: item.auth, publicKey: item.publicKey, applicationServerKey: item.applicationServerKey });
+        try { assert.deepEqual(result.publicKey, item.publicKey); assert.equal(result.scope, 'https://x.com/'); }
+        finally { clearRecord(result); }
+    } finally { changed.fill(0); }
+    assert.throws(() => rewriteSyntheticOrigin(item.record, 'https://x.com/'), { code: 'EDGE_FIXTURE_RECORD_INVALID' });
+    assert.throws(() => rewriteSyntheticOrigin(Buffer.concat([item.record, metadata(scope)]), scope), { code: 'EDGE_FIXTURE_RECORD_INVALID' });
+});
 test('synthetic Edge selector chooses the exact local site and rejects another site and duplicates', () => {
     const first = sample('http://127.0.0.1:12345/'), second = sample('http://localhost:12345/');
     const chosen = selectSyntheticEdgeRecord([Buffer.from([0]), second.record, first.record], 'http://127.0.0.1:12345/');
