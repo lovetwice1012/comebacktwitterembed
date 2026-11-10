@@ -6,7 +6,7 @@ const path = require('node:path');
 const http = require('node:http');
 const { spawn } = require('node:child_process');
 const { once } = require('node:events');
-const { randomBytes, generateKeyPairSync } = require('node:crypto');
+const { randomBytes, generateKeyPairSync, X509Certificate, createHash } = require('node:crypto');
 const { pathToFileURL } = require('node:url');
 const CDP = require('chrome-remote-interface');
 const webpush = require('web-push');
@@ -21,11 +21,12 @@ let stage = 'start';
 async function main() {
     if (process.env.NODE_ENV !== 'test' || process.platform !== 'win32') throw new Error('PROBE_MODE_INVALID');
     const realWns = process.env.EDGE_PROBE_REAL_WNS === '1';
-    if (realWns && (process.env.EDGE_PROBE_DATABASE !== '1' || !/^[1-9]\d{2}$/.test(process.env.EDGE_PROBE_SYNTHETIC_CHANNEL || '')
-        || !/^\d\.\d$/.test(process.env.EDGE_PROBE_SYNTHETIC_PROTOCOL || ''))) throw new Error('PROBE_MODE_INVALID');
+    const calibrate = process.env.EDGE_PROBE_RELAY_CALIBRATION === '1';
+    if (realWns && (process.env.EDGE_PROBE_DATABASE !== '1' || !calibrate && (!/^[1-9]\d{2}$/.test(process.env.EDGE_PROBE_SYNTHETIC_CHANNEL || '')
+        || !/^\d\.\d$/.test(process.env.EDGE_PROBE_SYNTHETIC_PROTOCOL || '')))) throw new Error('PROBE_MODE_INVALID');
     const temp = await fs.realpath(os.tmpdir()), root = await fs.mkdtemp(path.join(temp, 'cbte-edge-broker-fixture-'));
     const profile = path.join(root, 'profile'), edge = 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
-    let server, chrome, cdp, broker, testDb;
+    let server, chrome, cdp, broker, testDb, calibrationRelay, calibrationPfx;
     try {
         const vapid = webpush.generateVAPIDKeys();
         server = http.createServer((request, response) => {
@@ -62,6 +63,57 @@ async function main() {
         }
         if (!captured || captured.endpoint !== expected.endpoint || captured.keys.p256dh !== expected.keys.p256dh
             || captured.keys.auth !== expected.keys.auth || captured.applicationServerKey !== vapid.publicKey) throw new Error('PROBE_CAPTURE_MISMATCH');
+        let calibrationMetadata;
+        if (process.env.EDGE_PROBE_RELAY_CALIBRATION === '1') {
+            stage = 'calibration';
+            // A separate disposable profile is calibrated. The profile whose
+            // notification settings will be exported never uses the relay.
+            const calibrationProfile = path.join(root, 'calibration-profile');
+            chrome = spawn(edge, ['--headless=new', '--remote-debugging-port=0', `--user-data-dir=${calibrationProfile}`,
+                '--no-first-run', '--no-default-browser-check', 'about:blank'], { windowsHide: true, stdio: 'ignore' });
+            let calibrationPort;
+            for (let i = 0; i < 120 && !calibrationPort; i++) {
+                try { calibrationPort = Number((await fs.readFile(path.join(calibrationProfile, 'DevToolsActivePort'), 'utf8')).split('\n')[0]); } catch { await wait(100); }
+            }
+            if (!calibrationPort || chrome.exitCode !== null) throw new Error('PROBE_BROWSER_FAILED');
+            cdp = await CDP({ port: calibrationPort }); await cdp.Browser.grantPermissions({ origin, permissions: ['notifications'] }); await cdp.Page.enable();
+            const calibrationLoaded = new Promise(resolve => cdp.Page.loadEventFired(resolve)); await cdp.Page.navigate({ url: origin }); await calibrationLoaded;
+            const calibrationSubscription = await cdp.Runtime.evaluate({ awaitPromise: true, returnByValue: true, expression: `(async()=>{
+                const r=await navigator.serviceWorker.register('/sw.js');await navigator.serviceWorker.ready;
+                const s=await r.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:window.key});return s.toJSON()})()` });
+            if (calibrationSubscription.exceptionDetails || !calibrationSubscription.result?.value?.endpoint
+                || calibrationSubscription.result.value.keys?.p256dh === captured.keys.p256dh) throw new Error('PROBE_CALIBRATION_PROFILE_INVALID');
+            const calibrationExit = chrome.exitCode === null ? once(chrome, 'exit') : Promise.resolve();
+            await cdp.Browser.close(); await cdp.close(); cdp = null; await calibrationExit; chrome = null;
+            const certHelper = path.resolve(__dirname, '../../client/angelic-setup/EdgeEphemeralCertificate.ps1').replace(/'/g, "''");
+            const certCommand = `$ErrorActionPreference='Stop'; . '${certHelper}'; $c=New-XEdgeEphemeralCertificate; try { [ordered]@{pfx=[Convert]::ToBase64String($c.pfx);password=$c.password;certificate=[Convert]::ToBase64String($c.certificate)}|ConvertTo-Json -Compress } finally { [Array]::Clear($c.pfx,0,$c.pfx.Length);[Array]::Clear($c.certificate,0,$c.certificate.Length) }`;
+            const certOutput = require('node:child_process').spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(certCommand, 'utf16le').toString('base64')],
+                { encoding: 'utf8', windowsHide: true, timeout: 10000 });
+            if (certOutput.status !== 0) throw new Error('PROBE_CERT_FAILED');
+            const cert = JSON.parse(certOutput.stdout); calibrationPfx = Buffer.from(cert.pfx, 'base64');
+            const spki = createHash('sha256').update(new X509Certificate(Buffer.from(cert.certificate, 'base64')).publicKey.export({ type: 'spki', format: 'der' })).digest('base64');
+            let browserTicks;
+            const helper = path.resolve(__dirname, '../../client/angelic-setup/EdgePeerIdentity.ps1').replace(/'/g, "''"), executable = edge.replace(/'/g, "''");
+            calibrationRelay = await require('../../src/automation/edge-calibration-relay').createEdgeCalibrationRelay({ pfx: calibrationPfx, passphrase: cert.password,
+                authorizePeer: async ({ clientPort, serverPort }) => {
+                    if (!chrome || !/^\d{18}$/.test(browserTicks || '')) return false;
+                    const command = `$ErrorActionPreference='Stop'; . '${helper}'; if (-not (Test-XEdgeOwnedLoopbackPeer -ClientPort ${clientPort} -ServerPort ${serverPort} -BrowserPid ${chrome.pid} -BrowserStartTicks ([long]'${browserTicks}') -BrowserExecutable '${executable}')) {exit 1}; exit 0`;
+                    const checked = require('node:child_process').spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(command, 'utf16le').toString('base64')],
+                        { encoding: 'utf8', windowsHide: true, timeout: 10000 });
+                    return checked.status === 0;
+                } });
+            chrome = spawn(edge, ['--headless=new', `--user-data-dir=${calibrationProfile}`, `--edge-wns-push-server-url=https://127.0.0.1:${calibrationRelay.port}`,
+                `--ignore-certificate-errors-spki-list=${spki}`, '--no-first-run', '--no-default-browser-check', 'about:blank'], { windowsHide: true, stdio: 'ignore' });
+            const ticksCommand = `$ErrorActionPreference='Stop'; $p=Get-Process -Id ${chrome.pid}; try {if ([IO.Path]::GetFullPath($p.Path) -ine '${executable}') {exit 1}; $p.StartTime.ToUniversalTime().Ticks.ToString()} finally {$p.Dispose()}`;
+            const ticksOutput = require('node:child_process').spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(ticksCommand, 'utf16le').toString('base64')],
+                { encoding: 'utf8', windowsHide: true, timeout: 10000 });
+            browserTicks = (ticksOutput.stdout || '').trim(); if (ticksOutput.status !== 0 || !/^\d{18}$/.test(browserTicks)) throw new Error('PROBE_PEER_AUTH_FAILED');
+            let timeout;
+            try { calibrationMetadata = await Promise.race([calibrationRelay.metadata, new Promise((_resolve, reject) => { timeout = setTimeout(() => reject(new Error('PROBE_CALIBRATION_TIMEOUT')), 30000); })]); }
+            finally { clearTimeout(timeout); }
+            await calibrationRelay.close(); calibrationRelay = null;
+            if (chrome.exitCode === null) { chrome.kill(); await once(chrome, 'exit'); } chrome = null;
+        }
         stage = 'snapshot';
         const token = randomBytes(16).toString('hex'), snapshotPath = path.join(root, `edge-snapshot-${token}`);
         const storePath = path.join(snapshotPath, 'Default', 'EdgePushStorageWithConnectTokenAndKey');
@@ -87,7 +139,7 @@ async function main() {
         try {
             result = await readEdgeSnapshot({ snapshotPath, token, expected: observed, browserVersion: browserProduct.split('/')[1],
                 agent: { os: 'Windows', osVersion: '1', architecture: 'x64', locale: 'en' },
-                client: { channel: realWns ? process.env.EDGE_PROBE_SYNTHETIC_CHANNEL : 'abc', protocolVersion: realWns ? process.env.EDGE_PROBE_SYNTHETIC_PROTOCOL : '1.0',
+                client: calibrationMetadata || { channel: realWns ? process.env.EDGE_PROBE_SYNTHETIC_CHANNEL : 'abc', protocolVersion: realWns ? process.env.EDGE_PROBE_SYNTHETIC_PROTOCOL : '1.0',
                     clientName: 'Synthetic client', clientVersion: '1.2.3.4' },
                 dbFactory: location => new ClassicLevel(location, { createIfMissing: false, keyEncoding: 'buffer', valueEncoding: 'buffer' }) });
         } finally { observed.publicKey.fill(0); observed.auth.fill(0); observed.applicationServerKey.fill(0); }
@@ -147,11 +199,13 @@ async function main() {
         }
         for (const field of Object.values(cryptoKeys)) field.fill(0);
         const summary = { syntheticProfile: true, privatePipeCapture: true, subscriptionMatched: true, applicationKeyMatched: true,
-            snapshotSelected: true, ownerBoundVault: true, fixtureDecrypted: true, databaseRecovery, browserClosed: broker.chrome.exitCode !== null, realWnsWorkerTested };
+            snapshotSelected: true, ownerBoundVault: true, fixtureDecrypted: true, databaseRecovery, calibrationMetadataCaptured: Boolean(calibrationMetadata), browserClosed: broker.chrome.exitCode !== null, realWnsWorkerTested };
         if (typeof process.send === 'function') await new Promise((resolve, reject) => process.send(summary, error => error ? reject(new Error('PROBE_IPC_FAILED')) : resolve()));
         else console.log(JSON.stringify(summary));
     } finally {
         if (testDb) await testDb.close();
+        if (calibrationRelay) await calibrationRelay.close().catch(() => {});
+        calibrationPfx?.fill(0);
         if (cdp) await cdp.close().catch(() => {});
         if (broker) { await broker.stop().catch(() => {}); if (broker.chrome.exitCode === null) { broker.chrome.kill(); await once(broker.chrome, 'exit').catch(() => {}); } }
         if (chrome && chrome.exitCode === null) { chrome.kill(); await once(chrome, 'exit').catch(() => {}); }
